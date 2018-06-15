@@ -6,6 +6,8 @@
 # export LD_LIBRARY_PATH=/usr/local/gcc-7.3/lib64/
 # export LIBRARY_PATH=/usr/local/gcc-7.3/lib64/
 #
+# Get the latest version of gcc with svn ls svn://gcc.gnu.org/svn/gcc/tags/ | grep '^gcc[_-][0-9]' | sort | tail -n1
+#
 
 work_dir=$HOME/gcc-7_offload/wrk
 install_dir=/usr/local/gcc-7.3
