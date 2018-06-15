@@ -1,0 +1,941 @@
+*-------------------------------------------------------------------------------
+*
+* Q-FF parameters:   CHARMM36 All-Hydrogen Nucleic Acid Parameter File  parameters
+*
+*-------------------------------------------------------------------------------
+*  CHARMM36 All-Hydrogen Nucleic Acid Parameter File 
+* Parameters translated for Q with charmm2q.py (Geir V. Isaksen, 2016)
+* with small changes by Mauricio Esguerra and Christoffer Lind.
+*-------------------------------------------------------------------------------
+[options] force-field options
+name                Q   CHARMM36 All-Hydrogen Nucleic Acid Parameter File 
+vdw_rule            arithmetic   ! vdW combination rule (geometric or arithmetic )
+scale_14            1.0          ! electrostatic 1-4 scaling factor
+switch_atoms        off          ! on = use switch atom; off = use charge group
+improper_definition explicit     ! improper representation by 2 or four atoms
+improper_potential  harmonic
+coulomb_constant    332.0716     ! Constant in electrostatic energy calculation; default = 332.
+force_field         charmm       ! Force Field Type (GROMOS (default), AMBER or CHARMM)
+
+
+[atom_types]
+* V(Lennard-Jones) = Eps,i,j[(Rmin,i,j/ri,j)**12 - 2(Rmin,i,j/ri,j)**6]
+* epsilon: kcal/mole, Eps,i,j = sqrt(eps,i * eps,j)
+* Rmin/2: A, Rmin,i,j = Rmin/2,i + Rmin/2,j
+*-iac------Avdw1------Avdw2-----Bvdw1------Avdw3-----Bvdw2&3----mass---SYBYL-name-old-comment
+HN1        0.2245     0.2245    0.0460     0.2245    0.0460      1.0080 1  
+HN2        0.2245     0.2245    0.0460     0.2245    0.0460      1.0080 1  
+HN3        1.1000     1.1000    0.0460     1.1000    0.0460      1.0080 1 !adm jr. aromatic Hvdw 
+HN4        0.2245     0.2245    0.0460     0.2245    0.0460      1.0080 1  
+HN5        0.2245     0.2245    0.0460     0.2245    0.0460      1.0080 1  
+HN6        1.3200     1.3200    0.0220     1.3200    0.0220      1.0080 1  
+HN7        1.3200     1.3200    0.0220     1.3200    0.0220      1.0080 1  
+HN8        1.3400     1.3400    0.0280     1.3400    0.0280      1.0080 1 ! Hydrogen bound to CN8
+HN9        1.3400     1.3400    0.0240     1.3400    0.0240      1.0080 1 ! Hydrogen bound to CN9
+NN1        1.8500     1.8500    0.2000     1.8500    0.2000     14.0070 1  
+NN2        1.8500     1.8500    0.2000     1.8500    0.2000     14.0070 1  
+NN2B       1.8500     1.8500    0.2000     1.8500    0.2000     14.0070 1 ! From NN2, for N9 in guanines
+NN2G       1.8500     1.8500    0.2000     1.8500    0.2000     14.0070 1  
+NN2U       1.8500     1.8500    0.2000     1.8500    0.2000     14.0070 1  
+NN3        1.8500     1.8500    0.2000     1.8500    0.2000     14.0070 1  
+NN3A       1.8500     1.8500    0.2000     1.8500    0.2000     14.0070 1  
+NN3G       1.8500     1.8500    0.2000     1.8500    0.2000     14.0070 1  
+NN4        1.8500     1.8500    0.2000     1.8500    0.2000     14.0070 1  
+NN6        1.8500     1.8500    0.2000     1.8500    0.2000     14.0070 1  
+ON1        1.7000     1.7000    0.1200     1.7000    0.1200     15.9994 1  
+ON1C       1.7000     1.7000    0.1200     1.7000    0.1200     15.9994 1  
+ON2        1.7700     1.7700    0.1521     1.7700    0.1521     15.9994 1  
+ON3        1.7000     1.7000    0.1200     1.7000    0.1200     15.9994 1  
+ON4        1.7700     1.7700    0.1521     1.7700    0.1521     15.9994 1  
+ON5        1.7700     1.7700    0.1521     1.7700    0.1521     15.9994 1  
+ON6        1.7700     1.7700    0.1521     1.7700    0.1521     15.9994 1  
+ON6B       1.7700     1.7700    0.1521     1.7700    0.1521     15.9994 1  
+CN1        1.9000     1.9000    0.1000     1.9000    0.1000     12.0110 1  
+CN1T       1.9000     1.9000    0.1000     1.9000    0.1000     12.0110 1  
+CN2        1.9000     1.9000    0.1000     1.9000    0.1000     12.0110 1  
+CN3        1.9000     1.9000    0.0900     1.9000    0.0900     12.0110 1  
+CN3T       1.9000     1.9000    0.0900     1.9000    0.0900     12.0110 1 ! T, adm jr.
+CN4        1.9000     1.9000    0.0750     1.9000    0.0750     12.0110 1  
+CN5        1.9000     1.9000    0.0750     1.9000    0.0750     12.0110 1  
+CN5G       1.9000     1.9000    0.0750     1.9000    0.0750     12.0110 1  
+CN7        2.2750     2.2750    0.0200     1.9000    0.0100     12.0110 1 !equivalent to protein CT1
+CN7B       2.2750     2.2750    0.0200     1.9000    0.0100     12.0110 1 !equivalent to protein CT1
+CN8        2.0100     2.0100    0.0560     1.9000    0.0100     12.0110 1 !
+CN8B       2.0100     2.0100    0.0560     1.9000    0.0100     12.0110 1 !
+CN9        2.0400     2.0400    0.0780     1.9000    0.0100     12.0110 1 !
+P          2.1500     2.1500    0.5850     2.1500    0.5850     30.9740 1  
+P2         2.1500     2.1500    0.5850     2.1500    0.5850     30.9740 1  
+
+[bonds]
+* V(bond) = Kb(b - b0)**2
+* Kb: kcal/mole/A**2
+* b0: A
+* atom type Kb          b0
+*
+* iaci  iacj     force.c.    dist.
+*-------------------------------------------------------------------------------
+CN8    NN6      400.000     1.480 ! methylammonium
+NN6    HN1      806.000     1.040 ! methylammonium
+ON6    CN8B     520.000     1.420 ! susil
+CN8    CN8B     445.000     1.528 ! Alkanes, sacred
+CN1    CN3      604.000     1.409 !U, adm jr. 11/97
+CN1    CN3T     604.000     1.403 !T, adm jr. 11/97
+CN1    CN5G     604.000     1.360 !G, adm jr. 11/97
+CN1    NN2      760.000     1.367 !C, adm jr. 11/97
+CN1T   NN2B     604.000     1.348 !U,T adm jr. 11/97
+CN1    NN2G     680.000     1.396 !G, adm jr. 11/97
+CN1    NN2U     680.000     1.389 !U,T adm jr. 11/97
+CN1T   NN2U     680.000     1.383 !U,T adm jr. 11/97
+CN1    NN3      700.000     1.335 !C, adm jr. 11/97
+CN1T   ON1     1720.000     1.230 !nad/ppi, jjp1/adm jr. 7/95
+CN1    ON1     1320.000     1.234 !U,A,G par_a4 adm jr. 10/2/91
+CN1    ON1C    1240.000     1.245 !C, adm jr. 10/2/91
+CN2    CN3      640.000     1.406 !C, adm jr. 11/97
+CN2    CN5      720.000     1.358 !A, adm jr. 11/97
+CN2    NN1      720.000     1.366 !C,A,G JWK, adm jr. 10/2/91
+CN2    NN2G     800.000     1.392 !G  
+CN2    NN3      900.000     1.343 !C  
+CN2    NN3A     800.000     1.342 !A, adm jr. 11/97
+CN2    NN3G     640.000     1.326 !G, adm jr. 11/97
+CN3    CN3     1000.000     1.326 !C,U adm jr. 11/97
+CN3    CN3T    1120.000     1.320 !T, adm jr. 11/97
+CN3T   CN9      460.000     1.478 !T, adm jr. 11/97
+CN3    HN3      700.000     1.090 !C,U, JWK
+CN3T   HN3      700.000     1.090 !T, JWK
+CN3    NN2      604.000     1.343 !C, adm jr. 11/97
+CN3    NN2B     640.000     1.343 !U,T adm jr. 11/97
+CN4    HN3      760.000     1.090 !G,A, JWK par_a7 9/30/91
+CN4    NN2      640.000     1.374 !A, adm jr. 11/97
+CN4    NN2B     600.000     1.378 !G, adm jr. 11/97
+CN4    NN3A     840.000     1.322 !A, adm jr. 11/97
+CN4    NN4      800.000     1.305 !G,A, adm jr. 11/97
+CN5    CN5      620.000     1.361 !A, adm jr. 11/97
+CN5    CN5G     640.000     1.350 !G, adm jr. 11/97
+CN5    NN2      600.000     1.375 !A, adm jr. 11/97
+CN5    NN2B     604.000     1.375 !G, adm jr. 11/97
+CN5    NN3A     700.000     1.312 !A, JWK par_a8 9/30/91
+CN5    NN3G     700.000     1.315 !G, adm jr. 11/97
+CN5    NN4      620.000     1.355 !A, adm jr. 11/97
+CN5G   NN4      620.000     1.365 !G, adm jr. 11/97
+CN8    CN8      445.000     1.528 !Alkanes, sacred
+CN8    CN9      445.000     1.528 !Alkanes, sacred
+CN8    NN2      800.000     1.460 !9-E-GUA, ADM JR.
+CN8    ON5      856.000     1.420 !RIBOSE, MeOH
+CN9    HN9      644.000     1.111 !alkanes
+CN9    ON2      680.000     1.430 !DMP, ADM Jr.
+HN1    NN1      976.000     1.000 !A,C,G, JWK, adm jr. 7/24/91
+HN2    NN2      948.000     1.010 !C,U, JWK
+HN2    NN2B     948.000     1.010 !G, adm jr. 11/97
+HN2    NN2G     942.000     1.010 !G, JWK, par_a12 9/30/91
+HN2    NN2U     948.000     1.010 !U, JWK, adm jr. 7/24/91
+HN4    ON4     1090.000     0.960 !MP_1, ADM Jr.
+ON2    P        540.000     1.600 !DMP, ADM Jr. 
+ON2    P2       540.000     1.600 !DMP, ADM Jr., adm, 2011 DNA update
+ON3    P       1160.000     1.480 !DMP, ADM Jr.
+ON3    P2      1160.000     1.480 !DMP, ADM Jr., adm, 2011 DNA update
+ON4    P        474.000     1.580 !MP_1, ADM Jr.
+ON4    P2       474.000     1.580 !MP_1, ADM Jr., adm, 2011 DNA update
+CN7B   ON6      520.000     1.420 ! From exp  
+CN7B   CN8      400.000     1.518 ! From exp 
+CN7    ON6      480.000     1.446 ! Fom exp.
+CN7    CN7      445.000     1.529 ! From exp 
+CN7    CN8      445.000     1.516 ! From exp. 
+CN7    CN9      445.000     1.516 ! for 5MET, From alkanes
+CN7    HN7      618.000     1.111 !Alkanes, sacred
+CN8    HN8      618.000     1.111 !Alkanes, sacred
+CN7B   HN7      618.000     1.111 ! From CN8  HN7 (NF)
+CN7B   ON6B     520.000     1.420 ! From CN7B ON6
+CN7    ON6B     480.000     1.480 ! From CN7  ON6
+CN7B   CN7B     400.000     1.450 ! 
+CN7    CN7B     445.000     1.460 ! Specific to RNA 
+CN7    CN8B     445.000     1.512 ! From exp. 
+CN8B   ON2      640.000     1.440 ! From exp
+CN8B   ON5      856.000     1.420 !From CN8 ON2, adm jr., 8/30/98
+CN7    ON2      620.000     1.433 ! From exp
+CN7B   ON2      620.000     1.433 ! From exp, for NADPH and bkbmod
+CN7    ON5      856.000     1.420 !From CN8 ON2, adm jr., 8/30/98
+CN9    NN2      800.000     1.456 !9-M-A/C, adm jr.
+CN8    NN2B     800.000     1.458 !9-M-G/T/U, adm jr.
+CN9    NN2B     800.000     1.458 !9-M-G/T/U, adm jr.
+CN7B   NN2      440.000     1.456 !A/C
+CN7B   NN2B     440.000     1.458 !G/T/U
+CN8B   HN8      618.000     1.111 !Alkanes, sacred
+ON5    HN5     1090.000     0.960 !RIBOSE, MeOH
+CN7B   ON5      856.000     1.400 ! check adm jr., 
+CN8    ON2      680.000     1.440 !
+
+[angles]
+* V(angle) = Ktheta(Theta - Theta0)**2
+* V(Urey-Bradley) = Kub(S - S0)**2
+* Ktheta: kcal/mole/rad**2
+* Theta0: degrees
+* Kub: kcal/mole/A**2 (Urey-Bradley)
+* S0: A
+* atom types     Ktheta    Theta0   Kub     S0
+* 
+* iaci  iacj   iack      forceK   angle0     forceUB    Stheta
+*-------------------------------------------------------------------------------
+CN7    CN8    CN8       116.70    113.6     11.16      2.56 !alkane
+CN8    CN7    CN8       116.70    113.6     11.16      2.56 !alkane
+CN8    CN8    CN8       116.70    113.6     11.16      2.56 !alkane
+HN1    NN6    CN8        60.00    109.5     20.00      2.07 !methylammonium
+NN6    CN8    HN8        90.00    107.5     35.00      2.10 !methylammonium
+CN7    CN8    ON2       230.00    109.7      0.00      0.00 !DNA exocyclic angles
+NN6    CN8    CN8       135.40    110.0      0.00      0.00 !methylammonium
+HN1    NN6    HN1        88.00    109.5      0.00      0.00 !methylammonium
+ON2    CN8    CN8       230.00    109.7      0.00      0.00 !DNA exocyclic angles
+CN7    ON6    CN8B      220.00    109.0      0.00      0.00  
+ON6    CN8B   CN8       180.00    106.0      0.00      0.00  
+CN8B   CN8    CN7       160.00    106.0      0.00      0.00  
+ON6    CN8B   HN8        90.40    107.2      0.00      0.00 !
+HN8    CN8B   CN8        69.06    110.1     22.53      2.18 ! alkane
+HN8    CN8    CN8B       69.06    110.1     22.53      2.18 ! alkane
+CN2    NN3A   CN4       180.00    117.8      0.00      0.00 !6R) adm jr. 11/97
+NN3A   CN4    NN3A      120.00    133.0      0.00      0.00 !6R)
+CN4    NN3A   CN5       180.00    110.1      0.00      0.00 !6R)
+CN5    CN5    NN3A      120.00    127.4      0.00      0.00 !6R) bridgeC4
+CN2    CN5    CN5       120.00    121.0      0.00      0.00 !6R) bridgeC5
+CN5    CN2    NN3A      120.00    110.7      0.00      0.00 !6R)
+CN5    CN5    NN2       200.00    105.7      0.00      0.00 !5R) bridgeC4
+CN5    CN5    NN4       200.00    110.0      0.00      0.00 !5R) bridgeC5
+CN4    NN4    CN5       240.00    104.6      0.00      0.00 !5R)
+NN2    CN4    NN4       200.00    113.4      0.00      0.00 !5R)
+CN4    NN2    CN5       200.00    106.3      0.00      0.00 !5R)
+NN2    CN5    NN3A      200.00    126.9      0.00      0.00 !bridgeC4
+CN2    CN5    NN4       200.00    129.0      0.00      0.00 !bridgeC5
+HN3    CN4    NN3A       76.00    113.5      0.00      0.00 !h2
+NN3A   CN2    NN1       100.00    130.7      0.00      0.00 !n6
+CN5    CN2    NN1       100.00    118.6      0.00      0.00 !
+CN2    NN1    HN1        80.00    121.5      0.00      0.00 !h61,h62, C,A,G
+HN1    NN1    HN1        62.00    117.0      0.00      0.00 !C,A,G
+NN4    CN4    HN3        78.00    124.8      0.00      0.00 !h8, G,A
+NN2    CN4    HN3        78.00    121.8      0.00      0.00 !
+CN5    NN2    HN2        60.00    129.4      0.00      0.00 !h9
+CN4    NN2    HN2        60.00    125.0      0.00      0.00 !
+CN1    NN2G   CN2       140.00    131.1      0.00      0.00 !6R)G, adm jr. 11/97
+NN2G   CN2    NN3G      140.00    122.2      0.00      0.00 !6R)
+CN2    NN3G   CN5       180.00    109.4      0.00      0.00 !6R)
+CN5G   CN5    NN3G      140.00    129.9      0.00      0.00 !6R) bridgeC4
+CN1    CN5G   CN5       140.00    119.6      0.00      0.00 !6R) bridgeC5
+CN5G   CN1    NN2G      140.00    107.8      0.00      0.00 !6R)
+CN5G   CN5    NN2B      200.00    104.6      0.00      0.00 !5R) bridgeC4
+CN5    CN5G   NN4       200.00    111.4      0.00      0.00 !5R) bridgeC5
+CN4    NN4    CN5G      240.00    103.8      0.00      0.00 !5R)
+NN2B   CN4    NN4       200.00    113.0      0.00      0.00 !5R)
+CN4    NN2B   CN5       200.00    107.2      0.00      0.00 !5R)
+NN2B   CN5    NN3G      280.00    125.5      0.00      0.00 ! bridgeC4
+CN1    CN5G   NN4       250.00    129.0      0.00      0.00 ! bridgeC5
+CN1    NN2G   HN2        90.00    113.3      0.00      0.00 ! h1
+CN2    NN2G   HN2        90.00    115.6      0.00      0.00 !
+NN1    CN2    NN2G      190.00    115.4      0.00      0.00 ! n2 
+NN1    CN2    NN3G      190.00    122.4      0.00      0.00 !
+NN2G   CN1    ON1       100.00    127.5      0.00      0.00 ! o6
+CN5G   CN1    ON1       100.00    124.7      0.00      0.00 !
+HN3    CN4    NN2B       80.00    122.2      0.00      0.00 ! h8 (NN4 CN4 HN3 124.8)
+CN4    NN2B   HN2        60.00    124.6      0.00      0.00 ! h9
+CN5    NN2B   HN2        60.00    129.3      0.00      0.00 !
+CN1    NN2    CN3       100.00    124.1      0.00      0.00 !C, adm jr. 11/97
+NN2    CN1    NN3       100.00    116.8      0.00      0.00 !C
+CN1    NN3    CN2       170.00    119.1      0.00      0.00 !C
+CN3    CN2    NN3       170.00    119.3      0.00      0.00 !C
+CN2    CN3    CN3       170.00    117.8      0.00      0.00 !C
+CN3    CN3    NN2       170.00    122.9      0.00      0.00 !C
+CN1    NN2    HN2        74.00    121.2      0.00      0.00 !C, h1
+CN3    NN2    HN2        74.00    114.7      0.00      0.00 !C
+NN2    CN1    ON1C      260.00    119.4      0.00      0.00 !C, o2
+NN3    CN1    ON1C      260.00    123.8      0.00      0.00 !C
+NN3    CN2    NN1       162.00    122.3      0.00      0.00 !C, n4
+CN3    CN2    NN1       162.00    118.4      0.00      0.00 !C
+CN2    CN3    HN3        76.00    120.1      0.00      0.00 !C h5
+CN3    CN3    HN3        76.00    122.1      0.00      0.00 !C,U
+HN3    CN3    NN2        88.00    115.0      0.00      0.00 !C, h6
+CN1T   NN2B   CN3       140.00    122.0      0.00      0.00 !U, adm jr. 11/97
+NN2B   CN1T   NN2U      100.00    114.0      0.00      0.00 !U
+CN1T   NN2U   CN1       100.00    130.2      0.00      0.00 !U
+NN2U   CN1    CN3       140.00    112.6      0.00      0.00 !U
+CN1    CN3    CN3       200.00    117.6      0.00      0.00 !U
+CN3    CN3    NN2B      200.00    123.6      0.00      0.00 !U
+CN1T   NN2B   HN2        81.00    122.0      0.00      0.00 !U, h1
+CN3    NN2B   HN2        64.00    116.0      0.00      0.00 !U
+NN2B   CN1T   ON1       200.00    121.6      0.00      0.00 !U, o2
+NN2U   CN1T   ON1       200.00    124.4      0.00      0.00 !U
+CN1T   NN2U   HN2        81.00    114.4      0.00      0.00 !U, h3
+CN1    NN2U   HN2        81.00    115.4      0.00      0.00 !U
+NN2U   CN1    ON1       200.00    121.9      0.00      0.00 !U, o4
+CN3    CN1    ON1       200.00    125.5      0.00      0.00 !U, 
+CN1    CN3    HN3        60.00    120.3      0.00      0.00 !U, h5
+HN3    CN3    NN2B       60.00    114.3      0.00      0.00 !U, h6
+CN3T   CN1    NN2U      140.00    113.5      0.00      0.00 !T, adm jr. 11/97
+CN1    CN3T   CN3       240.00    116.7      0.00      0.00 !T
+CN3T   CN3    NN2B      240.00    123.6      0.00      0.00 !125.3  
+CN3T   CN1    ON1       200.00    124.6      0.00      0.00 !T, o4
+CN1    CN3T   CN9        76.00    118.7      0.00      0.00 !T, c5 methyl
+CN3    CN3T   CN9        76.00    124.6      0.00      0.00 !T
+CN3T   CN3    HN3        60.00    122.1      0.00      0.00 !T, h6
+CN1T   NN2B   CN9       140.00    116.0      0.00      0.00 !1-M-T/U, adm jr. 
+CN3    NN2B   CN9       140.00    122.0      0.00      0.00 !1-M-T/U, adm jr. 7/24/91
+CN1    NN2    CN9       140.00    115.4      0.00      0.00 !1-M-C, adm jr. 
+CN3    NN2    CN9       140.00    120.5      0.00      0.00 !1-M-C, adm jr. 7/24/91
+CN5    NN2    CN9       140.00    125.9      0.00      0.00 !9-M-A, adm jr.
+CN4    NN2    CN9       140.00    127.8      0.00      0.00 !9-M-A, adm jr.
+CN5    NN2B   CN9       140.00    125.9      0.00      0.00 !9-M-G, adm jr.
+CN4    NN2B   CN9       140.00    126.9      0.00      0.00 !9-M-G, adm jr.
+CN5    NN2B   CN8       140.00    125.9      0.00      0.00 !9-E-G, adm jr.
+CN4    NN2B   CN8       140.00    126.9      0.00      0.00 !9-E-G, adm jr.
+NN2B   CN8    CN9       140.00    113.7      0.00      0.00 !9-E-G, adm jr.
+CN1T   NN2B   CN7B       90.00    118.4      0.00      0.00 !U/T, FC from A
+CN3    NN2B   CN7B       90.00    119.6      0.00      0.00 !U/T
+CN1    NN2    CN7B       90.00    120.0      0.00      0.00 !C, FC from A
+CN3    NN2    CN7B       90.00    115.9      0.00      0.00 !C
+CN5    NN2    CN7B       90.00    126.1      0.00      0.00 !A
+CN4    NN2    CN7B       90.00    127.6      0.00      0.00 !A
+CN5    NN2B   CN7B       90.00    126.5      0.00      0.00 !G
+CN4    NN2B   CN7B       90.00    126.3      0.00      0.00 !G
+ON6    CN7B   NN2       220.00    108.0      0.00      0.00 !C/A DNA
+ON6B   CN7B   NN2       220.00    112.0      0.00      0.00 !C/A RNA
+CN8    CN7B   NN2       220.00    113.7      0.00      0.00 !C/A
+CN7B   CN7B   NN2       220.00    111.0      0.00      0.00 !C/A, RNA
+ON6    CN7B   NN2B      220.00    108.0      0.00      0.00 !T/U/G (DNA) FC from A
+ON6B   CN7B   NN2B      220.00    112.0      0.00      0.00 !T/U/G (RNA) FC from A
+CN8    CN7B   NN2B      220.00    113.7      0.00      0.00 !T/U/G 
+CN7B   CN7B   NN2B      220.00    111.0      0.00      0.00 !T/U/G, RNA 
+HN7    CN7B   NN2        86.00    111.0      0.00      0.00 !
+HN7    CN7B   NN2B       86.00    111.0      0.00      0.00 !From HN7  CN7B NN2
+CN9    CN8    HN8        69.20    110.1     22.53      2.18 ! Alkanes, sacred
+CN9    CN7    HN7        69.20    110.1     22.53      2.18 ! Alkanes, sacred
+HN8    CN8    NN2        66.86    110.1      0.00      0.00 !FOR 9-M-ADE(THY), ADM
+HN8    CN8    ON5        91.80    108.9      0.00      0.00 !RIBOSE, Adm Jr. MeOH
+CN3    CN9    HN9        66.86    110.1     22.53      2.18 ! Alkanes, sacred
+CN3T   CN9    HN9        66.86    110.1     22.53      2.18 ! Alkanes, sacred
+CN8    CN9    HN9        69.20    110.1     22.53      2.18 ! Alkanes, sacred
+HN9    CN9    CN7        66.86    110.1     22.53      2.18 ! Alkanes, sacred
+HN9    CN9    NN2        66.86    110.1      0.00      0.00 !FOR 9-M-A(T), adm jr.
+HN9    CN9    NN2B       66.86    110.1      0.00      0.00 !FOR 9-M-G(C), adm jr.
+HN8    CN8    NN2B       66.86    110.1      0.00      0.00 !FOR 9-E-G, adm jr.
+HN9    CN9    ON2       120.00    109.5      0.00      0.00 !DMP, ADM Jr.
+CN9    ON2    P          40.00    120.0     35.00      2.33 !DMP, ADM Jr.
+HN4    ON4    P          60.00    115.0     40.00      2.35 !MP_1, ADM Jr. 
+HN4    ON4    P2         60.00    115.0     40.00      2.35 !MP_1, ADM Jr. , adm, 2011 DNA update
+HN5    ON5    CN8       115.00    106.0      0.00      0.00 !RIBOSE, Adm Jr. MeOH
+HN5    ON5    CN9       115.00    106.0      0.00      0.00 !RIBOSE, Adm Jr. MeOH
+ON2    P      ON2       160.00    104.3      0.00      0.00 !DMP, ADM Jr.
+ON2    P2     ON2       160.00    104.3      0.00      0.00 !DMP, ADM Jr., adm, 2011 DNA update
+ON2    P      ON4        96.20    108.0      0.00      0.00 !MP_1, ADM Jr.
+ON2    P2     ON4        96.20    108.0      0.00      0.00 !MP_1, ADM Jr., adm, 2011 DNA update
+ON3    P      ON4       197.80    108.2      0.00      0.00 !MP_1, ADM Jr.
+ON3    P2     ON4       197.80    108.2      0.00      0.00 !MP_1, ADM Jr., adm, 2011 DNA update
+ON4    P      ON4       197.80    104.0      0.00      0.00 !MP_0, ADM Jr.
+ON4    P2     ON4       197.80    104.0      0.00      0.00 !MP_0, ADM Jr., adm, 2011 DNA update
+CN7    CN8    ON5       151.40    110.1      0.00      0.00 !RIBOSE, adm jr. MeOH
+HN9    CN9    HN9        71.00    108.4      5.40      1.80 !alkane update, adm jr. 3/2/92
+CN7    ON6    CN7B      220.00    108.0      0.00      0.00 ! NF, 11/97, C4'O4'C1'
+ON6    CN7B   CN8       180.00    102.0      0.00      0.00 ! NF, 11/97, C4'O4'C1' 
+CN7B   CN8    CN7       160.00    100.0      0.00      0.00 ! NF, 11/97, C1'C2'C3'
+CN8    CN7    CN7       120.00    102.0      8.00      2.56 !NF, 11/97, C2'C3'C4'
+CN9    CN7    CN7       120.00    102.0      8.00      2.56 !for 5MET, adm jr.
+CN7    CN7    ON6       200.00    104.0      0.00      0.00 ! NF, 11/97, C3'C4'O4'
+HN7    CN7    ON6        90.40    107.2      0.00      0.00 ! 
+HN7    CN7B   ON6        90.40    107.2      0.00      0.00 ! 
+HN7    CN7    CN7        80.00    108.0      0.00      0.00 !
+CN7B   CN8    HN8        66.80    110.1     22.53      2.18 ! following terms directly
+CN8    CN7B   HN7        66.80    110.1     22.53      2.18 ! from alkanes
+HN7    CN7    CN8        69.00    110.1     22.53      2.18 ! 
+HN8    CN8    CN7        69.06    110.1     22.53      2.18 ! 
+HN8    CN8    CN8        69.06    110.1     22.53      2.18 ! 
+HN8    CN8    HN8        71.00    109.0      5.40      1.80 ! 
+HN7    CN7    HN7        71.00    109.0      5.40      1.80 !
+CN7    ON6B   CN7B      220.00    115.0      0.00      0.00 ! From CN7  ON6  CN7B
+CN7    CN7    ON6B      200.00    110.0      0.00      0.00 ! From CN7  CN7  ON6
+ON6B   CN7B   CN7B      180.00    106.0      0.00      0.00 ! 030998 
+CN7B   CN7B   CN7       220.00     96.0      0.00      0.00 ! 
+CN7B   CN7    CN7       120.00    100.0      8.00      2.56 !NF, 11/97, C2'C3'C4'
+HN7    CN7    ON6B       90.40    107.2      0.00      0.00 !
+HN7    CN7B   ON6B       90.40    107.2      0.00      0.00 !
+CN7B   CN7B   HN7        66.80    110.1     22.53      2.18 ! following terms directly
+HN7    CN7B   HN7        71.00    109.0      5.40      1.80 !
+ON6    CN7    CN8B      180.00    108.2      0.00      0.00 !NF, 11/97, O4'C4'C5'
+ON6    CN7    CN9       180.00    108.2      0.00      0.00 !for 5MET, adm jr.
+CN7    CN7    CN8B       90.00    110.0      0.00      0.00 !NF, 11/97, C3'C4'C5'
+CN8    CN7    CN8B      116.70    113.6     11.16      2.56 ! from alkane, 25P1
+CN7    CN8B   ON2       140.00    108.4      0.00      0.00 !NF, 11/97, C4'C5'O5'
+CN7    CN7    ON2       230.00    109.7      0.00      0.00 !NF, 11/97, C4'C3'O3'
+CN7B   CN7B   ON2       230.00    109.7      0.00      0.00 !NF, 11/97, C4'C3'O3' for NADPH and bkbmod
+CN8    CN7    ON2       230.00    109.7      0.00      0.00 !NF, 11/97, C2'C3'O3'
+CN8B   ON2    P          40.00    120.0     35.00      2.33 !NF, 11/97, C5'O5'P
+CN8B   ON2    P2         40.00    120.0     35.00      2.33 !NF, 11/97, C5'O5'P, adm, 2011 DNA update
+CN7    ON2    P          40.00    120.0     35.00      2.33 !NF, 11/97, C3'O3'P
+CN7    ON2    P2         40.00    120.0     35.00      2.33 !NF, 11/97, C3'O3'P, adm, 2011 DNA update
+CN7B   ON2    P          40.00    120.0     35.00      2.33 !NF, 11/97, C3'O3'P, for NADPH and bkbmod
+CN7B   ON2    P2         40.00    120.0     35.00      2.33 !NF, 11/97, C3'O3'P, for NADPH and bkbmod, adm, 2011 DNA update
+HN7    CN7    CN8B       69.00    110.1     22.53      2.18 ! From HN7  CN7  CN8
+HN8    CN8B   ON2       120.00    109.5      0.00      0.00 ! From HN7  CN8  ON2
+HN5    ON5    CN8B      115.00    106.0      0.00      0.00 ! From HN5  ON5  CN8
+HN8    CN8B   HN8        71.00    109.0      5.40      1.80 ! Alkanes, sacred
+HN8    CN8B   CN7        69.06    110.1     22.53      2.18 ! Alkanes, sacred
+HN7    CN7    ON2       120.00    109.5      0.00      0.00 !DMP, adm jr. from HN7  CN8  ON2
+HN7    CN7B   ON2       120.00    109.5      0.00      0.00 !DMP, adm jr. from HN7  CN8  ON2, for NADPH and bkbmod
+CN7    CN8B   ON5       151.40    110.1      0.00      0.00 ! From CN7  CN8B  ON5
+CN8B   CN7    ON5       180.00    108.2      0.00      0.00 ! phosphoramidate, carbocyclic
+HN8    CN8B   ON5        91.80    108.9      0.00      0.00 ! From HN7  CN8  ON5
+ON5    CN7    CN8       151.40    110.0      0.00      0.00 ! from CHARMM22
+ON5    CN7    CN7       151.40    110.1      0.00      0.00 ! 
+HN7    CN7    ON5       120.00    109.5      0.00      0.00 ! 
+HN5    ON5    CN7       115.00    109.0      0.00      0.00 ! 
+ON6B   CN7    CN8B      180.00    108.2      0.00      0.00 ! 
+ON6B   CN7    CN9       180.00    108.2      0.00      0.00 ! for 5MET patch, adm jr.
+ON2    CN7    CN7B      180.00    110.0      0.00      0.00 !
+ON5    CN7    CN7B      180.00    110.0      0.00      0.00 ! From ON5  CN7  CN8
+ON5    CN7B   CN7B      160.00    108.4      0.00      0.00 ! 
+ON5    CN7B   CN7       180.00    108.0      0.00      0.00 ! 
+HN7    CN7B   ON5       120.00    109.5      0.00      0.00 !
+HN5    ON5    CN7B      115.00    109.0      0.00      0.00 !
+HN7    CN7B   CN7        69.06    110.1     22.53      2.18  
+HN7    CN7    CN7B       69.06    110.1     22.53      2.18  
+CN8    ON2    P          40.00    120.0     35.00      2.33 !DMP, adm jr.
+CN8    ON2    P2         40.00    120.0     35.00      2.33 !DMP, adm jr., adm 2011 DNA update
+ON2    P      ON3       197.80    111.6      0.00      0.00 !DMP, adm jr.
+ON2    P2     ON3       197.80    111.6      0.00      0.00 !DMP, adm jr., adm, 2011 DNA update
+ON3    P      ON3       240.00    120.0      0.00      0.00 !DMP, adm jr.
+ON3    P2     ON3       240.00    120.0      0.00      0.00 !DMP, adm jr., adm, 2011 DNA update
+HN8    CN8    ON2       120.00    109.5      0.00      0.00 !DMP, adm jr.
+ON5    P      ON3       197.80    111.6      0.00      0.00 ! From ON2 P ON3
+ON6    CN7B   CN7       240.00    106.2      0.00      0.00 ! 
+CN7B   CN7    CN8       116.70    113.6     11.16      2.56 ! 
+
+[torsions]
+* V(dihedral) = Kchi(1 + cos(n(chi) - delta))
+* Kchi: kcal/mole
+* n: multiplicity
+* delta: degrees
+* atom types             Kchi    n   delta
+* Neutral N terminus
+* 
+*iaci  iacj   iack   iacl      forceK   #minima     phase   #paths
+*-------------------------------------------------------------------------------
+?      CN8    ON2    ?         -0.100     3.000     0.000     1 ! phosphate ester
+?      CN7    CN8    ?          0.200     3.000     0.000     1 ! alkane
+?      CN8    NN6    ?          0.100     3.000     0.000     1 ! methylammonium
+CN7    ON6    CN8B   HN8        0.195     1.000     0.000     1  
+ON6    CN8B   CN8    HN8        0.195     1.000     0.000     1  
+HN7    CN7    ON6    CN8B       0.195     3.000     0.000     1  
+CN8B   CN8    CN7    HN7        0.195     3.000     0.000     1  
+HN8    CN8B   CN8    HN8        0.195     3.000     0.000     1  
+HN8    CN8B   CN8    CN7        0.195     3.000     0.000     1  
+CN8B   CN7    ON6    CN8B       0.500    -5.000     0.000     1 ! min at 150 310 max at 25 200
+CN8B   CN7    ON6    CN8B       0.100    -3.000   180.000     1 
+CN8B   CN7    ON6    CN8B       0.500     1.000     0.000     1  
+CN8B   CN8    CN7    ON5        0.400    -5.000     0.000     1 
+CN8B   CN8    CN7    ON5        0.400    -3.000     0.000     1 
+CN8B   CN8    CN7    ON5        0.700    -2.000     0.000     1 !elevates energy at 0 (c3'endo), adm
+CN8B   CN8    CN7    ON5        0.500     1.000   180.000     1 !elevates energy at 0 (c3'endo), adm
+CN8B   CN8    CN7    ON2        0.400    -5.000     0.000     1 !terms for oligonuclotide
+CN8B   CN8    CN7    ON2        0.400    -3.000     0.000     1 
+CN8B   CN8    CN7    ON2        0.700    -2.000     0.000     1 
+CN8B   CN8    CN7    ON2        0.500     1.000   180.000     1  
+CN7    ON6    CN8B   CN8        0.600    -6.000   180.000     1 
+CN7    ON6    CN8B   CN8        0.600     3.000     0.000     1  
+ON6    CN8B   CN8    CN7        0.700    -5.000   180.000     1 !lowers 90, shifts c2endo minimum towards 200
+ON6    CN8B   CN8    CN7        0.400    -4.000     0.000     1 !lowers 90, shifts c2endo minimum towards 200
+ON6    CN8B   CN8    CN7        0.400     3.000   180.000     1 !lowers 90, shifts c2endo minimum towards 200
+CN7    CN7    CN8    CN8B       0.500    -4.000     0.000     1 
+CN7    CN7    CN8    CN8B       0.100     3.000     0.000     1 !lowers energy in 150 to 250 range
+CN8B   ON6    CN7    CN7        0.500     3.000     0.000     1 !effects surface in 200-360 region
+ON2    P2     ON2    CN7        0.900    -1.000   180.000     1 ! adm, 2011 DNA update new param, zeta, kat2 set
+ON2    P2     ON2    CN7        0.400    -2.000   180.000     1 ! adm, 2011 DNA update new param, zeta, kat2 set
+ON2    P2     ON2    CN7        0.200     3.000   180.000     1 ! adm, 2011 DNA update new param, zeta, kat2 set
+ON2    P      ON2    CN7        1.200    -1.000   180.000     1 !10/97, DMP, adm jr., RNA
+ON2    P      ON2    CN7        0.100    -2.000   180.000     1 !10/97, DMP, adm jr., RNA
+ON2    P      ON2    CN7        0.100    -3.000   180.000     1 !10/97, DMP, adm jr., RNA
+ON2    P      ON2    CN7        0.000     6.000     0.000     1 !10/97, DMP, adm jr., RNA
+ON2    P      ON2    CN8        1.200    -1.000   180.000     1 !10/97, DMP, adm jr.
+ON2    P      ON2    CN8        0.100    -2.000   180.000     1 !10/97, DMP, adm jr.
+ON2    P      ON2    CN8        0.100    -3.000   180.000     1 !10/97, DMP, adm jr.
+ON2    P      ON2    CN8        0.000     6.000     0.000     1 !10/97, DMP, adm jr.
+ON2    P2     ON2    CN8        1.200    -1.000   180.000     1 !10/97, DMP, adm jr., adm 2011 DNA update
+ON2    P2     ON2    CN8        0.100    -2.000   180.000     1 !10/97, DMP, adm jr., adm 2011 DNA update
+ON2    P2     ON2    CN8        0.100    -3.000   180.000     1 !10/97, DMP, adm jr., adm 2011 DNA update
+ON2    P2     ON2    CN8        0.000     6.000     0.000     1 !10/97, DMP, adm jr., adm	2011 DNA update
+ON2    P2     ON2    CN8B       1.200    -1.000   180.000     1 !10/97, DMP, adm jr., adm, 2011 DNA update
+ON2    P2     ON2    CN8B       0.100    -2.000   180.000     1 !10/97, DMP, adm jr., adm, 2011 DNA update
+ON2    P2     ON2    CN8B       0.100    -3.000   180.000     1 !10/97, DMP, adm jr., adm, 2011 DNA update
+ON2    P2     ON2    CN8B       0.000     6.000     0.000     1 !10/97, DMP, adm jr., adm, 2011 DNA update
+ON2    P      ON2    CN8B       1.200    -1.000   180.000     1 !10/97, DMP, adm jr., RNA
+ON2    P      ON2    CN8B       0.100    -2.000   180.000     1 !10/97, DMP, adm jr., RNA
+ON2    P      ON2    CN8B       0.100    -3.000   180.000     1 !10/97, DMP, adm jr., RNA
+ON2    P      ON2    CN8B       0.000     6.000     0.000     1 !10/97, DMP, adm jr., RNA
+ON2    P      ON2    CN9        1.200    -1.000   180.000     1 !dmp
+ON2    P      ON2    CN9        0.100    -2.000   180.000     1 !dmp
+ON2    P      ON2    CN9        0.100    -3.000   180.000     1 !dmp
+ON2    P      ON2    CN9        0.000     6.000     0.000     1 !dmp
+ON2    P2     ON2    CN9        1.200    -1.000   180.000     1 !dmp, adm, 2011 DNA update
+ON2    P2     ON2    CN9        0.100    -2.000   180.000     1 !dmp, adm, 2011 DNA update
+ON2    P2     ON2    CN9        0.100    -3.000   180.000     1 !dmp, adm, 2011 DNA update
+ON2    P2     ON2    CN9        0.000     6.000     0.000     1 !dmp, adm, 2011 DNA update
+ON3    P      ON2    CN7        0.100     3.000     0.000     1 !dmp,eps, O1P-P-O3'-C3'
+ON3    P2     ON2    CN7        0.100     3.000     0.000     1 !dmp,eps, O1P-P-O3'-C3', adm, 2011 DNA update
+ON3    P      ON2    CN7B       0.100     3.000     0.000     1 !for NADPH and bkbmod
+ON3    P      ON2    CN8        0.100     3.000     0.000     1 !dmp
+ON3    P2     ON2    CN8        0.100     3.000     0.000     1 !dmp, adm	2011 DNA update
+ON3    P      ON2    CN8B       0.100     3.000     0.000     1 !dmp,bet, O1P-P-O5'-C5'
+ON3    P2     ON2    CN8B       0.100     3.000     0.000     1 !dmp,bet, O1P-P-O5'-C5', adm, 2011 DNA update
+ON3    P      ON2    CN9        0.100     3.000     0.000     1 !dmp
+ON3    P2     ON2    CN9        0.100     3.000     0.000     1 !dmp, adm, 2011 DNA update
+ON4    P      ON2    CN7        0.950    -2.000     0.000     1 !MP_1, adm jr.
+ON4    P      ON2    CN7        0.500     3.000     0.000     1 !MP_1, adm jr.
+ON4    P2     ON2    CN7        0.950    -2.000     0.000     1 !MP_1, adm jr., adm, 2011 DNA update
+ON4    P2     ON2    CN7        0.500     3.000     0.000     1 !MP_1, adm jr., adm, 2011 DNA update
+ON4    P      ON2    CN8        0.950    -2.000     0.000     1 !MP_1, adm jr.
+ON4    P      ON2    CN8        0.500     3.000     0.000     1 !MP_1, adm jr.
+ON4    P      ON2    CN8B       0.950    -2.000     0.000     1 !MP_1, adm jr.
+ON4    P      ON2    CN8B       0.500     3.000     0.000     1 !MP_1, adm jr.
+ON4    P2     ON2    CN8B       0.950    -2.000     0.000     1 !MP_1, adm jr., adm, 2011 DNA update
+ON4    P2     ON2    CN8B       0.500     3.000     0.000     1 !MP_1, adm jr., adm, 2011 DNA update
+ON4    P      ON2    CN9        0.950    -2.000     0.000     1 !MP_1, adm jr.
+ON4    P      ON2    CN9        0.500     3.000     0.000     1 !MP_1, adm jr.
+ON4    P2     ON2    CN9        0.950    -2.000     0.000     1 !MP_1, adm jr., adm, 2011 DNA update
+ON4    P2     ON2    CN9        0.500     3.000     0.000     1 !MP_1, adm jr., adm, 2011 DNA update
+?      ON4    P      ?          0.300     3.000     0.000     1 !MP_1, adm jr.
+?      ON4    P2     ?          0.300     3.000     0.000     1 !MP_1, adm jr., adm, 2011 DNA update
+P      ON2    CN7    HN7        0.000     3.000     0.000     1 !dmp,eps, H-C3'-O3'-P
+P2     ON2    CN7    HN7        0.000     3.000     0.000     1 !dmp,eps, H-C3'-O3'-P, adm, 2011 DNA update
+P      ON2    CN7B   HN7        0.000     3.000     0.000     1 !for NADPH and bkbmod
+P      ON2    CN8B   HN8        0.000     3.000     0.000     1 !dmp,beta, H-C5'-O5'-P
+P2     ON2    CN8B   HN8        0.000     3.000     0.000     1 !dmp,beta, H-C5'-O5'-P, adm, 2011 DNA update
+P      ON2    CN8    HN8        0.000     3.000     0.000     1 !dmp
+P      ON2    CN9    HN9        0.000     3.000     0.000     1 !dmp
+P2     ON2    CN9    HN9        0.000     3.000     0.000     1 !dmp, adm, 2011 DNA update
+cn9    cn8    cn8    cn9        0.150     1.000     0.000     1  
+cn9    cn8    cn8    cn8        0.150     1.000     0.000     1  
+NN2B   CN1T   NN2U   CN1        1.500     2.000   180.000     1 ! adm jr. 11/97
+CN1T   NN2U   CN1    CN3        1.500     2.000   180.000     1 ! adm jr. 11/97
+NN2U   CN1    CN3    CN3        1.500     2.000   180.000     1 ! adm jr. 11/97
+CN1    CN3    CN3    NN2B       6.000     2.000   180.000     1 ! adm jr. 11/97 
+CN3    CN3    NN2B   CN1T       1.500     2.000   180.000     1 ! adm jr. 11/97
+CN3    NN2B   CN1T   NN2U       1.500     2.000   180.000     1 ! adm jr. 11/97
+HN3    CN3    CN3    HN3        3.000     2.000   180.000     1 ! adm jr. 11/97
+HN3    CN3    CN1    ON1        6.000     2.000   180.000     1 ! adm jr. 11/97
+ON1    CN1T   NN2B   HN2        0.000     2.000   180.000     1 ! adm jr. 11/97
+ON1    CN1    NN2U   HN2        0.000     2.000   180.000     1 ! adm jr. 11/97
+ON1    CN1T   NN2U   HN2        0.000     2.000   180.000     1 ! adm jr. 11/97
+HN2    NN2B   CN3    HN3        1.500     2.000   180.000     1 ! adm jr. 11/97
+NN2B   CN1T   NN2U   HN2        3.800     2.000   180.000     1 ! adm jr. 11/97
+CN3    CN1    NN2U   HN2        3.800     2.000   180.000     1 ! adm jr. 11/97
+CN3    CN3    NN2B   HN2        1.600     2.000   180.000     1 ! adm jr. 11/97
+NN2U   CN1T   NN2B   HN2        1.600     2.000   180.000     1 ! adm jr. 11/97
+CN1T   NN2B   CN3    CN3T       1.800     2.000   180.000     1 ! adm jr. 11/97
+NN2U   CN1    CN3T   CN3        1.800     2.000   180.000     1 ! adm jr. 11/97
+CN1    CN3T   CN3    NN2B       3.000     2.000   180.000     1 ! adm jr. 11/97
+NN2B   CN1    CN3T   CN9        5.600     2.000   180.000     1 ! adm jr. 11/97
+NN2B   CN3    CN3T   CN9        5.600     2.000   180.000     1 ! adm jr. 11/97
+CN1    CN3T   CN9    HN9        0.460     3.000     0.000     1 ! adm jr. 11/97
+CN3    CN3T   CN9    HN9        0.460     3.000     0.000     1 ! adm jr. 11/97
+CN3T   CN1    NN2U   HN2        4.800     2.000   180.000     1 ! adm jr. 11/97
+CN3    NN2    CN1    NN3        0.600     2.000   180.000     1 ! adm jr. 11/97
+NN2    CN1    NN3    CN2        0.600     2.000   180.000     1 ! adm jr. 11/97
+CN1    NN3    CN2    CN3        6.000     2.000   180.000     1 ! adm jr. 11/97
+NN3    CN2    CN3    CN3        0.600     2.000   180.000     1 ! adm jr. 11/97
+CN2    CN3    CN3    NN2        6.000     2.000   180.000     1 ! adm jr. 11/97
+CN3    CN3    NN2    CN1        0.600     2.000   180.000     1 ! adm jr. 11/97
+NN3    CN2    NN1    HN1        1.000     2.000   180.000     1 ! adm jr. 11/97
+CN3    CN2    NN1    HN1        1.000     2.000   180.000     1 ! adm jr. 11/97
+NN1    CN2    NN3    CN1        2.000     2.000   180.000     1 ! adm jr. 11/97
+NN1    CN2    CN3    CN3        2.000     2.000   180.000     1 ! adm jr. 11/97
+NN1    CN2    CN3    HN3        2.000     2.000   180.000     1 ! adm jr. 11/97
+ON1C   CN1    NN2    HN2        3.000     2.000   180.000     1 ! adm jr. 11/97
+ON1C   CN1    NN3    CN2        1.600     2.000   180.000     1 ! adm jr. 11/97
+ON1C   CN1    NN2    CN3        1.600     2.000   180.000     1 ! adm jr. 11/97
+NN3    CN2    CN3    HN3        3.400     2.000   180.000     1 ! adm jr. 11/97
+NN2    CN3    CN3    HN3        3.400     2.000   180.000     1 ! adm jr. 11/97
+CN2    CN3    CN3    HN3        4.600     2.000   180.000     1 ! adm jr. 11/97
+CN1    NN2    CN3    HN3        4.600     2.000   180.000     1 ! adm jr. 11/97
+?      CN2    NN3    ?          2.000     2.000   180.000     1 ! adm jr. 11/97
+CN2    NN3A   CN4    NN3A       1.800     2.000   180.000     1 ! adm jr. 11/97, 6-mem
+NN3A   CN4    NN3A   CN5        2.000     2.000   180.000     1 ! 
+CN4    NN3A   CN5    CN5        1.800     2.000   180.000     1 ! 
+NN3A   CN5    CN5    CN2        2.000     2.000   180.000     1 ! treated 2x
+CN5    CN5    CN2    NN3A       1.800     2.000   180.000     1 ! 
+CN5    CN2    NN3A   CN4       10.000     2.000   180.000     1 ! 
+CN5    CN5    NN4    CN4        6.000     2.000   180.000     1 ! 5-mem
+CN5    NN4    CN4    NN2       14.000     2.000   180.000     1 ! 
+NN4    CN4    NN2    CN5        6.000     2.000   180.000     1 ! 
+CN4    NN2    CN5    CN5        6.000     2.000   180.000     1 !
+NN2    CN5    CN5    NN4       14.000     2.000   180.000     1 ! treated 2x
+CN2    NN3A   CN4    HN3        8.500     2.000   180.000     1 ! H2
+CN5    NN3A   CN4    HN3        8.500     2.000   180.000     1 ! H2
+CN5    NN4    CN4    HN3        5.200     2.000   180.000     1 ! H8
+CN5    NN2    CN4    HN3        5.200     2.000   180.000     1 ! H8
+CN5    CN5    NN2    HN2        1.200     2.000   180.000     1 ! H9
+NN4    CN4    NN2    HN2        1.200     2.000   180.000     1 ! H9
+HN2    NN2    CN4    HN3        0.000     2.000   180.000     1 ! H8-C-N-H9
+CN4    NN3A   CN2    NN1        4.000     2.000   180.000     1 ! N6
+CN5    CN5    CN2    NN1        4.000     2.000   180.000     1 ! N6
+NN4    CN5    CN2    NN1        0.000     2.000   180.000     1 ! N6
+CN5    CN2    NN1    HN1        0.500     2.000   180.000     1 ! 6-NH2
+NN3A   CN2    NN1    HN1        0.500     2.000   180.000     1 ! 
+NN3A   CN5    CN5    NN4        7.000     2.000   180.000     1 !A, adm jr. 11/97
+CN2    CN5    CN5    NN2        7.000     2.000   180.000     1 !A
+NN3A   CN2    CN5    NN4        2.000     2.000   180.000     1 !A
+CN2    CN5    NN4    CN4        2.000     2.000   180.000     1 !A
+CN4    NN3A   CN5    NN2        2.000     2.000   180.000     1 !A
+NN3A   CN5    NN2    CN4        2.000     2.000   180.000     1 !A
+CN1    NN2G   CN2    NN3G       0.200     2.000   180.000     1 !adm jr. 11/97, 6-mem
+NN2G   CN2    NN3G   CN5        2.000     2.000   180.000     1 !
+CN2    NN3G   CN5    CN5G       0.200     2.000   180.000     1 !
+NN3G   CN5    CN5G   CN1        2.000     2.000   180.000     1 !
+CN5    CN5G   CN1    NN2G       0.200     2.000   180.000     1 !
+CN5G   CN1    NN2G   CN2        0.200     2.000   180.000     1 !
+CN5    CN5G   NN4    CN4        6.000     2.000   180.000     1 !5-mem
+CN5G   NN4    CN4    NN2B      16.000     2.000   180.000     1 !
+NN4    CN4    NN2B   CN5        6.000     2.000   180.000     1 !
+CN4    NN2B   CN5    CN5G       6.000     2.000   180.000     1 !
+NN2B   CN5    CN5G   NN4       10.000     2.000   180.000     1 !
+ON1    CN1    CN5G   CN5       14.000     2.000   180.000     1 !G, O6
+ON1    CN1    CN5G   NN4        0.000     2.000   180.000     1 !
+ON1    CN1    NN2G   CN2       14.000     2.000   180.000     1 !
+ON1    CN1    NN2G   HN2        0.000     2.000   180.000     1 !
+NN1    CN2    NN2G   CN1        4.000     2.000   180.000     1 !G, N2
+NN1    CN2    NN3G   CN5        4.000     2.000   180.000     1 !
+NN1    CN2    NN2G   HN2        0.000     2.000   180.000     1 !
+NN2G   CN2    NN1    HN1        1.200     2.000   180.000     1 !
+NN3G   CN2    NN1    HN1        1.200     2.000   180.000     1 !
+HN2    NN2G   CN1    CN5G       3.600     2.000   180.000     1 !G, H1
+HN2    NN2G   CN2    NN3G       3.600     2.000   180.000     1 !
+HN3    CN4    NN4    CN5G       5.600     2.000   180.000     1 !G, H8
+HN3    CN4    NN2B   CN5        5.600     2.000   180.000     1 !
+HN3    CN4    NN2B   HN2        0.000     2.000   180.000     1 !
+HN2    NN2B   CN5    CN5G       1.200     2.000   180.000     1 !G, H9
+HN2    NN2B   CN5    NN3G       1.200     2.000   180.000     1 !
+HN2    NN2B   CN4    NN4        1.200     2.000   180.000     1 !
+NN3G   CN5    CN5G   NN4       10.000     2.000   180.000     1 !adm jr. 11/97
+CN1    CN5G   CN5    NN2       10.000     2.000   180.000     1 !
+NN2G   CN1    CN5G   NN4        2.000     2.000   180.000     1 !
+CN1    CN5G   NN4    CN4        2.000     2.000   180.000     1 !
+CN2    NN3G   CN5    NN2B       2.000     2.000   180.000     1 !
+NN3G   CN5    NN2B   CN4        2.000     2.000   180.000     1 !
+?      CN1    NN3    ?          1.000     2.000   180.000     1 ! c22
+?      CN1    NN2    ?          0.900     2.000   180.000     1 ! c22
+?      CN1T   NN2B   ?          0.900     2.000   180.000     1 ! From X CN1 NN2 X, for thymines 
+?      CN1    NN2G   ?          0.900     2.000   180.000     1 ! c22
+?      CN1    NN2U   ?          0.900     2.000   180.000     1 ! c22
+?      CN1T   NN2U   ?          0.900     2.000   180.000     1 ! c22
+?      CN3    NN2    ?          1.000     2.000   180.000     1 ! c22
+?      CN3    NN2B   ?          1.000     2.000   180.000     1 ! From X CN3 NN2 X, for thymines
+?      CN3    CN3    ?          1.000     2.000   180.000     1 ! c22
+?      CN3    CN3T   ?          1.000     2.000   180.000     1 !T, adm jr. 11/97
+?      CN1    CN3    ?          1.000     2.000   180.000     1 ! c22
+?      CN1    CN3T   ?          1.000     2.000   180.000     1 !T, adm jr. 11/97
+?      CN2    CN3    ?          0.800     2.000   180.000     1 ! c22
+?      CN1    CN5G   ?          1.000     2.000   180.000     1 ! adm jr. 11/97
+?      CN2    NN2G   ?          1.000     2.000   180.000     1 ! 
+?      CN2    CN5    ?          1.000     2.000   180.000     1 ! 
+?      CN4    NN2    ?          1.500     2.000   180.000     1 ! 
+?      CN4    NN2B   ?          1.500     2.000   180.000     1 ! From X CN4 NN2 X
+?      CN4    NN3A   ?          3.500     2.000   180.000     1 ! 
+?      CN4    NN4    ?          2.000     2.000   180.000     1 ! A,G
+?      CN5    CN5    ?          0.000     2.000   180.000     1 !
+?      CN5G   CN5    ?          0.000     2.000   180.000     1 ! adm jr. 11/97
+?      CN5    NN2    ?          1.500     2.000   180.000     1 !
+?      CN5    NN2B   ?          1.500     2.000   180.000     1 ! From X CN5 NN2 X
+?      CN5    NN3A   ?          1.000     2.000   180.000     1 !
+?      CN5    NN3G   ?          1.000     2.000   180.000     1 ! adm jr. 11/97
+?      CN5    NN4    ?          1.000     2.000   180.000     1 !
+?      CN5G   NN4    ?          1.000     2.000   180.000     1 ! adm jr. 11/97
+?      CN2    NN3A   ?          1.000     2.000   180.000     1 !
+?      CN2    NN3G   ?          1.000     2.000   180.000     1 ! adm jr. 11/97
+CN1    NN2    CN9    HN9        0.190     3.000     0.000     1 ! 1-M-C
+CN3    NN2    CN9    HN9        0.000     3.000     0.000     1 ! 1-M-C
+CN4    NN2    CN9    HN9        0.000     3.000     0.000     1 ! 9-M-A
+CN5    NN2    CN9    HN9        0.190     3.000     0.000     1 ! 9-M-A
+CN1    NN2B   CN9    HN9        0.190     3.000     0.000     1 ! 1-M-U
+CN1T   NN2B   CN9    HN9        0.190     3.000     0.000     1 ! 1-M-T
+CN3    NN2B   CN9    HN9        0.000     3.000     0.000     1 ! 1-M-T/U
+CN4    NN2B   CN9    HN9        0.000     3.000     0.000     1 ! 9-M-G
+CN5    NN2B   CN9    HN9        0.190     3.000     0.000     1 ! 9-M-G
+CN4    NN2B   CN8    HN8        0.000     3.000     0.000     1 ! 9-E-G
+CN5    NN2B   CN8    HN8        0.190     3.000     0.000     1 ! 9-E-G
+CN4    NN2B   CN8    CN9        0.000     3.000     0.000     1 ! 9-E-G
+CN5    NN2B   CN8    CN9        0.190     3.000     0.000     1 ! 9-E-G
+?      CN8    CN8    ?          0.150     3.000     0.000     1 ! Alkanes (0.2 to 0.15)
+?      CN8    CN9    ?          0.150     3.000     0.000     1 ! Alkanes (0.2 to 0.15)
+HN7    CN7B   CN7B   ON2        0.195     3.000     0.000     1 !for NADPH and bkbmod
+ON2    CN7B   CN7B   NN2        0.000     3.000     0.000     1 !for NADPH and bkbmod
+CN7    CN7B   ON6    CN7        0.600     6.000   180.000     1  
+CN7B   CN7    CN7    CN7        0.400     6.000     0.000     1 ! good for amplitudes
+CN7B   CN7    CN7    CN9        0.400     6.000     0.000     1 ! good for amplitudes, 5MET
+CN7    CN7    CN7    ON6        0.600     6.000     0.000     1  
+CN7    CN7    CN7B   ON6        0.600     6.000     0.000     1  
+ON2    CN7    CN7    CN7        0.800    -6.000     0.000     1 !
+ON2    CN7    CN7    CN7        0.400    -5.000     0.000     1 ! Moves the barrier right
+ON2    CN7    CN7    CN7        2.000     3.000   180.000     1 !
+ON2    CN7B   CN7    CN7        0.800    -6.000     0.000     1 !
+ON2    CN7B   CN7    CN7        0.400    -5.000     0.000     1 ! Moves the barrier right
+ON2    CN7B   CN7    CN7        2.000     3.000   180.000     1 !
+ON5    CN7    CN7    CN7        0.800    -6.000     0.000     1 !
+ON5    CN7    CN7    CN7        0.400    -5.000     0.000     1 ! Moves the barrier right
+ON5    CN7    CN7    CN7        2.000     3.000   180.000     1 !
+ON5    CN7    CN7    ON5        0.000     3.000     0.000     1 ! 
+ON5    CN7    CN7    ON2        0.000     3.000     0.000     1 ! 
+ON2    CN7    CN7B   ON6        0.500    -6.000     0.000     1 !good for amplitudes
+ON2    CN7    CN7B   ON6        0.300    -5.000     0.000     1 !impact on amplitudes
+ON2    CN7    CN7B   ON6        0.600    -4.000   180.000     1 !increases c2'endo
+ON2    CN7    CN7B   ON6        0.200     3.000     0.000     1 !
+CN7    CN7    CN7    CN8B       0.500     4.000   180.000     1 !del lowers 180 deg.
+CN7B   NN2    CN4    HN3        0.300     2.000   180.000     1 ! NF
+CN7B   NN2    CN5    CN5       11.000     2.000   180.000     1 ! adm jr.
+CN7B   NN2    CN4    NN4       11.000     2.000   180.000     1 ! adm jr.
+CN7B   NN2    CN4    NN3A      11.000     2.000   180.000     1 ! adm jr.
+ON6    CN7B   NN2    CN5        1.100     1.000   180.000     1 !
+ON6    CN7B   NN2    CN4        1.100     1.000     0.000     1 ! NF 
+ON6B   CN7B   NN2    CN5        1.100     1.000   180.000     1 !
+ON6B   CN7B   NN2    CN4        1.100     1.000     0.000     1 !
+CN8    CN7B   NN2    CN5        0.300     3.000     0.000     1 ! NF
+CN8    CN7B   NN2    CN4        0.000     3.000   180.000     1 ! NF
+CN7B   CN7B   NN2    CN5        0.300     3.000     0.000     1 ! NF
+CN7B   CN7B   NN2    CN4        0.000     3.000   180.000     1 ! NF
+HN7    CN7B   NN2    CN5        0.000     3.000     0.000     1 ! NF
+HN7    CN7B   NN2    CN4        0.195     3.000     0.000     1 ! NF
+CN7B   NN2    CN3    HN3        0.300     2.000   180.000     1 ! NF
+CN7B   NN2    CN1    ON1C      11.000     2.000   180.000     1 ! adm jr. from A
+CN7B   NN2    CN1    NN3       11.000     2.000   180.000     1 ! adm jr. 
+CN7B   NN2    CN3    CN3       11.000     2.000   180.000     1 ! adm jr.
+ON6    CN7B   NN2    CN1        0.000     3.000     0.000     1 ! 
+ON6    CN7B   NN2    CN3        1.000     1.000     0.000     1 ! NF 
+ON6B   CN7B   NN2    CN1        0.000     3.000     0.000     1 !
+ON6B   CN7B   NN2    CN3        1.000     1.000     0.000     1 !
+CN8    CN7B   NN2    CN1        1.000     3.000     0.000     1 ! 
+CN8    CN7B   NN2    CN3        0.000     3.000   180.000     1 ! NF 030697
+CN7B   CN7B   NN2    CN1        1.000     3.000     0.000     1 !
+CN7B   CN7B   NN2    CN3        0.000     3.000   180.000     1 !
+HN7    CN7B   NN2    CN1        0.000     3.000     0.000     1 ! NF
+HN7    CN7B   NN2    CN3        0.195     3.000     0.000     1 ! NF
+CN7B   NN2B   CN3    HN3        0.300     2.000   180.000     1 ! NF
+CN7B   NN2B   CN1T   ON1       11.000     2.000   180.000     1 ! adm jr. from A
+CN7B   NN2B   CN1T   NN2U      11.000     2.000   180.000     1 ! adm jr.
+CN7B   NN2B   CN3    CN3T      11.000     2.000   180.000     1 ! adm jr.
+ON6    CN7B   NN2B   CN1        0.000     3.000     0.000     1 ! 
+ON6    CN7B   NN2B   CN1T       0.700    -3.000     0.000     1 !
+ON6    CN7B   NN2B   CN1T       0.800     1.000   180.000     1 ! 
+ON6    CN7B   NN2B   CN3        0.900     1.000     0.000     1 ! NF 
+ON6B   CN7B   NN2B   CN1        0.000     3.000     0.000     1 !
+ON6B   CN7B   NN2B   CN1T       0.700    -3.000     0.000     1 !
+ON6B   CN7B   NN2B   CN1T       0.800     1.000   180.000     1 !
+ON6B   CN7B   NN2B   CN3        0.900     1.000     0.000     1 !
+CN8    CN7B   NN2B   CN1T       0.200     3.000   180.000     1 ! 
+CN8    CN7B   NN2B   CN3        0.000     3.000   180.000     1 ! NF
+CN7B   CN7B   NN2B   CN1T       0.200     3.000   180.000     1 !
+CN7B   CN7B   NN2B   CN3        0.000     3.000   180.000     1 !
+HN7    CN7B   NN2B   CN1T       0.000     3.000     0.000     1 ! NF
+HN7    CN7B   NN2B   CN3        0.195     3.000     0.000     1 ! NF
+CN7B   NN2B   CN4    HN3        0.300     2.000   180.000     1 ! NF
+CN7B   NN2B   CN4    NN4       11.000     2.000   180.000     1 ! adm jr.
+CN7B   NN2B   CN5    CN5G      11.000     2.000   180.000     1 ! adm jr. from U
+CN7B   NN2B   CN5    NN3G      11.000     2.000   180.000     1 ! adm jr.
+ON6    CN7B   NN2B   CN5        0.200    -3.000     0.000     1 !
+ON6    CN7B   NN2B   CN5        1.100     1.000   180.000     1 !
+ON6    CN7B   NN2B   CN4        1.400     1.000     0.000     1 ! NF 
+ON6B   CN7B   NN2B   CN5        0.200    -3.000     0.000     1 !
+ON6B   CN7B   NN2B   CN5        1.100     1.000   180.000     1 !
+ON6B   CN7B   NN2B   CN4        1.400     1.000     0.000     1 !
+CN8    CN7B   NN2B   CN5        0.000     3.000     0.000     1 ! NF
+CN8    CN7B   NN2B   CN4        0.000     3.000   180.000     1 ! NF 030697
+CN7B   CN7B   NN2B   CN5        0.000     3.000     0.000     1 ! NF
+CN7B   CN7B   NN2B   CN4        0.000     3.000   180.000     1 !
+HN7    CN7B   NN2B   CN5        0.000     3.000     0.000     1 ! NF
+HN7    CN7B   NN2B   CN4        0.195     3.000     0.000     1 ! NF
+CN7    ON6    CN7B   NN2        0.000     3.000     0.000     1  
+CN7    ON6    CN7B   NN2B       0.000     3.000     0.000     1  
+CN7    ON6B   CN7B   NN2        0.000     3.000     0.000     1  
+CN7    ON6B   CN7B   NN2B       0.000     3.000     0.000     1  
+CN7    CN8    CN7B   NN2        0.000     3.000     0.000     1  
+CN7    CN8    CN7B   NN2B       0.000     3.000     0.000     1  
+HN8    CN8    CN7B   NN2        0.000     3.000     0.000     1  
+HN8    CN8    CN7B   NN2B       0.000     3.000     0.000     1  
+CN7    CN7B   CN7B   NN2        0.000     3.000     0.000     1  
+CN7    CN7B   CN7B   NN2B       0.000     3.000     0.000     1  
+HN7    CN7B   CN7B   NN2        0.000     3.000     0.000     1  
+HN7    CN7B   CN7B   NN2B       0.000     3.000     0.000     1  
+CN7    CN8B   ON2    P          0.200     1.000   120.000     1 !bet C4'-C5'-O5'-P, adm jr.
+CN7    CN8B   ON2    P2         0.200     1.000   120.000     1 !bet C4'-C5'-O5'-P, adm jr., adm, 2011 DNA update
+CN7    CN8B   ON5    HN5        1.330    -1.000     0.000     1 
+CN7    CN8B   ON5    HN5        0.180    -2.000     0.000     1 
+CN7    CN8B   ON5    HN5        0.320     3.000     0.000     1  
+HN8    CN8B   ON5    HN5        0.000     3.000     0.000     1 !bet
+CN7    CN7    CN8B   ON2        0.200    -4.000   180.000     1 !gam adm jr.
+CN7    CN7    CN8B   ON2        0.800    -3.000   180.000     1 !gam C3'-C4'-C5'-O5'
+CN7    CN7    CN8B   ON2        0.400    -2.000     0.000     1 !gam
+CN7    CN7    CN8B   ON2        2.500     1.000   180.000     1 !gam
+CN8    CN7    CN8B   ON2        0.200     3.000   180.000     1 ! from gam, carbocyclic and 25P1
+CN7    CN7    CN8B   ON5        0.200    -4.000   180.000     1 !gam adm jr.
+CN7    CN7    CN8B   ON5        0.800    -3.000   180.000     1 !gam C3'-C4'-C5'-O5'
+CN7    CN7    CN8B   ON5        0.400    -2.000     0.000     1 !gam
+CN7    CN7    CN8B   ON5        2.500     1.000   180.000     1 !gam
+ON6    CN7    CN8B   ON2        3.400     1.000   180.000     1 !gam O4'-C4'-C5'-O5',influences +60
+ON6B   CN7    CN8B   ON2        3.400     1.000   180.000     1 !gam, RNA
+ON6    CN7    CN8B   ON5        3.400     1.000   180.000     1 !gam
+ON6B   CN7    CN8B   ON5        3.400     1.000   180.000     1 !gam, RNA
+HN8    CN8B   CN7    CN7        0.195     3.000     0.000     1 !gam,H-C5'-C4'-H
+HN8    CN8B   CN7    CN8        0.195     1.000     0.000     1 !gam, carbocylic, 25P1
+HN8    CN8B   CN7    ON6        0.195     1.000     0.000     1 !gam,H-C5'-C4'-O4'
+HN8    CN8B   CN7    ON6B       0.195     1.000     0.000     1 !gam, RNA
+HN7    CN7    CN8B   ON2        0.195     3.000     0.000     1 !gam H-C4'-C5'-O5'
+HN7    CN7    CN8B   ON5        0.195     3.000     0.000     1 !gam
+HN8    CN8    CN8    ON6        0.195     1.000     0.000     1 !gam,H-C5'-C4'-O4'
+CN9    CN7    CN7    CN8B       0.500     4.000   180.000     1 !cn8 -> cn9
+HN7    CN7    CN9    HN9        0.195     3.000     0.000     1 !cn8 -> cn9
+CN7    CN7    CN9    HN9        0.195     3.000     0.000     1 !cn8 -> cn9
+ON6    CN7    CN9    HN9        0.195     3.000     0.000     1 !cn7 -> cn9
+HN7    CN7    CN7    CN9        0.195     3.000     0.000     1 !cn8 -> cn9
+ON2    CN7    CN7    CN9        0.200    -4.000     0.000     1 !cn8b -> cn9
+ON2    CN7    CN7    CN9        0.800     3.000   180.000     1 !cn8b -> cn9
+CN8    CN7    CN7    CN9        0.500     4.000   180.000     1 !cn8b -> cn9
+CN8    CN7    CN7    CN8B       0.500     4.000   180.000     1 !del lowers 180 deg. 
+CN7B   CN7    CN7    CN8B       0.200     4.000   180.000     1 !del, RNA
+ON2    CN7    CN7    CN8B       0.200    -4.000     0.000     1 !del
+ON2    CN7    CN7    CN8B       0.800     3.000   180.000     1 !del,decreases P [100,250]
+ON5    CN7    CN7    CN8B       0.200    -4.000     0.000     1 !
+ON5    CN7    CN7    CN8B       0.800     3.000   180.000     1 !
+ON2    CN7    CN7    ON6        0.500    -6.000     0.000     1 !del, good for amplitudes
+ON2    CN7    CN7    ON6        0.300    -5.000     0.000     1 !del, impact on amplitudes
+ON2    CN7    CN7    ON6        0.600    -4.000   180.000     1 !del, increases c2'endo
+ON2    CN7    CN7    ON6        0.200     3.000     0.000     1 !
+ON2    CN7    CN7    ON6B       0.400    -6.000     0.000     1 !del, RNA, good for amplitudes
+ON2    CN7    CN7    ON6B       0.000    -5.000     0.000     1 !del, RNA, impact on amplitudes
+ON2    CN7    CN7    ON6B       0.000    -4.000   180.000     1 !del, RNA, increases c2'endo
+ON2    CN7    CN7    ON6B       1.600     3.000     0.000     1 !del, RNA, increases C2'endo
+ON2    CN7B   CN7B   ON6B       0.400    -6.000     0.000     1 !del, RNA, good for amplitudes
+ON2    CN7B   CN7B   ON6B       0.000    -5.000     0.000     1 !del, RNA, impact on amplitudes
+ON2    CN7B   CN7B   ON6B       0.000    -4.000   180.000     1 !del, RNA, increases c2'endo
+ON2    CN7B   CN7B   ON6B       1.600     3.000     0.000     1 !del, RNA, increases C2'endo
+ON5    CN7    CN7    ON6        0.500    -6.000     0.000     1 !
+ON5    CN7    CN7    ON6        0.300    -5.000     0.000     1 !
+ON5    CN7    CN7    ON6        0.600    -4.000   180.000     1 !
+ON5    CN7    CN7    ON6        0.200     3.000     0.000     1 ! 
+ON5    CN7    CN7    ON6B       0.400    -6.000     0.000     1 !RNA
+ON5    CN7    CN7    ON6B       0.000    -5.000     0.000     1 !RNA
+ON5    CN7    CN7    ON6B       0.000    -4.000   180.000     1 !RNA
+ON5    CN7    CN7    ON6B       1.600     3.000     0.000     1 !RNA. increases c2'endo
+CN7B   ON6    CN7    CN8B       0.800     3.000     0.000     1 ! P [30,80] 
+CN7B   ON6B   CN7    CN8B       2.000     3.000     0.000     1 ! To lower barrier in RNA
+CN7B   ON6B   CN7    CN9        2.000     3.000     0.000     1 ! To lower barrier in RNA, 5MET
+ON2    CN7    CN8    CN7B       0.800    -6.000     0.000     1 !
+ON2    CN7    CN8    CN7B       0.400    -5.000     0.000     1 ! Moves the barrier right
+ON2    CN7    CN8    CN7B       2.000     3.000   180.000     1 !  
+ON2    CN7    CN7B   CN7B       0.600    -6.000     0.000     1 ! RNA
+ON2    CN7    CN7B   CN7B       0.000    -5.000     0.000     1 ! RNA c2/c3 endo in RNA
+ON2    CN7    CN7B   CN7B       1.600     3.000   180.000     1 !
+ON5    CN7    CN8    CN7B       0.800    -6.000     0.000     1 !
+ON5    CN7    CN8    CN7B       0.400    -5.000     0.000     1 !
+ON5    CN7    CN8    CN7B       2.000     3.000   180.000     1 !
+ON5    CN7    CN7B   CN7B       0.600    -6.000     0.000     1 ! RNA, c2/c3 endo
+ON5    CN7    CN7B   CN7B       0.000    -5.000     0.000     1 ! RNA
+ON5    CN7    CN7B   CN7B       1.600     3.000   180.000     1 ! RNA
+ON2    CN7    CN8    HN8        0.195     3.000     0.000     1 ! 
+ON5    CN7    CN8    HN8        0.195     3.000   180.000     1 !
+ON2    CN7    CN7B   HN7        0.195     3.000     0.000     1 ! RNA
+ON5    CN7    CN7B   HN7        0.195     3.000   180.000     1 ! RNA
+HN7    CN7    CN7    ON2        0.195     3.000     0.000     1  
+HN7    CN7    CN7    ON5        0.195     3.000     0.000     1  
+CN7    CN7    ON2    P2         0.600    -5.000     0.000     1 !eps, adm, 2011 DNA update
+CN7    CN7    ON2    P2         0.200    -4.000     0.000     1 !eps, locat of 200 mimima, adm, 2011 DNA update
+CN7    CN7    ON2    P2         0.000    -3.000   180.000     1 !eps, barE beteen minima, adm, 2011 DNA update
+CN7    CN7    ON2    P2         0.400    -2.000     0.000     1 !eps, relE of 200 vs 275 min, adm, 2011 DNA update
+CN7    CN7    ON2    P2         1.900     1.000   180.000     1 !eps, adm, 2011 DNA update
+CN7    CN7    ON2    P          0.600    -5.000     0.000     1 !eps, RNA
+CN7    CN7    ON2    P          0.200    -4.000     0.000     1 !eps, locat of 200 mimima, RNA
+CN7    CN7    ON2    P          0.000    -3.000   180.000     1 !eps, barE beteen minima, RNA
+CN7    CN7    ON2    P          0.400    -2.000     0.000     1 !eps, relE of 200 vs 275 min, RNA
+CN7    CN7    ON2    P          1.900     1.000   180.000     1 !eps, RNA
+CN8    CN7    ON2    P          2.500     1.000   180.000     1 ! 3-terminal phosphate
+CN8    CN7    ON2    P2         1.900     1.000   180.000     1 ! adm, 2011 DNA update new param, eps
+CN7B   CN7    ON2    P          2.500     1.000   180.000     1 !eps, RNA 
+CN7B   CN7B   ON2    P          2.500     1.000   180.000     1 !eps, NADPH and bkbmod
+CN7    CN7B   ON2    P          2.500     1.000   180.000     1 !eps, NADPH and bkbmod
+CN7    CN7    ON5    HN5        0.500    -3.000     0.000     1 
+CN7    CN7    ON5    HN5        0.300    -2.000   180.000     1 
+CN7    CN7    ON5    HN5        1.500     1.000     0.000     1  
+CN8    CN7    ON5    HN5        0.500    -3.000     0.000     1 
+CN8    CN7    ON5    HN5        1.000    -2.000   180.000     1 
+CN8    CN7    ON5    HN5        0.300     1.000     0.000     1  
+CN7B   CN7    ON5    HN5        0.800    -3.000     0.000     1 ! RNA
+CN7B   CN7    ON5    HN5        0.500     1.000     0.000     1 ! RNA
+HN7    CN7    ON5    HN5        0.000     3.000     0.000     1  
+HN7    CN7    CN8B   HN8        0.195     3.000     0.000     1 !gam H-C4'-C5'-H
+HN7    CN7    CN7    CN8B       0.195     3.000     0.000     1 !gam H-C3'-C4'-C5'
+CN8    CN7B   ON6    CN7        0.600     6.000   180.000     1 !C2'-C1'-O4'-C4'
+CN8    CN7    CN7    ON6        1.000    -4.000     0.000     1 ! adm, 2011 DNA update new param, C2'-C3'-C4'-O4'; lowers c3'endo
+CN8    CN7    CN7    ON6        0.300    -5.000   180.000     1 ! adm, 2011 DNA update new param, C2'-C3'-C4'-O4'; position of minima
+CN8    CN7    CN7    ON6        0.300     6.000   180.000     1 ! adm, 2011 DNA update new param, C2'-C3'-C4'-O4'; position of minima
+CN7B   CN7B   ON6B   CN7        0.000     6.000     0.000     1 ! RNA, Lowers barrier
+CN7B   CN7    CN7    ON6B       0.000     3.000     0.000     1 ! RNA
+CN7    CN8    CN7B   ON6        0.600     6.000     0.000     1 ! C3'-C2'-C1'-O4', adjust barrier
+CN7    CN7B   CN7B   ON6B       0.400     6.000     0.000     1 ! RNA
+CN7B   CN8    CN7    CN7        0.400     6.000     0.000     1 ! good for amplitudes
+CN7B   CN7B   CN7    CN7        0.000     6.000     0.000     1 ! RNA
+CN7    CN7    ON6    CN7B       0.600     6.000   180.000     1 ! C3'-C4'-O4'-C1'
+CN7    CN7    ON6B   CN7B       0.000     6.000   180.000     1 ! RNA
+HN7    CN7    CN7    CN8        0.000     3.000     0.000     1 !puc,H-C3'-C4'-C5'
+HN7    CN7    CN8    CN7B       0.195     3.000     0.000     1 !H-C3'-C2'-C1'
+HN7    CN7B   CN8    CN7        0.195     3.000     0.000     1 !H-C1'-C2'-C3'
+HN7    CN7    CN7    ON6        0.195     3.000   180.000     1 ! useful
+HN8    CN8    CN7B   ON6        0.195     3.000     0.000     1 !H-C2'-C1'-O4'
+HN7    CN7    CN7    HN7        0.195     3.000     0.000     1 !H-C4'-C3'-H
+HN7    CN7B   CN8    HN8        0.195     3.000     0.000     1 !H-C1'-C2'-H 
+HN7    CN7    CN8    HN8        0.195     3.000     0.000     1 !H-C3'-C2'-H
+HN8    CN8    CN7    CN7        0.195     3.000     0.000     1 ! useful *cccc*
+HN7    CN7    ON6    CN7B       0.195     3.000     0.000     1 !H-C3'-C2'-C1'
+HN7    CN7B   ON6    CN7        0.000     3.000     0.000     1 !H-C1'-O4'-C4'
+HN7    CN7    CN7    ON6B       0.195     3.000   180.000     1 ! RNA
+HN9    CN9    CN7    ON6B       0.195     3.000   180.000     1 ! RNA, 5MET
+HN8    CN8    CN7B   ON6B       0.195     3.000     0.000     1 ! RNA
+HN7    CN7B   ON6B   CN7        0.000     3.000     0.000     1 ! RNA
+HN7    CN7    ON6B   CN7B       0.195     3.000     0.000     1 ! RNA
+HN7    CN7    CN7B   CN7B       0.195     3.000     0.000     1 ! RNA, H-C3'-C2'-C1'
+HN7    CN7B   CN7B   CN7        0.195     3.000     0.000     1 ! RNA, H-C1'-C2'-C3'
+HN7    CN7B   CN7B   ON6B       0.195     3.000     0.000     1 ! RNA, H-C2'-C1'-O4'
+NN2    CN7B   CN7B   ON5        0.000     3.000     0.000     1 ! Adenine and cytosine
+NN2B   CN7B   CN7B   ON5        0.000     3.000     0.000     1 ! Guanine and uracil
+ON5    CN7B   CN7B   HN7        0.000     3.000     0.000     1 ! 
+HN7    CN7B   CN7B   HN7        0.000     3.000     0.000     1 ! 
+CN7    CN7    CN7B   ON5        0.000     3.000     0.000     1  
+ON6B   CN7B   CN7B   ON5        0.000     3.000     0.000     1  
+ON5    CN7B   CN7    ON2        0.000     3.000     0.000     1  
+ON5    CN7    CN7B   ON2        0.000     3.000     0.000     1  
+ON5    CN7B   CN7    ON5        0.000     3.000     0.000     1  
+HN7    CN7B   ON5    HN5        0.000     3.000     0.000     1  
+HN5    ON5    CN7B   CN7B       0.000    -6.000   180.000     1 ! ejd, 2010 RNA update
+HN5    ON5    CN7B   CN7B       0.400    -3.000     0.000     1 ! shifts min, ejd, 2010 RNA update
+HN5    ON5    CN7B   CN7B       0.400    -2.000     0.000     1 ! ejd, 2010 RNA update
+HN5    ON5    CN7B   CN7B       0.800     1.000     0.000     1 ! height of right barrier and can shift min, ejd, 2010 RNA update
+HN5    ON5    CN7B   CN7        0.200    -3.000     0.000     1 ! ejd, 2010 RNA update
+HN5    ON5    CN7B   CN7        0.000    -2.000   180.000     1 ! ejd, 2010 RNA update
+HN5    ON5    CN7B   CN7        2.000     1.000     0.000     1 ! height of left side barrier, ejd, 2010 RNA update
+CN7B   ON6    CN7    CN9        0.000     3.000     0.000     1 ! added for sugar model compounds
+HN7    CN7    CN7B   ON5        0.195     3.000     0.000     1 ! for nadp/nadph (NOT
+HN7    CN7B   CN7    CN7        0.195     3.000     0.000     1 ! for nadp/nadph (NOT
+HN7    CN7    CN7    CN7B       0.195     3.000     0.000     1 ! for nadp/nadph (NOT
+HN7    CN7    CN7B   HN7        0.195     3.000     0.000     1 ! for nadp/nadph (NOT
+
+[impropers]
+* V(improper) = Kpsi(psi - psi0)**2
+* Kpsi: kcal/mole/rad**2
+* psi0: degrees
+* note that the second column of numbers (0) is ignored
+* atom types           Kpsi                   psi0
+* 
+* iaci  iacj   iack   iacl      forceK     imp0
+*-------------------------------------------------------------------------------
+?      HN2    NN2    ?          2.000     0.000 !C, adm jr. 11/97
+NN2B   CN4    CN5    HN2       14.000     0.000 !G, adm jr. 11/97
+?      HN1    NN1    ?          8.000     0.000 !G, adm jr. 11/97
+NN1    CN2    HN1    HN1       12.000     0.000 !A,C adm jr. 11/97
+?      CN1    ON1    ?        180.000     0.000 !U
+?      CN1T   ON1    ?        180.000     0.000 !U
+CN1    NN2G   CN5G   ON1      180.000     0.000 !G
+CN1T   NN2B   NN2U   ON1      220.000     0.000 !T/O2, adm jr. 11/97
+CN1    NN2U   CN3T   ON1      180.000     0.000 !T/O4, adm jr. 11/97
+?      CN1    ON1C   ?        160.000     0.000 !C, par_32, adm jr. 10/2/91
+?      CN2    NN1    ?        180.000     0.000 !C, 
+CN2    NN3G   NN2G   NN1       80.000     0.000 !G
+CN2    NN3A   CN5    NN1       80.000     0.000 !A
+CN2    NN3    CN3    NN1      120.000     0.000 !C, 
+?      CN9    CN3T   ?         28.000     0.000 !T, adm jr. 11/97

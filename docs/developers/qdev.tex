@@ -1,0 +1,506 @@
+%===============================================================================
+%  Preamble
+%===============================================================================
+\documentclass[10pt, oneside, pdftex]{article}
+\renewcommand{\thefootnote}{\roman{footnote}}
+\usepackage{amsmath, amstext, amsfonts, amssymb}
+\usepackage{xcolor}
+\definecolor{bl}{rgb}{0.0,0.2,0.6}
+\usepackage{sectsty}
+\usepackage{url}
+\usepackage{fancyvrb}
+\usepackage{setspace}
+\singlespacing
+\usepackage[left=2.54cm,bottom=2.00cm,top=2.00cm,right=2.54cm]{geometry}
+\usepackage[compact]{titlesec}
+\usepackage[colorinlistoftodos]{todonotes}
+%\allsectionsfont{\color{bl}\scshape\selectfont}
+\allsectionsfont{\color{bl}}
+%\usepackage{chapterbib}
+%\includeonly{chapter1}
+%\usepackage{pdflscape}
+%\usepackage[style=reading, sorting=ynt]{biblatex}
+
+
+%===============================================================================
+% Setup of lstlisting
+%===============================================================================
+\usepackage{listings}
+\usepackage{color}
+\definecolor{deepblue}{rgb}{0,0,0.5}
+\definecolor{deepred}{rgb}{0.6,0,0}
+\definecolor{deepgreen}{rgb}{0,0.5,0}
+\definecolor{dkgreen}{rgb}{0,0.6,0}
+\definecolor{gray}{rgb}{0.5,0.5,0.5}
+\definecolor{mauve}{rgb}{0.58,0,0.82}
+
+\lstset{frame=tb,
+language=bash,
+aboveskip=3mm,
+belowskip=3mm,
+showstringspaces=false,
+columns=flexible,
+basicstyle={\small\ttfamily},
+numbers=none,
+numberstyle=\tiny\color{gray},
+keywordstyle=\color{blue},
+commentstyle=\color{dkgreen},
+stringstyle=\color{mauve},
+breaklines=true,
+breakatwhitespace=true,
+tabsize=3}
+
+
+%===============================================================================
+%  Fonts in Document
+%===============================================================================
+%\usepackage{times}
+%\usepackage{pslatex}
+%\usepackage{newcent}
+%\usepackage{palatcm}
+%\usepackage{palatino}
+%\usepackage[T1]{fontenc}
+\usepackage[scaled]{helvet}
+\renewcommand*\familydefault{\sfdefault}
+%\renewcommand*{\encodingdefault}{T1}
+% For more options go to: http://www.tug.dk/FontCatalogue/
+
+
+%===============================================================================
+% Definitions
+%===============================================================================
+% Define a new command that prints the title only
+% Begin definition
+\makeatletter
+\def\printtitle{
+{\color{bl} \centering \Huge \textbf{\@title}\par}} % Typesetting
+\makeatother
+% End definition
+
+\title{Q\\
+    \LARGE Version 5.7 \\
+    \LARGE \vspace*{-10pt}Developers Manual\vspace*{10pt}}
+
+
+% Define a new command that prints the author(s) only
+% Begin definition
+\makeatletter
+\def\printauthor{                        % Define command: \printauthor
+{\centering \small \@author}}            % Typesetting
+\makeatother
+% End definition
+
+\author{
+  \vspace{10pt}
+  Mauricio Esguerra \\
+  \vspace{4pt}
+  mauricio.esguerra@gmail.com \\
+  \vspace{20pt}
+  }
+
+% Custom headers and footers
+\usepackage{fancyhdr}
+\pagestyle{fancy}                    % Enabling the custom headers/footers
+\usepackage{lastpage}
+% Header (empty)
+\lhead{}
+\chead{}
+\rhead{}
+\lfoot{\footnotesize Q Development - \texttt{qdyn.bmc.uu.se}}
+\cfoot{}
+\rfoot{\footnotesize page \thepage\ }%of \pageref{LastPage}}    % "Page 1 of 2"
+\renewcommand{\headrulewidth}{0.0pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+% Change the abstract environment
+\usepackage[runin]{abstract}             % runin option for a run-in title
+\setlength\absleftindent{30pt}           % left margin
+\setlength\absrightindent{30pt}          % right margin
+\abslabeldelim{\quad}                    %
+\setlength{\abstitleskip}{-10pt}
+\renewcommand{\abstractname}{}
+\renewcommand{\abstracttextfont}{\color{bl} \small \slshape}    % slanted text
+
+%===============================================================================
+% Start document
+%===============================================================================
+\begin{document}
+\printtitle
+\printauthor
+\tableofcontents
+%\bibliographystyle{plainurl}
+\bibliographystyle{nar}
+\vspace{20pt}
+\section{Introduction}
+This is  the developers  manual for \textbf{Q},  the free  energy from
+molecular dynamics program.\\
+\noindent \textbf{Q}  is entirely written in  modern \textbf{FORTRAN}.
+Its  initial   development  was   in  \textbf{FORTRAN}  90,   but  the
+incorporation    of   object    oriented    paradigms   into    modern
+\textbf{FORTRAN} have  seen the code  evolve to take advantage  of the
+evolution  of the  language.   Currently  the program  incorporporates
+elements of  the \textbf{FORTRAN}  2008 standard.  For parallelization
+\textbf{Q}  uses  the  MPI2  standard  and  follows  a  point-to-point
+communication  approach. This  is advantageous  in that  it can  avoid
+overhead which often happens  in one-sided communication, specially if
+one does not  develop according to the system specifics,  like type of
+processors, OS, number of processors, etc.
+To make MPI calls we use precompiler directives, this need to be
+specified in out makefiles with the \textbf{-fpp} flag for intel
+fortran and \textbf{cpp} for the GNU Compiler Collection (GCC).
+
+
+\subsection{Documentation}
+\label{documentation}
+To document the code we've selected ford, a package by Chris
+MacMackin. It's a python package so it can be installed with pip.
+To run it we use:
+\begin{Verbatim}
+    ford -d ../../src -o devdocs forddocs.md
+\end{Verbatim}
+
+One exclamation mark ignored, two exclamation marks taken as FORD
+documentation.
+FORD by default documents after the function, or subroutine, or so, but
+to make it document with what is prior to the, say, subroutine, after
+version 1.10 one should use a greater than symbol after the
+exclamation mark.
+
+\begin{Verbatim}
+!------------------------------------------------------------------------------!
+!>  **subroutine: put_ene**
+!!    defines what goes in the energy files.
+!------------------------------------------------------------------------------!
+  subroutine put_ene(unit, e2, offd)
+\end{Verbatim}
+  
+
+
+\subsection{Makefile}
+\label{makefile}
+The  makefile follows  closely the  \textbf{GNU} \textbf{make}  manual
+(\url{http://www.gnu.org/software/make/manual/make.html}).         Any
+modifications to the makefile should  make sure that user-space is not
+broken,  that  is,  \textbf{Q}  should  compile on  all  of  the  main
+operating systems, Linux,  OSX and Windows 10, and avoid  fully, or as
+much as possible, hardware specific compiler options.\\
+
+\subsection{Cluster Architectures}
+\label{clusterarchitectures}
+
+
+\subsection{Debugging}
+\label{debugging}
+
+
+\subsection{Profiling}
+\label{profiling}
+
+\subsection{Best Practices}
+\label{bestpractices}
+
+\url{http://www.fortran90.org/src/best-practices.html}
+
+
+\section{ChangeLog}
+\label{changelog}
+
+
+\section{Release Schedule}
+\label{schedule}
+
+
+\section{qprep}
+\label{qprep}
+\textbf{qprep}  is the  utility which  allows the  translation of  pdb
+files into a format which the dynamics engine can understand. The main
+file  generated  by \textbf{qprep}  is  refered  to as  the  topology,
+generally  given the  \textit{.top} extension.  The following  command
+passes an input file to \textbf{qprep}.
+
+\lstset{language=sh, frame=single}
+%\begin{Verbatim}[numbers=left]
+\fvset{frame=single, fontfamily=courier, fontsize=\small}
+%\fvset{frame=single, fontfamily=courier}
+\begin{Verbatim}
+qprep < generate.inp >& generate.log &
+\end{Verbatim}
+
+Apart from topology creation \textbf{qprep} is also used to solvate a
+solute and generate an SCAS boundary.
+
+
+
+\subsection{qprep.f90}
+
+\textbf{qprep.f90} is the  main program which acts as  an interface to
+the main  code which resides  mainly in the  \textbf{prep.f90} module.
+It's composed of six subroutines\\
+
+
+
+\textbf{Modules: }\\
+\textit{iso\_fortran\_env}\\
+\textit{prep}\\
+\textit{avetr}\\
+
+
+\textbf{Subroutines: }\\
+
+
+\subsubsection{version} 
+\subsubsection{prep}
+\textbf{Modules: }\\
+\textit{}
+
+%%qprep.o prefs.o prep.o avetr.o nrgy.o
+
+
+\begin{Verbatim}
+subroutine prep_startup
+subroutine allocate_for_pdb(atoms, residues, molecules)
+subroutine prep_shutdown
+subroutine clearlib
+subroutine check_alloc(message)
+subroutine addbond
+subroutine clearbond
+subroutine angle_ene(emax, nlarge, av_ene)
+subroutine bond_ene(emax, nlarge, av_ene)
+subroutine changeimp
+subroutine checkangs
+subroutine checkbonds
+subroutine checkimps
+subroutine checktors
+subroutine xlink
+subroutine impr_ene(emax, nlarge, av_ene, mode)
+subroutine listres
+subroutine listseq
+subroutine make14list
+subroutine makeangles
+subroutine make_solute_bonds
+subroutine makebonds
+subroutine set_bondcodes
+subroutine makeexlist
+subroutine makehyds
+subroutine makeimps
+subroutine imp_params
+subroutine makeimps_explicit
+subroutine maketop
+subroutine set_default_mask
+subroutine makeconn
+subroutine maketors
+subroutine prompt(outtxt)
+subroutine oldreadlib(filnam)
+subroutine readlib(file)
+subroutine check_overload(resnam)
+subroutine oldreadparm(flag)
+subroutine readff
+subroutine readparm(filnam)
+subroutine clearpdb
+subroutine cleartop
+subroutine readpdb()
+subroutine readtop
+subroutine readx
+subroutine readnext
+subroutine readframe
+subroutine trajectory
+subroutine modify_mask
+subroutine set_cgp
+subroutine set_crg
+subroutine set_iac
+subroutine set_solvent_type
+subroutine define_boundary_condition
+subroutine solvate
+subroutine solvate_box
+subroutine solvate_box_grid
+subroutine solvate_box_file
+subroutine solvate_sphere
+subroutine solvate_sphere_grid
+subroutine solvate_sphere_file(shift)
+subroutine solvate_restart
+subroutine add_solvent_to_topology(waters_in_sphere, max_waters,
+make_hydrogens, pack)
+subroutine grow_arrays_for_solvent(nmore, atoms_per_molecule)
+subroutine tors_ene(emax, nlarge, av_ene)
+subroutine writepdb
+subroutine writemol2
+subroutine writetop
+subroutine listprefs
+subroutine set
+subroutine make_shell2
+\end{Verbatim}
+ 
+\subsubsection{avetr} 
+
+
+
+\section{qdum}
+\label{qdum}
+
+
+\section{qdyn}
+\label{qdyn}
+\textbf{qdyn} is compiled using the following explicit rules:
+\begin{Verbatim}
+-ffree-line-length-none
+-fcray-pointer
+-fall-intrinsics
+-std=legacy
+-Wall
+-Wtabs
+-fstack-protector
+-O3
+-DG95=1 -c
+\end{Verbatim}
+
+\textbf{Development} flags recommended from fortran90.org:\\
+-Wall -Wextra -Wimplicit-interface -fPIC -fmax-errors=1 -g -fcheck=all -fbacktrace\\
+
+\textbf{Production} flags recommended from fortran90.org:\\
+-Wall -Wextra -Wimplicit-interface -fPIC -Werror -fmax-errors=1 -O3 -march=native -ffast-math -funroll-loops\\
+
+sizes: Specifies data storage for all Q programs.\\
+Modules used= NONE
+
+nrgy: Input/Output for energy data and energy file.\\
+Modules used= sizes\\
+Subroutines:\\
+  nrgy\_startup = empty\\
+  put\_ene =
+
+Functions:
+
+mpiglob: Declares global variables for MPI parallelization of qdyn
+Modules used = nrgy
+Subroutines:
+
+Functions:
+
+
+misc:\\
+Modules used = sizes\\
+Subroutines:
+
+Functions:
+
+
+prmfile: Data files parser.
+Modules used = misc
+Subroutines:
+  prmfile\_startup = EMPTY ? WTF
+
+
+Functions:
+
+
+index:
+Modules used = NONE
+
+
+topo:
+Modules used = sizes, misc
+Subroutines:
+  topo\_startup = EMPTY ? WTF
+
+
+Functions:
+
+
+qatom:
+Modules used = sizes, nrgy, misc, prmfile, indexer, topo
+
+
+mask:
+Modules used = topo
+
+
+trj:
+Modules used = atom\_mask, misc
+
+
+
+
+-DG95=1 -cpp -c
+
+md: This is the main molecular dynamics \textit{module}.
+Modules used =
+
+
+qdyn: This file contains the main \textbf{qdyn} \textit{program} code.
+Modules used =
+
+
+
+\section{qfep}
+\label{qfep}
+
+
+\section{qcalc}
+\label{qcalc}
+
+
+\section{Tricks}
+\label{tricks}
+
+A very convenient trick for cleaning up the code is:
+
+emacs --batch md.f90 -f mark-whole-buffer -f f90-indent-subprogram -f save-buffer
+
+
+\section{Links}
+\label{links}
+The following  is a  collection of reference  links useful  for fotran
+programers.
+
+
+\noindent - The description of the GNU Compiler Collection (gcc) version 5.1.0\\
+\url{https://gcc.gnu.org/onlinedocs/gcc-5.1.0/gfortran.pdf}
+
+
+\subsection{Doxygen}
+\label{doxygen}
+To automatically  document the fortran  code to help  developers there
+are two alternatives. One is ford  which we described in the beggining
+of this  document, and  the other  one is doxygen.   To use  doxygen a
+configuration file is necessary.  This has been downloaded from:\\
+
+\url{https://modelingguru.nasa.gov/docs/DOC-1811}
+
+And modified to our needs.
+
+Just doing:
+
+\begin{lstlisting}
+doxygen DoxygenConfigFortran
+\end{lstlisting}
+
+Generates html code.
+
+A mainfile document is included in the file maintext.txt
+
+
+\subsection{Fortran codes available online}
+These projects are  a good resource to check-out  development and good
+practices on coding. Even though FORTRAN does not enforce syntax rules
+as  Python  does,  the user  should  use  them  so  that the  code  is
+readable. An analog of the  sytax rules for Python, frequently refered
+to as PEP8, would be very useful for FORTRAN programers. \\
+
+Jason Blevins. Benchmarking ansi C and FORTRAN.\\
+\url{http://jblevins.org/git/scicomp.git/tree/}\\
+
+Gyro-Kinetics at Warwick. A program for turbulence study in plasmas.\\
+\url{https://bitbucket.org/gkw/gkw/wiki/Home}\\
+
+OpenMC. A Monte Carlo code.\\
+\url{https://github.com/mit-crpg/openmc}\\
+
+A collection of generic Fortran routines.\\
+\url{https://github.com/astrofrog/fortranlib}\\
+
+Fluidity: A fluid dynamics code.\\
+\url{http://fluidityproject.github.io/}\\
+
+
+\bibliography{biblio}
+\end{document}
