@@ -15,13 +15,36 @@
 !!  by Johan Aqvist, Karin Kolmodin, John Marelius, Johan Sund  
 !!  qfep free energy analysis program for FEP, EVB & Umbrella Sampling  
 !------------------------------------------------------------------------------!
+  module mathOps
+   contains
+     attributes(global) subroutine saxpy(x, y, a)
+       implicit none
+       real :: x(:), y(:)
+       real, value :: a
+       integer :: i, n
+       n = size(x)
+       i = blockDim%x * (blockIdx%x - 1) + threadIdx%x
+       if (i <= n) y(i) = y(i) + a*x(i)
+     end subroutine saxpy 
+   end module mathOps
+
+
 program qfep
   use iso_fortran_env, only : compiler_version, compiler_options
   
   use nrgy
   use parse
 
+  use mathOps
+  use cudafor
+
   implicit none
+
+  integer, parameter :: N = 40000
+  real :: ssx(N), ssy(N), ssa
+  real, device :: x_d(N), y_d(N)
+  type(dim3) :: grid, tBlock
+
   character(*), parameter :: program_name = 'qfep'
   character(*), parameter :: program_version = '5.7'
   character(*), parameter :: program_date = '2015-04-01'
@@ -39,7 +62,7 @@ program qfep
 
   type(OFFDIAG_SAVE), dimension(mxstates) :: offd
 
-  real(8) :: rt,gapmin,gapmax,sum,dv,gaprange,xint,dvg,veff1,veff2, &
+  real(8) :: rt,gapmin,gapmax,vsum,dv,gaprange,xint,dvg,veff1,veff2, &
              dGa,dGb,dGg,alpha_B,scale_Hij,veff,min,dlam,sumf,sumb, &
              konst,fel,nfnr,nrnf
   real(8),dimension(mxbin) :: sumg,sumg2,avdvg,avc1,avc2,avc11,avc12,avc13, &
@@ -74,8 +97,8 @@ program qfep
   real           :: dummy !masoud
   character(100) :: iline !masoud
 
-  
   call commandlineoptions
+  call gpu_test(ssx,ssy,x_d,y_d,ssa,N)
   call startup
 
 
@@ -382,7 +405,7 @@ program qfep
   if(nfiles > 1) then !the following is meaningless for a single file
      dgf=0.
      dgfsum=0.
-     sum=0.
+     vsum=0.
      veff1=0.
      veff2=0.
      dv=0.
@@ -400,16 +423,16 @@ program qfep
            dv=veff2-veff1
            veff1=0.
            veff2=0.
-           sum=sum+exp(-dv/rt)
+           vsum=vsum+exp(-dv/rt)
         end do
-        sum=sum/real(FEP(ifile)%npts-nskip)
-        dgf(ifile)=-rt*dlog(sum)
+        vsum=vsum/real(FEP(ifile)%npts-nskip)
+        dgf(ifile)=-rt*dlog(vsum)
         dgfsum(ifile+1)=dgfsum(ifile)+dgf(ifile)
-        sum=0.
+        vsum=0.
      end do
      dgrsum=0.
      dgr=0.
-     sum=0.
+     vsum=0.
      veff1=0.
      veff2=0.
      dv=0.
@@ -422,16 +445,16 @@ program qfep
            dv=veff2-veff1
            veff1=0.
            veff2=0.
-           sum=sum+exp(-dv/rt)
+           vsum=vsum+exp(-dv/rt)
         end do
-        sum=sum/real(FEP(ifile)%npts-nskip)
-        dgr(ifile)=-rt*dlog(sum)
+        vsum=vsum/real(FEP(ifile)%npts-nskip)
+        dgr(ifile)=-rt*dlog(vsum)
         dgrsum(ifile-1)=dgrsum(ifile)+dgr(ifile)
-        sum=0.
+        vsum=0.
      end do
      dgtisum=0.
      dgti=0.
-     sum=0.
+     vsum=0.
      veff1=0.
      veff2=0.
      dv=0.
@@ -445,10 +468,10 @@ program qfep
            dv=veff2-veff1
            veff1=0.
            veff2=0.
-           sum=sum+dv
+           vsum=vsum+dv
         end do
-        dgti(ifile)=sum/real(FEP(ifile)%npts-nskip)
-        sum=0.
+        dgti(ifile)=vsum/real(FEP(ifile)%npts-nskip)
+        vsum=0.
      end do
      do ifile=2,nfiles
         dlam=FEP(ifile-1)%lambda(istate)-FEP(ifile)%lambda(istate)
@@ -456,7 +479,7 @@ program qfep
      end do
      dglu=0.
      dglusum=0.
-     sum=0.
+     vsum=0.
      veff1=0.
      veff2=0.
      dv=0.
@@ -469,10 +492,10 @@ program qfep
            dv=(veff2-veff1)/2
            veff1=0.
            veff2=0.
-           sum=sum+exp(-dv/rt)
+           vsum=vsum+exp(-dv/rt)
         end do
-        sumf=sum/real(FEP(ifile)%npts-nskip)
-        sum=0.
+        sumf=vsum/real(FEP(ifile)%npts-nskip)
+        vsum=0.
         do ipt=nskip+1,FEP(ifile+1)%npts
            do istate=1,nstates
               veff1=veff1+FEP(ifile)%lambda(istate)*FEP(ifile+1)%v(istate,ipt)
@@ -481,16 +504,16 @@ program qfep
            dv=(veff2-veff1)/2
            veff1=0.
            veff2=0.
-           sum=sum+exp(dv/rt)
+           vsum=vsum+exp(dv/rt)
         end do
-        sumb=sum/real(FEP(ifile+1)%npts-nskip)
+        sumb=vsum/real(FEP(ifile+1)%npts-nskip)
         dglu(ifile)=-rt*dlog(sumf/sumb)
         dglusum(ifile+1)=dglusum(ifile)+dglu(ifile)
-        sum=0.
+        vsum=0.
      end do
      dgbar=0.
      dgbarsum=0.
-     sum=0.
+     vsum=0.
      veff1=0.
      veff2=0.
      dv=0.
@@ -509,10 +532,10 @@ program qfep
               dv=(veff2-veff1)
               veff1=0.
               veff2=0.
-              sum=sum+1/((1+(nfnr*exp((dv-konst)/rt))))
+              vsum=vsum+1/((1+(nfnr*exp((dv-konst)/rt))))
            end do
-           sumf=sum/real(FEP(ifile)%npts-nskip)
-           sum=0.
+           sumf=vsum/real(FEP(ifile)%npts-nskip)
+           vsum=0.
            do ipt=nskip+1,FEP(ifile+1)%npts
               do istate=1,nstates
                  veff1=veff1+FEP(ifile)%lambda(istate)*FEP(ifile+1)%v(istate,ipt)
@@ -521,11 +544,11 @@ program qfep
               dv=(veff2-veff1)
               veff1=0.
               veff2=0.
-              sum=sum+1/((1+(nrnf*exp((-dv+konst)/rt))))
+              vsum=vsum+1/((1+(nrnf*exp((-dv+konst)/rt))))
            end do
-           sumb=sum/real(FEP(ifile+1)%npts-nskip)
+           sumb=vsum/real(FEP(ifile+1)%npts-nskip)
            dgbar(ifile)=-rt*dlog((sumf/sumb)*exp(-konst/rt)*nfnr)
-           sum=0.
+           vsum=0.
            fel=ABS(konst-dgbar(ifile))
            konst=dgbar(ifile)
         end do
@@ -539,7 +562,7 @@ program qfep
      write(*,21)
      write(*,22)
 21   format('# Part 1: Free energy perturbation summary:')
-22   format('# lambda(1)      dGf sum(dGf)      dGr sum(dGr)     <dG>')
+22   format('# lambda(1)      dGf vsum(dGf)      dGr vsum(dGr)     <dG>')
      dG(1)=0.0
      do ifile=2,nfiles
         dG(ifile)=dG(ifile-1)+0.5*(dgf(ifile-1)-dgr(ifile))
@@ -680,7 +703,7 @@ program qfep
      write(*,30)
      write(*,31)
 30   format('# Part 4: Termodynamic integration:')
-31   format('# lambda(1)      dGti    sum(dGti) ')
+31   format('# lambda(1)      dGti    vsum(dGti) ')
      do ifile=1,nfiles
         write (*,23) &
              FEP(ifile)%lambda(1),dgti(ifile-1),dgtisum(ifile)
@@ -692,7 +715,7 @@ program qfep
      write(*,32)
      write(*,33)
 32   format('# Part 5: Overlap sampling Lu et al:')
-33   format('# lambda(1)      dG    sum(dG) ')
+33   format('# lambda(1)      dG    vsum(dG) ')
      do ifile=1,nfiles
         write (*,23) &
              FEP(ifile)%lambda(1),dglu(ifile-1),dglusum(ifile)
@@ -704,7 +727,7 @@ program qfep
      write(*,33)
      write(*,34)
 34   format('# Part 6: BAR Bennet:')
-35   format('# lambda(1)      dG    sum(dG) ')
+35   format('# lambda(1)      dG    vsum(dG) ')
      do ifile=1,nfiles
         write (*,23) &
              FEP(ifile)%lambda(1),dgbar(ifile-1),dgbarsum(ifile)
@@ -797,6 +820,23 @@ end subroutine startup
     end select
   end do
   end subroutine commandlineoptions
+
+  subroutine gpu_test(x,y,x_d,y_d,a,N)
+   integer, parameter :: N = 40000
+   real :: x(N), y(N)
+   real, device :: x_d(N), y_d(N)
+   real :: a
+
+   tBlock = dim3(256,1,1)
+   grid = dim3(ceiling(real(N)/tBlock%x),1,1)
+ 
+   x = 1.0; y = 2.0; a = 2.0
+   x_d = x
+   y_d = y
+   call saxpy<<<grid, tBlock>>>(x_d, y_d, a)
+   y = y_d
+   write(*,*) 'Max error: ', maxval(abs(y-4.0))
+  end subroutine gpu_test
 
   !----------------------------------------------------------------------------!
   !!  subroutine: print_help  
