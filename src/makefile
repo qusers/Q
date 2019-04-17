@@ -10,11 +10,25 @@
 ################################################################################
 
 ################################################################################
+# Environment-specific variables
+################################################################################
+
+ifeq ($(OS),Windows_NT)
+	OBJ=		obj
+	EXE=		.exe
+	MDFLAGS=	-p
+else
+ 	OBJ=		o
+	MDFLAGS=	-p
+endif
+
+################################################################################
 # Intel Fortran ifort ( tested in linux and osx)
 ################################################################################
+
 ifeq ($(COMP),ifort)
 	FC=             ifort
-	FC_OPT=         -O3
+	FC_OPT=		-O3
 	FFLAGS=         -ip -ipo -unroll -static-intel -fstack-protector \
 	                ${FC_OPT}
 	FPP_FLG=        -fpp
@@ -57,11 +71,11 @@ else ifeq ($(COMP),osx)
 # PGI Compiler -- compiles at csb
 ################################################################################
 else ifeq ($(COMP),pgi)
-	FC=             pgf90.exe
+	FC=             pgf90$(EXE)
 	FC_OPT=         -O0 -g -Mcuda
 	FFLAGS=         ${FC_OPT}
 	FPP_FLG=        -Mpreprocess
-    PGI_TERM=       debug
+	PGI_TERM=       debug
 
 	MPIFC=          mpif90
 	MPIFLAGS=       -lmpi  #-f90=${FC}
@@ -130,7 +144,7 @@ default: what
 ################################################################################
 # Targets
 ################################################################################
-all:	qfep qprep qdyn qcalc move1 move2
+all:	qfep qprep qdyn qcalc qdum move1 move2
 
 debug:
 	@make FFLAGS="${DEBUG}" \
@@ -145,177 +159,179 @@ mpidebug:
 	qdynp move1 move3
 
 clean:
-	-rm -f *.obj  *.mod *.M *.kmo *.il *.oo
+	-rm -f *.$(OBJ) *.mod *.M *.kmo *.il *.oo *.dwf *.pdb
 
 nuke:
-	-rm -rf *.obj  *.mod *.M *.kmo *.il *.oo qfep qdynp qdyn qprep qcalc \
-	qdum ../bin ../obj
+	-rm -rf *.$(OBJ) *.mod *.M *.kmo *.il *.oo *.dwf *.pdb qfep$(EXE) qdynp$(EXE) qdyn$(EXE) qprep$(EXE) qcalc \
+	qdum$(EXE) ../bin ../obj
 
-qcalc qdyn qdum qdynp qprep qfep: misc.obj mpiglob.obj
+print-%  : ; @echo $* = $($*)
 
-qcalc qdyn qdum qdynp qprep: mask.obj prmfile.obj sizes.obj topo.obj trj.obj index.obj
+qcalc qdyn qdum qdynp qprep qfep: misc.$(OBJ) mpiglob.$(OBJ)
 
-qcalc qdyn qdum qdynp qfep: nrgy.obj
+qcalc qdyn qdum qdynp qprep: mask.$(OBJ) prmfile.$(OBJ) sizes.$(OBJ) topo.$(OBJ) trj.$(OBJ) index.$(OBJ)
 
-qcalc qdyn qdum qdynp: qatom.obj
+qcalc qdyn qdum qdynp qfep: nrgy.$(OBJ)
 
-qcalc qprep qfep: parse.obj
+qcalc qdyn qdum qdynp: qatom.$(OBJ)
 
-qcalc qprep: maskmanip.obj
+qcalc qprep qfep: parse.$(OBJ)
 
-qdyn qdum: qdyn.obj
+qcalc qprep: maskmanip.$(OBJ)
 
-qprep: qprep.obj prefs.obj prep.obj avetr.obj nrgy.obj
+qdyn qdum: qdyn.$(OBJ)
+
+qprep: qprep.$(OBJ) prefs.$(OBJ) prep.$(OBJ) avetr.$(OBJ) nrgy.$(OBJ)
 	${FC} ${FFLAGS} ${FLIBS} $+ -o $@
 
-qfep: qfep.obj
+qfep: qfep.$(OBJ)
 	${FC} ${FFLAGS} ${FLIBS} $+ -o $@
 
-qcalc: calc_base.obj calc_chemscore.obj calc_fit.obj calc_geom.obj calc_pmfscore.obj \
-	calc_com_ke.obj calc_com.obj calc_rdf.obj calc_rms.obj calc_rmsf.obj \
-	calc_entropy.obj calc_nb.obj calc_xscore.obj eigen.obj qcalc.obj
+qcalc: calc_base.$(OBJ) calc_chemscore.$(OBJ) calc_fit.$(OBJ) calc_geom.$(OBJ) calc_pmfscore.$(OBJ) \
+	calc_com_ke.$(OBJ) calc_com.$(OBJ) calc_rdf.$(OBJ) calc_rms.$(OBJ) calc_rmsf.$(OBJ) \
+	calc_entropy.$(OBJ) calc_nb.$(OBJ) calc_xscore.$(OBJ) eigen.$(OBJ) qcalc.$(OBJ)
 	${FC} ${FFLAGS} ${FLIBS} $+ -o $@
 
-qdyn : md.obj
+qdyn : md.$(OBJ)
 	${FC} ${FFLAGS} ${FLIBS} $+ -o $@
 
-qdum : md_dum.obj
+qdum : md_dum.$(OBJ)
 	${FC} ${FFLAGS} ${FLIBS} $+ -o $@
 
-qdynp : md_mpi.obj qdyn_mpi.obj
+qdynp : md_mpi.$(OBJ) qdyn_mpi.$(OBJ)
 	${MPIFC} ${MPIFLAGS} ${FFLAGS} ${FLIBS} $+ -o $@
 
 
 ################################################################################
-# Object modules
+# $(OBJ)ect modules
 ################################################################################
-avetr.obj: avetr.f90 prep.obj
+avetr.$(OBJ): avetr.f90 prep.$(OBJ)
 	${FC} ${FFLAGS} -c $<
 
-calc_base.obj:calc_base.f90 topo.obj
+calc_base.$(OBJ):calc_base.f90 topo.$(OBJ)
 	${FC} ${FFLAGS} -c $<
 
-calc_chemscore.obj: calc_chemscore.f90 maskmanip.obj trj.obj prmfile.obj index.obj qatom.obj
+calc_chemscore.$(OBJ): calc_chemscore.f90 maskmanip.$(OBJ) trj.$(OBJ) prmfile.$(OBJ) index.$(OBJ) qatom.$(OBJ)
 	${FC} ${FFLAGS} -c $<
 
-calc_entropy.obj:calc_entropy.f90 calc_base.obj maskmanip.obj trj.obj calc_fit.obj
+calc_entropy.$(OBJ):calc_entropy.f90 calc_base.$(OBJ) maskmanip.$(OBJ) trj.$(OBJ) calc_fit.$(OBJ)
 	${FC} ${FFLAGS} -c $<
 
-calc_fit.obj:calc_fit.f90 calc_base.obj maskmanip.obj
+calc_fit.$(OBJ):calc_fit.f90 calc_base.$(OBJ) maskmanip.$(OBJ)
 	${FC} ${FFLAGS} -c $<
 
-calc_geom.obj:calc_geom.f90 calc_base.obj
+calc_geom.$(OBJ):calc_geom.f90 calc_base.$(OBJ)
 	${FC} ${FFLAGS} -c $<
 
-calc_nb.obj:calc_nb.f90 calc_base.obj maskmanip.obj parse.obj qatom.obj prmfile.obj
+calc_nb.$(OBJ):calc_nb.f90 calc_base.$(OBJ) maskmanip.$(OBJ) parse.$(OBJ) qatom.$(OBJ) prmfile.$(OBJ)
 	${FC} ${FFLAGS} -c $<
 
-calc_pmfscore.obj: calc_pmfscore.f90 calc_base.obj maskmanip.obj trj.obj topo.obj \
-	prmfile.obj index.obj qatom.obj misc.obj
+calc_pmfscore.$(OBJ): calc_pmfscore.f90 calc_base.$(OBJ) maskmanip.$(OBJ) trj.$(OBJ) topo.$(OBJ) \
+	prmfile.$(OBJ) index.$(OBJ) qatom.$(OBJ) misc.$(OBJ)
 	${FC} ${FFLAGS} -c $<
 
-calc_xscore.obj: calc_xscore.f90 calc_base.obj maskmanip.obj trj.obj topo.obj prmfile.obj \
-	index.obj qatom.obj misc.obj
+calc_xscore.$(OBJ): calc_xscore.f90 calc_base.$(OBJ) maskmanip.$(OBJ) trj.$(OBJ) topo.$(OBJ) prmfile.$(OBJ) \
+	index.$(OBJ) qatom.$(OBJ) misc.$(OBJ)
 	${FC} ${FFLAGS} -c $<
 
-calc_rdf.obj:calc_rdf.f90 calc_base.obj parse.obj maskmanip.obj
+calc_rdf.$(OBJ):calc_rdf.f90 calc_base.$(OBJ) parse.$(OBJ) maskmanip.$(OBJ)
 	${FC} ${FFLAGS} -c $<
 
-calc_rms.obj:calc_rms.f90 calc_base.obj maskmanip.obj
+calc_rms.$(OBJ):calc_rms.f90 calc_base.$(OBJ) maskmanip.$(OBJ)
 	${FC} ${FFLAGS} -c $<
 
-calc_com_ke.obj:calc_com_ke.f90 calc_base.obj maskmanip.obj
+calc_com_ke.$(OBJ):calc_com_ke.f90 calc_base.$(OBJ) maskmanip.$(OBJ)
 	${FC} ${FFLAGS} -c $<
 
-calc_com.obj:calc_com.f90 calc_base.obj maskmanip.obj
+calc_com.$(OBJ):calc_com.f90 calc_base.$(OBJ) maskmanip.$(OBJ)
 	${FC} ${FFLAGS} -c $<
 
-calc_rmsf.obj:calc_rmsf.f90 calc_base.obj maskmanip.obj
+calc_rmsf.$(OBJ):calc_rmsf.f90 calc_base.$(OBJ) maskmanip.$(OBJ)
 	${FC} ${FFLAGS} -c $<
 
-eigen.obj:eigen.f90
+eigen.$(OBJ):eigen.f90
 	${FC} ${FFLAGS} -c $<
 
-index.obj:index.f90
+index.$(OBJ):index.f90
 	${FC} ${FFLAGS} -c $<
 
-mask.obj:	mask.f90 topo.obj
+mask.$(OBJ):	mask.f90 topo.$(OBJ)
 	${FC} ${FFLAGS} -c $<
 
-maskmanip.obj:maskmanip.f90 mask.obj misc.obj parse.obj
+maskmanip.$(OBJ):maskmanip.f90 mask.$(OBJ) misc.$(OBJ) parse.$(OBJ)
 	${FC} ${FFLAGS} -c $<
 
-md.obj:	md.f90 mpiglob.obj qatom.obj sizes.obj trj.obj topo.obj
+md.$(OBJ):	md.f90 mpiglob.$(OBJ) qatom.$(OBJ) sizes.$(OBJ) trj.$(OBJ) topo.$(OBJ)
 	${FC} ${FFLAGS} ${FPP_FLG} -c md.f90
 
-md_dum.obj:md.f90 mpiglob.obj qatom.obj sizes.obj trj.obj topo.obj
-	${FC} ${FFLAGS} ${FPP_FLG} -DDUM -c md.f90 -o md_dum.obj
+md_dum.$(OBJ):md.f90 mpiglob.$(OBJ) qatom.$(OBJ) sizes.$(OBJ) trj.$(OBJ) topo.$(OBJ)
+	${FC} ${FFLAGS} ${FPP_FLG} -DDUM -c md.f90 -o md_dum.$(OBJ)
 
-md_mpi.obj: md.f90 mpiglob.obj qatom.obj sizes.obj topo.obj trj.obj
+md_mpi.$(OBJ): md.f90 mpiglob.$(OBJ) qatom.$(OBJ) sizes.$(OBJ) topo.$(OBJ) trj.$(OBJ)
 	${MPIFC} ${MPIFLAGS} ${FFLAGS} ${FPP_FLG} -DUSE_MPI \
-	-c md.f90 -o md_mpi.obj
+	-c md.f90 -o md_mpi.$(OBJ)
 
-misc.obj: misc.f90 sizes.obj
+misc.$(OBJ): misc.f90 sizes.$(OBJ)
 	${FC} ${FFLAGS} -c $<
 
-mpiglob.obj: mpiglob.f90 sizes.obj nrgy.obj
+mpiglob.$(OBJ): mpiglob.f90 sizes.$(OBJ) nrgy.$(OBJ)
 	${FC} ${FFLAGS} -c $<
 
-nrgy.obj: nrgy.f90 sizes.obj
+nrgy.$(OBJ): nrgy.f90 sizes.$(OBJ)
 	${FC} ${FFLAGS} -c $<
 
-parse.obj: parse.f90 misc.obj
+parse.$(OBJ): parse.f90 misc.$(OBJ)
 	${FC} ${FFLAGS} -c $<
 
-prefs.obj: prefs.f90
+prefs.$(OBJ): prefs.f90
 	${FC} ${FFLAGS} -c $<
 
-prep.obj: prep.f90 maskmanip.obj sizes.obj parse.obj prmfile.obj trj.obj index.obj prefs.obj
+prep.$(OBJ): prep.f90 maskmanip.$(OBJ) sizes.$(OBJ) parse.$(OBJ) prmfile.$(OBJ) trj.$(OBJ) index.$(OBJ) prefs.$(OBJ)
 	${FC} ${FFLAGS} -c $<
 
-prmfile.obj: prmfile.f90 misc.obj mpiglob.obj
+prmfile.$(OBJ): prmfile.f90 misc.$(OBJ) mpiglob.$(OBJ)
 	${FC} ${FFLAGS} -g -c $<
 
-qprep.obj: qprep.f90 prep.obj avetr.obj
+qprep.$(OBJ): qprep.f90 prep.$(OBJ) avetr.$(OBJ)
 	${FC} ${FFLAGS} -c $<
 
-qatom.obj: qatom.f90 misc.obj nrgy.obj prmfile.obj sizes.obj index.obj topo.obj
+qatom.$(OBJ): qatom.f90 misc.$(OBJ) nrgy.$(OBJ) prmfile.$(OBJ) sizes.$(OBJ) index.$(OBJ) topo.$(OBJ)
 	${FC} ${FFLAGS} -c $<
 
-qcalc.obj: qcalc.f90 calc_chemscore.obj calc_pmfscore.obj calc_xscore.obj trj.obj \
-	calc_base.obj calc_rms.obj calc_fit.obj calc_geom.obj
+qcalc.$(OBJ): qcalc.f90 calc_chemscore.$(OBJ) calc_pmfscore.$(OBJ) calc_xscore.$(OBJ) trj.$(OBJ) \
+	calc_base.$(OBJ) calc_rms.$(OBJ) calc_fit.$(OBJ) calc_geom.$(OBJ)
 	${FC} ${FFLAGS} ${FPP_FLG} -c qcalc.f90
 
-qdyn.obj: qdyn.f90 md.obj mpiglob.obj
+qdyn.$(OBJ): qdyn.f90 md.$(OBJ) mpiglob.$(OBJ)
 	${FC} ${FFLAGS} ${FPP_FLG} -c qdyn.f90
 
-qdyn_dum.obj: qdyn.f90 md.obj mpiglob.obj
-	${FC} ${FFLAGS} ${FPP_FLG} -DDUM -c qdyn.f90 -o qdyn_dum.obj
+qdyn_dum.$(OBJ): qdyn.f90 md.$(OBJ) mpiglob.$(OBJ)
+	${FC} ${FFLAGS} ${FPP_FLG} -DDUM -c qdyn.f90 -o qdyn_dum.$(OBJ)
 
-qdyn_mpi.obj: qdyn.f90 md_mpi.obj mpiglob.obj
+qdyn_mpi.$(OBJ): qdyn.f90 md_mpi.$(OBJ) mpiglob.$(OBJ)
 	${MPIFC} ${MPIFLAGS} ${FFLAGS} ${FPP_FLG} -DUSE_MPI \
-        -c qdyn.f90 -o qdyn_mpi.obj
+        -c qdyn.f90 -o qdyn_mpi.$(OBJ)
 
-qfep.obj: qfep.f90 nrgy.obj parse.obj
+qfep.$(OBJ): qfep.f90 nrgy.$(OBJ) parse.$(OBJ)
 	${FC} ${FFLAGS} ${FPP_FLG} -c qfep.f90
 
-sizes.obj: sizes.f90
+sizes.$(OBJ): sizes.f90
 	${FC} ${FFLAGS} -c $<
 
-topo.obj:  topo.f90 misc.obj mpiglob.obj sizes.obj
+topo.$(OBJ):  topo.f90 misc.$(OBJ) mpiglob.$(OBJ) sizes.$(OBJ)
 	${FC} ${FFLAGS} -c $<
 
-trj.obj:  trj.f90 mask.obj misc.obj
+trj.$(OBJ):  trj.f90 mask.$(OBJ) misc.$(OBJ)
 	${FC} ${FFLAGS} -c $<
 
 move1:
-	mkdir -p ..\obj ; mv *.obj *.mod ..\obj\
+	mkdir $(MDFLAGS) ../obj ; mv *.$(OBJ) *.mod ../obj/
 
 move2:
-	mkdir -p ..\bin ; mv qfep.exe qprep.exe qdyn.exe qdum.exe qcalc.exe ..\bin\
+	mkdir $(MDFLAGS) ../bin ; mv qfep$(EXE) qprep$(EXE) qdyn$(EXE) qdum$(EXE) qcalc$(EXE) ../bin/
 
 move3:
-	mkdir -p ..\bin ; mv qdynp.exe ..\bin\
+	mkdir $(MDFLAGS) ../bin ; mv qdynp$(EXE) ../bin/
 
 ################################################################################
 
