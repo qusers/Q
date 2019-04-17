@@ -32,3 +32,9 @@
 *.app
 *.dwf
 *.pdb
+
+#Q Test files
+*.dcd
+*.log
+*.re
+*.en
