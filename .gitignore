@@ -30,3 +30,9 @@
 *.exe
 *.out
 *.app
+
+# Q Tester files
+*.dcd
+*.log
+*.en
+*.re

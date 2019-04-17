@@ -1,0 +1,32 @@
+#Read the topology file/files
+rl  lig.lib
+rl  qoplsaa.lib
+
+#Read the parameter file
+rff qoplsaa.prm
+
+#Read the starting, usually precleaned pdb file.
+rp  lig.pdb
+
+ls
+lr 1
+preferences
+
+#you need to create the sulfur-sulfur bridges.
+#addbond atomnum atomnum y
+
+#Create water sphere
+boundary 1 9.911   4.984  -2.011 20.0
+solvate    9.911   4.984  -2.011 20.0 1 HOH
+
+mt lig_w
+wt lig_w.top
+
+checkbonds 6
+checkangs  6
+checktors  6
+checkimps  6
+
+wp lig_w.pdb
+y
+q
