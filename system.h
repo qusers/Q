@@ -1,6 +1,8 @@
 #ifndef __SYSTEM_H__
 #define __SYSTEM_H__
 
+//#define __PROFILING__
+
 // Coulomb's constant, TODO get this from topology file
 #define Coul 332.0716
 
@@ -51,6 +53,15 @@
 // Fixed proteins force constant.
 #define k_fix 200.0
 
+// Ratio of restrained protein shell that is free, rest is restrained. Has a default of 0.85
+// TODO: get from topology file
+#define shell_default 0.85
+
+// Outer shell of the domain, generally the same as rwater.
+// TODO: get from topology file
+#define rexcl_o 15.0
+
+// Definition of water shells
 #define wpolr_layer 3.0001
 #define drouter 0.5
 
@@ -191,10 +202,12 @@ extern cbond_t* cbonds;
 extern charge_t* charges;
 extern ccharge_t* ccharges;
 extern ctorsion_t* ctorsions;
-extern coord_t* coords;
+extern coord_t* coords_top;
 extern ngbr14_t* ngbrs14;
 extern ngbr23_t* ngbrs23;
 extern torsion_t* torsions;
+extern bool *excluded;
+extern bool *heavy;
 
 void init_coords(char* filename);
 void init_bonds(char* filename);
@@ -211,11 +224,29 @@ void init_ngbr14s(char* filename);
 void init_ngbr23s(char* filename);
 void init_catypes(char* filename);
 void init_atypes(char* filename);
+void init_excluded(char* filename);
 
 /* =============================================
  * == RESTRAINTS
  * =============================================
  */
+
+struct restrseq_t {
+    int ai;
+    int aj;
+    double k;
+    bool ih;
+    int to_center; // Flag for restraining to geom. or mass center
+};
+
+extern int n_restrseqs;
+extern restrseq_t *restrseqs;
+
+// Protein shell layout. Defined once per run
+extern bool *shell;
+
+void init_pshells();
+void init_restrseqs(char* filename);
 
 struct shell_t {
     int n_inshell;
@@ -231,14 +262,14 @@ struct shell_t {
 extern double crgQtot;
 extern double Dwmz, awmz;
 
-// Shell layout. Defined once per run
+// Water shell layout. Defined once per run
 extern double *theta, *theta0, *tdum; //array size n_waters
 extern int n_max_inshell, n_shells;
 extern int **list_sh, **nsort; // array size (n_max_inshell, n_shells)
 extern shell_t* wshells;
 
 void init_water_sphere();
-void init_shells();
+void init_wshells();
 
 /* =============================================
  * == CALCUTED IN THE INTEGRATION
@@ -268,9 +299,13 @@ struct energy_t {
     double Utot;
     double Uradx;
     double Upolx;
+    double Ufix;
+    double Ushell;
+    double Upres;
     double Urestr;
 };
 
+extern coord_t *coords;
 extern dvel_t* dvelocities;
 extern energy_t energies;
 extern double Temp;
@@ -279,7 +314,6 @@ extern double A_OO, B_OO, crg_ow, crg_hw; // TODO: don't keep this in system.cu?
 void init_velocities();
 void init_dvelocities();
 void init_energies();
-void init_water_sphere();
 
 /* =============================================
  * == INTEGRATION METHODS

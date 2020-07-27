@@ -53,7 +53,7 @@ int n_catypes;
 int n_ngbrs23;
 int n_ngbrs14;
 
-coord_t* coords;
+coord_t* coords_top;
 bond_t* bonds;
 cbond_t* cbonds;
 angle_t* angles;
@@ -68,6 +68,8 @@ atype_t* atypes;
 catype_t* catypes;
 ngbr23_t* ngbrs23;
 ngbr14_t* ngbrs14;
+bool *excluded;
+bool *heavy;
 
 void init_coords(char* filename) {
     csvfile_t file = read_csv(filename, 1, base_folder);
@@ -86,16 +88,22 @@ void init_coords(char* filename) {
     n_atoms_solute = atoi(file.buffer[1][0]);
 
     coords = (coord_t*) malloc(n_atoms * sizeof(coord_t));
+    coords_top = (coord_t*) malloc(n_atoms * sizeof(coord_t));
 
     for (int i = 0; i < file.n_lines; i++) {
-        coord_t coord;
+        coord_t coord, coord_top;
         char *eptr;
 
         coord.x = strtod(file.buffer[i+2][0], &eptr);
         coord.y = strtod(file.buffer[i+2][1], &eptr);
         coord.z = strtod(file.buffer[i+2][2], &eptr);
 
+        coord_top.x = coord.x;
+        coord_top.y = coord.y;
+        coord_top.z = coord.z;
+
         coords[i] = coord;
+        coords_top[i] = coord_top;
     }
     
     clean_csv(file);
@@ -208,6 +216,10 @@ void init_cangles(char* filename) {
     }
     
     clean_csv(file);
+}
+
+void init_excluded(char *filename) {
+    excluded = (bool*) calloc(n_atoms, sizeof(bool));
 }
 
 void init_torsions(char* filename) {
@@ -524,11 +536,13 @@ void init_atypes(char* filename) {
     clean_csv(file);
 }
 
+
 /* =============================================
  * == CALCUTED IN THE INTEGRATION
  * =============================================
  */
 
+coord_t* coords;
 vel_t* velocities;
 dvel_t* dvelocities;
 energy_t energies;
@@ -585,6 +599,11 @@ void init_xcoords() {
  * == RESTRAINTS
  * =============================================
  */
+
+bool *shell;
+
+int n_restrseqs;
+restrseq_t *restrseqs;
 
 double crgQtot = 0;
 double Dwmz, awmz;
@@ -676,6 +695,57 @@ void init_wshells() {
     }
 }
 
+void init_pshells() {
+    double mass, r2, rin2;
+
+    heavy = (bool*) malloc(n_atoms * sizeof(bool));
+    shell = (bool*) malloc(n_atoms * sizeof(bool));
+    rin2 = pow(shell_default * rexcl_o, 2);
+
+    int n_heavy = 0, n_inshell = 0;
+
+    for (int i = 0; i < n_atoms; i++) {
+        mass = catypes[atypes[i].a-1].m;
+        if (mass < 4.0) {
+            heavy[i] = false;
+        }
+        else {
+            heavy[i] = true;
+            n_heavy++;
+        }
+
+        if (heavy[i] && !excluded[i] && i < n_atoms_solute) {
+            r2 = pow(coords_top[i].x - centerX, 2) 
+                + pow(coords_top[i].y - centerY, 2)
+                + pow(coords_top[i].z - centerZ, 2);
+            if (r2 > rin2) {
+                shell[i] = true;
+                n_inshell++;
+            }
+            else {
+                shell[i] = false;
+            }
+        }
+    }
+
+    printf("n_heavy = %d, n_inshell = %d\n", n_heavy, n_inshell);
+}
+
+
+void init_restrseqs(char* filename) {
+    n_restrseqs = 1;
+    restrseqs = (restrseq_t*) malloc(1 * sizeof(restrseq_t));
+
+    restrseq_t seq;
+    seq.ai = 1;
+    seq.aj = 14;
+    seq.k = 1.0;
+    seq.ih = 0;
+    seq.to_center = 2;
+
+    restrseqs[0] = seq;
+}
+
 /* =============================================
  * == ENERGY & TEMPERATURE
  * =============================================
@@ -738,7 +808,6 @@ void write_header() {
 
     char path[1024];
     sprintf(path, "%s/output/%s", base_folder, "coords.csv");
-    puts(path);
 
     fp = fopen(path, "w");
   
@@ -806,7 +875,8 @@ void calc_integration(int iteration) {
         calc_radix_w_forces();
         calc_polx_w_forces(iteration);
     }
-
+    calc_pshell_forces();
+    calc_restrseq_forces();
 
     // Now apply leapfrog integration
     calc_leapfrog();
@@ -815,7 +885,7 @@ void calc_integration(int iteration) {
     calc_temperature();
 
     // Update totals
-    energies.Urestr = energies.Uradx + energies.Upolx;
+    energies.Urestr = energies.Uradx + energies.Upolx + energies.Ushell + energies.Ufix + energies.Upres;
     energies.Upot = energies.Uangle + energies.Ubond + energies.Utor + energies.Ucoul + energies.Uvdw + energies.Urestr;
     energies.Utot = energies.Upot + energies.Ukin;  
     
@@ -825,6 +895,9 @@ void calc_integration(int iteration) {
     printf("Utor = %f\n", energies.Utor);
     printf("Uradx = %f\n", energies.Uradx);
     printf("Upolx = %f\n", energies.Upolx);
+    printf("Ushell = %f\n", energies.Ushell);
+    printf("Ufix = %f\n", energies.Ufix);
+    printf("Upres = %f\n", energies.Upres);
     printf("Urestr = %f\n", energies.Urestr);
     printf("Ucoul = %f\n", energies.Ucoul);
     printf("Uvdw = %f\n", energies.Uvdw);
@@ -833,9 +906,11 @@ void calc_integration(int iteration) {
     printf("Utot = %f\n", energies.Utot);
 
     // Profiler info
+#ifdef __PROFILING__
     printf("Elapsed time for bonded forces: %f\n", (end_bonded-start) / (double)CLOCKS_PER_SEC );
     printf("Elapsed time for non-bonded forces: %f\n", (end_nonbonded-end_bonded) / (double)CLOCKS_PER_SEC);
-    
+#endif /* __PROFILING__ */
+
     // Write coordinates to file
     write_coords(iteration);
 }
@@ -854,10 +929,12 @@ void init_variables() {
     init_cimpropers("cimpropers.csv");
     init_coords("coords.csv");
     init_ctorsions("ctorsions.csv");
+    init_excluded("excluded.csv");
     init_impropers("impropers.csv");
     init_torsions("torsions.csv");
     init_ngbrs14("ngbrs14.csv");
     init_ngbrs23("ngbrs23.csv");
+    init_restrseqs("restrseqs.csv");
 
     // From calculation in the integration
     init_velocities();
@@ -870,6 +947,7 @@ void init_variables() {
         init_water_sphere();
         init_wshells();
     }
+    init_pshells();
 
     // Init energy
     energies.Ubond = 0;
@@ -881,6 +959,8 @@ void init_variables() {
     energies.Upot = 0;
     energies.Uradx = 0;
     energies.Upolx = 0;
+    energies.Ushell = 0;
+    energies.Ufix = 0;
     energies.Urestr = 0;
 
     // Write header to file
