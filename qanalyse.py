@@ -222,7 +222,7 @@ class Calculations(object):
             for key in Trajectory.maskPDB:
                 atom = Trajectory.maskPDB[key]
                 if atom[4] in parameters.['residue']:
-                    
+                    print(atom)
                     
 
 if __name__ == "__main__":
