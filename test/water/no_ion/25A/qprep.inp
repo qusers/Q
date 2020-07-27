@@ -1,0 +1,8 @@
+rl ../../../../FF/OPLS2015.lib
+rprm ../../../../FF/OPLS2015.prm
+boundary 1 0.0 0.0 0.0 25
+solvate 0.0 0.0 0.0 25 1 HOH
+maketop MKC_p 
+writetop water.top 
+wp water.pdb y 
+q 
