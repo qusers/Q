@@ -66,6 +66,25 @@ def euclidian_overlap(coord1, coord2, distance):
     else:
         return False
 
+def euclidian_range(coord1, coord2, dist1, dist2):
+    """
+    Calculates whether two points in space overlap within a certain distance
+    Returns:
+        Boolean
+    """
+    if ((coord1[0]-coord2[0])**2 + 
+        (coord1[1]-coord2[1])**2 + 
+        (coord1[2]-coord2[2])**2) < dist2**2:
+        
+        if ((coord1[0]-coord2[0])**2 + 
+            (coord1[1]-coord2[1])**2 + 
+            (coord1[2]-coord2[2])**2) > dist1**2:
+            return True
+
+    else:
+        print('jahoor')
+        return False
+
 def overlapping_pairs(pdbfile, reslist, include=('ATOM', 'HETATM')):
     """
     Calculates whether input pdb has overlaying atoms, based on provided residue names

@@ -22,6 +22,7 @@ class Trajectory(object):
         Trajectory.natoms = []
         Trajectory.maskPDB = {}
         Trajectory.volume = None
+        Trajectory.center = None
 
 class Mapping(object):
     """ Mapping of atom names to atom types"""
@@ -50,6 +51,7 @@ class Mapping(object):
         top = topology.Read_Topology(self.top)
         self.topology = top.parse_topology()
         Trajectory.volume = float(self.topology.radii)
+        Trajectory.center = self.topology.solvcenter
         
         resdic = {}
         attypes = {}
@@ -186,7 +188,10 @@ class Calculations(object):
                       'residue' : []
                      }
 
-        
+        center = [float(Trajectory.center[0]),
+                  float(Trajectory.center[1]),
+                  float(Trajectory.center[2])
+                 ]
         # read in parameters from file
         # probably needs some dir logic
         with open('number_density.calc') as infile:
@@ -208,23 +213,36 @@ class Calculations(object):
         # Now we need calculate whether the atom falls within a bin.
         # First construct the bins and calculate the volumes
         steps = Trajectory.volume/float(parameters['bins'])
-        maxbin = round(round(steps, 2))
+        maxbin = int(round(round(steps, 2)))
+        bins = {}
+        empty = []
+        
+        for i in range(0,len(Trajectory.frames)):
+            empty.append(0)
+
         for i in range(0,maxbin):
             r = (i + 1) * parameters['bins']
+            r0 = i * parameters['bins']
             
             # the last bin can be smaller
             if i + 1 == maxbin:
                 if r > float(Trajectory.volume):
                     r = r - (r -Trajectory.volume)
+            
+            bins[i] = [r0,r,empty]
         
-        # perform the calculations
-            # calculate number of waters in each bin
-            for key in Trajectory.maskPDB:
-                atom = Trajectory.maskPDB[key]
-                if atom[4] in parameters.['residue']:
-                    print(atom)
+        # Now loop over the frames
+        for frame in Trajectory.frames:
+            frame = int(frame[0])
+            for b in bins:    
+                for ai in Trajectory.maskPDB:
+                    if Trajectory.maskPDB[ai][4] == 'HOH':# and Trajectory.maskPDB[ai][2] == 'O':
+                        coord_index = (frame) * int(Trajectory.natoms) + ai
+                        if f.euclidian_range(center,Trajectory.coords[coord_index],bins[b][0],bins[b][1]) == True:
+                            bins[b][2][frame] += 1
+        
+        print(bins)
                     
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         prog='Py-MD',

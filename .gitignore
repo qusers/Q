@@ -40,4 +40,6 @@ qdyn
 *.re
 *.en
 
-__pycache__*
+__pycache__/*
+test/water/no_ion/*
+*.pyc

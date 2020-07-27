@@ -352,10 +352,10 @@ class Read_Topology(object):
                         Topology.radii = linesplit[1]
                         
                     if 'Solute center' in line:
-                        Topology.solucenter = [linesplit[0],linesplit[1],linesplit]
+                        Topology.solucenter = [linesplit[0],linesplit[1],linesplit[2]]
                                         
                     if 'Solvent center' in line:
-                        Topology.solvcenter = [linesplit[0],linesplit[1],linesplit]
+                        Topology.solvcenter = [linesplit[0],linesplit[1],linesplit[2]]
                         
                 if block == 33:
                     line = line.strip()

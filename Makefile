@@ -1,4 +1,4 @@
-CC = gcc
+CC = nvcc
 CFLAGS = -g
 
 all: qdyn
