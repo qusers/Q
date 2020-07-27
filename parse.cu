@@ -1,15 +1,24 @@
 #include "parse.h"
 #include <stdio.h>
+#include <unistd.h>
 
-csvfile_t read_csv(char* filename, int ext) {
+csvfile_t read_csv(char* filename, int ext, char* base_folder) {
     csvfile_t retval;
 
     retval.ext = ext;
 
+    char path[1024];
+    sprintf(path, "%s/%s", base_folder, filename);
+    if(access(path, F_OK) == -1) {
+        printf(">>> FATAL: The following file could not be found. Exiting...\n");
+        puts(path);
+        exit(EXIT_FAILURE);
+    }
+
     // File handle
     FILE * fp;
 
-    fp = fopen(filename, "r");
+    fp = fopen(path, "r");
     if (fp == NULL)
         exit(EXIT_FAILURE);
 

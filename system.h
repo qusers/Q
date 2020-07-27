@@ -44,6 +44,13 @@
 // TODO get force constant from md.inp
 #define k_wpol 20.0
 
+// Protein boundary force constant.
+// TODO get force constant from md.inp
+#define k_pshell 10.0
+
+// Fixed proteins force constant.
+#define k_fix 200.0
+
 #define wpolr_layer 3.0001
 #define drouter 0.5
 
@@ -64,6 +71,8 @@ void clean_variables();
 extern int n_atoms;
 extern int n_atoms_solute;
 extern int n_waters;
+
+extern char base_folder[1024];
 
 /* =============================================
  * == FROM TOPOLOGY FILE

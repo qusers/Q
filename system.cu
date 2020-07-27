@@ -11,6 +11,7 @@
 #include <string.h>
 #include <math.h>
 #include <time.h>
+#include <unistd.h>
 
 /* =============================================
  * == GENERAL
@@ -20,6 +21,8 @@
 int n_atoms;
 int n_atoms_solute;
 int n_waters;
+
+char base_folder[1024];
 
 double dt = time_unit * step_size;
 double tau_T = time_unit * bath_coupling;
@@ -67,7 +70,7 @@ ngbr23_t* ngbrs23;
 ngbr14_t* ngbrs14;
 
 void init_coords(char* filename) {
-    csvfile_t file = read_csv(filename, 1);
+    csvfile_t file = read_csv(filename, 1, base_folder);
 
     n_coords = 0;
     n_atoms = 0;
@@ -99,7 +102,7 @@ void init_coords(char* filename) {
 }
 
 void init_bonds(char* filename) {
-    csvfile_t file = read_csv(filename, 1);
+    csvfile_t file = read_csv(filename, 1, base_folder);
     
     n_bonds = 0;
     n_bonds_solute = 0;
@@ -127,7 +130,7 @@ void init_bonds(char* filename) {
 }
 
 void init_cbonds(char* filename) {
-    csvfile_t file = read_csv(filename, 0);
+    csvfile_t file = read_csv(filename, 0, base_folder);
 
     n_cbonds = 0;
 
@@ -153,7 +156,7 @@ void init_cbonds(char* filename) {
 }
 
 void init_angles(char* filename) {
-    csvfile_t file = read_csv(filename, 1);
+    csvfile_t file = read_csv(filename, 1, base_folder);
 
     n_angles = 0;
     n_angles_solute = 0;
@@ -182,7 +185,7 @@ void init_angles(char* filename) {
 }
 
 void init_cangles(char* filename) {
-    csvfile_t file = read_csv(filename, 0);
+    csvfile_t file = read_csv(filename, 0, base_folder);
 
     n_cangles = 0;
     
@@ -208,7 +211,7 @@ void init_cangles(char* filename) {
 }
 
 void init_torsions(char* filename) {
-    csvfile_t file = read_csv(filename, 1);
+    csvfile_t file = read_csv(filename, 1, base_folder);
 
     n_torsions = 0;
     n_torsions_solute = 0;
@@ -238,7 +241,7 @@ void init_torsions(char* filename) {
 }
 
 void init_ctorsions(char* filename) {
-    csvfile_t file = read_csv(filename, 0);
+    csvfile_t file = read_csv(filename, 0, base_folder);
     
     n_ctorsions = 0;
 
@@ -266,7 +269,7 @@ void init_ctorsions(char* filename) {
 }
 
 void init_impropers(char* filename) {
-    csvfile_t file = read_csv(filename, 1);
+    csvfile_t file = read_csv(filename, 1, base_folder);
 
     n_impropers = 0;
     n_impropers_solute = 0;
@@ -296,7 +299,7 @@ void init_impropers(char* filename) {
 }
 
 void init_cimpropers(char* filename) {
-    csvfile_t file = read_csv(filename, 0);
+    csvfile_t file = read_csv(filename, 0, base_folder);
 
     n_cimpropers = 0;
 
@@ -324,7 +327,7 @@ void init_cimpropers(char* filename) {
 }
 
 void init_charges(char* filename) {
-    csvfile_t file = read_csv(filename, 0);
+    csvfile_t file = read_csv(filename, 0, base_folder);
 
     n_charges = 0;
 
@@ -349,7 +352,7 @@ void init_charges(char* filename) {
 }
 
 void init_ccharges(char* filename) {
-    csvfile_t file = read_csv(filename, 0);
+    csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
         return;
@@ -375,7 +378,16 @@ void init_ccharges(char* filename) {
 void init_ngbrs14(char* filename) {
     FILE * fp;
 
-    fp = fopen(filename, "r");
+    char path[1024];
+    sprintf(path, "%s/%s", base_folder, filename);
+
+    if(access(path, F_OK) == -1) {
+        printf(">>> FATAL: The following file could not be found. Exiting...\n");
+        puts(path);
+        exit(EXIT_FAILURE);
+    }
+
+    fp = fopen(path, "r");
     if (fp == NULL)
         exit(EXIT_FAILURE);
 
@@ -413,7 +425,16 @@ void init_ngbrs14(char* filename) {
 void init_ngbrs23(char* filename) {
     FILE * fp;
 
-    fp = fopen(filename, "r");
+    char path[1024];
+    sprintf(path, "%s/%s", base_folder, filename);
+
+    if(access(path, F_OK) == -1) {
+        printf(">>> FATAL: The following file could not be found. Exiting...\n");
+        puts(path);
+        exit(EXIT_FAILURE);
+    }
+
+    fp = fopen(path, "r");
     if (fp == NULL)
         exit(EXIT_FAILURE);
 
@@ -449,7 +470,7 @@ void init_ngbrs23(char* filename) {
 }
 
 void init_catypes(char* filename) {
-    csvfile_t file = read_csv(filename, 0);
+    csvfile_t file = read_csv(filename, 0, base_folder);
 
     int n_catomtypes = 0;
 
@@ -480,7 +501,7 @@ void init_catypes(char* filename) {
 }
 
 void init_atypes(char* filename) {
-    csvfile_t file = read_csv(filename, 0);
+    csvfile_t file = read_csv(filename, 0, base_folder);
 
     n_atypes = 0;
 
@@ -588,7 +609,7 @@ void init_water_sphere() {
 }
 
 //ONLY call if there are actually solvent atoms, or get segfaulted
-void init_shells() {
+void init_wshells() {
     int n_inshell;
     double drs, router, ri, dr, Vshell, rshell;
     if (mu_w == 0) {
@@ -639,7 +660,7 @@ void init_shells() {
             , wshells[2].router, wshells[2].router - wshells[2].dr
         );
 
-    n_max_inshell = 251; // *= 1.5; // Make largest a little bigger just in case
+    n_max_inshell *= 1.5; // Make largest a little bigger just in case
 
     // Initialize arrays needed for bookkeeping
     theta = (double*) malloc(n_waters * sizeof(double));
@@ -654,7 +675,6 @@ void init_shells() {
         nsort[i] = (int*) malloc(n_shells * sizeof(int));
     }
 }
-
 
 /* =============================================
  * == ENERGY & TEMPERATURE
@@ -716,7 +736,11 @@ void calc_leapfrog() {
 void write_header() {
     FILE * fp;
 
-    fp = fopen("test/q5/butane/output/coords.csv", "w");
+    char path[1024];
+    sprintf(path, "%s/output/%s", base_folder, "coords.csv");
+    puts(path);
+
+    fp = fopen(path, "w");
   
     fprintf(fp, "%d\n", n_atoms);
   
@@ -729,7 +753,10 @@ void write_coords(int iteration) {
     FILE * fp;
     int i;
 
-    fp = fopen("test/q5/butane/output/coords.csv", "a");
+    char path[1024];
+    sprintf(path, "%s/output/%s", base_folder, "coords.csv");
+
+    fp = fopen(path, "a");
 
     fprintf(fp, "%d\n", iteration / 25);
     for(i = 0; i < n_atoms; i++) {
@@ -816,21 +843,21 @@ void calc_integration(int iteration) {
 
 void init_variables() {
     // From topology file
-    init_angles("test/q5/butane/angles.csv");
-    init_atypes("test/q5/butane/atypes.csv");
-    init_bonds("test/q5/butane/bonds.csv");
-    init_cangles("test/q5/butane/cangles.csv");
-    init_catypes("test/q5/butane/catypes.csv");
-    init_cbonds("test/q5/butane/cbonds.csv");
-    init_ccharges("test/q5/butane/ccharges.csv");
-    init_charges("test/q5/butane/charges.csv");
-    init_cimpropers("test/q5/butane/cimpropers.csv");
-    init_coords("test/q5/butane/coords.csv");
-    init_ctorsions("test/q5/butane/ctorsions.csv");
-    init_impropers("test/q5/butane/impropers.csv");
-    init_torsions("test/q5/butane/torsions.csv");
-    init_ngbrs14("test/q5/butane/ngbrs14.csv");
-    init_ngbrs23("test/q5/butane/ngbrs23.csv");
+    init_angles("angles.csv");
+    init_atypes("atypes.csv");
+    init_bonds("bonds.csv");
+    init_cangles("cangles.csv");
+    init_catypes("catypes.csv");
+    init_cbonds("cbonds.csv");
+    init_ccharges("ccharges.csv");
+    init_charges("charges.csv");
+    init_cimpropers("cimpropers.csv");
+    init_coords("coords.csv");
+    init_ctorsions("ctorsions.csv");
+    init_impropers("impropers.csv");
+    init_torsions("torsions.csv");
+    init_ngbrs14("ngbrs14.csv");
+    init_ngbrs23("ngbrs23.csv");
 
     // From calculation in the integration
     init_velocities();
@@ -841,7 +868,7 @@ void init_variables() {
     n_waters = (n_atoms - n_atoms_solute) / 3;
     if (n_waters > 0) {
         init_water_sphere();
-        init_shells();
+        init_wshells();
     }
 
     // Init energy
