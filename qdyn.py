@@ -305,7 +305,8 @@ class Run_Dynamics(object):
     
     def construct_inputs(self):
         for key in MD.distrest:
-            print(key, MD.distrest[key])
+            continue
+            #print(key, MD.distrest[key])
         return None
     
 if __name__ == "__main__":

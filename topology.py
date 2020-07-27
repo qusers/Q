@@ -38,6 +38,7 @@ class Topology():
         Topology.solucenter = []
         Topology.radii = None
         Topology.exclusion = None
+        Topology.excluded = []
 
 class Read_Topology(object):
     """
@@ -355,6 +356,17 @@ class Read_Topology(object):
                                         
                     if 'Solvent center' in line:
                         Topology.solvcenter = [linesplit[0],linesplit[1],linesplit]
+                        
+                if block == 33:
+                    line = line.strip()
+                    for l in line:
+                        l = l.strip()
+                        if l == 'F':
+                            l = '0'
+                        else:
+                            l = '1'
+
+                        Topology.excluded.append(l)
         
         # header construct
         Topology.header = header
@@ -430,6 +442,9 @@ class Read_Topology(object):
                         
         # Atomtype names, matches with atype
         Topology.anames = anames
+        
+        # Join exclusions
+        Topology.excluded = ''.join(Topology.excluded)
         
         return(Topology)
         
