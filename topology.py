@@ -38,6 +38,7 @@ class Topology():
         Topology.solucenter = []
         Topology.radii = None
         Topology.exclusion = None
+        Topology.excluded = []
 
 class Read_Topology(object):
     """
@@ -355,6 +356,17 @@ class Read_Topology(object):
                                         
                     if 'Solvent center' in line:
                         Topology.solvcenter = [linesplit[0],linesplit[1],linesplit]
+                        
+                if block == 33:
+                    line = line.strip()
+                    for l in line:
+                        l = l.strip()
+                        if l == 'F':
+                            l = '0'
+                        else:
+                            l = '1'
+
+                        Topology.excluded.append(l)
         
         # header construct
         Topology.header = header
@@ -431,6 +443,9 @@ class Read_Topology(object):
         # Atomtype names, matches with atype
         Topology.anames = anames
         
+        # Join exclusions
+        Topology.excluded = ''.join(Topology.excluded)
+        
         return(Topology)
         
 class Write_Topology(object):        
@@ -463,9 +478,10 @@ class Write_Topology(object):
                 outfile.write('{};{}\n'.format(line[0],line[1]))
                 
         #Topology.catypes = {}
+        keys = sorted(Topology.catypes.keys())
         with open(csvdir+'/catypes.csv','w') as outfile:
             outfile.write('{}\n'.format(len(Topology.catypes)))
-            for key in Topology.catypes:
+            for key in keys:
                 outfile.write('{};{};{};{};{};{};{};{}\n'.format(key,
                                                                  Topology.catypes[key][0],
                                                                  Topology.catypes[key][1],
@@ -484,9 +500,10 @@ class Write_Topology(object):
                 outfile.write('{};{};{}\n'.format(line[0],line[1],line[2]))      
                 
         #Topology.cbonds = {}
+        keys = sorted(Topology.cbonds.keys())
         with open(csvdir+'/cbonds.csv','w') as outfile:
             outfile.write('{}\n'.format(len(Topology.cbonds)))
-            for key in Topology.cbonds:
+            for key in keys:
                 outfile.write('{};{};{}\n'.format(key,
                                                   Topology.cbonds[key][0],
                                                   Topology.cbonds[key][1]
@@ -503,9 +520,10 @@ class Write_Topology(object):
                                                      line[3]))  
                 
         #Topology.cangles = {}
+        keys = sorted(Topology.cangles.keys())        
         with open(csvdir+'/cangles.csv','w') as outfile:
             outfile.write('{}\n'.format(len(Topology.cangles)))
-            for key in Topology.cangles:
+            for key in keys:
                 outfile.write('{};{};{}\n'.format(key,
                                                   Topology.cangles[key][0],
                                                   Topology.cangles[key][1]
@@ -524,9 +542,10 @@ class Write_Topology(object):
                                                     ))
                 
         #Topology.ctorsions = {}
+        keys = sorted(Topology.ctorsions.keys())                
         with open(csvdir+'/ctorsions.csv','w') as outfile:
             outfile.write('{}\n'.format(len(Topology.ctorsions)))
-            for key in Topology.ctorsions:
+            for key in keys:
                 outfile.write('{};{};{};{}\n'.format(key,
                                                      Topology.ctorsions[key][0],
                                                      Topology.ctorsions[key][1],
@@ -545,9 +564,10 @@ class Write_Topology(object):
                                                         line[4],
                                                     ))
         #Topology.cimpropers = {}
+        keys = sorted(Topology.cimpropers.keys())                        
         with open(csvdir+'/cimpropers.csv','w') as outfile:
             outfile.write('{}\n'.format(len(Topology.cimpropers)))
-            for key in Topology.cimpropers:
+            for key in keys:
                 outfile.write('{};{};{};{}\n'.format(key,
                                                      Topology.cimpropers[key][0],
                                                      Topology.cimpropers[key][1],
@@ -562,9 +582,10 @@ class Write_Topology(object):
                 outfile.write('{};{}\n'.format(line[0],line[1]))
                 
         #Topology.ccharges = {}
+        keys = sorted(Topology.ccharges.keys())                                
         with open(csvdir+'/ccharges.csv','w') as outfile:
             outfile.write('{}\n'.format(len(Topology.ccharges)))
-            for key in Topology.ccharges:
+            for key in keys:
                 outfile.write('{};{}\n'.format(key,Topology.ccharges[key]))
                 
         #Topology.ngbr14 = []
@@ -590,3 +611,7 @@ class Write_Topology(object):
             outfile.write('{}\n'.format(len(Topology.ngbr23long)))
             for line in Topology.ngbr23long:
                 outfile.write('{};{}\n'.format(line[0],line[1]))
+                
+        #Topology.excluded = []
+        with open(csvdir+'/excluded.csv','w') as outfile:
+            outfile.write(Topology.excluded + '\n')
