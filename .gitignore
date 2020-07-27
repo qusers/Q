@@ -2,6 +2,7 @@
 *.d
 
 # Compiled Object files
+qdyn
 *.slo
 *.lo
 *.o

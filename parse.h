@@ -10,7 +10,7 @@ struct csvfile_t {
     int ext;
 };
 
-csvfile_t read_csv(char *filename, int ext);
+csvfile_t read_csv(char *filename, int ext, char *base_folder);
 void clean_csv(csvfile_t file);
 
 #endif /* __PARSE_H__ */
