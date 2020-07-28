@@ -82,7 +82,6 @@ def euclidian_range(coord1, coord2, dist1, dist2):
             return True
 
     else:
-        print('jahoor')
         return False
 
 def overlapping_pairs(pdbfile, reslist, include=('ATOM', 'HETATM')):
