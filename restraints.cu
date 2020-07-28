@@ -20,11 +20,11 @@ void calc_radix_w_forces() {
     
     // Calculate erst and dv. Note all atoms except oxygens are skipped
     for (int i = n_atoms_solute; i < n_atoms; i += 3) {
-        dr.x = coords[i].x - centerX;
-        dr.y = coords[i].y - centerY;
-        dr.z = coords[i].z - centerZ;
+        dr.x = coords[i].x - topo.solvent_center.x;
+        dr.y = coords[i].y - topo.solvent_center.y;
+        dr.z = coords[i].z - topo.solvent_center.z;
         b = sqrt(pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2));
-        db = b - (rwater - shift);
+        db = b - (topo.solvent_radius - shift);
 
         if (db > 0) {
             ener = 0.5 * k_wsphere * pow(db, 2) - Dwmz;
@@ -84,9 +84,9 @@ void calc_polx_w_forces(int iteration) {
         rmu.y /= rm;
         rmu.z /= rm;
 
-        rcu.x = coords[wi].x - centerX;
-        rcu.y = coords[wi].y - centerY;
-        rcu.z = coords[wi].z - centerZ;
+        rcu.x = coords[wi].x - topo.solvent_center.x;
+        rcu.y = coords[wi].y - topo.solvent_center.y;
+        rcu.z = coords[wi].z - topo.solvent_center.z;
         rc = sqrt(pow(rcu.x, 2) + pow(rcu.y, 2) + pow(rcu.z, 2));
         rcu.x /= rc;
         rcu.y /= rc;
@@ -174,9 +174,9 @@ void calc_polx_w_forces(int iteration) {
             rmu.y /= rm;
             rmu.z /= rm;
     
-            rcu.x = coords[wi].x - centerX;
-            rcu.y = coords[wi].y - centerY;
-            rcu.z = coords[wi].z - centerZ;
+            rcu.x = coords[wi].x - topo.solvent_center.x;
+            rcu.y = coords[wi].y - topo.solvent_center.y;
+            rcu.z = coords[wi].z - topo.solvent_center.z;
             rc = sqrt(pow(rcu.x, 2) + pow(rcu.y, 2) + pow(rcu.z, 2));
             rcu.x /= rc;
             rcu.y /= rc;
@@ -232,7 +232,6 @@ void calc_pshell_forces() {
                 k = k_fix;
             }
             else {
-                printf("i = %d\n", i);
                 k = k_pshell;
             }
             dr.x = coords[i].x - coords_top[i].x;

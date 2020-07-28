@@ -182,8 +182,8 @@ shell_t* wshells;
  */
 
 void init_water_sphere() {
-    Dwmz = 0.26 * exp(-0.19 * (rwater - 15)) + 0.74;
-    awmz = 0.2 / (1 + exp(0.4 * (rwater - 25))) + 0.3;
+    Dwmz = 0.26 * exp(-0.19 * (topo.solvent_radius - 15)) + 0.74;
+    awmz = 0.2 / (1 + exp(0.4 * (topo.solvent_radius - 25))) + 0.3;
 
     printf("Dwmz = %f, awmz = %f\n", Dwmz, awmz);
 }
@@ -210,7 +210,7 @@ void init_wshells() {
 
     printf("n_shells = %d\n", n_shells);
 
-    router = rwater;
+    router = topo.solvent_radius;
     n_max_inshell = 0;
 
     for (int i = 0; i < n_shells; i++) {
@@ -261,7 +261,7 @@ void init_pshells() {
 
     heavy = (bool*) malloc(n_atoms * sizeof(bool));
     shell = (bool*) malloc(n_atoms * sizeof(bool));
-    rin2 = pow(shell_default * rexcl_o, 2);
+    rin2 = pow(shell_default * topo.exclusion_radius, 2);
 
     int n_heavy = 0, n_inshell = 0;
 
@@ -276,9 +276,9 @@ void init_pshells() {
         }
 
         if (heavy[i] && !excluded[i] && i < n_atoms_solute) {
-            r2 = pow(coords_top[i].x - centerX, 2) 
-                + pow(coords_top[i].y - centerY, 2)
-                + pow(coords_top[i].z - centerZ, 2);
+            r2 = pow(coords_top[i].x - topo.solute_center.x, 2) 
+                + pow(coords_top[i].y - topo.solute_center.y, 2)
+                + pow(coords_top[i].z - topo.solute_center.z, 2);
             if (r2 > rin2) {
                 shell[i] = true;
                 n_inshell++;
@@ -489,6 +489,8 @@ void calc_integration_step(int iteration) {
 
 void init_variables() {
     // From topology file
+    init_topo("topo.csv");
+    
     init_angles("angles.csv");
     init_atypes("atypes.csv");
     init_bonds("bonds.csv");

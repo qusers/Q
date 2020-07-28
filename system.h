@@ -31,13 +31,6 @@
 // TODO get bath_coupling from md.inp
 #define c_bath_coupling 1.0
 
-// Center of the water sphere
-// TODO get sphere coordinates from topology
-#define centerX 0.0
-#define centerY 0.0
-#define centerZ 0.0
-#define rwater 15.000
-
 // Surface inward harmonic force constant. Has a default of 60
 // TODO get force constant from md.inp
 #define k_wsphere 60.0
@@ -56,10 +49,6 @@
 // Ratio of restrained protein shell that is free, rest is restrained. Has a default of 0.85
 // TODO: get from md.inp
 #define shell_default 0.85
-
-// Outer shell of the domain, generally the same as rwater.
-// TODO: get from topology file
-#define rexcl_o 15.0
 
 // Definition of water shells
 #define wpolr_layer 3.0001

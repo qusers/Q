@@ -24,6 +24,9 @@ void init_md(char *filename);
  * == FROM TOPOLOGY FILE
  * =============================================
  */
+
+void init_topo(char *filename);
+
 void init_coords(char* filename);
 void init_bonds(char* filename);
 void init_cbonds(char* filename);

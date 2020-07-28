@@ -280,15 +280,15 @@ void init_topo(char *filename) {
 
     coord_t solute_center, solvent_center;
 
-    topo.solvent_type = atoi(file.buffer[0][0]);
-    topo.exclusion_radius = strtod(file.buffer[1][0], &eptr);
-    topo.solvent_radius = strtod(file.buffer[2][0], &eptr);
-    solute_center.x = strtod(file.buffer[3][0], &eptr);
-    solute_center.y = strtod(file.buffer[4][0], &eptr);
-    solute_center.z = strtod(file.buffer[5][0], &eptr);
-    solvent_center.x = strtod(file.buffer[6][0], &eptr);
-    solvent_center.y = strtod(file.buffer[7][0], &eptr);
-    solvent_center.z = strtod(file.buffer[8][0], &eptr);
+    topo.solvent_type = atoi(file.buffer[1][0]);
+    topo.exclusion_radius = strtod(file.buffer[2][0], &eptr);
+    topo.solvent_radius = strtod(file.buffer[3][0], &eptr);
+    solute_center.x = strtod(file.buffer[4][0], &eptr);
+    solute_center.y = strtod(file.buffer[4][1], &eptr);
+    solute_center.z = strtod(file.buffer[4][2], &eptr);
+    solvent_center.x = strtod(file.buffer[5][0], &eptr);
+    solvent_center.y = strtod(file.buffer[5][1], &eptr);
+    solvent_center.z = strtod(file.buffer[5][2], &eptr);
 
     topo.solute_center = solute_center;
     topo.solvent_center = solvent_center;
