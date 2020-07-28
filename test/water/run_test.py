@@ -15,7 +15,7 @@ def write_calc(sphere):
 if cleanup == True:
     os.system('rm -r no_ion/*/water')
     os.system('rm no_ion/*/md.log')
-    os.system('rm no_ion/*.out')
+    os.system('rm no_ion/*/*.out')
 
 for sphere in spheres:
     inputs = curdir + '/no_ion/' + sphere + '/water'
@@ -23,6 +23,7 @@ for sphere in spheres:
     write_calc(sphere)    
     os.system('python ../../../../qdyn.py -t water.top')
     os.mkdir('water/output')
+    print('Running test {} '.format(sphere))
     os.system('../../../../qdyn ' + inputs + ' > md.log')
     os.system(numb_dens + ' > numb_dens.out')
     os.chdir(curdir)

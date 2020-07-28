@@ -399,7 +399,7 @@ void write_coords(int iteration) {
 void calc_integration() {
     init_variables();
 
-    for (int i = 0; i < 11; i++) {
+    for (int i = 0; i < 5001; i++) {
         calc_integration_step(i);
     }
     

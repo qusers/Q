@@ -40,6 +40,7 @@ class Topology():
         Topology.exclusion = None
         Topology.solvtype = None
         Topology.excluded = []
+        Topology.topdir = None
 
 class Read_Topology(object):
     """
@@ -462,6 +463,7 @@ class Write_Topology(object):
         
     def write_csv(self):
         csvdir = self.workdir + '/' + self.topology_file[:-4]
+        Topology.topdir = csvdir
         if path.exists(csvdir) == True:
             os.system('rm -r ' + csvdir)
         
