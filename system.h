@@ -2,6 +2,7 @@
 #define __SYSTEM_H__
 
 //#define __PROFILING__
+//#define DEBUG
 
 // Coulomb's constant, TODO get this from topology file
 #define Coul 332.0716
@@ -77,8 +78,8 @@ struct md_t {
     double shell_force;  // Note: this is for the pshell
     // [solvent]
     double radial_force;
-    bool polarization;
-    double polarization_force;
+    bool polarisation;
+    double polarisation_force;
     // [intervals]
     int non_bond;
     int output;

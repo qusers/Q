@@ -157,10 +157,10 @@ void calc_polx_w_forces(int iteration) {
             if (theta0[il] > M_PI) theta0[il] = M_PI;
 
             avtdum += theta[ii];
-            ener = .5 * md.polarization_force * pow(theta[ii] - theta0[il] + wshells[is].theta_corr, 2);
+            ener = .5 * md.polarisation_force * pow(theta[ii] - theta0[il] + wshells[is].theta_corr, 2);
             energies.Upolx += ener;
 
-            dv = md.polarization_force * (theta[ii] - theta0[il] + wshells[is].theta_corr);
+            dv = md.polarisation_force * (theta[ii] - theta0[il] + wshells[is].theta_corr);
 
             wi = n_atoms_solute + 3 * ii;
 

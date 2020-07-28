@@ -23,9 +23,7 @@ int n_atoms_solute;
 int n_waters;
 
 char base_folder[1024];
-
-double dt = time_unit * md.stepsize;
-double tau_T = time_unit * md.bath_coupling;
+double dt, tau_T;
 
 /* =============================================
  * == FROM MD FILE
@@ -334,6 +332,7 @@ void calc_temperature() {
     printf("Temp = %f\n", Temp);
     
     Tscale = sqrt(1 + (dt / tau_T) * (md.temperature / Temp - 1.0));
+    printf("Tscale = %f, tau_T = %f, Temp = %f\n", Tscale, tau_T, Temp);
 }
 
 /* =============================================
@@ -443,7 +442,7 @@ void calc_integration_step(int iteration) {
     // Calculate restraints
     if (n_waters > 0) {
         calc_radix_w_forces();
-        if (md.polarization) {
+        if (md.polarisation) {
             calc_polx_w_forces(iteration);
         }
     }
@@ -491,6 +490,9 @@ void calc_integration_step(int iteration) {
 void init_variables() {
     // From MD file
     init_md("md.csv");
+
+    dt = time_unit * md.stepsize;
+    tau_T = time_unit * md.bath_coupling;
 
     // From topology file
     init_topo("topo.csv");
