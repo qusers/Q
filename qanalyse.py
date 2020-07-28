@@ -282,10 +282,9 @@ class Calculations(object):
         sdv_data = np.std(data,0)
             
         for i in range(0, len(avg_data)):
-            print('bin:   {}   avg:    {} ± {}'.format(i,
-                                                       avg_data[i],
-                                                       sdv_data[i])
-        print(sdv_data)
+            print('bin:   {}   avg: {:.4f} +/- {:.4f}'.format(i,
+                                                             avg_data[i],
+                                                             sdv_data[i]))
             
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
