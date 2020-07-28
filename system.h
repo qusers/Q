@@ -29,7 +29,7 @@
 
 // Coupling constant used in temperature calculation
 // TODO get bath_coupling from md.inp
-#define bath_coupling 1.0
+#define c_bath_coupling 1.0
 
 // Center of the water sphere
 // TODO get sphere coordinates from topology
@@ -84,6 +84,50 @@ extern int n_atoms_solute;
 extern int n_waters;
 
 extern char base_folder[1024];
+
+/* =============================================
+ * == FROM MD FILE
+ * =============================================
+ */
+
+struct md_t {
+    // [MD]
+    int steps;
+    double stepsize;
+    double temperature;
+    char thermostat[40];
+    double bath_coupling;
+    int random_seed;
+    double initial_temperature;
+    bool shake_solvent;
+    bool shake_hydrogens;
+    bool lrf;
+    // [cut-offs]
+    double solute_solute;
+    double solvent_solvent;
+    double solute_solvent;
+    double q_atom;
+    // [sphere]
+    double shell_radius;
+    double shell_force;
+    // [solvent]
+    double radial_force;
+    bool polarization;
+    double polarization_force;
+    // [intervals]
+    int non_bond;
+    int output;
+    int energy;
+    int trajectory;
+    // [trajectory_atoms]
+    // [lambdas]
+    // [sequence_restraints]
+    // [distance_restraints]
+    // [angle_restraints]
+    // [wall_restraints]
+};
+
+extern md_t md;
 
 /* =============================================
  * == FROM TOPOLOGY FILE
@@ -227,6 +271,14 @@ void init_atypes(char* filename);
 void init_excluded(char* filename);
 
 /* =============================================
+ * == Q ATOMS
+ * =============================================
+ */
+
+extern int n_lambdas;
+extern double *lambdas;
+
+/* =============================================
  * == RESTRAINTS
  * =============================================
  */
@@ -239,8 +291,46 @@ struct restrseq_t {
     int to_center; // Flag for restraining to geom. or mass center
 };
 
+struct restrpos_t {
+    int a;
+    int ipsi;
+    coord_t x;
+    coord_t k;
+};
+
+struct restrdis_t {
+    int ai, aj;
+    int ipsi;
+    double d1, d2;
+    double k;
+    char itext[20], jtext[20];
+};
+
+struct restrang_t {
+    int ai, aj, ak;
+    int ipsi;
+    double ang;
+    double k;
+};
+
+struct restrwall_t {
+    int ai, aj;
+    double d, k, aMorse, dMorse;
+    bool ih;
+};
+
 extern int n_restrseqs;
+extern int n_restrspos;
+extern int n_restrdists;
+extern int n_restrangs;
+extern int n_restrwalls;
+
 extern restrseq_t *restrseqs;
+extern restrpos_t *restrspos;
+extern restrdis_t *restrdists;
+extern restrang_t *restrangs;
+extern restrwall_t *restrwalls;
+
 
 // Protein shell layout. Defined once per run
 extern bool *shell;
