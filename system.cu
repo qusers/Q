@@ -78,6 +78,8 @@ ngbr14_t* ngbrs14;
 bool *excluded;
 bool *heavy;
 
+topo_t topo;
+
 /* =============================================
  * == Q ATOMS
  * =============================================
@@ -394,7 +396,17 @@ void write_coords(int iteration) {
     fclose (fp);
 }
 
-void calc_integration(int iteration) {
+void calc_integration() {
+    init_variables();
+
+    for (int i = 0; i < 11; i++) {
+        calc_integration_step(i);
+    }
+    
+    clean_variables();
+}
+
+void calc_integration_step(int iteration) {
     printf("================================================\n");
     printf("== STEP %d\n", iteration);
     printf("================================================\n");

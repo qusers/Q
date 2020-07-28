@@ -12,7 +12,7 @@
 // Maxwell temperature, TODO get this from md.inp
 #define Tmaxw 300.0
 
-// Initial temperature, TODO get this from md.inp
+// Target temperature, TODO get this from md.inp
 #define Temp0 300.0
 
 // Fortran max allowed line width, used in neighbor list
@@ -54,7 +54,7 @@
 #define k_fix 200.0
 
 // Ratio of restrained protein shell that is free, rest is restrained. Has a default of 0.85
-// TODO: get from topology file
+// TODO: get from md.inp
 #define shell_default 0.85
 
 // Outer shell of the domain, generally the same as rwater.
@@ -230,6 +230,16 @@ struct ngbr14_t {
     int ai;
     int aj;
 };
+
+struct topo_t {
+    int solvent_type;
+    double exclusion_radius;
+    double solvent_radius;
+    coord_t solute_center;
+    coord_t solvent_center;
+};
+
+extern topo_t topo;
 
 extern int n_angles;
 extern int n_angles_solute;
@@ -408,6 +418,7 @@ void init_energies();
  * =============================================
  */
 
-void calc_integration(int iteration);
+void calc_integration();
+void calc_integration_step(int iteration);
 
 #endif /* __SYSTEM_H__ */
