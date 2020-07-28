@@ -6,6 +6,7 @@ import sys
 import itertools
 from os import path
 import shutil
+import json
 
 import IO
 import functions as f
@@ -103,16 +104,20 @@ class Prepare_Topology(object):
         write_top.write_csv()
 
 class Run_Dynamics(object):
-    def __init__(self,top,inp,qdir):
+    def __init__(self,top,inp,qdir,json):
         self.top = top
         self.inp = inp
         self.qdir = qdir
         self.md = MD()
+        self.write_json = json
         
         # Run stuff
         if self.qdir != None:
             print("reading Q input files in {}".format(self.qdir))
             self.read_q_inputs()
+            
+        if self.write_json == True:
+            self.write_MD()
             
         # write the inputs for the C code, based on the MD class
         self.construct_inputs()
@@ -309,6 +314,14 @@ class Run_Dynamics(object):
             #print(key, MD.distrest[key])
         return None
     
+    def write_MD(self):
+        print("Writing out json files of the MD inputs")
+        #with open('test.txt', 'w') as outfile:
+        #    json.dump(MD.__dict__.copy(),outfile)
+        obj = MD()
+        print(dir(obj))
+        print([a for a in dir(obj) if not a.startswith('__')])
+    
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         prog='Py-MD',
@@ -333,10 +346,17 @@ if __name__ == "__main__":
                         default = None,
                         required = False,                        
                         help = "Directory with standard Q inputfiles")
+            
+    parser.add_argument('-wp', '--wpython',
+                        dest = "wpython",
+                        default = False,
+                        action = 'store_true',                        
+                        help = "Toggle to write out python readable json files of the md")
     
     args = parser.parse_args()
     Prepare_Topology(top = args.top)
     Run_Dynamics(top = args.top,
                  inp = args.inp,
-                 qdir = args.qdir
+                 qdir = args.qdir,
+                 json = args.wpython
                 )
