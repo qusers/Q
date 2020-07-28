@@ -20,11 +20,11 @@ void calc_radix_w_forces() {
     
     // Calculate erst and dv. Note all atoms except oxygens are skipped
     for (int i = n_atoms_solute; i < n_atoms; i += 3) {
-        dr.x = coords[i].x - centerX;
-        dr.y = coords[i].y - centerY;
-        dr.z = coords[i].z - centerZ;
+        dr.x = coords[i].x - topo.solvent_center.x;
+        dr.y = coords[i].y - topo.solvent_center.y;
+        dr.z = coords[i].z - topo.solvent_center.z;
         b = sqrt(pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2));
-        db = b - (rwater - shift);
+        db = b - (topo.solvent_radius - shift);
 
         if (db > 0) {
             ener = 0.5 * k_wsphere * pow(db, 2) - Dwmz;
@@ -84,9 +84,9 @@ void calc_polx_w_forces(int iteration) {
         rmu.y /= rm;
         rmu.z /= rm;
 
-        rcu.x = coords[wi].x - centerX;
-        rcu.y = coords[wi].y - centerY;
-        rcu.z = coords[wi].z - centerZ;
+        rcu.x = coords[wi].x - topo.solvent_center.x;
+        rcu.y = coords[wi].y - topo.solvent_center.y;
+        rcu.z = coords[wi].z - topo.solvent_center.z;
         rc = sqrt(pow(rcu.x, 2) + pow(rcu.y, 2) + pow(rcu.z, 2));
         rcu.x /= rc;
         rcu.y /= rc;
@@ -174,9 +174,9 @@ void calc_polx_w_forces(int iteration) {
             rmu.y /= rm;
             rmu.z /= rm;
     
-            rcu.x = coords[wi].x - centerX;
-            rcu.y = coords[wi].y - centerY;
-            rcu.z = coords[wi].z - centerZ;
+            rcu.x = coords[wi].x - topo.solvent_center.x;
+            rcu.y = coords[wi].y - topo.solvent_center.y;
+            rcu.z = coords[wi].z - topo.solvent_center.z;
             rc = sqrt(pow(rcu.x, 2) + pow(rcu.y, 2) + pow(rcu.z, 2));
             rcu.x /= rc;
             rcu.y /= rc;
@@ -217,5 +217,132 @@ void calc_polx_w_forces(int iteration) {
 
         wshells[is].avtheta     += avtdum / (double) wshells[is].n_inshell;
         wshells[is].avn_inshell += wshells[is].n_inshell;
+    }
+}
+
+void calc_pshell_forces() {
+    coord_t dr;
+    double k, r2, ener;
+
+    energies.Ushell = 0;
+    energies.Ufix = 0;
+    for (int i = 0; i < n_atoms_solute; i++) {
+        if (excluded[i] || shell[i]) {
+            if (excluded[i]) {
+                k = k_fix;
+            }
+            else {
+                k = k_pshell;
+            }
+            dr.x = coords[i].x - coords_top[i].x;
+            dr.y = coords[i].y - coords_top[i].y;
+            dr.z = coords[i].z - coords_top[i].z;
+            r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
+            ener = 0.5 * k * r2;
+
+            if (excluded[i]) energies.Ufix += ener;
+            if (shell[i]) energies.Ushell += ener;
+
+            dvelocities[i].x += k * dr.x;
+            dvelocities[i].y += k * dr.y;
+            dvelocities[i].z += k * dr.z;
+        }
+    }
+}
+
+void calc_restrseq_forces() {
+    double k, mass, totmass;
+    coord_t dr;
+    double r2, ener;
+
+    energies.Upres = 0;
+    for (int s = 0; s < n_restrseqs; s++) {
+        k = restrseqs[s].k;
+
+        dr.x = 0;
+        dr.y = 0;
+        dr.z = 0;
+        int n_ctr = 0;
+        totmass = 0;
+
+        // Geometric center
+        if (restrseqs[s].to_center == 1) {
+            for (int i = restrseqs[s].ai-1; i < restrseqs[s].aj-1; i++) {
+                if (heavy[i] || restrseqs[s].ih) {
+                    n_ctr++;
+                    dr.x += (coords[i].x - coords_top[i].x);
+                    dr.y += (coords[i].y - coords_top[i].y);
+                    dr.z += (coords[i].z - coords_top[i].z);
+                }
+            }
+
+            if (n_ctr > 0) {
+                dr.x /= n_ctr;
+                dr.y /= n_ctr;
+                dr.z /= n_ctr;
+                r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
+                ener = .5 * k * r2;
+                energies.Upres += ener;
+
+                for (int i = restrseqs[s].ai-1; i < restrseqs[s].aj-1; i++) {
+                    if (heavy[i] || restrseqs[s].ih) {
+                        mass = catypes[atypes[i].code - 1].m;
+                        dvelocities[i].x += (k * dr.x * mass / 12.010);
+                        dvelocities[i].y += (k * dr.y * mass / 12.010);
+                        dvelocities[i].z += (k * dr.z * mass / 12.010);
+                    }
+                }
+            }
+        }
+
+        // Mass center
+        else if (restrseqs[s].to_center == 2) {
+            for (int i = restrseqs[s].ai-1; i < restrseqs[s].aj-1; i++) {
+                if (heavy[i] || restrseqs[i].ih) {
+                    mass = catypes[atypes[i].code-1].m;
+                    totmass += mass;
+                    dr.x += (coords[i].x - coords_top[i].x) * mass;
+                    dr.y += (coords[i].y - coords_top[i].y) * mass;
+                    dr.z += (coords[i].z - coords_top[i].z) * mass;
+                }
+            }
+
+            if (totmass > 0) {
+                dr.x /= totmass;
+                dr.y /= totmass;
+                dr.z /= totmass;
+                r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
+                ener = .5 * k * r2;
+                energies.Upres += ener;
+
+                for (int i = restrseqs[s].ai-1; i < restrseqs[s].aj-1; i++) {
+                    if (heavy[i] || restrseqs[s].ih) {
+                        mass = catypes[atypes[i].code - 1].m;
+                        dvelocities[i].x += k * dr.x;
+                        dvelocities[i].y += k * dr.y;
+                        dvelocities[i].z += k * dr.z;
+                    }
+                }
+            }
+        }
+
+        // Restrain to topology coordinate
+        else {
+            for (int i = restrseqs[s].ai-1; i < restrseqs[s].aj-1; i++) {
+                if (heavy[i] || restrseqs[s].ih) {
+                    dr.x = coords[i].x - coords_top[i].x;
+                    dr.y = coords[i].y - coords_top[i].y;
+                    dr.z = coords[i].z - coords_top[i].z;
+
+                    r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
+                    ener = .5 * k * r2;
+                    energies.Upres += ener;
+
+                    dvelocities[i].x += k * dr.x;
+                    dvelocities[i].y += k * dr.y;
+                    dvelocities[i].z += k * dr.z;
+                }
+            }
+        }
     }
 }

@@ -1,6 +1,8 @@
 #ifndef __SYSTEM_H__
 #define __SYSTEM_H__
 
+//#define __PROFILING__
+
 // Coulomb's constant, TODO get this from topology file
 #define Coul 332.0716
 
@@ -10,7 +12,7 @@
 // Maxwell temperature, TODO get this from md.inp
 #define Tmaxw 300.0
 
-// Initial temperature, TODO get this from md.inp
+// Target temperature, TODO get this from md.inp
 #define Temp0 300.0
 
 // Fortran max allowed line width, used in neighbor list
@@ -27,14 +29,7 @@
 
 // Coupling constant used in temperature calculation
 // TODO get bath_coupling from md.inp
-#define bath_coupling 1.0
-
-// Center of the water sphere
-// TODO get sphere coordinates from topology
-#define centerX 0.0
-#define centerY 0.0
-#define centerZ 0.0
-#define rwater 15.000
+#define c_bath_coupling 1.0
 
 // Surface inward harmonic force constant. Has a default of 60
 // TODO get force constant from md.inp
@@ -51,6 +46,11 @@
 // Fixed proteins force constant.
 #define k_fix 200.0
 
+// Ratio of restrained protein shell that is free, rest is restrained. Has a default of 0.85
+// TODO: get from md.inp
+#define shell_default 0.85
+
+// Definition of water shells
 #define wpolr_layer 3.0001
 #define drouter 0.5
 
@@ -73,6 +73,50 @@ extern int n_atoms_solute;
 extern int n_waters;
 
 extern char base_folder[1024];
+
+/* =============================================
+ * == FROM MD FILE
+ * =============================================
+ */
+
+struct md_t {
+    // [MD]
+    int steps;
+    double stepsize;
+    double temperature;
+    char thermostat[40];
+    double bath_coupling;
+    int random_seed;
+    double initial_temperature;
+    bool shake_solvent;
+    bool shake_hydrogens;
+    bool lrf;
+    // [cut-offs]
+    double solute_solute;
+    double solvent_solvent;
+    double solute_solvent;
+    double q_atom;
+    // [sphere]
+    double shell_radius;
+    double shell_force;
+    // [solvent]
+    double radial_force;
+    bool polarization;
+    double polarization_force;
+    // [intervals]
+    int non_bond;
+    int output;
+    int energy;
+    int trajectory;
+    // [trajectory_atoms]
+    // [lambdas]
+    // [sequence_restraints]
+    // [distance_restraints]
+    // [angle_restraints]
+    // [wall_restraints]
+};
+
+extern md_t md;
 
 /* =============================================
  * == FROM TOPOLOGY FILE
@@ -176,46 +220,120 @@ struct ngbr14_t {
     int aj;
 };
 
+struct topo_t {
+    int solvent_type;
+    double exclusion_radius;
+    double solvent_radius;
+    coord_t solute_center;
+    coord_t solvent_center;
+};
+
+extern topo_t topo;
+
 extern int n_angles;
+extern int n_angles_solute;
+extern int n_atypes;
 extern int n_bonds;
+extern int n_bonds_solute;
+extern int n_cangles;
+extern int n_cbonds;
+extern int n_ccharges;
+extern int n_charges;
+extern int n_coords;
+extern int n_cimpropers;
+extern int n_ctorsions;
+extern int n_impropers;
+extern int n_impropers_solute;
 extern int n_ngbrs14;
 extern int n_ngbrs23;
 extern int n_torsions;
+extern int n_torsions_solute;
 
-extern angle_t* angles;
-extern atype_t* atypes;
-extern bond_t* bonds;
-extern cangle_t* cangles;
-extern catype_t* catypes;
-extern cbond_t* cbonds;
-extern charge_t* charges;
-extern ccharge_t* ccharges;
-extern ctorsion_t* ctorsions;
-extern coord_t* coords;
-extern ngbr14_t* ngbrs14;
-extern ngbr23_t* ngbrs23;
-extern torsion_t* torsions;
+extern angle_t *angles;
+extern atype_t *atypes;
+extern bond_t *bonds;
+extern cangle_t *cangles;
+extern catype_t *catypes;
+extern cbond_t *cbonds;
+extern charge_t *charges;
+extern ccharge_t *ccharges;
+extern cimproper_t *cimpropers;
+extern ctorsion_t *ctorsions;
+extern coord_t *coords_top;
+extern improper_t *impropers;
+extern ngbr14_t *ngbrs14;
+extern ngbr23_t *ngbrs23;
+extern torsion_t *torsions;
+extern bool *excluded;
+extern bool *heavy;
 
-void init_coords(char* filename);
-void init_bonds(char* filename);
-void init_cbonds(char* filename);
-void init_angles(char* filename);
-void init_cangles(char* filename);
-void init_torsions(char* filename);
-void init_ctorsions(char* filename);
-void init_impropers(char* filename);
-void init_cimpropers(char* filename);
-void init_charges(char* filename);
-void init_ccharges(char* filename);
-void init_ngbr14s(char* filename);
-void init_ngbr23s(char* filename);
-void init_catypes(char* filename);
-void init_atypes(char* filename);
+/* =============================================
+ * == Q ATOMS
+ * =============================================
+ */
+
+extern int n_lambdas;
+extern double *lambdas;
 
 /* =============================================
  * == RESTRAINTS
  * =============================================
  */
+
+struct restrseq_t {
+    int ai;
+    int aj;
+    double k;
+    bool ih;
+    int to_center; // Flag for restraining to geom. or mass center
+};
+
+struct restrpos_t {
+    int a;
+    int ipsi;
+    coord_t x;
+    coord_t k;
+};
+
+struct restrdis_t {
+    int ai, aj;
+    int ipsi;
+    double d1, d2;
+    double k;
+    char itext[20], jtext[20];
+};
+
+struct restrang_t {
+    int ai, aj, ak;
+    int ipsi;
+    double ang;
+    double k;
+};
+
+struct restrwall_t {
+    int ai, aj;
+    double d, k, aMorse, dMorse;
+    bool ih;
+};
+
+extern int n_restrseqs;
+extern int n_restrspos;
+extern int n_restrdists;
+extern int n_restrangs;
+extern int n_restrwalls;
+
+extern restrseq_t *restrseqs;
+extern restrpos_t *restrspos;
+extern restrdis_t *restrdists;
+extern restrang_t *restrangs;
+extern restrwall_t *restrwalls;
+
+
+// Protein shell layout. Defined once per run
+extern bool *shell;
+
+void init_pshells();
+void init_restrseqs(char* filename);
 
 struct shell_t {
     int n_inshell;
@@ -231,14 +349,14 @@ struct shell_t {
 extern double crgQtot;
 extern double Dwmz, awmz;
 
-// Shell layout. Defined once per run
+// Water shell layout. Defined once per run
 extern double *theta, *theta0, *tdum; //array size n_waters
 extern int n_max_inshell, n_shells;
 extern int **list_sh, **nsort; // array size (n_max_inshell, n_shells)
 extern shell_t* wshells;
 
 void init_water_sphere();
-void init_shells();
+void init_wshells();
 
 /* =============================================
  * == CALCUTED IN THE INTEGRATION
@@ -268,9 +386,13 @@ struct energy_t {
     double Utot;
     double Uradx;
     double Upolx;
+    double Ufix;
+    double Ushell;
+    double Upres;
     double Urestr;
 };
 
+extern coord_t *coords;
 extern dvel_t* dvelocities;
 extern energy_t energies;
 extern double Temp;
@@ -279,13 +401,13 @@ extern double A_OO, B_OO, crg_ow, crg_hw; // TODO: don't keep this in system.cu?
 void init_velocities();
 void init_dvelocities();
 void init_energies();
-void init_water_sphere();
 
 /* =============================================
  * == INTEGRATION METHODS
  * =============================================
  */
 
-void calc_integration(int iteration);
+void calc_integration();
+void calc_integration_step(int iteration);
 
 #endif /* __SYSTEM_H__ */

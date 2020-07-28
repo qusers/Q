@@ -25,8 +25,15 @@ int n_waters;
 char base_folder[1024];
 
 double dt = time_unit * step_size;
-double tau_T = time_unit * bath_coupling;
+double tau_T = time_unit * c_bath_coupling;
 //double dt = step_size_unit * step_size;
+
+/* =============================================
+ * == FROM MD FILE
+ * =============================================
+ */
+
+md_t md;
 
 /* =============================================
  * == FROM TOPOLOGY FILE
@@ -53,7 +60,7 @@ int n_catypes;
 int n_ngbrs23;
 int n_ngbrs14;
 
-coord_t* coords;
+coord_t* coords_top;
 bond_t* bonds;
 cbond_t* cbonds;
 angle_t* angles;
@@ -68,467 +75,25 @@ atype_t* atypes;
 catype_t* catypes;
 ngbr23_t* ngbrs23;
 ngbr14_t* ngbrs14;
+bool *excluded;
+bool *heavy;
 
-void init_coords(char* filename) {
-    csvfile_t file = read_csv(filename, 1, base_folder);
+topo_t topo;
 
-    n_coords = 0;
-    n_atoms = 0;
-    n_atoms_solute = 0;
+/* =============================================
+ * == Q ATOMS
+ * =============================================
+ */
 
-    if (file.n_lines < 1) {
-        return;
-    }
-
-    n_coords = atoi(file.buffer[0][0]);
-    n_atoms = n_coords;
-
-    n_atoms_solute = atoi(file.buffer[1][0]);
-
-    coords = (coord_t*) malloc(n_atoms * sizeof(coord_t));
-
-    for (int i = 0; i < file.n_lines; i++) {
-        coord_t coord;
-        char *eptr;
-
-        coord.x = strtod(file.buffer[i+2][0], &eptr);
-        coord.y = strtod(file.buffer[i+2][1], &eptr);
-        coord.z = strtod(file.buffer[i+2][2], &eptr);
-
-        coords[i] = coord;
-    }
-    
-    clean_csv(file);
-}
-
-void init_bonds(char* filename) {
-    csvfile_t file = read_csv(filename, 1, base_folder);
-    
-    n_bonds = 0;
-    n_bonds_solute = 0;
-
-    if (file.n_lines < 1) {
-        return;
-    }
-
-    n_bonds = atoi(file.buffer[0][0]);
-    n_bonds_solute = atoi(file.buffer[1][0]);
-
-    bonds = (bond_t*) malloc(n_bonds * sizeof(bond_t));
-
-    for (int i = 0; i < n_bonds; i++) {
-        bond_t bond;
-
-        bond.ai = atoi(file.buffer[i+2][0]);
-        bond.aj = atoi(file.buffer[i+2][1]);
-        bond.code = atoi(file.buffer[i+2][2]);
-
-        bonds[i] = bond;
-    }
-
-    clean_csv(file);
-}
-
-void init_cbonds(char* filename) {
-    csvfile_t file = read_csv(filename, 0, base_folder);
-
-    n_cbonds = 0;
-
-    if (file.n_lines < 1) {
-        return;
-    }
-
-    n_cbonds = atoi(file.buffer[0][0]);
-    cbonds = (cbond_t*) malloc(n_cbonds * sizeof(cbond_t));
-
-    for (int i = 0; i < n_cbonds; i++) {
-        cbond_t cbond;
-        char *eptr;
-
-        cbond.code = atoi(file.buffer[i+1][0]);
-        cbond.kb = strtod(file.buffer[i+1][1], &eptr);
-        cbond.b0 = strtod(file.buffer[i+1][2], &eptr);
-
-        cbonds[i] = cbond;
-    }
-
-    clean_csv(file);
-}
-
-void init_angles(char* filename) {
-    csvfile_t file = read_csv(filename, 1, base_folder);
-
-    n_angles = 0;
-    n_angles_solute = 0;
-
-    if (file.n_lines < 1) {
-        return;
-    }
-
-    n_angles = atoi(file.buffer[0][0]);
-    n_angles_solute = atoi(file.buffer[1][0]);
-
-    angles = (angle_t*) malloc(n_angles * sizeof(angle_t));
-
-    for (int i = 0; i < n_angles; i++) {
-        angle_t angle;
-
-        angle.ai = atoi(file.buffer[i+2][0]);
-        angle.aj = atoi(file.buffer[i+2][1]);
-        angle.ak = atoi(file.buffer[i+2][2]);
-        angle.code = atoi(file.buffer[i+2][3]);
-
-        angles[i] = angle;
-    }
-
-    clean_csv(file);
-}
-
-void init_cangles(char* filename) {
-    csvfile_t file = read_csv(filename, 0, base_folder);
-
-    n_cangles = 0;
-    
-    if (file.n_lines < 1) {
-        return;
-    }
-
-    n_cangles = atoi(file.buffer[0][0]);
-    cangles = (cangle_t*) malloc(n_cangles * sizeof(cangle_t));
-
-    for (int i = 0; i < n_cangles; i++) {
-        cangle_t cangle;
-        char* eptr;
-
-        cangle.code = atoi(file.buffer[i+1][0]);
-        cangle.kth = strtod(file.buffer[i+1][1], &eptr);
-        cangle.th0 = strtod(file.buffer[i+1][2], &eptr);
-
-        cangles[i] = cangle;
-    }
-    
-    clean_csv(file);
-}
-
-void init_torsions(char* filename) {
-    csvfile_t file = read_csv(filename, 1, base_folder);
-
-    n_torsions = 0;
-    n_torsions_solute = 0;
-
-    if (file.n_lines < 1) {
-        return;
-    }
-
-    n_torsions = atoi(file.buffer[0][0]);
-    n_torsions_solute = atoi(file.buffer[1][0]);
-
-    torsions = (torsion_t*) malloc(n_torsions * sizeof(torsion_t));
-
-    for (int i = 0; i < n_torsions; i++) {
-        torsion_t torsion;
-
-        torsion.ai = atoi(file.buffer[i+2][0]);
-        torsion.aj = atoi(file.buffer[i+2][1]);
-        torsion.ak = atoi(file.buffer[i+2][2]);
-        torsion.al = atoi(file.buffer[i+2][3]);
-        torsion.code = atoi(file.buffer[i+2][4]);
-
-        torsions[i] = torsion;
-    }
-    
-    clean_csv(file);
-}
-
-void init_ctorsions(char* filename) {
-    csvfile_t file = read_csv(filename, 0, base_folder);
-    
-    n_ctorsions = 0;
-
-    if (file.n_lines < 1) {
-        return;
-    }
-    
-    n_ctorsions = atoi(file.buffer[0][0]);
-
-    ctorsions = (ctorsion_t*) malloc(n_ctorsions * sizeof(ctorsion_t));
-
-    for (int i = 0; i < n_ctorsions; i++) {
-        ctorsion_t ctorsion;
-        char* eptr;
-
-        ctorsion.code = atoi(file.buffer[i+1][0]);
-        ctorsion.k = strtod(file.buffer[i+1][1], &eptr);
-        ctorsion.n = strtod(file.buffer[i+1][2], &eptr);
-        ctorsion.d = strtod(file.buffer[i+1][3], &eptr);
-
-        ctorsions[i] = ctorsion;
-    }
-
-    clean_csv(file);
-}
-
-void init_impropers(char* filename) {
-    csvfile_t file = read_csv(filename, 1, base_folder);
-
-    n_impropers = 0;
-    n_impropers_solute = 0;
-
-    if (file.n_lines < 1) {
-        return;
-    }
-
-    n_impropers = atoi(file.buffer[0][0]);
-    n_impropers_solute = atoi(file.buffer[1][0]);
-
-    impropers = (improper_t*) malloc(n_impropers * sizeof(improper_t));
-
-    for (int i = 0; i < n_impropers; i++) {
-        improper_t improper;
-
-        improper.ai = atoi(file.buffer[i+2][0]);
-        improper.aj = atoi(file.buffer[i+2][1]);
-        improper.ak = atoi(file.buffer[i+2][2]);
-        improper.al = atoi(file.buffer[i+2][3]);
-        improper.code = atoi(file.buffer[i+2][4]);
-
-        impropers[i] = improper;
-    }
-    
-    clean_csv(file);
-}
-
-void init_cimpropers(char* filename) {
-    csvfile_t file = read_csv(filename, 0, base_folder);
-
-    n_cimpropers = 0;
-
-    if (file.n_lines < 1) {
-        return;
-    }
-
-    n_cimpropers = atoi(file.buffer[0][0]);
-
-    cimpropers = (cimproper_t*) malloc(n_cimpropers * sizeof(cimproper_t));
-
-    for (int i = 0; i < n_cimpropers; i++) {
-        cimproper_t cimproper;
-        char* eptr;
-
-        cimproper.code = atoi(file.buffer[i+1][0]);
-        cimproper.k = strtod(file.buffer[i+1][1], &eptr);
-        cimproper.n = strtod(file.buffer[i+1][2], &eptr);
-        cimproper.d = strtod(file.buffer[i+1][3], &eptr);
-
-        cimpropers[i] = cimproper;
-    }
-    
-    clean_csv(file);
-}
-
-void init_charges(char* filename) {
-    csvfile_t file = read_csv(filename, 0, base_folder);
-
-    n_charges = 0;
-
-    if (file.n_lines < 1) {
-        return;
-    }
-
-    n_charges = atoi(file.buffer[0][0]);
-
-    charges = (charge_t*) malloc(n_charges * sizeof(charge_t));
-
-    for (int i = 0; i < n_charges; i++) {
-        charge_t charge;
-
-        charge.a = atoi(file.buffer[i+1][0]);
-        charge.code = atoi(file.buffer[i+1][1]);
-
-        charges[i] = charge;
-    }
-
-    clean_csv(file);
-}
-
-void init_ccharges(char* filename) {
-    csvfile_t file = read_csv(filename, 0, base_folder);
-
-    if (file.n_lines < 1) {
-        return;
-    }
-    
-    n_ccharges = atoi(file.buffer[0][0]);
-
-    ccharges = (ccharge_t*) malloc(n_ccharges * sizeof(ccharge_t));
-    
-    for (int i = 0; i < n_ccharges; i++) {
-        ccharge_t ccharge;
-        char* eptr;
-
-        ccharge.code = atoi(file.buffer[i+1][0]);
-        ccharge.charge = strtod(file.buffer[i+1][1], &eptr);
-
-        ccharges[i] = ccharge;
-    }
-
-    clean_csv(file);
-}
-
-void init_ngbrs14(char* filename) {
-    FILE * fp;
-
-    char path[1024];
-    sprintf(path, "%s/%s", base_folder, filename);
-
-    if(access(path, F_OK) == -1) {
-        printf(">>> FATAL: The following file could not be found. Exiting...\n");
-        puts(path);
-        exit(EXIT_FAILURE);
-    }
-
-    fp = fopen(path, "r");
-    if (fp == NULL)
-        exit(EXIT_FAILURE);
-
-    char line[1024];
-    
-    n_ngbrs14 = 0;
-    int lines = 0;
-
-    if (fgets(line, 1024, fp)) {
-        lines = atoi(line);
-    }
-    else {
-        return;
-    }
-
-    ngbrs14 = (ngbr14_t*) malloc(lines * sizeof(ngbr14_t) * line_width);
-    int lineI = 0;
-
-    while (fgets(line, 1024, fp)) {
-        for (int i = 0; i < line_width; i++) {
-            if (line[i] == '1') {
-                ngbr14_t ngbr14;
-                ngbr14.ai = lineI + 1;
-                ngbr14.aj = ((lineI + i + 1) % lines) + 1;
-                ngbrs14[n_ngbrs14] = ngbr14;
-                n_ngbrs14++;
-            }
-        }
-        lineI++;
-    }
-
-    fclose(fp);
-}
-
-void init_ngbrs23(char* filename) {
-    FILE * fp;
-
-    char path[1024];
-    sprintf(path, "%s/%s", base_folder, filename);
-
-    if(access(path, F_OK) == -1) {
-        printf(">>> FATAL: The following file could not be found. Exiting...\n");
-        puts(path);
-        exit(EXIT_FAILURE);
-    }
-
-    fp = fopen(path, "r");
-    if (fp == NULL)
-        exit(EXIT_FAILURE);
-
-    char line[1024];
-    
-    n_ngbrs23 = 0;
-    int lines = 0;
-
-    if (fgets(line, 1024, fp)) {
-        lines = atoi(line);
-    }
-    else {
-        return;
-    }
-
-    ngbrs23 = (ngbr23_t*) malloc(lines * sizeof(ngbr23_t) * line_width);
-    int lineI = 0;
-
-    while (fgets(line, 1024, fp)) {
-        for (int i = 0; i < line_width; i++) {
-            if (line[i] == '1') {
-                ngbr23_t ngbr23;
-                ngbr23.ai = lineI + 1;
-                ngbr23.aj = ((lineI + i + 1) % lines) + 1;
-                ngbrs23[n_ngbrs23] = ngbr23;
-                n_ngbrs23++;
-            }
-        }
-        lineI++;
-    }
-
-    fclose(fp);
-}
-
-void init_catypes(char* filename) {
-    csvfile_t file = read_csv(filename, 0, base_folder);
-
-    int n_catomtypes = 0;
-
-    if (file.n_lines < 1) {
-        return;
-    }
-
-    n_catomtypes = atoi(file.buffer[0][0]);
-    catypes = (catype_t*) malloc(n_catomtypes * sizeof(catype_t));
-
-    for (int i = 0; i < n_catomtypes; i++) {
-        catype_t catype;
-        char* eptr;
-
-        catype.code = atoi(file.buffer[i+1][0]);
-        catype.m = strtod(file.buffer[i+1][1], &eptr);
-        catype.aii_normal = strtod(file.buffer[i+1][2], &eptr);
-        catype.bii_normal = strtod(file.buffer[i+1][3], &eptr);
-        catype.aii_polar = strtod(file.buffer[i+1][4], &eptr);
-        catype.bii_polar = strtod(file.buffer[i+1][5], &eptr);
-        catype.aii_1_4 = strtod(file.buffer[i+1][6], &eptr);
-        catype.bii_1_4 = strtod(file.buffer[i+1][7], &eptr);
-
-        catypes[i] = catype;
-    }
-
-    clean_csv(file);
-}
-
-void init_atypes(char* filename) {
-    csvfile_t file = read_csv(filename, 0, base_folder);
-
-    n_atypes = 0;
-
-    if (file.n_lines < 1) {
-        return;
-    }
-
-    n_atypes = atoi(file.buffer[0][0]);
-
-    atypes = (atype_t*) malloc(n_atypes * sizeof(atype_t));
-    for (int i = 0; i < n_atypes; i++) {
-        atype_t atype;
-
-        atype.a = atoi(file.buffer[i+1][0]);
-        atype.code = atoi(file.buffer[i+1][1]);
-
-        atypes[i] = atype;
-    }
-
-    clean_csv(file);
-}
+int n_lambdas;
+double *lambdas;
 
 /* =============================================
  * == CALCUTED IN THE INTEGRATION
  * =============================================
  */
 
+coord_t* coords;
 vel_t* velocities;
 dvel_t* dvelocities;
 energy_t energies;
@@ -586,6 +151,21 @@ void init_xcoords() {
  * =============================================
  */
 
+// Array of length n_atoms
+bool *shell;
+
+int n_restrseqs;
+int n_restrspos;
+int n_restrdists;
+int n_restrangs;
+int n_restrwalls;
+
+restrseq_t *restrseqs;
+restrpos_t *restrspos;
+restrdis_t *restrdists;
+restrang_t *restrangs;
+restrwall_t* restrwalls;
+
 double crgQtot = 0;
 double Dwmz, awmz;
  
@@ -602,8 +182,8 @@ shell_t* wshells;
  */
 
 void init_water_sphere() {
-    Dwmz = 0.26 * exp(-0.19 * (rwater - 15)) + 0.74;
-    awmz = 0.2 / (1 + exp(0.4 * (rwater - 25))) + 0.3;
+    Dwmz = 0.26 * exp(-0.19 * (topo.solvent_radius - 15)) + 0.74;
+    awmz = 0.2 / (1 + exp(0.4 * (topo.solvent_radius - 25))) + 0.3;
 
     printf("Dwmz = %f, awmz = %f\n", Dwmz, awmz);
 }
@@ -630,7 +210,7 @@ void init_wshells() {
 
     printf("n_shells = %d\n", n_shells);
 
-    router = rwater;
+    router = topo.solvent_radius;
     n_max_inshell = 0;
 
     for (int i = 0; i < n_shells; i++) {
@@ -676,6 +256,57 @@ void init_wshells() {
     }
 }
 
+void init_pshells() {
+    double mass, r2, rin2;
+
+    heavy = (bool*) malloc(n_atoms * sizeof(bool));
+    shell = (bool*) malloc(n_atoms * sizeof(bool));
+    rin2 = pow(shell_default * topo.exclusion_radius, 2);
+
+    int n_heavy = 0, n_inshell = 0;
+
+    for (int i = 0; i < n_atoms; i++) {
+        mass = catypes[atypes[i].a-1].m;
+        if (mass < 4.0) {
+            heavy[i] = false;
+        }
+        else {
+            heavy[i] = true;
+            n_heavy++;
+        }
+
+        if (heavy[i] && !excluded[i] && i < n_atoms_solute) {
+            r2 = pow(coords_top[i].x - topo.solute_center.x, 2) 
+                + pow(coords_top[i].y - topo.solute_center.y, 2)
+                + pow(coords_top[i].z - topo.solute_center.z, 2);
+            if (r2 > rin2) {
+                shell[i] = true;
+                n_inshell++;
+            }
+            else {
+                shell[i] = false;
+            }
+        }
+    }
+
+    printf("n_heavy = %d, n_inshell = %d\n", n_heavy, n_inshell);
+}
+
+
+void init_restrseqs(char* filename) {
+    n_restrseqs = 1;
+    restrseqs = (restrseq_t*) malloc(1 * sizeof(restrseq_t));
+
+    restrseq_t seq;
+    seq.ai = 1;
+    seq.aj = 14;
+    seq.k = 1.0;
+    seq.ih = 0;
+    seq.to_center = 2;
+
+    restrseqs[0] = seq;
+}
+
 /* =============================================
  * == ENERGY & TEMPERATURE
  * =============================================
@@ -693,7 +324,7 @@ void calc_temperature() {
         ener = .5 * mass_i * (pow(velocities[i].x, 2) + pow(velocities[i].y, 2) + pow(velocities[i].z, 2));
         Temp += ener;
         if (ener > Ekinmax) {
-            //printf(">>> WARNING: hot atom %d: %f\n", i, ener/Boltz/3);
+            printf(">>> WARNING: hot atom %d: %f\n", i, ener/Boltz/3);
         }
     }
 
@@ -732,13 +363,12 @@ void calc_leapfrog() {
     }
 }
 
-// Write header to coordinate output file, i.e. number of atoms
+// Write header (number of atoms) to coordinate output file
 void write_header() {
     FILE * fp;
 
     char path[1024];
     sprintf(path, "%s/output/%s", base_folder, "coords.csv");
-    puts(path);
 
     fp = fopen(path, "w");
   
@@ -766,7 +396,17 @@ void write_coords(int iteration) {
     fclose (fp);
 }
 
-void calc_integration(int iteration) {
+void calc_integration() {
+    init_variables();
+
+    for (int i = 0; i < 11; i++) {
+        calc_integration_step(i);
+    }
+    
+    clean_variables();
+}
+
+void calc_integration_step(int iteration) {
     printf("================================================\n");
     printf("== STEP %d\n", iteration);
     printf("================================================\n");
@@ -806,7 +446,8 @@ void calc_integration(int iteration) {
         calc_radix_w_forces();
         calc_polx_w_forces(iteration);
     }
-
+    calc_pshell_forces();
+    calc_restrseq_forces();
 
     // Now apply leapfrog integration
     calc_leapfrog();
@@ -815,7 +456,7 @@ void calc_integration(int iteration) {
     calc_temperature();
 
     // Update totals
-    energies.Urestr = energies.Uradx + energies.Upolx;
+    energies.Urestr = energies.Uradx + energies.Upolx + energies.Ushell + energies.Ufix + energies.Upres;
     energies.Upot = energies.Uangle + energies.Ubond + energies.Utor + energies.Ucoul + energies.Uvdw + energies.Urestr;
     energies.Utot = energies.Upot + energies.Ukin;  
     
@@ -825,6 +466,9 @@ void calc_integration(int iteration) {
     printf("Utor = %f\n", energies.Utor);
     printf("Uradx = %f\n", energies.Uradx);
     printf("Upolx = %f\n", energies.Upolx);
+    printf("Ushell = %f\n", energies.Ushell);
+    printf("Ufix = %f\n", energies.Ufix);
+    printf("Upres = %f\n", energies.Upres);
     printf("Urestr = %f\n", energies.Urestr);
     printf("Ucoul = %f\n", energies.Ucoul);
     printf("Uvdw = %f\n", energies.Uvdw);
@@ -833,9 +477,11 @@ void calc_integration(int iteration) {
     printf("Utot = %f\n", energies.Utot);
 
     // Profiler info
+#ifdef __PROFILING__
     printf("Elapsed time for bonded forces: %f\n", (end_bonded-start) / (double)CLOCKS_PER_SEC );
     printf("Elapsed time for non-bonded forces: %f\n", (end_nonbonded-end_bonded) / (double)CLOCKS_PER_SEC);
-    
+#endif /* __PROFILING__ */
+
     // Write coordinates to file
     write_coords(iteration);
 }
@@ -843,6 +489,8 @@ void calc_integration(int iteration) {
 
 void init_variables() {
     // From topology file
+    init_topo("topo.csv");
+    
     init_angles("angles.csv");
     init_atypes("atypes.csv");
     init_bonds("bonds.csv");
@@ -854,10 +502,12 @@ void init_variables() {
     init_cimpropers("cimpropers.csv");
     init_coords("coords.csv");
     init_ctorsions("ctorsions.csv");
+    init_excluded("excluded.csv");
     init_impropers("impropers.csv");
     init_torsions("torsions.csv");
     init_ngbrs14("ngbrs14.csv");
     init_ngbrs23("ngbrs23.csv");
+    init_restrseqs("restrseqs.csv");
 
     // From calculation in the integration
     init_velocities();
@@ -870,6 +520,7 @@ void init_variables() {
         init_water_sphere();
         init_wshells();
     }
+    init_pshells();
 
     // Init energy
     energies.Ubond = 0;
@@ -881,6 +532,8 @@ void init_variables() {
     energies.Upot = 0;
     energies.Uradx = 0;
     energies.Upolx = 0;
+    energies.Ushell = 0;
+    energies.Ufix = 0;
     energies.Urestr = 0;
 
     // Write header to file

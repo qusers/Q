@@ -13,13 +13,7 @@ int main(int argc, char *argv[]){
 
     strcpy(base_folder, argv[1]);
 
-    init_variables();
-
-    for (int i = 0; i < 10001; i++) {
-        calc_integration(i);
-    }
-
-    clean_variables();
+    calc_integration();
 
     exit(EXIT_SUCCESS);
 }

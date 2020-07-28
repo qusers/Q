@@ -15,7 +15,7 @@ system.o: system.cu system.h utils.h parse.h restraints.h
 utils.o: utils.cu utils.h
 	$(CC) $(CFLAGS) -c utils.cu
 
-parse.o: parse.cu parse.h
+parse.o: parse.cu parse.h system.h
 	$(CC) $(CFLAGS) -c parse.cu
 
 restraints.o: restraints.cu restraints.h system.h
