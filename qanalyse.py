@@ -227,9 +227,9 @@ class Calculations(object):
             r0 = i * parameters['bins']
             
             # the last bin can be smaller
-            #if i + 1 == maxbin:
-            #    if r > float(Trajectory.volume):
-            #        r = r - (r -Trajectory.volume)
+            if i + 1 == maxbin:
+                if r > float(Trajectory.volume):
+                    r = r - (r -Trajectory.volume)
             
             V = (4 * math.pi * (r ** 3))/3
             bins[i] = [r0,r,V,[]]
@@ -277,7 +277,15 @@ class Calculations(object):
             for b in binlist:
                 bins[b][3] = []
                 
-        print(np.asarray(n_density))
+        data = np.asarray(n_density)
+        avg_data = np.mean(data,0)
+        sdv_data = np.std(data,0)
+            
+        for i in range(0, len(avg_data)):
+            print('bin:   {}   avg:    {} ± {}'.format(i,
+                                                       avg_data[i],
+                                                       sdv_data[i])
+        print(sdv_data)
             
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

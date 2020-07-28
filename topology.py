@@ -38,6 +38,7 @@ class Topology():
         Topology.solucenter = []
         Topology.radii = None
         Topology.exclusion = None
+        Topology.solvtype = None
         Topology.excluded = []
 
 class Read_Topology(object):
@@ -203,6 +204,8 @@ class Read_Topology(object):
                     continue
 
                 if 'solvent type (0=SPC,1=3-atom,2=general)' in line:
+                    line = line.split()
+                    Topology.solvtype=(line[0])                  
                     block = 32
                     continue
 
@@ -615,3 +618,18 @@ class Write_Topology(object):
         #Topology.excluded = []
         with open(csvdir+'/excluded.csv','w') as outfile:
             outfile.write(Topology.excluded + '\n')
+            
+        #Topo.csv
+        with open(csvdir+'/topo.csv','w') as outfile:
+            outfile.write('5\n')
+            outfile.write(Topology.solvtype + '\n')
+            outfile.write(Topology.exclusion + '\n')
+            outfile.write(Topology.radii + '\n')
+            outfile.write('{};{};{}\n'.format(Topology.solucenter[0],
+                                              Topology.solucenter[1],
+                                              Topology.solucenter[2],))
+            
+            outfile.write('{};{};{}\n'.format(Topology.solvcenter[0],
+                                              Topology.solvcenter[1],
+                                              Topology.solvcenter[2],))
+            

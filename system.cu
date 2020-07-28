@@ -749,7 +749,7 @@ void write_header() {
 
 // Write step number, coordinates of atoms to coordinate output file
 void write_coords(int iteration) {
-    if (iteration % 25 != 0) return;
+    if (iteration % 50 != 0) return;
     FILE * fp;
     int i;
 
@@ -758,7 +758,7 @@ void write_coords(int iteration) {
 
     fp = fopen(path, "a");
 
-    fprintf(fp, "%d\n", iteration / 25);
+    fprintf(fp, "%d\n", iteration / 50);
     for(i = 0; i < n_atoms; i++) {
         fprintf(fp, "%f;%f;%f\n", coords[i].x, coords[i].y, coords[i].z);
     }
