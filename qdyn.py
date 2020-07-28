@@ -213,8 +213,9 @@ class Run_Dynamics(object):
                         self.md.MD[line[0]][stage_ref] = line[1]
                                         
                     if block == 6:
-                        line = line.split()
-                        self.md.MD[line[0]][stage_ref] = line[1]
+                        continue
+                        #line = line.split()
+                        #self.md.MD[line[0]][stage_ref] = line[1]
                                             
                     if block == 7:
                         self.md.MD['trajectory_atoms'][stage_ref] = line.strip()
@@ -277,6 +278,7 @@ class Run_Dynamics(object):
             outfile.write('stepsize;{}\n'.format(self.md.MD['stepsize'][i]))        
             outfile.write('temperature;{}\n'.format(self.md.MD['temperature'][i]))        
             outfile.write('thermostat;{}\n'.format(self.md.MD['thermostat'][i]))        
+            outfile.write('bath_coupling;{}\n'.format(self.md.MD['bath_coupling'][i]))        
             outfile.write('random_seed;{}\n'.format(self.md.MD['random_seed'][i]))        
             outfile.write('initial_temperature;{}\n'.format(self.md.MD['initial_temperature'][i]))        
             outfile.write('shake_solvent;{}\n'.format(self.md.MD['shake_solvent'][i]))        
@@ -290,6 +292,7 @@ class Run_Dynamics(object):
             outfile.write('shell_force;{}\n'.format(self.md.MD['shell_force'][i]))        
             outfile.write('radial_force;{}\n'.format(self.md.MD['radial_force'][i]))        
             outfile.write('polarisation;{}\n'.format(self.md.MD['polarisation'][i]))        
+            outfile.write('polarisation_force;{}\n'.format(self.md.MD['polarisation_force'][i]))        
             outfile.write('non_bond;{}\n'.format(self.md.MD['non_bond'][i]))        
             outfile.write('output;{}\n'.format(self.md.MD['output'][i]))        
             outfile.write('energy;{}\n'.format(self.md.MD['energy'][i]))        

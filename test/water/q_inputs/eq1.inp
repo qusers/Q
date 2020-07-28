@@ -32,11 +32,3 @@ trajectory                100
 non_bond                  25
 energy                    10
 
-[files]
-topology                  prot.top
-trajectory                eq1.dcd
-final                     eq1.re
-fep                       FEP1.fep
-
-[trajectory_atoms]
-not excluded
