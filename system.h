@@ -232,43 +232,41 @@ struct ngbr14_t {
 };
 
 extern int n_angles;
+extern int n_angles_solute;
+extern int n_atypes;
 extern int n_bonds;
+extern int n_bonds_solute;
+extern int n_cangles;
+extern int n_cbonds;
+extern int n_ccharges;
+extern int n_charges;
+extern int n_coords;
+extern int n_cimpropers;
+extern int n_ctorsions;
+extern int n_impropers;
+extern int n_impropers_solute;
 extern int n_ngbrs14;
 extern int n_ngbrs23;
 extern int n_torsions;
+extern int n_torsions_solute;
 
-extern angle_t* angles;
-extern atype_t* atypes;
-extern bond_t* bonds;
-extern cangle_t* cangles;
-extern catype_t* catypes;
-extern cbond_t* cbonds;
-extern charge_t* charges;
-extern ccharge_t* ccharges;
-extern ctorsion_t* ctorsions;
-extern coord_t* coords_top;
-extern ngbr14_t* ngbrs14;
-extern ngbr23_t* ngbrs23;
-extern torsion_t* torsions;
+extern angle_t *angles;
+extern atype_t *atypes;
+extern bond_t *bonds;
+extern cangle_t *cangles;
+extern catype_t *catypes;
+extern cbond_t *cbonds;
+extern charge_t *charges;
+extern ccharge_t *ccharges;
+extern cimproper_t *cimpropers;
+extern ctorsion_t *ctorsions;
+extern coord_t *coords_top;
+extern improper_t *impropers;
+extern ngbr14_t *ngbrs14;
+extern ngbr23_t *ngbrs23;
+extern torsion_t *torsions;
 extern bool *excluded;
 extern bool *heavy;
-
-void init_coords(char* filename);
-void init_bonds(char* filename);
-void init_cbonds(char* filename);
-void init_angles(char* filename);
-void init_cangles(char* filename);
-void init_torsions(char* filename);
-void init_ctorsions(char* filename);
-void init_impropers(char* filename);
-void init_cimpropers(char* filename);
-void init_charges(char* filename);
-void init_ccharges(char* filename);
-void init_ngbr14s(char* filename);
-void init_ngbr23s(char* filename);
-void init_catypes(char* filename);
-void init_atypes(char* filename);
-void init_excluded(char* filename);
 
 /* =============================================
  * == Q ATOMS
