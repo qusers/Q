@@ -24,9 +24,8 @@ int n_waters;
 
 char base_folder[1024];
 
-double dt = time_unit * step_size;
-double tau_T = time_unit * c_bath_coupling;
-//double dt = step_size_unit * step_size;
+double dt = time_unit * md.stepsize;
+double tau_T = time_unit * md.bath_coupling;
 
 /* =============================================
  * == FROM MD FILE
@@ -110,7 +109,7 @@ void init_velocities() {
     velocities = (vel_t*) malloc(n_atoms * sizeof(vel_t));
 
     // If not previous value set, use a Maxwell distribution to fill velocities
-    double kT = Boltz * Tmaxw;
+    double kT = Boltz * md.initial_temperature;
     double sd, mass;
     for (int i = 0; i < n_atoms; i++) {
         mass = catypes[atypes[i].code - 1].m;
@@ -314,7 +313,7 @@ void init_restrseqs(char* filename) {
 
 void calc_temperature() {
     double Ndegf = 3 * n_atoms;
-    double Ekinmax = 1000.0 * Ndegf * Boltz * Temp0 / 2.0 / n_atoms;
+    double Ekinmax = 1000.0 * Ndegf * Boltz * md.temperature / 2.0 / n_atoms;
     double ener;
     double mass_i;
 
@@ -334,7 +333,7 @@ void calc_temperature() {
 
     printf("Temp = %f\n", Temp);
     
-    Tscale = sqrt(1 + (dt / tau_T) * (Temp0 / Temp - 1.0));
+    Tscale = sqrt(1 + (dt / tau_T) * (md.temperature / Temp - 1.0));
 }
 
 /* =============================================
@@ -379,7 +378,7 @@ void write_header() {
 
 // Write step number, coordinates of atoms to coordinate output file
 void write_coords(int iteration) {
-    if (iteration % 50 != 0) return;
+    if (iteration % md.trajectory != 0) return;
     FILE * fp;
     int i;
 
@@ -388,7 +387,7 @@ void write_coords(int iteration) {
 
     fp = fopen(path, "a");
 
-    fprintf(fp, "%d\n", iteration / 50);
+    fprintf(fp, "%d\n", iteration / md.trajectory);
     for(i = 0; i < n_atoms; i++) {
         fprintf(fp, "%f;%f;%f\n", coords[i].x, coords[i].y, coords[i].z);
     }
@@ -399,7 +398,7 @@ void write_coords(int iteration) {
 void calc_integration() {
     init_variables();
 
-    for (int i = 0; i < 11; i++) {
+    for (int i = 0; i < md.steps; i++) {
         calc_integration_step(i);
     }
     
@@ -444,7 +443,9 @@ void calc_integration_step(int iteration) {
     // Calculate restraints
     if (n_waters > 0) {
         calc_radix_w_forces();
-        calc_polx_w_forces(iteration);
+        if (md.polarization) {
+            calc_polx_w_forces(iteration);
+        }
     }
     calc_pshell_forces();
     calc_restrseq_forces();
@@ -488,6 +489,9 @@ void calc_integration_step(int iteration) {
 
 
 void init_variables() {
+    // From MD file
+    init_md("md.csv");
+
     // From topology file
     init_topo("topo.csv");
     
@@ -513,6 +517,9 @@ void init_variables() {
     init_velocities();
     init_dvelocities();
     init_xcoords();
+
+    // Init random seed from MD file
+    srand(md.random_seed);
 
     // Init waters, boundary restrains
     n_waters = (n_atoms - n_atoms_solute) / 3;

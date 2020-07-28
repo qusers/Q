@@ -1,0 +1,6 @@
+Wel meenemen: steps, stepsize, temperature, bath_coupling, random_seed, intitial_temperature, radial_force, polarization (IMPLEMENTEREN!!), polarization_force, trajectory (IMPLEMENTEREN!!)
+en de restrains ofc
+Later: shake_solvent, shake hydrogens, shell_radius, shell_force
+Boeit niet: de rest
+Misschien: lrf, cut-offs
+En ook nog: inlezen/uitschrijven velocities
