@@ -58,9 +58,16 @@ class MD(object):
              }
     
 class Prepare_Topology(object):
-    def __init__(self,top):
+    def __init__(self,top,rundir):
         self.top = top
-        
+        self.rundir = rundir
+        if not os.path.exists(rundir):
+            os.mkdir(rundir)
+            
+        else:
+            shutil.rmtree(rundir)
+            os.mkdir(rundir)
+            
         # Read the stuff
         self.read_topology()
         self.write_topology()
@@ -70,11 +77,11 @@ class Prepare_Topology(object):
         self.topology = top.parse_topology()
         
     def write_topology(self):
-        write_top = topology.Write_Topology(self.top)
+        write_top = topology.Write_Topology(self.rundir + '/' + self.top)
         write_top.write_csv()
 
 class Prepare_Inputs(object):
-    def __init__(self,top,inp,qdir,json):
+    def __init__(self,top,inp,qdir,json,rundir):
         self.top = top
         self.inp = inp
         self.qdir = qdir
@@ -285,7 +292,7 @@ class Prepare_Inputs(object):
         
         
         # semi-hardcoded, needs fix!
-        with open(self.top[:-4] + '/md.csv', 'w') as outfile:
+        with open(self.rundir + self.top[:-4] + '/md.csv', 'w') as outfile:
             outfile.write('{}\n'.format(j))
             outfile.write('steps;{}\n'.format(self.md.MD['steps'][i]))        
             outfile.write('stepsize;{}\n'.format(self.md.MD['stepsize'][i]))        
@@ -310,12 +317,13 @@ class Prepare_Inputs(object):
             outfile.write('output;{}\n'.format(self.md.MD['output'][i]))        
             outfile.write('energy;{}\n'.format(self.md.MD['energy'][i]))        
             outfile.write('trajectory;{}\n'.format(self.md.MD['trajectory'][i]))        
-
         
 class Run_Dynamics(object):
-    def __init__(self):
-        for i, stage in enumerate (Topology.MD.MD['stages']):
-            print(i, stage)
+    def __init__(self,rundir):
+        #inputs = Prepare_Inputs()
+        self.rundir = rundir
+        for i, stage in enumerate (MD.MD['stages']):
+            Prepare_Inputs.write_csv()(i)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -346,11 +354,19 @@ if __name__ == "__main__":
                         dest = "wpython",
                         default = None,
                         help = "Toggle to write out python readable json files of the md")
+                
+    parser.add_argument('-r', '--rundir',
+                        dest = "rundir",
+                        default = None,
+                        help = "Toggle to write out python readable json files of the md")
     
     args = parser.parse_args()
-    Prepare_Topology(top = args.top)
+    Prepare_Topology(top = args.top,
+                     rundir = args.rundir)
     Prepare_Inputs(top = args.top,
                    inp = args.inp,
                    qdir = args.qdir,
-                   json = args.wpython
+                   json = args.wpython,
+                   rundir = args.rundir
                   )
+    Run_Dynamics(rundir = args.rundir)
