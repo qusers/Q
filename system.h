@@ -2,6 +2,7 @@
 #define __SYSTEM_H__
 
 //#define __PROFILING__
+//#define DEBUG
 
 // Coulomb's constant, TODO get this from topology file
 #define Coul 332.0716
@@ -9,35 +10,11 @@
 // Boltzano's constant
 #define Boltz 0.001986
 
-// Maxwell temperature, TODO get this from md.inp
-#define Tmaxw 300.0
-
-// Target temperature, TODO get this from md.inp
-#define Temp0 300.0
-
 // Fortran max allowed line width, used in neighbor list
 #define line_width 25
 
-// Timestep definitions, 1 step = 10E-15s
-// TODO get step_size, steps from md.inp
-//#define step_size_unit 10E-5
-#define step_size 1
-//#define steps 10
-
 // Internally used time unit because of ??
 #define time_unit 0.020462
-
-// Coupling constant used in temperature calculation
-// TODO get bath_coupling from md.inp
-#define c_bath_coupling 1.0
-
-// Surface inward harmonic force constant. Has a default of 60
-// TODO get force constant from md.inp
-#define k_wsphere 60.0
-
-// Polarization force constant. Has a default of 20
-// TODO get force constant from md.inp
-#define k_wpol 20.0
 
 // Protein boundary force constant.
 // TODO get force constant from md.inp
@@ -97,12 +74,12 @@ struct md_t {
     double solute_solvent;
     double q_atom;
     // [sphere]
-    double shell_radius;
-    double shell_force;
+    double shell_radius; // Note: this is for the pshell
+    double shell_force;  // Note: this is for the pshell
     // [solvent]
     double radial_force;
-    bool polarization;
-    double polarization_force;
+    bool polarisation;
+    double polarisation_force;
     // [intervals]
     int non_bond;
     int output;

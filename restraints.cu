@@ -8,8 +8,8 @@ void calc_radix_w_forces() {
     coord_t dr;
     double shift;
 
-    if (k_wsphere != 0) {
-        shift = sqrt(Boltz * Temp / k_wsphere);
+    if (md.radial_force != 0) {
+        shift = sqrt(Boltz * Temp / md.radial_force);
     }
     else {
         shift = 0;
@@ -27,8 +27,8 @@ void calc_radix_w_forces() {
         db = b - (topo.solvent_radius - shift);
 
         if (db > 0) {
-            ener = 0.5 * k_wsphere * pow(db, 2) - Dwmz;
-            dv = k_wsphere * db / b;
+            ener = 0.5 * md.radial_force * pow(db, 2) - Dwmz;
+            dv = md.radial_force * db / b;
         }
         else {
             if (b > 0.0) {
@@ -157,10 +157,10 @@ void calc_polx_w_forces(int iteration) {
             if (theta0[il] > M_PI) theta0[il] = M_PI;
 
             avtdum += theta[ii];
-            ener = .5 * k_wpol * pow(theta[ii] - theta0[il] + wshells[is].theta_corr, 2);
+            ener = .5 * md.polarisation_force * pow(theta[ii] - theta0[il] + wshells[is].theta_corr, 2);
             energies.Upolx += ener;
 
-            dv = k_wpol * (theta[ii] - theta0[il] + wshells[is].theta_corr);
+            dv = md.polarisation_force * (theta[ii] - theta0[il] + wshells[is].theta_corr);
 
             wi = n_atoms_solute + 3 * ii;
 
