@@ -345,19 +345,15 @@ void init_coords(char* filename) {
     coords_top = (coord_t*) malloc(n_atoms * sizeof(coord_t));
 
     for (int i = 0; i < file.n_lines; i++) {
-        coord_t coord, coord_top;
         char *eptr;
 
-        coord.x = strtod(file.buffer[i+2][0], &eptr);
-        coord.y = strtod(file.buffer[i+2][1], &eptr);
-        coord.z = strtod(file.buffer[i+2][2], &eptr);
+        coords[i].x = strtod(file.buffer[i+2][0], &eptr);
+        coords[i].y = strtod(file.buffer[i+2][1], &eptr);
+        coords[i].z = strtod(file.buffer[i+2][2], &eptr);
 
-        coord_top.x = coord.x;
-        coord_top.y = coord.y;
-        coord_top.z = coord.z;
-
-        coords[i] = coord;
-        coords_top[i] = coord_top;
+        coords_top[i].x = coords[i].x;
+        coords_top[i].y = coords[i].y;
+        coords_top[i].z = coords[i].z;
     }
     
     clean_csv(file);

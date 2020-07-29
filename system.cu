@@ -561,7 +561,10 @@ void clean_variables() {
     free(charges);
     free(cimpropers);
     free(coords);
+    free(coords_top);
     free(ctorsions);
+    free(excluded);
+    free(heavy);
     free(impropers);
     free(torsions);
     free(ngbrs14);
@@ -582,6 +585,8 @@ void clean_variables() {
         free(list_sh);
         free(nsort);
     }
+    free(restrseqs);
+    free(shell);
 
     // From calculation in the integration
     free(velocities);
