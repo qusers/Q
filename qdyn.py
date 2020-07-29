@@ -73,26 +73,29 @@ class Prepare_Topology(object):
         write_top = topology.Write_Topology(self.top)
         write_top.write_csv()
 
-class Run_Dynamics(object):
+class Prepare_Inputs(object):
     def __init__(self,top,inp,qdir,json):
         self.top = top
         self.inp = inp
         self.qdir = qdir
         self.md = MD()
 
-        self.write_json = json
+        self.jsondir = json
         
         # Run stuff
         if self.qdir != None:
             print("reading Q input files in {}".format(self.qdir))
             self.read_q_inputs()
             
-        if self.write_json == True:
+        if self.jsondir != None:
             self.write_MD()
+            
+        if self.inp != None:
+            self.read_MD()
             
         # write the inputs for the C code, based on the MD class
         self.construct_inputs()
-        self.write_csv(0)
+        #self.write_csv(0)
         
     def read_q_inputs(self):
         """ This function reads Q inputfiles from Q-FEP modules"""
@@ -119,7 +122,6 @@ class Run_Dynamics(object):
         # populate the values in the MD topology with empty values
         # this makes sure that undefinied values are skipped but
         # length of array maintained
-        # WOULD BE GREAT TO JUST LOOP OVER THESE OBJECTS....!!!
         restraints = ['seqrest',
                       'posrest',
                       'distrest'
@@ -252,9 +254,20 @@ class Run_Dynamics(object):
     
     def write_MD(self):
         print("Writing out json files of the MD inputs")
-        with open('test.txt', 'w') as outfile:
-            json.dump(self.md.__dict__,outfile)
+        if not os.path.exists(self.jsondir):
+            os.mkdir(self.jsondir)
+        else:
+            shutil.rmtree(self.jsondir)
+            os.mkdir(self.jsondir)
             
+        with open(self.jsondir + '/md.json', 'w') as outfile:
+            inputs = self.md.MD
+            json.dump(inputs,outfile,indent=2)
+    
+    def read_MD(self):
+        with open(self.inp) as json_file:
+            self.md.MD = json.load(json_file)
+    
     def write_csv(self,i):
         """
         needs to loop over stages in MD object (for now gets integer 
@@ -297,7 +310,13 @@ class Run_Dynamics(object):
             outfile.write('output;{}\n'.format(self.md.MD['output'][i]))        
             outfile.write('energy;{}\n'.format(self.md.MD['energy'][i]))        
             outfile.write('trajectory;{}\n'.format(self.md.MD['trajectory'][i]))        
-    
+
+        
+class Run_Dynamics(object):
+    def __init__(self):
+        for i, stage in enumerate (Topology.MD.MD['stages']):
+            print(i, stage)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         prog='Py-MD',
@@ -325,14 +344,13 @@ if __name__ == "__main__":
             
     parser.add_argument('-wp', '--wpython',
                         dest = "wpython",
-                        default = False,
-                        action = 'store_true',                        
+                        default = None,
                         help = "Toggle to write out python readable json files of the md")
     
     args = parser.parse_args()
     Prepare_Topology(top = args.top)
-    Run_Dynamics(top = args.top,
-                 inp = args.inp,
-                 qdir = args.qdir,
-                 json = args.wpython
-                )
+    Prepare_Inputs(top = args.top,
+                   inp = args.inp,
+                   qdir = args.qdir,
+                   json = args.wpython
+                  )
