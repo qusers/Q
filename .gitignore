@@ -43,3 +43,5 @@ qdyn
 __pycache__/*
 test/water/no_ion/*
 *.pyc
+
+.DS_Store
