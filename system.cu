@@ -404,8 +404,8 @@ void calc_leapfrog() {
     }
 }
 
-// Write header (number of atoms) to coordinate output file
-void write_header() {
+// Write header (number of atoms) to output file
+void write_header(char *filename) {
     FILE * fp;
 
     char path[1024];
@@ -433,6 +433,55 @@ void write_coords(int iteration) {
     for(i = 0; i < n_atoms; i++) {
         fprintf(fp, "%f;%f;%f\n", coords[i].x, coords[i].y, coords[i].z);
     }
+  
+    fclose (fp);
+}
+
+// Write step number, velocities of atoms to coordinate output file
+void write_velocities(int iteration) {
+    if (iteration % md.trajectory != 0) return;
+    FILE * fp;
+    int i;
+
+    char path[1024];
+    sprintf(path, "%s/output/%s", base_folder, "velocities.csv");
+
+    fp = fopen(path, "a");
+
+    fprintf(fp, "%d\n", iteration / md.trajectory);
+    for(i = 0; i < n_atoms; i++) {
+        fprintf(fp, "%f;%f;%f\n", velocities[i].x, velocities[i].y, velocities[i].z);
+    }
+  
+    fclose (fp);
+}
+
+// Write step number, energies of atoms to coordinate output file
+void write_energies(int iteration) {
+    if (iteration % md.energy != 0) return;
+    FILE * fp;
+    int i;
+
+    char path[1024];
+    sprintf(path, "%s/output/%s", base_folder, "coords.csv");
+
+    fp = fopen(path, "a");
+
+    fprintf(fp, "%d\n", iteration / md.energy);
+    fprintf(fp, "Ubond = %f\n", energies.Ubond);
+    fprintf(fp, "Uangle = %f\n", energies.Uangle);
+    fprintf(fp, "Utor = %f\n", energies.Utor);
+    fprintf(fp, "Uradx = %f\n", energies.Uradx);
+    fprintf(fp, "Upolx = %f\n", energies.Upolx);
+    fprintf(fp, "Ushell = %f\n", energies.Ushell);
+    fprintf(fp, "Ufix = %f\n", energies.Ufix);
+    fprintf(fp, "Upres = %f\n", energies.Upres);
+    fprintf(fp, "Urestr = %f\n", energies.Urestr);
+    fprintf(fp, "Ucoul = %f\n", energies.Ucoul);
+    fprintf(fp, "Uvdw = %f\n", energies.Uvdw);
+    fprintf(fp, "Ukin = %f\n", energies.Ukin);
+    fprintf(fp, "Upot = %f\n", energies.Upot);
+    fprintf(fp, "Utot = %f\n", energies.Utot);
   
     fclose (fp);
 }
@@ -525,8 +574,10 @@ void calc_integration_step(int iteration) {
     printf("Elapsed time for non-bonded forces: %f\n", (end_nonbonded-end_bonded) / (double)CLOCKS_PER_SEC);
 #endif /* __PROFILING__ */
 
-    // Write coordinates to file
+    // Append output files
     write_coords(iteration);
+    write_velocities(iteration);
+    write_energies(iteration);
 }
 
 void init_variables() {
@@ -581,13 +632,17 @@ void init_variables() {
     init_qsoftcores("q_softcores.csv");
     init_qtorsions("q_torsions.csv");
 
+    // Init random seed from MD file
+    srand(md.random_seed);
+
     // From calculation in the integration
     init_velocities();
     init_dvelocities();
     init_xcoords();
 
-    // Init random seed from MD file
-    srand(md.random_seed);
+    // From input file
+    init_icoords("i_coords.csv");
+    init_ivelocities("i_velocities.csv");    
 
     // Init waters, boundary restrains
     n_waters = (n_atoms - n_atoms_solute) / 3;
@@ -612,7 +667,9 @@ void init_variables() {
     energies.Urestr = 0;
 
     // Write header to file
-    write_header();
+    write_header("coords.csv");
+    write_header("velocities.csv");
+    write_header("energies.csv");
 }
 
 void clean_variables() {

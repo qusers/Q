@@ -72,4 +72,12 @@ void init_qshakes(char *filename);
 void init_qsoftcores(char *filename);
 void init_qtorsions(char *filename);
 
+/* =============================================
+ * == FROM INPUT FILE
+ * =============================================
+ */
+
+void init_icoords(char *filename);
+void init_ivelocities(char *filename);    
+
 #endif /* __PARSE_H__ */

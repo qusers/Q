@@ -538,6 +538,7 @@ struct energy_t {
 };
 
 extern coord_t *coords;
+extern vel_t* velocities;
 extern dvel_t* dvelocities;
 extern energy_t energies;
 extern double Temp;

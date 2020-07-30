@@ -1257,3 +1257,42 @@ void init_qtorsions(char *filename) {
 
     clean_csv(file);
 }
+
+/* =============================================
+ * == FROM INPUT FILE
+ * =============================================
+ */
+
+void init_icoords(char *filename) {
+    csvfile_t file = read_csv(filename, 0, base_folder);
+
+    if (file.n_lines < 1) {
+        return;
+    }
+
+    for (int i = 0; i < n_atoms; i++) {
+        char *eptr;
+        coords[i].x = strtod(file.buffer[i+1][0], &eptr);
+        coords[i].y = strtod(file.buffer[i+1][1], &eptr);
+        coords[i].z = strtod(file.buffer[i+1][2], &eptr);
+    }
+
+    clean_csv(file);
+}
+
+void init_ivelocities(char *filename) {
+    csvfile_t file = read_csv(filename, 0, base_folder);
+
+    if (file.n_lines < 1) {
+        return;
+    }
+    
+    for (int i = 0; i < n_qatoms; i++) {
+        char *eptr;
+        velocities[i].x = strtod(file.buffer[i+1][0], &eptr);
+        velocities[i].y = strtod(file.buffer[i+1][1], &eptr);
+        velocities[i].z = strtod(file.buffer[i+1][2], &eptr);
+    }
+
+    clean_csv(file);
+}
