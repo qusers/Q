@@ -78,12 +78,55 @@ bool *heavy;
 topo_t topo;
 
 /* =============================================
- * == Q ATOMS
+ * == FROM FEP FILE
  * =============================================
  */
 
 int n_lambdas;
 double *lambdas;
+
+int n_qangcouples;
+int n_qangles;
+int n_qatoms;
+int n_qbonds;
+int n_qcangles;
+int n_qcatypes;
+int n_qcbonds;
+int n_qcimpropers;
+int n_qctorsions;
+int n_qelscales;
+int n_qexclpairs;
+int n_qimprcouples;
+int n_qimpropers;
+int n_qoffdiags;
+int n_qshakes;
+int n_qsoftpairs;
+int n_qsoftcores;
+int n_qtorcouples;
+int n_qtorsions;
+
+q_angcouple_t *q_angcouples;
+q_atom_t *q_atoms;
+q_cangle_t *q_cangles;
+q_catype_t *q_catypes;
+q_cbond_t *q_cbonds;
+q_cimproper_t *q_cimpropers;
+q_ctorsion_t *q_ctorsions;
+q_offdiag_t *q_offdiags;
+q_imprcouple_t *q_imprcouples;
+q_softpair_t *q_softpairs;
+q_torcouple_t *q_torcouples;
+
+q_angle_t **q_angles;
+q_atype_t **q_atypes;
+q_bond_t **q_bonds;
+q_charge_t **q_charges;
+q_elscale_t **q_elscales;
+q_exclpair_t **q_exclpairs;
+q_improper_t **q_impropers;
+q_shake_t **q_shakes;
+q_softcore_t **q_softcores;
+q_torsion_t **q_torsions;
 
 /* =============================================
  * == CALCUTED IN THE INTEGRATION
@@ -486,7 +529,6 @@ void calc_integration_step(int iteration) {
     write_coords(iteration);
 }
 
-
 void init_variables() {
     // From MD file
     init_md("md.csv");
@@ -514,6 +556,30 @@ void init_variables() {
     init_ngbrs14("ngbrs14.csv");
     init_ngbrs23("ngbrs23.csv");
     init_restrseqs("restrseqs.csv");
+
+    // From FEP file
+    init_qangcouples("q_angcouples.csv");
+    init_qatoms("q_atoms.csv");
+    init_qcangles("q_cangles.csv");
+    init_qcatypes("q_catypes.csv");
+    init_qcbonds("q_cbonds.csv");
+    init_qcimpropers("q_cimpropers.csv");
+    init_qctorsions("q_ctorsions.csv");
+    init_qoffdiags("q_offdiags.csv");
+    init_qimprcouples("q_imprcouples.csv");
+    init_qsoftpairs("q_softpairs.csv");
+    init_qtorcouples("q_torcouples.csv");
+
+    init_qangles("q_angles.csv");
+    init_qatypes("q_atypes.csv");
+    init_qbonds("q_bonds.csv");
+    init_qcharges("q_charges.csv");
+    init_qelscales("q_elscales.csv");
+    init_qexclpairs("q_exclpairs.csv");
+    init_qimpropers("q_impropers.csv");
+    init_qshakes("q_shakes.csv");
+    init_qsoftcores("q_softcores.csv");
+    init_qtorsions("q_torsions.csv");
 
     // From calculation in the integration
     init_velocities();
@@ -561,11 +627,65 @@ void clean_variables() {
     free(charges);
     free(cimpropers);
     free(coords);
+    free(coords_top);
     free(ctorsions);
+    free(excluded);
+    free(heavy);
     free(impropers);
     free(torsions);
     free(ngbrs14);
     free(ngbrs23);
+
+    // From FEP file
+    free(q_angcouples);
+    free(q_atoms);
+    free(q_cangles);
+    free(q_catypes);
+    free(q_cbonds);
+    free(q_cimpropers);
+    free(q_ctorsions);
+    free(q_offdiags);
+    free(q_imprcouples);
+    free(q_softpairs);
+    free(q_torcouples);
+    for (int i = 0; i < n_qatoms; i++) {
+        free(q_atypes[i]);
+        free(q_charges[i]);
+    }
+    free(q_atypes);
+    free(q_charges);
+    for (int i = 0; i < n_qangles; i++) {
+        free(q_angles[i]);
+    }
+    free(q_angles);
+    for (int i = 0; i < n_qbonds; i++) {
+        free(q_bonds[i]);
+    }
+    free(q_bonds);
+    for (int i = 0; i < n_qelscales; i++) {
+        free(q_elscales[i]);
+    }
+    free(q_elscales);
+    for (int i = 0; i < n_qexclpairs; i++) {
+        free(q_exclpairs[i]);
+    }
+    free(q_exclpairs);
+    for (int i = 0; i < n_qimpropers; i++) {
+        free(q_impropers[i]);
+    }
+    free(q_impropers);
+    for (int i = 0; i < n_qshakes; i++) {
+        free(q_shakes[i]);
+    }
+    free(q_shakes);
+    for (int i = 0; i < n_qsoftcores; i++) {
+        free(q_softcores[i]);
+    }
+    free(q_softcores);
+    for (int i = 0; i < n_qtorsions; i++) {
+        free(q_torsions[i]);
+    }
+    free(q_torsions);
 
     // Restraints
     if (n_waters > 0) {
@@ -582,6 +702,8 @@ void clean_variables() {
         free(list_sh);
         free(nsort);
     }
+    free(restrseqs);
+    free(shell);
 
     // From calculation in the integration
     free(velocities);

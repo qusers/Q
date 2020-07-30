@@ -44,4 +44,32 @@ void init_catypes(char* filename);
 void init_atypes(char* filename);
 void init_excluded(char* filename);
 
+/* =============================================
+ * == FROM FEP FILE
+ * =============================================
+ */
+
+void init_qangcouples(char *filename);
+void init_qatoms(char *filename);
+void init_qcangles(char *filename);
+void init_qcatypes(char *filename);
+void init_qcbonds(char *filename);
+void init_qcimpropers(char *filename);
+void init_qctorsions(char *filename);
+void init_qoffdiags(char *filename);
+void init_qimprcouples(char *filename);
+void init_qsoftpairs(char *filename);
+void init_qtorcouples(char *filename);
+
+void init_qangles(char *filename);
+void init_qatypes(char *filename);
+void init_qbonds(char *filename);
+void init_qcharges(char *filename);
+void init_qelscales(char *filename);
+void init_qexclpairs(char *filename);
+void init_qimpropers(char *filename);
+void init_qshakes(char *filename);
+void init_qsoftcores(char *filename);
+void init_qtorsions(char *filename);
+
 #endif /* __PARSE_H__ */

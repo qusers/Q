@@ -245,12 +245,180 @@ extern bool *excluded;
 extern bool *heavy;
 
 /* =============================================
- * == Q ATOMS
+ * == FROM FEP FILE
  * =============================================
  */
 
 extern int n_lambdas;
 extern double *lambdas;
+
+struct q_angcouple_t {
+    int acode;
+    int bcode;
+};
+
+struct q_angle_t {
+    int ai;
+    int aj;
+    int ak;
+    int code;
+};
+
+struct q_atom_t {
+    int a;
+};
+
+struct q_atype_t {
+    int code;
+};
+
+struct q_bond_t {
+    int ai;
+    int aj;
+    int code;
+};
+
+struct q_cangle_t {
+    double kth;
+    double th0;
+};
+
+struct q_catype_t {
+    char name[10];
+    double Ai;
+    double Bi;
+    double Ci;
+    double ai;
+    double Ai_14;
+    double Bi_14;
+    double m;
+};
+
+struct q_cbond_t {
+    double kb;
+    double b0;
+};
+
+struct q_charge_t {
+    double q;
+};
+
+struct q_cimproper_t {
+    double kth;
+    double th0;
+};
+
+struct q_ctorsion_t {
+    double k;
+    double n;
+    double d;
+};
+
+struct q_elscale_t {
+    int qi;
+    int qj;
+    double mu;
+};
+
+struct q_exclpair_t {
+    int ai;
+    int aj;
+    int excl;
+};
+
+struct q_imprcouple_t {
+    int icode;
+    int bcode;
+};
+
+struct q_improper_t {
+    int ai;
+    int aj;
+    int ak;
+    int al;
+    int code;
+};
+
+struct q_offdiag_t {
+    int i;
+    int j;
+    int qk;
+    int ql;
+    double Aij;
+    double muij;
+};
+
+struct q_shake_t {
+    int ai;
+    int aj;
+    double dist;
+};
+
+struct q_softcore_t {
+    double s;
+};
+
+struct q_softpair_t {
+    int qi;
+    int qj;
+};
+
+struct q_torcouple_t {
+    int tcode;
+    int bcode;
+};
+
+struct q_torsion_t {
+    int ai;
+    int aj;
+    int ak;
+    int al;
+    int code;
+};
+
+
+extern int n_qangcouples;
+extern int n_qangles;
+extern int n_qatoms;
+extern int n_qbonds;
+extern int n_qcangles;
+extern int n_qcatypes;
+extern int n_qcbonds;
+extern int n_qcimpropers;
+extern int n_qctorsions;
+extern int n_qelscales;
+extern int n_qexclpairs;
+extern int n_qimprcouples;
+extern int n_qimpropers;
+extern int n_qoffdiags;
+extern int n_qshakes;
+extern int n_qsoftcores;
+extern int n_qsoftpairs;
+extern int n_qtorcouples;
+extern int n_qtorsions;
+
+extern q_angcouple_t *q_angcouples;
+extern q_atom_t *q_atoms;
+extern q_cangle_t *q_cangles;
+extern q_catype_t *q_catypes;
+extern q_cbond_t *q_cbonds;
+extern q_cimproper_t *q_cimpropers;
+extern q_ctorsion_t *q_ctorsions;
+extern q_offdiag_t *q_offdiags;
+extern q_imprcouple_t *q_imprcouples;
+extern q_softpair_t *q_softpairs;
+extern q_torcouple_t *q_torcouples;
+
+extern q_angle_t **q_angles;
+extern q_atype_t **q_atypes;
+extern q_bond_t **q_bonds;
+extern q_charge_t **q_charges;
+extern q_elscale_t **q_elscales;
+extern q_exclpair_t **q_exclpairs;
+extern q_improper_t **q_impropers;
+extern q_shake_t **q_shakes;
+extern q_softcore_t **q_softcores;
+extern q_torsion_t **q_torsions;
 
 /* =============================================
  * == RESTRAINTS
