@@ -8,6 +8,8 @@ from os import path
 import shutil
 import json
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/share/')))
+
 import IO
 import functions as f
 import potential_energy as Upot
@@ -325,48 +327,20 @@ class Run_Dynamics(object):
         for i, stage in enumerate (MD.MD['stages']):
             Prepare_Inputs.write_csv()(i)
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        prog='Py-MD',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        description = '       == Python based MD engine == ')
 
+class Init(object):
+    def __init__(self, data):
+        print(data)
+    # dict from qdyn toplevel
+    #args = parser.parse_args()
     
-    parser.add_argument('-t', '--top',
-                        dest = "top",
-                        default = None,
-                        required = True,
-                        help = "Q topology file")
-    
-    parser.add_argument('-i', '--inp',
-                        dest = "inp",
-                        default = None,
-                        required = False,                        
-                        help = "Python type MD input file")
-        
-    parser.add_argument('-d', '--qdir',
-                        dest = "qdir",
-                        default = None,
-                        required = False,                        
-                        help = "Directory with standard Q inputfiles")
-            
-    parser.add_argument('-wp', '--wpython',
-                        dest = "wpython",
-                        default = None,
-                        help = "Toggle to write out python readable json files of the md")
-                
-    parser.add_argument('-r', '--rundir',
-                        dest = "rundir",
-                        default = None,
-                        help = "Toggle to write out python readable json files of the md")
-    
-    args = parser.parse_args()
-    Prepare_Topology(top = args.top,
-                     rundir = args.rundir)
-    Prepare_Inputs(top = args.top,
-                   inp = args.inp,
-                   qdir = args.qdir,
-                   json = args.wpython,
-                   rundir = args.rundir
-                  )
-    Run_Dynamics(rundir = args.rundir)
+    # running specified stuff
+    #Prepare_Topology(top = args.top,
+    #                 rundir = args.rundir)
+    #Prepare_Inputs(top = args.top,
+    #               inp = args.inp,
+    #               qdir = args.qdir,
+    #               json = args.wpython,
+    #               rundir = args.rundir
+    #              )
+    #Run_Dynamics(rundir = args.rundir)
