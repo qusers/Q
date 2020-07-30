@@ -2,66 +2,77 @@
 import os
 import itertools
 from os import path
+import json
 
 # Q-GPU libraries
 import IO
 
 class Topology():
     def __init__(self):
-        Topology.header = {}
-        Topology.coords = []            # block 01  ## TODO for reference
-        Topology.atypes = []        
-        Topology.catypes = {}        
-        Topology.nbonds_solute = None
-        Topology.bonds = []
-        Topology.cbonds = {}
-        Topology.nangles_solute = None        
-        Topology.angles = []
-        Topology.cangles = {}
-        Topology.ntorsions_solute = None                
-        Topology.torsions = []
-        Topology.ctorsions = {}
-        Topology.nimpropers_solute = None                
-        Topology.impropers = []
-        Topology.cimpropers = {}
-        Topology.charges = []
-        Topology.ccharges = {}
-        Topology.ngbr14 = []
-        Topology.ngbr14long = []
-        Topology.ngbr23 = []
-        Topology.ngbr23long = []
-        Topology.scaling = None
-        Topology.residues = []
-        Topology.anames = []
-        Topology.sequence = []
-        Topology.solvcenter = []
-        Topology.solucenter = []
-        Topology.radii = None
-        Topology.exclusion = None
-        Topology.solvtype = None
-        Topology.excluded = []
-        Topology.topdir = None
+        self.data = {'header'           : {},
+                     'coords'           : [],
+                     'atypes'           : [],
+                     'catypes'          : {},
+                     'nbonds_solute'    : None,
+                     'bonds'            : [],
+                     'cbonds'           : {},
+                     'nangles_solute'   : None,
+                     'angles'           : [],
+                     'cangles'          : {},
+                     'ntorsions_solute' : None,
+                     'torsions'         : [],
+                     'ctorsions'        : {},
+                     'nimpropers_solute': None,
+                     'impropers'        : [],
+                     'cimpropers'       : {},
+                     'charges'          : [],
+                     'ccharges'         : {},
+                     'ngbr14'           : [],
+                     'ngbr14long'       : [],
+                     'ngbr23'           : [],
+                     'ngbr23long'       : [],
+                     'scaling'          : None,
+                     'residues'         : [],
+                     'anames'           : [],
+                     'sequence'         : [],
+                     'solvcenter'       : [],
+                     'solucenter'       : [],
+                     'radii'            : None,
+                     'exclusion'        : None,
+                     'solvtype'         : None,
+                     'excluded'         : [],
+                     'topdir'           : None,
+                    }
+
 
 class Read_Topology(object):
     """
     Read Q topology file as an input, parse to topology class
     """
     def __init__(self, top, *args, **kwargs):    
-        self.topology = Topology()
-        self.topology_file = top
+        self.top = top
         
-    def parse_topology(self):
+        data = Topology()
+        self.data = data.data
+        
+    def JSON(self):
+        with open(self.top) as json_file:
+            self.data = json.load(json_file)
+        
+        return(self.data)
+        
+    def Q(self):
         block = 0
         charges_tmp = []
         charges_type_tmp = {}
         header = {}
         cnt = 0
 
-        with open(self.topology_file) as infile:
+        with open(self.top) as infile:
             for line in infile:
                     
                 if 'Total no. of atoms' in line:
-                    Topology.natoms_solute = line.split()[1]                    
+                    self.data['natoms_solute'] = line.split()[1]                    
                     block = 1
                     continue
                     
@@ -206,7 +217,7 @@ class Read_Topology(object):
 
                 if 'solvent type (0=SPC,1=3-atom,2=general)' in line:
                     line = line.split()
-                    Topology.solvtype=(line[0])                  
+                    self.data['solvtype']=(line[0])                  
                     block = 32
                     continue
 
@@ -221,45 +232,45 @@ class Read_Topology(object):
                     
                 if block == 1:
                     line = line.split()
-                    self.topology.coords.append(line)
+                    self.data['coords'].append(line)
                     
                 if block == 2:
                     line = line.split()
                     for atype in line:
                         cnt += 1
-                        self.topology.atypes.append([cnt,int(atype)])
+                        self.data['atypes'].append([cnt,int(atype)])
                         
                 if block == 3:
                     line = line.split()
-                    self.topology.bonds.append(line)
+                    self.data['bonds'].append(line)
                     
                 if block == 4:
                     line = line.split()
-                    self.topology.cbonds[line[0]] = [line[1],line[2]]
+                    self.data['cbonds'][line[0]] = [line[1],line[2]]
                     
                 if block == 5:
                     line = line.split()
-                    self.topology.angles.append(line)
+                    self.data['angles'].append(line)
                     
                 if block == 6:
                     line = line.split()
-                    self.topology.cangles[line[0]] = [line[1],line[2]]
+                    self.data['cangles'][line[0]] = [line[1],line[2]]
                     
                 if block == 7:
                     line = line.split()
-                    self.topology.torsions.append(line)
+                    self.data['torsions'].append(line)
                     
                 if block == 8:
                     line = line.split()
-                    self.topology.ctorsions[line[0]] = [line[1],line[2],line[3],line[4]]
+                    self.data['ctorsions'][line[0]] = [line[1],line[2],line[3],line[4]]
                     
                 if block == 9:
                     line = line.split()
-                    self.topology.impropers.append(line)
+                    self.data['impropers'].append(line)
                     
                 if block == 10:
                     line = line.split()
-                    self.topology.cimpropers[line[0]] = [line[1],'-2.000',line[2],'1']
+                    self.data['cimpropers'][line[0]] = [line[1],'-2.000',line[2],'1']
                     
                 if block == 11:
                     line = line.split()
@@ -352,14 +363,14 @@ class Read_Topology(object):
                 if block == 32:
                     linesplit = line.split()
                     if 'Exclusion' in line:
-                        Topology.exclusion = linesplit[0]
-                        Topology.radii = linesplit[1]
+                        self.data['exclusion'] = linesplit[0]
+                        self.data['radii'] = linesplit[1]
                         
                     if 'Solute center' in line:
-                        Topology.solucenter = [linesplit[0],linesplit[1],linesplit[2]]
+                        self.data['solucenter'] = [linesplit[0],linesplit[1],linesplit[2]]
                                         
                     if 'Solvent center' in line:
-                        Topology.solvcenter = [linesplit[0],linesplit[1],linesplit[2]]
+                        self.data['solvcenter'] = [linesplit[0],linesplit[1],linesplit[2]]
                         
                 if block == 33:
                     line = line.strip()
@@ -370,30 +381,30 @@ class Read_Topology(object):
                         else:
                             l = '1'
 
-                        Topology.excluded.append(l)
+                        self.data['excluded'].append(l)
         
         # header construct
-        Topology.header = header
+        self.data['header'] = header
         
         # split coordinates             
-        self.topology.coords = list(itertools.chain.from_iterable(self.topology.coords))
-        Topology.coords = IO.split_list(self.topology.coords,3)
+        tmp = list(itertools.chain.from_iterable(self.data['coords']))
+        self.data['coords'] = IO.split_list(tmp,3)
         
         # split bonds
-        self.topology.bonds = list(itertools.chain.from_iterable(self.topology.bonds))
-        Topology.bonds = IO.split_list(self.topology.bonds,3)
+        tmp = list(itertools.chain.from_iterable(self.data['bonds']))
+        self.data['bonds'] = IO.split_list(tmp,3)
         
         # split angles
-        self.topology.angles = list(itertools.chain.from_iterable(self.topology.angles))
-        Topology.angles = IO.split_list(self.topology.angles,4)        
+        tmp = list(itertools.chain.from_iterable(self.data['angles']))
+        self.data['angles'] = IO.split_list(tmp,4)        
                 
         # split torsions
-        self.topology.torsions = list(itertools.chain.from_iterable(self.topology.torsions))
-        Topology.torsions = IO.split_list(self.topology.torsions,5)        
+        tmp = list(itertools.chain.from_iterable(self.data['torsions']))
+        self.data['torsions'] = IO.split_list(tmp,5)        
                         
         # split impropers
-        self.topology.impropers = list(itertools.chain.from_iterable(self.topology.impropers))
-        Topology.impropers = IO.split_list(self.topology.impropers,5)        
+        tmp = list(itertools.chain.from_iterable(self.data['impropers']))
+        self.data['impropers'] = IO.split_list(tmp,5)        
         
         # construct charges
         ctype = 0
@@ -403,14 +414,14 @@ class Read_Topology(object):
                 ctype += 1
                 charges_type_tmp[charge] = ctype
                         
-            Topology.charges.append([i+1, charges_type_tmp[charge]])
+            self.data['charges'].append([i+1, charges_type_tmp[charge]])
         
         for key in charges_type_tmp:
-            Topology.ccharges[charges_type_tmp[key]] = key
+            self.data['ccharges'][charges_type_tmp[key]] = key
             
         # construct atom types
         for i in range(0, len(Masses)):
-            Topology.catypes[i+1] = [Masses[i],
+            self.data['catypes'][i+1] = [Masses[i],
                                           Aii_normal[i],
                                           Bii_normal[i],
                                           Aii_polar[i],
@@ -421,124 +432,125 @@ class Read_Topology(object):
             
         # construct 1-4
         ngbr14 = ''.join(ngbr14)
-        Topology.ngbr14 = [ngbr14[i:i+25] for i in range(0, len(ngbr14), 25)]
+        self.data['ngbr14'] = [ngbr14[i:i+25] for i in range(0, len(ngbr14), 25)]
         
         #construct 1-4 long
-        self.topology.ngbr14long = list(itertools.chain.from_iterable(self.topology.ngbr14long))
-        Topology.ngbr14long = IO.split_list(self.topology.ngbr14long,2)
+        tmp = list(itertools.chain.from_iterable(self.data['ngbr14long']))
+        self.data['ngbr14long'] = IO.split_list(tmp,2)
         
         # construct 2-3
         ngbr23 = ''.join(ngbr23)
-        Topology.ngbr23 = [ngbr23[i:i+25] for i in range(0, len(ngbr23), 25)]
+        self.data['ngbr23'] = [ngbr23[i:i+25] for i in range(0, len(ngbr23), 25)]
         
         # construct 2-3 long
-        self.topology.ngbr23long = list(itertools.chain.from_iterable(self.topology.ngbr23long))
-        Topology.ngbr23long = IO.split_list(self.topology.ngbr23long,2)
+        tmp = list(itertools.chain.from_iterable(self.data['ngbr14long']))
+        self.data['ngbr23long'] = IO.split_list(tmp,2)
         
         # Starting atom of every residue 
-        Topology.residues = residues
+        self.data['residues'] = residues
         
         # Residue list
-        Topology.sequence = sequence
+        self.data['sequence'] = sequence
                 
         # Starting atom of molecules in topology
-        Topology.molecules = molecules
+        self.data['molecules'] = molecules
                         
         # Atomtype names, matches with atype
-        Topology.anames = anames
+        self.data['anames'] = anames
         
         # Join exclusions
-        Topology.excluded = ''.join(Topology.excluded)
+        self.data['excluded'] = ''.join(self.data['excluded'])
         
-        return(Topology)
+        return(self.data)
         
 class Write_Topology(object):        
     """
     Write Python topology object to file
     """
-    def __init__(self, top, *args, **kwargs):    
-        self.topology_file = top
-        self.header = []
-        self.workdir = os.getcwd()
+    def __init__(self, data, *args, **kwargs):    
+        self.data = data
+
+    def JSON(self,wd):
+        """
+        .json MD input file
+        """
+        self.wd = wd
+        with open(self.wd + 'water.json', 'w') as outfile:
+            inputs = self.data
+            json.dump(inputs,outfile,indent=2)        
         
-    def write_csv(self):
-        csvdir = self.workdir + '/' + self.topology_file[:-4]
-        Topology.topdir = csvdir
-        if path.exists(csvdir) == True:
-            os.system('rm -r ' + csvdir)
-        
-        os.mkdir(csvdir)
-            
+    def CSV(self,wd):
+        self.wd = wd
         #Topology.coords = []
-        with open(csvdir+'/coords.csv','w') as outfile:
-            outfile.write('{}\n'.format(len(Topology.coords)))
-            outfile.write('{}\n'.format(Topology.natoms_solute))            
-            for line in Topology.coords:
+        with open(self.wd + 'coords.csv','w') as outfile:
+            outfile.write('{}\n'.format(len(self.data['coords'])))
+            outfile.write('{}\n'.format(self.data['natoms_solute']))            
+            for line in self.data['coords']:
                 outfile.write('{};{};{}\n'.format(line[0],line[1],line[2]))
         
         #Topology.atypes = []
-        with open(csvdir+'/atypes.csv','w') as outfile:
-            outfile.write('{}\n'.format(len(Topology.atypes)))
-            for line in Topology.atypes:
+        with open(self.wd + '/atypes.csv','w') as outfile:
+            outfile.write('{}\n'.format(len(self.data['atypes'])))
+            for line in self.data['atypes']:
                 outfile.write('{};{}\n'.format(line[0],line[1]))
                 
         #Topology.catypes = {}
-        keys = sorted(Topology.catypes.keys())
-        with open(csvdir+'/catypes.csv','w') as outfile:
-            outfile.write('{}\n'.format(len(Topology.catypes)))
+        keys = sorted(self.data['catypes'].keys())
+        with open(self.wd + '/catypes.csv','w') as outfile:
+            outfile.write('{}\n'.format(len(self.data['catypes'])))
             for key in keys:
                 outfile.write('{};{};{};{};{};{};{};{}\n'.format(key,
-                                                                 Topology.catypes[key][0],
-                                                                 Topology.catypes[key][1],
-                                                                 Topology.catypes[key][2],
-                                                                 Topology.catypes[key][3],
-                                                                 Topology.catypes[key][4],
-                                                                 Topology.catypes[key][5],
-                                                                 Topology.catypes[key][6],
+                                                                 self.data['catypes'][key][0],
+                                                                 self.data['catypes'][key][1],
+                                                                 self.data['catypes'][key][2],
+                                                                 self.data['catypes'][key][3],
+                                                                 self.data['catypes'][key][4],
+                                                                 self.data['catypes'][key][5],
+                                                                 self.data['catypes'][key][6],
                                                                 ))
                 
         #Topology.bonds = []
-        with open(csvdir+'/bonds.csv','w') as outfile:
-            outfile.write('{}\n'.format(len(Topology.bonds)))
-            outfile.write('{}\n'.format(Topology.nbonds_solute))            
-            for line in Topology.bonds:
+        with open(self.wd + '/bonds.csv','w') as outfile:
+            outfile.write('{}\n'.format(len(self.data['bonds'])))
+            outfile.write('{}\n'.format(self.data['nbonds_solute']))            
+            for line in self.data['bonds']:
                 outfile.write('{};{};{}\n'.format(line[0],line[1],line[2]))      
                 
         #Topology.cbonds = {}
-        keys = sorted(Topology.cbonds.keys())
-        with open(csvdir+'/cbonds.csv','w') as outfile:
-            outfile.write('{}\n'.format(len(Topology.cbonds)))
+        keys = sorted(self.data['cbonds'].keys())
+        with open(self.wd + '/cbonds.csv','w') as outfile:
+            outfile.write('{}\n'.format(len(self.data['cbonds'])))
             for key in keys:
                 outfile.write('{};{};{}\n'.format(key,
-                                                  Topology.cbonds[key][0],
-                                                  Topology.cbonds[key][1]
+                                                  self.data['cbonds'][key][0],
+                                                  self.data['cbonds'][key][1]
                                                  ))
         
         #Topology.angles = []
-        with open(csvdir+'/angles.csv','w') as outfile:
-            outfile.write('{}\n'.format(len(Topology.angles)))
-            outfile.write('{}\n'.format(Topology.nangles_solute))                        
-            for line in Topology.angles:
+        with open(self.wd + '/angles.csv','w') as outfile:
+            outfile.write('{}\n'.format(len(self.data['angles'])))
+            outfile.write('{}\n'.format(self.data['nangles_solute']))                        
+            for line in self.data['angles']:
                 outfile.write('{};{};{};{}\n'.format(line[0],
                                                      line[1],
                                                      line[2],
                                                      line[3]))  
                 
         #Topology.cangles = {}
-        keys = sorted(Topology.cangles.keys())        
-        with open(csvdir+'/cangles.csv','w') as outfile:
-            outfile.write('{}\n'.format(len(Topology.cangles)))
+        keys = sorted(self.data['cangles'].keys())        
+        with open(self.wd + '/cangles.csv','w') as outfile:
+            outfile.write('{}\n'.format(len(self.data['cangles'])))
             for key in keys:
                 outfile.write('{};{};{}\n'.format(key,
-                                                  Topology.cangles[key][0],
-                                                  Topology.cangles[key][1]
+                                                  self.data['cangles'][key][0],
+                                                  self.data['cangles'][key][1]
                                                  ))
                 
         #Topology.torsions = []
-        with open(csvdir+'/torsions.csv','w') as outfile:
-            outfile.write('{}\n'.format(len(Topology.torsions)))
-            outfile.write('{}\n'.format(Topology.ntorsions_solute))                                    
-            for line in Topology.torsions:
+        with open(self.wd + '/torsions.csv','w') as outfile:
+            outfile.write('{}\n'.format(len(self.data['torsions'])))
+            outfile.write('{}\n'.format(self.data['ntorsions_solute']))                                    
+            for line in self.data['torsions']:
                 outfile.write('{};{};{};{};{}\n'.format(line[0],
                                                         line[1],
                                                         line[2],
@@ -547,21 +559,21 @@ class Write_Topology(object):
                                                     ))
                 
         #Topology.ctorsions = {}
-        keys = sorted(Topology.ctorsions.keys())                
-        with open(csvdir+'/ctorsions.csv','w') as outfile:
-            outfile.write('{}\n'.format(len(Topology.ctorsions)))
+        keys = sorted(self.data['ctorsions'].keys())                
+        with open(self.wd + '/ctorsions.csv','w') as outfile:
+            outfile.write('{}\n'.format(len(self.data['ctorsions'])))
             for key in keys:
                 outfile.write('{};{};{};{}\n'.format(key,
-                                                     Topology.ctorsions[key][0],
-                                                     Topology.ctorsions[key][1],
-                                                     Topology.ctorsions[key][2],
-                                                     Topology.ctorsions[key][3],
+                                                     self.data['ctorsions'][key][0],
+                                                     self.data['ctorsions'][key][1],
+                                                     self.data['ctorsions'][key][2],
+                                                     self.data['ctorsions'][key][3],
                                                  ))
         #Topology.impropers = []
-        with open(csvdir+'/impropers.csv','w') as outfile:
-            outfile.write('{}\n'.format(len(Topology.impropers)))
-            outfile.write('{}\n'.format(Topology.nimpropers_solute))                                                
-            for line in Topology.impropers:
+        with open(self.wd + '/impropers.csv','w') as outfile:
+            outfile.write('{}\n'.format(len(self.data['impropers'])))
+            outfile.write('{}\n'.format(self.data['nimpropers_solute']))                                                
+            for line in self.data['impropers']:
                 outfile.write('{};{};{};{};{}\n'.format(line[0],
                                                         line[1],
                                                         line[2],
@@ -569,69 +581,69 @@ class Write_Topology(object):
                                                         line[4],
                                                     ))
         #Topology.cimpropers = {}
-        keys = sorted(Topology.cimpropers.keys())                        
-        with open(csvdir+'/cimpropers.csv','w') as outfile:
-            outfile.write('{}\n'.format(len(Topology.cimpropers)))
+        keys = sorted(self.data['cimpropers'].keys())                        
+        with open(self.wd + '/cimpropers.csv','w') as outfile:
+            outfile.write('{}\n'.format(len(self.data['cimpropers'])))
             for key in keys:
                 outfile.write('{};{};{};{}\n'.format(key,
-                                                     Topology.cimpropers[key][0],
-                                                     Topology.cimpropers[key][1],
-                                                     Topology.cimpropers[key][2],
-                                                     Topology.cimpropers[key][3],
+                                                     self.data['cimpropers'][key][0],
+                                                     self.data['cimpropers'][key][1],
+                                                     self.data['cimpropers'][key][2],
+                                                     self.data['cimpropers'][key][3],
                                                  ))
         
         #Topology.charges = []
-        with open(csvdir+'/charges.csv','w') as outfile:
-            outfile.write('{}\n'.format(len(Topology.charges)))
-            for line in Topology.charges:
+        with open(self.wd + '/charges.csv','w') as outfile:
+            outfile.write('{}\n'.format(len(self.data['charges'])))
+            for line in self.data['charges']:
                 outfile.write('{};{}\n'.format(line[0],line[1]))
                 
         #Topology.ccharges = {}
-        keys = sorted(Topology.ccharges.keys())                                
-        with open(csvdir+'/ccharges.csv','w') as outfile:
-            outfile.write('{}\n'.format(len(Topology.ccharges)))
+        keys = sorted(self.data['ccharges'].keys())                                
+        with open(self.wd + '/ccharges.csv','w') as outfile:
+            outfile.write('{}\n'.format(len(self.data['ccharges'])))
             for key in keys:
-                outfile.write('{};{}\n'.format(key,Topology.ccharges[key]))
+                outfile.write('{};{}\n'.format(key,self.data['ccharges'][key]))
                 
         #Topology.ngbr14 = []
-        with open(csvdir+'/ngbrs14.csv','w') as outfile:
-            outfile.write('{}\n'.format(len(Topology.ngbr14)))
-            for line in Topology.ngbr14:
+        with open(self.wd + '/ngbrs14.csv','w') as outfile:
+            outfile.write('{}\n'.format(len(self.data['ngbr14'])))
+            for line in self.data['ngbr14']:
                 outfile.write('{}\n'.format(line))
                 
         #Topology.ngbr14long = []
-        with open(csvdir+'/ngbrs14long.csv','w') as outfile:
-            outfile.write('{}\n'.format(len(Topology.ngbr14long)))
-            for line in Topology.ngbr14long:
+        with open(self.wd + '/ngbrs14long.csv','w') as outfile:
+            outfile.write('{}\n'.format(len(self.data['ngbr14long'])))
+            for line in self.data['ngbr14long']:
                 outfile.write('{};{}\n'.format(line[0],line[1]))
                 
         #Topology.ngbr23 = []
-        with open(csvdir+'/ngbrs23.csv','w') as outfile:
-            outfile.write('{}\n'.format(len(Topology.ngbr23)))
-            for line in Topology.ngbr23:
+        with open(self.wd + '/ngbrs23.csv','w') as outfile:
+            outfile.write('{}\n'.format(len(self.data['ngbr23'])))
+            for line in self.data['ngbr23']:
                 outfile.write('{}\n'.format(line))
                 
         #Topology.ngbr23long = []
-        with open(csvdir+'/ngbrs23long.csv','w') as outfile:
-            outfile.write('{}\n'.format(len(Topology.ngbr23long)))
-            for line in Topology.ngbr23long:
+        with open(self.wd + '/ngbrs23long.csv','w') as outfile:
+            outfile.write('{}\n'.format(len(self.data['ngbr23long'])))
+            for line in self.data['ngbr23long']:
                 outfile.write('{};{}\n'.format(line[0],line[1]))
                 
         #Topology.excluded = []
-        with open(csvdir+'/excluded.csv','w') as outfile:
-            outfile.write(Topology.excluded + '\n')
+        with open(self.wd + '/excluded.csv','w') as outfile:
+            outfile.write(self.data['excluded'] + '\n')
             
         #Topo.csv
-        with open(csvdir+'/topo.csv','w') as outfile:
+        with open(self.wd + '/topo.csv','w') as outfile:
             outfile.write('5\n')
-            outfile.write(Topology.solvtype + '\n')
-            outfile.write(Topology.exclusion + '\n')
-            outfile.write(Topology.radii + '\n')
-            outfile.write('{};{};{}\n'.format(Topology.solucenter[0],
-                                              Topology.solucenter[1],
-                                              Topology.solucenter[2],))
+            outfile.write(self.data['solvtype'] + '\n')
+            outfile.write(self.data['exclusion'] + '\n')
+            outfile.write(self.data['radii'] + '\n')
+            outfile.write('{};{};{}\n'.format(self.data['solucenter'][0],
+                                              self.data['solucenter'][1],
+                                              self.data['solucenter'][2],))
             
-            outfile.write('{};{};{}\n'.format(Topology.solvcenter[0],
-                                              Topology.solvcenter[1],
-                                              Topology.solvcenter[2],))
+            outfile.write('{};{};{}\n'.format(self.data['solvcenter'][0],
+                                              self.data['solvcenter'][1],
+                                              self.data['solvcenter'][2],))
             

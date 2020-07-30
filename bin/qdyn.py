@@ -7,43 +7,63 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../s
 import qdyn
 
 class Startup(object):
-    def __init__(self,top):
-        start = qdyn.Init(top)
+    def __init__(self,top,fep,md,re,wd):
+        data = {'top'   :   top,
+                'fep'   :   fep,
+                'md'    :   md,
+                're'    :   re,
+                'wd'    :   wd
+               }
+        START = qdyn.Init(data)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        prog='Q',
+        prog='Qdyn',
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        description = '       == Q == ')
-
+        description = '       == Qdyn == ')
+    
+    parser.add_argument('--version', 
+                        action='version', 
+                        version='%(prog)s 0.1.0')
+    
     parser.add_argument('-t', '--top',
                         dest = "top",
                         default = None,
                         required = True,
                         help = "Q topology file")
     
-    parser.add_argument('-i', '--inp',
-                        dest = "inp",
+    parser.add_argument('-m', '--md',
+                        dest = "md",
+                        default = None,
+                        required = True,                        
+                        help = "MD input file, use .inp for Q file format, .json for Python \n"   \
+                               "type input"
+                        )
+           
+    parser.add_argument('-f', '--fep',
+                        dest = "fep",
                         default = None,
                         required = False,                        
-                        help = "Python type MD input file")
-        
-    parser.add_argument('-d', '--qdir',
-                        dest = "qdir",
+                        help = "FEPfile, use .fep for Q file format, .json for Python")
+       
+    parser.add_argument('-r', '--re',
+                        dest = "re",
                         default = None,
-                        required = False,                        
-                        help = "Directory with standard Q inputfiles")
-            
-    parser.add_argument('-wp', '--wpython',
-                        dest = "wpython",
+                        required = False,                                                
+                        help = "Restart file: TO DO")
+
+         
+    parser.add_argument('-d', '--workdir',
+                        dest = "workdir",
                         default = None,
-                        help = "Toggle to write out python readable json files of the md")
-                
-    parser.add_argument('-r', '--rundir',
-                        dest = "rundir",
-                        default = None,
-                        help = "Toggle to write out python readable json files of the md")
-    
+                        required = True,                                                
+                        help = "Working directory")
+
     args = parser.parse_args()
     
-    Startup(top = args.top)
+    Startup(top = args.top,
+            fep = args.fep,            
+            md = args.md,
+            re = args.re,
+            wd = args.workdir,
+           )
