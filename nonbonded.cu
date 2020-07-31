@@ -6,7 +6,7 @@
  * =============================================
  */
 
- void calc_nonbonded_forces() {
+ void calc_nonbonded_pp_forces() {
     bool bond14, bond23;
     double scaling;
     coord_t da;
@@ -15,15 +15,18 @@
     double dva;
     double qi, qj;
     double ai_aii, aj_aii, ai_bii, aj_bii;
+    int i, j;
     catype_t ai_type, aj_type;
 
-    if (n_atoms_solute > 0) {
+    if (n_patoms > 0) {
         energies.Ucoul = 0;
         energies.Uvdw = 0;
     }
 
-    for (int i = 0; i < n_atoms_solute; i++) {
-        for (int j = i+1; j < n_atoms_solute; j++) {
+    for (int pi = 0; pi < n_patoms; pi++) {
+        for (int pj = i+1; pj < n_patoms; pj++) {
+            i = p_atoms[pi].a - 1;
+            j = p_atoms[pj].a - 1;
             bond23 = false;
             bond14 = false;
             for (int k = 0; k < n_ngbrs23; k++) {

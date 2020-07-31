@@ -3,8 +3,8 @@ CFLAGS = -g
 
 all: qdyn
 
-qdyn: system.o main.o utils.o parse.o restraints.o bonded.o nonbonded.o solvent.o
-	$(CC) $(CFLAGS) -o qdyn main.o system.o utils.o parse.o restraints.o bonded.o nonbonded.o solvent.o
+qdyn: system.o main.o utils.o parse.o restraints.o bonded.o nonbonded.o solvent.o qatoms.o
+	$(CC) $(CFLAGS) -o qdyn main.o system.o utils.o parse.o restraints.o bonded.o nonbonded.o solvent.o qatoms.o
 
 main.o: main.cu system.h
 	$(CC) $(CFLAGS) -c main.cu
@@ -29,6 +29,9 @@ nonbonded.o: nonbonded.cu nonbonded.h system.h
 
 solvent.o: solvent.cu solvent.h system.h
 	$(CC) $(CFLAGS) -c solvent.cu
+
+qatoms.o: qatoms.cu qatoms.h system.h
+	$(CC) $(CFLAGS) -c qatoms.cu
 
 clean:
 	rm -f *.o qdyn

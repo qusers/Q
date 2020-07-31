@@ -5,6 +5,7 @@
 #include "nonbonded.h"
 #include "solvent.h"
 #include "restraints.h"
+#include "qatoms.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,6 +21,8 @@
 
 int n_atoms;
 int n_atoms_solute;
+int n_patoms;
+int n_qatoms;
 int n_waters;
 
 char base_folder[1024];
@@ -87,7 +90,6 @@ double *lambdas;
 
 int n_qangcouples;
 int n_qangles;
-int n_qatoms;
 int n_qbonds;
 int n_qcangles;
 int n_qcatypes;
@@ -127,6 +129,76 @@ q_improper_t **q_impropers;
 q_shake_t **q_shakes;
 q_softcore_t **q_softcores;
 q_torsion_t **q_torsions;
+
+// Remove bonds, angles, torsions and impropers which are excluded or changed in the FEP file
+void shrink_topology() {
+    int excluded;
+    int ai = 0, bi = 0, ii = 0, ti = 0;
+    int qai = 0, qbi = 0, qii = 0, qti = 0;
+
+    excluded = 0;
+    for (int i = 0; i < n_angles; i++) {
+        if (angles[i].ai == q_angles[qai][0].ai
+         && angles[i].aj == q_angles[qai][0].aj
+         && angles[i].ak == q_angles[qai][0].ak) {
+            qai++;
+            excluded++;
+        }
+        else {
+            angles[ai] = angles[i];
+            ai++;
+        }
+    }
+    n_angles -= excluded;
+
+    excluded = 0;
+    for (int i = 0; i < n_bonds; i++) {
+        if (bonds[i].ai == q_bonds[qbi][0].ai
+         && bonds[i].aj == q_bonds[qbi][0].aj) {
+            qbi++;
+            excluded++;
+        }
+        else {
+            bonds[bi] = bonds[i];
+            bi++;
+        }
+    }
+    n_bonds -= excluded;
+
+    // excluded = 0;
+    // for (int i = 0; i < n_impropers; i++) {
+    //     if (impropers[i].ai == q_impropers[qai][0].ai
+    //      && impropers[i].aj == q_impropers[qai][0].aj
+    //      && impropers[i].ak == q_impropers[qai][0].ak
+    //      && impropers[i].al == q_impropers[qai][0].al) {
+    //         qii++;
+    //         excluded++;
+    //     }
+    //     else {
+    //         impropers[ii] = impropers[i];
+    //         ii++;
+    //     }
+    // }
+    // n_impropers -= excluded;
+
+    excluded = 0;
+    for (int i = 0; i < n_torsions; i++) {
+        if (torsions[i].ai == q_torsions[qti][0].ai
+         && torsions[i].aj == q_torsions[qti][0].aj
+         && torsions[i].ak == q_torsions[qti][0].ak
+         && torsions[i].al == q_torsions[qti][0].al) {
+            qti++;
+            excluded++;
+        }
+        else {
+            torsions[ti] = torsions[i];
+            ti++;
+        }
+    }
+    n_torsions -= excluded;
+
+    // TODO: add exclusion pairs
+}
 
 /* =============================================
  * == CALCUTED IN THE INTEGRATION
@@ -348,6 +420,33 @@ void init_restrseqs(char* filename) {
 }
 
 /* =============================================
+ * == CALCUTED IN THE INTEGRATION
+ * =============================================
+ */
+
+p_atom_t *p_atoms;
+energy_t *q_energies;
+
+void init_patoms() {
+    n_patoms = n_atoms_solute - n_qatoms;
+
+    p_atoms = (p_atom_t*) malloc(n_patoms * sizeof(p_atom_t));
+
+    // Loop through all solutes, adding a p atom to the list every time a non-q atom is encountered
+    int pi = 0;
+    int qi = 0;
+    for (int i = 0; i < n_atoms; i++) {
+        if (i == q_atoms[qi].a-1) {
+            qi++;
+        }
+        else {
+            p_atoms[pi].a = i+1;
+            pi++;
+        }
+    }
+}
+
+/* =============================================
  * == ENERGY & TEMPERATURE
  * =============================================
  */
@@ -460,7 +559,6 @@ void write_velocities(int iteration) {
 void write_energies(int iteration) {
     if (iteration % md.energy != 0) return;
     FILE * fp;
-    int i;
 
     char path[1024];
     sprintf(path, "%s/output/%s", base_folder, "coords.csv");
@@ -521,7 +619,8 @@ void calc_integration_step(int iteration) {
 
     clock_t end_bonded = clock();
 
-    calc_nonbonded_forces();
+    calc_nonbonded_qp_forces();
+    calc_nonbonded_pp_forces();
 
     clock_t end_nonbonded = clock();
 
@@ -529,6 +628,7 @@ void calc_integration_step(int iteration) {
     if (n_waters > 0) {
         calc_nonbonded_ww_forces();
         calc_nonbonded_pw_forces();
+        calc_nonbonded_qw_forces();
     }
 
     // Calculate restraints
@@ -541,11 +641,30 @@ void calc_integration_step(int iteration) {
     calc_pshell_forces();
     calc_restrseq_forces();
 
+    // Q-Q nonbonded interactions
+    calc_nonbonded_qq_forces();
+
+    // Q-atom bonded interactions: loop over Q-atom states
+    for (int state = 0; state < n_lambdas; state++) {
+        calc_qangle_forces(state);
+        calc_qbond_forces(state);
+        calc_qtorsion_forces(state);
+    }
+
     // Now apply leapfrog integration
     calc_leapfrog();
 
     // Recalculate temperature and kinetic energy for output
     calc_temperature();
+
+    // Update energies with an average of all states
+    for (int state = 0; state < n_lambdas; state++) {
+        energies.Ubond += q_energies[state].Ubond * lambdas[state];
+        energies.Ubond += q_energies[state].Uangle * lambdas[state];
+        energies.Utor += q_energies[state].Utor * lambdas[state];
+        energies.Ucoul += q_energies[state].Ucoul * lambdas[state];
+        energies.Uvdw += q_energies[state].Uvdw * lambdas[state];
+    }
 
     // Update totals
     energies.Urestr = energies.Uradx + energies.Upolx + energies.Ushell + energies.Ufix + energies.Upres;
@@ -632,10 +751,13 @@ void init_variables() {
     init_qsoftcores("q_softcores.csv");
     init_qtorsions("q_torsions.csv");
 
+    shrink_topology();
+
     // Init random seed from MD file
     srand(md.random_seed);
 
     // From calculation in the integration
+    init_patoms();
     init_velocities();
     init_dvelocities();
     init_xcoords();
@@ -665,6 +787,8 @@ void init_variables() {
     energies.Ushell = 0;
     energies.Ufix = 0;
     energies.Urestr = 0;
+
+    q_energies = (energy_t*) calloc(n_lambdas, sizeof(energy_t));
 
     // Write header to file
     write_header("coords.csv");
@@ -766,4 +890,7 @@ void clean_variables() {
     free(velocities);
     free(dvelocities);
     free(xcoords);
+
+    // Energies & temperature
+    free(q_energies);
 }
