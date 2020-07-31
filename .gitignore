@@ -42,4 +42,7 @@ qdyn
 
 __pycache__/*
 test/water/no_ion/*
+test/ethane-ethanol/test/*
 *.pyc
+
+.DS_Store

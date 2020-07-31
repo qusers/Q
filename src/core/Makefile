@@ -1,7 +1,7 @@
 CC = nvcc
 CFLAGS = -g
 
-all: qdyn
+all: qdyn move
 
 qdyn: system.o main.o utils.o parse.o restraints.o bonded.o nonbonded.o solvent.o
 	$(CC) $(CFLAGS) -o qdyn main.o system.o utils.o parse.o restraints.o bonded.o nonbonded.o solvent.o
@@ -31,4 +31,8 @@ solvent.o: solvent.cu solvent.h system.h
 	$(CC) $(CFLAGS) -c solvent.cu
 
 clean:
-	rm -f *.o qdyn
+	rm -f *.o ../../bin/qdyn
+
+move:
+	mkdir ../../bin
+	mv qdyn ../../bin/

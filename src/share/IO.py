@@ -250,3 +250,17 @@ def read_lib(libfile):
 
 def split_list(lst,n):
     return [lst[i:i + n] for i in range(0, len(lst), n)]
+
+def run_command(executable, options):
+    """
+    Takes two variables, the executable location and its options (as string), and 
+    runs the program.
+    
+    Returns the output of that program as an unformatted string.
+    """
+    args = shlex.split(executable + options)
+    print(' '.join(args))
+    
+    out = check_output(args)
+
+    return out
