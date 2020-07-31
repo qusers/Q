@@ -47,6 +47,8 @@ void clean_variables();
 
 extern int n_atoms;
 extern int n_atoms_solute;
+extern int n_patoms;
+extern int n_qatoms;
 extern int n_waters;
 
 extern char base_folder[1024];
@@ -379,7 +381,6 @@ struct q_torsion_t {
 
 extern int n_qangcouples;
 extern int n_qangles;
-extern int n_qatoms;
 extern int n_qbonds;
 extern int n_qcangles;
 extern int n_qcatypes;
@@ -508,6 +509,10 @@ void init_wshells();
  * =============================================
  */
 
+struct p_atom_t {
+    int a;
+};
+
 struct vel_t {
     double x;
     double y;
@@ -537,9 +542,12 @@ struct energy_t {
     double Urestr;
 };
 
+extern p_atom_t *p_atoms;
 extern coord_t *coords;
+extern vel_t* velocities;
 extern dvel_t* dvelocities;
 extern energy_t energies;
+extern energy_t *q_energies;
 extern double Temp;
 extern double A_OO, B_OO, crg_ow, crg_hw; // TODO: don't keep this in system.cu?
 
