@@ -470,14 +470,13 @@ class Write_Topology(object):
     def __init__(self, data, *args, **kwargs):    
         self.data = data
 
-    def JSON(self,wd):
+    def JSON(self,out_json):
         """
         .json MD input file
         """
-        self.wd = wd
-        with open(self.wd + 'water.json', 'w') as outfile:
+        with open(out_json, 'w') as outfile:
             inputs = self.data
-            json.dump(inputs,outfile,indent=2)        
+            json.dump(inputs,outfile,indent=2)     
         
     def CSV(self,wd):
         self.wd = wd

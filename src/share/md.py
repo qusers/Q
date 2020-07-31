@@ -220,11 +220,10 @@ class Write_MD(object):
             outfile.write('energy;{}\n'             .format(self.data['energy']))        
             outfile.write('trajectory;{}\n'         .format(self.data['trajectory']))
             
-    def JSON(self,wd):
+    def JSON(self,out_json):
         """
         .json MD input file
         """
-        self.wd = wd
-        with open(self.wd + 'md.json', 'w') as outfile:
+        with open(out_json, 'w') as outfile:
             inputs = self.data
-            json.dump(inputs,outfile,indent=2)
+            json.dump(inputs,outfile,indent=2)    

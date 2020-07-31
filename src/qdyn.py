@@ -11,31 +11,36 @@ import json
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/share/')))
 
 import IO
-import functions as f
-import potential_energy as Upot
-import geometries
 import topology as TOPOLOGY        
 import defaults as DEFAULTS
-import md as MD
+import md       as MD
+import settings as SETTINGS
+import fep      as FEP
 
 class Create_Environment(object):
     """
         Creates the workdirectory environment.
     """
-    def __init__(self,top,wd):
-        self.top = top
-        self.wd = wd
-        
+    def __init__(self,top,wd):        
         if not os.path.exists(wd):
             os.mkdir(wd)
+            os.mkdir(wd + '/' + top.split('.')[0])
             
         else:
             shutil.rmtree(wd)
-            os.mkdir(wd)        
+            os.mkdir(wd)
+            os.mkdir(wd + '/' +  top.split('.')[0])
+            
+        # create the output folder for qdyn
+        os.mkdir(wd + '/' + top.split('.')[0] + '/output')
         
 class Prepare_Topology(object):
     """
-        Creates a topology object and writes .csv files for qdyn.
+        Creates a topology object.
+        Reads: 
+                .json and .top topology files.
+        Writes:
+                .csv and .json topology files.
     """    
     def __init__(self,top,wd):
         self.top = top
@@ -55,10 +60,18 @@ class Prepare_Topology(object):
         
         # Write the topology in csv and json format
         write_top.CSV(self.wd + '/' + self.top.split('.')[0] + '/')
-        write_top.JSON(self.wd + '/' + self.top.split('.')[0] + '/')
-
+        
+        out_json = self.wd + '/' + self.top.split('.')[0] + '/' + self.top.split('.')[0] + '.json'
+        write_top.JSON(out_json)
 
 class Prepare_MD(object):
+    """
+        Creates a topology object.
+        Reads: 
+                .json and .inp md input files.
+        Writes:
+                .csv and .json md input files.
+    """        
     def __init__(self,top,md,wd):
         self.top = top
         self.wd  = wd
@@ -77,15 +90,48 @@ class Prepare_MD(object):
         
         # Write md data files (both csv and json file)
         write_md.CSV(self.wd + '/' + self.top.split('.')[0] + '/')
-        write_md.JSON(self.wd + '/' + self.top.split('.')[0]+ '/')
+        
+        out_json = self.wd + '/' + self.top.split('.')[0] + '/' + self.md.split('.')[0] + '.json'
+        write_md.JSON(out_json)        
 
+class Prepare_FEP(object):       
+    """
+        Creates an FEP object.
+        Reads: 
+                .json and .fep FEP files.
+        Writes:
+                .csv and .json FEP files.
+    """  
+    def __init__(self,fepfile,wd,top):
+        self.fepfile = fepfile
+        self.wd = wd
+        self.top = top
+        
+        read_fep  = FEP.Read_Fep(self.fepfile)
+        
+        # Get the extension and read data
+        if self.fepfile.split('.')[-1] == 'json':
+            fep_data = read_fep.JSON()
+            
+        else:
+            fep_data = read_fep.Q()     
+
+        # Initiate the write class
+        write_fep = FEP.Write_Fep(fep_data)
+        
+        # Write the topology in csv and json format
+        write_fep.CSV(self.wd + '/' + self.top.split('.')[0] + '/')
+        out_json = self.wd + '/' + self.top.split('.')[0] + '/' + self.fepfile.split('.')[0] + '.json'
+        write_fep.JSON(out_json)
+        
 class Run_Dynamics(object):
-    def __init__(self,rundir):
-        #inputs = Prepare_Inputs()
-        self.rundir = rundir
-        for i, stage in enumerate (MD.MD['stages']):
-            Prepare_Inputs.write_csv()(i)
-
+    """
+        Runs the main dynamics loop.
+    """           
+    def __init__(self,wd,top):
+        executable = SETTINGS.ROOT + 'bin/qdyn '
+        options = wd + '/' + top.split('.')[0]
+        IO.run_command(executable,options)
 
 class Init(object):
     def __init__(self, data):
@@ -121,7 +167,11 @@ class Init(object):
                 print("FATAL: unrecognized extension for {}".format(data['fep']))
                 sys.exit()
     
-        # running specified stuff
+        # INIT
+        Create_Environment(top = self.environment['top'],
+                         wd  = self.environment['wd'],
+                        )
+
         Prepare_Topology(top = self.environment['top'],
                          wd  = self.environment['wd'],
                         )
@@ -130,4 +180,12 @@ class Init(object):
                    wd  = self.environment['wd'],
                    md  = self.environment['md'],
                   )
-    #Run_Dynamics(rundir = args.rundir)
+        
+        # Only to run when fep file is specified?
+        Prepare_FEP(fepfile = self.environment['fep'],
+                    wd  = self.environment['wd'],
+                    top = self.environment['top']                 
+                   )
+        
+        Run_Dynamics(wd  = self.environment['wd'],
+                     top = self.environment['top'])
