@@ -572,6 +572,7 @@ void write_energies(int iteration) {
     fp = fopen(path, "a");
 
     fprintf(fp, "%d\n", iteration / md.energy);
+    fprintf(fp, "Temp = %f\n", Temp);
     fprintf(fp, "Ubond = %f\n", energies.Ubond);
     fprintf(fp, "Uangle = %f\n", energies.Uangle);
     fprintf(fp, "Utor = %f\n", energies.Utor);

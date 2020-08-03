@@ -45,4 +45,5 @@ test/water/no_ion/*/md_01/*
 *.pyc
 *.csv
 *.json
+*.calc
 .DS_Store
