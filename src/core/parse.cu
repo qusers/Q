@@ -40,7 +40,7 @@ csvfile_t read_csv(const char* filename, int ext, char* base_folder) {
     for (int i = 0; i <= retval.n_lines + ext; i++) {
         retval.buffer[i] = (char**) malloc(N_COLUMNS * sizeof(char*));
         for (int j = 0; j < N_COLUMNS; j++) {
-            retval.buffer[i][j] = (char*) malloc(N_COLUMNS * sizeof(char));
+            retval.buffer[i][j] = (char*) malloc(COLUMN_WIDTH * sizeof(char));
         }
     }
 
@@ -189,17 +189,19 @@ void init_md(const char *filename) {
     // [trajectory_atoms]
 
     // From here on, need a variable to keep track of index in csvfile
-    // int k = 24;
+    int k = 24;
 
-    // // [lambdas]
-    // n_lambdas = atoi(file.buffer[k][0]);
-    // printf("reading in %d lambdas\n", n_lambdas);
-    // lambdas = (double*) malloc(n_lambdas * sizeof(double));
-    // k++;
-    // for (int i = 0; i < n_lambdas; i++) {
-    //     lambdas[i] = strtod(file.buffer[k][0], &eptr);
-    //     k++;
-    // }
+    // [lambdas]
+    n_lambdas = atoi(file.buffer[k][0]);
+    #ifdef DEBUG
+    printf("reading in %d lambdas (%s in file)\n", n_lambdas, file.buffer[k][1]);
+    #endif
+    lambdas = (double*) malloc(n_lambdas * sizeof(double));
+    k++;
+    for (int i = 0; i < n_lambdas; i++) {
+        lambdas[i] = strtod(file.buffer[k][0], &eptr);
+        k++;
+    }
 
     // // [sequence_restraints]
     // n_restrseqs = atoi(file.buffer[k][0]);
