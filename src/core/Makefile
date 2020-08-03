@@ -37,5 +37,5 @@ clean:
 	rm -f *.o ../../bin/qdyn
 
 move:
-	mkdir ../../bin
+	mkdir -p ../../bin
 	mv qdyn ../../bin/
