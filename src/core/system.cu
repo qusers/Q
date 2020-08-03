@@ -441,7 +441,7 @@ void init_patoms() {
     // Loop through all solutes, adding a p atom to the list every time a non-q atom is encountered
     int pi = 0;
     int qi = 0;
-    for (int i = 0; i < n_atoms; i++) {
+    for (int i = 0; i < n_atoms_solute; i++) {
         if (i == q_atoms[qi].a-1) {
             qi++;
         }
