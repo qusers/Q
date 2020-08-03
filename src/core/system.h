@@ -560,6 +560,13 @@ void init_energies();
  * =============================================
  */
 
+void init_variables();
+void clean_variables();
+void write_header(const char *filename);
+void write_coords(int iteration);
+void write_velocities(int iteration);
+void write_energies(int iteration);
+
 void calc_integration();
 void calc_integration_step(int iteration);
 

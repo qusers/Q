@@ -405,7 +405,7 @@ void init_pshells() {
 }
 
 
-void init_restrseqs(char* filename) {
+void init_restrseqs() {
     n_restrseqs = 1;
     restrseqs = (restrseq_t*) malloc(1 * sizeof(restrseq_t));
 
@@ -504,7 +504,7 @@ void calc_leapfrog() {
 }
 
 // Write header (number of atoms) to output file
-void write_header(char *filename) {
+void write_header(const char *filename) {
     FILE * fp;
 
     char path[1024];
@@ -725,7 +725,7 @@ void init_variables() {
     init_torsions("torsions.csv");
     init_ngbrs14("ngbrs14.csv");
     init_ngbrs23("ngbrs23.csv");
-    init_restrseqs("restrseqs.csv");
+    init_restrseqs();
 
     // From FEP file
     init_qangcouples("q_angcouples.csv");
