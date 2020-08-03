@@ -10,7 +10,7 @@ struct csvfile_t {
     int ext;
 };
 
-csvfile_t read_csv(char *filename, int ext, char *base_folder);
+csvfile_t read_csv(const char *filename, int ext, char *base_folder);
 void clean_csv(csvfile_t file);
 
 /* =============================================
@@ -18,66 +18,66 @@ void clean_csv(csvfile_t file);
  * =============================================
  */
 
-void init_md(char *filename);
+void init_md(const char *filename);
 
 /* =============================================
  * == FROM TOPOLOGY FILE
  * =============================================
  */
 
-void init_topo(char *filename);
+void init_topo(const char *filename);
 
-void init_coords(char* filename);
-void init_bonds(char* filename);
-void init_cbonds(char* filename);
-void init_angles(char* filename);
-void init_cangles(char* filename);
-void init_torsions(char* filename);
-void init_ctorsions(char* filename);
-void init_impropers(char* filename);
-void init_cimpropers(char* filename);
-void init_charges(char* filename);
-void init_ccharges(char* filename);
-void init_ngbrs14(char* filename);
-void init_ngbrs23(char* filename);
-void init_catypes(char* filename);
-void init_atypes(char* filename);
-void init_excluded(char* filename);
+void init_coords(const char *filename);
+void init_bonds(const char *filename);
+void init_cbonds(const char *filename);
+void init_angles(const char *filename);
+void init_cangles(const char *filename);
+void init_torsions(const char *filename);
+void init_ctorsions(const char *filename);
+void init_impropers(const char *filename);
+void init_cimpropers(const char *filename);
+void init_charges(const char *filename);
+void init_ccharges(const char *filename);
+void init_ngbrs14(const char *filename);
+void init_ngbrs23(const char *filename);
+void init_catypes(const char *filename);
+void init_atypes(const char *filename);
+void init_excluded(const char *filename);
 
 /* =============================================
  * == FROM FEP FILE
  * =============================================
  */
 
-void init_qangcouples(char *filename);
-void init_qatoms(char *filename);
-void init_qcangles(char *filename);
-void init_qcatypes(char *filename);
-void init_qcbonds(char *filename);
-void init_qcimpropers(char *filename);
-void init_qctorsions(char *filename);
-void init_qoffdiags(char *filename);
-void init_qimprcouples(char *filename);
-void init_qsoftpairs(char *filename);
-void init_qtorcouples(char *filename);
+void init_qangcouples(const char *filename);
+void init_qatoms(const char *filename);
+void init_qcangles(const char *filename);
+void init_qcatypes(const char *filename);
+void init_qcbonds(const char *filename);
+void init_qcimpropers(const char *filename);
+void init_qctorsions(const char *filename);
+void init_qoffdiags(const char *filename);
+void init_qimprcouples(const char *filename);
+void init_qsoftpairs(const char *filename);
+void init_qtorcouples(const char *filename);
 
-void init_qangles(char *filename);
-void init_qatypes(char *filename);
-void init_qbonds(char *filename);
-void init_qcharges(char *filename);
-void init_qelscales(char *filename);
-void init_qexclpairs(char *filename);
-void init_qimpropers(char *filename);
-void init_qshakes(char *filename);
-void init_qsoftcores(char *filename);
-void init_qtorsions(char *filename);
+void init_qangles(const char *filename);
+void init_qatypes(const char *filename);
+void init_qbonds(const char *filename);
+void init_qcharges(const char *filename);
+void init_qelscales(const char *filename);
+void init_qexclpairs(const char *filename);
+void init_qimpropers(const char *filename);
+void init_qshakes(const char *filename);
+void init_qsoftcores(const char *filename);
+void init_qtorsions(const char *filename);
 
 /* =============================================
  * == FROM INPUT FILE
  * =============================================
  */
 
-void init_icoords(char *filename);
-void init_ivelocities(char *filename);    
+void init_icoords(const char *filename);
+void init_ivelocities(const char *filename);    
 
 #endif /* __PARSE_H__ */

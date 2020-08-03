@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <unistd.h>
 
-csvfile_t read_csv(char* filename, int ext, char* base_folder) {
+csvfile_t read_csv(const char* filename, int ext, char* base_folder) {
     csvfile_t retval;
 
     retval.ext = ext;
@@ -85,7 +85,7 @@ void clean_csv(csvfile_t file) {
  * =============================================
  */
 
-void init_md(char *filename) {
+void init_md(const char *filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
     char *eptr;
 
@@ -313,7 +313,7 @@ void init_md(char *filename) {
  * =============================================
  */
 
-void init_topo(char *filename) {
+void init_topo(const char *filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
     char *eptr;
 
@@ -335,7 +335,7 @@ void init_topo(char *filename) {
     clean_csv(file);
 }
 
-void init_coords(char* filename) {
+void init_coords(const char* filename) {
     csvfile_t file = read_csv(filename, 1, base_folder);
 
     n_coords = 0;
@@ -369,7 +369,7 @@ void init_coords(char* filename) {
     clean_csv(file);
 }
 
-void init_bonds(char* filename) {
+void init_bonds(const char* filename) {
     csvfile_t file = read_csv(filename, 1, base_folder);
     
     n_bonds = 0;
@@ -397,7 +397,7 @@ void init_bonds(char* filename) {
     clean_csv(file);
 }
 
-void init_cbonds(char* filename) {
+void init_cbonds(const char* filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     n_cbonds = 0;
@@ -423,7 +423,7 @@ void init_cbonds(char* filename) {
     clean_csv(file);
 }
 
-void init_angles(char* filename) {
+void init_angles(const char* filename) {
     csvfile_t file = read_csv(filename, 1, base_folder);
 
     n_angles = 0;
@@ -452,7 +452,7 @@ void init_angles(char* filename) {
     clean_csv(file);
 }
 
-void init_cangles(char* filename) {
+void init_cangles(const char* filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     n_cangles = 0;
@@ -478,11 +478,11 @@ void init_cangles(char* filename) {
     clean_csv(file);
 }
 
-void init_excluded(char *filename) {
+void init_excluded(const char *filename) {
     excluded = (bool*) calloc(n_atoms, sizeof(bool));
 }
 
-void init_torsions(char* filename) {
+void init_torsions(const char* filename) {
     csvfile_t file = read_csv(filename, 1, base_folder);
 
     n_torsions = 0;
@@ -512,7 +512,7 @@ void init_torsions(char* filename) {
     clean_csv(file);
 }
 
-void init_ctorsions(char* filename) {
+void init_ctorsions(const char* filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
     
     n_ctorsions = 0;
@@ -540,7 +540,7 @@ void init_ctorsions(char* filename) {
     clean_csv(file);
 }
 
-void init_impropers(char* filename) {
+void init_impropers(const char* filename) {
     csvfile_t file = read_csv(filename, 1, base_folder);
 
     n_impropers = 0;
@@ -570,7 +570,7 @@ void init_impropers(char* filename) {
     clean_csv(file);
 }
 
-void init_cimpropers(char* filename) {
+void init_cimpropers(const char* filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     n_cimpropers = 0;
@@ -598,7 +598,7 @@ void init_cimpropers(char* filename) {
     clean_csv(file);
 }
 
-void init_charges(char* filename) {
+void init_charges(const char* filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     n_charges = 0;
@@ -623,7 +623,7 @@ void init_charges(char* filename) {
     clean_csv(file);
 }
 
-void init_ccharges(char* filename) {
+void init_ccharges(const char* filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
@@ -647,7 +647,7 @@ void init_ccharges(char* filename) {
     clean_csv(file);
 }
 
-void init_ngbrs14(char* filename) {
+void init_ngbrs14(const char* filename) {
     FILE * fp;
 
     char path[1024];
@@ -694,7 +694,7 @@ void init_ngbrs14(char* filename) {
     fclose(fp);
 }
 
-void init_ngbrs23(char* filename) {
+void init_ngbrs23(const char* filename) {
     FILE * fp;
 
     char path[1024];
@@ -741,7 +741,7 @@ void init_ngbrs23(char* filename) {
     fclose(fp);
 }
 
-void init_catypes(char* filename) {
+void init_catypes(const char* filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     int n_catomtypes = 0;
@@ -772,7 +772,7 @@ void init_catypes(char* filename) {
     clean_csv(file);
 }
 
-void init_atypes(char* filename) {
+void init_atypes(const char* filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     n_atypes = 0;
@@ -801,7 +801,7 @@ void init_atypes(char* filename) {
  * =============================================
  */
 
-void init_qangcouples(char *filename) {
+void init_qangcouples(const char *filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     n_qangcouples = 0;
@@ -821,7 +821,7 @@ void init_qangcouples(char *filename) {
     clean_csv(file);
 }
 
-void init_qatoms(char *filename) {
+void init_qatoms(const char *filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     n_qatoms = 0;
@@ -840,7 +840,7 @@ void init_qatoms(char *filename) {
     clean_csv(file);
 }
 
-void init_qcangles(char *filename) {
+void init_qcangles(const char *filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     n_qcangles = 0;
@@ -861,7 +861,7 @@ void init_qcangles(char *filename) {
     clean_csv(file);
 }
 
-void init_qcatypes(char *filename) {
+void init_qcatypes(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     n_qcatypes = 0;
@@ -888,7 +888,7 @@ void init_qcatypes(char *filename) {
     clean_csv(file);
 }
 
-void init_qcbonds(char *filename) {
+void init_qcbonds(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     n_qcbonds = 0;
@@ -909,7 +909,7 @@ void init_qcbonds(char *filename) {
     clean_csv(file);
 }
 
-void init_qcimpropers(char *filename) {
+void init_qcimpropers(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     n_qcimpropers = 0;
@@ -930,7 +930,7 @@ void init_qcimpropers(char *filename) {
     clean_csv(file);
 }
 
-void init_qctorsions(char *filename) {
+void init_qctorsions(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     n_qctorsions = 0;
@@ -952,7 +952,7 @@ void init_qctorsions(char *filename) {
     clean_csv(file);
 }
 
-void init_qoffdiags(char *filename) {
+void init_qoffdiags(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     n_qoffdiags = 0;
@@ -977,7 +977,7 @@ void init_qoffdiags(char *filename) {
     clean_csv(file);
 }
 
-void init_qimprcouples(char *filename) {
+void init_qimprcouples(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     n_qimprcouples = 0;
@@ -997,7 +997,7 @@ void init_qimprcouples(char *filename) {
     clean_csv(file);
 }
 
-void init_qsoftpairs(char *filename) {
+void init_qsoftpairs(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     n_qsoftpairs = 0;
@@ -1017,7 +1017,7 @@ void init_qsoftpairs(char *filename) {
     clean_csv(file);
 }
 
-void init_qtorcouples(char *filename) {
+void init_qtorcouples(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     n_qtorcouples = 0;
@@ -1037,7 +1037,7 @@ void init_qtorcouples(char *filename) {
     clean_csv(file);
 }
 
-void init_qangles(char *filename) {
+void init_qangles(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
@@ -1060,7 +1060,7 @@ void init_qangles(char *filename) {
     clean_csv(file);
 }
 
-void init_qatypes(char *filename) {
+void init_qatypes(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
@@ -1079,7 +1079,7 @@ void init_qatypes(char *filename) {
     clean_csv(file);
 }
 
-void init_qbonds(char *filename) {
+void init_qbonds(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
@@ -1101,7 +1101,7 @@ void init_qbonds(char *filename) {
     clean_csv(file);
 }
 
-void init_qcharges(char *filename) {
+void init_qcharges(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
@@ -1121,7 +1121,7 @@ void init_qcharges(char *filename) {
     clean_csv(file);
 }
 
-void init_qelscales(char *filename) {
+void init_qelscales(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
@@ -1144,7 +1144,7 @@ void init_qelscales(char *filename) {
     clean_csv(file);
 }
 
-void init_qexclpairs(char *filename) {
+void init_qexclpairs(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
@@ -1166,7 +1166,7 @@ void init_qexclpairs(char *filename) {
     clean_csv(file);
 }
 
-void init_qimpropers(char *filename) {
+void init_qimpropers(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
@@ -1190,7 +1190,7 @@ void init_qimpropers(char *filename) {
     clean_csv(file);
 }
 
-void init_qshakes(char *filename) {
+void init_qshakes(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
@@ -1213,7 +1213,7 @@ void init_qshakes(char *filename) {
     clean_csv(file);
 }
 
-void init_qsoftcores(char *filename) {
+void init_qsoftcores(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
@@ -1234,7 +1234,7 @@ void init_qsoftcores(char *filename) {
     clean_csv(file);
 }
 
-void init_qtorsions(char *filename) {
+void init_qtorsions(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
@@ -1263,7 +1263,7 @@ void init_qtorsions(char *filename) {
  * =============================================
  */
 
-void init_icoords(char *filename) {
+void init_icoords(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
@@ -1280,7 +1280,7 @@ void init_icoords(char *filename) {
     clean_csv(file);
 }
 
-void init_ivelocities(char *filename) {
+void init_ivelocities(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
