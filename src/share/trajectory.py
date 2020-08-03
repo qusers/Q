@@ -10,12 +10,13 @@ import IO
 class Trajectory(object):
     """ Trajectory object class, one nparray per timeframe"""
     def __init__(self):
-        Trajectory.frames = []
-        Trajectory.coords = []
-        Trajectory.natoms = []
-        Trajectory.maskPDB = {}
-        Trajectory.volume = None
-        Trajectory.center = None
+        self.data = {'frames' = [],
+                     'coords' = [],
+                     'natoms' = [],
+                     'maskPDB' = {},
+                     'volume' = None,
+                     'center' = None
+                    }
         
         
 class Read_Trajectory(object):

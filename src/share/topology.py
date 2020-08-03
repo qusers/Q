@@ -48,13 +48,12 @@ class Mapping(object):
     """ Mapping of atom names to atom types"""
     def __init__(self,ilib,top):
         self.ilib = ilib
-        self.top = top
+        self.topology = top
         Mapping.prm2lib = {}
-        self.trajectory = Trajectory()
         
         # run stuff
         self.read_lib()
-        self.read_topology()
+        #self.create_mask()
         
     def read_lib(self):
         self.lib = IO.read_lib(self.ilib)
@@ -67,28 +66,24 @@ class Mapping(object):
             for line in self.lib[resname]['[atoms]']:
                 Mapping.prm2lib[resname][int(line[0])] = line[1]
                 
-    def read_topology(self):
-        top = topology.Read_Topology(self.top)
-        self.topology = top.parse_topology()
-        Trajectory.volume = float(self.topology.radii)
-        Trajectory.center = self.topology.solvcenter
-        
+    def create_mask(self):
         resdic = {}
         attypes = {}
         resno = 0
+        self.mask = {}
+
+        for i in range(0,len(self.topology['residues'])):
+            resdic[int(self.topology['residues'][i])] = self.topology['sequence'][i]
         
-        for i in range(0,len(self.topology.residues)):
-            resdic[int(self.topology.residues[i])] = self.topology.sequence[i]
+        for i in range(0,len(self.topology['atypes'])):
+            attypes[self.topology['atypes'][i][0]] = self.topology['atypes'][i][1]
             
-        for i in range(0,len(self.topology.atypes)):
-            attypes[self.topology.atypes[i][0]] = self.topology.atypes[i][1]
-            
-        for ai in range(0,len(self.topology.atypes)):
+        for ai in range(0,len(self.topology['atypes'])):
             if ai + 1 in resdic:
                 resname = resdic[ai + 1]
                 resno += 1
                 idex = ai
-            #atname = self.topology.anames[attypes[ai + 1] - 1]
+            atname = self.topology['anames'][attypes[ai + 1] - 1]
             atname = Mapping.prm2lib[resname][ai - idex + 1]
 
             # construct the .pdb matrix
@@ -106,8 +101,9 @@ class Mapping(object):
                    ' '
                   ]
 
-            Trajectory.maskPDB[ai] = pdb
-
+            self.mask[ai] = pdb
+            
+        return(self.mask)
 
 class Read_Topology(object):
     """
