@@ -13,7 +13,7 @@
     double r2a, ra, r6a;
     double Vela, V_a, V_b;
     double dva;
-    double qi, qj;
+    double crg_i, crg_j;
     double ai_aii, aj_aii, ai_bii, aj_bii;
     int i, j;
     catype_t ai_type, aj_type;
@@ -46,8 +46,8 @@
 
             scaling = bond14 ? .5 : 1;
 
-            qi = ccharges[charges[i].code - 1].charge;
-            qj = ccharges[charges[j].code - 1].charge;
+            crg_i = ccharges[charges[i].code - 1].charge;
+            crg_j = ccharges[charges[j].code - 1].charge;
 
             ai_type = catypes[atypes[i].code - 1];
             aj_type = catypes[atypes[j].code - 1];
@@ -59,7 +59,7 @@
             ra = sqrt(r2a);
             r6a = r2a * r2a * r2a;
 
-            Vela = scaling * Coul * qi * qj * ra;
+            Vela = scaling * Coul * crg_i * crg_j * ra;
 
             ai_aii = bond14 ? ai_type.aii_1_4 : ai_type.aii_normal;
             aj_aii = bond14 ? aj_type.aii_1_4 : aj_type.aii_normal;

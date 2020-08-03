@@ -222,7 +222,7 @@ double Tscale = 1;
 coord_t* xcoords;
 
 // Water constants
-double A_OO = 0, B_OO, crg_ow, crg_hw, mu_w = 0;
+double A_O = 0, A_OO = 0, B_O, B_OO, crg_ow, crg_hw, mu_w = 0;
 
 void init_velocities() {
     velocities = (vel_t*) malloc(n_atoms * sizeof(vel_t));
@@ -614,6 +614,10 @@ void calc_integration_step(int iteration) {
     }
     energies.Ucoul = 0;
     energies.Uvdw = 0;
+    for (int state = 0; state < n_lambdas; state++) {
+        q_energies[state].Ucoul = 0;
+        q_energies[state].Uvdw = 0;
+    }
 
     // Determine temperature and kinetic energy
     calc_temperature();
