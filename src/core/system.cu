@@ -442,7 +442,7 @@ void init_patoms() {
     int pi = 0;
     int qi = 0;
     for (int i = 0; i < n_atoms_solute; i++) {
-        if (i == q_atoms[qi].a-1) {
+        if (n_qatoms > 0 && i == q_atoms[qi].a-1) {
             qi++;
         }
         else {
