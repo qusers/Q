@@ -41,7 +41,6 @@ class MD():
                       'restart'             :   None,
                       'final'               :   None,
                       'fep'                 :   None,
-                      'energy'              :   None,
                       'trajectory_atoms'    :   None,
                       'lambdas'             :   None,
                       'seqrest'             :   [],

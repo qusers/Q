@@ -10,8 +10,6 @@ import math
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/share/')))
 
-import IO
-import topology as TOPOLOGY        
 import defaults as DEFAULTS
 import md       as MD
 import settings as SETTINGS

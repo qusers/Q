@@ -13,7 +13,7 @@ MD = {
 'output'            : 5     ,
 'trajectory'        : 100   ,
 'non_bond'          : 25    ,
-'energy'            : None  ,
+'energy'            : 1     ,
 'thermostat'        : 'berendsen'  ,
 'random_seed'       : 1  ,
 } 
