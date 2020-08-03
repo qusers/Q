@@ -188,8 +188,14 @@ class Write_MD(object):
         
         """
         self.wd = wd
+        lists = ['lambdas']
         
-        j = 23
+        j = 24
+        
+        # Get length of lists (lambdas, restraints)
+        for l in lists:
+            j += len(self.data[l])
+            
         
         # Add lines for restraints
         # TO DO, restraints not implemented yet
@@ -220,6 +226,11 @@ class Write_MD(object):
             outfile.write('energy;{}\n'             .format(self.data['energy']))        
             outfile.write('trajectory;{}\n'         .format(self.data['trajectory']))
             
+            # possible to have multiple lambdas, need to loop
+            outfile.write('{};lambdas\n'.format(len(self.data['lambdas'])))         
+            for l in self.data['lambdas']:
+                outfile.write('{}\n'                .format(l))        
+
     def JSON(self,out_json):
         """
         .json MD input file

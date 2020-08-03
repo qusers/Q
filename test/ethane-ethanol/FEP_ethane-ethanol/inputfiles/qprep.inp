@@ -1,19 +1,11 @@
-rl /home/jespers/software/qligfep/FF/OPLS2015.lib 
+rl /home/w/wije/pfs/software/qgpu/data/ff/OPLS2015.lib 
 rl ethane.lib
 rl ethanol_renumber.lib
 rprm OPLS2015_ethane_ethanol_merged.prm 
 ! TO DO Change if protein system is used
-rp ethane_ethanol.pdb 
-! set solute_density 0.05794 
-! NOTE, this is now large for water system, change for protein system
-set solvent_pack 2.5
+rp top_p.pdb
 boundary 1 -0.0 0.0 0.0 20
-solvate -0.0 0.0 0.0 20 1 HOH
-!addbond at1 at2 y
+!solvate -0.0 0.0 0.0 20 1 HOH
 maketop MKC_p 
 writetop dualtop.top 
-wp top_p.pdb y 
-mask none 
-mask not excluded 
-wp complexnotexcluded.pdb y 
 q 
