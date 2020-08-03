@@ -137,33 +137,37 @@ void shrink_topology() {
     int qai = 0, qbi = 0, qii = 0, qti = 0;
 
     excluded = 0;
-    for (int i = 0; i < n_angles; i++) {
-        if (angles[i].ai == q_angles[qai][0].ai
-         && angles[i].aj == q_angles[qai][0].aj
-         && angles[i].ak == q_angles[qai][0].ak) {
-            qai++;
-            excluded++;
+    if (n_qangles > 0) {
+        for (int i = 0; i < n_angles; i++) {
+            if (angles[i].ai == q_angles[qai][0].ai
+             && angles[i].aj == q_angles[qai][0].aj
+             && angles[i].ak == q_angles[qai][0].ak) {
+                qai++;
+                excluded++;
+            }
+            else {
+                angles[ai] = angles[i];
+                ai++;
+            }
         }
-        else {
-            angles[ai] = angles[i];
-            ai++;
-        }
+        n_angles -= excluded;
     }
-    n_angles -= excluded;
 
     excluded = 0;
-    for (int i = 0; i < n_bonds; i++) {
-        if (bonds[i].ai == q_bonds[qbi][0].ai
-         && bonds[i].aj == q_bonds[qbi][0].aj) {
-            qbi++;
-            excluded++;
+    if (n_qbonds > 0) {
+        for (int i = 0; i < n_bonds; i++) {
+            if (bonds[i].ai == q_bonds[qbi][0].ai
+             && bonds[i].aj == q_bonds[qbi][0].aj) {
+                qbi++;
+                excluded++;
+            }
+            else {
+                bonds[bi] = bonds[i];
+                bi++;
+            }
         }
-        else {
-            bonds[bi] = bonds[i];
-            bi++;
-        }
+        n_bonds -= excluded;
     }
-    n_bonds -= excluded;
 
     // excluded = 0;
     // for (int i = 0; i < n_impropers; i++) {
@@ -182,20 +186,22 @@ void shrink_topology() {
     // n_impropers -= excluded;
 
     excluded = 0;
-    for (int i = 0; i < n_torsions; i++) {
-        if (torsions[i].ai == q_torsions[qti][0].ai
-         && torsions[i].aj == q_torsions[qti][0].aj
-         && torsions[i].ak == q_torsions[qti][0].ak
-         && torsions[i].al == q_torsions[qti][0].al) {
-            qti++;
-            excluded++;
+    if (n_qtorsions > 0) {
+        for (int i = 0; i < n_torsions; i++) {
+            if (torsions[i].ai == q_torsions[qti][0].ai
+             && torsions[i].aj == q_torsions[qti][0].aj
+             && torsions[i].ak == q_torsions[qti][0].ak
+             && torsions[i].al == q_torsions[qti][0].al) {
+                qti++;
+                excluded++;
+            }
+            else {
+                torsions[ti] = torsions[i];
+                ti++;
+            }
         }
-        else {
-            torsions[ti] = torsions[i];
-            ti++;
-        }
+        n_torsions -= excluded;
     }
-    n_torsions -= excluded;
 
     // TODO: add exclusion pairs
 }
@@ -474,7 +480,7 @@ void calc_temperature() {
     printf("Temp = %f\n", Temp);
     
     Tscale = sqrt(1 + (dt / tau_T) * (md.temperature / Temp - 1.0));
-    printf("Tscale = %f, tau_T = %f, Temp = %f\n", Tscale, tau_T, Temp);
+    // printf("Tscale = %f, tau_T = %f, Temp = %f\n", Tscale, tau_T, Temp);
 }
 
 /* =============================================
@@ -508,7 +514,7 @@ void write_header(const char *filename) {
     FILE * fp;
 
     char path[1024];
-    sprintf(path, "%s/output/%s", base_folder, "coords.csv");
+    sprintf(path, "%s/output/%s", base_folder, filename);
 
     fp = fopen(path, "w");
   
@@ -561,7 +567,7 @@ void write_energies(int iteration) {
     FILE * fp;
 
     char path[1024];
-    sprintf(path, "%s/output/%s", base_folder, "coords.csv");
+    sprintf(path, "%s/output/%s", base_folder, "energies.csv");
 
     fp = fopen(path, "a");
 
@@ -605,6 +611,8 @@ void calc_integration_step(int iteration) {
         dvelocities[i].y = 0;
         dvelocities[i].z = 0;
     }
+    energies.Ucoul = 0;
+    energies.Uvdw = 0;
 
     // Determine temperature and kinetic energy
     calc_temperature();
@@ -725,7 +733,7 @@ void init_variables() {
     init_torsions("torsions.csv");
     init_ngbrs14("ngbrs14.csv");
     init_ngbrs23("ngbrs23.csv");
-    init_restrseqs();
+    // init_restrseqs();
 
     // From FEP file
     init_qangcouples("q_angcouples.csv");
@@ -763,8 +771,8 @@ void init_variables() {
     init_xcoords();
 
     // From input file
-    init_icoords("i_coords.csv");
-    init_ivelocities("i_velocities.csv");    
+    // init_icoords("i_coords.csv");
+    // init_ivelocities("i_velocities.csv");    
 
     // Init waters, boundary restrains
     n_waters = (n_atoms - n_atoms_solute) / 3;

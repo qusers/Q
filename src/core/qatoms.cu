@@ -56,7 +56,7 @@ void calc_nonbonded_qq_forces() {
     
                 scaling = bond14 ? .5 : 1;
 
-                elscale = 0;
+                elscale = 1;
                 for (int k = 0; k < n_qelscales; k++) {
                     if (q_elscales[k][state].qi == qi+1 && q_elscales[k][state].qj == qj+1) {
                         elscale = q_elscales[k][state].mu;
