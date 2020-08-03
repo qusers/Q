@@ -10,8 +10,6 @@ import math
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/share/')))
 
-#import IO
-#import topology as TOPOLOGY        
 import defaults as DEFAULTS
 import md       as MD
 import settings as SETTINGS
@@ -20,15 +18,24 @@ import fep      as FEP
 class Init(object):
     def __init__(self, data):
         """ Retrieves a dictionary of user input from qalc.py:
-               {'top'   :   top,
-                'fep'   :   fep,
-                'md'    :   md,
-                're'    :   re,
-                'wd'    :   wd
+               {'top' : top,
+                 'otrj' : otrj,
+                 'itrj' : itrj,
+                 'ilib' : ilib,
+                 'wraj' : wtraj,
+                 'calc' : calc,
                }
         """
+        data = { 'top' : top,
+                 'otrj' : otrj,
+                 'itrj' : itrj,
+                 'ilib' : ilib,
+                 'wraj' : wtraj,
+                 'calc' : calc,
+               }        
         self.environment = data
-    
+        
+        print(self.environment)
     # Maybe we want specific inputs here (definitely some input file later)
     #if args.itrj != None and args.ilib != None:
     #    Mapping(ilib = args.ilib,
