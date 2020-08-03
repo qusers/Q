@@ -20,8 +20,8 @@ if cleanup == True:
 for sphere in spheres:
     inputs = curdir + '/no_ion/' + sphere + '/water'
     os.chdir('no_ion/' + sphere)
- #   write_calc(sphere)    
-   os.system('../../../../bin/qdyn.py -t water.top')
-    print('Running test {} '.format(sphere))
+ #   write_calc(sphere)   
+    print('Running test {} '.format(sphere)) 
+    os.system('python ../../../../bin/qdyn.py -t water.top -m md01.inp -d md01')
 #    os.system(numb_dens + ' > numb_dens.out')
     os.chdir(curdir)
