@@ -193,7 +193,8 @@ class Write_MD(object):
         
         # Get length of lists (lambdas, restraints)
         for l in lists:
-            j += len(self.data[l])
+            if self.data[l] != None:
+                j += len(self.data[l])
             
         
         # Add lines for restraints
@@ -226,9 +227,13 @@ class Write_MD(object):
             outfile.write('trajectory;{}\n'         .format(self.data['trajectory']))
             
             # possible to have multiple lambdas, need to loop
-            outfile.write('{};lambdas\n'.format(len(self.data['lambdas'])))         
-            for l in self.data['lambdas']:
-                outfile.write('{}\n'                .format(l))        
+            if self.data['lambdas'] != None:
+                outfile.write('{};lambdas\n'.format(len(self.data['lambdas'])))
+                for l in self.data['lambdas']:
+                    outfile.write('{}\n'                .format(l))
+                    
+            else:
+                outfile.write('0;lambdas\n')
 
     def JSON(self,out_json):
         """
