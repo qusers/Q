@@ -190,7 +190,7 @@ class Write_MD(object):
         self.wd = wd
         lists = ['lambdas']
         
-        j = 24
+        j = 25
         
         # Get length of lists (lambdas, restraints)
         for l in lists:
