@@ -107,6 +107,9 @@ class Prepare_FEP(object):
         self.wd = wd
         self.top = top
         
+        if self.fepfile == None:
+            return None
+        
         read_fep  = FEP.Read_Fep(self.fepfile)
         
         # Get the extension and read data
@@ -169,7 +172,7 @@ class Init(object):
     
         # INIT
         Create_Environment(top = self.environment['top'],
-                         wd  = self.environment['wd'],
+                           wd  = self.environment['wd'],
                         )
 
         Prepare_Topology(top = self.environment['top'],

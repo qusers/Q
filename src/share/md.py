@@ -42,7 +42,7 @@ class MD():
                       'final'               :   None,
                       'fep'                 :   None,
                       'trajectory_atoms'    :   None,
-                      'lambdas'             :   None,
+                      'lambdas'             :   [],
                       'seqrest'             :   [],
                       'posrest'             :   [],
                       'distrest'            :   [],
