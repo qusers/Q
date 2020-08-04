@@ -41,8 +41,9 @@ qdyn
 *.en
 
 __pycache__/*
-test/water/no_ion/*
-test/ethane-ethanol/test/*
+test/water/no_ion/*/md_01/*
 *.pyc
-
+*.csv
+*.json
+*.calc
 .DS_Store

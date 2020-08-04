@@ -110,19 +110,25 @@ class Prepare_FEP(object):
         read_fep  = FEP.Read_Fep(self.fepfile)
         
         # Get the extension and read data
-        if self.fepfile.split('.')[-1] == 'json':
-            fep_data = read_fep.JSON()
-            
+        if fepfile != None:
+            if self.fepfile.split('.')[-1] == 'json':
+                fep_data = read_fep.JSON()
+
+            else:
+                fep_data = read_fep.Q()
+                
         else:
-            fep_data = read_fep.Q()     
+            data = FEP.Fep()
+            fep_data = data.data
 
         # Initiate the write class
         write_fep = FEP.Write_Fep(fep_data)
         
         # Write the topology in csv and json format
         write_fep.CSV(self.wd + '/' + self.top.split('.')[0] + '/')
-        out_json = self.wd + '/' + self.top.split('.')[0] + '/' + self.fepfile.split('.')[0] + '.json'
-        write_fep.JSON(out_json)
+        if fepfile != None:
+            out_json = self.wd + '/' + self.top.split('.')[0] + '/' + self.fepfile.split('.')[0] + '.json'
+            write_fep.JSON(out_json)
         
 class Run_Dynamics(object):
     """

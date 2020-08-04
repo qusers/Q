@@ -441,8 +441,8 @@ void init_patoms() {
     // Loop through all solutes, adding a p atom to the list every time a non-q atom is encountered
     int pi = 0;
     int qi = 0;
-    for (int i = 0; i < n_atoms; i++) {
-        if (i == q_atoms[qi].a-1) {
+    for (int i = 0; i < n_atoms_solute; i++) {
+        if (n_qatoms > 0 && i == q_atoms[qi].a-1) {
             qi++;
         }
         else {
@@ -572,6 +572,7 @@ void write_energies(int iteration) {
     fp = fopen(path, "a");
 
     fprintf(fp, "%d\n", iteration / md.energy);
+    fprintf(fp, "Temp = %f\n", Temp);
     fprintf(fp, "Ubond = %f\n", energies.Ubond);
     fprintf(fp, "Uangle = %f\n", energies.Uangle);
     fprintf(fp, "Utor = %f\n", energies.Utor);
