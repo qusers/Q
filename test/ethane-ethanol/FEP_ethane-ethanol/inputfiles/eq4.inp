@@ -34,7 +34,7 @@ topology                  dualtop.top
 trajectory                eq4.dcd
 restart                   eq3.re
 final                     eq4.re
-fep                       FEP_VAR
+fep                       FEP1.fep
 
 [trajectory_atoms]
 not excluded

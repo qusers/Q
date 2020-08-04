@@ -43,6 +43,7 @@ qdyn
 __pycache__/*
 #test/water/no_ion/*
 test/ethane-ethanol/test/*
+test/ethane-ethanol/FEP_*
 *.pyc
 
 .DS_Store
@@ -50,3 +51,4 @@ test/ethane-ethanol/test/*
 *.json
 *.calc
 *.pml
+*.inp

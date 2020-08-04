@@ -16,6 +16,7 @@ import defaults as DEFAULTS
 import md       as MD
 import settings as SETTINGS
 import fep      as FEP
+import restart  as RESTART
 
 class Create_Environment(object):
     """
@@ -129,6 +130,41 @@ class Prepare_FEP(object):
         if self.fepfile != None:
             out_json = self.wd + '/' + self.top.split('.')[0] + '/' + self.fepfile.split('.')[0] + '.json'
             write_fep.JSON(out_json)
+
+class Read_Restart(object):       
+    """
+        Creates restart files.
+        Reads: 
+                .json and .csv restart files (TO DO .re)
+        Writes:
+                .json and .csv restart files.
+    """  
+    def __init__(self,restart,wd,top):
+        self.restart = restart
+        self.wd = wd
+        self.top = top
+
+        read_restart = RESTART.Read_Restart(self.restart)
+        
+        # Get the extension and read data
+        if self.restart != None:
+            if self.restart.split('.')[-1] == 'json':
+                self.velocities,self.coordinates = read_restart.JSON()
+
+            else:
+                self.velocities,self.coordinates = read_restart.CSV()     
+                
+        # construct empty
+        else:
+            self.velocities = []
+            self.coordinates = []
+        
+        # Initiate the write class
+        write_re = RESTART.Write_Restart(self.velocities, self.coordinates)
+            
+        # Write md data files (both csv and json file)
+        write_re.CSV(self.wd + '/' + self.top.split('.')[0] + '/')
+        #write_re.JSON()
         
 class Run_Dynamics(object):
     """
@@ -163,10 +199,10 @@ class Init(object):
             print("FATAL: unrecognized extension for {}".format(data['md']))
             sys.exit()
             
-        if data['re'] != None:
-            if data['re'].split('.')[-1] not in extensions:
-                print("FATAL: unrecognized extension for {}".format(data['re']))
-                sys.exit()
+        #if data['re'] != None:
+        #    if data['re'].split('.')[-1] not in extensions:
+        #        print("FATAL: unrecognized extension for {}".format(data['re']))
+        #        sys.exit()
         
         if data['fep'] != None:
             if data['fep'].split('.')[-1] not in extensions:
@@ -191,6 +227,11 @@ class Init(object):
         Prepare_FEP(fepfile = self.environment['fep'],
                     wd  = self.environment['wd'],
                     top = self.environment['top']                 
+                   )
+        
+        Read_Restart(restart = self.environment['re'],
+                         wd  = self.environment['wd'],
+                        top  = self.environment['top'],
                    )
         
         Run_Dynamics(wd  = self.environment['wd'],

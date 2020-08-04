@@ -772,8 +772,8 @@ void init_variables() {
     init_xcoords();
 
     // From input file
-    // init_icoords("i_coords.csv");
-    // init_ivelocities("i_velocities.csv");    
+    init_icoords("i_coords.csv");
+    init_ivelocities("i_velocities.csv");    
 
     // Init waters, boundary restrains
     n_waters = (n_atoms - n_atoms_solute) / 3;

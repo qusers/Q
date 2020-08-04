@@ -1,7 +1,7 @@
 [MD]
 steps                     10000
 stepsize                  1.0
-temperature               T_VAR
+temperature               298
 bath_coupling             10
 shake_hydrogens           off
 shake_solute              off
@@ -36,7 +36,7 @@ trajectory                md_0880_0120.dcd
 restart                   md_0900_0100.re
 energy                    md_0880_0120.en
 final                     md_0880_0120.re
-fep                       FEP_VAR
+fep                       FEP1.fep
 
 [trajectory_atoms]
 not excluded

@@ -1,7 +1,7 @@
 [MD]
-steps                     100000
+steps                     10000
 stepsize                  1.0
-temperature               T_VAR
+temperature               298
 bath_coupling             10.0
 shake_solvent             on
 shake_hydrogens           off
@@ -34,7 +34,7 @@ topology                  dualtop.top
 trajectory                eq5.dcd
 restart                   eq4.re
 final                     eq5.re
-fep                       FEP_VAR
+fep                       FEP1.fep
 
 [trajectory_atoms]
 not excluded
