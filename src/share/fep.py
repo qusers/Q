@@ -50,7 +50,9 @@ class Read_Fep(object):
 
         data = Fep()
         self.data = data.data
-
+    
+    def EMPTY(self):
+        return(self.data)
         
     def JSON(self):
         with open(self.fepfile) as json_file:
@@ -347,9 +349,9 @@ class Write_Fep(object):
                     
         with open(self.wd + 'q_atypes.csv','w') as outfile:
             if len(self.data['q_atypes']) == 0:
-                    outfile.write('0\n')    
+                    outfile.write('0\n')
                     
-            else:        
+            else:
                 outfile.write('{}\n'.format(len(self.data['q_atypes'][0])*self.data['q_states']))
                 for i in range(0,self.data['q_states']):
                     for j in range(0, len(self.data['q_atypes'][i])):
@@ -374,8 +376,9 @@ class Write_Fep(object):
         
         with open(self.wd + 'q_charges.csv','w') as outfile:
             if len(self.data['q_charges']) == 0:
-                    outfile.write('0\n')   
-            else:
+                    outfile.write('0\n')
+                    
+            else:            
                 outfile.write('{}\n'.format(len(self.data['q_charges'][0])*self.data['q_states']))
                 for i in range(0,self.data['q_states']):
                     for j in range(0, len(self.data['q_charges'][i])):
@@ -383,8 +386,9 @@ class Write_Fep(object):
                 
         with open(self.wd + 'q_softpairs.csv','w') as outfile:
             if len(self.data['q_softpairs']) == 0:
-                    outfile.write('0\n')   
-            else:
+                    outfile.write('0\n')
+                    
+            else:                    
                 outfile.write('{}\n'.format(len(self.data['q_softpairs'][0])*self.data['q_states']))
                 for i in range(0,self.data['q_states']):
                     for j in range(0, len(self.data['q_softpairs'][i])):
@@ -394,7 +398,7 @@ class Write_Fep(object):
             if len(self.data['q_exclpairs']) == 0:
                     outfile.write('0\n')
                     
-            else:
+            else:                    
                 outfile.write('{}\n'.format(len(self.data['q_exclpairs'][0])*self.data['q_states']))
                 for i in range(0,self.data['q_states']):
                     for j in range(0, len(self.data['q_exclpairs'][i])):
@@ -411,8 +415,9 @@ class Write_Fep(object):
                             
         with open(self.wd + 'q_softcores.csv','w') as outfile:
             if len(self.data['q_softcores']) == 0:
-                    outfile.write('0\n')   
-            else:
+                    outfile.write('0\n')
+                    
+            else:                        
                 outfile.write('{}\n'.format(len(self.data['q_softcores'][0])*self.data['q_states']))
                 for i in range(0,self.data['q_states']):
                     for j in range(0, len(self.data['q_softcores'][i])):
@@ -420,8 +425,9 @@ class Write_Fep(object):
                                                     
         with open(self.wd + 'q_bonds.csv','w') as outfile:
             if len(self.data['q_bonds']) == 0:
-                    outfile.write('0\n')   
-            else:            
+                    outfile.write('0\n')
+                    
+            else:                 
                 outfile.write('{}\n'.format(len(self.data['q_bonds'][0])*self.data['q_states']))
                 for i in range(0,self.data['q_states']):
                     for j in range(0, len(self.data['q_bonds'][i])):
@@ -438,8 +444,9 @@ class Write_Fep(object):
                                                                             
         with open(self.wd + 'q_angles.csv','w') as outfile:
             if len(self.data['q_angles']) == 0:
-                    outfile.write('0\n')   
-            else:                
+                    outfile.write('0\n')
+                    
+            else:                 
                 outfile.write('{}\n'.format(len(self.data['q_angles'][0])*self.data['q_states']))
                 for i in range(0,self.data['q_states']):
                     for j in range(0, len(self.data['q_angles'][i])):
@@ -456,8 +463,9 @@ class Write_Fep(object):
                                                                                                     
         with open(self.wd + 'q_torsions.csv','w') as outfile:
             if len(self.data['q_torsions']) == 0:
-                    outfile.write('0\n')   
-            else:                        
+                    outfile.write('0\n')
+                    
+            else:                          
                 outfile.write('{}\n'.format(len(self.data['q_torsions'][0])*self.data['q_states']))
                 for i in range(0,self.data['q_states']):
                     for j in range(0, len(self.data['q_torsions'][i])):
@@ -474,8 +482,9 @@ class Write_Fep(object):
                                                                                                                             
         with open(self.wd + 'q_impropers.csv','w') as outfile:
             if len(self.data['q_impropers']) == 0:
-                    outfile.write('0\n')   
-            else:               
+                    outfile.write('0\n')
+                    
+            else:                      
                 outfile.write('{}\n'.format(len(self.data['q_impropers'][0])*self.data['q_states']))
                 for i in range(0,self.data['q_states']):
                     for j in range(0, len(self.data['q_impropers'][i])):
@@ -519,8 +528,9 @@ class Write_Fep(object):
                                                                                                                                     
         with open(self.wd + 'q_shakes.csv','w') as outfile:
             if len(self.data['q_shakes']) == 0:
-                    outfile.write('0\n')   
-            else:                  
+                    outfile.write('0\n')
+                    
+            else:                             
                 outfile.write('{}\n'.format(len(self.data['q_shakes'][0])*self.data['q_states']))
                 for i in range(0,self.data['q_states']):
                     for j in range(0, len(self.data['q_shakes'][i])):

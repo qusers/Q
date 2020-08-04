@@ -19,7 +19,7 @@ lrf                       99
 
 [sphere]
 shell_force               10.0
-shell_radius              25.0
+shell_radius              25
 
 [solvent]
 radial_force              60.0

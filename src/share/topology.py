@@ -44,67 +44,6 @@ class Topology():
                      'topdir'           : None,
                     }
 
-class Mapping(object):
-    """ Mapping of atom names to atom types"""
-    def __init__(self,ilib,top):
-        self.ilib = ilib
-        self.topology = top
-        Mapping.prm2lib = {}
-        
-        # run stuff
-        self.read_lib()
-        #self.create_mask()
-        
-    def read_lib(self):
-        self.lib = IO.read_lib(self.ilib)
-    
-        # here, generate the lib/prm atom mapping, add the charges to the atom properties in prm
-        for resname in self.lib:
-            if not resname in Mapping.prm2lib:
-                Mapping.prm2lib[resname] = {}
-                
-            for line in self.lib[resname]['[atoms]']:
-                Mapping.prm2lib[resname][int(line[0])] = line[1]
-                
-    def create_mask(self):
-        resdic = {}
-        attypes = {}
-        resno = 0
-        self.mask = {}
-
-        for i in range(0,len(self.topology['residues'])):
-            resdic[int(self.topology['residues'][i])] = self.topology['sequence'][i]
-        
-        for i in range(0,len(self.topology['atypes'])):
-            attypes[self.topology['atypes'][i][0]] = self.topology['atypes'][i][1]
-            
-        for ai in range(0,len(self.topology['atypes'])):
-            if ai + 1 in resdic:
-                resname = resdic[ai + 1]
-                resno += 1
-                idex = ai
-            atname = self.topology['anames'][attypes[ai + 1] - 1]
-            atname = Mapping.prm2lib[resname][ai - idex + 1]
-
-            # construct the .pdb matrix
-            pdb = ['HETATM',
-                   ai + 1,
-                   atname,' ',
-                   resname,' ',
-                   resno,' ',
-                   0.0,
-                   0.0,
-                   0.0,
-                   0.0,
-                   0.0,
-                   ' ',
-                   ' '
-                  ]
-
-            self.mask[ai] = pdb
-            
-        return(self.mask)
-
 class Read_Topology(object):
     """
     Read Q topology file as an input, parse to topology class

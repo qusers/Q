@@ -12,7 +12,7 @@ class Startup(object):
                  'wd'   : wd,
                  'itrj' : itrj,
                  'ilib' : ilib,
-                 'wraj' : wtraj,
+                 'otrj' : otrj,
                  'calc' : calc,
                }
         START = qcalc.Init(data)
@@ -36,7 +36,7 @@ if __name__ == "__main__":
     parser.add_argument('-wd', '--workdir',
                         dest = "wd",
                         default = None,
-                        help = " Output trajectory file")
+                        help = " Output folder")
             
     parser.add_argument('-it', '--itrj',
                         dest = "itrj",
@@ -48,9 +48,9 @@ if __name__ == "__main__":
                         default = None,
                         help = "Library files for used topology")
     
-    parser.add_argument("-wt", "--wtraj",
-                        default = False,
-                        action = 'store_true',
+    parser.add_argument("-ot", "--otrj",
+                        dest = 'otrj',
+                        choices = ['.pdb'],
                         help="Write trajecotry")
     
     parser.add_argument('-c', '--calc',
@@ -66,6 +66,6 @@ if __name__ == "__main__":
             wd = args.wd,
             itrj = args.itrj,
             ilib = args.ilib,
-            wtraj = args.wtraj,
+            otrj = args.otrj,
             calc = args.calc,
            )
