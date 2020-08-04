@@ -49,3 +49,4 @@ test/ethane-ethanol/test/*
 *.csv
 *.json
 *.calc
+*.pml
