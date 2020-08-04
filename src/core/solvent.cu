@@ -1,10 +1,17 @@
 #include "system.h"
 #include "solvent.h"
 
+#include <stdio.h>
+#include <time.h>
+#include <unistd.h>
+
 /* =============================================
  * == SOLVENT INTERACTIONS
  * =============================================
  */
+
+coord_t *X;
+dvel_t *MAT, *DV;
 
 //ONLY call if there are actually solvent atoms, or get segfaulted
 void calc_nonbonded_ww_forces() {
@@ -244,7 +251,58 @@ void calc_nonbonded_ww_forces() {
 }
 
 void calc_nonbonded_ww_forces_host() {
-    
+    int mem_size_X = 3 * n_waters * sizeof(coord_t);
+    int mem_size_MAT = 3 * 3 * n_waters * n_waters * sizeof(dvel_t);
+    int mem_size_DV = 3 * n_waters * sizeof(dvel_t);
+
+    cudaError_t error;
+
+    // Initialize water constants
+    if (A_OO == 0) {
+        catype_t catype_ow;    // Atom type of first O, H atom
+        ccharge_t ccharge_ow, ccharge_hw; // Charge of first O, H atom
+
+        catype_ow = catypes[atypes[n_atoms_solute].code - 1];
+        ccharge_ow = ccharges[charges[n_atoms_solute].code - 1];
+        ccharge_hw = ccharges[charges[n_atoms_solute+1].code - 1];
+
+        A_OO = pow(catype_ow.aii_normal, 2);
+        B_OO = pow(catype_ow.bii_normal, 2);
+
+        crg_ow = ccharge_ow.charge;
+        crg_hw = ccharge_hw.charge;
+
+        cudaMalloc((void**) &X, mem_size_X);
+        error = cudaMalloc((void**) &MAT, mem_size_MAT);
+        if (error != cudaSuccess) {
+            printf(">>> FATAL: memory for matrix could not be allocated. Exiting...\n");
+            exit(EXIT_FAILURE);
+        }
+        cudaMalloc((void**) &DV, mem_size_DV);    
+    }
+
+    clock_t start = clock();
+
+    cudaMemcpy(X, coords, mem_size_X, cudaMemcpyHostToDevice);
+    cudaMemset(MAT, 0, mem_size_MAT);
+    cudaMemcpy(DV, dvelocities, mem_size_DV, cudaMemcpyHostToDevice);
+
+    clock_t end = clock();
+
+    printf("Time to copy data over: %f\n", (end-start) / (double)CLOCKS_PER_SEC);
+
+    dim3 threads,grid;
+
+    threads = dim3(BLOCK_SIZE, BLOCK_SIZE);
+    grid = dim3(3 * n_waters / threads.x, 3 * n_waters / threads.y);
+
+    double evdw, ecoul;
+
+    calc_ww_dvel_matrix<<<grid, threads>>>(n_waters, crg_ow, crg_hw, A_OO, B_OO, X, &evdw, &ecoul, MAT);
+    calc_ww_dvel_vector_rows<<<(3 * 3 * n_waters * n_waters / BLOCK_SIZE), BLOCK_SIZE>>>(n_waters, DV, MAT);
+    calc_ww_dvel_vector_columns<<<(3 * 3 * n_waters * n_waters / BLOCK_SIZE), BLOCK_SIZE>>>(n_waters, DV, MAT);
+
+    cudaMemcpy(dvelocities, DV, mem_size_DV, cudaMemcpyDeviceToHost);
 }
 
 __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, double crg_hw, double A_OO, double B_OO,
@@ -484,7 +542,7 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
 }
 
 __global__ void calc_ww_dvel_matrix(int n_waters, double crg_ow, double crg_hw, double A_OO, double B_OO,
-    coord_t *X, coord_t *Y, double *Evdw, double *Ecoul, dvel_t *MAT) {
+    coord_t *X, double *Evdw, double *Ecoul, dvel_t *MAT) {
     // Block index
     int bx = blockIdx.x;
     int by = blockIdx.y;
@@ -499,13 +557,32 @@ __global__ void calc_ww_dvel_matrix(int n_waters, double crg_ow, double crg_hw, 
     int aStart = 3 * BLOCK_SIZE * by;
     int bStart = 3 * BLOCK_SIZE * bx;
 
-    Xs[3 * tx    ] = X[aStart + 3 * tx    ];
-    Xs[3 * tx + 1] = X[aStart + 3 * tx + 1];
-    Xs[3 * tx + 2] = X[aStart + 3 * tx + 2];
+    if (aStart + 3 * tx >= 3 * n_waters) return;
+    if (bStart + 3 * ty >= 3 * n_waters) return;
 
-    Ys[3 * ty    ] = Y[bStart + 3 * ty    ];
-    Ys[3 * ty + 1] = Y[bStart + 3 * ty + 1];
-    Ys[3 * ty + 2] = Y[bStart + 3 * ty + 2];
+    if (bx == by) {
+        Xs[3 * tx    ] = X[aStart + 3 * tx    ];
+        Xs[3 * tx + 1] = X[aStart + 3 * tx + 1];
+        Xs[3 * tx + 2] = X[aStart + 3 * tx + 2];
+    }
+    else {
+        Xs[3 * tx    ] = X[aStart + 3 * tx    ];
+        Xs[3 * tx + 1] = X[aStart + 3 * tx + 1];
+        Xs[3 * tx + 2] = X[aStart + 3 * tx + 2];
+    
+        Ys[3 * ty    ] = X[bStart + 3 * ty    ];
+        Ys[3 * ty + 1] = X[bStart + 3 * ty + 1];
+        Ys[3 * ty + 2] = X[bStart + 3 * ty + 2];
+    }
+
+    __syncthreads();
+
+    if (bx == by && tx == ty) {
+        Ys[3 * ty    ] = Xs[3 * ty    ];
+        Ys[3 * ty + 1] = Xs[3 * ty + 1];
+        Ys[3 * ty + 2] = Xs[3 * ty + 2];
+
+    }
 
     __syncthreads();
 
@@ -523,18 +600,56 @@ __global__ void calc_ww_dvel_matrix(int n_waters, double crg_ow, double crg_hw, 
     MAT[ix + n_waters * 3 * ty + tx    ] = water_a[0];
     MAT[ix + n_waters * 3 * ty + tx + 1] = water_a[1];
     MAT[ix + n_waters * 3 * ty + tx + 2] = water_a[2];
+
+    __syncthreads();
 }
 
-__global__ void calc_ww_dvel_vector(int n_waters, coord_t *X, dvel_t *DV, dvel_t *MAT) {
-    // Block index
-    int bx = blockIdx.x;
-    int by = blockIdx.y;
+__global__ void calc_ww_dvel_vector_rows(int n_waters, dvel_t *DV, dvel_t *MAT) {
+    int row = blockIdx.x*blockDim.x + threadIdx.x;
+    if (row >= 3 * n_waters) return;
 
-    // Thread index
-    int tx = threadIdx.x;
-    int ty = threadIdx.y;
+    dvel_t dv;
+    dv.x = 0;
+    dv.y = 0;
+    dv.z = 0;
 
+    for (int i = 0; i < 3 * n_waters; i++) {
+        if (i > row) {
+            dv.x += MAT[row + 3 * n_waters * i].x;
+            dv.y += MAT[row + 3 * n_waters * i].y;
+            dv.z += MAT[row + 3 * n_waters * i].z;
+        }
+    }
 
+    DV[row].x += dv.x;
+    DV[row].y += dv.y;
+    DV[row].z += dv.z;
+
+    __syncthreads();
+}
+
+__global__ void calc_ww_dvel_vector_columns(int n_waters, dvel_t *DV, dvel_t *MAT) {
+    int column = blockIdx.x*blockDim.x + threadIdx.x;
+    if (column >= 3 * n_waters) return;
+
+    dvel_t dv;
+    dv.x = 0;
+    dv.y = 0;
+    dv.z = 0;
+
+    for (int i = 0; i < 3 * n_waters; i++) {
+        if (i < column) {
+            dv.x += MAT[i + 3 * n_waters * column].x;
+            dv.y += MAT[i + 3 * n_waters * column].y;
+            dv.z += MAT[i + 3 * n_waters * column].z;
+        }
+    }
+
+    DV[column].x -= dv.x;
+    DV[column].y -= dv.y;
+    DV[column].z -= dv.z;
+
+    __syncthreads();
 }
 
 void calc_nonbonded_pw_forces() {

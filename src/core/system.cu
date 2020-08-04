@@ -358,7 +358,7 @@ void init_wshells() {
             , wshells[2].router, wshells[2].router - wshells[2].dr
         );
 
-    n_max_inshell *= 1.5; // Make largest a little bigger just in case
+    n_max_inshell = 3 * n_waters; // Make largest a little bigger just in case
 
     // Initialize arrays needed for bookkeeping
     theta = (double*) malloc(n_waters * sizeof(double));
@@ -469,7 +469,7 @@ void calc_temperature() {
         ener = .5 * mass_i * (pow(velocities[i].x, 2) + pow(velocities[i].y, 2) + pow(velocities[i].z, 2));
         Temp += ener;
         if (ener > Ekinmax) {
-            printf(">>> WARNING: hot atom %d: %f\n", i, ener/Boltz/3);
+            //printf(">>> WARNING: hot atom %d: %f\n", i, ener/Boltz/3);
         }
     }
 
@@ -634,7 +634,7 @@ void calc_integration_step(int iteration) {
 
     // Now solvent interactions
     if (n_waters > 0) {
-        calc_nonbonded_ww_forces();
+        calc_nonbonded_ww_forces_host();
         calc_nonbonded_pw_forces();
         calc_nonbonded_qw_forces();
     }
