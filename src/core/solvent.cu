@@ -255,7 +255,7 @@ void calc_nonbonded_pw_forces() {
 
     for (int pi = 0; pi < n_patoms; pi++) {
         for (int j = n_atoms_solute; j < n_atoms; j++) {
-            i = p_atoms[i].a-1;
+            i = p_atoms[pi].a-1;
             qi = ccharges[charges[i].code - 1].charge;
             qj = ccharges[charges[j].code - 1].charge;
 
