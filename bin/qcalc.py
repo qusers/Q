@@ -7,9 +7,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../s
 import qcalc
 
 class Startup(object):
-    def __init__(self,top,wd,itrj,ilib,otrj,calc):
-        data = { 'top' : top,
-                 'wd' : wd,
+    def __init__(self,top,wd,itrj,ilib,wtraj,calc):
+        data = { 'top'  : top,
+                 'wd'   : wd,
                  'itrj' : itrj,
                  'ilib' : ilib,
                  'otrj' : otrj,
@@ -31,9 +31,9 @@ if __name__ == "__main__":
                         dest = "top",
                         default = None,
                         required = True,
-                        help = "Q topology file")
+                        help = "Q .json topology file")
         
-    parser.add_argument('-wd', '--wdir',
+    parser.add_argument('-wd', '--workdir',
                         dest = "wd",
                         default = None,
                         help = " Output folder")
