@@ -631,7 +631,6 @@ void calc_integration_step(int iteration) {
     calc_nonbonded_qp_forces();
     calc_nonbonded_pp_forces();
 
-    clock_t end_nonbonded = clock();
 
     // Now solvent interactions
     if (n_waters > 0) {
@@ -639,6 +638,8 @@ void calc_integration_step(int iteration) {
         calc_nonbonded_pw_forces();
         calc_nonbonded_qw_forces();
     }
+
+    clock_t end_nonbonded = clock();
 
     // Calculate restraints
     if (n_waters > 0) {
@@ -650,6 +651,8 @@ void calc_integration_step(int iteration) {
     calc_pshell_forces();
     calc_restrseq_forces();
 
+    clock_t end_restraints = clock();
+
     // Q-Q nonbonded interactions
     calc_nonbonded_qq_forces();
 
@@ -659,6 +662,8 @@ void calc_integration_step(int iteration) {
         calc_qbond_forces(state);
         calc_qtorsion_forces(state);
     }
+
+    clock_t end_qatoms = clock();
 
     // Now apply leapfrog integration
     calc_leapfrog();
@@ -696,16 +701,20 @@ void calc_integration_step(int iteration) {
     printf("Upot = %f\n", energies.Upot);
     printf("Utot = %f\n", energies.Utot);
 
+    // Append output files
+    write_coords(iteration);
+    write_velocities(iteration);
+    write_energies(iteration);    
+
+    clock_t end_calculation = clock();
+
     // Profiler info
 #ifdef __PROFILING__
     printf("Elapsed time for bonded forces: %f\n", (end_bonded-start) / (double)CLOCKS_PER_SEC );
     printf("Elapsed time for non-bonded forces: %f\n", (end_nonbonded-end_bonded) / (double)CLOCKS_PER_SEC);
+    printf("Elapsed time for entire time-step: %f\n", (end_calculation-start) / (double)CLOCKS_PER_SEC);
 #endif /* __PROFILING__ */
 
-    // Append output files
-    write_coords(iteration);
-    write_velocities(iteration);
-    write_energies(iteration);
 }
 
 void init_variables() {
