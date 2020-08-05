@@ -11,13 +11,15 @@
  */
 
 coord_t *X;
-dvel_t *MAT, *DV;
+dvel_t *DV, *h_DV;
+calc_water_t *MAT, *h_MAT;
 
 //ONLY call if there are actually solvent atoms, or get segfaulted
 void calc_nonbonded_ww_forces() {
     double rOX, rH1X, rH2X, r2;
     coord_t dOX, dH1X, dH2X;
     double Vel, V_a, V_b, dv;
+    double tempX, tempY, tempZ;
 
     energies.Ucoul = 0;
     energies.Uvdw = 0;
@@ -40,6 +42,12 @@ void calc_nonbonded_ww_forces() {
 
     for (int i = n_atoms_solute; i < n_atoms; i+=3) {
         for (int j = i+3; j < n_atoms; j+=3) {
+            if (i == 0 && j == 3) {
+                tempX = dvelocities[4].x;
+                tempY = dvelocities[4].y;
+                tempZ = dvelocities[4].z;
+            }
+
             // --- O - (O,H1,H2) ---
             dOX.x = coords[j].x - coords[i].x;
             dOX.y = coords[j].y - coords[i].y;
@@ -246,13 +254,22 @@ void calc_nonbonded_ww_forces() {
             // Put i and j indexes back to prevent troubles
             i -= 2;
             j -= 2;
+
+            if (i == 0 && j == 3) {
+                printf("MAT[1][0].O = %f %f %f\n", dvelocities[4].x - tempX, dvelocities[4].y - tempY, dvelocities[4].z - tempZ);
+            }
+            if (i == 3) {
+                // printf("MAT[1][%d].O = %f %f %f\n", j/3, dvelocities[3].x - tempX, dvelocities[3].y - tempY, dvelocities[3].z - tempZ);
+            }
         }
     }
+
+    printf("%f %f %f\n", dvelocities[3].x, dvelocities[3].y, dvelocities[3].z);
 }
 
 void calc_nonbonded_ww_forces_host() {
     int mem_size_X = 3 * n_waters * sizeof(coord_t);
-    int mem_size_MAT = 3 * 3 * n_waters * n_waters * sizeof(dvel_t);
+    int mem_size_MAT = n_waters * n_waters * sizeof(calc_water_t);
     int mem_size_DV = 3 * n_waters * sizeof(dvel_t);
 
     cudaError_t error;
@@ -279,36 +296,58 @@ void calc_nonbonded_ww_forces_host() {
             exit(EXIT_FAILURE);
         }
         cudaMalloc((void**) &DV, mem_size_DV);    
+        h_DV = (dvel_t*) malloc(3 * n_waters * sizeof(dvel_t));
+        h_MAT = (calc_water_t*) malloc(n_waters * n_waters * sizeof(calc_water_t));
     }
-
-    clock_t start = clock();
 
     cudaMemcpy(X, coords, mem_size_X, cudaMemcpyHostToDevice);
     cudaMemset(MAT, 0, mem_size_MAT);
     cudaMemcpy(DV, dvelocities, mem_size_DV, cudaMemcpyHostToDevice);
 
-    clock_t end = clock();
-
-    printf("Time to copy data over: %f\n", (end-start) / (double)CLOCKS_PER_SEC);
-
     dim3 threads,grid;
 
     threads = dim3(BLOCK_SIZE, BLOCK_SIZE);
-    grid = dim3(3 * n_waters / threads.x, 3 * n_waters / threads.y);
+    grid = dim3(n_waters+1 / threads.x, n_waters+1 / threads.y);
 
     double evdw, ecoul;
 
+    cudaMemcpy(h_DV, DV, mem_size_DV, cudaMemcpyDeviceToHost);
+    printf("%f %f %f\n", h_DV[0].x, h_DV[0].y, h_DV[0].z);
     calc_ww_dvel_matrix<<<grid, threads>>>(n_waters, crg_ow, crg_hw, A_OO, B_OO, X, &evdw, &ecoul, MAT);
-    calc_ww_dvel_vector_rows<<<(3 * 3 * n_waters * n_waters / BLOCK_SIZE), BLOCK_SIZE>>>(n_waters, DV, MAT);
-    calc_ww_dvel_vector_columns<<<(3 * 3 * n_waters * n_waters / BLOCK_SIZE), BLOCK_SIZE>>>(n_waters, DV, MAT);
+    calc_ww_dvel_vector_rows<<<(n_waters+1 / BLOCK_SIZE), BLOCK_SIZE>>>(n_waters, DV, MAT);
+    cudaMemcpy(h_DV, DV, mem_size_DV, cudaMemcpyDeviceToHost);
+    printf("%f %f %f\n", h_DV[3].x, h_DV[3].y, h_DV[3].z);
+    // calc_ww_dvel_vector_columns<<<(n_waters / BLOCK_SIZE), BLOCK_SIZE>>>(n_waters, DV, MAT);
+    // cudaMemcpy(h_DV, DV, mem_size_DV, cudaMemcpyDeviceToHost);
+    // printf("%f %f %f\n", h_DV[1].x, h_DV[1].y, h_DV[1].z);
+
+    cudaMemcpy(h_MAT, MAT, mem_size_MAT, cudaMemcpyDeviceToHost);
+    // printf("MAT[1][2].O = %f %f %f\n", h_MAT[2 + n_waters].O.x, h_MAT[2 + n_waters].O.y, h_MAT[2 + n_waters].O.z);
+    // printf("MAT[1][2].H1 = %f %f %f\n", h_MAT[2 + n_waters].H1.x, h_MAT[2 + n_waters].H1.y, h_MAT[2 + n_waters].H1.z);
+    // printf("MAT[1][2].H2 = %f %f %f\n", h_MAT[2 + n_waters].H2.x, h_MAT[2 + n_waters].H2.y, h_MAT[2 + n_waters].H2.z);
+
+    // printf("MAT[2][1].O = %f %f %f\n", h_MAT[1+ 2*n_waters].O.x, h_MAT[1+2*n_waters].O.y, h_MAT[1+2*n_waters].O.z);
+    // printf("MAT[2][1].H1 = %f %f %f\n", h_MAT[1+2*n_waters].H1.x, h_MAT[1+2*n_waters].H1.y, h_MAT[1+2*n_waters].H1.z);
+    // printf("MAT[2][1].H2 = %f %f %f\n", h_MAT[1+2*n_waters].H2.x, h_MAT[1+2*n_waters].H2.y, h_MAT[1+2*n_waters].H2.z);
+    for (int i = 0; i < n_waters; i++) {
+        // printf("MAT[1][%d].O = %f %f %f\n", i, h_MAT[i+n_waters].O.x, h_MAT[i+n_waters].O.y, h_MAT[i+n_waters].O.z);
+    }
+    for (int i = 0; i < n_waters; i++) {
+        printf("MAT[%d][0].H1 = %f %f %f\n", i, h_MAT[i*n_waters].H1.x, h_MAT[i*n_waters].H1.y, h_MAT[i*n_waters].H1.z);
+    }
 
     cudaMemcpy(dvelocities, DV, mem_size_DV, cudaMemcpyDeviceToHost);
+}
+
+__device__ void set_water(int n_waters, int row, int column, dvel_t *val, calc_water_t *MAT) {
+    MAT[column + n_waters * row].O  = val[0];
+    MAT[column + n_waters * row].H1 = val[1];
+    MAT[column + n_waters * row].H2 = val[2];
 }
 
 __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, double crg_hw, double A_OO, double B_OO,
     coord_t *Xs, coord_t *Ys, double *Evdw, double *Ecoul, dvel_t *water_a, dvel_t *water_b) {
     
-    // Do stuff
     double rOX, rH1X, rH2X, r2;
     coord_t dOX, dH1X, dH2X;
     double Vel, V_a, V_b, dv;
@@ -326,7 +365,7 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
 
     // O - H1
     j += 1;
-    w_j++;
+    w_j += 1;
 
     dH1X.x = Ys[j].x - Xs[i].x;
     dH1X.y = Ys[j].y - Xs[i].y;
@@ -335,7 +374,7 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
 
     // O-H2 (X=H2)
     j += 1;
-    w_j++;
+    w_j += 1;
 
     dH2X.x = Ys[j].x - Xs[i].x;
     dH2X.y = Ys[j].y - Xs[i].y;
@@ -350,8 +389,6 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
     Vel = Coul * pow(crg_ow, 2) * rOX;
     V_a = A_OO * (r2*r2*r2) * (r2*r2*r2);
     V_b = B_OO * (r2*r2*r2);
-    *Evdw += (V_a - V_b);
-    *Ecoul += Vel;
     dv = r2 * (-Vel - 12 * V_a + 6 * V_b);
     j -= 2; //move pointer back to O in interacting molecule
     w_j -= 2;
@@ -365,10 +402,9 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
     // O - H1
     r2 = pow(rH1X, 2);
     Vel = Coul * crg_ow * crg_hw * rH1X;
-    *Ecoul += Vel;
     dv = r2 * (-Vel);
     j += 1; //point to H1 in j-molecule
-    w_j++;
+    w_j += 1;
     water_a[w_i].x -= (dv * dH1X.x);
     water_b[w_j].x += (dv * dH1X.x);
     water_a[w_i].y -= (dv * dH1X.y);
@@ -379,10 +415,9 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
     // O - H2
     r2 = pow(rH2X, 2);
     Vel = Coul * crg_ow * crg_hw * rH2X;
-    *Ecoul += Vel;
     dv = r2 * (-Vel);
     j += 1; //point to H2 in j-molecule
-    w_j++;
+    w_j += 1;
     water_a[w_i].x -= (dv * dH2X.x);
     water_b[w_j].x += (dv * dH2X.x);
     water_a[w_i].y -= (dv * dH2X.y);
@@ -392,7 +427,7 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
 
     // --- H1 - (O,H1,H2) ---
     i += 1; //Point to H1 in i-molecule
-    w_i++;
+    w_i += 1;
     j -= 2; //Point to O in j-molecule
     w_j -= 2;
 
@@ -404,7 +439,7 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
 
     // H1 - H1 (X=H1)
     j += 1;
-    w_j++;
+    w_j += 1;
 
     dH1X.x = Ys[j].x - Xs[i].x;
     dH1X.y = Ys[j].y - Xs[i].y;
@@ -413,7 +448,7 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
 
     // H1 - H2 (X=H2)
     j += 1;
-    w_j++;
+    w_j += 1;
 
     dH2X.x = Ys[j].x - Xs[i].x;
     dH2X.y = Ys[j].y - Xs[i].y;
@@ -426,7 +461,6 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
     // H1 - O
     r2 = rOX * rOX;
     Vel = Coul * crg_hw * crg_ow * rOX;
-    *Ecoul += Vel;
     dv = r2 * (-Vel);
     j -= 2; //move pointer back to O in interacting molecule
     w_j -= 2;
@@ -440,10 +474,9 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
     // H1 - H1
     r2 = pow(rH1X, 2);
     Vel = Coul * crg_hw * crg_hw * rH1X;
-    *Ecoul += Vel;
     dv = r2 * (-Vel);
     j += 1; //point to H1 in j-molecule
-    w_j++;
+    w_j += 1;
     water_a[w_i].x -= (dv * dH1X.x);
     water_b[w_j].x += (dv * dH1X.x);
     water_a[w_i].y -= (dv * dH1X.y);
@@ -454,10 +487,9 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
     // H1 - H2
     r2 = pow(rH2X, 2);
     Vel = Coul * crg_hw * crg_hw * rH2X;
-    *Ecoul += Vel;
     dv = r2 * (-Vel);
     j += 1; //point to H2 in j-molecule
-    w_j++;
+    w_j += 1;
     water_a[w_i].x -= (dv * dH2X.x);
     water_b[w_j].x += (dv * dH2X.x);
     water_a[w_i].y -= (dv * dH2X.y);
@@ -467,7 +499,7 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
 
     // --- H2 - (O,H1,H2) ---
     i += 1; //Point to H2 in i-molecule
-    w_i++;
+    w_i += 1;
     j -= 2; //Point to O in j-molecule
     w_j -= 2;
 
@@ -479,7 +511,7 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
 
     // H2 - H1 (X=H1)
     j += 1;
-    w_j++;
+    w_j += 1;
 
     dH1X.x = Ys[j].x - Xs[i].x;
     dH1X.y = Ys[j].y - Xs[i].y;
@@ -488,7 +520,7 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
 
     // H2 - H2 (X=H2)
     j += 1;
-    w_j++;
+    w_j += 1;
 
     dH2X.x = Ys[j].x - Xs[i].x;
     dH2X.y = Ys[j].y - Xs[i].y;
@@ -501,7 +533,6 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
     // H2 - O
     r2 = rOX * rOX;
     Vel = Coul * crg_hw * crg_ow * rOX;
-    *Ecoul += Vel;
     dv = r2 * (-Vel);
     j -= 2; //move pointer back to O in interacting molecule
     w_j -= 2;
@@ -515,10 +546,9 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
     // H2 - H1
     r2 = pow(rH1X, 2);
     Vel = Coul * crg_hw * crg_hw * rH1X;
-    *Ecoul += Vel;
     dv = r2 * (-Vel);
     j += 1; //point to H1 in j-molecule
-    w_j++;
+    w_j += 1;
     water_a[w_i].x -= (dv * dH1X.x);
     water_b[w_j].x += (dv * dH1X.x);
     water_a[w_i].y -= (dv * dH1X.y);
@@ -529,20 +559,25 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
     // H1 - H2
     r2 = pow(rH2X, 2);
     Vel = Coul * crg_hw * crg_hw * rH2X;
-    *Ecoul += Vel;
     dv = r2 * (-Vel);
     j += 1; //point to H2 in j-molecule
-    w_j++;
+    w_j += 1;
     water_a[w_i].x -= (dv * dH2X.x);
     water_b[w_j].x += (dv * dH2X.x);
     water_a[w_i].y -= (dv * dH2X.y);
     water_b[w_j].y += (dv * dH2X.y);
     water_a[w_i].z -= (dv * dH2X.z);
     water_b[w_j].z += (dv * dH2X.z);
+
+    // Put i and j indexes back to prevent troubles
+    i -= 2;
+    w_i -= 2;
+    j -= 2;
+    w_j -= 2;
 }
 
 __global__ void calc_ww_dvel_matrix(int n_waters, double crg_ow, double crg_hw, double A_OO, double B_OO,
-    coord_t *X, double *Evdw, double *Ecoul, dvel_t *MAT) {
+    coord_t *X, double *Evdw, double *Ecoul, calc_water_t *MAT) {
     // Block index
     int bx = blockIdx.x;
     int by = blockIdx.y;
@@ -551,103 +586,153 @@ __global__ void calc_ww_dvel_matrix(int n_waters, double crg_ow, double crg_hw, 
     int tx = threadIdx.x;
     int ty = threadIdx.y;
     
-    __shared__ coord_t Xs[3 * BLOCK_SIZE];
-    __shared__ coord_t Ys[3 * BLOCK_SIZE];
-
     int aStart = 3 * BLOCK_SIZE * by;
     int bStart = 3 * BLOCK_SIZE * bx;
 
-    if (aStart + 3 * tx >= 3 * n_waters) return;
-    if (bStart + 3 * ty >= 3 * n_waters) return;
+    if (aStart + 3 * tx > 3 * n_waters) return;
+    if (bStart + 3 * ty > 3 * n_waters) return;
 
-    if (bx == by) {
-        Xs[3 * tx    ] = X[aStart + 3 * tx    ];
-        Xs[3 * tx + 1] = X[aStart + 3 * tx + 1];
-        Xs[3 * tx + 2] = X[aStart + 3 * tx + 2];
-    }
-    else {
-        Xs[3 * tx    ] = X[aStart + 3 * tx    ];
-        Xs[3 * tx + 1] = X[aStart + 3 * tx + 1];
-        Xs[3 * tx + 2] = X[aStart + 3 * tx + 2];
-    
-        Ys[3 * ty    ] = X[bStart + 3 * ty    ];
-        Ys[3 * ty + 1] = X[bStart + 3 * ty + 1];
-        Ys[3 * ty + 2] = X[bStart + 3 * ty + 2];
-    }
+    __shared__ coord_t Xs[3 * BLOCK_SIZE];
+    __shared__ coord_t Ys[3 * BLOCK_SIZE];
+
+    // if (bx == by) {
+    //     Xs[3 * tx    ] = X[aStart + 3 * tx    ];
+    //     Xs[3 * tx + 1] = X[aStart + 3 * tx + 1];
+    //     Xs[3 * tx + 2] = X[aStart + 3 * tx + 2];
+    // }
+    // else {
+    Xs[3 * ty    ] = X[aStart + 3 * ty    ];
+    Xs[3 * ty + 1] = X[aStart + 3 * ty + 1];
+    Xs[3 * ty + 2] = X[aStart + 3 * ty + 2];
+
+    Ys[3 * tx    ] = X[bStart + 3 * tx    ];
+    Ys[3 * tx + 1] = X[bStart + 3 * tx + 1];
+    Ys[3 * tx + 2] = X[bStart + 3 * tx + 2];
+    // }
+
+    // __syncthreads();
+
+    // if (bx == by && tx == ty) {
+    //     Ys[3 * ty    ] = Xs[3 * ty    ];
+    //     Ys[3 * ty + 1] = Xs[3 * ty + 1];
+    //     Ys[3 * ty + 2] = Xs[3 * ty + 2];
+
+    // }
 
     __syncthreads();
 
-    if (bx == by && tx == ty) {
-        Ys[3 * ty    ] = Xs[3 * ty    ];
-        Ys[3 * ty + 1] = Xs[3 * ty + 1];
-        Ys[3 * ty + 2] = Xs[3 * ty + 2];
-
-    }
-
-    __syncthreads();
+    if (bx < by || (bx == by && tx < ty)) return;
 
     dvel_t water_a[3], water_b[3];
+    water_a[0].x = 0;
+    water_a[0].y = 0;
+    water_a[0].z = 0;
+    water_a[1].x = 0;
+    water_a[1].y = 0;
+    water_a[1].z = 0;
+    water_a[2].x = 0;
+    water_a[2].y = 0;
+    water_a[2].z = 0;
+    water_b[0].x = 0;
+    water_b[0].y = 0;
+    water_b[0].z = 0;
+    water_b[1].x = 0;
+    water_b[1].y = 0;
+    water_b[1].z = 0;
+    water_b[2].x = 0;
+    water_b[2].y = 0;
+    water_b[2].z = 0;
+    
 
     if (bx != by || tx != ty) {
         double evdw, ecoul;
-        calc_ww_dvel_matrix_incr(tx, ty, crg_ow, crg_hw, A_OO, B_OO, Xs, Ys, &evdw, &ecoul, water_a, water_b);
+        calc_ww_dvel_matrix_incr(ty, tx, crg_ow, crg_hw, A_OO, B_OO, Xs, Ys, &evdw, &ecoul, water_a, water_b);
     }
 
-    __syncthreads();
+    // water_b[0].x = -water_a[0].x;
+    // water_b[0].y = -water_a[0].y;
+    // water_b[0].z = -water_a[0].z;
+    // water_b[1].x = -water_a[1].x;
+    // water_b[1].y = -water_a[1].y;
+    // water_b[1].z = -water_a[1].z;
+    // water_b[2].x = -water_a[2].x;
+    // water_b[2].y = -water_a[2].y;
+    // water_b[2].z = -water_a[2].z;
 
-    int ix = n_waters * 3 * BLOCK_SIZE * by + BLOCK_SIZE * bx;
-
-    MAT[ix + n_waters * 3 * ty + tx    ] = water_a[0];
-    MAT[ix + n_waters * 3 * ty + tx + 1] = water_a[1];
-    MAT[ix + n_waters * 3 * ty + tx + 2] = water_a[2];
-
+    set_water(n_waters, by * BLOCK_SIZE + ty, bx * BLOCK_SIZE + tx, water_a, MAT);
+    set_water(n_waters, bx * BLOCK_SIZE + tx, by * BLOCK_SIZE + ty, water_b, MAT);
+    
     __syncthreads();
 }
 
-__global__ void calc_ww_dvel_vector_rows(int n_waters, dvel_t *DV, dvel_t *MAT) {
+__global__ void calc_ww_dvel_vector_rows(int n_waters, dvel_t *DV, calc_water_t *MAT) {
     int row = blockIdx.x*blockDim.x + threadIdx.x;
-    if (row >= 3 * n_waters) return;
+    if (row >= n_waters) return;
 
-    dvel_t dv;
-    dv.x = 0;
-    dv.y = 0;
-    dv.z = 0;
+    dvel_t dO, dH1, dH2;
+    dO.x = 0;
+    dO.y = 0;
+    dO.z = 0;
+    dH1.x = 0;
+    dH1.y = 0;
+    dH1.z = 0;
+    dH2.x = 0;
+    dH2.y = 0;
+    dH2.z = 0;
 
-    for (int i = 0; i < 3 * n_waters; i++) {
-        if (i > row) {
-            dv.x += MAT[row + 3 * n_waters * i].x;
-            dv.y += MAT[row + 3 * n_waters * i].y;
-            dv.z += MAT[row + 3 * n_waters * i].z;
+    for (int i = 0; i < n_waters; i++) {
+        if (i != row) {
+            dO.x += MAT[i + n_waters * row].O.x;
+            dO.y += MAT[i + n_waters * row].O.y;
+            dO.z += MAT[i + n_waters * row].O.z;
+            dH1.x += MAT[i + n_waters * row].H1.x;
+            dH1.y += MAT[i + n_waters * row].H1.y;
+            dH1.z += MAT[i + n_waters * row].H1.z;
+            dH2.x += MAT[i + n_waters * row].H2.x;
+            dH2.y += MAT[i + n_waters * row].H2.y;
+            dH2.z += MAT[i + n_waters * row].H2.z;
         }
     }
 
-    DV[row].x += dv.x;
-    DV[row].y += dv.y;
-    DV[row].z += dv.z;
+    DV[3*row].x += dO.x;
+    DV[3*row].y += dO.y;
+    DV[3*row].z += dO.z;
+    DV[3*row+1].x += dH1.x;
+    DV[3*row+1].y += dH1.y;
+    DV[3*row+1].z += dH1.z;
+    DV[3*row+2].x += dH2.x;
+    DV[3*row+2].y += dH2.y;
+    DV[3*row+2].z += dH2.z;
 
     __syncthreads();
 }
 
-__global__ void calc_ww_dvel_vector_columns(int n_waters, dvel_t *DV, dvel_t *MAT) {
+__global__ void calc_ww_dvel_vector_columns(int n_waters, dvel_t *DV, calc_water_t *MAT) {
     int column = blockIdx.x*blockDim.x + threadIdx.x;
-    if (column >= 3 * n_waters) return;
+    if (column >= n_waters) return;
 
     dvel_t dv;
     dv.x = 0;
     dv.y = 0;
     dv.z = 0;
 
-    for (int i = 0; i < 3 * n_waters; i++) {
-        if (i < column) {
-            dv.x += MAT[i + 3 * n_waters * column].x;
-            dv.y += MAT[i + 3 * n_waters * column].y;
-            dv.z += MAT[i + 3 * n_waters * column].z;
+    for (int i = 0; i < n_waters; i++) {
+        if (i > column) {
+            dv.x += MAT[column + n_waters * i].O.x;
+            dv.y += MAT[column + n_waters * i].O.x;
+            dv.z += MAT[column + n_waters * i].O.x;
+            dv.x += MAT[column + n_waters * i].H1.x;
+            dv.y += MAT[column + n_waters * i].H1.x;
+            dv.z += MAT[column + n_waters * i].H1.x;
+            dv.x += MAT[column + n_waters * i].H2.x;
+            dv.y += MAT[column + n_waters * i].H2.x;
+            dv.z += MAT[column + n_waters * i].H2.x;
         }
     }
 
-    DV[column].x -= dv.x;
-    DV[column].y -= dv.y;
-    DV[column].z -= dv.z;
+    DV[column].x += dv.x;
+    DV[column].y += dv.y;
+    DV[column].z += dv.z;
 
     __syncthreads();
 }
@@ -701,4 +786,10 @@ void calc_nonbonded_pw_forces() {
             energies.Uvdw += (V_a - V_b);
         }
     }
+}
+
+void clean_solvent() {
+    cudaFree(X);
+    cudaFree(MAT);
+    cudaFree(DV);
 }

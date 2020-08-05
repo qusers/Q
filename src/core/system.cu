@@ -909,6 +909,8 @@ void clean_variables() {
     free(dvelocities);
     free(xcoords);
 
+    clean_solvent();
+
     // Energies & temperature
     free(q_energies);
 }
