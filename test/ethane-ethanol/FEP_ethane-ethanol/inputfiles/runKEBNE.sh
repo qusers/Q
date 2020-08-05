@@ -2,7 +2,7 @@
 #
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=28
-#SBATCH -A SNIC2018-2-3 
+#SBATCH -A SNIC2019-2-1 
 #              d-hh:mm:ss
 #SBATCH --time=0-04:00:00
 
@@ -10,7 +10,7 @@ export TMP=/tmp
 export TEMP=/tmp
 export TMPDIR=/tmp
 ## Load modules for qdynp
-module load gompi/2017b
+module load iompi/2018b
 
 
 ## define qdynp location
@@ -20,8 +20,8 @@ temperature=298
 run=10
 finalMDrestart=md_0000_1000.re
 
-workdir=/home/jespers/adenosine/1.A1-A2A_selectivity/A1/5.FEP/holo
-inputfiles=/home/jespers/adenosine/1.A1-A2A_selectivity/A1/5.FEP/holo/inputfiles
+workdir=/pfs/nobackup/home/w/wije/software/qgpu-qcalc/test/ethane-ethanol/FEP_ethane-ethanol
+inputfiles=/pfs/nobackup/home/w/wije/software/qgpu-qcalc/test/ethane-ethanol/FEP_ethane-ethanol/inputfiles
 length=${#fepfiles[@]}
 length=$((length-1))
 for index in $(seq 0 $length);do

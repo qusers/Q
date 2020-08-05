@@ -22,18 +22,23 @@ class Create_Environment(object):
     """
         Creates the workdirectory environment.
     """
-    def __init__(self,top,wd):        
+    def __init__(self,top,wd):
+        if not os.path.exists(wd.split('/')[0]):
+            os.mkdir(wd.split('/')[0])
+            
+        else:
+            shutil.rmtree(wd.split('/')[0])
+            os.mkdir(wd.split('/')[0])
+        
         if not os.path.exists(wd):
             os.mkdir(wd)
-            os.mkdir(wd + '/' + top.split('.')[0])
             
         else:
             shutil.rmtree(wd)
             os.mkdir(wd)
-            os.mkdir(wd + '/' +  top.split('.')[0])
             
         # create the output folder for qdyn
-        os.mkdir(wd + '/' + top.split('.')[0] + '/output')
+        os.mkdir(wd + '/output')
         
 class Prepare_Topology(object):
     """
@@ -60,9 +65,9 @@ class Prepare_Topology(object):
         write_top = TOPOLOGY.Write_Topology(top_data)
         
         # Write the topology in csv and json format
-        write_top.CSV(self.wd + '/' + self.top.split('.')[0] + '/')
+        write_top.CSV(self.wd + '/')
         
-        out_json = self.wd + '/' + self.top.split('.')[0] + '/' + self.top.split('.')[0] + '.json'
+        out_json = self.wd + '/' + self.wd.split('/')[1] + '.json'
         write_top.JSON(out_json)
 
 class Prepare_MD(object):
@@ -198,17 +203,17 @@ class Init(object):
         if data['md'].split('.')[-1] not in extensions:
             print("FATAL: unrecognized extension for {}".format(data['md']))
             sys.exit()
-            
-        #if data['re'] != None:
-        #    if data['re'].split('.')[-1] not in extensions:
-        #        print("FATAL: unrecognized extension for {}".format(data['re']))
-        #        sys.exit()
-        
+
         if data['fep'] != None:
             if data['fep'].split('.')[-1] not in extensions:
                 print("FATAL: unrecognized extension for {}".format(data['fep']))
                 sys.exit()
-    
+        
+        # Create wd
+        if '/' in self.environment['top']:
+            toproot = self.environment['top'].split('/')[-1]
+        self.environment['wd'] = self.environment['wd']  + '/' + toproot.split('.')[0]   
+        
         # INIT
         Create_Environment(top = self.environment['top'],
                            wd  = self.environment['wd'],
