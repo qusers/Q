@@ -4,6 +4,9 @@
 void calc_nonbonded_ww_forces();
 void calc_nonbonded_ww_forces_host();
 
+void calc_nonbonded_ww_forces_incr(int row, int column, double crg_ow, double crg_hw, double A_OO, double B_OO,
+    coord_t *Xs, coord_t *Ys, double *Evdw, double *Ecoul, dvel_t *water_a, dvel_t *water_b);
+
 struct calc_water_t {
     dvel_t O;
     dvel_t H1;
@@ -21,7 +24,6 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
 __global__ void calc_ww_dvel_matrix(int n_waters, double crg_ow, double crg_hw, double A_OO, double B_OO,
     coord_t *X, double *Evdw, double *Ecoul, calc_water_t *MAT);
 __global__ void calc_ww_dvel_vector_rows(int n_waters, dvel_t *DV, calc_water_t *MAT);
-__global__ void calc_ww_dvel_vector_columns(int n_waters, dvel_t *DV, calc_water_t *MAT);
 
 void calc_nonbonded_pw_forces();
 
