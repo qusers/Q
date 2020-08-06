@@ -38,25 +38,9 @@ void calc_nonbonded_ww_forces() {
     for (int i = n_atoms_solute; i < n_atoms; i+=3) {
         for (int j = i+3; j < n_atoms; j+=3) {
             dvel_t water_a[3], water_b[3];
-            water_a[0].x = 0;
-            water_a[0].y = 0;
-            water_a[0].z = 0;
-            water_a[1].x = 0;
-            water_a[1].y = 0;
-            water_a[1].z = 0;
-            water_a[2].x = 0;
-            water_a[2].y = 0;
-            water_a[2].z = 0;
-            water_b[0].x = 0;
-            water_b[0].y = 0;
-            water_b[0].z = 0;
-            water_b[1].x = 0;
-            water_b[1].y = 0;
-            water_b[1].z = 0;
-            water_b[2].x = 0;
-            water_b[2].y = 0;
-            water_b[2].z = 0;
-        
+            memset(&water_a, 0, 3 * sizeof(dvel_t));
+            memset(&water_b, 0, 3 * sizeof(dvel_t));
+                
             calc_nonbonded_ww_forces_incr(i/3, j/3, crg_ow, crg_hw, A_OO, B_OO, coords, coords, &energies.Uvdw, &energies.Ucoul, water_a, water_b);
 
             // printf("MAT[%d][%d].O = %f %f %f\n", i/3, j/3, water_a[0].x, water_a[0].y, water_a[0].z);
