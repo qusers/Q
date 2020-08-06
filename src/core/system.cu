@@ -689,7 +689,10 @@ void calc_integration_step(int iteration) {
     calc_pshell_forces();
     calc_restrseq_forces();
     calc_restrdis_forces();
-
+    calc_restrpos_forces();
+    calc_restrang_forces();
+    calc_restrwall_forces();
+    
     // Q-Q nonbonded interactions
     calc_nonbonded_qq_forces();
 

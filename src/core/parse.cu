@@ -222,32 +222,32 @@ void init_md(const char *filename) {
         k++;
     }
 
-    // // [position_restraints]
-    // n_restrspos = atoi(file.buffer[k][0]);
-    // printf("reading in %d position restraints\n", n_restrspos);
-    // restrspos = (restrpos_t*) malloc(n_restrspos * sizeof(restrpos_t));
-    // k++;
-    // for (int i = 0; i < n_restrspos; i++) {
-    //     restrpos_t restrpos;
+    // [position_restraints]
+    n_restrspos = atoi(file.buffer[k][0]);
+    printf("reading in %d position restraints\n (%s in file )", n_restrspos, file.buffer[k][1]);
+    restrspos = (restrpos_t*) malloc(n_restrspos * sizeof(restrpos_t));
+    k++;
+    for (int i = 0; i < n_restrspos; i++) {
+        restrpos_t restrpos;
 
-    //     restrpos.a = atoi(file.buffer[k][0]);
-    //     restrpos.ipsi = atoi(file.buffer[k][1]);
+        restrpos.a = atoi(file.buffer[k][0]);
+        restrpos.ipsi = atoi(file.buffer[k][1]);
 
-    //     coord_t r_x, r_k;
+        coord_t r_x, r_k;
 
-    //     r_x.x = strtod(file.buffer[k][2], &eptr);
-    //     r_x.y = strtod(file.buffer[k][3], &eptr);
-    //     r_x.z = strtod(file.buffer[k][4], &eptr);
-    //     r_k.x = strtod(file.buffer[k][5], &eptr);
-    //     r_k.y = strtod(file.buffer[k][6], &eptr);
-    //     r_k.z = strtod(file.buffer[k][7], &eptr);
+        r_x.x = strtod(file.buffer[k][2], &eptr);
+        r_x.y = strtod(file.buffer[k][3], &eptr);
+        r_x.z = strtod(file.buffer[k][4], &eptr);
+        r_k.x = strtod(file.buffer[k][5], &eptr);
+        r_k.y = strtod(file.buffer[k][6], &eptr);
+        r_k.z = strtod(file.buffer[k][7], &eptr);
 
-    //     restrpos.x = r_x;
-    //     restrpos.k = r_k;
+        restrpos.x = r_x;
+        restrpos.k = r_k;
         
-    //     restrspos[i] = restrpos;
-    //     k++;
-    // }
+        restrspos[i] = restrpos;
+        k++;
+    }
 
     // [distance_restraints]
     n_restrdists = atoi(file.buffer[k][0]);
@@ -269,44 +269,44 @@ void init_md(const char *filename) {
         k++;
     }
 
-    // // [angle_restraints]
-    // n_restrangs = atoi(file.buffer[k][0]);
-    // restrangs = (restrang_t*) malloc(n_restrangs * sizeof(restrang_t));
-    // printf("reading in %d angle restraints\n", n_restrangs);
-    // k++;
-    // for (int i = 0; i < n_restrangs; i++) {
-    //     restrang_t restrang;
+    // [angle_restraints]
+    n_restrangs = atoi(file.buffer[k][0]);
+    restrangs = (restrang_t*) malloc(n_restrangs * sizeof(restrang_t));
+    printf("reading in %d angle restraints (%s in file)\n", n_restrangs, file.buffer[k][1]);
+    k++;
+    for (int i = 0; i < n_restrangs; i++) {
+        restrang_t restrang;
 
-    //     restrang.ai = atoi(file.buffer[k][0]);
-    //     restrang.aj = atoi(file.buffer[k][1]);
-    //     restrang.ak = atoi(file.buffer[k][2]);
-    //     restrang.ipsi = atoi(file.buffer[k][3]);
-    //     restrang.ang = strtod(file.buffer[k][4], &eptr);
-    //     restrang.k = strtod(file.buffer[k][5], &eptr);
+        restrang.ai = atoi(file.buffer[k][0]);
+        restrang.aj = atoi(file.buffer[k][1]);
+        restrang.ak = atoi(file.buffer[k][2]);
+        restrang.ipsi = atoi(file.buffer[k][3]);
+        restrang.ang = strtod(file.buffer[k][4], &eptr);
+        restrang.k = strtod(file.buffer[k][5], &eptr);
 
-    //     restrangs[i] = restrang;
-    //     k++;
-    // }
+        restrangs[i] = restrang;
+        k++;
+    }
 
-    // // [wall_restraints]
-    // n_restrwalls = atoi(file.buffer[k][0]);
-    // restrwalls = (restrwall_t*) malloc(n_restrwalls * sizeof(restrwall_t));
-    // printf("reading in %d wall restraints\n", n_restrwalls);
-    // k++;
-    // for (int i = 0; i < n_restrwalls; i++) {
-    //     restrwall_t restrwall;
+    // [wall_restraints]
+    n_restrwalls = atoi(file.buffer[k][0]);
+    restrwalls = (restrwall_t*) malloc(n_restrwalls * sizeof(restrwall_t));
+    printf("reading in %d wall restraints (%s in file)\n", n_restrwalls, file.buffer[k][1]);
+    k++;
+    for (int i = 0; i < n_restrwalls; i++) {
+        restrwall_t restrwall;
 
-    //     restrwall.ai = atoi(file.buffer[k][0]);
-    //     restrwall.aj = atoi(file.buffer[k][1]);
-    //     restrwall.d = atoi(file.buffer[k][2]);
-    //     restrwall.k = atoi(file.buffer[k][3]);
-    //     restrwall.dMorse = atoi(file.buffer[k][4]);
-    //     restrwall.aMorse = atoi(file.buffer[k][5]);
-    //     restrwall.ih = file.buffer[k][6] == "1";
+        restrwall.ai = atoi(file.buffer[k][0]);
+        restrwall.aj = atoi(file.buffer[k][1]);
+        restrwall.d = strtod(file.buffer[k][2], &eptr);
+        restrwall.k = strtod(file.buffer[k][3], &eptr);
+        restrwall.dMorse = strtod(file.buffer[k][4], &eptr);
+        restrwall.aMorse = strtod(file.buffer[k][5], &eptr);
+        restrwall.ih = file.buffer[k][6] == "1";
         
-    //     restrwalls[i] = restrwall;
-    //     k++;
-    // }
+        restrwalls[i] = restrwall;
+        k++;
+    }
 
     clean_csv(file);
 }
