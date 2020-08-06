@@ -43,24 +43,23 @@ class Get_Energy(object):
                 .csv and .json topology files.
     """    
     def __init__(self,ener,wd):
-        self.ener = ener
         self.wd = wd
-        
-        read_ener  = ENERGY.Read_Energy(self.ener)
-        
-        # Read the energy from QDYN
-        ener_data = read_ener.QDYN()   
-        
-        # Initiate the write class
-        write_ener = ENERGY.Write_Energy(ener_data,self.wd)
-        
-        # Write the topology in csv and json format
-        write_ener.JSON()
-        
-        avg_Upot = np.average(ener_data['energies']['Upot'])
-        sem_Upot = np.std(ener_data['energies']['Upot'])
-        
-        print(avg_Upot, sem_Upot)
+        for energyfile in ener:
+            read_ener  = ENERGY.Read_Energy(energyfile)
+
+            # Read the energy from QDYN
+            ener_data = read_ener.QDYN()   
+
+            # Initiate the write class
+            write_ener = ENERGY.Write_Energy(ener_data,self.wd)
+
+            # Write the topology in csv and json format
+            write_ener.JSON()
+
+            ##avg_Upot = np.average(ener_data['energies']['Upot'])
+            ##sem_Upot = np.std(ener_data['energies']['Upot'])
+
+            #print(avg_Upot, sem_Upot)
         
             
 class Init(object):
@@ -72,10 +71,10 @@ class Init(object):
         """
         self.environment = data
         # Create user specified work environment
-        Create_Environment(self.environment['wd'])
+        Create_Environment(self.environment['workdir'])
     
         # All the qcalc modules need a mask to map coordinate system
         # to the topology/pdb in formation,
-        Get_Energy(self.environment['ener'],
-                    self.environment['wd'],
-                     )
+        Get_Energy(self.environment['energy_files'],
+                   self.environment['workdir'],
+                  )

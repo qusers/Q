@@ -8,24 +8,48 @@ import qfep
 
 class Startup(object):
     def __init__(self,ener,wd,inp):
+        self.data = {
+                    'workdir'           : None,
+                    'states'            : None,
+                    'offdiag_elements'  : None,
+                    'kT'                : None,
+                    'points_to_skip'    : None,
+                    'only_QQ'           : None,
+                    'gap_bins'          : None,
+                    'points_per_bin'    : None,
+                    'alpha_state'       : None,
+                    'linear_combination': [],
+                    'energy_files'      : []
+                    }
+        
         if inp == None:
             if ener == None or wd ==None :
                 print(">>> FATAL: need input arguments or inputfile")
                 
             else:
-                data = { 'ener'  : ener,
-                         'wd'   : wd,
-                       }
+                self.data['energy_files'] = [ener]
+                self.data['workdir']      = [wd]
                 
         else:
             print("Reading data from input file")
             self.inp = inp
-            data = self.read_input()
+            self.read_input()
         
-        START = qfep.Init(data)
+        START = qfep.Init(self.data)
     
     def read_input(self):
-        print(self.inp)
+        with open(self.inp) as infile:
+            for line in infile:
+                line = line.strip()
+                line = line.split()
+                if len(line) == 2:
+                    if not line[0] in self.data:
+                        print(">>> FATAL: keyword {} in inputfile invalid".format(key))
+                    self.data[line[0]] = line[1]
+                    
+                else:
+                    if line[0] != 'energy_files':
+                        self.data['energy_files'].append(line[0])
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
