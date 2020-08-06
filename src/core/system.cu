@@ -523,6 +523,27 @@ void write_header(const char *filename) {
     fclose (fp);
 }
 
+// Write header (number of atoms & lambdas) to output file
+void write_energy_header() {
+    FILE * fp;
+
+    char path[1024];
+    sprintf(path, "%s/output/%s", base_folder, "energies.csv");
+
+    fp = fopen(path, "w");
+  
+    fprintf(fp, "%d\n", n_atoms);
+
+    fprintf(fp, "lambdas\n");
+    fprintf(fp, "%d\n", n_lambdas);
+
+    for (int state = 0; state < n_lambdas; state++) {
+        fprintf(fp, "%f\n", lambdas[state]);
+    }
+  
+    fclose (fp);
+}
+
 // Write step number, coordinates of atoms to coordinate output file
 void write_coords(int iteration) {
     if (iteration % md.trajectory != 0) return;
@@ -842,7 +863,7 @@ void init_variables() {
     // Write header to file
     write_header("coords.csv");
     write_header("velocities.csv");
-    write_header("energies.csv");
+    write_energy_header();
 }
 
 void clean_variables() {
