@@ -222,7 +222,7 @@ double Tscale = 1;
 coord_t* xcoords;
 
 // Water constants
-double A_OO = 0, B_OO, crg_ow, crg_hw, mu_w = 0;
+double A_O = 0, A_OO = 0, B_O, B_OO, crg_ow, crg_hw, mu_w = 0;
 
 void init_velocities() {
     velocities = (vel_t*) malloc(n_atoms * sizeof(vel_t));
@@ -572,6 +572,18 @@ void write_energies(int iteration) {
     fp = fopen(path, "a");
 
     fprintf(fp, "%d\n", iteration / md.energy);
+
+    for (int state = 0; state < n_lambdas; state++) {
+        fprintf(fp, ">>> State %d\n", state);
+        fprintf(fp, "Ubond = %f\n", q_energies[state].Ubond);
+        fprintf(fp, "Uangle = %f\n", q_energies[state].Uangle);
+        fprintf(fp, "Utor = %f\n", q_energies[state].Utor);
+        fprintf(fp, "Ucoul = %f\n", q_energies[state].Ucoul);
+        fprintf(fp, "Uvdw = %f\n", q_energies[state].Uvdw);
+        fprintf(fp, "Q-SUM = %f\n", q_energies[state].Upot);
+    }
+
+    fprintf(fp, ">>> Total\n");
     fprintf(fp, "Temp = %f\n", Temp);
     fprintf(fp, "Ubond = %f\n", energies.Ubond);
     fprintf(fp, "Uangle = %f\n", energies.Uangle);
@@ -614,6 +626,10 @@ void calc_integration_step(int iteration) {
     }
     energies.Ucoul = 0;
     energies.Uvdw = 0;
+    for (int state = 0; state < n_lambdas; state++) {
+        q_energies[state].Ucoul = 0;
+        q_energies[state].Uvdw = 0;
+    }
 
     // Determine temperature and kinetic energy
     calc_temperature();
@@ -669,17 +685,31 @@ void calc_integration_step(int iteration) {
     // Update energies with an average of all states
     for (int state = 0; state < n_lambdas; state++) {
         energies.Ubond += q_energies[state].Ubond * lambdas[state];
-        energies.Ubond += q_energies[state].Uangle * lambdas[state];
+        energies.Uangle += q_energies[state].Uangle * lambdas[state];
         energies.Utor += q_energies[state].Utor * lambdas[state];
         energies.Ucoul += q_energies[state].Ucoul * lambdas[state];
         energies.Uvdw += q_energies[state].Uvdw * lambdas[state];
+
+        q_energies[state].Upot = q_energies[state].Ubond + q_energies[state].Uangle
+            + q_energies[state].Utor + q_energies[state].Ucoul + q_energies[state].Uvdw;
     }
 
     // Update totals
     energies.Urestr = energies.Uradx + energies.Upolx + energies.Ushell + energies.Ufix + energies.Upres;
     energies.Upot = energies.Uangle + energies.Ubond + energies.Utor + energies.Ucoul + energies.Uvdw + energies.Urestr;
     energies.Utot = energies.Upot + energies.Ukin;  
-    
+
+    for (int state = 0; state < n_lambdas; state++) {
+        printf(">>> State %d\n", state);
+        printf("Ubond = %f\n", q_energies[state].Ubond);
+        printf("Uangle = %f\n", q_energies[state].Uangle);
+        printf("Utor = %f\n", q_energies[state].Utor);
+        printf("Ucoul = %f\n", q_energies[state].Ucoul);
+        printf("Uvdw = %f\n", q_energies[state].Uvdw);
+        printf("Q-SUM = %f\n", q_energies[state].Upot);
+    }
+
+    printf(">>> Total\n");
     printf("Tscale = %f\n", Tscale);
     printf("Ubond = %f\n", energies.Ubond);
     printf("Uangle = %f\n", energies.Uangle);
@@ -695,6 +725,7 @@ void calc_integration_step(int iteration) {
     printf("Ukin = %f\n", energies.Ukin);
     printf("Upot = %f\n", energies.Upot);
     printf("Utot = %f\n", energies.Utot);
+
 
     // Profiler info
 #ifdef __PROFILING__

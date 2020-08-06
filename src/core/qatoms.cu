@@ -6,11 +6,163 @@
 #include <math.h>
 
 void calc_nonbonded_qp_forces() {
+    int i, j;
+    coord_t da;
+    double r2, r6, r;
+    double ai_aii, aj_aii, ai_bii, aj_bii;
+    q_catype_t qi_type;
+    catype_t aj_type;
+    bool bond23, bond14;
+    double scaling, Vel, V_a, V_b, dv;
 
+    for (int qi = 0; qi < n_qatoms; qi++) {
+        for (int pj = 0; pj < n_patoms; pj++) {
+            i = q_atoms[qi].a - 1;
+            j = p_atoms[pj].a - 1;
+
+            bond23 = false;
+            bond14 = false;
+            for (int k = 0; k < n_ngbrs23; k++) {
+                if (ngbrs23[k].ai == i+1 && ngbrs23[k].aj == j+1) {
+                    // printf("BOND 23: %d, %d", ngbrs23[k].ai, ngbrs23[k].aj);
+                    bond23 = true;
+                }
+            }
+            for (int k = 0; k < n_ngbrs14; k++) {
+                if (ngbrs14[k].ai == i+1 && ngbrs14[k].aj == j+1) {
+                    // printf("BOND 14: %d, %d", ngbrs23[k].ai, ngbrs23[k].aj);
+                    bond14 = true;
+                }
+            }
+
+            if (bond23) continue;
+
+            scaling = bond14 ? .5 : 1;
+
+            da.x = coords[j].x - coords[i].x;
+            da.y = coords[j].y - coords[i].y;
+            da.z = coords[j].z - coords[i].z;
+
+            r2 = pow(da.x, 2) + pow(da.y, 2) + pow(da.z, 2);
+            
+            r6 = r2 * r2 * r2;
+            r2 = 1 / r2;
+            r = sqrt(r2);
+
+            for (int state = 0; state < n_lambdas; state++) {
+                qi_type = q_catypes[q_atypes[qi][state].code - 1];
+                aj_type = catypes[atypes[j].code - 1];
+    
+                ai_aii = bond14 ? qi_type.Ai_14 : qi_type.Ai;
+                aj_aii = bond14 ? aj_type.aii_1_4 : aj_type.aii_normal;
+                ai_bii = bond14 ? qi_type.Bi_14 : qi_type.Bi;
+                aj_bii = bond14 ? aj_type.bii_1_4 : aj_type.bii_normal;
+    
+                Vel = scaling * q_charges[qi][state].q * ccharges[charges[i].code - 1].charge * r;
+                V_a = ai_aii * aj_aii / (r6 * r6);
+                V_b = ai_bii * aj_bii / r6;
+                dv = r2 * (-Vel - (12 * V_a - 6 * V_b)) * lambdas[state];
+    
+                // Update forces
+                dvelocities[i].x -= dv * da.x;
+                dvelocities[i].y -= dv * da.y;
+                dvelocities[i].z -= dv * da.z;
+                dvelocities[j].x += dv * da.x;
+                dvelocities[j].y += dv * da.y;
+                dvelocities[j].z += dv * da.z;
+    
+                // Update Q totals
+                q_energies[state].Ucoul += Vel;
+                q_energies[state].Uvdw += (V_a - V_b);
+            }
+        }
+    }
 }
 
 void calc_nonbonded_qw_forces() {
+    int i;
+    coord_t dO, dH1, dH2;
+    double r2O, rH1, rH2, r6O, rO, r2H1, r2H2;
+    double dvO, dvH1, dvH2;
+    double V_a, V_b, VelO, VelH1, VelH2;
+    q_catype_t qi_type;
+    double ai_aii, ai_bii;
 
+    if (A_O == 0) {
+        catype_t catype_ow;    // Atom type of first O, H atom
+
+        catype_ow = catypes[atypes[n_atoms_solute].code - 1];
+
+        A_O = catype_ow.aii_normal;
+        B_O = catype_ow.bii_normal;
+    }
+
+    // Loop over O-atoms, q-atoms
+    for (int j = n_atoms_solute; j < n_atoms; j+= 3) {
+        for (int qi = 0; qi < n_qatoms; qi++) {
+            i = q_atoms[qi].a - 1;
+            dO.x = coords[j].x - coords[i].x;
+            dO.y = coords[j].y - coords[i].y;
+            dO.z = coords[j].z - coords[i].z;
+            dH1.x = coords[j+1].x - coords[i].x;
+            dH1.y = coords[j+1].y - coords[i].y;
+            dH1.z = coords[j+1].z - coords[i].z;
+            dH2.x = coords[j+2].x - coords[i].x;
+            dH2.y = coords[j+2].y - coords[i].y;
+            dH2.z = coords[j+2].z - coords[i].z;
+            r2O = pow(dO.x, 2) + pow(dO.y, 2) + pow(dO.z, 2);
+            rH1 = 1 / (pow(dH1.x, 2) + pow(dH1.y, 2) + pow(dH1.z, 2));
+            rH2 = 1 / (pow(dO.x, 2) + pow(dO.y, 2) + pow(dO.z, 2));
+            r6O = r2O * r2O * r2O;
+            r2O = 1 / r2O;
+            rO = sqrt(r2O);
+            r2H1 = rH1 * rH1;
+            r2H2 = rH2 * rH2;
+
+            // Reset potential
+            dvO = 0;
+            dvH1 = 0;
+            dvH2 = 0;
+
+            for (int state = 0; state < n_lambdas; state++) {
+                qi_type = q_catypes[q_atypes[qi][state].code - 1];
+
+                ai_aii = qi_type.Ai;
+                ai_bii = qi_type.Bi;
+                
+                V_a = ai_aii * A_O / (r6O * r6O);
+                V_b = ai_bii * B_O / (r6O);
+
+                VelO = crg_ow * q_charges[qi][state].q * rO;
+                VelH1 = crg_hw * q_charges[qi][state].q * rH1;
+                VelH2 = crg_hw * q_charges[qi][state].q * rH2;
+                dvO += r2O * (-VelO - (12 * V_a - 6 * V_b)) * lambdas[state];
+                dvH1 -= r2H1 * VelH1 * lambdas[state];
+                dvH2 -= r2H2 * VelH2 * lambdas[state];
+
+                q_energies[state].Ucoul += (VelO + VelH1 + VelH2);
+                q_energies[state].Uvdw += (V_a - V_b);
+            }
+
+            // Note r6O is not the usual 1/rO^6, but rather rO^6. be careful!!!
+
+            // Update forces on Q-atom
+            dvelocities[i].x -= (dvO * dO.x + dvH1 * dH1.x + dvH2 * dH2.x);
+            dvelocities[i].y -= (dvO * dO.y + dvH1 * dH1.y + dvH2 * dH2.y);
+            dvelocities[i].z -= (dvO * dO.z + dvH1 * dH1.z + dvH2 * dH2.z);
+
+            // Update forces on water
+            dvelocities[j].x += dvO * dO.x;
+            dvelocities[j].y += dvO * dO.y;
+            dvelocities[j].z += dvO * dO.z;
+            dvelocities[j+1].x += dvH1 * dH1.x;
+            dvelocities[j+1].y += dvH1 * dH1.y;
+            dvelocities[j+1].z += dvH1 * dH1.z;
+            dvelocities[j+2].x += dvH2 * dH2.x;
+            dvelocities[j+2].y += dvH2 * dH2.y;
+            dvelocities[j+2].z += dvH2 * dH2.z;
+        }
+    }
 }
 
 void calc_nonbonded_qq_forces() {
@@ -26,9 +178,6 @@ void calc_nonbonded_qq_forces() {
     double ai_aii, aj_aii, ai_bii, aj_bii;
 
     for (int state = 0; state < n_lambdas; state++) {
-        q_energies[state].Ucoul = 0;
-        q_energies[state].Uvdw = 0;
-        
         for (int qi = 0; qi < n_qatoms; qi++) {
             for (int qj = qi+1; qj < n_qatoms; qj++) {
                 ai = q_atoms[qi].a - 1;

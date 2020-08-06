@@ -549,7 +549,7 @@ extern dvel_t* dvelocities;
 extern energy_t energies;
 extern energy_t *q_energies;
 extern double Temp;
-extern double A_OO, B_OO, crg_ow, crg_hw; // TODO: don't keep this in system.cu?
+extern double A_O, A_OO, B_O, B_OO, crg_ow, crg_hw; // TODO: don't keep this in system.cu?
 
 void init_velocities();
 void init_dvelocities();
