@@ -350,12 +350,12 @@ void calc_restrseq_forces() {
 void calc_restrdis_forces() {
     int state, i, j;
     coord_t dr;
-    double lambda, b, db, ener;
+    double lambda, b, db, dv, ener;
 
     for (int ir = 0; ir < n_restrdists; ir++) {
         state =  restrdists[ir].ipsi-1;
-        i = rstrdists[ir].ai - 1;
-        j = rstrdists[ir].aj - 1;
+        i = restrdists[ir].ai - 1;
+        j = restrdists[ir].aj - 1;
 
         dr.x = coords[j].x - coords[i].x;
         dr.y = coords[j].y - coords[i].y;
@@ -369,11 +369,11 @@ void calc_restrdis_forces() {
         }
 
         b = sqrt(pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2));
-        if (b < rstrdists[ir].d1) {
-            db = b - rstrdists[ir].d1;
+        if (b < restrdists[ir].d1) {
+            db = b - restrdists[ir].d1;
         }
-        else if (b > rstrdists[ir].d2) {
-            db = b - rstrdists[ir].d2;
+        else if (b > restrdists[ir].d2) {
+            db = b - restrdists[ir].d2;
         }
         else {
             db = 0;

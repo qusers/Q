@@ -204,8 +204,9 @@ void init_md(const char *filename) {
     }
 
     // [sequence_restraints]
+    printf("k = %d\n", k);
     n_restrseqs = atoi(file.buffer[k][0]);
-    printf("reading in %d sequence restraints\n", n_restrseqs);
+    printf("reading in %d sequence restraints (%s in file)\n", n_restrseqs, file.buffer[k][1]);
     restrseqs = (restrseq_t*) malloc(n_restrseqs * sizeof(restrseq_t));
     k++;
     for (int i = 0; i < n_restrseqs; i++) {
@@ -251,7 +252,7 @@ void init_md(const char *filename) {
     // [distance_restraints]
     n_restrdists = atoi(file.buffer[k][0]);
     restrdists = (restrdis_t*) malloc(n_restrdists * sizeof(restrdis_t));
-    printf("reading in %d distance restraints\n", n_restrdists);
+    printf("reading in %d distance restraints (%s in file)\n", n_restrdists, file.buffer[k][1]);
     k++;
     for (int i = 0; i < n_restrdists; i++) {
         restrdis_t restrdist;
