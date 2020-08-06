@@ -38,18 +38,23 @@ class Startup(object):
         START = qfep.Init(self.data)
     
     def read_input(self):
+        block = 0
         with open(self.inp) as infile:
             for line in infile:
                 line = line.strip()
                 line = line.split()
-                if len(line) == 2:
-                    if not line[0] in self.data:
-                        print(">>> FATAL: keyword {} in inputfile invalid".format(key))
-                    self.data[line[0]] = line[1]
+                if line[0] == 'energy_files':
+                    block = 1
+                    continue
                     
-                else:
-                    if line[0] != 'energy_files':
-                        self.data['energy_files'].append(line[0])
+                if block == 0:
+                    if len(line) == 2:
+                        if not line[0] in self.data:
+                            print(">>> FATAL: keyword {} in inputfile invalid".format(key))
+                        self.data[line[0]] = line[1]
+                    
+                if block == 1:
+                        self.data['energy_files'].append([line[0],line[1]])
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

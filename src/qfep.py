@@ -42,24 +42,34 @@ class Get_Energy(object):
         Writes:
                 .csv and .json topology files.
     """    
-    def __init__(self,ener,wd):
+    def __init__(self,ener,wd,states):
         self.wd = wd
         for energyfile in ener:
-            read_ener  = ENERGY.Read_Energy(energyfile)
+            infile  = energyfile[0]
+            outfile = energyfile[1]
+            read_ener  = ENERGY.Read_Energy(infile,states)
 
             # Read the energy from QDYN
             ener_data = read_ener.QDYN()   
 
             # Initiate the write class
-            write_ener = ENERGY.Write_Energy(ener_data,self.wd)
+            write_ener = ENERGY.Write_Energy(ener_data,self.wd + '/' + outfile)
 
             # Write the topology in csv and json format
             write_ener.JSON()
-
-            ##avg_Upot = np.average(ener_data['energies']['Upot'])
-            ##sem_Upot = np.std(ener_data['energies']['Upot'])
-
-            #print(avg_Upot, sem_Upot)
+            
+class Calc_FE(object):
+    def __init__(self,ener,wd,states):
+        self.ener = ener
+        self.wd = wd
+        self.states = states
+        self.energies = {}
+        for energyfile in ener:
+            infile  = energyfile[0]
+            outfile = energyfile[1]            
+            read_ener  = ENERGY.Read_Energy(infile,states)
+            ener_data = read_ener.JSON(self.wd + '/' + outfile)
+            self.energies[outfile] = ener_data['q_total']
         
             
 class Init(object):
@@ -77,4 +87,10 @@ class Init(object):
         # to the topology/pdb in formation,
         Get_Energy(self.environment['energy_files'],
                    self.environment['workdir'],
+                   self.environment['states'],
                   )
+        
+        Calc_FE(self.environment['energy_files'],
+                self.environment['workdir'],
+                self.environment['states'],
+                 )

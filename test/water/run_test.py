@@ -1,5 +1,6 @@
 import glob
 import os
+import time
 
 spheres=['10A', '15A', '20A', '25A', '30A']
 curdir = os.getcwd()
@@ -21,7 +22,10 @@ for sphere in spheres:
     inputs = curdir + '/no_ion/' + sphere + '/water'
     os.chdir('no_ion/' + sphere)
     write_calc(sphere)   
-    print('Running test {} '.format(sphere)) 
+    time1 = time.time()
+    print('Running test {} '.format(sphere))
     os.system('python ../../../../bin/qdyn.py -t water.top -m md01.inp -d md01')
+    time2 = time.time()
+    print('{:s} function took {:.3f} ms'.format(sphere, (time2-time1)*1000.0))
     os.system(numb_dens + ' > numb_dens.out')
     os.chdir(curdir)

@@ -95,9 +95,11 @@ class Prepare_MD(object):
         write_md = MD.Write_MD(md_data)
         
         # Write md data files (both csv and json file)
-        write_md.CSV(self.wd + '/' + self.top.split('.')[0] + '/')
+        #write_md.CSV(self.wd + '/' + self.top.split('.')[0] + '/')
+        write_md.CSV(self.wd + '/')
         
-        out_json = self.wd + '/' + self.top.split('.')[0] + '/' + self.md.split('.')[0] + '.json'
+        #out_json = self.wd + '/' + self.top.split('.')[0] + '/' + self.md.split('.')[0] + '.json'
+        out_json = self.wd + '/' + self.md.split('.')[0] + '.json'
         write_md.JSON(out_json)        
 
 class Prepare_FEP(object):       
@@ -130,10 +132,10 @@ class Prepare_FEP(object):
         write_fep = FEP.Write_Fep(fep_data)
 
         # Write the topology in csv and json format
-        write_fep.CSV(self.wd + '/' + self.top.split('.')[0] + '/')
+        write_fep.CSV(self.wd + '/')
         
         if self.fepfile != None:
-            out_json = self.wd + '/' + self.top.split('.')[0] + '/' + self.fepfile.split('.')[0] + '.json'
+            out_json = self.wd + '/' + self.fepfile.split('.')[0] + '.json'
             write_fep.JSON(out_json)
 
 class Read_Restart(object):       
@@ -168,7 +170,7 @@ class Read_Restart(object):
         write_re = RESTART.Write_Restart(self.velocities, self.coordinates)
             
         # Write md data files (both csv and json file)
-        write_re.CSV(self.wd + '/' + self.top.split('.')[0] + '/')
+        write_re.CSV(self.wd + '/')
         #write_re.JSON()
         
 class Run_Dynamics(object):
@@ -177,7 +179,7 @@ class Run_Dynamics(object):
     """           
     def __init__(self,wd,top):
         executable = SETTINGS.ROOT + 'bin/qdyn '
-        options = wd + '/' + top.split('.')[0]
+        options = wd + '/' 
         IO.run_command(executable,options)
 
 class Init(object):
@@ -212,6 +214,9 @@ class Init(object):
         # Create wd
         if '/' in self.environment['top']:
             toproot = self.environment['top'].split('/')[-1]
+            
+        else:
+            toproot = self.environment['top']
         self.environment['wd'] = self.environment['wd']  + '/' + toproot.split('.')[0]   
         
         # INIT
