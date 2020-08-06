@@ -24,7 +24,7 @@
     }
 
     for (int pi = 0; pi < n_patoms; pi++) {
-        for (int pj = i+1; pj < n_patoms; pj++) {
+        for (int pj = pi+1; pj < n_patoms; pj++) {
             i = p_atoms[pi].a - 1;
             j = p_atoms[pj].a - 1;
             bond23 = false;

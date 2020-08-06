@@ -7,12 +7,12 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../s
 import qcalc
 
 class Startup(object):
-    def __init__(self,top,otrj,itrj,ilib,wtraj,calc):
-        data = { 'top' : top,
-                 'otrj' : otrj,
+    def __init__(self,top,wd,itrj,ilib,wtraj,calc):
+        data = { 'top'  : top,
+                 'wd'   : wd,
                  'itrj' : itrj,
                  'ilib' : ilib,
-                 'wraj' : wtraj,
+                 'otrj' : otrj,
                  'calc' : calc,
                }
         START = qcalc.Init(data)
@@ -27,24 +27,16 @@ if __name__ == "__main__":
                         action='version', 
                         version='%(prog)s 0.1.0')
     
-            
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        prog='Qcalc,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        description = '       == Python based MD engine == ')
-
-    
     parser.add_argument('-t', '--top',
                         dest = "top",
                         default = None,
                         required = True,
-                        help = "Q topology file")
+                        help = "Q .json topology file")
         
-    parser.add_argument('-ot', '--otrj',
-                        dest = "otrj",
+    parser.add_argument('-wd', '--workdir',
+                        dest = "wd",
                         default = None,
-                        help = " Output trajectory file")
+                        help = " Output folder")
             
     parser.add_argument('-it', '--itrj',
                         dest = "itrj",
@@ -56,9 +48,9 @@ if __name__ == "__main__":
                         default = None,
                         help = "Library files for used topology")
     
-    parser.add_argument("-wt", "--wtraj",
-                        default = False,
-                        action = 'store_true',
+    parser.add_argument("-ot", "--otrj",
+                        dest = 'otrj',
+                        choices = ['.pdb'],
                         help="Write trajecotry")
     
     parser.add_argument('-c', '--calc',
@@ -71,9 +63,9 @@ if __name__ == "__main__":
     
     
     Startup(top = args.top,
-            otrj = args.otrj,
+            wd = args.wd,
             itrj = args.itrj,
             ilib = args.ilib,
-            wtraj = args.wtraj,
+            otrj = args.otrj,
             calc = args.calc,
            )
