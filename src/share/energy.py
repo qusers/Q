@@ -14,6 +14,7 @@ class Energy(object):
                       'frames'      : [],
                       'Temp'        : [],
                       'q_total'     : [],
+                      'lambdas'     : [],
                       'energies'    : { 'Ubond':[],
                                         'Uangle':[],
                                         'Utor':[],
@@ -43,13 +44,18 @@ class Read_Energy(object):
         
     def QDYN(self):
         with open (self.ener) as infile:
-            block = 0
+            block = -1
+            cnt = -1
             for line in infile:
                 line = line.strip()
                 line = line.split('=')
                 line[0] = line[0].strip()
                 
                 # read in block
+                if line[0].split()[0] == 'lambdas':
+                    block = 0
+                    continue
+                
                 if line[0].split()[0] == '>>>':
                     line = line[0].split()
                     if line[1] == 'State':
@@ -61,6 +67,19 @@ class Read_Energy(object):
                 
                     continue
                 
+                if block == 0:
+                    cnt += 1
+                    if cnt == 0:
+                        lambdas = int(line[0])
+                        continue    
+                    
+                    if cnt < lambdas +1:
+                        self.data['lambdas'].append(line[0])
+                        
+                    if cnt == lambdas:
+                        block = -1
+                        continue
+                    
                 if block == 1:
                     if line[0] == 'Q-SUM':
                         state = int(state)

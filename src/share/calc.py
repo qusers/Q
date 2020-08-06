@@ -111,34 +111,18 @@ def EXP(MA1,l1,l2,kT,skip):
         Zwanzig exponential formula
         Need to feed lambdas
     """
-    #do ipt=nskip+1,FEP(ifile)%npts
-    #       do istate=1,nstates
-    #          veff1=veff1+FEP(ifile)%lambda(istate)*FEP(ifile)%v(istate,ipt)
-    #          veff2=veff2+FEP(ifile+1)%lambda(istate)*FEP(ifile)%v(istate,ipt)
-    #       end do
-    #       dv=veff2-veff1
-    #       veff1=0.
-    #       veff2=0.
-    #       sum=sum+exp(-dv/rt)
-    #    end do
-    #    sum=sum/real(FEP(ifile)%npts-nskip)
-    #    dgf(ifile)=-rt*dlog(sum)
-    #    dgfsum(ifile+1)=dgfsum(ifile)+dgf(ifile)
-    #    sum=0.
-    # end do
     veff1 = 0.0
     veff2 = 0.0
     total = 0.0
     kT = float(kT)
-        
     for ipt in range(skip,len(MA1[0])):
         for state in range(0,len(MA1)):
-            veff1 += l1[state] * float(MA1[state][ipt])
-            veff2 += l2[state] * float(MA1[state][ipt])
+            veff1 += float(l1[state]) * float(MA1[state][ipt])
+            veff2 += float(l2[state]) * float(MA1[state][ipt])
           
         dv=veff2-veff1
         veff1=0.0
-        veff1=0.0
+        veff2=0.0
         total += math.exp(-dv/kT)
     avg = total/(len(MA1[0])-skip)
     dGf = -kT*math.log(avg)

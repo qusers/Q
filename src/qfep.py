@@ -65,9 +65,11 @@ class Calc_FE(object):
         self.states = states
         self.kT = kT
         self.energies = {}
-        
-        # hard coded stuff for testing
+        self.lambdas = {}
+        #points to skip
         skip = int(skip)
+        dGfsum = 0
+        dGflist = [0.0]
 
         # construct the energy lookup
         for energyfile in ener:
@@ -75,18 +77,33 @@ class Calc_FE(object):
             outfile = energyfile[1]            
             read_ener  = ENERGY.Read_Energy(infile,states)
             ener_data = read_ener.JSON(self.wd + '/' + outfile)
-            self.energies[outfile] = ener_data['q_total']
-            
+            self.energies[outfile] = ener_data['q_total']      
+            self.lambdas[outfile] = ener_data['lambdas']      
+        
         for i, ifile in enumerate(self.ener):
             if ifile == self.ener[-1]:
                 continue
             
             MA1 = self.energies[self.ener[i][1]]
+            l_file1 = self.lambdas[self.ener[i][1]]
+            l_file2 = self.lambdas[self.ener[i+1][1]]
             
             # Throw the Q energies to calc module
-            dGf = CALC.EXP(MA1,l1,l2,self.kT,skip)
-            print(ifile[1],dGf)
+            dGf = CALC.EXP(MA1,l_file1,l_file2,self.kT,skip)
+            dGflist.append(dGf)
             
+        dGflist = np.array(dGflist)
+        dGfsum = np.sum(dGflist)
+        
+        with open(self.wd + '/qfep.out', 'w') as outfile:
+            outfile.write('{}       {}\n'.format('lambda','dGf'))
+            for i in range(0,len(dGflist)):
+                outfile.write('{}       {:.3f}\n'.format(self.lambdas[self.ener[i][1]][0],
+                                                   dGflist[i]
+                                                  ))
+            outfile.write('dGfsum = {:.3f}'.format(dGfsum))
+                
+        
 class Init(object):
     def __init__(self, data):
         """ Retrieves a dictionary of user input from qfep.py:
