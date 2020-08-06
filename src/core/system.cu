@@ -580,6 +580,7 @@ void write_energies(int iteration) {
         fprintf(fp, "Utor = %f\n", q_energies[state].Utor);
         fprintf(fp, "Ucoul = %f\n", q_energies[state].Ucoul);
         fprintf(fp, "Uvdw = %f\n", q_energies[state].Uvdw);
+        fprintf(fp, "Q-SUM = %f\n", q_energies[state].Upot);
     }
 
     fprintf(fp, ">>> Total\n");
@@ -688,6 +689,9 @@ void calc_integration_step(int iteration) {
         energies.Utor += q_energies[state].Utor * lambdas[state];
         energies.Ucoul += q_energies[state].Ucoul * lambdas[state];
         energies.Uvdw += q_energies[state].Uvdw * lambdas[state];
+
+        q_energies[state].Upot = q_energies[state].Ubond + q_energies[state].Uangle
+            + q_energies[state].Utor + q_energies[state].Ucoul + q_energies[state].Uvdw;
     }
 
     // Update totals
@@ -702,6 +706,7 @@ void calc_integration_step(int iteration) {
         printf("Utor = %f\n", q_energies[state].Utor);
         printf("Ucoul = %f\n", q_energies[state].Ucoul);
         printf("Uvdw = %f\n", q_energies[state].Uvdw);
+        printf("Q-SUM = %f\n", q_energies[state].Upot);
     }
 
     printf(">>> Total\n");
