@@ -95,10 +95,8 @@ class Prepare_MD(object):
         write_md = MD.Write_MD(md_data)
         
         # Write md data files (both csv and json file)
-        #write_md.CSV(self.wd + '/' + self.top.split('.')[0] + '/')
         write_md.CSV(self.wd + '/')
         
-        #out_json = self.wd + '/' + self.top.split('.')[0] + '/' + self.md.split('.')[0] + '.json'
         out_json = self.wd + '/' + self.md.split('.')[0] + '.json'
         write_md.JSON(out_json)        
 
