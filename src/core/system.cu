@@ -693,7 +693,7 @@ void calc_integration_step(int iteration) {
         energies.Uvdw += q_energies[state].Uvdw * lambdas[state];
 
         // Update protein restraint energies with an average of all states
-        energies.Upres += q_energies[state].restr * lambdas[state];
+        energies.Upres += q_energies[state].Urestr * lambdas[state];
 
         // Update total Q-SUM for this state
         q_energies[state].Upot = q_energies[state].Ubond + q_energies[state].Uangle
