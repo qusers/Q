@@ -59,25 +59,50 @@ class Get_Energy(object):
             write_ener.JSON()
             
 class Calc_FE(object):
-    def __init__(self,ener,wd,states):
+    def __init__(self,ener,wd,states,kT,skip):
         self.ener = ener
         self.wd = wd
         self.states = states
+        self.kT = kT
         self.energies = {}
+        
+        # hard coded stuff for testing
+        skip = int(skip)
+
+        # construct the energy lookup
         for energyfile in ener:
             infile  = energyfile[0]
             outfile = energyfile[1]            
             read_ener  = ENERGY.Read_Energy(infile,states)
             ener_data = read_ener.JSON(self.wd + '/' + outfile)
             self.energies[outfile] = ener_data['q_total']
-        
+            
+        for i, ifile in enumerate(self.ener):
+            if ifile == self.ener[-1]:
+                continue
+            
+            MA1 = self.energies[self.ener[i][1]]
+            
+            # Throw the Q energies to calc module
+            dGf = CALC.EXP(MA1,l1,l2,self.kT,skip)
+            print(ifile[1],dGf)
             
 class Init(object):
     def __init__(self, data):
-        """ Retrieves a dictionary of user input from qalc.py:
-               {'ener' : ener,
-                'wd' : wd,
-               }
+        """ Retrieves a dictionary of user input from qfep.py:
+        self.data = {
+                    'workdir'           : None,
+                    'states'            : None,
+                    'offdiag_elements'  : None,
+                    'kT'                : None,
+                    'points_to_skip'    : None,
+                    'only_QQ'           : None,
+                    'gap_bins'          : None,
+                    'points_per_bin'    : None,
+                    'alpha_state'       : None,
+                    'linear_combination': [],
+                    'energy_files'      : []
+                    }
         """
         self.environment = data
         # Create user specified work environment
@@ -93,4 +118,6 @@ class Init(object):
         Calc_FE(self.environment['energy_files'],
                 self.environment['workdir'],
                 self.environment['states'],
+                self.environment['kT'],
+                self.environment['points_to_skip'],
                  )
