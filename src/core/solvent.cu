@@ -359,42 +359,19 @@ void calc_nonbonded_ww_forces_host() {
     }
 
     cudaMemcpy(X, coords, mem_size_X, cudaMemcpyHostToDevice);
-    cudaMemset(MAT, 0, mem_size_MAT);
     cudaMemcpy(DV, dvelocities, mem_size_DV, cudaMemcpyHostToDevice);
 
     dim3 threads,grid;
 
     threads = dim3(BLOCK_SIZE, BLOCK_SIZE);
-    printf("threads.x = %d\n", threads.x);
     grid = dim3((n_waters + BLOCK_SIZE - 1) / threads.x, (n_waters + BLOCK_SIZE - 1) / threads.y);
 
     double evdw, ecoul;
 
-    cudaMemcpy(h_DV, DV, mem_size_DV, cudaMemcpyDeviceToHost);
-    // printf("%f %f %f\n", h_DV[0].x, h_DV[0].y, h_DV[0].z);
     calc_ww_dvel_matrix<<<grid, threads>>>(n_waters, crg_ow, crg_hw, A_OO, B_OO, X, &evdw, &ecoul, MAT);
-    // calc_ww_dvel_matrix<<<grid, threads>>>(n_waters, crg_ow, crg_hw, A_OO, B_OO, X, &evdw, &ecoul, MAT, false);
     calc_ww_dvel_vector_rows<<<((n_waters+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_waters, DV, MAT);
-    cudaMemcpy(h_DV, DV, mem_size_DV, cudaMemcpyDeviceToHost);
-    // printf("%f %f %f\n", h_DV[3].x, h_DV[3].y, h_DV[3].z);
-    // calc_ww_dvel_vector_columns<<<(n_waters / BLOCK_SIZE), BLOCK_SIZE>>>(n_waters, DV, MAT);
-    // cudaMemcpy(h_DV, DV, mem_size_DV, cudaMemcpyDeviceToHost);
-    // printf("%f %f %f\n", h_DV[1].x, h_DV[1].y, h_DV[1].z);
 
-    // printf("MAT[1][2].O = %f %f %f\n", h_MAT[2 + n_waters].O.x, h_MAT[2 + n_waters].O.y, h_MAT[2 + n_waters].O.z);
-    // printf("MAT[1][2].H1 = %f %f %f\n", h_MAT[2 + n_waters].H1.x, h_MAT[2 + n_waters].H1.y, h_MAT[2 + n_waters].H1.z);
-    // printf("MAT[1][2].H2 = %f %f %f\n", h_MAT[2 + n_waters].H2.x, h_MAT[2 + n_waters].H2.y, h_MAT[2 + n_waters].H2.z);
-
-    // printf("MAT[2][1].O = %f %f %f\n", h_MAT[1+ 2*n_waters].O.x, h_MAT[1+2*n_waters].O.y, h_MAT[1+2*n_waters].O.z);
-    // printf("MAT[2][1].H1 = %f %f %f\n", h_MAT[1+2*n_waters].H1.x, h_MAT[1+2*n_waters].H1.y, h_MAT[1+2*n_waters].H1.z);
-    // printf("MAT[2][1].H2 = %f %f %f\n", h_MAT[1+2*n_waters].H2.x, h_MAT[1+2*n_waters].H2.y, h_MAT[1+2*n_waters].H2.z);
-    // for (int i = 0; i < n_waters; i++) {
-    //     printf("MAT[%d][0].O = %f %f %f\n", i, h_MAT[i*n_waters].O.x, h_MAT[i*n_waters].O.y, h_MAT[i*n_waters].O.z);
-    // }
-    // for (int i = 0; i < n_waters; i++) {
-    //     printf("MAT[0][%d].O = %f %f %f\n", i, h_MAT[i].O.x, h_MAT[i].O.y, h_MAT[i].O.z);
-    // }
-    cudaMemcpy(h_MAT, MAT, mem_size_MAT, cudaMemcpyDeviceToHost);
+    // cudaMemcpy(h_MAT, MAT, mem_size_MAT, cudaMemcpyDeviceToHost);
 
     // for (int i = 0; i < n_waters; i++) {
     //     for (int j = 0; j < n_waters; j++) {
@@ -666,98 +643,43 @@ __global__ void calc_ww_dvel_matrix(int n_waters, double crg_ow, double crg_hw, 
     int aStart = 3 * BLOCK_SIZE * by;
     int bStart = 3 * BLOCK_SIZE * bx;
 
-    //if (aStart + 3 * tx > 3 * n_waters) printf("%d\n", aStart + 3 * tx);
-    //if (bStart + 3 * tx > 3 * n_waters) printf("%d\n", bStart + 3 * tx);
-
     if (aStart + 3 * ty >= 3 * n_waters) return;
     if (bStart + 3 * tx >= 3 * n_waters) return;
 
-    // if (bx == 9 && by == 0) printf("bx = %d by = %d tx = %d ty = %d\n", bx, by, tx, ty);
-
     __shared__ coord_t Xs[3 * BLOCK_SIZE];
     __shared__ coord_t Ys[3 * BLOCK_SIZE];
+    
+    if (tx == 0) {
+        Xs[3 * ty    ] = X[aStart + 3 * ty    ];
+        Xs[3 * ty + 1] = X[aStart + 3 * ty + 1];
+        Xs[3 * ty + 2] = X[aStart + 3 * ty + 2];
+    }
 
-    // if (bx == by) {
-    //     Xs[3 * tx    ] = X[aStart + 3 * tx    ];
-    //     Xs[3 * tx + 1] = X[aStart + 3 * tx + 1];
-    //     Xs[3 * tx + 2] = X[aStart + 3 * tx + 2];
-    // }
-    // else {
-        
-    Xs[3 * ty    ] = X[aStart + 3 * ty    ];
-    Xs[3 * ty + 1] = X[aStart + 3 * ty + 1];
-    Xs[3 * ty + 2] = X[aStart + 3 * ty + 2];
-
-    Ys[3 * tx    ] = X[bStart + 3 * tx    ];
-    Ys[3 * tx + 1] = X[bStart + 3 * tx + 1];
-    Ys[3 * tx + 2] = X[bStart + 3 * tx + 2];
-    // }
-
-    // __syncthreads();
-
-    // if (bx == by && tx == ty) {
-    //     Ys[3 * ty    ] = Xs[3 * ty    ];
-    //     Ys[3 * ty + 1] = Xs[3 * ty + 1];
-    //     Ys[3 * ty + 2] = Xs[3 * ty + 2];
-
-    // }
+    if (ty == 0) {
+        Ys[3 * tx    ] = X[bStart + 3 * tx    ];
+        Ys[3 * tx + 1] = X[bStart + 3 * tx + 1];
+        Ys[3 * tx + 2] = X[bStart + 3 * tx + 2];
+    }
 
     __syncthreads();
 
     if (bx < by || (bx == by && tx < ty)) return;
 
-    // if (bx == 9 && by == 0) printf("bx = %d by = %d tx = %d ty = %d\n", bx, by, tx, ty);
-
     dvel_t water_a[3], water_b[3];
-    water_a[0].x = 0;
-    water_a[0].y = 0;
-    water_a[0].z = 0;
-    water_a[1].x = 0;
-    water_a[1].y = 0;
-    water_a[1].z = 0;
-    water_a[2].x = 0;
-    water_a[2].y = 0;
-    water_a[2].z = 0;
-    water_b[0].x = 0;
-    water_b[0].y = 0;
-    water_b[0].z = 0;
-    water_b[1].x = 0;
-    water_b[1].y = 0;
-    water_b[1].z = 0;
-    water_b[2].x = 0;
-    water_b[2].y = 0;
-    water_b[2].z = 0;
-    
+    memset(&water_a, 0, 3 * sizeof(dvel_t));
+    memset(&water_b, 0, 3 * sizeof(dvel_t));
 
     if (bx != by || tx != ty) {
         double evdw, ecoul;
         calc_ww_dvel_matrix_incr(ty, tx, crg_ow, crg_hw, A_OO, B_OO, Xs, Ys, &evdw, &ecoul, water_a, water_b);
     }
 
-    // water_b[0].x = -water_a[0].x;
-    // water_b[0].y = -water_a[0].y;
-    // water_b[0].z = -water_a[0].z;
-    // water_b[1].x = -water_a[1].x;
-    // water_b[1].y = -water_a[1].y;
-    // water_b[1].z = -water_a[1].z;
-    // water_b[2].x = -water_a[2].x;
-    // water_b[2].y = -water_a[2].y;
-    // water_b[2].z = -water_a[2].z;
-
     int row = by * BLOCK_SIZE + ty;
     int column = bx * BLOCK_SIZE + tx;
 
-    // printf("row = %d column = %d\n", row, column);
+    set_water(n_waters, row, column, water_a, MAT);
+    set_water(n_waters, column, row, water_b, MAT);
 
-    // if (row >= 144) printf("row = %d column = %d water_a.O = %f %f %f water_b.O = %f %f %f\n", row, column, water_a[0].x, water_a[0].y, water_a[0].z, water_b[0].x, water_b[0].y, water_b[0].z );
-
-    // if (get_a) {
-        set_water(n_waters, row, column, water_a, MAT);
-    // }
-    // else {
-        set_water(n_waters, column, row, water_b, MAT);
-    // }
-    
     __syncthreads();
 }
 
