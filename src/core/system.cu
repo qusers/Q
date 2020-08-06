@@ -580,6 +580,7 @@ void write_energies(int iteration) {
         fprintf(fp, "Utor = %f\n", q_energies[state].Utor);
         fprintf(fp, "Ucoul = %f\n", q_energies[state].Ucoul);
         fprintf(fp, "Uvdw = %f\n", q_energies[state].Uvdw);
+        fprintf(fp, "Urestr = %f\n", q_energies[state].Urestr);
         fprintf(fp, "Q-SUM = %f\n", q_energies[state].Upot);
     }
 
@@ -665,6 +666,7 @@ void calc_integration_step(int iteration) {
     }
     calc_pshell_forces();
     calc_restrseq_forces();
+    calc_restrdis_forces();
 
     // Q-Q nonbonded interactions
     calc_nonbonded_qq_forces();
@@ -690,8 +692,13 @@ void calc_integration_step(int iteration) {
         energies.Ucoul += q_energies[state].Ucoul * lambdas[state];
         energies.Uvdw += q_energies[state].Uvdw * lambdas[state];
 
+        // Update protein restraint energies with an average of all states
+        energies.Upres += q_energies[state].restr * lambdas[state];
+
+        // Update total Q-SUM for this state
         q_energies[state].Upot = q_energies[state].Ubond + q_energies[state].Uangle
-            + q_energies[state].Utor + q_energies[state].Ucoul + q_energies[state].Uvdw;
+            + q_energies[state].Utor + q_energies[state].Ucoul + q_energies[state].Uvdw
+            + q_energies[state].Urestr;
     }
 
     // Update totals
@@ -706,6 +713,7 @@ void calc_integration_step(int iteration) {
         printf("Utor = %f\n", q_energies[state].Utor);
         printf("Ucoul = %f\n", q_energies[state].Ucoul);
         printf("Uvdw = %f\n", q_energies[state].Uvdw);
+        printf("Urestr = %f\n", q_energies[state].Urestr);
         printf("Q-SUM = %f\n", q_energies[state].Upot);
     }
 
