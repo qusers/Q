@@ -630,6 +630,7 @@ void calc_integration_step(int iteration) {
     for (int state = 0; state < n_lambdas; state++) {
         q_energies[state].Ucoul = 0;
         q_energies[state].Uvdw = 0;
+        q_energies[state].Urestr = 0;
     }
 
     // Determine temperature and kinetic energy
