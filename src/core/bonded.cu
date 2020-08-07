@@ -3,6 +3,7 @@
 #include "system.h"
 #include "bonded.h"
 #include "utils.h"
+#include <stdio.h>
 
 /* =============================================
  * == BONDED INTERACTIONS
@@ -323,8 +324,13 @@ void calc_improper2_forces() {
         bkinv = sqrt(bk2inv);
 
         cos_phi = (rnj.x * rnk.x + rnj.y * rnk.y + rnj.z * rnk.z) * (bjinv * bkinv);
-        if (cos_phi > 1) cos_phi = 1;
-        if (cos_phi < -1) cos_phi = -1;
+        // printf("cos_phi = %f\n", cos_phi);
+        if (cos_phi > 1) {
+            cos_phi = 1;
+        }
+        if (cos_phi < -1) {
+            cos_phi = -1;
+        }
         phi = acos(cos_phi);
         if (rjk.x * (rnj.y * rnk.z - rnj.z * rnk.y)
             + rjk.y * (rnj.z * rnk.x - rnj.x * rnk.z)
@@ -339,8 +345,16 @@ void calc_improper2_forces() {
 
         // Forces
         f1 = sin(phi);
-        if (abs(f1 < 1E-12)) f1 = 1E-12;
+        if (abs(f1) < 1E-12) f1 = 1E-12;
         f1 = -1 / f1;
+        // printf("f1 = %f phi = %f cos_phi = %f\n", f1, phi, cos_phi);
+
+        di.x = f1 * (rnk.x * (bjinv * bkinv) - cos_phi * rnj.x * bj2inv);
+        di.y = f1 * (rnk.y * (bjinv * bkinv) - cos_phi * rnj.y * bj2inv);
+        di.z = f1 * (rnk.z * (bjinv * bkinv) - cos_phi * rnj.z * bj2inv);
+        dl.x = f1 * (rnj.x * (bjinv * bkinv) - cos_phi * rnk.x * bk2inv);
+        dl.y = f1 * (rnj.y * (bjinv * bkinv) - cos_phi * rnk.y * bk2inv);
+        dl.z = f1 * (rnj.z * (bjinv * bkinv) - cos_phi * rnk.z * bk2inv);
 
         rki.x = rji.x - rjk.x;
         rki.y = rji.y - rjk.y;
