@@ -591,8 +591,7 @@ void init_cimpropers(const char* filename) {
 
         cimproper.code = atoi(file.buffer[i+1][0]);
         cimproper.k = strtod(file.buffer[i+1][1], &eptr);
-        cimproper.n = strtod(file.buffer[i+1][2], &eptr);
-        cimproper.d = strtod(file.buffer[i+1][3], &eptr);
+        cimproper.phi0 = strtod(file.buffer[i+1][2], &eptr);
 
         cimpropers[i] = cimproper;
     }
@@ -925,8 +924,8 @@ void init_qcimpropers(const char*filename) {
 
     for (int i = 0; i < n_qcimpropers; i++) {
         char *eptr;
-        q_cimpropers[i].kth = strtod(file.buffer[i+1][0], &eptr);
-        q_cimpropers[i].th0 = strtod(file.buffer[i+1][1], &eptr);
+        q_cimpropers[i].k = strtod(file.buffer[i+1][0], &eptr);
+        q_cimpropers[i].phi0 = strtod(file.buffer[i+1][1], &eptr);
     }
 
     clean_csv(file);
