@@ -262,8 +262,7 @@ void init_md(const char *filename) {
         restrdist.d1 = strtod(file.buffer[k][2], &eptr);
         restrdist.d2 = strtod(file.buffer[k][3], &eptr);
         restrdist.k = strtod(file.buffer[k][4], &eptr);
-        strcpy(restrdist.itext, file.buffer[k][5]);
-        strcpy(restrdist.jtext, file.buffer[k][6]);
+        restrdist.ipsi = atoi(file.buffer[k][5]);
 
         restrdists[i] = restrdist;
         k++;
