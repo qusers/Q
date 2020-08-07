@@ -20,8 +20,8 @@ temperature=298
 run=10
 finalMDrestart=md_0000_1000.re
 
-workdir=/pfs/nobackup/home/w/wije/software/qgpu-qcalc/test/ethane-ethanol/FEP_ethane-ethanol
-inputfiles=/pfs/nobackup/home/w/wije/software/qgpu-qcalc/test/ethane-ethanol/FEP_ethane-ethanol/inputfiles
+workdir=/pfs/nobackup/home/w/wije/software/qgpu-qcalc/test/ethane-ethanol/2.water/FEP_ethane-ethanol
+inputfiles=/pfs/nobackup/home/w/wije/software/qgpu-qcalc/test/ethane-ethanol/2.water/FEP_ethane-ethanol/inputfiles
 length=${#fepfiles[@]}
 length=$((length-1))
 for index in $(seq 0 $length);do

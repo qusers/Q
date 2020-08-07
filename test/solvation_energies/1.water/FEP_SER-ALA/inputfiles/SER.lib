@@ -1,0 +1,23 @@
+{LIG}     ! atoms no    6   total charge -0.000 
+
+[info] 
+ SYBYLtype RESIDUE 
+
+[atoms] 
+   1   C1        XC1          0.1450
+   2   O2        XO2         -0.6830
+   3   H3        XH3          0.4180
+   4   H4        XH4          0.0400
+   5   H5        XH5          0.0400
+   6   H6        XH6          0.0400
+
+[bonds]
+C1        O2
+C1        H4
+C1        H5
+C1        H6
+O2        H3
+
+[impropers]
+
+[charge_groups]
