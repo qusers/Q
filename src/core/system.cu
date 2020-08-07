@@ -588,6 +588,7 @@ void write_energies(int iteration) {
     fprintf(fp, "Ubond = %f\n", energies.Ubond);
     fprintf(fp, "Uangle = %f\n", energies.Uangle);
     fprintf(fp, "Utor = %f\n", energies.Utor);
+    fprintf(fp, "Uimp = %f\n", energies.Uimp);
     fprintf(fp, "Uradx = %f\n", energies.Uradx);
     fprintf(fp, "Upolx = %f\n", energies.Upolx);
     fprintf(fp, "Ushell = %f\n", energies.Ushell);
@@ -715,6 +716,7 @@ void calc_integration_step(int iteration) {
     printf("Ubond = %f\n", energies.Ubond);
     printf("Uangle = %f\n", energies.Uangle);
     printf("Utor = %f\n", energies.Utor);
+    printf("Uimp = %f\n", energies.Uimp);
     printf("Uradx = %f\n", energies.Uradx);
     printf("Upolx = %f\n", energies.Upolx);
     printf("Ushell = %f\n", energies.Ushell);
