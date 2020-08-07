@@ -664,6 +664,7 @@ void calc_integration_step(int iteration) {
     calc_angle_forces();
     calc_bond_forces();
     calc_torsion_forces();
+    calc_improper2_forces();
 
     clock_t end_bonded = clock();
 
@@ -725,7 +726,7 @@ void calc_integration_step(int iteration) {
 
     // Update totals
     energies.Urestr = energies.Uradx + energies.Upolx + energies.Ushell + energies.Ufix + energies.Upres;
-    energies.Upot = energies.Uangle + energies.Ubond + energies.Utor + energies.Ucoul + energies.Uvdw + energies.Urestr;
+    energies.Upot = energies.Uangle + energies.Ubond + energies.Utor + energies.Uimp + energies.Ucoul + energies.Uvdw + energies.Urestr;
     energies.Utot = energies.Upot + energies.Ukin;  
 
     for (int state = 0; state < n_lambdas; state++) {
