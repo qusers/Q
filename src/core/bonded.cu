@@ -334,7 +334,7 @@ void calc_improper2_forces() {
 
         // Energy
         arg = 2 * phi - to_radians(cimp.phi0);
-        ener += cimp.k * (1 + cos(arg));
+        ener = cimp.k * (1 + cos(arg));
         dv = -2 * cimp.k * sin(arg);
 
         // Forces
