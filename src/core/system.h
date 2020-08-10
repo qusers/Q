@@ -167,8 +167,7 @@ struct improper_t {
 struct cimproper_t {
     int code;
     double k;
-    double n;
-    double d;
+    double phi0;
 };
 
 struct charge_t {
@@ -314,8 +313,8 @@ struct q_charge_t {
 };
 
 struct q_cimproper_t {
-    double kth;
-    double th0;
+    double k;
+    double phi0;
 };
 
 struct q_ctorsion_t {
@@ -537,6 +536,7 @@ struct energy_t {
     double Ubond;
     double Uangle;
     double Utor;
+    double Uimp;
     double Ucoul;
     double Uvdw;
     double Ukin;
@@ -557,7 +557,7 @@ extern dvel_t* dvelocities;
 extern energy_t energies;
 extern energy_t *q_energies;
 extern double Temp;
-extern double A_OO, B_OO, crg_ow, crg_hw; // TODO: don't keep this in system.cu?
+extern double A_O, A_OO, B_O, B_OO, crg_ow, crg_hw; // TODO: don't keep this in system.cu?
 
 void init_velocities();
 void init_dvelocities();

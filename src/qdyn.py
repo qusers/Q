@@ -16,23 +16,29 @@ import defaults as DEFAULTS
 import md       as MD
 import settings as SETTINGS
 import fep      as FEP
+import restart  as RESTART
 
 class Create_Environment(object):
     """
         Creates the workdirectory environment.
     """
-    def __init__(self,top,wd):        
+    def __init__(self,top,wd):
+        if not os.path.exists(wd.split('/')[0]):
+            os.mkdir(wd.split('/')[0])
+            
+        else:
+            shutil.rmtree(wd.split('/')[0])
+            os.mkdir(wd.split('/')[0])
+        
         if not os.path.exists(wd):
             os.mkdir(wd)
-            os.mkdir(wd + '/' + top.split('.')[0])
             
         else:
             shutil.rmtree(wd)
             os.mkdir(wd)
-            os.mkdir(wd + '/' +  top.split('.')[0])
             
         # create the output folder for qdyn
-        os.mkdir(wd + '/' + top.split('.')[0] + '/output')
+        os.mkdir(wd + '/output')
         
 class Prepare_Topology(object):
     """
@@ -59,9 +65,9 @@ class Prepare_Topology(object):
         write_top = TOPOLOGY.Write_Topology(top_data)
         
         # Write the topology in csv and json format
-        write_top.CSV(self.wd + '/' + self.top.split('.')[0] + '/')
+        write_top.CSV(self.wd + '/')
         
-        out_json = self.wd + '/' + self.top.split('.')[0] + '/' + self.top.split('.')[0] + '.json'
+        out_json = self.wd + '/' + self.wd.split('/')[1] + '.json'
         write_top.JSON(out_json)
 
 class Prepare_MD(object):
@@ -89,9 +95,9 @@ class Prepare_MD(object):
         write_md = MD.Write_MD(md_data)
         
         # Write md data files (both csv and json file)
-        write_md.CSV(self.wd + '/' + self.top.split('.')[0] + '/')
+        write_md.CSV(self.wd + '/')
         
-        out_json = self.wd + '/' + self.top.split('.')[0] + '/' + self.md.split('.')[0] + '.json'
+        out_json = self.wd + '/' + self.md.split('.')[0] + '.json'
         write_md.JSON(out_json)        
 
 class Prepare_FEP(object):       
@@ -110,25 +116,60 @@ class Prepare_FEP(object):
         read_fep  = FEP.Read_Fep(self.fepfile)
         
         # Get the extension and read data
-        if fepfile != None:
+        if self.fepfile != None:
             if self.fepfile.split('.')[-1] == 'json':
                 fep_data = read_fep.JSON()
 
             else:
-                fep_data = read_fep.Q()
-                
-        else:
-            data = FEP.Fep()
-            fep_data = data.data
+                fep_data = read_fep.Q()     
 
+        else:
+            fep_data = read_fep.EMPTY()
+            
         # Initiate the write class
         write_fep = FEP.Write_Fep(fep_data)
-        
+
         # Write the topology in csv and json format
-        write_fep.CSV(self.wd + '/' + self.top.split('.')[0] + '/')
-        if fepfile != None:
-            out_json = self.wd + '/' + self.top.split('.')[0] + '/' + self.fepfile.split('.')[0] + '.json'
+        write_fep.CSV(self.wd + '/')
+        
+        if self.fepfile != None:
+            out_json = self.wd + '/' + self.fepfile.split('.')[0] + '.json'
             write_fep.JSON(out_json)
+
+class Read_Restart(object):       
+    """
+        Creates restart files.
+        Reads: 
+                .json and .csv restart files (TO DO .re)
+        Writes:
+                .json and .csv restart files.
+    """  
+    def __init__(self,restart,wd,top):
+        self.restart = restart
+        self.wd = wd
+        self.top = top
+
+        read_restart = RESTART.Read_Restart(self.restart)
+        
+        # Get the extension and read data
+        if self.restart != None:
+            if self.restart.split('.')[-1] == 'json':
+                self.velocities,self.coordinates = read_restart.JSON()
+
+            else:
+                self.velocities,self.coordinates = read_restart.CSV()     
+                
+        # construct empty
+        else:
+            self.velocities = []
+            self.coordinates = []
+        
+        # Initiate the write class
+        write_re = RESTART.Write_Restart(self.velocities, self.coordinates)
+            
+        # Write md data files (both csv and json file)
+        write_re.CSV(self.wd + '/')
+        #write_re.JSON()
         
 class Run_Dynamics(object):
     """
@@ -136,7 +177,7 @@ class Run_Dynamics(object):
     """           
     def __init__(self,wd,top):
         executable = SETTINGS.ROOT + 'bin/qdyn '
-        options = wd + '/' + top.split('.')[0]
+        options = wd + '/' 
         IO.run_command(executable,options)
 
 class Init(object):
@@ -162,20 +203,23 @@ class Init(object):
         if data['md'].split('.')[-1] not in extensions:
             print("FATAL: unrecognized extension for {}".format(data['md']))
             sys.exit()
-            
-        if data['re'] != None:
-            if data['re'].split('.')[-1] not in extensions:
-                print("FATAL: unrecognized extension for {}".format(data['re']))
-                sys.exit()
-        
+
         if data['fep'] != None:
             if data['fep'].split('.')[-1] not in extensions:
                 print("FATAL: unrecognized extension for {}".format(data['fep']))
                 sys.exit()
-    
+        
+        # Create wd
+        if '/' in self.environment['top']:
+            toproot = self.environment['top'].split('/')[-1]
+            
+        else:
+            toproot = self.environment['top']
+        self.environment['wd'] = self.environment['wd']  + '/' + toproot.split('.')[0]   
+        
         # INIT
         Create_Environment(top = self.environment['top'],
-                         wd  = self.environment['wd'],
+                           wd  = self.environment['wd'],
                         )
 
         Prepare_Topology(top = self.environment['top'],
@@ -191,6 +235,11 @@ class Init(object):
         Prepare_FEP(fepfile = self.environment['fep'],
                     wd  = self.environment['wd'],
                     top = self.environment['top']                 
+                   )
+        
+        Read_Restart(restart = self.environment['re'],
+                         wd  = self.environment['wd'],
+                        top  = self.environment['top'],
                    )
         
         Run_Dynamics(wd  = self.environment['wd'],

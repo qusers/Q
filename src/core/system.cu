@@ -222,7 +222,7 @@ double Tscale = 1;
 coord_t* xcoords;
 
 // Water constants
-double A_OO = 0, B_OO, crg_ow, crg_hw, mu_w = 0;
+double A_O = 0, A_OO = 0, B_O, B_OO, crg_ow, crg_hw, mu_w = 0;
 
 void init_velocities() {
     velocities = (vel_t*) malloc(n_atoms * sizeof(vel_t));
@@ -523,6 +523,27 @@ void write_header(const char *filename) {
     fclose (fp);
 }
 
+// Write header (number of atoms & lambdas) to output file
+void write_energy_header() {
+    FILE * fp;
+
+    char path[1024];
+    sprintf(path, "%s/output/%s", base_folder, "energies.csv");
+
+    fp = fopen(path, "w");
+  
+    fprintf(fp, "%d\n", n_atoms);
+
+    fprintf(fp, "lambdas\n");
+    fprintf(fp, "%d\n", n_lambdas);
+
+    for (int state = 0; state < n_lambdas; state++) {
+        fprintf(fp, "%f\n", lambdas[state]);
+    }
+  
+    fclose (fp);
+}
+
 // Write step number, coordinates of atoms to coordinate output file
 void write_coords(int iteration) {
     if (iteration % md.trajectory != 0) return;
@@ -572,10 +593,24 @@ void write_energies(int iteration) {
     fp = fopen(path, "a");
 
     fprintf(fp, "%d\n", iteration / md.energy);
+
+    for (int state = 0; state < n_lambdas; state++) {
+        fprintf(fp, ">>> State %d\n", state);
+        fprintf(fp, "Ubond = %f\n", q_energies[state].Ubond);
+        fprintf(fp, "Uangle = %f\n", q_energies[state].Uangle);
+        fprintf(fp, "Utor = %f\n", q_energies[state].Utor);
+        fprintf(fp, "Ucoul = %f\n", q_energies[state].Ucoul);
+        fprintf(fp, "Uvdw = %f\n", q_energies[state].Uvdw);
+        fprintf(fp, "Urestr = %f\n", q_energies[state].Urestr);
+        fprintf(fp, "Q-SUM = %f\n", q_energies[state].Upot);
+    }
+
+    fprintf(fp, ">>> Total\n");
     fprintf(fp, "Temp = %f\n", Temp);
     fprintf(fp, "Ubond = %f\n", energies.Ubond);
     fprintf(fp, "Uangle = %f\n", energies.Uangle);
     fprintf(fp, "Utor = %f\n", energies.Utor);
+    fprintf(fp, "Uimp = %f\n", energies.Uimp);
     fprintf(fp, "Uradx = %f\n", energies.Uradx);
     fprintf(fp, "Upolx = %f\n", energies.Upolx);
     fprintf(fp, "Ushell = %f\n", energies.Ushell);
@@ -614,6 +649,11 @@ void calc_integration_step(int iteration) {
     }
     energies.Ucoul = 0;
     energies.Uvdw = 0;
+    for (int state = 0; state < n_lambdas; state++) {
+        q_energies[state].Ucoul = 0;
+        q_energies[state].Uvdw = 0;
+        q_energies[state].Urestr = 0;
+    }
 
     // Determine temperature and kinetic energy
     calc_temperature();
@@ -625,6 +665,7 @@ void calc_integration_step(int iteration) {
     calc_angle_forces();
     calc_bond_forces();
     calc_torsion_forces();
+    calc_improper2_forces();
 
     clock_t end_bonded = clock();
 
@@ -650,6 +691,7 @@ void calc_integration_step(int iteration) {
     }
     calc_pshell_forces();
     calc_restrseq_forces();
+    calc_restrdis_forces();
 
     clock_t end_restraints = clock();
 
@@ -674,21 +716,42 @@ void calc_integration_step(int iteration) {
     // Update energies with an average of all states
     for (int state = 0; state < n_lambdas; state++) {
         energies.Ubond += q_energies[state].Ubond * lambdas[state];
-        energies.Ubond += q_energies[state].Uangle * lambdas[state];
+        energies.Uangle += q_energies[state].Uangle * lambdas[state];
         energies.Utor += q_energies[state].Utor * lambdas[state];
         energies.Ucoul += q_energies[state].Ucoul * lambdas[state];
         energies.Uvdw += q_energies[state].Uvdw * lambdas[state];
+
+        // Update protein restraint energies with an average of all states
+        energies.Upres += q_energies[state].Urestr * lambdas[state];
+
+        // Update total Q-SUM for this state
+        q_energies[state].Upot = q_energies[state].Ubond + q_energies[state].Uangle
+            + q_energies[state].Utor + q_energies[state].Ucoul + q_energies[state].Uvdw
+            + q_energies[state].Urestr;
     }
 
     // Update totals
     energies.Urestr = energies.Uradx + energies.Upolx + energies.Ushell + energies.Ufix + energies.Upres;
-    energies.Upot = energies.Uangle + energies.Ubond + energies.Utor + energies.Ucoul + energies.Uvdw + energies.Urestr;
+    energies.Upot = energies.Uangle + energies.Ubond + energies.Utor + energies.Uimp + energies.Ucoul + energies.Uvdw + energies.Urestr;
     energies.Utot = energies.Upot + energies.Ukin;  
-    
+
+    for (int state = 0; state < n_lambdas; state++) {
+        printf(">>> State %d\n", state);
+        printf("Ubond = %f\n", q_energies[state].Ubond);
+        printf("Uangle = %f\n", q_energies[state].Uangle);
+        printf("Utor = %f\n", q_energies[state].Utor);
+        printf("Ucoul = %f\n", q_energies[state].Ucoul);
+        printf("Uvdw = %f\n", q_energies[state].Uvdw);
+        printf("Urestr = %f\n", q_energies[state].Urestr);
+        printf("Q-SUM = %f\n", q_energies[state].Upot);
+    }
+
+    printf(">>> Total\n");
     printf("Tscale = %f\n", Tscale);
     printf("Ubond = %f\n", energies.Ubond);
     printf("Uangle = %f\n", energies.Uangle);
     printf("Utor = %f\n", energies.Utor);
+    printf("Uimp = %f\n", energies.Uimp);
     printf("Uradx = %f\n", energies.Uradx);
     printf("Upolx = %f\n", energies.Upolx);
     printf("Ushell = %f\n", energies.Ushell);
@@ -781,8 +844,8 @@ void init_variables() {
     init_xcoords();
 
     // From input file
-    // init_icoords("i_coords.csv");
-    // init_ivelocities("i_velocities.csv");    
+    init_icoords("i_coords.csv");
+    init_ivelocities("i_velocities.csv");    
 
     // Init waters, boundary restrains
     n_waters = (n_atoms - n_atoms_solute) / 3;
@@ -811,7 +874,7 @@ void init_variables() {
     // Write header to file
     write_header("coords.csv");
     write_header("velocities.csv");
-    write_header("energies.csv");
+    write_energy_header();
 }
 
 void clean_variables() {
