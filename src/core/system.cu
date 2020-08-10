@@ -28,6 +28,8 @@ int n_waters;
 char base_folder[1024];
 double dt, tau_T;
 
+bool run_gpu = false;
+
 /* =============================================
  * == FROM MD FILE
  * =============================================
@@ -119,16 +121,16 @@ q_imprcouple_t *q_imprcouples;
 q_softpair_t *q_softpairs;
 q_torcouple_t *q_torcouples;
 
-q_angle_t **q_angles;
-q_atype_t **q_atypes;
-q_bond_t **q_bonds;
-q_charge_t **q_charges;
-q_elscale_t **q_elscales;
-q_exclpair_t **q_exclpairs;
-q_improper_t **q_impropers;
-q_shake_t **q_shakes;
-q_softcore_t **q_softcores;
-q_torsion_t **q_torsions;
+q_angle_t *q_angles;
+q_atype_t *q_atypes;
+q_bond_t *q_bonds;
+q_charge_t *q_charges;
+q_elscale_t *q_elscales;
+q_exclpair_t *q_exclpairs;
+q_improper_t *q_impropers;
+q_shake_t *q_shakes;
+q_softcore_t *q_softcores;
+q_torsion_t *q_torsions;
 
 // Remove bonds, angles, torsions and impropers which are excluded or changed in the FEP file
 void shrink_topology() {
@@ -139,9 +141,9 @@ void shrink_topology() {
     excluded = 0;
     if (n_qangles > 0) {
         for (int i = 0; i < n_angles; i++) {
-            if (angles[i].ai == q_angles[qai][0].ai
-             && angles[i].aj == q_angles[qai][0].aj
-             && angles[i].ak == q_angles[qai][0].ak) {
+            if (angles[i].ai == q_angles[qai].ai
+             && angles[i].aj == q_angles[qai].aj
+             && angles[i].ak == q_angles[qai].ak) {
                 qai++;
                 excluded++;
             }
@@ -156,8 +158,8 @@ void shrink_topology() {
     excluded = 0;
     if (n_qbonds > 0) {
         for (int i = 0; i < n_bonds; i++) {
-            if (bonds[i].ai == q_bonds[qbi][0].ai
-             && bonds[i].aj == q_bonds[qbi][0].aj) {
+            if (bonds[i].ai == q_bonds[qbi].ai
+             && bonds[i].aj == q_bonds[qbi].aj) {
                 qbi++;
                 excluded++;
             }
@@ -188,10 +190,10 @@ void shrink_topology() {
     excluded = 0;
     if (n_qtorsions > 0) {
         for (int i = 0; i < n_torsions; i++) {
-            if (torsions[i].ai == q_torsions[qti][0].ai
-             && torsions[i].aj == q_torsions[qti][0].aj
-             && torsions[i].ak == q_torsions[qti][0].ak
-             && torsions[i].al == q_torsions[qti][0].al) {
+            if (torsions[i].ai == q_torsions[qti].ai
+             && torsions[i].aj == q_torsions[qti].aj
+             && torsions[i].ak == q_torsions[qti].ak
+             && torsions[i].al == q_torsions[qti].al) {
                 qti++;
                 excluded++;
             }
@@ -675,9 +677,16 @@ void calc_integration_step(int iteration) {
 
     // Now solvent interactions
     if (n_waters > 0) {
-        calc_nonbonded_ww_forces_host();
-        calc_nonbonded_pw_forces();
-        calc_nonbonded_qw_forces();
+        if (run_gpu) {
+            calc_nonbonded_ww_forces_host();
+            calc_nonbonded_pw_forces();
+            calc_nonbonded_qw_forces_host();
+        }
+        else {
+            calc_nonbonded_ww_forces();
+            calc_nonbonded_pw_forces();
+            calc_nonbonded_qw_forces();
+        }
     }
 
     clock_t end_nonbonded = clock();
@@ -910,43 +919,15 @@ void clean_variables() {
     free(q_imprcouples);
     free(q_softpairs);
     free(q_torcouples);
-    for (int i = 0; i < n_qatoms; i++) {
-        free(q_atypes[i]);
-        free(q_charges[i]);
-    }
     free(q_atypes);
     free(q_charges);
-    for (int i = 0; i < n_qangles; i++) {
-        free(q_angles[i]);
-    }
     free(q_angles);
-    for (int i = 0; i < n_qbonds; i++) {
-        free(q_bonds[i]);
-    }
     free(q_bonds);
-    for (int i = 0; i < n_qelscales; i++) {
-        free(q_elscales[i]);
-    }
     free(q_elscales);
-    for (int i = 0; i < n_qexclpairs; i++) {
-        free(q_exclpairs[i]);
-    }
     free(q_exclpairs);
-    for (int i = 0; i < n_qimpropers; i++) {
-        free(q_impropers[i]);
-    }
     free(q_impropers);
-    for (int i = 0; i < n_qshakes; i++) {
-        free(q_shakes[i]);
-    }
     free(q_shakes);
-    for (int i = 0; i < n_qsoftcores; i++) {
-        free(q_softcores[i]);
-    }
     free(q_softcores);
-    for (int i = 0; i < n_qtorsions; i++) {
-        free(q_torsions[i]);
-    }
     free(q_torsions);
 
     // Restraints
@@ -972,7 +953,10 @@ void clean_variables() {
     free(dvelocities);
     free(xcoords);
 
-    clean_solvent();
+    if (run_gpu) {
+        clean_solvent();
+        clean_qatoms();
+    }
 
     // Energies & temperature
     free(q_energies);

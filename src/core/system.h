@@ -61,6 +61,8 @@ extern int n_waters;
 
 extern char base_folder[1024];
 
+extern bool run_gpu;
+
 /* =============================================
  * == FROM MD FILE
  * =============================================
@@ -417,16 +419,17 @@ extern q_imprcouple_t *q_imprcouples;
 extern q_softpair_t *q_softpairs;
 extern q_torcouple_t *q_torcouples;
 
-extern q_angle_t **q_angles;
-extern q_atype_t **q_atypes;
-extern q_bond_t **q_bonds;
-extern q_charge_t **q_charges;
-extern q_elscale_t **q_elscales;
-extern q_exclpair_t **q_exclpairs;
-extern q_improper_t **q_impropers;
-extern q_shake_t **q_shakes;
-extern q_softcore_t **q_softcores;
-extern q_torsion_t **q_torsions;
+// NB. Arrays below are 2-dimensional!
+extern q_angle_t *q_angles;
+extern q_atype_t *q_atypes;
+extern q_bond_t *q_bonds;
+extern q_charge_t *q_charges;
+extern q_elscale_t *q_elscales;
+extern q_exclpair_t *q_exclpairs;
+extern q_improper_t *q_impropers;
+extern q_shake_t *q_shakes;
+extern q_softcore_t *q_softcores;
+extern q_torsion_t *q_torsions;
 
 /* =============================================
  * == RESTRAINTS

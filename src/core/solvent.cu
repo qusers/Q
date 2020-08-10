@@ -12,10 +12,14 @@
 
 coord_t *X;
 dvel_t *DV, *h_DV;
-calc_water_t *MAT, *h_MAT;
+calc_water_t *WW_MAT, *h_WW_MAT;
 
 //ONLY call if there are actually solvent atoms, or get segfaulted
 void calc_nonbonded_ww_forces() {
+    double rOX, rH1X, rH2X, r2;
+    coord_t dOX, dH1X, dH2X;
+    double Vel, V_a, V_b, dv;
+
     energies.Ucoul = 0;
     energies.Uvdw = 0;
 
@@ -37,274 +41,214 @@ void calc_nonbonded_ww_forces() {
 
     for (int i = n_atoms_solute; i < n_atoms; i+=3) {
         for (int j = i+3; j < n_atoms; j+=3) {
-            dvel_t water_a[3], water_b[3];
-            memset(&water_a, 0, 3 * sizeof(dvel_t));
-            memset(&water_b, 0, 3 * sizeof(dvel_t));
-                
-            calc_nonbonded_ww_forces_incr(i/3, j/3, crg_ow, crg_hw, A_OO, B_OO, coords, coords, &energies.Uvdw, &energies.Ucoul, water_a, water_b);
+            // --- O - (O,H1,H2) ---
+            dOX.x = coords[j].x - coords[i].x;
+            dOX.y = coords[j].y - coords[i].y;
+            dOX.z = coords[j].z - coords[i].z;
+            rOX = pow(dOX.x, 2) + pow(dOX.y, 2) + pow(dOX.z, 2);
 
-            // printf("MAT[%d][%d].O = %f %f %f\n", i/3, j/3, water_a[0].x, water_a[0].y, water_a[0].z);
-            // printf("MAT[%d][%d].O = %f %f %f\n", j/3, i/3, water_b[0].x, water_b[0].y, water_b[0].z);
+            // O - H1
+            j += 1;
 
-            dvelocities[i].x += water_a[0].x;
-            dvelocities[i].y += water_a[0].y;
-            dvelocities[i].z += water_a[0].z;
-            dvelocities[i+1].x += water_a[1].x;
-            dvelocities[i+1].y += water_a[1].y;
-            dvelocities[i+1].z += water_a[1].z;
-            dvelocities[i+2].x += water_a[2].x;
-            dvelocities[i+2].y += water_a[2].y;
-            dvelocities[i+2].z += water_a[2].z;
+            dH1X.x = coords[j].x - coords[i].x;
+            dH1X.y = coords[j].y - coords[i].y;
+            dH1X.z = coords[j].z - coords[i].z;
+            rH1X = pow(dH1X.x, 2) + pow(dH1X.y, 2) + pow(dH1X.z, 2);
 
-            dvelocities[j].x += water_b[0].x;
-            dvelocities[j].y += water_b[0].y;
-            dvelocities[j].z += water_b[0].z;
-            dvelocities[j+1].x += water_b[1].x;
-            dvelocities[j+1].y += water_b[1].y;
-            dvelocities[j+1].z += water_b[1].z;
-            dvelocities[j+2].x += water_b[2].x;
-            dvelocities[j+2].y += water_b[2].y;
-            dvelocities[j+2].z += water_b[2].z;
+            // O-H2 (X=H2)
+            j += 1;
+
+            dH2X.x = coords[j].x - coords[i].x;
+            dH2X.y = coords[j].y - coords[i].y;
+            dH2X.z = coords[j].z - coords[i].z;
+            rH2X = pow(dH2X.x, 2) + pow(dH2X.y, 2) + pow(dH2X.z, 2);
+            rOX = sqrt(1 / rOX);
+            rH1X = sqrt(1 / rH1X);
+            rH2X = sqrt(1 / rH2X);
+
+            // O - O
+            r2 = rOX * rOX;
+            Vel = Coul * pow(crg_ow, 2) * rOX;
+            V_a = A_OO * (r2*r2*r2) * (r2*r2*r2);
+            V_b = B_OO * (r2*r2*r2);
+            energies.Uvdw += (V_a - V_b);
+            energies.Ucoul += Vel;
+            dv = r2 * (-Vel - 12 * V_a + 6 * V_b);
+            j -= 2; //move pointer back to O in interacting molecule
+            dvelocities[i].x -= (dv * dOX.x);
+            dvelocities[j].x += (dv * dOX.x);
+            dvelocities[i].y -= (dv * dOX.y);
+            dvelocities[j].y += (dv * dOX.y);
+            dvelocities[i].z -= (dv * dOX.z);
+            dvelocities[j].z += (dv * dOX.z);
+
+            // O - H1
+            r2 = pow(rH1X, 2);
+            Vel = Coul * crg_ow * crg_hw * rH1X;
+            energies.Ucoul += Vel;
+            dv = r2 * (-Vel);
+            j += 1; //point to H1 in j-molecule
+            dvelocities[i].x -= (dv * dH1X.x);
+            dvelocities[j].x += (dv * dH1X.x);
+            dvelocities[i].y -= (dv * dH1X.y);
+            dvelocities[j].y += (dv * dH1X.y);
+            dvelocities[i].z -= (dv * dH1X.z);
+            dvelocities[j].z += (dv * dH1X.z);
+
+            // O - H2
+            r2 = pow(rH2X, 2);
+            Vel = Coul * crg_ow * crg_hw * rH2X;
+            energies.Ucoul += Vel;
+            dv = r2 * (-Vel);
+            j += 1; //point to H2 in j-molecule
+            dvelocities[i].x -= (dv * dH2X.x);
+            dvelocities[j].x += (dv * dH2X.x);
+            dvelocities[i].y -= (dv * dH2X.y);
+            dvelocities[j].y += (dv * dH2X.y);
+            dvelocities[i].z -= (dv * dH2X.z);
+            dvelocities[j].z += (dv * dH2X.z);
+
+            // --- H1 - (O,H1,H2) ---
+            i += 1; //Point to H1 in i-molecule
+            j -= 2; //Point to O in j-molecule
+
+            // H1 - O (X=O)
+            dOX.x = coords[j].x - coords[i].x;
+            dOX.y = coords[j].y - coords[i].y;
+            dOX.z = coords[j].z - coords[i].z;
+            rOX = pow(dOX.x, 2) + pow(dOX.y, 2) + pow(dOX.z, 2);
+
+            // H1 - H1 (X=H1)
+            j += 1;
+
+            dH1X.x = coords[j].x - coords[i].x;
+            dH1X.y = coords[j].y - coords[i].y;
+            dH1X.z = coords[j].z - coords[i].z;
+            rH1X = pow(dH1X.x, 2) + pow(dH1X.y, 2) + pow(dH1X.z, 2);
+
+            // H1 - H2 (X=H2)
+            j += 1;
+
+            dH2X.x = coords[j].x - coords[i].x;
+            dH2X.y = coords[j].y - coords[i].y;
+            dH2X.z = coords[j].z - coords[i].z;
+            rH2X = pow(dH2X.x, 2) + pow(dH2X.y, 2) + pow(dH2X.z, 2);
+            rOX = sqrt(1 / rOX);
+            rH1X = sqrt(1 / rH1X);
+            rH2X = sqrt(1 / rH2X);
+
+            // H1 - O
+            r2 = rOX * rOX;
+            Vel = Coul * crg_hw * crg_ow * rOX;
+            energies.Ucoul += Vel;
+            dv = r2 * (-Vel);
+            j -= 2; //move pointer back to O in interacting molecule
+            dvelocities[i].x -= (dv * dOX.x);
+            dvelocities[j].x += (dv * dOX.x);
+            dvelocities[i].y -= (dv * dOX.y);
+            dvelocities[j].y += (dv * dOX.y);
+            dvelocities[i].z -= (dv * dOX.z);
+            dvelocities[j].z += (dv * dOX.z);
+
+            // H1 - H1
+            r2 = pow(rH1X, 2);
+            Vel = Coul * crg_hw * crg_hw * rH1X;
+            energies.Ucoul += Vel;
+            dv = r2 * (-Vel);
+            j += 1; //point to H1 in j-molecule
+            dvelocities[i].x -= (dv * dH1X.x);
+            dvelocities[j].x += (dv * dH1X.x);
+            dvelocities[i].y -= (dv * dH1X.y);
+            dvelocities[j].y += (dv * dH1X.y);
+            dvelocities[i].z -= (dv * dH1X.z);
+            dvelocities[j].z += (dv * dH1X.z);
+
+            // H1 - H2
+            r2 = pow(rH2X, 2);
+            Vel = Coul * crg_hw * crg_hw * rH2X;
+            energies.Ucoul += Vel;
+            dv = r2 * (-Vel);
+            j += 1; //point to H2 in j-molecule
+            dvelocities[i].x -= (dv * dH2X.x);
+            dvelocities[j].x += (dv * dH2X.x);
+            dvelocities[i].y -= (dv * dH2X.y);
+            dvelocities[j].y += (dv * dH2X.y);
+            dvelocities[i].z -= (dv * dH2X.z);
+            dvelocities[j].z += (dv * dH2X.z);
+
+            // --- H2 - (O,H1,H2) ---
+            i += 1; //Point to H2 in i-molecule
+            j -= 2; //Point to O in j-molecule
+
+            // H2 - O (X=O)
+            dOX.x = coords[j].x - coords[i].x;
+            dOX.y = coords[j].y - coords[i].y;
+            dOX.z = coords[j].z - coords[i].z;
+            rOX = pow(dOX.x, 2) + pow(dOX.y, 2) + pow(dOX.z, 2);
+
+            // H2 - H1 (X=H1)
+            j += 1;
+
+            dH1X.x = coords[j].x - coords[i].x;
+            dH1X.y = coords[j].y - coords[i].y;
+            dH1X.z = coords[j].z - coords[i].z;
+            rH1X = pow(dH1X.x, 2) + pow(dH1X.y, 2) + pow(dH1X.z, 2);
+
+            // H2 - H2 (X=H2)
+            j += 1;
+
+            dH2X.x = coords[j].x - coords[i].x;
+            dH2X.y = coords[j].y - coords[i].y;
+            dH2X.z = coords[j].z - coords[i].z;
+            rH2X = pow(dH2X.x, 2) + pow(dH2X.y, 2) + pow(dH2X.z, 2);
+            rOX = sqrt(1 / rOX);
+            rH1X = sqrt(1 / rH1X);
+            rH2X = sqrt(1 / rH2X);
+
+            // H2 - O
+            r2 = rOX * rOX;
+            Vel = Coul * crg_hw * crg_ow * rOX;
+            energies.Ucoul += Vel;
+            dv = r2 * (-Vel);
+            j -= 2; //move pointer back to O in interacting molecule
+            dvelocities[i].x -= (dv * dOX.x);
+            dvelocities[j].x += (dv * dOX.x);
+            dvelocities[i].y -= (dv * dOX.y);
+            dvelocities[j].y += (dv * dOX.y);
+            dvelocities[i].z -= (dv * dOX.z);
+            dvelocities[j].z += (dv * dOX.z);
+
+            // H2 - H1
+            r2 = pow(rH1X, 2);
+            Vel = Coul * crg_hw * crg_hw * rH1X;
+            energies.Ucoul += Vel;
+            dv = r2 * (-Vel);
+            j += 1; //point to H1 in j-molecule
+            dvelocities[i].x -= (dv * dH1X.x);
+            dvelocities[j].x += (dv * dH1X.x);
+            dvelocities[i].y -= (dv * dH1X.y);
+            dvelocities[j].y += (dv * dH1X.y);
+            dvelocities[i].z -= (dv * dH1X.z);
+            dvelocities[j].z += (dv * dH1X.z);
+
+            // H1 - H2
+            r2 = pow(rH2X, 2);
+            Vel = Coul * crg_hw * crg_hw * rH2X;
+            energies.Ucoul += Vel;
+            dv = r2 * (-Vel);
+            j += 1; //point to H2 in j-molecule
+            dvelocities[i].x -= (dv * dH2X.x);
+            dvelocities[j].x += (dv * dH2X.x);
+            dvelocities[i].y -= (dv * dH2X.y);
+            dvelocities[j].y += (dv * dH2X.y);
+            dvelocities[i].z -= (dv * dH2X.z);
+            dvelocities[j].z += (dv * dH2X.z);
+
+            // Put i and j indexes back to prevent troubles
+            i -= 2;
+            j -= 2;
         }
     }
-}
-
-void calc_nonbonded_ww_forces_incr(int row, int column, double crg_ow, double crg_hw, double A_OO, double B_OO,
-    coord_t *Xs, coord_t *Ys, double *Evdw, double *Ecoul, dvel_t *water_a, dvel_t *water_b) {
-
-    double rOX, rH1X, rH2X, r2;
-    coord_t dOX, dH1X, dH2X;
-    double Vel, V_a, V_b, dv;
-    double tempX, tempY, tempZ;
-    
-    int i = 3 * row;
-    int j = 3 * column;
-    int wi = 0, wj = 0;
-
-    // --- O - (O,H1,H2) ---
-    dOX.x = Ys[j].x - Xs[i].x;
-    dOX.y = Ys[j].y - Xs[i].y;
-    dOX.z = Ys[j].z - Xs[i].z;
-    rOX = pow(dOX.x, 2) + pow(dOX.y, 2) + pow(dOX.z, 2);
-
-    // O - H1
-    j += 1;
-    wj += 1;
-
-    dH1X.x = Ys[j].x - Xs[i].x;
-    dH1X.y = Ys[j].y - Xs[i].y;
-    dH1X.z = Ys[j].z - Xs[i].z;
-    rH1X = pow(dH1X.x, 2) + pow(dH1X.y, 2) + pow(dH1X.z, 2);
-
-    // O-H2 (X=H2)
-    j += 1;
-    wj += 1;
-
-    dH2X.x = Ys[j].x - Xs[i].x;
-    dH2X.y = Ys[j].y - Xs[i].y;
-    dH2X.z = Ys[j].z - Xs[i].z;
-    rH2X = pow(dH2X.x, 2) + pow(dH2X.y, 2) + pow(dH2X.z, 2);
-    rOX = sqrt(1 / rOX);
-    rH1X = sqrt(1 / rH1X);
-    rH2X = sqrt(1 / rH2X);
-
-    // O - O
-    r2 = rOX * rOX;
-    Vel = Coul * pow(crg_ow, 2) * rOX;
-    V_a = A_OO * (r2*r2*r2) * (r2*r2*r2);
-    V_b = B_OO * (r2*r2*r2);
-    *Evdw += (V_a - V_b);
-    *Ecoul += Vel;
-    dv = r2 * (-Vel - 12 * V_a + 6 * V_b);
-    j -= 2; //move pointer back to O in interacting molecule
-    wj -= 2;
-
-    water_a[wi].x -= (dv * dOX.x);
-    water_b[wj].x += (dv * dOX.x);
-    water_a[wi].y -= (dv * dOX.y);
-    water_b[wj].y += (dv * dOX.y);
-    water_a[wi].z -= (dv * dOX.z);
-    water_b[wj].z += (dv * dOX.z);
-
-    // O - H1
-    r2 = pow(rH1X, 2);
-    Vel = Coul * crg_ow * crg_hw * rH1X;
-    *Ecoul += Vel;
-    dv = r2 * (-Vel);
-    j += 1; //point to H1 in j-molecule
-    wj += 1;
-
-    water_a[wi].x -= (dv * dH1X.x);
-    water_b[wj].x += (dv * dH1X.x);
-    water_a[wi].y -= (dv * dH1X.y);
-    water_b[wj].y += (dv * dH1X.y);
-    water_a[wi].z -= (dv * dH1X.z);
-    water_b[wj].z += (dv * dH1X.z);
-
-    // O - H2
-    r2 = pow(rH2X, 2);
-    Vel = Coul * crg_ow * crg_hw * rH2X;
-    *Ecoul += Vel;
-    dv = r2 * (-Vel);
-    j += 1; //point to H2 in j-molecule
-    wj += 1;
-
-    water_a[wi].x -= (dv * dH2X.x);
-    water_b[wj].x += (dv * dH2X.x);
-    water_a[wi].y -= (dv * dH2X.y);
-    water_b[wj].y += (dv * dH2X.y);
-    water_a[wi].z -= (dv * dH2X.z);
-    water_b[wj].z += (dv * dH2X.z);
-
-    // --- H1 - (O,H1,H2) ---
-    i += 1; //Point to H1 in i-molecule
-    wi += 1;
-    j -= 2; //Point to O in j-molecule
-    wj -= 2;
-
-    // H1 - O (X=O)
-    dOX.x = Ys[j].x - Xs[i].x;
-    dOX.y = Ys[j].y - Xs[i].y;
-    dOX.z = Ys[j].z - Xs[i].z;
-    rOX = pow(dOX.x, 2) + pow(dOX.y, 2) + pow(dOX.z, 2);
-
-    // H1 - H1 (X=H1)
-    j += 1;
-    wj += 1;
-
-    dH1X.x = Ys[j].x - Xs[i].x;
-    dH1X.y = Ys[j].y - Xs[i].y;
-    dH1X.z = Ys[j].z - Xs[i].z;
-    rH1X = pow(dH1X.x, 2) + pow(dH1X.y, 2) + pow(dH1X.z, 2);
-
-    // H1 - H2 (X=H2)
-    j += 1;
-    wj += 1;
-
-    dH2X.x = Ys[j].x - Xs[i].x;
-    dH2X.y = Ys[j].y - Xs[i].y;
-    dH2X.z = Ys[j].z - Xs[i].z;
-    rH2X = pow(dH2X.x, 2) + pow(dH2X.y, 2) + pow(dH2X.z, 2);
-    rOX = sqrt(1 / rOX);
-    rH1X = sqrt(1 / rH1X);
-    rH2X = sqrt(1 / rH2X);
-
-    // H1 - O
-    r2 = rOX * rOX;
-    Vel = Coul * crg_hw * crg_ow * rOX;
-    *Ecoul += Vel;
-    dv = r2 * (-Vel);
-    j -= 2; //move pointer back to O in interacting molecule
-    wj -= 2;
-    water_a[wi].x -= (dv * dOX.x);
-    water_b[wj].x += (dv * dOX.x);
-    water_a[wi].y -= (dv * dOX.y);
-    water_b[wj].y += (dv * dOX.y);
-    water_a[wi].z -= (dv * dOX.z);
-    water_b[wj].z += (dv * dOX.z);
-
-    // H1 - H1
-    r2 = pow(rH1X, 2);
-    Vel = Coul * crg_hw * crg_hw * rH1X;
-    *Ecoul += Vel;
-    dv = r2 * (-Vel);
-    j += 1; //point to H1 in j-molecule
-    wj += 1;
-    water_a[wi].x -= (dv * dH1X.x);
-    water_b[wj].x += (dv * dH1X.x);
-    water_a[wi].y -= (dv * dH1X.y);
-    water_b[wj].y += (dv * dH1X.y);
-    water_a[wi].z -= (dv * dH1X.z);
-    water_b[wj].z += (dv * dH1X.z);
-
-    // H1 - H2
-    r2 = pow(rH2X, 2);
-    Vel = Coul * crg_hw * crg_hw * rH2X;
-    *Ecoul += Vel;
-    dv = r2 * (-Vel);
-    j += 1; //point to H2 in j-molecule
-    wj += 1;
-    water_a[wi].x -= (dv * dH2X.x);
-    water_b[wj].x += (dv * dH2X.x);
-    water_a[wi].y -= (dv * dH2X.y);
-    water_b[wj].y += (dv * dH2X.y);
-    water_a[wi].z -= (dv * dH2X.z);
-    water_b[wj].z += (dv * dH2X.z);
-
-    // --- H2 - (O,H1,H2) ---
-    i += 1; //Point to H2 in i-molecule
-    wi += 1;
-    j -= 2; //Point to O in j-molecule
-    wj -= 2;
-
-    // H2 - O (X=O)
-    dOX.x = Ys[j].x - Xs[i].x;
-    dOX.y = Ys[j].y - Xs[i].y;
-    dOX.z = Ys[j].z - Xs[i].z;
-    rOX = pow(dOX.x, 2) + pow(dOX.y, 2) + pow(dOX.z, 2);
-
-    // H2 - H1 (X=H1)
-    j += 1;
-    wj += 1;
-
-    dH1X.x = Ys[j].x - Xs[i].x;
-    dH1X.y = Ys[j].y - Xs[i].y;
-    dH1X.z = Ys[j].z - Xs[i].z;
-    rH1X = pow(dH1X.x, 2) + pow(dH1X.y, 2) + pow(dH1X.z, 2);
-
-    // H2 - H2 (X=H2)
-    j += 1;
-    wj += 1;
-
-    dH2X.x = Ys[j].x - Xs[i].x;
-    dH2X.y = Ys[j].y - Xs[i].y;
-    dH2X.z = Ys[j].z - Xs[i].z;
-    rH2X = pow(dH2X.x, 2) + pow(dH2X.y, 2) + pow(dH2X.z, 2);
-    rOX = sqrt(1 / rOX);
-    rH1X = sqrt(1 / rH1X);
-    rH2X = sqrt(1 / rH2X);
-
-    // H2 - O
-    r2 = rOX * rOX;
-    Vel = Coul * crg_hw * crg_ow * rOX;
-    *Ecoul += Vel;
-    dv = r2 * (-Vel);
-    j -= 2; //move pointer back to O in interacting molecule
-    wj -= 2;
-    water_a[wi].x -= (dv * dOX.x);
-    water_b[wj].x += (dv * dOX.x);
-    water_a[wi].y -= (dv * dOX.y);
-    water_b[wj].y += (dv * dOX.y);
-    water_a[wi].z -= (dv * dOX.z);
-    water_b[wj].z += (dv * dOX.z);
-
-    // H2 - H1
-    r2 = pow(rH1X, 2);
-    Vel = Coul * crg_hw * crg_hw * rH1X;
-    *Ecoul += Vel;
-    dv = r2 * (-Vel);
-    j += 1; //point to H1 in j-molecule
-    wj += 1;
-    water_a[wi].x -= (dv * dH1X.x);
-    water_b[wj].x += (dv * dH1X.x);
-    water_a[wi].y -= (dv * dH1X.y);
-    water_b[wj].y += (dv * dH1X.y);
-    water_a[wi].z -= (dv * dH1X.z);
-    water_b[wj].z += (dv * dH1X.z);
-
-    // H1 - H2
-    r2 = pow(rH2X, 2);
-    Vel = Coul * crg_hw * crg_hw * rH2X;
-    *Ecoul += Vel;
-    dv = r2 * (-Vel);
-    j += 1; //point to H2 in j-molecule
-    wj += 1;
-    water_a[wi].x -= (dv * dH2X.x);
-    water_b[wj].x += (dv * dH2X.x);
-    water_a[wi].y -= (dv * dH2X.y);
-    water_b[wj].y += (dv * dH2X.y);
-    water_a[wi].z -= (dv * dH2X.z);
-    water_b[wj].z += (dv * dH2X.z);
 }
 
 void calc_nonbonded_ww_forces_host() {
@@ -329,21 +273,20 @@ void calc_nonbonded_ww_forces_host() {
         crg_ow = ccharge_ow.charge;
         crg_hw = ccharge_hw.charge;
 
-        cudaSetDevice(1);
-
         cudaMalloc((void**) &X, mem_size_X);
-        error = cudaMalloc((void**) &MAT, mem_size_MAT);
+        error = cudaMalloc((void**) &WW_MAT, mem_size_MAT);
         if (error != cudaSuccess) {
             printf(">>> FATAL: memory for matrix could not be allocated. Exiting...\n");
             exit(EXIT_FAILURE);
         }
         cudaMalloc((void**) &DV, mem_size_DV);    
         h_DV = (dvel_t*) malloc(3 * n_waters * sizeof(dvel_t));
-        h_MAT = (calc_water_t*) malloc(mem_size_MAT);
+        h_WW_MAT = (calc_water_t*) malloc(mem_size_MAT);
     }
 
-    cudaMemcpy(X, coords, mem_size_X, cudaMemcpyHostToDevice);
-    cudaMemcpy(DV, dvelocities, mem_size_DV, cudaMemcpyHostToDevice);
+    cudaMemcpy(X, &coords[n_atoms_solute], mem_size_X, cudaMemcpyHostToDevice);
+    cudaMemset(WW_MAT, 0, mem_size_MAT);
+    cudaMemcpy(DV, &dvelocities[n_atoms_solute], mem_size_DV, cudaMemcpyHostToDevice);
 
     dim3 threads,grid;
 
@@ -352,10 +295,14 @@ void calc_nonbonded_ww_forces_host() {
 
     double evdw, ecoul;
 
-    calc_ww_dvel_matrix<<<grid, threads>>>(n_waters, crg_ow, crg_hw, A_OO, B_OO, X, &evdw, &ecoul, MAT);
-    calc_ww_dvel_vector_rows<<<((n_waters+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_waters, DV, MAT);
+    calc_ww_dvel_matrix<<<grid, threads>>>(n_waters, crg_ow, crg_hw, A_OO, B_OO, X, &evdw, &ecoul, WW_MAT);
+    calc_ww_dvel_vector<<<((n_waters+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_waters, DV, WW_MAT);
 
-    // cudaMemcpy(h_MAT, MAT, mem_size_MAT, cudaMemcpyDeviceToHost);
+    // cudaMemcpy(h_WW_MAT, WW_MAT, mem_size_MAT, cudaMemcpyDeviceToHost);
+
+    // for (int i = 0; i < n_waters; i++) {
+    //     printf("X[%d] = %f %f %f\n", i, coords[i].x, coords[i].y, coords[i].z);
+    // }
 
     // for (int i = 0; i < n_waters; i++) {
     //     for (int j = 0; j < n_waters; j++) {
@@ -363,7 +310,11 @@ void calc_nonbonded_ww_forces_host() {
     //     }
     // }
 
-    cudaMemcpy(dvelocities, DV, mem_size_DV, cudaMemcpyDeviceToHost);
+    cudaMemcpy(&dvelocities[n_atoms_solute], DV, mem_size_DV, cudaMemcpyDeviceToHost);
+
+    // for (int i = 0; i < n_waters; i++) {
+    //     printf("dvelocities[%d] = %f %f %f\n", i, dvelocities[i].x, dvelocities[i].y, dvelocities[i].z);
+    // }
 }
 
 __device__ void set_water(int n_waters, int row, int column, dvel_t *val, calc_water_t *MAT) {
@@ -653,13 +604,32 @@ __global__ void calc_ww_dvel_matrix(int n_waters, double crg_ow, double crg_hw, 
     memset(&water_a, 0, 3 * sizeof(dvel_t));
     memset(&water_b, 0, 3 * sizeof(dvel_t));
 
+    int row = by * BLOCK_SIZE + ty;
+    int column = bx * BLOCK_SIZE + tx;
+    
+    // if (row == 0 && column == 1) {
+    //     printf("Xs[0] = %f\n", Xs[0]);
+    //     printf("Ys[0] = %f\n", Ys[0]);
+    //     printf("Xs[1] = %f\n", Xs[1]);
+    //     printf("Ys[1] = %f\n", Ys[1]);
+    //     printf("Xs[2] = %f\n", Xs[2]);
+    //     printf("Ys[2] = %f\n", Ys[2]);
+    //     printf("Xs[3] = %f\n", Xs[3]);
+    //     printf("Ys[3] = %f\n", Ys[3]);
+    //     printf("Xs[4] = %f\n", Xs[4]);
+    //     printf("Ys[4] = %f\n", Ys[4]);
+
+    //     printf("Ys[%d] = %f Xs[%d] = %f\n", 3 * ty, Ys[3 * ty], 3 * tx, Xs[3 * tx]);
+    // }
+
     if (bx != by || tx != ty) {
         double evdw, ecoul;
         calc_ww_dvel_matrix_incr(ty, tx, crg_ow, crg_hw, A_OO, B_OO, Xs, Ys, &evdw, &ecoul, water_a, water_b);
     }
 
-    int row = by * BLOCK_SIZE + ty;
-    int column = bx * BLOCK_SIZE + tx;
+    // if (row == 0 && column == 1) {
+    //     printf("water_a = %f %f %f water_b = %f %f %f\n", water_a[0].x, water_a[0].y, water_a[0].z, water_b[0].x, water_b[0].y, water_b[0].z);
+    // }
 
     set_water(n_waters, row, column, water_a, MAT);
     set_water(n_waters, column, row, water_b, MAT);
@@ -667,7 +637,7 @@ __global__ void calc_ww_dvel_matrix(int n_waters, double crg_ow, double crg_hw, 
     __syncthreads();
 }
 
-__global__ void calc_ww_dvel_vector_rows(int n_waters, dvel_t *DV, calc_water_t *MAT) {
+__global__ void calc_ww_dvel_vector(int n_waters, dvel_t *DV, calc_water_t *MAT) {
     int row = blockIdx.x*blockDim.x + threadIdx.x;
     if (row >= n_waters) return;
 
@@ -762,6 +732,8 @@ void calc_nonbonded_pw_forces() {
 
 void clean_solvent() {
     cudaFree(X);
-    cudaFree(MAT);
+    cudaFree(WW_MAT);
     cudaFree(DV);
+    free(h_DV);
+    free(h_WW_MAT);
 }

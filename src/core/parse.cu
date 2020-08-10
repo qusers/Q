@@ -34,6 +34,10 @@ csvfile_t read_csv(const char* filename, int ext, char* base_folder) {
         return retval;
     }
 
+    if (retval.n_lines == 0) {
+        return retval;
+    }
+
     char line[N_COLUMNS * COLUMN_WIDTH];
     retval.buffer = (char***) malloc(retval.n_lines * N_COLUMNS * sizeof(char**));
 
@@ -70,13 +74,15 @@ csvfile_t read_csv(const char* filename, int ext, char* base_folder) {
 }
 
 void clean_csv(csvfile_t file) {
-    for (int i = 0; i <= file.n_lines + file.ext; i++) {
-        for (int j = 0; j < N_COLUMNS; j++) {
-            free(file.buffer[i][j]);
+    if (file.n_lines > 0) {
+        for (int i = 0; i <= file.n_lines + file.ext; i++) {
+            for (int j = 0; j < N_COLUMNS; j++) {
+                free(file.buffer[i][j]);
+            }
+            free(file.buffer[i]);
         }
-        free(file.buffer[i]);
+        free(file.buffer);
     }
-    free(file.buffer);
 }
 
 
@@ -345,6 +351,7 @@ void init_coords(const char* filename) {
     n_atoms_solute = 0;
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
@@ -378,6 +385,7 @@ void init_bonds(const char* filename) {
     n_bonds_solute = 0;
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
@@ -405,6 +413,7 @@ void init_cbonds(const char* filename) {
     n_cbonds = 0;
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
@@ -432,6 +441,7 @@ void init_angles(const char* filename) {
     n_angles_solute = 0;
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
@@ -460,6 +470,7 @@ void init_cangles(const char* filename) {
     n_cangles = 0;
     
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
@@ -491,6 +502,7 @@ void init_torsions(const char* filename) {
     n_torsions_solute = 0;
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
@@ -520,6 +532,7 @@ void init_ctorsions(const char* filename) {
     n_ctorsions = 0;
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
     
@@ -549,6 +562,7 @@ void init_impropers(const char* filename) {
     n_impropers_solute = 0;
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
@@ -578,6 +592,7 @@ void init_cimpropers(const char* filename) {
     n_cimpropers = 0;
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
@@ -605,6 +620,7 @@ void init_charges(const char* filename) {
     n_charges = 0;
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
@@ -628,6 +644,7 @@ void init_ccharges(const char* filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
     
@@ -748,6 +765,7 @@ void init_catypes(const char* filename) {
     int n_catomtypes = 0;
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
@@ -779,6 +797,7 @@ void init_atypes(const char* filename) {
     n_atypes = 0;
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
@@ -808,6 +827,7 @@ void init_qangcouples(const char *filename) {
     n_qangcouples = 0;
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
@@ -828,6 +848,7 @@ void init_qatoms(const char *filename) {
     n_qatoms = 0;
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
@@ -847,6 +868,7 @@ void init_qcangles(const char *filename) {
     n_qcangles = 0;
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
@@ -868,6 +890,7 @@ void init_qcatypes(const char*filename) {
     n_qcatypes = 0;
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
@@ -895,6 +918,7 @@ void init_qcbonds(const char*filename) {
     n_qcbonds = 0;
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
@@ -916,6 +940,7 @@ void init_qcimpropers(const char*filename) {
     n_qcimpropers = 0;
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
@@ -937,6 +962,7 @@ void init_qctorsions(const char*filename) {
     n_qctorsions = 0;
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
@@ -959,6 +985,7 @@ void init_qoffdiags(const char*filename) {
     n_qoffdiags = 0;
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
@@ -984,6 +1011,7 @@ void init_qimprcouples(const char*filename) {
     n_qimprcouples = 0;
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
@@ -1004,6 +1032,7 @@ void init_qsoftpairs(const char*filename) {
     n_qsoftpairs = 0;
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
@@ -1024,6 +1053,7 @@ void init_qtorcouples(const char*filename) {
     n_qtorcouples = 0;
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
@@ -1042,19 +1072,19 @@ void init_qangles(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
     n_qangles = atoi(file.buffer[0][0]) / n_lambdas;
-    q_angles = (q_angle_t**) malloc (n_qangles * sizeof(q_angle_t*));
+    q_angles = (q_angle_t*) malloc (n_qangles * n_lambdas * sizeof(q_angle_t));
 
     for (int i = 0; i < n_qangles; i++) {
-        q_angles[i] = (q_angle_t*) malloc(n_lambdas * sizeof(q_angle_t));
         for (int j = 0; j < n_lambdas; j++) {
-            q_angles[i][j].ai = atoi(file.buffer[i + j * n_qangles + 1][0]);
-            q_angles[i][j].aj = atoi(file.buffer[i + j * n_qangles + 1][1]);
-            q_angles[i][j].ak = atoi(file.buffer[i + j * n_qangles + 1][2]);
-            q_angles[i][j].code = atoi(file.buffer[i + j * n_qangles + 1][3]);
+            q_angles[i + j * n_qangles].ai = atoi(file.buffer[i + j * n_qangles + 1][0]);
+            q_angles[i + j * n_qangles].aj = atoi(file.buffer[i + j * n_qangles + 1][1]);
+            q_angles[i + j * n_qangles].ak = atoi(file.buffer[i + j * n_qangles + 1][2]);
+            q_angles[i + j * n_qangles].code = atoi(file.buffer[i + j * n_qangles + 1][3]);
         }
     }
 
@@ -1065,15 +1095,14 @@ void init_qatypes(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
-    q_atypes = (q_atype_t**) malloc (n_qatoms * sizeof(q_atype_t*));
-
+    q_atypes = (q_atype_t*) malloc (n_qatoms * n_lambdas * sizeof(q_atype_t));
     for (int i = 0; i < n_qatoms; i++) {
-        q_atypes[i] = (q_atype_t*) malloc(n_lambdas * sizeof(q_atype_t));
         for (int j = 0; j < n_lambdas; j++) {
-            q_atypes[i][j].code = atoi(file.buffer[i + j * n_qatoms + 1][0]);
+            q_atypes[i + j * n_qatoms].code = atoi(file.buffer[i + j * n_qatoms + 1][0]);
         }
     }
 
@@ -1084,18 +1113,18 @@ void init_qbonds(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
     n_qbonds = atoi(file.buffer[0][0]) / n_lambdas;
-    q_bonds = (q_bond_t**) malloc (n_qbonds * sizeof(q_bond_t*));
+    q_bonds = (q_bond_t*) malloc (n_qbonds * n_lambdas * sizeof(q_bond_t));
 
     for (int i = 0; i < n_qbonds; i++) {
-        q_bonds[i] = (q_bond_t*) malloc(n_lambdas * sizeof(q_bond_t));
         for (int j = 0; j < n_lambdas; j++) {
-            q_bonds[i][j].ai = atoi(file.buffer[i + j * n_qbonds + 1][0]);
-            q_bonds[i][j].aj = atoi(file.buffer[i + j * n_qbonds + 1][1]);
-            q_bonds[i][j].code = atoi(file.buffer[i + j * n_qbonds + 1][2]);
+            q_bonds[i + j * n_qbonds].ai = atoi(file.buffer[i + j * n_qbonds + 1][0]);
+            q_bonds[i + j * n_qbonds].aj = atoi(file.buffer[i + j * n_qbonds + 1][1]);
+            q_bonds[i + j * n_qbonds].code = atoi(file.buffer[i + j * n_qbonds + 1][2]);
         }
     }
 
@@ -1106,16 +1135,16 @@ void init_qcharges(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
-    q_charges = (q_charge_t**) malloc (n_qatoms * sizeof(q_charge_t*));
+    q_charges = (q_charge_t*) malloc (n_qatoms * n_lambdas * sizeof(q_charge_t));
 
     for (int i = 0; i < n_qatoms; i++) {
-        q_charges[i] = (q_charge_t*) malloc(n_lambdas * sizeof(q_charge_t));
         for (int j = 0; j < n_lambdas; j++) {
             char *eptr;
-            q_charges[i][j].q = strtod(file.buffer[i + j * n_qatoms + 1][0], &eptr);
+            q_charges[i + j * n_qatoms].q = strtod(file.buffer[i + j * n_qatoms + 1][0], &eptr);
         }
     }
 
@@ -1126,19 +1155,19 @@ void init_qelscales(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
     n_qelscales = atoi(file.buffer[0][0]) / n_lambdas;
-    q_elscales = (q_elscale_t**) malloc (n_qelscales * sizeof(q_elscale_t*));
+    q_elscales = (q_elscale_t*) malloc (n_qelscales * n_lambdas * sizeof(q_elscale_t));
 
     for (int i = 0; i < n_qelscales; i++) {
-        q_elscales[i] = (q_elscale_t*) malloc(n_lambdas * sizeof(q_elscale_t));
         for (int j = 0; j < n_lambdas; j++) {
             char *eptr;
-            q_elscales[i][j].qi = atoi(file.buffer[i + j * n_qelscales + 1][0]);
-            q_elscales[i][j].qj = atoi(file.buffer[i + j * n_qelscales + 1][1]);
-            q_elscales[i][j].mu = strtod(file.buffer[i + j * n_qelscales + 1][2], &eptr);
+            q_elscales[i + j * n_qelscales].qi = atoi(file.buffer[i + j * n_qelscales + 1][0]);
+            q_elscales[i + j * n_qelscales].qj = atoi(file.buffer[i + j * n_qelscales + 1][1]);
+            q_elscales[i + j * n_qelscales].mu = strtod(file.buffer[i + j * n_qelscales + 1][2], &eptr);
         }
     }
 
@@ -1149,18 +1178,18 @@ void init_qexclpairs(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
     n_qexclpairs = atoi(file.buffer[0][0]) / n_lambdas;
-    q_exclpairs = (q_exclpair_t**) malloc (n_qexclpairs * sizeof(q_exclpair_t*));
+    q_exclpairs = (q_exclpair_t*) malloc (n_qexclpairs * n_lambdas * sizeof(q_exclpair_t));
 
     for (int i = 0; i < n_qexclpairs; i++) {
-        q_exclpairs[i] = (q_exclpair_t*) malloc(n_lambdas * sizeof(q_exclpair_t));
         for (int j = 0; j < n_lambdas; j++) {
-            q_exclpairs[i][j].ai = atoi(file.buffer[i + j * n_qexclpairs + 1][0]);
-            q_exclpairs[i][j].aj = atoi(file.buffer[i + j * n_qexclpairs + 1][1]);
-            q_exclpairs[i][j].excl = atoi(file.buffer[i + j * n_qexclpairs + 1][2]);
+            q_exclpairs[i + j * n_qexclpairs].ai = atoi(file.buffer[i + j * n_qexclpairs + 1][0]);
+            q_exclpairs[i + j * n_qexclpairs].aj = atoi(file.buffer[i + j * n_qexclpairs + 1][1]);
+            q_exclpairs[i + j * n_qexclpairs].excl = atoi(file.buffer[i + j * n_qexclpairs + 1][2]);
         }
     }
 
@@ -1171,20 +1200,20 @@ void init_qimpropers(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
     n_qimpropers = atoi(file.buffer[0][0]) / n_lambdas;
-    q_impropers = (q_improper_t**) malloc (n_qimpropers * sizeof(q_improper_t*));
+    q_impropers = (q_improper_t*) malloc (n_qimpropers * n_lambdas * sizeof(q_improper_t));
 
     for (int i = 0; i < n_qimpropers; i++) {
-        q_impropers[i] = (q_improper_t*) malloc(n_lambdas * sizeof(q_improper_t));
         for (int j = 0; j < n_lambdas; j++) {
-            q_impropers[i][j].ai = atoi(file.buffer[i + j * n_qimpropers + 1][0]);
-            q_impropers[i][j].aj = atoi(file.buffer[i + j * n_qimpropers + 1][1]);
-            q_impropers[i][j].ak = atoi(file.buffer[i + j * n_qimpropers + 1][2]);
-            q_impropers[i][j].al = atoi(file.buffer[i + j * n_qimpropers + 1][3]);
-            q_impropers[i][j].code = atoi(file.buffer[i + j * n_qimpropers + 1][4]);
+            q_impropers[i + j * n_qimpropers].ai = atoi(file.buffer[i + j * n_qimpropers + 1][0]);
+            q_impropers[i + j * n_qimpropers].aj = atoi(file.buffer[i + j * n_qimpropers + 1][1]);
+            q_impropers[i + j * n_qimpropers].ak = atoi(file.buffer[i + j * n_qimpropers + 1][2]);
+            q_impropers[i + j * n_qimpropers].al = atoi(file.buffer[i + j * n_qimpropers + 1][3]);
+            q_impropers[i + j * n_qimpropers].code = atoi(file.buffer[i + j * n_qimpropers + 1][4]);
         }
     }
 
@@ -1195,19 +1224,19 @@ void init_qshakes(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
     n_qshakes = atoi(file.buffer[0][0]) / n_lambdas;
-    q_shakes = (q_shake_t**) malloc (n_qshakes * sizeof(q_shake_t*));
+    q_shakes = (q_shake_t*) malloc (n_qshakes * n_lambdas * sizeof(q_shake_t));
 
     for (int i = 0; i < n_qshakes; i++) {
-        q_shakes[i] = (q_shake_t*) malloc(n_lambdas * sizeof(q_shake_t));
         for (int j = 0; j < n_lambdas; j++) {
             char *eptr;
-            q_shakes[i][j].ai = atoi(file.buffer[i + j * n_qshakes + 1][0]);
-            q_shakes[i][j].aj = atoi(file.buffer[i + j * n_qshakes + 1][1]);
-            q_shakes[i][j].dist = strtod(file.buffer[i + j * n_qshakes + 1][2], &eptr);
+            q_shakes[i + j * n_qshakes].ai = atoi(file.buffer[i + j * n_qshakes + 1][0]);
+            q_shakes[i + j * n_qshakes].aj = atoi(file.buffer[i + j * n_qshakes + 1][1]);
+            q_shakes[i + j * n_qshakes].dist = strtod(file.buffer[i + j * n_qshakes + 1][2], &eptr);
         }
     }
 
@@ -1218,17 +1247,19 @@ void init_qsoftcores(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
+    printf("file.n_lines = %d\n", file.n_lines);
+
     n_qsoftcores = atoi(file.buffer[0][0]) / n_lambdas;
-    q_softcores = (q_softcore_t**) malloc (n_qsoftcores * sizeof(q_softcore_t*));
+    q_softcores = (q_softcore_t*) malloc (n_qsoftcores * n_lambdas * sizeof(q_softcore_t));
 
     for (int i = 0; i < n_qsoftcores; i++) {
-        q_softcores[i] = (q_softcore_t*) malloc(n_lambdas * sizeof(q_softcore_t));
         for (int j = 0; j < n_lambdas; j++) {
             char *eptr;
-            q_softcores[i][j].s = strtod(file.buffer[i + j * n_qsoftcores + 1][0], &eptr);
+            q_softcores[i + j * n_qsoftcores].s = strtod(file.buffer[i + j * n_qsoftcores + 1][0], &eptr);
         }
     }
 
@@ -1239,20 +1270,20 @@ void init_qtorsions(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
     n_qtorsions = atoi(file.buffer[0][0]) / n_lambdas;
-    q_torsions = (q_torsion_t**) malloc (n_qtorsions * sizeof(q_torsion_t*));
+    q_torsions = (q_torsion_t*) malloc (n_qtorsions * n_lambdas * sizeof(q_torsion_t));
 
     for (int i = 0; i < n_qtorsions; i++) {
-        q_torsions[i] = (q_torsion_t*) malloc(n_lambdas * sizeof(q_torsion_t));
         for (int j = 0; j < n_lambdas; j++) {
-            q_torsions[i][j].ai = atoi(file.buffer[i + j * n_qtorsions + 1][0]);
-            q_torsions[i][j].aj = atoi(file.buffer[i + j * n_qtorsions + 1][1]);
-            q_torsions[i][j].ak = atoi(file.buffer[i + j * n_qtorsions + 1][2]);
-            q_torsions[i][j].al = atoi(file.buffer[i + j * n_qtorsions + 1][3]);
-            q_torsions[i][j].code = atoi(file.buffer[i + j * n_qtorsions + 1][4]);
+            q_torsions[i + j * n_qtorsions].ai = atoi(file.buffer[i + j * n_qtorsions + 1][0]);
+            q_torsions[i + j * n_qtorsions].aj = atoi(file.buffer[i + j * n_qtorsions + 1][1]);
+            q_torsions[i + j * n_qtorsions].ak = atoi(file.buffer[i + j * n_qtorsions + 1][2]);
+            q_torsions[i + j * n_qtorsions].al = atoi(file.buffer[i + j * n_qtorsions + 1][3]);
+            q_torsions[i + j * n_qtorsions].code = atoi(file.buffer[i + j * n_qtorsions + 1][4]);
         }
     }
 
