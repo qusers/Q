@@ -269,7 +269,7 @@ class Read_Topology(object):
                     
                 if block == 10:
                     line = line.split()
-                    self.data['cimpropers'][line[0]] = [line[1],'-2.000',line[2],'1']
+                    self.data['cimpropers'][line[0]] = [line[1],line[2]]
                     
                 if block == 11:
                     line = line.split()
@@ -583,11 +583,9 @@ class Write_Topology(object):
         with open(self.wd + '/cimpropers.csv','w') as outfile:
             outfile.write('{}\n'.format(len(self.data['cimpropers'])))
             for key in keys:
-                outfile.write('{};{};{};{}\n'.format(key,
-                                                     self.data['cimpropers'][key][0],
-                                                     self.data['cimpropers'][key][1],
-                                                     self.data['cimpropers'][key][2],
-                                                     self.data['cimpropers'][key][3],
+                outfile.write('{};{};{}\n'.format(key,
+                                                  self.data['cimpropers'][key][0],
+                                                  self.data['cimpropers'][key][1],
                                                  ))
         
         #Topology.charges = []

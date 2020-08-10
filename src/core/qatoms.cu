@@ -4,6 +4,7 @@
 #include "system.h"
 #include "utils.h"
 #include <math.h>
+#include <stdio.h>
 
 void calc_nonbonded_qp_forces() {
     int i, j;
@@ -111,10 +112,10 @@ void calc_nonbonded_qw_forces() {
             dH2.y = coords[j+2].y - coords[i].y;
             dH2.z = coords[j+2].z - coords[i].z;
             r2O = pow(dO.x, 2) + pow(dO.y, 2) + pow(dO.z, 2);
-            rH1 = 1 / (pow(dH1.x, 2) + pow(dH1.y, 2) + pow(dH1.z, 2));
-            rH2 = 1 / (pow(dO.x, 2) + pow(dO.y, 2) + pow(dO.z, 2));
+            rH1 = sqrt(1.0 / (pow(dH1.x, 2) + pow(dH1.y, 2) + pow(dH1.z, 2)));
+            rH2 = sqrt(1.0 / (pow(dH2.x, 2) + pow(dH2.y, 2) + pow(dH2.z, 2)));
             r6O = r2O * r2O * r2O;
-            r2O = 1 / r2O;
+            r2O = 1.0 / r2O;
             rO = sqrt(r2O);
             r2H1 = rH1 * rH1;
             r2H2 = rH2 * rH2;
@@ -133,9 +134,9 @@ void calc_nonbonded_qw_forces() {
                 V_a = ai_aii * A_O / (r6O * r6O);
                 V_b = ai_bii * B_O / (r6O);
 
-                VelO = crg_ow * q_charges[qi][state].q * rO;
-                VelH1 = crg_hw * q_charges[qi][state].q * rH1;
-                VelH2 = crg_hw * q_charges[qi][state].q * rH2;
+                VelO = Coul * crg_ow * q_charges[qi][state].q * rO;
+                VelH1 = Coul * crg_hw * q_charges[qi][state].q * rH1;
+                VelH2 = Coul * crg_hw * q_charges[qi][state].q * rH2;
                 dvO += r2O * (-VelO - (12 * V_a - 6 * V_b)) * lambdas[state];
                 dvH1 -= r2H1 * VelH1 * lambdas[state];
                 dvH2 -= r2H2 * VelH2 * lambdas[state];
@@ -163,6 +164,7 @@ void calc_nonbonded_qw_forces() {
             dvelocities[j+2].z += dvH2 * dH2.z;
         }
     }
+
 }
 
 void calc_nonbonded_qq_forces() {

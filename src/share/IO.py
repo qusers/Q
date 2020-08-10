@@ -171,80 +171,81 @@ def read_prm(prmfiles):
                         sys.exit()                
     return prm
 
-def read_lib(libfile):
+def read_lib(libfiles):
     """
-    Takes a Q .lib gives back the dictionary of residues in that library
+    Takes a list of Q .libraries gives back the dictionary of residues in that library
     """
     libdic = {}
     block = 0    
-    
-    with open(libfile) as infile:
-        for line in infile:
-            line = line.strip()
-            if len(line) < 1:
-                continue
-                
-            if line[0] == '{':
-                resname = line.split()
-                resname = resname[0]
-                resname = resname.strip('{')
-                resname = resname.strip('}')
-                
-                if resname not in libdic:
-                    libdic[resname] = {'[info]':[],
-                                       '[atoms]':[],
-                                       '[bonds]':[],
-                                       '[impropers]':[],
-                                       '[charge_groups]':[],
-                                       'lib2prm':{},
-                                        }
+
+    for libfile in libfiles:
+        with open(libfile) as infile:
+            for line in infile:
+                line = line.strip()
+                if len(line) < 1:
                     continue
-                else:
-                    print('Warning, duplicate residue name, did not add parameters')
-                    
-            if line[0] == "*":
-                continue
-                
-            if line[0] == '!':
-                continue
-            if line == '[info]':
-                block = 1
-                continue                
-            elif line == '[atoms]':
-                block = 2
-                continue
-            elif line == '[bonds]':
-                block = 3
-                continue
-            elif line == '[impropers]':
-                block = 4
-                continue
-            elif line == '[charge_groups]':
-                block = 5
-                continue
-                
-            elif line == '[connections]':
-                block = 6
-                continue
 
-            if block == 1:
-                libdic[resname]['[info]'].append(line.split())
+                if line[0] == '{':
+                    resname = line.split()
+                    resname = resname[0]
+                    resname = resname.strip('{')
+                    resname = resname.strip('}')
 
-            if block == 2:
-                libdic[resname]['[atoms]'].append(line.split())
-                libdic[resname]['lib2prm'][line.split()[1]] = line.split()[2]
+                    if resname not in libdic:
+                        libdic[resname] = {'[info]':[],
+                                           '[atoms]':[],
+                                           '[bonds]':[],
+                                           '[impropers]':[],
+                                           '[charge_groups]':[],
+                                           'lib2prm':{},
+                                            }
+                        continue
+                    else:
+                        print('Warning, duplicate residue name, did not add parameters')
 
-            elif block == 3:
-                # the bonded part is a connectiviy graph
-                line = line.split()
+                if line[0] == "*":
+                    continue
 
-                libdic[resname]['[bonds]'].append((line[0],line[1]))
+                if line[0] == '!':
+                    continue
+                if line == '[info]':
+                    block = 1
+                    continue                
+                elif line == '[atoms]':
+                    block = 2
+                    continue
+                elif line == '[bonds]':
+                    block = 3
+                    continue
+                elif line == '[impropers]':
+                    block = 4
+                    continue
+                elif line == '[charge_groups]':
+                    block = 5
+                    continue
 
-            elif block == 4:
-                libdic[resname]['[impropers]'].append(line.split())                
+                elif line == '[connections]':
+                    block = 6
+                    continue
 
-            elif block == 5:
-                libdic[resname]['[charge_groups]'].append(line.split())
+                if block == 1:
+                    libdic[resname]['[info]'].append(line.split())
+
+                if block == 2:
+                    libdic[resname]['[atoms]'].append(line.split())
+                    libdic[resname]['lib2prm'][line.split()[1]] = line.split()[2]
+
+                elif block == 3:
+                    # the bonded part is a connectiviy graph
+                    line = line.split()
+
+                    libdic[resname]['[bonds]'].append((line[0],line[1]))
+
+                elif block == 4:
+                    libdic[resname]['[impropers]'].append(line.split())                
+
+                elif block == 5:
+                    libdic[resname]['[charge_groups]'].append(line.split())
                 
     return(libdic)
 

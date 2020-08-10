@@ -98,7 +98,8 @@ class Calculate(object):
         read_traj = TRAJECTORY.Read_Trajectory(self.wd + '/traj.json')
         traj =read_traj.JSON()
         
-        calc = CALC.number_density(mask,traj,wd)
+        if calc == 'number_density':
+            calc = CALC.number_density(mask,traj,wd)
         
 class Init(object):
     def __init__(self, data):
@@ -112,6 +113,10 @@ class Init(object):
                }
         """   
         self.environment = data
+        
+        # Check if multiple inpit libraries
+        self.environment['ilib'] = self.environment['ilib'].strip()
+        self.environment['ilib'] = self.environment['ilib'].split(',')
         
         # Create user specified work environment
         Create_Environment(self.environment['wd'])

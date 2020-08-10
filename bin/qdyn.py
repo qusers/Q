@@ -50,7 +50,7 @@ if __name__ == "__main__":
                         dest = "re",
                         default = None,
                         required = False,                                                
-                        help = "Restart file: TO DO")
+                        help = "Restart file")
 
          
     parser.add_argument('-d', '--workdir',

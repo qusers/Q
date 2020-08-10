@@ -70,10 +70,7 @@ class Write_Trajectory(object):
             files.append(filename)
             
             with open(self.wd + '/' + filename,'w') as outfile:
-                for ai in range(0,int(self.traj['natoms'])):
-                    #Trajectory.maskPDB[ai][8] = 0.0
-                    #Trajectory.maskPDB[ai][9] =  0.0
-                    #Trajectory.maskPDB[ai][10] =  0.0                    
+                for ai in range(0,int(self.traj['natoms'])):                
                     # Update the coordinates
                     coord_index = (frame) * int(self.traj['natoms']) + ai
                     coords = self.traj['coords'][coord_index]

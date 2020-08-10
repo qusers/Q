@@ -203,23 +203,24 @@ void init_md(const char *filename) {
         k++;
     }
 
-    // // [sequence_restraints]
-    // n_restrseqs = atoi(file.buffer[k][0]);
-    // printf("reading in %d sequence restraints\n", n_restrseqs);
-    // restrseqs = (restrseq_t*) malloc(n_restrseqs * sizeof(restrseq_t));
-    // k++;
-    // for (int i = 0; i < n_restrseqs; i++) {
-    //     restrseq_t restrseq;
+    // [sequence_restraints]
+    printf("k = %d\n", k);
+    n_restrseqs = atoi(file.buffer[k][0]);
+    printf("reading in %d sequence restraints (%s in file)\n", n_restrseqs, file.buffer[k][1]);
+    restrseqs = (restrseq_t*) malloc(n_restrseqs * sizeof(restrseq_t));
+    k++;
+    for (int i = 0; i < n_restrseqs; i++) {
+        restrseq_t restrseq;
 
-    //     restrseq.ai = atoi(file.buffer[k][0]);
-    //     restrseq.aj = atoi(file.buffer[k][1]);
-    //     restrseq.k = strtod(file.buffer[k][2], &eptr);
-    //     restrseq.ih = file.buffer[k][3] == "1";
-    //     restrseq.to_center = atoi(file.buffer[k][4]);
+        restrseq.ai = atoi(file.buffer[k][0]);
+        restrseq.aj = atoi(file.buffer[k][1]);
+        restrseq.k = strtod(file.buffer[k][2], &eptr);
+        restrseq.ih = file.buffer[k][3] == "1";
+        restrseq.to_center = atoi(file.buffer[k][4]);
 
-    //     restrseqs[i] = restrseq;
-    //     k++;
-    // }
+        restrseqs[i] = restrseq;
+        k++;
+    }
 
     // // [position_restraints]
     // n_restrspos = atoi(file.buffer[k][0]);
@@ -248,25 +249,24 @@ void init_md(const char *filename) {
     //     k++;
     // }
 
-    // // [distance_restraints]
-    // n_restrdists = atoi(file.buffer[k][0]);
-    // restrdists = (restrdis_t*) malloc(n_restrdists * sizeof(restrdis_t));
-    // printf("reading in %d distance restraints\n", n_restrdists);
-    // k++;
-    // for (int i = 0; i < n_restrdists; i++) {
-    //     restrdis_t restrdist;
+    // [distance_restraints]
+    n_restrdists = atoi(file.buffer[k][0]);
+    restrdists = (restrdis_t*) malloc(n_restrdists * sizeof(restrdis_t));
+    printf("reading in %d distance restraints (%s in file)\n", n_restrdists, file.buffer[k][1]);
+    k++;
+    for (int i = 0; i < n_restrdists; i++) {
+        restrdis_t restrdist;
 
-    //     restrdist.ai = atoi(file.buffer[k][0]);
-    //     restrdist.aj = atoi(file.buffer[k][1]);
-    //     restrdist.d1 = strtod(file.buffer[k][2], &eptr);
-    //     restrdist.d2 = strtod(file.buffer[k][3], &eptr);
-    //     restrdist.k = strtod(file.buffer[k][4], &eptr);
-    //     strcpy(restrdist.itext, file.buffer[k][5]);
-    //     strcpy(restrdist.jtext, file.buffer[k][6]);
+        restrdist.ai = atoi(file.buffer[k][0]);
+        restrdist.aj = atoi(file.buffer[k][1]);
+        restrdist.d1 = strtod(file.buffer[k][2], &eptr);
+        restrdist.d2 = strtod(file.buffer[k][3], &eptr);
+        restrdist.k = strtod(file.buffer[k][4], &eptr);
+        restrdist.ipsi = atoi(file.buffer[k][5]);
 
-    //     restrdists[i] = restrdist;
-    //     k++;
-    // }
+        restrdists[i] = restrdist;
+        k++;
+    }
 
     // // [angle_restraints]
     // n_restrangs = atoi(file.buffer[k][0]);
@@ -591,8 +591,7 @@ void init_cimpropers(const char* filename) {
 
         cimproper.code = atoi(file.buffer[i+1][0]);
         cimproper.k = strtod(file.buffer[i+1][1], &eptr);
-        cimproper.n = strtod(file.buffer[i+1][2], &eptr);
-        cimproper.d = strtod(file.buffer[i+1][3], &eptr);
+        cimproper.phi0 = strtod(file.buffer[i+1][2], &eptr);
 
         cimpropers[i] = cimproper;
     }
@@ -925,8 +924,8 @@ void init_qcimpropers(const char*filename) {
 
     for (int i = 0; i < n_qcimpropers; i++) {
         char *eptr;
-        q_cimpropers[i].kth = strtod(file.buffer[i+1][0], &eptr);
-        q_cimpropers[i].th0 = strtod(file.buffer[i+1][1], &eptr);
+        q_cimpropers[i].k = strtod(file.buffer[i+1][0], &eptr);
+        q_cimpropers[i].phi0 = strtod(file.buffer[i+1][1], &eptr);
     }
 
     clean_csv(file);
