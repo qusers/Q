@@ -682,7 +682,7 @@ void calc_integration_step(int iteration) {
             calc_nonbonded_ww_forces_host();
             end_ww = clock();
             calc_nonbonded_pw_forces();
-            calc_nonbonded_qw_forces();
+            calc_nonbonded_qw_forces_host();
         }
         else {
             start_ww = clock();

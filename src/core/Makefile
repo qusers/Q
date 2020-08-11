@@ -1,5 +1,5 @@
 CC = nvcc
-CFLAGS = -g -G
+CFLAGS = -g
 
 all: qdyn move
 
