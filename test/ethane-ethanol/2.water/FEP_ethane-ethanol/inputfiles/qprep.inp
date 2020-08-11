@@ -4,8 +4,8 @@ rl ethanol_renumber.lib
 rprm OPLS2015_ethane_ethanol_merged.prm 
 ! TO DO Change if protein system is used
 rp top_p.pdb
-boundary 1 -0.0 0.0 0.0 15
-solvate -0.0 0.0 0.0 15 1 HOH
+boundary 1 -0.0 0.0 0.0 25
+solvate -0.0 0.0 0.0 25 1 HOH
 maketop MKC_p 
 writetop dualtop.top 
 q 

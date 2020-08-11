@@ -44,6 +44,10 @@ __pycache__/*
 #test/water/no_ion/*
 test/ethane-ethanol/test/*
 test/ethane-ethanol/FEP_*
+test/ethanol-methane/test/*
+test/ethanol-methane/FEP_*
+
+
 *.pyc
 
 .DS_Store

@@ -176,7 +176,7 @@ class Run_Dynamics(object):
         Runs the main dynamics loop.
     """           
     def __init__(self,wd,top):
-        executable = SETTINGS.ROOT + 'bin/qdyn '
+        executable = SETTINGS.ROOT + 'bin/qdyn --gpu '
         options = wd + '/' 
         IO.run_command(executable,options)
 
