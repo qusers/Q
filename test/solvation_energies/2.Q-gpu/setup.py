@@ -17,7 +17,6 @@ with open('submit.py','w') as outfile:
     outfile.write("import os\n")
     outfile.write("curdir = os.getcwd()\n")
     for fepsubmit in glob.glob('*/FEP_*'):
-        print(fepsubmit)
         outfile.write("os.chdir('{}')\n".format(fepsubmit))
         outfile.write("os.system('sbatch submit.sh')\n")
         outfile.write("os.chdir('../../')\n")
