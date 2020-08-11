@@ -178,7 +178,7 @@ class Run_Dynamics(object):
     def __init__(self,wd,top):
         executable = SETTINGS.ROOT + 'bin/qdyn '
         options = wd + '/' 
-        IO.run_command(executable,options)
+        IO.run_command(executable,options,runtime=True)
 
 class Init(object):
     def __init__(self, data):

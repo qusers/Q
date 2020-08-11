@@ -45,6 +45,7 @@ class Get_Energy(object):
     def __init__(self,ener,wd,states):
         self.wd = wd
         for energyfile in ener:
+            print(energyfile)
             infile  = energyfile[0]
             outfile = energyfile[1]
             read_ener  = ENERGY.Read_Energy(infile,states)
@@ -123,7 +124,9 @@ class Init(object):
         """
         self.environment = data
         # Create user specified work environment
+        
         Create_Environment(self.environment['workdir'])
+        
     
         # All the qcalc modules need a mask to map coordinate system
         # to the topology/pdb in formation,

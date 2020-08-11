@@ -52,3 +52,5 @@ test/ethane-ethanol/FEP_*
 *.calc
 *.pml
 *.inp
+test/solvation_energies/2.Q-gpu/1.water/*
+test/solvation_energies/2.Q-gpu/2.vacuum/*
