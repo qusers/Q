@@ -1,4 +1,10 @@
 # QligFEP solvation free energies test set
+
+This test set was part of the original QligFEP publication:
+* Jespers et al. (https://doi.org/10.1186/s13321-019-0348-5).
+
+Note that for the moment we are testing with 15A spheres
+
 To run this test:
 - Untar oldQrunfiles.tar.gz, this contains reference Q files in the old format.
   These files are used as input for the new QligFEP application for backward compatability.

@@ -3,14 +3,14 @@ import os
 
 QligFEP = '../../../app/QligFEP.py'
 # construct FEPfiles
-#for fep in glob.glob('../1.Q-cpu/*/FEP_*'):
-#    of = fep
-#    wd = fep.split('/')[2]
-#    c  = 'KEBNE'
+for fep in glob.glob('../1.Q-cpu/*/FEP_*'):
+    of = fep
+    wd = fep.split('/')[2]
+    c  = 'KEBNE'
 
-#    print("Setting up FEPs for {}".format(fep))
+    print("Setting up FEPs for {}".format(fep))
     
-#    os.system('python {} -of {} -wd {} -c {}'.format(QligFEP,of,wd,c))
+    os.system('python {} -of {} -wd {} -c {}'.format(QligFEP,of,wd,c))
         
 # write the submit file
 with open('submit.py','w') as outfile:
