@@ -268,7 +268,7 @@ def run_command(executable, options, runtime=False):
     time2 = time.time()
     
     if runtime == True:
-        print('runtime {:.3f} s'.format(time2-time1*1000000.0))
+        print('runtime {:.3f} s'.format((time2-time1)*1000000.0))
 
     return out
 
