@@ -45,6 +45,7 @@ __pycache__/*
 test/ethane-ethanol/test/*
 test/ethane-ethanol/FEP_*
 *.pyc
+*.fuse*
 
 .DS_Store
 *.csv
