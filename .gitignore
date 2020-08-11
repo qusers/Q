@@ -46,7 +46,7 @@ test/ethane-ethanol/test/*
 test/ethane-ethanol/FEP_*
 test/ethanol-methane/test/*
 test/ethanol-methane/FEP_*
-
+.fuse
 
 *.pyc
 
