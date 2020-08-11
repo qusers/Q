@@ -674,16 +674,20 @@ void calc_integration_step(int iteration) {
     calc_nonbonded_qp_forces();
     calc_nonbonded_pp_forces();
 
-
+    clock_t start_ww, end_ww;
     // Now solvent interactions
     if (n_waters > 0) {
         if (run_gpu) {
+            start_ww = clock();
             calc_nonbonded_ww_forces_host();
+            end_ww = clock();
             calc_nonbonded_pw_forces();
-            calc_nonbonded_qw_forces_host();
+            calc_nonbonded_qw_forces();
         }
         else {
+            start_ww = clock();
             calc_nonbonded_ww_forces();
+            end_ww = clock();
             calc_nonbonded_pw_forces();
             calc_nonbonded_qw_forces();
         }
@@ -785,6 +789,9 @@ void calc_integration_step(int iteration) {
     printf("Elapsed time for bonded forces: %f\n", (end_bonded-start) / (double)CLOCKS_PER_SEC );
     printf("Elapsed time for non-bonded forces: %f\n", (end_nonbonded-end_bonded) / (double)CLOCKS_PER_SEC);
     printf("Elapsed time for entire time-step: %f\n", (end_calculation-start) / (double)CLOCKS_PER_SEC);
+    if (n_waters > 0) {
+        printf("Elapsed time for ww interactions: %f\n", (end_ww-start_ww) / (double)CLOCKS_PER_SEC );
+    }
 #endif /* __PROFILING__ */
 
 }
