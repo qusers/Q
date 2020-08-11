@@ -15,9 +15,6 @@ void calc_radix_w_forces() {
         shift = 0;
     }
 
-    // Initialize radial restriction energy
-    energies.Uradx = 0;
-    
     // Calculate erst and dv. Note all atoms except oxygens are skipped
     for (int i = n_atoms_solute; i < n_atoms; i += 3) {
         dr.x = coords[i].x - topo.solvent_center.x;
@@ -60,9 +57,6 @@ void calc_polx_w_forces(int iteration) {
     double avtdum, arg, f0, dv;
     double ener;
 
-    // Initialize polar restriction energy
-    energies.Upolx = 0;
-    
     for (int is = 0; is < n_shells; is++) {
         wshells[is].n_inshell = 0;
         wshells[is].theta_corr = 0;
@@ -224,8 +218,6 @@ void calc_pshell_forces() {
     coord_t dr;
     double k, r2, ener;
 
-    energies.Ushell = 0;
-    energies.Ufix = 0;
     for (int i = 0; i < n_atoms_solute; i++) {
         if (excluded[i] || shell[i]) {
             if (excluded[i]) {
@@ -255,7 +247,6 @@ void calc_restrseq_forces() {
     coord_t dr;
     double r2, ener;
 
-    energies.Upres = 0;
     for (int s = 0; s < n_restrseqs; s++) {
         k = restrseqs[s].k;
 

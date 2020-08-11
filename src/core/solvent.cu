@@ -12,9 +12,6 @@ void calc_nonbonded_ww_forces() {
     coord_t dOX, dH1X, dH2X;
     double Vel, V_a, V_b, dv;
 
-    energies.Ucoul = 0;
-    energies.Uvdw = 0;
-
     // Initialize water constants
     if (A_OO == 0) {
         catype_t catype_ow;    // Atom type of first O, H atom

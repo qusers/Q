@@ -649,6 +649,16 @@ void calc_integration_step(int iteration) {
     }
     energies.Ucoul = 0;
     energies.Uvdw = 0;
+    energies.Uangle = 0;
+    energies.Ubond = 0;
+    energies.Utor = 0;
+    energies.Uimp = 0;
+    energies.Upres = 0;
+    energies.Uradx = 0;
+    energies.Upolx = 0;
+    energies.Ushell = 0;
+    energies.Ufix = 0;
+
     for (int state = 0; state < n_lambdas; state++) {
         q_energies[state].Ucoul = 0;
         q_energies[state].Uvdw = 0;

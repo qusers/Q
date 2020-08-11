@@ -1,5 +1,6 @@
 #include "system.h"
 #include "nonbonded.h"
+#include <stdio.h>
 
 /* =============================================
  * == NON-BONDED INTERACTIONS
@@ -17,11 +18,6 @@
     double ai_aii, aj_aii, ai_bii, aj_bii;
     int i, j;
     catype_t ai_type, aj_type;
-
-    if (n_patoms > 0) {
-        energies.Ucoul = 0;
-        energies.Uvdw = 0;
-    }
 
     for (int pi = 0; pi < n_patoms; pi++) {
         for (int pj = pi+1; pj < n_patoms; pj++) {
@@ -80,6 +76,8 @@
 
             energies.Ucoul += Vela;
             energies.Uvdw += (V_a - V_b);
+
+            printf("Ecoul = %f Evdw = %f\n", Vela, (V_a - V_b));
         }
     }
 }

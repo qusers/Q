@@ -22,8 +22,6 @@
     double cos_th, th, dth, dv, f1;
     double ener;
 
-    energies.Uangle = 0;
-
     for (int i = 0; i < n_angles; i++) {
         aii = angles[i].ai - 1;
         aji = angles[i].aj - 1;
@@ -105,8 +103,6 @@ void calc_bond_forces() {
     cbond_t cbond;
     double dx2, dx1, ddx, ener, ampl;
 
-    energies.Ubond = 0;
-
     for (int i = 0; i < n_bonds; i++) {
         aii = bonds[i].ai-1;
         aji = bonds[i].aj-1;
@@ -155,8 +151,6 @@ void calc_torsion_forces() {
 
     torsion_t t;
     ctorsion_t ctors;
-
-    energies.Utor = 0;
 
     for (int i = 0; i < n_torsions; i++) {
         t = torsions[i];
@@ -285,8 +279,6 @@ void calc_improper2_forces() {
 
     improper_t imp;
     cimproper_t cimp;
-
-    energies.Uimp = 0;
 
     for (int i = 0; i < n_impropers; i++) {
         imp = impropers[i];
