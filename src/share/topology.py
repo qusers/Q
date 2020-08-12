@@ -327,13 +327,13 @@ class Read_Topology(object):
                     ngbr14.append(line.strip())
                 
                 if block == 24:
-                    ngbr14long.append(line.strip())
+                    ngbr14long.append(line.strip().split())
                     
                 if block == 25:
                     ngbr23.append(line.strip())
                 
                 if block == 26:
-                    ngbr23long.append(line.strip())
+                    ngbr23long.append(line.strip().split())
                         
                 if block == 27:
                     line = line.split()
@@ -442,15 +442,16 @@ class Read_Topology(object):
         self.data['ngbr14'] = [ngbr14[i:i+25] for i in range(0, len(ngbr14), 25)]
         
         #construct 1-4 long
-        tmp = list(itertools.chain.from_iterable(self.data['ngbr14long']))
+        tmp = list(itertools.chain.from_iterable(ngbr14long))
+        print(tmp)
         self.data['ngbr14long'] = IO.split_list(tmp,2)
-        
+                
         # construct 2-3
         ngbr23 = ''.join(ngbr23)
         self.data['ngbr23'] = [ngbr23[i:i+25] for i in range(0, len(ngbr23), 25)]
         
         # construct 2-3 long
-        tmp = list(itertools.chain.from_iterable(self.data['ngbr14long']))
+        tmp = list(itertools.chain.from_iterable(ngbr23long))
         self.data['ngbr23long'] = IO.split_list(tmp,2)
         
         # Starting atom of every residue 
