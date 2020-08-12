@@ -31,6 +31,7 @@ void calc_nonbonded_ww_forces() {
 
     for (int i = n_atoms_solute; i < n_atoms; i+=3) {
         for (int j = i+3; j < n_atoms; j+=3) {
+            if (excluded[i] || excluded[j]) continue;
             // --- O - (O,H1,H2) ---
             dOX.x = coords[j].x - coords[i].x;
             dOX.y = coords[j].y - coords[i].y;
@@ -256,6 +257,7 @@ void calc_nonbonded_pw_forces() {
     for (int pi = 0; pi < n_patoms; pi++) {
         for (int j = n_atoms_solute; j < n_atoms; j++) {
             i = p_atoms[pi].a-1;
+            if (excluded[i] || excluded[j]) continue;
             qi = ccharges[charges[i].code - 1].charge;
             qj = ccharges[charges[j].code - 1].charge;
 
