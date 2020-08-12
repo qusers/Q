@@ -27,6 +27,7 @@
             bond14 = LJ_matrix[i * n_atoms_solute + j] == 1;
 
             if (bond23) continue;
+            if (excluded[i] || excluded[j]) continue;
 
             scaling = bond14 ? .5 : 1;
 
@@ -67,5 +68,8 @@
 
             // printf("solute: Ecoul = %f Evdw = %f\n", Vela, (V_a - V_b));
         }
+        // printf("i = %d\n", p_atoms[pi].a - 1);
+        // printf("energies.Ucoul = %f\n", energies.Ucoul);
+        // printf("energies.Uvdw = %f\n", energies.Uvdw);
     }
 }

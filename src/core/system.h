@@ -1,7 +1,7 @@
 #ifndef __SYSTEM_H__
 #define __SYSTEM_H__
 
-//#define __PROFILING__
+#define __PROFILING__
 #define DEBUG
 
 // Coulomb's constant, TODO get this from topology file

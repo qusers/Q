@@ -481,7 +481,32 @@ void init_cangles(const char* filename) {
 }
 
 void init_excluded(const char *filename) {
-    excluded = (bool*) calloc(n_atoms, sizeof(bool));
+    excluded = (bool*) malloc(n_atoms * sizeof(bool));
+
+    FILE * fp;
+
+    char path[1024];
+    sprintf(path, "%s/%s", base_folder, filename);
+
+    if(access(path, F_OK) == -1) {
+        printf(">>> FATAL: The following file could not be found. Exiting...\n");
+        puts(path);
+        exit(EXIT_FAILURE);
+    }
+
+    fp = fopen(path, "r");
+    if (fp == NULL)
+        exit(EXIT_FAILURE);
+
+    char line[8192];
+    
+    if (fgets(line, 8192, fp)) {
+        for (int i = 0; i < n_atoms_solute; i++) {
+            excluded[i] = line[i] == '1';
+        }
+    }
+
+    fclose(fp);
 }
 
 void init_torsions(const char* filename) {
@@ -681,7 +706,7 @@ void init_ngbrs14(const char* filename) {
         for (int i = 0; i < line_width; i++) {
             if (line[i] == '1') {
                 int i = lineI;
-                int j = (lineI + i + 1) % lines;
+                int j = (lineI + i + 2) % lines;
                 LJ_matrix[i * n_atoms_solute + j] = 1;
             }
         }
@@ -724,7 +749,7 @@ void init_ngbrs23(const char* filename) {
         for (int i = 0; i < line_width; i++) {
             if (line[i] == '1') {
                 int i = lineI;
-                int j = (lineI + i + 1) % lines;
+                int j = (lineI + i + 2) % lines;
                 LJ_matrix[i * n_atoms_solute + j] = 3;
             }
         }

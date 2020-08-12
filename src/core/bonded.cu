@@ -94,6 +94,8 @@
         dvelocities[aji].x -= dv * (di.x + dk.x);
         dvelocities[aji].y -= dv * (di.y + dk.y);
         dvelocities[aji].z -= dv * (di.z + dk.z);
+
+        printf("ANGLE ener = %f\n", ener);
     }
 }
 
@@ -134,6 +136,8 @@ void calc_bond_forces() {
         dvelocities[aii].x -= ampl * dx.x;
         dvelocities[aii].y -= ampl * dx.y;
         dvelocities[aii].z -= ampl * dx.z;
+
+        printf("BOND %d %d ener = %f\n", aii, aji, ener);
     }
 }
 

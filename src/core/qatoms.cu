@@ -29,6 +29,7 @@ void calc_nonbonded_qp_forces() {
             bond14 = LJ_matrix[i * n_atoms_solute + j] == 1;
 
             if (bond23) continue;
+            if (excluded[i] || excluded[j]) continue;
 
             scaling = bond14 ? .5 : 1;
 
@@ -99,6 +100,7 @@ void calc_nonbonded_qw_forces() {
     for (int j = n_atoms_solute; j < n_atoms; j+= 3) {
         for (int qi = 0; qi < n_qatoms; qi++) {
             i = q_atoms[qi].a - 1;
+            if (excluded[i] || excluded[j]) continue;
             dO.x = coords[j].x - coords[i].x;
             dO.y = coords[j].y - coords[i].y;
             dO.z = coords[j].z - coords[i].z;
@@ -188,6 +190,7 @@ void calc_nonbonded_qq_forces() {
                 bond14 = LJ_matrix[ai * n_atoms_solute + aj] == 1;
         
                 if (bond23) continue;
+                if (excluded[ai] || excluded[aj]) continue;
     
                 scaling = bond14 ? .5 : 1;
 

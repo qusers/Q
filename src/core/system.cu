@@ -130,7 +130,7 @@ q_softcore_t **q_softcores;
 q_torsion_t **q_torsions;
 
 // Remove bonds, angles, torsions and impropers which are excluded or changed in the FEP file
-void shrink_topology() {
+void exclude_qatom_definitions() {
     int excluded;
     int ai = 0, bi = 0, ii = 0, ti = 0;
     int qai = 0, qbi = 0, qii = 0, qti = 0;
@@ -203,6 +203,78 @@ void shrink_topology() {
     }
 
     // TODO: add exclusion pairs
+
+}
+
+void exclude_all_atoms_excluded_definitions() {
+    int n_excluded;
+    int ai = 0, bi = 0, ii = 0, ti = 0;
+
+    n_excluded = 0;
+    for (int i = 0; i < n_angles; i++) {
+        if (excluded[angles[i].ai - 1]
+            && excluded[angles[i].aj - 1]
+            && excluded[angles[i].ak - 1]) {
+            n_excluded++;
+        }
+        else {
+            angles[ai] = angles[i];
+            ai++;
+        }
+    }
+    printf("original: %d. # excluded angles: %d\n", n_angles, n_excluded);
+    n_angles -= n_excluded;
+
+    n_excluded = 0;
+    for (int i = 0; i < n_bonds; i++) {
+        if (excluded[bonds[i].ai - 1]
+            && excluded[bonds[i].aj - 1]) {
+            n_excluded++;
+        }
+        else {
+            bonds[bi] = bonds[i];
+            bi++;
+        }
+    }
+    printf("original: %d. # excluded bonds: %d\n", n_bonds, n_excluded);
+    n_bonds -= n_excluded;
+
+    n_excluded = 0;
+    for (int i = 0; i < n_impropers; i++) {
+        if (excluded[impropers[i].ai - 1]
+            && excluded[impropers[i].aj - 1]
+            && excluded[impropers[i].ak - 1]
+            && excluded[impropers[i].al - 1]) {
+            n_excluded++;
+        }
+        else {
+            impropers[ii] = impropers[i];
+            ii++;
+        }
+    }
+    printf("original: %d. # excluded impropers: %d\n", n_impropers, n_excluded);
+    n_impropers -= n_excluded;
+
+    n_excluded = 0;
+    for (int i = 0; i < n_torsions; i++) {
+        if (excluded[torsions[i].ai - 1]
+            && excluded[torsions[i].aj - 1]
+            && excluded[torsions[i].ak - 1]
+            && excluded[torsions[i].al - 1]) {
+            n_excluded++;
+        }
+        else {
+            torsions[ti] = torsions[i];
+            ti++;
+        }
+    }
+    printf("original: %d. # excluded torsions: %d\n", n_torsions, n_excluded);
+    n_torsions -= n_excluded;
+}
+
+void shrink_topology() {
+    exclude_qatom_definitions();
+    exclude_all_atoms_excluded_definitions();
 }
 
 /* =============================================
@@ -357,7 +429,7 @@ void init_wshells() {
             , wshells[2].router, wshells[2].router - wshells[2].dr
         );
 
-    n_max_inshell *= 1.5; // Make largest a little bigger just in case
+    n_max_inshell = n_waters; // Make largest a little bigger just in case
 
     // Initialize arrays needed for bookkeeping
     theta = (double*) malloc(n_waters * sizeof(double));
@@ -468,7 +540,7 @@ void calc_temperature() {
         ener = .5 * mass_i * (pow(velocities[i].x, 2) + pow(velocities[i].y, 2) + pow(velocities[i].z, 2));
         Temp += ener;
         if (ener > Ekinmax) {
-            printf(">>> WARNING: hot atom %d: %f\n", i, ener/Boltz/3);
+            // printf(">>> WARNING: hot atom %d: %f\n", i, ener/Boltz/3);
         }
     }
 
@@ -768,11 +840,13 @@ void calc_integration_step(int iteration) {
     printf("Upot = %f\n", energies.Upot);
     printf("Utot = %f\n", energies.Utot);
 
+    clock_t end = clock();
 
     // Profiler info
 #ifdef __PROFILING__
     printf("Elapsed time for bonded forces: %f\n", (end_bonded-start) / (double)CLOCKS_PER_SEC );
     printf("Elapsed time for non-bonded forces: %f\n", (end_nonbonded-end_bonded) / (double)CLOCKS_PER_SEC);
+    printf("Elapsed time for entire integration step: %f\n", (end-start) / (double)CLOCKS_PER_SEC);
 #endif /* __PROFILING__ */
 
     // Append output files
