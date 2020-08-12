@@ -46,6 +46,8 @@ class MD():
                       'seqrest'             :   [],
                       'posrest'             :   [],
                       'distrest'            :   [],
+                      'anglerest'           :   [],
+                      'wallrest'            :   [],
                       'thermostat'          :   None,
                     }
 
@@ -114,12 +116,20 @@ class Read_MD(object):
                     block = 9
                     continue
 
-                if '[positional_restraints]' in line:
+                if '[atom_restraints]' in line:
                     block = 10
                     continue
 
                 if '[distance_restraints]' in line:
                     block = 11
+                    continue                        
+
+                if '[wall_restraints]' in line:
+                    block = 12
+                    continue                        
+
+                if '[angle_restraints]' in line:
+                    block = 13
                     continue                        
 
                 if block == 1:
@@ -172,6 +182,21 @@ class Read_MD(object):
                     else:
                         self.data['distrest'].append((line.split()))
 
+                if block == 12:
+                    if len(self.data['wallrest']) == 0:
+                        self.data['wallrest'] = [line.split()]
+
+                    else:
+                        self.data['wallrest'].append((line.split()))
+                
+                # Not sure about this keyword
+                if block == 13:
+                    if len(self.data['anglerest']) == 0:
+                        self.data['anglerest'] = [line.split()]
+
+                    else:
+                        self.data['anglerest'].append((line.split()))
+
         return(self.data)
     
 class Write_MD(object):        
@@ -189,7 +214,7 @@ class Write_MD(object):
         self.wd = wd
         lists = ['lambdas','seqrest','distrest']
         
-        j = 27
+        j = 30
         
         # Get length of lists (lambdas, restraints)
         for l in lists:
@@ -227,6 +252,7 @@ class Write_MD(object):
             outfile.write('trajectory;{}\n'         .format(self.data['trajectory']))
             
             # possible to have multiple lambdas, need to loop
+            ### LAMBDAS ###
             if self.data['lambdas'] != None:
                 outfile.write('{};lambdas\n'.format(len(self.data['lambdas'])))
                 for l in self.data['lambdas']:
@@ -235,7 +261,7 @@ class Write_MD(object):
             else:
                 outfile.write('0;lambdas\n')
 
-            # possible to have multiple restraints, need to loop
+            ### SEQREST ###
             if self.data['seqrest'] != None:
                 outfile.write('{};{}\n'.format(len(self.data['seqrest']),'seqrest'))
                 for r in self.data['seqrest']:
@@ -244,7 +270,16 @@ class Write_MD(object):
             else:
                 outfile.write('0;{}\n'.format('seqrest'))    
                 
-            # possible to have multiple restraints, need to loop
+            ### POSREST ###
+            if self.data['posrest'] != None:
+                outfile.write('{};{}\n'.format(len(self.data['posrest']),'posrest'))
+                for r in self.data['posrest']:
+                    outfile.write('{};{};{};{};{};{}\n'.format(*r))
+
+            else:
+                outfile.write('0;{}\n'.format('posrest'))    
+                
+            ### DISTREST ###
             if self.data['distrest'] != None:
                 outfile.write('{};{}\n'.format(len(self.data['distrest']),'distrest'))
                 for r in self.data['distrest']:
@@ -252,6 +287,24 @@ class Write_MD(object):
 
             else:
                 outfile.write('0;{}\n'.format('distrest'))    
+                
+            ### ANGLEREST ###
+            if self.data['anglerest'] != None:
+                outfile.write('{};{}\n'.format(len(self.data['anglerest']),'anglerest'))
+                for r in self.data['anglerest']:
+                    outfile.write('{};{};{};{};{};{}\n'.format(*r))
+
+            else:
+                outfile.write('0;{}\n'.format('anglerest'))    
+                
+            ### WALLREST ###
+            if self.data['wallrest'] != None:
+                outfile.write('{};{}\n'.format(len(self.data['wallrest']),'wallrest'))
+                for r in self.data['wallrest']:
+                    outfile.write('{};{};{};{};{};{}\n'.format(*r))
+
+            else:
+                outfile.write('0;{}\n'.format('wallrest'))    
 
     def JSON(self,out_json):
         """

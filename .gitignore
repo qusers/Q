@@ -57,3 +57,4 @@ test/solvation_energies/2.Q-gpu/1.water/*
 test/solvation_energies/2.Q-gpu/2.vacuum/*
 test/solvation_energies/2.Q-gpu/submit.py
 test/solvation_energies/1.Q-cpu
+test/CDk2/rundir/

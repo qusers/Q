@@ -443,7 +443,6 @@ class Read_Topology(object):
         
         #construct 1-4 long
         tmp = list(itertools.chain.from_iterable(ngbr14long))
-        print(tmp)
         self.data['ngbr14long'] = IO.split_list(tmp,2)
                 
         # construct 2-3
