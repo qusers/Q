@@ -25,11 +25,12 @@ shell_radius              15
 radial_force              60.0
 polarisation              on
 polarisation_force        20.0
+charge_correction         off
 
 [intervals]
-output                    5
-trajectory                100
-non_bond                  25
+output                    1
+trajectory                1
+non_bond                  1
 
 [files]
 topology                  dualtop.top
