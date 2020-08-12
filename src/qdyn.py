@@ -181,7 +181,7 @@ class Run_Dynamics(object):
         out = IO.run_command(executable,options)
         if verbose == True:
             print(out)
-
+            
 class Init(object):
     def __init__(self, data):
         """ Retrieves a dictionary of user input from qdyn:
