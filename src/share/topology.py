@@ -245,7 +245,7 @@ class Read_Topology(object):
                     
                 if block == 4:
                     line = line.split()
-                    self.data['cbonds'][line[0]] = [line[1],line[2]]
+                    self.data['cbonds'][int(line[0])] = [line[1],line[2]]
                     
                 if block == 5:
                     line = line.split()
@@ -253,7 +253,7 @@ class Read_Topology(object):
                     
                 if block == 6:
                     line = line.split()
-                    self.data['cangles'][line[0]] = [line[1],line[2]]
+                    self.data['cangles'][int(line[0])] = [line[1],line[2]]
                     
                 if block == 7:
                     line = line.split()
@@ -261,7 +261,7 @@ class Read_Topology(object):
                     
                 if block == 8:
                     line = line.split()
-                    self.data['ctorsions'][line[0]] = [line[1],line[2],line[3],line[4]]
+                    self.data['ctorsions'][int(line[0])] = [line[1],line[2],line[3],line[4]]
                     
                 if block == 9:
                     line = line.split()
@@ -269,7 +269,7 @@ class Read_Topology(object):
                     
                 if block == 10:
                     line = line.split()
-                    self.data['cimpropers'][line[0]] = [line[1],line[2]]
+                    self.data['cimpropers'][int(line[0])] = [line[1],line[2]]
                     
                 if block == 11:
                     line = line.split()
@@ -364,11 +364,19 @@ class Read_Topology(object):
                     if 'Exclusion' in line:
                         self.data['exclusion'] = linesplit[0]
                         self.data['radii'] = linesplit[1]
-                        
+                    
+                    # capture ugly bug in Q where center = centre
+                    if 'Solute centre' in line:
+                        self.data['solucenter'] = [linesplit[0],linesplit[1],linesplit[2]]
+                                                               
                     if 'Solute center' in line:
                         self.data['solucenter'] = [linesplit[0],linesplit[1],linesplit[2]]
-                                        
+                        
+                    # capture ugly bug in Q
                     if 'Solvent center' in line:
+                        self.data['solvcenter'] = [linesplit[0],linesplit[1],linesplit[2]]
+                                                                
+                    if 'Solvent centre' in line:
                         self.data['solvcenter'] = [linesplit[0],linesplit[1],linesplit[2]]
                         
                 if block == 33:

@@ -39,9 +39,6 @@ final                     eq1.re
 [trajectory_atoms]
 not excluded
 
-[lambdas]
-1.000 0.000
-
 [sequence_restraints]
 
 [distance_restraints]
