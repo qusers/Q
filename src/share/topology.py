@@ -373,10 +373,10 @@ class Read_Topology(object):
                         self.data['solucenter'] = [linesplit[0],linesplit[1],linesplit[2]]
                         
                     # capture ugly bug in Q
-                    if 'Solvent centre' in line:
+                    if 'Solvent center' in line:
                         self.data['solvcenter'] = [linesplit[0],linesplit[1],linesplit[2]]
                                                                 
-                    if 'Solvent center' in line:
+                    if 'Solvent centre' in line:
                         self.data['solvcenter'] = [linesplit[0],linesplit[1],linesplit[2]]
                         
                 if block == 33:

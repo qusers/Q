@@ -23,20 +23,8 @@
         for (int pj = pi+1; pj < n_patoms; pj++) {
             i = p_atoms[pi].a - 1;
             j = p_atoms[pj].a - 1;
-            bond23 = false;
-            bond14 = false;
-            for (int k = 0; k < n_ngbrs23; k++) {
-                if (ngbrs23[k].ai == charges[i].a && ngbrs23[k].aj == charges[j].a) {
-                    // printf("BOND 23: %d, %d", ngbrs23[k].ai, ngbrs23[k].aj);
-                    bond23 = true;
-                }
-            }
-            for (int k = 0; k < n_ngbrs14; k++) {
-                if (ngbrs14[k].ai == charges[i].a && ngbrs14[k].aj == charges[j].a) {
-                    // printf("BOND 14: %d, %d", ngbrs23[k].ai, ngbrs23[k].aj);
-                    bond14 = true;
-                }
-            }
+            bond23 = LJ_matrix[i * n_atoms_solute + j] == 3;
+            bond14 = LJ_matrix[i * n_atoms_solute + j] == 1;
 
             if (bond23) continue;
 
@@ -77,7 +65,7 @@
             energies.Ucoul += Vela;
             energies.Uvdw += (V_a - V_b);
 
-            printf("Ecoul = %f Evdw = %f\n", Vela, (V_a - V_b));
+            // printf("solute: Ecoul = %f Evdw = %f\n", Vela, (V_a - V_b));
         }
     }
 }

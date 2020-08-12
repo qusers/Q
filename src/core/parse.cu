@@ -666,7 +666,6 @@ void init_ngbrs14(const char* filename) {
 
     char line[1024];
     
-    n_ngbrs14 = 0;
     int lines = 0;
 
     if (fgets(line, 1024, fp)) {
@@ -676,17 +675,14 @@ void init_ngbrs14(const char* filename) {
         return;
     }
 
-    ngbrs14 = (ngbr14_t*) malloc(lines * sizeof(ngbr14_t) * line_width);
     int lineI = 0;
 
     while (fgets(line, 1024, fp)) {
         for (int i = 0; i < line_width; i++) {
             if (line[i] == '1') {
-                ngbr14_t ngbr14;
-                ngbr14.ai = lineI + 1;
-                ngbr14.aj = ((lineI + i + 1) % lines) + 1;
-                ngbrs14[n_ngbrs14] = ngbr14;
-                n_ngbrs14++;
+                int i = lineI;
+                int j = (lineI + i + 1) % lines;
+                LJ_matrix[i * n_atoms_solute + j] = 1;
             }
         }
         lineI++;
@@ -713,7 +709,6 @@ void init_ngbrs23(const char* filename) {
 
     char line[1024];
     
-    n_ngbrs23 = 0;
     int lines = 0;
 
     if (fgets(line, 1024, fp)) {
@@ -723,23 +718,24 @@ void init_ngbrs23(const char* filename) {
         return;
     }
 
-    ngbrs23 = (ngbr23_t*) malloc(lines * sizeof(ngbr23_t) * line_width);
     int lineI = 0;
 
     while (fgets(line, 1024, fp)) {
         for (int i = 0; i < line_width; i++) {
             if (line[i] == '1') {
-                ngbr23_t ngbr23;
-                ngbr23.ai = lineI + 1;
-                ngbr23.aj = ((lineI + i + 1) % lines) + 1;
-                ngbrs23[n_ngbrs23] = ngbr23;
-                n_ngbrs23++;
+                int i = lineI;
+                int j = (lineI + i + 1) % lines;
+                LJ_matrix[i * n_atoms_solute + j] = 3;
             }
         }
         lineI++;
     }
 
     fclose(fp);
+}
+
+void init_LJ_matrix() {
+    LJ_matrix = (int *) calloc(n_atoms_solute * n_atoms_solute, sizeof(int));
 }
 
 void init_catypes(const char* filename) {

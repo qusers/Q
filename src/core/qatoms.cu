@@ -16,25 +16,17 @@ void calc_nonbonded_qp_forces() {
     bool bond23, bond14;
     double scaling, Vel, V_a, V_b, dv;
 
+    // printf("n_qatoms = %d n_patoms = %d\n", n_qatoms, n_patoms);
+
     for (int qi = 0; qi < n_qatoms; qi++) {
         for (int pj = 0; pj < n_patoms; pj++) {
             i = q_atoms[qi].a - 1;
             j = p_atoms[pj].a - 1;
 
-            bond23 = false;
-            bond14 = false;
-            for (int k = 0; k < n_ngbrs23; k++) {
-                if (ngbrs23[k].ai == i+1 && ngbrs23[k].aj == j+1) {
-                    // printf("BOND 23: %d, %d", ngbrs23[k].ai, ngbrs23[k].aj);
-                    bond23 = true;
-                }
-            }
-            for (int k = 0; k < n_ngbrs14; k++) {
-                if (ngbrs14[k].ai == i+1 && ngbrs14[k].aj == j+1) {
-                    // printf("BOND 14: %d, %d", ngbrs23[k].ai, ngbrs23[k].aj);
-                    bond14 = true;
-                }
-            }
+            printf("i = %d j = %d\n", i, j);
+
+            bond23 = LJ_matrix[i * n_atoms_solute + j] == 3;
+            bond14 = LJ_matrix[i * n_atoms_solute + j] == 1;
 
             if (bond23) continue;
 
@@ -59,10 +51,12 @@ void calc_nonbonded_qp_forces() {
                 ai_bii = bond14 ? qi_type.Bi_14 : qi_type.Bi;
                 aj_bii = bond14 ? aj_type.bii_1_4 : aj_type.bii_normal;
     
-                Vel = scaling * q_charges[qi][state].q * ccharges[charges[i].code - 1].charge * r;
+                Vel = Coul * scaling * q_charges[qi][state].q * ccharges[charges[j].code - 1].charge * r;
                 V_a = ai_aii * aj_aii / (r6 * r6);
                 V_b = ai_bii * aj_bii / r6;
                 dv = r2 * (-Vel - (12 * V_a - 6 * V_b)) * lambdas[state];
+
+                // printf("Vel = %f V_a = %f V_b = %f\n", Vel, V_a, V_b);
     
                 // Update forces
                 dvelocities[i].x -= dv * da.x;
@@ -78,6 +72,9 @@ void calc_nonbonded_qp_forces() {
             }
         }
     }
+
+    // printf("q_energies[0].Ucoul = %f\n", q_energies[0].Ucoul);
+    // printf("q_energies[0].Uvdw = %f\n", q_energies[0].Uvdw);
 }
 
 void calc_nonbonded_qw_forces() {
@@ -164,7 +161,6 @@ void calc_nonbonded_qw_forces() {
             dvelocities[j+2].z += dvH2 * dH2.z;
         }
     }
-
 }
 
 void calc_nonbonded_qq_forces() {
@@ -188,21 +184,9 @@ void calc_nonbonded_qq_forces() {
                 crg_i = q_charges[qi][state].q;
                 crg_j = q_charges[qj][state].q;
 
-                bond23 = false;
-                bond14 = false;
-                for (int k = 0; k < n_ngbrs23; k++) {
-                    if (ngbrs23[k].ai == ai+1 && ngbrs23[k].aj == aj+1) {
-                        // printf("BOND 23: %d, %d", ngbrs23[k].ai, ngbrs23[k].aj);
-                        bond23 = true;
-                    }
-                }
-                for (int k = 0; k < n_ngbrs14; k++) {
-                    if (ngbrs14[k].ai == ai+1 && ngbrs14[k].aj == aj+1) {
-                        // printf("BOND 14: %d, %d", ngbrs23[k].ai, ngbrs23[k].aj);
-                        bond14 = true;
-                    }
-                }
-    
+                bond23 = LJ_matrix[ai * n_atoms_solute + aj] == 3;
+                bond14 = LJ_matrix[ai * n_atoms_solute + aj] == 1;
+        
                 if (bond23) continue;
     
                 scaling = bond14 ? .5 : 1;
