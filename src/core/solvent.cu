@@ -1,5 +1,6 @@
 #include "system.h"
 #include "solvent.h"
+#include <stdio.h>
 
 /* =============================================
  * == SOLVENT INTERACTIONS
@@ -238,6 +239,8 @@ void calc_nonbonded_ww_forces() {
             j -= 2;
         }
     }
+
+    // printf("solvent: Ecoul = %f Evdw = %f\n", energies.Ucoul, energies.Uvdw);
 }
 
 void calc_nonbonded_pw_forces() {
@@ -289,4 +292,6 @@ void calc_nonbonded_pw_forces() {
             energies.Uvdw += (V_a - V_b);
         }
     }
+
+    // printf("solute-solvent: Ecoul = %f Evdw = %f\n", energies.Ucoul, energies.Uvdw);
 }

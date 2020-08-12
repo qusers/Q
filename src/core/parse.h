@@ -40,6 +40,7 @@ void init_charges(const char *filename);
 void init_ccharges(const char *filename);
 void init_ngbrs14(const char *filename);
 void init_ngbrs23(const char *filename);
+void init_LJ_matrix();
 void init_catypes(const char *filename);
 void init_atypes(const char *filename);
 void init_excluded(const char *filename);

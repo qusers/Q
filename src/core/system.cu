@@ -73,8 +73,7 @@ charge_t* charges;
 ccharge_t* ccharges;
 atype_t* atypes;
 catype_t* catypes;
-ngbr23_t* ngbrs23;
-ngbr14_t* ngbrs14;
+int *LJ_matrix;
 bool *excluded;
 bool *heavy;
 
@@ -384,7 +383,7 @@ void init_pshells() {
     int n_heavy = 0, n_inshell = 0;
 
     for (int i = 0; i < n_atoms; i++) {
-        mass = catypes[atypes[i].a-1].m;
+        mass = catypes[atypes[i].code-1].m;
         if (mass < 4.0) {
             heavy[i] = false;
         }
@@ -806,6 +805,7 @@ void init_variables() {
     init_excluded("excluded.csv");
     init_impropers("impropers.csv");
     init_torsions("torsions.csv");
+    init_LJ_matrix();
     init_ngbrs14("ngbrs14.csv");
     init_ngbrs23("ngbrs23.csv");
     // init_restrseqs();
@@ -897,8 +897,7 @@ void clean_variables() {
     free(heavy);
     free(impropers);
     free(torsions);
-    free(ngbrs14);
-    free(ngbrs23);
+    free(LJ_matrix);
 
     // From FEP file
     free(q_angcouples);

@@ -365,10 +365,10 @@ class Read_Topology(object):
                         self.data['exclusion'] = linesplit[0]
                         self.data['radii'] = linesplit[1]
                         
-                    if 'Solute centre' in line:
+                    if 'Solute center' in line:
                         self.data['solucenter'] = [linesplit[0],linesplit[1],linesplit[2]]
                                         
-                    if 'Solvent centre' in line:
+                    if 'Solvent center' in line:
                         self.data['solvcenter'] = [linesplit[0],linesplit[1],linesplit[2]]
                         
                 if block == 33:
