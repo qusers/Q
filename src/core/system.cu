@@ -210,34 +210,34 @@ void exclude_all_atoms_excluded_definitions() {
     int n_excluded;
     int ai = 0, bi = 0, ii = 0, ti = 0;
 
-    n_excluded = 0;
-    for (int i = 0; i < n_angles; i++) {
-        if (excluded[angles[i].ai - 1]
-            && excluded[angles[i].aj - 1]
-            && excluded[angles[i].ak - 1]) {
-            n_excluded++;
-        }
-        else {
-            angles[ai] = angles[i];
-            ai++;
-        }
-    }
-    printf("original: %d. # excluded angles: %d\n", n_angles, n_excluded);
-    n_angles -= n_excluded;
+    // n_excluded = 0;
+    // for (int i = 0; i < n_angles; i++) {
+    //     if (excluded[angles[i].ai - 1]
+    //         && excluded[angles[i].aj - 1]
+    //         && excluded[angles[i].ak - 1]) {
+    //         n_excluded++;
+    //     }
+    //     else {
+    //         angles[ai] = angles[i];
+    //         ai++;
+    //     }
+    // }
+    // printf("original: %d. # excluded angles: %d\n", n_angles, n_excluded);
+    // n_angles -= n_excluded;
 
-    n_excluded = 0;
-    for (int i = 0; i < n_bonds; i++) {
-        if (excluded[bonds[i].ai - 1]
-            && excluded[bonds[i].aj - 1]) {
-            n_excluded++;
-        }
-        else {
-            bonds[bi] = bonds[i];
-            bi++;
-        }
-    }
-    printf("original: %d. # excluded bonds: %d\n", n_bonds, n_excluded);
-    n_bonds -= n_excluded;
+    // n_excluded = 0;
+    // for (int i = 0; i < n_bonds; i++) {
+    //     if (excluded[bonds[i].ai - 1]
+    //         && excluded[bonds[i].aj - 1]) {
+    //         n_excluded++;
+    //     }
+    //     else {
+    //         bonds[bi] = bonds[i];
+    //         bi++;
+    //     }
+    // }
+    // printf("original: %d. # excluded bonds: %d\n", n_bonds, n_excluded);
+    // n_bonds -= n_excluded;
 
     n_excluded = 0;
     for (int i = 0; i < n_impropers; i++) {
@@ -882,6 +882,8 @@ void init_variables() {
     init_LJ_matrix();
     init_ngbrs14("ngbrs14.csv");
     init_ngbrs23("ngbrs23.csv");
+    init_ngbrs14_long("ngbrs14long.csv");
+    init_ngbrs23_long("ngbrs23long.csv");
     // init_restrseqs();
 
     // From FEP file

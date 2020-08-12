@@ -241,7 +241,7 @@ void calc_nonbonded_ww_forces() {
         }
     }
 
-    // printf("solvent: Ecoul = %f Evdw = %f\n", energies.Ucoul, energies.Uvdw);
+    printf("solvent: Ecoul = %f Evdw = %f\n", energies.Ucoul, energies.Uvdw);
 }
 
 void calc_nonbonded_pw_forces() {
@@ -295,5 +295,5 @@ void calc_nonbonded_pw_forces() {
         }
     }
 
-    // printf("solute-solvent: Ecoul = %f Evdw = %f\n", energies.Ucoul, energies.Uvdw);
+    printf("solute-solvent: Ecoul = %f Evdw = %f\n", energies.Ucoul, energies.Uvdw);
 }

@@ -705,9 +705,10 @@ void init_ngbrs14(const char* filename) {
     while (fgets(line, 1024, fp)) {
         for (int i = 0; i < line_width; i++) {
             if (line[i] == '1') {
-                int i = lineI;
-                int j = (lineI + i + 2) % lines;
-                LJ_matrix[i * n_atoms_solute + j] = 1;
+                int ix = lineI;
+                int jx = (lineI + i + 1) % lines;
+                // if (ix < 100 && jx < 100) printf("i = %d j = %d\n", ix+1, jx+1);
+                LJ_matrix[ix * n_atoms_solute + jx] = 1;
             }
         }
         lineI++;
@@ -748,9 +749,10 @@ void init_ngbrs23(const char* filename) {
     while (fgets(line, 1024, fp)) {
         for (int i = 0; i < line_width; i++) {
             if (line[i] == '1') {
-                int i = lineI;
-                int j = (lineI + i + 2) % lines;
-                LJ_matrix[i * n_atoms_solute + j] = 3;
+                int ix = lineI;
+                int jx = (lineI + i + 1) % lines;
+                // if (ix < 100 && jx < 100) printf("i = %d j = %d\n", ix+1, jx+1);
+                LJ_matrix[ix * n_atoms_solute + jx] = 3;
             }
         }
         lineI++;
@@ -759,8 +761,47 @@ void init_ngbrs23(const char* filename) {
     fclose(fp);
 }
 
+void init_ngbrs14_long(const char* filename) {
+    csvfile_t file = read_csv(filename, 0, base_folder);
+
+    if (file.n_lines < 1) {
+        clean_csv(file);
+        return;
+    }
+
+    int n_ngbrs14_long = atoi(file.buffer[0][0]);
+
+    for (int i = 0; i < n_ngbrs14_long; i++) {
+        int ix = atoi(file.buffer[i+1][0])-1;
+        int jx = atoi(file.buffer[i+1][1])-1;
+        LJ_matrix[ix * n_atoms_solute + jx] = 1;
+    }
+
+    clean_csv(file);
+}
+
+void init_ngbrs23_long(const char* filename) {
+    csvfile_t file = read_csv(filename, 0, base_folder);
+
+    if (file.n_lines < 1) {
+        clean_csv(file);
+        return;
+    }
+
+    int n_ngbrs23_long = atoi(file.buffer[0][0]);
+
+    for (int i = 0; i < n_ngbrs23_long; i++) {
+        int ix = atoi(file.buffer[i+1][0])-1;
+        int jx = atoi(file.buffer[i+1][1])-1;
+        LJ_matrix[ix * n_atoms_solute + jx] = 3;
+    }
+
+    clean_csv(file);
+}
+
 void init_LJ_matrix() {
-    LJ_matrix = (int *) calloc(n_atoms_solute * n_atoms_solute, sizeof(int));
+    LJ_matrix = (int *) malloc(n_atoms_solute * n_atoms_solute * sizeof(int));
+    memset(LJ_matrix, 0, n_atoms_solute * n_atoms_solute * sizeof(int));
 }
 
 void init_catypes(const char* filename) {
