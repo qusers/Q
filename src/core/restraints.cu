@@ -1,5 +1,7 @@
 #include "system.h"
 #include "restraints.h"
+#include "utils.h"
+#include "math.h"
 
 #include <stdio.h>
 
@@ -244,6 +246,7 @@ void calc_pshell_forces() {
     }
 }
 
+// sequence restraints (independent of Q-state)
 void calc_restrseq_forces() {
     double k, mass, totmass;
     coord_t dr;
@@ -340,6 +343,54 @@ void calc_restrseq_forces() {
     }
 }
 
+// extra positional restraints (Q-state dependent)
+void calc_restrpos_forces() {
+    int state, i;
+    coord_t dr;
+    double lambda, ener, x2, y2, z2;
+
+    for (int ir = 0; ir < n_restrspos; ir++) {
+        state = restrspos[ir].ipsi-1;
+        i = restrspos[ir].a-1;
+
+        dr.x = coords[i].x - restrspos[ir].x.x;
+        dr.y = coords[i].y - restrspos[ir].x.y;
+        dr.z = coords[i].z - restrspos[ir].x.z;
+
+        if (restrspos[ir].ipsi != 0) {
+            lambda = lambdas[state];
+        }
+        else {
+            lambda = 1;
+        }
+
+        x2 = pow(dr.x, 2);
+        y2 = pow(dr.y, 2);
+        z2 = pow(dr.z, 2);
+
+        ener = .5 * restrspos[ir].k.x * x2
+            + .5 * restrspos[ir].k.y * y2
+            + .5 * restrspos[ir].k.z * z2;
+
+        dvelocities[i].x += restrspos[ir].k.x * dr.x * lambda;
+        dvelocities[i].y += restrspos[ir].k.y * dr.y * lambda;
+        dvelocities[i].z += restrspos[ir].k.z * dr.z * lambda;
+
+        if (restrspos[ir].ipsi == 0) {
+            for (int k = 0; k < n_lambdas; k++) {
+                q_energies[k].Urestr += ener;
+            }
+            if (n_lambdas == 0) {
+                energies.Upres += ener;
+            }
+        }
+        else {
+            q_energies[state].Urestr += ener;
+        }
+    }
+}
+
+// atom-atom distance restraints (Q-state dependent)
 void calc_restrdis_forces() {
     int state, i, j;
     coord_t dr;
@@ -393,6 +444,127 @@ void calc_restrdis_forces() {
         }
         else {
             q_energies[state].Urestr += ener;
+        }
+    }
+}
+
+// atom-atom-atom angle restraints (Q-state dependent)
+void calc_restrang_forces() {
+    int state, i, j, k;
+    coord_t dr, dr2, di, dk;
+    double lambda, r2ij, r2jk, rij, rjk, cos_th, th;
+    double dth, dv, ener, f1;
+
+    for (int ir = 0; ir < n_restrangs; ir++) {
+        state = restrangs[ir].ipsi-1;
+        i = restrangs[ir].ai-1;
+        j = restrangs[ir].aj-1;
+        k = restrangs[ir].ak-1;
+
+        // distance from atom i to atom j
+        dr.x = coords[i].x - coords[j].x;
+        dr.y = coords[i].y - coords[j].y;
+        dr.z = coords[i].z - coords[j].z;
+
+        // distance from atom k to atom j
+        dr.x = coords[k].x - coords[j].x;
+        dr.y = coords[k].y - coords[j].y;
+        dr.z = coords[k].z - coords[j].z;
+
+        if (restrangs[ir].ipsi != 0) {
+            lambda = lambdas[state];
+        }
+        else {
+            lambda = 1;
+        }
+
+        r2ij = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
+        r2jk = pow(dr2.x, 2) + pow(dr2.y, 2) + pow(dr2.z, 2);
+
+        rij = sqrt(r2ij);
+        rjk = sqrt(r2jk);
+
+        cos_th = dr.x * dr2.x + dr.y * dr2.y + dr.z * dr2.z;
+        cos_th /= rij * rjk;
+
+        if (cos_th > 1) cos_th = 1;
+        if (cos_th < -1) cos_th = -1;
+
+        th = acos(cos_th);
+        dth = th - to_radians(restrangs[ir].ang);
+
+        ener = .5 * restrangs[ir].k * pow(dth, 2);
+        dv = lambda * restrangs[ir].k * dth;
+
+        f1 = sin(th);
+        if (abs(f1) < 1E-12) {
+            f1 = -1E-12;
+        }
+        else {
+            f1 = -1 / f1;
+        }
+
+        di.x = f1 * (dr2.x / (rij * rjk) - cos_th * dr.x / r2ij );
+        di.y = f1 * (dr2.y / (rij * rjk) - cos_th * dr.y / r2ij );
+        di.z = f1 * (dr2.z / (rij * rjk) - cos_th * dr.z / r2ij );
+        dk.x = f1 * (dr.x / (rij * rjk) - cos_th * dr2.x / r2jk );
+        dk.y = f1 * (dr.y / (rij * rjk) - cos_th * dr2.y / r2jk );
+        dk.z = f1 * (dr.z / (rij * rjk) - cos_th * dr2.z / r2jk );
+
+        dvelocities[i].x += dv * di.x;
+        dvelocities[i].y += dv * di.y;
+        dvelocities[i].z += dv * di.z;
+        dvelocities[k].x += dv * dk.x;
+        dvelocities[k].y += dv * dk.y;
+        dvelocities[k].z += dv * dk.z;
+        dvelocities[j].x -= dv * (di.x + dk.x);
+        dvelocities[j].y -= dv * (di.y + dk.y);
+        dvelocities[j].z -= dv * (di.z + dk.z);
+
+        if (restrdists[ir].ipsi == 0) {
+            for (int k = 0; k < n_lambdas; k++) {
+                q_energies[k].Urestr += ener;
+            }
+            if (n_lambdas == 0) {
+                energies.Upres += ener;
+            }
+        }
+        else {
+            q_energies[state].Urestr += ener;
+        }
+    }
+}
+
+// extra half-harmonic wall restraints
+void calc_restrwall_forces() {
+    double k, b, db, ener, dv, fexp;
+    coord_t dr;
+
+    for (int ir = 0; ir < n_restrwalls; ir++) {
+        for (int i = restrwalls[ir].ai-1; i < restrwalls[ir].aj-1; i++) {
+            if (heavy[i] || restrwalls[ir].ih) {
+                dr.x = coords[i].x - topo.solvent_center.x;
+                dr.y = coords[i].y - topo.solvent_center.y;
+                dr.x = coords[i].x - topo.solvent_center.x;
+
+                b = sqrt(pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2));
+                db = b - restrwalls[ir].d;
+
+                if (db > 0) {
+                    ener = .5 * k * pow(db, 2) - restrwalls[ir].dMorse;
+                    dv = k * db / b;
+                }
+                else {
+                    fexp = exp(restrwalls[ir].aMorse * db);
+                    ener = restrwalls[ir].dMorse * (fexp * fexp - 2 * fexp);
+                    dv = -2 * restrwalls[ir].dMorse * restrwalls[ir].aMorse * (fexp - fexp*fexp) / b;
+                }
+                energies.Upres += ener;
+
+                dvelocities[i].x += dv * dr.x;
+                dvelocities[i].y += dv * dr.y;
+                dvelocities[i].z += dv * dr.z;
+            }
         }
     }
 }
