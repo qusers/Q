@@ -237,7 +237,7 @@ class Write_Qfepfile():
                         
                 if cnt > 8:
                     ener_root = line[0].split('/')[-1].split('.')[0]
-                    fepout = '{}/dualtop/output/energies.csv'.format(ener_root)
+                    fepout = '{}/dualtop/output/energies.csv,{}/{}.json'.format(ener_root,self.wd,ener_root)
                     self.data['energy_files'].append(fepout) 
                     
     def write_qfep(self):

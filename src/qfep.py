@@ -26,7 +26,8 @@ class Create_Environment(object):
     """
         Creates the workdirectory environment.
     """
-    def __init__(self,wd):        
+    def __init__(self,wd):
+        print(wd)
         if not os.path.exists(wd):
             os.mkdir(wd)
             
@@ -45,7 +46,6 @@ class Get_Energy(object):
     def __init__(self,ener,wd,states):
         self.wd = wd
         for energyfile in ener:
-            print(energyfile)
             infile  = energyfile[0]
             outfile = energyfile[1]
             read_ener  = ENERGY.Read_Energy(infile,states)
