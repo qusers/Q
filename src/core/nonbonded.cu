@@ -88,5 +88,5 @@
         // printf("energies.Ucoul = %f\n", energies.Ucoul);
         // printf("energies.Uvdw = %f\n", energies.Uvdw);
     }
-    printf("solute: Ecoul = %f Evdw = %f\n", energies.Ucoul, energies.Uvdw);
+    // printf("solute: Ecoul = %f Evdw = %f\n", energies.Ucoul, energies.Uvdw);
 }

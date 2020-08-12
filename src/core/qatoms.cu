@@ -23,7 +23,7 @@ void calc_nonbonded_qp_forces() {
             i = q_atoms[qi].a - 1;
             j = p_atoms[pj].a - 1;
 
-            printf("i = %d j = %d\n", i, j);
+            // printf("i = %d j = %d\n", i, j);
 
             bond23 = LJ_matrix[i * n_atoms_solute + j] == 3;
             bond14 = LJ_matrix[i * n_atoms_solute + j] == 1;
