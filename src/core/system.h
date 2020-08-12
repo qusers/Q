@@ -159,8 +159,7 @@ struct improper_t {
 struct cimproper_t {
     int code;
     double k;
-    double n;
-    double d;
+    double phi0;
 };
 
 struct charge_t {
@@ -189,16 +188,6 @@ struct catype_t {
     double bii_1_4;
 };
 
-struct ngbr23_t {
-    int ai;
-    int aj;
-};
-
-struct ngbr14_t {
-    int ai;
-    int aj;
-};
-
 struct topo_t {
     int solvent_type;
     double exclusion_radius;
@@ -223,8 +212,6 @@ extern int n_cimpropers;
 extern int n_ctorsions;
 extern int n_impropers;
 extern int n_impropers_solute;
-extern int n_ngbrs14;
-extern int n_ngbrs23;
 extern int n_torsions;
 extern int n_torsions_solute;
 
@@ -240,8 +227,7 @@ extern cimproper_t *cimpropers;
 extern ctorsion_t *ctorsions;
 extern coord_t *coords_top;
 extern improper_t *impropers;
-extern ngbr14_t *ngbrs14;
-extern ngbr23_t *ngbrs23;
+extern int *LJ_matrix;
 extern torsion_t *torsions;
 extern bool *excluded;
 extern bool *heavy;
@@ -306,8 +292,8 @@ struct q_charge_t {
 };
 
 struct q_cimproper_t {
-    double kth;
-    double th0;
+    double k;
+    double phi0;
 };
 
 struct q_ctorsion_t {
@@ -529,6 +515,7 @@ struct energy_t {
     double Ubond;
     double Uangle;
     double Utor;
+    double Uimp;
     double Ucoul;
     double Uvdw;
     double Ukin;

@@ -1,0 +1,6 @@
+sed -i 's/shake_solvent             on/shake_solvent             off/' */FEP_*-ALA/inputfiles/*.inp
+sed -i 's/lrf                       on/lrf                       off/' */FEP_*-ALA/inputfiles/*.inp
+sed -i 's/solute_solvent            10/solute_solvent            99/' */FEP_*-ALA/inputfiles/*.inp
+sed -i 's/solute_solute             10/solute_solute             99/' */FEP_*-ALA/inputfiles/*.inp
+sed -i 's/solvent_solvent           10/solvent_solvent           99/' */FEP_*-ALA/inputfiles/*.inp
+sed -i 's/FEP_VAR/FEP1.fep/' */FEP_*-ALA/inputfiles/*.inp

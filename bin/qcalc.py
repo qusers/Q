@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../s
 import qcalc
 
 class Startup(object):
-    def __init__(self,top,wd,itrj,ilib,wtraj,calc):
+    def __init__(self,top,wd,itrj,ilib,otrj,calc):
         data = { 'top'  : top,
                  'wd'   : wd,
                  'itrj' : itrj,

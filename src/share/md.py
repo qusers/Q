@@ -156,7 +156,7 @@ class Read_MD(object):
                         self.data['seqrest'] = [line.split()]
 
                     else:
-                        sself.data['seqrest'].append((line.split()))
+                        self.data['seqrest'].append((line.split()))
 
                 if block == 10:
                     if len(self.data['posrest']) == 0:
@@ -187,9 +187,9 @@ class Write_MD(object):
         
         """
         self.wd = wd
-        lists = ['lambdas']
+        lists = ['lambdas','seqrest','distrest']
         
-        j = 25
+        j = 27
         
         # Get length of lists (lambdas, restraints)
         for l in lists:
@@ -230,10 +230,28 @@ class Write_MD(object):
             if self.data['lambdas'] != None:
                 outfile.write('{};lambdas\n'.format(len(self.data['lambdas'])))
                 for l in self.data['lambdas']:
-                    outfile.write('{}\n'                .format(l))
+                    outfile.write('{}\n'.format(l))
                     
             else:
                 outfile.write('0;lambdas\n')
+
+            # possible to have multiple restraints, need to loop
+            if self.data['seqrest'] != None:
+                outfile.write('{};{}\n'.format(len(self.data['seqrest']),'seqrest'))
+                for r in self.data['seqrest']:
+                    outfile.write('{};{};{};{};{}\n'.format(*r))
+
+            else:
+                outfile.write('0;{}\n'.format('seqrest'))    
+                
+            # possible to have multiple restraints, need to loop
+            if self.data['distrest'] != None:
+                outfile.write('{};{}\n'.format(len(self.data['distrest']),'distrest'))
+                for r in self.data['distrest']:
+                    outfile.write('{};{};{};{};{};{}\n'.format(*r))
+
+            else:
+                outfile.write('0;{}\n'.format('distrest'))    
 
     def JSON(self,out_json):
         """

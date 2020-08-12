@@ -7,12 +7,13 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../s
 import qdyn
 
 class Startup(object):
-    def __init__(self,top,fep,md,re,wd):
-        data = {'top'   :   top,
-                'fep'   :   fep,
-                'md'    :   md,
-                're'    :   re,
-                'wd'    :   wd
+    def __init__(self,top,fep,md,re,wd,verbose):
+        data = {'top'       :   top,
+                'fep'       :   fep,
+                'md'        :   md,
+                're'        :   re,
+                'wd'        :   wd,
+                'verbose'   :   verbose
                }
         START = qdyn.Init(data)
 
@@ -50,13 +51,19 @@ if __name__ == "__main__":
                         dest = "re",
                         default = None,
                         required = False,                                                
-                        help = "Restart file: TO DO")
-
+                        help = "Restart file")
          
     parser.add_argument('-d', '--workdir',
                         dest = "workdir",
                         default = None,
                         required = True,                                                
+                        help = "Working directory")
+         
+    parser.add_argument('--verbose',
+                        dest = "verbose",
+                        default = False,
+                        required = False,                                                
+                        action = 'store_true',
                         help = "Working directory")
 
     args = parser.parse_args()
@@ -66,4 +73,5 @@ if __name__ == "__main__":
             md = args.md,
             re = args.re,
             wd = args.workdir,
+            verbose = args.verbose,
            )

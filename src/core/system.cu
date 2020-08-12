@@ -73,8 +73,7 @@ charge_t* charges;
 ccharge_t* ccharges;
 atype_t* atypes;
 catype_t* catypes;
-ngbr23_t* ngbrs23;
-ngbr14_t* ngbrs14;
+int *LJ_matrix;
 bool *excluded;
 bool *heavy;
 
@@ -131,7 +130,7 @@ q_softcore_t **q_softcores;
 q_torsion_t **q_torsions;
 
 // Remove bonds, angles, torsions and impropers which are excluded or changed in the FEP file
-void shrink_topology() {
+void exclude_qatom_definitions() {
     int excluded;
     int ai = 0, bi = 0, ii = 0, ti = 0;
     int qai = 0, qbi = 0, qii = 0, qti = 0;
@@ -204,6 +203,78 @@ void shrink_topology() {
     }
 
     // TODO: add exclusion pairs
+
+}
+
+void exclude_all_atoms_excluded_definitions() {
+    int n_excluded;
+    int ai = 0, bi = 0, ii = 0, ti = 0;
+
+    // n_excluded = 0;
+    // for (int i = 0; i < n_angles; i++) {
+    //     if (excluded[angles[i].ai - 1]
+    //         && excluded[angles[i].aj - 1]
+    //         && excluded[angles[i].ak - 1]) {
+    //         n_excluded++;
+    //     }
+    //     else {
+    //         angles[ai] = angles[i];
+    //         ai++;
+    //     }
+    // }
+    // printf("original: %d. # excluded angles: %d\n", n_angles, n_excluded);
+    // n_angles -= n_excluded;
+
+    // n_excluded = 0;
+    // for (int i = 0; i < n_bonds; i++) {
+    //     if (excluded[bonds[i].ai - 1]
+    //         && excluded[bonds[i].aj - 1]) {
+    //         n_excluded++;
+    //     }
+    //     else {
+    //         bonds[bi] = bonds[i];
+    //         bi++;
+    //     }
+    // }
+    // printf("original: %d. # excluded bonds: %d\n", n_bonds, n_excluded);
+    // n_bonds -= n_excluded;
+
+    n_excluded = 0;
+    for (int i = 0; i < n_impropers; i++) {
+        if (excluded[impropers[i].ai - 1]
+            && excluded[impropers[i].aj - 1]
+            && excluded[impropers[i].ak - 1]
+            && excluded[impropers[i].al - 1]) {
+            n_excluded++;
+        }
+        else {
+            impropers[ii] = impropers[i];
+            ii++;
+        }
+    }
+    printf("original: %d. # excluded impropers: %d\n", n_impropers, n_excluded);
+    n_impropers -= n_excluded;
+
+    n_excluded = 0;
+    for (int i = 0; i < n_torsions; i++) {
+        if (excluded[torsions[i].ai - 1]
+            && excluded[torsions[i].aj - 1]
+            && excluded[torsions[i].ak - 1]
+            && excluded[torsions[i].al - 1]) {
+            n_excluded++;
+        }
+        else {
+            torsions[ti] = torsions[i];
+            ti++;
+        }
+    }
+    printf("original: %d. # excluded torsions: %d\n", n_torsions, n_excluded);
+    n_torsions -= n_excluded;
+}
+
+void shrink_topology() {
+    exclude_qatom_definitions();
+    exclude_all_atoms_excluded_definitions();
 }
 
 /* =============================================
@@ -358,7 +429,7 @@ void init_wshells() {
             , wshells[2].router, wshells[2].router - wshells[2].dr
         );
 
-    n_max_inshell *= 1.5; // Make largest a little bigger just in case
+    n_max_inshell = n_waters; // Make largest a little bigger just in case
 
     // Initialize arrays needed for bookkeeping
     theta = (double*) malloc(n_waters * sizeof(double));
@@ -384,7 +455,7 @@ void init_pshells() {
     int n_heavy = 0, n_inshell = 0;
 
     for (int i = 0; i < n_atoms; i++) {
-        mass = catypes[atypes[i].a-1].m;
+        mass = catypes[atypes[i].code-1].m;
         if (mass < 4.0) {
             heavy[i] = false;
         }
@@ -610,6 +681,7 @@ void write_energies(int iteration) {
     fprintf(fp, "Ubond = %f\n", energies.Ubond);
     fprintf(fp, "Uangle = %f\n", energies.Uangle);
     fprintf(fp, "Utor = %f\n", energies.Utor);
+    fprintf(fp, "Uimp = %f\n", energies.Uimp);
     fprintf(fp, "Uradx = %f\n", energies.Uradx);
     fprintf(fp, "Upolx = %f\n", energies.Upolx);
     fprintf(fp, "Ushell = %f\n", energies.Ushell);
@@ -648,6 +720,16 @@ void calc_integration_step(int iteration) {
     }
     energies.Ucoul = 0;
     energies.Uvdw = 0;
+    energies.Uangle = 0;
+    energies.Ubond = 0;
+    energies.Utor = 0;
+    energies.Uimp = 0;
+    energies.Upres = 0;
+    energies.Uradx = 0;
+    energies.Upolx = 0;
+    energies.Ushell = 0;
+    energies.Ufix = 0;
+
     for (int state = 0; state < n_lambdas; state++) {
         q_energies[state].Ucoul = 0;
         q_energies[state].Uvdw = 0;
@@ -664,6 +746,7 @@ void calc_integration_step(int iteration) {
     calc_angle_forces();
     calc_bond_forces();
     calc_torsion_forces();
+    calc_improper2_forces();
 
     clock_t end_bonded = clock();
 
@@ -728,7 +811,7 @@ void calc_integration_step(int iteration) {
 
     // Update totals
     energies.Urestr = energies.Uradx + energies.Upolx + energies.Ushell + energies.Ufix + energies.Upres;
-    energies.Upot = energies.Uangle + energies.Ubond + energies.Utor + energies.Ucoul + energies.Uvdw + energies.Urestr;
+    energies.Upot = energies.Uangle + energies.Ubond + energies.Utor + energies.Uimp + energies.Ucoul + energies.Uvdw + energies.Urestr;
     energies.Utot = energies.Upot + energies.Ukin;  
 
     for (int state = 0; state < n_lambdas; state++) {
@@ -747,6 +830,7 @@ void calc_integration_step(int iteration) {
     printf("Ubond = %f\n", energies.Ubond);
     printf("Uangle = %f\n", energies.Uangle);
     printf("Utor = %f\n", energies.Utor);
+    printf("Uimp = %f\n", energies.Uimp);
     printf("Uradx = %f\n", energies.Uradx);
     printf("Upolx = %f\n", energies.Upolx);
     printf("Ushell = %f\n", energies.Ushell);
@@ -759,11 +843,13 @@ void calc_integration_step(int iteration) {
     printf("Upot = %f\n", energies.Upot);
     printf("Utot = %f\n", energies.Utot);
 
+    clock_t end = clock();
 
     // Profiler info
 #ifdef __PROFILING__
     printf("Elapsed time for bonded forces: %f\n", (end_bonded-start) / (double)CLOCKS_PER_SEC );
     printf("Elapsed time for non-bonded forces: %f\n", (end_nonbonded-end_bonded) / (double)CLOCKS_PER_SEC);
+    printf("Elapsed time for entire integration step: %f\n", (end-start) / (double)CLOCKS_PER_SEC);
 #endif /* __PROFILING__ */
 
     // Append output files
@@ -796,8 +882,11 @@ void init_variables() {
     init_excluded("excluded.csv");
     init_impropers("impropers.csv");
     init_torsions("torsions.csv");
+    init_LJ_matrix();
     init_ngbrs14("ngbrs14.csv");
     init_ngbrs23("ngbrs23.csv");
+    init_ngbrs14_long("ngbrs14long.csv");
+    init_ngbrs23_long("ngbrs23long.csv");
     // init_restrseqs();
 
     // From FEP file
@@ -836,8 +925,8 @@ void init_variables() {
     init_xcoords();
 
     // From input file
-    // init_icoords("i_coords.csv");
-    // init_ivelocities("i_velocities.csv");    
+    init_icoords("i_coords.csv");
+    init_ivelocities("i_velocities.csv");    
 
     // Init waters, boundary restrains
     n_waters = (n_atoms - n_atoms_solute) / 3;
@@ -887,8 +976,7 @@ void clean_variables() {
     free(heavy);
     free(impropers);
     free(torsions);
-    free(ngbrs14);
-    free(ngbrs23);
+    free(LJ_matrix);
 
     // From FEP file
     free(q_angcouples);

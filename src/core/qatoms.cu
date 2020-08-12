@@ -4,6 +4,7 @@
 #include "system.h"
 #include "utils.h"
 #include <math.h>
+#include <stdio.h>
 
 void calc_nonbonded_qp_forces() {
     int i, j;
@@ -15,27 +16,20 @@ void calc_nonbonded_qp_forces() {
     bool bond23, bond14;
     double scaling, Vel, V_a, V_b, dv;
 
+    // printf("n_qatoms = %d n_patoms = %d\n", n_qatoms, n_patoms);
+
     for (int qi = 0; qi < n_qatoms; qi++) {
         for (int pj = 0; pj < n_patoms; pj++) {
             i = q_atoms[qi].a - 1;
             j = p_atoms[pj].a - 1;
 
-            bond23 = false;
-            bond14 = false;
-            for (int k = 0; k < n_ngbrs23; k++) {
-                if (ngbrs23[k].ai == i+1 && ngbrs23[k].aj == j+1) {
-                    // printf("BOND 23: %d, %d", ngbrs23[k].ai, ngbrs23[k].aj);
-                    bond23 = true;
-                }
-            }
-            for (int k = 0; k < n_ngbrs14; k++) {
-                if (ngbrs14[k].ai == i+1 && ngbrs14[k].aj == j+1) {
-                    // printf("BOND 14: %d, %d", ngbrs23[k].ai, ngbrs23[k].aj);
-                    bond14 = true;
-                }
-            }
+            // printf("i = %d j = %d\n", i, j);
+
+            bond23 = LJ_matrix[i * n_atoms_solute + j] == 3;
+            bond14 = LJ_matrix[i * n_atoms_solute + j] == 1;
 
             if (bond23) continue;
+            if (excluded[i] || excluded[j]) continue;
 
             scaling = bond14 ? .5 : 1;
 
@@ -58,10 +52,12 @@ void calc_nonbonded_qp_forces() {
                 ai_bii = bond14 ? qi_type.Bi_14 : qi_type.Bi;
                 aj_bii = bond14 ? aj_type.bii_1_4 : aj_type.bii_normal;
     
-                Vel = scaling * q_charges[qi][state].q * ccharges[charges[i].code - 1].charge * r;
+                Vel = Coul * scaling * q_charges[qi][state].q * ccharges[charges[j].code - 1].charge * r;
                 V_a = ai_aii * aj_aii / (r6 * r6);
                 V_b = ai_bii * aj_bii / r6;
                 dv = r2 * (-Vel - (12 * V_a - 6 * V_b)) * lambdas[state];
+
+                // printf("Vel = %f V_a = %f V_b = %f\n", Vel, V_a, V_b);
     
                 // Update forces
                 dvelocities[i].x -= dv * da.x;
@@ -77,6 +73,9 @@ void calc_nonbonded_qp_forces() {
             }
         }
     }
+
+    // printf("q_energies[0].Ucoul = %f\n", q_energies[0].Ucoul);
+    // printf("q_energies[0].Uvdw = %f\n", q_energies[0].Uvdw);
 }
 
 void calc_nonbonded_qw_forces() {
@@ -101,6 +100,7 @@ void calc_nonbonded_qw_forces() {
     for (int j = n_atoms_solute; j < n_atoms; j+= 3) {
         for (int qi = 0; qi < n_qatoms; qi++) {
             i = q_atoms[qi].a - 1;
+            if (excluded[i] || excluded[j]) continue;
             dO.x = coords[j].x - coords[i].x;
             dO.y = coords[j].y - coords[i].y;
             dO.z = coords[j].z - coords[i].z;
@@ -111,10 +111,10 @@ void calc_nonbonded_qw_forces() {
             dH2.y = coords[j+2].y - coords[i].y;
             dH2.z = coords[j+2].z - coords[i].z;
             r2O = pow(dO.x, 2) + pow(dO.y, 2) + pow(dO.z, 2);
-            rH1 = 1 / (pow(dH1.x, 2) + pow(dH1.y, 2) + pow(dH1.z, 2));
-            rH2 = 1 / (pow(dO.x, 2) + pow(dO.y, 2) + pow(dO.z, 2));
+            rH1 = sqrt(1.0 / (pow(dH1.x, 2) + pow(dH1.y, 2) + pow(dH1.z, 2)));
+            rH2 = sqrt(1.0 / (pow(dH2.x, 2) + pow(dH2.y, 2) + pow(dH2.z, 2)));
             r6O = r2O * r2O * r2O;
-            r2O = 1 / r2O;
+            r2O = 1.0 / r2O;
             rO = sqrt(r2O);
             r2H1 = rH1 * rH1;
             r2H2 = rH2 * rH2;
@@ -133,9 +133,9 @@ void calc_nonbonded_qw_forces() {
                 V_a = ai_aii * A_O / (r6O * r6O);
                 V_b = ai_bii * B_O / (r6O);
 
-                VelO = crg_ow * q_charges[qi][state].q * rO;
-                VelH1 = crg_hw * q_charges[qi][state].q * rH1;
-                VelH2 = crg_hw * q_charges[qi][state].q * rH2;
+                VelO = Coul * crg_ow * q_charges[qi][state].q * rO;
+                VelH1 = Coul * crg_hw * q_charges[qi][state].q * rH1;
+                VelH2 = Coul * crg_hw * q_charges[qi][state].q * rH2;
                 dvO += r2O * (-VelO - (12 * V_a - 6 * V_b)) * lambdas[state];
                 dvH1 -= r2H1 * VelH1 * lambdas[state];
                 dvH2 -= r2H2 * VelH2 * lambdas[state];
@@ -186,22 +186,11 @@ void calc_nonbonded_qq_forces() {
                 crg_i = q_charges[qi][state].q;
                 crg_j = q_charges[qj][state].q;
 
-                bond23 = false;
-                bond14 = false;
-                for (int k = 0; k < n_ngbrs23; k++) {
-                    if (ngbrs23[k].ai == ai+1 && ngbrs23[k].aj == aj+1) {
-                        // printf("BOND 23: %d, %d", ngbrs23[k].ai, ngbrs23[k].aj);
-                        bond23 = true;
-                    }
-                }
-                for (int k = 0; k < n_ngbrs14; k++) {
-                    if (ngbrs14[k].ai == ai+1 && ngbrs14[k].aj == aj+1) {
-                        // printf("BOND 14: %d, %d", ngbrs23[k].ai, ngbrs23[k].aj);
-                        bond14 = true;
-                    }
-                }
-    
+                bond23 = LJ_matrix[ai * n_atoms_solute + aj] == 3;
+                bond14 = LJ_matrix[ai * n_atoms_solute + aj] == 1;
+        
                 if (bond23) continue;
+                if (excluded[ai] || excluded[aj]) continue;
     
                 scaling = bond14 ? .5 : 1;
 
