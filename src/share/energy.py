@@ -18,6 +18,7 @@ class Energy(object):
                       'energies'    : { 'Ubond':[],
                                         'Uangle':[],
                                         'Utor':[],
+                                        'Uimp':[],                                                                            
                                         'Uradx':[],
                                         'Upolx':[],
                                         'Ushell':[],
@@ -43,6 +44,7 @@ class Read_Energy(object):
             self.data['q_total'].append([])
         
     def QDYN(self):
+        print(self.ener)
         with open (self.ener) as infile:
             block = -1
             cnt = -1
