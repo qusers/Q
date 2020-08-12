@@ -245,7 +245,7 @@ class Read_Topology(object):
                     
                 if block == 4:
                     line = line.split()
-                    self.data['cbonds'][line[0]] = [line[1],line[2]]
+                    self.data['cbonds'][int(line[0])] = [line[1],line[2]]
                     
                 if block == 5:
                     line = line.split()
@@ -253,7 +253,7 @@ class Read_Topology(object):
                     
                 if block == 6:
                     line = line.split()
-                    self.data['cangles'][line[0]] = [line[1],line[2]]
+                    self.data['cangles'][int(line[0])] = [line[1],line[2]]
                     
                 if block == 7:
                     line = line.split()
@@ -261,7 +261,7 @@ class Read_Topology(object):
                     
                 if block == 8:
                     line = line.split()
-                    self.data['ctorsions'][line[0]] = [line[1],line[2],line[3],line[4]]
+                    self.data['ctorsions'][int(line[0])] = [line[1],line[2],line[3],line[4]]
                     
                 if block == 9:
                     line = line.split()
@@ -269,7 +269,7 @@ class Read_Topology(object):
                     
                 if block == 10:
                     line = line.split()
-                    self.data['cimpropers'][line[0]] = [line[1],line[2]]
+                    self.data['cimpropers'][int(line[0])] = [line[1],line[2]]
                     
                 if block == 11:
                     line = line.split()
