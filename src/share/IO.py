@@ -5,7 +5,8 @@ import os
 import stat
 import numpy as np
 import sys
-
+import shutil
+import time
 
 def pdb_parse_in(line, include=('ATOM','HETATM')):
     """
@@ -252,7 +253,7 @@ def read_lib(libfiles):
 def split_list(lst,n):
     return [lst[i:i + n] for i in range(0, len(lst), n)]
 
-def run_command(executable, options):
+def run_command(executable, options, runtime=False):
     """
     Takes two variables, the executable location and its options (as string), and 
     runs the program.
@@ -262,6 +263,25 @@ def run_command(executable, options):
     args = shlex.split(executable + options)
     print(' '.join(args))
     
+    time1 = time.time()
     out = check_output(args)
+    time2 = time.time()
+    
+    if runtime == True:
+        print('runtime {:.3f} s'.format((time2-time1)*1000000.0))
 
     return out
+
+def create_dir(d, overwrite):
+    if not os.path.exists(d):
+        os.mkdir(d)
+        
+    elif overwrite == False:
+        return
+
+    else:
+        if overwrite == True:
+            print("Overwriting folder {}".format(d))
+        
+        shutil.rmtree(d)
+        os.mkdir(d)

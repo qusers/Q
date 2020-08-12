@@ -1,0 +1,78 @@
+[MD]
+steps                     1
+stepsize                  0.1
+temperature               1
+bath_coupling             0.2
+random_seed               112
+initial_temperature       1
+shake_solvent             on
+shake_hydrogens           off
+shake_solute              off
+lrf                       on
+
+[cut-offs]
+solute_solvent            10
+solute_solute             10
+solvent_solvent           10
+q_atom                    99
+lrf                       99
+
+[sphere]
+shell_force               10.0
+shell_radius              25
+
+[solvent]
+radial_force              60.0
+polarisation              on
+polarisation_force        20.0
+
+[intervals]
+output                    5
+trajectory                100
+non_bond                  25
+
+[files]
+topology                  dualtop.top
+trajectory                eq1.dcd
+final                     eq1.re
+fep                       FEP1.fep
+
+[trajectory_atoms]
+not excluded
+
+[lambdas]
+1.000 0.000
+
+[sequence_restraints]
+4799   4907   10.0 0  0
+
+[distance_restraints]
+4799 4852 0.0 0.2 0.5 0
+4800 4853 0.0 0.2 0.5 0
+4801 4854 0.0 0.2 0.5 0
+4802 4855 0.0 0.2 0.5 0
+4803 4856 0.0 0.2 0.5 0
+4804 4857 0.0 0.2 0.5 0
+4805 4858 0.0 0.2 0.5 0
+4806 4859 0.0 0.2 0.5 0
+4807 4860 0.0 0.2 0.5 0
+4808 4861 0.0 0.2 0.5 0
+4809 4862 0.0 0.2 0.5 0
+4810 4863 0.0 0.2 0.5 0
+4811 4864 0.0 0.2 0.5 0
+4812 4865 0.0 0.2 0.5 0
+4813 4866 0.0 0.2 0.5 0
+4814 4867 0.0 0.2 0.5 0
+4815 4868 0.0 0.2 0.5 0
+4816 4869 0.0 0.2 0.5 0
+4817 4870 0.0 0.2 0.5 0
+4818 4871 0.0 0.2 0.5 0
+4819 4872 0.0 0.2 0.5 0
+4820 4873 0.0 0.2 0.5 0
+4821 4874 0.0 0.2 0.5 0
+4822 4875 0.0 0.2 0.5 0
+4823 4876 0.0 0.2 0.5 0
+4824 4877 0.0 0.2 0.5 0
+4825 4878 0.0 0.2 0.5 0
+4826 4879 0.0 0.2 0.5 0
+4827 4881 0.0 0.2 0.5 0

@@ -1,5 +1,6 @@
 #include "system.h"
 #include "solvent.h"
+#include <stdio.h>
 
 #include <stdio.h>
 #include <time.h>
@@ -20,9 +21,6 @@ void calc_nonbonded_ww_forces() {
     coord_t dOX, dH1X, dH2X;
     double Vel, V_a, V_b, dv;
 
-    energies.Ucoul = 0;
-    energies.Uvdw = 0;
-
     // Initialize water constants
     if (A_OO == 0) {
         catype_t catype_ow;    // Atom type of first O, H atom
@@ -41,6 +39,7 @@ void calc_nonbonded_ww_forces() {
 
     for (int i = n_atoms_solute; i < n_atoms; i+=3) {
         for (int j = i+3; j < n_atoms; j+=3) {
+            if (excluded[i] || excluded[j]) continue;
             // --- O - (O,H1,H2) ---
             dOX.x = coords[j].x - coords[i].x;
             dOX.y = coords[j].y - coords[i].y;
@@ -249,6 +248,8 @@ void calc_nonbonded_ww_forces() {
             j -= 2;
         }
     }
+
+    // printf("solvent: Ecoul = %f Evdw = %f\n", energies.Ucoul, energies.Uvdw);
 }
 
 void calc_nonbonded_ww_forces_host() {
@@ -692,6 +693,7 @@ void calc_nonbonded_pw_forces() {
     for (int pi = 0; pi < n_patoms; pi++) {
         for (int j = n_atoms_solute; j < n_atoms; j++) {
             i = p_atoms[pi].a-1;
+            if (excluded[i] || excluded[j]) continue;
             qi = ccharges[charges[i].code - 1].charge;
             qj = ccharges[charges[j].code - 1].charge;
 

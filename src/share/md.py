@@ -156,7 +156,7 @@ class Read_MD(object):
                         self.data['seqrest'] = [line.split()]
 
                     else:
-                        sself.data['seqrest'].append((line.split()))
+                        self.data['seqrest'].append((line.split()))
 
                 if block == 10:
                     if len(self.data['posrest']) == 0:

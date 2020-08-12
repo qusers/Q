@@ -228,32 +228,32 @@ void init_md(const char *filename) {
         k++;
     }
 
-    // // [position_restraints]
-    // n_restrspos = atoi(file.buffer[k][0]);
-    // printf("reading in %d position restraints\n", n_restrspos);
-    // restrspos = (restrpos_t*) malloc(n_restrspos * sizeof(restrpos_t));
-    // k++;
-    // for (int i = 0; i < n_restrspos; i++) {
-    //     restrpos_t restrpos;
+    // [position_restraints]
+    n_restrspos = atoi(file.buffer[k][0]);
+    printf("reading in %d position restraints\n (%s in file )", n_restrspos, file.buffer[k][1]);
+    restrspos = (restrpos_t*) malloc(n_restrspos * sizeof(restrpos_t));
+    k++;
+    for (int i = 0; i < n_restrspos; i++) {
+        restrpos_t restrpos;
 
-    //     restrpos.a = atoi(file.buffer[k][0]);
-    //     restrpos.ipsi = atoi(file.buffer[k][1]);
+        restrpos.a = atoi(file.buffer[k][0]);
+        restrpos.ipsi = atoi(file.buffer[k][1]);
 
-    //     coord_t r_x, r_k;
+        coord_t r_x, r_k;
 
-    //     r_x.x = strtod(file.buffer[k][2], &eptr);
-    //     r_x.y = strtod(file.buffer[k][3], &eptr);
-    //     r_x.z = strtod(file.buffer[k][4], &eptr);
-    //     r_k.x = strtod(file.buffer[k][5], &eptr);
-    //     r_k.y = strtod(file.buffer[k][6], &eptr);
-    //     r_k.z = strtod(file.buffer[k][7], &eptr);
+        r_x.x = strtod(file.buffer[k][2], &eptr);
+        r_x.y = strtod(file.buffer[k][3], &eptr);
+        r_x.z = strtod(file.buffer[k][4], &eptr);
+        r_k.x = strtod(file.buffer[k][5], &eptr);
+        r_k.y = strtod(file.buffer[k][6], &eptr);
+        r_k.z = strtod(file.buffer[k][7], &eptr);
 
-    //     restrpos.x = r_x;
-    //     restrpos.k = r_k;
+        restrpos.x = r_x;
+        restrpos.k = r_k;
         
-    //     restrspos[i] = restrpos;
-    //     k++;
-    // }
+        restrspos[i] = restrpos;
+        k++;
+    }
 
     // [distance_restraints]
     n_restrdists = atoi(file.buffer[k][0]);
@@ -274,44 +274,44 @@ void init_md(const char *filename) {
         k++;
     }
 
-    // // [angle_restraints]
-    // n_restrangs = atoi(file.buffer[k][0]);
-    // restrangs = (restrang_t*) malloc(n_restrangs * sizeof(restrang_t));
-    // printf("reading in %d angle restraints\n", n_restrangs);
-    // k++;
-    // for (int i = 0; i < n_restrangs; i++) {
-    //     restrang_t restrang;
+    // [angle_restraints]
+    n_restrangs = atoi(file.buffer[k][0]);
+    restrangs = (restrang_t*) malloc(n_restrangs * sizeof(restrang_t));
+    printf("reading in %d angle restraints (%s in file)\n", n_restrangs, file.buffer[k][1]);
+    k++;
+    for (int i = 0; i < n_restrangs; i++) {
+        restrang_t restrang;
 
-    //     restrang.ai = atoi(file.buffer[k][0]);
-    //     restrang.aj = atoi(file.buffer[k][1]);
-    //     restrang.ak = atoi(file.buffer[k][2]);
-    //     restrang.ipsi = atoi(file.buffer[k][3]);
-    //     restrang.ang = strtod(file.buffer[k][4], &eptr);
-    //     restrang.k = strtod(file.buffer[k][5], &eptr);
+        restrang.ai = atoi(file.buffer[k][0]);
+        restrang.aj = atoi(file.buffer[k][1]);
+        restrang.ak = atoi(file.buffer[k][2]);
+        restrang.ipsi = atoi(file.buffer[k][3]);
+        restrang.ang = strtod(file.buffer[k][4], &eptr);
+        restrang.k = strtod(file.buffer[k][5], &eptr);
 
-    //     restrangs[i] = restrang;
-    //     k++;
-    // }
+        restrangs[i] = restrang;
+        k++;
+    }
 
-    // // [wall_restraints]
-    // n_restrwalls = atoi(file.buffer[k][0]);
-    // restrwalls = (restrwall_t*) malloc(n_restrwalls * sizeof(restrwall_t));
-    // printf("reading in %d wall restraints\n", n_restrwalls);
-    // k++;
-    // for (int i = 0; i < n_restrwalls; i++) {
-    //     restrwall_t restrwall;
+    // [wall_restraints]
+    n_restrwalls = atoi(file.buffer[k][0]);
+    restrwalls = (restrwall_t*) malloc(n_restrwalls * sizeof(restrwall_t));
+    printf("reading in %d wall restraints (%s in file)\n", n_restrwalls, file.buffer[k][1]);
+    k++;
+    for (int i = 0; i < n_restrwalls; i++) {
+        restrwall_t restrwall;
 
-    //     restrwall.ai = atoi(file.buffer[k][0]);
-    //     restrwall.aj = atoi(file.buffer[k][1]);
-    //     restrwall.d = atoi(file.buffer[k][2]);
-    //     restrwall.k = atoi(file.buffer[k][3]);
-    //     restrwall.dMorse = atoi(file.buffer[k][4]);
-    //     restrwall.aMorse = atoi(file.buffer[k][5]);
-    //     restrwall.ih = file.buffer[k][6] == "1";
+        restrwall.ai = atoi(file.buffer[k][0]);
+        restrwall.aj = atoi(file.buffer[k][1]);
+        restrwall.d = strtod(file.buffer[k][2], &eptr);
+        restrwall.k = strtod(file.buffer[k][3], &eptr);
+        restrwall.dMorse = strtod(file.buffer[k][4], &eptr);
+        restrwall.aMorse = strtod(file.buffer[k][5], &eptr);
+        restrwall.ih = file.buffer[k][6] == "1";
         
-    //     restrwalls[i] = restrwall;
-    //     k++;
-    // }
+        restrwalls[i] = restrwall;
+        k++;
+    }
 
     clean_csv(file);
 }
@@ -492,7 +492,32 @@ void init_cangles(const char* filename) {
 }
 
 void init_excluded(const char *filename) {
-    excluded = (bool*) calloc(n_atoms, sizeof(bool));
+    excluded = (bool*) malloc(n_atoms * sizeof(bool));
+
+    FILE * fp;
+
+    char path[1024];
+    sprintf(path, "%s/%s", base_folder, filename);
+
+    if(access(path, F_OK) == -1) {
+        printf(">>> FATAL: The following file could not be found. Exiting...\n");
+        puts(path);
+        exit(EXIT_FAILURE);
+    }
+
+    fp = fopen(path, "r");
+    if (fp == NULL)
+        exit(EXIT_FAILURE);
+
+    char line[8192];
+    
+    if (fgets(line, 8192, fp)) {
+        for (int i = 0; i < n_atoms_solute; i++) {
+            excluded[i] = line[i] == '1';
+        }
+    }
+
+    fclose(fp);
 }
 
 void init_torsions(const char* filename) {
@@ -683,7 +708,6 @@ void init_ngbrs14(const char* filename) {
 
     char line[1024];
     
-    n_ngbrs14 = 0;
     int lines = 0;
 
     if (fgets(line, 1024, fp)) {
@@ -693,17 +717,15 @@ void init_ngbrs14(const char* filename) {
         return;
     }
 
-    ngbrs14 = (ngbr14_t*) malloc(lines * sizeof(ngbr14_t) * line_width);
     int lineI = 0;
 
     while (fgets(line, 1024, fp)) {
         for (int i = 0; i < line_width; i++) {
             if (line[i] == '1') {
-                ngbr14_t ngbr14;
-                ngbr14.ai = lineI + 1;
-                ngbr14.aj = ((lineI + i + 1) % lines) + 1;
-                ngbrs14[n_ngbrs14] = ngbr14;
-                n_ngbrs14++;
+                int ix = lineI;
+                int jx = (lineI + i + 1) % lines;
+                // if (ix < 100 && jx < 100) printf("i = %d j = %d\n", ix+1, jx+1);
+                LJ_matrix[ix * n_atoms_solute + jx] = 1;
             }
         }
         lineI++;
@@ -730,7 +752,6 @@ void init_ngbrs23(const char* filename) {
 
     char line[1024];
     
-    n_ngbrs23 = 0;
     int lines = 0;
 
     if (fgets(line, 1024, fp)) {
@@ -740,23 +761,64 @@ void init_ngbrs23(const char* filename) {
         return;
     }
 
-    ngbrs23 = (ngbr23_t*) malloc(lines * sizeof(ngbr23_t) * line_width);
     int lineI = 0;
 
     while (fgets(line, 1024, fp)) {
         for (int i = 0; i < line_width; i++) {
             if (line[i] == '1') {
-                ngbr23_t ngbr23;
-                ngbr23.ai = lineI + 1;
-                ngbr23.aj = ((lineI + i + 1) % lines) + 1;
-                ngbrs23[n_ngbrs23] = ngbr23;
-                n_ngbrs23++;
+                int ix = lineI;
+                int jx = (lineI + i + 1) % lines;
+                // if (ix < 100 && jx < 100) printf("i = %d j = %d\n", ix+1, jx+1);
+                LJ_matrix[ix * n_atoms_solute + jx] = 3;
             }
         }
         lineI++;
     }
 
     fclose(fp);
+}
+
+void init_ngbrs14_long(const char* filename) {
+    csvfile_t file = read_csv(filename, 0, base_folder);
+
+    if (file.n_lines < 1) {
+        clean_csv(file);
+        return;
+    }
+
+    int n_ngbrs14_long = atoi(file.buffer[0][0]);
+
+    for (int i = 0; i < n_ngbrs14_long; i++) {
+        int ix = atoi(file.buffer[i+1][0])-1;
+        int jx = atoi(file.buffer[i+1][1])-1;
+        LJ_matrix[ix * n_atoms_solute + jx] = 1;
+    }
+
+    clean_csv(file);
+}
+
+void init_ngbrs23_long(const char* filename) {
+    csvfile_t file = read_csv(filename, 0, base_folder);
+
+    if (file.n_lines < 1) {
+        clean_csv(file);
+        return;
+    }
+
+    int n_ngbrs23_long = atoi(file.buffer[0][0]);
+
+    for (int i = 0; i < n_ngbrs23_long; i++) {
+        int ix = atoi(file.buffer[i+1][0])-1;
+        int jx = atoi(file.buffer[i+1][1])-1;
+        LJ_matrix[ix * n_atoms_solute + jx] = 3;
+    }
+
+    clean_csv(file);
+}
+
+void init_LJ_matrix() {
+    LJ_matrix = (int *) malloc(n_atoms_solute * n_atoms_solute * sizeof(int));
+    memset(LJ_matrix, 0, n_atoms_solute * n_atoms_solute * sizeof(int));
 }
 
 void init_catypes(const char* filename) {

@@ -26,7 +26,7 @@ class Create_Environment(object):
     """
         Creates the workdirectory environment.
     """
-    def __init__(self,wd):        
+    def __init__(self,wd):
         if not os.path.exists(wd):
             os.mkdir(wd)
             
@@ -123,7 +123,9 @@ class Init(object):
         """
         self.environment = data
         # Create user specified work environment
+        
         Create_Environment(self.environment['workdir'])
+        
     
         # All the qcalc modules need a mask to map coordinate system
         # to the topology/pdb in formation,

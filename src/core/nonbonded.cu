@@ -1,5 +1,6 @@
 #include "system.h"
 #include "nonbonded.h"
+#include <stdio.h>
 
 /* =============================================
  * == NON-BONDED INTERACTIONS
@@ -18,31 +19,21 @@
     int i, j;
     catype_t ai_type, aj_type;
 
-    if (n_patoms > 0) {
-        energies.Ucoul = 0;
-        energies.Uvdw = 0;
-    }
-
     for (int pi = 0; pi < n_patoms; pi++) {
         for (int pj = pi+1; pj < n_patoms; pj++) {
             i = p_atoms[pi].a - 1;
             j = p_atoms[pj].a - 1;
-            bond23 = false;
-            bond14 = false;
-            for (int k = 0; k < n_ngbrs23; k++) {
-                if (ngbrs23[k].ai == charges[i].a && ngbrs23[k].aj == charges[j].a) {
-                    // printf("BOND 23: %d, %d", ngbrs23[k].ai, ngbrs23[k].aj);
-                    bond23 = true;
-                }
-            }
-            for (int k = 0; k < n_ngbrs14; k++) {
-                if (ngbrs14[k].ai == charges[i].a && ngbrs14[k].aj == charges[j].a) {
-                    // printf("BOND 14: %d, %d", ngbrs23[k].ai, ngbrs23[k].aj);
-                    bond14 = true;
-                }
-            }
+            bond23 = LJ_matrix[i * n_atoms_solute + j] == 3;
+            bond14 = LJ_matrix[i * n_atoms_solute + j] == 1;
 
-            if (bond23) continue;
+            // if (bond14 && i < 100 && j < 100) printf("1-4: i = %d j = %d\n", i+1, j+1);
+            if (bond23) {
+                if (i < 100 && j < 100) {
+                    // printf("2-3: i = %d j = %d\n", i+1, j+1);
+                }
+                continue;
+            }
+            if (excluded[i] || excluded[j]) continue;
 
             scaling = bond14 ? .5 : 1;
 
@@ -80,6 +71,22 @@
 
             energies.Ucoul += Vela;
             energies.Uvdw += (V_a - V_b);
+
+            // printf("solute: Ecoul = %f Evdw = %f\n", Vela, (V_a - V_b));
+            // if (i+1 == 66 && j+1 == 67) {
+            // if (i+1 == 2 && j+1 == 4) {
+            // if (i < 100 && j < 100) {
+            // if (V_a > 100) {
+            //     printf("i = %d j = %d\n", i+1, j+1);
+            //     // printf("energies.Ucoul = %f\n", energies.Ucoul);
+            //     // printf("energies.Uvdw = %f\n", energies.Uvdw);
+            //     printf("energies.Ucoul = %f, crg_i = %f, crg_j = %f, ra = %f\n", Vela, crg_i * sqrt(Coul), crg_j * sqrt(Coul), ra);
+            //     printf("energies.Uvdw = %f, r2a = %f, r6a = %f, ai_aii = %f, aj_aii = %f, ai_bii = %f, aj_bii = %f\n", (V_a - V_b), r2a, r6a, ai_aii, aj_aii, ai_bii, aj_bii);
+            // }
         }
+        // printf("i = %d\n", p_atoms[pi].a - 1);
+        // printf("energies.Ucoul = %f\n", energies.Ucoul);
+        // printf("energies.Uvdw = %f\n", energies.Uvdw);
     }
+    // printf("solute: Ecoul = %f Evdw = %f\n", energies.Ucoul, energies.Uvdw);
 }
