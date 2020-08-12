@@ -481,7 +481,32 @@ void init_cangles(const char* filename) {
 }
 
 void init_excluded(const char *filename) {
-    excluded = (bool*) calloc(n_atoms, sizeof(bool));
+    excluded = (bool*) malloc(n_atoms * sizeof(bool));
+
+    FILE * fp;
+
+    char path[1024];
+    sprintf(path, "%s/%s", base_folder, filename);
+
+    if(access(path, F_OK) == -1) {
+        printf(">>> FATAL: The following file could not be found. Exiting...\n");
+        puts(path);
+        exit(EXIT_FAILURE);
+    }
+
+    fp = fopen(path, "r");
+    if (fp == NULL)
+        exit(EXIT_FAILURE);
+
+    char line[8192];
+    
+    if (fgets(line, 8192, fp)) {
+        for (int i = 0; i < n_atoms_solute; i++) {
+            excluded[i] = line[i] == '1';
+        }
+    }
+
+    fclose(fp);
 }
 
 void init_torsions(const char* filename) {
@@ -666,7 +691,6 @@ void init_ngbrs14(const char* filename) {
 
     char line[1024];
     
-    n_ngbrs14 = 0;
     int lines = 0;
 
     if (fgets(line, 1024, fp)) {
@@ -676,17 +700,15 @@ void init_ngbrs14(const char* filename) {
         return;
     }
 
-    ngbrs14 = (ngbr14_t*) malloc(lines * sizeof(ngbr14_t) * line_width);
     int lineI = 0;
 
     while (fgets(line, 1024, fp)) {
         for (int i = 0; i < line_width; i++) {
             if (line[i] == '1') {
-                ngbr14_t ngbr14;
-                ngbr14.ai = lineI + 1;
-                ngbr14.aj = ((lineI + i + 1) % lines) + 1;
-                ngbrs14[n_ngbrs14] = ngbr14;
-                n_ngbrs14++;
+                int ix = lineI;
+                int jx = (lineI + i + 1) % lines;
+                // if (ix < 100 && jx < 100) printf("i = %d j = %d\n", ix+1, jx+1);
+                LJ_matrix[ix * n_atoms_solute + jx] = 1;
             }
         }
         lineI++;
@@ -713,7 +735,6 @@ void init_ngbrs23(const char* filename) {
 
     char line[1024];
     
-    n_ngbrs23 = 0;
     int lines = 0;
 
     if (fgets(line, 1024, fp)) {
@@ -723,23 +744,64 @@ void init_ngbrs23(const char* filename) {
         return;
     }
 
-    ngbrs23 = (ngbr23_t*) malloc(lines * sizeof(ngbr23_t) * line_width);
     int lineI = 0;
 
     while (fgets(line, 1024, fp)) {
         for (int i = 0; i < line_width; i++) {
             if (line[i] == '1') {
-                ngbr23_t ngbr23;
-                ngbr23.ai = lineI + 1;
-                ngbr23.aj = ((lineI + i + 1) % lines) + 1;
-                ngbrs23[n_ngbrs23] = ngbr23;
-                n_ngbrs23++;
+                int ix = lineI;
+                int jx = (lineI + i + 1) % lines;
+                // if (ix < 100 && jx < 100) printf("i = %d j = %d\n", ix+1, jx+1);
+                LJ_matrix[ix * n_atoms_solute + jx] = 3;
             }
         }
         lineI++;
     }
 
     fclose(fp);
+}
+
+void init_ngbrs14_long(const char* filename) {
+    csvfile_t file = read_csv(filename, 0, base_folder);
+
+    if (file.n_lines < 1) {
+        clean_csv(file);
+        return;
+    }
+
+    int n_ngbrs14_long = atoi(file.buffer[0][0]);
+
+    for (int i = 0; i < n_ngbrs14_long; i++) {
+        int ix = atoi(file.buffer[i+1][0])-1;
+        int jx = atoi(file.buffer[i+1][1])-1;
+        LJ_matrix[ix * n_atoms_solute + jx] = 1;
+    }
+
+    clean_csv(file);
+}
+
+void init_ngbrs23_long(const char* filename) {
+    csvfile_t file = read_csv(filename, 0, base_folder);
+
+    if (file.n_lines < 1) {
+        clean_csv(file);
+        return;
+    }
+
+    int n_ngbrs23_long = atoi(file.buffer[0][0]);
+
+    for (int i = 0; i < n_ngbrs23_long; i++) {
+        int ix = atoi(file.buffer[i+1][0])-1;
+        int jx = atoi(file.buffer[i+1][1])-1;
+        LJ_matrix[ix * n_atoms_solute + jx] = 3;
+    }
+
+    clean_csv(file);
+}
+
+void init_LJ_matrix() {
+    LJ_matrix = (int *) malloc(n_atoms_solute * n_atoms_solute * sizeof(int));
+    memset(LJ_matrix, 0, n_atoms_solute * n_atoms_solute * sizeof(int));
 }
 
 void init_catypes(const char* filename) {

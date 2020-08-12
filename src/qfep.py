@@ -27,7 +27,6 @@ class Create_Environment(object):
         Creates the workdirectory environment.
     """
     def __init__(self,wd):
-        print(wd)
         if not os.path.exists(wd):
             os.mkdir(wd)
             

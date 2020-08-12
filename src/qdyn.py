@@ -175,11 +175,13 @@ class Run_Dynamics(object):
     """
         Runs the main dynamics loop.
     """           
-    def __init__(self,wd,top):
+    def __init__(self,wd,top,verbose):
         executable = SETTINGS.ROOT + 'bin/qdyn '
         options = wd + '/' 
-        IO.run_command(executable,options,runtime=True)
-
+        out = IO.run_command(executable,options)
+        if verbose == True:
+            print(out)
+            
 class Init(object):
     def __init__(self, data):
         """ Retrieves a dictionary of user input from qdyn:
@@ -187,7 +189,8 @@ class Init(object):
                 'fep'   :   fep,
                 'md'    :   md,
                 're'    :   re,
-                'wd'    :   wd
+                'wd'    :   wd,
+                'verbose'    :   verbose
                }
         """
         self.environment = data
@@ -243,4 +246,5 @@ class Init(object):
                    )
         
         Run_Dynamics(wd  = self.environment['wd'],
-                     top = self.environment['top'])
+                     top = self.environment['top'],
+                     verbose = self.environment['verbose'])
