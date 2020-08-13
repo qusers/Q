@@ -1,0 +1,10 @@
+rl ../../../data/ff/OPLS2015.lib
+rl butane.lib
+rp butane.pdb
+rprm OPLS2015_butane.prm
+boundary 1 0.0 0.0 0.0 20
+solvate 0.0 0.0 0.0 20 1 HOH
+maketop MKC_p 
+writetop butane.top 
+wp top_butane.pdb y 
+q 
