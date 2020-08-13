@@ -176,8 +176,8 @@ class Run_Dynamics(object):
         Runs the main dynamics loop.
     """           
 
-    def __init__(self,wd,top):
-        executable = SETTINGS.ROOT + 'bin/qdyn --gpu '
+    def __init__(self,wd,top,verbose):
+        executable = SETTINGS.ROOT + 'bin/qdyn '
         
         options = wd + '/' 
         out = IO.run_command(executable,options)
@@ -196,7 +196,7 @@ class Init(object):
                }
         """
         self.environment = data
-        
+        print(data)
         # check extension:
         extensions = ['json','inp','fep','re','top']
         
@@ -248,9 +248,5 @@ class Init(object):
                    )
         
         Run_Dynamics(wd  = self.environment['wd'],
-<<<<<<< HEAD
-                     top = self.environment['top'])
-=======
                      top = self.environment['top'],
                      verbose = self.environment['verbose'])
->>>>>>> master
