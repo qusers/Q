@@ -670,6 +670,7 @@ void write_energies(int iteration) {
         fprintf(fp, "Ubond = %f\n", q_energies[state].Ubond);
         fprintf(fp, "Uangle = %f\n", q_energies[state].Uangle);
         fprintf(fp, "Utor = %f\n", q_energies[state].Utor);
+        fprintf(fp, "Uimp = %f\n", q_energies[state].Uimp);
         fprintf(fp, "Ucoul = %f\n", q_energies[state].Ucoul);
         fprintf(fp, "Uvdw = %f\n", q_energies[state].Uvdw);
         fprintf(fp, "Urestr = %f\n", q_energies[state].Urestr);
@@ -792,13 +793,13 @@ void calc_integration_step(int iteration) {
     // Recalculate temperature and kinetic energy for output
     calc_temperature();
 
-    // Update energies with an average of all states
+    // Update total potential energies with an average of all states
     for (int state = 0; state < n_lambdas; state++) {
-        energies.Ubond += q_energies[state].Ubond * lambdas[state];
-        energies.Uangle += q_energies[state].Uangle * lambdas[state];
-        energies.Utor += q_energies[state].Utor * lambdas[state];
-        energies.Ucoul += q_energies[state].Ucoul * lambdas[state];
-        energies.Uvdw += q_energies[state].Uvdw * lambdas[state];
+        energies.UQtot += q_energies[state].Ubond * lambdas[state];
+        energies.UQtot += q_energies[state].Uangle * lambdas[state];
+        energies.UQtot += q_energies[state].Utor * lambdas[state];
+        energies.UQtot += q_energies[state].Ucoul * lambdas[state];
+        energies.UQtot += q_energies[state].Uvdw * lambdas[state];
 
         // Update protein restraint energies with an average of all states
         energies.Upres += q_energies[state].Urestr * lambdas[state];
@@ -811,7 +812,7 @@ void calc_integration_step(int iteration) {
 
     // Update totals
     energies.Urestr = energies.Uradx + energies.Upolx + energies.Ushell + energies.Ufix + energies.Upres;
-    energies.Upot = energies.Uangle + energies.Ubond + energies.Utor + energies.Uimp + energies.Ucoul + energies.Uvdw + energies.Urestr;
+    energies.Upot = energies.UQtot + energies.Uangle + energies.Ubond + energies.Utor + energies.Uimp + energies.Ucoul + energies.Uvdw + energies.Urestr;
     energies.Utot = energies.Upot + energies.Ukin;  
 
     for (int state = 0; state < n_lambdas; state++) {
@@ -819,6 +820,7 @@ void calc_integration_step(int iteration) {
         printf("Ubond = %f\n", q_energies[state].Ubond);
         printf("Uangle = %f\n", q_energies[state].Uangle);
         printf("Utor = %f\n", q_energies[state].Utor);
+        printf("Uimp = %f\n", q_energies[state].Uimp);
         printf("Ucoul = %f\n", q_energies[state].Ucoul);
         printf("Uvdw = %f\n", q_energies[state].Uvdw);
         printf("Urestr = %f\n", q_energies[state].Urestr);

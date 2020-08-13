@@ -1,1 +1,0 @@
-Bonded energies in Q atoms should be included in Qatom total potential energy.
