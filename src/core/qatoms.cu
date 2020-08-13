@@ -63,7 +63,7 @@ void calc_nonbonded_qp_forces() {
                 ai_bii = bond14 ? qi_type.Bi_14 : qi_type.Bi;
                 aj_bii = bond14 ? aj_type.bii_1_4 : aj_type.bii_normal;
 
-                Vel = Coul * scaling * q_charges[qi + n_qatoms * state].q * ccharges[charges[i].code - 1].charge * r;
+                Vel = Coul * scaling * q_charges[qi + n_qatoms * state].q * ccharges[charges[j].code - 1].charge * r;
                 V_a = ai_aii * aj_aii / (r6 * r6);
                 V_b = ai_bii * aj_bii / r6;
                 dv = r2 * (-Vel - (12 * V_a - 6 * V_b)) * lambdas[state];
