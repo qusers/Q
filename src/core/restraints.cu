@@ -221,7 +221,7 @@ void calc_pshell_forces() {
     double k, r2, ener;
 
     for (int i = 0; i < n_atoms_solute; i++) {
-        if (excluded[i] || shell[i]) {
+        if (shell[i] || excluded[i]) {
             // printf("i = %d excluded = %s shell = %s\n", i, excluded[i] ? "True" : "False", shell[i] ? "True" : "False");
             if (excluded[i]) {
                 k = k_fix;
