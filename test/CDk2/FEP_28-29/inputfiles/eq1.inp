@@ -1,19 +1,19 @@
 [MD]
-steps                     1
+steps                     1000
 stepsize                  0.1
 temperature               1
 bath_coupling             0.2
 random_seed               112
 initial_temperature       1
-shake_solvent             on
+shake_solvent             off
 shake_hydrogens           off
 shake_solute              off
-lrf                       on
+lrf                       off
 
 [cut-offs]
-solute_solvent            10
-solute_solute             10
-solvent_solvent           10
+solute_solvent            99
+solute_solute             99
+solvent_solvent           99
 q_atom                    99
 lrf                       99
 
