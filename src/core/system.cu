@@ -542,7 +542,7 @@ void calc_temperature() {
         ener = .5 * mass_i * (pow(velocities[i].x, 2) + pow(velocities[i].y, 2) + pow(velocities[i].z, 2));
         Temp += ener;
         if (ener > Ekinmax) {
-            //printf(">>> WARNING: hot atom %d: %f\n", i, ener/Boltz/3);
+            printf(">>> WARNING: hot atom %d: %f\n", i, ener/Boltz/3);
         }
     }
 
@@ -762,7 +762,7 @@ void calc_integration_step(int iteration) {
             start_ww = clock();
             calc_nonbonded_ww_forces_host();
             end_ww = clock();
-            calc_nonbonded_pw_forces();
+            calc_nonbonded_pw_forces_host();
             calc_nonbonded_qw_forces_host();
         }
         else {

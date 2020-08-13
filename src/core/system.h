@@ -214,6 +214,7 @@ extern int n_atypes;
 extern int n_bonds;
 extern int n_bonds_solute;
 extern int n_cangles;
+extern int n_catypes;
 extern int n_cbonds;
 extern int n_ccharges;
 extern int n_charges;

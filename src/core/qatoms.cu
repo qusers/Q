@@ -79,13 +79,11 @@ void calc_nonbonded_qp_forces() {
                 // Update Q totals
                 q_energies[state].Ucoul += Vel;
                 q_energies[state].Uvdw += (V_a - V_b);
-
-                if (Vel > 100) printf("i=%d j=%d Vel=%f\n", i+1, j+1, Vel);
             }
         }
     }
 
-    #ifdef DEBUG 
+    #ifdef DEBUG
     printf("q-p: Ecoul = %f Evdw = %f\n", q_energies[0].Ucoul, q_energies[0].Uvdw);
     #endif
 }
@@ -779,14 +777,6 @@ void calc_qtorsion_forces(int state) {
 // q_charge_t *D_qcharges;
 // q_atom_t *D_qatoms;
 // double *D_lambdas;
-
-void check_cudaMalloc(void** devPtr, size_t size) {
-    cudaError_t error = cudaMalloc((void**) devPtr, size);
-    if (error != cudaSuccess) {
-        printf(">>> FATAL: memory for matrix could not be allocated. Exiting...\n");
-        exit(EXIT_FAILURE);
-    }
-}
 
 void clean_qatoms() {
     cudaFree(Q);
