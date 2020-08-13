@@ -7,6 +7,8 @@ tar -xvf testfiles.tar.gz
 
 Run the test with the following command:
 
-python ../../../bin/qdyn.py -t topo.json -m eq1.inp -d TEST -r -r Q5_data/ --verbose
+python ../../../bin/qdyn.py -t topo.json -m md0.json -d TEST -r Q5_data/
 
-Then run compare.py to check if the obtained results match the reference results.
+Then to check if the obtained results match the reference results:
+
+python compare.py
