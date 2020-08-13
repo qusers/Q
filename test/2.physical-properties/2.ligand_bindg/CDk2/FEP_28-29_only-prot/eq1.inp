@@ -27,7 +27,7 @@ polarisation              on
 polarisation_force        20.0
 
 [intervals]
-output                    q
+output                    1
 trajectory                100
 non_bond                  25
 
