@@ -11,6 +11,9 @@ with open('eq1.log') as infile:
         if 'Energy summary at step      0' in line:
             block = 1
             continue
+        if 'FINAL' in line:
+            block = 0
+            continue
             
         if block == 1:
             line = line.split()
