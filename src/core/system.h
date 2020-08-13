@@ -2,7 +2,7 @@
 #define __SYSTEM_H__
 
 #define __PROFILING__
-#define DEBUG
+//#define DEBUG
 
 // Coulomb's constant, TODO get this from topology file
 #define Coul 332.0716

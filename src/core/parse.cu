@@ -824,17 +824,15 @@ void init_LJ_matrix() {
 void init_catypes(const char* filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
-    int n_catomtypes = 0;
-
     if (file.n_lines < 1) {
         clean_csv(file);
         return;
     }
 
-    n_catomtypes = atoi(file.buffer[0][0]);
-    catypes = (catype_t*) malloc(n_catomtypes * sizeof(catype_t));
+    n_catypes = atoi(file.buffer[0][0]);
+    catypes = (catype_t*) malloc(n_catypes * sizeof(catype_t));
 
-    for (int i = 0; i < n_catomtypes; i++) {
+    for (int i = 0; i < n_catypes; i++) {
         catype_t catype;
         char* eptr;
 

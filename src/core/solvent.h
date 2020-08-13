@@ -35,6 +35,7 @@ extern catype_t *D_catypes;
 extern atype_t *D_atypes;
 extern p_atom_t *D_patoms;
 
+// W-W interactions
 __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, double crg_hw, double A_OO, double B_OO,
     coord_t *Xs, coord_t *Ys, double *Evdw, double *Ecoul, dvel_t *water_a, dvel_t *water_b);
 
@@ -42,6 +43,7 @@ __global__ void calc_ww_dvel_matrix(int n_waters, double crg_ow, double crg_hw, 
     coord_t *X, double *Evdw, double *Ecoul, calc_ww_t *MAT);
 __global__ void calc_ww_dvel_vector(int n_waters, dvel_t *DV, calc_ww_t *MAT);
 
+// P-W interactions
 __device__ void calc_pw_dvel_matrix_incr(int row, int pi, int column, int wj, int n_patoms,
     coord_t *Ps, coord_t *Xs, double *Evdw, double *Ecoul, calc_pw_t *pw,
     ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms);

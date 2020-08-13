@@ -203,16 +203,46 @@ void calc_nonbonded_qw_forces_host() {
         A_O = catype_ow.aii_normal;
         B_O = catype_ow.bii_normal;
 
+        #ifdef DEBUG
+        printf("Allocating Q\n");
+        #endif
         check_cudaMalloc((void**) &Q, mem_size_Q);
+        #ifdef DEBUG
+        printf("Allocating W\n");
+        #endif
         check_cudaMalloc((void**) &W, mem_size_W);
+        #ifdef DEBUG
+        printf("Allocating QW_MAT\n");
+        #endif
         check_cudaMalloc((void**) &QW_MAT, mem_size_MAT);
+        #ifdef DEBUG
+        printf("Allocating DV_Q\n");
+        #endif
         check_cudaMalloc((void**) &DV_Q, mem_size_DV_Q);
+        #ifdef DEBUG
+        printf("Allocating DV_W\n");
+        #endif
         check_cudaMalloc((void**) &DV_W, mem_size_DV_W);
 
+        #ifdef DEBUG
+        printf("Allocating D_qcatypes\n");
+        #endif
         check_cudaMalloc((void**) &D_qcatypes, mem_size_qcatypes);
+        #ifdef DEBUG
+        printf("Allocating D_qatypes\n");
+        #endif
         check_cudaMalloc((void**) &D_qatypes, mem_size_qatypes);
+        #ifdef DEBUG
+        printf("Allocating D_qcharges\n");
+        #endif
         check_cudaMalloc((void**) &D_qcharges, mem_size_qcharges);
+        #ifdef DEBUG
+        printf("Allocating D_qatoms\n");
+        #endif
         check_cudaMalloc((void**) &D_qatoms, mem_size_qatoms);
+        #ifdef DEBUG
+        printf("Allocating D_lambdas\n");
+        #endif
         check_cudaMalloc((void**) &D_lambdas, mem_size_lambdas);
 
         cudaMemcpy(D_qcatypes, q_catypes, mem_size_qcatypes, cudaMemcpyHostToDevice);
