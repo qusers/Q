@@ -1,0 +1,29 @@
+{LID}     ! atoms no    9   total charge -0.000 
+
+[info] 
+ SYBYLtype RESIDUE 
+
+[atoms] 
+   1   C1        XC9         -0.1800
+   2   C2        XC10          0.1450
+   3   O3        XO11         -0.6830
+   4   H4        XH12          0.0600
+   5   H5        XH13          0.0600
+   6   H6        XH14          0.0600
+   7   H7        XH15          0.0600
+   8   H8        XH16          0.0600
+   9   H9        XH17          0.4180
+
+[bonds]
+C1        C2
+C1        H4
+C1        H5
+C1        H6
+C2        O3
+C2        H7
+C2        H8
+O3        H9
+
+[impropers]
+
+[charge_groups]
