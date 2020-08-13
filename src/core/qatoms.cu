@@ -79,12 +79,15 @@ void calc_nonbonded_qp_forces() {
                 // Update Q totals
                 q_energies[state].Ucoul += Vel;
                 q_energies[state].Uvdw += (V_a - V_b);
+
+                if (Vel > 100) printf("i=%d j=%d Vel=%f\n", i+1, j+1, Vel);
             }
         }
     }
 
-    // printf("q_energies[0].Ucoul = %f\n", q_energies[0].Ucoul);
-    // printf("q_energies[0].Uvdw = %f\n", q_energies[0].Uvdw);
+    #ifdef DEBUG 
+    printf("q-p: Ecoul = %f Evdw = %f\n", q_energies[0].Ucoul, q_energies[0].Uvdw);
+    #endif
 }
 
 void calc_nonbonded_qw_forces() {
@@ -175,6 +178,10 @@ void calc_nonbonded_qw_forces() {
             dvelocities[j+2].z += dvH2 * dH2.z;
         }
     }
+    
+    #ifdef DEBUG 
+    printf("q-w: Ecoul = %f Evdw = %f\n", q_energies[0].Ucoul, q_energies[0].Uvdw);
+    #endif
 }
 
 void calc_nonbonded_qw_forces_host() {
@@ -548,6 +555,10 @@ void calc_nonbonded_qq_forces() {
             }
         }
     }
+
+    #ifdef DEBUG 
+    printf("q-q: Ecoul = %f Evdw = %f\n", q_energies[0].Ucoul, q_energies[0].Uvdw);
+    #endif
 }
 
 void calc_qangle_forces(int state) {
