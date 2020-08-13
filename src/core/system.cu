@@ -450,8 +450,8 @@ void init_wshells() {
 void init_pshells() {
     double mass, r2, rin2;
 
-    heavy = (bool*) malloc(n_atoms * sizeof(bool));
-    shell = (bool*) malloc(n_atoms * sizeof(bool));
+    heavy = (bool*) calloc(n_atoms, sizeof(bool));
+    shell = (bool*) calloc(n_atoms, sizeof(bool));
     rin2 = pow(shell_default * topo.exclusion_radius, 2);
 
     int n_heavy = 0, n_inshell = 0;

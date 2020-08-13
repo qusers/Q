@@ -512,8 +512,8 @@ void init_excluded(const char *filename) {
     char line[8192];
     
     if (fgets(line, 8192, fp)) {
-        for (int i = 0; i < n_atoms_solute; i++) {
-            excluded[i] = line[i] == '1';
+        for (int i = 0; i < n_atoms; i++) {
+            excluded[i] = (line[i] == '1');
         }
     }
 
