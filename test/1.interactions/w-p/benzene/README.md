@@ -7,7 +7,7 @@ tar -xvf testfiles.tar.gz
 
 Run the test with the following command:
 
-python ../../../bin/qdyn.py -t topo.json -m md0.json -d TEST -r Q5_data/
+python ../../../../bin/qdyn.py -t benzene-water.json -m eq1.json -d TEST -r Q5_data/
 
 Then to check if the obtained results match the reference results:
 

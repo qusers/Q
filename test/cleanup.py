@@ -42,3 +42,8 @@ print('cleaning w-q interaction folder')
 os.chdir('1.interactions/w-q/benzene')
 os.system('rm -r compare.py eq1.json benzene-water.json Q5_data/ TEST/ FEP1.json')
 os.chdir(curdir)
+
+print('cleaning w-w interaction folder')
+os.chdir('1.interactions/w-w/water')
+os.system('rm -r compare.py eq1.json water.json Q5_data/ TEST/ ')
+os.chdir(curdir)
