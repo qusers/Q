@@ -796,19 +796,7 @@ void calc_qtorsion_forces(int state) {
     }
 }
 
-// // Device pointers
-// coord_t *Q, *W;
-// dvel_t *DV_Q, *DV_W;
-// calc_qw_t *QW_MAT, *h_QW_MAT;
-
-// // Constants pointers
-// q_catype_t *D_qcatypes;
-// q_atype_t *D_qatypes;
-// q_charge_t *D_qcharges;
-// q_atom_t *D_qatoms;
-// double *D_lambdas;
-
-void clean_qatoms() {
+void clean_d_qatoms() {
     cudaFree(Q);
     cudaFree(W);
     cudaFree(QW_MAT);

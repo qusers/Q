@@ -11,18 +11,13 @@
  * =============================================
  */
 
-coord_t *P, *X;
-dvel_t *DV, *DV_P;
+coord_t *X;
+dvel_t *DV;
 calc_ww_t *WW_MAT, *h_WW_MAT;
 calc_pw_t *PW_MAT, *h_PW_MAT;
 
 // Constants pointers
-ccharge_t *D_ccharges;
-charge_t *D_charges;
-catype_t *D_catypes;
-atype_t * D_atypes;
-p_atom_t *D_patoms;
-bool gpu_set = false;
+bool pw_gpu_set = false;
 
 //ONLY call if there are actually solvent atoms, or get segfaulted
 void calc_nonbonded_ww_forces() {
@@ -318,7 +313,9 @@ void calc_nonbonded_ww_forces_host() {
     calc_ww_dvel_matrix<<<grid, threads>>>(n_waters, crg_ow, crg_hw, A_OO, B_OO, X, &evdw, &ecoul, WW_MAT);
     calc_ww_dvel_vector<<<((n_waters+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_waters, DV, WW_MAT);
 
-    // cudaMemcpy(h_WW_MAT, WW_MAT, mem_size_MAT, cudaMemcpyDeviceToHost);
+    #ifdef DEBUG
+    cudaMemcpy(h_WW_MAT, WW_MAT, mem_size_MAT, cudaMemcpyDeviceToHost);
+    #endif
 
     // for (int i = 0; i < n_waters; i++) {
     //     printf("X[%d] = %f %f %f\n", i, coords[i].x, coords[i].y, coords[i].z);
@@ -336,7 +333,6 @@ void calc_nonbonded_ww_forces_host() {
     //     printf("dvelocities[%d] = %f %f %f\n", i, dvelocities[i].x, dvelocities[i].y, dvelocities[i].z);
     // }
 }
-
 
 void calc_nonbonded_pw_forces() {
     coord_t da;
@@ -404,68 +400,25 @@ void calc_nonbonded_pw_forces() {
 
 void calc_nonbonded_pw_forces_host() {
     int mem_size_X = 3 * n_waters * sizeof(coord_t);
-    int mem_size_P = n_patoms * sizeof(coord_t);
     int mem_size_DV = 3 * n_waters * sizeof(dvel_t);
     int mem_size_DV_P = n_patoms * sizeof(dvel_t);
     int mem_size_PW_MAT = 3 * n_waters * n_patoms * sizeof(calc_pw_t);
 
-    int mem_size_ccharges = n_ccharges * sizeof(ccharge_t);
-    int mem_size_charges = n_atoms * sizeof(charge_t);
-    int mem_size_catypes = n_catypes * sizeof(catype_t);
-    int mem_size_atypes = n_atoms * sizeof(atype_t);
-    int mem_size_patoms = n_patoms * sizeof(p_atom_t);
+    if (!pw_gpu_set) {
+        pw_gpu_set = true;
 
-    if (!gpu_set) {
-        gpu_set = true;
-
-        #ifdef DEBUG
-        printf("Allocating P\n");
-        #endif
-        check_cudaMalloc((void**) &P, mem_size_P);
-        #ifdef DEBUG
-        printf("Allocating DV_P\n");
-        #endif
-        check_cudaMalloc((void**) &DV_P, mem_size_DV_P);
         #ifdef DEBUG
         printf("Allocating PW_MAT\n");
         #endif
         check_cudaMalloc((void**) &PW_MAT, mem_size_PW_MAT);
 
         #ifdef DEBUG
-        printf("Allocating D_ccharges\n");
-        #endif
-        check_cudaMalloc((void**) &D_ccharges, mem_size_ccharges);
-        #ifdef DEBUG
-        printf("Allocating D_charges\n");
-        #endif
-        check_cudaMalloc((void**) &D_charges, mem_size_charges);
-        #ifdef DEBUG
-        printf("Allocating D_catypes\n");
-        #endif
-        check_cudaMalloc((void**) &D_catypes, mem_size_catypes);
-        #ifdef DEBUG
-        printf("Allocating D_atypes\n");
-        #endif
-        check_cudaMalloc((void**) &D_atypes, mem_size_atypes);
-        #ifdef DEBUG
-        printf("Allocating D_patoms\n");
-        #endif
-        check_cudaMalloc((void**) &D_patoms, mem_size_patoms);
-
-        #ifdef DEBUG
         printf("All GPU solvent memory allocated\n");
         #endif
-
-        cudaMemcpy(D_ccharges, ccharges, mem_size_ccharges, cudaMemcpyHostToDevice);
-        cudaMemcpy(D_charges, charges, mem_size_charges, cudaMemcpyHostToDevice);
-        cudaMemcpy(D_catypes, catypes, mem_size_catypes, cudaMemcpyHostToDevice);
-        cudaMemcpy(D_atypes, atypes, mem_size_atypes, cudaMemcpyHostToDevice);
-        cudaMemcpy(D_patoms, p_atoms, mem_size_patoms, cudaMemcpyHostToDevice);
 
         h_PW_MAT = (calc_pw_t*) malloc(mem_size_PW_MAT);
     }
 
-    cudaMemcpy(P, coords, mem_size_P, cudaMemcpyHostToDevice);
     cudaMemcpy(X, &coords[n_atoms_solute], mem_size_X, cudaMemcpyHostToDevice);
     cudaMemcpy(DV_P, dvelocities, mem_size_DV_P, cudaMemcpyHostToDevice);
     cudaMemcpy(DV, &dvelocities[n_atoms_solute], mem_size_DV, cudaMemcpyHostToDevice);
@@ -475,18 +428,14 @@ void calc_nonbonded_pw_forces_host() {
     threads = dim3(BLOCK_SIZE, BLOCK_SIZE);
     grid = dim3((3*n_waters + BLOCK_SIZE - 1) / threads.x, (n_patoms + BLOCK_SIZE - 1) / threads.y);
     double evdw, ecoul;
-
-    // __global__ void calc_pw_dvel_matrix(int n_patoms, int n_waters,
-    //     coord_t *P, coord_t *X, double *Evdw, double *Ecoul, calc_pw_t *PW_MAT,
-    //     ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms);
-    // __global__ void calc_pw_dvel_vector_row(int n_patoms, int n_waters, dvel_t *DV_P, dvel_t *DV, calc_pw_t *PW_MAT);
-    // __global__ void calc_pw_dvel_vector_column(int n_patoms, int n_waters, dvel_t *DV_P, dvel_t *DV, calc_pw_t *PW_MAT);
     
     calc_pw_dvel_matrix<<<grid, threads>>>(n_patoms, n_waters, P, X, &evdw, &ecoul, PW_MAT, D_ccharges, D_charges, D_catypes, D_atypes, D_patoms);
     calc_pw_dvel_vector_column<<<((3*n_waters+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_patoms, n_waters, DV_P, DV, PW_MAT);
     calc_pw_dvel_vector_row<<<((n_patoms+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_patoms, n_waters, DV_P, DV, PW_MAT);
 
+    #ifdef DEBUG
     cudaMemcpy(h_PW_MAT, PW_MAT, mem_size_PW_MAT, cudaMemcpyDeviceToHost);
+    #endif
 
     // for (int i = 0; i < n_waters; i++) {
     //     printf("X[%d] = %f %f %f\n", i, coords[i].x, coords[i].y, coords[i].z);
@@ -1054,19 +1003,11 @@ __global__ void calc_pw_dvel_vector_column(int n_patoms, int n_waters, dvel_t *D
     __syncthreads();
 }
 
-void clean_solvent() {
-    cudaFree(P);
+void clean_d_solvent() {
     cudaFree(X);
     cudaFree(WW_MAT);
     cudaFree(PW_MAT);
     cudaFree(DV);
-    cudaFree(DV_P);
-
-    cudaFree(D_ccharges);
-    cudaFree(D_charges);
-    cudaFree(D_catypes);
-    cudaFree(D_atypes);
-    cudaFree(D_patoms);
 
     free(h_WW_MAT);
     free(h_PW_MAT);

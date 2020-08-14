@@ -1,5 +1,6 @@
 #include "system.h"
 #include "nonbonded.h"
+#include "utils.h"
 #include <stdio.h>
 
 /* =============================================
@@ -7,7 +8,20 @@
  * =============================================
  */
 
- void calc_nonbonded_pp_forces() {
+coord_t *P;
+dvel_t *DV_P;
+dvel_t *PP_MAT, *h_PP_MAT;
+bool pp_gpu_set = false;
+
+// Constants pointers
+ccharge_t *D_ccharges;
+charge_t *D_charges;
+catype_t *D_catypes;
+atype_t * D_atypes;
+p_atom_t *D_patoms;
+int *D_LJ_matrix;
+
+void calc_nonbonded_pp_forces() {
     bool bond14, bond23;
     double scaling;
     coord_t da;
@@ -26,14 +40,8 @@
             bond23 = LJ_matrix[i * n_atoms_solute + j] == 3;
             bond14 = LJ_matrix[i * n_atoms_solute + j] == 1;
 
-            // if (bond14 && i < 100 && j < 100) printf("1-4: i = %d j = %d\n", i+1, j+1);
-            if (bond23) {
-                if (i < 100 && j < 100) {
-                    // printf("2-3: i = %d j = %d\n", i+1, j+1);
-                }
-                continue;
-            }
-            if (excluded[i] || excluded[j]) continue;
+            if (bond23) continue;
+            // if (excluded[i] || excluded[j]) continue;
 
             scaling = bond14 ? .5 : 1;
 
@@ -71,22 +79,274 @@
 
             energies.Ucoul += Vela;
             energies.Uvdw += (V_a - V_b);
-
-            // printf("solute: Ecoul = %f Evdw = %f\n", Vela, (V_a - V_b));
-            // if (i+1 == 66 && j+1 == 67) {
-            // if (i+1 == 2 && j+1 == 4) {
-            // if (i < 100 && j < 100) {
-            // if (V_a > 100) {
-            //     printf("i = %d j = %d\n", i+1, j+1);
-            //     // printf("energies.Ucoul = %f\n", energies.Ucoul);
-            //     // printf("energies.Uvdw = %f\n", energies.Uvdw);
-            //     printf("energies.Ucoul = %f, crg_i = %f, crg_j = %f, ra = %f\n", Vela, crg_i * sqrt(Coul), crg_j * sqrt(Coul), ra);
-            //     printf("energies.Uvdw = %f, r2a = %f, r6a = %f, ai_aii = %f, aj_aii = %f, ai_bii = %f, aj_bii = %f\n", (V_a - V_b), r2a, r6a, ai_aii, aj_aii, ai_bii, aj_bii);
-            // }
         }
-        // printf("i = %d\n", p_atoms[pi].a - 1);
-        // printf("energies.Ucoul = %f\n", energies.Ucoul);
-        // printf("energies.Uvdw = %f\n", energies.Uvdw);
     }
-    // printf("solute: Ecoul = %f Evdw = %f\n", energies.Ucoul, energies.Uvdw);
+}
+
+void calc_nonbonded_pp_forces_host() {
+    int mem_size_P = n_patoms * sizeof(coord_t);
+    int mem_size_DV_P = n_patoms * sizeof(dvel_t);
+
+    int mem_size_ccharges = n_ccharges * sizeof(ccharge_t);
+    int mem_size_charges = n_atoms * sizeof(charge_t);
+    int mem_size_catypes = n_catypes * sizeof(catype_t);
+    int mem_size_atypes = n_atoms * sizeof(atype_t);
+    int mem_size_patoms = n_patoms * sizeof(p_atom_t);
+
+    int mem_size_PP_MAT = n_patoms * n_patoms * sizeof(dvel_t);
+    int mem_size_LJ_matrix = n_patoms * n_patoms * sizeof(int);
+
+    if (!pp_gpu_set) {
+        pp_gpu_set = true;
+        int mem_size_P = n_patoms * sizeof(coord_t);
+        #ifdef DEBUG
+        printf("Allocating P\n");
+        #endif
+        check_cudaMalloc((void**) &P, mem_size_P);
+        #ifdef DEBUG
+        printf("Allocating DV_P\n");
+        #endif
+        check_cudaMalloc((void**) &DV_P, mem_size_DV_P);
+
+        #ifdef DEBUG
+        printf("Allocating D_ccharges\n");
+        #endif
+        check_cudaMalloc((void**) &D_ccharges, mem_size_ccharges);
+        #ifdef DEBUG
+        printf("Allocating D_charges\n");
+        #endif
+        check_cudaMalloc((void**) &D_charges, mem_size_charges);
+        #ifdef DEBUG
+        printf("Allocating D_catypes\n");
+        #endif
+        check_cudaMalloc((void**) &D_catypes, mem_size_catypes);
+        #ifdef DEBUG
+        printf("Allocating D_atypes\n");
+        #endif
+        check_cudaMalloc((void**) &D_atypes, mem_size_atypes);
+        #ifdef DEBUG
+        printf("Allocating D_patoms\n");
+        #endif
+        check_cudaMalloc((void**) &D_patoms, mem_size_patoms);
+        #ifdef DEBUG
+        printf("Allocating D_LJ_matrix\n");
+        #endif
+        check_cudaMalloc((void**) &D_LJ_matrix, mem_size_LJ_matrix);
+
+        #ifdef DEBUG
+        printf("Allocating PP_MAT\n");
+        #endif
+        check_cudaMalloc((void**) &PP_MAT, mem_size_PP_MAT);
+
+        cudaMemcpy(D_ccharges, ccharges, mem_size_ccharges, cudaMemcpyHostToDevice);
+        cudaMemcpy(D_charges, charges, mem_size_charges, cudaMemcpyHostToDevice);
+        cudaMemcpy(D_catypes, catypes, mem_size_catypes, cudaMemcpyHostToDevice);
+        cudaMemcpy(D_atypes, atypes, mem_size_atypes, cudaMemcpyHostToDevice);
+        cudaMemcpy(D_patoms, p_atoms, mem_size_patoms, cudaMemcpyHostToDevice);
+        cudaMemcpy(D_LJ_matrix, LJ_matrix, mem_size_LJ_matrix, cudaMemcpyHostToDevice);
+
+        // for (int i = 0; i < 100; i++) {
+        //     for (int j = 0; j < 100; j++) {
+        //         printf("LJ_matrix[%d][%d] = %d\n", i, j, LJ_matrix[i * n_patoms + j]);
+        //     }
+        // }
+
+        h_PP_MAT = (dvel_t*) malloc(mem_size_PP_MAT);
+    }
+
+    cudaMemcpy(P, coords, mem_size_P, cudaMemcpyHostToDevice);
+    cudaMemcpy(DV_P, dvelocities, mem_size_DV_P, cudaMemcpyHostToDevice);
+
+    dim3 threads,grid;
+
+    threads = dim3(BLOCK_SIZE, BLOCK_SIZE);
+    grid = dim3((n_patoms + BLOCK_SIZE - 1) / threads.x, (n_patoms + BLOCK_SIZE - 1) / threads.y);
+    double evdw, ecoul;
+
+    calc_pp_dvel_matrix<<<grid, threads>>>(n_patoms, P, &evdw, &ecoul, PP_MAT, D_ccharges, D_charges, D_catypes, D_atypes, D_patoms, D_LJ_matrix);
+    calc_pp_dvel_vector<<<((n_patoms+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_patoms, DV_P, PP_MAT);
+
+    cudaMemcpy(dvelocities, DV_P, mem_size_DV_P, cudaMemcpyDeviceToHost);
+
+    #ifdef DEBUG
+    cudaMemcpy(h_PP_MAT, PP_MAT, mem_size_PP_MAT, cudaMemcpyDeviceToHost);
+    #endif
+
+    for (int i = 0; i < n_patoms; i++) {
+        for (int j = 0; j < n_patoms; j++) {
+            // if (h_PP_MAT[i * n_patoms + j].x > 100)
+            // printf("PP_MAT[%d][%d] = %f %f %f\n", i, j, h_PP_MAT[i * n_patoms + j].x, h_PP_MAT[i * n_patoms + j].y, h_PP_MAT[i * n_patoms + j].z);
+        }
+    }
+}
+
+/* =============================================
+ * == DEVICE
+ * =============================================
+ */
+
+__device__ void calc_pp_dvel_matrix_incr(int row, int pi, int column, int pj,
+    coord_t *Xs, coord_t *Ys, int *LJs, double *Evdw, double *Ecoul, dvel_t *patom_a, dvel_t *patom_b,
+    ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms) {
+    
+    bool bond14, bond23;
+    double scaling;
+    coord_t da;
+    double r2a, ra, r6a;
+    double Vela, V_a, V_b;
+    double dva;
+    double crg_i, crg_j;
+    double ai_aii, aj_aii, ai_bii, aj_bii;
+    int i, j;
+    catype_t ai_type, aj_type;
+
+    i = D_patoms[pi].a - 1;
+    j = D_patoms[pj].a - 1;
+    bond23 = LJs[row * BLOCK_SIZE + column] == 3;
+    bond14 = LJs[row * BLOCK_SIZE + column] == 1;
+
+    if (bond23) return;
+    // if (excluded[i] || excluded[j]) return;
+
+    scaling = bond14 ? .5 : 1;
+
+    crg_i = D_ccharges[D_charges[i].code - 1].charge;
+    crg_j = D_ccharges[D_charges[j].code - 1].charge;
+
+    ai_type = D_catypes[D_atypes[i].code - 1];
+    aj_type = D_catypes[D_atypes[j].code - 1];
+
+    da.x = Ys[column].x - Xs[row].x;
+    da.y = Ys[column].y - Xs[row].y;
+    da.z = Ys[column].z - Xs[row].z;
+    r2a = 1 / (pow(da.x, 2) + pow(da.y, 2) + pow(da.z, 2));
+    ra = sqrt(r2a);
+    r6a = r2a * r2a * r2a;
+
+    Vela = scaling * Coul * crg_i * crg_j * ra;
+
+    ai_aii = bond14 ? ai_type.aii_1_4 : ai_type.aii_normal;
+    aj_aii = bond14 ? aj_type.aii_1_4 : aj_type.aii_normal;
+    ai_bii = bond14 ? ai_type.bii_1_4 : ai_type.bii_normal;
+    aj_bii = bond14 ? aj_type.bii_1_4 : aj_type.bii_normal;
+
+    V_a = r6a * r6a * ai_aii * aj_aii;
+    V_b = r6a * ai_bii * aj_bii;
+    dva = r2a * ( -Vela -12 * V_a + 6 * V_b);
+
+    patom_a->x = -dva * da.x;
+    patom_a->y = -dva * da.y;
+    patom_a->z = -dva * da.z;
+
+    patom_b->x = dva * da.x;
+    patom_b->y = dva * da.y;
+    patom_b->z = dva * da.z;
+
+    *Evdw += Vela;
+    *Ecoul += (V_a - V_b);
+}
+
+__global__ void calc_pp_dvel_matrix(int n_patoms,
+    coord_t *P, double *Evdw, double *Ecoul, dvel_t *PP_MAT,
+    ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms, int *D_LJ_matrix) {
+    // Block index
+    int bx = blockIdx.x;
+    int by = blockIdx.y;
+
+    // Thread index
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+
+    // if (bx == 9 && by == 0) printf("bx = %d by = %d tx = %d ty = %d\n", bx, by, tx, ty);
+
+    int aStart = BLOCK_SIZE * by;
+    int bStart = BLOCK_SIZE * bx;
+
+    if (aStart + ty >= n_patoms) return;
+    if (bStart + tx >= n_patoms) return;
+
+    __shared__ coord_t Xs[BLOCK_SIZE];
+    __shared__ coord_t Ys[BLOCK_SIZE];
+    __shared__     int LJs[BLOCK_SIZE * BLOCK_SIZE];
+    
+    // if (bx == 0 && by == 0) printf("bx = %d by = %d tx = %d ty = %d\n", bx, by, tx, ty);
+
+    if (tx == 0) {
+        Xs[ty] = P[aStart + ty];
+    }
+
+    if (ty == 0) {
+        Ys[tx] = P[bStart + tx];
+    }
+    LJs[ty * BLOCK_SIZE + tx] = D_LJ_matrix[(aStart + ty) * n_patoms + bStart + tx];
+    // if (bx == 0 && by == 0) printf("bx = %d by = %d tx = %d ty = %d LJs[%d][%d] = %d LJ[0][2]=%d\n", bx, by, tx, ty, tx, ty, LJs[ty * BLOCK_SIZE + tx], D_LJ_matrix[2]);
+    // if ((bStart + tx) % 4 == 0 && bx == 0 && by == 0) printf("LJs[%d] = %d\n", ty * BLOCK_SIZE + tx, LJs[ty * BLOCK_SIZE + tx]);
+
+    __syncthreads();
+
+    if (bx < by || (bx == by && tx < ty)) return;
+
+    dvel_t patom_a, patom_b;
+    memset(&patom_a, 0, sizeof(dvel_t));
+    memset(&patom_b, 0, sizeof(dvel_t));
+
+    int row = by * BLOCK_SIZE + ty;
+    int column = bx * BLOCK_SIZE + tx;
+
+    if (bx != by || tx != ty) {
+        double evdw, ecoul;
+        // __device__ void calc_pp_dvel_matrix_incr(int row, int pi, int column, int pj,
+        //     coord_t *Xs, coord_t *Ys, bool *LJs, double *Evdw, double *Ecoul, dvel_t *patom_a, dvel_t *patom_b,
+        //     ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms);
+
+        calc_pp_dvel_matrix_incr(ty, aStart + ty, tx, bStart + tx, Xs, Ys, LJs, &evdw, &ecoul, &patom_a,
+             &patom_b, D_ccharges, D_charges, D_catypes, D_atypes, D_patoms);
+    }
+
+    // if (row == 0 && column == 1) {
+    //     printf("water_a = %f %f %f water_b = %f %f %f\n", water_a[0].x, water_a[0].y, water_a[0].z, water_b[0].x, water_b[0].y, water_b[0].z);
+    // }
+
+    PP_MAT[row * n_patoms + column] = patom_a;
+    PP_MAT[column * n_patoms + row] = patom_b;
+
+    __syncthreads();
+}
+
+__global__ void calc_pp_dvel_vector(int n_patoms, dvel_t *DV_P, dvel_t *PP_MAT) {
+    int row = blockIdx.x*blockDim.x + threadIdx.x;
+    if (row >= n_patoms) return;
+
+    dvel_t dP;
+    dP.x = 0;
+    dP.y = 0;
+    dP.z = 0;
+
+    for (int i = 0; i < n_patoms; i++) {
+        if (i != row) {
+            dP.x += PP_MAT[i + n_patoms * row].x;
+            dP.y += PP_MAT[i + n_patoms * row].y;
+            dP.z += PP_MAT[i + n_patoms * row].z;
+        }
+    }
+
+    DV_P[row].x += dP.x;
+    DV_P[row].y += dP.y;
+    DV_P[row].z += dP.z;
+
+    __syncthreads();
+}
+
+void clean_d_patoms() {
+    cudaFree(P);
+    cudaFree(DV_P);
+    cudaFree(PP_MAT);
+
+    free(h_PP_MAT);
+
+    cudaFree(D_ccharges);
+    cudaFree(D_charges);
+    cudaFree(D_catypes);
+    cudaFree(D_atypes);
+    cudaFree(D_patoms);
 }

@@ -542,7 +542,7 @@ void calc_temperature() {
         ener = .5 * mass_i * (pow(velocities[i].x, 2) + pow(velocities[i].y, 2) + pow(velocities[i].z, 2));
         Temp += ener;
         if (ener > Ekinmax) {
-            printf(">>> WARNING: hot atom %d: %f\n", i, ener/Boltz/3);
+            // printf(">>> WARNING: hot atom %d: %f\n", i, ener/Boltz/3);
         }
     }
 
@@ -752,8 +752,19 @@ void calc_integration_step(int iteration) {
 
     clock_t end_bonded = clock();
 
-    calc_nonbonded_qp_forces();
-    calc_nonbonded_pp_forces();
+    clock_t start_pp, end_pp;
+    if (run_gpu) {
+        calc_nonbonded_qp_forces();
+        start_pp = clock();
+        calc_nonbonded_pp_forces_host();
+        end_pp = clock();
+    }
+    else {
+        calc_nonbonded_qp_forces();
+        start_pp = clock();
+        calc_nonbonded_pp_forces();
+        end_pp = clock();
+    }
 
     clock_t start_ww, end_ww, start_pw, end_pw;
     // Now solvent interactions
@@ -877,11 +888,13 @@ void calc_integration_step(int iteration) {
 #ifdef __PROFILING__
     printf("Elapsed time for bonded forces: %f\n", (end_bonded-start) / (double)CLOCKS_PER_SEC );
     printf("Elapsed time for non-bonded forces: %f\n", (end_nonbonded-end_bonded) / (double)CLOCKS_PER_SEC);
-    printf("Elapsed time for entire time-step: %f\n", (end_calculation-start) / (double)CLOCKS_PER_SEC);
+    printf("Elapsed time for pp interactions: %f\n", (end_pp-start_pp) / (double)CLOCKS_PER_SEC );
     if (n_waters > 0) {
         printf("Elapsed time for ww interactions: %f\n", (end_ww-start_ww) / (double)CLOCKS_PER_SEC );
         printf("Elapsed time for pw interactions: %f\n", (end_pw-start_pw) / (double)CLOCKS_PER_SEC );
     }
+    printf("---\n");
+    printf("Elapsed time for entire time-step: %f\n", (end_calculation-start) / (double)CLOCKS_PER_SEC);
 #endif /* __PROFILING__ */
 
 }
@@ -1053,8 +1066,9 @@ void clean_variables() {
     free(xcoords);
 
     if (run_gpu) {
-        clean_solvent();
-        clean_qatoms();
+        clean_d_solvent();
+        clean_d_qatoms();
+        clean_d_patoms();
     }
 
     // Energies & temperature
