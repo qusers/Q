@@ -7,13 +7,14 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../s
 import qdyn
 
 class Startup(object):
-    def __init__(self,top,fep,md,re,wd,verbose):
+    def __init__(self,top,fep,md,re,wd,verbose,gpu):
         data = {'top'       :   top,
                 'fep'       :   fep,
                 'md'        :   md,
                 're'        :   re,
                 'wd'        :   wd,
-                'verbose'   :   verbose
+                'verbose'   :   verbose,
+                'gpu'       :   gpu
                }
         START = qdyn.Init(data)
 
@@ -64,7 +65,14 @@ if __name__ == "__main__":
                         default = False,
                         required = False,                                                
                         action = 'store_true',
-                        help = "Working directory")
+                        help = "If set, print out more stuff")
+         
+    parser.add_argument('--gpu',
+                        dest = "gpu",
+                        default = False,
+                        required = False,                                                
+                        action = 'store_true',
+                        help = "Set for GPU action")
 
     args = parser.parse_args()
     
@@ -74,4 +82,5 @@ if __name__ == "__main__":
             re = args.re,
             wd = args.workdir,
             verbose = args.verbose,
+            gpu = args.gpu,
            )

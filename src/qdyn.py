@@ -176,10 +176,14 @@ class Run_Dynamics(object):
         Runs the main dynamics loop.
     """           
 
-    def __init__(self,wd,top,verbose):
-        executable = SETTINGS.ROOT + 'bin/qdyn '
+    def __init__(self,wd,top,verbose,gpu):
+        if gpu == True:
+            executable = SETTINGS.ROOT + 'bin/qdyn --gpu '
         
-        options = wd + '/' 
+        else:
+            executable = SETTINGS.ROOT + 'bin/qdyn '
+            
+        options = wd + '/ ' 
         out = IO.run_command(executable,options)
         if verbose == True:
             print(out)
@@ -249,4 +253,5 @@ class Init(object):
         
         Run_Dynamics(wd  = self.environment['wd'],
                      top = self.environment['top'],
+                     gpu = self.environment['gpu'],
                      verbose = self.environment['verbose'])
