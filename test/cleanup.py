@@ -32,3 +32,13 @@ os.chdir('../')
 os.chdir('FEP_Na')
 os.system('rm -r Na-benzene-vacuum.json compare.py eq1.json Q5_data/ FEP1.json TEST')
 os.chdir(curdir)
+
+print('cleaning w-p interaction folder')
+os.chdir('1.interactions/w-p/benzene')
+os.system('rm -r compare.py eq1.json benzene-water.json Q5_data/ TEST/')
+os.chdir(curdir)
+
+print('cleaning w-q interaction folder')
+os.chdir('1.interactions/w-q/benzene')
+os.system('rm -r compare.py eq1.json benzene-water.json Q5_data/ TEST/ FEP1.json')
+os.chdir(curdir)
