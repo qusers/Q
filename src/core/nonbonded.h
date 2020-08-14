@@ -23,15 +23,16 @@ extern catype_t *D_catypes;
 extern atype_t *D_atypes;
 extern p_atom_t *D_patoms;
 extern int *D_LJ_matrix;
+extern bool *D_excluded;
 
 // P-P interactions
 __device__ void calc_pp_dvel_matrix_incr(int row, int pi, int column, int pj,
-    coord_t *Xs, coord_t *Ys, int *LJs, double *Evdw, double *Ecoul, dvel_t *patom_a, dvel_t *patom_b,
+    coord_t *Xs, coord_t *Ys, int *LJs, bool *excluded_s, double *Evdw, double *Ecoul, dvel_t *patom_a, dvel_t *patom_b,
     ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms);
 
 __global__ void calc_pp_dvel_matrix(int n_patoms,
     coord_t *P, double *Evdw, double *Ecoul, dvel_t *PP_MAT,
-    ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms, int *D_LJ_matrix);
+    ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms, int *D_LJ_matrix, bool *D_excluded);
 
 __global__ void calc_pp_dvel_vector(int n_patoms, dvel_t *DV_P, dvel_t *PP_MAT);
 

@@ -347,7 +347,7 @@ void calc_nonbonded_pw_forces() {
     for (int pi = 0; pi < n_patoms; pi++) {
         for (int j = n_atoms_solute; j < n_atoms; j++) {
             i = p_atoms[pi].a-1;
-            // if (excluded[i] || excluded[j]) continue;
+            if (excluded[i] || excluded[j]) continue;
             qi = ccharges[charges[i].code - 1].charge;
             qj = ccharges[charges[j].code - 1].charge;
 
@@ -429,7 +429,7 @@ void calc_nonbonded_pw_forces_host() {
     grid = dim3((3*n_waters + BLOCK_SIZE - 1) / threads.x, (n_patoms + BLOCK_SIZE - 1) / threads.y);
     double evdw, ecoul;
     
-    calc_pw_dvel_matrix<<<grid, threads>>>(n_patoms, n_waters, P, X, &evdw, &ecoul, PW_MAT, D_ccharges, D_charges, D_catypes, D_atypes, D_patoms);
+    calc_pw_dvel_matrix<<<grid, threads>>>(n_patoms, n_waters, P, X, &evdw, &ecoul, PW_MAT, D_ccharges, D_charges, D_catypes, D_atypes, D_patoms, D_excluded);
     calc_pw_dvel_vector_column<<<((3*n_waters+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_patoms, n_waters, DV_P, DV, PW_MAT);
     calc_pw_dvel_vector_row<<<((n_patoms+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_patoms, n_waters, DV_P, DV, PW_MAT);
 
@@ -824,7 +824,7 @@ __global__ void calc_ww_dvel_vector(int n_waters, dvel_t *DV, calc_ww_t *MAT) {
 }
 
 __device__ void calc_pw_dvel_matrix_incr(int row, int pi, int column, int j, int n_patoms,
-    coord_t *Ps, coord_t *Xs, double *Evdw, double *Ecoul, calc_pw_t *pw,
+    coord_t *Ps, coord_t *Xs, bool *excluded_s, double *Evdw, double *Ecoul, calc_pw_t *pw,
     ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms) {
 
     coord_t da;
@@ -838,7 +838,7 @@ __device__ void calc_pw_dvel_matrix_incr(int row, int pi, int column, int j, int
     atype_t i_type, j_type;
 
     i = D_patoms[pi].a-1;
-    // if (excluded[i] || excluded[j]) continue;
+    if (excluded_s[row]) return;
     qi = D_ccharges[D_charges[i].code - 1].charge;
     qj = D_ccharges[D_charges[n_patoms + j].code - 1].charge; //TODO: FIX THIS!!! WILL NOT WORK WITH QATOMS!!!!!
 
@@ -888,7 +888,7 @@ __device__ void calc_pw_dvel_matrix_incr(int row, int pi, int column, int j, int
 
 __global__ void calc_pw_dvel_matrix(int n_patoms, int n_waters,
     coord_t *P, coord_t *X, double *Evdw, double *Ecoul, calc_pw_t *PW_MAT,
-    ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms) {
+    ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms, bool *D_excluded) {
     // Block index
     int bx = blockIdx.x;
     int by = blockIdx.y;
@@ -909,9 +909,14 @@ __global__ void calc_pw_dvel_matrix(int n_patoms, int n_waters,
 
     __shared__ coord_t Ps[BLOCK_SIZE];
     __shared__ coord_t Xs[BLOCK_SIZE];
+    __shared__    bool excluded_s[BLOCK_SIZE];
 
     Ps[ty] = P[D_patoms[aStart + ty].a-1];
     Xs[tx] = X[bStart + tx];
+
+    if (tx == 0) {
+        excluded_s[ty] = D_excluded[D_patoms[aStart + ty].a-1];
+    }
 
     __syncthreads();
 
@@ -941,7 +946,7 @@ __global__ void calc_pw_dvel_matrix(int n_patoms, int n_waters,
     // coord_t *Ps, coord_t *Xs, double *Evdw, double *Ecoul, calc_pw_t *pw,
     // ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms)
     double evdw, ecoul;
-    calc_pw_dvel_matrix_incr(ty, aStart + ty, tx, bStart + tx, n_patoms, Ps, Xs, &evdw, &ecoul, &pw, D_ccharges, D_charges, D_catypes, D_atypes, D_patoms);
+    calc_pw_dvel_matrix_incr(ty, aStart + ty, tx, bStart + tx, n_patoms, Ps, Xs, excluded_s, &evdw, &ecoul, &pw, D_ccharges, D_charges, D_catypes, D_atypes, D_patoms);
 
     // if (row == 0 && column == 1) {
     //     printf("water_a = %f %f %f water_b = %f %f %f\n", water_a[0].x, water_a[0].y, water_a[0].z, water_b[0].x, water_b[0].y, water_b[0].z);
@@ -1012,5 +1017,7 @@ void clean_d_solvent() {
     free(h_WW_MAT);
     free(h_PW_MAT);
 
+    #ifdef DEBUG
     printf("All memory freed\n");
+    #endif
 }
