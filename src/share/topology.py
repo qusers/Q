@@ -55,8 +55,26 @@ class Read_Topology(object):
         self.data = data.data
         
     def JSON(self):
+        constants = ['catypes','cbonds','cangles','ctorsions','cimpropers','ccharges']
+        to_delete = []
+        tmp = {}
+        
         with open(self.top) as json_file:
             self.data = json.load(json_file)
+            
+        for key in self.data:
+            if key in constants:
+                tmp[key] = {}
+                for i in self.data[key]:
+                    tmp[key][int(i)] = self.data[key][i]
+                    
+                    if not key in to_delete:
+                        to_delete.append(key)
+        
+        for key in to_delete:
+            del self.data[key]
+
+        self.data = {**tmp, **self.data}
         
         return(self.data)
         
@@ -481,6 +499,7 @@ class Write_Topology(object):
         """
         .json MD input file
         """
+        #print(self.data['catypes']['1'])
         with open(out_json, 'w') as outfile:
             inputs = self.data
             json.dump(inputs,outfile,indent=2)     

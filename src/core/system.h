@@ -527,6 +527,7 @@ struct energy_t {
     double Ushell;
     double Upres;
     double Urestr;
+    double UQtot;
 };
 
 extern p_atom_t *p_atoms;

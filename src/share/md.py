@@ -250,7 +250,7 @@ class Write_MD(object):
             outfile.write('output;{}\n'             .format(self.data['output']))        
             outfile.write('energy;{}\n'             .format(self.data['energy']))        
             outfile.write('trajectory;{}\n'         .format(self.data['trajectory']))
-            
+
             # possible to have multiple lambdas, need to loop
             ### LAMBDAS ###
             if self.data['lambdas'] != None:
