@@ -1,2 +1,0 @@
-No Uimp being printed for Q atoms.
-Energies that are part of Q atom should not be appearing in total energies.
