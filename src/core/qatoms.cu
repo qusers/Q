@@ -6,8 +6,6 @@
 #include <stdio.h>
 
 // Device pointers
-coord_t *Q, *W;
-dvel_t *DV_Q, *DV_W;
 calc_qw_t *QW_MAT, *h_QW_MAT;
 
 // Constants pointers
@@ -183,9 +181,9 @@ void calc_nonbonded_qw_forces() {
 }
 
 void calc_nonbonded_qw_forces_host() {
-    int mem_size_Q = n_qatoms * sizeof(coord_t);
+    int mem_size_X = n_atoms * sizeof(coord_t);
     int mem_size_W = 3 * n_waters * sizeof(coord_t);
-    int mem_size_DV_Q = n_qatoms * sizeof(dvel_t);
+    int mem_size_DV_X = n_atoms * sizeof(dvel_t);
     int mem_size_DV_W = 3 * n_waters * sizeof(dvel_t);
     int mem_size_MAT = 3 * n_waters * n_qatoms * sizeof(calc_qw_t);
 
@@ -204,25 +202,9 @@ void calc_nonbonded_qw_forces_host() {
         B_O = catype_ow.bii_normal;
 
         #ifdef DEBUG
-        printf("Allocating Q\n");
-        #endif
-        check_cudaMalloc((void**) &Q, mem_size_Q);
-        #ifdef DEBUG
-        printf("Allocating W\n");
-        #endif
-        check_cudaMalloc((void**) &W, mem_size_W);
-        #ifdef DEBUG
         printf("Allocating QW_MAT\n");
         #endif
         check_cudaMalloc((void**) &QW_MAT, mem_size_MAT);
-        #ifdef DEBUG
-        printf("Allocating DV_Q\n");
-        #endif
-        check_cudaMalloc((void**) &DV_Q, mem_size_DV_Q);
-        #ifdef DEBUG
-        printf("Allocating DV_W\n");
-        #endif
-        check_cudaMalloc((void**) &DV_W, mem_size_DV_W);
 
         #ifdef DEBUG
         printf("Allocating D_qcatypes\n");
@@ -254,10 +236,10 @@ void calc_nonbonded_qw_forces_host() {
         h_QW_MAT = (calc_qw_t*) malloc(mem_size_MAT);
     }
 
-    cudaMemcpy(Q, coords, mem_size_Q, cudaMemcpyHostToDevice);
+    cudaMemcpy(X, coords, mem_size_X, cudaMemcpyHostToDevice);
     cudaMemcpy(W, &coords[n_atoms_solute], mem_size_W, cudaMemcpyHostToDevice);
-    cudaMemcpy(DV_Q, dvelocities, mem_size_Q, cudaMemcpyHostToDevice);
-    cudaMemcpy(DV_W, &dvelocities[n_atoms_solute], mem_size_W, cudaMemcpyHostToDevice);
+    cudaMemcpy(DV_X, dvelocities, mem_size_DV_X, cudaMemcpyHostToDevice);
+    cudaMemcpy(DV_W, &dvelocities[n_atoms_solute], mem_size_DV_W, cudaMemcpyHostToDevice);
 
     dim3 threads,grid;
 
@@ -266,9 +248,9 @@ void calc_nonbonded_qw_forces_host() {
 
     double evdw, ecoul;
 
-    calc_qw_dvel_matrix<<<grid, threads>>>(n_qatoms, n_waters, n_lambdas, crg_ow, crg_hw, A_O, B_O, Q, W, &evdw, &ecoul, QW_MAT, D_qcatypes, D_qatypes, D_qcharges, D_qatoms, D_lambdas);
-    calc_qw_dvel_vector_column<<<((n_waters+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_qatoms, n_waters, DV_Q, DV_W, QW_MAT);
-    calc_qw_dvel_vector_row<<<((n_qatoms+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_qatoms, n_waters, DV_Q, DV_W, QW_MAT);
+    calc_qw_dvel_matrix<<<grid, threads>>>(n_qatoms, n_waters, n_lambdas, crg_ow, crg_hw, A_O, B_O, X, W, &evdw, &ecoul, QW_MAT, D_qcatypes, D_qatypes, D_qcharges, D_qatoms, D_lambdas);
+    calc_qw_dvel_vector_column<<<((n_waters+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_qatoms, n_waters, DV_X, DV_W, QW_MAT);
+    calc_qw_dvel_vector_row<<<((n_qatoms+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_qatoms, n_waters, DV_X, DV_W, QW_MAT, D_qatoms);
 
     // cudaMemcpy(h_QW_MAT, QW_MAT, mem_size_MAT, cudaMemcpyDeviceToHost);
 
@@ -282,7 +264,7 @@ void calc_nonbonded_qw_forces_host() {
     //     }
     // }
 
-    cudaMemcpy(dvelocities, DV_Q, mem_size_DV_Q, cudaMemcpyDeviceToHost);
+    cudaMemcpy(dvelocities, DV_X, mem_size_DV_X, cudaMemcpyDeviceToHost);
     cudaMemcpy(&dvelocities[n_atoms_solute], DV_W, mem_size_DV_W, cudaMemcpyDeviceToHost);
 }
 
@@ -667,7 +649,7 @@ __device__ void calc_qw_dvel_matrix_incr(int row, int qi, int column, int n_lamb
 }
 
 __global__ void calc_qw_dvel_matrix(int n_qatoms, int n_waters, int n_lambdas, double crg_ow, double crg_hw, double A_O, double B_O,
-    coord_t *Q, coord_t *W, double *Evdw, double *Ecoul, calc_qw_t *MAT,
+    coord_t *X, coord_t *W, double *Evdw, double *Ecoul, calc_qw_t *MAT,
     q_catype_t *D_qcatypes, q_atype_t *D_qatypes, q_charge_t *D_qcharges, q_atom_t *D_qatoms, double *D_lambdas) {
     // Block index
     int bx = blockIdx.x;
@@ -690,7 +672,7 @@ __global__ void calc_qw_dvel_matrix(int n_qatoms, int n_waters, int n_lambdas, d
     __shared__ coord_t Ws[3 * BLOCK_SIZE];
 
     if (tx == 0) {
-        Qs[ty] = Q[D_qatoms[aStart + ty].a-1];
+        Qs[ty] = X[D_qatoms[aStart + ty].a-1];
     }
 
     if (ty == 0) {
@@ -738,7 +720,8 @@ __global__ void calc_qw_dvel_matrix(int n_qatoms, int n_waters, int n_lambdas, d
     __syncthreads();
 }
 
-__global__ void calc_qw_dvel_vector_row(int n_qatoms, int n_waters, dvel_t *DV_Q, dvel_t *DV_W, calc_qw_t *MAT) {
+// TODO add D_qatoms as input var
+__global__ void calc_qw_dvel_vector_row(int n_qatoms, int n_waters, dvel_t *DV_X, dvel_t *DV_W, calc_qw_t *MAT, q_atom_t *D_qatoms) {
     int row = blockIdx.x*blockDim.x + threadIdx.x;
     if (row >= n_qatoms) return;
 
@@ -754,14 +737,16 @@ __global__ void calc_qw_dvel_vector_row(int n_qatoms, int n_waters, dvel_t *DV_Q
         dQ.z += MAT[i + n_waters * row].Q.z;
     }
 
-    DV_Q[row].x += dQ.x;
-    DV_Q[row].y += dQ.y;
-    DV_Q[row].z += dQ.z;
+    int q = D_qatoms[row].a-1;
+
+    DV_X[q].x += dQ.x;
+    DV_X[q].y += dQ.y;
+    DV_X[q].z += dQ.z;
 
     __syncthreads();
 }
 
-__global__ void calc_qw_dvel_vector_column(int n_qatoms, int n_waters, dvel_t *DV_Q, dvel_t *DV_W, calc_qw_t *MAT) {
+__global__ void calc_qw_dvel_vector_column(int n_qatoms, int n_waters, dvel_t *DV_X, dvel_t *DV_W, calc_qw_t *MAT) {
     int column = blockIdx.x*blockDim.x + threadIdx.x;
     if (column >= n_waters) return;
 
@@ -807,11 +792,7 @@ __global__ void calc_qw_dvel_vector_column(int n_qatoms, int n_waters, dvel_t *D
 // Q-P interactions
 
 void clean_d_qatoms() {
-    cudaFree(Q);
-    cudaFree(W);
     cudaFree(QW_MAT);
-    cudaFree(DV_Q);
-    cudaFree(DV_W);
     cudaFree(D_qcatypes);
     cudaFree(D_qatypes);
     cudaFree(D_qcharges);

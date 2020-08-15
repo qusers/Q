@@ -21,8 +21,8 @@ struct calc_qw_t {
  * == DEVICE
  * =============================================
  */
-extern coord_t *Q, *W;
-extern dvel_t *DV_Q, *DV_W;
+extern coord_t *X, *W;
+extern dvel_t *DV_X, *DV_W;
 extern calc_qw_t *QW_MAT;
 
 // Constants pointers
@@ -41,7 +41,7 @@ __global__ void calc_qw_dvel_matrix(int n_qatoms, int n_waters, int n_lambdas, d
     coord_t *Q, coord_t *W, double *Evdw, double *Ecoul, calc_qw_t *MAT,
     q_catype_t *D_qcatypes, q_atype_t *D_qatypes, q_charge_t *D_qcharges, q_atom_t *D_qatoms, double *D_lambdas);
 
-__global__ void calc_qw_dvel_vector_row(int n_qatoms, int n_waters, dvel_t *DV_Q, dvel_t *DV_W, calc_qw_t *MAT);
+__global__ void calc_qw_dvel_vector_row(int n_qatoms, int n_waters, dvel_t *DV_Q, dvel_t *DV_W, calc_qw_t *MAT, q_atom_t *D_qatoms);
 
 __global__ void calc_qw_dvel_vector_column(int n_qatoms, int n_waters, dvel_t *DV_Q, dvel_t *DV_W, calc_qw_t *MAT);
 
