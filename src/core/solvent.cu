@@ -461,10 +461,9 @@ void calc_nonbonded_pw_forces_host() {
  * =============================================
  */
 
+// W-W interactions
+
 __device__ void set_water(int n_waters, int row, int column, dvel_t *val, calc_ww_t *MAT) {
-    // if (row < 32 && column < 32) {
-    //     printf("MAT[%d][%d].O = %f %f %f\n", row, column, val[0].x, val[0].y, val[0].z);
-    // }
     MAT[column + n_waters * row].O  = val[0];
     MAT[column + n_waters * row].H1 = val[1];
     MAT[column + n_waters * row].H2 = val[2];
@@ -822,6 +821,8 @@ __global__ void calc_ww_dvel_vector(int n_waters, dvel_t *DV, calc_ww_t *MAT) {
 
     __syncthreads();
 }
+
+// P-W interactions
 
 __device__ void calc_pw_dvel_matrix_incr(int row, int pi, int column, int j, int n_patoms,
     coord_t *Ps, coord_t *Xs, bool *excluded_s, double *Evdw, double *Ecoul, calc_pw_t *pw,

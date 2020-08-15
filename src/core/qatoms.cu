@@ -286,233 +286,6 @@ void calc_nonbonded_qw_forces_host() {
     cudaMemcpy(&dvelocities[n_atoms_solute], DV_W, mem_size_DV_W, cudaMemcpyDeviceToHost);
 }
 
-__device__ void calc_qw_dvel_matrix_incr(int row, int qi, int column, int n_lambdas, int n_qatoms, double crg_ow, double crg_hw, double A_O, double B_O,
-    coord_t *Qs, coord_t *Ws, double *Evdw, double *Ecoul, calc_qw_t *qw,
-    q_catype_t *D_qcatypes, q_atype_t *D_qatypes, q_charge_t *D_qcharges, q_atom_t *D_qatoms, double *D_lambdas) {
-
-    int j;
-    coord_t dO, dH1, dH2;
-    double r2O, rH1, rH2, r6O, rO, r2H1, r2H2;
-    double dvO, dvH1, dvH2;
-    double V_a, V_b, VelO, VelH1, VelH2;
-    q_atype_t qa_type;
-    q_catype_t qi_type;
-    double ai_aii, ai_bii;
-
-    j = 3 * column;
-    dO.x = Ws[j].x - Qs[row].x;
-    dO.y = Ws[j].y - Qs[row].y;
-    dO.z = Ws[j].z - Qs[row].z;
-    dH1.x = Ws[j+1].x - Qs[row].x;
-    dH1.y = Ws[j+1].y - Qs[row].y;
-    dH1.z = Ws[j+1].z - Qs[row].z;
-    dH2.x = Ws[j+2].x - Qs[row].x;
-    dH2.y = Ws[j+2].y - Qs[row].y;
-    dH2.z = Ws[j+2].z - Qs[row].z;
-    // if (j == 6) { 
-    //     printf("dO = %f %f %f, dH1 = %f %f %f, dH2 = %f %f %f\n", dO.x, dO.y, dO.z, dH1.x, dH1.y, dH1.z, dH2.x, dH2.y, dH2.z);
-    //     if (dO.x == 0) {
-    //         printf("Ws[%d] = %f %f %f, Qs[%d] = %f %f %f\n", j, Ws[j].x, Ws[j].y, Ws[j].z, row, Qs[row].x, Qs[row].y, Qs[row].z);
-    //     }
-    // }
-    r2O = pow(dO.x, 2) + pow(dO.y, 2) + pow(dO.z, 2);
-    rH1 = sqrt(1.0 / (pow(dH1.x, 2) + pow(dH1.y, 2) + pow(dH1.z, 2)));
-    rH2 = sqrt(1.0 / (pow(dH2.x, 2) + pow(dH2.y, 2) + pow(dH2.z, 2)));
-    r6O = r2O * r2O * r2O;
-    r2O = 1.0 / r2O;
-    rO = sqrt(r2O);
-    r2H1 = rH1 * rH1;
-    r2H2 = rH2 * rH2;
-
-    // Reset potential
-    dvO = 0;
-    dvH1 = 0;
-    dvH2 = 0;
-
-    for (int state = 0; state < n_lambdas; state++) {
-        qa_type = D_qatypes[qi + n_qatoms * state];
-        qi_type = D_qcatypes[qa_type.code - 1];
-
-        ai_aii = qi_type.Ai;
-        ai_bii = qi_type.Bi;
-
-        V_a = ai_aii * A_O / (r6O * r6O);
-        V_b = ai_bii * B_O / (r6O);
-
-        VelO = Coul * crg_ow * D_qcharges[qi + n_qatoms * state].q * rO;
-        VelH1 = Coul * crg_hw * D_qcharges[qi + n_qatoms * state].q * rH1;
-        VelH2 = Coul * crg_hw * D_qcharges[qi + n_qatoms * state].q * rH2;
-
-        // if (qi == 1 && j == 12) printf("crg_ow = %f charge[%d] = %f rO = %f j = %d\n", crg_hw, qi + n_qatoms * state, D_qcharges[qi + n_qatoms * state].q, rH1, j);
-        // if (qi == 1 && j == 12) printf("ai_aii = %f ai_bii = %f qi = %d V_a = %f V_b = %f VelO = %f VelH1 = %f VelH2 = %f\n", ai_aii, ai_bii, qi, V_a, V_b, VelO, VelH1, VelH2);
-        // if (qi == 1 && j == 12 && state == 0) printf("r6O = %f ai_aii = %f A_O = %f B_O = %f V_a = %f V_b = %f\n", r6O, ai_aii, A_O, B_O, V_a, V_b);
-
-        dvO += r2O * (-VelO - (12 * V_a - 6 * V_b)) * D_lambdas[state];
-        dvH1 -= r2H1 * VelH1 * D_lambdas[state];
-        dvH2 -= r2H2 * VelH2 * D_lambdas[state];
-
-        // if (qi == 1) printf("j = %d, dvO = %f, dvH1 = %f, dvH2 = %f\n", j, dvO, dvH1, dvH2);
-
-        *Ecoul += (VelO + VelH1 + VelH2);
-        *Evdw += (V_a - V_b);
-    }
-
-    // Note r6O is not the usual 1/rO^6, but rather rO^6. be careful!!!
-
-    // Update forces on Q-atom
-    (*qw).Q.x -= (dvO * dO.x + dvH1 * dH1.x + dvH2 * dH2.x);
-    (*qw).Q.y -= (dvO * dO.y + dvH1 * dH1.y + dvH2 * dH2.y);
-    (*qw).Q.z -= (dvO * dO.z + dvH1 * dH1.z + dvH2 * dH2.z);
-
-    // Update forces on water
-    (*qw).O.x += dvO * dO.x;
-    (*qw).O.y += dvO * dO.y;
-    (*qw).O.z += dvO * dO.z;
-    (*qw).H1.x += dvH1 * dH1.x;
-    (*qw).H1.y += dvH1 * dH1.y;
-    (*qw).H1.z += dvH1 * dH1.z;
-    (*qw).H2.x += dvH2 * dH2.x;
-    (*qw).H2.y += dvH2 * dH2.y;
-    (*qw).H2.z += dvH2 * dH2.z;
-}
-
-__global__ void calc_qw_dvel_matrix(int n_qatoms, int n_waters, int n_lambdas, double crg_ow, double crg_hw, double A_O, double B_O,
-    coord_t *Q, coord_t *W, double *Evdw, double *Ecoul, calc_qw_t *MAT,
-    q_catype_t *D_qcatypes, q_atype_t *D_qatypes, q_charge_t *D_qcharges, q_atom_t *D_qatoms, double *D_lambdas) {
-    // Block index
-    int bx = blockIdx.x;
-    int by = blockIdx.y;
-
-    // Thread index
-    int tx = threadIdx.x;
-    int ty = threadIdx.y;
-
-
-    int aStart = BLOCK_SIZE * by;
-    int bStart = 3 * BLOCK_SIZE * bx;
-
-    if (aStart + ty >= n_qatoms) return;
-    if (bStart + 3 * tx >= 3 * n_waters) return;
-
-    // if (bx == 8 && by == 1) printf("bx = %d by = %d tx = %d ty = %d\n", bx, by, tx, ty);
-
-    __shared__ coord_t Qs[BLOCK_SIZE];
-    __shared__ coord_t Ws[3 * BLOCK_SIZE];
-
-    if (tx == 0) {
-        Qs[ty] = Q[D_qatoms[aStart + ty].a-1];
-    }
-
-    if (ty == 0) {
-        Ws[3 * tx    ] = W[bStart + 3 * tx    ];
-        Ws[3 * tx + 1] = W[bStart + 3 * tx + 1];
-        Ws[3 * tx + 2] = W[bStart + 3 * tx + 2];
-    }
-
-    __syncthreads();
-
-    calc_qw_t qw;
-    memset(&qw, 0, sizeof(calc_qw_t));
-
-    int row = by * BLOCK_SIZE + ty;
-    int column = bx * BLOCK_SIZE + tx;
-
-    // if (row == 0 && column == 1) {
-    //     printf("Xs[0] = %f\n", Xs[0]);
-    //     printf("Ys[0] = %f\n", Ys[0]);
-    //     printf("Xs[1] = %f\n", Xs[1]);
-    //     printf("Ys[1] = %f\n", Ys[1]);
-    //     printf("Xs[2] = %f\n", Xs[2]);
-    //     printf("Ys[2] = %f\n", Ys[2]);
-    //     printf("Xs[3] = %f\n", Xs[3]);
-    //     printf("Ys[3] = %f\n", Ys[3]);
-    //     printf("Xs[4] = %f\n", Xs[4]);
-    //     printf("Ys[4] = %f\n", Ys[4]);
-
-    //     printf("Ys[%d] = %f Xs[%d] = %f\n", 3 * ty, Ys[3 * ty], 3 * tx, Xs[3 * tx]);
-    // }
-
-    // if (bx == 8 && by == 1) printf("bx = %d by = %d tx = %d ty = %d\n", bx, by, tx, ty);
-    double evdw, ecoul;
-    calc_qw_dvel_matrix_incr(ty, aStart + ty, tx, n_lambdas, n_qatoms, crg_ow, crg_hw, A_O, B_O, Qs, Ws, &evdw, &ecoul, &qw, D_qcatypes, D_qatypes, D_qcharges, D_qatoms, D_lambdas);
-
-    // if (row == 0 && column == 1) {
-    //     printf("water_a = %f %f %f water_b = %f %f %f\n", water_a[0].x, water_a[0].y, water_a[0].z, water_b[0].x, water_b[0].y, water_b[0].z);
-    // }
-
-    // if (bx == 8 && by == 1) printf("n_qatoms = %d\n", n_qatoms);
-    // if (bx == 8 && by == 1) printf("qi = %d j = %d charge[%d] = %f\n", row, column, row + n_qatoms, D_qcharges[row + n_qatoms * 1].q);
-
-    MAT[column + n_waters * row] = qw;
-
-    __syncthreads();
-}
-
-__global__ void calc_qw_dvel_vector_row(int n_qatoms, int n_waters, dvel_t *DV_Q, dvel_t *DV_W, calc_qw_t *MAT) {
-    int row = blockIdx.x*blockDim.x + threadIdx.x;
-    if (row >= n_qatoms) return;
-
-    dvel_t dQ;
-
-    dQ.x = 0;
-    dQ.y = 0;
-    dQ.z = 0;
-
-    for (int i = 0; i < n_waters; i++) {
-        dQ.x += MAT[i + n_waters * row].Q.x;
-        dQ.y += MAT[i + n_waters * row].Q.y;
-        dQ.z += MAT[i + n_waters * row].Q.z;
-    }
-
-    DV_Q[row].x += dQ.x;
-    DV_Q[row].y += dQ.y;
-    DV_Q[row].z += dQ.z;
-
-    __syncthreads();
-}
-
-__global__ void calc_qw_dvel_vector_column(int n_qatoms, int n_waters, dvel_t *DV_Q, dvel_t *DV_W, calc_qw_t *MAT) {
-    int column = blockIdx.x*blockDim.x + threadIdx.x;
-    if (column >= n_waters) return;
-
-    dvel_t dO, dH1, dH2;
-
-    dO.x = 0;
-    dO.y = 0;
-    dO.z = 0;
-    dH1.x = 0;
-    dH1.y = 0;
-    dH1.z = 0;
-    dH2.x = 0;
-    dH2.y = 0;
-    dH2.z = 0;
-
-    for (int i = 0; i < n_qatoms; i++) {
-        dO.x += MAT[column + n_waters * i].O.x;
-        dO.y += MAT[column + n_waters * i].O.y;
-        dO.z += MAT[column + n_waters * i].O.z;
-        dH1.x += MAT[column + n_waters * i].H1.x;
-        dH1.y += MAT[column + n_waters * i].H1.y;
-        dH1.z += MAT[column + n_waters * i].H1.z;
-        dH2.x += MAT[column + n_waters * i].H2.x;
-        dH2.y += MAT[column + n_waters * i].H2.y;
-        dH2.z += MAT[column + n_waters * i].H2.z;
-    }
-
-    DV_W[3*column].x += dO.x;
-    DV_W[3*column].y += dO.y;
-    DV_W[3*column].z += dO.z;
-    DV_W[3*column+1].x += dH1.x;
-    DV_W[3*column+1].y += dH1.y;
-    DV_W[3*column+1].z += dH1.z;
-    DV_W[3*column+2].x += dH2.x;
-    DV_W[3*column+2].y += dH2.y;
-    DV_W[3*column+2].z += dH2.z;
-
-    __syncthreads();
-}
-
-
 void calc_nonbonded_qq_forces() {
     int ai, aj;
     double crg_i, crg_j;
@@ -795,6 +568,243 @@ void calc_qtorsion_forces(int state) {
         dvelocities[al].z += dv * dpl.z;
     }
 }
+
+/* =============================================
+ * == DEVICE
+ * =============================================
+ */
+
+// Q-W interactions
+
+__device__ void calc_qw_dvel_matrix_incr(int row, int qi, int column, int n_lambdas, int n_qatoms, double crg_ow, double crg_hw, double A_O, double B_O,
+    coord_t *Qs, coord_t *Ws, double *Evdw, double *Ecoul, calc_qw_t *qw,
+    q_catype_t *D_qcatypes, q_atype_t *D_qatypes, q_charge_t *D_qcharges, q_atom_t *D_qatoms, double *D_lambdas) {
+
+    int j;
+    coord_t dO, dH1, dH2;
+    double r2O, rH1, rH2, r6O, rO, r2H1, r2H2;
+    double dvO, dvH1, dvH2;
+    double V_a, V_b, VelO, VelH1, VelH2;
+    q_atype_t qa_type;
+    q_catype_t qi_type;
+    double ai_aii, ai_bii;
+
+    j = 3 * column;
+    dO.x = Ws[j].x - Qs[row].x;
+    dO.y = Ws[j].y - Qs[row].y;
+    dO.z = Ws[j].z - Qs[row].z;
+    dH1.x = Ws[j+1].x - Qs[row].x;
+    dH1.y = Ws[j+1].y - Qs[row].y;
+    dH1.z = Ws[j+1].z - Qs[row].z;
+    dH2.x = Ws[j+2].x - Qs[row].x;
+    dH2.y = Ws[j+2].y - Qs[row].y;
+    dH2.z = Ws[j+2].z - Qs[row].z;
+    // if (j == 6) { 
+    //     printf("dO = %f %f %f, dH1 = %f %f %f, dH2 = %f %f %f\n", dO.x, dO.y, dO.z, dH1.x, dH1.y, dH1.z, dH2.x, dH2.y, dH2.z);
+    //     if (dO.x == 0) {
+    //         printf("Ws[%d] = %f %f %f, Qs[%d] = %f %f %f\n", j, Ws[j].x, Ws[j].y, Ws[j].z, row, Qs[row].x, Qs[row].y, Qs[row].z);
+    //     }
+    // }
+    r2O = pow(dO.x, 2) + pow(dO.y, 2) + pow(dO.z, 2);
+    rH1 = sqrt(1.0 / (pow(dH1.x, 2) + pow(dH1.y, 2) + pow(dH1.z, 2)));
+    rH2 = sqrt(1.0 / (pow(dH2.x, 2) + pow(dH2.y, 2) + pow(dH2.z, 2)));
+    r6O = r2O * r2O * r2O;
+    r2O = 1.0 / r2O;
+    rO = sqrt(r2O);
+    r2H1 = rH1 * rH1;
+    r2H2 = rH2 * rH2;
+
+    // Reset potential
+    dvO = 0;
+    dvH1 = 0;
+    dvH2 = 0;
+
+    for (int state = 0; state < n_lambdas; state++) {
+        qa_type = D_qatypes[qi + n_qatoms * state];
+        qi_type = D_qcatypes[qa_type.code - 1];
+
+        ai_aii = qi_type.Ai;
+        ai_bii = qi_type.Bi;
+
+        V_a = ai_aii * A_O / (r6O * r6O);
+        V_b = ai_bii * B_O / (r6O);
+
+        VelO = Coul * crg_ow * D_qcharges[qi + n_qatoms * state].q * rO;
+        VelH1 = Coul * crg_hw * D_qcharges[qi + n_qatoms * state].q * rH1;
+        VelH2 = Coul * crg_hw * D_qcharges[qi + n_qatoms * state].q * rH2;
+
+        // if (qi == 1 && j == 12) printf("crg_ow = %f charge[%d] = %f rO = %f j = %d\n", crg_hw, qi + n_qatoms * state, D_qcharges[qi + n_qatoms * state].q, rH1, j);
+        // if (qi == 1 && j == 12) printf("ai_aii = %f ai_bii = %f qi = %d V_a = %f V_b = %f VelO = %f VelH1 = %f VelH2 = %f\n", ai_aii, ai_bii, qi, V_a, V_b, VelO, VelH1, VelH2);
+        // if (qi == 1 && j == 12 && state == 0) printf("r6O = %f ai_aii = %f A_O = %f B_O = %f V_a = %f V_b = %f\n", r6O, ai_aii, A_O, B_O, V_a, V_b);
+
+        dvO += r2O * (-VelO - (12 * V_a - 6 * V_b)) * D_lambdas[state];
+        dvH1 -= r2H1 * VelH1 * D_lambdas[state];
+        dvH2 -= r2H2 * VelH2 * D_lambdas[state];
+
+        // if (qi == 1) printf("j = %d, dvO = %f, dvH1 = %f, dvH2 = %f\n", j, dvO, dvH1, dvH2);
+
+        *Ecoul += (VelO + VelH1 + VelH2);
+        *Evdw += (V_a - V_b);
+    }
+
+    // Note r6O is not the usual 1/rO^6, but rather rO^6. be careful!!!
+
+    // Update forces on Q-atom
+    (*qw).Q.x -= (dvO * dO.x + dvH1 * dH1.x + dvH2 * dH2.x);
+    (*qw).Q.y -= (dvO * dO.y + dvH1 * dH1.y + dvH2 * dH2.y);
+    (*qw).Q.z -= (dvO * dO.z + dvH1 * dH1.z + dvH2 * dH2.z);
+
+    // Update forces on water
+    (*qw).O.x += dvO * dO.x;
+    (*qw).O.y += dvO * dO.y;
+    (*qw).O.z += dvO * dO.z;
+    (*qw).H1.x += dvH1 * dH1.x;
+    (*qw).H1.y += dvH1 * dH1.y;
+    (*qw).H1.z += dvH1 * dH1.z;
+    (*qw).H2.x += dvH2 * dH2.x;
+    (*qw).H2.y += dvH2 * dH2.y;
+    (*qw).H2.z += dvH2 * dH2.z;
+}
+
+__global__ void calc_qw_dvel_matrix(int n_qatoms, int n_waters, int n_lambdas, double crg_ow, double crg_hw, double A_O, double B_O,
+    coord_t *Q, coord_t *W, double *Evdw, double *Ecoul, calc_qw_t *MAT,
+    q_catype_t *D_qcatypes, q_atype_t *D_qatypes, q_charge_t *D_qcharges, q_atom_t *D_qatoms, double *D_lambdas) {
+    // Block index
+    int bx = blockIdx.x;
+    int by = blockIdx.y;
+
+    // Thread index
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+
+
+    int aStart = BLOCK_SIZE * by;
+    int bStart = 3 * BLOCK_SIZE * bx;
+
+    if (aStart + ty >= n_qatoms) return;
+    if (bStart + 3 * tx >= 3 * n_waters) return;
+
+    // if (bx == 8 && by == 1) printf("bx = %d by = %d tx = %d ty = %d\n", bx, by, tx, ty);
+
+    __shared__ coord_t Qs[BLOCK_SIZE];
+    __shared__ coord_t Ws[3 * BLOCK_SIZE];
+
+    if (tx == 0) {
+        Qs[ty] = Q[D_qatoms[aStart + ty].a-1];
+    }
+
+    if (ty == 0) {
+        Ws[3 * tx    ] = W[bStart + 3 * tx    ];
+        Ws[3 * tx + 1] = W[bStart + 3 * tx + 1];
+        Ws[3 * tx + 2] = W[bStart + 3 * tx + 2];
+    }
+
+    __syncthreads();
+
+    calc_qw_t qw;
+    memset(&qw, 0, sizeof(calc_qw_t));
+
+    int row = by * BLOCK_SIZE + ty;
+    int column = bx * BLOCK_SIZE + tx;
+
+    // if (row == 0 && column == 1) {
+    //     printf("Xs[0] = %f\n", Xs[0]);
+    //     printf("Ys[0] = %f\n", Ys[0]);
+    //     printf("Xs[1] = %f\n", Xs[1]);
+    //     printf("Ys[1] = %f\n", Ys[1]);
+    //     printf("Xs[2] = %f\n", Xs[2]);
+    //     printf("Ys[2] = %f\n", Ys[2]);
+    //     printf("Xs[3] = %f\n", Xs[3]);
+    //     printf("Ys[3] = %f\n", Ys[3]);
+    //     printf("Xs[4] = %f\n", Xs[4]);
+    //     printf("Ys[4] = %f\n", Ys[4]);
+
+    //     printf("Ys[%d] = %f Xs[%d] = %f\n", 3 * ty, Ys[3 * ty], 3 * tx, Xs[3 * tx]);
+    // }
+
+    // if (bx == 8 && by == 1) printf("bx = %d by = %d tx = %d ty = %d\n", bx, by, tx, ty);
+    double evdw, ecoul;
+    calc_qw_dvel_matrix_incr(ty, aStart + ty, tx, n_lambdas, n_qatoms, crg_ow, crg_hw, A_O, B_O, Qs, Ws, &evdw, &ecoul, &qw, D_qcatypes, D_qatypes, D_qcharges, D_qatoms, D_lambdas);
+
+    // if (row == 0 && column == 1) {
+    //     printf("water_a = %f %f %f water_b = %f %f %f\n", water_a[0].x, water_a[0].y, water_a[0].z, water_b[0].x, water_b[0].y, water_b[0].z);
+    // }
+
+    // if (bx == 8 && by == 1) printf("n_qatoms = %d\n", n_qatoms);
+    // if (bx == 8 && by == 1) printf("qi = %d j = %d charge[%d] = %f\n", row, column, row + n_qatoms, D_qcharges[row + n_qatoms * 1].q);
+
+    MAT[column + n_waters * row] = qw;
+
+    __syncthreads();
+}
+
+__global__ void calc_qw_dvel_vector_row(int n_qatoms, int n_waters, dvel_t *DV_Q, dvel_t *DV_W, calc_qw_t *MAT) {
+    int row = blockIdx.x*blockDim.x + threadIdx.x;
+    if (row >= n_qatoms) return;
+
+    dvel_t dQ;
+
+    dQ.x = 0;
+    dQ.y = 0;
+    dQ.z = 0;
+
+    for (int i = 0; i < n_waters; i++) {
+        dQ.x += MAT[i + n_waters * row].Q.x;
+        dQ.y += MAT[i + n_waters * row].Q.y;
+        dQ.z += MAT[i + n_waters * row].Q.z;
+    }
+
+    DV_Q[row].x += dQ.x;
+    DV_Q[row].y += dQ.y;
+    DV_Q[row].z += dQ.z;
+
+    __syncthreads();
+}
+
+__global__ void calc_qw_dvel_vector_column(int n_qatoms, int n_waters, dvel_t *DV_Q, dvel_t *DV_W, calc_qw_t *MAT) {
+    int column = blockIdx.x*blockDim.x + threadIdx.x;
+    if (column >= n_waters) return;
+
+    dvel_t dO, dH1, dH2;
+
+    dO.x = 0;
+    dO.y = 0;
+    dO.z = 0;
+    dH1.x = 0;
+    dH1.y = 0;
+    dH1.z = 0;
+    dH2.x = 0;
+    dH2.y = 0;
+    dH2.z = 0;
+
+    for (int i = 0; i < n_qatoms; i++) {
+        dO.x += MAT[column + n_waters * i].O.x;
+        dO.y += MAT[column + n_waters * i].O.y;
+        dO.z += MAT[column + n_waters * i].O.z;
+        dH1.x += MAT[column + n_waters * i].H1.x;
+        dH1.y += MAT[column + n_waters * i].H1.y;
+        dH1.z += MAT[column + n_waters * i].H1.z;
+        dH2.x += MAT[column + n_waters * i].H2.x;
+        dH2.y += MAT[column + n_waters * i].H2.y;
+        dH2.z += MAT[column + n_waters * i].H2.z;
+    }
+
+    DV_W[3*column].x += dO.x;
+    DV_W[3*column].y += dO.y;
+    DV_W[3*column].z += dO.z;
+    DV_W[3*column+1].x += dH1.x;
+    DV_W[3*column+1].y += dH1.y;
+    DV_W[3*column+1].z += dH1.z;
+    DV_W[3*column+2].x += dH2.x;
+    DV_W[3*column+2].y += dH2.y;
+    DV_W[3*column+2].z += dH2.z;
+
+    __syncthreads();
+}
+
+// Q-Q interactions
+
+// Q-P interactions
 
 void clean_d_qatoms() {
     cudaFree(Q);

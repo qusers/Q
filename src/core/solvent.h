@@ -37,6 +37,8 @@ extern p_atom_t *D_patoms;
 extern bool *D_excluded;
 
 // W-W interactions
+__device__ void set_water(int n_waters, int row, int column, dvel_t *val, calc_ww_t *MAT);
+
 __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, double crg_hw, double A_OO, double B_OO,
     coord_t *Xs, coord_t *Ys, double *Evdw, double *Ecoul, dvel_t *water_a, dvel_t *water_b);
 
