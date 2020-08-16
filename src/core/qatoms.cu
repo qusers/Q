@@ -181,9 +181,9 @@ void calc_nonbonded_qw_forces() {
 }
 
 void calc_nonbonded_qw_forces_host() {
-    int mem_size_X = n_atoms * sizeof(coord_t);
+    int mem_size_X = n_atoms_solute * sizeof(coord_t);
     int mem_size_W = 3 * n_waters * sizeof(coord_t);
-    int mem_size_DV_X = n_atoms * sizeof(dvel_t);
+    int mem_size_DV_X = n_atoms_solute * sizeof(dvel_t);
     int mem_size_DV_W = 3 * n_waters * sizeof(dvel_t);
     int mem_size_MAT = 3 * n_waters * n_qatoms * sizeof(calc_qw_t);
 
@@ -252,17 +252,22 @@ void calc_nonbonded_qw_forces_host() {
     calc_qw_dvel_vector_column<<<((n_waters+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_qatoms, n_waters, DV_X, DV_W, QW_MAT);
     calc_qw_dvel_vector_row<<<((n_qatoms+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_qatoms, n_waters, DV_X, DV_W, QW_MAT, D_qatoms);
 
-    // cudaMemcpy(h_QW_MAT, QW_MAT, mem_size_MAT, cudaMemcpyDeviceToHost);
+    #ifdef DEBUG
+    cudaMemcpy(h_QW_MAT, QW_MAT, mem_size_MAT, cudaMemcpyDeviceToHost);
+    #endif
 
     // for (int i = 0; i < n_waters; i++) {
     //     printf("X[%d] = %f %f %f\n", i, coords[i].x, coords[i].y, coords[i].z);
     // }
 
-    // for (int i = 0; i < n_qatoms; i++) {
-    //     for (int j = 0; j < n_waters; j++) {
-    //         printf("MAT[%d][%d].O = %f %f %f\n", i, j, h_QW_MAT[i * n_waters + j].O.x, h_QW_MAT[i * n_waters + j].O.y, h_QW_MAT[i * n_waters + j].O.z);
-    //     }
-    // }
+    #ifdef DEBUG
+    for (int i = 0; i < n_qatoms; i++) {
+        for (int j = 0; j < 3 * n_waters; j++) {
+            if (h_QW_MAT[3 * i * n_waters + j].Q.x > 100)
+            printf("QW_MAT[%d][%d].Q = %f %f %f\n", i, j, h_QW_MAT[i * 3 * n_waters + j].Q.x, h_QW_MAT[i * 3 * n_waters + j].Q.y, h_QW_MAT[i * 3 * n_waters + j].Q.z);
+        }
+    }
+    #endif
 
     cudaMemcpy(dvelocities, DV_X, mem_size_DV_X, cudaMemcpyDeviceToHost);
     cudaMemcpy(&dvelocities[n_atoms_solute], DV_W, mem_size_DV_W, cudaMemcpyDeviceToHost);

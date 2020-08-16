@@ -48,11 +48,11 @@ __global__ void calc_ww_dvel_matrix(int n_waters, double crg_ow, double crg_hw, 
 __global__ void calc_ww_dvel_vector(int n_waters, dvel_t *DV, calc_ww_t *MAT);
 
 // P-W interactions
-__device__ void calc_pw_dvel_matrix_incr(int row, int pi, int column, int wj, int n_patoms,
+__device__ void calc_pw_dvel_matrix_incr(int row, int pi, int column, int wj, int n_atoms_solute,
     coord_t *Ps, coord_t *Ws, bool *excluded_s, double *Evdw, double *Ecoul, calc_pw_t *pw,
     ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms);
 
-__global__ void calc_pw_dvel_matrix(int n_patoms, int n_waters,
+__global__ void calc_pw_dvel_matrix(int n_patoms, int n_atoms_solute, int n_waters,
     coord_t *X, coord_t *W, double *Evdw, double *Ecoul, calc_pw_t *PW_MAT,
     ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms, bool *D_excluded);
 

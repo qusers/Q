@@ -321,11 +321,12 @@ void calc_nonbonded_ww_forces_host() {
     //     printf("X[%d] = %f %f %f\n", i, coords[i].x, coords[i].y, coords[i].z);
     // }
 
-    // for (int i = 0; i < n_waters; i++) {
-    //     for (int j = 0; j < n_waters; j++) {
-    //         printf("MAT[%d][%d].O = %f %f %f\n", i, j, h_MAT[i * n_waters + j].O.x, h_MAT[i * n_waters + j].O.y, h_MAT[i * n_waters + j].O.z);
-    //     }
-    // }
+    for (int i = 0; i < n_waters; i++) {
+        for (int j = 0; j < n_waters; j++) {
+            if (h_WW_MAT[i * n_waters + j].O.x > 100)
+            printf("WW_MAT[%d][%d].H1 = %f %f %f\n", i, j, h_WW_MAT[i * n_waters + j].O.x, h_WW_MAT[i * n_waters + j].O.y, h_WW_MAT[i * n_waters + j].O.z);
+        }
+    }
 
     cudaMemcpy(&dvelocities[n_atoms_solute], DV_W, mem_size_DV_W, cudaMemcpyDeviceToHost);
 
@@ -429,7 +430,7 @@ void calc_nonbonded_pw_forces_host() {
     grid = dim3((3*n_waters + BLOCK_SIZE - 1) / threads.x, (n_patoms + BLOCK_SIZE - 1) / threads.y);
     double evdw, ecoul;
     
-    calc_pw_dvel_matrix<<<grid, threads>>>(n_patoms, n_waters, X, W, &evdw, &ecoul, PW_MAT, D_ccharges, D_charges, D_catypes, D_atypes, D_patoms, D_excluded);
+    calc_pw_dvel_matrix<<<grid, threads>>>(n_patoms, n_atoms_solute, n_waters, X, W, &evdw, &ecoul, PW_MAT, D_ccharges, D_charges, D_catypes, D_atypes, D_patoms, D_excluded);
     calc_pw_dvel_vector_column<<<((3*n_waters+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_patoms, n_waters, DV_X, DV_W, PW_MAT);
     calc_pw_dvel_vector_row<<<((n_patoms+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_patoms, n_waters, DV_X, DV_W, PW_MAT, D_patoms);
 
@@ -442,11 +443,14 @@ void calc_nonbonded_pw_forces_host() {
     // }
 
     // printf("n_patoms = %d n_watoms = %d\n", n_patoms, 3 * n_waters);
-    // for (int i = 0; i < n_patoms; i++) {
-        // for (int j = 1745; j < 3 * n_waters; j++) {
-            // printf("MAT[%d][%d].W = %f %f %f\n", i, 1754, h_PW_MAT[3 * i * n_waters + 1754].W.x, h_PW_MAT[3 * i * n_waters + 1754].W.y, h_PW_MAT[3 * i * n_waters + 1754].W.z);
-        // }
-    // }
+    #ifdef DEBUG
+    for (int i = 0; i < n_patoms; i++) {
+        for (int j = 0; j < 3 * n_waters; j++) {
+            if (h_PW_MAT[3 * i * n_waters + j].P.x > 100)
+            printf("PW_MAT[%d][%d].P = %f %f %f\n", i, j, h_PW_MAT[3 * i * n_waters + j].P.x, h_PW_MAT[3 * i * n_waters + j].P.y, h_PW_MAT[3 * i * n_waters + j].P.z);
+        }
+    }
+    #endif
 
     cudaMemcpy(dvelocities, DV_X, mem_size_DV_X, cudaMemcpyDeviceToHost);
     cudaMemcpy(&dvelocities[n_atoms_solute], DV_W, mem_size_DV_W, cudaMemcpyDeviceToHost);
@@ -824,7 +828,7 @@ __global__ void calc_ww_dvel_vector(int n_waters, dvel_t *DV_W, calc_ww_t *MAT) 
 
 // P-W interactions
 
-__device__ void calc_pw_dvel_matrix_incr(int row, int pi, int column, int j, int n_patoms,
+__device__ void calc_pw_dvel_matrix_incr(int row, int pi, int column, int j, int n_atoms_solute,
     coord_t *Xs, coord_t *Ws, bool *excluded_s, double *Evdw, double *Ecoul, calc_pw_t *pw,
     ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms) {
 
@@ -839,14 +843,14 @@ __device__ void calc_pw_dvel_matrix_incr(int row, int pi, int column, int j, int
 
     if (excluded_s[row]) return;
     qi = D_ccharges[D_charges[pi].code - 1].charge;
-    qj = D_ccharges[D_charges[n_patoms + j].code - 1].charge; //TODO: FIX THIS!!! WILL NOT WORK WITH QATOMS!!!!!
+    qj = D_ccharges[D_charges[n_atoms_solute + j].code - 1].charge; //TODO: FIX THIS!!! WILL NOT WORK WITH QATOMS!!!!!
 
     // if (pi < 100 && j < 100){
     //     printf("qi = %f qj = %f\n", qi, qj);
     // }
 
     ai_type = D_catypes[D_atypes[pi].code - 1];
-    aj_type = D_catypes[D_atypes[n_patoms + j].code - 1];
+    aj_type = D_catypes[D_atypes[n_atoms_solute + j].code - 1];
 
     da.x = Ws[column].x - Xs[row].x;
     da.y = Ws[column].y - Xs[row].y;
@@ -885,7 +889,7 @@ __device__ void calc_pw_dvel_matrix_incr(int row, int pi, int column, int j, int
     // if (pi < 100 && j < 100) printf("Evdw = %f Ecoul = %f\n", *Evdw, *Ecoul);
 }
 
-__global__ void calc_pw_dvel_matrix(int n_patoms, int n_waters,
+__global__ void calc_pw_dvel_matrix(int n_patoms, int n_atoms_solute, int n_waters,
     coord_t *X, coord_t *W, double *Evdw, double *Ecoul, calc_pw_t *PW_MAT,
     ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms, bool *D_excluded) {
     // Block index
@@ -947,7 +951,7 @@ __global__ void calc_pw_dvel_matrix(int n_patoms, int n_waters,
     // coord_t *Ps, coord_t *Xs, double *Evdw, double *Ecoul, calc_pw_t *pw,
     // ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms)
     double evdw, ecoul;
-    calc_pw_dvel_matrix_incr(ty, pi, tx, bStart + tx, n_patoms, Xs, Ws, excluded_s, &evdw, &ecoul, &pw, D_ccharges, D_charges, D_catypes, D_atypes, D_patoms);
+    calc_pw_dvel_matrix_incr(ty, pi, tx, bStart + tx, n_atoms_solute, Xs, Ws, excluded_s, &evdw, &ecoul, &pw, D_ccharges, D_charges, D_catypes, D_atypes, D_patoms);
 
     // if (row == 0 && column == 1) {
     //     printf("water_a = %f %f %f water_b = %f %f %f\n", water_a[0].x, water_a[0].y, water_a[0].z, water_b[0].x, water_b[0].y, water_b[0].z);

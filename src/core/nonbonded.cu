@@ -85,8 +85,8 @@ void calc_nonbonded_pp_forces() {
 }
 
 void calc_nonbonded_pp_forces_host() {
-    int mem_size_X = n_atoms * sizeof(coord_t);
-    int mem_size_DV_X = n_atoms * sizeof(dvel_t);
+    int mem_size_X = n_atoms_solute * sizeof(coord_t);
+    int mem_size_DV_X = n_atoms_solute * sizeof(dvel_t);
 
     int mem_size_ccharges = n_ccharges * sizeof(ccharge_t);
     int mem_size_charges = n_atoms * sizeof(charge_t);
@@ -182,12 +182,14 @@ void calc_nonbonded_pp_forces_host() {
     //     printf("excluded[%d] = %s\n", i, excluded[i] ? "True" : "False");
     // }
 
-    // for (int i = 0; i < n_patoms; i++) {
-    //     for (int j = 0; j < n_patoms; j++) {
-            // if (h_PP_MAT[i * n_patoms + j].x > 100)
-            // printf("PP_MAT[%d][%d] = %f %f %f\n", i, j, h_PP_MAT[i * n_patoms + j].x, h_PP_MAT[i * n_patoms + j].y, h_PP_MAT[i * n_patoms + j].z);
-    //     }
-    // }
+    #ifdef DEBUG
+    for (int i = 0; i < n_patoms; i++) {
+        for (int j = 0; j < n_patoms; j++) {
+            if (h_PP_MAT[i * n_patoms + j].x > 100)
+            printf("PP_MAT[%d][%d] = %f %f %f\n", i, j, h_PP_MAT[i * n_patoms + j].x, h_PP_MAT[i * n_patoms + j].y, h_PP_MAT[i * n_patoms + j].z);
+        }
+    }
+    #endif
 }
 
 /* =============================================
