@@ -88,74 +88,15 @@ void calc_nonbonded_pp_forces_host() {
     int mem_size_X = n_atoms_solute * sizeof(coord_t);
     int mem_size_DV_X = n_atoms_solute * sizeof(dvel_t);
 
-    int mem_size_ccharges = n_ccharges * sizeof(ccharge_t);
-    int mem_size_charges = n_atoms * sizeof(charge_t);
-    int mem_size_catypes = n_catypes * sizeof(catype_t);
-    int mem_size_atypes = n_atoms * sizeof(atype_t);
-    int mem_size_patoms = n_patoms * sizeof(p_atom_t);
-    int mem_size_LJ_matrix = n_atoms_solute * n_atoms_solute * sizeof(int);
-    int mem_size_excluded = n_atoms * sizeof(bool);
-
     int mem_size_PP_MAT = n_patoms * n_patoms * sizeof(dvel_t);
 
     if (!pp_gpu_set) {
         pp_gpu_set = true;
-        #ifdef DEBUG
-        printf("Allocating P\n");
-        #endif
-        check_cudaMalloc((void**) &X, mem_size_X);
-        #ifdef DEBUG
-        printf("Allocating DV_P\n");
-        #endif
-        check_cudaMalloc((void**) &DV_X, mem_size_DV_X);
-
-        #ifdef DEBUG
-        printf("Allocating D_ccharges\n");
-        #endif
-        check_cudaMalloc((void**) &D_ccharges, mem_size_ccharges);
-        #ifdef DEBUG
-        printf("Allocating D_charges\n");
-        #endif
-        check_cudaMalloc((void**) &D_charges, mem_size_charges);
-        #ifdef DEBUG
-        printf("Allocating D_catypes\n");
-        #endif
-        check_cudaMalloc((void**) &D_catypes, mem_size_catypes);
-        #ifdef DEBUG
-        printf("Allocating D_atypes\n");
-        #endif
-        check_cudaMalloc((void**) &D_atypes, mem_size_atypes);
-        #ifdef DEBUG
-        printf("Allocating D_patoms\n");
-        #endif
-        check_cudaMalloc((void**) &D_patoms, mem_size_patoms);
-        #ifdef DEBUG
-        printf("Allocating D_LJ_matrix\n");
-        #endif
-        check_cudaMalloc((void**) &D_LJ_matrix, mem_size_LJ_matrix);
-        #ifdef DEBUG
-        printf("Allocating D_excluded\n");
-        #endif
-        check_cudaMalloc((void**) &D_excluded, mem_size_excluded);
 
         #ifdef DEBUG
         printf("Allocating PP_MAT\n");
         #endif
         check_cudaMalloc((void**) &PP_MAT, mem_size_PP_MAT);
-
-        cudaMemcpy(D_ccharges, ccharges, mem_size_ccharges, cudaMemcpyHostToDevice);
-        cudaMemcpy(D_charges, charges, mem_size_charges, cudaMemcpyHostToDevice);
-        cudaMemcpy(D_catypes, catypes, mem_size_catypes, cudaMemcpyHostToDevice);
-        cudaMemcpy(D_atypes, atypes, mem_size_atypes, cudaMemcpyHostToDevice);
-        cudaMemcpy(D_patoms, p_atoms, mem_size_patoms, cudaMemcpyHostToDevice);
-        cudaMemcpy(D_LJ_matrix, LJ_matrix, mem_size_LJ_matrix, cudaMemcpyHostToDevice);
-        cudaMemcpy(D_excluded, excluded, mem_size_excluded, cudaMemcpyHostToDevice);
-
-        // for (int i = 0; i < 100; i++) {
-        //     for (int j = 0; j < 100; j++) {
-        //         printf("LJ_matrix[%d][%d] = %d\n", i, j, LJ_matrix[i * n_patoms + j]);
-        //     }
-        // }
 
         h_PP_MAT = (dvel_t*) malloc(mem_size_PP_MAT);
     }
@@ -177,10 +118,6 @@ void calc_nonbonded_pp_forces_host() {
     #ifdef DEBUG
     cudaMemcpy(h_PP_MAT, PP_MAT, mem_size_PP_MAT, cudaMemcpyDeviceToHost);
     #endif
-
-    // for (int i = 0; i < n_patoms; i++) {
-    //     printf("excluded[%d] = %s\n", i, excluded[i] ? "True" : "False");
-    // }
 
     #ifdef DEBUG
     for (int i = 0; i < n_patoms; i++) {
@@ -266,8 +203,6 @@ __global__ void calc_pp_dvel_matrix(int n_patoms, int n_atoms_solute,
     int tx = threadIdx.x;
     int ty = threadIdx.y;
 
-    // if (bx == 9 && by == 0) printf("bx = %d by = %d tx = %d ty = %d\n", bx, by, tx, ty);
-
     int aStart = BLOCK_SIZE * by;
     int bStart = BLOCK_SIZE * bx;
 
@@ -279,8 +214,6 @@ __global__ void calc_pp_dvel_matrix(int n_patoms, int n_atoms_solute,
     __shared__     int LJs[BLOCK_SIZE * BLOCK_SIZE];
     __shared__    bool excluded_s[2 * BLOCK_SIZE];
     
-    // if (bx == 0 && by == 0) printf("bx = %d by = %d tx = %d ty = %d\n", bx, by, tx, ty);
-
     int pi = D_patoms[aStart + ty].a-1;
     int pj = D_patoms[bStart + tx].a-1;
 
@@ -295,9 +228,6 @@ __global__ void calc_pp_dvel_matrix(int n_patoms, int n_atoms_solute,
     }
     LJs[ty * BLOCK_SIZE + tx] = D_LJ_matrix[pi * n_atoms_solute + pj];
 
-    // if (bx == 0 && by == 1 && tx == 0) printf("excluded_s[%d] = %s\n", ty, excluded_s[ty] ? "True" : "False");
-    // if (bx == 0 && by == 1 && ty == 0) printf("excluded_s[%d] = %s\n", BLOCK_SIZE + tx, excluded_s[BLOCK_SIZE + tx] ? "True" : "False");
-
     __syncthreads();
 
     if (bx < by || (bx == by && tx < ty)) return;
@@ -311,17 +241,10 @@ __global__ void calc_pp_dvel_matrix(int n_patoms, int n_atoms_solute,
 
     if (bx != by || tx != ty) {
         double evdw, ecoul;
-        // __device__ void calc_pp_dvel_matrix_incr(int row, int pi, int column, int pj,
-        //     coord_t *Xs, coord_t *Ys, bool *LJs, double *Evdw, double *Ecoul, dvel_t *patom_a, dvel_t *patom_b,
-        //     ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms);
 
         calc_pp_dvel_matrix_incr(ty, pi, tx, pj, Xs, Ys, LJs, excluded_s, &evdw, &ecoul, &patom_a,
              &patom_b, D_ccharges, D_charges, D_catypes, D_atypes, D_patoms);
     }
-
-    // if (row == 0 && column == 1) {
-    //     printf("water_a = %f %f %f water_b = %f %f %f\n", water_a[0].x, water_a[0].y, water_a[0].z, water_b[0].x, water_b[0].y, water_b[0].z);
-    // }
 
     PP_MAT[row * n_patoms + column] = patom_a;
     PP_MAT[column * n_patoms + row] = patom_b;

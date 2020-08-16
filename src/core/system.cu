@@ -754,7 +754,7 @@ void calc_integration_step(int iteration) {
 
     clock_t start_pp, end_pp;
     if (run_gpu) {
-        calc_nonbonded_qp_forces();
+        calc_nonbonded_qp_forces_host();
         start_pp = clock();
         calc_nonbonded_pp_forces_host();
         end_pp = clock();
