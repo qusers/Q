@@ -809,7 +809,9 @@ void calc_integration_step(int iteration) {
     clock_t end_restraints = clock();
 
     // Q-Q nonbonded interactions
+    clock_t start_temp = clock();
     calc_nonbonded_qq_forces();
+    clock_t end_temp = clock();
 
     // Q-atom bonded interactions: loop over Q-atom states
     for (int state = 0; state < n_lambdas; state++) {
@@ -889,6 +891,7 @@ void calc_integration_step(int iteration) {
     printf("Elapsed time for bonded forces: %f\n", (end_bonded-start) / (double)CLOCKS_PER_SEC );
     printf("Elapsed time for non-bonded forces: %f\n", (end_nonbonded-end_bonded) / (double)CLOCKS_PER_SEC);
     printf("Elapsed time for pp interactions: %f\n", (end_pp-start_pp) / (double)CLOCKS_PER_SEC );
+    printf("Elapsed time for qq interaction: %f\n",  (end_temp-start_temp) / (double)CLOCKS_PER_SEC );
     if (n_waters > 0) {
         printf("Elapsed time for ww interactions: %f\n", (end_ww-start_ww) / (double)CLOCKS_PER_SEC );
         printf("Elapsed time for pw interactions: %f\n", (end_pw-start_pw) / (double)CLOCKS_PER_SEC );

@@ -8,6 +8,7 @@
 // Device pointers
 calc_qw_t *QW_MAT, *h_QW_MAT;
 calc_qp_t *QP_MAT, *h_QP_MAT;
+dvel_t *QQ_MAT;
 
 // Constants pointers
 q_catype_t *D_qcatypes;
@@ -76,6 +77,14 @@ void calc_nonbonded_qp_forces() {
                 // Update Q totals
                 q_energies[state].Ucoul += Vel;
                 q_energies[state].Uvdw += (V_a - V_b);
+
+                // if (state == 0 && qi == 0) {
+                //     printf("MAT[0][%d].Q = %f %f %f\n", pj, -dv * da.x, -dv * da.y, -dv * da.z);
+                // }
+                // if (state == 0 && qi == 0 && j == 1) {
+                //     printf("crg_q = %f crg_j = %f r = %f\n", q_charges[qi + n_qatoms * state].q, ccharges[charges[pj].code - 1].charge, r);
+                //     printf("ai_aii = %f aj_aii = %f ai_bii = %f aj_bii = %f\n", ai_aii, aj_aii, ai_bii, aj_bii);
+                // }        
             }
         }
     }
@@ -89,6 +98,7 @@ void calc_nonbonded_qp_forces_host() {
     int mem_size_X = n_atoms_solute * sizeof(coord_t);
     int mem_size_DV_X = n_atoms_solute * sizeof(dvel_t);
     int mem_size_QP_MAT = n_qatoms * n_patoms * sizeof(calc_qp_t);
+    int mem_size_QQ_MAT = n_qatoms * n_qatoms * sizeof(dvel_t);
 
     int mem_size_qcatypes = n_qcatypes * sizeof(q_catype_t);
     int mem_size_qatypes = n_qatoms * n_lambdas * sizeof(q_atype_t);
@@ -183,6 +193,10 @@ void calc_nonbonded_qp_forces_host() {
         printf("Allocating QP_MAT\n");
         #endif
         check_cudaMalloc((void**) &QP_MAT, mem_size_QP_MAT);
+        #ifdef DEBUG
+        printf("Allocating QP_MAT\n");
+        #endif
+        check_cudaMalloc((void**) &QQ_MAT, mem_size_QQ_MAT);
 
         h_QP_MAT = (calc_qp_t*) malloc(mem_size_QP_MAT);
     }
@@ -210,6 +224,7 @@ void calc_nonbonded_qp_forces_host() {
     #ifdef DEBUG
     for (int i = 0; i < n_qatoms; i++) {
         for (int j = 0; j < n_patoms; j++) {
+            if (i == 0)
             // if (h_QP_MAT[i * n_patoms + j].Q.x > 100)
             printf("QP_MAT[%d][%d].Q = %f %f %f\n", i, j, h_QP_MAT[i * n_patoms + j].Q.x, h_QP_MAT[i * n_patoms + j].Q.y, h_QP_MAT[i * n_patoms + j].Q.z);
         }
@@ -857,7 +872,7 @@ __global__ void calc_qw_dvel_vector_column(int n_qatoms, int n_waters, dvel_t *D
 
 __device__ void calc_qp_dvel_matrix_incr(int row, int qi, int column, int pj, int n_lambdas, int n_qatoms,
     coord_t *Qs, coord_t *Ps, int *LJs, bool *excluded_s, double *Evdw, double *Ecoul, calc_qp_t *qp,
-    q_catype_t *D_qcatypes, q_atype_t *D_qatypes, q_charge_t *D_qcharges, q_atom_t *D_qatoms, double *D_lambdas,
+    q_catype_t *D_qcatypes, q_atype_t *D_qatypes, q_charge_t *D_qcharges, p_atom_t *D_patoms, q_atom_t *D_qatoms, double *D_lambdas,
     catype_t *D_catypes, atype_t *D_atypes, ccharge_t *D_ccharges, charge_t *D_charges) {
     
     coord_t da;
@@ -867,6 +882,8 @@ __device__ void calc_qp_dvel_matrix_incr(int row, int qi, int column, int pj, in
     catype_t aj_type;
     bool bond23, bond14;
     double scaling, Vel, V_a, V_b, dv;
+
+    int j = D_patoms[pj].a-1;
 
     bond23 = LJs[row * BLOCK_SIZE + column] == 3;
     bond14 = LJs[row * BLOCK_SIZE + column] == 1;
@@ -888,25 +905,30 @@ __device__ void calc_qp_dvel_matrix_incr(int row, int qi, int column, int pj, in
 
     for (int state = 0; state < n_lambdas; state++) {
         qi_type = D_qcatypes[D_qatypes[qi + n_qatoms * state].code - 1];
-        aj_type = D_catypes[D_atypes[pj].code - 1];
+        aj_type = D_catypes[D_atypes[j].code - 1];
 
         ai_aii = bond14 ? qi_type.Ai_14 : qi_type.Ai;
         aj_aii = bond14 ? aj_type.aii_1_4 : aj_type.aii_normal;
         ai_bii = bond14 ? qi_type.Bi_14 : qi_type.Bi;
         aj_bii = bond14 ? aj_type.bii_1_4 : aj_type.bii_normal;
 
-        Vel = Coul * scaling * D_qcharges[qi + n_qatoms * state].q * D_ccharges[D_charges[pj].code - 1].charge * r;
+        Vel = Coul * scaling * D_qcharges[qi + n_qatoms * state].q * D_ccharges[D_charges[j].code - 1].charge * r;
         V_a = ai_aii * aj_aii / (r6 * r6);
         V_b = ai_bii * aj_bii / r6;
         dv = r2 * (-Vel - (12 * V_a - 6 * V_b)) * D_lambdas[state];
 
+        // if (state == 0 && qi == 0 && pj == 1) {
+        //     printf("crg_q = %f crg_j = %f r = %f\n", D_qcharges[qi + n_qatoms * state].q, D_ccharges[D_charges[pj].code - 1].charge, r);
+        //     printf("ai_aii = %f aj_aii = %f ai_bii = %f aj_bii = %f\n", ai_aii, aj_aii, ai_bii, aj_bii);
+        // }
+
         // Update forces
-        qp->Q.x -= dv * da.x;
-        qp->Q.y -= dv * da.y;
-        qp->Q.z -= dv * da.z;
-        qp->P.x += dv * da.x;
-        qp->P.y += dv * da.y;
-        qp->P.z += dv * da.z;
+        qp->Q.x += dv * da.x;
+        qp->Q.y += dv * da.y;
+        qp->Q.z += dv * da.z;
+        qp->P.x -= dv * da.x;
+        qp->P.y -= dv * da.y;
+        qp->P.z -= dv * da.z;
 
         // Update Q totals
         *Ecoul += Vel;
@@ -961,8 +983,8 @@ __global__ void calc_qp_dvel_matrix(int n_qatoms, int n_patoms, int n_lambdas, i
     int column = bx * BLOCK_SIZE + tx;
     
     double evdw, ecoul;
-    calc_qp_dvel_matrix_incr(ty, row, tx, pj, n_lambdas, n_qatoms, Qs, Ps, LJs, excluded_s, &evdw, &ecoul,
-        &qp, D_qcatypes, D_qatypes, D_qcharges, D_qatoms, D_lambdas, D_catypes, D_atypes, D_ccharges, D_charges);
+    calc_qp_dvel_matrix_incr(ty, row, tx, column, n_lambdas, n_qatoms, Qs, Ps, LJs, excluded_s, &evdw, &ecoul,
+        &qp, D_qcatypes, D_qatypes, D_qcharges, D_patoms, D_qatoms, D_lambdas, D_catypes, D_atypes, D_ccharges, D_charges);
 
     QP_MAT[n_patoms * row + column] = qp;
 
@@ -1023,6 +1045,7 @@ __global__ void calc_qp_dvel_vector_column(int n_qatoms, int n_patoms, dvel_t *D
 void clean_d_qatoms() {
     cudaFree(QW_MAT);
     cudaFree(QP_MAT);
+    cudaFree(QQ_MAT);
     cudaFree(D_qcatypes);
     cudaFree(D_qatypes);
     cudaFree(D_qcharges);

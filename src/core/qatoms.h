@@ -67,7 +67,7 @@ __global__ void calc_qw_dvel_vector_column(int n_qatoms, int n_waters, dvel_t *D
 
 __device__ void calc_qp_dvel_matrix_incr(int row, int qi, int column, int pj, int n_lambdas, int n_qatoms,
     coord_t *Qs, coord_t *Ps, int *LJs, bool *excluded_s, double *Evdw, double *Ecoul, calc_qp_t *qp,
-    q_catype_t *D_qcatypes, q_atype_t *D_qatypes, q_charge_t *D_qcharges, q_atom_t *D_qatoms, double *D_lambdas,
+    q_catype_t *D_qcatypes, q_atype_t *D_qatypes, q_charge_t *D_qcharges, p_atom_t *D_patoms, q_atom_t *D_qatoms, double *D_lambdas,
     catype_t *D_catypes, atype_t *D_atypes, ccharge_t *D_ccharges, charge_t *D_charges);
 
 __global__ void calc_qp_dvel_matrix(int n_qatoms, int n_patoms, int n_lambdas, int n_atoms_solute,
