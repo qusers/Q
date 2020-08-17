@@ -1349,8 +1349,8 @@ void init_ivelocities(const char*filename) {
     if (file.n_lines < 1) {
         return;
     }
-    
-    for (int i = 0; i < n_qatoms; i++) {
+
+    for (int i = 0; i < n_atoms; i++) {
         char *eptr;
         velocities[i].x = strtod(file.buffer[i+1][0], &eptr);
         velocities[i].y = strtod(file.buffer[i+1][1], &eptr);

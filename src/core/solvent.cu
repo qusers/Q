@@ -62,8 +62,8 @@ void calc_nonbonded_ww_forces() {
             Vel = Coul * pow(crg_ow, 2) * rOX;
             V_a = A_OO * (r2*r2*r2) * (r2*r2*r2);
             V_b = B_OO * (r2*r2*r2);
-            energies.Uvdw += (V_a - V_b);
-            energies.Ucoul += Vel;
+            E_nonbond_ww.Uvdw += (V_a - V_b);
+            E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel - 12 * V_a + 6 * V_b);
             j -= 2; //move pointer back to O in interacting molecule
             dvelocities[i].x -= (dv * dOX.x);
@@ -76,7 +76,7 @@ void calc_nonbonded_ww_forces() {
             // O - H1
             r2 = pow(rH1X, 2);
             Vel = Coul * crg_ow * crg_hw * rH1X;
-            energies.Ucoul += Vel;
+            E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H1 in j-molecule
             dvelocities[i].x -= (dv * dH1X.x);
@@ -89,7 +89,7 @@ void calc_nonbonded_ww_forces() {
             // O - H2
             r2 = pow(rH2X, 2);
             Vel = Coul * crg_ow * crg_hw * rH2X;
-            energies.Ucoul += Vel;
+            E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H2 in j-molecule
             dvelocities[i].x -= (dv * dH2X.x);
@@ -131,7 +131,7 @@ void calc_nonbonded_ww_forces() {
             // H1 - O
             r2 = rOX * rOX;
             Vel = Coul * crg_hw * crg_ow * rOX;
-            energies.Ucoul += Vel;
+            E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j -= 2; //move pointer back to O in interacting molecule
             dvelocities[i].x -= (dv * dOX.x);
@@ -144,7 +144,7 @@ void calc_nonbonded_ww_forces() {
             // H1 - H1
             r2 = pow(rH1X, 2);
             Vel = Coul * crg_hw * crg_hw * rH1X;
-            energies.Ucoul += Vel;
+            E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H1 in j-molecule
             dvelocities[i].x -= (dv * dH1X.x);
@@ -157,7 +157,7 @@ void calc_nonbonded_ww_forces() {
             // H1 - H2
             r2 = pow(rH2X, 2);
             Vel = Coul * crg_hw * crg_hw * rH2X;
-            energies.Ucoul += Vel;
+            E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H2 in j-molecule
             dvelocities[i].x -= (dv * dH2X.x);
@@ -199,7 +199,7 @@ void calc_nonbonded_ww_forces() {
             // H2 - O
             r2 = rOX * rOX;
             Vel = Coul * crg_hw * crg_ow * rOX;
-            energies.Ucoul += Vel;
+            E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j -= 2; //move pointer back to O in interacting molecule
             dvelocities[i].x -= (dv * dOX.x);
@@ -212,7 +212,7 @@ void calc_nonbonded_ww_forces() {
             // H2 - H1
             r2 = pow(rH1X, 2);
             Vel = Coul * crg_hw * crg_hw * rH1X;
-            energies.Ucoul += Vel;
+            E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H1 in j-molecule
             dvelocities[i].x -= (dv * dH1X.x);
@@ -225,7 +225,7 @@ void calc_nonbonded_ww_forces() {
             // H1 - H2
             r2 = pow(rH2X, 2);
             Vel = Coul * crg_hw * crg_hw * rH2X;
-            energies.Ucoul += Vel;
+            E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H2 in j-molecule
             dvelocities[i].x -= (dv * dH2X.x);
@@ -290,8 +290,8 @@ void calc_nonbonded_pw_forces() {
             dvelocities[j].y += dva * da.y;
             dvelocities[j].z += dva * da.z;
 
-            energies.Ucoul += Vela;
-            energies.Uvdw += (V_a - V_b);
+            E_nonbond_pw.Ucoul += Vela;
+            E_nonbond_pw.Uvdw += (V_a - V_b);
         }
     }
 

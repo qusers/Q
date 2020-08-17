@@ -42,7 +42,7 @@ void calc_radix_w_forces() {
         }
 
         // Update energy and forces
-        energies.Uradx += ener;
+        E_restraint.Uradx += ener;
         dvelocities[i].x += dv * dr.x;
         dvelocities[i].y += dv * dr.y;
         dvelocities[i].z += dv * dr.z;
@@ -154,7 +154,7 @@ void calc_polx_w_forces(int iteration) {
 
             avtdum += theta[ii];
             ener = .5 * md.polarisation_force * pow(theta[ii] - theta0[il] + wshells[is].theta_corr, 2);
-            energies.Upolx += ener;
+            E_restraint.Upolx += ener;
 
             dv = md.polarisation_force * (theta[ii] - theta0[il] + wshells[is].theta_corr);
 
@@ -236,8 +236,8 @@ void calc_pshell_forces() {
             ener = 0.5 * k * r2;
             // printf("dr = %f %f %f\n", dr.x, dr.y, dr.z);
 
-            if (excluded[i]) energies.Ufix += ener;
-            if (shell[i]) energies.Ushell += ener;
+            if (excluded[i]) E_restraint.Ufix += ener;
+            if (shell[i]) E_restraint.Ushell += ener;
 
             dvelocities[i].x += k * dr.x;
             dvelocities[i].y += k * dr.y;
@@ -278,7 +278,7 @@ void calc_restrseq_forces() {
                 dr.z /= n_ctr;
                 r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
                 ener = .5 * k * r2;
-                energies.Upres += ener;
+                E_restraint.Upres += ener;
 
                 for (int i = restrseqs[s].ai-1; i < restrseqs[s].aj-1; i++) {
                     if (heavy[i] || restrseqs[s].ih) {
@@ -309,7 +309,7 @@ void calc_restrseq_forces() {
                 dr.z /= totmass;
                 r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
                 ener = .5 * k * r2;
-                energies.Upres += ener;
+                E_restraint.Upres += ener;
 
                 for (int i = restrseqs[s].ai-1; i < restrseqs[s].aj-1; i++) {
                     if (heavy[i] || restrseqs[s].ih) {
@@ -332,7 +332,7 @@ void calc_restrseq_forces() {
 
                     r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
                     ener = .5 * k * r2;
-                    energies.Upres += ener;
+                    E_restraint.Upres += ener;
 
                     dvelocities[i].x += k * dr.x;
                     dvelocities[i].y += k * dr.y;
@@ -378,14 +378,14 @@ void calc_restrpos_forces() {
 
         if (restrspos[ir].ipsi == 0) {
             for (int k = 0; k < n_lambdas; k++) {
-                q_energies[k].Urestr += ener;
+                EQ_restraint[k].Urestr += ener;
             }
             if (n_lambdas == 0) {
-                energies.Upres += ener;
+                E_restraint.Upres += ener;
             }
         }
         else {
-            q_energies[state].Urestr += ener;
+            EQ_restraint[state].Urestr += ener;
         }
     }
 }
@@ -436,14 +436,14 @@ void calc_restrdis_forces() {
 
         if (restrdists[ir].ipsi == 0) {
             for (int k = 0; k < n_lambdas; k++) {
-                q_energies[k].Urestr += ener;
+                EQ_restraint[k].Urestr += ener;
             }
             if (n_lambdas == 0) {
-                energies.Upres += ener;
+                E_restraint.Upres += ener;
             }
         }
         else {
-            q_energies[state].Urestr += ener;
+            EQ_restraint[state].Urestr += ener;
         }
     }
 }
@@ -523,14 +523,14 @@ void calc_restrang_forces() {
 
         if (restrdists[ir].ipsi == 0) {
             for (int k = 0; k < n_lambdas; k++) {
-                q_energies[k].Urestr += ener;
+                EQ_restraint[k].Urestr += ener;
             }
             if (n_lambdas == 0) {
-                energies.Upres += ener;
+                E_restraint.Upres += ener;
             }
         }
         else {
-            q_energies[state].Urestr += ener;
+            EQ_restraint[state].Urestr += ener;
         }
     }
 }
@@ -559,7 +559,7 @@ void calc_restrwall_forces() {
                     ener = restrwalls[ir].dMorse * (fexp * fexp - 2 * fexp);
                     dv = -2 * restrwalls[ir].dMorse * restrwalls[ir].aMorse * (fexp - fexp*fexp) / b;
                 }
-                energies.Upres += ener;
+                E_restraint.Upres += ener;
 
                 dvelocities[i].x += dv * dr.x;
                 dvelocities[i].y += dv * dr.y;

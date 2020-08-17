@@ -26,13 +26,7 @@
             bond23 = LJ_matrix[i * n_atoms_solute + j] == 3;
             bond14 = LJ_matrix[i * n_atoms_solute + j] == 1;
 
-            // if (bond14 && i < 100 && j < 100) printf("1-4: i = %d j = %d\n", i+1, j+1);
-            if (bond23) {
-                if (i < 100 && j < 100) {
-                    // printf("2-3: i = %d j = %d\n", i+1, j+1);
-                }
-                continue;
-            }
+            if (bond23) continue;
             if (excluded[i] || excluded[j]) continue;
 
             scaling = bond14 ? .5 : 1;
@@ -69,24 +63,8 @@
             dvelocities[j].y += dva * da.y;
             dvelocities[j].z += dva * da.z;
 
-            energies.Ucoul += Vela;
-            energies.Uvdw += (V_a - V_b);
-
-            // printf("solute: Ecoul = %f Evdw = %f\n", Vela, (V_a - V_b));
-            // if (i+1 == 66 && j+1 == 67) {
-            // if (i+1 == 2 && j+1 == 4) {
-            // if (i < 100 && j < 100) {
-            // if (V_a > 100) {
-            //     printf("i = %d j = %d\n", i+1, j+1);
-            //     // printf("energies.Ucoul = %f\n", energies.Ucoul);
-            //     // printf("energies.Uvdw = %f\n", energies.Uvdw);
-            //     printf("energies.Ucoul = %f, crg_i = %f, crg_j = %f, ra = %f\n", Vela, crg_i * sqrt(Coul), crg_j * sqrt(Coul), ra);
-            //     printf("energies.Uvdw = %f, r2a = %f, r6a = %f, ai_aii = %f, aj_aii = %f, ai_bii = %f, aj_bii = %f\n", (V_a - V_b), r2a, r6a, ai_aii, aj_aii, ai_bii, aj_bii);
-            // }
+            E_nonbond_pp.Ucoul += Vela;
+            E_nonbond_pp.Uvdw += (V_a - V_b);
         }
-        // printf("i = %d\n", p_atoms[pi].a - 1);
-        // printf("energies.Ucoul = %f\n", energies.Ucoul);
-        // printf("energies.Uvdw = %f\n", energies.Uvdw);
     }
-    // printf("solute: Ecoul = %f Evdw = %f\n", energies.Ucoul, energies.Uvdw);
 }

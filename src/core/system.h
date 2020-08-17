@@ -511,31 +511,43 @@ struct dvel_t {
     double z;
 };
 
-struct energy_t {
+struct E_bonded_t {
     double Ubond;
     double Uangle;
     double Utor;
     double Uimp;
+};
+
+struct E_nonbonded_t {
     double Ucoul;
     double Uvdw;
-    double Ukin;
-    double Upot;
-    double Utot;
+};
+
+struct E_restraint_t {
     double Uradx;
     double Upolx;
     double Ufix;
     double Ushell;
     double Upres;
     double Urestr;
-    double UQtot;
+};
+
+struct energy_t {
+    double Ukin;
+    double Upot;
+    double Utot;
 };
 
 extern p_atom_t *p_atoms;
 extern coord_t *coords;
 extern vel_t* velocities;
 extern dvel_t* dvelocities;
-extern energy_t energies;
-extern energy_t *q_energies;
+extern energy_t E_total;
+extern energy_t *EQ_total;
+extern E_bonded_t E_bond_p, E_bond_w, E_bond_q, *EQ_bond;
+extern E_nonbonded_t E_nonbond_pp, E_nonbond_pw, E_nonbond_ww, E_nonbond_qx;
+extern E_nonbonded_t *EQ_nonbond_qq, *EQ_nonbond_qp, *EQ_nonbond_qw, *EQ_nonbond_qx;
+extern E_restraint_t E_restraint, *EQ_restraint;
 extern double Temp;
 extern double A_O, A_OO, B_O, B_OO, crg_ow, crg_hw; // TODO: don't keep this in system.cu?
 

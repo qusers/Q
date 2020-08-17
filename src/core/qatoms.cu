@@ -68,8 +68,8 @@ void calc_nonbonded_qp_forces() {
                 dvelocities[j].z += dv * da.z;
     
                 // Update Q totals
-                q_energies[state].Ucoul += Vel;
-                q_energies[state].Uvdw += (V_a - V_b);
+                EQ_nonbond_qp[state].Ucoul += Vel;
+                EQ_nonbond_qp[state].Uvdw += (V_a - V_b);
             }
         }
     }
@@ -140,8 +140,8 @@ void calc_nonbonded_qw_forces() {
                 dvH1 -= r2H1 * VelH1 * lambdas[state];
                 dvH2 -= r2H2 * VelH2 * lambdas[state];
 
-                q_energies[state].Ucoul += (VelO + VelH1 + VelH2);
-                q_energies[state].Uvdw += (V_a - V_b);
+                EQ_nonbond_qw[state].Ucoul += (VelO + VelH1 + VelH2);
+                EQ_nonbond_qw[state].Uvdw += (V_a - V_b);
             }
 
             // Note r6O is not the usual 1/rO^6, but rather rO^6. be careful!!!
@@ -230,8 +230,8 @@ void calc_nonbonded_qq_forces() {
                 dvelocities[aj].y += dva * da.y;
                 dvelocities[aj].z += dva * da.z;
     
-                q_energies[state].Ucoul += Vela;
-                q_energies[state].Uvdw += (V_a - V_b);    
+                EQ_nonbond_qq[state].Ucoul += Vela;
+                EQ_nonbond_qq[state].Uvdw += (V_a - V_b);    
             }
         }
     }
@@ -272,7 +272,7 @@ void calc_qangle_forces(int state) {
         th = acos(cos_th);
         dth = th - to_radians(q_cangles[ic].th0);
         ener = .5 * q_cangles[ic].kth * pow(dth, 2);
-        q_energies[state].Uangle += ener;
+        EQ_bond[state].Uangle += ener;
 
         dv = q_cangles[ic].kth * dth * lambdas[state];
         f1 = sin(th);
@@ -320,7 +320,7 @@ void calc_qbond_forces(int state) {
         db = b - q_cbonds[ic].b0;
 
         ener = 0.5 * q_cbonds[ic].kb * pow(db, 2);
-        q_energies[state].Ubond += ener;
+        EQ_bond[state].Ubond += ener;
         dv = db * q_cbonds[ic].kb * lambdas[state] / b;
 
         dvelocities[ai].x -= dv * rij.x;
@@ -424,7 +424,7 @@ void calc_qtorsion_forces(int state) {
         dpl.z = rjk.x * dl.y - rjk.y * dl.x;
 
         // Update energy and forces
-        q_energies[state].Utor += ener;
+        EQ_bond[state].Utor += ener;
 
         dvelocities[ai].x += dv * dpi.x;
         dvelocities[ai].y += dv * dpi.y;
