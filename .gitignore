@@ -53,8 +53,8 @@ test/ethane-ethanol/FEP_*
 *.calc
 *.pml
 *.inp
-test/solvation_energies/2.Q-gpu/1.water/*
-test/solvation_energies/2.Q-gpu/2.vacuum/*
-test/solvation_energies/2.Q-gpu/submit.py
-test/solvation_energies/1.Q-cpu
+test/2.physical-properties/1.solvation/1.Q-cpu/
+test/2.physical-properties/1.solvation/2.Q-gpu/1.water/
+test/2.physical-properties/1.solvation/2.Q-gpu/2.vacuum/
+test/2.physical-properties/1.solvation/2.Q-gpu/submit.py
 test/CDk2/rundir/
