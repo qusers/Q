@@ -118,25 +118,30 @@ class Write_MD():
         self.oldFEP = oldFEP
         self.oldFEProot = oldFEP.split('/')[-1]
         reps = globaldata['randrep']
+        
+        eq = sorted(glob.glob('{}/inputfiles/eq*.inp'.format(oldFEP)))
+        md = sorted(glob.glob('{}/inputfiles/md*.inp'.format(oldFEP)))[::-1]
+        mdfiles = eq + md
+        for i, md in enumerate(mdfiles):
+            self.mdroot = md.split('/')[-1]
+            self.mdroot = self.mdroot.split('.')[0]
+            if not self.mdroot in globaldata['MDs']:
+                globaldata['MDs'].append(self.mdroot) 
+                
+            if i == 0:
+                for T in globaldata['Temp']:
+                    self.T = T
+                    for replicate in globaldata['randrep']:
+                        self.r = replicate
+                        md_data = self.construct(md)
+                        md_data['random_seed'] = globaldata['randrep'][replicate]
+                        if md_data['temperature'] == 'T_VAR':
+                            md_data['temperature'] = self.T
 
-        for T in globaldata['Temp']:
-            self.T = T
-            for replicate in globaldata['randrep']:
-                self.r = replicate
-                eq = sorted(glob.glob('{}/inputfiles/eq*.inp'.format(oldFEP)))
-                md = sorted(glob.glob('{}/inputfiles/md*.inp'.format(oldFEP)))[::-1]
-                mdfiles = eq + md
-                for md in mdfiles:
-                    self.mdroot = md.split('/')[-1]
-                    self.mdroot = self.mdroot.split('.')[0]
-                    if not self.mdroot in globaldata['MDs']:
-                        globaldata['MDs'].append(self.mdroot)                   
-                    md_data = self.construct(md)
-                    md_data['random_seed'] = globaldata['randrep'][replicate]
-                    if md_data['temperature'] == 'T_VAR':
-                        md_data['temperature'] = self.T
-                        
-                    self.write(md_data)
+            else:
+                md_data['random_seed'] = None
+            
+            self.write(md_data)
             
     def construct(self,md):
         read_md  = MD.Read_MD(md)
@@ -146,13 +151,19 @@ class Write_MD():
     
     def write(self,md_data):
         write_md = MD.Write_MD(md_data)
-        out_json = '{}/{}/{:.1f}/{:02d}/{}.json'.format(self.wd,
-                                                   self.oldFEProot,
-                                                   self.T,
-                                                   self.r,
-                                                   self.mdroot,
-                                                  )
-
+        if self.mdroot == 'eq1':
+            out_json = '{}/{}/{:.1f}/{:02d}/{}.json'.format(self.wd,
+                                                       self.oldFEProot,
+                                                       self.T,
+                                                       self.r,
+                                                       self.mdroot,
+                                                      )
+        else:
+            out_json = '{}/{}/inputfiles/{}.json'.format(self.wd,
+                                                       self.oldFEProot,
+                                                       self.mdroot,
+                                                      )
+            
         write_md.JSON(out_json)
         
 class Write_Qfepfile():
@@ -243,10 +254,8 @@ class Write_Qfepfile():
                     self.data['energy_files'].append(fepout) 
                     
     def write_qfep(self):
-        out_json = '{}/{}/{:.1f}/{:02d}/{}'.format(self.wd,
+        out_json = '{}/{}/inputfiles/{}'.format(self.wd,
                                                   self.oldFEProot,
-                                                  self.T,
-                                                  self.r,
                                                   'qfep.json',
                                                  )
         with open(out_json, 'w') as outfile:
@@ -268,7 +277,7 @@ class Write_Runfile():
 
         for i, mdfile in enumerate(globaldata['MDs']):
             if i == 0:
-                command = "    os.system('python {} -t {} -m {}.json -f {} -d {} ')\n".format(self.qdyn,
+                command = "    os.system('python {} -t {} -m {}.json -f {} -d {} --clean')\n".format(self.qdyn,
                                                                             self.topology,
                                                                             mdfile,
                                                                             self.fepfile,
@@ -276,7 +285,7 @@ class Write_Runfile():
                                                                            )
             else:
                 restart = globaldata['MDs'][i-1]
-                command = "    os.system('python {} -t {} -m {}.json -f {} -d {} -r {}/dualtop/output')\n".format(self.qdyn,
+                command = "    os.system('python {} -t {} -m ../../inputfiles/{}.json -f {} -d {} -r {}/dualtop/output --clean')\n".format(self.qdyn,
                                                                                   self.topology,
                                                                                   mdfile,
                                                                                   self.fepfile,
@@ -286,7 +295,7 @@ class Write_Runfile():
             self.commands.append(command)
             
         # add the qfep command:
-        command = "    os.system('python {} -d out -i qfep.json')\n".format(self.qfep)
+        command = "    os.system('python {} -d out -i ../../inputfiles/qfep.json ')\n".format(self.qfep)
         self.commands.append(command)
             
         for T in globaldata['Temp']:
