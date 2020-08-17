@@ -237,7 +237,9 @@ class Write_Qfepfile():
                         
                 if cnt > 8:
                     ener_root = line[0].split('/')[-1].split('.')[0]
-                    fepout = '{}/dualtop/output/energies.csv,{}/{}.json'.format(ener_root,self.wd,ener_root)
+                    fep1 = '{}/dualtop/output/energies.csv'.format(ener_root)
+                    fep2 = '{}.json'.format(ener_root)
+                    fepout = [fep1,fep2]
                     self.data['energy_files'].append(fepout) 
                     
     def write_qfep(self):
@@ -254,6 +256,7 @@ class Write_Qfepfile():
 class Write_Runfile():
     def __init__(self,wd,oldFEP,cluster):
         self.qdyn = SETTINGS.ROOT + 'bin/qdyn.py '
+        self.qfep = SETTINGS.ROOT + 'bin/qfep.py '
         self.wd = wd
         self.oldFEProot = oldFEP.split('/')[-1]                
         self.cluster = cluster
@@ -283,7 +286,7 @@ class Write_Runfile():
             self.commands.append(command)
             
         # add the qfep command:
-        command = "    os.system('python ~/pfs/software/qgpu-qfep/bin/qfep.py -d out -i qfep.json')\n"
+        command = "    os.system('python {} -d out -i qfep.json')\n".format(self.qfep)
         self.commands.append(command)
             
         for T in globaldata['Temp']:

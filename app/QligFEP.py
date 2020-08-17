@@ -23,10 +23,9 @@ class Startup(object):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         prog='QligFEP',
-        version='1.0',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description = '       == Generate FEP files for dual topology ligand FEP == ')
-    
+    parser.add_argument('--version', action='version', version='%(prog)s 1.0')    
     parser.add_argument('-of', '--oldFEP',
                         dest = "oldFEP",
                         required = False,
