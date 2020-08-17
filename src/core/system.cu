@@ -649,7 +649,7 @@ void write_energies(int iteration) {
 
     fp = fopen(path, "a");
 
-    fprintf(fp, "%d\n", iteration / md.energy);
+    fprintf(fp, "interval %d\n", iteration / md.energy);
 
     fprintf(fp, "[temperature]\n");
     fprintf(fp, "Temp\t%f\n", Temp);
