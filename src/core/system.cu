@@ -653,7 +653,6 @@ void write_energies(int iteration) {
 
     fprintf(fp, "[temperature]\n");
     fprintf(fp, "Temp\t%f\n", Temp);
-    fprintf(fp, "Tscale\t%f\n", Tscale);
     fprintf(fp, "\n");
 
     fprintf(fp, "[bonded]\n");
@@ -664,11 +663,11 @@ void write_energies(int iteration) {
     fprintf(fp, "\n");
 
     fprintf(fp, "[nonbonded]\n");
-    fprintf(fp, "type\tUvdw\tUcoul\n");
-    fprintf(fp, "pp\t%f\t%f\n", E_nonbond_pp.Uvdw, E_nonbond_pp.Ucoul);
-    fprintf(fp, "pw\t%f\t%f\n", E_nonbond_pw.Uvdw, E_nonbond_pw.Ucoul);
-    fprintf(fp, "ww\t%f\t%f\n", E_nonbond_ww.Uvdw, E_nonbond_ww.Ucoul);
-    fprintf(fp, "qx\t%f\t%f\n", E_nonbond_qx.Uvdw, E_nonbond_qx.Ucoul);
+    fprintf(fp, "type\tUcoul\tUvdw\n");
+    fprintf(fp, "pp\t%f\t%f\n", E_nonbond_pp.Ucoul, E_nonbond_pp.Uvdw);
+    fprintf(fp, "pw\t%f\t%f\n", E_nonbond_pw.Ucoul, E_nonbond_pw.Uvdw);
+    fprintf(fp, "ww\t%f\t%f\n", E_nonbond_ww.Ucoul, E_nonbond_ww.Uvdw);
+    fprintf(fp, "qx\t%f\t%f\n", E_nonbond_qx.Ucoul, E_nonbond_qx.Uvdw);
     fprintf(fp, "\n");
 
     fprintf(fp, "[restraint]\n");
@@ -681,10 +680,10 @@ void write_energies(int iteration) {
     fprintf(fp, "\n");
 
     fprintf(fp, "[q-energies]\n");
-    fprintf(fp, "lambda\tSUM\tUbond\tUangle\tUtor\tUimp\tUvdw\tUcoul\tUrestr\n");
+    fprintf(fp, "lambda\tSUM\tUbond\tUangle\tUtor\tUimp\tUcoul\tUvdw\tUrestr\n");
     for (int state = 0; state < n_lambdas; state++) {
         fprintf(fp, "%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\n", lambdas[state], EQ_total[state].Utot, EQ_bond[state].Ubond,
-            EQ_bond[state].Uangle, EQ_bond[state].Utor, EQ_bond[state].Uimp, EQ_nonbond_qx[state].Uvdw, EQ_nonbond_qx[state].Ucoul, EQ_restraint[state].Urestr);
+            EQ_bond[state].Uangle, EQ_bond[state].Utor, EQ_bond[state].Uimp, EQ_nonbond_qx[state].Ucoul, EQ_nonbond_qx[state].Uvdw, EQ_restraint[state].Urestr);
     }
     fprintf(fp, "\n");
     
@@ -859,7 +858,6 @@ void calc_integration_step(int iteration) {
 
     printf("[temperature]\n");
     printf("Temp\t%f\n", Temp);
-    printf("Tscale\t%f\n", Tscale);
     printf("\n");
 
     printf("[bonded]\n");
@@ -870,11 +868,11 @@ void calc_integration_step(int iteration) {
     printf("\n");
 
     printf("[nonbonded]\n");
-    printf("type\tUvdw\tUcoul\n");
-    printf("pp\t%f\t%f\n", E_nonbond_pp.Uvdw, E_nonbond_pp.Ucoul);
-    printf("pw\t%f\t%f\n", E_nonbond_pw.Uvdw, E_nonbond_pw.Ucoul);
-    printf("ww\t%f\t%f\n", E_nonbond_ww.Uvdw, E_nonbond_ww.Ucoul);
-    printf("qx\t%f\t%f\n", E_nonbond_qx.Uvdw, E_nonbond_qx.Ucoul);
+    printf("type\tUcoul\tUvdw\n");
+    printf("pp\t%f\t%f\n", E_nonbond_pp.Ucoul, E_nonbond_pp.Uvdw);
+    printf("pw\t%f\t%f\n", E_nonbond_pw.Ucoul, E_nonbond_pw.Uvdw);
+    printf("ww\t%f\t%f\n", E_nonbond_ww.Ucoul, E_nonbond_ww.Uvdw);
+    printf("qx\t%f\t%f\n", E_nonbond_qx.Ucoul, E_nonbond_qx.Uvdw);
     printf("\n");
 
     printf("[restraint]\n");
@@ -887,10 +885,10 @@ void calc_integration_step(int iteration) {
     printf("\n");
 
     printf("[q-energies]\n");
-    printf("lambda\tSUM\tUbond\tUangle\tUtor\tUimp\tUvdw\tUcoul\tUrestr\n");
+    printf("lambda\tSUM\tUbond\tUangle\tUtor\tUimp\tUcoul\tUvdw\tUrestr\n");
     for (int state = 0; state < n_lambdas; state++) {
         printf("%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\n", lambdas[state], EQ_total[state].Utot, EQ_bond[state].Ubond,
-            EQ_bond[state].Uangle, EQ_bond[state].Utor, EQ_bond[state].Uimp, EQ_nonbond_qx[state].Uvdw, EQ_nonbond_qx[state].Ucoul, EQ_restraint[state].Urestr);
+            EQ_bond[state].Uangle, EQ_bond[state].Utor, EQ_bond[state].Uimp, EQ_nonbond_qx[state].Ucoul, EQ_nonbond_qx[state].Uvdw, EQ_restraint[state].Urestr);
     }
     printf("\n");
     
