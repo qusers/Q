@@ -31,7 +31,7 @@ void calc_nonbonded_qp_forces() {
             if (bond23) continue;
             if (excluded[i] || excluded[j]) continue;
 
-            scaling = bond14 ? .5 : 1;
+            scaling = bond14 ? topo.el14_scale : 1;
 
             da.x = coords[j].x - coords[i].x;
             da.y = coords[j].y - coords[i].y;
@@ -52,7 +52,7 @@ void calc_nonbonded_qp_forces() {
                 ai_bii = bond14 ? qi_type.Bi_14 : qi_type.Bi;
                 aj_bii = bond14 ? aj_type.bii_1_4 : aj_type.bii_normal;
     
-                Vel = Coul * scaling * q_charges[qi][state].q * ccharges[charges[j].code - 1].charge * r;
+                Vel = topo.coulomb_constant * scaling * q_charges[qi][state].q * ccharges[charges[j].code - 1].charge * r;
                 V_a = ai_aii * aj_aii / (r6 * r6);
                 V_b = ai_bii * aj_bii / r6;
                 dv = r2 * (-Vel - (12 * V_a - 6 * V_b)) * lambdas[state];
@@ -133,9 +133,9 @@ void calc_nonbonded_qw_forces() {
                 V_a = ai_aii * A_O / (r6O * r6O);
                 V_b = ai_bii * B_O / (r6O);
 
-                VelO = Coul * crg_ow * q_charges[qi][state].q * rO;
-                VelH1 = Coul * crg_hw * q_charges[qi][state].q * rH1;
-                VelH2 = Coul * crg_hw * q_charges[qi][state].q * rH2;
+                VelO = topo.coulomb_constant * crg_ow * q_charges[qi][state].q * rO;
+                VelH1 = topo.coulomb_constant * crg_hw * q_charges[qi][state].q * rH1;
+                VelH2 = topo.coulomb_constant * crg_hw * q_charges[qi][state].q * rH2;
                 dvO += r2O * (-VelO - (12 * V_a - 6 * V_b)) * lambdas[state];
                 dvH1 -= r2H1 * VelH1 * lambdas[state];
                 dvH2 -= r2H2 * VelH2 * lambdas[state];
@@ -192,7 +192,7 @@ void calc_nonbonded_qq_forces() {
                 if (bond23) continue;
                 if (excluded[ai] || excluded[aj]) continue;
     
-                scaling = bond14 ? .5 : 1;
+                scaling = bond14 ? topo.el14_scale : 1;
 
                 elscale = 1;
                 for (int k = 0; k < n_qelscales; k++) {
@@ -211,7 +211,7 @@ void calc_nonbonded_qq_forces() {
                 ra = sqrt(r2a);
                 r6a = r2a * r2a * r2a;
     
-                Vela = scaling * Coul * crg_i * crg_j * ra * elscale;
+                Vela = scaling * topo.coulomb_constant * crg_i * crg_j * ra * elscale;
     
                 ai_aii = bond14 ? qi_type.Ai_14 : qi_type.Ai;
                 aj_aii = bond14 ? qj_type.Ai_14 : qj_type.Ai;

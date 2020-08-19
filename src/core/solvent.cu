@@ -59,7 +59,7 @@ void calc_nonbonded_ww_forces() {
 
             // O - O
             r2 = rOX * rOX;
-            Vel = Coul * pow(crg_ow, 2) * rOX;
+            Vel = topo.coulomb_constant * pow(crg_ow, 2) * rOX;
             V_a = A_OO * (r2*r2*r2) * (r2*r2*r2);
             V_b = B_OO * (r2*r2*r2);
             E_nonbond_ww.Uvdw += (V_a - V_b);
@@ -75,7 +75,7 @@ void calc_nonbonded_ww_forces() {
 
             // O - H1
             r2 = pow(rH1X, 2);
-            Vel = Coul * crg_ow * crg_hw * rH1X;
+            Vel = topo.coulomb_constant * crg_ow * crg_hw * rH1X;
             E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H1 in j-molecule
@@ -88,7 +88,7 @@ void calc_nonbonded_ww_forces() {
 
             // O - H2
             r2 = pow(rH2X, 2);
-            Vel = Coul * crg_ow * crg_hw * rH2X;
+            Vel = topo.coulomb_constant * crg_ow * crg_hw * rH2X;
             E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H2 in j-molecule
@@ -130,7 +130,7 @@ void calc_nonbonded_ww_forces() {
 
             // H1 - O
             r2 = rOX * rOX;
-            Vel = Coul * crg_hw * crg_ow * rOX;
+            Vel = topo.coulomb_constant * crg_hw * crg_ow * rOX;
             E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j -= 2; //move pointer back to O in interacting molecule
@@ -143,7 +143,7 @@ void calc_nonbonded_ww_forces() {
 
             // H1 - H1
             r2 = pow(rH1X, 2);
-            Vel = Coul * crg_hw * crg_hw * rH1X;
+            Vel = topo.coulomb_constant * crg_hw * crg_hw * rH1X;
             E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H1 in j-molecule
@@ -156,7 +156,7 @@ void calc_nonbonded_ww_forces() {
 
             // H1 - H2
             r2 = pow(rH2X, 2);
-            Vel = Coul * crg_hw * crg_hw * rH2X;
+            Vel = topo.coulomb_constant * crg_hw * crg_hw * rH2X;
             E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H2 in j-molecule
@@ -198,7 +198,7 @@ void calc_nonbonded_ww_forces() {
 
             // H2 - O
             r2 = rOX * rOX;
-            Vel = Coul * crg_hw * crg_ow * rOX;
+            Vel = topo.coulomb_constant * crg_hw * crg_ow * rOX;
             E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j -= 2; //move pointer back to O in interacting molecule
@@ -211,7 +211,7 @@ void calc_nonbonded_ww_forces() {
 
             // H2 - H1
             r2 = pow(rH1X, 2);
-            Vel = Coul * crg_hw * crg_hw * rH1X;
+            Vel = topo.coulomb_constant * crg_hw * crg_hw * rH1X;
             E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H1 in j-molecule
@@ -224,7 +224,7 @@ void calc_nonbonded_ww_forces() {
 
             // H1 - H2
             r2 = pow(rH2X, 2);
-            Vel = Coul * crg_hw * crg_hw * rH2X;
+            Vel = topo.coulomb_constant * crg_hw * crg_hw * rH2X;
             E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H2 in j-molecule
@@ -271,7 +271,7 @@ void calc_nonbonded_pw_forces() {
             ra = sqrt(r2a);
             r6a = r2a * r2a * r2a;
 
-            Vela = Coul * qi * qj * ra;
+            Vela = topo.coulomb_constant * qi * qj * ra;
 
             ai_aii = ai_type.aii_normal;
             aj_aii = aj_type.aii_normal;

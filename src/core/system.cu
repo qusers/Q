@@ -551,7 +551,7 @@ void init_shake() {
         ai = bonds[bi].ai-1;
         aj = bonds[bi].aj-1;
 
-        while(ai+1 >= molecules[mol+1]) {
+        while(mol+1 < n_molecules && ai+1 >= molecules[mol+1]) {
             // new molecule
             mol += 1;
         }
@@ -1137,6 +1137,7 @@ void init_variables() {
     init_coords("coords.csv");
     init_ctorsions("ctorsions.csv");
     init_excluded("excluded.csv");
+    init_molecules("molecules.csv");
     init_impropers("impropers.csv");
     init_torsions("torsions.csv");
     init_LJ_matrix();

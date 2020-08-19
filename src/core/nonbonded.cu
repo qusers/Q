@@ -29,7 +29,7 @@
             if (bond23) continue;
             if (excluded[i] || excluded[j]) continue;
 
-            scaling = bond14 ? .5 : 1;
+            scaling = bond14 ? topo.el14_scale : 1;
 
             crg_i = ccharges[charges[i].code - 1].charge;
             crg_j = ccharges[charges[j].code - 1].charge;
@@ -44,7 +44,7 @@
             ra = sqrt(r2a);
             r6a = r2a * r2a * r2a;
 
-            Vela = scaling * Coul * crg_i * crg_j * ra;
+            Vela = scaling * topo.coulomb_constant * crg_i * crg_j * ra;
 
             ai_aii = bond14 ? ai_type.aii_1_4 : ai_type.aii_normal;
             aj_aii = bond14 ? aj_type.aii_1_4 : aj_type.aii_normal;

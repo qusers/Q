@@ -334,6 +334,9 @@ void init_topo(const char *filename) {
     topo.solute_center = solute_center;
     topo.solvent_center = solvent_center;
 
+    topo.el14_scale = strtod(file.buffer[6][0], &eptr);
+    topo.coulomb_constant = strtod(file.buffer[7][0], &eptr);
+
     clean_csv(file);
 }
 
@@ -857,6 +860,23 @@ void init_atypes(const char* filename) {
         atype.code = atoi(file.buffer[i+1][1]);
 
         atypes[i] = atype;
+    }
+
+    clean_csv(file);
+}
+
+void init_molecules(const char*filename) {
+    csvfile_t file = read_csv(filename, 0, base_folder);
+    
+    if (file.n_lines < 1) {
+        return;
+    }
+
+    n_molecules = atoi(file.buffer[0][0]);
+    molecules = (int*) malloc(n_molecules * sizeof(int));
+
+    for (int i = 0; i < n_molecules; i++) {
+        molecules[i] = atoi(file.buffer[i+1][0]);
     }
 
     clean_csv(file);
