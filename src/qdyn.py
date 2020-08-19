@@ -97,7 +97,7 @@ class Prepare_MD(object):
         # Write md data files (both csv and json file)
         write_md.CSV(self.wd + '/')
         
-        out_json = self.wd + '/' + self.md.split('.')[0] + '.json'
+        out_json = self.wd + '/' + self.md.split('.')[1] + '.json'
         write_md.JSON(out_json)        
 
 class Prepare_FEP(object):       
@@ -133,7 +133,7 @@ class Prepare_FEP(object):
         write_fep.CSV(self.wd + '/')
         
         if self.fepfile != None:
-            out_json = self.wd + '/' + self.fepfile.split('.')[0] + '.json'
+            out_json = self.wd + '/' + self.fepfile.split('.')[1] + '.json'
             write_fep.JSON(out_json)
 
 class Read_Restart(object):       
