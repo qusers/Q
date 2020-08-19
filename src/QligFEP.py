@@ -74,7 +74,10 @@ class Create_Environment():
         IO.create_dir('{}/{}'.format(wd,oldFEProot),overwrite)
         
         # create inputfile dir
-        IO.create_dir('{}/{}/{}'.format(wd,oldFEProot,'inputfiles'),overwrite)        
+        IO.create_dir('{}/{}/{}'.format(wd,oldFEProot,'inputfiles'),overwrite)
+        
+        # create results dir
+        IO.create_dir('{}/{}/{}'.format(wd,oldFEProot,'results'),overwrite)        
 
         # create temperature dirs
         for T in globaldata['Temp']:
@@ -135,10 +138,13 @@ class Write_MD():
                         self.r = replicate
                         md_data = self.construct(md)
                         md_data['random_seed'] = globaldata['randrep'][replicate]
-                        if md_data['temperature'] == 'T_VAR':
-                            md_data['temperature'] = self.T
 
+            
+            if 'md' in md:
+                md_data['temperature'] = self.T
+                
             else:
+                md_data['random_seed']
                 md_data['random_seed'] = None
             
             self.write(md_data)
@@ -152,19 +158,27 @@ class Write_MD():
     def write(self,md_data):
         write_md = MD.Write_MD(md_data)
         if self.mdroot == 'eq1':
-            out_json = '{}/{}/{:.1f}/{:02d}/{}.json'.format(self.wd,
-                                                       self.oldFEProot,
-                                                       self.T,
-                                                       self.r,
-                                                       self.mdroot,
-                                                      )
-        else:
+            for T in globaldata['Temp']:
+                self.T = T
+                for replicate in globaldata['randrep']:
+                    self.r = replicate            
+                    out_json = '{}/{}/{:.1f}/{:02d}/{}.json'.format(self.wd,
+                                                               self.oldFEProot,
+                                                               self.T,
+                                                               self.r,
+                                                               self.mdroot,
+                                                              )
+
+                    write_md.JSON(out_json)
+
+            
+        else:                
             out_json = '{}/{}/inputfiles/{}.json'.format(self.wd,
                                                        self.oldFEProot,
                                                        self.mdroot,
                                                       )
             
-        write_md.JSON(out_json)
+            write_md.JSON(out_json)
         
 class Write_Qfepfile():
     def __init__(self,wd,oldFEP):
@@ -297,7 +311,20 @@ class Write_Runfile():
         # add the qfep command:
         command = "    os.system('python {} -d out -i ../../inputfiles/qfep.json ')\n".format(self.qfep)
         self.commands.append(command)
-            
+        
+        # Clean up commands
+        command = "    shutil.move('out/qfep.out, ../../results/qfep-{:02d}.out'.format(i))\n"
+        self.commands.append(command)
+        
+        command = "    os.chdir('../../')\n"
+        self.commands.append(command)        
+        
+        command = "    os.system('tar -xvf raw_data-{:02d}.tar.gz 298.0/{:02d}'.format(i))\n"
+        self.commands.append(command)
+        
+        command = "    shutil.rmtree('298.0/{:02d}'.format(i))\n"
+        self.commands.append(command)
+        
         for T in globaldata['Temp']:
             self.T = T
             for replicate in globaldata['randrep']:
@@ -311,6 +338,7 @@ class Write_Runfile():
         with open(self.py,'w') as outfile:
             outfile.write(
                 "import multiprocessing\n"                                  \
+                "import shutil\n"                                  \
                 "import os\n\n"                                             \
                 "def worker(i):\n"                                          \
                 "    os.chdir('298.0/{:02d}'.format(i))\n"      ## HARDCODED,NEEDS FIX
