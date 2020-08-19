@@ -500,9 +500,12 @@ void init_excluded(const char *filename) {
 
     char line[8192];
     
+    n_excluded = 0;
+
     if (fgets(line, 8192, fp)) {
         for (int i = 0; i < n_atoms; i++) {
             excluded[i] = (line[i] == '1');
+            if (excluded[i]) n_excluded++;
         }
     }
 

@@ -6,6 +6,7 @@
 #include "solvent.h"
 #include "restraints.h"
 #include "qatoms.h"
+#include "shake.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,6 +25,7 @@ int n_atoms_solute;
 int n_patoms;
 int n_qatoms;
 int n_waters;
+int n_molecules = 0;
 
 char base_folder[1024];
 double dt, tau_T;
@@ -34,6 +36,7 @@ double dt, tau_T;
  */
 
 md_t md;
+bool separate_scaling = false;
 
 /* =============================================
  * == FROM TOPOLOGY FILE
@@ -59,6 +62,7 @@ int n_atypes;
 int n_catypes;
 int n_ngbrs23;
 int n_ngbrs14;
+int n_excluded;
 
 coord_t* coords_top;
 bond_t* bonds;
@@ -76,6 +80,7 @@ catype_t* catypes;
 int *LJ_matrix;
 bool *excluded;
 bool *heavy;
+int *molecules;
 
 topo_t topo;
 
@@ -207,74 +212,118 @@ void exclude_qatom_definitions() {
 }
 
 void exclude_all_atoms_excluded_definitions() {
-    int n_excluded;
+    int n_excl;
     int ai = 0, bi = 0, ii = 0, ti = 0;
 
-    // n_excluded = 0;
+    // n_excl = 0;
     // for (int i = 0; i < n_angles; i++) {
     //     if (excluded[angles[i].ai - 1]
     //         && excluded[angles[i].aj - 1]
     //         && excluded[angles[i].ak - 1]) {
-    //         n_excluded++;
+    //         n_excl++;
     //     }
     //     else {
     //         angles[ai] = angles[i];
     //         ai++;
     //     }
     // }
-    // printf("original: %d. # excluded angles: %d\n", n_angles, n_excluded);
-    // n_angles -= n_excluded;
+    // printf("original: %d. # excluded angles: %d\n", n_angles, n_excl);
+    // n_angles -= n_excl;
 
-    // n_excluded = 0;
+    // n_excl = 0;
     // for (int i = 0; i < n_bonds; i++) {
     //     if (excluded[bonds[i].ai - 1]
     //         && excluded[bonds[i].aj - 1]) {
-    //         n_excluded++;
+    //         n_excl++;
     //     }
     //     else {
     //         bonds[bi] = bonds[i];
     //         bi++;
     //     }
     // }
-    // printf("original: %d. # excluded bonds: %d\n", n_bonds, n_excluded);
-    // n_bonds -= n_excluded;
+    // printf("original: %d. # excluded bonds: %d\n", n_bonds, n_excl);
+    // n_bonds -= n_excl;
 
-    n_excluded = 0;
+    n_excl = 0;
     for (int i = 0; i < n_impropers; i++) {
         if (excluded[impropers[i].ai - 1]
             && excluded[impropers[i].aj - 1]
             && excluded[impropers[i].ak - 1]
             && excluded[impropers[i].al - 1]) {
-            n_excluded++;
+            n_excl++;
         }
         else {
             impropers[ii] = impropers[i];
             ii++;
         }
     }
-    printf("original: %d. # excluded impropers: %d\n", n_impropers, n_excluded);
-    n_impropers -= n_excluded;
+    printf("original: %d. # excluded impropers: %d\n", n_impropers, n_excl);
+    n_impropers -= n_excl;
 
-    n_excluded = 0;
+    n_excl = 0;
     for (int i = 0; i < n_torsions; i++) {
         if (excluded[torsions[i].ai - 1]
             && excluded[torsions[i].aj - 1]
             && excluded[torsions[i].ak - 1]
             && excluded[torsions[i].al - 1]) {
-            n_excluded++;
+            n_excl++;
         }
         else {
             torsions[ti] = torsions[i];
             ti++;
         }
     }
-    printf("original: %d. # excluded torsions: %d\n", n_torsions, n_excluded);
-    n_torsions -= n_excluded;
+    printf("original: %d. # excluded torsions: %d\n", n_torsions, n_excl);
+    n_torsions -= n_excl;
 }
 
-void shrink_topology() {
-    exclude_qatom_definitions();
-    exclude_all_atoms_excluded_definitions();
+void exclude_shaken_definitions() {
+    int excluded;
+    int bi = 0;
+    int si = 0;
+    int ang_i = 0;
+    int ai, aj;
+
+    excluded = 0;
+    if (n_shake_constraints > 0) {
+        for (int i = 0; i < n_bonds; i++) {
+            if (bonds[i].ai == shake_bonds[si].ai
+             && bonds[i].aj == shake_bonds[si].aj) {
+                si++;
+                excluded++;
+            }
+            else {
+                bonds[bi] = bonds[i];
+                bi++;
+            }
+        }
+        n_bonds -= excluded;
+    }
+
+    excluded = 0;
+    if (n_shake_constraints > 0) {
+        for (int i = 0; i < n_shake_constraints; i++) {
+            ai = shake_bonds[i].ai;
+            aj = shake_bonds[i].aj;
+            for (int j = 0; j < n_angles; j++) {
+                if ( (angles[j].ai == ai && angles[j].aj == aj)
+                    || (angles[j].ai == aj && angles[j].ak == aj) ) {
+                    angles[j].code = 0;
+                    break;
+                }
+            }
+        }
+
+        for (int i = 0; i < n_angles; i++) {
+            if (angles[i].code == 0) {
+                excluded++;
+            }
+            else {
+                angles[ang_i] = angles[i];
+                ang_i++;
+            }
+        }
+    }
 }
 
 /* =============================================
@@ -285,8 +334,6 @@ void shrink_topology() {
 coord_t* coords;
 vel_t* velocities;
 dvel_t* dvelocities;
-double Temp = 0;
-double Tscale = 1;
 
 // Shake constrains
 coord_t* xcoords;
@@ -480,6 +527,91 @@ void init_restrseqs() {
 }
 
 /* =============================================
+ * == SHAKE
+ * =============================================
+ */
+
+int n_shake_constraints, *mol_n_shakes;
+shake_bond_t *shake_bonds;
+ 
+void init_shake() {
+    int ai, aj;
+    int mol = 0;
+    int shake;
+    int n_solute_shake_constraints = 0;
+    double excl_shake = 0;
+    bool shake_hydrogens = false;
+    bool shake_solute = false;
+    bool shake_solvent = false;
+
+    n_shake_constraints = 0;
+    mol_n_shakes = (int*) calloc(n_molecules, sizeof(int));
+    
+    for (int bi = 0; bi < n_bonds; bi++) {
+        ai = bonds[bi].ai-1;
+        aj = bonds[bi].aj-1;
+
+        while(ai+1 >= molecules[mol+1]) {
+            // new molecule
+            mol += 1;
+        }
+
+        if ( (shake_hydrogens && (!heavy[ai] || !heavy[aj]))
+            || (shake_solute && ai+1 <= n_atoms_solute) 
+            || (shake_solvent && ai+1 > n_atoms_solute) ) {
+            mol_n_shakes[mol]++;
+            n_shake_constraints++;
+        }
+
+        if (excluded[ai]) excl_shake += 0.5;
+        if (excluded[aj]) excl_shake += 0.5;
+    }
+
+    shake_bonds = (shake_bond_t*) malloc(n_shake_constraints * sizeof(shake_bond_t));
+    mol = 0;
+    shake = 0;
+    for (int bi = 0; bi < n_bonds; bi++) {
+        ai = bonds[bi].ai-1;
+        aj = bonds[bi].aj-1;
+
+        while(ai+1 >= molecules[mol+1]) {
+            // new molecule
+            mol += 1;
+        }
+
+        if ( (shake_hydrogens && (!heavy[ai] || !heavy[aj]))
+            || (shake_solute && ai+1 <= n_atoms_solute) 
+            || (shake_solvent && ai+1 > n_atoms_solute) ) {
+            shake_bonds[shake].ai = ai+1;
+            shake_bonds[shake].aj = aj+1;
+            shake_bonds[shake].dist2 = pow(cbonds[bonds[bi].code-1].b0, 2);
+            shake++;
+        }
+    }
+
+    // Get total number of shake constraints in solute (used for separate scaling of temperatures)
+    for (int i = 0; i < n_molecules - n_waters; i++) {
+        n_solute_shake_constraints += mol_n_shakes[i];
+    }
+
+    Ndegf = 3 * n_atoms - n_shake_constraints;
+    Ndegfree = Ndegf - 3 * n_excluded + excl_shake;
+
+    Ndegf_solvent = Ndegf - 3 * n_atoms_solute  + n_solute_shake_constraints;
+    Ndegf_solute = Ndegf - Ndegf_solvent;
+
+    Ndegfree_solvent = 3 * (n_atoms - n_atoms_solute) - (n_shake_constraints - n_solute_shake_constraints);
+    Ndegfree_solute = Ndegfree - Ndegfree_solvent;
+
+    if (Ndegfree_solvent * Ndegfree_solute == 0) {
+        separate_scaling = false;
+    }
+    else {
+        separate_scaling = true;
+    }
+}
+
+/* =============================================
  * == CALCUTED IN THE INTEGRATION
  * =============================================
  */
@@ -516,27 +648,66 @@ void init_patoms() {
  * =============================================
  */
 
+double Ndegf, Ndegfree, Ndegf_solvent, Ndegf_solute, Ndegfree_solvent, Ndegfree_solute;
+double Temp = 0, Tfree = 0;
+double Tscale_solute = 1, Tscale_solvent = 1;
+
 void calc_temperature() {
-    double Ndegf = 3 * n_atoms;
+    Temp = 0;
+    Tfree = 0;
+    double Temp_solute = 0, Tfree_solute = 0, Texcl_solute = 0;
+    double Tfree_solvent = 0, Temp_solvent = 0, Texcl_solvent = 0;
     double Ekinmax = 1000.0 * Ndegf * Boltz * md.temperature / 2.0 / n_atoms;
     double ener;
     double mass_i;
 
     Temp = 0;
-    for (int i = 0; i < n_atoms; i++) {
+    for (int i = 0; i < n_atoms_solute; i++) {
         mass_i = catypes[atypes[i].code - 1].m;
         ener = .5 * mass_i * (pow(velocities[i].x, 2) + pow(velocities[i].y, 2) + pow(velocities[i].z, 2));
-        Temp += ener;
+        Temp_solute += ener;
+        if (!excluded[i]) {
+            Tfree_solute += ener;
+        }
+        else {
+            Texcl_solute += ener;
+        }
         if (ener > Ekinmax) {
             printf(">>> WARNING: hot atom %d: %f\n", i, ener/Boltz/3);
         }
     }
 
+    for (int i = n_atoms_solute; i < n_atoms; i++) {
+        mass_i = catypes[atypes[i].code - 1].m;
+        ener = .5 * mass_i * (pow(velocities[i].x, 2) + pow(velocities[i].y, 2) + pow(velocities[i].z, 2));
+        Temp_solvent += ener;
+        if (!excluded[i]) {
+            Tfree_solvent += ener;
+        }
+        else {
+            Texcl_solvent += ener;
+        }
+        if (ener > Ekinmax) {
+            printf(">>> WARNING: hot atom %d: %f\n", i, ener/Boltz/3);
+        }
+    }
+
+    Tfree = Tfree_solute + Tfree_solute;
+    Temp = Temp_solute + Temp_solvent;
+
     E_total.Ukin = Temp;
 
     Temp = 2.0 * Temp / Boltz / Ndegf;
+    Tfree = 2.0 * Tfree / Boltz / Ndegfree;
 
-    Tscale = sqrt(1 + (dt / tau_T) * (md.temperature / Temp - 1.0));
+    if (separate_scaling) {
+        if (Tfree_solvent != 0) Tscale_solvent = sqrt(1 + (dt / tau_T) * (md.temperature / Tfree_solvent - 1.0));
+        if (Tfree_solute != 0) Tscale_solute = sqrt(1 + (dt / tau_T) * (md.temperature / Tfree_solute - 1.0));
+    }
+    else {
+        if (Tfree != 0) Tscale_solvent = sqrt(1 + (dt / tau_T) * (md.temperature / Tfree - 1.0));
+        Tscale_solute = Tscale_solvent;
+    }
     // printf("Tscale = %f, tau_T = %f, Temp = %f\n", Tscale, tau_T, Temp);
 }
 
@@ -547,13 +718,13 @@ void calc_temperature() {
 
 void calc_leapfrog() {
     double mass_i, winv_i;
-    for (int i = 0; i < n_atoms; i++) {
+    for (int i = 0; i < n_atoms_solute; i++) {
         mass_i = catypes[atypes[i].code - 1].m;
 
         winv_i = 1/mass_i;
-        velocities[i].x = (velocities[i].x - dvelocities[i].x * dt * winv_i) * Tscale;
-        velocities[i].y = (velocities[i].y - dvelocities[i].y * dt * winv_i) * Tscale;
-        velocities[i].z = (velocities[i].z - dvelocities[i].z * dt * winv_i) * Tscale;
+        velocities[i].x = (velocities[i].x - dvelocities[i].x * dt * winv_i) * Tscale_solute;
+        velocities[i].y = (velocities[i].y - dvelocities[i].y * dt * winv_i) * Tscale_solute;
+        velocities[i].z = (velocities[i].z - dvelocities[i].z * dt * winv_i) * Tscale_solute;
 
         // Prepare copy for shake
         xcoords[i].x = coords[i].x;
@@ -563,6 +734,37 @@ void calc_leapfrog() {
         coords[i].x += velocities[i].x * dt;
         coords[i].y += velocities[i].y * dt;
         coords[i].z += velocities[i].z * dt;
+
+    }
+
+    for (int i = n_atoms_solute; i < n_atoms; i++) {
+        mass_i = catypes[atypes[i].code - 1].m;
+
+        winv_i = 1/mass_i;
+        velocities[i].x = (velocities[i].x - dvelocities[i].x * dt * winv_i) * Tscale_solvent;
+        velocities[i].y = (velocities[i].y - dvelocities[i].y * dt * winv_i) * Tscale_solvent;
+        velocities[i].z = (velocities[i].z - dvelocities[i].z * dt * winv_i) * Tscale_solvent;
+
+        // Prepare copy for shake
+        xcoords[i].x = coords[i].x;
+        xcoords[i].y = coords[i].y;
+        xcoords[i].z = coords[i].z;
+
+        coords[i].x += velocities[i].x * dt;
+        coords[i].y += velocities[i].y * dt;
+        coords[i].z += velocities[i].z * dt;
+
+    }
+
+
+    // Shake if necessary
+    if (n_shake_constraints > 0) {
+        calc_shake_constraints();
+        for (int i = 0; i < n_atoms; i++) {
+            velocities[i].x = (coords[i].x - xcoords[i].x) / dt;
+            velocities[i].y = (coords[i].y - xcoords[i].y) / dt;
+            velocities[i].z = (coords[i].z - xcoords[i].z) / dt;
+        }
     }
 }
 
@@ -968,7 +1170,15 @@ void init_variables() {
     init_qsoftcores("q_softcores.csv");
     init_qtorsions("q_torsions.csv");
 
-    shrink_topology();
+    // First part of shrink topology, this needs to be done first as shake constraints are based on bonds
+    exclude_qatom_definitions();
+    exclude_all_atoms_excluded_definitions();
+    
+    // Shake constraints, need to be initialized before last part of shrink_topology
+    init_shake();
+
+    // Now remove shaken bonds
+    exclude_shaken_definitions();
 
     // Init random seed from MD file
     srand(md.random_seed);
@@ -982,10 +1192,6 @@ void init_variables() {
     // From input file
     init_icoords("i_coords.csv");
     init_ivelocities("i_velocities.csv");    
-
-    // for (int i = 0; i < n_atoms; i++) {
-    //     printf("velocities[%d] = %f %f %f\n", i, velocities[i].x, velocities[i].y, velocities[i].z);
-    // }
 
     // Init waters, boundary restrains
     n_waters = (n_atoms - n_atoms_solute) / 3;
@@ -1029,6 +1235,7 @@ void clean_variables() {
     free(impropers);
     free(torsions);
     free(LJ_matrix);
+    free(molecules);
 
     // From FEP file
     free(q_angcouples);
@@ -1103,6 +1310,10 @@ void clean_variables() {
     free(velocities);
     free(dvelocities);
     free(xcoords);
+
+    // Shake
+    free(mol_n_shakes);    
+    free(shake_bonds);
 
     // Energies & temperature
     free(EQ_total);
