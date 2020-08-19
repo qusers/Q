@@ -82,16 +82,32 @@ def check_CUDA():
 def get_installdir():
     print("Please provide the installation directory: ")
     INSTALLDIR = input()
+    INSTALLDIR = INSTALLDIR.strip()
     
     return INSTALLDIR
 
 def create_installdir(INSTALLDIR):
     if os.path.isdir(INSTALLDIR) == True:
         write = query_yes_no("Directory exists, are you sure you want to install here?")
+        if len(glob.glob('{}/*'.format(INSTALLDIR)))     > 0:
+            overwrite = query_yes_no("Directory not empty, clean up?")
         
         if write == False:
             print("Will not write in specified folder, exiting now")
             sys.exit()
+        
+        if overwrite == False:
+            print("Directory needs to be empty, exiting now")
+            sys.exit()
+        
+        if overwrite == True:
+            print("Deleting files in folder")
+            for file in glob.glob('{}/*'.format(INSTALLDIR)):
+                if os.path.isfile(file):
+                    os.remove(file)
+
+                if os.path.isdir(file):
+                    shutil.rmtree(file)
             
         write_in_folder = os.access(INSTALLDIR, os.W_OK)
     
@@ -116,7 +132,21 @@ def install(ROOTDIR):
         if file == 'install.py':
             continue
         
-        shutil.copytree(file, ROOTDIR + file)
+        if os.path.isfile(file):
+            shutil.copy(file, ROOTDIR + '/' + file)
+                    
+        if os.path.isdir(file):
+            shutil.copytree(file, ROOTDIR + '/' + file)
+            
+    os.chdir(ROOTDIR)
+    os.chdir('src/core')
+    out = subprocess.check_output('make')
+    
+    print("If you want to have Q-GPU executable files in your path permanently.")
+    print("Please add the following to .bashrc or .bash:")
+    print('export PYTHONPATH="${}:{}/bin"'.format('{PYTHONPATH}',ROOTDIR))
+    
+    print("==== INSTALLATION COMPLETE ====")
             
 if __name__ == "__main__":    
     init()
