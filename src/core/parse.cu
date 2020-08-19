@@ -118,78 +118,82 @@ void init_md(const char *filename) {
     #ifdef DEBUG
     printf("read %f into initial_temperature (%s in file)\n", md.initial_temperature, file.buffer[7][0]);
     #endif
-    md.shake_solvent = file.buffer[8][1] == "on";
+    md.shake_solvent = strcmp(file.buffer[8][1], "on") == 0;
     #ifdef DEBUG
     printf("read %s into shake_solvent (%s in file)\n", file.buffer[8][1], file.buffer[8][0]);
     #endif
-    md.shake_hydrogens = file.buffer[9][1] == "on";
+    md.shake_solute = strcmp(file.buffer[9][1], "on") == 0;
     #ifdef DEBUG
-    printf("read %s into shake_hydrogens (%s in file)\n", file.buffer[9][1], file.buffer[9][0]);
+    printf("read %s into shake_solute (%s in file)\n", file.buffer[9][1], file.buffer[9][0]);
     #endif
-    md.lrf = file.buffer[10][1] == "on";
+    md.shake_hydrogens = strcmp(file.buffer[10][1], "on") == 0;
     #ifdef DEBUG
-    printf("read %s into lrf (%s in file)\n", file.buffer[10][1], file.buffer[10][0]);
+    printf("read %s into shake_hydrogens (%s in file)\n", file.buffer[10][1], file.buffer[10][0]);
+    #endif
+    md.lrf = strcmp(file.buffer[11][1], "on") == 0;
+    #ifdef DEBUG
+    printf("read %s into lrf (%s in file)\n", file.buffer[11][1], file.buffer[11][0]);
     #endif
     // [cut-offs]
-    md.solute_solute = strtod(file.buffer[11][1], &eptr);
+    md.solute_solute = strtod(file.buffer[12][1], &eptr);
     #ifdef DEBUG
-    printf("read %f into solute_solute (%s in file)\n", md.solute_solute, file.buffer[11][0]);
+    printf("read %f into solute_solute (%s in file)\n", md.solute_solute, file.buffer[12][0]);
     #endif
-    md.solvent_solvent = strtod(file.buffer[12][1], &eptr);
+    md.solvent_solvent = strtod(file.buffer[13][1], &eptr);
     #ifdef DEBUG
-    printf("read %f into solvent_solvent (%s in file)\n", md.solvent_solvent, file.buffer[12][0]);
+    printf("read %f into solvent_solvent (%s in file)\n", md.solvent_solvent, file.buffer[13][0]);
     #endif
-    md.solute_solvent = strtod(file.buffer[13][1], &eptr);
+    md.solute_solvent = strtod(file.buffer[14][1], &eptr);
     #ifdef DEBUG
-    printf("read %f into solute_solvent (%s in file)\n", md.solute_solvent, file.buffer[13][0]);
+    printf("read %f into solute_solvent (%s in file)\n", md.solute_solvent, file.buffer[14][0]);
     #endif
-    md.q_atom = strtod(file.buffer[14][1], &eptr);
+    md.q_atom = strtod(file.buffer[15][1], &eptr);
     #ifdef DEBUG
-    printf("read %f into q_atom (%s in file)\n", md.q_atom, file.buffer[14][0]);
+    printf("read %f into q_atom (%s in file)\n", md.q_atom, file.buffer[15][0]);
     #endif
     // [sphere]
-    md.shell_radius = strtod(file.buffer[15][1], &eptr);
+    md.shell_radius = strtod(file.buffer[16][1], &eptr);
     #ifdef DEBUG
-    printf("read %f into shell_radius (%s in file)\n", md.shell_radius, file.buffer[15][0]);
+    printf("read %f into shell_radius (%s in file)\n", md.shell_radius, file.buffer[16][0]);
     #endif
-    md.shell_force = strtod(file.buffer[16][1], &eptr);
+    md.shell_force = strtod(file.buffer[17][1], &eptr);
     #ifdef DEBUG
-    printf("read %f into shell_force (%s in file)\n", md.shell_force, file.buffer[16][0]);
+    printf("read %f into shell_force (%s in file)\n", md.shell_force, file.buffer[17][0]);
     #endif
     // [solvent]
-    md.radial_force = strtod(file.buffer[17][1], &eptr);
+    md.radial_force = strtod(file.buffer[18][1], &eptr);
     #ifdef DEBUG
-    printf("read %f into radial_force (%s in file)\n", md.radial_force, file.buffer[17][0]);
+    printf("read %f into radial_force (%s in file)\n", md.radial_force, file.buffer[18][0]);
     #endif
     md.polarisation = true;
     #ifdef DEBUG
-    printf("read %s into polarisation (%s in file)\n", file.buffer[18][1], file.buffer[18][0]);
+    printf("read %s into polarisation (%s in file)\n", file.buffer[19][1], file.buffer[19][0]);
     #endif
-    md.polarisation_force = strtod(file.buffer[19][1], &eptr);
+    md.polarisation_force = strtod(file.buffer[20][1], &eptr);
     #ifdef DEBUG
-    printf("read %s into polarisation_force (%s in file)\n", file.buffer[19][1], file.buffer[19][0]);
+    printf("read %s into polarisation_force (%s in file)\n", file.buffer[20][1], file.buffer[20][0]);
     #endif
     // [intervals]
-    md.non_bond = atoi(file.buffer[20][1]);
+    md.non_bond = atoi(file.buffer[21][1]);
     #ifdef DEBUG
-    printf("read %d into non_bond (%s in file)\n", md.non_bond, file.buffer[20][0]);
+    printf("read %d into non_bond (%s in file)\n", md.non_bond, file.buffer[21][0]);
     #endif
-    md.output = atoi(file.buffer[21][1]);
+    md.output = atoi(file.buffer[22][1]);
     #ifdef DEBUG
-    printf("read %d into output (%s in file)\n", md.output, file.buffer[21][0]);
+    printf("read %d into output (%s in file)\n", md.output, file.buffer[22][0]);
     #endif
-    md.energy = atoi(file.buffer[22][1]);
+    md.energy = atoi(file.buffer[23][1]);
     #ifdef DEBUG
-    printf("read %d into energy (%s in file)\n", md.energy, file.buffer[22][0]);
+    printf("read %d into energy (%s in file)\n", md.energy, file.buffer[23][0]);
     #endif
-    md.trajectory = atoi(file.buffer[23][1]);
+    md.trajectory = atoi(file.buffer[24][1]);
     #ifdef DEBUG
-    printf("read %d into trajectory (%s in file)\n", md.trajectory, file.buffer[23][0]);
+    printf("read %d into trajectory (%s in file)\n", md.trajectory, file.buffer[24][0]);
     #endif
     // [trajectory_atoms]
 
     // From here on, need a variable to keep track of index in csvfile
-    int k = 24;
+    int k = 25;
 
     // [lambdas]
     n_lambdas = atoi(file.buffer[k][0]);

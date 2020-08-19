@@ -540,9 +540,6 @@ void init_shake() {
     int shake;
     int n_solute_shake_constraints = 0;
     double excl_shake = 0;
-    bool shake_hydrogens = false;
-    bool shake_solute = false;
-    bool shake_solvent = false;
 
     n_shake_constraints = 0;
     mol_n_shakes = (int*) calloc(n_molecules, sizeof(int));
@@ -556,9 +553,9 @@ void init_shake() {
             mol += 1;
         }
 
-        if ( (shake_hydrogens && (!heavy[ai] || !heavy[aj]))
-            || (shake_solute && ai+1 <= n_atoms_solute) 
-            || (shake_solvent && ai+1 > n_atoms_solute) ) {
+        if ( (md.shake_hydrogens && (!heavy[ai] || !heavy[aj]))
+            || (md.shake_solute && ai+1 <= n_atoms_solute) 
+            || (md.shake_solvent && ai+1 > n_atoms_solute) ) {
             mol_n_shakes[mol]++;
             n_shake_constraints++;
         }
@@ -579,9 +576,9 @@ void init_shake() {
             mol += 1;
         }
 
-        if ( (shake_hydrogens && (!heavy[ai] || !heavy[aj]))
-            || (shake_solute && ai+1 <= n_atoms_solute) 
-            || (shake_solvent && ai+1 > n_atoms_solute) ) {
+        if ( (md.shake_hydrogens && (!heavy[ai] || !heavy[aj]))
+            || (md.shake_solute && ai+1 <= n_atoms_solute) 
+            || (md.shake_solvent && ai+1 > n_atoms_solute) ) {
             shake_bonds[shake].ai = ai+1;
             shake_bonds[shake].aj = aj+1;
             shake_bonds[shake].dist2 = pow(cbonds[bonds[bi].code-1].b0, 2);

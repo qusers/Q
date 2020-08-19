@@ -73,6 +73,7 @@ struct md_t {
     int random_seed;
     double initial_temperature;
     bool shake_solvent;
+    bool shake_solute;
     bool shake_hydrogens;
     bool lrf;
     // [cut-offs]
