@@ -11,7 +11,7 @@ Q is a set of Molecular Dynamics (MD) tools tailored to the following specific k
 This version includes a translation of the original Q fortran code to C/CUDA and Python.
 
 ## Authors:
-Chiel Jespers, Willem Jespers, Johan Åqvist, Hugo Gutiérrez‐de‐Terán
+Chiel Jespers, Willem Jespers, Mauricio Esguerra, Johan Åqvist, Hugo Gutiérrez‐de‐Terán
 
 ## Installation
 The Python environment works with Python > 3.6. It solely uses native python libraries, so no additional libraries will need to be installed.
@@ -51,6 +51,19 @@ echo $path | grep qsource
 ## Troubleshooting
 
 If you receive error messages during compilation please report them to ???? including the compiler used (e.g. intel fortran), the compiler version, and the error message.
+
+## Testing
+Q-GPU includes various tests that compare the output of the original fortran code with the C/CUDA code. They are situated in the test folder and include:
+- 1.interactions
+- 2.physical-properties
+
+The first folder includes test cases for the different type of interactions in Q, that is water-water (w-w), solute-solute (p-p) and Qatom-Qatom (q-q) interactions, and any mixture thereof.
+These test run a single point energy calculation for all of these, and are compared with the output from Q5.07. The test can be run seperately following the instructions in each folder, or all at once using the run_test.py script (TODO!).
+
+In the second folder, we provide test cases for the calculation of solvation free energies of side-chain mimics, and several protein-ligand binding cases (CDk2 and A2aAR, TODO!). These sets were previously included in our QligFEP paper:
+
+- Jespers et al. (https://doi.org/10.1186/s13321-019-0348-5).
+
 
 NOTES:
 =========
