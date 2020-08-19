@@ -1,6 +1,5 @@
-Q-GPU
-=======
-Version control of Q-GPU, an adaption of Q version 5.06 running on GPUs.
+# Q-GPU #
+Version control of Q-GPU, an adaptation of Q version 5.06 running on GPUs.
 
 Q is a set of Molecular Dynamics (MD) tools tailored to the following specific kinds of free energy calculations:
 
@@ -10,11 +9,13 @@ Q is a set of Molecular Dynamics (MD) tools tailored to the following specific k
 
 This version includes a translation of the original Q fortran code to C/CUDA and Python.
 
-## Authors:
+
+## Authors: ##
 Chiel Jespers, Willem Jespers, Mauricio Esguerra, Johan Åqvist, Hugo Gutiérrez‐de‐Terán
 
-## Installation
-The frontend is build on Python, version > 3.6. It solely uses native python libraries, so it has no dependencies on any additional libraries.
+
+## Installation ##
+The frontend is built on Python, version > 3.6. It solely uses native python libraries, so it has no dependencies on any additional libraries.
 
 To compile the qdyn engine source code, you need a CUDA compiler. The code has been tested with the following versions:
 
@@ -24,13 +25,15 @@ To succesfully install and compile the code:
 
 ```bash
 unset SSH_ASKPASS
-git clone https://yourgitusernamehere@github.com/qusers/qgpu.git
+mkdir ~/software
+cd ~/software
+git clone https://yourgitusernamehere@github.com/qusers/qgpu.git 
 cd qgpu/src/core
 make
 ```
 
 After this you have to add the program to your system path by modifying your shell initiation script. 
-If your shell is bash, you can add the following lines to your .bashrc file using a text editor. The following assumes that your user name is "johndow" and the home directory is "/Users/johndoe/":
+If your shell is bash, you can add the following lines to your .bashrc file using a text editor. The following assumes that your user name is "johndoe" and the home directory is "/Users/johndoe/":
 
 ```bash
 SOFT=/Users/johndoe/software
@@ -43,22 +46,29 @@ Once the q binaries are declared in your path you should be able to call all q b
 To test that the path to your compiled Q binaries has been correctly assigned you can issue the following commands in the terminal:
 
 ```bash
-source .bashrc
-echo $path | grep qsource
+source ~/.bashrc
+env | grep qgpu
 
-/Users/johndoe/software/qsource
+QDIR=/Users/johndoe/software/qgpu
 ```
-## NOTE to the current version
-The Qprep tool from Q is needed for the preparation of the molecular topology files needed for the MD engine Qdyn. Currently, Qprep is provided as fortran code, which compiles on CPUs. The workflow for a Q-gpu free energy simulation consists then in:
-- An initial topology preparation stage that runs on a regular CPU, 
-- The MD sampling Qdyn, which ron on a CUDA-based GPU
-- The FEP analysis tool (qfep) provided in python (running both in GPU or CPU)
 
-## Troubleshooting
+Additiontally you can search for the binaries with:
 
+    which qgpu
+
+
+## NOTE to the current version ##
+The Qprep tool from Q is needed for the preparation of molecular topology files required by the MD engine Qdyn. Currently, Qprep is provided as fortran code, which compiles on CPUs. The workflow for a Q-gpu free energy simulation consists then in:
+- An initial topology preparation stage that runs on a regular CPU  
+- The MD sampling Qdyn, which ron on a CUDA-based GPU  
+- The FEP analysis tool (qfep) provided in python (running both in GPU or CPU)  
+
+
+## Troubleshooting ##
 If you receive error messages during compilation please report them to ???? including the compiler used (e.g. CUDA), the compiler version (e.e. 10.1.243), and the error message.
 
-## Testing
+
+## Testing ##
 Q-GPU includes various tests that compare the output of the original fortran code with the C/CUDA code. They are situated in the test folder and include:
 - 1.interactions
 - 2.physical-properties
@@ -71,9 +81,7 @@ In the second folder, we provide test cases for the calculation of solvation fre
 - Jespers et al. (https://doi.org/10.1186/s13321-019-0348-5).
 
 
-NOTES:
-=========
-
-19/08/2020
+# VERSION NOTES: #
+**19/08/2020**
 
 Generating first version of Q-GPU readme.
