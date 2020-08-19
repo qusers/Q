@@ -1,4 +1,4 @@
-qsource
+Q-GPU
 =======
 Version control of Q-GPU, an adaption of Q version 5.06 that runs on GPUs.
 
@@ -9,6 +9,9 @@ Q is a set of Molecular Dynamics (MD) tools tailored to the following specific k
 3. Linear Interaction Energies (LIE)
 
 This version includes a translation of the original Q fortran code to C/CUDA and Python.
+
+## Authors:
+Chiel Jespers, Willem Jespers, Johan Åqvist, Hugo Gutiérrez‐de‐Terán
 
 ## Installation
 The Python environment works with Python > 3.6. It solely uses native python libraries, so no additional libraries will need to be installed.
@@ -43,11 +46,11 @@ source .bashrc
 echo $path | grep qsource
 
 /Users/johndoe/software/qsource
+```
 
 ## Troubleshooting
 
 If you receive error messages during compilation please report them to ???? including the compiler used (e.g. intel fortran), the compiler version, and the error message.
-
 
 NOTES:
 =========
