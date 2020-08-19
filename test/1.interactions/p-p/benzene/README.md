@@ -7,7 +7,7 @@ tar -xvf testfiles.tar.gz
 
 Run the test with the following command:
 
-python ../../../../bin/qdyn.py -t benzene-vacuum.json -m eq1.json -d TEST -r Q5_data/
+python ../../../../bin/qdyn.py -t Q5_data/benzene-vacuum.top -m Q5_data/eq1.inp -d TEST -r Q5_data/
 
 Then to check if the obtained results match the reference results:
 
