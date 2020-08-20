@@ -6,7 +6,7 @@ MD = {
 'q_atom'            : 99    ,
 'lrf'               : 99    ,
 'shell_force'       : 10.0  ,
-'shell_radius'      : 25    ,
+#'shell_radius'      : 25    ,
 'radial_force'      : 60.0  ,
 'polarisation'      : True  ,
 'polarisation_force': 20.0  ,

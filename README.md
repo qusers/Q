@@ -1,6 +1,6 @@
 Q-GPU
 =======
-Version control of Q-GPU, an adaption of Q version 5.06 that runs on GPUs.
+Version control of Q-GPU, an adaption of Q version 5.06 running on GPUs.
 
 Q is a set of Molecular Dynamics (MD) tools tailored to the following specific kinds of free energy calculations:
 
@@ -14,7 +14,7 @@ This version includes a translation of the original Q fortran code to C/CUDA and
 Chiel Jespers, Willem Jespers, Mauricio Esguerra, Johan Åqvist, Hugo Gutiérrez‐de‐Terán
 
 ## Installation
-The Python environment works with Python > 3.6. It solely uses native python libraries, so no additional libraries will need to be installed.
+The frontend is build on Python, version > 3.6. It solely uses native python libraries, so it has no dependencies on any additional libraries.
 
 To compile the qdyn engine source code, you need a CUDA compiler. The code has been tested with the following versions:
 
@@ -29,7 +29,8 @@ cd qgpu/src/core
 make
 ```
 
-After this you have to add the program to your system path by modifying your shell initiation script, that is, if your shell is bash, you can add the following lines to your .bashrc file using a text editor:
+After this you have to add the program to your system path by modifying your shell initiation script. 
+If your shell is bash, you can add the following lines to your .bashrc file using a text editor. The following assumes that your user name is "johndow" and the home directory is "/Users/johndoe/":
 
 ```bash
 SOFT=/Users/johndoe/software
@@ -47,10 +48,15 @@ echo $path | grep qsource
 
 /Users/johndoe/software/qsource
 ```
+## NOTE to the current version
+The Qprep tool from Q is needed for the preparation of the molecular topology files needed for the MD engine Qdyn. Currently, Qprep is provided as fortran code, which compiles on CPUs. The workflow for a Q-gpu free energy simulation consists then in:
+- An initial topology preparation stage that runs on a regular CPU, 
+- The MD sampling Qdyn, which ron on a CUDA-based GPU
+- The FEP analysis tool (qfep) provided in python (running both in GPU or CPU)
 
 ## Troubleshooting
 
-If you receive error messages during compilation please report them to ???? including the compiler used (e.g. intel fortran), the compiler version, and the error message.
+If you receive error messages during compilation please report them to ???? including the compiler used (e.g. CUDA), the compiler version (e.e. 10.1.243), and the error message.
 
 ## Testing
 Q-GPU includes various tests that compare the output of the original fortran code with the C/CUDA code. They are situated in the test folder and include:

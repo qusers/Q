@@ -662,7 +662,7 @@ class Write_Topology(object):
             
         #Topo.csv
         with open(self.wd + '/topo.csv','w') as outfile:
-            outfile.write('6\n')
+            outfile.write('7\n')
             outfile.write(self.data['solvtype'] + '\n')
             outfile.write(self.data['exclusion'] + '\n')
             outfile.write(self.data['radii'] + '\n')
