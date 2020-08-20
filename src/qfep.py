@@ -44,14 +44,16 @@ class Get_Energy(object):
     """    
     def __init__(self,ener,wd,states):
         self.wd = wd
-        for energyfile in ener:
-            print(energyfile)
+        for energyfile in ener:       
             infile  = energyfile[0]
             outfile = energyfile[1]
+            
+            #if outfile != 'out/md_1000_0000.json':
+            #    continue                 
             read_ener  = ENERGY.Read_Energy(infile,states)
 
             # Read the energy from QDYN
-            ener_data = read_ener.QDYN()   
+            ener_data = read_ener.QDYN()
 
             # Initiate the write class
             write_ener = ENERGY.Write_Energy(ener_data,self.wd + '/' + outfile)
@@ -75,21 +77,33 @@ class Calc_FE(object):
         # construct the energy lookup
         for energyfile in ener:
             infile  = energyfile[0]
-            outfile = energyfile[1]            
+            outfile = energyfile[1]
             read_ener  = ENERGY.Read_Energy(infile,states)
             ener_data = read_ener.JSON(self.wd + '/' + outfile)
-            self.energies[outfile] = ener_data['q_total']      
-            self.lambdas[outfile] = ener_data['lambdas']      
-        
+            
+            #print(ener_data[0]['q-energies'])
+            for frame in range(0,len(ener_data)):
+                if not outfile in self.energies:
+                    self.energies[outfile] = [ener_data[frame]['q-energies']['SUM']]
+                else:
+                    self.energies[outfile].append(ener_data[frame]['q-energies']['SUM'])
+
+                self.lambdas[outfile] = ener_data[frame]['q-energies']['lambda']
+                #else:
+                #    self.lambdas[outfile].append(ener_data[frame]['q-energies']['lambda'])
+            #self.lambdas[outfile]  = [ener_data[0]['q-energies']['lambda'],ener_data[1]['q-energies']['lambda']]
+        print(self.lambdas)
         for i, ifile in enumerate(self.ener):
             if ifile == self.ener[-1]:
                 continue
-            
             MA1 = self.energies[self.ener[i][1]]
             l_file1 = self.lambdas[self.ener[i][1]]
             l_file2 = self.lambdas[self.ener[i+1][1]]
             
+            print(l_file1)
+            print(l_file2)
             # Throw the Q energies to calc module
+            #print(MA1,l_file1,l_file2,self.kT,skip)
             dGf = CALC.EXP(MA1,l_file1,l_file2,self.kT,skip)
             dGflist.append(dGf)
             
@@ -104,7 +118,6 @@ class Calc_FE(object):
                                                   ))
             outfile.write('dGfsum = {:.3f}'.format(dGfsum))
                 
-        
 class Init(object):
     def __init__(self, data):
         """ Retrieves a dictionary of user input from qfep.py:
@@ -124,6 +137,7 @@ class Init(object):
         """
         self.environment = data
         # Create user specified work environment
+        self.environment['energy_files'] = self.environment['energy_files'][0:2]
         
         Create_Environment(self.environment['workdir'])
         
