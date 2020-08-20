@@ -15,7 +15,7 @@ Chiel Jespers, Willem Jespers, Mauricio Esguerra, Johan Åqvist, Hugo Gutiérrez
 
 
 ## Installation ##
-The frontend is built on Python, version > 3.6. It solely uses native python libraries, so it has no dependencies on any additional libraries.
+The frontend is built on Python and will run in versions > 3.6. It mainly uses native python libraries and only needs numpy as additional package with no further dependencies.
 
 To compile the qdyn engine source code, you need a CUDA compiler. The code has been tested with the following versions:
 

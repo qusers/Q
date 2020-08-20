@@ -1,4 +1,4 @@
-#!/usr/bin/end python
+#!/usr/bin/end python3
 import glob
 import numpy as np
 import argparse
