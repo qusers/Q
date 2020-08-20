@@ -39,4 +39,6 @@ __global__ void calc_pp_dvel_vector(int n_patoms, dvel_t *DV_X, dvel_t *PP_MAT, 
 
 void clean_d_patoms();
 
+__global__ void calc_energy_sum(int rows, int columns, double *Evdw_TOT, double *Ecoul_TOT, double *Evdw, double *Ecoul, bool upper_diagonal);
+
 #endif /* __NONBONDED_H__ */

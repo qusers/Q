@@ -15,8 +15,12 @@ coord_t *W;
 dvel_t *DV_W;
 calc_ww_t *WW_MAT, *h_WW_MAT;
 calc_pw_t *PW_MAT, *h_PW_MAT;
-double *D_Evdw, *D_Ecoul, *h_Evdw, *h_Ecoul;
-double *D_evdw_TOT, *D_ecoul_TOT, evdw_TOT, ecoul_TOT;
+
+double *D_WW_Evdw, *D_WW_Ecoul, *h_WW_Evdw, *h_WW_Ecoul;
+double *D_WW_evdw_TOT, *D_WW_ecoul_TOT, WW_evdw_TOT, WW_ecoul_TOT;
+
+double *D_PW_Evdw, *D_PW_Ecoul, *h_PW_Evdw, *h_PW_Ecoul;
+double *D_PW_evdw_TOT, *D_PW_ecoul_TOT, PW_evdw_TOT, PW_ecoul_TOT;
 
 // Constants pointers
 bool pw_gpu_set = false;
@@ -276,8 +280,8 @@ void calc_nonbonded_ww_forces_host() {
     int mem_size_MAT = n_waters * n_waters * sizeof(calc_ww_t);
     int mem_size_DV_W = 3 * n_waters * sizeof(dvel_t);
     int n_blocks = (n_waters+BLOCK_SIZE - 1) / BLOCK_SIZE;
-    int mem_size_D_Evdw = n_blocks * n_blocks * sizeof(double);
-    int mem_size_D_Ecoul = n_blocks * n_blocks * sizeof(double);
+    int mem_size_WW_Evdw = n_blocks * n_blocks * sizeof(double);
+    int mem_size_WW_Ecoul = n_blocks * n_blocks * sizeof(double);
 
     cudaError_t error;
 
@@ -309,20 +313,20 @@ void calc_nonbonded_ww_forces_host() {
         #endif
         check_cudaMalloc((void**) &DV_W, mem_size_DV_W);
         #ifdef DEBUG
-        printf("Allocating D_Evdw\n");
+        printf("Allocating D_WW_Evdw\n");
         #endif
-        check_cudaMalloc((void**) &D_Evdw, mem_size_D_Evdw);    
+        check_cudaMalloc((void**) &D_WW_Evdw, mem_size_WW_Evdw);    
         #ifdef DEBUG
-        printf("Allocating D_Ecoul\n");
+        printf("Allocating D_WW_Ecoul\n");
         #endif
-        check_cudaMalloc((void**) &D_Ecoul, mem_size_D_Ecoul);
+        check_cudaMalloc((void**) &D_WW_Ecoul, mem_size_WW_Ecoul);
 
-        check_cudaMalloc((void**) &D_evdw_TOT, sizeof(double));
-        check_cudaMalloc((void**) &D_ecoul_TOT, sizeof(double)); 
+        check_cudaMalloc((void**) &D_WW_evdw_TOT, sizeof(double));
+        check_cudaMalloc((void**) &D_WW_ecoul_TOT, sizeof(double)); 
 
         h_WW_MAT = (calc_ww_t*) malloc(mem_size_MAT);
-        h_Evdw = (double*) malloc(mem_size_D_Evdw);
-        h_Ecoul = (double*) malloc(mem_size_D_Ecoul);
+        h_WW_Evdw = (double*) malloc(mem_size_WW_Evdw);
+        h_WW_Ecoul = (double*) malloc(mem_size_WW_Ecoul);
     }
 
     cudaMemcpy(W, &coords[n_atoms_solute], mem_size_W, cudaMemcpyHostToDevice);
@@ -334,7 +338,7 @@ void calc_nonbonded_ww_forces_host() {
     threads = dim3(BLOCK_SIZE, BLOCK_SIZE);
     grid = dim3((n_waters + BLOCK_SIZE - 1) / threads.x, (n_waters + BLOCK_SIZE - 1) / threads.y);
 
-    calc_ww_dvel_matrix<<<grid, threads>>>(n_waters, crg_ow, crg_hw, A_OO, B_OO, W, D_Evdw, D_Ecoul, WW_MAT);
+    calc_ww_dvel_matrix<<<grid, threads>>>(n_waters, crg_ow, crg_hw, A_OO, B_OO, W, D_WW_Evdw, D_WW_Ecoul, WW_MAT);
     calc_ww_dvel_vector<<<((n_waters+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_waters, DV_W, WW_MAT);
 
     #ifdef DEBUG
@@ -355,28 +359,16 @@ void calc_nonbonded_ww_forces_host() {
     #endif
 
     cudaMemcpy(&dvelocities[n_atoms_solute], DV_W, mem_size_DV_W, cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_Evdw, D_Evdw, mem_size_D_Evdw, cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_Ecoul, D_Ecoul, mem_size_D_Ecoul, cudaMemcpyDeviceToHost);
 
-    // for (int i = 0; i < n_blocks; i++) {
-    //     for (int j = 0; j < n_blocks; j++) {
-    //         if (i >= j) {
-    //             energies.Uvdw += h_Evdw[j * n_blocks + i];
-    //             energies.Ucoul += h_Ecoul[j * n_blocks + i];
-    //         }
+    calc_energy_sum<<<1, threads>>>(n_blocks, n_blocks, D_WW_evdw_TOT, D_WW_ecoul_TOT, D_WW_Evdw, D_WW_Ecoul, true);
 
-    //     }
-    // }
+    cudaMemcpy(&WW_evdw_TOT, D_WW_evdw_TOT, sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&WW_ecoul_TOT, D_WW_ecoul_TOT, sizeof(double), cudaMemcpyDeviceToHost);
 
-    calc_energy_sum<<<1, threads>>>( (n_waters+BLOCK_SIZE - 1) / BLOCK_SIZE, D_evdw_TOT, D_ecoul_TOT, D_Evdw, D_Ecoul);
+    energies.Uvdw += WW_evdw_TOT;
+    energies.Ucoul += WW_ecoul_TOT;
 
-    cudaMemcpy(&evdw_TOT, D_evdw_TOT, sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&ecoul_TOT, D_ecoul_TOT, sizeof(double), cudaMemcpyDeviceToHost);
-
-    energies.Uvdw += evdw_TOT;
-    energies.Ucoul += ecoul_TOT;
-
-    printf("Total energies for ww interactions: %f %f\n", energies.Uvdw, energies.Ucoul);
+    printf("Total energies for ww interactions: %f %f\n", WW_evdw_TOT, WW_ecoul_TOT);
 
     // for (int i = 0; i < n_atoms; i++) {
     //     printf("dvelocities[%d] = %f %f %f\n", i, dvelocities[i].x, dvelocities[i].y, dvelocities[i].z);
@@ -453,6 +445,12 @@ void calc_nonbonded_pw_forces_host() {
     int mem_size_DV_X = n_atoms_solute * sizeof(dvel_t);
     int mem_size_PW_MAT = 3 * n_waters * n_patoms * sizeof(calc_pw_t);
 
+    int n_blocks_p = (n_patoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    int n_blocks_w = (3*n_waters + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+    int mem_size_PW_Evdw = n_blocks_p * n_blocks_w * sizeof(double);
+    int mem_size_PW_Ecoul = n_blocks_p * n_blocks_w * sizeof(double);
+
     if (!pw_gpu_set) {
         pw_gpu_set = true;
 
@@ -460,6 +458,27 @@ void calc_nonbonded_pw_forces_host() {
         printf("Allocating PW_MAT\n");
         #endif
         check_cudaMalloc((void**) &PW_MAT, mem_size_PW_MAT);
+
+        #ifdef DEBUG
+        printf("Allocating PW_MAT\n");
+        #endif
+        check_cudaMalloc((void**) &PW_MAT, mem_size_PW_MAT);
+        #ifdef DEBUG
+        printf("Allocating PW_MAT\n");
+        #endif
+        check_cudaMalloc((void**) &PW_MAT, mem_size_PW_MAT);
+
+        #ifdef DEBUG
+        printf("Allocating D_PW_Evdw\n");
+        #endif
+        check_cudaMalloc((void**) &D_PW_Evdw, mem_size_PW_Evdw);    
+        #ifdef DEBUG
+        printf("Allocating D_PW_Ecoul\n");
+        #endif
+        check_cudaMalloc((void**) &D_PW_Ecoul, mem_size_PW_Ecoul);
+
+        check_cudaMalloc((void**) &D_PW_evdw_TOT, sizeof(double));
+        check_cudaMalloc((void**) &D_PW_ecoul_TOT, sizeof(double)); 
 
         #ifdef DEBUG
         printf("All GPU solvent memory allocated\n");
@@ -476,9 +495,8 @@ void calc_nonbonded_pw_forces_host() {
 
     threads = dim3(BLOCK_SIZE, BLOCK_SIZE);
     grid = dim3((3*n_waters + BLOCK_SIZE - 1) / threads.x, (n_patoms + BLOCK_SIZE - 1) / threads.y);
-    double evdw, ecoul;
     
-    calc_pw_dvel_matrix<<<grid, threads>>>(n_patoms, n_atoms_solute, n_waters, X, W, &evdw, &ecoul, PW_MAT, D_ccharges, D_charges, D_catypes, D_atypes, D_patoms, D_excluded);
+    calc_pw_dvel_matrix<<<grid, threads>>>(n_patoms, n_atoms_solute, n_waters, X, W, D_PW_Evdw, D_PW_Ecoul, PW_MAT, D_ccharges, D_charges, D_catypes, D_atypes, D_patoms, D_excluded);
     calc_pw_dvel_vector_column<<<((3*n_waters+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_patoms, n_waters, DV_X, DV_W, PW_MAT);
     calc_pw_dvel_vector_row<<<((n_patoms+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_patoms, n_waters, DV_X, DV_W, PW_MAT, D_patoms);
 
@@ -502,6 +520,16 @@ void calc_nonbonded_pw_forces_host() {
 
     cudaMemcpy(dvelocities, DV_X, mem_size_DV_X, cudaMemcpyDeviceToHost);
     cudaMemcpy(&dvelocities[n_atoms_solute], DV_W, mem_size_DV_W, cudaMemcpyDeviceToHost);
+
+    calc_energy_sum<<<1, threads>>>(n_blocks_p, n_blocks_w, D_PW_evdw_TOT, D_PW_ecoul_TOT, D_PW_Evdw, D_PW_Ecoul, false);
+
+    cudaMemcpy(&PW_evdw_TOT, D_PW_evdw_TOT, sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&PW_ecoul_TOT, D_PW_ecoul_TOT, sizeof(double), cudaMemcpyDeviceToHost);
+
+    energies.Uvdw += PW_evdw_TOT;
+    energies.Ucoul += PW_ecoul_TOT;
+
+    printf("Total energies for pw interactions: %f %f\n", PW_evdw_TOT, PW_ecoul_TOT);
 
     // for (int i = 0; i < n_atoms; i++) {
     //     printf("dvelocities[%d] = %f %f %f\n", i, dvelocities[i].x, dvelocities[i].y, dvelocities[i].z);
@@ -985,6 +1013,14 @@ __global__ void calc_pw_dvel_matrix(int n_patoms, int n_atoms_solute, int n_wate
     int tx = threadIdx.x;
     int ty = threadIdx.y;
 
+    __shared__ double Ecoul_S[BLOCK_SIZE][BLOCK_SIZE];
+    __shared__ double Evdw_S[BLOCK_SIZE][BLOCK_SIZE];
+
+    Ecoul_S[ty][tx] = 0;
+    Evdw_S[ty][tx] = 0;
+
+    // if (tx == 0 && ty == 0) printf("bx = %d by = %d\n", bx, by);
+
     // if (bx == 0 && by == 0) printf("bx = %d by = %d tx = %d ty = %d\n", bx, by, tx, ty);
 
     int aStart = BLOCK_SIZE * by;
@@ -1035,8 +1071,10 @@ __global__ void calc_pw_dvel_matrix(int n_patoms, int n_atoms_solute, int n_wate
     // __device__ void calc_pw_dvel_matrix_incr(int row, int pi, int column, int j, int n_patoms,
     // coord_t *Ps, coord_t *Xs, double *Evdw, double *Ecoul, calc_pw_t *pw,
     // ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms)
-    double evdw, ecoul;
+    double evdw = 0, ecoul = 0;
     calc_pw_dvel_matrix_incr(ty, pi, tx, bStart + tx, n_atoms_solute, Xs, Ws, excluded_s, &evdw, &ecoul, &pw, D_ccharges, D_charges, D_catypes, D_atypes, D_patoms);
+    Evdw_S[ty][tx] = evdw;
+    Ecoul_S[ty][tx] = ecoul;
 
     // if (row == 0 && column == 1) {
     //     printf("water_a = %f %f %f water_b = %f %f %f\n", water_a[0].x, water_a[0].y, water_a[0].z, water_b[0].x, water_b[0].y, water_b[0].z);
@@ -1046,6 +1084,25 @@ __global__ void calc_pw_dvel_matrix(int n_patoms, int n_atoms_solute, int n_wate
     // if (bx == 8 && by == 1) printf("qi = %d j = %d charge[%d] = %f\n", row, column, row + n_qatoms, D_qcharges[row + n_qatoms * 1].q);
 
     PW_MAT[column + 3 * n_waters * row] = pw;
+
+    __syncthreads();
+
+    int rowlen = (3 * n_waters + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+    if (tx == 0 && ty == 0) {
+        double tot_Evdw = 0;
+        double tot_Ecoul = 0;
+        for (int i = 0; i < BLOCK_SIZE; i++) {
+            for (int j = 0; j < BLOCK_SIZE; j++) {
+                tot_Evdw += Evdw_S[i][j];
+                tot_Ecoul += Ecoul_S[i][j];
+            }
+        }
+        Evdw[rowlen * by + bx] = tot_Evdw;
+        Ecoul[rowlen * by + bx] = tot_Ecoul;
+        // printf("Evdw[%d][%d] = %f\n", by, bx, tot_Evdw);
+        // printf("Ecoul[%d][%d] = %f\n", by, bx, tot_Ecoul);
+    }
 
     __syncthreads();
 }
@@ -1099,7 +1156,7 @@ __global__ void calc_pw_dvel_vector_column(int n_patoms, int n_waters, dvel_t *D
 }
 
 // General
-__global__ void calc_energy_sum(int len, double *Evdw_TOT, double *Ecoul_TOT, double *Evdw, double *Ecoul) {
+__global__ void calc_energy_sum(int rows, int columns, double *Evdw_TOT, double *Ecoul_TOT, double *Evdw, double *Ecoul, bool upper_diagonal) {
     int tx = threadIdx.x;
     int ty = threadIdx.y;
 
@@ -1108,13 +1165,15 @@ __global__ void calc_energy_sum(int len, double *Evdw_TOT, double *Ecoul_TOT, do
 
     double coul_TOT = 0;
     double vdw_TOT = 0;
-    for (int i = ty; i < len; i+= BLOCK_SIZE) {
-        for (int j = tx; j < len; j+= BLOCK_SIZE) {
-            if (i <= j) {
-                // printf("Ecoul[%d][%d] = %f\n", i, j, Ecoul[i * len + j]);
-                // printf("Evdw[%d][%d] = %f\n", i, j, Evdw[i * len + j]);
-                coul_TOT += Ecoul[i * len + j];
-                vdw_TOT += Evdw[i * len + j];
+    for (int i = ty; i < rows; i+= BLOCK_SIZE) {
+        for (int j = tx; j < columns; j+= BLOCK_SIZE) {
+            if (i <= j || !upper_diagonal) {
+                // if (tx == 0 && ty == 0) {
+                //     printf("Ecoul[%d][%d] = %f\n", i, j, Ecoul[i * columns + j]);
+                //     printf("Evdw[%d][%d] = %f\n", i, j, Evdw[i * columns + j]);
+                // }
+                coul_TOT += Ecoul[i * columns + j];
+                vdw_TOT += Evdw[i * columns + j];
             }
         }
     }
@@ -1129,7 +1188,7 @@ __global__ void calc_energy_sum(int len, double *Evdw_TOT, double *Ecoul_TOT, do
 
         for (int i = 0; i < BLOCK_SIZE; i++) {
             for (int j = 0; j < BLOCK_SIZE; j++) {
-                if (i <= j) {
+                if (i <= j || !upper_diagonal) {
                     Evdw_temp += Evdw_S[i][j];
                     Ecoul_temp += Ecoul_S[i][j];
                 }

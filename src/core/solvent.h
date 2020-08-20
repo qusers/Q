@@ -61,7 +61,7 @@ __global__ void calc_pw_dvel_vector_row(int n_patoms, int n_waters, dvel_t *DV_X
 __global__ void calc_pw_dvel_vector_column(int n_patoms, int n_waters, dvel_t *DV_X, dvel_t *DV_W, calc_pw_t *PW_MAT);
 
 // General
-__global__ void calc_energy_sum(int len, double *Evdw_TOT, double *Ecoul_TOT, double *Evdw, double *Ecoul);
+__global__ void calc_energy_sum(int rows, int columns, double *Evdw_TOT, double *Ecoul_TOT, double *Evdw, double *Ecoul, bool upper_diagonal);
 
 void clean_d_solvent();
 
