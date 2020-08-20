@@ -40,12 +40,8 @@ def init():
     print("================================\n")
     print("This is the installer for Q-GPU\n")
     print("================================\n")
-    print("Checking Python version")
 
 def check_python():
-    print("================================\n")
-    print("This is the installer for Q-GPU\n")
-    print("================================\n")
     print("Checking Python version")
     print("================================")
     print("version is {}.{}.{}".format(sys.version_info[0],
@@ -143,10 +139,12 @@ def install(ROOTDIR):
     out = subprocess.check_output('make')
     
     print("If you want to have Q-GPU executable files in your path permanently.")
-    print("Please add the following to .bashrc or .bash:")
+    print("Please add the following to .bashrc or .bash_profile:")
+    print('export PATH={}/bin:$PATH'.format(ROOTDIR))
+    print("If you want to have Q-GPU python libraries available as modules in python:")
     print('export PYTHONPATH="${}:{}/bin"'.format('{PYTHONPATH}',ROOTDIR))
     
-    print("==== INSTALLATION COMPLETE ====")
+    print("\n==== INSTALLATION COMPLETE ====")
             
 if __name__ == "__main__":    
     init()
