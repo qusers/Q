@@ -127,7 +127,7 @@ def create_installdir(INSTALLDIR):
 def install(ROOTDIR):
     print("Installing Q-GPU in {}".format(ROOTDIR))
     for file in glob.glob('*'):
-        if file == 'install.py':
+        if file == 'install':
             continue
         
         if os.path.isfile(file):

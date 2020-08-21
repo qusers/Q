@@ -1,6 +1,7 @@
 import os
 import shlex
 import subprocess
+import argparse
 
 class Startup(object):
     def __init__(self,arch):
@@ -32,7 +33,7 @@ class Startup(object):
             print(out2.decode('utf-8'))
             print("======================================================")    
             os.system('rm -r TEST Q5_data compare.py')
-            os.chdir(curdir)
+            os.chdir(self.curdir)
 
 
 if __name__ == "__main__":
