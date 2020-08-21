@@ -133,7 +133,7 @@ class Write_MD():
 
             md_data = self.construct(md)
             
-            if 'md' in md:
+            if 'md' in md or 'eq5' in md:
                 md_data['temperature'] = self.T
             
             
