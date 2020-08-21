@@ -214,8 +214,8 @@ __device__ void calc_pp_dvel_matrix_incr(int row, int pi, int column, int pj,
     patom_b->y = dva * da.y;
     patom_b->z = dva * da.z;
 
-    *Evdw += Vela;
-    *Ecoul += (V_a - V_b);
+    *Ecoul += Vela;
+    *Evdw += (V_a - V_b);
 }
 
 __global__ void calc_pp_dvel_matrix(int n_patoms, int n_atoms_solute,

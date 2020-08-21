@@ -977,8 +977,8 @@ __device__ void calc_pw_dvel_matrix_incr(int row, int pi, int column, int j, int
     pw->W.y += dva * da.y;
     pw->W.z += dva * da.z;
 
-    *Evdw += Vela;
-    *Ecoul += (V_a - V_b);
+    *Ecoul += Vela;
+    *Evdw += (V_a - V_b);
 
     // if (pi == 522 && j == 175) {
     //     printf("Vela = %f V_a = %f V_b = %f P = %f %f %f ai_aii = %f aj_aii = %f\n", Vela, V_a, V_b, pw->P.x, pw->P.y, pw->P.z, ai_aii, aj_aii);
