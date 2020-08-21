@@ -287,7 +287,6 @@ void shrink_topology() {
 coord_t* coords;
 vel_t* velocities;
 dvel_t* dvelocities;
-energy_t energies;
 double Temp = 0;
 double Tscale = 1;
 
@@ -311,22 +310,6 @@ void init_velocities() {
         velocities[i].y = gauss(0, sd);
         velocities[i].z = gauss(0, sd);
     }
-    
-    //RANDOM SEED 1
-    // velocities[0].x  = -1.9487889916926994E-002; velocities[0].y  = -3.9794110209903535E-004; velocities[0].z   = -7.5508872831782825E-004;
-    // velocities[1].x  = 1.2857881903672132E-002; velocities[1].y  = -7.6644783763564926E-003; velocities[1].z   = -1.1772849886081924E-004;
-    // velocities[2].x  = -1.6573999513626415E-002; velocities[2].y  = -4.9060190728011481E-003; velocities[2].z  = -3.1297180167266033E-003;
-    // velocities[3].x  = 3.8335098604742421E-002;  velocities[3].y  = 1.7470716125507550E-002; velocities[3].z   = 1.7746920612499859E-002;
-    // velocities[4].x  = -5.1831092590390600E-002;  velocities[4].y  = 3.3890986156632857E-002; velocities[4].z   = -1.8360181579421129E-002;
-    // velocities[5].x  = -4.6344189702980876E-002; velocities[5].y  = 2.9483974897825213E-002; velocities[5].z   = 1.7345339668199650E-002;
-    // velocities[6].x  = 3.3232237727582541E-002;  velocities[6].y  = 2.9621103153618156E-002; velocities[6].z   = 7.7704965685342450E-002;
-    // velocities[7].x  = -6.5965875415921298E-003; velocities[7].y  = -1.3232621374638211E-002; velocities[7].z   = 4.6166681226082279E-002;
-    // velocities[8].x  = -7.6695194596259841E-002;  velocities[8].y  = 1.3793159134795696E-002; velocities[8].z   = -7.5649865640426625E-003;
-    // velocities[9].x  = 3.4339585945416480E-002;     velocities[9].y  = -1.9276301810268296E-002; velocities[9].z   = 2.1654891903647925E-003;
-    // velocities[10].x = -8.6857064866742075E-003; velocities[10].y = 3.8524770102720978E-003; velocities[10].z  = 9.5000329534403842E-003;
-    // velocities[11].x = 8.2276623425555515E-002;  velocities[11].y = -3.3500317868709793E-002; velocities[11].z  = -2.9493028790202912E-005;
-    // velocities[12].x = 3.1561873458621555E-002; velocities[12].y = 1.0256001797406836E-002; velocities[12].z = 1.4081403694315784E-003;
-    // velocities[13].x = 3.1497294075191563E-002; velocities[13].y = -3.2678383060448672E-002; velocities[13].z  = 6.1714353481433948E-002;
 }
 
 void init_dvelocities() {
@@ -504,7 +487,12 @@ void init_restrseqs() {
  */
 
 p_atom_t *p_atoms;
-energy_t *q_energies;
+energy_t E_total;
+energy_t *EQ_total;
+E_bonded_t E_bond_p, E_bond_w, E_bond_q, *EQ_bond;
+E_nonbonded_t E_nonbond_pp, E_nonbond_pw, E_nonbond_ww, E_nonbond_qx;
+E_nonbonded_t *EQ_nonbond_qq, *EQ_nonbond_qp, *EQ_nonbond_qw, *EQ_nonbond_qx;
+E_restraint_t E_restraint, *EQ_restraint;
 
 void init_patoms() {
     n_patoms = n_atoms_solute - n_qatoms;
@@ -546,12 +534,10 @@ void calc_temperature() {
         }
     }
 
-    energies.Ukin = Temp;
+    E_total.Ukin = Temp;
 
     Temp = 2.0 * Temp / Boltz / Ndegf;
 
-    printf("Temp = %f\n", Temp);
-    
     Tscale = sqrt(1 + (dt / tau_T) * (md.temperature / Temp - 1.0));
     // printf("Tscale = %f, tau_T = %f, Temp = %f\n", Tscale, tau_T, Temp);
 }
@@ -665,36 +651,49 @@ void write_energies(int iteration) {
 
     fp = fopen(path, "a");
 
-    fprintf(fp, "%d\n", iteration / md.energy);
+    fprintf(fp, "interval %d\n", iteration / md.energy);
 
+    fprintf(fp, "[temperature]\n");
+    fprintf(fp, "Temp\t%f\n", Temp);
+    fprintf(fp, "\n");
+
+    fprintf(fp, "[bonded]\n");
+    fprintf(fp, "type\tUbond\tUangle\tUtor\tUimp\n");
+    fprintf(fp, "p\t%f\t%f\t%f\t%f\n", E_bond_p.Ubond, E_bond_p.Uangle, E_bond_p.Utor, E_bond_p.Uimp);
+    fprintf(fp, "w\t%f\t%f\t%f\t%f\n", E_bond_w.Ubond, E_bond_w.Uangle, E_bond_w.Utor, E_bond_w.Uimp);
+    fprintf(fp, "qp\t%f\t%f\t%f\t%f\n", E_bond_q.Ubond, E_bond_q.Uangle, E_bond_q.Utor, E_bond_q.Uimp);
+    fprintf(fp, "\n");
+
+    fprintf(fp, "[nonbonded]\n");
+    fprintf(fp, "type\tUcoul\tUvdw\n");
+    fprintf(fp, "pp\t%f\t%f\n", E_nonbond_pp.Ucoul, E_nonbond_pp.Uvdw);
+    fprintf(fp, "pw\t%f\t%f\n", E_nonbond_pw.Ucoul, E_nonbond_pw.Uvdw);
+    fprintf(fp, "ww\t%f\t%f\n", E_nonbond_ww.Ucoul, E_nonbond_ww.Uvdw);
+    fprintf(fp, "qx\t%f\t%f\n", E_nonbond_qx.Ucoul, E_nonbond_qx.Uvdw);
+    fprintf(fp, "\n");
+
+    fprintf(fp, "[restraint]\n");
+    fprintf(fp, "Uradx\t%f\n", E_restraint.Uradx);
+    fprintf(fp, "Upolx\t%f\n", E_restraint.Upolx);
+    fprintf(fp, "Ushell\t%f\n", E_restraint.Ushell);
+    fprintf(fp, "Ufix\t%f\n", E_restraint.Ufix);
+    fprintf(fp, "Upres\t%f\n", E_restraint.Upres);
+    fprintf(fp, "Total\t%f\n", E_restraint.Urestr);
+    fprintf(fp, "\n");
+
+    fprintf(fp, "[q-energies]\n");
+    fprintf(fp, "lambda\tSUM\tUbond\tUangle\tUtor\tUimp\tUcoul\tUvdw\tUrestr\n");
     for (int state = 0; state < n_lambdas; state++) {
-        fprintf(fp, ">>> State %d\n", state);
-        fprintf(fp, "Ubond = %f\n", q_energies[state].Ubond);
-        fprintf(fp, "Uangle = %f\n", q_energies[state].Uangle);
-        fprintf(fp, "Utor = %f\n", q_energies[state].Utor);
-        fprintf(fp, "Ucoul = %f\n", q_energies[state].Ucoul);
-        fprintf(fp, "Uvdw = %f\n", q_energies[state].Uvdw);
-        fprintf(fp, "Urestr = %f\n", q_energies[state].Urestr);
-        fprintf(fp, "Q-SUM = %f\n", q_energies[state].Upot);
+        fprintf(fp, "%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\n", lambdas[state], EQ_total[state].Utot, EQ_bond[state].Ubond,
+            EQ_bond[state].Uangle, EQ_bond[state].Utor, EQ_bond[state].Uimp, EQ_nonbond_qx[state].Ucoul, EQ_nonbond_qx[state].Uvdw, EQ_restraint[state].Urestr);
     }
-
-    fprintf(fp, ">>> Total\n");
-    fprintf(fp, "Temp = %f\n", Temp);
-    fprintf(fp, "Ubond = %f\n", energies.Ubond);
-    fprintf(fp, "Uangle = %f\n", energies.Uangle);
-    fprintf(fp, "Utor = %f\n", energies.Utor);
-    fprintf(fp, "Uimp = %f\n", energies.Uimp);
-    fprintf(fp, "Uradx = %f\n", energies.Uradx);
-    fprintf(fp, "Upolx = %f\n", energies.Upolx);
-    fprintf(fp, "Ushell = %f\n", energies.Ushell);
-    fprintf(fp, "Ufix = %f\n", energies.Ufix);
-    fprintf(fp, "Upres = %f\n", energies.Upres);
-    fprintf(fp, "Urestr = %f\n", energies.Urestr);
-    fprintf(fp, "Ucoul = %f\n", energies.Ucoul);
-    fprintf(fp, "Uvdw = %f\n", energies.Uvdw);
-    fprintf(fp, "Ukin = %f\n", energies.Ukin);
-    fprintf(fp, "Upot = %f\n", energies.Upot);
-    fprintf(fp, "Utot = %f\n", energies.Utot);
+    fprintf(fp, "\n");
+    
+    fprintf(fp, "[total]\n");
+    fprintf(fp, "Ukin\t%f\n", E_total.Ukin);
+    fprintf(fp, "Upot\t%f\n", E_total.Upot);
+    fprintf(fp, "Utot\t%f\n", E_total.Utot);
+    fprintf(fp, "\n");
   
     fclose (fp);
 }
@@ -709,34 +708,75 @@ void calc_integration() {
     clean_variables();
 }
 
-void calc_integration_step(int iteration) {
-    printf("================================================\n");
-    printf("== STEP %d\n", iteration);
-    printf("================================================\n");
-
-    // Reset derivatives
+void reset_energies() {
     for (int i = 0; i < n_atoms; i++) {
         dvelocities[i].x = 0;
         dvelocities[i].y = 0;
         dvelocities[i].z = 0;
     }
-    energies.Ucoul = 0;
-    energies.Uvdw = 0;
-    energies.Uangle = 0;
-    energies.Ubond = 0;
-    energies.Utor = 0;
-    energies.Uimp = 0;
-    energies.Upres = 0;
-    energies.Uradx = 0;
-    energies.Upolx = 0;
-    energies.Ushell = 0;
-    energies.Ufix = 0;
-
+    E_total.Upot = 0;
+    E_bond_p.Uangle = 0;
+    E_bond_p.Ubond = 0;
+    E_bond_p.Utor = 0;
+    E_bond_p.Uimp = 0;
+    E_bond_w.Uangle = 0;
+    E_bond_w.Ubond = 0;
+    E_bond_w.Utor = 0;
+    E_bond_w.Uimp = 0;
+    E_bond_q.Uangle = 0;
+    E_bond_q.Ubond = 0;
+    E_bond_q.Utor = 0;
+    E_bond_q.Uimp = 0;
+    E_nonbond_pp.Ucoul = 0;
+    E_nonbond_pp.Uvdw = 0;
+    E_nonbond_pw.Ucoul = 0;
+    E_nonbond_pw.Uvdw = 0;
+    E_nonbond_ww.Ucoul = 0;
+    E_nonbond_ww.Uvdw = 0;
+    E_nonbond_qx.Ucoul = 0;
+    E_nonbond_qx.Uvdw = 0;
+    E_restraint.Uradx = 0;
+    E_restraint.Upolx = 0;
+    E_restraint.Ufix = 0;
+    E_restraint.Ushell = 0;
+    E_restraint.Upres = 0;
+    E_restraint.Urestr = 0;
     for (int state = 0; state < n_lambdas; state++) {
-        q_energies[state].Ucoul = 0;
-        q_energies[state].Uvdw = 0;
-        q_energies[state].Urestr = 0;
+        EQ_bond[state].Uangle = 0;
+        EQ_bond[state].Ubond = 0;
+        EQ_bond[state].Utor = 0;
+        EQ_bond[state].Uimp = 0;
+        EQ_nonbond_qq[state].Ucoul = 0;
+        EQ_nonbond_qq[state].Uvdw = 0;
+        EQ_nonbond_qp[state].Ucoul = 0;
+        EQ_nonbond_qp[state].Uvdw = 0;
+        EQ_nonbond_qw[state].Ucoul = 0;
+        EQ_nonbond_qw[state].Uvdw = 0;
+        EQ_restraint[state].Urestr = 0;
     }
+}
+
+void calc_bonded_forces() {
+    E_bond_p.Uangle = calc_angle_forces(0, n_angles_solute);
+    E_bond_w.Uangle = calc_angle_forces(n_angles_solute, n_angles);
+
+    E_bond_p.Ubond = calc_bond_forces(0, n_bonds_solute);
+    E_bond_w.Ubond = calc_bond_forces(n_bonds_solute, n_bonds);
+
+    E_bond_p.Utor = calc_torsion_forces(0, n_torsions_solute);
+    E_bond_w.Utor = calc_torsion_forces(n_torsions_solute, n_torsions);
+
+    E_bond_p.Uimp = calc_improper2_forces(0, n_impropers_solute);
+    E_bond_w.Uimp = calc_improper2_forces(n_impropers_solute, n_impropers);
+}
+
+void calc_integration_step(int iteration) {
+    printf("================================================\n");
+    printf("== STEP %d\n", iteration);
+    printf("================================================\n");
+
+    // Reset derivatives & energies
+    reset_energies();
 
     // Determine temperature and kinetic energy
     calc_temperature();
@@ -745,10 +785,7 @@ void calc_integration_step(int iteration) {
     clock_t start = clock();
 
     // First solute interactions
-    calc_angle_forces();
-    calc_bond_forces();
-    calc_torsion_forces();
-    calc_improper2_forces();
+    calc_bonded_forces();
 
     clock_t end_bonded = clock();
 
@@ -832,56 +869,74 @@ void calc_integration_step(int iteration) {
     // Recalculate temperature and kinetic energy for output
     calc_temperature();
 
-    // Update energies with an average of all states
+    // Update total potential energies with an average of all states
     for (int state = 0; state < n_lambdas; state++) {
-        energies.Ubond += q_energies[state].Ubond * lambdas[state];
-        energies.Uangle += q_energies[state].Uangle * lambdas[state];
-        energies.Utor += q_energies[state].Utor * lambdas[state];
-        energies.Ucoul += q_energies[state].Ucoul * lambdas[state];
-        energies.Uvdw += q_energies[state].Uvdw * lambdas[state];
+        EQ_nonbond_qx[state].Ucoul = EQ_nonbond_qq[state].Ucoul + EQ_nonbond_qp[state].Ucoul + EQ_nonbond_qw[state].Ucoul;
+        EQ_nonbond_qx[state].Uvdw = EQ_nonbond_qq[state].Uvdw + EQ_nonbond_qp[state].Uvdw + EQ_nonbond_qw[state].Uvdw;
+
+        EQ_total[state].Utot = EQ_bond[state].Ubond + EQ_bond[state].Uangle + EQ_bond[state].Utor + EQ_bond[state].Uimp
+            + EQ_nonbond_qx[state].Ucoul + EQ_nonbond_qx[state].Uvdw + EQ_restraint[state].Urestr;
+
+        E_bond_q.Ubond += EQ_bond[state].Ubond * lambdas[state];
+        E_bond_q.Uangle += EQ_bond[state].Uangle * lambdas[state];
+        E_bond_q.Utor += EQ_bond[state].Utor * lambdas[state];
+        E_bond_q.Uimp += EQ_bond[state].Uimp * lambdas[state];
+        E_nonbond_qx.Ucoul += EQ_nonbond_qx[state].Ucoul * lambdas[state];
+        E_nonbond_qx.Uvdw += EQ_nonbond_qx[state].Uvdw * lambdas[state];
 
         // Update protein restraint energies with an average of all states
-        energies.Upres += q_energies[state].Urestr * lambdas[state];
-
-        // Update total Q-SUM for this state
-        q_energies[state].Upot = q_energies[state].Ubond + q_energies[state].Uangle
-            + q_energies[state].Utor + q_energies[state].Ucoul + q_energies[state].Uvdw
-            + q_energies[state].Urestr;
+        E_restraint.Upres += EQ_restraint[state].Urestr * lambdas[state];
     }
 
     // Update totals
-    energies.Urestr = energies.Uradx + energies.Upolx + energies.Ushell + energies.Ufix + energies.Upres;
-    energies.Upot = energies.Uangle + energies.Ubond + energies.Utor + energies.Uimp + energies.Ucoul + energies.Uvdw + energies.Urestr;
-    energies.Utot = energies.Upot + energies.Ukin;  
+    E_restraint.Urestr = E_restraint.Uradx + E_restraint.Upolx + E_restraint.Ushell + E_restraint.Ufix + E_restraint.Upres;
+    E_total.Upot = E_bond_p.Ubond + E_bond_w.Ubond + E_bond_p.Uangle + E_bond_w.Uangle + E_bond_p.Utor + E_bond_p.Uimp
+        + E_nonbond_pp.Ucoul + E_nonbond_pp.Uvdw + E_nonbond_pw.Ucoul + E_nonbond_pw.Uvdw + E_nonbond_ww.Ucoul
+        + E_nonbond_ww.Uvdw + E_bond_q.Ubond + E_bond_q.Uangle + E_bond_q.Utor + E_bond_q.Uimp
+        + E_nonbond_qx.Ucoul + E_nonbond_qx.Uvdw + E_restraint.Urestr;
+    E_total.Utot = E_total.Upot + E_total.Ukin;
 
+    printf("[temperature]\n");
+    printf("Temp\t%f\n", Temp);
+    printf("\n");
+
+    printf("[bonded]\n");
+    printf("type\tUbond\tUangle\tUtor\tUimp\n");
+    printf("p\t%f\t%f\t%f\t%f\n", E_bond_p.Ubond, E_bond_p.Uangle, E_bond_p.Utor, E_bond_p.Uimp);
+    printf("w\t%f\t%f\t%f\t%f\n", E_bond_w.Ubond, E_bond_w.Uangle, E_bond_w.Utor, E_bond_w.Uimp);
+    printf("qp\t%f\t%f\t%f\t%f\n", E_bond_q.Ubond, E_bond_q.Uangle, E_bond_q.Utor, E_bond_q.Uimp);
+    printf("\n");
+
+    printf("[nonbonded]\n");
+    printf("type\tUcoul\tUvdw\n");
+    printf("pp\t%f\t%f\n", E_nonbond_pp.Ucoul, E_nonbond_pp.Uvdw);
+    printf("pw\t%f\t%f\n", E_nonbond_pw.Ucoul, E_nonbond_pw.Uvdw);
+    printf("ww\t%f\t%f\n", E_nonbond_ww.Ucoul, E_nonbond_ww.Uvdw);
+    printf("qx\t%f\t%f\n", E_nonbond_qx.Ucoul, E_nonbond_qx.Uvdw);
+    printf("\n");
+
+    printf("[restraint]\n");
+    printf("Uradx\t%f\n", E_restraint.Uradx);
+    printf("Upolx\t%f\n", E_restraint.Upolx);
+    printf("Ushell\t%f\n", E_restraint.Ushell);
+    printf("Ufix\t%f\n", E_restraint.Ufix);
+    printf("Upres\t%f\n", E_restraint.Upres);
+    printf("Total\t%f\n", E_restraint.Urestr);
+    printf("\n");
+
+    printf("[q-energies]\n");
+    printf("lambda\tSUM\tUbond\tUangle\tUtor\tUimp\tUcoul\tUvdw\tUrestr\n");
     for (int state = 0; state < n_lambdas; state++) {
-        printf(">>> State %d\n", state);
-        printf("Ubond = %f\n", q_energies[state].Ubond);
-        printf("Uangle = %f\n", q_energies[state].Uangle);
-        printf("Utor = %f\n", q_energies[state].Utor);
-        printf("Ucoul = %f\n", q_energies[state].Ucoul);
-        printf("Uvdw = %f\n", q_energies[state].Uvdw);
-        printf("Urestr = %f\n", q_energies[state].Urestr);
-        printf("Q-SUM = %f\n", q_energies[state].Upot);
+        printf("%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\n", lambdas[state], EQ_total[state].Utot, EQ_bond[state].Ubond,
+            EQ_bond[state].Uangle, EQ_bond[state].Utor, EQ_bond[state].Uimp, EQ_nonbond_qx[state].Ucoul, EQ_nonbond_qx[state].Uvdw, EQ_restraint[state].Urestr);
     }
-
-    printf(">>> Total\n");
-    printf("Tscale = %f\n", Tscale);
-    printf("Ubond = %f\n", energies.Ubond);
-    printf("Uangle = %f\n", energies.Uangle);
-    printf("Utor = %f\n", energies.Utor);
-    printf("Uimp = %f\n", energies.Uimp);
-    printf("Uradx = %f\n", energies.Uradx);
-    printf("Upolx = %f\n", energies.Upolx);
-    printf("Ushell = %f\n", energies.Ushell);
-    printf("Ufix = %f\n", energies.Ufix);
-    printf("Upres = %f\n", energies.Upres);
-    printf("Urestr = %f\n", energies.Urestr);
-    printf("Ucoul = %f\n", energies.Ucoul);
-    printf("Uvdw = %f\n", energies.Uvdw);
-    printf("Ukin = %f\n", energies.Ukin);
-    printf("Upot = %f\n", energies.Upot);
-    printf("Utot = %f\n", energies.Utot);
+    printf("\n");
+    
+    printf("[total]\n");
+    printf("Ukin\t%f\n", E_total.Ukin);
+    printf("Upot\t%f\n", E_total.Upot);
+    printf("Utot\t%f\n", E_total.Utot);
+    printf("\n");
 
     // Append output files
     write_coords(iteration);
@@ -977,6 +1032,10 @@ void init_variables() {
     init_icoords("i_coords.csv");
     init_ivelocities("i_velocities.csv");    
 
+    // for (int i = 0; i < n_atoms; i++) {
+    //     printf("velocities[%d] = %f %f %f\n", i, velocities[i].x, velocities[i].y, velocities[i].z);
+    // }
+
     // Init waters, boundary restrains
     n_waters = (n_atoms - n_atoms_solute) / 3;
     if (n_waters > 0) {
@@ -986,20 +1045,13 @@ void init_variables() {
     init_pshells();
 
     // Init energy
-    energies.Ubond = 0;
-    energies.Uangle = 0;
-    energies.Utor = 0;
-    energies.Ucoul = 0;
-    energies.Uvdw = 0;
-    energies.Ukin = 0;
-    energies.Upot = 0;
-    energies.Uradx = 0;
-    energies.Upolx = 0;
-    energies.Ushell = 0;
-    energies.Ufix = 0;
-    energies.Urestr = 0;
-
-    q_energies = (energy_t*) calloc(n_lambdas, sizeof(energy_t));
+    EQ_total = (energy_t*) malloc(n_lambdas * sizeof(energy_t));
+    EQ_bond = (E_bonded_t*) malloc(n_lambdas * sizeof(E_bonded_t));
+    EQ_nonbond_qq = (E_nonbonded_t*) malloc(n_lambdas * sizeof(E_nonbonded_t));
+    EQ_nonbond_qp = (E_nonbonded_t*) malloc(n_lambdas * sizeof(E_nonbonded_t));
+    EQ_nonbond_qw = (E_nonbonded_t*) malloc(n_lambdas * sizeof(E_nonbonded_t));
+    EQ_nonbond_qx = (E_nonbonded_t*) malloc(n_lambdas * sizeof(E_nonbonded_t));
+    EQ_restraint = (E_restraint_t*) malloc(n_lambdas * sizeof(E_restraint_t));
 
     // Write header to file
     write_header("coords.csv");
@@ -1080,5 +1132,11 @@ void clean_variables() {
     }
 
     // Energies & temperature
-    free(q_energies);
+    free(EQ_total);
+    free(EQ_bond);
+    free(EQ_nonbond_qq);
+    free(EQ_nonbond_qp);
+    free(EQ_nonbond_qw);
+    free(EQ_nonbond_qx);
+    free(EQ_restraint);
 }

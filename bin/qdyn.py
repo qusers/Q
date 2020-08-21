@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import argparse
 import os
 import sys
@@ -7,14 +9,15 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../s
 import qdyn
 
 class Startup(object):
-    def __init__(self,top,fep,md,re,wd,verbose,gpu):
+    def __init__(self,top,fep,md,re,wd,verbose,gpu,clean):
         data = {'top'       :   top,
                 'fep'       :   fep,
                 'md'        :   md,
                 're'        :   re,
                 'wd'        :   wd,
                 'verbose'   :   verbose,
-                'gpu'       :   gpu
+                'gpu'       :   gpu,
+                'clean'     :   clean
                }
         START = qdyn.Init(data)
 
@@ -65,7 +68,7 @@ if __name__ == "__main__":
                         default = False,
                         required = False,                                                
                         action = 'store_true',
-                        help = "If set, print out more stuff")
+                        help = "Turn verbose output on")
          
     parser.add_argument('--gpu',
                         dest = "gpu",
@@ -73,6 +76,13 @@ if __name__ == "__main__":
                         required = False,                                                
                         action = 'store_true',
                         help = "Set for GPU action")
+         
+    parser.add_argument('--clean',
+                        dest = "clean",
+                        default = False,
+                        required = False,                                                
+                        action = 'store_true',
+                        help = "Cleanup intermediate csv files")
 
     args = parser.parse_args()
     
@@ -83,4 +93,5 @@ if __name__ == "__main__":
             wd = args.workdir,
             verbose = args.verbose,
             gpu = args.gpu,
+            clean = args.clean,
            )

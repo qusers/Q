@@ -42,6 +42,8 @@ class Topology():
                      'solvtype'         : None,
                      'excluded'         : [],
                      'topdir'           : None,
+                     'coulomb'          : None,
+                     '14scaling'        : None,
                     }
 
 class Read_Topology(object):
@@ -55,8 +57,26 @@ class Read_Topology(object):
         self.data = data.data
         
     def JSON(self):
+        constants = ['catypes','cbonds','cangles','ctorsions','cimpropers','ccharges']
+        to_delete = []
+        tmp = {}
+        
         with open(self.top) as json_file:
             self.data = json.load(json_file)
+            
+        for key in self.data:
+            if key in constants:
+                tmp[key] = {}
+                for i in self.data[key]:
+                    tmp[key][int(i)] = self.data[key][i]
+                    
+                    if not key in to_delete:
+                        to_delete.append(key)
+        
+        for key in to_delete:
+            del self.data[key]
+
+        self.data = {**tmp, **self.data}
         
         return(self.data)
         
@@ -129,7 +149,6 @@ class Read_Topology(object):
                                                                                    
                 if 'Electrostatic 1-4 scaling factor' in line:
                     block = 14
-                    continue
                                                                                                    
                 if 'Masses' in line:
                     block = 15
@@ -283,6 +302,9 @@ class Read_Topology(object):
                     continue
                            
                 if block == 14:
+                    line = line.split()
+                    self.data['14scaling'] = line[0]
+                    self.data['coulomb'] = line[1]
                     continue
                            
                 if block == 15:
@@ -481,6 +503,7 @@ class Write_Topology(object):
         """
         .json MD input file
         """
+        #print(self.data['catypes']['1'])
         with open(out_json, 'w') as outfile:
             inputs = self.data
             json.dump(inputs,outfile,indent=2)     
@@ -639,7 +662,7 @@ class Write_Topology(object):
             
         #Topo.csv
         with open(self.wd + '/topo.csv','w') as outfile:
-            outfile.write('5\n')
+            outfile.write('7\n')
             outfile.write(self.data['solvtype'] + '\n')
             outfile.write(self.data['exclusion'] + '\n')
             outfile.write(self.data['radii'] + '\n')
@@ -651,3 +674,5 @@ class Write_Topology(object):
                                               self.data['solvcenter'][1],
                                               self.data['solvcenter'][2],))
             
+            outfile.write(self.data['14scaling'] + '\n')
+            outfile.write(self.data['coulomb'] + '\n')

@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import argparse
 import os
 import sys
@@ -58,12 +60,12 @@ class Startup(object):
                             self.data[line[0]] = line[1]
 
                     if block == 1:
-                            self.data['energy_files'].append([line[0],line[1]])
+                        self.data['energy_files'].append([line[0],line[1]])
                             
         else:
             with open(self.inp) as json_file:
                 self.data = json.load(json_file)
-                self.data['energy_files'] = [self.data['energy_files']]
+                self.data['energy_files'] = self.data['energy_files']
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

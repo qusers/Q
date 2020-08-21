@@ -81,8 +81,8 @@ void calc_nonbonded_pp_forces() {
             dvelocities[j].y += dva * da.y;
             dvelocities[j].z += dva * da.z;
 
-            energies.Ucoul += Vela;
-            energies.Uvdw += (V_a - V_b);
+            E_nonbond_pp.Ucoul += Vela;
+            E_nonbond_pp.Uvdw += (V_a - V_b);
         }
     }
 }
@@ -151,10 +151,8 @@ void calc_nonbonded_pp_forces_host() {
     cudaMemcpy(&PP_evdw_TOT, D_PP_evdw_TOT, sizeof(double), cudaMemcpyDeviceToHost);
     cudaMemcpy(&PP_ecoul_TOT, D_PP_ecoul_TOT, sizeof(double), cudaMemcpyDeviceToHost);
 
-    energies.Uvdw += PP_evdw_TOT;
-    energies.Ucoul += PP_ecoul_TOT;
-
-    printf("Total energies for pp interactions: %f %f\n", PP_evdw_TOT, PP_ecoul_TOT);
+    E_nonbond_pp.Uvdw += PP_evdw_TOT;
+    E_nonbond_pp.Ucoul += PP_ecoul_TOT;
 }
 
 /* =============================================

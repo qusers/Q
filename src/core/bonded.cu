@@ -10,7 +10,7 @@
  * =============================================
  */
 
- void calc_angle_forces() {
+double calc_angle_forces(int start, int end) {
     int aii, aji, aki;
 
     coord_t ai, aj, ak;
@@ -21,8 +21,9 @@
     cangle_t cangle;
     double cos_th, th, dth, dv, f1;
     double ener;
+    double angle = 0;
 
-    for (int i = 0; i < n_angles; i++) {
+    for (int i = start; i < end; i++) {
         aii = angles[i].ai - 1;
         aji = angles[i].aj - 1;
         aki = angles[i].ak - 1;
@@ -73,7 +74,7 @@
 
         // Update energies and forces
 
-        energies.Uangle += ener;
+        angle += ener;
 
         di.x = f1 * ( rjk.x * bjiinv * bjkinv - cos_th * rji.x * bji2inv);
         di.y = f1 * ( rjk.y * bjiinv * bjkinv - cos_th * rji.y * bji2inv);
@@ -97,15 +98,18 @@
 
         // printf("ANGLE ener = %f\n", ener);
     }
+
+    return angle;
 }
 
-void calc_bond_forces() {
+double calc_bond_forces(int start, int end) {
     int aii, aji;
     coord_t ai, aj, dx;
     cbond_t cbond;
     double dx2, dx1, ddx, ener, ampl;
+    double bond = 0;
 
-    for (int i = 0; i < n_bonds; i++) {
+    for (int i = start; i < end; i++) {
         aii = bonds[i].ai-1;
         aji = bonds[i].aj-1;
         ai = coords[aii];
@@ -124,7 +128,7 @@ void calc_bond_forces() {
         ddx = dx1 - cbond.b0;
         ener = .5 * cbond.kb * ddx * ddx;
 
-        energies.Ubond += ener;
+        bond += ener;
 
         // Update forces
         ampl = cbond.kb * ddx / dx1;
@@ -139,9 +143,11 @@ void calc_bond_forces() {
 
         // printf("BOND %d %d ener = %f\n", aii, aji, ener);
     }
+
+    return bond;
 }
 
-void calc_torsion_forces() {
+double calc_torsion_forces(int start, int end) {
     int aii, aji, aki, ali;
 
     coord_t ai, aj, ak, al;
@@ -152,11 +158,12 @@ void calc_torsion_forces() {
     double cos_phi, phi;
     double arg, dv, f1;
     double ener;
+    double torsion = 0;
 
     torsion_t t;
     ctorsion_t ctors;
 
-    for (int i = 0; i < n_torsions; i++) {
+    for (int i = start; i < end; i++) {
         t = torsions[i];
         ctors = ctorsions[t.code - 1];
 
@@ -252,7 +259,7 @@ void calc_torsion_forces() {
         dpl.z = rjk.x * dl.y - rjk.y * dl.x;
 
         // Update energy and forces
-        energies.Utor += ener;
+        torsion += ener;
 
         dvelocities[aii].x += dv * dpi.x;
         dvelocities[aii].y += dv * dpi.y;
@@ -270,9 +277,11 @@ void calc_torsion_forces() {
         dvelocities[ali].y += dv * dpl.y;
         dvelocities[ali].z += dv * dpl.z;
     }
+
+    return torsion;
 }
 
-void calc_improper2_forces() {
+double calc_improper2_forces(int start, int end) {
     int aii, aji, aki, ali;
 
     coord_t ai, aj, ak, al;
@@ -283,8 +292,9 @@ void calc_improper2_forces() {
 
     improper_t imp;
     cimproper_t cimp;
+    double improper = 0;
 
-    for (int i = 0; i < n_impropers; i++) {
+    for (int i = start; i < end; i++) {
         imp = impropers[i];
         cimp = cimpropers[imp.code - 1];
 
@@ -373,7 +383,7 @@ void calc_improper2_forces() {
         dpl.z = rjk.x * dl.y - rjk.y * dl.x;
 
         // Update energy and forces
-        energies.Uimp += ener;
+        improper += ener;
 
         dvelocities[aii].x += dv * dpi.x;
         dvelocities[aii].y += dv * dpi.y;
@@ -390,6 +400,7 @@ void calc_improper2_forces() {
         dvelocities[ali].x += dv * dpl.x;
         dvelocities[ali].y += dv * dpl.y;
         dvelocities[ali].z += dv * dpl.z;
-
     }
+
+    return improper;
 }

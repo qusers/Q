@@ -1,3 +1,4 @@
+#!/usr/bin/end python3
 import glob
 import numpy as np
 import argparse
@@ -97,11 +98,12 @@ class Prepare_MD(object):
         # Write md data files (both csv and json file)
         write_md.CSV(self.wd + '/')
         
-        out_json = self.wd + '/' + self.md.split('.')[0] + '.json'
+        out_json = self.wd + '/' + self.md.split('.')[1] + '.json'
         write_md.JSON(out_json)        
 
 class Prepare_FEP(object):       
     """
+                     verbose = self.environment['verbose'])
         Creates an FEP object.
         Reads: 
                 .json and .fep FEP files.
@@ -133,7 +135,7 @@ class Prepare_FEP(object):
         write_fep.CSV(self.wd + '/')
         
         if self.fepfile != None:
-            out_json = self.wd + '/' + self.fepfile.split('.')[0] + '.json'
+            out_json = self.wd + '/' + self.fepfile.split('.')[1] + '.json'
             write_fep.JSON(out_json)
 
 class Read_Restart(object):       
@@ -167,7 +169,7 @@ class Read_Restart(object):
         # Initiate the write class
         write_re = RESTART.Write_Restart(self.velocities, self.coordinates)
             
-        # Write md data files (both csv and json file)
+        # Write md data file
         write_re.CSV(self.wd + '/')
         #write_re.JSON()
         
@@ -175,8 +177,7 @@ class Run_Dynamics(object):
     """
         Runs the main dynamics loop.
     """           
-
-    def __init__(self,wd,top,verbose,gpu):
+    def __init__(self,wd,top,verbose,gpu,clean):
         if gpu == True:
             executable = SETTINGS.ROOT + 'bin/qdyn --gpu '
         
@@ -184,19 +185,25 @@ class Run_Dynamics(object):
             executable = SETTINGS.ROOT + 'bin/qdyn '
             
         options = wd + '/ ' 
+
         out = IO.run_command(executable,options)
         if verbose == True:
-            print(out)
+            print(out.decode("utf-8"))
+            
+        if clean == True:
+            for csvfile in glob.glob(wd + '/*csv'):
+                os.remove(csvfile)
             
 class Init(object):
     def __init__(self, data):
         """ Retrieves a dictionary of user input from qdyn:
-               {'top'   :   top,
-                'fep'   :   fep,
-                'md'    :   md,
-                're'    :   re,
-                'wd'    :   wd,
-                'verbose'    :   verbose
+               {'top'       :   top,
+                'fep'       :   fep,
+                'md'        :   md,
+                're'        :   re,
+                'wd'        :   wd,
+                'verbose'   :   verbose
+                'clean'   :   clean
                }
         """
         self.environment = data
@@ -254,4 +261,5 @@ class Init(object):
         Run_Dynamics(wd  = self.environment['wd'],
                      top = self.environment['top'],
                      gpu = self.environment['gpu'],
+                     clean = self.environment['clean'],
                      verbose = self.environment['verbose'])

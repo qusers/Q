@@ -81,8 +81,8 @@ void calc_nonbonded_ww_forces() {
             Vel = Coul * pow(crg_ow, 2) * rOX;
             V_a = A_OO * (r2*r2*r2) * (r2*r2*r2);
             V_b = B_OO * (r2*r2*r2);
-            evdw += (V_a - V_b);
-            ecoul += Vel;
+            E_nonbond_ww.Uvdw += (V_a - V_b);
+            E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel - 12 * V_a + 6 * V_b);
             j -= 2; //move pointer back to O in interacting molecule
             dvelocities[i].x -= (dv * dOX.x);
@@ -95,7 +95,7 @@ void calc_nonbonded_ww_forces() {
             // O - H1
             r2 = pow(rH1X, 2);
             Vel = Coul * crg_ow * crg_hw * rH1X;
-            ecoul += Vel;
+            E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H1 in j-molecule
             dvelocities[i].x -= (dv * dH1X.x);
@@ -108,7 +108,7 @@ void calc_nonbonded_ww_forces() {
             // O - H2
             r2 = pow(rH2X, 2);
             Vel = Coul * crg_ow * crg_hw * rH2X;
-            ecoul += Vel;
+            E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H2 in j-molecule
             dvelocities[i].x -= (dv * dH2X.x);
@@ -150,7 +150,7 @@ void calc_nonbonded_ww_forces() {
             // H1 - O
             r2 = rOX * rOX;
             Vel = Coul * crg_hw * crg_ow * rOX;
-            ecoul += Vel;
+            E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j -= 2; //move pointer back to O in interacting molecule
             dvelocities[i].x -= (dv * dOX.x);
@@ -163,7 +163,7 @@ void calc_nonbonded_ww_forces() {
             // H1 - H1
             r2 = pow(rH1X, 2);
             Vel = Coul * crg_hw * crg_hw * rH1X;
-            ecoul += Vel;
+            E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H1 in j-molecule
             dvelocities[i].x -= (dv * dH1X.x);
@@ -176,7 +176,7 @@ void calc_nonbonded_ww_forces() {
             // H1 - H2
             r2 = pow(rH2X, 2);
             Vel = Coul * crg_hw * crg_hw * rH2X;
-            ecoul += Vel;
+            E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H2 in j-molecule
             dvelocities[i].x -= (dv * dH2X.x);
@@ -218,7 +218,7 @@ void calc_nonbonded_ww_forces() {
             // H2 - O
             r2 = rOX * rOX;
             Vel = Coul * crg_hw * crg_ow * rOX;
-            ecoul += Vel;
+            E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j -= 2; //move pointer back to O in interacting molecule
             dvelocities[i].x -= (dv * dOX.x);
@@ -231,7 +231,7 @@ void calc_nonbonded_ww_forces() {
             // H2 - H1
             r2 = pow(rH1X, 2);
             Vel = Coul * crg_hw * crg_hw * rH1X;
-            ecoul += Vel;
+            E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H1 in j-molecule
             dvelocities[i].x -= (dv * dH1X.x);
@@ -244,7 +244,7 @@ void calc_nonbonded_ww_forces() {
             // H1 - H2
             r2 = pow(rH2X, 2);
             Vel = Coul * crg_hw * crg_hw * rH2X;
-            ecoul += Vel;
+            E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H2 in j-molecule
             dvelocities[i].x -= (dv * dH2X.x);
@@ -260,9 +260,6 @@ void calc_nonbonded_ww_forces() {
 
             // printf("Evdw[%d][%d] = %f\n", i/3, j/3, evdw);
             // printf("Ecoul[%d][%d] = %f\n", i/3, j/3, ecoul);
-
-            energies.Uvdw += evdw;
-            energies.Ucoul += ecoul;
         }
     }
 
@@ -365,10 +362,8 @@ void calc_nonbonded_ww_forces_host() {
     cudaMemcpy(&WW_evdw_TOT, D_WW_evdw_TOT, sizeof(double), cudaMemcpyDeviceToHost);
     cudaMemcpy(&WW_ecoul_TOT, D_WW_ecoul_TOT, sizeof(double), cudaMemcpyDeviceToHost);
 
-    energies.Uvdw += WW_evdw_TOT;
-    energies.Ucoul += WW_ecoul_TOT;
-
-    printf("Total energies for ww interactions: %f %f\n", WW_evdw_TOT, WW_ecoul_TOT);
+    E_nonbond_ww.Uvdw += WW_evdw_TOT;
+    E_nonbond_ww.Ucoul += WW_ecoul_TOT;
 
     // for (int i = 0; i < n_atoms; i++) {
     //     printf("dvelocities[%d] = %f %f %f\n", i, dvelocities[i].x, dvelocities[i].y, dvelocities[i].z);
@@ -421,22 +416,14 @@ void calc_nonbonded_pw_forces() {
             dvelocities[j].y += dva * da.y;
             dvelocities[j].z += dva * da.z;
 
-            energies.Ucoul += Vela;
-            energies.Uvdw += (V_a - V_b);
+            E_nonbond_pw.Ucoul += Vela;
+            E_nonbond_pw.Uvdw += (V_a - V_b);
 
             // if (j - n_atoms_solute == 1754) {
             //     printf("MAT[%d][%d].W = %f %f %f\n", i, j - n_atoms_solute, dva * da.x, dva * da.y, dva * da.z);
             // }
         }
     }
-
-    // for (int i = 0; i < n_atoms; i++) {
-    //     printf("dvelocities[%d] = %f %f %f\n", i, dvelocities[i].x, dvelocities[i].y, dvelocities[i].z);
-    // }
-
-    #ifdef DEBUG 
-    printf("solute-solvent: Ecoul = %f Evdw = %f\n", energies.Ucoul, energies.Uvdw);
-    #endif 
 }
 
 void calc_nonbonded_pw_forces_host() {
@@ -526,10 +513,8 @@ void calc_nonbonded_pw_forces_host() {
     cudaMemcpy(&PW_evdw_TOT, D_PW_evdw_TOT, sizeof(double), cudaMemcpyDeviceToHost);
     cudaMemcpy(&PW_ecoul_TOT, D_PW_ecoul_TOT, sizeof(double), cudaMemcpyDeviceToHost);
 
-    energies.Uvdw += PW_evdw_TOT;
-    energies.Ucoul += PW_ecoul_TOT;
-
-    printf("Total energies for pw interactions: %f %f\n", PW_evdw_TOT, PW_ecoul_TOT);
+    E_nonbond_pw.Uvdw += PW_evdw_TOT;
+    E_nonbond_pw.Ucoul += PW_ecoul_TOT;
 
     // for (int i = 0; i < n_atoms; i++) {
     //     printf("dvelocities[%d] = %f %f %f\n", i, dvelocities[i].x, dvelocities[i].y, dvelocities[i].z);

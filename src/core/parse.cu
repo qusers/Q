@@ -1359,6 +1359,7 @@ void init_icoords(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
 
@@ -1376,10 +1377,11 @@ void init_ivelocities(const char*filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
 
     if (file.n_lines < 1) {
+        clean_csv(file);
         return;
     }
-    
-    for (int i = 0; i < n_qatoms; i++) {
+
+    for (int i = 0; i < n_atoms; i++) {
         char *eptr;
         velocities[i].x = strtod(file.buffer[i+1][0], &eptr);
         velocities[i].y = strtod(file.buffer[i+1][1], &eptr);
