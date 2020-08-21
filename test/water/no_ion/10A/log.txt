@@ -1,0 +1,58 @@
+read 1 into steps (steps in file)
+read 1.000000 into stepsize (stepsize in file)
+read 300.000000 into temperature (temperature in file)
+read berendsen into thermostat (thermostat in file)
+read 10.000000 into bath_coupling (bath_coupling in file)
+read 12 into random_seed (random_seed in file)
+read 1.000000 into initial_temperature (initial_temperature in file)
+read off into shake_solvent (shake_solvent in file)
+read off into shake_hydrogens (shake_hydrogens in file)
+read 99 into lrf (lrf in file)
+read 99.000000 into solute_solute (solute_solute in file)
+read 99.000000 into solvent_solvent (solvent_solvent in file)
+read 99.000000 into solute_solvent (solute_solvent in file)
+read 99.000000 into q_atom (q_atom in file)
+read 10.000000 into shell_radius (shell_radius in file)
+read 10.000000 into shell_force (shell_force in file)
+read 60.000000 into radial_force (radial_force in file)
+read on into polarisation (polarisation in file)
+read 20.0 into polarisation_force (polarisation_force in file)
+read 25 into non_bond (non_bond in file)
+read 5 into output (output in file)
+read 1 into energy (energy in file)
+read 100 into trajectory (trajectory in file)
+reading in 0 lambdas (lambdas in file)
+Dwmz = 1.392155, awmz = 0.499473
+n_shells = 3
+shell 0: (10.160000, 9.660000). shell 1: (9.660000, 8.660000). shell 2: (8.660000, 7.160000).
+n_heavy = 84, n_inshell = 0
+================================================
+== STEP 0
+================================================
+Temp = 0.975067
+-0.375677 0.135582 -0.230026
+dv[0] = -0.375677 0.135582 -0.230026
+dv[1] = 0.314037 -0.157293 0.166434
+dv[2] = 0.061640 0.021711 0.063592
+dv[0] + MAT[0][1].O = -1.703266 -1.377393 1.511254
+dv[1] + MAT[0][1].H1 = 0.518306 0.413848 -0.584207
+dv[2] + MAT[0][1].H2 = 0.676204 0.720601 -0.428227
+Temp = 201.211806
+Tscale = 1.024254
+Ubond = 0.014949
+Uangle = 0.003716
+Utor = 0.000000
+Uradx = -116.428745
+Upolx = 8.997173
+Ushell = 0.000000
+Ufix = 0.000000
+Upres = 0.000000
+Urestr = -107.431572
+Ucoul = -48.304825
+Uvdw = -42.585221
+Ukin = 264.339797
+Upot = -198.302953
+Utot = 66.036844
+Elapsed time for bonded forces: 0.000149
+Elapsed time for non-bonded forces: 0.012892
+Elapsed time for entire time-step: 0.014643

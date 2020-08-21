@@ -103,6 +103,7 @@ class Prepare_MD(object):
 
 class Prepare_FEP(object):       
     """
+                     verbose = self.environment['verbose'])
         Creates an FEP object.
         Reads: 
                 .json and .fep FEP files.
@@ -176,11 +177,15 @@ class Run_Dynamics(object):
     """
         Runs the main dynamics loop.
     """           
-    def __init__(self,wd,top,verbose,clean):
-        executable = SETTINGS.ROOT + 'bin/qdyn '
-        options = wd + '/' 
-        topdir = wd
+    def __init__(self,wd,top,verbose,gpu,clean):
+        if gpu == True:
+            executable = SETTINGS.ROOT + 'bin/qdyn --gpu '
         
+        else:
+            executable = SETTINGS.ROOT + 'bin/qdyn '
+            
+        options = wd + '/ ' 
+
         out = IO.run_command(executable,options)
         if verbose == True:
             print(out.decode("utf-8"))
@@ -202,7 +207,7 @@ class Init(object):
                }
         """
         self.environment = data
-        
+        print(data)
         # check extension:
         extensions = ['json','inp','fep','re','top']
         
@@ -255,5 +260,6 @@ class Init(object):
         
         Run_Dynamics(wd  = self.environment['wd'],
                      top = self.environment['top'],
+                     gpu = self.environment['gpu'],
                      clean = self.environment['clean'],
                      verbose = self.environment['verbose'])
