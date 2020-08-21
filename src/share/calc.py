@@ -116,7 +116,7 @@ def EXP(MA1,l1,l2,kT,skip):
     total = 0.0
     skip = 0  #TEMP
     kT = float(kT)
-    #print(MA1)
+    print(MA1)
     for ipt in range(skip,len(MA1)):
         for state in range(0,len(MA1)):
             veff1 += l1[state] * MA1[state][ipt]
