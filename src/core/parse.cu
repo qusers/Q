@@ -70,6 +70,7 @@ csvfile_t read_csv(const char* filename, int ext, char* base_folder) {
 }
 
 void clean_csv(csvfile_t file) {
+    if (file.n_lines < 1) return;
     for (int i = 0; i <= file.n_lines + file.ext; i++) {
         for (int j = 0; j < N_COLUMNS; j++) {
             free(file.buffer[i][j]);
