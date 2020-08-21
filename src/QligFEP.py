@@ -130,23 +130,18 @@ class Write_MD():
             self.mdroot = self.mdroot.split('.')[0]
             if not self.mdroot in globaldata['MDs']:
                 globaldata['MDs'].append(self.mdroot) 
-                
-            if i == 0:
-                for T in globaldata['Temp']:
-                    self.T = T
-                    for replicate in globaldata['randrep']:
-                        self.r = replicate
-                        md_data = self.construct(md)
-                        md_data['random_seed'] = globaldata['randrep'][replicate]
 
+            md_data = self.construct(md)
             
-            if 'md' in md:
+            if 'md' in md or 'eq5' in md:
                 md_data['temperature'] = self.T
+            
+            
+            if md == 'eq1':
+                md_data['random_seed'] = globaldata['randrep'][replicate]
                 
             else:
-                md_data['random_seed']
                 md_data['random_seed'] = None
-            
             self.write(md_data)
             
     def construct(self,md):
