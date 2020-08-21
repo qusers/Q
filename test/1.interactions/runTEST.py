@@ -49,7 +49,7 @@ class Startup(object):
                 args.append('--gpu')
             print(' '.join(args))
             out = subprocess.check_output(args)
-            out2 = subprocess.check_output(['python','compare.py'])
+            out2 = subprocess.check_output([executable,'compare.py'])
             print(out2.decode('utf-8'))
             print("======================================================")    
             os.system('rm -r TEST Q5_data compare.py')
