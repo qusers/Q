@@ -340,6 +340,9 @@ void init_topo(const char *filename) {
     topo.solute_center = solute_center;
     topo.solvent_center = solvent_center;
 
+    topo.el14_scale = strtod(file.buffer[6][0], &eptr);
+    topo.coulomb_constant = strtod(file.buffer[7][0], &eptr);
+
     clean_csv(file);
 }
 

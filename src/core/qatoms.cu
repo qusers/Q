@@ -40,7 +40,7 @@ void calc_nonbonded_qp_forces() {
             if (bond23) continue;
             if (excluded[i] || excluded[j]) continue;
 
-            scaling = bond14 ? .5 : 1;
+            scaling = bond14 ? topo.el14_scale : 1;
 
             da.x = coords[j].x - coords[i].x;
             da.y = coords[j].y - coords[i].y;
@@ -61,7 +61,7 @@ void calc_nonbonded_qp_forces() {
                 ai_bii = bond14 ? qi_type.Bi_14 : qi_type.Bi;
                 aj_bii = bond14 ? aj_type.bii_1_4 : aj_type.bii_normal;
 
-                Vel = Coul * scaling * q_charges[qi + n_qatoms * state].q * ccharges[charges[j].code - 1].charge * r;
+                Vel = topo.coulomb_constant * scaling * q_charges[qi + n_qatoms * state].q * ccharges[charges[j].code - 1].charge * r;
                 V_a = ai_aii * aj_aii / (r6 * r6);
                 V_b = ai_bii * aj_bii / r6;
                 dv = r2 * (-Vel - (12 * V_a - 6 * V_b)) * lambdas[state];
@@ -205,7 +205,7 @@ void calc_nonbonded_qp_forces_host() {
 
     calc_qp_dvel_matrix<<<grid, threads>>>(n_qatoms, n_patoms, n_lambdas, n_atoms_solute, X, &evdw, &ecoul, QP_MAT,
         D_qcatypes, D_qatypes, D_qcharges, D_patoms, D_qatoms, D_lambdas, D_LJ_matrix, D_excluded,
-        D_catypes, D_atypes, D_ccharges, D_charges);
+        D_catypes, D_atypes, D_ccharges, D_charges, topo);
     calc_qp_dvel_vector_column<<<((n_patoms+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_qatoms, n_patoms, DV_X, QP_MAT, D_patoms);
     calc_qp_dvel_vector_row<<<((n_qatoms+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_qatoms, n_patoms, DV_X, QP_MAT, D_qatoms);
 
@@ -281,9 +281,9 @@ void calc_nonbonded_qw_forces() {
                 V_a = ai_aii * A_O / (r6O * r6O);
                 V_b = ai_bii * B_O / (r6O);
 
-                VelO = Coul * crg_ow * q_charges[qi + n_qatoms * state].q * rO;
-                VelH1 = Coul * crg_hw * q_charges[qi + n_qatoms * state].q * rH1;
-                VelH2 = Coul * crg_hw * q_charges[qi + n_qatoms * state].q * rH2;
+                VelO = topo.coulomb_constant * crg_ow * q_charges[qi + n_qatoms * state].q * rO;
+                VelH1 = topo.coulomb_constant * crg_hw * q_charges[qi + n_qatoms * state].q * rH1;
+                VelH2 = topo.coulomb_constant * crg_hw * q_charges[qi + n_qatoms * state].q * rH2;
 
                 // if (state == 0 && qi == 1) printf("j = %d ai__aii = %f A_O = %f B_O = %f V_a = %f V_b = %f r6O = %f\n", j, ai_aii, A_O, B_O, V_a, V_b, r6O);
 
@@ -355,7 +355,7 @@ void calc_nonbonded_qw_forces_host() {
 
     double evdw, ecoul;
 
-    calc_qw_dvel_matrix<<<grid, threads>>>(n_qatoms, n_waters, n_lambdas, crg_ow, crg_hw, A_O, B_O, X, W, &evdw, &ecoul, QW_MAT, D_qcatypes, D_qatypes, D_qcharges, D_qatoms, D_lambdas);
+    calc_qw_dvel_matrix<<<grid, threads>>>(n_qatoms, n_waters, n_lambdas, crg_ow, crg_hw, A_O, B_O, X, W, &evdw, &ecoul, QW_MAT, D_qcatypes, D_qatypes, D_qcharges, D_qatoms, D_lambdas, topo);
     calc_qw_dvel_vector_column<<<((n_waters+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_qatoms, n_waters, DV_X, DV_W, QW_MAT);
     calc_qw_dvel_vector_row<<<((n_qatoms+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_qatoms, n_waters, DV_X, DV_W, QW_MAT, D_qatoms);
 
@@ -403,7 +403,7 @@ void calc_nonbonded_qq_forces() {
                 if (bond23) continue;
                 if (excluded[ai] || excluded[aj]) continue;
     
-                scaling = bond14 ? .5 : 1;
+                scaling = bond14 ? topo.el14_scale : 1;
 
                 elscale = 1;
                 for (int k = 0; k < n_qelscales; k++) {
@@ -422,7 +422,7 @@ void calc_nonbonded_qq_forces() {
                 ra = sqrt(r2a);
                 r6a = r2a * r2a * r2a;
 
-                Vela = scaling * Coul * crg_i * crg_j * ra * elscale;
+                Vela = scaling * topo.coulomb_constant * crg_i * crg_j * ra * elscale;
 
                 ai_aii = bond14 ? qi_type.Ai_14 : qi_type.Ai;
                 aj_aii = bond14 ? qj_type.Ai_14 : qj_type.Ai;
@@ -668,7 +668,7 @@ void calc_qtorsion_forces(int state) {
 
 __device__ void calc_qw_dvel_matrix_incr(int row, int qi, int column, int n_lambdas, int n_qatoms, double crg_ow, double crg_hw, double A_O, double B_O,
     coord_t *Qs, coord_t *Ws, double *Evdw, double *Ecoul, calc_qw_t *qw,
-    q_catype_t *D_qcatypes, q_atype_t *D_qatypes, q_charge_t *D_qcharges, q_atom_t *D_qatoms, double *D_lambdas) {
+    q_catype_t *D_qcatypes, q_atype_t *D_qatypes, q_charge_t *D_qcharges, q_atom_t *D_qatoms, double *D_lambdas, topo_t D_topo) {
 
     int j;
     coord_t dO, dH1, dH2;
@@ -714,9 +714,9 @@ __device__ void calc_qw_dvel_matrix_incr(int row, int qi, int column, int n_lamb
         V_a = ai_aii * A_O / (r6O * r6O);
         V_b = ai_bii * B_O / (r6O);
 
-        VelO = Coul * crg_ow * D_qcharges[qi + n_qatoms * state].q * rO;
-        VelH1 = Coul * crg_hw * D_qcharges[qi + n_qatoms * state].q * rH1;
-        VelH2 = Coul * crg_hw * D_qcharges[qi + n_qatoms * state].q * rH2;
+        VelO = D_topo.coulomb_constant * crg_ow * D_qcharges[qi + n_qatoms * state].q * rO;
+        VelH1 = D_topo.coulomb_constant * crg_hw * D_qcharges[qi + n_qatoms * state].q * rH1;
+        VelH2 = D_topo.coulomb_constant * crg_hw * D_qcharges[qi + n_qatoms * state].q * rH2;
         
         dvO += r2O * (-VelO - (12 * V_a - 6 * V_b)) * D_lambdas[state];
         dvH1 -= r2H1 * VelH1 * D_lambdas[state];
@@ -747,7 +747,7 @@ __device__ void calc_qw_dvel_matrix_incr(int row, int qi, int column, int n_lamb
 
 __global__ void calc_qw_dvel_matrix(int n_qatoms, int n_waters, int n_lambdas, double crg_ow, double crg_hw, double A_O, double B_O,
     coord_t *X, coord_t *W, double *Evdw, double *Ecoul, calc_qw_t *MAT,
-    q_catype_t *D_qcatypes, q_atype_t *D_qatypes, q_charge_t *D_qcharges, q_atom_t *D_qatoms, double *D_lambdas) {
+    q_catype_t *D_qcatypes, q_atype_t *D_qatypes, q_charge_t *D_qcharges, q_atom_t *D_qatoms, double *D_lambdas, topo_t D_topo) {
     // Block index
     int bx = blockIdx.x;
     int by = blockIdx.y;
@@ -785,7 +785,7 @@ __global__ void calc_qw_dvel_matrix(int n_qatoms, int n_waters, int n_lambdas, d
     int column = bx * BLOCK_SIZE + tx;
     
     double evdw, ecoul;
-    calc_qw_dvel_matrix_incr(ty, aStart + ty, tx, n_lambdas, n_qatoms, crg_ow, crg_hw, A_O, B_O, Qs, Ws, &evdw, &ecoul, &qw, D_qcatypes, D_qatypes, D_qcharges, D_qatoms, D_lambdas);
+    calc_qw_dvel_matrix_incr(ty, aStart + ty, tx, n_lambdas, n_qatoms, crg_ow, crg_hw, A_O, B_O, Qs, Ws, &evdw, &ecoul, &qw, D_qcatypes, D_qatypes, D_qcharges, D_qatoms, D_lambdas, D_topo);
 
     MAT[column + n_waters * row] = qw;
 
@@ -865,7 +865,7 @@ __global__ void calc_qw_dvel_vector_column(int n_qatoms, int n_waters, dvel_t *D
 __device__ void calc_qp_dvel_matrix_incr(int row, int qi, int column, int pj, int n_lambdas, int n_qatoms,
     coord_t *Qs, coord_t *Ps, int *LJs, bool *excluded_s, double *Evdw, double *Ecoul, calc_qp_t *qp,
     q_catype_t *D_qcatypes, q_atype_t *D_qatypes, q_charge_t *D_qcharges, p_atom_t *D_patoms, q_atom_t *D_qatoms, double *D_lambdas,
-    catype_t *D_catypes, atype_t *D_atypes, ccharge_t *D_ccharges, charge_t *D_charges) {
+    catype_t *D_catypes, atype_t *D_atypes, ccharge_t *D_ccharges, charge_t *D_charges, topo_t D_topo) {
     
     coord_t da;
     double r2, r6, r;
@@ -883,7 +883,7 @@ __device__ void calc_qp_dvel_matrix_incr(int row, int qi, int column, int pj, in
     if (bond23) return;
     if (excluded_s[row] || excluded_s[BLOCK_SIZE + column]) return;
 
-    scaling = bond14 ? .5 : 1;
+    scaling = bond14 ? D_topo.el14_scale : 1;
 
     da.x = Qs[row].x - Ps[column].x;
     da.y = Qs[row].y - Ps[column].y;
@@ -904,7 +904,7 @@ __device__ void calc_qp_dvel_matrix_incr(int row, int qi, int column, int pj, in
         ai_bii = bond14 ? qi_type.Bi_14 : qi_type.Bi;
         aj_bii = bond14 ? aj_type.bii_1_4 : aj_type.bii_normal;
 
-        Vel = Coul * scaling * D_qcharges[qi + n_qatoms * state].q * D_ccharges[D_charges[j].code - 1].charge * r;
+        Vel = D_topo.coulomb_constant * scaling * D_qcharges[qi + n_qatoms * state].q * D_ccharges[D_charges[j].code - 1].charge * r;
         V_a = ai_aii * aj_aii / (r6 * r6);
         V_b = ai_bii * aj_bii / r6;
         dv = r2 * (-Vel - (12 * V_a - 6 * V_b)) * D_lambdas[state];
@@ -931,7 +931,7 @@ __device__ void calc_qp_dvel_matrix_incr(int row, int qi, int column, int pj, in
 __global__ void calc_qp_dvel_matrix(int n_qatoms, int n_patoms, int n_lambdas, int n_atoms_solute,
     coord_t *X, double *Evdw, double *Ecoul, calc_qp_t *QP_MAT,
     q_catype_t *D_qcatypes, q_atype_t *D_qatypes, q_charge_t *D_qcharges, p_atom_t *D_patoms, q_atom_t *D_qatoms, double *D_lambdas,
-    int *D_LJ_matrix, bool *D_excluded, catype_t *D_catypes, atype_t *D_atypes, ccharge_t *D_ccharges, charge_t *D_charges) {
+    int *D_LJ_matrix, bool *D_excluded, catype_t *D_catypes, atype_t *D_atypes, ccharge_t *D_ccharges, charge_t *D_charges, topo_t D_topo) {
     
     // Block index
     int bx = blockIdx.x;
@@ -976,7 +976,7 @@ __global__ void calc_qp_dvel_matrix(int n_qatoms, int n_patoms, int n_lambdas, i
     
     double evdw, ecoul;
     calc_qp_dvel_matrix_incr(ty, row, tx, column, n_lambdas, n_qatoms, Qs, Ps, LJs, excluded_s, &evdw, &ecoul,
-        &qp, D_qcatypes, D_qatypes, D_qcharges, D_patoms, D_qatoms, D_lambdas, D_catypes, D_atypes, D_ccharges, D_charges);
+        &qp, D_qcatypes, D_qatypes, D_qcharges, D_patoms, D_qatoms, D_lambdas, D_catypes, D_atypes, D_ccharges, D_charges, D_topo);
 
     QP_MAT[n_patoms * row + column] = qp;
 

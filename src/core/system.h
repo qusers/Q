@@ -204,6 +204,8 @@ struct topo_t {
     double solvent_radius;
     coord_t solute_center;
     coord_t solvent_center;
+    double el14_scale;
+    double coulomb_constant;
 };
 
 extern topo_t topo;

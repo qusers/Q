@@ -78,7 +78,7 @@ void calc_nonbonded_ww_forces() {
 
             // O - O
             r2 = rOX * rOX;
-            Vel = Coul * pow(crg_ow, 2) * rOX;
+            Vel = topo.coulomb_constant * pow(crg_ow, 2) * rOX;
             V_a = A_OO * (r2*r2*r2) * (r2*r2*r2);
             V_b = B_OO * (r2*r2*r2);
             E_nonbond_ww.Uvdw += (V_a - V_b);
@@ -94,7 +94,7 @@ void calc_nonbonded_ww_forces() {
 
             // O - H1
             r2 = pow(rH1X, 2);
-            Vel = Coul * crg_ow * crg_hw * rH1X;
+            Vel = topo.coulomb_constant * crg_ow * crg_hw * rH1X;
             E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H1 in j-molecule
@@ -107,7 +107,7 @@ void calc_nonbonded_ww_forces() {
 
             // O - H2
             r2 = pow(rH2X, 2);
-            Vel = Coul * crg_ow * crg_hw * rH2X;
+            Vel = topo.coulomb_constant * crg_ow * crg_hw * rH2X;
             E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H2 in j-molecule
@@ -149,7 +149,7 @@ void calc_nonbonded_ww_forces() {
 
             // H1 - O
             r2 = rOX * rOX;
-            Vel = Coul * crg_hw * crg_ow * rOX;
+            Vel = topo.coulomb_constant * crg_hw * crg_ow * rOX;
             E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j -= 2; //move pointer back to O in interacting molecule
@@ -162,7 +162,7 @@ void calc_nonbonded_ww_forces() {
 
             // H1 - H1
             r2 = pow(rH1X, 2);
-            Vel = Coul * crg_hw * crg_hw * rH1X;
+            Vel = topo.coulomb_constant * crg_hw * crg_hw * rH1X;
             E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H1 in j-molecule
@@ -175,7 +175,7 @@ void calc_nonbonded_ww_forces() {
 
             // H1 - H2
             r2 = pow(rH2X, 2);
-            Vel = Coul * crg_hw * crg_hw * rH2X;
+            Vel = topo.coulomb_constant * crg_hw * crg_hw * rH2X;
             E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H2 in j-molecule
@@ -217,7 +217,7 @@ void calc_nonbonded_ww_forces() {
 
             // H2 - O
             r2 = rOX * rOX;
-            Vel = Coul * crg_hw * crg_ow * rOX;
+            Vel = topo.coulomb_constant * crg_hw * crg_ow * rOX;
             E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j -= 2; //move pointer back to O in interacting molecule
@@ -230,7 +230,7 @@ void calc_nonbonded_ww_forces() {
 
             // H2 - H1
             r2 = pow(rH1X, 2);
-            Vel = Coul * crg_hw * crg_hw * rH1X;
+            Vel = topo.coulomb_constant * crg_hw * crg_hw * rH1X;
             E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H1 in j-molecule
@@ -243,7 +243,7 @@ void calc_nonbonded_ww_forces() {
 
             // H1 - H2
             r2 = pow(rH2X, 2);
-            Vel = Coul * crg_hw * crg_hw * rH2X;
+            Vel = topo.coulomb_constant * crg_hw * crg_hw * rH2X;
             E_nonbond_ww.Ucoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H2 in j-molecule
@@ -335,7 +335,7 @@ void calc_nonbonded_ww_forces_host() {
     threads = dim3(BLOCK_SIZE, BLOCK_SIZE);
     grid = dim3((n_waters + BLOCK_SIZE - 1) / threads.x, (n_waters + BLOCK_SIZE - 1) / threads.y);
 
-    calc_ww_dvel_matrix<<<grid, threads>>>(n_waters, crg_ow, crg_hw, A_OO, B_OO, W, D_WW_Evdw, D_WW_Ecoul, WW_MAT);
+    calc_ww_dvel_matrix<<<grid, threads>>>(n_waters, crg_ow, crg_hw, A_OO, B_OO, W, D_WW_Evdw, D_WW_Ecoul, WW_MAT, topo);
     calc_ww_dvel_vector<<<((n_waters+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_waters, DV_W, WW_MAT);
 
     #ifdef DEBUG
@@ -397,7 +397,7 @@ void calc_nonbonded_pw_forces() {
             ra = sqrt(r2a);
             r6a = r2a * r2a * r2a;
 
-            Vela = Coul * qi * qj * ra;
+            Vela = topo.coulomb_constant * qi * qj * ra;
 
             ai_aii = ai_type.aii_normal;
             aj_aii = aj_type.aii_normal;
@@ -483,7 +483,7 @@ void calc_nonbonded_pw_forces_host() {
     threads = dim3(BLOCK_SIZE, BLOCK_SIZE);
     grid = dim3((3*n_waters + BLOCK_SIZE - 1) / threads.x, (n_patoms + BLOCK_SIZE - 1) / threads.y);
     
-    calc_pw_dvel_matrix<<<grid, threads>>>(n_patoms, n_atoms_solute, n_waters, X, W, D_PW_Evdw, D_PW_Ecoul, PW_MAT, D_ccharges, D_charges, D_catypes, D_atypes, D_patoms, D_excluded);
+    calc_pw_dvel_matrix<<<grid, threads>>>(n_patoms, n_atoms_solute, n_waters, X, W, D_PW_Evdw, D_PW_Ecoul, PW_MAT, D_ccharges, D_charges, D_catypes, D_atypes, D_patoms, D_excluded, topo);
     calc_pw_dvel_vector_column<<<((3*n_waters+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_patoms, n_waters, DV_X, DV_W, PW_MAT);
     calc_pw_dvel_vector_row<<<((n_patoms+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_patoms, n_waters, DV_X, DV_W, PW_MAT, D_patoms);
 
@@ -535,7 +535,7 @@ __device__ void set_water(int n_waters, int row, int column, dvel_t *val, calc_w
 }
 
 __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, double crg_hw, double A_OO, double B_OO,
-    coord_t *Xs, coord_t *Ys, double *Evdw, double *Ecoul, dvel_t *water_a, dvel_t *water_b) {
+    coord_t *Xs, coord_t *Ys, double *Evdw, double *Ecoul, dvel_t *water_a, dvel_t *water_b, topo_t D_topo) {
     double rOX, rH1X, rH2X, r2;
     coord_t dOX, dH1X, dH2X;
     double Vel, V_a, V_b, dv;
@@ -574,7 +574,7 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
 
     // O - O
     r2 = rOX * rOX;
-    Vel = Coul * pow(crg_ow, 2) * rOX;
+    Vel = D_topo.coulomb_constant * pow(crg_ow, 2) * rOX;
     V_a = A_OO * (r2*r2*r2) * (r2*r2*r2);
     V_b = B_OO * (r2*r2*r2);
     *Evdw += (V_a - V_b);
@@ -592,7 +592,7 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
 
     // O - H1
     r2 = pow(rH1X, 2);
-    Vel = Coul * crg_ow * crg_hw * rH1X;
+    Vel = D_topo.coulomb_constant * crg_ow * crg_hw * rH1X;
     *Ecoul += Vel;
     dv = r2 * (-Vel);
     j += 1; //point to H1 in j-molecule
@@ -607,7 +607,7 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
 
     // O - H2
     r2 = pow(rH2X, 2);
-    Vel = Coul * crg_ow * crg_hw * rH2X;
+    Vel = D_topo.coulomb_constant * crg_ow * crg_hw * rH2X;
     *Ecoul += Vel;
     dv = r2 * (-Vel);
     j += 1; //point to H2 in j-molecule
@@ -655,7 +655,7 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
 
     // H1 - O
     r2 = rOX * rOX;
-    Vel = Coul * crg_hw * crg_ow * rOX;
+    Vel = D_topo.coulomb_constant * crg_hw * crg_ow * rOX;
     *Ecoul += Vel;
     dv = r2 * (-Vel);
     j -= 2; //move pointer back to O in interacting molecule
@@ -669,7 +669,7 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
 
     // H1 - H1
     r2 = pow(rH1X, 2);
-    Vel = Coul * crg_hw * crg_hw * rH1X;
+    Vel = D_topo.coulomb_constant * crg_hw * crg_hw * rH1X;
     *Ecoul += Vel;
     dv = r2 * (-Vel);
     j += 1; //point to H1 in j-molecule
@@ -683,7 +683,7 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
 
     // H1 - H2
     r2 = pow(rH2X, 2);
-    Vel = Coul * crg_hw * crg_hw * rH2X;
+    Vel = D_topo.coulomb_constant * crg_hw * crg_hw * rH2X;
     *Ecoul += Vel;
     dv = r2 * (-Vel);
     j += 1; //point to H2 in j-molecule
@@ -730,7 +730,7 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
 
     // H2 - O
     r2 = rOX * rOX;
-    Vel = Coul * crg_hw * crg_ow * rOX;
+    Vel = D_topo.coulomb_constant * crg_hw * crg_ow * rOX;
     *Ecoul += Vel;
     dv = r2 * (-Vel);
     j -= 2; //move pointer back to O in interacting molecule
@@ -744,7 +744,7 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
 
     // H2 - H1
     r2 = pow(rH1X, 2);
-    Vel = Coul * crg_hw * crg_hw * rH1X;
+    Vel = D_topo.coulomb_constant * crg_hw * crg_hw * rH1X;
     *Ecoul += Vel;
     dv = r2 * (-Vel);
     j += 1; //point to H1 in j-molecule
@@ -758,7 +758,7 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
 
     // H1 - H2
     r2 = pow(rH2X, 2);
-    Vel = Coul * crg_hw * crg_hw * rH2X;
+    Vel = D_topo.coulomb_constant * crg_hw * crg_hw * rH2X;
     *Ecoul += Vel;
     dv = r2 * (-Vel);
     j += 1; //point to H2 in j-molecule
@@ -772,7 +772,7 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
 }
 
 __global__ void calc_ww_dvel_matrix(int n_waters, double crg_ow, double crg_hw, double A_OO, double B_OO,
-    coord_t *W, double *Evdw, double *Ecoul, calc_ww_t *MAT) {
+    coord_t *W, double *Evdw, double *Ecoul, calc_ww_t *MAT, topo_t D_topo) {
     // Block index
     int bx = blockIdx.x;
     int by = blockIdx.y;
@@ -838,7 +838,7 @@ __global__ void calc_ww_dvel_matrix(int n_waters, double crg_ow, double crg_hw, 
 
     if (bx != by || tx != ty) {
         double evdw = 0, ecoul = 0;
-        calc_ww_dvel_matrix_incr(ty, tx, crg_ow, crg_hw, A_OO, B_OO, Xs, Ys, &evdw, &ecoul, water_a, water_b);
+        calc_ww_dvel_matrix_incr(ty, tx, crg_ow, crg_hw, A_OO, B_OO, Xs, Ys, &evdw, &ecoul, water_a, water_b, D_topo);
         Evdw_S[ty][tx] = evdw;
         Ecoul_S[ty][tx] = ecoul;
     }
@@ -928,7 +928,7 @@ __global__ void calc_ww_dvel_vector(int n_waters, dvel_t *DV_W, calc_ww_t *MAT) 
 
 __device__ void calc_pw_dvel_matrix_incr(int row, int pi, int column, int j, int n_atoms_solute,
     coord_t *Xs, coord_t *Ws, bool *excluded_s, double *Evdw, double *Ecoul, calc_pw_t *pw,
-    ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms) {
+    ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms, topo_t D_topo) {
 
     coord_t da;
     double r2a, ra, r6a;
@@ -957,7 +957,7 @@ __device__ void calc_pw_dvel_matrix_incr(int row, int pi, int column, int j, int
     ra = sqrt(r2a);
     r6a = r2a * r2a * r2a;
 
-    Vela = Coul * qi * qj * ra;
+    Vela = D_topo.coulomb_constant * qi * qj * ra;
 
     ai_aii = ai_type.aii_normal;
     aj_aii = aj_type.aii_normal;
@@ -989,7 +989,7 @@ __device__ void calc_pw_dvel_matrix_incr(int row, int pi, int column, int j, int
 
 __global__ void calc_pw_dvel_matrix(int n_patoms, int n_atoms_solute, int n_waters,
     coord_t *X, coord_t *W, double *Evdw, double *Ecoul, calc_pw_t *PW_MAT,
-    ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms, bool *D_excluded) {
+    ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms, bool *D_excluded, topo_t D_topo) {
     // Block index
     int bx = blockIdx.x;
     int by = blockIdx.y;
@@ -1057,7 +1057,7 @@ __global__ void calc_pw_dvel_matrix(int n_patoms, int n_atoms_solute, int n_wate
     // coord_t *Ps, coord_t *Xs, double *Evdw, double *Ecoul, calc_pw_t *pw,
     // ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms)
     double evdw = 0, ecoul = 0;
-    calc_pw_dvel_matrix_incr(ty, pi, tx, bStart + tx, n_atoms_solute, Xs, Ws, excluded_s, &evdw, &ecoul, &pw, D_ccharges, D_charges, D_catypes, D_atypes, D_patoms);
+    calc_pw_dvel_matrix_incr(ty, pi, tx, bStart + tx, n_atoms_solute, Xs, Ws, excluded_s, &evdw, &ecoul, &pw, D_ccharges, D_charges, D_catypes, D_atypes, D_patoms, D_topo);
     Evdw_S[ty][tx] = evdw;
     Ecoul_S[ty][tx] = ecoul;
 

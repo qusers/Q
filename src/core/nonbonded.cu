@@ -47,7 +47,7 @@ void calc_nonbonded_pp_forces() {
             if (bond23) continue;
             if (excluded[i] || excluded[j]) continue;
 
-            scaling = bond14 ? .5 : 1;
+            scaling = bond14 ? topo.el14_scale : 1;
 
             crg_i = ccharges[charges[i].code - 1].charge;
             crg_j = ccharges[charges[j].code - 1].charge;
@@ -62,7 +62,7 @@ void calc_nonbonded_pp_forces() {
             ra = sqrt(r2a);
             r6a = r2a * r2a * r2a;
 
-            Vela = scaling * Coul * crg_i * crg_j * ra;
+            Vela = scaling * topo.coulomb_constant * crg_i * crg_j * ra;
 
             ai_aii = bond14 ? ai_type.aii_1_4 : ai_type.aii_normal;
             aj_aii = bond14 ? aj_type.aii_1_4 : aj_type.aii_normal;
@@ -128,7 +128,7 @@ void calc_nonbonded_pp_forces_host() {
     threads = dim3(BLOCK_SIZE, BLOCK_SIZE);
     grid = dim3((n_patoms + BLOCK_SIZE - 1) / threads.x, (n_patoms + BLOCK_SIZE - 1) / threads.y);
 
-    calc_pp_dvel_matrix<<<grid, threads>>>(n_patoms, n_atoms_solute, X, D_PP_Evdw, D_PP_Ecoul, PP_MAT, D_ccharges, D_charges, D_catypes, D_atypes, D_patoms, D_LJ_matrix, D_excluded);
+    calc_pp_dvel_matrix<<<grid, threads>>>(n_patoms, n_atoms_solute, X, D_PP_Evdw, D_PP_Ecoul, PP_MAT, D_ccharges, D_charges, D_catypes, D_atypes, D_patoms, D_LJ_matrix, D_excluded, topo);
     calc_pp_dvel_vector<<<((n_patoms+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_patoms, DV_X, PP_MAT, D_patoms);
 
     cudaMemcpy(dvelocities, DV_X, mem_size_DV_X, cudaMemcpyDeviceToHost);
@@ -162,7 +162,7 @@ void calc_nonbonded_pp_forces_host() {
 
 __device__ void calc_pp_dvel_matrix_incr(int row, int pi, int column, int pj,
     coord_t *Xs, coord_t *Ys, int *LJs, bool *excluded_s, double *Evdw, double *Ecoul, dvel_t *patom_a, dvel_t *patom_b,
-    ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms) {
+    ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms, topo_t D_topo) {
     
     bool bond14, bond23;
     double scaling;
@@ -180,7 +180,7 @@ __device__ void calc_pp_dvel_matrix_incr(int row, int pi, int column, int pj,
     if (bond23) return;
     if (excluded_s[row] || excluded_s[BLOCK_SIZE + column]) return;
 
-    scaling = bond14 ? .5 : 1;
+    scaling = bond14 ? D_topo.el14_scale : 1;
 
     crg_i = D_ccharges[D_charges[pi].code - 1].charge;
     crg_j = D_ccharges[D_charges[pj].code - 1].charge;
@@ -195,7 +195,7 @@ __device__ void calc_pp_dvel_matrix_incr(int row, int pi, int column, int pj,
     ra = sqrt(r2a);
     r6a = r2a * r2a * r2a;
 
-    Vela = scaling * Coul * crg_i * crg_j * ra;
+    Vela = scaling * D_topo.coulomb_constant * crg_i * crg_j * ra;
 
     ai_aii = bond14 ? ai_type.aii_1_4 : ai_type.aii_normal;
     aj_aii = bond14 ? aj_type.aii_1_4 : aj_type.aii_normal;
@@ -220,7 +220,7 @@ __device__ void calc_pp_dvel_matrix_incr(int row, int pi, int column, int pj,
 
 __global__ void calc_pp_dvel_matrix(int n_patoms, int n_atoms_solute,
     coord_t *X, double *Evdw, double *Ecoul, dvel_t *PP_MAT,
-    ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms, int *D_LJ_matrix, bool *D_excluded) {
+    ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms, int *D_LJ_matrix, bool *D_excluded, topo_t D_topo) {
     // Block index
     int bx = blockIdx.x;
     int by = blockIdx.y;
@@ -274,7 +274,7 @@ __global__ void calc_pp_dvel_matrix(int n_patoms, int n_atoms_solute,
     if (bx != by || tx != ty) {
         double evdw = 0, ecoul = 0;
         calc_pp_dvel_matrix_incr(ty, pi, tx, pj, Xs, Ys, LJs, excluded_s, &evdw, &ecoul, &patom_a,
-             &patom_b, D_ccharges, D_charges, D_catypes, D_atypes, D_patoms);
+             &patom_b, D_ccharges, D_charges, D_catypes, D_atypes, D_patoms, D_topo);
         Evdw_S[ty][tx] = evdw;
         Ecoul_S[ty][tx] = ecoul;
     }

@@ -40,21 +40,21 @@ extern bool *D_excluded;
 __device__ void set_water(int n_waters, int row, int column, dvel_t *val, calc_ww_t *MAT);
 
 __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, double crg_hw, double A_OO, double B_OO,
-    coord_t *Xs, coord_t *Ys, double *Evdw, double *Ecoul, dvel_t *water_a, dvel_t *water_b);
+    coord_t *Xs, coord_t *Ys, double *Evdw, double *Ecoul, dvel_t *water_a, dvel_t *water_b, topo_t topo);
 
 __global__ void calc_ww_dvel_matrix(int n_waters, double crg_ow, double crg_hw, double A_OO, double B_OO,
-    coord_t *X, double *Evdw, double *Ecoul, calc_ww_t *MAT);
+    coord_t *X, double *Evdw, double *Ecoul, calc_ww_t *MAT, topo_t topo);
     
 __global__ void calc_ww_dvel_vector(int n_waters, dvel_t *DV, calc_ww_t *MAT);
 
 // P-W interactions
 __device__ void calc_pw_dvel_matrix_incr(int row, int pi, int column, int wj, int n_atoms_solute,
     coord_t *Ps, coord_t *Ws, bool *excluded_s, double *Evdw, double *Ecoul, calc_pw_t *pw,
-    ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms);
+    ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms, topo_t topo);
 
 __global__ void calc_pw_dvel_matrix(int n_patoms, int n_atoms_solute, int n_waters,
     coord_t *X, coord_t *W, double *Evdw, double *Ecoul, calc_pw_t *PW_MAT,
-    ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms, bool *D_excluded);
+    ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms, bool *D_excluded, topo_t topo);
 
 __global__ void calc_pw_dvel_vector_row(int n_patoms, int n_waters, dvel_t *DV_X, dvel_t *DV_W, calc_pw_t *PW_MAT, p_atom_t *D_patoms);
 
