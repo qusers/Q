@@ -44,7 +44,7 @@ class Startup(object):
             os.chdir(test[0])
             subprocess.check_output(['tar', '-xvf', 'testfiles.tar.gz'])
             args = shlex.split(test[2])
-            args = args + [test[1]]
+            args = [test[1]] + args
             if self.arch == 'gpu':
                 args.append('--gpu')
             print(' '.join(args))
