@@ -969,6 +969,11 @@ void init_variables() {
     dt = time_unit * md.stepsize;
     tau_T = time_unit * md.bath_coupling;
 
+    if (run_gpu && n_lambdas > 2) {
+        printf(">>> FATAL: More than 2 states not supported on GPU architecture. Exiting...\n");
+        exit(EXIT_FAILURE);
+    }
+
     // From topology file
     init_topo("topo.csv");
     

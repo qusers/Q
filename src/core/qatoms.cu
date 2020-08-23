@@ -359,6 +359,12 @@ void calc_nonbonded_qw_forces_host() {
     int mem_size_DV_W = 3 * n_waters * sizeof(dvel_t);
     int mem_size_MAT = 3 * n_waters * n_qatoms * sizeof(calc_qw_t);
 
+    int n_blocks_q = (n_qatoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    int n_blocks_w = (n_waters + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    //TODO make Evdw & Ecoul work for # of states > 2
+    int mem_size_QW_Evdw = min(n_lambdas, 2) * n_blocks_q * n_blocks_w * sizeof(double);
+    int mem_size_QW_Ecoul = min(n_lambdas, 2) * n_blocks_q * n_blocks_w * sizeof(double);
+
     if (A_O == 0) {
         catype_t catype_ow;    // Atom type of first O atom
 
@@ -371,6 +377,21 @@ void calc_nonbonded_qw_forces_host() {
         printf("Allocating QW_MAT\n");
         #endif
         check_cudaMalloc((void**) &QW_MAT, mem_size_MAT);
+
+        #ifdef DEBUG
+        printf("Allocating D_QW_Evdw\n");
+        #endif
+        check_cudaMalloc((void**) &D_QW_Evdw, mem_size_QW_Evdw);    
+        #ifdef DEBUG
+        printf("Allocating D_QW_Ecoul\n");
+        #endif
+        check_cudaMalloc((void**) &D_QW_Ecoul, mem_size_QW_Ecoul);
+
+        check_cudaMalloc((void**) &D_QW_evdw_TOT, sizeof(double));
+        check_cudaMalloc((void**) &D_QW_ecoul_TOT, sizeof(double)); 
+
+        h_QW_Evdw = (double*) malloc(mem_size_QW_Evdw);
+        h_QW_Ecoul = (double*) malloc(mem_size_QW_Ecoul);
 
         h_QW_MAT = (calc_qw_t*) malloc(mem_size_MAT);
     }
@@ -387,7 +408,7 @@ void calc_nonbonded_qw_forces_host() {
 
     double evdw, ecoul;
 
-    calc_qw_dvel_matrix<<<grid, threads>>>(n_qatoms, n_waters, n_lambdas, crg_ow, crg_hw, A_O, B_O, X, W, &evdw, &ecoul, QW_MAT, D_qcatypes, D_qatypes, D_qcharges, D_qatoms, D_lambdas, topo);
+    calc_qw_dvel_matrix<<<grid, threads>>>(n_qatoms, n_waters, n_lambdas, crg_ow, crg_hw, A_O, B_O, X, W, D_QW_Evdw, D_QW_Ecoul, QW_MAT, D_qcatypes, D_qatypes, D_qcharges, D_qatoms, D_lambdas, topo);
     calc_qw_dvel_vector_column<<<((n_waters+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_qatoms, n_waters, DV_X, DV_W, QW_MAT);
     calc_qw_dvel_vector_row<<<((n_qatoms+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_qatoms, n_waters, DV_X, DV_W, QW_MAT, D_qatoms);
 
@@ -406,6 +427,17 @@ void calc_nonbonded_qw_forces_host() {
 
     cudaMemcpy(dvelocities, DV_X, mem_size_DV_X, cudaMemcpyDeviceToHost);
     cudaMemcpy(&dvelocities[n_atoms_solute], DV_W, mem_size_DV_W, cudaMemcpyDeviceToHost);
+
+    //TODO make Evdw & Ecoul work for # of states > 2
+    for (int state = 0; state < min(2, n_lambdas); state++) {
+        calc_energy_sum<<<1, threads>>>(n_blocks_q, n_blocks_w, D_QW_evdw_TOT, D_QW_ecoul_TOT, &D_QW_Evdw[state * n_blocks_w * n_blocks_q], &D_QW_Ecoul[state * n_blocks_w * n_blocks_q], false);
+
+        cudaMemcpy(&QW_evdw_TOT, D_QW_evdw_TOT, sizeof(double), cudaMemcpyDeviceToHost);
+        cudaMemcpy(&QW_ecoul_TOT, D_QW_ecoul_TOT, sizeof(double), cudaMemcpyDeviceToHost);
+    
+        EQ_nonbond_qw[state].Uvdw += QW_evdw_TOT;
+        EQ_nonbond_qw[state].Ucoul += QW_ecoul_TOT;
+    }
 }
 
 void calc_nonbonded_qq_forces() {
@@ -699,7 +731,7 @@ void calc_qtorsion_forces(int state) {
 // Q-W interactions
 
 __device__ void calc_qw_dvel_matrix_incr(int row, int qi, int column, int n_lambdas, int n_qatoms, double crg_ow, double crg_hw, double A_O, double B_O,
-    coord_t *Qs, coord_t *Ws, double *Evdw, double *Ecoul, calc_qw_t *qw,
+    coord_t *Qs, coord_t *Ws, double Evdw_S[BLOCK_SIZE][2 * BLOCK_SIZE], double Ecoul_S[BLOCK_SIZE][2 * BLOCK_SIZE], calc_qw_t *qw,
     q_catype_t *D_qcatypes, q_atype_t *D_qatypes, q_charge_t *D_qcharges, q_atom_t *D_qatoms, double *D_lambdas, topo_t D_topo) {
 
     int j;
@@ -754,8 +786,9 @@ __device__ void calc_qw_dvel_matrix_incr(int row, int qi, int column, int n_lamb
         dvH1 -= r2H1 * VelH1 * D_lambdas[state];
         dvH2 -= r2H2 * VelH2 * D_lambdas[state];
 
-        *Ecoul += (VelO + VelH1 + VelH2);
-        *Evdw += (V_a - V_b);
+        // Update Q totals
+        Ecoul_S[row][state * BLOCK_SIZE + column] += (VelO + VelH1 + VelH2);
+        Evdw_S[row][state * BLOCK_SIZE + column] += (V_a - V_b);
     }
 
     // Note r6O is not the usual 1/rO^6, but rather rO^6. be careful!!!
@@ -788,7 +821,15 @@ __global__ void calc_qw_dvel_matrix(int n_qatoms, int n_waters, int n_lambdas, d
     int tx = threadIdx.x;
     int ty = threadIdx.y;
 
+    //TODO implement >2 states on GPU
+    __shared__ double Evdw_S[BLOCK_SIZE][2 * BLOCK_SIZE];
+    __shared__ double Ecoul_S[BLOCK_SIZE][2 * BLOCK_SIZE];    
 
+    Ecoul_S[ty][tx] = 0;
+    Evdw_S[ty][tx] = 0;
+    Ecoul_S[ty][tx+BLOCK_SIZE] = 0;
+    Evdw_S[ty][tx+BLOCK_SIZE] = 0;
+    
     int aStart = BLOCK_SIZE * by;
     int bStart = 3 * BLOCK_SIZE * bx;
 
@@ -816,10 +857,31 @@ __global__ void calc_qw_dvel_matrix(int n_qatoms, int n_waters, int n_lambdas, d
     int row = by * BLOCK_SIZE + ty;
     int column = bx * BLOCK_SIZE + tx;
     
-    double evdw, ecoul;
-    calc_qw_dvel_matrix_incr(ty, aStart + ty, tx, n_lambdas, n_qatoms, crg_ow, crg_hw, A_O, B_O, Qs, Ws, &evdw, &ecoul, &qw, D_qcatypes, D_qatypes, D_qcharges, D_qatoms, D_lambdas, D_topo);
+    calc_qw_dvel_matrix_incr(ty, aStart + ty, tx, n_lambdas, n_qatoms, crg_ow, crg_hw, A_O, B_O, Qs, Ws, Evdw_S, Ecoul_S,
+        &qw, D_qcatypes, D_qatypes, D_qcharges, D_qatoms, D_lambdas, D_topo);
 
     MAT[column + n_waters * row] = qw;
+
+    __syncthreads();
+
+    int rowlen = (n_waters + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    int collen = (n_qatoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+    if (tx == 0 && ty == 0) {
+        //TODO implement >2 states on GPU
+        for (int state = 0; state < min(2, n_lambdas); state++) {
+            double tot_Evdw = 0;
+            double tot_Ecoul = 0;
+            for (int i = 0; i < BLOCK_SIZE; i++) {
+                for (int j = 0; j < BLOCK_SIZE; j++) {
+                    tot_Evdw += Evdw_S[i][j + state * BLOCK_SIZE];
+                    tot_Ecoul += Ecoul_S[i][j + state * BLOCK_SIZE];
+                }
+            }
+            Evdw[rowlen * collen * state + rowlen * by + bx] = tot_Evdw;
+            Ecoul[rowlen * collen * state + rowlen * by + bx] = tot_Ecoul;
+        }
+    }
 
     __syncthreads();
 }
