@@ -245,7 +245,7 @@ __global__ void calc_pp_dvel_matrix(int n_patoms, int n_atoms_solute,
     __shared__ coord_t Ys[BLOCK_SIZE];
     __shared__     int LJs[BLOCK_SIZE * BLOCK_SIZE];
     __shared__    bool excluded_s[2 * BLOCK_SIZE];
-    
+
     int pi = D_patoms[aStart + ty].a-1;
     int pj = D_patoms[bStart + tx].a-1;
 

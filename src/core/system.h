@@ -4,9 +4,6 @@
 #define __PROFILING__
 //#define DEBUG
 
-// Coulomb's constant, TODO get this from topology file
-#define Coul 332.0716
-
 // Boltzano's constant
 #define Boltz 0.001986
 
@@ -46,7 +43,7 @@ void clean_variables();
  */
 
 // Thread block size
-#define BLOCK_SIZE 16
+#define BLOCK_SIZE 8
 
 /* =============================================
  * == GENERAL

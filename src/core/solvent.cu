@@ -1085,8 +1085,6 @@ __global__ void calc_pw_dvel_matrix(int n_patoms, int n_atoms_solute, int n_wate
         }
         Evdw[rowlen * by + bx] = tot_Evdw;
         Ecoul[rowlen * by + bx] = tot_Ecoul;
-        // printf("Evdw[%d][%d] = %f\n", by, bx, tot_Evdw);
-        // printf("Ecoul[%d][%d] = %f\n", by, bx, tot_Ecoul);
     }
 
     __syncthreads();

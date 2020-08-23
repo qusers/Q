@@ -79,6 +79,8 @@ __global__ void calc_qp_dvel_vector_row(int n_qatoms, int n_patoms, dvel_t *DV_X
 
 __global__ void calc_qp_dvel_vector_column(int n_qatoms, int n_patoms, dvel_t *DV_X, calc_qp_t *QP_MAT, p_atom_t *D_patoms);
 
+__global__ void calc_energy_sum(int rows, int columns, double *Evdw_TOT, double *Ecoul_TOT, double *Evdw, double *Ecoul, bool upper_diagonal);
+
 void clean_d_qatoms();
 
 #endif /* __QATOMS_H__ */
