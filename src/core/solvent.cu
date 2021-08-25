@@ -47,9 +47,11 @@ void calc_nonbonded_ww_forces() {
         crg_hw = ccharge_hw.charge;
     }
 
+    // double ecoul_block = 0, evdw_block = 0;
+
     for (int i = n_atoms_solute; i < n_atoms; i+=3) {
         for (int j = i+3; j < n_atoms; j+=3) {
-            double evdw = 0, ecoul = 0;
+            double ecoul = 0, evdw = 0;
             // if (excluded[i] || excluded[j]) continue;
             // --- O - (O,H1,H2) ---
             dOX.x = coords[j].x - coords[i].x;
@@ -81,8 +83,8 @@ void calc_nonbonded_ww_forces() {
             Vel = topo.coulomb_constant * pow(crg_ow, 2) * rOX;
             V_a = A_OO * (r2*r2*r2) * (r2*r2*r2);
             V_b = B_OO * (r2*r2*r2);
-            E_nonbond_ww.Uvdw += (V_a - V_b);
-            E_nonbond_ww.Ucoul += Vel;
+            evdw += (V_a - V_b);
+            ecoul += Vel;
             dv = r2 * (-Vel - 12 * V_a + 6 * V_b);
             j -= 2; //move pointer back to O in interacting molecule
             dvelocities[i].x -= (dv * dOX.x);
@@ -95,7 +97,7 @@ void calc_nonbonded_ww_forces() {
             // O - H1
             r2 = pow(rH1X, 2);
             Vel = topo.coulomb_constant * crg_ow * crg_hw * rH1X;
-            E_nonbond_ww.Ucoul += Vel;
+            ecoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H1 in j-molecule
             dvelocities[i].x -= (dv * dH1X.x);
@@ -108,7 +110,7 @@ void calc_nonbonded_ww_forces() {
             // O - H2
             r2 = pow(rH2X, 2);
             Vel = topo.coulomb_constant * crg_ow * crg_hw * rH2X;
-            E_nonbond_ww.Ucoul += Vel;
+            ecoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H2 in j-molecule
             dvelocities[i].x -= (dv * dH2X.x);
@@ -150,7 +152,7 @@ void calc_nonbonded_ww_forces() {
             // H1 - O
             r2 = rOX * rOX;
             Vel = topo.coulomb_constant * crg_hw * crg_ow * rOX;
-            E_nonbond_ww.Ucoul += Vel;
+            ecoul += Vel;
             dv = r2 * (-Vel);
             j -= 2; //move pointer back to O in interacting molecule
             dvelocities[i].x -= (dv * dOX.x);
@@ -163,7 +165,7 @@ void calc_nonbonded_ww_forces() {
             // H1 - H1
             r2 = pow(rH1X, 2);
             Vel = topo.coulomb_constant * crg_hw * crg_hw * rH1X;
-            E_nonbond_ww.Ucoul += Vel;
+            ecoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H1 in j-molecule
             dvelocities[i].x -= (dv * dH1X.x);
@@ -176,7 +178,7 @@ void calc_nonbonded_ww_forces() {
             // H1 - H2
             r2 = pow(rH2X, 2);
             Vel = topo.coulomb_constant * crg_hw * crg_hw * rH2X;
-            E_nonbond_ww.Ucoul += Vel;
+            ecoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H2 in j-molecule
             dvelocities[i].x -= (dv * dH2X.x);
@@ -218,7 +220,7 @@ void calc_nonbonded_ww_forces() {
             // H2 - O
             r2 = rOX * rOX;
             Vel = topo.coulomb_constant * crg_hw * crg_ow * rOX;
-            E_nonbond_ww.Ucoul += Vel;
+            ecoul += Vel;
             dv = r2 * (-Vel);
             j -= 2; //move pointer back to O in interacting molecule
             dvelocities[i].x -= (dv * dOX.x);
@@ -231,7 +233,7 @@ void calc_nonbonded_ww_forces() {
             // H2 - H1
             r2 = pow(rH1X, 2);
             Vel = topo.coulomb_constant * crg_hw * crg_hw * rH1X;
-            E_nonbond_ww.Ucoul += Vel;
+            ecoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H1 in j-molecule
             dvelocities[i].x -= (dv * dH1X.x);
@@ -244,7 +246,7 @@ void calc_nonbonded_ww_forces() {
             // H1 - H2
             r2 = pow(rH2X, 2);
             Vel = topo.coulomb_constant * crg_hw * crg_hw * rH2X;
-            E_nonbond_ww.Ucoul += Vel;
+            ecoul += Vel;
             dv = r2 * (-Vel);
             j += 1; //point to H2 in j-molecule
             dvelocities[i].x -= (dv * dH2X.x);
@@ -258,14 +260,22 @@ void calc_nonbonded_ww_forces() {
             i -= 2;
             j -= 2;
 
-            // printf("Evdw[%d][%d] = %f\n", i/3, j/3, evdw);
-            // printf("Ecoul[%d][%d] = %f\n", i/3, j/3, ecoul);
+            E_nonbond_ww.Uvdw += evdw;
+            E_nonbond_ww.Ucoul += ecoul;
+            // if (70*8 <= i/3 && i/3 < 71*8 && 70*8 <= j/3 && j/3 < 71*8) {
+            //     ecoul_block += ecoul;
+            //     evdw_block += evdw;
+                // printf("Evdw[%d][%d] = %f\n", i/3, j/3, evdw);
+                // printf("Ecoul[%d][%d] = %f\n", i/3, j/3, ecoul);
+            // }
         }
     }
 
     // for (int i = 0; i < n_atoms; i++) {
     //     printf("dvelocities[%d] = %f %f %f\n", i, dvelocities[i].x, dvelocities[i].y, dvelocities[i].z);
     // }
+
+    // printf("ecoul_block = %f, evdw_block = %f\n", ecoul_block, evdw_block);
 
     #ifdef DEBUG 
     printf("solvent: Ecoul = %f Evdw = %f\n", energies.Ucoul, energies.Uvdw);
@@ -334,6 +344,7 @@ void calc_nonbonded_ww_forces_host() {
 
     threads = dim3(BLOCK_SIZE, BLOCK_SIZE);
     grid = dim3((n_waters + BLOCK_SIZE - 1) / threads.x, (n_waters + BLOCK_SIZE - 1) / threads.y);
+    // printf("n_blocks = %d\n", (n_waters + BLOCK_SIZE - 1) / threads.x);
 
     calc_ww_dvel_matrix<<<grid, threads>>>(n_waters, crg_ow, crg_hw, A_OO, B_OO, W, D_WW_Evdw, D_WW_Ecoul, WW_MAT, topo);
     calc_ww_dvel_vector<<<((n_waters+BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_waters, DV_W, WW_MAT);
@@ -841,6 +852,9 @@ __global__ void calc_ww_dvel_matrix(int n_waters, double crg_ow, double crg_hw, 
         calc_ww_dvel_matrix_incr(ty, tx, crg_ow, crg_hw, A_OO, B_OO, Xs, Ys, &evdw, &ecoul, water_a, water_b, D_topo);
         Evdw_S[ty][tx] = evdw;
         Ecoul_S[ty][tx] = ecoul;
+        // if (bx == 2 && tx == 0 && by == 1 && ty == 0) {
+        //     printf("evdw = %f, ecoul = %f, \n", evdw, ecoul);
+        // }
     }
 
     // if (row == 0 && column == 1) {
@@ -866,6 +880,9 @@ __global__ void calc_ww_dvel_matrix(int n_waters, double crg_ow, double crg_hw, 
         Evdw[rowlen * by + bx] = tot_Evdw;
         Ecoul[rowlen * by + bx] = tot_Ecoul;
 
+        if (bx == 70 && by == 70) {
+            printf("bx = %d, by = %d, tot_Evdw = %f, tot_Ecoul = %f\n", bx, by, tot_Evdw, tot_Ecoul);
+        }
         // printf("bx = %d by = %d tot_Evdw = %f tot_Ecoul = %f\n", bx, by, Evdw[rowlen * by + bx], Ecoul[rowlen * by + bx]);
     }
 
@@ -1146,15 +1163,12 @@ __global__ void calc_energy_sum(int rows, int columns, double *Evdw_TOT, double 
     __shared__ double Ecoul_S[BLOCK_SIZE][BLOCK_SIZE];
     __shared__ double Evdw_S[BLOCK_SIZE][BLOCK_SIZE];
 
+    //TODO: better way to distribute upper diagonal over threads? Seems like threads in left bottom corner have less work
     double coul_TOT = 0;
     double vdw_TOT = 0;
     for (int i = ty; i < rows; i+= BLOCK_SIZE) {
         for (int j = tx; j < columns; j+= BLOCK_SIZE) {
             if (i <= j || !upper_diagonal) {
-                // if (tx == 0 && ty == 0) {
-                //     printf("Ecoul[%d][%d] = %f\n", i, j, Ecoul[i * columns + j]);
-                //     printf("Evdw[%d][%d] = %f\n", i, j, Evdw[i * columns + j]);
-                // }
                 coul_TOT += Ecoul[i * columns + j];
                 vdw_TOT += Evdw[i * columns + j];
             }
@@ -1171,10 +1185,8 @@ __global__ void calc_energy_sum(int rows, int columns, double *Evdw_TOT, double 
 
         for (int i = 0; i < BLOCK_SIZE; i++) {
             for (int j = 0; j < BLOCK_SIZE; j++) {
-                if (i <= j || !upper_diagonal) {
-                    Evdw_temp += Evdw_S[i][j];
-                    Ecoul_temp += Ecoul_S[i][j];
-                }
+                Evdw_temp += Evdw_S[i][j];
+                Ecoul_temp += Ecoul_S[i][j];
             }
         }
 
