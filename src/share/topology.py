@@ -3,6 +3,7 @@ import os
 import itertools
 from os import path
 import json
+import sys
 
 # Q-GPU libraries
 import IO
@@ -384,6 +385,9 @@ class Read_Topology(object):
                 if block == 32:
                     linesplit = line.split()
                     if 'Exclusion' in line:
+                        if float(linesplit[0]) > 30.0:
+                            print("Sphere sizes exceding 30A are currently not supported")
+                            sys.exit()
                         self.data['exclusion'] = linesplit[0]
                         self.data['radii'] = linesplit[1]
                     

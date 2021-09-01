@@ -36,7 +36,8 @@ class Startup(object):
                  ['w-p/benzene/',executable, '../../../bin/qdyn.py -t Q5_data/benzene-water.top -m Q5_data/eq1.inp -d TEST -r Q5_data/'],
                  ['w-q/benzene/',executable, '../../../bin/qdyn.py -t Q5_data/benzene-water.top -m Q5_data/eq1.inp -f Q5_data/FEP1.fep -d TEST -r Q5_data/'],
                  ['w-w/water/',executable, '../../../bin/qdyn.py -t Q5_data/water.top -m Q5_data/eq1.inp -d TEST -r Q5_data/'],
-                 ['boundary/',executable, '../../bin/qdyn.py -t Q5_data/fat_wat.top -m Q5_data/eq1.inp -d TEST -r Q5_data']
+                 ['boundary/',executable, '../../bin/qdyn.py -t Q5_data/ala_wat.top -m Q5_data/eq1.inp -d TEST -r Q5_data'],
+                 ['polypeptide/',executable, '../../bin/qdyn.py -t Q5_data/ala_wat.top -m Q5_data/eq1.inp -d TEST -r Q5_data']
                 ]
         
         self.curdir = os.getcwd()
