@@ -12,7 +12,7 @@ for fep in FEPs:
 
     print("Setting up FEPs for {}".format(fep))
     
-    os.system('python {} -of {} -wd {} -c {}'.format(QligFEP,of,wd,c))
+    os.system('python3 {} -of {} -wd {} -c {}'.format(QligFEP,of,wd,c))
         
 # write the submit file
 with open('submit.py','w') as outfile:

@@ -5,8 +5,9 @@ import argparse
 import sys
 
 class Startup(object):
-    def __init__(self,arch):
+    def __init__(self,arch,verbose):
         self.arch =   arch
+        self.verbose = verbose
         executable = sys.executable
         print("Checking Python version")
         print("================================")
@@ -49,8 +50,12 @@ class Startup(object):
             args = [test[1]] + args
             if self.arch == 'gpu':
                 args.append('--gpu')
+            if self.verbose:
+                args.append('--verbose')
             print(' '.join(args))
             out = subprocess.check_output(args)
+            if self.verbose:
+                print(out.decode('utf-8'))
             out2 = subprocess.check_output([executable,'compare.py'])
             print(out2.decode('utf-8'))
             print("======================================================")    
@@ -74,7 +79,12 @@ if __name__ == "__main__":
                         help = "Run tests with either GPU or CPU architecture"
                         )
 
+    parser.add_argument('--verbose',
+                        action = 'store_true'
+    )
+
     args = parser.parse_args()
     
     Startup(arch = args.arch,
+            verbose = args.verbose
            )
