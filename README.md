@@ -86,7 +86,7 @@ In the second folder, we provide test cases for the calculation of solvation fre
 
 ## Benchmarking ##
 
-We have included a benchmark set of water spheres of sizes 10-30A (in increments of 5).
+We have included a benchmark set of water spheres of sizes 10-30A (in increments of 5). Table generated with https://www.tablesgenerator.com/markdown_tables
 
 | sphere | cpu Intel(R) Xeon(R) CPU E5-2650 v4 @ 2.20GHz Time in seconds | gpu NVIDIA GeForce GTX 1080  Time in seconds |
 |--------|:-------------------------------------------------------------:|:--------------------------------------------:|
