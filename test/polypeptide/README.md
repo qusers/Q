@@ -12,3 +12,7 @@ python ../../bin/qdyn.py -t Q5_data/ala_wat.top -m Q5_data/eq1.inp -d TEST -r Q5
 Then to check if the obtained results match the reference results:
 
 python compare.py
+
+To run the Q5 code manually, run the following command in the testfiles/Q5_data folder:
+
+../../../../bin/qdyn5 eq1.inp

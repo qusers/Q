@@ -5,9 +5,10 @@ import argparse
 import sys
 
 class Startup(object):
-    def __init__(self,arch,verbose):
+    def __init__(self,arch,verbose,run):
         self.arch =   arch
         self.verbose = verbose
+        self.run = run
         executable = sys.executable
         print("Checking Python version")
         print("================================")
@@ -40,6 +41,8 @@ class Startup(object):
                  ['polypeptide/',executable, '../../bin/qdyn.py -t Q5_data/ala_wat.top -m Q5_data/eq1.inp -d TEST -r Q5_data']
                 ]
         
+        if run is not None:
+            tests = [x for x in tests if any(r for r in run if x[0].split('/')[0] == r)]
         self.curdir = os.getcwd()
 
         for test in tests:
@@ -84,8 +87,15 @@ if __name__ == "__main__":
                         action = 'store_true'
     )
 
+    parser.add_argument('-r', '--run',
+                        dest = "run",
+                        required = False,
+                        nargs = "+",
+                        help = "Specify which tests to run")
+
     args = parser.parse_args()
     
     Startup(arch = args.arch,
-            verbose = args.verbose
+            verbose = args.verbose,
+            run = args.run
            )
