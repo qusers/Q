@@ -236,7 +236,10 @@ class Read_Topology(object):
 
                 if 'solvent type (0=SPC,1=3-atom,2=general)' in line:
                     line = line.split()
-                    self.data['solvtype']=(line[0])                  
+                    self.data['solvtype']=(line[0])   
+                    if line[0] != '0':
+                         print('FATAL: solvent type other than SPC (0) not supported')
+                         sys.exit()             
                     block = 32
                     continue
 
