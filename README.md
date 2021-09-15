@@ -84,6 +84,17 @@ In the second folder, we provide test cases for the calculation of solvation fre
 
 - Jespers et al. (<https://doi.org/10.1186/s13321-019-0348-5>).
 
+## Benchmarking ##
+
+We have included a benchmark set of water spheres of sizes 10-30A (in increments of 5).
+
+| sphere | cpu Intel(R) Xeon(R) CPU E5-2650 v4 @ 2.20GHz Time in seconds | gpu NVIDIA GeForce GTX 1080  Time in seconds |
+|--------|:-------------------------------------------------------------:|:--------------------------------------------:|
+| 10A    |                                                         6.838 |                                        1.988 |
+| 15A    |                                                        60.698 |                                        4.882 |
+| 20A    |                                                       368.657 |                                       19.233 |
+| 25A    |                                                      1257.150 |                                       59.948 |
+| 30A    |                                                               |                                              |
 
 # VERSION NOTES: #
 

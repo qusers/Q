@@ -2,6 +2,7 @@ import os
 import shutil
 import argparse
 import sys
+import time
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src/share/')))
 
@@ -27,8 +28,13 @@ class Run(object):
         Prepares a Q topology using qprep (Q6.0.7 Fortran code)
         
     """    
-    def __init__(self,wd):
+    def __init__(self,wd,run):
+        self.run = run
         self.spheres = ['10A','15A','20A','25A','30A']
+
+        if run is not None:
+            self.spheres = [x for x in self.spheres if any(r for r in self.run if x == r)]
+
         self.FF = 'OPLS2015'
         self.wd = wd
         self.qprep_inp = """ 
@@ -93,14 +99,14 @@ class Run(object):
 
         ## CPU ##
         t = time.localtime()
-        time = time.strftime("%H:%M:%S", t)
-        print("({}) Running {} size sphere on cpu, runtime:".format(time,self.sphere))
+        cur_time = time.strftime("%H:%M:%S", t)
+        print("({}) Running {} size sphere on cpu:".format(cur_time,self.sphere))
         IO.run_command(qdyn_exec, '-t water_{}.top -m md.json -d test'.format(self.sphere[:-1]),runtime=True)
 
         ## GPU ##
         t = time.localtime()
-        time = time.strftime("%H:%M:%S", t)
-        print("({}) Running {} size sphere on gpu, runtime:".format(time,self.sphere))
+        cur_time = time.strftime("%H:%M:%S", t)
+        print("({}) Running {} size sphere on gpu:".format(cur_time,self.sphere))
         IO.run_command(qdyn_exec, '-t water_{}.top -m md.json -d test --gpu'.format(self.sphere[:-1]),runtime=True)        
         
         ## GO BACK
@@ -126,9 +132,8 @@ class Init(object):
 
         Run(
                            wd  = data['wd'],
+                           run = data['run']
                         )
-
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -145,6 +150,12 @@ if __name__ == "__main__":
                         default = None,
                         required = True,
                         help = " Output folder")
+
+    parser.add_argument('-r', '--run',
+                        dest = "run",
+                        required = False,
+                        nargs = "+",
+                        help = "Specify which tests to run")                        
 
     args = parser.parse_args() 
 
