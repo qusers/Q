@@ -94,7 +94,7 @@ We have included a benchmark set of water spheres of sizes 10-30A (in increments
 | 15A    |                                                        60.698 |                                        4.882 |
 | 20A    |                                                       368.657 |                                       19.233 |
 | 25A    |                                                      1257.150 |                                       59.948 |
-| 30A    |                                                               |                                              |
+| 30A    |                                                      4060.083 |                                      192.180 |
 
 # VERSION NOTES: #
 
