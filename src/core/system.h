@@ -224,6 +224,7 @@ extern int n_impropers;
 extern int n_impropers_solute;
 extern int n_torsions;
 extern int n_torsions_solute;
+extern int n_excluded;
 
 extern angle_t *angles;
 extern atype_t *atypes;
@@ -559,7 +560,7 @@ extern E_bonded_t E_bond_p, E_bond_w, E_bond_q, *EQ_bond;
 extern E_nonbonded_t E_nonbond_pp, E_nonbond_pw, E_nonbond_ww, E_nonbond_qx;
 extern E_nonbonded_t *EQ_nonbond_qq, *EQ_nonbond_qp, *EQ_nonbond_qw, *EQ_nonbond_qx;
 extern E_restraint_t E_restraint, *EQ_restraint;
-extern double Temp;
+extern double Temp, Tfree, Texcl;
 extern double A_O, A_OO, B_O, B_OO, crg_ow, crg_hw; // TODO: don't keep this in system.cu?
 
 void init_velocities();

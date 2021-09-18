@@ -61,6 +61,7 @@ int n_atypes;
 int n_catypes;
 int n_ngbrs23;
 int n_ngbrs14;
+int n_excluded;
 
 coord_t* coords_top;
 bond_t* bonds;
@@ -288,6 +289,8 @@ coord_t* coords;
 vel_t* velocities;
 dvel_t* dvelocities;
 double Temp = 0;
+double Texcl = 0;
+double Tfree = 0;
 double Tscale = 1;
 
 // Shake constrains
@@ -520,26 +523,38 @@ void init_patoms() {
 
 void calc_temperature() {
     double Ndegf = 3 * n_atoms;
+    double Ndegfree = Ndegf - 3 * n_excluded;
+    printf("Ndegf = %f, Ndegfree = %f, n_excluded = %d\n", Ndegf, Ndegfree, n_excluded);
+
     double Ekinmax = 1000.0 * Ndegf * Boltz * md.temperature / 2.0 / n_atoms;
     double ener;
     double mass_i;
 
     Temp = 0;
+    Tfree = 0;
+    Texcl = 0;
     for (int i = 0; i < n_atoms; i++) {
         mass_i = catypes[atypes[i].code - 1].m;
         ener = .5 * mass_i * (pow(velocities[i].x, 2) + pow(velocities[i].y, 2) + pow(velocities[i].z, 2));
-        Temp += ener;
+        if (excluded[i]) {
+            Texcl += ener;
+        }
+        else {
+            Tfree += ener;
+        }
         if (ener > Ekinmax) {
-            // printf(">>> WARNING: hot atom %d: %f\n", i, ener/Boltz/3);
+            printf(">>> WARNING: hot atom %d: %f\n", i, ener/Boltz/3);
         }
     }
 
+    Temp = Tfree + Texcl;
     E_total.Ukin = Temp;
 
     Temp = 2.0 * Temp / Boltz / Ndegf;
+    Tfree = 2.0 * Tfree / Boltz / Ndegfree;
 
-    Tscale = sqrt(1 + (dt / tau_T) * (md.temperature / Temp - 1.0));
-    // printf("Tscale = %f, tau_T = %f, Temp = %f\n", Tscale, tau_T, Temp);
+    Tscale = sqrt(1 + (dt / tau_T) * (md.temperature / Tfree - 1.0));
+    printf("Tscale = %f, tau_T = %f, Temp = %f, Tfree = %f\n", Tscale, tau_T, Temp, Tfree);
 }
 
 /* =============================================

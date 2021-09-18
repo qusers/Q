@@ -496,6 +496,7 @@ void init_cangles(const char* filename) {
 
 void init_excluded(const char *filename) {
     excluded = (bool*) malloc(n_atoms * sizeof(bool));
+    n_excluded = 0;
 
     FILE * fp;
 
@@ -516,7 +517,11 @@ void init_excluded(const char *filename) {
     
     if (fgets(line, 8192, fp)) {
         for (int i = 0; i < n_atoms; i++) {
-            excluded[i] = (line[i] == '1');
+            bool excl = (line[i] == '1');
+            excluded[i] = excl;
+            if (excl) {
+                n_excluded++;
+            }
         }
     }
 
