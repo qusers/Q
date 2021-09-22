@@ -9,6 +9,8 @@ import json
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/share/')))
 
 import settings
+import IO
+import topology as TOPOLOGY
 
 class Create_Environment(object):
     """
@@ -139,9 +141,9 @@ class Parse_Q6_data(object):
                     if line[0] == 'SUM':
                         Q_energies[step]['SUM'] = line[1:]
 
-        data = json.dumps(Q_energies, indent=1)
+        jsondata = json.dumps(Q_energies, indent=1)
         with open('Q_data.json', 'w') as outfile:
-            outfile.write(data)
+            outfile.write(jsondata)
 
         with open('velocities.csv','w') as outfile:
             outfile.write('{}\n'.format(int(len(velocities)/3)))
@@ -153,10 +155,40 @@ class Parse_Q6_data(object):
                 else:
                     outfile.write('{}\n'.format(v))
 
+        # Parse the topology
+        Qtopology = '{}{}'.format(data['topdir'],
+                                  data['testinfo'][data['test']][0])
+        read_top = TOPOLOGY.Read_Topology(Qtopology)
+        top_data = read_top.Q()
+        with open('coords.csv','w') as outfile:
+            outfile.write('{}\n'.format(len(top_data['coords'])))
+            outfile.write('{}\n'.format(top_data['natoms_solute']))            
+            for line in top_data['coords']:
+                outfile.write('{};{};{}\n'.format(line[0],line[1],line[2]))
 
 class Run_QGPU(object):
     def __init__(self,data):
         print('Running QGPU')
+        os.mkdir('tmp')
+        shutil.copy('velocities.csv', 'tmp/velocities.csv')
+        shutil.copy('coords.csv', 'tmp/coords.csv')
+        args = [
+                ' {}bin/qdyn.py'.format(settings.ROOT),
+                '-t', '{}{}'.format(data['topdir'],
+                                   data['testinfo'][data['test']][0]),
+                '-m', 'eq1.inp',
+                '-d', 'TEST',
+                '-r', 'tmp'  
+               ]
+
+        # FEP file?
+        if len(data['testinfo'][data['test']]) == 3:
+            args.append('-f')
+            args.append('{}{}'.format(data['inputdir'],data['testinfo'][data['test']][2]))
+
+        args_string = ' '.join(args)
+
+        IO.run_command(data['executable'],args_string)
 
 class Compare(object):
     def __init__(self,data):
@@ -211,7 +243,7 @@ class Init(object):
                                           ],
                     'q-p_benzene'       : [
                                            'Na-benzene-vacuum.top',
-                                           '20'
+                                           '20',
                                            'FEP_benzene.fep'
                                           ],
                     'q-p_Na'            : [
@@ -221,17 +253,17 @@ class Init(object):
                                           ],
                     'q-p-w_benzene'     : [
                                            'Na-benzene-water.top',
-                                           '20'
+                                           '20',
                                            'FEP_benzene.fep'
                                           ],
                     'q-p-w_Na'          : [
                                            'Na-benzene-water.top',
-                                           '20'
+                                           '20',
                                            'FEP_Na.fep'
                                           ],
                     'q-q'               : [
                                            'benzene-vacuum.top',
-                                           '20'
+                                           '20',
                                            'FEP_benzene.fep'
                                           ],
                     'w-p'               : [
@@ -240,7 +272,7 @@ class Init(object):
                                           ],
                     'w-q'               : [
                                            'benzene-water.top',
-                                           '20'
+                                           '20',
                                            'FEP_benzene.fep'                                            
                                           ],
                     'w-w'               : [
