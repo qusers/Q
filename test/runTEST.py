@@ -136,7 +136,7 @@ class Parse_Q6_data(object):
                         Q_energies[step]['restraints'] = line[1:]
 
                     if line[0] == 'Q-atom':
-                        Q_energies[step]['Q-atom'] = l                        
+                        Q_energies[step]['Q-atom'] = line[1:]                     
                                                         
                     if line[0] == 'SUM':
                         Q_energies[step]['SUM'] = line[1:]
