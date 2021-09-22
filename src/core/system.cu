@@ -716,7 +716,7 @@ void write_energies(int iteration) {
 void calc_integration() {
     init_variables();
 
-    for (int i = 0; i < md.steps; i++) {
+    for (int i = 0; i <= md.steps; i++) {
         calc_integration_step(i);
     }
     
@@ -787,7 +787,12 @@ void calc_bonded_forces() {
 
 void calc_integration_step(int iteration) {
     printf("================================================\n");
-    printf("== STEP %d\n", iteration);
+    if (iteration > 0) {
+        printf("== STEP %d\n", iteration);
+    }
+    else {
+        printf("== INITIAL ENERGIES");
+    }
     printf("================================================\n");
 
     // Reset derivatives & energies
