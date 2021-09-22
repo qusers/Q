@@ -4,6 +4,7 @@ import subprocess
 import argparse
 import sys
 import shutil
+import json
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/share/')))
 
@@ -81,13 +82,13 @@ final                     eq1.re
 
 class Run_Q6(object):
     def __init__(self,data):
+        print("Running Q6")
         q_command = '{}bin/qdyn5_test eq1.inp > eq1.log'.format(settings.ROOT)
         os.system(q_command)
 
 class Parse_Q6_data(object):
     def __init__(self,data):
-        import json
-
+        print("Parsing Q6 data")
         block = 0
         Q_energies = {}
         velocities = []
@@ -97,33 +98,46 @@ class Parse_Q6_data(object):
                 if len(line.strip()) < 2:
                     continue        
                 
-                if 'At_ID' in line:
+                if 'At_ID' in line and block == 0:
                     line = line.split()
                     velocities.append(line[3])
                     
-                if 'Energy summary at step      0' in line:
+                if 'Energy summary at step      ' in line:
+                    step = line.split()[-2]
+                    Q_energies[step] = {}
                     block = 1
                     continue
+
                 if 'FINAL' in line:
-                    block = 0
-                    break
+                    # The last step in Q is our last step
+                    step = data['timestep']
+                    Q_energies[data['timestep']] = {}
+                    block = 1
+                    continue
+
+                if 'Main loop starts here' in line:
+                    block = 2
+                    continue
                     
                 if block == 1:
                     line = line.split()
                     if line[0] == 'solute':
-                        Q_energies['solute'] = line[1:]
+                        Q_energies[step]['solute'] = line[1:]
                         
                     if line[0] == 'solvent':
-                        Q_energies['solvent'] = line[1:]
+                        Q_energies[step]['solvent'] = line[1:]
                                         
                     if line[0] == 'solute-solvent':
-                        Q_energies['solute-solvent'] = line[1:]        
+                        Q_energies[step]['solute-solvent'] = line[1:]        
                                         
                     if line[0] == 'restraints':
-                        Q_energies['restraints'] = line[1:]
+                        Q_energies[step]['restraints'] = line[1:]
+
+                    if line[0] == 'Q-atom':
+                        Q_energies[step]['Q-atom'] = l                        
                                                         
                     if line[0] == 'SUM':
-                        Q_energies['SUM'] = line[1:]
+                        Q_energies[step]['SUM'] = line[1:]
 
         data = json.dumps(Q_energies, indent=1)
         with open('Q_data.json', 'w') as outfile:
@@ -257,7 +271,7 @@ class Init(object):
             os.chdir(self.data['curtest'])
             create_MD_input(self.data)
             Run_Q6(self.data)
-            #Parse_Q6_data(self.data)
+            Parse_Q6_data(self.data)
             Run_QGPU(self.data)
             failed = Compare(self.data)
             os.chdir(self.data['curdir'])
