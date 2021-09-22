@@ -3,68 +3,271 @@ import shlex
 import subprocess
 import argparse
 import sys
+import shutil
 
-class Startup(object):
-    def __init__(self,arch,verbose,run):
-        self.arch =   arch
-        self.verbose = verbose
-        self.run = run
-        executable = sys.executable
-        print("Checking Python version")
-        print("================================")
-        print("version is {}.{}.{}".format(sys.version_info[0],
-                                           sys.version_info[1],
-                                           sys.version_info[2],
-                                          ))
-        print("================================")
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/share/')))
 
-        if sys.version_info[0] < 3: 
-            print("Q-GPU only works with Python 3.6 or higher")
-            print("Exiting now")
-            sys.exit()
+import settings
 
-        if sys.version_info[0] == 3 and sys.version_info[1] < 6:
-            print("Q-GPU only works with Python 3.6 or higher")
-            print("Exiting now")    
-            sys.exit()   
+class Create_Environment(object):
+    """
+        Creates the workdirectory environment.
+    """
+    def __init__(self,data):
+        wd = data['curtest']        
+        if not os.path.exists(wd):
+            os.mkdir(wd)
+            
+        else:
+            shutil.rmtree(wd)
+            os.mkdir(wd)
+
+class create_MD_input(object):
+    def __init__(self,data):
+        print('Generating MD input file')
+        test = data['test']
+        md_content = \
+"""[MD]
+steps                     {}
+stepsize                  1
+temperature               1
+bath_coupling             1
+random_seed               112
+initial_temperature       1
+shake_solvent             off
+shake_hydrogens           off
+shake_solute              off
+lrf                       off
+
+[cut-offs]
+solute_solvent            99.0
+solute_solute             99.0
+solvent_solvent           99.0
+q_atom                    99.0
+lrf                       99.0
+
+[sphere]
+shell_force               10.0
+shell_radius              {}
+
+[solvent]
+radial_force              60.0
+polarisation              on
+polarisation_force        20.0
+charge_correction         off
+
+[intervals]
+output                    1
+non_bond                  1
+
+[files]
+topology                  {}{}
+final                     eq1.re
+""".format(data['timestep'],
+           data['testinfo'][data['test']][1],
+           data['topdir'],
+           data['testinfo'][data['test']][0])
+        # Check if we are dealing with a FEP file
+        if len(data['testinfo'][test]) == 3:
+            fep_part = """fep                       {}{}
+
+[lambdas]
+1.000 0.000
+""".format(data['inputdir'],data['testinfo'][data['test']][2])
+            md_content = md_content + fep_part 
+
+        with open('eq1.inp', 'w') as outfile:
+            outfile.write(md_content)
+
+class Run_Q6(object):
+    def __init__(self,data):
+        q_command = '{}bin/qdyn5_test eq1.inp > eq1.log'.format(settings.ROOT)
+        os.system(q_command)
+
+class Parse_Q6_data(object):
+    def __init__(self,data):
+        import json
+
+        block = 0
+        Q_energies = {}
+        velocities = []
+
+        with open('eq1.log') as infile:
+            for line in infile:
+                if len(line.strip()) < 2:
+                    continue        
+                
+                if 'At_ID' in line:
+                    line = line.split()
+                    velocities.append(line[3])
+                    
+                if 'Energy summary at step      0' in line:
+                    block = 1
+                    continue
+                if 'FINAL' in line:
+                    block = 0
+                    break
+                    
+                if block == 1:
+                    line = line.split()
+                    if line[0] == 'solute':
+                        Q_energies['solute'] = line[1:]
+                        
+                    if line[0] == 'solvent':
+                        Q_energies['solvent'] = line[1:]
+                                        
+                    if line[0] == 'solute-solvent':
+                        Q_energies['solute-solvent'] = line[1:]        
+                                        
+                    if line[0] == 'restraints':
+                        Q_energies['restraints'] = line[1:]
+                                                        
+                    if line[0] == 'SUM':
+                        Q_energies['SUM'] = line[1:]
+
+        data = json.dumps(Q_energies, indent=1)
+        with open('Q_data.json', 'w') as outfile:
+            outfile.write(data)
+
+        with open('velocities.csv','w') as outfile:
+            outfile.write('{}\n'.format(int(len(velocities)/3)))
+            outfile.write('0\n')
+            for i, v in enumerate(velocities):
+                if (i + 1) % 3 != 0:
+                    outfile.write('{};'.format(v))
+                
+                else:
+                    outfile.write('{}\n'.format(v))
+
+
+class Run_QGPU(object):
+    def __init__(self,data):
+        print('Running QGPU')
+
+class Compare(object):
+    def __init__(self,data):
+        print('Compare Q data')
+
+class Cleanup(object):
+    def __init__(self,data):
+        wd = data['curtest']  
+        shutil.rmtree(wd)
+
+class Init(object):
+    def __init__(self, data):
+        """ Retrieves a dictionary of user input from qdyn:
+               {'top'       :   top,
+                'fep'       :   fep,
+                'md'        :   md,
+                're'        :   re,
+                'wd'        :   wd,
+                'verbose'   :   verbose
+                'clean'   :   clean
+               }
+        """
+        self.data = data
+        self.data['curdir'] = os.getcwd()
+        self.data['executable'] = sys.executable
+        self.data['topdir'] = '{}test/data/topology/'.format(settings.ROOT)
+        self.data['inputdir']   = '{}test/data/inputs/'.format(settings.ROOT)
+
+        if self.data['wd'] == None:
+            self.data['wd'] = self.data['curdir'] + '/'
+        if self.data['wd'][-1] != '/':
+            self.data['wd'] = self.data['wd'] + '/'
+
+        #old_tests = [['p-p/benzene/',executable, '../../../bin/qdyn.py -t Q5_data/benzene-vacuum.top -m Q5_data/eq1.inp -d TEST -r Q5_data/'],
+        #         ['q-p/benzene-Na/FEP_benzene',executable, '../../../../bin/qdyn.py -t Q5_data/Na-benzene-vacuum.top -m Q5_data/eq1.inp -d TEST -f Q5_data/FEP1.fep -r Q5_data/'],
+        #         ['q-p/benzene-Na/FEP_Na',executable, '../../../../bin/qdyn.py -t Q5_data/Na-benzene-vacuum.top -m Q5_data/eq1.inp -d TEST -f Q5_data/FEP1.fep -r Q5_data/'],
+        #         ['q-p-w/benzene-Na/FEP_benzene',executable, '../../../../bin/qdyn.py -t Q5_data/Na-benzene-water.top -m Q5_data/eq1.inp -d TEST -f Q5_data/FEP1.fep -r Q5_data/'],
+        #         ['q-p-w/benzene-Na/FEP_Na',executable, '../../../../bin/qdyn.py -t Q5_data/Na-benzene-water.top -m Q5_data/eq1.inp -d TEST -f Q5_data/FEP1.fep -r Q5_data/'],
+        #         ['q-q/benzene/',executable, '../../../bin/qdyn.py -t Q5_data/benzene-vacuum.top -m Q5_data/eq1.inp -d TEST -r Q5_data -f Q5_data/FEP1.fep'],
+        #         ['w-p/benzene/',executable, '../../../bin/qdyn.py -t Q5_data/benzene-water.top -m Q5_data/eq1.inp -d TEST -r Q5_data/'],
+        #         ['w-q/benzene/',executable, '../../../bin/qdyn.py -t Q5_data/benzene-water.top -m Q5_data/eq1.inp -f Q5_data/FEP1.fep -d TEST -r Q5_data/'],
+        #         ['w-w/water/',executable, '../../../bin/qdyn.py -t Q5_data/water.top -m Q5_data/eq1.inp -d TEST -r Q5_data/'],
+        #         ['boundary/',executable, '../../bin/qdyn.py -t Q5_data/ala_wat.top -m Q5_data/eq1.inp -d TEST -r Q5_data'],
+        #         ['polypeptide/',executable, '../../bin/qdyn.py -t Q5_data/ala_wat.top -m Q5_data/eq1.inp -d TEST -r Q5_data']
+        #        ]
         
-        tests = [['p-p/benzene/',executable, '../../../bin/qdyn.py -t Q5_data/benzene-vacuum.top -m Q5_data/eq1.inp -d TEST -r Q5_data/'],
-                 ['q-p/benzene-Na/FEP_benzene',executable, '../../../../bin/qdyn.py -t Q5_data/Na-benzene-vacuum.top -m Q5_data/eq1.inp -d TEST -f Q5_data/FEP1.fep -r Q5_data/'],
-                 ['q-p/benzene-Na/FEP_Na',executable, '../../../../bin/qdyn.py -t Q5_data/Na-benzene-vacuum.top -m Q5_data/eq1.inp -d TEST -f Q5_data/FEP1.fep -r Q5_data/'],
-                 ['q-p-w/benzene-Na/FEP_benzene',executable, '../../../../bin/qdyn.py -t Q5_data/Na-benzene-water.top -m Q5_data/eq1.inp -d TEST -f Q5_data/FEP1.fep -r Q5_data/'],
-                 ['q-p-w/benzene-Na/FEP_Na',executable, '../../../../bin/qdyn.py -t Q5_data/Na-benzene-water.top -m Q5_data/eq1.inp -d TEST -f Q5_data/FEP1.fep -r Q5_data/'],
-                 ['q-q/benzene/',executable, '../../../bin/qdyn.py -t Q5_data/benzene-vacuum.top -m Q5_data/eq1.inp -d TEST -r Q5_data -f Q5_data/FEP1.fep'],
-                 ['w-p/benzene/',executable, '../../../bin/qdyn.py -t Q5_data/benzene-water.top -m Q5_data/eq1.inp -d TEST -r Q5_data/'],
-                 ['w-q/benzene/',executable, '../../../bin/qdyn.py -t Q5_data/benzene-water.top -m Q5_data/eq1.inp -f Q5_data/FEP1.fep -d TEST -r Q5_data/'],
-                 ['w-w/water/',executable, '../../../bin/qdyn.py -t Q5_data/water.top -m Q5_data/eq1.inp -d TEST -r Q5_data/'],
-                 ['boundary/',executable, '../../bin/qdyn.py -t Q5_data/ala_wat.top -m Q5_data/eq1.inp -d TEST -r Q5_data'],
-                 ['polypeptide/',executable, '../../bin/qdyn.py -t Q5_data/ala_wat.top -m Q5_data/eq1.inp -d TEST -r Q5_data']
-                ]
-        
-        if run is not None:
-            tests = [x for x in tests if any(r for r in run if x[0].split('/')[0] == r)]
-        self.curdir = os.getcwd()
+        #system = [topology, radius, fepfile]
+        self.data['testinfo'] = {
+                    'p-p'               : [
+                                            'benzene-vacuum.top',
+                                            '20'
+                                          ],
+                    'q-p_benzene'       : [
+                                           'Na-benzene-vacuum.top',
+                                           '20'
+                                           'FEP_benzene.fep'
+                                          ],
+                    'q-p_Na'            : [
+                                           'Na-benzene-vacuum.top',
+                                           '20',
+                                           'FEP_Na.fep'
+                                          ],
+                    'q-p-w_benzene'     : [
+                                           'Na-benzene-water.top',
+                                           '20'
+                                           'FEP_benzene.fep'
+                                          ],
+                    'q-p-w_Na'          : [
+                                           'Na-benzene-water.top',
+                                           '20'
+                                           'FEP_Na.fep'
+                                          ],
+                    'q-q'               : [
+                                           'benzene-vacuum.top',
+                                           '20'
+                                           'FEP_benzene.fep'
+                                          ],
+                    'w-p'               : [
+                                           'benzene-water.top',
+                                           '20'
+                                          ],
+                    'w-q'               : [
+                                           'benzene-water.top',
+                                           '20'
+                                           'FEP_benzene.fep'                                            
+                                          ],
+                    'w-w'               : [
+                                           'water.top',
+                                           '20'
+                                          ],
+                    'boundary'          : [
+                                           'ala_wat.top',
+                                           '15'
+                                          ],
+                    'polypeptide'       : [
+                                           'ala_wat.top',
+                                           '15'                       
+                                          ]
+                }
 
+        tests = data['testinfo'].keys()
+        if self.data['run'] != None:
+            tests = [x for x in tests if any(r for r in self.data['run'] if x == r)]
         for test in tests:
-            print("======================================================")
-            print("Running test: {}".format(test[0].split('/')[0]))
-            os.chdir(test[0])
-            subprocess.check_output(['tar', '-xvf', 'testfiles.tar.gz'])
-            args = shlex.split(test[2])
-            args = [test[1]] + args
-            if self.arch == 'gpu':
-                args.append('--gpu')
-            if self.verbose:
-                args.append('--verbose')
-            print(' '.join(args))
-            out = subprocess.check_output(args)
-            if self.verbose:
-                print(out.decode('utf-8'))
-            out2 = subprocess.check_output([executable,'compare.py'])
-            print(out2.decode('utf-8'))
-            print("======================================================")    
-            os.system('rm -r TEST Q5_data compare.py')
-            os.chdir(self.curdir)
+            print("\nRunning {}".format(test))
+            self.data['test'] = test
+            self.data['curtest'] = self.data['wd'] + test
+            # INIT
+            Create_Environment(self.data)
+            
+            # Running the actual code
+            os.chdir(self.data['curtest'])
+            create_MD_input(self.data)
+            Run_Q6(self.data)
+            #Parse_Q6_data(self.data)
+            Run_QGPU(self.data)
+            failed = Compare(self.data)
+            os.chdir(self.data['curdir'])
+            print('\n')
+
+            # Cleanup
+            if self.data['tokeep'] == 'None':
+                Cleanup(self.data)
+            if self.data['tokeep'] == 'Failed' and failed == True:
+                Cleanup(self.data)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -82,6 +285,13 @@ if __name__ == "__main__":
                         choices = ['cpu','gpu'],                        
                         help = "Run tests with either GPU or CPU architecture"
                         )
+                        
+    parser.add_argument('-k', '--keep',
+                        dest = "tokeep",
+                        default = 'None',                        
+                        choices = ['All','Failed', 'None'],                        
+                        help = "Specify which files will be cleaned up after the test"
+                        )
 
     parser.add_argument('--verbose',
                         action = 'store_true'
@@ -93,9 +303,17 @@ if __name__ == "__main__":
                         nargs = "+",
                         help = "Specify which tests to run")
 
+    parser.add_argument('-w', '--wd',
+                        dest = "wd",
+                        required = False,
+                        help = "Specify a working directory")
+
+
+    parser.add_argument('-t', '--timestep',
+                        dest = "timestep",
+                        required = True,
+                        help = "Specify the number of timesteps for each test")
+
     args = parser.parse_args()
     
-    Startup(arch = args.arch,
-            verbose = args.verbose,
-            run = args.run
-           )
+    START = Init(vars(args))
