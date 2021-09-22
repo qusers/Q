@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../s
 import settings
 import IO
 import topology as TOPOLOGY
+import compare
 
 class Create_Environment(object):
     """
@@ -190,9 +191,39 @@ class Run_QGPU(object):
 
         IO.run_command(data['executable'],args_string)
 
+class bcolors:
+    OKGREEN = '\033[92m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'    
+
 class Compare(object):
     def __init__(self,data):
-        print('Compare Q data')
+        top = '{}'.format(data['testinfo'][data['test']][0][:-4])
+        energyfile = '{}/TEST/{}/output/energies.csv'.format(data['curtest'],top)
+
+        #QGPU data
+        QGPU_data = compare.parse_energy(energyfile)
+        print(len(QGPU_data))
+
+        #Q6 data
+        Q6_data_file = '{}/Q_data.json'.format(data['curtest'])
+        with open(Q6_data_file) as infile:
+            Q6_data = json.load(infile)
+
+        # loop over each step and run the comparison
+        for key in Q6_data:
+            print('Comparing energies for frame {}'.format(key))
+            Q6_tmp = Q6_data[key]
+            QGPU_tmp = QGPU_data[int(key)]
+            passed = compare.compare_energies(Q6_tmp,QGPU_tmp)
+
+            ## PRINT PASS ##    
+            if passed == False:
+                print('Passed test? ' + f"{bcolors.FAIL} FALSE {bcolors.ENDC}")
+                break
+        
+            if passed == True:
+                print('Passed test? ' + f"{bcolors.OKGREEN} TRUE {bcolors.ENDC}")    
 
 class Cleanup(object):
     def __init__(self,data):
