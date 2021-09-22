@@ -261,14 +261,14 @@ def run_command(executable, options, runtime=False):
     Returns the output of that program as an unformatted string.
     """
     args = shlex.split(executable + options)
-    print(' '.join(args))
+    #print(' '.join(args))
     
     time1 = time.time()
     out = check_output(args)
     time2 = time.time()
     
     if runtime == True:
-        print('runtime {:.3f} s'.format((time2-time1)*1000000.0))
+        print('runtime {:.3f} s'.format((time2-time1)))
 
     return out
 
