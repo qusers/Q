@@ -12,6 +12,7 @@ import settings
 import IO
 import topology as TOPOLOGY
 import compare
+import energy as ENERGY
 
 class Create_Environment(object):
     """
@@ -202,8 +203,12 @@ class Compare(object):
         energyfile = '{}/TEST/{}/output/energies.csv'.format(data['curtest'],top)
 
         #QGPU data
-        QGPU_data = compare.parse_energy(energyfile)
-        print(len(QGPU_data))
+        read_ener  = ENERGY.Read_Energy(energyfile,0)
+        QGPU_data = read_ener.QDYN()
+
+        write_ener = ENERGY.Write_Energy(QGPU_data, 'test.json')
+        write_ener.roundup_data()
+        write_ener.JSON()
 
         #Q6 data
         Q6_data_file = '{}/Q_data.json'.format(data['curtest'])

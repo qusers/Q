@@ -186,6 +186,11 @@ class Write_Energy(object):
         self.outfile = outfile
         self.data = data
 
+    def roundup_data(self,decimal=2):
+        # work on self.data if specified, decimal=2
+        # Needs to deal with nested dict
+        print(decimal)
+
     def JSON(self):
         with open(self.outfile, 'w') as outfile:
             inputs = self.data
