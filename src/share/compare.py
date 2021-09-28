@@ -13,6 +13,36 @@ def roundup(number):
     return(stringnumber)
 
 def compare_energies(Q_data, QGPU_data):
+    QGPU_data['nonbonded']['pp'][0] = roundup(QGPU_data['nonbonded']['pp'][0])
+    QGPU_data['nonbonded']['pp'][1] = roundup(QGPU_data['nonbonded']['pp'][1])
+    QGPU_data['nonbonded']['qx'][0] = roundup(QGPU_data['nonbonded']['qx'][0])
+    QGPU_data['nonbonded']['qx'][1] = roundup(QGPU_data['nonbonded']['qx'][1])
+    QGPU_data['bonded']['qp'][0]    = roundup(QGPU_data['bonded']['qp'][0])
+    QGPU_data['bonded']['qp'][1]    = roundup(QGPU_data['bonded']['qp'][1])
+    QGPU_data['bonded']['qp'][2]    = roundup(QGPU_data['bonded']['qp'][2])
+    QGPU_data['bonded']['qp'][3]    = roundup(QGPU_data['bonded']['qp'][3])
+    QGPU_data['nonbonded']['pw'][0] = roundup(QGPU_data['nonbonded']['pw'][0])
+    QGPU_data['nonbonded']['pw'][1] = roundup(QGPU_data['nonbonded']['pw'][1])
+    QGPU_data['nonbonded']['ww'][0] = roundup(QGPU_data['nonbonded']['ww'][0])
+    QGPU_data['nonbonded']['ww'][1] = roundup(QGPU_data['nonbonded']['ww'][1])
+    QGPU_data['bonded']['w'][0]     = roundup(QGPU_data['bonded']['w'][0])
+    QGPU_data['bonded']['w'][1]     = roundup(QGPU_data['bonded']['w'][1])
+    QGPU_data['bonded']['w'][2]     = roundup(QGPU_data['bonded']['w'][2])
+    QGPU_data['bonded']['w'][3]     = roundup(QGPU_data['bonded']['w'][3])
+    QGPU_data['bonded']['p'][0]     = roundup(QGPU_data['bonded']['p'][0])
+    QGPU_data['bonded']['p'][1]     = roundup(QGPU_data['bonded']['p'][1])
+    QGPU_data['bonded']['p'][2]     = roundup(QGPU_data['bonded']['p'][2])
+    QGPU_data['bonded']['p'][3]     = roundup(QGPU_data['bonded']['p'][3])
+    QGPU_data['restraint']['Total'] = roundup(QGPU_data['restraint']['Total'])
+    QGPU_data['restraint']['Ufix']  = roundup(QGPU_data['restraint']['Ufix'])
+    QGPU_data['restraint']['Uradx'] = roundup(QGPU_data['restraint']['Uradx'])
+    QGPU_data['restraint']['Upolx'] = roundup(QGPU_data['restraint']['Upolx'])
+    QGPU_data['restraint']['Ushell']= roundup(QGPU_data['restraint']['Ushell'])
+    QGPU_data['restraint']['Upres'] = roundup(QGPU_data['restraint']['Upres'])
+    QGPU_data['total']['Utot']      = roundup(QGPU_data['total']['Utot'])
+    QGPU_data['total']['Upot']      = roundup(QGPU_data['total']['Upot'])
+    QGPU_data['total']['Ukin']      = roundup(QGPU_data['total']['Ukin'])
+
     passed = True
     # nonbonded interactions
     if Q_data['solute'][0] != QGPU_data['nonbonded']['pp'][0]:

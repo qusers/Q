@@ -215,6 +215,11 @@ class Compare(object):
         with open(Q6_data_file) as infile:
             Q6_data = json.load(infile)
 
+        QGPU_file = 'test.json'
+        with open(QGPU_file) as infile:
+            QGPU_data = json.load(infile)
+            print(type(QGPU_data[0]['temperature']['Temp']))
+
         # loop over each step and run the comparison
         for key in Q6_data:
             print('Comparing energies for frame {}'.format(key))
@@ -225,7 +230,7 @@ class Compare(object):
             ## PRINT PASS ##    
             if passed == False:
                 print('Passed test? ' + f"{bcolors.FAIL} FALSE {bcolors.ENDC}")
-                break
+                #break
         
             if passed == True:
                 print('Passed test? ' + f"{bcolors.OKGREEN} TRUE {bcolors.ENDC}")    
