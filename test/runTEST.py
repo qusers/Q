@@ -207,7 +207,6 @@ class Compare(object):
         QGPU_data = read_ener.QDYN()
 
         write_ener = ENERGY.Write_Energy(QGPU_data, 'test.json')
-        write_ener.roundup_data()
         write_ener.JSON()
 
         #Q6 data
@@ -218,7 +217,6 @@ class Compare(object):
         QGPU_file = 'test.json'
         with open(QGPU_file) as infile:
             QGPU_data = json.load(infile)
-            print(type(QGPU_data[0]['temperature']['Temp']))
 
         # loop over each step and run the comparison
         for key in Q6_data:
