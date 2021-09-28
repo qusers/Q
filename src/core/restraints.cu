@@ -11,7 +11,7 @@ void calc_radix_w_forces() {
     double shift;
 
     if (md.radial_force != 0) {
-        shift = sqrt(Boltz * Temp / md.radial_force);
+        shift = sqrt(Boltz * Tfree / md.radial_force);
     }
     else {
         shift = 0;
@@ -61,7 +61,9 @@ void calc_polx_w_forces(int iteration) {
 
     for (int is = 0; is < n_shells; is++) {
         wshells[is].n_inshell = 0;
-        // wshells[is].theta_corr = 0;
+        if (iteration == 0) {
+            wshells[is].theta_corr = 0;
+        }
     }
 
     for (int i = 0; i < n_waters; i++) {
