@@ -106,7 +106,7 @@ class Parse_Q6_data(object):
                     line = line.split()
                     velocities.append(line[3])
                     
-                if 'Energy summary at step      ' in line:
+                if 'Energy summary at step' in line:
                     step = line.split()[-2]
                     Q_energies[step] = {}
                     block = 1
@@ -220,18 +220,20 @@ class Compare(object):
 
         # loop over each step and run the comparison
         for key in Q6_data:
-            print('Comparing energies for frame {}'.format(key))
+            if int(key) == len(Q6_data) - 1:
+                continue
+            #print('Comparing energies for frame {}'.format(key))
             Q6_tmp = Q6_data[key]
             QGPU_tmp = QGPU_data[int(key)]
             passed = compare.compare_energies(Q6_tmp,QGPU_tmp)
 
             ## PRINT PASS ##    
             if passed == False:
+                print('Compared energies for frame {}'.format(key))
                 print('Passed test? ' + f"{bcolors.FAIL} FALSE {bcolors.ENDC}")
-                #break
         
-            if passed == True:
-                print('Passed test? ' + f"{bcolors.OKGREEN} TRUE {bcolors.ENDC}")    
+        if passed == True:
+            print('Passed test? ' + f"{bcolors.OKGREEN} TRUE {bcolors.ENDC}")    
 
 class Cleanup(object):
     def __init__(self,data):
@@ -255,26 +257,14 @@ class Init(object):
         self.data['executable'] = sys.executable
         self.data['topdir'] = '{}test/data/topology/'.format(settings.ROOT)
         self.data['inputdir']   = '{}test/data/inputs/'.format(settings.ROOT)
+        # Step = step + 1
+        self.data['timestep'] = '{}'.format(int(self.data['timestep'])+1)
 
         if self.data['wd'] == None:
             self.data['wd'] = self.data['curdir'] + '/'
         if self.data['wd'][-1] != '/':
             self.data['wd'] = self.data['wd'] + '/'
 
-        #old_tests = [['p-p/benzene/',executable, '../../../bin/qdyn.py -t Q5_data/benzene-vacuum.top -m Q5_data/eq1.inp -d TEST -r Q5_data/'],
-        #         ['q-p/benzene-Na/FEP_benzene',executable, '../../../../bin/qdyn.py -t Q5_data/Na-benzene-vacuum.top -m Q5_data/eq1.inp -d TEST -f Q5_data/FEP1.fep -r Q5_data/'],
-        #         ['q-p/benzene-Na/FEP_Na',executable, '../../../../bin/qdyn.py -t Q5_data/Na-benzene-vacuum.top -m Q5_data/eq1.inp -d TEST -f Q5_data/FEP1.fep -r Q5_data/'],
-        #         ['q-p-w/benzene-Na/FEP_benzene',executable, '../../../../bin/qdyn.py -t Q5_data/Na-benzene-water.top -m Q5_data/eq1.inp -d TEST -f Q5_data/FEP1.fep -r Q5_data/'],
-        #         ['q-p-w/benzene-Na/FEP_Na',executable, '../../../../bin/qdyn.py -t Q5_data/Na-benzene-water.top -m Q5_data/eq1.inp -d TEST -f Q5_data/FEP1.fep -r Q5_data/'],
-        #         ['q-q/benzene/',executable, '../../../bin/qdyn.py -t Q5_data/benzene-vacuum.top -m Q5_data/eq1.inp -d TEST -r Q5_data -f Q5_data/FEP1.fep'],
-        #         ['w-p/benzene/',executable, '../../../bin/qdyn.py -t Q5_data/benzene-water.top -m Q5_data/eq1.inp -d TEST -r Q5_data/'],
-        #         ['w-q/benzene/',executable, '../../../bin/qdyn.py -t Q5_data/benzene-water.top -m Q5_data/eq1.inp -f Q5_data/FEP1.fep -d TEST -r Q5_data/'],
-        #         ['w-w/water/',executable, '../../../bin/qdyn.py -t Q5_data/water.top -m Q5_data/eq1.inp -d TEST -r Q5_data/'],
-        #         ['boundary/',executable, '../../bin/qdyn.py -t Q5_data/ala_wat.top -m Q5_data/eq1.inp -d TEST -r Q5_data'],
-        #         ['polypeptide/',executable, '../../bin/qdyn.py -t Q5_data/ala_wat.top -m Q5_data/eq1.inp -d TEST -r Q5_data']
-        #        ]
-        
-        #system = [topology, radius, fepfile]
         self.data['testinfo'] = {
                     'p-p'               : [
                                             'benzene-vacuum.top',
