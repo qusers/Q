@@ -89,17 +89,18 @@ class Read_Energy(object):
                     # construct lambdas
                     states = int(line[0])
                     block = -2
+                
+                # I believe this was here for the summary steps
+                #if i % 100 != 0:
+                #    continue
                     
-                if i % 100 != 0:
-                    continue
-                    
-                if i % 100 == 0:
-                    i = int(i/100)
+                #if i % 100 == 0:
+                #    i = int(i/100)
                     
                 if block == 0:
                     data = Energy()
                     data = data.data
-                    total.append(self.data)    
+                    total.append(data)    
                     
                 # Find header
                 if '[temperature]' in line:
@@ -173,7 +174,7 @@ class Read_Energy(object):
                 if block == 6:
                     line = line.split()
                     total[i]['total'][line[0]] = float(line[1])
-        
+
         return(total)
     
     def JSON(self,outfile):
