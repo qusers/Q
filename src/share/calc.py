@@ -116,18 +116,18 @@ def EXP(MA1,l1,l2,kT,skip):
     total = 0.0
     skip = 0  #TEMP
     kT = float(kT)
-    print(MA1)
     for ipt in range(skip,len(MA1)):
-        for state in range(0,len(MA1)):
-            veff1 += l1[state] * MA1[state][ipt]
-            veff2 += l2[state] * MA1[state][ipt]
+        for state in range(0,len(l1)):
+            veff1 += l1[state] * MA1[ipt][state]
+            veff2 += l2[state] * MA1[ipt][state]
           
         dv=veff2-veff1
         veff1=0.0
         veff2=0.0
         total += math.exp(-dv/kT)
+
     avg = total/(len(MA1[0])-skip)
-    print(avg)
+    #print(avg)
     dGf = -kT*math.log(avg)
     
     return dGf

@@ -126,6 +126,7 @@ class Write_MD():
         md = sorted(glob.glob('{}/inputfiles/md*.inp'.format(oldFEP)))[::-1]
         mdfiles = eq + md
         for i, md in enumerate(mdfiles):
+            print(md)
             self.mdroot = md.split('/')[-1]
             self.mdroot = self.mdroot.split('.')[0]
             if not self.mdroot in globaldata['MDs']:
@@ -137,8 +138,8 @@ class Write_MD():
                 md_data['temperature'] = self.T
             
             
-            if md == 'eq1':
-                md_data['random_seed'] = globaldata['randrep'][replicate]
+            if 'eq1' in md:
+                md_data['random_seed'] = globaldata['randrep'][i]
                 
             else:
                 md_data['random_seed'] = None

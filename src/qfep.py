@@ -78,11 +78,10 @@ class Calc_FE(object):
         for energyfile in ener:
             infile  = energyfile[0]
             outfile = energyfile[1]
-            read_ener  = ENERGY.Read_Energy(infile,states)
-            ener_data = read_ener.JSON(self.wd + '/' + outfile)
             
-            #print(ener_data[0]['q-energies'])
-            for frame in range(0,len(ener_data)):
+            for frame in range(0,len(self.ener)):
+                read_ener  = ENERGY.Read_Energy(infile,states)
+                ener_data = read_ener.JSON(self.wd + '/' + outfile)
                 if not outfile in self.energies:
                     self.energies[outfile] = [ener_data[frame]['q-energies']['SUM']]
                 else:
@@ -92,7 +91,6 @@ class Calc_FE(object):
                 #else:
                 #    self.lambdas[outfile].append(ener_data[frame]['q-energies']['lambda'])
             #self.lambdas[outfile]  = [ener_data[0]['q-energies']['lambda'],ener_data[1]['q-energies']['lambda']]
-        print(self.lambdas)
         for i, ifile in enumerate(self.ener):
             if ifile == self.ener[-1]:
                 continue
@@ -100,10 +98,7 @@ class Calc_FE(object):
             l_file1 = self.lambdas[self.ener[i][1]]
             l_file2 = self.lambdas[self.ener[i+1][1]]
             
-            print(l_file1)
-            print(l_file2)
             # Throw the Q energies to calc module
-            #print(MA1,l_file1,l_file2,self.kT,skip)
             dGf = CALC.EXP(MA1,l_file1,l_file2,self.kT,skip)
             dGflist.append(dGf)
             
@@ -137,19 +132,19 @@ class Init(object):
         """
         self.environment = data
         # Create user specified work environment
-        self.environment['energy_files'] = self.environment['energy_files'][0:2]
+        self.environment['energy_files'] = self.environment['energy_files']
         
         Create_Environment(self.environment['workdir'])
         
     
         # All the qcalc modules need a mask to map coordinate system
         # to the topology/pdb in formation,
-        Get_Energy(self.environment['energy_files'],
+        Get_Energy(self.environment['energy_files'],#[0:3],  #Temporarily looking at only 43 files as something goes wrong in the matrix population
                    self.environment['workdir'],
                    self.environment['states'],
                   )
-        
-        Calc_FE(self.environment['energy_files'],
+
+        Calc_FE(self.environment['energy_files'],#[0:3],  #Temporarily looking at only 43 files as something goes wrong in the matrix population
                 self.environment['workdir'],
                 self.environment['states'],
                 self.environment['kT'],
