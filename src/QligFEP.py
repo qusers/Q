@@ -126,7 +126,6 @@ class Write_MD():
         md = sorted(glob.glob('{}/inputfiles/md*.inp'.format(oldFEP)))[::-1]
         mdfiles = eq + md
         for i, md in enumerate(mdfiles):
-            print(md)
             self.mdroot = md.split('/')[-1]
             self.mdroot = self.mdroot.split('.')[0]
             if not self.mdroot in globaldata['MDs']:
@@ -166,7 +165,6 @@ class Write_MD():
                                                               )
 
                     write_md.JSON(out_json)
-
             
         else:                
             out_json = '{}/{}/inputfiles/{}.json'.format(self.wd,
@@ -305,17 +303,17 @@ class Write_Runfile():
             self.commands.append(command)
             
         # add the qfep command:
-        command = "    os.system('python {} -d out -i ../../inputfiles/qfep.json ')\n".format(self.qfep)
+        command = "    os.system('python {} -d out -i ../../inputfiles/qfep.json')\n".format(self.qfep)
         self.commands.append(command)
         
         # Clean up commands
-        command = "    shutil.move('out/qfep.out, ../../results/qfep-{:02d}.out'.format(i))\n"
+        command = "    shutil.move('out/qfep.out', '../../results/qfep-{:02d}.out'.format(i))\n"
         self.commands.append(command)
         
         command = "    os.chdir('../../')\n"
         self.commands.append(command)        
         
-        command = "    os.system('tar -xvf raw_data-{:02d}.tar.gz 298.0/{:02d}'.format(i))\n"
+        command = "    os.system('tar -cvf raw_data-{:02d}.tar.gz 298.0/{:02d}'.format(i,i))\n"
         self.commands.append(command)
         
         command = "    shutil.rmtree('298.0/{:02d}'.format(i))\n"
