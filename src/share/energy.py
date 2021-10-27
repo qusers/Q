@@ -66,9 +66,22 @@ class Read_Energy(object):
     def QDYN(self):
         total = []
         block = -1
+        # Get the total blocks in the energy file
         with open (self.ener) as infile:
-            print("reading energies in file {}".format(self.ener))
-            i = -1
+            for line in infile:
+                if 'interval' in line:
+                    interval = line.split()[1]
+
+        interval = int(interval)
+        #populate
+        for i in range(0,interval):
+            data = Energy()
+            data = data.data
+            total.append(data)
+
+        with open (self.ener) as infile:
+            #print("reading energies in file {}".format(self.ener))
+            i = -2
             for line in infile:
                 if len(line) < 2:
                     continue
@@ -97,10 +110,10 @@ class Read_Energy(object):
                 #if i % 100 == 0:
                 #    i = int(i/100)
                     
-                if block == 0:
-                    data = Energy()
-                    data = data.data
-                    total.append(data)    
+                # if block == 0:
+                #     data = Energy()
+                #     data = data.data
+                #     total.append(data)    
                     
                 # Find header
                 if '[temperature]' in line:

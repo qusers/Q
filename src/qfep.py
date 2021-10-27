@@ -71,47 +71,64 @@ class Calc_FE(object):
         self.lambdas = {}
         #points to skip
         skip = int(skip)
-        dGfsum = 0
-        dGflist = [0.0]
+        dGflist = []
+        dGrlist = []
 
         # construct the energy lookup
         for energyfile in ener:
             infile  = energyfile[0]
             outfile = energyfile[1]
-            
-            for frame in range(0,len(self.ener)):
-                read_ener  = ENERGY.Read_Energy(infile,states)
-                ener_data = read_ener.JSON(self.wd + '/' + outfile)
+
+            read_ener  = ENERGY.Read_Energy(infile,states)
+            ener_data = read_ener.JSON(self.wd + '/' + outfile)
+
+            for frame in range(0,len(ener_data)):
                 if not outfile in self.energies:
-                    self.energies[outfile] = [ener_data[frame]['q-energies']['SUM']]
-                else:
-                    self.energies[outfile].append(ener_data[frame]['q-energies']['SUM'])
+                    self.energies[outfile] = []
+
+                self.energies[outfile].append(ener_data[frame]['q-energies']['SUM'])
 
                 self.lambdas[outfile] = ener_data[frame]['q-energies']['lambda']
-                #else:
-                #    self.lambdas[outfile].append(ener_data[frame]['q-energies']['lambda'])
-            #self.lambdas[outfile]  = [ener_data[0]['q-energies']['lambda'],ener_data[1]['q-energies']['lambda']]
+
         for i, ifile in enumerate(self.ener):
             if ifile == self.ener[-1]:
                 continue
+
             MA1 = self.energies[self.ener[i][1]]
             l_file1 = self.lambdas[self.ener[i][1]]
             l_file2 = self.lambdas[self.ener[i+1][1]]
-            
+
             # Throw the Q energies to calc module
-            dGf = CALC.EXP(MA1,l_file1,l_file2,self.kT,skip)
+            dGf = CALC.EXPfwd(MA1,l_file1,l_file2,self.kT,skip)
+            dGr = CALC.EXPbwd(MA1,l_file1,l_file2,self.kT,skip)
+
             dGflist.append(dGf)
-            
+            dGrlist.append(dGr)
+
         dGflist = np.array(dGflist)
         dGfsum = np.sum(dGflist)
+
+        dGrlist = np.array(dGrlist)
+        dGrlist = dGrlist[::-1]
+        dGrsum = np.sum(dGrlist)
+
+        dGlist = []
+        for i in range(0, len(dGflist)):
+            a = (dGflist[i] - dGrlist[i])/2
+            dGlist.append(a)
         
+        #dGavg = np.sum(dGlist)
+        dG = np.sum(np.array(dGlist))
+
         with open(self.wd + '/qfep.out', 'w') as outfile:
-            outfile.write('{}       {}\n'.format('lambda','dGf'))
-            for i in range(0,len(dGflist)):
-                outfile.write('{}       {:.3f}\n'.format(self.lambdas[self.ener[i][1]][0],
-                                                   dGflist[i]
-                                                  ))
-            outfile.write('dGfsum = {:.3f}'.format(dGfsum))
+            outstring = """
+Qfep outfile 
+
+dG = {dG:.2f}
+
+
+""".format(dG=dG)
+            outfile.write(outstring)
                 
 class Init(object):
     def __init__(self, data):
