@@ -106,7 +106,7 @@ def number_density(mask,traj,wd):
                                                          avg_data[i],
                                                          sdv_data[i]))
         
-def EXP(MA1,l1,l2,kT,skip):
+def EXPfwd(MA1,l1,l2,kT,skip):
     """
         Zwanzig exponential formula
         Need to feed lambdas
@@ -116,18 +116,143 @@ def EXP(MA1,l1,l2,kT,skip):
     total = 0.0
     skip = 0  #TEMP
     kT = float(kT)
-    print(MA1)
-    for ipt in range(skip,len(MA1)):
-        for state in range(0,len(MA1)):
-            veff1 += l1[state] * MA1[state][ipt]
-            veff2 += l2[state] * MA1[state][ipt]
+    for ipt in range(skip,len(MA1) -1):
+        for state in range(0,len(l1)):
+            veff1 += l1[state] * MA1[ipt][state]
+            veff2 += l2[state] * MA1[ipt + 1][state]
           
         dv=veff2-veff1
         veff1=0.0
         veff2=0.0
-        total += math.exp(-dv/kT)
-    avg = total/(len(MA1[0])-skip)
-    print(avg)
+        total = total + math.exp(-dv/kT)
+
+    avg = total/(len(MA1)-skip)
     dGf = -kT*math.log(avg)
     
     return dGf
+
+#       ! boltzmann's constant beta = 1/rt
+#      dgf=0.
+#      dgfsum=0.
+#      sum=0.
+#      veff1=0.
+#      veff2=0.
+#      dv=0.
+#      do ifile=1,nfiles-1
+#         do ipt=nskip+1,FEP(ifile)%npts
+#            do istate=1,nstates
+#               veff1=veff1+FEP(ifile)%lambda(istate)*FEP(ifile)%v(istate,ipt)
+#               veff2=veff2+FEP(ifile+1)%lambda(istate)*FEP(ifile)%v(istate,ipt)
+#            end do
+#            dv=veff2-veff1
+#            veff1=0.
+#            veff2=0.
+#            sum=sum+exp(-dv/rt)
+#         end do
+#         sum=sum/real(FEP(ifile)%npts-nskip)
+#         dgf()=-rt*dlog(sum)
+
+def EXPbwd(MA1,l1,l2,kT,skip):
+    """
+        Zwanzig exponential formula
+        Need to feed lambdas
+    """
+    veff1 = 0.0
+    veff2 = 0.0
+    total = 0.0
+    skip = 0  #TEMP
+    kT = float(kT)
+    MA1 = MA1[::-1]
+    for ipt in range(skip,len(MA1) - 1):
+        for state in range(0,len(l1)):
+            veff1 += l1[state] * MA1[ipt][state]
+            veff2 += l2[state] * MA1[ipt + 1][state]
+          
+        dv=veff1-veff2
+        veff1=0.0
+        veff2=0.0
+        total = total + math.exp(-dv/kT)
+
+    avg = total/(len(MA1)-skip)
+    dGr = -kT*math.log(avg)
+    
+    return dGr
+#   ! Do the reverse calculation of delta G's according to Zwanzig.
+#      sum=0.
+#      veff1=0.
+#      veff2=0.
+#      dv=0.
+#      do ifile=nfiles,2,-1
+#         do ipt=nskip+1,FEP(ifile)%npts
+#            do istate=1,nstates
+#               veff1=veff1+FEP(ifile)%lambda(istate)*FEP(ifile)%v(istate,ipt)
+#               veff2=veff2+FEP(ifile-1)%lambda(istate)*FEP(ifile)%v(istate,ipt)
+#            end do
+#            dv=veff2-veff1
+#            veff1=0.
+#            veff2=0.
+#            sum=sum+exp(-dv/rt)
+#         end do
+#         sum=sum/real(FEP(ifile)%npts-nskip)
+#         dgr=-rt*dlog(sum)
+#      end do
+
+
+# !  Bennet's Acceptance Ratio (BAR)
+#      dgbar=0.
+#      dgbarsum=0.
+#      sum=0.
+#      veff1=0.
+#      veff2=0.
+#      dv=0.
+#      konst=0
+#      fel=1
+#      do ifile=1,nfiles-1
+#         konst=dglu(ifile)
+#         !print *, 'constant for the bennett formula initial', dglu(ifile)
+#         felcutoff = 0.001
+#         do while (fel > felcutoff)
+#            nfnr=real(FEP(ifile)%npts-nskip)/real(FEP(ifile+1)%npts-nskip)
+#            nrnf=real(FEP(ifile+1)%npts-nskip)/real(FEP(ifile)%npts-nskip)
+#            !print *, 'optimization cutoff begin', 0.001
+#            !print *, 'nfnr, nrnf, ifile = ', nfnr, nrnf, ifile
+
+#            do ipt=nskip+1,FEP(ifile)%npts
+#               do istate=1,nstates
+#                  veff1=veff1+FEP(ifile)%lambda(istate)*FEP(ifile)%v(istate,ipt)
+#                  veff2=veff2+FEP(ifile+1)%lambda(istate)*FEP(ifile)%v(istate,ipt)
+#               end do
+#               dv=(veff2-veff1)
+#               veff1=0.
+#               veff2=0.
+#               sum=sum+1/((1+(nfnr*exp((dv-konst)/rt))))
+#            end do
+#            sumf=sum/real(FEP(ifile)%npts-nskip)
+
+#            sum=0.
+#            do ipt=nskip+1,FEP(ifile+1)%npts
+#               do istate=1,nstates
+#                  veff1=veff1+FEP(ifile)%lambda(istate)*FEP(ifile+1)%v(istate,ipt)
+#                  veff2=veff2+FEP(ifile+1)%lambda(istate)*FEP(ifile+1)%v(istate,ipt)
+#               end do
+#               dv=(veff2-veff1)
+#               veff1=0.
+#               veff2=0.
+#               sum=sum+1/((1+(nrnf*exp((-dv+konst)/rt))))
+#            end do
+#            sumb=sum/real(FEP(ifile+1)%npts-nskip)
+
+
+#            dgbar(ifile)=-rt*dlog((sumf/sumb)*exp(-konst/rt)*nfnr)
+#            sum=0.
+#            fel=abs(konst-dgbar(ifile))
+#            konst=dgbar(ifile)
+#            !print *, 'optimization cutoff end', ifile, fel
+#         end do
+
+#         !print *, 'constant for the bennett formula end', dglu(ifile)
+#         dgbarsum(ifile+1)=dgbarsum(ifile)+dgbar(ifile)
+#         !print *, 'The optimization constant is', fel
+#         fel=1
+
+#      end do

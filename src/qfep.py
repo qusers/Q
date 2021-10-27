@@ -71,52 +71,64 @@ class Calc_FE(object):
         self.lambdas = {}
         #points to skip
         skip = int(skip)
-        dGfsum = 0
-        dGflist = [0.0]
+        dGflist = []
+        dGrlist = []
 
         # construct the energy lookup
         for energyfile in ener:
             infile  = energyfile[0]
             outfile = energyfile[1]
+
             read_ener  = ENERGY.Read_Energy(infile,states)
             ener_data = read_ener.JSON(self.wd + '/' + outfile)
-            
-            #print(ener_data[0]['q-energies'])
+
             for frame in range(0,len(ener_data)):
                 if not outfile in self.energies:
-                    self.energies[outfile] = [ener_data[frame]['q-energies']['SUM']]
-                else:
-                    self.energies[outfile].append(ener_data[frame]['q-energies']['SUM'])
+                    self.energies[outfile] = []
+
+                self.energies[outfile].append(ener_data[frame]['q-energies']['SUM'])
 
                 self.lambdas[outfile] = ener_data[frame]['q-energies']['lambda']
-                #else:
-                #    self.lambdas[outfile].append(ener_data[frame]['q-energies']['lambda'])
-            #self.lambdas[outfile]  = [ener_data[0]['q-energies']['lambda'],ener_data[1]['q-energies']['lambda']]
-        print(self.lambdas)
+
         for i, ifile in enumerate(self.ener):
             if ifile == self.ener[-1]:
                 continue
+
             MA1 = self.energies[self.ener[i][1]]
             l_file1 = self.lambdas[self.ener[i][1]]
             l_file2 = self.lambdas[self.ener[i+1][1]]
-            
-            print(l_file1)
-            print(l_file2)
+
             # Throw the Q energies to calc module
-            #print(MA1,l_file1,l_file2,self.kT,skip)
-            dGf = CALC.EXP(MA1,l_file1,l_file2,self.kT,skip)
+            dGf = CALC.EXPfwd(MA1,l_file1,l_file2,self.kT,skip)
+            dGr = CALC.EXPbwd(MA1,l_file1,l_file2,self.kT,skip)
+
             dGflist.append(dGf)
-            
+            dGrlist.append(dGr)
+
         dGflist = np.array(dGflist)
         dGfsum = np.sum(dGflist)
+
+        dGrlist = np.array(dGrlist)
+        dGrlist = dGrlist[::-1]
+        dGrsum = np.sum(dGrlist)
+
+        dGlist = []
+        for i in range(0, len(dGflist)):
+            a = (dGflist[i] - dGrlist[i])/2
+            dGlist.append(a)
         
+        #dGavg = np.sum(dGlist)
+        dG = np.sum(np.array(dGlist))
+
         with open(self.wd + '/qfep.out', 'w') as outfile:
-            outfile.write('{}       {}\n'.format('lambda','dGf'))
-            for i in range(0,len(dGflist)):
-                outfile.write('{}       {:.3f}\n'.format(self.lambdas[self.ener[i][1]][0],
-                                                   dGflist[i]
-                                                  ))
-            outfile.write('dGfsum = {:.3f}'.format(dGfsum))
+            outstring = """
+Qfep outfile 
+
+dG = {dG:.2f}
+
+
+""".format(dG=dG)
+            outfile.write(outstring)
                 
 class Init(object):
     def __init__(self, data):
@@ -137,19 +149,19 @@ class Init(object):
         """
         self.environment = data
         # Create user specified work environment
-        self.environment['energy_files'] = self.environment['energy_files'][0:2]
+        self.environment['energy_files'] = self.environment['energy_files']
         
         Create_Environment(self.environment['workdir'])
         
     
         # All the qcalc modules need a mask to map coordinate system
         # to the topology/pdb in formation,
-        Get_Energy(self.environment['energy_files'],
+        Get_Energy(self.environment['energy_files'],#[0:3],  #Temporarily looking at only 43 files as something goes wrong in the matrix population
                    self.environment['workdir'],
                    self.environment['states'],
                   )
-        
-        Calc_FE(self.environment['energy_files'],
+
+        Calc_FE(self.environment['energy_files'],#[0:3],  #Temporarily looking at only 43 files as something goes wrong in the matrix population
                 self.environment['workdir'],
                 self.environment['states'],
                 self.environment['kT'],

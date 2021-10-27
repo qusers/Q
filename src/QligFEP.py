@@ -121,28 +121,30 @@ class Write_MD():
         self.oldFEP = oldFEP
         self.oldFEProot = oldFEP.split('/')[-1]
         reps = globaldata['randrep']
-        
+
         eq = sorted(glob.glob('{}/inputfiles/eq*.inp'.format(oldFEP)))
         md = sorted(glob.glob('{}/inputfiles/md*.inp'.format(oldFEP)))[::-1]
         mdfiles = eq + md
-        for i, md in enumerate(mdfiles):
-            self.mdroot = md.split('/')[-1]
-            self.mdroot = self.mdroot.split('.')[0]
-            if not self.mdroot in globaldata['MDs']:
-                globaldata['MDs'].append(self.mdroot) 
+        
+        for replicate in globaldata['randrep']:
+            for i, md in enumerate(mdfiles):
+                self.mdroot = md.split('/')[-1]
+                self.mdroot = self.mdroot.split('.')[0]
+                if not self.mdroot in globaldata['MDs']:
+                    globaldata['MDs'].append(self.mdroot) 
 
-            md_data = self.construct(md)
-            
-            if 'md' in md or 'eq5' in md:
-                md_data['temperature'] = self.T
-            
-            
-            if md == 'eq1':
-                md_data['random_seed'] = globaldata['randrep'][replicate]
+                md_data = self.construct(md)
                 
-            else:
-                md_data['random_seed'] = None
-            self.write(md_data)
+                if 'md' in md or 'eq5' in md:
+                    md_data['temperature'] = self.T
+                
+                
+                if 'eq1' in md:
+                    md_data['random_seed'] = globaldata['randrep'][replicate]
+                    
+                else:
+                    md_data['random_seed'] = None
+                self.write(md_data, replicate)
             
     def construct(self,md):
         read_md  = MD.Read_MD(md)
@@ -150,22 +152,20 @@ class Write_MD():
 
         return md_data
     
-    def write(self,md_data):
+    def write(self,md_data, replicate):
         write_md = MD.Write_MD(md_data)
         if self.mdroot == 'eq1':
             for T in globaldata['Temp']:
                 self.T = T
-                for replicate in globaldata['randrep']:
-                    self.r = replicate            
-                    out_json = '{}/{}/{:.1f}/{:02d}/{}.json'.format(self.wd,
-                                                               self.oldFEProot,
-                                                               self.T,
-                                                               self.r,
-                                                               self.mdroot,
-                                                              )
+                self.r = replicate            
+                out_json = '{}/{}/{:.1f}/{:02d}/{}.json'.format(self.wd,
+                                                            self.oldFEProot,
+                                                            self.T,
+                                                            self.r,
+                                                            self.mdroot,
+                                                            )
 
-                    write_md.JSON(out_json)
-
+                write_md.JSON(out_json)
             
         else:                
             out_json = '{}/{}/inputfiles/{}.json'.format(self.wd,
@@ -304,17 +304,17 @@ class Write_Runfile():
             self.commands.append(command)
             
         # add the qfep command:
-        command = "    os.system('python {} -d out -i ../../inputfiles/qfep.json ')\n".format(self.qfep)
+        command = "    os.system('python {} -d out -i ../../inputfiles/qfep.json')\n".format(self.qfep)
         self.commands.append(command)
         
         # Clean up commands
-        command = "    shutil.move('out/qfep.out, ../../results/qfep-{:02d}.out'.format(i))\n"
+        command = "    shutil.move('out/qfep.out', '../../results/qfep-{:02d}.out'.format(i))\n"
         self.commands.append(command)
         
         command = "    os.chdir('../../')\n"
         self.commands.append(command)        
         
-        command = "    os.system('tar -xvf raw_data-{:02d}.tar.gz 298.0/{:02d}'.format(i))\n"
+        command = "    os.system('tar -cvf raw_data-{:02d}.tar.gz 298.0/{:02d}'.format(i,i))\n"
         self.commands.append(command)
         
         command = "    shutil.rmtree('298.0/{:02d}'.format(i))\n"
