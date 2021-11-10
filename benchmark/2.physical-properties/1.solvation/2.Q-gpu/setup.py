@@ -3,8 +3,8 @@ import os
 
 QligFEP = '../../../../app/QligFEP.py'
 # construct FEPfiles
-FEPs = glob.glob('../1.Q-cpu/2.vacuum/*')
-FEPs = [FEPs[0]]
+FEPs = glob.glob('../1.Q-cpu/*/*')
+#FEPs = [FEPs[0]]
 for fep in FEPs:
     of = fep
     wd = fep.split('/')[2]
