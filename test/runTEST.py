@@ -315,6 +315,10 @@ class Init(object):
                     'polypeptide'       : [
                                            'ala_wat.top',
                                            '15'                       
+                                          ],
+                    'polypeptide25'     : [
+                                           'ala_wat25.top',
+                                           '25'
                                           ]
                 }
 

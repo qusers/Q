@@ -62,6 +62,7 @@ benchmark/2.physical-properties/1.solvation/2.Q-gpu/1.water/
 benchmark/2.physical-properties/1.solvation/2.Q-gpu/2.vacuum/
 benchmark/2.physical-properties/1.solvation/2.Q-gpu/submit.py
 benchmark/CDk2/rundir/
+test/CDk2/rundir/
 test/1.interactions/*/*/Q5_data/
 test/1.interactions/*/*/compare.py
 test/1.interactions/*/*/*/Q5_data/
