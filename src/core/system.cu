@@ -897,6 +897,20 @@ void calc_integration_step(int iteration) {
         EQ_total[state].Utot = EQ_bond[state].Ubond + EQ_bond[state].Uangle + EQ_bond[state].Utor + EQ_bond[state].Uimp
             + EQ_nonbond_qx[state].Ucoul + EQ_nonbond_qx[state].Uvdw + EQ_restraint[state].Urestr;
 
+        if (lambdas[state] == 0) {
+            EQ_bond[state].Uangle = 0;
+            EQ_bond[state].Ubond = 0;
+            EQ_bond[state].Utor = 0;
+            EQ_bond[state].Uimp = 0;
+            EQ_nonbond_qq[state].Ucoul = 0;
+            EQ_nonbond_qq[state].Uvdw = 0;
+            EQ_nonbond_qp[state].Ucoul = 0;
+            EQ_nonbond_qp[state].Uvdw = 0;
+            EQ_nonbond_qw[state].Ucoul = 0;
+            EQ_nonbond_qw[state].Uvdw = 0;
+            EQ_restraint[state].Urestr = 0;
+        }
+
         E_bond_q.Ubond += EQ_bond[state].Ubond * lambdas[state];
         E_bond_q.Uangle += EQ_bond[state].Uangle * lambdas[state];
         E_bond_q.Utor += EQ_bond[state].Utor * lambdas[state];
