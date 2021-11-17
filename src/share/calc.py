@@ -171,6 +171,8 @@ def EXPbwd(MA1,l1,l2,kT,skip):
         dv=veff1-veff2
         veff1=0.0
         veff2=0.0
+        math.exp(-dv/kT)
+        print(ipt,-dv/kT, total)
         total = total + math.exp(-dv/kT)
 
     avg = total/(len(MA1)-skip)

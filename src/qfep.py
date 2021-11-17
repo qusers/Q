@@ -91,6 +91,7 @@ class Calc_FE(object):
                 self.lambdas[outfile] = ener_data[frame]['q-energies']['lambda']
 
         for i, ifile in enumerate(self.ener):
+            print(ifile)
             if ifile == self.ener[-1]:
                 continue
 
@@ -117,8 +118,9 @@ class Calc_FE(object):
             a = (dGflist[i] - dGrlist[i])/2
             dGlist.append(a)
         
-        #dGavg = np.sum(dGlist)
+        dGavg = np.sum(dGlist)
         dG = np.sum(np.array(dGlist))
+        #dG = np.sum(np.array(dGflist))
 
         with open(self.wd + '/qfep.out', 'w') as outfile:
             outstring = """
