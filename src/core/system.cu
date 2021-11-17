@@ -891,12 +891,6 @@ void calc_integration_step(int iteration) {
 
     // Update total potential energies with an average of all states
     for (int state = 0; state < n_lambdas; state++) {
-        EQ_nonbond_qx[state].Ucoul = EQ_nonbond_qq[state].Ucoul + EQ_nonbond_qp[state].Ucoul + EQ_nonbond_qw[state].Ucoul;
-        EQ_nonbond_qx[state].Uvdw = EQ_nonbond_qq[state].Uvdw + EQ_nonbond_qp[state].Uvdw + EQ_nonbond_qw[state].Uvdw;
-
-        EQ_total[state].Utot = EQ_bond[state].Ubond + EQ_bond[state].Uangle + EQ_bond[state].Utor + EQ_bond[state].Uimp
-            + EQ_nonbond_qx[state].Ucoul + EQ_nonbond_qx[state].Uvdw + EQ_restraint[state].Urestr;
-
         if (lambdas[state] == 0) {
             EQ_bond[state].Uangle = 0;
             EQ_bond[state].Ubond = 0;
@@ -910,6 +904,12 @@ void calc_integration_step(int iteration) {
             EQ_nonbond_qw[state].Uvdw = 0;
             EQ_restraint[state].Urestr = 0;
         }
+
+        EQ_nonbond_qx[state].Ucoul = EQ_nonbond_qq[state].Ucoul + EQ_nonbond_qp[state].Ucoul + EQ_nonbond_qw[state].Ucoul;
+        EQ_nonbond_qx[state].Uvdw = EQ_nonbond_qq[state].Uvdw + EQ_nonbond_qp[state].Uvdw + EQ_nonbond_qw[state].Uvdw;
+
+        EQ_total[state].Utot = EQ_bond[state].Ubond + EQ_bond[state].Uangle + EQ_bond[state].Utor + EQ_bond[state].Uimp
+            + EQ_nonbond_qx[state].Ucoul + EQ_nonbond_qx[state].Uvdw + EQ_restraint[state].Urestr;
 
         E_bond_q.Ubond += EQ_bond[state].Ubond * lambdas[state];
         E_bond_q.Uangle += EQ_bond[state].Uangle * lambdas[state];
