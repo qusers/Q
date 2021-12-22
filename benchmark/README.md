@@ -8,7 +8,7 @@ FEP on Solvation free energies (water and vacuum systems) of:
 Propane
 Isobutane
 1-butane
-* Ethanol
+Ethanol   DONE
 Methanol
 Methanethiol
 methylsulfanylethane
