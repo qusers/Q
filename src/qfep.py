@@ -73,6 +73,9 @@ class Calc_FE(object):
         skip = int(skip)
         dGflist = []
         dGrlist = []
+        dGOSlist = []
+        dGBARlist = []
+
 
         # construct the energy lookup
         for energyfile in ener:
@@ -103,15 +106,29 @@ class Calc_FE(object):
             dGf = CALC.EXPfwd(MA1,l_file1,l_file2,self.kT,skip)
             dGr = CALC.EXPbwd(MA1,l_file1,l_file2,self.kT,skip)
 
+            dGOS = CALC.overlap_sampling(MA1,l_file1,l_file2,self.kT,skip)
+            dGBAR = CALC.BAR(MA1,l_file1,l_file2,self.kT,skip,dGOS)
+
             dGflist.append(dGf)
             dGrlist.append(dGr)
+            dGOSlist.append(dGOS)
+            dGBARlist.append(dGBAR)            
 
         dGflist = np.array(dGflist)
         dGfsum = np.sum(dGflist)
+        #print(dGflist)
 
         dGrlist = np.array(dGrlist)
         dGrlist = dGrlist[::-1]
         dGrsum = np.sum(dGrlist)
+
+        #print(dGrlist)
+
+        dGOSsum = np.sum(np.array(dGOSlist))
+        #print(dGOSsum)
+
+        dGBARsum = np.sum(np.array(dGBARlist))
+        print(dGBARlist,dGBARsum)        
 
         dGlist = []
         for i in range(0, len(dGflist)):

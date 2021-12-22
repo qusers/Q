@@ -172,7 +172,6 @@ def EXPbwd(MA1,l1,l2,kT,skip):
         veff1=0.0
         veff2=0.0
         math.exp(-dv/kT)
-        print(ipt,-dv/kT, total)
         total = total + math.exp(-dv/kT)
 
     avg = total/(len(MA1)-skip)
@@ -199,6 +198,175 @@ def EXPbwd(MA1,l1,l2,kT,skip):
 #         dgr=-rt*dlog(sum)
 #      end do
 
+""" ! Overlap Sampling. Lu
+     dglu=0.
+     dglusum=0.
+     sum=0.
+     veff1=0.
+     veff2=0.
+     dv=0.
+     do ifile=1,nfiles-1
+       ! Note, similar to Zwanzig for the forward calculation
+        do ipt=nskip+1,FEP(ifile)%npts
+           do istate=1,nstates
+              !print *, 'veff1 = FEP(ifile)%lambda(istate) * FEP(ifile)%v(istate,ipt)', FEP(ifile)%lambda(istate), FEP(ifile)%v(istate,ipt), ifile, istate,ipt
+              veff1=veff1+FEP(ifile)%lambda(istate)*FEP(ifile)%v(istate,ipt)
+              veff2=veff2+FEP(ifile+1)%lambda(istate)*FEP(ifile)%v(istate,ipt)
+           end do
+           dv=(veff2-veff1)/2
+           veff1=0.
+           veff2=0.
+           sum=sum+exp(-dv/rt)
+        end do
+        sumf=sum/real(FEP(ifile)%npts-nskip)
+        sum=0.
+
+#       ! boltzmann's constant beta = 1/rt
+#      dgf=0.
+#      dgfsum=0.
+#      sum=0.
+#      veff1=0.
+#      veff2=0.
+#      dv=0.
+#      do ifile=1,nfiles-1
+#         do ipt=nskip+1,FEP(ifile)%npts
+#            do istate=1,nstates
+#               veff1=veff1+FEP(ifile)%lambda(istate)*FEP(ifile)%v(istate,ipt)
+#               veff2=veff2+FEP(ifile+1)%lambda(istate)*FEP(ifile)%v(istate,ipt)
+#            end do
+#            dv=veff2-veff1
+#            veff1=0.
+#            veff2=0.
+#            sum=sum+exp(-dv/rt)
+#         end do
+#         sum=sum/real(FEP(ifile)%npts-nskip)
+#         dgf()=-rt*dlog(sum)
+
+
+
+        ! Note, similar to Zwanzig for the backward calculation
+        do ipt=nskip+1,FEP(ifile+1)%npts
+           do istate=1,nstates
+              veff1=veff1+FEP(ifile)%lambda(istate)*FEP(ifile+1)%v(istate,ipt)
+              veff2=veff2+FEP(ifile+1)%lambda(istate)*FEP(ifile+1)%v(istate,ipt)
+           end do
+           dv=(veff2-veff1)/2
+           veff1=0.
+           veff2=0.
+           sum=sum+exp(dv/rt)
+        end do
+        sumb=sum/real(FEP(ifile+1)%npts-nskip)
+
+        dglu(ifile)=-rt*dlog(sumf/sumb) ! used later as initial guess for bennetts's constant
+        dglusum(ifile+1)=dglusum(ifile)+dglu(ifile)
+        sum=0.
+     end do
+
+     !print *, 'constant for the bennett formula from overlap sampling', dglu(1) """
+
+def overlap_sampling(MA1,l1,l2,kT,skip):
+    """
+        Overlap sampling
+    """
+    veff1 = 0.0
+    veff2 = 0.0
+    total = 0.0
+    skip = 0  #TEMP
+    kT = float(kT)
+    #MA1 = MA1[::-1]
+    for ipt in range(skip,len(MA1) - 1):
+        for state in range(0,len(l1)):
+            veff1 += l1[state] * MA1[ipt][state]
+            veff2 += l2[state] * MA1[ipt + 1][state]
+          
+        dv=(veff1-veff2)/2
+        veff1=0.0
+        veff2=0.0
+        math.exp(-dv/kT)
+        total = total + math.exp(-dv/kT)
+
+    totalf = total / len(MA1)
+    veff1 = 0.0
+    veff2 = 0.0
+    total = 0.0
+    skip = 0  #TEMP
+    MA1 = MA1[::-1]
+    for ipt in range(skip,len(MA1) - 1):
+        for state in range(0,len(l1)):
+            veff1 += l1[state] * MA1[ipt][state]
+            veff2 += l2[state] * MA1[ipt + 1][state]
+          
+        dv=(veff1-veff2)/2
+        veff1=0.0
+        veff2=0.0
+        math.exp(-dv/kT)
+        total = total + math.exp(-dv/kT)
+
+    totalb = total / len(MA1)
+    dglu = -kT*math.log(totalf/totalb)
+
+    return dglu
+
+def BAR(MA1,l1,l2,kT,skip,dglu):
+    """
+        Zwanzig exponential formula
+        Need to feed lambdas
+    """
+#      dgbar=0.
+#      dgbarsum=0.
+#      sum=0.
+#      veff1=0.
+#      veff2=0.
+#      dv=0.
+#      konst=0
+    fel=1.0
+    felcutoff=0.001
+    konst = dglu
+
+    while (fel > felcutoff):
+        veff1 = 0.0
+        veff2 = 0.0
+        total = 0.0
+        skip = 0  #TEMP
+        kT = float(kT)
+        #MA1 = MA1[::-1]
+        for ipt in range(skip,len(MA1) - 1):
+            for state in range(0,len(l1)):
+                veff1 += l1[state] * MA1[ipt][state]
+                veff2 += l2[state] * MA1[ipt + 1][state]
+            
+            dv=veff1-veff2
+            veff1=0.0
+            veff2=0.0
+            math.exp(-dv/kT)
+            total = total + 1/(1 + math.exp((dv-konst)/kT))
+
+        totalf = total / len(MA1)
+
+        veff1 = 0.0
+        veff2 = 0.0
+        total = 0.0
+        skip = 0  #TEMP
+        MA1 = MA1[::-1]
+        for ipt in range(skip,len(MA1) - 1):
+            for state in range(0,len(l1)):
+                veff1 += l1[state] * MA1[ipt][state]
+                veff2 += l2[state] * MA1[ipt + 1][state]
+            
+            dv=veff1-veff2
+            veff1=0.0
+            veff2=0.0
+            math.exp(-dv/kT)
+            total = total + 1/(1 + math.exp((-dv+konst)/kT))
+
+        totalb = total / len(MA1)
+
+#            dgbar(ifile)=-rt*dlog((sumf/sumb)*exp(-konst/rt)*nfnr)
+        dgbar = -kT*math.log((totalf/totalb)*math.exp(-konst/kT))
+        fel = abs(konst - dgbar)
+        konst = dgbar
+    
+    return dgbar
 
 # !  Bennet's Acceptance Ratio (BAR)
 #      dgbar=0.
