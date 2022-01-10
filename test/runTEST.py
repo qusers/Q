@@ -188,10 +188,17 @@ class Run_QGPU(object):
             args.append('-f')
             args.append('{}{}'.format(data['inputdir'],data['testinfo'][data['test']][2]))
 
+        if data['verbose'] == True:
+            args.append('--verbose')
+
+        if data['arch'] == 'gpu':
+            args.append('--gpu')
+
         args_string = ' '.join(args)
 
-        IO.run_command(data['executable'],args_string)
-
+        out = IO.run_command(data['executable'],args_string)
+        if data['verbose'] == True:
+            print(out.decode("utf-8"))
 class bcolors:
     OKGREEN = '\033[92m'
     FAIL = '\033[91m'
