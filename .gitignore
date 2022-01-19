@@ -67,3 +67,8 @@ test/1.interactions/*/*/Q5_data/
 test/1.interactions/*/*/compare.py
 test/1.interactions/*/*/*/Q5_data/
 test/1.interactions/*/*/*/compare.py
+test/data/FEP_solvation/1.QCPU/
+test/data/FEP_solvation/1.water/
+test/data/FEP_solvation/2.QGPU/2.vacuum/
+test/data/FEP_solvation/2.QGPU/1.water/
+test/data/FEP_solvation/submit.py
