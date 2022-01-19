@@ -891,6 +891,20 @@ void calc_integration_step(int iteration) {
 
     // Update total potential energies with an average of all states
     for (int state = 0; state < n_lambdas; state++) {
+        if (lambdas[state] == 0) {
+            EQ_bond[state].Uangle = 0;
+            EQ_bond[state].Ubond = 0;
+            EQ_bond[state].Utor = 0;
+            EQ_bond[state].Uimp = 0;
+            EQ_nonbond_qq[state].Ucoul = 0;
+            EQ_nonbond_qq[state].Uvdw = 0;
+            EQ_nonbond_qp[state].Ucoul = 0;
+            EQ_nonbond_qp[state].Uvdw = 0;
+            EQ_nonbond_qw[state].Ucoul = 0;
+            EQ_nonbond_qw[state].Uvdw = 0;
+            EQ_restraint[state].Urestr = 0;
+        }
+
         EQ_nonbond_qx[state].Ucoul = EQ_nonbond_qq[state].Ucoul + EQ_nonbond_qp[state].Ucoul + EQ_nonbond_qw[state].Ucoul;
         EQ_nonbond_qx[state].Uvdw = EQ_nonbond_qq[state].Uvdw + EQ_nonbond_qp[state].Uvdw + EQ_nonbond_qw[state].Uvdw;
 
