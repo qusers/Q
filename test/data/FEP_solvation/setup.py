@@ -3,7 +3,7 @@ import os
 
 QligFEP = '../../../app/QligFEP.py'
 # construct FEPfiles
-FEPs = glob.glob('../1.Q-cpu/*/*')
+FEPs = glob.glob('../1.QCPU/*/*')
 #FEPs = [FEPs[0]]
 for fep in FEPs:
     of = fep
@@ -20,5 +20,5 @@ with open('submit.py','w') as outfile:
     outfile.write("curdir = os.getcwd()\n")
     for fepsubmit in glob.glob('*/*'):
         outfile.write("os.chdir('{}')\n".format(fepsubmit))
-        outfile.write("os.system('sbatch submit.sh')\n")
+        outfile.write("os.system('sh submit.sh')\n")
         outfile.write("os.chdir('../../')\n")
