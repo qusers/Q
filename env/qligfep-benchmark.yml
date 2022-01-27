@@ -11,6 +11,7 @@ dependencies:
   - cairo=1.16.0=hf32fb01_1
   - certifi=2021.5.30=py36h06a4308_0
   - entrypoints=0.3=py36_0
+  - et_xmlfile=1.1.0=py36h06a4308_0
   - fontconfig=2.13.1=h6c09931_0
   - freetype=2.11.0=h70c0345_0
   - giflib=5.2.1=h7b6447c_0
@@ -48,7 +49,8 @@ dependencies:
   - numpy=1.19.2=py36h54aff64_0
   - numpy-base=1.19.2=py36hfa32c7d_0
   - olefile=0.46=pyhd3eb1b0_0
-  - openssl=1.1.1l=h7f8727e_0
+  - openpyxl=3.0.9=pyhd3eb1b0_0
+  - openssl=1.1.1m=h7f8727e_0
   - pandas=1.1.5=py36ha9443f7_0
   - parso=0.8.2=pyhd3eb1b0_0
   - pcre=8.45=h295c915_0

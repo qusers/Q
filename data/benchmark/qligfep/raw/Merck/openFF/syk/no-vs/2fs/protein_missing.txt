@@ -1,0 +1,7 @@
+FEP                                               dG        sem       crashes   
+FEP_CHEMBL3265006_CHEMBL3259820                   -15.68    0.37      0         
+FEP_CHEMBL3265023_CHEMBL3265035                   18.99     0.25      0         
+FEP_CHEMBL3265026_CHEMBL3265033                   -169.82   0.52      0         
+FEP_CHEMBL3265019_CHEMBL3265017                   nan       nan       10        
+FEP_CHEMBL3264999_CHEMBL3265037                   107.27    0.85      0         
+FEP_CHEMBL3264999_CHEMBL3265033                   -74.06    1.17      0         

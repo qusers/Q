@@ -1,0 +1,4 @@
+FEP_254_251 protein/
+FEP_290_57 protein/
+FEP_254_251 water/
+FEP_290_57 water/

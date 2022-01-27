@@ -1,0 +1,3 @@
+FEP                                               dG        sem       crashes   
+FEP_CHEMBL3402764_90-CHEMBL3402756_2_7            -73.45    0.37      3         
+FEP_CHEMBL3402742_23-CHEMBL3402764_90             20.78     0.90      3         

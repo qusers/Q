@@ -1,0 +1,8 @@
+FEP_6-7 water/
+FEP_Example_1-6 water/
+FEP_Example_1-7 water/
+FEP_SHP099-1_Example_7-11 water/
+FEP_6-7 protein/
+FEP_Example_1-6 protein/
+FEP_Example_1-7 protein/
+FEP_SHP099-1_Example_7-11 protein/

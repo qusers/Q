@@ -1,0 +1,3 @@
+FEP                                               dG        sem       crashes   
+FEP_3a_3b                                         2.22      0.05      0         
+FEP_5a_5b                                         -25.82    0.13      0         

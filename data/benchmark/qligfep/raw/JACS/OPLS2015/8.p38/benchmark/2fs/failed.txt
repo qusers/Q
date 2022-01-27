@@ -1,0 +1,10 @@
+FEP_p38a-2y_p38a-2v protein/
+FEP_p38a-2z_p38a-2y protein/
+FEP_p38a-2u_p38a-2m protein/
+FEP_p38a-2bb_p38a-2y protein/
+FEP_p38a-2u_p38a-2q protein/
+FEP_p38a-2y_p38a-2v water/
+FEP_p38a-2z_p38a-2y water/
+FEP_p38a-2u_p38a-2m water/
+FEP_p38a-2bb_p38a-2y water/
+FEP_p38a-2u_p38a-2q water/

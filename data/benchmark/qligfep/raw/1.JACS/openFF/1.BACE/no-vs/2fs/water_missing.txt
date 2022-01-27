@@ -1,0 +1,5 @@
+FEP                           dG        sem       crashes   
+FEP_CAT-4a-CAT-4j             -15.20    0.09      0         
+FEP_CAT-13k-CAT-4p            23.10     0.23      0         
+FEP_CAT-4b-CAT-4a             9.65      0.09      0         
+FEP_CAT-4p-CAT-17h            -1.63     0.06      0         
