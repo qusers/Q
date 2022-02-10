@@ -275,30 +275,6 @@ class MapGen():
                         outfile.write('{} {}\n'.format(e0, e1))
         outfile.close()
 
-
-# The following code is the CLI
-def getParser():
-    parser = argparse.ArgumentParser(
-        prog='MapGen',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        description='FEP map generator based on selected distance metrics.')
-    parser.add_argument('-i', '--insdf',
-                        dest="isdf",
-                        required=True,
-                        help=".sdf file name")
-    parser.add_argument('-m', '--metric',
-                        dest="metric",
-                        default='MFP',
-                        choices=['MFP', 'Tanimoto', 'MCS', 'SMILES'],
-                        required=False,
-                        help="Distance metric for ligand pairwairse comparison")
-    parser.add_argument('-o', '--otxt',
-                        dest="o",
-                        required=True,
-                        help="Name for output file")
-    return parser
-
-
 class Init(object):
     def __init__(self,data):
         # Put file in memory stream. This allows the server to read uploaded file

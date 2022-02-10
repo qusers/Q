@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<body>
+
+<h1>My First Web Page</h1>
+<p>My First Paragraph</p>
+
+<p id="demo"></p>
+
+<script>
+    //src='dir.php'
+    var path = document.location.pathname;
+    var directory = path.substring(path.indexOf('/'), path.lastIndexOf('/'));
+    //document.getElementById("demo").innerHTML = path;
+    //function printImg() {
+    //    pwin = window.open(document.getElementById("mainImg").src,"_blank");
+    //    pwin.onload = function () {window.print();}
+    //}
+    
+    //requiring path and fs modules
+    //const path = require('path');
+    const fs = require('fs');
+    //joining path of directory 
+    //var directoryPath = path.join(__dirname, './');
+    document.getElementById("demo").innerHTML = directoy;
+    //passsing directoryPath and callback function
+    fs.readdir(directory, function (err, files) {
+        //handling error
+        if (err) {
+            return console.log('Unable to scan directory: ' + err);
+        }    
+        //listing all files using forEach
+        files.forEach(function (file) {
+              // Do whatever you want to do with the file
+            //document.getElementById("demo").innerHTML = file;
+            console.log(file); 
+    });
+});
+
+</script>
+
+</body>
+</html>

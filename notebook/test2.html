@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>How to Create and Save text file in JavaScript</title>
+    <script src="js/FileSaver.js"></script>
+    <script>
+
+  function exportJson(el) {
+
+  var obj = {
+    a: 123,
+    b: "4 5 6"
+  };
+  var data = "text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(obj));
+  // what to return in order to show download window?
+
+  el.setAttribute("href", "data:"+data);
+  el.setAttribute("download", "data.json");    
+  }  
+    </script>
+</head>
+<body>
+
+    <a id="exportJSON" onclick="exportJson(this);" class="btn"><i class="icon-download"></i> export json</a>
+
+	
+</body>
+</html>
