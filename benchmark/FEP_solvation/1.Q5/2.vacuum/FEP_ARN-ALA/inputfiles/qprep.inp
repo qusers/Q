@@ -1,0 +1,19 @@
+rl /home/jespers/software/qligfep/FF/OPLS2015.lib 
+rl ARN.lib
+rl ALA_renumber.lib
+rprm OPLS2015_ARN_ALA_merged.prm 
+! TO DO Change if protein system is used
+rp ARN_ALA.pdb 
+! set solute_density 0.05794 
+! NOTE, this is now large for water system, change for protein system
+set solvent_pack 2.5
+boundary 1 0.04 -0.447 -0.018 15
+!solvate 0.04 -0.447 -0.018 15 SOLVENT
+!addbond at1 at2 y
+maketop MKC_p 
+writetop dualtop.top 
+wp top_p.pdb y 
+mask none 
+mask not excluded 
+wp complexnotexcluded.pdb y 
+q 
