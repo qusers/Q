@@ -1,0 +1,21 @@
+{LID}     ! atoms no    5   total charge 0.000 
+
+[info] 
+ SYBYLtype RESIDUE 
+
+[atoms] 
+   1   C1        XC15         -0.2400
+   2   H2        XH16          0.0600
+   3   H3        XH17          0.0600
+   4   H4        XH18          0.0600
+   5   H5        XH19          0.0600
+
+[bonds]
+C1        H2
+C1        H3
+C1        H4
+C1        H5
+
+[impropers]
+
+[charge_groups]

@@ -74,14 +74,14 @@ class Read_Energy(object):
 
         interval = int(interval)
         #populate
-        for i in range(0,interval):
+        for i in range(0,interval+1):
             data = Energy()
             data = data.data
             total.append(data)
 
         with open (self.ener) as infile:
             #print("reading energies in file {}".format(self.ener))
-            i = -2
+            i = -1
             for line in infile:
                 if len(line) < 2:
                     continue

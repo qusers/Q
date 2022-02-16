@@ -1,0 +1,2 @@
+FEP                           dG        sem       crashes   
+FEP_18624_1_18625_1           -4.21     0.14      0         

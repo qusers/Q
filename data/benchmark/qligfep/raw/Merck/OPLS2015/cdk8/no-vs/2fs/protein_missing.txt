@@ -1,0 +1,3 @@
+FEP                                               dG        sem       crashes   
+FEP_42_30                                         -5.07     0.26      0         
+FEP_16_18                                         -1.26     0.24      0         

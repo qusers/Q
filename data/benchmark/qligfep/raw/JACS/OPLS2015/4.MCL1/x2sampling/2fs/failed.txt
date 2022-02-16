@@ -1,0 +1,5 @@
+FEP_68_54 protein/
+FEP_67_60 water/
+FEP_68_54 water/
+FEP_66_62 water/
+FEP_67_37 water/

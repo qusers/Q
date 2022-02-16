@@ -1,0 +1,252 @@
+Regression metrics for dG for BACE target
+r2 0.61
+r2 CI 0.371 - 0.78
+MAE 0.666
+RMSE 0.85
+slope 1.327
+intercept 3.046
+p_value 0.0
+std_error 0.182
+kendall_tau 0.566
+spearman_rho 0.737
+n 36
+Regression metrics for dG for ccc_BACE target
+r2 0.004
+r2 CI 0.074 - 0.147
+MAE 1.245
+RMSE 1.478
+slope 0.107
+intercept -8.334
+p_value 0.633
+std_error 0.294
+kendall_tau 0.056
+spearman_rho 0.076
+n 36
+Regression metrics for dG for ccc_CDK2 target
+r2 0.224
+r2 CI 0.001 - 0.616
+MAE 0.882
+RMSE 1.042
+slope 0.265
+intercept -6.689
+p_value 0.139
+std_error 0.132
+kendall_tau 0.283
+spearman_rho 0.415
+n 16
+Regression metrics for dG for ccc_JNK1 target
+r2 0.213
+r2 CI 0.001 - 0.555
+MAE 1.449
+RMSE 1.821
+slope 0.843
+intercept -0.226
+p_value 0.014
+std_error 0.371
+kendall_tau 0.388
+spearman_rho 0.497
+n 21
+Regression metrics for dG for ccc_MCL1 target
+r2 0.014
+r2 CI 0.165 - 0.038
+MAE 2.343
+RMSE 2.777
+slope -0.186
+intercept -7.743
+p_value 0.116
+std_error 0.25
+kendall_tau -0.169
+spearman_rho -0.24
+n 42
+Regression metrics for dG for ccc_p38 target
+r2 0.03
+r2 CI 0.234 - 0.03
+MAE 1.604
+RMSE 2.275
+slope -0.33
+intercept -14.18
+p_value 0.514
+std_error 0.33
+kendall_tau -0.079
+spearman_rho -0.103
+n 34
+Regression metrics for dG for ccc_PTP1B target
+r2 0.644
+r2 CI 0.341 - 0.833
+MAE 0.603
+RMSE 0.798
+slope 0.782
+intercept -1.968
+p_value 0.0
+std_error 0.127
+kendall_tau 0.695
+spearman_rho 0.824
+n 23
+Regression metrics for dG for ccc_QligFEP3_BACE target
+r2 0.065
+r2 CI 0.007 - 0.29
+MAE 1.289
+RMSE 1.591
+slope 0.501
+intercept -4.145
+p_value 0.19
+std_error 0.326
+kendall_tau 0.154
+spearman_rho 0.252
+n 36
+Regression metrics for dG for ccc_QligFEP3_CDK2 target
+r2 0.294
+r2 CI 0.004 - 0.669
+MAE 0.911
+RMSE 1.186
+slope 0.441
+intercept -4.515
+p_value 0.116
+std_error 0.183
+kendall_tau 0.3
+spearman_rho 0.456
+n 16
+Regression metrics for dG for ccc_QligFEP3_JNK1 target
+r2 0.299
+r2 CI 0.023 - 0.626
+MAE 1.137
+RMSE 1.426
+slope 1.084
+intercept 0.481
+p_value 0.005
+std_error 0.381
+kendall_tau 0.44
+spearman_rho 0.652
+n 21
+Regression metrics for dG for ccc_QligFEP3_Thrombin target
+r2 0.244
+r2 CI 0.023 - 0.712
+MAE 1.411
+RMSE 1.793
+slope 1.773
+intercept 7.096
+p_value 0.445
+std_error 1.041
+kendall_tau 0.2
+spearman_rho 0.4
+n 11
+Regression metrics for dG for ccc_QligFEP3_Tyk2 target
+r2 0.054
+r2 CI 0.088 - 0.427
+MAE 1.171
+RMSE 1.343
+slope 0.157
+intercept -8.196
+p_value 0.228
+std_error 0.175
+kendall_tau 0.233
+spearman_rho 0.382
+n 16
+Regression metrics for dG for ccc_Thrombin target
+r2 0.5
+r2 CI 0.035 - 0.842
+MAE 0.417
+RMSE 0.538
+slope 1.036
+intercept 0.297
+p_value 0.06
+std_error 0.345
+kendall_tau 0.455
+spearman_rho 0.618
+n 11
+Regression metrics for dG for ccc_Tyk2 target
+r2 0.794
+r2 CI 0.501 - 0.925
+MAE 0.445
+RMSE 0.571
+slope 0.796
+intercept -1.987
+p_value 0.0
+std_error 0.108
+kendall_tau 0.7
+spearman_rho 0.868
+n 16
+Regression metrics for dG for CDK2 target
+r2 0.227
+r2 CI 0.001 - 0.618
+MAE 0.882
+RMSE 1.039
+slope 0.267
+intercept -6.671
+p_value 0.139
+std_error 0.132
+kendall_tau 0.283
+spearman_rho 0.415
+n 16
+Regression metrics for dG for JNK1 target
+r2 0.715
+r2 CI 0.425 - 0.876
+MAE 1.055
+RMSE 1.143
+slope 1.775
+intercept 7.053
+p_value 0.0
+std_error 0.257
+kendall_tau 0.756
+spearman_rho 0.898
+n 21
+Regression metrics for dG for MCL1 target
+r2 0.596
+r2 CI 0.374 - 0.759
+MAE 0.843
+RMSE 1.043
+slope 1.183
+intercept 1.474
+p_value 0.0
+std_error 0.154
+kendall_tau 0.602
+spearman_rho 0.779
+n 42
+Regression metrics for dG for p38 target
+r2 0.426
+r2 CI 0.163 - 0.659
+MAE 0.859
+RMSE 0.967
+slope 0.824
+intercept -1.874
+p_value 0.0
+std_error 0.169
+kendall_tau 0.462
+spearman_rho 0.638
+n 34
+Regression metrics for dG for PTP1B target
+r2 0.644
+r2 CI 0.34 - 0.833
+MAE 0.606
+RMSE 0.8
+slope 0.785
+intercept -1.932
+p_value 0.0
+std_error 0.127
+kendall_tau 0.695
+spearman_rho 0.824
+n 23
+Regression metrics for dG for Thrombin target
+r2 0.499
+r2 CI 0.034 - 0.842
+MAE 0.417
+RMSE 0.538
+slope 1.034
+intercept 0.284
+p_value 0.06
+std_error 0.345
+kendall_tau 0.455
+spearman_rho 0.618
+n 11
+Regression metrics for dG for Tyk2 target
+r2 0.794
+r2 CI 0.501 - 0.925
+MAE 0.446
+RMSE 0.571
+slope 0.796
+intercept -1.982
+p_value 0.0
+std_error 0.108
+kendall_tau 0.7
+spearman_rho 0.868
+n 16

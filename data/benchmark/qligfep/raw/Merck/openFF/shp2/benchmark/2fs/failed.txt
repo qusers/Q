@@ -1,0 +1,10 @@
+FEP_SHP836-2_Example-27 protein/
+FEP_SHP836-2_4 protein/
+FEP_SHP836-2_3 protein/
+FEP_SHP099-1-Example-7_Example-30 protein/
+FEP_7_6 water/
+FEP_4_3 water/
+FEP_11_10 water/
+FEP_11_SHP099-1-Example-7 water/
+FEP_7_Example-1 water/
+FEP_Example-24_Example-22 water/

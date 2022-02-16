@@ -1,0 +1,13 @@
+FEP                                               dG        sem       std       crashes   
+FEP_CHEMBL1078774_CHEMBL1089056                   8.76      0.18      0.55      0         
+FEP_CHEMBL1078691_CHEMBL1084115                   0.56      0.12      0.39      0         
+FEP_CHEMBL1083517_CHEMBL1086410                   7.26      nan       nan       0         
+FEP_CHEMBL1077204_CHEMBL1085666                   nan       nan       nan       3         
+FEP_CHEMBL1078774_CHEMBL1078691                   -2.29     0.27      0.86      0         
+FEP_CHEMBL1084676_CHEMBL1085666                   nan       nan       nan       1         
+FEP_CHEMBL1078691_CHEMBL1089056                   11.07     0.09      0.29      0         
+FEP_CHEMBL1083836_CHEMBL1082248                   nan       nan       nan       3         
+FEP_CHEMBL1082249_CHEMBL1096002                   26.92     nan       nan       5         
+FEP_CHEMBL1077204_CHEMBL1084676                   29.14     0.43      1.28      0         
+FEP_CHEMBL1084115_CHEMBL1078998                   7.12      0.22      0.45      0         
+FEP_CHEMBL1083517_CHEMBL1086409                   9.58      0.16      0.40      2         
