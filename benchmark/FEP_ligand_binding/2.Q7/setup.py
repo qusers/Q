@@ -11,6 +11,7 @@ for fep in FEPs:
     c  = 'KEBNE'
 
     print("Setting up FEPs for {}".format(fep))
+    print('python3 {} -of {} -wd {} -c {}'.format(QligFEP,of,wd,c))
     
     os.system('python3 {} -of {} -wd {} -c {}'.format(QligFEP,of,wd,c))
         
