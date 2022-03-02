@@ -25,19 +25,30 @@
             width: 400px;
             height: 600px;
         }
+
+        p.bold {
+            font-weight: bold
+        }
         
 </style>
 
 </head>
 
 <body>
-<div id = "mynetwork"></div>
+<div id="mynetwork"></div>
 
 <div>
-    <p>Import file</p>
-    <input type="file" name="file" id="file">
+    <h2>Import file</h2>
+    <input type="file" name="file" id="file"><br>
     <button onclick="doupload()" name="submit">Upload File</button>
-    <p>Export file</p>
+    <h2>FEP data</h2>
+    <p class="bold">From</p>
+    <div id="from">-</div>
+    <p class="bold">To</p>
+    <div id="to">-</div>
+    <p class="bold">dG</p>
+    <div id="dG">-</div>
+    <h2>Export file</h2>
     <button onclick="exportJson()" id="exporter" name="submit">Export</button>
 </div>
 
@@ -46,6 +57,7 @@
     // initialize global variables.
     var edges;
     var nodes;
+    var selectedEdge;
     var network; 
     var container;
     var options, data;
@@ -127,10 +139,20 @@
         // put it in its div
         // options.configure["container"] = document.getElementById("config");
         network = new vis.Network(container, data, options);
+        network.on("click", function(params) {
+            const selectedEdge = params.edges[0]
+            if(selectedEdge) {
+                const edge = getEdgeById(Object.values(edges._data), selectedEdge);
+                // Populate data
+                document.getElementById("from").innerText = edge.from ?? '-';
+                document.getElementById("to").innerText = edge.to ?? '-';
+                document.getElementById("dG").innerText = edge.payload?.dG ?? '-';
+            }
+        });
         return network;
 
         clearOutputArea();
-    } 
+    }
 
     function exportJson() {
         var dataset = new vis.DataSet(data)
@@ -163,6 +185,18 @@
     }
 
     function getNodeById(data, id) {
+        for (var n = 0; n < data.length; n++) {
+            if (data[n].id == id) {
+                // double equals since id can be numeric or string
+                return data[n];
+            }
+        }
+
+        throw "Can not find id '" + id + "' in data";
+    }
+
+    function getEdgeById(data, id) {
+        console.log(data);
         for (var n = 0; n < data.length; n++) {
             if (data[n].id == id) {
                 // double equals since id can be numeric or string
