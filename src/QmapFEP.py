@@ -5,13 +5,82 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from networkx.drawing.nx_agraph import graphviz_layout
 from rdkit.Chem.Fingerprints import FingerprintMols
+from rdkit.Chem import PandasTools
 from rdkit.Chem import AllChem
+from rdkit.Chem import rdDepictor
 from rdkit import Chem
 from rdkit.Chem import rdFMCS
+import sys
+import os
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/share/')))
+
+import src
+from src.share import Rgroup
+
+class GenRgroup():
+    def __init__(self, IO_sdf, sdf):
+        self.sdf = sdf
+        #self.suppl = Chem.ForwardSDMolSupplier(in_sdf)
+        #self.suppl2 = Chem.SDMolSupplier(in_sdf)
+        self.frame = PandasTools.LoadSDF(self.sdf,smilesName='SMILES',molColName='Molecule',
+           includeFingerprints=True)
+
+        rdDepictor.SetPreferCoordGen(True)
+
+        # change to API input
+        self.outdir = 'output'
+
+        if not os.path.isdir(self.outdir):
+            os.mkdir(self.outdir)
+
+    def generate_images(self):
+        # Function that actually runs it all
+        self.compute_coords()
+        self.get_core()
+        self.generate_Rgroups()
+        self.draw()
+
+    def compute_coords(self):
+        
+        smis = self.frame['SMILES']
+        self.cids = list(self.frame.ID)
+        self.ms = [Chem.MolFromSmiles(x) for x in smis]
+        for m in self.ms:
+            rdDepictor.Compute2DCoords(m)
+
+    def get_core(self):
+        # Change to ForwardSDMolSupplier at some point
+        with Chem.SDMolSupplier(self.sdf) as cdk2mols:
+            res=rdFMCS.FindMCS(cdk2mols).smartsString
+        #res=rdFMCS.FindMCS(self.sdf).smartsString
+        self.core = Chem.MolFromSmarts(res)
+        rdDepictor.Compute2DCoords(self.core)
+
+    def generate_Rgroups(self):
+        ps = Chem.AdjustQueryParameters.NoAdjustments()
+        ps.makeDummiesQueries=True
+        self.qcore = Chem.AdjustQueryProperties(self.core,ps)
+        mhs = [Chem.AddHs(x,addCoords=True) for x in self.ms]
+        self.mms = [x for x in mhs if x.HasSubstructMatch(self.qcore)]
+        for m in self.mms:
+            for atom in m.GetAtoms():
+                atom.SetIntProp("SourceAtomIdx",atom.GetIdx())
+        
+        self.groups,_ = Chem.rdRGroupDecomposition.RGroupDecompose([self.qcore],self.mms,asSmiles=False,asRows=True)
+
+    def draw(self):
+        # Make the label definition non-dependent on user input
+        lbls=[*self.groups[0]]
+        lbls.remove("Core")
+        overview, images = Rgroup.draw_multiple(self.mms,self.groups,self.qcore,lbls=lbls,legends=self.cids,subImageSize=(300,250))
+
+        # save file with unique identifier (?)
+        for i, image in enumerate(images):
+            image.save(self.outdir + '/' + self.cids[i] + '.png', format="png")
 
 class MapGen():
     def __init__(self, in_sdf, metric, o):
-        print(o)
         self.suppl = Chem.ForwardSDMolSupplier(in_sdf)
         self.metric = metric
         self.otxt = o
@@ -110,7 +179,7 @@ class MapGen():
         self.set_ligpairs()
         self.make_map()
         self.savemap()
-        self.make_graph()
+        #self.make_graph()
 
     def intersection(self, edge_list, candidate_edge):
         r1, r2 = candidate_edge.split()[0], candidate_edge.split()[1]
@@ -225,6 +294,7 @@ class MapGen():
                         c +=1
                 if c == len(cycles):
                     big_cycles = False
+
             # 6. Remove redundant edges
             for edge in sorted(H.edges(data=True), key=lambda t: t[2].get('weight', 1)):
                 try:
@@ -283,5 +353,13 @@ class Init(object):
             metric  = data['metric']
             o       = data['o'] 
             with io.BytesIO(f.read()) as fio:
+                # Generate Rgroup images
+                Rg = GenRgroup(fio,data['isdf'])
+                Rg.generate_images()
+
+                # Create the network
                 mg = MapGen(fio, metric, o)
                 mg.process_map()
+
+                # Show interactive map
+                ## TO DO

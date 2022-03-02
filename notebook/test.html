@@ -133,9 +133,12 @@
     } 
 
     function exportJson() {
-        var dataset = new DataSet(data.nodes)
-        console.log(dataset.nodes.getIds())
-        var exportdata = "text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data));
+        var dataset = new vis.DataSet(data)
+        dataParsed = {
+            "nodes": Object.values(data.nodes._data),
+            "edges": Object.values(data.edges._data),
+        }
+        var exportdata = "text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(dataParsed));
 
         var a = document.createElement('a');
         a.href = 'data:' + exportdata;
