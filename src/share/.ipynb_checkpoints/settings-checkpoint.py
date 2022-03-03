@@ -3,11 +3,6 @@ import os
 ROOT = os.path.dirname(os.path.realpath(__file__))
 ROOT = ROOT.split('src')[0]
 
-ENV = {
-        'ROOT'    :  ROOT,
-        'SCRATCH' :  '/tmp'
-}
-
 SLURM =  {
 'KEBNE' : {'--nodes'            : '1',
            '--ntasks-per-node'  : '10',

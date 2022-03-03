@@ -19,6 +19,7 @@ import settings as SETTINGS
 import md       as MD
 import fep      as FEP
 
+# This needs to be fixed!!
 globaldata = {'replicates' : None,
               'randrep'    : {},             
               'Temp'       : [],

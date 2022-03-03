@@ -1,0 +1,10 @@
+LICENSE
+README.md
+pyproject.toml
+setup.cfg
+setup.py
+Q.egg-info/PKG-INFO
+Q.egg-info/SOURCES.txt
+Q.egg-info/dependency_links.txt
+Q.egg-info/requires.txt
+Q.egg-info/top_level.txt
