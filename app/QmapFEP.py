@@ -29,6 +29,11 @@ if __name__ == "__main__":
                         dest="o",
                         required=True,
                         help="Name for output file")
+
+    parser.add_argument('-wd', '--workdir',
+                        dest="wd",
+                        default='workdir',
+                        help="Name for the working directory")                        
     
     args = parser.parse_args()
 
