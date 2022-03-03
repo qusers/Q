@@ -58,17 +58,8 @@ test/ethanol-methane/FEP_*
 *.pml
 *.inp
 
-FEP_solvation  MD_water
-benchmark/FEP_solvation/1.Q-cpu/
-benchmark/FEP_solvation/1.water/
-benchmark/FEP_solvation/2.Q-gpu/2.vacuum/
-benchmark/FEP_solvation/submit.py
-test/1.interactions/*/*/Q5_data/
-test/1.interactions/*/*/compare.py
-test/1.interactions/*/*/*/Q5_data/
-test/1.interactions/*/*/*/compare.py
-test/data/FEP_solvation/1.QCPU/
-test/data/FEP_solvation/1.water/
-test/data/FEP_solvation/2.QGPU/2.vacuum/
-test/data/FEP_solvation/2.QGPU/1.water/
-test/data/FEP_solvation/submit.py
+# benchmark files
+benchmark/FEP_solvation/2.Q7/1.water/
+benchmark/FEP_solvation/2.Q7/2.vacuum/
+benchmark/FEP_ligand_binding/2.Q7/1.protein/
+benchmark/FEP_ligand_binding/2.Q7/2.water/

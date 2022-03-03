@@ -4,6 +4,7 @@ import networkx as nx
 import pandas as pd
 import matplotlib.pyplot as plt
 from networkx.drawing.nx_agraph import graphviz_layout
+from networkx.readwrite import json_graph
 from rdkit.Chem.Fingerprints import FingerprintMols
 from rdkit.Chem import PandasTools
 from rdkit.Chem import AllChem
@@ -12,15 +13,20 @@ from rdkit import Chem
 from rdkit.Chem import rdFMCS
 import sys
 import os
+import json
+import shutil
 
+# import Q modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/share/')))
 
 import src
+from src.share import settings as s
 from src.share import Rgroup
 
 class GenRgroup():
-    def __init__(self, IO_sdf, sdf):
+    def __init__(self, IO_sdf, sdf, wd):
         self.sdf = sdf
+        self.wd = wd
         #self.suppl = Chem.ForwardSDMolSupplier(in_sdf)
         #self.suppl2 = Chem.SDMolSupplier(in_sdf)
         self.frame = PandasTools.LoadSDF(self.sdf,smilesName='SMILES',molColName='Molecule',
@@ -28,11 +34,13 @@ class GenRgroup():
 
         rdDepictor.SetPreferCoordGen(True)
 
-        # change to API input
-        self.outdir = 'output'
-
-        if not os.path.isdir(self.outdir):
-            os.mkdir(self.outdir)
+        # Catch if path exist?
+        if not os.path.isdir(self.wd):
+            os.mkdir(self.wd)
+        
+        imgdir = self.wd + '/' + 'img'
+        if not os.path.isdir(imgdir):
+            os.mkdir(imgdir)
 
     def generate_images(self):
         # Function that actually runs it all
@@ -77,15 +85,16 @@ class GenRgroup():
 
         # save file with unique identifier (?)
         for i, image in enumerate(images):
-            image.save(self.outdir + '/' + self.cids[i] + '.png', format="png")
+            image.save(self.wd + '/img/' + self.cids[i] + '.png', format="png")
 
 class MapGen():
-    def __init__(self, in_sdf, metric, o):
+    def __init__(self, in_sdf, metric, o, wd):
         self.suppl = Chem.ForwardSDMolSupplier(in_sdf)
         self.metric = metric
         self.otxt = o
         self.lig_dict = {}
         self.simF = None    # The similarity function to calculate distance between ligands
+        self.wd = wd
         self._set_similarity_function()
 
     def make_fp(self, mol):
@@ -178,7 +187,9 @@ class MapGen():
         self.sim_mx()
         self.set_ligpairs()
         self.make_map()
-        self.savemap()
+        self.savemapJson()
+        self.copyhtml()
+        #self.savemap()
         #self.make_graph()
 
     def intersection(self, edge_list, candidate_edge):
@@ -345,20 +356,45 @@ class MapGen():
                         outfile.write('{} {}\n'.format(e0, e1))
         outfile.close()
 
+    def savemapJson(self):
+        for charge, lig in self.lig_dict.items():
+            graph = lig['Graph']
+
+            # Some data reformatting needs to be done for visjs
+            data = json_graph.node_link_data(graph)
+            data['edges'] = data.pop('links')
+            for edge in data['edges']:
+                edge['from'] = edge.pop('source')
+                edge['to'] = edge.pop('target')
+                edge['payload'] = {"dG":"Test"}
+
+            for node in data['nodes']:
+                #node['label'] = node["id"]   # maybe need unique identifiers?
+                node["shape"] = "circularImage"      # to be changed to img location
+                node["image"] = "./img/{}.png".format(node["id"])
+                node["size"]  = 40
+
+        with open('{}/{}.json'.format(self.wd, self.otxt), 'w') as outfile:
+            outfile.write(json.dumps(data,indent = 4))
+
+    def copyhtml(self):
+        shutil.copy(s.ENV['ROOT'] + 'app/QmapFEP.html', '{}/QmapFEP.html'.format(self.wd))
+
 class Init(object):
     def __init__(self,data):
         # Put file in memory stream. This allows the server to read uploaded file
         #  into memory and pass it as an io.BytesIO() to MapGen        
         with open(data['isdf'], "rb") as f:
             metric  = data['metric']
-            o       = data['o'] 
+            o       = data['o']
+            wd   = data['wd']
             with io.BytesIO(f.read()) as fio:
                 # Generate Rgroup images
-                Rg = GenRgroup(fio,data['isdf'])
+                Rg = GenRgroup(fio,data['isdf'],wd)
                 Rg.generate_images()
 
                 # Create the network
-                mg = MapGen(fio, metric, o)
+                mg = MapGen(fio, metric, o, wd)
                 mg.process_map()
 
                 # Show interactive map
