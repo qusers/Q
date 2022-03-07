@@ -66,21 +66,24 @@ class GenInterm():
         for self.i, self.pair in enumerate(self.pairs):
             self.find_largest()
             self.get_rgroups()
-            ## currently only look for intermediates if there is only 1 rgroup
-            if self.possible:
+            for self.column in self.columns:
                 self.tokenize()
                 self.permutate()
-                self.weld()
-                # save original large & small molecule for keeping track of where the intermediates came from
-                ## not sure if better to save as smiles or as mol
-                self.df_interm['Large'] = self.df[self.df['Largest'] == True]['Molecule'].values[0]
-                self.df_interm['Small'] = self.df[self.df['Largest'] == False]['Molecule'].values[0]
-
-                df_all = pd.concat([df_all, self.df_interm], ignore_index=True)
+            self.weld()
+            # save original large & small molecule for keeping track of where the intermediates came from
+            ## not sure if better to save as smiles or as mol
+            self.df_interm['Large'] = self.df[self.df['Largest'] == True]['Molecule'].values[0]
+            self.df_interm['Small'] = self.df[self.df['Largest'] == False]['Molecule'].values[0]
+            self.df_interm['PairNum'] = self.i
+            self.df_interm['MultipleRgroups'] = self.multiple
+        
+            df_all = pd.concat([df_all, self.df_interm], ignore_index=True)
 
         # save sdf with columns; molecules of intermediate, large & smalle fragment 
         ## could be improved
-        PandasTools.WriteSDF(df_all, self.wd + '/' + 'SMinterm/' + self.namef, molColName='Intermediate', properties=['Large', 'Small']) 
+        ## for testing also saving information on pair number (so that easy to reproduce) 
+        ## if final intermediate is fragmented & if pairs had multiple r-groups
+        PandasTools.WriteSDF(df_all, self.wd + '/' + 'SMinterm/' + self.namef, molColName='Intermediate', properties=['Large', 'Small', 'PairNum', 'MultipleRgroups']) 
 
     
     def find_largest(self):
@@ -97,25 +100,24 @@ class GenInterm():
         """ 
         Use maximum common substructure of two molecules to get the differing R-Groups
         """
-        self.possible = True
+        self.multiple = False
         # find maximim common substructure & pass if none found
         ## possible to use different comparison functions
         res=rdFMCS.FindMCS(self.pair, matchValences=True, ringMatchesRingOnly=True)
-        
+
         core = Chem.MolFromSmarts(res.smartsString)
         res,_ = rdRGD.RGroupDecompose([core],self.pair,asSmiles=True,asRows=False)
         self.df_rgroup= pd.DataFrame(res)
 
         if len(self.df_rgroup.columns) > 2:
-            print(f'Too many rgroups, no intermediates will be generated for pair number {self.i}')
-            self.possible = False
-            
+            print(f'Multiple rgroups for pair number {self.i}')
+            self.multiple = True
+            self.columns = self.df_rgroup.columns[1:]
+        else:
+            self.columns = ['R1']
 
         # combine largest and rgroup info
-        self.df = pd.concat([self.df_largest, self.df_rgroup], axis=1)
-
-        ## if multiple r-groups indicate which r-group interested in?
-        self.column = 'R1'
+        self.df = pd.concat([self.df_largest, self.df_rgroup], axis=1)   
 
 
     def tokenize(self):
@@ -142,27 +144,33 @@ class GenInterm():
         """ 
         Remove tokens or edit tokens from R-groups of the largest molecule. Currently only able to remove tokens
         """
-        
-        # create new dataframe for storing adapted rgroups
+        # create new dataframe for storing adapted rgroups [has Core, R1, ... Rn]
         self.df_interm = pd.DataFrame(columns = self.df.columns[1:]).drop(columns = ['Largest'])
            
-        # for large rgroup go over all the combinations with length in range 2 shorter than largest fragment - to 1 larger than shortest fragment 
-        # (2 because connection token not taken into account)
+        # for large rgroup go over all the combinations with length in range 1 shorter than largest fragment - to 1 larger than shortest fragment 
         ## ask willem if shortest intermediate fragment can have as much atoms as shortest fragment or should always be 1 bigger
         ## maybe handle connection token differently
-        for i in range(len(self.tokens) - 2, len(self.tokens_small) - 1, -1):
-            for subset in itertools.combinations(self.tokens[:-1], i):
-                interm = ''.join(list(subset) + list(self.tokens[-1]))
-                # save fragments with valid SMILES
-                if Chem.MolFromSmiles(interm) is not None:
-                    self.df_interm.loc[self.df_interm.shape[0], self.column] = interm
+        for i in range(len(self.tokens) - 1, len(self.tokens_small) - 1, -1):
+            for subset in itertools.combinations(self.tokens, i):
+                # in some cases connection token will be removed, discard those cases
+                ## does not take into account situation with multiple connections in rgroup, like for pair 7 
+                ## C1CC1[*:1].[H][*:1].[H][*:1]
+                connection = [item for item in subset if re.match('\\[\\*:.\\]', item)]
+                if connection:
+                    interm = ''.join(subset)
+                    # save fragments with valid SMILES
+                    if Chem.MolFromSmiles(interm) is not None:
+                        self.df_interm.loc[self.df_interm.shape[0], self.column] = interm
         
         self.df_interm = self.df_interm.drop_duplicates(subset=self.column)   
 
-        ## needs to be adapted for case of multiple rgroups
-        core = self.df.at[0,'Core']
-        self.df_interm['Core'] = core
-        
+        self.df_interm['Core'] = self.df.at[0,'Core']
+        # in case of multiple rgroups also add unchanged rgroups to df
+        if self.multiple == True:
+            for rgroup in self.columns:
+                if rgroup != self.column:
+                    self.df_interm[rgroup] = self.df.at[0,rgroup]
+
 
     def weld(self):
         """ 
@@ -174,9 +182,10 @@ class GenInterm():
 
         for index, row in self.df_interm.iterrows():
             try:
-                ## adapt to work for multiple R groups
-                mol_to_weld = Chem.MolFromSmiles(
-                    f"{row['Core']}.{row['R1']}")
+                combined_smiles = row['Core']
+                for column in self.columns:
+                    combined_smiles = combined_smiles + '.' + row[column]
+                mol_to_weld = Chem.MolFromSmiles(combined_smiles)
                 welded_mol = self.weld_r_groups(mol_to_weld)
                 self.df_interm.at[index, 'Intermediate'] = welded_mol
             except AttributeError:
