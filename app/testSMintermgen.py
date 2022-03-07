@@ -16,3 +16,7 @@ if __name__ == '__main__':
     df = PandasTools.LoadSDF('Data/SMinterm/Tyk2_ligands.sdf',smilesName='SMILES',molColName='Intermediate',
            includeFingerprints=False)
     print(df['SMILES'])
+    df['Fragmented'] = df.apply(lambda row: '.' in row.SMILES, axis=1)
+    print(df.Fragmented.value_counts())
+    df = df.drop(columns = ['Large', 'Small', 'Intermediate'])
+    df.to_csv('Data/SMinterm/test.csv')
