@@ -2,7 +2,6 @@
 ## output is sdf file with intermediates for each pair?
 
 ## functionalities to add
-## able to work with molecule pairs that have more than 1 Rgroup
 ## protonate/deprotonate molecules at pH 7 & remove charged
 ## add function to permutate that changes tokens into tokens from smaller fragment (currently only removing tokens)
 ## weld_r_groups gives index & aromaticity errors & sometimes returns SMILES with fragments & also for different rdkit versions get different number of intermediates back
