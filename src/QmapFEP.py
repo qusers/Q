@@ -24,7 +24,7 @@ from src.share import settings as s
 from src.share import Rgroup
 
 class GenRgroup():
-    def __init__(self, IO_sdf, sdf, wd):
+    def __init__(self, IO_sdf, sdf, wd, env=True):
         self.sdf = sdf
         self.wd = wd
         #self.suppl = Chem.ForwardSDMolSupplier(in_sdf)
@@ -34,13 +34,14 @@ class GenRgroup():
 
         rdDepictor.SetPreferCoordGen(True)
 
-        # Catch if path exist?
-        if not os.path.isdir(self.wd):
-            os.mkdir(self.wd)
+        if env == True:
+            # Catch if path exist?
+            if not os.path.isdir(self.wd):
+                os.mkdir(self.wd)
         
-        imgdir = self.wd + '/' + 'img'
-        if not os.path.isdir(imgdir):
-            os.mkdir(imgdir)
+            imgdir = self.wd + '/' + 'img'
+            if not os.path.isdir(imgdir):
+                os.mkdir(imgdir)
 
     def generate_images(self):
         # Function that actually runs it all
