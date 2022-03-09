@@ -37,21 +37,51 @@
 </head>
 
 <body>
-<div id="mynetwork"></div>
+<div class="container">
+    <div id="mynetwork"></div>
+</div>
+<div class="container p-10">
+    <div class="">
+        <br>
+        <br>
 
-<div>
-    <h2>Import file</h2>
-    <input type="file" name="file" id="file"><br>
-    <button onclick="doupload()" name="submit">Upload File</button>
-    <h2>FEP data</h2>
-    <p class="bold">From</p>
-    <div id="from">-</div>
-    <p class="bold">To</p>
-    <div id="to">-</div>
-    <p class="bold">dG</p>
-    <div id="dG">-</div>
-    <h2>Export file</h2>
-    <button onclick="exportJson()" id="exporter" name="submit">Export</button>
+        <div class="row">
+            <h2>Import file</h2>
+        </div>
+        <div class="row px-2">
+            <input type="file" class="form-control" name="file" id="file"><br>
+            <button onclick="doupload()" name="submit" class="btn btn-primary">Upload File</button>
+        </div>
+        <br>
+    
+        <div class="row">
+            <h2>FEP data</h2>
+        </div>
+        <div class="row px-2">
+            <table class="table">
+                <thead>
+                </thead>
+                <tbody>
+                  <tr>
+                    <th scope="row">From</th>
+                    <td id="from">-</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">To</th>
+                    <td id="to">-</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">dG</th>
+                    <td id="dG">-</td>
+                  </tr>
+                </tbody>
+            </table>    
+        </div>
+        <br>
+        <div class="row px-2">
+            <button onclick="exportJson()" id="exporter" name="submit" class="btn btn-primary">Export JSON</button>
+        </div>
+    </div>
 </div>
 
 <script type="text/javascript">

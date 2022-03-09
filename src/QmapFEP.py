@@ -19,9 +19,8 @@ import shutil
 # import Q modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/share/')))
 
-import src
-from src.share import settings as s
-from src.share import Rgroup
+from share import settings as s
+from share import Rgroup
 
 class GenRgroup():
     def __init__(self, IO_sdf, sdf, wd, env=True):
