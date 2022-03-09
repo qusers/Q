@@ -81,7 +81,12 @@ class GenRgroup():
         # Make the label definition non-dependent on user input
         lbls=[*self.groups[0]]
         lbls.remove("Core")
-        overview, images = Rgroup.draw_multiple(self.mms,self.groups,self.qcore,lbls=lbls,legends=self.cids,subImageSize=(300,250))
+        overview, images = Rgroup.draw_multiple(self.mms,
+                                                self.groups,
+                                                self.qcore,
+                                                lbls=lbls,
+                                                #legends=self.cids,
+                                                subImageSize=(300,250))
 
         # save file with unique identifier (?)
         for i, image in enumerate(images):
@@ -369,10 +374,10 @@ class MapGen():
                 edge['payload'] = {"dG":"Test"}
 
             for node in data['nodes']:
-                #node['label'] = node["id"]   # maybe need unique identifiers?
-                node["shape"] = "circularImage"      # to be changed to img location
+                node['label'] = node["id"]   # maybe need unique identifiers?
+                node["shape"] = "image"      # to be changed to img location
                 node["image"] = "./img/{}.png".format(node["id"])
-                node["size"]  = 40
+                #node["size"]  = 40
 
         with open('{}/{}.json'.format(self.wd, self.otxt), 'w') as outfile:
             outfile.write(json.dumps(data,indent = 4))
