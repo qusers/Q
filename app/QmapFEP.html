@@ -13,24 +13,67 @@
 
 <style type="text/css">
 
-        #mynetwork {
-            width: 1000px;
-            height: 1000px;
-            background-color: #ffffff;
-            border: 1px solid lightgray;
-            position: relative;
-            float: left;
-        }
-        
-        #config {
-            float: left;
-            width: 400px;
-            height: 600px;
-        }
+    #mynetwork {
+        width: 900px;
+        height: 900px;
+        background-color: #ffffff;
+        border: 1px solid lightgray;
+        position: relative;
+        float: left;
+    }
 
-        p.bold {
-            font-weight: bold
-        }
+    #config {
+        float: left;
+        width: 400px;
+        height: 600px;
+    }
+
+    p.bold {
+        font-weight: bold
+    }
+
+    .row {
+        --bs-gutter-x: 0
+    }
+
+    dl.custom-dl {
+        margin-bottom: 2rem;
+        border-radius: 0.5rem;
+        border: 1px solid #e6e0da;
+    }
+    dl.custom-dl dt {
+        padding: 1rem;
+        background-color: #fafafa;
+        border-top: 1px solid #e6e0da;
+        border-right: 1px solid #e6e0da;
+    }
+    dl.custom-dl dt:first-of-type {
+        border-top: 0;
+    }
+    dl.custom-dl dd {
+        margin: 0;
+        padding: 1rem 1.25rem;
+        border-top: 1px solid #e6e0da;
+    }
+    dl.custom-dl dd:first-of-type {
+        border-top: 0;
+    }
+
+    .custom-dl dt:first-of-type {
+        border-top-left-radius: 0.5rem;
+    }
+
+    .custom-dl dt:last-of-type {
+        border-bottom-left-radius: 0.5rem;
+    }
+
+    .custom-dl dd:first-of-type {
+        border-top-right-radius: 0.5rem;
+    }
+
+    .custom-dl dd:last-of-type {
+        border-bottom-right-radius: 0.5rem;
+    }
         
 </style>
 
@@ -45,7 +88,7 @@
         <br>
         <br>
 
-        <div class="row">
+        <div class="row px-2">
             <h2>Import file</h2>
         </div>
         <div class="row px-2">
@@ -54,28 +97,24 @@
         </div>
         <br>
     
-        <div class="row">
+        <div class="row px-2">
             <h2>FEP data</h2>
         </div>
         <div class="row px-2">
-            <table class="table">
-                <thead>
-                </thead>
-                <tbody>
-                  <tr>
-                    <th scope="row">From</th>
-                    <td id="from">-</td>
-                  </tr>
-                  <tr>
-                    <th scope="row">To</th>
-                    <td id="to">-</td>
-                  </tr>
-                  <tr>
-                    <th scope="row">dG</th>
-                    <td id="dG">-</td>
-                  </tr>
-                </tbody>
-            </table>    
+            <dl class="custom-dl row mb-0">
+                <dt class="col-6">From</dt>
+                <dd class="col-6" id="from">
+                    -
+                </dd>
+                <dt class="col-6">To</dt>
+                <dd class="col-6" id="to">
+                    -
+                </dd>
+                <dt class="col-6">dG</dt>
+                <dd class="col-6" id="dG">
+                    -
+                </dd>
+            </dl>
         </div>
         <br>
         <div class="row px-2">
