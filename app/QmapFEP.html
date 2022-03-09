@@ -1,8 +1,11 @@
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
+<meta charset=UTF-8>
+<title>QmapFEP</title>
+</head>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.16.1/vis.css" type="text/css" />
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p" crossorigin="anonymous"></script>
 <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.16.1/vis-network.min.js"> </script>
 <center>
 <h1></h1>
@@ -85,14 +88,11 @@
 </div>
 <div class="container p-10">
     <div class="">
-        <br>
-        <br>
-
         <div class="row px-2">
             <h2>Import file</h2>
         </div>
         <div class="row px-2">
-            <input type="file" class="form-control" name="file" id="file"><br>
+            <input type="file" class="form-control" name="file" id="file">
             <button onclick="doupload()" name="submit" class="btn btn-primary">Upload File</button>
         </div>
         <br>
@@ -110,7 +110,7 @@
                 <dd class="col-6" id="to">
                     -
                 </dd>
-                <dt class="col-6">dG</dt>
+                <dt class="col-6" id="dGName">-</dt>
                 <dd class="col-6" id="dG">
                     -
                 </dd>
@@ -120,11 +120,31 @@
         <div class="row px-2">
             <button onclick="exportJson()" id="exporter" name="submit" class="btn btn-primary">Export JSON</button>
         </div>
+        <br>
+        <div class="row px-2">
+            <h2>Benchmark</h2>
+        </div>
+    <ul class="nav nav-tabs" id="myTab" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="tab1-tab" data-bs-toggle="tab" data-bs-target="#tab1" type="button" role="tab" aria-controls="tab1" aria-selected="true">tab1</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab2-tab" data-bs-toggle="tab" data-bs-target="#tab2" type="button" role="tab" aria-controls="tab2" aria-selected="false">tab2</button>
+        </li>
+    </ul>
+  
+    <div class="tab-content">
+        <div class="tab-pane active" id="tab1" role="tabpanel" aria-labelledby="tab1-tab">
+            <img src="vleesetend.jpg" alt="Dit is een vleesetend paard">
+        </div>
+        <div class="tab-pane" id="tab2" role="tabpanel" aria-labelledby="tab2-tab">
+            <img src="vleesetend_grimmig.jpg" width="300" height="300" alt="Dit is een grimmig vleesetend paard">
+        </div>
     </div>
+  
 </div>
 
 <script type="text/javascript">
-
     // initialize global variables.
     var edges;
     var nodes;
@@ -228,6 +248,16 @@
                 document.getElementById("from").innerText = edge.from ?? '-';
                 document.getElementById("to").innerText = edge.to ?? '-';
                 document.getElementById("dG").innerText = edge.payload?.dG ?? '-';
+                document.getElementById("dGName").innerText = 'ddG'
+            }
+            const selectedNode = params.nodes[0];
+            if (selectedNode) {
+                const node = getNodeById(Object.values(nodes._data), selectedNode);
+                // Populate data
+                document.getElementById("from").innerText = node.id ?? '-';
+                document.getElementById("to").innerText = '-';
+                document.getElementById("dG").innerText = node.payload?.dG ?? '-';
+                document.getElementById("dGName").innerText = 'dG'
             }
         });
         return network;
@@ -277,7 +307,6 @@
     }
 
     function getEdgeById(data, id) {
-        console.log(data);
         for (var n = 0; n < data.length; n++) {
             if (data[n].id == id) {
                 // double equals since id can be numeric or string
@@ -326,6 +355,17 @@
 
     init();
 
+    var triggerTabList = [].slice.call(document.querySelectorAll('#myTab button'))
+    triggerTabList.forEach(function (triggerEl) {
+        var tabTrigger = new bootstrap.Tab(triggerEl)
+
+        triggerEl.addEventListener('click', function (event) {
+            event.preventDefault()
+            tabTrigger.show()
+        })
+    })
 </script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p" crossorigin="anonymous"></script>
+
 </body>
 </html>
