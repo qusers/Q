@@ -371,12 +371,13 @@ class MapGen():
             for edge in data['edges']:
                 edge['from'] = edge.pop('source')
                 edge['to'] = edge.pop('target')
-                edge['payload'] = {"dG":"Test"}
+                edge['payload'] = {"ddG":"Test"}
 
             for node in data['nodes']:
                 node['label'] = node["id"]   # maybe need unique identifiers?
                 node["shape"] = "image"      # to be changed to img location
                 node["image"] = "./img/{}.png".format(node["id"])
+                node['payload'] = {"dG":"Test"}
                 #node["size"]  = 40
 
         with open('{}/{}.json'.format(self.wd, self.otxt), 'w') as outfile:
@@ -384,6 +385,49 @@ class MapGen():
 
     def copyhtml(self):
         shutil.copy(s.ENV['ROOT'] + 'app/QmapFEP.html', '{}/QmapFEP.html'.format(self.wd))
+
+class Analyze(object):
+    def __init__(self, o, datadir): # TO DO datadir not in API currently
+        self.mapfile = o
+        self.datadir = datadir
+
+        self.readmap()
+        self.populate_map()
+        self.write()
+
+    def readmap(self):
+        with open(self.mapfile) as infile:
+            self.data = json.load(infile)
+
+    def populate_map(self):
+        tmp = {}
+        for system in ['protein', 'water']:
+            with open(self.datadir + '/' + system + '_whole.txt') as infile:
+                for line in infile:
+                    if len(line) == 0:
+                        continue
+                    if 'crashes' in line:
+                        continue
+                    line = line.split()
+                    pert = line[0].split('_')
+                    From = pert[1].split('-')[0]
+                    To = pert[1].split('-')[1]
+
+                    if system == 'protein':
+                        tmp[(From,To)] = {'protein' : float(line[1])}
+                        tmp[(To,From)] = {'protein' : -1. * float(line[1])}
+                    
+                    if system == 'water':
+                        tmp[(From,To)]['water'] = float(line[1])
+                        tmp[(To,From)]['water'] = -1. * float(line[1])
+
+        for edge in self.data['edges']:
+            ddG = (tmp[edge['from'],edge['to']])["protein"] - (tmp[edge['from'],edge['to']])["water"]
+            edge["payload"]["ddG"] = "{:.2f}" .format(ddG)
+        
+    def write(self):
+        with open(self.mapfile, 'w') as outfile:
+            outfile.write(json.dumps(self.data,indent=4))
 
 class Init(object):
     def __init__(self,data):
