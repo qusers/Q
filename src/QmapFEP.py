@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../s
 
 from share import settings as s
 from share import Rgroup
+from share import plot
 
 class GenRgroup():
     def __init__(self, IO_sdf, sdf, wd, env=True):
@@ -371,13 +372,13 @@ class MapGen():
             for edge in data['edges']:
                 edge['from'] = edge.pop('source')
                 edge['to'] = edge.pop('target')
-                edge['payload'] = {"ddG":"Test"}
+                edge['payload'] = {"ddG":"Test","ddGexpt":None}
 
             for node in data['nodes']:
                 node['label'] = node["id"]   # maybe need unique identifiers?
                 node["shape"] = "image"      # to be changed to img location
                 node["image"] = "./img/{}.png".format(node["id"])
-                node['payload'] = {"dG":"Test"}
+                node['payload'] = {"dG":"Test","dGexpt":None}
                 #node["size"]  = 40
 
         with open('{}/{}.json'.format(self.wd, self.otxt), 'w') as outfile:
@@ -385,6 +386,55 @@ class MapGen():
 
     def copyhtml(self):
         shutil.copy(s.ENV['ROOT'] + 'app/QmapFEP.html', '{}/QmapFEP.html'.format(self.wd))
+
+class LoadData(object):
+    """
+        	Load experimental or user data
+    """
+    def __init__(self, o, ifile): # ifile needs to come from API
+        self.ifile = ifile
+        self.mapfile = o
+
+        self.get_extension()
+        self.read_file()
+        self.populate_json()
+        self.write()
+
+    def get_extension(self):
+        self.extension = self.ifile.split('.')[-1]
+
+    def read_file(self):
+        self.expt = {}
+        extensions = ['csv'] # Maybe I will
+        if self.extension not in extensions:
+            print("can't read file")
+            sys.exit()
+
+        if self.extension == 'csv':
+            with open(self.ifile) as infile:
+                i = -1
+                for line in infile:
+                    i += 1
+                    if i == 0:
+                        # skip header
+                        continue
+                    line = line.split()
+                    self.expt[line[0].strip('"')] = float(line[1])
+
+    def populate_json(self):
+        with open(self.mapfile) as infile:
+            self.QmapFEPdata = json.load(infile)
+
+        for node in self.QmapFEPdata['nodes']:
+            node["payload"]['dGexpt'] = self.expt[node['id']]
+
+        for edge in self.QmapFEPdata['edges']:
+            edge["payload"]['ddGexpt'] = self.expt[edge['to']] - self.expt[edge['from']]
+            edge["payload"]['ddGexpt'] = '{:.2f}'.format(edge["payload"]['ddGexpt'])
+
+    def write(self):
+        with open(self.mapfile, 'w') as outfile:
+            outfile.write(json.dumps(self.QmapFEPdata,indent=4))
 
 class Analyze(object):
     def __init__(self, o, datadir): # TO DO datadir not in API currently
@@ -428,6 +478,28 @@ class Analyze(object):
     def write(self):
         with open(self.mapfile, 'w') as outfile:
             outfile.write(json.dumps(self.data,indent=4))
+
+class GenPlot(object):
+    def __init__(self,o,wd):
+        self.mapfile = o
+        self.wd = wd
+
+        self.load()
+        self.plot()
+
+    def load(self):
+        with open(self.mapfile) as infile:
+            self.data = json.load(infile)   
+
+    def plot(self):
+        x = []
+        y = []
+        error = []
+        # generate ddG plot
+        for edge in self.data['edges']:
+            x.append(float(edge["payload"]["ddGexpt"]))
+            y.append(float(edge["payload"]["ddG"]))
+        plot.linplot(x=x,y=y,d='ddG')
 
 class Init(object):
     def __init__(self,data):
