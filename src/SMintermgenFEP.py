@@ -2,7 +2,7 @@
 ## output is sdf file with intermediates for each pair?
 
 ## functionalities to add
-## protonate/deprotonate molecules at pH 7 & remove charged
+## add function to handle case where R group consists of multiple fragments
 ## add function to permutate that changes tokens into tokens from smaller fragment (currently only removing tokens)
 ## weld_r_groups gives index & aromaticity errors & sometimes returns SMILES with fragments & also for different rdkit versions get different number of intermediates back
 ## probably better to work with something else than dataframe for intermediates from each better
@@ -18,6 +18,7 @@ rdBase.DisableLog('rdApp.error')
 from rdkit.Chem import rdFMCS
 from rdkit.Chem import rdRGroupDecomposition as rdRGD
 from rdkit.Chem import PandasTools
+import pybel
 
 
 import pandas as pd
@@ -67,6 +68,7 @@ class GenInterm():
             self.get_rgroups()
             for self.column in self.columns:
                 self.tokenize()
+                self.charge_original = self.return_charge(self.rgroup_large)
                 self.permutate()
             self.weld()
             # save original large & small molecule for keeping track of where the intermediates came from
@@ -131,11 +133,11 @@ class GenInterm():
         idx_large = self.df.index[self.df['Largest'] == True]
         idx_small = self.df.index[self.df['Largest'] == False]
 
-        rgroup_large = self.df.at[idx_large[0],self.column]
+        self.rgroup_large = self.df.at[idx_large[0],self.column]
         rgroup_small = self.df.at[idx_small[0],self.column]
-        
+
         # for each r group delete one token and save as intermediate
-        self.tokens = [token for token in regex.findall(rgroup_large)]
+        self.tokens = [token for token in regex.findall(self.rgroup_large)]
         self.tokens_small = [token for token in regex.findall(rgroup_small)]
         
 
@@ -157,9 +159,12 @@ class GenInterm():
                 connection = [item for item in subset if re.match('\\[\\*:.\\]', item)]
                 if connection:
                     interm = ''.join(subset)
-                    # save fragments with valid SMILES
+                    # keep fragments with valid SMILES
                     if Chem.MolFromSmiles(interm) is not None:
-                        self.df_interm.loc[self.df_interm.shape[0], self.column] = interm
+                        # keep fragments that do not introduce/loose charge
+                        # using openbabel & looking at disconnected rgroups could sometimes be incorrect
+                        if self.check_charge(interm):
+                            self.df_interm.loc[self.df_interm.shape[0], self.column] = interm
         
         self.df_interm = self.df_interm.drop_duplicates(subset=self.column)   
 
@@ -170,6 +175,28 @@ class GenInterm():
                 if rgroup != self.column:
                     self.df_interm[rgroup] = self.df.at[0,rgroup]
 
+
+    def check_charge(self, interm):
+        charge = self.return_charge(interm)
+
+        return charge == self.charge_original
+    
+
+    def return_charge(self, rgroup):
+        try:
+            mol = pybel.readstring("smi", rgroup)
+            #bool polaronly, bool correctForPH, double pH
+            mol.OBMol.AddHydrogens(False, True, 7.4)
+            rgroup = mol.write("smi")
+
+            mol = Chem.MolFromSmiles(rgroup)
+            charge = Chem.GetFormalCharge(mol)
+            # - for neutral, positive numbers for positive charge, negative for neragive charge
+        except OSError:
+            # in case where pybel cannot read molecule, decided to kick out molecule
+            charge = None
+        return charge
+    
 
     def weld(self):
         """ 
