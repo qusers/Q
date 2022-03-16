@@ -61,9 +61,9 @@ class GenRgroup():
     def get_core(self):
         # Change to ForwardSDMolSupplier at some point
         with Chem.SDMolSupplier(self.sdf) as cdk2mols:
-            res=rdFMCS.FindMCS(cdk2mols).smartsString
+            self.res=rdFMCS.FindMCS(cdk2mols).smartsString
         #res=rdFMCS.FindMCS(self.sdf).smartsString
-        self.core = Chem.MolFromSmarts(res)
+        self.core = Chem.MolFromSmarts(self.res)
         rdDepictor.Compute2DCoords(self.core)
 
     def generate_Rgroups(self):
@@ -153,7 +153,7 @@ class MapGen():
         if not self.lig_dict:
             self.set_ligdict()
         for charge, ligand in self.lig_dict.items():
-            seed = Chem.rdFMCS.FindMCS([mol for mol in self.lig_dict[charge]['Mol']], atomCompare=rdFMCS.AtomCompare.CompareAny, bondCompare=rdFMCS.BondCompare.CompareAny).smartsString
+            seed = self.res  # Chem.rdFMCS.FindMCS([mol for mol in self.lig_dict[charge]['Mol']], atomCompare=rdFMCS.AtomCompare.CompareAny, bondCompare=rdFMCS.BondCompare.CompareAny).smartsString
             sim_df = pd.DataFrame()
             dif_df = pd.DataFrame()
             ligands_done = []

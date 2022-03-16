@@ -5,14 +5,14 @@ import os
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/')))
 
-import QmapFEP
+import QmapFEP2
 
 class Startup(object):
     """
     Create dual topology FEP files based on two ligands
     """
     def __init__(self, data, *args, **kwargs):
-        START = QmapFEP.Init(data)
+        START = QmapFEP2.Init(data)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
