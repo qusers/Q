@@ -18,11 +18,14 @@ import uuid
 import shutil
 import sys
 import os
+import matplotlib.pyplot as plt
 
 # import Q modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/share/')))
 
 from share import settings as s
+from share import ccc
+from share import plot
 
 @lru_cache(maxsize=4)
 def get_palette(name="OKABE"):
@@ -613,7 +616,7 @@ class LoadData(object):
 
     def read_file(self):
         self.expt = {}
-        extensions = ['csv'] # Maybe I will
+        extensions = ['csv']
         if self.extension not in extensions:
             print("can't read file")
             sys.exit()
@@ -645,12 +648,14 @@ class LoadData(object):
             outfile.write(json.dumps(self.QmapFEPdata,indent=4))
 
 class Analyze(object):
-    def __init__(self, o, datadir): # TO DO datadir not in API currently
+    def __init__(self, o, datadir, wd): # TO DO datadir not in API currently
         self.mapfile = o
+        self.wd = wd
         self.datadir = datadir
 
         self.readmap()
         self.populate_map()
+        self.do_ccc()
         self.write()
 
     def readmap(self):
@@ -670,6 +675,7 @@ class Analyze(object):
                     pert = line[0].split('_')
                     From = pert[1].split('-')[0]
                     To = pert[1].split('-')[1]
+                    sem = line[2]
 
                     if system == 'protein':
                         tmp[(From,To)] = {'protein' : float(line[1])}
@@ -682,7 +688,31 @@ class Analyze(object):
         for edge in self.data['edges']:
             ddG = (tmp[edge['from'],edge['to']])["protein"] - (tmp[edge['from'],edge['to']])["water"]
             edge["payload"]["ddG"] = "{:.2f}" .format(ddG)
-        
+
+    def do_ccc(self):
+        """ Performs cycle closure correction. Algorithm that using as input a list of edges with their corresponding relative ddG
+         returns corrected ddGs which eliminate the hysteresis of the cycles in the FEP network. """
+        edges = []
+        ddG = []
+
+        for edge in self.data['edges']:
+            l1, l2 = edge['from'], edge['to']
+            edges.append((l1, l2))
+            w = float(edge['payload']['ddG'])
+            ddG.append(w)
+
+        c = ccc.CCC(edges=edges, E=ddG, target='TEST',workdir='./') # no idea why I need to give a target name
+        all_cycles = c.generate_cycles()
+        connectivity_sets, conMat = c.make_cccMatrix(all_cycles)
+        indep_subgraph_M, final_set, sem_cor = c.get_independent(connectivity_sets, conMat)
+        edges, ddG_cor = c.make_corrections(indep_subgraph_M, final_set)
+
+        for edge in self.data['edges']:
+            l1, l2 = edge['from'], edge['to']
+            i = edges.index((l1,l2))
+            newddG = '{:.2f}'.format(ddG_cor[i])
+            edge['payload']['ddGpredccc'] = newddG
+
     def write(self):
         with open(self.mapfile, 'w') as outfile:
             outfile.write(json.dumps(self.data,indent=4))
@@ -693,20 +723,20 @@ class GenPlot(object):
         self.wd = wd
 
         self.load()
-        self.plot()
+        self.makeplot()
 
     def load(self):
         with open(self.mapfile) as infile:
             self.data = json.load(infile)   
 
-    def plot(self):
+    def makeplot(self):
         x = []
         y = []
         error = []
         # generate ddG plot
         for edge in self.data['edges']:
             x.append(float(edge["payload"]["ddGexpt"]))
-            y.append(float(edge["payload"]["ddG"]))
+            y.append(float(edge["payload"]["ddGpredccc"]))
         plot.linplot(x=x,y=y,d='ddG')
 
 class Init(object):
