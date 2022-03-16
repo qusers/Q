@@ -1,370 +1,575 @@
 import argparse
+from collections import namedtuple
+from functools import cached_property, lru_cache
 import io
+import itertools
+import operator
+from pathlib import Path
 import networkx as nx
-import pandas as pd
-import matplotlib.pyplot as plt
-from networkx.drawing.nx_agraph import graphviz_layout
-from networkx.readwrite import json_graph
+from rdkit import Chem, DataStructs, Geometry
+from rdkit.Chem import (AllChem, rdDepictor, rdFMCS, rdqueries,
+                        rdRGroupDecomposition)
+from rdkit.Chem.Draw import rdMolDraw2D
 from rdkit.Chem.Fingerprints import FingerprintMols
-from rdkit.Chem import PandasTools
-from rdkit.Chem import AllChem
-from rdkit.Chem import rdDepictor
-from rdkit import Chem
-from rdkit.Chem import rdFMCS
+rdDepictor.SetPreferCoordGen(True)
+from networkx.readwrite import json_graph
+import json
+import uuid
+import shutil
 import sys
 import os
-import json
-import shutil
 
 # import Q modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/share/')))
 
 from share import settings as s
-from share import Rgroup
-from share import plot
 
-class GenRgroup():
-    def __init__(self, IO_sdf, sdf, wd, env=True):
-        self.sdf = sdf
-        self.wd = wd
-        #self.suppl = Chem.ForwardSDMolSupplier(in_sdf)
-        #self.suppl2 = Chem.SDMolSupplier(in_sdf)
-        self.frame = PandasTools.LoadSDF(self.sdf,smilesName='SMILES',molColName='Molecule',
-           includeFingerprints=True)
+@lru_cache(maxsize=4)
+def get_palette(name="OKABE"):
+    """Build a palette from a set of selected ones."""
+    # "Tol" colormap from https://davidmathlogic.com/colorblind
+    TOL = [(51, 34, 136), (17, 119, 51), (68, 170, 153), (136, 204, 238),
+           (221, 204, 119), (204, 102, 119), (170, 68, 153), (136, 34, 85)]
+    # "IBM" colormap from https://davidmathlogic.com/colorblind
+    IBM = [(100, 143, 255), (120, 94, 240), (220, 38, 127), (254, 97, 0),
+           (255, 176, 0)]
+    # Okabe_Ito colormap from https://jfly.uni-koeln.de/color/
+    OKABE = [(230, 159, 0), (86, 180, 233), (0, 158, 115), (240, 228, 66),
+             (0, 114, 178), (213, 94, 0), (204, 121, 167)]
 
-        rdDepictor.SetPreferCoordGen(True)
+    result = [(0, 0, 0)]
+    for color in locals().get(name):
+        result.append(tuple(channel / 255 for channel in color))
 
-        if env == True:
-            # Catch if path exist?
-            if not os.path.isdir(self.wd):
-                os.mkdir(self.wd)
-        
-            imgdir = self.wd + '/' + 'img'
-            if not os.path.isdir(imgdir):
-                os.mkdir(imgdir)
+    return result
 
-    def generate_images(self):
-        # Function that actually runs it all
-        self.compute_coords()
-        self.get_core()
-        self.generate_Rgroups()
-        self.draw()
+Ligand = namedtuple("Ligand", ["name", "pool_idx", "fingerprint"])
 
-    def compute_coords(self):
-        
-        smis = self.frame['SMILES']
-        self.cids = list(self.frame.ID)
-        self.ms = [Chem.MolFromSmiles(x) for x in smis]
-        for m in self.ms:
-            rdDepictor.Compute2DCoords(m)
+class MoleculePool:
+    """Keeps track of a group of molecules, adding the properties needed.
+    mcs: The Maximum Common Substructure (the core).
+    core: The common core for all molecules as a Mol object.
+    query_core: Same as core, but to use with decomposition.
+    groups: A list of Core + Residues found for each molecule."""
 
-    def get_core(self):
-        # Change to ForwardSDMolSupplier at some point
-        with Chem.SDMolSupplier(self.sdf) as cdk2mols:
-            self.res=rdFMCS.FindMCS(cdk2mols).smartsString
-        #res=rdFMCS.FindMCS(self.sdf).smartsString
-        self.core = Chem.MolFromSmarts(self.res)
-        rdDepictor.Compute2DCoords(self.core)
+    def __init__(self, molecules=None):
+        self.molecules = []
+        if molecules:
+            self.molecules = molecules
 
-    def generate_Rgroups(self):
-        ps = Chem.AdjustQueryParameters.NoAdjustments()
-        ps.makeDummiesQueries=True
-        self.qcore = Chem.AdjustQueryProperties(self.core,ps)
-        mhs = [Chem.AddHs(x,addCoords=True) for x in self.ms]
-        self.mms = [x for x in mhs if x.HasSubstructMatch(self.qcore)]
-        for m in self.mms:
-            for atom in m.GetAtoms():
-                atom.SetIntProp("SourceAtomIdx",atom.GetIdx())
-        
-        self.groups,_ = Chem.rdRGroupDecomposition.RGroupDecompose([self.qcore],self.mms,asSmiles=False,asRows=True)
+    def __getitem__(self, idx):
+        return self.molecules[idx]
 
-    def draw(self):
-        # Make the label definition non-dependent on user input
-        lbls=[*self.groups[0]]
-        lbls.remove("Core")
-        overview, images = Rgroup.draw_multiple(self.mms,
-                                                self.groups,
-                                                self.qcore,
-                                                lbls=lbls,
-                                                #legends=self.cids,
-                                                subImageSize=(300,250))
+    def __len__(self):
+        return len(self.molecules)
 
-        # save file with unique identifier (?)
-        for i, image in enumerate(images):
-            image.save(self.wd + '/img/' + self.cids[i] + '.png', format="png")
+    def append(self, item):
+        """Adds a new molecule to the pool."""
+        self.molecules.append(item)
+        # Clear the cached properties so they get re-calculated
+        for attr in ["mcs", "core", "query_core", "groups"]:
+            try:
+                delattr(self, attr)
+            except AttributeError:
+                pass
 
-class MapGen():
-    def __init__(self, in_sdf, metric, o, wd):
-        self.suppl = Chem.ForwardSDMolSupplier(in_sdf)
-        self.metric = metric
-        self.otxt = o
-        self.lig_dict = {}
-        self.simF = None    # The similarity function to calculate distance between ligands
-        self.wd = wd
-        self._set_similarity_function()
-
-    def make_fp(self, mol):
-        if self.metric == 'Tanimoto':
-            fp = FingerprintMols.FingerprintMol(mol)
-        elif self.metric == 'MFP':
-            fp = AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048)
-        elif self.metric == 'SMILES':
-            fp = Chem.MolToSmiles(mol, isomericSmiles=True)
+    @cached_property
+    def mcs(self):
+        if len(self) == 0:
+            return
+        if len(self) == 1:
+            # If the "pool" is only one, create a pool of two to trick FindMCS.
+            #  The MCS returned will be the whole molecule.
+            # This is neeced because FindMCS returns a non-instantiable
+            #  ResultMCS object.
+            molecules = [self.molecules[0], self.molecules[0]]
         else:
-            fp = None
-        return fp
+            molecules = self.molecules
+
+        return rdFMCS.FindMCS(molecules,
+                              matchValences=False,
+                              ringMatchesRingOnly=True,
+                              completeRingsOnly=True,
+                              matchChiralTag=False)
+
+    @cached_property
+    def core(self):
+        if self.mcs:
+            return Chem.MolFromSmarts(self.mcs.smartsString)
+
+    @cached_property
+    def query_core(self):
+        if self.core:
+            ps = Chem.AdjustQueryParameters.NoAdjustments()
+            ps.makeDummiesQueries = True
+            return Chem.AdjustQueryProperties(self.core, ps)
+
+    @cached_property
+    def groups(self):
+        molecule_matches = []
+        if self.query_core:
+            for molecule in self.molecules:
+                if molecule.HasSubstructMatch(self.query_core):
+                    molecule_matches.append(molecule)
+                    for atom in molecule.GetAtoms():
+                        atom.SetIntProp("SourceAtomIdx", atom.GetIdx())
+
+            return Chem.rdRGroupDecomposition.RGroupDecompose(
+                [self.query_core], molecule_matches, asSmiles=False,
+                asRows=True)[0]
+        else:
+            return []
+
+
+class MoleculeImage:
+    """Creates and writes Images of molecules."""
+    # Workflow mostly based on
+    # https://rdkit.blogspot.com/2020/10/molecule-highlighting-and-r-group.html
+    def __init__(self, pool_idx=0, pool=None, palette="OKABE"):
+        """Loads a molecule to create its image.
+        As each molecule needs a core to refer to (orienting, coloring...),
+        load a `pool` of them, pointing which one of the pool are you interested:
+            pool = MoleculePool([Mol1, Mol2, ..., Moln])
+            # Load Image for Mol1 above
+            MoleculeImage(pool=pool, pool_idx=0)
+            # For Mol2
+            MoleculeImage(pool=pool, pool_idx=1)
+        """
+        self.pool = pool  # This is the info of all other molecules
+        self.pool_idx = pool_idx
+        self.pool.groups  # This initializes the pool attributes
+
+        # Create a new molecule to store the drawing changes
+        # RDKit modifies the original
+        self.molecule = Chem.Mol(self.pool[self.pool_idx])
+        self.draw_mol = self.molecule
+
+        self.palette = get_palette(name=palette)
+        try:
+            self.name = self.molecule.GetProp("_Name")
+        except KeyError:
+            self.name = ""
+
+        self.core = Chem.Mol(self.pool.core)  # Copy the core
+        rdDepictor.Compute2DCoords(self.core) # This reorients the core
+        self.size = (400, 400)
+        self.fill_rings = False
+        self.idx_property = "SourceAtomIdx"
+        self.bond_width = 2
+        self.atom_radius = 0.4
+
+        self.rings = []
+        self.old_new = {}
+
+        # First step: flat the molecule and the core
+        self._flatten_molecule()
+
+    def _flatten_molecule(self):
+        """Flatten the molecule into 2D space."""
+        rdDepictor.Compute2DCoords(self.molecule)
+        self.molecule.UpdatePropertyCache()
+
+    def _fix_isotopes(self):
+        """Include the atom map numbers in the substructure search in order to
+        try to ensure a good alignment of the molecule to symmetric cores."""
+        for atom in (_ for _ in self.core.GetAtoms() if _.GetAtomMapNum()):
+            atom.ExpandQuery(
+                rdqueries.IsotopeEqualsQueryAtom(200 + atom.GetAtomMapNum()))
+
+        for label, group in self.pool.groups[self.pool_idx].items():
+            if label == 'Core':
+                continue
+            for atom in group.GetAtoms():
+                if (not atom.GetAtomicNum() and atom.GetAtomMapNum() and
+                    atom.HasProp('dummyLabel') and atom.GetProp('dummyLabel') == label):
+                    # attachment point. the atoms connected to this
+                    # should be from the molecule
+                    for nbr in [_ for _ in atom.GetNeighbors()
+                                if _.HasProp(self.idx_property)]:
+                        mAt = self.molecule.GetAtomWithIdx(
+                            nbr.GetIntProp(self.idx_property))
+                        if mAt.GetIsotope():
+                            mAt.SetIntProp('_OrigIsotope', mAt.GetIsotope())
+                        mAt.SetIsotope(200 + atom.GetAtomMapNum())
+
+    def _remove_hs(self):
+        """Remove unmapped hs so that they don't mess up the depiction.
+        Updates the old indexes mapped to new ones"""
+        rhps = Chem.RemoveHsParameters()
+        rhps.removeMapped = False
+        self.draw_mol = Chem.RemoveHs(self.molecule, rhps)
+        # Reset the original isotope values and account for the fact that
+        #  removing the Hs changed atom indices
+        for i, atom in enumerate(self.draw_mol.GetAtoms()):
+            if atom.HasProp(self.idx_property):
+                self.old_new[atom.GetIntProp(self.idx_property)] = i
+                if atom.HasProp("_OrigIsotope"):
+                    atom.SetIsotope(atom.GetIntProp("_OrigIsotope"))
+                    atom.ClearProp("_OrigIsotope")
+                else:
+                    atom.SetIsotope(0)
+
+    def _reorient_molecule(self):
+        """Reorients the drawing molecule following the core."""
+        rdDepictor.GenerateDepictionMatching2DStructure(
+            self.draw_mol, self.core)
+
+    def _add_ring(self, group, color):
+        """Add rings found in group to self.rings."""
+        Chem.GetSSSR(group)  # This finds and sets the rings.
+        ring_info = group.GetRingInfo()
+        for aring in ring_info.AtomRings():
+            tring = []
+            allFound = True
+            for aid in aring:
+                atom = group.GetAtomWithIdx(aid)
+                if not atom.HasProp(self.idx_property):
+                    allFound = False
+                    break
+                tring.append(self.old_new[atom.GetIntProp(self.idx_property)])
+            if allFound:
+                self.rings.append((tring, color))
+
+    def _highlight_residue_atoms(self, group, color):
+        """Highlight the atoms of a group with a given color.
+        Return the dict with the atoms to highlight."""
+        highlights = {}
+        atom_radius = {}
+        for atom in group.GetAtoms():
+            if atom.HasProp(self.idx_property):
+                origIdx = self.old_new[atom.GetIntProp(self.idx_property)]
+                highlights[origIdx] = [color]
+                atom_radius[origIdx] = self.atom_radius
+
+        return (highlights, atom_radius)
+
+    def _highlight_residue_bonds(self, group, color):
+        """Highlight the bonds of a group with a given color.
+        Return the dict with the atoms to highlight."""
+        highlights = {}
+        width_multiplier = {}
+        for bond in group.GetBonds():
+            batom = bond.GetBeginAtom()
+            eatom = bond.GetEndAtom()
+            if batom.HasProp(self.idx_property) and eatom.HasProp(self.idx_property):
+                origBnd = self.draw_mol.GetBondBetweenAtoms(
+                    self.old_new[batom.GetIntProp(self.idx_property)],
+                    self.old_new[eatom.GetIntProp(self.idx_property)])
+                bndIdx = origBnd.GetIdx()
+                highlights[bndIdx] = [color]
+                width_multiplier[bndIdx] = self.bond_width
+
+        return (highlights, width_multiplier)
+
+    def _highlight_residue(self, group, color, highlight):
+        atoms, atom_radius = self._highlight_residue_atoms(group, color)
+        highlight[0].update(atoms)
+        highlight[2].update(atom_radius)
+
+        bonds, bond_widths = self._highlight_residue_bonds(group, color)
+        highlight[1].update(bonds)
+        highlight[3].update(bond_widths)
+
+    def _colorfill_rings(self, highlights):
+        """Fill the rings in self.rings with the color requested."""
+        if self.fill_rings and self.rings:
+            # Set the molecule scale
+            self.canvas.DrawMoleculeWithHighlights(self.draw_mol, "", *highlights)
+            self.canvas.ClearDrawing()
+            canvas_options = self.canvas.drawOptions()
+
+            conf = self.draw_mol.GetConformer()
+            for (ring, color) in self.rings:
+                ps = [Geometry.Point2D(conf.GetAtomPosition(_)) for _ in ring]
+                self.canvas.SetFillPolys(True)
+                self.canvas.SetColour(color)
+                self.canvas.DrawPolygon(ps)
+            canvas_options.clearBackground = False
+
+    def png(self):
+        """Create a PNG with the data.
+            imgr = mapgen.MoleculeImage(pool_idx=1, pool=pool)
+            with open("MyMolecule.png", "wb") as r:
+                h.write(imgr.png())
+        """
+        # Store which atoms, bonds, and rings will be highlighted
+        highlights = [{}, {}, {}, {}]
+
+        # Initialize the drawing
+        self.canvas = rdMolDraw2D.MolDraw2DCairo(*self.size)
+        canvas_options = self.canvas.drawOptions()
+        canvas_options.useBWAtomPalette()
+
+        if self.core:
+            self._fix_isotopes()      #
+            self._remove_hs()         # Does this three belongs here ??
+            self._reorient_molecule() #
+            # Loop over R groups.
+            for color, (label, group) in zip(
+                    self.palette, self.pool.groups[self.pool_idx].items()):
+                if label == "Core":
+                    continue
+                self._highlight_residue(group, color, highlights)
+
+                if self.fill_rings:
+                    self._add_ring(group, color)
+
+            if self.fill_rings and self.rings:
+                self._colorfill_rings(highlights)
+
+        # Draw the molecule, with highlights
+        self.canvas.DrawMoleculeWithHighlights(self.draw_mol, "", *highlights)
+        self.canvas.FinishDrawing()
+
+        return self.canvas.GetDrawingText()  # This is a Png as a b"" string
+
+
+class MapGen:
+    def __init__(self, in_sdf, metric, o, wd, network_obj=None):
+        """Creates a Network from a Network Generator object.
+        A Network Generator is a model, in which we need one field: metric
+        If this model doesn't have a File-like at in_sdf, an alternative
+        in_sdf parameter can be provided to work with."""
+        if network_obj and hasattr(network_obj, "in_sdf") and \
+                hasattr(network_obj.in_sdf, "seek"):
+            network_obj.in_sdf.seek(0)
+            self.suppl = Chem.ForwardSDMolSupplier(network_obj.in_sdf)
+        else:
+            self.suppl = Chem.SDMolSupplier(str(in_sdf))
+
+        self.network = network_obj
+        self.wd=wd
+        self.otxt=o
+
+        # make environment
+        Path(self.wd).mkdir(exist_ok=True)
+        self.img_dir = "{}/img".format(self.wd)
+        Path(self.img_dir).mkdir(exist_ok=True)
+
+        # Make object on the fly if running from command line
+        if self.network == None:
+            class network: pass
+            #SMILES = "SMILES"
+            #MFP = "MFP"
+            #Tanimoto = "Tanimoto"
+            #MCS = "MCS"  # The slowest of them all
+            network.SMILES = 'SMILES'
+            network.MFP = 'MFP'
+            network.Tanimoto = 'Tanimoto'
+            network.MCS = 'MCS'
+
+            self.network = network
+            self.metric = metric
+
+        else:
+            self.metric = network_obj.metric
+        self.pool = MoleculePool()
+        self.ligands = {}
+        self.simF = None
+
+        self._set_ligands()
+        self._set_similarity_function()
+        self._set_similarity_matrix()
+
+    def fingerprint(self, molecule):
+        if self.metric == self.network.Tanimoto:
+            return FingerprintMols.FingerprintMol(molecule)
+        elif self.metric == self.network.MFP:
+            return AllChem.GetMorganFingerprintAsBitVect(
+                molecule, 2, nBits=2048)
+        elif self.metric == self.network.SMILES:
+            return Chem.MolToSmiles(molecule, isomericSmiles=True)
 
     def _set_similarity_function(self):
         """Set the similarity function to be used with selected metric."""
-        if self.metric in ['Tanimoto', 'MFP']:
-            from rdkit.DataStructs import FingerprintSimilarity as f
-        elif self.metric == 'SMILES':
-            from Bio.pairwise2 import align
-            f = align.globalms
-        self.simF = f
+        if self.metric in [self.network.Tanimoto, self.network.MFP]:
+            self.simF = DataStructs.FingerprintSimilarity
+        elif self.metric == self.network.MCS:
+            self.simF = Chem.rdFMCS.FindMCS
+        elif self.metric == self.network.SMILES:
+            from Bio import pairwise2
+            self.simF = pairwise2.align.globalms
 
-    def _ligands_score(self, data, lig_i, lig_j):
-        """Return a similarity score between lig_i and lig_j using self.simF."""
-        if lig_i == lig_j:
-            return 100.0 if self.metric in ['SMILES', 'MCS'] else 1.0
-        if self.metric in ['Tanimoto', 'MFP']:
-            return self.simF(data['FP'][lig_i], data['FP'][lig_j])
-        if self.metric == 'MCS':
-            score = self.simF([data['Mol'][lig_i],
-                               data['Mol'][lig_j]],
+    def _ligands_score(self, l1_idx, l2_idx):
+        """Return a similarity score between l1 and l2 using self.simF."""
+        if l1_idx == l2_idx:
+            return 100.0 if self.metric in [self.network.SMILES, self.network.MCS] else 1.0
+
+        if self.metric == self.network.MCS:
+            molecule_1 = self.pool[l1_idx]
+            molecule_2 = self.pool[l2_idx]
+            score = self.simF([molecule_1, molecule_2],
                               atomCompare=rdFMCS.AtomCompare.CompareAny)
             return score.numAtoms + score.numBonds
-        if self.metric == 'SMILES':
-            return (100 - self.simF(
-                data['FP'][lig_i], data['FP'][lig_j], 1, -1, -0.5, -0.05)[0][2]) / 100
+        else:
+            fingerprint_1 = self.fingerprint(self.pool[l1_idx])
+            fingerprint_2 = self.fingerprint(self.pool[l2_idx])
+            if self.metric in [self.network.Tanimoto, self.network.MFP]:
+                return round(self.simF(fingerprint_1, fingerprint_2), 3)
+            if self.metric == self.network.SMILES:
+                return round(self.simF(fingerprint_1, fingerprint_2,
+                                       1, -1, -0.5, -0.05)[0].score, 3)
 
-    def set_ligdict(self):
-        for mol in self.suppl:
+    def _set_ligands(self):
+        for idx, mol in enumerate(self.suppl):
+            self.pool.append(mol)
             charge = Chem.rdmolops.GetFormalCharge(mol)
-            v = self.lig_dict.setdefault(charge, {'Name': [], 'Mol': [], 'FP': [], 'AtNumb':[]})
-            v['Name'].append(mol.GetProp('_Name'))
-            v['AtNumb'].append(mol.GetNumHeavyAtoms())
-            v['Mol'].append(mol)
-            if self.metric != 'MCS':
-                v['FP'].append(self.make_fp(mol))
+            v = self.ligands.setdefault(charge, {"Ligand": []})
+            ligand = Ligand(name=mol.GetProp('_Name'),
+                            pool_idx=idx,
+                            fingerprint=self.fingerprint(mol))
 
-    def sim_mx(self):
-        # Ensure the self.lig_dict has been created
-        if not self.lig_dict:
-            self.set_ligdict()
-        for charge, ligand in self.lig_dict.items():
-            seed = self.res  # Chem.rdFMCS.FindMCS([mol for mol in self.lig_dict[charge]['Mol']], atomCompare=rdFMCS.AtomCompare.CompareAny, bondCompare=rdFMCS.BondCompare.CompareAny).smartsString
-            sim_df = pd.DataFrame()
-            dif_df = pd.DataFrame()
-            ligands_done = []
-            for i, lig1 in enumerate(ligand['Name']):
-                for j, lig2 in enumerate(ligand['Name']):
-                    if lig2 not in ligands_done:
-                        pair = [ligand['Mol'][i], ligand['Mol'][j]]
-                        mcs = Chem.rdFMCS.FindMCS(pair, atomCompare=rdFMCS.AtomCompare.CompareAny, bondCompare=rdFMCS.BondCompare.CompareAny, seedSmarts=seed)
-                        d1, d2 = abs(mcs.numAtoms - ligand['AtNumb'][i]), abs(mcs.numAtoms - ligand['AtNumb'][j])
-                        sim_df.loc[lig2, lig1] = self._ligands_score(ligand, i, j) - 0.001*(d1+d2)
-                        dif_df.loc[lig2, lig1] = d1 + d2
-                            
-                ligands_done.append(lig1)
-            self.lig_dict[charge]['sim_df'] = sim_df
-            self.lig_dict[charge]['dif_df'] = dif_df
+            v["Ligand"].append(ligand)
 
-    def set_ligpairs(self):
-        for charge, value in self.lig_dict.items():
-            sim_dict = {}
-            dif_dict = {}
-            for i in value['sim_df'].index:
-                for j in value['sim_df'].columns:
-                    if value['sim_df'].loc[i, j] not in [1.0, 100] and not pd.isnull(value['sim_df'].loc[i, j]):
-                        sim_dict['{} {}'.format(i, j)] = round(value['sim_df'].loc[i, j], 3)
-                        dif_dict['{} {}'.format(i, j)] = value['dif_df'].loc[i, j]
+    def _set_similarity_matrix(self):
+        # TODO document this and change function name (not a matrix anymore).
+        # Ensure the self.ligands has been created
+        if not self.ligands:
+            self.set_ligands()
 
-            if self.metric in ['Tanimoto', 'MFP', 'MCS']:
-                sim_dict = {k: v for k, v in sorted(sim_dict.items(), key=lambda item: item[1], reverse=True)}
-            elif self.metric == 'SMILES':
-                sim_dict = {k: v for k, v in sorted(sim_dict.items(), key=lambda item: item[1], reverse=False)}
+        reverse = self.metric == self.network.SMILES
+        for charge, ligands in self.ligands.items():
+            ligands["Scores"] = {}
+            for l1, l2 in itertools.combinations(ligands["Ligand"], 2):
+                ligands["Scores"][(l1.pool_idx, l2.pool_idx)] = \
+                    self._ligands_score(l1.pool_idx, l2.pool_idx)
 
-            value['sim_dict'] = sim_dict
-            value['dif_dict'] = dif_dict
+            ligands["Scores"] = \
+                {k: v for k, v in sorted(ligands["Scores"].items(),
+                                         key=operator.itemgetter(1),
+                                         reverse=reverse)}
+
+    def build_charge_tree(self, ligands):
+        """Build a graph with all ligands provided."""
+        #if "pairs_dict" not in ligands:
+        #    # Call set_ligpairs the first iteration if it wasn't called before
+        #    self.set_ligpairs()
+        H = nx.Graph()
+
+        if len(ligands['Ligand']) == 1:
+            # In case one ligand is found alone in a charge group
+            # A "graph" of one node and no edges is created.
+            H.add_node(ligands["Ligand"][0].pool_idx)
+        elif len(ligands['Ligand']) == 2:
+            # In case two ligands are found in a charge group
+            # Complete similarity matrix. At this point, stop graph
+            # generation because two nodes in a graph will always result
+            # in the same graph.
+            H.add_edge(ligands['Ligand'][0].pool_idx,
+                       ligands['Ligand'][1].pool_idx,
+                       weight=ligands["Scores"][(0, 1)])
+        else:
+            incomplete = True
+            while incomplete:
+                for (l1, l2), score in ligands["Scores"].items():
+                    if len(H.nodes) == len(ligands['Ligand']):
+                        # All nodes has been added to the graph
+                        incomplete = False
+                        break
+                    if H.has_edge(l1, l2) or H.has_edge(l2, l1):
+                        # Both Nodes already in graph and connected
+                        continue
+                    if len(H.nodes) == 0 or self.intersection(H.edges, l1, l2) \
+                            and self.not_ingraph(H.nodes, l1, l2):
+                        H.add_edge(l1, l2, weight=score)
+                        break
+        return H
+
+    def close_cycles(self, ligands):
+        """Close open cycles in graph.
+        An outer node (open cycle) is defined as a Node with only one Edge.
+        """
+        outer_nodes = self.outer_nodes(ligands["Graph"])
+        while True:
+            added_edge = False
+            for (l1, l2), score in ligands["Scores"].items():
+                if l1 in outer_nodes or l2 in outer_nodes:
+                    if (l1, l2) not in ligands["Graph"].edges or \
+                            (l2, l1) not in ligands["Graph"].edges:
+                        ligands["Graph"].add_edge(l1, l2, weight=score)
+                        # signal that an edge has been added in this iteration
+                        # of the while loop.
+                        added_edge = True
+                        break
+
+            outer_nodes = self.outer_nodes(ligands["Graph"])
+            # if no edge has been added, the while loop will hang. Exit.
+            if not added_edge or len(outer_nodes) == 0:
+                break
+
+    def add_influence_edges(self, ligands):
+        def under_cent(graph):
+            return [v for k, v in
+                    nx.eigenvector_centrality(graph, max_iter=1000).items()
+                    if v < 0.01]
+
+        eig_cent = {k: v for k, v in sorted(
+            nx.eigenvector_centrality(ligands["Graph"], max_iter=1000).items(),
+            key=lambda item: item[1], reverse=True)}
+        per_nodes = [k for k, v in eig_cent.items() if v < 0.01]
+        per_len = len(per_nodes)
+
+        # FIXME: Potential hang loop here
+        while per_len > 1:
+            for (l1, l2), score in ligands["Scores"].items():
+                if (l1 in per_nodes and l2 not in per_nodes) or \
+                        (l1 not in per_nodes and l2 in per_nodes):
+                    if (l1, l2) not in ligands["Graph"].edges or \
+                            (l2, l1) not in ligands["Graph"].edges and \
+                            intersection(ligands["Graph"].edges, l1, l2):
+                        ligands["Graph"].add_edge(l1, l2, weight=score)
+                        nlen = len(under_cent(ligands["Graph"]))
+                        if nlen > per_len:
+                            ligands["Graph"].remove_edge(l1, l2)
+                            continue
+                        else:
+                            per_len = nlen
+                            break
 
     def process_map(self):
-        self.set_ligdict()
-        self.sim_mx()
-        self.set_ligpairs()
+        self._set_similarity_matrix()
         self.make_map()
-        self.savemapJson()
-        self.copyhtml()
-        #self.savemap()
-        #self.make_graph()
 
-    def intersection(self, edge_list, candidate_edge):
-        r1, r2 = candidate_edge.split()[0], candidate_edge.split()[1]
+        # need to be caught if website version is to be merged
+        self.savePNG()
+        self.savemapJSON()
+        self.copyhtml()
+
+    def intersection(self, edge_list, r1, r2):
         for edge in edge_list:
             if r1 == edge[0] or r1 == edge[1] or r2 == edge[0] or r2 == edge[1]:
-                return True  # Shortcut comparing: it's already True
+                return True # Shortcut comparing: it's already True
         return False
 
-    def not_ingraph(self, node_list, candidate_edge):
-        r1, r2 = candidate_edge.split()[0], candidate_edge.split()[1]
+    def not_ingraph(self, node_list, r1, r2):
         return r1 not in node_list or r2 not in node_list
 
     def outer_nodes(self, G):
-        node_list = [node for node, val in G.degree() if val == 1]
+        node_list = []
+        for node in G.nodes:
+            if len(G.edges(node)) == 1:
+                node_list.append(node)
         return node_list
 
     def make_map(self):
-        for charge, lig in self.lig_dict.items():
-            H = nx.Graph()
-            lpd = self.lig_dict[charge]['sim_dict']
-            dpd = self.lig_dict[charge]['dif_dict']
-            if len(lig['Name']) == 1:  # In case one ligand is found alone in a charge group
-                raise AttributeError('Ligand found alone in charge group.')
-
-            # 1. Make shortest spannign tree (SPT)
-            incomplete = True
-            while incomplete:
-                for pert, score in lpd.items():
-                    if len(H.nodes) == len(lig['Name']):
-                        incomplete = False
-                        break
-                    l1, l2 = pert.split()[0], pert.split()[1]
-                    if H.has_edge(l1, l2) or H.has_edge(l2, l1):
-                        continue
-                    if len(H.nodes) == 0 or self.intersection(H.edges, pert) and self.not_ingraph(H.nodes, pert):
-                        H.add_edge(l1, l2, weight=score)
-                        break
-            
+        for charge, ligands in self.ligands.items():
+            # 1. Make SPT (Shortest Path Tree)
+            ligands["Graph"] = self.build_charge_tree(ligands)
             # 2. Close Cycles
-            while len(self.outer_nodes(H)) != 0:
-                for pert, score in lpd.items():
-                    l1, l2 = pert.split()[0], pert.split()[1]
-                    if l1 in self.outer_nodes(H) or l2 in self.outer_nodes(H):
-                        if ((l1, l2) not in H.edges or (l2, l1) not in H.edges):
-                            H.add_edge(l1, l2, weight=score)
-                            break
+            self.close_cycles(ligands)
+            # 3. Add influence edges
+            self.add_influence_edges(ligands)
 
-            # 3. Ensure diameter constraint
-            d = nx.diameter(H)
-            while d > 8:
-                for pert, score in lpd.items():
-                    l1, l2 = pert.split()[0], pert.split()[1]
-                    if (l1, l2) not in H.edges() and (l2, l1) not in H.edges() and self.intersection(H.edges(), pert):
-                        H.add_edge(l1, l2, weight=score)
-                        nd = nx.diameter(H)
-                        if nd == d:
-                            H.remove_edge(l1, l2)
-                            continue
-                        else:
-                            d = nd
-                            break
+    def savePNG(self):
+        for i, molecule in enumerate(self.pool):
+            ligand = self.ligands[0]['Ligand'][i] # Charge thing to be fixed here.
+            moleculeImage = MoleculeImage(pool_idx=i, pool=self.pool)
+            with open(str(Path(self.img_dir) / f"{ligand.name}.png"), "wb") as png:
+                png.write(moleculeImage.png())
 
-            # 4. k-edge augmentation 
-            t = 1.0
-            k_edge_comp = False
-            no_complement = False
-            while not k_edge_comp and not no_complement:
-                complement = None
-                try:
-                    avail = {(k.split()[0], k.split()[1]):v for k, v in lpd.items() if v > t}
-                    complement = list(nx.k_edge_augmentation(H, k = 2.0, avail=avail))
-                except:
-                    pass
-                if complement == None:
-                    t -= 0.05
-                else:
-                    ilegal = []
-                    for edge in complement:
-                        score = lpd['{} {}'.format(edge[0], edge[1])]
-                        dif = dpd['{} {}'.format(edge[0], edge[1])]
-                        e = (edge[0], edge[1])
-                        if (dif >= 6) and score <= 0.70:
-                            ilegal.append(edge)
-                            continue
-                        else:
-                            w = lpd['{} {}'.format(edge[0], edge[1])]
-                            H.add_edge(*edge, weight=w)
-                    if len(ilegal) == len(complement):
-                        no_complement = True
-                    k_edge_comp = nx.is_k_edge_connected(H, 2.0)
-
-            # 5. Break big cycles
-            big_cycles = False
-            cycles = nx.cycle_basis(H)
-            breaking_edges = []
-            for cyc in cycles:
-                if len(cyc) >= 8:
-                    big_cycles = True
-
-            while big_cycles:
-                cycles = nx.cycle_basis(H)
-                c = 0
-                for cyc in cycles:
-                    if len(cyc) >= 8:
-                        for pert, score in lpd.items():
-                            l1, l2 = pert.split()[0], pert.split()[1]
-                            if l1 in cyc and l2 in cyc and (l1, l2) not in H.edges() and (l2, l1) not in H.edges():
-                                H.add_edge(l1, l2, weight=score)
-                                breaking_edges.extend([(l1, l2), (l2, l1)])
-                                break
-                    else:
-                        c +=1
-                if c == len(cycles):
-                    big_cycles = False
-
-            # 6. Remove redundant edges
-            for edge in sorted(H.edges(data=True), key=lambda t: t[2].get('weight', 1)):
-                try:
-                    dif = dpd['{} {}'.format(edge[0], edge[1])]
-                except:
-                    dif = dpd['{} {}'.format(edge[1], edge[0])]
-                if ((edge[2]['weight'] <= 0.70) or (dif >= 6)) and ((edge[0], edge[1]) not in breaking_edges):
-                    H.remove_edge(*edge[:2])
-                    if not nx.is_connected(H):
-                        H.add_edge(*edge[:2], weight=edge[2]['weight'])
-                    elif nx.diameter(H) > 7:
-                        H.add_edge(*edge[:2], weight=edge[2]['weight'])
-                    elif not nx.is_k_edge_connected(H, k=2):
-                        H.add_edge(*edge[:2], weight=edge[2]['weight'])
-                    elif len(self.outer_nodes(H)) > 0:
-                        H.add_edge(*edge[:2], weight=edge[2]['weight'])
-            print('Number of edges: {}'.format(len(H.edges())))
-            lig['Graph'] = H
-    
-    def make_graph(self):
-        """ Plotting of the FEP network graph. """
-        for charge, lig in self.lig_dict.items():
-            G = nx.DiGraph()
-            for e in lig['Graph'].edges():
-                G.add_edge(e[0], e[1])
-            dG_pos = graphviz_layout(G, prog='neato')
-            labels = nx.get_edge_attributes(G, 'weight')
-            nx.draw(G, pos=dG_pos, with_labels=True, node_size=1000)
-            nx.draw_networkx_edges(G, dG_pos, arrowstyle='-|>', arrowsize=10)
-            nx.draw_networkx_edge_labels(G, dG_pos, edge_labels=labels)
-            plt.show()
-    
-    def clean_name(self, str):
-        return str.replace('.', '-').replace('_', '-').replace('(', '-').replace(')', '-')
-
-    def savemap(self):
-        with open('{}'.format(self.otxt), 'w') as outfile:
-            for charge, lig in self.lig_dict.items():
-                for e in lig['Graph'].edges():
-                    idx, jdx = lig['Name'].index(e[0]), lig['Name'].index(e[1])
-                    e0, e1 = self.clean_name(e[0]), self.clean_name(e[1])
-                    an0, an1 = lig['AtNumb'][idx], lig['AtNumb'][jdx]
-                    if an0 > an1: 
-                        outfile.write('{} {}\n'.format(e0, e1))
-                    elif an1 > an0:
-                        outfile.write('{} {}\n'.format(e1, e0))
-                    else:
-                        outfile.write('{} {}\n'.format(e0, e1))
-        outfile.close()
-
-    def savemapJson(self):
-        for charge, lig in self.lig_dict.items():
-            graph = lig['Graph']
+    def savemapJSON(self):
+        for charge, ligands in self.ligands.items():
+            graph = ligands["Graph"]
 
             # Some data reformatting needs to be done for visjs
             data = json_graph.node_link_data(graph)
@@ -375,15 +580,18 @@ class MapGen():
                 edge['payload'] = {"ddG":"Test","ddGexpt":None}
 
             for node in data['nodes']:
-                node['label'] = node["id"]   # maybe need unique identifiers?
+                labelname = self.ligands[0]['Ligand'][node['id']].name
+                node['label'] = labelname # maybe need unique identifiers?
+                #node['label'] = node["id"]   # maybe need unique identifiers?
                 node["shape"] = "image"      # to be changed to img location
-                node["image"] = "./img/{}.png".format(node["id"])
+                node["image"] = "./img/{}.png".format(labelname)
                 node['payload'] = {"dG":"Test","dGexpt":None}
                 #node["size"]  = 40
 
         with open('{}/{}.json'.format(self.wd, self.otxt), 'w') as outfile:
-            outfile.write(json.dumps(data,indent = 4))
-
+        #with open('test.json', 'w') as outfile:
+            outfile.write(json.dumps(data,indent = 4))            
+    
     def copyhtml(self):
         shutil.copy(s.ENV['ROOT'] + 'app/QmapFEP.html', '{}/QmapFEP.html'.format(self.wd))
 
@@ -510,13 +718,6 @@ class Init(object):
             o       = data['o']
             wd   = data['wd']
             with io.BytesIO(f.read()) as fio:
-                # Generate Rgroup images
-                Rg = GenRgroup(fio,data['isdf'],wd)
-                Rg.generate_images()
-
                 # Create the network
-                mg = MapGen(fio, metric, o, wd)
+                mg = MapGen(data['isdf'], metric, o, wd)
                 mg.process_map()
-
-                # Show interactive map
-                ## TO DO
