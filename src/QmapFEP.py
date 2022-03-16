@@ -19,6 +19,7 @@ import shutil
 import sys
 import os
 import matplotlib.pyplot as plt
+import math
 
 # import Q modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/share/')))
@@ -573,17 +574,17 @@ class MapGen:
     def savemapJSON(self):
         for charge, ligands in self.ligands.items():
             graph = ligands["Graph"]
-
             # Some data reformatting needs to be done for visjs
             data = json_graph.node_link_data(graph)
             data['edges'] = data.pop('links')
             for edge in data['edges']:
-                edge['from'] = edge.pop('source')
-                edge['to'] = edge.pop('target')
+                edge['from'] = self.ligands[0]['Ligand'][edge['source']].name
+                edge['to'] = self.ligands[0]['Ligand'][edge['target']].name
                 edge['payload'] = {"ddG":"Test","ddGexpt":None}
 
             for node in data['nodes']:
                 labelname = self.ligands[0]['Ligand'][node['id']].name
+                node['id'] = labelname
                 node['label'] = labelname # maybe need unique identifiers?
                 #node['label'] = node["id"]   # maybe need unique identifiers?
                 node["shape"] = "image"      # to be changed to img location
@@ -678,16 +679,18 @@ class Analyze(object):
                     sem = line[2]
 
                     if system == 'protein':
-                        tmp[(From,To)] = {'protein' : float(line[1])}
-                        tmp[(To,From)] = {'protein' : -1. * float(line[1])}
+                        tmp[(From,To)] = {'protein' : (float(line[1]),float(sem))}
+                        tmp[(To,From)] = {'protein' : (-1. * float(line[1]),float(sem))}
                     
                     if system == 'water':
-                        tmp[(From,To)]['water'] = float(line[1])
-                        tmp[(To,From)]['water'] = -1. * float(line[1])
+                        tmp[(From,To)]['water'] = (float(line[1]),float(sem))
+                        tmp[(To,From)]['water'] = (-1. * float(line[1]),float(sem))
 
         for edge in self.data['edges']:
-            ddG = (tmp[edge['from'],edge['to']])["protein"] - (tmp[edge['from'],edge['to']])["water"]
+            ddG = (tmp[edge['from'],edge['to']])["protein"][0] - (tmp[edge['from'],edge['to']])["water"][0]
+            ddGsem = ((tmp[edge['from'],edge['to']])["protein"][1] + (tmp[edge['from'],edge['to']])["water"][1])/math.sqrt(2)
             edge["payload"]["ddG"] = "{:.2f}" .format(ddG)
+            edge["payload"]["sem"] = "{:.2f}" .format(ddGsem)
 
     def do_ccc(self):
         """ Performs cycle closure correction. Algorithm that using as input a list of edges with their corresponding relative ddG
@@ -737,7 +740,9 @@ class GenPlot(object):
         for edge in self.data['edges']:
             x.append(float(edge["payload"]["ddGexpt"]))
             y.append(float(edge["payload"]["ddGpredccc"]))
-        plot.linplot(x=x,y=y,d='ddG')
+            error.append(float(edge["payload"]["sem"]))
+        
+        plot.linplot(x=x,y=y,d='ddG',error=error,storedir=self.wd)
 
 class Init(object):
     def __init__(self,data):
