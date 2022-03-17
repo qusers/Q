@@ -3,7 +3,6 @@
 
 ## functionalities to add
 ## add function to handle case where R group consists of multiple fragments
-## add function to permutate that changes tokens into tokens from smaller fragment (currently only removing tokens)
 ## weld_r_groups gives index & aromaticity errors & sometimes returns SMILES with fragments & also for different rdkit versions get different number of intermediates back
 ## probably better to work with something else than dataframe for intermediates from each better
 
@@ -14,7 +13,7 @@
 
 from cmath import nan
 from rdkit import rdBase, Chem
-rdBase.DisableLog('rdApp.error')
+rdBase.DisableLog('rdApp.*')
 from rdkit.Chem import rdFMCS
 from rdkit.Chem import rdRGroupDecomposition as rdRGD
 from rdkit.Chem import PandasTools
@@ -33,10 +32,11 @@ from rdkit.Chem.rdchem import EditableMol
 
 
 class GenInterm():
-    def __init__(self, path, namef, wd):
+    def __init__(self, path, namef, wd, insert_small):
         self.path = path
         self.namef = namef
         self.wd = wd
+        self.insert_small = insert_small
         
         with open(self.path + self.namef, 'rb') as reader:
             suppl = Chem.ForwardSDMolSupplier(reader)
@@ -64,8 +64,10 @@ class GenInterm():
         # for each of the pairs create the intermediates
         ## for loop could probably be prettier
         for self.i, self.pair in enumerate(self.pairs):
+            #if self.i != 22: continue
             self.find_largest()
             self.get_rgroups()
+            # for each r-group
             for self.column in self.columns:
                 self.tokenize()
                 self.charge_original = self.return_charge(self.rgroup_large)
@@ -117,8 +119,19 @@ class GenInterm():
         else:
             self.columns = ['R1']
 
+        # remove hydrogens post match
+        for column in self.columns:
+            self.df_rgroup.loc[0,column] = self.remove_Hfragmens(self.df_rgroup.loc[0,column])
+            self.df_rgroup.loc[1,column] = self.remove_Hfragmens(self.df_rgroup.loc[1,column])
         # combine largest and rgroup info
         self.df = pd.concat([self.df_largest, self.df_rgroup], axis=1)   
+
+
+    def remove_Hfragmens(self, SMILES):
+        tokens = SMILES.split('.')
+        SMILES_stripped = [item for item in tokens if not re.match(r"(\[H\]\[\*\:.\])", item)]
+
+        return '.'.join(SMILES_stripped)
 
 
     def tokenize(self):
@@ -147,7 +160,20 @@ class GenInterm():
         """
         # create new dataframe for storing adapted rgroups [has Core, R1, ... Rn]
         self.df_interm = pd.DataFrame(columns = self.df.columns[1:]).drop(columns = ['Largest'])
-           
+
+        # sample some/all options where tokens from small r-group are inserted
+        available_small = [item for item in self.tokens_small if not re.match(r"(\[\*\:.\]|\.)", item)]
+
+        if len(available_small) == 0:
+            insert_small = False 
+        else:
+            to_add = set()
+            for i in range(1, len(available_small)+1):
+                for subset in itertools.combinations(available_small, i):
+                    to_add.add(subset)
+            insert_small = self.insert_small
+
+        # get all the possible options for shorter r-group   
         # for large rgroup go over all the combinations with length in range 1 shorter than largest fragment - to 1 larger than shortest fragment 
         ## ask willem if shortest intermediate fragment can have as much atoms as shortest fragment or should always be 1 bigger
         ## maybe handle connection token differently
@@ -158,14 +184,29 @@ class GenInterm():
                 ## C1CC1[*:1].[H][*:1].[H][*:1]
                 connection = [item for item in subset if re.match('\\[\\*:.\\]', item)]
                 if connection:
-                    interm = ''.join(subset)
-                    # keep fragments with valid SMILES
-                    if Chem.MolFromSmiles(interm) is not None:
-                        # keep fragments that do not introduce/loose charge
-                        # using openbabel & looking at disconnected rgroups could sometimes be incorrect
-                        if self.check_charge(interm):
-                            self.df_interm.loc[self.df_interm.shape[0], self.column] = interm
+                    # add fragments of small subset into large subset
+                    subsets = []
+                    subsets.append(subset)
+
+                    if insert_small:
+                        for to_insert in to_add:
+                            # only insert tokens from small fragment when smaller than long fragment
+                            if len(subset) >= len(self.tokens) - len(to_insert): continue
+                            for j in range(len(subset)):
+                                a = list(subset)
+                                a[j:j] = to_insert
+                                subsets.append(a)
+
+                    for subset in subsets:
+                        interm = ''.join(subset)
+                        # keep fragments with valid SMILES
+                        if Chem.MolFromSmiles(interm) is not None:
+                            # keep fragments that do not introduce/loose charge
+                            # using openbabel & looking at disconnected rgroups could sometimes be incorrect
+                            if self.check_charge(interm):
+                                self.df_interm.loc[self.df_interm.shape[0], self.column] = interm
         
+        # drop duplicate R groups to save time
         self.df_interm = self.df_interm.drop_duplicates(subset=self.column)   
 
         self.df_interm['Core'] = self.df.at[0,'Core']
@@ -192,7 +233,7 @@ class GenInterm():
             mol = Chem.MolFromSmiles(rgroup)
             charge = Chem.GetFormalCharge(mol)
             # - for neutral, positive numbers for positive charge, negative for neragive charge
-        except OSError:
+        except:
             # in case where pybel cannot read molecule, decided to kick out molecule
             charge = None
         return charge
@@ -203,9 +244,7 @@ class GenInterm():
         Put modified rgroups back on the core, returns intermediate
         """
         self.df_interm['Intermediate'] = nan
-        # drop doplicate R groups to save time
-        self.df_interm = self.df_interm.drop_duplicates(subset='R1')
-
+        
         for index, row in self.df_interm.iterrows():
             try:
                 combined_smiles = row['Core']
@@ -223,7 +262,7 @@ class GenInterm():
 
         ## not 100% sure this works on mol objects
         self.df_interm = self.df_interm.drop_duplicates(subset='Intermediate')
-        self.df_interm = self.df_interm.drop(columns = ['R1', 'Core'])
+        self.df_interm = self.df_interm.drop(columns = [* ['Core'], *self.columns])
         self.df_interm = self.df_interm.dropna()
         
 

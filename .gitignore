@@ -63,3 +63,6 @@ benchmark/FEP_solvation/2.Q7/1.water/
 benchmark/FEP_solvation/2.Q7/2.vacuum/
 benchmark/FEP_ligand_binding/2.Q7/1.protein/
 benchmark/FEP_ligand_binding/2.Q7/2.water/
+
+# SMILES based intermediates
+app/Data/SMinterm/Tyk2_ligands.sdf
