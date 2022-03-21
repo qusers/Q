@@ -77,7 +77,7 @@ class CCC:
             else:
                 converged_cycles.append(cycle)
 
-        return converged_cycles
+        return all_cycles
     
     def make_cccMatrix(self, all_cycles):
         Mg = np.zeros(shape=(len(all_cycles), len(self.edges)))

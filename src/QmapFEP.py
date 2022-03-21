@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../s
 from share import settings as s
 from share import ccc
 from share import plot
+from share import metrics
 
 @lru_cache(maxsize=4)
 def get_palette(name="OKABE"):
@@ -657,6 +658,7 @@ class Analyze(object):
         self.readmap()
         self.populate_map()
         self.do_ccc()
+        self.get_metrics()
         self.write()
 
     def readmap(self):
@@ -718,6 +720,18 @@ class Analyze(object):
             i = edges.index((l1,l2))
             newddG = '{:.2f}'.format(ddG_cor[i])
             edge['payload']['ddGpredccc'] = newddG
+
+    def get_metrics(self):
+        x = []
+        y = []
+        error = []
+        # generate ddG plot
+        for edge in self.data['edges']:
+            x.append(float(edge["payload"]["ddGexpt"]))
+            y.append(float(edge["payload"]["ddGpredccc"]))
+            error.append(float(edge["payload"]["sem"]))
+
+        self.data['allmetrics'] = metrics.analysis(X=x,Y=y,Z=error)
 
     def write(self):
         with open(self.mapfile, 'w') as outfile:
