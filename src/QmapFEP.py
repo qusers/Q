@@ -697,14 +697,17 @@ class Analyze(object):
          returns corrected ddGs which eliminate the hysteresis of the cycles in the FEP network. """
         edges = []
         ddG = []
+        sem = []
 
         for edge in self.data['edges']:
             l1, l2 = edge['from'], edge['to']
             edges.append((l1, l2))
             w = float(edge['payload']['ddG'])
+            e = float(edge['payload']['sem'])
             ddG.append(w)
+            sem.append(e)
 
-        c = ccc.CCC(edges=edges, E=ddG, target='TEST',workdir='./') # no idea why I need to give a target name
+        c = ccc.CCC(edges=edges, E=ddG, Esem=sem, workdir='./')
         all_cycles = c.generate_cycles()
         connectivity_sets, conMat = c.make_cccMatrix(all_cycles)
         indep_subgraph_M, final_set, sem_cor = c.get_independent(connectivity_sets, conMat)

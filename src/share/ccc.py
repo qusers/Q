@@ -1,3 +1,4 @@
+from ast import NodeTransformer
 import networkx as nx
 from networkx.drawing.nx_agraph import graphviz_layout
 import numpy as np
@@ -8,10 +9,10 @@ class CCC:
     """ Cycle closure correction algorithm.
     Input a list of edges and its associated ddG values.
     Output corrected ddG values without hysteresis."""
-    def __init__(self, edges, E, target, workdir):
+    def __init__(self, edges, E, Esem, workdir):
         self.edges = edges
         self.E = E
-        self.target = target
+        self.Esem = Esem
         self.wrkdir = workdir
 
     def independent_rows(self, A, tol=1e-05):
@@ -36,11 +37,47 @@ class CCC:
 
     def generate_cycles(self):
         input_list = self.edges.copy()
+        tmp = {}
+        # construct energy dictionary, including invert
+        for i in range(0, len(input_list)):
+            tmp[input_list[i]] = (self.E[i], self.Esem[i])
+            invert_edge = (input_list[i][1],input_list[i][0])
+            tmp[invert_edge] = (-self.E[i], self.Esem[i])
+
+        # make the graph
         G = nx.Graph(input_list)
+
+        # add the weights, these are the ddG values
+        for edge in G.edges():
+            G[edge[0]][edge[1]]['weight'] = tmp[edge][0]
+
         G = G.to_directed()
         simp_cyc = list(nx.simple_cycles(G))
         all_cycles = [i for i in simp_cyc if len(i) > 2]
-        return all_cycles
+        converged_cycles = []
+        bad_cycles = []
+
+        # identify bad cycles:
+        for cycle in all_cycles:
+            ddGsum = 0.
+            sem = 0.
+            for i in range(0,len(cycle)):
+                if i < len(cycle) - 1:
+                    query = (cycle[i], cycle[i+1])
+                else:
+                    query = (cycle[i], cycle[0])
+                
+                ddGsum += tmp[query][0]
+                sem += tmp[query][1]
+
+            sem_pooled = sem/np.sqrt(len(cycle))
+            if abs(ddGsum) - sem_pooled  > 0.0:
+                bad_cycles.append([cycle, ddGsum, sem_pooled])
+
+            else:
+                converged_cycles.append(cycle)
+
+        return converged_cycles
     
     def make_cccMatrix(self, all_cycles):
         Mg = np.zeros(shape=(len(all_cycles), len(self.edges)))
