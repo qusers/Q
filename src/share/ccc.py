@@ -68,9 +68,9 @@ class CCC:
                     query = (cycle[i], cycle[0])
                 
                 ddGsum += tmp[query][0]
-                sem += tmp[query][1]
+                sem += (tmp[query][1] ** 2)
 
-            sem_pooled = sem/np.sqrt(len(cycle))
+            sem_pooled = np.sqrt(sem)
             if abs(ddGsum) - sem_pooled  > 0.0:
                 bad_cycles.append([cycle, ddGsum, sem_pooled])
 

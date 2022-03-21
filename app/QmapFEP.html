@@ -145,7 +145,16 @@
                     <img src="vleesetend_grimmig.jpg" width="300" height="300" alt="Dit is een grimmig vleesetend paard">
                 </div>
                 <div class="tab-pane" id="metric" role="tabpanel" aria-labelledby="metric-tab">
-                    <img src="vleesetend_grimmig.jpg" width="300" height="300" alt="Dit is een grimmig vleesetend paard">
+                    <dl class="custom-dl row mb-0">
+                        <dt class="col-6">MAE</dt>
+                        <dd class="col-6" id="MAE">
+                            -
+                        </dd>
+                        <dt class="col-6">RMSE</dt>
+                        <dd class="col-6" id="RMSE">
+                            -
+                        </dd>
+                    </dl>
                 </div>
             </div>
         </div>
@@ -175,6 +184,7 @@
         let data = document.getElementById("file").files[0];
         data.text().then((data) => {
             jsonData = JSON.parse(data)
+            populateMetrics();
             drawGraph();
         });
     };
@@ -185,6 +195,12 @@
 
     function clearOutputArea() {
         exportArea.value = "";
+    }
+    
+    function populateMetrics() {        
+        // get metrics for the ddG graph
+        document.getElementById("MAE").innerText = jsonData.allmetrics.MAE[0] ?? '-';
+        document.getElementById("RMSE").innerText = jsonData.allmetrics.RMSE[0];// ?? '-';
     }
 
     function drawGraph() {
