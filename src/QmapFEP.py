@@ -22,12 +22,12 @@ import matplotlib.pyplot as plt
 import math
 
 # import Q modules
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/share/')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../share/')))
 
-from share import settings as s
-from share import ccc
-from share import plot
-from share import metrics
+import settings as s
+import ccc
+import plot
+import metrics
 
 @lru_cache(maxsize=4)
 def get_palette(name="OKABE"):
