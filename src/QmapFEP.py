@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 import math
 
 # import Q modules
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../env/')))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../share/')))
 
 import settings as s
