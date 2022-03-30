@@ -599,7 +599,7 @@ class MapGen:
             outfile.write(json.dumps(data,indent = 4))            
     
     def copyhtml(self):
-        shutil.copy(s.ENV['ROOT'] + 'app/QmapFEP.html', '{}/QmapFEP.html'.format(self.wd))
+        shutil.copy(s.ENV['ROOT'] + 'src/QmapFEP.html', '{}/QmapFEP.html'.format(self.wd))
 
 class LoadData(object):
     """
