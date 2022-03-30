@@ -654,10 +654,12 @@ class Analyze(object):
         self.mapfile = o
         self.wd = wd
         self.datadir = datadir
+        self.ener_dict_corr = {}
 
         self.readmap()
         self.populate_map()
         self.do_ccc()
+        self.calc_dG()
         self.get_metrics()
         self.write()
 
@@ -709,9 +711,9 @@ class Analyze(object):
             ddG.append(w)
             sem.append(e)
 
-        c = ccc.CCC(edges=edges, E=ddG, Esem=sem, workdir='./')
-        all_cycles = c.generate_cycles()
-        connectivity_sets, conMat = c.make_cccMatrix(all_cycles)
+        c = ccc.CCC(edges=edges, E=ddG, Esem=sem, workdir=self.wd)
+        self.all_cycles, self.ener_dict, self.graph = c.generate_cycles()
+        connectivity_sets, conMat = c.make_cccMatrix(self.all_cycles)
         indep_subgraph_M, final_set, sem_cor = c.get_independent(connectivity_sets, conMat)
         edges, ddG_cor = c.make_corrections(indep_subgraph_M, final_set)
 
@@ -720,6 +722,59 @@ class Analyze(object):
             i = edges.index((l1,l2))
             newddG = '{:.2f}'.format(ddG_cor[i])
             edge['payload']['ddGpredccc'] = newddG
+
+            self.ener_dict_corr[(l1,l2)] = float(newddG)
+            self.ener_dict_corr[(l2,l1)] = -float(newddG)
+
+    def calc_dG(self):
+        # for loop over nodes
+        # for each for loop go to the reference(s)
+        # keep shortest path to a reference 
+        # TO DO: Probably want to save a graph in the json
+
+        # TO DO: refactor code
+
+        refs = {'1h1q':None, '1h1r':None}
+        # fetch dGs from reference
+        for ref in refs:
+            for node in self.data['nodes']:
+                if node['id'] == ref:
+                    refs[ref] = node['payload']['dGexpt']
+
+        targets = self.graph.nodes()
+
+        cycle_array = []
+        for ref in refs:
+            cycles = []
+            for target in targets:
+                cycle = nx.shortest_path(self.graph, source=ref, target=target)
+                cycles.append(cycle)
+            cycle_array.append(cycles)
+
+        # block
+        shortest_to_ref = []
+        dG_tmp = {}
+
+        for cycle in cycles:
+            ddGsum = 0.
+            sem = 0.
+            for i in range(0,len(cycle) -1):
+                query = (cycle[i], cycle[i+1])
+                ddGsum += self.ener_dict_corr[query]
+                sem += self.ener_dict[query][1]**2
+
+            dG = refs[cycle[0]] + ddGsum
+            sem = math.sqrt(sem)
+            dG = '{:.2f}'.format(dG)
+            sem  = '{:.2f}'.format(sem)
+            dG_tmp[cycle[-1]] = (dG, sem)
+
+        # populate json data
+        for node in self.data['nodes']:
+            node['payload']['dG'] = dG_tmp[node["id"]][0]   
+            node['payload']['sem'] = dG_tmp[node["id"]][1]
+
+        #print(self.data)
 
     def get_metrics(self):
         x = []
@@ -743,13 +798,14 @@ class GenPlot(object):
         self.wd = wd
 
         self.load()
-        self.makeplot()
+        self.makeplot_ddG()
+        self.makeplot_dG()
 
     def load(self):
         with open(self.mapfile) as infile:
             self.data = json.load(infile)   
 
-    def makeplot(self):
+    def makeplot_ddG(self):
         x = []
         y = []
         error = []
@@ -760,6 +816,18 @@ class GenPlot(object):
             error.append(float(edge["payload"]["sem"]))
         
         plot.linplot(x=x,y=y,d='ddG',error=error,storedir=self.wd)
+
+    def makeplot_dG(self):
+        x = []
+        y = []
+        error = []
+        # generate ddG plot
+        for node in self.data['nodes']:
+            x.append(float(node["payload"]["dGexpt"]))
+            y.append(float(node["payload"]["dG"]))
+            error.append(float(node["payload"]["sem"]))
+        
+        plot.linplot(x=x,y=y,d='dG',error=error,storedir=self.wd)    
 
 class Init(object):
     def __init__(self,data):

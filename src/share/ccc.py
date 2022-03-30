@@ -1,4 +1,3 @@
-from ast import NodeTransformer
 import networkx as nx
 from networkx.drawing.nx_agraph import graphviz_layout
 import numpy as np
@@ -77,7 +76,7 @@ class CCC:
             else:
                 converged_cycles.append(cycle)
 
-        return all_cycles
+        return all_cycles, tmp, G
     
     def make_cccMatrix(self, all_cycles):
         Mg = np.zeros(shape=(len(all_cycles), len(self.edges)))
