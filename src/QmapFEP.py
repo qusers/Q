@@ -18,11 +18,16 @@ import uuid
 import shutil
 import sys
 import os
+import matplotlib.pyplot as plt
+import math
 
 # import Q modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/share/')))
 
 from share import settings as s
+from share import ccc
+from share import plot
+from share import metrics
 
 @lru_cache(maxsize=4)
 def get_palette(name="OKABE"):
@@ -570,17 +575,17 @@ class MapGen:
     def savemapJSON(self):
         for charge, ligands in self.ligands.items():
             graph = ligands["Graph"]
-
             # Some data reformatting needs to be done for visjs
             data = json_graph.node_link_data(graph)
             data['edges'] = data.pop('links')
             for edge in data['edges']:
-                edge['from'] = edge.pop('source')
-                edge['to'] = edge.pop('target')
+                edge['from'] = self.ligands[0]['Ligand'][edge['source']].name
+                edge['to'] = self.ligands[0]['Ligand'][edge['target']].name
                 edge['payload'] = {"ddG":"Test","ddGexpt":None}
 
             for node in data['nodes']:
                 labelname = self.ligands[0]['Ligand'][node['id']].name
+                node['id'] = labelname
                 node['label'] = labelname # maybe need unique identifiers?
                 #node['label'] = node["id"]   # maybe need unique identifiers?
                 node["shape"] = "image"      # to be changed to img location
@@ -613,7 +618,7 @@ class LoadData(object):
 
     def read_file(self):
         self.expt = {}
-        extensions = ['csv'] # Maybe I will
+        extensions = ['csv']
         if self.extension not in extensions:
             print("can't read file")
             sys.exit()
@@ -645,12 +650,17 @@ class LoadData(object):
             outfile.write(json.dumps(self.QmapFEPdata,indent=4))
 
 class Analyze(object):
-    def __init__(self, o, datadir): # TO DO datadir not in API currently
+    def __init__(self, o, datadir, wd): # TO DO datadir not in API currently
         self.mapfile = o
+        self.wd = wd
         self.datadir = datadir
+        self.ener_dict_corr = {}
 
         self.readmap()
         self.populate_map()
+        self.do_ccc()
+        self.calc_dG()
+        self.get_metrics()
         self.write()
 
     def readmap(self):
@@ -670,19 +680,114 @@ class Analyze(object):
                     pert = line[0].split('_')
                     From = pert[1].split('-')[0]
                     To = pert[1].split('-')[1]
+                    sem = line[2]
 
                     if system == 'protein':
-                        tmp[(From,To)] = {'protein' : float(line[1])}
-                        tmp[(To,From)] = {'protein' : -1. * float(line[1])}
+                        tmp[(From,To)] = {'protein' : (float(line[1]),float(sem))}
+                        tmp[(To,From)] = {'protein' : (-1. * float(line[1]),float(sem))}
                     
                     if system == 'water':
-                        tmp[(From,To)]['water'] = float(line[1])
-                        tmp[(To,From)]['water'] = -1. * float(line[1])
+                        tmp[(From,To)]['water'] = (float(line[1]),float(sem))
+                        tmp[(To,From)]['water'] = (-1. * float(line[1]),float(sem))
 
         for edge in self.data['edges']:
-            ddG = (tmp[edge['from'],edge['to']])["protein"] - (tmp[edge['from'],edge['to']])["water"]
+            ddG = (tmp[edge['from'],edge['to']])["protein"][0] - (tmp[edge['from'],edge['to']])["water"][0]
+            ddGsem = ((tmp[edge['from'],edge['to']])["protein"][1] + (tmp[edge['from'],edge['to']])["water"][1])/math.sqrt(2)
             edge["payload"]["ddG"] = "{:.2f}" .format(ddG)
-        
+            edge["payload"]["sem"] = "{:.2f}" .format(ddGsem)
+
+    def do_ccc(self):
+        """ Performs cycle closure correction. Algorithm that using as input a list of edges with their corresponding relative ddG
+         returns corrected ddGs which eliminate the hysteresis of the cycles in the FEP network. """
+        edges = []
+        ddG = []
+        sem = []
+
+        for edge in self.data['edges']:
+            l1, l2 = edge['from'], edge['to']
+            edges.append((l1, l2))
+            w = float(edge['payload']['ddG'])
+            e = float(edge['payload']['sem'])
+            ddG.append(w)
+            sem.append(e)
+
+        c = ccc.CCC(edges=edges, E=ddG, Esem=sem, workdir=self.wd)
+        self.all_cycles, self.ener_dict, self.graph = c.generate_cycles()
+        connectivity_sets, conMat = c.make_cccMatrix(self.all_cycles)
+        indep_subgraph_M, final_set, sem_cor = c.get_independent(connectivity_sets, conMat)
+        edges, ddG_cor = c.make_corrections(indep_subgraph_M, final_set)
+
+        for edge in self.data['edges']:
+            l1, l2 = edge['from'], edge['to']
+            i = edges.index((l1,l2))
+            newddG = '{:.2f}'.format(ddG_cor[i])
+            edge['payload']['ddGpredccc'] = newddG
+
+            self.ener_dict_corr[(l1,l2)] = float(newddG)
+            self.ener_dict_corr[(l2,l1)] = -float(newddG)
+
+    def calc_dG(self):
+        # for loop over nodes
+        # for each for loop go to the reference(s)
+        # keep shortest path to a reference 
+        # TO DO: Probably want to save a graph in the json
+
+        # TO DO: refactor code
+
+        refs = {'1h1q':None, '1h1r':None}
+        # fetch dGs from reference
+        for ref in refs:
+            for node in self.data['nodes']:
+                if node['id'] == ref:
+                    refs[ref] = node['payload']['dGexpt']
+
+        targets = self.graph.nodes()
+
+        cycle_array = []
+        for ref in refs:
+            cycles = []
+            for target in targets:
+                cycle = nx.shortest_path(self.graph, source=ref, target=target)
+                cycles.append(cycle)
+            cycle_array.append(cycles)
+
+        # block
+        shortest_to_ref = []
+        dG_tmp = {}
+
+        for cycle in cycles:
+            ddGsum = 0.
+            sem = 0.
+            for i in range(0,len(cycle) -1):
+                query = (cycle[i], cycle[i+1])
+                ddGsum += self.ener_dict_corr[query]
+                sem += self.ener_dict[query][1]**2
+
+            dG = refs[cycle[0]] + ddGsum
+            sem = math.sqrt(sem)
+            dG = '{:.2f}'.format(dG)
+            sem  = '{:.2f}'.format(sem)
+            dG_tmp[cycle[-1]] = (dG, sem)
+
+        # populate json data
+        for node in self.data['nodes']:
+            node['payload']['dG'] = dG_tmp[node["id"]][0]   
+            node['payload']['sem'] = dG_tmp[node["id"]][1]
+
+        #print(self.data)
+
+    def get_metrics(self):
+        x = []
+        y = []
+        error = []
+        # generate ddG plot
+        for edge in self.data['edges']:
+            x.append(float(edge["payload"]["ddGexpt"]))
+            y.append(float(edge["payload"]["ddGpredccc"]))
+            error.append(float(edge["payload"]["sem"]))
+
+        self.data['allmetrics'] = metrics.analysis(X=x,Y=y,Z=error)
+
     def write(self):
         with open(self.mapfile, 'w') as outfile:
             outfile.write(json.dumps(self.data,indent=4))
@@ -693,21 +798,36 @@ class GenPlot(object):
         self.wd = wd
 
         self.load()
-        self.plot()
+        self.makeplot_ddG()
+        self.makeplot_dG()
 
     def load(self):
         with open(self.mapfile) as infile:
             self.data = json.load(infile)   
 
-    def plot(self):
+    def makeplot_ddG(self):
         x = []
         y = []
         error = []
         # generate ddG plot
         for edge in self.data['edges']:
             x.append(float(edge["payload"]["ddGexpt"]))
-            y.append(float(edge["payload"]["ddG"]))
-        plot.linplot(x=x,y=y,d='ddG')
+            y.append(float(edge["payload"]["ddGpredccc"]))
+            error.append(float(edge["payload"]["sem"]))
+        
+        plot.linplot(x=x,y=y,d='ddG',error=error,storedir=self.wd)
+
+    def makeplot_dG(self):
+        x = []
+        y = []
+        error = []
+        # generate ddG plot
+        for node in self.data['nodes']:
+            x.append(float(node["payload"]["dGexpt"]))
+            y.append(float(node["payload"]["dG"]))
+            error.append(float(node["payload"]["sem"]))
+        
+        plot.linplot(x=x,y=y,d='dG',error=error,storedir=self.wd)    
 
 class Init(object):
     def __init__(self,data):

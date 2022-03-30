@@ -12,7 +12,7 @@ class Startup(object):
     Create dual topology FEP files based on two ligands
     """
     def __init__(self, data, *args, **kwargs):
-        START = QmapFEP2.Init(data)
+        START = QmapFEP.Init(data)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

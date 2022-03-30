@@ -77,7 +77,7 @@
     .custom-dl dd:last-of-type {
         border-bottom-right-radius: 0.5rem;
     }
-        
+
 </style>
 
 </head>
@@ -96,7 +96,7 @@
             <button onclick="doupload()" name="submit" class="btn btn-primary">Upload File</button>
         </div>
         <br>
-    
+
         <div class="row px-2">
             <h2>FEP data</h2>
         </div>
@@ -111,7 +111,7 @@
                     -
                 </dd>
                 <dt class="col-6" id="dGName">-</dt>
-                <dd class="col-6" id="dG">
+                <dd class="col-6" id="dGDisplay">
                     -
                 </dd>
             </dl>
@@ -122,7 +122,7 @@
         </div>
         <br>
         <div class="row px-2">
-            <h2>Benchmark</h2>
+            <h2>Performance</h2>
         </div>
         <div class="row px-2">
             <ul class="nav nav-tabs" id="myTab" role="tablist">
@@ -136,16 +136,25 @@
                     <button class="nav-link" id="metric-tab" data-bs-toggle="tab" data-bs-target="#metric" type="button" role="tab" aria-controls="metric" aria-selected="false">metric</button>
                 </li>
             </ul>
-          
+
             <div class="tab-content">
                 <div class="tab-pane active" id="ddG" role="tabpanel" aria-labelledby="ddG-tab">
                     <img src="plot_ddG.png" width="400" height="400"  alt="ddG plot">
                 </div>
                 <div class="tab-pane" id="dG" role="tabpanel" aria-labelledby="dG-tab">
-                    <img src="vleesetend_grimmig.jpg" width="300" height="300" alt="Dit is een grimmig vleesetend paard">
+                    <img src="plot_dG.png" width="300" height="300" alt="dG plot">
                 </div>
                 <div class="tab-pane" id="metric" role="tabpanel" aria-labelledby="metric-tab">
-                    <img src="vleesetend_grimmig.jpg" width="300" height="300" alt="Dit is een grimmig vleesetend paard">
+                    <dl class="custom-dl row mb-0">
+                        <dt class="col-6">MAE</dt>
+                        <dd class="col-6" id="MAE">
+                            -
+                        </dd>
+                        <dt class="col-6">RMSE</dt>
+                        <dd class="col-6" id="RMSE">
+                            -
+                        </dd>
+                    </dl>
                 </div>
             </div>
         </div>
@@ -157,7 +166,7 @@
     var edges;
     var nodes;
     var selectedEdge;
-    var network; 
+    var network;
     var container;
     var options, data;
     var jsonData;
@@ -175,6 +184,7 @@
         let data = document.getElementById("file").files[0];
         data.text().then((data) => {
             jsonData = JSON.parse(data)
+            populateMetrics();
             drawGraph();
         });
     };
@@ -187,9 +197,15 @@
         exportArea.value = "";
     }
 
+    function populateMetrics() {
+        // get metrics for the ddG graph
+        document.getElementById("MAE").innerText = jsonData.allmetrics.MAE[0] ?? '-';
+        document.getElementById("RMSE").innerText = jsonData.allmetrics.RMSE[0];// ?? '-';
+    }
+
     function drawGraph() {
         var container = document.getElementById('mynetwork');
-        
+
         // parsing and collecting nodes and edges from the python
         // this will be keywords later that are fed in the file.
         nodes = new vis.DataSet(jsonData.nodes);
@@ -200,7 +216,7 @@
 
         options = {
             "height": '100%',
-            "width": '100%',            
+            "width": '100%',
             "configure": {
                 "enabled": false,
                 "filter": false
@@ -221,7 +237,7 @@
                     "border": "black",
                 },
                 "shapeProperties": {
-                    "useBorderWithImage": true,  
+                    "useBorderWithImage": true,
                 },
             },
             "interaction": {
@@ -243,7 +259,7 @@
             "enabled": true
             }
         };
-      
+
         // if this network requires displaying the configure window,
         // put it in its div
         // options.configure["container"] = document.getElementById("config");
@@ -255,7 +271,7 @@
                 // Populate data
                 document.getElementById("from").innerText = edge.from ?? '-';
                 document.getElementById("to").innerText = edge.to ?? '-';
-                document.getElementById("dG").innerText = edge.payload?.ddG ?? '-';
+                document.getElementById("dGDisplay").innerText = edge.payload?.ddG ?? '-';
                 document.getElementById("dGName").innerText = 'ddG'
             }
             const selectedNode = params.nodes[0];
@@ -264,7 +280,7 @@
                 // Populate data
                 document.getElementById("from").innerText = node.id ?? '-';
                 document.getElementById("to").innerText = '-';
-                document.getElementById("dG").innerText = node.payload?.dG ?? '-';
+                document.getElementById("dGDisplay").innerText = node.payload?.dG ?? '-';
                 document.getElementById("dGName").innerText = 'dG'
             }
         });
@@ -286,7 +302,7 @@
         a.download = 'data.json';
         a.innerHTML = 'download JSON';
         a.click();
-    }  
+    }
 
     function getNodeData(data) {
         var networkNodes = [];
