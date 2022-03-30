@@ -10,7 +10,7 @@ import json
 from random import randrange
 from subprocess import check_output
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/share/')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../share/')))
 
 # Q-GPU native libraries
 import IO

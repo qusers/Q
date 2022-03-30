@@ -1,50 +1,56 @@
-#!/usr/bin/env python3
-
 import argparse
 import os
 import sys
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/')))
+#sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/')))
 
-import qdyn
+import QligFEP
 
 class Startup(object):
-    def __init__(self,top,fep,md,re,wd,verbose,gpu,clean):
-        data = {'top'       :   top,
-                'fep'       :   fep,
+    """
+    Create dual topology FEP files based on two ligands
+    """
+    def __init__(self, oldFEP, wd, cluster, overwrite,*args, **kwargs):
+        
+        data = {'oldFEP'    : oldFEP,
+                'wd'        : wd,
+                'cluster'   : cluster,
+                'overwrite' : overwrite
                }
-        START = qdyn.Init(data)
+        
+        START = QligFEP.Init(data)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        prog='Qdyn',
+        prog='QligFEP',
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        description = '       == Qdyn == ')
-    
-    parser.add_argument('--version', 
-                        action='version', 
-                        version='%(prog)s 0.1.0')
-
-    parser.add_argument('-w', '--workdir',
-                        dest = "wd",
-                        default = None,
-                        required = False,
-                        help = "Working directory")
-    
-    parser.add_argument('-F', '--oldFEP',
+        description = '       == Generate FEP files for dual topology ligand FEP == ')
+    parser.add_argument('--version', action='version', version='%(prog)s 1.0')    
+    parser.add_argument('-of', '--oldFEP',
                         dest = "oldFEP",
-                        default = None,
-                        required = True,                        
-                        help = "Directory with QligFEP v1.0 inputfiles, implemented for backward compatability."
-                        )
-
-    parser.add_argument('--overwrite',
+                        required = False,
+                        help = "If specified, read old QligFEP input file format")
+        
+    parser.add_argument('-wd', '--workdir',
+                        dest = "wd",
+                        required = True,
+                        help = "Workdir folder")
+            
+    parser.add_argument('-c', '--cluster',
+                        dest = "cluster",
+                        required = False,
+                        help = "Workdir folder")
+                
+    parser.add_argument('-ow', '--overwrite',
                         dest = "overwrite",
+                        required = False,
                         default = False,
-                        required = False,                                                
                         action = 'store_true',
-                        help = "OVerwrite files in specified working directory")    
-
-    args = parser.parse_args()
+                        help = "Set flag to overwrite old folder completely")
     
-    Startup(vars(args))
+    args = parser.parse_args()
+    Startup(oldFEP = args.oldFEP,
+            wd   = args.wd,
+            cluster   = args.cluster,
+            overwrite   = args.overwrite,
+            )

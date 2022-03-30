@@ -1,7 +1,7 @@
 import os
 # Root directory of the QGPU modules
 ROOT = os.path.dirname(os.path.realpath(__file__))
-ROOT = ROOT.split('src')[0]
+ROOT = ROOT.split('env')[0]
 
 ENV = {
         'ROOT'    :  ROOT,

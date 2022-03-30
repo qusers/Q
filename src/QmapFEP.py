@@ -22,12 +22,13 @@ import matplotlib.pyplot as plt
 import math
 
 # import Q modules
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/share/')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../env/')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../share/')))
 
-from share import settings as s
-from share import ccc
-from share import plot
-from share import metrics
+import settings as s
+import ccc
+import plot
+import metrics
 
 @lru_cache(maxsize=4)
 def get_palette(name="OKABE"):
@@ -598,7 +599,7 @@ class MapGen:
             outfile.write(json.dumps(data,indent = 4))            
     
     def copyhtml(self):
-        shutil.copy(s.ENV['ROOT'] + 'app/QmapFEP.html', '{}/QmapFEP.html'.format(self.wd))
+        shutil.copy(s.ENV['ROOT'] + 'src/QmapFEP.html', '{}/QmapFEP.html'.format(self.wd))
 
 class LoadData(object):
     """
@@ -644,6 +645,8 @@ class LoadData(object):
         for edge in self.QmapFEPdata['edges']:
             edge["payload"]['ddGexpt'] = self.expt[edge['to']] - self.expt[edge['from']]
             edge["payload"]['ddGexpt'] = '{:.2f}'.format(edge["payload"]['ddGexpt'])
+        
+        self.QmapFEPdata["plot"] = {"dG" : "plot_dG.png", "ddG" : "plot_ddG.png"}
 
     def write(self):
         with open(self.mapfile, 'w') as outfile:

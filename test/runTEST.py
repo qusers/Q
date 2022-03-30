@@ -6,7 +6,8 @@ import sys
 import shutil
 import json
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/share/')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../share/')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../env/')))
 
 import settings
 import IO
