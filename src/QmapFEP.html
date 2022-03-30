@@ -139,10 +139,10 @@
 
             <div class="tab-content">
                 <div class="tab-pane active" id="ddG" role="tabpanel" aria-labelledby="ddG-tab">
-                    <img src="plot_ddG.png" width="400" height="400"  alt="ddG plot">
+                    <img id="ddG-img" src="" width="400" height="400">
                 </div>
                 <div class="tab-pane" id="dG" role="tabpanel" aria-labelledby="dG-tab">
-                    <img src="plot_dG.png" width="300" height="300" alt="dG plot">
+                    <img id="dG-img" src="" width="400" height="400">
                 </div>
                 <div class="tab-pane" id="metric" role="tabpanel" aria-labelledby="metric-tab">
                     <dl class="custom-dl row mb-0">
@@ -184,6 +184,7 @@
         let data = document.getElementById("file").files[0];
         data.text().then((data) => {
             jsonData = JSON.parse(data)
+            populatePlots();
             populateMetrics();
             drawGraph();
         });
@@ -195,6 +196,11 @@
 
     function clearOutputArea() {
         exportArea.value = "";
+    }
+
+    function populatePlots() {
+        document.getElementById("ddG-img").setAttribute("src", jsonData.plot.ddG);
+        document.getElementById("dG-img").setAttribute("src", jsonData.plot.dG);
     }
 
     function populateMetrics() {

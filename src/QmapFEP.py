@@ -645,6 +645,8 @@ class LoadData(object):
         for edge in self.QmapFEPdata['edges']:
             edge["payload"]['ddGexpt'] = self.expt[edge['to']] - self.expt[edge['from']]
             edge["payload"]['ddGexpt'] = '{:.2f}'.format(edge["payload"]['ddGexpt'])
+        
+        self.QmapFEPdata["plot"] = {"dG" : "plot_dG.png", "ddG" : "plot_ddG.png"}
 
     def write(self):
         with open(self.mapfile, 'w') as outfile:
