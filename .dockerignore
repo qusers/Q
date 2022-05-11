@@ -1,0 +1,11 @@
+# Ignore everything
+**
+
+# Allow files and directories
+!/src/**
+!/bin/**
+!/test/**
+!/share/**
+!/env/**
+!setup.py
+!pyproject.toml
