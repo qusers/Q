@@ -2,10 +2,10 @@
 **
 
 # Allow files and directories
-!/src/**
-!/bin/**
-!/test/**
-!/share/**
-!/env/**
+!src/**
+!bin/**
+!test/**
+!share/**
+!env/**
 !setup.py
 !pyproject.toml

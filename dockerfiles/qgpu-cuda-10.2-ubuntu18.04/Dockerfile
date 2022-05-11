@@ -49,5 +49,5 @@ COPY ./pyproject.toml ./pyproject.toml
 RUN pip install .
 RUN pip install numpy
 
-# Set the default command to python3
+# Set the default command to perpetually running process
 ENTRYPOINT ["tail", "-f", "/dev/null"]
