@@ -3,6 +3,7 @@
 
 #define __PROFILING__
 //#define DEBUG
+#define VERBOSE
 
 // Boltzano's constant
 #define Boltz 0.001986

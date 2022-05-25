@@ -97,103 +97,103 @@ void init_md(const char *filename) {
 
     // [MD]
     md.steps = atoi(file.buffer[1][1]);
-    #ifdef DEBUG
+    #ifdef VERBOSE
     printf("read %d into steps (%s in file)\n", md.steps, file.buffer[1][0]);
     #endif
     md.stepsize = strtod(file.buffer[2][1], &eptr);
-    #ifdef DEBUG
+    #ifdef VERBOSE
     printf("read %f into stepsize (%s in file)\n", md.stepsize, file.buffer[2][0]);
     #endif
     md.temperature = strtod(file.buffer[3][1], &eptr);
-    #ifdef DEBUG
+    #ifdef VERBOSE
     printf("read %f into temperature (%s in file)\n", md.temperature, file.buffer[3][0]);
     #endif
     strcpy(md.thermostat, file.buffer[4][1]);
-    #ifdef DEBUG
+    #ifdef VERBOSE
     printf("read %s into thermostat (%s in file)\n", md.thermostat, file.buffer[4][0]);
     #endif
     md.bath_coupling = strtod(file.buffer[5][1], &eptr);
-    #ifdef DEBUG
+    #ifdef VERBOSE
     printf("read %f into bath_coupling (%s in file)\n", md.bath_coupling, file.buffer[5][0]);
     #endif
     md.random_seed = atoi(file.buffer[6][1]);
-    #ifdef DEBUG
+    #ifdef VERBOSE
     printf("read %d into random_seed (%s in file)\n", md.random_seed, file.buffer[6][0]);
     #endif
     md.initial_temperature = strtod(file.buffer[7][1], &eptr);
-    #ifdef DEBUG
+    #ifdef VERBOSE
     printf("read %f into initial_temperature (%s in file)\n", md.initial_temperature, file.buffer[7][0]);
     #endif
     md.shake_solvent = strcmp(file.buffer[8][1], "on") == 0;
-    #ifdef DEBUG
+    #ifdef VERBOSE
     printf("read %s into shake_solvent (%s in file)\n", file.buffer[8][1], file.buffer[8][0]);
     #endif
     md.shake_solute = strcmp(file.buffer[9][1], "on") == 0;
-    #ifdef DEBUG
+    #ifdef VERBOSE
     printf("read %s into shake_solute (%s in file)\n", file.buffer[9][1], file.buffer[9][0]);
     #endif
     md.shake_hydrogens = strcmp(file.buffer[10][1], "on") == 0;
-    #ifdef DEBUG
+    #ifdef VERBOSE
     printf("read %s into shake_hydrogens (%s in file)\n", file.buffer[10][1], file.buffer[10][0]);
     #endif
     md.lrf = strcmp(file.buffer[11][1], "on") == 0;
-    #ifdef DEBUG
+    #ifdef VERBOSE
     printf("read %s into lrf (%s in file)\n", file.buffer[11][1], file.buffer[11][0]);
     #endif
     // [cut-offs]
     md.solute_solute = strtod(file.buffer[12][1], &eptr);
-    #ifdef DEBUG
+    #ifdef VERBOSE
     printf("read %f into solute_solute (%s in file)\n", md.solute_solute, file.buffer[12][0]);
     #endif
     md.solvent_solvent = strtod(file.buffer[13][1], &eptr);
-    #ifdef DEBUG
+    #ifdef VERBOSE
     printf("read %f into solvent_solvent (%s in file)\n", md.solvent_solvent, file.buffer[13][0]);
     #endif
     md.solute_solvent = strtod(file.buffer[14][1], &eptr);
-    #ifdef DEBUG
+    #ifdef VERBOSE
     printf("read %f into solute_solvent (%s in file)\n", md.solute_solvent, file.buffer[14][0]);
     #endif
     md.q_atom = strtod(file.buffer[15][1], &eptr);
-    #ifdef DEBUG
+    #ifdef VERBOSE
     printf("read %f into q_atom (%s in file)\n", md.q_atom, file.buffer[15][0]);
     #endif
     // [sphere]
     md.shell_radius = strtod(file.buffer[16][1], &eptr);
-    #ifdef DEBUG
+    #ifdef VERBOSE
     printf("read %f into shell_radius (%s in file)\n", md.shell_radius, file.buffer[16][0]);
     #endif
     md.shell_force = strtod(file.buffer[17][1], &eptr);
-    #ifdef DEBUG
+    #ifdef VERBOSE
     printf("read %f into shell_force (%s in file)\n", md.shell_force, file.buffer[17][0]);
     #endif
     // [solvent]
     md.radial_force = strtod(file.buffer[18][1], &eptr);
-    #ifdef DEBUG
+    #ifdef VERBOSE
     printf("read %f into radial_force (%s in file)\n", md.radial_force, file.buffer[18][0]);
     #endif
     md.polarisation = true;
-    #ifdef DEBUG
+    #ifdef VERBOSE
     printf("read %s into polarisation (%s in file)\n", file.buffer[19][1], file.buffer[19][0]);
     #endif
     md.polarisation_force = strtod(file.buffer[20][1], &eptr);
-    #ifdef DEBUG
+    #ifdef VERBOSE
     printf("read %s into polarisation_force (%s in file)\n", file.buffer[20][1], file.buffer[20][0]);
     #endif
     // [intervals]
     md.non_bond = atoi(file.buffer[21][1]);
-    #ifdef DEBUG
+    #ifdef VERBOSE
     printf("read %d into non_bond (%s in file)\n", md.non_bond, file.buffer[21][0]);
     #endif
     md.output = atoi(file.buffer[22][1]);
-    #ifdef DEBUG
+    #ifdef VERBOSE
     printf("read %d into output (%s in file)\n", md.output, file.buffer[22][0]);
     #endif
     md.energy = atoi(file.buffer[23][1]);
-    #ifdef DEBUG
+    #ifdef VERBOSE
     printf("read %d into energy (%s in file)\n", md.energy, file.buffer[23][0]);
     #endif
     md.trajectory = atoi(file.buffer[24][1]);
-    #ifdef DEBUG
+    #ifdef VERBOSE
     printf("read %d into trajectory (%s in file)\n", md.trajectory, file.buffer[24][0]);
     #endif
     // [trajectory_atoms]
@@ -203,7 +203,7 @@ void init_md(const char *filename) {
 
     // [lambdas]
     n_lambdas = atoi(file.buffer[k][0]);
-    #ifdef DEBUG
+    #ifdef VERBOSE
     printf("reading in %d lambdas (%s in file)\n", n_lambdas, file.buffer[k][1]);
     #endif
     lambdas = (double*) malloc(n_lambdas * sizeof(double));
