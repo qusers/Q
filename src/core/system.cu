@@ -564,10 +564,11 @@ void init_shake() {
             || (md.shake_solvent && ai+1 > n_atoms_solute) ) {
             mol_n_shakes[mol]++;
             n_shake_constraints++;
-        }
 
-        if (excluded[ai]) excl_shake += 0.5;
-        if (excluded[aj]) excl_shake += 0.5;
+            if (excluded[ai]) excl_shake += 0.5;
+            if (excluded[aj]) excl_shake += 0.5;
+    
+        }
     }
 
     shake_bonds = (shake_bond_t*) malloc(n_shake_constraints * sizeof(shake_bond_t));
@@ -606,7 +607,7 @@ void init_shake() {
     Ndegfree_solvent = Ndegfree - (n_shake_constraints - n_solute_shake_constraints);
     Ndegfree_solute = Ndegfree - Ndegfree_solvent;
 
-    printf("n_shake_constrains = %d, n_solute_shake_constraints = %d\n", n_shake_constraints, n_solute_shake_constraints);
+    printf("n_shake_constrains = %d, n_solute_shake_constraints = %d, excl_shake = %f\n", n_shake_constraints, n_solute_shake_constraints, excl_shake);
 
     if (Ndegfree_solvent * Ndegfree_solute == 0) {
         separate_scaling = false;
