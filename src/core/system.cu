@@ -603,8 +603,8 @@ void init_shake() {
     Ndegf_solvent = Ndegf - 3 * n_atoms_solute  + n_solute_shake_constraints;
     Ndegf_solute = Ndegf - Ndegf_solvent;
 
-    Ndegfree_solvent = 3 * (n_atoms - n_atoms_solute) - (n_shake_constraints - n_solute_shake_constraints);
-    Ndegfree_solute = Ndegfree - Ndegfree_solvent;
+    Ndegfree_solvent = Ndegfree;//3 * (n_atoms - n_atoms_solute) - (n_shake_constraints - n_solute_shake_constraints);
+    Ndegfree_solute = 0;//Ndegfree - Ndegfree_solvent;
 
     if (Ndegfree_solvent * Ndegfree_solute == 0) {
         separate_scaling = false;
@@ -655,7 +655,7 @@ double Ndegf, Ndegfree, Ndegf_solvent, Ndegf_solute, Ndegfree_solvent, Ndegfree_
 double Tscale_solute = 1, Tscale_solvent = 1;
 
 void calc_temperature() {
-    printf("Ndegf = %f, Ndegfree = %f, n_excluded = %d\n", Ndegf, Ndegfree, n_excluded);
+    printf("Ndegf = %f, Ndegfree = %f, n_excluded = %d, Ndegfree_solvent = %f, Ndegfree_solute = %f\n", Ndegf, Ndegfree, n_excluded, Ndegfree_solvent, Ndegfree_solute);
     Temp = 0;
     Tfree = 0;
     double Temp_solute = 0, Tfree_solute = 0, Texcl_solute = 0;
@@ -695,7 +695,7 @@ void calc_temperature() {
         }
     }
 
-    Tfree = Tfree_solute + Tfree_solute;
+    Tfree = Tfree_solute + Tfree_solvent;
     Temp = Temp_solute + Temp_solvent;
 
     E_total.Ukin = Temp;
@@ -711,7 +711,7 @@ void calc_temperature() {
         if (Tfree != 0) Tscale_solvent = sqrt(1 + (dt / tau_T) * (md.temperature / Tfree - 1.0));
         Tscale_solute = Tscale_solvent;
     }
-    printf("Tscale = %f, tau_T = %f, Temp = %f\n", Tscale_solvent, tau_T, Temp);
+    printf("Tscale = %f, tau_T = %f, Temp = %f, Tfree = %f\n", Tscale_solvent, tau_T, Temp, Tfree);
 }
 
 /* =============================================
