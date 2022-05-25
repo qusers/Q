@@ -1,0 +1,19 @@
+rl /home/jespers/software/setupFEP/FF/OPLS2015.lib 
+rl 1h1q.lib
+rl 28_renumber.lib
+rprm OPLS2015_1h1q_28_merged.prm 
+! TO DO Change if protein system is used
+rp 1h1q_28.pdb 
+! set solute_density 0.05794 
+! NOTE, this is now large for water system, change for protein system
+set solvent_pack 2.5
+boundary 1 0.535 26.779 8.803 22
+solvate 0.535 26.779 8.803 22 4 water.pdb
+!addbond at1 at2 y
+maketop MKC_p 
+writetop dualtop.top 
+wp top_p.pdb y 
+mask none 
+mask not excluded 
+wp complexnotexcluded.pdb y 
+q 

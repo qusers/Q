@@ -1,0 +1,14 @@
+[FEP]
+states 2
+
+[atoms]
+1    13
+
+[atom_types]
+SOD   1036.9613    6.8099    0.0        0.0      733.2424   4.8153    22.9898
+
+[change_charges]
+1       1.0   1.0
+
+[change_atoms]
+1       SOD        SOD

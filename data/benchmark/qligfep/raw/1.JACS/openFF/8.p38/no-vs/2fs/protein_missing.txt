@@ -1,0 +1,3 @@
+FEP                                               dG        sem       crashes   
+FEP_p38a-2u_p38a-2o                               15.18     0.29      0         
+FEP_p38a-3fly_p38a-2gg                            -42.48    0.67      0         

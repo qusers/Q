@@ -1,0 +1,3 @@
+FEP                           dG        sem       crashes   
+FEP_ejm_42_ejm_46             9.38      0.12      1         
+FEP_jmc_30_ejm_46             6.67      0.29      0         

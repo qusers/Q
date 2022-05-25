@@ -1,0 +1,120 @@
+<html>
+<head>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.16.1/vis.css" type="text/css" />
+<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.16.1/vis-network.min.js"> </script>
+<center>
+<h1></h1>
+</center>
+
+<!-- <link rel="stylesheet" href="../node_modules/vis/dist/vis.min.css" type="text/css" />
+<script type="text/javascript" src="../node_modules/vis/dist/vis.js"> </script>-->
+
+<style type="text/css">
+
+        #mynetwork {
+            width: 1000px;
+            height: 1000px;
+            background-color: #ffffff;
+            border: 1px solid lightgray;
+            position: relative;
+            float: left;
+        }
+
+        
+
+        
+        #config {
+            float: left;
+            width: 400px;
+            height: 600px;
+        }
+        
+
+        
+</style>
+
+</head>
+
+<body>
+<div id = "mynetwork"></div>
+
+
+<div id = "config"></div>
+
+<script type="text/javascript">
+
+    // initialize global variables.
+    var edges;
+    var nodes;
+    var network; 
+    var container;
+    var options, data;
+
+    
+    // This method is responsible for drawing the graph, returns the drawn network
+    function drawGraph() {
+        var container = document.getElementById('mynetwork');
+        
+        
+
+        // parsing and collecting nodes and edges from the python
+        nodes = new vis.DataSet([{"id": "28", "label": "28", "shape": "dot", "size": 10}, {"id": "30", "label": "30", "shape": "dot", "size": 10}, {"id": "1h1s", "label": "1h1s", "shape": "dot", "size": 10}, {"id": "29", "label": "29", "shape": "dot", "size": 10}, {"id": "31", "label": "31", "shape": "dot", "size": 10}, {"id": "26", "label": "26", "shape": "dot", "size": 10}, {"id": "32", "label": "32", "shape": "dot", "size": 10}, {"id": "1oiy", "label": "1oiy", "shape": "dot", "size": 10}, {"id": "21", "label": "21", "shape": "dot", "size": 10}, {"id": "1oi9", "label": "1oi9", "shape": "dot", "size": 10}, {"id": "1oiu", "label": "1oiu", "shape": "dot", "size": 10}, {"id": "1h1r", "label": "1h1r", "shape": "dot", "size": 10}, {"id": "1h1q", "label": "1h1q", "shape": "dot", "size": 10}, {"id": "17", "label": "17", "shape": "dot", "size": 10}, {"id": "20", "label": "20", "shape": "dot", "size": 10}, {"id": "22", "label": "22", "shape": "dot", "size": 10}]);
+        edges = new vis.DataSet([{"from": "28", "to": "30", "weight": 1}, {"from": "28", "to": "1h1s", "weight": 1}, {"from": "28", "to": "29", "weight": 1}, {"from": "30", "to": "1h1s", "weight": 1}, {"from": "30", "to": "29", "weight": 1}, {"from": "30", "to": "31", "weight": 1}, {"from": "30", "to": "26", "weight": 1}, {"from": "1h1s", "to": "32", "weight": 1}, {"from": "1h1s", "to": "1oiy", "weight": 1}, {"from": "31", "to": "26", "weight": 1}, {"from": "26", "to": "21", "weight": 1}, {"from": "26", "to": "1oi9", "weight": 1}, {"from": "32", "to": "1oiu", "weight": 1}, {"from": "1oiy", "to": "1oi9", "weight": 1}, {"from": "1oiu", "to": "1h1r", "weight": 1}, {"from": "1h1r", "to": "21", "weight": 1}, {"from": "1h1r", "to": "1h1q", "weight": 1}, {"from": "1h1r", "to": "17", "weight": 1}, {"from": "1h1r", "to": "20", "weight": 1}, {"from": "1h1r", "to": "22", "weight": 1}, {"from": "21", "to": "22", "weight": 1}, {"from": "1oi9", "to": "1h1q", "weight": 1}, {"from": "1h1q", "to": "17", "weight": 1}, {"from": "17", "to": "20", "weight": 1}]);
+
+        // adding nodes and edges to the graph
+        data = {nodes: nodes, edges: edges};
+
+        var options = {
+    "configure": {
+        "enabled": true
+    },
+    "edges": {
+        "color": {
+            "inherit": true
+        },
+        "smooth": {
+            "enabled": false,
+            "type": "continuous"
+        }
+    },
+    "interaction": {
+        "dragNodes": true,
+        "hideEdgesOnDrag": false,
+        "hideNodesOnDrag": false
+    },
+    "physics": {
+        "enabled": true,
+        "stabilization": {
+            "enabled": true,
+            "fit": true,
+            "iterations": 1000,
+            "onlyDynamicEdges": false,
+            "updateInterval": 50
+        }
+    }
+};
+        
+        
+
+        
+        // if this network requires displaying the configure window,
+        // put it in its div
+        options.configure["container"] = document.getElementById("config");
+        
+
+        network = new vis.Network(container, data, options);
+	 
+        
+
+
+        
+
+        return network;
+
+    }
+
+    drawGraph();
+
+</script>
+</body>
+</html>

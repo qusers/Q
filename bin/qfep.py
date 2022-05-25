@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import argparse
 import os
 import sys
@@ -67,9 +69,9 @@ class Startup(object):
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        prog='Qdyn',
+        prog='Qfep',
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        description = '       == Qdyn == ')
+        description = '       == Qfep == ')
     
     parser.add_argument('--version', 
                         action='version', 

@@ -1,11 +1,8 @@
 #ifndef __SYSTEM_H__
 #define __SYSTEM_H__
 
-//#define __PROFILING__
-#define DEBUG
-
-// Coulomb's constant, TODO get this from topology file
-#define Coul 332.0716
+#define __PROFILING__
+//#define DEBUG
 
 // Boltzano's constant
 #define Boltz 0.001986
@@ -45,6 +42,14 @@ void init_variables();
 void clean_variables();
 
 /* =============================================
+ * == DEVICE SETTINGS
+ * =============================================
+ */
+
+// Thread block size
+#define BLOCK_SIZE 8
+
+/* =============================================
  * == GENERAL
  * =============================================
  */
@@ -57,6 +62,8 @@ extern int n_waters;
 extern int n_molecules;
 
 extern char base_folder[1024];
+
+extern bool run_gpu;
 
 /* =============================================
  * == FROM MD FILE
@@ -213,6 +220,7 @@ extern int n_atypes;
 extern int n_bonds;
 extern int n_bonds_solute;
 extern int n_cangles;
+extern int n_catypes;
 extern int n_cbonds;
 extern int n_ccharges;
 extern int n_charges;
@@ -224,6 +232,7 @@ extern int n_impropers;
 extern int n_impropers_solute;
 extern int n_torsions;
 extern int n_torsions_solute;
+extern int n_excluded;
 
 extern angle_t *angles;
 extern atype_t *atypes;
@@ -409,16 +418,17 @@ extern q_imprcouple_t *q_imprcouples;
 extern q_softpair_t *q_softpairs;
 extern q_torcouple_t *q_torcouples;
 
-extern q_angle_t **q_angles;
-extern q_atype_t **q_atypes;
-extern q_bond_t **q_bonds;
-extern q_charge_t **q_charges;
-extern q_elscale_t **q_elscales;
-extern q_exclpair_t **q_exclpairs;
-extern q_improper_t **q_impropers;
-extern q_shake_t **q_shakes;
-extern q_softcore_t **q_softcores;
-extern q_torsion_t **q_torsions;
+// NB. Arrays below are 2-dimensional!
+extern q_angle_t *q_angles;
+extern q_atype_t *q_atypes;
+extern q_bond_t *q_bonds;
+extern q_charge_t *q_charges;
+extern q_elscale_t *q_elscales;
+extern q_exclpair_t *q_exclpairs;
+extern q_improper_t *q_impropers;
+extern q_shake_t *q_shakes;
+extern q_softcore_t *q_softcores;
+extern q_torsion_t *q_torsions;
 
 /* =============================================
  * == RESTRAINTS
@@ -578,7 +588,7 @@ extern E_bonded_t E_bond_p, E_bond_w, E_bond_q, *EQ_bond;
 extern E_nonbonded_t E_nonbond_pp, E_nonbond_pw, E_nonbond_ww, E_nonbond_qx;
 extern E_nonbonded_t *EQ_nonbond_qq, *EQ_nonbond_qp, *EQ_nonbond_qw, *EQ_nonbond_qx;
 extern E_restraint_t E_restraint, *EQ_restraint;
-extern double Temp;
+extern double Temp, Tfree, Texcl;
 extern double A_O, A_OO, B_O, B_OO, crg_ow, crg_hw; // TODO: don't keep this in system.cu?
 
 void init_velocities();

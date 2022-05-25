@@ -1,4 +1,5 @@
 #include <math.h>
+#include <stdio.h>
 
 // Get a value from a gaussian distributed random variable with
 // mean mean and standard deviation sd
@@ -19,4 +20,12 @@ double to_degrees(double radians) {
 
 double to_radians(double degrees) {
     return degrees * (M_PI / 180.0);
+}
+
+void check_cudaMalloc(void** devPtr, size_t size) {
+    cudaError_t error = cudaMalloc((void**) devPtr, size);
+    if (error != cudaSuccess) {
+        printf(">>> FATAL: memory for matrix could not be allocated. Exiting...\n");
+        exit(EXIT_FAILURE);
+    }
 }

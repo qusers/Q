@@ -1,0 +1,38 @@
+[MD]
+steps                     20000
+stepsize                  2.0
+temperature               300.0
+bath_coupling             100
+random_seed               1
+initial_temperature       300.0
+shake_solvent             on
+shake_solute              off
+shake_hydrogens           on
+lrf                       on
+
+[cut_offs]
+solute_solute             10
+solute_solvent            10
+solvent_solvent           10
+q_atom                    99
+lrf                       99
+
+[sphere]
+shell_radius              16
+shell_force               20
+
+[intervals]
+non_bond                  25
+output                    50
+energy                    0
+trajectory                200
+
+[files]
+topology                  prep/lig_w.top
+fep                       prep/lig_w.fep
+restart                   dc2.re
+final                     dc3.re
+trajectory                dc3.dcd
+
+[sequence_restraints]
+1 46 0.5 0 1

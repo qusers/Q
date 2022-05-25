@@ -30,6 +30,8 @@ int n_molecules = 0;
 char base_folder[1024];
 double dt, tau_T;
 
+bool run_gpu = false;
+
 /* =============================================
  * == FROM MD FILE
  * =============================================
@@ -123,16 +125,16 @@ q_imprcouple_t *q_imprcouples;
 q_softpair_t *q_softpairs;
 q_torcouple_t *q_torcouples;
 
-q_angle_t **q_angles;
-q_atype_t **q_atypes;
-q_bond_t **q_bonds;
-q_charge_t **q_charges;
-q_elscale_t **q_elscales;
-q_exclpair_t **q_exclpairs;
-q_improper_t **q_impropers;
-q_shake_t **q_shakes;
-q_softcore_t **q_softcores;
-q_torsion_t **q_torsions;
+q_angle_t *q_angles;
+q_atype_t *q_atypes;
+q_bond_t *q_bonds;
+q_charge_t *q_charges;
+q_elscale_t *q_elscales;
+q_exclpair_t *q_exclpairs;
+q_improper_t *q_impropers;
+q_shake_t *q_shakes;
+q_softcore_t *q_softcores;
+q_torsion_t *q_torsions;
 
 // Remove bonds, angles, torsions and impropers which are excluded or changed in the FEP file
 void exclude_qatom_definitions() {
@@ -143,9 +145,9 @@ void exclude_qatom_definitions() {
     excluded = 0;
     if (n_qangles > 0) {
         for (int i = 0; i < n_angles; i++) {
-            if (angles[i].ai == q_angles[qai][0].ai
-             && angles[i].aj == q_angles[qai][0].aj
-             && angles[i].ak == q_angles[qai][0].ak) {
+            if (angles[i].ai == q_angles[qai].ai
+             && angles[i].aj == q_angles[qai].aj
+             && angles[i].ak == q_angles[qai].ak) {
                 qai++;
                 excluded++;
             }
@@ -160,8 +162,8 @@ void exclude_qatom_definitions() {
     excluded = 0;
     if (n_qbonds > 0) {
         for (int i = 0; i < n_bonds; i++) {
-            if (bonds[i].ai == q_bonds[qbi][0].ai
-             && bonds[i].aj == q_bonds[qbi][0].aj) {
+            if (bonds[i].ai == q_bonds[qbi].ai
+             && bonds[i].aj == q_bonds[qbi].aj) {
                 qbi++;
                 excluded++;
             }
@@ -192,10 +194,10 @@ void exclude_qatom_definitions() {
     excluded = 0;
     if (n_qtorsions > 0) {
         for (int i = 0; i < n_torsions; i++) {
-            if (torsions[i].ai == q_torsions[qti][0].ai
-             && torsions[i].aj == q_torsions[qti][0].aj
-             && torsions[i].ak == q_torsions[qti][0].ak
-             && torsions[i].al == q_torsions[qti][0].al) {
+            if (torsions[i].ai == q_torsions[qti].ai
+             && torsions[i].aj == q_torsions[qti].aj
+             && torsions[i].ak == q_torsions[qti].ak
+             && torsions[i].al == q_torsions[qti].al) {
                 qti++;
                 excluded++;
             }
@@ -334,6 +336,10 @@ void exclude_shaken_definitions() {
 coord_t* coords;
 vel_t* velocities;
 dvel_t* dvelocities;
+double Temp = 0;
+double Texcl = 0;
+double Tfree = 0;
+double Tscale = 1;
 
 // Shake constrains
 coord_t* xcoords;
@@ -898,7 +904,7 @@ void write_energies(int iteration) {
 void calc_integration() {
     init_variables();
 
-    for (int i = 0; i < md.steps; i++) {
+    for (int i = 0; i <= md.steps; i++) {
         calc_integration_step(i);
     }
     
@@ -969,7 +975,12 @@ void calc_bonded_forces() {
 
 void calc_integration_step(int iteration) {
     printf("================================================\n");
-    printf("== STEP %d\n", iteration);
+    if (iteration > 0) {
+        printf("== STEP %d\n", iteration);
+    }
+    else {
+        printf("== INITIAL ENERGIES");
+    }
     printf("================================================\n");
 
     // Reset derivatives & energies
@@ -986,17 +997,48 @@ void calc_integration_step(int iteration) {
 
     clock_t end_bonded = clock();
 
-    calc_nonbonded_qp_forces();
-    calc_nonbonded_pp_forces();
+    clock_t start_pp, end_pp, start_qp, end_qp;
+    if (run_gpu) {
+        start_qp = clock();
+        calc_nonbonded_qp_forces_host();
+        end_qp = clock();
+        start_pp = clock();
+        calc_nonbonded_pp_forces_host();
+        end_pp = clock();
+    }
+    else {
+        start_qp = clock();
+        calc_nonbonded_qp_forces();
+        end_qp = clock();
+        start_pp = clock();
+        calc_nonbonded_pp_forces();
+        end_pp = clock();
+    }
 
-    clock_t end_nonbonded = clock();
-
+    clock_t start_ww, end_ww, start_pw, end_pw;
     // Now solvent interactions
     if (n_waters > 0) {
-        calc_nonbonded_ww_forces();
-        calc_nonbonded_pw_forces();
-        calc_nonbonded_qw_forces();
+        if (run_gpu) {
+            start_ww = clock();
+            calc_nonbonded_ww_forces_host();
+            end_ww = clock();
+            start_pw = clock();
+            calc_nonbonded_pw_forces_host();
+            end_pw = clock();
+            calc_nonbonded_qw_forces_host();
+        }
+        else {
+            start_ww = clock();
+            calc_nonbonded_ww_forces();
+            end_ww = clock();
+            start_pw = clock();
+            calc_nonbonded_pw_forces();
+            end_pw = clock();
+            calc_nonbonded_qw_forces();
+        }
     }
+
+    clock_t end_nonbonded = clock();
 
     // Calculate restraints
     if (n_waters > 0) {
@@ -1008,12 +1050,17 @@ void calc_integration_step(int iteration) {
     calc_pshell_forces();
     calc_restrseq_forces();
     calc_restrdis_forces();
+
     calc_restrpos_forces();
     calc_restrang_forces();
     calc_restrwall_forces();
     
+    clock_t end_restraints = clock();
+
     // Q-Q nonbonded interactions
+    clock_t start_qq = clock();
     calc_nonbonded_qq_forces();
+    clock_t end_qq = clock();
 
     // Q-atom bonded interactions: loop over Q-atom states
     for (int state = 0; state < n_lambdas; state++) {
@@ -1021,6 +1068,8 @@ void calc_integration_step(int iteration) {
         calc_qbond_forces(state);
         calc_qtorsion_forces(state);
     }
+
+    clock_t end_qatoms = clock();
 
     // Now apply leapfrog integration
     calc_leapfrog();
@@ -1030,6 +1079,20 @@ void calc_integration_step(int iteration) {
 
     // Update total potential energies with an average of all states
     for (int state = 0; state < n_lambdas; state++) {
+        if (lambdas[state] == 0) {
+            EQ_bond[state].Uangle = 0;
+            EQ_bond[state].Ubond = 0;
+            EQ_bond[state].Utor = 0;
+            EQ_bond[state].Uimp = 0;
+            EQ_nonbond_qq[state].Ucoul = 0;
+            EQ_nonbond_qq[state].Uvdw = 0;
+            EQ_nonbond_qp[state].Ucoul = 0;
+            EQ_nonbond_qp[state].Uvdw = 0;
+            EQ_nonbond_qw[state].Ucoul = 0;
+            EQ_nonbond_qw[state].Uvdw = 0;
+            EQ_restraint[state].Urestr = 0;
+        }
+
         EQ_nonbond_qx[state].Ucoul = EQ_nonbond_qq[state].Ucoul + EQ_nonbond_qp[state].Ucoul + EQ_nonbond_qw[state].Ucoul;
         EQ_nonbond_qx[state].Uvdw = EQ_nonbond_qq[state].Uvdw + EQ_nonbond_qp[state].Uvdw + EQ_nonbond_qw[state].Uvdw;
 
@@ -1097,19 +1160,28 @@ void calc_integration_step(int iteration) {
     printf("Utot\t%f\n", E_total.Utot);
     printf("\n");
 
-    clock_t end = clock();
+    // Append output files
+    write_coords(iteration);
+    write_velocities(iteration);
+    write_energies(iteration);    
+
+    clock_t end_calculation = clock();
 
     // Profiler info
 #ifdef __PROFILING__
     printf("Elapsed time for bonded forces: %f\n", (end_bonded-start) / (double)CLOCKS_PER_SEC );
     printf("Elapsed time for non-bonded forces: %f\n", (end_nonbonded-end_bonded) / (double)CLOCKS_PER_SEC);
-    printf("Elapsed time for entire integration step: %f\n", (end-start) / (double)CLOCKS_PER_SEC);
+    printf("Elapsed time for pp interactions: %f\n", (end_pp-start_pp) / (double)CLOCKS_PER_SEC );
+    printf("Elapsed time for qq interaction: %f\n",  (end_qq-start_qq) / (double)CLOCKS_PER_SEC );
+    printf("Elapsed time for qp interaction: %f\n",  (end_qp-start_qp) / (double)CLOCKS_PER_SEC );
+    if (n_waters > 0) {
+        printf("Elapsed time for ww interactions: %f\n", (end_ww-start_ww) / (double)CLOCKS_PER_SEC );
+        printf("Elapsed time for pw interactions: %f\n", (end_pw-start_pw) / (double)CLOCKS_PER_SEC );
+    }
+    printf("---\n");
+    printf("Elapsed time for entire time-step: %f\n", (end_calculation-start) / (double)CLOCKS_PER_SEC);
 #endif /* __PROFILING__ */
 
-    // Append output files
-    write_coords(iteration);
-    write_velocities(iteration);
-    write_energies(iteration);
 }
 
 void init_variables() {
@@ -1118,6 +1190,11 @@ void init_variables() {
 
     dt = time_unit * md.stepsize;
     tau_T = time_unit * md.bath_coupling;
+
+    if (run_gpu && n_lambdas > 2) {
+        printf(">>> FATAL: More than 2 states not supported on GPU architecture. Exiting...\n");
+        exit(EXIT_FAILURE);
+    }
 
     // From topology file
     init_topo("topo.csv");
@@ -1247,43 +1324,15 @@ void clean_variables() {
     free(q_imprcouples);
     free(q_softpairs);
     free(q_torcouples);
-    for (int i = 0; i < n_qatoms; i++) {
-        free(q_atypes[i]);
-        free(q_charges[i]);
-    }
     free(q_atypes);
     free(q_charges);
-    for (int i = 0; i < n_qangles; i++) {
-        free(q_angles[i]);
-    }
     free(q_angles);
-    for (int i = 0; i < n_qbonds; i++) {
-        free(q_bonds[i]);
-    }
     free(q_bonds);
-    for (int i = 0; i < n_qelscales; i++) {
-        free(q_elscales[i]);
-    }
     free(q_elscales);
-    for (int i = 0; i < n_qexclpairs; i++) {
-        free(q_exclpairs[i]);
-    }
     free(q_exclpairs);
-    for (int i = 0; i < n_qimpropers; i++) {
-        free(q_impropers[i]);
-    }
     free(q_impropers);
-    for (int i = 0; i < n_qshakes; i++) {
-        free(q_shakes[i]);
-    }
     free(q_shakes);
-    for (int i = 0; i < n_qsoftcores; i++) {
-        free(q_softcores[i]);
-    }
     free(q_softcores);
-    for (int i = 0; i < n_qtorsions; i++) {
-        free(q_torsions[i]);
-    }
     free(q_torsions);
 
     // Restraints
@@ -1312,6 +1361,11 @@ void clean_variables() {
     // Shake
     free(mol_n_shakes);    
     free(shake_bonds);
+    if (run_gpu) {
+        clean_d_solvent();
+        clean_d_qatoms();
+        clean_d_patoms();
+    }
 
     // Energies & temperature
     free(EQ_total);

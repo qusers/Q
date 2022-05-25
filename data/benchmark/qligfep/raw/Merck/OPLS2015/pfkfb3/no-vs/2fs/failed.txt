@@ -1,0 +1,4 @@
+FEP_43-41 protein/
+FEP_39-42 protein/
+FEP_20-41 protein/
+FEP_43-42 protein/

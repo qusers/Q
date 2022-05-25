@@ -7,6 +7,7 @@ qdyn
 *.lo
 *.o
 *.obj
+bin/q6
 
 # Precompiled Headers
 *.gch
@@ -44,6 +45,10 @@ __pycache__/*
 #test/water/no_ion/*
 test/ethane-ethanol/test/*
 test/ethane-ethanol/FEP_*
+test/ethanol-methane/test/*
+test/ethanol-methane/FEP_*
+.fuse
+
 *.pyc
 *.fuse*
 
@@ -53,12 +58,11 @@ test/ethane-ethanol/FEP_*
 *.calc
 *.pml
 *.inp
-test/2.physical-properties/1.solvation/1.Q-cpu/
-test/2.physical-properties/1.solvation/2.Q-gpu/1.water/
-test/2.physical-properties/1.solvation/2.Q-gpu/2.vacuum/
-test/2.physical-properties/1.solvation/2.Q-gpu/submit.py
-test/CDk2/rundir/
-test/1.interactions/*/*/Q5_data/
-test/1.interactions/*/*/compare.py
-test/1.interactions/*/*/*/Q5_data/
-test/1.interactions/*/*/*/compare.py
+
+# benchmark files
+benchmark/FEP_solvation/2.Q7/1.water/
+benchmark/FEP_solvation/2.Q7/2.vacuum/
+benchmark/FEP_ligand_binding/2.Q7/1.protein/
+benchmark/FEP_ligand_binding/2.Q7/2.water/
+
+!test/q6/**
