@@ -603,8 +603,10 @@ void init_shake() {
     Ndegf_solvent = Ndegf - 3 * n_atoms_solute  + n_solute_shake_constraints;
     Ndegf_solute = Ndegf - Ndegf_solvent;
 
-    Ndegfree_solvent = Ndegfree;//3 * (n_atoms - n_atoms_solute) - (n_shake_constraints - n_solute_shake_constraints);
-    Ndegfree_solute = 0;//Ndegfree - Ndegfree_solvent;
+    Ndegfree_solvent = Ndegfree - (n_shake_constraints - n_solute_shake_constraints);
+    Ndegfree_solute = Ndegfree - Ndegfree_solvent;
+
+    printf("n_shake_constrains = %d, n_solute_shake_constraints = %d\n", n_shake_constraints, n_solute_shake_constraints);
 
     if (Ndegfree_solvent * Ndegfree_solute == 0) {
         separate_scaling = false;
