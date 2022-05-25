@@ -184,18 +184,16 @@
         let data = document.getElementById("file").files[0];
         data.text().then((data) => {
             jsonData = JSON.parse(data)
-            populatePlots();
-            populateMetrics();
             drawGraph();
+            if (jsonData.hasCalculated) {
+                populatePlots();
+                populateMetrics();
+            }
         });
     };
 
     function destroyNetwork() {
         network.destroy();
-    }
-
-    function clearOutputArea() {
-        exportArea.value = "";
     }
 
     function populatePlots() {
@@ -291,8 +289,6 @@
             }
         });
         return network;
-
-        clearOutputArea();
     }
 
     function exportJson() {

@@ -578,6 +578,7 @@ class MapGen:
             graph = ligands["Graph"]
             # Some data reformatting needs to be done for visjs
             data = json_graph.node_link_data(graph)
+            data['hasCalculated'] = False
             data['edges'] = data.pop('links')
             for edge in data['edges']:
                 edge['from'] = self.ligands[0]['Ligand'][edge['source']].name
@@ -664,6 +665,7 @@ class Analyze(object):
         self.do_ccc()
         self.calc_dG()
         self.get_metrics()
+        self.set_hasCalculated()
         self.write()
 
     def readmap(self):
@@ -790,6 +792,9 @@ class Analyze(object):
             error.append(float(edge["payload"]["sem"]))
 
         self.data['allmetrics'] = metrics.analysis(X=x,Y=y,Z=error)
+
+    def set_hasCalculated(self):
+        self.data['hasCalculated'] = True
 
     def write(self):
         with open(self.mapfile, 'w') as outfile:
