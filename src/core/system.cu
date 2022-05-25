@@ -652,7 +652,6 @@ void init_patoms() {
  */
 
 double Ndegf, Ndegfree, Ndegf_solvent, Ndegf_solute, Ndegfree_solvent, Ndegfree_solute;
-double Temp = 0, Tfree = 0;
 double Tscale_solute = 1, Tscale_solvent = 1;
 
 void calc_temperature() {
