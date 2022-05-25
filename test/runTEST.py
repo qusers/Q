@@ -32,6 +32,11 @@ class create_MD_input(object):
     def __init__(self,data):
         print('Generating MD input file')
         test = data['test']
+        if data['shake'] == True:
+            shake = 'on'
+
+        else:
+            shake = 'off'
         md_content = \
 """[MD]
 steps                     {}
@@ -40,9 +45,9 @@ temperature               1
 bath_coupling             1
 random_seed               112
 initial_temperature       1
-shake_solvent             off
-shake_hydrogens           off
-shake_solute              off
+shake_solvent             {}
+shake_hydrogens           {}
+shake_solute              {}
 lrf                       off
 
 [cut-offs]
@@ -70,6 +75,7 @@ non_bond                  1
 topology                  {}{}
 final                     eq1.re
 """.format(data['timestep'],
+           shake, shake, shake,
            data['testinfo'][data['test']][1],
            data['topdir'],
            data['testinfo'][data['test']][0])
@@ -88,7 +94,7 @@ final                     eq1.re
 class Run_Q6(object):
     def __init__(self,data):
         print("Running Q6")
-        q_command = '{}bin/qdyn5_test eq1.inp > eq1.log'.format(settings.ROOT)
+        q_command = '{}bin/q6/qdyn eq1.inp > eq1.log'.format(settings.ROOT)
         os.system(q_command)
 
 class Parse_Q6_data(object):
@@ -400,6 +406,13 @@ if __name__ == "__main__":
                         dest = "timestep",
                         required = True,
                         help = "Specify the number of timesteps for each test")
+
+
+    parser.add_argument('-s', '--shake',
+                        dest = "shake",
+                        default = False,
+                        action = 'store_true',
+                        help = "Turn shake on")
 
     args = parser.parse_args()
     
