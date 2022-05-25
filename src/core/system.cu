@@ -655,6 +655,7 @@ double Ndegf, Ndegfree, Ndegf_solvent, Ndegf_solute, Ndegfree_solvent, Ndegfree_
 double Tscale_solute = 1, Tscale_solvent = 1;
 
 void calc_temperature() {
+    printf("Ndegf = %f, Ndegfree = %f, n_excluded = %d\n", Ndegf, Ndegfree, n_excluded);
     Temp = 0;
     Tfree = 0;
     double Temp_solute = 0, Tfree_solute = 0, Texcl_solute = 0;
@@ -710,7 +711,7 @@ void calc_temperature() {
         if (Tfree != 0) Tscale_solvent = sqrt(1 + (dt / tau_T) * (md.temperature / Tfree - 1.0));
         Tscale_solute = Tscale_solvent;
     }
-    // printf("Tscale = %f, tau_T = %f, Temp = %f\n", Tscale, tau_T, Temp);
+    printf("Tscale = %f, tau_T = %f, Temp = %f\n", Tscale_solvent, tau_T, Temp);
 }
 
 /* =============================================

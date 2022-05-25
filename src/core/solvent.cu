@@ -880,9 +880,9 @@ __global__ void calc_ww_dvel_matrix(int n_waters, double crg_ow, double crg_hw, 
         Evdw[rowlen * by + bx] = tot_Evdw;
         Ecoul[rowlen * by + bx] = tot_Ecoul;
 
-        if (bx == 70 && by == 70) {
-            printf("bx = %d, by = %d, tot_Evdw = %f, tot_Ecoul = %f\n", bx, by, tot_Evdw, tot_Ecoul);
-        }
+        // if (bx == 70 && by == 70) {
+        //     printf("bx = %d, by = %d, tot_Evdw = %f, tot_Ecoul = %f\n", bx, by, tot_Evdw, tot_Ecoul);
+        // }
         // printf("bx = %d by = %d tot_Evdw = %f tot_Ecoul = %f\n", bx, by, Evdw[rowlen * by + bx], Ecoul[rowlen * by + bx]);
     }
 
