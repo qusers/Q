@@ -7,6 +7,7 @@ qdyn
 *.lo
 *.o
 *.obj
+bin/q6
 
 # Precompiled Headers
 *.gch
@@ -63,3 +64,5 @@ benchmark/FEP_solvation/2.Q7/1.water/
 benchmark/FEP_solvation/2.Q7/2.vacuum/
 benchmark/FEP_ligand_binding/2.Q7/1.protein/
 benchmark/FEP_ligand_binding/2.Q7/2.water/
+
+!test/q6/**
