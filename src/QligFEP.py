@@ -356,7 +356,8 @@ class Write_Runfile():
             'processors': self.n_processes
         }
 
-        with open('{}/share/templates/RUN.py'.format(SETTINGS.ROOT), 'r') as f, open(self.py,'w') as outfile:
+        with open('{}/share/templates/RUN.py'.format(SETTINGS.ROOT), 'r') as f, \
+             open(self.py,'w') as outfile:
             src = Template(f.read())
             result = src.substitute(d)
             outfile.write(result)
