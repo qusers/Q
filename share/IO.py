@@ -7,6 +7,15 @@ import numpy as np
 import sys
 import shutil
 import time
+import json
+
+def JSONdump(data, outfile):
+        """
+        Dump data to a json file
+        """
+        print(outfile)
+        with open(outfile, 'w') as outfile:
+            json.dump(data,outfile,indent=2)    
 
 def pdb_parse_in(line, include=('ATOM','HETATM')):
     """

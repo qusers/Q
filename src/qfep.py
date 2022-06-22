@@ -9,6 +9,7 @@ import shutil
 import math
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../share/')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../env/')))
 
 # Q-GPU packages
 import IO

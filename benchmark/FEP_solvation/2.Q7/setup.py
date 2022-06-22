@@ -4,7 +4,7 @@ import os
 QligFEP = '../../../bin/QligFEP.py'
 # construct FEPfiles
 FEPs = glob.glob('../1.Q5/*/*')
-#FEPs = [FEPs[0]]
+FEPs = [FEPs[0]]
 for fep in FEPs:
     of = fep
     wd = fep.split('/')[2]

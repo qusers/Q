@@ -9,8 +9,11 @@ import sys
 import json
 from random import randrange
 from subprocess import check_output
+from string import Template
+
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../share/')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../env/')))
 
 # Q-GPU native libraries
 import IO
@@ -20,8 +23,7 @@ import md       as MD
 import fep      as FEP
 
 # This needs to be fixed!!
-globaldata = {'replicates' : None,
-              'randrep'    : {},             
+globaldata = {           
               'Temp'       : [],
               'MDs'        : []
              }
@@ -33,10 +35,13 @@ class Random():
     """
     def __init__(self):        
         repdic = {}
+        seeds = []
         for i in range(0, globaldata['replicates']):
             repdic[i] = randrange(0,9999)
+            seeds.append(randrange(0,9999))
 
         globaldata['randrep'] = repdic
+        globaldata['seeds'] = seeds
 
 class Read_Submit():
     def __init__(self,oldFEP):        
@@ -121,7 +126,7 @@ class Write_MD():
         self.wd = wd
         self.oldFEP = oldFEP
         self.oldFEProot = oldFEP.split('/')[-1]
-        reps = globaldata['randrep']
+        self.lambdas = []
 
         eq = sorted(glob.glob('{}/inputfiles/eq*.inp'.format(oldFEP)))
         md = sorted(glob.glob('{}/inputfiles/md*.inp'.format(oldFEP)))[::-1]
@@ -139,17 +144,32 @@ class Write_MD():
                 if 'md' in md or 'eq5' in md:
                     md_data['temperature'] = self.T
                 
-                
                 if 'eq1' in md:
                     md_data['random_seed'] = globaldata['randrep'][replicate]
                     
                 else:
                     md_data['random_seed'] = None
+
+                # going to remove writing all MD files and implement lambdas instead
+                if not md_data['lambdas'] in self.lambdas:
+                    self.lambdas.append(md_data['lambdas'])    
                 self.write(md_data, replicate)
+
+        # Writing seeds and lambdas to seperate files
+
+        IO.JSONdump(globaldata['seeds'],
+                   '{}/{}/inputfiles/{}.json'.format(self.wd,
+                                    self.oldFEProot,
+                                    'seeds'))
+        
+        IO.JSONdump(self.lambdas,                    
+                    '{}/{}/inputfiles/{}.json'.format(self.wd,
+                                    self.oldFEProot,
+                                    'lambdas'))
             
     def construct(self,md):
         read_md  = MD.Read_MD(md)
-        md_data = read_md.Q()     
+        md_data = read_md.Q()    
 
         return md_data
     
@@ -175,7 +195,7 @@ class Write_MD():
                                                       )
             
             write_md.JSON(out_json)
-        
+
 class Write_Qfepfile():
     def __init__(self,wd,oldFEP):
         """
@@ -331,26 +351,15 @@ class Write_Runfile():
                 self.write_py()
         
     def write_py(self):
-        with open(self.py,'w') as outfile:
-            outfile.write(
-                "import multiprocessing\n"                                  \
-                "import shutil\n"                                  \
-                "import os\n\n"                                             \
-                "def worker(i):\n"                                          \
-                "    os.chdir('298.0/{:02d}'.format(i))\n"      ## HARDCODED,NEEDS FIX
-            )
-            for command in self.commands:
-                outfile.write(command)
-                
-            outfile.write(
-                "    return\n\n"                                            \
-                "if __name__ == '__main__':\n"                              \
-                "    jobs = []\n"                                           \
-                "    for i in range({}):\n"                                 \
-                "        p = multiprocessing.Process(target=worker,args=(i,))\n"      \
-                "        jobs.append(p)\n"                                  \
-                "        p.start()".format(self.n_processes)                                 
-            )
+        d = {
+            'runfiles': '\n'.join(self.commands),
+            'processors': self.n_processes
+        }
+
+        with open('{}/share/templates/RUN.py'.format(SETTINGS.ROOT), 'r') as f, open(self.py,'w') as outfile:
+            src = Template(f.read())
+            result = src.substitute(d)
+            outfile.write(result)
 
 class Write_Submitfile():
     def __init__(self,wd,oldFEP,cluster):
