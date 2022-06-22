@@ -559,6 +559,8 @@ void init_shake() {
             mol += 1;
         }
 
+        printf("ai=%d aj=%d\n", ai, aj);
+        printf("heavy[ai]=%d, heavy[aj]=%d\n", heavy[ai], heavy[aj]);
         if ( (md.shake_hydrogens && (!heavy[ai] || !heavy[aj]))
             || (md.shake_solute && ai+1 <= n_atoms_solute) 
             || (md.shake_solvent && ai+1 > n_atoms_solute) ) {
@@ -1253,6 +1255,7 @@ void init_variables() {
     exclude_all_atoms_excluded_definitions();
     
     // Shake constraints, need to be initialized before last part of shrink_topology
+    init_pshells();
     init_shake();
 
     // Now remove shaken bonds
@@ -1277,7 +1280,6 @@ void init_variables() {
         init_water_sphere();
         init_wshells();
     }
-    init_pshells();
 
     // Init energy
     EQ_total = (energy_t*) malloc(n_lambdas * sizeof(energy_t));
