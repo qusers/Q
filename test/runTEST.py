@@ -94,7 +94,7 @@ final                     eq1.re
 class Run_Q6(object):
     def __init__(self,data):
         print("Running Q6")
-        q_command = '{}bin/q6/qdyn eq1.inp > eq1.log'.format(settings.ROOT)
+        q_command = '{}bin/qdyn5_test eq1.inp > eq1.log'.format(settings.ROOT)
         os.system(q_command)
 
 class Parse_Q6_data(object):
