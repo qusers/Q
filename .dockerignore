@@ -9,3 +9,4 @@
 !env/**
 !setup.py
 !pyproject.toml
+!dockerfiles/*/*.repo
