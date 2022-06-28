@@ -1,0 +1,10 @@
+LICENSE
+README.md
+pyproject.toml
+setup.cfg
+setup.py
+QligFEP.egg-info/PKG-INFO
+QligFEP.egg-info/SOURCES.txt
+QligFEP.egg-info/dependency_links.txt
+QligFEP.egg-info/requires.txt
+QligFEP.egg-info/top_level.txt
