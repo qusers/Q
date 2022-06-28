@@ -150,7 +150,7 @@ clean:
 
 nuke:
 	-rm -rf *.o  *.mod *.M *.kmo *.il *.oo qfep qdynp qdyn qprep qcalc \
-	qdum ../bin ../obj
+	qdum ../../bin/q6 ../../obj
 
 qcalc qdyn qdum qdynp qprep qfep: misc.o mpiglob.o
 

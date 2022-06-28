@@ -6,8 +6,8 @@ ROOT_DIR = os.path.dirname(os.path.realpath(__file__))
 FF_DIR = os.path.join(ROOT_DIR, "FF")
 INPUT_DIR = os.path.join(ROOT_DIR, "INPUTS")
 # Dicionary of locations of Q executables
-Q_DIR = {'CSB':'/home/jespers/software/q6/bin/',
-         'LOCAL':'/home/jespers/software/q6/bin/'
+Q_DIR = {'CSB':'/home/willem/software/Q/bin/q6/',
+         'LOCAL':'/home/willem/software/Q/bin/q6/'
          #'LOCAL':'/Users/willemjespers/Software/Q6/bin/'
         }
 BIN = os.path.join(ROOT_DIR, "bin")

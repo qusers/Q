@@ -8,7 +8,7 @@ import shlex
 from subprocess import check_output
 
 import functions as f
-import src.settings as s
+import settings as s
 import IO
 
 class Run(object):
@@ -834,6 +834,7 @@ class Run(object):
         os.chdir(writedir)
         cluster_options = getattr(s, self.cluster)
         qprep = cluster_options['QPREP']
+        print(qprep)
         options = ' < qprep.inp > qprep.out'
         # Somehow Q is very annoying with this < > input style so had to implement
         # another function that just calls os.system instead of using the preferred
