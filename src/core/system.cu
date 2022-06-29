@@ -791,7 +791,7 @@ void calc_integration_step(int iteration) {
         printf("== STEP %d\n", iteration);
     }
     else {
-        printf("== INITIAL ENERGIES");
+        printf("== INITIAL ENERGIES\n");
     }
     printf("================================================\n");
 
