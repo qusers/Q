@@ -15,7 +15,16 @@ def JSONdump(data, outfile):
         """
         print(outfile)
         with open(outfile, 'w') as outfile:
-            json.dump(data,outfile,indent=2)    
+            json.dump(data,outfile,indent=2) 
+
+def json2Q(json_in, q_out):
+    """
+        Translate Q7 json file to Q6 input file
+    """  
+    with open(json_in) as infile:
+        data = json.load(infile)
+
+        print(data)
 
 def pdb_parse_in(line, include=('ATOM','HETATM')):
     """

@@ -211,7 +211,7 @@ class Write_MD(object):
     
     def CSV(self,wd):
         """
-        .csv file format for qdyn
+        .csv file format for qdyn GPU version
         
         """
         self.wd = wd
@@ -315,4 +315,144 @@ class Write_MD(object):
         """
         with open(out_json, 'w') as outfile:
             inputs = self.data
-            json.dump(inputs,outfile,indent=2)    
+            json.dump(inputs,outfile,indent=2)
+
+    def Q(self, q_outfile):
+        """
+        Q5 input file write function
+        
+        """
+                if '[MD]' in line:
+                    block = 1
+                    continue
+
+                if '[cut-offs]' in line:
+                    block = 2
+                    continue
+
+                if '[sphere]' in line:
+                    block = 3
+                    continue
+
+                if '[solvent]' in line:
+                    block = 4
+                    continue
+
+                if '[intervals]' in line:
+                    block = 5
+                    continue
+
+                if '[files]' in line:
+                    block = 6
+                    continue
+
+                if '[trajectory_atoms]' in line:
+                    block = 7
+                    continue
+
+                if '[lambdas]' in line:
+                    block = 8
+                    continue
+
+                if '[sequence_restraints]' in line:
+                    block = 9
+                    continue
+
+                if '[atom_restraints]' in line:
+                    block = 10
+                    continue
+
+                if '[distance_restraints]' in line:
+                    block = 11
+                    continue                        
+
+                if '[wall_restraints]' in line:
+                    block = 12
+                    continue                        
+
+                if '[angle_restraints]' in line:
+                    block = 13
+                    continue    
+
+        with open(q_outfile, 'w') as outfile:
+            outfile.write('[MD]\n')
+            outfile.write('steps;{}\n'              .format(self.data['steps']))        
+            outfile.write('stepsize;{}\n'           .format(self.data['stepsize']))        
+            outfile.write('temperature;{}\n'        .format(self.data['temperature']))        
+            outfile.write('thermostat;{}\n'         .format(self.data['thermostat']))        
+            outfile.write('bath_coupling;{}\n'      .format(self.data['bath_coupling']))        
+            outfile.write('random_seed;{}\n'        .format(self.data['random_seed']))        
+            outfile.write('initial_temperature;{}\n'.format(self.data['initial_temperature']))        
+            outfile.write('shake_solvent;{}\n'      .format(self.data['shake_solvent']))        
+            outfile.write('shake_hydrogens;{}\n'    .format(self.data['shake_hydrogens'])) 
+            outfile.write('lrf;{}\n'                .format(self.data['lrf']))        
+
+            outfile.write('[cut-offs]\n')     
+            outfile.write('solute_solute;{}\n'      .format(self.data['solute_solute']))        
+            outfile.write('solvent_solvent;{}\n'    .format(self.data['solvent_solvent']))        
+            outfile.write('solute_solvent;{}\n'     .format(self.data['solute_solvent']))        
+            outfile.write('q_atom;{}\n'             .format(self.data['q_atom']))        
+            outfile.write('shell_radius;{}\n'       .format(self.data['shell_radius']))        
+            outfile.write('shell_force;{}\n'        .format(self.data['shell_force']))        
+            outfile.write('radial_force;{}\n'       .format(self.data['radial_force']))        
+            outfile.write('polarisation;{}\n'       .format(self.data['polarisation']))        
+            outfile.write('polarisation_force;{}\n' .format(self.data['polarisation_force']))        
+            outfile.write('non_bond;{}\n'           .format(self.data['non_bond']))        
+            outfile.write('output;{}\n'             .format(self.data['output']))        
+            outfile.write('energy;{}\n'             .format(self.data['energy']))        
+            outfile.write('trajectory;{}\n'         .format(self.data['trajectory']))
+
+            # possible to have multiple lambdas, need to loop
+            ### LAMBDAS ###
+            if self.data['lambdas'] != None:
+                outfile.write('{};lambdas\n'.format(len(self.data['lambdas'])))
+                for l in self.data['lambdas']:
+                    outfile.write('{}\n'.format(l))
+                    
+            else:
+                outfile.write('0;lambdas\n')
+
+            ### SEQREST ###
+            if self.data['seqrest'] != None:
+                outfile.write('{};{}\n'.format(len(self.data['seqrest']),'seqrest'))
+                for r in self.data['seqrest']:
+                    outfile.write('{};{};{};{};{}\n'.format(*r))
+
+            else:
+                outfile.write('0;{}\n'.format('seqrest'))    
+                
+            ### POSREST ###
+            if self.data['posrest'] != None:
+                outfile.write('{};{}\n'.format(len(self.data['posrest']),'posrest'))
+                for r in self.data['posrest']:
+                    outfile.write('{};{};{};{};{};{}\n'.format(*r))
+
+            else:
+                outfile.write('0;{}\n'.format('posrest'))    
+                
+            ### DISTREST ###
+            if self.data['distrest'] != None:
+                outfile.write('{};{}\n'.format(len(self.data['distrest']),'distrest'))
+                for r in self.data['distrest']:
+                    outfile.write('{};{};{};{};{};{}\n'.format(*r))
+
+            else:
+                outfile.write('0;{}\n'.format('distrest'))    
+                
+            ### ANGLEREST ###
+            if self.data['anglerest'] != None:
+                outfile.write('{};{}\n'.format(len(self.data['anglerest']),'anglerest'))
+                for r in self.data['anglerest']:
+                    outfile.write('{};{};{};{};{};{}\n'.format(*r))
+
+            else:
+                outfile.write('0;{}\n'.format('anglerest'))    
+                
+            ### WALLREST ###
+            if self.data['wallrest'] != None:
+                outfile.write('{};{}\n'.format(len(self.data['wallrest']),'wallrest'))
+                for r in self.data['wallrest']:
+                    outfile.write('{};{};{};{};{};{}\n'.format(*r))
+
+            else:
+                outfile.write('0;{}\n'.format('wallrest'))         

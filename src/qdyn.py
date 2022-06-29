@@ -177,17 +177,33 @@ class Read_Restart(object):
 class Run_Dynamics(object):
     """
         Runs the main dynamics loop.
+
+        Run_Dynamics(wd  = self.environment['wd'],
+                     top = self.environment['top'],
+                     core = self.environment['core'],
+                     clean = self.environment['clean'],
+                     md = self.environment['clean'],
+                     fep = self.environment['fep'],
+                     verbose = self.environment['verbose'])
+
     """           
-    def __init__(self,wd,top,verbose,gpu,clean):
-        if gpu == True:
-            executable = SETTINGS.ROOT + 'bin/qdyn --gpu '
-        
-        else:
-            executable = SETTINGS.ROOT + 'bin/qdyn '
-            
+    def __init__(self,wd,top,core,clean,md,fep,verbose):
+        executables = {
+            'q6'        : '{}/bin/q6/qdyn '.format(SETTINGS.ROOT),
+            'q6-mpi'    : '{}/bin/q6/qdynp '.format(SETTINGS.ROOT),
+            'q7'        : '{}/bin/qdyn '.format(SETTINGS.ROOT),
+            'q7-gpu'    : '{}/bin/qdyn --gpu '.format(SETTINGS.ROOT)
+        }
+
         options = wd + '/ ' 
 
-        out = IO.run_command(executable,options)
+        if 'q7' in core:
+            out = IO.run_command(executables[core],options)
+
+        if 'q6' in core:
+            q_input = '{}.inp'.format(md.split('.')[0])
+            IO.json2Q(md,q_input)
+
         if verbose == True:
             print(out.decode("utf-8"))
             
@@ -208,7 +224,7 @@ class Init(object):
                }
         """
         self.environment = data
-        print(data)
+
         # check extension:
         extensions = ['json','inp','fep','re','top']
         
@@ -261,6 +277,8 @@ class Init(object):
         
         Run_Dynamics(wd  = self.environment['wd'],
                      top = self.environment['top'],
-                     gpu = self.environment['gpu'],
+                     core = self.environment['core'],
                      clean = self.environment['clean'],
+                     md = self.environment['md'],
+                     fep = self.environment['fep'],
                      verbose = self.environment['verbose'])
