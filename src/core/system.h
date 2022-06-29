@@ -3,6 +3,7 @@
 
 #define __PROFILING__
 //#define DEBUG
+#define VERBOSE
 
 // Boltzano's constant
 #define Boltz 0.001986
@@ -34,6 +35,10 @@
 // Once per how many steps theta_corr should be updated
 #define itdis_update 100
 
+// Shake convergence criterion (fraction of distance)
+#define shake_tol 0.0001
+#define shake_max_iter 1000
+
 void init_variables();
 void clean_variables();
 
@@ -55,8 +60,11 @@ extern int n_atoms_solute;
 extern int n_patoms;
 extern int n_qatoms;
 extern int n_waters;
+extern int n_molecules;
 
 extern char base_folder[1024];
+
+extern double dt;
 
 extern bool run_gpu;
 
@@ -75,6 +83,7 @@ struct md_t {
     int random_seed;
     double initial_temperature;
     bool shake_solvent;
+    bool shake_solute;
     bool shake_hydrogens;
     bool lrf;
     // [cut-offs]
@@ -103,6 +112,7 @@ struct md_t {
 };
 
 extern md_t md;
+extern bool separate_scaling;
 
 /* =============================================
  * == FROM TOPOLOGY FILE
@@ -220,6 +230,7 @@ extern int n_charges;
 extern int n_coords;
 extern int n_cimpropers;
 extern int n_ctorsions;
+extern int n_excluded;
 extern int n_impropers;
 extern int n_impropers_solute;
 extern int n_torsions;
@@ -237,11 +248,15 @@ extern ccharge_t *ccharges;
 extern cimproper_t *cimpropers;
 extern ctorsion_t *ctorsions;
 extern coord_t *coords_top;
+extern coord_t *xcoords;
 extern improper_t *impropers;
 extern int *LJ_matrix;
 extern torsion_t *torsions;
 extern bool *excluded;
 extern bool *heavy;
+extern double *winv;
+
+extern int *molecules;
 
 /* =============================================
  * == FROM FEP FILE
@@ -503,6 +518,23 @@ void init_water_sphere();
 void init_wshells();
 
 /* =============================================
+ * == SHAKE
+ * =============================================
+ */
+
+struct shake_bond_t {
+    int ai;
+    int aj;
+    double dist2;
+    bool ready;
+};
+
+extern int n_shake_constraints, *mol_n_shakes;
+extern shake_bond_t *shake_bonds;
+
+void init_shake();
+
+/* =============================================
  * == CALCUTED IN THE INTEGRATION
  * =============================================
  */
@@ -566,6 +598,14 @@ extern double A_O, A_OO, B_O, B_OO, crg_ow, crg_hw; // TODO: don't keep this in 
 void init_velocities();
 void init_dvelocities();
 void init_energies();
+
+/* =============================================
+ * == ENERGY & TEMPERATURE
+ * =============================================
+ */
+
+extern double Ndegf, Ndegfree, Ndegf_solvent, Ndegf_solute, Ndegfree_solvent, Ndegfree_solute;
+void calc_temperature();
 
 /* =============================================
  * == INTEGRATION METHODS

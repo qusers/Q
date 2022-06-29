@@ -46,6 +46,7 @@ void init_ngbrs23_long(const char* filename);
 void init_catypes(const char *filename);
 void init_atypes(const char *filename);
 void init_excluded(const char *filename);
+void init_molecules(const char *filename);
 
 /* =============================================
  * == FROM FEP FILE

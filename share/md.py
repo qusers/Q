@@ -217,7 +217,7 @@ class Write_MD(object):
         self.wd = wd
         lists = ['lambdas','seqrest','distrest']
         
-        j = 30
+        j = 31
         
         # Get length of lists (lambdas, restraints)
         for l in lists:
@@ -237,7 +237,8 @@ class Write_MD(object):
             outfile.write('bath_coupling;{}\n'      .format(self.data['bath_coupling']))        
             outfile.write('random_seed;{}\n'        .format(self.data['random_seed']))        
             outfile.write('initial_temperature;{}\n'.format(self.data['initial_temperature']))        
-            outfile.write('shake_solvent;{}\n'      .format(self.data['shake_solvent']))        
+            outfile.write('shake_solvent;{}\n'      .format(self.data['shake_solvent']))       
+            outfile.write('shake_solute;{}\n'       .format(self.data['shake_solute'])) 
             outfile.write('shake_hydrogens;{}\n'    .format(self.data['shake_hydrogens']))        
             outfile.write('lrf;{}\n'                .format(self.data['lrf']))        
             outfile.write('solute_solute;{}\n'      .format(self.data['solute_solute']))        
