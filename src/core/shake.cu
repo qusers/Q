@@ -4,9 +4,9 @@
 #include <math.h>
 #include <stdio.h>
 
-int calc_shake_constraints() {
+int calc_shake_constraints(coord_t *coords, coord_t *xcoords) {
     int ai, aj, n_iterations, total_iterations, shake;
-    double xij2, diff, corr, scp, xxij2, mi, mj;
+    double xij2, diff, corr, scp, xxij2;
     coord_t xij, xxij;
 
     shake = 0;
@@ -25,9 +25,6 @@ int calc_shake_constraints() {
                     ai = shake_bonds[shake + i].ai-1;
                     aj = shake_bonds[shake + i].aj-1;
     
-                    mi = catypes[atypes[ai].code-1].m;
-                    mj = catypes[atypes[aj].code-1].m;
-    
                     xij.x = coords[ai].x - coords[aj].x;
                     xij.y = coords[ai].y - coords[aj].y;
                     xij.z = coords[ai].z - coords[aj].z;
@@ -40,14 +37,14 @@ int calc_shake_constraints() {
                     xxij.y = xcoords[ai].y - xcoords[aj].y;
                     xxij.z = xcoords[ai].z - xcoords[aj].z;
                     scp = xij.x * xxij.x + xij.y * xxij.y + xij.z * xxij.z;
-                    corr = diff / (2 * scp * (1 / mi + 1 / mj));
+                    corr = diff / (2 * scp * (winv[ai] + winv[aj]));
     
-                    coords[ai].x += xxij.x * corr / mi;
-                    coords[ai].y += xxij.y * corr / mi;
-                    coords[ai].z += xxij.z * corr / mi;
-                    coords[aj].x -= xxij.x * corr / mj;
-                    coords[aj].y -= xxij.y * corr / mj;
-                    coords[aj].z -= xxij.z * corr / mj;
+                    coords[ai].x += xxij.x * corr * winv[ai];
+                    coords[ai].y += xxij.y * corr * winv[ai];
+                    coords[ai].z += xxij.z * corr * winv[ai];
+                    coords[aj].x -= xxij.x * corr * winv[aj];
+                    coords[aj].y -= xxij.y * corr * winv[aj];
+                    coords[aj].z -= xxij.z * corr * winv[aj];
                 }
             }
     
@@ -60,7 +57,7 @@ int calc_shake_constraints() {
                     break;
                 }
             }
-        } while(n_iterations < shake_max_iter);
+        } while(n_iterations < shake_max_iter && !converged);
 
         if (!converged) {
             for (int i = 0; i < mol_n_shakes[mol]; i++) {
@@ -82,4 +79,51 @@ int calc_shake_constraints() {
 
     // Set niter to the average number of iterations per molecule
     return total_iterations / n_molecules;
+}
+
+void initial_shaking() {
+    for (int i = 0; i < n_atoms; i++) {
+        xcoords[i].x = coords[i].x;
+        xcoords[i].y = coords[i].y;
+        xcoords[i].z = coords[i].z;
+    }
+    calc_shake_constraints(coords, xcoords);
+    for (int i = 0; i < n_atoms; i++) {
+        xcoords[i].x = coords[i].x - dt * velocities[i].x;
+        xcoords[i].y = coords[i].y - dt * velocities[i].y;
+        xcoords[i].z = coords[i].z - dt * velocities[i].z;
+    }
+    calc_shake_constraints(xcoords, coords);
+    for (int i = 0; i < n_atoms; i++) {
+        velocities[i].x = (coords[i].x - xcoords[i].x) / dt;
+        velocities[i].y = (coords[i].y - xcoords[i].y) / dt;
+        velocities[i].z = (coords[i].z - xcoords[i].z) / dt;
+    }
+}
+
+void stop_cm_translation() {
+    double total_mass = 0;
+    double rmass = 0;
+    coord_t vcm;
+    vcm.x = 0;
+    vcm.y = 0;
+    vcm.z = 0;
+
+    for (int ai = 0; ai < n_atoms; ai++) {
+        rmass = catypes[atypes[ai].code-1].m;
+        total_mass += rmass;
+        vcm.x = vcm.x + velocities[ai].x * rmass;
+        vcm.y = vcm.y + velocities[ai].y;
+        vcm.z = vcm.z + velocities[ai].z;
+    }
+
+    vcm.x = vcm.x / total_mass;
+    vcm.y = vcm.y / total_mass;
+    vcm.z = vcm.z / total_mass;
+
+    for (int ai = 0; ai < n_atoms; ai++) {
+        velocities[ai].x = velocities[ai].x - vcm.x;
+        velocities[ai].y = velocities[ai].y - vcm.y;
+        velocities[ai].z = velocities[ai].z - vcm.z;
+    }
 }

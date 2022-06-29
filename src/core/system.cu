@@ -83,6 +83,7 @@ int *LJ_matrix;
 bool *excluded;
 bool *heavy;
 int *molecules;
+double *winv;
 
 topo_t topo;
 
@@ -371,6 +372,13 @@ void init_xcoords() {
     xcoords = (coord_t*) malloc(n_atoms * sizeof(coord_t));
 }
 
+void init_inv_mass() {
+    winv = (double*) malloc(n_atoms * sizeof(double));
+    for (int ai = 0; ai < n_atoms; ai++) {
+        winv[ai] = 1 / catypes[atypes[ai].code-1].m;
+    }
+}
+
 /* =============================================
  * == RESTRAINTS
  * =============================================
@@ -559,8 +567,6 @@ void init_shake() {
             mol += 1;
         }
 
-        printf("ai=%d aj=%d\n", ai, aj);
-        printf("heavy[ai]=%d, heavy[aj]=%d\n", heavy[ai], heavy[aj]);
         if ( (md.shake_hydrogens && (!heavy[ai] || !heavy[aj]))
             || (md.shake_solute && ai+1 <= n_atoms_solute) 
             || (md.shake_solvent && ai+1 > n_atoms_solute) ) {
@@ -767,7 +773,7 @@ void calc_leapfrog() {
 
     // Shake if necessary
     if (n_shake_constraints > 0) {
-        calc_shake_constraints();
+        calc_shake_constraints(coords, xcoords);
         for (int i = 0; i < n_atoms; i++) {
             velocities[i].x = (coords[i].x - xcoords[i].x) / dt;
             velocities[i].y = (coords[i].y - xcoords[i].y) / dt;
@@ -1225,6 +1231,7 @@ void init_variables() {
     init_ngbrs14_long("ngbrs14long.csv");
     init_ngbrs23_long("ngbrs23long.csv");
     // init_restrseqs();
+    init_inv_mass();
 
     // From FEP file
     init_qangcouples("q_angcouples.csv");
@@ -1290,6 +1297,11 @@ void init_variables() {
     EQ_nonbond_qx = (E_nonbonded_t*) malloc(n_lambdas * sizeof(E_nonbonded_t));
     EQ_restraint = (E_restraint_t*) malloc(n_lambdas * sizeof(E_restraint_t));
 
+    if (n_shake_constraints > 0) {
+        initial_shaking();
+        stop_cm_translation();
+    }
+    
     // Write header to file
     write_header("coords.csv");
     write_header("velocities.csv");

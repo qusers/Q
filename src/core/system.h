@@ -64,6 +64,8 @@ extern int n_molecules;
 
 extern char base_folder[1024];
 
+extern double dt;
+
 extern bool run_gpu;
 
 /* =============================================
@@ -252,6 +254,7 @@ extern int *LJ_matrix;
 extern torsion_t *torsions;
 extern bool *excluded;
 extern bool *heavy;
+extern double *winv;
 
 extern int *molecules;
 
