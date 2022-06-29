@@ -87,7 +87,7 @@ else ifeq ($(COMP),gcc)
 	FC_OPT=         -O3
 	FFLAGS=         -funroll-loops -ffree-line-length-none -fcray-pointer \
 	                -static-libgfortran -fall-intrinsics -std=legacy \
-	                -Wall -Wtabs -fstack-protector ${FC_OPT} -DG95=1
+	                -fstack-protector ${FC_OPT} -DG95=1 -w
 
 	FPP_FLG=        -cpp
 
@@ -107,8 +107,8 @@ else
 	FC=             gfortran
 	FC_OPT=         -O3
 	FFLAGS=         -ffree-line-length-none -fcray-pointer \
-	                -fall-intrinsics -std=legacy -Wall \
-	                ${FC_OPT} -DG95=1
+	                -fall-intrinsics -std=legacy \
+	                ${FC_OPT} -DG95=1 -w
 
 	FPP_FLG=        -cpp
 
@@ -133,6 +133,8 @@ default: what
 ################################################################################
 all:	qfep qprep qdyn qdum qcalc move1 move2
 
+test:   qfep qprep qdyn_test qdum qcalc move1 move4
+
 debug:
 	@make FFLAGS="${DEBUG}" \
 	qfep qprep qdyn qdum qcalc move1 move2
@@ -152,19 +154,21 @@ nuke:
 	-rm -rf *.o  *.mod *.M *.kmo *.il *.oo qfep qdynp qdyn qprep qcalc \
 	qdum ../../bin/q6 ../../obj
 
-qcalc qdyn qdum qdynp qprep qfep: misc.o mpiglob.o
+qcalc qdyn qdyn_test qdum qdynp qprep qfep: misc.o mpiglob.o
 
-qcalc qdyn qdum qdynp qprep: mask.o prmfile.o sizes.o topo.o trj.o index.o
+qcalc qdyn qdyn_test qdum qdynp qprep: mask.o prmfile.o sizes.o topo.o trj.o index.o
 
-qcalc qdyn qdum qdynp qfep: nrgy.o
+qcalc qdyn qdyn_test qdum qdynp qfep: nrgy.o
 
-qcalc qdyn qdum qdynp: qatom.o
+qcalc qdyn qdyn_test qdum qdynp: qatom.o
 
 qcalc qprep qfep: parse.o
 
 qcalc qprep: maskmanip.o
 
 qdyn qdum: qdyn.o
+
+qdyn_test: qdyn_test.o
 
 qprep: qprep.o prefs.o prep.o avetr.o nrgy.o
 	${FC} ${FFLAGS} ${FLIBS} $+ -o $@
@@ -179,6 +183,9 @@ qcalc: calc_base.o calc_chemscore.o calc_fit.o calc_geom.o calc_pmfscore.o \
 
 qdyn : md.o
 	${FC} ${FFLAGS} ${FLIBS} $+ -o $@
+
+qdyn_test : md_test.o #qdyn_test.o
+	${FC} ${FFLAGS} ${FLIBS} $+ -o $@	
 
 qdum : md_dum.o
 	${FC} ${FFLAGS} ${FLIBS} $+ -o $@
@@ -249,6 +256,9 @@ maskmanip.o:maskmanip.f90 mask.o misc.o parse.o
 md.o:	md.f90 mpiglob.o qatom.o sizes.o trj.o topo.o
 	${FC} ${FFLAGS} ${FPP_FLG} -c md.f90
 
+md_test.o:	md_test.f90 mpiglob.o qatom.o sizes.o trj.o topo.o
+	${FC} ${FFLAGS} ${FPP_FLG} -c md_test.f90
+
 md_dum.o:md.f90 mpiglob.o qatom.o sizes.o trj.o topo.o
 	${FC} ${FFLAGS} ${FPP_FLG} -DDUM -c md.f90 -o md_dum.o
 
@@ -290,6 +300,9 @@ qcalc.o: qcalc.f90 calc_chemscore.o calc_pmfscore.o calc_xscore.o trj.o \
 qdyn.o: qdyn.f90 md.o mpiglob.o
 	${FC} ${FFLAGS} ${FPP_FLG} -c qdyn.f90
 
+qdyn_test.o: qdyn_test.f90 md_test.o mpiglob.o
+	${FC} ${FFLAGS} ${FPP_FLG} -c qdyn_test.f90	-o qdyn_test.o
+
 qdyn_dum.o: qdyn.f90 md.o mpiglob.o
 	${FC} ${FFLAGS} ${FPP_FLG} -DDUM -c qdyn.f90 -o qdyn_dum.o
 
@@ -317,6 +330,9 @@ move2:
 
 move3:
 	mkdir -p ../../bin/q6 ; mv qdynp ../../bin/q6
+
+move4:
+	mkdir -p ../../bin/q6 ; mv qfep qprep qdyn_test qdum qcalc ../../bin/q6	
 
 ################################################################################
 
