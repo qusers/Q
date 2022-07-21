@@ -9,6 +9,19 @@ import shutil
 import time
 import json
 
+## Global objects
+# Translational dictionary for charged residues
+charged_res = {'HIS': {'HD1' : 'HID',
+                       'HE2' : 'HIE'},
+               'GLU': {'HE2' : 'GLH'},
+               'ASP': {'HD2' : 'ASH'}
+              }    
+
+def replace(string, replacements):
+    pattern = re.compile(r'\b(' + '|'.join(replacements.keys()) + r')\b')
+    replaced_string = pattern.sub(lambda x: replacements[x.group()], string)
+    return replaced_string
+
 def JSONdump(data, outfile):
         """
         Dump data to a json file
@@ -271,20 +284,25 @@ def read_lib(libfiles):
 def split_list(lst,n):
     return [lst[i:i + n] for i in range(0, len(lst), n)]
 
-def run_command(executable, options, runtime=False):
+def run_command(executable, options, runtime=False, string=False):
     """
     Takes two variables, the executable location and its options (as string), and 
     runs the program.
     
     Returns the output of that program as an unformatted string.
     """
-    args = shlex.split(executable + options)
-    #print(' '.join(args))
-    
+    out = None
     time1 = time.time()
-    out = check_output(args)
-    time2 = time.time()
+    if string == False:
+        args = shlex.split(executable + options)
+        out = check_output(args)
+        print(' '.join(args))
+
+    else:
+        os.system(executable + options)
+        out = None
     
+    time2 = time.time()    
     if runtime == True:
         print('runtime {:.3f} s'.format((time2-time1)))
 

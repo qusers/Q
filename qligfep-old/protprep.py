@@ -4,10 +4,16 @@ import os
 import collections
 from time import gmtime, strftime
 import numpy as np
+import sys
+import glob
 
-import functions as f
-import settings as s
-import IO
+# Import Q modules
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../env/')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../share/')))
+
+from share import functions as f
+from env import settings as s
+from share import IO
 
 class Run(object):
     """
@@ -451,12 +457,13 @@ class Run(object):
                         outfile.write(outline)            
         
     def run_qprep(self):
-        qprep = s.Q_DIR[self.preplocation] + 'qprep'
+        qprep = s.ROOT + 'bin/q6/qprep'
         options = ' < qprep.inp > qprep.out'
         # Somehow Q is very annoying with this < > input style so had to implement
         # another function that just calls os.system instead of using the preferred
         # subprocess module....
-        IO.run_command(qprep, options, string = True)
+        out = IO.run_command(qprep, options, string = True)
+        print(out)
         
     ##### THIS PART COMES AFTER THE TEMP .pdb IS WRITTEN ######
     def write_pdb_out(self):
@@ -557,6 +564,9 @@ class Run(object):
             os.remove('top_p.pdb')
             os.remove('complexnotexcluded.pdb')
             os.remove('tmp.top')
+
+        else:
+            print(glob.glob('*'))
             
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

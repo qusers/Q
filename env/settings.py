@@ -1,7 +1,13 @@
 import os
+import sys
 # Root directory of the QGPU modules
 ROOT = os.path.dirname(os.path.realpath(__file__))
 ROOT = ROOT.split('env')[0]
+
+FF_DIR = ROOT + 'data/ff'
+
+# For QligFEP compatibility, will me moved
+INPUT_DIR = ROOT + 'qligfep-old/INPUTS'
 
 ENV = {
         'ROOT'    :  ROOT,
