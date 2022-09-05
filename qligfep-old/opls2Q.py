@@ -6,6 +6,7 @@ import re
 import sys
 import os
 import argparse
+import glob
 
 import IO
 import functions as f
@@ -217,8 +218,9 @@ class Run(object):
             # Add other parameter generators later
             v = 'OPLS 14'
             v = v.split(' ')
-            ffld_serv = s.SCHROD_DIR + 'utilities/ffld_server'
-            struct_conv = s.SCHROD_DIR + 'utilities/structconvert'
+            # .exe also supported on wsl
+            ffld_serv = s.SCHROD_DIR + 'utilities/ffld_server' + s.EXE
+            struct_conv = s.SCHROD_DIR + 'utilities/structconvert' + s.EXE
             # Running command line tool has been moved to IO, change function!
             if self.AA == True:
                 # First convert to .mae file to avoid reading errors

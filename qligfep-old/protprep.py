@@ -98,8 +98,14 @@ class Run(object):
                         continue
                     
                     line = IO.pdb_parse_in(line)
-                        
-                    if tmp[13] == 'H':# and line[4] != 'SOL':
+
+                    if line[4] == 'POP':
+                        element = line[2][0]
+                        line[13] = ' {}'.format(element)
+                        #print(line)
+                        write = True
+
+                    if line[13] == ' H':# and line[4] != 'SOL':
                         write = False
                         
                     else:

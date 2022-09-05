@@ -13,7 +13,10 @@ Q_DIR = {'CSB':'/home/willem/software/Q/bin/q6/',
 BIN = os.path.join(ROOT_DIR, "bin")
 
 # some example schrodinger directory
-#SCHROD_DIR = '/opt/schrodinger/suites2017-3/'
+SCHROD_DIR = '/mnt/c/Program\ Files/Schrodinger2022-2/'
+
+# quick fix to run .exe files on wsl
+EXE = '.exe'
 
 # CLUSTER INPUTS. To add your own cluster, use the same input as below
 CSB = {'NODES'        : '1',
