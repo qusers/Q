@@ -662,6 +662,12 @@ class Write_Topology(object):
             outfile.write('{}\n'.format(len(self.data['ngbr23long'])))
             for line in self.data['ngbr23long']:
                 outfile.write('{};{}\n'.format(line[0],line[1]))
+                                
+        #Topology.ngbr23long = []
+        with open(self.wd + '/molecules.csv','w') as outfile:
+            outfile.write('{}\n'.format(len(self.data['molecules'])))
+            for line in self.data['molecules']:
+                outfile.write('{}\n'.format(line[0]))
                 
         #Topology.excluded = []
         with open(self.wd + '/excluded.csv','w') as outfile:
