@@ -140,66 +140,70 @@ void init_md(const char *filename) {
     #ifdef VERBOSE
     printf("read %s into lrf (%s in file)\n", file.buffer[11][1], file.buffer[11][0]);
     #endif
+    md.charge_groups = strcmp(file.buffer[12][1], "on") == 0;
+    #ifdef VERBOSE
+    printf("read %s into lrf (%s in file)\n", file.buffer[12][1], file.buffer[12][0]);
+    #endif
     // [cut-offs]
-    md.solute_solute = strtod(file.buffer[12][1], &eptr);
+    md.solute_solute = strtod(file.buffer[13][1], &eptr);
     #ifdef VERBOSE
-    printf("read %f into solute_solute (%s in file)\n", md.solute_solute, file.buffer[12][0]);
+    printf("read %f into solute_solute (%s in file)\n", md.solute_solute, file.buffer[13][0]);
     #endif
-    md.solvent_solvent = strtod(file.buffer[13][1], &eptr);
+    md.solvent_solvent = strtod(file.buffer[14][1], &eptr);
     #ifdef VERBOSE
-    printf("read %f into solvent_solvent (%s in file)\n", md.solvent_solvent, file.buffer[13][0]);
+    printf("read %f into solvent_solvent (%s in file)\n", md.solvent_solvent, file.buffer[14][0]);
     #endif
-    md.solute_solvent = strtod(file.buffer[14][1], &eptr);
+    md.solute_solvent = strtod(file.buffer[15][1], &eptr);
     #ifdef VERBOSE
-    printf("read %f into solute_solvent (%s in file)\n", md.solute_solvent, file.buffer[14][0]);
+    printf("read %f into solute_solvent (%s in file)\n", md.solute_solvent, file.buffer[15][0]);
     #endif
-    md.q_atom = strtod(file.buffer[15][1], &eptr);
+    md.q_atom = strtod(file.buffer[16][1], &eptr);
     #ifdef VERBOSE
-    printf("read %f into q_atom (%s in file)\n", md.q_atom, file.buffer[15][0]);
+    printf("read %f into q_atom (%s in file)\n", md.q_atom, file.buffer[16][0]);
     #endif
     // [sphere]
-    md.shell_radius = strtod(file.buffer[16][1], &eptr);
+    md.shell_radius = strtod(file.buffer[17][1], &eptr);
     #ifdef VERBOSE
-    printf("read %f into shell_radius (%s in file)\n", md.shell_radius, file.buffer[16][0]);
+    printf("read %f into shell_radius (%s in file)\n", md.shell_radius, file.buffer[17][0]);
     #endif
-    md.shell_force = strtod(file.buffer[17][1], &eptr);
+    md.shell_force = strtod(file.buffer[18][1], &eptr);
     #ifdef VERBOSE
-    printf("read %f into shell_force (%s in file)\n", md.shell_force, file.buffer[17][0]);
+    printf("read %f into shell_force (%s in file)\n", md.shell_force, file.buffer[18][0]);
     #endif
     // [solvent]
-    md.radial_force = strtod(file.buffer[18][1], &eptr);
+    md.radial_force = strtod(file.buffer[19][1], &eptr);
     #ifdef VERBOSE
-    printf("read %f into radial_force (%s in file)\n", md.radial_force, file.buffer[18][0]);
+    printf("read %f into radial_force (%s in file)\n", md.radial_force, file.buffer[19][0]);
     #endif
     md.polarisation = true;
     #ifdef VERBOSE
-    printf("read %s into polarisation (%s in file)\n", file.buffer[19][1], file.buffer[19][0]);
+    printf("read %s into polarisation (%s in file)\n", file.buffer[20][1], file.buffer[20][0]);
     #endif
-    md.polarisation_force = strtod(file.buffer[20][1], &eptr);
+    md.polarisation_force = strtod(file.buffer[21][1], &eptr);
     #ifdef VERBOSE
-    printf("read %s into polarisation_force (%s in file)\n", file.buffer[20][1], file.buffer[20][0]);
+    printf("read %s into polarisation_force (%s in file)\n", file.buffer[21][1], file.buffer[21][0]);
     #endif
     // [intervals]
-    md.non_bond = atoi(file.buffer[21][1]);
+    md.non_bond = atoi(file.buffer[22][1]);
     #ifdef VERBOSE
-    printf("read %d into non_bond (%s in file)\n", md.non_bond, file.buffer[21][0]);
+    printf("read %d into non_bond (%s in file)\n", md.non_bond, file.buffer[22][0]);
     #endif
-    md.output = atoi(file.buffer[22][1]);
+    md.output = atoi(file.buffer[23][1]);
     #ifdef VERBOSE
-    printf("read %d into output (%s in file)\n", md.output, file.buffer[22][0]);
+    printf("read %d into output (%s in file)\n", md.output, file.buffer[23][0]);
     #endif
-    md.energy = atoi(file.buffer[23][1]);
+    md.energy = atoi(file.buffer[24][1]);
     #ifdef VERBOSE
-    printf("read %d into energy (%s in file)\n", md.energy, file.buffer[23][0]);
+    printf("read %d into energy (%s in file)\n", md.energy, file.buffer[24][0]);
     #endif
-    md.trajectory = atoi(file.buffer[24][1]);
+    md.trajectory = atoi(file.buffer[25][1]);
     #ifdef VERBOSE
-    printf("read %d into trajectory (%s in file)\n", md.trajectory, file.buffer[24][0]);
+    printf("read %d into trajectory (%s in file)\n", md.trajectory, file.buffer[25][0]);
     #endif
     // [trajectory_atoms]
 
     // From here on, need a variable to keep track of index in csvfile
-    int k = 25;
+    int k = 26;
 
     // [lambdas]
     n_lambdas = atoi(file.buffer[k][0]);
@@ -890,7 +894,7 @@ void init_atypes(const char* filename) {
     clean_csv(file);
 }
 
-void init_molecules(const char*filename) {
+void init_molecules(const char *filename) {
     csvfile_t file = read_csv(filename, 0, base_folder);
     
     if (file.n_lines < 1) {
@@ -902,6 +906,43 @@ void init_molecules(const char*filename) {
 
     for (int i = 0; i < n_molecules; i++) {
         molecules[i] = atoi(file.buffer[i+1][0]);
+    }
+
+    clean_csv(file);
+}
+
+void init_charge_groups(const char *filename) {
+    csvfile_t file = read_csv(filename, 0, base_folder);
+
+    if (file.n_lines < 1) {
+        return;
+    }
+
+    n_cgrps_solute = atoi(file.buffer[0][0]);
+    n_cgrps_solvent = atoi(file.buffer[0][1]);
+
+    int n_charge_groups = n_cgrps_solute + n_cgrps_solvent;
+
+    charge_groups = (cgrp_t*) malloc(n_charge_groups);
+
+    int line_nr = 1;
+    int n_atoms_crgp = 0;
+
+    for (int i = 0; i < n_charge_groups; i++) {
+        crgp_t charge_group;
+
+        n_atoms_crgp = atoi(file.buffer[line_nr][0]);
+        charge_group.n_atoms = n_atoms_crgp;
+        charge_group.iswitch = atoi(file.buffer[line_nr][1]);
+        charge_group.a = (int*) malloc(n_atoms_crgp * sizeof(int));
+        
+        line_nr++;
+        for (int j = 0; j < charge_group.n_atoms; j++) {
+            charge_group.a[j] = atoi(file.buffer[line_nr][0]);
+            line_nr++;
+        }
+
+        charge_groups[i] = charge_group;
     }
 
     clean_csv(file);

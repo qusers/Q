@@ -65,6 +65,8 @@ int n_catypes;
 int n_ngbrs23;
 int n_ngbrs14;
 int n_excluded;
+int n_cgrps_solute;
+int n_cgrps_solvent;
 
 coord_t* coords_top;
 bond_t* bonds;
@@ -84,6 +86,7 @@ bool *excluded;
 bool *heavy;
 int *molecules;
 double *winv;
+cgrp_t *charge_groups;
 
 topo_t topo;
 
@@ -525,6 +528,43 @@ void init_pshells() {
     printf("n_heavy = %d, n_inshell = %d\n", n_heavy, n_inshell);
 }
 
+void init_pshells_with_charge_groups() {
+    double mass, r2, rin2;
+
+    heavy = (bool*) calloc(n_atoms, sizeof(bool));
+    shell = (bool*) calloc(n_atoms, sizeof(bool));
+    rin2 = pow(shell_default * topo.exclusion_radius, 2);
+
+    int n_heavy = 0, n_inshell = 0;
+
+    for (int i = 0; i < n_atoms; i++) {
+        mass = catypes[atypes[i].code-1].m;
+        if (mass < 4.0) {
+            heavy[i] = false;
+        }
+        else {
+            heavy[i] = true;
+            n_heavy++;
+        }
+    }
+
+    for (int grp = 0; grp < n_cgrps_solute; grp++) {
+        cgrp_t cgrp = charge_groups[grp];
+        int i = cgrp.iswitch-1;
+        if (heavy[i] && !excluded[i] && i < n_atoms_solute) {
+            r2 = pow(coords_top[i].x - topo.solute_center.x, 2) 
+                + pow(coords_top[i].y - topo.solute_center.y, 2)
+                + pow(coords_top[i].z - topo.solute_center.z, 2);
+            bool switch_atom_in_shell = r2 > rin2
+            for (int j = 0; j < cgrp.n_atoms; j++) {
+                shell[cgrp.a[j]-1] = switch_atom_in_shell;
+                n_inshell++;
+            }
+        }
+    }
+
+    printf("n_heavy = %d, n_inshell = %d\n", n_heavy, n_inshell);
+}
 
 void init_restrseqs() {
     n_restrseqs = 1;
@@ -1232,6 +1272,9 @@ void init_variables() {
     init_ngbrs23_long("ngbrs23long.csv");
     // init_restrseqs();
     init_inv_mass();
+    if (md.charge_groups) {
+        init_charge_groups("charge_groups.csv");
+    }
 
     // From FEP file
     init_qangcouples("q_angcouples.csv");
@@ -1262,7 +1305,12 @@ void init_variables() {
     exclude_all_atoms_excluded_definitions();
     
     // Shake constraints, need to be initialized before last part of shrink_topology
-    init_pshells();
+    if (md.charge_groups) {
+        init_pshells_with_charge_groups();
+    }
+    else {
+        init_pshells();
+    }
     init_shake();
 
     // Now remove shaken bonds
@@ -1328,6 +1376,10 @@ void clean_variables() {
     free(torsions);
     free(LJ_matrix);
     free(molecules);
+    for (int i = 0; i < n_cgrps_solute + n_cgrps_solvent; i++) {
+        free(charge_groups[i].a);
+    }
+    free(charge_groups);
 
     // From FEP file
     free(q_angcouples);
