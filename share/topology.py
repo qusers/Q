@@ -87,6 +87,7 @@ class Read_Topology(object):
         charges_type_tmp = {}
         header = {}
         cnt = 0
+        switch = 0
 
         with open(self.top) as infile:
             for line in infile:
@@ -142,6 +143,12 @@ class Read_Topology(object):
                                                                    
                 if 'No. of charge groups' in line:
                     block = 12
+                    charge_groups = []
+                    line = line.split()
+                    solute_cgp = int(line[1])
+                    total_cgp = int(line[0])
+                    solvent_cgp = total_cgp - solute_cgp
+                    self.data['charge_group_total'] = ['{}'.format(solute_cgp),'{}'.format(solvent_cgp)]
                     continue
                                                                                    
                 if 'vdW combination rule' in line:
@@ -300,7 +307,19 @@ class Read_Topology(object):
                         charges_tmp.append(charge)
                         
                 if block == 12:
-                    continue
+                    line = line.split()
+                    switch += 1
+
+                    # odd lines are the # atoms and switch atom
+                    if switch == 1:
+                        tmp = []
+                        tmp.append(line)
+                    
+                    # even numbers are the atom numbers
+                    if switch == 2:
+                        tmp.append(line)
+                        charge_groups.append(tmp)
+                        switch = 0
                            
                 if block == 13:
                     continue
@@ -497,6 +516,15 @@ class Read_Topology(object):
         # Join exclusions
         self.data['excluded'] = ''.join(self.data['excluded'])
         
+        # Charge groups`
+        cgp_cnt = 1
+        for group in charge_groups:
+            cgp_cnt += 1
+            for ele in group[1]:
+                cgp_cnt += 1
+            
+        self.data['charge_groups'] = [cgp_cnt, charge_groups]
+
         return(self.data)
         
 class Write_Topology(object):        
@@ -510,7 +538,6 @@ class Write_Topology(object):
         """
         .json MD input file
         """
-        #print(self.data['catypes']['1'])
         with open(out_json, 'w') as outfile:
             inputs = self.data
             json.dump(inputs,outfile,indent=2)     
@@ -689,3 +716,15 @@ class Write_Topology(object):
             
             outfile.write(self.data['14scaling'] + '\n')
             outfile.write(self.data['coulomb'] + '\n')
+
+        # Charge groups
+        with open(self.wd + '/charge_groups.csv','w') as outfile:
+            # TO DO ADD LINE TOTALS
+            outfile.write('{}\n'.format(self.data['charge_groups'][0]))
+            outfile.write('{};{}\n'.format(self.data['charge_group_total'][0],
+                                           self.data['charge_group_total'][1]))
+
+            for charge_group in self.data['charge_groups'][1]:
+                outfile.write('{};{}\n'.format(charge_group[0][0],charge_group[0][1]))
+                for atom in charge_group[1]:
+                    outfile.write('{}\n'.format(atom))       
