@@ -142,7 +142,7 @@ void init_md(const char *filename) {
     #endif
     md.charge_groups = strcmp(file.buffer[12][1], "on") == 0;
     #ifdef VERBOSE
-    printf("read %s into lrf (%s in file)\n", file.buffer[12][1], file.buffer[12][0]);
+    printf("read %s into charge_groups (%s in file)\n", file.buffer[12][1], file.buffer[12][0]);
     #endif
     // [cut-offs]
     md.solute_solute = strtod(file.buffer[13][1], &eptr);
@@ -921,8 +921,6 @@ void init_charge_groups(const char *filename) {
     n_cgrps_solute = atoi(file.buffer[1][0]);
     n_cgrps_solvent = atoi(file.buffer[1][1]);
 
-    printf("n_cgrps_solute=%d, n_cgrps_solvent=%d\n", n_cgrps_solute, n_cgrps_solvent);
-
     int n_charge_groups = n_cgrps_solute + n_cgrps_solvent;
 
     charge_groups = (cgrp_t*) malloc(n_charge_groups * sizeof(cgrp_t));
@@ -937,7 +935,6 @@ void init_charge_groups(const char *filename) {
         charge_group.n_atoms = n_atoms_crgp;
         charge_group.iswitch = atoi(file.buffer[line_nr][1]);
         charge_group.a = (int*) malloc(n_atoms_crgp * sizeof(int));
-        // printf("n_atoms_cgrp=%d\n", n_atoms_crgp);
         
         line_nr++;
         for (int j = 0; j < charge_group.n_atoms; j++) {

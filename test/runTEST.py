@@ -324,7 +324,7 @@ class Init(object):
                                           ],
                     'boundary'          : [
                                            'ala_wat.top',
-                                           '15'
+                                           '14'
                                           ],
                     'polypeptide'       : [
                                            'ala_wat.top',

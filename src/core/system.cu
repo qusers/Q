@@ -533,7 +533,7 @@ void init_pshells_with_charge_groups() {
 
     heavy = (bool*) calloc(n_atoms, sizeof(bool));
     shell = (bool*) calloc(n_atoms, sizeof(bool));
-    rin2 = pow(shell_default * topo.exclusion_radius, 2);
+    rin2 = pow(md.shell_radius, 2);
 
     int n_heavy = 0, n_inshell = 0;
 
@@ -558,12 +558,14 @@ void init_pshells_with_charge_groups() {
             bool switch_atom_in_shell = r2 > rin2;
             for (int j = 0; j < cgrp.n_atoms; j++) {
                 shell[cgrp.a[j]-1] = switch_atom_in_shell;
-                n_inshell++;
+                if (switch_atom_in_shell) {
+                    n_inshell++;
+                }
             }
         }
     }
 
-    printf("n_heavy = %d, n_inshell = %d\n", n_heavy, n_inshell);
+    printf("(with charge groups): n_heavy = %d, n_inshell = %d\n", n_heavy, n_inshell);
 }
 
 void init_restrseqs() {
