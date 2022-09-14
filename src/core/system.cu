@@ -555,7 +555,7 @@ void init_pshells_with_charge_groups() {
             r2 = pow(coords_top[i].x - topo.solute_center.x, 2) 
                 + pow(coords_top[i].y - topo.solute_center.y, 2)
                 + pow(coords_top[i].z - topo.solute_center.z, 2);
-            bool switch_atom_in_shell = r2 > rin2
+            bool switch_atom_in_shell = r2 > rin2;
             for (int j = 0; j < cgrp.n_atoms; j++) {
                 shell[cgrp.a[j]-1] = switch_atom_in_shell;
                 n_inshell++;

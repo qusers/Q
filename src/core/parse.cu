@@ -918,23 +918,26 @@ void init_charge_groups(const char *filename) {
         return;
     }
 
-    n_cgrps_solute = atoi(file.buffer[0][0]);
-    n_cgrps_solvent = atoi(file.buffer[0][1]);
+    n_cgrps_solute = atoi(file.buffer[1][0]);
+    n_cgrps_solvent = atoi(file.buffer[1][1]);
+
+    printf("n_cgrps_solute=%d, n_cgrps_solvent=%d\n", n_cgrps_solute, n_cgrps_solvent);
 
     int n_charge_groups = n_cgrps_solute + n_cgrps_solvent;
 
-    charge_groups = (cgrp_t*) malloc(n_charge_groups);
+    charge_groups = (cgrp_t*) malloc(n_charge_groups * sizeof(cgrp_t));
 
-    int line_nr = 1;
+    int line_nr = 2;
     int n_atoms_crgp = 0;
 
     for (int i = 0; i < n_charge_groups; i++) {
-        crgp_t charge_group;
+        cgrp_t charge_group;
 
         n_atoms_crgp = atoi(file.buffer[line_nr][0]);
         charge_group.n_atoms = n_atoms_crgp;
         charge_group.iswitch = atoi(file.buffer[line_nr][1]);
         charge_group.a = (int*) malloc(n_atoms_crgp * sizeof(int));
+        // printf("n_atoms_cgrp=%d\n", n_atoms_crgp);
         
         line_nr++;
         for (int j = 0; j < charge_group.n_atoms; j++) {
