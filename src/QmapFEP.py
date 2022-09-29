@@ -424,7 +424,6 @@ class MapGen:
             ligand = Ligand(name=mol.GetProp('_Name'),
                             pool_idx=idx,
                             fingerprint=self.fingerprint(mol))
-
             v["Ligand"].append(ligand)
 
     def _set_similarity_matrix(self):

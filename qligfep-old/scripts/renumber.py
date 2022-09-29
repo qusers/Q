@@ -6,7 +6,7 @@
 # 2019-09-18
 
 import sys
-installdir = '/home/vanderent/software/qligfep/' 
+installdir = '/home/willem/software/Q/qligfep-old/' 
 sys.path.append(installdir)
 
 import IO

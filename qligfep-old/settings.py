@@ -7,7 +7,8 @@ FF_DIR = os.path.join(ROOT_DIR, "FF")
 INPUT_DIR = os.path.join(ROOT_DIR, "INPUTS")
 # Dicionary of locations of Q executables
 Q_DIR = {'CSB':'/home/willem/software/Q/bin/q6/',
-         'LOCAL':'/home/willem/software/Q/bin/q6/'
+         'LOCAL':'/home/willem/software/Q/bin/q6/',
+         'SNELLIUS':'/home/wjespers/software/Q/bin/q6/'
          #'LOCAL':'/Users/willemjespers/Software/Q6/bin/'
         }
 BIN = os.path.join(ROOT_DIR, "bin")
@@ -27,6 +28,17 @@ CSB = {'NODES'        : '1',
        'QPREP'        : Q_DIR['CSB'] + 'qprep',
        'QFEP'         : Q_DIR['CSB'] + 'qfep',
        'QCALC'        : Q_DIR['CSB'] + 'qcalc'
+      }
+
+# CLUSTER INPUTS. To add your own cluster, use the same input as below
+SNELLIUS = {'NODES'        : '1',
+            'NTASKS'       : '16',
+            'TIME'         : '0-12:00:00',  # d-hh:mm:ss
+            'MODULES'      : 'module load 2021\n module load gompi/2021a',
+            'QDYN'         : 'qdyn=' + Q_DIR['SNELLIUS'] + 'qdynp',
+            'QPREP'        : Q_DIR['LOCAL'] + 'qprep',
+            'QFEP'         : Q_DIR['SNELLIUS'] + 'qfep',
+            'QCALC'        : Q_DIR['SNELLIUS'] + 'qcalc'
       }
 
 ALICE = {'MAINDIR'      : '/home/jespersw/software/q6/',
