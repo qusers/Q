@@ -566,8 +566,9 @@ class MapGen:
             self.add_influence_edges(ligands)
 
     def savePNG(self):
+        print(self.ligands)
         for i, molecule in enumerate(self.pool):
-            ligand = self.ligands[0]['Ligand'][i] # Charge thing to be fixed here.
+            ligand = self.ligands[1]['Ligand'][i] # Charge thing to be fixed here.
             moleculeImage = MoleculeImage(pool_idx=i, pool=self.pool)
             with open(str(Path(self.img_dir) / f"{ligand.name}.png"), "wb") as png:
                 png.write(moleculeImage.png())
@@ -580,12 +581,12 @@ class MapGen:
             data['hasCalculated'] = False
             data['edges'] = data.pop('links')
             for edge in data['edges']:
-                edge['from'] = self.ligands[0]['Ligand'][edge['source']].name
-                edge['to'] = self.ligands[0]['Ligand'][edge['target']].name
+                edge['from'] = self.ligands[1]['Ligand'][edge['source']].name
+                edge['to'] = self.ligands[1]['Ligand'][edge['target']].name
                 edge['payload'] = {"ddG":"Test","ddGexpt":None}
 
             for node in data['nodes']:
-                labelname = self.ligands[0]['Ligand'][node['id']].name
+                labelname = self.ligands[1]['Ligand'][node['id']].name
                 node['id'] = labelname
                 node['label'] = labelname # maybe need unique identifiers?
                 #node['label'] = node["id"]   # maybe need unique identifiers?
