@@ -3,8 +3,8 @@ CFLAGS = -g
 
 all: qdyn move
 
-qdyn: system.o main.o utils.o parse.o restraints.o bonded.o nonbonded.o solvent.o qatoms.o shake.o
-	$(CC) $(CFLAGS) -o qdyn main.o system.o utils.o parse.o restraints.o bonded.o nonbonded.o solvent.o qatoms.o shake.o
+qdyn: system.o main.o utils.o parse.o restraints.o bonded.o nonbonded.o solvent.o qatoms.o shake.o cutoff.o
+	$(CC) $(CFLAGS) -o qdyn main.o system.o utils.o parse.o restraints.o bonded.o nonbonded.o solvent.o qatoms.o shake.o cutoff.o
 
 main.o: main.cu system.h
 	$(CC) $(CFLAGS) -c main.cu
@@ -35,6 +35,9 @@ qatoms.o: qatoms.cu qatoms.h system.h
 
 shake.o: shake.cu system.h
 	$(CC) $(CFLAGS) -c shake.cu
+
+cutoff.o: cutoff.cu cutoff.h system.h
+	$(CC) $(CFLAGS) -c cutoff.cu
 
 clean:
 	rm -f *.o ../../bin/qdyn
