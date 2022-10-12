@@ -2,7 +2,7 @@
 #define __PARSE_H__
 
 #define N_COLUMNS       10
-#define COLUMN_WIDTH    25
+#define COLUMN_WIDTH    100
 
 struct csvfile_t {
     char ***buffer;
