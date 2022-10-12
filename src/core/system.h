@@ -535,6 +535,23 @@ extern shake_bond_t *shake_bonds;
 void init_shake();
 
 /* =============================================
+ * == CUTOFF
+ * =============================================
+ */
+
+struct lrf_t {
+    coord_t cgp_center;
+    double phi0;
+    double *phi1;
+    double *phi2;
+    double *phi3;
+};
+
+extern lrf_t *lrf;
+
+void init_lrf();
+
+/* =============================================
  * == CALCUTED IN THE INTEGRATION
  * =============================================
  */
