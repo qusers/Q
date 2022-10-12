@@ -203,8 +203,8 @@ def compare_energies(Q_data, QGPU_data):
     QGPU_data['total']['Upot']      = roundup(QGPU_data['total']['Upot'])
 
     #28
-    energies_QGPU[1]    = QGPU_data['total']['Ukin']
-    energies_Q6[1]      = QGPU_data['total']['Ukin']   
+    energies_QGPU[28]    = QGPU_data['total']['Ukin']
+    energies_Q6[28]      = QGPU_data['total']['Ukin']   
     QGPU_data['total']['Ukin']      = roundup(QGPU_data['total']['Ukin'])
 
     passed = True

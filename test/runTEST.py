@@ -6,6 +6,7 @@ import sys
 import shutil
 import json
 import numpy as np
+from matplotlib import pyplot as plt
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../share/')))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../env/')))
@@ -258,10 +259,10 @@ class Compare(object):
             print('Passed test? ' + f"{bcolors.OKGREEN} TRUE {bcolors.ENDC}")
 
         if data["avg"] == True:
-            Q6_mean = np.mean(total_energies_Q6,axis=0)
-            Q6_stdev = np.std(total_energies_Q6,axis=0)
-            QGPU_mean = np.mean(total_energies_QGPU,axis=0)
-            QGPU_stdev = np.std(total_energies_QGPU,axis=0)
+            Q6_mean = np.mean(total_energies_Q6[8000:],axis=0)
+            Q6_stdev = np.std(total_energies_Q6[8000:],axis=0)
+            QGPU_mean = np.mean(total_energies_QGPU[8000:],axis=0)
+            QGPU_stdev = np.std(total_energies_QGPU[8000:],axis=0)
             # formatted printing
             for i, headername in enumerate(compare.header):
                 print('{} {:.2f} {:.2f} {:.2f} {:.2f}'.format(headername,
@@ -269,6 +270,17 @@ class Compare(object):
                                                               Q6_stdev[i],
                                                               QGPU_mean[i],
                                                               QGPU_stdev[i]))
+
+        if data["plot"] == True:
+            x = np.arange(8000,len(total_energies_Q6))
+            y1 = np.asarray(total_energies_Q6)[8000:, 26]
+            y2 = np.asarray(total_energies_QGPU)[8000:, 26]
+            plt.plot(x, y1,label='Q6')
+            plt.plot(x, y2,label='QGPU')
+            plt.xlabel('time (fs)')
+            plt.ylabel('Utotal (kcal/mol)')
+            plt.legend()
+            plt.savefig(data['wd'] + '/Utot.png')
 
 class Cleanup(object):
     def __init__(self,data):
