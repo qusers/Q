@@ -5,6 +5,8 @@ import argparse
 import sys
 import shutil
 import json
+import numpy as np
+from matplotlib import pyplot as plt
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../share/')))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../env/')))
@@ -213,6 +215,8 @@ class bcolors:
 
 class Compare(object):
     def __init__(self,data):
+        total_energies_Q6 = []
+        total_energies_QGPU = []
         top = '{}'.format(data['testinfo'][data['test']][0][:-4])
         energyfile = '{}/TEST/{}/output/energies.csv'.format(data['curtest'],top)
 
@@ -239,7 +243,12 @@ class Compare(object):
             #print('Comparing energies for frame {}'.format(key))
             Q6_tmp = Q6_data[key]
             QGPU_tmp = QGPU_data[int(key)]
-            passed = compare.compare_energies(Q6_tmp,QGPU_tmp)
+
+            #print(Q6_tmp,QGPU_tmp)
+            passed, energies_Q6, energies_QGPU = compare.compare_energies(Q6_tmp,QGPU_tmp)
+
+            total_energies_Q6.append(energies_Q6)
+            total_energies_QGPU.append(energies_QGPU)
 
             ## PRINT PASS ##    
             if passed == False:
@@ -247,7 +256,31 @@ class Compare(object):
                 print('Passed test? ' + f"{bcolors.FAIL} FALSE {bcolors.ENDC}")
         
         if passed == True:
-            print('Passed test? ' + f"{bcolors.OKGREEN} TRUE {bcolors.ENDC}")    
+            print('Passed test? ' + f"{bcolors.OKGREEN} TRUE {bcolors.ENDC}")
+
+        if data["avg"] == True:
+            Q6_mean = np.mean(total_energies_Q6,axis=0)
+            Q6_stdev = np.std(total_energies_Q6,axis=0)
+            QGPU_mean = np.mean(total_energies_QGPU,axis=0)
+            QGPU_stdev = np.std(total_energies_QGPU,axis=0)
+            # formatted printing
+            for i, headername in enumerate(compare.header):
+                print('{} {:.2f} {:.2f} {:.2f} {:.2f}'.format(headername,
+                                                              Q6_mean[i],
+                                                              Q6_stdev[i],
+                                                              QGPU_mean[i],
+                                                              QGPU_stdev[i]))
+
+        if data["plot"] == True:
+            x = np.arange(0,len(total_energies_Q6))
+            y1 = np.asarray(total_energies_Q6)[:, 26]
+            y2 = np.asarray(total_energies_QGPU)[:, 26]
+            plt.plot(x, y1,label='Q6')
+            plt.plot(x, y2,label='QGPU')
+            plt.xlabel('time (fs)')
+            plt.ylabel('Utotal (kcal/mol)')
+            plt.legend()
+            plt.savefig(data['wd'] + '/Utot.png')
 
 class Cleanup(object):
     def __init__(self,data):
@@ -324,7 +357,7 @@ class Init(object):
                                           ],
                     'boundary'          : [
                                            'ala_wat.top',
-                                           '15'
+                                           '14'
                                           ],
                     'polypeptide'       : [
                                            'ala_wat.top',
@@ -333,7 +366,13 @@ class Init(object):
                     'polypeptide25'     : [
                                            'ala_wat25.top',
                                            '25'
-                                          ]
+                                          ],
+
+                    'q-q-large_vac'     : [
+                                           'dualtop_vacuum.top',
+                                           '22',
+                                           'dualtop.fep'
+                                          ]                                          
                 }
 
         tests = data['testinfo'].keys()
@@ -413,6 +452,19 @@ if __name__ == "__main__":
                         default = False,
                         action = 'store_true',
                         help = "Turn shake on")
+
+    parser.add_argument('--avg',
+                        dest = "avg",
+                        default = False,
+                        action = 'store_true',
+                        help = "Calculate average energy properties")
+
+
+    parser.add_argument('--plot',
+                        dest = "plot",
+                        default = False,
+                        action = 'store_true',
+                        help = "Make a plot of the energies")
 
     args = parser.parse_args()
     

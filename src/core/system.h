@@ -86,6 +86,7 @@ struct md_t {
     bool shake_solute;
     bool shake_hydrogens;
     bool lrf;
+    bool charge_groups;
     // [cut-offs]
     double solute_solute;
     double solvent_solvent;
@@ -215,6 +216,12 @@ struct topo_t {
     double coulomb_constant;
 };
 
+struct cgrp_t {
+    int n_atoms;
+    int iswitch;
+    int *a;
+};
+
 extern topo_t topo;
 
 extern int n_angles;
@@ -236,6 +243,8 @@ extern int n_impropers_solute;
 extern int n_torsions;
 extern int n_torsions_solute;
 extern int n_excluded;
+extern int n_cgrps_solute;
+extern int n_cgrps_solvent;
 
 extern angle_t *angles;
 extern atype_t *atypes;
@@ -255,6 +264,7 @@ extern torsion_t *torsions;
 extern bool *excluded;
 extern bool *heavy;
 extern double *winv;
+extern cgrp_t *charge_groups;
 
 extern int *molecules;
 
@@ -389,7 +399,6 @@ struct q_torsion_t {
     int al;
     int code;
 };
-
 
 extern int n_qangcouples;
 extern int n_qangles;
