@@ -370,7 +370,7 @@ class Init(object):
 
                     'q-q-large_vac'     : [
                                            'dualtop_vacuum.top',
-                                           '25',
+                                           '22',
                                            'dualtop.fep'
                                           ]                                          
                 }
