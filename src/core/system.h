@@ -548,6 +548,9 @@ struct lrf_t {
 };
 
 extern lrf_t *lrf;
+extern bool *ww_is_lrf;
+extern bool *pw_is_lrf;
+extern bool *pp_is_lrf;
 
 void init_lrf();
 

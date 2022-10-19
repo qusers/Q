@@ -626,6 +626,74 @@ void init_shake() {
 }
 
 /* =============================================
+ * == LRF
+ * =============================================
+ */
+
+ lrf_t *lrf;
+ bool *ww_is_lrf;
+ bool *pw_is_lrf;
+ bool *pp_is_lrf;
+
+void init_lrf() {
+    int ai, aj;
+    int wai, waj;
+    double rOO, rOX, cut_ww_2;
+    double field0, field1, field2;
+    coord_t dOO, dOX;
+
+    cut_ww_2 = md.solvent_solvent * md.solvent_solvent;
+
+    // Initialize LRF array for all atoms
+    lrf = (lrf_t*) malloc(n_atoms * sizeof(lrf_t));
+    for (int i = 0; i < n_atoms; i++) {
+        // Use atom itself as charge group center for now
+        lrf[i].cgp_center.x = coords[i].x;
+        lrf[i].cgp_center.y = coords[i].x;
+        lrf[i].cgp_center.z = coords[i].x;
+
+        lrf[i].phi1 = (double*) calloc(3 * sizeof(double));
+        lrf[i].phi2 = (double*) calloc(9 * sizeof(double));
+        lrf[i].phi3 = (double*) calloc(27 * sizeof(double));
+    }
+
+    // W-W interactions
+    ww_is_lrf = (bool*) calloc(n_waters * n_waters * sizeof(bool));
+    for (int i = 0; i < n_waters; i++) {
+        for (int j = i+1; j < n_waters; j++) {
+            ai = n_atoms_solute + 3*i;
+            aj = n_atoms_solute + 3*j;
+            dOO.x = coords[aj].x - coords[ai].x;
+            dOO.y = coords[aj].y - coords[ai].y;
+            dOO.z = coords[aj].z - coords[ai].z;
+            rOO = pow(dOO.x, 2) + pow(dOO.y, 2) + pow(dOO.z, 2);
+
+            if (rOO <= cut_ww_2) {
+                ww_is_lrf[i * n_waters + j] = false;
+            }
+            else {
+                ww_is_lrf[i * n_waters + j] = true;
+
+                for (int wi = 0; wi < 3; wi++) {
+                    wai = ai + wi;
+                    waj = aj + wj;
+
+                    dOX.x = coords[wai].x;
+                }
+
+                for (int wj = 0; wj < 3; wj++) {
+
+                }
+            }
+        }
+    }
+
+    // P-W interactions
+
+    // P-P interactions
+}
+
+/* =============================================
  * == CALCUTED IN THE INTEGRATION
  * =============================================
  */
@@ -1268,6 +1336,9 @@ void init_variables() {
     // Now remove shaken bonds
     exclude_shaken_definitions();
 
+    // Initialize LRF
+    init_lrf();
+
     // Init random seed from MD file
     srand(md.random_seed);
 
@@ -1378,6 +1449,14 @@ void clean_variables() {
     // Shake
     free(mol_n_shakes);    
     free(shake_bonds);
+
+    // LRF
+    free(lrf);
+    free(ww_is_lrf);
+    free(pw_is_lrf);
+    free(pp_is_lrf);
+
+    // GPU
     if (run_gpu) {
         clean_d_solvent();
         clean_d_qatoms();
