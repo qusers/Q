@@ -1,4 +1,4 @@
-rl /home/jespers/software/setupFEP/FF/OPLS2015.lib 
+rl /home/willem/software/Q/data/ff/OPLS2015.lib 
 rl 1h1q.lib
 rl 28_renumber.lib
 rprm OPLS2015_1h1q_28_merged.prm 

@@ -1,8 +1,8 @@
 Q topology file
 TITLE      MKC_p
-DATE       20181216
-VERSION     5.06
-LIB_FILES  /home/jespers/software/setupFEP/FF/OPLS2015.lib;1h1q.lib;28_renumber.lib
+DATE       20221019
+VERSION     6.01
+LIB_FILES  /home/willem/software/Q/data/ff/OPLS2015.lib;1h1q.lib;28_renumber.lib
 FORCEFIELD OPLS-AA/M
 FF_TYPE    2
 PRM_FILE   OPLS2015_1h1q_28_merged.prm
@@ -1246,7 +1246,7 @@ END        of header
     0.102    39.681     9.499      0.535    39.187    11.905
     1.115    39.026    11.161     -0.023    39.911    11.622
     0.535    39.187    15.007      0.750    39.243    15.938
-    1.276    39.602    14.565      0.535    39.187    18.109
+    1.275    39.602    14.565      0.535    39.187    18.109
     0.275    38.680    17.340      1.485    39.271    18.031
     0.535    39.187    21.211      0.470    39.950    21.786
     0.579    39.556    20.329      0.535    39.187    24.313
@@ -8158,7 +8158,7 @@ END        of header
  4533  4534  4535
      192 = No. of atom types
        1 = vdW combination rule (1 = Geom. / 2 = Arit.)
- 0.50000 332.0000 = Electrostatic 1-4 scaling factor and  Coulomb constant
+ 0.50000 332.0716 = Electrostatic 1-4 scaling factor and  Coulomb constant
 Masses: 
  12.011  12.011  12.011  12.011  12.011  12.011  12.011  12.011  12.011  12.011
  12.011  12.011  12.011  12.011  12.011  12.011  12.011  12.011  12.011  12.011
@@ -8915,10 +8915,10 @@ XH91     XH92     XH93     XH94     XH95     XH96     XH97     XH98
                                                                              
                                                                              
                                                            
-       0 = solvent type (0=SPC,1=3-atom,2=general)
+       1 = solvent type (0=SPC,1=3-atom,2=general)
   22.000  22.080 = Exclusion, solvent radii
-   0.535  26.779   8.803 = Solute centre
-   0.535  26.779   8.803 = Solvent centre
+   0.535  26.779   8.803 = Solute center
+   0.535  26.779   8.803 = Solvent center
        0       0 = No. of excluded atoms (incl. water), no. of excluded waters
 FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
 FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF

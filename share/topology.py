@@ -149,6 +149,7 @@ class Read_Topology(object):
                     total_cgp = int(line[0])
                     solvent_cgp = total_cgp - solute_cgp
                     self.data['charge_group_total'] = ['{}'.format(solute_cgp),'{}'.format(solvent_cgp)]
+                    switch = 1
                     continue
                                                                                    
                 if 'vdW combination rule' in line:
@@ -307,19 +308,29 @@ class Read_Topology(object):
                         charges_tmp.append(charge)
                         
                 if block == 12:
+                    print(line)
                     line = line.split()
-                    switch += 1
 
-                    # odd lines are the # atoms and switch atom
+                    # first get the info line
                     if switch == 1:
                         tmp = []
                         tmp.append(line)
+                        switch = 2
+                        n_atoms = int(line[0])
+                        at_tmp = []
+                        continue
                     
                     # even numbers are the atom numbers
                     if switch == 2:
-                        tmp.append(line)
-                        charge_groups.append(tmp)
-                        switch = 0
+                        if n_atoms > len(at_tmp):
+                            for at in line:
+                                at_tmp.append(at)
+
+                            if n_atoms == len(at_tmp):
+                                # put the atom list in the chatge_group thing
+                                tmp.append(at_tmp)
+                                charge_groups.append(tmp)
+                                switch = 1
                            
                 if block == 13:
                     continue
@@ -518,6 +529,7 @@ class Read_Topology(object):
         
         # Charge groups`
         cgp_cnt = 1
+        print(charge_groups)
         for group in charge_groups:
             cgp_cnt += 1
             for ele in group[1]:

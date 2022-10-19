@@ -366,7 +366,13 @@ class Init(object):
                     'polypeptide25'     : [
                                            'ala_wat25.top',
                                            '25'
-                                          ]
+                                          ],
+
+                    'q-q-large_vac'     : [
+                                           'dualtop_vacuum.top',
+                                           '25',
+                                           'dualtop.fep'
+                                          ]                                          
                 }
 
         tests = data['testinfo'].keys()
