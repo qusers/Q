@@ -272,9 +272,9 @@ class Compare(object):
                                                               QGPU_stdev[i]))
 
         if data["plot"] == True:
-            x = np.arange(8000,len(total_energies_Q6))
-            y1 = np.asarray(total_energies_Q6)[26]
-            y2 = np.asarray(total_energies_QGPU)[26]
+            x = np.arange(0,len(total_energies_Q6))
+            y1 = np.asarray(total_energies_Q6)[:, 26]
+            y2 = np.asarray(total_energies_QGPU)[:, 26]
             plt.plot(x, y1,label='Q6')
             plt.plot(x, y2,label='QGPU')
             plt.xlabel('time (fs)')
