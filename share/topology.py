@@ -308,7 +308,6 @@ class Read_Topology(object):
                         charges_tmp.append(charge)
                         
                 if block == 12:
-                    print(line)
                     line = line.split()
 
                     # first get the info line
@@ -529,7 +528,6 @@ class Read_Topology(object):
         
         # Charge groups`
         cgp_cnt = 1
-        print(charge_groups)
         for group in charge_groups:
             cgp_cnt += 1
             for ele in group[1]:
