@@ -1,8 +1,20 @@
-###############################################################################
-Welcome to Qprep version 5.06
+--------------------------------------------------------------------------------
+Welcome to qprep version: 6.0.1
  
-Qprep> 
-Reading molecular library /home/jespers/software/setupFEP/FF/OPLS2015.lib
+This version was compiled using: GCC version 9.4.0
+ 
+And using the following compiler options: 
+-mtune=generic -march=x86-64 -O3 -w -std=legacy -ffree-line-length-none -fcray-pointer -fall-intrinsics -fpre-include=/usr/include/finclude/math-vector-fortran.h
+
+ 
+For command line options type qprep --help  or qprep -h at the terminal.
+ 
+If you are using the interactive mode you can type "help"
+at the prompt. To quit type "quit".
+--------------------------------------------------------------------------------
+
+qprep> 
+Reading molecular library /home/willem/software/Q/data/ff/OPLS2015.lib
 
 name  atoms  net Q  bonds  rules   imps Q-grps
 ALA      10   0.00      9      0      2      3
@@ -96,26 +108,28 @@ LTRP     25  -1.00     26      0     11      7
 Na+       1   1.00      0      0      0    none, creating default
 POP      52   0.00     51      0      3     18
 PO4       6  -2.00      5      0      0      1
+ACE       6  -0.00      5      0      1      2
+NMA       6   0.00      5      0      1      1
 
-Accumulated no. of library entries loaded =  88
+Accumulated no. of library entries loaded =  90
 
-Qprep> 
+qprep> 
 Reading molecular library 1h1q.lib
 
 name  atoms  net Q  bonds  rules   imps Q-grps
 LIG      45  -0.00     48      0     13      1
 
-Accumulated no. of library entries loaded =  89
+Accumulated no. of library entries loaded =  91
 
-Qprep> 
+qprep> 
 Reading molecular library 28_renumber.lib
 
 name  atoms  net Q  bonds  rules   imps Q-grps
 LID      53  -0.00     56      0     14      1
 
-Accumulated no. of library entries loaded =  90
+Accumulated no. of library entries loaded =  92
 
-Qprep> 
+qprep> 
 Reading force field parameter file.
 Forcefield name:               OPLS-AA/M
 Forcefield type:               AMBER
@@ -124,7 +138,7 @@ Scaling of 1-4 electrostatics: 0.500
 Cut-off rule:                  switching atoms
 Improper potential:            PERIODIC
 Improper generation:           EXPLICIT
- Coulomb constant is set to the default value of 332.
+Coulomb constant:              332.0716
 Read  192 atom types
 >>>>> WARNING: No SYBYL name for one or more atom types.
 Read    0 atom type alias names
@@ -139,32 +153,32 @@ Read  262 unique torsion parameters
 Read  135 improper types
 Force field parameters successfully read.
 
-Qprep> 
+qprep> 
 PDB file contains    98 atoms.
 The number of atoms in the topology will be    98
 molecule    1: LIG     1
 molecule    2: LID     2
 
 Successfully read PDB file with    2 molecules,
-    2 residues totally (    2 in solute).
-   98 atoms totally (   98 in solute).
+    2 residues total (    2 in solute).
+   98 atoms total (   98 in solute).
 
 Sequence listing:
 
 LIG  LID 
- 
-Qprep> Qprep> 
-Simulation sphere centre                   :      0.535  26.779   8.803
-Simulation radius                          :     22.000
-Qprep> 
-Solvation sphere centre                   :      0.535  26.779   8.803
-Library entry used to generate solvent  :       HOH 
+
+qprep> qprep> 
+Simulation sphere center                =      0.535  26.779   8.803
+Simulation radius                       =     22.000
+qprep> 
+Solvation sphere center                 =      0.535  26.779   8.803
+Library entry used to generate solvent  =       HOH 
 Radius of solvent sphere                =      22.00 A
 Grid spacing                            =       3.10 A 
 No. of solvent molecules in the sphere:  1503
-Minimum distance to solute heavy atoms:  2.50 A
+Minimum distance to solute heavy atoms (solvent_pack):  2.50 A
 No. of solvent molecules to add to the system:  1479
-Qprep> Assigned  4535 atom types.
+qprep> Assigned  4535 atom types.
 Assigned  4535 atomic charges.
 Made       104 solute bonds.
 Made         0 extra bonds.
@@ -185,11 +199,11 @@ Made        2 solute  charge groups comprising a total of     98 atoms.
 Made     1479 solvent charge groups comprising a total of   4437 atoms.
 Effective water radius                     : 22.08
 Topology successfully generated.
-Qprep> 
+qprep> 
 ---------------------------- Writing topology file ---------------------------
 solute atoms                :     98
 solvent atoms               :   4437
-co-ordinates                :  13605
+coordinates                 :  13605
 integer atom codes          :   4535
 solute bonds                :    104
 solvent bonds               :   4437
@@ -215,17 +229,17 @@ molecules                   :   1481
 Atom type names             :    192
 SYBYL type information      :    192
 excluded atom list          :      0
- 
-Qprep> 
+
+qprep> 
 
 PDB file successfully written.
 
-Qprep> The current mask contains  4535 atoms.
+qprep> The current mask contains  4535 atoms.
 Mask cleared.
-Qprep> The current mask contains     0 atoms.
+qprep> The current mask contains     0 atoms.
   4535 atoms added to mask which now contains  4535 atoms.
-Qprep> 
+qprep> 
 
 PDB file successfully written.
 
-Qprep> 
+qprep> 

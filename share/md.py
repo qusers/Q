@@ -240,7 +240,8 @@ class Write_MD(object):
             outfile.write('shake_solvent;{}\n'      .format(self.data['shake_solvent']))       
             outfile.write('shake_solute;{}\n'       .format(self.data['shake_solute'])) 
             outfile.write('shake_hydrogens;{}\n'    .format(self.data['shake_hydrogens']))        
-            outfile.write('lrf;{}\n'                .format(self.data['lrf']))        
+            outfile.write('lrf;{}\n'                .format(self.data['lrf']))   
+            outfile.write('charge_groups;{}\n'      .format('on')) # charge group, always on        
             outfile.write('solute_solute;{}\n'      .format(self.data['solute_solute']))        
             outfile.write('solvent_solvent;{}\n'    .format(self.data['solvent_solvent']))        
             outfile.write('solute_solvent;{}\n'     .format(self.data['solute_solvent']))        

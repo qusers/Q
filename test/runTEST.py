@@ -259,10 +259,10 @@ class Compare(object):
             print('Passed test? ' + f"{bcolors.OKGREEN} TRUE {bcolors.ENDC}")
 
         if data["avg"] == True:
-            Q6_mean = np.mean(total_energies_Q6[8000:],axis=0)
-            Q6_stdev = np.std(total_energies_Q6[8000:],axis=0)
-            QGPU_mean = np.mean(total_energies_QGPU[8000:],axis=0)
-            QGPU_stdev = np.std(total_energies_QGPU[8000:],axis=0)
+            Q6_mean = np.mean(total_energies_Q6,axis=0)
+            Q6_stdev = np.std(total_energies_Q6,axis=0)
+            QGPU_mean = np.mean(total_energies_QGPU,axis=0)
+            QGPU_stdev = np.std(total_energies_QGPU,axis=0)
             # formatted printing
             for i, headername in enumerate(compare.header):
                 print('{} {:.2f} {:.2f} {:.2f} {:.2f}'.format(headername,
@@ -272,9 +272,9 @@ class Compare(object):
                                                               QGPU_stdev[i]))
 
         if data["plot"] == True:
-            x = np.arange(8000,len(total_energies_Q6))
-            y1 = np.asarray(total_energies_Q6)[8000:, 26]
-            y2 = np.asarray(total_energies_QGPU)[8000:, 26]
+            x = np.arange(0,len(total_energies_Q6))
+            y1 = np.asarray(total_energies_Q6)[:, 26]
+            y2 = np.asarray(total_energies_QGPU)[:, 26]
             plt.plot(x, y1,label='Q6')
             plt.plot(x, y2,label='QGPU')
             plt.xlabel('time (fs)')
@@ -357,7 +357,7 @@ class Init(object):
                                           ],
                     'boundary'          : [
                                            'ala_wat.top',
-                                           '15'
+                                           '14'
                                           ],
                     'polypeptide'       : [
                                            'ala_wat.top',
@@ -366,7 +366,13 @@ class Init(object):
                     'polypeptide25'     : [
                                            'ala_wat25.top',
                                            '25'
-                                          ]
+                                          ],
+
+                    'q-q-large_vac'     : [
+                                           'dualtop_vacuum.top',
+                                           '22',
+                                           'dualtop.fep'
+                                          ]                                          
                 }
 
         tests = data['testinfo'].keys()
