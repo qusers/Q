@@ -245,6 +245,7 @@ extern int n_torsions_solute;
 extern int n_excluded;
 extern int n_cgrps_solute;
 extern int n_cgrps_solvent;
+extern int n_charge_groups; 
 
 extern angle_t *angles;
 extern atype_t *atypes;

@@ -67,6 +67,7 @@ int n_ngbrs14;
 int n_excluded;
 int n_cgrps_solute;
 int n_cgrps_solvent;
+int n_charge_groups;
 
 coord_t* coords_top;
 bond_t* bonds;
@@ -678,26 +679,54 @@ void init_shake() {
  bool *pp_is_lrf;
 
 void init_lrf() {
+    // Initialize LRF array for all atoms
+    lrf = (lrf_t*) malloc(n_atoms * sizeof(lrf_t));
+    for (int i = 0; i < n_charge_groups; i++) {
+        int iswitch = charge_group[i].iswitch-1;
+        for (int j = 0; j < charge_group[i].n_atoms; j++) {
+            int a = charge_groups[i].a[j]-1;
+            lrf[a].cgp_center.x = coords[iswitch].x;
+            lrf[a].cgp_center.y = coords[iswitch].y;
+            lrf[a].cgp_center.z = coords[iswitch].z;
+
+            lrf[a].phi1 = (double*) calloc(3 * sizeof(double));
+            lrf[a].phi2 = (double*) calloc(9 * sizeof(double));
+            lrf[a].phi3 = (double*) calloc(27 * sizeof(double));
+        }
+    }
+
+    init_lrf_ww();
+    init_lrf_pw();
+    init_lrf_pp();
+
+    // Manually set lrf flag to false for Q-atoms
+    for (int i = 0; i < q_atoms; i++) {
+        int ai = q_atoms[i].a-1;
+        for (int j = 0; j < n_atoms_solute; j++) {
+            lrf_pp[ai * n_atoms_solute + j] = false;
+        }
+
+        for (int j = 0; j < n_waters; j++) {
+            lrf_pw[ai * n_waters + j] = false;
+        }
+    }
+}
+
+void init_lrf_ww() {
     int ai, aj;
     int wai, waj;
     double rOO, rOX, cut_ww_2;
     double field0, field1, field2;
     coord_t dOO, dOX;
+    catype_t catype_ow;    // Atom type of first O, H atom
+    ccharge_t ccharge_ow, ccharge_hw; // Charge of first O, H atom
+    double current_charge;
+
+    catype_ow = catypes[atypes[n_atoms_solute].code - 1];
+    ccharge_ow = ccharges[charges[n_atoms_solute].code - 1];
+    ccharge_hw = ccharges[charges[n_atoms_solute+1].code - 1];
 
     cut_ww_2 = md.solvent_solvent * md.solvent_solvent;
-
-    // Initialize LRF array for all atoms
-    lrf = (lrf_t*) malloc(n_atoms * sizeof(lrf_t));
-    for (int i = 0; i < n_atoms; i++) {
-        // Use atom itself as charge group center for now
-        lrf[i].cgp_center.x = coords[i].x;
-        lrf[i].cgp_center.y = coords[i].x;
-        lrf[i].cgp_center.z = coords[i].x;
-
-        lrf[i].phi1 = (double*) calloc(3 * sizeof(double));
-        lrf[i].phi2 = (double*) calloc(9 * sizeof(double));
-        lrf[i].phi3 = (double*) calloc(27 * sizeof(double));
-    }
 
     // W-W interactions
     ww_is_lrf = (bool*) calloc(n_waters * n_waters * sizeof(bool));
@@ -718,21 +747,307 @@ void init_lrf() {
 
                 for (int wi = 0; wi < 3; wi++) {
                     wai = ai + wi;
-                    waj = aj + wj;
 
-                    dOX.x = coords[wai].x;
+                    dOX.x = coords[wai].x - lrf[aj].cgp_center.x;
+                    dOX.y = coords[wai].y - lrf[aj].cgp_center.y;
+                    dOX.z = coords[wai].z - lrf[aj].cgp_center.z;
+                    rOX = pow(dOX.x, 2) + pow(dOX.y, 2) + pow(dOX.z, 2);
+
+                    if (wi == 0) {
+                        current_charge = ccharge_ow.charge;
+                    }
+                    else {
+                        current_charge = ccharge_hw.charge;
+                    }
+
+                    field0 = current_charge / (rOX * sqrt(rOX));
+
+                    lrf[aj].phi0 += field0 * rOX;
+
+                    lrf[aj].phi1[0] -= field0 * dOX.x;
+                    lrf[aj].phi1[1] -= field0 * dOX.y;
+                    lrf[aj].phi1[2] -= field0 * dOX.z;
+
+                    field1 = 3 * field0 / rOX;
+
+                    lrf[aj].phi2[0] += (field1 * dOX.x * dOX.x - field0);
+                    lrf[aj].phi2[1] += field1 * dOX.x * dOX.y;
+                    lrf[aj].phi2[2] += field1 * dOX.x * dOX.z;
+                    lrf[aj].phi2[3] += field1 * dOX.y * dOX.x;
+                    lrf[aj].phi2[4] += (field1 * dOX.y * dOX.y - field0);
+                    lrf[aj].phi2[5] += field1 * dOX.y * dOX.z;
+                    lrf[aj].phi2[6] += field1 * dOX.z * dOX.x;
+                    lrf[aj].phi2[7] += field1 * dOX.z * dOX.y;
+                    lrf[aj].phi2[8] += (field1 * dOX.z * dOX.z - field0);
+
+                    field2 = -field1 / rOX;
+
+                    lrf[aj].phi3[0] += field2 * (.5 * dOX.x * dOX.x * dOX.x - 3 * rOX * dOX.x);
+                    lrf[aj].phi3[1] += field2 * (.5 * dOX.x * dOX.x * dOX.y - rOX * dOX.y);
+                    lrf[aj].phi3[2] += field2 * (.5 * dOX.x * dOX.x * dOX.z - rOX * dOX.z);
+                    lrf[aj].phi3[3] += field2 * (.5 * dOX.x * dOX.y * dOX.x - rOX * dOX.y);
+                    lrf[aj].phi3[4] += field2 * (.5 * dOX.x * dOX.y * dOX.y - rOX * dOX.x);
+                    lrf[aj].phi3[5] += field2 * (.5 * dOX.x * dOX.y * dOX.z);
+                    lrf[aj].phi3[6] += field2 * (.5 * dOX.x * dOX.z * dOX.x - rOX * dOX.z);
+                    lrf[aj].phi3[7] += field2 * (.5 * dOX.x * dOX.z * dOX.y);
+                    lrf[aj].phi3[8] += field2 * (.5 * dOX.x * dOX.z * dOX.z - rOX * dOX.x);
+                    lrf[aj].phi3[9] += field2 * (.5 * dOX.y * dOX.x * dOX.x - rOX * dOX.y);
+                    lrf[aj].phi3[10] += field2 * (.5 * dOX.y * dOX.x * dOX.y - rOX * dOX.x);
+                    lrf[aj].phi3[11] += field2 * (.5 * dOX.y * dOX.x * dOX.z);
+                    lrf[aj].phi3[12] += field2 * (.5 * dOX.y * dOX.y * dOX.x - rOX * dOX.x);
+                    lrf[aj].phi3[13] += field2 * (.5 * dOX.y * dOX.y * dOX.y - 3 * rOX * dOX.y);
+                    lrf[aj].phi3[14] += field2 * (.5 * dOX.y * dOX.y * dOX.z - rOX * dOX.z);
+                    lrf[aj].phi3[15] += field2 * (.5 * dOX.y * dOX.z * dOX.x);
+                    lrf[aj].phi3[16] += field2 * (.5 * dOX.y * dOX.z * dOX.y - rOX * dOX.z);
+                    lrf[aj].phi3[17] += field2 * (.5 * dOX.y * dOX.z * dOX.z - rOX * dOX.y);
+                    lrf[aj].phi3[18] += field2 * (.5 * dOX.z * dOX.x * dOX.x - rOX * dOX.z);
+                    lrf[aj].phi3[19] += field2 * (.5 * dOX.z * dOX.x * dOX.y);
+                    lrf[aj].phi3[20] += field2 * (.5 * dOX.z * dOX.x * dOX.z - rOX * dOX.x);
+                    lrf[aj].phi3[21] += field2 * (.5 * dOX.z * dOX.y * dOX.x);
+                    lrf[aj].phi3[22] += field2 * (.5 * dOX.z * dOX.y * dOX.y - rOX * dOX.z);
+                    lrf[aj].phi3[23] += field2 * (.5 * dOX.z * dOX.y * dOX.z - rOX * dOX.y);
+                    lrf[aj].phi3[24] += field2 * (.5 * dOX.z * dOX.z * dOX.x - rOX * dOX.x);
+                    lrf[aj].phi3[25] += field2 * (.5 * dOX.z * dOX.z * dOX.y - rOX * dOX.y);
+                    lrf[aj].phi3[26] += field2 * (.5 * dOX.z * dOX.z * dOX.z - 3 * rOX * dOX.z);
                 }
 
                 for (int wj = 0; wj < 3; wj++) {
+                    waj = aj + wj;
 
+                    dOX.x = coords[ai].x - lrf[waj].cgp_center.x;
+                    dOX.y = coords[ai].y - lrf[waj].cgp_center.y;
+                    dOX.z = coords[ai].z - lrf[waj].cgp_center.z;
+                    rOX = pow(dOX.x, 2) + pow(dOX.y, 2) + pow(dOX.z, 2);
+
+                    if (wj == 0) {
+                        current_charge = ccharge_ow.charge;
+                    }
+                    else {
+                        current_charge = ccharge_hw.charge;
+                    }
+
+                    field0 = current_charge / (rOX * sqrt(rOX));
+
+                    lrf[ai].phi0 += field0 * rOX;
+
+                    lrf[ai].phi1[0] -= field0 * dOX.x;
+                    lrf[ai].phi1[1] -= field0 * dOX.y;
+                    lrf[ai].phi1[2] -= field0 * dOX.z;
+
+                    field1 = 3 * field0 / rOX;
+
+                    lrf[ai].phi2[0] += (field1 * dOX.x * dOX.x - field0);
+                    lrf[ai].phi2[1] += field1 * dOX.x * dOX.y;
+                    lrf[ai].phi2[2] += field1 * dOX.x * dOX.z;
+                    lrf[ai].phi2[3] += field1 * dOX.y * dOX.x;
+                    lrf[ai].phi2[4] += (field1 * dOX.y * dOX.y - field0);
+                    lrf[ai].phi2[5] += field1 * dOX.y * dOX.z;
+                    lrf[ai].phi2[6] += field1 * dOX.z * dOX.x;
+                    lrf[ai].phi2[7] += field1 * dOX.z * dOX.y;
+                    lrf[ai].phi2[8] += (field1 * dOX.z * dOX.z - field0);
+
+                    field2 = -field1 / rOX;
+
+                    lrf[ai].phi3[0] += field2 * (.5 * dOX.x * dOX.x * dOX.x - 3 * rOX * dOX.x);
+                    lrf[ai].phi3[1] += field2 * (.5 * dOX.x * dOX.x * dOX.y - rOX * dOX.y);
+                    lrf[ai].phi3[2] += field2 * (.5 * dOX.x * dOX.x * dOX.z - rOX * dOX.z);
+                    lrf[ai].phi3[3] += field2 * (.5 * dOX.x * dOX.y * dOX.x - rOX * dOX.y);
+                    lrf[ai].phi3[4] += field2 * (.5 * dOX.x * dOX.y * dOX.y - rOX * dOX.x);
+                    lrf[ai].phi3[5] += field2 * (.5 * dOX.x * dOX.y * dOX.z);
+                    lrf[ai].phi3[6] += field2 * (.5 * dOX.x * dOX.z * dOX.x - rOX * dOX.z);
+                    lrf[ai].phi3[7] += field2 * (.5 * dOX.x * dOX.z * dOX.y);
+                    lrf[ai].phi3[8] += field2 * (.5 * dOX.x * dOX.z * dOX.z - rOX * dOX.x);
+                    lrf[ai].phi3[9] += field2 * (.5 * dOX.y * dOX.x * dOX.x - rOX * dOX.y);
+                    lrf[ai].phi3[10] += field2 * (.5 * dOX.y * dOX.x * dOX.y - rOX * dOX.x);
+                    lrf[ai].phi3[11] += field2 * (.5 * dOX.y * dOX.x * dOX.z);
+                    lrf[ai].phi3[12] += field2 * (.5 * dOX.y * dOX.y * dOX.x - rOX * dOX.x);
+                    lrf[ai].phi3[13] += field2 * (.5 * dOX.y * dOX.y * dOX.y - 3 * rOX * dOX.y);
+                    lrf[ai].phi3[14] += field2 * (.5 * dOX.y * dOX.y * dOX.z - rOX * dOX.z);
+                    lrf[ai].phi3[15] += field2 * (.5 * dOX.y * dOX.z * dOX.x);
+                    lrf[ai].phi3[16] += field2 * (.5 * dOX.y * dOX.z * dOX.y - rOX * dOX.z);
+                    lrf[ai].phi3[17] += field2 * (.5 * dOX.y * dOX.z * dOX.z - rOX * dOX.y);
+                    lrf[ai].phi3[18] += field2 * (.5 * dOX.z * dOX.x * dOX.x - rOX * dOX.z);
+                    lrf[ai].phi3[19] += field2 * (.5 * dOX.z * dOX.x * dOX.y);
+                    lrf[ai].phi3[20] += field2 * (.5 * dOX.z * dOX.x * dOX.z - rOX * dOX.x);
+                    lrf[ai].phi3[21] += field2 * (.5 * dOX.z * dOX.y * dOX.x);
+                    lrf[ai].phi3[22] += field2 * (.5 * dOX.z * dOX.y * dOX.y - rOX * dOX.z);
+                    lrf[ai].phi3[23] += field2 * (.5 * dOX.z * dOX.y * dOX.z - rOX * dOX.y);
+                    lrf[ai].phi3[24] += field2 * (.5 * dOX.z * dOX.z * dOX.x - rOX * dOX.x);
+                    lrf[ai].phi3[25] += field2 * (.5 * dOX.z * dOX.z * dOX.y - rOX * dOX.y);
+                    lrf[ai].phi3[26] += field2 * (.5 * dOX.z * dOX.z * dOX.z - 3 * rOX * dOX.z);
                 }
             }
         }
     }
+}
 
-    // P-W interactions
+void init_lrf_pw() {
 
-    // P-P interactions
+}
+
+void init_lrf_pp() {
+    int ci, cj;
+    int ai, aj;
+    double rPP, rPX, cut_pp_2;
+    double field0, field1, field2;
+    coord_t dPP, dPX;
+    double current_charge;
+
+    cut_pp_2 = md.solute_solute * md.solute_solute;
+
+    // W-W interactions
+    pp_is_lrf = (bool*) calloc(n_atoms_solute * n_atoms_solute * sizeof(bool));
+    for (int i = 0; i < n_charge_groups; i++) {
+        for (int j = i+1; j < n_charge_groups; j++) {
+            ci = charge_groups[i].iswitch-1;
+            cj = charge_groups[j].iswitch-1;
+            dPP.x = coords[cj].x - coords[ci].x;
+            dPP.y = coords[cj].y - coords[ci].y;
+            dPP.z = coords[cj].z - coords[ci].z;
+            rPP = pow(dPP.x, 2) + pow(dPP.y, 2) + pow(dPP.z, 2);
+
+            if (rPP <= cut_pp_2) {
+                for (int k = 0; k < charge_groups[i].n_atoms; k++) {
+                    for (int l = 0; l < charge_groups[j].n_atoms; l++) {
+                        ai = charge_groups[i].a[k]-1;
+                        aj = charge_groups[j].a[k]-1;
+                        pp_is_lrf[ai * n_atoms_solute + aj] = false;
+                    }
+                }
+            }
+            else {
+                for (int k = 0; k < charge_groups[i].n_atoms; k++) {
+                    for (int l = 0; l < charge_groups[j].n_atoms; l++) {
+                        ai = charge_groups[i].a[k]-1;
+                        aj = charge_groups[j].a[k]-1;
+                        pp_is_lrf[ai * n_atoms_solute + aj] = true;
+                    }
+                }
+
+                for (int k = 0; k < charge_groups[i].n_atoms; k++) {
+                    ai = charge_groups[i].a[k]-1;
+
+                    dPX.x = coords[ai].x - lrf[cj].cgp_center.x;
+                    dPX.y = coords[ai].y - lrf[cj].cgp_center.y;
+                    dPX.z = coords[ai].z - lrf[cj].cgp_center.z;
+                    rPX = pow(dPX.x, 2) + pow(dPX.y, 2) + pow(dPX.z, 2);
+
+                    current_charge = ccharges[charges[ai].code - 1].charge;
+
+                    field0 = current_charge / (rPX * sqrt(rPX));
+
+                    lrf[cj].phi0 += field0 * rPX;
+
+                    lrf[cj].phi1[0] -= field0 * dPX.x;
+                    lrf[cj].phi1[1] -= field0 * dPX.y;
+                    lrf[cj].phi1[2] -= field0 * dPX.z;
+
+                    field1 = 3 * field0 / rPX;
+
+                    lrf[cj].phi2[0] += (field1 * dPX.x * dPX.x - field0);
+                    lrf[cj].phi2[1] += field1 * dPX.x * dPX.y;
+                    lrf[cj].phi2[2] += field1 * dPX.x * dPX.z;
+                    lrf[cj].phi2[3] += field1 * dPX.y * dPX.x;
+                    lrf[cj].phi2[4] += (field1 * dPX.y * dPX.y - field0);
+                    lrf[cj].phi2[5] += field1 * dPX.y * dPX.z;
+                    lrf[cj].phi2[6] += field1 * dPX.z * dPX.x;
+                    lrf[cj].phi2[7] += field1 * dPX.z * dPX.y;
+                    lrf[cj].phi2[8] += (field1 * dPX.z * dPX.z - field0);
+
+                    field2 = -field1 / rPX;
+
+                    lrf[cj].phi3[0] += field2 * (.5 * dPX.x * dPX.x * dPX.x - 3 * rPX * dPX.x);
+                    lrf[cj].phi3[1] += field2 * (.5 * dPX.x * dPX.x * dPX.y - rPX * dPX.y);
+                    lrf[cj].phi3[2] += field2 * (.5 * dPX.x * dPX.x * dPX.z - rPX * dPX.z);
+                    lrf[cj].phi3[3] += field2 * (.5 * dPX.x * dPX.y * dPX.x - rPX * dPX.y);
+                    lrf[cj].phi3[4] += field2 * (.5 * dPX.x * dPX.y * dPX.y - rPX * dPX.x);
+                    lrf[cj].phi3[5] += field2 * (.5 * dPX.x * dPX.y * dPX.z);
+                    lrf[cj].phi3[6] += field2 * (.5 * dPX.x * dPX.z * dPX.x - rPX * dPX.z);
+                    lrf[cj].phi3[7] += field2 * (.5 * dPX.x * dPX.z * dPX.y);
+                    lrf[cj].phi3[8] += field2 * (.5 * dPX.x * dPX.z * dPX.z - rPX * dPX.x);
+                    lrf[cj].phi3[9] += field2 * (.5 * dPX.y * dPX.x * dPX.x - rPX * dPX.y);
+                    lrf[cj].phi3[10] += field2 * (.5 * dPX.y * dPX.x * dPX.y - rPX * dPX.x);
+                    lrf[cj].phi3[11] += field2 * (.5 * dPX.y * dPX.x * dPX.z);
+                    lrf[cj].phi3[12] += field2 * (.5 * dPX.y * dPX.y * dPX.x - rPX * dPX.x);
+                    lrf[cj].phi3[13] += field2 * (.5 * dPX.y * dPX.y * dPX.y - 3 * rPX * dPX.y);
+                    lrf[cj].phi3[14] += field2 * (.5 * dPX.y * dPX.y * dPX.z - rPX * dPX.z);
+                    lrf[cj].phi3[15] += field2 * (.5 * dPX.y * dPX.z * dPX.x);
+                    lrf[cj].phi3[16] += field2 * (.5 * dPX.y * dPX.z * dPX.y - rPX * dPX.z);
+                    lrf[cj].phi3[17] += field2 * (.5 * dPX.y * dPX.z * dPX.z - rPX * dPX.y);
+                    lrf[cj].phi3[18] += field2 * (.5 * dPX.z * dPX.x * dPX.x - rPX * dPX.z);
+                    lrf[cj].phi3[19] += field2 * (.5 * dPX.z * dPX.x * dPX.y);
+                    lrf[cj].phi3[20] += field2 * (.5 * dPX.z * dPX.x * dPX.z - rPX * dPX.x);
+                    lrf[cj].phi3[21] += field2 * (.5 * dPX.z * dPX.y * dPX.x);
+                    lrf[cj].phi3[22] += field2 * (.5 * dPX.z * dPX.y * dPX.y - rPX * dPX.z);
+                    lrf[cj].phi3[23] += field2 * (.5 * dPX.z * dPX.y * dPX.z - rPX * dPX.y);
+                    lrf[cj].phi3[24] += field2 * (.5 * dPX.z * dPX.z * dPX.x - rPX * dPX.x);
+                    lrf[cj].phi3[25] += field2 * (.5 * dPX.z * dPX.z * dPX.y - rPX * dPX.y);
+                    lrf[cj].phi3[26] += field2 * (.5 * dPX.z * dPX.z * dPX.z - 3 * rPX * dPX.z);
+                }
+
+                for (int l = 0; l < charge_groups[j].n_atoms; l++) {
+                    aj = charge_groups[j].a[l]-1;
+
+                    dPX.x = coords[ci].x - lrf[aj].cgp_center.x;
+                    dPX.y = coords[ci].y - lrf[aj].cgp_center.y;
+                    dPX.z = coords[ci].z - lrf[aj].cgp_center.z;
+                    rPX = pow(dPX.x, 2) + pow(dPX.y, 2) + pow(dPX.z, 2);
+
+                    current_charge = ccharges[charges[aj].code - 1].charge;
+
+                    field0 = current_charge / (rPX * sqrt(rPX));
+
+                    lrf[ci].phi0 += field0 * rPX;
+
+                    lrf[ci].phi1[0] -= field0 * dPX.x;
+                    lrf[ci].phi1[1] -= field0 * dPX.y;
+                    lrf[ci].phi1[2] -= field0 * dPX.z;
+
+                    field1 = 3 * field0 / rPX;
+
+                    lrf[ci].phi2[0] += (field1 * dPX.x * dPX.x - field0);
+                    lrf[ci].phi2[1] += field1 * dPX.x * dPX.y;
+                    lrf[ci].phi2[2] += field1 * dPX.x * dPX.z;
+                    lrf[ci].phi2[3] += field1 * dPX.y * dPX.x;
+                    lrf[ci].phi2[4] += (field1 * dPX.y * dPX.y - field0);
+                    lrf[ci].phi2[5] += field1 * dPX.y * dPX.z;
+                    lrf[ci].phi2[6] += field1 * dPX.z * dPX.x;
+                    lrf[ci].phi2[7] += field1 * dPX.z * dPX.y;
+                    lrf[ci].phi2[8] += (field1 * dPX.z * dPX.z - field0);
+
+                    field2 = -field1 / rPX;
+
+                    lrf[ci].phi3[0] += field2 * (.5 * dPX.x * dPX.x * dPX.x - 3 * rPX * dPX.x);
+                    lrf[ci].phi3[1] += field2 * (.5 * dPX.x * dPX.x * dPX.y - rPX * dPX.y);
+                    lrf[ci].phi3[2] += field2 * (.5 * dPX.x * dPX.x * dPX.z - rPX * dPX.z);
+                    lrf[ci].phi3[3] += field2 * (.5 * dPX.x * dPX.y * dPX.x - rPX * dPX.y);
+                    lrf[ci].phi3[4] += field2 * (.5 * dPX.x * dPX.y * dPX.y - rPX * dPX.x);
+                    lrf[ci].phi3[5] += field2 * (.5 * dPX.x * dPX.y * dPX.z);
+                    lrf[ci].phi3[6] += field2 * (.5 * dPX.x * dPX.z * dPX.x - rPX * dPX.z);
+                    lrf[ci].phi3[7] += field2 * (.5 * dPX.x * dPX.z * dPX.y);
+                    lrf[ci].phi3[8] += field2 * (.5 * dPX.x * dPX.z * dPX.z - rPX * dPX.x);
+                    lrf[ci].phi3[9] += field2 * (.5 * dPX.y * dPX.x * dPX.x - rPX * dPX.y);
+                    lrf[ci].phi3[10] += field2 * (.5 * dPX.y * dPX.x * dPX.y - rPX * dPX.x);
+                    lrf[ci].phi3[11] += field2 * (.5 * dPX.y * dPX.x * dPX.z);
+                    lrf[ci].phi3[12] += field2 * (.5 * dPX.y * dPX.y * dPX.x - rPX * dPX.x);
+                    lrf[ci].phi3[13] += field2 * (.5 * dPX.y * dPX.y * dPX.y - 3 * rPX * dPX.y);
+                    lrf[ci].phi3[14] += field2 * (.5 * dPX.y * dPX.y * dPX.z - rPX * dPX.z);
+                    lrf[ci].phi3[15] += field2 * (.5 * dPX.y * dPX.z * dPX.x);
+                    lrf[ci].phi3[16] += field2 * (.5 * dPX.y * dPX.z * dPX.y - rPX * dPX.z);
+                    lrf[ci].phi3[17] += field2 * (.5 * dPX.y * dPX.z * dPX.z - rPX * dPX.y);
+                    lrf[ci].phi3[18] += field2 * (.5 * dPX.z * dPX.x * dPX.x - rPX * dPX.z);
+                    lrf[ci].phi3[19] += field2 * (.5 * dPX.z * dPX.x * dPX.y);
+                    lrf[ci].phi3[20] += field2 * (.5 * dPX.z * dPX.x * dPX.z - rPX * dPX.x);
+                    lrf[ci].phi3[21] += field2 * (.5 * dPX.z * dPX.y * dPX.x);
+                    lrf[ci].phi3[22] += field2 * (.5 * dPX.z * dPX.y * dPX.y - rPX * dPX.z);
+                    lrf[ci].phi3[23] += field2 * (.5 * dPX.z * dPX.y * dPX.z - rPX * dPX.y);
+                    lrf[ci].phi3[24] += field2 * (.5 * dPX.z * dPX.z * dPX.x - rPX * dPX.x);
+                    lrf[ci].phi3[25] += field2 * (.5 * dPX.z * dPX.z * dPX.y - rPX * dPX.y);
+                    lrf[ci].phi3[26] += field2 * (.5 * dPX.z * dPX.z * dPX.z - 3 * rPX * dPX.z);
+                }
+            }
+        }
+    }
 }
 
 /* =============================================
@@ -1449,7 +1764,7 @@ void clean_variables() {
     free(torsions);
     free(LJ_matrix);
     free(molecules);
-    for (int i = 0; i < n_cgrps_solute + n_cgrps_solvent; i++) {
+    for (int i = 0; i < n_charge_groups; i++) {
         free(charge_groups[i].a);
     }
     free(charge_groups);

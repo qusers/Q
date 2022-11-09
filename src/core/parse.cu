@@ -921,7 +921,7 @@ void init_charge_groups(const char *filename) {
     n_cgrps_solute = atoi(file.buffer[1][0]);
     n_cgrps_solvent = atoi(file.buffer[1][1]);
 
-    int n_charge_groups = n_cgrps_solute + n_cgrps_solvent;
+    n_charge_groups = n_cgrps_solute + n_cgrps_solvent;
 
     charge_groups = (cgrp_t*) malloc(n_charge_groups * sizeof(cgrp_t));
 
