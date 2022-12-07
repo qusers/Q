@@ -684,18 +684,16 @@ bool *pp_is_lrf;
     double rOO, rOX, cut_ww_2;
     double field0, field1, field2;
     coord_t dOO, dOX;
-    catype_t catype_ow;    // Atom type of first O, H atom
     ccharge_t ccharge_ow, ccharge_hw; // Charge of first O, H atom
     double current_charge;
 
-    catype_ow = catypes[atypes[n_atoms_solute].code - 1];
     ccharge_ow = ccharges[charges[n_atoms_solute].code - 1];
     ccharge_hw = ccharges[charges[n_atoms_solute+1].code - 1];
 
     cut_ww_2 = md.solvent_solvent * md.solvent_solvent;
 
     // W-W interactions
-    ww_is_lrf = (bool*) calloc(n_waters * n_waters * sizeof(bool));
+    ww_is_lrf = (bool*) calloc(n_waters * n_waters, sizeof(bool));
     for (int i = 0; i < n_waters; i++) {
         for (int j = i+1; j < n_waters; j++) {
             ai = n_atoms_solute + 3*i;
@@ -851,9 +849,15 @@ void init_lrf_pw() {
     int ai, aj, ci, waj;
     double rO, rX, cut_pw_2;
     coord_t dO, dX;
+    ccharge_t ccharge_ow, ccharge_hw; // Charge of first O, H atom
+    double current_charge;
+    double field0, field1, field2;
+
+    ccharge_ow = ccharges[charges[n_atoms_solute].code - 1];
+    ccharge_hw = ccharges[charges[n_atoms_solute+1].code - 1];
 
     cut_pw_2 = md.solute_solvent * md.solute_solvent;
-    pw_is_lrf = (bool*) calloc(n_atoms_solute * n_waters * sizeof(bool));
+    pw_is_lrf = (bool*) calloc(n_atoms_solute * n_waters, sizeof(bool));
 
     for (int i = 0; i < n_charge_groups; i++) {
         for (int j = 0; j < n_waters; j++) {
@@ -1017,7 +1021,7 @@ void init_lrf_pp() {
     cut_pp_2 = md.solute_solute * md.solute_solute;
 
     // P-P interactions
-    pp_is_lrf = (bool*) calloc(n_atoms_solute * n_atoms_solute * sizeof(bool));
+    pp_is_lrf = (bool*) calloc(n_atoms_solute * n_atoms_solute, sizeof(bool));
     for (int i = 0; i < n_charge_groups; i++) {
         for (int j = i+1; j < n_charge_groups; j++) {
             ci = charge_groups[i].iswitch-1;
@@ -1175,16 +1179,16 @@ void init_lrf() {
     // Initialize LRF array for all atoms
     lrf = (lrf_t*) malloc(n_atoms * sizeof(lrf_t));
     for (int i = 0; i < n_charge_groups; i++) {
-        int iswitch = charge_group[i].iswitch-1;
-        for (int j = 0; j < charge_group[i].n_atoms; j++) {
+        int iswitch = charge_groups[i].iswitch-1;
+        for (int j = 0; j < charge_groups[i].n_atoms; j++) {
             int a = charge_groups[i].a[j]-1;
             lrf[a].cgp_center.x = coords[iswitch].x;
             lrf[a].cgp_center.y = coords[iswitch].y;
             lrf[a].cgp_center.z = coords[iswitch].z;
 
-            lrf[a].phi1 = (double*) calloc(3 * sizeof(double));
-            lrf[a].phi2 = (double*) calloc(9 * sizeof(double));
-            lrf[a].phi3 = (double*) calloc(27 * sizeof(double));
+            lrf[a].phi1 = (double*) calloc(3, sizeof(double));
+            lrf[a].phi2 = (double*) calloc(9, sizeof(double));
+            lrf[a].phi3 = (double*) calloc(27, sizeof(double));
         }
     }
 
@@ -1193,14 +1197,14 @@ void init_lrf() {
     init_lrf_pp();
 
     // Manually set lrf flag to false for Q-atoms
-    for (int i = 0; i < q_atoms; i++) {
+    for (int i = 0; i < n_qatoms; i++) {
         int ai = q_atoms[i].a-1;
         for (int j = 0; j < n_atoms_solute; j++) {
-            lrf_pp[ai * n_atoms_solute + j] = false;
+            pp_is_lrf[ai * n_atoms_solute + j] = false;
         }
 
         for (int j = 0; j < n_waters; j++) {
-            lrf_pw[ai * n_waters + j] = false;
+            pw_is_lrf[ai * n_waters + j] = false;
         }
     }
 }
