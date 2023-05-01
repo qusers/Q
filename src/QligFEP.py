@@ -33,10 +33,10 @@ class Random():
         Gets total replicates, constructs a dictionary of random values per
         replicate
     """
-    def __init__(self):        
+    def __init__(self,replicates=10):        
         repdic = {}
         seeds = []
-        for i in range(0, globaldata['replicates']):
+        for i in range(0, replicates):
             repdic[i] = randrange(0,9999)
             seeds.append(randrange(0,9999))
 
