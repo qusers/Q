@@ -1,21 +1,19 @@
 import settings as s
-from subprocess import check_output
-import shlex
-import math
-import re
-import sys
 import os
 import argparse
 from copy import deepcopy
 import numpy as np
 from simtk import unit
+from rdkit import Chem
+from rdkit.Chem import Draw
 
 # QligFEP modules
 import IO
 
 # openFF modules
-from openforcefield.topology import Molecule, Topology
-from openforcefield.typing.engines.smirnoff import ForceField
+from openff.toolkit import Molecule, ForceField, Topology
+from openff.interchange import Interchange
+from openff.toolkit.typing.engines.smirnoff import UnassignedValenceParameterException
 #from openforcefield.utils import get_data_filename
 
 class Run(object):
@@ -30,11 +28,16 @@ class Run(object):
         want to do with the object.
         """
         self.lig = lig
+        self.charges_list_magnitude = []
         self.FF = FF
         self.merge = merge
         self.ff_list = []
         self.mapping = {}
         self.total_charge = 0
+        self.molecule = Molecule.from_file(self.lig + '.sdf')
+        self.topology = Topology.from_molecules([self.molecule])
+        self.forcefield = ForceField('openff-2.1.0.offxml')
+        self.parameters = self.forcefield.label_molecules(self.topology)[0]
         self.masses =   {"H"     : "1.0080",
                          "C"     : "12.0110",
                          "N"     : "14.0070",
@@ -48,41 +51,42 @@ class Run(object):
                         "DUM"   : "0.0000"
                         }
     
-    def openff(self):
-        # Load the molecule (for now mol2, until charges are saved on sdf)
-        molecule = Molecule.from_file(self.lig + '.sdf')
-        topology = Topology.from_molecules([molecule])
-        
-        self.molecule = molecule
-        self.topology = topology
-        # Label using the smirnoff99Frosst force field
-        self.forcefield = ForceField('openff-1.0.0.offxml')
-        self.parameters = self.forcefield.label_molecules(topology)[0]
-    
-    def read_mol2(self):
-        """
-            This is basically to get the charge, will later be deprecated when charges are
-            transferable in openff
-        """
-        with open(self.lig + '.mol2') as infile:
+    def charges_and_mapping(self):
+
+        ### Assign partial charges and return in form of dictionary (can only load sdf, mol or smi) ###
+        # sage = ForceField(self.forcefield)
+        # molecule = Molecule.from_file(self.lig + '.sdf')
+        self.partial_charges = Interchange.from_smirnoff(self.forcefield, [self.molecule])['Electrostatics'].charges
+
+        # loop through dictionary and safe charges in list
+        for charge in self.partial_charges.values():
+            self.charges_list_magnitude.append(round(charge._magnitude, 3))
+
+        # get total charge and round
+        self.total_charge = round(sum(self.charges_list_magnitude),10)
+
+        if self.total_charge != 0.0:
+            print('WARNING: residual charge {} ,check charges'.format(self.total_charge))
+
+        # loop through sdf lig file and safe relevant information in mapping dictionary
+        with open(self.lig + '.sdf') as infile:
             cnt = -1
+            # loop through sdf file and retreive information
             for line in infile:
                 line = line.split()
-                if len(line) == 9:
+                if len(line) == 16:
                     cnt += 1
-                    self.mapping[cnt] = [line[0],               # at idex
-                                         line[1],               # atname
-                                         line[5].split('.')[0], # attype
-                                         line[8],               # charge
-                                         line[2],               # X coordinate
-                                         line[3],               # Y coordinte
-                                         line[4]                # Z coordinate
+                    atomindex = cnt + 1
+                    charge = self.charges_list_magnitude[cnt]
+                    self.mapping[cnt] = [   str(atomindex),                         # at idex
+                                            line[3] + str(atomindex),               # atname
+                                            line[3],                                # attype
+                                            str(charge),                            # charge
+                                            line[0],                                # X coordinate
+                                            line[1],                                # Y coordinte
+                                            line[2]                                 # Z coordinate
                                         ]
-                    self.total_charge += float(line[8]) 
-        
-        if self.total_charge != 0.0:
-            print('WARNING: residual charge {} check your mol2 file!'.format(self.total_charge))
-            
+
     def write_lib_Q(self):
         with open(self.lig + '.lib', 'w') as outfile:
             outfile.write('{}    ! atoms no {}   total charge {} \n\n'.format('{LIG}',
@@ -101,7 +105,7 @@ class Run(object):
                                                                     self.mapping[at][3]
                                                                     )
                              )
-                
+
             # bonded block
             outfile.write("\n[bonds]\n")
             for i, bond in enumerate(self.parameters['Bonds']):
@@ -122,6 +126,8 @@ class Run(object):
                                                            ak, 
                                                            al))
 
+            # This was commented out?
+
             #outfile.write("\n[charge_groups]")
             #for i, atom in enumerate(self.mapping):
             #    if self.mapping[atom][2] != 'H':
@@ -132,14 +138,17 @@ class Run(object):
             #                outfile.write(' {}'.format(self.mapping[bond[1]][1]))
             
     def write_prm_Q(self):
-        if self.FF == 'AMBER14sb' and self.merge == True:
+
+        # dont know what happens here
+        if self.FF == 'AMBER14sb' and self.merge is True:
             prm_file = os.path.join(s.FF_DIR, 'AMBER14sb.prm')
             prm_file_out = self.FF + '_' + self.lig + '.prm'
             
-        elif self.merge == False:
+        elif self.merge is False:
             prm_file = os.path.join(s.FF_DIR, 'NOMERGE.prm')
             prm_file_out = self.lig + '.prm'
-                    
+
+                   
         with open(prm_file) as infile, open(prm_file_out, 'w') as outfile:
             for line in infile:
                 block = 0
@@ -322,11 +331,17 @@ class Run(object):
 
         # Make deepcopies of both inputs, since we may modify them in this function
         forcefield = deepcopy(self.forcefield)
+
+        ###### lig.sdf file ######
         molecule = deepcopy(self.molecule)
 
         # Set partial charges to placeholder values so that we can skip AM1-BCC 
         # during parameterization
-        molecule.partial_charges = (np.zeros(molecule.n_atoms) + 0.1) * unit.elementary_charge
+
+        # the partial charges have to be added to the molecule somehow with an array like thing multiplied with the elementary charge
+        # They have to be the same format. It works for the molecule.partial_charges = (np.zeros(molecule.n_atoms) + 0.1) * unit.elementary_charge
+        # molecule.n_atoms just gives 45 (number of atoms). So that should not be 
+        molecule.partial_charges = np.array(self.charges_list_magnitude) * unit.elementary_charge
 
         # Prepare dictionary to catch parameterization failure info
         success = False
@@ -335,9 +350,17 @@ class Run(object):
         while not success:
             # Try to parameterize the system, catching the exception if there is one.
             try:
-                forcefield.create_openmm_system(molecule.to_topology(), 
-                                        charge_from_molecules=[molecule])
+
+                ###### error occurs, Molecule Brc1cccc(Nc2nc(OCC3CCCCC3)c3nc[nH]c3n2)c1 has a net charge of 4.5 ######
+                    #### why do you calculate charges when you have them already? ####
+                    #### why molecule.to_topology() when we have that already in the openff function? ####
+                    #### charge_from_molecules (List[openff.toolkit.molecule.Molecule], optional) – If specified, partial #
+                    #    charges will be taken from the given molecules instead of being determined by the force field. #####
+
+                forcefield.create_openmm_system(molecule.to_topology(), charge_from_molecules=[molecule])
                 success = True
+
+            ###### NameError: name 'UnassignedValenceParameterException' is not defined ######
             except UnassignedValenceParameterException as e:      
                 success = False
 
@@ -427,9 +450,9 @@ class Run(object):
                 # which will make it always find parameters for each term. This will prevent the same
                 # parameterization exception from being raised in the next attempt.
                 param_list = forcefield.get_parameter_handler(handler_tagname).parameters
-                param_list.insert(0, super_generics[handler_tagname])
+                param_list.insert(0, super_generics[handler_tagname]) # What's this?
 
-        if success != True:
+        if success is not True:
             print(missing_params)
         else:
             print('Parameters succesfully assigned')
@@ -452,6 +475,7 @@ if __name__ == "__main__":
                         choices = ['AMBER14sb'],
                         help = "forcefield to use")
 
+    # changed the default to false
     parser.add_argument('-m', '--merge',
                         dest = "merge",
                         action = 'store_false',
@@ -464,9 +488,8 @@ if __name__ == "__main__":
               merge = args.merge
              )
 
-    run.openff()
+    run.charges_and_mapping()
     run.report_missing_parameters()
-    run.read_mol2()
     run.write_lib_Q()
     run.write_prm_Q()
     run.write_PDB()
