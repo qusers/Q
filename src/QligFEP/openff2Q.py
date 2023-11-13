@@ -1,3 +1,4 @@
+"""Write Q topology and parameter files from Open Force Field Toolkit"""
 import settings as s
 import os
 import argparse
@@ -14,7 +15,45 @@ import IO
 from openff.toolkit import Molecule, ForceField, Topology
 from openff.interchange import Interchange
 from openff.toolkit.typing.engines.smirnoff import UnassignedValenceParameterException
-#from openforcefield.utils import get_data_filename
+from openff.toolkit.typing.engines.smirnoff import (
+    BondHandler, AngleHandler, ProperTorsionHandler,
+    ImproperTorsionHandler, vdWHandler
+)
+
+# inspired on the dictionary found in the link:
+# https://notebook.community/open-forcefield-group/openforcefield/examples/check_dataset_parameter_coverage/check_parameter_coverage
+
+super_generics = {'Bonds': 
+                   BondHandler.BondType(smirks='[*:1]~[*:2]', 
+                                       k=0*unit.kilocalorie/unit.mole/unit.angstrom**2,
+                                       length=0*unit.angstrom
+                                       ),
+                 'Angles': 
+                   AngleHandler.AngleType(smirks='[*:1]~[*:2]~[*:3]',
+                                          angle=0*unit.degree,
+                                          k=0*unit.kilocalorie/unit.mole/unit.degree**2
+                                          ),
+                 'ProperTorsions': 
+                   ProperTorsionHandler.ProperTorsionType(smirks='[*:1]~[*:2]~[*:3]~[*:4]',
+                                                          phase1=0*unit.degree,
+                                                          periodicity1=0,
+                                                          k1=0*unit.kilocalorie/unit.mole,
+                                                          idivf1=1
+                                                         ),
+                 'ImproperTorsions': 
+                   ImproperTorsionHandler.ImproperTorsionType(smirks='[*:1]~[*:2](~[*:3])~[*:4]',
+                                                              phase1=0*unit.degree,
+                                                              periodicity1=0,
+                                                              k1=0*unit.kilocalorie/unit.mole,
+                                                              idivf1=1
+                                                              ),
+                 'vdW': 
+                   vdWHandler.vdWType(smirks='[*:1]',
+                                      rmin_half=0*unit.angstrom,
+                                      epsilon = 0*unit.kilocalorie/unit.mole
+                                     ),
+                 }
+
 
 class Run(object):
     """
@@ -450,7 +489,7 @@ class Run(object):
                 # which will make it always find parameters for each term. This will prevent the same
                 # parameterization exception from being raised in the next attempt.
                 param_list = forcefield.get_parameter_handler(handler_tagname).parameters
-                param_list.insert(0, super_generics[handler_tagname]) # What's this?
+                param_list.insert(0, super_generics[handler_tagname])
 
         if success is not True:
             print(missing_params)

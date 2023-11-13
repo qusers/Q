@@ -1,17 +1,14 @@
-import argparse
 import re
 import glob
 import os
 import shutil
 import stat
-import shlex
-from subprocess import check_output
 
 import functions as f
 import settings as s
 import IO
 
-class Run(object):
+class QligFEP(object):
     """
     Create dual topology FEP files based on two ligands
     """
@@ -46,6 +43,7 @@ class Run(object):
         #Temporary until flag is here
         self.ABS = False #True
         self.ABS_waters = []
+        self.write_dir = None
         
         if self.system == 'protein':
             # Get last atom and residue from complexfile!
@@ -74,6 +72,7 @@ class Run(object):
         if not os.path.exists(directory + '/inputfiles'):
             os.makedirs(directory + '/inputfiles')
 
+        self.write_dir = directory
         return directory
     
     def replace(self, string, replacements):
@@ -433,7 +432,7 @@ class Run(object):
         reslist = ['LIG', 'LID']
         overlap_list = f.overlapping_pairs(pdbfile, reslist)
         
-        if self.ABS == True:
+        if self.ABS:
             with open(pdbfile) as infile:
                 for line in infile:
                     if line[13].strip() == 'O': 
@@ -442,7 +441,7 @@ class Run(object):
                             
         return overlap_list
         
-    def write_MD_05(self, lambdas, writedir, lig_size1, lig_size2):
+    def write_MD_05(self, lambdas, writedir, lig_size1, lig_size2, overlapping_atoms):
         lambda_tot = len(lambdas)
         replacements = {}
         file_list1 = []
@@ -477,7 +476,7 @@ class Run(object):
         replacements['EQ_LAMBDA']       =   '0.500 0.500'
         
         if self.system == 'water' or self.system == 'vacuum':
-            if self.ABS == False:
+            if self.ABS is False:
                 replacements['WATER_RESTRAINT'] = '{:<7}{:<7} 1.0 0 1   \n'.format(self.atomoffset + 1, 
                                                                               self.atomoffset + lig_size1 + 
                                                                               lig_size2
@@ -508,7 +507,7 @@ class Run(object):
 
             with open(eq_file_in) as infile, open(eq_file_out, 'w') as outfile:
                 for line in infile:
-                    line = run.replace(line, replacements)
+                    line = self.replace(line, replacements)
                     outfile.write(line)
                     if line == '[distance_restraints]\n':
                         for line in overlapping_atoms:
@@ -524,7 +523,7 @@ class Run(object):
         file_out = writedir + '/md_0500_0500.inp' 
         with open(file_in) as infile, open(file_out, 'w') as outfile:
             for line in infile:
-                line = run.replace(line, replacements)
+                line = self.replace(line, replacements)
                 outfile.write(line)
                 if line == '[distance_restraints]\n':
                     for line in overlapping_atoms:
@@ -620,7 +619,7 @@ class Run(object):
 
             with open(eq_file_in) as infile, open(eq_file_out, 'w') as outfile:
                 for line in infile:
-                    line = run.replace(line, replacements)
+                    line = self.replace(line, replacements)
                     outfile.write(line)
                     if line == '[distance_restraints]\n':
                         for line in overlapping_atoms:
@@ -632,7 +631,7 @@ class Run(object):
         file_out = writedir + '/md_1000_0000.inp' 
         with open(file_in) as infile, open(file_out, 'w') as outfile:
             for line in infile:
-                line = run.replace(line, replacements)
+                line = self.replace(line, replacements)
                 outfile.write(line)
                 if line == '[distance_restraints]\n':
                     for line in overlapping_atoms:
@@ -679,12 +678,12 @@ class Run(object):
         replacements = {}
         replacements['TEMP_VAR']    = self.temperature
         replacements['RUN_VAR']     = self.replicates
-        replacements['RUNFILE']     = 'run' + self.cluster + '.sh'
+        replacements['RUNFILE']     = 'self' + self.cluster + '.sh'
         submit_in = s.ROOT_DIR + '/INPUTS/FEP_submit.sh'
         submit_out = writedir + ('/FEP_submit.sh')
         with open(submit_in) as infile, open (submit_out, 'w') as outfile:
             for line in infile:
-                line = run.replace(line, replacements)
+                line = self.replace(line, replacements)
                 outfile.write(line)
         
         try:
@@ -697,8 +696,8 @@ class Run(object):
         
     def write_runfile(self, writedir, file_list):
         ntasks = getattr(s, self.cluster)['NTASKS']
-        src = s.INPUT_DIR + '/run.sh'
-        tgt = writedir + '/run' + self.cluster + '.sh'
+        src = s.INPUT_DIR + '/self.sh'
+        tgt = writedir + '/self' + self.cluster + '.sh'
         EQ_files = sorted(glob.glob(writedir + '/eq*.inp'))
         
         if self.start == '1':
@@ -770,7 +769,7 @@ class Run(object):
     
     def write_qfep(self, inputdir, windows, lambdas):
         qfep_in = s.ROOT_DIR + '/INPUTS/qfep.inp' 
-        qfep_out = writedir + '/inputfiles/qfep.inp'
+        qfep_out = self.writedir + '/inputfiles/qfep.inp'
         i = 0
         total_l = len(lambdas)
         
@@ -782,7 +781,7 @@ class Run(object):
         replacements['TOTAL_L']=str(total_l)
         with open(qfep_in) as infile, open(qfep_out, 'w') as outfile:
             for line in infile:
-                line = run.replace(line, replacements)
+                line = self.replace(line, replacements)
                 outfile.write(line)
             
             if line == '!ENERGY_FILES\n':
@@ -820,8 +819,8 @@ class Run(object):
         
         with open(qprep_in) as infile, open(qprep_out, 'w') as outfile:
             for line in infile:
-                line = run.replace(line, replacements)
-                if line == '!addbond at1 at2 y\n' and self.cysbond != None:
+                line = self.replace(line, replacements)
+                if line == '!addbond at1 at2 y\n' and self.cysbond is not None:
                     cysbond = self.cysbond.split(',')
                     for cys in cysbond:
                         at1 = cys.split('_')[0]
@@ -841,143 +840,3 @@ class Run(object):
         # subprocess module....
         IO.run_command(qprep, options, string = True)
         os.chdir('../../')
-
-
-def parseargs(args: list[str] = []) -> argparse.Namespace:
-    """Return a Namespace after parsing an argument string.
-
-    If args is not provided, defaults to args from command line.
-    """
-    parser = argparse.ArgumentParser(
-        prog='QligFEP',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        description = '       == Generate FEP files for dual topology ligand FEP == ')
-
-    parser.add_argument('-l1', '--lig_1',
-                        dest = "lig1",
-                        required = True,
-                        help = "name of ligand 1")
-
-    parser.add_argument('-l2', '--lig_2',
-                        dest = "lig2",
-                        required = True,
-                        help = "name of ligand 2")
-
-    parser.add_argument('-FF', '--forcefield',
-                        dest = "FF",
-                        required = True,
-                        choices = ['OPLS2005', 'OPLS2015', 'AMBER14sb', 'CHARMM36', 'CHARMM22', 'CHARMM_TEST'],
-                        help = "Forcefield to be used")
-
-    parser.add_argument('-s', '--system',
-                        dest = "system",
-                        required = True,
-                        choices = ['water', 'protein', 'vacuum'],
-                        help = "what type of system we are setting up")
-
-    parser.add_argument('-c', '--cluster',
-                        dest = "cluster",
-                        required = True,
-                        help = "cluster you want to submit to, cluster specific parameters added to settings"
-                       )
-
-    parser.add_argument('-r', '--sphereradius',
-                        dest = "sphereradius",
-                        required = False,
-                        default = '15',
-                        help = "size of the simulation sphere"
-                       )
-
-    parser.add_argument('-b', '--cysbond',
-                        dest = "cysbond",
-                        default = None,
-                        help = "Temporary function to add cysbonds at1:at2,at3:at4 etc."
-                       )
-
-    parser.add_argument('-l', '--start',
-                        dest = "start",
-                        default = '0.5',
-                        choices = ['1', '0.5'],
-                        help = "Starting FEP in the middle or endpoint"
-                       )
-
-    parser.add_argument('-T', '--temperature',
-                        dest = "temperature",
-                        default = '298',
-                        help = "Temperature(s), mutliple tempereratures given as 'T1,T2,...,TN'"
-                       )
-
-    parser.add_argument('-R', '--replicates',
-                        dest = "replicates",
-                        default = '10',
-                        help = "How many repeats should be run"
-                       )
-
-    parser.add_argument('-S', '--sampling',
-                        dest = "sampling",
-                        default = 'linear',
-                        choices = ['linear', 'sigmoidal', 'exponential', 'reverse_exponential'],
-                        help = "Lambda spacing type to be used"
-                       )
-
-    parser.add_argument('-w', '--windows',
-                        dest = "windows",
-                        default = '50',
-                        help = "Total number of windows that will be run"
-                       )
-
-    if args:
-        return parser.parse_args(args)
-    else:
-        return parser.parse_args()
-
-
-if __name__ == "__main__":
-    args = parseargs()
-    run = Run(lig1 = args.lig1,
-              lig2 = args.lig2,
-              FF= args.FF,
-              system = args.system,
-              cluster = args.cluster,
-              sphereradius = args.sphereradius,
-              cysbond = args.cysbond,
-              start = args.start,
-              temperature = args.temperature,
-              replicates = args.replicates,
-              sampling = args.sampling
-             )
-
-    writedir = run.makedir()
-    inputdir = writedir + '/inputfiles'
-    a = run.read_files()
-    changes_for_libfiles = a[0][1]
-    changes_for_prmfiles = a[0][1]
-    change_charges       = a[1][0]
-    change_vdw           = a[1][1]
-    changes_for_pdbfiles = a[0][0]
-    lig_size1, lig_size2 = a[2][0], a[2][1]
-
-    # Write the merged files
-    run.change_lib(changes_for_libfiles, inputdir)
-    FEP_vdw = run.change_prm(changes_for_prmfiles, inputdir)
-    run.write_FEP_file(change_charges, change_vdw, FEP_vdw, inputdir, lig_size1, lig_size2)
-    run.merge_pdbs(inputdir)
-    if args.system == 'protein':
-        run.write_water_pdb(inputdir)
-    lambdas = run.get_lambdas(args.windows, args.sampling)
-    overlapping_atoms = run.overlapping_atoms(writedir)
-    
-    # Handling the correct offset here
-    if args.start == '0.5':
-        file_list = run.write_MD_05(lambdas, inputdir, lig_size1, lig_size2)
-        run.write_runfile(inputdir, file_list)    
-        
-    if args.start == '1':
-        file_list = run.write_MD_1(lambdas, inputdir, lig_size1, lig_size2, overlapping_atoms)
-        run.write_runfile(inputdir, file_list)    
-    
-    run.write_submitfile(writedir)
-    run.write_qfep(inputdir, args.windows, lambdas)
-    run.write_qprep(inputdir)
-    run.qprep(inputdir)
-    

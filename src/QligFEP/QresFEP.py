@@ -20,36 +20,36 @@ class Run(object):
         self.cofactor = [cofactor]
         # Check whether all required files are there:
         required = ['protein.pdb', 'water.pdb', 'protPREP.log']
-        if self.cofactor[0] != None:
+        if self.cofactor[0] is not None:
             extension = ['.pdb', '.lib', '.prm']
             for filename in self.cofactor:
                 for line in extension:
                     required.append(filename + line)
         for filename in required:
-            if os.path.exists(filename) == False:
+            if os.path.exists(filename) is False:
                 required = ' '.join(required)
                 print("ERROR: {} are required files, exiting now.".format(required))
                 sys.exit()
         
-        if windows == None:
+        if windows is None:
             self.windows = s.WINDOWS
             
         else:
             self.windows = int(windows)
             
-        if sampling == None:
+        if sampling is None:
             self.sampling = s.SAMPLING
             
         else:
             self.sampling = sampling
             
-        if temperature == None:
+        if temperature is None:
             self.temperature = s.TEMPERATURE
             
         else:
             self.temperature = temperature
             
-        if replicates == None:
+        if replicates is None:
             self.replicates = s.REPLICATES
             
         else:

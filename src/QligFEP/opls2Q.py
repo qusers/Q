@@ -6,10 +6,8 @@ import re
 import sys
 import os
 import argparse
-import glob
 
 import IO
-import functions as f
 
 class Run(object):
     """
@@ -182,7 +180,7 @@ class Run(object):
         for key in dic:
             for line in dic[key]:
                 charge = float(charges[key]) + float(charges[line])
-                if charge.is_integer() == True:
+                if charge.is_integer() is True:
                     charge_group_list.append([key, line])
                     charge_group_dic[key] = line
                     charge = 0
@@ -205,7 +203,7 @@ class Run(object):
                     charge = charge + charge_a1 + charge_a2
                     charge_group = [line[0], line[1]]
 
-                if charge.is_integer() == True:
+                if charge.is_integer() is True:
                     charge_group_list.append(charge_group)
                     charge_group = []
                     charge = 0
@@ -222,7 +220,7 @@ class Run(object):
             ffld_serv = s.SCHROD_DIR + 'utilities/ffld_server' + s.EXE
             struct_conv = s.SCHROD_DIR + 'utilities/structconvert' + s.EXE
             # Running command line tool has been moved to IO, change function!
-            if self.AA == True:
+            if self.AA is True:
                 # First convert to .mae file to avoid reading errors
                 options = ' -ipdb ' + pdb + ' -omae ' + pdb[:-4] + '.mae'
                 args = shlex.split(struct_conv + options)
@@ -255,7 +253,7 @@ class Run(object):
                 if len(line) < 2:
                     continue
                 outfile.write(line +'\n')
-                if self.AA == True:
+                if self.AA is True:
                     # Construct for renaming atom names
                     line = line.split()
                     if line[0] == 'OPLSAA':
@@ -282,10 +280,10 @@ class Run(object):
                         bonds.append([line[0],line[1]])
 
         self.h_ignore = []           
-        if self.AA == True:
+        if self.AA is True:
             with open(pdb) as infile:
                 for line in infile:
-                    if line.startswith(self.include) == False:
+                    if line.startswith(self.include) is False:
                         continue
                     line = IO.pdb_parse_in(line)
                     at_id = int(line[1]) - 1
@@ -306,7 +304,7 @@ class Run(object):
         with open(self.lig + '.log', 'r') as infile:
             for line in infile:
                 ignore_line = False
-                if self.AA == True:
+                if self.AA is True:
                     line = IO.replace(line, self.at_replace)
 
                 if len(line) > 2:
@@ -315,7 +313,7 @@ class Run(object):
                         if entry in self.h_ignore:
                             ignore_line = True
                             
-                    if ignore_line != True:
+                    if ignore_line is not True:
                         opls_list.append(line)
                     
         self.ff_list = opls_list
@@ -354,7 +352,7 @@ class Run(object):
             # Create lists 
             if len(line[0]) <= 4 and line[0] != 'atom':
                 if block == 1:
-                    if line[0] in self.backbone and self.AA == True:
+                    if line[0] in self.backbone and self.AA is True:
                         charge = [line[0], float(self.backbone[line[0]])]
                         charge_sum = charge_sum + float(self.backbone[line[0]])
                     else:
@@ -485,7 +483,7 @@ class Run(object):
             for line in bonds:
                 outfile.write('{:10}{}\n'.format(line[0][0], line[0][1]))
             
-            if self.AA == True:
+            if self.AA is True:
                     outfile.write('\n[connections]\n')
                     outfile.write('head N\n')
                     outfile.write('tail C\n')
@@ -517,15 +515,15 @@ class Run(object):
         torsion = parm[5]
         improper = parm[6]
 
-        if self.FF == 'OPLS2015' and self.merge == True:
+        if self.FF == 'OPLS2015' and self.merge is True:
             prm_file = os.path.join(s.FF_DIR, 'OPLS2015.prm')
             prm_file_out = self.FF + '_' + self.lig + '.prm'
             
-        elif self.FF == 'OPLS2005' and self.merge == True:
+        elif self.FF == 'OPLS2005' and self.merge is True:
             prm_file = os.path.join(s.FF_DIR, 'OPLS2005.prm')
             prm_file_out = self.FF + '_' + self.lig + '.prm'
             
-        elif self.merge == False:
+        elif self.merge is False:
             prm_file = os.path.join(s.FF_DIR, 'NOMERGE.prm')
             prm_file_out = self.lig + '.prm'
         
@@ -597,12 +595,12 @@ class Run(object):
         pdb_out = self.lig + '_out.pdb'
         index = -1
         atomnames = self.Q_FF[0]
-        if self.vs == True:
+        if self.vs is True:
             lig_size = len(self.Q_FF[0]) - len(self.halogens)
         with open(pdb_in) as infile, open(pdb_out, 'w') as outfile:
             for line in infile:
                 line = IO.pdb_parse_in(line)
-                if self.AA == True and line[2] in self.h_ignore:
+                if self.AA is True and line[2] in self.h_ignore:
                     continue
                 
                 if line[0].strip() in include:
@@ -614,10 +612,10 @@ class Run(object):
                     outfile.write(outline + '\n')
                     
                     # Define virtual site coordinates
-                    if self.vs == True and line[2] in self.halogens:
+                    if self.vs is True and line[2] in self.halogens:
                         self.halogens[line[2]].append(line)
 
-            if self.vs == True:
+            if self.vs is True:
                 for halogen in self.halogens:
                     lig_size += 1
                     at_entry = self.halogens[halogen][2]
@@ -686,7 +684,7 @@ if __name__ == "__main__":
     run.get_parameters()
     run.read_log()
     run.convert_toQ()
-    if args.vs == True:
+    if args.vs is True:
         run.add_virtualsite()
     run.write_lib_Q()
     run.write_prm_Q()

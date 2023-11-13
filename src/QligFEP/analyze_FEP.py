@@ -12,7 +12,7 @@ try:
     matplotlib.use('Agg')    
     import matplotlib.pyplot as plt
     plot = True
-except:
+except ModuleNotFoundError:
     print('cannot import matplotlib, skipping plot generation')
     plot = False
 
@@ -44,7 +44,7 @@ class Run(object):
     def create_environment(self):
         self.analysisdir = self.FEP + '/analysis'
         # Add overwrite function?
-        if os.path.isdir(self.analysisdir) != True:
+        if os.path.isdir(self.analysisdir) is not True:
             os.mkdir(self.analysisdir)
     
     def read_FEPs(self):
@@ -247,8 +247,8 @@ if __name__ == "__main__":
     run.read_FEPs()
     run.read_mdlog()
     
-    if plot == True:
+    if plot:
         run.plot_data()
         
-    if args.PDB == True:
+    if args.PDB:
         run.write_re2pdb()

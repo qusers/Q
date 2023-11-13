@@ -7,13 +7,9 @@ import numpy as np
 import sys
 import glob
 
-# Import Q modules
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../env/')))
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../share/')))
-
-from share import functions as f
-from env import settings as s
-from share import IO
+from Qgpu import IO
+import Qgpu.functions as f
+import QligFEP.settings as s
 
 class Run(object):
     """
@@ -94,7 +90,7 @@ class Run(object):
                  open(self.prot[:-4] + '_noH.pdb', 'w') as outfile:
                 for line in infile:
                     tmp = line
-                    if line.startswith(self.include) == False:
+                    if line.startswith(self.include) is False:
                         continue
                     
                     line = IO.pdb_parse_in(line)
@@ -123,7 +119,7 @@ class Run(object):
                                      ]
                             write = f.euclidian_overlap(coord1, coord2, self.radius + 5)
                             
-                        if self.water != False:
+                        if self.water:
                             line_out = IO.pdb_parse_out(line)
 
                         else:
@@ -153,7 +149,7 @@ class Run(object):
                                 self.original_charges[line[5]][line[6]] = \
                                 IO.charged_res[line[4]][line[2]]
                 
-                    if write == True:
+                    if write:
                         outfile.write(line_out + '\n')
             
         elif self.origin == 'maestro':
@@ -198,13 +194,13 @@ class Run(object):
                     
             for line in infile:
                 line = IO.pdb_parse_in(line)
-                if not line[5] in self.chains:
+                if line[5] not in self.chains:
                     self.chains.append(line[5])
                 # construct chain based container
                 self.PDB[line[5]] = {}
                 
         with open(pdbfile) as infile:
-            if self.water == True:
+            if self.water:
                 self.PDB['w'] = {}
             for line in infile:
                 if line.startswith(self.include):
@@ -215,13 +211,13 @@ class Run(object):
                         if line[6] in self.original_charges[chain]:
                             line[4] = self.original_charges[chain][line[6]]
                     
-                    if self.water == True:
+                    if self.water:
                         if line[4] == 'HOH':
                             self.PDB['w'][line[1]] = line
                         else:
                             self.PDB[line[5]][line[1]] = line
                         
-                    elif self.water == False:
+                    elif self.water is False:
                         if line[4] != 'HOH':
                             self.PDB[line[5]][line[1]] = line
 
@@ -265,8 +261,8 @@ class Run(object):
                                   float(at[9]), 
                                   float(at[10])
                                  ]
-                        if f.euclidian_overlap(coord1, coord2, rest_bound) == False:
-                            if not at[5] in decharge:
+                        if f.euclidian_overlap(coord1, coord2, rest_bound) is False:
+                            if at[5] not in decharge:
                                 decharge[at[5]] = [at[6]]
                             else:
                                 decharge[at[5]].append(at[6])
@@ -306,7 +302,7 @@ class Run(object):
                                     if at_2[6] in decharge[chain2]:
                                         continue
                                         
-                                    if f.euclidian_overlap(coord1, coord2, 4.0) == True:
+                                    if f.euclidian_overlap(coord1, coord2, 4.0):
                                         decharge[chain2].append(at_2[6])
                                         outline = '{:<10}{:<10}{:<10}{:<10}'.format(
                                                       self.log['QRESN'][chain2][at_2[6]],
@@ -409,7 +405,7 @@ class Run(object):
                 for line in cys_mat:
                     k += 1
                     for j in range(i, total):
-                        if cys_mat[i][j+1] == True and cys_mat[k][0] != cys_mat[j][0]:
+                        if cys_mat[i][j+1] is True and cys_mat[k][0] != cys_mat[j][0]:
                             cyx.append(cys_mat[k][0])
                             cyx.append(cys_mat[j][0])
                             outline = '{:<10}{:<10}{:<10}{:<10}{:<10}{:<10}'.format(self.log['QRESN'][chain][cys_mat[k][0]], 
@@ -489,7 +485,7 @@ class Run(object):
                                   float(line[9]), 
                                   float(line[10])
                                  ]
-                        if f.euclidian_overlap(coord1, coord2, self.radius) == True:
+                        if f.euclidian_overlap(coord1, coord2, self.radius):
                             waters_tokeep.append(line[6])
                             
         with open('top_p.pdb') as infile, \
@@ -562,7 +558,7 @@ class Run(object):
                         outfile.write('{:<10}{:<10}{:10}{:10}\n'.format(Q_resi,PDB_resi,chain,resn))
                     
     def cleanup(self):
-        if self.noclean == False:
+        if self.noclean is False:
             os.remove(self.prot[:-4] + '_tmp.pdb')
             os.remove(self.prot[:-4] + '_noH.pdb')
             os.remove('qprep.inp')

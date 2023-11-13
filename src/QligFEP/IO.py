@@ -6,7 +6,7 @@ import stat
 import numpy as np
 
 import functions as f
-import src.settings as s
+from .settings import settings as s
 
 ## Some useful objects TO DO add GLH etc.
 charged_res = {'HIS': {'HD1' : 'HID',
@@ -88,7 +88,7 @@ def run_command(executable, options, string = False):
     options need to be split or not (e.g. Q runs with one string), and runs the program.
     Returns the output of that program as an unformatted string.
     """
-    if string == False:
+    if string is False:
         args = shlex.split(executable + options)
         out = check_output(args)
         print(' '.join(args))
@@ -267,7 +267,7 @@ def read_qfep(qfep):
             line = line.split()
             if len(line) > 3:
                 if line[0] == 'ERROR:' or line[1] == 'ERROR:':
-                    ERROR = True
+                    raise Exception('QFEP ERROR:\n' + qfep)
 
                 if line[3] == 'Free':
                     block = 1
@@ -339,7 +339,7 @@ def read_qfep_verbose(qfep):
             line = line.split()
             if len(line) > 3:
                 if line[0] == 'ERROR:' or line[1] == 'ERROR:':
-                    ERROR = True
+                    raise Exception('QFEP ERROR:\n' + qfep)
 
                 if line[3] == 'Free':
                     block = 1

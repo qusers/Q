@@ -1,8 +1,6 @@
 import argparse
-import re
 import os
 import shutil
-import sys
 import glob
 
 import functions as f
@@ -24,13 +22,13 @@ class Run(object):
         self.system         = system
         self.preplocation   = preplocation
         self.cluster        = cluster
-        if temperature == None:
+        if temperature is None:
             self.temperature = s.TEMPERATURE
             
         else:
             self.temperature = temperature
             
-        if replicates == None:
+        if replicates is None:
             self.replicates = s.REPLICATES
             
         else:
@@ -49,7 +47,7 @@ class Run(object):
 
         
         # Add cofactors to list for further pdb/prm parsing
-        if cofactor != None:
+        if cofactor is not None:
             self.cofactor.append(cofactor)
             
         if self.system == 'water' or self.system == 'vacuum':
@@ -66,7 +64,7 @@ class Run(object):
                  s.FF_DIR + '/' + self.forcefield + '.lib',
                 }
         
-        if self.cofactor[0] != None:
+        if self.cofactor[0] is not None:
             for filename in self.cofactor:
                 files[self.directory + '/inputfiles/' + filename + '.lib'] = filename + '.lib'
         
@@ -112,12 +110,13 @@ class Run(object):
         else:
             pdb_files = []
         
-        if self.cofactor[0] != None:
+        if self.cofactor[0] is not None:
             for line in self.cofactor:
                 pdb_files.append(line + '.pdb')
         
         for pdb_file in pdb_files:
             with open(pdb_file) as infile:
+                resoffset = len(self.PDB)
                 for line in infile:
                     if line.startswith(self.include):
                         atnr += 1
@@ -137,7 +136,6 @@ class Run(object):
                         
                         self.systemsize += 1
                 
-                resoffset = len(self.PDB)
                 
     def merge_prm(self):
         headers =['[options]', 
@@ -149,7 +147,7 @@ class Run(object):
                  ]
         
         prmfiles = [s.FF_DIR + '/' + self.forcefield + '.prm']
-        if self.cofactor[0] != None:
+        if self.cofactor[0] is not None:
             for filename in self.cofactor:
                 prmfiles.append(filename + '.prm')
             
@@ -180,7 +178,7 @@ class Run(object):
         waters_remove = []
         waters = {}
         
-        if self.cofactor[0] != None:
+        if self.cofactor[0] is not None:
             for line in self.cofactor:
                 with open(line + '.pdb') as infile:
                     for line in infile:
@@ -199,7 +197,7 @@ class Run(object):
                     waters[line[6]] = [line]
 
                 for coord_co in cofactor_coordinates:
-                    if f.euclidian_overlap(coord_wat, coord_co, 1.6) == True:
+                    if f.euclidian_overlap(coord_wat, coord_co, 1.6):
                         waters_remove.append(line[6])
             
             for key in waters:
@@ -225,7 +223,7 @@ class Run(object):
         src = s.INPUT_DIR + '/qprep_resFEP.inp'
         self.qprep = self.directory + '/inputfiles/qprep.inp'
         libraries = [self.forcefield + '.lib']
-        if self.cofactor[0] != None:
+        if self.cofactor[0] is not None:
             for filename in self.cofactor:
                 libraries.append(filename + '.lib')
                 
