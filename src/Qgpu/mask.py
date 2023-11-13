@@ -1,7 +1,4 @@
 # Standard Python libraries
-import os
-import itertools
-from os import path
 import json
 
 # Q-GPU libraries
@@ -23,7 +20,7 @@ class Read_Library(object):
     def Q(self):
         self.lib = IO.read_lib(self.lib)
         for resname in self.lib:
-            if not resname in self.prm2lib:
+            if resname not in self.prm2lib:
                 self.prm2lib[resname] = {}
                 
             for line in self.lib[resname]['[atoms]']:

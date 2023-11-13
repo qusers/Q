@@ -1,6 +1,7 @@
 import math
 import functions as f
 import numpy as np
+import sys
 
 def number_density(mask,traj,wd):
     print("calculating number densities")
@@ -23,12 +24,12 @@ def number_density(mask,traj,wd):
             line = line.split()
             if len(line) < 1:
                 continue
-            if not line[0] in parameters:
+            if line[0] not in parameters:
                 print("FATAL: parameter {} not found in inputfile".format(line[0]))
                 sys.exit()
 
             else:
-                if type(parameters[line[0]]) == list:
+                if isinstance(parameters[line[0]], list):
                     parameters[line[0]].append(line[1])
 
                 else:
@@ -57,7 +58,7 @@ def number_density(mask,traj,wd):
 
     V_tmp = {}
     for b in bins:
-        bins_tmp = bins
+        bins_tmp = bins # todo: not-used variable
         tmp = bins[b][2]
         for i in binlist[0:b]:
             tmp = tmp - bins[i][2]

@@ -1,11 +1,5 @@
 # Standard Python libraries
-import os
-import itertools
-from os import path
 import json
-
-# Q-GPU libraries
-import IO
 
 class Fep():
     def __init__(self):
@@ -73,7 +67,7 @@ class Read_Fep(object):
                         
         # construct states for keywords:
         for key in self.data:
-            if type(self.data[key]) == list:
+            if isinstance(self.data[key], list):
                 for i in range(0,self.data['states']):
                     self.data[key].append([])
         
@@ -339,7 +333,7 @@ class Write_Fep(object):
         self.wd = wd
         
         with open(self.wd + 'q_atoms.csv','w') as outfile:
-            if self.data['q_atoms'] == None:
+            if self.data['q_atoms'] is None:
                     outfile.write('0\n')
                     
             else:
@@ -358,7 +352,7 @@ class Write_Fep(object):
                         outfile.write('{}\n'.format(self.data['q_atypes'][i][j]))
                     
         with open(self.wd + 'q_catypes.csv','w') as outfile:
-            if self.data['q_catypes'] == None:
+            if self.data['q_catypes'] is None:
                     outfile.write('0\n')
                     
             else:
@@ -405,7 +399,7 @@ class Write_Fep(object):
                         outfile.write('{}\n'.format(self.data['q_exclpairs'][i][j]))
         
         with open(self.wd + 'q_elscales.csv','w') as outfile:
-            if self.data['q_elscales'] == None:
+            if self.data['q_elscales'] is None:
                     outfile.write('0\n')
                     
             else:
@@ -434,7 +428,7 @@ class Write_Fep(object):
                         outfile.write('{}\n'.format(self.data['q_bonds'][i][j]))
                     
         with open(self.wd + 'q_cbonds.csv','w') as outfile:
-            if self.data['q_cbonds'] == None:
+            if self.data['q_cbonds'] is None:
                     outfile.write('0\n')
                     
             else:
@@ -453,7 +447,7 @@ class Write_Fep(object):
                         outfile.write('{}\n'.format(self.data['q_angles'][i][j]))
                     
         with open(self.wd + 'q_cangles.csv','w') as outfile:
-            if self.data['q_cangles'] == None:
+            if self.data['q_cangles'] is None:
                     outfile.write('0\n')
                     
             else:
@@ -472,7 +466,7 @@ class Write_Fep(object):
                         outfile.write('{}\n'.format(self.data['q_torsions'][i][j]))
                     
         with open(self.wd + 'q_ctorsions.csv','w') as outfile:
-            if self.data['q_ctorsions'] == None:
+            if self.data['q_ctorsions'] is None:
                     outfile.write('0\n')
                     
             else:
@@ -491,7 +485,7 @@ class Write_Fep(object):
                         outfile.write('{}\n'.format(self.data['q_impropers'][i][j]))
                     
         with open(self.wd + 'q_cimpropers.csv','w') as outfile:
-            if self.data['q_cimpropers'] == None:
+            if self.data['q_cimpropers'] is None:
                     outfile.write('0\n')
                     
             else:
@@ -500,7 +494,7 @@ class Write_Fep(object):
                     outfile.write('{}\n'.format(line))
                                             
         with open(self.wd + 'q_angcouples.csv','w') as outfile:
-            if self.data['q_angcouples'] == None:
+            if self.data['q_angcouples'] is None:
                     outfile.write('0\n')
                     
             else:
@@ -509,7 +503,7 @@ class Write_Fep(object):
                     outfile.write('{}\n'.format(line))
                                             
         with open(self.wd + 'q_torcouples.csv','w') as outfile:
-            if self.data['q_torcouples'] == None:
+            if self.data['q_torcouples'] is None:
                     outfile.write('0\n')
                     
             else:
@@ -518,7 +512,7 @@ class Write_Fep(object):
                     outfile.write('{}\n'.format(line))
                                             
         with open(self.wd + 'q_imprcouples.csv','w') as outfile:
-            if self.data['q_imprcouples'] == None:
+            if self.data['q_imprcouples'] is None:
                     outfile.write('0\n')
                     
             else:
@@ -538,7 +532,7 @@ class Write_Fep(object):
                     
                     
         with open(self.wd + 'q_offdiags.csv','w') as outfile:
-            if self.data['q_offdiags'] == None:
+            if self.data['q_offdiags'] is None:
                     outfile.write('0\n')
                     
             else:

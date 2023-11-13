@@ -1,11 +1,5 @@
-# Standard Python libraries
-import os
-import itertools
-from os import path
+"""Module to read and write restart files"""
 import json
-
-# Q-GPU libraries
-import IO
 
 class Restart(object):
     """ Trajectory object class, one nparray per timeframe"""

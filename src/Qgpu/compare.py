@@ -1,4 +1,3 @@
-import json
 import numpy as np
 
 # Q6 QGPU variable matching

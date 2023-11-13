@@ -1,11 +1,5 @@
 # Standard Python libraries
-import os
-import itertools
-from os import path
 import json
-
-# Q-GPU libraries
-import IO
 
 class Energy(object):
     """ Trajectory object class, one nparray per timeframe"""

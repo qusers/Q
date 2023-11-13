@@ -1,29 +1,17 @@
+"""R-group analysis and visualization"""
 from rdkit import Chem
-from rdkit.Chem import Draw
 from rdkit.Chem.Draw import IPythonConsole
-IPythonConsole.molSize=(450,350)
-from rdkit.Chem import rdRGroupDecomposition
 from rdkit.Chem import rdqueries
 from rdkit.Chem import rdDepictor
 from rdkit.Chem.Draw import rdMolDraw2D
 from rdkit import Geometry
-from rdkit.Chem import PandasTools
-rdDepictor.SetPreferCoordGen(True)
-import pandas as pd
 from collections import defaultdict
-from rdkit.Chem import rdFMCS
 
 from PIL import Image as pilImage
 from io import BytesIO
 
-from IPython.display import SVG,Image
-from ipywidgets import interact
-
-import rdkit
-
-import networkx as nx
-import matplotlib.pyplot as plt
-from pyvis.network import Network
+IPythonConsole.molSize=(450,350)
+rdDepictor.SetPreferCoordGen(True)
 
 def draw_multiple(ms,groups,qcore,lbls,legends=None,nPerRow=4,subImageSize=(250,200)):
     nRows = len(ms)//nPerRow

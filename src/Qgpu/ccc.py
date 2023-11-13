@@ -1,7 +1,6 @@
+"""Contain the cycle closure correction algorithm."""
 import networkx as nx
-from networkx.drawing.nx_agraph import graphviz_layout
 import numpy as np
-import matplotlib.pyplot as plt
 
 
 class CCC:

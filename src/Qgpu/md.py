@@ -1,15 +1,6 @@
 # Standard Python libraries
-import os
-import sys
-import itertools
-from os import path
 import json
-
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../env/')))
-
-# Q-GPU libraries
-import IO
-import defaults as DEFAULTS
+from QligFEP.settings import defaults as DEFAULTS
 
 class MD():
     def __init__(self):
@@ -40,7 +31,6 @@ class MD():
                       'non_bond'            :   None,
                       'energy'              :   None,
                       'topology'            :   None,
-                      'trajectory'          :   None,
                       'restart'             :   None,
                       'final'               :   None,
                       'fep'                 :   None,
@@ -221,7 +211,7 @@ class Write_MD(object):
         
         # Get length of lists (lambdas, restraints)
         for l in lists:
-            if self.data[l] != None:
+            if self.data[l] is not None:
                 j += len(self.data[l])
             
         
@@ -258,7 +248,7 @@ class Write_MD(object):
 
             # possible to have multiple lambdas, need to loop
             ### LAMBDAS ###
-            if self.data['lambdas'] != None:
+            if self.data['lambdas'] is not None:
                 outfile.write('{};lambdas\n'.format(len(self.data['lambdas'])))
                 for l in self.data['lambdas']:
                     outfile.write('{}\n'.format(l))
@@ -267,7 +257,7 @@ class Write_MD(object):
                 outfile.write('0;lambdas\n')
 
             ### SEQREST ###
-            if self.data['seqrest'] != None:
+            if self.data['seqrest'] is not None:
                 outfile.write('{};{}\n'.format(len(self.data['seqrest']),'seqrest'))
                 for r in self.data['seqrest']:
                     outfile.write('{};{};{};{};{}\n'.format(*r))
@@ -276,7 +266,7 @@ class Write_MD(object):
                 outfile.write('0;{}\n'.format('seqrest'))    
                 
             ### POSREST ###
-            if self.data['posrest'] != None:
+            if self.data['posrest'] is not None:
                 outfile.write('{};{}\n'.format(len(self.data['posrest']),'posrest'))
                 for r in self.data['posrest']:
                     outfile.write('{};{};{};{};{};{}\n'.format(*r))
@@ -285,7 +275,7 @@ class Write_MD(object):
                 outfile.write('0;{}\n'.format('posrest'))    
                 
             ### DISTREST ###
-            if self.data['distrest'] != None:
+            if self.data['distrest'] is not None:
                 outfile.write('{};{}\n'.format(len(self.data['distrest']),'distrest'))
                 for r in self.data['distrest']:
                     outfile.write('{};{};{};{};{};{}\n'.format(*r))
@@ -294,7 +284,7 @@ class Write_MD(object):
                 outfile.write('0;{}\n'.format('distrest'))    
                 
             ### ANGLEREST ###
-            if self.data['anglerest'] != None:
+            if self.data['anglerest'] is not None:
                 outfile.write('{};{}\n'.format(len(self.data['anglerest']),'anglerest'))
                 for r in self.data['anglerest']:
                     outfile.write('{};{};{};{};{};{}\n'.format(*r))
@@ -303,7 +293,7 @@ class Write_MD(object):
                 outfile.write('0;{}\n'.format('anglerest'))    
                 
             ### WALLREST ###
-            if self.data['wallrest'] != None:
+            if self.data['wallrest'] is not None:
                 outfile.write('{};{}\n'.format(len(self.data['wallrest']),'wallrest'))
                 for r in self.data['wallrest']:
                     outfile.write('{};{};{};{};{};{}\n'.format(*r))

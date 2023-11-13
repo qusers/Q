@@ -1,7 +1,5 @@
+"""Trajectory object class, one nparray per timeframe"""
 # Standard Python libraries
-import os
-import itertools
-from os import path
 import json
 
 # Q-GPU libraries
@@ -54,7 +52,7 @@ class Write_Trajectory(object):
         self.mask = mask
         self.traj = traj
         
-        if otrj != None:
+        if otrj is not None:
             self.otrj = self.wd + '/traj' + otrj
         
     def JSON(self):

@@ -2,8 +2,6 @@ import re
 import shlex
 from subprocess import check_output
 import os
-import stat
-import numpy as np
 import sys
 import shutil
 import time
@@ -62,7 +60,7 @@ def pdb_parse_in(line, include=('ATOM','HETATM')):
         try:
             at_entry.append(float(line[54:60])) # 11 Occupancy
             
-        except:
+        except: # TODO: add the correct exception
             at_entry.append(0.0)                # 11 Empty Occupancy
             
         try:

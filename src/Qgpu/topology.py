@@ -1,7 +1,6 @@
+"""Module for reading and writing Q topology files"""
 # Standard Python libraries
-import os
 import itertools
-from os import path
 import json
 import sys
 
