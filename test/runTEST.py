@@ -1,21 +1,14 @@
 import os
-import shlex
-import subprocess
 import argparse
 import sys
 import shutil
 import json
 import numpy as np
 from matplotlib import pyplot as plt
-
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../share/')))
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../env/')))
-
-import settings
-import IO
-import topology as TOPOLOGY
-import compare
-import energy as ENERGY
+import Qgpu.topology as TOPOLOGY
+import Qgpu.energy as ENERGY
+from QligFEP.settings import settings
+from Qgpu import IO, compare
 
 class Create_Environment(object):
     """
@@ -34,7 +27,7 @@ class create_MD_input(object):
     def __init__(self,data):
         print('Generating MD input file')
         test = data['test']
-        if data['shake'] == True:
+        if data['shake']:
             shake = 'on'
 
         else:
@@ -197,7 +190,7 @@ class Run_QGPU(object):
             args.append('-f')
             args.append('{}{}'.format(data['inputdir'],data['testinfo'][data['test']][2]))
 
-        if data['verbose'] == True:
+        if data['verbose']:
             args.append('--verbose')
 
         if data['arch'] == 'gpu':
@@ -206,7 +199,7 @@ class Run_QGPU(object):
         args_string = ' '.join(args)
 
         out = IO.run_command(data['executable'],args_string)
-        if data['verbose'] == True:
+        if data['verbose']:
             print(out.decode("utf-8"))
 class bcolors:
     OKGREEN = '\033[92m'
@@ -251,14 +244,14 @@ class Compare(object):
             total_energies_QGPU.append(energies_QGPU)
 
             ## PRINT PASS ##    
-            if passed == False:
+            if passed is False:
                 print('Compared energies for frame {}'.format(key))
                 print('Passed test? ' + f"{bcolors.FAIL} FALSE {bcolors.ENDC}")
         
-        if passed == True:
+        if passed:
             print('Passed test? ' + f"{bcolors.OKGREEN} TRUE {bcolors.ENDC}")
 
-        if data["avg"] == True:
+        if data["avg"]:
             Q6_mean = np.mean(total_energies_Q6,axis=0)
             Q6_stdev = np.std(total_energies_Q6,axis=0)
             QGPU_mean = np.mean(total_energies_QGPU,axis=0)
@@ -271,7 +264,7 @@ class Compare(object):
                                                               QGPU_mean[i],
                                                               QGPU_stdev[i]))
 
-        if data["plot"] == True:
+        if data["plot"]:
             x = np.arange(0,len(total_energies_Q6))
             y1 = np.asarray(total_energies_Q6)[:, 26]
             y2 = np.asarray(total_energies_QGPU)[:, 26]
@@ -307,7 +300,7 @@ class Init(object):
         # Step = step + 1
         self.data['timestep'] = '{}'.format(int(self.data['timestep'])+1)
 
-        if self.data['wd'] == None:
+        if self.data['wd'] is not None:
             self.data['wd'] = self.data['curdir'] + '/'
         if self.data['wd'][-1] != '/':
             self.data['wd'] = self.data['wd'] + '/'
@@ -376,7 +369,7 @@ class Init(object):
                 }
 
         tests = data['testinfo'].keys()
-        if self.data['run'] != None:
+        if self.data['run'] is not None:
             tests = [x for x in tests if any(r for r in self.data['run'] if x == r)]
         for test in tests:
             print("\nRunning {}".format(test))
@@ -398,7 +391,7 @@ class Init(object):
             # Cleanup
             if self.data['tokeep'] == 'None':
                 Cleanup(self.data)
-            if self.data['tokeep'] == 'Failed' and failed == True:
+            if self.data['tokeep'] == 'Failed' and failed:
                 Cleanup(self.data)
 
 if __name__ == "__main__":
