@@ -1,3 +1,34 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=61.0", "wheel", "numpy"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "QligFEP"
+dynamic = ["version"]
+description = "Python CLI designed to facilitate a robust and fast setup of free energy perturbation (FEP)."
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+# keywords = [""]
+authors = [{ name = "Willem Jespers", email = "w.jespers@lacdr.leidenuniv.nl" }]
+# maintainers = [{ name = "", email = "" }] # TODO
+classifiers = [
+    "License :: OSI Approved :: GNU General Public License v2 (GPLv2)",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10" # todo: might have other versions
+]
+dependencies = [
+    "numpy" # todo: add the other dependencies
+]
+
+[tool.setuptools.dynamic]
+version = {attr = "QligFEP.__version__"}
+
+[project.urls]
+repository = "https://github.com/qusers/qligfep"
+# homepage = "https://github.com/to-do/replace-me"
+
+[project.scripts]
+qligfep = "QligFEP.CLI.qligfep_cli:main"

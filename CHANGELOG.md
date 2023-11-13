@@ -34,3 +34,12 @@ Q/
 - Changed all `sys.path.insert` statements to the correct respective import statement:
   - `env/` was abolished and the setting are now under `QligFEP/settings/`;
   - `share/` was renamed to `Qgpu`, to make things more clear.
+- Changed a statements like `== True` to `is True`. Also fixed statements such as `!= None` and `type(<object>)` == list to `isinstance()`.
+- Currently working on moving the command line interface (CLI) to `QligFEP/CLI`.
+
+ongoing: [removing all `sys.path.insert`] statements
+
+- For later reference, it seems like the cystein bonds need to be [hardcoded](https://github.com/GPCR-ModSim/qligfep-benchmark/blob/main/inputfilegen/OPLS2015/Thrombin/setup.py) at the moment?? Should we have a script that does it for us?
+- Also related to that, should we 
+- Question: do we really need `setupFEP.py`? Maybe just remove it?
+- TODO: figure out how to add the different cluster configurations on settings.py.
