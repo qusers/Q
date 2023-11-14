@@ -21,15 +21,26 @@ To compile the qdyn engine source code, you need a CUDA compiler. The code has b
 
 - CUDA/10.1.243
 
-To succesfully install and compile the code:
+To succesfully install and compile the code (Fortran):
 
 ```bash
 unset SSH_ASKPASS
 mkdir ~/software
 cd ~/software
-git clone https://yourgitusernamehere@github.com/qusers/qgpu.git 
-cd qgpu/src/core
+git clone https://yourgitusernamehere@github.com/qusers/qgpu.git
+cd Q
+git checkout refactor/qligfep-david
+cd src/q6
 make
+```
+
+After this, also install the python package. You should be able to do it through:
+```bash
+cd Q
+conda env create -f environment.yml
+conda activate qligfep_new
+# make sure you have the correct environment installed
+python -m pip install -e .
 ```
 
 After succesful compilation of **Q-GPU** you have to add the program to your system path by modifying your shell initiation script. 
