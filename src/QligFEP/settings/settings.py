@@ -6,7 +6,7 @@ ROOT_DIR = SRC / "QligFEP"
 FF_DIR = ROOT_DIR / "FF"
 INPUT_DIR = ROOT_DIR / "INPUTS"
 # Dicionary of locations of Q executables
-QDIR = SRC / "q6"
+Q_DIR = SRC / "q6"
 # Q_DIR = {'CSB':'/home/willem/software/Q/bin/q6/',
 #          'LOCAL':'/home/willem/software/Q/bin/q6/',
 #          'SNELLIUS':'/home/wjespers/software/Q/bin/q6/'
@@ -25,10 +25,10 @@ CSB = {'NODES'        : '1',
        'NTASKS'       : '16',
        'TIME'         : '0-12:00:00',  # d-hh:mm:ss
        'MODULES'      : 'module load gcc/6.2.0\n module load openmpi/2.1.0',
-       'QDYN'         : 'qdyn=' + Q_DIR['CSB'] + 'qdynp',
-       'QPREP'        : Q_DIR['CSB'] + 'qprep',
-       'QFEP'         : Q_DIR['CSB'] + 'qfep',
-       'QCALC'        : Q_DIR['CSB'] + 'qcalc'
+       'QDYN'         : 'qdyn=' + Q_DIR + 'qdynp',
+       'QPREP'        : Q_DIR + 'qprep',
+       'QFEP'         : Q_DIR + 'qfep',
+       'QCALC'        : Q_DIR + 'qcalc'
       }
 
 # CLUSTER INPUTS. To add your own cluster, use the same input as below
@@ -36,10 +36,10 @@ SNELLIUS = {'NODES'        : '1',
             'NTASKS'       : '16',
             'TIME'         : '0-12:00:00',  # d-hh:mm:ss
             'MODULES'      : 'module load 2021\n module load gompi/2021a',
-            'QDYN'         : 'qdyn=' + Q_DIR['SNELLIUS'] + 'qdynp',
-            'QPREP'        : Q_DIR['LOCAL'] + 'qprep',
-            'QFEP'         : Q_DIR['SNELLIUS'] + 'qfep',
-            'QCALC'        : Q_DIR['SNELLIUS'] + 'qcalc'
+            'QDYN'         : 'qdyn=' + Q_DIR + 'qdynp',
+            'QPREP'        : Q_DIR + 'qprep',
+            'QFEP'         : Q_DIR + 'qfep',
+            'QCALC'        : Q_DIR + 'qcalc'
       }
 
 ALICE = {'MAINDIR'      : '/home/jespersw/software/q6/',

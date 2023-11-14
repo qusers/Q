@@ -1,4 +1,3 @@
-import argparse
 from collections import namedtuple
 from functools import cached_property, lru_cache
 import io
@@ -7,28 +6,19 @@ import operator
 from pathlib import Path
 import networkx as nx
 from rdkit import Chem, DataStructs, Geometry
-from rdkit.Chem import (AllChem, rdDepictor, rdFMCS, rdqueries,
-                        rdRGroupDecomposition)
+from rdkit.Chem import AllChem, rdDepictor, rdFMCS, rdqueries
 from rdkit.Chem.Draw import rdMolDraw2D
 from rdkit.Chem.Fingerprints import FingerprintMols
-rdDepictor.SetPreferCoordGen(True)
 from networkx.readwrite import json_graph
 import json
 import uuid
 import shutil
 import sys
-import os
-import matplotlib.pyplot as plt
 import math
+from QligFEP.settings import settings as s
+from Qgpu import ccc, plot, metrics
 
-# import Q modules
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../env/')))
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../share/')))
-
-import settings as s
-import ccc
-import plot
-import metrics
+rdDepictor.SetPreferCoordGen(True)
 
 @lru_cache(maxsize=4)
 def get_palette(name="OKABE"):
@@ -521,7 +511,7 @@ class MapGen:
                         (l1 not in per_nodes and l2 in per_nodes):
                     if (l1, l2) not in ligands["Graph"].edges or \
                             (l2, l1) not in ligands["Graph"].edges and \
-                            intersection(ligands["Graph"].edges, l1, l2):
+                            self.intersection(ligands["Graph"].edges, l1, l2):
                         ligands["Graph"].add_edge(l1, l2, weight=score)
                         nlen = len(under_cent(ligands["Graph"]))
                         if nlen > per_len:
