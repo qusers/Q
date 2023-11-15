@@ -35,3 +35,4 @@ repository = "https://github.com/qusers/qligfep"
 
 [project.scripts]
 qligfep = "QligFEP.CLI.qligfep_cli:main"
+qmapfep = "QligFEP.CLI.qmapfep_cli:main"

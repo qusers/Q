@@ -35,12 +35,14 @@ def parse_arguments():
     
     return parser.parse_args()
     
-
-if __name__ == "__main__":
-    args = parse_arguments()
+def main(args):
     parser = argparse.ArgumentParser(
         prog='QmapFEP',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description='FEP map generator based on selected distance metrics.')
-
     Startup(vars(args))
+    
+
+if __name__ == "__main__":
+    args = parse_arguments()
+    main(args)
