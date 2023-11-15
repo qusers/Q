@@ -8,7 +8,7 @@ import sys
 import glob
 
 from .IO import pdb_parse_in, pdb_parse_out, charged_res, replace, run_command
-import Qgpu.functions as f
+import QligFEP.functions as f
 import QligFEP.settings as s
 
 class Run(object):
