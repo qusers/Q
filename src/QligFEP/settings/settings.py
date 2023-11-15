@@ -1,18 +1,18 @@
 from QligFEP import SRC
 
-ROOT_DIR = SRC / "QligFEP"
+ROOT_DIR = str(SRC / "QligFEP")
 
 # The directories to the input FF and run related input files are given here
-FF_DIR = ROOT_DIR / "FF"
-INPUT_DIR = ROOT_DIR / "INPUTS"
+FF_DIR = ROOT_DIR + "FF"
+INPUT_DIR = ROOT_DIR + "INPUTS"
 # Dicionary of locations of Q executables
-Q_DIR = SRC / "q6"
+Q_DIR = str(SRC / "q6")
 # Q_DIR = {'CSB':'/home/willem/software/Q/bin/q6/',
 #          'LOCAL':'/home/willem/software/Q/bin/q6/',
 #          'SNELLIUS':'/home/wjespers/software/Q/bin/q6/'
 #          #'LOCAL':'/Users/willemjespers/Software/Q6/bin/'
 #         }
-BIN = ROOT_DIR / "bin"
+BIN = ROOT_DIR + "bin"
 
 # some example schrodinger directory
 SCHROD_DIR = '/mnt/c/Program\ Files/Schrodinger2022-2/'
@@ -48,7 +48,7 @@ ALICE = {'MAINDIR'      : '/home/jespersw/software/q6/',
          'TIME'         : '0-3:00:00',  # d-hh:mm:ss
          'MODULES'      : 'module load OpenMPI/3.1.3-GCC-8.2.0-2.31.1',
          'QDYN'         : 'qdyn=/home/jespersw/software/q6/bin/qdynp',
-         'QPREP'        : Q_DIR['CSB'] + 'qprep',
+         'QPREP'        : Q_DIR + 'qprep',
          'QFEP'         : '/home/jespersw/software/q6/bin/qfep',
          'QCALC'        : '/home/jespersw/software/q6/bin/qcalc'
         }

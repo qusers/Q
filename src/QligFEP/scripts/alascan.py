@@ -6,11 +6,9 @@ import sys
 import os
 import argparse
 
-# Add this path so we can find the QligFEP modules
-sys.path.append('/home/jespers/software/qligfep-p3/qligfep/')
-import IO
-import settings as s
-import functions as f
+import QligFEP.functions as f
+import QligFEP.settings.settings as s
+from ..IO import pdb_parse_in
 
 class Run(object):
     """
@@ -68,7 +66,7 @@ class Run(object):
         with open('protein.pdb') as infile:
             for line in infile:
                 if line.startswith(self.include):
-                    line = IO.pdb_parse_in(line)
+                    line = pdb_parse_in(line)
                     if int(line[6]) in self.CYS:
                         continue
 
@@ -83,7 +81,7 @@ class Run(object):
             with open(lig + '.pdb') as infile:
                 for line in infile:
                     if line.startswith(self.include):
-                        line = IO.pdb_parse_in(line)
+                        line = pdb_parse_in(line)
                         coord1 = (line[8],line[9],line[10])
                         for at in self.prot_coord:
                             coord2 = self.prot_coord[at][0]

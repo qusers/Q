@@ -1,4 +1,3 @@
-import settings as s
 from subprocess import check_output
 import shlex
 import math
@@ -7,7 +6,9 @@ import sys
 import os
 import argparse
 
-import IO
+
+from .IO import pdb_parse_in, pdb_parse_out, replace
+import QligFEP.settings as s
 
 class Run(object):
     """
@@ -285,7 +286,7 @@ class Run(object):
                 for line in infile:
                     if line.startswith(self.include) is False:
                         continue
-                    line = IO.pdb_parse_in(line)
+                    line = pdb_parse_in(line)
                     at_id = int(line[1]) - 1
                     self.at_replace[at_names[at_id]] = line[2]
         
@@ -305,7 +306,7 @@ class Run(object):
             for line in infile:
                 ignore_line = False
                 if self.AA is True:
-                    line = IO.replace(line, self.at_replace)
+                    line = replace(line, self.at_replace)
 
                 if len(line) > 2:
                     line = line.split()
@@ -599,7 +600,7 @@ class Run(object):
             lig_size = len(self.Q_FF[0]) - len(self.halogens)
         with open(pdb_in) as infile, open(pdb_out, 'w') as outfile:
             for line in infile:
-                line = IO.pdb_parse_in(line)
+                line = pdb_parse_in(line)
                 if self.AA is True and line[2] in self.h_ignore:
                     continue
                 
@@ -608,7 +609,7 @@ class Run(object):
                     index += 1
                     line[2] = atomnames[index][0]
                     line[6] = 1
-                    outline = IO.pdb_parse_out(line)
+                    outline = pdb_parse_out(line)
                     outfile.write(outline + '\n')
                     
                     # Define virtual site coordinates
@@ -625,7 +626,7 @@ class Run(object):
                     at_entry[9] = at_entry[9] + 0.001
                     at_entry[10] = at_entry[10] + 0.001
                     at_entry[13] = ' H'
-                    outline = IO.pdb_parse_out(at_entry)
+                    outline = pdb_parse_out(at_entry)
                     outfile.write(outline + '\n')
                     
         os.rename(pdb_out, pdb_in)

@@ -4,9 +4,9 @@ import os
 import shutil
 import stat
 
-import functions as f
-import settings as s
-import IO
+import QligFEP.functions as f
+import QligFEP.settings.settings as s
+from .IO import pdb_parse_in, pdb_parse_out, replace, run_command
 
 class QligFEP(object):
     """
@@ -345,10 +345,10 @@ class QligFEP(object):
         with open(self.lig2 + '.pdb') as infile:
             for line in infile:
                 if line.split()[0].strip() in self.include:
-                    atom1 = IO.pdb_parse_in(line)
+                    atom1 = pdb_parse_in(line)
                     atom1[4] = 'LID'
                     #line2 = pattern.sub(lambda x: replacements[x.group()], line)
-                    line = IO.pdb_parse_out(atom1) + '\n'
+                    line = pdb_parse_out(atom1) + '\n'
                     file_replaced.append(line)
                                             
         with open(self.lig1 + '.pdb') as infile,                                            \
@@ -364,13 +364,13 @@ class QligFEP(object):
                     resnr = int(line[22:26])
                     # The atoms are not allowed to overlap in Q
                     atnr += 1
-                    atom1 = IO.pdb_parse_in(line)
+                    atom1 = pdb_parse_in(line)
                     atom1[1] = atom1[1] + self.atomoffset
                     atom1[6] = atom1[6] + self.residueoffset
                     atom1[8] = float(atom1[8]) + 0.001
                     atom1[9] = float(atom1[9]) + 0.001
                     atom1[10] = float(atom1[10]) + 0.001
-                    line = IO.pdb_parse_out(atom1) + '\n'
+                    line = pdb_parse_out(atom1) + '\n'
               
                     outfile.write(line)
                     
@@ -436,7 +436,7 @@ class QligFEP(object):
             with open(pdbfile) as infile:
                 for line in infile:
                     if line[13].strip() == 'O': 
-                        line = IO.pdb_parse_in(line)
+                        line = pdb_parse_in(line)
                         self.ABS_waters.append(int(line[1])+self.atomoffset)
                             
         return overlap_list
@@ -719,7 +719,7 @@ class QligFEP(object):
                         
                     except:
                         line = ''
-                outline = IO.replace(line, replacements)
+                outline = replace(line, replacements)
                 outfile.write(outline)
                 
                 if line.strip() == '#EQ_FILES':
@@ -838,5 +838,5 @@ class QligFEP(object):
         # Somehow Q is very annoying with this < > input style so had to implement
         # another function that just calls os.system instead of using the preferred
         # subprocess module....
-        IO.run_command(qprep, options, string = True)
+        run_command(qprep, options, string = True)
         os.chdir('../../')

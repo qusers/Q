@@ -1,12 +1,9 @@
 import glob
-import sys
 import os
 import numpy as np
 
-sys.path.append('/home/w/wije/pfs/software/qligfep/')
-
-import IO
-import settings as s
+from ..IO import replace
+import QligFEP.settings.settings as s
 
 qcalc =  s.KEBNE['QCALC']
 q_res = ['258', '259']
@@ -21,7 +18,7 @@ def write_qcalc(dcd):
     with open(s.INPUT_DIR+ '/qcalc.inp') as infile,          \
          open(out, 'w') as outfile:
         for line in infile:
-            line = IO.replace(line, replacements)
+            line = replace(line, replacements)
             if line.rstrip() == 'TRAJECTORIES':
                 for trajectory in dcd:
                     trajectory = trajectory + '\n'
@@ -93,4 +90,4 @@ data_2 = get_results(1)
 el_diff = data_1[2] - data_2[2]
 for i in range(0, len(el_diff)):
     if el_diff[i] > 1.0:
-        print i, el_diff[i]
+        print(i, el_diff[i])

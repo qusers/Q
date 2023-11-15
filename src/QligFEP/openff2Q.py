@@ -9,7 +9,7 @@ from rdkit import Chem
 from rdkit.Chem import Draw
 
 # QligFEP modules
-import IO
+from .IO import pdb_parse_out
 
 # openFF modules
 from openff.toolkit import Molecule, ForceField, Topology
@@ -336,7 +336,7 @@ class Run(object):
                             a_el,       # 13 Element symbol
                             ''          # 14 Charge on atom
                            ]
-                outfile.write(IO.pdb_parse_out(at_entry) + '\n')
+                outfile.write(pdb_parse_out(at_entry) + '\n')
 
     def report_missing_parameters(self):
         """

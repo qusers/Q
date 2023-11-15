@@ -7,7 +7,7 @@ import numpy as np
 import sys
 import glob
 
-from Qgpu import IO
+from .IO import pdb_parse_in, pdb_parse_out, charged_res, replace, run_command
 import Qgpu.functions as f
 import QligFEP.settings as s
 
@@ -55,7 +55,7 @@ class Run(object):
         with open(self.prot) as infile:
             for line in infile:
                 if line.startswith(self.include):
-                    line = IO.pdb_parse_in(line)
+                    line = pdb_parse_in(line)
                     if center[0] == 'RESN':
                         if line[5] == center[2]:
                             if line[6] == int(center[1]) \
@@ -93,7 +93,7 @@ class Run(object):
                     if line.startswith(self.include) is False:
                         continue
                     
-                    line = IO.pdb_parse_in(line)
+                    line = pdb_parse_in(line)
 
                     if line[4] == 'POP':
                         element = line[2][0]
@@ -120,34 +120,34 @@ class Run(object):
                             write = f.euclidian_overlap(coord1, coord2, self.radius + 5)
                             
                         if self.water:
-                            line_out = IO.pdb_parse_out(line)
+                            line_out = pdb_parse_out(line)
 
                         else:
                             continue
 
                     elif line[4] == 'ILE' and line[2] == 'CD':
                         line[2] = 'CD1'
-                        line_out = IO.pdb_parse_out(line)
+                        line_out = pdb_parse_out(line)
 
                     elif line[4] == 'CL-':
                         continue
 
-                    line_out = IO.pdb_parse_out(line)
+                    line_out = pdb_parse_out(line)
                     
                     # Get the charges from the hydrogen connections
                     # NOTE: this might be more common and thus less lines of code might be
                     # needed, check when implementing MolProbity!!
-                    if line[4] in IO.charged_res:
-                        if line[2] in IO.charged_res[line[4]]:
+                    if line[4] in charged_res:
+                        if line[2] in charged_res[line[4]]:
                             if line[5] not in self.original_charges:
                                 self.original_charges[line[5]] = {}
                             
-                            if line[2] not in IO.charged_res[line[4]]:
+                            if line[2] not in charged_res[line[4]]:
                                 self.original_charges[line[5]][line[6]] = 'HIP'
                                 
                             else:
                                 self.original_charges[line[5]][line[6]] = \
-                                IO.charged_res[line[4]][line[2]]
+                                charged_res[line[4]][line[2]]
                 
                     if write:
                         outfile.write(line_out + '\n')
@@ -157,22 +157,22 @@ class Run(object):
                  open(self.prot[:-4] + '_noH.pdb', 'w') as outfile:
                 for line in infile:
                     if line.startswith(self.include):
-                        line = IO.pdb_parse_in(line)
+                        line = pdb_parse_in(line)
                         if line[2][0] != 'H':
-                            outline = IO.pdb_parse_out(line)
+                            outline = pdb_parse_out(line)
                             outfile.write(outline  + '\n')
                         
                         # Get the charges from the hydrogen connections
-                        if line[4] in IO.charged_res:
-                            if line[2] in IO.charged_res[line[4]]:
+                        if line[4] in charged_res:
+                            if line[2] in charged_res[line[4]]:
                                 if line[5] not in self.original_charges:
                                     self.original_charges[line[5]] = {}
 
-                                if line[2] not in IO.charged_res[line[4]]:
+                                if line[2] not in charged_res[line[4]]:
                                     self.original_charges[line[5]][line[6]] = 'HIP'
 
                                 else:
-                                    self.original_charges[line[5]][line[6]] = IO.charged_res[line[4]][line[2]]
+                                    self.original_charges[line[5]][line[6]] = charged_res[line[4]][line[2]]
 
 
     
@@ -188,12 +188,12 @@ class Run(object):
         with open(pdbfile) as infile:
             for line in infile:
                 if line.startswith(self.include):
-                    header = IO.pdb_parse_in(line)
+                    header = pdb_parse_in(line)
                     RES_ref = header[6] - 1
                     break
                     
             for line in infile:
-                line = IO.pdb_parse_in(line)
+                line = pdb_parse_in(line)
                 if line[5] not in self.chains:
                     self.chains.append(line[5])
                 # construct chain based container
@@ -204,7 +204,7 @@ class Run(object):
                 self.PDB['w'] = {}
             for line in infile:
                 if line.startswith(self.include):
-                    line = IO.pdb_parse_in(line)
+                    line = pdb_parse_in(line)
                     chain = line[5]
                     RES = line[6]
                     if chain in self.original_charges:
@@ -433,7 +433,7 @@ class Run(object):
             for chain in self.PDB:
                 atom_numbers = sorted(list(self.PDB[chain].keys()))
                 for atom in atom_numbers:
-                    outline = IO.pdb_parse_out(self.PDB[chain][atom]) + '\n'
+                    outline = pdb_parse_out(self.PDB[chain][atom]) + '\n'
                     outfile.write(outline)
                 if len(self.PDB) != 1:
                     outfile.write('GAP\n')
@@ -450,7 +450,7 @@ class Run(object):
         with open (s.INPUT_DIR + '/qprep_protprep.inp') as infile, \
             open ('qprep.inp', 'w') as outfile:
             for line in infile:
-                line = IO.replace(line, replacements)
+                line = replace(line, replacements)
                 outfile.write(line)
                 if line[0:8] == '!addbond':
                     for line in self.log['CYX']:
@@ -464,7 +464,7 @@ class Run(object):
         # Somehow Q is very annoying with this < > input style so had to implement
         # another function that just calls os.system instead of using the preferred
         # subprocess module....
-        out = IO.run_command(qprep, options, string = True)
+        out = run_command(qprep, options, string = True)
         print(out)
         
     ##### THIS PART COMES AFTER THE TEMP .pdb IS WRITTEN ######
@@ -477,7 +477,7 @@ class Run(object):
         with open('top_p.pdb') as infile:
             for line in infile:
                 if line.startswith(self.include):
-                    line = IO.pdb_parse_in(line)
+                    line = pdb_parse_in(line)
                     if line[4].strip() in waters and \
                        line[2].strip() == waters[line[4].strip()][0]:
                         coord1 = self.center
@@ -494,13 +494,13 @@ class Run(object):
                     
             for line in infile:
                 if line.startswith(self.include):
-                    line = IO.pdb_parse_in(line)
+                    line = pdb_parse_in(line)
                     if line[6] in waters_tokeep:
-                        outline = IO.pdb_parse_out(line) + '\n'
+                        outline = pdb_parse_out(line) + '\n'
                         watout.write(outline)
 
                     if line[4] not in waters:
-                        outline = IO.pdb_parse_out(line) + '\n'
+                        outline = pdb_parse_out(line) + '\n'
                         protout.write(outline)
                 if line[0:3] == 'TER' or line == 'GAP':
                     protout.write(line)

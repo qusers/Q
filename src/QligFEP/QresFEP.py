@@ -5,9 +5,9 @@ import shutil
 import sys
 import glob
 
-import functions as f
-import settings as s
-import IO
+from .IO import pdb_parse_in, pdb_parse_out, read_prm, replace, run_command, merge_two_dicts, write_submitfile, AA, get_lambdas
+import QligFEP.settings as s
+import QligFEP.functions as f
 
 class Run(object):
     """
@@ -95,14 +95,14 @@ class Run(object):
     
     def checkFEP(self):
         if len(self.mutation[0]) == 1:
-            AA_from = IO.AA(self.mutation[0])
+            AA_from = AA(self.mutation[0])
             
         else:
             AA_from = self.mutation[0]
         
         try:
             if len(self.mutation[2]) == 1:
-                AA_to = IO.AA(self.mutation[2])
+                AA_to = AA(self.mutation[2])
             
             else:
                 AA_to = self.mutation[2]
@@ -191,7 +191,7 @@ class Run(object):
                 self.MUTresn = '{}2{}'.format(self.mutation[0],'X')
         
         elif len(self.mutation[2]) == 3:
-            self.MUTresn = '{}2{}'.format(IO.AA(self.mutation[0]),IO.AA(self.mutation[2]))
+            self.MUTresn = '{}2{}'.format(AA(self.mutation[0]),AA(self.mutation[2]))
         #self.backbone = []
         self.backbone = ['C', 'O', 'CA', 'N', 'H', 'HA']
         # Read in the mutant residue
@@ -199,7 +199,7 @@ class Run(object):
             MUT = []
             with open(self.mutation[2] + '.pdb') as infile:
                 for line in infile:
-                    line = IO.pdb_parse_in(line)
+                    line = pdb_parse_in(line)
                     # The residue name should match the mutant residue number
                     # relative to Q numbering from protPREP.log
                     line[6] = int(self.PDB2Q[self.mutation[1]])
@@ -216,10 +216,11 @@ class Run(object):
         
         for pdb_file in pdb_files:
             with open(pdb_file) as infile:
+                resoffset = len(self.PDB)
                 for line in infile:
                     if line.startswith(self.include):
                         atnr += 1
-                        line = IO.pdb_parse_in(line)
+                        line = pdb_parse_in(line)
                         if pdb_file != 'protein.pdb':
                             line[6] = resoffset + 1
                             line[1] = self.systemsize
@@ -269,7 +270,6 @@ class Run(object):
                         
                         self.systemsize += 1
                 
-                resoffset = len(self.PDB)
     
     def create_dual_lib(self):
         FFlib = {}
@@ -327,7 +327,7 @@ class Run(object):
         ## Read the mutant residue
         # Construct atom name replacements
         if len(self.mutation[2]) == 1:
-            AA = IO.AA(self.mutation[2])
+            AA = AA(self.mutation[2])
             
         else:
             AA = self.mutation[2]
@@ -375,7 +375,7 @@ class Run(object):
                     continue
                 
                 # Merge the library on the reference
-                line = IO.replace(line, replacements)
+                line = replace(line, replacements)
                 self.merged_lib[header].append(line)
         
         # Write out the merged library file
@@ -422,7 +422,7 @@ class Run(object):
         # Write tmp qprep.inp and prm file
         if self.nonAA == True:
             prmfile.append(self.mutation[2] + '.prm')
-        prms = IO.read_prm(prmfile)
+        prms = read_prm(prmfile)
         prm_tmp = self.directory + '/inputfiles/tmp.prm'
         qprep_tmp = self.directory + '/inputfiles/tmp.inp'
         pdb_tmp = self.directory + '/inputfiles/tmp.pdb'
@@ -431,7 +431,7 @@ class Run(object):
         with open(pdb_tmp, 'w') as outfile:
             mutPDB = self.PDB[int(self.PDB2Q[self.mutation[1]])]
             for atom in mutPDB:            
-                outfile.write(IO.pdb_parse_out(atom) + '\n')
+                outfile.write(pdb_parse_out(atom) + '\n')
 
         
         with open(prm_tmp, 'w') as outfile:
@@ -458,7 +458,7 @@ class Run(object):
         # Somehow Q is very annoying with this < > input style so had to implement
         # another function that just calls os.system instead of using the preferred
         # subprocess module....
-        IO.run_command(qprep, options, string = True)
+        run_command(qprep, options, string = True)
         
         with open('tmp.out') as infile:
             for line in infile:
@@ -513,7 +513,7 @@ class Run(object):
         if self.nonAA == True:
             prmfiles.append(self.mutation[2] + '.prm')
             
-        prms = IO.read_prm(prmfiles)
+        prms = read_prm(prmfiles)
         prm_merged = self.directory + '/inputfiles/' + self.forcefield + '_merged.prm'
         self.prm_merged = self.forcefield + '_merged.prm'
 
@@ -535,7 +535,7 @@ class Run(object):
         with open(PDBout, 'w') as outfile:
             for key in self.PDB:
                 for line in self.PDB[key]:
-                    outline = IO.pdb_parse_out(line) + '\n'
+                    outline = pdb_parse_out(line) + '\n'
                     outfile.write(outline)
                     
     def select_waters(self):
@@ -550,13 +550,13 @@ class Run(object):
                 with open(line + '.pdb') as infile:
                     for line in infile:
                         if line.startswith(self.include):
-                            line = IO.pdb_parse_in(line)    
+                            line = pdb_parse_in(line)    
                             cofactor_coordinates.append([line[8], line[9], line[10]])
         
         with open (src) as infile, open (tgt, 'w') as outfile:
             outfile.write('{} SPHERE\n'.format(self.radius))
             for line in infile:
-                line = IO.pdb_parse_in(line)    
+                line = pdb_parse_in(line)    
                 coord_wat = [line[8], line[9], line[10]]
                 try:
                     waters[line[6]].append(line)
@@ -570,7 +570,7 @@ class Run(object):
             for key in waters:
                 if key not in waters_remove:
                     for water in waters[key]:
-                        outfile.write(IO.pdb_parse_out(water) + '\n')
+                        outfile.write(pdb_parse_out(water) + '\n')
             
     def write_qprep(self):
         replacements = {'PRM':self.prm_merged,
@@ -598,7 +598,7 @@ class Run(object):
             if self.dual == True:
                 outfile.write('rl ' + self.MUTresn + '.lib\n')    
             for line in infile:
-                line = IO.replace(line, replacements)
+                line = replace(line, replacements)
                 if line.split()[0] == '!Added':
                     for libraryfile in libraries:
                         outfile.write('rl ' + libraryfile + '\n')
@@ -619,11 +619,11 @@ class Run(object):
         # Somehow Q is very annoying with this < > input style so had to implement
         # another function that just calls os.system instead of using the preferred
         # subprocess module....
-        IO.run_command(qprep, options, string = True)
+        run_command(qprep, options, string = True)
         os.chdir('../../')
                     
     def get_lambdas(self):
-        self.lambdas = IO.get_lambdas(self.windows, self.sampling)
+        self.lambdas = get_lambdas(self.windows, self.sampling)
 
     def write_EQ(self):
         for line in self.PDB[int(self.PDB2Q[self.chain][self.mutation[1]])]:
@@ -639,7 +639,7 @@ class Run(object):
             tgt = self.directory + '/inputfiles/' + EQ_file[-1]
             with open(src) as infile, open(tgt, 'w') as outfile:
                 for line in infile:
-                    outline = IO.replace(line, self.replacements)
+                    outline = replace(line, self.replacements)
                     outfile.write(outline)
                     
     def write_MD(self):
@@ -670,7 +670,7 @@ class Run(object):
 
                 with open(src) as infile, open(tgt, 'w') as outfile:
                     for line in infile:
-                        outline = IO.replace(line, self.replacements)
+                        outline = replace(line, self.replacements)
                         outfile.write(outline)
 
                 ## Store previous file
@@ -689,7 +689,7 @@ class Run(object):
             tgt = self.directory + '/inputfiles/md_0500_0500.inp'
             with open(src) as infile, open(tgt, 'w') as outfile:
                 for line in infile:
-                    outline = IO.replace(line, self.replacements)
+                    outline = replace(line, self.replacements)
                     outfile.write(outline)
             
             # Write out part 1 of the out files
@@ -706,7 +706,7 @@ class Run(object):
                 
                 with open(src) as infile, open(tgt, 'w') as outfile:
                     for line in infile:
-                        outline = IO.replace(line, self.replacements)
+                        outline = replace(line, self.replacements)
                         outfile.write(outline)
                         
                 ## Store previous file
@@ -729,7 +729,7 @@ class Run(object):
                 
                 with open(src) as infile, open(tgt, 'w') as outfile:
                     for line in infile:
-                        outline = IO.replace(line, self.replacements)
+                        outline = replace(line, self.replacements)
                         outfile.write(outline)
                         
                 ## Store previous file
@@ -754,7 +754,7 @@ class Run(object):
             md_1 = MD_files[0:half]
             md_2 = MD_files[half:]
 
-        replacements = IO.merge_two_dicts(self.replacements, getattr(s, self.cluster))
+        replacements = merge_two_dicts(self.replacements, getattr(s, self.cluster))
         replacements['FEPS'] = ' '.join(self.FEPlist)
             
         with open(src) as infile, open(tgt, 'w') as outfile:
@@ -765,7 +765,7 @@ class Run(object):
                         
                     except:
                         line = ''
-                outline = IO.replace(line, replacements)
+                outline = replace(line, replacements)
                 outfile.write(outline)
                 
                 if line.strip() == '#EQ_FILES':
@@ -809,7 +809,7 @@ class Run(object):
                             outfile.write('\n')
                         
     def write_submitfile(self):
-        IO.write_submitfile(self.directory, self.replacements)
+        write_submitfile(self.directory, self.replacements)
     
     def write_FEPfile(self):
         if self.dual == True:
@@ -896,7 +896,7 @@ class Run(object):
         prmfiles = [s.FF_DIR + '/' + self.forcefield + '.prm']
         if self.nonAA == True:
             prmfiles.append(self.mutation[2] + '.prm')
-        vdw_prms = IO.read_prm(prmfiles)['[atom_types]']
+        vdw_prms = read_prm(prmfiles)['[atom_types]']
         
         ## Next, we start to construct the FEP file
         with open(self.directory + '/inputfiles/FEP1.fep', 'w') as outfile:
@@ -1026,7 +1026,7 @@ class Run(object):
         
         with open(qfep_in) as infile, open(qfep_out, 'w') as outfile:
             for line in infile:
-                line = IO.replace(line, replacements)
+                line = replace(line, replacements)
                 outfile.write(line)
 
             if line == '!ENERGY_FILES\n':

@@ -5,12 +5,7 @@
 # Modifications by F.W van der Ent
 # 2019-09-18
 
-import sys
-installdir = '/home/willem/software/Q/qligfep-old/' 
-sys.path.append(installdir)
-
-import IO
-import functions
+from ..IO import pdb_parse_in, pdb_parse_out
 import argparse
 
 parser = argparse.ArgumentParser()
@@ -34,7 +29,7 @@ with open(pdbfile) as infile, open(pdbfile[:-4] + '_renumber.pdb', 'w') as outfi
         elif 'GAP' in line:
             outfile.write(line)
         elif line.startswith('ATOM'):
-            line2 = IO.pdb_parse_in(line)
+            line2 = pdb_parse_in(line)
             resn = line2[6]
             if resn != resn_ref:
                 resn_out += 1
@@ -42,4 +37,4 @@ with open(pdbfile) as infile, open(pdbfile[:-4] + '_renumber.pdb', 'w') as outfi
 
             line2[6] = resn_out
             
-            outfile.write(IO.pdb_parse_out(line2) + '\n')
+            outfile.write(pdb_parse_out(line2) + '\n')

@@ -3,9 +3,9 @@ import glob
 import numpy as np
 import os
 
-import functions as f
-import settings as s
-import IO
+from .IO import run_command, read_qfep
+import QligFEP.settings as s
+import QligFEP.functions as f
 
 try:
     import matplotlib
@@ -67,13 +67,13 @@ class Run(object):
             replicate = file_parse[3]
             
             try:
-                energies = IO.read_qfep(filename)
+                energies = read_qfep(filename)
             except:
                 print("Could not retrieve energies for: " + filename)
                 energies = [np.nan, np.nan, np.nan, np.nan, np.nan]
                 self.failed.append(replicate)
             #try:
-            #    energies = IO.read_qfep(filename)
+            #    energies = read_qfep(filename)
             #except:
             #    print "Could not retrieve energies for: " + filename
             #    energies = [np.nan, np.nan, np.nan, np.nan, np.nan]
@@ -89,7 +89,7 @@ class Run(object):
             if not replicate in self.energies:
                 self.energies[replicate] = {}
                 
-            self.energies[replicate][FEP] = IO.read_qfep_verbose(filename)
+            self.energies[replicate][FEP] = read_qfep_verbose(filename)
         for method in methods:
             dG_array = []
             for key in methods[method]:
@@ -199,7 +199,7 @@ class Run(object):
         # Somehow Q is very annoying with this < > input style so had to implement
         # another function that just calls os.system instead of using the preferred
         # subprocess module....
-        IO.run_command(qprep, options, string = True)
+        run_command(qprep, options, string = True)
             
         os.chdir(curdir)
         

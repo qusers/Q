@@ -5,8 +5,8 @@ import os
 import stat
 import numpy as np
 
-import functions as f
-from .settings import settings as s
+import QligFEP.functions as f
+import QligFEP.settings.settings as s
 
 ## Some useful objects TO DO add GLH etc.
 charged_res = {'HIS': {'HD1' : 'HID',

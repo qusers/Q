@@ -1,4 +1,4 @@
-import IO
+from .IO import pdb_parse_in
 import numpy as np
 
 def sigmoid(t, k):
@@ -60,7 +60,7 @@ def overlapping_pairs(pdbfile, reslist, include=('ATOM', 'HETATM')):
     with open(pdbfile) as infile:
         for line in infile:
             if line.startswith(include):
-                line_parse = IO.pdb_parse_in(line)
+                line_parse = pdb_parse_in(line)
                 if line_parse[4] in reslist:
                     coordinates.append([line_parse[1],
                                         line_parse[8],

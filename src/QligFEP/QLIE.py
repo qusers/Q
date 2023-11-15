@@ -3,9 +3,10 @@ import os
 import shutil
 import glob
 
-import functions as f
-import settings as s
-import IO
+from .IO import pdb_parse_in, pdb_parse_out, read_prm, replace, run_command, merge_two_dicts, write_submitfile
+
+import QligFEP.settings as s
+import QligFEP.functions as f
 
 class Run(object):
     """
@@ -120,7 +121,7 @@ class Run(object):
                 for line in infile:
                     if line.startswith(self.include):
                         atnr += 1
-                        line = IO.pdb_parse_in(line)
+                        line = pdb_parse_in(line)
                         if pdb_file != 'protein.pdb' and self.system == 'protein':
                                 line[6] = resoffset + 1
                                 line[1] = self.systemsize
@@ -151,7 +152,7 @@ class Run(object):
             for filename in self.cofactor:
                 prmfiles.append(filename + '.prm')
             
-        prms = IO.read_prm(prmfiles)
+        prms = read_prm(prmfiles)
         prm_merged = self.directory + '/inputfiles/' + self.forcefield + '_merged.prm'
         self.prm_merged = self.forcefield + '_merged.prm'
         
@@ -167,7 +168,7 @@ class Run(object):
         with open(PDBout, 'w') as outfile:
             for key in self.PDB:
                 for line in self.PDB[key]:
-                    outline = IO.pdb_parse_out(line) + '\n'
+                    outline = pdb_parse_out(line) + '\n'
                     outfile.write(outline)                
     def select_waters(self):
         if self.system != 'protein':
@@ -183,13 +184,13 @@ class Run(object):
                 with open(line + '.pdb') as infile:
                     for line in infile:
                         if line.startswith(self.include):
-                            line = IO.pdb_parse_in(line)    
+                            line = pdb_parse_in(line)    
                             cofactor_coordinates.append([line[8], line[9], line[10]])
         
         with open (src) as infile, open (tgt, 'w') as outfile:
             outfile.write('{} SPHERE\n'.format(self.radius))
             for line in infile:
-                line = IO.pdb_parse_in(line)    
+                line = pdb_parse_in(line)    
                 coord_wat = [line[8], line[9], line[10]]
                 try:
                     waters[line[6]].append(line)
@@ -203,7 +204,7 @@ class Run(object):
             for key in waters:
                 if key not in waters_remove:
                     for water in waters[key]:
-                        outfile.write(IO.pdb_parse_out(water) + '\n')                    
+                        outfile.write(pdb_parse_out(water) + '\n')                    
                     
     def write_qprep(self):
         replacements = {'PRM':self.prm_merged,
@@ -229,7 +230,7 @@ class Run(object):
                 
         with open(src) as infile, open(self.qprep, 'w') as outfile:
             for line in infile:
-                line = IO.replace(line, replacements)
+                line = replace(line, replacements)
                 if line.split()[0] == '!Added':
                     for libraryfile in libraries:
                         outfile.write('rl ' + libraryfile + '\n')
@@ -250,7 +251,7 @@ class Run(object):
         # Somehow Q is very annoying with this < > input style so had to implement
         # another function that just calls os.system instead of using the preferred
         # subprocess module....
-        IO.run_command(qprep, options, string = True)
+        run_command(qprep, options, string = True)
         os.chdir('../../')                
     def write_EQ(self):
         # If water or vacuum system, apply restrain on ligand
@@ -273,7 +274,7 @@ class Run(object):
             tgt = self.directory + '/inputfiles/' + EQ_file[-1]
             with open(src) as infile, open(tgt, 'w') as outfile:
                 for line in infile:
-                    outline = IO.replace(line, self.replacements)
+                    outline = replace(line, self.replacements)
                     outfile.write(outline)
                     
     def write_MD(self):
@@ -285,7 +286,7 @@ class Run(object):
             
             with open(src) as infile, open(tgt, 'w') as outfile:
                 for line in infile:
-                    outline = IO.replace(line, self.replacements)
+                    outline = replace(line, self.replacements)
                     outfile.write(outline)                
         
             self.replacements['FILE_N'] = 'md_LIE_{:02d}'.format(i)
@@ -298,7 +299,7 @@ class Run(object):
 
         MD_files = sorted(glob.glob(self.directory + '/inputfiles/md*.inp'))
 
-        replacements = IO.merge_two_dicts(self.replacements, getattr(s, self.cluster))
+        replacements = merge_two_dicts(self.replacements, getattr(s, self.cluster))
         replacements['FEPS'] = 'FEP1.fep'
             
         with open(src) as infile, open(tgt, 'w') as outfile:
@@ -310,7 +311,7 @@ class Run(object):
                     except:
                         line = ''
                         
-                outline = IO.replace(line, replacements)
+                outline = replace(line, replacements)
                 if line[0:7] != 'timeout':
                     outfile.write(outline)
                 
@@ -335,10 +336,10 @@ class Run(object):
                         outfile.write(outline)     
 
     def write_submitfile(self):
-        IO.write_submitfile(self.directory, self.replacements)                        
+        write_submitfile(self.directory, self.replacements)                        
                         
     def write_FEPfile(self):
-        vdw_prms = IO.read_prm([self.ligand + '.prm'])['[atom_types]']
+        vdw_prms = read_prm([self.ligand + '.prm'])['[atom_types]']
         with open(self.directory + '/inputfiles/FEP1.fep', 'w') as outfile:
             # First create the file header
             outfile.write('! LIE ' + self.ligand + '\n\n')

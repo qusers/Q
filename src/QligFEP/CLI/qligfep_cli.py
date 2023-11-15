@@ -1,14 +1,7 @@
 import argparse
 from QligFEP.qligfep import QligFEP
 
-def parseargs(args: list[str] = []) -> argparse.Namespace:
-    """Return a Namespace after parsing an argument string.
-
-    If args is not provided, defaults to args from command line.
-    
-    Usage example:
-        qligfep -l1 <mol1> -l2 <mol2> -FF OPLS2015 -s water -c TETRA -r 25 -w 100 -l 0.5 -S sigmoidal
-    """
+def parse_arguments():
     parser = argparse.ArgumentParser(
         prog='QligFEP',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -86,13 +79,11 @@ def parseargs(args: list[str] = []) -> argparse.Namespace:
                         default = '50',
                         help = "Total number of windows that will be run"
                        )
+    return parser.parse_args()
 
-    if args:
-        return parser.parse_args(args)
-    else:
-        return parser.parse_args()
-    
-def main(args):
+
+def main():
+    args = parse_arguments()
     run = QligFEP(lig1 = args.lig1,
               lig2 = args.lig2,
               FF= args.FF,
@@ -103,7 +94,8 @@ def main(args):
               start = args.start,
               temperature = args.temperature,
               replicates = args.replicates,
-              sampling = args.sampling
+              sampling =args.sampling,
+              windows= args.windows
              )
 
     writedir = run.makedir()
@@ -139,8 +131,3 @@ def main(args):
     run.write_qfep(inputdir, args.windows, lambdas)
     run.write_qprep(inputdir)
     run.qprep(inputdir)
-    
-    
-if __name__ == "__main__":
-    args = parseargs()
-    main(args)
