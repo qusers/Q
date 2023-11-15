@@ -22,6 +22,9 @@ classifiers = [
 dependencies = [
     "numpy" # todo: add the other dependencies
 ]
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["QligFEP", "Qgpu"]
 
 [tool.setuptools.dynamic]
 version = {attr = "QligFEP.__version__"}
