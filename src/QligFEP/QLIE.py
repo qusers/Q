@@ -3,10 +3,11 @@ import os
 import shutil
 import glob
 
-from .IO import pdb_parse_in, pdb_parse_out, read_prm, replace, run_command, merge_two_dicts, write_submitfile
+from .IO import pdb_parse_in, pdb_parse_out, read_prm, replace, run_command, write_submitfile, merge_two_dicts
 
-import QligFEP.settings as s
-import QligFEP.functions as f
+from .functions import COG, euclidian_overlap
+from .settings import CONFIGS, CLUSTER_DICT, TEMPERATURE, REPLICATES
+
 
 class Run(object):
     """
@@ -24,13 +25,13 @@ class Run(object):
         self.preplocation   = preplocation
         self.cluster        = cluster
         if temperature is None:
-            self.temperature = s.TEMPERATURE
+            self.temperature = TEMPERATURE
             
         else:
             self.temperature = temperature
             
         if replicates is None:
-            self.replicates = s.REPLICATES
+            self.replicates = REPLICATES
             
         else:
             self.replicates = replicates
@@ -52,7 +53,7 @@ class Run(object):
             self.cofactor.append(cofactor)
             
         if self.system == 'water' or self.system == 'vacuum':
-            self.sphere = f.COG(self.ligand +'.pdb')
+            self.sphere = COG(self.ligand +'.pdb')
             self.radius = radius
     
     def create_environment(self):
@@ -62,7 +63,7 @@ class Run(object):
             os.makedirs(self.directory + '/inputfiles')
             
         files = {self.directory + '/inputfiles/' + self.forcefield + '.lib': \
-                 s.FF_DIR + '/' + self.forcefield + '.lib',
+                 CONFIGS['FF_DIR'] + '/' + self.forcefield + '.lib',
                 }
         
         if self.cofactor[0] is not None:
@@ -147,7 +148,7 @@ class Run(object):
                   '[impropers]'
                  ]
         
-        prmfiles = [s.FF_DIR + '/' + self.forcefield + '.prm']
+        prmfiles = [CONFIGS['FF_DIR'] + '/' + self.forcefield + '.prm']
         if self.cofactor[0] is not None:
             for filename in self.cofactor:
                 prmfiles.append(filename + '.prm')
@@ -198,7 +199,7 @@ class Run(object):
                     waters[line[6]] = [line]
 
                 for coord_co in cofactor_coordinates:
-                    if f.euclidian_overlap(coord_wat, coord_co, 1.6):
+                    if euclidian_overlap(coord_wat, coord_co, 1.6):
                         waters_remove.append(line[6])
             
             for key in waters:
@@ -221,7 +222,7 @@ class Run(object):
         elif self.system == 'vacuum':
             replacements['solvate']='!solvate'
         
-        src = s.INPUT_DIR + '/qprep_resFEP.inp'
+        src = CONFIGS['INPUT_DIR'] + '/qprep_resFEP.inp'
         self.qprep = self.directory + '/inputfiles/qprep.inp'
         libraries = [self.forcefield + '.lib']
         if self.cofactor[0] is not None:
@@ -246,7 +247,7 @@ class Run(object):
                 
     def run_qprep(self):
         os.chdir(self.directory + '/inputfiles/')
-        qprep = s.Q_DIR[self.preplocation] + 'qprep'
+        qprep = CONFIGS['QPREP']
         options = ' < qprep.inp > qprep.out'
         # Somehow Q is very annoying with this < > input style so had to implement
         # another function that just calls os.system instead of using the preferred
@@ -268,7 +269,7 @@ class Run(object):
         self.replacements['ATOM_START_LIG1'] = '{}'.format(1)
         self.replacements['EQ_LAMBDA'] = '1.000 0.000'
         
-        for EQ_file in glob.glob(s.INPUT_DIR + '/eq*.inp'):
+        for EQ_file in glob.glob(CONFIGS['INPUT_DIR'] + '/eq*.inp'):
             src = EQ_file
             EQ_file = EQ_file.split('/')
             tgt = self.directory + '/inputfiles/' + EQ_file[-1]
@@ -279,7 +280,7 @@ class Run(object):
                     
     def write_MD(self):
         self.replacements['FILE_N'] = 'eq5'
-        src = s.INPUT_DIR + '/md_LIE_XX.inp'
+        src = CONFIGS['INPUT_DIR'] + '/md_LIE_XX.inp'
         for i in range(1, 11):
             tgt = self.directory + '/inputfiles/md_LIE_{:02d}.inp'.format(i)
             self.replacements['FILE'] = 'md_LIE_{:02d}'.format(i)
@@ -292,14 +293,14 @@ class Run(object):
             self.replacements['FILE_N'] = 'md_LIE_{:02d}'.format(i)
         
     def write_runfile(self):
-        ntasks = getattr(s, self.cluster)['NTASKS']
-        src = s.INPUT_DIR + '/run.sh'
+        ntasks = CLUSTER_DICT[self.cluster]['NTASKS']
+        src = CONFIGS['INPUT_DIR'] + '/run.sh'
         tgt = self.directory + '/inputfiles/run' + self.cluster + '.sh'
         EQ_files = sorted(glob.glob(self.directory + '/inputfiles/eq*.inp'))
 
         MD_files = sorted(glob.glob(self.directory + '/inputfiles/md*.inp'))
 
-        replacements = merge_two_dicts(self.replacements, getattr(s, self.cluster))
+        replacements = merge_two_dicts(self.replacements, CLUSTER_DICT[self.cluster])
         replacements['FEPS'] = 'FEP1.fep'
             
         with open(src) as infile, open(tgt, 'w') as outfile:

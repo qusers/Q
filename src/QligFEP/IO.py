@@ -5,8 +5,8 @@ import os
 import stat
 import numpy as np
 
-import QligFEP.functions as f
-import QligFEP.settings.settings as s
+from .functions import sigmoid
+from .settings import CONFIGS
 
 ## Some useful objects TO DO add GLH etc.
 charged_res = {'HIS': {'HD1' : 'HID',
@@ -209,8 +209,8 @@ def get_lambdas(windows, sampling):
 
     if sampling == 'sigmoidal': 
         for i in range(0, step + 1):
-            lmbda1 = '{:.3f}'.format(0.5 * (f.sigmoid(float(i)/float(step), k) + 1))
-            lmbda2 = '{:.3f}'.format(0.5 * (-f.sigmoid(float(i)/float(step), k) + 1))
+            lmbda1 = '{:.3f}'.format(0.5 * (sigmoid(float(i)/float(step), k) + 1))
+            lmbda2 = '{:.3f}'.format(0.5 * (-sigmoid(float(i)/float(step), k) + 1))
             lmbda_1.append(lmbda1)
             lmbda_2.append(lmbda2)
 
@@ -224,14 +224,14 @@ def get_lambdas(windows, sampling):
 
     else:
         for i in range(0, windows + 1):
-            lmbda = '{:.3f}'.format(f.sigmoid(float(i)/float(windows), k))
+            lmbda = '{:.3f}'.format(sigmoid(float(i)/float(windows), k))
             lambdas.append(lmbda)
 
     lambdas = lambdas[::-1]
     return lambdas   
 
 def write_submitfile(writedir, replacements):
-    submit_in = s.ROOT_DIR + '/INPUTS/FEP_submit.sh'
+    submit_in = CONFIGS['ROOT_DIR'] + '/INPUTS/FEP_submit.sh'
     submit_out = writedir + ('/FEP_submit.sh')
     with open(submit_in) as infile, open (submit_out, 'w') as outfile:
         for line in infile:

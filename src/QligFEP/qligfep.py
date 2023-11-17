@@ -4,10 +4,10 @@ import os
 import shutil
 import stat
 
-import QligFEP.functions as f
-import QligFEP.settings.settings as s
 from .IO import pdb_parse_in, pdb_parse_out, replace, run_command
-
+from .settings import CONFIGS, CLUSTER_DICT
+from .functions import sigmoid, overlapping_pairs, kT, COG
+ 
 class QligFEP(object):
     """
     Create dual topology FEP files based on two ligands
@@ -176,7 +176,7 @@ class QligFEP(object):
         pattern = re.compile(r'\b(' + '|'.join(replacements.keys()) + r')\b')
         file1 = glob.glob(self.lig1 + '.prm')[0]
         file2 = glob.glob(self.lig2 + '.prm')[0]
-        prm_file = s.FF_DIR + '/' + self.FF + '.prm'
+        prm_file = CONFIGS['FF_DIR'] + '/' + self.FF + '.prm'
         prm_merged = {'vdw':[],
                        'bonds':[],
                        'angle':[],
@@ -406,8 +406,8 @@ class QligFEP(object):
 
         if sampling == 'sigmoidal': 
             for i in range(0, step + 1):
-                lmbda1 = '{:.3f}'.format(0.5 * (f.sigmoid(float(i)/float(step), k) + 1))
-                lmbda2 = '{:.3f}'.format(0.5 * (-f.sigmoid(float(i)/float(step), k) + 1))
+                lmbda1 = '{:.3f}'.format(0.5 * (sigmoid(float(i)/float(step), k) + 1))
+                lmbda2 = '{:.3f}'.format(0.5 * (-sigmoid(float(i)/float(step), k) + 1))
                 lmbda_1.append(lmbda1)
                 lmbda_2.append(lmbda2)
 
@@ -421,7 +421,7 @@ class QligFEP(object):
 
         else:
             for i in range(0, windows + 1):
-                lmbda = '{:.3f}'.format(f.sigmoid(float(i)/float(windows), k))
+                lmbda = '{:.3f}'.format(sigmoid(float(i)/float(windows), k))
                 lambdas.append(lmbda)
         
         lambdas = lambdas[::-1]
@@ -430,7 +430,7 @@ class QligFEP(object):
     def overlapping_atoms(self, writedir):
         pdbfile = writedir + '/inputfiles/' + self.lig1 + '_' + self.lig2 + '.pdb'
         reslist = ['LIG', 'LID']
-        overlap_list = f.overlapping_pairs(pdbfile, reslist)
+        overlap_list = overlapping_pairs(pdbfile, reslist)
         
         if self.ABS:
             with open(pdbfile) as infile:
@@ -501,7 +501,7 @@ class QligFEP(object):
         elif self.system == 'protein':
             replacements['WATER_RESTRAINT'] = ''
                     
-        for eq_file_in in sorted(glob.glob(s.ROOT_DIR + '/INPUTS/eq*.inp')):
+        for eq_file_in in sorted(glob.glob(CONFIGS['ROOT_DIR'] + '/INPUTS/eq*.inp')):
             eq_file = eq_file_in.split('/')[-1:][0]
             eq_file_out = writedir + '/' + eq_file
 
@@ -519,7 +519,7 @@ class QligFEP(object):
                         
                 file_list1.append(eq_file)
                 
-        file_in = s.INPUT_DIR + '/md_0500_0500.inp'
+        file_in = CONFIGS['INPUT_DIR'] + '/md_0500_0500.inp'
         file_out = writedir + '/md_0500_0500.inp' 
         with open(file_in) as infile, open(file_out, 'w') as outfile:
             for line in infile:
@@ -559,7 +559,7 @@ class QligFEP(object):
 
                 # Consider putting this in a function seeing as it is called multiple times
                 pattern = re.compile(r'\b(' + '|'.join(replacements.keys()) + r')\b')
-                file_in = s.INPUT_DIR + '/md_XXXX_XXXX.inp'
+                file_in = CONFIGS['INPUT_DIR'] + '/md_XXXX_XXXX.inp'
                 file_out = writedir + '/' + filename + '.inp'
 
                 with open(file_in) as infile, open(file_out, 'w') as outfile:
@@ -613,7 +613,7 @@ class QligFEP(object):
         elif self.system == 'protein':
             replacements['WATER_RESTRAINT'] = ''
         
-        for eq_file_in in sorted(glob.glob(s.ROOT_DIR + '/INPUTS/eq*.inp')):
+        for eq_file_in in sorted(glob.glob(CONFIGS['ROOT_DIR'] + '/INPUTS/eq*.inp')):
             eq_file = eq_file_in.split('/')[-1:][0]
             eq_file_out = writedir + '/' + eq_file
 
@@ -627,7 +627,7 @@ class QligFEP(object):
 
                 file_list_1.append(eq_file)
                 
-        file_in = s.INPUT_DIR + '/md_1000_0000.inp'
+        file_in = CONFIGS['INPUT_DIR'] + '/md_1000_0000.inp'
         file_out = writedir + '/md_1000_0000.inp' 
         with open(file_in) as infile, open(file_out, 'w') as outfile:
             for line in infile:
@@ -657,7 +657,7 @@ class QligFEP(object):
 
                 # Move to functio
                 pattern = re.compile(r'\b(' + '|'.join(replacements.keys()) + r')\b')
-                file_in = s.INPUT_DIR + '/md_XXXX_XXXX.inp'
+                file_in = CONFIGS['INPUT_DIR'] + '/md_XXXX_XXXX.inp'
                 file_out = writedir + '/' + filename + '.inp'
 
                 with open(file_in) as infile, open(file_out, 'w') as outfile:
@@ -679,7 +679,7 @@ class QligFEP(object):
         replacements['TEMP_VAR']    = self.temperature
         replacements['RUN_VAR']     = self.replicates
         replacements['RUNFILE']     = 'self' + self.cluster + '.sh'
-        submit_in = s.ROOT_DIR + '/INPUTS/FEP_submit.sh'
+        submit_in = CONFIGS['ROOT_DIR'] + '/INPUTS/FEP_submit.sh'
         submit_out = writedir + ('/FEP_submit.sh')
         with open(submit_in) as infile, open (submit_out, 'w') as outfile:
             for line in infile:
@@ -695,8 +695,9 @@ class QligFEP(object):
 
         
     def write_runfile(self, writedir, file_list):
-        ntasks = getattr(s, self.cluster)['NTASKS']
-        src = s.INPUT_DIR + '/self.sh'
+        
+        ntasks = CLUSTER_DICT[self.cluster]['NTASKS']
+        src = CONFIGS['INPUT_DIR'] + '/self.sh'
         tgt = writedir + '/self' + self.cluster + '.sh'
         EQ_files = sorted(glob.glob(writedir + '/eq*.inp'))
         
@@ -707,7 +708,7 @@ class QligFEP(object):
             md_1 = file_list[1]
             md_2 = file_list[2]
         
-        replacements = getattr(s, self.cluster)
+        replacements = CLUSTER_DICT[self.cluster]
         replacements['FEPS']='FEP1.fep'
         run_threads = '{}'.format(int(replacements['NTASKS']))
         
@@ -768,13 +769,13 @@ class QligFEP(object):
                 outfile.write('rm *.re\n')
     
     def write_qfep(self, inputdir, windows, lambdas):
-        qfep_in = s.ROOT_DIR + '/INPUTS/qfep.inp' 
+        qfep_in = CONFIGS['ROOT_DIR'] + '/INPUTS/qfep.inp' 
         qfep_out = self.writedir + '/inputfiles/qfep.inp'
         i = 0
         total_l = len(lambdas)
         
         # TO DO: multiple files will need to be written out for temperature range
-        kT = f.kT(float(self.temperature))
+        kT = kT(float(self.temperature))
         replacements = {}
         replacements['kT']=kT
         replacements['WINDOWS']=windows
@@ -799,11 +800,11 @@ class QligFEP(object):
 
     def write_qprep(self, writedir):
         replacements = {}
-        center = f.COG(self.lig1 + '.pdb')
+        center = COG(self.lig1 + '.pdb')
         center = '{:} {:} {:}'.format(center[0], center[1], center[2])
-        qprep_in = s.ROOT_DIR + '/INPUTS/qprep.inp'
+        qprep_in = CONFIGS['ROOT_DIR'] + '/INPUTS/qprep.inp'
         qprep_out = writedir + '/qprep.inp'
-        replacements['FF_LIB'] = s.ROOT_DIR + '/FF/' + self.FF + '.lib'
+        replacements['FF_LIB'] = CONFIGS['ROOT_DIR'] + '/FF/' + self.FF + '.lib'
         replacements['LIG1']   = self.lig1 + '.lib'
         replacements['LIG2']   = self.lig2 + '_renumber.lib'
         replacements['LIGPRM'] = self.FF + '_' + self.lig1 + '_' + self.lig2 + '_merged.prm'
@@ -831,7 +832,7 @@ class QligFEP(object):
         
     def qprep(self, writedir):
         os.chdir(writedir)
-        cluster_options = getattr(s, self.cluster)
+        cluster_options = CLUSTER_DICT[self.cluster]
         qprep = cluster_options['QPREP']
         print(qprep)
         options = ' < qprep.inp > qprep.out'

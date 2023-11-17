@@ -4,8 +4,9 @@ import numpy as np
 import os
 
 from .IO import run_command, read_qfep
-import QligFEP.settings as s
-import QligFEP.functions as f
+from .functions import read_qfep_verbose, avg_sem
+from .settings import CLUSTER_DICT
+
 
 try:
     import matplotlib
@@ -97,7 +98,7 @@ class Run(object):
                 dG_array.append(methods[method][key])
             dG_array = np.array(dG_array)
             dG_array = dG_array.astype(np.float)
-            dG = f.avg_sem(dG_array)
+            dG = avg_sem(dG_array)
             results[method]='{:6.2f}{:6.2f}'.format(*dG)
             
         for method in methods_list:
@@ -193,8 +194,7 @@ class Run(object):
             
             outfile.write('q\n')
             
-        cluster_options = getattr(s, self.cluster)
-        qprep = cluster_options['QPREP']
+        qprep = CLUSTER_DICT[self.cluster]['QPREP']
         options = ' < re2pdb.inp > re2pdb.out'
         # Somehow Q is very annoying with this < > input style so had to implement
         # another function that just calls os.system instead of using the preferred
