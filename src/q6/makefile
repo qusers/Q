@@ -323,16 +323,16 @@ trj.o:  trj.f90 mask.o misc.o
 	${FC} ${FFLAGS} -c $<
 
 move1:
-	mkdir -p ../../obj ; mv *.o *.mod ../../obj/
+	mkdir -p obj ; mv *.o *.mod obj/
 
 move2:
-	mkdir -p ../../bin/q6 ; mv qfep qprep qdyn qdum qcalc ../../bin/q6
+	mkdir -p bin/q6 ; mv qfep qprep qdyn qdum qcalc bin/q6
 
 move3:
-	mkdir -p ../../bin/q6 ; mv qdynp ../../bin/q6
+	mkdir -p bin/q6 ; mv qdynp bin/q6
 
 move4:
-	mkdir -p ../../bin/q6 ; mv qfep qprep qdyn_test qdum qcalc ../../bin/q6	
+	mkdir -p bin/q6 ; mv qfep qprep qdyn_test qdum qcalc bin/q6	
 
 ################################################################################
 
