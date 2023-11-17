@@ -6,16 +6,16 @@ import operator
 from pathlib import Path
 import networkx as nx
 from rdkit import Chem, DataStructs, Geometry
-from rdkit.Chem import AllChem, rdDepictor, rdFMCS, rdqueries
+from rdkit.Chem import AllChem, rdDepictor, rdFMCS, rdqueries, rdRGroupDecomposition
 from rdkit.Chem.Draw import rdMolDraw2D
 from rdkit.Chem.Fingerprints import FingerprintMols
 from networkx.readwrite import json_graph
 import json
-import uuid
+# import uuid
 import shutil
 import sys
 import math
-from QligFEP.settings import settings as s
+# from QligFEP.settings import settings as s
 from Qgpu import ccc, plot, metrics
 
 rdDepictor.SetPreferCoordGen(True)
@@ -110,7 +110,7 @@ class MoleculePool:
                     for atom in molecule.GetAtoms():
                         atom.SetIntProp("SourceAtomIdx", atom.GetIdx())
 
-            return Chem.rdRGroupDecomposition.RGroupDecompose(
+            return rdRGroupDecomposition.RGroupDecompose(
                 [self.query_core], molecule_matches, asSmiles=False,
                 asRows=True)[0]
         else:
@@ -830,7 +830,7 @@ class GenPlot(object):
 class Init(object):
     def __init__(self,data):
         # Put file in memory stream. This allows the server to read uploaded file
-        #  into memory and pass it as an io.BytesIO() to MapGen        
+        # into memory and pass it as an io.BytesIO() to MapGen
         with open(data['isdf'], "rb") as f:
             metric  = data['metric']
             o       = data['o']
