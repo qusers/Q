@@ -7,7 +7,7 @@ Q/
 ├── setup.py # needed for compiling Q
 ├── README.md
 ├── src/
-│   ├── Q6/
+│   ├── q6/
 │   │   ├── <filename>.f90
 │   │   └── makefile
 │   ├── QligFEP/ # old name: qligfep-old /
@@ -53,3 +53,8 @@ Q/
 - [  ] Make a script detecting the cystein bonds so that the user doesn't need to [hardcode](https://github.com/GPCR-ModSim/qligfep-benchmark/blob/main/inputfilegen/OPLS2015/Thrombin/setup.py) them anymore
 - [  ] Numpy seems to have a support for compiling fortran code. Could think about making a wrapper so that thes functions can be directly called with python. (for now, lower priority...)
 - [  ] Setup a proper logging to the package. An easy option would be to use [loguru](https://github.com/Delgan/loguru), which I personally find very cool 🙂.
+- [  ] Make current `except` statements in the code more specific. When not specific, these statements can also catch, for example, `KeyboardInterrupt`, triggered by a `Ctrl + c` in the terminal.
+- [  ] Currently, QmapFEP makes a `self.ligands` dictionary with the charges as keys. However, that's problematic because the charges were hard-coded... I added the charges to the MoleculePool but the code doesn't use that yet.
+
+## Questions:
+- QmapFEP not working when .sdf file contains more than 1 unique formal charges.
