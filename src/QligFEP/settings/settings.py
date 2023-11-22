@@ -1,4 +1,5 @@
 from QligFEP import SRC
+from multiprocessing import cpu_count
 
 ROOT_DIR = SRC / "QligFEP"
 
@@ -103,9 +104,9 @@ TETRA  = {'NODES'      : '1',
           **Q_PATHS
         }
 
-LOCAL = {'NODES'      : '',
-         'NTASKS'     : '',
-         'TIME'       : '',  # d-hh:mm:ss
+LOCAL = {'NODES'      : 1,
+         'NTASKS'     : cpu_count(),
+         'TIME'       : '0-24:00:00',  # d-hh:mm:ss
          'MODULES'    : '\n', # Add a \n for every added module
          **Q_PATHS
         }
