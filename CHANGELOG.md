@@ -35,11 +35,21 @@ Q/
   - `env/` was abolished and the setting are now under `QligFEP/settings/`;
   - `share/` was renamed to `Qgpu`, to make things more clear.
 - Changed a statements like `== True` to `is True`. Also fixed statements such as `!= None` and `type(<object>)` == list to `isinstance()`.
-- Currently working on moving the command line interface (CLI) to `QligFEP/CLI`.
+- Command line interface (CLI) moved to `QligFEP/CLI`.
+- All `sys.path.insert` statements removed and substituted by relative imports within the package.
+- Moved the IO functions `pdb_parse_out`, `pdb_parse_in` to the module `pdb_utils` to avoid circular imports within the package.
+- Three CLIs currently implemented: `qligfep`, `setupFEP`, and `qmapfep`. `TODO: will probably make it capitalized in the future.`
+- q6's makefile no longer moves the executables to Q/ and instead keeps then within `src/q6`. Useful for future improvements where the user will get everything necessary to get started by doing pip install.
 
-ongoing: [removing all `sys.path.insert`] statements
 
-- For later reference, it seems like the cystein bonds need to be [hardcoded](https://github.com/GPCR-ModSim/qligfep-benchmark/blob/main/inputfilegen/OPLS2015/Thrombin/setup.py) at the moment?? Should we have a script that does it for us?
-- Also related to that, should we 
-- Question: do we really need `setupFEP.py`? Maybe just remove it?
-- TODO: figure out how to add the different cluster configurations on settings.py.
+
+## TODO:
+- [  ] Update Qgpu with the correct imports as well.
+- [  ] Unify both IO modules from Qgpu and QligFEP to a single one that can interact with both implementations [`q6` and `Qgpu` backends].
+- [  ] Get Lomap running and compare it to QmapFEP.
+- [  ] Implement Softcore to the package. ⚠️ Might take a long time ⚠️
+  - Can take a look at the implementation of this in other packages and translate it to fortran code
+  - Testing: Would run simulations with & without softcore ➡️ How do values compare? 
+- [  ] Make a script detecting the cystein bonds so that the user doesn't need to [hardcode](https://github.com/GPCR-ModSim/qligfep-benchmark/blob/main/inputfilegen/OPLS2015/Thrombin/setup.py) them anymore
+- [  ] Numpy seems to have a support for compiling fortran code. Could think about making a wrapper so that thes functions can be directly called with python. (for now, lower priority...)
+- [  ] Setup a proper logging to the package. An easy option would be to use [loguru](https://github.com/Delgan/loguru), which I personally find very cool 🙂.
