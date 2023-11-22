@@ -37,7 +37,7 @@ def parse_arguments():
     
     return parser.parse_args()
     
-def main():
+def main_exe():
     args = parse_arguments()
     if args.wd is None:
         args.wd = args.isdf.split('.')[0]
@@ -50,3 +50,6 @@ def main():
         'wd': args.wd
     }
     Init(data)
+
+if __name__ == '__main__':
+    main_exe()

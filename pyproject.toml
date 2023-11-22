@@ -38,5 +38,6 @@ repository = "https://github.com/qusers/qligfep"
 # homepage = "https://github.com/to-do/replace-me"
 
 [project.scripts]
-qligfep = "QligFEP.CLI.qligfep_cli:main"
-qmapfep = "QligFEP.CLI.qmapfep_cli:main"
+qligfep = "QligFEP.CLI.qligfep_cli:main_exe"
+qmapfep = "QligFEP.CLI.qmapfep_cli:main_exe"
+setupFEP = "QligFEP.CLI.setupFEP:main_exe"

@@ -1,7 +1,10 @@
+"""Module containing the QligFEP command line interface."""
+
 import argparse
 from QligFEP.qligfep import QligFEP
+from typing import Optional
 
-def parse_arguments():
+def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog='QligFEP',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -63,7 +66,7 @@ def parse_arguments():
 
     parser.add_argument('-R', '--replicates',
                         dest = "replicates",
-                        default = '10',
+                        default = '25',
                         help = "How many repeats should be run"
                        )
 
@@ -82,21 +85,34 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def main():
-    args = parse_arguments()
-    run = QligFEP(lig1 = args.lig1,
-              lig2 = args.lig2,
-              FF= args.FF,
-              system = args.system,
-              cluster = args.cluster,
-              sphereradius = args.sphereradius,
-              cysbond = args.cysbond,
-              start = args.start,
-              temperature = args.temperature,
-              replicates = args.replicates,
-              sampling =args.sampling,
-              windows= args.windows
-             )
+def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
+    """Main function for qligfep_cli.py. Takes arguments from argparse and passes them
+    to QligFEP class. If no arguments are given, the function will use the keyword arguments
+    that are passed to it.
+
+    Args:
+        args: argparse.Namespace object containing all the arguments.
+        kwargs: keyword arguments that will be passed to QligFEP class.
+    """
+    if args is not None:
+        param_dict = {
+            "lig1" : args.lig1,
+            "lig2" : args.lig2,
+            "FF": args.FF,
+            "system": args.system,
+            "cluster": args.cluster,
+            "sphereradius": args.sphereradius,
+            "cysbond": args.cysbond,
+            "start": args.start,
+            "temperature": args.temperature,
+            "replicates": args.replicates,
+            "sampling": args.sampling,
+            "windows": args.windows,
+        }
+    else: 
+        param_dict = {}
+    param_dict.update(kwargs)
+    run = QligFEP(**param_dict)
 
     writedir = run.makedir()
     inputdir = writedir + '/inputfiles'
@@ -131,3 +147,10 @@ def main():
     run.write_qfep(inputdir, args.windows, lambdas)
     run.write_qprep(inputdir)
     run.qprep(inputdir)
+
+def main_exe():
+    args = parse_arguments()
+    main(args)
+
+if __name__ == '__main__':
+    main_exe
