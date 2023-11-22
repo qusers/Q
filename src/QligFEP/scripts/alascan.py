@@ -8,7 +8,7 @@ import argparse
 
 import QligFEP.functions as f
 import QligFEP.settings.settings as s
-from ..IO import pdb_parse_in
+from ..pdb_utils import pdb_parse_in
 
 class Run(object):
     """

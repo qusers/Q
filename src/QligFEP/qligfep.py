@@ -4,7 +4,8 @@ import os
 import shutil
 import stat
 
-from .IO import pdb_parse_in, pdb_parse_out, replace, run_command
+from .IO import replace, run_command
+from .pdb_utils import pdb_parse_in, pdb_parse_out
 from .settings import CONFIGS, CLUSTER_DICT
 from .functions import sigmoid, overlapping_pairs, kT, COG
  

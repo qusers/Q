@@ -9,7 +9,7 @@ from rdkit import Chem
 from rdkit.Chem import Draw
 
 # QligFEP modules
-from .IO import pdb_parse_out
+from .pdb_utils import pdb_parse_out
 
 # openFF modules
 from openff.toolkit import Molecule, ForceField, Topology

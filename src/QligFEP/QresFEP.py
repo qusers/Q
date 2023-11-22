@@ -5,7 +5,8 @@ import shutil
 import sys
 import glob
 
-from .IO import pdb_parse_in, pdb_parse_out, read_prm, replace, run_command, merge_two_dicts, write_submitfile, AA, get_lambdas
+from .IO import read_prm, replace, run_command, merge_two_dicts, write_submitfile, AA, get_lambdas
+from .pdb_utils import pdb_parse_in, pdb_parse_out
 import QligFEP.settings as s
 import QligFEP.functions as f
 

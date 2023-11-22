@@ -7,7 +7,8 @@ import os
 import argparse
 
 
-from .IO import pdb_parse_in, pdb_parse_out, replace
+from .IO import replace
+from .pdb_utils import pdb_parse_in, pdb_parse_out
 import QligFEP.settings as s
 
 class Run(object):

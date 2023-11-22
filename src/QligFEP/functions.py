@@ -1,4 +1,4 @@
-from .IO import pdb_parse_in
+from .pdb_utils import pdb_parse_in
 import numpy as np
 
 def sigmoid(t, k):

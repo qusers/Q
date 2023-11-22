@@ -7,7 +7,8 @@ import numpy as np
 import sys
 import glob
 
-from .IO import pdb_parse_in, pdb_parse_out, charged_res, replace, run_command
+from .IO import charged_res, replace, run_command
+from .pdb_utils import pdb_parse_in, pdb_parse_out
 import QligFEP.functions as f
 import QligFEP.settings as s
 

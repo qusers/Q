@@ -5,7 +5,7 @@
 # Modifications by F.W van der Ent
 # 2019-09-18
 
-from ..IO import pdb_parse_in, pdb_parse_out
+from ..pdb_utils import pdb_parse_in, pdb_parse_out
 import argparse
 
 parser = argparse.ArgumentParser()
