@@ -3,10 +3,11 @@ import os
 import shutil
 import glob
 
-from .IO import pdb_parse_in, pdb_parse_out, read_prm, replace, run_command, write_submitfile, merge_two_dicts
+from .IO import read_prm, replace, run_command, write_submitfile, merge_two_dicts
+from .pdb_utils import pdb_parse_in, pdb_parse_out
 
 from .functions import COG, euclidian_overlap
-from .settings import CONFIGS, CLUSTER_DICT, TEMPERATURE, REPLICATES
+from .settings.settings import CONFIGS, CLUSTER_DICT, TEMPERATURE, REPLICATES
 
 
 class Run(object):

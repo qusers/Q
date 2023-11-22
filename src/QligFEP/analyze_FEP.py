@@ -5,7 +5,7 @@ import os
 
 from .IO import run_command, read_qfep
 from .functions import read_qfep_verbose, avg_sem
-from .settings import CLUSTER_DICT
+from .settings.settings import CLUSTER_DICT
 
 
 try:

@@ -6,7 +6,7 @@ import stat
 import numpy as np
 
 from .functions import sigmoid
-from .settings import CONFIGS
+from .settings.settings import CONFIGS
 
 ## Some useful objects TO DO add GLH etc.
 charged_res = {'HIS': {'HD1' : 'HID',

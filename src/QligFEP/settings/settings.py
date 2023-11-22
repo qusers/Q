@@ -7,7 +7,7 @@ FF_DIR = ROOT_DIR / "FF"
 INPUT_DIR = ROOT_DIR / "INPUTS"
 # Dicionary of locations of Q executables
 Q_DIR = SRC / "q6"
-BIN = ROOT_DIR / "bin/q6"
+BIN = Q_DIR / "bin/q6"
 
 if not BIN.exists():
     raise FileNotFoundError(
@@ -107,7 +107,6 @@ LOCAL = {'NODES'      : '',
          'NTASKS'     : '',
          'TIME'       : '',  # d-hh:mm:ss
          'MODULES'    : '\n', # Add a \n for every added module
-         'ACCOUNT'    : ''
          **Q_PATHS
         }
 
