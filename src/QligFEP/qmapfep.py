@@ -1,5 +1,6 @@
 from collections import namedtuple
 from functools import cached_property, lru_cache
+from loguru import logger
 import io
 import itertools
 import operator
@@ -50,18 +51,30 @@ class MoleculePool:
 
     def __init__(self, molecules=None):
         self.molecules = []
+        self.charges = []
         if molecules:
             self.molecules = molecules
+        if not self.charges:
+            self.calculate_charge()
 
     def __getitem__(self, idx):
         return self.molecules[idx]
-
+    
     def __len__(self):
         return len(self.molecules)
+    
+    def __repr__(self) -> str:
+        return f"MoleculePool - {len(self)} molecules. Core = {Chem.MolToSmarts(self.core)}"
+    
+    def calculate_charge(self):
+        if not self.charges:
+            for molecule in self.molecules:
+                self.charges.append(Chem.rdmolops.GetFormalCharge(molecule))
 
     def append(self, item):
         """Adds a new molecule to the pool."""
         self.molecules.append(item)
+        self.charges.append(Chem.rdmolops.GetFormalCharge(item))
         # Clear the cached properties so they get re-calculated
         for attr in ["mcs", "core", "query_core", "groups"]:
             try:
@@ -360,7 +373,7 @@ class MapGen:
         else:
             self.metric = network_obj.metric
         self.pool = MoleculePool()
-        self.ligands = {}
+        self.ligands = {} # dict w/ charges as keys and mols as values
         self.simF = None
 
         self._set_ligands()
@@ -414,6 +427,7 @@ class MapGen:
             ligand = Ligand(name=mol.GetProp('_Name'),
                             pool_idx=idx,
                             fingerprint=self.fingerprint(mol))
+            # TODO: Maybe manage the charges from MoleculePool instead?
             v["Ligand"].append(ligand)
 
     def _set_similarity_matrix(self):
@@ -557,11 +571,15 @@ class MapGen:
 
     def savePNG(self):
         print(self.ligands)
-        for i, molecule in enumerate(self.pool):
-            ligand = self.ligands[1]['Ligand'][i] # Charge thing to be fixed here.
-            moleculeImage = MoleculeImage(pool_idx=i, pool=self.pool)
-            with open(str(Path(self.img_dir) / f"{ligand.name}.png"), "wb") as png:
-                png.write(moleculeImage.png())
+        if len(self.ligands.keys()) > 1:
+            logger.warning("Ligands in .sdf file contain different charges!!")
+        # In the future, better to access the charge from MoleculePool
+        for charge in self.ligands.keys():
+            for i, molecule in enumerate(self.pool):
+                ligand = self.ligands[charge]['Ligand'][i] # Charge thing to be fixed here.
+                moleculeImage = MoleculeImage(pool_idx=i, pool=self.pool)
+                with open(str(Path(self.img_dir) / f"{ligand.name}.png"), "wb") as png:
+                    png.write(moleculeImage.png())
 
     def savemapJSON(self):
         for charge, ligands in self.ligands.items():
@@ -570,20 +588,21 @@ class MapGen:
             data = json_graph.node_link_data(graph)
             data['hasCalculated'] = False
             data['edges'] = data.pop('links')
-            for edge in data['edges']:
-                edge['from'] = self.ligands[1]['Ligand'][edge['source']].name
-                edge['to'] = self.ligands[1]['Ligand'][edge['target']].name
-                edge['payload'] = {"ddG":"Test","ddGexpt":None}
+            for charge in self.ligands.keys(): # TODO: should change this to be more general
+                for edge in data['edges']:
+                    edge['from'] = self.ligands[charge]['Ligand'][edge['source']].name
+                    edge['to'] = self.ligands[charge]['Ligand'][edge['target']].name
+                    edge['payload'] = {"ddG":"Test","ddGexpt":None}
 
-            for node in data['nodes']:
-                labelname = self.ligands[1]['Ligand'][node['id']].name
-                node['id'] = labelname
-                node['label'] = labelname # maybe need unique identifiers?
-                #node['label'] = node["id"]   # maybe need unique identifiers?
-                node["shape"] = "image"      # to be changed to img location
-                node["image"] = "./img/{}.png".format(labelname)
-                node['payload'] = {"dG":"Test","dGexpt":None}
-                #node["size"]  = 40
+                for node in data['nodes']:
+                    labelname = self.ligands[charge]['Ligand'][node['id']].name
+                    node['id'] = labelname
+                    node['label'] = labelname # maybe need unique identifiers?
+                    #node['label'] = node["id"]   # maybe need unique identifiers? # TODO: add inchikeys?
+                    node["shape"] = "image"      # to be changed to img location
+                    node["image"] = "./img/{}.png".format(labelname)
+                    node['payload'] = {"dG":"Test","dGexpt":None}
+                    #node["size"]  = 40
 
         with open('{}/{}.json'.format(self.wd, self.otxt), 'w') as outfile:
         #with open('test.json', 'w') as outfile:
