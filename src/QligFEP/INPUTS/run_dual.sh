@@ -8,6 +8,9 @@
 #SBATCH -J JOBNAME
 #SBATCH -o slurm.%N.%j.out # STDOUT
 
+export TMP=/tmp
+export TEMP=/tmp
+export TMPDIR=/tmp
 ## Load modules for qdynp
 MODULES
 
@@ -19,6 +22,7 @@ run=10
 finalMDrestart=md_0000_1000.re
 seed="$[1 + $[RANDOM % 32767]]"
 starttime=$(date)
+
 workdir=$(pwd)
 inputfiles=$workdir/inputfiles
 length=${#fepfiles[@]}
@@ -36,26 +40,33 @@ rundir=$tempdir/$run
 mkdir -p $rundir
 cd $rundir
 
-cp $inputfiles/md*.inp .
+cp $inputfiles/eq*.inp .
 cp $inputfiles/*.top .
 cp $inputfiles/qfep.inp .
 cp $inputfiles/$fepfile .
 
+
+
+sed -i s/SEED_VAR/$seed/ eq1.inp
 if [ $index -lt 1 ]; then
-cp $inputfiles/eq*.inp .
-sed -i s/SEED_VAR/$seed/ eq1.inp # change the random seed to custom
+sed -i s/'0.000 1.000'/'1.000 0.000'/ eq*inp
+cp $inputfiles/md*_F.inp .
 else
-lastfep=FEP$index
-cp $workdir/$lastfep/$temperature/$run/$finalMDrestart $rundir/eq5.re
-fi
+sed -i s/'1.000 0.000'/'0.000 1.000'/ eq*inp
+cp $inputfiles/md*_R.inp .
+fi  
 
 sed -i s/T_VAR/"$temperature"/ *.inp
 sed -i s/FEP_VAR/"$fepfile"/ *.inp
 if [ $index -lt 1 ]; then
 #EQ_FILES
-fi
 #RUN_FILES
 timeout 30s QFEP < qfep.inp > qfep.out
+else
+#EQ_FILES
+#RUN_FILES_R
+timeout 30s QFEP < qfep.inp > qfep.out
+fi
 done
 #CLEANUP
 
@@ -65,4 +76,4 @@ echo "#    Starting time: $starttime"
 echo "#    Ending time: $endtime"                                  
 echo "#    Random seed: $seed"                                      
 echo "#    Replicate Number: $run"                                
-echo "#    Working Directory: $workdir"
+echo "#    Working Directory: $workdir"  

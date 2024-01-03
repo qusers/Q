@@ -5,9 +5,10 @@
 #SBATCH -A ACCOUNT 
 #              d-hh:mm:ss
 #SBATCH --time=TIME
-#SBATCH -J JOBNAME
-#SBATCH -o slurm.%N.%j.out # STDOUT
 
+export TMP=/tmp
+export TEMP=/tmp
+export TMPDIR=/tmp
 ## Load modules for qdynp
 MODULES
 
@@ -17,10 +18,9 @@ fepfiles=(FEPS)
 temperature=298
 run=10
 finalMDrestart=md_0000_1000.re
-seed="$[1 + $[RANDOM % 32767]]"
-starttime=$(date)
-workdir=$(pwd)
-inputfiles=$workdir/inputfiles
+workdir=/home/jespers/adenosine/1.A1-A2A_selectivity/A1/5.FEP/holo
+inputfiles=/home/jespers/adenosine/1.A1-A2A_selectivity/A1/5.FEP/holo/inputfiles
+check=/home/x_aledi/software/qligfep/stopLIE.py
 length=${#fepfiles[@]}
 length=$((length-1))
 for index in $(seq 0 $length);do
@@ -38,12 +38,11 @@ cd $rundir
 
 cp $inputfiles/md*.inp .
 cp $inputfiles/*.top .
-cp $inputfiles/qfep.inp .
 cp $inputfiles/$fepfile .
 
 if [ $index -lt 1 ]; then
 cp $inputfiles/eq*.inp .
-sed -i s/SEED_VAR/$seed/ eq1.inp # change the random seed to custom
+sed -i s/SEED_VAR/"$[1 + $[RANDOM % 9999]]"/ eq1.inp
 else
 lastfep=FEP$index
 cp $workdir/$lastfep/$temperature/$run/$finalMDrestart $rundir/eq5.re
@@ -51,18 +50,11 @@ fi
 
 sed -i s/T_VAR/"$temperature"/ *.inp
 sed -i s/FEP_VAR/"$fepfile"/ *.inp
+echo $run
 if [ $index -lt 1 ]; then
+#time mpirun -np 16 $qdyn eq1.inp > eq1.log
 #EQ_FILES
 fi
 #RUN_FILES
 timeout 30s QFEP < qfep.inp > qfep.out
 done
-#CLEANUP
-
-endtime=$(date)
-echo "#    EXPRESS LOG for jobid: $SLURM_JOB_ID"                      
-echo "#    Starting time: $starttime"                                  
-echo "#    Ending time: $endtime"                                  
-echo "#    Random seed: $seed"                                      
-echo "#    Replicate Number: $run"                                
-echo "#    Working Directory: $workdir"

@@ -4,6 +4,7 @@ temperatures=(TEMP_VAR)
 runs=RUN_VAR
 restartfile=md_0000_1000.re
 workdir="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
+echo $wrkdir
 inputfiles=$workdir/inputfiles
 submitfile=$inputfiles/RUNFILE
 
