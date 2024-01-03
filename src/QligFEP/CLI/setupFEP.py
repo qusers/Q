@@ -6,6 +6,8 @@ import json
 import subprocess
 import logging
 import shutil
+import os
+import sys
 
 logging.basicConfig(
     filename='cli_calls.log',
@@ -53,7 +55,9 @@ def parse_arguments():
         prog='QligFEP',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description =
-        "Generate all FEP files for the directory you're working on.")
+        ("Generate all FEP files for the directory you're working on. "
+         "e.g. of parameters: -FF OPLS2015 -c KEBNE -S sigmoidal -r 25 -l 0.5 -w 100")
+        )
     parser.add_argument('-FF', '--forcefield',
                         dest = "FF",
                         required = True,
@@ -125,7 +129,7 @@ def main_exe():
     
     cwd = Path.cwd()
     systems = ['water', 'protein']
-    sys_directories = [cwd / '1.water', cwd / '1.protein']
+    sys_directories = [cwd / '1.water', cwd / '2.protein']
     # make sure that the default directories for running the FEP calculations are there
     for sys_dir in sys_directories:
         if not sys_dir.exists():
@@ -159,10 +163,12 @@ def main_exe():
                 sampling = args.sampling,
                 windows = args.windows
             )
+            print(command)
+            sys.exit()
             
             dst = sys_dir / ('FEP_' + lig1 + '_' + lig2)
-            submit_command(command)
-            shutil.move(temp_dir, dst)
+            os.system(command)
+            # shutil.move(temp_dir, dst)
 
 if __name__ == '__main__':
     main_exe()

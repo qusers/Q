@@ -3,6 +3,7 @@
 import argparse
 from QligFEP.qligfep import QligFEP
 from typing import Optional
+from loguru import logger
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -82,6 +83,23 @@ def parse_arguments() -> argparse.Namespace:
                         default = '50',
                         help = "Total number of windows that will be run"
                        )
+    parser.add_argument('-sc', '--softcore',
+                        dest = "softcore",
+                        default = False,
+                        action="store_true",
+                        help = "Turn on if you want to use softcore"
+                       )
+    parser.add_argument('-ts', '--timestep',
+                        dest = "timestep",
+                        choices = ['1fs','2fs'],
+                        default = "2fs",
+                        help = "Simulation timestep, default 2fs"
+                       )
+    parser.add_argument('-clean', '--files-to-clean',
+                        dest="to_clean",
+                        nargs="+",
+                        default=None,
+                        help="Files to clean after the simulation.")
     return parser.parse_args()
 
 
@@ -107,12 +125,15 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "temperature": args.temperature,
             "replicates": args.replicates,
             "sampling": args.sampling,
-            "windows": args.windows,
+            "timestep": args.timestep,
+            "softcore": args.softcore,
+            "to_clean": args.to_clean,
         }
     else: 
         param_dict = {}
     param_dict.update(kwargs)
     run = QligFEP(**param_dict)
+    run.set_timestep()
 
     writedir = run.makedir()
     inputdir = writedir + '/inputfiles'
@@ -125,27 +146,38 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     lig_size1, lig_size2 = a[2][0], a[2][1]
 
     # Write the merged files
+    logger.log("INFO", "Writing changes on files")
     run.change_lib(changes_for_libfiles, inputdir)
+    logger.log("INFO", "Changing parameters")
     FEP_vdw = run.change_prm(changes_for_prmfiles, inputdir)
+    logger.log("INFO", "Writing FEP files")
     run.write_FEP_file(change_charges, change_vdw, FEP_vdw, inputdir, lig_size1, lig_size2)
+    logger.log('INFO', 'Writing PDB files')
     run.merge_pdbs(inputdir)
     if args.system == 'protein':
         run.write_water_pdb(inputdir)
+    logger.log('INFO', 'Getting the lambdas')
     lambdas = run.get_lambdas(args.windows, args.sampling)
+    logger.log('INFO', 'Run the overlapping atoms')
     overlapping_atoms = run.overlapping_atoms(writedir)
     
     # Handling the correct offset here
+    logger.log('INFO', 'Writing the MD files')
     if args.start == '0.5':
-        file_list = run.write_MD_05(lambdas, inputdir, lig_size1, lig_size2)
+        file_list = run.write_MD_05(lambdas, inputdir, lig_size1, lig_size2, overlapping_atoms)
         run.write_runfile(inputdir, file_list)    
         
     if args.start == '1':
         file_list = run.write_MD_1(lambdas, inputdir, lig_size1, lig_size2, overlapping_atoms)
         run.write_runfile(inputdir, file_list)    
-    
+    logger.log('INFO', f'Generated files: {file_list}')
+    logger.log('INFO', 'Writing the submit files')
     run.write_submitfile(writedir)
-    run.write_qfep(inputdir, args.windows, lambdas)
+    logger.log('INFO', 'Writing the QFEP files')
+    run.write_qfep(args.windows, lambdas)
+    logger.log('INFO', 'Writing the QPREP files')
     run.write_qprep(inputdir)
+    logger.log('INFO', 'Running QFEP')
     run.qprep(inputdir)
 
 def main_exe():

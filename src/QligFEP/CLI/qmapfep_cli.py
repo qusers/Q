@@ -39,6 +39,8 @@ def parse_arguments():
     
 def main_exe():
     args = parse_arguments()
+    if args.isdf is None:
+        raise ValueError('No input file provided')
     if args.wd is None:
         args.wd = args.isdf.split('.')[0]
     if args.o is None:
