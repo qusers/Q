@@ -224,7 +224,6 @@ test/ethanol-methane/FEP_*
 *.json
 *.calc
 *.pml
-*.inp
 
 # benchmark files
 benchmark/FEP_solvation/2.Q7/1.water/
