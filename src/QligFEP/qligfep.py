@@ -1,3 +1,4 @@
+from pathlib import Path
 import re
 import glob
 import os
@@ -662,7 +663,7 @@ class QligFEP(object):
                 lambda1 = lambd
                 lambda2 = lambdas[step_n]
                 filename = 'md_' + lambda1.replace('.', '') + '_' + lambda2.replace('.', '')
-                replacements['FLOAT_LAMBDA1']   =   lambda1 
+                replacements['FLOAT_LAMBDA1']   =   lambda1
                 replacements['FLOAT_LAMBDA2']   =   lambda2
                 replacements['FILE']          =   filename
                 replacements['FILE_N'] = filename_N
@@ -689,8 +690,8 @@ class QligFEP(object):
     
     def write_submitfile(self, writedir):
         replacements = {}
-        replacements['TEMP_VAR']    = self.temperature
-        replacements['RUN_VAR']     = self.replicates
+        replacements['TEMP_VAR']    = str(self.temperature)
+        replacements['RUN_VAR']     = str(self.replicates)
         replacements['RUNFILE']     = 'run' + self.cluster + '.sh'
         if self.softcore:
             submit_in = CONFIGS['ROOT_DIR'] + '/INPUTS/FEP_submit_sc.sh'
@@ -700,7 +701,10 @@ class QligFEP(object):
         with open(submit_in) as infile:
             with open (submit_out, 'w') as outfile:
                 for line in infile:
-                    line = replace(line, replacements)
+                    try:
+                        line = replace(line, replacements)
+                    except TypeError:
+                        print('heyyy')
                     outfile.write(line)
         
         try:
@@ -734,9 +738,9 @@ class QligFEP(object):
             with open(tgt, 'w') as outfile:
                 for line in infile:
                     if line.strip() == '#SBATCH -A ACCOUNT':
-                        try:
+                        try: # Try to take account info - not for all clusters!
                             replacements['ACCOUNT']
-                        except:
+                        except KeyError:
                             line = ''
                     if line.strip() == '#SBATCH -J JOBNAME':
                         try:
@@ -754,11 +758,9 @@ class QligFEP(object):
                     outfile.write(outline)
                     if line.strip() == '#EQ_FILES':
                         for line in EQ_files:
-                            file_base = line.split('/')[-1][:-4]
-                            outline = 'time srun $qdyn {}.inp' \
-                                   ' > {}.log\n'.format(file_base,
-                                                       file_base)
-                        outfile.write(outline)
+                            file_base = Path(line).stem
+                            outline = f'time srun $qdyn {file_base}.inp > {file_base}.log\n'
+                            outfile.write(outline)
                         
                     if line.strip() == '#RUN_FILES':
                         if self.start == '1':
@@ -803,8 +805,8 @@ class QligFEP(object):
         # TO DO: multiple files will need to be written out for temperature range
         k_T = kT(float(self.temperature))
         replacements = {}
-        replacements['kT']=k_T
-        replacements['WINDOWS']=windows
+        replacements['kT']=str(k_T)
+        replacements['WINDOWS']=str(windows)
         replacements['TOTAL_L']=str(total_l)
         with open(qfep_in) as infile:
             with open(qfep_out, 'w') as outfile:
