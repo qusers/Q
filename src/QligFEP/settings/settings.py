@@ -43,7 +43,7 @@ CONFIGS = {
 CSB = {'NODES'        : '1',
        'NTASKS'       : '16',
        'TIME'         : '0-12:00:00',  # d-hh:mm:ss
-       'MODULES'      : 'module load Q/6.0.1_ME\n',
+       'MODULES'      : 'module purge\nmodule load Q/6.0.1_ME\n',
        **Q_PATHS
       }
 
