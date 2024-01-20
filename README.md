@@ -1,3 +1,57 @@
+# QligFEP
+
+## Installation
+
+The current conda environment is available in the `environment.yml` file, but installing it with `conda env create -f environment.yml` will take a long time. Instead, we recommend that you use `mamba` or its lightweight version `micromamba`. Please check this Gist on how to [install micromamba](https://gist.github.com/David-Araripe/3ecd90bfbfd1c8e813812a203384b3c0).
+
+Once you have `micromamba` installed and have already cloned this repo, you can create the environment with:
+
+```bash
+micromamba create -f environment.yml -n qligfep_new 
+```
+Once you have the environment created you can activate it and install qligfep through the commands:
+    
+```bash
+microamamba activate qligfep_new
+python -m pip install -e .
+```
+
+Now that you're set, you should have access to the qligfep package. This includes the command-linde-interfaces (CLIs) `qligfep`, `qmapfep`, and `setupFEP`.
+
+Additionally, you should install the following packages:
+```bash
+python -m pip install rdkit scikit-learn loguru
+```
+
+And update the following conda packages (yes, I will make a PR to update the environment.yml file):
+```bash
+micromamba install openff-toolkit=0.14.5 openmm=8.1.1 -c conda-forge --yes
+```
+
+TODO's:
+- Update environment.yml file so that the installation is easier;
+- Implement a CLI to create parameter files from openff.
+
+## openff-to-q usage:
+At the moment you need a notebook or something like that. I will make the CLI soon 🙃 `DISCLAIMER`: This takes an awful lot of time to run (80 minutes for 36 ligands). I tried to make it faster but 
+multithreading wasn't possible. 🥲
+```python
+from loguru import logger
+
+run = Run(lig="ligs_container/BACE_ligands", FF="AMBER14sb", merge=True)
+
+logger.info("Running charges and mapping")
+run.get_charges()
+run.get_mapping()
+# run.report_missing_parameters()
+logger.info("Writing lib files")
+run.write_lib_Q()
+logger.info("Writing prm files")
+run.write_prm_Q()
+logger.info("Writing pdb files")
+run.write_PDB()
+```
+
 # Q-GPU #
 Version control of **Q-GPU**, an adaptation of **Q** version 5.06 running on GPUs.
 
