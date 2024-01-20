@@ -52,6 +52,13 @@ logger.info("Writing pdb files")
 run.write_PDB()
 ```
 
+note: the calculations all failed but I think the problem is in the merged parameters file. I will have to check it out later.
+```
+! End ligand improper parameters
+! End ligand improper parameters
+```
+`cat OPLS2015_CAT-13o_CAT-24_merged.prm`
+
 # Q-GPU #
 Version control of **Q-GPU**, an adaptation of **Q** version 5.06 running on GPUs.
 
