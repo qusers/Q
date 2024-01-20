@@ -127,7 +127,7 @@ class Run(object):
             parameters = self.parameters[lname]
             mapping = self.mapping[lname]
             total_charge = self.total_charges[lname]
-            with open(self.lig + ".lib", "w") as outfile:
+            with open(lname + ".lib", "w") as outfile:
                 outfile.write(
                     "{}    ! atoms no {}   total charge {} \n\n".format(
                         "{LIG}", len(mapping), total_charge
@@ -169,134 +169,134 @@ class Run(object):
             parameters = self.parameters[lname]
             mapping = self.mapping[lname]
             prm_file_out = f'{lname}.prm'
-        with open(prm_file) as infile, open(prm_file_out, "w") as outfile:
-            for line in infile:
-                block = 0
-                outfile.write(line)
-                if len(line) > 1:
-                    if line == "! Ligand vdW parameters\n":
-                        block = 1
-                    if line == "! Ligand bond parameters\n":
-                        block = 2
-                    if line == "! Ligand angle parameters\n":
-                        block = 3
-                    if line == "! Ligand torsion parameters\n":
-                        block = 4
-                    if line == "! Ligand improper parameters\n":
-                        block = 5
+            with open(prm_file) as infile, open(prm_file_out, "w") as outfile:
+                for line in infile:
+                    block = 0
+                    outfile.write(line)
+                    if len(line) > 1:
+                        if line == "! Ligand vdW parameters\n":
+                            block = 1
+                        if line == "! Ligand bond parameters\n":
+                            block = 2
+                        if line == "! Ligand angle parameters\n":
+                            block = 3
+                        if line == "! Ligand torsion parameters\n":
+                            block = 4
+                        if line == "! Ligand improper parameters\n":
+                            block = 5
 
-                if block == 1:
-                    for atom_indices, parameter in parameters["vdW"].items():
-                        ai = atom_indices[0]
-                        ai_name = mapping[ai][1].lower()
-                        # This is a bit hacky, check how to get the float out directly
-                        epsilon = float("{}".format(parameter.epsilon).split()[0])
-                        epsilon23 = epsilon / 2
-                        # TO DO: CHECK IF THIS IS CORRECT!
-                        Rmin = "{}".format(parameter.rmin_half)
-                        Rmin = Rmin.split()[0]
-                        Rmin = float(Rmin)
-                        mass = self.masses[mapping[ai][2]]
-                        outfile.write(
-                            """{:6}{: 8.3f}{: 10.3f}{: 10.3f}{: 10.3f}{: 10.3f}{:>10s}\n""".format(
-                                ai_name, Rmin, 0.00, epsilon, Rmin, epsilon23, mass
-                            )
-                        )
-
-                if block == 2:
-                    for atom_indices, parameter in parameters["Bonds"].items():
-                        ai = atom_indices[0]
-                        ai_name = mapping[ai][1].lower()
-                        aj = atom_indices[1]
-                        aj_name = mapping[aj][1].lower()
-                        fc = float("{}".format(parameter.k).split()[0])
-                        l = float("{}".format(parameter.length).split()[0])
-                        outfile.write(
-                            "{:10}{:10}{:10.1f}{:>10.3f}\n".format(
-                                ai_name, aj_name, fc, l
-                            )
-                        )
-
-                if block == 3:
-                    for atom_indices, parameter in parameters["Angles"].items():
-                        ai = atom_indices[0]
-                        ai_name = mapping[ai][1].lower()
-                        aj = atom_indices[1]
-                        aj_name = mapping[aj][1].lower()
-                        ak = atom_indices[2]
-                        ak_name = mapping[ak][1].lower()
-                        fc = float("{}".format(parameter.k).split()[0])
-                        angle = float("{}".format(parameter.angle).split()[0])
-
-                        outfile.write(
-                            """{:10}{:10}{:10}{: 8.2f}{:>12.3f}\n""".format(
-                                ai_name, aj_name, ak_name, fc, angle
-                            )
-                        )
-
-                if block == 4:
-                    for atom_indices, parameter in parameters[
-                        "ProperTorsions"
-                    ].items():
-                        forces = []
-                        ai = atom_indices[0]
-                        ai_name = mapping[ai][1].lower()
-                        aj = atom_indices[1]
-                        aj_name = mapping[aj][1].lower()
-                        ak = atom_indices[2]
-                        ak_name = mapping[ak][1].lower()
-                        al = atom_indices[3]
-                        al_name = mapping[al][1].lower()
-                        max_phase = len(parameter.phase)
-
-                        # Now check if there are multiple minima
-                        for i in range(0, max_phase):
-                            fc = float("{}".format(parameter.k[i]).split()[0])
-                            phase = float("{}".format(parameter.phase[i]).split()[0])
-                            paths = int(parameter.idivf[i])
-
-                            if i != max_phase - 1 and max_phase > 1:
-                                minimum = float(parameter.periodicity[i]) * -1
-
-                            else:
-                                minimum = float(parameter.periodicity[i])
-
-                            force = (fc, minimum, phase, paths)
-                            forces.append(force)
-
-                        for force in forces:
+                    if block == 1:
+                        for atom_indices, parameter in parameters["vdW"].items():
+                            ai = atom_indices[0]
+                            ai_name = mapping[ai][1].lower()
+                            # This is a bit hacky, check how to get the float out directly
+                            epsilon = float("{}".format(parameter.epsilon).split()[0])
+                            epsilon23 = epsilon / 2
+                            # TO DO: CHECK IF THIS IS CORRECT!
+                            Rmin = "{}".format(parameter.rmin_half)
+                            Rmin = Rmin.split()[0]
+                            Rmin = float(Rmin)
+                            mass = self.masses[mapping[ai][2]]
                             outfile.write(
-                                """{:10}{:10}{:10}{:10}{:>10.3f}{:>10.3f}{:>10.3f}{:>5d}\n""".format(
-                                    ai_name,
-                                    aj_name,
-                                    ak_name,
-                                    al_name,
-                                    force[0],
-                                    force[1],
-                                    force[2],
-                                    force[3],
+                                """{:6}{: 8.3f}{: 10.3f}{: 10.3f}{: 10.3f}{: 10.3f}{:>10s}\n""".format(
+                                    ai_name, Rmin, 0.00, epsilon, Rmin, epsilon23, mass
                                 )
                             )
 
-                if block == 5:
-                    for atom_indices, parameter in parameters[
-                        "ImproperTorsions"
-                    ].items():
-                        ai = atom_indices[0]
-                        ai_name = mapping[ai][1].lower()
-                        aj = atom_indices[1]
-                        aj_name = mapping[aj][1].lower()
-                        ak = atom_indices[2]
-                        ak_name = mapping[ak][1].lower()
-                        al = atom_indices[3]
-                        al_name = mapping[al][1].lower()
-                        fc = float("{}".format(parameter.k[0]).split()[0])
-                        phase = float("{}".format(parameter.phase[0]).split()[0])
-                        outfile.write(
-                            """{:10}{:10}{:10}{:10}{:10.3f}{:10.3f}\n""".format(
-                                ai_name, aj_name, ak_name, al_name, fc, phase
+                    if block == 2:
+                        for atom_indices, parameter in parameters["Bonds"].items():
+                            ai = atom_indices[0]
+                            ai_name = mapping[ai][1].lower()
+                            aj = atom_indices[1]
+                            aj_name = mapping[aj][1].lower()
+                            fc = float("{}".format(parameter.k).split()[0])
+                            l = float("{}".format(parameter.length).split()[0])
+                            outfile.write(
+                                "{:10}{:10}{:10.1f}{:>10.3f}\n".format(
+                                    ai_name, aj_name, fc, l
+                                )
                             )
-                        )
+
+                    if block == 3:
+                        for atom_indices, parameter in parameters["Angles"].items():
+                            ai = atom_indices[0]
+                            ai_name = mapping[ai][1].lower()
+                            aj = atom_indices[1]
+                            aj_name = mapping[aj][1].lower()
+                            ak = atom_indices[2]
+                            ak_name = mapping[ak][1].lower()
+                            fc = float("{}".format(parameter.k).split()[0])
+                            angle = float("{}".format(parameter.angle).split()[0])
+
+                            outfile.write(
+                                """{:10}{:10}{:10}{: 8.2f}{:>12.3f}\n""".format(
+                                    ai_name, aj_name, ak_name, fc, angle
+                                )
+                            )
+
+                    if block == 4:
+                        for atom_indices, parameter in parameters[
+                            "ProperTorsions"
+                        ].items():
+                            forces = []
+                            ai = atom_indices[0]
+                            ai_name = mapping[ai][1].lower()
+                            aj = atom_indices[1]
+                            aj_name = mapping[aj][1].lower()
+                            ak = atom_indices[2]
+                            ak_name = mapping[ak][1].lower()
+                            al = atom_indices[3]
+                            al_name = mapping[al][1].lower()
+                            max_phase = len(parameter.phase)
+
+                            # Now check if there are multiple minima
+                            for i in range(0, max_phase):
+                                fc = float("{}".format(parameter.k[i]).split()[0])
+                                phase = float("{}".format(parameter.phase[i]).split()[0])
+                                paths = int(parameter.idivf[i])
+
+                                if i != max_phase - 1 and max_phase > 1:
+                                    minimum = float(parameter.periodicity[i]) * -1
+
+                                else:
+                                    minimum = float(parameter.periodicity[i])
+
+                                force = (fc, minimum, phase, paths)
+                                forces.append(force)
+
+                            for force in forces:
+                                outfile.write(
+                                    """{:10}{:10}{:10}{:10}{:>10.3f}{:>10.3f}{:>10.3f}{:>5d}\n""".format(
+                                        ai_name,
+                                        aj_name,
+                                        ak_name,
+                                        al_name,
+                                        force[0],
+                                        force[1],
+                                        force[2],
+                                        force[3],
+                                    )
+                                )
+
+                    if block == 5:
+                        for atom_indices, parameter in parameters[
+                            "ImproperTorsions"
+                        ].items():
+                            ai = atom_indices[0]
+                            ai_name = mapping[ai][1].lower()
+                            aj = atom_indices[1]
+                            aj_name = mapping[aj][1].lower()
+                            ak = atom_indices[2]
+                            ak_name = mapping[ak][1].lower()
+                            al = atom_indices[3]
+                            al_name = mapping[al][1].lower()
+                            fc = float("{}".format(parameter.k[0]).split()[0])
+                            phase = float("{}".format(parameter.phase[0]).split()[0])
+                            outfile.write(
+                                """{:10}{:10}{:10}{:10}{:10.3f}{:10.3f}\n""".format(
+                                    ai_name, aj_name, ak_name, al_name, fc, phase
+                                )
+                            )
 
     def write_PDB(self):
         for lname in self.lig_names:
