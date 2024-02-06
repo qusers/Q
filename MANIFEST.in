@@ -1,0 +1,5 @@
+recursive-include src/QligFEP/FF *
+recursive-include src/QligFEP/INPUTS *
+recursive-include src/QligFEP/resources *
+recursive-include src/q6/ *.f90
+recursive-include src/q6/ makefile
