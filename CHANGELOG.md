@@ -40,10 +40,12 @@ Q/
 - Moved the IO functions `pdb_parse_out`, `pdb_parse_in` to the module `pdb_utils` to avoid circular imports within the package.
 - Three CLIs currently implemented: `qligfep`, `setupFEP`, and `qmapfep`. `TODO: will probably make it capitalized in the future.`
 - q6's makefile no longer moves the executables to Q/ and instead keeps then within `src/q6`. Useful for future improvements where the user will get everything necessary to get started by doing pip install.
+- openff2Q now implemented within a CLI as well. Still need to update the module for supporting the previous ForceFields as well.
 
 
 
 ## TODO:
+- [  ] add a MANIFEST.in file to include non-python files in the package.
 - [  ] Update Qgpu with the correct imports as well.
 - [  ] Unify both IO modules from Qgpu and QligFEP to a single one that can interact with both implementations [`q6` and `Qgpu` backends].
 - [  ] Get Lomap running and compare it to QmapFEP.
@@ -52,7 +54,7 @@ Q/
   - Testing: Would run simulations with & without softcore ➡️ How do values compare? 
 - [  ] Make a script detecting the cystein bonds so that the user doesn't need to [hardcode](https://github.com/GPCR-ModSim/qligfep-benchmark/blob/main/inputfilegen/OPLS2015/Thrombin/setup.py) them anymore
 - [  ] Numpy seems to have a support for compiling fortran code. Could think about making a wrapper so that thes functions can be directly called with python. (for now, lower priority...)
-- [  ] Setup a proper logging to the package. An easy option would be to use [loguru](https://github.com/Delgan/loguru), which I personally find very cool 🙂.
+- [x] Setup a proper logging to the package. An easy option would be to use [loguru](https://github.com/Delgan/loguru), which I personally find very cool 🙂.
 - [  ] Make current `except` statements in the code more specific. When not specific, these statements can also catch, for example, `KeyboardInterrupt`, triggered by a `Ctrl + c` in the terminal.
 - [  ] Currently, QmapFEP makes a `self.ligands` dictionary with the charges as keys. However, that's problematic because the charges were hard-coded... I added the charges to the MoleculePool but the code doesn't use that yet.
 
