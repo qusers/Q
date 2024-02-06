@@ -11,28 +11,35 @@ from .settings.settings import FF_DIR
 # openFF modules
 from openff.toolkit import Molecule, ForceField, Topology
 from openff.interchange import Interchange
+from openff.interchange.smirnoff._create import _electrostatics
 
-class Run(object):
-    """
-    Create FEP files from a common substructure for a given set of
-    ligands
-    """
-    def __init__(self, lig, FF, merge, *args, **kwargs):
-        """
-        The init method is a kind of constructor, called when an instance
-        of the class is created. The method serves to initialize what you
-        want to do with the object.
-        """
+class OpenFF2Q(object):
+    """Class to process ligands and generate OpenFF parameter files for QligFEP.
+
+    Attributes:
+        topologies: List[openff.toolkit.topology.Topology]
+            List of topologies for each ligand.
+        parameters: List[openff.toolkit.typing.engines.smirnoff.parameters.ParameterList]
+    """    
+    def __init__(self, lig, *args, **kwargs):
+        """Initializes a new instance of OpenFF2Q to process the `.sdf` input as lig.
+        
+        Args:
+            lig: sdf file containing the ligands to be processed.
+        """        
         self.lig = lig
         self.FF = 'openff-2.1.0'
-        self.merge = merge
         self.ff_list = []
         self.total_charges = {}
-        self.molecules = Molecule.from_file(self.lig + '.sdf')
+        self.molecules = Molecule.from_file(self.lig)
         self.lig_names = [mol.name for mol in self.molecules]
         self.mapping = {lname:{} for lname in self.lig_names}
         self.forcefield = ForceField('openff-2.1.0.offxml')
-        self.topologies, self.parameters = self.topologies_and_parameters()
+        self.topologies, self.parameters = self.set_topologies_and_parameters()
+        self.sdf_contents = {} # store the sdf content for each entry
+        self.parse_sdf_contents() # add the sdf content to the dictionary
+        self.charges_list_magnitude = {} # store charge magnitude for each ligand
+        self.total_charges = {} # store the total charges
         self.masses =   {"H"     : "1.0080",
                          "C"     : "12.0110",
                          "N"     : "14.0070",
@@ -46,7 +53,7 @@ class Run(object):
                         "DUM"   : "0.0000"
                         }
 
-    def topologies_and_parameters(self):
+    def set_topologies_and_parameters(self):
         topologies = {}
         parameters = {}
         for lname, mol in zip(self.lig_names, self.molecules):
@@ -57,26 +64,37 @@ class Run(object):
     
     def calculate_charges(self, lname) -> None:
         topology = self.topologies[lname]
-        partial_charges = Interchange.from_smirnoff(self.forcefield, topology)['Electrostatics'].charges.values()
+        interchange = Interchange()
+        _topology = Interchange.validate_topology(topology)
+        _electrostatics(
+            interchange,
+            self.forcefield,
+            _topology,
+            None,
+            None,
+        )
+        partial_charges = interchange['Electrostatics'].charges.values()
         charges_magnitudes = np.array([c._magnitude for c in partial_charges])
         total_charges = round(charges_magnitudes.sum(), 10)
         if total_charges != 0.0:
             print(f'WARNING: ligand {lname} residual charge {total_charges} ,check charges')
         return charges_magnitudes
 
-    def get_charges(self):
-        ### Assign partial charges and return in form of dictionary (can only load sdf, mol or smi) ###
-        self.charges_list_magnitude = {} # store charge magnitude for each ligand
-        self.total_charges = {} # store the total charges
+    def process_ligands(self):
+        """Assigns partial charges and writes the .lib, .prm and .pdb files for each ligand."""
         logger.info('Calculating charges')
         for lname in tqdm(self.lig_names):
             charges_magnitudes = self.calculate_charges(lname)
             self.charges_list_magnitude.update({lname : charges_magnitudes})
             self.total_charges.update({lname : round(charges_magnitudes.sum(), 10)})
-        
-    def get_mapping(self):
-        # Splitting the SDF content into individual entries
-        with open(self.lig + '.sdf') as infile:
+            self.get_mapping(lname)
+            self.write_lib_Q(lname)
+            self.write_prm_Q(lname)
+            self.write_PDB(lname)
+            
+    def parse_sdf_contents(self):
+        """Parse the SDF content into individual entries and have them saved in a dictionary."""
+        with open(self.lig) as infile:
             content = infile.readlines()
             ligands = []
             current_ligand = []
@@ -89,244 +107,266 @@ class Run(object):
                     current_ligand.append(line.strip())
 
         for lname, sdf_content in zip(self.lig_names, ligands):
-            if len(sdf_content) < 4:
-                continue  # Skip if entry is too short to have atom data
+            self.sdf_contents.update({lname : sdf_content})
+        
+    def get_mapping(self, lname):
+        """Get the mapping of the ligand atoms to the forcefield parameters.
 
-            # Safely extract atom count
-            try:
-                atom_count = int(sdf_content[3].split()[0])
-            except ValueError:
-                # Skip this ligand if counts line is not properly formatted
-                continue
+        Args:
+            lname: name of the ligand for the mapping.
+        """        
+        # Splitting the SDF content into individual entries
+        sdf_content = self.parse_sdf_contents[lname]
+        if len(sdf_content) < 4:
+            logger.error("Entry is too short to have atom data!")
 
-            cnt = -1
+        # Safely extract atom count
+        try:
+            atom_count = int(sdf_content[3].split()[0])
+        except ValueError:
+            # Skip this ligand if counts line is not properly formatted
+            logger.error("Could not extract atom count from SDF file!")
 
-            for line in sdf_content[4:4 + atom_count]:  # Process only atom lines
-                cnt += 1
-                atom_data = line.split()
+        cnt = -1
 
-                if len(atom_data) < 4:
-                    continue  # Skip if line does not have enough data
+        for line in sdf_content[4:4 + atom_count]:  # Process only atom lines
+            cnt += 1
+            atom_data = line.split()
 
-                atom_index = cnt + 1
-                charge = self.charges_list_magnitude[lname]
+            if len(atom_data) < 4:
+                continue  # Skip if line does not have enough data
 
-                self.mapping[lname][cnt] = [
-                    str(atom_index),                   # atom index
-                    atom_data[3] + str(atom_index),    # atom name
-                    atom_data[3],                      # atom type
-                    str(charge),                       # charge
-                    atom_data[0],                      # X coordinate
-                    atom_data[1],                      # Y coordinate
-                    atom_data[2]                       # Z coordinate
-                ]
+            atom_index = cnt + 1
+            charge = self.charges_list_magnitude[lname]
+
+            self.mapping[lname][cnt] = [
+                str(atom_index),                   # atom index
+                atom_data[3] + str(atom_index),    # atom name
+                atom_data[3],                      # atom type
+                str(charge),                       # charge
+                atom_data[0],                      # X coordinate
+                atom_data[1],                      # Y coordinate
+                atom_data[2]                       # Z coordinate
+            ]
 
 
-    def write_lib_Q(self):
-        for lname in self.lig_names:
-            parameters = self.parameters[lname]
-            mapping = self.mapping[lname]
-            total_charge = self.total_charges[lname]
-            with open(lname + ".lib", "w") as outfile:
+    def write_lib_Q(self, lname: str):
+        """Writes Q's .lib file for a given ligand.
+
+        Args:
+            lname: name of the ligand for the .lib file.
+        """        
+        parameters = self.parameters[lname]
+        mapping = self.mapping[lname]
+        total_charge = self.total_charges[lname]
+        with open(lname + ".lib", "w") as outfile:
+            outfile.write(
+                "{}    ! atoms no {}   total charge {} \n\n".format(
+                    "{LIG}", len(mapping), total_charge
+                )
+            )
+
+            outfile.write("[info] \n SYBYLtype RESIDUE \n\n")
+
+            # atom and charge block:
+            outfile.write("[atoms] \n")
+            for i, at in enumerate(mapping):
                 outfile.write(
-                    "{}    ! atoms no {}   total charge {} \n\n".format(
-                        "{LIG}", len(mapping), total_charge
+                    "{:>4s}   {:10}{:11}{:>10s}\n".format(
+                        mapping[at][0],
+                        mapping[at][1],
+                        mapping[at][1].lower(),
+                        mapping[at][3],
                     )
                 )
+            # bonded block
+            outfile.write("\n[bonds]\n")
+            for i, bond in enumerate(parameters["Bonds"]):
+                ai = mapping[bond[0]][1]
+                aj = mapping[bond[1]][1]
+                outfile.write("{:10s}{:}\n".format(ai, aj))
 
-                outfile.write("[info] \n SYBYLtype RESIDUE \n\n")
+            # improper block
+            outfile.write("\n[impropers]\n")
+            for i, torsion in enumerate(parameters["ImproperTorsions"]):
+                ai = mapping[torsion[0]][1]
+                aj = mapping[torsion[1]][1]
+                ak = mapping[torsion[2]][1]
+                al = mapping[torsion[3]][1]
+                outfile.write("{:10}{:10}{:10}{}\n".format(ai, aj, ak, al))
 
-                # atom and charge block:
-                outfile.write("[atoms] \n")
-                for i, at in enumerate(mapping):
-                    outfile.write(
-                        "{:>4s}   {:10}{:11}{:>10s}\n".format(
-                            mapping[at][0],
-                            mapping[at][1],
-                            mapping[at][1].lower(),
-                            mapping[at][3],
-                        )
-                    )
-                # bonded block
-                outfile.write("\n[bonds]\n")
-                for i, bond in enumerate(parameters["Bonds"]):
-                    ai = mapping[bond[0]][1]
-                    aj = mapping[bond[1]][1]
-                    outfile.write("{:10s}{:}\n".format(ai, aj))
+    def write_prm_Q(self, lname: str):
+        """Writes Q's .prm file for a given ligand.
 
-                # improper block
-                outfile.write("\n[impropers]\n")
-                for i, torsion in enumerate(parameters["ImproperTorsions"]):
-                    ai = mapping[torsion[0]][1]
-                    aj = mapping[torsion[1]][1]
-                    ak = mapping[torsion[2]][1]
-                    al = mapping[torsion[3]][1]
-                    outfile.write("{:10}{:10}{:10}{}\n".format(ai, aj, ak, al))
-
-    def write_prm_Q(self):
+        Args:
+            lname: name of the ligand for the .prm file.
+        """        
         prm_file = os.path.join(str(FF_DIR), "NOMERGE.prm")
-        for lname in self.lig_names:
-            parameters = self.parameters[lname]
-            mapping = self.mapping[lname]
-            prm_file_out = f'{lname}.prm'
-            with open(prm_file) as infile, open(prm_file_out, "w") as outfile:
-                for line in infile:
-                    block = 0
-                    outfile.write(line)
-                    if len(line) > 1:
-                        if line == "! Ligand vdW parameters\n":
-                            block = 1
-                        if line == "! Ligand bond parameters\n":
-                            block = 2
-                        if line == "! Ligand angle parameters\n":
-                            block = 3
-                        if line == "! Ligand torsion parameters\n":
-                            block = 4
-                        if line == "! Ligand improper parameters\n":
-                            block = 5
+        parameters = self.parameters[lname]
+        mapping = self.mapping[lname]
+        prm_file_out = f'{lname}.prm'
+        with open(prm_file) as infile, open(prm_file_out, "w") as outfile:
+            for line in infile:
+                block = 0
+                outfile.write(line)
+                if len(line) > 1:
+                    if line == "! Ligand vdW parameters\n":
+                        block = 1
+                    if line == "! Ligand bond parameters\n":
+                        block = 2
+                    if line == "! Ligand angle parameters\n":
+                        block = 3
+                    if line == "! Ligand torsion parameters\n":
+                        block = 4
+                    if line == "! Ligand improper parameters\n":
+                        block = 5
 
-                    if block == 1:
-                        for atom_indices, parameter in parameters["vdW"].items():
-                            ai = atom_indices[0]
-                            ai_name = mapping[ai][1].lower()
-                            # This is a bit hacky, check how to get the float out directly
-                            epsilon = float("{}".format(parameter.epsilon).split()[0])
-                            epsilon23 = epsilon / 2
-                            # TO DO: CHECK IF THIS IS CORRECT!
-                            Rmin = "{}".format(parameter.rmin_half)
-                            Rmin = Rmin.split()[0]
-                            Rmin = float(Rmin)
-                            mass = self.masses[mapping[ai][2]]
+                if block == 1:
+                    for atom_indices, parameter in parameters["vdW"].items():
+                        ai = atom_indices[0]
+                        ai_name = mapping[ai][1].lower()
+                        # This is a bit hacky, check how to get the float out directly
+                        epsilon = float("{}".format(parameter.epsilon).split()[0])
+                        epsilon23 = epsilon / 2
+                        # TO DO: CHECK IF THIS IS CORRECT!
+                        Rmin = "{}".format(parameter.rmin_half)
+                        Rmin = Rmin.split()[0]
+                        Rmin = float(Rmin)
+                        mass = self.masses[mapping[ai][2]]
+                        outfile.write(
+                            """{:6}{: 8.3f}{: 10.3f}{: 10.3f}{: 10.3f}{: 10.3f}{:>10s}\n""".format(
+                                ai_name, Rmin, 0.00, epsilon, Rmin, epsilon23, mass
+                            )
+                        )
+
+                if block == 2:
+                    for atom_indices, parameter in parameters["Bonds"].items():
+                        ai = atom_indices[0]
+                        ai_name = mapping[ai][1].lower()
+                        aj = atom_indices[1]
+                        aj_name = mapping[aj][1].lower()
+                        fc = float("{}".format(parameter.k).split()[0])
+                        l = float("{}".format(parameter.length).split()[0])
+                        outfile.write(
+                            "{:10}{:10}{:10.1f}{:>10.3f}\n".format(
+                                ai_name, aj_name, fc, l
+                            )
+                        )
+
+                if block == 3:
+                    for atom_indices, parameter in parameters["Angles"].items():
+                        ai = atom_indices[0]
+                        ai_name = mapping[ai][1].lower()
+                        aj = atom_indices[1]
+                        aj_name = mapping[aj][1].lower()
+                        ak = atom_indices[2]
+                        ak_name = mapping[ak][1].lower()
+                        fc = float("{}".format(parameter.k).split()[0])
+                        angle = float("{}".format(parameter.angle).split()[0])
+
+                        outfile.write(
+                            """{:10}{:10}{:10}{: 8.2f}{:>12.3f}\n""".format(
+                                ai_name, aj_name, ak_name, fc, angle
+                            )
+                        )
+
+                if block == 4:
+                    for atom_indices, parameter in parameters[
+                        "ProperTorsions"
+                    ].items():
+                        forces = []
+                        ai = atom_indices[0]
+                        ai_name = mapping[ai][1].lower()
+                        aj = atom_indices[1]
+                        aj_name = mapping[aj][1].lower()
+                        ak = atom_indices[2]
+                        ak_name = mapping[ak][1].lower()
+                        al = atom_indices[3]
+                        al_name = mapping[al][1].lower()
+                        max_phase = len(parameter.phase)
+
+                        # Now check if there are multiple minima
+                        for i in range(0, max_phase):
+                            fc = float("{}".format(parameter.k[i]).split()[0])
+                            phase = float("{}".format(parameter.phase[i]).split()[0])
+                            paths = int(parameter.idivf[i])
+
+                            if i != max_phase - 1 and max_phase > 1:
+                                minimum = float(parameter.periodicity[i]) * -1
+
+                            else:
+                                minimum = float(parameter.periodicity[i])
+
+                            force = (fc, minimum, phase, paths)
+                            forces.append(force)
+
+                        for force in forces:
                             outfile.write(
-                                """{:6}{: 8.3f}{: 10.3f}{: 10.3f}{: 10.3f}{: 10.3f}{:>10s}\n""".format(
-                                    ai_name, Rmin, 0.00, epsilon, Rmin, epsilon23, mass
+                                """{:10}{:10}{:10}{:10}{:>10.3f}{:>10.3f}{:>10.3f}{:>5d}\n""".format(
+                                    ai_name,
+                                    aj_name,
+                                    ak_name,
+                                    al_name,
+                                    force[0],
+                                    force[1],
+                                    force[2],
+                                    force[3],
                                 )
                             )
 
-                    if block == 2:
-                        for atom_indices, parameter in parameters["Bonds"].items():
-                            ai = atom_indices[0]
-                            ai_name = mapping[ai][1].lower()
-                            aj = atom_indices[1]
-                            aj_name = mapping[aj][1].lower()
-                            fc = float("{}".format(parameter.k).split()[0])
-                            l = float("{}".format(parameter.length).split()[0])
-                            outfile.write(
-                                "{:10}{:10}{:10.1f}{:>10.3f}\n".format(
-                                    ai_name, aj_name, fc, l
-                                )
+                if block == 5:
+                    for atom_indices, parameter in parameters[
+                        "ImproperTorsions"
+                    ].items():
+                        ai = atom_indices[0]
+                        ai_name = mapping[ai][1].lower()
+                        aj = atom_indices[1]
+                        aj_name = mapping[aj][1].lower()
+                        ak = atom_indices[2]
+                        ak_name = mapping[ak][1].lower()
+                        al = atom_indices[3]
+                        al_name = mapping[al][1].lower()
+                        fc = float("{}".format(parameter.k[0]).split()[0])
+                        phase = float("{}".format(parameter.phase[0]).split()[0])
+                        outfile.write(
+                            """{:10}{:10}{:10}{:10}{:10.3f}{:10.3f}\n""".format(
+                                ai_name, aj_name, ak_name, al_name, fc, phase
                             )
+                        )
 
-                    if block == 3:
-                        for atom_indices, parameter in parameters["Angles"].items():
-                            ai = atom_indices[0]
-                            ai_name = mapping[ai][1].lower()
-                            aj = atom_indices[1]
-                            aj_name = mapping[aj][1].lower()
-                            ak = atom_indices[2]
-                            ak_name = mapping[ak][1].lower()
-                            fc = float("{}".format(parameter.k).split()[0])
-                            angle = float("{}".format(parameter.angle).split()[0])
+    def write_PDB(self, lname: str):
+        """Writes a PDB file for a given ligand.
 
-                            outfile.write(
-                                """{:10}{:10}{:10}{: 8.2f}{:>12.3f}\n""".format(
-                                    ai_name, aj_name, ak_name, fc, angle
-                                )
-                            )
-
-                    if block == 4:
-                        for atom_indices, parameter in parameters[
-                            "ProperTorsions"
-                        ].items():
-                            forces = []
-                            ai = atom_indices[0]
-                            ai_name = mapping[ai][1].lower()
-                            aj = atom_indices[1]
-                            aj_name = mapping[aj][1].lower()
-                            ak = atom_indices[2]
-                            ak_name = mapping[ak][1].lower()
-                            al = atom_indices[3]
-                            al_name = mapping[al][1].lower()
-                            max_phase = len(parameter.phase)
-
-                            # Now check if there are multiple minima
-                            for i in range(0, max_phase):
-                                fc = float("{}".format(parameter.k[i]).split()[0])
-                                phase = float("{}".format(parameter.phase[i]).split()[0])
-                                paths = int(parameter.idivf[i])
-
-                                if i != max_phase - 1 and max_phase > 1:
-                                    minimum = float(parameter.periodicity[i]) * -1
-
-                                else:
-                                    minimum = float(parameter.periodicity[i])
-
-                                force = (fc, minimum, phase, paths)
-                                forces.append(force)
-
-                            for force in forces:
-                                outfile.write(
-                                    """{:10}{:10}{:10}{:10}{:>10.3f}{:>10.3f}{:>10.3f}{:>5d}\n""".format(
-                                        ai_name,
-                                        aj_name,
-                                        ak_name,
-                                        al_name,
-                                        force[0],
-                                        force[1],
-                                        force[2],
-                                        force[3],
-                                    )
-                                )
-
-                    if block == 5:
-                        for atom_indices, parameter in parameters[
-                            "ImproperTorsions"
-                        ].items():
-                            ai = atom_indices[0]
-                            ai_name = mapping[ai][1].lower()
-                            aj = atom_indices[1]
-                            aj_name = mapping[aj][1].lower()
-                            ak = atom_indices[2]
-                            ak_name = mapping[ak][1].lower()
-                            al = atom_indices[3]
-                            al_name = mapping[al][1].lower()
-                            fc = float("{}".format(parameter.k[0]).split()[0])
-                            phase = float("{}".format(parameter.phase[0]).split()[0])
-                            outfile.write(
-                                """{:10}{:10}{:10}{:10}{:10.3f}{:10.3f}\n""".format(
-                                    ai_name, aj_name, ak_name, al_name, fc, phase
-                                )
-                            )
-
-    def write_PDB(self):
-        for lname in self.lig_names:
-            mapping = self.mapping[lname]
-            with open(lname + '.pdb', 'w') as outfile:
-                for atom in mapping:
-                    ai      = atom + 1
-                    ai_name = mapping[atom][1]
-                    a_el    = mapping[atom][2]
-                    ax      = float(mapping[atom][4])
-                    ay      = float(mapping[atom][5])
-                    az      = float(mapping[atom][6])
-                    at_entry = ['HETATM',   #  0 ATOM/HETATM
-                                ai,         #  1 ATOM serial number
-                                ai_name,    #  2 ATOM name
-                                '',         #  3 Alternate location indicator
-                                'LIG',      #  4 Residue name
-                                '',         #  5 Chain identifier
-                                1,          #  6 Residue sequence number
-                                '',         #  7 Code for insertion of residue
-                                ax,         #  8 Orthogonal coordinates for X
-                                ay,         #  9 Orthogonal coordinates for Y
-                                az,         # 10 Orthogonal coordinates for Z
-                                0.0,        # 11 Occupancy
-                                0.0,        # 12 Temperature factor
-                                a_el,       # 13 Element symbol
-                                ''          # 14 Charge on atom
-                            ]
-                    outfile.write(pdb_parse_out(at_entry) + '\n')
-
+        Args:
+            lname: name of the ligand for the .pdb file.
+        """        
+        mapping = self.mapping[lname]
+        with open(lname + '.pdb', 'w') as outfile:
+            for atom in mapping:
+                ai      = atom + 1
+                ai_name = mapping[atom][1]
+                a_el    = mapping[atom][2]
+                ax      = float(mapping[atom][4])
+                ay      = float(mapping[atom][5])
+                az      = float(mapping[atom][6])
+                at_entry = ['HETATM',   #  0 ATOM/HETATM
+                            ai,         #  1 ATOM serial number
+                            ai_name,    #  2 ATOM name
+                            '',         #  3 Alternate location indicator
+                            'LIG',      #  4 Residue name
+                            '',         #  5 Chain identifier
+                            1,          #  6 Residue sequence number
+                            '',         #  7 Code for insertion of residue
+                            ax,         #  8 Orthogonal coordinates for X
+                            ay,         #  9 Orthogonal coordinates for Y
+                            az,         # 10 Orthogonal coordinates for Z
+                            0.0,        # 11 Occupancy
+                            0.0,        # 12 Temperature factor
+                            a_el,       # 13 Element symbol
+                            ''          # 14 Charge on atom
+                        ]
+                outfile.write(pdb_parse_out(at_entry) + '\n')
+                    
     # def report_missing_parameters(self): # TODO: This doesn't work yet...
     #     """
     #     Analyze a molecule using a provided ForceField, generating a report of any
@@ -511,7 +551,7 @@ if __name__ == "__main__":
                         help = "Use this flag if you do not want the ligand prms to be merged")
     
     args = parser.parse_args()
-    run = Run(lig = args.lig,
+    run = OpenFF2Q(lig = args.lig,
               FF = args.FF,
               merge = args.merge
              )
