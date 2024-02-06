@@ -185,4 +185,4 @@ def main_exe():
     main(args)
 
 if __name__ == '__main__':
-    main_exe
+    main_exe()
