@@ -116,7 +116,7 @@ class OpenFF2Q(object):
             lname: name of the ligand for the mapping.
         """        
         # Splitting the SDF content into individual entries
-        sdf_content = self.parse_sdf_contents[lname]
+        sdf_content = self.sdf_contents[lname]
         if len(sdf_content) < 4:
             logger.error("Entry is too short to have atom data!")
 
