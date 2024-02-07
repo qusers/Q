@@ -1,5 +1,4 @@
 import os
-import argparse
 from tqdm import tqdm
 from loguru import logger
 import numpy as np
@@ -12,6 +11,7 @@ from .settings.settings import FF_DIR
 from openff.toolkit import Molecule, ForceField, Topology
 from openff.interchange import Interchange
 from openff.interchange.smirnoff._create import _electrostatics
+from openff.toolkit.utils import UndefinedStereochemistryError
 
 class OpenFF2Q(object):
     """Class to process ligands and generate OpenFF parameter files for QligFEP.
@@ -55,7 +55,11 @@ class OpenFF2Q(object):
                         }
         
     def setup_mols_and_names(self):
-        mols = Molecule.from_file(self.lig)
+        try:
+            mols = Molecule.from_file(self.lig)
+        except UndefinedStereochemistryError:
+            logger.warning('Undefined stereochemistry in the input file!! Will try to process the ligands anyway.')
+            mols = Molecule.from_file(self.lig, allow_undefined_stereo=True)
         if not isinstance(mols, list):
             self.single_ligand = True
             mols = [mols]
