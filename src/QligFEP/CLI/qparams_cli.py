@@ -10,18 +10,17 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         '-FF',
         '--forcefield',
-        required = True,
         dest="forcefield",
         default='OpenFF',
         choices = ['OPLS2005', 'OPLS2015', 'AMBER14sb', 'CHARMM36', 'CHARMM22', 'CHARMM_TEST', 'OpenFF'],
-        help = "Forcefield to be used"
+        help = "Forcefield to be used. Defaults to OpenFF."
     )
     return parser.parse_args()
 
 def main(args: argparse.Namespace) -> None:
     if args.forcefield == 'OpenFF':
         openff2q = OpenFF2Q(args.input)
-        openff2q.write_all_files()
+        openff2q.process_ligands()
     else:
         raise NotImplementedError("Forcefield not supported through this CLI yet")
     

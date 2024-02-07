@@ -31,8 +31,9 @@ class OpenFF2Q(object):
         self.FF = 'openff-2.1.0'
         self.ff_list = []
         self.total_charges = {}
-        self.molecules = Molecule.from_file(self.lig)
-        self.lig_names = [mol.name for mol in self.molecules]
+        self.molecules = []
+        self.lig_names = []
+        self.setup_mols_and_names()
         self.mapping = {lname:{} for lname in self.lig_names}
         self.forcefield = ForceField('openff-2.1.0.offxml')
         self.topologies, self.parameters = self.set_topologies_and_parameters()
@@ -52,6 +53,22 @@ class OpenFF2Q(object):
                          "I"     : "126.90", 
                         "DUM"   : "0.0000"
                         }
+        
+    def setup_mols_and_names(self):
+        mols = Molecule.from_file(self.lig)
+        if not isinstance(mols, list):
+            self.single_ligand = True
+            mols = [mols]
+        else:
+            self.single_ligand = False
+        
+        if self.single_ligand:
+            self.lig_names = [self.lig.split('.')[0]]
+        else:
+            self.lig_names = [ # in some cases the name is empty so we give it a name
+                mol.name if mol.name != '' else f'lig_{idx}' for idx, mol in enumerate(mols)
+            ]
+        self.molecules = mols
 
     def set_topologies_and_parameters(self):
         topologies = {}
@@ -86,7 +103,7 @@ class OpenFF2Q(object):
         for lname in tqdm(self.lig_names):
             charges_magnitudes = self.calculate_charges(lname)
             self.charges_list_magnitude.update({lname : charges_magnitudes})
-            self.total_charges.update({lname : round(charges_magnitudes.sum(), 10)})
+            self.total_charges.update({lname : f'{round(charges_magnitudes.sum(), 10):.3f}'})
             self.get_mapping(lname)
             self.write_lib_Q(lname)
             self.write_prm_Q(lname)
@@ -137,8 +154,7 @@ class OpenFF2Q(object):
                 continue  # Skip if line does not have enough data
 
             atom_index = cnt + 1
-            charge = self.charges_list_magnitude[lname]
-
+            charge = round(self.charges_list_magnitude[lname][cnt], 3) # round for Q
             self.mapping[lname][cnt] = [
                 str(atom_index),                   # atom index
                 atom_data[3] + str(atom_index),    # atom name
@@ -524,40 +540,3 @@ class OpenFF2Q(object):
     #         print(missing_params)
     #     else:
     #         print('Parameters succesfully assigned')
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        prog='lig_prep',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        description = '       == Generate parameter files for ligands. == ')
-
-    
-    parser.add_argument('-l', '--ligand',
-                        dest = "lig",
-                        required = True,
-                        help = "name of the ligand")
-    
-    parser.add_argument('-FF', '--forcefield',
-                        dest = "FF",
-                        required = True,
-                        choices = ['AMBER14sb'],
-                        help = "forcefield to use")
-
-    # changed the default to false
-    parser.add_argument('-m', '--merge',
-                        dest = "merge",
-                        action = 'store_false',
-                        default = False,        
-                        help = "Use this flag if you do not want the ligand prms to be merged")
-    
-    args = parser.parse_args()
-    run = OpenFF2Q(lig = args.lig,
-              FF = args.FF,
-              merge = args.merge
-             )
-
-    run.charges_and_mapping()
-    run.report_missing_parameters()
-    run.write_lib_Q()
-    run.write_prm_Q()
-    run.write_PDB()
