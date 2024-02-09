@@ -18,7 +18,8 @@ temperature=298
 run=10
 finalMDrestart=md_0000_1000.re
 seed="$[1 + $[RANDOM % 32767]]"
-starttime=$(date)
+starttime=$(date +%s)
+starttime_readable=$(date)
 workdir=$(pwd)
 inputfiles=$workdir/inputfiles
 length=${#fepfiles[@]}
@@ -59,10 +60,21 @@ timeout 30s QFEP < qfep.inp > qfep.out
 done
 #CLEANUP
 
-endtime=$(date)
-echo "#    EXPRESS LOG for jobid: $SLURM_JOB_ID"                      
-echo "#    Starting time: $starttime"                                  
-echo "#    Ending time: $endtime"                                  
-echo "#    Random seed: $seed"                                      
-echo "#    Replicate Number: $run"                                
+endtime=$(date +%s)
+endtime_readable=$(date)
+# Calculate runtime
+runtime=$((endtime - starttime))
+
+# Convert runtime to hours:minutes:seconds
+hours=$(($runtime / 3600))
+minutes=$(($runtime % 3600 / 60))
+seconds=$(($runtime % 60))
+
+echo "#    EXPRESS LOG for jobid: $SLURM_JOB_ID"
+echo "#    Slurm tasks: $SLURM_NTASKS"
+echo "#    Starttime: $starttime_readable"
+echo "#    Endtime: $endtime_readable"
+echo "#    Runtime: ${hours}h:${minutes}m:${seconds}s"
+echo "#    Random seed: $seed"
+echo "#    Replicate Number: $run"
 echo "#    Working Directory: $workdir"
