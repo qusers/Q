@@ -759,29 +759,29 @@ class QligFEP(object):
                     if line.strip() == '#EQ_FILES':
                         for line in EQ_files:
                             file_base = Path(line).stem
-                            outline = f'time srun $qdyn {file_base}.inp > {file_base}.log\n'
+                            outline = f'time srun -n $SLURM_NTASKS $qdyn {file_base}.inp > {file_base}.log\n'
                             outfile.write(outline)
                         
                     if line.strip() == '#RUN_FILES':
                         if self.start == '1':
                             for line in MD_files:
                                 file_base = line.split('/')[-1][:-4]
-                                outline = 'time srun $qdyn {}.inp'  \
+                                outline = 'time srun -n $SLURM_NTASKS $qdyn {}.inp'  \
                                       ' > {}.log\n'.format(file_base,
                                                            file_base)
                             outfile.write(outline)
                             
                         elif self.start == '0.5':
-                            outline = 'time srun $qdyn {}.inp' \
+                            outline = 'time srun -n $SLURM_NTASKS $qdyn {}.inp' \
                                       ' > {}.log\n\n'.format('md_0500_0500',
                                                              'md_0500_0500')
                             outfile.write(outline)
                             for i, md in enumerate(md_1):
-                                outline1 = 'time srun $qdyn {}.inp'  \
+                                outline1 = 'time srun -n $SLURM_NTASKS $qdyn {}.inp'  \
                                           ' > {}.log\n'.format(md_1[i][:-4],
                                                              md_1[i][:-4])
 
-                                outline2 = 'time srun $qdyn {}.inp'  \
+                                outline2 = 'time srun -n $SLURM_NTASKS $qdyn {}.inp'  \
                                       ' > {}.log\n'.format(md_2[i][:-4],
                                                            md_2[i][:-4])
 
