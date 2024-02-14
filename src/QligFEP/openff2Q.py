@@ -1,6 +1,7 @@
 import os
 from tqdm import tqdm
 from loguru import logger
+from pathlib import Path
 import numpy as np
 
 # QligFEP modules
@@ -41,18 +42,6 @@ class OpenFF2Q(object):
         self.parse_sdf_contents() # add the sdf content to the dictionary
         self.charges_list_magnitude = {} # store charge magnitude for each ligand
         self.total_charges = {} # store the total charges
-        self.masses =   {"H"     : "1.0080",
-                         "C"     : "12.0110",
-                         "N"     : "14.0070",
-                         "O"     : "15.9994",
-                         "F"     : "19.0000",
-                         "P"     : "30.9700",
-                         "S"     : "32.0600",
-                         "Cl"    : "35.0000",
-                         "Br"    : "79.9000",
-                         "I"     : "126.90", 
-                        "DUM"   : "0.0000"
-                        }
         
     def setup_mols_and_names(self):
         try:
@@ -129,6 +118,26 @@ class OpenFF2Q(object):
 
         for lname, sdf_content in zip(self.lig_names, ligands):
             self.sdf_contents.update({lname : sdf_content})
+            
+    def write_sdf_separate(self, output_dir):
+        """Function to write the separate multiple molecules within a sdf file into their own
+        .sdf, placed under `output_dir`.
+
+        Args:
+            output_dir: the directory to save the single sdf molecules.
+
+        Raises:
+            ValueError: if `output_dir` is neither a `str` or a `pathlib.Path` object.
+        """        
+        if isinstance(output_dir, str):
+            output_dir = Path(output_dir)
+        elif not isinstance(output_dir, Path):
+            raise ValueError('output_dir must be either a str or pathlib.Path object')
+        if not output_dir.exists():
+            output_dir.mkdir(exist_ok=True)
+        for idx, lname in enumerate(self.lig_names):
+            fpath = str(output_dir / f'{lname}.sdf')
+            self.molecules[idx].to_file(file_path=fpath, file_format='sdf')
         
     def get_mapping(self, lname):
         """Get the mapping of the ligand atoms to the forcefield parameters.
@@ -225,6 +234,7 @@ class OpenFF2Q(object):
         parameters = self.parameters[lname]
         mapping = self.mapping[lname]
         prm_file_out = f'{lname}.prm'
+        mol = self.molecules[self.lig_names.index(lname)]
         with open(prm_file) as infile, open(prm_file_out, "w") as outfile:
             for line in infile:
                 block = 0
@@ -252,7 +262,8 @@ class OpenFF2Q(object):
                         Rmin = "{}".format(parameter.rmin_half)
                         Rmin = Rmin.split()[0]
                         Rmin = float(Rmin)
-                        mass = self.masses[mapping[ai][2]]
+                        assert len(atom_indices) == 1, f'More than 1 atom indices present: {atom_indices}'
+                        mass = mol.atoms[atom_indices[0]].mass.magnitude
                         outfile.write(
                             """{:6}{: 8.3f}{: 10.3f}{: 10.3f}{: 10.3f}{: 10.3f}{:>10s}\n""".format(
                                 ai_name, Rmin, 0.00, epsilon, Rmin, epsilon23, mass
