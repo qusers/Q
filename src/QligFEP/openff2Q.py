@@ -263,7 +263,7 @@ class OpenFF2Q(object):
                         Rmin = Rmin.split()[0]
                         Rmin = float(Rmin)
                         assert len(atom_indices) == 1, f'More than 1 atom indices present: {atom_indices}'
-                        mass = mol.atoms[atom_indices[0]].mass.magnitude
+                        mass = str(round(mol.atoms[atom_indices[0]].mass.magnitude, 4))
                         outfile.write(
                             """{:6}{: 8.3f}{: 10.3f}{: 10.3f}{: 10.3f}{: 10.3f}{:>10s}\n""".format(
                                 ai_name, Rmin, 0.00, epsilon, Rmin, epsilon23, mass
