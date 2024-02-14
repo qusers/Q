@@ -1,6 +1,10 @@
 from QligFEP import SRC
 from multiprocessing import cpu_count
 
+def nljoin(list_strings): # nl for new line
+    return '\n'.join(list_strings) + '\n'
+    
+
 ROOT_DIR = SRC / "QligFEP"
 
 # The directories to the input FF and run related input files are given here
@@ -43,7 +47,7 @@ CONFIGS = {
 CSB = {'NODES'        : '1',
        'NTASKS'       : '16',
        'TIME'         : '0-12:00:00',  # d-hh:mm:ss
-       'MODULES'      : 'module purge\nmodule load Q/6.0.1_ME\n',
+       'MODULES'      : nljoin(['module purge', 'module load Q/6.0.1_ME']),
        **Q_PATHS
       }
 
@@ -51,7 +55,7 @@ CSB = {'NODES'        : '1',
 SNELLIUS = {'NODES'        : '1',
             'NTASKS'       : '16',
             'TIME'         : '0-12:00:00',  # d-hh:mm:ss
-            'MODULES'      : 'module load 2021\n module load gompi/2021a',
+            'MODULES'      : nljoin(['module load 2021', 'module load gompi/2021a']),
             **Q_PATHS
       }
 
@@ -59,7 +63,7 @@ ALICE = {'MAINDIR'      : Q_DIR,
          'NODES'        : '1',
          'NTASKS'       : '24',
          'TIME'         : '0-3:00:00',  # d-hh:mm:ss
-         'MODULES'      : 'module load OpenMPI/3.1.3-GCC-8.2.0-2.31.1',
+         'MODULES'      : nljoin(['module load OpenMPI/3.1.3-GCC-8.2.0-2.31.1']),
          **Q_PATHS
         }
 
@@ -67,7 +71,7 @@ ALICE = {'MAINDIR'      : Q_DIR,
 HEBBE = {'NODES'      : '1',
          'NTASKS'     : '20',
          'TIME'       : '0-02:00:00',  # d-hh:mm:ss
-         'MODULES'    : 'module load GCC/5.4.0-2.26\nmodule load OpenMPI/1.10.3\n', # Add a \n for every added module
+         'MODULES'    : nljoin(['module load GCC/5.4.0-2.26', 'module load OpenMPI/1.10.3']),
          'ACCOUNT'    : 'SNIC2018-2-3',
          **Q_PATHS
         }
@@ -75,7 +79,7 @@ HEBBE = {'NODES'      : '1',
 KEBNE = {'NODES'      : '1',
          'NTASKS'     : '28',
          'TIME'       : '0-04:00:00',  # d-hh:mm:ss
-         'MODULES'    : 'module load gompi/2017b\n', # Add a \n for every added module
+         'MODULES'    : nljoin(['module load gompi/2017b']),
          'ACCOUNT'    : 'SNIC2018-2-3',
          **Q_PATHS
         }
@@ -83,7 +87,7 @@ KEBNE = {'NODES'      : '1',
 STALLO = {'NODES'      : '1',
          'NTASKS'     : '20',
          'TIME'       : '0-12:00:00',  # d-hh:mm:ss
-         'MODULES'    : 'module load impi/2018.1.163-iccifort-2018.1.163-GCC-6.4.0-2.28\n', # Add a \n for every added module
+         'MODULES'    : nljoin(['module load impi/2018.1.163-iccifort-2018.1.163-GCC-6.4.0-2.28']),
          'ACCOUNT'    : 'nn4654K',
          **Q_PATHS
         }
@@ -91,7 +95,7 @@ STALLO = {'NODES'      : '1',
 UPPMAX = {'NODES'      : '1',
          'NTASKS'     : '20',
          'TIME'       : '0-24:00:00',  # d-hh:mm:ss
-         'MODULES'    : 'gcc/9.2.0\nopenmpi/4.0.2\n', # Add a \n for every added module
+         'MODULES'    : nljoin(['gcc/9.2.0', 'openmpi/4.0.2']),
          'ACCOUNT'    : 'snic2018-2-3',
          **Q_PATHS
         }
@@ -99,15 +103,22 @@ UPPMAX = {'NODES'      : '1',
 TETRA  = {'NODES'      : '1',
           'NTASKS'     : '32',
           'TIME'       : '0-24:00:00',  # d-hh:mm:ss
-          'MODULES'    : '\n', # Add a \n for every added module
+          'MODULES'    : '\n',
           'ACCOUNT'    : 'snic2022-3-2',
           **Q_PATHS
         }
 
+DARDEL = {'NODES'      : '1',
+          'NTASKS'     : '32',
+          'TIME'       : '0-24:00:00',  # d-hh:mm:ss
+          'MODULES'    : nljoin(['module purge', 'module load cpe/22.06', 'module load PrgEnv-gnu']),
+          'ACCOUNT'    : 'naiss2023-3-5',
+        }
+
 LOCAL = {'NODES'      : 1,
-         'NTASKS'     : cpu_count(),
+         'NTASKS'     : str(cpu_count()),
          'TIME'       : '0-24:00:00',  # d-hh:mm:ss
-         'MODULES'    : '\n', # Add a \n for every added module
+         'MODULES'    : '\n',
          **Q_PATHS
         }
 
