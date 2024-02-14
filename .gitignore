@@ -174,7 +174,7 @@ qdyn
 *.lo
 *.o
 *.obj
-bin/q6
+src/q6/bin/
 
 # Precompiled Headers
 *.gch
