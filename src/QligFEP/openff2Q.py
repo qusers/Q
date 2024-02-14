@@ -14,12 +14,18 @@ from openff.interchange import Interchange
 from openff.interchange.smirnoff._create import _electrostatics
 
 class OpenFF2Q(MoleculeIO):
-    """Class to process ligands and generate OpenFF parameter files for QligFEP.
+    """Class to process ligands and generate OpenFF parameter files for QligFEP. Dictionary
+    variables use ligand names as keys, as setup in the MoleculeIO class.
 
     Attributes:
-        topologies: List[openff.toolkit.topology.Topology]
-            List of topologies for each ligand.
-        parameters: List[openff.toolkit.typing.engines.smirnoff.parameters.ParameterList]
+        mapping: Dictionary to store the mapping of the ligand atoms to the forcefield parameters.
+        forcefield: OpenFF ForceField object.
+        topologies: Dictionary with `openff.toolkit.topology.Topology` objects as values.
+        parameters: Dictionary with `openff.toolkit.typing.engines.smirnoff.parameters.ParameterList`
+            objects as values.
+        charges_list_magnitude: Dictionary to store the partial charge magnitude for each
+            atom in the ligand for each ligand.
+        total_charges: Dictionary to store the total charges for each ligand.
     """    
     def __init__(self, lig, *args, **kwargs):
         """Initializes a new instance of OpenFF2Q to process the `.sdf` input as lig.

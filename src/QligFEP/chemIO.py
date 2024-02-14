@@ -6,12 +6,15 @@ from openff.toolkit import Molecule
 from openff.toolkit.utils import UndefinedStereochemistryError
 
 class MoleculeIO(object):
-    """Class to process ligands and generate OpenFF parameter files for QligFEP.
-
+    """A class to handle the input/output of molecules. Ligands are usually initialized
+    from .sdf files and then processed into individual molecules.
+    
     Attributes:
-        topologies: List[openff.toolkit.topology.Topology]
-            List of topologies for each ligand.
-        parameters: List[openff.toolkit.typing.engines.smirnoff.parameters.ParameterList]
+        self.lig: the input ligand file.
+        self.molecules: a list of Molecule objects.
+        self.lig_names: a list of ligand names.
+        self.sdf_contents: a dictionary of the sdf contents for each ligand.
+        self.single_ligand: a boolean to indicate if the input file contains a single ligand.
     """    
     def __init__(self, lig, *args, **kwargs):
         """Initialize a Molecule Input/Output object. This helper class has a base functionality
