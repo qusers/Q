@@ -10,6 +10,11 @@ Once you have `micromamba` installed and have already cloned this repo, you can 
 micromamba create -f environment.yml -n qligfep_new 
 ```
 Once you have the environment created you can activate it and install qligfep through the commands:
+
+<details>
+<summary> ⚠️!! NOTE !!⚠️ </summary>
+Currently, you have to remove setup.py from your files. Either move it somewhere else or delete it. In the future, we would like to set it up with configurations for directly compiling Q.
+</details>
     
 ```bash
 microamamba activate qligfep_new
@@ -23,41 +28,32 @@ Additionally, you should install the following packages:
 python -m pip install rdkit scikit-learn loguru
 ```
 
-And update the following conda packages (yes, I will make a PR to update the environment.yml file):
+And update the following conda packages (still need a PR to update the environment.yml file):
 ```bash
-micromamba install openff-toolkit=0.14.5 openmm=8.1.1 -c conda-forge --yes
+micromamba install openff-toolkit=0.14.5 openmm=8.1.1 lomap2 -c conda-forge --yes
 ```
-
-TODO's:
-- Update environment.yml file so that the installation is easier;
-- Implement a CLI to create parameter files from openff.
 
 ## openff-to-q usage:
-At the moment you need a notebook or something like that. I will make the CLI soon 🙃 `DISCLAIMER`: This takes an awful lot of time to run (80 minutes for 36 ligands). I tried to make it faster but 
-multithreading wasn't possible. 🥲
-```python
-from loguru import logger
+After installing this python package with the above instructions, you should have access to the command `qparams`. So far, the function only supports creating parameter files using OpenFF parameters and others are on the `TODO` list. Running `qparams -h` should return you:
+```
+usage: qparams [-h] -i INPUT [-FF {OPLS2005,OPLS2015,AMBER14sb,CHARMM36,CHARMM22,CHARMM_TEST,OpenFF}]
 
-run = Run(lig="ligs_container/BACE_ligands", FF="AMBER14sb", merge=True)
+Write ligand parameter files for QligFEP according to the chosen forcefield
 
-logger.info("Running charges and mapping")
-run.get_charges()
-run.get_mapping()
-# run.report_missing_parameters()
-logger.info("Writing lib files")
-run.write_lib_Q()
-logger.info("Writing prm files")
-run.write_prm_Q()
-logger.info("Writing pdb files")
-run.write_PDB()
+options:
+  -h, --help            show this help message and exit
+  -i INPUT, --input INPUT
+                        Input (sdf) file.
+  -FF {OPLS2005,OPLS2015,AMBER14sb,CHARMM36,CHARMM22,CHARMM_TEST,OpenFF}, --forcefield {OPLS2005,OPLS2015,AMBER14sb,CHARMM36,CHARMM22,CHARMM_TEST,OpenFF}
+                        Forcefield to be used. Defaults to OpenFF.
 ```
 
-note: the calculations all failed but I think the problem is in the merged parameters file. I will have to check it out later.
+
+! Note on Swedish servers !
+- If you're running jobs on [Dardel](https://www.pdc.kth.se/hpc-services/computing-systems/dardel), you will need to make a modification on Q's makefile. To do so, run `cd Q` after cloning the repository and run:
+```bash
+sed -i 's/\bmpif90\b/ftn/g' src/q6/makefile
 ```
-! End ligand improper parameters
-! End ligand improper parameters
-```
-`cat OPLS2015_CAT-13o_CAT-24_merged.prm`
 
 # Q-GPU #
 Version control of **Q-GPU**, an adaptation of **Q** version 5.06 running on GPUs.
