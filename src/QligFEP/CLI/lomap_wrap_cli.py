@@ -110,7 +110,7 @@ def parse_arguments() -> argparse.Namespace:
     
 def main(args):
     # TODO: could implement other lomap arguemnts here
-    lomap = LomapWrap(args.inp, args.out, args.time, args.verbose)
+    lomap = LomapWrap(args.input, args.output, args.time, args.verbose)
     lomap.run_lomap()
 
 def main_exe():
