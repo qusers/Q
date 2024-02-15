@@ -7,6 +7,7 @@ from pathlib import Path
 from loguru import logger
 from typing import Optional
 from multiprocessing import cpu_count
+import numpy as np
 
 # QligFEP imports
 from ..chemIO import MoleculeIO
@@ -26,7 +27,7 @@ class LomapWrap(object):
         }
         self._check_input()
         
-    def _check_input(self):
+    def _check_input(self) -> None:
         """Method to check self.inp for the correct file format."""
         inpath = Path(self.inp)
         if inpath.suffix == '.sdf':
@@ -40,14 +41,22 @@ class LomapWrap(object):
             handler.write_sdf_separate(self.out)
             self.lomap_args.update({'directory': self.out})
     
-    def _parse_output(self, output):
+    def _parse_output(self, output) -> str:
+        inpath = Path(self.inp)
         if output is None:
-            output = Path(self.inp).parent / Path(self.inp).stem
+            if inpath.suffix == '.sdf':
+                inp_is_dir = False
+            elif inpath.is_dir():
+                inp_is_dir = True
+            else:
+                raise ValueError('The input file must be a `.sdf` or a directory.')
+            # if the input is a directory, lomap will write the output to the same directory
+            output = (inpath if inp_is_dir else inpath.parent / Path(self.inp).stem)
         else:
             output = Path(output).absolute()
-        return output
+        return str(output)
             
-    def _setup_cores(self):
+    def _setup_cores(self) -> int:
         """Method to check the number of cores."""
         if cpu_count() < 2:
             logger.warning('You are using only one core. This might take a while.')
@@ -58,25 +67,20 @@ class LomapWrap(object):
             cores = 8
         return cores
     
-    def format_graph_data(self, nx_graph):
-        organized_data = []
-
-        # Iterate over all edges to gather necessary information
+    def format_graph_data(self, nx_graph) -> dict:
+        formatted_data = []
+        # Iterate over the edges and extract the data
         for source, target, data in nx_graph.edges(data=True):
             # Extract edge data
-            weight = data.get("similarity", 0)  # Default to 0 if not found
-            strict_flag = data.get("strict_flag", None)  # Include if needed
-
-            # Extract node names from nodes data
+            weight = data.get("similarity", np.nan)  # Default to Nan if not present
+            strict_flag = data.get("strict_flag", None)  # Add lomap's strict flag
+            # extract the data and save it ina a dictionary
             source_node_data = nx_graph.nodes[source]
             target_node_data = nx_graph.nodes[target]
-            source_name = source_node_data.get("fname_comp").replace(
-                ".sdf", ""
-            )  # Assuming fname_comp holds the file name
+            source_name = source_node_data.get("fname_comp").replace(".sdf", "")
             target_name = target_node_data.get("fname_comp").replace(".sdf", "")
 
-            # Construct the dictionary for the current edge
-            edge_dict = {
+            edge_dict = { # returned values are a list of edge dictionaries
                 "weight": weight,
                 "source": source,
                 "target": target,
@@ -84,12 +88,11 @@ class LomapWrap(object):
                 "from": source_name,
                 "to": target_name,
             }
-            # Append the constructed dictionary to the list
-            organized_data.append(edge_dict)
+            formatted_data.append(edge_dict)
 
-        return {'edges': organized_data}
+        return {'edges': formatted_data} # TODO: add nodes to the output
     
-    def run_lomap(self):
+    def run_lomap(self) -> None:
         db_mol = lomap.DBMolecules("haha", output=True)
         # Calculate the similarity matrices
         strict, loose = db_mol.build_matrices()
@@ -98,6 +101,7 @@ class LomapWrap(object):
         result_dict = self.format_graph_data(nx_graph)
         with open(self.out / 'lomap.json', 'w') as f:
             json.dump(result_dict, f, indent=4)
+        return result_dict
         
 def parse_arguments() -> argparse.Namespace:
     """Method to parse the arguments."""
