@@ -9,7 +9,7 @@ import shutil
 import os
 import sys
 
-from logger import logger
+from ..logger import logger
 
 logging.basicConfig(
     filename='cli_calls.log',
