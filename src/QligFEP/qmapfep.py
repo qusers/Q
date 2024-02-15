@@ -1,6 +1,5 @@
 from collections import namedtuple
 from functools import cached_property, lru_cache
-from loguru import logger
 import io
 import itertools
 import operator
@@ -18,6 +17,7 @@ import sys
 import math
 # from QligFEP.settings import settings as s
 from Qgpu import ccc, plot, metrics
+from .logger import logger
 
 rdDepictor.SetPreferCoordGen(True)
 

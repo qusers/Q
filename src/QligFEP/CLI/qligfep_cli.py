@@ -3,7 +3,7 @@
 import argparse
 from QligFEP.qligfep import QligFEP
 from typing import Optional
-from loguru import logger
+from ..logger import logger
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(

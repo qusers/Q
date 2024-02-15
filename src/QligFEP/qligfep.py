@@ -4,7 +4,7 @@ import glob
 import os
 import shutil
 import stat
-from loguru import logger
+from .logger import logger
 
 from .IO import replace, run_command
 from .pdb_utils import pdb_parse_in, pdb_parse_out
@@ -71,14 +71,14 @@ class QligFEP(object):
             
     def set_timestep(self):
         if self.timestep == '1fs':
-            logger.log('INFO', 'Using 1fs timestep')
+            logger.debug('Using 1fs timestep')
             self.replacements['NSTEPS1'] = '100000'
             self.replacements['NSTEPS2'] = '10000'
             self.replacements['STEPSIZE'] = '1.0'
             self.replacements['STEPTOGGLE'] = 'off'
             
         elif self.timestep == '2fs':
-            logger.log('INFO', 'Using 2fs timestep')
+            logger.debug('Using 2fs timestep')
             self.replacements['NSTEPS1'] = '50000'
             self.replacements['NSTEPS2'] = '5000'
             self.replacements['STEPSIZE'] = '2.0'
@@ -514,7 +514,7 @@ class QligFEP(object):
                     
         for eq_file_in in sorted(glob.glob(CONFIGS['ROOT_DIR'] + '/INPUTS/eq*.inp')):
             eq_file = eq_file_in.split('/')[-1:][0]
-            logger.log('INFO', f'Writing {eq_file}')
+            logger.debug(f'Writing {eq_file}')
             eq_file_out = writedir + '/' + eq_file
 
             with open(eq_file_in) as infile:
@@ -863,7 +863,7 @@ class QligFEP(object):
         os.chdir(writedir)
         cluster_options = CLUSTER_DICT[self.cluster]
         qprep = cluster_options['QPREP']
-        logger.log('INFO', f'Running QPREP from path {qprep}')
+        logger.info(f'Running QPREP from path {qprep}')
         options = ' < qprep.inp > qprep.out'
         # Somehow Q is very annoying with this < > input style so had to implement
         # another function that just calls os.system instead of using the preferred

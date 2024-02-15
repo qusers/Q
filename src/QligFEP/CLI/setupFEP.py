@@ -1,6 +1,5 @@
 """Module to generate (setup) all FEP files for the directory you're working on."""
 
-from loguru import logger
 from pathlib import Path
 import argparse
 import json
@@ -9,6 +8,8 @@ import logging
 import shutil
 import os
 import sys
+
+from logger import logger
 
 logging.basicConfig(
     filename='cli_calls.log',

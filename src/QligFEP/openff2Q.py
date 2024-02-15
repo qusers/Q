@@ -1,12 +1,12 @@
 import os
 from tqdm import tqdm
-from loguru import logger
 import numpy as np
 
 # QligFEP modules
 from .pdb_utils import pdb_parse_out
 from .settings.settings import FF_DIR
 from .chemIO import MoleculeIO
+from .logger import logger
 
 # openFF modules
 from openff.toolkit import ForceField, Topology

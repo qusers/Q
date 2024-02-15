@@ -4,13 +4,13 @@ import json
 import lomap
 import argparse
 from pathlib import Path
-from loguru import logger
 from typing import Optional
 from multiprocessing import cpu_count
 import numpy as np
 
 # QligFEP imports
 from ..chemIO import MoleculeIO
+from ..logger import logger
 
 class LomapWrap(object):
     """Class to wrap the lomap package for the QligFEP CLI."""

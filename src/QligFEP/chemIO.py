@@ -1,9 +1,11 @@
-from loguru import logger
 from pathlib import Path
 
 # openFF modules
 from openff.toolkit import Molecule
 from openff.toolkit.utils import UndefinedStereochemistryError
+
+# QligFEP modules
+from .logger import logger
 
 class MoleculeIO(object):
     """A class to handle the input/output of molecules. Ligands are usually initialized
