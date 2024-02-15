@@ -1,5 +1,6 @@
 """Module to generate (setup) all FEP files for the directory you're working on."""
 
+from loguru import logger
 from pathlib import Path
 import argparse
 import json
@@ -124,7 +125,6 @@ def parse_arguments():
                             "an error if there are more than one."
                         ),
                         default = None,
-                        required = True
                        )
     parser.add_argument('-ts', '--timestep',
                         dest = "timestep",
@@ -174,10 +174,8 @@ def main_exe():
                 timestep = args.timestep,
                 windows = args.windows
             )
-            print(command)
-            sys.exit()
-            
-            dst = sys_dir / ('FEP_' + lig1 + '_' + lig2)
+            logger.info(f"Submitting the command:\n{command}")
+            # dst = sys_dir / ('FEP_' + lig1 + '_' + lig2)
             os.system(command)
             # shutil.move(temp_dir, dst)
 
