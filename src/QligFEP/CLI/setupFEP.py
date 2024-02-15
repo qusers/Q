@@ -175,9 +175,9 @@ def main_exe():
                 windows = args.windows
             )
             logger.info(f"Submitting the command:\n{command}")
-            # dst = sys_dir / ('FEP_' + lig1 + '_' + lig2)
+            dst = sys_dir / f'FEP_{lig1}_{lig2}'
             os.system(command)
-            # shutil.move(temp_dir, dst)
+            shutil.move(temp_dir, dst)
 
 if __name__ == '__main__':
     main_exe()
