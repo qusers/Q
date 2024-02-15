@@ -104,7 +104,7 @@ TETRA  = {'NODES'      : '1',
           'NTASKS'     : '32',
           'TIME'       : '0-24:00:00',  # d-hh:mm:ss
           'MODULES'    : '\n',
-          'ACCOUNT'    : 'snic2022-3-2',
+          'ACCOUNT'    : 'naiss2023-3-5',
           **Q_PATHS
         }
 
