@@ -146,23 +146,23 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     lig_size1, lig_size2 = a[2][0], a[2][1]
 
     # Write the merged files
-    logger.log("INFO", "Writing changes on files")
+    logger.debug("Writing changes on files")
     run.change_lib(changes_for_libfiles, inputdir)
-    logger.log("INFO", "Changing parameters")
+    logger.debug("Changing parameters")
     FEP_vdw = run.change_prm(changes_for_prmfiles, inputdir)
-    logger.log("INFO", "Writing FEP files")
+    logger.debug("Writing FEP files")
     run.write_FEP_file(change_charges, change_vdw, FEP_vdw, inputdir, lig_size1, lig_size2)
-    logger.log('INFO', 'Writing PDB files')
+    logger.debug('Writing PDB files')
     run.merge_pdbs(inputdir)
     if args.system == 'protein':
         run.write_water_pdb(inputdir)
-    logger.log('INFO', 'Getting the lambdas')
+    logger.debug('Getting the lambdas')
     lambdas = run.get_lambdas(args.windows, args.sampling)
-    logger.log('INFO', 'Run the overlapping atoms')
+    logger.debug('Run the overlapping atoms')
     overlapping_atoms = run.overlapping_atoms(writedir)
     
     # Handling the correct offset here
-    logger.log('INFO', 'Writing the MD files')
+    logger.debug('Writing the MD files')
     if args.start == '0.5':
         file_list = run.write_MD_05(lambdas, inputdir, lig_size1, lig_size2, overlapping_atoms)
         run.write_runfile(inputdir, file_list)    
@@ -170,14 +170,14 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     if args.start == '1':
         file_list = run.write_MD_1(lambdas, inputdir, lig_size1, lig_size2, overlapping_atoms)
         run.write_runfile(inputdir, file_list)    
-    logger.log('INFO', f'Generated files: {file_list}')
-    logger.log('INFO', 'Writing the submit files')
+    logger.debug(f'Generated files: {file_list}')
+    logger.debug('Writing the submit files')
     run.write_submitfile(writedir)
-    logger.log('INFO', 'Writing the QFEP files')
+    logger.debug('Writing the QFEP files')
     run.write_qfep(args.windows, lambdas)
-    logger.log('INFO', 'Writing the QPREP files')
+    logger.debug('Writing the QPREP files')
     run.write_qprep(inputdir)
-    logger.log('INFO', 'Running QFEP')
+    logger.debug('Running QFEP')
     run.qprep(inputdir)
 
 def main_exe():
