@@ -159,7 +159,7 @@ def main_exe():
             lig1 = pair[0]
             lig2 = pair[1]
             
-            temp_dir = cwd  / f'FEP_{lig1}_{lig2}'
+            temp_dir = cwd  / f'FEP_{lig1}-{lig2}'
             command = create_call(
                 lig1 = lig1,
                 lig2 = lig2,
@@ -176,7 +176,7 @@ def main_exe():
                 windows = args.windows
             )
             logger.info(f"Submitting the command:\n{command}")
-            dst = sys_dir / f'FEP_{lig1}_{lig2}'
+            dst = sys_dir / f'FEP_{lig1}-{lig2}'
             os.system(command)
             shutil.move(temp_dir, dst)
 
