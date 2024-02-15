@@ -23,6 +23,8 @@ class LomapWrap(object):
             'parallel': self.cores,
             'time': time,
             'verbose':verbose,
+            'output_no_graph': True,
+            'output_no_images': True,
             **kwargs
         }
         self._check_input()
@@ -30,15 +32,15 @@ class LomapWrap(object):
     def _check_input(self) -> None:
         """Method to check self.inp for the correct file format."""
         inpath = Path(self.inp)
-        if inpath.suffix == '.sdf':
+        if inpath.is_dir():
             if any([len(list(inpath.glob('*.sdf'))) < 2, len(list(inpath.glob('*.mol2'))) > 2]):
                 logger.warning('You are using a directory as input, certify that you have the desired ligand files.')
             self.lomap_args.update({'directory': self.inp})
-        elif inpath.is_dir():
+        elif inpath.suffix == '.sdf':
             handler = MoleculeIO(self.inp)
             Path(self.out).mkdir(parents=True, exist_ok=False)
             logger.info(f'Writing {self.inp} to separate `.sdf` files to be stored in {self.out}.')
-            handler.write_sdf_separate(self.out)
+            handler.write_sdf_separate(self.out)    
             self.lomap_args.update({'directory': self.out})
     
     def _parse_output(self, output) -> str:
@@ -93,13 +95,13 @@ class LomapWrap(object):
         return {'edges': formatted_data} # TODO: add nodes to the output
     
     def run_lomap(self) -> None:
-        db_mol = lomap.DBMolecules("haha", output=True)
+        db_mol = lomap.DBMolecules(**self.lomap_args, output=True)
         # Calculate the similarity matrices
         strict, loose = db_mol.build_matrices()
         # Generate the NetworkX graph and output the results
         nx_graph = db_mol.build_graph()
         result_dict = self.format_graph_data(nx_graph)
-        with open(self.out / 'lomap.json', 'w') as f:
+        with (Path(self.out) / 'lomap.json').open('w') as f:
             json.dump(result_dict, f, indent=4)
         return result_dict
         
