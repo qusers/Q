@@ -28,7 +28,7 @@ def create_call(**kwargs):
     """Function to dynamically create a call to QligFEP.cli.main_exe() based on the kwargs."""    
     template = (
         'qligfep -l1 {lig1} -l2 {lig2} -FF {FF} -s {system} -c {cluster} -R {replicates} '
-        '-S {sampling} -r {sphereradius} -l {start} -w {windows} -T {temperature}'
+        '-S {sampling} -r {sphereradius} -l {start} -w {windows} -T {temperature} -ts {timestep}'
         )
     if 'cysbond' in kwargs and kwargs['cysbond'] is not None:
         template += ' -b {cysbond}'
@@ -55,26 +55,28 @@ def parse_arguments():
         prog='QligFEP',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description =
-        ("Generate all FEP files for the directory you're working on. "
-         "e.g. of parameters: -FF OPLS2015 -c KEBNE -S sigmoidal -r 25 -l 0.5 -w 100")
+        ("Generate all FEP files for the directory you're working on, according to the "
+         "edges input in the json_map file. This includes creating directories for both "
+         "water and protein system. Submitting the FEP calculations to the cluster is up to the user. "
+         "A minimal example of usage: setupFEP -FF OPLS2015 -c KEBNE -S sigmoidal -r 25 -l 0.5 -w 100")
         )
     parser.add_argument('-FF', '--forcefield',
                         dest = "FF",
                         required = True,
                         choices = ['OPLS2005', 'OPLS2015', 'AMBER14sb', 'CHARMM36', 'CHARMM22', 'CHARMM_TEST'],
-                        help = "Forcefield to be used")
+                        help = "Forcefield to be used.")
 
     parser.add_argument('-c', '--cluster',
                         dest = "cluster",
                         required = True,
-                        help = "cluster you want to submit to, cluster specific parameters added to settings"
+                        help = "cluster you want to submit to, cluster specific parameters added to settings."
                        )
 
     parser.add_argument('-r', '--sphereradius',
                         dest = "sphereradius",
                         required = False,
                         default = '25',
-                        help = "size of the simulation sphere"
+                        help = "Size of the simulation sphere. Defaults to 25."
                        )
 
     parser.add_argument('-b', '--cysbond',
@@ -87,31 +89,32 @@ def parse_arguments():
                         dest = "start",
                         default = '0.5',
                         choices = ['1', '0.5'],
-                        help = "Starting FEP in the middle or endpoint"
+                        help = "Starting FEP in the middle or endpoint. Defaults to 0.5."
                        )
 
     parser.add_argument('-T', '--temperature',
                         dest = "temperature",
                         default = '298',
-                        help = "Temperature(s), mutliple tempereratures given as 'T1,T2,...,TN'"
+                        help = "Temperature(s), mutliple tempereratures given as 'T1,T2,...,TN'. Defaults to 298K"
                        )
 
     parser.add_argument('-R', '--replicates',
                         dest = "replicates",
                         default = '10',
-                        help = "How many repeats should be run"
+                        help = "How many repeats should be run. Defaults to 10."
                        )
 
     parser.add_argument('-S', '--sampling',
                         dest = "sampling",
                         default = 'sigmoidal',
                         choices = ['linear', 'sigmoidal', 'exponential', 'reverse_exponential'],
-                        help = "Lambda spacing type to be used"
+                        help = "Lambda spacing type to be used. Defaults to `sigmoidal`."
                        )
     parser.add_argument('-w', '--windows',
                         dest = "windows",
                         default = '100',
-                        help = "Total number of windows that will be run"
+                        help = "Total number of windows that will be run. Defaults to 100.",
+                        type=str,
                        )
     parser.add_argument('-j', '--json_map',
                         dest='json_map',
@@ -121,6 +124,13 @@ def parse_arguments():
                             "an error if there are more than one."
                         ),
                         default = None,
+                        required = True
+                       )
+    parser.add_argument('-ts', '--timestep',
+                        dest = "timestep",
+                        choices = ['1fs','2fs'],
+                        default = "2fs",
+                        help = "Simulation timestep, default 2fs"
                        )
     return parser.parse_args()
 
@@ -161,6 +171,7 @@ def main_exe():
                 temperature=args.temperature,
                 replicates = args.replicates,
                 sampling = args.sampling,
+                timestep = args.timestep,
                 windows = args.windows
             )
             print(command)

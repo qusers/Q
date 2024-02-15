@@ -25,7 +25,7 @@ def parse_arguments() -> argparse.Namespace:
                         dest = "FF",
                         required = True,
                         choices = ['OPLS2005', 'OPLS2015', 'AMBER14sb', 'CHARMM36', 'CHARMM22', 'CHARMM_TEST'],
-                        help = "Forcefield to be used")
+                        help = "Forcefield to be used.")
 
     parser.add_argument('-s', '--system',
                         dest = "system",
@@ -36,14 +36,14 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('-c', '--cluster',
                         dest = "cluster",
                         required = True,
-                        help = "cluster you want to submit to, cluster specific parameters added to settings"
+                        help = "cluster you want to submit to, cluster specific parameters added to settings."
                        )
 
     parser.add_argument('-r', '--sphereradius',
                         dest = "sphereradius",
                         required = False,
                         default = '15',
-                        help = "size of the simulation sphere"
+                        help = "Size of the simulation sphere. Defaults to 25."
                        )
 
     parser.add_argument('-b', '--cysbond',
@@ -56,32 +56,32 @@ def parse_arguments() -> argparse.Namespace:
                         dest = "start",
                         default = '0.5',
                         choices = ['1', '0.5'],
-                        help = "Starting FEP in the middle or endpoint"
+                        help = "Starting FEP in the middle or endpoint. Defaults to 0.5."
                        )
 
     parser.add_argument('-T', '--temperature',
                         dest = "temperature",
                         default = '298',
-                        help = "Temperature(s), mutliple tempereratures given as 'T1,T2,...,TN'"
+                        help = "Temperature(s), mutliple tempereratures given as 'T1,T2,...,TN'. Defaults to 298K"
                        )
 
     parser.add_argument('-R', '--replicates',
                         dest = "replicates",
-                        default = '25',
-                        help = "How many repeats should be run"
+                        default = '10',
+                        help = "How many repeats should be run. Defaults to 10."
                        )
 
     parser.add_argument('-S', '--sampling',
                         dest = "sampling",
-                        default = 'linear',
+                        default = 'sigmoidal',
                         choices = ['linear', 'sigmoidal', 'exponential', 'reverse_exponential'],
                         help = "Lambda spacing type to be used"
                        )
 
     parser.add_argument('-w', '--windows',
                         dest = "windows",
-                        default = '50',
-                        help = "Total number of windows that will be run"
+                        help = "Total number of windows that will be run. Defaults to 100.",
+                        type=str,
                        )
     parser.add_argument('-sc', '--softcore',
                         dest = "softcore",
