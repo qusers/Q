@@ -29,11 +29,11 @@ class LomapWrap(object):
     def _check_input(self):
         """Method to check self.inp for the correct file format."""
         inpath = Path(self.inp)
-        if inpath.is_dir():
+        if inpath.suffix == '.sdf':
             if any([len(list(inpath.glob('*.sdf'))) < 2, len(list(inpath.glob('*.mol2'))) > 2]):
                 logger.warning('You are using a directory as input, certify that you have the desired ligand files.')
             self.lomap_args.update({'directory': self.inp})
-        elif inpath.suffix == '.sdf':
+        elif inpath.is_dir():
             handler = MoleculeIO(self.inp)
             Path(self.out).mkdir(parents=True, exist_ok=False)
             logger.info(f'Writing {self.inp} to separate `.sdf` files to be stored in {self.out}.')
