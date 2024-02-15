@@ -95,7 +95,7 @@ class LomapWrap(object):
         return {'edges': formatted_data} # TODO: add nodes to the output
     
     def run_lomap(self) -> None:
-        db_mol = lomap.DBMolecules(**self.lomap_args, output=True)
+        db_mol = lomap.DBMolecules(**self.lomap_args)
         # Calculate the similarity matrices
         strict, loose = db_mol.build_matrices()
         # Generate the NetworkX graph and output the results
