@@ -17,7 +17,6 @@ class LomapWrap(object):
         self.inp = inp
         self.out = self._parse_output(out)
         self.cores = self._setup_cores()
-        self._check_input()
         self.lomap_args = {
             'directory': None,
             'parallel': self.cores,
@@ -25,6 +24,7 @@ class LomapWrap(object):
             'verbose':verbose,
             **kwargs
         }
+        self._check_input()
         
     def _check_input(self):
         """Method to check self.inp for the correct file format."""
