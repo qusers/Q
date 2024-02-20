@@ -185,7 +185,7 @@ def main_exe():
                 sampling = args.sampling,
                 timestep = args.timestep,
                 windows = args.windows,
-                to_clean = args.to_clean,
+                to_clean = ' '.join(args.to_clean),
             )
             logger.info(f"Submitting the command:\n{command}")
             dst = sys_dir / f'FEP_{lig1}-{lig2}'
