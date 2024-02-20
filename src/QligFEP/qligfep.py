@@ -88,7 +88,7 @@ class QligFEP(object):
             raise ValueError('Timestep not recognized')
         
     def makedir(self):
-        lignames = self.lig1 + '-' +self.lig2
+        lignames = f'{self.lig1}_{self.lig2}'
         directory = self.rootdir + '/FEP_' + lignames
         if not os.path.exists(directory):
             os.makedirs(directory)
@@ -863,7 +863,7 @@ class QligFEP(object):
         os.chdir(writedir)
         cluster_options = CLUSTER_DICT[self.cluster]
         qprep = cluster_options['QPREP']
-        logger.info(f'Running QPREP from path {qprep}')
+        logger.info(f'Running QPREP from path {qprep}') 
         options = ' < qprep.inp > qprep.out'
         # Somehow Q is very annoying with this < > input style so had to implement
         # another function that just calls os.system instead of using the preferred
