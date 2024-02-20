@@ -99,7 +99,12 @@ def parse_arguments() -> argparse.Namespace:
                         dest="to_clean",
                         nargs="+",
                         default=None,
-                        help="Files to clean after the simulation.")
+                        help=(
+                            "Files to clean after the simulation. The arguments are given as a list of strings "
+                            "and the cleaning is done by adding the command `rm -rf *{arg1} *{arg2}` to the job submission. "
+                            "Usage example: `-clean dcd` will remove all dcd files after the simulation. If left as None, won't clean any files."
+                            )
+                        )
     return parser.parse_args()
 
 

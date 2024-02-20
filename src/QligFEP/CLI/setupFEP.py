@@ -30,7 +30,8 @@ def create_call(**kwargs):
     """Function to dynamically create a call to QligFEP.cli.main_exe() based on the kwargs."""    
     template = (
         'qligfep -l1 {lig1} -l2 {lig2} -FF {FF} -s {system} -c {cluster} -R {replicates} '
-        '-S {sampling} -r {sphereradius} -l {start} -w {windows} -T {temperature} -ts {timestep}'
+        '-S {sampling} -r {sphereradius} -l {start} -w {windows} -T {temperature} -ts {timestep} '
+        '-clean {to_clean}'
         )
     if 'cysbond' in kwargs and kwargs['cysbond'] is not None:
         template += ' -b {cysbond}'
@@ -133,6 +134,16 @@ def parse_arguments():
                         default = "2fs",
                         help = "Simulation timestep, default 2fs"
                        )
+    parser.add_argument('-clean', '--files-to-clean',
+                        dest="to_clean",
+                        nargs="+",
+                        default=None,
+                        help=(
+                            "Files to clean after the simulation. The arguments are given as a list of strings "
+                            "and the cleaning is done by adding the command `rm -rf *{arg1} *{arg2}` to the job submission. "
+                            "Usage example: `-clean dcd` will remove all dcd files after the simulation. If left as None, won't clean any files."
+                            )
+                        )
     return parser.parse_args()
 
 def main_exe():
@@ -173,7 +184,8 @@ def main_exe():
                 replicates = args.replicates,
                 sampling = args.sampling,
                 timestep = args.timestep,
-                windows = args.windows
+                windows = args.windows,
+                to_clean = args.to_clean,
             )
             logger.info(f"Submitting the command:\n{command}")
             dst = sys_dir / f'FEP_{lig1}-{lig2}'
