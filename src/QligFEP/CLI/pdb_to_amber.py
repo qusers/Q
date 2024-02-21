@@ -3,7 +3,7 @@
 !! Note !! The functions:
 rename_residues, rename_charged, labeledPDB_to_AmberPDB, renumber_atoms,
 nest_pdb, unnest_pdb, get_coords, disulfide_search, pdb_cleanup, histidine_search,
-atom_is_present, rename_termini
+atom_is_present
 
 are all Python3 adaptations from the original repository / module:
 https://github.com/choderalab/mmtools/blob/master/mccetools/rename.py
@@ -13,26 +13,43 @@ to use this module, you can use the following code:
 """
 
 import argparse
+from typing import List
 from ..logger import logger
 import os
 import sys
 import math
 
 
-def rename_residues(pdbarr, renameTermini=True, terminology='AMBER'):
+def rename_residues(pdbarr):
     logger.debug(f"At start of renaming, pdbarr has {len(pdbarr)} items")
     npdb = nest_pdb(pdbarr)
     logger.debug(f"Nest/unnest leads to {len(unnest_pdb(npdb))}, items")
-    npdb = rename_charged(npdb, terminology=terminology)
+    npdb = rename_charged(npdb)
     npdb = histidine_search(npdb)
-    npdb = disulfide_search(npdb, terminology=terminology)
-    print('### renameTermini =', renameTermini)
-    if renameTermini:
-        npdb = rename_termini(npdb)
+    npdb = disulfide_search(npdb)
     pdbarr = unnest_pdb(npdb)
     return pdbarr
 
-def rename_charged(npdb, terminology = 'AMBER'):
+def correct_amino_acid_atom_names(npdb_i, resname):
+    """corrects the amino acid atom names according to the charge state and the force field
+    terminology. This function is called within rename_changed() where pdb_i is the
+    nested pdb data structure for a single residue. The function modifies the
+    residue name in place.
+
+    Args:
+        npdb_i: nested pdb data structure for a single residue
+        resname_and_state: the residue name and charge state, e.g. 'LYS0' or 'LYS+'
+        terminology: which FF terminology will be used. Defaults to 'AMBER'.
+    """
+    if resname=='GLH':
+        npdb_i=[x.replace('HE1  GLH','HE2  GLH') for x in npdb_i]
+    elif resname=='ASH':
+        npdb_i=[x.replace('HD1  ASH','HD2  ASH') for x in npdb_i]
+    elif resname=='LYN':
+        npdb_i=[x.replace('HE1  GLH','HE2  GLH') for x in npdb_i]
+    return npdb_i
+
+def rename_charged(npdb):
     """Generate AMBER-specific residue names for charged residues from MCCE residue names. Also fix some problems with atom naming (specifically hydrogens) for charged residues.
         
     ARGUMENTS
@@ -49,36 +66,8 @@ def rename_charged(npdb, terminology = 'AMBER'):
     """
     for i, res in enumerate(npdb):
         original_resname = res[0][17:20]
-        resname_and_state = res[-1][17:20] + res[-1][-1]
-        if resname_and_state == 'HIS+':
-            npdb[i] = [x.replace('HIS', 'HIP') for x in npdb[i]]
-        elif (resname_and_state[i]=='LYS0'):
-            if terminology == 'AMBER':
-                npdb[i]=[x.replace('LYS','LYN') for x in npdb[i]]
-            elif terminology == 'gAMBER':
-                npdb[i]=[x.replace('LYS','LYN') for x in npdb[i]]
-        elif (resname_and_state[i]=='LYS+'):
-            if terminology =='AMBER':
-                npdb[i]=[x.replace('LYS','LYP') for x in npdb[i]]
-            if terminology =='gAMBER':
-                npdb[i]=[x.replace('LYS','LYS') for x in npdb[i]]
-        elif (resname_and_state[i]=='CYS0'):
-            if terminology =='AMBER':
-                npdb[i]=[x.replace('CYS','CYN') for x in npdb[i]]
-            elif terminology =='gAMBER':
-                npdb[i]=[x.replace('CYS','CYS') for x in npdb[i]]
-        elif (resname_and_state[i]=='CYS-'):
-            npdb[i]=[x.replace('CYS','CYM') for x in npdb[i]]
-        elif (resname_and_state[i]=='ASP0'):
-            npdb[i]=[x.replace('ASP','ASH') for x in npdb[i]]
-            #DLM 8/25/2009: ASH needs to have HD2, not HD1, for some reason
-            npdb[i]=[x.replace('HD1 ASH','HD2 ASH') for x in npdb[i]]
-        #Aspartate requires no sub
-        elif (resname_and_state[i]=='GLU0'):
-            npdb[i]=[x.replace('GLU','GLH') for x in npdb[i]]
-            #DLM 7-1-2009: Fix GLY HE1 to HE2
-            npdb[i] = [x.replace('HE1 GLH','HE2 GLH') for x in npdb[i]]
-        
+        resname = res[-1][17:20]
+        npdb[i] = correct_amino_acid_atom_names(npdb[i], resname)
         new_resname = res[0][17:20] # keep track for the log message
         if original_resname != new_resname:
             logger.info(f"Residue {i+1}: {original_resname} renamed to {new_resname}.")
@@ -103,7 +92,27 @@ def renumber_atoms(pdbarr):
     for i, line in enumerate(pdbarr):
         pdbarr[i] = f"{line[:6]}{str(i+1).rjust(5)}{line[11:]}"
 
-def nest_pdb(pdbarr):
+def nest_pdb(pdbarr: List[str]) -> List[List[str]]:
+    """Organizes a flat list of PDB (Protein Data Bank) file lines into a nested structure
+    grouped by residues. This function takes a list of strings, each representing a line
+    from a PDB file, and groups these lines by residue. Each residue's lines are collected
+    based on continuity of residue identifiers and uniqueness of atom names within the
+    residue. This nested structure is useful for operations that require manipulation or
+    analysis on a per-residue basis.
+
+    args:
+        pdbarr: A list where each element is a string representing a line from a PDB file.
+
+    Returns:
+    - nestedpdb : Each inner list contains all the lines from the input 
+        corresponding to a single residue. The grouping is based on residue identifiers
+        (including residue name, chain identifier, and residue sequence number) and ensures
+        that each atom within a residue is unique.
+
+    Notes:
+    - The function assumes that the input list is ordered as it would be in a standard PDB file,
+        where lines corresponding to atoms of the same residue are consecutive.
+    """
     nestedpdb = []
     residue = []
     usedatoms = []
@@ -129,27 +138,34 @@ def get_coords(atomname, residue):
             return tuple(float(line[i:i+8]) for i in range(30, 54, 8))
     raise ValueError("Atom not found!")
 
-def disulfide_search(npdb, min_dist=1.8, max_dist=2.2, terminology='AMBER'):
+def disulfide_search(npdb, min_dist=1.8, max_dist=2.2):
     residues_to_rename = set()
     for i in range(len(npdb)):
-        if npdb[i][0][17:20] not in ['CYS', 'CYD']:
+        if npdb[i][0][17:20] not in ['CYS', 'CYD', 'CYX']:
             continue
         iX, iY, iZ = get_coords('SG', npdb[i])
+        i_residue_info = npdb[i][0][17:27].strip()  # Extract residue info for logging
+        i_atom_number = npdb[i][0][6:11].strip()  # Extract atom number for logging
+
         for j in range(i + 1, len(npdb)):
-            if npdb[j][0][17:20] not in ['CYS', 'CYD']:
+            if npdb[j][0][17:20] not in ['CYS', 'CYD', 'CYX']:
                 continue
             jX, jY, jZ = get_coords('SG', npdb[j])
+            j_residue_info = npdb[j][0][17:27].strip()  # Extract residue info for logging
+            j_atom_number = npdb[j][0][6:11].strip()  # Extract atom number for logging
+
             distance = math.sqrt((iX - jX) ** 2 + (iY - jY) ** 2 + (iZ - jZ) ** 2)
             if min_dist <= distance <= max_dist:
                 residues_to_rename.update({i, j})
+                # Log the atoms involved in the disulfide bond, including their atom numbers
+                logger.info(f"Disulfide bond detected within atoms: {i_atom_number}_{j_atom_number} with distance {distance:.2f} Å.")
+                logger.info(f"Bond between residues `{i_residue_info}` and `{j_residue_info}`.")
     
     for i in residues_to_rename:
-        if terminology == 'AMBER':
-            npdb[i] = [x.replace('CYS ', 'CYS2') if 'CYS' in x else x.replace('CYD ', 'CYS2') for x in npdb[i]]
-        elif terminology == 'gAMBER':
-            npdb[i] = [x.replace('CYS ', 'CYX') if 'CYS' in x else x.replace('CYD ', 'CYX') for x in npdb[i]]
+        npdb[i] = [x.replace('CYS ', 'CYX') if 'CYS' in x or 'CYD' in x else x for x in npdb[i]]
     
     return npdb
+
 
 def pdb_cleanup(pdbarr):
     updated_pdbarr = []
@@ -202,36 +218,7 @@ def atom_is_present(pdblines, atomname):
         return True
     else:
         return False
-    
-def rename_termini(npdb):
-    NTerminiRes = []
-    CTerminiRes = []
-    for i in range(len(npdb)):
-        if npdb[i][0][17:20] in ['NTR', 'NTG']:
-            NTerminiRes.append(i)
-        if npdb[i][0][17:20] == 'CTR':
-            CTerminiRes.append(i)
 
-    if len(NTerminiRes) != len(CTerminiRes):
-        raise ValueError("Mismatch in the number of N-terminal and C-terminal residues.")
-
-    for k in range(len(CTerminiRes)):
-        NResIndex = NTerminiRes[k]
-        CResIndex = CTerminiRes[k]
-
-        ntrname = npdb[NResIndex+1][0][17:20]
-        ctrname = npdb[CResIndex-1][0][17:20]
-
-        # Rename N-terminal residues
-        for j in [NResIndex, NResIndex+1]:
-            npdb[j] = [x.replace('NTR', 'N' + ntrname).replace('NTG', 'N' + ntrname) for x in npdb[j]]
-
-        # Rename C-terminal residues and terminal oxygen atoms
-        for j in [CResIndex-1, CResIndex]:
-            npdb[j] = [x.replace('CTR', 'C' + ctrname) for x in npdb[j]]
-            npdb[j] = [x.replace(' O ', ' OC1') if ' O ' in x else x.replace('OXT', 'OC2') for x in npdb[j]]
-
-    return npdb
 
 def main_exe():
     parser = argparse.ArgumentParser(description="Rename amino acids in a PDB file for AMBER forcefield compatibility.")
