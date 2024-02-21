@@ -28,7 +28,73 @@ def rename_residues(pdbarr):
     npdb = histidine_search(npdb)
     npdb = disulfide_search(npdb)
     pdbarr = unnest_pdb(npdb)
+    pdbarr = correct_neutral_arginine(pdbarr)
     return pdbarr
+
+def correct_neutral_arginine(pdb_arr):
+    """
+    Updates residue naming for ARN (neutral arginine - AMBER14sb) residues to ensure
+    compatibility.
+
+    Will check for HH22 atom in ARN residues. If HH22 is found, it indicates that the
+    NH1 and NH2 groups (and their associated hydrogens) should be renamed to match the
+    naming convention in the force field (only HH11, HH12, HH21 should exist). This
+    renaming ensures that the nitrogen and hydrogen atoms in the side chain of arginine
+    are correctly identified and interact as expected according to the simulation parameters.
+
+    Parameters:
+    - pdb_lines (list of str): The original PDB content as a list of strings, where each
+      string represents a line in the PDB file.
+
+    Returns:
+    - list of str: The updated PDB content with corrected atom names for ARN residues,
+      ready for use in molecular dynamics simulations.
+    """
+    # Placeholder for updated PDB lines
+    updated_pdb_lines = []
+    
+    # Check if any ARN residue contains HH22
+    has_hh22 = any("ARN" in line and "HH22" in line for line in pdb_arr)
+
+    # Only proceed with renaming if HH22 is present
+    if not has_hh22:
+        return pdb_arr  # Return original lines if no HH22 found
+
+    # Temporary mapping for the first pass
+    atom_name_replacements = {
+        "NH1": "NHT",  # Temporary name for NH1
+        "HH11": "HHT1",  # Temporary name for HH11
+        "NH2": "NH1",
+        "HH21": "HH11",
+        "HH22": "HHT2",  # Temporary name for HH22 to avoid direct swap conflict
+    }
+
+    # Reverse mapping for the second pass
+    final_name_replacements = {
+        "NHT": "NH2",
+        "HHT1": "HH21",
+        "HHT2": "HH12",  # Assuming HH22 should be renamed to HH12 if present
+    }
+
+    for line in pdb_arr: # First pass: Apply initial renaming
+        if line.startswith("ATOM") and "ARN" in line:
+            atom_name = line[12:16].strip()  # Extract atom name
+            if atom_name in atom_name_replacements:
+                new_atom_name = atom_name_replacements[atom_name].ljust(4)
+                line = line[:12] + new_atom_name + line[16:]
+        updated_pdb_lines.append(line)
+
+    # Second pass: Replace temporary names with their final names
+    final_updated_pdb_lines = []
+    for line in updated_pdb_lines:
+        if line.startswith("ATOM") and "ARN" in line:
+            atom_name = line[12:16].strip()  # Extract atom name
+            if atom_name in final_name_replacements:
+                new_atom_name = final_name_replacements[atom_name].ljust(4)
+                line = line[:12] + new_atom_name + line[16:]
+        final_updated_pdb_lines.append(line)
+
+    return final_updated_pdb_lines
 
 def correct_amino_acid_atom_names(npdb_i, resname):
     """corrects the amino acid atom names according to the charge state and the force field
@@ -46,6 +112,8 @@ def correct_amino_acid_atom_names(npdb_i, resname):
     elif resname=='ASH':
         npdb_i=[x.replace('HD1  ASH','HD2  ASH') for x in npdb_i]
     elif resname=='LYN':
+        npdb_i=[x.replace('HE1  GLH','HE2  GLH') for x in npdb_i]
+    elif resname=='ARN':
         npdb_i=[x.replace('HE1  GLH','HE2  GLH') for x in npdb_i]
     return npdb_i
 
