@@ -115,6 +115,10 @@ def correct_amino_acid_atom_names(npdb_i, resname):
         npdb_i=[x.replace('HE1  GLH','HE2  GLH') for x in npdb_i]
     elif resname=='ARN':
         npdb_i=[x.replace('HE1  GLH','HE2  GLH') for x in npdb_i]
+    elif resname=='LYN':
+        # HZ1 and HZ2 should be renamed to HZ2 and HZ3...
+        npdb_i=[x.replace('HZ2  LYN','HZ3  LYN') for x in npdb_i]
+        npdb_i=[x.replace('HZ1  LYN','HZ2  LYN') for x in npdb_i]
     return npdb_i
 
 def rename_charged(npdb):
