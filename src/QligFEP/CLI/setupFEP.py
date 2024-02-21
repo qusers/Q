@@ -180,7 +180,7 @@ def main_exe():
                 system=system,
                 cluster = args.cluster,
                 sphereradius = args.sphereradius,
-                cysbond = args.cysbond,
+                cysbond = (args.cysbond if system == 'protein' else None),
                 start = args.start,
                 temperature=args.temperature,
                 replicates = args.replicates,
