@@ -7,7 +7,6 @@ import subprocess
 import logging
 import shutil
 import os
-import sys
 
 from ..logger import logger
 
@@ -85,9 +84,12 @@ def parse_arguments():
     parser.add_argument('-b', '--cysbond',
                         dest = "cysbond",
                         default = None,
-                        help = "Temporary function to add cysbonds at1:at2,at3:at4 etc."
-                       )
-
+                        help = (
+                            "Add cystein bonds. Input should be formatted with the atom numbers"
+                            "(participating in the Cys bond) connected by `_` and with different bonds "
+                            "separated by `,` as in: `atom1_atom2,atom3_atom4`"
+                        )
+                        )
     parser.add_argument('-l', '--start',
                         dest = "start",
                         default = '0.5',
