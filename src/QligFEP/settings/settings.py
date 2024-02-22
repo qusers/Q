@@ -103,7 +103,7 @@ UPPMAX = {'NODES'      : '1',
 TETRA  = {'NODES'      : '1',
           'NTASKS'     : '32',
           'TIME'       : '0-24:00:00',  # d-hh:mm:ss
-          'MODULES'    : 'buildenv-gcc/2022a-eb\n',
+          'MODULES'    : 'buildenv-gcc/2023a-eb\n',
           'ACCOUNT'    : 'naiss2023-3-5',
           **Q_PATHS
         }
