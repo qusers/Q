@@ -28,9 +28,9 @@ def ligpairs_from_json(json_file):
 def create_call(**kwargs):
     """Function to dynamically create a call to QligFEP.cli.main_exe() based on the kwargs."""    
     template = (
-        'qligfep -l1 {lig1} -l2 {lig2} -FF {FF} -s {system} -c {cluster} -R {replicates} '
-        '-S {sampling} -r {sphereradius} -l {start} -w {windows} -T {temperature} -ts {timestep} '
-        '-clean {to_clean}'
+        "qligfep -l1 '{lig1}' -l2 '{lig2}' -FF {FF} -s {system} -c {cluster} -R {replicates} "
+        "-S {sampling} -r {sphereradius} -l {start} -w {windows} -T {temperature} -ts {timestep} "
+        "-clean {to_clean}"
         )
     if 'cysbond' in kwargs and kwargs['cysbond'] is not None:
         template += ' -b {cysbond}'

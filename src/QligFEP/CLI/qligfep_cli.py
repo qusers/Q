@@ -14,12 +14,14 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('-l1', '--lig_1',
                         dest = "lig1",
                         required = True,
-                        help = "name of ligand 1")
+                        help = "name of ligand 1",
+                        type=str)
 
     parser.add_argument('-l2', '--lig_2',
                         dest = "lig2",
                         required = True,
-                        help = "name of ligand 2")
+                        help = "name of ligand 2",
+                        type=str)
 
     parser.add_argument('-FF', '--forcefield',
                         dest = "FF",
