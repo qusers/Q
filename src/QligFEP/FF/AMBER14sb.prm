@@ -18,6 +18,7 @@ improper_potential             periodic
 improper_definition            explicit
 
 [atom_types]
+* tac               R*1        R*2   epsilon1        R*3 epsilon2&3       mass
 2C                1.908        0.0     0.1094      1.908     0.0547      12.01
 3C                1.908        0.0     0.1094      1.908     0.0547      12.01
 Br                 2.22        0.0       0.32       2.22       0.16       79.9
@@ -83,6 +84,7 @@ P                   2.1        0.0        0.2        2.1        0.1      30.97
 S                   2.0        0.0       0.25        2.0      0.125      32.06
 SH                  2.0        0.0       0.25        2.0      0.125      32.06
 Zn                  1.1        0.0     0.0125        1.1    0.00625       65.4
+SOD               1.470        0.0   0.030383      1.470   0.015191      22.99
 
 ! Ligand vdW parameters
 ! End ligand vdW parameters
