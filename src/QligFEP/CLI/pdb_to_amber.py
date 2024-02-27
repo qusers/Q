@@ -18,6 +18,7 @@ from ..logger import logger
 import os
 import sys
 import math
+import numpy as np
 
 
 def rename_residues(pdbarr):
@@ -214,15 +215,17 @@ def disulfide_search(npdb, min_dist=1.8, max_dist=2.2):
         if npdb[i][0][17:20] not in ['CYS', 'CYD', 'CYX']:
             continue
         iX, iY, iZ = get_coords('SG', npdb[i])
-        i_residue_info = npdb[i][0][17:27].strip()  # Extract residue info for logging
-        i_atom_number = npdb[i][0][6:11].strip()  # Extract atom number for logging
+        sg_idx = np.where(np.char.find(npdb[i], 'SG') != -1)[0][0]
+        i_residue_info = npdb[i][sg_idx][17:27].strip()  # Extract residue info for logging
+        i_atom_number = npdb[i][sg_idx][6:11].strip()  # Extract atom number for logging
 
         for j in range(i + 1, len(npdb)):
             if npdb[j][0][17:20] not in ['CYS', 'CYD', 'CYX']:
                 continue
             jX, jY, jZ = get_coords('SG', npdb[j])
-            j_residue_info = npdb[j][0][17:27].strip()  # Extract residue info for logging
-            j_atom_number = npdb[j][0][6:11].strip()  # Extract atom number for logging
+            sg_idx = np.where(np.char.find(npdb[j], 'SG') != -1)[0][0]
+            j_residue_info = npdb[j][sg_idx][17:27].strip()  # Extract residue info for logging
+            j_atom_number = npdb[j][sg_idx][6:11].strip()  # Extract atom number for logging
 
             distance = math.sqrt((iX - jX) ** 2 + (iY - jY) ** 2 + (iZ - jZ) ** 2)
             if min_dist <= distance <= max_dist:
