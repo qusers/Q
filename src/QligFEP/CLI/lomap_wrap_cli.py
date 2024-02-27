@@ -1,11 +1,13 @@
 """Module to wrap the lomap package for the QligFEP CLI."""
 
 import json
+import re
 import lomap
 import argparse
 from pathlib import Path
 from typing import Optional
 from multiprocessing import cpu_count
+from rdkit import Chem
 import numpy as np
 
 # QligFEP imports
@@ -15,6 +17,7 @@ from ..logger import logger
 class LomapWrap(object):
     """Class to wrap the lomap package for the QligFEP CLI."""
     def __init__(self, inp: str, out: Optional[str]=None, time=30, verbose='info', **kwargs):
+        self.nodes = {}
         self.inp = inp
         self.out = self._parse_output(out)
         self.cores = self._setup_cores()
@@ -40,7 +43,7 @@ class LomapWrap(object):
             handler = MoleculeIO(self.inp)
             Path(self.out).mkdir(parents=True, exist_ok=False)
             logger.info(f'Writing {self.inp} to separate `.sdf` files to be stored in {self.out}.')
-            handler.write_sdf_separate(self.out)    
+            handler.write_sdf_separate(self.out)
             self.lomap_args.update({'directory': self.out})
     
     def _parse_output(self, output) -> str:
@@ -96,11 +99,18 @@ class LomapWrap(object):
     
     def run_lomap(self) -> None:
         db_mol = lomap.DBMolecules(**self.lomap_args)
+        for lomap_mol in db_mol._list:
+            mol = lomap_mol.getMolecule()
+            name = lomap_mol.getName()
+            smiles = Chem.MolToSmiles(mol)
+            formal_charge = Chem.GetFormalCharge(mol)
+            self.nodes.update({name: {'smiles': smiles, 'formal_charge': formal_charge}})
         # Calculate the similarity matrices
         strict, loose = db_mol.build_matrices()
         # Generate the NetworkX graph and output the results
         nx_graph = db_mol.build_graph()
         result_dict = self.format_graph_data(nx_graph)
+        result_dict.update({'nodes': self.nodes})
         with (Path(self.out) / 'lomap.json').open('w') as f:
             json.dump(result_dict, f, indent=4)
         return result_dict
