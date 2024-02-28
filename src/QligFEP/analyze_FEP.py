@@ -3,6 +3,7 @@ import glob
 import os
 import re
 from pathlib import Path
+from itertools import product
 
 import numpy as np
 
@@ -133,6 +134,36 @@ class FepReader(object):
             
             self.data[self.system].update({'CrashedReplicates': failed_replicates})
             self.data[self.system].update({'FEP_result': method_results})
+            
+    # now write me a function that will take the systems within self.data.keys(), try to find `protein` and `water` and for each of the nodes, it will calculate the ddG according to the correct perturbation id (self.data[self.system][fep][FEP_result])
+    def calculate_ddG(self):
+        self.data.update({'ddG': {}})
+        systems = ['1.water', '2.protein']
+        # assert both systems have the same FEPs
+        prot_feps = sorted([k for k in self.data['2.protein'].keys()])
+        water_feps = sorted([k for k in self.data['1.water'].keys()])
+        assert prot_feps == water_feps, 'FEPs do not match between protein and water!!'
+        for fep in water_feps:
+            w_fep = self.data['1.water'][fep]
+            p_fep = self.data['2.protein'][fep]
+            w_result = w_fep['FEP_result']
+            p_result = p_fep['FEP_result']
+            
+            for _sys in systems:
+                # check for inconsistencies
+                if w_fep['fep_stage'] != p_fep['fep_stage']:
+                    logger.error(f'FEP stages do not match between {fep} and {node}!!')
+                    continue
+                if w_fep['temperature'] != p_fep['temperature']:
+                    logger.error(f'Temperatures do not match between {fep} and {node}!!')
+                    continue
+                if w_fep['lambda_sum'] != p_fep['lambda_sum']:
+                    logger.error(f'Lambda sums do not match between {fep} and {node}!!')
+                    continue
+            
+            ddG = p_result['dG']['avg'] - w_result['dG']['avg']
+            ddG_sem = np.sqrt(p_result['dG']['sem']**2 + w_result['dG']['sem']**2)
+            self.data['ddG'].update({fep: {'ddG': ddG, 'ddG_sem': ddG_sem}})
 
 class Run(object):
     """
