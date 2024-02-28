@@ -7,6 +7,9 @@ import numpy as np
 
 from .functions import sigmoid
 from .settings.settings import CONFIGS
+from .logger import logger
+
+qfep_error_regex = re.compile(r'ERROR:')
 
 ## Some useful objects TO DO add GLH etc.
 charged_res = {'HIS': {'HD1' : 'HID',
@@ -202,10 +205,17 @@ def read_qfep(qfep):
     with open(qfep) as infile:
         block = 0
         for line in infile:
+            try:
+                if qfep_error_regex.findall(line):
+                    error_main = qfep_error_regex.findall(line)[0]
+                    error_body = ''.join([next(infile) for _ in range(2)])
+                    raise IOError(f'QFEP ERROR !! {error_main}\n{error_body}')
+            except StopIteration:
+                logger.info('Reached the end of the file before capturing the full error body.')
+                raise IOError(f'QFEP ERROR !! {error_main}')
+
             line = line.split()
             if len(line) > 3:
-                if line[0] == 'ERROR:' or line[1] == 'ERROR:':
-                    raise Exception('QFEP ERROR:\n' + qfep)
 
                 if line[3] == 'Free':
                     block = 1
@@ -226,10 +236,10 @@ def read_qfep(qfep):
             if len(line) > 1:
                 if block == 1:
                     if line[0] == '1.000000':
-                        Zwanzig_r = line[4]
+                        Zwanzig_r = float(line[4])
 
                     elif line[0] == '0.000000':
-                        Zwanzig_f = line[2]
+                        Zwanzig_f = float(line[2])
 
                         if line[5] == '-Infinity':
                             Zwanzig = np.nan
@@ -261,24 +271,31 @@ def read_qfep(qfep):
     return [Zwanzig, Zwanzig_f, Zwanzig_r, OS, BAR]
 #    return [Zwanzig, Zwanzig_f, Zwanzig_r]#, OS, BAR]
 def read_qfep_verbose(qfep):
-    """
-    Reads a given qfep.out file.
+    """Reads a given qfep.out file and outputs a two-dimensional numpy array with the following structure:
 
-    returns [[Zwanzig, dGfr, dGr, OS, BAR]   lambda 1
-                          ....               lambda ..
-             [Zwanzig, dGfr, dGr, OS, BAR]]  lambda n
-    """
-    # Merge this and the above function?
-    # Zwanzig, frwd, rv, OS, BAR
+    Args:
+        qfep: qpfe.out file to be parsed.
+
+    Raises:
+        IOError: if the qfep.out file contains an error message and no content to be parsed.
+
+    Returns:
+        A two-dimensional numpy array with the following structure:
+    >>> [[Zwanzig, dGfr, dGr, OS, BAR]   lambda 1
+    >>>               ....               lambda ..
+    >>>  [Zwanzig, dGfr, dGr, OS, BAR]]  lambda n
+    """    
     array = [[],[],[],[],[]]
     with open(qfep) as infile:
         block = 0
         for line in infile:
+            if qfep_error_regex.findall(line):
+                error_main = qfep_error_regex.findall(line)[0]
+                # error_body = ''.join([next(infile) for i in range(1)])
+                raise IOError(f'QFEP ERROR !! {error_main}\n')
+            
             line = line.split()
             if len(line) > 3:
-                if line[0] == 'ERROR:' or line[1] == 'ERROR:':
-                    raise Exception('QFEP ERROR:\n' + qfep)
-
                 if line[3] == 'Free':
                     block = 1
 
@@ -301,28 +318,30 @@ def read_qfep_verbose(qfep):
                 
                 if block == 1:
                     try:
-                        array[0].append(np.float(line[5]))
+                        array[0].append(float(line[5]))
                     except:
                         array[0].append(np.nan)
                     try:
-                        array[1].append(np.float(line[4]))
+                        array[1].append(float(line[4]))
                     except:
                         array[1].append(np.nan)
                     try:
-                        array[2].append(np.float(line[2]))
+                        array[2].append(float(line[2]))
                     except:
                         array[2].append(np.nan)
 
                 if block == 3:
                     try:
-                        array[3].append(np.float(line[2]))
+                        array[3].append(float(line[2]))
                     except:
                         array[3].append(np.nan)
 
                 if block == 4:
                     try:
-                        array[4].append(np.float(line[2]))
+                        array[4].append(float(line[2]))
                     except:
                         array[4].append(np.nan)
-    
-    return array   
+    arr = np.array(array)
+    if np.isnan(arr).any():
+        logger.warning('This function ran into exceptions; could use this file for debugging!')
+    return arr.T
