@@ -111,6 +111,17 @@ class LomapWrap(object):
         nx_graph = db_mol.build_graph()
         result_dict = self.format_graph_data(nx_graph)
         result_dict.update({'nodes': self.nodes})
+        same_charges = []
+        for edge in result_dict['edges']:
+            _from = edge['from']
+            _to = edge['to']
+            same = self.nodes[_from]['formal_charge'] == self.nodes[_to]['formal_charge']
+            edge.update({'same_charge': same})
+            same_charges.append(same)
+        if all(same_charges):
+            logger.info('All ligands have the same formal charge.')
+        else:
+            logger.warning('Not all ligands have the same formal charge!!')
         with (Path(self.out) / 'lomap.json').open('w') as f:
             json.dump(result_dict, f, indent=4)
         return result_dict
