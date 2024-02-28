@@ -1,12 +1,39 @@
 import argparse
 import glob
-import numpy as np
 import os
+import re
+from pathlib import Path
 
-from .IO import run_command, read_qfep
-from .functions import read_qfep_verbose, avg_sem
+import numpy as np
+
+from .functions import avg_sem
+from .IO import read_qfep, read_qfep_verbose, run_command
+from .logger import logger
 from .settings.settings import CLUSTER_DICT
 
+
+def info_from_run_file(file_path: Path):
+    """Extract the FEP temperature from a run file."""
+    info = {'temperature': None, 'replicates': None}
+    run_files = sorted(list(file_path.glob('run*.sh')))
+    if len(run_files) == 0:
+        logger.error(f'No run files found in {file_path}')
+    elif len(run_files) > 1:
+        logger.warning(f'Multiple run files found in {file_path}!! Using the first one.')
+    run_file = run_files[0]
+    temp_pattern = re.compile(r'temperature=(\d+)')
+    replic_pattern = re.compile(r'run=(\d+)')
+    with run_file.open('r', encoding='utf-8') as _file:
+        for line in _file:
+            temp_match = temp_pattern.search(line)
+            replicate_match = replic_pattern.search(line)
+            if temp_match:
+                info['temperature'] = temp_match.group(1)
+            if replicate_match:
+                info['replicates'] = replicate_match.group(1)
+    if any([v is None for v in info.values()]):
+        logger.error(f'Could not extract temperature and/or replicates from {run_file}')
+    return info
 
 try:
     import matplotlib
@@ -16,6 +43,96 @@ try:
 except ModuleNotFoundError:
     print('cannot import matplotlib, skipping plot generation')
     plot = False
+
+class FepReader(object):
+    """Class to analyze FEP output files. This wrapper class will read, structure the files
+    and enable input/output operation with the analyzed data.
+    """    
+    def __init__(self, system) -> None:
+        self.cwd = Path.cwd()
+        self.data = {}
+        self.system = None
+        self.load_system(system)
+        
+    def load_system(self, system:str):
+        """This method will load the FEP directories within a system directory. The reason
+        for this is the way setupFEP is structured. When running it, it will create two
+        different diretories for storing the perturbation; `1.water` and `2.protein`."""
+        fep_dirs = sorted(list((self.cwd / system).glob('FEP_*')))
+        self.data.update({system: {}})
+        self.data[system].update({_dir.name : {'root': str(_dir.absolute())} for _dir in fep_dirs})
+        self.system = system
+        
+    def load_new_system(self, system: str):
+        """This method will load a new system into the data dictionary."""
+        self.load_system(system)
+        self.read_fep_inputs()
+    
+    def read_fep_inputs(self):
+        for fep in self.data[self.system].keys():
+            _dir = Path(self.data[self.system][fep]['root'])
+            run_info = info_from_run_file(_dir / 'inputfiles')
+            temperature = run_info['temperature']
+            replicates = run_info['replicates']
+            inputs = sorted(list(_dir.glob('inputfiles/md*.inp')))
+            fep_files = sorted(list(_dir.glob('inputfiles/FEP*.fep')))
+            fep_stages = []
+            for fep_file in fep_files:
+                fep_stages.append(fep_file.stem)
+            if len(fep_stages) > 1: # Are there cases where we'll have more than 1?
+                logger.warning(f'Multiple FEP files found in {fep}: {fep_files}!! Using the first...')
+            fep_stage = fep_stages[0]
+            lambda_sum = len(fep_files) * (len(inputs)-1)
+            self.data[self.system][fep].update(
+                {
+                    'lambda_sum': lambda_sum,
+                    'fep_stage': fep_stage,
+                    'temperature': str(temperature),
+                    'replicates': replicates
+                }
+            )
+            
+    def read_perturbations(self):
+        methods_list = ['dG', 'dGf', 'dGr', 'dGos', 'dGbar']
+        feps = [k for k in self.data[self.system].keys()]
+        
+        for fep in feps:
+            fep_dict = self.data[self.system][fep]
+            _dir = Path(fep_dict['root'])
+            replicate_root = _dir / fep_dict['fep_stage'] / fep_dict['temperature']
+            replicate_qfep_files = sorted( # here we use the int to sort the replicates
+                list(replicate_root.glob('*/qfep.out')), key=lambda x: int(x.parent.name)
+            )
+            energies = {}
+            method_results = {method: {} for method in methods_list}
+            failed_replicates = []
+            all_replicates = [i for i in range(1, int(fep_dict['replicates']) + 1)]
+            stage = self.data[self.system][fep]['fep_stage']
+            for rep in replicate_qfep_files:
+                repID = int(rep.parent.name)
+                try:
+                    energies[repID] = read_qfep(rep)
+                except OSError as e:
+                    logger.warning(
+                        f"Failed to retrieve energies for: {fep}, {stage} - rep.{repID}. Error: \n{e}"
+                    )
+                    failed_replicates.append(repID)
+                    energies[repID] = np.array([np.nan] * len(methods_list))  # Assuming 5 methods
+                    
+            # per different type of energy, populate the methods dictionary
+            for mname in methods_list:
+                method_idx = methods_list.index(mname)
+                method_energies = np.array([energies[repID][method_idx] for repID in all_replicates])
+                print('energies', method_energies)
+                
+                method_results[mname] = {
+                    'energies': method_energies.tolist(),
+                    'avg': np.nanmean(method_energies),
+                    'sem': np.nanstd(method_energies) / np.sqrt(method_energies.shape)
+                }
+            
+            self.data[self.system].update({'CrashedReplicates': failed_replicates})
+            self.data[self.system].update({'FEP_result': method_results})
 
 class Run(object):
     """
