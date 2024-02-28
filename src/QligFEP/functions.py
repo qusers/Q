@@ -90,9 +90,9 @@ def kT(T):
     return kT
 
 def avg_sem(array):
-    FEP_sum = array.sum(axis = 0)
+    FEP_sum = array.sum(axis=0)
     dG = np.nanmean(FEP_sum)
     cnt = len(FEP_sum)
-    sem = np.nanstd(FEP_sum, ddof =1)/np.sqrt(cnt)
-
+    sem = np.nanstd(FEP_sum, ddof=1) / np.sqrt(cnt)
     return [dG, sem]
+
