@@ -115,7 +115,11 @@ class LomapWrap(object):
         for edge in result_dict['edges']:
             _from = edge['from']
             _to = edge['to']
-            same = self.nodes[_from]['formal_charge'] == self.nodes[_to]['formal_charge']
+            try:
+                same = self.nodes[_from]['formal_charge'] == self.nodes[_to]['formal_charge']
+            except KeyError:
+                logger.error('Either of the mols: {_from} or {_to} not in nodes.')
+                continue
             edge.update({'same_charge': same})
             same_charges.append(same)
         if all(same_charges):
