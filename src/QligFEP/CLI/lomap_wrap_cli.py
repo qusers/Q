@@ -101,7 +101,7 @@ class LomapWrap(object):
         db_mol = lomap.DBMolecules(**self.lomap_args)
         for lomap_mol in db_mol._list:
             mol = lomap_mol.getMolecule()
-            name = lomap_mol.getName()
+            name = Path(lomap_mol.getName()).stem # remove the file extension
             smiles = Chem.MolToSmiles(mol)
             formal_charge = Chem.GetFormalCharge(mol)
             self.nodes.update({name: {'smiles': smiles, 'formal_charge': formal_charge}})
@@ -115,11 +115,7 @@ class LomapWrap(object):
         for edge in result_dict['edges']:
             _from = edge['from']
             _to = edge['to']
-            try:
-                same = self.nodes[_from]['formal_charge'] == self.nodes[_to]['formal_charge']
-            except KeyError:
-                logger.error('Either of the mols: {_from} or {_to} not in nodes.')
-                continue
+            same = self.nodes[_from]['formal_charge'] == self.nodes[_to]['formal_charge']
             edge.update({'same_charge': same})
             same_charges.append(same)
         if all(same_charges):
