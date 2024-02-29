@@ -1,16 +1,12 @@
 import argparse
-import glob
-import os
 import re
 from pathlib import Path
-from itertools import product
+import matplotlib.pyplot as plt
 
 import numpy as np
 
-from .functions import avg_sem
 from .IO import read_qfep, read_qfep_verbose, run_command
 from .logger import logger
-from .settings.settings import CLUSTER_DICT
 
 
 def info_from_run_file(file_path: Path):
@@ -36,24 +32,25 @@ def info_from_run_file(file_path: Path):
         logger.error(f'Could not extract temperature and/or replicates from {run_file}')
     return info
 
-try:
-    import matplotlib
-    matplotlib.use('Agg')    
-    import matplotlib.pyplot as plt
-    plot = True
-except ModuleNotFoundError:
-    print('cannot import matplotlib, skipping plot generation')
-    plot = False
-
 class FepReader(object):
     """Class to analyze FEP output files. This wrapper class will read, structure the files
     and enable input/output operation with the analyzed data.
     """    
-    def __init__(self, system) -> None:
+    def __init__(self, system:str, target_name:str) -> None:
+        """Initialize the FEP reader class. This class will store the FEP information inside
+        `self.data` and will be used to analyze the results & generate plots.
+
+        Args:
+            system: which system to be loaded first. This should be a directory containing
+                the FEP directories, named by default with the format `FEP_*`.
+            target_name: name of the target protein so we can load the correct FEP directories.
+        """        
         self.cwd = Path.cwd()
         self.data = {}
         self.system = None
+        self.target_name = target_name
         self.load_system(system)
+        self.read_fep_inputs()
         
     def load_system(self, system:str):
         """This method will load the FEP directories within a system directory. The reason
@@ -112,6 +109,7 @@ class FepReader(object):
             for rep in replicate_qfep_files:
                 repID = int(rep.parent.name)
                 try:
+                    # TODO: shall we also support the verbose output? -> see IO.read_qfep_verbose
                     energies[repID] = read_qfep(rep)
                 except OSError as e:
                     logger.warning(
@@ -135,268 +133,176 @@ class FepReader(object):
             self.data[self.system].update({'CrashedReplicates': failed_replicates})
             self.data[self.system].update({'FEP_result': method_results})
             
-    # now write me a function that will take the systems within self.data.keys(), try to find `protein` and `water` and for each of the nodes, it will calculate the ddG according to the correct perturbation id (self.data[self.system][fep][FEP_result])
-    def calculate_ddG(self):
-        self.data.update({'ddG': {}})
-        systems = ['1.water', '2.protein']
+    def calculate_ddG(self, water_sys:str = '1.water', protein_sys:str = '2.protein'):
+        self.data.update({'result': {}})
+        systems = [water_sys, protein_sys]
         # assert both systems have the same FEPs
-        prot_feps = sorted([k for k in self.data['2.protein'].keys()])
-        water_feps = sorted([k for k in self.data['1.water'].keys()])
+        prot_feps = sorted([k for k in self.data[protein_sys].keys()])
+        water_feps = sorted([k for k in self.data[water_sys].keys()])
         assert prot_feps == water_feps, 'FEPs do not match between protein and water!!'
         for fep in water_feps:
-            w_fep = self.data['1.water'][fep]
-            p_fep = self.data['2.protein'][fep]
+            w_fep = self.data[water_sys][fep]
+            p_fep = self.data[protein_sys][fep]
             w_result = w_fep['FEP_result']
             p_result = p_fep['FEP_result']
             
             for _sys in systems:
                 # check for inconsistencies
                 if w_fep['fep_stage'] != p_fep['fep_stage']:
-                    logger.error(f'FEP stages do not match between {fep} and {node}!!')
+                    logger.error(f'FEP stages do not match between water/{fep} and protein/{fep}.')
                     continue
                 if w_fep['temperature'] != p_fep['temperature']:
-                    logger.error(f'Temperatures do not match between {fep} and {node}!!')
+                    logger.error(f'Temperatures do not match between water/{fep} and protein/{fep}.')
                     continue
                 if w_fep['lambda_sum'] != p_fep['lambda_sum']:
-                    logger.error(f'Lambda sums do not match between {fep} and {node}!!')
+                    logger.error(f'Lambda sums do not match between water/{fep} and protein/{fep}.')
                     continue
             
-            ddG = p_result['dG']['avg'] - w_result['dG']['avg']
-            ddG_sem = np.sqrt(p_result['dG']['sem']**2 + w_result['dG']['sem']**2)
-            self.data['ddG'].update({fep: {'ddG': ddG, 'ddG_sem': ddG_sem}})
-
-class Run(object):
-    """
-    """
-    def __init__(self, FEP, color, PDB, cluster, *args, **kwargs):
-        self.cluster=cluster
-        self.FEP = FEP.strip('/')
-        self.energies = {}
-        self.FEPstages = []
-        FEPfiles = glob.glob(self.FEP + '/inputfiles/FEP*.fep')
-        inputs = glob.glob(self.FEP + '/inputfiles/md*.inp')
-        FEPfiles.sort()
-        self.failed = []
-        for FEPfile in FEPfiles:
-            FEPstage = FEPfile.split('/')[-1]
-            FEPstage = FEPstage.split('.')[0]
-            self.FEPstages.append(FEPstage)
-            
-        self.lambda_sum = len(FEPfiles) * (len(inputs)-1)
-        
-        colors = {'blue':['navy','lightblue'],
-                  'red' :['darkred','mistyrose']
-                 }
-        
-        self.color = colors[color]
-        
-    def create_environment(self):
-        self.analysisdir = self.FEP + '/analysis'
-        # Add overwrite function?
-        if os.path.isdir(self.analysisdir) is not True:
-            os.mkdir(self.analysisdir)
-    
-    def read_FEPs(self):
-        methods_list = ['dG', 'dGf', 'dGr', 'dGos', 'dGbar']
-        methods = {'dG'     : {},
-                   'dGf'    : {},
-                   'dGr'    : {},
-                   'dGos'   : {},
-                   'dGbar' :  {}
-                  }
-        results = {}
-        out = []
-        
-        FEPs = sorted(glob.glob(self.FEP + '/*/*/*/qfep.out'))
-        for filename in FEPs:
-            i = -1
-            file_parse = filename.split('/')
-            FEP = file_parse[1]
-            temperature = file_parse[2]
-            replicate = file_parse[3]
-            
-            try:
-                energies = read_qfep(filename)
-            except:
-                print("Could not retrieve energies for: " + filename)
-                energies = [np.nan, np.nan, np.nan, np.nan, np.nan]
-                self.failed.append(replicate)
-            #try:
-            #    energies = read_qfep(filename)
-            #except:
-            #    print "Could not retrieve energies for: " + filename
-            #    energies = [np.nan, np.nan, np.nan, np.nan, np.nan]
-
-            for key in methods_list:
-                i += 1
-                try:
-                    methods[key][FEP].append(energies[i])
-                except:
-                    methods[key][FEP] = [energies[i]]
-                    
-            # Construct for the energy figure
-            if not replicate in self.energies:
-                self.energies[replicate] = {}
+            for method in w_result.keys():
+                new_key = f'g{method}'
+                ddG = p_result[method]['avg'] - w_result[method]['avg']
+                ddG_sem = np.sqrt(p_result[method]['sem']**2 + w_result[method]['sem']**2)
+                self.data['result'][new_key].update({fep: {new_key: ddG, f'{new_key}_sem': ddG_sem}})
                 
-            self.energies[replicate][FEP] = read_qfep_verbose(filename)
-        for method in methods:
-            dG_array = []
-            for key in methods[method]:
-                print(method, key, methods[method][key])
-                dG_array.append(methods[method][key])
-            dG_array = np.array(dG_array)
-            dG_array = dG_array.astype(np.float)
-            dG = avg_sem(dG_array)
-            results[method]='{:6.2f}{:6.2f}'.format(*dG)
-            
-        for method in methods_list:
-            out.append(results[method])
+    def create_ddG_plot(self, method, margin: float = 1.0, xylims:tuple|None = None):
+        """Creates the ddG plot for the FEP that has already been analyzed. The plot will
+        show the experimental (X axis) vs mean predicted values (Y axis), with error bars
+        representing the standard error of the mean (SEM).
 
-        print(self.FEP, '{} {} {} {} {}'.format(*out))
+        Args:
+            method: the energy method to be used for the plot. Must be one of the keys in
+                the result dictionary.
+            margin: margin value to be added/subtracted to the max/min values obtained. Defaults to 1.0.
+            xylims: if values are passed, x&y min will be xylims[0] and max will be [1]. Defaults to None.
+
+        Returns:
+            the matplotlib figure and axis objects (fig, ax).
+        """        
+        if 'result' not in self.data.keys():
+            logger.error('No results to plot. Run calculate_ddG first.')
+            return
+        elif method not in self.data['result'].keys():
+            logger.error(
+                f"{method} not in result dictionary. Pick one of the following: "
+                f"{', '.join(self.data["result"].keys())}"
+                )
+            return
+        data_dict = self.data['result'][method]
+        avg_values = [data['avg'] for data in data_dict.values()]
+        sem_values = [data['sem'] for data in data_dict.values()]
+        exp_values = [data['exp_data'] for data in data_dict.values()]
         
-    def read_mdlog(self):
-        mapping = {}
-        cnt = -1
-        # Add temperature variable later
-        md_files = glob.glob(self.FEP + '/FEP*/*/*/md*.log')        
-        md_files.sort()
-        md_ref = glob.glob(self.FEP + '/inputfiles/md*.inp')
-        windows = len(glob.glob(self.FEP + '/inputfiles/md*.inp')) - 1
-        stages = len(glob.glob(self.FEP + '/inputfiles/FEP*.fep'))
-        for ref in md_ref:
-            w = ref.split('/')[-1].split('_')[2].split('.')[0]
-            cnt += 1
-            mapping[w]=cnt
-
-        for md_file in md_files:
-            stage = md_file.split('/')[1][-1]
-            l = md_file.split('/')[-1].split('_')[2].split('.')[0]
-            offset = (int(stage) - 1) * int(windows)
-            cumulative_l = (mapping[l] + offset)
-            (cumulative_l)
-            
-    def plot_data(self):
-        y_axis = {}
-        x_axis = range(0,self.lambda_sum+1)
-        avg = []
-        for replicate in self.failed:
-            del self.energies[replicate]
-        for replicate in self.energies:
-            y_axis[replicate] = [0]
-            dG = 0
-            for FEPstage in self.FEPstages:
-                for energy in self.energies[replicate][FEPstage][0][1:]:
-                    energy = dG + energy
-                    y_axis[replicate].append(energy)
-                dG+=self.energies[replicate][FEPstage][0][-1]
+        # Calculate RMSE & correlation coefficient
+        rmse = np.sqrt(np.mean((np.array(avg_values) - np.array(exp_values))**2))
+        correlation_coef = np.corrcoef(exp_values, avg_values)[0, 1]
         
-        for y in y_axis:
-            for i,energy in enumerate(y_axis[y]):
-                if len(avg) < self.lambda_sum + 1:
-                    avg.append(energy)
-                else:
-                    avg[i] += energy
-
-            plt.plot(x_axis,y_axis[y],color=self.color[1])
-        y_avg = [x / len(y_axis) for x in avg]
-        plt.plot(x_axis,y_avg,color=self.color[0])
-        axes = plt.gca()
-        axes.set_xlim([0,self.lambda_sum])
-        plt.xlabel(r'cumulative $\lambda$', fontsize=18)
-        plt.ylabel(r'$\Delta$G (kcal/mol)', fontsize=16)        
-        plt.savefig(self.analysisdir+'/dG.png',dpi=300,transparent=True)
+        if xylims is not None:
+            assert len(xylims) == 2, 'xylims must be a tuple with 2 elements.'
+            assert xylims[0] < xylims[1], 'xylims[0] must be smaller than xylims[1].'
+            min_val = xylims[0]
+            max_val = xylims[1]
+        else:
+            all_values = avg_values + exp_values
+            min_val = min(all_values) - margin
+            max_val = max(all_values) + margin
         
-    def write_re2pdb(self):
-        curdir = os.getcwd()
-        os.chdir(self.FEP + '/analysis')
-        if not os.path.exists('pdbs'):
-            os.mkdir('pdbs')
-
-        libfiles = glob.glob('../inputfiles/*.lib')
-        re_files = glob.glob('../FEP*/*/*/*.re')
-        topology = glob.glob('../inputfiles/*.top')[0]
+        fig, ax = plt.subplots()
         
-        with open('../inputfiles/qprep.inp') as f:
-            protlib = f.readline()
+        plt.errorbar(exp_values, avg_values, yerr=sem_values, fmt='o', color='black', ecolor='lightgray', elinewidth=3, capsize=0)
+        plt.plot([min_val, max_val], [min_val, max_val], 'k-', linewidth=2) # Black identity line
+        
+        # Highlight predictions within 1 and 2 kcal/mol of the experimental affinity
+        ax.fill_between([min_val, max_val], [min_val - 1, max_val - 1], [min_val + 1, max_val + 1], color='darkgray', alpha=0.5)
+        ax.fill_between([min_val, max_val], [min_val - 2, max_val - 2], [min_val + 2, max_val + 2], color='lightgray', alpha=0.5)
+        
+        # Annotating the plot with τ and RMSE # TODO: figure out how to place it...
+        plt.text(min_val, max_val, f'$\\tau = {correlation_coef:.2f}$, RMSE = {rmse:.2f} kcal/mol', fontsize=12, verticalalignment='top')
+        
+        # set labels, make it square and add legend
+        plt.xlabel('$\Delta\Delta G_{exp} [kcal/mol]$')
+        plt.ylabel('$\Delta\Delta G_{pred} [kcal/mol]$')
+        plt.xlim(min_val, max_val)
+        plt.ylim(min_val, max_val)
+        ax.set_aspect('equal', adjustable='box')
+        ax.legend(['Identity line', 'Within 1 kcal/mol', 'Within 2 kcal/mol'], loc='upper left')
+        return fig, ax
 
-        with open('re2pdb.inp', 'w') as outfile:
-            outfile.write('{}'.format(protlib))
-            
-            for libfile in libfiles:
-                outfile.write('rl {}\n'.format(libfile))
+# def write_re2pdb(self): # TODO: port this to the new class
+#     curdir = os.getcwd()
+#     os.chdir(self.FEP + '/analysis')
+#     if not os.path.exists('pdbs'):
+#         os.mkdir('pdbs')
 
-            outfile.write('rt {}\n'.format(topology))
+#     libfiles = glob.glob('../inputfiles/*.lib')
+#     re_files = glob.glob('../FEP*/*/*/*.re')
+#     topology = glob.glob('../inputfiles/*.top')[0]
+    
+#     with open('../inputfiles/qprep.inp') as f:
+#         protlib = f.readline()
 
-            for re_file in re_files:
-                pdb_out = re_file.split('/')[-1][:-3]
-                repeat = '{:02d}'.format(int(re_file.split('/')[3]))
-                pdb_out = 'pdbs/{}_{}'.format(repeat, pdb_out)
-                outfile.write('rx {}\n'.format(re_file))
-                outfile.write('wp {}.pdb\n'.format(pdb_out))
-                outfile.write('y\n')
-            
-            outfile.write('mask none\n')
-            outfile.write('mask not excluded\n')
-            outfile.write('wp pdbs/complexnotexcluded.pdb\n')
-            outfile.write('y\n')
-            
-            outfile.write('q\n')
-            
-        qprep = CLUSTER_DICT[self.cluster]['QPREP']
-        options = ' < re2pdb.inp > re2pdb.out'
-        # Somehow Q is very annoying with this < > input style so had to implement
-        # another function that just calls os.system instead of using the preferred
-        # subprocess module....
-        run_command(qprep, options, string = True)
-            
-        os.chdir(curdir)
+#     with open('re2pdb.inp', 'w') as outfile:
+#         outfile.write('{}'.format(protlib))
+        
+#         for libfile in libfiles:
+#             outfile.write('rl {}\n'.format(libfile))
+
+#         outfile.write('rt {}\n'.format(topology))
+
+#         for re_file in re_files:
+#             pdb_out = re_file.split('/')[-1][:-3]
+#             repeat = '{:02d}'.format(int(re_file.split('/')[3]))
+#             pdb_out = 'pdbs/{}_{}'.format(repeat, pdb_out)
+#             outfile.write('rx {}\n'.format(re_file))
+#             outfile.write('wp {}.pdb\n'.format(pdb_out))
+#             outfile.write('y\n')
+        
+#         outfile.write('mask none\n')
+#         outfile.write('mask not excluded\n')
+#         outfile.write('wp pdbs/complexnotexcluded.pdb\n')
+#         outfile.write('y\n')
+        
+#         outfile.write('q\n')
+        
+#     qprep = CLUSTER_DICT[self.cluster]['QPREP']
+#     options = ' < re2pdb.inp > re2pdb.out'
+#     run_command(qprep, options, string = True)
+        
+#     os.chdir(curdir)
         
             
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        prog='protPREP',
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        description = '       == Analyse FEP == ')
+        description = 'Analyze FEP output files and generate plots.')
+    parser.add_argument('-p', '--protein_dir',
+                        dest = "protein_dir",
+                        required = False,
+                        default = '2.protein',
+                        help = (
+                            "Path to the directory containing the protein system FEPs. "
+                            "Will default to `2.protein` in the current working directory."
+                            ))
 
-    
-    parser.add_argument('-F', '--FEP',
-                        dest = "FEP",
-                        required = True,
-                        help = "name of FEP directory (FEP_$)")
-    
-    parser.add_argument('-pdb', '--PDB',
-                        dest = "PDB",
+    parser.add_argument('-w', '--water_dir',
+                        dest = "water_dir",
                         required = False,
-                        default = False,
-                        action = 'store_true',
-                        help = "Add this argument if you want .pdb files of the trajectory")
+                        default = '2.protein',
+                        help = (
+                            "Path to the directory containing the water system FEPs. "
+                            "Will default to `1.water` in the current working directory."
+                            ))
     
-    parser.add_argument('-c', '--color',
-                        dest = "color",
-                        required = False,
-                        default = 'blue',
-                        choices = ['blue', 'red'],
-                        help = "color for the plot")
-    
-    parser.add_argument('-C', '--cluster',
-                        dest = "cluster",
+    parser.add_argument('-j', '--json_file',
+                        dest = "json_file",
                         required = True,
-                        help = "cluster information")
+                        help = (
+                            "Path to the .json file containing the mapping of the perturbations. "
+                            "This should be the same file used to run the setupFEP script."
+                        ))
     
+    parser.add_argument('-t', '--target',
+                        dest = "target",
+                        required = True,
+                        help = "Name of the protein target; used to save the plot.")
     
     args = parser.parse_args()
-    run = Run(FEP = args.FEP,
-              color = args.color,
-              cluster = args.cluster,
-              PDB = args.PDB
-             )
-    
-    run.create_environment()
-    run.read_FEPs()
-    run.read_mdlog()
-    
-    if plot:
-        run.plot_data()
-        
-    if args.PDB:
-        run.write_re2pdb()
