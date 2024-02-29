@@ -32,6 +32,52 @@ class LomapWrap(object):
         }
         self._check_input()
         
+    @staticmethod
+    def extract_user_defined_properties(file_path: Path) -> dict:
+        """Extract user-defined properties from a MOL2 or SDF file. This function is used
+        to incorporate user-defined fields from the molecular structures to the nodes of
+        the graph.
+
+        Args:
+            file_path: path pointing the file.
+
+        Returns:
+            A dictionary with keys and values of the user-defined properties.
+        """    
+        properties = {}
+        
+        if file_path.suffix.lower() == '.sdf':
+            with file_path.open('r') as file:
+                content = file.read()
+                # SDF files have properties after the "M  END" marker
+                properties_section = content.split('M  END\n')[1]
+                # Each property is separated by '>' and ends with a newline
+                for prop in properties_section.strip().split('\n> '):
+                    if prop: # non-empty
+                        lines = prop.split('\n')
+                        if len(lines) >= 2:
+                            key = lines[0].strip('<>')
+                            value = '\n'.join(lines[1:]).strip()
+                            properties[key] = value
+                            
+        elif file_path.suffix.lower() == '.mol2':
+            logger.warning("!!! This method wasn't tested yet for MOL2 files !!!")
+            with file_path.open('r') as file:
+                content = file.read()
+                in_molecule_section = False
+                # MOL2 files might have user-defined properties in the molecule section
+                for line in content.split('\n'):
+                    if line.startswith('@<TRIPOS>MOLECULE'):
+                        in_molecule_section = True
+                    elif line.startswith('@<TRIPOS>'):
+                        in_molecule_section = False
+                    elif in_molecule_section:
+                        # Assuming user-defined properties in MOL2 are key-value pairs in the molecule section
+                        match = re.match(r'^\s*(\S+)\s*:\s*(.*)$', line)
+                        if match:
+                            properties[match.group(1)] = match.group(2)
+        return properties
+        
     def _check_input(self) -> None:
         """Method to check self.inp for the correct file format."""
         inpath = Path(self.inp)
@@ -94,17 +140,20 @@ class LomapWrap(object):
                 "to": target_name,
             }
             formatted_data.append(edge_dict)
-
-        return {'edges': formatted_data} # TODO: add nodes to the output
+        
+        return {'edges': formatted_data}
     
     def run_lomap(self) -> None:
         db_mol = lomap.DBMolecules(**self.lomap_args)
+        rundir = db_mol.options['directory']
         for lomap_mol in db_mol._list:
             mol = lomap_mol.getMolecule()
-            name = Path(lomap_mol.getName()).stem # remove the file extension
+            molpath = Path(rundir) / lomap_mol.getName()
+            extra_data = self.extract_user_defined_properties(molpath)
+            name = molpath.stem # remove the file extension
             smiles = Chem.MolToSmiles(mol)
             formal_charge = Chem.GetFormalCharge(mol)
-            self.nodes.update({name: {'smiles': smiles, 'formal_charge': formal_charge}})
+            self.nodes.update({name: {'smiles': smiles, 'formal_charge': formal_charge, **extra_data}})
         # Calculate the similarity matrices
         strict, loose = db_mol.build_matrices()
         # Generate the NetworkX graph and output the results
