@@ -1,4 +1,5 @@
 import argparse
+from genericpath import isdir
 import re
 from pathlib import Path
 import matplotlib.pyplot as plt
@@ -67,6 +68,8 @@ class FepReader(object):
         self.read_fep_inputs()
     
     def read_fep_inputs(self):
+        """Load basic FEP information from the input files, including temperature,
+        number of replicates, and lambda sum. Information is stored in`self.data`."""
         for fep in self.data[self.system].keys():
             _dir = Path(self.data[self.system][fep]['root'])
             run_info = info_from_run_file(_dir / 'inputfiles')
@@ -91,6 +94,8 @@ class FepReader(object):
             )
             
     def read_perturbations(self):
+        """Read the ran perturbations. Running this method will populate the `self.data` dictionary
+        with the FEPs and their respective delta-G's for the loaded system (self.system)."""
         methods_list = ['dG', 'dGf', 'dGr', 'dGos', 'dGbar']
         feps = [k for k in self.data[self.system].keys()]
         
@@ -134,6 +139,14 @@ class FepReader(object):
             self.data[self.system].update({'FEP_result': method_results})
             
     def calculate_ddG(self, water_sys:str = '1.water', protein_sys:str = '2.protein'):
+        """After running `read_perturbations`, for both the water and the protein systems,
+        running this method will calculate the ddG for each FEP and store it in `self.data`
+        under the key `result`.
+
+        Args:
+            water_sys: name of the water system that was read. Defaults to '1.water'.
+            protein_sys: name of the protein system that was read. Defaults to '2.protein'.
+        """        
         self.data.update({'result': {}})
         systems = [water_sys, protein_sys]
         # assert both systems have the same FEPs
@@ -164,7 +177,13 @@ class FepReader(object):
                 ddG_sem = np.sqrt(p_result[method]['sem']**2 + w_result[method]['sem']**2)
                 self.data['result'][new_key].update({fep: {new_key: ddG, f'{new_key}_sem': ddG_sem}})
                 
-    def create_ddG_plot(self, method, margin: float = 1.0, xylims:tuple|None = None):
+    def create_ddG_plot(
+            self,
+            method,
+            margin: float = 1.0,
+            xylims: tuple | None = None,
+            output_path: str | None = None,
+        ):
         """Creates the ddG plot for the FEP that has already been analyzed. The plot will
         show the experimental (X axis) vs mean predicted values (Y axis), with error bars
         representing the standard error of the mean (SEM).
@@ -225,7 +244,82 @@ class FepReader(object):
         plt.ylim(min_val, max_val)
         ax.set_aspect('equal', adjustable='box')
         ax.legend(['Identity line', 'Within 1 kcal/mol', 'Within 2 kcal/mol'], loc='upper left')
+        if output_path is not None:
+            if isinstance(output_path, str):
+                output_path = Path(output_path)
+            else: 
+                assert isinstance(output_path, Path), 'output_path must be a string or a Path object.'
+            if output_path.isdir():
+                logger.info(f'Using default name to save the plot file under the dir: {output_path}')
+                fig.savefig(f'{self.target_name}_{method}_ddG_plot.png', dpi=300, bbox_inches='tight')
+            elif output_path.exits():
+                logger.warning(f'File {output_path} already exists. Overwriting...')
+            else:
+                logger.info(f'Saving the plot to {output_path}')
+            assert output_path.stem == '.png', 'output_path must be a .png file.'
+            fig.savefig(str(output_path), dpi=300, bbox_inches='tight')
         return fig, ax
+
+
+def parse_arguments() -> argparse.Namespace:
+    """Method to parse the arguments."""
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description = 'Analyze FEP output files and generate plots.')
+    parser.add_argument('-p', '--protein_dir',
+                        dest = "protein_dir",
+                        required = False,
+                        default = '2.protein',
+                        help = (
+                            "Path to the directory containing the protein system FEPs. "
+                            "Will default to `2.protein` in the current working directory."
+                            ))
+
+    parser.add_argument('-w', '--water_dir',
+                        dest = "water_dir",
+                        required = False,
+                        default = '2.protein',
+                        help = (
+                            "Path to the directory containing the water system FEPs. "
+                            "Will default to `1.water` in the current working directory."
+                            ))
+    
+    parser.add_argument('-j', '--json_file',
+                        dest = "json_file",
+                        required = True,
+                        help = (
+                            "Path to the .json file containing the mapping of the perturbations. "
+                            "This should be the same file used to run the setupFEP script."
+                        ))
+    
+    parser.add_argument('-t', '--target',
+                        dest = "target",
+                        required = True,
+                        help = "Name of the protein target; used to save the plot."
+                        )
+    
+    parser.add_argument('-m', '--method',
+                        required = False,
+                        default = 'ddG',
+                        choices = ['ddG', 'ddGf', 'ddGr', 'ddGos', 'ddGbar'],
+                        help = 'Energy method to be used for the plot. Defaults to ddG.'
+                        )
+                        
+    return parser.parse_args()
+
+def main(args):
+    fep_reader = FepReader(system = args.water_dir, target_name = args.target)
+    fep_reader.read_perturbations()
+    fep_reader.load_new_system(system = args.protein_dir)
+    fep_reader.read_perturbations()
+    fep_reader.calculate_ddG()
+    fep_reader.create_ddG_plot(method = args.method)
+    # TODO: add method to populate json file
+    
+
+def main_exe():
+    args = parse_arguments()
+    main(args)
 
 # def write_re2pdb(self): # TODO: port this to the new class
 #     curdir = os.getcwd()
@@ -271,38 +365,4 @@ class FepReader(object):
         
             
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        description = 'Analyze FEP output files and generate plots.')
-    parser.add_argument('-p', '--protein_dir',
-                        dest = "protein_dir",
-                        required = False,
-                        default = '2.protein',
-                        help = (
-                            "Path to the directory containing the protein system FEPs. "
-                            "Will default to `2.protein` in the current working directory."
-                            ))
-
-    parser.add_argument('-w', '--water_dir',
-                        dest = "water_dir",
-                        required = False,
-                        default = '2.protein',
-                        help = (
-                            "Path to the directory containing the water system FEPs. "
-                            "Will default to `1.water` in the current working directory."
-                            ))
-    
-    parser.add_argument('-j', '--json_file',
-                        dest = "json_file",
-                        required = True,
-                        help = (
-                            "Path to the .json file containing the mapping of the perturbations. "
-                            "This should be the same file used to run the setupFEP script."
-                        ))
-    
-    parser.add_argument('-t', '--target',
-                        dest = "target",
-                        required = True,
-                        help = "Name of the protein target; used to save the plot.")
-    
-    args = parser.parse_args()
+    main_exe()
