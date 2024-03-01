@@ -133,20 +133,21 @@ class FepReader(object):
                     failed_replicates.append(repID)
                     energies[repID] = np.array([np.nan] * len(methods_list))  # Assuming 5 methods
                     
+            all_energies_arr = []
             # per different type of energy, populate the methods dictionary
             for mname in methods_list:
                 method_idx = methods_list.index(mname)
                 method_energies = np.array([energies[repID][method_idx] for repID in all_replicates])
-                print('energies', method_energies)
-                
+                all_energies_arr.append(', '.join(["%.3f" % n for n in method_energies]))
+                logger.debug('energies:\n' + '\n'.join(all_energies_arr))
                 method_results[mname] = {
                     'energies': method_energies.tolist(),
                     'avg': np.nanmean(method_energies),
                     'sem': np.nanstd(method_energies) / np.sqrt(method_energies.shape)
                 }
             
-            self.data[self.system].update({'CrashedReplicates': failed_replicates})
-            self.data[self.system].update({'FEP_result': method_results})
+            self.data[self.system][fep].update({'CrashedReplicates': failed_replicates})
+            self.data[self.system][fep].update({'FEP_result': method_results})
             
     def calculate_ddG(self, water_sys:str = '1.water', protein_sys:str = '2.protein'):
         """After running `read_perturbations`, for both the water and the protein systems,
@@ -288,7 +289,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('-w', '--water-dir',
                         dest = "water_dir",
                         required = False,
-                        default = '2.protein',
+                        default = '1.water',
                         help = (
                             "Path to the directory containing the water system FEPs. "
                             "Will default to `1.water` in the current working directory."
