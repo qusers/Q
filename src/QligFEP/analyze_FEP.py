@@ -122,7 +122,15 @@ class FepReader(object):
                     'replicates': replicates
                 }
             )
-            
+    
+    def run_qfep(self, qfep_file: Path):
+        """Run qfep for the given FEP directory."""
+        qfep = Q_PATHS['QFEP']
+        os.chdir(str(qfep_file.parent.absolute()))
+        options = ' < qfep.inp > qfep.out'
+        run_command(qfep, options, string = True)
+        os.chdir(str(self.cwd.absolute()))
+
     def read_perturbations(self):
         """Read the ran perturbations. Running this method will populate the `self.data` dictionary
         with the FEPs and their respective delta-G's for the loaded system (self.system)."""
@@ -144,11 +152,7 @@ class FepReader(object):
             for rep in replicate_qfep_files:
                 if rep.stat().st_size == 0: # if the file is empty, try runnign qfep again
                     logger.warning(f'Empty qfep.out file: {rep}. Trying to run qfep again...')
-                    qfep = Q_PATHS['QFEP']
-                    os.chdir(str(rep.parent.absolute()))
-                    options = ' < qfep.inp > qfep.out'
-                    run_command(qfep, options, string = True)
-                    os.chdir(str(self.cwd.absolute()))
+                    self.run_qfep(rep)
                 logger.debug(f'    Reading qfep.out file: {rep}')
                 repID = int(rep.parent.name)
                 try:
@@ -160,6 +164,10 @@ class FepReader(object):
                     )
                     failed_replicates.append(repID)
                     energies[repID] = np.array([np.nan] * len(self.methods_list))  # Assuming 5 methods
+                except UnboundLocalError:
+                    logger.error(f'Unbound variable error while parsing {rep}. Trying to run qfep again...')
+                    self.run_qfep(rep)
+                    energies[repID] = read_qfep(rep)
                     
             all_energies_arr = []
             # per different type of energy, populate the methods dictionary
