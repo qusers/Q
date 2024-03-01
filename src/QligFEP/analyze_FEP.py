@@ -281,7 +281,7 @@ class FepReader(object):
         Returns:
             the matplotlib figure and axis objects (fig, ax).
         """
-        example_fep = self.data[self.system].keys()[0] # access the first FEP to check for ddG methods
+        example_fep = [self.data[self.system].keys()][0] # access the first FEP to check for ddG methods
         if 'result' not in self.data.keys():
             logger.error('No results to plot. Run calculate_ddG first.')
             return
