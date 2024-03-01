@@ -317,7 +317,7 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 def main(args):
-    logger.level = args.log_level
+    logger.level(args.log_level.upper())
     fep_reader = FepReader(system = args.water_dir, target_name = args.target)
     fep_reader.read_perturbations()
     fep_reader.load_new_system(system = args.protein_dir)
