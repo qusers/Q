@@ -8,6 +8,7 @@ import numpy as np
 
 from .IO import read_qfep, read_qfep_verbose, run_command
 from .logger import logger, setup_logger
+from .settings.settings import Q_PATHS
 
 
 def info_from_run_file(file_path: Path):
@@ -113,6 +114,11 @@ class FepReader(object):
             all_replicates = [i for i in range(1, int(fep_dict['replicates']) + 1)]
             stage = self.data[self.system][fep]['fep_stage']
             for rep in replicate_qfep_files:
+                if rep.stat().st_size == 0: # if the file is empty, try runnign qfep again
+                    logger.warning(f'Empty qfep.out file: {rep}. Trying to run qfep again...')
+                    qfep = Q_PATHS['QFEP']
+                    options = f' < {rep.parent}/qfep.inp > {rep.parent}/qfep.out'
+                    run_command(qfep, options, string = True)
                 logger.debug(f'    Reading qfep.out file: {rep}')
                 repID = int(rep.parent.name)
                 try:
