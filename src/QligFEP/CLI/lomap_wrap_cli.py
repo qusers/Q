@@ -176,7 +176,7 @@ class LomapWrap(object):
             _from = edge['from']
             _to = edge['to']
             # check for the same formal charge
-            same = self.nodes[_from]['formal_charge'] == self.nodes[_to]['formal_charge']
+            same = self.nodes[_to]['formal_charge'] == self.nodes[_from]['formal_charge']
             for key in extra_data_numerical:
                 try:
                     delta = self.nodes[_from][key] - self.nodes[_to][key]
