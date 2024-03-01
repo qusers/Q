@@ -223,7 +223,7 @@ class FepReader(object):
             for method in w_result.keys():
                 new_key = f'd{method}'
                 ddG = p_result[method]['avg'] - w_result[method]['avg']
-                ddG_sem = np.sqrt(p_result[method]['sem']**2 + w_result[method]['sem']**2)
+                ddG_sem = float(np.sqrt(p_result[method]['sem']**2 + w_result[method]['sem']**2))
                 self.data['result'][new_key].update({fep: {f'{new_key}_avg': ddG, f'{new_key}_sem': ddG_sem}})
             self.feps.append(fep)
 
