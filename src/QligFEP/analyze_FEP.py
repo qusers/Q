@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from .IO import read_qfep, read_qfep_verbose, run_command
-from .logger import logger
+from .logger import logger, setup_logger
 
 
 def info_from_run_file(file_path: Path):
@@ -317,7 +317,7 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 def main(args):
-    logger.level(args.log_level.upper())
+    setup_logger(level=args.log_level)
     fep_reader = FepReader(system = args.water_dir, target_name = args.target)
     fep_reader.read_perturbations()
     fep_reader.load_new_system(system = args.protein_dir)
