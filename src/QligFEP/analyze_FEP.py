@@ -1,5 +1,5 @@
 import argparse
-from genericpath import isdir
+import os
 import re
 from pathlib import Path
 import matplotlib.pyplot as plt
@@ -117,8 +117,10 @@ class FepReader(object):
                 if rep.stat().st_size == 0: # if the file is empty, try runnign qfep again
                     logger.warning(f'Empty qfep.out file: {rep}. Trying to run qfep again...')
                     qfep = Q_PATHS['QFEP']
-                    options = f' < {rep.parent}/qfep.inp > {rep.parent}/qfep.out'
+                    os.chdir(str(qfep.parent.absolute()))
+                    options = ' < qfep.inp > qfep.out'
                     run_command(qfep, options, string = True)
+                    os.chdir(str(self.cwd.absolute()))
                 logger.debug(f'    Reading qfep.out file: {rep}')
                 repID = int(rep.parent.name)
                 try:
