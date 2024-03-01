@@ -14,7 +14,7 @@ from .settings.settings import Q_PATHS
 def find_original_strings(combined_string, dictionary):
     """Function to find the original strings from a FEP_* directory name and the json file
     with `nodes` containing the original strings."""
-    dictionary = [dictionary['nodes'].keys()]
+    dictkeys = list(dictionary['nodes'].keys())
     for i in range(len(combined_string)):
         if combined_string[i] == "_":
             # Split the string at the current underscore
@@ -22,7 +22,7 @@ def find_original_strings(combined_string, dictionary):
             second_part = combined_string[i+1:]
             
             # check for existance in keys
-            if first_part in dictionary and second_part in dictionary:
+            if first_part in dictkeys and second_part in dictkeys:
                 return first_part, second_part
             
             # If the first part is not in the dictionary, it might contain an underscore
@@ -31,7 +31,7 @@ def find_original_strings(combined_string, dictionary):
                 if combined_string[j] == "_":
                     first_part = combined_string[:j]
                     second_part = combined_string[j+1:]
-                    if first_part in dictionary and second_part in dictionary:
+                    if first_part in dictkeys and second_part in dictkeys:
                         return first_part, second_part
                     
     return None, None  # Return None if no valid split is found
@@ -265,9 +265,12 @@ class FepReader(object):
                     break
             
             # populate the result dictionary
-            if 'experimental' not in self.data['result'].keys():
-                self.data['result'].update({'experimental': {}})
-            self.data['result']['experimental'].update({fep:  ddG})
+            if ddG is not None:
+                if 'experimental' not in self.data['result'].keys():
+                    self.data['result'].update({'experimental': {}})
+                self.data['result']['experimental'].update({fep: ddG})
+            else:
+                print(f"Error: ddG not found for {fep}")
                 
     def create_ddG_plot(
             self,
