@@ -46,7 +46,8 @@ class FepReader(object):
             system: which system to be loaded first. This should be a directory containing
                 the FEP directories, named by default with the format `FEP_*`.
             target_name: name of the target protein so we can load the correct FEP directories.
-        """        
+        """
+        self.methods_list = ['dG', 'dGf', 'dGr', 'dGos', 'dGbar']
         self.cwd = Path.cwd()
         self.data = {}
         self.system = None
@@ -97,7 +98,6 @@ class FepReader(object):
     def read_perturbations(self):
         """Read the ran perturbations. Running this method will populate the `self.data` dictionary
         with the FEPs and their respective delta-G's for the loaded system (self.system)."""
-        methods_list = ['dG', 'dGf', 'dGr', 'dGos', 'dGbar']
         feps = [k for k in self.data[self.system].keys()]
         
         for fep in feps:
@@ -109,7 +109,7 @@ class FepReader(object):
                 list(replicate_root.glob('*/qfep.out')), key=lambda x: int(x.parent.name)
             )
             energies = {}
-            method_results = {method: {} for method in methods_list}
+            method_results = {method: {} for method in self.methods_list}
             failed_replicates = []
             all_replicates = [i for i in range(1, int(fep_dict['replicates']) + 1)]
             stage = self.data[self.system][fep]['fep_stage']
@@ -131,12 +131,12 @@ class FepReader(object):
                         f"Failed to retrieve energies for: {fep}, {stage} - rep.{repID}. Error: \n{e}"
                     )
                     failed_replicates.append(repID)
-                    energies[repID] = np.array([np.nan] * len(methods_list))  # Assuming 5 methods
+                    energies[repID] = np.array([np.nan] * len(self.methods_list))  # Assuming 5 methods
                     
             all_energies_arr = []
             # per different type of energy, populate the methods dictionary
-            for mname in methods_list:
-                method_idx = methods_list.index(mname)
+            for mname in self.methods_list:
+                method_idx = self.methods_list.index(mname)
                 method_energies = np.array([energies[repID][method_idx] for repID in all_replicates])
                 all_energies_arr.append(', '.join(["%.3f" % n for n in method_energies]))
                 method_results[mname] = {
@@ -158,7 +158,7 @@ class FepReader(object):
             water_sys: name of the water system that was read. Defaults to '1.water'.
             protein_sys: name of the protein system that was read. Defaults to '2.protein'.
         """        
-        self.data.update({'result': {}})
+        self.data.update({'result': {f'd{method}': {} for method in self.method_list}})
         systems = [water_sys, protein_sys]
         # assert both systems have the same FEPs
         prot_feps = sorted([k for k in self.data[protein_sys].keys()])
@@ -183,7 +183,7 @@ class FepReader(object):
                     continue
             
             for method in w_result.keys():
-                new_key = f'g{method}'
+                new_key = f'd{method}'
                 ddG = p_result[method]['avg'] - w_result[method]['avg']
                 ddG_sem = np.sqrt(p_result[method]['sem']**2 + w_result[method]['sem']**2)
                 self.data['result'][new_key].update({fep: {new_key: ddG, f'{new_key}_sem': ddG_sem}})
