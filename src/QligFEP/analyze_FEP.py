@@ -178,8 +178,11 @@ class FepReader(object):
             self.data[self.system][fep].update({'FEP_result': method_results})
     
     def create_result_key(self):
-        for fep in self.data[self.system].keys():
-            self.data[self.system][fep].update({'result': {f'd{method}': {} for method in self.methods_list}})
+        if 'result' not in self.data.keys():
+            self.data.update({'result': {}})
+        for method in self.methods_list:
+            new_key = f'd{method}'
+            self.data['result'].update({new_key: {}})
     
     def calculate_ddG(self, water_sys:str = '1.water', protein_sys:str = '2.protein'):
         """After running `read_perturbations`, for both the water and the protein systems,
