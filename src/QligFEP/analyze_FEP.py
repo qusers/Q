@@ -170,7 +170,7 @@ class FepReader(object):
                 method_results[mname] = {
                     'energies': method_energies.tolist(),
                     'avg': np.nanmean(method_energies),
-                    'sem': np.nanstd(method_energies) / np.sqrt(method_energies.shape)
+                    'sem': float(np.nanstd(method_energies) / np.sqrt(method_energies.shape))
                 }
             logger.debug('energies:\n' + '\n'.join(all_energies_arr))
             
@@ -257,8 +257,9 @@ class FepReader(object):
                     break
             
             # populate the result dictionary
-            for key in self.data['result'].keys():
-                self.data['result'][key].update({fep: {exp_key: ddG}})
+            if 'experimental' not in self.data['result'].keys():
+                self.data['result'].update({'experimental': {}})
+            self.data['result']['experimental'].update({fep:  ddG})
                 
     def create_ddG_plot(
             self,
@@ -281,14 +282,13 @@ class FepReader(object):
         Returns:
             the matplotlib figure and axis objects (fig, ax).
         """
-        example_fep = [self.data[self.system].keys()][0] # access the first FEP to check for ddG methods
         if 'result' not in self.data.keys():
             logger.error('No results to plot. Run calculate_ddG first.')
             return
-        elif method not in example_fep.keys():
+        elif method not in self.data['result'].keys():
             logger.error(
                 f"{method} not in result dictionary. Pick one of the following: "
-                f"{', '.join(example_fep.keys())}"
+                f"{', '.join(self.data['result'].keys())}"
                 )
             return
         
@@ -302,7 +302,7 @@ class FepReader(object):
             try:
                 avg_values.append(data_dict[avg_key])
                 sem_values.append(data_dict[sem_key])
-                exp_values.append(data_dict[self.exp_key])
+                exp_values.append(self.data['result']['experimental'][fep])
             except KeyError:
                 logger.error(f'KeyError: {method} not found in {fep}.')
                 logger.error(f'Current dictionary: {data_dict}')
@@ -340,20 +340,20 @@ class FepReader(object):
         plt.ylim(min_val, max_val)
         ax.set_aspect('equal', adjustable='box')
         ax.legend(['Identity line', 'Within 1 kcal/mol', 'Within 2 kcal/mol'], loc='upper left')
-        if output_path is not None:
-            if isinstance(output_path, str):
-                output_path = Path(output_path)
-            else: 
-                assert isinstance(output_path, Path), 'output_path must be a string or a Path object.'
-            if output_path.isdir():
-                logger.info(f'Using default name to save the plot file under the dir: {output_path}')
-                fig.savefig(f'{self.target_name}_{method}_ddG_plot.png', dpi=300, bbox_inches='tight')
-            elif output_path.exits():
-                logger.warning(f'File {output_path} already exists. Overwriting...')
-            else:
-                logger.info(f'Saving the plot to {output_path}')
-            assert output_path.stem == '.png', 'output_path must be a .png file.'
-            fig.savefig(str(output_path), dpi=300, bbox_inches='tight')
+        if output_path is None:
+            output_path = Path().cwd()
+            logger.info('Using default name to save the plot at the current working directory...')
+            fig.savefig(f'{self.target_name}_{method}_ddG_plot.png', dpi=300, bbox_inches='tight')
+            return fig, ax
+        if isinstance(output_path, str):
+            output_path = Path(output_path)
+        assert isinstance(output_path, Path), 'output_path must be a string or a Path object.'
+        if output_path.isdir():
+            output_path = output_path / f'{self.target_name}_{method}_ddG_plot.png'
+            logger.info(f'Using default name to save the plot at {output_path}')
+        elif output_path.exits():
+            logger.warning(f'File {output_path} already exists. Overwriting...')
+        fig.savefig(output_path, dpi=300, bbox_inches='tight')
         return fig, ax
     
     def save_json_data(self, out_path: str | Path | None = None):
