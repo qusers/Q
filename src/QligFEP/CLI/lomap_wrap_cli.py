@@ -57,7 +57,9 @@ class LomapWrap(object):
                         lines = prop.split('\n')
                         if len(lines) >= 2:
                             key = lines[0].strip('<>')
+                            key = re.compile(r'<(.*?)>').search(key).group(1)
                             value = '\n'.join(lines[1:]).strip()
+                            value = re.sub(r'\n+\$\$\$\$', '', value)
                             properties[key] = value
                             
         elif file_path.suffix.lower() == '.mol2':
