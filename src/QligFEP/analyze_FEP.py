@@ -158,7 +158,7 @@ class FepReader(object):
             water_sys: name of the water system that was read. Defaults to '1.water'.
             protein_sys: name of the protein system that was read. Defaults to '2.protein'.
         """        
-        self.data.update({'result': {f'd{method}': {} for method in self.method_list}})
+        self.data.update({'result': {f'd{method}': {} for method in self.methods_list}})
         systems = [water_sys, protein_sys]
         # assert both systems have the same FEPs
         prot_feps = sorted([k for k in self.data[protein_sys].keys()])
