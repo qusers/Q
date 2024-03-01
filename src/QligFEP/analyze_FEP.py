@@ -100,6 +100,7 @@ class FepReader(object):
         feps = [k for k in self.data[self.system].keys()]
         
         for fep in feps:
+            logger.debug(f'Reading FEP: {fep}')
             fep_dict = self.data[self.system][fep]
             _dir = Path(fep_dict['root'])
             replicate_root = _dir / fep_dict['fep_stage'] / fep_dict['temperature']
@@ -112,6 +113,7 @@ class FepReader(object):
             all_replicates = [i for i in range(1, int(fep_dict['replicates']) + 1)]
             stage = self.data[self.system][fep]['fep_stage']
             for rep in replicate_qfep_files:
+                logger.debug(f'    Reading qfep.out file: {rep}')
                 repID = int(rep.parent.name)
                 try:
                     # TODO: shall we also support the verbose output? -> see IO.read_qfep_verbose
@@ -266,7 +268,7 @@ def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description = 'Analyze FEP output files and generate plots.')
-    parser.add_argument('-p', '--protein_dir',
+    parser.add_argument('-p', '--protein-dir',
                         dest = "protein_dir",
                         required = False,
                         default = '2.protein',
@@ -275,7 +277,7 @@ def parse_arguments() -> argparse.Namespace:
                             "Will default to `2.protein` in the current working directory."
                             ))
 
-    parser.add_argument('-w', '--water_dir',
+    parser.add_argument('-w', '--water-dir',
                         dest = "water_dir",
                         required = False,
                         default = '2.protein',
@@ -284,7 +286,7 @@ def parse_arguments() -> argparse.Namespace:
                             "Will default to `1.water` in the current working directory."
                             ))
     
-    parser.add_argument('-j', '--json_file',
+    parser.add_argument('-j', '--json-file',
                         dest = "json_file",
                         required = True,
                         help = (
@@ -304,10 +306,18 @@ def parse_arguments() -> argparse.Namespace:
                         choices = ['ddG', 'ddGf', 'ddGr', 'ddGos', 'ddGbar'],
                         help = 'Energy method to be used for the plot. Defaults to ddG.'
                         )
+
+    parser.add_argument('-l', '--log-level',
+                        required = False,
+                        default = 'INFO',
+                        help = "Set the log level for the logger. Defaults to INFO.",
+                        choices = ["TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"],
+                        )
                         
     return parser.parse_args()
 
 def main(args):
+    logger.level = args.log_level
     fep_reader = FepReader(system = args.water_dir, target_name = args.target)
     fep_reader.read_perturbations()
     fep_reader.load_new_system(system = args.protein_dir)
