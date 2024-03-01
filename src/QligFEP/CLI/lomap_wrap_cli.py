@@ -188,9 +188,8 @@ class LomapWrap(object):
                     edge.update({f'delta_{key}': None})
                 except KeyError:
                     logger.warning(
-                        f'The {key} property is not present for one the ligands: {_from} | {_to}'
+                        f'The {key} property is not present for one the ligands: {_from} | {_to}. Skipping edge creation...'
                     )
-                    edge.update({f'delta_{key}': None})
             edge.update({'same_charge': same})
             same_charges.append(same)
             # update the potential ddG value
