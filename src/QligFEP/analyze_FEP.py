@@ -334,7 +334,7 @@ class FepReader(object):
         plt.text(max_val, min_val, f'$\\tau = {correlation_coef:.2f}$, RMSE = {rmse:.2f} kcal/mol', fontsize=10, verticalalignment='bottom', horizontalalignment='right')
         
         # set labels, make it square and add legend
-        plt.title(f'{self.target_name} - {method} plot')
+        plt.title(f"{self.target_name} - $\Delta\Delta{method.replace('dd', '')}$ plot")
         plt.xlabel('$\Delta\Delta G_{exp} [kcal/mol]$')
         plt.ylabel('$\Delta\Delta G_{pred} [kcal/mol]$')
         plt.xlim(min_val, max_val)
