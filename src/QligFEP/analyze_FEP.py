@@ -139,12 +139,12 @@ class FepReader(object):
                 method_idx = methods_list.index(mname)
                 method_energies = np.array([energies[repID][method_idx] for repID in all_replicates])
                 all_energies_arr.append(', '.join(["%.3f" % n for n in method_energies]))
-                logger.debug('energies:\n' + '\n'.join(all_energies_arr))
                 method_results[mname] = {
                     'energies': method_energies.tolist(),
                     'avg': np.nanmean(method_energies),
                     'sem': np.nanstd(method_energies) / np.sqrt(method_energies.shape)
                 }
+            logger.debug('energies:\n' + '\n'.join(all_energies_arr))
             
             self.data[self.system][fep].update({'CrashedReplicates': failed_replicates})
             self.data[self.system][fep].update({'FEP_result': method_results})
