@@ -417,9 +417,9 @@ def parse_arguments() -> argparse.Namespace:
     
     parser.add_argument('-m', '--method',
                         required = False,
-                        default = 'ddG',
+                        default = 'ddGbar',
                         choices = ['ddG', 'ddGf', 'ddGr', 'ddGos', 'ddGbar'],
-                        help = 'Energy method to be used for the plot. Defaults to ddG.'
+                        help = 'Energy method to be used for the plot. Defaults to ddGbar.'
                         )
 
     parser.add_argument('-l', '--log-level',
