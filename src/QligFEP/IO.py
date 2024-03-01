@@ -202,7 +202,7 @@ def read_qfep(qfep):
 
     returns [Zwanzig, dGfr, dGr, TI, OS, BAR]
     """
-    with open(qfep) as infile:
+    with open(qfep, 'r') as infile:
         block = 0
         for line in infile:
             try:
@@ -286,7 +286,7 @@ def read_qfep_verbose(qfep):
     >>>  [Zwanzig, dGfr, dGr, OS, BAR]]  lambda n
     """    
     array = [[],[],[],[],[]]
-    with open(qfep) as infile:
+    with open(qfep, 'r') as infile:
         block = 0
         for line in infile:
             if qfep_error_regex.findall(line):
