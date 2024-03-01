@@ -117,7 +117,7 @@ class FepReader(object):
                 if rep.stat().st_size == 0: # if the file is empty, try runnign qfep again
                     logger.warning(f'Empty qfep.out file: {rep}. Trying to run qfep again...')
                     qfep = Q_PATHS['QFEP']
-                    os.chdir(str(qfep.parent.absolute()))
+                    os.chdir(str(rep.parent.absolute()))
                     options = ' < qfep.inp > qfep.out'
                     run_command(qfep, options, string = True)
                     os.chdir(str(self.cwd.absolute()))
