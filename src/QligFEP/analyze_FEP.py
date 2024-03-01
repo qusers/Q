@@ -203,7 +203,7 @@ class FepReader(object):
         elif method not in self.data['result'].keys():
             logger.error(
                 f"{method} not in result dictionary. Pick one of the following: "
-                f"{', '.join(self.data["result"].keys())}"
+                f"{', '.join(self.data['result'].keys())}"
                 )
             return
         data_dict = self.data['result'][method]
