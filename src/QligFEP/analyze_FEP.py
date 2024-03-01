@@ -323,23 +323,24 @@ class FepReader(object):
         
         fig, ax = plt.subplots()
         
-        plt.errorbar(exp_values, avg_values, yerr=sem_values, fmt='o', color='black', ecolor='lightgray', elinewidth=3, capsize=0)
-        plt.plot([min_val, max_val], [min_val, max_val], 'k-', linewidth=2) # Black identity line
+        plt.errorbar(exp_values, avg_values, yerr=sem_values, fmt='o', color='black', ecolor='black', elinewidth=2.0, capsize=0, zorder=4)
+        plt.plot([min_val, max_val], [min_val, max_val], 'k-', linewidth=1.5, zorder=3) # Black identity line
         
         # Highlight predictions within 1 and 2 kcal/mol of the experimental affinity
-        ax.fill_between([min_val, max_val], [min_val - 1, max_val - 1], [min_val + 1, max_val + 1], color='darkgray', alpha=0.5)
-        ax.fill_between([min_val, max_val], [min_val - 2, max_val - 2], [min_val + 2, max_val + 2], color='lightgray', alpha=0.5)
+        ax.fill_between([min_val, max_val], [min_val - 1, max_val - 1], [min_val + 1, max_val + 1], color='darkgray', alpha=0.5, zorder=2)
+        ax.fill_between([min_val, max_val], [min_val - 2, max_val - 2], [min_val + 2, max_val + 2], color='lightgray', alpha=0.5, zorder=1)
         
         # Annotating the plot with τ and RMSE # TODO: figure out how to place it...
-        plt.text(min_val, max_val, f'$\\tau = {correlation_coef:.2f}$, RMSE = {rmse:.2f} kcal/mol', fontsize=12, verticalalignment='top')
+        plt.text(max_val, min_val, f'$\\tau = {correlation_coef:.2f}$, RMSE = {rmse:.2f} kcal/mol', fontsize=10, verticalalignment='bottom', horizontalalignment='right')
         
         # set labels, make it square and add legend
+        plt.title(f'{self.target_name} - {method} plot')
         plt.xlabel('$\Delta\Delta G_{exp} [kcal/mol]$')
         plt.ylabel('$\Delta\Delta G_{pred} [kcal/mol]$')
         plt.xlim(min_val, max_val)
         plt.ylim(min_val, max_val)
         ax.set_aspect('equal', adjustable='box')
-        ax.legend(['Identity line', 'Within 1 kcal/mol', 'Within 2 kcal/mol'], loc='upper left')
+        ax.legend(['Identity line', 'Within 1 kcal/mol', 'Within 2 kcal/mol'], bbox_to_anchor=(1.04, 0), loc="lower left", borderaxespad=0, frameon=False)
         if output_path is None:
             output_path = Path().cwd()
             logger.info('Using default name to save the plot at the current working directory...')
