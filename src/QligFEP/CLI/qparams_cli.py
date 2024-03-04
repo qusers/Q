@@ -8,7 +8,7 @@ def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Write ligand parameter files for QligFEP according to the chosen forcefield"
     )
-    parser.add_argument('-i', '--input', required = True, help = "Input (sdf) file.")
+    parser.add_argument('-i', '--input', required = True, help = "Input (sdf) file containing one or more ligands.")
     parser.add_argument(
         '-FF',
         '--forcefield',

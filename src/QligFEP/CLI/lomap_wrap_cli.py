@@ -203,10 +203,22 @@ class LomapWrap(object):
         
 def parse_arguments() -> argparse.Namespace:
     """Method to parse the arguments."""
-    parser = argparse.ArgumentParser(description='Wrap the lomap package for the QligFEP CLI.')
-    parser.add_argument('--input', '-i', type=str, help='Input file or directory.')
-    parser.add_argument('--output', '-o', type=str, help='Output directory.')
-    parser.add_argument('--time', '-t', type=int, default=30, help='Time to run the lomap package.')
+    parser = argparse.ArgumentParser(description='Lomap wrapper to be used in  QligFEP.')
+    parser.add_argument('--input',
+                        '-i',
+                        type=str,
+                        help=(
+                            'Input file (sdf) or directory containing the mol files (sdf|mol2) to '
+                            'be used by lomap. If sdf, a new dir is created, containing separate sdf files '
+                            ))
+    parser.add_argument('--output',
+                        '-o',
+                        type=str,
+                        help=(
+                            'Output file (json) to store the lomap results. If not provided, '
+                            'defaults to `lomap.json`, stored in the directory with the separate sdf|mol2 files.'
+                            ))
+    parser.add_argument('--time', '-t', type=int, default=30, help='Maximum time in seconds used to perform the MCS search.')
     parser.add_argument('--verbose', '-v', type=str, default='info', help='Verbosity level.')
     return parser.parse_args()
     
