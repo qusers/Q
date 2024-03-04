@@ -164,11 +164,11 @@ class FepReader(object):
                         f"Failed to retrieve energies for: {fep}, {stage} - rep.{repID}. Error: \n{e}"
                     )
                     failed_replicates.append(repID)
-                    energies[repID] = np.array([np.nan] * len(self.methods_list))  # Assuming 5 methods
+                    energies[repID] = np.array([np.nan] * len(self.methods_list))  # Assuming 5 energy methods
                 except UnboundLocalError:
-                    logger.error(f'Unbound variable error while parsing {rep}. Trying to run qfep again...')
-                    self.run_qfep(rep)
-                    energies[repID] = read_qfep(rep)
+                    logger.error(f'Unable to parse energies from {rep}. Retrieving nan energies for...')
+                    failed_replicates.append(repID)
+                    energies[repID] = np.array([np.nan] * len(self.methods_list))  # Assuming 5 energy methods
                     
             all_energies_arr = []
             # per different type of energy, populate the methods dictionary
