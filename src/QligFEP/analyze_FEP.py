@@ -4,6 +4,7 @@ import re
 import json
 from pathlib import Path
 import matplotlib.pyplot as plt
+from sklearn.metrics import mean_absolute_error
 
 import numpy as np
 
@@ -320,6 +321,7 @@ class FepReader(object):
         
         # Calculate RMSE & correlation coefficient
         rmse = np.sqrt(np.mean((np.array(avg_values) - np.array(exp_values))**2))
+        mae = mean_absolute_error(exp_values, avg_values)
         correlation_coef = np.corrcoef(exp_values, avg_values)[0, 1]
         
         if xylims is not None:
@@ -342,7 +344,9 @@ class FepReader(object):
         ax.fill_between([min_val, max_val], [min_val - 2, max_val - 2], [min_val + 2, max_val + 2], color='lightgray', alpha=0.5, zorder=1)
         
         # Annotating the plot with τ and RMSE # TODO: figure out how to place it...
-        plt.text(max_val, min_val, f'$\\tau = {correlation_coef:.2f}$, RMSE = {rmse:.2f} kcal/mol', fontsize=10, verticalalignment='bottom', horizontalalignment='right')
+        unit = r"$\frac{kcal}{mol}$"
+        text_body = f'$\\tau = {correlation_coef:.2f}$ | RMSE = {rmse:.2f} {unit} | MAE = {mae:.2f} {unit}'
+        plt.text(max_val - 0.1, min_val, text_body, fontsize=10, verticalalignment='bottom', horizontalalignment='right')
         
         # set labels, make it square and add legend
         plt.title(fr"{self.target_name} - $\Delta\Delta {method.replace('dd', '')}$ plot")
