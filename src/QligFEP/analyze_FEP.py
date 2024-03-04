@@ -159,14 +159,16 @@ class FepReader(object):
                 try:
                     # TODO: shall we also support the verbose output? -> see IO.read_qfep_verbose
                     energies[repID] = read_qfep(rep)
-                except OSError as e:
-                    logger.warning(
-                        f"Failed to retrieve energies for: {fep}, {stage} - rep.{repID}. Error: \n{e}"
+                except OSError as e: # if the file is empty
+                    logger.error(
+                        f"Failed to read energies from {rep}. Error: \n{e}"
                     )
                     failed_replicates.append(repID)
                     energies[repID] = np.array([np.nan] * len(self.methods_list))  # Assuming 5 energy methods
-                except UnboundLocalError:
-                    logger.error(f'Unable to parse energies from {rep}. Retrieving nan energies for...')
+                # if the qfep.out is not in the correct format due to not being fully ran, the loop won't
+                # retrieve the energies, causing an UnboundLocalError.
+                except UnboundLocalError as e:
+                    logger.error(f'Failed to read energies from {rep}. Error: \n{e}')
                     failed_replicates.append(repID)
                     energies[repID] = np.array([np.nan] * len(self.methods_list))  # Assuming 5 energy methods
                     
