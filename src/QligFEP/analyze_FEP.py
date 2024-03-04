@@ -138,13 +138,27 @@ class FepReader(object):
         feps = [k for k in self.data[self.system].keys()]
         
         for fep in feps:
-            logger.debug(f'Reading FEP: {fep}')
+            logger.info(f'Reading FEP: {fep}')
             fep_dict = self.data[self.system][fep]
+            n_replicates = int(fep_dict['replicates'])
             _dir = Path(fep_dict['root'])
             replicate_root = _dir / fep_dict['fep_stage'] / fep_dict['temperature']
             replicate_qfep_files = sorted( # here we use the int to sort the replicates
                 list(replicate_root.glob('*/qfep.out')), key=lambda x: int(x.parent.name)
             )
+            
+            # deal with missing qfep.out files
+            if len(replicate_qfep_files) < n_replicates:
+                logger.warning('Not all replicates have qfep.out files in the directory. Creating empty files...')
+                for i in range(1, n_replicates + 1):
+                    if not (replicate_root / str(i) / 'qfep.out').exists():
+                        (replicate_root / str(i) / 'qfep.out').touch()
+                replicate_qfep_files = sorted(
+                    list(replicate_root.glob('*/qfep.out')), key=lambda x: int(x.parent.name)
+                )
+                logger.info(f'Created {n_replicates} empty qfep.out files in {replicate_root}')
+                logger.debug('Files created:\n' + '\n'.join([str(f) for f in replicate_qfep_files]))
+            
             energies = {}
             method_results = {method: {} for method in self.methods_list}
             failed_replicates = []
