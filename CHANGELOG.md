@@ -57,6 +57,7 @@ Q/
 - [x] Setup a proper logging to the package; for now this was (roughly) done with [loguru](https://github.com/Delgan/loguru).
 - [  ] Make current `except` statements in the code more specific. When not specific, these statements can also catch, for example, `KeyboardInterrupt`, triggered by a `Ctrl + c` in the terminal.
 - [  ] Currently, QmapFEP makes a `self.ligands` dictionary with the charges as keys. However, that's problematic because the charges were hard-coded... I added the charges to the MoleculePool but the code doesn't use that yet.
+- [  ] Add test modules for the current refactored code.
 
 ## TODO:
 - qpenff2Q module has a structure that would be useful to be made into a base class. E.g.: we could use it as a child class for handling routine operations with `.sdf` files.
