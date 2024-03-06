@@ -334,7 +334,7 @@ class FepReader(object):
             for fep in self.feps:
                 fep_dict = self.data['result'][method][fep]
                 if fep_dict['from'] == _from and fep_dict['to'] == _to:
-                    edge[method].update({
+                    edge.update({
                         'Q_ddG_avg': fep_dict[f'{method}_avg'],
                         'Q_ddG_sem': fep_dict[f'{method}_sem'],
                         })
