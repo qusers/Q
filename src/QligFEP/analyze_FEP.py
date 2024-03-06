@@ -222,7 +222,8 @@ class FepReader(object):
                 method_results[mname] = {
                     'energies': method_energies.tolist(),
                     'avg': np.nanmean(method_energies),
-                    'sem': float(np.nanstd(method_energies) / np.sqrt(method_energies.shape))
+                    'sem': float(np.nanstd(method_energies) / np.sqrt(method_energies.shape)),
+                    'std': np.nanstd(method_energies),
                 }
             logger.debug('energies:\n' + '\n'.join(all_energies_arr))
             
@@ -276,9 +277,11 @@ class FepReader(object):
                 delta_method = f'd{method}'
                 ddG = p_result[method]['avg'] - w_result[method]['avg']
                 ddG_sem = float(np.sqrt(p_result[method]['sem']**2 + w_result[method]['sem']**2))
+                ddG_std = float(np.sqrt(p_result[method]['std']**2 + w_result[method]['std']**2))
                 self.data['result'][delta_method].update({fep: {
                     f'{delta_method}_avg': ddG,
                     f'{delta_method}_sem': ddG_sem,
+                    f'{delta_method}_std': ddG_std,
                     'from': w_fep['from'],
                     'to': w_fep['to']
                     }})
@@ -337,6 +340,7 @@ class FepReader(object):
                     edge.update({
                         'Q_ddG_avg': fep_dict[f'{method}_avg'],
                         'Q_ddG_sem': fep_dict[f'{method}_sem'],
+                        'Q_ddG_std': fep_dict[f'{method}_std'],
                         })
         if output_file is not None:
             if isinstance(output_file, str):
