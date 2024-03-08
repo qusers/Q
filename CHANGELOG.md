@@ -38,24 +38,28 @@ Q/
 - Command line interface (CLI) moved to `QligFEP/CLI`.
 - All `sys.path.insert` statements removed and substituted by relative imports within the package.
 - Moved the IO functions `pdb_parse_out`, `pdb_parse_in` to the module `pdb_utils` to avoid circular imports within the package.
-- Three CLIs currently implemented: `qligfep`, `setupFEP`, and `qmapfep`. `TODO: will probably make it capitalized in the future.`
+- Three CLIs implemented: `qligfep`, `setupFEP`, and `qmapfep`.
+  - TODO: `setupFEP` is currently setup in a way that it creates only the **protein** and the **water** legs. In the future, it would be good to have it flexible so that it can also create the **vacuum** legs as well.
 - q6's makefile no longer moves the executables to Q/ and instead keeps then within `src/q6`. Useful for future improvements where the user will get everything necessary to get started by doing pip install.
 - openff2Q now implemented within a CLI as well. Still need to update the module for supporting the previous ForceFields as well (e.g.: charmm, opls...).
-- openff2Q calculates atom masses directly from the package instead of the previous hardcoded dictionary. 
+- openff2Q calculates atom masses directly from the package instead of the previous hardcoded dictionary.
+- created the `pdb_to_amber.py` module, accessible through the CLI as `pdb2amber` to programatically rename the aminoacids according to the force-field conventions.
+  - TODO: in the script there's also a bit for identifiying cystein bonds. Should move this somewhere else in the future.
+- `analyze_FEP.py` now accessible through the CLI with the command `qligfep_analyze`.
+- Switched the SHAKE algorithm to `off` on [equilibrations 1 to 4](https://github.com/qusers/Q/commit/4758c2b010cead0d40686b7c608405a4c576ab05). TODO: benchmark SHAKE behavior when ON from equilibration 4 as well.
+- Changed the timelimit for jobs on Tetralith from 24:00:00 to 12:00:00 to allow our jobs to be used as ["backfill" jobs](https://www.nsc.liu.se/support/batch-jobs/tetralith/adapt-to-workflow/#:~:text=If%20possible%2C%20structure%20your%20jobs%20so%20that%20the%20time%20limit%20is%20between%2030%20minutes%20and%2024%20hours.%20Such%20jobs%20can%20often%20be%20started%20using%20%22backfill%22%20(using%20nodes%20that%20would%20otherwise%20be%20idle).).
 
 
 
 ## TODO:
 - [x] add a MANIFEST.in file to include non-python files in the package.
-- [  ] Update Qgpu with the correct imports as well.
-- [  ] Unify both IO modules from Qgpu and QligFEP to a single one that can interact with both implementations [`q6` and `Qgpu` backends].
-- [  ] Implement Softcore to the package. ⚠️ Might take a long time ⚠️
+- [x] Update Qgpu with the correct imports as well.
+- [  ] Implement Softcore to the package. ⚠️ Would take a long time ⚠️
   - Can take a look at the implementation of this in other packages and translate it to fortran code
-  - Testing: Would run simulations with & without softcore ➡️ How do values compare? 
-- [  ] Make a script detecting the cystein bonds so that the user doesn't need to [hardcode](https://github.com/GPCR-ModSim/qligfep-benchmark/blob/main/inputfilegen/OPLS2015/Thrombin/setup.py) them anymore
+- [x] Make a script detecting the cystein bonds so that the user doesn't need to [hardcode](https://github.com/GPCR-ModSim/qligfep-benchmark/blob/main/inputfilegen/OPLS2015/Thrombin/setup.py) them anymore.
 - [  ] Numpy seems to have a support for compiling fortran code. Could think about making a wrapper so that thes functions can be directly called with python. (for now, lower priority...)
 - [x] Setup a proper logging to the package; for now this was (roughly) done with [loguru](https://github.com/Delgan/loguru).
-- [  ] Make current `except` statements in the code more specific. When not specific, these statements can also catch, for example, `KeyboardInterrupt`, triggered by a `Ctrl + c` in the terminal.
+- [x] Make current `except` statements in the code more specific. When not specific, these statements can also catch, for example, `KeyboardInterrupt`, triggered by a `Ctrl + c` in the terminal. (but ongoing...)
 - [  ] Currently, QmapFEP makes a `self.ligands` dictionary with the charges as keys. However, that's problematic because the charges were hard-coded... I added the charges to the MoleculePool but the code doesn't use that yet.
 - [  ] Add test modules for the current refactored code.
 
