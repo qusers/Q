@@ -56,7 +56,7 @@ if [ $index -lt 1 ]; then
 #EQ_FILES
 fi
 #RUN_FILES
-timeout 30s QFEP < qfep.inp > qfep.out
+timeout 3m QFEP < qfep.inp > qfep.out || [ $? -eq 124 ] && echo "##### WARNING - QFEP TIMED OUT #####"
 done
 #CLEANUP
 

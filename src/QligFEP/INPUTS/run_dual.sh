@@ -61,19 +61,18 @@ sed -i s/FEP_VAR/"$fepfile"/ *.inp
 if [ $index -lt 1 ]; then
 #EQ_FILES
 #RUN_FILES
-timeout 30s QFEP < qfep.inp > qfep.out
+timeout 3m QFEP < qfep.inp > qfep.out || [ $? -eq 124 ] && echo "##### WARNING - QFEP TIMED OUT #####"
 else
 #EQ_FILES
 #RUN_FILES_R
-timeout 30s QFEP < qfep.inp > qfep.out
-fi
+timeout 3m QFEP < qfep.inp > qfep.out || [ $? -eq 124 ] && echo "##### WARNING - QFEP TIMED OUT #####"
 done
 #CLEANUP
 
 endtime=$(date)
-echo "#    EXPRESS LOG for jobid: $SLURM_JOB_ID"                      
-echo "#    Starting time: $starttime"                                  
-echo "#    Ending time: $endtime"                                  
-echo "#    Random seed: $seed"                                      
-echo "#    Replicate Number: $run"                                
-echo "#    Working Directory: $workdir"  
+echo "#    EXPRESS LOG for jobid: $SLURM_JOB_ID"
+echo "#    Starting time: $starttime"
+echo "#    Ending time: $endtime"
+echo "#    Random seed: $seed"
+echo "#    Replicate Number: $run"
+echo "#    Working Directory: $workdir"
