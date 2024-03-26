@@ -101,16 +101,16 @@ UPPMAX = {'NODES'      : '1',
         }
 
 TETRA  = {'NODES'      : '1',
-          'NTASKS'     : '32',
-          'TIME'       : '0-12:00:00',  # d-hh:mm:ss
-          'MODULES'    : 'buildenv-gcc/2023a-eb\n',
+          'NTASKS'     : '8',
+          'TIME'       : '0-6:00:00',  # d-hh:mm:ss
+          'MODULES'    : 'module load buildenv-gcc/2023a-eb\n',
           'ACCOUNT'    : 'naiss2023-3-5',
           **Q_PATHS
         }
 
 DARDEL = {'NODES'      : '1',
-          'NTASKS'     : '32',
-          'TIME'       : '0-24:00:00',  # d-hh:mm:ss
+          'NTASKS'     : '8',
+          'TIME'       : '0-6:00:00',  # d-hh:mm:ss
           'MODULES'    : nljoin(['module purge', 'module load cpe/22.06', 'module load PrgEnv-gnu']),
           'ACCOUNT'    : 'naiss2023-3-5',
         }
