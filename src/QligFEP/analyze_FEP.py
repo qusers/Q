@@ -160,6 +160,40 @@ class FepReader(object):
         run_command(qfep, options, string = True)
         os.chdir(str(self.cwd.absolute()))
 
+    def read_single_replicate(self, qfep_repli_path: Path):
+        """Reads a single replicate qfep.out file and returns the energies and a list.
+        If the list is not empty, it means that the replicate failed to be read.
+
+        Args:
+            qfep_repli_path: path to the qfep.out file. e.g.: `<root>/FEP_lig1_lig2/FEP1/298/2/qfep.out`
+
+        Returns:
+            energies: a list with the energies for the replicate.
+            failed_replicate: a list with the replicates that failed to be read.
+        """        
+        failed_replicate = []
+        if qfep_repli_path.stat().st_size == 0: # if the file is empty, try runnign qfep again
+            logger.warning(f'Empty qfep.out file: {qfep_repli_path}. Trying to run qfep again...')
+            self.run_qfep(qfep_repli_path)
+        logger.debug(f'    Reading qfep.out file: {qfep_repli_path}')
+        repID = int(qfep_repli_path.parent.name)
+        try:
+            # TODO: shall we also support the verbose output? -> see IO.read_qfep_verbose
+            energies = read_qfep(qfep_repli_path)
+        except OSError as e: # if the file is empty
+            logger.error(
+                f"Failed to read energies from {qfep_repli_path}. Error: \n{e}"
+            )
+            failed_replicate.append(repID)
+            energies = np.array([np.nan] * len(self.methods_list))  # Assuming 5 energy methods
+        # if the qfep.out is not in the correct format due to not being fully ran, the loop won't
+        # retrieve the energies, causing an UnboundLocalError.
+        except UnboundLocalError as e:
+            logger.error(f'Failed to read energies from {qfep_repli_path}. Error: \n{e}')
+            failed_replicate.append(repID)
+            energies = np.array([np.nan] * len(self.methods_list))  # Assuming 5 energy methods
+        return energies, failed_replicate
+    
     def read_perturbations(self):
         """Read the ran perturbations. Running this method will populate the `self.data` dictionary
         with the FEPs and their respective delta-G's for the loaded system (self.system)."""
@@ -192,27 +226,10 @@ class FepReader(object):
             failed_replicates = []
             all_replicates = [i for i in range(1, int(fep_dict['replicates']) + 1)]
             for rep in replicate_qfep_files:
-                if rep.stat().st_size == 0: # if the file is empty, try runnign qfep again
-                    logger.warning(f'Empty qfep.out file: {rep}. Trying to run qfep again...')
-                    self.run_qfep(rep)
-                logger.debug(f'    Reading qfep.out file: {rep}')
                 repID = int(rep.parent.name)
-                try:
-                    # TODO: shall we also support the verbose output? -> see IO.read_qfep_verbose
-                    energies[repID] = read_qfep(rep)
-                except OSError as e: # if the file is empty
-                    logger.error(
-                        f"Failed to read energies from {rep}. Error: \n{e}"
-                    )
-                    failed_replicates.append(repID)
-                    energies[repID] = np.array([np.nan] * len(self.methods_list))  # Assuming 5 energy methods
-                # if the qfep.out is not in the correct format due to not being fully ran, the loop won't
-                # retrieve the energies, causing an UnboundLocalError.
-                except UnboundLocalError as e:
-                    logger.error(f'Failed to read energies from {rep}. Error: \n{e}')
-                    failed_replicates.append(repID)
-                    energies[repID] = np.array([np.nan] * len(self.methods_list))  # Assuming 5 energy methods
-                    
+                replicate_energies, failed = self.read_single_replicate(rep)
+                energies[repID] = replicate_energies
+                failed_replicates.extend(failed)
             all_energies_arr = []
             # per different type of energy, populate the methods dictionary
             for mname in self.methods_list:
