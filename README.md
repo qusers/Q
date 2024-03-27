@@ -1,3 +1,60 @@
+# QligFEP
+
+## Installation
+
+The current conda environment is available in the `environment.yml` file, but installing it with `conda env create -f environment.yml` will take a long time. Instead, we recommend that you use `mamba` or its lightweight version `micromamba`. Please check this Gist on how to [install micromamba](https://gist.github.com/David-Araripe/3ecd90bfbfd1c8e813812a203384b3c0).
+
+Once you have `micromamba` installed and have already cloned this repo, you can create the environment with:
+
+```bash
+micromamba create -f environment.yml -n qligfep_new 
+```
+Once you have the environment created you can activate it and install qligfep through the commands:
+
+<details>
+<summary> ⚠️!! NOTE !!⚠️ </summary>
+Currently, you have to remove setup.py from your files. Either move it somewhere else or delete it. In the future, we would like to set it up with configurations for directly compiling Q.
+</details>
+    
+```bash
+microamamba activate qligfep_new
+python -m pip install -e .
+```
+
+Now that you're set, you should have access to the qligfep package. This includes the command-linde-interfaces (CLIs) `qligfep`, `qmapfep`, and `setupFEP`.
+
+Additionally, you should install the following packages:
+```bash
+python -m pip install rdkit scikit-learn loguru
+```
+
+And update the following conda packages (still need a PR to update the environment.yml file):
+```bash
+micromamba install openff-toolkit=0.14.5 openmm=8.1.1 lomap2 -c conda-forge --yes
+```
+
+## openff-to-q usage:
+After installing this python package with the above instructions, you should have access to the command `qparams`. So far, the function only supports creating parameter files using OpenFF parameters and others are on the `TODO` list. Running `qparams -h` should return you:
+```
+usage: qparams [-h] -i INPUT [-FF {OPLS2005,OPLS2015,AMBER14sb,CHARMM36,CHARMM22,CHARMM_TEST,OpenFF}]
+
+Write ligand parameter files for QligFEP according to the chosen forcefield
+
+options:
+  -h, --help            show this help message and exit
+  -i INPUT, --input INPUT
+                        Input (sdf) file.
+  -FF {OPLS2005,OPLS2015,AMBER14sb,CHARMM36,CHARMM22,CHARMM_TEST,OpenFF}, --forcefield {OPLS2005,OPLS2015,AMBER14sb,CHARMM36,CHARMM22,CHARMM_TEST,OpenFF}
+                        Forcefield to be used. Defaults to OpenFF.
+```
+
+
+! Note on Swedish servers !
+- If you're running jobs on [Dardel](https://www.pdc.kth.se/hpc-services/computing-systems/dardel), you will need to make a modification on Q's makefile. To do so, run `cd Q` after cloning the repository and run:
+```bash
+sed -i 's/\bmpif90\b/ftn/g' src/q6/makefile
+```
+
 # Q-GPU #
 Version control of **Q-GPU**, an adaptation of **Q** version 5.06 running on GPUs.
 
@@ -21,15 +78,26 @@ To compile the qdyn engine source code, you need a CUDA compiler. The code has b
 
 - CUDA/10.1.243
 
-To succesfully install and compile the code:
+To succesfully install and compile the code (Fortran):
 
 ```bash
 unset SSH_ASKPASS
 mkdir ~/software
 cd ~/software
-git clone https://yourgitusernamehere@github.com/qusers/qgpu.git 
-cd qgpu/src/core
+git clone https://yourgitusernamehere@github.com/qusers/qgpu.git
+cd Q
+git checkout refactor/qligfep-david
+cd src/q6
 make
+```
+
+After this, also install the python package. You should be able to do it through:
+```bash
+cd Q
+conda env create -f environment.yml
+conda activate qligfep_new
+# make sure you have the correct environment installed
+python -m pip install -e .
 ```
 
 After succesful compilation of **Q-GPU** you have to add the program to your system path by modifying your shell initiation script. 
