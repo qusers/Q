@@ -10,8 +10,6 @@ from .logger import logger
 
 # openFF modules
 from openff.toolkit import ForceField, Topology
-from openff.interchange import Interchange
-from openff.interchange.smirnoff._create import _electrostatics
 
 class OpenFF2Q(MoleculeIO):
     """Class to process ligands and generate OpenFF parameter files for QligFEP. Dictionary
@@ -51,21 +49,9 @@ class OpenFF2Q(MoleculeIO):
         return topologies, parameters
     
     def calculate_charges(self, lname) -> None:
-        topology = self.topologies[lname]
-        interchange = Interchange()
-        _topology = Interchange.validate_topology(topology)
-        _electrostatics(
-            interchange,
-            self.forcefield,
-            _topology,
-            None,
-            None,
-        )
-        partial_charges = interchange['Electrostatics'].charges.values()
-        charges_magnitudes = np.array([c._magnitude for c in partial_charges])
-        total_charges = round(charges_magnitudes.sum(), 10)
-        if total_charges != 0.0:
-            print(f'WARNING: ligand {lname} residual charge {total_charges} ,check charges')
+        molecule = self.molecules[self.lig_names.index(lname)]
+        partial_charges = self.forcefield.get_partial_charges(molecule)
+        charges_magnitudes = np.array([c.magnitude for c in partial_charges])
         return charges_magnitudes
 
     def process_ligands(self):
@@ -79,6 +65,9 @@ class OpenFF2Q(MoleculeIO):
             self.write_lib_Q(lname)
             self.write_prm_Q(lname)
             self.write_PDB(lname)
+        all_formal_charges = [int(self.total_charges[n]) for n in self.lig_names]
+        if np.unique(all_formal_charges).size > 1:
+            logger.warning(f'Formal charges of ligands in .sdf are not unique: {self.total_charges}')
             
     def get_mapping(self, lname):
         """Get the mapping of the ligand atoms to the forcefield parameters.
