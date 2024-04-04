@@ -11,43 +11,25 @@ micromamba create -f environment.yml -n qligfep_new
 ```
 Once you have the environment created you can activate it and install qligfep through the commands:
 
-<details>
-<summary> ⚠️!! NOTE !!⚠️ </summary>
-Currently, you have to remove setup.py from your files. Either move it somewhere else or delete it. In the future, we would like to set it up with configurations for directly compiling Q.
-</details>
-    
 ```bash
 microamamba activate qligfep_new
 python -m pip install -e .
 ```
 
-Now that you're set, you should have access to the qligfep package. This includes the command-linde-interfaces (CLIs) `qligfep`, `qmapfep`, and `setupFEP`.
+Now you're set with the qligfep package. This includes the command-linde-interfaces (CLIs):
 
-Additionally, you should install the following packages:
-```bash
-python -m pip install rdkit scikit-learn loguru
-```
+1. `qparams`: used to generate ligand parameters;
+1. `pdb2amber`: formats a PDB file to be used with Q's implementation of the AMBER forcefield;
+1. `qlomap`: wraps `Lomap` to generate the `.json` perturbation mapping;
+1. `qmapfep`: in-house developed method to generate the `.json` perturbation mapping;
+1. `qligfep`: main CLI for running QligFEP simulations.
+1. `setupFEP`: sets up all the the QligFEP files for a simulation, including protein and water systems.
+1. `qligfep_analyze`: CLI to analyze the results of a QligFEP simulation.
 
-And update the following conda packages (still need a PR to update the environment.yml file):
+And update the following conda packages:
 ```bash
 micromamba install openff-toolkit=0.14.5 openmm=8.1.1 lomap2 -c conda-forge --yes
 ```
-
-## openff-to-q usage:
-After installing this python package with the above instructions, you should have access to the command `qparams`. So far, the function only supports creating parameter files using OpenFF parameters and others are on the `TODO` list. Running `qparams -h` should return you:
-```
-usage: qparams [-h] -i INPUT [-FF {OPLS2005,OPLS2015,AMBER14sb,CHARMM36,CHARMM22,CHARMM_TEST,OpenFF}]
-
-Write ligand parameter files for QligFEP according to the chosen forcefield
-
-options:
-  -h, --help            show this help message and exit
-  -i INPUT, --input INPUT
-                        Input (sdf) file.
-  -FF {OPLS2005,OPLS2015,AMBER14sb,CHARMM36,CHARMM22,CHARMM_TEST,OpenFF}, --forcefield {OPLS2005,OPLS2015,AMBER14sb,CHARMM36,CHARMM22,CHARMM_TEST,OpenFF}
-                        Forcefield to be used. Defaults to OpenFF.
-```
-
 
 ! Note on Swedish servers !
 - If you're running jobs on [Dardel](https://www.pdc.kth.se/hpc-services/computing-systems/dardel), you will need to make a modification on Q's makefile. To do so, run `cd Q` after cloning the repository and run:

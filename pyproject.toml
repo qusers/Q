@@ -20,7 +20,11 @@ classifiers = [
     "Programming Language :: Python :: 3.10" # todo: might have other versions
 ]
 dependencies = [
-    "numpy" # todo: add the other dependencies
+    "numpy",
+    "matplotlib",
+    "rdkit",
+    "scikit-learn",
+    "loguru"
 ]
 
 [tool.setuptools]
