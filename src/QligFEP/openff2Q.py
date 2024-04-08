@@ -78,7 +78,7 @@ class OpenFF2Q(MoleculeIO):
             self.write_lib_Q(lname)
             self.write_prm_Q(lname)
             self.write_PDB(lname)
-        all_formal_charges = [int(self.total_charges[n]) for n in self.lig_names]
+        all_formal_charges = [self.total_charges[n] for n in self.lig_names]
         if np.unique(all_formal_charges).size > 1:
             logger.warning(f'Formal charges of ligands in .sdf are not unique: {self.total_charges}')
             
