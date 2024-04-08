@@ -10,6 +10,8 @@ from .logger import logger
 
 # openFF modules
 from openff.toolkit import ForceField, Topology
+from openff.interchange import Interchange
+from openff.interchange.smirnoff._create import _electrostatics
 
 class OpenFF2Q(MoleculeIO):
     """Class to process ligands and generate OpenFF parameter files for QligFEP. Dictionary
@@ -49,9 +51,20 @@ class OpenFF2Q(MoleculeIO):
         return topologies, parameters
     
     def calculate_charges(self, lname) -> None:
-        molecule = self.molecules[self.lig_names.index(lname)]
-        partial_charges = self.forcefield.get_partial_charges(molecule)
-        charges_magnitudes = np.array([c.magnitude for c in partial_charges])
+        topology = self.topologies[lname]
+        interchange = Interchange()
+        _topology = Interchange.validate_topology(topology)
+        # the following is slow, but it's the most straightforward way to get the charges
+        # for detauls on this, see: https://github.com/openforcefield/openff-toolkit/issues/1853
+        _electrostatics(
+            interchange,
+            self.forcefield,
+            _topology,
+            None,
+            None,
+        )
+        partial_charges = interchange['Electrostatics'].charges.values()
+        charges_magnitudes = np.array([c._magnitude for c in partial_charges])
         return charges_magnitudes
 
     def process_ligands(self):
