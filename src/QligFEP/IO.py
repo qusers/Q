@@ -252,8 +252,8 @@ def read_qfep(qfep):
                         TI = line[2]
                         if line[2] == '-Infinity':
                             TI = np.nan
-                    except:
-                        TI = np.nan
+                    except IndexError:
+                        TI = np.nan # TODO: this line is never reached... # noqa: F841
 
                 if block == 3 and line[0] == '0.000000':
                     if line[2] == '-Infinity':
@@ -319,27 +319,27 @@ def read_qfep_verbose(qfep):
                 if block == 1:
                     try:
                         array[0].append(float(line[5]))
-                    except:
+                    except IndexError:
                         array[0].append(np.nan)
                     try:
                         array[1].append(float(line[4]))
-                    except:
+                    except IndexError:
                         array[1].append(np.nan)
                     try:
                         array[2].append(float(line[2]))
-                    except:
+                    except IndexError:
                         array[2].append(np.nan)
 
                 if block == 3:
                     try:
                         array[3].append(float(line[2]))
-                    except:
+                    except IndexError:
                         array[3].append(np.nan)
 
                 if block == 4:
                     try:
                         array[4].append(float(line[2]))
-                    except:
+                    except IndexError:
                         array[4].append(np.nan)
     arr = np.array(array)
     if np.isnan(arr).any():
