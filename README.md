@@ -12,7 +12,7 @@ micromamba create -f environment.yml -n qligfep_new
 Once you have the environment created you can activate it and install qligfep through the commands:
 
 ```bash
-microamamba activate qligfep_new
+micromamba activate qligfep_new
 python -m pip install -e .
 ```
 
