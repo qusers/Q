@@ -7,6 +7,7 @@ from typing import Optional
 from ..IO import run_command
 from ..logger import logger
 from ..settings.settings import CONFIGS
+from ..pdb_utils import nest_pdb, disulfide_search
 
 # NOTE: cysbonds will have \n after each bond -> `maketop MKC_p` is in a different line
 qprep_inp_content = """rl {ff_lib_path}
@@ -17,7 +18,7 @@ rp {pdb_file_path}
 ! NOTE, this is now large for water system, change for protein system
 set solvent_pack 2.3
 boundary 1 {cog} 25.0
-solvate {cog} {sphereradius} 1 HOH
+solvate {cog} {sphereradius} {qprep_type}
 {cysbond}maketop MKC_p
 writetop dualtop.top
 wp top_p.pdb y
@@ -75,12 +76,22 @@ def parse_arguments() -> argparse.Namespace:
         "-b",
         "--cysbond",
         dest="cysbond",
-        default="",
+        default="auto",
         help=(
             "Add cystein bonds. Input should be formatted with the atom numbers"
             "(participating in the Cys bond) connected by `_` and with different bonds "
-            "separated by `,` as in: `atom1_atom2,atom3_atom4`"
+            "separated by `,` as in: `atom1_atom2,atom3_atom4`. Defaults to `auto`, where "
+            "cystein bonds will be automatically detected within distance of 1.8 to 2.2 A."
         ),
+        type=str,
+    )
+    parser.add_argument(
+        "-t",
+        "--qprep_type",
+        dest="qprep_type",
+        default="water",
+        choices=["protein", "water"],
+        help="Type of system to be solvated. If water, the cysbond argument will be ignored. Defaults to water.",
         type=str,
     )
     return parser.parse_args()
@@ -95,25 +106,45 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     cwd = Path.cwd()
     qprep_inp_path = cwd / "qprep.inp"
     qprep_path = CONFIGS["QPREP"]
+    pdb_file = str(cwd / args.pdb_file)
+    sphereradius = f'{args.sphereradius:.1f}'
+    cog = " ".join(args.cog)
+    
     ff_lib_path = str(Path(CONFIGS["FF_DIR"]) / f"{args.FF}.lib")
     ff_prm_path = str(Path(CONFIGS["FF_DIR"]) / f"{args.FF}.prm")
+    
+    if args.qprep_type == "protein":
+        annotation_type = "4 water.pdb"
+    if args.qprep_type == "water":
+        annotation_type = "1 HOH"
+    
     cysbonds = args.cysbond
-    if cysbonds != "":
+    if cysbonds == "auto":
+        with open(pdb_file, 'r') as f:
+            pdb_lines = f.readlines()
+            npdb = nest_pdb(pdb_lines)
+            npdb, cysbonds = disulfide_search(npdb)
+            del npdb
+        print(cysbonds)
+        cysbonds = "".join([f"addbond {atomN[0]} {atomN[1]} y\n" for atomN in cysbonds])
+    elif cysbonds != "":
         cysbonds = cysbonds.split(",")
-        cysbonds = "\n".join(
-            [f"addbond {b.split('_')[0]} {b.split('_')[1]} y" for b in cysbonds]
+        cysbonds = "".join(
+            [f"addbond {b.split('_')[0]} {b.split('_')[1]} y\n" for b in cysbonds]
         )
-    sphereradius = f'{args.sphereradius:.1f}'
+    else:
+        raise ValueError("Invalid cysbond input. Please check the input format.")
 
     # format the cysbonds = addbond at1 at2 y
     if args is not None:
         param_dict = {
-            "pdb_file_path": args.pdb_file,
-            "cog": args.cog,
+            "pdb_file_path": pdb_file,
+            "cog": cog,
             "ff_lib_path": ff_lib_path,
             "ff_prm_path": ff_prm_path,
             "sphereradius": sphereradius,
             "cysbond": cysbonds,
+            "qprep_type": annotation_type,
         }
     else:
         param_dict = {}
