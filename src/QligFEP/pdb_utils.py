@@ -104,6 +104,7 @@ def unnest_pdb(npdb):
 
 def disulfide_search(npdb, min_dist=1.8, max_dist=2.2):
     residues_to_rename = set()
+    cysbonds = []
     for i in range(len(npdb)):
         if npdb[i][0][17:20] not in ['CYS', 'CYD', 'CYX']:
             continue
@@ -126,11 +127,12 @@ def disulfide_search(npdb, min_dist=1.8, max_dist=2.2):
                 # Log the atoms involved in the disulfide bond, including their atom numbers
                 logger.info(f"Disulfide bond detected within atoms: {i_atom_number}_{j_atom_number} with distance {distance:.2f} Å.")
                 logger.info(f"Bond between residues `{i_residue_info}` and `{j_residue_info}`.")
+                cysbonds.append((i_atom_number, j_atom_number))
     
     for i in residues_to_rename:
         npdb[i] = [x.replace('CYS ', 'CYX') if 'CYS' in x or 'CYD' in x else x for x in npdb[i]]
     
-    return npdb
+    return npdb, cysbonds
 
 def get_coords(atomname, residue):
     for line in residue:
