@@ -44,7 +44,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('-r', '--sphereradius',
                         dest = "sphereradius",
                         required = False,
-                        default = '15',
+                        default = '25',
                         help = "Size of the simulation sphere. Defaults to 25."
                        )
 
