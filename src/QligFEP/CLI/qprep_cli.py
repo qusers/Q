@@ -103,6 +103,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         cysbonds = "\n".join(
             [f"addbond {b.split('_')[0]} {b.split('_')[1]} y" for b in cysbonds]
         )
+    sphereradius = f'{args.sphereradius:.1f}'
 
     # format the cysbonds = addbond at1 at2 y
     if args is not None:
@@ -111,7 +112,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "cog": args.cog,
             "ff_lib_path": ff_lib_path,
             "ff_prm_path": ff_prm_path,
-            "sphereradius": args.sphereradius,
+            "sphereradius": sphereradius,
             "cysbond": cysbonds,
         }
     else:
@@ -136,3 +137,6 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
 def main_exe():
     args = parse_arguments()
     main(args)
+
+if __name__ == "__main__":
+    main_exe()
