@@ -25,6 +25,8 @@ Now you're set with the qligfep package. This includes the command-linde-interfa
 1. `qligfep`: main CLI for running QligFEP simulations.
 1. `setupFEP`: sets up all the the QligFEP files for a simulation, including protein and water systems.
 1. `qligfep_analyze`: CLI to analyze the results of a QligFEP simulation.
+1. `qcog`: calculates the center of geometry (COG) of a ligand in a PDB/SDF file. If multiple ligands are found in sdf, the program will calculate the COG for all of them
+1. `qprep_prot`: creates an input file for qprep (fortran program) and runs it to either: 1) solvate the protein structure; 2) create the water sphere.
 
 And update the following conda packages:
 ```bash
