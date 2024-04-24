@@ -131,7 +131,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "system": args.system,
             "cluster": args.cluster,
             "sphereradius": args.sphereradius,
-            "cysbond": args.cysbond,
+            "cysbond": args.cysbond,  # TODO: add automatic detection of cysbond as in qprep_cli.py
             "start": args.start,
             "temperature": args.temperature,
             "replicates": args.replicates,
