@@ -91,36 +91,40 @@ def parse_arguments() -> argparse.Namespace:
         dest="qprep_type",
         default="water",
         choices=["protein", "water"],
-        help="Type of system to be solvated. If water, the cysbond argument will be ignored. Defaults to water.",
+        help=(
+            "Type of system to be solvated. If water, the cysbond argument will be ignored. "
+            "But qprep will require a water.pdb file in the same directory. Defaults to water."
+        ),
         type=str,
     )
     return parser.parse_args()
 
 
 def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
-    """Either
+    """Either runs the qprep program with the given arguments via **kwargs or parses
+    the arguments and runs the program.
 
     Args:
-        args: _description_. Defaults to None.
+        args: argparse Namespace containing the arguments for the qprep program. Defaults to None
     """
     cwd = Path.cwd()
     qprep_inp_path = cwd / "qprep.inp"
     qprep_path = CONFIGS["QPREP"]
     pdb_file = str(cwd / args.pdb_file)
-    sphereradius = f'{args.sphereradius:.1f}'
+    sphereradius = f"{args.sphereradius:.1f}"
     cog = " ".join(args.cog)
-    
+
     ff_lib_path = str(Path(CONFIGS["FF_DIR"]) / f"{args.FF}.lib")
     ff_prm_path = str(Path(CONFIGS["FF_DIR"]) / f"{args.FF}.prm")
-    
+
     if args.qprep_type == "protein":
         annotation_type = "4 water.pdb"
     if args.qprep_type == "water":
         annotation_type = "1 HOH"
-    
+
     cysbonds = args.cysbond
     if cysbonds == "auto":
-        with open(pdb_file, 'r') as f:
+        with open(pdb_file, "r") as f:
             pdb_lines = f.readlines()
             npdb = nest_pdb(pdb_lines)
             npdb, cysbonds = disulfide_search(npdb)
@@ -147,7 +151,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "qprep_type": annotation_type,
         }
     else:
-        param_dict = {}
+        param_dict = {**kwargs}
 
     # write qprep.inp with the formatted qprep_inp_content using Path
     if qprep_inp_path.exists():
@@ -168,6 +172,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
 def main_exe():
     args = parse_arguments()
     main(args)
+
 
 if __name__ == "__main__":
     main_exe()
