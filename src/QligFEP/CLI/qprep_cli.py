@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..IO import run_command
-from ..logger import logger
+from ..logger import logger, setup_logger
 from ..settings.settings import CONFIGS
 from ..pdb_utils import nest_pdb, disulfide_search
 
@@ -97,6 +97,18 @@ def parse_arguments() -> argparse.Namespace:
         ),
         type=str,
     )
+    parser.add_argument(
+        "-log",
+        "--log-level",
+        dest="log_level",
+        default="INFO",
+        choices=["INFO", "DEBUG", "WARNING", "ERROR", "CRITICAL"],
+        help=(
+            "Set the logging level. Defaults to INFO. "
+            "Choose between: INFO, DEBUG, WARNING, ERROR, CRITICAL."
+        ),
+        type=str,
+    )
     return parser.parse_args()
 
 
@@ -108,8 +120,10 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         args: argparse Namespace containing the arguments for the qprep program. Defaults to None
     """
     cwd = Path.cwd()
-    qprep_inp_path = cwd / "qprep.inp"
+    if args.log_level != "INFO":
+        setup_logger(args.log_level.upper())
     qprep_path = CONFIGS["QPREP"]
+    logger.debug(f'Running qprep from path: {qprep_path}')
     pdb_file = str(cwd / args.pdb_file)
     sphereradius = f"{args.sphereradius:.1f}"
     cog = " ".join(args.cog)
@@ -121,6 +135,9 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         annotation_type = "4 water.pdb"
     if args.qprep_type == "water":
         annotation_type = "1 HOH"
+    
+    qprep_filename = f"qprep_{args.qprep_type}"
+    qprep_inp_path = cwd / f"{qprep_filename}.inp"
 
     cysbonds = args.cysbond
     if cysbonds == "auto":
@@ -129,7 +146,6 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             npdb = nest_pdb(pdb_lines)
             npdb, cysbonds = disulfide_search(npdb)
             del npdb
-        print(cysbonds)
         cysbonds = "".join([f"addbond {atomN[0]} {atomN[1]} y\n" for atomN in cysbonds])
     elif cysbonds != "":
         cysbonds = cysbonds.split(",")
@@ -162,11 +178,28 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         with qprep_inp_path.open("w") as qprep_inp_f:
             qprep_inp_f.write(qprep_inp_content.format(**param_dict))
 
-    options = " < qprep.inp > qprep.out"
+    options = f" < {qprep_filename}.inp > {qprep_filename}.out"
+    logger.debug(f'Running command {qprep_path} {options}')
     run_command(qprep_path, options, string=True)
     logger.info(
-        "qprep run finished. Check the output `qprep.out` for more information."
+        f"qprep run finished. Check the output `{qprep_filename}.out` for more information."
     )
+    # if the -t argument is water, we should read the pdb files and write a water.pdb file with only water molecules
+    if args.qprep_type == "water":
+        waterfile = Path(cwd / "water.pdb")
+        if waterfile.exists():
+            logger.warning(
+                "water.pdb already exists!! Skipping water.pdb file generation..."
+            )
+        else:
+            with open("complexnotexcluded.pdb", "r") as f:
+                lines = f.readlines()
+            with open("water.pdb", "w") as f:
+                for line in lines:
+                    if line.startswith("ATOM"):
+                        if line[17:20] == "HOH":
+                            f.write(line)
+                logger.info("water.pdb file created.")
 
 
 def main_exe():
