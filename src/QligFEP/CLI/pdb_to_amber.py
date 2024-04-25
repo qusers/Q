@@ -1,7 +1,7 @@
 """Module with utility functions (and CLI) to rename .pdb files so that they're compatible with the AMBER forcefield.
 
 !! Note !! The functions:
-rename_residues, rename_charged, labeledPDB_to_AmberPDB, renumber_atoms,
+rename_residues, rename_charged, labeledPDB_to_AmberPDB,
 nest_pdb, unnest_pdb, get_coords, disulfide_search, pdb_cleanup, histidine_search,
 atom_is_present
 
@@ -62,16 +62,19 @@ def correct_neutral_arginine(pdb_arr):
 
     # Temporary mapping for the first pass
     atom_name_replacements = {
-        "NH1": "NHT",  # Temporary name for NH1
-        "HH11": "HHT1",  # Temporary name for HH11
-        "NH2": "NH1",
-        "HH21": "HH11",
-        "HH22": "HHT2",  # Temporary name for HH22 to avoid direct swap conflict
+        "NH1": "NHT ", # Temporary name for NH1
+        "HH11": "HHT1",
+        "NH2": "NH1 ",
+        "HH21": "HH11", # Temporary name for HH11
+        "HH22": "HHT2", # Temporary name for HH22 to avoid direct swap conflict
     }
+    atom_name_replacements = {
+    }
+
 
     # Reverse mapping for the second pass
     final_name_replacements = {
-        "NHT": "NH2",
+        "NHT ": "NH2 ",
         "HHT1": "HH21",
         "HHT2": "HH12",  # Assuming HH22 should be renamed to HH12 if present
     }
@@ -80,7 +83,7 @@ def correct_neutral_arginine(pdb_arr):
         if line.startswith("ATOM") and "ARN" in line:
             atom_name = line[12:16].strip()  # Extract atom name
             if atom_name in atom_name_replacements:
-                new_atom_name = atom_name_replacements[atom_name].ljust(4)
+                new_atom_name = atom_name_replacements[atom_name]
                 line = line[:12] + new_atom_name + line[16:]
         updated_pdb_lines.append(line)
 
@@ -154,14 +157,10 @@ def labeledPDB_to_AmberPDB(labeledPDBfile, outPDBfile, renameResidues=True):
     if renameResidues:
         pdbarr = rename_residues(pdbarr)
     pdbarr = pdb_cleanup(pdbarr)
-    with open(outPDBfile, 'w') as fout:
+    with open(outPDBfile, 'w') as file_out:
         for line in pdbarr:
-            fout.write(f"{line}\n")
+            file_out.write(f"{line}\n")
             
-def renumber_atoms(pdbarr):
-    for i, line in enumerate(pdbarr):
-        pdbarr[i] = f"{line[:6]}{str(i+1).rjust(5)}{line[11:]}"
-
 def pdb_cleanup(pdbarr):
     updated_pdbarr = []
     for line in pdbarr:
