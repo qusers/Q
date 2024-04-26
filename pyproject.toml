@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel", "numpy"]
+requires = ["setuptools>=64", "setuptools_scm>=8", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -24,7 +24,8 @@ dependencies = [
     "matplotlib",
     "rdkit",
     "scikit-learn",
-    "loguru"
+    "loguru",
+    "MolClusterkit @ git+https://github.com/David-Araripe/MolClusterkit.git#master",
 ]
 
 [tool.setuptools]
@@ -36,6 +37,9 @@ include = ["QligFEP", "Qgpu"]
 
 [tool.setuptools.dynamic]
 version = {attr = "QligFEP.__version__"}
+
+[tool.setuptools_scm]
+write_to = "src/QligFEP/_version.py"
 
 [project.urls]
 repository = "https://github.com/qusers/qligfep"
