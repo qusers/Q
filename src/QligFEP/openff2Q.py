@@ -10,8 +10,6 @@ from .logger import logger
 
 # openFF modules
 from openff.toolkit import ForceField, Topology
-from openff.interchange import Interchange
-from openff.interchange.smirnoff._create import _electrostatics
 
 class OpenFF2Q(MoleculeIO):
     """Class to process ligands and generate OpenFF parameter files for QligFEP. Dictionary
@@ -34,9 +32,9 @@ class OpenFF2Q(MoleculeIO):
             lig: sdf file containing the ligands to be processed.
         """
         super().__init__(lig, *args, **kwargs)
-        self.FF = 'openff-2.1.0'
+        self.FF = 'openff-2.2.0' # TODO: later, this same class can be used for other FFs
         self.mapping = {lname:{} for lname in self.lig_names}
-        self.forcefield = ForceField('openff-2.1.0.offxml')
+        self.forcefield = ForceField('openff-2.2.0.offxml')
         self.topologies, self.parameters = self.set_topologies_and_parameters()
         self.charges_list_magnitude = {} # store charge magnitude for each ligand
         self.total_charges = {} # store the total charges
@@ -51,20 +49,12 @@ class OpenFF2Q(MoleculeIO):
         return topologies, parameters
     
     def calculate_charges(self, lname) -> None:
-        topology = self.topologies[lname]
-        interchange = Interchange()
-        _topology = Interchange.validate_topology(topology)
-        # the following is slow, but it's the most straightforward way to get the charges
-        # for detauls on this, see: https://github.com/openforcefield/openff-toolkit/issues/1853
-        _electrostatics(
-            interchange,
-            self.forcefield,
-            _topology,
-            None,
-            None,
-        )
-        partial_charges = interchange['Electrostatics'].charges.values()
-        charges_magnitudes = np.array([c._magnitude for c in partial_charges])
+        molecule = self.molecules[self.lig_names.index(lname)]
+        # Seems like the fastest way of doing this for now (if you're not OpenEye licensed);
+        # for details on this, see: https://github.com/openforcefield/openff-toolkit/issues/1853
+        # TODO: try to see if you can do this with multiple threads using joblib
+        molecule.assign_partial_charges(partial_charge_method="am1bcc")
+        charges_magnitudes = np.array([c._magnitude for c in molecule.partial_charges])
         return charges_magnitudes
 
     def process_ligands(self):
