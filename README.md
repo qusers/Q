@@ -7,12 +7,16 @@ The current conda environment is available in the `environment.yml` file, but in
 Once you have `micromamba` installed and have already cloned this repo, you can create the environment with:
 
 ```bash
-micromamba create -f environment.yml -n qligfep_new 
+micromamba create -f environment.yml -n qligfep_new
 ```
-Once you have the environment created you can activate it and install qligfep through the commands:
-
+Now, activate the environment and update the following conda packages:
 ```bash
 micromamba activate qligfep_new
+micromamba install openff-toolkit=0.16.0 openff-forcefields=2024.04.0 openmm=8.1.1 lomap2 -c conda-forge --yes
+```
+
+Now that you have the environment ready and activated, install qligfep through the command:
+```bash
 python -m pip install -e .
 ```
 
@@ -25,11 +29,9 @@ Now you're set with the qligfep package. This includes the command-linde-interfa
 1. `qligfep`: main CLI for running QligFEP simulations.
 1. `setupFEP`: sets up all the the QligFEP files for a simulation, including protein and water systems.
 1. `qligfep_analyze`: CLI to analyze the results of a QligFEP simulation.
+1. `qcog`: calculates the center of geometry (COG) of a ligand in a PDB/SDF file. If multiple ligands are found in sdf, the program will calculate the COG for all of them
+1. `qprep_prot`: creates an input file for qprep (fortran program) and runs it to either: 1) solvate the protein structure; 2) create the water sphere.
 
-And update the following conda packages:
-```bash
-micromamba install openff-toolkit=0.14.5 openmm=8.1.1 lomap2 -c conda-forge --yes
-```
 
 ! Note on Swedish servers !
 - If you're running jobs on [Dardel](https://www.pdc.kth.se/hpc-services/computing-systems/dardel), you will need to make a modification on Q's makefile. To do so, run `cd Q` after cloning the repository and run:

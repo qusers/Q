@@ -1,7 +1,7 @@
 """Module with utility functions (and CLI) to rename .pdb files so that they're compatible with the AMBER forcefield.
 
 !! Note !! The functions:
-rename_residues, rename_charged, labeledPDB_to_AmberPDB, renumber_atoms,
+rename_residues, rename_charged, labeledPDB_to_AmberPDB,
 nest_pdb, unnest_pdb, get_coords, disulfide_search, pdb_cleanup, histidine_search,
 atom_is_present
 
@@ -13,12 +13,11 @@ to use this module, you can use the following code:
 """
 
 import argparse
-from typing import List
 from ..logger import logger
 import os
 import sys
-import math
-import numpy as np
+
+from ..pdb_utils import nest_pdb, unnest_pdb, disulfide_search
 
 
 def rename_residues(pdbarr):
@@ -27,7 +26,7 @@ def rename_residues(pdbarr):
     logger.debug(f"Nest/unnest leads to {len(unnest_pdb(npdb))}, items")
     npdb = rename_charged(npdb)
     npdb = histidine_search(npdb)
-    npdb = disulfide_search(npdb)
+    npdb, cysbonds = disulfide_search(npdb)
     pdbarr = unnest_pdb(npdb)
     pdbarr = correct_neutral_arginine(pdbarr)
     return pdbarr
@@ -63,16 +62,19 @@ def correct_neutral_arginine(pdb_arr):
 
     # Temporary mapping for the first pass
     atom_name_replacements = {
-        "NH1": "NHT",  # Temporary name for NH1
-        "HH11": "HHT1",  # Temporary name for HH11
-        "NH2": "NH1",
-        "HH21": "HH11",
-        "HH22": "HHT2",  # Temporary name for HH22 to avoid direct swap conflict
+        "NH1": "NHT ", # Temporary name for NH1
+        "HH11": "HHT1",
+        "NH2": "NH1 ",
+        "HH21": "HH11", # Temporary name for HH11
+        "HH22": "HHT2", # Temporary name for HH22 to avoid direct swap conflict
     }
+    atom_name_replacements = {
+    }
+
 
     # Reverse mapping for the second pass
     final_name_replacements = {
-        "NHT": "NH2",
+        "NHT ": "NH2 ",
         "HHT1": "HH21",
         "HHT2": "HH12",  # Assuming HH22 should be renamed to HH12 if present
     }
@@ -81,7 +83,7 @@ def correct_neutral_arginine(pdb_arr):
         if line.startswith("ATOM") and "ARN" in line:
             atom_name = line[12:16].strip()  # Extract atom name
             if atom_name in atom_name_replacements:
-                new_atom_name = atom_name_replacements[atom_name].ljust(4)
+                new_atom_name = atom_name_replacements[atom_name]
                 line = line[:12] + new_atom_name + line[16:]
         updated_pdb_lines.append(line)
 
@@ -155,91 +157,10 @@ def labeledPDB_to_AmberPDB(labeledPDBfile, outPDBfile, renameResidues=True):
     if renameResidues:
         pdbarr = rename_residues(pdbarr)
     pdbarr = pdb_cleanup(pdbarr)
-    with open(outPDBfile, 'w') as fout:
+    with open(outPDBfile, 'w') as file_out:
         for line in pdbarr:
-            fout.write(f"{line}\n")
+            file_out.write(f"{line}\n")
             
-def renumber_atoms(pdbarr):
-    for i, line in enumerate(pdbarr):
-        pdbarr[i] = f"{line[:6]}{str(i+1).rjust(5)}{line[11:]}"
-
-def nest_pdb(pdbarr: List[str]) -> List[List[str]]:
-    """Organizes a flat list of PDB (Protein Data Bank) file lines into a nested structure
-    grouped by residues. This function takes a list of strings, each representing a line
-    from a PDB file, and groups these lines by residue. Each residue's lines are collected
-    based on continuity of residue identifiers and uniqueness of atom names within the
-    residue. This nested structure is useful for operations that require manipulation or
-    analysis on a per-residue basis.
-
-    args:
-        pdbarr: A list where each element is a string representing a line from a PDB file.
-
-    Returns:
-    - nestedpdb : Each inner list contains all the lines from the input 
-        corresponding to a single residue. The grouping is based on residue identifiers
-        (including residue name, chain identifier, and residue sequence number) and ensures
-        that each atom within a residue is unique.
-
-    Notes:
-    - The function assumes that the input list is ordered as it would be in a standard PDB file,
-        where lines corresponding to atoms of the same residue are consecutive.
-    """
-    nestedpdb = []
-    residue = []
-    usedatoms = []
-    for line in pdbarr:
-        atom = line[12:17].strip()
-        if not residue or line[17:27] != residue[-1][17:27] or atom in usedatoms:
-            if residue: nestedpdb.append(residue)
-            residue = [line]
-            usedatoms = [atom]
-        else:
-            residue.append(line)
-            usedatoms.append(atom)
-    if residue:
-        nestedpdb.append(residue)
-    return nestedpdb
-
-def unnest_pdb(npdb):
-    return [atm for res in npdb for atm in res]
-
-def get_coords(atomname, residue):
-    for line in residue:
-        if line[12:16].strip() == atomname.strip():
-            return tuple(float(line[i:i+8]) for i in range(30, 54, 8))
-    raise ValueError("Atom not found!")
-
-def disulfide_search(npdb, min_dist=1.8, max_dist=2.2):
-    residues_to_rename = set()
-    for i in range(len(npdb)):
-        if npdb[i][0][17:20] not in ['CYS', 'CYD', 'CYX']:
-            continue
-        iX, iY, iZ = get_coords('SG', npdb[i])
-        sg_idx = np.where(np.char.find(npdb[i], 'SG') != -1)[0][0]
-        i_residue_info = npdb[i][sg_idx][17:27].strip()  # Extract residue info for logging
-        i_atom_number = npdb[i][sg_idx][6:11].strip()  # Extract atom number for logging
-
-        for j in range(i + 1, len(npdb)):
-            if npdb[j][0][17:20] not in ['CYS', 'CYD', 'CYX']:
-                continue
-            jX, jY, jZ = get_coords('SG', npdb[j])
-            sg_idx = np.where(np.char.find(npdb[j], 'SG') != -1)[0][0]
-            j_residue_info = npdb[j][sg_idx][17:27].strip()  # Extract residue info for logging
-            j_atom_number = npdb[j][sg_idx][6:11].strip()  # Extract atom number for logging
-
-            distance = math.sqrt((iX - jX) ** 2 + (iY - jY) ** 2 + (iZ - jZ) ** 2)
-            if min_dist <= distance <= max_dist:
-                residues_to_rename.update({i, j})
-                # Log the atoms involved in the disulfide bond, including their atom numbers
-                logger.info(f"Disulfide bond detected within atoms: {i_atom_number}_{j_atom_number} with distance {distance:.2f} Å.")
-                logger.info(f"Bond between residues `{i_residue_info}` and `{j_residue_info}`.")
-    
-    for i in residues_to_rename:
-        npdb[i] = [x.replace('CYS ', 'CYX') if 'CYS' in x or 'CYD' in x else x for x in npdb[i]]
-    
-    return npdb
-
-
 def pdb_cleanup(pdbarr):
     updated_pdbarr = []
     for line in pdbarr:
