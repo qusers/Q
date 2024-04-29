@@ -30,10 +30,11 @@ def create_call(**kwargs):
     template = (
         "qligfep -l1 '{lig1}' -l2 '{lig2}' -FF {FF} -s {system} -c {cluster} -R {replicates} "
         "-S {sampling} -r {sphereradius} -l {start} -w {windows} -T {temperature} -ts {timestep} "
-        "-clean {to_clean}"
         )
     if 'cysbond' in kwargs and kwargs['cysbond'] is not None:
         template += ' -b {cysbond}'
+    if 'to_clean' in kwargs and kwargs['cysbond'] is not None:
+        template += ' -clean {to_clean}'
     return template.format(**kwargs)
 
 def submit_command(command :str) -> None:
@@ -173,6 +174,7 @@ def main_exe():
             lig2 = pair[1]
             
             temp_dir = cwd  / f'FEP_{lig1}_{lig2}'
+            to_clean = (None if args.to_clean is not None else ' '.join(args.to_clean))
             command = create_call(
                 lig1 = lig1,
                 lig2 = lig2,
@@ -187,7 +189,7 @@ def main_exe():
                 sampling = args.sampling,
                 timestep = args.timestep,
                 windows = args.windows,
-                to_clean = ' '.join(args.to_clean),
+                to_clean = to_clean,
             )
             logger.info(f"Submitting the command:\n{command}")
             dst = sys_dir / f'FEP_{lig1}_{lig2}'

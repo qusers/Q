@@ -6,6 +6,7 @@ The current conda environment is available in the `environment.yml` file, but in
 
 Once you have `micromamba` installed and have already cloned this repo, you can create the environment with:
 
+### Linux
 ```bash
 micromamba create -f environment.yml -n qligfep_new
 ```
@@ -19,6 +20,19 @@ Now that you have the environment ready and activated, install qligfep through t
 ```bash
 python -m pip install -e .
 ```
+
+### MacOS
+
+The environment provided doesn't build on Mac due to missing libraries. If you're using this operating system, you'll have to create the environment by scratch through the commands:
+
+``` bash
+micromamba create -n qligfep_new -c conda-forge openff-toolkit=0.16.0 openff-forcefields=2024.04.0 openmm=8.1.1 lomap2 -c conda-forge --yes
+micromamba activate qligfep_new
+python -m pip install joblib scipy tqdm
+python -m pip install -e .
+```
+
+## Command line interface (CLI)
 
 Now you're set with the qligfep package. This includes the command-linde-interfaces (CLIs):
 

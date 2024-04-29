@@ -1,15 +1,15 @@
-import os
-from tqdm import tqdm
-import numpy as np
+"""Module containing the OpenFF2Q class to process ligands and generate OpenFF parameter files for QligFEP."""
 
-# QligFEP modules
-from .pdb_utils import pdb_parse_out
-from .settings.settings import FF_DIR
+import numpy as np
+from joblib import Parallel, delayed, parallel_config
+from openff.toolkit import ForceField, Molecule, Topology
+from tqdm import tqdm
+
 from .chemIO import MoleculeIO
 from .logger import logger
+from .pdb_utils import pdb_parse_out
+from .settings.settings import FF_DIR
 
-# openFF modules
-from openff.toolkit import ForceField, Topology
 
 class OpenFF2Q(MoleculeIO):
     """Class to process ligands and generate OpenFF parameter files for QligFEP. Dictionary
@@ -24,21 +24,36 @@ class OpenFF2Q(MoleculeIO):
         charges_list_magnitude: Dictionary to store the partial charge magnitude for each
             atom in the ligand for each ligand.
         total_charges: Dictionary to store the total charges for each ligand.
-    """    
-    def __init__(self, lig, *args, **kwargs):
+    """
+
+    def __init__(self, lig, pattern="*.sdf", n_jobs=1):
         """Initializes a new instance of OpenFF2Q to process the `.sdf` input as lig.
-        
+
         Args:
-            lig: sdf file containing the ligands to be processed.
+            lig: sdf file containing several molecules or directory containing the sdf files.
+            pattern: If desired, a pattern can be used to search for sdf files within a directory with
+                `glob`. If lig is a sdf file, this argument will be ignored. Defaults to None.
         """
-        super().__init__(lig, *args, **kwargs)
-        self.FF = 'openff-2.2.0' # TODO: later, this same class can be used for other FFs
-        self.mapping = {lname:{} for lname in self.lig_names}
-        self.forcefield = ForceField('openff-2.2.0.offxml')
+        super().__init__(lig, pattern=pattern)
+        self.n_jobs = n_jobs
+        self.mapping = {lname: {} for lname in self.lig_names}
+        self.forcefield = ForceField("openff-2.2.0.offxml")
         self.topologies, self.parameters = self.set_topologies_and_parameters()
-        self.charges_list_magnitude = {} # store charge magnitude for each ligand
-        self.total_charges = {} # store the total charges
-        
+        self.charges_list_magnitude = {}  # store charge magnitude for each ligand
+        self.total_charges = {}  # store the total charges
+
+    @staticmethod
+    def _assign_charge(molecule: Molecule) -> np.ndarray:
+        """Private method that assigns partial charges to an input Molecule and returns their magnitudes"""
+        try:
+            # Seems like the fastest way of doing this for now (if you're not OpenEye licensed);
+            # for details on this, see: https://github.com/openforcefield/openff-toolkit/issues/1853
+            molecule.assign_partial_charges(partial_charge_method="am1bcc")
+        except Exception as e:
+            print(f"Failed to assign charges for a molecule: {e}")
+        charges_magnitudes = np.array([c._magnitude for c in molecule.partial_charges])
+        return charges_magnitudes
+
     def set_topologies_and_parameters(self):
         topologies = {}
         parameters = {}
@@ -47,37 +62,40 @@ class OpenFF2Q(MoleculeIO):
             topologies.update({lname: topology})
             parameters.update({lname: self.forcefield.label_molecules(topology)[0]})
         return topologies, parameters
-    
-    def calculate_charges(self, lname) -> None:
-        molecule = self.molecules[self.lig_names.index(lname)]
-        # Seems like the fastest way of doing this for now (if you're not OpenEye licensed);
-        # for details on this, see: https://github.com/openforcefield/openff-toolkit/issues/1853
-        # TODO: try to see if you can do this with multiple threads using joblib
-        molecule.assign_partial_charges(partial_charge_method="am1bcc")
-        charges_magnitudes = np.array([c._magnitude for c in molecule.partial_charges])
-        return charges_magnitudes
 
     def process_ligands(self):
         """Assigns partial charges and writes the .lib, .prm and .pdb files for each ligand."""
-        logger.info('Calculating charges')
-        for lname in tqdm(self.lig_names):
-            charges_magnitudes = self.calculate_charges(lname)
-            self.charges_list_magnitude.update({lname : charges_magnitudes})
-            self.total_charges.update({lname : f'{round(charges_magnitudes.sum(), 10):.3f}'})
+        logger.info("Calculating charges")
+        with parallel_config(
+            n_jobs=self.n_jobs, backend="multiprocessing"
+        ):  # backend="threading"
+            molecules = tqdm(self.molecules)
+            charges_magnitudes = Parallel()(
+                delayed(self._assign_charge)(molecule) for molecule in molecules
+            )
+        logger.info("Done! Writing .lib, .prm and .pdb files for each ligand")
+        for lname, charges in zip(self.lig_names, charges_magnitudes):
+            self.charges_list_magnitude.update({lname: charges})
+            formatted_sum = f'{round(charges_magnitudes.sum(), 10):.3f}'
+            if formatted_sum == '-0.000':
+                formatted_sum = '0.000'
+            self.total_charges.update({lname: formatted_sum})
             self.get_mapping(lname)
             self.write_lib_Q(lname)
             self.write_prm_Q(lname)
             self.write_PDB(lname)
         all_formal_charges = [self.total_charges[n] for n in self.lig_names]
         if np.unique(all_formal_charges).size > 1:
-            logger.warning(f'Formal charges of ligands in .sdf are not unique: {self.total_charges}')
-            
+            logger.warning(
+                f"Formal charges of ligands in .sdf are not unique: {self.total_charges}"
+            )
+
     def get_mapping(self, lname):
         """Get the mapping of the ligand atoms to the forcefield parameters.
 
         Args:
             lname: name of the ligand for the mapping.
-        """        
+        """
         # Splitting the SDF content into individual entries
         sdf_content = self.sdf_contents[lname]
         if len(sdf_content) < 4:
@@ -92,7 +110,7 @@ class OpenFF2Q(MoleculeIO):
 
         cnt = -1
 
-        for line in sdf_content[4:4 + atom_count]:  # Process only atom lines
+        for line in sdf_content[4 : 4 + atom_count]:  # Process only atom lines
             cnt += 1
             atom_data = line.split()
 
@@ -100,24 +118,23 @@ class OpenFF2Q(MoleculeIO):
                 continue  # Skip if line does not have enough data
 
             atom_index = cnt + 1
-            charge = round(self.charges_list_magnitude[lname][cnt], 3) # round for Q
+            charge = round(self.charges_list_magnitude[lname][cnt], 3)  # round for Q
             self.mapping[lname][cnt] = [
-                str(atom_index),                   # atom index
-                atom_data[3] + str(atom_index),    # atom name
-                atom_data[3],                      # atom type
-                str(charge),                       # charge
-                atom_data[0],                      # X coordinate
-                atom_data[1],                      # Y coordinate
-                atom_data[2]                       # Z coordinate
+                str(atom_index),  # atom index
+                atom_data[3] + str(atom_index),  # atom name
+                atom_data[3],  # atom type
+                str(charge),  # charge
+                atom_data[0],  # X coordinate
+                atom_data[1],  # Y coordinate
+                atom_data[2],  # Z coordinate
             ]
-
 
     def write_lib_Q(self, lname: str):
         """Writes Q's .lib file for a given ligand.
 
         Args:
             lname: name of the ligand for the .lib file.
-        """        
+        """
         parameters = self.parameters[lname]
         mapping = self.mapping[lname]
         total_charge = self.total_charges[lname]
@@ -162,11 +179,11 @@ class OpenFF2Q(MoleculeIO):
 
         Args:
             lname: name of the ligand for the .prm file.
-        """        
-        prm_file = os.path.join(str(FF_DIR), "NOMERGE.prm")
+        """
+        prm_file = str(FF_DIR / "NOMERGE.prm")
         parameters = self.parameters[lname]
         mapping = self.mapping[lname]
-        prm_file_out = f'{lname}.prm'
+        prm_file_out = f"{lname}.prm"
         mol = self.molecules[self.lig_names.index(lname)]
         with open(prm_file) as infile, open(prm_file_out, "w") as outfile:
             for line in infile:
@@ -195,7 +212,9 @@ class OpenFF2Q(MoleculeIO):
                         Rmin = "{}".format(parameter.rmin_half)
                         Rmin = Rmin.split()[0]
                         Rmin = float(Rmin)
-                        assert len(atom_indices) == 1, f'More than 1 atom indices present: {atom_indices}'
+                        assert (
+                            len(atom_indices) == 1
+                        ), f"More than 1 atom indices present: {atom_indices}"
                         mass = str(round(mol.atoms[atom_indices[0]].mass.magnitude, 4))
                         outfile.write(
                             """{:6}{: 8.3f}{: 10.3f}{: 10.3f}{: 10.3f}{: 10.3f}{:>10s}\n""".format(
@@ -235,9 +254,7 @@ class OpenFF2Q(MoleculeIO):
                         )
 
                 if block == 4:
-                    for atom_indices, parameter in parameters[
-                        "ProperTorsions"
-                    ].items():
+                    for atom_indices, parameter in parameters["ProperTorsions"].items():
                         forces = []
                         ai = atom_indices[0]
                         ai_name = mapping[ai][1].lower()
@@ -279,9 +296,7 @@ class OpenFF2Q(MoleculeIO):
                             )
 
                 if block == 5:
-                    for atom_indices, parameter in parameters[
-                        "ImproperTorsions"
-                    ].items():
+                    for atom_indices, parameter in parameters["ImproperTorsions"].items():
                         ai = atom_indices[0]
                         ai_name = mapping[ai][1].lower()
                         aj = atom_indices[1]
@@ -303,34 +318,35 @@ class OpenFF2Q(MoleculeIO):
 
         Args:
             lname: name of the ligand for the .pdb file.
-        """        
+        """
         mapping = self.mapping[lname]
-        with open(lname + '.pdb', 'w') as outfile:
+        with open(lname + ".pdb", "w") as outfile:
             for atom in mapping:
-                ai      = atom + 1
+                ai = atom + 1
                 ai_name = mapping[atom][1]
-                a_el    = mapping[atom][2]
-                ax      = float(mapping[atom][4])
-                ay      = float(mapping[atom][5])
-                az      = float(mapping[atom][6])
-                at_entry = ['HETATM',   #  0 ATOM/HETATM
-                            ai,         #  1 ATOM serial number
-                            ai_name,    #  2 ATOM name
-                            '',         #  3 Alternate location indicator
-                            'LIG',      #  4 Residue name
-                            '',         #  5 Chain identifier
-                            1,          #  6 Residue sequence number
-                            '',         #  7 Code for insertion of residue
-                            ax,         #  8 Orthogonal coordinates for X
-                            ay,         #  9 Orthogonal coordinates for Y
-                            az,         # 10 Orthogonal coordinates for Z
-                            0.0,        # 11 Occupancy
-                            0.0,        # 12 Temperature factor
-                            a_el,       # 13 Element symbol
-                            ''          # 14 Charge on atom
-                        ]
-                outfile.write(pdb_parse_out(at_entry) + '\n')
-                    
+                a_el = mapping[atom][2]
+                ax = float(mapping[atom][4])
+                ay = float(mapping[atom][5])
+                az = float(mapping[atom][6])
+                at_entry = [
+                    "HETATM",  #  0 ATOM/HETATM
+                    ai,  #  1 ATOM serial number
+                    ai_name,  #  2 ATOM name
+                    "",  #  3 Alternate location indicator
+                    "LIG",  #  4 Residue name
+                    "",  #  5 Chain identifier
+                    1,  #  6 Residue sequence number
+                    "",  #  7 Code for insertion of residue
+                    ax,  #  8 Orthogonal coordinates for X
+                    ay,  #  9 Orthogonal coordinates for Y
+                    az,  # 10 Orthogonal coordinates for Z
+                    0.0,  # 11 Occupancy
+                    0.0,  # 12 Temperature factor
+                    a_el,  # 13 Element symbol
+                    "",  # 14 Charge on atom
+                ]
+                outfile.write(pdb_parse_out(at_entry) + "\n")
+
     # def report_missing_parameters(self): # TODO: This doesn't work yet...
     #     """
     #     Analyze a molecule using a provided ForceField, generating a report of any
