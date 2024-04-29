@@ -210,6 +210,7 @@ def parse_arguments() -> argparse.Namespace:
                         help=(
                             'Input file (sdf) or directory containing the mol files (sdf|mol2) to '
                             'be used by lomap. If sdf, a new dir is created, containing separate sdf files '
+                            'for each ligand.'
                             ))
     parser.add_argument('--output',
                         '-o',
