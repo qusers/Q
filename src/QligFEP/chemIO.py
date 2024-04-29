@@ -1,12 +1,10 @@
 from pathlib import Path
 from typing import List, Tuple, Union
-from rdkit import Chem
 
-# openFF modules
 from openff.toolkit import Molecule
 from openff.toolkit.utils import UndefinedStereochemistryError
+from rdkit import Chem
 
-# QligFEP modules
 from .logger import logger
 
 
@@ -37,7 +35,7 @@ class MoleculeIO(object):
         self.setup_mols_and_names(self.lig, pattern)
         self.parse_sdf_contents()  # add the sdf content to the dictionary
 
-    def parse_mol(self, ligpath: Union[Path, str]) -> Tuple[List[Molecule], List[str]]:
+    def _parse_mol(self, ligpath: Union[Path, str]) -> Tuple[List[Molecule], List[str]]:
         """Function to parse a .sdf file into a list of Molecule objects and their names.
 
         Args:
@@ -96,9 +94,9 @@ class MoleculeIO(object):
                 self.lig_files = sorted(
                     list(lig.glob(pattern))
                 )  # glob doesn't return sorted list
-            mols_and_names = [self.parse_mol(lig) for lig in self.lig_files]
+            mols_and_names = [self._parse_mol(lig) for lig in self.lig_files]
         elif Path(lig).exists():
-            mols_and_names = [self.parse_mol(lig)]
+            mols_and_names = [self._parse_mol(lig)]
         else:
             raise ValueError(
                 f"No ligands found in {lig}. Make sure it's a `.sdf` file or a directory containing those."
