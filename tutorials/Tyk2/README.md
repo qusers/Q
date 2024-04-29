@@ -119,7 +119,44 @@ pdb2amber -i protein.pdb -o protein_amber.pdb
 
 # Job submission
 
-Now that you ran `setupFEP`, you should have both `1.water` and `2.water` directories
+Now that you ran `setupFEP`, you should have both `1.water` and `2.water` directories created. to submit the replicates for a sigle *water* or *protein* "leg", you need to run the `FEP_submit.sh` shell script that is found under each perturbation directory.
+
+A perturbation directory follows the default naming `cd 1.water/FEP_<lig1>_<lig2>`, where you have *lig1* as your *from* ligand and *lig2* as your *to* ligand. To make this process easier, we recommend a bash function to your `.bashrc` See the link if you [have no idea what does that mean](https://www.marquette.edu/high-performance-computing/bashrc.php).
+
+The function is the following:
+
+``` bash
+function submitFEPjobs {
+    # Path to the parent directory containing subdirectories
+    PARENT_DIR=$(pwd)
+    # Iterate over all subdirectories
+    for dir in "$PARENT_DIR"/*; do
+      if [ -d "$dir" ]; then  # Check if it is a directory
+        echo "Entering $dir"
+        cd "$dir"  # Enter the directory
+
+        # Check if exe_script.sh exists and is executable
+        if [ -x "FEP_submit.sh" ]; then
+          sh FEP_submit.sh  # Execute the script
+          sleep 3  # Wait for 3 seconds
+        else
+          echo "FEP_submit.sh not found or not executable in $dir"
+        fi
+
+        cd ..  # Go back to the parent directory
+      fi
+    done
+}
+```
+
+Once you have this function there, you can just call it through your terminal (⚠️ On the first time you add this function you have to run `source ~/.bashrc` to make sure it apply the changes).
+
+Then you can just submit all the calculations of your water leg through:
+
+```bash
+cd 1.water
+submitFEPjobs
+```
 
 # END OF THE UPDATED PART OF THE TUTORIAL
 
