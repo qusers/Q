@@ -63,7 +63,10 @@ class OpenFF2Q(MoleculeIO):
         for lname in tqdm(self.lig_names):
             charges_magnitudes = self.calculate_charges(lname)
             self.charges_list_magnitude.update({lname : charges_magnitudes})
-            self.total_charges.update({lname : f'{round(charges_magnitudes.sum(), 10):.3f}'})
+            formatted_sum = f'{round(charges_magnitudes.sum(), 10):.3f}'
+            if formatted_sum == '-0.000':
+                formatted_sum = '0.000'
+            self.total_charges.update({lname : formatted_sum})
             self.get_mapping(lname)
             self.write_lib_Q(lname)
             self.write_prm_Q(lname)
