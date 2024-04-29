@@ -192,6 +192,17 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 "water.pdb already exists!! Skipping water.pdb file generation..."
             )
         else:
+            if not Path("complexnotexcluded.pdb").exists():
+                logger.error(
+                    "`complexnotexcluded.pdb` file not found. This is as sign qprep didn't "
+                    "run correctly. Check the outoput in your console and try again..."
+                )
+                logger.info(
+                    "If your console contains something like `libgfortran.so.5: cannot "
+                    "open shared object file: No such file or directory`, you might need to load "
+                    "some module in your HPC system that you used to compile Q."
+                )
+                raise FileNotFoundError('complexnotexcluded.pdb file not found. Something went wrong')
             with open("complexnotexcluded.pdb", "r") as f:
                 lines = f.readlines()
             with open("water.pdb", "w") as f:
