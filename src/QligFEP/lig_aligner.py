@@ -1,36 +1,68 @@
-from copy import deepcopy
+"""Module with the LigandAligner class to align ligands to a reference ligand using kcombu."""
+
+import shutil
+import subprocess
+from functools import partial
+from pathlib import Path
+
+from joblib import Parallel, delayed, parallel_config
+from openff.toolkit import Molecule
 from rdkit import Chem
 from tqdm import tqdm
-from pathlib import Path
-import subprocess
-from joblib import delayed, Parallel, parallel_config
-from functools import partial
 
 from . import SRC
 from .chemIO import MoleculeIO
 from .logger import logger
 
 
-class LigandAligner:
-    def __init__(self, molio: MoleculeIO, n_threads: int = 1):
-        """initalize the ligand aligner class from a MoleculeIO object.
+class LigandAligner(MoleculeIO):
+
+    def __init__(
+        self,
+        lig,
+        pattern: str = "*.sdf",
+        n_threads: int = 1,
+        temp_ligalign_dir: str = "to_align_ligands",
+    ):
+        """initalize the ligand aligner. This class inherits from MoleculeIO and adds the
+        functionality to align the ligands to a reference using kcombu.
 
         Args:
-            molio: MoleculeIO object (input/output). See `chemIO.py` for more details.
+            lig: sdf file containing several molecules or directory containing the sdf files.
+            pattern: If desired, a pattern can be used to search for sdf files within a directory with
+                `glob`. If lig is a sdf file, this argument will be ignored. Defaults to None.
             n_threads: Number of threads to create for the ligand alignment part. Defaults to 1.
+            temp_ligalign_dir: name for the temporary directory to store the separate sdf files.
+                Defaults to "to_align_ligands".
 
         Raises:
             FileNotFoundError: If the kcombu executable is not found.
         """
-        self.molecules = [deepcopy(m.to_rdkit()) for m in molio.molecules]
-        self.lig_names = molio.lig_names
+        super().__init__(lig, pattern)
+        self.lig_is_dir = Path(lig).is_dir()
+        self._setup_tempdir(temp_ligalign_dir)
         self.kcombu_exe = str(SRC / "kcombu/fkcombu")
+        self.n_threads = n_threads
+        self.reference_mol: Molecule = None
         if not Path(self.kcombu_exe).exists():
             raise FileNotFoundError(
                 f"Could not find kcombu executable at {self.kcombu_exe} make sure it is installed."
             )
-        molio.parse_sdf_contents()
-        molio.write_sdf_separate("to_align_ligands")
+
+    def _setup_tempdir(self, tempdir: Path):
+        """If the input is not a directory, create a temporary directory to store the
+        separate sdf files and write them there. If the input is a directory, the temporary
+        directory is the same as the input directory.
+
+        Args:
+            tempdir: Path to the temporary directory.
+        """
+        tempdir = Path(tempdir)
+        if self.lig_files != []:  # created when the input is a directory
+            self.tempdir = tempdir
+            self.write_sdf_separate(self.tempdir)
+        else:
+            self.tempdir = Path(self.lig)
 
     def _transfer_sdf_metadata(self, original_file, aligned_file):
         """
@@ -60,13 +92,12 @@ class LigandAligner:
         aligned_writer.close()
 
     def _update_aligned_sdf_files(self, ligand_names, reference, ligpath):
-        """
-        Update the aligned SDF files with metadata from the original SDF files.
+        """Update the aligned SDF files with metadata from the original SDF files.
 
         Args:
-        ligand_names (list): List of ligand names to process.
-        reference (str): Name of the reference ligand.
-        ligpath (Path): Path to the directory containing the SDF files.
+            ligand_names: List of ligand names to process.
+            reference: Name of the reference ligand.
+            ligpath: Path to the directory containing the SDF files.
         """
         modification = f"_{reference}_aligned.sdf"
 
@@ -81,17 +112,18 @@ class LigandAligner:
                     logger.error(f"Aligned file {aligned_sdf} not found.")
 
     def kcombu_align(self, reference: str) -> None:
-        """Aligns the ligands to a reference ligand using kcombu.
+        """Aligns the ligands to a reference ligand using kcombu and saves the path
+        to the aligned ligand in `self.reference`.
 
         Args:
             reference: The name of the ligand to align the other ligands to.
         """
         cwd = Path.cwd()
-        ligpath = cwd / "to_align_ligands"
-        ref_sdf = ligpath / f"{reference}.sdf"
-        suffix = f"_{reference}_aligned"
+        ligpath = cwd / self.tempdir
+        self.refname = reference
+        self.reference_path = ligpath / f"{reference}.sdf"
+        self.suffix = f"_{reference}_aligned"
 
-        self.reference = ref_sdf
         to_align_sdfs = [
             ligpath / f"{name}.sdf" for name in self.lig_names if name != reference
         ]
@@ -99,39 +131,27 @@ class LigandAligner:
         commands = []
         logger.info(f"Aligning ligands to ref `{reference}` with kcombu...")
         for lig in to_align_sdfs:
-            kcombu_options = f"-T {lig} -R {ref_sdf} -osdfT {lig.with_stem(lig.stem + suffix)} -E 'V'"
+            kcombu_options = (
+                f"-T {lig} -R {self.reference_path} "
+                f"-osdfT {lig.with_stem(lig.stem + self.suffix)} -E 'V'"
+            )
             commands.append(f"{self.kcombu_exe} {kcombu_options}")
 
         commands = tqdm(commands)
         partial_func = partial(subprocess.run, capture_output=True, text=True)
-        with parallel_config(backend="threading", n_jobs=2):
+        with parallel_config(backend="threading", n_jobs=self.n_threads):
             Parallel()(delayed(partial_func)(cmd.split()) for cmd in commands)
         self._update_aligned_sdf_files(self.lig_names, reference, ligpath)
 
-    def aligned_ligands_to_sigle_file(self, output_name: str, align_dir=None) -> None:
-        """Writes the aligned ligands to a single file.
+    def output_aligned_molecules(self, output_name: str) -> None:
+        """Writes the aligned molecules to a single `.sdf` file.
 
         Args:
-            align_dir: _description_
-            output_name: _description_
+            output_name: name of the output file to write the aligned ligands to.
         """
-        if align_dir is None:
-            align_dir = Path.cwd() / "to_align_ligands"
-        else:
-            align_dir = Path(align_dir)
-        sdf_files = [lig for lig in align_dir.glob("*_aligned.sdf")] + [self.reference]
-
-        molecules = []
-        for sdf_file in sdf_files:
-            # Use the supplier to load molecules from each file
-            suppl = Chem.SDMolSupplier(str(sdf_file))
-            for mol in suppl:
-                if mol is not None:
-                    molecules.append(mol)
-
-        writer = Chem.SDWriter(output_name)
-        for mol in molecules:
-            writer.write(mol)
-        writer.close()
-
-        logger.info(f"Aligned ligands written to {output_name}")
+        # make a temporary copy of the reference ligand with f"_{reference}_aligned"
+        temp_ref_stem = f"{self.refname}_tempRef_{self.suffix}"
+        shutil.copy(self.reference_path, self.reference_path.with_stem(temp_ref_stem))
+        molio = MoleculeIO(self.tempdir, pattern=f"*{self.suffix}.sdf")
+        self.reference_path.with_stem(temp_ref_stem).unlink()
+        molio.write_to_single_sdf(output_name)
