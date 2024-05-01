@@ -45,6 +45,42 @@ write_to = "src/QligFEP/_version.py"
 repository = "https://github.com/qusers/qligfep"
 # homepage = "https://github.com/to-do/replace-me"
 
+[tool.black]
+line-length =  110
+target-version = ['py39']
+
+[tool.isort]
+profile = "black"
+
+[tool.ruff]
+line-length = 110
+indent-width = 4
+target-version = 'py39'
+
+[tool.ruff.lint]
+select = [
+    # pycodestyle
+    "E",
+    # Pyflakes
+    "F",
+    # pyupgrade
+    "UP",
+    # flake8-bugbear
+    "B",
+    # flake8-simplify
+    "SIM",
+    # isort
+    "I",
+    # warnings
+    "W",
+    # numpy specific rules
+    "NPY",
+
+]
+ignore = [
+    "E501" # line too long
+]
+
 [project.scripts]
 qligfep = "QligFEP.CLI.qligfep_cli:main_exe"
 qmapfep = "QligFEP.CLI.qmapfep_cli:main_exe"
