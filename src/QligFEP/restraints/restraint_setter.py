@@ -1,9 +1,7 @@
 from copy import deepcopy
-from importlib.util import find_spec
 from itertools import zip_longest
 from pathlib import Path
 
-import numpy as np
 from kartograf import KartografAtomMapper, SmallMoleculeComponent
 from kartograf.atom_aligner import align_mol_shape
 from kartograf.atom_mapping_scorer import MappingVolumeRatioScorer
@@ -11,10 +9,19 @@ from rdkit import Chem
 
 from ..logger import logger
 from .atom_mapping import process_rings_separately
-from .render_functions import extract_sub_molecule, remove_hydrogens
 
 
 class RestraintSetter:
+    """
+    TODO: currently, this class correctly sets the restraints for the ring structures,
+    but it takes into account:
+        1) the ring structure itself
+        2) the substitutions
+    In the future, it should also account for:
+        3) the fact that the ring, despite being the same, has different decorations and
+        should therefore be left unrestrained
+    """
+
     def __init__(self, molA: str, molB: str) -> None:
         self.ligname1 = Path(molA).stem
         self.ligname2 = Path(molB).stem
@@ -43,7 +50,7 @@ class RestraintSetter:
         # Score Mapping
         rmsd_scorer = MappingVolumeRatioScorer()
         score = rmsd_scorer(mapping=self.kartograf_mapping)
-        print(f"RMSD Score: {score}")
+        logger.info(f"Mapping volume score: {score}")
         self.atom_mapping = deepcopy(self.kartograf_mapping.to_dict()["componentA_to_componentB"])
 
     @staticmethod
