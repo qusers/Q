@@ -90,7 +90,7 @@ class MoleculeIO(object):
         elif Path(lig).is_dir():
             lig = Path(lig)
             if pattern is not None:
-                logger.info(f"Searching for {pattern} files in {lig}...")
+                logger.debug(f"Searched for {pattern} files in {Path(lig).absolute}")
                 self.lig_files = sorted(
                     list(lig.glob(pattern))
                 )  # glob doesn't return sorted list
@@ -170,6 +170,6 @@ class MoleculeIO(object):
         """
         writer = Chem.SDWriter(output_name)
         for mol in self.molecules:
-            writer.write(mol)
+            writer.write(mol.to_rdkit())
         writer.close()
         logger.info(f"`self.molecules` written to {output_name}")
