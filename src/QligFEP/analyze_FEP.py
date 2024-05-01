@@ -522,17 +522,18 @@ def parse_arguments() -> argparse.Namespace:
                         help = 'Energy method to be used for the plot. Defaults to ddGbar.'
                         )
 
-    parser.add_argument('-l', '--log-level',
+    parser.add_argument('-log', '--log-level',
+                        dest='log',
                         required = False,
-                        default = 'INFO',
-                        help = "Set the log level for the logger. Defaults to INFO.",
-                        choices = ["TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"],
+                        default = 'info',
+                        help = "Set the log level for the logger. Defaults to `info`.",
+                        choices = ["trace", "debug", "info", "warning", "error", "critical"],
                         )
                         
     return parser.parse_args()
 
 def main(args):
-    setup_logger(level=args.log_level)
+    setup_logger(level=args.log)
     fep_reader = FepReader(system = args.water_dir, target_name = args.target, mapping_json = args.json_file)
     fep_reader.read_perturbations()
     fep_reader.load_new_system(system = args.protein_dir)

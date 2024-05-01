@@ -8,7 +8,7 @@ import logging
 import shutil
 import os
 
-from ..logger import logger
+from ..logger import logger, setup_logger
 
 logging.basicConfig(
     filename='cli_calls.log',
@@ -147,10 +147,22 @@ def parse_arguments():
                             "Usage example: `-clean dcd` will remove all dcd files after the simulation. If left as None, won't clean any files."
                             )
                         )
+    parser.add_argument(
+        "-log",
+        "--log-level",
+        dest='log',
+        required=False,
+        default="info",
+        help="Set the log level for the logger. Defaults to `info`.",
+        choices=["trace", "debug", "info", "warning", "error", "critical"],
+    )
     return parser.parse_args()
 
 def main_exe():
     args = parse_arguments()
+    
+    # setup the logger with the desired log level
+    setup_logger(level=args.log)
     
     cwd = Path.cwd()
     systems = ['water', 'protein']
