@@ -83,10 +83,10 @@ def parse_arguments() -> argparse.Namespace:
 
 def main(args: argparse.Namespace):
     """Main function to align the ligands."""
-    
+
     # setup the logger with the desired log level
     setup_logger(level=args.log)
-    
+
     aligner = LigandAligner(
         args.input,
         n_threads=args.parallel,
@@ -109,7 +109,7 @@ def main(args: argparse.Namespace):
     if args.ref is None:
         smiles_list = [mol.to_smiles() for mol in aligner.molecules]
         mcs_kwargs = {
-            "atomCompare": "CompareAny",
+            "atomCompare": "CompareElements",
             "bondCompare": "CompareAny",
             "ringCompare": "StrictRingFusion",
         }
