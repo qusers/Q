@@ -8,6 +8,7 @@ from pathlib import Path
 from joblib import Parallel, delayed, parallel_config
 from openff.toolkit import Molecule
 from rdkit import Chem
+from rdkit.Chem import rdFMCS
 from tqdm import tqdm
 
 from . import SRC
@@ -16,7 +17,7 @@ from .logger import logger
 
 
 class LigandAligner(MoleculeIO):
-    
+
     # TODO: in the future it would be good to make this more flexible so that it
     # could also perform 1:1 alignment between ligands. E.g.: FEP_lig1_lig2 would
     # have lig 1 aligned to lig 2 or vice-versa.
@@ -78,6 +79,46 @@ class LigandAligner(MoleculeIO):
             self.delete_tempdir = delete_tempdir
         self.write_sdf_separate(self.tempdir)
 
+    @staticmethod
+    def _transfer_charges_metadata(molA, molB):
+        """Method to transfer the charges from one molecule to another based on the MCS.
+        This is needed because the aligned molecules created by kcombu do not have the
+        charges & hydrogens from the reference molecule. MCS is used to make sure the
+        atoms are mapped correctly.
+
+        Args:
+            molA: molecule A to transfer the charges from.
+            molB: molecule B to transfer the charges to.
+
+        Returns:
+            molA, molB: Molecules with the same charges.
+        """
+        mcs_result = rdFMCS.FindMCS(
+            [molA, molB], atomCompare=rdFMCS.AtomCompare.CompareAny, bondCompare=rdFMCS.BondCompare.CompareAny
+        )
+        mcs_smarts = mcs_result.smartsString  # SMARTS pattern of the MCS
+        mcs_mol = Chem.MolFromSmarts(mcs_smarts)  # Convert SMARTS to an RDKit Mol object
+
+        # Map atoms based on MCS
+        matchA = molA.GetSubstructMatch(mcs_mol)
+        matchB = molB.GetSubstructMatch(mcs_mol)
+
+        # Optional: Print mappings to debug
+        logger.trace("Mapping of atoms:")
+        for a, b in zip(matchA, matchB):
+            logger.trace(f"MolA atom {a} maps to MolB atom {b}")
+
+        # Example application: transferring formal charges based on the mapping
+        for a, b in zip(matchA, matchB):
+            atomA = molA.GetAtomWithIdx(a)
+            atomB = molB.GetAtomWithIdx(b)
+            formal_charge = atomA.GetFormalCharge()
+            atomB.SetFormalCharge(formal_charge)
+            if atomA.HasProp('_GasteigerCharge'):
+                gaister_charge = atomA.GetProp('_GasteigerCharge')
+                atomB.SetProp('_GasteigerCharge', gaister_charge)
+        return molA, molB
+
     def _transfer_sdf_metadata(self, original_file, aligned_file):
         """
         Copies metadata from the original SDF file to the aligned SDF file and adds
@@ -94,15 +135,20 @@ class LigandAligner(MoleculeIO):
         # Iterate over molecules from both suppliers simultaneously
         for original_mol, aligned_mol in zip(original_supplier, aligned_supplier):
             if original_mol is not None and aligned_mol is not None:
-                # Copy properties from the original molecule to the aligned molecule
-                aligned_mols.append(aligned_mol)
+                # Copy all molecular properties
                 for prop_name in original_mol.GetPropNames():
                     prop_value = original_mol.GetProp(prop_name)
                     aligned_mol.SetProp(prop_name, prop_value)
-                    aligned_mol = Chem.AddHs(aligned_mol, addCoords=True)
+
+                # remove the H's to make it easier on the MCS & transfer the charges
+                original_mol = Chem.RemoveHs(original_mol)
+                original_mol, aligned_mol = self._transfer_charges_metadata(original_mol, aligned_mol)
+                aligned_mol = Chem.AddHs(aligned_mol, addCoords=True) # add hydrogens
+                aligned_mols.append(aligned_mol)
+
         aligned_writer = Chem.SDWriter(str(aligned_file))
         for mol in aligned_mols:
-            aligned_writer.write(aligned_mol)
+            aligned_writer.write(mol)
         aligned_writer.close()
 
     def _update_aligned_sdf_files(self, ligand_names, reference, ligpath):
