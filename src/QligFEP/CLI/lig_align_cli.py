@@ -109,9 +109,9 @@ def main(args: argparse.Namespace):
     if args.ref is None:
         smiles_list = [mol.to_smiles() for mol in aligner.molecules]
         mcs_kwargs = {
-            "AtomCompare": "CompareAny",
-            "BondCompare": "CompareAny",
-            "RingCompare": "StrictRingFusion",
+            "atomCompare": "CompareAny",
+            "bondCompare": "CompareAny",
+            "ringCompare": "StrictRingFusion",
         }
         mcs_cluster = MCSClustering(smiles_list, **mcs_kwargs)
         logger.info(
