@@ -16,13 +16,18 @@ from .logger import logger
 
 
 class LigandAligner(MoleculeIO):
+    
+    # TODO: in the future it would be good to make this more flexible so that it
+    # could also perform 1:1 alignment between ligands. E.g.: FEP_lig1_lig2 would
+    # have lig 1 aligned to lig 2 or vice-versa.
 
     def __init__(
         self,
         lig,
         pattern: str = "*.sdf",
         n_threads: int = 1,
-        temp_ligalign_dir: str = "to_align_ligands",
+        tempdir: str = "to_align_ligands",
+        delete_tempdir: bool = True,
     ):
         """initalize the ligand aligner. This class inherits from MoleculeIO and adds the
         functionality to align the ligands to a reference using kcombu.
@@ -32,15 +37,16 @@ class LigandAligner(MoleculeIO):
             pattern: If desired, a pattern can be used to search for sdf files within a directory with
                 `glob`. If lig is a sdf file, this argument will be ignored. Defaults to None.
             n_threads: Number of threads to create for the ligand alignment part. Defaults to 1.
-            temp_ligalign_dir: name for the temporary directory to store the separate sdf files.
+            tempdir: name for the temporary directory to store the separate sdf files.
                 Defaults to "to_align_ligands".
+            delete_tempdir: If True, the temporary directory will be deleted upon calling
+                `output_aligned_molecules`.
 
         Raises:
             FileNotFoundError: If the kcombu executable is not found.
         """
         super().__init__(lig, pattern)
-        self.lig_is_dir = Path(lig).is_dir()
-        self._setup_tempdir(temp_ligalign_dir)
+        self._setup_tempdir(tempdir, delete_tempdir=delete_tempdir)
         self.kcombu_exe = str(SRC / "kcombu/fkcombu")
         self.n_threads = n_threads
         self.reference_mol: Molecule = None
@@ -49,25 +55,33 @@ class LigandAligner(MoleculeIO):
                 f"Could not find kcombu executable at {self.kcombu_exe} make sure it is installed."
             )
 
-    def _setup_tempdir(self, tempdir: Path):
+    def _setup_tempdir(self, tempdir: Path, delete_tempdir):
         """If the input is not a directory, create a temporary directory to store the
         separate sdf files and write them there. If the input is a directory, the temporary
         directory is the same as the input directory.
 
         Args:
             tempdir: Path to the temporary directory.
+            delete_tempdir: If True, the temporary directory will be deleted upon calling
+                `output_aligned_molecules`.
         """
         tempdir = Path(tempdir)
         if self.lig_files != []:  # created when the input is a directory
-            self.tempdir = tempdir
-            self.write_sdf_separate(self.tempdir)
-        else:
             self.tempdir = Path(self.lig)
+            logger.warning(
+                "Input directory is used as tempdir for the aligned ligands "
+                "and won't be deleted"
+            )
+            self.delete_tempdir = False  # never delete the input directory
+        elif Path(self.lig).suffix == ".sdf":
+            self.tempdir = tempdir
+            self.delete_tempdir = delete_tempdir
+        self.write_sdf_separate(self.tempdir)
 
     def _transfer_sdf_metadata(self, original_file, aligned_file):
         """
         Copies metadata from the original SDF file to the aligned SDF file and adds
-        hydrogens to the aligned molecules.
+        hydrogens to the aligned ligands.
 
         Args:
         original_file (str or Path): Path to the original SDF file.
@@ -143,15 +157,20 @@ class LigandAligner(MoleculeIO):
             Parallel()(delayed(partial_func)(cmd.split()) for cmd in commands)
         self._update_aligned_sdf_files(self.lig_names, reference, ligpath)
 
-    def output_aligned_molecules(self, output_name: str) -> None:
+    def output_aligned_ligands(self, output_name: str) -> None:
         """Writes the aligned molecules to a single `.sdf` file.
 
         Args:
             output_name: name of the output file to write the aligned ligands to.
         """
-        # make a temporary copy of the reference ligand with f"_{reference}_aligned"
+        # temporary copy of the reference ligand with f"_{reference}_aligned" suffix so we get it with glob
         temp_ref_stem = f"{self.refname}_tempRef_{self.suffix}"
         shutil.copy(self.reference_path, self.reference_path.with_stem(temp_ref_stem))
         molio = MoleculeIO(self.tempdir, pattern=f"*{self.suffix}.sdf")
         self.reference_path.with_stem(temp_ref_stem).unlink()
         molio.write_to_single_sdf(output_name)
+        if self.delete_tempdir:
+            logger.info(
+                f"Deleting temporary directory with aligned ligands: {self.tempdir}"
+            )
+            shutil.rmtree(self.tempdir)
