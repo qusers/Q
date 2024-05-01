@@ -19,12 +19,13 @@ class RestraintSetter:
         self.ligname1 = Path(molA).stem
         self.ligname2 = Path(molB).stem
         self._load_molecules(molA, molB)
+        self._align_and_map_molecules()
 
     def _path_to_mol(self, _path):
         if Path(_path).suffix == ".pdb":
             return Chem.MolFromPDBFile(_path)
         elif Path(_path).suffix == ".sdf":
-            return Chem.SDMolSupplier(_path)[0]
+            return Chem.SDMolSupplier(_path, removeHs=False)[0]
         return None
 
     def _load_molecules(self, molA, molB):
@@ -38,7 +39,7 @@ class RestraintSetter:
     def _align_and_map_molecules(self):
         mapper = KartografAtomMapper(atom_map_hydrogens=True)
         a_molB = align_mol_shape(self.molB, ref_mol=self.molA)
-        self.kartograph_mapping = next(mapper.suggest_mappings(self.molA, a_molB))
+        self.kartograf_mapping = next(mapper.suggest_mappings(self.molA, a_molB))
         # Score Mapping
         rmsd_scorer = MappingVolumeRatioScorer()
         score = rmsd_scorer(mapping=self.kartograf_mapping)
@@ -55,7 +56,7 @@ class RestraintSetter:
             all_atomsA = [ring_atomA] + subs_atomsA
             ring_atomB = atom_mapping.get(ring_atomA)
             if ring_atomB is None or ring_atomB not in subsB:
-                continue  # Skip if no corresponding atom or no substituents list
+                continue
             all_atomsB = [ring_atomB] + subsB[ring_atomB]
             for atomA, atomB in zip_longest(all_atomsA, all_atomsB):
                 if atomA is None or atomB is None:
@@ -68,69 +69,69 @@ class RestraintSetter:
                     break
         return is_same
 
+    def is_ring_equivalent(self, ring_data, mol_a, mol_b, atom_mapping):
+        # Enhanced ring equivalence check
+        ring_atoms_a_indices = ring_data["ringAtomsA"]
+        ring_atoms_b_indices = [
+            atom_mapping.get(a) for a in ring_atoms_a_indices if atom_mapping.get(a) is not None
+        ]
+
+        # Check if mapped indices fully match the ringAtomsB set
+        if set(ring_atoms_b_indices) != ring_data["ringAtomsB"]:
+            return False
+
+        # Further check the atomic number and connectivity
+        for a, b in zip(ring_atoms_a_indices, ring_atoms_b_indices):
+            atom_a = mol_a.GetAtomWithIdx(a)
+            atom_b = mol_b.GetAtomWithIdx(b)
+            if not self.are_atoms_equivalent(atom_a, atom_b):
+                return False
+
+        return True
+
     def compare_molecule_rings(self, data, atom_mapping, mol_a, mol_b):
         matching_atoms = {}
+        purge_list = []
+        data = deepcopy(data)
+        data.pop("Ring mapping", None)  # Remove safely with default
 
         for ring_key, ring_data in data.items():
-            if ring_key == "Ring mapping" or "Ring" not in ring_key:
+            if "Ring" not in ring_key:
                 continue
-            matching_atoms[ring_key] = set()
-            ring_atoms_a_indices = ring_data["ringAtomsA"]
-            # get the ring atoms for mol_b based on the atom mapping
-            ring_atoms_b_indices = [atom_mapping.get(a) for a in ring_atoms_a_indices]
-            # check if both rings are the same
-            eq_array = []
-            for atom_idx_a, atom_idx_b in zip(ring_atoms_a_indices, ring_atoms_b_indices):
-                atom_a = mol_a.GetAtomWithIdx(atom_idx_a)
-                atom_b = mol_b.GetAtomWithIdx(atom_idx_b)
-                eq_array.append(self.are_atoms_equivalent(atom_a, atom_b))
-            if all(eq_array):
-                matching_atoms[ring_key] = set(ring_atoms_a_indices)
+            if self.is_ring_equivalent(ring_data, mol_a, mol_b, atom_mapping):
+                matching_atoms[ring_key] = set(ring_data["ringAtomsA"])
             else:
-                continue
+                purge_list.extend(ring_data["ringAtomsA"])
 
+        # Process and compare substituents only for equivalent rings
+        for ring_key in matching_atoms:
+            ring_data = data[ring_key]
             subsA = ring_data["substituentsA"]
             subsB = ring_data["substituentsB"]
 
-            # Compare substituents
             matched_subs = self.are_substituents_equivalent(subsA, subsB, atom_mapping, mol_a, mol_b)
-            matching_atoms[ring_key] = matching_atoms[ring_key].union(matched_subs)
+            matching_atoms[ring_key].update(matched_subs)
 
-        return matching_atoms
-
-    def get_restraints(self):
-        ringStruc_compareDict = process_rings_separately(self.molA, self.molB, self.atom_mapping)
-        rest_per_ring_atomIdxs = self.compare_molecule_rings(
-            ringStruc_compareDict, self.atom_mapping, self.molA, self.molB
+        all_atomA_idxs = set(
+            idx for ring_atoms in matching_atoms.values() for idx in ring_atoms if idx not in purge_list
         )
-
-        all_atom_numbers = []
-        for _, value in rest_per_ring_atomIdxs.items():
-            all_atom_numbers.extend(value)
-
-        submol = extract_sub_molecule(np.unique(all_atom_numbers).tolist(), self.molA.to_rdkit())
-        submol = remove_hydrogens(submol)
-        self.submol = submol
-
-        mols = [Chem.RemoveHs(self.molA.to_rdkit()), Chem.RemoveHs(self.molB.to_rdkit())]
-        matches = [mol.GetSubstructMatches(submol)[0] for mol in mols]
-        restraints = {self.atom_mapping[k]: v for k, v in self.atom_mapping.items() if k in matches[0]}
-        self.restraints = restraints
+        restraints = {k: atom_mapping[k] for k in all_atomA_idxs if k in atom_mapping}
         return restraints
 
-    def render_restraints(self, restraints):
-        if find_spec("chem-filters"):
-            from chemFilters.img_render import MolGridPlotter
-        else:
-            logger.info(
-                "chem-filters not found, install it from: "
-                "https://github.com/David-Araripe/chemFilters/blob/master/pyproject.toml"
-            )
-        mols = [Chem.RemoveHs(self.molA.to_rdkit()), Chem.RemoveHs(self.molB.to_rdkit())]
-        matches = [mol.GetSubstructMatches(self.submol)[0] for mol in mols]
-        plotter = MolGridPlotter(from_smi=False, add_atom_indices=True, size=(400, 400))
-        imgs = []
-        imgs.append(plotter.render_mol(mols[0], highlightAtoms=matches[0]))
-        imgs.append(plotter.render_mol(mols[1], highlightAtoms=matches[1]))
-        img = plotter._images_to_grid(imgs, n_cols=2)
-        return img
+    def set_restraints(self):
+        ringStruc_compareDict = process_rings_separately(
+            Chem.RemoveHs(self.molA.to_rdkit()), Chem.RemoveHs(self.molB.to_rdkit()), self.atom_mapping
+        )
+        restraints = self.compare_molecule_rings(
+            ringStruc_compareDict, self.atom_mapping, self.molA.to_rdkit(), self.molB.to_rdkit()
+        )
+
+        # submol = extract_sub_molecule(np.unique(all_atomA_idxs).tolist(), self.molA.to_rdkit())
+        # submol = remove_hydrogens(submol)
+        # self.submol = submol
+
+        # mols = [Chem.RemoveHs(self.molA.to_rdkit()), Chem.RemoveHs(self.molB.to_rdkit())]
+        # matches = [mol.GetSubstructMatches(submol)[0] for mol in mols]
+        # restraints = {self.atom_mapping[k]: v for k, v in self.atom_mapping.items() if k in matches[0]}
+        self.restraints = restraints
+        return restraints
