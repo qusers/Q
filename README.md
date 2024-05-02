@@ -13,7 +13,7 @@ micromamba create -f environment.yml -n qligfep_new
 Now, activate the environment and update the following conda packages:
 ```bash
 micromamba activate qligfep_new
-micromamba install openff-toolkit=0.16.0 openff-forcefields=2024.04.0 openmm=8.1.1 lomap2 -c conda-forge --yes
+micromamba install openff-toolkit=0.16.0 openff-forcefields=2024.04.0 openmm=8.1.1 lomap2 kartograf -c conda-forge --yes
 ```
 
 Now that you have the environment ready and activated, install qligfep through the command:
