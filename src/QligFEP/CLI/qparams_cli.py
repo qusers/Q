@@ -43,6 +43,7 @@ def parse_arguments() -> argparse.Namespace:
             "Number of jobs to parallelize operations. Currently applied to calculate "
             "the charges of the molecules using OpenFF. Defaults to 1."
         ),
+        type=int,
     )
     return parser.parse_args()
 
