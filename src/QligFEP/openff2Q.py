@@ -66,19 +66,15 @@ class OpenFF2Q(MoleculeIO):
     def process_ligands(self):
         """Assigns partial charges and writes the .lib, .prm and .pdb files for each ligand."""
         logger.info("Calculating charges")
-        with parallel_config(
-            n_jobs=self.n_jobs, backend="multiprocessing"
-        ):  # backend="threading"
+        with parallel_config(n_jobs=self.n_jobs, backend="multiprocessing"):
             molecules = tqdm(self.molecules)
-            charges_magnitudes = Parallel()(
-                delayed(self._assign_charge)(molecule) for molecule in molecules
-            )
+            charges_magnitudes = Parallel()(delayed(self._assign_charge)(molecule) for molecule in molecules)
         logger.info("Done! Writing .lib, .prm and .pdb files for each ligand")
         for lname, charges in zip(self.lig_names, charges_magnitudes):
             self.charges_list_magnitude.update({lname: charges})
-            formatted_sum = f'{round(charges.sum(), 10):.3f}'
-            if formatted_sum == '-0.000':
-                formatted_sum = '0.000'
+            formatted_sum = f"{round(charges.sum(), 10):.3f}"
+            if formatted_sum == "-0.000":
+                formatted_sum = "0.000"
             self.total_charges.update({lname: formatted_sum})
             self.get_mapping(lname)
             self.write_lib_Q(lname)
@@ -86,9 +82,9 @@ class OpenFF2Q(MoleculeIO):
             self.write_PDB(lname)
         all_formal_charges = [self.total_charges[n] for n in self.lig_names]
         if np.unique(all_formal_charges).size > 1:
-            logger.warning(
-                f"Formal charges of ligands in .sdf are not unique: {self.total_charges}"
-            )
+            logger.warning(f"Formal charges of ligands in .sdf are not unique: {self.total_charges}")
+        else:
+            logger.info(f"Output files written for {len(self.lig_names)} ligands")
 
     def get_mapping(self, lname):
         """Get the mapping of the ligand atoms to the forcefield parameters.
@@ -140,9 +136,7 @@ class OpenFF2Q(MoleculeIO):
         total_charge = self.total_charges[lname]
         with open(lname + ".lib", "w") as outfile:
             outfile.write(
-                "{}    ! atoms no {}   total charge {} \n\n".format(
-                    "{LIG}", len(mapping), total_charge
-                )
+                "{}    ! atoms no {}   total charge {} \n\n".format("{LIG}", len(mapping), total_charge)
             )
 
             outfile.write("[info] \n SYBYLtype RESIDUE \n\n")
@@ -212,9 +206,7 @@ class OpenFF2Q(MoleculeIO):
                         Rmin = "{}".format(parameter.rmin_half)
                         Rmin = Rmin.split()[0]
                         Rmin = float(Rmin)
-                        assert (
-                            len(atom_indices) == 1
-                        ), f"More than 1 atom indices present: {atom_indices}"
+                        assert len(atom_indices) == 1, f"More than 1 atom indices present: {atom_indices}"
                         mass = str(round(mol.atoms[atom_indices[0]].mass.magnitude, 4))
                         outfile.write(
                             """{:6}{: 8.3f}{: 10.3f}{: 10.3f}{: 10.3f}{: 10.3f}{:>10s}\n""".format(
@@ -230,11 +222,7 @@ class OpenFF2Q(MoleculeIO):
                         aj_name = mapping[aj][1].lower()
                         fc = float("{}".format(parameter.k).split()[0])
                         l = float("{}".format(parameter.length).split()[0])
-                        outfile.write(
-                            "{:10}{:10}{:10.1f}{:>10.3f}\n".format(
-                                ai_name, aj_name, fc, l
-                            )
-                        )
+                        outfile.write("{:10}{:10}{:10.1f}{:>10.3f}\n".format(ai_name, aj_name, fc, l))
 
                 if block == 3:
                     for atom_indices, parameter in parameters["Angles"].items():
