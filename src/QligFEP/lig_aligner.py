@@ -5,6 +5,7 @@ import subprocess
 from functools import partial
 from pathlib import Path
 
+from chemFilters.img_render import MolPlotter
 from joblib import Parallel, delayed, parallel_config
 from openff.toolkit import Molecule
 from rdkit import Chem
@@ -14,6 +15,8 @@ from tqdm import tqdm
 from . import SRC
 from .chemIO import MoleculeIO
 from .logger import logger
+
+plotter = MolPlotter(from_smi=False, size=(400, 400), add_atom_indices=True)
 
 
 class LigandAligner(MoleculeIO):
@@ -70,8 +73,7 @@ class LigandAligner(MoleculeIO):
         if self.lig_files != []:  # created when the input is a directory
             self.tempdir = Path(self.lig)
             logger.warning(
-                "Input directory is used as tempdir for the aligned ligands "
-                "and won't be deleted"
+                "Input directory is used as tempdir for the aligned ligands " "and won't be deleted"
             )
             self.delete_tempdir = False  # never delete the input directory
         elif Path(self.lig).suffix == ".sdf":
@@ -94,7 +96,10 @@ class LigandAligner(MoleculeIO):
             molA, molB: Molecules with the same charges.
         """
         mcs_result = rdFMCS.FindMCS(
-            [molA, molB], atomCompare=rdFMCS.AtomCompare.CompareAny, bondCompare=rdFMCS.BondCompare.CompareAny
+            [molA, molB],
+            atomCompare=rdFMCS.AtomCompare.CompareElements,
+            bondCompare=rdFMCS.BondCompare.CompareOrder,
+            completeRingsOnly=True,
         )
         mcs_smarts = mcs_result.smartsString  # SMARTS pattern of the MCS
         mcs_mol = Chem.MolFromSmarts(mcs_smarts)  # Convert SMARTS to an RDKit Mol object
@@ -114,10 +119,74 @@ class LigandAligner(MoleculeIO):
             atomB = molB.GetAtomWithIdx(b)
             formal_charge = atomA.GetFormalCharge()
             atomB.SetFormalCharge(formal_charge)
-            if atomA.HasProp('_GasteigerCharge'):
-                gaister_charge = atomA.GetProp('_GasteigerCharge')
-                atomB.SetProp('_GasteigerCharge', gaister_charge)
+            if atomA.HasProp("_GasteigerCharge"):
+                gaister_charge = atomA.GetProp("_GasteigerCharge")
+                atomB.SetProp("_GasteigerCharge", gaister_charge)
+            # if atom is oxygen, check for valence 3 and remove hydrogens bound to it
+            if atomA.GetAtomicNum() == 8 and atomA.GetTotalDegree() == 3:
+                # forcefully remove the hydrogen bound to it
+                atomB.SetNumExplicitHs(0)
+                atomB.UpdatePropertyCache()
         return molA, molB
+
+    @staticmethod
+    def adjust_oxygen_charges(mol):
+        """
+        Adjusts charges for oxygen atoms that are supposed to be negatively charged but might have an extra hydrogen.
+
+        Args:
+        mol (rdkit.Chem.Mol): The molecule to modify.
+
+        Returns:
+        rdkit.Chem.Mol: The molecule with adjusted charges, or None if sanitization fails.
+        """
+        # Iterate over all oxygen atoms
+        for atom in mol.GetAtoms():
+            if atom.GetAtomicNum() == 8 and atom.GetTotalDegree() == 3:  # Oxygen with three bonds
+                if atom.GetTotalNumHs() > 0:  # Has implicit hydrogen
+                    atom.SetNumExplicitHs(max(atom.GetTotalNumHs() - 1, 0))  # Remove one hydrogen
+                atom.SetFormalCharge(-1)  # Assign a negative charge
+                atom.UpdatePropertyCache()
+
+        # Attempt to sanitize the molecule
+        try:
+            Chem.SanitizeMol(mol)
+        except Exception as e:
+            print(f"Sanitization error: {e}")
+            return None
+        return mol
+
+    @staticmethod
+    def assign_quaternary_amine_charges(mol, name):
+        """
+        Assigns charges to quaternary nitrogen atoms that might be incorrectly uncharged.
+
+        Args:
+        mol (rdkit.Chem.Mol): The molecule to modify.
+
+        Returns:
+        rdkit.Chem.Mol: The molecule with assigned charges.
+        """
+        # Iterate over all nitrogen atoms
+        problematic = False
+        for atom in mol.GetAtoms():
+            if atom.GetAtomicNum() == 7 and atom.GetTotalDegree() == 4:  # Nitrogen with four bonds
+                if atom.GetFormalCharge() == 0:  # Uncharged
+                    problematic = True
+                    atom.SetFormalCharge(1)  # Assign a positive charge
+                    atom.UpdatePropertyCache()
+
+        # Sanitize the molecule
+        try:
+            Chem.SanitizeMol(mol)
+        except Exception as e:
+            print(f"Sanitization error: {e}")
+            return None
+        if problematic:
+            logger.error(
+                'While processing molecule "{}", a quaternary amine was found and charged.'.format(name)
+            )
+        return mol
 
     def _transfer_sdf_metadata(self, original_file, aligned_file):
         """
@@ -128,13 +197,14 @@ class LigandAligner(MoleculeIO):
         original_file (str or Path): Path to the original SDF file.
         aligned_file (str or Path): Path to the aligned SDF file after transformation.
         """
-        original_supplier = Chem.SDMolSupplier(str(original_file))
-        aligned_supplier = Chem.SDMolSupplier(str(aligned_file))
+        original_supplier = Chem.SDMolSupplier(str(original_file), removeHs=True)
+        aligned_supplier = Chem.SDMolSupplier(str(aligned_file), removeHs=True, sanitize=False)
 
         aligned_mols = []
         # Iterate over molecules from both suppliers simultaneously
         for original_mol, aligned_mol in zip(original_supplier, aligned_supplier):
             if original_mol is not None and aligned_mol is not None:
+                Chem.SanitizeMol(aligned_mol, sanitizeOps=Chem.SanitizeFlags.SANITIZE_SETAROMATICITY)
                 # Copy all molecular properties
                 for prop_name in original_mol.GetPropNames():
                     prop_value = original_mol.GetProp(prop_name)
@@ -143,7 +213,19 @@ class LigandAligner(MoleculeIO):
                 # remove the H's to make it easier on the MCS & transfer the charges
                 original_mol = Chem.RemoveHs(original_mol)
                 original_mol, aligned_mol = self._transfer_charges_metadata(original_mol, aligned_mol)
-                aligned_mol = Chem.AddHs(aligned_mol, addCoords=True) # add hydrogens
+                logger.info(f"Transferring metadata to {aligned_file}")
+
+                if aligned_file.stem == "18639-1_18624-1_aligned":
+                    img = plotter.render_mol(aligned_mol)
+                    img.save("Aligned_mol_stats1.png")
+                aligned_mol = self.adjust_oxygen_charges(aligned_mol)
+                if aligned_file.stem == "18639-1_18624-1_aligned":
+                    img = plotter.render_mol(aligned_mol)
+                    img.save("Aligned_mol_stats3.png")
+                aligned_mol = self.assign_quaternary_amine_charges(aligned_mol, name=aligned_file)
+                if aligned_file.stem == "18639-1_18624-1_aligned":
+                    img = plotter.render_mol(aligned_mol)
+                    img.save("Aligned_mol_stats2.png")
                 aligned_mols.append(aligned_mol)
 
         aligned_writer = Chem.SDWriter(str(aligned_file))
@@ -184,16 +266,13 @@ class LigandAligner(MoleculeIO):
         self.reference_path = ligpath / f"{reference}.sdf"
         self.suffix = f"_{reference}_aligned"
 
-        to_align_sdfs = [
-            ligpath / f"{name}.sdf" for name in self.lig_names if name != reference
-        ]
+        to_align_sdfs = [ligpath / f"{name}.sdf" for name in self.lig_names if name != reference]
 
         commands = []
         logger.info(f"Aligning ligands to ref `{reference}` with kcombu...")
         for lig in to_align_sdfs:
             kcombu_options = (
-                f"-T {lig} -R {self.reference_path} "
-                f"-osdfT {lig.with_stem(lig.stem + self.suffix)} -E 'V'"
+                f"-T {lig} -R {self.reference_path} " f"-osdfT {lig.with_stem(lig.stem + self.suffix)} -E 'V'"
             )
             commands.append(f"{self.kcombu_exe} {kcombu_options}")
 
@@ -216,7 +295,5 @@ class LigandAligner(MoleculeIO):
         self.reference_path.with_stem(temp_ref_stem).unlink()
         molio.write_to_single_sdf(output_name)
         if self.delete_tempdir:
-            logger.info(
-                f"Deleting temporary directory with aligned ligands: {self.tempdir}"
-            )
+            logger.info(f"Deleting temporary directory with aligned ligands: {self.tempdir}")
             shutil.rmtree(self.tempdir)
