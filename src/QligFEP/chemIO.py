@@ -21,7 +21,7 @@ class MoleculeIO:
         self.sdf_contents: a dictionary of the sdf contents for each ligand
     """
 
-    def __init__(self, lig, pattern: str = "*.sdf", force_rdkit: bool = False):
+    def __init__(self, lig, pattern: str = "*.sdf"):
         """Initialize a Molecule Input/Output object. This helper class has a base functionality
         used for handling `.sdf`, like reading it, outputting separate `.sdf` files (required by lomap),
         and storing the molecules & their names into a single object.
@@ -32,7 +32,6 @@ class MoleculeIO:
                 `glob`. If lig is a sdf file, this argument will be ignored. Defaults to None.
         """
         self.lig = lig
-        self.force_rdkit = force_rdkit
         self.setup_mols_and_names(self.lig, pattern)
         self.parse_sdf_contents()  # add the sdf content to the dictionary
 
@@ -47,28 +46,6 @@ class MoleculeIO:
         """
         if isinstance(ligpath, Path):
             ligpath = str(ligpath)
-        if self.force_rdkit:  # temporary fix for processing aligned molecules
-            # For details on why is this here: https://github.com/openforcefield/openff-toolkit/issues/1872
-            rdmols = [
-                mol
-                for mol in Chem.SDMolSupplier(
-                    str(ligpath),
-                    sanitize=False,
-                )
-                if mol is not None
-            ]
-            mols = []
-            for mol in rdmols:
-                try:
-                    mols.append(Molecule.from_rdkit(mol))
-                except UndefinedStereochemistryError:
-                    logger.warning(
-                        "Undefined stereochemistry in the input file!! Will try to process the ligands anyway."
-                    )
-                    mols.append(Molecule.from_rdkit(mol, allow_undefined_stereo=True))
-                except Exception as e:
-                    logger.error(f"Error processing file {ligpath}: {e}")
-                    return [], []
         try:
             mols = Molecule.from_file(ligpath)
         except UndefinedStereochemistryError:
