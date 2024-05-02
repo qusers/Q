@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Tuple, Union
+from typing import Union
 
 from openff.toolkit import Molecule
 from openff.toolkit.utils import UndefinedStereochemistryError
@@ -8,7 +8,7 @@ from rdkit import Chem
 from .logger import logger
 
 
-class MoleculeIO(object):
+class MoleculeIO:
     """A class to handle the input/output of molecules. Ligands are usually initialized
     from (.sdf files | directories containing .sdf files) and then processed into individual
     molecules.
@@ -21,7 +21,7 @@ class MoleculeIO(object):
         self.sdf_contents: a dictionary of the sdf contents for each ligand
     """
 
-    def __init__(self, lig, pattern: str = "*.sdf"):
+    def __init__(self, lig, pattern: str = "*.sdf", force_rdkit: bool = False):
         """Initialize a Molecule Input/Output object. This helper class has a base functionality
         used for handling `.sdf`, like reading it, outputting separate `.sdf` files (required by lomap),
         and storing the molecules & their names into a single object.
@@ -32,10 +32,11 @@ class MoleculeIO(object):
                 `glob`. If lig is a sdf file, this argument will be ignored. Defaults to None.
         """
         self.lig = lig
+        self.force_rdkit = force_rdkit
         self.setup_mols_and_names(self.lig, pattern)
         self.parse_sdf_contents()  # add the sdf content to the dictionary
 
-    def _parse_mol(self, ligpath: Union[Path, str]) -> Tuple[List[Molecule], List[str]]:
+    def _parse_mol(self, ligpath: Union[Path, str]) -> tuple[list[Molecule], list[str]]:
         """Function to parse a .sdf file into a list of Molecule objects and their names.
 
         Args:
@@ -46,6 +47,28 @@ class MoleculeIO(object):
         """
         if isinstance(ligpath, Path):
             ligpath = str(ligpath)
+        if self.force_rdkit:  # temporary fix for processing aligned molecules
+            # For details on why is this here: https://github.com/openforcefield/openff-toolkit/issues/1872
+            rdmols = [
+                mol
+                for mol in Chem.SDMolSupplier(
+                    str(ligpath),
+                    sanitize=False,
+                )
+                if mol is not None
+            ]
+            mols = []
+            for mol in rdmols:
+                try:
+                    mols.append(Molecule.from_rdkit(mol))
+                except UndefinedStereochemistryError:
+                    logger.warning(
+                        "Undefined stereochemistry in the input file!! Will try to process the ligands anyway."
+                    )
+                    mols.append(Molecule.from_rdkit(mol, allow_undefined_stereo=True))
+                except Exception as e:
+                    logger.error(f"Error processing file {ligpath}: {e}")
+                    return [], []
         try:
             mols = Molecule.from_file(ligpath)
         except UndefinedStereochemistryError:
@@ -58,9 +81,7 @@ class MoleculeIO(object):
             return [], []
 
         mols = [mols] if not isinstance(mols, list) else mols
-        lig_names = [
-            mol.name if mol.name else f"lig_{idx}" for idx, mol in enumerate(mols)
-        ]
+        lig_names = [mol.name if mol.name else f"lig_{idx}" for idx, mol in enumerate(mols)]
         return mols, lig_names
 
     def setup_mols_and_names(self, lig: str, pattern: str = "*.sdf"):
@@ -91,9 +112,7 @@ class MoleculeIO(object):
             lig = Path(lig)
             if pattern is not None:
                 logger.debug(f"Searched for {pattern} files in {Path(lig).absolute}")
-                self.lig_files = sorted(
-                    list(lig.glob(pattern))
-                )  # glob doesn't return sorted list
+                self.lig_files = sorted(list(lig.glob(pattern)))  # glob doesn't return sorted list
             mols_and_names = [self._parse_mol(lig) for lig in self.lig_files]
         elif Path(lig).exists():
             mols_and_names = [self._parse_mol(lig)]
@@ -119,14 +138,14 @@ class MoleculeIO(object):
         for lname, sdf_content in zip(self.lig_names, ligands):
             self.sdf_contents.update({lname: sdf_content})
 
-    def _parse_sdf(self, lig: str) -> List[List[str]]:
+    def _parse_sdf(self, lig: str) -> list[list[str]]:
         """Reads a `.sdf` file and returns a list containing the lines for each ligand in the file.
 
         Args:
             lig: the path to the `.sdf` file.
 
         Returns:
-            List[List[str]]: a list of ligands, where each ligand is a list of lines.
+            list[list[str]]: a list of ligands, where each ligand is a list of lines.
         """
         with open(lig) as infile:
             content = infile.readlines()
@@ -138,7 +157,7 @@ class MoleculeIO(object):
                     ligands.append(current_ligand)
                     current_ligand = []  # Start a new ligand entry
                 else:
-                    current_ligand.append(line.strip())
+                    current_ligand.append(line.rstrip())
         return ligands
 
     def write_sdf_separate(self, output_dir):
