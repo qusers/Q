@@ -76,7 +76,7 @@ class OpenFF2Q(MoleculeIO):
         logger.info("Done! Writing .lib, .prm and .pdb files for each ligand")
         for lname, charges in zip(self.lig_names, charges_magnitudes):
             self.charges_list_magnitude.update({lname: charges})
-            formatted_sum = f'{round(charges_magnitudes.sum(), 10):.3f}'
+            formatted_sum = f'{round(charges.sum(), 10):.3f}'
             if formatted_sum == '-0.000':
                 formatted_sum = '0.000'
             self.total_charges.update({lname: formatted_sum})
