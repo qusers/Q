@@ -30,6 +30,13 @@ class RestraintSetter:
 
     def _path_to_mol(self, _path):
         if Path(_path).suffix == ".pdb":
+            logger.error(
+                "RDKit can not safely read PDBs on their own. Information about bond order and aromaticity "
+                "is likely to be lost. PDBs can be used along with a valid smiles string with RDKit using "
+                "the constructor from `openff.toolkit` Molecule.from_pdb_and_smiles(file_path, smiles) "
+                "but this is not yet implemented in this class."
+            )
+            raise ValueError("PDBs are not supported yet.")
             return Chem.MolFromPDBFile(_path)
         elif Path(_path).suffix == ".sdf":
             return Chem.SDMolSupplier(_path, removeHs=False)[0]
