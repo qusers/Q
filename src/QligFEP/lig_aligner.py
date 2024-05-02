@@ -5,7 +5,6 @@ import subprocess
 from functools import partial
 from pathlib import Path
 
-from chemFilters.img_render import MolPlotter
 from joblib import Parallel, delayed, parallel_config
 from openff.toolkit import Molecule
 from rdkit import Chem
@@ -15,8 +14,6 @@ from tqdm import tqdm
 from . import SRC
 from .chemIO import MoleculeIO
 from .logger import logger
-
-plotter = MolPlotter(from_smi=False, size=(400, 400), add_atom_indices=True)
 
 
 class LigandAligner(MoleculeIO):
@@ -129,65 +126,6 @@ class LigandAligner(MoleculeIO):
                 atomB.UpdatePropertyCache()
         return molA, molB
 
-    @staticmethod
-    def adjust_oxygen_charges(mol):
-        """
-        Adjusts charges for oxygen atoms that are supposed to be negatively charged but might have an extra hydrogen.
-
-        Args:
-        mol (rdkit.Chem.Mol): The molecule to modify.
-
-        Returns:
-        rdkit.Chem.Mol: The molecule with adjusted charges, or None if sanitization fails.
-        """
-        # Iterate over all oxygen atoms
-        for atom in mol.GetAtoms():
-            if atom.GetAtomicNum() == 8 and atom.GetTotalDegree() == 3:  # Oxygen with three bonds
-                if atom.GetTotalNumHs() > 0:  # Has implicit hydrogen
-                    atom.SetNumExplicitHs(max(atom.GetTotalNumHs() - 1, 0))  # Remove one hydrogen
-                atom.SetFormalCharge(-1)  # Assign a negative charge
-                atom.UpdatePropertyCache()
-
-        # Attempt to sanitize the molecule
-        try:
-            Chem.SanitizeMol(mol)
-        except Exception as e:
-            print(f"Sanitization error: {e}")
-            return None
-        return mol
-
-    @staticmethod
-    def assign_quaternary_amine_charges(mol, name):
-        """
-        Assigns charges to quaternary nitrogen atoms that might be incorrectly uncharged.
-
-        Args:
-        mol (rdkit.Chem.Mol): The molecule to modify.
-
-        Returns:
-        rdkit.Chem.Mol: The molecule with assigned charges.
-        """
-        # Iterate over all nitrogen atoms
-        problematic = False
-        for atom in mol.GetAtoms():
-            if atom.GetAtomicNum() == 7 and atom.GetTotalDegree() == 4:  # Nitrogen with four bonds
-                if atom.GetFormalCharge() == 0:  # Uncharged
-                    problematic = True
-                    atom.SetFormalCharge(1)  # Assign a positive charge
-                    atom.UpdatePropertyCache()
-
-        # Sanitize the molecule
-        try:
-            Chem.SanitizeMol(mol)
-        except Exception as e:
-            print(f"Sanitization error: {e}")
-            return None
-        if problematic:
-            logger.error(
-                'While processing molecule "{}", a quaternary amine was found and charged.'.format(name)
-            )
-        return mol
-
     def _transfer_sdf_metadata(self, original_file, aligned_file):
         """
         Copies metadata from the original SDF file to the aligned SDF file and adds
@@ -212,20 +150,8 @@ class LigandAligner(MoleculeIO):
 
                 # remove the H's to make it easier on the MCS & transfer the charges
                 original_mol = Chem.RemoveHs(original_mol)
+                logger.debug(f"Transferring metadata to {aligned_file}")
                 original_mol, aligned_mol = self._transfer_charges_metadata(original_mol, aligned_mol)
-                logger.info(f"Transferring metadata to {aligned_file}")
-
-                if aligned_file.stem == "18639-1_18624-1_aligned":
-                    img = plotter.render_mol(aligned_mol)
-                    img.save("Aligned_mol_stats1.png")
-                aligned_mol = self.adjust_oxygen_charges(aligned_mol)
-                if aligned_file.stem == "18639-1_18624-1_aligned":
-                    img = plotter.render_mol(aligned_mol)
-                    img.save("Aligned_mol_stats3.png")
-                aligned_mol = self.assign_quaternary_amine_charges(aligned_mol, name=aligned_file)
-                if aligned_file.stem == "18639-1_18624-1_aligned":
-                    img = plotter.render_mol(aligned_mol)
-                    img.save("Aligned_mol_stats2.png")
                 aligned_mols.append(aligned_mol)
 
         aligned_writer = Chem.SDWriter(str(aligned_file))
@@ -249,7 +175,6 @@ class LigandAligner(MoleculeIO):
                 aligned_sdf = ligpath / f"{name}{modification}"
                 if aligned_sdf.exists():
                     self._transfer_sdf_metadata(original_sdf, aligned_sdf)
-                    logger.debug(f"Updated metadata for {aligned_sdf}")
                 else:
                     logger.error(f"Aligned file {aligned_sdf} not found.")
 
