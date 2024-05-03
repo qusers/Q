@@ -47,7 +47,7 @@ repository = "https://github.com/qusers/qligfep"
 
 [tool.black]
 line-length =  110
-target-version = ['py39']
+target-version = ['py310']
 
 [tool.isort]
 profile = "black"
