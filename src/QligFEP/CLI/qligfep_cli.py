@@ -113,6 +113,7 @@ def parse_arguments() -> argparse.Namespace:
         dest="windows",
         help="Total number of windows that will be run. Defaults to 100.",
         type=str,
+        default="100",
     )
     parser.add_argument(
         "-sc",
