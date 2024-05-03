@@ -39,7 +39,7 @@ class RestraintSetter:
             raise ValueError("PDBs are not supported yet.")
             return Chem.MolFromPDBFile(_path)
         elif Path(_path).suffix == ".sdf":
-            return Chem.SDMolSupplier(_path, removeHs=False)[0]
+            return Chem.SDMolSupplier(str(_path), removeHs=False)[0]
         return None
 
     def _load_molecules(self, molA, molB):
