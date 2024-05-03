@@ -449,8 +449,8 @@ class QligFEP:
         elif self.restraint_method == "chemoverlap":
             parent_write_dir = Path(writedir).parent
             pdb_df = read_pdb_to_dataframe(pdbfile)
-            subset_lig1 = pdb_df.query("resname == LIG")
-            subset_lig2 = pdb_df.query("resname == LID")
+            subset_lig1 = pdb_df.query("residue_name == 'LIG'")
+            subset_lig2 = pdb_df.query("residue_name == 'LID'")
             lig1_path = parent_write_dir / f"{self.lig1}.sdf"
             lig2_path = parent_write_dir / f"{self.lig2}.sdf"
             if not lig1_path.exists() or not lig2_path.exists():
@@ -462,7 +462,7 @@ class QligFEP:
                     f"same directory you're using for the FEP calculations: {parent_write_dir}"
                 )
             else:
-                logger.debug("Setting restraints using the `chemoverlap` method.")
+                logger.debug(f'Loading sdf for restraint calculation:\nlig1:"{lig1_path}"\nlig2"{lig2_path}"')
                 rsetter = RestraintSetter(lig1_path, lig2_path)
                 restraints = rsetter.set_restraints()
                 if strict_check:  # TODO: move this to the tests when we have them...
@@ -478,8 +478,8 @@ class QligFEP:
                         assert atom1_in_pdb == atom1_in_rdkit
                         assert atom2_in_pdb == atom2_in_rdkit
                 # convert the numbers accordingly
-                pdb_atoms_lig1 = subset_lig1["atom_number"].values
-                pdb_atoms_lig2 = subset_lig2["atom_number"].values
+                pdb_atoms_lig1 = subset_lig1["atom_serial_number"].values
+                pdb_atoms_lig2 = subset_lig2["atom_serial_number"].values
                 torestraint_list = [[pdb_atoms_lig1[k], pdb_atoms_lig2[v]] for k, v in restraints.items()]
         return torestraint_list
 
