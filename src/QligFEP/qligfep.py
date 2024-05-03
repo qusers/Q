@@ -8,7 +8,8 @@ from pathlib import Path
 from .functions import COG, kT, overlapping_pairs, sigmoid
 from .IO import replace, run_command
 from .logger import logger
-from .pdb_utils import pdb_parse_in, pdb_parse_out
+from .pdb_utils import pdb_parse_in, pdb_parse_out, read_pdb_to_dataframe
+from .restraints.restraint_setter import RestraintSetter
 from .settings.settings import CLUSTER_DICT, CONFIGS
 
 
@@ -33,6 +34,7 @@ class QligFEP:
         timestep,
         softcore,
         to_clean,
+        restraint_method,
         *args,
         **kwargs,
     ):
@@ -57,6 +59,7 @@ class QligFEP:
         self.ABS = False  # True
         self.ABS_waters = []
         self.write_dir = None
+        self.restraint_method = restraint_method
 
         if self.system == "protein":
             # Get last atom and residue from complexfile!
@@ -175,7 +178,7 @@ class QligFEP:
                             atomtypes.append([merged_molsize, "DUM", j])
 
         molsize_lig2 = merged_molsize - molsize_lig1
-        return [changes_1, changes_2], [charges, atomtypes], [molsize_lig1, molsize_lig2]
+        return ([changes_1, changes_2], [charges, atomtypes], [molsize_lig1, molsize_lig2])
 
     def change_lib(self, replacements, writedir):
         replacements["LIG"] = "LID"
@@ -414,19 +417,71 @@ class QligFEP:
         lambdas = lambdas[::-1]
         return lambdas
 
-    def overlapping_atoms(self, writedir):
-        pdbfile = writedir + "/inputfiles/" + self.lig1 + "_" + self.lig2 + ".pdb"
-        reslist = ["LIG", "LID"]
-        overlap_list = overlapping_pairs(pdbfile, reslist)
+    def set_restraints(self, writedir, strict_check=True):
+        """Function to set the restraints for FEP. Originally, this was performed on
+        overlapping atoms, but based on our observations this was changed to a more
+        chemistry-aware method, implemented under `QligFEP.restraints.restraint_setter`.
 
-        if self.ABS:
-            with open(pdbfile) as infile:
-                for line in infile:
-                    if line[13].strip() == "O":
-                        line = pdb_parse_in(line)
-                        self.ABS_waters.append(int(line[1]) + self.atomoffset)
+        Args:
+            writedir: directory to get the input files from, e.g.: FEP_lig1_lig2/inputfiles.
+            method: method to use for setting the distance restraints. Can be either
+                `chemoverlap` or `overlap`. Defaults to the original 'overlap'.
 
-        return overlap_list
+        Returns:
+            list: list of overlapping atoms.
+        """
+        if self.restraint_method not in ["chemoverlap", "overlap"]:
+            raise ValueError(
+                f"Method {self.restraint_method} not recognized. Please use 'chemoverlap' or 'overlap'."
+            )
+        pdbfile = writedir + f"/inputfiles/{self.lig1}_{self.lig2}.pdb"
+        if self.restraint_method == "overlap":
+            reslist = ["LIG", "LID"]
+            torestraint_list = overlapping_pairs(pdbfile, reslist)
+
+            if self.ABS:
+                with open(pdbfile) as infile:
+                    for line in infile:
+                        if line[13].strip() == "O":
+                            line = pdb_parse_in(line)
+                            self.ABS_waters.append(int(line[1]) + self.atomoffset)
+
+        elif self.restraint_method == "chemoverlap":
+            parent_write_dir = Path(writedir).parent
+            pdb_df = read_pdb_to_dataframe(pdbfile)
+            subset_lig1 = pdb_df.query("resname == LIG")
+            subset_lig2 = pdb_df.query("resname == LID")
+            lig1_path = parent_write_dir / f"{self.lig1}.sdf"
+            lig2_path = parent_write_dir / f"{self.lig2}.sdf"
+            if not lig1_path.exists() or not lig2_path.exists():
+                logger.error(
+                    "Loading ligands from PDB files for the `chemoverlap` method is not supported yet."
+                )
+                raise FileNotFoundError(
+                    "If you're using the `chemoverlap` method, you need to have the `sdf` ligands in the "
+                    f"same directory you're using for the FEP calculations: {parent_write_dir}"
+                )
+            else:
+                logger.debug("Setting restraints using the `chemoverlap` method.")
+                rsetter = RestraintSetter(lig1_path, lig2_path)
+                restraints = rsetter.set_restraints()
+                if strict_check:  # TODO: move this to the tests when we have them...
+                    rdLig1 = rsetter.molA.to_rdkit()
+                    rdLig2 = rsetter.molB.to_rdkit()
+                    for AtomIdx_Lig1, AtomIdx_Lig2 in restraints.items():
+                        rowLig1 = subset_lig1.iloc[AtomIdx_Lig1]
+                        rowLig2 = subset_lig2.iloc[AtomIdx_Lig2]
+                        atom1_in_pdb = rowLig1["atom_name"].strip("1234567890")
+                        atom1_in_rdkit = rdLig1.GetAtomWithIdx(AtomIdx_Lig1).GetSymbol()
+                        atom2_in_pdb = rowLig2["atom_name"].strip("1234567890")
+                        atom2_in_rdkit = rdLig2.GetAtomWithIdx(AtomIdx_Lig2).GetSymbol()
+                        assert atom1_in_pdb == atom1_in_rdkit
+                        assert atom2_in_pdb == atom2_in_rdkit
+                # convert the numbers accordingly
+                pdb_atoms_lig1 = subset_lig1["atom_number"].values
+                pdb_atoms_lig2 = subset_lig2["atom_number"].values
+                torestraint_list = [[pdb_atoms_lig1[k], pdb_atoms_lig2[v]] for k, v in restraints.items()]
+        return torestraint_list
 
     def write_MD_05(self, lambdas, writedir, lig_size1, lig_size2, overlapping_atoms):
         replacements = self.replacements
@@ -472,7 +527,10 @@ class QligFEP:
                     self.atomoffset + 1, self.atomoffset + lig_size1
                 )
 
-                for i in range(self.atomoffset + 1 + lig_size1, self.atomoffset + 2 + lig_size1 + lig_size2):
+                for i in range(
+                    self.atomoffset + 1 + lig_size1,
+                    self.atomoffset + 2 + lig_size1 + lig_size2,
+                ):
                     cnt += 1
                     if cnt == 0:
                         rest = f"{i:<7}{i:<7} 1.0 0 1   \n"
