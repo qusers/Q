@@ -150,6 +150,8 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     elif cysbonds != "":
         cysbonds = cysbonds.split(",")
         cysbonds = "".join([f"addbond {b.split('_')[0]} {b.split('_')[1]} y\n" for b in cysbonds])
+    elif cysbonds == "":  # TODO: do this in a smarter way...
+        pass
     else:
         raise ValueError("Invalid cysbond input. Please check the input format.")
 
