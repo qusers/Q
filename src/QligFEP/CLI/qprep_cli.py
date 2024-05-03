@@ -6,8 +6,8 @@ from typing import Optional
 
 from ..IO import run_command
 from ..logger import logger, setup_logger
+from ..pdb_utils import disulfide_search, nest_pdb
 from ..settings.settings import CONFIGS
-from ..pdb_utils import nest_pdb, disulfide_search
 
 # NOTE: cysbonds will have \n after each bond -> `maketop MKC_p` is in a different line
 qprep_inp_content = """rl {ff_lib_path}
@@ -123,7 +123,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     if args.log_level != "INFO":
         setup_logger(args.log_level.upper())
     qprep_path = CONFIGS["QPREP"]
-    logger.debug(f'Running qprep from path: {qprep_path}')
+    logger.debug(f"Running qprep from path: {qprep_path}")
     pdb_file = str(cwd / args.pdb_file)
     sphereradius = f"{args.sphereradius:.1f}"
     cog = " ".join(args.cog)
@@ -135,13 +135,13 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         annotation_type = "4 water.pdb"
     if args.qprep_type == "water":
         annotation_type = "1 HOH"
-    
+
     qprep_filename = f"qprep_{args.qprep_type}"
     qprep_inp_path = cwd / f"{qprep_filename}.inp"
 
-    cysbonds = args.cysbond
+    cysbonds = "" if args.qprep_type == "water" else args.cysbond
     if cysbonds == "auto":
-        with open(pdb_file, "r") as f:
+        with open(pdb_file) as f:
             pdb_lines = f.readlines()
             npdb = nest_pdb(pdb_lines)
             npdb, cysbonds = disulfide_search(npdb)
@@ -149,9 +149,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         cysbonds = "".join([f"addbond {atomN[0]} {atomN[1]} y\n" for atomN in cysbonds])
     elif cysbonds != "":
         cysbonds = cysbonds.split(",")
-        cysbonds = "".join(
-            [f"addbond {b.split('_')[0]} {b.split('_')[1]} y\n" for b in cysbonds]
-        )
+        cysbonds = "".join([f"addbond {b.split('_')[0]} {b.split('_')[1]} y\n" for b in cysbonds])
     else:
         raise ValueError("Invalid cysbond input. Please check the input format.")
 
@@ -171,26 +169,20 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
 
     # write qprep.inp with the formatted qprep_inp_content using Path
     if qprep_inp_path.exists():
-        logger.warning(
-            "qprep.inp already exists!! Skipping qprep.inp file generation..."
-        )
+        logger.warning("qprep.inp already exists!! Skipping qprep.inp file generation...")
     else:
         with qprep_inp_path.open("w") as qprep_inp_f:
             qprep_inp_f.write(qprep_inp_content.format(**param_dict))
 
     options = f" < {qprep_filename}.inp > {qprep_filename}.out"
-    logger.debug(f'Running command {qprep_path} {options}')
+    logger.debug(f"Running command {qprep_path} {options}")
     run_command(qprep_path, options, string=True)
-    logger.info(
-        f"qprep run finished. Check the output `{qprep_filename}.out` for more information."
-    )
+    logger.info(f"qprep run finished. Check the output `{qprep_filename}.out` for more information.")
     # if the -t argument is water, we should read the pdb files and write a water.pdb file with only water molecules
     if args.qprep_type == "water":
         waterfile = Path(cwd / "water.pdb")
         if waterfile.exists():
-            logger.warning(
-                "water.pdb already exists!! Skipping water.pdb file generation..."
-            )
+            logger.warning("water.pdb already exists!! Skipping water.pdb file generation...")
         else:
             if not Path("complexnotexcluded.pdb").exists():
                 logger.error(
@@ -202,14 +194,13 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                     "open shared object file: No such file or directory`, you might need to load "
                     "some module in your HPC system that you used to compile Q."
                 )
-                raise FileNotFoundError('complexnotexcluded.pdb file not found. Something went wrong')
-            with open("complexnotexcluded.pdb", "r") as f:
+                raise FileNotFoundError("complexnotexcluded.pdb file not found. Something went wrong")
+            with open("complexnotexcluded.pdb") as f:
                 lines = f.readlines()
             with open("water.pdb", "w") as f:
                 for line in lines:
-                    if line.startswith("ATOM"):
-                        if line[17:20] == "HOH":
-                            f.write(line)
+                    if line.startswith("ATOM") and line[17:20] == "HOH":
+                        f.write(line)
                 logger.info("water.pdb file created.")
 
 
