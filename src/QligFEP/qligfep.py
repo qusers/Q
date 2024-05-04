@@ -448,7 +448,7 @@ class QligFEP:
 
         elif self.restraint_method == "chemoverlap":
             parent_write_dir = Path(writedir).parent
-            pdb_df = read_pdb_to_dataframe(pdbfile)
+            pdb_df = read_pdb_to_dataframe(Path(pdbfile).parent / "top_p.pdb")
             subset_lig1 = pdb_df.query("residue_name == 'LIG'")
             subset_lig2 = pdb_df.query("residue_name == 'LID'")
             lig1_path = parent_write_dir / f"{self.lig1}.sdf"
