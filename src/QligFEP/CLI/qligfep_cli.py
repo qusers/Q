@@ -216,6 +216,12 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     logger.debug("Getting the lambdas")
     lambdas = run.get_lambdas(args.windows, args.sampling)
     logger.debug("Writing atom mapping for distance restraints")
+    # TODO: `write_qprep` and `qprep` were called last in the original script, but the new restraint
+    # method depends on the correct `qprep` output: top_p.pdb
+    logger.debug("Writing the QPREP files")
+    run.write_qprep(inputdir)
+    logger.debug("Running QFEP")
+    run.qprep(inputdir)
     overlapping_atoms = run.set_restraints(writedir)
 
     # Handling the correct offset here
@@ -232,10 +238,6 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     run.write_submitfile(writedir)
     logger.debug("Writing the QFEP files")
     run.write_qfep(args.windows, lambdas)
-    logger.debug("Writing the QPREP files")
-    run.write_qprep(inputdir)
-    logger.debug("Running QFEP")
-    run.qprep(inputdir)
 
 
 def main_exe():

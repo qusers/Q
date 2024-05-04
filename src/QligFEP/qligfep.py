@@ -448,7 +448,16 @@ class QligFEP:
 
         elif self.restraint_method == "chemoverlap":
             parent_write_dir = Path(writedir).parent
-            pdb_df = read_pdb_to_dataframe(Path(pdbfile).parent / "top_p.pdb")
+
+            if self.system == "protein":  # In this case order of elements in PDB file is: prot, LIG, LID, HOH
+                pdb_df = read_pdb_to_dataframe(Path(pdbfile).parent / "top_p.pdb")
+            elif self.system == "water":  # Here both top_p.pdb
+                pdb_df = read_pdb_to_dataframe(pdbfile)
+            else:
+                raise ValueError(
+                    f"System {self.system} not supported by this distance "
+                    "restraint method. Please use 'protein' or 'water'."
+                )
             subset_lig1 = pdb_df.query("residue_name == 'LIG'")
             subset_lig2 = pdb_df.query("residue_name == 'LID'")
             lig1_path = parent_write_dir / f"{self.lig1}.sdf"
