@@ -146,10 +146,10 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             npdb = nest_pdb(pdb_lines)
             npdb, cysbonds = disulfide_search(npdb)
             del npdb
-        cysbonds = "".join([f"addbond {atomN[0]} {atomN[1]} y\n" for atomN in cysbonds])
+        cysbonds = "".join([f"!addbond {atomN[0]} {atomN[1]} y\n" for atomN in cysbonds])
     elif cysbonds != "":
         cysbonds = cysbonds.split(",")
-        cysbonds = "".join([f"addbond {b.split('_')[0]} {b.split('_')[1]} y\n" for b in cysbonds])
+        cysbonds = "".join([f"!addbond {b.split('_')[0]} {b.split('_')[1]} y\n" for b in cysbonds])
     elif cysbonds == "":  # TODO: do this in a smarter way...
         pass
     else:
