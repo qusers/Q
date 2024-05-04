@@ -57,7 +57,7 @@ class RestraintSetter:
         # Score Mapping
         rmsd_scorer = MappingVolumeRatioScorer()
         score = rmsd_scorer(mapping=self.kartograf_mapping)
-        logger.info(f"Mapping volume score: {score}")
+        logger.info(f"Volume ratio score between ligands: {score}")
         self.atom_mapping = deepcopy(self.kartograf_mapping.to_dict()["componentA_to_componentB"])
 
     @staticmethod
