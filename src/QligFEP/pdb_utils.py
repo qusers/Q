@@ -147,6 +147,13 @@ def get_coords(atomname, residue):
     raise ValueError("Atom not found!")
 
 
+def _convert_to(value, dtype):
+    try:
+        return dtype(value)
+    except ValueError:
+        return value
+
+
 def read_pdb_to_dataframe(pdb_file):
     columns = [
         "record_type",
@@ -172,18 +179,18 @@ def read_pdb_to_dataframe(pdb_file):
             if line.startswith(("ATOM", "HETATM")):
                 parsed_line = [
                     line[0:6].strip(),  # record_type
-                    int(line[6:11].strip()),  # atom_serial_number
+                    _convert_to((line[6:11].strip()), int),  # atom_serial_number
                     line[12:16].strip(),  # atom_name
                     line[16].strip(),  # alt_loc
                     line[17:20].strip(),  # residue_name
                     line[21].strip(),  # chain_id
-                    int(line[22:26].strip()),  # residue_seq_number
+                    _convert_to((line[22:26].strip()), int),  # residue_seq_number
                     line[26].strip(),  # insertion_code
-                    float(line[30:38].strip()),  # x
-                    float(line[38:46].strip()),  # y
-                    float(line[46:54].strip()),  # z
-                    float(line[54:60].strip()),  # occupancy
-                    float(line[60:66].strip()),  # temp_factor
+                    _convert_to((line[30:38].strip()), float),  # x
+                    _convert_to((line[38:46].strip()), float),  # y
+                    _convert_to((line[46:54].strip()), float),  # z
+                    _convert_to((line[54:60].strip()), float),  # occupancy
+                    _convert_to((line[60:66].strip()), float),  # temp_factor
                     line[72:76].strip(),  # segment_id
                     line[76:78].strip(),  # element_symbol
                     line[78:80].strip(),  # charge
