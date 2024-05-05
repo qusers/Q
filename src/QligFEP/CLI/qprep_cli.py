@@ -4,6 +4,8 @@ import argparse
 from pathlib import Path
 from typing import Optional
 
+import pandas as pd
+
 from ..chemIO import MoleculeIO
 from ..IO import run_command
 from ..logger import logger, setup_logger
@@ -231,7 +233,10 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         # make an output suffix that will be always unique, including time information:
         name_input_pdb = Path(args.input_pdb_file).stem
         for_nn_pdb = Path(cwd / f"{name_input_pdb}_withLigands.pdb")
-        write_dataframe_to_pdb(ligands_df, cwd / f"{name_input_pdb}_withLigands.pdb")
+        write_dataframe_to_pdb(
+            pd.concat([input_pdb_df, ligands_df], ignore_index=True),
+            cwd / f"{name_input_pdb}_withLigands.pdb",
+        )
         # pdb_file = str(cwd / f"{name_input_pdb}_withLigands.pdb")
         pdb_file = str(cwd / args.input_pdb_file)  # Q doesn't seem to work so we go for the NN approach
     else:
