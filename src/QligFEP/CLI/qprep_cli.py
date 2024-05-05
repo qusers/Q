@@ -1,7 +1,6 @@
 """Module containing the command line interface for the qprep fortran program."""
 
 import argparse
-from io import StringIO
 from pathlib import Path
 from typing import Optional
 
@@ -15,6 +14,7 @@ from ..pdb_utils import (
     write_dataframe_to_pdb,
 )
 from ..settings.settings import CONFIGS
+from .cog_cli import MolecularCOG
 
 # NOTE: cysbonds will have \n after each bond -> `maketop MKC_p` is in a different line
 qprep_inp_content = """rl {ff_lib_path}
@@ -24,7 +24,7 @@ rp {pdb_file_path}
 ! set solute_density 0.05794
 ! NOTE, this is now large for water system, change for protein system
 set solvent_pack {solvent_pack}
-boundary 1 {cog} 25.0
+boundary 1 {cog} {sphereradius}
 solvate {cog} {sphereradius} {qprep_type}
 {cysbond}maketop MKC_p
 writetop dualtop.top
@@ -47,9 +47,9 @@ def parse_arguments() -> argparse.Namespace:
         )
     )
     parser.add_argument(
-        "-pdb",
-        "--pdb_file",
-        dest="pdb_file",
+        "-i",
+        "--input_pdb_file",
+        dest="input_pdb_file",
         required=True,
         help="input protein to run qprep",
     )
@@ -65,8 +65,15 @@ def parse_arguments() -> argparse.Namespace:
         "-cog",
         "--center_of_geometry",
         dest="cog",
-        help="Center of geometry for the protein. The format is 'x y z', where all numbers contain 3 decimal cases.",
-        required=True,
+        help=(
+            "Center of geometry for the protein. The format is 'x y z', where all numbers "
+            "contain 3 decimal cases. This center of geometry can be obtained using the `qcog ` "
+            "command, but if you include ligands using the `-lig` option, this COG will be "
+            "automatically calculated. If you want to calculate the COG manually, you can use "
+            "this option. Defaults to None."
+        ),
+        required=False,
+        default=None,
         nargs=3,
         type=str,
     )
@@ -109,7 +116,7 @@ def parse_arguments() -> argparse.Namespace:
         type=float,
     )
     parser.add_argument(
-        "-il",
+        "-lig",
         "--include_ligands",
         dest="include_ligands",
         default=None,
@@ -120,7 +127,7 @@ def parse_arguments() -> argparse.Namespace:
             "pdb or sdf files. If you include a sdf file that contains multiple ligands, the program will "
             "include the coordinates for all of them."
         ),
-        type=float,
+        type=str,
     )
     parser.add_argument(
         "-t",
@@ -138,11 +145,11 @@ def parse_arguments() -> argparse.Namespace:
         "-log",
         "--log-level",
         dest="log_level",
-        default="INFO",
-        choices=["INFO", "DEBUG", "WARNING", "ERROR", "CRITICAL"],
+        default="info",
+        choices=["info", "debug", "warning", "error", "critical"],
         help=(
-            "Set the logging level. Defaults to INFO. "
-            "Choose between: INFO, DEBUG, WARNING, ERROR, CRITICAL."
+            "Set the logging level. Defaults to info. "
+            "Choose between: info, debug, warning, error, critical."
         ),
         type=str,
     )
@@ -163,7 +170,44 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     logger.debug(f"Running qprep from path: {qprep_path}")
     sphereradius = f"{args.sphereradius:.1f}"
     formatted_solvent_pack = f"{args.solvent_pack:.1f}"
-    cog = " ".join(args.cog)
+
+    if args.include_ligands is not None:
+        raise NotImplementedError(
+            "This option is not yet implemented as it would require the "
+            "uset to provide the ligands' .lib & .prm files, as done in `qligfep`"
+        )
+
+    # handle COG depending on the input
+    if args.cog is None:
+        if args.qprep_type == "protein":
+            # take the COG from the qprep_water.inp file
+            try:
+                with open("qprep_water.inp") as f:
+                    lines = f.readlines()
+            except FileNotFoundError as e:
+                logger.error(
+                    "qprep_water.inp file not found. Make sure you run qprep with the -t water argument "
+                    "first and then run it again with the `-t protein` argument to generate the final water sphere."
+                )
+                logger.info(
+                    "Usage example:\n"
+                    "qprep_prot -i BACE_modif_renamed.pdb -lig ../BACE_ligands_aligned.sdf"
+                    "qprep_prot -i BACE_modif_renamed_withLigands.pdb -t protein -sp 2.5"
+                )
+                raise FileNotFoundError from e("qprep_water.inp file not found.")
+            for line in lines:
+                if line.startswith("boundary"):
+                    cog = " ".join(line.split()[2:5])
+                    logger.debug(f"COG is {cog}")
+        elif args.include_ligands is not None:
+            molCOG = MolecularCOG(args.include_ligands)
+            cog = " ".join(molCOG().strip("[]").split(" "))
+            logger.debug(f"COG is {cog}")
+        else:
+            raise ValueError("Center of geometry not provided. Please provide the COG.")
+    else:
+        cog = " ".join(args.cog)
+        logger.debug(f"COG is {cog}")
 
     # write temporary pdb_file depending on args.include_ligands parameter
     if args.include_ligands is not None:
@@ -171,20 +215,24 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         assert lig_path.exists(), f"File {lig_path} does not exist."
         if lig_path.suffix == ".pdb":
             raise ValueError(".pdb file format not yet implemented for ligands. Please use .sdf format.")
-        molio = MoleculeIO(args.include_ligands)
-        input_pdb_df = read_pdb_to_dataframe(args.pdb_file)
+        logger.debug(f"loading ligands from: {lig_path}")
+        molio = MoleculeIO(str(lig_path))
+        input_pdb_df = read_pdb_to_dataframe(args.input_pdb_file)
         offset = input_pdb_df["atom_serial_number"].astype(int).max()
-        output = StringIO()  # just to prevent writing to disk
-        ligands_df = molio.write_to_single_pdb(output)
-        del output
+
+        temp_ligfile = Path(cwd / "temp_ligands.pdb")
+        ligands_df = molio.write_to_single_pdb(temp_ligfile)
+        temp_ligfile.unlink()
+
         ligands_df = ligands_df.assign(
             atom_serial_number=lambda x: x["atom_serial_number"].astype(int) + offset,
         )
         # make an output suffix that will be always unique, including time information:
-        write_dataframe_to_pdb(ligands_df, cwd / f"{args.pdb_file}_withLigands.pdb")
-        pdb_file = str(cwd / f"{args.pdb_file}_withLigands.pdb")
+        name_input_pdb = Path(args.input_pdb_file).stem
+        write_dataframe_to_pdb(ligands_df, cwd / f"{name_input_pdb}_withLigands.pdb")
+        pdb_file = str(cwd / f"{name_input_pdb}_withLigands.pdb")
     else:
-        pdb_file = str(cwd / args.pdb_file)
+        pdb_file = str(cwd / args.input_pdb_file)
 
     ff_lib_path = str(Path(CONFIGS["FF_DIR"]) / f"{args.FF}.lib")
     ff_prm_path = str(Path(CONFIGS["FF_DIR"]) / f"{args.FF}.prm")
