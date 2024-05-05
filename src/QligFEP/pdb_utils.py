@@ -1,6 +1,7 @@
 """Module containing functions for parsing pdb files."""
 
 import math
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -154,6 +155,29 @@ def _convert_to(value, dtype):
         return value
 
 
+def _parse_pdb_line(line):
+    if line.startswith(("ATOM", "HETATM")):
+        parsed_line = [
+            line[0:6].strip(),  # record_type
+            _convert_to((line[6:11].strip()), int),  # atom_serial_number
+            line[12:16].strip(),  # atom_name
+            line[16].strip(),  # alt_loc
+            line[17:20].strip(),  # residue_name
+            line[21].strip(),  # chain_id
+            _convert_to((line[22:26].strip()), int),  # residue_seq_number
+            line[26].strip(),  # insertion_code
+            _convert_to((line[30:38].strip()), float),  # x
+            _convert_to((line[38:46].strip()), float),  # y
+            _convert_to((line[46:54].strip()), float),  # z
+            _convert_to((line[54:60].strip()), float),  # occupancy
+            _convert_to((line[60:66].strip()), float),  # temp_factor
+            line[72:76].strip(),  # segment_id
+            line[76:78].strip(),  # element_symbol
+            line[78:80].strip(),  # charge
+        ]
+        return parsed_line
+
+
 def read_pdb_to_dataframe(pdb_file):
     columns = [
         "record_type",
@@ -174,28 +198,19 @@ def read_pdb_to_dataframe(pdb_file):
         "charge",
     ]
     data = []
-    with open(pdb_file) as file:
-        for line in file:
-            if line.startswith(("ATOM", "HETATM")):
-                parsed_line = [
-                    line[0:6].strip(),  # record_type
-                    _convert_to((line[6:11].strip()), int),  # atom_serial_number
-                    line[12:16].strip(),  # atom_name
-                    line[16].strip(),  # alt_loc
-                    line[17:20].strip(),  # residue_name
-                    line[21].strip(),  # chain_id
-                    _convert_to((line[22:26].strip()), int),  # residue_seq_number
-                    line[26].strip(),  # insertion_code
-                    _convert_to((line[30:38].strip()), float),  # x
-                    _convert_to((line[38:46].strip()), float),  # y
-                    _convert_to((line[46:54].strip()), float),  # z
-                    _convert_to((line[54:60].strip()), float),  # occupancy
-                    _convert_to((line[60:66].strip()), float),  # temp_factor
-                    line[72:76].strip(),  # segment_id
-                    line[76:78].strip(),  # element_symbol
-                    line[78:80].strip(),  # charge
-                ]
-                data.append(parsed_line)
+    if isinstance(pdb_file, list):
+        for line in pdb_file:
+            result = _parse_pdb_line(line)
+            if result is not None:
+                data.append(result)
+    elif isinstance(pdb_file, str, Path):
+        assert Path(pdb_file).exists(), f"File {pdb_file} does not exist."
+        with open(pdb_file) as file:
+            for line in file:
+                result = _parse_pdb_line(line)
+                if result is not None:
+                    data.append(result)
+
     df = pd.DataFrame(data, columns=columns)
     return df
 
