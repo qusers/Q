@@ -7,15 +7,13 @@ from pathlib import Path
 import numpy as np
 from MolClusterkit.mcs import MCSClustering
 
-from ..lig_aligner import LigandAligner
+from ..lig_aligner import GlobalLigandAligner
 from ..logger import logger, setup_logger
 
 
 def parse_arguments() -> argparse.Namespace:
     """Method to parse the arguments."""
-    parser = argparse.ArgumentParser(
-        description="Lomap wrapper to be used in  QligFEP."
-    )
+    parser = argparse.ArgumentParser(description="Lomap wrapper to be used in  QligFEP.")
     parser.add_argument(
         "--input",
         "-i",
@@ -72,7 +70,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "-log",
         "--log-level",
-        dest='log',
+        dest="log",
         required=False,
         default="info",
         help="Set the log level for the logger. Defaults to `info`.",
@@ -87,7 +85,7 @@ def main(args: argparse.Namespace):
     # setup the logger with the desired log level
     setup_logger(level=args.log)
 
-    aligner = LigandAligner(
+    aligner = GlobalLigandAligner(
         args.input,
         n_threads=args.parallel,
         tempdir="to_align_ligands",
@@ -104,7 +102,6 @@ def main(args: argparse.Namespace):
             aligned_files = [aligner.lig_files[idx] for idx in aligned_files]
             logger.info(f"Aligned files: {aligned_files}")
             sys.exit(1)
-
 
     if args.ref is None:
         smiles_list = [mol.to_smiles() for mol in aligner.molecules]
@@ -129,9 +126,7 @@ def main(args: argparse.Namespace):
                 "The reference ligand is not in the input ligands. See the ligands names with the `lig_names` attribute."
             )
             logger.info(f"lig_names; {aligner.lig_names}")
-            raise ValueError(
-                f"The reference ligand {reference_name} is not in the input ligands."
-            )
+            raise ValueError(f"The reference ligand {reference_name} is not in the input ligands.")
         logger.info(f"Aligning ligands to reference: {reference_name}")
 
     # run the alignment using kcombu
@@ -139,9 +134,7 @@ def main(args: argparse.Namespace):
 
     output = Path(args.output)
     if output.exists():
-        logger.warning(
-            f"The output file {output} already exists. It will be overwritten."
-        )
+        logger.warning(f"The output file {output} already exists. It will be overwritten.")
 
     aligner.output_aligned_ligands(str(output))
 

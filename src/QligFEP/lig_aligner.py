@@ -16,11 +16,14 @@ from .chemIO import MoleculeIO
 from .logger import logger
 
 
-class LigandAligner(MoleculeIO):
+class GlobalLigandAligner(MoleculeIO):
+    # TODO: Inspect other parameters with kcombu and implement them on method `kcombu_align`
 
     # TODO: in the future it would be good to make this more flexible so that it
     # could also perform 1:1 alignment between ligands. E.g.: FEP_lig1_lig2 would
     # have lig 1 aligned to lig 2 or vice-versa.
+
+    # -> This would be implemented in another class e.g.: `LocalLigandAligner`
 
     def __init__(
         self,
