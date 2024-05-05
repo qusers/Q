@@ -47,26 +47,19 @@ class MolecularCOG:
         return f"[{round(center[0], 3)} {round(center[1], 3)} {round(center[2], 3)}]"
 
     def _cog_sdf(self):
-        coordinate_regex = re.compile(
-            r"^\s*(-?\d+\.\d{4})\s*(-?\d+\.\d{4})\s*(-?\d+\.\d{4})\s+\S"
-        )
+        coordinate_regex = re.compile(r"^\s*(-?\d+\.\d{4})\s*(-?\d+\.\d{4})\s*(-?\d+\.\d{4})\s+\S")
         centers = []
         coordinates = []
         with self.filepath.open() as file:
             for line in file:
                 if coordinate_regex.match(line):
-                    coords = [
-                        float(coordinate_regex.match(line).group(i))
-                        for i in range(1, 4)
-                    ]
+                    coords = [float(coordinate_regex.match(line).group(i)) for i in range(1, 4)]
                     coordinates.append(coords)
                 elif line.startswith("$$$$") and coordinates:
                     centers.append(self._calculate_center(coordinates))
                     coordinates = []
 
-        if (
-            coordinates
-        ):  # For the last set of coordinates if the file does not end with '$$$$'
+        if coordinates:  # For the last set of coordinates if the file does not end with '$$$$'
             centers.append(self._calculate_center(coordinates))
 
         if len(centers) > 1:
