@@ -1,12 +1,19 @@
 """Module containing the command line interface for the qprep fortran program."""
 
 import argparse
+from io import StringIO
 from pathlib import Path
 from typing import Optional
 
+from ..chemIO import MoleculeIO
 from ..IO import run_command
 from ..logger import logger, setup_logger
-from ..pdb_utils import disulfide_search, nest_pdb
+from ..pdb_utils import (
+    disulfide_search,
+    nest_pdb,
+    read_pdb_to_dataframe,
+    write_dataframe_to_pdb,
+)
 from ..settings.settings import CONFIGS
 
 # NOTE: cysbonds will have \n after each bond -> `maketop MKC_p` is in a different line
@@ -16,7 +23,7 @@ rprm {ff_prm_path}
 rp {pdb_file_path}
 ! set solute_density 0.05794
 ! NOTE, this is now large for water system, change for protein system
-set solvent_pack 2.3
+set solvent_pack {solvent_pack}
 boundary 1 {cog} 25.0
 solvate {cog} {sphereradius} {qprep_type}
 {cysbond}maketop MKC_p
@@ -86,6 +93,36 @@ def parse_arguments() -> argparse.Namespace:
         type=str,
     )
     parser.add_argument(
+        "-sp",
+        "--solvent_pack",
+        dest="solvent_pack",
+        default=2.3,
+        help=(
+            "Parameter to qprep.inp `set solvent_pack`. According to Q's manual, this value "
+            "corresponds to the minimum distance between solute and solvent heavy atoms when "
+            "adding solvent (e.g.: HOH) and defaults to 2.4. In QligFEP we use a value of 2.3, "
+            "but while generating a water.pdb that is suitable for input in `qligfep` and "
+            "`setupFEP` (with `-t protein`), this can create water molecules that are too "
+            "close to the ligands, causing calculations to crash. Please increase this value "
+            "when you call this program with the `-t protein` argument. Defaults to 2.3."
+        ),
+        type=float,
+    )
+    parser.add_argument(
+        "-il",
+        "--include_ligands",
+        dest="include_ligands",
+        default=None,
+        help=(
+            "Optional argument to include ligands while preparing the water sphere with your `-pdb` file. "
+            "This is useful if you want to include ligands to `mask` your water sphere, leaving a blank space "
+            "to be filled in when you call `qligfep` or `setupFEP`. The input for this argument can be either "
+            "pdb or sdf files. If you include a sdf file that contains multiple ligands, the program will "
+            "include the coordinates for all of them."
+        ),
+        type=float,
+    )
+    parser.add_argument(
         "-t",
         "--qprep_type",
         dest="qprep_type",
@@ -124,9 +161,30 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         setup_logger(args.log_level.upper())
     qprep_path = CONFIGS["QPREP"]
     logger.debug(f"Running qprep from path: {qprep_path}")
-    pdb_file = str(cwd / args.pdb_file)
     sphereradius = f"{args.sphereradius:.1f}"
+    formatted_solvent_pack = f"{args.solvent_pack:.1f}"
     cog = " ".join(args.cog)
+
+    # write temporary pdb_file depending on args.include_ligands parameter
+    if args.include_ligands is not None:
+        lig_path = Path(args.include_ligands)
+        assert lig_path.exists(), f"File {lig_path} does not exist."
+        if lig_path.suffix == ".pdb":
+            raise ValueError(".pdb file format not yet implemented for ligands. Please use .sdf format.")
+        molio = MoleculeIO(args.include_ligands)
+        input_pdb_df = read_pdb_to_dataframe(args.pdb_file)
+        offset = input_pdb_df["atom_serial_number"].astype(int).max()
+        output = StringIO()  # just to prevent writing to disk
+        ligands_df = molio.write_to_single_pdb(output)
+        del output
+        ligands_df = ligands_df.assign(
+            atom_serial_number=lambda x: x["atom_serial_number"].astype(int) + offset,
+        )
+        # make an output suffix that will be always unique, including time information:
+        write_dataframe_to_pdb(ligands_df, cwd / f"{args.pdb_file}_withLigands.pdb")
+        pdb_file = str(cwd / f"{args.pdb_file}_withLigands.pdb")
+    else:
+        pdb_file = str(cwd / args.pdb_file)
 
     ff_lib_path = str(Path(CONFIGS["FF_DIR"]) / f"{args.FF}.lib")
     ff_prm_path = str(Path(CONFIGS["FF_DIR"]) / f"{args.FF}.prm")
@@ -165,6 +223,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "sphereradius": sphereradius,
             "cysbond": cysbonds,
             "qprep_type": annotation_type,
+            "solvent_pack": formatted_solvent_pack,
         }
     else:
         param_dict = {**kwargs}
