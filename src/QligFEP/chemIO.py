@@ -174,7 +174,7 @@ class MoleculeIO:
         writer.close()
         logger.info(f"`self.molecules` written to {output_name}")
 
-    def write_to_single_pdb(self, output_name: str) -> None:
+    def write_to_single_pdb(self, output_name: str) -> pd.DataFrame:
         """Writes all `self.molecules` to a single `.pdb` file.
 
         Args:
@@ -196,10 +196,11 @@ class MoleculeIO:
 
             # update the offset for the atom_serial_number & assign unique residue names
             lig_pdb = lig_pdb.assign(
-                atom_serial_number=lambda x, offset: x["atom_serial_number"].astype(int) + offset,
+                atom_serial_number=lambda x, offset=offset: x["atom_serial_number"].astype(int) + offset,
                 residue_name=resn,
             )
             offset += lig_pdb["atom_serial_number"].astype(int).max()
             ligands_dfs.append(lig_pdb)
         ligands_dfs = pd.concat(ligands_dfs, ignore_index=True)
         write_dataframe_to_pdb(ligands_dfs, output_name)
+        return ligands_dfs
