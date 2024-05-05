@@ -30,11 +30,11 @@ def pdb_HOH_nn(pdb_df_query, pdb_df_target, th=2.5, output_file=None):
     query_arr = water_oxygen_df[["x", "y", "z"]].values
 
     # Select only oxygen atoms from the target protein atoms
-    protein_oxygen_df = pdb_df_target.query("atom_name == 'O'")
-    target_arr = protein_oxygen_df[["x", "y", "z"]].values
+    # protein_heavy = pdb_df_target[~pdb_df_target["atom_name"].str.contains("H", regex=False)]
+    target_arr = pdb_df_target[["x", "y", "z"]].values
 
     # Use NearestNeighbors with a radius threshold
-    knn = NearestNeighbors(radius=th, metric="euclidean", n_jobs=-1)
+    knn = NearestNeighbors(radius=th, metric="euclidean", n_jobs=4)
     knn.fit(query_arr)
 
     # Find all protein atoms within the radius of water oxygen atoms
@@ -56,6 +56,18 @@ def pdb_HOH_nn(pdb_df_query, pdb_df_target, th=2.5, output_file=None):
 
     # Optionally write results to a PDB file
     if output_file:
+        # assign the correct data types
+        final["atom_serial_number"] = final["atom_serial_number"].astype(int)
+        final["residue_seq_number"] = final["residue_seq_number"].astype(int)
+        final["x"] = final["x"].astype(float)
+        final["y"] = final["y"].astype(float)
+        final["z"] = final["z"].astype(float)
+        try:
+            final["occupancy"] = final["occupancy"].astype(float)
+            final["temp_factor"] = final["temp_factor"].astype(float)
+        except ValueError:
+            final["occupancy"] = 0
+            final["temp_factor"] = 0
         write_dataframe_to_pdb(final, output_file)
 
     return final

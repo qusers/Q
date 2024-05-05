@@ -10,6 +10,7 @@ from ..logger import logger, setup_logger
 from ..pdb_utils import (
     disulfide_search,
     nest_pdb,
+    pdb_HOH_nn,
     read_pdb_to_dataframe,
     write_dataframe_to_pdb,
 )
@@ -171,11 +172,11 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     sphereradius = f"{args.sphereradius:.1f}"
     formatted_solvent_pack = f"{args.solvent_pack:.1f}"
 
-    if args.include_ligands is not None:
-        raise NotImplementedError(
-            "This option is not yet implemented as it would require the "
-            "uset to provide the ligands' .lib & .prm files, as done in `qligfep`"
-        )
+    # if args.include_ligands is not None:
+    #     raise NotImplementedError(
+    #         "This option is not yet implemented as it would require the "
+    #         "uset to provide the ligands' .lib & .prm files, as done in `qligfep`"
+    #     )
 
     # handle COG depending on the input
     if args.cog is None:
@@ -229,10 +230,13 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         )
         # make an output suffix that will be always unique, including time information:
         name_input_pdb = Path(args.input_pdb_file).stem
+        for_nn_pdb = Path(cwd / f"{name_input_pdb}_withLigands.pdb")
         write_dataframe_to_pdb(ligands_df, cwd / f"{name_input_pdb}_withLigands.pdb")
-        pdb_file = str(cwd / f"{name_input_pdb}_withLigands.pdb")
+        # pdb_file = str(cwd / f"{name_input_pdb}_withLigands.pdb")
+        pdb_file = str(cwd / args.input_pdb_file)  # Q doesn't seem to work so we go for the NN approach
     else:
         pdb_file = str(cwd / args.input_pdb_file)
+        for_nn_pdb = Path(pdb_file)
 
     ff_lib_path = str(Path(CONFIGS["FF_DIR"]) / f"{args.FF}.lib")
     ff_prm_path = str(Path(CONFIGS["FF_DIR"]) / f"{args.FF}.prm")
@@ -311,6 +315,18 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                     if line.startswith("ATOM") and line[17:20] == "HOH":
                         f.write(line)
                 logger.info("water.pdb file created.")
+    if args.qprep_type == "protein":
+        waterfile = Path(cwd / "water.pdb")
+        logger.info(
+            f"Using NN with theshold {args.solvent_pack} A to remove water molecules too close to protein & ligands."
+        )
+        logger.info(f"input files: {waterfile} {for_nn_pdb}")
+        pdb_HOH_nn(
+            read_pdb_to_dataframe(waterfile),
+            read_pdb_to_dataframe(for_nn_pdb),
+            float(args.solvent_pack),
+            output_file=waterfile,
+        )
 
 
 def main_exe():
