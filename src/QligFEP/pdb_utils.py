@@ -7,8 +7,58 @@ import numpy as np
 import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import AllChem
+from sklearn.neighbors import NearestNeighbors
 
 from .logger import logger
+
+
+def pdb_HOH_nn(pdb_df_query, pdb_df_target, th=2.5, output_file=None):
+    """
+    Find water oxygen atoms within a distance threshold from protein atoms.
+
+    Args:
+        pdb_df_query: DataFrame containing the water molecules.
+        pdb_df_target: DataFrame containing the protein atoms.
+        th: Distance threshold in Angstroms.
+        output_file: Optional path to write the result to a file.
+
+    Returns:
+        A DataFrame containing the water oxygen atoms within the distance threshold.
+    """
+    # Extract coordinates and filter to keep only oxygen atoms from water molecules
+    water_oxygen_df = pdb_df_query.query("atom_name == 'O'")
+    query_arr = water_oxygen_df[["x", "y", "z"]].values
+
+    # Select only oxygen atoms from the target protein atoms
+    protein_oxygen_df = pdb_df_target.query("atom_name == 'O'")
+    target_arr = protein_oxygen_df[["x", "y", "z"]].values
+
+    # Use NearestNeighbors with a radius threshold
+    knn = NearestNeighbors(radius=th, metric="euclidean", n_jobs=-1)
+    knn.fit(query_arr)
+
+    # Find all protein atoms within the radius of water oxygen atoms
+    distances, indices = knn.radius_neighbors(target_arr)
+
+    # Flatten indices, ensuring only unique and valid indices are retained
+    unique_indices = sorted(set([i for sublist in indices for i in sublist]))
+    to_rm_waters = water_oxygen_df.iloc[unique_indices]["residue_seq_number"].tolist()
+    logger.info(f"Removing {len(to_rm_waters)} water molecules within {th} Å of protein atoms.")
+    final = pdb_df_query[~pdb_df_query["residue_seq_number"].isin(to_rm_waters)].copy()
+    # now renumber the atom_serial_number and the residue_seq_number
+    startAtom = final["atom_serial_number"].values[0]
+
+    final["atom_serial_number"] = np.arange(startAtom, startAtom + len(final))
+    new_residue_seq_numbers = {
+        residue: i + 1 for i, residue in enumerate(final["residue_seq_number"].unique())
+    }
+    final["residue_seq_number"] = final["residue_seq_number"].map(new_residue_seq_numbers)
+
+    # Optionally write results to a PDB file
+    if output_file:
+        write_dataframe_to_pdb(final, output_file)
+
+    return final
 
 
 def pdb_parse_in(line, include=("ATOM", "HETATM")):
