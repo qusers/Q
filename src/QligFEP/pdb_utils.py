@@ -203,7 +203,7 @@ def read_pdb_to_dataframe(pdb_file):
             result = _parse_pdb_line(line)
             if result is not None:
                 data.append(result)
-    elif isinstance(pdb_file, str, Path):
+    elif isinstance(pdb_file, (str, Path)):
         assert Path(pdb_file).exists(), f"File {pdb_file} does not exist."
         with open(pdb_file) as file:
             for line in file:
