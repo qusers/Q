@@ -209,8 +209,8 @@ def main_exe():
     setup_logger(level=args.log)
 
     cwd = Path.cwd()
-    systems = ["water", "protein"]
-    sys_directories = [cwd / "1.water", cwd / "2.protein"]
+    systems = ["protein", "water"]
+    sys_directories = [cwd / "2.protein", cwd / "1.water"]
     # make sure that the default directories for running the FEP calculations are there
     for sys_dir in sys_directories:
         if not sys_dir.exists():
