@@ -1,11 +1,15 @@
+from io import StringIO
+from itertools import product
 from pathlib import Path
 from typing import Union
 
+import pandas as pd
 from openff.toolkit import Molecule
 from openff.toolkit.utils import UndefinedStereochemistryError
 from rdkit import Chem
 
 from .logger import logger
+from .pdb_utils import read_pdb_to_dataframe, write_dataframe_to_pdb
 
 
 class MoleculeIO:
@@ -47,7 +51,7 @@ class MoleculeIO:
         if isinstance(ligpath, Path):
             ligpath = str(ligpath)
         try:
-            mols = Molecule.from_file(ligpath)
+            mols = Molecule.from_file(ligpath).to_file()
         except UndefinedStereochemistryError:
             logger.warning(
                 "Undefined stereochemistry in the input file!! Will try to process the ligands anyway."
@@ -169,3 +173,33 @@ class MoleculeIO:
             writer.write(mol.to_rdkit())
         writer.close()
         logger.info(f"`self.molecules` written to {output_name}")
+
+    def write_to_single_pdb(self, output_name: str) -> None:
+        """Writes all `self.molecules` to a single `.pdb` file.
+
+        Args:
+            output_name: name of the output file to write the aligned ligands to.
+        """
+        offset = 0
+        ligands_dfs = []
+        lig_resn = ["LI", "LG", "LH"]
+        last_lig_resn = [d for d in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"]
+        lig_resnames = ["".join(i) for i in product(lig_resn, last_lig_resn)]
+        for mol, resn in zip(self.molecules, lig_resnames):
+            # write the molecule pdb lines in memory and convert them to pd.DataFrame
+            output = StringIO()
+            mol.to_file(output, file_format="pdb")
+            pdb_data = output.getvalue()
+            pdb_lines = pdb_data.splitlines()
+            output.close()  # Close the StringIO instance when done
+            lig_pdb = read_pdb_to_dataframe(pdb_lines)
+
+            # update the offset for the atom_serial_number & assign unique residue names
+            lig_pdb = lig_pdb.assign(
+                atom_serial_number=lambda x, offset: x["atom_serial_number"].astype(int) + offset,
+                residue_name=resn,
+            )
+            offset += lig_pdb["atom_serial_number"].astype(int).max()
+            ligands_dfs.append(lig_pdb)
+        ligands_dfs = pd.concat(ligands_dfs, ignore_index=True)
+        write_dataframe_to_pdb(ligands_dfs, output_name)
