@@ -12,7 +12,7 @@ from sklearn.neighbors import NearestNeighbors
 from .logger import logger
 
 
-def pdb_HOH_nn(pdb_df_query, pdb_df_target, th=2.5, output_file=None):
+def pdb_HOH_nn(pdb_df_query, pdb_df_target, th=2.5, output_file=None, only_Oxy:False):
     """
     Find water oxygen atoms within a distance threshold from protein atoms.
 
@@ -26,8 +26,11 @@ def pdb_HOH_nn(pdb_df_query, pdb_df_target, th=2.5, output_file=None):
         A DataFrame containing the water oxygen atoms within the distance threshold.
     """
     # Extract coordinates and filter to keep only oxygen atoms from water molecules
-    water_oxygen_df = pdb_df_query.query("atom_name == 'O'")
-    query_arr = water_oxygen_df[["x", "y", "z"]].values
+    if only_Oxy:
+        water_query = pdb_df_query.query("atom_name == 'O'")
+    else:
+        water_query = pdb_df_query
+    query_arr = water_query[["x", "y", "z"]].values
 
     # Select only oxygen atoms from the target protein atoms
     # protein_heavy = pdb_df_target[~pdb_df_target["atom_name"].str.contains("H", regex=False)]
@@ -42,7 +45,7 @@ def pdb_HOH_nn(pdb_df_query, pdb_df_target, th=2.5, output_file=None):
 
     # Flatten indices, ensuring only unique and valid indices are retained
     unique_indices = sorted(set([i for sublist in indices for i in sublist]))
-    to_rm_waters = water_oxygen_df.iloc[unique_indices]["residue_seq_number"].tolist()
+    to_rm_waters = water_query.iloc[unique_indices]["residue_seq_number"].tolist()
     logger.info(f"Removing {len(to_rm_waters)} water molecules within {th} Å of protein atoms.")
     final = pdb_df_query[~pdb_df_query["residue_seq_number"].isin(to_rm_waters)].copy()
     # now renumber the atom_serial_number and the residue_seq_number
