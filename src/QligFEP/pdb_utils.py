@@ -12,7 +12,7 @@ from sklearn.neighbors import NearestNeighbors
 from .logger import logger
 
 
-def pdb_HOH_nn(pdb_df_query, pdb_df_target, th=2.5, output_file=None, only_Oxy:False):
+def pdb_HOH_nn(pdb_df_query, pdb_df_target, th=2.5, output_file=None, only_Oxy: bool = False):
     """
     Find water oxygen atoms within a distance threshold from protein atoms.
 
@@ -26,10 +26,7 @@ def pdb_HOH_nn(pdb_df_query, pdb_df_target, th=2.5, output_file=None, only_Oxy:F
         A DataFrame containing the water oxygen atoms within the distance threshold.
     """
     # Extract coordinates and filter to keep only oxygen atoms from water molecules
-    if only_Oxy:
-        water_query = pdb_df_query.query("atom_name == 'O'")
-    else:
-        water_query = pdb_df_query
+    water_query = pdb_df_query.query("atom_name == 'O'") if only_Oxy else pdb_df_query
     query_arr = water_query[["x", "y", "z"]].values
 
     # Select only oxygen atoms from the target protein atoms
