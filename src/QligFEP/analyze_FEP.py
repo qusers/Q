@@ -555,8 +555,10 @@ def parse_arguments() -> argparse.Namespace:
         "-exp",
         "--experimental-key",
         dest="experimental_key",
-        required=True,
         help=("Key in the provided .json file that contains the experimental data."),
+        type=str,
+        required=False,
+        default=None,
     )
 
     parser.add_argument(
@@ -596,12 +598,13 @@ def main(args):
     fep_reader.load_new_system(system=args.protein_dir)
     fep_reader.read_perturbations()
     fep_reader.calculate_ddG()
-    fep_reader.load_experimental_data(exp_key=args.experimental_key)
     fep_reader.save_json_data()  # TODO: add argument for the out file
-    fep_reader.create_ddG_plot(method=args.method)
     fep_reader.populate_mapping_dictionary(
         method=args.method, output_file=args.json_file.replace(".json", "_ddG.json")
     )
+    if args.experimental_key is not None:
+        fep_reader.load_experimental_data(exp_key=args.experimental_key)
+        fep_reader.create_ddG_plot(method=args.method)
 
 
 def main_exe():
