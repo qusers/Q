@@ -8,7 +8,7 @@ from kartograf.atom_mapping_scorer import MappingVolumeRatioScorer
 from rdkit import Chem
 
 from ..logger import logger
-from .atom_mapping import process_rings_separately
+from .atom_mapping import AtomMapperHelper
 
 
 class RestraintSetter:
@@ -133,7 +133,8 @@ class RestraintSetter:
         return restraints
 
     def set_restraints(self):
-        ringStruc_compareDict = process_rings_separately(
+        atom_mapper = AtomMapperHelper()
+        ringStruc_compareDict = atom_mapper.process_rings_separately(
             Chem.RemoveHs(self.molA.to_rdkit()), Chem.RemoveHs(self.molB.to_rdkit()), self.atom_mapping
         )
         restraints = self.compare_molecule_rings(
