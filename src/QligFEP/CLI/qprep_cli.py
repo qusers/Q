@@ -326,6 +326,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             f"Using NN with theshold {args.solvent_pack} A to remove water molecules too close to protein & ligands."
         )
         logger.info(f"input files: {waterfile} {for_nn_pdb}")
+        # TODO: enhance this step so we also keep crystalographyc waters
         pdb_HOH_nn(
             read_pdb_to_dataframe(waterfile),
             read_pdb_to_dataframe(for_nn_pdb),

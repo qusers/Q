@@ -3,6 +3,7 @@
 import numpy as np
 from joblib import Parallel, delayed, parallel_config
 from openff.toolkit import ForceField, Molecule, Topology
+from openff.toolkit.utils.nagl_wrapper import NAGLToolkitWrapper
 from tqdm import tqdm
 
 from .chemIO import MoleculeIO
@@ -26,13 +27,16 @@ class OpenFF2Q(MoleculeIO):
         total_charges: Dictionary to store the total charges for each ligand.
     """
 
-    def __init__(self, lig, pattern="*.sdf", n_jobs=1):
+    def __init__(self, lig, pattern: str = "*.sdf", nagl: bool = False, n_jobs: int = 1):
         """Initializes a new instance of OpenFF2Q to process the `.sdf` input as lig.
 
         Args:
             lig: sdf file containing several molecules or directory containing the sdf files.
             pattern: If desired, a pattern can be used to search for sdf files within a directory with
                 `glob`. If lig is a sdf file, this argument will be ignored. Defaults to None.
+            nagl: if True, the partial charges will be calculated with nagl, which does so with
+                deep learning in the backend, and is faster than the default AM1-BCC method.
+            n_jobs: number of jobs to calculate the partial charges in parallel.
         """
         super().__init__(lig, pattern=pattern)
         self.n_jobs = n_jobs
@@ -41,14 +45,31 @@ class OpenFF2Q(MoleculeIO):
         self.topologies, self.parameters = self.set_topologies_and_parameters()
         self.charges_list_magnitude = {}  # store charge magnitude for each ligand
         self.total_charges = {}  # store the total charges
+        self._set_nagl(nagl=nagl)
 
-    @staticmethod
-    def _assign_charge(molecule: Molecule) -> np.ndarray:
+    def _set_nagl(self, nagl: bool):
+        """Set the forcefield to be used to calculate the molecules' partial charges."""
+        if nagl:
+            self.nagl = NAGLToolkitWrapper()
+            # Implementation following the OMSF demo @ Naturalis, Leiden:
+            # https://github.com/openforcefield/symposium_2024_demo/tree/main
+            logger.debug("Warming up the NAGL toolkit")
+            self.nagl_partial_charg_str = "openff-gnn-am1bcc-0.1.0-rc.2.pt"
+            self.nagl.assign_partial_charges(Molecule.from_smiles("C"), self.nagl_partial_charg_str)
+        else:
+            self.nagl_partial_charg_str = None
+            self.nagl = None
+
+    def _assign_charge(self, molecule: Molecule) -> np.ndarray:
         """Private method that assigns partial charges to an input Molecule and returns their magnitudes"""
         try:
-            # Seems like the fastest way of doing this for now (if you're not OpenEye licensed);
-            # for details on this, see: https://github.com/openforcefield/openff-toolkit/issues/1853
-            molecule.assign_partial_charges(partial_charge_method="am1bcc")
+            if self.nagl is not None:
+                # Nagl is much faster than the default amber method, but not all ligands are supported
+                self.nagl.assign_partial_charges(molecule, partial_charge_method=self.nagl_partial_charg_str)
+            else:
+                # Seems like the fastest way of doing this with Amber (if you're not OpenEye licensed);
+                # for details on this, see: https://github.com/openforcefield/openff-toolkit/issues/1853
+                molecule.assign_partial_charges(partial_charge_method="am1bcc")
         except Exception as e:
             print(f"Failed to assign charges for a molecule: {e}")
         charges_magnitudes = np.array([c._magnitude for c in molecule.partial_charges])
