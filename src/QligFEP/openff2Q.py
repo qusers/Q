@@ -164,7 +164,7 @@ class OpenFF2Q(MoleculeIO):
 
             # atom and charge block:
             outfile.write("[atoms] \n")
-            for i, at in enumerate(mapping):
+            for at in mapping:
                 outfile.write(
                     "{:>4s}   {:10}{:11}{:>10s}\n".format(
                         mapping[at][0],
@@ -175,19 +175,19 @@ class OpenFF2Q(MoleculeIO):
                 )
             # bonded block
             outfile.write("\n[bonds]\n")
-            for i, bond in enumerate(parameters["Bonds"]):
+            for bond in parameters["Bonds"]:
                 ai = mapping[bond[0]][1]
                 aj = mapping[bond[1]][1]
-                outfile.write("{:10s}{:}\n".format(ai, aj))
+                outfile.write(f"{ai:10s}{aj}\n")
 
             # improper block
             outfile.write("\n[impropers]\n")
-            for i, torsion in enumerate(parameters["ImproperTorsions"]):
+            for torsion in parameters["ImproperTorsions"]:
                 ai = mapping[torsion[0]][1]
                 aj = mapping[torsion[1]][1]
                 ak = mapping[torsion[2]][1]
                 al = mapping[torsion[3]][1]
-                outfile.write("{:10}{:10}{:10}{}\n".format(ai, aj, ak, al))
+                outfile.write(f"{ai:10}{aj:10}{ak:10}{al}\n")
 
     def write_prm_Q(self, lname: str):
         """Writes Q's .prm file for a given ligand.
@@ -221,10 +221,10 @@ class OpenFF2Q(MoleculeIO):
                         ai = atom_indices[0]
                         ai_name = mapping[ai][1].lower()
                         # This is a bit hacky, check how to get the float out directly
-                        epsilon = float("{}".format(parameter.epsilon).split()[0])
+                        epsilon = float(f"{parameter.epsilon}".split()[0])
                         epsilon23 = epsilon / 2
                         # TO DO: CHECK IF THIS IS CORRECT!
-                        Rmin = "{}".format(parameter.rmin_half)
+                        Rmin = f"{parameter.rmin_half}"
                         Rmin = Rmin.split()[0]
                         Rmin = float(Rmin)
                         assert len(atom_indices) == 1, f"More than 1 atom indices present: {atom_indices}"
@@ -241,9 +241,9 @@ class OpenFF2Q(MoleculeIO):
                         ai_name = mapping[ai][1].lower()
                         aj = atom_indices[1]
                         aj_name = mapping[aj][1].lower()
-                        fc = float("{}".format(parameter.k).split()[0])
-                        l = float("{}".format(parameter.length).split()[0])
-                        outfile.write("{:10}{:10}{:10.1f}{:>10.3f}\n".format(ai_name, aj_name, fc, l))
+                        fc = float(f"{parameter.k}".split()[0])
+                        leng = float(f"{parameter.length}".split()[0])
+                        outfile.write(f"{ai_name:10}{aj_name:10}{fc:10.1f}{leng:>10.3f}\n")
 
                 if block == 3:
                     for atom_indices, parameter in parameters["Angles"].items():
@@ -253,14 +253,10 @@ class OpenFF2Q(MoleculeIO):
                         aj_name = mapping[aj][1].lower()
                         ak = atom_indices[2]
                         ak_name = mapping[ak][1].lower()
-                        fc = float("{}".format(parameter.k).split()[0])
-                        angle = float("{}".format(parameter.angle).split()[0])
+                        fc = float(f"{parameter.k}".split()[0])
+                        angle = float(f"{parameter.angle}".split()[0])
 
-                        outfile.write(
-                            """{:10}{:10}{:10}{: 8.2f}{:>12.3f}\n""".format(
-                                ai_name, aj_name, ak_name, fc, angle
-                            )
-                        )
+                        outfile.write(f"""{ai_name:10}{aj_name:10}{ak_name:10}{fc: 8.2f}{angle:>12.3f}\n""")
 
                 if block == 4:
                     for atom_indices, parameter in parameters["ProperTorsions"].items():
@@ -277,8 +273,8 @@ class OpenFF2Q(MoleculeIO):
 
                         # Now check if there are multiple minima
                         for i in range(0, max_phase):
-                            fc = float("{}".format(parameter.k[i]).split()[0])
-                            phase = float("{}".format(parameter.phase[i]).split()[0])
+                            fc = float(f"{parameter.k[i]}".split()[0])
+                            phase = float(f"{parameter.phase[i]}".split()[0])
                             paths = int(parameter.idivf[i])
 
                             if i != max_phase - 1 and max_phase > 1:
@@ -314,12 +310,10 @@ class OpenFF2Q(MoleculeIO):
                         ak_name = mapping[ak][1].lower()
                         al = atom_indices[3]
                         al_name = mapping[al][1].lower()
-                        fc = float("{}".format(parameter.k[0]).split()[0])
-                        phase = float("{}".format(parameter.phase[0]).split()[0])
+                        fc = float(f"{parameter.k[0]}".split()[0])
+                        phase = float(f"{parameter.phase[0]}".split()[0])
                         outfile.write(
-                            """{:10}{:10}{:10}{:10}{:10.3f}{:10.3f}\n""".format(
-                                ai_name, aj_name, ak_name, al_name, fc, phase
-                            )
+                            f"""{ai_name:10}{aj_name:10}{ak_name:10}{al_name:10}{fc:10.3f}{phase:10.3f}\n"""
                         )
 
     def write_PDB(self, lname: str):
