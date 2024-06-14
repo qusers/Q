@@ -25,13 +25,11 @@ def pdb_HOH_nn(pdb_df_query, pdb_df_target, th=2.5, output_file=None, only_Oxy: 
     Returns:
         A DataFrame containing the water oxygen atoms within the distance threshold.
     """
-    # Extract coordinates and filter to keep only oxygen atoms from water molecules
     water_query = pdb_df_query.query("atom_name == 'O'") if only_Oxy else pdb_df_query
     query_arr = water_query[["x", "y", "z"]].values
 
-    # Select only oxygen atoms from the target protein atoms
-    # protein_heavy = pdb_df_target[~pdb_df_target["atom_name"].str.contains("H", regex=False)]
-    target_arr = pdb_df_target[["x", "y", "z"]].values
+    pdb_ions = ["ZN", "SOD", "IOD", "BR", "CL", "CU", "CU1", "NA", "MG", "CA"]  # noqa: F841
+    target_arr = pdb_df_target.query("~residue_name.isin(@pdb_ions)")[["x", "y", "z"]].values
 
     # Use NearestNeighbors with a radius threshold
     knn = NearestNeighbors(radius=th, metric="euclidean", n_jobs=4)
@@ -69,8 +67,9 @@ def pdb_HOH_nn(pdb_df_query, pdb_df_target, th=2.5, output_file=None, only_Oxy: 
             final["occupancy"] = 0
             final["temp_factor"] = 0
         write_dataframe_to_pdb(final, output_file)
+    n_removed = len(water_query) - len(final)
 
-    return final
+    return final, n_removed
 
 
 def pdb_parse_in(line, include=("ATOM", "HETATM")):
