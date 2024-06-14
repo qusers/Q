@@ -3968,6 +3968,9 @@ subroutine readpdb()
         ChainID, resnum_tmp, InsCode, xtmp(1:3)
       !write(*,atnam_tmp)
 
+      ! ---   rm leading spaces from atom name & add trailing spaces so it's 4 characters long
+      call remove_leading_spaces(atnam_tmp)
+      
       ! ---   New residue ?
       if(resnum_tmp/=oldnum) then
         ! ---      Check if old residue was OK...
@@ -4127,6 +4130,31 @@ subroutine readpdb()
   close(3)
   call clearpdb
   pdb_file = ''
+
+contains
+
+  subroutine remove_leading_spaces(atnam_tmp)
+  character(len=4)              :: atnam_tmp 
+  character(len=100)            :: trimmed_atnam, spaces
+  integer                       :: len_trimmed, len_spaces
+
+  ! Trim leading spaces and store them
+  trimmed_atnam = adjustl(atnam_tmp)
+  len_trimmed = len_trim(trimmed_atnam)
+  len_spaces = len(atnam_tmp) - len_trimmed
+
+  ! Append the spaces to the end of the trimmed atnam_tmp
+  spaces = repeat(' ', len_spaces)
+  trimmed_atnam = trimmed_atnam(1:len_trimmed)//spaces
+
+  ! Ensure the length is 4 by adding extra spaces if necessary
+  if (len_trimmed < 4) then
+      atnam_tmp = trimmed_atnam(1:min(len_trimmed + len_spaces, 4))//repeat(' ', max(0, 4 - len_trimmed - len_spaces))
+  else
+      atnam_tmp = trimmed_atnam(1:4)
+  endif
+end subroutine remove_leading_spaces
+
 end subroutine readpdb
 
 
