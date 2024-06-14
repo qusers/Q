@@ -279,13 +279,17 @@ def read_pdb_to_dataframe(pdb_file):
 
 def write_dataframe_to_pdb(df, output_file):
     with open(output_file, "w") as file:
+        if df.temp_factor.dtype == "float64":
+            df.temp_factor = df.temp_factor.round(2).astype(str)
+        if df.occupancy.dtype == "float64":
+            df.occupancy = df.occupancy.round(2).astype(str)
         for _, row in df.iterrows():
             pdb_line = (
                 f"{row['record_type']:<6}{row['atom_serial_number']:>5} "
                 f"{row['atom_name']:<4}{row['alt_loc']:<1}{row['residue_name']:>3} "
                 f"{row['chain_id']:>1}{row['residue_seq_number']:>4}{row['insertion_code']:>1}   "
-                f"{row['x']:>8.3f}{row['y']:>8.3f}{row['z']:>8.3f}{row['occupancy']:>6.2f}"
-                f"{row['temp_factor']:>6.2f}          {row['element_symbol']:>2}{row['charge']:>2}\n"
+                f"{row['x']:>8.3f}{row['y']:>8.3f}{row['z']:>8.3f}{row['occupancy']:>6}"
+                f"{row['temp_factor']:>6}          {row['element_symbol']:>2}{row['charge']:>2}\n"
             )
             file.write(pdb_line)
 
