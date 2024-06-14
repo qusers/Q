@@ -4,20 +4,13 @@ import argparse
 from pathlib import Path
 from typing import Optional
 
-import pandas as pd
+import numpy as np
 
-from ..chemIO import MoleculeIO
 from ..IO import run_command
 from ..logger import logger, setup_logger
-from ..pdb_utils import (
-    disulfide_search,
-    nest_pdb,
-    pdb_HOH_nn,
-    read_pdb_to_dataframe,
-    write_dataframe_to_pdb,
-)
+from ..pdb_utils import pdb_HOH_nn, read_pdb_to_dataframe, write_dataframe_to_pdb
 from ..settings.settings import CONFIGS
-from .cog_cli import MolecularCOG
+from .utils import handle_cysbonds
 
 # NOTE: cysbonds will have \n after each bond -> `maketop MKC_p` is in a different line
 qprep_inp_content = """rl {ff_lib_path}
@@ -28,7 +21,7 @@ rp {pdb_file_path}
 ! NOTE, this is now large for water system, change for protein system
 set solvent_pack {solvent_pack}
 boundary 1 {cog} {sphereradius}
-solvate {cog} {sphereradius} {qprep_type}
+solvate {cog} {sphereradius} 1 HOH
 {cysbond}maketop MKC_p
 writetop dualtop.top
 wp top_p.pdb y
@@ -106,43 +99,16 @@ def parse_arguments() -> argparse.Namespace:
         "-sp",
         "--solvent_pack",
         dest="solvent_pack",
-        default=2.3,
+        default=3.0,
         help=(
             "Parameter to qprep.inp `set solvent_pack`. According to Q's manual, this value "
             "corresponds to the minimum distance between solute and solvent heavy atoms when "
-            "adding solvent (e.g.: HOH) and defaults to 2.4. In QligFEP we use a value of 2.3, "
-            "but while generating a water.pdb that is suitable for input in `qligfep` and "
-            "`setupFEP` (with `-t protein`), this can create water molecules that are too "
-            "close to the ligands, causing calculations to crash. Please increase this value "
-            "when you call this program with the `-t protein` argument. Defaults to 2.3."
+            "adding solvent (e.g.: HOH) and defaults to 2.4. In QligFEP we use a value of 2.3 "
+            "on the water leg. For the protein leg, however, this value often creates water "
+            "molecules that are too close to the structure, causing calculations to crash. "
+            "close to the ligands, causing calculations to crash. Defaults to 3.0."
         ),
         type=float,
-    )
-    parser.add_argument(
-        "-lig",
-        "--include_ligands",
-        dest="include_ligands",
-        default=None,
-        help=(
-            "Optional argument to include ligands while preparing the water sphere with your `-pdb` file. "
-            "This is useful if you want to include ligands to `mask` your water sphere, leaving a blank space "
-            "to be filled in when you call `qligfep` or `setupFEP`. The input for this argument can be either "
-            "pdb or sdf files. If you include a sdf file that contains multiple ligands, the program will "
-            "include the coordinates for all of them."
-        ),
-        type=str,
-    )
-    parser.add_argument(
-        "-t",
-        "--qprep_type",
-        dest="qprep_type",
-        default="water",
-        choices=["protein", "water"],
-        help=(
-            "Type of system to be solvated. If water, the cysbond argument will be ignored. "
-            "But qprep will require a water.pdb file in the same directory. Defaults to water."
-        ),
-        type=str,
     )
     parser.add_argument(
         "-log",
@@ -174,103 +140,18 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     sphereradius = f"{args.sphereradius:.1f}"
     formatted_solvent_pack = f"{args.solvent_pack:.1f}"
 
-    # if args.include_ligands is not None:
-    #     raise NotImplementedError(
-    #         "This option is not yet implemented as it would require the "
-    #         "uset to provide the ligands' .lib & .prm files, as done in `qligfep`"
-    #     )
+    cog = " ".join(args.cog)
+    logger.debug(f"COG is {cog}")
 
-    # handle COG depending on the input
-    if args.cog is None:
-        if args.qprep_type == "protein":
-            # take the COG from the qprep_water.inp file
-            try:
-                with open("qprep_water.inp") as f:
-                    lines = f.readlines()
-            except FileNotFoundError as e:
-                logger.error(
-                    "qprep_water.inp file not found. Make sure you run qprep with the -t water argument "
-                    "first and then run it again with the `-t protein` argument to generate the final water sphere."
-                )
-                logger.info(
-                    "Usage example:\n"
-                    "qprep_prot -i BACE_modif_renamed.pdb -lig ../BACE_ligands_aligned.sdf"
-                    "qprep_prot -i BACE_modif_renamed_withLigands.pdb -t protein -sp 2.5"
-                )
-                raise FileNotFoundError from e("qprep_water.inp file not found.")
-            for line in lines:
-                if line.startswith("boundary"):
-                    cog = " ".join(line.split()[2:5])
-                    logger.debug(f"COG is {cog}")
-        elif args.include_ligands is not None:
-            molCOG = MolecularCOG(args.include_ligands)
-            cog = " ".join(molCOG().strip("[]").split(" "))
-            logger.debug(f"COG is {cog}")
-        else:
-            raise ValueError("Center of geometry not provided. Please provide the COG.")
-    else:
-        cog = " ".join(args.cog)
-        logger.debug(f"COG is {cog}")
-
-    # write temporary pdb_file depending on args.include_ligands parameter
-    if args.include_ligands is not None:
-        lig_path = Path(args.include_ligands)
-        assert lig_path.exists(), f"File {lig_path} does not exist."
-        if lig_path.suffix == ".pdb":
-            raise ValueError(".pdb file format not yet implemented for ligands. Please use .sdf format.")
-        logger.debug(f"loading ligands from: {lig_path}")
-        molio = MoleculeIO(str(lig_path))
-        input_pdb_df = read_pdb_to_dataframe(args.input_pdb_file)
-        offset = input_pdb_df["atom_serial_number"].astype(int).max()
-
-        temp_ligfile = Path(cwd / "temp_ligands.pdb")
-        ligands_df = molio.write_to_single_pdb(temp_ligfile)
-        temp_ligfile.unlink()
-
-        ligands_df = ligands_df.assign(
-            atom_serial_number=lambda x: x["atom_serial_number"].astype(int) + offset,
-        )
-        # make an output suffix that will be always unique, including time information:
-        name_input_pdb = Path(args.input_pdb_file).stem
-        for_nn_pdb = Path(cwd / f"{name_input_pdb}_withLigands.pdb")
-        write_dataframe_to_pdb(
-            pd.concat([input_pdb_df, ligands_df], ignore_index=True),
-            cwd / f"{name_input_pdb}_withLigands.pdb",
-        )
-        # pdb_file = str(cwd / f"{name_input_pdb}_withLigands.pdb")
-        pdb_file = str(cwd / args.input_pdb_file)  # Q doesn't seem to work so we go for the NN approach
-    else:
-        pdb_file = str(cwd / args.input_pdb_file)
-        for_nn_pdb = Path(pdb_file)
+    pdb_file = str(cwd / args.input_pdb_file)
 
     ff_lib_path = str(Path(CONFIGS["FF_DIR"]) / f"{args.FF}.lib")
     ff_prm_path = str(Path(CONFIGS["FF_DIR"]) / f"{args.FF}.prm")
 
-    if args.qprep_type == "protein":
-        annotation_type = "4 water.pdb"
-    if args.qprep_type == "water":
-        annotation_type = "1 HOH"
+    qprep_inp_path = cwd / "qprep.inp"
 
-    qprep_filename = f"qprep_{args.qprep_type}"
-    qprep_inp_path = cwd / f"{qprep_filename}.inp"
+    cysbonds = handle_cysbonds(args.cysbond, pdb_file, comment_out=True)
 
-    cysbonds = "" if args.qprep_type == "water" else args.cysbond
-    if cysbonds == "auto":
-        with open(pdb_file) as f:
-            pdb_lines = f.readlines()
-            npdb = nest_pdb(pdb_lines)
-            npdb, cysbonds = disulfide_search(npdb)
-            del npdb
-        cysbonds = "".join([f"!addbond {atomN[0]} {atomN[1]} y\n" for atomN in cysbonds])
-    elif cysbonds != "":
-        cysbonds = cysbonds.split(",")
-        cysbonds = "".join([f"!addbond {b.split('_')[0]} {b.split('_')[1]} y\n" for b in cysbonds])
-    elif cysbonds == "":  # TODO: do this in a smarter way...
-        pass
-    else:
-        raise ValueError("Invalid cysbond input. Please check the input format.")
-
-    # format the cysbonds = addbond at1 at2 y
     if args is not None:
         param_dict = {
             "pdb_file_path": pdb_file,
@@ -279,59 +160,62 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "ff_prm_path": ff_prm_path,
             "sphereradius": sphereradius,
             "cysbond": cysbonds,
-            "qprep_type": annotation_type,
             "solvent_pack": formatted_solvent_pack,
         }
     else:
         param_dict = {**kwargs}
 
-    # write qprep.inp with the formatted qprep_inp_content using Path
     if qprep_inp_path.exists():
-        logger.warning("qprep.inp already exists!! Skipping qprep.inp file generation...")
-    else:
-        with qprep_inp_path.open("w") as qprep_inp_f:
-            qprep_inp_f.write(qprep_inp_content.format(**param_dict))
+        logger.warning("qprep.inp already exists!! Overwriting...")
+    with qprep_inp_path.open("w") as qprep_inp_f:
+        qprep_inp_f.write(qprep_inp_content.format(**param_dict))
 
-    options = f" < {qprep_filename}.inp > {qprep_filename}.out"
+    options = " < qprep.inp > qprep.out"
     logger.debug(f"Running command {qprep_path} {options}")
     run_command(qprep_path, options, string=True)
-    logger.info(f"qprep run finished. Check the output `{qprep_filename}.out` for more information.")
-    # if the -t argument is water, we should read the pdb files and write a water.pdb file with only water molecules
-    if args.qprep_type == "water":
-        waterfile = Path(cwd / "water.pdb")
-        if waterfile.exists():
-            logger.warning("water.pdb already exists!! Skipping water.pdb file generation...")
-        else:
-            if not Path("complexnotexcluded.pdb").exists():
-                logger.error(
-                    "`complexnotexcluded.pdb` file not found. This is as sign qprep didn't "
-                    "run correctly. Check the outoput in your console and try again..."
-                )
-                logger.info(
-                    "If your console contains something like `libgfortran.so.5: cannot "
-                    "open shared object file: No such file or directory`, you might need to load "
-                    "some module in your HPC system that you used to compile Q."
-                )
-                raise FileNotFoundError("complexnotexcluded.pdb file not found. Something went wrong")
-            with open("complexnotexcluded.pdb") as f:
-                lines = f.readlines()
-            with open("water.pdb", "w") as f:
-                for line in lines:
-                    if line.startswith("ATOM") and line[17:20] == "HOH":
-                        f.write(line)
-                logger.info("water.pdb file created.")
-    if args.qprep_type == "protein":
-        waterfile = Path(cwd / "water.pdb")
+    logger.info("qprep run finished. Check the output `qprep.out` for more information.")
+
+    waterfile = Path(cwd / "water.pdb")
+    # Write water file and deal with possible errors
+    if not Path("complexnotexcluded.pdb").exists():
+        logger.error(
+            "`complexnotexcluded.pdb` file not found. This is as sign qprep didn't "
+            "run correctly. Check the outoput in your console and try again..."
+        )
         logger.info(
-            f"Using NN with theshold {args.solvent_pack} A to remove water molecules too close to protein & ligands."
+            "If your console contains something like `libgfortran.so.5: cannot "
+            "open shared object file: No such file or directory`, you might need to load "
+            "some module in your HPC system that you used to compile Q."
         )
-        logger.info(f"input files: {waterfile} {for_nn_pdb}")
-        pdb_HOH_nn(
-            read_pdb_to_dataframe(waterfile),
-            read_pdb_to_dataframe(for_nn_pdb),
-            float(args.solvent_pack),
-            output_file=waterfile,
+        raise FileNotFoundError("complexnotexcluded.pdb file not found. Something went wrong")
+    with open("complexnotexcluded.pdb") as f:
+        lines = f.readlines()
+    with open("water.pdb", "w") as f:
+        for line in lines:
+            if line.startswith("ATOM") and line[17:20] == "HOH":
+                f.write(line)
+        logger.info("water.pdb file created.")
+
+    # Now that the water file is created, we remove water molecules outside the sphere radius
+    cog = [float(i) for i in cog.split()]
+    water_df = read_pdb_to_dataframe(waterfile)
+    oxygen_subset = water_df.query('atom_name == "O"')
+    euclidean_distances = oxygen_subset[["x", "y", "z"]].sub(cog).pow(2).sum(1).apply(np.sqrt)
+    outside = np.where(euclidean_distances > args.sphereradius)[0]
+    outside_HOH_residues = oxygen_subset.iloc[outside].residue_seq_number.unique()  # noqa: F841
+    if outside.shape[0] > 0:
+        logger.warning(f"Found {outside.shape[0]} water molecules outside the sphere radius.")
+        logger.warning("Removing these water molecules from the water.pdb file.")
+        todrop_idxs = water_df.query("residue_seq_number in @outside_HOH_residues").index
+        water_df.drop(index=todrop_idxs, inplace=True)
+        new_distances = (
+            water_df.query('atom_name == "O"')[["x", "y", "z"]].sub(cog).pow(2).sum(1).apply(np.sqrt)
         )
+        logger.debug(f"Final highest distance is {new_distances.max():.2f} A")
+        write_dataframe_to_pdb(water_df, waterfile)
+    else:
+        logger.info("All water molecules are inside the sphere radius.")
+        logger.debug(f"Final highest distance to COG is {euclidean_distances.max():.2f} A")
 
 
 def main_exe():
