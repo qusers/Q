@@ -279,9 +279,9 @@ def read_pdb_to_dataframe(pdb_file):
 def write_dataframe_to_pdb(df, output_file):
     with open(output_file, "w") as file:
         if df.temp_factor.dtype == "float64":
-            df.temp_factor = df.temp_factor.round(2).astype(str)
+            df.temp_factor = df.temp_factor.apply(lambda x: f"{x:.2f}")
         if df.occupancy.dtype == "float64":
-            df.occupancy = df.occupancy.round(2).astype(str)
+            df.occupancy = df.occupancy.apply(lambda x: f"{x:.2f}")
         for _, row in df.iterrows():
             pdb_line = (
                 f"{row['record_type']:<6}{row['atom_serial_number']:>5} "
