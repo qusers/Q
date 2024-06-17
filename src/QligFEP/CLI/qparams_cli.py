@@ -22,7 +22,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "-FF",
         "--forcefield",
-        dest="forcefield",
+        dest="FF",
         default="OpenFF",
         choices=[
             "OPLS2005",
@@ -71,7 +71,7 @@ def parse_arguments() -> argparse.Namespace:
 
 def main(args: argparse.Namespace) -> None:
     setup_logger(level=args.log)
-    if args.forcefield == "OpenFF":
+    if args.FF == "OpenFF":
         openff2q = OpenFF2Q(args.input, nagl=args.nagl, n_jobs=args.parallel)
         openff2q.process_ligands()
     else:
