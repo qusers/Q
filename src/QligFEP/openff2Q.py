@@ -1,5 +1,7 @@
 """Module containing the OpenFF2Q class to process ligands and generate OpenFF parameter files for QligFEP."""
 
+from pathlib import Path
+
 import numpy as np
 from joblib import Parallel, delayed, parallel_config
 from openff.toolkit import ForceField, Molecule, Topology
@@ -40,6 +42,7 @@ class OpenFF2Q(MoleculeIO):
         """
         super().__init__(lig, pattern=pattern)
         self.n_jobs = n_jobs
+        self.out_dir = Path(self.lig).parent
         self.mapping = {lname: {} for lname in self.lig_names}
         self.forcefield = ForceField("openff-2.2.0.offxml")
         self.topologies, self.parameters = self.set_topologies_and_parameters()
@@ -87,7 +90,8 @@ class OpenFF2Q(MoleculeIO):
     def process_ligands(self):
         """Assigns partial charges and writes the .lib, .prm and .pdb files for each ligand."""
         logger.info("Calculating charges")
-        with parallel_config(n_jobs=self.n_jobs, backend="multiprocessing"):
+        backend = "threading" if self.nagl else "multiprocessing"
+        with parallel_config(n_jobs=self.n_jobs, backend=backend):
             molecules = tqdm(self.molecules)
             charges_magnitudes = Parallel()(delayed(self._assign_charge)(molecule) for molecule in molecules)
         logger.info("Done! Writing .lib, .prm and .pdb files for each ligand")
@@ -155,7 +159,8 @@ class OpenFF2Q(MoleculeIO):
         parameters = self.parameters[lname]
         mapping = self.mapping[lname]
         total_charge = self.total_charges[lname]
-        with open(lname + ".lib", "w") as outfile:
+        libfile_out = self.out_dir / f"{lname}.lib"
+        with open(libfile_out, "w") as outfile:
             outfile.write(
                 "{}    ! atoms no {}   total charge {} \n\n".format("{LIG}", len(mapping), total_charge)
             )
@@ -195,12 +200,12 @@ class OpenFF2Q(MoleculeIO):
         Args:
             lname: name of the ligand for the .prm file.
         """
-        prm_file = str(FF_DIR / "NOMERGE.prm")
+        prm_template = str(FF_DIR / "NOMERGE.prm")
         parameters = self.parameters[lname]
         mapping = self.mapping[lname]
-        prm_file_out = f"{lname}.prm"
+        prmfile_out = f"{self.out_dir / lname}.prm"
         mol = self.molecules[self.lig_names.index(lname)]
-        with open(prm_file) as infile, open(prm_file_out, "w") as outfile:
+        with open(prm_template) as infile, open(prmfile_out, "w") as outfile:
             for line in infile:
                 block = 0
                 outfile.write(line)
@@ -323,7 +328,8 @@ class OpenFF2Q(MoleculeIO):
             lname: name of the ligand for the .pdb file.
         """
         mapping = self.mapping[lname]
-        with open(lname + ".pdb", "w") as outfile:
+        pdbfile_out = self.out_dir / f"{lname}.pdb"
+        with open(pdbfile_out, "w") as outfile:
             for atom in mapping:
                 ai = atom + 1
                 ai_name = mapping[atom][1]
