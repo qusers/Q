@@ -1329,21 +1329,21 @@
     [charge_groups]
         SOD   
 *--------------------------------------------------------------------------------
-{MG}            !charge: 2.00 ||  Magnesium Ion, CM set for TIP3P water from Li et al., JCTC, 2013, 9, 2733
+{MAG}            !charge: 2.00 ||  Magnesium Ion, CM set for TIP3P water from Li et al., JCTC, 2013, 9, 2733
     [atoms]
-         1 MG     MG           2.00
+         1 MAG    MAG          2.00
     [charge_groups]
-        MG   
+        MAG   
 *--------------------------------------------------------------------------------
-{CL}            !charge:-1.00 ||  Chloride Ion, HFE set for TIP3P water from Li et al., JCTC, 2015, 11, 1645
+{CHL}            !charge:-1.00 ||  Chloride Ion, HFE set for TIP3P water from Li et al., JCTC, 2015, 11, 1645
     [atoms]
-         1 CL     CL          -1.00
+         1 CHL    CHL         -1.00
     [charge_groups]
-        CL   
+        CHL   
 *--------------------------------------------------------------------------------
-{ZN}            !charge: 2.00 ||  Zinc Ion, CM set for TIP3P water from Li et al., JCTC, 2013, 9, 2733
+{ZIN}            !charge: 2.00 ||  Zinc Ion, CM set for TIP3P water from Li et al., JCTC, 2013, 9, 2733
     [atoms]
-         1 ZN     ZN           2.00
+         1 ZIN    ZIN          2.00
     [charge_groups]
-        ZN   
+        ZIN  
 *------------------------------------------------------------------
