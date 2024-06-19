@@ -40,11 +40,16 @@ In this case, follow this definition:
 The following Python function outputs the parameters in the format required by the `AMBER14sb.prm` file (just make sure you have matching indentation with the other parameters in the file):
 
 ```python
-def array_calc(sig, eps, mass):
+def array_calc(atom, sig, eps, mass = None):
     # calculate LJ types
     sig = float(sig)
     eps = float(eps)
-    return f"{sig:.4f}, 0.0, {eps:.6f}, {sig:.4f}, {sig/2:.7f}, {mass:.3}"
+    if mass is None:
+        mass = 0.0
+    return (
+        f"{atom:<13}{sig:>10}{0.0:>11}"
+        f"{eps:>11}{sig:>11}{eps/2:>11.6f}{mass:>11.2f}"
+    )
 ```
 
 ## Adding extra ion parameters
@@ -94,3 +99,128 @@ The parameters for the `Na+` ion are `1.475` and `0.03171494` (in the order `sig
 For the reasons why such parameters are differently configured in the `prm` files Q, please refer to the [user's manual](http://qdyn.no-ip.org/documents/qman.pdf). Specifically, the following section (page 31):
 
 The Lennard-Jones potential can be written either as $ \frac{A_{ij}}{r^{12}} - \frac{B_{ij}}{r^6}$ or $ \varepsilon_{ij} \left( \left( \frac{R^*_{ij}}{r_{ij}} \right)^{12} - 2 \cdot \left( \frac{R^*_{ij}}{r_{ij}} \right)^6 \right) $, using the geometric or arithmetic rules, respectively, to combine parameters for pairs of atom types. Treatment of 1-4 interactions (LJ and electrostatic) is specific for each force field.
+
+# On the ForceField parameters:
+
+The force field .prm files follow, (here in the example: AmberFF) the pattern:
+
+```text
+[options]
+name                           Q-Amber14SB
+type                           AMBER
+vdw_rule                       arithmetic !vdW combination rule (geometric or arithmetic)
+scale_14                       0.8333 ! electrostatic 1-4 scaling factor
+switch_atoms                   off
+improper_potential             periodic
+improper_definition            explicit
+
+[atom_types]
+...
+
+! Ligand vdW parameters
+! End ligand vdW parameters
+
+[bonds]
+...
+
+! Ligand bond parameters
+! End ligand bond parameters
+
+[angles]
+...
+
+! Ligand angle parameters
+! End ligand angle parameters
+
+[torsions]
+...
+
+! Ligand torsion parameters
+! End ligand torsion parameters
+
+[impropers]
+...
+
+! Ligand improper parameters
+! End ligand improper parameters
+```
+
+This tutorial will show how to convert prm files from other force fields in the openMM format to the Q format. Let's take the (Amber14sb force field)[https://github.com/openmm/openmm/blob/8.1.1/wrappers/python/openmm/app/data/amber14/protein.ff14SB.xml] as an example.
+
+⚠️ Note: the following instructions are only to be followed fo creating a forcefield with the `arithmetic` vdw rule (as in the Amber FF).
+
+Source for the explanation of the OpenMM force field files: http://docs.openmm.org/7.6.0/userguide/application/05_creating_ffs.html
+
+## atom_types:
+
+For this you can follow the explanation on either [Charmm & OPLS ForceFields](#charmm--opls-forcefields) or [Amber ForceField](#amber-forcefield) sections.
+
+To extract the correct values from the OpenMM force field file, you will need to make some conversions. There, `sigma` is reported in $nm$ and `eps` in $kJ/mol$. You can use the following Python function to convert these values to the units used by Q:
+
+<!-- Not sure why multiplying 5.612 does the trick??? -->
+```python
+def atom_type_forces_from_openmm(sig, eps):
+     # convert eps from kJ/mol to kcal/mol
+     sig = round(sig * 5.612, 4)
+     # convert sig to A
+     eps = round(eps * 23.9005736 / 100, 3)
+     return sig, eps
+```
+## bonds
+
+For this, you will have to convert the `HarmonicBondForce`, but OpenMM uses spring forces reported in $kJ/mol/nm^2$, but Q uses these forces in $kcal/mol/A^2$ rounded up to 1 decimal case.
+
+To convert these values you can use the Python function:
+
+```python
+def convert_kj_mol_nm2_to_kcal_mol_a2(value_kj_mol_nm2):
+     conversion_factor = 23.9005736
+     value_kcal_mol_a2 = round(value_kj_mol_nm2 * conversion_factor / 10000, 1)
+     return value_kcal_mol_a2
+```
+
+For the length, you should use * 10 same values reported on the `HarmonicBondForce` present in the OpenMM force field file, but make sure to mu
+
+## angles
+
+According to the Q manual, the `[angles]` part of the file define the harmonic angle parameters. However, other transformations are needed to convert the values from the OpenMM force field file to the Q format.
+
+Since OpenMM uses angles as $radians$ and spring constants in $kJ/mol/rad^2$, you will need to convert these values to the units used by Q. You can use the following Python function to convert these values:
+
+```python
+import math
+
+def radians_to_degrees(radians):
+    return radians * 180 / math.pi
+
+# values for C, C, O angles
+angle = 2.0943951023931953
+Q_converted_angle = round(radians_to_degrees(angle), 1)
+
+k = 669.44
+Q_converted_k = convert_kj_mol_nm2_to_kcal_mol_a2(k) * 100
+```
+## torsions
+
+According to Q's manual, this part is defined with the following columns:
+1) atom type 1 or 0 or ? to match any atom type
+2) atom type 2
+3) atom type 3
+4) atom type 4 or 0 or ? to match any atom type
+5) force constant = 1/2 * barrier height (kcal * mol^-1)
+6) periodicity (number of maxima per turn). Add a minus sign before to indicate that more components follow on subsequent lines, i. e. for a torsion potential with multiple components all but the last component should be entered with negative periodicity.
+7) phase shift ($\delta/2$ define the location of first maximum) ($\degree$)
+8) number of paths
+
+## impropers
+
+> TODO: this part isn't so clear yet... need to investigate further.
+
+columns:
+1) atom type 1 or 0 or ? to match any atom type
+2) atom type 2
+3) atom type 3
+4) atom type 4 or 0 or ? to match any atom type
+5) force constant = kcal / mol / rad^2
+6) equilibrium angle
+
