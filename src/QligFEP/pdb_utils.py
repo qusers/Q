@@ -12,12 +12,13 @@ from sklearn.neighbors import NearestNeighbors
 from .logger import logger
 
 
-def pdb_HOH_nn(pdb_df_query, pdb_df_target, th=2.5, output_file=None, only_Oxy: bool = False):
-    """
-    Find water oxygen atoms within a distance threshold from protein atoms.
+def rm_HOH_clash_NN(pdb_df_query, pdb_df_target, th=2.5, output_file=None, only_Oxy: bool = False):
+    """Use a NearestNeighbors approach to find water molecules within a distance threshold
+    (Ångström) from an input pdb file (e.g.: a protein-ligand complex), and remove them if
+    the atoms are within the threshold distance from the input pdb structure.
 
     Args:
-        pdb_df_query: DataFrame containing the water molecules.
+        pdb_df_query: DataFrame containing the water molecules to be removed.
         pdb_df_target: DataFrame containing the protein atoms.
         th: Distance threshold in Angstroms.
         output_file: Optional path to write the result to a file.
