@@ -4,7 +4,7 @@ import re
 import requests
 import simtk
 import xmltodict
-from simtk.openmm.app import element
+from openmm.app import element
 
 
 def array_calc(atom, sig, eps, mass=None):
@@ -93,6 +93,9 @@ def extract_torsions(torsions: dict):
         # FIXME: the number of paths is currently wrong... See definition from Q manual:
         # The number of paths is the number of ways that a two-atom torsion can
         # be defined, i:e: the product of the number of atoms bonded to the two middle atoms
+        # I opened an issue on that on Q's repository: https://github.com/qusers/Q6/issues/20
+        # TODO: try to figure it out; this piece of code might help with answering it:
+        # https://github.com/mpurg/qtools/blob/master/qscripts-cli/q_amber2q.py#L179-L183
         num_paths = len(periodicities)
 
         for idx, period in enumerate(periodicities):
