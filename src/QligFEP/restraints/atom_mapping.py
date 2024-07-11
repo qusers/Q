@@ -1,6 +1,10 @@
 """Module for atom mapping utilities, to be used to set FEP restraints. Main function is `process_rings_separately`"""
 
+from itertools import combinations
+
 from rdkit import Chem
+
+from ..logger import logger
 
 
 class AtomMapperHelper:
@@ -14,9 +18,17 @@ class AtomMapperHelper:
     def identify_and_enumerate_rings(self, mol):
         """Identify distinct ring structures and enumerate them."""
         ring_info = mol.GetRingInfo()
-        rings = {}  # Maps ring index to a set of atom indices in the ring
-        for idx, ring in enumerate(ring_info.AtomRings()):
-            rings[idx] = set(ring)
+        rings = []
+        for ring in ring_info.AtomRings():
+            rings.append(set(ring))
+
+        for ring1, ring2 in combinations(rings, 2):  # check for ring overlap & merge
+            if ring1.intersection(ring2):
+                rings.remove(ring1)
+                rings.remove(ring2)
+                rings.append(ring1.union(ring2))
+
+        rings = {idx: ring for idx, ring in enumerate(rings)}
         return rings
 
     def map_rings_between_molecules(
@@ -57,9 +69,9 @@ class AtomMapperHelper:
             >>> }
         """
         ringsA = self.identify_and_enumerate_rings(molA)
-        self.ringIdxsA = molA.GetRingInfo().AtomRings()
+        self.ringIdxsA = [item for sublist in molA.GetRingInfo().AtomRings() for item in sublist]
         ringsB = self.identify_and_enumerate_rings(molB)
-        self.ringIdxsB = molB.GetRingInfo().AtomRings()
+        self.ringIdxsB = [item for sublist in molB.GetRingInfo().AtomRings() for item in sublist]
         rings = {}
         ring_mapping = self.map_rings_between_molecules(ringsA, ringsB, atom_mapping)
         rings.update({"Ring mapping": ring_mapping})
@@ -67,8 +79,8 @@ class AtomMapperHelper:
         for ring_idx, (idxA, idxB) in enumerate(ring_mapping.items()):
             atomsA = ringsA[idxA]
             atomsB = ringsB[idxB]
-            substituentsA = self.get_substituents(molA, atomsA)
-            substituentsB = self.get_substituents(molB, atomsB)
+            substituentsA = self.get_substituents(molA, atomsA, a_or_b="a")
+            substituentsB = self.get_substituents(molB, atomsB, a_or_b="b")
             rings.update(
                 {
                     f"Ring {ring_idx}": {
@@ -89,37 +101,50 @@ class AtomMapperHelper:
                 return True
         return False
 
-    def walk_bonds(self, atom, found_atoms, visited_atoms, mol, current_ring_atoms):
-        if atom.GetIdx() in visited_atoms:
+    def walk_bonds(self, atom, found_atoms, visited_atoms, mol, current_ring_atoms, a_or_b):
+        atom_idx = atom.GetIdx()
+        if atom_idx in visited_atoms:
             return found_atoms, visited_atoms  # Return immediately if atom has been visited
 
-        visited_atoms.add(atom.GetIdx())  # Mark this atom as visited
-        found_atoms.add(atom.GetIdx())  # Add this atom to the found set
+        found_atoms.add(atom_idx)  # Add this atom to the found set
+        visited_atoms.add(atom_idx)  # Mark this atom as visited
 
         for neighbor in atom.GetNeighbors():
-            if neighbor.GetIdx() not in visited_atoms and neighbor.GetIdx() not in current_ring_atoms:
+            neighbor_idx = neighbor.GetIdx()
+            if neighbor_idx in current_ring_atoms:
+                continue
+
+            rings_idxs = self.ringIdxsA if a_or_b == "a" else self.ringIdxsB
+            if neighbor_idx in rings_idxs:
+                continue
+
+            if neighbor_idx not in visited_atoms:
                 # Recursively walk bonds from this neighbor
                 found_atoms, visited_atoms = self.walk_bonds(
-                    neighbor, found_atoms, visited_atoms, mol, current_ring_atoms
+                    neighbor, found_atoms, visited_atoms, mol, current_ring_atoms, a_or_b
                 )
 
         return found_atoms, visited_atoms
 
-    def get_substituents(self, mol, ring_atoms):
+    def get_substituents(self, mol, ring_atoms, a_or_b: str):
         substituents = {}
         visited_atoms = set(ring_atoms)  # Start with ring atoms as visited to avoid re-traversing the ring
 
         for atom_idx in ring_atoms:
             atom = mol.GetAtomWithIdx(atom_idx)
+            logger.trace(f"Processing atom {atom_idx} in {ring_atoms} for molecule {a_or_b}")
 
             for neighbor in atom.GetNeighbors():
-                if neighbor.GetIdx() not in visited_atoms:
-                    # Explore substituents starting from this neighbor
-                    new_found, _ = self.walk_bonds(neighbor, set(), visited_atoms.copy(), mol, ring_atoms)
-                    if new_found:  # If any new atoms were found, add them to the substituents list
-                        substituents[atom_idx] = list(
-                            new_found  # Convert set to list if needed for downstream processing
-                        )
+                neighbor_idx = neighbor.GetIdx()
+                if neighbor_idx in ring_atoms:
+                    continue
+
+                # Explore substituents starting from this neighbor
+                new_found, _ = self.walk_bonds(neighbor, set(), visited_atoms.copy(), mol, ring_atoms, a_or_b)
+                if new_found:  # If any new atoms were found, add them to the substituents list
+                    substituents[atom_idx] = list(
+                        new_found  # Convert set to list if needed for downstream processing
+                    )
             # after completing the for loop, add itself if no substituents were found
             if atom_idx not in substituents:
                 substituents[atom_idx] = [atom_idx]

@@ -17,7 +17,7 @@ class RestraintSetter:
     but it takes into account:
         1) the ring structure itself
         2) the substitutions
-    In the future, it should also account for:
+    In the future, it should also account for: # see FIXME below...
         3) the fact that the ring, despite being the same, has different decorations and
         should therefore be left unrestrained
     """
@@ -51,7 +51,7 @@ class RestraintSetter:
         self.molB = SmallMoleculeComponent.from_rdkit(rdmolB)
 
     def _align_and_map_molecules(self):
-        mapper = KartografAtomMapper(atom_map_hydrogens=True)
+        mapper = KartografAtomMapper(atom_map_hydrogens=False)
         a_molB = align_mol_shape(self.molB, ref_mol=self.molA)
         self.kartograf_mapping = next(mapper.suggest_mappings(self.molA, a_molB))
         # Score Mapping
@@ -65,6 +65,8 @@ class RestraintSetter:
         return atom_a.GetAtomicNum() == atom_b.GetAtomicNum()
 
     def are_substituents_equivalent(self, subsA, subsB, atom_mapping, mol_a, mol_b):
+        logger.trace(f"Substituents A: {subsA}")
+        logger.trace(f"Substituents B: {subsB}")
         is_same = set()
         for ring_atomA, subs_atomsA in subsA.items():
             all_atomsA = [ring_atomA] + subs_atomsA
@@ -77,6 +79,15 @@ class RestraintSetter:
                     break
                 atomA_obj = mol_a.GetAtomWithIdx(atomA)
                 atomB_obj = mol_b.GetAtomWithIdx(atomB)
+
+                # The iteration should stop when it finds a ring structure
+                if any([atomA != ring_atomA, atomB != ring_atomB]) and any(
+                    [atomA in self.atom_mapper.ringIdxsA, atomB in self.atom_mapper.ringIdxsB]
+                ):
+                    if self.are_atoms_equivalent(atomA_obj, atomB_obj):
+                        is_same.add(atomA)
+                    break
+
                 if self.are_atoms_equivalent(atomA_obj, atomB_obj):
                     is_same.add(atomA)  # Add original ring atom if all checks pass
                 else:
@@ -105,7 +116,8 @@ class RestraintSetter:
 
     def compare_molecule_rings(self, data, atom_mapping, mol_a, mol_b):
         matching_atoms = {}
-        purge_list = []
+        #  FIXME - I need to compare the atoms & the immediate neighbors! If not the same, purge the rings
+        purge_list = []  # make this for the ring atoms that aren't equal including neighbors
         data = deepcopy(data)
         data.pop("Ring mapping", None)  # Remove safely with default
 
@@ -126,6 +138,7 @@ class RestraintSetter:
             matched_subs = self.are_substituents_equivalent(subsA, subsB, atom_mapping, mol_a, mol_b)
             matching_atoms[ring_key].update(matched_subs)
 
+        logger.trace(f"PURGE: {purge_list}")
         all_atomA_idxs = set(
             idx for ring_atoms in matching_atoms.values() for idx in ring_atoms if idx not in purge_list
         )
@@ -133,20 +146,13 @@ class RestraintSetter:
         return restraints
 
     def set_restraints(self):
-        atom_mapper = AtomMapperHelper()
-        ringStruc_compareDict = atom_mapper.process_rings_separately(
+        self.atom_mapper = AtomMapperHelper()
+        ringStruc_compareDict = self.atom_mapper.process_rings_separately(
             Chem.RemoveHs(self.molA.to_rdkit()), Chem.RemoveHs(self.molB.to_rdkit()), self.atom_mapping
         )
         restraints = self.compare_molecule_rings(
             ringStruc_compareDict, self.atom_mapping, self.molA.to_rdkit(), self.molB.to_rdkit()
         )
-
-        # submol = extract_sub_molecule(np.unique(all_atomA_idxs).tolist(), self.molA.to_rdkit())
-        # submol = remove_hydrogens(submol)
-        # self.submol = submol
-
-        # mols = [Chem.RemoveHs(self.molA.to_rdkit()), Chem.RemoveHs(self.molB.to_rdkit())]
-        # matches = [mol.GetSubstructMatches(submol)[0] for mol in mols]
-        # restraints = {self.atom_mapping[k]: v for k, v in self.atom_mapping.items() if k in matches[0]}
+        logger.debug(f"Atoms to restrain: {restraints}")
         self.restraints = restraints
         return restraints
