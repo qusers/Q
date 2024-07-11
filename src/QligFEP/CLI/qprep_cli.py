@@ -1,6 +1,7 @@
 """Module containing the command line interface for the qprep fortran program."""
 
 import argparse
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -8,8 +9,8 @@ import numpy as np
 
 from ..IO import run_command
 from ..logger import logger, setup_logger
-from ..pdb_utils import pdb_HOH_nn, read_pdb_to_dataframe, write_dataframe_to_pdb
-from ..settings.settings import CONFIGS
+from ..pdb_utils import read_pdb_to_dataframe, write_dataframe_to_pdb
+from ..settings.settings import CONFIGS, FF_DIR
 from .utils import handle_cysbonds
 
 # NOTE: cysbonds will have \n after each bond -> `maketop MKC_p` is in a different line
@@ -31,6 +32,36 @@ mask not excluded
 wp complexnotexcluded.pdb y
 q
 """
+
+
+class QprepError(Exception):
+    pass
+
+
+def qprep_error_check(qprep_out_path: Path, ff_name) -> None:
+    """Check for errors in the qprep.out file and raise an exception if any are found.
+
+    Args:
+        qprep_out_path: Path to the qprep.out file.
+        ff_name: name of the forcefield to point user to the .lib & .prm files.
+
+    Raises:
+        QprepError: ff any errors are found in the qprep.out file.
+    """
+    error_pat = re.compile(r"ERROR\:\s", re.IGNORECASE)
+    outfile_lines = qprep_out_path.read_text().split("\n")
+    error_lines = []
+    for line in outfile_lines:
+        if error_pat.findall(line):
+            error_lines.append(line)
+            logger.error(
+                f"Errors found in qprep output file {qprep_out_path}. Please check if the amino "
+                "acids in your pdb file match the residue & atom conventions on the forcefield .lib & .prm files:\n"
+                f"{FF_DIR/ ff_name}.prm & {FF_DIR/ ff_name}.lib"
+            )
+    if error_lines:
+        error_message = {"\n".join(error_lines)}
+        raise QprepError(error_message)
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -149,6 +180,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     ff_prm_path = str(Path(CONFIGS["FF_DIR"]) / f"{args.FF}.prm")
 
     qprep_inp_path = cwd / "qprep.inp"
+    qprep_out_path = cwd / "qprep.out"
 
     cysbonds = handle_cysbonds(args.cysbond, pdb_file, comment_out=True)
 
@@ -173,6 +205,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     options = " < qprep.inp > qprep.out"
     logger.debug(f"Running command {qprep_path} {options}")
     run_command(qprep_path, options, string=True)
+    qprep_error_check(qprep_out_path, args.FF)
     logger.info("qprep run finished. Check the output `qprep.out` for more information.")
 
     waterfile = Path(cwd / "water.pdb")
@@ -191,6 +224,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     with open("complexnotexcluded.pdb") as f:
         lines = f.readlines()
     with open("water.pdb", "w") as f:
+        f.write(f"TITLE      Water Sphere Generated with Qprep: COG {cog}\n")
         for line in lines:
             if line.startswith("ATOM") and line[17:20] == "HOH":
                 f.write(line)
