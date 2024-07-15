@@ -2,6 +2,7 @@ from copy import deepcopy
 from itertools import zip_longest
 from pathlib import Path
 
+import numpy as np
 from kartograf import KartografAtomMapper, SmallMoleculeComponent
 from kartograf.atom_aligner import align_mol_shape
 from kartograf.atom_mapping_scorer import MappingVolumeRatioScorer
@@ -61,6 +62,29 @@ class RestraintSetter:
         self.atom_mapping = deepcopy(self.kartograf_mapping.to_dict()["componentA_to_componentB"])
 
     @staticmethod
+    def get_ring_and_ring_immediates(mol: Chem.Mol, connect_struct: dict):
+        """Function to get the ring atoms and their immediate neighbors as an array of atomic
+        numbers. The list is ordered as [ring_atom1, bound_atom1, ring_atom2, bound_atom2, ...].
+
+        Args:
+            mol: rdkit molecule object
+            connect_struct: dictionary containing the ring atoms (keys) and their bound atoms (values)
+
+        Returns:
+            np.array: array of atomic numbers for the ring atoms and their immediate neighbors.
+        """
+        ringAtom_subsAtom = []  # list containing the ring atoms & bound atoms
+        for ringAtom, subsAtom in connect_struct.items():
+            ring_atomicnum = mol.GetAtomWithIdx(ringAtom).GetAtomicNum()
+            if subsAtom[0] != ringAtom:
+                subs_atomicnum = mol.GetAtomWithIdx(subsAtom[0]).GetAtomicNum()
+                ringAtom_subsAtom.extend([ring_atomicnum, subs_atomicnum])
+            else:
+                # no 0 atomic number so we use for missing atoms
+                ringAtom_subsAtom.extend([ring_atomicnum, 0])
+        return np.array(ringAtom_subsAtom)
+
+    @staticmethod
     def are_atoms_equivalent(atom_a, atom_b):
         return atom_a.GetAtomicNum() == atom_b.GetAtomicNum()
 
@@ -94,7 +118,7 @@ class RestraintSetter:
                     break
         return is_same
 
-    def is_ring_equivalent(self, ring_data, mol_a, mol_b, atom_mapping):
+    def is_ring_equivalent(self, ring_data, mol_a, mol_b, atom_mapping) -> bool:
         # Enhanced ring equivalence check
         ring_atoms_a_indices = ring_data["ringAtomsA"]
         ring_atoms_b_indices = [
@@ -114,18 +138,50 @@ class RestraintSetter:
 
         return True
 
-    def compare_molecule_rings(self, data, atom_mapping, mol_a, mol_b):
+    def compare_molecule_rings(
+        self, data: dict, atom_mapping: dict, mol_a: Chem.Mol, mol_b: Chem.Mol, strict: bool = True
+    ) -> dict:
+        """Compares the ring structures based on the data output from `process_rings_separately`
+        and returns a dictionary with the final atoms to be restrained.
+
+        Args:
+            data: dictionary output from `process_rings_separately`.
+            atom_mapping: atom mapping dictionary output from Kartograf.
+            mol_a: molecule A in RDKit format.
+            mol_b: molecule B in RDKit format.
+            strict: if true, it will purge rings with differing immediate-surrounds
+                (e.g. a methil decoration v.s. a Cl atom). Defaults to True.
+
+        Returns:
+            a dictionary with the final atoms to be restrained.
+        """
         matching_atoms = {}
-        #  FIXME - I need to compare the atoms & the immediate neighbors! If not the same, purge the rings
         purge_list = []  # make this for the ring atoms that aren't equal including neighbors
         data = deepcopy(data)
-        data.pop("Ring mapping", None)  # Remove safely with default
+        data.pop("Mapped Rings")
+        connections = {k: v for k, v in data.items() if "->" in k}
 
         for ring_key, ring_data in data.items():
+            if "->" in ring_key:
+                continue
             if "Ring" not in ring_key:
                 continue
             if self.is_ring_equivalent(ring_data, mol_a, mol_b, atom_mapping):
                 matching_atoms[ring_key] = set(ring_data["ringAtomsA"])
+                if strict:
+                    molA_ring_and_subs = self.get_ring_and_ring_immediates(mol_a, ring_data["substituentsA"])
+                    molB_ring_and_subs = self.get_ring_and_ring_immediates(mol_b, ring_data["substituentsB"])
+                    is_same = np.equal(molA_ring_and_subs, molB_ring_and_subs).all()
+                    if not is_same:
+                        ring_connections = {k: v for k, v in connections.items() if k.startswith(ring_key)}
+                        conserve_atoms = []  # we want to conserve the atoms that connect to other rings
+                        for conserve in ring_connections.values():
+                            conserve_atoms.extend(conserve)
+                        to_purge = np.unique(
+                            [item for k, vals in ring_data["substituentsA"].items() for item in [k] + vals]
+                        )
+                        # purge everything else that is not connected to another ring
+                        purge_list.extend(np.setdiff1d(to_purge, conserve_atoms).tolist())
             else:
                 purge_list.extend(ring_data["ringAtomsA"])
 
@@ -145,7 +201,7 @@ class RestraintSetter:
         restraints = {k: atom_mapping[k] for k in all_atomA_idxs if k in atom_mapping}
         return restraints
 
-    def set_restraints(self):
+    def set_restraints(self) -> dict:
         self.atom_mapper = AtomMapperHelper()
         ringStruc_compareDict = self.atom_mapper.process_rings_separately(
             Chem.RemoveHs(self.molA.to_rdkit()), Chem.RemoveHs(self.molB.to_rdkit()), self.atom_mapping

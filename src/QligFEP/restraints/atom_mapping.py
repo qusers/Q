@@ -55,10 +55,10 @@ class AtomMapperHelper:
             atom_mapping: Kartograf mapping between atoms in molecule A and molecule B.
 
         Returns:
-            dict: Dictionary containing the ring mapping, the atoms in each ring, and the substituents
+            dict: Dictionary containing the Mapped Rings, the atoms in each ring, and the substituents
                 for each ring in both molecules.
         Example:
-            >>> {'Ring mapping': {0: 0, 1: 1, 2: 2, 3: 3},
+            >>> {'Mapped Rings': {0: 0, 1: 1, 2: 2, 3: 3},
             >>> 'Ring 0': {'ringAtomsA': {set of AtomIndexes in ring 0 of molecule A},
             >>> 'ringAtomsB': {set of AtomIndexes in ring 0 of molecule B},
             >>> 'substituentsA': {AtominRing0 for molecule A: [substituent atom indexes]
@@ -74,7 +74,7 @@ class AtomMapperHelper:
         self.ringIdxsB = [item for sublist in molB.GetRingInfo().AtomRings() for item in sublist]
         rings = {}
         ring_mapping = self.map_rings_between_molecules(ringsA, ringsB, atom_mapping)
-        rings.update({"Ring mapping": ring_mapping})
+        rings.update({"Mapped Rings": ring_mapping})
 
         for ring_idx, (idxA, idxB) in enumerate(ring_mapping.items()):
             atomsA = ringsA[idxA]
@@ -91,6 +91,20 @@ class AtomMapperHelper:
                     }
                 }
             )
+        ring_keys = [key for key in rings if key.startswith("Ring")]
+        for key in ring_keys:
+            for ringAtom, subsAtoms in rings[key]["substituentsA"].items():
+                if ringAtom != subsAtoms[-1]:
+                    neighbors = self.get_surrounding_idxs(subsAtoms[-1], molA)
+                    for secondkey in ring_keys:
+                        to_ring_atoms = rings[secondkey]["ringAtomsA"]
+                        if secondkey == key:
+                            continue
+                        else:
+                            if bool(set(neighbors) & set(to_ring_atoms)):
+                                rings.update({f"{key} -> {secondkey}": list(subsAtoms)})
+                else:
+                    continue
         return rings
 
     def is_atom_in_other_ring(self, atom, current_ring_atoms, mol):
@@ -106,7 +120,8 @@ class AtomMapperHelper:
         if atom_idx in visited_atoms:
             return found_atoms, visited_atoms  # Return immediately if atom has been visited
 
-        found_atoms.add(atom_idx)  # Add this atom to the found set
+        if atom_idx not in found_atoms:
+            found_atoms.append(atom_idx)
         visited_atoms.add(atom_idx)  # Mark this atom as visited
 
         for neighbor in atom.GetNeighbors():
@@ -140,7 +155,9 @@ class AtomMapperHelper:
                     continue
 
                 # Explore substituents starting from this neighbor
-                new_found, _ = self.walk_bonds(neighbor, set(), visited_atoms.copy(), mol, ring_atoms, a_or_b)
+                new_found, _ = self.walk_bonds(
+                    neighbor, list(), visited_atoms.copy(), mol, ring_atoms, a_or_b
+                )
                 if new_found:  # If any new atoms were found, add them to the substituents list
                     substituents[atom_idx] = list(
                         new_found  # Convert set to list if needed for downstream processing
