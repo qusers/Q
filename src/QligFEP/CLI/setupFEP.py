@@ -7,8 +7,10 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Optional
 
 from ..logger import logger, setup_logger
+from .parser_base import parse_arguments
 
 logging.basicConfig(
     filename="cli_calls.log", level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -16,12 +18,12 @@ logging.basicConfig(
 
 
 def ligpairs_from_json(json_file):
-    with open(json_file, "r") as infile:
+    with open(json_file) as infile:
         json_dict = json.load(infile)
     try:
         edges = json_dict["edges"]  # should be a list of dictionaries
-    except KeyError:
-        raise KeyError('Could not find "edges" in json file')
+    except KeyError as kerr:
+        raise KeyError('Could not find "edges" in json file') from kerr
     ligpairs = [(e["from"], e["to"]) for e in edges]
     return ligpairs
 
@@ -57,154 +59,7 @@ def submit_command(command: str) -> None:
         raise
 
 
-def parse_arguments():
-    parser = argparse.ArgumentParser(
-        prog="QligFEP",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        description=(
-            "Generate all FEP files for the directory you're working on, according to the "
-            "edges input in the json_map file. This includes creating directories for both "
-            "water and protein system. Submitting the FEP calculations to the cluster is up to the user. "
-            "A minimal example of usage: setupFEP -FF OPLS2015 -c KEBNE -S sigmoidal -r 25 -l 0.5 -w 100"
-        ),
-    )
-    parser.add_argument(
-        "-FF",
-        "--forcefield",
-        dest="FF",
-        required=True,
-        choices=["OPLS2005", "OPLS2015", "AMBER14sb", "CHARMM36", "CHARMM22", "CHARMM_TEST"],
-        help="Forcefield to be used.",
-    )
-
-    parser.add_argument(
-        "-c",
-        "--cluster",
-        dest="cluster",
-        required=True,
-        help="cluster you want to submit to, cluster specific parameters added to settings.",
-    )
-
-    parser.add_argument(
-        "-r",
-        "--sphereradius",
-        dest="sphereradius",
-        required=False,
-        default="25",
-        help="Size of the simulation sphere. Defaults to 25.",
-    )
-
-    parser.add_argument(
-        "-b",
-        "--cysbond",
-        dest="cysbond",
-        default=None,
-        help=(
-            "Add cystein bonds. Input should be formatted with the atom numbers"
-            "(participating in the Cys bond) connected by `_` and with different bonds "
-            "separated by `,` as in: `atom1_atom2,atom3_atom4`"
-        ),
-    )
-    parser.add_argument(
-        "-l",
-        "--start",
-        dest="start",
-        default="0.5",
-        choices=["1", "0.5"],
-        help="Starting FEP in the middle or endpoint. Defaults to 0.5.",
-    )
-
-    parser.add_argument(
-        "-T",
-        "--temperature",
-        dest="temperature",
-        default="298",
-        help="Temperature(s), mutliple tempereratures given as 'T1,T2,...,TN'. Defaults to 298K",
-    )
-
-    parser.add_argument(
-        "-R",
-        "--replicates",
-        dest="replicates",
-        default="10",
-        help="How many repeats should be run. Defaults to 10.",
-    )
-
-    parser.add_argument(
-        "-S",
-        "--sampling",
-        dest="sampling",
-        default="sigmoidal",
-        choices=["linear", "sigmoidal", "exponential", "reverse_exponential"],
-        help="Lambda spacing type to be used. Defaults to `sigmoidal`.",
-    )
-    parser.add_argument(
-        "-w",
-        "--windows",
-        dest="windows",
-        default="100",
-        help="Total number of windows that will be run. Defaults to 100.",
-        type=str,
-    )
-    parser.add_argument(
-        "-j",
-        "--json_map",
-        dest="json_map",
-        help=(
-            "Path for the '.json' QmapFEP file. If not given, the script will "
-            "look for a single '.json' file in the current directory and raise "
-            "an error if there are more than one."
-        ),
-        default=None,
-    )
-    parser.add_argument(
-        "-ts",
-        "--timestep",
-        dest="timestep",
-        choices=["1fs", "2fs"],
-        default="2fs",
-        help="Simulation timestep, default 2fs",
-    )
-    parser.add_argument(
-        "-clean",
-        "--files-to-clean",
-        dest="to_clean",
-        nargs="+",
-        default=None,
-        help=(
-            "Files to clean after the simulation. The arguments are given as a list of strings "
-            "and the cleaning is done by adding the command `rm -rf *{arg1} *{arg2}` to the job submission. "
-            "Usage example: `-clean dcd` will remove all dcd files after the simulation. If left as None, won't clean any files."
-        ),
-    )
-    parser.add_argument(
-        "-rest",
-        "--restraint_method",
-        dest="restraint_method",
-        type=str,
-        default="chemoverlap",
-        help=(
-            "Method to use for distance restraints. Options are 'chemoverlap' or 'overlap'. "
-            "Historically, this was done only considering the proximity of the ligands (1A), "
-            "but a chemistry-aware implementation is being developed using Kartograf for mapping "
-            "the atoms in common within the ligands. Defaults to 'chemoverlap'."
-        ),
-    )
-    parser.add_argument(
-        "-log",
-        "--log-level",
-        dest="log",
-        required=False,
-        default="info",
-        help="Set the log level for the logger. Defaults to `info`.",
-        choices=["trace", "debug", "info", "warning", "error", "critical"],
-    )
-    return parser.parse_args()
-
-
-def main_exe():
-    args = parse_arguments()
-
+def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     # setup the logger with the desired log level
     setup_logger(level=args.log)
 
@@ -252,6 +107,11 @@ def main_exe():
             dst = sys_dir / f"FEP_{lig1}_{lig2}"
             os.system(command)
             shutil.move(temp_dir, dst)
+
+
+def main_exe():
+    args = parse_arguments(program="setupFEP")
+    main(args)
 
 
 if __name__ == "__main__":
