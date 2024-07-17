@@ -28,7 +28,7 @@ def rename_residues(pdbarr):
     npdb = glu_search(npdb)
     npdb = rename_charged(npdb)
     npdb = histidine_search(npdb)
-    npdb, cysbonds = disulfide_search(npdb)
+    npdb, _, _ = disulfide_search(npdb)
     pdbarr = unnest_pdb(npdb)
     pdbarr = correct_neutral_arginine(pdbarr)
     return pdbarr

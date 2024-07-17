@@ -23,11 +23,11 @@ def cysbonds_for_qprep(pdb_file: Path, comment_out: bool = True):
         npdb = nest_pdb(pdb_lines)
         npdb, cysbonds, renamed = disulfide_search(npdb)
         if renamed:
-            logger.info("Disulfide bonds detected: renaming CYS to CYX")
+            logger.warning("Disulfide bonds detected on CYS residues! Renaming to CYX")
             pdbarr = unnest_pdb(npdb)
             with open(pdb_file, "w") as file_out:
                 for line in pdbarr:
-                    file_out.write(f"{line}\n")
+                    file_out.write(f"{line}")
     addbond = "!addbond" if comment_out else "addbond"
     cysbonds = "".join([f"{addbond} {atomN[0]} {atomN[1]} y\n" for atomN in cysbonds])
     return cysbonds

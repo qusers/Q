@@ -191,16 +191,17 @@ def disulfide_search(npdb, min_dist=1.8, max_dist=2.2):
             if min_dist <= distance <= max_dist:
                 residues_to_rename.update({i, j})
                 # Log the atoms involved in the disulfide bond, including their atom numbers
-                logger.info(
+                logger.debug(
                     f"Disulfide bond detected within atoms: {i_atom_number}_{j_atom_number} with distance {distance:.2f} Å."
                 )
-                logger.info(f"Bond between residues `{i_residue_info}` and `{j_residue_info}`.")
+                logger.debug(f"Bond between residues `{i_residue_info}` and `{j_residue_info}`.")
                 cysbonds.append((i_atom_number, j_atom_number))
 
+    renamed = bool(residues_to_rename)
     for i in residues_to_rename:
-        npdb[i] = [x.replace("CYS ", "CYX") if "CYS" in x or "CYD" in x else x for x in npdb[i]]
+        npdb[i] = [x.replace("CYS", "CYX") if "CYS" in x or "CYD" in x else x for x in npdb[i]]
 
-    return npdb, cysbonds
+    return npdb, cysbonds, renamed
 
 
 def get_coords(atomname, residue):
