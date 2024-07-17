@@ -183,6 +183,10 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     qprep_out_path = cwd / "qprep.out"
 
     cysbonds = handle_cysbonds(args.cysbond, pdb_file, comment_out=True)
+    protein_df = read_pdb_to_dataframe(pdb_file)
+    no_crystal_waters_df = protein_df.query('residue_name != "HOH"')
+    if not no_crystal_waters_df.empty:
+        write_dataframe_to_pdb(no_crystal_waters_df, Path(pdb_file).with_stem(f"{args.input_pdb_file}_noHOH"))
 
     if args is not None:
         param_dict = {
