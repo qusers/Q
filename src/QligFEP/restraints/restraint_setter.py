@@ -1,3 +1,5 @@
+"""Contain the `RestraintSetter` class - map atoms to be restrained during hybrid topology FEP calculations"""
+
 from copy import deepcopy
 from itertools import zip_longest
 from pathlib import Path
@@ -14,18 +16,26 @@ from .atom_mapping import AtomMapperHelper
 
 class RestraintSetter:
     """
-    TODO: currently, this class correctly sets the restraints for the ring structures,
-    but it takes into account:
-        1) the ring structure itself
-        2) the substitutions
-    In the future, it should also account for: # see FIXME below...
-        3) the fact that the ring, despite being the same, has different decorations and
-        should therefore be left unrestrained
+    Class for mapping atom indexes between molecules A and B for force restraints during
+    hybrid topology FEP simulations. The class uses Kartograf to define an initial atom
+    mapping and compares both molecules based on their ring structures and respective decorations.
+
+    The main method for this class is `set_restraints`, which returns a dictionary with the atoms
+    to be restrained.
+
+    Example:
+        >>> from QligFEP.restraints.restraint_setter import RestraintSetter
+        >>> rsetter = RestraintSetter('molecule_A.sdf', 'molecule_B.sdf')
+        >>> restraints = rsetter.set_restraints(strict=False, ignore_substituent_atom_type=True)
+
+    Attributes:
+        self.molA: Molecule A (arg[0]) in RDKit format
+        self.molB: Molecule B (arg[1]) in RDKit format
+        self.kartograf_mapping: kartograf mapping object
+        self.atom_mapping: kartagraf's `componentA_to_componentB` mapping dictionary
     """
 
     def __init__(self, molA: str, molB: str) -> None:
-        self.ligname1 = Path(molA).stem
-        self.ligname2 = Path(molB).stem
         self._load_molecules(molA, molB)
         self._align_and_map_molecules()
 
@@ -52,7 +62,7 @@ class RestraintSetter:
         self.molB = SmallMoleculeComponent.from_rdkit(rdmolB)
 
     def _align_and_map_molecules(self):
-        mapper = KartografAtomMapper(atom_map_hydrogens=False)
+        mapper = KartografAtomMapper(atom_map_hydrogens=False, map_exact_ring_matches_only=True)
         a_molB = align_mol_shape(self.molB, ref_mol=self.molA)
         self.kartograf_mapping = next(mapper.suggest_mappings(self.molA, a_molB))
         # Score Mapping
@@ -62,7 +72,7 @@ class RestraintSetter:
         self.atom_mapping = deepcopy(self.kartograf_mapping.to_dict()["componentA_to_componentB"])
 
     @staticmethod
-    def get_ring_and_ring_immediates(mol: Chem.Mol, connect_struct: dict):
+    def get_ring_and_ringbound(mol: Chem.Mol, connect_struct: dict, ignore_elements: bool = False):
         """Function to get the ring atoms and their immediate neighbors as an array of atomic
         numbers. The list is ordered as [ring_atom1, bound_atom1, ring_atom2, bound_atom2, ...].
 
@@ -78,9 +88,9 @@ class RestraintSetter:
             ring_atomicnum = mol.GetAtomWithIdx(ringAtom).GetAtomicNum()
             if subsAtom[0] != ringAtom:
                 subs_atomicnum = mol.GetAtomWithIdx(subsAtom[0]).GetAtomicNum()
-                ringAtom_subsAtom.extend([ring_atomicnum, subs_atomicnum])
+                ringAtom_subsAtom.extend([ring_atomicnum, (subs_atomicnum if not ignore_elements else 1)])
             else:
-                # no 0 atomic number so we use for missing atoms
+                # 0 is missing atom (can't do nan on array equality)
                 ringAtom_subsAtom.extend([ring_atomicnum, 0])
         return np.array(ringAtom_subsAtom)
 
@@ -139,9 +149,15 @@ class RestraintSetter:
         return True
 
     def compare_molecule_rings(
-        self, data: dict, atom_mapping: dict, mol_a: Chem.Mol, mol_b: Chem.Mol, strict: bool = True
+        self,
+        data: dict,
+        atom_mapping: dict,
+        mol_a: Chem.Mol,
+        mol_b: Chem.Mol,
+        strict: bool = False,
+        ignore_substituent_atom_type: bool = True,
     ) -> dict:
-        """Compares the ring structures based on the data output from `process_rings_separately`
+        """Compares the ring structures based on the data output from `AtomMapperHelper.process_rings_separately`
         and returns a dictionary with the final atoms to be restrained.
 
         Args:
@@ -149,8 +165,11 @@ class RestraintSetter:
             atom_mapping: atom mapping dictionary output from Kartograf.
             mol_a: molecule A in RDKit format.
             mol_b: molecule B in RDKit format.
-            strict: if true, it will purge rings with differing immediate-surrounds
-                (e.g. a methil decoration v.s. a Cl atom). Defaults to True.
+            strict: if True, it will purge rings and their non-linker substituents based on both ring structure
+                identity & immediate neighbors. Defaults to False.
+            ignore_substituent_atom_type: if true, it will ignore the atomic number of the substituents when comparing them.
+                In this case, it will consider all substituents as equivalent, but it will still remove break-of-symmetry
+                cases. Defaults to True.
 
         Returns:
             a dictionary with the final atoms to be restrained.
@@ -161,6 +180,7 @@ class RestraintSetter:
         data.pop("Mapped Rings")
         connections = {k: v for k, v in data.items() if "->" in k}
 
+        conserve_atoms = []  # we want to conserve the atoms that connect to other rings
         for ring_key, ring_data in data.items():
             if "->" in ring_key:
                 continue
@@ -169,21 +189,31 @@ class RestraintSetter:
             if self.is_ring_equivalent(ring_data, mol_a, mol_b, atom_mapping):
                 matching_atoms[ring_key] = set(ring_data["ringAtomsA"])
                 if strict:
-                    molA_ring_and_subs = self.get_ring_and_ring_immediates(mol_a, ring_data["substituentsA"])
-                    molB_ring_and_subs = self.get_ring_and_ring_immediates(mol_b, ring_data["substituentsB"])
+                    molA_ring_and_subs = self.get_ring_and_ringbound(
+                        mol_a, ring_data["substituentsA"], ignore_substituent_atom_type
+                    )
+                    compareB = {}
+                    for key in ring_data["substituentsA"]:
+                        compareB[atom_mapping[key]] = ring_data["substituentsB"][atom_mapping[key]]
+                    molB_ring_and_subs = self.get_ring_and_ringbound(
+                        mol_b, compareB, ignore_substituent_atom_type
+                    )
                     is_same = np.equal(molA_ring_and_subs, molB_ring_and_subs).all()
+                    # check for len(v) > 2 to avoid conserving the restraints for the ring itself (ring-ring bond)
+                    # logger.trace(data)
+                    ring_connections = {k: v for k, v in connections.items() if k.startswith(ring_key)}
+                    for conserve in ring_connections.values():
+                        conserve_atoms.extend(conserve)
+                        logger.debug(f"conserving atoms: {conserve_atoms}")
                     if not is_same:
-                        ring_connections = {k: v for k, v in connections.items() if k.startswith(ring_key)}
-                        conserve_atoms = []  # we want to conserve the atoms that connect to other rings
-                        for conserve in ring_connections.values():
-                            conserve_atoms.extend(conserve)
                         to_purge = np.unique(
                             [item for k, vals in ring_data["substituentsA"].items() for item in [k] + vals]
                         )
-                        # purge everything else that is not connected to another ring
-                        purge_list.extend(np.setdiff1d(to_purge, conserve_atoms).tolist())
+                        purge_list.extend(to_purge)  # purge all rings & substituents another ring
             else:
+                logger.trace(f"`{ring_key}` is not equivalent, purging atoms: {ring_data['ringAtomsA']}")
                 purge_list.extend(ring_data["ringAtomsA"])
+        purge_list = np.setdiff1d(purge_list, conserve_atoms).tolist()  # conserve connection to rings
 
         # Process and compare substituents only for equivalent rings
         for ring_key in matching_atoms:
@@ -201,13 +231,31 @@ class RestraintSetter:
         restraints = {k: atom_mapping[k] for k in all_atomA_idxs if k in atom_mapping}
         return restraints
 
-    def set_restraints(self) -> dict:
+    def set_restraints(self, strict: bool = False, ignore_substituent_atom_type: bool = False) -> dict:
+        """Main method for the class `RestraintSetter`. Runs all the methods necessary to compare both
+        structures, find the atoms to be restrained, and returns a dictionary with the atoms to be restrained.
+
+        Args:
+            strict: whether to apply the strict method on the `compare_molecule_rings()` method or not.
+                if True, it will purge rings and their non-linker substituents based on both ring structure
+                identity & immediate neighbors. Defaults to False.
+            ignore_substituent_atom_type: if true, it will ignore the atomic number of the substituents
+                when comparing them for the `strict` method. Defaults to False.
+
+        Returns:
+            restraints: dictionary containing the atoms to be restrained.
+        """
         self.atom_mapper = AtomMapperHelper()
         ringStruc_compareDict = self.atom_mapper.process_rings_separately(
             Chem.RemoveHs(self.molA.to_rdkit()), Chem.RemoveHs(self.molB.to_rdkit()), self.atom_mapping
         )
         restraints = self.compare_molecule_rings(
-            ringStruc_compareDict, self.atom_mapping, self.molA.to_rdkit(), self.molB.to_rdkit()
+            ringStruc_compareDict,
+            self.atom_mapping,
+            self.molA.to_rdkit(),
+            self.molB.to_rdkit(),
+            strict=strict,
+            ignore_substituent_atom_type=ignore_substituent_atom_type,
         )
         logger.debug(f"Atoms to restrain: {restraints}")
         self.restraints = restraints
