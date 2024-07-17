@@ -33,6 +33,15 @@ def parse_arguments(program: str) -> argparse.Namespace:
         choices=["OPLS2005", "OPLS2015", "AMBER14sb", "CHARMM36", "CHARMM22", "CHARMM_TEST"],
         help="Forcefield to be used.",
     )
+    if program == "QligFEP":
+        parser.add_argument(
+            "-s",
+            "--system",
+            dest="system",
+            required=True,
+            choices=["water", "protein", "vacuum"],
+            help="what type of system we are setting up",
+        )
     parser.add_argument(
         "-c",
         "--cluster",
