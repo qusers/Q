@@ -3,6 +3,7 @@
 import argparse
 
 from ..settings.settings import CLUSTER_DICT
+from .utils import get_avail_restraint_methods
 
 
 def parse_arguments(program: str) -> argparse.Namespace:
@@ -155,27 +156,20 @@ def parse_arguments(program: str) -> argparse.Namespace:
         "--restraint_method",
         dest="restraint_method",
         type=str,
-        default="chemoverlap_mp",
-        choices=[
-            "overlap",
-            "chemoverlap_mp",
-            "chemoverlap_ls",
-            "chemoverlap_strict",
-        ],
+        default="hybridization_ls",
+        choices=get_avail_restraint_methods(),
         help=(
             """How to set the restraints to the ligand topologies involved in the perturbation.
-              1) `overlap` - old implementation; restraints are applied to whichever atoms
-                    within 1 A distance in the perturbation topologies;
-              2) `chemoverlap_mp` (more permissive); restraints are applied to atoms which have
-                  equivalent ring structures. The restraint is then applied to the respective
-                  decorations in the ring, provided same atom types.
-              3) `chemoverlap_ls` - (less strict); restraint are applied to atoms which have
-                  equivalent ring structures + immediate surround. E.g.: a methyl in only one
-                  of the rings would lead to the whole ring left unrestrained.
-              4) `chemoverlap_strict` - (strict); restraint are applied to atoms which have
-                  equivalent ring structures + immediate surround, but immediate surround
-                  will be atom-type sensitive. E.g.: a methyl v.s. a chlorine would lead to
-                  the unrestrained ring."""
+            Ring atom compare: `aromaticity`, `hibridization`, `element`. Setting the first part of the
+                string as either of these, will determine how the ring atoms are treated to be defined as
+                equivalent.
+            Surround atom compare: `p` (permissive), `ls` (less strict), `strict`.
+                Setting the second part of the string as either of these, will determine if or how the
+                direct surrounding atoms to the ring strictures will be taken into account for ring equivalence.
+                    1) Permissive: Only the ring atoms are compared.
+                    2) Less strict: The ring atoms and their direct surroundings are compared, but element type
+                        is ignored.
+                    3) Strict: The ring atoms and their direct surroundings are element-wise compared."""
         ),
     )
     parser.add_argument(

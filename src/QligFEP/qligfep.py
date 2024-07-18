@@ -3,12 +3,19 @@ import os
 import re
 import shutil
 import stat
+from itertools import product
 from pathlib import Path
 
+from .CLI.utils import get_avail_restraint_methods, handle_cysbonds
 from .functions import COG, kT, overlapping_pairs, sigmoid
 from .IO import replace, run_command
 from .logger import logger
-from .pdb_utils import pdb_parse_in, pdb_parse_out, read_pdb_to_dataframe
+from .pdb_utils import (
+    pdb_parse_in,
+    pdb_parse_out,
+    read_pdb_to_dataframe,
+    rm_HOH_clash_NN,
+)
 from .restraints.restraint_setter import RestraintSetter
 from .settings.settings import CLUSTER_DICT, CONFIGS
 
@@ -60,6 +67,7 @@ class QligFEP:
         self.ABS_waters = []
         self.write_dir = None
         self.restraint_method = restraint_method
+        self.pdb_fname = f"{self.lig1}_{self.lig2}.pdb"
 
         if self.system == "protein":
             # Get last atom and residue from complexfile!
@@ -349,33 +357,31 @@ class QligFEP:
                     line = pdb_parse_out(atom1) + "\n"
                     file_replaced.append(line)
 
-        with open(f"{self.lig1}.pdb") as infile:
-            pdb_fname = f"{writedir}/{self.lig1}_{self.lig2}.pdb"
-            with open(pdb_fname, "w") as outfile:
-                if self.system == "protein":
-                    with open("protein.pdb") as protfile:
-                        for line in protfile:
-                            outfile.write(line)
-                for line in infile:
-                    if line.split()[0].strip() in self.include:
-                        resnr = int(line[22:26])
-                        atnr += 1  # The atoms are not allowed to overlap in Q
-                        atom1 = pdb_parse_in(line)
-                        atom1[1] = atom1[1] + self.atomoffset
-                        atom1[6] = atom1[6] + self.residueoffset
-                        atom1[8] = float(atom1[8]) + 0.001
-                        atom1[9] = float(atom1[9]) + 0.001
-                        atom1[10] = float(atom1[10]) + 0.001
-                        line = pdb_parse_out(atom1) + "\n"
+        with open(f"{self.lig1}.pdb") as infile, open(f"{writedir}/{self.pdb_fname}", "w") as outfile:
+            if self.system == "protein":
+                with open("protein.pdb") as protfile:
+                    for line in protfile:
                         outfile.write(line)
-
-                self.residueoffset = self.residueoffset + 2
-                resnr = f"{self.residueoffset:4}"
-                for line in file_replaced:
-                    atnr = atnr + 1
-                    atchange = f"{atnr:5}"
-                    line = line[0:6] + atchange + line[11:22] + resnr + line[26:]
+            for line in infile:
+                if line.split()[0].strip() in self.include:
+                    resnr = int(line[22:26])
+                    atnr += 1  # The atoms are not allowed to overlap in Q
+                    atom1 = pdb_parse_in(line)
+                    atom1[1] = atom1[1] + self.atomoffset
+                    atom1[6] = atom1[6] + self.residueoffset
+                    atom1[8] = float(atom1[8]) + 0.001
+                    atom1[9] = float(atom1[9]) + 0.001
+                    atom1[10] = float(atom1[10]) + 0.001
+                    line = pdb_parse_out(atom1) + "\n"
                     outfile.write(line)
+
+            self.residueoffset = self.residueoffset + 2
+            resnr = f"{self.residueoffset:4}"
+            for line in file_replaced:
+                atnr = atnr + 1
+                atchange = f"{atnr:5}"
+                line = line[0:6] + atchange + line[11:22] + resnr + line[26:]
+                outfile.write(line)
 
     def write_water_pdb(self, writedir):
         header = self.sphereradius + ".0 SPHERE\n"
@@ -417,23 +423,40 @@ class QligFEP:
         lambdas = lambdas[::-1]
         return lambdas
 
-    def set_restraints(self, writedir, strict_check=True):
+    def set_restraints(self, writedir, strict_check: bool = True):
         """Function to set the restraints for FEP. Originally, this was performed on
         overlapping atoms, but based on our observations this was changed to a more
         chemistry-aware method, implemented under `QligFEP.restraints.restraint_setter`.
 
+        The configuration on how these restraints will be applied depend on two strings, passed into
+        `method` as `{ring_compare_method}_{surround_compare_method}`. Alternatively, the user can
+        opt for `overlap` which simply restrains atoms within 1 A from each other.
+
+        Explanation:
+            Ring atom compare: `aromaticity`, `hibridization`, `element`. Setting the first part of the
+                string as either of these, will determine how the ring atoms are treated to be defined as
+                equivalent.
+            Surround atom compare: `p` (permissive), `ls` (less strict), `strict`.
+                Setting the second part of the string as either of these, will determine if or how the
+                direct surrounding atoms to the ring strictures will be taken into account for ring equivalence.
+                    - Permissive: Only the ring atoms are compared.
+                    - Less strict: The ring atoms and their direct surroundings are compared, but element type
+                        is ignored.
+                    - Strict: The ring atoms and their direct surroundings are element-wise compared.
+
         Args:
             writedir: directory to get the input files from, e.g.: FEP_lig1_lig2/inputfiles.
-            method: method to use for setting the distance restraints. Can be either
-                `chemoverlap` or `overlap`. Defaults to the original 'overlap'.
+            strict_check: whether to assert the atom indexes are correctly assigned.
 
         Returns:
             list: list of overlapping atoms.
         """
-        if self.restraint_method not in ["chemoverlap", "overlap"]:
+        avail_methods = get_avail_restraint_methods()
+        if self.restraint_method not in avail_methods:
             raise ValueError(
-                f"Method {self.restraint_method} not recognized. Please use 'chemoverlap' or 'overlap'."
+                f"Method {self.restraint_method} not recognized. Please use one of {avail_methods}"
             )
+
         pdbfile = writedir + f"/inputfiles/{self.lig1}_{self.lig2}.pdb"
         if self.restraint_method == "overlap":
             reslist = ["LIG", "LID"]
@@ -446,7 +469,7 @@ class QligFEP:
                             line = pdb_parse_in(line)
                             self.ABS_waters.append(int(line[1]) + self.atomoffset)
 
-        elif self.restraint_method == "chemoverlap":
+        else:
             parent_write_dir = Path(writedir).parent
 
             if self.system == "protein":  # In this case order of elements in PDB file is: prot, LIG, LID, HOH
@@ -473,8 +496,20 @@ class QligFEP:
             else:
                 logger.debug(f'Loading sdf for restraint calculation:\nlig1:"{lig1_path}"\nlig2"{lig2_path}"')
                 rsetter = RestraintSetter(lig1_path, lig2_path)
-                restraints = rsetter.set_restraints()
-                if strict_check:  # TODO: move this to the tests when we have them...
+                ring_atom_compare = self.restraint_method.split("_")[0]
+                surround_atom_compare = self.restraint_method.split("_")[1]
+                if surround_atom_compare == "p":
+                    strict_surround = False
+                    ignore_surround_atom_type = False
+                else:
+                    strict_surround = True
+                    ignore_surround_atom_type = surround_atom_compare == "ls"
+                restraints = rsetter.set_restraints(
+                    ring_compare_method=ring_atom_compare,
+                    strict_surround=strict_surround,
+                    ignore_surround_atom_type=ignore_surround_atom_type,
+                )
+                if strict_check:  # TODO: This should be moved to the tests in the future...
                     rdLig1 = rsetter.molA.to_rdkit()
                     rdLig2 = rsetter.molB.to_rdkit()
                     for AtomIdx_Lig1, AtomIdx_Lig2 in restraints.items():
@@ -821,8 +856,10 @@ class QligFEP:
                 if line.strip() == "#CLEANUP" and self.to_clean is not None:
                     replacements["CLEANUP"] = "#Cleaned {} files\n".format(" ".join(self.to_clean))
                     outline = replace(line, replacements)
-                    for _format in self.to_clean:
-                        outfile.write(f"rm -f *{_format}\n")
+                    for suffix in self.to_clean:
+                        if suffix is None:
+                            break
+                        outfile.write(f"rm -f *{suffix}\n")
                     outfile.write(outline[1:])
 
     def write_qfep(self, windows, lambdas):
@@ -850,9 +887,47 @@ class QligFEP:
                     filename = "md_" + lambda1.replace(".", "") + "_" + lambda2.replace(".", "") + ".en\n"
                     outfile.write(filename)
 
+    def avoid_water_protein_clashes(self, writedir, prot_th=1.7, water_th=1.6):
+        """Function to remove water molecules too close to protein & ligands | ligands.
+        Thresholds are the distances in Ångström from the protein & ligands | ligands atoms
+        to the nearest atom in the water molecule (HOH).
+
+        Args:
+            writedir: directory in which QligFEP will write the input files.
+            prot_th: threshold (Å) to remove water molecules clashing with protein & ligand
+                on the protein leg. Defaults to 1.7.
+            water_th: threshold (Å) to remove water molecules clashing with the ligands
+                in the water leg. Defaults to 1.5.
+        """
+        waterfile = Path(writedir) / "water.pdb"
+        protfile = Path(writedir) / self.pdb_fname
+        threshold = prot_th if self.system == "protein" else water_th
+        logger.info(f"Removing water molecules too close to protein & ligands - threshold: {prot_th} A.")
+        _, n_removed = rm_HOH_clash_NN(
+            read_pdb_to_dataframe(waterfile),
+            read_pdb_to_dataframe(protfile),
+            threshold,
+            waterfile,
+        )
+        logger.warning(f"Removed {n_removed / 3} water molecules too close to protein & ligands.")
+
     def write_qprep(self, writedir):
+        """Write the qprep.inp file for Q. If the system is water, the center of geometry
+        will be calculated from the lig1's atoms coordinates. If the system is protein, it
+        will try to extract the center of geometry from the TITLE line in the water.pdb file,
+        added by the `qprep_prot` program.
+
+        Args:
+            writedir: directory in which QligFEP will write the input files.
+        """
         replacements = {}
-        center = COG(self.lig1 + ".pdb")
+        cog = None
+        cog_regex = re.compile(r"^\d+\.\d{3}\s\d+\.\d{3}\s\d+\.\d{3}$")
+        with open(writedir + "/water.pdb") as infile:
+            first_line = infile.readline().strip()
+            if first_line.startswith("TITLE"):
+                cog = cog_regex.match(first_line).group()
+        center = COG(self.lig1 + ".pdb") if cog is None or self.system == "water" else cog
         center = f"{center[0]} {center[1]} {center[2]}"
         qprep_in = CONFIGS["ROOT_DIR"] + "/INPUTS/qprep.inp"
         qprep_out = writedir + "/qprep.inp"
@@ -871,14 +946,13 @@ class QligFEP:
             replacements["SOLVENT"] = "4 water.pdb"
 
         with open(qprep_in) as infile, open(qprep_out, "w") as outfile:
+            cysbond_str = handle_cysbonds(
+                self.cysbond, Path(writedir) / self.pdb_fname, comment_out=(self.system != "protein")
+            )
             for line in infile:
                 line = replace(line, replacements)
-                if line == "!addbond at1 at2 y\n" and self.cysbond is not None:
-                    cysbond = self.cysbond.split(",")
-                    for cys in cysbond:
-                        at1 = cys.split("_")[0]
-                        at2 = cys.split("_")[1]
-                        outfile.write("addbond " + at1 + " " + at2 + " y \n")
+                if line == "!addbond at1 at2 y\n" and cysbond_str != "":
+                    outfile.write(cysbond_str)
                     continue
                 outfile.write(line)
 
