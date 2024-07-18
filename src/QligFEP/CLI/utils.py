@@ -8,7 +8,7 @@ from ..pdb_utils import disulfide_search, nest_pdb, unnest_pdb
 
 def cysbonds_for_qprep(pdb_file: Path, comment_out: bool = True):
     """Method to search for disulfide bonds in a pdb file and return the bonds in the format
-    `!addbond at1 at2 y\n` used in the `qprep.inp` file.
+    `!addbond atom1 atom2 y\n` used in the `qprep.inp` file.
 
     Args:
         pdb_file: path to the pdb file to search for disulfide bonds.
@@ -16,7 +16,7 @@ def cysbonds_for_qprep(pdb_file: Path, comment_out: bool = True):
             will ignore them. If False, the bonds will be uncommented.
 
     Returns:
-        str: string containing the disulfide bonds in the format `!addbond at1 at2 y\n`.
+        str: string containing the disulfide bonds in the format `!addbond atom1 atom2 y\n`.
     """
     with open(pdb_file) as f:
         pdb_lines = f.readlines()
@@ -29,19 +29,22 @@ def cysbonds_for_qprep(pdb_file: Path, comment_out: bool = True):
                 for line in pdbarr:
                     file_out.write(f"{line}")
     addbond = "!addbond" if comment_out else "addbond"
-    cysbonds = "".join([f"{addbond} {atomN[0]} {atomN[1]} y\n" for atomN in cysbonds])
+    cysbonds = "".join([f"{addbond} {bond[0]} {bond[1]} y\n" for bond in cysbonds])
     return cysbonds
 
 
 def handle_cysbonds(input_config: str, pdb_file: Path, comment_out: bool = True):
     """Handle cysbond input. If the input is `auto`, it will search for disulfide bonds
     in the pdb file. If the input is `none`, it will return an empty string so that no
-    bonds are added. If the input is a string with the format `at1_at2,at3_at4`, it
-    will return the bonds in the format `!addbond at1 at2 y\n!addbond at3 at4 y\n`.
+    bonds are added. If the input is a string with the format `atom1_atom2,atom3_atom4`, it
+    will return the bonds in the format `!addbond x1 x2 y\n!addbond x3 x4 y\n`.
+
+    Note: atoms in the bond can be defined as either `ResNumber:SG` or `AtomNumber` in Qprep.
+    We opt for the former as it's less error-prone.
 
     Args:
         input_config: configuration for the cysbonds. Can be `auto`, `none`, or a string
-            with the format `at1_at2,at3_at4`.
+            with the format `atom1_atom2,atom3_atom4`.
         pdb_file: path to the pdb file to search for disulfide bonds.
         comment_out: if True, the bonds will be commented out as in `!addbond` so qprep
             will ignore them. If False, the bonds will be uncommented.

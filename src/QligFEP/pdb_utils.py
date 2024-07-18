@@ -195,7 +195,7 @@ def disulfide_search(npdb, min_dist=1.8, max_dist=2.2):
                     f"Disulfide bond detected within atoms: {i_atom_number}_{j_atom_number} with distance {distance:.2f} Å."
                 )
                 logger.debug(f"Bond between residues `{i_residue_info}` and `{j_residue_info}`.")
-                cysbonds.append((i_atom_number, j_atom_number))
+                cysbonds.append((f"{i_residue_info}:SG", f"{i_residue_info}:SG"))
 
     renamed = bool(residues_to_rename)
     for i in residues_to_rename:
@@ -281,9 +281,9 @@ def read_pdb_to_dataframe(pdb_file):
 def write_dataframe_to_pdb(df, output_file):
     with open(output_file, "w") as file:
         if df.temp_factor.dtype == "float64":
-            df.temp_factor = df.temp_factor.apply(lambda x: f"{x:.2f}")
+            df.loc[:, "temp_factor"] = df.temp_factor.apply(lambda x: f"{x:.2f}")
         if df.occupancy.dtype == "float64":
-            df.occupancy = df.occupancy.apply(lambda x: f"{x:.2f}")
+            df.loc[:, "occupancy"] = df.occupancy.apply(lambda x: f"{x:.2f}")
         for _, row in df.iterrows():
             pdb_line = (
                 f"{row['record_type']:<6}{row['atom_serial_number']:>5} "
