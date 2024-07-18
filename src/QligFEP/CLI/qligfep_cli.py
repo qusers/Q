@@ -59,13 +59,15 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     run.write_FEP_file(change_charges, change_vdw, FEP_vdw, inputdir, lig_size1, lig_size2)
     logger.debug("Writing PDB files")
     run.merge_pdbs(inputdir)
-    if args.system == "protein":
-        run.write_water_pdb(inputdir)
+
+    run.write_water_pdb(inputdir)
+
     logger.debug("Getting the lambdas")
     lambdas = run.get_lambdas(args.windows, args.sampling)
     logger.debug("Writing atom mapping for distance restraints")
 
-    run.avoid_water_protein_clashes(inputdir)  # will only run for the protein leg
+    if args.system == "protein":
+        run.avoid_water_protein_clashes(inputdir)  # will only run for the protein leg
 
     logger.debug("Writing the QPREP files")
     run.write_qprep(inputdir)
