@@ -37,7 +37,7 @@ def create_call(**kwargs):
     )
     if "cysbond" in kwargs and kwargs["cysbond"] is not None:
         template += " -b {cysbond}"
-    if "to_clean" in kwargs and kwargs["cysbond"] is not None:
+    if "to_clean" in kwargs and kwargs["to_clean"] is not None:
         template += " -clean {to_clean}"
     return template.format(**kwargs)
 
