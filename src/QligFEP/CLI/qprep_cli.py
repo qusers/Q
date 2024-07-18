@@ -183,10 +183,15 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     qprep_out_path = cwd / "qprep.out"
 
     cysbonds = handle_cysbonds(args.cysbond, pdb_file, comment_out=True)
+
+    # write out without crystal waters - (will be in sphere)
     protein_df = read_pdb_to_dataframe(pdb_file)
-    no_crystal_waters_df = protein_df.query('residue_name != "HOH"')
-    if not no_crystal_waters_df.empty:
-        write_dataframe_to_pdb(no_crystal_waters_df, Path(pdb_file).with_stem(f"{args.input_pdb_file}_noHOH"))
+    crystal_waters_df = protein_df.query("residue_name == 'HOH'")
+    if not crystal_waters_df.empty:
+        fname = args.input_pdb_file.split(".")[0]
+        write_dataframe_to_pdb(
+            protein_df.query("residue_name != 'HOH'"), Path(pdb_file).with_stem(f"{fname}_noHOH")
+        )
 
     if args is not None:
         param_dict = {
