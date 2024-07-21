@@ -204,7 +204,7 @@ def disulfide_search(npdb, min_dist=1.8, max_dist=2.2):
                     f"Disulfide bond detected within atoms: {i_atom_number}_{j_atom_number} with distance {distance:.2f} Å."
                 )
                 logger.debug(f"Bond between residues `{i_residue_info}` and `{j_residue_info}`.")
-                cysbonds.append((f"{i_residue_info}:SG", f"{i_residue_info}:SG"))
+                cysbonds.append((f"{i_residue_info}:SG", f"{j_residue_info}:SG"))
 
     renamed = bool(residues_to_rename)
     for i in residues_to_rename:
