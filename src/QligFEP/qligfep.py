@@ -5,6 +5,7 @@ import shutil
 import stat
 from itertools import product
 from pathlib import Path
+from typing import Optional
 
 from .CLI.utils import get_avail_restraint_methods, handle_cysbonds
 from .functions import COG, kT, overlapping_pairs, sigmoid
@@ -887,7 +888,7 @@ class QligFEP:
                     filename = "md_" + lambda1.replace(".", "") + "_" + lambda2.replace(".", "") + ".en\n"
                     outfile.write(filename)
 
-    def avoid_water_protein_clashes(self, writedir, prot_th=1.7, water_th=1.6):
+    def avoid_water_protein_clashes(self, writedir, prot_th=1.7, water_th=1.6, header: Optional[str] = None):
         """Function to remove water molecules too close to protein & ligands | ligands.
         Thresholds are the distances in Ångström from the protein & ligands | ligands atoms
         to the nearest atom in the water molecule (HOH).
@@ -898,16 +899,20 @@ class QligFEP:
                 on the protein leg. Defaults to 1.7.
             water_th: threshold (Å) to remove water molecules clashing with the ligands
                 in the water leg. Defaults to 1.5.
+            header: header to be added to the water.pdb file. This detail is needed in Qprep's
+                current version (2024/07/21), as it doesn't recognize the radius when merging an
+                existing water.pdb file to the topology.
         """
         waterfile = Path(writedir) / "water.pdb"
         protfile = Path(writedir) / self.pdb_fname
         threshold = prot_th if self.system == "protein" else water_th
-        logger.info(f"Removing water molecules too close to protein & ligands - threshold: {prot_th} A.")
+        logger.info(f"Removing water molecules too close to protein & ligands - threshold: {threshold} A.")
         _, n_removed = rm_HOH_clash_NN(
-            read_pdb_to_dataframe(waterfile),
-            read_pdb_to_dataframe(protfile),
-            threshold,
-            waterfile,
+            pdb_df_query=read_pdb_to_dataframe(waterfile),
+            pdb_df_target=read_pdb_to_dataframe(protfile),
+            th=threshold,
+            output_file=waterfile,
+            header=header,
         )
         logger.warning(f"Removed {n_removed / 3} water molecules too close to protein & ligands.")
 

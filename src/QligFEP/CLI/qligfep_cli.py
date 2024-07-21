@@ -66,8 +66,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     lambdas = run.get_lambdas(args.windows, args.sampling)
     logger.debug("Writing atom mapping for distance restraints")
 
-    if args.system == "protein":
-        run.avoid_water_protein_clashes(inputdir)  # will only run for the protein leg
+    run.avoid_water_protein_clashes(inputdir, header=f"{run.sphereradius}.0 SPHERE")
 
     logger.debug("Writing the QPREP files")
     run.write_qprep(inputdir)

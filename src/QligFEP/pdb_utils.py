@@ -2,6 +2,7 @@
 
 import math
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -12,7 +13,14 @@ from sklearn.neighbors import NearestNeighbors
 from .logger import logger
 
 
-def rm_HOH_clash_NN(pdb_df_query, pdb_df_target, th=2.5, output_file=None, only_Oxy: bool = False):
+def rm_HOH_clash_NN(
+    pdb_df_query,
+    pdb_df_target,
+    th=2.5,
+    output_file=None,
+    only_Oxy: bool = False,
+    header: Optional[str] = None,
+):
     """Use a NearestNeighbors approach to find water molecules within a distance threshold
     (Ångström) from an input pdb file (e.g.: a protein-ligand complex), and remove them if
     the atoms are within the threshold distance from the input pdb structure.
@@ -22,6 +30,7 @@ def rm_HOH_clash_NN(pdb_df_query, pdb_df_target, th=2.5, output_file=None, only_
         pdb_df_target: DataFrame containing the protein atoms.
         th: Distance threshold in Angstroms.
         output_file: Optional path to write the result to a file.
+        header: header to be added to the output pdb file. Defaults to None
 
     Returns:
         A DataFrame containing the water oxygen atoms within the distance threshold.
@@ -67,7 +76,7 @@ def rm_HOH_clash_NN(pdb_df_query, pdb_df_target, th=2.5, output_file=None, only_
         except ValueError:
             final["occupancy"] = 0
             final["temp_factor"] = 0
-        write_dataframe_to_pdb(final, output_file)
+        write_dataframe_to_pdb(final, output_file, header=header)
     n_removed = len(water_query) - len(final)
 
     return final, n_removed
@@ -278,8 +287,17 @@ def read_pdb_to_dataframe(pdb_file):
     return df
 
 
-def write_dataframe_to_pdb(df, output_file):
+def write_dataframe_to_pdb(df, output_file, header: Optional[str] = None):
+    """Save a DataFrame object created from read_pdb_to_dataframe function to a PDB file.
+
+    Args:
+        df: DataFrame object containing the parsed PDB file.
+        output_file: name of the output file (include .pdb extension).
+        header: if desired, a header to be added to the PDB file. Defaults to None.
+    """
     with open(output_file, "w") as file:
+        if header is not None:
+            file.write(f"{header}\n")
         if df.temp_factor.dtype == "float64":
             df.loc[:, "temp_factor"] = df.temp_factor.apply(lambda x: f"{x:.2f}")
         if df.occupancy.dtype == "float64":
