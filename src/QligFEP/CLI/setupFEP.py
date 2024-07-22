@@ -12,9 +12,7 @@ from typing import Optional
 from ..logger import logger, setup_logger
 from .parser_base import parse_arguments
 
-logging.basicConfig(
-    filename="cli_calls.log", level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 
 def ligpairs_from_json(json_file):
