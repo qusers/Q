@@ -92,7 +92,7 @@ class MoleculeIO:
         elif Path(lig).is_dir():
             lig = Path(lig)
             if pattern is not None:
-                logger.debug(f"Searched for {pattern} files in {Path(lig).absolute}")
+                logger.debug(f"Searched for {pattern} files in {Path(lig).absolute()}")
                 self.lig_files = sorted(list(lig.glob(pattern)))  # glob doesn't return sorted list
             mols_and_names = [self._parse_mol(lig) for lig in self.lig_files]
         elif Path(lig).exists():
