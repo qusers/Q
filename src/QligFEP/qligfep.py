@@ -938,12 +938,18 @@ class QligFEP:
         """
         replacements = {}
         cog = None
-        cog_regex = re.compile(r"^\d+\.\d{3}\s\d+\.\d{3}\s\d+\.\d{3}$")
+        cog_regex = re.compile(
+            r"([-]?\d{1,2}(?:\.\d{3})?)\s+([-]?\d{1,2}(?:\.\d{3})?)\s+([-]?\d{1,2}(?:\.\d{3})?)"
+        )
         # see if the water.pdb file has a COG from qprep
-        with Path(writedir).parent / "water.pdb" as infile:
-            first_line = infile.readline().strip()
-            if first_line.startswith("TITLE"):
-                cog = cog_regex.match(first_line).group()
+        first_lines = (Path(writedir).parents[1] / "water.pdb").read_text().split("\n")[:3]
+        for line in first_lines:
+            if line.startswith("TITLE"):
+                _matches = cog_regex.search(line)
+                center = " ".join(_matches.groups()) if _matches else None
+                if _matches is None:
+                    logger.warning(f"Failed to extract COG from line:\n{line}")
+                    logger.info("Will calculate the COG from the ligand atoms.")
         center = COG(self.lig1 + ".pdb") if cog is None or self.system == "water" else cog
         center = f"{center[0]} {center[1]} {center[2]}"
         qprep_in = CONFIGS["ROOT_DIR"] + "/INPUTS/qprep.inp"
