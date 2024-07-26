@@ -3,10 +3,10 @@ import os
 import re
 import shutil
 import stat
-from itertools import product
 from pathlib import Path
 from typing import Optional
 
+from .CLI.qprep_cli import qprep_error_check
 from .CLI.utils import get_avail_restraint_methods, handle_cysbonds
 from .functions import COG, kT, overlapping_pairs, sigmoid
 from .IO import replace, run_command
@@ -81,6 +81,8 @@ class QligFEP:
                         continue
             self.residueoffset = resnr
             self.atomoffset = atnr
+            # NOTE: atomoffset is updated in `write_FEP_file` as Q might protonate
+            # amino acids outside the sphere, making the residue offset incorrect.
         else:
             self.atomoffset = 0
             self.residueoffset = 0
@@ -299,6 +301,11 @@ class QligFEP:
         lig_size1 = int(lig_size1)
         lig_size2 = int(lig_size2)
         lig_tot = lig_size1 + lig_size2
+        self.atomoffset = (
+            read_pdb_to_dataframe(Path(writedir) / "top_p.pdb")
+            .query("~residue_name.isin(['HOH', 'LIG', 'LID'])")
+            .shape[0]
+        )
 
         with open(writedir + "/FEP1.fep", "w") as outfile:
             total_atoms = len(change_charges)
@@ -389,6 +396,8 @@ class QligFEP:
         with open("water.pdb") as infile, open(writedir + "/water.pdb", "w") as outfile:
             outfile.write(header)
             for line in infile:
+                if line.startswith("TITLE"):  # qprep doesn't accept titles
+                    continue
                 outfile.write(line)
 
     def get_lambdas(self, windows, sampling):
@@ -906,7 +915,9 @@ class QligFEP:
         waterfile = Path(writedir) / "water.pdb"
         protfile = Path(writedir) / self.pdb_fname
         threshold = prot_th if self.system == "protein" else water_th
-        logger.info(f"Removing water molecules too close to protein & ligands - threshold: {threshold} A.")
+        system_to_log = "protein & ligands" if self.system == "protein" else "ligands"
+
+        logger.info(f"Removing water molecules too close to {system_to_log} - threshold: {threshold} A.")
         _, n_removed = rm_HOH_clash_NN(
             pdb_df_query=read_pdb_to_dataframe(waterfile),
             pdb_df_target=read_pdb_to_dataframe(protfile),
@@ -928,7 +939,8 @@ class QligFEP:
         replacements = {}
         cog = None
         cog_regex = re.compile(r"^\d+\.\d{3}\s\d+\.\d{3}\s\d+\.\d{3}$")
-        with open(writedir + "/water.pdb") as infile:
+        # see if the water.pdb file has a COG from qprep
+        with Path(writedir).parent / "water.pdb" as infile:
             first_line = infile.readline().strip()
             if first_line.startswith("TITLE"):
                 cog = cog_regex.match(first_line).group()
@@ -971,4 +983,5 @@ class QligFEP:
         # another function that just calls os.system instead of using the preferred
         # subprocess module....
         run_command(qprep, options, string=True)
+        qprep_error_check(Path("qprep.out"), self.FF)
         os.chdir("../../")

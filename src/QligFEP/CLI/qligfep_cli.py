@@ -55,8 +55,6 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     run.change_lib(changes_for_libfiles, inputdir)
     logger.debug("Changing parameters")
     FEP_vdw = run.change_prm(changes_for_prmfiles, inputdir)
-    logger.debug("Writing FEP files")
-    run.write_FEP_file(change_charges, change_vdw, FEP_vdw, inputdir, lig_size1, lig_size2)
     logger.debug("Writing PDB files")
     run.merge_pdbs(inputdir)
 
@@ -68,10 +66,11 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
 
     run.avoid_water_protein_clashes(inputdir, header=f"{run.sphereradius}.0 SPHERE")
 
-    logger.debug("Writing the QPREP files")
+    logger.debug("Writing the QPREP files & running qprep")
     run.write_qprep(inputdir)
-    logger.debug("Running QFEP")
     run.qprep(inputdir)
+    logger.debug("Writing FEP files")
+    run.write_FEP_file(change_charges, change_vdw, FEP_vdw, inputdir, lig_size1, lig_size2)
     overlapping_atoms = run.set_restraints(writedir)
 
     # Handling the correct offset here
