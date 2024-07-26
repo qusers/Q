@@ -233,7 +233,8 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     with open("complexnotexcluded.pdb") as f:
         lines = f.readlines()
     with open("water.pdb", "w") as f:
-        f.write(f"TITLE      Water Sphere Generated with Qprep: COG {cog}\n")
+        water_header = f"TITLE      Water Sphere Generated with Qprep: COG {cog}"
+        f.write(f"{water_header}\n")
         for line in lines:
             if line.startswith("ATOM") and line[17:20] == "HOH":
                 f.write(line)
@@ -244,7 +245,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     water_df = read_pdb_to_dataframe(waterfile)
     oxygen_subset = water_df.query('atom_name == "O"')
     euclidean_distances = oxygen_subset[["x", "y", "z"]].sub(cog).pow(2).sum(1).apply(np.sqrt)
-    outside = np.where(euclidean_distances > args.sphereradius)[0]
+    outside = np.where(euclidean_distances > args.sphereradius * 1.05)[0]  # we add a tolerance of 5%
     outside_HOH_residues = oxygen_subset.iloc[outside].residue_seq_number.unique()  # noqa: F841
     if outside.shape[0] > 0:
         logger.warning(f"Found {outside.shape[0]} water molecules outside the sphere radius.")
@@ -255,7 +256,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             water_df.query('atom_name == "O"')[["x", "y", "z"]].sub(cog).pow(2).sum(1).apply(np.sqrt)
         )
         logger.debug(f"Final highest distance is {new_distances.max():.2f} A")
-        write_dataframe_to_pdb(water_df, waterfile)
+        write_dataframe_to_pdb(water_df, waterfile, header=water_header)
     else:
         logger.info("All water molecules are inside the sphere radius.")
         logger.debug(f"Final highest distance to COG is {euclidean_distances.max():.2f} A")
