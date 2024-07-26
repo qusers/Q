@@ -1,6 +1,7 @@
 """Module containing the OpenFF2Q class to process ligands and generate OpenFF parameter files for QligFEP."""
 
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 from joblib import Parallel, delayed, parallel_config
@@ -19,10 +20,10 @@ class OpenFF2Q(MoleculeIO):
     variables use ligand names as keys, as setup in the MoleculeIO class.
 
     Attributes:
-        mapping: Dictionary to store the mapping of the ligand atoms to the forcefield parameters.
+        mapping: Dictionary with enumerated list of atoms containing [index, name, type, charge, Xcoord, Ycoord, Zcoord]
         forcefield: OpenFF ForceField object.
-        topologies: Dictionary with `openff.toolkit.topology.Topology` objects as values.
-        parameters: Dictionary with `openff.toolkit.typing.engines.smirnoff.parameters.ParameterList`
+        topologies: Dict with mol names as keys and `openff.toolkit.topology.Topology` objects as values.
+        parameters: Dict with mol names as keys and `openff.toolkit.typing.engines.smirnoff.parameters.ParameterList`
             objects as values.
         charges_list_magnitude: Dictionary to store the partial charge magnitude for each
             atom in the ligand for each ligand.
@@ -44,11 +45,18 @@ class OpenFF2Q(MoleculeIO):
         self.n_jobs = n_jobs
         self.out_dir = Path(self.lig).parent
         self.mapping = {lname: {} for lname in self.lig_names}
-        self.forcefield = ForceField("openff-2.2.0.offxml")
+        self.forcefield = self._set_forcefield(None)
         self.topologies, self.parameters = self.set_topologies_and_parameters()
         self.charges_list_magnitude = {}  # store charge magnitude for each ligand
         self.total_charges = {}  # store the total charges
         self._set_nagl(nagl=nagl)
+
+    def _set_forcefield(self, ffstring: Optional[str]) -> ForceField:
+        if ffstring is None:
+            # why unconstrained: https://docs.openforcefield.org/projects/toolkit/en/stable/faq.html
+            ffstring = "openff_unconstrained-2.2.0.offxml"
+        logger.debug(f"Forcefield for the ligand parameters: {ffstring}")
+        return ForceField(ffstring)
 
     def _set_nagl(self, nagl: bool):
         """Set the forcefield to be used to calculate the molecules' partial charges."""
@@ -95,6 +103,7 @@ class OpenFF2Q(MoleculeIO):
             molecules = tqdm(self.molecules)
             charges_magnitudes = Parallel()(delayed(self._assign_charge)(molecule) for molecule in molecules)
         logger.info("Done! Writing .lib, .prm and .pdb files for each ligand")
+        logger.debug(f"Output path: {self.out_dir}")
         for lname, charges in zip(self.lig_names, charges_magnitudes):
             self.charges_list_magnitude.update({lname: charges})
             formatted_sum = f"{round(charges.sum(), 10):.3f}"
