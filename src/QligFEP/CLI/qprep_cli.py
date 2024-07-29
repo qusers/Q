@@ -38,6 +38,10 @@ class QprepError(Exception):
     pass
 
 
+class QprepAtomLibMissingError(Exception):
+    pass
+
+
 def qprep_error_check(qprep_out_path: Path, ff_name) -> None:
     """Check for errors in the qprep.out file and raise an exception if any are found.
 
@@ -49,8 +53,12 @@ def qprep_error_check(qprep_out_path: Path, ff_name) -> None:
         QprepError: ff any errors are found in the qprep.out file.
     """
     error_pat = re.compile(r"ERROR\:\s", re.IGNORECASE)
+    missing_lib_pat = re.compile(
+        r">>> Atom ...?.? in residue no\.\s+\d+ not found in library entry for [A-Z]+"
+    )
     outfile_lines = qprep_out_path.read_text().split("\n")
     error_lines = []
+    missing_atomlib_lines = []
     for line in outfile_lines:
         if error_pat.findall(line):
             error_lines.append(line)
@@ -59,9 +67,20 @@ def qprep_error_check(qprep_out_path: Path, ff_name) -> None:
                 "acids in your pdb file match the residue & atom conventions on the forcefield .lib & .prm files:\n"
                 f"{FF_DIR/ ff_name}.prm & {FF_DIR/ ff_name}.lib"
             )
+        if missing_lib_pat.findall(line):
+            missing_atomlib_lines.append(line)
+            logger.error(
+                f"Errors found in qprep output file {qprep_out_path}. "
+                "Your protein file likely contains atoms that are not present in the forcefield's .lib & .prm files:, \n"
+                f"{FF_DIR/ ff_name}.prm & {FF_DIR/ ff_name}.lib"
+            )
+
     if error_lines:
         error_message = {"\n".join(error_lines)}
         raise QprepError(error_message)
+    if missing_atomlib_lines:
+        error_message = {"\n".join(missing_atomlib_lines)}
+        raise QprepAtomLibMissingError(error_message)
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -164,7 +183,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         args: argparse Namespace containing the arguments for the qprep program. Defaults to None
     """
     cwd = Path.cwd()
-    if args.log_level != "INFO":
+    if args.log_level != "info":
         setup_logger(args.log_level.upper())
     qprep_path = CONFIGS["QPREP"]
     logger.debug(f"Running qprep from path: {qprep_path}")
