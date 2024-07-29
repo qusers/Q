@@ -1,4 +1,5 @@
 import numpy as np
+from openff.units import unit
 
 from .pdb_utils import pdb_parse_in
 
@@ -97,3 +98,104 @@ def avg_sem(array):
     cnt = len(FEP_sum)
     sem = np.nanstd(FEP_sum, ddof=1) / np.sqrt(cnt)
     return [dG, sem]
+
+
+def convert_value(value, original_type, final_type, temperature=298.0, out_unit=None):
+    """Adapted from: https://github.com/openforcefield/protein-ligand-benchmark/blob/main/plbenchmark/utils.py
+    Converts an experimental value into another derived quantity with specified unit.
+
+    Args:
+        value: float, numerical value
+        original_type: string, code for the original observable. Can be `dg`, `ki`, `ic50`, `pic50`
+        final_type: string, code for the desired derived quantity. Can be `dg`, `ki`, `ic50`, `pic50`
+        temperature: float, temperature in kelvin. Defaults to 298.0 (default temperature in QligFEP)
+        out_unit: unit of type :py:class:`pint`, output unit of final_type, needs to fit to the requested final_type. Defaults to None.
+
+    Raises:
+        NotImplementedError: whenever the conversion is not possible.
+
+    Returns:
+        float with desired unit
+    """
+    # define default units
+    if out_unit is None:
+        if final_type == "dg":
+            out_unit = unit("kilocalories / mole")
+        elif final_type == "ki" or final_type == "ic50":
+            out_unit = unit("nanomolar")
+        elif final_type == "pic50":
+            out_unit = unit("")
+
+    if original_type == "dg":
+        if final_type == "dg":
+            return (value.to(out_unit)).magnitude
+        elif final_type == "ki" or final_type == "ic50":
+            result = np.exp(-value / (unit.molar_gas_constant * temperature * unit.kelvin)) * unit.molar
+            return (result.to(out_unit)).magnitude
+        elif final_type == "pic50":
+            result = value / (unit.molar_gas_constant * temperature * unit.kelvin) / np.log(10)
+            return (result.to(out_unit)).magnitude
+        else:
+            raise NotImplementedError(
+                f"Conversion to observable {final_type} not possible. "
+                f"Observable must be any of: dg, ki, ic50 or pic50."
+            )
+    elif original_type == "ki":
+        if final_type == "dg":
+            if value < 1e-15 * unit("molar"):
+                return (0.0 * out_unit).magnitude
+            else:
+                result = unit.molar_gas_constant * temperature * unit.kelvin * np.log(value / unit.molar)
+                return (result.to(out_unit).round(2)).magnitude
+        elif final_type == "ki" or final_type == "ic50":
+            return (value.to(out_unit)).magnitude
+        elif final_type == "pic50":
+            if value < 1e-15 * unit("molar"):
+                return (-1e15 * out_unit).magnitude
+            else:
+                result = -np.log(value / unit.molar) / np.log(10)
+                return (result).magnitude
+        else:
+            raise NotImplementedError(
+                f"Conversion to observable {final_type} not possible. "
+                f"Observable must be any of: dg, ki, ic50 or pic50."
+            )
+    elif original_type == "ic50":
+        if final_type == "dg":
+            if value < 1e-15 * unit("molar"):
+                return (0.0 * out_unit).magnitude
+            else:
+                result = (
+                    unit.molar_gas_constant
+                    * temperature
+                    * unit.kelvin
+                    * np.log(value.to("molar") / unit.molar)
+                )
+                return (result.to(out_unit).round(2)).magnitude
+        elif final_type == "ki" or final_type == "ic50":
+            return (value.to(out_unit)).magnitude
+        elif final_type == "pic50":
+            if value.to("molar") < 1e-15 * unit("molar"):
+                return (-1e15 * out_unit).magnitude
+            else:
+                result = -np.log(value / unit.molar) / np.log(10)
+                return (result).magnitude
+        else:
+            raise NotImplementedError(
+                f"Conversion to observable {final_type} not possible. "
+                f"Observable must be any of: dg, ki, ic50 or pic50."
+            )
+    elif original_type == "pic50":
+        if final_type == "dg":
+            result = -1 * unit.molar_gas_constant * temperature * unit.kelvin * value * np.log(10)
+            return (result.to(out_unit).round(2)).magnitude
+        elif final_type == "ki" or final_type == "ic50":
+            result = 10 ** (-value) * unit("molar")
+            return (result.to(out_unit)).magnitude
+        elif final_type == "pic50":
+            return (value.to(out_unit)).magnitude
+        else:
+            raise NotImplementedError(
+                f"Conversion to observable {final_type} not possible. "
+                f"Observable must be any of: dg, ki, ic50 or pic50."
+            )
