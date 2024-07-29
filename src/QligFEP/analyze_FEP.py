@@ -620,6 +620,8 @@ def main(args):
         method=args.method, output_file=args.json_file.replace(".json", "_ddG.json")
     )
     if args.experimental_key is not None:
+        if args.exp_unit is not None and args.exp_unit != "dg":
+            logger.warning("Make sure your experimental data is reported in the nanomolar scale!")
         fep_reader.load_experimental_data(exp_key=args.experimental_key, exp_unit=args.exp_unit)
         fep_reader.create_ddG_plot(method=args.method)
 

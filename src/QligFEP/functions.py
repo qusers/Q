@@ -103,7 +103,7 @@ def avg_sem(array):
 def convert_value(value, original_type, final_type, temperature=298.0, out_unit=None):
     """Adapted from: https://github.com/openforcefield/protein-ligand-benchmark/blob/main/plbenchmark/utils.py
     Converts an experimental value into another derived quantity with specified unit. Please note that
-    ic50 and ki values should be in nanomolar.
+    ic50, ki, and pic50 values should be in nanomolar.
 
     Args:
         value: float, numerical value
@@ -119,6 +119,12 @@ def convert_value(value, original_type, final_type, temperature=298.0, out_unit=
         float with desired unit
     """
     # define default units
+    if isinstance(value, (float, int)) and original_type in ["ki", "ic50"]:
+        value = value * 10**-9 * unit("molar")
+    elif isinstance(value, (float, int)) and original_type == "pic50":
+        value = 10 ** (-value) * unit("molar")
+    elif isinstance(value, (float, int)) and original_type == "dg":
+        value = value * unit("kilocalories / mole")
     if out_unit is None:
         if final_type == "dg":
             out_unit = unit("kilocalories / mole")
