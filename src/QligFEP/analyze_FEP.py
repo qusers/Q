@@ -3,11 +3,13 @@ import json
 import os
 import re
 from pathlib import Path
+from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.metrics import mean_absolute_error
 
+from .functions import convert_value
 from .IO import read_qfep, read_qfep_verbose, run_command
 from .logger import logger, setup_logger
 from .settings.settings import Q_PATHS
@@ -312,13 +314,15 @@ class FepReader:
                 )
             self.feps.append(fep)
 
-    def load_experimental_data(self, exp_key: str):
-        """Function to load the experimental data found in the input json file and
-        populate the existing result `self.data['result']` dictionary with the experimental
-        values.
+    def load_experimental_data(self, exp_key: str, exp_unit: Optional[str] = None):
+        """Load the experimental data found in the input json file and populate the existing
+        result `self.data['result']` dictionary with the experimental values. If an exp_unit
+        is defined, the method will convert the experimental values from the given unit to dG
+        in kilocalories / mole.
 
         Args:
             exp_key: the key in the `self.mapping_json` file that contains the experimental data.
+            exp_unit: the unit of the experimental data. Defaults None, meaning it won't run a conversion.
         """
         self.exp_key = exp_key
         if "result" not in self.data:
@@ -331,7 +335,11 @@ class FepReader:
             # search ligands in the edges
             for edge in self.mapping_json["edges"]:
                 if edge["from"] == _from and edge["to"] == _to:
-                    ddG = edge[exp_key]
+                    ddG = (
+                        convert_value(edge[exp_key], original_type=exp_unit, final_type="dg")
+                        if exp_unit is not None
+                        else edge[exp_key]
+                    )
                     break
 
             # populate the result dictionary
@@ -562,6 +570,15 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "-expu",
+        "--experimental-unit",
+        dest="exp_unit",
+        help="Unit of the experimental data. Defaults to kcal/mol.",
+        default=None,
+        choices=["dg", "ki", "ic50", "pic50"],
+    )
+
+    parser.add_argument(
         "-t",
         "--target",
         dest="target",
@@ -603,7 +620,7 @@ def main(args):
         method=args.method, output_file=args.json_file.replace(".json", "_ddG.json")
     )
     if args.experimental_key is not None:
-        fep_reader.load_experimental_data(exp_key=args.experimental_key)
+        fep_reader.load_experimental_data(exp_key=args.experimental_key, exp_unit=args.exp_unit)
         fep_reader.create_ddG_plot(method=args.method)
 
 
