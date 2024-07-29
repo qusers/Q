@@ -65,7 +65,7 @@ class MolecularCOG:
         if len(centers) > 1:
             logger.warning("Calculating for all ligands in the file.")
             for i, center in enumerate(centers):
-                logger.info(f"Ligand {i+1} center: {center}")
+                logger.debug(f"Ligand {i+1} center: {center}")
 
         overall_center = [sum(x) / len(centers) for x in zip(*centers)]
         return f"[{round(overall_center[0], 3)} {round(overall_center[1], 3)} {round(overall_center[2], 3)}]"
