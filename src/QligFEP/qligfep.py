@@ -925,7 +925,7 @@ class QligFEP:
             output_file=waterfile,
             header=header,
         )
-        logger.warning(f"Removed {n_removed / 3} water molecules too close to protein & ligands.")
+        logger.warning(f"Removed {int(n_removed / 3)} water molecules too close to protein & ligands.")
 
     def write_qprep(self, writedir):
         """Write the qprep.inp file for Q. If the system is water, the center of geometry
