@@ -44,7 +44,7 @@ class MolecularCOG:
                     center[2] += float(line[46:54])
         if count > 0:
             center = [x / count for x in center]
-        return f"[{round(center[0], 3)} {round(center[1], 3)} {round(center[2], 3)}]"
+        return f"[{round(center[0], 3):.3f} {round(center[1], 3):.3f} {round(center[2], 3):.3f}]"
 
     def _cog_sdf(self):
         coordinate_regex = re.compile(r"^\s*(-?\d+\.\d{4})\s*(-?\d+\.\d{4})\s*(-?\d+\.\d{4})\s+\S")
@@ -68,7 +68,7 @@ class MolecularCOG:
                 logger.debug(f"Ligand {i+1} center: {center}")
 
         overall_center = [sum(x) / len(centers) for x in zip(*centers)]
-        return f"[{round(overall_center[0], 3)} {round(overall_center[1], 3)} {round(overall_center[2], 3)}]"
+        return f"[{round(overall_center[0], 3):.3f} {round(overall_center[1], 3):.3f} {round(overall_center[2], 3):.3f}]"
 
     def _calculate_center(self, coordinates):
         count = len(coordinates)
