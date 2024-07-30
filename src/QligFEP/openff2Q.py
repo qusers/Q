@@ -53,8 +53,9 @@ class OpenFF2Q(MoleculeIO):
 
     def _set_forcefield(self, ffstring: Optional[str]) -> ForceField:
         if ffstring is None:
-            # why unconstrained: https://docs.openforcefield.org/projects/toolkit/en/stable/faq.html
-            ffstring = "openff_unconstrained-2.2.0.offxml"
+            # why not the constrained: https://docs.openforcefield.org/projects/toolkit/en/stable/faq.html
+            ffstring = "openff-2.2.0.offxml"
+            # for a list of the forcefields: https://github.com/openforcefield/openff-forcefields/tree/main/openforcefields/offxml
         logger.debug(f"Forcefield for the ligand parameters: {ffstring}")
         return ForceField(ffstring)
 
