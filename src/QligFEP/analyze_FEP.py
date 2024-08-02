@@ -1,3 +1,5 @@
+"""Module containing both class and CLI for analyzing FEP calculations setup through the program setupFEP"""
+
 import argparse
 import json
 import os
@@ -380,7 +382,7 @@ class FepReader:
             with output_file.open("w") as f:
                 json.dump(self.mapping_json, f, indent=4)
 
-    def create_ddG_plot(
+    def create_ddG_plot(  # FIXME: This could be a static method or a function to make it more flexible
         self,
         method,
         margin: float = 1.0,
@@ -417,6 +419,15 @@ class FepReader:
             except KeyError:
                 logger.error(f"KeyError: {method} not found in {fep}.")
                 logger.error(f"Current dictionary: {data_dict}")
+
+        # check for nan values and, if present, remove them
+        nan_val_idxs = np.where(np.isnan(avg_values))[0]
+        problem_feps = [self.feps[idx] for idx in nan_val_idxs]
+        if len(nan_val_idxs) > 0:
+            logger.warning(f"Dropping FEPs with nan values: {problem_feps}")
+            avg_values = [val for idx, val in enumerate(avg_values) if idx not in nan_val_idxs]
+            sem_values = [val for idx, val in enumerate(sem_values) if idx not in nan_val_idxs]
+            exp_values = [val for idx, val in enumerate(exp_values) if idx not in nan_val_idxs]
 
         # Calculate RMSE & correlation coefficient
         rmse = np.sqrt(np.mean((np.array(avg_values) - np.array(exp_values)) ** 2))
@@ -564,6 +575,15 @@ def parse_arguments() -> argparse.Namespace:
         "--experimental-key",
         dest="experimental_key",
         help=("Key in the provided .json file that contains the experimental data."),
+        type=str,
+        required=False,
+        default=None,
+    )
+    parser.add_argument(
+        "-experr",
+        "--experimental-error-key",
+        dest="exp_error",
+        help=("Key in the provided .json file that contains the error for the experimental data."),
         type=str,
         required=False,
         default=None,
