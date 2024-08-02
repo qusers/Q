@@ -38,6 +38,7 @@ def rm_HOH_clash_NN(
     water_query = pdb_df_query.query("atom_name == 'O'") if only_Oxy else pdb_df_query
     query_arr = water_query[["x", "y", "z"]].values
 
+    # we ignore ions in the target; as water molecules might be in close proximity to it
     pdb_ions = ["ZN", "SOD", "IOD", "BR", "CL", "CU", "CU1", "NA", "MG", "CA"]  # noqa: F841
     target_arr = pdb_df_target.query("~residue_name.isin(@pdb_ions)")[["x", "y", "z"]].values
 
@@ -51,7 +52,6 @@ def rm_HOH_clash_NN(
     # Flatten indices, ensuring only unique and valid indices are retained
     unique_indices = sorted(set([i for sublist in indices for i in sublist]))
     to_rm_waters = water_query.iloc[unique_indices]["residue_seq_number"].tolist()
-    logger.info(f"Removing {len(to_rm_waters)} water molecules within {th} Å of protein atoms.")
     final = pdb_df_query[~pdb_df_query["residue_seq_number"].isin(to_rm_waters)].copy()
     # now renumber the atom_serial_number and the residue_seq_number
     startAtom = final["atom_serial_number"].values[0]
@@ -78,7 +78,10 @@ def rm_HOH_clash_NN(
             final["temp_factor"] = 0
         write_dataframe_to_pdb(final, output_file, header=header)
     n_removed = len(water_query) - len(final)
-
+    logger.info(
+        f"Removing {n_removed/3} water molecules {'with oxygen atoms' if only_Oxy else ''}"
+        f" within {th} Å of protein atoms."
+    )
     return final, n_removed
 
 
