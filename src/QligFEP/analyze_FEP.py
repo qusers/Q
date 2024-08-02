@@ -192,6 +192,10 @@ class FepReader:
             logger.error(f"Failed to read energies from {qfep_repli_path}. Error: \n{e}")
             failed_replicate.append(repID)
             energies = np.array([np.nan] * len(self.methods_list))  # Assuming 5 energy methods
+        except IndexError as e:
+            logger.error(f"Failed to read energies from {qfep_repli_path}. Error: \n{e}")
+            failed_replicate.append(repID)
+            energies = np.array([np.nan] * len(self.methods_list))
         # if the qfep.out is not in the correct format due to not being fully ran, the loop won't
         # retrieve the energies, causing an UnboundLocalError.
         except UnboundLocalError as e:
