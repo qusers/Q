@@ -56,6 +56,14 @@ def rm_HOH_clash_NN(
     # now renumber the atom_serial_number and the residue_seq_number
     startAtom = final["atom_serial_number"].values[0]
 
+    n_removed = np.setdiff1d(
+        water_query["residue_seq_number"].unique(), final["residue_seq_number"].unique()
+    ).shape[0]
+    logger.info(
+        f"Removed {n_removed} water molecules {'with oxygen atoms' if only_Oxy else ''}"
+        f" within {th} Å of protein atoms."
+    )
+
     final["atom_serial_number"] = np.arange(startAtom, startAtom + len(final))
     new_residue_seq_numbers = {
         residue: i + 1 for i, residue in enumerate(final["residue_seq_number"].unique())
@@ -77,11 +85,6 @@ def rm_HOH_clash_NN(
             final["occupancy"] = 0
             final["temp_factor"] = 0
         write_dataframe_to_pdb(final, output_file, header=header)
-    n_removed = len(water_query) - len(final)
-    logger.info(
-        f"Removing {n_removed/3} water molecules {'with oxygen atoms' if only_Oxy else ''}"
-        f" within {th} Å of protein atoms."
-    )
     return final, n_removed
 
 
