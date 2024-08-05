@@ -48,18 +48,16 @@ Q/
 - `analyze_FEP.py` now accessible through the CLI with the command `qligfep_analyze`.
 - Switched the SHAKE algorithm to `off` on [equilibrations 1 to 4](https://github.com/qusers/Q/commit/4758c2b010cead0d40686b7c608405a4c576ab05). TODO: benchmark SHAKE behavior when ON from equilibration 4 as well.
 - Changed the timelimit for jobs on Tetralith from 24:00:00 to 12:00:00 to allow our jobs to be used as ["backfill" jobs](https://www.nsc.liu.se/support/batch-jobs/tetralith/adapt-to-workflow/#:~:text=If%20possible%2C%20structure%20your%20jobs%20so%20that%20the%20time%20limit%20is%20between%2030%20minutes%20and%2024%20hours.%20Such%20jobs%20can%20often%20be%20started%20using%20%22backfill%22%20(using%20nodes%20that%20would%20otherwise%20be%20idle).).
-
+- Modified the `qprep.f90` code to fix problem where atom names containing leading spaces would not be recognized by the code.
+- There are now different ways of setting up the restraints between atoms while doing a FEP with the `qligfep` program. Still under development as we don't have the final benchmarking results;
+- `qprep_cli` now works much better to generate the initial watersphere. Currently, you can generate it for your protein structure and the watersphere will be adapted while preparing the perturbations with `qligfep` to avoid clashes.
+- `qligfep` now supports a `auto` flag on the cystein bonds detection so that you don't have to manually input that anymore;
 
 
 ## TODO:
-- [x] add a MANIFEST.in file to include non-python files in the package.
-- [x] Update Qgpu with the correct imports as well.
 - [  ] Implement Softcore to the package. ⚠️ Would take a long time ⚠️
   - Can take a look at the implementation of this in other packages and translate it to fortran code
-- [x] Make a script detecting the cystein bonds so that the user doesn't need to [hardcode](https://github.com/GPCR-ModSim/qligfep-benchmark/blob/main/inputfilegen/OPLS2015/Thrombin/setup.py) them anymore.
 - [  ] Numpy seems to have a support for compiling fortran code. Could think about making a wrapper so that thes functions can be directly called with python. (for now, lower priority...)
-- [x] Setup a proper logging to the package; for now this was (roughly) done with [loguru](https://github.com/Delgan/loguru).
-- [x] Make current `except` statements in the code more specific. When not specific, these statements can also catch, for example, `KeyboardInterrupt`, triggered by a `Ctrl + c` in the terminal. (but ongoing...)
 - [  ] Currently, QmapFEP makes a `self.ligands` dictionary with the charges as keys. However, that's problematic because the charges were hard-coded... I added the charges to the MoleculePool but the code doesn't use that yet.
 - [  ] Add test modules for the current refactored code.
 
