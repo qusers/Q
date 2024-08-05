@@ -11,7 +11,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.metrics import mean_absolute_error
 
-from .functions import convert_value
 from .IO import read_qfep, read_qfep_verbose, run_command
 from .logger import logger, setup_logger
 from .settings.settings import Q_PATHS
@@ -341,11 +340,7 @@ class FepReader:
             # search ligands in the edges
             for edge in self.mapping_json["edges"]:
                 if edge["from"] == _from and edge["to"] == _to:
-                    ddG = (
-                        convert_value(edge[exp_key], original_type=exp_unit, final_type="dg")
-                        if exp_unit is not None
-                        else edge[exp_key]
-                    )
+                    ddG = edge[exp_key]
                     break
 
             # populate the result dictionary
@@ -583,6 +578,7 @@ def parse_arguments() -> argparse.Namespace:
         required=False,
         default=None,
     )
+
     parser.add_argument(
         "-experr",
         "--experimental-error-key",
@@ -591,15 +587,6 @@ def parse_arguments() -> argparse.Namespace:
         type=str,
         required=False,
         default=None,
-    )
-
-    parser.add_argument(
-        "-expu",
-        "--experimental-unit",
-        dest="exp_unit",
-        help="Unit of the experimental data. Defaults to kcal/mol.",
-        default=None,
-        choices=["dg", "ki", "ic50", "pic50"],
     )
 
     parser.add_argument(
