@@ -923,7 +923,9 @@ class QligFEP:
             pdb_df_target=read_pdb_to_dataframe(protfile),
             th=threshold,
             output_file=waterfile,
+            heavy_only=True,
             header=header,
+            save_removed=False,  # set to True if you want to check the removed waters
         )
 
     def write_qprep(self, writedir):

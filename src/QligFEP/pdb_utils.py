@@ -18,8 +18,9 @@ def rm_HOH_clash_NN(
     pdb_df_target,
     th=2.5,
     output_file=None,
-    only_Oxy: bool = False,
+    heavy_only: bool = False,
     header: Optional[str] = None,
+    save_removed=False,
 ):
     """Use a NearestNeighbors approach to find water molecules within a distance threshold
     (Ångström) from an input pdb file (e.g.: a protein-ligand complex), and remove them if
@@ -30,17 +31,22 @@ def rm_HOH_clash_NN(
         pdb_df_target: DataFrame containing the protein atoms.
         th: Distance threshold in Angstroms.
         output_file: Optional path to write the result to a file.
+        heavy_only: If True, only consider heavy atoms (i.e., exclude hydrogen atoms).
         header: header to be added to the output pdb file. Defaults to None
 
     Returns:
         A DataFrame containing the water oxygen atoms within the distance threshold.
     """
-    water_query = pdb_df_query.query("atom_name == 'O'") if only_Oxy else pdb_df_query
+    water_query = pdb_df_query.query("atom_name == 'O'") if heavy_only else pdb_df_query
     query_arr = water_query[["x", "y", "z"]].values
 
-    # we ignore ions in the target; as water molecules might be in close proximity to it
+    # we ignore ions in the target; since water molecules might be in close proximity to it
     pdb_ions = ["ZN", "SOD", "IOD", "BR", "CL", "CU", "CU1", "NA", "MG", "CA"]  # noqa: F841
-    target_arr = pdb_df_target.query("~residue_name.isin(@pdb_ions)")[["x", "y", "z"]].values
+    target_arr = pdb_df_target.query("~residue_name.isin(@pdb_ions)")
+    if heavy_only:
+        target_arr = target_arr.query(r"~atom_name.str.contains('^H[A-Z]?\d{0,2}?')")[["x", "y", "z"]].values
+    else:
+        target_arr = target_arr[["x", "y", "z"]].values
 
     # Use NearestNeighbors with a radius threshold
     knn = NearestNeighbors(radius=th, metric="euclidean", n_jobs=4)
@@ -60,7 +66,7 @@ def rm_HOH_clash_NN(
         water_query["residue_seq_number"].unique(), final["residue_seq_number"].unique()
     ).shape[0]
     logger.info(
-        f"Removed {n_removed} water molecules {'with oxygen atoms' if only_Oxy else ''}"
+        f"Removed {n_removed} water molecules {'with oxygen atoms' if heavy_only else ''}"
         f" within {th} Å of protein atoms."
     )
 
@@ -85,6 +91,13 @@ def rm_HOH_clash_NN(
             final["occupancy"] = 0
             final["temp_factor"] = 0
         write_dataframe_to_pdb(final, output_file, header=header)
+        if save_removed:
+            removed_file = Path(output_file).with_name(Path(output_file).stem + "_removed.pdb")
+            write_dataframe_to_pdb(
+                pdb_df_query[pdb_df_query["residue_seq_number"].isin(to_rm_waters)],
+                removed_file,
+                header=header,
+            )
     return final, n_removed
 
 
