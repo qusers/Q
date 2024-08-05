@@ -214,7 +214,7 @@ According to Q's manual, this part is defined with the following columns:
 
 ## impropers
 
-> TODO: this part isn't so clear yet... need to investigate further.
+According to Q's manual, this part is defined with the following.
 
 columns:
 1) atom type 1 or 0 or ? to match any atom type
@@ -224,3 +224,8 @@ columns:
 5) force constant = kcal / mol / rad^2
 6) equilibrium angle
 
+However, despite the force here being reported as $kcal/mol/rad^2$, it seems like multiplying this value by 10 does reproduce the correct values in the Q force field file.
+
+See script `conversion.py` in this directory for a guide on how to convert the OpenMM force field files to the Q format.
+
+# add section on how to add from extra forcefield:
