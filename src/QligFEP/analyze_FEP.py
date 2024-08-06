@@ -319,15 +319,12 @@ class FepReader:
                 )
             self.feps.append(fep)
 
-    def load_experimental_data(self, exp_key: str, exp_unit: Optional[str] = None):
+    def load_experimental_data(self, exp_key: str):
         """Load the experimental data found in the input json file and populate the existing
-        result `self.data['result']` dictionary with the experimental values. If an exp_unit
-        is defined, the method will convert the experimental values from the given unit to dG
-        in kilocalories / mole.
+        result `self.data['result']` dictionary with the experimental values
 
         Args:
             exp_key: the key in the `self.mapping_json` file that contains the experimental data.
-            exp_unit: the unit of the experimental data. Defaults None, meaning it won't run a conversion.
         """
         self.exp_key = exp_key
         if "result" not in self.data:
@@ -631,9 +628,7 @@ def main(args):
         method=args.method, output_file=args.json_file.replace(".json", "_ddG.json")
     )
     if args.experimental_key is not None:
-        if args.exp_unit is not None and args.exp_unit != "dg":
-            logger.warning("Make sure your experimental data is reported in the nanomolar scale!")
-        fep_reader.load_experimental_data(exp_key=args.experimental_key, exp_unit=args.exp_unit)
+        fep_reader.load_experimental_data(exp_key=args.experimental_key)
         fep_reader.create_ddG_plot(method=args.method)
 
 
