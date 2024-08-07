@@ -42,12 +42,11 @@ class QligFEP:
         timestep,
         softcore,
         to_clean,
-        restraint_method,
         *args,
         **kwargs,
     ):
         self.softcore = softcore
-        self.replacements = {}  # What is this used for?
+        self.replacements = {}  # TODO: make this explicit in the future
         self.timestep = timestep
         self.lig1 = lig1
         self.lig2 = lig2
@@ -67,7 +66,6 @@ class QligFEP:
         self.ABS = False  # True
         self.ABS_waters = []
         self.write_dir = None
-        self.restraint_method = restraint_method
         self.pdb_fname = f"{self.lig1}_{self.lig2}.pdb"
 
         if self.system == "protein":
@@ -433,7 +431,7 @@ class QligFEP:
         lambdas = lambdas[::-1]
         return lambdas
 
-    def set_restraints(self, writedir, strict_check: bool = True):
+    def set_restraints(self, writedir, restraint_method, strict_check: bool = True):
         """Function to set the restraints for FEP. Originally, this was performed on
         overlapping atoms, but based on our observations this was changed to a more
         chemistry-aware method, implemented under `QligFEP.restraints.restraint_setter`.
@@ -462,13 +460,11 @@ class QligFEP:
             list: list of overlapping atoms.
         """
         avail_methods = get_avail_restraint_methods()
-        if self.restraint_method not in avail_methods:
-            raise ValueError(
-                f"Method {self.restraint_method} not recognized. Please use one of {avail_methods}"
-            )
+        if restraint_method not in avail_methods:
+            raise ValueError(f"Method {restraint_method} not recognized. Please use one of {avail_methods}")
 
         pdbfile = writedir + f"/inputfiles/{self.lig1}_{self.lig2}.pdb"
-        if self.restraint_method == "overlap":
+        if restraint_method == "overlap":
             reslist = ["LIG", "LID"]
             torestraint_list = overlapping_pairs(pdbfile, reslist)
 
@@ -506,8 +502,8 @@ class QligFEP:
             else:
                 logger.debug(f'Loading sdf for restraint calculation:\nlig1:"{lig1_path}"\nlig2"{lig2_path}"')
                 rsetter = RestraintSetter(lig1_path, lig2_path)
-                ring_atom_compare = self.restraint_method.split("_")[0]
-                surround_atom_compare = self.restraint_method.split("_")[1]
+                ring_atom_compare = restraint_method.split("_")[0]
+                surround_atom_compare = restraint_method.split("_")[1]
                 if surround_atom_compare == "p":
                     strict_surround = False
                     ignore_surround_atom_type = False
@@ -897,7 +893,9 @@ class QligFEP:
                     filename = "md_" + lambda1.replace(".", "") + "_" + lambda2.replace(".", "") + ".en\n"
                     outfile.write(filename)
 
-    def avoid_water_protein_clashes(self, writedir, prot_th=1.7, water_th=1.6, header: Optional[str] = None):
+    def avoid_water_protein_clashes(
+        self, writedir, prot_th=1.5, water_th=1.5, header: Optional[str] = None, save_removed: bool = False
+    ):
         """Function to remove water molecules too close to protein & ligands | ligands.
         Thresholds are the distances in Ångström from the protein & ligands | ligands atoms
         to the nearest atom in the water molecule (HOH).
@@ -905,7 +903,7 @@ class QligFEP:
         Args:
             writedir: directory in which QligFEP will write the input files.
             prot_th: threshold (Å) to remove water molecules clashing with protein & ligand
-                on the protein leg. Defaults to 1.7.
+                on the protein leg. Defaults to 1.5.
             water_th: threshold (Å) to remove water molecules clashing with the ligands
                 in the water leg. Defaults to 1.5.
             header: header to be added to the water.pdb file. This detail is needed in Qprep's
@@ -925,7 +923,7 @@ class QligFEP:
             output_file=waterfile,
             heavy_only=True,
             header=header,
-            save_removed=False,  # set to True if you want to check the removed waters
+            save_removed=save_removed,
         )
 
     def write_qprep(self, writedir):

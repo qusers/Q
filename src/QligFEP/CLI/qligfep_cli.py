@@ -33,7 +33,6 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "timestep": args.timestep,
             "softcore": args.softcore,
             "to_clean": args.to_clean,
-            "restraint_method": args.restraint_method,
         }
     else:
         param_dict = {}
@@ -64,14 +63,16 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     lambdas = run.get_lambdas(args.windows, args.sampling)
     logger.debug("Writing atom mapping for distance restraints")
 
-    run.avoid_water_protein_clashes(inputdir, header=f"{run.sphereradius}.0 SPHERE")
+    run.avoid_water_protein_clashes(
+        inputdir, header=f"{run.sphereradius}.0 SPHERE", save_removed=(args.log in ["trace", "debug"])
+    )
 
     logger.debug("Writing the QPREP files & running qprep")
     run.write_qprep(inputdir)
     run.qprep(inputdir)
     logger.debug("Writing FEP files")
     run.write_FEP_file(change_charges, change_vdw, FEP_vdw, inputdir, lig_size1, lig_size2)
-    overlapping_atoms = run.set_restraints(writedir)
+    overlapping_atoms = run.set_restraints(writedir, args.restraint_method, strict_check=True)
 
     # Handling the correct offset here
     logger.debug("Writing the MD files")
