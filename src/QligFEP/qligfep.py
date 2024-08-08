@@ -937,9 +937,7 @@ class QligFEP:
         """
         replacements = {}
         cog = None
-        cog_regex = re.compile(
-            r"([-]?\d{1,2}(?:\.\d{3})?)\s+([-]?\d{1,2}(?:\.\d{3})?)\s+([-]?\d{1,2}(?:\.\d{3})?)"
-        )
+        cog_regex = re.compile(r"([-]?\d{1,3}\.\d{3})\s+([-]?\d{1,3}\.\d{3})\s+([-]?\d{1,3}\.\d{3})")
         # see if the water.pdb file has a COG from qprep
         first_lines = (Path(writedir).parents[1] / "water.pdb").read_text().split("\n")[:3]
         for line in first_lines:
@@ -968,6 +966,7 @@ class QligFEP:
             replacements["SOLVENT"] = "4 water.pdb"
 
         with open(qprep_in) as infile, open(qprep_out, "w") as outfile:
+            # FIXME: it might be that the cystein bond is out of the sphere (excluded from TOP). Need to check that
             cysbond_str = handle_cysbonds(
                 self.cysbond, Path(writedir) / self.pdb_fname, comment_out=(self.system != "protein")
             )
