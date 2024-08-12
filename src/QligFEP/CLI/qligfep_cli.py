@@ -33,6 +33,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "timestep": args.timestep,
             "softcore": args.softcore,
             "to_clean": args.to_clean,
+            "random_state": args.random_state,
         }
     else:
         param_dict = {}

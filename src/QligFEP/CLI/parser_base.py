@@ -173,6 +173,16 @@ def parse_arguments(program: str) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "-rs",
+        "--random_state",
+        dest="random_state",
+        type=int,
+        default=None,
+        help=(
+            "Reproducible random state for the random FEP seed generator. Defaults to None (random FEP seeds)."
+        ),
+    )
+    parser.add_argument(
         "-log",
         "--log-level",
         dest="log",

@@ -37,6 +37,8 @@ def create_call(**kwargs):
         template += " -b {cysbond}"
     if "to_clean" in kwargs and kwargs["to_clean"] is not None:
         template += " -clean {to_clean}"
+    if "random_state" in kwargs and kwargs["random_state"] is not None:
+        template += " -rs {random_state}"
     return template.format(**kwargs)
 
 
@@ -99,6 +101,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 timestep=args.timestep,
                 windows=args.windows,
                 to_clean=to_clean,
+                random_state=args.random_state,
                 rest=args.restraint_method,
             )
             logger.info(f"Submitting the command:\n{command}")

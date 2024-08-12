@@ -4,7 +4,9 @@ import re
 import shutil
 import stat
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
+
+import numpy as np
 
 from .CLI.qprep_cli import qprep_error_check
 from .CLI.utils import get_avail_restraint_methods, handle_cysbonds
@@ -28,21 +30,21 @@ class QligFEP:
 
     def __init__(
         self,
-        lig1,
-        lig2,
-        FF,
-        system,
-        cluster,
-        sphereradius,
-        cysbond,
-        start,
-        temperature,
-        replicates,
-        sampling,
-        timestep,
-        softcore,
-        to_clean,
-        *args,
+        lig1: str,
+        lig2: str,
+        FF: str,
+        system: str,
+        cluster: str = "TETRA",
+        sphereradius: str = "25",
+        cysbond: str = "none",
+        start: Literal["0.0", "0.5"] = "0.0",
+        temperature: str = "298",
+        replicates: str = "10",
+        sampling: Literal["sigmoidal", "linear", "exponential", "reverse_exponential"] = "sigmoidal",
+        timestep: Literal["1fs", "2fs"] = "2fs",
+        softcore: bool = False,  # Not implemented yet
+        to_clean: Optional[list[str]] = None,
+        random_state: Optional[int] = 42,
         **kwargs,
     ):
         self.softcore = softcore
@@ -67,6 +69,7 @@ class QligFEP:
         self.ABS_waters = []
         self.write_dir = None
         self.pdb_fname = f"{self.lig1}_{self.lig2}.pdb"
+        self.seeds = self.set_seeds(random_state)
 
         if self.system == "protein":
             # Get last atom and residue from complexfile!
@@ -84,6 +87,13 @@ class QligFEP:
         else:
             self.atomoffset = 0
             self.residueoffset = 0
+
+    def set_seeds(self, random_state):
+        """Set the seeds for reproduciblity"""
+        if random_state is None:
+            return np.random.default_rng().integers(0, 32767, size=int(self.replicates))
+        rng = np.random.default_rng(random_state)
+        return rng.integers(0, 32767, size=int(self.replicates))
 
     def set_timestep(self):
         if self.timestep == "1fs":
@@ -766,6 +776,7 @@ class QligFEP:
         replacements["TEMP_VAR"] = str(self.temperature)
         replacements["RUN_VAR"] = str(self.replicates)
         replacements["RUNFILE"] = "run" + self.cluster + ".sh"
+        replacements["SEED_VAR"] = " ".join([str(s) for s in self.seeds])
         if self.softcore:
             submit_in = CONFIGS["ROOT_DIR"] + "/INPUTS/FEP_submit_sc.sh"
         else:
