@@ -903,7 +903,7 @@ class QligFEP:
                     outfile.write(filename)
 
     def avoid_water_protein_clashes(
-        self, writedir, prot_th=1.5, water_th=1.5, header: Optional[str] = None, save_removed: bool = False
+        self, writedir, prot_th=1.4, water_th=1.4, header: Optional[str] = None, save_removed: bool = False
     ):
         """Function to remove water molecules too close to protein & ligands | ligands.
         Thresholds are the distances in Ångström from the protein & ligands | ligands atoms
@@ -912,9 +912,9 @@ class QligFEP:
         Args:
             writedir: directory in which QligFEP will write the input files.
             prot_th: threshold (Å) to remove water molecules clashing with protein & ligand
-                on the protein leg. Defaults to 1.5.
+                on the protein leg. Defaults to 1.4.
             water_th: threshold (Å) to remove water molecules clashing with the ligands
-                in the water leg. Defaults to 1.5.
+                in the water leg. Defaults to 1.4.
             header: header to be added to the water.pdb file. This detail is needed in Qprep's
                 current version (2024/07/21), as it doesn't recognize the radius when merging an
                 existing water.pdb file to the topology.
