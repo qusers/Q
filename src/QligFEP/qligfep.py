@@ -822,6 +822,8 @@ class QligFEP:
                     except KeyError:
                         line = ""
                 if line.strip() == "#SBATCH -J JOBNAME":
+                    if self.cluster == 'DARDEL': # TODO: refactor this...
+                        outfile.write('#SBATCH -p shared\n')
                     try:
                         if self.system == "water":
                             jobname = "w_"
