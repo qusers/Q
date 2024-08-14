@@ -1,0 +1,1 @@
+make all COMP=gcc && make mpi COMP=gcc

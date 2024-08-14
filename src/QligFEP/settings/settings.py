@@ -113,7 +113,8 @@ TETRA = {
     "NODES": "1",
     "NTASKS": "8",
     "TIME": "0-06:00:00",  # d-hh:mm:ss
-    "MODULES": "module load buildenv-gcc/2023a-eb\n",
+    # Commented out because we're not compiling Q during the job runtime
+    "MODULES": "# module load buildenv-gcc/2022a-eb\n",
     "ACCOUNT": "naiss2023-3-5",
     **Q_PATHS,
 }
@@ -122,7 +123,7 @@ DARDEL = {
     "NODES": "1",
     "NTASKS": "8",
     "TIME": "0-06:00:00",  # d-hh:mm:ss
-    "MODULES": nljoin(["module purge", "module load cpe/22.06", "module load PrgEnv-gnu"]),
+    "MODULES": nljoin(["# module purge", "# module load cpe/23.12", "# module load PrgEnv-gnu/8.5.0"]),
     "ACCOUNT": "naiss2023-3-5",
     **Q_PATHS,
 }
