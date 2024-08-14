@@ -145,5 +145,6 @@ CLUSTER_DICT = {
     "STALLO": STALLO,
     "UPPMAX": UPPMAX,
     "TETRA": TETRA,
+    "DARDEL": DARDEL,
     "LOCAL": LOCAL,
 }
