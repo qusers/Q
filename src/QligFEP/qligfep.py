@@ -361,7 +361,6 @@ class QligFEP:
     def merge_pdbs(self, writedir):
         replacements = {}
         replacements["LIG"] = "LID"
-        pattern = re.compile(r"\b(" + "|".join(replacements.keys()) + r")\b")
         file_replaced = []
         atnr = self.atomoffset
         with open(self.lig2 + ".pdb") as infile:
@@ -369,7 +368,6 @@ class QligFEP:
                 if line.split()[0].strip() in self.include:
                     atom1 = pdb_parse_in(line)
                     atom1[4] = "LID"
-                    # line2 = pattern.sub(lambda x: replacements[x.group()], line)
                     line = pdb_parse_out(atom1) + "\n"
                     file_replaced.append(line)
 
@@ -614,7 +612,7 @@ class QligFEP:
                         outfile.write(line)
                         if line == "[distance_restraints]\n":
                             for line in overlapping_atoms:
-                                outfile.write(f"{line[0]:d} {line[1]:d} 0.0 0.1 1.5 0\n")
+                                outfile.write(f"{line[0]:d} {line[1]:d} 0.0 0.1 3.0 0\n")
 
                         if line == "[sequence_restraints]\n":
                             for line in restlist:
