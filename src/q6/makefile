@@ -85,7 +85,7 @@ else ifeq ($(COMP),ibm)
 else ifeq ($(COMP),gcc)
 	FC=             gfortran
 	FC_OPT=         -O3
-	FFLAGS=         -funroll-loops -ffree-line-length-none -fcray-pointer \
+	FFLAGS=         -funroll-all-loops -ffree-line-length-none -fcray-pointer \
 	                -static-libgfortran -fall-intrinsics -std=legacy \
 	                -fstack-protector ${FC_OPT} -DG95=1 -w
 
