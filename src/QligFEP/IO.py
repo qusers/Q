@@ -1,13 +1,14 @@
+import os
 import re
 import shlex
-from subprocess import check_output
-import os
 import stat
+from subprocess import check_output
+
 import numpy as np
 
 from .functions import sigmoid
-from .settings.settings import CONFIGS
 from .logger import logger
+from .settings.settings import CONFIGS
 
 qfep_error_regex = re.compile(r'ERROR:')
 
@@ -16,7 +17,7 @@ charged_res = {'HIS': {'HD1' : 'HID',
                        'HE2' : 'HIE'},
                'GLU': {'HE2' : 'GLH'},
                'ASP': {'HD2' : 'ASH'}
-              }    
+              }
 
 def replace(string, replacements):
     pattern = re.compile(r'\b(' + '|'.join(replacements.keys()) + r')\b')
@@ -43,30 +44,30 @@ def AA(AA):
     """
     Handy dictionary to convert 3 letter AA code to one and vice versa
     """
-    threeAA = {'CYS': 'C', 'CYX': 'C', 'ASH': 'D', 'ASP': 'D', 'SER': 'S', 
-               'GLN': 'Q', 'LYN': 'K', 'LYS': 'K', 'ILE': 'I', 'PRO': 'P', 
-               'THR': 'T', 'PHE': 'F', 'ASN': 'N', 'GLY': 'G', 'HID': 'H', 
-               'HIP': 'H', 'HIE': 'H', 'HIS': 'H', 'LEU': 'L', 'ARN': 'R', 
-               'ARG': 'R', 'TRP': 'W', 'ALA': 'A', 'VAL': 'V', 'GLH': 'E', 
+    threeAA = {'CYS': 'C', 'CYX': 'C', 'ASH': 'D', 'ASP': 'D', 'SER': 'S',
+               'GLN': 'Q', 'LYN': 'K', 'LYS': 'K', 'ILE': 'I', 'PRO': 'P',
+               'THR': 'T', 'PHE': 'F', 'ASN': 'N', 'GLY': 'G', 'HID': 'H',
+               'HIP': 'H', 'HIE': 'H', 'HIS': 'H', 'LEU': 'L', 'ARN': 'R',
+               'ARG': 'R', 'TRP': 'W', 'ALA': 'A', 'VAL': 'V', 'GLH': 'E',
                'GLU': 'E', 'TYR': 'Y', 'MET': 'M'
               }
-    
-    fourAA = { 'CCYS': 'C', 'CASP': 'D', 'CASH': 'H', 'CSER': 'S', 
-               'CGLN': 'Q', 'CLYN': 'K', 'CLYS': 'K', 'CILE': 'I', 
-               'CPRO': 'P', 'CTHR': 'T', 'CPHE': 'F', 'CASN': 'N', 
-               'CGLY': 'G', 'CHIE': 'H', 'CHID': 'H', 'CHIP': 'H', 
-               'CLEU': 'L', 'CARG': 'R', 'CARN': 'R', 'CTRP': 'W', 
+
+    fourAA = { 'CCYS': 'C', 'CASP': 'D', 'CASH': 'H', 'CSER': 'S',
+               'CGLN': 'Q', 'CLYN': 'K', 'CLYS': 'K', 'CILE': 'I',
+               'CPRO': 'P', 'CTHR': 'T', 'CPHE': 'F', 'CASN': 'N',
+               'CGLY': 'G', 'CHIE': 'H', 'CHID': 'H', 'CHIP': 'H',
+               'CLEU': 'L', 'CARG': 'R', 'CARN': 'R', 'CTRP': 'W',
                'CALA': 'A', 'CVAL': 'V', 'CGLU': 'E', 'CGLH': 'E',
                'CTYR': 'Y', 'CMET': 'M'
              }
-    
+
     oneAA = {  'C' : 'CYS', 'D' : 'ASP', 'S' : 'SER', 'Q' : 'GLN',
-               'K' : 'LYS', 'I' : 'ILE', 'P' : 'PRO', 'T' : 'THR', 
+               'K' : 'LYS', 'I' : 'ILE', 'P' : 'PRO', 'T' : 'THR',
                'F' : 'PHE', 'N' : 'ASN', 'G' : 'GLY', 'H' : 'HID',
                'L' : 'LEU', 'R' : 'ARG', 'W' : 'TRP', 'A' : 'ALA',
                'V' : 'VAL', 'E' : 'GLU', 'Y' : 'TYR', 'M' : 'MET'
             }
-    
+
     if len(AA) == 4:
         AA = fourAA[AA]
         return AA
@@ -74,17 +75,16 @@ def AA(AA):
     if len(AA) == 3:
         AA = threeAA[AA]
         return AA
-        
+
     if len(AA) == 1:
         AA = oneAA[AA]
         return AA
-
 
 def read_prm(prmfiles):
     """
     Takes a list of Q .prm files and merges them, first file is the referene .prm file
     Returns a dicitonary of the merged .prm files
-    """    
+    """
     block = 0
     prm = {'[options]':[],
             '[atom_types]':[],
@@ -92,13 +92,13 @@ def read_prm(prmfiles):
             '[angles]':[],
             '[torsions]':[],
             '[impropers]':[]}
-    
+
     for filename in prmfiles:
         with open(filename) as infile:
             for line in infile:
                 if line == '[options]\n':
                     block = 1
-                    continue                
+                    continue
                 elif line == '[atom_types]\n':
                     block = 2
                     continue
@@ -122,17 +122,17 @@ def read_prm(prmfiles):
                     prm['[atom_types]'].append(line)
 
                 elif block == 3:
-                    prm['[bonds]'].append(line)                
+                    prm['[bonds]'].append(line)
 
                 elif block == 4:
-                    prm['[angles]'].append(line)                
+                    prm['[angles]'].append(line)
 
                 elif block == 5:
-                    prm['[torsions]'].append(line)                
+                    prm['[torsions]'].append(line)
 
                 elif block == 6:
                     prm['[impropers]'].append(line)
-                
+
     return prm
 
 def get_lambdas(windows, sampling):
@@ -141,17 +141,17 @@ def get_lambdas(windows, sampling):
     lambdas = []
     lmbda_1 = []
     lmbda_2 = []
-    k_dic = {'sigmoidal':-1.1, 
+    k_dic = {'sigmoidal':-1.1,
              'linear':1000,
              'exponential':-1.1,
              'reverse_exponential':1.1
             }
     k = k_dic[sampling]
 
-    if sampling == 'sigmoidal': 
+    if sampling == 'sigmoidal':
         for i in range(0, step + 1):
-            lmbda1 = '{:.3f}'.format(0.5 * (sigmoid(float(i)/float(step), k) + 1))
-            lmbda2 = '{:.3f}'.format(0.5 * (-sigmoid(float(i)/float(step), k) + 1))
+            lmbda1 = f'{0.5 * (sigmoid(float(i)/float(step), k) + 1):.3f}'
+            lmbda2 = f'{0.5 * (-sigmoid(float(i)/float(step), k) + 1):.3f}'
             lmbda_1.append(lmbda1)
             lmbda_2.append(lmbda2)
 
@@ -165,11 +165,11 @@ def get_lambdas(windows, sampling):
 
     else:
         for i in range(0, windows + 1):
-            lmbda = '{:.3f}'.format(sigmoid(float(i)/float(windows), k))
+            lmbda = f'{sigmoid(float(i)/float(windows), k):.3f}'
             lambdas.append(lmbda)
 
     lambdas = lambdas[::-1]
-    return lambdas   
+    return lambdas
 
 def write_submitfile(writedir, replacements):
     submit_in = CONFIGS['ROOT_DIR'] + '/INPUTS/FEP_submit.sh'
@@ -192,27 +192,23 @@ def merge_two_dicts(x, y):
     z.update(y)
     return z
 
-def regex_str_int(line):
-    a = re.split("(\d+)", line)
-    return a
-    
 def read_qfep(qfep):
     """
     Reads a given qfep.out file.
 
     returns [Zwanzig, dGfr, dGr, TI, OS, BAR]
     """
-    with open(qfep, 'r') as infile:
+    with open(qfep) as infile:
         block = 0
         for line in infile:
             try:
                 if qfep_error_regex.findall(line):
                     error_main = qfep_error_regex.findall(line)[0]
                     error_body = ''.join([next(infile) for _ in range(2)])
-                    raise IOError(f'QFEP ERROR !! {error_main}\n{error_body}')
-            except StopIteration:
+                    raise OSError(f'QFEP ERROR !! {error_main}\n{error_body}')
+            except StopIteration as e:
                 logger.info('Reached the end of the file before capturing the full error body.')
-                raise IOError(f'QFEP ERROR !! {error_main}')
+                raise OSError(f'QFEP ERROR !! {error_main}') from e
 
             line = line.split()
             if len(line) > 3:
@@ -241,35 +237,24 @@ def read_qfep(qfep):
                     elif line[0] == '0.000000':
                         Zwanzig_f = float(line[2])
 
-                        if line[5] == '-Infinity':
-                            Zwanzig = np.nan
-
-                        else:
-                            Zwanzig = float(line[5])
+                        Zwanzig = np.nan if line[5] == '-Infinity' else float(line[5])
 
                 if block == 2 and line[0] == '0.000000':
                     try:
-                        TI = line[2]
+                        thermo_integration = line[2]
                         if line[2] == '-Infinity':
-                            TI = np.nan
+                            thermo_integration = np.nan
                     except IndexError:
-                        TI = np.nan # TODO: this line is never reached... # noqa: F841
+                        thermo_integration = np.nan # TODO: this line is never reached... # noqa: F841
 
                 if block == 3 and line[0] == '0.000000':
-                    if line[2] == '-Infinity':
-                        OS = np.nan
-
-                    else:
-                        OS = float(line[2])
+                    overlap_sampling = np.nan if line[2] == '-Infinity' else float(line[2])
 
                 if block == 4 and line[0] == '0.000000':
-                    if line[2] == '-Infinity':
-                        BAR = np.nan
-                    else:
-                        BAR = float(line[2])
-                        
-    return [Zwanzig, Zwanzig_f, Zwanzig_r, OS, BAR]
-#    return [Zwanzig, Zwanzig_f, Zwanzig_r]#, OS, BAR]
+                    bar = np.nan if line[2] == '-Infinity' else float(line[2])
+
+    return [Zwanzig, Zwanzig_f, Zwanzig_r, overlap_sampling, bar]
+
 def read_qfep_verbose(qfep):
     """Reads a given qfep.out file and outputs a two-dimensional numpy array with the following structure:
 
@@ -284,16 +269,16 @@ def read_qfep_verbose(qfep):
     >>> [[Zwanzig, dGfr, dGr, OS, BAR]   lambda 1
     >>>               ....               lambda ..
     >>>  [Zwanzig, dGfr, dGr, OS, BAR]]  lambda n
-    """    
+    """
     array = [[],[],[],[],[]]
-    with open(qfep, 'r') as infile:
+    with open(qfep) as infile:
         block = 0
         for line in infile:
             if qfep_error_regex.findall(line):
                 error_main = qfep_error_regex.findall(line)[0]
                 # error_body = ''.join([next(infile) for i in range(1)])
-                raise IOError(f'QFEP ERROR !! {error_main}\n')
-            
+                raise OSError(f'QFEP ERROR !! {error_main}\n')
+
             line = line.split()
             if len(line) > 3:
                 if line[3] == 'Free':
@@ -311,11 +296,11 @@ def read_qfep_verbose(qfep):
 
                 if line[3] == 'Reaction':
                     block = 0
-                    
+
             if len(line) > 1:
                 if line[0] == '#':
                     continue
-                
+
                 if block == 1:
                     try:
                         array[0].append(float(line[5]))
