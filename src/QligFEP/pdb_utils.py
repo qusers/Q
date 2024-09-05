@@ -236,7 +236,7 @@ def get_coords(atomname, residue):
     for line in residue:
         if line[12:16].strip() == atomname.strip():
             return tuple(float(line[i : i + 8]) for i in range(30, 54, 8))
-    raise ValueError("Atom not found!")
+    raise ValueError(f"Atom {atomname} not found in residue {residue}!")
 
 
 def _convert_to(value, dtype):
