@@ -12,6 +12,7 @@ from rdkit import Chem
 
 from ..logger import logger
 from .atom_mapping import AtomMapperHelper
+from .hydrogen_utils import are_hydrogens_at_end, reindex_hydrogens_to_end
 
 
 class RestraintSetter:
@@ -50,7 +51,14 @@ class RestraintSetter:
             raise ValueError("PDBs are not supported yet.")
             return Chem.MolFromPDBFile(_path)
         elif Path(_path).suffix == ".sdf":
-            return Chem.SDMolSupplier(str(_path), removeHs=False)[0]
+            mol = Chem.SDMolSupplier(str(_path), removeHs=False)[0]
+            if not are_hydrogens_at_end(mol):
+                mol = reindex_hydrogens_to_end(mol)
+                logger.warning("Hydrogens were not at the end of the molecule. Reindexed them.")
+                writer = Chem.SDWriter(_path)
+                writer.write(mol)
+                writer.close()
+            return mol
         return None
 
     def _load_molecules(self, molA, molB):
@@ -308,7 +316,7 @@ class RestraintSetter:
         """
         self.atom_mapper = AtomMapperHelper()
         ringStruc_compareDict = self.atom_mapper.process_rings_separately(
-            self.molA.to_rdkit(), self.molB.to_rdkit(), self.atom_mapping
+            Chem.RemoveHs(self.molA.to_rdkit()), Chem.RemoveHs(self.molB.to_rdkit()), self.atom_mapping
         )
         restraints = self.compare_molecule_rings(
             ringStruc_compareDict,
