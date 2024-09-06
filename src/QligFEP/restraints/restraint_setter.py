@@ -62,6 +62,7 @@ class RestraintSetter:
         self.molB = SmallMoleculeComponent.from_rdkit(rdmolB)
 
     def _align_and_map_molecules(self):
+        # TODO: now we run this alignment but the aligned molecule isn't saved
         mapper = KartografAtomMapper(atom_map_hydrogens=False, map_exact_ring_matches_only=True)
         a_molB = align_mol_shape(self.molB, ref_mol=self.molA)
         self.kartograf_mapping = next(mapper.suggest_mappings(self.molA, a_molB))
@@ -307,7 +308,7 @@ class RestraintSetter:
         """
         self.atom_mapper = AtomMapperHelper()
         ringStruc_compareDict = self.atom_mapper.process_rings_separately(
-            Chem.RemoveHs(self.molA.to_rdkit()), Chem.RemoveHs(self.molB.to_rdkit()), self.atom_mapping
+            self.molA.to_rdkit(), self.molB.to_rdkit(), self.atom_mapping
         )
         restraints = self.compare_molecule_rings(
             ringStruc_compareDict,
