@@ -53,11 +53,11 @@ class RestraintSetter:
         elif Path(_path).suffix == ".sdf":
             mol = Chem.SDMolSupplier(str(_path), removeHs=False)[0]
             if not are_hydrogens_at_end(mol):
-                mol = reindex_hydrogens_to_end(mol)
-                logger.warning("Hydrogens were not at the end of the molecule. Reindexed them.")
-                writer = Chem.SDWriter(_path)
-                writer.write(mol)
-                writer.close()
+                raise ValueError(
+                    "Hydrogens are not in the end of the atom list. Please reindex them "
+                    "before proceeding and assert that your .lib, .prm and .pdb files match "
+                    "the atom indexes of the molecule you're setting restraints for."
+                )
             return mol
         return None
 
