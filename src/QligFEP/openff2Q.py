@@ -30,18 +30,23 @@ class OpenFF2Q(MoleculeIO):
         total_charges: Dictionary to store the total charges for each ligand.
     """
 
-    def __init__(self, lig, pattern: str = "*.sdf", nagl: bool = False, n_jobs: int = 1):
+    def __init__(
+        self, lig, pattern: str = "*.sdf", reindex_hydrogens: bool = True, nagl: bool = False, n_jobs: int = 1
+    ):
         """Initializes a new instance of OpenFF2Q to process the `.sdf` input as lig.
 
         Args:
             lig: sdf file containing several molecules or directory containing the sdf files.
             pattern: If desired, a pattern can be used to search for sdf files within a directory with
                 `glob`. If lig is a sdf file, this argument will be ignored. Defaults to None.
+            reindex_hydrogens: If True, loading molecules will assert that hydrogen atoms are at the end
+                of the atom list and reindex them if they are not (needed by restraint setting algorithm).
+                If False, the molecules will be loaded as is. Defaults to True.
             nagl: if True, the partial charges will be calculated with nagl, which does so with
                 deep learning in the backend, and is faster than the default AM1-BCC method.
             n_jobs: number of jobs to calculate the partial charges in parallel.
         """
-        super().__init__(lig, pattern=pattern)
+        super().__init__(lig, pattern=pattern, reindex_hydrogens=reindex_hydrogens)
         self.n_jobs = n_jobs
         self.out_dir = Path(self.lig).parent
         self.mapping = {lname: {} for lname in self.lig_names}

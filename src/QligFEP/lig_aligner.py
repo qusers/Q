@@ -29,6 +29,7 @@ class GlobalLigandAligner(MoleculeIO):
         self,
         lig,
         pattern: str = "*.sdf",
+        reindex_hydrogens: bool = True,
         n_threads: int = 1,
         tempdir: str = "to_align_ligands",
         delete_tempdir: bool = True,
@@ -40,6 +41,9 @@ class GlobalLigandAligner(MoleculeIO):
             lig: sdf file containing several molecules or directory containing the sdf files.
             pattern: If desired, a pattern can be used to search for sdf files within a directory with
                 `glob`. If lig is a sdf file, this argument will be ignored. Defaults to None.
+            reindex_hydrogens: If True, loading molecules will assert that hydrogen atoms are at the end
+                of the atom list and reindex them if they are not (needed by restraint setting algorithm).
+                If False, the molecules will be loaded as is. Defaults to True.
             n_threads: Number of threads to create for the ligand alignment part. Defaults to 1.
             tempdir: name for the temporary directory to store the separate sdf files.
                 Defaults to "to_align_ligands".
@@ -49,7 +53,7 @@ class GlobalLigandAligner(MoleculeIO):
         Raises:
             FileNotFoundError: If the kcombu executable is not found.
         """
-        super().__init__(lig, pattern)
+        super().__init__(lig, pattern=pattern, reindex_hydrogens=reindex_hydrogens)
         self._setup_tempdir(tempdir, delete_tempdir=delete_tempdir)
         self.kcombu_exe = str(SRC / "kcombu/fkcombu")
         self.n_threads = n_threads

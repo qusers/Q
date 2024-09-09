@@ -10,6 +10,7 @@ from rdkit import Chem
 
 from .logger import logger
 from .pdb_utils import read_pdb_to_dataframe, write_dataframe_to_pdb
+from .restraints.hydrogen_utils import are_hydrogens_at_end, reindex_hydrogens_to_end
 
 
 class MoleculeIO:
@@ -25,7 +26,7 @@ class MoleculeIO:
         self.sdf_contents: a dictionary of the sdf contents for each ligand
     """
 
-    def __init__(self, lig, pattern: str = "*.sdf"):
+    def __init__(self, lig, pattern: str = "*.sdf", reindex_hydrogens: bool = True):
         """Initialize a Molecule Input/Output object. This helper class has a base functionality
         used for handling `.sdf`, like reading it, outputting separate `.sdf` files (required by lomap),
         and storing the molecules & their names into a single object.
@@ -34,10 +35,21 @@ class MoleculeIO:
             lig: sdf file containing several molecules or directory containing the sdf files.
             pattern: If desired, a pattern can be used to search for sdf files within a directory with
                 `glob`. If lig is a sdf file, this argument will be ignored. Defaults to None.
+            reindex_hydrogens: If True, loading molecules will assert that hydrogen atoms are at the end
+                of the atom list and reindex them if they are not (needed by restraint setting algorithm).
+                If False, the molecules will be loaded as is. Defaults to True.
         """
+        self._reindex_hydrogens = reindex_hydrogens
         self.lig = lig
         self.setup_mols_and_names(self.lig, pattern)
         self.parse_sdf_contents()  # add the sdf content to the dictionary
+
+    def _force_H_reindexing(self, mol: Molecule, name: str) -> Molecule:
+        rdkit_mol = mol.to_rdkit()
+        if not are_hydrogens_at_end(rdkit_mol):
+            rdkit_mol = reindex_hydrogens_to_end(rdkit_mol)
+            logger.warning(f"Hydrogens not at the end of the atom list for molecule {mol.name}. Reindexed.")
+        return Molecule.from_rdkit(rdkit_mol)
 
     def _parse_mol(self, ligpath: Union[Path, str]) -> tuple[list[Molecule], list[str]]:
         """Function to parse a .sdf file into a list of Molecule objects and their names.
@@ -62,6 +74,8 @@ class MoleculeIO:
             return [], []
 
         mols = [mols] if not isinstance(mols, list) else mols
+        if self._reindex_hydrogens:
+            mols = [self._force_H_reindexing(mol) for mol in mols]
         lig_names = [mol.name if mol.name else f"lig_{idx}" for idx, mol in enumerate(mols)]
         return mols, lig_names
 
@@ -109,37 +123,10 @@ class MoleculeIO:
     def parse_sdf_contents(self):
         """Parse the SDF content into individual entries and have them saved in a dictionary."""
         self.sdf_contents = {}
-        if self.lig_files != []:
-            ligands = []
-            for ligfile in self.lig_files:
-                ligands.extend(self._parse_sdf(ligfile))
-        else:
-            ligands = self._parse_sdf(self.lig)
-
-        for lname, sdf_content in zip(self.lig_names, ligands):
-            self.sdf_contents.update({lname: sdf_content})
-
-    def _parse_sdf(self, lig: str) -> list[list[str]]:
-        """Reads a `.sdf` file and returns a list containing the lines for each ligand in the file.
-
-        Args:
-            lig: the path to the `.sdf` file.
-
-        Returns:
-            list[list[str]]: a list of ligands, where each ligand is a list of lines.
-        """
-        with open(lig) as infile:
-            content = infile.readlines()
-            ligands = []
-            current_ligand = []
-
-            for line in content:
-                if line.strip() == "$$$$":  # End of a ligand entry
-                    ligands.append(current_ligand)
-                    current_ligand = []  # Start a new ligand entry
-                else:
-                    current_ligand.append(line.rstrip())
-        return ligands
+        for mol, name in zip(self.molecules, self.lig_names):
+            string_buffer = StringIO()
+            mol.to_file(string_buffer, file_format="sdf")
+            self.sdf_contents.update({name: string_buffer.getvalue()})
 
     def write_sdf_separate(self, output_dir):
         """Function to write the separate multiple molecules within a sdf file into their own
