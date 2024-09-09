@@ -29,4 +29,7 @@ def reindex_hydrogens_to_end(mol):
     h_atoms = [atom.GetIdx() for atom in mol.GetAtoms() if atom.GetAtomicNum() == 1]
     new_order = non_h_atoms + h_atoms
     mol_reordered = rdmolops.RenumberAtoms(mol, new_order)
+    for prop_name in mol.GetPropNames():  # assert properties are conserved
+        prop_value = mol.GetProp(prop_name)
+        mol_reordered.SetProp(prop_name, prop_value)
     return mol_reordered

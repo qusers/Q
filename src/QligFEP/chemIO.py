@@ -44,12 +44,12 @@ class MoleculeIO:
         self.setup_mols_and_names(self.lig, pattern)
         self.parse_sdf_contents()  # add the sdf content to the dictionary
 
-    def _force_H_reindexing(self, mol: Molecule, name: str) -> Molecule:
+    def _force_H_reindexing(self, mol: Molecule) -> Molecule:
         rdkit_mol = mol.to_rdkit()
         if not are_hydrogens_at_end(rdkit_mol):
             rdkit_mol = reindex_hydrogens_to_end(rdkit_mol)
             logger.warning(f"Hydrogens not at the end of the atom list for molecule {mol.name}. Reindexed.")
-        return Molecule.from_rdkit(rdkit_mol)
+        return Molecule.from_rdkit(rdkit_mol, hydrogens_are_explicit=True)
 
     def _parse_mol(self, ligpath: Union[Path, str]) -> tuple[list[Molecule], list[str]]:
         """Function to parse a .sdf file into a list of Molecule objects and their names.
@@ -74,9 +74,9 @@ class MoleculeIO:
             return [], []
 
         mols = [mols] if not isinstance(mols, list) else mols
+        lig_names = [mol.name if mol.name else f"lig_{idx}" for idx, mol in enumerate(mols)]
         if self._reindex_hydrogens:
             mols = [self._force_H_reindexing(mol) for mol in mols]
-        lig_names = [mol.name if mol.name else f"lig_{idx}" for idx, mol in enumerate(mols)]
         return mols, lig_names
 
     def setup_mols_and_names(self, lig: str, pattern: str = "*.sdf"):

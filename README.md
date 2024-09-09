@@ -13,7 +13,7 @@ micromamba create -f environment.yml -n qligfep_new
 Now, activate the environment and update the following conda packages:
 ```bash
 micromamba activate qligfep_new
-micromamba install openff-toolkit=0.16.4 openff-forcefields=2024.04.0 openmm=8.1.1 "openff-nagl>=0.3.8" lomap2 kartograf -c conda-forge --yes
+micromamba install openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.04.0 openmm=8.1.1 "openff-nagl>=0.3.8" lomap2 kartograf -c conda-forge --yes
 ```
 
 Now that you have the environment ready and activated, install qligfep through the command:
@@ -21,12 +21,20 @@ Now that you have the environment ready and activated, install qligfep through t
 python -m pip install -e .
 ```
 
+<details>
+<summary>In one line...</summary>
+
+```bash
+micromamba create -f environment.yml -n qligfep_new -y && micromamba activate qligfep_new && micromamba install openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.04.0 openmm=8.1.1 "openff-nagl>=0.3.8" lomap2 kartograf -c conda-forge --yes && python -m pip install -e .
+```
+</details>
+
 ### MacOS
 
 The environment provided doesn't build on Mac due to missing libraries. If you're using this operating system, you'll have to create the environment by scratch through the commands:
 
 ``` bash
-micromamba create -n qligfep_new -c conda-forge openff-toolkit=0.16.4 openff-forcefields=2024.04.0 openmm=8.1.1 lomap2 -c conda-forge --yes
+micromamba create -n qligfep_new openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.04.0 openmm=8.1.1 lomap2 kartograf -c conda-forge --yes
 micromamba activate qligfep_new
 python -m pip install joblib scipy tqdm
 python -m pip install -e .
