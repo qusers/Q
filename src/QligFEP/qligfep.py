@@ -514,7 +514,7 @@ class QligFEP:
                 surround_atom_compare = restraint_method.split("_")[1]
                 if surround_atom_compare == "p":
                     strict_surround = False
-                    ignore_surround_atom_type = False
+                    ignore_surround_atom_type = True  # is ignored when strict_surround is False
                 else:
                     strict_surround = True
                     ignore_surround_atom_type = surround_atom_compare == "ls"
@@ -822,8 +822,8 @@ class QligFEP:
                     except KeyError:
                         line = ""
                 if line.strip() == "#SBATCH -J JOBNAME":
-                    if self.cluster == 'DARDEL': # TODO: refactor this...
-                        outfile.write('#SBATCH -p shared\n')
+                    if self.cluster == "DARDEL":  # TODO: refactor this...
+                        outfile.write("#SBATCH -p shared\n")
                     try:
                         if self.system == "water":
                             jobname = "w_"
