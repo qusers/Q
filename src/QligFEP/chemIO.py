@@ -126,7 +126,7 @@ class MoleculeIO:
         for mol, name in zip(self.molecules, self.lig_names):
             string_buffer = StringIO()
             mol.to_file(string_buffer, file_format="sdf")
-            self.sdf_contents.update({name: string_buffer.getvalue()})
+            self.sdf_contents.update({name: string_buffer.getvalue().splitlines()})
 
     def write_sdf_separate(self, output_dir):
         """Function to write the separate multiple molecules within a sdf file into their own
