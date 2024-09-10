@@ -12,7 +12,7 @@ from rdkit import Chem
 
 from ..logger import logger
 from .atom_mapping import AtomMapperHelper
-from .hydrogen_utils import are_hydrogens_at_end, reindex_hydrogens_to_end
+from .hydrogen_utils import are_hydrogens_at_end
 
 
 class RestraintSetter:

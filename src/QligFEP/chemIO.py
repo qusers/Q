@@ -77,6 +77,8 @@ class MoleculeIO:
         lig_names = [mol.name if mol.name else f"lig_{idx}" for idx, mol in enumerate(mols)]
         if self._reindex_hydrogens:
             mols = [self._force_H_reindexing(mol) for mol in mols]
+        for mol, name in zip(mols, lig_names):  # update name property
+            mol.name = name
         return mols, lig_names
 
     def setup_mols_and_names(self, lig: str, pattern: str = "*.sdf"):
