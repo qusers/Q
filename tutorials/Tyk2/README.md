@@ -4,7 +4,7 @@ This folder contains a step by step tutorial to setup and
 analyze QligFEP calculations, as reported in Jespers et al.
 (https://doi.org/10.1186/s13321-019-0348-5).  
 
-The workflow consists of four main steps:  
+The workflow consists of the following steps:  
 
 1. Generate ligand parameters from `.sdf` files using OpenFF;
     - Comprised of: `prm`, `lib`, `pdb`, and `.sdf` files for each one of the ligands.
@@ -14,13 +14,13 @@ The workflow consists of four main steps:
 5. Submit the jobs to an HPC cluster;
 6. Analyze the results.
 
-# Simplified tutorial
+# Tutorial
 
 Go to the directory with the ligand files:
 ```bash
 cd tutorials/Tyk2/ligprep
 ```
-Generate the ligand parameter, library, and pdb files. For this we use NAGL for a faster calculation of the partial charges. This is still experimental, so for your own experiments, please use the default method (AM1-BCC).
+Generate the ligand parameter, library, and pdb files. For this we use NAGL for a faster calculation of the partial charges. This is still experimental, so for your own experiments, please use the default method (AM1-BCC) simply by not adding the `-nagl` flag.
 ```bash
 qparams -i Tyk2_ligands.sdf -p 4 -nagl
 ```
@@ -36,7 +36,7 @@ cp ligprep/*.pdb ligprep/*.prm ligprep/*.lib setupFEP/
 # Copy the separate .sdf files and the lomap.json file:
 cp ligprep/Tyk2_ligands/*.sdf ligprep/Tyk2_ligands/lomap.json setupFEP/
 ```
-Now we just need to prepare our water sphere! The first step is to calculate the center of geometry of the ligand. For this, we can use the `qcog` command:
+Now we just need to prepare our water sphere. The first step is to calculate the center of geometry of the ligand. For this, we can use the `qcog` command:
 ```bash
 qcog -i ligprep/Tyk2_ligands.sdf
 ```
@@ -52,10 +52,12 @@ To generate the water sphere, we then run:
 ```bash
 qprep_prot -cog -4.727 26.163 -30.542 -i protein.pdb -FF AMBER14sb -r 25
 ```
-Done! Let's prepare our job submission files to run the FEP calculations on HPC systems.
+Done! No we move both the protein and the water `.pdb` files to the same directory containing our ligand files. To do this, run the command:
 ```bash
 cp protein.pdb water.pdb ../
 ```
+The next step is creating the job submission files to run the FEP calculations on HPC systems. This can be done per-edge by using the `qligfep` command line program, or done for all edges within your perturbation network by using the `setupFEP` command and specifying the file with your perturbation network - in this case, `lomap.json`.
+
 For preparing the files, we run:
 ```bash
 setupFEP -FF AMBER14sb -r 25 -ts 2fs -j lomap.json -clean dcd -rs 42 -c CSB
@@ -69,7 +71,25 @@ The explanation of the flags is as follows:
 - `-rs 42`: The random seed for the simulation.
 - `-c CSB`: The cluster for which the job submission files will be generated. This takes configurations from the `CLUSTER_DICT` global variable within the [settings.py](../../src/QligFEP/settings/settings.py#L139-L150) module.
 
-For more information on the flags you can run `setupFEP -h`.
+Another important configuration flag is the `--restraint_method`, or `-rest` for short. This configuration controls the way atoms from the two molecular topologies are restrained together within the simulation sampling.
+
+As opposed to the single topology scheme, where the ligands involved in the perturbation share both physical and "dummy" atoms used to introduce forces in the system according to the lambda parameter, QligFEP uses a dual topology scheme. There, atom types are not allowed to change types or parameters. Instead, all atoms partially interact with the environment, having their potentials scaled according to the lambda parameter (windows).
+
+Therefore, since both topologies are maintained through the sampling time, restrain forces must be introduced in the system to ensure the space overlap of both intermediates through simulation. Defining the correct moieties that should be kept together during this process is non-trivial and the package current supports different configurations.
+
+To illustrate the implications the available options, we use one perturbation edge from the `p38` benchmarking dataset:
+
+<p align="center">
+  <img width="720" src="../Tyk2/imgs/p38a_2ff-p38a_2h.jpg">
+</p>
+
+Now let's get to the available options for the `--restraint_method` flag:
+<!-- 
+How to set the restraints to the ligand topologies involved in the perturbation. Ring atom compare: `aromaticity`, `hibridization`, `element`. Setting the first part of the
+string as either of these, will determine how the ring atoms are treated to be defined as equivalent. Surround atom compare: `p` (permissive), `ls` (less strict), `strict`.
+Setting the second part of the string as either of these, will determine if or how the direct surrounding atoms to the ring strictures will be taken into account for ring
+equivalence. 1) Permissive: Only the ring atoms are compared. 2) Less strict: The ring atoms and their direct surroundings are compared, but element type is ignored. 3)
+Strict: The ring atoms and their direct surroundings are element-wise compared. -->
 
 Done!! Now, for submitting the jobs, please have a look at section [Job submission](#job-submission).
 
