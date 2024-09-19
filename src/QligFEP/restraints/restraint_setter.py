@@ -298,6 +298,7 @@ class RestraintSetter:
         ring_compare_method: str = "element",
         strict_surround: bool = False,
         ignore_surround_atom_type: bool = False,
+        kartograf_native: bool = False,
     ) -> dict:
         """Main method for the class `RestraintSetter`. Run all the methods necessary to compare two ligands
         to be transmuted, find the atoms to be restrained, and return a dictionary with the atoms to be restrained.
@@ -310,10 +311,13 @@ class RestraintSetter:
                 & immediate neighbors. Defaults to False.
             ignore_substituent_atom_type: if true, it will ignore the atomic number of the substituents
                 when comparing them for the `strict_surround` method. Defaults to False.
+            kartograf_native: if True, it will use the native mapping from Kartograf. Defaults to False.
 
         Returns:
             restraints: dictionary containing the atoms to be restrained.
         """
+        if kartograf_native:
+            return self.atom_mapping
         self.atom_mapper = AtomMapperHelper()
         ringStruc_compareDict = self.atom_mapper.process_rings_separately(
             Chem.RemoveHs(self.molA.to_rdkit()), Chem.RemoveHs(self.molB.to_rdkit()), self.atom_mapping
