@@ -1,7 +1,7 @@
 from io import StringIO
 from itertools import product
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 import pandas as pd
 from openff.toolkit import Molecule
@@ -130,12 +130,14 @@ class MoleculeIO:
             mol.to_file(string_buffer, file_format="sdf")
             self.sdf_contents.update({name: string_buffer.getvalue().splitlines()})
 
-    def write_sdf_separate(self, output_dir):
+    def write_sdf_separate(self, output_dir, molecules: Optional[list[Molecule]] = None) -> None:
         """Function to write the separate multiple molecules within a sdf file into their own
         .sdf, placed under `output_dir`.
 
         Args:
             output_dir: the directory to save the single sdf molecules.
+            molecules: a list of Molecule objects to write to the output directory. If None, the
+                `self.molecules` will be written. Defaults to None.
 
         Raises:
             ValueError: if `output_dir` is neither a `str` or a `pathlib.Path` object.
@@ -147,23 +149,29 @@ class MoleculeIO:
 
         if not output_dir.exists():
             output_dir.mkdir(parents=True, exist_ok=True)
-        for idx, lname in enumerate(self.lig_names):
-            fpath = str(output_dir / f"{lname}.sdf")
-            self.molecules[idx].to_file(file_path=fpath, file_format="sdf")
+        if molecules is None:
+            for idx, lname in enumerate(self.lig_names):
+                fpath = str(output_dir / f"{lname}.sdf")
+                self.molecules[idx].to_file(file_path=fpath, file_format="sdf")
+        else:
+            for mol in molecules:
+                mol.to_file(file_path=f"{mol.name}.sdf", file_format="sdf")
 
-    def write_to_single_sdf(self, output_name: str) -> None:
+    def write_to_single_sdf(self, output_name: str, molecules: Optional[list[Molecule]] = None) -> None:
         """Writes all `self.molecules` to a single `.sdf` file.
 
         Args:
             output_name: name of the output file to write the aligned ligands to.
+            molecules: a list of Molecule objects to write to the output directory. If None, the
+                `self.molecules` will be written. Defaults to None.
         """
         writer = Chem.SDWriter(output_name)
-        for mol in self.molecules:
+        for mol in self.molecules if molecules is None else molecules:
             writer.write(mol.to_rdkit())
         writer.close()
-        logger.info(f"`self.molecules` written to {output_name}")
+        logger.info(f"{'`self.molecules`' if molecules is None else 'molecules'} written to {output_name}")
 
-    def write_to_single_pdb(self, output_name: str, init_offset=0) -> pd.DataFrame:
+    def write_to_single_pdb(self, output_name: str, init_offset: int = 0) -> pd.DataFrame:
         """Writes all `self.molecules` to a single `.pdb` file.
 
         Args:
