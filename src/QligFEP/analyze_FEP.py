@@ -482,7 +482,7 @@ class FepReader:
         )
 
         # set labels, make it square and add legend
-        plt.title(rf"{self.target_name} - $\Delta\Delta {method.replace('dd', '')}$ plot")
+        plt.title(rf"{self.target_name}, $N={len(avg_values)}$ - $\Delta\Delta {method.replace('dd', '')}$ plot")
         plt.xlabel("$\Delta\Delta G_{exp} [kcal/mol]$")  # noqa: W605
         plt.ylabel("$\Delta\Delta G_{pred} [kcal/mol]$")  # noqa: W605
         plt.xlim(min_val, max_val)
