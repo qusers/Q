@@ -439,7 +439,7 @@ class QligFEP:
         lambdas = lambdas[::-1]
         return lambdas
 
-    def set_restraints(self, writedir, restraint_method, strict_check: bool = True):
+    def set_restraints(self, writedir, restraint_method, strict_check: bool = True) -> list[list[int]]:
         """Function to set the restraints for FEP. Originally, this was performed on
         overlapping atoms, but based on our observations this was changed to a more
         chemistry-aware method, implemented under `QligFEP.restraints.restraint_setter`.
@@ -510,19 +510,22 @@ class QligFEP:
             else:
                 logger.debug(f'Loading sdf for restraint calculation:\nlig1:"{lig1_path}"\nlig2"{lig2_path}"')
                 rsetter = RestraintSetter(lig1_path, lig2_path)
-                ring_atom_compare = restraint_method.split("_")[0]
-                surround_atom_compare = restraint_method.split("_")[1]
-                if surround_atom_compare == "p":
-                    strict_surround = False
-                    ignore_surround_atom_type = True  # is ignored when strict_surround is False
+                if restraint_method == "kartograf":
+                    restraints = rsetter.set_restraints(kartograf_native=True)
                 else:
-                    strict_surround = True
-                    ignore_surround_atom_type = surround_atom_compare == "ls"
-                restraints = rsetter.set_restraints(
-                    ring_compare_method=ring_atom_compare,
-                    strict_surround=strict_surround,
-                    ignore_surround_atom_type=ignore_surround_atom_type,
-                )
+                    ring_atom_compare = restraint_method.split("_")[0]
+                    surround_atom_compare = restraint_method.split("_")[1]
+                    if surround_atom_compare == "p":
+                        strict_surround = False
+                        ignore_surround_atom_type = True  # is ignored when strict_surround is False
+                    else:
+                        strict_surround = True
+                        ignore_surround_atom_type = surround_atom_compare == "ls"
+                    restraints = rsetter.set_restraints(
+                        ring_compare_method=ring_atom_compare,
+                        strict_surround=strict_surround,
+                        ignore_surround_atom_type=ignore_surround_atom_type,
+                    )
                 if strict_check:  # TODO: This should be moved to the tests in the future...
                     rdLig1 = rsetter.molA.to_rdkit()
                     rdLig2 = rsetter.molB.to_rdkit()

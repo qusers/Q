@@ -149,14 +149,12 @@ def parse_arguments() -> argparse.Namespace:
         "-sp",
         "--solvent_pack",
         dest="solvent_pack",
-        default=3.0,
+        default=2.3,
         help=(
             "Parameter to qprep.inp `set solvent_pack`. According to Q's manual, this value "
             "corresponds to the minimum distance between solute and solvent heavy atoms when "
-            "adding solvent (e.g.: HOH) and defaults to 2.4. In QligFEP we use a value of 2.3 "
-            "on the water leg. For the protein leg, however, this value often creates water "
-            "molecules that are too close to the structure, causing calculations to crash. "
-            "close to the ligands, causing calculations to crash. Defaults to 3.0."
+            "adding solvent (e.g.: HOH) and defaults to 2.4. In QligFEP we use a value of 2.3. "
+            "Defaults to 3.0."
         ),
         type=float,
     )

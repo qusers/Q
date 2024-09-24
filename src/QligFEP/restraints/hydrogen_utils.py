@@ -6,14 +6,15 @@ from rdkit.Chem import rdmolops
 def are_hydrogens_at_end(mol):
     """Created to certify that heavy atom indexes will be conserved upon removal of hydrogens."""
     atoms = mol.GetAtoms()
-    non_h_found = False
+    h_block_ended = False
     for atom in reversed(atoms):
-        if atom.GetAtomicNum() == 1:  # If hydrogen
-            if non_h_found:
+        # logger.trace(f"Atom {atom.GetIdx()} atomicNumber {atom.GetAtomicNum()}")
+        if atom.GetAtomicNum() == 1:
+            if h_block_ended:
                 return False
         else:
-            non_h_found = True
-    return True
+            h_block_ended = True
+    return True  # All checks passed
 
 
 def reindex_hydrogens_to_end(mol):
