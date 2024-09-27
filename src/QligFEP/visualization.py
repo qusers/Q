@@ -5,9 +5,13 @@ from typing import Optional, Union
 
 import matplotlib.pyplot as plt
 import py3Dmol
+from kartograf import SmallMoleculeComponent
 from matplotlib.colors import rgb2hex
 from openff.toolkit import Molecule
 from rdkit import Chem
+
+from .CLI.utils import get_avail_restraint_methods
+from .restraints.restraint_setter import RestraintSetter
 
 
 def mol_to_molblock(mol: Union[Molecule, Chem.Mol]) -> str:
@@ -80,9 +84,8 @@ def render_system(
 def render_ligand_restraints(
     ligand1: Union[Chem.Mol, "Molecule"],
     ligand2: Union[Chem.Mol, "Molecule"],
-    mappings: dict[int, int],
-    spheres: bool = True,
-    show_atomIDs: bool = True,
+    restraint_mapping: dict[int, int],
+    show_atom_idxs: bool = True,
     size: tuple[int, int] = (900, 500),
     sphere_palette: str = "hsv",
     sphere_radius: float = 0.6,
@@ -97,12 +100,13 @@ def render_ligand_restraints(
     Args:
         ligand1: First ligand molecule (RDKit Mol or custom Molecule object).
         ligand2: Second ligand molecule (RDKit Mol or custom Molecule object).
-        mappings: Dictionary of atom index mappings from ligand1 to ligand2.
-        spheres: Whether to show matching atoms as spheres.
-        show_atomIDs: Whether to show atom IDs in the visualization.
-        style: Style to represent the molecules in py3Dmol.
+        restraint_mapping: Dictionary of atom indexes; [0] - atom idxs in lig1 that are mapped
+            into atom idxs in lig2 [1].
+        show_atom_idxs: Whether to show atom idxs in the visualization.
         size: Tuple of (width, height) for the entire viewer.
         sphere_palette: Matplotlib colormap to use for coloring the spheres.
+        sphere_radius: Radius of the spheres rendered in the restrained atoms. Defaults to 0.6.
+        sphere_alpha: Alpha value for the spheres. Defaults to 0.8.
 
     Returns:
         None
@@ -132,8 +136,7 @@ def render_ligand_restraints(
     # Ligand 1 view
     view.addModel(mol_to_molblock(ligand1), "ligand1", viewer=(0, 0))
     view.setStyle({"stick": {}}, viewer=(0, 0))
-    if spheres:
-        add_spheres(view, ligand1, mappings, is_ligand1=True, viewer=(0, 0))
+    add_spheres(view, ligand1, restraint_mapping, is_ligand1=True, viewer=(0, 0))
 
     # Overlapped view
     view.addModel(mol_to_molblock(ligand1), "ligand1_overlap", viewer=(0, 1))
@@ -146,10 +149,9 @@ def render_ligand_restraints(
     # Ligand 2 view
     view.addModel(mol_to_molblock(ligand2), "ligand2", viewer=(0, 2))
     view.setStyle({"stick": {"colorscheme": "lightskyblueCarbon"}}, viewer=(0, 2))
-    if spheres:
-        add_spheres(view, ligand2, mappings, is_ligand1=False, viewer=(0, 2))
+    add_spheres(view, ligand2, restraint_mapping, is_ligand1=False, viewer=(0, 2))
 
-    if show_atomIDs:
+    if show_atom_idxs:
         for v in [(0, 0), (0, 2)]:
             view.addPropertyLabels(
                 "index",
@@ -167,3 +169,86 @@ def render_ligand_restraints(
     view.zoomTo()
     view.render()
     view.show()
+
+
+def apply_and_render_restraint(
+    ligand1: Union[Molecule, Chem.Mol, str, Path],
+    ligand2: Union[Molecule, Chem.Mol, str, Path],
+    restraint_method: str = "hybridization_p",
+    show_atom_idxs: bool = True,
+    size: tuple[int, int] = (900, 500),
+    sphere_palette: str = "hsv",
+    sphere_radius: float = 0.6,
+    sphere_alpha: float = 0.8,
+) -> dict[int, int]:
+    """Apply and render restraints between two ligands according to restraint methods
+    available in QligFEP.
+
+    Args:
+        ligand1: First ligand (RDKit Mol or custom Molecule object).
+        ligand2: Second ligand (RDKit Mol or custom Molecule object).
+        restraint_method: Chosen method for setting the ligand restraints. Defaults to "hybridization_p".
+        show_atom_idxs: Whether to show atom idxs in the visualization.
+        size: Tuple of (width, height) for the entire viewer.
+        sphere_palette: Matplotlib colormap to use for coloring the spheres.
+        sphere_radius: Radius of the spheres rendered in the restrained atoms. Defaults to 0.6.
+        sphere_alpha: Alpha value for the spheres. Defaults to 0.8.
+
+    Returns:
+        dict[int, int]: Dictionary of atom indexes containing the atoms to be restrained.
+            [0] - atom indexes in ligand1;
+            [1] - atom indexes in ligand2.
+
+    Note: using the `show_atom_idxs` parameter will add the indexes to the rendering.
+    """
+
+    def process_input(ligand):
+        if isinstance(ligand, (str, Path)):
+            ligand = Molecule.from_file(ligand)
+        elif isinstance(ligand, Chem.Mol):
+            ligand = Molecule.from_rdkit(ligand)
+        elif isinstance(ligand, Molecule, SmallMoleculeComponent):
+            pass
+        else:
+            raise ValueError("Ligand should be a path to a file, a RDKit molecule, or an OpenFF molecule.")
+        return ligand
+
+    ligand1 = process_input(ligand1)
+    ligand2 = process_input(ligand2)
+
+    if restraint_method not in get_avail_restraint_methods():
+        raise ValueError(
+            f"restraint_method should be one of {get_avail_restraint_methods()}, got {restraint_method}"
+        )
+    elif restraint_method == "overlap":
+        raise ValueError("Overlap method is not supported by this method yet, use `kartograf` instead.")
+
+    rsetter = RestraintSetter("lig1.sdf", "lig2.sdf")
+
+    if restraint_method == "kartograf":
+        restraint_dict = rsetter.set_restraints(
+            kartograf_native=True,  # other arguments ignored
+        )
+    else:
+        ring_compare_method, permissiveness_lvl = restraint_method.split("_")
+        if permissiveness_lvl == "p":
+            # in this case, ignore_surround_atom_type is not needed
+            params = {"strict_surround": False}
+        elif permissiveness_lvl == "ls":
+            params = {"strict_surround": True, "ignore_surround_atom_type": True}
+        elif permissiveness_lvl == "strict":
+            params = {"strict_surround": True, "ignore_surround_atom_type": False}
+        restraint_dict = rsetter.set_restraints(ring_compare_method=ring_compare_method, **params)
+
+    render_ligand_restraints(
+        ligand1,
+        ligand2,
+        restraint_dict,
+        show_atom_idxs=show_atom_idxs,
+        size=size,
+        sphere_palette=sphere_palette,
+        sphere_radius=sphere_radius,
+        sphere_alpha=sphere_alpha,
+    )
+
+    return restraint_dict
