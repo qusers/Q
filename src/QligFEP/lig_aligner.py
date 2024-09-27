@@ -130,6 +130,10 @@ class GlobalLigandAligner(MoleculeIO):
 
                 elif value in valid_params[key]:
                     processed_params[key] = value
+
+                elif isinstance(value, bool):
+                    processed_params[key] = "T" if value else "F"
+
                 else:
                     raise ValueError(
                         f"Invalid value '{value}' for parameter '{key}'. Valid values: {valid_params[key]}"
@@ -157,6 +161,7 @@ class GlobalLigandAligner(MoleculeIO):
         """Set up a temporary directory for alignment operations."""
         self.temp_dir = tempfile.TemporaryDirectory(prefix="ligand_alignment_")
         temp_path = Path(self.temp_dir.name)
+        logger.debug(f"Temporary directory created for the alignment at {temp_path}")
         self.write_sdf_separate(temp_path)
         return temp_path
 
@@ -386,6 +391,7 @@ class GlobalLigandAligner(MoleculeIO):
                     logger.error(f"Error in kcombu alignment: {e}")
 
         self._load_aligned_molecules(temp_path)
+        self.cleanup()
 
         # Transfer other relevant metadata as needed
 
@@ -454,4 +460,5 @@ class GlobalLigandAligner(MoleculeIO):
 
     def __del__(self):
         """Destructor to ensure cleanup of temporary directory."""
-        self.cleanup()
+        if self.temp_dir:
+            self.cleanup()
