@@ -1,11 +1,11 @@
-"""Module with the LigandAligner class to align ligands to a reference ligand using kcombu."""
-
-import shutil
+import atexit
 import subprocess
+import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
 from pathlib import Path
+from typing import Any, Optional, Union
 
-from joblib import Parallel, delayed, parallel_config
 from openff.toolkit import Molecule
 from rdkit import Chem
 from rdkit.Chem import rdFMCS
@@ -17,80 +17,203 @@ from .logger import logger
 
 
 class GlobalLigandAligner(MoleculeIO):
-    # TODO: Inspect other parameters with kcombu and implement them on method `kcombu_align`
+    """Align ligands based on three-dimensional coordinates using the fkcombu program.
 
-    # TODO: in the future it would be good to make this more flexible so that it
-    # could also perform 1:1 alignment between ligands. E.g.: FEP_lig1_lig2 would
-    # have lig 1 aligned to lig 2 or vice-versa.
+        For more information on fkcombu, see their docs:
+            https://pdbj.org/kcombu/doc/README_fkcombu.html
+        For information on the `connectivity`, `top_constraint_tol` parameters, see:
+            https://pdbj.org/kcombu/doc/README_pkcombu.html
 
-    # -> This would be implemented in another class e.g.: `LocalLigandAligner`
+    Attributes:
+        SDF_EXTENSION (str): Default file extension for SDF files.
+        ALIGNED_SUFFIX (str): Suffix added to aligned molecule files.
+        kcombu_exe (Path): Path to the fkcombu executable.
+        n_threads (int): Number of threads to use for parallel alignment.
+        reference_mol (str): Name of the molecule used as reference for the last alignment performed.
+        aligned_molecules (dict): Aligned molecules, stored with [key] as name of the molecule.
+        temp_dir (Path): Temporary directory for alignment operations.
+        fkparams (dict): Dictionary of fkcombu parameters.
+        fkcombu_command (str): Base fkcombu command string.
+    """
+
+    SDF_EXTENSION = ".sdf"
+    ALIGNED_SUFFIX = "_aligned"
 
     def __init__(
         self,
         lig,
-        pattern: str = "*.sdf",
+        pattern: str = f"*{SDF_EXTENSION}",
         reindex_hydrogens: bool = True,
         n_threads: int = 1,
-        tempdir: str = "to_align_ligands",
-        delete_tempdir: bool = True,
+        protein: Optional[str] = None,
+        energy: str = "a",
+        search: str = "f",
+        steep_descend: bool = True,
+        connectivity: str = "t",
+        top_constraint_tol: Optional[int] = None,
+        **fkcombu_params,
     ):
-        """initalize the ligand aligner. This class inherits from MoleculeIO and adds the
-        functionality to align the ligands to a reference using kcombu.
+        """
+        Initialize a GlobalLigandAligner object for aligning ligands based on three-dimensional coordinates
+        using the fkcombu program. Additional parameters can be passed to fkcombu through keyword arguments.
+
+        For more information on fkcombu, see their docs:
+            https://pdbj.org/kcombu/doc/README_fkcombu.html
+        For information on the `connectivity`, `top_constraint_tol` parameters, see:
+            https://pdbj.org/kcombu/doc/README_pkcombu.html
 
         Args:
             lig: sdf file containing several molecules or directory containing the sdf files.
             pattern: If desired, a pattern can be used to search for sdf files within a directory with
-                `glob`. If lig is a sdf file, this argument will be ignored. Defaults to None.
+                `glob`. If lig is a sdf file, this argument will be ignored. Defaults to "*.sdf".
             reindex_hydrogens: If True, loading molecules will assert that hydrogen atoms are at the end
                 of the atom list and reindex them if they are not (needed by restraint setting algorithm).
                 If False, the molecules will be loaded as is. Defaults to True.
-            n_threads: Number of threads to create for the ligand alignment part. Defaults to 1.
-            tempdir: name for the temporary directory to store the separate sdf files.
-                Defaults to "to_align_ligands".
-            delete_tempdir: If True, the temporary directory will be deleted upon calling
-                `output_aligned_molecules`.
+            n_threads: Number of threads to use for parallel alignment. Defaults to 1.
+            energy: fkcombu energy calculation method. `a` for atom-match, `v` for volume-overlap. Defaults to `a`.
+            search: fkcombu search method `f` for flexible, `r` for rigid, `n` for nothing. Defaults to `f`.
+            steep_descend: fkcombu perform Gradient-based Steepest Descent fitting. Defaults to True.
+            connectivity: fkcombu connectivity method for finding the MCS. `c` for connected,
+                `s` for substructure, `i` for isomorphic, `t` for topo_constrained_disconnected. If more
+                flexible correspondences are needed, use `t` together with the `top_constraint_tol` parameter.
+            top_constraint_tol: the maximum number of bonds (shortest path) allowed as a tolerance for
+                not breaking the connectivity of the MCS. Only used if `connectivity` is set to `t`.
 
         Raises:
             FileNotFoundError: If the kcombu executable is not found.
         """
         super().__init__(lig, pattern=pattern, reindex_hydrogens=reindex_hydrogens)
-        self._setup_tempdir(tempdir, delete_tempdir=delete_tempdir)
         self.kcombu_exe = str(SRC / "kcombu/fkcombu")
         self.n_threads = n_threads
-        self.reference_mol: Molecule = None
+        self.reference_mol: Optional[Molecule] = None
+        self.aligned_molecules: dict[str, Molecule] = {}
+        self.temp_dir: Optional[tempfile.TemporaryDirectory] = None
+        self.fkparams = self._process_fkparams(
+            {"P": protein, "E": energy.upper(), "S": search.upper(), "SD": steep_descend, **fkcombu_params},
+            connectivity.upper(),
+            top_constraint_tol,
+        )
+        self.fkcombu_command = self._build_fkcombu_command()
+        atexit.register(self.cleanup)  # Clean up temp directory on exit of the program
+
         if not Path(self.kcombu_exe).exists():
             raise FileNotFoundError(
-                f"Could not find kcombu executable at {self.kcombu_exe} make sure it is installed."
+                f"Could not find kcombu executable at {self.kcombu_exe}. Make sure it is installed."
             )
 
-    def _setup_tempdir(self, tempdir: Path, delete_tempdir):
-        """If the input is not a directory, create a temporary directory to store the
-        separate sdf files and write them there. If the input is a directory, the temporary
-        directory is the same as the input directory.
+    def _process_fkparams(self, fkparams: dict[str, Any], connectivity, top_constraint_tol) -> dict[str, str]:
+        """Process and validate fkcombu parameters, called during initialization."""
+        valid_params = {
+            "P": None,  # Protein file
+            "E": ("A", "V"),  # Energy calculation method; [A]tom-match, [V]olume-overlap
+            "S": ("F", "R", "N"),  # Search method; [F]lexible, [R]igid, [N]othing
+            "SD": ("T", "F"),  # Perform Gradient-based Steepest Descent fitting
+        }
+        processed_params = {}
+
+        connectivity_supported = ("C", "S", "I", "T")
+        if connectivity not in connectivity_supported:
+            raise ValueError(
+                f"Invalid connectivity method '{connectivity}'. Supported methods: {connectivity_supported}"
+            )
+        else:
+            processed_params["con"] = connectivity
+            if connectivity == "T" and top_constraint_tol is not None:
+                processed_params["mtd"] = str(top_constraint_tol)
+
+        for key, value in fkparams.items():
+            if key in valid_params:
+
+                if key == "P":
+                    if value is None:
+                        continue
+                    elif not Path(value).exists():
+                        raise FileNotFoundError(f"Protein file '{value}' not found.")
+                    processed_params[key] = str(value) if isinstance(value, Path) else value
+                elif value in valid_params[key]:
+                    processed_params[key] = value
+                elif isinstance(value, bool):
+                    processed_params[key] = "T" if value else "F"
+                else:
+                    raise ValueError(
+                        f"Invalid value '{value}' for parameter '{key}'. Valid values: {valid_params[key]}"
+                    )
+            else:
+                logger.info(f"Parsing keyword parameter: {key}; {value}")
+                if isinstance(value, bool):
+                    processed_params[key] = "T" if value else "F"
+                else:
+                    processed_params[key] = str(value)
+
+        return processed_params
+
+    def _build_fkcombu_command(self) -> str:
+        """Build the base fkcombu command string."""
+        command = [self.kcombu_exe]
+        for key, value in self.fkparams.items():
+            if key in ("E", "S"):
+                command.extend([f"-{key}", value])
+            else:
+                command.extend([f"-{key}", value])
+        return command
+
+    def _setup_temp_dir(self) -> Path:
+        """Set up a temporary directory for alignment operations."""
+        self.temp_dir = tempfile.TemporaryDirectory(prefix="ligand_alignment_")
+        temp_path = Path(self.temp_dir.name)
+        logger.debug(f"Temporary directory created for the alignment at {temp_path}")
+        self.write_sdf_separate(temp_path)
+        return temp_path
+
+    def _run_kcombu(self, mol_path, reference_path, output_file) -> None:
+        """Run fkcombu to align a molecule to a reference and write the aligned molecule
+        to an output file.
 
         Args:
-            tempdir: Path to the temporary directory.
-            delete_tempdir: If True, the temporary directory will be deleted upon calling
-                `output_aligned_molecules`.
+            mol_path: path to the molecule to be aligned.
+            reference_path: path to the reference molecule.
+            output_file: path to save the aligned molecule to.
         """
-        tempdir = Path(tempdir)
-        if self.lig_files != []:  # created when the input is a directory
-            self.tempdir = Path(self.lig)
-            logger.warning(
-                "Input directory is used as tempdir for the aligned ligands " "and won't be deleted"
-            )
-            self.delete_tempdir = False  # never delete the input directory
-        elif Path(self.lig).suffix == ".sdf":
-            self.tempdir = tempdir
-            self.delete_tempdir = delete_tempdir
-        self.write_sdf_separate(self.tempdir)
+
+        command = self.fkcombu_command + [
+            "-T",
+            str(mol_path),
+            "-R",
+            str(reference_path),
+            "-osdfT",
+            str(output_file),
+        ]
+        logger.debug(f"Running kcombu: {' '.join(command)}")
+        try:
+            subprocess.run(command, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+            logger.error(f"kcombu process error: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error running kcombu: {e}")
+
+    def _load_aligned_molecules(self, temp_path: Path) -> None:
+        """Load aligned molecules from temporary files into memory."""
+        for name in self.lig_names:
+            if name != self.refname:
+                aligned_file = temp_path / f"{name}{self.ALIGNED_SUFFIX}{self.SDF_EXTENSION}"
+                original_file = temp_path / f"{name}{self.SDF_EXTENSION}"
+                if aligned_file.exists():
+                    self._transfer_sdf_metadata(original_file, aligned_file)
+                    aligned_mol = Molecule.from_file(str(aligned_file))
+
+                    self.aligned_molecules[name] = aligned_mol
+                else:
+                    logger.warning(f"Aligned file not found for {name}")
+
+        # Add the reference molecule to aligned_molecules
+        self.aligned_molecules[self.refname] = self.reference_mol
 
     @staticmethod
     def _transfer_charges_metadata(molA, molB):
-        """Method to transfer the charges from one molecule to another based on the MCS.
-        This is needed because the aligned molecules created by kcombu do not have the
-        charges & hydrogens from the reference molecule. MCS is used to make sure the
-        atoms are mapped correctly.
+        """Transfer the charges from one molecule to another based on the MCS. Necessary
+        step because the aligned molecules created by kcombu don't have the charges' metadata
+        from the reference molecule, causing the implicit hydrogens to be incorrectly assinged.
+        MCS is used to make sure the atoms are mapped correctly.
 
         Args:
             molA: molecule A to transfer the charges from.
@@ -105,20 +228,17 @@ class GlobalLigandAligner(MoleculeIO):
             bondCompare=rdFMCS.BondCompare.CompareOrder,
             completeRingsOnly=True,
         )
-        mcs_smarts = mcs_result.smartsString  # SMARTS pattern of the MCS
-        mcs_mol = Chem.MolFromSmarts(mcs_smarts)  # Convert SMARTS to an RDKit Mol object
+        mcs_smarts = mcs_result.smartsString
+        mcs_mol = Chem.MolFromSmarts(mcs_smarts)
 
-        # Map atoms based on MCS
         matchA = molA.GetSubstructMatch(mcs_mol)
         matchB = molB.GetSubstructMatch(mcs_mol)
 
-        # Optional: Print mappings to debug
         logger.trace("Mapping of atoms:")
-        for a, b in zip(matchA, matchB):
+        for a, b in zip(matchA, matchB):  # trace the mapping; used for debugging
             logger.trace(f"MolA atom {a} maps to MolB atom {b}")
 
-        # Example application: transferring formal charges based on the mapping
-        for a, b in zip(matchA, matchB):
+        for a, b in zip(matchA, matchB):  # iterate atoms and transfer charges
             atomA = molA.GetAtomWithIdx(a)
             atomB = molB.GetAtomWithIdx(b)
             formal_charge = atomA.GetFormalCharge()
@@ -126,9 +246,8 @@ class GlobalLigandAligner(MoleculeIO):
             if atomA.HasProp("_GasteigerCharge"):
                 gaister_charge = atomA.GetProp("_GasteigerCharge")
                 atomB.SetProp("_GasteigerCharge", gaister_charge)
-            # if atom is oxygen, check for valence 3 and remove hydrogens bound to it
+            # if atom is oxygen, check for valence 3 and remove bound hydrogens
             if atomA.GetAtomicNum() == 8 and atomA.GetTotalDegree() == 3:
-                # forcefully remove the hydrogen bound to it
                 atomB.SetNumExplicitHs(0)
                 atomB.UpdatePropertyCache()
         return molA, molB
@@ -146,17 +265,15 @@ class GlobalLigandAligner(MoleculeIO):
         aligned_supplier = Chem.SDMolSupplier(str(aligned_file), removeHs=True, sanitize=False)
 
         aligned_mols = []
-        # Iterate over molecules from both suppliers simultaneously
         for original_mol, aligned_mol in zip(original_supplier, aligned_supplier):
             if original_mol is not None and aligned_mol is not None:
                 Chem.SanitizeMol(aligned_mol, sanitizeOps=Chem.SanitizeFlags.SANITIZE_SETAROMATICITY)
-                # Copy all molecular properties
-                for prop_name in original_mol.GetPropNames():
+
+                for prop_name in original_mol.GetPropNames():  # copy all properties
                     prop_value = original_mol.GetProp(prop_name)
                     aligned_mol.SetProp(prop_name, prop_value)
 
-                # remove the H's to make it easier on the MCS & transfer the charges
-                original_mol = Chem.RemoveHs(original_mol)
+                original_mol = Chem.RemoveHs(original_mol)  # rm H's to transfer charges transfer the charges
                 logger.debug(f"Transferring metadata to {aligned_file}")
                 original_mol, aligned_mol = self._transfer_charges_metadata(original_mol, aligned_mol)
                 aligned_mols.append(aligned_mol)
@@ -166,66 +283,162 @@ class GlobalLigandAligner(MoleculeIO):
             aligned_writer.write(mol)
         aligned_writer.close()
 
-    def _update_aligned_sdf_files(self, ligand_names, reference, ligpath):
-        """Update the aligned SDF files with metadata from the original SDF files.
+    def align_single_molecule(
+        self, molecule: Union[str, Molecule], reference: Union[str, Molecule]
+    ) -> Molecule:
+        """
+        Align a single molecule to a reference molecule.
 
         Args:
-            ligand_names: List of ligand names to process.
-            reference: Name of the reference ligand.
-            ligpath: Path to the directory containing the SDF files.
+            molecule: The molecule to align (either a Molecule object or a name of a molecule in self.molecules)
+            reference: The reference molecule (either a Molecule object or a name of a molecule in self.molecules)
+
+        Returns:
+            The aligned Molecule object
         """
-        modification = f"_{reference}_aligned.sdf"
+        temp_path = self._setup_temp_dir()
 
-        for name in ligand_names:
-            if name != reference:
-                original_sdf = ligpath / f"{name}.sdf"
-                aligned_sdf = ligpath / f"{name}{modification}"
-                if aligned_sdf.exists():
-                    self._transfer_sdf_metadata(original_sdf, aligned_sdf)
-                else:
-                    logger.error(f"Aligned file {aligned_sdf} not found.")
+        if isinstance(molecule, str):
+            molecule = next((mol for mol in self.molecules if mol.name == molecule), None)
+            if molecule is None:
+                raise ValueError(f"Molecule {molecule} not found in self.molecules")
+        if isinstance(reference, str):
+            reference = next((mol for mol in self.molecules if mol.name == reference), None)
+            if reference is None:
+                raise ValueError(f"Reference molecule {reference} not found in self.molecules")
 
-    def kcombu_align(self, reference: str) -> None:
-        """Aligns the ligands to a reference ligand using kcombu and saves the path
-        to the aligned ligand in `self.reference`.
+        molecule_path = temp_path / f"to_align{self.SDF_EXTENSION}"
+        reference_path = temp_path / f"reference{self.SDF_EXTENSION}"
+        molecule.to_file(str(molecule_path), file_format="sdf")
+        reference.to_file(str(reference_path), file_format="sdf")
+
+        output_path = temp_path / f"aligned{self.SDF_EXTENSION}"
+
+        self._run_kcombu(molecule_path, reference_path, output_path)
+
+        aligned_molecule = Molecule.from_file(str(output_path))
+        self._transfer_metadata(molecule, aligned_molecule)
+
+        if self.temp_dir:
+            self.temp_dir.cleanup()
+
+        return aligned_molecule
+
+    def kcombu_align(
+        self, reference: Union[str, Molecule], molecules_to_align: Optional[list[Union[str, Molecule]]] = None
+    ) -> None:
+        """
+        Aligns the specified molecules to a reference molecule using kcombu.
 
         Args:
-            reference: The name of the ligand to align the other ligands to.
+            reference: The reference molecule (either a Molecule object or a name of a molecule in self.molecules)
+            molecules_to_align: List of molecules to align (either Molecule objects or names of molecules in self.molecules).
+                                If None, aligns all molecules except the reference.
         """
-        cwd = Path.cwd()
-        ligpath = cwd / self.tempdir
-        self.refname = reference
-        self.reference_path = ligpath / f"{reference}.sdf"
-        self.suffix = f"_{reference}_aligned"
+        temp_path = self._setup_temp_dir()
 
-        to_align_sdfs = [ligpath / f"{name}.sdf" for name in self.lig_names if name != reference]
+        if isinstance(reference, str):  # prepare the reference
+            self.refname = reference
+            self.reference_mol = next((mol for mol in self.molecules if mol.name == reference), None)
+            if self.reference_mol is None:
+                raise ValueError(f"Reference molecule {reference} not found in self.molecules")
+        else:
+            self.refname = reference.name
+            self.reference_mol = reference
 
-        commands = []
-        logger.info(f"Aligning ligands to ref `{reference}` with kcombu...")
-        for lig in to_align_sdfs:
-            kcombu_options = (
-                f"-T {lig} -R {self.reference_path} " f"-osdfT {lig.with_stem(lig.stem + self.suffix)} -E 'V'"
-            )
-            commands.append(f"{self.kcombu_exe} {kcombu_options}")
+        self.reference_path = temp_path / f"{self.refname}{self.SDF_EXTENSION}"
+        self.reference_mol.to_file(str(self.reference_path), file_format="sdf")
 
-        commands = tqdm(commands)
-        partial_func = partial(subprocess.run, capture_output=True, text=True)
-        with parallel_config(backend="threading", n_jobs=self.n_threads):
-            Parallel()(delayed(partial_func)(cmd.split()) for cmd in commands)
-        self._update_aligned_sdf_files(self.lig_names, reference, ligpath)
+        if molecules_to_align is None:  # prepare molecules to align
+            molecules_to_align = [mol for mol in self.molecules if mol.name != self.refname]
+        else:
+            molecules_to_align = [
+                next((mol for mol in self.molecules if mol.name == m), m) if isinstance(m, str) else m
+                for m in molecules_to_align
+            ]
 
-    def output_aligned_ligands(self, output_name: str) -> None:
-        """Writes the aligned molecules to a single `.sdf` file.
+        logger.info(f"Aligning {len(molecules_to_align)} molecules to ref `{self.refname}` with kcombu...")
+
+        with ThreadPoolExecutor(max_workers=self.n_threads) as executor:
+            futures = []
+            for mol in molecules_to_align:
+                mol_path = temp_path / f"{mol.name}{self.SDF_EXTENSION}"
+                mol.to_file(str(mol_path), file_format="sdf")
+                output_file = mol_path.with_stem(f"{mol.name}{self.ALIGNED_SUFFIX}")
+                partial_func = partial(
+                    self._run_kcombu,
+                    mol_path=mol_path,
+                    reference_path=self.reference_path,
+                    output_file=output_file,
+                )
+                futures.append(executor.submit(partial_func))
+
+            for future in tqdm(as_completed(futures), total=len(futures), desc="Aligning ligands"):
+                try:
+                    future.result()
+                except Exception as e:
+                    logger.error(f"Error in kcombu alignment: {e}")
+
+        self._load_aligned_molecules(temp_path)
+        self.cleanup()
+
+    def output_aligned_ligands(
+        self, output_name: str, ref_names: Optional[Union[str, list[str]]] = None
+    ) -> None:
+        """
+        Write the aligned molecules to a single .sdf file, optionally including the original reference ligand(s).
 
         Args:
-            output_name: name of the output file to write the aligned ligands to.
+            output_name (str): Name of the output .sdf file.
+            ref_names: Name(s) of the reference ligand(s) to include in their original conformation.
+                If None, only aligned molecules are written. Defaults to None.
+
+        Raises:
+            ValueError: If a specified reference name is not found in the original molecules.
         """
-        # temporary copy of the reference ligand with f"_{reference}_aligned" suffix so we get it with glob
-        temp_ref_stem = f"{self.refname}_tempRef_{self.suffix}"
-        shutil.copy(self.reference_path, self.reference_path.with_stem(temp_ref_stem))
-        molio = MoleculeIO(self.tempdir, pattern=f"*{self.suffix}.sdf")
-        self.reference_path.with_stem(temp_ref_stem).unlink()
-        molio.write_to_single_sdf(output_name)
-        if self.delete_tempdir:
-            logger.info(f"Deleting temporary directory with aligned ligands: {self.tempdir}")
-            shutil.rmtree(self.tempdir)
+        writer = Chem.SDWriter(output_name)
+
+        # Write aligned molecules
+        for _, mol in self.aligned_molecules.items():
+            writer.write(mol.to_rdkit())
+
+        # Process and write reference ligands if specified
+        if ref_names:
+            if isinstance(ref_names, str):
+                ref_names = [ref_names]
+
+            for ref_name in ref_names:
+                original_ref = self.get_molecule(ref_name, aligned=False)
+                if original_ref is None:
+                    raise ValueError(f"Reference molecule '{ref_name}' not found in original molecules.")
+                writer.write(original_ref.to_rdkit())
+                logger.info(f"Original reference '{ref_name}' added to output file.")
+
+        writer.close()
+        logger.info(f"Aligned molecules and specified references written to {output_name}")
+
+        if self.temp_dir:
+            self.temp_dir.cleanup()
+            logger.info("Temporary directory cleaned up")
+
+    def get_molecule(self, name: str, aligned: bool = True) -> Optional[Molecule]:
+        """
+        Retrieve a molecule by name, either aligned or original.
+
+        Args:
+            name: The name of the molecule to retrieve.
+            aligned: If True, return the aligned molecule; if False, return the original.
+
+        Returns:
+            The requested Molecule object, or None if not found.
+        """
+        if aligned:
+            return self.aligned_molecules.get(name)
+        return next((mol for mol in self.molecules if mol.name == name), None)
+
+    def cleanup(self) -> None:
+        """Clean up the temporary directory used for the ligand alignment operations."""
+        logger.debug(f"Temporary directory {self.temp_dir.name} cleaned up")
+        if self.temp_dir:
+            self.temp_dir.cleanup()
+            self.temp_dir = None
