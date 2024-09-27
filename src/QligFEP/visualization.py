@@ -11,7 +11,18 @@ from rdkit import Chem
 def render_system(
     molecules: list[Union[Molecule, Chem.Mol]],
     protein_path: Optional[Union[Path, str]] = None,
+    protein_style: str = "stick",
+    size: tuple[int, int] = (600, 500),
 ) -> None:
+    """Render a system containing molecules and a protein structure using py3Dmol.
+
+    Args:
+        molecules: list of Molecule or Chem.Mol objects to render.
+        protein_path: path to a protein structure file to render alongside the molecules.
+            Defaults to None.
+        protein_style: style to render the protein structure in. Can be 'stick' or 'cartoon'.
+            Defaults to 'stick'.
+    """
 
     def mols_to_molblock(mol):
         if isinstance(mol, Molecule):
@@ -26,9 +37,12 @@ def render_system(
         elif not protein_path.exists():
             raise FileNotFoundError(f"Could not find the protein file at {protein_path}")
 
-        view = py3Dmol.view(width=600, height=500)
+        view = py3Dmol.view(width=size[0], height=size[1])
         view.addModel(protein_path.read_text(), "pdb")
-        view.setStyle({"model": -1}, {"stick": {"radius": 0.04}})
+        if protein_style == "stick":
+            view.setStyle({"model": -1}, {"stick": {"radius": 0.04}})
+        elif protein_style == "cartoon":
+            view.setStyle({"model": -1}, {"cartoon": {"color": "spectrum"}})
         view.addSurface(py3Dmol.VDW, {"opacity": 0.5}, {"model": -1})
 
     for i, mol in enumerate(molecules):
@@ -50,4 +64,5 @@ def render_system(
         }
     }""",
     )
-    return view.render()
+    view.render()
+    view.show()
