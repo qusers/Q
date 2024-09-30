@@ -191,8 +191,15 @@ class GlobalLigandAligner(MoleculeIO):
         except Exception as e:
             logger.error(f"Unexpected error running kcombu: {e}")
 
-    def _load_aligned_molecules(self, temp_path: Path) -> None:
-        """Load aligned molecules from temporary files into memory."""
+    def _load_aligned_molecules(self, temp_path: Path) -> list[Molecule]:
+        """Load aligned molecules from temporary files into memory.
+
+        Args:
+            temp_path: Path to the temporary directory containing the aligned molecules.
+
+        Returns:
+            List of aligned Molecule objects
+        """
         for name in self.lig_names:
             if name != self.refname:
                 aligned_file = temp_path / f"{name}{self.ALIGNED_SUFFIX}{self.SDF_EXTENSION}"
@@ -207,6 +214,7 @@ class GlobalLigandAligner(MoleculeIO):
 
         # Add the reference molecule to aligned_molecules
         self.aligned_molecules[self.refname] = self.reference_mol
+        return self.aligned_molecules
 
     @staticmethod
     def _transfer_charges_metadata(molA, molB):
@@ -326,14 +334,20 @@ class GlobalLigandAligner(MoleculeIO):
 
     def kcombu_align(
         self, reference: Union[str, Molecule], molecules_to_align: Optional[list[Union[str, Molecule]]] = None
-    ) -> None:
+    ) -> list[Molecule]:
         """
-        Aligns the specified molecules to a reference molecule using kcombu.
+        Aligns the specified molecules to a reference molecule using kcombu. The aligned molecules returned
+        by this function are stored in the `aligned_molecules` attribute for convenience. Upon using a reference
+        molecule, the original reference molecule is stored in the `aligned_molecules` attribute as well.
 
         Args:
-            reference: The reference molecule (either a Molecule object or a name of a molecule in self.molecules)
-            molecules_to_align: List of molecules to align (either Molecule objects or names of molecules in self.molecules).
-                                If None, aligns all molecules except the reference.
+            reference: The reference molecule (either a Molecule object or a name of a molecule
+                in self.molecules)
+            molecules_to_align: List of molecules to align (either Molecule objects or names of
+                molecules in self.molecules). If None, aligns all molecules except the reference.
+
+        Returns:
+            List of aligned Molecule objects
         """
         temp_path = self._setup_temp_dir()
 
@@ -379,8 +393,9 @@ class GlobalLigandAligner(MoleculeIO):
                 except Exception as e:
                     logger.error(f"Error in kcombu alignment: {e}")
 
-        self._load_aligned_molecules(temp_path)
+        aligned_ligands = self._load_aligned_molecules(temp_path)
         self.cleanup()
+        return aligned_ligands
 
     def output_aligned_ligands(
         self, output_name: str, ref_names: Optional[Union[str, list[str]]] = None
@@ -391,7 +406,8 @@ class GlobalLigandAligner(MoleculeIO):
         Args:
             output_name (str): Name of the output .sdf file.
             ref_names: Name(s) of the reference ligand(s) to include in their original conformation.
-                If None, only aligned molecules are written. Defaults to None.
+                Note that reference ligands are aligned when using the `kcombu_align` method.
+                If None, only molecules within self.aligned_molecules will be written. Defaults to None.
 
         Raises:
             ValueError: If a specified reference name is not found in the original molecules.
