@@ -210,7 +210,6 @@ class QligFEP:
                 file_replaced.append(line2)
 
         with open(writedir + "/" + self.lig2 + "_renumber.lib", "w") as outfile:
-            block = 0
             for line in file_replaced:
                 outfile.write(line)
 
@@ -450,8 +449,8 @@ class QligFEP:
 
         Explanation:
             Ring atom compare: `aromaticity`, `hibridization`, `element`. Setting the first part of the
-                string as either of these, will determine how the ring atoms are treated to be defined as
-                equivalent.
+                string as either of these, will determine how the substituents / ring atoms are treated to be
+                defined as equivalent.
             Surround atom compare: `p` (permissive), `ls` (less strict), `strict`.
                 Setting the second part of the string as either of these, will determine if or how the
                 direct surrounding atoms to the ring strictures will be taken into account for ring equivalence.
@@ -522,7 +521,7 @@ class QligFEP:
                         strict_surround = True
                         ignore_surround_atom_type = surround_atom_compare == "ls"
                     restraints = rsetter.set_restraints(
-                        ring_compare_method=ring_atom_compare,
+                        atom_compare_method=ring_atom_compare,
                         strict_surround=strict_surround,
                         ignore_surround_atom_type=ignore_surround_atom_type,
                     )
@@ -800,7 +799,6 @@ class QligFEP:
 
     def write_runfile(self, writedir, file_list):
 
-        ntasks = CLUSTER_DICT[self.cluster]["NTASKS"]
         src = CONFIGS["INPUT_DIR"] + "/run.sh"
         tgt = writedir + "/run" + self.cluster + ".sh"
         EQ_files = sorted(glob.glob(writedir + "/eq*.inp"))

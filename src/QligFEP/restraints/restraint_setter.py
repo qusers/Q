@@ -8,6 +8,7 @@ import numpy as np
 from kartograf import KartografAtomMapper, SmallMoleculeComponent
 from kartograf.atom_aligner import align_mol_shape
 from kartograf.atom_mapping_scorer import MappingVolumeRatioScorer
+from numpy.typing import NDArray
 from rdkit import Chem
 
 from ..logger import logger
@@ -84,17 +85,17 @@ class RestraintSetter:
     def get_ring_and_ringbound(
         mol: Chem.Mol,
         connect_struct: dict,
-        ring_compare_method: str = "element",
+        atom_compare_method: str = "element",
         ignore_surround_elements: bool = False,
-    ):
+    ) -> NDArray:
         """Function to get the ring atoms and their immediate neighbors as an array of atomic
         numbers. The list is ordered as [ring_atom1, bound_atom1, ring_atom2, bound_atom2, ...].
 
         Args:
             mol: rdkit molecule object
             connect_struct: dictionary containing the ring atoms (keys) and their bound atoms (values)
-            ring_compare_method: method to compare the ring atoms. Choices are `element`, `hybridization`,
-                and `aromaticity`.
+            atom_compare_method: method to compare the substituents & ring atoms. Choices are `element`,
+                `hybridization`, and `aromaticity`.
             ignore_surround_elements: if true, it will ignore the atomic number of the substituents
 
         Returns:
@@ -103,11 +104,11 @@ class RestraintSetter:
         ringAtom_subsAtom = []  # list containing the ring atoms & bound atoms
         for ringAtom, subsAtom in connect_struct.items():
 
-            if ring_compare_method == "hybridization":
+            if atom_compare_method == "hybridization":
                 ringAtomInfo = mol.GetAtomWithIdx(ringAtom).GetHybridization().name
-            elif ring_compare_method == "element":
+            elif atom_compare_method == "element":
                 ringAtomInfo = mol.GetAtomWithIdx(ringAtom).GetAtomicNum()
-            elif ring_compare_method == "aromaticity":
+            elif atom_compare_method == "aromaticity":
                 ringAtomInfo = mol.GetAtomWithIdx(ringAtom).GetIsAromatic()
 
             if subsAtom[0] != ringAtom:
@@ -121,7 +122,7 @@ class RestraintSetter:
         return np.array(ringAtom_subsAtom)
 
     @staticmethod
-    def are_atoms_equivalent(atom_a, atom_b, compare_method: str = "element") -> bool:
+    def are_atoms_equivalent(atom_a: Chem.Atom, atom_b: Chem.Atom, compare_method: str = "element") -> bool:
         """check if two atoms are equivalent based on the `compare_method`.
 
         Args:
@@ -144,7 +145,15 @@ class RestraintSetter:
         logger.trace(f"Result: {result}")
         return result
 
-    def are_substituents_equivalent(self, subsA, subsB, atom_mapping, mol_a, mol_b):
+    def are_substituents_equivalent(
+        self,
+        subsA: dict,
+        subsB: dict,
+        atom_mapping: dict,
+        mol_a: Chem.Mol,
+        mol_b: Chem.Mol,
+        compare_method: str = "element",
+    ) -> bool:
         logger.trace(f"Substituents A: {subsA}")
         logger.trace(f"Substituents B: {subsB}")
         is_same = set()
@@ -164,17 +173,24 @@ class RestraintSetter:
                 if any([atomA != ring_atomA, atomB != ring_atomB]) and any(
                     [atomA in self.atom_mapper.ringIdxsA, atomB in self.atom_mapper.ringIdxsB]
                 ):
-                    if self.are_atoms_equivalent(atomA_obj, atomB_obj):
+                    if self.are_atoms_equivalent(atomA_obj, atomB_obj, compare_method=compare_method):
                         is_same.add(atomA)
                     break
 
-                if self.are_atoms_equivalent(atomA_obj, atomB_obj):
+                if self.are_atoms_equivalent(atomA_obj, atomB_obj, compare_method=compare_method):
                     is_same.add(atomA)  # Add original ring atom if all checks pass
                 else:
                     break
         return is_same
 
-    def is_ring_equivalent(self, ring_data, mol_a, mol_b, atom_mapping, compare_method="element") -> bool:
+    def is_ring_equivalent(
+        self,
+        ring_data: dict,
+        mol_a: Chem.Mol,
+        mol_b: Chem.Mol,
+        atom_mapping: dict,
+        compare_method: str = "element",
+    ) -> bool:
         """takes as input the mapped ring data from `AtomMapperHelper.process_rings_separately`
         compares the ring atoms between molecule A and molecule B.
 
@@ -213,7 +229,7 @@ class RestraintSetter:
         atom_mapping: dict,
         mol_a: Chem.Mol,
         mol_b: Chem.Mol,
-        ring_compare_method: str = "element",
+        atom_compare_method: str = "element",
         strict_surround: bool = False,
         ignore_surround_atom_type: bool = True,
     ) -> dict:
@@ -225,8 +241,8 @@ class RestraintSetter:
             atom_mapping: atom mapping dictionary output from Kartograf.
             mol_a: molecule A in RDKit format.
             mol_b: molecule B in RDKit format.
-            ring_compare_method: method to compare the ring atoms. Choices are `element`, `hybridization`,
-                and `aromaticity`.
+            atom_compare_method: method to compare the substituents & ring atoms. Choices are `element`,
+                `hybridization`, and `aromaticity`.
             strict_surround: apply a strict method of `compare_molecule_rings()`. If True, it will
                 purge rings and their not ring-linker substituents based on both ring structure
                 & immediate neighbors. Defaults to False.
@@ -248,17 +264,17 @@ class RestraintSetter:
                 continue
             if "Ring" not in ring_key:
                 continue
-            if self.is_ring_equivalent(ring_data, mol_a, mol_b, atom_mapping, ring_compare_method):
+            if self.is_ring_equivalent(ring_data, mol_a, mol_b, atom_mapping, atom_compare_method):
                 matching_atoms[ring_key] = set(ring_data["ringAtomsA"])
                 if strict_surround:
                     molA_ring_and_subs = self.get_ring_and_ringbound(
-                        mol_a, ring_data["substituentsA"], ring_compare_method, ignore_surround_atom_type
+                        mol_a, ring_data["substituentsA"], atom_compare_method, ignore_surround_atom_type
                     )
                     compareB = {}
                     for key in ring_data["substituentsA"]:
                         compareB[atom_mapping[key]] = ring_data["substituentsB"][atom_mapping[key]]
                     molB_ring_and_subs = self.get_ring_and_ringbound(
-                        mol_b, compareB, ring_compare_method, ignore_surround_atom_type
+                        mol_b, compareB, atom_compare_method, ignore_surround_atom_type
                     )
                     is_same = np.equal(molA_ring_and_subs, molB_ring_and_subs).all()
                     # check for len(v) > 2 to avoid conserving the restraints for the ring itself (ring-ring bond)
@@ -283,7 +299,9 @@ class RestraintSetter:
             subsA = ring_data["substituentsA"]
             subsB = ring_data["substituentsB"]
 
-            matched_subs = self.are_substituents_equivalent(subsA, subsB, atom_mapping, mol_a, mol_b)
+            matched_subs = self.are_substituents_equivalent(
+                subsA, subsB, atom_mapping, mol_a, mol_b, compare_method=atom_compare_method
+            )
             matching_atoms[ring_key].update(matched_subs)
 
         logger.trace(f"PURGE: {purge_list}")
@@ -295,7 +313,7 @@ class RestraintSetter:
 
     def set_restraints(
         self,
-        ring_compare_method: str = "element",
+        atom_compare_method: str = "element",
         strict_surround: bool = False,
         ignore_surround_atom_type: bool = False,
         kartograf_native: bool = False,
@@ -304,8 +322,8 @@ class RestraintSetter:
         to be transmuted, find the atoms to be restrained, and return a dictionary with the atoms to be restrained.
 
         Args:
-            ring_compare_method: method to compare the ring atoms. Choices are `element`, `hybridization`,
-                and `aromaticity`.
+            atom_compare_method: method to compare the substituents & ring atoms. Choices are `element`,
+                `hybridization`, and `aromaticity`.
             strict_surround: apply a strict method of `compare_molecule_rings()`. If True, it will
                 purge rings and their not ring-linker substituents based on both ring structure
                 & immediate neighbors. Defaults to False.
@@ -327,7 +345,7 @@ class RestraintSetter:
             self.atom_mapping,
             self.molA.to_rdkit(),
             self.molB.to_rdkit(),
-            ring_compare_method=ring_compare_method,
+            atom_compare_method=atom_compare_method,
             strict_surround=strict_surround,
             ignore_surround_atom_type=ignore_surround_atom_type,
         )

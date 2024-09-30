@@ -230,7 +230,7 @@ def apply_and_render_restraint(
             kartograf_native=True,  # other arguments ignored
         )
     else:
-        ring_compare_method, permissiveness_lvl = restraint_method.split("_")
+        atom_compare_method, permissiveness_lvl = restraint_method.split("_")
         if permissiveness_lvl == "p":
             # in this case, ignore_surround_atom_type is not needed
             params = {"strict_surround": False}
@@ -238,7 +238,7 @@ def apply_and_render_restraint(
             params = {"strict_surround": True, "ignore_surround_atom_type": True}
         elif permissiveness_lvl == "strict":
             params = {"strict_surround": True, "ignore_surround_atom_type": False}
-        restraint_dict = rsetter.set_restraints(ring_compare_method=ring_compare_method, **params)
+        restraint_dict = rsetter.set_restraints(atom_compare_method=atom_compare_method, **params)
 
     render_ligand_restraints(
         ligand1,

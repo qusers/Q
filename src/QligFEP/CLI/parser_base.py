@@ -160,9 +160,9 @@ def parse_arguments(program: str) -> argparse.Namespace:
         choices=get_avail_restraint_methods(),
         help=(
             """How to set the restraints to the ligand topologies involved in the perturbation.
-            Ring atom compare: `aromaticity`, `hibridization`, `element`. Setting the first part of the
-                string as either of these, will determine how the ring atoms are treated to be defined as
-                equivalent.
+            Atom compare method: `aromaticity`, `hibridization`, `element`. Setting the first part of the
+                string as either of these, will determine how the substituents / ring atoms are treated to be
+                defined as equivalent.
             Surround atom compare: `p` (permissive), `ls` (less strict), `strict`.
                 Setting the second part of the string as either of these, will determine if or how the
                 direct surrounding atoms to the ring strictures will be taken into account for ring equivalence.

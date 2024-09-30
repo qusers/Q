@@ -20,13 +20,13 @@ class AtomMapperHelper:
         self.ringIdxsA = None
         self.ringIdxsB = None
 
-    def get_surrounding_idxs(self, atom, mol) -> list[int]:
+    def get_surrounding_idxs(self, atom: Chem.Atom, mol: Chem.Mol) -> list[int]:
         return [a.GetIdx() for a in mol.GetAtomWithIdx(atom).GetNeighbors()]
 
-    def identify_and_enumerate_rings(self, mol) -> dict:
+    def identify_and_enumerate_rings(self, mol: Chem.Mol) -> dict:
         """Identify ring structures and enumerate them into a dictionary"""
 
-        def merge_sets(sets: list[set]):
+        def merge_sets(sets: list[set]) -> list[set]:
             """merge sets within a list based on shared numbers (rings that share atoms)."""
             changed = True
             while changed:
@@ -51,7 +51,7 @@ class AtomMapperHelper:
         rings = {idx: ring for idx, ring in enumerate(rings)}
         return rings
 
-    def map_rings_between_molecules(self, ringsA, ringsB, atom_mapping) -> dict:
+    def map_rings_between_molecules(self, ringsA: dict, ringsB: dict, atom_mapping: dict) -> dict:
         """Map rings between molecules based on atom mapping."""
         ring_mapping = {}  # Maps ring indices in A to ring indices in B
         for idxA, atomsA in ringsA.items():
@@ -61,7 +61,7 @@ class AtomMapperHelper:
                     break
         return ring_mapping
 
-    def process_rings_separately(self, molA: Chem.Mol, molB: Chem.Mol, atom_mapping):
+    def process_rings_separately(self, molA: Chem.Mol, molB: Chem.Mol, atom_mapping: dict) -> dict[dict]:
         """Process each ring separately based on ring equivalency and their substituents.
         The returned dictionary is the main output for the restraint setting process. It contains
         the mapping between rings, the atoms in each ring, and the substituents for each ring
@@ -143,7 +143,15 @@ class AtomMapperHelper:
                 return True
         return False
 
-    def walk_bonds(self, atom, found_atoms, visited_atoms, mol, current_ring_atoms, a_or_b):
+    def walk_bonds(
+        self,
+        atom: Chem.Atom,
+        found_atoms: list,
+        visited_atoms: set,
+        mol: Chem.Mol,
+        current_ring_atoms: list[int],
+        a_or_b: str,
+    ) -> tuple[list, set]:
         atom_idx = atom.GetIdx()
         rings_idxs = self.ringIdxsA if a_or_b == "a" else self.ringIdxsB
         if atom_idx in visited_atoms or atom_idx in rings_idxs:
@@ -169,7 +177,7 @@ class AtomMapperHelper:
 
         return found_atoms, visited_atoms
 
-    def get_substituents(self, mol, ring_atoms, a_or_b: str):
+    def get_substituents(self, mol: Chem.Mol, ring_atoms: list[int], a_or_b: str) -> dict:
         substituents = {}
         visited_atoms = set(ring_atoms)  # Start with ring atoms as visited to avoid re-traversing the ring
 
