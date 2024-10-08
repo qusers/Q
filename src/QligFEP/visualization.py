@@ -11,6 +11,7 @@ from openff.toolkit import Molecule
 from rdkit import Chem
 
 from .CLI.utils import get_avail_restraint_methods
+from .logger import logger
 from .restraints.restraint_setter import RestraintSetter
 
 
@@ -82,8 +83,8 @@ def render_system(
 # Credit to: https://github.com/OpenFreeEnergy/openfe/blob/main/openfe/utils/visualization_3D.py
 # And to: https://github.com/OpenFreeEnergy/kartograf/blob/main/src/kartograf/utils/mapping_visualization_widget.py
 def render_ligand_restraints(
-    ligand1: Union[Chem.Mol, "Molecule"],
-    ligand2: Union[Chem.Mol, "Molecule"],
+    ligand1: Union[Chem.Mol, Molecule, SmallMoleculeComponent],
+    ligand2: Union[Chem.Mol, Molecule, SmallMoleculeComponent],
     restraint_mapping: dict[int, int],
     show_atom_idxs: bool = True,
     size: tuple[int, int] = (900, 500),
@@ -201,20 +202,8 @@ def apply_and_render_restraint(
 
     Note: using the `show_atom_idxs` parameter will add the indexes to the rendering.
     """
-
-    def process_input(ligand):
-        if isinstance(ligand, (str, Path)):
-            ligand = Molecule.from_file(ligand)
-        elif isinstance(ligand, Chem.Mol):
-            ligand = Molecule.from_rdkit(ligand)
-        elif isinstance(ligand, Molecule, SmallMoleculeComponent):
-            pass
-        else:
-            raise ValueError("Ligand should be a path to a file, a RDKit molecule, or an OpenFF molecule.")
-        return ligand
-
-    ligand1 = process_input(ligand1)
-    ligand2 = process_input(ligand2)
+    ligand1 = RestraintSetter.input_to_small_molecule_component(ligand1)
+    ligand2 = RestraintSetter.input_to_small_molecule_component(ligand2)
 
     if restraint_method not in get_avail_restraint_methods():
         raise ValueError(
@@ -223,7 +212,7 @@ def apply_and_render_restraint(
     elif restraint_method == "overlap":
         raise ValueError("Overlap method is not supported by this method yet, use `kartograf` instead.")
 
-    rsetter = RestraintSetter("lig1.sdf", "lig2.sdf")
+    rsetter = RestraintSetter(ligand1, ligand2)
 
     if restraint_method == "kartograf":
         restraint_dict = rsetter.set_restraints(
@@ -239,6 +228,7 @@ def apply_and_render_restraint(
         elif permissiveness_lvl == "strict":
             params = {"strict_surround": True, "ignore_surround_atom_type": False}
         restraint_dict = rsetter.set_restraints(atom_compare_method=atom_compare_method, **params)
+        logger.debug(f"Restraints set using {restraint_method} method. Parameters: {params}")
 
     render_ligand_restraints(
         ligand1,

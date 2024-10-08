@@ -3,12 +3,14 @@
 from copy import deepcopy
 from itertools import zip_longest
 from pathlib import Path
+from typing import Union
 
 import numpy as np
 from kartograf import KartografAtomMapper, SmallMoleculeComponent
 from kartograf.atom_aligner import align_mol_shape
 from kartograf.atom_mapping_scorer import MappingVolumeRatioScorer
 from numpy.typing import NDArray
+from openff.toolkit import Molecule
 from rdkit import Chem
 
 from ..logger import logger
@@ -41,34 +43,44 @@ class RestraintSetter:
         self._load_molecules(molA, molB)
         self._align_and_map_molecules()
 
-    def _path_to_mol(self, _path):
-        if Path(_path).suffix == ".pdb":
-            logger.error(
-                "RDKit can not safely read PDBs on their own. Information about bond order and aromaticity "
-                "is likely to be lost. PDBs can be used along with a valid smiles string with RDKit using "
-                "the constructor from `openff.toolkit` Molecule.from_pdb_and_smiles(file_path, smiles) "
-                "but this is not yet implemented in this class."
-            )
-            raise ValueError("PDBs are not supported yet.")
-            return Chem.MolFromPDBFile(_path)
-        elif Path(_path).suffix == ".sdf":
-            mol = Chem.SDMolSupplier(str(_path), removeHs=False)[0]
-            if not are_hydrogens_at_end(mol):
+    @staticmethod
+    def input_to_small_molecule_component(
+        input_molecule: Union[Molecule, Chem.Mol, str, Path]
+    ) -> SmallMoleculeComponent:
+        if isinstance(input_molecule, SmallMoleculeComponent):
+            mol = input_molecule
+        elif isinstance(input_molecule, Molecule):
+            mol = SmallMoleculeComponent(input_molecule)
+        elif isinstance(input_molecule, Chem.Mol):
+            mol = SmallMoleculeComponent.from_rdkit(input_molecule)
+        elif isinstance(input_molecule, (str, Path)):
+            path = Path(input_molecule)
+            if path.suffix == ".pdb":
                 raise ValueError(
-                    "Hydrogens are not in the end of the atom list. Please reindex them "
-                    "before proceeding and assert that your .lib, .prm and .pdb files match "
-                    "the atom indexes of the molecule you're setting restraints for."
+                    "RDKit can not safely read PDBs on their own. Information about bond order and aromaticity "
+                    "is likely to be lost. PDBs can be used along with a valid smiles string with RDKit using "
+                    "the constructor from `openff.toolkit` Molecule.from_pdb_and_smiles(file_path, smiles) "
+                    "but this is not yet implemented in this class."
                 )
-            return mol
-        return None
+            elif path.suffix == ".sdf":
+                mol = SmallMoleculeComponent.from_sdf_file(input_molecule)
+            else:
+                raise ValueError("If input is a path, it should be a .sdf file")
+        else:
+            raise ValueError(
+                "Input should be a path to a file, a RDKit molecule, an OpenFF molecule, or a SmallMoleculeComponent."
+            )
+        if not are_hydrogens_at_end(mol.to_rdkit()):  # Check if hydrogens are at the end
+            raise ValueError(
+                "Hydrogens are not at the end of the atom list. Please reindex them "
+                "before proceeding and assert that your .lib, .prm and .pdb files match "
+                "the atom indexes of the molecule you're setting restraints for."
+            )
+        return mol
 
     def _load_molecules(self, molA, molB):
-        rdmolA = self._path_to_mol(molA)
-        rdmolB = self._path_to_mol(molB)
-        if any([rdmolA is None, rdmolB is None]):
-            raise ValueError("Molecule could not be loaded!")
-        self.molA = SmallMoleculeComponent.from_rdkit(rdmolA)
-        self.molB = SmallMoleculeComponent.from_rdkit(rdmolB)
+        self.molA = self.input_to_small_molecule_component(molA)
+        self.molB = self.input_to_small_molecule_component(molB)
 
     def _align_and_map_molecules(self):
         # TODO: now we run this alignment but the aligned molecule isn't saved
