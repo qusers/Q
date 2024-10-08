@@ -1,12 +1,12 @@
 # QligFEP
 
-## Installation
+## ⚙️ Installation
 
 The current conda environment is available in the `environment.yml` file, but installing it with `conda env create -f environment.yml` will take a long time. Instead, we recommend that you use `mamba` or its lightweight version `micromamba`. Please check this Gist on how to [install micromamba](https://gist.github.com/David-Araripe/3ecd90bfbfd1c8e813812a203384b3c0).
 
 Once you have `micromamba` installed and have already cloned this repo, you can create the environment with:
 
-### Linux
+### 🐧 Linux
 ```bash
 micromamba create -f environment.yml -n qligfep_new
 ```
@@ -29,7 +29,7 @@ micromamba create -f environment.yml -n qligfep_new -y && micromamba activate ql
 ```
 </details>
 
-### MacOS
+### 🍎 MacOS
 
 The environment provided doesn't build on Mac due to missing libraries. If you're using this operating system, you'll have to create the environment by scratch through the commands:
 
@@ -40,7 +40,21 @@ python -m pip install joblib scipy tqdm
 python -m pip install -e .
 ```
 
-## Command line interface (CLI)
+### 🛠️ Compiling Q
+
+To compile the Q binaries, you will need to have the `gfortran` compiler installed. To access this compiler on different HPCs, you can use the `module load` command. Check [here](/src/QligFEP/settings/settings.py) for a list of the different HPCs we have already ran RBFE simulations on.
+
+E.g.: To compile Q on Snellius, you will have to run the following commands:
+```bash
+module load 2021
+module load gompi/2021a
+```
+Finally, compiling Q can be done with the following commands:
+```bash
+make all COMP=gcc && make mpi COMP=gcc
+```
+
+## ⌨️ Command line interface (CLI)
 
 Now you're set with the qligfep package. This includes the command-linde-interfaces (CLIs):
 
