@@ -73,13 +73,15 @@ class QligFEP:
 
         if self.system == "protein":
             # Get last atom and residue from complexfile!
-            with open("protein.pdb") as infile:
-                for line in infile:
+            txt_lines = Path("protein.pdb").read_text().splitlines()
+            for line in reversed(txt_lines):
+                if line.startswith("ATOM") or line.startswith("HETATM"):
                     try:
                         resnr = int(line[22:26])
                         atnr = int(line[6:11])
-                    except IndexError:
+                    except (IndexError, ValueError):
                         continue
+                    break
             self.residueoffset = resnr
             self.atomoffset = atnr
             # NOTE: atomoffset is updated in `write_FEP_file` as Q might protonate
