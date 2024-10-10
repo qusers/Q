@@ -1,6 +1,7 @@
 *--------------------------------------------------------------------------------
 *
 * Q-FF parameters: Amber ff14SB ported from AmberTools16 by M. Purg (October 2016)
+* and by D. Araripe (phosaa14SB & lipid21 parameters, added in 2024)
 * Options section adapted from qamber95.prm
 *
 * v0.2
@@ -95,6 +96,26 @@ SOD                1.47        0.0   0.030383       1.47   0.015191      22.99
 CHL               2.252        0.0   0.602931      2.252      1.126       35.5
 MAG                1.36        0.0   0.010202       1.36       0.68       24.3
 ZIN               1.271        0.0   0.003303      1.271     0.6355       65.4
+cA               1.9080        0.0     0.1094     1.9080     0.9540      12.01
+cB               1.9080        0.0     0.0860     1.9080     0.9540      12.01
+cC               1.9080        0.0     0.0860     1.9080     0.9540      12.01
+cD               1.9080        0.0     0.1094     1.9080     0.9540      12.01
+hA               1.4870        0.0     0.0157     1.4870     0.7435       1.01
+hB               1.2500        0.0     0.0070     1.2500     0.6250       1.01
+hE               1.3870        0.0     0.0157     1.3870     0.6935       1.01
+hL               1.4600        0.0     0.0100     1.4600     0.7300       1.01
+hN               0.6000        0.0     0.0157     0.6000     0.3000       1.01
+hO               0.6000        0.0     0.0157     0.6000     0.3000       1.01
+hX               1.1000        0.0     0.0157     1.1000     0.5500       1.01
+nA               1.8240        0.0     0.1700     1.8240     0.9120      14.01
+nN               1.8240        0.0     0.1700     1.8240     0.9120      14.01
+oC               1.6612        0.0     0.2100     1.6612     0.8306      16.00
+oH               1.7210        0.0     0.2104     1.7210     0.8605      16.00
+oO               1.6612        0.0     0.2100     1.6612     0.8306      16.00
+oP               1.6612        0.0     0.2100     1.6612     0.8306      16.00
+oS               1.6837        0.0     0.1700     1.6837     0.8418      16.00
+oT               1.6837        0.0     0.1700     1.6837     0.8418      16.00
+pA               2.1000        0.0     0.2000     2.1000     1.0500      30.97
 
 ! Ligand vdW parameters
 ! End ligand vdW parameters
@@ -297,6 +318,35 @@ CG           CA                938.0       1.40
 3C           OR                640.0       1.41
 2C           OR                640.0       1.41
 2C           OZ                640.0       1.41
+cD           cC                656.6       1.51
+cC           cD                656.6       1.51
+cD           cD                606.2       1.53
+cA           cD                606.2       1.53
+cC           oC               1296.0       1.21
+oS           cC                822.6       1.34
+nA           cA                587.2       1.50
+cA           cA                606.2       1.53
+pA           oT                460.0       1.61   !from parm99
+pA           oP               1050.0       1.48   !from parm99
+cA           oT                603.0       1.44
+cA           oS                603.0       1.44
+cA           hA                674.6       1.09
+cD           hL                674.6       1.09
+cA           hX                677.4       1.09
+cA           hE                671.8       1.09
+cB           cB               1179.4       1.32
+cB           cD                656.6       1.51
+cB           cA                656.6       1.51
+cB           hB                688.6       1.09
+cA           cC                656.6       1.51
+cC           oO               1296.0       1.21
+hN           nA                738.0       1.03
+cA           oH                628.2       1.43
+hO           oH                739.2       0.97
+oH           pA                642.4       1.62
+cC           nN                956.4       1.34
+cA           nN                661.2       1.46
+hN           nN                820.4       1.01
 
 ! Ligand bond parameters
 ! End ligand bond parameters
@@ -843,12 +893,76 @@ CX           3C           OZ                100.0      109.5
 CX           3C           OR                100.0      109.5
 CX           2C           OZ                100.0      109.5
 CX           2C           OR                100.0      109.5
+cD           cD           cD                 94.4      112.0
+cD           cC           oC                136.1      123.1
+cD           cC           oS                138.5      112.0
+cD           cD           cC                127.6      110.5
+hA           cA           hA                 78.9      108.3
+cA           cA           hA                 92.7      110.0
+cD           cA           hA                 92.7      110.0
+cA           cD           hL                 92.7      110.0
+cA           cA           cA                126.4      110.6
+cD           cD           cA                126.4      110.6
+cA           cA           cD                126.4      110.6
+cA           cA           cB                127.1      111.4
+cA           cB           cB                128.7      123.4
+cA           cB           cA                125.4      116.5
+cA           cB           hB                 91.3      117.3
+cB           cA           hA                 94.1      110.5
+oS           cC           oC                151.9      123.3
+oP           pA           oP                280.0      119.9   ! from O2-P -O2 
+cA           nA           cA                125.7      110.6
+cA           cA           nA                128.9      114.3
+oT           pA           oP                200.0      108.2   ! from O2-P -OS
+oT           cA           cA                135.6      108.4
+pA           oT           cA                200.0      120.5   ! from CT-OS-P 
+oT           pA           oT                180.0      102.6   ! from OS-P -OS 
+cA           cA           oS                135.6      108.4
+cA           oS           cC                127.3      115.1
+hL           cD           cC                 94.4      109.7
+hL           cD           hL                 78.9      108.3
+hL           cD           cD                 92.7      110.0
+hX           cA           hX                 78.1      110.7
+nA           cA           hX                 98.0      107.9
+hE           cA           cA                 92.7      110.1
+hE           cA           hE                 78.4      109.5
+cA           cA           hX                 92.0      111.7
+oT           cA           hE                101.7      108.8
+hE           cA           oS                101.7      108.8
+cB           cB           cD                128.7      123.4
+cB           cD           hL                 94.1      110.5
+cB           cD           cD                127.1      111.4
+cB           cB           hB                100.1      120.9
+cD           cB           hB                 91.3      117.3
+cA           cC           oO                136.1      123.1
+oO           cC           oO                156.3      130.4
+cA           nA           hN                 92.4      110.1
+hN           nA           hN                 81.0      108.1
+cA           cA           cC                127.6      110.5
+cC           cA           nA                130.1      114.2
+cC           cA           hX                 94.5      109.5
+hE           cA           oH                101.9      109.9
+cA           oH           hO                 94.2      108.2
+cA           cA           oH                135.4      109.4
+hO           oH           pA                111.8      110.1
+oH           pA           oT                 89.8      102.4
+oP           pA           oH                 87.6      115.3
+cB           cD           cB                127.9      112.1
+cA           cA           nN                131.7      112.1
+cA           nN           cC                127.8      121.3
+cA           nN           hN                 92.1      116.8
+cC           nN           hN                 98.4      118.5
+cD           cC           nN                135.7      115.2
+hE           cA           nN                 99.6      109.3
+nN           cC           oC                151.7      122.0
+cB           cA           oH                136.4      110.2
+cB           cA           hE                 94.1      110.5
 
 ! Zero fc dual topology angles
 3C           CX           2C                  0.0      120.0
 
 ! Ligand angle parameters
-! End ligand angle parameters
+! End ligand angle parameter
 
 [torsions]
 ?            2C           2C           ?                   1.4   3.0        0.0   9.0
@@ -1614,6 +1728,189 @@ CT           CG           CA           HA                  0.0   2.0      180.0 
 CW           NA           P            OQ                  0.0   3.0        0.0   1.0
 CC           NA           P            OQ                  0.0   3.0        0.0   1.0
 CR           NA           P            OQ                  0.0   3.0        0.0   1.0
+cD           cD           cD           cD               0.1000  -5.0        0.0   1.0
+cD           cD           cD           cD               0.1000  -4.0        0.0   1.0
+cD           cD           cD           cD               0.3000  -3.0        0.0   1.0
+cD           cD           cD           cD               0.1000  -2.0        0.0   1.0
+cD           cD           cD           cD               0.1000   1.0        0.0   1.0
+cA           oT           pA           oP               0.0000  -5.0        0.0   1.0
+cA           oT           pA           oP               0.0000  -4.0        0.0   1.0
+cA           oT           pA           oP               0.0000  -3.0        0.0   1.0
+cA           oT           pA           oP               0.2000  -2.0        0.0   1.0
+cA           oT           pA           oP               0.0000   1.0        0.0   1.0
+hE           cA           oT           pA               0.0000  -5.0        0.0   1.0
+hE           cA           oT           pA               0.0000  -4.0        0.0   1.0
+hE           cA           oT           pA               0.3830  -3.0        0.0   1.0
+hE           cA           oT           pA               0.0000  -2.0        0.0   1.0
+hE           cA           oT           pA               0.0000   1.0        0.0   1.0
+oS           cA           cA           cA               0.0000  -5.0        0.0   1.0
+oS           cA           cA           cA               0.0000  -4.0        0.0   1.0
+oS           cA           cA           cA               0.0000  -3.0        0.0   1.0
+oS           cA           cA           cA               0.0000  -2.0        0.0   1.0
+oS           cA           cA           cA               0.0000   1.0        0.0   1.0
+oT           cA           cA           oS               0.0000  -5.0        0.0   1.0
+oT           cA           cA           oS               0.0000  -4.0        0.0   1.0
+oT           cA           cA           oS               0.0000  -3.0        0.0   1.0
+oT           cA           cA           oS               0.0000  -2.0        0.0   1.0
+oT           cA           cA           oS               0.0000   1.0        0.0   1.0
+cC           oS           cA           cA              -0.2000  -3.0      300.0   1.0
+cC           oS           cA           cA              -0.3000  -2.0      240.0   1.0
+cC           oS           cA           cA              -0.1000   1.0        0.0   1.0
+oS           cA           cA           oS               1.0000  -3.0        0.0   1.0
+oS           cA           cA           oS               0.3000  -2.0        0.0   1.0
+oS           cA           cA           oS              -0.1000   1.0      180.0   1.0
+cA           oT           pA           oT               0.6000  -3.0        0.0   1.0
+cA           oT           pA           oT               2.3000   2.0        0.0   1.0
+cA           cA           oT           pA               0.0000  -3.0        0.0   1.0
+cA           cA           oT           pA              -0.8000   2.0      180.0   1.0
+cA           cA           cA           oT               0.4000  -3.0       60.0   1.0
+cA           cA           cA           oT               0.2000  -2.0      120.0   1.0
+cA           cA           cA           oT               0.8000   1.0      180.0   1.0
+nA           cA           cA           oT               1.0000   3.0        0.0   1.0
+cD           cB           cB           cD               0.0000  -5.0        0.0   1.0
+cD           cB           cB           cD               0.0000  -4.0        0.0   1.0
+cD           cB           cB           cD               0.6000  -3.0        0.0   1.0
+cD           cB           cB           cD               3.3000  -2.0      180.0   1.0
+cD           cB           cB           cD               1.7000   1.0      180.0   1.0
+cA           cB           cB           cA               6.6500  -2.0      180.0   1.0
+cA           cB           cB           cA               1.9000   1.0      180.0   1.0
+cD           cB           cB           cA               6.6500  -2.0      180.0   1.0
+cD           cB           cB           cA               1.9000   1.0      180.0   1.0
+cB           cB           cD           cD               0.2000  -5.0      180.0   1.0
+cB           cB           cD           cD               0.2000  -4.0      180.0   1.0
+cB           cB           cD           cD               0.4000  -3.0      180.0   1.0
+cB           cB           cD           cD               0.4000  -2.0      180.0   1.0
+cB           cB           cD           cD               0.6000   1.0        0.0   1.0
+cA           cA           cB           cB               0.0000   2.0        0.0   1.0
+cB           cD           cD           cD               0.1000  -5.0        0.0   1.0
+cB           cD           cD           cD               0.0000  -4.0        0.0   1.0
+cB           cD           cD           cD               0.5000  -3.0        0.0   1.0
+cB           cD           cD           cD               0.0000  -2.0        0.0   1.0
+cB           cD           cD           cD               0.0000   1.0        0.0   1.0
+cB           cA           cA           cA               0.0000  -5.0        0.0   1.0
+cB           cA           cA           cA               0.0000  -4.0        0.0   1.0
+cB           cA           cA           cA               0.0000  -3.0        0.0   1.0
+cB           cA           cA           cA               0.0000  -2.0        0.0   1.0
+cB           cA           cA           cA               0.0000   1.0        0.0   1.0
+cD           cD           cC           oC               0.0000   2.0      180.0   1.0
+cD           cD           cC           oS               0.0000   2.0      180.0   1.0
+cD           cC           oS           cA               2.7000   2.0      180.0   1.0
+cC           cD           cD           cD               0.1560   3.0        0.0   1.0
+cA           cA           nA           cA               0.1560   3.0        0.0   1.0
+cA           oS           cC           oC               2.7000  -2.0      180.0   1.0
+cA           oS           cC           oC               1.4000   1.0      180.0   1.0
+hL           cD           cC           oC               0.0800  -3.0      180.0   1.0
+hL           cD           cC           oC               0.8000   1.0        0.0   1.0
+hL           cD           cC           oS               0.0000   2.0      180.0   1.0
+hL           cD           cD           hL               0.1500   3.0        0.0   1.0
+hL           cD           cD           cC               0.1560   3.0        0.0   1.0
+hL           cD           cD           cD               0.1600   3.0        0.0   1.0
+cD           cD           cD           hL               0.1600   3.0        0.0   1.0
+cC           cD           cD           hL               0.1560   3.0        0.0   1.0
+hX           cA           nA           cA               0.1560   3.0        0.0   1.0
+hE           cA           cA           hX               0.1560   3.0        0.0   1.0
+hE           cA           cA           nA               0.1560   3.0        0.0   1.0
+oT           cA           cA           hX               0.1560   3.0        0.0   1.0
+hE           cA           cA           oS               0.0000  -3.0        0.0   1.0
+hE           cA           cA           oS               0.2500   1.0        0.0   1.0
+hE           cA           cA           hE               0.1560   3.0        0.0   1.0
+hE           cA           cA           oT               0.0000  -3.0        0.0   1.0
+hE           cA           cA           oT               0.2500   1.0        0.0   1.0
+hE           cA           oS           cC               0.3830   3.0        0.0   1.0
+hE           cA           cA           cA               0.1560   3.0        0.0   1.0
+cA           cA           cA           hE               0.1560   3.0        0.0   1.0
+oS           cA           cA           hE               0.0000  -3.0        0.0   1.0
+oS           cA           cA           hE               0.2500   1.0        0.0   1.0
+cD           cD           cB           hB               0.0000   2.0        0.0   1.0
+hB           cB           cD           hL               0.0000   2.0        0.0   1.0
+cB           cD           cD           hL               0.1556   3.0        0.0   1.0
+cD           cB           cB           hB               6.6500   2.0      180.0   1.0
+cB           cB           cD           hL               0.3800  -3.0      180.0   1.0
+cB           cB           cD           hL               1.1500   1.0        0.0   1.0
+hB           cB           cB           hB               6.6500   2.0      180.0   1.0
+cC           cA           nA           hN               0.1556   3.0        0.0   1.0
+nA           cA           cC           oO               0.0000   2.0      180.0   1.0
+hN           nA           cA           hX               0.1556   3.0        0.0   1.0
+hX           cA           cC           oO               0.0000   2.0      180.0   1.0
+cC           cA           cA           hE               0.1556   3.0        0.0   1.0
+cA           cA           nA           hN               0.1556   3.0        0.0   1.0
+cA           cA           cC           oO               0.0000   2.0      180.0   1.0
+cC           cA           cA           oT               0.1556   3.0        0.0   1.0
+hE           cA           oH           hO               0.5000   3.0        0.0   1.0
+cA           cA           oH           hO               0.1600  -3.0        0.0   1.0
+cA           cA           oH           hO               0.2500   1.0        0.0   1.0
+hE           cA           cA           oH               0.0000  -3.0        0.0   1.0
+hE           cA           cA           oH               0.2500   1.0        0.0   1.0
+cA           cA           cA           oH               0.1556   3.0        0.0   1.0
+oH           cA           cA           oT               0.1440  -3.0        0.0   1.0
+oH           cA           cA           oT               1.1750   2.0        0.0   1.0
+oH           cA           cA           oH               0.1440  -3.0        0.0   1.0
+oH           cA           cA           oH               1.1750   2.0        0.0   1.0
+cA           oT           pA           oH               0.2500  -3.0        0.0   1.0
+cA           oT           pA           oH               1.2000   2.0        0.0   1.0
+hO           oH           pA           oT               0.5333   3.0        0.0   1.0
+hO           oH           pA           oP               0.5333   3.0        0.0   1.0
+cB           cB           cD           cB               0.0000  -5.0        0.0   1.0
+cB           cB           cD           cB               0.0000  -4.0        0.0   1.0
+cB           cB           cD           cB               0.0000  -3.0        0.0   1.0
+cB           cB           cD           cB               0.0000  -2.0        0.0   1.0
+cB           cB           cD           cB               0.0000   1.0        0.0   1.0
+cB           cD           cB           hB               0.0000   2.0        0.0   1.0
+cA           cA           cA           cA               0.1800  -3.0        0.0   1.0
+cA           cA           cA           cA               0.2500  -2.0      180.0   1.0
+cA           cA           cA           cA               0.2000   1.0      180.0   1.0
+cA           cA           cA           cD               0.1800  -3.0        0.0   1.0
+cA           cA           cA           cD               0.2500  -2.0      180.0   1.0
+cA           cA           cA           cD               0.2000   1.0      180.0   1.0
+cA           cA           cD           cD               0.1800  -3.0        0.0   1.0
+cA           cA           cD           cD               0.2500  -2.0      180.0   1.0
+cA           cA           cD           cD               0.2000   1.0      180.0   1.0
+cA           cD           cD           cD               0.1800  -3.0        0.0   1.0
+cA           cD           cD           cD               0.2500  -2.0      180.0   1.0
+cA           cD           cD           cD               0.2000   1.0      180.0   1.0
+cA           cA           cA           hA               0.1600   3.0        0.0   1.0
+cD           cA           cA           hA               0.1600   3.0        0.0   1.0
+cA           cA           cD           hL               0.1600   3.0        0.0   1.0
+hA           cA           cA           hA               0.1500   3.0        0.0   1.0
+hA           cA           cD           hL               0.1500   3.0        0.0   1.0
+cD           cD           cA           hA               0.1600   3.0        0.0   1.0
+cA           cD           cD           hL               0.1600   3.0        0.0   1.0
+cA           cA           cB           cA               0.0000   2.0        0.0   1.0
+cA           cB           cB           hB               6.6500   2.0      180.0   1.0
+hA           cA           cB           hB               0.0000   2.0        0.0   1.0
+cA           cA           cB           hB               0.0000   2.0        0.0   1.0
+cB           cA           cA           hA               0.1556   3.0        0.0   1.0
+cB           cA           cA           oH               0.1556   3.0        0.0   1.0
+cB           cB           cA           hA               0.3800  -3.0      180.0   1.0
+cB           cB           cA           hA               1.1500   1.0        0.0   1.0
+hA           cA           cA           oH               0.0000  -3.0        0.0   1.0
+hA           cA           cA           oH               0.2500   1.0        0.0   1.0
+cA           cB           cA           hA               0.0000   2.0        0.0   1.0
+hA           cA           cA           hE               0.1556   3.0        0.0   1.0
+cB           cA           cA           hE               0.1556   3.0        0.0   1.0
+cA           cA           nN           cC               0.0000   2.0        0.0   1.0
+cA           cA           nN           hN               0.0000   2.0        0.0   1.0
+cA           nN           cC           cD               2.5000   2.0      180.0   1.0
+cA           nN           cC           oC               2.5000   2.0      180.0   1.0
+cB           cA           cA           nN               2.4000  -3.0        0.0   1.0
+cB           cA           cA           nN               1.3000  -2.0      180.0   1.0
+cB           cA           cA           nN               0.4000   1.0       60.0   1.0
+cC           nN           cA           hE               0.0000   2.0        0.0   1.0
+cD           cC           nN           hN               2.5000   2.0      180.0   1.0
+cD           cD           cC           nN               0.0000   2.0      180.0   1.0
+hE           cA           cA           nN               0.1560   3.0        0.0   1.0
+hE           cA           nN           hN               0.0000   2.0        0.0   1.0
+hL           cD           cC           nN               0.0000   2.0        0.0   1.0
+hN           nN           cC           oC               2.5000   2.0      180.0   1.0
+nN           cA           cA           oH               0.1560   3.0        0.0   1.0
+nN           cA           cA           oT               0.0000   3.0        0.0   1.0
+cB           cA           oH           hO               0.1600  -3.0        0.0   1.0
+cB           cA           oH           hO               0.2500   1.0        0.0   1.0
+cB           cB           cA           oH               0.0000   2.0        0.0   1.0
+hE           cA           cB           cB               0.0000   2.0        0.0   1.0
+hE           cA           cB           hB               0.0000   2.0        0.0   1.0
+oH           cA           cB           hB               0.0000   2.0        0.0   1.0
+cC           cD           cD           cB               0.1556   3.0        0.0   1.0
 
 ! Ligand torsion parameters
 
@@ -1681,6 +1978,14 @@ H5           C            O            OH                  1.1      180.0
 H5           C            O            OS                  1.1      180.0
 N2           CA           NA           NC                  1.1      180.0
 CA           CG           CA           HA                  1.1      180.0
+cA           cA           cB           cB                  1.1      180.0
+cA           cB           cB           hB                  1.1      180.0
+cA           cC           nN           hN                  1.1      180.0
+cA           oO           cC           oO                  1.1      180.0
+cB           cD           cB           hB                  1.1      180.0
+cD           nN           cC           oC                  1.1      180.0
+cD           oC           cC           oS                 10.5      180.0
+cA           cC           nN           hN                  1.1      180.0
 
 ! Ligand improper parameters
 ! End ligand improper parameters

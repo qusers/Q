@@ -100,6 +100,69 @@ For the reasons why such parameters are differently configured in the `prm` file
 
 The Lennard-Jones potential can be written either as $ \frac{A_{ij}}{r^{12}} - \frac{B_{ij}}{r^6}$ or $ \varepsilon_{ij} \left( \left( \frac{R^*_{ij}}{r_{ij}} \right)^{12} - 2 \cdot \left( \frac{R^*_{ij}}{r_{ij}} \right)^6 \right) $, using the geometric or arithmetic rules, respectively, to combine parameters for pairs of atom types. Treatment of 1-4 interactions (LJ and electrostatic) is specific for each force field.
 
+## Adding extra AMBER parameters
+After installing our environment, you should be able to find AMBER parameters under the path `~/micromamba//envs/AmberTools23/dat/leap/parm`.
+
+Upon inspecting these files, you'll see `frcmod` files. The parameters from those files are converted to Q lib/prm formats. Just a few operations need to be done.
+
+In the example, we convert `frcmod.phosaa14SB`:
+```text
+Updated dihedral parameters for phosphorylated amino acids for use with ff14SB
+
+MASS
+OP      16.00   0.434   Monoanionic Phosphate oxygen (analog to O2)
+...
+
+BOND
+HO-OQ   553.0   0.960   from HO-OH
+
+ANGL
+OP-P -OP        140.0   119.90  from O2-P -O2
+
+DIHE
+N -CX-CT-CG       1    0.152093       0   -1
+
+IMPR
+CA-CG-CA-HA     1.100  180   2
+
+NONB
+OP      1.7493  0.2100          modified acc. to FEP solvation energies for phosphate monoanions
+```
+
+Which are converted to `AMBER14sb.prm`:
+```text
+[atom_types]
+OP               1.7493        0.0     0.2100     1.7493    0.87465       16.0
+! first value is sigma(after NONB), second is 0.0, third is epsilon, fourth is sigma again, fifth is sigma/2, sixth is mass
+
+[bonds]
+HO           OQ               1106.0       0.96
+! here the original has "HO-OQ   553.0   0.960   from HO-OH"
+! we then multiply the first value by 2 and keep the second
+
+[angles]
+OP           P            OP                280.0      119.9
+! Here the original has "OP-P -OP        140.0   119.90  from O2-P -O2"
+! we multiply the first value by 2 and keep the second
+
+[torsions]
+N            CX           CT           CG             0.152093  -1.0        0.0   1.0
+N            CX           CT           CG             0.172788  -2.0      180.0   1.0
+N            CX           CT           CG             0.490342  -3.0        0.0   1.0
+N            CX           CT           CG             0.045151   4.0      180.0   1.0
+! This value is stated as `DIHE` in the original file. see:
+! "N -CX-CT-CG       1    0.152093       0   -1"
+! "N -CX-CT-CG       1    0.172788     180   -2"
+! "N -CX-CT-CG       1    0.490342       0   -3"
+! "N -CX-CT-CG       1    0.045151     180    4"
+! The first value remains the same, then we have the periodicity (-1 to 4, in this case), phase shift (angles), and number of paths (always 1 in this case)
+
+[impropers]
+CA           CG           CA           HA                  1.1      180.0
+! In the original we have: "CA-CG-CA-HA     1.100  180   2"
+! The first value remains the same, then we have the angle. values are kept the same
+```
+
 # On the ForceField parameters:
 
 The force field .prm files follow, (here in the example: AmberFF) the pattern:
