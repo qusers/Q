@@ -156,10 +156,11 @@ def parse_arguments(program: str) -> argparse.Namespace:
         "--restraint_method",
         dest="restraint_method",
         type=str,
-        default="hybridization_ls",
+        default="hybridization_p",
         choices=get_avail_restraint_methods(),
         help=(
-            """How to set the restraints to the ligand topologies involved in the perturbation.
+            """How to set the restraints to the ligand topologies involved in the perturbation. Defaults to `hybridization_p`.
+
             Atom compare method: `aromaticity`, `hibridization`, `element`. Setting the first part of the
                 string as either of these, will determine how the substituents / ring atoms are treated to be
                 defined as equivalent.

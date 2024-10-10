@@ -543,6 +543,15 @@ class QligFEP:
                 pdb_atoms_lig1 = subset_lig1["atom_serial_number"].values
                 pdb_atoms_lig2 = subset_lig2["atom_serial_number"].values
                 torestraint_list = [[pdb_atoms_lig1[k], pdb_atoms_lig2[v]] for k, v in restraints.items()]
+        rest_atom_count = len(torestraint_list)
+        rest_pct_lig1 = rest_atom_count / subset_lig1.shape[0]
+        rest_pct_lig2 = rest_atom_count / subset_lig2.shape[0]
+        if rest_pct_lig1 > 0.3 or rest_pct_lig2 > 0.3 or rest_atom_count < 6:
+            logger.warning(
+                f"{rest_atom_count} restraints set with `{restraint_method}` account for {rest_pct_lig1:.2%} "
+                f"of lig1 and {rest_pct_lig2:.2%} of lig2. Make sure this is intendend. Too few restraints might "
+                "lead to crashes or unstable perturbations."
+            )
         return torestraint_list
 
     def write_MD_05(self, lambdas, writedir, lig_size1, lig_size2, overlapping_atoms):
