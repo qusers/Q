@@ -7,7 +7,7 @@
 #module load rocks-openmpi
 #module load gcc/6.2.0
 module load mpi/openmpi-x86_64
-export bindir="../../../bin/q6"
+export bindir="/Q/src/q6/bin/q6"
 
 
 if [ "x$bindir" == "x" ]

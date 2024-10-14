@@ -1,4 +1,4 @@
-FROM rockylinux
+FROM rockylinux:9
 
 RUN yum makecache --refresh
 RUN yum -y install openmpi

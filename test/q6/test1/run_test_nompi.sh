@@ -1,6 +1,6 @@
 #!/bin/bash 
 
-qbinary=/Users/esguerra/software/qsource/development/esguerra/bin
+qbinary=/Q/src/q6/bin/q6/qdyn
 
 if [ "x$qbinary" == "x" ]
 then 
