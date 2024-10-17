@@ -1,4 +1,5 @@
 import atexit
+import shutil
 import subprocess
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -83,7 +84,7 @@ class GlobalLigandAligner(MoleculeIO):
             FileNotFoundError: If the kcombu executable is not found.
         """
         super().__init__(lig, pattern=pattern, reindex_hydrogens=reindex_hydrogens)
-        self.kcombu_exe = str(SRC / "kcombu/fkcombu")
+        self.kcombu_exe = self._set_fkcombu_exe()
         self.n_threads = n_threads
         self.reference_mol: Optional[Molecule] = None
         self.aligned_molecules: dict[str, Molecule] = {}
@@ -100,6 +101,16 @@ class GlobalLigandAligner(MoleculeIO):
             raise FileNotFoundError(
                 f"Could not find kcombu executable at {self.kcombu_exe}. Make sure it is installed."
             )
+
+    def _set_fkcombu_exe(self) -> str:
+        if shutil.which("fkcombu") is not None:
+            fkcombu_exe = Path(shutil.which("fkcombu"))
+            logger.debug(f"Using fkcombu executable from {fkcombu_exe}")
+        else:
+            raise ImportError(
+                "fkcombu not installed. To install, run the command `micromamba install michellab::fkcombu`."
+            )
+        return str(fkcombu_exe)
 
     def _process_fkparams(self, fkparams: dict[str, Any], connectivity, top_constraint_tol) -> dict[str, str]:
         """Process and validate fkcombu parameters, called during initialization."""
