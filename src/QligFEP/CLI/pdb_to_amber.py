@@ -141,10 +141,10 @@ def rename_charged(npdb):
     - DFV 20-02-2024: adapted to python3 & added logger.
     """
     for i, res in enumerate(npdb):
-        original_resname = res[0][17:20]
-        resname = res[-1][17:20]
+        original_resname = res[0][17:21].rstrip()
+        resname = res[-1][17:21].rstrip()
         npdb[i] = correct_amino_acid_atom_names(npdb[i], resname)
-        new_resname = res[0][17:20]  # keep track for the log message
+        new_resname = res[0][17:21].rstrip()  # keep track for the log message
         if original_resname != new_resname:
             logger.info(f"Residue {i+1}: {original_resname} renamed to {new_resname}.")
     return npdb
@@ -180,14 +180,14 @@ def pdb_cleanup(pdbarr):
     for i, residue in enumerate(npdb):
         for j, line in enumerate(residue):
             # Assume chain identifier is blank for simplicity; adjust if handling multi-chain PDBs
-            npdb[i][j] = f"{line[:21]} {' ':1}{str(i + 1).rjust(4)}{'    '}{line[30:]}"
+            npdb[i][j] = f"{line[:21]}{' ':1}{str(i + 1).rjust(4)}{'    '}{line[30:]}"
 
     return unnest_pdb(npdb)  # Return the unnested, cleaned-up PDB array
 
 
 def histidine_search(npdb):
     for i in range(len(npdb)):
-        resname = npdb[i][0][17:20]
+        resname = npdb[i][0][17:21].rstrip()
         if resname == "HIS":
             HE_present = atom_is_present(npdb[i], "HE2")  # bonded to NE2
             HD_present = atom_is_present(npdb[i], "HD1")  # bonded to ND1
@@ -203,9 +203,37 @@ def histidine_search(npdb):
     return npdb
 
 
+def nc_termini_search(npdb):
+
+    NATURAL_AA = (
+        "ALA;ARG;ASH;ASN;ASP;CYM;CYS;CYX;GLH;GLN;GLU;GLY;HID;HIE;HIP;"
+        "HYP;ILE;LEU;LYN;LYS;MET;PHE;PRO;SER;THR;TRP;TYR;VAL"
+    ).split(";")
+
+    for i in range(len(npdb)):
+        resname = npdb[i][0][17:21].rstrip()
+        if resname in NATURAL_AA:
+            if resname in ["CYM", "ASH", "GLH", "LYN"]:
+                continue  # no parameter for those on C or N terminus
+            H3_present = atom_is_present(npdb[i], "H3")  # n-terminus
+            OXT_present = atom_is_present(npdb[i], "OXT")  # c-terminus
+            if H3_present:
+                if resname == "HYP":
+                    logger.error(
+                        "No parameters available for n-terminal HYP residue!!! Please check your structure"
+                    )
+                else:
+                    npdb[i] = [x.replace(f"{resname} ", f"N{resname}") for x in npdb[i]]
+            if OXT_present:
+                npdb[i] = [x.replace(f"{resname} ", f"C{resname}") for x in npdb[i]]
+            if H3_present and OXT_present:
+                raise ValueError(f"residue {npdb[i]} has both H3 and OXT atoms")
+    return npdb
+
+
 def glu_search(npdb):
     for i in range(len(npdb)):
-        resname = npdb[i][0][17:20]
+        resname = npdb[i][0][17:21].rstrip()
         if resname == "GLU":
             HE1_present = atom_is_present(npdb[i], "HE1")
             if HE1_present:
@@ -215,7 +243,7 @@ def glu_search(npdb):
 
 def asp_search(npdb):
     for i in range(len(npdb)):
-        resname = npdb[i][0][17:20]
+        resname = npdb[i][0][17:21].rstrip()
         if resname == "ASP":
             OD1_present = atom_is_present(npdb[i], "OD1")
             OD2_present = atom_is_present(npdb[i], "OD2")
@@ -249,7 +277,7 @@ def adjust_pdb_indentation(input_file, output_file):
                 atom_serial_number = line[6:11].strip()
                 atom_name = line[12:16].strip()
                 alt_loc = line[16].strip()
-                residue_name = line[17:20].strip()
+                residue_name = line[17:21].strip()
                 chain_id = line[21].strip()
                 residue_seq_number = line[22:26].strip()
                 insertion_code = line[26].strip()

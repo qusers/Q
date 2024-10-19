@@ -113,7 +113,7 @@ def pdb_parse_in(line, include=("ATOM", "HETATM")):
         at_entry.append(int(line[6:11]))  #  1 ATOM serial number
         at_entry.append(line[12:16].strip())  #  2 ATOM name
         at_entry.append(line[16:17])  #  3 Alternate location indicator
-        at_entry.append(line[17:21].strip())  #  4 Residue name
+        at_entry.append(line[17:21].strip())  #  4 Residue name - 21 instead of 20 for N- & C- termini
         at_entry.append(line[21:22])  #  5 Chain identifier
         at_entry.append(int(line[22:26]))  #  6 Residue sequence number
         at_entry.append(line[26:27])  #  7 Code for insertion of residue
@@ -145,9 +145,9 @@ def pdb_parse_in(line, include=("ATOM", "HETATM")):
 
 def pdb_parse_out(line):
     """
-    Takes a list and parses it into a pdb writeable line
+    Takes a list and parses it into a pdb writeable line using positional arguments
     """
-    line = "{:6s}{:5d} {:<4s}{:1s}{:3s} {:1s}{:4d}{:1s}   {:8.3f}{:8.3f}{:8.3f}{:6.2f}{:6.2f}          {:>2s}{:2s}".format(
+    line = "{:6s}{:5d} {:<4s}{:1s}{:4s}{:1s}{:4d}{:1s}   {:8.3f}{:8.3f}{:8.3f}{:6.2f}{:6.2f}          {:>2s}{:2s}".format(
         *line
     )
     return line
@@ -253,8 +253,8 @@ def _parse_pdb_line(line):
             _convert_to((line[6:11].strip()), int),  # atom_serial_number
             line[12:16].strip(),  # atom_name
             line[16].strip(),  # alt_loc
-            line[17:20].strip(),  # residue_name
-            line[21].strip(),  # chain_id
+            line[17:21].strip(),  # residue_name - 21 instead of 20 for N- & C- termini
+            line[21:22].strip(),  # chain_id
             _convert_to((line[22:26].strip()), int),  # residue_seq_number
             line[26].strip(),  # insertion_code
             _convert_to((line[30:38].strip()), float),  # x
@@ -324,11 +324,14 @@ def write_dataframe_to_pdb(df, output_file, header: Optional[str] = None):
         for _, row in df.iterrows():
             pdb_line = (
                 f"{row['record_type']:<6}{row['atom_serial_number']:>5} "
-                f"{row['atom_name']:<4}{row['alt_loc']:<1}{row['residue_name']:>3} "
+                f"{row['atom_name']:<4}{row['alt_loc']:<1}{row['residue_name']:<4}"  # residue_name:>4 for N- & C- termini
                 f"{row['chain_id']:>1}{row['residue_seq_number']:>4}{row['insertion_code']:>1}   "
                 f"{row['x']:>8.3f}{row['y']:>8.3f}{row['z']:>8.3f}{row['occupancy']:>6}"
                 f"{row['temp_factor']:>6}          {row['element_symbol']:>2}{row['charge']:>2}\n"
             )
+            # except ValueError as e:
+            #     logger.error(f"{row.values}")
+            #     raise ValueError from e
             file.write(pdb_line)
 
 
