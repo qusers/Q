@@ -1002,7 +1002,9 @@ class QligFEP:
                 for line in cysbond_str.strip().split('\n'):
                     parts = line.split()
                     resn1, at1 = parts[1].split(':')
+                    resn1 = int(resn1)
                     resn2, at2 = parts[2].split(':')
+                    resn2 = int(resn2)
                     
                     atom1 = pdb_df.query('residue_seq_number == @resn1 & atom_name == @at1')
                     atom2 = pdb_df.query('residue_seq_number == @resn2 & atom_name == @at2')
