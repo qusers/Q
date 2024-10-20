@@ -1001,11 +1001,11 @@ class QligFEP:
                 new_cysbond_str = ""
                 for line in cysbond_str.strip().split('\n'):
                     parts = line.split()
-                    atom1_info = parts[1].split(':')
-                    atom2_info = parts[2].split(':')
+                    resn1, at1 = parts[1].split(':')
+                    resn2, at2 = parts[2].split(':')
                     
-                    atom1 = pdb_df.query('residue_seq_number == @int(atom1_info[0]) and atom_name == @atom1_info[1]')
-                    atom2 = pdb_df.query('residue_seq_number == @int(atom2_info[0]) and atom_name == @atom2_info[1]')
+                    atom1 = pdb_df.query('residue_seq_number == @resn1 & atom_name == @at1')
+                    atom2 = pdb_df.query('residue_seq_number == @resn2 & atom_name == @at2')
                     if not atom1.empty and not atom2.empty:
                         atom1_coords = atom1[['x', 'y', 'z']].values[0]
                         atom2_coords = atom2[['x', 'y', 'z']].values[0]
