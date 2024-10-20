@@ -995,7 +995,7 @@ class QligFEP:
             cysbond_str = handle_cysbonds(
                 self.cysbond, Path(writedir) / self.pdb_fname, comment_out=(self.system != "protein")
             )
-            if self.system == "protein":
+            if self.system == "protein" and self.cysbond == 'auto':
                 # cysbond shouldn't be there if the AA is out of the sphere radius
                 pdb_df = read_pdb_to_dataframe(Path(writedir) / self.pdb_fname)
                 new_cysbond_str = ""
@@ -1020,6 +1020,8 @@ class QligFEP:
                             logger.info(f"Excluding cysbond {line}; one or both atoms are outside the sphere radius.")
                     else:
                         logger.warning(f"Atom information not found for bond {line}.")
+                if new_cysbond_str:
+                    cysbond_str = new_cysbond_str
             for line in infile:
                 line = replace(line, replacements)
                 if line == "!addbond at1 at2 y\n" and cysbond_str != "":
