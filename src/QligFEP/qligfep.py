@@ -18,6 +18,7 @@ from .pdb_utils import (
     pdb_parse_out,
     read_pdb_to_dataframe,
     rm_HOH_clash_NN,
+    calculate_distance,
 )
 from .restraints.restraint_setter import RestraintSetter
 from .settings.settings import CLUSTER_DICT, CONFIGS
@@ -972,6 +973,7 @@ class QligFEP:
                     logger.info("Will calculate the COG from the ligand atoms.")
         center = COG(self.lig1 + ".pdb") if cog is None or self.system == "water" else cog
         center = f"{center[0]} {center[1]} {center[2]}"
+        self.cog = [float(coord) for coord in center.split()]
         qprep_in = CONFIGS["ROOT_DIR"] + "/INPUTS/qprep.inp"
         qprep_out = writedir + "/qprep.inp"
         replacements["FF_LIB"] = CONFIGS["ROOT_DIR"] + "/FF/" + self.FF + ".lib"
@@ -993,6 +995,29 @@ class QligFEP:
             cysbond_str = handle_cysbonds(
                 self.cysbond, Path(writedir) / self.pdb_fname, comment_out=(self.system != "protein")
             )
+            if self.system == "protein":
+                # cysbond shouldn't be there if the AA is out of the sphere radius
+                pdb_df = read_pdb_to_dataframe(Path(writedir) / self.pdb_fname)
+                new_cysbond_str = ""
+                for line in cysbond_str.strip().split('\n'):
+                    parts = line.split()
+                    atom1_info = parts[1].split(':')
+                    atom2_info = parts[2].split(':')
+                    
+                    atom1 = pdb_df.query('residue_seq_number == @int(atom1_info[0]) and atom_name == @atom1_info[1]')
+                    atom2 = pdb_df.query('residue_seq_number == @int(atom2_info[0]) and atom_name == @atom2_info[1]')
+                    if not atom1.empty and not atom2.empty:
+                        atom1_coords = atom1[['x', 'y', 'z']].values[0]
+                        atom2_coords = atom2[['x', 'y', 'z']].values[0]
+                        
+                        dist1 = calculate_distance(atom1_coords, self.cog)
+                        dist2 = calculate_distance(atom2_coords, self.cog)
+                        if dist1 <= int(self.sphereradius) and dist2 <= int(self.sphereradius):
+                            new_cysbond_str += line + '\n'
+                        else:
+                            logger.info(f"Excluding cysbond {line}; one or both atoms are outside the sphere radius.")
+                    else:
+                        logger.warning(f"Atom information not found for bond {line}.")
             for line in infile:
                 line = replace(line, replacements)
                 if line == "!addbond at1 at2 y\n" and cysbond_str != "":

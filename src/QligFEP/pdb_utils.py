@@ -238,6 +238,9 @@ def get_coords(atomname, residue):
             return tuple(float(line[i : i + 8]) for i in range(30, 54, 8))
     raise ValueError(f"Atom {atomname} not found in residue {residue}!")
 
+def calculate_distance(atom_coords, center_coords) -> float:
+    return math.sqrt(sum((a - b) ** 2 for a, b in zip(atom_coords, center_coords)))
+
 
 def _convert_to(value, dtype):
     try:
