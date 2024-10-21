@@ -3921,7 +3921,7 @@ subroutine readpdb()
 ! atnam_tmp, resnam_tmp, &
 !        resnum_tmp, xtmp(1:3)
 !10	format(12x,1x,a4,a4,1x,i4,4x,3f8.3)
-10	format(a6,a5,1x,a4,a1,a3,1x,a1,i4,a1,3x,3f8.3)
+10	format(a6,a5,1x,a4,a1,a4,a1,i4,a1,3x,3f8.3)
 !10	format(11x,1x,a4,1x,a4,a1,i4,a1,3x,3f8.3)
   !       progress output formats
 20 format('molecule ',i4,': ',a4,i5)
@@ -3970,6 +3970,7 @@ subroutine readpdb()
 
       ! ---   rm leading spaces from atom name & add trailing spaces so it's 4 characters long
       call remove_leading_spaces(atnam_tmp)
+      call remove_leading_spaces(resnam_tmp)
       
       ! ---   New residue ?
       if(resnum_tmp/=oldnum) then
