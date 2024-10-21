@@ -31,7 +31,7 @@ def create_call(**kwargs):
     template = (
         "qligfep -l1 '{lig1}' -l2 '{lig2}' -FF {FF} -s {system} -c {cluster} -R {replicates} "
         "-S {sampling} -r {sphereradius} -l {start} -w {windows} -T {temperature} -ts {timestep} "
-        "-rest {rest}"
+        "-rest {rest} -log {log}"
     )
     if "cysbond" in kwargs and kwargs["cysbond"] is not None:
         template += " -b {cysbond}"
@@ -103,6 +103,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 to_clean=to_clean,
                 random_state=args.random_state,
                 rest=args.restraint_method,
+                log=args.log,
             )
             logger.info(f"Submitting the command:\n{command}")
             dst = sys_dir / f"FEP_{lig1}_{lig2}"

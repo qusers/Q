@@ -3,7 +3,7 @@
 import argparse
 from typing import Optional
 
-from ..logger import logger
+from ..logger import logger, setup_logger
 from ..qligfep import QligFEP
 from .parser_base import parse_arguments
 
@@ -38,6 +38,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     else:
         param_dict = {}
     param_dict.update(kwargs)
+    setup_logger(level=args.log.upper())
     run = QligFEP(**param_dict)
     run.set_timestep()
 

@@ -1014,6 +1014,7 @@ class QligFEP:
                         
                         dist1 = calculate_distance(atom1_coords, self.cog)
                         dist2 = calculate_distance(atom2_coords, self.cog)
+                        logger.debug(f'{resn1}:{at1} and {resn2}:{at2} within {dist1} and {dist2} of the COG.')
                         if dist1 <= int(self.sphereradius) and dist2 <= int(self.sphereradius):
                             new_cysbond_str += line + '\n'
                         else:
