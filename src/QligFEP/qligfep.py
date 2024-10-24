@@ -14,11 +14,11 @@ from .functions import COG, kT, overlapping_pairs, sigmoid
 from .IO import replace, run_command
 from .logger import logger
 from .pdb_utils import (
+    calculate_distance,
     pdb_parse_in,
     pdb_parse_out,
     read_pdb_to_dataframe,
     rm_HOH_clash_NN,
-    calculate_distance,
 )
 from .restraints.restraint_setter import RestraintSetter
 from .settings.settings import CLUSTER_DICT, CONFIGS
@@ -995,30 +995,34 @@ class QligFEP:
             cysbond_str = handle_cysbonds(
                 self.cysbond, Path(writedir) / self.pdb_fname, comment_out=(self.system != "protein")
             )
-            if self.system == "protein" and self.cysbond == 'auto':
+            if self.system == "protein" and self.cysbond == "auto" and cysbond_str != "":
                 # cysbond shouldn't be there if the AA is out of the sphere radius
                 pdb_df = read_pdb_to_dataframe(Path(writedir) / self.pdb_fname)
                 new_cysbond_str = ""
-                for line in cysbond_str.strip().split('\n'):
+                for line in cysbond_str.strip().split("\n"):
                     parts = line.split()
-                    resn1, at1 = parts[1].split(':')
+                    resn1, at1 = parts[1].split(":")
                     resn1 = int(resn1)
-                    resn2, at2 = parts[2].split(':')
+                    resn2, at2 = parts[2].split(":")
                     resn2 = int(resn2)
-                    
-                    atom1 = pdb_df.query('residue_seq_number == @resn1 & atom_name == @at1')
-                    atom2 = pdb_df.query('residue_seq_number == @resn2 & atom_name == @at2')
+
+                    atom1 = pdb_df.query("residue_seq_number == @resn1 & atom_name == @at1")
+                    atom2 = pdb_df.query("residue_seq_number == @resn2 & atom_name == @at2")
                     if not atom1.empty and not atom2.empty:
-                        atom1_coords = atom1[['x', 'y', 'z']].values[0]
-                        atom2_coords = atom2[['x', 'y', 'z']].values[0]
-                        
+                        atom1_coords = atom1[["x", "y", "z"]].values[0]
+                        atom2_coords = atom2[["x", "y", "z"]].values[0]
+
                         dist1 = calculate_distance(atom1_coords, self.cog)
                         dist2 = calculate_distance(atom2_coords, self.cog)
-                        logger.debug(f'{resn1}:{at1} and {resn2}:{at2} within {dist1} and {dist2} of the COG.')
+                        logger.debug(
+                            f"{resn1}:{at1} and {resn2}:{at2} within {dist1} and {dist2} of the COG."
+                        )
                         if dist1 <= int(self.sphereradius) and dist2 <= int(self.sphereradius):
-                            new_cysbond_str += line + '\n'
+                            new_cysbond_str += line + "\n"
                         else:
-                            logger.info(f"Excluding cysbond {line}; one or both atoms are outside the sphere radius.")
+                            logger.info(
+                                f"Excluding cysbond {line}; one or both atoms are outside the sphere radius."
+                            )
                     else:
                         logger.warning(f"Atom information not found for bond {line}.")
                 if new_cysbond_str:
