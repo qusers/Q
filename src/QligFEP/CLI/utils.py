@@ -8,7 +8,7 @@ from ..pdb_utils import disulfide_search, nest_pdb, unnest_pdb
 
 
 def get_avail_restraint_methods():
-    ring_compare_methods = ["aromaticity", "hybridization", "element"]
+    ring_compare_methods = ["heavyatom", "aromaticity", "hybridization", "element"]
     surround_compare_methods = ["p", "ls", "strict"]
     return list(map(lambda x: "_".join(x), product(ring_compare_methods, surround_compare_methods))) + [
         "overlap",

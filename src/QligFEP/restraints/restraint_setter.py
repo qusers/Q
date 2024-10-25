@@ -140,7 +140,11 @@ class RestraintSetter:
         Args:
             atom_a: rdkit Atom object A.
             atom_b: rdkit Atom object B.
-            compare_method: method to compare the atoms A & B. Defaults to 'element'.
+            compare_method: method to compare the atoms A & B. Defaults to "element". Options are:
+                - 'element': compare atomic numbers
+                - 'hybridization': compare hybridization states
+                - 'aromaticity': compare aromaticity
+                - 'heavy_atoms': consider all non-hydrogen atoms as equivalent
 
         Returns:
             bool: ture if the atoms are equivalent, false otherwise.
@@ -148,12 +152,16 @@ class RestraintSetter:
         logger.trace(
             f"Comparing atoms {atom_a.GetSymbol()}:{atom_a.GetIdx()} and {atom_b.GetSymbol()}:{atom_b.GetIdx()}"
         )
-        if compare_method == "hybridization":
+        if compare_method == "heavyatom":
+            result = (atom_a.GetAtomicNum() > 1) and (atom_b.GetAtomicNum() > 1)
+        elif compare_method == "hybridization":
             result = atom_a.GetHybridization().name == atom_b.GetHybridization().name
         elif compare_method == "element":
             result = atom_a.GetAtomicNum() == atom_b.GetAtomicNum()
         elif compare_method == "aromaticity":
             result = atom_a.GetIsAromatic() == atom_b.GetIsAromatic()
+        else:
+            raise ValueError(f"Invalid compare method: {compare_method}")
         logger.trace(f"Result: {result}")
         return result
 
@@ -254,7 +262,7 @@ class RestraintSetter:
             mol_a: molecule A in RDKit format.
             mol_b: molecule B in RDKit format.
             atom_compare_method: method to compare the substituents & ring atoms. Choices are `element`,
-                `hybridization`, and `aromaticity`.
+                `heavyatom`, `hybridization`, and `aromaticity`.
             strict_surround: apply a strict method of `compare_molecule_rings()`. If True, it will
                 purge rings and their not ring-linker substituents based on both ring structure
                 & immediate neighbors. Defaults to False.

@@ -161,9 +161,11 @@ def parse_arguments(program: str) -> argparse.Namespace:
         help=(
             """How to set the restraints to the ligand topologies involved in the perturbation. Defaults to `hybridization_p`.
 
-            Atom compare method: `aromaticity`, `hibridization`, `element`. Setting the first part of the
+            Atom compare method: `heavyatom`, `aromaticity`, `hibridization`, `element`. Setting the first part of the
                 string as either of these, will determine how the substituents / ring atoms are treated to be
-                defined as equivalent.
+                defined as equivalent. Heavyatom will only check if both atoms being compared are heavy atoms. Aromaticity
+                and hybridization operater similarly, but checking for those properties instead. Element will check 
+                for atom equivalence based on atomic numbers.
             Surround atom compare: `p` (permissive), `ls` (less strict), `strict`.
                 Setting the second part of the string as either of these, will determine if or how the
                 direct surrounding atoms to the ring strictures will be taken into account for ring equivalence.
