@@ -785,27 +785,17 @@ class QligFEP:
 
     def write_submitfile(self, writedir):
         replacements = {}
-        replacements["TEMP_VAR"] = str(self.temperature)
-        replacements["RUN_VAR"] = str(self.replicates)
         replacements["RUNFILE"] = "run" + self.cluster + ".sh"
-        replacements["SEED_VAR"] = " ".join([str(s) for s in self.seeds])
-        if self.softcore:
-            submit_in = CONFIGS["ROOT_DIR"] + "/INPUTS/FEP_submit_sc.sh"
-        else:
-            submit_in = CONFIGS["ROOT_DIR"] + "/INPUTS/FEP_submit.sh"
+        submit_in = CONFIGS["ROOT_DIR"] + "/INPUTS/FEP_submit.sh"
         submit_out = writedir + ("/FEP_submit.sh")
         with open(submit_in) as infile, open(submit_out, "w") as outfile:
             for line in infile:
-                try:
-                    line = replace(line, replacements)
-                except TypeError:
-                    print("heyyy")
+                line = replace(line, replacements)
                 outfile.write(line)
 
         try:
             st = os.stat(submit_out)
             os.chmod(submit_out, st.st_mode | stat.S_IEXEC)
-
         except:
             print("WARNING: Could not change permission for " + submit_out)
 
@@ -829,6 +819,12 @@ class QligFEP:
             replacements["FEPS"] = "FEP1.fep"
         with open(src) as infile, open(tgt, "w") as outfile:
             for line in infile:
+                if line.strip() == "#SBATCH --array=1-TOTAL_JOBS":
+                    replacements["TOTAL_JOBS"] = str(self.replicates)
+                if line.strip() == "temperatures=(TEMP_VAR)":
+                    replacements["TEMP_VAR"] = str(self.temperature)
+                if line.strip() == "seeds=(RANDOM_SEEDS)":
+                    replacements["RANDOM_SEEDS"] = " ".join([str(s) for s in self.seeds])
                 if line.strip() == "#SBATCH -A ACCOUNT":
                     try:  # Try to take account info - not for all clusters!
                         replacements["ACCOUNT"]
@@ -861,8 +857,8 @@ class QligFEP:
                     if self.start == "1":
                         for line in MD_files:
                             file_base = line.split("/")[-1][:-4]
-                            outline = "time srun -n $SLURM_NTASKS $qdyn {}.inp" " > {}.log\n".format(
-                                file_base, file_base
+                            outline = (
+                                f"time srun -n $SLURM_NTASKS $qdyn {file_base}.inp" f" > {file_base}.log\n"
                             )
                         outfile.write(outline)
 
@@ -872,12 +868,11 @@ class QligFEP:
                         )
                         outfile.write(outline)
                         for i, md in enumerate(md_1):
-                            outline1 = "time srun -n $SLURM_NTASKS $qdyn {}.inp" " > {}.log\n".format(
-                                md_1[i][:-4], md_1[i][:-4]
+                            outline1 = (
+                                f"time srun -n $SLURM_NTASKS $qdyn {md_1[i][:-4]}.inp > {md_1[i][:-4]}.log\n"
                             )
-
-                            outline2 = "time srun -n $SLURM_NTASKS $qdyn {}.inp" " > {}.log\n".format(
-                                md_2[i][:-4], md_2[i][:-4]
+                            outline2 = (
+                                f"time srun -n $SLURM_NTASKS $qdyn {md_2[i][:-4]}.inp > {md_2[i][:-4]}.log\n"
                             )
 
                             outfile.write(outline1)
