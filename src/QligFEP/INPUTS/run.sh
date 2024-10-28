@@ -22,7 +22,6 @@ fepfiles=(FEPS)
 # Debug prints
 echo "Number of temperatures: ${#temperatures[@]}"
 echo "Number of runs: $runs"
-echo "Number of seeds: ${#seeds[@]}"
 echo "Array task ID: $SLURM_ARRAY_TASK_ID"
 
 # Validate inputs
@@ -70,7 +69,6 @@ MODULES
 ## define qdynp location
 QDYN
 
-echo "Running FEP for T=$temperature, replicate $run_num, seed $seed"
 starttime=$(date +%s)
 starttime_readable=$(date)
 
@@ -88,6 +86,9 @@ cd $tempdir || exit
 rundir=$tempdir/$run_num
 mkdir -p $rundir
 cd $rundir || exit
+
+echo "Running job in $rundir"
+echo "Parameters T=$temperature, replicate=$run_num, seed=$seed"
 
 cp $inputfiles/md*.inp .
 cp $inputfiles/*.top .
