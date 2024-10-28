@@ -2,6 +2,7 @@
 #
 #SBATCH --nodes=NODES
 #SBATCH --ntasks-per-node=NTASKS
+#SBATCH --mem-per-cpu=128  # more than enough for 25A sphere size FEP
 #SBATCH -A ACCOUNT 
 #              d-hh:mm:ss
 #SBATCH --time=TIME
