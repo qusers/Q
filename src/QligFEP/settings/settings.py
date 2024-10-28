@@ -59,7 +59,7 @@ SNELLIUS = {
     "NODES": "1",
     "NTASKS": "16",
     "TIME": "0-12:00:00",  # d-hh:mm:ss
-    "MODULES": nljoin(["module load 2021", "module load gompi/2021a"]),
+    "MODULES": nljoin(["module load 2023", "module load OpenMPI/4.1.5-GCC-12.3.0"]),
     **Q_PATHS,
 }
 
