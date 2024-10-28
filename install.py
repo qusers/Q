@@ -1,10 +1,9 @@
-#!/usr/bin/env python3
-
-import sys
-import subprocess
-import os
 import glob
+import os
 import shutil
+import subprocess
+import sys
+
 
 def query_yes_no(question, default="no"):
     """Ask a yes/no question via raw_input() and return their answer.
@@ -16,8 +15,7 @@ def query_yes_no(question, default="no"):
 
     The "answer" return value is True for "yes" or False for "no".
     """
-    valid = {"yes": True, "y": True, "ye": True,
-             "no": False, "n": False}
+    valid = {"yes": True, "y": True, "ye": True, "no": False, "n": False}
     if default is None:
         prompt = " [y/n] "
     elif default == "yes":
@@ -25,43 +23,37 @@ def query_yes_no(question, default="no"):
     elif default == "no":
         prompt = " [y/N] "
     else:
-        raise ValueError("invalid default answer: '%s'" % default)
+        raise ValueError(f"invalid default answer: '{default}'")
 
     while True:
         sys.stdout.write(question + prompt)
         choice = input().lower()
-        if default is not None and choice == '':
+        if default is not None and choice == "":
             return valid[default]
         elif choice in valid:
             return valid[choice]
         else:
-            sys.stdout.write("Please respond with 'yes' or 'no' "
-                             "(or 'y' or 'n').\n")
-            
+            sys.stdout.write("Please respond with 'yes' or 'no' " "(or 'y' or 'n').\n")
+
+
 def init():
     print("================================\n")
     print("This is the installer for Q-GPU\n")
     print("================================\n")
 
+
 def check_python():
     print("Checking Python version")
     print("================================")
-    print("version is {}.{}.{}".format(sys.version_info[0],
-                                       sys.version_info[1],
-                                       sys.version_info[2],
-                                      ))
+    print(f"version is {sys.version_info[0]}.{sys.version_info[1]}.{sys.version_info[2]}")
     print("================================")
-    
-    if sys.version_info[0] < 3: 
+
+    if sys.version_info[0] == 3 and sys.version_info[1] < 6:
         print("Q-GPU only works with Python 3.6 or higher")
         print("Exiting now")
         sys.exit()
 
-    if sys.version_info[0] == 3 and sys.version_info[1] < 6:
-        print("Q-GPU only works with Python 3.6 or higher")
-        print("Exiting now")    
-        sys.exit()
-        
+
 def check_CUDA():
     print("================================")
     print("Checking CUDA version")
@@ -69,86 +61,91 @@ def check_CUDA():
 
     if len(out) == 0:
         print("Can't find nvcc, exiting now")
-        print("Exiting now")    
+        print("Exiting now")
         sys.exit()
 
     out = subprocess.check_output(["nvcc", "--version"]).decode("utf-8")
-    print("version is {}".format(out.split()[-1]))
+    print(f"version is {out.split()[-1]}")
 
     print("================================")
-    
+
+
 def get_installdir():
     print("Please provide the installation directory: ")
     INSTALLDIR = input()
     INSTALLDIR = INSTALLDIR.strip()
-    
+
     return INSTALLDIR
 
+
 def create_installdir(INSTALLDIR):
-    if os.path.isdir(INSTALLDIR) == True:
+    if os.path.isdir(INSTALLDIR) is True:
         write = query_yes_no("Directory exists, are you sure you want to install here?")
-        if len(glob.glob('{}/*'.format(INSTALLDIR)))     > 0:
+        if len(glob.glob(f"{INSTALLDIR}/*")) > 0:
             overwrite = query_yes_no("Directory not empty, clean up?")
-        
-        if write == False:
+
+        if write is False:
             print("Will not write in specified folder, exiting now")
             sys.exit()
-        
-        if overwrite == False:
+
+        if overwrite is False:
             print("Directory needs to be empty, exiting now")
             sys.exit()
-        
-        if overwrite == True:
+
+        if overwrite is True:
             print("Deleting files in folder")
-            for file in glob.glob('{}/*'.format(INSTALLDIR)):
+            for file in glob.glob(f"{INSTALLDIR}/*"):
                 if os.path.isfile(file):
                     os.remove(file)
 
                 if os.path.isdir(file):
                     shutil.rmtree(file)
-            
+
         write_in_folder = os.access(INSTALLDIR, os.W_OK)
-    
-        if write_in_folder == False or write == False:
+
+        if write_in_folder is False or write is False:
             print("Can't write in specified folder, exiting now")
             sys.exit()
-        
+
     else:
         try:
             os.mkdir(INSTALLDIR)
-            
-        except:
+
+        except Exception as e:
+            print(f"Error: {e}")
             print("Can't create installation directory, exiting now")
             sys.exit()
-    
+
     ROOTDIR = os.path.abspath(INSTALLDIR)
     return ROOTDIR
 
+
 def install(ROOTDIR):
-    print("Installing Q-GPU in {}".format(ROOTDIR))
-    for file in glob.glob('*'):
-        if file == 'install':
+    print(f"Installing Q-GPU in {ROOTDIR}")
+    for file in glob.glob("*"):
+        if file == "install":
             continue
-        
+
         if os.path.isfile(file):
-            shutil.copy(file, ROOTDIR + '/' + file)
-                    
+            shutil.copy(file, ROOTDIR + "/" + file)
+
         if os.path.isdir(file):
-            shutil.copytree(file, ROOTDIR + '/' + file)
-            
+            shutil.copytree(file, ROOTDIR + "/" + file)
+
     os.chdir(ROOTDIR)
-    os.chdir('src/core')
-    out = subprocess.check_output('make')
-    
+    os.chdir("src/core")
+    out = subprocess.check_output("make")
+
     print("If you want to have Q-GPU executable files in your path permanently.")
     print("Please add the following to .bashrc or .bash_profile:")
-    print('export PATH={}/bin:$PATH'.format(ROOTDIR))
+    print(f"export PATH={ROOTDIR}/bin:$PATH")
     print("If you want to have Q-GPU python libraries available as modules in python:")
-    print('export PYTHONPATH="${}:{}/bin"'.format('{PYTHONPATH}',ROOTDIR))
-    
+    print('export PYTHONPATH="${}:{}/bin"'.format("{PYTHONPATH}", ROOTDIR))
+
     print("\n==== INSTALLATION COMPLETE ====")
-            
-if __name__ == "__main__":    
+
+
+if __name__ == "__main__":
     init()
     check_python()
     check_CUDA()
