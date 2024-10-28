@@ -13,8 +13,8 @@ def parse_arguments(program: str) -> argparse.Namespace:
             formatter_class=argparse.RawDescriptionHelpFormatter,
             description="       == Generate FEP files for dual topology ligand FEP == ",
         )
-        parser.add_argument("-l1", "--lig_1", dest="lig1", required=True, help="name of ligand 1", type=str)
-        parser.add_argument("-l2", "--lig_2", dest="lig2", required=True, help="name of ligand 2", type=str)
+        parser.add_argument("-l1", "--lig1", dest="lig1", required=True, help="name of ligand 1", type=str)
+        parser.add_argument("-l2", "--lig2", dest="lig2", required=True, help="name of ligand 2", type=str)
     elif program == "setupFEP":
         parser = argparse.ArgumentParser(
             prog="setupFEP",

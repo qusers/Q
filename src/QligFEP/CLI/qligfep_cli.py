@@ -1,6 +1,9 @@
 """Module containing the QligFEP command line interface."""
 
 import argparse
+import datetime
+import json
+from pathlib import Path
 from typing import Optional
 
 from ..logger import logger, setup_logger
@@ -44,6 +47,17 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
 
     writedir = run.makedir()
     inputdir = writedir + "/inputfiles"
+
+    # Write the configuration file for the run
+    command_str = " ".join(
+        ["qligfep"] + [(f"--{k} {v}" if k != "FF" else f"-{k} {v}") for k, v in param_dict.items()]
+    ) + [f"restraint_method {args.restraint_method}"]
+    time_now = datetime.datetime.now()
+    date_str = time_now.strftime("%Y-%m-%d %H:%M:%S")
+    (Path(inputdir) / "fep_config.json").write_text(
+        json.dumps({**param_dict, **{"time": date_str, "command_str": command_str}}, indent=4)
+    )
+
     a = run.read_files()
     changes_for_libfiles = a[0][1]
     changes_for_prmfiles = a[0][1]
