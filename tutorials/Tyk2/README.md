@@ -122,20 +122,24 @@ function submitFEPjobs {
     PARENT_DIR=$(pwd)
     # Iterate over all subdirectories
     for dir in "$PARENT_DIR"/*; do
-      if [ -d "$dir" ]; then  # Check if it is a directory
-        echo "Entering $dir"
-        cd "$dir"  # Enter the directory
+        if [ -d "$dir" ]; then
+            echo "Entering $dir"
+            cd "$dir"
 
-        # Check if exe_script.sh exists and is executable
-        if [ -x "FEP_submit.sh" ]; then
-          sh FEP_submit.sh  # Execute the script
-          sleep 3  # Wait for 3 seconds
-        else
-          echo "FEP_submit.sh not found or not executable in $dir"
+            if [ -f "submitted.txt" ]; then # if timestamp, skip
+                echo "Directory $dir was already submitted on $(cat submitted.txt)"
+            else
+                if [ -x "FEP_submit.sh" ]; then
+                    sh FEP_submit.sh  # Submit & create timestamp
+                    date "+%d/%m/%Y %H:%M:%S" > submitted.txt
+                    echo "Job submitted and timestamp created"
+                    sleep 5  # Wait for 5 seconds
+                else
+                    echo "FEP_submit.sh not found or not executable in $dir"
+                fi
+            fi
+            cd ..  # Go back to the parent directory
         fi
-
-        cd ..  # Go back to the parent directory
-      fi
     done
 }
 ```
