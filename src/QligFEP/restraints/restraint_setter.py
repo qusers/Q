@@ -107,7 +107,7 @@ class RestraintSetter:
             mol: rdkit molecule object
             connect_struct: dictionary containing the ring atoms (keys) and their bound atoms (values)
             atom_compare_method: method to compare the substituents & ring atoms. Choices are `element`,
-                `hybridization`, and `aromaticity`.
+                `hybridization`, `aromaticity`, and `heavyatom`.
             ignore_surround_elements: if true, it will ignore the atomic number of the substituents
 
         Returns:
@@ -116,18 +116,27 @@ class RestraintSetter:
         ringAtom_subsAtom = []  # list containing the ring atoms & bound atoms
         for ringAtom, subsAtom in connect_struct.items():
 
-            if atom_compare_method == "hybridization":
+            if atom_compare_method == "heavyatom":
+                ringAtomInfo = mol.GetAtomWithIdx(ringAtom).GetAtomicNum() > 1
+            elif atom_compare_method == "hybridization":
                 ringAtomInfo = mol.GetAtomWithIdx(ringAtom).GetHybridization().name
             elif atom_compare_method == "element":
                 ringAtomInfo = mol.GetAtomWithIdx(ringAtom).GetAtomicNum()
             elif atom_compare_method == "aromaticity":
                 ringAtomInfo = mol.GetAtomWithIdx(ringAtom).GetIsAromatic()
+            else:
+                raise ValueError(f"Invalid compare method: {atom_compare_method}")
 
             if subsAtom[0] != ringAtom:
-                subs_atomicnum = mol.GetAtomWithIdx(subsAtom[0]).GetAtomicNum()
-                ringAtom_subsAtom.extend(
-                    [ringAtomInfo, (subs_atomicnum if not ignore_surround_elements else 1)]
-                )
+                if atom_compare_method == "heavyatom":
+                    subs_repr = mol.GetAtomWithIdx(subsAtom[0]).GetAtomicNum() > 1
+                elif atom_compare_method == "hybridization":
+                    subs_repr = mol.GetAtomWithIdx(subsAtom[0]).GetHybridization().name
+                elif atom_compare_method == "element":
+                    subs_repr = mol.GetAtomWithIdx(subsAtom[0]).GetAtomicNum()
+                elif atom_compare_method == "aromaticity":
+                    subs_repr = mol.GetAtomWithIdx(subsAtom[0]).GetIsAromatic()
+                ringAtom_subsAtom.extend([ringAtomInfo, (subs_repr if not ignore_surround_elements else 1)])
             else:
                 # 0 is missing atom (can't do nan on array equality)
                 ringAtom_subsAtom.extend([ringAtomInfo, 0])
