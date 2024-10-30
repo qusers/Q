@@ -850,7 +850,7 @@ class QligFEP:
                 if line.strip() == "#EQ_FILES":
                     for line in EQ_files:
                         file_base = Path(line).stem
-                        outline = f"time srun --cpu-bind=cores $qdyn {file_base}.inp > {file_base}.log\n"
+                        outline = f"time srun -n $SLURM_NTASKS --cpu-bind=cores $qdyn {file_base}.inp > {file_base}.log\n"
                         outfile.write(outline)
 
                 if line.strip() == "#RUN_FILES":
@@ -858,22 +858,17 @@ class QligFEP:
                         for line in MD_files:
                             file_base = line.split("/")[-1][:-4]
                             outline = (
-                                f"time srun --cpu-bind=cores $qdyn {file_base}.inp" f" > {file_base}.log\n"
+                                f"time srun -n $SLURM_NTASKS --cpu-bind=cores $qdyn {file_base}.inp"
+                                f" > {file_base}.log\n"
                             )
                         outfile.write(outline)
 
                     elif self.start == "0.5":
-                        outline = "time srun --cpu-bind=cores $qdyn {}.inp" " > {}.log\n\n".format(
-                            "md_0500_0500", "md_0500_0500"
-                        )
+                        outline = "time srun -n $SLURM_NTASKS --cpu-bind=cores $qdyn md_0500_0500.inp > md_0500_0500.log\n\n"
                         outfile.write(outline)
                         for i, md in enumerate(md_1):
-                            outline1 = (
-                                f"time srun --cpu-bind=cores $qdyn {md_1[i][:-4]}.inp > {md_1[i][:-4]}.log\n"
-                            )
-                            outline2 = (
-                                f"time srun --cpu-bind=cores $qdyn {md_2[i][:-4]}.inp > {md_2[i][:-4]}.log\n"
-                            )
+                            outline1 = f"time srun -n $SLURM_NTASKS --cpu-bind=cores $qdyn {md_1[i][:-4]}.inp > {md_1[i][:-4]}.log\n"
+                            outline2 = f"time srun -n $SLURM_NTASKS --cpu-bind=cores $qdyn {md_2[i][:-4]}.inp > {md_2[i][:-4]}.log\n"
 
                             outfile.write(outline1)
                             outfile.write(outline2)
