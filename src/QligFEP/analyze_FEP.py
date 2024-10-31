@@ -25,16 +25,18 @@ def info_from_run_file(file_path: Path):
     elif len(run_files) > 1:
         logger.warning(f"Multiple run files found in {file_path}!! Using the first one.")
     run_file = run_files[0]
-    temp_pattern = re.compile(r"temperature=(\d+)")
-    replic_pattern = re.compile(r"run=(\d+)")
+    temp_pattern = re.compile(r"temperatures=\((\d+)\)")
+    seeds_pattern = re.compile(r"seeds=\(([0-9\s]+)\)")
     with run_file.open("r", encoding="utf-8") as _file:
         for line in _file:
             temp_match = temp_pattern.search(line)
-            replicate_match = replic_pattern.search(line)
+            seeds_match = seeds_pattern.match(line)
             if temp_match:
                 info["temperature"] = temp_match.group(1)
-            if replicate_match:
-                info["replicates"] = replicate_match.group(1)
+            if seeds_match:
+                info["random_seeds"] = seeds_pattern.findall(line)[0].split()
+                info["replicates"] = len(info["random_seeds"])
+
     if any([v is None for v in info.values()]):
         logger.error(f"Could not extract temperature and/or replicates from {run_file}")
     return info
@@ -482,7 +484,9 @@ class FepReader:
         )
 
         # set labels, make it square and add legend
-        plt.title(rf"{self.target_name}, $N={len(avg_values)}$ - $\Delta\Delta {method.replace('dd', '')}$ plot")
+        plt.title(
+            rf"{self.target_name}, $N={len(avg_values)}$ - $\Delta\Delta {method.replace('dd', '')}$ plot"
+        )
         plt.xlabel("$\Delta\Delta G_{exp} [kcal/mol]$")  # noqa: W605
         plt.ylabel("$\Delta\Delta G_{pred} [kcal/mol]$")  # noqa: W605
         plt.xlim(min_val, max_val)
