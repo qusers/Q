@@ -82,24 +82,24 @@ else ifeq ($(COMP),ibm)
 # AMD EPYC Optimized Version
 ################################################################################
 else ifeq ($(COMP),amd)
-        FC=             gfortran
-        FC_OPT=         -O3 -march=znver2 -mtune=znver2
-        FFLAGS=         -ffree-line-length-none -fcray-pointer \
-                        -fall-intrinsics -std=legacy \
-                        -fstack-protector ${FC_OPT} -DG95=1 -w \
-                        -funroll-all-loops -flto -fno-strict-aliasing
+	FC=             gfortran
+	FC_OPT=         -O3 -march=znver2 -mtune=znver2
+	FFLAGS=         -ffree-line-length-none -fcray-pointer \
+					-fall-intrinsics -std=legacy \
+					-fstack-protector ${FC_OPT} -DG95=1 -w \
+					-funroll-all-loops -flto -fno-strict-aliasing
 
-        FPP_FLG=        -cpp
+	FPP_FLG=        -cpp
 
-        MPIFC=          mpif90
-        OMPI_FC=        ${FC}
-        # Add specific MPI flags for stability
-        OMPI_FCFLAGS=   ${FFLAGS} -DUSE_MPI_WIN_ALLOCATE_SHARED=0 \
-                        -DUSE_MPI_IN_PLACE=1
-        MPI=            ${OMPI_FCFLAGS}
+	MPIFC=          mpif90
+	OMPI_FC=        ${FC}
+	# Add specific MPI flags for stability
+	OMPI_FCFLAGS=   ${FFLAGS} -DUSE_MPI_WIN_ALLOCATE_SHARED=0 \
+					-DUSE_MPI_IN_PLACE=1
+	MPI=            ${OMPI_FCFLAGS}
 
-        DEBUG=          -fbacktrace -g ${FC_OPT}
-        DEBUGMPI=       -fbacktrace -g ${FC_OPT}
+	DEBUG=          -fbacktrace -g ${FC_OPT}
+	DEBUGMPI=       -fbacktrace -g ${FC_OPT}
 
 ################################################################################
 # GNU gcc-gfortran
@@ -157,7 +157,7 @@ all:    qfep qprep qdyn qdum qcalc move1 move2
 test:   qfep qprep qdyn_test qdum qcalc move1 move4
 
 debug:
-    @make FFLAGS="${DEBUG}" \
+	@make FFLAGS="${DEBUG}" \
     qfep qprep qdyn qdum qcalc move1 move2
 
 mpi:
