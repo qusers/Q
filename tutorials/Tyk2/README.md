@@ -97,10 +97,11 @@ Now let's get to the available options for the `--restraint_method` flag:
 
 How to set the restraints to the ligand topologies involved in the perturbation. Our method contains two configuration parts. How to compare the ring and if or how to take the ring-surround into consideration.
 
-- Ring comparison methods: `aromaticity`, `hibridization`, `element`. Each of these methods will define how to compare the ring atoms overlapping in space.
-    1) Aromaticity: atoms are considered equal if they have the same aromaticity flag in `RDKit`.
-    2) Hibridization: atoms are considered equal if they have the same hybridization state in `RDKit`.
-    3) Element: atoms are considered equal if they have the same atomic number.
+- Ring comparison methods: `heavyatom`, `aromaticity`, `hibridization`, `element`. Each of these methods will define how to compare the ring atoms overlapping in space.
+    1) Heavyatom: atoms are considered equal provided they're both heavy atoms.
+    2) Aromaticity: atoms are considered equal if they have the same aromaticity flag in `RDKit`.
+    3) Hibridization: atoms are considered equal if they have the same hybridization state in `RDKit`.
+    4) Element: atoms are considered equal if they have the same atomic number.
 
 - Surround atom compare: `p` (permissive), `ls` (less strict), `strict`.
 Setting this part of the string as either of these, will determine if or how the direct surrounding atoms to the ring strictures will be taken into account for ring equivalence.
@@ -112,7 +113,9 @@ Setting this part of the string as either of these, will determine if or how the
 
 Now that you ran `setupFEP`, you should have both `1.water` and `2.protein` directories created in the same directory you had your `lomap.json` file. to submit the replicates for a sigle *water* or *protein* "leg", you need to run the `FEP_submit.sh` shell script that is found under each perturbation directory.
 
-A perturbation directory follows the default naming `cd 1.water/FEP_<lig1>_<lig2>`, where you have *lig1* as your *starting point* ligand and *lig2* as your *end point* ligand (e.g.: *lig1 ➡️ λ ➡️ lig2*). To make this process easier, we recommend a bash function to your `.bashrc` See the link if you [have no idea what does that mean](https://www.marquette.edu/high-performance-computing/bashrc.php).
+A perturbation directory follows the default naming `FEP_<lig1>_<lig2>`, where you have *lig1* as your *starting point* ligand and *lig2* as your *end point* ligand (e.g.: *lig1 ➡️ λ ➡️ lig2*). To make the submission process easier, we recommend a bash function to your `.bashrc` See the link if you [have no idea what does that mean](https://www.marquette.edu/high-performance-computing/bashrc.php).
+
+The function iterates through the perturbations `FEP_<lig1>_<lig2>` found in the directories containing the `protein` or the `water` legs. Within each directory, it submits the jobs by running the shell script `FEP_submit.sh`, and creates a `submitted.txt` with the time the script was submitted. If `submitted.txt` exists, it skips the directory and moves to the next one.
 
 The function is the following:
 
@@ -146,12 +149,14 @@ function submitFEPjobs {
 
 Once you have this function there, you can just call it through your terminal (⚠️ On the first time you add this function you have to run `source ~/.bashrc` to make sure it apply the changes).
 
-Then you can just submit all the calculations of your water leg through:
+Then you can just submit all the calculations within your protein or water "leg" through:
 
 ```bash
-cd 1.water
+cd 2.protein
 submitFEPjobs
 ```
+
+❗**Tip**❗ Protein legs tend to be more challenging than water legs as you might still have protein-ligand or protein-protein clashes. We recommend starting with the protein leg first and, if the submitted jobs aren't crashing before the 5 to 7 minutes mark, you can proceed with the water leg.
 
 ## Analysis
 
