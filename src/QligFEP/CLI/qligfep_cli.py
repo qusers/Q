@@ -52,8 +52,8 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     command_str = " ".join(
         ["qligfep"]
         + [(f"--{k} {v}" if k != "FF" else f"-{k} {v}") for k, v in param_dict.items()]
-        + [f"restraint_method {args.restraint_method}"]
-    )
+        + [f"--restraint_method {args.restraint_method}"]
+    ).replace("to_clean", "files-to-clean")
     time_now = datetime.datetime.now()
     date_str = time_now.strftime("%Y-%m-%d %H:%M:%S")
     (Path(inputdir) / "fep_config.json").write_text(
