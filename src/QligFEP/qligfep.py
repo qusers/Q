@@ -616,6 +616,7 @@ class QligFEP:
 
         for eq_file_in in sorted(glob.glob(CONFIGS["ROOT_DIR"] + "/INPUTS/eq*.inp")):
             eq_file = eq_file_in.split("/")[-1:][0]
+            rest_force = 1.5 if eq_file != "eq5.inp" else 0.5  # 1.5 for eq1-4, 0.5 for eq5
             logger.debug(f"Writing {eq_file}")
             eq_file_out = writedir + "/" + eq_file
 
@@ -626,7 +627,7 @@ class QligFEP:
                         outfile.write(line)
                         if line == "[distance_restraints]\n":
                             for line in overlapping_atoms:
-                                outfile.write(f"{line[0]:d} {line[1]:d} 0.0 0.1 3.0 0\n")
+                                outfile.write(f"{line[0]:d} {line[1]:d} 0.0 0.1 {rest_force:.1f} 0\n")
 
                         if line == "[sequence_restraints]\n":
                             for line in restlist:
