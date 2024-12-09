@@ -148,6 +148,64 @@
         head N
         tail C
 *--------------------------------------------------------------------------------
+{ARN}
+    [atoms]
+        1  N      N             -0.614250
+        2  H      H              0.375260
+        3  CA     CX            -0.048340
+        4  HA     H1             0.095460
+        5  CB     C8             0.023350
+        6  HB2    HC             0.033000
+        7  HB3    HC             0.033000
+        8  CG     C8             0.159200
+        9  HG2    HC            -0.058930
+       10  HG3    HC            -0.058930
+       11  CD     C8             0.208950
+       12  HD2    H1             0.025060
+       13  HD3    H1             0.025060
+       14  NE     N2            -0.860400
+       15  HE     H              0.375710
+       16  CZ     CA             0.918860
+       17  NH1    N2            -0.919830
+       18  HH11   H              0.392740
+       19  HH12   H              0.392740
+       20  NH2    N2            -0.942810
+       21  HH21   H              0.359190
+       22  C      C              0.689230
+       23  O      O             -0.603320
+    [bonds]
+        N     H
+        N     CA
+        CA    HA
+        CA    CB
+        CA    C
+        CB    HB2
+        CB    HB3
+        CB    CG
+        CG    HG2
+        CG    HG3
+        CG    CD
+        CD    HD2
+        CD    HD3
+        CD    NE
+        NE    HE
+        NE    CZ
+        CZ    NH1
+        CZ    NH2
+        NH1   HH11
+        NH1   HH12
+        NH2   HH21
+        C     O
+    [impropers]
+        -C    N     CA    H
+        CA    C     +N    O
+        NE    CZ    NH1   NH2
+        CD    NE    CZ    HE
+        CZ    NH1   HH11  HH12
+    [connections]
+        head N
+        tail C
+*--------------------------------------------------------------------------------
 {ASH}
     [atoms]
         1  N      N             -0.415700
