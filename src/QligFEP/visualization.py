@@ -91,6 +91,7 @@ def render_ligand_restraints(
     sphere_palette: str = "hsv",
     sphere_radius: float = 0.6,
     sphere_alpha: float = 0.8,
+    render: bool = True,
 ) -> None:
     """
     Visualize two ligands with their atom mappings in three linked windows. The first
@@ -108,6 +109,7 @@ def render_ligand_restraints(
         sphere_palette: Matplotlib colormap to use for coloring the spheres.
         sphere_radius: Radius of the spheres rendered in the restrained atoms. Defaults to 0.6.
         sphere_alpha: Alpha value for the spheres. Defaults to 0.8.
+        render: Whether to render the visualization. Defaults to True.
 
     Returns:
         None
@@ -169,7 +171,9 @@ def render_ligand_restraints(
 
     view.zoomTo()
     view.render()
-    view.show()
+    if render:
+        view.show()
+    return view
 
 
 def apply_and_render_restraint(
