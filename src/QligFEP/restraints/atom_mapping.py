@@ -17,8 +17,10 @@ class AtomMapperHelper:
     """
 
     def __init__(self) -> None:
-        self.ringIdxsA = None
-        self.ringIdxsB = None
+        self.mapped_ringIdxsA = None
+        self.mapped_ringIdxsB = None
+        self.all_ringIdxsA = None
+        self.all_ringIdxsB = None
 
     def get_surrounding_idxs(self, atom: Chem.Atom, mol: Chem.Mol) -> list[int]:
         return [a.GetIdx() for a in mol.GetAtomWithIdx(atom).GetNeighbors()]
@@ -87,17 +89,21 @@ class AtomMapperHelper:
             >>> }
         """
         ringsA = self.identify_and_enumerate_rings(molA)
+        logger.debug(f"Rings in molecule A: {ringsA}")
         ringsB = self.identify_and_enumerate_rings(molB)
-        self.ringIdxsA = []
-        self.ringIdxsB = []
+        logger.debug(f"Rings in molecule B: {ringsB}")
+        self.all_ringIdxsA = [idx for set_values in ringsA.values() for idx in set_values]
+        self.all_ringIdxsB = [idx for set_values in ringsB.values() for idx in set_values]
+        self.mapped_ringIdxsA = []
+        self.mapped_ringIdxsB = []
 
         for idxs in ringsA.values():  # only add rings that are fully mapped by kartograf
             if np.isin(list(idxs), list(atom_mapping.keys())).all():
-                self.ringIdxsA.extend(idxs)
+                self.mapped_ringIdxsA.extend(idxs)
 
         for idxs in ringsB.values():
             if np.isin(list(idxs), list(atom_mapping.values())).all():
-                self.ringIdxsB.extend(idxs)
+                self.mapped_ringIdxsB.extend(idxs)
 
         rings = {}
         ring_mapping = self.map_rings_between_molecules(ringsA, ringsB, atom_mapping)
@@ -153,7 +159,7 @@ class AtomMapperHelper:
         a_or_b: str,
     ) -> tuple[list, set]:
         atom_idx = atom.GetIdx()
-        rings_idxs = self.ringIdxsA if a_or_b == "a" else self.ringIdxsB
+        rings_idxs = self.mapped_ringIdxsA if a_or_b == "a" else self.mapped_ringIdxsB
         if atom_idx in visited_atoms or atom_idx in rings_idxs:
             # Return immediately if atom has been visited or if it's part of a ring (e.g.: ring linked to another ring)
             return found_atoms, visited_atoms

@@ -200,10 +200,10 @@ class RestraintSetter:
 
                 # The iteration should stop when it finds a ring structure
                 if any([atomA != ring_atomA, atomB != ring_atomB]) and any(
-                    [atomA in self.atom_mapper.ringIdxsA, atomB in self.atom_mapper.ringIdxsB]
+                    # we do this on all_ringIdxs -> if mapped, it'll be taken care of,
+                    # and unmapped atoms shouldn't be restrained. So either way we stop it
+                    [atomA in self.atom_mapper.all_ringIdxsA, atomB in self.atom_mapper.all_ringIdxsB]
                 ):
-                    if self.are_atoms_equivalent(atomA_obj, atomB_obj, compare_method=compare_method):
-                        is_same.add(atomA)
                     break
 
                 if self.are_atoms_equivalent(atomA_obj, atomB_obj, compare_method=compare_method):
