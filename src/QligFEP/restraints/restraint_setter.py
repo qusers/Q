@@ -7,7 +7,6 @@ from typing import Union
 
 import numpy as np
 from kartograf import KartografAtomMapper, SmallMoleculeComponent
-from kartograf.atom_aligner import align_mol_shape
 from kartograf.atom_mapping_scorer import MappingVolumeRatioScorer
 from numpy.typing import NDArray
 from openff.toolkit import Molecule
@@ -39,9 +38,18 @@ class RestraintSetter:
         self.atom_mapping: kartagraf's `componentA_to_componentB` mapping dictionary
     """
 
-    def __init__(self, molA: str, molB: str) -> None:
+    def __init__(self, molA: str, molB: str, kartograf_max_atom_distance: float | int = 0.95) -> None:
+        """Initialize the RestraintSetter class with two molecules to have their atoms mapped
+        for the FEP restraint definition.
+
+        Args:
+            molA: path to the molecule A file (sdf format).
+            molB: path to the molecule B file (sdf format).
+            kartograf_max_atom_distance: maximum distance between atoms to be considered for mapping.
+                Defaults to 0.95.
+        """
         self._load_molecules(molA, molB)
-        self._align_and_map_molecules()
+        self._map_molecules(kartograf_max_atom_distance)
 
     @staticmethod
     def input_to_small_molecule_component(
@@ -82,8 +90,13 @@ class RestraintSetter:
         self.molA = self.input_to_small_molecule_component(molA)
         self.molB = self.input_to_small_molecule_component(molB)
 
-    def _align_and_map_molecules(self):
-        mapper = KartografAtomMapper(atom_map_hydrogens=False, map_exact_ring_matches_only=True)
+    def _map_molecules(self, atom_max_distance: float = 0.95):
+        mapper = KartografAtomMapper(
+            atom_map_hydrogens=False,
+            map_exact_ring_matches_only=True,
+            atom_max_distance=atom_max_distance,
+        )
+        logger.debug(f"Kartograf max distance: {mapper.atom_max_distance}")
         self.kartograf_mapping = next(mapper.suggest_mappings(self.molA, self.molB))
         # Score Mapping
         rmsd_scorer = MappingVolumeRatioScorer()

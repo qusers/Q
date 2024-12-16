@@ -156,10 +156,9 @@ def parse_arguments(program: str) -> argparse.Namespace:
         "--restraint_method",
         dest="restraint_method",
         type=str,
-        default="hybridization_p",
-        choices=get_avail_restraint_methods(),
+        default="heavyatom_p",
         help=(
-            """How to set the restraints to the ligand topologies involved in the perturbation. Defaults to `hybridization_p`.
+            """How to set the restraints to the ligand topologies involved in the perturbation. Defaults to `heavyatom_p`.
 
             Atom compare method: `heavyatom`, `aromaticity`, `hibridization`, `element`. Setting the first part of the
                 string as either of these, will determine how the substituents / ring atoms are treated to be
@@ -172,7 +171,10 @@ def parse_arguments(program: str) -> argparse.Namespace:
                     1) Permissive: Only the ring atoms are compared.
                     2) Less strict: The ring atoms and their direct surroundings are compared, but element type
                         is ignored.
-                    3) Strict: The ring atoms and their direct surroundings are element-wise compared."""
+                    3) Strict: The ring atoms and their direct surroundings are element-wise compared.
+           Kartograf atom max distance (optional): int or float to be used by `kartograf` as the maximum distance between
+                atoms to be considered for mapping. This is by default set to 0.95 A, but can be changed by passing `_0.95`,
+                for example, at the end of the `restraint_method` string."""
         ),
     )
     parser.add_argument(

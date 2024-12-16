@@ -446,21 +446,28 @@ class QligFEP:
         overlapping atoms, but based on our observations this was changed to a more
         chemistry-aware method, implemented under `QligFEP.restraints.restraint_setter`.
 
-        The configuration on how these restraints will be applied depend on two strings, passed into
-        `method` as `{ring_compare_method}_{surround_compare_method}`. Alternatively, the user can
-        opt for `overlap` which simply restrains atoms within 1 A from each other.
+        The configuration on how these restraints will be applied depend on three strings, passed into
+        `method` as `{ring_compare_method}_{surround_compare_method}_{atom_max_distance}`. Alternatively, the user
+        can opt for `overlap` which simply restrains atoms within 1 A from each other, or `kartograf` to use
+        the package's functionality without further post-processing of the mappings.
 
         Explanation:
             Ring atom compare: `aromaticity`, `hibridization`, `element`. Setting the first part of the
                 string as either of these, will determine how the substituents / ring atoms are treated to be
                 defined as equivalent.
+
             Surround atom compare: `p` (permissive), `ls` (less strict), `strict`.
                 Setting the second part of the string as either of these, will determine if or how the
                 direct surrounding atoms to the ring strictures will be taken into account for ring equivalence.
-                    - Permissive: Only the ring atoms are compared.
-                    - Less strict: The ring atoms and their direct surroundings are compared, but element type
-                        is ignored.
-                    - Strict: The ring atoms and their direct surroundings are element-wise compared.
+
+            - Permissive: Only the ring atoms are compared.
+            - Less strict: The ring atoms and their direct surroundings are compared, but element type
+                is ignored.
+            - Strict: The ring atoms and their direct surroundings are element-wise compared.
+
+            Kartograf atom max distance (optional): int or float to be used by `kartograf` as the maximum distance between
+                atoms to be considered for mapping. This is by default set to 0.95 A, but can be changed by passing `_0.95`,
+                for example, at the end of the `restraint_method` string.
 
         Args:
             writedir: directory to get the input files from, e.g.: FEP_lig1_lig2/inputfiles.
@@ -469,6 +476,14 @@ class QligFEP:
         Returns:
             list: list of overlapping atoms.
         """
+        pattern = r"_(\d+\.?\d*)"  # check for the optional atom max distance
+        match = re.search(pattern, restraint_method)
+        if match:
+            atom_max_distance = float(match.group(1))
+            restraint_method = re.sub(pattern, "", restraint_method)
+        else:
+            atom_max_distance = 0.95
+
         avail_methods = get_avail_restraint_methods()
         if restraint_method not in avail_methods:
             raise ValueError(f"Method {restraint_method} not recognized. Please use one of {avail_methods}")
@@ -503,32 +518,27 @@ class QligFEP:
             lig2_path = parent_write_dir / f"{self.lig2}.sdf"
             if not lig1_path.exists() or not lig2_path.exists():
                 logger.error(
-                    "Loading ligands from PDB files for the `chemoverlap` method is not supported yet."
+                    "Using restraint methods other than `overlap` requires the sdf of the ligands to also be in the perturbation directory."
                 )
                 raise FileNotFoundError(
-                    "If you're using the `chemoverlap` method, you need to have the `sdf` ligands in the "
-                    f"same directory you're using for the FEP calculations: {parent_write_dir}"
+                    f"Could not find the sdf files for the ligands in the perturbation directory: {lig1_path}, {lig2_path}"
                 )
             else:
                 logger.debug(f'Loading sdf for restraint calculation:\nlig1:"{lig1_path}"\nlig2"{lig2_path}"')
-                rsetter = RestraintSetter(lig1_path, lig2_path)
+                rsetter = RestraintSetter(lig1_path, lig2_path, kartograf_max_atom_distance=atom_max_distance)
                 if restraint_method == "kartograf":
                     restraints = rsetter.set_restraints(kartograf_native=True)
                 else:
-                    ring_atom_compare = restraint_method.split("_")[0]
-                    surround_atom_compare = restraint_method.split("_")[1]
-                    if surround_atom_compare == "p":
-                        strict_surround = False
-                        ignore_surround_atom_type = True  # is ignored when strict_surround is False
-                    else:
-                        strict_surround = True
-                        ignore_surround_atom_type = surround_atom_compare == "ls"
-                    restraints = rsetter.set_restraints(
-                        atom_compare_method=ring_atom_compare,
-                        strict_surround=strict_surround,
-                        ignore_surround_atom_type=ignore_surround_atom_type,
-                    )
-                if strict_check:  # TODO: This should be moved to the tests in the future...
+                    atom_compare_method, permissiveness_lvl = restraint_method.split("_")
+                    if permissiveness_lvl == "p":
+                        params = {"strict_surround": False}
+                    elif permissiveness_lvl == "ls":
+                        params = {"strict_surround": True, "ignore_surround_atom_type": True}
+                    elif permissiveness_lvl == "strict":
+                        params = {"strict_surround": True, "ignore_surround_atom_type": False}
+                    restraints = rsetter.set_restraints(atom_compare_method=atom_compare_method, **params)
+                    logger.debug(f"Restraints set using {restraint_method} method. Parameters: {params}")
+                if strict_check:  # Good to check in case sdf in directory doesn't belong to the structure
                     rdLig1 = rsetter.molA.to_rdkit()
                     rdLig2 = rsetter.molB.to_rdkit()
                     for AtomIdx_Lig1, AtomIdx_Lig2 in restraints.items():
