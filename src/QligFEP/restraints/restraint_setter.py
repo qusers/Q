@@ -83,10 +83,8 @@ class RestraintSetter:
         self.molB = self.input_to_small_molecule_component(molB)
 
     def _align_and_map_molecules(self):
-        # TODO: now we run this alignment but the aligned molecule isn't saved
         mapper = KartografAtomMapper(atom_map_hydrogens=False, map_exact_ring_matches_only=True)
-        a_molB = align_mol_shape(self.molB, ref_mol=self.molA)
-        self.kartograf_mapping = next(mapper.suggest_mappings(self.molA, a_molB))
+        self.kartograf_mapping = next(mapper.suggest_mappings(self.molA, self.molB))
         # Score Mapping
         rmsd_scorer = MappingVolumeRatioScorer()
         score = rmsd_scorer(mapping=self.kartograf_mapping)
