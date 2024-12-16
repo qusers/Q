@@ -18,7 +18,7 @@ def rm_HOH_clash_NN(
     pdb_df_target,
     th=2.5,
     output_file=None,
-    heavy_only: bool = False,
+    heavy_only: bool = True,
     header: Optional[str] = None,
     save_removed=False,
 ):
@@ -237,6 +237,7 @@ def get_coords(atomname, residue):
         if line[12:16].strip() == atomname.strip():
             return tuple(float(line[i : i + 8]) for i in range(30, 54, 8))
     raise ValueError(f"Atom {atomname} not found in residue {residue}!")
+
 
 def calculate_distance(atom_coords, center_coords) -> float:
     return math.sqrt(sum((a - b) ** 2 for a, b in zip(atom_coords, center_coords)))
