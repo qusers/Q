@@ -4,7 +4,7 @@ import re
 import shutil
 import stat
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal, Optional, Union
 
 import numpy as np
 
@@ -45,6 +45,7 @@ class QligFEP:
         timestep: Literal["1fs", "2fs"] = "2fs",
         softcore: bool = False,  # Not implemented yet
         to_clean: Optional[list[str]] = None,
+        water_thresh: Union[float, int] = 1.4,
         random_state: Optional[int] = 42,
         **kwargs,
     ):
@@ -65,6 +66,7 @@ class QligFEP:
         self.replicates = replicates
         self.sampling = sampling
         self.to_clean = to_clean
+        self.water_thresh = water_thresh
         # Temporary until flag is here
         self.ABS = False  # True
         self.ABS_waters = []
@@ -920,26 +922,25 @@ class QligFEP:
                     filename = "md_" + lambda1.replace(".", "") + "_" + lambda2.replace(".", "") + ".en\n"
                     outfile.write(filename)
 
-    def avoid_water_protein_clashes(
-        self, writedir, prot_th=1.4, water_th=1.4, header: Optional[str] = None, save_removed: bool = False
-    ):
-        """Function to remove water molecules too close to protein & ligands | ligands.
+    def avoid_water_protein_clashes(self, writedir, header: Optional[str] = None, save_removed: bool = False):
+        """Function to remove water molecules too close to protein & ligands | ligands (water leg).
         Thresholds are the distances in Ångström from the protein & ligands | ligands atoms
-        to the nearest atom in the water molecule (HOH).
+        to the nearest heavy atom in the water molecule (HOH).
+
+        The threshold used for the removal of these clashing water molecules are defined in the
+        `self.water_thresh` attribute.
 
         Args:
             writedir: directory in which QligFEP will write the input files.
-            prot_th: threshold (Å) to remove water molecules clashing with protein & ligand
-                on the protein leg. Defaults to 1.4.
-            water_th: threshold (Å) to remove water molecules clashing with the ligands
-                in the water leg. Defaults to 1.4.
             header: header to be added to the water.pdb file. This detail is needed in Qprep's
                 current version (2024/07/21), as it doesn't recognize the radius when merging an
                 existing water.pdb file to the topology.
+            save_removed: whether to save the removed water molecules to a file. This is automatically
+                set to True in the `CLI` in case `--log-level` is passed as either `debug` or `trace`.
         """
         waterfile = Path(writedir) / "water.pdb"
         protfile = Path(writedir) / self.pdb_fname
-        threshold = prot_th if self.system == "protein" else water_th
+        threshold = self.water_thresh
         system_to_log = "protein & ligands" if self.system == "protein" else "ligands"
 
         logger.info(f"Removing water molecules too close to {system_to_log} - threshold: {threshold} A.")

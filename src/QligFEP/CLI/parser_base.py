@@ -178,6 +178,17 @@ def parse_arguments(program: str) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "-wath",
+        "--water-thresh",
+        dest="water_thresh",
+        type=float,
+        default=1.4,
+        help=(
+            "Threshold (in Angstrom) for removing water molecules that are too close to the ligands "
+            "involved in the FEP. Defaults to 1.4 A."
+        ),
+    )
+    parser.add_argument(
         "-rs",
         "--random_state",
         dest="random_state",

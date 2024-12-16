@@ -37,6 +37,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "softcore": args.softcore,
             "to_clean": args.to_clean,
             "random_state": args.random_state,
+            "water_thresh": args.water_thresh,
         }
     else:
         param_dict = {}

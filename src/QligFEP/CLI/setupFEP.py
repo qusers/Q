@@ -39,6 +39,8 @@ def create_call(**kwargs):
         template += " -clean {to_clean}"
     if "random_state" in kwargs and kwargs["random_state"] is not None:
         template += " -rs {random_state}"
+    if "water_thresh" in kwargs and kwargs["water_thresh"] != 1.4:
+        template += " -wath {water_thresh}"
     return template.format(**kwargs)
 
 
@@ -103,6 +105,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 to_clean=to_clean,
                 random_state=args.random_state,
                 rest=args.restraint_method,
+                water_thresh=args.water_thresh,
                 log=args.log,
             )
             logger.info(f"Submitting the command:\n{command}")
