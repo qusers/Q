@@ -8,7 +8,7 @@
 #SBATCH --time=TIME
 #SBATCH -J JOBNAME
 #SBATCH --array=1-TOTAL_JOBS
-#SBATCH -o slurm.%N.%j.run%a.out
+#SBATCH -o slurm.run%a.%N.%j.out
 
 # Define your parameters
 temperatures=(TEMP_VAR)
