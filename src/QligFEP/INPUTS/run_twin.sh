@@ -116,10 +116,17 @@ sed -i "s/FEP_VAR/$fepfile/" *.inp
 
 cd - || exit
 done
+cpu_list=$(cat /proc/self/status | grep Cpus_allowed_list | awk '{print $2}')
+
+start=$(echo $cpu_list | cut -d'-' -f1)
+end=$(echo $cpu_list | cut -d'-' -f2)
+
+first=$(seq -s, $start $((start+7)))
+last=$(seq -s, $((end-7)) $end)
 
 # Just to make sure twin jobs will run on different cores
-(srun -n 8 --cpu-bind=rank bash -c 'echo "Job 1 cores:"; taskset -pc $$') &
-(srun -n 8 --cpu-bind=rank bash -c 'echo "Job 2 cores:"; taskset -pc $$') &
+(srun -n 8 --cpu-bind=map_cpu:$first bash -c 'echo "Job 1 cores:"; taskset -pc $$') &
+(srun -n 8 --cpu-bind=map_cpu:$last bash -c 'echo "Job 2 cores:"; taskset -pc $$') &
 wait
 
 if [ $index -lt 1 ]; then
