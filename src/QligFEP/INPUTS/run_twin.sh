@@ -118,8 +118,8 @@ cd - || exit
 done
 
 # Just to make sure twin jobs will run on different cores
-(srun -n 8 --cpu-bind=map_cpu:0,1,2,3,4,5,6,7 bash -c 'echo "Job 1 cores:"; taskset -pc $$') &
-(srun -n 8 --cpu-bind=map_cpu:8,9,10,11,12,13,14,15 bash -c 'echo "Job 2 cores:"; taskset -pc $$') &
+(srun -n 8 --cpu-bind=rank bash -c 'echo "Job 1 cores:"; taskset -pc $$') &
+(srun -n 8 --cpu-bind=rank bash -c 'echo "Job 2 cores:"; taskset -pc $$') &
 wait
 
 if [ $index -lt 1 ]; then
