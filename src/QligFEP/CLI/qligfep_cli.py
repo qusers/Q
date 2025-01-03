@@ -97,17 +97,16 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     logger.debug("Writing the MD files")
     if args.start == "0.5":
         file_list = run.write_MD_05(lambdas, inputdir, lig_size1, lig_size2, overlapping_atoms)
-        run.write_runfile(inputdir, file_list)
-
-    if args.start == "1":
+    elif args.start == "1":
         file_list = run.write_MD_1(lambdas, inputdir, lig_size1, lig_size2, overlapping_atoms)
-        run.write_runfile(inputdir, file_list)
-    logger.debug(f"Generated files: {file_list}")
-    logger.debug("Writing the submit files")
+
     if args.cluster == "SNELLIUS":
         run.write_twin_runfile(inputdir, file_list)
     else:
-        run.write_submitfile(writedir)
+        run.write_runfile(inputdir, file_list)
+    logger.debug(f"Generated files: {file_list}")
+    logger.debug("Writing the submit files")
+    run.write_submitfile(writedir)
     logger.debug("Writing the QFEP files")
     run.write_qfep(args.windows, lambdas)
 

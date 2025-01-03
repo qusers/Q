@@ -927,7 +927,7 @@ class QligFEP:
         run_line = (
             '(cd "${rundirs[0]}" && time srun -n 8 --cpu-bind=cores,map_cpu:0-7 '
             "$qdyn FILEBASE.inp > FILEBASE.log) &\n"
-            '(cd "${rundirs[0]}" && time srun -n 8 --cpu-bind=cores,map_cpu:8-15 '
+            '(cd "${rundirs[1]}" && time srun -n 8 --cpu-bind=cores,map_cpu:8-15 '
             "$qdyn FILEBASE.inp > FILEBASE.log) &\n"
             "\n"
             "wait\n"
@@ -986,6 +986,7 @@ class QligFEP:
                             md2 = md_2[i][:-4]
 
                             outfile.write(run_line.replace("FILEBASE", md1))
+                            outfile.write("\n")
                             outfile.write(run_line.replace("FILEBASE", md2))
                             outfile.write("\n")
                 if line.strip() == "#CLEANUP" and self.to_clean is not None:
