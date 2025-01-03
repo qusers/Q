@@ -105,9 +105,10 @@ cp "$inputfiles"/$fepfile .
 
 if [ $index -lt 1 ]; then
 cp "$inputfiles"/eq*.inp .
-sed -i "s/SEED_VAR/$seed/" eq1.inp
+sed -i "s/SEED_VAR/$seed/" eq1.inp # change the random seed to custom
 else
-cp "$workdir/$lastfep/$temperature/$run_num/$finalMDrestart" ./eq5.re
+    lastfep=FEP$index
+    cp "$workdir/$lastfep/$temperature/$run_num/$finalMDrestart" ./eq5.re
 fi
 
 sed -i "s/T_VAR/$temperature/" *.inp
@@ -116,9 +117,6 @@ sed -i "s/FEP_VAR/$fepfile/" *.inp
 cd - || exit
 done
 
-else
-    lastfep=FEP$index
-    cp $workdir/$lastfep/$temperature/$run_num/$finalMDrestart $rundir/eq5.re
 fi
 sed -i "s/T_VAR/$temperature/" *.inp
 sed -i "s/FEP_VAR/$fepfile/" *.inp
