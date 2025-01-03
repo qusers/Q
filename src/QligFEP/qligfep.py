@@ -907,7 +907,7 @@ class QligFEP:
             file_list: list of files to be written out.
         """
 
-        src = CONFIGS["INPUT_DIR"] + "/run.sh"
+        src = CONFIGS["INPUT_DIR"] + "/run_twin.sh"
         tgt = writedir + "/run" + self.cluster + ".sh"
         EQ_files = sorted(glob.glob(writedir + "/eq*.inp"))
 
