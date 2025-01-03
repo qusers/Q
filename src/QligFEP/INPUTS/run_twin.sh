@@ -117,7 +117,6 @@ sed -i "s/FEP_VAR/$fepfile/" *.inp
 cd - || exit
 done
 
-fi
 sed -i "s/T_VAR/$temperature/" *.inp
 sed -i "s/FEP_VAR/$fepfile/" *.inp
 if [ $index -lt 1 ]; then

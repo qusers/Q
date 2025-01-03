@@ -925,9 +925,9 @@ class QligFEP:
             replacements["FEPS"] = "FEP1.fep"
 
         run_line = (
-            '(cd "${rundirs[0]}" && time srun -n 8 --cpu-bind=cores,map_cpu:0-7 '
+            '(cd "${rundirs[0]}" && time srun -n 8 --cpu-bind=cores,map_cpu:0,1,2,3,4,5,6,7 '
             "$qdyn FILEBASE.inp > FILEBASE.log) &\n"
-            '(cd "${rundirs[1]}" && time srun -n 8 --cpu-bind=cores,map_cpu:8-15 '
+            '(cd "${rundirs[1]}" && time srun -n 8 --cpu-bind=cores,map_cpu:8,9,10,11,12,13,14,15 '
             "$qdyn FILEBASE.inp > FILEBASE.log) &\n"
             "\n"
             "wait\n"
