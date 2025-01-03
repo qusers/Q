@@ -86,7 +86,7 @@ cd $tempdir || exit
 rundirs=("$tempdir/$run_num1" "$tempdir/$run_num2")
 jobseeds=("${seeds[$run_num1-1]}" "${seeds[$run_num2-1]}")
 
-echo "Running FEP$((index+1)) at $temperature K with seeds $seed1 and $seed2"
+echo "Running FEP$((index+1)) at $temperature K with seeds ${jobseeds[0]} and ${jobseeds[1]}"
 echo "Run directory 1 is ${rundirs[0]}"
 echo "Run directory 2 is ${rundirs[1]}"
 
@@ -117,8 +117,11 @@ sed -i "s/FEP_VAR/$fepfile/" *.inp
 cd - || exit
 done
 
-sed -i "s/T_VAR/$temperature/" *.inp
-sed -i "s/FEP_VAR/$fepfile/" *.inp
+# Just to make sure twin jobs will run on different cores
+(srun -n 8 --cpu-bind=map_cpu:0,1,2,3,4,5,6,7 bash -c 'echo "Job 1 cores:"; taskset -pc $$') &
+(srun -n 8 --cpu-bind=map_cpu:8,9,10,11,12,13,14,15 bash -c 'echo "Job 2 cores:"; taskset -pc $$') &
+wait
+
 if [ $index -lt 1 ]; then
 #EQ_FILES
 fi

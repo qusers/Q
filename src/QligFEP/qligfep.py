@@ -925,9 +925,9 @@ class QligFEP:
             replacements["FEPS"] = "FEP1.fep"
 
         run_line = (
-            '(cd "${rundirs[0]}" && time srun -n 8 --cpu-bind=cores,map_cpu:0,1,2,3,4,5,6,7 '
+            '(cd "${rundirs[0]}" && time srun -n 8 --cpu-bind=map_cpu:0,1,2,3,4,5,6,7 '
             "$qdyn FILEBASE.inp > FILEBASE.log) &\n"
-            '(cd "${rundirs[1]}" && time srun -n 8 --cpu-bind=cores,map_cpu:8,9,10,11,12,13,14,15 '
+            '(cd "${rundirs[1]}" && time srun -n 8 --cpu-bind=map_cpu:8,9,10,11,12,13,14,15 '
             "$qdyn FILEBASE.inp > FILEBASE.log) &\n"
             "\n"
             "wait\n"
@@ -971,6 +971,7 @@ class QligFEP:
                     for line in EQ_files:
                         file_base = Path(line).stem
                         outfile.write(run_line.replace("FILEBASE", file_base))
+                        outfile.write("\n")
 
                 if line.strip() == "#RUN_FILES":
                     if self.start == "1":
