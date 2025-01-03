@@ -938,7 +938,7 @@ class QligFEP:
                 if line.strip() == "#SBATCH --array=1-TOTAL_JOBS":
                     if int(self.replicates) % 2 != 0:
                         raise ValueError("Twin runfile requires an even number of replicates!!!")
-                    replacements["TOTAL_JOBS"] = str(int(self.replicates) / 2)  # each job will run two MDs
+                    replacements["TOTAL_JOBS"] = str(int(self.replicates) // 2)  # each job will run two MDs
                 if line.strip() == "temperatures=(TEMP_VAR)":
                     replacements["TEMP_VAR"] = str(self.temperature)
                 if line.strip() == "seeds=(RANDOM_SEEDS)":
