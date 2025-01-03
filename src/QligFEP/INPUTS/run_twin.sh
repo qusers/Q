@@ -62,8 +62,6 @@ fi
 
 # Get the actual values for this job
 temperature=${temperatures[$temp_idx]}
-seed1=${seeds[$run_num1-1]}
-seed2=${seeds[$run_num2-1]}
 
 ## Load modules for qdynp
 MODULES
@@ -86,13 +84,17 @@ mkdir -p $tempdir
 cd $tempdir || exit
 
 rundirs=("$tempdir/$run_num1" "$tempdir/$run_num2")
+jobseeds=("${seeds[$run_num1-1]}" "${seeds[$run_num2-1]}")
 
 echo "Running FEP$((index+1)) at $temperature K with seeds $seed1 and $seed2"
 echo "Run directory 1 is ${rundirs[0]}"
 echo "Run directory 2 is ${rundirs[1]}"
 
 # Create directories and copy files
-for dir in "${rundirs[@]}"; do
+for i in "${!rundirs[@]}"; do
+dir="${rundirs[$i]}"
+seed="${seeds[$i]}"
+
 mkdir -p "$dir"
 cd "$dir" || exit
 
