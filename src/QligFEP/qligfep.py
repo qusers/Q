@@ -876,7 +876,7 @@ class QligFEP:
                                 f"time srun -n $SLURM_NTASKS --cpu-bind=cores $qdyn {file_base}.inp"
                                 f" > {file_base}.log\n"
                             )
-                        outfile.write(outline)
+                            outfile.write(outline)
 
                     elif self.start == "0.5":
                         outline = "time srun -n $SLURM_NTASKS --cpu-bind=cores $qdyn md_0500_0500.inp > md_0500_0500.log\n\n"
@@ -887,6 +887,106 @@ class QligFEP:
 
                             outfile.write(outline1)
                             outfile.write(outline2)
+                            outfile.write("\n")
+                if line.strip() == "#CLEANUP" and self.to_clean is not None:
+                    replacements["CLEANUP"] = "#Cleaned {} files\n".format(" ".join(self.to_clean))
+                    outline = replace(line, replacements)
+                    for suffix in self.to_clean:
+                        if suffix is None:
+                            break
+                        outfile.write(f"rm -f *{suffix}\n")
+                    outfile.write(outline[1:])
+
+    def write_twin_runfile(self, writedir, file_list):
+        """Writes the same runfile as the normal, but will run two MD simulations in the
+        same job. This is done to optimize the usage of the CPU hours when running on 8
+        cores is not possible.
+
+        Args:
+            writedir: write directory for the runfile.
+            file_list: list of files to be written out.
+        """
+
+        src = CONFIGS["INPUT_DIR"] + "/run.sh"
+        tgt = writedir + "/run" + self.cluster + ".sh"
+        EQ_files = sorted(glob.glob(writedir + "/eq*.inp"))
+
+        if self.start == "1":
+            MD_files = reversed(sorted(glob.glob(writedir + "/md*.inp")))
+
+        elif self.start == "0.5":
+            md_1 = file_list[1]
+            md_2 = file_list[2]
+
+        replacements = CLUSTER_DICT[self.cluster]
+        if self.start == "1" and self.softcore is True:  # not implemented yet
+            replacements["FEPS"] = "FEP1.fep FEP2.fep FEP3.fep"
+        else:
+            replacements["FEPS"] = "FEP1.fep"
+
+        run_line = (
+            '(cd "${rundirs[0]}" && time srun -n 8 --cpu-bind=cores,map_cpu:0-7 '
+            "$qdyn FILEBASE.inp > FILEBASE.log) &\n"
+            '(cd "${rundirs[0]}" && time srun -n 8 --cpu-bind=cores,map_cpu:8-15 '
+            "$qdyn FILEBASE.inp > FILEBASE.log) &\n"
+            "\n"
+            "wait\n"
+        )
+
+        with open(src) as infile, open(tgt, "w") as outfile:
+            for line in infile:
+                if line.strip() == "#SBATCH --array=1-TOTAL_JOBS":
+                    if int(self.replicates) % 2 != 0:
+                        raise ValueError("Twin runfile requires an even number of replicates!!!")
+                    replacements["TOTAL_JOBS"] = str(int(self.replicates) / 2)  # each job will run two MDs
+                if line.strip() == "temperatures=(TEMP_VAR)":
+                    replacements["TEMP_VAR"] = str(self.temperature)
+                if line.strip() == "seeds=(RANDOM_SEEDS)":
+                    replacements["RANDOM_SEEDS"] = " ".join([str(s) for s in self.seeds])
+                if line.strip() == "#SBATCH -A ACCOUNT":
+                    try:  # Try to take account info - not for all clusters!
+                        replacements["ACCOUNT"]
+                    except KeyError:
+                        line = ""
+                if line.strip() == "#SBATCH -J JOBNAME":
+                    if self.cluster == "DARDEL":  # TODO: refactor this...
+                        outfile.write("#SBATCH -p shared\n")
+                    elif self.cluster == "SNELLIUS":
+                        outfile.write("#SBATCH -p genoa\n")
+                    try:
+                        if self.system == "water":
+                            jobname = "w_"
+                        elif self.system == "protein":
+                            jobname = "p_"
+                        elif self.system == "vacuum":
+                            jobname = "v_"
+                        jobname += self.lig1 + "_" + self.lig2
+                        replacements["JOBNAME"] = jobname
+                    except Exception as e:
+                        logger.error(f"Something went wrong while defining the jobname:\n{e}")
+                        line = ""
+                outline = replace(line, replacements)
+                outfile.write(outline)
+                if line.strip() == "#EQ_FILES":
+                    for line in EQ_files:
+                        file_base = Path(line).stem
+                        outfile.write(run_line.replace("FILEBASE", file_base))
+
+                if line.strip() == "#RUN_FILES":
+                    if self.start == "1":
+                        for line in MD_files:
+                            file_base = line.split("/")[-1][:-4]
+                            outfile.write(run_line.replace("FILEBASE", file_base))
+
+                    elif self.start == "0.5":
+                        outfile.write(run_line.replace("FILEBASE", "md_0500_0500"))
+                        outfile.write("\n")
+                        for i, _ in enumerate(md_1):
+                            md1 = md_1[i][:-4]
+                            md2 = md_2[i][:-4]
+
+                            outfile.write(run_line.replace("FILEBASE", md1))
+                            outfile.write(run_line.replace("FILEBASE", md2))
                             outfile.write("\n")
                 if line.strip() == "#CLEANUP" and self.to_clean is not None:
                     replacements["CLEANUP"] = "#Cleaned {} files\n".format(" ".join(self.to_clean))
