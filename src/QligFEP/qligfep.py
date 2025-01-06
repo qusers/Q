@@ -891,10 +891,8 @@ class QligFEP:
                 if line.strip() == "#CLEANUP" and self.to_clean is not None:
                     replacements["CLEANUP"] = "#Cleaned {} files\n".format(" ".join(self.to_clean))
                     outline = replace(line, replacements)
-                    for suffix in self.to_clean:
-                        if suffix is None:
-                            break
-                        outfile.write(f"rm -f *{suffix}\n")
+                    outfile.write('cd "${rundirs[0]}" && ' + f"rm -f *{' '.join(self.to_clean)}\n")
+                    outfile.write('cd "${rundirs[1]}" && ' + f"rm -f *{' '.join(self.to_clean)}\n")
                     outfile.write(outline[1:])
 
     def write_twin_runfile(self, writedir, file_list):

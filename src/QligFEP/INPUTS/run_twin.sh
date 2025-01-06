@@ -133,7 +133,8 @@ if [ $index -lt 1 ]; then
 #EQ_FILES
 fi
 #RUN_FILES
-timeout 3m QFEP < qfep.inp > qfep.out || [ $? -eq 124 ]
+cd "${rundirs[0]}" && timeout 3m QFEP < qfep.inp > qfep.out || [ $? -eq 124 ]
+cd "${rundirs[1]}" && timeout 3m QFEP < qfep.inp > qfep.out || [ $? -eq 124 ]
 done
 #CLEANUP
 
