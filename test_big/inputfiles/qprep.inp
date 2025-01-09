@@ -1,0 +1,20 @@
+rl /home/x_davfi/Q/src/QligFEP/FF/AMBER14sb.lib 
+rl ejm_31.lib
+rl ejm_42_renumber.lib
+rprm AMBER14sb_ejm_31_ejm_42_merged.prm 
+! TO DO Change if protein system is used
+rp ejm_31_ejm_42.pdb 
+! set solute_density 0.05794 
+! NOTE, this is now large for water system, change for protein system
+set solvent_pack 2.3
+boundary 1 -4.675 25.27 -30.505 25
+solvate -4.675 25.27 -30.505 25 4 water.pdb
+!addbond at1 at2 y
+maketop MKC_p 
+writetop dualtop.top 
+wp top_p.pdb y 
+rt dualtop.top
+mask none
+mask not excluded 
+wp complexnotexcluded.pdb y 
+q 

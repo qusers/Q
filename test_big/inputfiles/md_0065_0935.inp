@@ -1,0 +1,72 @@
+[MD]
+steps                     5000
+stepsize                  2.0
+temperature               T_VAR
+bath_coupling             10
+shake_hydrogens           on
+shake_solute              on
+shake_solvent             on
+lrf                       on
+separate_scaling          on
+
+[cut-offs]
+solute_solvent            10
+solute_solute             10
+solvent_solvent           10
+q_atom                    99
+lrf                       99
+
+[sphere]
+shell_force               10.0
+shell_radius              25
+
+[solvent]
+radial_force              60.0
+polarisation              on
+polarisation_force        20.0
+
+[intervals]
+output                    5
+energy                    10
+trajectory                100
+non_bond                  25
+
+[files]
+topology                  dualtop.top
+trajectory                md_0065_0935.dcd
+restart                   md_0070_0930.re
+energy                    md_0065_0935.en
+final                     md_0065_0935.re
+fep                       FEP_VAR
+
+[trajectory_atoms]
+not excluded
+
+[lambdas]
+0.065 0.935
+
+[sequence_restraints]
+
+
+[distance_restraints]
+4652 4684 0.0 0.1 0.5 0
+4653 4685 0.0 0.1 0.5 0
+4654 4686 0.0 0.1 0.5 0
+4655 4687 0.0 0.1 0.5 0
+4656 4688 0.0 0.1 0.5 0
+4657 4689 0.0 0.1 0.5 0
+4658 4690 0.0 0.1 0.5 0
+4659 4691 0.0 0.1 0.5 0
+4660 4692 0.0 0.1 0.5 0
+4661 4693 0.0 0.1 0.5 0
+4662 4694 0.0 0.1 0.5 0
+4663 4695 0.0 0.1 0.5 0
+4664 4696 0.0 0.1 0.5 0
+4665 4697 0.0 0.1 0.5 0
+4666 4698 0.0 0.1 0.5 0
+4667 4699 0.0 0.1 0.5 0
+4668 4700 0.0 0.1 0.5 0
+4669 4701 0.0 0.1 0.5 0
+4670 4702 0.0 0.1 0.5 0
+4671 4703 0.0 0.1 0.5 0
+4672 4704 0.0 0.1 0.5 0
