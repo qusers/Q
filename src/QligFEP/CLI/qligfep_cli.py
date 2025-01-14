@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Optional
 
+from QligFEP import __version__
+
 from ..logger import logger, setup_logger
 from ..qligfep import QligFEP
 from .parser_base import parse_arguments
@@ -28,7 +30,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "system": args.system,
             "cluster": args.cluster,
             "sphereradius": args.sphereradius,
-            "cysbond": args.cysbond,  # TODO: add automatic detection of cysbond as in qprep_cli.py
+            "cysbond": args.cysbond,
             "start": args.start,
             "temperature": args.temperature,
             "replicates": args.replicates,
@@ -49,16 +51,26 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     writedir = run.makedir()
     inputdir = writedir + "/inputfiles"
 
-    # Write json with run configs
-    command_str = " ".join(
-        ["qligfep"]
-        + [(f"--{k} {v}" if k != "FF" else f"-{k} {v}") for k, v in param_dict.items()]
-        + [f"--restraint_method {args.restraint_method}"]
-    ).replace("to_clean", "files-to-clean")
+    command_str = "qligfep"
+    for k, v in param_dict.items():
+        if k == "FF":
+            command_str += f" -{k} {v}"
+        elif k == "to_clean":
+            command_str += f" --{k} {' '.join(v)}".replace("to_clean", "files-to-clean")
+        elif k == "water_thresh":
+            command_str += f" --{k.replace('_', '-')} {v}"
+        elif k == "softcore":
+            continue
+        else:
+            command_str += f" --{k} {v}"
+    command_str += f" --restraint_method {args.restraint_method}"
     time_now = datetime.datetime.now()
     date_str = time_now.strftime("%Y-%m-%d %H:%M:%S")
     (Path(inputdir) / "fep_config.json").write_text(
-        json.dumps({**param_dict, **{"time": date_str, "command_str": command_str}}, indent=4)
+        json.dumps(
+            {**param_dict, **{"time": date_str, "command_str": command_str, "QligFEP_version": __version__}},
+            indent=4,
+        )
     )
 
     a = run.read_files()
