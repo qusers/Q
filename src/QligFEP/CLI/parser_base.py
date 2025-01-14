@@ -3,7 +3,6 @@
 import argparse
 
 from ..settings.settings import CLUSTER_DICT
-from .utils import get_avail_restraint_methods
 
 
 def parse_arguments(program: str) -> argparse.Namespace:
@@ -110,15 +109,6 @@ def parse_arguments(program: str) -> argparse.Namespace:
         help="Total number of windows that will be run. Defaults to 100.",
         type=str,
     )
-    if program == "QligFEP":
-        parser.add_argument(
-            "-sc",
-            "--softcore",
-            dest="softcore",
-            default=False,
-            action="store_true",
-            help="Turn on if you want to use softcore",
-        )
     if program == "setupFEP":  # this is only used for setupFEP
         parser.add_argument(
             "-j",

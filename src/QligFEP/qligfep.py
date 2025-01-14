@@ -43,13 +43,10 @@ class QligFEP:
         replicates: str = "10",
         sampling: Literal["sigmoidal", "linear", "exponential", "reverse_exponential"] = "sigmoidal",
         timestep: Literal["1fs", "2fs"] = "2fs",
-        softcore: bool = False,  # Not implemented yet
         to_clean: Optional[list[str]] = None,
         water_thresh: Union[float, int] = 1.4,
         random_state: Optional[int] = 42,
-        **kwargs,
     ):
-        self.softcore = softcore
         self.replacements = {}  # TODO: make this explicit in the future
         self.timestep = timestep
         self.lig1 = lig1
@@ -826,10 +823,7 @@ class QligFEP:
             md_2 = file_list[2]
 
         replacements = CLUSTER_DICT[self.cluster]
-        if self.start == "1" and self.softcore is True:  # not implemented yet
-            replacements["FEPS"] = "FEP1.fep FEP2.fep FEP3.fep"
-        else:
-            replacements["FEPS"] = "FEP1.fep"
+        replacements["FEPS"] = "FEP1.fep"
         with open(src) as infile, open(tgt, "w") as outfile:
             for line in infile:
                 if line.strip() == "#SBATCH --array=1-TOTAL_JOBS":
@@ -891,10 +885,6 @@ class QligFEP:
                 if line.strip() == "#CLEANUP" and self.to_clean is not None:
                     replacements["CLEANUP"] = "#Cleaned {} files\n".format(" ".join(self.to_clean))
                     outline = replace(line, replacements)
-                    for suffix in self.to_clean:
-                        if suffix is None:
-                            break
-                        outfile.write(f"rm -f *{suffix}\n")
                     outfile.write(outline[1:])
 
     def write_qfep(self, windows, lambdas):
