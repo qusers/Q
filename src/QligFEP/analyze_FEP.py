@@ -5,13 +5,15 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
-from sklearn.metrics import mean_absolute_error
+import pandas as pd
+from cinnabar import stats as cstats
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 
-from .IO import read_qfep, read_qfep_verbose, run_command
+from .IO import read_qfep, run_command
 from .logger import logger, setup_logger
 from .settings.settings import Q_PATHS
 
@@ -380,57 +382,78 @@ class FepReader:
             with output_file.open("w") as f:
                 json.dump(self.mapping_json, f, indent=4)
 
-    def create_ddG_plot(  # FIXME: This could be a static method or a function to make it more flexible
-        self,
-        method,
+    @staticmethod
+    def prepare_df(json_dict, experimental_data: bool = True):
+        pref = "dg" if "dg_error" in json_dict["edges"][0] else "ddg"
+        df = pd.DataFrame(json_dict["edges"])
+        if experimental_data:
+            df = (
+                df.assign(
+                    ddg_value=lambda x: x[pref + "_value"],
+                    residual=lambda x: x[pref + "_value"] - x["Q_ddG_avg"],
+                    residual_abs=lambda x: x["residual"].abs(),
+                )
+                .sort_values("residual_abs", ascending=False)
+                .drop(columns="residual_abs")
+            )
+        df = df.assign(
+            fep_name=lambda x: "FEP_" + x["from"] + "_" + x["to"],
+        )
+        return df
+
+    @staticmethod
+    def create_ddG_plot(
+        results_df: pd.DataFrame,
         margin: float = 1.0,
         xylims: tuple | None = None,
         output_path: str | None = None,
+        target_name: str | None = None,
+        savefig: bool = False,
     ):
         """Creates the ddG plot for the FEP that has already been analyzed. The plot will
         show the experimental (X axis) vs mean predicted values (Y axis), with error bars
         representing the standard error of the mean (SEM).
 
         Args:
-            method: the energy method to be used for the plot. Must be one of the keys in
-                the result dictionary.
+            reuslts_df: pd.DataFrame with the results from the FEP, output from `prepare_df`.
             margin: margin value to be added/subtracted to the max/min values obtained. Defaults to 1.0.
             xylims: if values are passed, x&y min will be xylims[0] and max will be [1]. Defaults to None.
             output_path: path to save the plot. If None, the plot will not be saved. Defaults to None.
+            target_name: name of the target protein to be added in the plot. Defaults to None.
+            savefig: if True, will save the plot to the output_path. Defaults to False.
 
         Returns:
             the matplotlib figure and axis objects (fig, ax).
         """
-        self._check_method_in_result(method)
-
-        avg_values = []
-        sem_values = []
-        exp_values = []
-        for fep in self.feps:
-            data_dict = self.data["result"][method][fep]
-            avg_key = f"{method}_avg"
-            sem_key = f"{method}_sem"
-            try:
-                avg_values.append(data_dict[avg_key])
-                sem_values.append(data_dict[sem_key])
-                exp_values.append(self.data["result"]["experimental"][fep]["value"])
-            except KeyError:
-                logger.error(f"KeyError: {method} not found in {fep}.")
-                logger.error(f"Current dictionary: {data_dict}")
-
-        # check for nan values and, if present, remove them
+        fep_names = results_df["fep_name"].values
+        avg_values = results_df["Q_ddG_avg"].values
+        sem_values = results_df["Q_ddG_sem"].values
+        exp_values = results_df["ddg_value"].values
         nan_val_idxs = np.where(np.isnan(avg_values))[0]
-        problem_feps = [self.feps[idx] for idx in nan_val_idxs]
         if len(nan_val_idxs) > 0:
-            logger.warning(f"Dropping FEPs with nan values: {problem_feps}")
-            avg_values = [val for idx, val in enumerate(avg_values) if idx not in nan_val_idxs]
-            sem_values = [val for idx, val in enumerate(sem_values) if idx not in nan_val_idxs]
-            exp_values = [val for idx, val in enumerate(exp_values) if idx not in nan_val_idxs]
+            logger.warning(f"Dropping FEPs with nan values: {fep_names[nan_val_idxs]}")
+            mask = ~np.isin(np.arange(len(avg_values)), nan_val_idxs)
+            avg_values = avg_values[mask]
+            sem_values = sem_values[mask]
+            exp_values = exp_values[mask]
 
-        # Calculate RMSE & correlation coefficient
-        rmse = np.sqrt(np.mean((np.array(avg_values) - np.array(exp_values)) ** 2))
-        mae = mean_absolute_error(exp_values, avg_values)
-        correlation_coef = np.corrcoef(exp_values, avg_values)[0, 1]
+        ## CALCULATE STATISTICS
+        def result_to_latex(res, latexify_each=False):  # TODO: move this out of this method?
+            """Round cinnabar's output to one decimal case and return a LaTeX string."""
+            mle = round(res["mle"], 2)
+            low = round(res["low"], 2)
+            high = round(res["high"], 2)
+
+            if latexify_each:
+                return f"${mle:.2f}_{{{low}}}^{{{high}}}$"
+            else:
+                return f"{mle:.2f}_{{{low}}}^{{{high}}}"
+
+        statistics = ["RMSE", "MUE", "KTAU"]
+        stats_dict = {}
+        for stat in statistics:
+            cinnabar_stats = cstats.bootstrap_statistic(avg_values, exp_values, statistic=stat)
+            stats_dict[stat] = result_to_latex(cinnabar_stats)
 
         if xylims is not None:
             assert len(xylims) == 2, "xylims must be a tuple with 2 elements."
@@ -475,44 +498,70 @@ class FepReader:
             zorder=1,
         )
 
-        # Annotating the plot with τ and RMSE # TODO: figure out how to place it...
-        unit = r"$\frac{kcal}{mol}$"
-        text_body = f"$\\tau = {correlation_coef:.2f}$ | RMSE = {rmse:.2f} {unit} | MAE = {mae:.2f} {unit}"
-        txt_position = (max_val * 0.99, min_val * 1.01)  # don't make it so close to axis
-        plt.text(
-            *txt_position, text_body, fontsize=10, verticalalignment="bottom", horizontalalignment="right"
-        )
-
         # set labels, make it square and add legend
         plt.title(
-            rf"{self.target_name}, $N={len(avg_values)}$ - $\Delta\Delta {method.replace('dd', '')}$ plot"
+            f"{(target_name + ' - ' if target_name is not None else '')}"
+            rf"$\Delta\Delta Gbar$ plot ($N={len(exp_values)}$)"
         )
         plt.xlabel("$\Delta\Delta G_{exp} [kcal/mol]$")  # noqa: W605
         plt.ylabel("$\Delta\Delta G_{pred} [kcal/mol]$")  # noqa: W605
         plt.xlim(min_val, max_val)
         plt.ylim(min_val, max_val)
         ax.set_aspect("equal", adjustable="box")
+
+        # add statistics to the plot
+        unit = r"\frac{kcal}{mol}"
+        text_body = (
+            f"$\\tau = {stats_dict['KTAU']}$ (Kendall's $\\tau$)",
+            f"RMSE = ${stats_dict['RMSE']}  {unit}$",
+            f"MUE = ${stats_dict['MUE']}  {unit}$",
+        )
+        logger.info(f"Stats: {' '.join(text_body)}")
+        hori_height = 0.35
+        spacing = 0.085
+        txt_positions = (
+            (1.04, hori_height),
+            (1.04, hori_height - spacing),
+            (1.04, hori_height - spacing * 2),
+        )
+        for txt_position, body in zip(txt_positions, text_body):
+            plt.text(
+                *txt_position,
+                body,
+                fontsize=12,
+                verticalalignment="bottom",
+                horizontalalignment="left",
+                transform=ax.transAxes,
+            )
+
+        legend_elements = [
+            Line2D([0], [0], color="k", linestyle="-", label="Identity line"),
+            Patch(facecolor="darkgray", alpha=0.5, label="Within 1 kcal/mol"),
+            Patch(facecolor="lightgray", alpha=0.5, label="Within 2 kcal/mol"),
+        ]
+
         ax.legend(
-            ["Identity line", "Within 1 kcal/mol", "Within 2 kcal/mol"],
+            handles=legend_elements,
             bbox_to_anchor=(1.04, 0),
             loc="lower left",
             borderaxespad=0,
             frameon=False,
         )
-        if output_path is None:
-            output_path = Path().cwd()
-            logger.info("Using default name to save the plot at the current working directory...")
-            fig.savefig(f"{self.target_name}_{method}_ddG_plot.png", dpi=300, bbox_inches="tight")
-            return fig, ax
-        if isinstance(output_path, str):
-            output_path = Path(output_path)
-        assert isinstance(output_path, Path), "output_path must be a string or a Path object."
-        if output_path.isdir():
-            output_path = output_path / f"{self.target_name}_{method}_ddG_plot.png"
-            logger.info(f"Using default name to save the plot at {output_path}")
-        elif output_path.exits():
-            logger.warning(f"File {output_path} already exists. Overwriting...")
-        fig.savefig(output_path, dpi=300, bbox_inches="tight")
+        if savefig:
+            if output_path is None:
+                output_path = Path().cwd()
+                logger.info("Using default name to save the plot at the current working directory...")
+                fig.savefig(f"{target_name}_ddG_plot.png", dpi=300, bbox_inches="tight")
+                return fig, ax
+            if isinstance(output_path, str):
+                output_path = Path(output_path)
+            assert isinstance(output_path, Path), "output_path must be a string or a Path object."
+            if output_path.isdir():
+                output_path = output_path / f"{target_name}_ddG_plot.png"
+                logger.info(f"Using default name to save the plot at {output_path}")
+            elif output_path.exits():
+                logger.warning(f"File {output_path} already exists. Overwriting...")
+            fig.savefig(output_path, dpi=300, bbox_inches="tight")
         return fig, ax
 
     def save_json_data(self, out_path: str | Path | None = None):
@@ -558,6 +607,16 @@ def parse_arguments() -> argparse.Namespace:
             "Will default to `1.water` in the current working directory."
         ),
     )
+
+    # parser.add_argument(
+    #     "-ignore",
+    #     "--ignore_missing",
+    #     dest="ignore_missing",
+    #     action="store_true",
+    #     help=(
+    #         "Ignore missing qfep.out files and continue with the data extraction if missing files are encountered."
+    #     ),
+    # )
 
     parser.add_argument(
         "-j",
@@ -627,13 +686,18 @@ def main(args):
     fep_reader.load_new_system(system=args.protein_dir)
     fep_reader.read_perturbations()
     fep_reader.calculate_ddG()
-    fep_reader.save_json_data()  # TODO: add argument for the out file
-    fep_reader.populate_mapping_dictionary(
-        method=args.method, output_file=args.json_file.replace(".json", "_ddG.json")
-    )
+    fep_reader.save_json_data()
+
+    results_file = args.json_file.replace(".json", "_ddG.json")
+    fep_reader.populate_mapping_dictionary(method=args.method, output_file=results_file)
     if args.experimental_key is not None:
         fep_reader.load_experimental_data(exp_key=args.experimental_key)
-        fep_reader.create_ddG_plot(method=args.method)
+        results_json = json.loads((Path.cwd() / results_file).read_text())
+        results_df = fep_reader.prepare_df(results_json)
+        fig, ax = fep_reader.create_ddG_plot(results_df=results_df)
+    else:
+        results_json = json.loads((Path.cwd() / results_file).read_text())
+        results_df = fep_reader.prepare_df(results_json, experimental_data=False)
 
 
 def main_exe():
