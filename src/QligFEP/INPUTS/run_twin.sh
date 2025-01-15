@@ -93,7 +93,7 @@ echo "Run directory 2 is ${rundirs[1]}"
 # Create directories and copy files
 for i in "${!rundirs[@]}"; do
 dir="${rundirs[$i]}"
-seed="${seeds[$i]}"
+seed="${jobseeds[$i]}"
 
 mkdir -p "$dir"
 cd "$dir" || exit
@@ -153,6 +153,7 @@ echo "#    Slurm tasks: $SLURM_NTASKS"
 echo "#    Starttime: $starttime_readable"
 echo "#    Endtime: $endtime_readable"
 echo "#    Runtime: ${hours}h:${minutes}m:${seconds}s"
-echo "#    Random seed: $seed"
-echo "#    Replicate Number: $run"
+echo "#    Seed for run $run_num1: ${jobseeds[0]}"
+echo "#    Seed for run $run_num2: ${jobseeds[1]}"
+echo "#    Replicate Numbers: $runs"
 echo "#    Working Directory: $workdir"
