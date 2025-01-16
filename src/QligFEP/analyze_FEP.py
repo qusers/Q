@@ -250,7 +250,7 @@ class FepReader:
             for mname in self.methods_list:
                 method_idx = self.methods_list.index(mname)
                 method_energies = np.array([energies[repID][method_idx] for repID in all_replicates])
-                all_energies_arr.append(", ".join(["%.3f" % n for n in method_energies]))
+                all_energies_arr.append(", ".join([f"{n:.3f}" for n in method_energies]))
                 method_results[mname] = {
                     "energies": method_energies.tolist(),
                     "avg": np.nanmean(method_energies),
