@@ -25,6 +25,7 @@ dependencies = [
     "rdkit",
     "scikit-learn",
     "loguru",
+    "cinnabar",
     "MolClusterkit @ git+https://github.com/David-Araripe/MolClusterkit.git#master",
 ]
 
