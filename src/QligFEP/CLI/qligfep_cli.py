@@ -36,7 +36,6 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "replicates": args.replicates,
             "sampling": args.sampling,
             "timestep": args.timestep,
-            "softcore": args.softcore,
             "to_clean": args.to_clean,
             "random_state": args.random_state,
             "water_thresh": args.water_thresh,
@@ -59,8 +58,6 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             command_str += f" --{k} {' '.join(v)}".replace("to_clean", "files-to-clean")
         elif k == "water_thresh":
             command_str += f" --{k.replace('_', '-')} {v}"
-        elif k == "softcore":
-            continue
         else:
             command_str += f" --{k} {v}"
     command_str += f" --restraint_method {args.restraint_method}"
