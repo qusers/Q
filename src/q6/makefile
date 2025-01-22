@@ -83,19 +83,18 @@ else ifeq ($(COMP),ibm)
 ################################################################################
 else ifeq ($(COMP),amd)
 	FC=             gfortran
-	FC_OPT=         -O3 -march=znver2 -mtune=znver2
-	FFLAGS=         -ffree-line-length-none -fcray-pointer \
-					-fall-intrinsics -std=legacy \
-					-fstack-protector ${FC_OPT} -DG95=1 -w \
-					-funroll-all-loops -flto -fno-strict-aliasing
+	FC_OPT=         -O3
+	FFLAGS=         -funroll-all-loops -ffree-line-length-none -fcray-pointer \
+	                -static-libgfortran -fall-intrinsics -std=legacy \
+	                -fstack-protector ${FC_OPT} -DG95=1 -w \
+					-march=znver4 -mtune=znver4 \
+					-mavx2 -mfma
 
 	FPP_FLG=        -cpp
 
 	MPIFC=          mpif90
 	OMPI_FC=        ${FC}
-	# Add specific MPI flags for stability
-	OMPI_FCFLAGS=   ${FFLAGS} -DUSE_MPI_WIN_ALLOCATE_SHARED=0 \
-					-DUSE_MPI_IN_PLACE=1
+	OMPI_FCFLAGS=   ${FFLAGS}
 	MPI=            ${OMPI_FCFLAGS}
 
 	DEBUG=          -fbacktrace -g ${FC_OPT}
