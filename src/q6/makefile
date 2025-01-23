@@ -155,6 +155,8 @@ default: what
 ################################################################################
 all:    qfep qprep qdyn qdum qcalc move1 move2
 
+qprep:  qprep
+
 test:   qfep qprep qdyn_test qdum qcalc move1 move4
 
 debug:
