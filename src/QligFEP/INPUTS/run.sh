@@ -1,8 +1,9 @@
 #!/bin/bash
 #
 #SBATCH --nodes=NODES
+#SBATCH --sockets-per-node=1
 #SBATCH --ntasks-per-node=NTASKS
-#SBATCH --mem-per-cpu=256  # more than enough for 25A sphere size FEP
+#SBATCH --mem-per-cpu=512  # more than enough for 25A sphere size FEP
 #SBATCH -A ACCOUNT 
 #              d-hh:mm:ss
 #SBATCH --time=TIME
@@ -89,6 +90,15 @@ cd $rundir || exit
 
 echo "Running job in $rundir"
 echo "Parameters T=$temperature, replicate=$run_num, seed=$seed"
+echo
+
+echo "=== Process Binding Information ==="
+echo "slurm tasks per node: $SLURM_TASKS_PER_NODE"
+echo "slurm tasks per socket: $SLURM_NTASKS_PER_SOCKET"
+echo "slurm cpus per node: $SLURM_JOB_CPUS_PER_NODE"
+echo "slurm tasks per core: $SLURM_NTASKS_PER_CORE"    
+echo
+
 
 cp $inputfiles/md*.inp .
 cp $inputfiles/*.top .
