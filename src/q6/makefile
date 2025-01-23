@@ -88,7 +88,9 @@ else ifeq ($(COMP),amd)
 	                -static-libgfortran -fall-intrinsics -std=legacy \
 	                -fstack-protector ${FC_OPT} -DG95=1 -w \
 					-march=znver4 -mtune=znver4 \
-					-mavx2 -mfma
+					-mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512cd \
+					-mavx512vnni -mavx512bitalg \
+					-mbmi -mbmi2 -mavx2 -mfma
 
 	FPP_FLG=        -cpp
 
