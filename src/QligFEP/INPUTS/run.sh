@@ -94,11 +94,17 @@ echo
 
 echo "=== Process Binding Information ==="
 echo "slurm tasks per node: $SLURM_TASKS_PER_NODE"
-echo "slurm tasks per socket: $SLURM_NTASKS_PER_SOCKET"
 echo "slurm cpus per node: $SLURM_JOB_CPUS_PER_NODE"
-echo "slurm tasks per core: $SLURM_NTASKS_PER_CORE"    
 echo
 
+echo -e "\n=== CPU Model Information ==="
+lscpu | grep -E "Model name|Architecture|CPU op|Thread|Core|Socket|NUMA|CPU(s)"
+echo
+
+echo -e "\n=== Available CPU List ==="
+cpu_list=$(cat /proc/self/status | grep Cpus_allowed_list | awk '{print $2}')
+echo "CPU list: $cpu_list"
+echo
 
 cp $inputfiles/md*.inp .
 cp $inputfiles/*.top .
@@ -138,5 +144,5 @@ echo "#    Starttime: $starttime_readable"
 echo "#    Endtime: $endtime_readable"
 echo "#    Runtime: ${hours}h:${minutes}m:${seconds}s"
 echo "#    Random seed: $seed"
-echo "#    Replicate Number: $run"
+echo "#    Replicate Number: $run_num"
 echo "#    Working Directory: $workdir"
