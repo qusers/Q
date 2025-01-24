@@ -695,6 +695,7 @@ def main(args):
         results_json = json.loads((Path.cwd() / results_file).read_text())
         results_df = fep_reader.prepare_df(results_json)
         fig, ax = fep_reader.create_ddG_plot(results_df=results_df)
+        fig.savefig(f"{args.target}_ddG_plot.png", dpi=300, bbox_inches="tight")
     else:
         results_json = json.loads((Path.cwd() / results_file).read_text())
         results_df = fep_reader.prepare_df(results_json, experimental_data=False)
