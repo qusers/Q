@@ -87,7 +87,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             lig2 = pair[1]
 
             temp_dir = cwd / f"FEP_{lig1}_{lig2}"
-            to_clean = None if args.to_clean is not None else " ".join(args.to_clean)
+            to_clean = " ".join(args.to_clean) if args.to_clean is not None else None
             command = create_call(
                 lig1=lig1,
                 lig2=lig2,

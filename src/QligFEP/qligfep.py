@@ -885,6 +885,8 @@ class QligFEP:
                 if line.strip() == "#CLEANUP" and self.to_clean is not None:
                     replacements["CLEANUP"] = "#Cleaned {} files\n".format(" ".join(self.to_clean))
                     outline = replace(line, replacements)
+                    rm_line = "rm -r " + " ".join(["*" + x for x in self.to_clean]) + "\n"
+                    outfile.write(rm_line)
                     outfile.write(outline[1:])
 
     def write_qfep(self, windows, lambdas):
