@@ -1,7 +1,6 @@
 #!/bin/bash
 #
 #SBATCH --nodes=NODES
-#SBATCH --sockets-per-node=1
 #SBATCH --ntasks-per-node=NTASKS
 #SBATCH --mem-per-cpu=512  # more than enough for 25A sphere size FEP
 #SBATCH -A ACCOUNT 
