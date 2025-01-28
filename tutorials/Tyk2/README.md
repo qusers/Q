@@ -25,11 +25,11 @@ cd tutorials/Tyk2/ligprep
 
 We then need to generate the ligand parameter, library, and pdb files. For this we use NAGL for a faster calculation of the partial charges. This is still experimental, so for your own experiments, please use the default method ([AM1-BCC](https://pubmed.ncbi.nlm.nih.gov/12395429/)) simply by not adding the `-nagl` flag.
 ```bash
-qparams -i Tyk2_ligands.sdf -p 4 -nagl
+qparams -i tyk2_ligands.sdf -p 4 -nagl
 ```
 Create your perturbation network using lomap:
 ```bash
-qlomap -i Tyk2_ligands.sdf
+qlomap -i tyk2_ligands.sdf
 ```
 Now, let's create a directory for your perturbations and copy the files we generated to it:
 ```bash
@@ -37,14 +37,14 @@ cd ../
 # Copy the files ligand files:
 cp ligprep/*.pdb ligprep/*.prm ligprep/*.lib setupFEP/
 # Copy the separate .sdf files and the lomap.json file:
-cp ligprep/Tyk2_ligands/*.sdf ligprep/Tyk2_ligands/lomap.json setupFEP/
+cp ligprep/tyk2_ligands/*.sdf ligprep/tyk2_ligands/lomap.json setupFEP/
 ```
 
 ## Water sphere
 
 Now we just need to prepare our water sphere. The first step is to calculate the center of geometry of the ligand. For this, we can use the `qcog` command:
 ```bash
-qcog -i ligprep/Tyk2_ligands.sdf
+qcog -i ligprep/tyk2_ligands.sdf
 ```
 The final value printed by this function is the geometric center of all ligands within the series (in the sdf file). You should see an output like like this:
 ```text
@@ -81,7 +81,7 @@ The explanation of the flags is as follows:
 
 ## Restraint setting 
 
-Another important configuration flag is the `--restraint_method`, or `-rest` for short. This configuration controls the way atoms from the two molecular topologies are restrained together within the sampling time.
+Another important configuration flag is the `--restraint_method`, or `-rest` for short. This configuration controls which atoms are "mapped" as equivalent. Mapped atoms among the two different molecular topologies will have a restraint force applied to them during the simulation whenever the distance between them exceeeds a certain threshold.
 
 As opposed to the single topology scheme, where the ligands involved in the perturbation share both physical and "dummy" atoms used to introduce forces in the system according to the lambda parameter, QligFEP uses a dual topology scheme. There, atom types are not allowed to change types or parameters. Instead, all atoms partially interact with the environment, having their potentials scaled according to the lambda parameter ([Bieniek et al. 2023](https://pubs.acs.org/doi/10.1021/acs.jcim.2c01596)).
 
@@ -108,6 +108,42 @@ Setting this part of the string as either of these, will determine if or how the
     1) Permissive: Only the ring atoms are compared.
     2) Less strict: The ring atoms and their direct surroundings are compared, but element type is ignored. 
     3) Strict: The ring atoms and their direct surroundings are element-wise compared.
+
+- Kartograf atom max distance (optional): `int` or `float` to be used by kartograf [Ries et al. 2024](https://pubs.acs.org/doi/10.1021/acs.jctc.3c01206) as the maximum distance between atoms to be considered for mapping. This is by default set to 0.95 Å, but can be changed by passing `_1.2`, for example, at the end of the `restraint_method` string. Having a higher number could fix some issues caused by having two molecules that aren't perfectly aligned (higher distance between equivalent atoms).
+
+By default, a restraint force of 1.5 $\text{kcal}/\text{mol}/\text{\AA}^2$ is applied to the equilibration (eq) 1-4 within the simulation protocol. A second distance restraint is applied to eq5 and all subsequent FEP molecular dynamics steps (labeled as `md_xxxx_xxxx`). The default threshold for the restraint is 0.5 $\text{\AA}$, but is customizable through the `--distance_restraint_force` argument, or `-drf` for short.
+
+Though set through the Python CLI, these configuration are set to the input files for **Q**. For example, after creating all the perturbation directories using `setupFEP`, we can investigate further:
+
+```bash
+head -n 60 2.protein/FEP_ejm_31_ejm_42/inputfiles/eq5.inp | tail -n 12
+```
+
+Where we see the output:
+```text
+[distance_restraints]
+4687 4719 0.0 0.1 0.5 0
+4688 4720 0.0 0.1 0.5 0
+4689 4721 0.0 0.1 0.5 0
+4690 4722 0.0 0.1 0.5 0
+4691 4723 0.0 0.1 0.5 0
+4692 4724 0.0 0.1 0.5 0
+4693 4725 0.0 0.1 0.5 0
+4694 4726 0.0 0.1 0.5 0
+4695 4727 0.0 0.1 0.5 0
+4696 4728 0.0 0.1 0.5 0
+4697 4729 0.0 0.1 0.5 0
+```
+
+These lines refer to:
+- The atom index of atom in Ligand 1 (named to `LIG` in QligFEP)
+- The atom index of atom in Ligand 2 (named to `LID` in QligFEP)
+- 0.0 & 0.1:  if distance among atoms is within this range, no force is applied
+- 0.5: The force to be applied (in $\text{kcal}/\text{mol}/\text{\AA}^2$)
+- 0 (last column): TODO
+
+❗**Note**❗ - The atom inices are based on the ones found in the `complexnotexcluded.pdb` file generated from `qprep`. This file contains the part of the protein that wasn't excluded from the spherical boundary condition cutoff, the ligand, and the water sphere.
+
 
 ## Job submission
 
@@ -178,7 +214,7 @@ Where we have the options:
 Running this command will iterate through all the perturbations in the `lomap.json` file and update itself with the `QligFEP` calculated values, outputting `lomap_ddG.json`. When experimental values are also present the following plot is then generated:
 
 <p align="center">
-  <img width="720" src="../Tyk2/imgs/Tyk2_ddGbar_ddG_plot.png">
+  <img width="720" src="../Tyk2/imgs/Tyk2_ddGbar_ddG_plot.svg">
 </p>
 
 For an example of what the `lomap_ddG.json` file looks like, see the [lomap_ddG.json](analysis/lomap_ddG.json) file. Additionally, a more verbose file containing the energy readouts from each lig is also generated, see the [Tyk2_FEP_results.json](analysis/Tyk2_FEP_results.json) file.
@@ -196,7 +232,7 @@ On our end, the generation of ligand parameters is done through the `qparams` CL
 
 However, for generating ligand parameters for your own experiments, please stick to the slower, but reliable defaulst method (AM1-BCC).
 
-Generating ligand parameters takes a while. Therefore we advice running it on the background. For example, to generate the parameters for the ligands in `Tyk2_ligands.sdf`, run:
+Generating ligand parameters takes a while. Therefore we advice running it on the background. For example, to generate the parameters for the ligands in `tyk2_ligands.sdf`, run:
 ```bash
 nohup qparams -i Tyk2_ligands.sdf > Tyk2_qparams.log 2>&1 &
 ```
