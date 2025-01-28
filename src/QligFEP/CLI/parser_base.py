@@ -153,7 +153,7 @@ def parse_arguments(program: str) -> argparse.Namespace:
             Atom compare method: `heavyatom`, `aromaticity`, `hibridization`, `element`. Setting the first part of the
                 string as either of these, will determine how the substituents / ring atoms are treated to be
                 defined as equivalent. Heavyatom will only check if both atoms being compared are heavy atoms. Aromaticity
-                and hybridization operater similarly, but checking for those properties instead. Element will check 
+                and hybridization operater similarly, but checking for those properties instead. Element will check
                 for atom equivalence based on atomic numbers.
             Surround atom compare: `p` (permissive), `ls` (less strict), `strict`.
                 Setting the second part of the string as either of these, will determine if or how the
@@ -165,6 +165,19 @@ def parse_arguments(program: str) -> argparse.Namespace:
            Kartograf atom max distance (optional): int or float to be used by `kartograf` as the maximum distance between
                 atoms to be considered for mapping. This is by default set to 0.95 A, but can be changed by passing `_0.95`,
                 for example, at the end of the `restraint_method` string."""
+        ),
+    )
+    parser.add_argument(
+        "-drf",
+        "--distance_restraint_force",
+        dest="dr_force",
+        type=float,
+        default=0.5,
+        help=(
+            "Force constant applied as distance restrains to ensure space overlap among ligands during FEP. For how/which atoms are mapped "
+            "restrained together by this force, check the `restraint_method` parameter description. Defaults to 0.5 kcal/mol/A^2. "
+            "restraints forces set through this parameter will be applied for equilibration 5 (eq5) and the md_xxxx_xxxx simulations. "
+            "Forces set by this parameter are set to the [distance_restraints] section of `.inp` (input) files."
         ),
     )
     parser.add_argument(

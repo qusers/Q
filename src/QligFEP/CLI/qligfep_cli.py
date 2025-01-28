@@ -37,8 +37,9 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "sampling": args.sampling,
             "timestep": args.timestep,
             "to_clean": args.to_clean,
-            "random_state": args.random_state,
             "water_thresh": args.water_thresh,
+            "dr_force": args.dr_force,
+            "random_state": args.random_state,
         }
     else:
         param_dict = {}
@@ -58,6 +59,8 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             command_str += f" --{k} {' '.join(v)}".replace("to_clean", "files-to-clean")
         elif k == "water_thresh":
             command_str += f" --{k.replace('_', '-')} {v}"
+        elif k == "dr_force":
+            command_str += f" --{k} {v}".replace("dr_force", "distance_restraint_force")
         else:
             command_str += f" --{k} {v}"
     command_str += f" --restraint_method {args.restraint_method}"

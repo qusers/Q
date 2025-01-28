@@ -31,7 +31,7 @@ def create_call(**kwargs):
     template = (
         "qligfep -l1 '{lig1}' -l2 '{lig2}' -FF {FF} -s {system} -c {cluster} -R {replicates} "
         "-S {sampling} -r {sphereradius} -l {start} -w {windows} -T {temperature} -ts {timestep} "
-        "-rest {rest} -log {log}"
+        "-rest {rest} -drf {dr_force} -log {log}"
     )
     if "cysbond" in kwargs and kwargs["cysbond"] is not None:
         template += " -b {cysbond}"
@@ -105,6 +105,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 to_clean=to_clean,
                 random_state=args.random_state,
                 rest=args.restraint_method,
+                dr_force=args.dr_force,
                 water_thresh=args.water_thresh,
                 log=args.log,
             )

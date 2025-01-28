@@ -45,6 +45,7 @@ class QligFEP:
         timestep: Literal["1fs", "2fs"] = "2fs",
         to_clean: Optional[list[str]] = None,
         water_thresh: Union[float, int] = 1.4,
+        dr_force: float = 0.5,
         random_state: Optional[int] = 42,
     ):
         self.replacements = {}  # TODO: make this explicit in the future
@@ -64,6 +65,7 @@ class QligFEP:
         self.sampling = sampling
         self.to_clean = to_clean
         self.water_thresh = water_thresh
+        self.dr_force = dr_force  # dr for distance restraint
         # Temporary until flag is here
         self.ABS = False  # True
         self.ABS_waters = []
@@ -625,7 +627,7 @@ class QligFEP:
 
         for eq_file_in in sorted(glob.glob(CONFIGS["ROOT_DIR"] + "/INPUTS/eq*.inp")):
             eq_file = eq_file_in.split("/")[-1:][0]
-            rest_force = 1.5 if eq_file != "eq5.inp" else 0.5  # 1.5 for eq1-4, 0.5 for eq5
+            rest_force = 1.5 if eq_file != "eq5.inp" else self.dr_force  # 1.5 for eq1-4
             logger.debug(f"Writing {eq_file}")
             eq_file_out = writedir + "/" + eq_file
 
@@ -652,7 +654,7 @@ class QligFEP:
                 outfile.write(line)
                 if line == "[distance_restraints]\n":
                     for line in overlapping_atoms:
-                        outfile.write(f"{line[0]:d} {line[1]:d} 0.0 0.1 0.5 0\n")
+                        outfile.write(f"{line[0]:d} {line[1]:d} 0.0 0.1 {self.dr_force:.1f} 0\n")
 
                 if line == "[sequence_restraints]\n":
                     for line in restlist:
@@ -692,7 +694,7 @@ class QligFEP:
                         outfile.write(line)
                         if line == "[distance_restraints]\n":
                             for line in overlapping_atoms:
-                                outfile.write(f"{line[0]:d} {line[1]:d} 0.0 0.1 0.5 0\n")
+                                outfile.write(f"{line[0]:d} {line[1]:d} 0.0 0.1 {self.dr_force:.1f} 0\n")
 
                     if line == "[sequence_restraints]\n":
                         for line in restlist:
