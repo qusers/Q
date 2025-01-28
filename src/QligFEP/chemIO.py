@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 import pandas as pd
+import py3Dmol
 from openff.toolkit import Molecule
 from openff.toolkit.utils import UndefinedStereochemistryError
 from rdkit import Chem
@@ -11,6 +12,7 @@ from rdkit import Chem
 from .logger import logger
 from .pdb_utils import read_pdb_to_dataframe, write_dataframe_to_pdb
 from .restraints.hydrogen_utils import are_hydrogens_at_end, reindex_hydrogens_to_end
+from .visualization import mol_to_molblock
 
 
 class MoleculeIO:
@@ -43,6 +45,39 @@ class MoleculeIO:
         self.lig = lig
         self.setup_mols_and_names(self.lig, pattern)
         self.parse_sdf_contents()  # add the sdf content to the dictionary
+
+    def __getitem__(self, name: str) -> Optional[Molecule]:
+        """Retrieve a molecule by its name.
+
+        Args:
+            name: The name of the molecule to retrieve.
+
+        Returns:
+            The Molecule object with the specified name, or None if not found.
+        """
+        if name in self.lig_names:
+            index = self.lig_names.index(name)
+            return self.molecules[index]
+        else:
+            logger.warning(f"Molecule with name {name} not found.")
+            return None
+
+    def display_overlay(self, *ligands, size=(800, 600), render=True):
+        view = py3Dmol.view(width=size[0], height=size[1])
+
+        for i, ligand in enumerate(ligands):
+            molblock = mol_to_molblock(self.__getitem__(ligand))
+            view.addModel(molblock, f"ligand{i}_overlap", viewer=(0, 1))
+            style = {"stick": {"opacity": 0.7}}
+            if i > 0:
+                style["stick"]["colorscheme"] = "lightskyblueCarbon"
+            view.setStyle({"model": i}, style, viewer=(0, 1))
+
+        view.zoomTo()
+        view.render()
+        if render:
+            view.show()
+        return view
 
     def _force_H_reindexing(self, mol: Molecule) -> Molecule:
         rdkit_mol = mol.to_rdkit()
