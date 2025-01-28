@@ -1,8 +1,7 @@
 """Module with utility functions (and CLI) to rename .pdb files so that they're compatible with the AMBER forcefield.
 
 !! Note !! The functions:
-rename_residues, rename_charged, labeledPDB_to_AmberPDB,
-nest_pdb, unnest_pdb, get_coords, disulfide_search, pdb_cleanup, histidine_search,
+rename_charged, nest_pdb, unnest_pdb, get_coords, pdb_cleanup, histidine_search,
 atom_is_present
 
 are all Python3 adaptations from the original repository / module:
@@ -14,24 +13,134 @@ to use this module, you can use the following code:
 
 import argparse
 import os
+import re
 import sys
+from pathlib import Path
 
 from ..logger import logger
-from ..pdb_utils import disulfide_search, nest_pdb, unnest_pdb
+from ..pdb_utils import (
+    nest_pdb,
+    read_pdb_to_dataframe,
+    unnest_pdb,
+    write_dataframe_to_pdb,
+)
 
 
-def rename_residues(pdbarr):
-    logger.debug(f"At start of renaming, pdbarr has {len(pdbarr)} items")
-    npdb = nest_pdb(pdbarr)
-    logger.debug(f"Nest/unnest leads to {len(unnest_pdb(npdb))}, items")
+def reindex_pdb_residues(pdb_path: Path, out_pdb_path: str):
+    pdb_df = read_pdb_to_dataframe(pdb_path)
+    uniq_indexes = pdb_df.set_index(
+        ["residue_seq_number", "residue_name", "chain_id", "insertion_code"]
+    ).index
+    resn_mapping = {resn: idx for idx, resn in enumerate(uniq_indexes.unique(), 1)}
+    pdb_df["residue_seq_number"] = uniq_indexes.map(resn_mapping)
+    pdb_df["insertion_code"] = ""
+    # pdb_df = pdb_df.assign(residue_seq_number=uniq_indexes.map(resn_mapping))
+    write_dataframe_to_pdb(pdb_df, out_pdb_path)
+
+
+def correct_numbered_atom_names(npdb_i):
+    """Corrects atom names that start with numbers by moving the numbers to the end.
+    Uses regex to match and extract leading numbers.
+
+    Args:
+        npdb_i: nested pdb data structure for a single residue
+
+    Returns:
+        Modified npdb_i with corrected atom names
+    """
+
+    def process_atom_name(line):
+        atom_name = line[12:16].strip()
+
+        # these only exist in AMBER with 2 and 3 for some reason (?)
+        sum_after = atom_name in [
+            "2HG",
+            "1HG",
+            "2HB",
+            "1HB",
+            "1HG1",
+            "2HG1",
+            "1HA",
+            "2HA",
+            "1HD",
+            "2HD",
+            "1HE",
+            "2HE",
+        ]
+
+        pattern = re.compile(r"^(\d+)([A-Z]+\d*)")
+        match = pattern.match(atom_name)
+
+        if not match:
+            return line
+
+        # Extract the matched groups
+        numbers, letters = match.groups()
+        new_atom_name = letters + (str(int(numbers) + 1) if sum_after else numbers)
+
+        # Format according to PDB specifications
+        if len(new_atom_name) == 4:
+            return line[:12] + new_atom_name + line[16:]
+        else:
+            return line[:12] + f"{new_atom_name:<4}" + line[16:]
+
+    return [process_atom_name(line) for line in npdb_i]
+
+
+def correct_amino_acid_atom_names(npdb_i, resname, rename_mapping):
+    """corrects the amino acid atom names according to the mapping provided
+
+    Args:
+        npdb_i: nested pdb data structure for a single residue
+        resname: the residue name
+        rename_mapping: a dictionary mapping old names to new names
+    """
+    if resname in rename_mapping:
+        for old_name, new_name in rename_mapping[resname].items():
+            npdb_i = [extract_and_replace(x, old_name, new_name) for x in npdb_i]
+            # certify that we have the alignment as expected for pdb files
+    return npdb_i
+
+
+def extract_and_replace(line, old_name, new_name):
+    """extracts the atom name and replaces it with the new name"""
+    atom_name = line[12:16].strip()
+    if atom_name != old_name:
+        return line
+    new_atom_name = atom_name.replace(old_name, new_name).strip()
+    if len(new_atom_name) == 4:
+        return line[:12] + new_atom_name + line[16:]
+    else:
+        # return left aligned atom name always with len() == 3 but with a " " in the beginning
+        return line[:12] + f" {new_atom_name:<3}" + line[16:]
+
+
+def fix_pdb(pdb_path: Path, rename_mapping):
+    renamed_pdb_path = pdb_path.with_name(pdb_path.stem + "_renamed.pdb")
+    with open(pdb_path) as f:
+        pdb_lines = f.readlines()
+
+    npdb = nest_pdb(pdb_lines)
     npdb = asp_search(npdb)
-    npdb = glu_search(npdb)
-    npdb = rename_charged(npdb)
+    npdb = glu_search(npdb)  # TODO; check if this one is necessary
     npdb = histidine_search(npdb)
-    npdb, _, _ = disulfide_search(npdb)
-    pdbarr = unnest_pdb(npdb)
-    pdbarr = correct_neutral_arginine(pdbarr)
-    return pdbarr
+
+    for i, res in enumerate(npdb):
+        resname = res[-1][17:21].rstrip()
+        if resname == "NMA":  # we use NME in our FF library
+            npdb[i] = [x.replace("NMA", "NME") for x in npdb[i]]
+            resname = "NME"
+        npdb[i] = correct_numbered_atom_names(npdb[i])
+        npdb[i] = correct_amino_acid_atom_names(npdb[i], resname, rename_mapping)
+
+    npdb = nc_termini_search(npdb)  # after atom name correction, label N and C termini
+    npdb = correct_neutral_arginine(npdb)
+    pdb_lines = unnest_pdb(npdb)
+
+    with open(renamed_pdb_path, "w") as f:
+        for line in pdb_lines:
+            f.write(line)
+    return pdb_lines
 
 
 def correct_neutral_arginine(pdb_arr):
@@ -101,30 +210,6 @@ def correct_neutral_arginine(pdb_arr):
     return final_updated_pdb_lines
 
 
-def correct_amino_acid_atom_names(npdb_i, resname):
-    """corrects the amino acid atom names according to the charge state and the force field
-    terminology. This function is called within rename_changed() where pdb_i is the
-    nested pdb data structure for a single residue. The function modifies the
-    residue name in place.
-
-    Args:
-        npdb_i: nested pdb data structure for a single residue
-        resname_and_state: the residue name and charge state, e.g. 'LYS0' or 'LYS+'
-        terminology: which FF terminology will be used. Defaults to 'AMBER'.
-    """
-    if resname == "GLH":
-        npdb_i = [x.replace("HE1", "HE2") for x in npdb_i]
-    if resname == "ASH":
-        npdb_i = [x.replace("HD1", "HD2") for x in npdb_i]
-    if resname == "ARN":
-        npdb_i = [x.replace("HH22", "HH21") for x in npdb_i]
-    if resname == "LYN":
-        # HZ1 and HZ2 should be renamed to HZ2 and HZ3...
-        npdb_i = [x.replace("HZ2", "HZ3") for x in npdb_i]
-        npdb_i = [x.replace("HZ1", "HZ2") for x in npdb_i]
-    return npdb_i
-
-
 def rename_charged(npdb):
     """Generate AMBER-specific residue names for charged residues from MCCE residue names. Also fix some problems with atom naming (specifically hydrogens) for charged residues.
 
@@ -148,41 +233,6 @@ def rename_charged(npdb):
         if original_resname != new_resname:
             logger.info(f"Residue {i+1}: {original_resname} renamed to {new_resname}.")
     return npdb
-
-
-def labeledPDB_to_AmberPDB(labeledPDBfile, outPDBfile, renameResidues=True):
-    with open(labeledPDBfile, "r") as fin:
-        lines = fin.readlines()
-    pdbarr = []
-    while lines:
-        pdbline = lines.pop(0)
-        label = lines.pop(0).strip()
-        pdbarr.append(pdbline.strip() + label)
-    if renameResidues:
-        pdbarr = rename_residues(pdbarr)
-    pdbarr = pdb_cleanup(pdbarr)
-    with open(outPDBfile, "w") as file_out:
-        for line in pdbarr:
-            file_out.write(f"{line}\n")
-
-
-def pdb_cleanup(pdbarr):
-    updated_pdbarr = []
-    for line in pdbarr:
-        atom = line[:54]  # Truncate each line to the first 54 characters (up to the end of the coordinates)
-        atomsymbol = line[12:16].strip(" 0123456789")[0]  # Extract the atom symbol
-        updated_line = f"{atom}  1.00  0.00          {atomsymbol.rjust(2)}"  # Format the line with default occupancy and B-factor, and reposition the atom symbol
-        updated_pdbarr.append(updated_line)
-
-    npdb = nest_pdb(updated_pdbarr)  # Nest the PDB for further processing if needed
-
-    # Renumber residues and set chain identifiers if required
-    for i, residue in enumerate(npdb):
-        for j, line in enumerate(residue):
-            # Assume chain identifier is blank for simplicity; adjust if handling multi-chain PDBs
-            npdb[i][j] = f"{line[:21]}{' ':1}{str(i + 1).rjust(4)}{'    '}{line[30:]}"
-
-    return unnest_pdb(npdb)  # Return the unnested, cleaned-up PDB array
 
 
 def histidine_search(npdb):
@@ -267,46 +317,6 @@ def atom_is_present(pdblines, atomname):
     return bool(any(atomname in atom for atom in atoms))
 
 
-def adjust_pdb_indentation(input_file, output_file):
-    lines_to_output = []
-    with open(input_file) as f_in:
-        for line in f_in:
-            if line.startswith(("ATOM", "HETATM")):
-                # Extract fields based on the PDB format specification
-                record_type = line[0:6]  # ATOM or HETATM
-                atom_serial_number = line[6:11].strip()
-                atom_name = line[12:16].strip()
-                alt_loc = line[16].strip()
-                residue_name = line[17:21].strip()
-                chain_id = line[21].strip()
-                residue_seq_number = line[22:26].strip()
-                insertion_code = line[26].strip()
-                x = line[30:38].strip()
-                y = line[38:46].strip()
-                z = line[46:54].strip()
-                occupancy = line[54:60].strip()
-                temp_factor = line[60:66].strip()
-                segment_id = line[72:76].strip()
-                element_symbol = line[76:78].strip()
-                charge = line[78:80].strip()
-
-                # Formatting the line correctly according to the PDB specification
-                formatted_line = f"{record_type:6}{atom_serial_number:>5} {atom_name:<4}{alt_loc:>1}{residue_name:>3} {chain_id:>1}{residue_seq_number:>4}{insertion_code:>1}   {x:>8}{y:>8}{z:>8}{occupancy:>6}{temp_factor:>6}      {segment_id:<4}{element_symbol:>2}{charge:>2}\n"
-
-                # Ensuring the line is exactly 80 characters long
-                assert (
-                    len(formatted_line) == 81
-                ), f"Line length is {len(formatted_line)}, expected 81 (including newline)"
-
-                lines_to_output.append(formatted_line)
-            else:
-                # Write non-ATOM/HETATM lines as they are
-                lines_to_output.append(line)
-    with open(output_file, "w") as f_out:
-        for line in lines_to_output:
-            f_out.write(line)
-
-
 def main_exe():
     parser = argparse.ArgumentParser(
         description="Rename amino acids in a PDB file for AMBER forcefield compatibility."
@@ -338,8 +348,6 @@ def main_exe():
             for line in renamed_pdb_lines:
                 f.write(line)
 
-        # TODO: this is a temporary fix for a bug in the code (residues are right aligned)
-        adjust_pdb_indentation(output_pdb_path, output_pdb_path)
         logger.info(f"Renaming completed. Output file: {output_pdb_path}")
 
     except Exception as e:
