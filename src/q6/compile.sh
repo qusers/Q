@@ -10,7 +10,7 @@ fi
 COMPILER=$1
 
 echo "Compiling qprep & qfep with default COMP=gcc configuration..."
-make qprep qfep COMP=$COMPILER
+make qprep qfep COMP=gcc
 
 if [ $? -ne 0 ]; then # check if command was successful
     echo "Error: Failed to compile qprep and qfep"
