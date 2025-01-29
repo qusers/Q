@@ -79,9 +79,9 @@ else ifeq ($(COMP),ibm)
 	FFLAGS=
 
 ################################################################################
-# AMD EPYC Optimized Version
+# AMD EPYC4 Optimized Version
 ################################################################################
-else ifeq ($(COMP),amd)
+else ifeq ($(COMP),epyc4)
 	FC=             gfortran
 	FC_OPT=         -O3
 	FFLAGS=         -funroll-all-loops -ffree-line-length-none -fcray-pointer \
@@ -154,8 +154,6 @@ default: what
 # Targets
 ################################################################################
 all:    qfep qprep qdyn qdum qcalc move1 move2
-
-qprep:  qprep
 
 test:   qfep qprep qdyn_test qdum qcalc move1 move4
 
