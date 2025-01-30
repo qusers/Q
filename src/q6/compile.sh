@@ -9,8 +9,8 @@ fi
 
 COMPILER=$1
 
-echo "Compiling qprep & qfep with default COMP=gcc configuration..."
-make qprep qfep COMP=gcc
+echo "Compiling qprep & qfep with COMP=$COMPILER..."
+make qprep qfep COMP=$COMPILER
 
 if [ $? -ne 0 ]; then # check if command was successful
     echo "Error: Failed to compile qprep and qfep"
@@ -32,5 +32,8 @@ if [ $? -ne 0 ]; then # check if command was successful
     echo "Error: Failed to compile MPI version"
     exit 1
 fi
+
+echo "Moving compiled files..."
+make move2
 
 echo "Compilation completed successfully!"
