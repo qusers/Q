@@ -44,7 +44,9 @@ def rm_HOH_clash_NN(
     pdb_ions = ["ZN", "SOD", "IOD", "BR", "CL", "CU", "CU1", "NA", "MG", "CA"]  # noqa: F841
     target_arr = pdb_df_target.query("~residue_name.isin(@pdb_ions)")
     if heavy_only:
-        target_arr = target_arr.query(r"~atom_name.str.contains('^H[A-Z]?\d{0,2}?')")[["x", "y", "z"]].values
+        target_arr = target_arr.query(
+            r"(~atom_name.str.contains('^H[A-Z]?\d{0,2}?')) | (residue_name.isin(['LIG', 'LID']))"
+        )[["x", "y", "z"]].values
     else:
         target_arr = target_arr[["x", "y", "z"]].values
 
