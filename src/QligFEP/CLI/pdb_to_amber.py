@@ -148,7 +148,7 @@ def fix_pdb(pdb_path: Path, rename_mapping=rename_mapping, out_name=None):
     return pdb_lines
 
 
-def correct_neutral_arginine(pdb_arr):
+def correct_neutral_arginine(npdb):
     """
     Updates residue naming for ARN (neutral arginine - AMBER14sb) residues to ensure
     compatibility.
@@ -160,59 +160,45 @@ def correct_neutral_arginine(pdb_arr):
     are correctly identified and interact as expected according to the simulation parameters.
 
     Parameters:
-    - pdb_lines (list of str): The original PDB content as a list of strings, where each
-      string represents a line in the PDB file.
+    - npdb (list of list of str): The nested PDB data structure, where each inner list
+      represents a residue and each string in the inner list represents a line in the PDB file.
 
     Returns:
-    - list of str: The updated PDB content with corrected atom names for ARN residues,
-      ready for use in molecular dynamics simulations.
+    - list of list of str: The updated nested PDB data structure with corrected atom names
+      for ARN residues, ready for use in molecular dynamics simulations.
     """
-    # Placeholder for updated PDB lines
-    updated_pdb_lines = []
-
-    # Check if any ARN residue contains HH22
-    has_hh22 = any("ARN" in line and "HH22" in line for line in pdb_arr)
-
-    # Only proceed with renaming if HH22 is present
-    if not has_hh22:
-        return pdb_arr  # Return original lines if no HH22 found
-
-    # Temporary mapping for the first pass
     atom_name_replacements = {
-        "NH1": "NHT ",  # Temporary name for NH1
-        "HH11": "HHT1",
-        "NH2": "NH1 ",
-        "HH21": "HH11",  # Temporary name for HH11
-        "HH22": "HHT2",  # Temporary name for HH22 to avoid direct swap conflict
+        "NH1": "NHT",  # temporary
+        "HH11": "HHT1",  # temporary
+        "NH2": "NH1",
+        "HH21": "HH11",
+        "HH22": "HH12",
     }
-    atom_name_replacements = {}
-
-    # Reverse mapping for the second pass
-    final_name_replacements = {
-        "NHT ": "NH2 ",
+    final_name_replacements = {  # reverse the temporary replacements (T)
+        "NHT": "NH2",
         "HHT1": "HH21",
-        "HHT2": "HH12",  # Assuming HH22 should be renamed to HH12 if present
     }
 
-    for line in pdb_arr:  # First pass: Apply initial renaming
-        if line.startswith("ATOM") and "ARN" in line:
-            atom_name = line[12:16].strip()  # Extract atom name
-            if atom_name in atom_name_replacements:
-                new_atom_name = atom_name_replacements[atom_name]
-                line = line[:12] + new_atom_name + line[16:]
-        updated_pdb_lines.append(line)
+    for i in range(len(npdb)):
+        resname = npdb[i][0][17:21].rstrip()
+        if resname == "ARN":
+            HH22_present = atom_is_present(npdb[i], "HH22")
+            if HH22_present:
+                for idx, line in enumerate(npdb[i]):
+                    atom_name = line[12:16].strip()  # Extract atom name
+                    if atom_name in atom_name_replacements:
+                        new_atom_name = atom_name_replacements[atom_name]
+                        npdb[i][idx] = f"{line[:12]}{new_atom_name:<4}{line[16:]}"
 
-    # Second pass: Replace temporary names with their final names
-    final_updated_pdb_lines = []
-    for line in updated_pdb_lines:
-        if line.startswith("ATOM") and "ARN" in line:
-            atom_name = line[12:16].strip()  # Extract atom name
-            if atom_name in final_name_replacements:
-                new_atom_name = final_name_replacements[atom_name].ljust(4)
-                line = line[:12] + new_atom_name + line[16:]
-        final_updated_pdb_lines.append(line)
+                for idx, line in enumerate(npdb[i]):
+                    atom_name = line[12:16].strip()  # Extract atom name
+                    if atom_name in final_name_replacements:
+                        new_atom_name = final_name_replacements[atom_name]
+                        npdb[i][idx] = f"{line[:12]}{new_atom_name:<4}{line[16:]}"
+        else:
+            continue
 
-    return final_updated_pdb_lines
+    return npdb
 
 
 def rename_charged(npdb):
