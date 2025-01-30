@@ -45,6 +45,9 @@ rename_mapping = {
         "1HA": "HA3",
         "2HA": "HA2",
     },
+    "GLH": {
+        "HE1": "HE2",
+    },
     "ARG": {
         "H2": "H",
         "2HG": "HG3",
@@ -83,6 +86,9 @@ rename_mapping = {
         "1HD2": "HD21",
         "2HD2": "HD22",
     },
+    "ASH": {
+        "HD1": "HD2",
+    },
     "PRO": {
         "2H": "H3",
         "1H": "H2",
@@ -109,6 +115,10 @@ rename_mapping = {
     "LYS": {
         "2HG": "HG3",
         "1HG": "HG2",
+    },
+    "LYN": {
+        "HZ2": "HZ3",
+        "HZ1": "HZ2",
     },
     "ILE": {
         "2HG": "HG3",

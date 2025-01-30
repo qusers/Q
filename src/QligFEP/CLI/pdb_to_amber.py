@@ -24,6 +24,7 @@ from ..pdb_utils import (
     unnest_pdb,
     write_dataframe_to_pdb,
 )
+from .aa_atom_rename import rename_mapping
 
 
 def reindex_pdb_residues(pdb_path: Path, out_pdb_path: str):
@@ -87,7 +88,7 @@ def correct_numbered_atom_names(npdb_i):
     return [process_atom_name(line) for line in npdb_i]
 
 
-def correct_amino_acid_atom_names(npdb_i, resname, rename_mapping):
+def correct_amino_acid_atom_names(npdb_i, resname, rename_mapping=rename_mapping):
     """corrects the amino acid atom names according to the mapping provided
 
     Args:
@@ -115,8 +116,10 @@ def extract_and_replace(line, old_name, new_name):
         return line[:12] + f" {new_atom_name:<3}" + line[16:]
 
 
-def fix_pdb(pdb_path: Path, rename_mapping):
-    renamed_pdb_path = pdb_path.with_name(pdb_path.stem + "_renamed.pdb")
+def fix_pdb(pdb_path: Path, rename_mapping=rename_mapping, out_name=None):
+    renamed_pdb_path = (
+        pdb_path.with_name(pdb_path.stem + "_renamed.pdb") if out_name is None else Path(out_name)
+    )
     with open(pdb_path) as f:
         pdb_lines = f.readlines()
 
@@ -140,6 +143,8 @@ def fix_pdb(pdb_path: Path, rename_mapping):
     with open(renamed_pdb_path, "w") as f:
         for line in pdb_lines:
             f.write(line)
+    logger.info(f"Renaming completed. Output file: {renamed_pdb_path}")
+
     return pdb_lines
 
 
@@ -335,20 +340,7 @@ def main_exe():
     logger.info(f"Processing file: {input_pdb_path}")
 
     try:
-        with open(input_pdb_path) as f:
-            pdb_lines = f.readlines()
-
-        renamed_pdb_lines = rename_residues(pdb_lines)
-        if args.output is not None:
-            output_pdb_path = args.output
-        else:
-            output_pdb_path = input_pdb_path.replace(".pdb", "_renamed.pdb")
-
-        with open(output_pdb_path, "w") as f:
-            for line in renamed_pdb_lines:
-                f.write(line)
-
-        logger.info(f"Renaming completed. Output file: {output_pdb_path}")
+        fix_pdb(Path(input_pdb_path), out_name=args.output)
 
     except Exception as e:
         logger.error(f"An error occurred: {e}")
