@@ -58,7 +58,7 @@ CSB = {
 SNELLIUS = {
     "NODES": "1",
     "NTASKS": "16",
-    "TIME": "0-06:00:00",  # d-hh:mm:ss
+    "TIME": "0-08:00:00",  # d-hh:mm:ss
     "MODULES": nljoin(
         [
             "module purge",
