@@ -52,7 +52,7 @@ def rm_HOH_clash_NN(
 
     boron_atoms = pdb_df_target.query(  # stricter check for boron-water proximity (crashes in QligFEP)
         r"residue_name.isin(['LIG', 'LID']) & atom_name.str.contains('^B\d{0,2}?')"
-    )[["x", "y", "z"]].values
+    )
 
     knn = NearestNeighbors(radius=th, metric="euclidean", n_jobs=4)
     knn.fit(query_arr)
@@ -60,14 +60,15 @@ def rm_HOH_clash_NN(
     unique_indices = sorted(set([i for sublist in indices for i in sublist]))
 
     if not boron_atoms.empty:
-        boron_knn = NearestNeighbors(radius=2.2, metric="euclidean", n_jobs=4)
-        logger.info("Water molecules found too close to ligands' Boron atoms (threshold of 2.2 Å)")
+        boron_th = th + 1
+        boron_knn = NearestNeighbors(radius=boron_th, metric="euclidean", n_jobs=4)
         boron_knn.fit(query_arr)
-        boron_distances, boron_indices = boron_knn.radius_neighbors(boron_atoms)
+        boron_distances, boron_indices = boron_knn.radius_neighbors(boron_atoms[["x", "y", "z"]].values)
         boron_unique_indices = sorted(set([i for sublist in boron_indices for i in sublist]))
-        Br_water_rm = water_query.iloc[boron_unique_indices]["residue_seq_number"].tolist()
-        logger.info(f"Removing {len(Br_water_rm)} water molecules near Boron atoms (threshold of 2.2 Å).")
-        unique_indices = sorted(set(unique_indices + boron_unique_indices))
+        n_Br_removed = len(water_query.iloc[boron_unique_indices]["residue_seq_number"].tolist())
+        if n_Br_removed > 0:
+            logger.info(f"Removing {n_Br_removed} waters near Boron atoms - threshold: {boron_th} Å")
+            unique_indices = sorted(set(unique_indices + boron_unique_indices))
 
     to_rm_waters = water_query.iloc[unique_indices]["residue_seq_number"].tolist()
     final = pdb_df_query[~pdb_df_query["residue_seq_number"].isin(to_rm_waters)].copy()
