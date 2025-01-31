@@ -50,15 +50,25 @@ def rm_HOH_clash_NN(
     else:
         target_arr = target_arr[["x", "y", "z"]].values
 
-    # Use NearestNeighbors with a radius threshold
+    boron_atoms = pdb_df_target.query(  # stricter check for boron-water proximity (crashes in QligFEP)
+        r"residue_name.isin(['LIG', 'LID']) & atom_name.str.contains('^B\d{0,2}?')"
+    )[["x", "y", "z"]].values
+
     knn = NearestNeighbors(radius=th, metric="euclidean", n_jobs=4)
     knn.fit(query_arr)
-
-    # Find all protein atoms within the radius of water oxygen atoms
     distances, indices = knn.radius_neighbors(target_arr)
-
-    # Flatten indices, ensuring only unique and valid indices are retained
     unique_indices = sorted(set([i for sublist in indices for i in sublist]))
+
+    if not boron_atoms.empty:
+        boron_knn = NearestNeighbors(radius=2.2, metric="euclidean", n_jobs=4)
+        logger.info("Water molecules found too close to ligands' Boron atoms (threshold of 2.2 Å)")
+        boron_knn.fit(query_arr)
+        boron_distances, boron_indices = boron_knn.radius_neighbors(boron_atoms)
+        boron_unique_indices = sorted(set([i for sublist in boron_indices for i in sublist]))
+        Br_water_rm = water_query.iloc[boron_unique_indices]["residue_seq_number"].tolist()
+        logger.info(f"Removing {len(Br_water_rm)} water molecules near Boron atoms (threshold of 2.2 Å).")
+        unique_indices = sorted(set(unique_indices + boron_unique_indices))
+
     to_rm_waters = water_query.iloc[unique_indices]["residue_seq_number"].tolist()
     final = pdb_df_query[~pdb_df_query["residue_seq_number"].isin(to_rm_waters)].copy()
     # now renumber the atom_serial_number and the residue_seq_number
@@ -68,7 +78,7 @@ def rm_HOH_clash_NN(
         water_query["residue_seq_number"].unique(), final["residue_seq_number"].unique()
     ).shape[0]
     logger.info(
-        f"Removed {n_removed} water molecules {'with oxygen atoms' if heavy_only else ''}"
+        f"Removed {n_removed} (total) water molecules {'with oxygen atoms' if heavy_only else ''}"
         f" within {th} Å of protein atoms."
     )
 
