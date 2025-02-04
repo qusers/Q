@@ -5,6 +5,7 @@ import json
 import os
 import re
 from pathlib import Path
+from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -13,35 +14,9 @@ from cinnabar import stats as cstats
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
-from .IO import read_qfep, run_command
+from .IO import read_qfep, read_qfep_verbose, run_command
 from .logger import logger, setup_logger
 from .settings.settings import Q_PATHS
-
-
-def info_from_run_file(file_path: Path):
-    """Extract the FEP temperature from a run file."""
-    info = {"temperature": None, "replicates": None}
-    run_files = sorted(list(file_path.glob("run*.sh")))
-    if len(run_files) == 0:
-        logger.error(f"No run files found in {file_path}")
-    elif len(run_files) > 1:
-        logger.warning(f"Multiple run files found in {file_path}!! Using the first one.")
-    run_file = run_files[0]
-    temp_pattern = re.compile(r"temperatures=\((\d+)\)")
-    seeds_pattern = re.compile(r"seeds=\(([0-9\s]+)\)")
-    with run_file.open("r", encoding="utf-8") as _file:
-        for line in _file:
-            temp_match = temp_pattern.search(line)
-            seeds_match = seeds_pattern.match(line)
-            if temp_match:
-                info["temperature"] = temp_match.group(1)
-            if seeds_match:
-                info["random_seeds"] = seeds_pattern.findall(line)[0].split()
-                info["replicates"] = len(info["random_seeds"])
-
-    if any([v is None for v in info.values()]):
-        logger.error(f"Could not extract temperature and/or replicates from {run_file}")
-    return info
 
 
 class FepReader:
@@ -49,7 +24,9 @@ class FepReader:
     and enable input/output operation with the analyzed data.
     """
 
-    def __init__(self, system: str, target_name: str, mapping_json: str) -> None:
+    def __init__(
+        self, system: str, target_name: str, mapping_json: str, n_lambdas: Optional[int] = None
+    ) -> None:
         """Initialize the FEP reader class. This class will store the FEP information inside
         `self.data` and will be used to analyze the results & generate plots.
 
@@ -57,8 +34,11 @@ class FepReader:
             system: which system to be loaded first. This should be a directory containing
                 the FEP directories, named by default with the format `FEP_*`.
             target_name: name of the target protein so we can load the correct FEP directories.
+            n_lambdas: number of lambda windows used in the FEP calculations. If left as default, will attempt
+                to get the information from number of md_XXXX_XXXX.inp files. Defaults to None.
         """
         self._load_mapping_json(mapping_json)
+        self.n_lambdas = n_lambdas
         self.exp_key = None  # will be defined from running load_experimental_data
         self.feps = []
         self.methods_list = ["dG", "dGf", "dGr", "dGos", "dGbar"]
@@ -68,6 +48,9 @@ class FepReader:
         self.target_name = target_name
         self.load_system(system)
         self.read_fep_inputs()
+        self.verbose_qEnergies = []
+        self.verbose_dgBar = []
+        self.run_data = []  # store the runtime, seed and comment for each replicate
 
     def _load_mapping_json(self, json_file: str) -> dict:
         with open(json_file) as json_file:
@@ -125,18 +108,25 @@ class FepReader:
         number of replicates, and lambda sum. Information is stored in`self.data`."""
         for fep in self.data[self.system]:
             _dir = Path(self.data[self.system][fep]["root"])
-            run_info = info_from_run_file(_dir / "inputfiles")
-            temperature = run_info["temperature"]
-            replicates = run_info["replicates"]
-            inputs = sorted(list(_dir.glob("inputfiles/md*.inp")))
-            fep_files = sorted(list(_dir.glob("inputfiles/FEP*.fep")))
+            fep_files = sorted(list((_dir).glob("FEP[0-9]*")))
             fep_stages = []
             for fep_file in fep_files:
                 fep_stages.append(fep_file.stem)
-            if len(fep_stages) > 1:  # Are there cases where we'll have more than 1?
+            if len(fep_stages) > 1:  # Maybe we'll implement this in the future (more than 1 FEP)
                 logger.warning(f"Multiple FEP files found in {fep}: {fep_files}!! Using the first...")
             fep_stage = fep_stages[0]
-            lambda_sum = len(fep_files) * (len(inputs) - 1)
+
+            temperature = [d for d in (_dir / fep_stage).glob("*") if d.is_dir()][0].name
+            replicates = len([d for d in (_dir / fep_stage / temperature).iterdir() if d.is_dir()])
+
+            if self.n_lambdas is None:
+                inputs = sorted(list(_dir.glob("inputfiles/md*.inp")))
+                if len(inputs) == 0:
+                    logger.error(
+                        f"No input files found in {fep}. If this is a backed up system without input files "
+                        ", consider passing the argument --n_lambdas (-lamb) to qligfepA"
+                    )
+                self.n_lambdas = len(fep_files) * (len(inputs) - 1)
 
             # register the ligand names in the dictionary for further results analysis
             ligands = fep.lstrip("FEP_")
@@ -150,7 +140,7 @@ class FepReader:
             try:
                 self.data[self.system][fep].update(
                     {  # populate the dictionary with the FEP information
-                        "lambda_sum": lambda_sum,
+                        "lambda_sum": self.n_lambdas,
                         "fep_stage": fep_stage,
                         "temperature": str(temperature),
                         "replicates": replicates,
@@ -183,14 +173,15 @@ class FepReader:
             failed_replicate: a list with the replicates that failed to be read.
         """
         failed_replicate = []
+        qEnergies, q_dgBAR = None, None
         if qfep_repli_path.stat().st_size == 0:  # if the file is empty, try runnign qfep again
             logger.warning(f"Empty qfep.out file: {qfep_repli_path}. Trying to run qfep again...")
             self.run_qfep(qfep_repli_path)
         logger.debug(f"    Reading qfep.out file: {qfep_repli_path}")
         repID = int(qfep_repli_path.parent.name)
         try:
-            # TODO: shall we also support the verbose output? -> see IO.read_qfep_verbose
             energies = read_qfep(qfep_repli_path)
+            qEnergies, q_dgBAR = read_qfep_verbose(qfep_repli_path)
         except OSError as e:  # if the file is empty
             logger.error(f"Failed to read energies from {qfep_repli_path}. Error: \n{e}")
             failed_replicate.append(repID)
@@ -205,12 +196,37 @@ class FepReader:
             logger.error(f"Failed to read energies from {qfep_repli_path}. Error: \n{e}")
             failed_replicate.append(repID)
             energies = np.array([np.nan] * len(self.methods_list))  # Assuming 5 energy methods
-        return energies, failed_replicate
+        return energies, failed_replicate, qEnergies, q_dgBAR
 
     def read_perturbations(self):
         """Read the ran perturbations. Running this method will populate the `self.data` dictionary
         with the FEPs and their respective delta-G's for the loaded system (self.system)."""
         feps = [k for k in self.data[self.system]]
+
+        keywords = ["DUE TO TIME LIMIT", "CANCELLED", "Out Of Memory", "abnormally"]
+
+        def search_within(slurm_out: Path):
+            runtime = ""
+            keyword = None
+            with slurm_out.open("r") as f:
+                for line in f:
+                    if line.startswith("#    Runtime:"):
+                        runtime = line.split(" ")[-1].strip()
+                    if line.startswith("Parameters"):
+                        seed = line.split(" ")[-1].replace("seed=", "")
+                    if any(k in line for k in keywords):
+                        keyword = [k for k in keywords if k in line][0]
+            if keyword is None:
+                comment = "SUCCESS"
+            elif keyword == "DUE TO TIME LIMIT":
+                comment = "TIMEOUT"
+            elif keyword == "CANCELLED":
+                comment = "CANCELLED"
+            elif keyword == "Out Of Memory":
+                comment = "OOM"
+            elif keyword == "abnormally":
+                comment = "CRASHED"
+            return runtime, seed, comment
 
         for fep in feps:
             logger.info(f"Reading FEP: {fep}")
@@ -218,6 +234,26 @@ class FepReader:
             n_replicates = int(fep_dict["replicates"])
             _dir = Path(fep_dict["root"])
             replicate_root = _dir / fep_dict["fep_stage"] / fep_dict["temperature"]
+
+            # extract data from slurm.out files
+            slurm_out_files = sorted(
+                Path(fep_dict["root"]).glob("slurm*.out"),
+                key=lambda x: int(re.search(r"run(\d+)", x.name).group(1)),
+            )
+            for slurm_out in slurm_out_files:
+                replicate = re.search(r"run(\d+)", slurm_out.name).group(1)
+                runtime, seed, comment = search_within(slurm_out)
+                self.run_data.append(
+                    {
+                        "FEP": fep,
+                        "system": self.system,
+                        "replicate": replicate,
+                        "runtime": runtime,
+                        "seed": seed,
+                        "comment": comment,
+                    }
+                )
+
             replicate_qfep_files = sorted(  # here we use the int to sort the replicates
                 list(replicate_root.glob("*/qfep.out")), key=lambda x: int(x.parent.name)
             )
@@ -242,7 +278,15 @@ class FepReader:
             all_replicates = [i for i in range(1, int(fep_dict["replicates"]) + 1)]
             for rep in replicate_qfep_files:
                 repID = int(rep.parent.name)
-                replicate_energies, failed = self.read_single_replicate(rep)
+                replicate_energies, failed, qEnergies, q_dgBAR = self.read_single_replicate(rep)
+                if qEnergies is not None:
+                    self.verbose_qEnergies.append(
+                        qEnergies.sort_values(by=["lambda_val"]).assign(
+                            fep=fep, system=self.system, replicate=repID
+                        )
+                    )
+                if q_dgBAR is not None:
+                    self.verbose_dgBar.append(q_dgBAR.assign(fep=fep, system=self.system, replicate=repID))
                 energies[repID] = replicate_energies
                 failed_replicates.extend(failed)
             all_energies_arr = []
@@ -307,7 +351,7 @@ class FepReader:
 
             for method in w_result:
                 delta_method = f"d{method}"
-                ddG = p_result[method]["avg"] - w_result[method]["avg"]
+                ddG = p_result[method]["avg"] - w_result[method]["avg"]  # calculated value (protein - water)
                 ddG_sem = float(np.sqrt(p_result[method]["sem"] ** 2 + w_result[method]["sem"] ** 2))
                 ddG_std = float(np.sqrt(p_result[method]["std"] ** 2 + w_result[method]["std"] ** 2))
                 self.data["result"][delta_method].update(
@@ -316,7 +360,7 @@ class FepReader:
                             f"{delta_method}_avg": ddG,
                             f"{delta_method}_sem": ddG_sem,
                             f"{delta_method}_std": ddG_std,
-                            "from": w_fep["from"],
+                            "from": w_fep["from"],  # the same for protein & water; can use either
                             "to": w_fep["to"],
                         }
                     }
@@ -667,6 +711,25 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "-v",
+        "--save-verbose",
+        dest="save_verbose",
+        action="store_true",
+        help="Passing this argument will save verbose data of the dG(BAR) and the qEnergies from the qfep.out files.",
+    )
+
+    parser.add_argument(
+        "-lamb",
+        "--n-lambdas",
+        dest="n_lambdas",
+        default=None,
+        help=(
+            "Number of lambda windows to be saved on the json file with the results. If left empty, will attempt to "
+            "define it from the number of md_*.inp files within the inputfiles/ subdirectory."
+        ),
+    )
+
+    parser.add_argument(
         "-log",
         "--log-level",
         dest="log",
@@ -681,7 +744,9 @@ def parse_arguments() -> argparse.Namespace:
 
 def main(args):
     setup_logger(level=args.log)
-    fep_reader = FepReader(system=args.water_dir, target_name=args.target, mapping_json=args.json_file)
+    fep_reader = FepReader(
+        system=args.water_dir, target_name=args.target, mapping_json=args.json_file, n_lambdas=args.n_lambdas
+    )
     fep_reader.read_perturbations()
     fep_reader.load_new_system(system=args.protein_dir)
     fep_reader.read_perturbations()
@@ -699,6 +764,12 @@ def main(args):
     else:
         results_json = json.loads((Path.cwd() / results_file).read_text())
         results_df = fep_reader.prepare_df(results_json, experimental_data=False)
+    if args.save_verbose:
+        verbose_qEnergies = pd.concat(fep_reader.verbose_qEnergies)
+        verbose_dgBar = pd.concat(fep_reader.verbose_dgBar)
+        verbose_qEnergies.to_csv(f"{args.target}_qEnergies_verbose.csv", index=False)
+        verbose_dgBar.to_csv(f"{args.target}_dgBar_verbose.csv", index=False)
+        pd.DataFrame(fep_reader.run_data).to_csv(f"{args.target}_run_data.csv", index=False)
 
 
 def main_exe():
