@@ -213,7 +213,7 @@ class FepReader:
                     if line.startswith("#    Runtime:"):
                         runtime = line.split(" ")[-1].strip()
                     if line.startswith("Parameters"):
-                        seed = line.split(" ")[-1].replace("seed=", "")
+                        seed = line.split(" ")[-1].replace("seed=", "").strip()
                     if any(k in line for k in keywords):
                         keyword = [k for k in keywords if k in line][0]
             if keyword is None:
