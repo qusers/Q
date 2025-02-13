@@ -25,6 +25,18 @@ def parse_arguments(program: str) -> argparse.Namespace:
                 "A minimal example of usage: setupFEP -FF OPLS2015 -c KEBNE -S sigmoidal -r 25 -l 0.5 -w 100"
             ),
         )
+        parser.add_argument(
+            "-p",
+            "--protein_only",
+            action="store_true",
+            help="Only generate FEP files for the protein system.",
+        )
+        parser.add_argument(
+            "-w",
+            "--water_only",
+            action="store_true",
+            help="Only generate FEP files for the water system.",
+        )
     parser.add_argument(
         "-FF",
         "--forcefield",
@@ -120,6 +132,18 @@ def parse_arguments(program: str) -> argparse.Namespace:
                 "an error if there are more than one."
             ),
             default=None,
+        )
+        parser.add_argument(
+            "-p",
+            "--protein_only",
+            action="store_true",
+            help="Only generate FEP files for the protein system.",
+        )
+        parser.add_argument(
+            "-w",
+            "--water_only",
+            action="store_true",
+            help="Only generate FEP files for the water system.",
         )
     parser.add_argument(
         "-ts",

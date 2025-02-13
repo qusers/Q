@@ -66,8 +66,17 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     setup_logger(level=args.log)
 
     cwd = Path.cwd()
-    systems = ["protein", "water"]
-    sys_directories = [cwd / "2.protein", cwd / "1.water"]
+
+    if args.protein_only:
+        systems = ["protein"]
+        sys_directories = [cwd / "2.protein"]
+    elif args.water_only:
+        systems = ["water"]
+        sys_directories = [cwd / "1.water"]
+    else:
+        systems = ["protein", "water"]
+        sys_directories = [cwd / "2.protein", cwd / "1.water"]
+
     # make sure that the default directories for running the FEP calculations are there
     for sys_dir in sys_directories:
         if not sys_dir.exists():
