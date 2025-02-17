@@ -25,25 +25,17 @@ def parse_arguments(program: str) -> argparse.Namespace:
                 "A minimal example of usage: setupFEP -FF OPLS2015 -c KEBNE -S sigmoidal -r 25 -l 0.5 -w 100"
             ),
         )
-        parser.add_argument(
-            "-p",
-            "--protein_only",
-            action="store_true",
-            help="Only generate FEP files for the protein system.",
-        )
-        parser.add_argument(
-            "-w",
-            "--water_only",
-            action="store_true",
-            help="Only generate FEP files for the water system.",
-        )
     parser.add_argument(
         "-FF",
         "--forcefield",
         dest="FF",
         required=True,
-        choices=["OPLS2005", "OPLS2015", "AMBER14sb", "CHARMM36", "CHARMM22", "CHARMM_TEST"],
-        help="Forcefield to be used.",
+        default="AMBER14sb",
+        help=(
+            "Forcefield to be used. Valid inputs: existing path to a forcefield file without the .lib & .prm "
+            "extensions or one of the following: OPLS2005, OPLS2015, AMBER14sb, CHARMM36, CHARMM22, CHARMM_TEST. "
+            "Defaults to AMBER14sb."
+        ),
     )
     if program == "QligFEP":
         parser.add_argument(
