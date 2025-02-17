@@ -134,13 +134,13 @@ def parse_arguments(program: str) -> argparse.Namespace:
             default=None,
         )
         parser.add_argument(
-            "-p",
+            "-po",
             "--protein_only",
             action="store_true",
             help="Only generate FEP files for the protein system.",
         )
         parser.add_argument(
-            "-w",
+            "-wo",
             "--water_only",
             action="store_true",
             help="Only generate FEP files for the water system.",
