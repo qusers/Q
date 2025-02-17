@@ -2,6 +2,7 @@ import os
 import re
 import shlex
 import stat
+from pathlib import Path
 from subprocess import check_output
 
 import numpy as np
@@ -15,6 +16,39 @@ qfep_error_regex = re.compile(r"ERROR:")
 
 ## Some useful objects TO DO add GLH etc.
 charged_res = {"HIS": {"HD1": "HID", "HE2": "HIE"}, "GLU": {"HE2": "GLH"}, "ASP": {"HD2": "ASH"}}
+
+
+def get_force_field_paths(force_field: str):
+    """Return the paths to the .lib and .prm files for the given force field. Inputs can
+    either be Path-like objects or strings, as for QligFEP-implemented forcefields (AMBER14sb,
+    CHARMM36, OPLS2005, OPLS2015).
+
+    Args:
+        force_field: Either a string with the name of the force field or a Path-like object
+            pointing to the `lib`, the `prm` or both files (no extension).
+
+    Raises:
+        FileNotFoundError: In case the .lib or .prm file is not found in the given directory.
+
+    Returns:
+        tuple: A tuple containing the paths to the .lib and .prm files.
+    """
+    _available = ["AMBER14sb", "CHARMM36", "OPLS2005", "OPLS2015"]
+    if force_field in _available:
+        lib_file = CONFIGS["FF_DIR"] + "/" + force_field + ".lib"
+        prm_file = CONFIGS["FF_DIR"] + "/" + force_field + ".prm"
+    else:
+        ff_path_obj = Path(force_field)
+        extensions = [".lib", ".prm"]
+        for ext in extensions:
+            if not ff_path_obj.with_suffix(ext).exists():
+                logger.error(
+                    "If passing a Path-like object, both .lib and .prm files must be present in the same directory."
+                )
+                raise FileNotFoundError(f"Could not find the {ext} file for the force field: {ff_path_obj}")
+        lib_file = str(ff_path_obj.with_suffix(".lib"))
+        prm_file = str(ff_path_obj.with_suffix(".prm"))
+    return lib_file, prm_file
 
 
 def replace(string, replacements):
@@ -196,6 +230,31 @@ def read_prm(prmfiles):
                     prm["[impropers]"].append(line)
 
     return prm
+
+
+def parse_prm(prm_contents: list[str]) -> dict[str, list[str]]:
+    sections = {}
+    current_section = None
+    current_content = []
+
+    for line in prm_contents:
+        if line.startswith("[") and line.endswith("]"):
+            if current_section is not None:  # If we were processing a section, save it
+                sections[current_section] = "\n".join(current_content)
+                current_content = []
+
+            current_section = line.strip("[]")
+            continue
+
+        # If we're in a section, add the line to current content
+        if current_section is not None:
+            current_content.append(line)
+
+    # save the last section
+    if current_section is not None and current_content:
+        sections[current_section] = "\n".join(current_content)
+
+    return sections
 
 
 def get_lambdas(windows, sampling):

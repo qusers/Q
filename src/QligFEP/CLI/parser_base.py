@@ -32,9 +32,9 @@ def parse_arguments(program: str) -> argparse.Namespace:
         required=True,
         default="AMBER14sb",
         help=(
-            "Forcefield to be used. Valid inputs: existing path to a forcefield file without the .lib & .prm "
-            "extensions or one of the following: OPLS2005, OPLS2015, AMBER14sb, CHARMM36, CHARMM22, CHARMM_TEST. "
-            "Defaults to AMBER14sb."
+            "Forcefield to be used. Valid inputs: existing path to a forcefield file without the extensions"
+            "(either .lib, .prm, or Path without the extensions will work) or one of the following: "
+            "OPLS2005, OPLS2015, AMBER14sb, CHARMM36. Defaults to AMBER14sb."
         ),
     )
     if program == "QligFEP":

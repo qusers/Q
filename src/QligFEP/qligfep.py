@@ -11,7 +11,7 @@ import numpy as np
 from .CLI.qprep_cli import qprep_error_check
 from .CLI.utils import get_avail_restraint_methods, handle_cysbonds
 from .functions import COG, kT, overlapping_pairs, sigmoid
-from .IO import replace, run_command
+from .IO import get_force_field_paths, replace, run_command
 from .logger import logger
 from .pdb_utils import (
     calculate_distance,
@@ -53,6 +53,7 @@ class QligFEP:
         self.lig1 = lig1
         self.lig2 = lig2
         self.FF = FF
+        self.lib_file, self.prm_file = get_force_field_paths(FF)
         self.system = system
         self.rootdir = os.getcwd()
         self.cluster = cluster
@@ -183,16 +184,13 @@ class QligFEP:
                     cnt = 0
                     for i in [line[1], line[2]]:
                         cnt = cnt + 1
-                        if self.FF == "AMBER14sb" or self.FF == "CHARMM36":
+                        if "AMBER14sb" in self.FF or "CHARMM36" in self.FF:
                             j = "X" + i
                         else:
                             match = re.match(r"([a-z]+)([0-9]+)", i, re.I)
                             if match:
                                 items = match.groups()
                                 j = str(items[0]) + str(int(items[1]) + int(molsize_lig1))
-
-                        if self.FF == "CHARMM_TEST":
-                            j = "X_" + i
 
                         if cnt == 1:
                             changes_1[i] = j
@@ -223,7 +221,7 @@ class QligFEP:
         pattern = re.compile(r"\b(" + "|".join(replacements.keys()) + r")\b")
         file1 = glob.glob(self.lig1 + ".prm")[0]
         file2 = glob.glob(self.lig2 + ".prm")[0]
-        prm_file = CONFIGS["FF_DIR"] + "/" + self.FF + ".prm"
+        prm_file = self.prm_file
         prm_merged = {"vdw": [], "bonds": [], "angle": [], "torsion": [], "improper": []}
 
         for file in [file1, file2]:
@@ -302,9 +300,7 @@ class QligFEP:
         for line in prm_merged["vdw"]:
             if len(line) > 1 and line[0] != "!" and line[0:1]:
                 line = line.split()
-                line2 = "{:10}{:10}{:10}{:10}{:10}{:10}{:10}{:10}".format(
-                    line[0], line[1], line[3], str(0), str(0), line[4], line[5], line[6]
-                )
+                line2 = f"{line[0]:10}{line[1]:10}{line[3]:10}{str(0):10}{str(0):10}{line[4]:10}{line[5]:10}{line[6]:10}"
                 FEP_vdw.append(line2)
         return FEP_vdw
 
@@ -717,8 +713,6 @@ class QligFEP:
         file_list_3 = []
         replacements = {}
         lig_total = lig_size1 + lig_size2
-        lambda_1 = []
-        lambda_2 = []
 
         replacements["ATOM_START_LIG1"] = f"{self.atomoffset + 1:<6}"
         replacements["ATOM_END_LIG1"] = f"{self.atomoffset + lig_size1:<7}"
@@ -974,7 +968,7 @@ class QligFEP:
         self.cog = [float(coord) for coord in center.split()]
         qprep_in = CONFIGS["ROOT_DIR"] + "/INPUTS/qprep.inp"
         qprep_out = writedir + "/qprep.inp"
-        replacements["FF_LIB"] = CONFIGS["ROOT_DIR"] + "/FF/" + self.FF + ".lib"
+        replacements["FF_LIB"] = self.lib_file
         replacements["LIG1"] = self.lig1 + ".lib"
         replacements["LIG2"] = self.lig2 + "_renumber.lib"
         replacements["LIGPRM"] = self.FF + "_" + self.lig1 + "_" + self.lig2 + "_merged.prm"
