@@ -336,7 +336,7 @@ class GlobalLigandAligner(MoleculeIO):
         self._run_kcombu(molecule_path, reference_path, output_path)
 
         aligned_molecule = Molecule.from_file(str(output_path))
-        self._transfer_metadata(molecule, aligned_molecule)
+        self._transfer_sdf_metadata(molecule, aligned_molecule)
 
         if self.temp_dir:
             self.temp_dir.cleanup()
