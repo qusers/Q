@@ -1,7 +1,7 @@
 from io import StringIO
 from itertools import product
 from pathlib import Path
-from typing import Optional, Union
+from typing import Generator, Optional, Union  # noqa: UP035
 
 import pandas as pd
 import py3Dmol
@@ -18,7 +18,16 @@ from .visualization import mol_to_molblock
 class MoleculeIO:
     """A class to handle the input/output of molecules. Ligands are usually initialized
     from (.sdf files | directories containing .sdf files) and then processed into individual
-    molecules.
+    ``openff.toolkit.Molecule` objects.
+
+    Upon initialization, parsed molecules are accessible through the molecule name, as in:
+    >>> mio = MoleculeIO("ligand.sdf")
+    >>> mio["ligand_name"]
+
+    Iterating through the MolecularIO object will yield the names and the Molecule objects:
+    >>> from rdkit import Chem
+    >>> for name, mol in mio:
+    >>>     print(name, mol.to_smiles())
 
     Attributes:
         self.lig: the input ligand `.sdf` file or directory
@@ -62,10 +71,31 @@ class MoleculeIO:
             logger.warning(f"Molecule with name {name} not found.")
             return None
 
-    def display_overlay(self, *ligands, size=(800, 600), render=True):
+    def __iter__(self) -> Generator[tuple[str, Molecule], None, None]:
+        """Iterate over the names and the Molecule objects"""
+        yield from zip(self.lig_names, self.molecules)
+
+    def display_overlay(
+        self, *ligands: Union[str, Chem.Mol, Molecule], size=(800, 600), render=False
+    ) -> py3Dmol.view:
+        """Display the overlay of the ligands using py3Dmol.
+
+        Args:
+            size: size of the rendering. Defaults to (800, 600).
+            render: whether to render it or not. Defaults to False.
+
+        Returns:
+            py3Dmol.view: the py3Dmol view object.
+        """
         view = py3Dmol.view(width=size[0], height=size[1])
 
         for i, ligand in enumerate(ligands):
+
+            if isinstance(ligand, str):
+                ligand = self.__getitem__(ligand)
+            elif isinstance(ligand, (Chem.Mol, Molecule)):
+                ligand = ligand
+
             molblock = mol_to_molblock(self.__getitem__(ligand))
             view.addModel(molblock, f"ligand{i}_overlap", viewer=(0, 1))
             style = {"stick": {"opacity": 0.7}}
@@ -160,7 +190,7 @@ class MoleculeIO:
     def parse_sdf_contents(self):
         """Parse the SDF content into individual entries and have them saved in a dictionary."""
         self.sdf_contents = {}
-        for mol, name in zip(self.molecules, self.lig_names):
+        for name, mol in self:
             string_buffer = StringIO()
             mol.to_file(string_buffer, file_format="sdf")
             self.sdf_contents.update({name: string_buffer.getvalue().splitlines()})
@@ -185,9 +215,9 @@ class MoleculeIO:
         if not output_dir.exists():
             output_dir.mkdir(parents=True, exist_ok=True)
         if molecules is None:
-            for idx, lname in enumerate(self.lig_names):
-                fpath = str(output_dir / f"{lname}.sdf")
-                self.molecules[idx].to_file(file_path=fpath, file_format="sdf")
+            for name, mol in self:
+                fpath = str(output_dir / f"{name}.sdf")
+                mol.to_file(file_path=fpath, file_format="sdf")
         else:
             for mol in molecules:
                 mol.to_file(file_path=f"{mol.name}.sdf", file_format="sdf")
@@ -201,7 +231,7 @@ class MoleculeIO:
                 `self.molecules` will be written. Defaults to None.
         """
         writer = Chem.SDWriter(output_name)
-        for mol in self.molecules if molecules is None else molecules:
+        for _, mol in self:
             writer.write(mol.to_rdkit())
         writer.close()
         logger.info(f"{'`self.molecules`' if molecules is None else 'molecules'} written to {output_name}")
