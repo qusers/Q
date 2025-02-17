@@ -1913,6 +1913,7 @@ oH           cA           cB           hB               0.0000   2.0        0.0 
 cC           cD           cD           cB               0.1556   3.0        0.0   1.0
 
 ! Ligand torsion parameters
+! End ligand torsion parameters
 
 [impropers]
 ?            C            O            ?                  10.5      180.0
@@ -1989,3 +1990,4 @@ cA           cC           nN           hN                  1.1      180.0
 
 ! Ligand improper parameters
 ! End ligand improper parameters
+
