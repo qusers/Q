@@ -7,7 +7,7 @@ from typing import Optional
 
 import numpy as np
 
-from ..IO import run_command
+from ..IO import get_force_field_paths, run_command
 from ..logger import logger, setup_logger
 from ..pdb_utils import read_pdb_to_dataframe, write_dataframe_to_pdb
 from ..settings.settings import CONFIGS, FF_DIR
@@ -193,8 +193,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
 
     pdb_file = str(cwd / args.input_pdb_file)
 
-    ff_lib_path = str(Path(CONFIGS["FF_DIR"]) / f"{args.FF}.lib")
-    ff_prm_path = str(Path(CONFIGS["FF_DIR"]) / f"{args.FF}.prm")
+    ff_lib_path, ff_prm_path = get_force_field_paths(args.FF)
 
     qprep_inp_path = cwd / "qprep.inp"
     qprep_out_path = cwd / "qprep.out"
