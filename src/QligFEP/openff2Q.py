@@ -1,7 +1,8 @@
 """Module containing the OpenFF2Q class to process ligands and generate OpenFF parameter files for QligFEP."""
 
+from io import StringIO
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TextIO
 
 import numpy as np
 from joblib import Parallel, delayed, parallel_config
@@ -10,6 +11,7 @@ from openff.toolkit.utils.nagl_wrapper import NAGLToolkitWrapper
 from tqdm import tqdm
 
 from .chemIO import MoleculeIO
+from .IO import get_force_field_paths, parse_prm
 from .logger import logger
 from .pdb_utils import pdb_parse_out
 from .settings.settings import FF_DIR
@@ -101,7 +103,7 @@ class OpenFF2Q(MoleculeIO):
             parameters.update({lname: self.forcefield.label_molecules(topology)[0]})
         return topologies, parameters
 
-    def process_ligands(self):
+    def process_ligands(self) -> None:
         """Assigns partial charges and writes the .lib, .prm and .pdb files for each ligand."""
         logger.info("Calculating charges")
         backend = "threading" if self.nagl else "multiprocessing"
@@ -116,17 +118,30 @@ class OpenFF2Q(MoleculeIO):
             if formatted_sum == "-0.000":
                 formatted_sum = "0.000"
             self.total_charges.update({lname: formatted_sum})
-            self.get_mapping(lname)
-            self.write_lib_Q(lname)
-            self.write_prm_Q(lname)
-            self.write_PDB(lname)
+            self.create_atom_prm_mapping(lname)
         all_formal_charges = [self.total_charges[n] for n in self.lig_names]
         if np.unique(all_formal_charges).size > 1:
             logger.warning(f"Formal charges of ligands in .sdf are not unique: {self.total_charges}")
         else:
             logger.info(f"Output files written for {len(self.lig_names)} ligands")
 
-    def get_mapping(self, lname):
+    def write_ligand_files(self, prefix=None, residue_name: str = "LIG") -> None:
+        """Writes the .lib, .prm and .pdb files for each ligand.
+
+        Args:
+            prefix: a custom prefix to be added to the atom names on the .lib file. Element symbols will be
+                lowercase not to be confused with protein atoms. Prefix should be used if more than one
+                ligand will be present in the system. E.g.: "X", used as standard for ligand 2 in QligFEP.
+                Defaults to None.
+            residue_name: name of the residue in the .lib file, matching the residue on the pdb file.
+                Defaults to "LIG".
+        """
+        for name, _ in self:
+            self.write_lib_Q(name, prefix=prefix, residue_name=residue_name)
+            self.write_prm_Q(name, prefix=prefix)
+            self.write_PDB(name, residue_name=residue_name)
+
+    def create_atom_prm_mapping(self, lname):
         """Get the mapping of the ligand atoms to the forcefield parameters.
 
         Args:
@@ -165,33 +180,48 @@ class OpenFF2Q(MoleculeIO):
                 atom_data[2],  # Z coordinate
             ]
 
-    def write_lib_Q(self, lname: str):
+    def write_lib_Q(
+        self,
+        lname: str,
+        outfile: Optional[TextIO] = None,
+        prefix: Optional[str] = None,
+        residue_name: str = "LIG",
+    ):
         """Writes Q's .lib file for a given ligand.
 
         Args:
             lname: name of the ligand for the .lib file.
+            outfile: file to write the .lib file to. Defaults to None, writing self.out_dir / lname.lib.
+            prefix: a custom prefix to be added to the atom names on the .lib file. Element symbols will be
+                lowercase not to be confused with protein atoms. Prefix should be used if more than one
+                ligand will be present in the system. E.g.: "X", used as standard for ligand 2 in QligFEP.
+                Defaults to None.
+            residue_name: name of the residue in the .lib file, matching the residue on the pdb file.
+                Defaults to "LIG".
         """
         parameters = self.parameters[lname]
         mapping = self.mapping[lname]
         total_charge = self.total_charges[lname]
-        libfile_out = self.out_dir / f"{lname}.lib"
-        with open(libfile_out, "w") as outfile:
-            outfile.write(
-                "{}    ! atoms no {}   total charge {} \n\n".format("{LIG}", len(mapping), total_charge)
-            )
+
+        if outfile is None:
+            libfile_out = self.out_dir / f"{lname}.lib"
+            outfile = open(libfile_out, "w")  # noqa: SIM115
+            should_close = True
+        else:
+            should_close = False
+
+        try:
+            label = "{" + residue_name + "}"
+            outfile.write(f"{label}    ! atoms no {len(mapping)}   total charge {total_charge} \n\n")
 
             outfile.write("[info] \n SYBYLtype RESIDUE \n\n")
 
             # atom and charge block:
             outfile.write("[atoms] \n")
             for at in mapping:
+                at_name = prefix + mapping[at][1].lower() if prefix is not None else mapping[at][1].lower()
                 outfile.write(
-                    "{:>4s}   {:10}{:11}{:>10s}\n".format(
-                        mapping[at][0],
-                        mapping[at][1],
-                        mapping[at][1].lower(),
-                        mapping[at][3],
-                    )
+                    f"{mapping[at][0]:>4s}   {mapping[at][1]:10}{at_name:11}{mapping[at][3]:>10s}\n"
                 )
             # bonded block
             outfile.write("\n[bonds]\n")
@@ -208,143 +238,173 @@ class OpenFF2Q(MoleculeIO):
                 ak = mapping[torsion[2]][1]
                 al = mapping[torsion[3]][1]
                 outfile.write(f"{ai:10}{aj:10}{ak:10}{al}\n")
+        finally:
+            if should_close:
+                outfile.close()
 
-    def write_prm_Q(self, lname: str):
+    def write_prm_Q(self, lname: str, outfile: Optional[TextIO] = None, prefix: Optional[str] = None):
         """Writes Q's .prm file for a given ligand.
 
         Args:
             lname: name of the ligand for the .prm file.
+            outfile: file to write the .prm file to. Defaults to None, writing self.out_dir / lname.prm.
+            prefix: a custom prefix to be added to the atom names on the .prm file. Element symbols will be
+                lowercase not to be confused with protein atoms. Prefix should be used if more than one
+                ligand will be present in the system. E.g.: "X", used as standard for ligand 2 in QligFEP.
+                Defaults to None.
+            residue_name: name of the residue in the .prm file, matching the residue on the pdb file.
+                Defaults to "LIG".
         """
+
+        def insert_prefix(at_name, prefix: Optional[str]):
+            if prefix is not None:
+                return prefix + at_name
+            return at_name
+
         prm_template = str(FF_DIR / "NOMERGE.prm")
         parameters = self.parameters[lname]
         mapping = self.mapping[lname]
-        prmfile_out = f"{self.out_dir / lname}.prm"
-        mol = self.molecules[self.lig_names.index(lname)]
-        with open(prm_template) as infile, open(prmfile_out, "w") as outfile:
-            for line in infile:
-                block = 0
-                outfile.write(line)
-                if len(line) > 1:
-                    if line == "! Ligand vdW parameters\n":
-                        block = 1
-                    if line == "! Ligand bond parameters\n":
-                        block = 2
-                    if line == "! Ligand angle parameters\n":
-                        block = 3
-                    if line == "! Ligand torsion parameters\n":
-                        block = 4
-                    if line == "! Ligand improper parameters\n":
-                        block = 5
 
-                if block == 1:
-                    for atom_indices, parameter in parameters["vdW"].items():
-                        ai = atom_indices[0]
-                        ai_name = mapping[ai][1].lower()
-                        # This is a bit hacky, check how to get the float out directly
-                        epsilon = float(f"{parameter.epsilon}".split()[0])
-                        epsilon23 = epsilon / 2
-                        # TO DO: CHECK IF THIS IS CORRECT!
-                        Rmin = f"{parameter.rmin_half}"
-                        Rmin = Rmin.split()[0]
-                        Rmin = float(Rmin)
-                        assert len(atom_indices) == 1, f"More than 1 atom indices present: {atom_indices}"
-                        mass = str(round(mol.atoms[atom_indices[0]].mass.magnitude, 4))
-                        outfile.write(
-                            """{:6}{: 8.3f}{: 10.3f}{: 10.3f}{: 10.3f}{: 10.3f}{:>10s}\n""".format(
-                                ai_name, Rmin, 0.00, epsilon, Rmin, epsilon23, mass
-                            )
-                        )
+        if outfile is None:
+            prmfile_out = f"{self.out_dir / lname}.prm"
+            outfile = open(prmfile_out, "w")  # noqa: SIM115
+            should_close = True
+        else:
+            should_close = False
 
-                if block == 2:
-                    for atom_indices, parameter in parameters["Bonds"].items():
-                        ai = atom_indices[0]
-                        ai_name = mapping[ai][1].lower()
-                        aj = atom_indices[1]
-                        aj_name = mapping[aj][1].lower()
-                        fc = float(f"{parameter.k}".split()[0])
-                        leng = float(f"{parameter.length}".split()[0])
-                        outfile.write(f"{ai_name:10}{aj_name:10}{fc:10.1f}{leng:>10.3f}\n")
+        try:
+            mol = self[lname]
+            with open(prm_template) as infile:
+                for line in infile:
+                    block = 0
+                    outfile.write(line)
+                    if len(line) > 1:
+                        if line == "! Ligand vdW parameters\n":
+                            block = 1
+                        if line == "! Ligand bond parameters\n":
+                            block = 2
+                        if line == "! Ligand angle parameters\n":
+                            block = 3
+                        if line == "! Ligand torsion parameters\n":
+                            block = 4
+                        if line == "! Ligand improper parameters\n":
+                            block = 5
 
-                if block == 3:
-                    for atom_indices, parameter in parameters["Angles"].items():
-                        ai = atom_indices[0]
-                        ai_name = mapping[ai][1].lower()
-                        aj = atom_indices[1]
-                        aj_name = mapping[aj][1].lower()
-                        ak = atom_indices[2]
-                        ak_name = mapping[ak][1].lower()
-                        fc = float(f"{parameter.k}".split()[0])
-                        angle = float(f"{parameter.angle}".split()[0])
-
-                        outfile.write(f"""{ai_name:10}{aj_name:10}{ak_name:10}{fc: 8.2f}{angle:>12.3f}\n""")
-
-                if block == 4:
-                    for atom_indices, parameter in parameters["ProperTorsions"].items():
-                        forces = []
-                        ai = atom_indices[0]
-                        ai_name = mapping[ai][1].lower()
-                        aj = atom_indices[1]
-                        aj_name = mapping[aj][1].lower()
-                        ak = atom_indices[2]
-                        ak_name = mapping[ak][1].lower()
-                        al = atom_indices[3]
-                        al_name = mapping[al][1].lower()
-                        max_phase = len(parameter.phase)
-
-                        # Now check if there are multiple minima
-                        for i in range(0, max_phase):
-                            fc = float(f"{parameter.k[i]}".split()[0])
-                            phase = float(f"{parameter.phase[i]}".split()[0])
-                            paths = int(parameter.idivf[i])
-
-                            if i != max_phase - 1 and max_phase > 1:
-                                minimum = float(parameter.periodicity[i]) * -1
-
-                            else:
-                                minimum = float(parameter.periodicity[i])
-
-                            force = (fc, minimum, phase, paths)
-                            forces.append(force)
-
-                        for force in forces:
+                    if block == 1:
+                        for atom_indices, parameter in parameters["vdW"].items():
+                            ai = atom_indices[0]
+                            ai_name = insert_prefix(mapping[ai][1].lower(), prefix)
+                            # This is a bit hacky, check how to get the float out directly
+                            epsilon = float(f"{parameter.epsilon}".split()[0])
+                            epsilon23 = epsilon / 2
+                            # TO DO: CHECK IF THIS IS CORRECT!
+                            Rmin = f"{parameter.rmin_half}"
+                            Rmin = Rmin.split()[0]
+                            Rmin = float(Rmin)
+                            assert len(atom_indices) == 1, f"More than 1 atom indices present: {atom_indices}"
+                            mass = f"{round(mol.atoms[atom_indices[0]].mass.magnitude, 2):.2f}"
                             outfile.write(
-                                """{:10}{:10}{:10}{:10}{:>10.3f}{:>10.3f}{:>10.3f}{:>5d}\n""".format(
-                                    ai_name,
-                                    aj_name,
-                                    ak_name,
-                                    al_name,
-                                    force[0],
-                                    force[1],
-                                    force[2],
-                                    force[3],
-                                )
+                                f"{ai_name:<6}{Rmin:>16.3f}{0.00: 12.1f}{epsilon:>10.3f}{Rmin:>12.3f}{epsilon23:>11.5f}{mass:>11s}\n"
                             )
 
-                if block == 5:
-                    for atom_indices, parameter in parameters["ImproperTorsions"].items():
-                        ai = atom_indices[0]
-                        ai_name = mapping[ai][1].lower()
-                        aj = atom_indices[1]
-                        aj_name = mapping[aj][1].lower()
-                        ak = atom_indices[2]
-                        ak_name = mapping[ak][1].lower()
-                        al = atom_indices[3]
-                        al_name = mapping[al][1].lower()
-                        fc = float(f"{parameter.k[0]}".split()[0])
-                        phase = float(f"{parameter.phase[0]}".split()[0])
-                        outfile.write(
-                            f"""{ai_name:10}{aj_name:10}{ak_name:10}{al_name:10}{fc:10.3f}{phase:10.3f}\n"""
-                        )
+                    if block == 2:
+                        for atom_indices, parameter in parameters["Bonds"].items():
+                            ai = atom_indices[0]
+                            ai_name = insert_prefix(mapping[ai][1].lower(), prefix)
+                            aj = atom_indices[1]
+                            aj_name = insert_prefix(mapping[aj][1].lower(), prefix)
+                            fc = float(f"{parameter.k}".split()[0])
+                            leng = float(f"{parameter.length}".split()[0])
+                            outfile.write(f"{ai_name:13}{aj_name:13}{fc:10.1f}{leng:>11.4f}\n")
 
-    def write_PDB(self, lname: str):
-        """Writes a PDB file for a given ligand.
+                    if block == 3:
+                        for atom_indices, parameter in parameters["Angles"].items():
+                            ai = atom_indices[0]
+                            ai_name = insert_prefix(mapping[ai][1].lower(), prefix)
+                            aj = atom_indices[1]
+                            aj_name = insert_prefix(mapping[aj][1].lower(), prefix)
+                            ak = atom_indices[2]
+                            ak_name = insert_prefix(mapping[ak][1].lower(), prefix)
+                            fc = float(f"{parameter.k}".split()[0])
+                            angle = float(f"{parameter.angle}".split()[0])
+
+                            outfile.write(f"{ai_name:13}{aj_name:13}{ak_name:13}{fc:>10.2f}{angle:>11.3f}\n")
+
+                    if block == 4:
+                        for atom_indices, parameter in parameters["ProperTorsions"].items():
+                            forces = []
+                            ai = atom_indices[0]
+                            ai_name = insert_prefix(mapping[ai][1].lower(), prefix)
+                            aj = atom_indices[1]
+                            aj_name = insert_prefix(mapping[aj][1].lower(), prefix)
+                            ak = atom_indices[2]
+                            ak_name = insert_prefix(mapping[ak][1].lower(), prefix)
+                            al = atom_indices[3]
+                            al_name = insert_prefix(mapping[al][1].lower(), prefix)
+                            max_phase = len(parameter.phase)
+
+                            # Now check if there are multiple minima
+                            for i in range(0, max_phase):
+                                fc = float(f"{parameter.k[i]}".split()[0])
+                                phase = float(f"{parameter.phase[i]}".split()[0])
+                                paths = int(parameter.idivf[i])
+
+                                if i != max_phase - 1 and max_phase > 1:
+                                    minimum = float(parameter.periodicity[i]) * -1
+
+                                else:
+                                    minimum = float(parameter.periodicity[i])
+
+                                force = (fc, minimum, phase, paths)
+                                forces.append(force)
+
+                            for force in forces:
+                                outfile.write(
+                                    f"""{ai_name:13}{aj_name:13}{ak_name:13}{al_name:13}{force[0]:>10.4f}{force[1]:>6.1f}{force[2]:>11.1f}{force[3]:>6.1f}\n"""
+                                )
+
+                    if block == 5:
+                        for atom_indices, parameter in parameters["ImproperTorsions"].items():
+                            ai = atom_indices[0]
+                            ai_name = insert_prefix(mapping[ai][1].lower(), prefix)
+                            aj = atom_indices[1]
+                            aj_name = insert_prefix(mapping[aj][1].lower(), prefix)
+                            ak = atom_indices[2]
+                            ak_name = insert_prefix(mapping[ak][1].lower(), prefix)
+                            al = atom_indices[3]
+                            al_name = insert_prefix(mapping[al][1].lower(), prefix)
+                            fc = float(f"{parameter.k[0]}".split()[0])
+                            phase = float(f"{parameter.phase[0]}".split()[0])
+                            outfile.write(
+                                f"""{ai_name:13}{aj_name:13}{ak_name:13}{al_name:13}{fc:10.1f}{phase:11.1f}\n"""
+                            )
+        finally:
+            if should_close:
+                outfile.close()
+
+    def write_PDB(self, lname: str, outfile: Optional[TextIO] = None, residue_name: str = "LIG"):
+        """Writes pdb file for a given ligand.
 
         Args:
-            lname: name of the ligand for the .pdb file.
+            lname: name of the ligand to be written.
+            outfile: file to write the .pdb file to. Defaults to None, writing self.out_dir / lname.pdb.
+            prefix: a custom prefix to be added to the atom names in Q's .prm file. Element symbols will be
+                lowercase not to be confused with protein atoms. Prefix should be used if more than one
+                ligand will be present in the system. E.g.: "X", used as standard for ligand 2 in QligFEP.
+                Defaults to None.
+            residue_name: name of the residue in the .prm file, matching the residue on the pdb file.
+                Defaults to "LIG".
         """
         mapping = self.mapping[lname]
-        pdbfile_out = self.out_dir / f"{lname}.pdb"
-        with open(pdbfile_out, "w") as outfile:
+
+        if outfile is None:
+            pdbfile_out = self.out_dir / f"{lname}.pdb"
+            outfile = open(pdbfile_out, "w")  # noqa: SIM115
+            should_close = True
+        else:
+            should_close = False
+
+        try:
             for atom in mapping:
                 ai = atom + 1
                 ai_name = mapping[atom][1]
@@ -357,7 +417,7 @@ class OpenFF2Q(MoleculeIO):
                     ai,  #  1 ATOM serial number
                     ai_name,  #  2 ATOM name
                     "",  #  3 Alternate location indicator
-                    "LIG",  #  4 Residue name
+                    residue_name,  #  4 Residue name
                     "",  #  5 Chain identifier
                     1,  #  6 Residue sequence number
                     "",  #  7 Code for insertion of residue
@@ -370,3 +430,76 @@ class OpenFF2Q(MoleculeIO):
                     "",  # 14 Charge on atom
                 ]
                 outfile.write(pdb_parse_out(at_entry) + "\n")
+        finally:
+            if should_close:
+                outfile.close()
+
+    def write_cofactor_plus_ff_files(self, ff: str):
+        """Method for writing the .lib, .prm and .pdb files for the cofactor and the forcefield."""
+        ff_lib, ff_prm = get_force_field_paths(ff)
+        protein_lib_lines = Path(ff_lib).read_text().splitlines()
+        protein_prm_lines = Path(ff_prm).read_text().splitlines()
+        protein_prm_sections = parse_prm(protein_prm_lines)
+        protein_prm_header = [line for line in protein_prm_lines[:15] if line.startswith("*")]
+
+        prefixes = list("QWERTY")
+        residues = ["CFA", "CFB", "CFC", "CFD", "CFE", "CFF"]  # cofactor a, b, ... f
+
+        # raise an error if there are more cofactors than prefixes available
+        if len(self.lig_names) > len(prefixes):
+            raise ValueError(
+                "More cofactors than prefixes available. Are you sure you have that many "
+                "cofactors? If so, add extra prefixes & to the residues list."
+            )
+
+        lig_prm_contents = {}
+        for name, prefix, res in zip(self.lig_names, prefixes, residues):
+            lib_out = StringIO()
+            self.write_lib_Q(name, outfile=lib_out, prefix=prefix, residue_name=res)
+            lib_lines = lib_out.getvalue().split("\n")
+            protein_lib_lines.extend(lib_lines)
+            protein_lib_lines.append("*" + ("-" * 80))
+            lib_out.close()
+
+            prm_out = StringIO()
+            self.write_prm_Q(name, outfile=prm_out, prefix=prefix)
+            clean_output = []
+            for line in prm_out.getvalue().split("\n"):
+                if not line.strip():
+                    continue
+                if line.startswith("!"):
+                    continue
+                clean_output.append(line)
+            sections = parse_prm(clean_output)
+            lig_prm_contents[name] = sections
+            prm_out.close()
+
+        final_prm_contents = [*protein_prm_header]
+        for header, lines in protein_prm_sections.items():
+            final_prm_contents.append(f"[{header}]")
+            final_prm_contents.append(protein_prm_sections[header])
+
+            if header != "options":
+                final_prm_contents.append(f"! Cofactor {header} parameters")
+
+            for name in self.lig_names:
+                try:
+                    cofactor_contents = lig_prm_contents[name][header]
+                except KeyError:
+                    logger.info(f'No "{header}" parameters found for cofactor {name}')
+                    continue
+                if cofactor_contents:
+                    final_prm_contents.append(cofactor_contents)
+
+            if header != "options":
+                final_prm_contents.append(f"! End cofactor {header} parameters")
+            final_prm_contents.append("")
+
+        # Write the final files
+        lib_out = self.out_dir / f"{ff}_plus_cofactor.lib"
+        prm_out = self.out_dir / f"{ff}_plus_cofactor.prm"
+
+        with open(lib_out, "w") as f:
+            f.write("\n".join(protein_lib_lines))
+        with open(prm_out, "w") as f:
+            f.write("\n".join(final_prm_contents))
