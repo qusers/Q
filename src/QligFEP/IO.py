@@ -46,8 +46,8 @@ def get_force_field_paths(force_field: str):
                     "If passing a Path-like object, both .lib and .prm files must be present in the same directory."
                 )
                 raise FileNotFoundError(f"Could not find the {ext} file for the force field: {ff_path_obj}")
-        lib_file = str(ff_path_obj.with_suffix(".lib"))
-        prm_file = str(ff_path_obj.with_suffix(".prm"))
+        lib_file = str(ff_path_obj.with_suffix(".lib").resolve().absolute())
+        prm_file = str(ff_path_obj.with_suffix(".prm").resolve().absolute())
     return lib_file, prm_file
 
 
