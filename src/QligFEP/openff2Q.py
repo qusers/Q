@@ -13,7 +13,12 @@ from tqdm import tqdm
 from .chemIO import MoleculeIO
 from .IO import get_force_field_paths, parse_prm
 from .logger import logger
-from .pdb_utils import pdb_parse_out
+from .pdb_utils import (
+    append_pdb_to_another,
+    pdb_parse_out,
+    read_pdb_to_dataframe,
+    write_dataframe_to_pdb,
+)
 from .settings.settings import FF_DIR
 
 
@@ -474,6 +479,16 @@ class OpenFF2Q(MoleculeIO):
             lig_prm_contents[name] = sections
             prm_out.close()
 
+            pdb_out = StringIO()  # get the pdb file to output as cofactors.pdb
+            self.write_PDB(name, outfile=pdb_out, residue_name=res)
+            if prefix == prefixes[0]:
+                cofactor = read_pdb_to_dataframe(pdb_out.getvalue().split("\n"))
+            else:
+                cofactor = append_pdb_to_another(
+                    cofactor, read_pdb_to_dataframe(pdb_out.getvalue().split("\n"))
+                )
+            pdb_out.close()
+
         final_prm_contents = [*protein_prm_header]
         for header, lines in protein_prm_sections.items():
             final_prm_contents.append(f"[{header}]")
@@ -503,3 +518,4 @@ class OpenFF2Q(MoleculeIO):
             f.write("\n".join(protein_lib_lines))
         with open(prm_out, "w") as f:
             f.write("\n".join(final_prm_contents))
+        write_dataframe_to_pdb(cofactor, self.out_dir / "all_cofactors.pdb")

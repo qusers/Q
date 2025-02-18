@@ -2,7 +2,8 @@
 
 import math
 from pathlib import Path
-from typing import Optional
+from string import ascii_uppercase
+from typing import Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -154,6 +155,72 @@ def pdb_parse_in(line, include=("ATOM", "HETATM")):
         at_entry = line
 
     return at_entry
+
+
+def next_chain_id(existing_ids):
+    """
+    Calculate the next chain ID based on existing IDs.
+    Wrap around to 'A' after 'Z', and ensure uniqueness.
+    """
+    alphabet = list(ascii_uppercase)
+    if not existing_ids:
+        return "A"
+    # Find the highest current chain_id and increment
+    highest_id = max([alphabet.index(cid) for cid in existing_ids if cid in alphabet], default=-1)
+    next_id_index = (highest_id + 1) % len(alphabet)
+    return alphabet[next_id_index]
+
+
+def append_pdb_to_another(
+    main_pdb: Union[pd.DataFrame, str, list[str]],
+    to_append_pdb: Union[pd.DataFrame, str, list[str]],
+    save_pdb: Optional[str] = None,
+    assign_new_chain: bool = False,
+    new_ligname: Optional[str] = None,
+) -> pd.DataFrame:
+    """Reads the two pdbs as DataFrames, appends the second to the end of the protein
+    file and writes the new pdb file containing both.
+
+    Args:
+        main_pdb: main pdb file to receive the appended pdb.
+        to_append_pdb: input pdb to be appended to main.
+        save_pdb: if desired, the path to save the merged pdb file. Defaults to None.
+        assign_new_chain: if True, assigns a new chain ID to the appended part. Defaults to False.
+        new_ligname: new residue name for the appended part, if desired. Defaults to None.
+
+    Returns:
+        DataFrame with the merged structure.
+    """
+    main_df = read_pdb_to_dataframe(main_pdb) if isinstance(main_pdb, (str, Path)) else main_pdb
+    to_append_df = (
+        read_pdb_to_dataframe(to_append_pdb) if isinstance(to_append_pdb, (str, Path)) else to_append_pdb
+    )
+
+    if assign_new_chain:
+        existing_chain_ids = set(main_df["chain_id"].replace({"": np.nan}).dropna().unique())
+        if not existing_chain_ids:
+            main_df["chain_id"] = "A"  # Default the protein to chain A if no chain_id is present
+            new_chain_id = "B"
+        else:
+            new_chain_id = next_chain_id(existing_chain_ids)
+
+    last_prot_atom = main_df["atom_serial_number"].astype(int).max()
+    last_prot_resn = main_df["residue_seq_number"].astype(int).max()
+
+    to_append_df = to_append_df.assign(
+        atom_serial_number=(to_append_df["atom_serial_number"].astype(int) + last_prot_atom).astype(str),
+        residue_seq_number=(to_append_df["residue_seq_number"].astype(int) + last_prot_resn).astype(str),
+    )
+
+    if new_ligname is not None:
+        to_append_df["residue_name"] = new_ligname
+    if assign_new_chain:
+        to_append_df["chain_id"] = new_chain_id
+
+    merged_df = pd.concat([main_df, to_append_df], ignore_index=True)
+    if save_pdb is not None:
+        write_dataframe_to_pdb(merged_df, save_pdb)
+    return merged_df
 
 
 def pdb_parse_out(line):
