@@ -9,7 +9,11 @@ import numpy as np
 
 from ..IO import get_force_field_paths, run_command
 from ..logger import logger, setup_logger
-from ..pdb_utils import read_pdb_to_dataframe, write_dataframe_to_pdb
+from ..pdb_utils import (
+    append_pdb_to_another,
+    read_pdb_to_dataframe,
+    write_dataframe_to_pdb,
+)
 from ..settings.settings import CONFIGS, FF_DIR
 from .utils import handle_cysbonds
 
@@ -104,8 +108,11 @@ def parse_arguments() -> argparse.Namespace:
         "--forcefield",
         dest="FF",
         default="AMBER14sb",
-        choices=["OPLS2015", "AMBER14sb", "CHARMM36"],
-        help="Forcefield to be used. Defaults to Amber14sb.",
+        help=(
+            "Protein forcefield to be used. Valid inputs: existing path to a forcefield file without the extensions"
+            "(either .lib, .prm, or Path without the extensions will work) or one of the following: "
+            "OPLS2005, OPLS2015, AMBER14sb, CHARMM36. Defaults to AMBER14sb."
+        ),
     )
     parser.add_argument(
         "-cog",
@@ -170,6 +177,16 @@ def parse_arguments() -> argparse.Namespace:
         ),
         type=str,
     )
+    parser.add_argument(
+        "-cof",
+        "--cofactors",
+        dest="cofactors",
+        nargs="*",
+        help=(
+            "List of cofactors to be added to the system. Inputs should be one or more "
+            "pdb files containing the cofactors to be added."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -192,8 +209,18 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     logger.debug(f"COG is {cog}")
 
     pdb_file = str(cwd / args.input_pdb_file)
+    pdb_path = cwd / args.input_pdb_file
 
     ff_lib_path, ff_prm_path = get_force_field_paths(args.FF)
+
+    if args.cofactors:  # append cofactors to the protein if any are passed...
+        pdb_data = read_pdb_to_dataframe(pdb_file)
+        for cofactor in args.cofactors:
+            pdb_data = append_pdb_to_another(pdb_data, cwd / cofactor)
+        cofactor_path = pdb_path.with_name(f"{pdb_path.stem}_plus_cofactors.pdb")
+        write_dataframe_to_pdb(pdb_data, cofactor_path)
+        pdb_path = cofactor_path
+        pdb_file = str(pdb_path)
 
     qprep_inp_path = cwd / "qprep.inp"
     qprep_out_path = cwd / "qprep.out"
