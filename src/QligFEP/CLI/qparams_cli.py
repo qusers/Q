@@ -85,10 +85,10 @@ def parse_arguments() -> argparse.Namespace:
 
 def main(args: argparse.Namespace) -> None:
     setup_logger(level=args.log)
-    if args.FF == "OpenFF":
+    if args.lff == "OpenFF":
         openff2q = OpenFF2Q(args.input, nagl=args.nagl, n_jobs=args.parallel)
         openff2q.process_ligands()
-        if openff2q.pcof:
+        if args.pcof:
             openff2q.write_cofactor_plus_ff_files(args.pff)
         else:
             openff2q.write_ligand_files()
