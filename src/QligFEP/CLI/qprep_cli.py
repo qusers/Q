@@ -216,7 +216,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     if args.cofactors:  # append cofactors to the protein if any are passed...
         pdb_data = read_pdb_to_dataframe(pdb_file)
         for cofactor in args.cofactors:
-            pdb_data = append_pdb_to_another(pdb_data, cwd / cofactor)
+            pdb_data = append_pdb_to_another(pdb_data, cwd / cofactor, ignore_waters=True)
         cofactor_path = pdb_path.with_name(f"{pdb_path.stem}_plus_cofactors.pdb")
         write_dataframe_to_pdb(pdb_data, cofactor_path)
         pdb_path = cofactor_path

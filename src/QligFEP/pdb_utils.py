@@ -177,6 +177,7 @@ def append_pdb_to_another(
     save_pdb: Optional[str] = None,
     assign_new_chain: bool = False,
     new_ligname: Optional[str] = None,
+    ignore_waters: bool = False,
 ) -> pd.DataFrame:
     """Reads the two pdbs as DataFrames, appends the second to the end of the protein
     file and writes the new pdb file containing both.
@@ -187,6 +188,8 @@ def append_pdb_to_another(
         save_pdb: if desired, the path to save the merged pdb file. Defaults to None.
         assign_new_chain: if True, assigns a new chain ID to the appended part. Defaults to False.
         new_ligname: new residue name for the appended part, if desired. Defaults to None.
+        ignore_waters: don't take waters in consideration for atom & residue number assignment.
+            Defaults to False.
 
     Returns:
         DataFrame with the merged structure.
@@ -204,8 +207,12 @@ def append_pdb_to_another(
         else:
             new_chain_id = next_chain_id(existing_chain_ids)
 
-    last_prot_atom = main_df["atom_serial_number"].astype(int).max()
-    last_prot_resn = main_df["residue_seq_number"].astype(int).max()
+    if ignore_waters:
+        last_prot_atom = main_df.query("residue_name != 'HOH'")["atom_serial_number"].astype(int).max()
+        last_prot_resn = main_df.query("residue_name != 'HOH'")["residue_seq_number"].astype(int).max()
+    else:
+        last_prot_atom = main_df["atom_serial_number"].astype(int).max()
+        last_prot_resn = main_df["residue_seq_number"].astype(int).max()
 
     to_append_df = to_append_df.assign(
         atom_serial_number=(to_append_df["atom_serial_number"].astype(int) + last_prot_atom).astype(str),
