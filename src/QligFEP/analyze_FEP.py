@@ -25,7 +25,12 @@ class FepReader:
     """
 
     def __init__(
-        self, system: str, target_name: str, mapping_json: str, n_lambdas: Optional[int] = None
+        self,
+        system: str,
+        target_name: str,
+        mapping_json: str,
+        n_lambdas: Optional[int] = None,
+        allow_missing_edges: bool = False,
     ) -> None:
         """Initialize the FEP reader class. This class will store the FEP information inside
         `self.data` and will be used to analyze the results & generate plots.
@@ -36,9 +41,13 @@ class FepReader:
             target_name: name of the target protein so we can load the correct FEP directories.
             n_lambdas: number of lambda windows used in the FEP calculations. If left as default, will attempt
                 to get the information from number of md_XXXX_XXXX.inp files. Defaults to None.
+            allow_missing_edges: if True, will not raise an error if FEP directories are missing. Defaults to False.
+                Skipped edges are also appeded to self.ignored_edges list to help user differ between crashes and
+                missing data.
         """
         self._load_mapping_json(mapping_json)
         self.n_lambdas = n_lambdas
+        self.allow_missing_edges = allow_missing_edges
         self.exp_key = None  # will be defined from running load_experimental_data
         self.feps = []
         self.methods_list = ["dG", "dGf", "dGr", "dGos", "dGbar"]
@@ -51,6 +60,7 @@ class FepReader:
         self.verbose_qEnergies = []
         self.verbose_dgBar = []
         self.run_data = []  # store the runtime, seed and comment for each replicate
+        self.ignored_edges = []  # store edges that were ignored if allow_missing_edges is True
 
     def _load_mapping_json(self, json_file: str) -> dict:
         with open(json_file) as json_file:
@@ -66,6 +76,17 @@ class FepReader:
                 f"{', '.join(self.data['result'].keys())}"
             )
             raise ValueError()
+
+    def _lig_names_from_FEPdir(self, fep_name: str):
+        ligands = fep_name.removeprefix("FEP_")
+        if len(ligands.split("_")) == 2:
+            _from, _to = ligands.split("_")
+        else:
+            for edge in self.mapping_json["edges"]:
+                if "_".join([edge["from"], edge["to"]]) == ligands:
+                    _from, _to = edge["from"], edge["to"]
+                    break
+        return _from, _to
 
     @staticmethod
     def init_from_json(data_json: str, target_name: str, mapping_json: str):
@@ -108,6 +129,12 @@ class FepReader:
         number of replicates, and lambda sum. Information is stored in`self.data`."""
         for fep in self.data[self.system]:
             _dir = Path(self.data[self.system][fep]["root"])
+            if not _dir.exists():
+                if self.allow_missing_edges:
+                    self.ignored_edges.append(fep)
+                else:
+                    raise FileNotFoundError(f"Directory {_dir} not found. Exiting...")
+
             fep_files = sorted(list((_dir).glob("FEP[0-9]*")))
             fep_stages = []
             for fep_file in fep_files:
@@ -129,14 +156,7 @@ class FepReader:
                 self.n_lambdas = len(fep_files) * (len(inputs) - 1)
 
             # register the ligand names in the dictionary for further results analysis
-            ligands = fep.lstrip("FEP_")
-            if len(ligands.split("_")) == 2:
-                _from, _to = ligands.split("_")
-            else:
-                for edge in self.mapping_json["edges"]:
-                    if "_".join([edge["from"], edge["to"]]) == ligands:
-                        _from, _to = edge["from"], edge["to"]
-                        break
+            _from, _to = self._lig_names_from_FEPdir(fep)
             try:
                 self.data[self.system][fep].update(
                     {  # populate the dictionary with the FEP information
@@ -233,6 +253,13 @@ class FepReader:
             fep_dict = self.data[self.system][fep]
             n_replicates = int(fep_dict["replicates"])
             _dir = Path(fep_dict["root"])
+
+            if not _dir.exists():
+                if self.allow_missing_edges:
+                    continue
+                else:
+                    raise FileNotFoundError(f"Directory {_dir} not found. Exiting...")
+
             replicate_root = _dir / fep_dict["fep_stage"] / fep_dict["temperature"]
 
             # extract data from slurm.out files
@@ -730,6 +757,17 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "-amiss",
+        "--allow-missing",
+        dest="allow_missing",
+        action="store_true",
+        help=(
+            "Normally, the script will raise an error if a FEP in the mapping file is not found in the directories. "
+            "Passing this argument will allow the script to continue without raising an error."
+        ),
+    )
+
+    parser.add_argument(
         "-log",
         "--log-level",
         dest="log",
@@ -745,7 +783,11 @@ def parse_arguments() -> argparse.Namespace:
 def main(args):
     setup_logger(level=args.log)
     fep_reader = FepReader(
-        system=args.water_dir, target_name=args.target, mapping_json=args.json_file, n_lambdas=args.n_lambdas
+        system=args.water_dir,
+        target_name=args.target,
+        mapping_json=args.json_file,
+        n_lambdas=args.n_lambdas,
+        allow_missing_edges=args.allow_missing,
     )
     fep_reader.read_perturbations()
     fep_reader.load_new_system(system=args.protein_dir)
@@ -759,6 +801,8 @@ def main(args):
         fep_reader.load_experimental_data(exp_key=args.experimental_key)
         results_json = json.loads((Path.cwd() / results_file).read_text())
         results_df = fep_reader.prepare_df(results_json)
+        if fep_reader.ignored_edges:
+            results_df = results_df.query("~fep_name.isin(@fep_reader.ignored_edges)").reset_index(drop=True)
         fig, ax = fep_reader.create_ddG_plot(results_df=results_df)
         fig.savefig(f"{args.target}_ddG_plot.png", dpi=300, bbox_inches="tight")
     else:
