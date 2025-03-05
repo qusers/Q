@@ -40,6 +40,31 @@ cp ligprep/*.pdb ligprep/*.prm ligprep/*.lib setupFEP/
 cp ligprep/tyk2_ligands/*.sdf ligprep/tyk2_ligands/lomap.json setupFEP/
 ```
 
+## Visualize the perturbation network
+
+Visualizing and interacting with the generated perturbation network from `qlomap` is possible by using the `qmapfep` program. For this, _make sure you're working locally (not on a remote machine)_.
+
+Now that the `lomap.json` was created under `tyk2_ligands/lomap.json`, let's use both the input `.sdf` file and the generated mapping `.json` file to crate the visualizer. Run:
+
+```bash
+qmapfep -i tyk2_ligands.sdf -wd . -l tyk2_ligands/lomap.json 
+```
+
+Two new files should be created: **qmapfep.html** and **tyk2_ligands.json**. To visualize the perturbation network, open the `qmapfep.html` file in your browser.
+
+<details>
+  <summary>How to open the file?</summary>
+
+If you're working on Windows WSL, you can open the current directory using the `explorer.exe .` command. In the new folder displayed to you, click on the file `qmapfep.html` to open it in your default browser.
+
+For macOS, simply type `open .` on the terminal.
+
+</details>
+
+Once loaded, the visualizer will contain a main section on the top right corner of the screen with the `Import file` title. Drag the generated `tyk2_ligands.json` file to the *Choose File* part of the button and and click *Upload file*. The UI will then display the perturbation network. Try clicking on the different ligands and edges and observe how the `FEP_data` section will update accordingly.
+
+To add new edges to the system, press *edit* on the top left corner and proceed to either delete or add new components. Once you're done, press *export JSON* and the new file will be downloaded to your computer. You can use this file for the next steps of the tutorial, instead of the original `lomap.json` file.
+
 ## Water sphere
 
 Now we just need to prepare our water sphere. The first step is to calculate the center of geometry of the ligand. For this, we can use the `qcog` command:

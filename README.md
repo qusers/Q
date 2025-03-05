@@ -61,7 +61,7 @@ Now you're set with the qligfep package. This includes the command-linde-interfa
 1. `qparams`: used to generate ligand parameters;
 1. `pdb2amber`: formats a PDB file to be used with Q's implementation of the AMBER forcefield;
 1. `qlomap`: wraps `Lomap` to generate the `.json` perturbation mapping;
-1. `qmapfep`: in-house developed method to generate the `.json` perturbation mapping;
+1. `qmapfep`: in-house developed method to generate the `.json` perturbation mapping, interactively visualize and add or remove edges.
 1. `qligfep`: main CLI for running QligFEP simulations.
 1. `setupFEP`: sets up all the the QligFEP files for a simulation, including protein and water systems.
 1. `qligfep_analyze`: CLI to analyze the results of a QligFEP simulation.
