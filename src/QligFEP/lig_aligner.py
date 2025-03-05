@@ -12,7 +12,6 @@ from rdkit import Chem
 from rdkit.Chem import rdFMCS
 from tqdm import tqdm
 
-from . import SRC
 from .chemIO import MoleculeIO
 from .logger import logger
 
