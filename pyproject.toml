@@ -20,6 +20,10 @@ classifiers = [
     "Programming Language :: Python :: 3.10" # todo: might have other versions
 ]
 dependencies = [
+    "joblib",
+    "scipy",
+    "tqdm",
+    "py3Dmol",
     "numpy",
     "matplotlib",
     "rdkit",
