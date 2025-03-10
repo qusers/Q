@@ -96,7 +96,7 @@ class MoleculeIO:
             elif isinstance(ligand, (Chem.Mol, Molecule)):
                 ligand = ligand
 
-            molblock = mol_to_molblock(self.__getitem__(ligand))
+            molblock = mol_to_molblock(ligand)
             view.addModel(molblock, f"ligand{i}_overlap", viewer=(0, 1))
             style = {"stick": {"opacity": 0.7}}
             if i > 0:
