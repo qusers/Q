@@ -47,6 +47,7 @@ class QligFEP:
         water_thresh: Union[float, int] = 1.4,
         dr_force: float = 0.5,
         random_state: Optional[int] = 42,
+        wath_ligand_only: bool = False,
     ):
         self.replacements = {}  # TODO: make this explicit in the future
         self.timestep = timestep
@@ -67,6 +68,7 @@ class QligFEP:
         self.to_clean = to_clean
         self.water_thresh = water_thresh
         self.dr_force = dr_force  # dr for distance restraint
+        self.wath_ligand_only = wath_ligand_only
         # Temporary until flag is here
         self.ABS = False  # True
         self.ABS_waters = []
@@ -938,6 +940,7 @@ class QligFEP:
             th=threshold,
             output_file=waterfile,
             heavy_only=True,
+            ligand_only=self.wath_ligand_only,
             header=header,
             save_removed=save_removed,
         )

@@ -40,6 +40,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "water_thresh": args.water_thresh,
             "dr_force": args.dr_force,
             "random_state": args.random_state,
+            "wath_ligand_only": args.wath_ligand_only,
         }
     else:
         param_dict = {}
@@ -59,6 +60,9 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             command_str += f" --{k} {' '.join(v)}".replace("to_clean", "files-to-clean")
         elif k == "water_thresh":
             command_str += f" --{k.replace('_', '-')} {v}"
+        elif k == "wath_ligand_only":
+            if v:
+                command_str += f" --{k}".replace("_", "-")
         elif k == "dr_force":
             command_str += f" --{k} {v}".replace("dr_force", "distance_restraint_force")
         else:

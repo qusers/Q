@@ -208,6 +208,16 @@ def parse_arguments(program: str) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "-wath-ligo",
+        "--wath-ligand-only",
+        dest="wath_ligand_only",
+        action="store_true",
+        help=(
+            "If set, the water threshold set by the `-wath` parameter will only be applied to the ligand "
+            "atoms, not the entire protein structure."
+        ),
+    )
+    parser.add_argument(
         "-rs",
         "--random_state",
         dest="random_state",

@@ -20,6 +20,7 @@ def rm_HOH_clash_NN(
     th=2.5,
     output_file=None,
     heavy_only: bool = True,
+    ligand_only: bool = False,
     header: Optional[str] = None,
     save_removed=False,
 ):
@@ -33,6 +34,7 @@ def rm_HOH_clash_NN(
         th: Distance threshold in Angstroms.
         output_file: Optional path to write the result to a file.
         heavy_only: If True, only consider heavy atoms (i.e., exclude hydrogen atoms).
+        ligand_only: If True, only remove waters near ligand atoms (default as LIG and LID).
         header: header to be added to the output pdb file. Defaults to None
 
     Returns:
@@ -45,11 +47,18 @@ def rm_HOH_clash_NN(
     pdb_ions = ["ZN", "SOD", "IOD", "BR", "CL", "CU", "CU1", "NA", "MG", "CA"]  # noqa: F841
     target_arr = pdb_df_target.query("~residue_name.isin(@pdb_ions)")
     if heavy_only:
+        if ligand_only:
+            target_arr = target_arr.query(
+                r"(~atom_name.str.contains('^H[A-Z]?\d{0,2}?')) & (residue_name.isin(['LIG', 'LID']))"
+            )[["x", "y", "z"]].values
         target_arr = target_arr.query(
             r"(~atom_name.str.contains('^H[A-Z]?\d{0,2}?')) | (residue_name.isin(['LIG', 'LID']))"
         )[["x", "y", "z"]].values
     else:
-        target_arr = target_arr[["x", "y", "z"]].values
+        if ligand_only:
+            target_arr = target_arr.query(r"residue_name.isin(['LIG', 'LID'])")[["x", "y", "z"]].values
+        else:
+            target_arr = target_arr[["x", "y", "z"]].values
 
     boron_atoms = pdb_df_target.query(  # stricter check for boron-water proximity (crashes in QligFEP)
         r"residue_name.isin(['LIG', 'LID']) & atom_name.str.contains('^B\d{0,2}?')"
