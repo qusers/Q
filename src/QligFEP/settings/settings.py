@@ -136,7 +136,7 @@ DARDEL = {
 }
 
 LOCAL = {
-    "NODES": 1,
+    "NODES": "1",
     "NTASKS": str(cpu_count()),
     "TIME": "0-24:00:00",  # d-hh:mm:ss
     "MODULES": "\n",
