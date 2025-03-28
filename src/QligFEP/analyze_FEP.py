@@ -218,15 +218,21 @@ class FepReader:
             energies = np.array([np.nan] * len(self.methods_list))  # Assuming 5 energy methods
         return energies, failed_replicate, qEnergies, q_dgBAR
 
-    def read_perturbations(self):
+    def read_perturbations(self, add_run_data: bool = True):
         """Read the ran perturbations. Running this method will populate the `self.data` dictionary
-        with the FEPs and their respective delta-G's for the loaded system (self.system)."""
+        with the FEPs and their respective delta-G's for the loaded system (self.system).
+
+        Args:
+            add_run_data: If True, will extract runtime, seed, and status information from slurm*.out files.
+                If False, will only use directory structure information. Defaults to True.
+        """
         feps = [k for k in self.data[self.system]]
 
         keywords = ["DUE TO TIME LIMIT", "CANCELLED", "Out Of Memory", "abnormally"]
 
         def search_within(slurm_out: Path):
             runtime = ""
+            seed = None
             keyword = None
             with slurm_out.open("r") as f:
                 for line in f:
@@ -261,26 +267,6 @@ class FepReader:
                     raise FileNotFoundError(f"Directory {_dir} not found. Exiting...")
 
             replicate_root = _dir / fep_dict["fep_stage"] / fep_dict["temperature"]
-
-            # extract data from slurm.out files
-            slurm_out_files = sorted(
-                Path(fep_dict["root"]).glob("slurm*.out"),
-                key=lambda x: int(re.search(r"run(\d+)", x.name).group(1)),
-            )
-            for slurm_out in slurm_out_files:
-                replicate = re.search(r"run(\d+)", slurm_out.name).group(1)
-                runtime, seed, comment = search_within(slurm_out)
-                self.run_data.append(
-                    {
-                        "FEP": fep,
-                        "system": self.system,
-                        "replicate": replicate,
-                        "runtime": runtime,
-                        "seed": seed,
-                        "comment": comment,
-                    }
-                )
-
             replicate_qfep_files = sorted(  # here we use the int to sort the replicates
                 list(replicate_root.glob("*/qfep.out")), key=lambda x: int(x.parent.name)
             )
@@ -299,10 +285,53 @@ class FepReader:
                 logger.info(f"Created {n_replicates} empty qfep.out files in {replicate_root}")
                 logger.debug("Files created:\n" + "\n".join([str(f) for f in replicate_qfep_files]))
 
+            # handle slurm.out run: data collection
+            if add_run_data:
+                try:
+                    # extract data from slurm.out files
+                    slurm_out_files = sorted(
+                        Path(fep_dict["root"]).glob("slurm*.out"),
+                        key=lambda x: int(re.search(r"run(\d+)", x.name).group(1)),
+                    )
+                    for slurm_out in slurm_out_files:
+                        replicate = re.search(r"run(\d+)", slurm_out.name).group(1)
+                        runtime, seed, comment = search_within(slurm_out)
+                        self.run_data.append(
+                            {
+                                "FEP": fep,
+                                "system": self.system,
+                                "replicate": replicate,
+                                "runtime": runtime,
+                                "seed": seed,
+                                "comment": comment,
+                            }
+                        )
+                except (FileNotFoundError, AttributeError) as e:
+                    logger.warning(f"Could not process slurm.out files for {fep}: {e}")
+                    # Fall back to directory-based run data
+                    add_run_data = False
+
+            # If slurm data processing failed or wasn't requested, use directory structure
+            if not add_run_data:
+                for rep in replicate_qfep_files:
+                    replicate = rep.parent.name
+                    self.run_data.append(
+                        {
+                            "FEP": fep,
+                            "system": self.system,
+                            "replicate": replicate,
+                            "runtime": None,
+                            "seed": None,
+                            "comment": None,
+                        }
+                    )
+
             energies = {}
             method_results = {method: {} for method in self.methods_list}
             failed_replicates = []
             all_replicates = [i for i in range(1, int(fep_dict["replicates"]) + 1)]
+
+            # Process each replicate's energy data
             for rep in replicate_qfep_files:
                 repID = int(rep.parent.name)
                 replicate_energies, failed, qEnergies, q_dgBAR = self.read_single_replicate(rep)
@@ -316,8 +345,9 @@ class FepReader:
                     self.verbose_dgBar.append(q_dgBAR.assign(fep=fep, system=self.system, replicate=repID))
                 energies[repID] = replicate_energies
                 failed_replicates.extend(failed)
+
+            # Calculate statistics for each energy method
             all_energies_arr = []
-            # per different type of energy, populate the methods dictionary
             for mname in self.methods_list:
                 method_idx = self.methods_list.index(mname)
                 method_energies = np.array([energies[repID][method_idx] for repID in all_replicates])
@@ -679,15 +709,17 @@ def parse_arguments() -> argparse.Namespace:
         ),
     )
 
-    # parser.add_argument(
-    #     "-ignore",
-    #     "--ignore_missing",
-    #     dest="ignore_missing",
-    #     action="store_true",
-    #     help=(
-    #         "Ignore missing qfep.out files and continue with the data extraction if missing files are encountered."
-    #     ),
-    # )
+    parser.add_argument(
+        "-norun",
+        "--no_run_data",
+        dest="no_run_data",
+        action="store_true",
+        help=(
+            "Pass this argument whenever you don't have slurm.out files in the FEP directories. "
+            "Doing so, run details such as seed, runtime and status won't be available, but the "
+            "results will still be collected."
+        ),
+    )
 
     parser.add_argument(
         "-j",
@@ -780,7 +812,7 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main(args):
+def main(args: argparse.Namespace):
     setup_logger(level=args.log)
     fep_reader = FepReader(
         system=args.water_dir,
@@ -789,9 +821,9 @@ def main(args):
         n_lambdas=args.n_lambdas,
         allow_missing_edges=args.allow_missing,
     )
-    fep_reader.read_perturbations()
+    fep_reader.read_perturbations(add_run_data=not args.no_run_data)
     fep_reader.load_new_system(system=args.protein_dir)
-    fep_reader.read_perturbations()
+    fep_reader.read_perturbations(add_run_data=not args.no_run_data)
     fep_reader.calculate_ddG()
     fep_reader.save_json_data()
 
