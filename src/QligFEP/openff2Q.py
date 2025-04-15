@@ -174,16 +174,23 @@ class OpenFF2Q(MoleculeIO):
                 continue  # Skip if line does not have enough data
 
             atom_index = cnt + 1
-            charge = round(self.charges_list_magnitude[lname][cnt], 3)  # round for Q
-            self.mapping[lname][cnt] = [
-                str(atom_index),  # atom index
-                atom_data[3] + str(atom_index),  # atom name
-                atom_data[3],  # atom type
-                str(charge),  # charge
-                atom_data[0],  # X coordinate
-                atom_data[1],  # Y coordinate
-                atom_data[2],  # Z coordinate
-            ]
+            try:
+                charge = round(self.charges_list_magnitude[lname][cnt], 3)  # round for Q
+                self.mapping[lname][cnt] = [
+                    str(atom_index),  # atom index
+                    atom_data[3] + str(atom_index),  # atom name
+                    atom_data[3],  # atom type
+                    str(charge),  # charge
+                    atom_data[0],  # X coordinate
+                    atom_data[1],  # Y coordinate
+                    atom_data[2],  # Z coordinate
+                ]
+            except IndexError as e:
+                logger.error(
+                    f"Error: Atom index {cnt} out of range for ligand {lname}. "
+                    f"Check the number of atoms in the SDF file."
+                )
+                raise e
 
     def write_lib_Q(
         self,
