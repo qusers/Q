@@ -231,8 +231,14 @@ class MoleculeIO:
                 `self.molecules` will be written. Defaults to None.
         """
         writer = Chem.SDWriter(output_name)
-        for _, mol in self:
-            writer.write(mol.to_rdkit())
+        if molecules is not None:
+            for mol in molecules:
+                if isinstance(mol, Molecule):
+                    mol = mol.to_rdkit()
+                writer.write(mol)
+        else:
+            for _, mol in self:
+                writer.write(mol.to_rdkit())
         writer.close()
         logger.info(f"{'`self.molecules`' if molecules is None else 'molecules'} written to {output_name}")
 
