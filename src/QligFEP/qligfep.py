@@ -839,7 +839,7 @@ class QligFEP:
                     if self.cluster == "DARDEL":  # TODO: refactor this...
                         outfile.write("#SBATCH -p shared\n")
                     elif self.cluster == "SNELLIUS":
-                        outfile.write("#SBATCH -p genoa\n")
+                        outfile.write("#SBATCH -p rome\n")
                     try:
                         if self.system == "water":
                             jobname = "w_"
