@@ -8,7 +8,7 @@ Once you have `micromamba` installed and have already cloned this repo, you can 
 
 ### 🐧 Linux
 ```bash
-micromamba create -f environment.yml -n qligfep_new
+micromamba create -n qligfep_new python=3.11
 ```
 Now, activate the environment and update the following conda packages:
 ```bash
@@ -25,7 +25,7 @@ python -m pip install -e .
 <summary>In one line...</summary>
 
 ```bash
-micromamba create -f environment.yml -n qligfep_new -y && micromamba activate qligfep_new && micromamba install openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 "openff-nagl>=0.3.8" lomap2 kartograf michellab::fkcombu -c conda-forge --yes && python -m pip install -e .
+micromamba create -n qligfep_new python=3.11 -y && micromamba activate qligfep_new && micromamba install openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 "openff-nagl>=0.3.8" lomap2 kartograf michellab::fkcombu -c conda-forge --yes && python -m pip install -e .
 ```
 </details>
 
@@ -34,7 +34,7 @@ micromamba create -f environment.yml -n qligfep_new -y && micromamba activate ql
 The environment provided doesn't build on Mac due to missing libraries. If you're using this operating system, you'll have to create the environment by scratch through the commands:
 
 ``` bash
-micromamba create -n qligfep_new openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 lomap2 kartograf michellab::fkcombu -c conda-forge --yes
+micromamba create -n qligfep_new python=3.11 openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 lomap2 kartograf michellab::fkcombu -c conda-forge --yes
 micromamba activate qligfep_new
 python -m pip install joblib scipy tqdm
 python -m pip install -e .
