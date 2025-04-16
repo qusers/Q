@@ -1,6 +1,7 @@
 """Module containing functions for parsing pdb files."""
 
 import math
+import re
 from pathlib import Path
 from string import ascii_uppercase
 from typing import Optional, Union
@@ -15,14 +16,14 @@ from .logger import logger
 
 
 def rm_HOH_clash_NN(
-    pdb_df_query,
-    pdb_df_target,
-    th=2.5,
-    output_file=None,
+    pdb_df_query: pd.DataFrame,
+    pdb_df_target: pd.DataFrame,
+    th: float = 2.5,
+    output_file: Union[str, Path] = None,
     heavy_only: bool = True,
     ligand_only: bool = False,
     header: Optional[str] = None,
-    save_removed=False,
+    save_removed: bool = False,
 ):
     """Use a NearestNeighbors approach to find water molecules within a distance threshold
     (Ångström) from an input pdb file (e.g.: a protein-ligand complex), and remove them if
@@ -45,20 +46,25 @@ def rm_HOH_clash_NN(
 
     # we ignore ions in the target; since water molecules might be in close proximity to it
     pdb_ions = ["ZN", "SOD", "IOD", "BR", "CL", "CU", "CU1", "NA", "MG", "CA"]  # noqa: F841
-    target_arr = pdb_df_target.query("~residue_name.isin(@pdb_ions)")
+    target_df = pdb_df_target.query("~residue_name.isin(@pdb_ions)")
     if heavy_only:
+        Hatom_protein_regex = re.compile(r"(?<![NCO])H\d*")  # noqa: F841
+        Hatom_ligand_regex = r"^H[A-Z]?\d{0,2}?"  # noqa: F841
         if ligand_only:
-            target_arr = target_arr.query(
-                r"(~atom_name.str.contains('^H[A-Z]?\d{0,2}?')) & (residue_name.isin(['LIG', 'LID']))"
+            target_arr = target_df.query(
+                "(~atom_name.str.match(@Hatom_protein_regex)) & "
+                r"(residue_name.isin(['LIG', 'LID']) & (~atom_name.str.contains(@Hatom_ligand_regex)))"
             )[["x", "y", "z"]].values
-        target_arr = target_arr.query(
-            r"(~atom_name.str.contains('^H[A-Z]?\d{0,2}?')) | (residue_name.isin(['LIG', 'LID']))"
-        )[["x", "y", "z"]].values
+        else:
+            target_arr = target_df.query(
+                "(~atom_name.str.match(@Hatom_protein_regex)) | "
+                r"(residue_name.isin(['LIG', 'LID']) & (~atom_name.str.contains(@Hatom_ligand_regex)))"
+            )[["x", "y", "z"]].values
     else:
         if ligand_only:
-            target_arr = target_arr.query(r"residue_name.isin(['LIG', 'LID'])")[["x", "y", "z"]].values
+            target_arr = target_df.query(r"residue_name.isin(['LIG', 'LID'])")[["x", "y", "z"]].values
         else:
-            target_arr = target_arr[["x", "y", "z"]].values
+            target_arr = target_df[["x", "y", "z"]].values
 
     boron_atoms = pdb_df_target.query(  # stricter check for boron-water proximity (crashes in QligFEP)
         r"residue_name.isin(['LIG', 'LID']) & atom_name.str.contains('^B\d{0,2}?')"
