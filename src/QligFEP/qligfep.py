@@ -537,7 +537,7 @@ class QligFEP:
                         params = {"strict_surround": True, "ignore_surround_atom_type": False}
                     restraints = rsetter.set_restraints(atom_compare_method=atom_compare_method, **params)
                     logger.debug(f"Restraints set using {restraint_method} method. Parameters: {params}")
-                if strict_check:  # Good to check in case sdf in directory doesn't belong to the structure
+                if strict_check:  # Make sure the ligands in the pdb file are the same as in the sdf files
                     rdLig1 = rsetter.molA.to_rdkit()
                     rdLig2 = rsetter.molB.to_rdkit()
                     for AtomIdx_Lig1, AtomIdx_Lig2 in restraints.items():
