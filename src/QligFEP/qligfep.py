@@ -1097,7 +1097,7 @@ class QligFEP:
         """
         logger.debug(f"Adding lipid restraints to {q_inp_file_path.split('/')[-1]}")
         with open(q_inp_file_path, "a") as outfile_append:
-            outfile_append.write("\n[atom restraints]")
+            outfile_append.write("\n[atom restraints]\n")
             for rest in self.lipid_restraints:
                 outfile_append.write(f"{rest}\n")
 
