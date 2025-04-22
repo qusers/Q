@@ -1062,7 +1062,6 @@ class QligFEP:
         lipid_vol = 0.03431  # A**-3 from octane
 
         knn = NearestNeighbors(radius=float(self.sphereradius), metric="euclidean", n_jobs=4)
-        print(pdb_df.shape)
         atom_coord_arr = pdb_df[["x", "y", "z"]].values
         knn.fit(np.array(atom_coord_arr))
         _, indices = knn.radius_neighbors(np.array(self.cog).reshape(1, -1))
@@ -1078,10 +1077,9 @@ class QligFEP:
         if density != 0.05794:
             logger.info(f"Calculated solute density: {density:.5f} g/cm^3")
             logger.info("Adding restraints to out-of-sphere lipid atoms")
-            outside_radius_indices = pdb_df.index.difference(indices[0])
-            out_of_sphere_lipid = pdb_df.iloc[outside_radius_indices].query("residue_name == 'POP'")
+            in_sphere_lipid = pdb_df.iloc[indices[0]].query("residue_name == 'POP'")
             self.lipid_restraints = (
-                out_of_sphere_lipid[["atom_serial_number", "x", "y", "z"]].astype(str).agg(" ".join, axis=1)
+                in_sphere_lipid[["atom_serial_number", "x", "y", "z"]].astype(str).agg(" ".join, axis=1)
                 + " 200. 200. 200. 0"
             ).tolist()
 
