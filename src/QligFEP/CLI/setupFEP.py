@@ -43,6 +43,8 @@ def create_call(**kwargs):
         template += " -wath {water_thresh}"
     if "wath_ligand_only" in kwargs and kwargs["wath_ligand_only"]:
         template += " -wath-ligo"
+    if "rest_shell_width" in kwargs and kwargs["rest_shell_width"] is not None:
+        template += " -rest-sw {rest_shell_width}"
     return template.format(**kwargs)
 
 
@@ -120,6 +122,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 water_thresh=args.water_thresh,
                 log=args.log,
                 wath_ligand_only=args.wath_ligand_only,
+                rest_shell_width=args.rest_shell_width,
             )
             logger.info(f"Submitting the command:\n{command}")
             dst = sys_dir / f"FEP_{lig1}_{lig2}"

@@ -50,6 +50,7 @@ class QligFEP:
         dr_force: float = 0.5,
         random_state: Optional[int] = 42,
         wath_ligand_only: bool = False,
+        rest_shell_width: float = None,
     ):
         self.replacements = {}  # TODO: make this explicit in the future
         self.timestep = timestep
@@ -71,6 +72,7 @@ class QligFEP:
         self.water_thresh = water_thresh
         self.dr_force = dr_force  # dr for distance restraint
         self.wath_ligand_only = wath_ligand_only
+        self.rest_shell_width = rest_shell_width
         # Temporary until flag is here
         self.ABS = False  # True
         self.ABS_waters = []
@@ -103,6 +105,19 @@ class QligFEP:
             return np.random.default_rng().integers(0, 32767, size=int(self.replicates))
         rng = np.random.default_rng(random_state)
         return rng.integers(0, 32767, size=int(self.replicates))
+
+    def _get_sphere_radius(self) -> str:
+        """Get sphere radius for the system considering the potential `rest_shell_width`
+        argument passed by the user to force a smaller sphere radius on the inputfiles/qprep.inp
+        call. This is used to reinforce the positional restraints on the lipid atoms, preventing
+        them from leaving the sphere during the simulation.
+        """
+        radius = (
+            float(self.sphereradius) - self.rest_shell_width
+            if self.rest_shell_width is not None
+            else float(self.sphereradius)
+        )
+        return f"{radius:.1f}"
 
     def set_timestep(self):
         if self.timestep == "1fs":
@@ -595,7 +610,7 @@ class QligFEP:
         replacements["ATOM_END_LIG1"] = f"{self.atomoffset + lig_size1:<7}"
         replacements["ATOM_START_LIG2"] = f"{self.atomoffset + lig_size1 + 1:<6}"
         replacements["ATOM_END_LIG2"] = f"{self.atomoffset + lig_size1 + lig_size2:<7}"
-        replacements["SPHERE"] = self.sphereradius
+        replacements["SPHERE"] = self._get_sphere_radius()
         replacements["ATOM_END"] = f"{self.atomoffset + lig_total:<6}"
         replacements["EQ_LAMBDA"] = "0.500 0.500"
 
@@ -722,7 +737,7 @@ class QligFEP:
         replacements["ATOM_END_LIG1"] = f"{self.atomoffset + lig_size1:<7}"
         replacements["ATOM_START_LIG2"] = f"{self.atomoffset + lig_size1 + 1:<6}"
         replacements["ATOM_END_LIG2"] = f"{self.atomoffset + lig_size1 + lig_size2:<7}"
-        replacements["SPHERE"] = self.sphereradius
+        replacements["SPHERE"] = self._get_sphere_radius()
         replacements["ATOM_END"] = f"{self.atomoffset + lig_total:<6}"
         replacements["EQ_LAMBDA"] = "1.000 0.000"
 
@@ -979,7 +994,7 @@ class QligFEP:
         replacements["LIGPRM"] = self.FF + "_" + self.lig1 + "_" + self.lig2 + "_merged.prm"
         replacements["LIGPDB"] = self.lig1 + "_" + self.lig2 + ".pdb"
         replacements["CENTER"] = center
-        replacements["SPHERE"] = self.sphereradius
+        replacements["SPHERE"] = self._get_sphere_radius()
         if self.system == "vacuum":
             replacements["solvate"] = "!solvate"
         if self.system == "water":
@@ -1051,7 +1066,6 @@ class QligFEP:
         lipid_vol = 0.03431  # A**-3 from octane
 
         knn = NearestNeighbors(radius=float(self.sphereradius), metric="euclidean", n_jobs=4)
-        print(pdb_df.shape)
         atom_coord_arr = pdb_df[["x", "y", "z"]].values
         knn.fit(np.array(atom_coord_arr))
         _, indices = knn.radius_neighbors(np.array(self.cog).reshape(1, -1))

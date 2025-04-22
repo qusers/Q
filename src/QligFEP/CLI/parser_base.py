@@ -185,7 +185,7 @@ def parse_arguments(program: str) -> argparse.Namespace:
     )
     parser.add_argument(
         "-drf",
-        "--distance_restraint_force",
+        "--distance-restraint-force",
         dest="dr_force",
         type=float,
         default=0.5,
@@ -195,6 +195,15 @@ def parse_arguments(program: str) -> argparse.Namespace:
             "restraints forces set through this parameter will be applied for equilibration 5 (eq5) and the md_xxxx_xxxx simulations. "
             "Forces set by this parameter are set to the [distance_restraints] section of `.inp` (input) files."
         ),
+    )
+    parser.add_argument(
+        "-rest-sw",
+        "--rest-shell-width",
+        dest="rest_shell_width",
+        required=False,
+        type=float,
+        default=None,
+        help="Width of outer shell used for solute restraints, recommended for membrane proteins.",
     )
     parser.add_argument(
         "-wath",

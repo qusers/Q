@@ -41,6 +41,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "dr_force": args.dr_force,
             "random_state": args.random_state,
             "wath_ligand_only": args.wath_ligand_only,
+            "rest_shell_width": args.rest_shell_width,
         }
     else:
         param_dict = {}
@@ -58,13 +59,13 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             command_str += f" -{k} {v}"
         elif k == "to_clean":
             command_str += f" --{k} {' '.join(v)}".replace("to_clean", "files-to-clean")
-        elif k == "water_thresh":
+        elif k in ("water_thresh", "rest_shell_width"):
             command_str += f" --{k.replace('_', '-')} {v}"
         elif k == "wath_ligand_only":
             if v:
                 command_str += f" --{k}".replace("_", "-")
         elif k == "dr_force":
-            command_str += f" --{k} {v}".replace("dr_force", "distance_restraint_force")
+            command_str += f" --{k} {v}".replace("dr_force", "distance-restraint-force")
         else:
             command_str += f" --{k} {v}"
     command_str += f" --restraint_method {args.restraint_method}"
