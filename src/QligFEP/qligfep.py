@@ -852,7 +852,7 @@ class QligFEP:
                     if self.cluster == "DARDEL":  # TODO: refactor this...
                         outfile.write("#SBATCH -p shared\n")
                     elif self.cluster == "SNELLIUS":
-                        outfile.write("#SBATCH -p genoa\n")
+                        outfile.write("#SBATCH -p rome\n")
                     try:
                         if self.system == "water":
                             jobname = "w_"
@@ -866,6 +866,9 @@ class QligFEP:
                         logger.error(f"Something went wrong while defining the jobname:\n{e}")
                         line = ""
                 outline = replace(line, replacements)
+                # This configuration is not available for CSB
+                if outline.strip().startswith("#SBATCH --mem-per-cpu=512") and self.cluster == "CSB":
+                    continue
                 outfile.write(outline)
                 if line.strip() == "#EQ_FILES":
                     for line in EQ_files:

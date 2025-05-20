@@ -270,7 +270,7 @@ class GlobalLigandAligner(MoleculeIO):
                 atomB.UpdatePropertyCache()
         return molA, molB
 
-    def _transfer_sdf_metadata(self, original_file, aligned_file):
+    def _transfer_sdf_metadata(self, original_file: Path, aligned_file: Path):
         """
         Copies metadata from the original SDF file to the aligned SDF file and adds
         hydrogens to the aligned ligands.
@@ -292,7 +292,7 @@ class GlobalLigandAligner(MoleculeIO):
                     aligned_mol.SetProp(prop_name, prop_value)
 
                 original_mol = Chem.RemoveHs(original_mol)  # rm H's to transfer charges transfer the charges
-                logger.debug(f"Transferring metadata to {aligned_file}")
+                logger.debug(f"Transferring metadata from {original_file} to {aligned_file}")
                 original_mol, aligned_mol = self._transfer_charges_metadata(original_mol, aligned_mol)
                 aligned_mols.append(aligned_mol)
 
@@ -327,15 +327,15 @@ class GlobalLigandAligner(MoleculeIO):
 
         molecule_path = temp_path / f"to_align{self.SDF_EXTENSION}"
         reference_path = temp_path / f"reference{self.SDF_EXTENSION}"
-        molecule.to_file(str(molecule_path), file_format="sdf")
-        reference.to_file(str(reference_path), file_format="sdf")
+        molecule.to_file(molecule_path, file_format="sdf")
+        reference.to_file(reference_path, file_format="sdf")
 
         output_path = temp_path / f"aligned{self.SDF_EXTENSION}"
 
         self._run_kcombu(molecule_path, reference_path, output_path)
 
+        self._transfer_sdf_metadata(molecule_path, output_path)
         aligned_molecule = Molecule.from_file(str(output_path))
-        self._transfer_sdf_metadata(molecule, aligned_molecule)
 
         if self.temp_dir:
             self.temp_dir.cleanup()
