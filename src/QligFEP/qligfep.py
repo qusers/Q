@@ -537,7 +537,7 @@ class QligFEP:
                         params = {"strict_surround": True, "ignore_surround_atom_type": False}
                     restraints = rsetter.set_restraints(atom_compare_method=atom_compare_method, **params)
                     logger.debug(f"Restraints set using {restraint_method} method. Parameters: {params}")
-                if strict_check:  # Make sure the ligands in the pdb file are the same as in the sdf files
+                if strict_check:  # Good to check in case sdf in directory doesn't belong to the structure
                     rdLig1 = rsetter.molA.to_rdkit()
                     rdLig2 = rsetter.molB.to_rdkit()
                     for AtomIdx_Lig1, AtomIdx_Lig2 in restraints.items():
@@ -623,6 +623,7 @@ class QligFEP:
         elif self.system == "protein":
             replacements["WATER_RESTRAINT"] = ""
 
+        # WRITING THE EQUILIBRATION INPUT FILES (eq1-5.inp), NOT PART OF THE FEP YET
         for eq_file_in in sorted(glob.glob(CONFIGS["ROOT_DIR"] + "/INPUTS/eq*.inp")):
             eq_file = eq_file_in.split("/")[-1:][0]
             rest_force = 1.5 if eq_file != "eq5.inp" else self.dr_force  # 1.5 for eq1-4
@@ -644,6 +645,7 @@ class QligFEP:
 
                 file_list1.append(eq_file)
 
+        # WRITING THE FEP MOLECULAR DYNAMICS INPUT FILES (e.g.: md_0500_0500.inp)
         file_in = CONFIGS["INPUT_DIR"] + "/md_0500_0500.inp"
         file_out = writedir + "/md_0500_0500.inp"
         with open(file_in) as infile, open(file_out, "w") as outfile:
@@ -853,6 +855,9 @@ class QligFEP:
                         logger.error(f"Something went wrong while defining the jobname:\n{e}")
                         line = ""
                 outline = replace(line, replacements)
+                # This configuration is not available for CSB
+                if outline.strip().startswith("#SBATCH --mem-per-cpu=512") and self.cluster == "CSB":
+                    continue
                 outfile.write(outline)
                 if line.strip() == "#EQ_FILES":
                     for line in EQ_files:
@@ -986,7 +991,6 @@ class QligFEP:
             replacements["SOLVENT"] = "4 water.pdb"
 
         with open(qprep_in) as infile, open(qprep_out, "w") as outfile:
-            # FIXME: it might be that the cystein bond is out of the sphere (excluded from TOP). Need to check that
             cysbond_str = handle_cysbonds(
                 self.cysbond, Path(writedir) / self.pdb_fname, comment_out=(self.system != "protein")
             )
