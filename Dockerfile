@@ -26,10 +26,12 @@ WORKDIR /Q/src/q6
 RUN make all
 RUN make mpi
 
-WORKDIR /Q/test/test_small
+#WORKDIR /Q/test/test_small
+WORKDIR /Q/test/test_big
 
 # Set the default command to perpetually running process
 # ENTRYPOINT ["tail", "-f", "/dev/null"]
 
 # Start running the tests right away
-ENTRYPOINT ["sh", "run_test_nompi.sh"]
+#ENTRYPOINT ["sh", "FEP_submit.sh"]
+EXPOSE 5000

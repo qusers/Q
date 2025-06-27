@@ -1,0 +1,248 @@
+--------------------------------------------------------------------------------
+Welcome to qprep version: 6.0.1
+ 
+This version was compiled using: GCC version 11.3.0
+ 
+And using the following compiler options: 
+-mtune=generic -march=x86-64 -O3 -w -std=legacy -ffree-line-length-none -fcray-pointer -fall-intrinsics -fpre-include=/usr/include/finclude/math-vector-fortran.h
+
+ 
+For command line options type qprep --help  or qprep -h at the terminal.
+ 
+If you are using the interactive mode you can type "help"
+at the prompt. To quit type "quit".
+--------------------------------------------------------------------------------
+
+qprep> 
+Reading molecular library /home/x_davfi/Q/src/QligFEP/FF/AMBER14sb.lib
+
+name  atoms  net Q  bonds  rules   imps Q-grps
+ACE       6   0.00      5      0      1    none, creating default
+ALA      10   0.00      9      0      2    none, creating default
+ARG      24   1.00     23      0      6    none, creating default
+ARN      23   0.00     22      0      5    none, creating default
+ASH      13  -0.00     12      0      3    none, creating default
+ASN      14   0.00     13      0      4    none, creating default
+ASP      12  -1.00     11      0      3    none, creating default
+CYM      10  -1.00      9      0      2    none, creating default
+CYS      11   0.00     10      0      2    none, creating default
+CYX      10   0.00      9      0      2    none, creating default
+GLH      16   0.00     15      0      3    none, creating default
+GLN      17   0.00     16      0      4    none, creating default
+GLU      15  -1.00     14      0      3    none, creating default
+GLY       7   0.00      6      0      2    none, creating default
+HID      17  -0.00     17      0      6    none, creating default
+HIE      17  -0.00     17      0      6    none, creating default
+HIP      18   1.00     18      0      7    none, creating default
+HYP      15   0.00     15      0      2    none, creating default
+ILE      19   0.00     18      0      2    none, creating default
+LEU      19   0.00     18      0      2    none, creating default
+LYN      21   0.00     20      0      2    none, creating default
+LYS      22   1.00     21      0      2    none, creating default
+MET      17   0.00     16      0      2    none, creating default
+NHE       3   0.00      2      0      1    none, creating default
+NMA       6  -0.00      5      0      1    none, creating default
+PHE      20   0.00     20      0      8    none, creating default
+PRO      14   0.00     14      0      2    none, creating default
+SER      11   0.00     10      0      2    none, creating default
+THR      14  -0.00     13      0      2    none, creating default
+TRP      24   0.00     25      0      9    none, creating default
+TYR      21   0.00     21      0      8    none, creating default
+VAL      16  -0.00     15      0      2    none, creating default
+HOH       3   0.00      3      0      0    none, creating default
+SOD       1   1.00      0      0      0      1
+
+Accumulated no. of library entries loaded =  34
+
+qprep> 
+Reading molecular library ejm_31.lib
+
+name  atoms  net Q  bonds  rules   imps Q-grps
+LIG      32   0.00     33      0     15    none, creating default
+
+Accumulated no. of library entries loaded =  35
+
+qprep> 
+Reading molecular library ejm_42_renumber.lib
+
+name  atoms  net Q  bonds  rules   imps Q-grps
+LID      35   0.00     36      0     15    none, creating default
+
+Accumulated no. of library entries loaded =  36
+
+qprep> 
+Reading force field parameter file.
+Forcefield name:               Q-Amber14SB
+Forcefield type:               AMBER
+Lennard-Jones combination rule:ARITHMETIC
+Scaling of 1-4 electrostatics: 0.833
+Cut-off rule:                  any atoms
+Improper potential:            PERIODIC
+Improper generation:           EXPLICIT
+Coulomb constant is set to the default value of 332.
+Read  133 atom types
+>>>>> WARNING: No SYBYL name for one or more atom types.
+Read    0 atom type alias names
+Read    0 LJ type 2 pairs
+Read  247 bond types
+Read   87 unique bond parameters
+>>>>> WARNING: No SYBYL bond type for one or more bond types.
+Read  603 angle types
+Read  143  unique angle parameters
+Read  818 torsion types
+Read  334 unique torsion parameters
+Read   92 improper types
+Force field parameters successfully read.
+
+qprep> 
+PDB file contains  4718 atoms.
+The number of atoms in the topology will be  4718
+molecule    1: THR     1 - GLN   288
+molecule    2: LIG   289
+molecule    3: LID   290
+
+Successfully read PDB file with    3 molecules,
+  290 residues total (  290 in solute).
+ 4718 atoms total ( 4718 in solute).
+
+Sequence listing:
+
+THR  VAL  PHE  HIE  LYS  ARN  TYR  LEU  LYN  LYS  ILE  ARG  ASP  LEU  GLY  GLU 
+GLY  HIE  PHE  GLY  LYS  VAL  SER  LEU  TYR  CYS  TYR  ASP  PRO  THR  ASN  ASH 
+GLY  THR  GLY  GLU  MET  VAL  ALA  VAL  LYS  ALA  LEU  LYS  ALA  ASP  CYS  GLY 
+PRO  GLN  HIE  ARN  SER  GLY  TRP  LYN  GLN  GLU  ILE  ASP  ILE  LEU  ARG  THR 
+LEU  TYR  HIE  GLU  HID  ILE  ILE  LYS  TYR  LYS  GLY  CYX  CYX  GLH  ASP  GLN 
+GLY  GLU  LYN  SER  LEU  GLN  LEU  VAL  MET  GLU  TYR  VAL  PRO  LEU  GLY  SER 
+LEU  ARG  ASP  TYR  LEU  PRO  ARG  HID  SER  ILE  GLY  LEU  ALA  GLN  LEU  LEU 
+LEU  PHE  ALA  GLN  GLN  ILE  CYS  GLU  GLY  MET  ALA  TYR  LEU  HIE  ALA  GLN 
+HID  TYR  ILE  HIE  ARG  ASP  LEU  ALA  ALA  ARG  ASN  VAL  LEU  LEU  ASP  ASN 
+ASP  ARN  LEU  VAL  LYS  ILE  GLY  ASP  PHE  GLY  LEU  ALA  LYN  ALA  VAL  PRO 
+GLH  GLY  HID  GLH  TYR  TYR  ARN  VAL  ARN  GLH  ASP  GLY  ASP  SER  PRO  VAL 
+PHE  TRP  TYR  ALA  PRO  GLH  CYS  LEU  LYN  GLH  TYR  LYN  PHE  TYR  TYR  ALA 
+SER  ASP  VAL  TRP  SER  PHE  GLY  VAL  THR  LEU  TYR  GLU  LEU  LEU  THR  HIE 
+CYS  ASP  SER  SER  GLN  SER  PRO  PRO  THR  LYN  PHE  LEU  GLH  LEU  ILE  GLY 
+ILE  ALA  GLN  GLY  GLN  MET  THR  VAL  LEU  ARN  LEU  THR  GLH  LEU  LEU  GLH 
+ARN  GLY  GLH  ARN  LEU  PRO  ARN  PRO  ASH  LYN  CYS  PRO  CYS  GLH  VAL  TYR 
+HIE  LEU  MET  LYN  ASN  CYS  TRP  GLH  THR  GLH  ALA  SER  PHE  ARN  PRO  THR 
+PHE  GLH  ASN  LEU  ILE  PRO  ILE  LEU  LYN  THR  VAL  HID  GLH  LYN  TYR  GLN 
+LIG  LID 
+
+qprep> qprep> 
+Simulation sphere center                =     -4.675  25.270 -30.505
+Simulation radius                       =     25.000
+qprep> 
+Solvation sphere center                 =     -4.675  25.270 -30.505
+Radius of sphere in solvent file        =     25.000
+Library entry used to generate solvent  =       HOH 
+No. of molecules in solvent file           =        983
+No. of solvent molecules in the sphere:******
+Minimum distance to solute heavy atoms (solvent_pack):  2.30 A
+No. of solvent molecules to add to the system:   959
+qprep> Assigned  7595 atom types.
+Assigned  7595 atomic charges.
+Made      4782 solute bonds.
+Made         0 extra bonds.
+Made      2877 solvent bonds.
+Made      8595 solute angles.
+Made      2877 solvent angles.
+Made     20149 solute torsions.
+Made         0 solvent torsions.
+Made       979 solute impropers.
+Made         0 solvent impropers.
+Made     12551 entries in the 1-4 neighbour list.
+Made         5 entries in the long-range 1-4 neighbour list.
+Made     19131 entries in list of excluded neighbours.
+Made         0 entries in list of long-range excluded neighbours.
+Made        10 solute hydrogens.
+Made         0 solvent hydrogens.
+Made      196 solute  charge groups comprising a total of   3159 atoms.
+Made      959 solvent charge groups comprising a total of   2877 atoms.
+Skipped    94excluded charge groups comprising a total of   1559 atoms.
+Effective water radius                     : 23.38
+Topology successfully generated.
+qprep> 
+---------------------------- Writing topology file ---------------------------
+solute atoms                :   4718
+solvent atoms               :   2877
+coordinates                 :  22785
+integer atom codes          :   7595
+solute bonds                :   4782
+solvent bonds               :   2877
+bond parameters             :     49
+solute angles               :   8595
+solvent angles              :   2877
+angle parameters            :     53
+torsions                    :  20149
+torsion parameters          :    243
+impropers                   :    979
+improper parameters         :     48
+charges                     :   7595
+total charge of not excluded:  -8.00
+charge groups               :   1155
+atom type parameters        :    133
+polar LJ pairs              :      0
+neighbour list              :  12551
+long-range neighbour list   :      5
+neighbour exclusion list    :  19131
+long-range exclusions       :      0
+residues                    :   1249
+molecules                   :    962
+Atom type names             :    133
+SYBYL type information      :    133
+excluded atom list          :   1559
+
+qprep> 
+
+PDB file successfully written.
+
+qprep> ---------------------------- Reading topology file ---------------------------
+MKC_p                                                                           
+
+No. of solute atoms     =       4718
+No. of solvent atoms    =       2877
+No. of coordinates      =      22785
+No. of atom type codes  =       7595
+No. of solute bonds     =       4782
+No. of solvent bonds    =       2877
+No. of solute angles    =       8595
+No. of solvent angles   =       2877
+No. of solute torsions  =      20149
+No. of solvent torsions =          0
+No. of solute impropers =        979
+No. of solvent impropers=          0
+No. of atomic charges   =       7595
+No. of solute chargegrps=        196
+No. of solvent chargegps=        959
+Charge group cut-off    : Any atoms
+vdW  rule [ 1=G / 2=A ] =          2
+El-static 1-4 damping   =      0.833
+Coulomb constant        =   332.0000
+No. of atom types       =        133
+No. of LJ type 2 pairs  =          0
+No. of heavy atoms      =       3349
+No. of 1-4 neighbours   =      12551
+No. long-range 1-4 nbrs =          5
+No. of nbor exclusions  =      19131
+No. of long-range excls =          0
+No. of residues         =       1249
+No of solute residues   =        290
+No. of molecules        =        962
+Atom type names         =        133
+SYBYL atom types        =        133
+Boundary: sphere
+Exclusion radius        =     25.000
+Eff. solvent radius     =     23.380
+Solute center           =     -4.675    25.270   -30.505
+Solvent center          =     -4.675    25.270   -30.505
+No. of excluded atoms   =       1559
+Molecular topology read successfully.
+
+qprep> The current mask contains  7595 atoms.
+Mask cleared.
+qprep> The current mask contains     0 atoms.
+  6036 atoms added to mask which now contains  6036 atoms.
+qprep> 
+
+PDB file successfully written.
+
+qprep> 

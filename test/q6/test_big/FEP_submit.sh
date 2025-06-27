@@ -1,9 +1,9 @@
 #! /bin/bash
 
 temperatures=(298)
-runs=10
+runs=1
 restartfile=md_0000_1000.re
-workdir="."
+workdir="/Q/test/test_big"
 echo $wrkdir
 inputfiles=$workdir/inputfiles
 submitfile=$inputfiles/runTETRA.sh
@@ -15,6 +15,6 @@ for temp in ${temperatures[*]};do
 sed -i s/temperature=.*/temperature="$temp"/g $submitfile
 for i in $(seq 1 $runs);do
 sed -i s/run=.*/run="$i"/g $submitfile
-sbatch $submitfile
+sh $submitfile
 done
 done
