@@ -48,7 +48,7 @@ CONFIGS = {
 # CLUSTER INPUTS. To add your own cluster, use the same input as below
 CSB = {
     "NODES": "1",
-    "NTASKS": "16",
+    "NTASKS": "8",
     "TIME": "0-12:00:00",  # d-hh:mm:ss
     "MODULES": nljoin(["module purge", "module load Q/6.0.1_ME"]),
     **Q_PATHS,
