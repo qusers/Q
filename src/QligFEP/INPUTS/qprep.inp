@@ -4,9 +4,9 @@ rl LIG2
 rprm LIGPRM 
 ! TO DO Change if protein system is used
 rp LIGPDB 
-! set solute_density 0.05794 
-! NOTE, this is now large for water system, change for protein system
+! solvation - density adapted to membrane proteins
 set solvent_pack 2.3
+set solute_density SOLUTEDENS
 boundary 1 CENTER SPHERE
 solvate CENTER SPHERE SOLVENT
 !addbond at1 at2 y

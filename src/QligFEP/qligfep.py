@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Literal, Optional, Union
 
 import numpy as np
+import pandas as pd
+from sklearn.neighbors import NearestNeighbors
 
 from .CLI.qprep_cli import qprep_error_check
 from .CLI.utils import get_avail_restraint_methods, handle_cysbonds
@@ -630,20 +632,18 @@ class QligFEP:
             logger.debug(f"Writing {eq_file}")
             eq_file_out = writedir + "/" + eq_file
 
-            with open(eq_file_in) as infile:
-                with open(eq_file_out, "w") as outfile:
-                    for line in infile:
-                        line = replace(line, replacements)
-                        outfile.write(line)
-                        if line == "[distance_restraints]\n":
-                            for line in overlapping_atoms:
-                                outfile.write(f"{line[0]:d} {line[1]:d} 0.0 0.1 {rest_force:.1f} 0\n")
+            with open(eq_file_in) as infile, open(eq_file_out, "w") as outfile:
+                for line in infile:
+                    line = replace(line, replacements)
+                    outfile.write(line)
+                    if line == "[distance_restraints]\n":
+                        for line in overlapping_atoms:
+                            outfile.write(f"{line[0]:d} {line[1]:d} 0.0 0.1 {rest_force:.1f} 0\n")
 
-                        if line == "[sequence_restraints]\n":
-                            for line in restlist:
-                                outfile.write(line)
-
-                file_list1.append(eq_file)
+                    if line == "[sequence_restraints]\n":
+                        for line in restlist:
+                            outfile.write(line)
+            file_list1.append(eq_file)
 
         # WRITING THE FEP MOLECULAR DYNAMICS INPUT FILES (e.g.: md_0500_0500.inp)
         file_in = CONFIGS["INPUT_DIR"] + "/md_0500_0500.inp"
@@ -659,7 +659,6 @@ class QligFEP:
                 if line == "[sequence_restraints]\n":
                     for line in restlist:
                         outfile.write(line)
-
         file_list1.append("md_0500_0500.inp")
 
         for lambdas in [lambda_1, lambda_2]:
@@ -699,7 +698,6 @@ class QligFEP:
                     if line == "[sequence_restraints]\n":
                         for line in restlist:
                             outfile.write(line)
-
                 filename_N = filename
 
                 if index == 1:
@@ -990,13 +988,16 @@ class QligFEP:
         if self.system == "protein":
             replacements["SOLVENT"] = "4 water.pdb"
 
+        pdb_df = read_pdb_to_dataframe(Path(writedir) / self.pdb_fname)
+        density = self.get_sphere_density(pdb_df) if self.system == "protein" else 0.05794
+        replacements["SOLUTEDENS"] = f"{density:.5f}"
+
         with open(qprep_in) as infile, open(qprep_out, "w") as outfile:
             cysbond_str = handle_cysbonds(
                 self.cysbond, Path(writedir) / self.pdb_fname, comment_out=(self.system != "protein")
             )
             if self.system == "protein" and self.cysbond == "auto" and cysbond_str != "":
                 # cysbond shouldn't be there if the AA is out of the sphere radius
-                pdb_df = read_pdb_to_dataframe(Path(writedir) / self.pdb_fname)
                 new_cysbond_str = ""
                 for line in cysbond_str.strip().split("\n"):
                     parts = line.split()
@@ -1032,6 +1033,43 @@ class QligFEP:
                     outfile.write(cysbond_str)
                     continue
                 outfile.write(line)
+
+    def get_sphere_density(self, pdb_df: pd.DataFrame) -> float:
+        """Calculate the solute density for the FEP system taking into consideration the different
+        densities for protein and lipids. The density is calculated as the weighted average
+        of the densities of the protein and lipids, where the weights are the number of atoms
+        in each.
+
+        Args:
+            pdb_df: DataFrame containing the PDB file information.
+
+        Returns:
+            float: The density of the system.
+        """
+        # regex with negative lookbehind to avoid matching NH, CH, OH (heavy atoms)
+        H_atom_regex = re.compile(r"(?<![NCO])H\d*")  # noqa: F841
+        protein_vol = 0.05794  # A**-3
+        lipid_vol = 0.03431  # A**-3 from octane
+
+        knn = NearestNeighbors(radius=float(self.sphereradius), metric="euclidean", n_jobs=4)
+        atom_coord_arr = pdb_df[["x", "y", "z"]].values
+        knn.fit(np.array(atom_coord_arr))
+        _, indices = knn.radius_neighbors(np.array(self.cog).reshape(1, -1))
+        heavy_atoms_df = (
+            pdb_df.iloc[indices[0]]
+            .query("residue_name != 'HOH'")
+            .query("~atom_name.str.match(@H_atom_regex)")
+        )
+        n_lipid_at = heavy_atoms_df.query("residue_name == 'POP'").shape[0]
+        if n_lipid_at == 0:
+            return 0.05794
+        n_protein_at = heavy_atoms_df.shape[0] - n_lipid_at
+
+        density = (n_protein_at * protein_vol + n_lipid_at * lipid_vol) / heavy_atoms_df.shape[0]
+        if density != 0.05794:
+            logger.info(f"Calculated solute density: {density:.5f} g/cm^3")
+
+        return density
 
     def qprep(self, writedir):
         os.chdir(writedir)
