@@ -53,7 +53,7 @@ class RestraintSetter:
 
     @staticmethod
     def input_to_small_molecule_component(
-        input_molecule: Union[Molecule, Chem.Mol, str, Path]
+        input_molecule: Union[Molecule, Chem.Mol, str, Path],
     ) -> SmallMoleculeComponent:
         if isinstance(input_molecule, SmallMoleculeComponent):
             mol = input_molecule
@@ -374,9 +374,9 @@ class RestraintSetter:
         Returns:
             restraints: dictionary containing the atoms to be restrained.
         """
+        self.atom_mapper = AtomMapperHelper()
         if kartograf_native:
             return self.atom_mapping
-        self.atom_mapper = AtomMapperHelper()
         ringStruc_compareDict = self.atom_mapper.process_rings_separately(
             Chem.RemoveHs(self.molA.to_rdkit()), Chem.RemoveHs(self.molB.to_rdkit()), self.atom_mapping
         )
