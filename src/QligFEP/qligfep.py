@@ -77,7 +77,6 @@ class QligFEP:
         self.write_dir = None
         self.pdb_fname = f"{self.lig1}_{self.lig2}.pdb"
         self.seeds = self.set_seeds(random_state)
-        self.lipid_restraints = []  # Used when a protein with POPC is prepared
 
         if self.system == "protein":
             # Get last atom and residue from complexfile!
@@ -644,8 +643,6 @@ class QligFEP:
                     if line == "[sequence_restraints]\n":
                         for line in restlist:
                             outfile.write(line)
-            if self.lipid_restraints:  # lipid restraints are appended to end of the file
-                self._add_lipid_restraint(eq_file_out)
             file_list1.append(eq_file)
 
         # WRITING THE FEP MOLECULAR DYNAMICS INPUT FILES (e.g.: md_0500_0500.inp)
@@ -662,8 +659,6 @@ class QligFEP:
                 if line == "[sequence_restraints]\n":
                     for line in restlist:
                         outfile.write(line)
-        if self.lipid_restraints:
-            self._add_lipid_restraint(file_out)
         file_list1.append("md_0500_0500.inp")
 
         for lambdas in [lambda_1, lambda_2]:
@@ -703,8 +698,6 @@ class QligFEP:
                     if line == "[sequence_restraints]\n":
                         for line in restlist:
                             outfile.write(line)
-                if self.lipid_restraints:
-                    self._add_lipid_restraint(file_out)
                 filename_N = filename
 
                 if index == 1:
@@ -750,8 +743,6 @@ class QligFEP:
                             for line in overlapping_atoms:
                                 outfile.write(f"{line[0]:d} {line[1]:d} 0.0 0.2 0.5 0\n")
                 file_list_1.append(eq_file)
-            if self.lipid_restraints:
-                self._add_lipid_restraint(eq_file_out)
 
         file_in = CONFIGS["INPUT_DIR"] + "/md_1000_0000.inp"
         file_out = writedir + "/md_1000_0000.inp"
@@ -763,8 +754,6 @@ class QligFEP:
                     for line in overlapping_atoms:
                         outfile.write(f"{line[0]:d} {line[1]:d} 0.0 0.2 0.5 0\n")
 
-        if self.lipid_restraints:
-            self._add_lipid_restraint(file_out)
         file_list_1.append("md_1000_0000.inp")
         filenr = 0
 
@@ -795,8 +784,6 @@ class QligFEP:
                         if line == "[distance_restraints]\n":
                             for line in overlapping_atoms:
                                 outfile.write(f"{line[0]:d} {line[1]:d} 0.0 0.1 0.5 0\n")
-                if self.lipid_restraints:
-                    self._add_lipid_restraint(file_out)
 
                 filename_N = filename
                 filenr += 1
@@ -1002,7 +989,7 @@ class QligFEP:
             replacements["SOLVENT"] = "4 water.pdb"
 
         pdb_df = read_pdb_to_dataframe(Path(writedir) / self.pdb_fname)
-        density = self.get_density_and_lipid_restraints(pdb_df) if self.system == "protein" else 0.05794
+        density = self.get_sphere_density(pdb_df) if self.system == "protein" else 0.05794
         replacements["SOLUTEDENS"] = f"{density:.5f}"
 
         with open(qprep_in) as infile, open(qprep_out, "w") as outfile:
@@ -1047,7 +1034,7 @@ class QligFEP:
                     continue
                 outfile.write(line)
 
-    def get_density_and_lipid_restraints(self, pdb_df: pd.DataFrame) -> float:
+    def get_sphere_density(self, pdb_df: pd.DataFrame) -> float:
         """Calculate the solute density for the FEP system taking into consideration the different
         densities for protein and lipids. The density is calculated as the weighted average
         of the densities of the protein and lipids, where the weights are the number of atoms
@@ -1074,33 +1061,15 @@ class QligFEP:
             .query("~atom_name.str.match(@H_atom_regex)")
         )
         n_lipid_at = heavy_atoms_df.query("residue_name == 'POP'").shape[0]
+        if n_lipid_at == 0:
+            return 0.05794
         n_protein_at = heavy_atoms_df.shape[0] - n_lipid_at
 
         density = (n_protein_at * protein_vol + n_lipid_at * lipid_vol) / heavy_atoms_df.shape[0]
         if density != 0.05794:
             logger.info(f"Calculated solute density: {density:.5f} g/cm^3")
-            logger.info("Adding restraints to out-of-sphere lipid atoms")
-            in_sphere_lipid = pdb_df.iloc[indices[0]].query("residue_name == 'POP'")
-            self.lipid_restraints = (
-                in_sphere_lipid[["atom_serial_number", "x", "y", "z"]].astype(str).agg(" ".join, axis=1)
-                + " 200. 200. 200. 0"
-            ).tolist()
 
         return density
-
-    def _add_lipid_restraint(self, q_inp_file_path: str):
-        """Append lipid restraints to the end of the input file (out_file).
-        The restraints are added to the end of the file, after the
-        [atom restraints] section.
-
-        Args:
-            out_file: path to the file to which the restraints will be added.
-        """
-        logger.debug(f"Adding lipid restraints to {q_inp_file_path.split('/')[-1]}")
-        with open(q_inp_file_path, "a") as outfile_append:
-            outfile_append.write("\n[atom restraints]\n")
-            for rest in self.lipid_restraints:
-                outfile_append.write(f"{rest}\n")
 
     def qprep(self, writedir):
         os.chdir(writedir)
