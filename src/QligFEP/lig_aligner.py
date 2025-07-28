@@ -287,6 +287,7 @@ class GlobalLigandAligner(MoleculeIO):
             if original_mol is not None and aligned_mol is not None:
                 Chem.SanitizeMol(aligned_mol, sanitizeOps=Chem.SanitizeFlags.SANITIZE_SETAROMATICITY)
 
+                aligned_mol.SetProp("_Name", original_mol.GetProp("_Name"))
                 for prop_name in original_mol.GetPropNames():  # copy all properties
                     prop_value = original_mol.GetProp(prop_name)
                     aligned_mol.SetProp(prop_name, prop_value)
