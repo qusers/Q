@@ -377,8 +377,10 @@ class QligFEP:
         with open(f"{self.lig1}.pdb") as infile, open(f"{writedir}/{self.pdb_fname}", "w") as outfile:
             if self.system == "protein":
                 with open("protein.pdb") as protfile:
-                    for line in protfile:
-                        outfile.write(line)
+                    contents = protfile.read()
+                    outfile.write(contents)
+                    if contents and not contents.endswith("\n"):
+                        outfile.write("\n")
             for line in infile:
                 if line.split()[0].strip() in self.include:
                     resnr = int(line[22:26])
