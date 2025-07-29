@@ -48,6 +48,7 @@ class QligFEP:
         dr_force: float = 0.5,
         random_state: Optional[int] = 42,
         wath_ligand_only: bool = False,
+        no_slurm: bool = False,
     ):
         self.replacements = {}  # TODO: make this explicit in the future
         self.timestep = timestep
@@ -75,6 +76,7 @@ class QligFEP:
         self.write_dir = None
         self.pdb_fname = f"{self.lig1}_{self.lig2}.pdb"
         self.seeds = self.set_seeds(random_state)
+        self.no_slurm = no_slurm
 
         if self.system == "protein":
             # Get last atom and residue from complexfile!
@@ -794,9 +796,10 @@ class QligFEP:
         return [file_list_1, file_list_2, file_list_3]
 
     def write_submitfile(self, writedir):
+        submit_script = "/FEP_submit.sh" if not self.no_slurm else "/FEP_submit_noslurm.sh"
         replacements = {}
         replacements["RUNFILE"] = "run" + self.cluster + ".sh"
-        submit_in = CONFIGS["ROOT_DIR"] + "/INPUTS/FEP_submit.sh"
+        submit_in = CONFIGS["ROOT_DIR"] + "/INPUTS" + submit_script
         submit_out = writedir + ("/FEP_submit.sh")
         with open(submit_in) as infile, open(submit_out, "w") as outfile:
             for line in infile:
@@ -810,8 +813,8 @@ class QligFEP:
             print("WARNING: Could not change permission for " + submit_out)
 
     def write_runfile(self, writedir, file_list):
-
-        src = CONFIGS["INPUT_DIR"] + "/run.sh"
+        run_script = "/run.sh" if not self.no_slurm else "/run_noslurm.sh"
+        src = CONFIGS["INPUT_DIR"] + run_script
         tgt = writedir + "/run" + self.cluster + ".sh"
         EQ_files = sorted(glob.glob(writedir + "/eq*.inp"))
 
@@ -862,26 +865,41 @@ class QligFEP:
                 if line.strip() == "#EQ_FILES":
                     for line in EQ_files:
                         file_base = Path(line).stem
-                        outline = f"time mpirun -n $SLURM_NTASKS --bind-to core $qdyn {file_base}.inp > {file_base}.log\n"
+                        if not self.no_slurm:
+                            outline = f"time mpirun -n $SLURM_NTASKS --bind-to core $qdyn {file_base}.inp > {file_base}.log\n"
+                        else:
+                            outline = f"time $qdyn {file_base}.inp > {file_base}.log\n"
                         outfile.write(outline)
 
                 if line.strip() == "#RUN_FILES":
                     if self.start == "1":
                         for line in MD_files:
                             file_base = line.split("/")[-1][:-4]
-                            outline = (
-                                f"time mpirun -n $SLURM_NTASKS --bind-to core $qdyn {file_base}.inp"
-                                f" > {file_base}.log\n"
-                            )
+                            if not self.no_slurm:
+                                outline = (
+                                    f"time mpirun -n $SLURM_NTASKS --bind-to core $qdyn {file_base}.inp"
+                                    f" > {file_base}.log\n"
+                                )
+                            else:
+                                outline = (
+                                    f"time $qdyn {file_base}.inp"
+                                    f" > {file_base}.log\n"
+                                )
                         outfile.write(outline)
 
                     elif self.start == "0.5":
-                        outline = "time mpirun -n $SLURM_NTASKS --bind-to core $qdyn md_0500_0500.inp > md_0500_0500.log\n\n"
+                        if not self.no_slurm:
+                            outline = "time mpirun -n $SLURM_NTASKS --bind-to core $qdyn md_0500_0500.inp > md_0500_0500.log\n\n"
+                        else:
+                            outline = "time $qdyn md_0500_0500.inp > md_0500_0500.log\n\n"
                         outfile.write(outline)
                         for i, md in enumerate(md_1):
-                            outline1 = f"time mpirun -n $SLURM_NTASKS --bind-to core $qdyn {md_1[i][:-4]}.inp > {md_1[i][:-4]}.log\n"
-                            outline2 = f"time mpirun -n $SLURM_NTASKS --bind-to core $qdyn {md_2[i][:-4]}.inp > {md_2[i][:-4]}.log\n"
-
+                            if not self.no_slurm:
+                                outline1 = f"time mpirun -n $SLURM_NTASKS --bind-to core $qdyn {md_1[i][:-4]}.inp > {md_1[i][:-4]}.log\n"
+                                outline2 = f"time mpirun -n $SLURM_NTASKS --bind-to core $qdyn {md_2[i][:-4]}.inp > {md_2[i][:-4]}.log\n"
+                            else:
+                                outline1 = f"time $qdyn {md_1[i][:-4]}.inp > {md_1[i][:-4]}.log\n"
+                                outline2 = f"time $qdyn {md_2[i][:-4]}.inp > {md_2[i][:-4]}.log\n"
                             outfile.write(outline1)
                             outfile.write(outline2)
                             outfile.write("\n")

@@ -41,6 +41,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "dr_force": args.dr_force,
             "random_state": args.random_state,
             "wath_ligand_only": args.wath_ligand_only,
+            "no_slurm": args.no_slurm
         }
     else:
         param_dict = {}

@@ -236,4 +236,14 @@ def parse_arguments(program: str) -> argparse.Namespace:
         help="Set the log level for the logger. Defaults to `info`.",
         choices=["trace", "debug", "info", "warning", "error", "critical"],
     )
+    parser.add_argument(
+        "-ns",
+        "--no-slurm",
+        dest="no_slurm",
+        action="store_true",
+        help=(
+            "To generate no-slurm script."
+        ),
+    )
+
     return parser.parse_args()
