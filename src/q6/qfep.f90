@@ -752,8 +752,8 @@ program qfep
 
      write(*,*) 
      write(*,*) 
-     write(*,33)
      write(*,34)
+     write(*,35)
 34   format('# Part 6: BAR Bennet:')
 35   format('# lambda(1)      dG    sum(dG) ')
      do ifile=1,nfiles

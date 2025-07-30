@@ -78,6 +78,29 @@ else ifeq ($(COMP),ibm)
 	FC_OPT=         -qsmp=omp
 	FFLAGS=
 
+################################################################################
+# AMD EPYC Optimized Version
+################################################################################
+else ifeq ($(COMP),amd)
+	FC=             gfortran
+	FC_OPT=         -O3
+	FFLAGS=         -funroll-all-loops -ffree-line-length-none -fcray-pointer \
+	                -static-libgfortran -fall-intrinsics -std=legacy \
+	                -fstack-protector ${FC_OPT} -DG95=1 -w \
+					-march=znver4 -mtune=znver4 \
+					-mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512cd \
+					-mavx512vnni -mavx512bitalg \
+					-mbmi -mbmi2 -mavx2 -mfma
+
+	FPP_FLG=        -cpp
+
+	MPIFC=          mpif90
+	OMPI_FC=        ${FC}
+	OMPI_FCFLAGS=   ${FFLAGS}
+	MPI=            ${OMPI_FCFLAGS}
+
+	DEBUG=          -fbacktrace -g ${FC_OPT}
+	DEBUGMPI=       -fbacktrace -g ${FC_OPT}
 
 ################################################################################
 # GNU gcc-gfortran
@@ -85,7 +108,7 @@ else ifeq ($(COMP),ibm)
 else ifeq ($(COMP),gcc)
 	FC=             gfortran
 	FC_OPT=         -O3
-	FFLAGS=         -funroll-loops -ffree-line-length-none -fcray-pointer \
+	FFLAGS=         -funroll-all-loops -ffree-line-length-none -fcray-pointer \
 	                -static-libgfortran -fall-intrinsics -std=legacy \
 	                -fstack-protector ${FC_OPT} -DG95=1 -w
 
@@ -96,9 +119,8 @@ else ifeq ($(COMP),gcc)
 	OMPI_FCFLAGS=   ${FFLAGS}
 	MPI=            ${OMPI_FCFLAGS}
 
-	DEBUG=          -fbacktrace -g ${FC_OPT}	
+	DEBUG=          -fbacktrace -g ${FC_OPT}
 	DEBUGMPI=       -fbacktrace -g ${FC_OPT}
-
 
 ################################################################################
 # If no COMP option is given
@@ -131,13 +153,15 @@ default: what
 ################################################################################
 # Targets
 ################################################################################
-all:	qfep qprep qdyn qdum qcalc move1 move2
+all:    qfep qprep qdyn qdum qcalc move1 move2
+
+qprep:  qprep
 
 test:   qfep qprep qdyn_test qdum qcalc move1 move4
 
 debug:
 	@make FFLAGS="${DEBUG}" \
-	qfep qprep qdyn qdum qcalc move1 move2
+    qfep qprep qdyn qdum qcalc move1 move2
 
 mpi:
 	@make FFLAGS="${MPI}" \
@@ -185,7 +209,7 @@ qdyn : md.o
 	${FC} ${FFLAGS} ${FLIBS} $+ -o $@
 
 qdyn_test : md_test.o #qdyn_test.o
-	${FC} ${FFLAGS} ${FLIBS} $+ -o $@	
+	${FC} ${FFLAGS} ${FLIBS} $+ -o $@
 
 qdum : md_dum.o
 	${FC} ${FFLAGS} ${FLIBS} $+ -o $@
@@ -247,16 +271,16 @@ eigen.o:eigen.f90
 index.o:index.f90
 	${FC} ${FFLAGS} -c $<
 
-mask.o:	mask.f90 topo.o
+mask.o: mask.f90 topo.o
 	${FC} ${FFLAGS} -c $<
 
-maskmanip.o:maskmanip.f90 mask.o misc.o parse.o
+maskmanip.o: maskmanip.f90 mask.o misc.o parse.o
 	${FC} ${FFLAGS} -c $<
 
-md.o:	md.f90 mpiglob.o qatom.o sizes.o trj.o topo.o
+md.o: md.f90 mpiglob.o qatom.o sizes.o trj.o topo.o
 	${FC} ${FFLAGS} ${FPP_FLG} -c md.f90
 
-md_test.o:	md_test.f90 mpiglob.o qatom.o sizes.o trj.o topo.o
+md_test.o: md_test.f90 mpiglob.o qatom.o sizes.o trj.o topo.o
 	${FC} ${FFLAGS} ${FPP_FLG} -c md_test.f90
 
 md_dum.o:md.f90 mpiglob.o qatom.o sizes.o trj.o topo.o
@@ -332,7 +356,7 @@ move3:
 	mkdir -p bin/q6 ; mv qdynp bin/q6
 
 move4:
-	mkdir -p bin/q6 ; mv qfep qprep qdyn_test qdum qcalc bin/q6	
+	mkdir -p bin/q6 ; mv qfep qprep qdyn_test qdum qcalc bin/q6
 
 ################################################################################
 

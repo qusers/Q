@@ -1,43 +1,52 @@
 """Module to generate (setup) all FEP files for the directory you're working on."""
 
-from pathlib import Path
 import argparse
 import json
-import subprocess
 import logging
-import shutil
 import os
+import shutil
+import subprocess
+from pathlib import Path
+from typing import Optional
 
-from ..logger import logger
+from ..logger import logger, setup_logger
+from .parser_base import parse_arguments
 
-logging.basicConfig(
-    filename='cli_calls.log',
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
 
 def ligpairs_from_json(json_file):
-    with open(json_file, 'r') as infile:
+    with open(json_file) as infile:
         json_dict = json.load(infile)
     try:
-        edges = json_dict['edges'] # should be a list of dictionaries
-    except KeyError:
-        raise KeyError('Could not find "edges" in json file')
-    ligpairs = [(e['from'], e['to']) for e in edges]
+        edges = json_dict["edges"]  # should be a list of dictionaries
+    except KeyError as kerr:
+        raise KeyError('Could not find "edges" in json file') from kerr
+    ligpairs = [(e["from"], e["to"]) for e in edges]
     return ligpairs
 
+
 def create_call(**kwargs):
-    """Function to dynamically create a call to QligFEP.cli.main_exe() based on the kwargs."""    
+    """Function to dynamically create a call to QligFEP.cli.main_exe() based on the kwargs."""
     template = (
         "qligfep -l1 '{lig1}' -l2 '{lig2}' -FF {FF} -s {system} -c {cluster} -R {replicates} "
         "-S {sampling} -r {sphereradius} -l {start} -w {windows} -T {temperature} -ts {timestep} "
-        )
-    if 'cysbond' in kwargs and kwargs['cysbond'] is not None:
-        template += ' -b {cysbond}'
-    if 'to_clean' in kwargs and kwargs['cysbond'] is not None:
-        template += ' -clean {to_clean}'
+        "-rest {rest} -drf {dr_force} -log {log}"
+    )
+    if "cysbond" in kwargs and kwargs["cysbond"] is not None:
+        template += " -b {cysbond}"
+    if "to_clean" in kwargs and kwargs["to_clean"] is not None:
+        template += " -clean {to_clean}"
+    if "random_state" in kwargs and kwargs["random_state"] is not None:
+        template += " -rs {random_state}"
+    if "water_thresh" in kwargs and kwargs["water_thresh"] != 1.4:
+        template += " -wath {water_thresh}"
+    if "wath_ligand_only" in kwargs and kwargs["wath_ligand_only"]:
+        template += " -wath-ligo"
     return template.format(**kwargs)
 
-def submit_command(command :str) -> None:
+
+def submit_command(command: str) -> None:
     """Function to submit a command using the subprocess module.
 
     Args:
@@ -53,148 +62,75 @@ def submit_command(command :str) -> None:
         logging.error(f"Unexpected error: {e}")
         raise
 
-def parse_arguments():
-    parser = argparse.ArgumentParser(
-        prog='QligFEP',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        description =
-        ("Generate all FEP files for the directory you're working on, according to the "
-         "edges input in the json_map file. This includes creating directories for both "
-         "water and protein system. Submitting the FEP calculations to the cluster is up to the user. "
-         "A minimal example of usage: setupFEP -FF OPLS2015 -c KEBNE -S sigmoidal -r 25 -l 0.5 -w 100")
-        )
-    parser.add_argument('-FF', '--forcefield',
-                        dest = "FF",
-                        required = True,
-                        choices = ['OPLS2005', 'OPLS2015', 'AMBER14sb', 'CHARMM36', 'CHARMM22', 'CHARMM_TEST'],
-                        help = "Forcefield to be used.")
 
-    parser.add_argument('-c', '--cluster',
-                        dest = "cluster",
-                        required = True,
-                        help = "cluster you want to submit to, cluster specific parameters added to settings."
-                       )
+def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
+    # setup the logger with the desired log level
+    setup_logger(level=args.log)
 
-    parser.add_argument('-r', '--sphereradius',
-                        dest = "sphereradius",
-                        required = False,
-                        default = '25',
-                        help = "Size of the simulation sphere. Defaults to 25."
-                       )
-
-    parser.add_argument('-b', '--cysbond',
-                        dest = "cysbond",
-                        default = None,
-                        help = (
-                            "Add cystein bonds. Input should be formatted with the atom numbers"
-                            "(participating in the Cys bond) connected by `_` and with different bonds "
-                            "separated by `,` as in: `atom1_atom2,atom3_atom4`"
-                        )
-                        )
-    parser.add_argument('-l', '--start',
-                        dest = "start",
-                        default = '0.5',
-                        choices = ['1', '0.5'],
-                        help = "Starting FEP in the middle or endpoint. Defaults to 0.5."
-                       )
-
-    parser.add_argument('-T', '--temperature',
-                        dest = "temperature",
-                        default = '298',
-                        help = "Temperature(s), mutliple tempereratures given as 'T1,T2,...,TN'. Defaults to 298K"
-                       )
-
-    parser.add_argument('-R', '--replicates',
-                        dest = "replicates",
-                        default = '10',
-                        help = "How many repeats should be run. Defaults to 10."
-                       )
-
-    parser.add_argument('-S', '--sampling',
-                        dest = "sampling",
-                        default = 'sigmoidal',
-                        choices = ['linear', 'sigmoidal', 'exponential', 'reverse_exponential'],
-                        help = "Lambda spacing type to be used. Defaults to `sigmoidal`."
-                       )
-    parser.add_argument('-w', '--windows',
-                        dest = "windows",
-                        default = '100',
-                        help = "Total number of windows that will be run. Defaults to 100.",
-                        type=str,
-                       )
-    parser.add_argument('-j', '--json_map',
-                        dest='json_map',
-                        help = (
-                            "Path for the '.json' QmapFEP file. If not given, the script will "
-                            "look for a single '.json' file in the current directory and raise "
-                            "an error if there are more than one."
-                        ),
-                        default = None,
-                       )
-    parser.add_argument('-ts', '--timestep',
-                        dest = "timestep",
-                        choices = ['1fs','2fs'],
-                        default = "2fs",
-                        help = "Simulation timestep, default 2fs"
-                       )
-    parser.add_argument('-clean', '--files-to-clean',
-                        dest="to_clean",
-                        nargs="+",
-                        default=None,
-                        help=(
-                            "Files to clean after the simulation. The arguments are given as a list of strings "
-                            "and the cleaning is done by adding the command `rm -rf *{arg1} *{arg2}` to the job submission. "
-                            "Usage example: `-clean dcd` will remove all dcd files after the simulation. If left as None, won't clean any files."
-                            )
-                        )
-    return parser.parse_args()
-
-def main_exe():
-    args = parse_arguments()
-    
     cwd = Path.cwd()
-    systems = ['water', 'protein']
-    sys_directories = [cwd / '1.water', cwd / '2.protein']
+
+    if args.protein_only:
+        systems = ["protein"]
+        sys_directories = [cwd / "2.protein"]
+    elif args.water_only:
+        systems = ["water"]
+        sys_directories = [cwd / "1.water"]
+    else:
+        systems = ["protein", "water"]
+        sys_directories = [cwd / "2.protein", cwd / "1.water"]
+
     # make sure that the default directories for running the FEP calculations are there
     for sys_dir in sys_directories:
         if not sys_dir.exists():
             sys_dir.mkdir()
-    
-    if args.json_map is None: # Try to load a json file from cwd
-        json_files = list(cwd.glob('*.json'))
+
+    if args.json_map is None:  # Try to load a json file from cwd
+        json_files = list(cwd.glob("*.json"))
         if len(json_files) == 1:
             args.json_map = json_files[0]
         else:
-            raise FileNotFoundError('No QmapFEP json file found in the current directory')
+            raise FileNotFoundError("No QmapFEP json file found in the current directory")
 
     lig_pairs = ligpairs_from_json(args.json_map)
     for system, sys_dir in zip(systems, sys_directories):
         for pair in lig_pairs:
             lig1 = pair[0]
             lig2 = pair[1]
-            
-            temp_dir = cwd  / f'FEP_{lig1}_{lig2}'
-            to_clean = (None if args.to_clean is not None else ' '.join(args.to_clean))
+
+            temp_dir = cwd / f"FEP_{lig1}_{lig2}"
+            to_clean = " ".join(args.to_clean) if args.to_clean is not None else None
             command = create_call(
-                lig1 = lig1,
-                lig2 = lig2,
-                FF = args.FF,
+                lig1=lig1,
+                lig2=lig2,
+                FF=args.FF,
                 system=system,
-                cluster = args.cluster,
-                sphereradius = args.sphereradius,
-                cysbond = (args.cysbond if system == 'protein' else None),
-                start = args.start,
+                cluster=args.cluster,
+                sphereradius=args.sphereradius,
+                cysbond=(args.cysbond if system == "protein" else None),
+                start=args.start,
                 temperature=args.temperature,
-                replicates = args.replicates,
-                sampling = args.sampling,
-                timestep = args.timestep,
-                windows = args.windows,
-                to_clean = to_clean,
+                replicates=args.replicates,
+                sampling=args.sampling,
+                timestep=args.timestep,
+                windows=args.windows,
+                to_clean=to_clean,
+                random_state=args.random_state,
+                rest=args.restraint_method,
+                dr_force=args.dr_force,
+                water_thresh=args.water_thresh,
+                log=args.log,
+                wath_ligand_only=args.wath_ligand_only,
             )
             logger.info(f"Submitting the command:\n{command}")
-            dst = sys_dir / f'FEP_{lig1}_{lig2}'
+            dst = sys_dir / f"FEP_{lig1}_{lig2}"
             os.system(command)
             shutil.move(temp_dir, dst)
 
-if __name__ == '__main__':
+
+def main_exe():
+    args = parse_arguments(program="setupFEP")
+    main(args)
+
+
+if __name__ == "__main__":
     main_exe()

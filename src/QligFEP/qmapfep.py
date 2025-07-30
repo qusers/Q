@@ -1,38 +1,62 @@
-from collections import namedtuple
-from functools import cached_property, lru_cache
 import io
 import itertools
-import operator
-from pathlib import Path
-import networkx as nx
-from rdkit import Chem, DataStructs, Geometry
-from rdkit.Chem import AllChem, rdDepictor, rdFMCS, rdqueries, rdRGroupDecomposition
-from rdkit.Chem.Draw import rdMolDraw2D
-from rdkit.Chem.Fingerprints import FingerprintMols
-from networkx.readwrite import json_graph
 import json
-# import uuid
+import math
+import operator
 import shutil
 import sys
-import math
+from collections import namedtuple
+from functools import cached_property, lru_cache
+from pathlib import Path
+from typing import Literal, Optional
+
+import networkx as nx
+from networkx.readwrite import json_graph
+from rdkit import Chem, DataStructs, Geometry
+from rdkit.Chem import (
+    rdDepictor,
+    rdFingerprintGenerator,
+    rdFMCS,
+    rdqueries,
+    rdRGroupDecomposition,
+)
+from rdkit.Chem.Draw import rdMolDraw2D
+from rdkit.Chem.Fingerprints import FingerprintMols
+
 # from QligFEP.settings import settings as s
-from Qgpu import ccc, plot, metrics
+from Qgpu import metrics, plot
+
 from .logger import logger
 
 rdDepictor.SetPreferCoordGen(True)
+
 
 @lru_cache(maxsize=4)
 def get_palette(name="OKABE"):
     """Build a palette from a set of selected ones."""
     # "Tol" colormap from https://davidmathlogic.com/colorblind
-    TOL = [(51, 34, 136), (17, 119, 51), (68, 170, 153), (136, 204, 238),
-           (221, 204, 119), (204, 102, 119), (170, 68, 153), (136, 34, 85)]
+    TOL = [
+        (51, 34, 136),
+        (17, 119, 51),
+        (68, 170, 153),
+        (136, 204, 238),
+        (221, 204, 119),
+        (204, 102, 119),
+        (170, 68, 153),
+        (136, 34, 85),
+    ]
     # "IBM" colormap from https://davidmathlogic.com/colorblind
-    IBM = [(100, 143, 255), (120, 94, 240), (220, 38, 127), (254, 97, 0),
-           (255, 176, 0)]
+    IBM = [(100, 143, 255), (120, 94, 240), (220, 38, 127), (254, 97, 0), (255, 176, 0)]
     # Okabe_Ito colormap from https://jfly.uni-koeln.de/color/
-    OKABE = [(230, 159, 0), (86, 180, 233), (0, 158, 115), (240, 228, 66),
-             (0, 114, 178), (213, 94, 0), (204, 121, 167)]
+    OKABE = [
+        (230, 159, 0),
+        (86, 180, 233),
+        (0, 158, 115),
+        (240, 228, 66),
+        (0, 114, 178),
+        (213, 94, 0),
+        (204, 121, 167),
+    ]
 
     result = [(0, 0, 0)]
     for color in locals().get(name):
@@ -40,8 +64,11 @@ def get_palette(name="OKABE"):
 
     return result
 
+
 Ligand = namedtuple("Ligand", ["name", "pool_idx", "fingerprint"])
 
+
+# FIXME this class contains some nested if statements raising collapsible-if (SIM102)
 class MoleculePool:
     """Keeps track of a group of molecules, adding the properties needed.
     mcs: The Maximum Common Substructure (the core).
@@ -59,13 +86,13 @@ class MoleculePool:
 
     def __getitem__(self, idx):
         return self.molecules[idx]
-    
+
     def __len__(self):
         return len(self.molecules)
-    
+
     def __repr__(self) -> str:
         return f"MoleculePool - {len(self)} molecules. Core = {Chem.MolToSmarts(self.core)}"
-    
+
     def calculate_charge(self):
         if not self.charges:
             for molecule in self.molecules:
@@ -95,11 +122,13 @@ class MoleculePool:
         else:
             molecules = self.molecules
 
-        return rdFMCS.FindMCS(molecules,
-                              matchValences=False,
-                              ringMatchesRingOnly=True,
-                              completeRingsOnly=True,
-                              matchChiralTag=False)
+        return rdFMCS.FindMCS(
+            molecules,
+            matchValences=False,
+            ringMatchesRingOnly=True,
+            completeRingsOnly=True,
+            matchChiralTag=False,
+        )
 
     @cached_property
     def core(self):
@@ -124,14 +153,15 @@ class MoleculePool:
                         atom.SetIntProp("SourceAtomIdx", atom.GetIdx())
 
             return rdRGroupDecomposition.RGroupDecompose(
-                [self.query_core], molecule_matches, asSmiles=False,
-                asRows=True)[0]
+                [self.query_core], molecule_matches, asSmiles=False, asRows=True
+            )[0]
         else:
             return []
 
 
 class MoleculeImage:
     """Creates and writes Images of molecules."""
+
     # Workflow mostly based on
     # https://rdkit.blogspot.com/2020/10/molecule-highlighting-and-r-group.html
     def __init__(self, pool_idx=0, pool=None, palette="OKABE"):
@@ -160,7 +190,7 @@ class MoleculeImage:
             self.name = ""
 
         self.core = Chem.Mol(self.pool.core)  # Copy the core
-        rdDepictor.Compute2DCoords(self.core) # This reorients the core
+        rdDepictor.Compute2DCoords(self.core)  # This reorients the core
         self.size = (400, 400)
         self.fill_rings = False
         self.idx_property = "SourceAtomIdx"
@@ -182,23 +212,24 @@ class MoleculeImage:
         """Include the atom map numbers in the substructure search in order to
         try to ensure a good alignment of the molecule to symmetric cores."""
         for atom in (_ for _ in self.core.GetAtoms() if _.GetAtomMapNum()):
-            atom.ExpandQuery(
-                rdqueries.IsotopeEqualsQueryAtom(200 + atom.GetAtomMapNum()))
+            atom.ExpandQuery(rdqueries.IsotopeEqualsQueryAtom(200 + atom.GetAtomMapNum()))
 
         for label, group in self.pool.groups[self.pool_idx].items():
-            if label == 'Core':
+            if label == "Core":
                 continue
             for atom in group.GetAtoms():
-                if (not atom.GetAtomicNum() and atom.GetAtomMapNum() and
-                    atom.HasProp('dummyLabel') and atom.GetProp('dummyLabel') == label):
+                if (
+                    not atom.GetAtomicNum()
+                    and atom.GetAtomMapNum()
+                    and atom.HasProp("dummyLabel")
+                    and atom.GetProp("dummyLabel") == label
+                ):
                     # attachment point. the atoms connected to this
                     # should be from the molecule
-                    for nbr in [_ for _ in atom.GetNeighbors()
-                                if _.HasProp(self.idx_property)]:
-                        mAt = self.molecule.GetAtomWithIdx(
-                            nbr.GetIntProp(self.idx_property))
+                    for nbr in [_ for _ in atom.GetNeighbors() if _.HasProp(self.idx_property)]:
+                        mAt = self.molecule.GetAtomWithIdx(nbr.GetIntProp(self.idx_property))
                         if mAt.GetIsotope():
-                            mAt.SetIntProp('_OrigIsotope', mAt.GetIsotope())
+                            mAt.SetIntProp("_OrigIsotope", mAt.GetIsotope())
                         mAt.SetIsotope(200 + atom.GetAtomMapNum())
 
     def _remove_hs(self):
@@ -220,8 +251,7 @@ class MoleculeImage:
 
     def _reorient_molecule(self):
         """Reorients the drawing molecule following the core."""
-        rdDepictor.GenerateDepictionMatching2DStructure(
-            self.draw_mol, self.core)
+        rdDepictor.GenerateDepictionMatching2DStructure(self.draw_mol, self.core)
 
     def _add_ring(self, group, color):
         """Add rings found in group to self.rings."""
@@ -263,7 +293,8 @@ class MoleculeImage:
             if batom.HasProp(self.idx_property) and eatom.HasProp(self.idx_property):
                 origBnd = self.draw_mol.GetBondBetweenAtoms(
                     self.old_new[batom.GetIntProp(self.idx_property)],
-                    self.old_new[eatom.GetIntProp(self.idx_property)])
+                    self.old_new[eatom.GetIntProp(self.idx_property)],
+                )
                 bndIdx = origBnd.GetIdx()
                 highlights[bndIdx] = [color]
                 width_multiplier[bndIdx] = self.bond_width
@@ -288,7 +319,7 @@ class MoleculeImage:
             canvas_options = self.canvas.drawOptions()
 
             conf = self.draw_mol.GetConformer()
-            for (ring, color) in self.rings:
+            for ring, color in self.rings:
                 ps = [Geometry.Point2D(conf.GetAtomPosition(_)) for _ in ring]
                 self.canvas.SetFillPolys(True)
                 self.canvas.SetColour(color)
@@ -297,9 +328,9 @@ class MoleculeImage:
 
     def png(self):
         """Create a PNG with the data.
-            imgr = mapgen.MoleculeImage(pool_idx=1, pool=pool)
-            with open("MyMolecule.png", "wb") as r:
-                h.write(imgr.png())
+        imgr = mapgen.MoleculeImage(pool_idx=1, pool=pool)
+        with open("MyMolecule.png", "wb") as r:
+            h.write(imgr.png())
         """
         # Store which atoms, bonds, and rings will be highlighted
         highlights = [{}, {}, {}, {}]
@@ -310,12 +341,11 @@ class MoleculeImage:
         canvas_options.useBWAtomPalette()
 
         if self.core:
-            self._fix_isotopes()      #
-            self._remove_hs()         # Does this three belongs here ??
-            self._reorient_molecule() #
+            self._fix_isotopes()  #
+            self._remove_hs()  # Does this three belongs here ??
+            self._reorient_molecule()  #
             # Loop over R groups.
-            for color, (label, group) in zip(
-                    self.palette, self.pool.groups[self.pool_idx].items()):
+            for color, (label, group) in zip(self.palette, self.pool.groups[self.pool_idx].items()):
                 if label == "Core":
                     continue
                 self._highlight_residue(group, color, highlights)
@@ -334,38 +364,41 @@ class MoleculeImage:
 
 
 class MapGen:
-    def __init__(self, in_sdf, metric, o, wd, network_obj=None):
+    def __init__(self, in_sdf, metric, o, wd, network_obj=None, in_json=None):
         """Creates a Network from a Network Generator object.
         A Network Generator is a model, in which we need one field: metric
         If this model doesn't have a File-like at in_sdf, an alternative
         in_sdf parameter can be provided to work with."""
-        if network_obj and hasattr(network_obj, "in_sdf") and \
-                hasattr(network_obj.in_sdf, "seek"):
+        self.in_json = in_json
+        if network_obj and hasattr(network_obj, "in_sdf") and hasattr(network_obj.in_sdf, "seek"):
             network_obj.in_sdf.seek(0)
             self.suppl = Chem.ForwardSDMolSupplier(network_obj.in_sdf)
         else:
             self.suppl = Chem.SDMolSupplier(str(in_sdf))
 
         self.network = network_obj
-        self.wd=wd
-        self.otxt=o
+        self.wd = wd
+        self.otxt = o
 
         # make environment
         Path(self.wd).mkdir(exist_ok=True)
-        self.img_dir = "{}/img".format(self.wd)
+        self.img_dir = f"{self.wd}/img"
         Path(self.img_dir).mkdir(exist_ok=True)
 
         # Make object on the fly if running from command line
-        if self.network == None:
-            class network: pass
-            #SMILES = "SMILES"
-            #MFP = "MFP"
-            #Tanimoto = "Tanimoto"
-            #MCS = "MCS"  # The slowest of them all
-            network.SMILES = 'SMILES'
-            network.MFP = 'MFP'
-            network.Tanimoto = 'Tanimoto'
-            network.MCS = 'MCS'
+        if self.network is None:
+
+            class network:
+                pass
+
+            # SMILES = "SMILES"
+            # MFP = "MFP"
+            # Tanimoto = "Tanimoto"
+            # MCS = "MCS"  # The slowest of them all
+            network.SMILES = "SMILES"
+            network.MFP = "MFP"
+            network.Tanimoto = "Tanimoto"
+            network.MCS = "MCS"
 
             self.network = network
             self.metric = metric
@@ -373,7 +406,7 @@ class MapGen:
         else:
             self.metric = network_obj.metric
         self.pool = MoleculePool()
-        self.ligands = {} # dict w/ charges as keys and mols as values
+        self.ligands = {}  # dict w/ charges as keys and mols as values
         self.simF = None
 
         self._set_ligands()
@@ -384,8 +417,8 @@ class MapGen:
         if self.metric == self.network.Tanimoto:
             return FingerprintMols.FingerprintMol(molecule)
         elif self.metric == self.network.MFP:
-            return AllChem.GetMorganFingerprintAsBitVect(
-                molecule, 2, nBits=2048)
+            morgan_fp_generator = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2028)
+            return morgan_fp_generator.GetFingerprint(molecule)
         elif self.metric == self.network.SMILES:
             return Chem.MolToSmiles(molecule, isomericSmiles=True)
 
@@ -397,6 +430,7 @@ class MapGen:
             self.simF = Chem.rdFMCS.FindMCS
         elif self.metric == self.network.SMILES:
             from Bio import pairwise2
+
             self.simF = pairwise2.align.globalms
 
     def _ligands_score(self, l1_idx, l2_idx):
@@ -407,8 +441,7 @@ class MapGen:
         if self.metric == self.network.MCS:
             molecule_1 = self.pool[l1_idx]
             molecule_2 = self.pool[l2_idx]
-            score = self.simF([molecule_1, molecule_2],
-                              atomCompare=rdFMCS.AtomCompare.CompareAny)
+            score = self.simF([molecule_1, molecule_2], atomCompare=rdFMCS.AtomCompare.CompareAny)
             return score.numAtoms + score.numBonds
         else:
             fingerprint_1 = self.fingerprint(self.pool[l1_idx])
@@ -416,17 +449,14 @@ class MapGen:
             if self.metric in [self.network.Tanimoto, self.network.MFP]:
                 return round(self.simF(fingerprint_1, fingerprint_2), 3)
             if self.metric == self.network.SMILES:
-                return round(self.simF(fingerprint_1, fingerprint_2,
-                                       1, -1, -0.5, -0.05)[0].score, 3)
+                return round(self.simF(fingerprint_1, fingerprint_2, 1, -1, -0.5, -0.05)[0].score, 3)
 
     def _set_ligands(self):
         for idx, mol in enumerate(self.suppl):
             self.pool.append(mol)
             charge = Chem.rdmolops.GetFormalCharge(mol)
             v = self.ligands.setdefault(charge, {"Ligand": []})
-            ligand = Ligand(name=mol.GetProp('_Name'),
-                            pool_idx=idx,
-                            fingerprint=self.fingerprint(mol))
+            ligand = Ligand(name=mol.GetProp("_Name"), pool_idx=idx, fingerprint=self.fingerprint(mol))
             # TODO: Maybe manage the charges from MoleculePool instead?
             v["Ligand"].append(ligand)
 
@@ -437,49 +467,51 @@ class MapGen:
             self.set_ligands()
 
         reverse = self.metric == self.network.SMILES
-        for charge, ligands in self.ligands.items():
+        for _, ligands in self.ligands.items():
             ligands["Scores"] = {}
             for l1, l2 in itertools.combinations(ligands["Ligand"], 2):
-                ligands["Scores"][(l1.pool_idx, l2.pool_idx)] = \
-                    self._ligands_score(l1.pool_idx, l2.pool_idx)
+                ligands["Scores"][(l1.pool_idx, l2.pool_idx)] = self._ligands_score(l1.pool_idx, l2.pool_idx)
 
-            ligands["Scores"] = \
-                {k: v for k, v in sorted(ligands["Scores"].items(),
-                                         key=operator.itemgetter(1),
-                                         reverse=reverse)}
+            ligands["Scores"] = {
+                k: v
+                for k, v in sorted(ligands["Scores"].items(), key=operator.itemgetter(1), reverse=reverse)
+            }
 
     def build_charge_tree(self, ligands):
         """Build a graph with all ligands provided."""
-        #if "pairs_dict" not in ligands:
+        # if "pairs_dict" not in ligands:
         #    # Call set_ligpairs the first iteration if it wasn't called before
         #    self.set_ligpairs()
         H = nx.Graph()
 
-        if len(ligands['Ligand']) == 1:
+        if len(ligands["Ligand"]) == 1:
             # In case one ligand is found alone in a charge group
             # A "graph" of one node and no edges is created.
             H.add_node(ligands["Ligand"][0].pool_idx)
-        elif len(ligands['Ligand']) == 2:
+        elif len(ligands["Ligand"]) == 2:
             # In case two ligands are found in a charge group
             # Complete similarity matrix. At this point, stop graph
             # generation because two nodes in a graph will always result
             # in the same graph.
-            H.add_edge(ligands['Ligand'][0].pool_idx,
-                       ligands['Ligand'][1].pool_idx,
-                       weight=ligands["Scores"][(0, 1)])
+            H.add_edge(
+                ligands["Ligand"][0].pool_idx, ligands["Ligand"][1].pool_idx, weight=ligands["Scores"][(0, 1)]
+            )
         else:
             incomplete = True
             while incomplete:
                 for (l1, l2), score in ligands["Scores"].items():
-                    if len(H.nodes) == len(ligands['Ligand']):
+                    if len(H.nodes) == len(ligands["Ligand"]):
                         # All nodes has been added to the graph
                         incomplete = False
                         break
                     if H.has_edge(l1, l2) or H.has_edge(l2, l1):
                         # Both Nodes already in graph and connected
                         continue
-                    if len(H.nodes) == 0 or self.intersection(H.edges, l1, l2) \
-                            and self.not_ingraph(H.nodes, l1, l2):
+                    if (
+                        len(H.nodes) == 0
+                        or self.intersection(H.edges, l1, l2)
+                        and self.not_ingraph(H.nodes, l1, l2)
+                    ):
                         H.add_edge(l1, l2, weight=score)
                         break
         return H
@@ -493,8 +525,7 @@ class MapGen:
             added_edge = False
             for (l1, l2), score in ligands["Scores"].items():
                 if l1 in outer_nodes or l2 in outer_nodes:
-                    if (l1, l2) not in ligands["Graph"].edges or \
-                            (l2, l1) not in ligands["Graph"].edges:
+                    if (l1, l2) not in ligands["Graph"].edges or (l2, l1) not in ligands["Graph"].edges:
                         ligands["Graph"].add_edge(l1, l2, weight=score)
                         # signal that an edge has been added in this iteration
                         # of the while loop.
@@ -508,24 +539,28 @@ class MapGen:
 
     def add_influence_edges(self, ligands):
         def under_cent(graph):
-            return [v for k, v in
-                    nx.eigenvector_centrality(graph, max_iter=1000).items()
-                    if v < 0.01]
+            return [v for k, v in nx.eigenvector_centrality(graph, max_iter=1000).items() if v < 0.01]
 
-        eig_cent = {k: v for k, v in sorted(
-            nx.eigenvector_centrality(ligands["Graph"], max_iter=1000).items(),
-            key=lambda item: item[1], reverse=True)}
+        eig_cent = {
+            k: v
+            for k, v in sorted(
+                nx.eigenvector_centrality(ligands["Graph"], max_iter=1000).items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )
+        }
         per_nodes = [k for k, v in eig_cent.items() if v < 0.01]
         per_len = len(per_nodes)
 
         # FIXME: Potential hang loop here
         while per_len > 1:
             for (l1, l2), score in ligands["Scores"].items():
-                if (l1 in per_nodes and l2 not in per_nodes) or \
-                        (l1 not in per_nodes and l2 in per_nodes):
-                    if (l1, l2) not in ligands["Graph"].edges or \
-                            (l2, l1) not in ligands["Graph"].edges and \
-                            self.intersection(ligands["Graph"].edges, l1, l2):
+                if (l1 in per_nodes and l2 not in per_nodes) or (l1 not in per_nodes and l2 in per_nodes):
+                    if (
+                        (l1, l2) not in ligands["Graph"].edges
+                        or (l2, l1) not in ligands["Graph"].edges
+                        and self.intersection(ligands["Graph"].edges, l1, l2)
+                    ):
                         ligands["Graph"].add_edge(l1, l2, weight=score)
                         nlen = len(under_cent(ligands["Graph"]))
                         if nlen > per_len:
@@ -535,20 +570,145 @@ class MapGen:
                             per_len = nlen
                             break
 
-    def process_map(self):
-        self._set_similarity_matrix()
-        self.make_map()
+    def _adapt_input_json(self, json_file):
+        """
+        This function takes an input json file as generated by qlomap and adapts it to
+        be used by qmapfep.
 
-        # need to be caught if website version is to be merged
-        self.savePNG()
-        self.savemapJSON()
-        self.copyhtml()
+        Args:
+            json_file: Path to json file as generated by qlomap
+
+        Returns:
+            dict: Adapted JSON data in the qmapfep format
+        """
+        with open(json_file) as f:
+            data = json.load(f)
+
+        adapted_data = {  # create new structure compatible with outpout from qlomap
+            "directed": False,
+            "multigraph": False,
+            "graph": {},
+            "nodes": [],
+            "hasCalculated": False,
+            "edges": [],
+        }
+
+        # Process nodes (from input .json "nodes" object to array of nodes)
+        for node_id, node_data in data["nodes"].items():
+            adapted_node = {
+                "id": node_id,
+                "label": node_id,
+                "shape": "image",
+                "image": f"./img/{node_id}.png",
+                "payload": {"dG": "Test", "dGexpt": node_data.get("ddg_value", None)},
+            }
+            adapted_data["nodes"].append(adapted_node)
+
+        # Create a mapping from node id to index, process edges to different format
+        node_index_map = {node["id"]: idx for idx, node in enumerate(adapted_data["nodes"])}
+        for edge_idx, edge_data in enumerate(data["edges"]):
+            source_id = edge_data["from"]
+            target_id = edge_data["to"]
+            source_idx = node_index_map[source_id]
+            target_idx = node_index_map[target_id]
+
+            weight = edge_data.get("similarity", None)  # use similarity as the weight if available
+            adapted_edge = {
+                "weight": weight,
+                "source": source_idx,
+                "target": target_idx,
+                "from": source_id,
+                "to": target_id,
+                "payload": {"ddG": "Test", "ddGexpt": edge_data.get("ddg_value", None)},
+            }
+            adapted_data["edges"].append(adapted_edge)
+
+        return adapted_data
+
+    def load_existing_map(self, json_file):
+        """
+        Load an existing JSON map file and adapt it to be used by the class.
+        This stores the adapted data in the class for further processing.
+
+        Args:
+            json_file: Path to the JSON file (mapping_ddG.json format)
+        """
+        # Load and adapt the input JSON data
+        with open(json_file) as f:
+            original_data = json.load(f)
+
+        adapted_data = self._adapt_input_json(json_file)
+
+        charge_groups = {}  # Group ligands by formal charge
+        for node_id, node_data in original_data["nodes"].items():
+            charge = node_data.get("formal_charge", None)
+            if charge is None:
+                charge = Chem.GetFormalCharge(Chem.MolToSmiles(node_data.get("smiles", None)))
+            if charge not in charge_groups:
+                charge_groups[charge] = []
+            charge_groups[charge].append(node_id)
+
+        for charge, node_ids in charge_groups.items():
+            # Initialize the ligands structure for this charge if not already present
+            if charge not in self.ligands:
+                self.ligands[charge] = {"Ligand": [], "Scores": {}, "Graph": nx.Graph()}
+
+            # Map from node_id to its index in the adapted_data nodes list
+            node_id_to_idx = {node["id"]: idx for idx, node in enumerate(adapted_data["nodes"])}
+
+            # Find nodes for this charge group
+            charge_node_indices = [node_id_to_idx[node_id] for node_id in node_ids]
+
+            # Add ligands for this charge group
+            for node_id in node_ids:
+                idx = node_id_to_idx[node_id]
+                # Create a Ligand object for each node
+                ligand = Ligand(
+                    name=node_id,
+                    pool_idx=idx,
+                    fingerprint=None,  # We don't need fingerprints when loading existing map
+                )
+                self.ligands[charge]["Ligand"].append(ligand)
+
+            # Create the graph structure for this charge group
+            graph = nx.Graph()
+
+            # Add nodes for this charge group
+            for idx in charge_node_indices:
+                graph.add_node(idx)
+
+            # Add edges between nodes in this charge group
+            for edge in adapted_data["edges"]:
+                source_idx = edge["source"]
+                target_idx = edge["target"]
+                if source_idx in charge_node_indices and target_idx in charge_node_indices:
+                    graph.add_edge(source_idx, target_idx, weight=edge["weight"])
+
+            # Store the graph for this charge group
+            self.ligands[charge]["Graph"] = graph
+
+        # Store the adapted data for later use in savemapJSON
+        self._adapted_data = adapted_data
+
+    def process_map(self):
+        if self.in_json is not None:
+            print("Loading existing map...")
+            self.load_existing_map(self.in_json)
+            self.savePNG()
+            self.savemapJSON()
+            self.copyhtml()
+
+        else:
+            self._set_similarity_matrix()
+            self.make_map()
+
+            # need to be caught if website version is to be merged
+            self.savePNG()
+            self.savemapJSON()
+            self.copyhtml()
 
     def intersection(self, edge_list, r1, r2):
-        for edge in edge_list:
-            if r1 == edge[0] or r1 == edge[1] or r2 == edge[0] or r2 == edge[1]:
-                return True # Shortcut comparing: it's already True
-        return False
+        return any(r1 == edge[0] or r1 == edge[1] or r2 == edge[0] or r2 == edge[1] for edge in edge_list)
 
     def not_ingraph(self, node_list, r1, r2):
         return r1 not in node_list or r2 not in node_list
@@ -561,7 +721,7 @@ class MapGen:
         return node_list
 
     def make_map(self):
-        for charge, ligands in self.ligands.items():
+        for _, ligands in self.ligands.items():
             # 1. Make SPT (Shortest Path Tree)
             ligands["Graph"] = self.build_charge_tree(ligands)
             # 2. Close Cycles
@@ -574,48 +734,53 @@ class MapGen:
         if len(self.ligands.keys()) > 1:
             logger.warning("Ligands in .sdf file contain different charges!!")
         # In the future, better to access the charge from MoleculePool
-        for charge in self.ligands.keys():
-            for i, molecule in enumerate(self.pool):
-                ligand = self.ligands[charge]['Ligand'][i] # Charge thing to be fixed here.
+        for charge in self.ligands:
+            for i, _ in enumerate(self.pool):
+                ligand = self.ligands[charge]["Ligand"][i]  # Charge thing to be fixed here.
                 moleculeImage = MoleculeImage(pool_idx=i, pool=self.pool)
                 with open(str(Path(self.img_dir) / f"{ligand.name}.png"), "wb") as png:
                     png.write(moleculeImage.png())
 
     def savemapJSON(self):
-        for charge, ligands in self.ligands.items():
-            graph = ligands["Graph"]
-            # Some data reformatting needs to be done for visjs
-            data = json_graph.node_link_data(graph)
-            data['hasCalculated'] = False
-            data['edges'] = data.pop('links')
-            for charge in self.ligands.keys(): # TODO: should change this to be more general
-                for edge in data['edges']:
-                    edge['from'] = self.ligands[charge]['Ligand'][edge['source']].name
-                    edge['to'] = self.ligands[charge]['Ligand'][edge['target']].name
-                    edge['payload'] = {"ddG":"Test","ddGexpt":None}
+        """
+        Override of the original savemapJSON method to use pre-adapted data
+        if available (when loading from existing map)
+        """
+        if hasattr(self, "_adapted_data"):
+            # Use the pre-adapted data if available
+            data = self._adapted_data
+        else:
+            # Otherwise use the original implementation
+            for charge, ligands in self.ligands.items():
+                graph = ligands["Graph"]
+                # Some data reformatting needs to be done for visjs
+                data = json_graph.node_link_data(graph)
+                data["hasCalculated"] = False
+                data["edges"] = data.pop("links")
+                for charge in self.ligands:
+                    for edge in data["edges"]:
+                        edge["from"] = self.ligands[charge]["Ligand"][edge["source"]].name
+                        edge["to"] = self.ligands[charge]["Ligand"][edge["target"]].name
+                        edge["payload"] = {"ddG": "Test", "ddGexpt": None}
+                    for node in data["nodes"]:
+                        labelname = self.ligands[charge]["Ligand"][node["id"]].name
+                        node["id"] = labelname
+                        node["label"] = labelname
+                        node["shape"] = "image"
+                        node["image"] = f"./img/{labelname}.png"
+                        node["payload"] = {"dG": "Test", "dGexpt": None}
 
-                for node in data['nodes']:
-                    labelname = self.ligands[charge]['Ligand'][node['id']].name
-                    node['id'] = labelname
-                    node['label'] = labelname # maybe need unique identifiers?
-                    #node['label'] = node["id"]   # maybe need unique identifiers? # TODO: add inchikeys?
-                    node["shape"] = "image"      # to be changed to img location
-                    node["image"] = "./img/{}.png".format(labelname)
-                    node['payload'] = {"dG":"Test","dGexpt":None}
-                    #node["size"]  = 40
+        with open(f"{self.wd}/{self.otxt}.json", "w") as outfile:
+            outfile.write(json.dumps(data, indent=4))
 
-        with open('{}/{}.json'.format(self.wd, self.otxt), 'w') as outfile:
-        #with open('test.json', 'w') as outfile:
-            outfile.write(json.dumps(data,indent = 4))            
-    
     def copyhtml(self):
-        shutil.copy(Path(__file__).parent /  'resources/QmapFEP.html', f'{self.wd}/qmapfep.html')
+        shutil.copy(Path(__file__).parent / "resources/QmapFEP.html", f"{self.wd}/qmapfep.html")
 
-class LoadData(object):
-    """
-        	Load experimental or user data
-    """
-    def __init__(self, o, ifile): # ifile needs to come from API
+
+class LoadData:
+    """Load experimental or user data"""
+
+    def __init__(self, o, ifile):  # ifile needs to come from API
         self.ifile = ifile
         self.mapfile = o
 
@@ -625,16 +790,16 @@ class LoadData(object):
         self.write()
 
     def get_extension(self):
-        self.extension = self.ifile.split('.')[-1]
+        self.extension = self.ifile.split(".")[-1]
 
     def read_file(self):
         self.expt = {}
-        extensions = ['csv']
+        extensions = ["csv"]
         if self.extension not in extensions:
             print("can't read file")
             sys.exit()
 
-        if self.extension == 'csv':
+        if self.extension == "csv":
             with open(self.ifile) as infile:
                 i = -1
                 for line in infile:
@@ -649,21 +814,22 @@ class LoadData(object):
         with open(self.mapfile) as infile:
             self.QmapFEPdata = json.load(infile)
 
-        for node in self.QmapFEPdata['nodes']:
-            node["payload"]['dGexpt'] = self.expt[node['id']]
+        for node in self.QmapFEPdata["nodes"]:
+            node["payload"]["dGexpt"] = self.expt[node["id"]]
 
-        for edge in self.QmapFEPdata['edges']:
-            edge["payload"]['ddGexpt'] = self.expt[edge['to']] - self.expt[edge['from']]
-            edge["payload"]['ddGexpt'] = '{:.2f}'.format(edge["payload"]['ddGexpt'])
-        
-        self.QmapFEPdata["plot"] = {"dG" : "plot_dG.png", "ddG" : "plot_ddG.png"}
+        for edge in self.QmapFEPdata["edges"]:
+            edge["payload"]["ddGexpt"] = self.expt[edge["to"]] - self.expt[edge["from"]]
+            edge["payload"]["ddGexpt"] = "{:.2f}".format(edge["payload"]["ddGexpt"])
+
+        self.QmapFEPdata["plot"] = {"dG": "plot_dG.png", "ddG": "plot_ddG.png"}
 
     def write(self):
-        with open(self.mapfile, 'w') as outfile:
-            outfile.write(json.dumps(self.QmapFEPdata,indent=4))
+        with open(self.mapfile, "w") as outfile:
+            outfile.write(json.dumps(self.QmapFEPdata, indent=4))
 
-class Analyze(object):
-    def __init__(self, o, datadir, wd): # TO DO datadir not in API currently
+
+class Analyze:
+    def __init__(self, o, datadir, wd):  # TO DO datadir not in API currently
         self.mapfile = o
         self.wd = wd
         self.datadir = datadir
@@ -683,77 +849,81 @@ class Analyze(object):
 
     def populate_map(self):
         tmp = {}
-        for system in ['protein', 'water']:
-            with open(self.datadir + '/' + system + '_whole.txt') as infile:
+        for system in ["protein", "water"]:
+            with open(self.datadir + "/" + system + "_whole.txt") as infile:
                 for line in infile:
                     if len(line) == 0:
                         continue
-                    if 'crashes' in line:
+                    if "crashes" in line:
                         continue
                     line = line.split()
-                    pert = line[0].split('_')
-                    From = pert[1].split('-')[0]
-                    To = pert[1].split('-')[1]
+                    pert = line[0].split("_")
+                    From = pert[1].split("-")[0]
+                    To = pert[1].split("-")[1]
                     sem = line[2]
 
-                    if system == 'protein':
-                        tmp[(From,To)] = {'protein' : (float(line[1]),float(sem))}
-                        tmp[(To,From)] = {'protein' : (-1. * float(line[1]),float(sem))}
-                    
-                    if system == 'water':
-                        tmp[(From,To)]['water'] = (float(line[1]),float(sem))
-                        tmp[(To,From)]['water'] = (-1. * float(line[1]),float(sem))
+                    if system == "protein":
+                        tmp[(From, To)] = {"protein": (float(line[1]), float(sem))}
+                        tmp[(To, From)] = {"protein": (-1.0 * float(line[1]), float(sem))}
 
-        for edge in self.data['edges']:
-            ddG = (tmp[edge['from'],edge['to']])["protein"][0] - (tmp[edge['from'],edge['to']])["water"][0]
-            ddGsem = ((tmp[edge['from'],edge['to']])["protein"][1] + (tmp[edge['from'],edge['to']])["water"][1])/math.sqrt(2)
-            edge["payload"]["ddG"] = "{:.2f}" .format(ddG)
-            edge["payload"]["sem"] = "{:.2f}" .format(ddGsem)
+                    if system == "water":
+                        tmp[(From, To)]["water"] = (float(line[1]), float(sem))
+                        tmp[(To, From)]["water"] = (-1.0 * float(line[1]), float(sem))
+
+        for edge in self.data["edges"]:
+            ddG = (tmp[edge["from"], edge["to"]])["protein"][0] - (tmp[edge["from"], edge["to"]])["water"][0]
+            ddGsem = (
+                (tmp[edge["from"], edge["to"]])["protein"][1] + (tmp[edge["from"], edge["to"]])["water"][1]
+            ) / math.sqrt(2)
+            edge["payload"]["ddG"] = f"{ddG:.2f}"
+            edge["payload"]["sem"] = f"{ddGsem:.2f}"
 
     def do_ccc(self):
-        """ Performs cycle closure correction. Algorithm that using as input a list of edges with their corresponding relative ddG
-         returns corrected ddGs which eliminate the hysteresis of the cycles in the FEP network. """
-        edges = []
-        ddG = []
-        sem = []
+        """Performs cycle closure correction. Algorithm that using as input a list of edges with their corresponding relative ddG
+        returns corrected ddGs which eliminate the hysteresis of the cycles in the FEP network."""
+        raise NotImplementedError("The current code isn't right and needs to be fixed...")
+        # TODO check the code from https://github.com/David-Araripe/Weighted_cc (Reproduce the CCC from Schrodinger...)
+        # edges = []
+        # ddG = []
+        # sem = []
 
-        for edge in self.data['edges']:
-            l1, l2 = edge['from'], edge['to']
-            edges.append((l1, l2))
-            w = float(edge['payload']['ddG'])
-            e = float(edge['payload']['sem'])
-            ddG.append(w)
-            sem.append(e)
+        # for edge in self.data["edges"]:
+        #     l1, l2 = edge["from"], edge["to"]
+        #     edges.append((l1, l2))
+        #     w = float(edge["payload"]["ddG"])
+        #     e = float(edge["payload"]["sem"])
+        #     ddG.append(w)
+        #     sem.append(e)
 
-        c = ccc.CCC(edges=edges, E=ddG, Esem=sem, workdir=self.wd)
-        self.all_cycles, self.ener_dict, self.graph = c.generate_cycles()
-        connectivity_sets, conMat = c.make_cccMatrix(self.all_cycles)
-        indep_subgraph_M, final_set, sem_cor = c.get_independent(connectivity_sets, conMat)
-        edges, ddG_cor = c.make_corrections(indep_subgraph_M, final_set)
+        # c = ccc.CCC(edges=edges, E=ddG, Esem=sem, workdir=self.wd)
+        # self.all_cycles, self.ener_dict, self.graph = c.generate_cycles()
+        # connectivity_sets, conMat = c.make_cccMatrix(self.all_cycles)
+        # indep_subgraph_M, final_set, sem_cor = c.get_independent(connectivity_sets, conMat)
+        # edges, ddG_cor = c.make_corrections(indep_subgraph_M, final_set)
 
-        for edge in self.data['edges']:
-            l1, l2 = edge['from'], edge['to']
-            i = edges.index((l1,l2))
-            newddG = '{:.2f}'.format(ddG_cor[i])
-            edge['payload']['ddGpredccc'] = newddG
+        # for edge in self.data["edges"]:
+        #     l1, l2 = edge["from"], edge["to"]
+        #     i = edges.index((l1, l2))
+        #     newddG = f"{ddG_cor[i]:.2f}"
+        #     edge["payload"]["ddGpredccc"] = newddG
 
-            self.ener_dict_corr[(l1,l2)] = float(newddG)
-            self.ener_dict_corr[(l2,l1)] = -float(newddG)
+        #     self.ener_dict_corr[(l1, l2)] = float(newddG)
+        #     self.ener_dict_corr[(l2, l1)] = -float(newddG)
 
     def calc_dG(self):
         # for loop over nodes
         # for each for loop go to the reference(s)
-        # keep shortest path to a reference 
+        # keep shortest path to a reference
         # TO DO: Probably want to save a graph in the json
 
         # TO DO: refactor code
 
-        refs = {'1h1q':None, '1h1r':None}
+        refs = {"1h1q": None, "1h1r": None}
         # fetch dGs from reference
         for ref in refs:
-            for node in self.data['nodes']:
-                if node['id'] == ref:
-                    refs[ref] = node['payload']['dGexpt']
+            for node in self.data["nodes"]:
+                if node["id"] == ref:
+                    refs[ref] = node["payload"]["dGexpt"]
 
         targets = self.graph.nodes()
 
@@ -766,51 +936,51 @@ class Analyze(object):
             cycle_array.append(cycles)
 
         # block
-        shortest_to_ref = []
         dG_tmp = {}
 
         for cycle in cycles:
-            ddGsum = 0.
-            sem = 0.
-            for i in range(0,len(cycle) -1):
-                query = (cycle[i], cycle[i+1])
+            ddGsum = 0.0
+            sem = 0.0
+            for i in range(0, len(cycle) - 1):
+                query = (cycle[i], cycle[i + 1])
                 ddGsum += self.ener_dict_corr[query]
-                sem += self.ener_dict[query][1]**2
+                sem += self.ener_dict[query][1] ** 2
 
             dG = refs[cycle[0]] + ddGsum
             sem = math.sqrt(sem)
-            dG = '{:.2f}'.format(dG)
-            sem  = '{:.2f}'.format(sem)
+            dG = f"{dG:.2f}"
+            sem = f"{sem:.2f}"
             dG_tmp[cycle[-1]] = (dG, sem)
 
         # populate json data
-        for node in self.data['nodes']:
-            node['payload']['dG'] = dG_tmp[node["id"]][0]   
-            node['payload']['sem'] = dG_tmp[node["id"]][1]
+        for node in self.data["nodes"]:
+            node["payload"]["dG"] = dG_tmp[node["id"]][0]
+            node["payload"]["sem"] = dG_tmp[node["id"]][1]
 
-        #print(self.data)
+        # print(self.data)
 
     def get_metrics(self):
         x = []
         y = []
         error = []
         # generate ddG plot
-        for edge in self.data['edges']:
+        for edge in self.data["edges"]:
             x.append(float(edge["payload"]["ddGexpt"]))
             y.append(float(edge["payload"]["ddGpredccc"]))
             error.append(float(edge["payload"]["sem"]))
 
-        self.data['allmetrics'] = metrics.analysis(X=x,Y=y,Z=error)
+        self.data["allmetrics"] = metrics.analysis(X=x, Y=y, Z=error)
 
     def set_hasCalculated(self):
-        self.data['hasCalculated'] = True
+        self.data["hasCalculated"] = True
 
     def write(self):
-        with open(self.mapfile, 'w') as outfile:
-            outfile.write(json.dumps(self.data,indent=4))
+        with open(self.mapfile, "w") as outfile:
+            outfile.write(json.dumps(self.data, indent=4))
 
-class GenPlot(object):
-    def __init__(self,o,wd):
+
+class GenPlot:
+    def __init__(self, o, wd):
         self.mapfile = o
         self.wd = wd
 
@@ -820,41 +990,62 @@ class GenPlot(object):
 
     def load(self):
         with open(self.mapfile) as infile:
-            self.data = json.load(infile)   
+            self.data = json.load(infile)
 
     def makeplot_ddG(self):
         x = []
         y = []
         error = []
         # generate ddG plot
-        for edge in self.data['edges']:
+        for edge in self.data["edges"]:
             x.append(float(edge["payload"]["ddGexpt"]))
             y.append(float(edge["payload"]["ddGpredccc"]))
             error.append(float(edge["payload"]["sem"]))
-        
-        plot.linplot(x=x,y=y,d='ddG',error=error,storedir=self.wd)
+
+        plot.linplot(x=x, y=y, d="ddG", error=error, storedir=self.wd)
 
     def makeplot_dG(self):
         x = []
         y = []
         error = []
         # generate ddG plot
-        for node in self.data['nodes']:
+        for node in self.data["nodes"]:
             x.append(float(node["payload"]["dGexpt"]))
             y.append(float(node["payload"]["dG"]))
             error.append(float(node["payload"]["sem"]))
-        
-        plot.linplot(x=x,y=y,d='dG',error=error,storedir=self.wd)    
 
-class Init(object):
-    def __init__(self,data):
+        plot.linplot(x=x, y=y, d="dG", error=error, storedir=self.wd)
+
+
+class Init:
+    def __init__(
+        self,
+        input_sdf: Optional[str] = None,
+        input_json: Optional[str] = None,
+        metric: Literal["MFP", "Tanimoto", "MCS", "SMILES"] = "Tanimoto",
+        output: Optional[str] = None,
+        wrkdir: Optional[str] = None,
+    ):
+        metric = metric
+        o = output
+        wd = wrkdir
         # Put file in memory stream. This allows the server to read uploaded file
         # into memory and pass it as an io.BytesIO() to MapGen
-        with open(data['isdf'], "rb") as f:
-            metric  = data['metric']
-            o       = data['o']
-            wd   = data['wd']
-            with io.BytesIO(f.read()) as fio:
+        if input_json is not None:
+            if input_sdf is None:
+                raise FileNotFoundError(
+                    "When loading a mapping from an existing .json file, an input .sdf file containing "
+                    "the ligands is required as well to generate the molecular rendering."
+                )
+            mg = MapGen(input_sdf, metric, o, wd, in_json=input_json)
+            mg.process_map()
+
+        elif input_sdf is not None:
+            with open(input_sdf, "rb") as f, io.BytesIO(f.read()) as fio:
                 # Create the network
-                mg = MapGen(data['isdf'], metric, o, wd)
+                mg = MapGen(input_sdf, metric, o, wd)
                 mg.process_map()
+        else:
+            raise AttributeError(
+                "No input file provided. Please provide either a .sdf or an existing .json file together with a .sdf file."
+            )

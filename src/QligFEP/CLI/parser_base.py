@@ -1,0 +1,239 @@
+"""Module holding a parse_arguments base function for both qligfep and setupFEP CLI's"""
+
+import argparse
+
+from ..settings.settings import CLUSTER_DICT
+
+
+def parse_arguments(program: str) -> argparse.Namespace:
+    if program == "QligFEP":
+        parser = argparse.ArgumentParser(
+            prog="QligFEP",
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            description="       == Generate FEP files for dual topology ligand FEP == ",
+        )
+        parser.add_argument("-l1", "--lig1", dest="lig1", required=True, help="name of ligand 1", type=str)
+        parser.add_argument("-l2", "--lig2", dest="lig2", required=True, help="name of ligand 2", type=str)
+    elif program == "setupFEP":
+        parser = argparse.ArgumentParser(
+            prog="setupFEP",
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            description=(
+                "Generate all FEP files for the directory you're working on, according to the "
+                "edges input in the json_map file. This includes creating directories for both "
+                "water and protein system. Submitting the FEP calculations to the cluster is up to the user. "
+                "A minimal example of usage: setupFEP -FF OPLS2015 -c KEBNE -S sigmoidal -r 25 -l 0.5 -w 100"
+            ),
+        )
+    parser.add_argument(
+        "-FF",
+        "--forcefield",
+        dest="FF",
+        required=True,
+        default="AMBER14sb",
+        help=(
+            "Protein forcefield to be used. Valid inputs: existing path to a forcefield file without the extensions"
+            "(either .lib, .prm, or Path without the extensions will work) or one of the following: "
+            "OPLS2005, OPLS2015, AMBER14sb, CHARMM36. Defaults to AMBER14sb."
+        ),
+    )
+    if program == "QligFEP":
+        parser.add_argument(
+            "-s",
+            "--system",
+            dest="system",
+            required=True,
+            choices=["water", "protein", "vacuum"],
+            help="what type of system we are setting up",
+        )
+    parser.add_argument(
+        "-c",
+        "--cluster",
+        dest="cluster",
+        required=True,
+        help="cluster you want to submit to, cluster specific parameters added to settings.",
+        choices=list(CLUSTER_DICT.keys()),
+    )
+    parser.add_argument(
+        "-r",
+        "--sphereradius",
+        dest="sphereradius",
+        required=False,
+        default="25",
+        help="Size of the simulation sphere. Defaults to 25.",
+    )
+    parser.add_argument(
+        "-b",
+        "--cysbond",
+        dest="cysbond",
+        default="auto",
+        help=(
+            "Add cystein bonds. Input should be formatted with the atom numbers"
+            "(participating in the Cys bond) connected by `_` and with different bonds "
+            "separated by `,` as in: `atom1_atom2,atom3_atom4`. Defaults to `auto`, where "
+            "cystein bonds will be automatically detected within distance of 1.8 to 2.2 A."
+        ),
+        type=str,
+    )
+    parser.add_argument(
+        "-l",
+        "--start",
+        dest="start",
+        default="0.5",
+        choices=["1", "0.5"],
+        help="Starting FEP in the middle or endpoint. Defaults to 0.5.",
+    )
+    parser.add_argument(
+        "-T",
+        "--temperature",
+        dest="temperature",
+        default="298",
+        help="Temperature(s), mutliple tempereratures given as 'T1,T2,...,TN'. Defaults to 298K",
+    )
+    parser.add_argument(
+        "-R",
+        "--replicates",
+        dest="replicates",
+        default="10",
+        help="How many repeats should be run. Defaults to 10.",
+    )
+    parser.add_argument(
+        "-S",
+        "--sampling",
+        dest="sampling",
+        default="sigmoidal",
+        choices=["linear", "sigmoidal", "exponential", "reverse_exponential"],
+        help="Lambda spacing type to be used. Defaults to `sigmoidal`.",
+    )
+    parser.add_argument(
+        "-w",
+        "--windows",
+        dest="windows",
+        default="100",
+        help="Total number of windows that will be run. Defaults to 100.",
+        type=str,
+    )
+    if program == "setupFEP":  # this is only used for setupFEP
+        parser.add_argument(
+            "-j",
+            "--json_map",
+            dest="json_map",
+            help=(
+                "Path for the '.json' QmapFEP file. If not given, the script will "
+                "look for a single '.json' file in the current directory and raise "
+                "an error if there are more than one."
+            ),
+            default=None,
+        )
+        parser.add_argument(
+            "-po",
+            "--protein_only",
+            action="store_true",
+            help="Only generate FEP files for the protein system.",
+        )
+        parser.add_argument(
+            "-wo",
+            "--water_only",
+            action="store_true",
+            help="Only generate FEP files for the water system.",
+        )
+    parser.add_argument(
+        "-ts",
+        "--timestep",
+        dest="timestep",
+        choices=["1fs", "2fs"],
+        default="2fs",
+        help="Simulation timestep, default 2fs",
+    )
+    parser.add_argument(
+        "-clean",
+        "--files-to-clean",
+        dest="to_clean",
+        nargs="+",
+        default="",
+        help=(
+            "Files to clean after the simulation. The arguments are given as a list of strings "
+            "and the cleaning is done by adding the command `rm -rf *{arg1} *{arg2}` to the job submission. "
+            "Usage example: `-clean dcd` will remove all dcd files after the simulation. If left as None, won't clean any files."
+        ),
+    )
+    parser.add_argument(
+        "-rest",
+        "--restraint_method",
+        dest="restraint_method",
+        type=str,
+        default="heavyatom_p",
+        help=(
+            """How to set the restraints to the ligand topologies involved in the perturbation. Defaults to `heavyatom_p`.
+
+            Atom compare method: `heavyatom`, `aromaticity`, `hibridization`, `element`. Setting the first part of the
+                string as either of these, will determine how the substituents / ring atoms are treated to be
+                defined as equivalent. Heavyatom will only check if both atoms being compared are heavy atoms. Aromaticity
+                and hybridization operater similarly, but checking for those properties instead. Element will check
+                for atom equivalence based on atomic numbers.
+            Surround atom compare: `p` (permissive), `ls` (less strict), `strict`.
+                Setting the second part of the string as either of these, will determine if or how the
+                direct surrounding atoms to the ring strictures will be taken into account for ring equivalence.
+                    1) Permissive: Only the ring atoms are compared.
+                    2) Less strict: The ring atoms and their direct surroundings are compared, but element type
+                        is ignored.
+                    3) Strict: The ring atoms and their direct surroundings are element-wise compared.
+           Kartograf atom max distance (optional): int or float to be used by `kartograf` as the maximum distance between
+                atoms to be considered for mapping. This is by default set to 0.95 A, but can be changed by passing `_0.95`,
+                for example, at the end of the `restraint_method` string."""
+        ),
+    )
+    parser.add_argument(
+        "-drf",
+        "--distance_restraint_force",
+        dest="dr_force",
+        type=float,
+        default=0.5,
+        help=(
+            "Force constant applied as distance restrains to ensure space overlap among ligands during FEP. For how/which atoms are mapped "
+            "restrained together by this force, check the `restraint_method` parameter description. Defaults to 0.5 kcal/mol/A^2. "
+            "restraints forces set through this parameter will be applied for equilibration 5 (eq5) and the md_xxxx_xxxx simulations. "
+            "Forces set by this parameter are set to the [distance_restraints] section of `.inp` (input) files."
+        ),
+    )
+    parser.add_argument(
+        "-wath",
+        "--water-thresh",
+        dest="water_thresh",
+        type=float,
+        default=1.4,
+        help=(
+            "Threshold (in Angstrom) for removing water molecules that are too close to the ligands "
+            "involved in the FEP. Defaults to 1.4 A."
+        ),
+    )
+    parser.add_argument(
+        "-wath-ligo",
+        "--wath-ligand-only",
+        dest="wath_ligand_only",
+        action="store_true",
+        help=(
+            "If set, the water threshold set by the `-wath` parameter will only be applied to the ligand "
+            "atoms, not the entire protein structure."
+        ),
+    )
+    parser.add_argument(
+        "-rs",
+        "--random_state",
+        dest="random_state",
+        type=int,
+        default=None,
+        help=(
+            "Reproducible random state for the random FEP seed generator. Defaults to None (random FEP seeds)."
+        ),
+    )
+    parser.add_argument(
+        "-log",
+        "--log-level",
+        dest="log",
+        required=False,
+        default="info",
+        help="Set the log level for the logger. Defaults to `info`.",
+        choices=["trace", "debug", "info", "warning", "error", "critical"],
+    )
+    return parser.parse_args()

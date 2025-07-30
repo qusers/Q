@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel", "numpy"]
+requires = ["setuptools>=64", "setuptools_scm>=8", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -20,11 +20,17 @@ classifiers = [
     "Programming Language :: Python :: 3.10" # todo: might have other versions
 ]
 dependencies = [
+    "joblib",
+    "scipy",
+    "tqdm",
+    "py3Dmol",
     "numpy",
     "matplotlib",
     "rdkit",
     "scikit-learn",
-    "loguru"
+    "loguru",
+    "cinnabar",
+    "MolClusterkit @ git+https://github.com/David-Araripe/MolClusterkit.git#master",
 ]
 
 [tool.setuptools]
@@ -37,9 +43,48 @@ include = ["QligFEP", "Qgpu"]
 [tool.setuptools.dynamic]
 version = {attr = "QligFEP.__version__"}
 
+[tool.setuptools_scm]
+write_to = "src/QligFEP/_version.py"
+
 [project.urls]
 repository = "https://github.com/qusers/qligfep"
 # homepage = "https://github.com/to-do/replace-me"
+
+[tool.black]
+line-length =  110
+target-version = ['py310']
+
+[tool.isort]
+profile = "black"
+
+[tool.ruff]
+line-length = 110
+indent-width = 4
+target-version = 'py39'
+
+[tool.ruff.lint]
+select = [
+    # pycodestyle
+    "E",
+    # Pyflakes
+    "F",
+    # pyupgrade
+    "UP",
+    # flake8-bugbear
+    "B",
+    # flake8-simplify
+    "SIM",
+    # isort
+    "I",
+    # warnings
+    "W",
+    # numpy specific rules
+    "NPY",
+
+]
+ignore = [
+    "E501" # line too long
+]
 
 [project.scripts]
 qligfep = "QligFEP.CLI.qligfep_cli:main_exe"
@@ -51,3 +96,4 @@ pdb2amber = "QligFEP.CLI.pdb_to_amber:main_exe"
 qligfep_analyze = "QligFEP.analyze_FEP:main_exe"
 qprep_prot = "QligFEP.CLI.qprep_cli:main_exe"
 qcog = "QligFEP.CLI.cog_cli:main_exe"
+ligalign = "QligFEP.CLI.lig_align_cli:main_exe"

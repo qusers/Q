@@ -1,19 +1,19 @@
 # QligFEP
 
-## Installation
+## ⚙️ Installation
 
 The current conda environment is available in the `environment.yml` file, but installing it with `conda env create -f environment.yml` will take a long time. Instead, we recommend that you use `mamba` or its lightweight version `micromamba`. Please check this Gist on how to [install micromamba](https://gist.github.com/David-Araripe/3ecd90bfbfd1c8e813812a203384b3c0).
 
 Once you have `micromamba` installed and have already cloned this repo, you can create the environment with:
 
-### Linux
+### 🐧 Linux
 ```bash
-micromamba create -f environment.yml -n qligfep_new
+micromamba create -n qligfep_new python=3.11
 ```
 Now, activate the environment and update the following conda packages:
 ```bash
 micromamba activate qligfep_new
-micromamba install openff-toolkit=0.16.0 openff-forcefields=2024.04.0 openmm=8.1.1 lomap2 -c conda-forge --yes
+micromamba install openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 "openff-nagl>=0.3.8" lomap2 kartograf michellab::fkcombu -c conda-forge --yes
 ```
 
 Now that you have the environment ready and activated, install qligfep through the command:
@@ -21,37 +21,52 @@ Now that you have the environment ready and activated, install qligfep through t
 python -m pip install -e .
 ```
 
-### MacOS
+<details>
+<summary>In one line...</summary>
+
+```bash
+micromamba create -n qligfep_new python=3.11 -c conda-forge -y && micromamba activate qligfep_new && micromamba install openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 "openff-nagl>=0.3.8" lomap2 kartograf michellab::fkcombu -c conda-forge --yes && python -m pip install -e .
+```
+</details>
+
+### 🍎 MacOS
 
 The environment provided doesn't build on Mac due to missing libraries. If you're using this operating system, you'll have to create the environment by scratch through the commands:
 
 ``` bash
-micromamba create -n qligfep_new -c conda-forge openff-toolkit=0.16.0 openff-forcefields=2024.04.0 openmm=8.1.1 lomap2 -c conda-forge --yes
+micromamba create -n qligfep_new python=3.11 openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 lomap2 kartograf michellab::fkcombu -c conda-forge --yes
 micromamba activate qligfep_new
 python -m pip install joblib scipy tqdm
 python -m pip install -e .
 ```
 
-## Command line interface (CLI)
+### 🛠️ Compiling Q
+
+To compile the Q binaries, you will need to have the `gfortran` compiler installed. To access this compiler on different HPCs, you can use the `module load` command. Check [here](/src/QligFEP/settings/settings.py) for a list of the different HPCs we have already ran RBFE simulations on.
+
+E.g.: To compile Q on Snellius, you will have to run the following commands:
+```bash
+module load 2021
+module load gompi/2021a
+```
+Finally, compiling Q can be done with the following commands:
+```bash
+make all COMP=gcc && make mpi COMP=gcc
+```
+
+## ⌨️ Command line interface (CLI)
 
 Now you're set with the qligfep package. This includes the command-linde-interfaces (CLIs):
 
 1. `qparams`: used to generate ligand parameters;
 1. `pdb2amber`: formats a PDB file to be used with Q's implementation of the AMBER forcefield;
 1. `qlomap`: wraps `Lomap` to generate the `.json` perturbation mapping;
-1. `qmapfep`: in-house developed method to generate the `.json` perturbation mapping;
+1. `qmapfep`: in-house developed method to generate the `.json` perturbation mapping, interactively visualize and add or remove edges.
 1. `qligfep`: main CLI for running QligFEP simulations.
 1. `setupFEP`: sets up all the the QligFEP files for a simulation, including protein and water systems.
 1. `qligfep_analyze`: CLI to analyze the results of a QligFEP simulation.
 1. `qcog`: calculates the center of geometry (COG) of a ligand in a PDB/SDF file. If multiple ligands are found in sdf, the program will calculate the COG for all of them
 1. `qprep_prot`: creates an input file for qprep (fortran program) and runs it to either: 1) solvate the protein structure; 2) create the water sphere.
-
-
-! Note on Swedish servers !
-- If you're running jobs on [Dardel](https://www.pdc.kth.se/hpc-services/computing-systems/dardel), you will need to make a modification on Q's makefile. To do so, run `cd Q` after cloning the repository and run:
-```bash
-sed -i 's/\bmpif90\b/ftn/g' src/q6/makefile
-```
 
 # Q-GPU #
 Version control of **Q-GPU**, an adaptation of **Q** version 5.06 running on GPUs.

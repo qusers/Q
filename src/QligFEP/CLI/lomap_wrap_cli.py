@@ -1,37 +1,40 @@
 """Module to wrap the lomap package for the QligFEP CLI."""
 
+import argparse
 import json
 import re
-import lomap
-import argparse
+from multiprocessing import cpu_count
 from pathlib import Path
 from typing import Optional
-from multiprocessing import cpu_count
-from rdkit import Chem
+
+import lomap
 import numpy as np
+from rdkit import Chem
 
 # QligFEP imports
 from ..chemIO import MoleculeIO
 from ..logger import logger
 
-class LomapWrap(object):
+
+class LomapWrap:
     """Class to wrap the lomap package for the QligFEP CLI."""
-    def __init__(self, inp: str, out: Optional[str]=None, time=30, verbose='info', **kwargs):
+
+    def __init__(self, inp: str, out: Optional[str] = None, time=30, verbose="info", **kwargs):
         self.nodes = {}
         self.inp = inp
         self.out = self._parse_output(out)
         self.cores = self._setup_cores()
         self.lomap_args = {
-            'directory': None,
-            'parallel': self.cores,
-            'time': time,
-            'verbose':verbose,
-            'output_no_graph': True,
-            'output_no_images': True,
-            **kwargs
+            "directory": None,
+            "parallel": self.cores,
+            "time": time,
+            "verbose": verbose,
+            "output_no_graph": True,
+            "output_no_images": True,
+            **kwargs,
         }
         self._check_input()
-        
+
     @staticmethod
     def extract_user_defined_properties(file_path: Path) -> dict:
         """Extract user-defined properties from a MOL2 or SDF file. This function is used
@@ -43,87 +46,89 @@ class LomapWrap(object):
 
         Returns:
             A dictionary with keys and values of the user-defined properties.
-        """    
-        numeric_pattern = re.compile(r'^\s*[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?\s*$')
+        """
+        numeric_pattern = re.compile(r"^\s*[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?\s*$")
         properties = {}
-        
-        if file_path.suffix.lower() == '.sdf':
-            with file_path.open('r') as file:
+
+        if file_path.suffix.lower() == ".sdf":
+            with file_path.open("r") as file:
                 content = file.read()
                 # SDF files have properties after the "M  END" marker
-                properties_section = content.split('M  END\n')[1]
+                properties_section = content.split("M  END\n")[1]
                 # Each property is separated by '>' and ends with a newline
-                for prop in properties_section.strip().split('\n> '):
-                    if prop: # non-empty
-                        lines = prop.split('\n')
+                for prop in properties_section.strip().split("\n> "):
+                    if prop:  # non-empty
+                        lines = prop.split("\n")
                         if len(lines) >= 2:
-                            key = lines[0].strip('<>')
-                            key = re.compile(r'<(.*?)>').search(key).group(1)
-                            value = '\n'.join(lines[1:]).strip()
-                            value = re.sub(r'\n+\$\$\$\$', '', value)
+                            key = lines[0].strip("<>")
+                            key = re.compile(r"<(.*?)>").search(key).group(1)
+                            value = "\n".join(lines[1:]).strip()
+                            value = re.sub(r"\n+\$\$\$\$", "", value)
                             properties[key] = value
-                            
-        elif file_path.suffix.lower() == '.mol2':
+
+        elif file_path.suffix.lower() == ".mol2":
             logger.warning("!!! This method wasn't tested yet for MOL2 files !!!")
-            with file_path.open('r') as file:
+            with file_path.open("r") as file:
                 content = file.read()
                 in_molecule_section = False
                 # MOL2 files might have user-defined properties in the molecule section
-                for line in content.split('\n'):
-                    if line.startswith('@<TRIPOS>MOLECULE'):
+                for line in content.split("\n"):
+                    if line.startswith("@<TRIPOS>MOLECULE"):
                         in_molecule_section = True
-                    elif line.startswith('@<TRIPOS>'):
+                    elif line.startswith("@<TRIPOS>"):
                         in_molecule_section = False
                     elif in_molecule_section:
                         # Assuming user-defined properties in MOL2 are key-value pairs in the molecule section
-                        match = re.match(r'^\s*(\S+)\s*:\s*(.*)$', line)
+                        match = re.match(r"^\s*(\S+)\s*:\s*(.*)$", line)
                         if match:
                             properties[match.group(1)] = match.group(2)
         for key, value in properties.items():
             if numeric_pattern.match(value):
                 properties[key] = float(value)
         return properties
-        
+
     def _check_input(self) -> None:
         """Method to check self.inp for the correct file format."""
         inpath = Path(self.inp)
         if inpath.is_dir():
-            if any([len(list(inpath.glob('*.sdf'))) < 2, len(list(inpath.glob('*.mol2'))) > 2]):
-                logger.warning('You are using a directory as input, certify that you have the desired ligand files.')
-            self.lomap_args.update({'directory': self.inp})
-        elif inpath.suffix == '.sdf':
+            if any([len(list(inpath.glob("*.sdf"))) < 2, len(list(inpath.glob("*.mol2"))) > 2]):
+                logger.warning(
+                    "You are using a directory as input, certify that you have the desired ligand files."
+                )
+            self.lomap_args.update({"directory": self.inp})
+        elif inpath.suffix == ".sdf":
             handler = MoleculeIO(self.inp)
             Path(self.out).mkdir(parents=True, exist_ok=False)
-            logger.info(f'Writing {self.inp} to separate `.sdf` files to be stored in {self.out}.')
+            logger.info(f"Writing {self.inp} to separate `.sdf` files to be stored in {self.out}.")
             handler.write_sdf_separate(self.out)
-            self.lomap_args.update({'directory': self.out})
-    
+            self.lomap_args.update({"directory": self.out})
+
     def _parse_output(self, output) -> str:
         inpath = Path(self.inp)
         if output is None:
-            if inpath.suffix == '.sdf':
+            if inpath.suffix == ".sdf":
                 inp_is_dir = False
             elif inpath.is_dir():
                 inp_is_dir = True
             else:
-                raise ValueError('The input file must be a `.sdf` or a directory.')
+                raise ValueError("The input file must be a `.sdf` or a directory.")
             # if the input is a directory, lomap will write the output to the same directory
-            output = (inpath if inp_is_dir else inpath.parent / Path(self.inp).stem)
+            output = inpath if inp_is_dir else inpath.parent / Path(self.inp).stem
         else:
             output = Path(output).absolute()
         return str(output)
-            
+
     def _setup_cores(self) -> int:
         """Method to check the number of cores."""
         if cpu_count() < 2:
-            logger.warning('You are using only one core. This might take a while.')
+            logger.warning("You are using only one core. This might take a while.")
             cores = 1
         elif cpu_count() < 8:
             cores = 4
         else:
             cores = 8
         return cores
-    
+
     def format_graph_data(self, nx_graph) -> dict:
         formatted_data = []
         # Iterate over the edges and extract the data
@@ -137,7 +142,7 @@ class LomapWrap(object):
             source_name = source_node_data.get("fname_comp").replace(".sdf", "")
             target_name = target_node_data.get("fname_comp").replace(".sdf", "")
 
-            edge_dict = { # returned values are a list of edge dictionaries
+            edge_dict = {  # returned values are a list of edge dictionaries
                 "weight": weight,
                 "source": source,
                 "target": target,
@@ -146,92 +151,103 @@ class LomapWrap(object):
                 "to": target_name,
             }
             formatted_data.append(edge_dict)
-        
-        return {'edges': formatted_data}
-    
+
+        return {"edges": formatted_data}
+
     def run_lomap(self) -> None:
         db_mol = lomap.DBMolecules(**self.lomap_args)
-        rundir = db_mol.options['directory']
-        
+        rundir = db_mol.options["directory"]
+
         extra_data_numerical = []
         for lomap_mol in db_mol._list:
             mol = lomap_mol.getMolecule()
             molpath = Path(rundir) / lomap_mol.getName()
             extra_data = self.extract_user_defined_properties(molpath)
             extra_data_numerical.extend([k for k, v in extra_data.items() if isinstance(v, (int, float))])
-            name = molpath.stem # remove the file extension
+            name = molpath.stem  # remove the file extension
             smiles = Chem.MolToSmiles(mol)
             formal_charge = Chem.GetFormalCharge(mol)
-            self.nodes.update({name: {'smiles': smiles, 'formal_charge': formal_charge, **extra_data}})
-        extra_data_numerical = list(set(extra_data_numerical)) # keep unique
-        
+            self.nodes.update({name: {"smiles": smiles, "formal_charge": formal_charge, **extra_data}})
+        extra_data_numerical = list(set(extra_data_numerical))  # keep unique
+
         # Calculate the similarity matrices
         strict, loose = db_mol.build_matrices()
         # Generate the NetworkX graph and output the results
         nx_graph = db_mol.build_graph()
         result_dict = self.format_graph_data(nx_graph)
-        result_dict.update({'nodes': self.nodes})
+        result_dict.update({"nodes": self.nodes})
         same_charges = []
-        for edge in result_dict['edges']:
-            _from = edge['from']
-            _to = edge['to']
+        for edge in result_dict["edges"]:
+            _from = edge["from"]
+            _to = edge["to"]
             # check for the same formal charge
-            same = self.nodes[_to]['formal_charge'] == self.nodes[_from]['formal_charge']
+            same = self.nodes[_to]["formal_charge"] == self.nodes[_from]["formal_charge"]
             for key in extra_data_numerical:
                 try:
                     delta = self.nodes[_from][key] - self.nodes[_to][key]
-                    edge.update({f'delta_{key}': delta})
+                    edge.update({f"delta_{key}": delta})
                 except TypeError:
                     logger.warning(
-                        f'The {key} property is not numerical for one the ligands: {_from} | {_to}'
+                        f"The {key} property is not numerical for one the ligands: {_from} | {_to}"
                     )
-                    edge.update({f'delta_{key}': None})
+                    edge.update({f"delta_{key}": None})
                 except KeyError:
-                    logger.warning(
-                        f'The {key} property is not present for one the ligands: {_from} | {_to}. Skipping edge creation...'
+                    logger.info(
+                        f"The {key} property is not present for one the ligands: {_from} | {_to} "
+                        "Information won't be kept in edge..."
                     )
-            edge.update({'same_charge': same})
+            edge.update({"same_charge": same})
             same_charges.append(same)
             # update the potential ddG value
         if all(same_charges):
-            logger.info('All ligands have the same formal charge.')
+            logger.info("All ligands have the same formal charge.")
         else:
-            logger.warning('Not all ligands have the same formal charge!!')
-        with (Path(self.out) / 'lomap.json').open('w') as f:
+            logger.warning("Not all ligands have the same formal charge!!")
+        with (Path(self.out) / "lomap.json").open("w") as f:
             json.dump(result_dict, f, indent=4)
         return result_dict
-        
+
+
 def parse_arguments() -> argparse.Namespace:
     """Method to parse the arguments."""
-    parser = argparse.ArgumentParser(description='Lomap wrapper to be used in  QligFEP.')
-    parser.add_argument('--input',
-                        '-i',
-                        type=str,
-                        help=(
-                            'Input file (sdf) or directory containing the mol files (sdf|mol2) to '
-                            'be used by lomap. If sdf, a new dir is created, containing separate sdf files '
-                            'for each ligand.'
-                            ))
-    parser.add_argument('--output',
-                        '-o',
-                        type=str,
-                        help=(
-                            'Output file (json) to store the lomap results. If not provided, '
-                            'defaults to `lomap.json`, stored in the directory with the separate sdf|mol2 files.'
-                            ))
-    parser.add_argument('--time', '-t', type=int, default=30, help='Maximum time in seconds used to perform the MCS search.')
-    parser.add_argument('--verbose', '-v', type=str, default='info', help='Verbosity level.')
+    parser = argparse.ArgumentParser(description="Lomap wrapper to be used in  QligFEP.")
+    parser.add_argument(
+        "--input",
+        "-i",
+        type=str,
+        help=(
+            "Input file (sdf) or directory containing the mol files (sdf|mol2) to "
+            "be used by lomap. If sdf, a new dir is created, containing separate sdf files "
+            "for each ligand."
+        ),
+    )
+    parser.add_argument(
+        "--output",
+        "-o",
+        type=str,
+        help=(
+            "Output file (json) to store the lomap results. If not provided, "
+            "defaults to `lomap.json`, stored in the directory with the separate sdf|mol2 files."
+        ),
+    )
+    parser.add_argument(
+        "--time", "-t", type=int, default=30, help="Maximum time in seconds used to perform the MCS search."
+    )
+    parser.add_argument("--verbose", "-v", type=str, default="info", help="Verbosity level.")
     return parser.parse_args()
-    
+
+
 def main(args):
     # TODO: could implement other lomap arguemnts here
     lomap = LomapWrap(args.input, args.output, args.time, args.verbose)
     lomap.run_lomap()
+
 
 def main_exe():
     """Main method to execute the lomap package."""
     args = parse_arguments()
     main(args)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main_exe()
