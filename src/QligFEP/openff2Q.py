@@ -145,6 +145,11 @@ class OpenFF2Q(MoleculeIO):
             self.write_lib_Q(name, prefix=prefix, residue_name=residue_name)
             self.write_prm_Q(name, prefix=prefix)
             self.write_PDB(name, residue_name=residue_name)
+            logger.warning(
+                f"Formal charges of ligands in .sdf are not unique: {self.total_charges}"
+            )
+        else:
+            logger.info(f"Output files written for {len(self.lig_names)} ligands")
 
     def create_atom_prm_mapping(self, lname):
         """Get the mapping of the ligand atoms to the forcefield parameters.
@@ -389,6 +394,24 @@ class OpenFF2Q(MoleculeIO):
                             phase = float(f"{parameter.phase[0]}".split()[0])
                             outfile.write(
                                 f"""{ai_name:13}{aj_name:13}{ak_name:13}{al_name:13}{fc:10.1f}{phase:11.1f}\n"""
+                if block == 5:
+                    for atom_indices, parameter in parameters[
+                        "ImproperTorsions"
+                    ].items():
+                        ai = atom_indices[0]
+                        ai_name = mapping[ai][1].lower()
+                        aj = atom_indices[1]
+                        aj_name = mapping[aj][1].lower()
+                        ak = atom_indices[2]
+                        ak_name = mapping[ak][1].lower()
+                        al = atom_indices[3]
+                        al_name = mapping[al][1].lower()
+                        fc = float("{}".format(parameter.k[0]).split()[0])
+                        phase = float("{}".format(parameter.phase[0]).split()[0])
+                        outfile.write(
+                            """{:10}{:10}{:10}{:10}{:10.3f}{:10.3f}\n""".format(
+                                ai_name, aj_name, ak_name, al_name, fc, phase
+
                             )
         finally:
             if should_close:
@@ -442,6 +465,7 @@ class OpenFF2Q(MoleculeIO):
                     "",  # 14 Charge on atom
                 ]
                 outfile.write(pdb_parse_out(at_entry) + "\n")
+
         finally:
             if should_close:
                 outfile.close()
