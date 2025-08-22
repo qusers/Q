@@ -230,7 +230,7 @@ class ProteinNeutralizer:
                 "atoms_removed": atoms_to_remove,
             }
 
-            logger.info(
+            logger.debug(
                 f"Neutralized {old_name} -> {new_name} at {chain}:{res_num} (distance: {distance:.2f}Å)"
             )
             if atoms_to_remove:
@@ -565,12 +565,12 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     # Log neutralization summary if performed
     if neutralization_stats and not args.skip_neutralization:
         logger.info(
-            "NEUTRALIZATION SUMMARY"
-            f"Total charged residues processed: {neutralization_stats['total_charged_residues']}"
-            f"Residues outside boundary: {neutralization_stats['residues_outside_boundary']}"
-            f"Salt bridge pairs neutralized: {neutralization_stats['salt_bridges_neutralized']}"
-            f"Total residues neutralized: {neutralization_stats['residues_neutralized']}"
-            f"Charge change: {neutralization_stats['original_total_charge']:+d} -> {neutralization_stats['final_total_charge']:+d}"
+            "NEUTRALIZATION SUMMARY\n"
+            f"Total charged residues processed: {neutralization_stats['total_charged_residues']}\n"
+            f"Residues outside boundary: {neutralization_stats['residues_outside_boundary']}\n"
+            f"Salt bridge pairs neutralized: {neutralization_stats['salt_bridges_neutralized']}\n"
+            f"Total residues neutralized: {neutralization_stats['residues_neutralized']}\n"
+            f"Charge change: {neutralization_stats['original_total_charge']:+d} -> {neutralization_stats['final_total_charge']:+d}\n"
         )
         if neutralization_stats["remaining_outside_charged"]:
             logger.warning(
