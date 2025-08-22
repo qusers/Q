@@ -4,8 +4,7 @@ import argparse
 import re
 from pathlib import Path
 
-from loguru import logger
-
+from ..logger import logger, setup_logger
 
 class MolecularCOG:
     """Class implemented to calculate the center of geometry of a molecule. It supports
@@ -107,10 +106,20 @@ def parse_arguments():
         help="For PDB files, specify the atom types to include (e.g., 'ATOM,HETATM').",
         type=str,
     )
+    parser.add_argument(
+        "-log",
+        "--log-level",
+        dest="log",
+        required=False,
+        default="info",
+        help="Set the log level for the logger. Defaults to `info`.",
+        choices=["trace", "debug", "info", "warning", "error", "critical"],
+    )
     return parser.parse_args()
 
 
 def main(args: argparse.Namespace) -> None:
+    setup_logger(args.log)
     cog = MolecularCOG(args.input)
     center = cog(args.include)
     logger.info(f"Center of geometry: {center}")
