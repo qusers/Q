@@ -420,13 +420,14 @@ def write_dataframe_to_pdb(df, output_file, header: Optional[str] = None):
         output_file: name of the output file (include .pdb extension).
         header: if desired, a header to be added to the PDB file. Defaults to None.
     """
+    df = df.copy()
     with open(output_file, "w") as file:
         if header is not None:
             file.write(f"{header}\n")
-        if df.temp_factor.dtype == "float64":
-            df.loc[:, "temp_factor"] = df.temp_factor.apply(lambda x: f"{x:.2f}")
-        if df.occupancy.dtype == "float64":
-            df.loc[:, "occupancy"] = df.occupancy.apply(lambda x: f"{x:.2f}")
+        if df["temp_factor"].dtype == "float64":
+            df["temp_factor"] = df["temp_factor"].apply(lambda x: f"{x:.2f}")
+        if df["occupancy"].dtype == "float64":
+            df["occupancy"] = df["occupancy"].apply(lambda x: f"{x:.2f}")
         for _, row in df.iterrows():
             pdb_line = (
                 f"{row['record_type']:<6}{row['atom_serial_number']:>5} "
