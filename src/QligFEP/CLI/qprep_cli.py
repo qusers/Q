@@ -82,10 +82,16 @@ class ProteinNeutralizer:
         logger.info(f"Neutralizing charged residues outside {self.rest_bound:.1f}Å boundary")
 
         df = read_pdb_to_dataframe(pdb_file)
+        return self.neutralize_outside_residues_dataframe(df, salt_bridge_cutoff)
+
+    def neutralize_outside_residues_dataframe(self, df, salt_bridge_cutoff=4.0):
+        """Find and neutralize charged residues outside the sphere boundary for a DataFrame"""
+        logger.info(f"Neutralizing charged residues outside {self.rest_bound:.1f}Å boundary")
+
         charged_residues_info = self._find_charged_residues(df)
 
         if not charged_residues_info:
-            logger.info("No charged residues found in the PDB file")
+            logger.info("No charged residues found in the PDB data")
             return df, self.stats
 
         self.stats["total_charged_residues"] = len(charged_residues_info)
@@ -126,7 +132,7 @@ class ProteinNeutralizer:
         """Find all charged residues in the PDB"""
         charged_residues_info = []
 
-        for res_name in self.charged_residues.keys():
+        for res_name in self.charged_residues:
             residues = df[df["residue_name"] == res_name]
 
             if len(residues) == 0:
@@ -496,47 +502,56 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     pdb_file = str(cwd / args.input_pdb_file)
     pdb_path = cwd / args.input_pdb_file
 
+    # Track processing steps for file naming
+    processing_steps = []
+    original_stem = pdb_path.stem
+
     ff_lib_path, ff_prm_path = get_force_field_paths(args.FF)
 
-    if args.cofactors:  # append cofactors to the protein if any are passed...
-        pdb_data = read_pdb_to_dataframe(pdb_file)
+    # Step 1: Remove crystal waters first (they will be replaced by sphere waters)
+    pdb_data = read_pdb_to_dataframe(pdb_file)
+    crystal_waters_df = pdb_data.query("residue_name == 'HOH'")
+    if not crystal_waters_df.empty:
+        logger.info(f"Removing {len(crystal_waters_df)} crystal water molecules")
+        pdb_data = pdb_data.query("residue_name != 'HOH'")
+        processing_steps.append("noHOH")
+
+    # Step 2: Add cofactors if provided
+    if args.cofactors:
+        logger.info(f"Adding {len(args.cofactors)} cofactor(s)")
         for cofactor in args.cofactors:
             pdb_data = append_pdb_to_another(pdb_data, cwd / cofactor, ignore_waters=True)
-        cofactor_path = pdb_path.with_name(f"{pdb_path.stem}_plus_cofactors.pdb")
-        write_dataframe_to_pdb(pdb_data, cofactor_path)
-        pdb_path = cofactor_path
-        pdb_file = str(pdb_path)
+        processing_steps.append("cofactors")
 
-    qprep_inp_path = cwd / "qprep.inp"
-    qprep_out_path = cwd / "qprep.out"
-
-    cysbonds = handle_cysbonds(args.cysbond, pdb_file, comment_out=True)
-
-    # write out without crystal waters - (will be in sphere)
-    protein_df = read_pdb_to_dataframe(pdb_file)
-    crystal_waters_df = protein_df.query("residue_name == 'HOH'")
-    if not crystal_waters_df.empty:
-        fname = args.input_pdb_file.split(".")[0]
-        write_dataframe_to_pdb(
-            protein_df.query("residue_name != 'HOH'"), Path(pdb_file).with_stem(f"{fname}_noHOH")
-        )
-
+    # Step 3: Neutralization
     neutralization_stats = None
     if not args.skip_neutralization:
         logger.info("Neutralizing charged residues outside spherical boundary")
         center_coords = [float(coord) for coord in args.cog]
         neutralizer = ProteinNeutralizer(center_coords, args.sphereradius, args.neutralize_boundary_offset)
         # Neutralize the protein and get statistics
-        neutralized_df, neutralization_stats = neutralizer.neutralize_outside_residues(
-            pdb_file, args.salt_bridge_cutoff
+        pdb_data, neutralization_stats = neutralizer.neutralize_outside_residues_dataframe(
+            pdb_data, args.salt_bridge_cutoff
         )
-        # Write the neutralized protein file
-        neutralized_pdb_path = pdb_path.with_name(f"{pdb_path.stem}_neutralized.pdb")
-        write_dataframe_to_pdb(neutralized_df, neutralized_pdb_path)
-        # Update the pdb_file path to use the neutralized version
-        pdb_file = str(neutralized_pdb_path)
-        pdb_path = neutralized_pdb_path
-        logger.info(f"Neutralized protein saved as: {neutralized_pdb_path}")
+        processing_steps.append("neutralized")
+        logger.info("Charged residues neutralized")
+
+    # Create final processed PDB file with descriptive name
+    if processing_steps:
+        processed_stem = f"{original_stem}_{'_'.join(processing_steps)}"
+        processed_pdb_path = pdb_path.with_name(f"{processed_stem}.pdb")
+    else:
+        processed_pdb_path = pdb_path
+
+    write_dataframe_to_pdb(pdb_data, processed_pdb_path)
+    pdb_file = str(processed_pdb_path)
+    pdb_path = processed_pdb_path
+    logger.info(f"Final processed protein saved as: {processed_pdb_path}")
+
+    qprep_inp_path = cwd / "qprep.inp"
+    qprep_out_path = cwd / "qprep.out"
+
+    cysbonds = handle_cysbonds(args.cysbond, pdb_file, comment_out=True)
 
     if args is not None:
         param_dict = {
@@ -606,8 +621,8 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     oxygen_subset = water_df.query('atom_name == "O"')
     euclidean_distances = oxygen_subset[["x", "y", "z"]].sub(cog).pow(2).sum(1).apply(np.sqrt)
     outside = np.where(euclidean_distances > args.sphereradius * 1.05)[0]  # we add a tolerance of 5%
-    outside_HOH_residues = oxygen_subset.iloc[outside].residue_seq_number.unique()  # noqa: F841
     if outside.shape[0] > 0:
+        outside_HOH_residues = oxygen_subset.iloc[outside].residue_seq_number.unique()
         logger.warning(f"Found {outside.shape[0]} water molecules outside the sphere radius.")
         logger.warning("Removing these water molecules from the water.pdb file.")
         todrop_idxs = water_df.query("residue_seq_number in @outside_HOH_residues").index
