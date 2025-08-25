@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from sklearn.neighbors import NearestNeighbors
 
-from .CLI.qprep_cli import qprep_error_check
+from .CLI.qprep_cli import QprepError, qprep_error_check
 from .CLI.utils import get_avail_restraint_methods, handle_cysbonds
 from .functions import COG, kT, overlapping_pairs, sigmoid
 from .IO import get_force_field_paths, replace, run_command
@@ -517,6 +517,13 @@ class QligFEP:
                 )
             subset_lig1 = pdb_df.query("residue_name == 'LIG'")
             subset_lig2 = pdb_df.query("residue_name == 'LID'")
+            logger.debug(f"lig1.shape: {subset_lig1.shape}")
+            logger.debug(f"lig2.shape: {subset_lig2.shape}")
+            if any([subset_lig1.shape[0] == 0, subset_lig2.shape[0] == 0]):
+                raise QprepError(
+                    "Something went wrong while preparing the protein edge. Please have a look at the "
+                    f"input files and at the qprep.out within {Path(writedir / 'qprep.inp')}"
+                )
             lig1_path = parent_write_dir / f"{self.lig1}.sdf"
             lig2_path = parent_write_dir / f"{self.lig2}.sdf"
             if not lig1_path.exists() or not lig2_path.exists():
