@@ -317,6 +317,7 @@ def qprep_error_check(qprep_out_path: Path, ff_name) -> None:
     error_pat = re.compile(r"ERROR\:\s", re.IGNORECASE)
     missing_lib_pat = re.compile(
         r">>> Atom ...?.? in residue no\.\s+\d+ not found in library entry for [A-Z]+"
+        r"|>>> Heavy atom ...?.? missing in residue\s+ [0-9]+"
     )
     outfile_lines = qprep_out_path.read_text().split("\n")
     error_lines = []
