@@ -6,6 +6,7 @@ from pathlib import Path
 
 from ..logger import logger, setup_logger
 
+
 class MolecularCOG:
     """Class implemented to calculate the center of geometry of a molecule. It supports
     PDB and SDF file formats. The center of geometry is calculated as the average of all
