@@ -286,9 +286,8 @@ def asp_search(npdb):
     for i in range(len(npdb)):
         resname = npdb[i][0][17:21].rstrip()
         if resname == "ASP":
-            OD1_present = atom_is_present(npdb[i], "OD1")
-            OD2_present = atom_is_present(npdb[i], "OD2")
-            if all([OD1_present, OD2_present]):
+            HD2_present = atom_is_present(npdb[i], "HD2")
+            if HD2_present:
                 npdb[i] = [x.replace("ASP", "ASH") for x in npdb[i]]
     return npdb
 
