@@ -15,6 +15,11 @@ from ..pdb_utils import (
     write_dataframe_to_pdb,
 )
 from ..settings.settings import CONFIGS, FF_DIR
+from ._popc_utils import (
+    convert_pymemdyn_to_unified_dataframe,
+    df_to_pdb_corrected_element,
+    has_pop_residues,
+)
 from .utils import handle_cysbonds
 
 # NOTE: cysbonds will have \n after each bond -> `maketop MKC_p` is in a different line
@@ -527,6 +532,19 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         processing_steps.append("neutralized")
         logger.info("Charged residues neutralized")
 
+    # Step 4: POPC lipid renaming (only for AMBER14sb with POP residues)
+    lipid_conversion_performed = False
+    pop_count = 0
+    if args.FF == "AMBER14sb":
+        has_pop, pop_count = has_pop_residues(pdb_data)
+        if has_pop:
+            logger.info(f"Detected {pop_count} POP lipid residue(s) with AMBER14sb forcefield")
+            logger.info("Converting pymemdyn POPC atom names to unified format compatible with AMBER14sb")
+            logger.info("Note: Qprep will add missing hydrogens automatically during topology generation")
+            pdb_data = convert_pymemdyn_to_unified_dataframe(pdb_data)
+            processing_steps.append("lipid_renamed")
+            lipid_conversion_performed = True
+
     # Create final processed PDB file with descriptive name
     if processing_steps:
         processed_stem = f"{original_stem}_{'_'.join(processing_steps)}"
@@ -534,7 +552,11 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     else:
         processed_pdb_path = pdb_path
 
-    write_dataframe_to_pdb(pdb_data, processed_pdb_path)
+    # Use element-corrected writing if lipids were converted
+    if lipid_conversion_performed:
+        df_to_pdb_corrected_element(pdb_data, processed_pdb_path)
+    else:
+        write_dataframe_to_pdb(pdb_data, processed_pdb_path)
     pdb_file = str(processed_pdb_path)
     pdb_path = processed_pdb_path
     logger.info(f"Final processed protein saved as: {processed_pdb_path}")
@@ -568,8 +590,17 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     qprep_error_check(qprep_out_path, args.FF)
     logger.info("qprep run finished. Check the output `qprep.out` for more information.")
 
-    # Log neutralization summary if performed
-    if neutralization_stats and not args.skip_neutralization:
+    # Log lipid conversion summary if performed
+    if lipid_conversion_performed:
+        logger.info(
+            "LIPID CONVERSION SUMMARY\n"
+            f"Converted {pop_count} POP lipid residue(s) from pymemdyn to Amber-unified format. "
+            "With the correct heavy atom naming, qprep will add the missing hydrogen atoms. "
+            "For this, check the output top_p.pdb from this program."
+        )
+
+    # Log neutralization summary if performed and charged residues were found
+    if neutralization_stats and not args.skip_neutralization and neutralization_stats['total_charged_residues'] > 0:
         logger.info(
             "NEUTRALIZATION SUMMARY\n"
             f"Total charged residues processed: {neutralization_stats['total_charged_residues']}\n"
