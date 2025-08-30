@@ -218,7 +218,7 @@ class ProteinNeutralizer:
             new_name = res_info["neutral_form"]
             distance = res_info["distance"]
 
-            # Change residue nameand remove atoms based on residue type
+            # Change residue name and remove atoms based on residue type
             mask = (modified_df["chain_id"] == chain) & (modified_df["residue_seq_number"] == res_num)
             modified_df.loc[mask, "residue_name"] = new_name
             atoms_to_remove = self._get_atoms_to_remove(old_name, new_name)
@@ -275,16 +275,6 @@ class ProteinNeutralizer:
     def _log_neutralization_stats(self):
         """Log neutralization statistics"""
         stats = self.stats
-
-        logger.info(
-            f"Neutralization statistics:\n"
-            f"  Total charged residues found: {stats['total_charged_residues']}"
-            f"  Residues outside boundary ({self.rest_bound:.1f}Å): {stats['residues_outside_boundary']}"
-            f"  Salt bridge pairs neutralized: {stats['salt_bridges_neutralized']}"
-            f"  Total residues neutralized: {stats['residues_neutralized']}"
-            f"  Original total charge: {stats['original_total_charge']:+d}"
-            f"  Final total charge: {stats['final_total_charge']:+d}"
-        )
 
         if stats["remaining_outside_charged"]:
             for res in stats["remaining_outside_charged"]:
