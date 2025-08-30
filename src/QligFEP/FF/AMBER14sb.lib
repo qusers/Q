@@ -3452,7 +3452,7 @@
         head N
         tail C
 *--------------------------------------------------------------------------------
-{POPC}
+{POP}
     [atoms]
         ! Phosphocholine head group (PC residue atoms)
         1  C11    cC             0.910403
