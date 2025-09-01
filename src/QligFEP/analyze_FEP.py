@@ -416,9 +416,9 @@ class FepReader:
                 self.data["result"][delta_method].update(
                     {
                         fep: {
-                            f"{delta_method}_avg": ddG,
-                            f"{delta_method}_sem": ddG_sem,
-                            f"{delta_method}_std": ddG_std,
+                            f"{delta_method}_avg": (ddG if not np.isnan(ddG) else None),
+                            f"{delta_method}_sem": (ddG_sem if not np.isnan(ddG_sem) else None),
+                            f"{delta_method}_std": (ddG_std if not np.isnan(ddG_std) else None),
                             "from": w_fep["from"],  # the same for protein & water; can use either
                             "to": w_fep["to"],
                         }
@@ -472,11 +472,15 @@ class FepReader:
             for fep in self.feps:
                 fep_dict = self.data["result"][method][fep]
                 if fep_dict["from"] == _from and fep_dict["to"] == _to:
+                    avg_val = fep_dict[f"{method}_avg"] if not np.isnan(fep_dict[f"{method}_avg"]) else None
+                    sem_val = fep_dict[f"{method}_sem"] if not np.isnan(fep_dict[f"{method}_sem"]) else None
+                    std_val = fep_dict[f"{method}_std"] if not np.isnan(fep_dict[f"{method}_std"]) else None
+
                     edge.update(
                         {
-                            "Q_ddG_avg": fep_dict[f"{method}_avg"],
-                            "Q_ddG_sem": fep_dict[f"{method}_sem"],
-                            "Q_ddG_std": fep_dict[f"{method}_std"],
+                            "Q_ddG_avg": avg_val,
+                            "Q_ddG_sem": sem_val,
+                            "Q_ddG_std": std_val,
                         }
                     )
         if output_file is not None:
