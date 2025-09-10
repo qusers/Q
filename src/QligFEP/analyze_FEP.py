@@ -650,7 +650,7 @@ class FepReader:
             f"{len(exp_values)}$)"
         )
         plt.xlabel("$\Delta\Delta G_{exp} (kcal/mol)$")  # noqa: W605
-        plt.ylabel("$\Delta\Delta G_{pred} (kcal/mol)$")  # noqa: W605
+        plt.ylabel("$\Delta\Delta G_{calc} (kcal/mol)$")  # noqa: W605
         plt.xlim(min_val, max_val)
         plt.ylim(min_val, max_val)
         ax.set_aspect("equal", adjustable="box")
