@@ -2,7 +2,7 @@
 
 ## ⚙️ Installation
 
-The current conda environment is available in the `environment.yml` file, but installing it with `conda env create -f environment.yml` will take a long time. Instead, we recommend that you use `mamba` or its lightweight version `micromamba`. Please check this Gist on how to [install micromamba](https://gist.github.com/David-Araripe/3ecd90bfbfd1c8e813812a203384b3c0).
+We recommend that you use `mamba` or, preferably, its lightweight version `micromamba`. Please check this link on how to [install it](https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html).
 
 Once you have `micromamba` installed and have already cloned this repo, you can create the environment with:
 
@@ -22,7 +22,7 @@ python -m pip install -e .
 ```
 
 <details>
-<summary>In one line...</summary>
+<summary>To install everything in one line...</summary>
 
 ```bash
 micromamba create -n qligfep_new python=3.11 -c conda-forge -y && micromamba activate qligfep_new && micromamba install openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 "openff-nagl>=0.3.8" lomap2 kartograf michellab::fkcombu -c conda-forge --yes && python -m pip install -e .
@@ -31,20 +31,38 @@ micromamba create -n qligfep_new python=3.11 -c conda-forge -y && micromamba act
 
 ### 🍎 MacOS
 
-The environment provided doesn't build on Mac due to missing libraries. If you're using this operating system, you'll have to create the environment by scratch through the commands:
+Similar to Linux, you can create the environment and install the required packages with:
 
 ``` bash
-micromamba create -n qligfep_new python=3.11 openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 lomap2 kartograf michellab::fkcombu -c conda-forge --yes
+micromamba create -n qligfep_new python=3.11 openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 lomap2 kartograf davidararipe::kcombu_bss -c conda-forge --yes
 micromamba activate qligfep_new
 python -m pip install joblib scipy tqdm
 python -m pip install -e .
 ```
 
+<details>
+<summary>To install everything in one line...</summary>
+
+```bash
+micromamba create -n qligfep_new python=3.11 openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 lomap2 kartograf davidararipe::kcombu_bss -c conda-forge --yes && micromamba activate qligfep_new && python -m pip install joblib scipy tqdm && python -m pip install -e .
+```
+</details>
+
 ### 🛠️ Compiling Q
 
-To compile the Q binaries, you will need to have the `gfortran` compiler installed. To access this compiler on different HPCs, you can use the `module load` command. Check [here](/src/QligFEP/settings/settings.py) for a list of the different HPCs we have already ran RBFE simulations on.
+> 💻 **If you're working locally**, If you're working locally, install `gfortran` using micromamba to compile Q, which is required for QligFEP's topology generation via `qprep`. Run the following commands:
 
-E.g.: To compile Q on Snellius, you will have to run the following commands:
+```bash
+micromamba install gfortran=11.3.0 -c conda-forge --yes
+cd src/q6
+make all COMP=gcc && cd ../..
+```
+
+If you're working on an HPC system, you will want to access `gfortran` through a pre-existing module avaiable in your system. This is done using the `module load` command. Check [here](/src/QligFEP/settings/settings.py) for a list of the different HPCs we have already ran RBFE simulations on. Module availability and loading is system-dependent, so please check with your system administrator if you have any issues.
+
+_Example_:
+
+To compile Q on Snellius, you will have to run the following commands:
 ```bash
 module load 2021
 module load gompi/2021a
@@ -54,19 +72,21 @@ Finally, compiling Q can be done with the following commands:
 make all COMP=gcc && make mpi COMP=gcc
 ```
 
+_Note_: see how we don't use `make mpi` locally. This is because we don't need parallelization for running `qprep`, which is the only Q program we use locally.
+
 ## ⌨️ Command line interface (CLI)
 
 Now you're set with the qligfep package. This includes the command-linde-interfaces (CLIs):
 
 1. `qparams`: used to generate ligand parameters;
-1. `pdb2amber`: formats a PDB file to be used with Q's implementation of the AMBER forcefield;
-1. `qlomap`: wraps `Lomap` to generate the `.json` perturbation mapping;
-1. `qmapfep`: in-house developed method to generate the `.json` perturbation mapping, interactively visualize and add or remove edges.
-1. `qligfep`: main CLI for running QligFEP simulations.
-1. `setupFEP`: sets up all the the QligFEP files for a simulation, including protein and water systems.
-1. `qligfep_analyze`: CLI to analyze the results of a QligFEP simulation.
-1. `qcog`: calculates the center of geometry (COG) of a ligand in a PDB/SDF file. If multiple ligands are found in sdf, the program will calculate the COG for all of them
-1. `qprep_prot`: creates an input file for qprep (fortran program) and runs it to either: 1) solvate the protein structure; 2) create the water sphere.
+2. `pdb2amber`: formats a PDB file to be used with Q's implementation of the AMBER forcefield;
+3. `qlomap`: wraps `Lomap` to generate the `.json` perturbation mapping;
+4. `qmapfep`: in-house developed method to generate the `.json` perturbation mapping, interactively visualize and add or remove edges.
+5. `qligfep`: main CLI for running QligFEP simulations.
+6. `setupFEP`: sets up all the the QligFEP files for a simulation, including protein and water systems.
+7. `qligfep_analyze`: CLI to analyze the results of a QligFEP simulation.
+8. `qcog`: calculates the center of geometry (COG) of a ligand in a PDB/SDF file. If multiple ligands are found in sdf, the program will calculate the COG for all of them
+9. `qprep_prot`: creates an input file for qprep (fortran program) and runs it to either: 1) solvate the protein structure; 2) create the water sphere.
 
 # Q-GPU #
 Version control of **Q-GPU**, an adaptation of **Q** version 5.06 running on GPUs.
@@ -81,7 +101,7 @@ This version includes a translation of the original **Q** fortran code to C/CUDA
 
 
 ## Authors ##
-Chiel Jespers, Willem Jespers, Mauricio Esguerra, Johan Åqvist, Hugo Gutiérrez‐de‐Terán
+Chiel Jespers, David Araripe, Willem Jespers, Mauricio Esguerra, Johan Åqvist, Hugo Gutiérrez‐de‐Terán
 
 
 ## Installation ##
