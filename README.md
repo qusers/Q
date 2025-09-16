@@ -34,7 +34,7 @@ micromamba create -n qligfep_new python=3.11 -c conda-forge -y && micromamba act
 Similar to Linux, you can create the environment and install the required packages with:
 
 ``` bash
-micromamba create -n qligfep_new python=3.11 openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 lomap2 kartograf davidararipe::kcombu_bss -c conda-forge --yes
+micromamba create -n qligfep_new python=3.11 openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 "openff-nagl>=0.3.8" lomap2 kartograf davidararipe::kcombu_bss -c conda-forge --yes
 micromamba activate qligfep_new
 python -m pip install joblib scipy tqdm
 python -m pip install -e .
