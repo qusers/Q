@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 from typing import Optional
 
+import matplotlib.cm as cm
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -414,9 +416,9 @@ class FepReader:
                 self.data["result"][delta_method].update(
                     {
                         fep: {
-                            f"{delta_method}_avg": ddG,
-                            f"{delta_method}_sem": ddG_sem,
-                            f"{delta_method}_std": ddG_std,
+                            f"{delta_method}_avg": (ddG if not np.isnan(ddG) else None),
+                            f"{delta_method}_sem": (ddG_sem if not np.isnan(ddG_sem) else None),
+                            f"{delta_method}_std": (ddG_std if not np.isnan(ddG_std) else None),
                             "from": w_fep["from"],  # the same for protein & water; can use either
                             "to": w_fep["to"],
                         }
@@ -470,11 +472,15 @@ class FepReader:
             for fep in self.feps:
                 fep_dict = self.data["result"][method][fep]
                 if fep_dict["from"] == _from and fep_dict["to"] == _to:
+                    avg_val = fep_dict[f"{method}_avg"] if not np.isnan(fep_dict[f"{method}_avg"]) else None
+                    sem_val = fep_dict[f"{method}_sem"] if not np.isnan(fep_dict[f"{method}_sem"]) else None
+                    std_val = fep_dict[f"{method}_std"] if not np.isnan(fep_dict[f"{method}_std"]) else None
+
                     edge.update(
                         {
-                            "Q_ddG_avg": fep_dict[f"{method}_avg"],
-                            "Q_ddG_sem": fep_dict[f"{method}_sem"],
-                            "Q_ddG_std": fep_dict[f"{method}_std"],
+                            "Q_ddG_avg": avg_val,
+                            "Q_ddG_sem": sem_val,
+                            "Q_ddG_std": std_val,
                         }
                     )
         if output_file is not None:
@@ -510,10 +516,12 @@ class FepReader:
         output_path: str | None = None,
         target_name: str | None = None,
         savefig: bool = False,
+        font: str | None = None,
     ):
         """Creates the ddG plot for the FEP that has already been analyzed. The plot will
         show the experimental (X axis) vs mean predicted values (Y axis), with error bars
-        representing the standard error of the mean (SEM).
+        representing the standard error of the mean (SEM). Points are colored based on
+        their deviation from experimental values (blue = 0 deviation, red = 3+ kcal/mol).
 
         Args:
             reuslts_df: pd.DataFrame with the results from the FEP, output from `prepare_df`.
@@ -537,6 +545,13 @@ class FepReader:
             avg_values = avg_values[mask]
             sem_values = sem_values[mask]
             exp_values = exp_values[mask]
+
+        # Calculate absolute deviations for coloring
+        deviations = np.abs(avg_values - exp_values)
+
+        # Create colormap from blue to red, with max at 3 kcal/mol
+        norm = mcolors.Normalize(vmin=0, vmax=4)
+        cmap = cm.RdBu_r
 
         ## CALCULATE STATISTICS
         def result_to_latex(res, latexify_each=False):  # TODO: move this out of this method?
@@ -566,19 +581,39 @@ class FepReader:
             min_val = min(all_values) - margin
             max_val = max(all_values) + margin
 
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(7, 4.5))
 
-        plt.errorbar(
+        # Plot colored points with error bars
+        scatter = plt.errorbar(
             exp_values,
             avg_values,
-            yerr=sem_values,
             fmt="o",
-            color="black",
-            ecolor="black",
-            elinewidth=2.0,
-            capsize=0,
+            yerr=sem_values,
+            ecolor="gray",
+            elinewidth=1.5,
+            capsize=2,
             zorder=4,
+            linestyle="None",
+            markersize=8,
         )
+
+        # Remove the default markers and add colored ones
+        scatter[0].remove()
+
+        # Add the colored scatter points
+        scatter_points = plt.scatter(
+            exp_values,
+            avg_values,
+            c=deviations,
+            cmap=cmap,
+            norm=norm,
+            s=45,
+            zorder=5,
+            edgecolors="black",
+            linewidths=0.5,
+            alpha=0.8,
+        )
+
         plt.plot([min_val, max_val], [min_val, max_val], "k-", linewidth=1.5, zorder=3)  # Black identity line
 
         # Highlight predictions within 1 and 2 kcal/mol of the experimental affinity
@@ -587,7 +622,7 @@ class FepReader:
             [min_val - 1, max_val - 1],
             [min_val + 1, max_val + 1],
             color="darkgray",
-            alpha=0.5,
+            alpha=0.3,
             zorder=2,
         )
         ax.fill_between(
@@ -595,17 +630,27 @@ class FepReader:
             [min_val - 2, max_val - 2],
             [min_val + 2, max_val + 2],
             color="lightgray",
-            alpha=0.5,
+            alpha=0.3,
             zorder=1,
         )
 
+        # Add colorbar
+        cbar = plt.colorbar(scatter_points, ax=ax, shrink=0.40, aspect=10, anchor=(0.0, 0.85), pad=0.05)
+
+        cbar.set_label("|Deviation| (kcal/mol)", rotation=270, labelpad=20)
+        cbar.ax.tick_params(labelsize=10)
+        cbar.set_ticks([0, 1, 2, 3, 4])
+        cbar.set_ticklabels(["0", "1", "2", "3", "≥4"])
+        cbar.ax.tick_params(labelsize=10)
+
         # set labels, make it square and add legend
         plt.title(
-            f"{(target_name + ' - ' if target_name is not None else '')}"
-            rf"$\Delta\Delta Gbar$ plot ($N={len(exp_values)}$)"
+            f"{(target_name + ' ' if target_name is not None else '')}"
+            r"$\Delta\Delta \text{G}_{\text{BAR}}$ ($\mathrm{N}="
+            f"{len(exp_values)}$)"
         )
-        plt.xlabel("$\Delta\Delta G_{exp} [kcal/mol]$")  # noqa: W605
-        plt.ylabel("$\Delta\Delta G_{pred} [kcal/mol]$")  # noqa: W605
+        plt.xlabel("$\Delta\Delta G_{exp} (kcal/mol)$")  # noqa: W605
+        plt.ylabel("$\Delta\Delta G_{calc} (kcal/mol)$")  # noqa: W605
         plt.xlim(min_val, max_val)
         plt.ylim(min_val, max_val)
         ax.set_aspect("equal", adjustable="box")
@@ -613,7 +658,7 @@ class FepReader:
         # add statistics to the plot
         unit = r"\frac{kcal}{mol}"
         text_body = (
-            f"$\\tau = {stats_dict['KTAU']}$ (Kendall's $\\tau$)",
+            f"$\\tau = {stats_dict['KTAU']}$",
             f"RMSE = ${stats_dict['RMSE']}  {unit}$",
             f"MUE = ${stats_dict['MUE']}  {unit}$",
         )
@@ -633,12 +678,13 @@ class FepReader:
                 verticalalignment="bottom",
                 horizontalalignment="left",
                 transform=ax.transAxes,
+                fontproperties=font,
             )
 
         legend_elements = [
             Line2D([0], [0], color="k", linestyle="-", label="Identity line"),
-            Patch(facecolor="darkgray", alpha=0.5, label="Within 1 kcal/mol"),
-            Patch(facecolor="lightgray", alpha=0.5, label="Within 2 kcal/mol"),
+            Patch(facecolor="darkgray", alpha=0.3, label="Within 1 kcal/mol"),
+            Patch(facecolor="lightgray", alpha=0.3, label="Within 2 kcal/mol"),
         ]
 
         ax.legend(
@@ -648,6 +694,12 @@ class FepReader:
             borderaxespad=0,
             frameon=False,
         )
+        # Remove top and right spines using matplotlib
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.5)
+        ax.set_axisbelow(True)
+
         if savefig:
             if output_path is None:
                 output_path = Path().cwd()
@@ -660,7 +712,7 @@ class FepReader:
             if output_path.isdir():
                 output_path = output_path / f"{target_name}_ddG_plot.png"
                 logger.info(f"Using default name to save the plot at {output_path}")
-            elif output_path.exits():
+            elif output_path.exists():  # Fixed typo: exits() -> exists()
                 logger.warning(f"File {output_path} already exists. Overwriting...")
             fig.savefig(output_path, dpi=300, bbox_inches="tight")
         return fig, ax
