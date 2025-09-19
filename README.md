@@ -88,6 +88,12 @@ Now you're set with the qligfep package. This includes the command-linde-interfa
 8. `qcog`: calculates the center of geometry (COG) of a ligand in a PDB/SDF file. If multiple ligands are found in sdf, the program will calculate the COG for all of them
 9. `qprep_prot`: creates an input file for qprep (fortran program) and runs it to either: 1) solvate the protein structure; 2) create the water sphere.
 
+# Citations: #
+Q6:       https://doi.org/10.1016/j.softx.2017.12.001
+Q         https://doi.org/10.1016/S1093-3263(98)80006-5
+QligFEP:  https://doi.org/10.1186/s13321-019-0348-5
+QresFEP:  https://doi.org/10.1021/acs.jctc.9b00538
+
 # Q-GPU #
 Version control of **Q-GPU**, an adaptation of **Q** version 5.06 running on GPUs.
 
