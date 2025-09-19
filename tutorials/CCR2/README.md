@@ -25,6 +25,12 @@ Once in the perturbation directory, we move the ligands to it and generate the p
 cp ../aligned_ligands.sdf .
 qlomap -i aligned_ligands.sdf
 ```
+
+To generate the QmapFEP html file:
+```bash
+qmapfep -i aligned_ligands.sdf -wd . -l aligned_ligands/lomap.json
+```
+
 ## create ligand parameters
 
 ```bash
