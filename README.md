@@ -90,8 +90,11 @@ Now you're set with the qligfep package. This includes the command-linde-interfa
 
 # Citations: #
 Q6:       https://doi.org/10.1016/j.softx.2017.12.001
+
 Q         https://doi.org/10.1016/S1093-3263(98)80006-5
+
 QligFEP:  https://doi.org/10.1186/s13321-019-0348-5
+
 QresFEP:  https://doi.org/10.1021/acs.jctc.9b00538
 
 # Q-GPU #
