@@ -5,10 +5,16 @@ import shutil
 import json
 import numpy as np
 from matplotlib import pyplot as plt
-import Qgpu.topology as TOPOLOGY
-import Qgpu.energy as ENERGY
-from QligFEP.settings import settings
-from Qgpu import IO, compare
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/Qgpu')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../env/')))
+
+import settings
+import IO
+import topology as TOPOLOGY
+import compare
+import energy as ENERGY
+
 
 class Create_Environment(object):
     """
@@ -177,12 +183,12 @@ class Run_QGPU(object):
         shutil.copy('velocities.csv', 'tmp/velocities.csv')
         shutil.copy('coords.csv', 'tmp/coords.csv')
         args = [
-                ' {}bin/qdyn.py'.format(settings.ROOT),
+                ' {}src/bin/qdyn.py'.format(settings.ROOT),
                 '-t', '{}{}'.format(data['topdir'],
                                    data['testinfo'][data['test']][0]),
                 '-m', 'eq1.inp',
                 '-d', 'TEST',
-                '-r', 'tmp'  
+                '-r', 'tmp'
                ]
 
         # FEP file?
@@ -194,7 +200,9 @@ class Run_QGPU(object):
             args.append('--verbose')
 
         if data['arch'] == 'gpu':
-            args.append('--gpu')
+            args += ['-c', 'q7-gpu']
+        else:
+            args += ['-c', 'q7']
 
         args_string = ' '.join(args)
 

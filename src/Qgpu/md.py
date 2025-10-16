@@ -1,6 +1,10 @@
 # Standard Python libraries
 import json
-from QligFEP.settings import defaults as DEFAULTS
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../env/')))
+import IO
+import defaults as DEFAULTS
 
 class MD():
     def __init__(self):
