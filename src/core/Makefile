@@ -1,5 +1,5 @@
 CC = nvcc
-CFLAGS = -g
+CFLAGS = -g -arch=sm_89 # For debugging; change as needed for optimization -> CFLAGS = -O3 -arch=sm_89
 
 all: qdyn move
 
