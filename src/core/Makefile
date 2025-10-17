@@ -1,5 +1,5 @@
 CC = nvcc
-CFLAGS = -g
+CFLAGS = -lineinfo -O3 -arch=sm_89
 
 all: qdyn move
 
