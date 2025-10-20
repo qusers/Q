@@ -16,7 +16,7 @@ micromamba activate qligfep_new
 micromamba install openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 "openff-nagl>=0.3.8" lomap2 kartograf michellab::fkcombu -c conda-forge --yes
 ```
 
-Now that you have the environment ready and activated, install qligfep through the command:
+Now that you have the environment ready and activated, [clone the repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository), enter the `Q` directory with `cd Q/`, and install qligfep through the command:
 ```bash
 python -m pip install -e .
 ```
@@ -31,7 +31,7 @@ micromamba create -n qligfep_new python=3.11 -c conda-forge -y && micromamba act
 
 ### 🍎 MacOS
 
-Similar to Linux, you can create the environment and install the required packages with:
+Similar to Linux, you need to [clone the repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository), enter the `Q` directory with `cd Q/`, create the environment and install the required packages with:
 
 ``` bash
 micromamba create -n qligfep_new python=3.11 openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 "openff-nagl>=0.3.8" lomap2 kartograf davidararipe::kcombu_bss -c conda-forge --yes
