@@ -1,9 +1,9 @@
+import glob
+import csv
+import re
+import statistics
+import math
 import os
-import os
-from datetime import datetime
-import glob, csv
-import re, csv, statistics, glob
-import os, csv, glob, re, math, statistics
 from datetime import datetime
 from jinja2 import Environment, FileSystemLoader
 
@@ -51,6 +51,8 @@ def make_html_report(logs_root: str, out_html: str):
                     "mem_util_mean": fget("gpu.mem_util_mean_pct"),
                     "mem_util_peak": fget("gpu.mem_util_peak_pct"),
                     "rc": int(row.get("return_code") or 0),
+                    "ns_per_day": fget("ns_per_day"),
+
                 })
     if not runs:
         raise RuntimeError(f"No runs found under {logs_root}")
@@ -71,6 +73,7 @@ def make_html_report(logs_root: str, out_html: str):
     util_mem_mean = []
     util_mem_peak = []
     speedups = []
+    ns_per_day = []
 
     for p in procs_list:
         vals = by[p]
@@ -81,6 +84,7 @@ def make_html_report(logs_root: str, out_html: str):
         util_peak = [v["util_peak"] for v in vals if math.isfinite(v["util_peak"])]
         mem_means = [v["mem_util_mean"] for v in vals if math.isfinite(v["mem_util_mean"])]
         mem_peaks = [v["mem_util_peak"] for v in vals if math.isfinite(v["mem_util_peak"])]
+        tmp_ns_per_day = [v["ns_per_day"] for v in vals if math.isfinite(v["ns_per_day"])]
 
         
         rc_bad = sum(1 for v in vals if v["rc"] != 0)
@@ -95,6 +99,7 @@ def make_html_report(logs_root: str, out_html: str):
         gpu_util_peak.append(statistics.mean(util_peak) if util_peak else float("nan"))
         util_mem_mean.append(statistics.mean(mem_means) if mem_means else float("nan"))
         util_mem_peak.append(statistics.mean(mem_peaks) if mem_peaks else float("nan"))
+        ns_per_day.append(statistics.mean(tmp_ns_per_day) if tmp_ns_per_day else float("nan"))
         
         
         Tn = max(walls) if walls else float("nan")
@@ -121,9 +126,8 @@ def make_html_report(logs_root: str, out_html: str):
             "vram_util_peak": statistics.mean(mem_peaks) if mem_peaks else float("nan"),
             "Tn": Tn,
             "speedup": speedup,
+            "ns_per_day": statistics.mean(tmp_ns_per_day) if tmp_ns_per_day else float("nan"),
         })
-
-        
 
 
     # render template (only data passed)
@@ -145,6 +149,7 @@ def make_html_report(logs_root: str, out_html: str):
             "gpu_mem_util_mean": util_mem_mean,
             "gpu_mem_util_peak": util_mem_peak,
             "speedup": speedups,
+            "ns_per_day": ns_per_day,
             "table_rows": table_rows,
         },
     )

@@ -1,15 +1,18 @@
-import subprocess
-import time
-import multiprocessing
 import os
-import os, time, subprocess, multiprocessing, threading, shutil, json, sys
+import time
+import subprocess
+import multiprocessing
+import threading
+import shutil
+import json
+import sys
 from datetime import datetime
-import glob, csv
+import glob
+import csv
 import psutil
-import csv, glob
-import os, csv, glob
-from datetime import datetime
 from benchmark_report import make_html_report
+
+TIME_STEP = 2 * 1e-6  # 2fs per step = 0.000002 ns per step
 
  
 def _collect_gpu_mem_mb_for_pids(pids):
@@ -51,7 +54,6 @@ def _collect_gpu_mem_mb_for_pids(pids):
 
 def _sample_gpu_util_pct_nvsmi():
     """Fallback: query overall GPU util (%) via nvidia-smi; returns average across GPUs."""
-    import shutil, subprocess
     if shutil.which("nvidia-smi") is None:
         return None
     try:
@@ -72,7 +74,6 @@ def _sample_gpu_util_pct_nvsmi():
         return None
 
 def _sample_gpu_mem_util_pct_nvsmi():
-    import shutil, subprocess
     if shutil.which("nvidia-smi") is None:
         return None
     try:
@@ -156,7 +157,7 @@ def _monitor_peaks(root_pid, stop_event, sample_interval=0.2):
     return peaks
 
 
-def run_program(program_index, program_command, output_file):
+def run_program(program_index, program_command, output_file, steps):
     """
     Run a program and write its output to a specified file, recording execution time and memory peaks.
     """
@@ -209,7 +210,7 @@ def run_program(program_index, program_command, output_file):
         gpu_util_mean = None
         gpu_util_peak = None
         s = peaks_holder.get("gpu_util_samples", 0)
-        if s and s > 0:
+        if s > 0:
             gpu_util_mean = peaks_holder["gpu_util_sum_pct"] / s
         gpu_util_peak = peaks_holder.get("gpu_util_peak_pct", None)
 
@@ -225,6 +226,7 @@ def run_program(program_index, program_command, output_file):
             "output": os.path.abspath(output_file),
             "stderr": os.path.abspath(err_file),
             "return_code": retcode,
+            "steps": steps,
             "time": {
                 "wall_seconds": execution_time
             },
@@ -264,11 +266,11 @@ def run_program(program_index, program_command, output_file):
         print(f"Process {program_index + 1} failed with error: {e}", file=sys.stderr)
 
 
-def work(max_procs, logs_dir, command):
+def work(max_procs, logs_dir, command, steps):
     tasks = []
     for i in range(max_procs):
         output_file = os.path.join(logs_dir, f"{i+1:03d}.log")
-        tasks.append((i, command, output_file))
+        tasks.append((i, command, output_file, steps))
 
     # Execute with a process pool
     with multiprocessing.Pool(processes=max_procs) as pool:
@@ -311,8 +313,11 @@ def work(max_procs, logs_dir, command):
         "time.wall_seconds", "memory.peak_rss_mb", "memory.peak_gpu_mem_mb", 
         "gpu.util_mean_pct", "gpu.util_peak_pct",
         "gpu.mem_util_mean_pct", "gpu.mem_util_peak_pct",
-        "output", "stderr", "command", "timestamp"
+        "output", "stderr", "command", "timestamp", "steps", "ns_per_day"
     ]
+
+    
+    
     with open(summary_csv, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fieldnames)
         w.writeheader()
@@ -332,6 +337,8 @@ def work(max_procs, logs_dir, command):
                 "stderr": m.get("stderr"),
                 "command": m.get("command"),
                 "timestamp": m.get("timestamp"),
+                "steps": m.get("steps"),
+                "ns_per_day": (m.get("steps") * TIME_STEP * 86400) / _get(m, "time.wall_seconds") if _get(m, "time.wall_seconds") else None, 
             })
 
     print("All processes finished.")
@@ -356,14 +363,28 @@ def run(args):
         print(f"Removing previous logs at: {logs_root}")
         shutil.rmtree(logs_root)
     
+    # data_dir/md.csv should exist
+    steps = None
+    if not os.path.exists(os.path.join(data_dir, "md.csv")):
+        raise FileNotFoundError(f"data_dir/md.csv not found: {data_dir}/md.csv")
+    with open(os.path.join(data_dir, "md.csv"), "r") as f:
+        # get steps from md.csv
+        for line in f:
+            if line.startswith("steps;"):
+                parts = line.strip().split(";")
+                if len(parts) >= 2:
+                    steps = int(parts[1])
+                    print(f"MD steps found in md.csv: {steps}")
+                    break
+    if steps is None:
+        raise RuntimeError(f"Could not find 'steps' in {data_dir}/md.csv")
     
     current_dir = os.getcwd()
     # Run cpu base line
     print("Running CPU baseline benchmark (1 process)...")
     logs_dir = os.path.join(current_dir, f"benchmark_logs/cpu_baseline")
     os.makedirs(logs_dir, exist_ok=True)
-    work(1, logs_dir, f'"{bin_path}" "{data_dir}"')
-    
+    work(1, logs_dir, f'"{bin_path}" "{data_dir}"', steps)
     
     for process_num in range(1, max_procs + 1):
         print(f"Will run {process_num} processes in parallel:")
@@ -373,7 +394,7 @@ def run(args):
         command = f'"{bin_path}" --gpu "{data_dir}"'
         print(f"Command: {command}")
         print(f"Running {process_num} parallel processes...")
-        work(process_num, logs_dir, command)
+        work(process_num, logs_dir, command, steps)
         
         print(f"Completed benchmark for {process_num} processes.\n")
         time.sleep(2)  # brief pause between runs

@@ -23,6 +23,12 @@
   <small>Logs root: {{ logs_root }}</small>
 
   <div class="chart">
+  <h2>Simulation performance (ns/day)</h2>
+  <div id="nsday-chart"></div>
+  <div class="note">Simulated nanoseconds per wall-clock day.</div>
+  </div>
+
+  <div class="chart">
     <h2>Wall time vs processes</h2>
     <div id="wall-chart"></div>
     <div class="note">Mean and p95 wall time (seconds) per process count.</div>
@@ -201,6 +207,13 @@ function lineChart(containerId, cfg) {
       { label: "Speedup", ys: payload.speedup }
     ]
   });
+
+  lineChart("nsday-chart", {
+    xLabel: "Processes", yLabel: "ns/day", xs: payload.procs,
+    series: [{ label: "Performance (ns/day)", ys: payload.ns_per_day }]
+  });
+
+
 })();
 
 // ----- Render summary table -----
@@ -220,6 +233,7 @@ function lineChart(containerId, cfg) {
       <th>GPU util mean (%)</th><th>GPU util peak (%)</th>
       <th>VRAM util mean (%)</th><th>VRAM util peak (%)</th>
       <th>Speedup (×)</th>
+      <th>ns/day</th>
     </tr>`;
   table.appendChild(thead);
 
@@ -233,7 +247,8 @@ function lineChart(containerId, cfg) {
       <td>${r.rss_mean.toFixed(1)}</td><td>${r.gpu_mean.toFixed(1)}</td>
       <td>${r.gpu_util_mean.toFixed(1)}</td><td>${r.gpu_util_peak.toFixed(1)}</td>
       <td>${r.vram_util_mean.toFixed(1)}</td><td>${r.vram_util_peak.toFixed(1)}</td>
-      <td>${r.speedup.toFixed(2)}</td>`;
+      <td>${r.speedup.toFixed(2)}</td><td>${r.ns_per_day.toFixed(1)}</td>
+    `;
     tbody.appendChild(tr);
   });
   table.appendChild(tbody);
