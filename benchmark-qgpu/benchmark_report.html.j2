@@ -1,0 +1,259 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>{{ title }}</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; }
+    .section { max-width: 920px; }
+    h1 { margin-bottom: .25rem; }
+    small { color:#666; }
+    .chart { margin: 18px 0; }
+    svg { max-width: 900px; width: 100%; height: auto; border: 1px solid #eee; }
+    table { border-collapse: collapse; margin-top: 16px; width: 100%; max-width: 900px; }
+    th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: right; }
+    th { background:#f6f8fa; }
+    td:first-child, th:first-child { text-align: left; }
+    .note { color:#666; margin: 8px 0 0; }
+  </style>
+</head>
+<body>
+<div class="section">
+  <h1>{{ title }}</h1>
+  <small>Logs root: {{ logs_root }}</small>
+
+  <div class="chart">
+  <h2>Simulation performance (ns/day)</h2>
+  <div id="nsday-chart"></div>
+  <div class="note">Simulated nanoseconds per wall-clock day.</div>
+  </div>
+
+  <div class="chart">
+    <h2>Wall time vs processes</h2>
+    <div id="wall-chart"></div>
+    <div class="note">Mean and p95 wall time (seconds) per process count.</div>
+  </div>
+
+<div class="chart">
+  <h2>Speedup vs processes</h2>
+  <div id="speedup-chart"></div>
+  <div class="note">Speedup(n) = T_cpu / (T_n / n)</div>
+</div>
+
+
+  <div class="chart">
+    <h2>Memory vs processes</h2>
+    <div id="mem-chart"></div>
+    <div class="note">Mean peak RSS (CPU MB) and mean peak GPU memory (MB).</div>
+  </div>
+
+  <div class="chart">
+  <h2>GPU Memory Utilization vs processes</h2>
+  <div id="memutil-chart"></div>
+  <div class="note">Mean and peak VRAM utilization across GPUs during each run.</div>
+  </div>
+
+  <div class="chart">
+    <h2>GPU Utilization vs processes</h2>
+    <div id="util-chart"></div>
+    <div class="note">Average GPU utilization across all GPUs while the job runs.</div>
+  </div>
+
+  <h2>Summary</h2>
+  <div id="summary-table"></div>
+
+  <p><small>Generated at {{ generated_at }}</small></p>
+</div>
+
+<script>
+// ----- Data injected by Python -----
+const payload = {{ payload | tojson }};
+
+// ----- Small SVG line chart helper (no dependencies) -----
+function lineChart(containerId, cfg) {
+  const { title, xLabel, yLabel, xs, series, width=900, height=360, margin=50 } = cfg;
+  const w = width, h = height, left=margin, top=margin, right=margin, bottom=margin;
+  const plotW = w - left - right, plotH = h - top - bottom;
+
+  const allY = series.flatMap(s => s.ys.filter(y => Number.isFinite(y)));
+  if (!xs.length || !allY.length) {
+    document.getElementById(containerId).innerHTML = "<p style='color:#888'>No data.</p>";
+    return;
+  }
+  let xMin = Math.min(...xs), xMax = Math.max(...xs);
+  let yMin = Math.min(...allY), yMax = Math.max(...allY);
+  if (yMin === yMax) { yMin -= 1; yMax += 1; }
+
+  const x2px = x => left + (x - xMin) / (xMax - xMin || 1) * plotW;
+  const y2px = y => top + (1 - (y - yMin) / (yMax - yMin || 1)) * plotH;
+
+  const palette = ["#1f77b4", "#d62728", "#2ca02c", "#ff7f0e"];
+
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+
+  // Axes
+  const xAxis = document.createElementNS(svgNS,"line");
+  xAxis.setAttribute("x1", left); xAxis.setAttribute("y1", top+plotH);
+  xAxis.setAttribute("x2", left+plotW); xAxis.setAttribute("y2", top+plotH);
+  xAxis.setAttribute("stroke", "#333"); svg.appendChild(xAxis);
+
+  const yAxis = document.createElementNS(svgNS,"line");
+  yAxis.setAttribute("x1", left); yAxis.setAttribute("y1", top);
+  yAxis.setAttribute("x2", left); yAxis.setAttribute("y2", top+plotH);
+  yAxis.setAttribute("stroke", "#333"); svg.appendChild(yAxis);
+
+  // Grid + ticks
+  const ticks = 5;
+  for (let i=0;i<=ticks;i++){
+    const yv = yMin + i*(yMax-yMin)/ticks;
+    const ypx = y2px(yv);
+    const gl = document.createElementNS(svgNS,"line");
+    gl.setAttribute("x1", left); gl.setAttribute("y1", ypx);
+    gl.setAttribute("x2", left+plotW); gl.setAttribute("y2", ypx);
+    gl.setAttribute("stroke", "#eee"); svg.appendChild(gl);
+
+    const t = document.createElementNS(svgNS,"text");
+    t.setAttribute("x", left-6); t.setAttribute("y", ypx+4);
+    t.setAttribute("text-anchor","end"); t.setAttribute("font-size","10");
+    t.textContent = Number(yv).toPrecision(3);
+    svg.appendChild(t);
+  }
+  xs.forEach(xv => {
+    const xpx = x2px(xv);
+    const gl = document.createElementNS(svgNS,"line");
+    gl.setAttribute("x1", xpx); gl.setAttribute("y1", top);
+    gl.setAttribute("x2", xpx); gl.setAttribute("y2", top+plotH);
+    gl.setAttribute("stroke", "#f7f7f7"); svg.appendChild(gl);
+
+    const t = document.createElementNS(svgNS,"text");
+    t.setAttribute("x", xpx); t.setAttribute("y", top+plotH+14);
+    t.setAttribute("text-anchor","middle"); t.setAttribute("font-size","10");
+    t.textContent = xv; svg.appendChild(t);
+  });
+
+  // Series
+  series.forEach((s, i) => {
+    const pts = xs
+      .map((x, idx) => Number.isFinite(s.ys[idx]) ? `${x2px(x).toFixed(1)},${y2px(s.ys[idx]).toFixed(1)}` : null)
+      .filter(Boolean).join(" ");
+    if (!pts) return;
+    const pl = document.createElementNS(svgNS,"polyline");
+    pl.setAttribute("fill","none"); pl.setAttribute("stroke", palette[i%palette.length]);
+    pl.setAttribute("stroke-width","2"); pl.setAttribute("points", pts);
+    svg.appendChild(pl);
+
+    // Legend
+    const r = document.createElementNS(svgNS,"rect");
+    r.setAttribute("x", left + i*160); r.setAttribute("y", 8);
+    r.setAttribute("width", 12); r.setAttribute("height", 12);
+    r.setAttribute("fill", palette[i%palette.length]); svg.appendChild(r);
+
+    const l = document.createElementNS(svgNS,"text");
+    l.setAttribute("x", left + i*160 + 18); l.setAttribute("y", 18);
+    l.setAttribute("font-size","12"); l.textContent = s.label; svg.appendChild(l);
+  });
+
+  // Axis labels
+  const xl = document.createElementNS(svgNS,"text");
+  xl.setAttribute("x", left+plotW/2); xl.setAttribute("y", h-6);
+  xl.setAttribute("text-anchor","middle"); xl.setAttribute("font-size","12");
+  xl.textContent = xLabel; svg.appendChild(xl);
+
+  const yl = document.createElementNS(svgNS,"text");
+  yl.setAttribute("transform", `translate(14,${top+plotH/2}) rotate(-90)`);
+  yl.setAttribute("text-anchor","middle"); yl.setAttribute("font-size","12");
+  yl.textContent = yLabel; svg.appendChild(yl);
+
+  document.getElementById(containerId).appendChild(svg);
+}
+
+// ----- Render charts -----
+(function(){
+  const xs = payload.procs; // e.g., [1,2,3,...]
+  lineChart("wall-chart", {
+    xLabel: "Processes", yLabel: "Seconds", xs,
+    series: [
+      { label: "Wall mean (s)", ys: payload.wall_mean },
+      { label: "Wall p95 (s)",  ys: payload.wall_p95  },
+    ]
+  });
+  lineChart("mem-chart", {
+    xLabel: "Processes", yLabel: "MB", xs,
+    series: [
+      { label: "RSS mean (MB)", ys: payload.rss_mean },
+      { label: "GPU mean (MB)", ys: payload.gpu_mean },
+    ]
+  });
+  lineChart("memutil-chart", {
+    xLabel: "Processes", yLabel: "% VRAM Utilization", xs: payload.procs,
+    series: [
+      { label: "VRAM util mean (%)", ys: payload.gpu_mem_util_mean },
+      { label: "VRAM util peak (%)", ys: payload.gpu_mem_util_peak }
+    ]
+  });
+// GPU utilization chart
+  lineChart("util-chart", {
+    xLabel: "Processes", yLabel: "% GPU Utilization", xs: payload.procs,
+    series: [
+      { label: "GPU util mean (%)", ys: payload.gpu_util_mean },
+      { label: "GPU util peak (%)", ys: payload.gpu_util_peak }
+    ]
+  });
+    lineChart("speedup-chart", {
+    xLabel: "Processes", yLabel: "Speedup (×)", xs: payload.procs,
+    series: [
+      { label: "Speedup", ys: payload.speedup }
+    ]
+  });
+
+  lineChart("nsday-chart", {
+    xLabel: "Processes", yLabel: "ns/day", xs: payload.procs,
+    series: [{ label: "Performance (ns/day)", ys: payload.ns_per_day }]
+  });
+
+
+})();
+
+// ----- Render summary table -----
+(function(){
+  const rows = payload.table_rows; // list of dicts
+  if (!rows.length) { 
+    document.getElementById("summary-table").innerHTML = "<p style='color:#888'>No data.</p>";
+    return;
+  }
+  const table = document.createElement("table");
+  const thead = document.createElement("thead");
+  thead.innerHTML = `
+    <tr>
+      <th>Procs</th><th>Runs</th><th>Non-zero RC</th>
+      <th>Wall mean (s)</th><th>p95 (s)</th><th>min (s)</th><th>max (s)</th>
+      <th>RSS mean (MB)</th><th>GPU mean (MB)</th>
+      <th>GPU util mean (%)</th><th>GPU util peak (%)</th>
+      <th>VRAM util mean (%)</th><th>VRAM util peak (%)</th>
+      <th>Speedup (×)</th>
+      <th>ns/day</th>
+    </tr>`;
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  rows.forEach(r => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${r.procs}</td><td>${r.runs}</td><td>${r.rc_bad}</td>
+      <td>${r.wall_mean.toFixed(3)}</td><td>${r.wall_p95.toFixed(3)}</td>
+      <td>${r.wall_min.toFixed(3)}</td><td>${r.wall_max.toFixed(3)}</td>
+      <td>${r.rss_mean.toFixed(1)}</td><td>${r.gpu_mean.toFixed(1)}</td>
+      <td>${r.gpu_util_mean.toFixed(1)}</td><td>${r.gpu_util_peak.toFixed(1)}</td>
+      <td>${r.vram_util_mean.toFixed(1)}</td><td>${r.vram_util_peak.toFixed(1)}</td>
+      <td>${r.speedup.toFixed(2)}</td><td>${r.ns_per_day.toFixed(1)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  document.getElementById("summary-table").appendChild(table);
+})();
+</script>
+</body>
+</html>
