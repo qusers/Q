@@ -81,13 +81,20 @@ final                     eq1.re
            data['topdir'],
            data['testinfo'][data['test']][0])
         # Check if we are dealing with a FEP file
-        if len(data['testinfo'][test]) == 3:
+        print(data['testinfo'][test])
+        if len(data['testinfo'][test]) >= 3:
             fep_part = """fep                       {}{}
 
 [lambdas]
 1.000 0.000
 """.format(data['inputdir'],data['testinfo'][data['test']][2])
-            md_content = md_content + fep_part 
+            md_content = md_content + fep_part
+        # Check if there are boundary conditions
+        if len(data['testinfo'][test]) == 4:
+            filename = data['inputdir'] + '/' + data['testinfo'][data['test']][3]
+            with open(filename, 'r') as f:
+                restraint_part = f.read()
+                md_content = md_content + restraint_part
 
         with open('eq1.inp', 'w') as outfile:
             outfile.write(md_content)
@@ -95,7 +102,7 @@ final                     eq1.re
 class Run_Q6(object):
     def __init__(self,data):
         print("Running Q6")
-        q_command = '{}bin/q6/qdyn_test eq1.inp > eq1.log'.format(settings.ROOT)
+        q_command = '{}src/q6/bin/q6/qdyn_test eq1.inp > eq1.log'.format(settings.ROOT)
         os.system(q_command)
 
 class Parse_Q6_data(object):
@@ -372,6 +379,12 @@ class Init(object):
                                            'dualtop_vacuum.top',
                                            '22',
                                            'dualtop.fep'
+                                          ],
+                    'cdk2'              : [
+                                           'cdk2.top',
+                                           '22',
+                                           'FEP_cdk2.fep',
+                                           'restraints_cdk2.inp'
                                           ],
                     'thrombin'          : [
                                            'thrombin.top',
