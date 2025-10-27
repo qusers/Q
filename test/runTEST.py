@@ -81,13 +81,15 @@ final                     eq1.re
            data['topdir'],
            data['testinfo'][data['test']][0])
         # Check if we are dealing with a FEP file
-        print(data['testinfo'][test])
         if len(data['testinfo'][test]) >= 3:
             fep_part = """fep                       {}{}
 
 [lambdas]
-1.000 0.000
 """.format(data['inputdir'],data['testinfo'][data['test']][2])
+            if data['testinfo'][data['test']][2].startswith("FEPm"):
+                fep_part += "0.500 0.500\n"
+            else:
+                fep_part += "1.000 0.000\n"
             md_content = md_content + fep_part
         # Check if there are boundary conditions
         if len(data['testinfo'][test]) == 4:
@@ -199,7 +201,7 @@ class Run_QGPU(object):
                ]
 
         # FEP file?
-        if len(data['testinfo'][data['test']]) == 3:
+        if len(data['testinfo'][data['test']]) >= 3:
             args.append('-f')
             args.append('{}{}'.format(data['inputdir'],data['testinfo'][data['test']][2]))
 
@@ -383,13 +385,13 @@ class Init(object):
                     'cdk2'              : [
                                            'cdk2.top',
                                            '22',
-                                           'FEP_cdk2.fep',
+                                           'FEPm_cdk2.fep',
                                            'restraints_cdk2.inp'
                                           ],
                     'thrombin'          : [
                                            'thrombin.top',
                                            '25',
-                                           'FEP_thrombin.fep',
+                                           'FEPm_thrombin.fep',
                                            ['eq5', '0744_0256', '0998_0002']
                                           ],
                 }
