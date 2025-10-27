@@ -368,12 +368,17 @@ class Init(object):
                                            'ala_wat25.top',
                                            '25'
                                           ],
-
                     'q-q-large_vac'     : [
                                            'dualtop_vacuum.top',
                                            '22',
                                            'dualtop.fep'
-                                          ]                                          
+                                          ],
+                    'thrombin'          : [
+                                           'thrombin.top',
+                                           '25',
+                                           'FEP_thrombin.fep',
+                                           ['eq5', '0744_0256', '0998_0002']
+                                          ],
                 }
 
         tests = data['testinfo'].keys()

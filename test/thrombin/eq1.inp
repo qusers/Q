@@ -1,0 +1,36 @@
+[MD]
+steps                     2
+stepsize                  1
+temperature               1
+bath_coupling             1
+random_seed               112
+initial_temperature       1
+shake_solvent             off
+shake_hydrogens           off
+shake_solute              off
+lrf                       off
+
+[cut-offs]
+solute_solvent            99.0
+solute_solute             99.0
+solvent_solvent           99.0
+q_atom                    99.0
+lrf                       99.0
+
+[sphere]
+shell_force               10.0
+shell_radius              25
+
+[solvent]
+radial_force              60.0
+polarisation              on
+polarisation_force        20.0
+charge_correction         off
+
+[intervals]
+output                    1
+non_bond                  1
+
+[files]
+topology                  /home/chichi148/Projects/Q/test/data/topology/thrombin.top
+final                     eq1.re

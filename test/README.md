@@ -66,20 +66,17 @@ description: simulation of polypeptide in 25A water sphere
 
 ===
 We will add the following tests:
-name: cdk2_1h1q_28_eq1
-description: early equilibration of cdk2 target
+name: thrombin
+description: early equilibration of thrombin target (1a_1c)
 
-name: cdk2_1h1q_28_eq5
-description: late equilibration of cdk2 target
+name: thrombin_eq5
+description: late equilibration of thrombin target
 
-name: cdk2_1h1q_28_0024_0976
-description: early perturbation of cdk2 target
+name: thrombin_0744_0256
+description: mid perturbation of thrombin target
 
-name: cdk2_1h1q_28_0744_0256
-description: mid perturbation of cdk2 target
-
-name: cdk2_1h1q_28_0998_0002
-description: late perturbation of cdk2 target
+name: thrombin_0998_0002
+description: late perturbation of thrombin target
 
 Similar for other (harder?) targets
 
