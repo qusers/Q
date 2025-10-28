@@ -15,6 +15,7 @@ import topology as TOPOLOGY
 import compare
 import energy as ENERGY
 
+lambdas = ['eq5', '0744_0256', '0998_0002']
 
 class Create_Environment(object):
     """
@@ -38,6 +39,18 @@ class create_MD_input(object):
 
         else:
             shake = 'off'
+
+        _lambda = None
+        _inv_lambda = None
+        # Check if a lambda has been specified
+
+        if len(data['testinfo'][test]) >= 3 and data['lambda'] is not None:
+            if not data['lambda'].startswith('eq'):
+                str_lambda = data['lambda'].split("_")[0]
+                str_inv_lambda = data['lambda'].split("_")[1]
+                _lambda = str_lambda[0] + "." + str_lambda[1:4]
+                _inv_lambda = str_inv_lambda[0] + "." + str_inv_lambda[1:4]
+
         md_content = \
 """[MD]
 steps                     {}
@@ -79,15 +92,28 @@ final                     eq1.re
            shake, shake, shake,
            data['testinfo'][data['test']][1],
            data['topdir'],
-           data['testinfo'][data['test']][0])
-        # Check if we are dealing with a FEP file
-        if len(data['testinfo'][test]) == 3:
+           data['topfile'])
+        if len(data['testinfo'][test]) >= 3:
+            filename = data['testinfo'][data['test']][2]
+
             fep_part = """fep                       {}{}
 
 [lambdas]
-1.000 0.000
-""".format(data['inputdir'],data['testinfo'][data['test']][2])
-            md_content = md_content + fep_part 
+""".format(data['inputdir'], filename)
+            if _lambda is not None:
+                fep_part += _lambda + " " + _inv_lambda + "\n"
+            else:
+                if filename.startswith("FEPm"):
+                    fep_part += "0.500 0.500\n"
+                else:
+                    fep_part += "1.000 0.000\n"
+            md_content = md_content + fep_part
+        # Check if there are boundary conditions
+        if len(data['testinfo'][test]) >= 4:
+            filename = data['inputdir'] + '/' + data['testinfo'][data['test']][3]
+            with open(filename, 'r') as f:
+                restraint_part = f.read()
+                md_content = md_content + restraint_part
 
         with open('eq1.inp', 'w') as outfile:
             outfile.write(md_content)
@@ -95,7 +121,7 @@ final                     eq1.re
 class Run_Q6(object):
     def __init__(self,data):
         print("Running Q6")
-        q_command = '{}bin/q6/qdyn_test eq1.inp > eq1.log'.format(settings.ROOT)
+        q_command = '{}src/q6/bin/q6/qdyn_test eq1.inp > eq1.log'.format(settings.ROOT)
         os.system(q_command)
 
 class Parse_Q6_data(object):
@@ -167,7 +193,7 @@ class Parse_Q6_data(object):
 
         # Parse the topology
         Qtopology = '{}{}'.format(data['topdir'],
-                                  data['testinfo'][data['test']][0])
+                                  data['topfile'])
         read_top = TOPOLOGY.Read_Topology(Qtopology)
         top_data = read_top.Q()
         with open('coords.csv','w') as outfile:
@@ -185,14 +211,14 @@ class Run_QGPU(object):
         args = [
                 ' {}src/bin/qdyn.py'.format(settings.ROOT),
                 '-t', '{}{}'.format(data['topdir'],
-                                   data['testinfo'][data['test']][0]),
+                                   data['topfile']),
                 '-m', 'eq1.inp',
                 '-d', 'TEST',
                 '-r', 'tmp'
                ]
 
         # FEP file?
-        if len(data['testinfo'][data['test']]) == 3:
+        if len(data['testinfo'][data['test']]) >= 3:
             args.append('-f')
             args.append('{}{}'.format(data['inputdir'],data['testinfo'][data['test']][2]))
 
@@ -218,7 +244,7 @@ class Compare(object):
     def __init__(self,data):
         total_energies_Q6 = []
         total_energies_QGPU = []
-        top = '{}'.format(data['testinfo'][data['test']][0][:-4])
+        top = '{}'.format(data['topfile'][:-4])
         energyfile = '{}/TEST/{}/output/energies.csv'.format(data['curtest'],top)
 
         #QGPU data
@@ -308,7 +334,7 @@ class Init(object):
         # Step = step + 1
         self.data['timestep'] = '{}'.format(int(self.data['timestep'])+1)
 
-        if self.data['wd'] is not None:
+        if self.data['wd'] is None:
             self.data['wd'] = self.data['curdir'] + '/'
         if self.data['wd'][-1] != '/':
             self.data['wd'] = self.data['wd'] + '/'
@@ -368,12 +394,23 @@ class Init(object):
                                            'ala_wat25.top',
                                            '25'
                                           ],
-
                     'q-q-large_vac'     : [
                                            'dualtop_vacuum.top',
                                            '22',
                                            'dualtop.fep'
-                                          ]                                          
+                                          ],
+                    'cdk2'              : [
+                                           'cdk2.top',
+                                           '22',
+                                           'FEPm_cdk2.fep',
+                                           'restraints_cdk2.inp'
+                                          ],
+                    'thrombin'          : [
+                                           'thrombin.top',
+                                           '25',
+                                           'FEPm_thrombin.fep',
+                                           'restraints_thrombin.inp'
+                                          ],
                 }
 
         tests = data['testinfo'].keys()
@@ -383,6 +420,10 @@ class Init(object):
             print("\nRunning {}".format(test))
             self.data['test'] = test
             self.data['curtest'] = self.data['wd'] + test
+            _topfile = data['testinfo'][data['test']][0]
+            if len(data['testinfo'][test]) >= 3 and data['lambda'] is not None:
+                _topfile = _topfile.split(".")[0] + "_" + data['lambda'] + "." + _topfile.split(".")[1]
+            self.data['topfile'] = _topfile
             # INIT
             Create_Environment(self.data)
             
@@ -466,6 +507,12 @@ if __name__ == "__main__":
                         default = False,
                         action = 'store_true',
                         help = "Make a plot of the energies")
+    
+    parser.add_argument('--lambda',
+                        dest = "lambda",
+                        default = None,
+                        required = False,
+                        help = "Specify a particular phase of the perturbation")
 
     args = parser.parse_args()
     
