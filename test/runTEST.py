@@ -15,6 +15,7 @@ import topology as TOPOLOGY
 import compare
 import energy as ENERGY
 
+lambdas = ['eq5', '0744_0256', '0998_0002']
 
 class Create_Environment(object):
     """
@@ -38,6 +39,18 @@ class create_MD_input(object):
 
         else:
             shake = 'off'
+
+        _lambda = None
+        _inv_lambda = None
+        # Check if a lambda has been specified
+
+        if len(data['testinfo'][test]) >= 3 and data['lambda'] is not None:
+            if not data['lambda'].startswith('eq'):
+                str_lambda = data['lambda'].split("_")[0]
+                str_inv_lambda = data['lambda'].split("_")[1]
+                _lambda = str_lambda[0] + "." + str_lambda[1:4]
+                _inv_lambda = str_inv_lambda[0] + "." + str_inv_lambda[1:4]
+
         md_content = \
 """[MD]
 steps                     {}
@@ -79,20 +92,24 @@ final                     eq1.re
            shake, shake, shake,
            data['testinfo'][data['test']][1],
            data['topdir'],
-           data['testinfo'][data['test']][0])
-        # Check if we are dealing with a FEP file
+           data['topfile'])
         if len(data['testinfo'][test]) >= 3:
+            filename = data['testinfo'][data['test']][2]
+
             fep_part = """fep                       {}{}
 
 [lambdas]
-""".format(data['inputdir'],data['testinfo'][data['test']][2])
-            if data['testinfo'][data['test']][2].startswith("FEPm"):
-                fep_part += "0.500 0.500\n"
+""".format(data['inputdir'], filename)
+            if _lambda is not None:
+                fep_part += _lambda + " " + _inv_lambda + "\n"
             else:
-                fep_part += "1.000 0.000\n"
+                if filename.startswith("FEPm"):
+                    fep_part += "0.500 0.500\n"
+                else:
+                    fep_part += "1.000 0.000\n"
             md_content = md_content + fep_part
         # Check if there are boundary conditions
-        if len(data['testinfo'][test]) == 4:
+        if len(data['testinfo'][test]) >= 4:
             filename = data['inputdir'] + '/' + data['testinfo'][data['test']][3]
             with open(filename, 'r') as f:
                 restraint_part = f.read()
@@ -176,7 +193,7 @@ class Parse_Q6_data(object):
 
         # Parse the topology
         Qtopology = '{}{}'.format(data['topdir'],
-                                  data['testinfo'][data['test']][0])
+                                  data['topfile'])
         read_top = TOPOLOGY.Read_Topology(Qtopology)
         top_data = read_top.Q()
         with open('coords.csv','w') as outfile:
@@ -194,7 +211,7 @@ class Run_QGPU(object):
         args = [
                 ' {}src/bin/qdyn.py'.format(settings.ROOT),
                 '-t', '{}{}'.format(data['topdir'],
-                                   data['testinfo'][data['test']][0]),
+                                   data['topfile']),
                 '-m', 'eq1.inp',
                 '-d', 'TEST',
                 '-r', 'tmp'
@@ -227,7 +244,7 @@ class Compare(object):
     def __init__(self,data):
         total_energies_Q6 = []
         total_energies_QGPU = []
-        top = '{}'.format(data['testinfo'][data['test']][0][:-4])
+        top = '{}'.format(data['topfile'][:-4])
         energyfile = '{}/TEST/{}/output/energies.csv'.format(data['curtest'],top)
 
         #QGPU data
@@ -317,7 +334,7 @@ class Init(object):
         # Step = step + 1
         self.data['timestep'] = '{}'.format(int(self.data['timestep'])+1)
 
-        if self.data['wd'] is not None:
+        if self.data['wd'] is None:
             self.data['wd'] = self.data['curdir'] + '/'
         if self.data['wd'][-1] != '/':
             self.data['wd'] = self.data['wd'] + '/'
@@ -392,7 +409,7 @@ class Init(object):
                                            'thrombin.top',
                                            '25',
                                            'FEPm_thrombin.fep',
-                                           ['eq5', '0744_0256', '0998_0002']
+                                           'restraints_thrombin.inp'
                                           ],
                 }
 
@@ -403,6 +420,12 @@ class Init(object):
             print("\nRunning {}".format(test))
             self.data['test'] = test
             self.data['curtest'] = self.data['wd'] + test
+            _topfile = data['testinfo'][data['test']][0]
+            print(_topfile)
+            if len(data['testinfo'][test]) >= 3 and data['lambda'] is not None:
+                _topfile = _topfile.split(".")[0] + "_" + data['lambda'] + "." + _topfile.split(".")[1]
+            print(_topfile)
+            self.data['topfile'] = _topfile
             # INIT
             Create_Environment(self.data)
             
@@ -486,6 +509,12 @@ if __name__ == "__main__":
                         default = False,
                         action = 'store_true',
                         help = "Make a plot of the energies")
+    
+    parser.add_argument('--lambda',
+                        dest = "lambda",
+                        default = None,
+                        required = False,
+                        help = "Specify a particular phase of the perturbation")
 
     args = parser.parse_args()
     
