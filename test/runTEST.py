@@ -421,10 +421,8 @@ class Init(object):
             self.data['test'] = test
             self.data['curtest'] = self.data['wd'] + test
             _topfile = data['testinfo'][data['test']][0]
-            print(_topfile)
             if len(data['testinfo'][test]) >= 3 and data['lambda'] is not None:
                 _topfile = _topfile.split(".")[0] + "_" + data['lambda'] + "." + _topfile.split(".")[1]
-            print(_topfile)
             self.data['topfile'] = _topfile
             # INIT
             Create_Environment(self.data)
