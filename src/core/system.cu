@@ -729,7 +729,9 @@ void calc_temperature() {
             Texcl_solute += ener;
         }
         if (ener > Ekinmax) {
-            printf(">>> WARNING: hot atom %d: %f\n", i, ener/Boltz/3);
+            printf(">>> WARNING: hot atom %d, %f %f %f %f %f %f: %f %f %f %f %f\n", i, velocities[i].x, velocities[i].y, velocities[i].z, 
+            coords[i].x, coords[i].y, coords[i].z, ener, ener/Boltz/3, Ekinmax, mass_i, Ekinmax / (0.5 * mass_i));
+            // printf(">>> WARNING: hot atom %d: %f\n", i, ener/Boltz/3);
         }
     }
 
@@ -744,7 +746,9 @@ void calc_temperature() {
             Texcl_solvent += ener;
         }
         if (ener > Ekinmax) {
-            printf(">>> WARNING: hot atom %d: %f\n", i, ener/Boltz/3);
+            printf(">>> WARNING: hot atom %d, %f %f %f %f %f %f: %f %f %f %f %f\n", i, velocities[i].x, velocities[i].y, velocities[i].z, 
+            coords[i].x, coords[i].y, coords[i].z, ener, ener/Boltz/3, Ekinmax, mass_i, Ekinmax / (0.5 * mass_i));
+            // printf(">>> WARNING: hot atom %d: %f\n", i, ener/Boltz/3);
         }
     }
 
