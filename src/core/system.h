@@ -64,7 +64,7 @@ extern int n_molecules;
 
 extern char base_folder[1024];
 
-extern double dt;
+extern float dt;
 
 extern bool run_gpu;
 
@@ -76,29 +76,29 @@ extern bool run_gpu;
 struct md_t {
     // [MD]
     int steps;
-    double stepsize;
-    double temperature;
+    float stepsize;
+    float temperature;
     char thermostat[40];
-    double bath_coupling;
+    float bath_coupling;
     int random_seed;
-    double initial_temperature;
+    float initial_temperature;
     bool shake_solvent;
     bool shake_solute;
     bool shake_hydrogens;
     bool lrf;
     bool charge_groups;
     // [cut-offs]
-    double solute_solute;
-    double solvent_solvent;
-    double solute_solvent;
-    double q_atom;
+    float solute_solute;
+    float solvent_solvent;
+    float solute_solvent;
+    float q_atom;
     // [sphere]
-    double shell_radius; // Note: this is for the pshell
-    double shell_force;  // Note: this is for the pshell
+    float shell_radius; // Note: this is for the pshell
+    float shell_force;  // Note: this is for the pshell
     // [solvent]
-    double radial_force;
+    float radial_force;
     bool polarisation;
-    double polarisation_force;
+    float polarisation_force;
     // [intervals]
     int non_bond;
     int output;
@@ -121,9 +121,9 @@ extern bool separate_scaling;
  */
 
 struct coord_t {
-    double x;
-    double y;
-    double z;
+    float x;
+    float y;
+    float z;
 };
 
 struct bond_t {
@@ -134,8 +134,8 @@ struct bond_t {
 
 struct cbond_t {
     int code;
-    double kb;
-    double b0;
+    float kb;
+    float b0;
 };
 
 struct angle_t {
@@ -147,8 +147,8 @@ struct angle_t {
 
 struct cangle_t {
     int code;
-    double kth;
-    double th0;
+    float kth;
+    float th0;
 };
 
 struct torsion_t {
@@ -161,9 +161,9 @@ struct torsion_t {
 
 struct ctorsion_t {
     int code;
-    double k;
-    double n;
-    double d;
+    float k;
+    float n;
+    float d;
 };
 
 struct improper_t {
@@ -176,8 +176,8 @@ struct improper_t {
 
 struct cimproper_t {
     int code;
-    double k;
-    double phi0;
+    float k;
+    float phi0;
 };
 
 struct charge_t {
@@ -187,7 +187,7 @@ struct charge_t {
 
 struct ccharge_t {
     int code;
-    double charge;
+    float charge;
 };
 
 struct atype_t {
@@ -197,23 +197,23 @@ struct atype_t {
 
 struct catype_t {
     int code;
-    double m;
-    double aii_normal;
-    double bii_normal;
-    double aii_polar;
-    double bii_polar;
-    double aii_1_4;
-    double bii_1_4;
+    float m;
+    float aii_normal;
+    float bii_normal;
+    float aii_polar;
+    float bii_polar;
+    float aii_1_4;
+    float bii_1_4;
 };
 
 struct topo_t {
     int solvent_type;
-    double exclusion_radius;
-    double solvent_radius;
+    float exclusion_radius;
+    float solvent_radius;
     coord_t solute_center;
     coord_t solvent_center;
-    double el14_scale;
-    double coulomb_constant;
+    float el14_scale;
+    float coulomb_constant;
 };
 
 struct cgrp_t {
@@ -263,7 +263,7 @@ extern int *LJ_matrix;
 extern torsion_t *torsions;
 extern bool *excluded;
 extern bool *heavy;
-extern double *winv;
+extern float *winv;
 extern cgrp_t *charge_groups;
 
 extern int *molecules;
@@ -274,7 +274,7 @@ extern int *molecules;
  */
 
 extern int n_lambdas;
-extern double *lambdas;
+extern float *lambdas;
 
 struct q_angcouple_t {
     int acode;
@@ -303,45 +303,45 @@ struct q_bond_t {
 };
 
 struct q_cangle_t {
-    double kth;
-    double th0;
+    float kth;
+    float th0;
 };
 
 struct q_catype_t {
     char name[10];
-    double Ai;
-    double Bi;
-    double Ci;
-    double ai;
-    double Ai_14;
-    double Bi_14;
-    double m;
+    float Ai;
+    float Bi;
+    float Ci;
+    float ai;
+    float Ai_14;
+    float Bi_14;
+    float m;
 };
 
 struct q_cbond_t {
-    double kb;
-    double b0;
+    float kb;
+    float b0;
 };
 
 struct q_charge_t {
-    double q;
+    float q;
 };
 
 struct q_cimproper_t {
-    double k;
-    double phi0;
+    float k;
+    float phi0;
 };
 
 struct q_ctorsion_t {
-    double k;
-    double n;
-    double d;
+    float k;
+    float n;
+    float d;
 };
 
 struct q_elscale_t {
     int qi;
     int qj;
-    double mu;
+    float mu;
 };
 
 struct q_exclpair_t {
@@ -368,18 +368,18 @@ struct q_offdiag_t {
     int j;
     int qk;
     int ql;
-    double Aij;
-    double muij;
+    float Aij;
+    float muij;
 };
 
 struct q_shake_t {
     int ai;
     int aj;
-    double dist;
+    float dist;
 };
 
 struct q_softcore_t {
-    double s;
+    float s;
 };
 
 struct q_softpair_t {
@@ -451,7 +451,7 @@ extern q_torsion_t *q_torsions;
 struct restrseq_t {
     int ai;
     int aj;
-    double k;
+    float k;
     bool ih;
     int to_center; // Flag for restraining to geom. or mass center
 };
@@ -466,21 +466,21 @@ struct restrpos_t {
 struct restrdis_t {
     int ai, aj;
     int ipsi;
-    double d1, d2;
-    double k;
+    float d1, d2;
+    float k;
     char itext[20], jtext[20];
 };
 
 struct restrang_t {
     int ai, aj, ak;
     int ipsi;
-    double ang;
-    double k;
+    float ang;
+    float k;
 };
 
 struct restrwall_t {
     int ai, aj;
-    double d, k, aMorse, dMorse;
+    float d, k, aMorse, dMorse;
     bool ih;
 };
 
@@ -505,20 +505,20 @@ void init_restrseqs(char* filename);
 
 struct shell_t {
     int n_inshell;
-    double theta_corr;
-    double avtheta;
-    double avn_inshell;
-    double router;
-    double dr;
-    double cstb;
+    float theta_corr;
+    float avtheta;
+    float avn_inshell;
+    float router;
+    float dr;
+    float cstb;
 };
 
 // Total energy in the system. Defined once per run
-extern double crgQtot;
-extern double Dwmz, awmz;
+extern float crgQtot;
+extern float Dwmz, awmz;
 
 // Water shell layout. Defined once per run
-extern double *theta, *theta0, *tdum; //array size n_waters
+extern float *theta, *theta0, *tdum; //array size n_waters
 extern int n_max_inshell, n_shells;
 extern int **list_sh, **nsort; // array size (n_max_inshell, n_shells)
 extern shell_t* wshells;
@@ -534,7 +534,7 @@ void init_wshells();
 struct shake_bond_t {
     int ai;
     int aj;
-    double dist2;
+    float dist2;
     bool ready;
 };
 
@@ -553,42 +553,42 @@ struct p_atom_t {
 };
 
 struct vel_t {
-    double x;
-    double y;
-    double z;
+    float x;
+    float y;
+    float z;
 };
 
 struct dvel_t {
-    double x;
-    double y;
-    double z;
+    float x;
+    float y;
+    float z;
 };
 
 struct E_bonded_t {
-    double Ubond;
-    double Uangle;
-    double Utor;
-    double Uimp;
+    float Ubond;
+    float Uangle;
+    float Utor;
+    float Uimp;
 };
 
 struct E_nonbonded_t {
-    double Ucoul;
-    double Uvdw;
+    float Ucoul;
+    float Uvdw;
 };
 
 struct E_restraint_t {
-    double Uradx;
-    double Upolx;
-    double Ufix;
-    double Ushell;
-    double Upres;
-    double Urestr;
+    float Uradx;
+    float Upolx;
+    float Ufix;
+    float Ushell;
+    float Upres;
+    float Urestr;
 };
 
 struct energy_t {
-    double Ukin;
-    double Upot;
-    double Utot;
+    float Ukin;
+    float Upot;
+    float Utot;
 };
 
 extern p_atom_t *p_atoms;
@@ -601,8 +601,8 @@ extern E_bonded_t E_bond_p, E_bond_w, E_bond_q, *EQ_bond;
 extern E_nonbonded_t E_nonbond_pp, E_nonbond_pw, E_nonbond_ww, E_nonbond_qx;
 extern E_nonbonded_t *EQ_nonbond_qq, *EQ_nonbond_qp, *EQ_nonbond_qw, *EQ_nonbond_qx;
 extern E_restraint_t E_restraint, *EQ_restraint;
-extern double Temp, Tfree, Texcl;
-extern double A_O, A_OO, B_O, B_OO, crg_ow, crg_hw; // TODO: don't keep this in system.cu?
+extern float Temp, Tfree, Texcl;
+extern float A_O, A_OO, B_O, B_OO, crg_ow, crg_hw; // TODO: don't keep this in system.cu?
 
 void init_velocities();
 void init_dvelocities();
@@ -613,7 +613,7 @@ void init_energies();
  * =============================================
  */
 
-extern double Ndegf, Ndegfree, Ndegf_solvent, Ndegf_solute, Ndegfree_solvent, Ndegfree_solute;
+extern float Ndegf, Ndegfree, Ndegf_solvent, Ndegf_solute, Ndegfree_solvent, Ndegfree_solute;
 void calc_temperature();
 
 /* =============================================

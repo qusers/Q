@@ -28,7 +28,7 @@ int n_waters;
 int n_molecules = 0;
 
 char base_folder[1024];
-double dt, tau_T;
+float dt, tau_T;
 
 bool run_gpu = false;
 
@@ -85,7 +85,7 @@ int *LJ_matrix;
 bool *excluded;
 bool *heavy;
 int *molecules;
-double *winv;
+float *winv;
 cgrp_t *charge_groups;
 
 topo_t topo;
@@ -96,7 +96,7 @@ topo_t topo;
  */
 
 int n_lambdas;
-double *lambdas;
+float *lambdas;
 
 int n_qangcouples;
 int n_qangles;
@@ -340,23 +340,23 @@ void exclude_shaken_definitions() {
 coord_t* coords;
 vel_t* velocities;
 dvel_t* dvelocities;
-double Temp = 0;
-double Texcl = 0;
-double Tfree = 0;
-double Tscale = 1;
+float Temp = 0;
+float Texcl = 0;
+float Tfree = 0;
+float Tscale = 1;
 
 // Shake constrains
 coord_t* xcoords;
 
 // Water constants
-double A_O = 0, A_OO = 0, B_O, B_OO, crg_ow, crg_hw, mu_w = 0;
+float A_O = 0, A_OO = 0, B_O, B_OO, crg_ow, crg_hw, mu_w = 0;
 
 void init_velocities() {
     velocities = (vel_t*) malloc(n_atoms * sizeof(vel_t));
 
     // If not previous value set, use a Maxwell distribution to fill velocities
-    double kT = Boltz * md.initial_temperature;
-    double sd, mass;
+    float kT = Boltz * md.initial_temperature;
+    float sd, mass;
     for (int i = 0; i < n_atoms; i++) {
         mass = catypes[atypes[i].code - 1].m;
         sd = sqrt(kT / mass);
@@ -376,7 +376,7 @@ void init_xcoords() {
 }
 
 void init_inv_mass() {
-    winv = (double*) malloc(n_atoms * sizeof(double));
+    winv = (float*) malloc(n_atoms * sizeof(float));
     for (int ai = 0; ai < n_atoms; ai++) {
         winv[ai] = 1 / catypes[atypes[ai].code-1].m;
     }
@@ -402,11 +402,11 @@ restrdis_t *restrdists;
 restrang_t *restrangs;
 restrwall_t* restrwalls;
 
-double crgQtot = 0;
-double Dwmz, awmz;
+float crgQtot = 0;
+float Dwmz, awmz;
  
  // Shell layout. Defined once per run
-double *theta, *theta0, *tdum; //array size n_waters
+float *theta, *theta0, *tdum; //array size n_waters
 int n_max_inshell, n_shells;
 int **list_sh, **nsort; // array size (n_max_inshell, n_shells)
 shell_t* wshells;
@@ -427,7 +427,7 @@ void init_water_sphere() {
 //ONLY call if there are actually solvent atoms, or get segfaulted
 void init_wshells() {
     int n_inshell;
-    double drs, router, ri, dr, Vshell, rshell;
+    float drs, router, ri, dr, Vshell, rshell;
     if (mu_w == 0) {
         // Get water properties from first water molecule
         cbond_t cbondw = cbonds[bonds[n_atoms_solute].code-1];
@@ -479,9 +479,9 @@ void init_wshells() {
     n_max_inshell = n_waters; // Make largest a little bigger just in case
 
     // Initialize arrays needed for bookkeeping
-    theta = (double*) malloc(n_waters * sizeof(double));
-    theta0 = (double*) malloc(n_waters * sizeof(double));
-    tdum = (double*) malloc(n_waters * sizeof(double));
+    theta = (float*) malloc(n_waters * sizeof(float));
+    theta0 = (float*) malloc(n_waters * sizeof(float));
+    tdum = (float*) malloc(n_waters * sizeof(float));
 
     list_sh = (int**) malloc(n_max_inshell * sizeof(int*));
     nsort = (int**) malloc(n_max_inshell * sizeof(int*));
@@ -493,7 +493,7 @@ void init_wshells() {
 }
 
 void init_pshells() {
-    double mass, r2, rin2;
+    float mass, r2, rin2;
 
     heavy = (bool*) calloc(n_atoms, sizeof(bool));
     shell = (bool*) calloc(n_atoms, sizeof(bool));
@@ -529,7 +529,7 @@ void init_pshells() {
 }
 
 void init_pshells_with_charge_groups() {
-    double mass, r2, rin2;
+    float mass, r2, rin2;
 
     heavy = (bool*) calloc(n_atoms, sizeof(bool));
     shell = (bool*) calloc(n_atoms, sizeof(bool));
@@ -595,7 +595,7 @@ void init_shake() {
     int mol = 0;
     int shake;
     int n_solute_shake_constraints = 0;
-    double excl_shake = 0;
+    float excl_shake = 0;
 
     n_shake_constraints = 0;
     mol_n_shakes = (int*) calloc(n_molecules, sizeof(int));
@@ -704,18 +704,18 @@ void init_patoms() {
  * =============================================
  */
 
-double Ndegf, Ndegfree, Ndegf_solvent, Ndegf_solute, Ndegfree_solvent, Ndegfree_solute;
-double Tscale_solute = 1, Tscale_solvent = 1;
+float Ndegf, Ndegfree, Ndegf_solvent, Ndegf_solute, Ndegfree_solvent, Ndegfree_solute;
+float Tscale_solute = 1, Tscale_solvent = 1;
 
 void calc_temperature() {
     printf("Ndegf = %f, Ndegfree = %f, n_excluded = %d, Ndegfree_solvent = %f, Ndegfree_solute = %f\n", Ndegf, Ndegfree, n_excluded, Ndegfree_solvent, Ndegfree_solute);
     Temp = 0;
     Tfree = 0;
-    double Temp_solute = 0, Tfree_solute = 0, Texcl_solute = 0;
-    double Tfree_solvent = 0, Temp_solvent = 0, Texcl_solvent = 0;
-    double Ekinmax = 1000.0 * Ndegf * Boltz * md.temperature / 2.0 / n_atoms;
-    double ener;
-    double mass_i;
+    float Temp_solute = 0, Tfree_solute = 0, Texcl_solute = 0;
+    float Tfree_solvent = 0, Temp_solvent = 0, Texcl_solvent = 0;
+    float Ekinmax = 1000.0 * Ndegf * Boltz * md.temperature / 2.0 / n_atoms;
+    float ener;
+    float mass_i;
 
     Temp = 0;
     for (int i = 0; i < n_atoms_solute; i++) {
@@ -777,7 +777,7 @@ void calc_temperature() {
  */
 
 void calc_leapfrog() {
-    double mass_i, winv_i;
+    float mass_i, winv_i;
     for (int i = 0; i < n_atoms_solute; i++) {
         mass_i = catypes[atypes[i].code - 1].m;
 
@@ -1226,17 +1226,17 @@ void calc_integration_step(int iteration) {
 
     // Profiler info
 #ifdef __PROFILING__
-    printf("Elapsed time for bonded forces: %f\n", (end_bonded-start) / (double)CLOCKS_PER_SEC );
-    printf("Elapsed time for non-bonded forces: %f\n", (end_nonbonded-end_bonded) / (double)CLOCKS_PER_SEC);
-    printf("Elapsed time for pp interactions: %f\n", (end_pp-start_pp) / (double)CLOCKS_PER_SEC );
-    printf("Elapsed time for qq interaction: %f\n",  (end_qq-start_qq) / (double)CLOCKS_PER_SEC );
-    printf("Elapsed time for qp interaction: %f\n",  (end_qp-start_qp) / (double)CLOCKS_PER_SEC );
+    printf("Elapsed time for bonded forces: %f\n", (end_bonded-start) / (float)CLOCKS_PER_SEC );
+    printf("Elapsed time for non-bonded forces: %f\n", (end_nonbonded-end_bonded) / (float)CLOCKS_PER_SEC);
+    printf("Elapsed time for pp interactions: %f\n", (end_pp-start_pp) / (float)CLOCKS_PER_SEC );
+    printf("Elapsed time for qq interaction: %f\n",  (end_qq-start_qq) / (float)CLOCKS_PER_SEC );
+    printf("Elapsed time for qp interaction: %f\n",  (end_qp-start_qp) / (float)CLOCKS_PER_SEC );
     if (n_waters > 0) {
-        printf("Elapsed time for ww interactions: %f\n", (end_ww-start_ww) / (double)CLOCKS_PER_SEC );
-        printf("Elapsed time for pw interactions: %f\n", (end_pw-start_pw) / (double)CLOCKS_PER_SEC );
+        printf("Elapsed time for ww interactions: %f\n", (end_ww-start_ww) / (float)CLOCKS_PER_SEC );
+        printf("Elapsed time for pw interactions: %f\n", (end_pw-start_pw) / (float)CLOCKS_PER_SEC );
     }
     printf("---\n");
-    printf("Elapsed time for entire time-step: %f\n", (end_calculation-start) / (double)CLOCKS_PER_SEC);
+    printf("Elapsed time for entire time-step: %f\n", (end_calculation-start) / (float)CLOCKS_PER_SEC);
 #endif /* __PROFILING__ */
 
 }

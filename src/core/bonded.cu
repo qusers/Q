@@ -10,18 +10,18 @@
  * =============================================
  */
 
-double calc_angle_forces(int start, int end) {
+float calc_angle_forces(int start, int end) {
     int aii, aji, aki;
 
     coord_t ai, aj, ak;
     coord_t rji, rjk;
     coord_t di, dk;
 
-    double bji2inv, bjk2inv, bjiinv, bjkinv;
+    float bji2inv, bjk2inv, bjiinv, bjkinv;
     cangle_t cangle;
-    double cos_th, th, dth, dv, f1;
-    double ener;
-    double angle = 0;
+    float cos_th, th, dth, dv, f1;
+    float ener;
+    float angle = 0;
 
     for (int i = start; i < end; i++) {
         aii = angles[i].ai - 1;
@@ -102,12 +102,12 @@ double calc_angle_forces(int start, int end) {
     return angle;
 }
 
-double calc_bond_forces(int start, int end) {
+float calc_bond_forces(int start, int end) {
     int aii, aji;
     coord_t ai, aj, dx;
     cbond_t cbond;
-    double dx2, dx1, ddx, ener, ampl;
-    double bond = 0;
+    float dx2, dx1, ddx, ener, ampl;
+    float bond = 0;
 
     for (int i = start; i < end; i++) {
         aii = bonds[i].ai-1;
@@ -147,18 +147,18 @@ double calc_bond_forces(int start, int end) {
     return bond;
 }
 
-double calc_torsion_forces(int start, int end) {
+float calc_torsion_forces(int start, int end) {
     int aii, aji, aki, ali;
 
     coord_t ai, aj, ak, al;
     coord_t rji, rjk, rkl, rnj, rnk, rki, rlj;
     coord_t di, dl, dpi, dpj, dpk, dpl;
 
-    double bj2inv, bk2inv, bjinv, bkinv;
-    double cos_phi, phi;
-    double arg, dv, f1;
-    double ener;
-    double torsion = 0;
+    float bj2inv, bk2inv, bjinv, bkinv;
+    float cos_phi, phi;
+    float arg, dv, f1;
+    float ener;
+    float torsion = 0;
 
     torsion_t t;
     ctorsion_t ctors;
@@ -281,18 +281,18 @@ double calc_torsion_forces(int start, int end) {
     return torsion;
 }
 
-double calc_improper2_forces(int start, int end) {
+float calc_improper2_forces(int start, int end) {
     int aii, aji, aki, ali;
 
     coord_t ai, aj, ak, al;
     coord_t rji, rjk, rkl, rnj, rnk, rki, rlj;
-    double bj2inv, bk2inv, bjinv, bkinv;
-    double cos_phi, phi, arg, ener, dv, f1;
+    float bj2inv, bk2inv, bjinv, bkinv;
+    float cos_phi, phi, arg, ener, dv, f1;
     coord_t di, dl, dpi, dpj, dpk, dpl; 
 
     improper_t imp;
     cimproper_t cimp;
-    double improper = 0;
+    float improper = 0;
 
     for (int i = start; i < end; i++) {
         imp = impropers[i];

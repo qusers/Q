@@ -16,20 +16,20 @@ dvel_t *DV_W;
 calc_ww_t *WW_MAT, *h_WW_MAT;
 calc_pw_t *PW_MAT, *h_PW_MAT;
 
-double *D_WW_Evdw, *D_WW_Ecoul, *h_WW_Evdw, *h_WW_Ecoul;
-double *D_WW_evdw_TOT, *D_WW_ecoul_TOT, WW_evdw_TOT, WW_ecoul_TOT;
+float *D_WW_Evdw, *D_WW_Ecoul, *h_WW_Evdw, *h_WW_Ecoul;
+float *D_WW_evdw_TOT, *D_WW_ecoul_TOT, WW_evdw_TOT, WW_ecoul_TOT;
 
-double *D_PW_Evdw, *D_PW_Ecoul, *h_PW_Evdw, *h_PW_Ecoul;
-double *D_PW_evdw_TOT, *D_PW_ecoul_TOT, PW_evdw_TOT, PW_ecoul_TOT;
+float *D_PW_Evdw, *D_PW_Ecoul, *h_PW_Evdw, *h_PW_Ecoul;
+float *D_PW_evdw_TOT, *D_PW_ecoul_TOT, PW_evdw_TOT, PW_ecoul_TOT;
 
 // Constants pointers
 bool pw_gpu_set = false;
 
 //ONLY call if there are actually solvent atoms, or get segfaulted
 void calc_nonbonded_ww_forces() {
-    double rOX, rH1X, rH2X, r2;
+    float rOX, rH1X, rH2X, r2;
     coord_t dOX, dH1X, dH2X;
-    double Vel, V_a, V_b, dv;
+    float Vel, V_a, V_b, dv;
 
     // Initialize water constants
     if (A_OO == 0) {
@@ -47,11 +47,11 @@ void calc_nonbonded_ww_forces() {
         crg_hw = ccharge_hw.charge;
     }
 
-    // double ecoul_block = 0, evdw_block = 0;
+    // float ecoul_block = 0, evdw_block = 0;
 
     for (int i = n_atoms_solute; i < n_atoms; i+=3) {
         for (int j = i+3; j < n_atoms; j+=3) {
-            double ecoul = 0, evdw = 0;
+            float ecoul = 0, evdw = 0;
             // if (excluded[i] || excluded[j]) continue;
             // --- O - (O,H1,H2) ---
             dOX.x = coords[j].x - coords[i].x;
@@ -286,9 +286,9 @@ void calc_nonbonded_ww_forces() {
 
 __device__ __forceinline__ void calculate_unforce_bound(
     const int y, const int x, const coord_t &q, const coord_t &p,
-    const topo_t &D_topo, const double &crg_ow, const double &crg_hw,
-    const double &A_OO, const double &B_OO, double &evdw, double &ecoul,
-    double &dv, double &tmpx, double &tmpy, double &tmpz) {
+    const topo_t &D_topo, const float &crg_ow, const float &crg_hw,
+    const float &A_OO, const float &B_OO, float &evdw, float &ecoul,
+    float &dv, float &tmpx, float &tmpy, float &tmpz) {
     int belong_y = y / 3;
     int belong_x = x / 3;
     if (belong_y == belong_x) {
@@ -302,16 +302,16 @@ __device__ __forceinline__ void calculate_unforce_bound(
     tmpx = p.x - q.x;
     tmpy = p.y - q.y;
     tmpz = p.z - q.z;
-    // double inv_dis = 1.0 / sqrt(pow(tmpx, 2) + pow(tmpy, 2) + pow(tmpz, 2));
-    double inv_dis = rsqrt(tmpx * tmpx + tmpy * tmpy + tmpz * tmpz);
-    double inv_dis2 = inv_dis * inv_dis;
+    // float inv_dis = 1.0 / sqrt(pow(tmpx, 2) + pow(tmpy, 2) + pow(tmpz, 2));
+    float inv_dis = rsqrt(tmpx * tmpx + tmpy * tmpy + tmpz * tmpz);
+    float inv_dis2 = inv_dis * inv_dis;
 
     ecoul = inv_dis * D_topo.coulomb_constant * (y_is_o ? crg_ow : crg_hw) *
             (x_is_o ? crg_ow : crg_hw);
-    double v_a = 0, v_b = 0;
+    float v_a = 0, v_b = 0;
     if (y_is_o && x_is_o) {
-        double inv_dis6 = inv_dis2 * inv_dis2 * inv_dis2;
-        double inv_dis12 = inv_dis6 * inv_dis6;
+        float inv_dis6 = inv_dis2 * inv_dis2 * inv_dis2;
+        float inv_dis12 = inv_dis6 * inv_dis6;
         v_a = A_OO * inv_dis12;
         v_b = B_OO * inv_dis6;
         evdw = v_a - v_b;
@@ -324,10 +324,10 @@ __device__ __forceinline__ void calculate_unforce_bound(
 template<const int Thread_x, const int Thread_y, const int Block_x,
     const int Block_y>
 __global__ void
-calc_ww(const int N, const double crg_ow, const double crg_hw,
-        const double A_OO, const double B_OO, const topo_t D_topo,
+calc_ww(const int N, const float crg_ow, const float crg_hw,
+        const float A_OO, const float B_OO, const topo_t D_topo,
         coord_t *__restrict__ W, dvel_t *__restrict__ DV_W,
-        double *__restrict__ Evdw_TOT, double *__restrict__ ecoul_TOT) {
+        float *__restrict__ Evdw_TOT, float *__restrict__ ecoul_TOT) {
     // Calculate block boundaries
     int NX = N;
     int NY = (N + 1) / 2;
@@ -341,11 +341,11 @@ calc_ww(const int N, const double crg_ow, const double crg_hw,
     // Shared memory declarations with padding to avoid bank conflicts
     __shared__ coord_t p[2 * Thread_x * Block_x + 1];
     __shared__ coord_t q[2 * Thread_y * Block_y + 1];
-    __shared__ double sum_row_x[2 * Thread_y * Block_y + 1];
-    __shared__ double sum_row_y[2 * Thread_y * Block_y + 1];
-    __shared__ double sum_row_z[2 * Thread_y * Block_y + 1];
+    __shared__ float sum_row_x[2 * Thread_y * Block_y + 1];
+    __shared__ float sum_row_y[2 * Thread_y * Block_y + 1];
+    __shared__ float sum_row_z[2 * Thread_y * Block_y + 1];
 
-    __shared__ double block_ecoul[(Thread_x * Thread_y + 31) / 32],
+    __shared__ float block_ecoul[(Thread_x * Thread_y + 31) / 32],
             block_evdw[(Thread_x * Thread_y + 31) / 32];
 
     // Thread indices
@@ -377,7 +377,7 @@ calc_ww(const int N, const double crg_ow, const double crg_hw,
     }
     __syncthreads();
     // Initialize column sums
-    double sum_col_x[2 * Block_x], sum_col_y[2 * Block_x], sum_col_z[2 * Block_x];
+    float sum_col_x[2 * Block_x], sum_col_y[2 * Block_x], sum_col_z[2 * Block_x];
     #pragma unroll
     for (int i = 0; i < Block_x; i++) {
         sum_col_x[i] = sum_col_x[Block_x + i] = 0;
@@ -386,7 +386,7 @@ calc_ww(const int N, const double crg_ow, const double crg_hw,
     }
 
     // Main computation loop with reduced thread divergence
-    double evdw_tot = 0, ecoul_tot = 0;
+    float evdw_tot = 0, ecoul_tot = 0;
     #pragma unroll
     for (int i = 0; i < Block_x; i++) {
         int i2 = i;
@@ -406,8 +406,8 @@ calc_ww(const int N, const double crg_ow, const double crg_hw,
             // Optimized condition check
             if (y >= x && (N % 2 == 0 || y != NY - 1)) {
                 int offset_y = y - block_y_left_begin;
-                double evdw = 0, ecoul = 0, dv = 0;
-                double tmpx = 0, tmpy = 0, tmpz = 0;
+                float evdw = 0, ecoul = 0, dv = 0;
+                float tmpx = 0, tmpy = 0, tmpz = 0;
 
                 int y2 = N - 1 - y;
                 int x2 = N - x;
@@ -417,9 +417,9 @@ calc_ww(const int N, const double crg_ow, const double crg_hw,
 
                 evdw_tot += evdw;
                 ecoul_tot += ecoul;
-                double v_x = dv * tmpx;
-                double v_y = dv * tmpy;
-                double v_z = dv * tmpz;
+                float v_x = dv * tmpx;
+                float v_y = dv * tmpy;
+                float v_z = dv * tmpz;
 
                 sum_col_x[Block_x + i2] += v_x;
                 sum_col_y[Block_x + i2] += v_y;
@@ -429,8 +429,8 @@ calc_ww(const int N, const double crg_ow, const double crg_hw,
                 sum_row_z[y_cal_num + offset_y] -= v_z;
             } else if (y < x) {
                 int offset_y = y - block_y_left_begin;
-                double evdw = 0, ecoul = 0, dv = 0;
-                double tmpx = 0, tmpy = 0, tmpz = 0;
+                float evdw = 0, ecoul = 0, dv = 0;
+                float tmpx = 0, tmpy = 0, tmpz = 0;
 
                 calculate_unforce_bound(y, x, q[offset_y], now_p0, D_topo, crg_ow,
                                      crg_hw, A_OO, B_OO, evdw, ecoul, dv, tmpx, tmpy,
@@ -438,9 +438,9 @@ calc_ww(const int N, const double crg_ow, const double crg_hw,
 
                 evdw_tot += evdw;
                 ecoul_tot += ecoul;
-                double v_x = dv * tmpx;
-                double v_y = dv * tmpy;
-                double v_z = dv * tmpz;
+                float v_x = dv * tmpx;
+                float v_y = dv * tmpy;
+                float v_z = dv * tmpz;
 
                 sum_col_x[i2] += v_x;
                 sum_col_y[i2] += v_y;
@@ -470,8 +470,8 @@ calc_ww(const int N, const double crg_ow, const double crg_hw,
 
     // Final reduction
     if (warp_id == 0) {
-        double val1 = (lane_id < (Thread_x * Thread_y + 31) / 32) ? block_ecoul[lane_id] : 0;
-        double val2 = (lane_id < (Thread_x * Thread_y + 31) / 32) ? block_evdw[lane_id] : 0;
+        float val1 = (lane_id < (Thread_x * Thread_y + 31) / 32) ? block_ecoul[lane_id] : 0;
+        float val2 = (lane_id < (Thread_x * Thread_y + 31) / 32) ? block_evdw[lane_id] : 0;
 
         #pragma unroll
         for (unsigned w = 16; w >= 1; w /= 2) {
@@ -546,8 +546,8 @@ void calc_nonbonded_ww_forces_host() {
 
         check_cudaMalloc((void **) &W, mem_size_W);
         check_cudaMalloc((void **) &DV_W, mem_size_DV_W);
-        check_cudaMalloc((void **) &D_WW_evdw_TOT, sizeof(double));
-        check_cudaMalloc((void **) &D_WW_ecoul_TOT, sizeof(double));
+        check_cudaMalloc((void **) &D_WW_evdw_TOT, sizeof(float));
+        check_cudaMalloc((void **) &D_WW_ecoul_TOT, sizeof(float));
     }
 
     WW_evdw_TOT = 0;
@@ -555,9 +555,9 @@ void calc_nonbonded_ww_forces_host() {
     cudaMemcpy(W, &coords[n_atoms_solute], mem_size_W, cudaMemcpyHostToDevice);
     cudaMemcpy(DV_W, &dvelocities[n_atoms_solute], mem_size_DV_W,
                cudaMemcpyHostToDevice);
-    cudaMemcpy(D_WW_evdw_TOT, &WW_evdw_TOT, sizeof(double),
+    cudaMemcpy(D_WW_evdw_TOT, &WW_evdw_TOT, sizeof(float),
                cudaMemcpyHostToDevice);
-    cudaMemcpy(D_WW_ecoul_TOT, &WW_ecoul_TOT, sizeof(double),
+    cudaMemcpy(D_WW_ecoul_TOT, &WW_ecoul_TOT, sizeof(float),
                cudaMemcpyHostToDevice);
 
     // Optimize thread block configuration
@@ -582,9 +582,9 @@ void calc_nonbonded_ww_forces_host() {
     cudaDeviceSynchronize();
     cudaMemcpy(&dvelocities[n_atoms_solute], DV_W, mem_size_DV_W,
                cudaMemcpyDeviceToHost);
-    cudaMemcpy(&WW_evdw_TOT, D_WW_evdw_TOT, sizeof(double),
+    cudaMemcpy(&WW_evdw_TOT, D_WW_evdw_TOT, sizeof(float),
                cudaMemcpyDeviceToHost);
-    cudaMemcpy(&WW_ecoul_TOT, D_WW_ecoul_TOT, sizeof(double),
+    cudaMemcpy(&WW_ecoul_TOT, D_WW_ecoul_TOT, sizeof(float),
                cudaMemcpyDeviceToHost);
     E_nonbond_ww.Uvdw += WW_evdw_TOT;
     E_nonbond_ww.Ucoul += WW_ecoul_TOT;
@@ -592,11 +592,11 @@ void calc_nonbonded_ww_forces_host() {
 
 void calc_nonbonded_pw_forces() {
     coord_t da;
-    double r2a, ra, r6a;
-    double Vela, V_a, V_b;
-    double dva;
-    double qi, qj;
-    double ai_aii, aj_aii, ai_bii, aj_bii;
+    float r2a, ra, r6a;
+    float Vela, V_a, V_b;
+    float dva;
+    float qi, qj;
+    float ai_aii, aj_aii, ai_bii, aj_bii;
     catype_t ai_type, aj_type;
     int i;
 
@@ -655,8 +655,8 @@ void calc_nonbonded_pw_forces_host() {
     int n_blocks_p = (n_patoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
     int n_blocks_w = (3*n_waters + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-    int mem_size_PW_Evdw = n_blocks_p * n_blocks_w * sizeof(double);
-    int mem_size_PW_Ecoul = n_blocks_p * n_blocks_w * sizeof(double);
+    int mem_size_PW_Evdw = n_blocks_p * n_blocks_w * sizeof(float);
+    int mem_size_PW_Ecoul = n_blocks_p * n_blocks_w * sizeof(float);
 
     if (!pw_gpu_set) {
         pw_gpu_set = true;
@@ -684,8 +684,8 @@ void calc_nonbonded_pw_forces_host() {
         #endif
         check_cudaMalloc((void**) &D_PW_Ecoul, mem_size_PW_Ecoul);
 
-        check_cudaMalloc((void**) &D_PW_evdw_TOT, sizeof(double));
-        check_cudaMalloc((void**) &D_PW_ecoul_TOT, sizeof(double)); 
+        check_cudaMalloc((void**) &D_PW_evdw_TOT, sizeof(float));
+        check_cudaMalloc((void**) &D_PW_ecoul_TOT, sizeof(float)); 
 
         #ifdef DEBUG
         printf("All GPU solvent memory allocated\n");
@@ -730,8 +730,8 @@ void calc_nonbonded_pw_forces_host() {
 
     calc_energy_sum<<<1, threads>>>(n_blocks_p, n_blocks_w, D_PW_evdw_TOT, D_PW_ecoul_TOT, D_PW_Evdw, D_PW_Ecoul, false);
 
-    cudaMemcpy(&PW_evdw_TOT, D_PW_evdw_TOT, sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&PW_ecoul_TOT, D_PW_ecoul_TOT, sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&PW_evdw_TOT, D_PW_evdw_TOT, sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&PW_ecoul_TOT, D_PW_ecoul_TOT, sizeof(float), cudaMemcpyDeviceToHost);
 
     E_nonbond_pw.Uvdw += PW_evdw_TOT;
     E_nonbond_pw.Ucoul += PW_ecoul_TOT;
@@ -754,12 +754,12 @@ __device__ void set_water(int n_waters, int row, int column, dvel_t *val, calc_w
     MAT[column + n_waters * row].H2 = val[2];
 }
 
-__device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, double crg_hw, double A_OO, double B_OO,
-    coord_t *Xs, coord_t *Ys, double *Evdw, double *Ecoul, dvel_t *water_a, dvel_t *water_b, topo_t D_topo) {
-    double rOX, rH1X, rH2X, r2;
+__device__ void calc_ww_dvel_matrix_incr(int row, int column, float crg_ow, float crg_hw, float A_OO, float B_OO,
+    coord_t *Xs, coord_t *Ys, float *Evdw, float *Ecoul, dvel_t *water_a, dvel_t *water_b, topo_t D_topo) {
+    float rOX, rH1X, rH2X, r2;
     coord_t dOX, dH1X, dH2X;
-    double Vel, V_a, V_b, dv;
-    double tempX, tempY, tempZ;
+    float Vel, V_a, V_b, dv;
+    float tempX, tempY, tempZ;
     
     int i = 3 * row;
     int j = 3 * column;
@@ -991,8 +991,8 @@ __device__ void calc_ww_dvel_matrix_incr(int row, int column, double crg_ow, dou
     water_b[wj].z += (dv * dH2X.z);
 }
 
-__global__ void calc_ww_dvel_matrix(int n_waters, double crg_ow, double crg_hw, double A_OO, double B_OO,
-    coord_t *W, double *Evdw, double *Ecoul, calc_ww_t *MAT, topo_t D_topo) {
+__global__ void calc_ww_dvel_matrix(int n_waters, float crg_ow, float crg_hw, float A_OO, float B_OO,
+    coord_t *W, float *Evdw, float *Ecoul, calc_ww_t *MAT, topo_t D_topo) {
     // Block index
     int bx = blockIdx.x;
     int by = blockIdx.y;
@@ -1001,8 +1001,8 @@ __global__ void calc_ww_dvel_matrix(int n_waters, double crg_ow, double crg_hw, 
     int tx = threadIdx.x;
     int ty = threadIdx.y;
 
-    __shared__ double Ecoul_S[BLOCK_SIZE][BLOCK_SIZE];
-    __shared__ double Evdw_S[BLOCK_SIZE][BLOCK_SIZE];
+    __shared__ float Ecoul_S[BLOCK_SIZE][BLOCK_SIZE];
+    __shared__ float Evdw_S[BLOCK_SIZE][BLOCK_SIZE];
 
     Ecoul_S[ty][tx] = 0;
     Evdw_S[ty][tx] = 0;
@@ -1057,7 +1057,7 @@ __global__ void calc_ww_dvel_matrix(int n_waters, double crg_ow, double crg_hw, 
     // }
 
     if (bx != by || tx != ty) {
-        double evdw = 0, ecoul = 0;
+        float evdw = 0, ecoul = 0;
         calc_ww_dvel_matrix_incr(ty, tx, crg_ow, crg_hw, A_OO, B_OO, Xs, Ys, &evdw, &ecoul, water_a, water_b, D_topo);
         Evdw_S[ty][tx] = evdw;
         Ecoul_S[ty][tx] = ecoul;
@@ -1078,8 +1078,8 @@ __global__ void calc_ww_dvel_matrix(int n_waters, double crg_ow, double crg_hw, 
     int rowlen = (n_waters + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
     if (tx == 0 && ty == 0) {
-        double tot_Evdw = 0;
-        double tot_Ecoul = 0;
+        float tot_Evdw = 0;
+        float tot_Ecoul = 0;
         for (int i = 0; i < BLOCK_SIZE; i++) {
             for (int j = 0; j < BLOCK_SIZE; j++) {
                 tot_Evdw += Evdw_S[i][j];
@@ -1153,15 +1153,15 @@ __global__ void calc_ww_dvel_vector(int n_waters, dvel_t *DV_W, calc_ww_t *MAT) 
 // P-W interactions
 
 __device__ void calc_pw_dvel_matrix_incr(int row, int pi, int column, int j, int n_atoms_solute,
-    coord_t *Xs, coord_t *Ws, bool *excluded_s, double *Evdw, double *Ecoul, calc_pw_t *pw,
+    coord_t *Xs, coord_t *Ws, bool *excluded_s, float *Evdw, float *Ecoul, calc_pw_t *pw,
     ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms, topo_t D_topo) {
 
     coord_t da;
-    double r2a, ra, r6a;
-    double Vela, V_a, V_b;
-    double dva;
-    double qi, qj;
-    double ai_aii, aj_aii, ai_bii, aj_bii;
+    float r2a, ra, r6a;
+    float Vela, V_a, V_b;
+    float dva;
+    float qi, qj;
+    float ai_aii, aj_aii, ai_bii, aj_bii;
     catype_t ai_type, aj_type;
     atype_t i_type, j_type;
 
@@ -1214,7 +1214,7 @@ __device__ void calc_pw_dvel_matrix_incr(int row, int pi, int column, int j, int
 }
 
 __global__ void calc_pw_dvel_matrix(int n_patoms, int n_atoms_solute, int n_waters,
-    coord_t *X, coord_t *W, double *Evdw, double *Ecoul, calc_pw_t *PW_MAT,
+    coord_t *X, coord_t *W, float *Evdw, float *Ecoul, calc_pw_t *PW_MAT,
     ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms, bool *D_excluded, topo_t D_topo) {
     // Block index
     int bx = blockIdx.x;
@@ -1224,8 +1224,8 @@ __global__ void calc_pw_dvel_matrix(int n_patoms, int n_atoms_solute, int n_wate
     int tx = threadIdx.x;
     int ty = threadIdx.y;
 
-    __shared__ double Ecoul_S[BLOCK_SIZE][BLOCK_SIZE];
-    __shared__ double Evdw_S[BLOCK_SIZE][BLOCK_SIZE];
+    __shared__ float Ecoul_S[BLOCK_SIZE][BLOCK_SIZE];
+    __shared__ float Evdw_S[BLOCK_SIZE][BLOCK_SIZE];
 
     Ecoul_S[ty][tx] = 0;
     Evdw_S[ty][tx] = 0;
@@ -1280,9 +1280,9 @@ __global__ void calc_pw_dvel_matrix(int n_patoms, int n_atoms_solute, int n_wate
 
     // if (bx == 8 && by == 1) printf("bx = %d by = %d tx = %d ty = %d\n", bx, by, tx, ty);
     // __device__ void calc_pw_dvel_matrix_incr(int row, int pi, int column, int j, int n_patoms,
-    // coord_t *Ps, coord_t *Xs, double *Evdw, double *Ecoul, calc_pw_t *pw,
+    // coord_t *Ps, coord_t *Xs, float *Evdw, float *Ecoul, calc_pw_t *pw,
     // ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms)
-    double evdw = 0, ecoul = 0;
+    float evdw = 0, ecoul = 0;
     calc_pw_dvel_matrix_incr(ty, pi, tx, bStart + tx, n_atoms_solute, Xs, Ws, excluded_s, &evdw, &ecoul, &pw, D_ccharges, D_charges, D_catypes, D_atypes, D_patoms, D_topo);
     Evdw_S[ty][tx] = evdw;
     Ecoul_S[ty][tx] = ecoul;
@@ -1301,8 +1301,8 @@ __global__ void calc_pw_dvel_matrix(int n_patoms, int n_atoms_solute, int n_wate
     int rowlen = (3 * n_waters + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
     if (tx == 0 && ty == 0) {
-        double tot_Evdw = 0;
-        double tot_Ecoul = 0;
+        float tot_Evdw = 0;
+        float tot_Ecoul = 0;
         for (int i = 0; i < BLOCK_SIZE; i++) {
             for (int j = 0; j < BLOCK_SIZE; j++) {
                 tot_Evdw += Evdw_S[i][j];
@@ -1365,16 +1365,16 @@ __global__ void calc_pw_dvel_vector_column(int n_patoms, int n_waters, dvel_t *D
 }
 
 // General
-__global__ void calc_energy_sum(int rows, int columns, double *Evdw_TOT, double *Ecoul_TOT, double *Evdw, double *Ecoul, bool upper_diagonal) {
+__global__ void calc_energy_sum(int rows, int columns, float *Evdw_TOT, float *Ecoul_TOT, float *Evdw, float *Ecoul, bool upper_diagonal) {
     int tx = threadIdx.x;
     int ty = threadIdx.y;
 
-    __shared__ double Ecoul_S[BLOCK_SIZE][BLOCK_SIZE];
-    __shared__ double Evdw_S[BLOCK_SIZE][BLOCK_SIZE];
+    __shared__ float Ecoul_S[BLOCK_SIZE][BLOCK_SIZE];
+    __shared__ float Evdw_S[BLOCK_SIZE][BLOCK_SIZE];
 
     //TODO: better way to distribute upper diagonal over threads? Seems like threads in left bottom corner have less work
-    double coul_TOT = 0;
-    double vdw_TOT = 0;
+    float coul_TOT = 0;
+    float vdw_TOT = 0;
     for (int i = ty; i < rows; i+= BLOCK_SIZE) {
         for (int j = tx; j < columns; j+= BLOCK_SIZE) {
             if (i <= j || !upper_diagonal) {
@@ -1389,8 +1389,8 @@ __global__ void calc_energy_sum(int rows, int columns, double *Evdw_TOT, double 
     __syncthreads();
 
     if (tx == 0 && ty == 0) {
-        double Evdw_temp = 0;
-        double Ecoul_temp = 0;
+        float Evdw_temp = 0;
+        float Ecoul_temp = 0;
 
         for (int i = 0; i < BLOCK_SIZE; i++) {
             for (int j = 0; j < BLOCK_SIZE; j++) {
