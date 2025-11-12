@@ -6,9 +6,9 @@
  * =============================================
  */
 
-double gauss(double mean, double sd);
-double to_degrees(double radians);
-double to_radians(double degrees);
+float gauss(float mean, float sd);
+float to_degrees(float radians);
+float to_radians(float degrees);
 
 /* =============================================
  * == DEVICE

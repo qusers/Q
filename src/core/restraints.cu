@@ -6,9 +6,9 @@
 #include <stdio.h>
 
 void calc_radix_w_forces() {
-    double b, db, ener, dv, fexp;
+    float b, db, ener, dv, fexp;
     coord_t dr;
-    double shift;
+    float shift;
 
     if (md.radial_force != 0) {
         shift = sqrt(Boltz * Tfree / md.radial_force);
@@ -52,12 +52,12 @@ void calc_radix_w_forces() {
 
 void calc_polx_w_forces(int iteration) {
     int wi, imin, jw, ii, iis, jmin;
-    double tmin;
+    float tmin;
     coord_t rmu, rcu, f1O, f1H1, f1H2, f2;
-    double rm, rc;
-    double cos_th;
-    double avtdum, arg, f0, dv;
-    double ener;
+    float rm, rc;
+    float cos_th;
+    float avtdum, arg, f0, dv;
+    float ener;
 
     for (int is = 0; is < n_shells; is++) {
         wshells[is].n_inshell = 0;
@@ -129,8 +129,8 @@ void calc_polx_w_forces(int iteration) {
     if (iteration != 0 && iteration % itdis_update == 0) {
         for (int is = 0; is < n_shells; is++) {
             printf("SHELL %d\n", is);
-            wshells[is].avtheta /= (double) itdis_update;
-            wshells[is].avn_inshell /= (double) itdis_update;
+            wshells[is].avtheta /= (float) itdis_update;
+            wshells[is].avn_inshell /= (float) itdis_update;
             wshells[is].theta_corr = wshells[is].theta_corr + wshells[is].avtheta - acos(wshells[is].cstb);
             printf("average theta = %f, average in shell = %f, theta_corr = %f\n",
                 wshells[is].avtheta * 180 / M_PI, wshells[is].avn_inshell, wshells[is].theta_corr * 180 / M_PI);
@@ -148,7 +148,7 @@ void calc_polx_w_forces(int iteration) {
         avtdum = 0;
         for (int il = 0; il < wshells[is].n_inshell; il++) {
             ii = nsort[il][is];
-            arg = 1 + ((1 - 2 * (double) (il+1)) / (double) wshells[is].n_inshell);
+            arg = 1 + ((1 - 2 * (float) (il+1)) / (float) wshells[is].n_inshell);
             theta0[il] = acos(arg);
             theta0[il] = theta0[il] - 3 * sin(theta0[il]) * wshells[is].cstb / 2;
             if (theta0[il] < 0) theta0[il] = 0;
@@ -184,7 +184,8 @@ void calc_polx_w_forces(int iteration) {
             if (cos_th > 1) cos_th = 1;
             if (cos_th < -1) cos_th = -1;
             f0 = sin(acos(cos_th));
-            if (abs(f0) < 1.0E-12) f0 = 1.0E-12;
+            // After change double to float, need to change 1e-12 to 1e-6, because of precision
+            if (abs(f0) < 1.0E-6) f0 = 1.0E-6;
             f0 = -1.0 / f0;
             f0 *= dv;
 
@@ -213,14 +214,14 @@ void calc_polx_w_forces(int iteration) {
             dvelocities[wi+2].z += f0 * (f1H2.z);
         }
 
-        wshells[is].avtheta     += avtdum / (double) wshells[is].n_inshell;
+        wshells[is].avtheta     += avtdum / (float) wshells[is].n_inshell;
         wshells[is].avn_inshell += wshells[is].n_inshell;
     }
 }
 
 void calc_pshell_forces() {
     coord_t dr;
-    double k, r2, ener;
+    float k, r2, ener;
 
     for (int i = 0; i < n_atoms_solute; i++) {
         if (shell[i] || excluded[i]) {
@@ -250,9 +251,9 @@ void calc_pshell_forces() {
 
 // sequence restraints (independent of Q-state)
 void calc_restrseq_forces() {
-    double k, mass, totmass;
+    float k, mass, totmass;
     coord_t dr;
-    double r2, ener;
+    float r2, ener;
 
     for (int s = 0; s < n_restrseqs; s++) {
         k = restrseqs[s].k;
@@ -349,7 +350,7 @@ void calc_restrseq_forces() {
 void calc_restrpos_forces() {
     int state, i;
     coord_t dr;
-    double lambda, ener, x2, y2, z2;
+    float lambda, ener, x2, y2, z2;
 
     for (int ir = 0; ir < n_restrspos; ir++) {
         state = restrspos[ir].ipsi-1;
@@ -396,7 +397,7 @@ void calc_restrpos_forces() {
 void calc_restrdis_forces() {
     int state, i, j;
     coord_t dr;
-    double lambda, b, db, dv, ener;
+    float lambda, b, db, dv, ener;
 
     for (int ir = 0; ir < n_restrdists; ir++) {
         state =  restrdists[ir].ipsi-1;
@@ -454,8 +455,8 @@ void calc_restrdis_forces() {
 void calc_restrang_forces() {
     int state, i, j, k;
     coord_t dr, dr2, di, dk;
-    double lambda, r2ij, r2jk, rij, rjk, cos_th, th;
-    double dth, dv, ener, f1;
+    float lambda, r2ij, r2jk, rij, rjk, cos_th, th;
+    float dth, dv, ener, f1;
 
     for (int ir = 0; ir < n_restrangs; ir++) {
         state = restrangs[ir].ipsi-1;
@@ -539,7 +540,7 @@ void calc_restrang_forces() {
 
 // extra half-harmonic wall restraints
 void calc_restrwall_forces() {
-    double k, b, db, ener, dv, fexp;
+    float k, b, db, ener, dv, fexp;
     coord_t dr;
 
     for (int ir = 0; ir < n_restrwalls; ir++) {

@@ -6,7 +6,7 @@
 
 int calc_shake_constraints(coord_t *coords, coord_t *xcoords) {
     int ai, aj, n_iterations, total_iterations, shake;
-    double xij2, diff, corr, scp, xxij2;
+    float xij2, diff, corr, scp, xxij2;
     coord_t xij, xxij;
 
     shake = 0;
@@ -102,8 +102,8 @@ void initial_shaking() {
 }
 
 void stop_cm_translation() {
-    double total_mass = 0;
-    double rmass = 0;
+    float total_mass = 0;
+    float rmass = 0;
     coord_t vcm;
     vcm.x = 0;
     vcm.y = 0;

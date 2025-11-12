@@ -13,8 +13,8 @@ dvel_t *DV_X;
 dvel_t *PP_MAT, *h_PP_MAT;
 bool pp_gpu_set = false;
 
-double *D_PP_Evdw, *D_PP_Ecoul, *h_PP_Evdw, *h_PP_Ecoul;
-double *D_PP_evdw_TOT, *D_PP_ecoul_TOT, PP_evdw_TOT, PP_ecoul_TOT;
+float *D_PP_Evdw, *D_PP_Ecoul, *h_PP_Evdw, *h_PP_Ecoul;
+float *D_PP_evdw_TOT, *D_PP_ecoul_TOT, PP_evdw_TOT, PP_ecoul_TOT;
 
 // Constants pointers
 ccharge_t *D_ccharges;
@@ -27,13 +27,13 @@ bool *D_excluded;
 
 void calc_nonbonded_pp_forces() {
     bool bond14, bond23;
-    double scaling;
+    float scaling;
     coord_t da;
-    double r2a, ra, r6a;
-    double Vela, V_a, V_b;
-    double dva;
-    double crg_i, crg_j;
-    double ai_aii, aj_aii, ai_bii, aj_bii;
+    float r2a, ra, r6a;
+    float Vela, V_a, V_b;
+    float dva;
+    float crg_i, crg_j;
+    float ai_aii, aj_aii, ai_bii, aj_bii;
     int i, j;
     catype_t ai_type, aj_type;
 
@@ -93,8 +93,8 @@ void calc_nonbonded_pp_forces_host() {
 
     int mem_size_PP_MAT = n_patoms * n_patoms * sizeof(dvel_t);
     int n_blocks = (n_patoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
-    int mem_size_PP_Evdw = n_blocks * n_blocks * sizeof(double);
-    int mem_size_PP_Ecoul = n_blocks * n_blocks * sizeof(double);
+    int mem_size_PP_Evdw = n_blocks * n_blocks * sizeof(float);
+    int mem_size_PP_Ecoul = n_blocks * n_blocks * sizeof(float);
 
     if (!pp_gpu_set) {
         pp_gpu_set = true;
@@ -112,12 +112,12 @@ void calc_nonbonded_pp_forces_host() {
         #endif
         check_cudaMalloc((void**) &D_PP_Ecoul, mem_size_PP_Ecoul);
 
-        check_cudaMalloc((void**) &D_PP_evdw_TOT, sizeof(double));
-        check_cudaMalloc((void**) &D_PP_ecoul_TOT, sizeof(double)); 
+        check_cudaMalloc((void**) &D_PP_evdw_TOT, sizeof(float));
+        check_cudaMalloc((void**) &D_PP_ecoul_TOT, sizeof(float)); 
 
         h_PP_MAT = (dvel_t*) malloc(mem_size_PP_MAT);
-        h_PP_Evdw = (double*) malloc(mem_size_PP_Evdw);
-        h_PP_Ecoul = (double*) malloc(mem_size_PP_Ecoul);
+        h_PP_Evdw = (float*) malloc(mem_size_PP_Evdw);
+        h_PP_Ecoul = (float*) malloc(mem_size_PP_Ecoul);
     }
 
     cudaMemcpy(X, coords, mem_size_X, cudaMemcpyHostToDevice);
@@ -148,8 +148,8 @@ void calc_nonbonded_pp_forces_host() {
 
     calc_energy_sum<<<1, threads>>>(n_blocks, n_blocks, D_PP_evdw_TOT, D_PP_ecoul_TOT, D_PP_Evdw, D_PP_Ecoul, true);
 
-    cudaMemcpy(&PP_evdw_TOT, D_PP_evdw_TOT, sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&PP_ecoul_TOT, D_PP_ecoul_TOT, sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&PP_evdw_TOT, D_PP_evdw_TOT, sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&PP_ecoul_TOT, D_PP_ecoul_TOT, sizeof(float), cudaMemcpyDeviceToHost);
 
     E_nonbond_pp.Uvdw += PP_evdw_TOT;
     E_nonbond_pp.Ucoul += PP_ecoul_TOT;
@@ -161,17 +161,17 @@ void calc_nonbonded_pp_forces_host() {
  */
 
 __device__ void calc_pp_dvel_matrix_incr(int row, int pi, int column, int pj,
-    coord_t *Xs, coord_t *Ys, int *LJs, bool *excluded_s, double *Evdw, double *Ecoul, dvel_t *patom_a, dvel_t *patom_b,
+    coord_t *Xs, coord_t *Ys, int *LJs, bool *excluded_s, float *Evdw, float *Ecoul, dvel_t *patom_a, dvel_t *patom_b,
     ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms, topo_t D_topo) {
     
     bool bond14, bond23;
-    double scaling;
+    float scaling;
     coord_t da;
-    double r2a, ra, r6a;
-    double Vela, V_a, V_b;
-    double dva;
-    double crg_i, crg_j;
-    double ai_aii, aj_aii, ai_bii, aj_bii;
+    float r2a, ra, r6a;
+    float Vela, V_a, V_b;
+    float dva;
+    float crg_i, crg_j;
+    float ai_aii, aj_aii, ai_bii, aj_bii;
     catype_t ai_type, aj_type;
 
     bond23 = LJs[row * BLOCK_SIZE + column] == 3;
@@ -219,7 +219,7 @@ __device__ void calc_pp_dvel_matrix_incr(int row, int pi, int column, int pj,
 }
 
 __global__ void calc_pp_dvel_matrix(int n_patoms, int n_atoms_solute,
-    coord_t *X, double *Evdw, double *Ecoul, dvel_t *PP_MAT,
+    coord_t *X, float *Evdw, float *Ecoul, dvel_t *PP_MAT,
     ccharge_t *D_ccharges, charge_t *D_charges, catype_t *D_catypes, atype_t *D_atypes, p_atom_t *D_patoms, int *D_LJ_matrix, bool *D_excluded, topo_t D_topo) {
     // Block index
     int bx = blockIdx.x;
@@ -232,8 +232,8 @@ __global__ void calc_pp_dvel_matrix(int n_patoms, int n_atoms_solute,
     int aStart = BLOCK_SIZE * by;
     int bStart = BLOCK_SIZE * bx;
 
-    __shared__ double Ecoul_S[BLOCK_SIZE][BLOCK_SIZE];
-    __shared__ double Evdw_S[BLOCK_SIZE][BLOCK_SIZE];
+    __shared__ float Ecoul_S[BLOCK_SIZE][BLOCK_SIZE];
+    __shared__ float Evdw_S[BLOCK_SIZE][BLOCK_SIZE];
 
     Ecoul_S[ty][tx] = 0;
     Evdw_S[ty][tx] = 0;
@@ -272,7 +272,7 @@ __global__ void calc_pp_dvel_matrix(int n_patoms, int n_atoms_solute,
     int column = bx * BLOCK_SIZE + tx;
 
     if (bx != by || tx != ty) {
-        double evdw = 0, ecoul = 0;
+        float evdw = 0, ecoul = 0;
         calc_pp_dvel_matrix_incr(ty, pi, tx, pj, Xs, Ys, LJs, excluded_s, &evdw, &ecoul, &patom_a,
              &patom_b, D_ccharges, D_charges, D_catypes, D_atypes, D_patoms, D_topo);
         Evdw_S[ty][tx] = evdw;
@@ -287,8 +287,8 @@ __global__ void calc_pp_dvel_matrix(int n_patoms, int n_atoms_solute,
     int rowlen = (n_patoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
     if (tx == 0 && ty == 0) {
-        double tot_Evdw = 0;
-        double tot_Ecoul = 0;
+        float tot_Evdw = 0;
+        float tot_Ecoul = 0;
         for (int i = 0; i < BLOCK_SIZE; i++) {
             for (int j = 0; j < BLOCK_SIZE; j++) {
                 tot_Evdw += Evdw_S[i][j];
