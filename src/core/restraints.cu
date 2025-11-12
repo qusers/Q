@@ -184,6 +184,7 @@ void calc_polx_w_forces(int iteration) {
             if (cos_th > 1) cos_th = 1;
             if (cos_th < -1) cos_th = -1;
             f0 = sin(acos(cos_th));
+            // After change double to float, need to change 1e-12 to 1e-6, because of precision
             if (abs(f0) < 1.0E-6) f0 = 1.0E-6;
             f0 = -1.0 / f0;
             f0 *= dv;
