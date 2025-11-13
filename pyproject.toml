@@ -38,7 +38,10 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["QligFEP", "Qgpu"]
+include = ["QligFEP", "Qgpu", "q6"]
+
+[tool.setuptools.package-data]
+q6 = ["bin/q6/*", "**/*.f90"]
 
 [tool.setuptools.dynamic]
 version = {attr = "QligFEP.__version__"}

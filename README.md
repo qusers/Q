@@ -9,70 +9,67 @@ Once you have `micromamba` installed and have already cloned this repo, you can 
 ### 🐧 Linux
 ```bash
 micromamba create -n qligfep_new python=3.11
-```
-Now, activate the environment and update the following conda packages:
-```bash
 micromamba activate qligfep_new
-micromamba install openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 "openff-nagl>=0.3.8" lomap2 kartograf michellab::fkcombu -c conda-forge --yes
+micromamba install gfortran=11.3.0 openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 "openff-nagl>=0.3.8" lomap2 kartograf michellab::fkcombu -c conda-forge --yes
 ```
 
-Now that you have the environment ready and activated, [clone the repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository), enter the `Q` directory with `cd Q/`, and install qligfep through the command:
+Now that you have the environment ready and activated, [clone the repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository), enter the `Q` directory with `cd Q/`, and install qligfep:
 ```bash
 python -m pip install -e .
 ```
+
+The `qprep` Fortran binary will be automatically compiled during installation.
 
 <details>
 <summary>To install everything in one line...</summary>
 
 ```bash
-micromamba create -n qligfep_new python=3.11 -c conda-forge -y && micromamba activate qligfep_new && micromamba install openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 "openff-nagl>=0.3.8" lomap2 kartograf michellab::fkcombu -c conda-forge --yes && python -m pip install -e .
+micromamba create -n qligfep_new python=3.11 gfortran=11.3.0 openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 "openff-nagl>=0.3.8" lomap2 kartograf michellab::fkcombu -c conda-forge --yes && micromamba activate qligfep_new && python -m pip install -e .
 ```
 </details>
 
 ### 🍎 MacOS
 
-Similar to Linux, you need to [clone the repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository), enter the `Q` directory with `cd Q/`, create the environment and install the required packages with:
+Similar to Linux, [clone the repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository), enter the `Q` directory with `cd Q/`, create the environment and install:
 
 ``` bash
-micromamba create -n qligfep_new python=3.11 openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 "openff-nagl>=0.3.8" lomap2 kartograf davidararipe::kcombu_bss -c conda-forge --yes
+micromamba create -n qligfep_new python=3.11 gfortran=11.3.0 openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 "openff-nagl>=0.3.8" lomap2 kartograf davidararipe::kcombu_bss -c conda-forge --yes
 micromamba activate qligfep_new
 python -m pip install joblib scipy tqdm
 python -m pip install -e .
 ```
 
+The `qprep` Fortran binary will be automatically compiled during installation.
+
 <details>
 <summary>To install everything in one line...</summary>
 
 ```bash
-micromamba create -n qligfep_new python=3.11 openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 lomap2 kartograf davidararipe::kcombu_bss -c conda-forge --yes && micromamba activate qligfep_new && python -m pip install joblib scipy tqdm && python -m pip install -e .
+micromamba create -n qligfep_new python=3.11 gfortran=11.3.0 openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 lomap2 kartograf davidararipe::kcombu_bss -c conda-forge --yes && micromamba activate qligfep_new && python -m pip install joblib scipy tqdm && python -m pip install -e .
 ```
 </details>
 
-### 🛠️ Compiling Q
+### 🛠️ Compiling Q for HPC (MPI support)
 
-> 💻 **If you're working locally**, If you're working locally, install `gfortran` using micromamba to compile Q, which is required for QligFEP's topology generation via `qprep`. Run the following commands:
+> 🖥️ **For HPC users only**: If you need MPI support for parallel simulations on HPC systems, you'll need to manually compile the MPI version of Q.
 
-```bash
-micromamba install gfortran=11.3.0 -c conda-forge --yes
-cd src/q6
-make all COMP=gcc && cd ../..
-```
+The basic `qprep` tool is automatically compiled during pip installation and is sufficient for local use. However, for running parallel simulations on HPC systems, you need to compile the MPI-enabled version:
 
-If you're working on an HPC system, you will want to access `gfortran` through a pre-existing module avaiable in your system. This is done using the `module load` command. Check [here](/src/QligFEP/settings/settings.py) for a list of the different HPCs we have already ran RBFE simulations on. Module availability and loading is system-dependent, so please check with your system administrator if you have any issues.
+On your HPC system, load the appropriate modules (system-dependent):
 
-_Example_:
-
-To compile Q on Snellius, you will have to run the following commands:
+_Example for Snellius_:
 ```bash
 module load 2021
 module load gompi/2021a
 ```
-Finally, compiling Q can be done with the following commands:
+
+Then compile the MPI version:
 ```bash
-make all COMP=gcc && make mpi COMP=gcc
+cd src/q6
+make mpi COMP=gcc
 ```
 
-_Note_: see how we don't use `make mpi` locally. This is because we don't need parallelization for running `qprep`, which is the only Q program we use locally.
+Check [here](/src/QligFEP/settings/settings.py) for a list of different HPCs we have successfully ran RBFE simulations on. Module availability and loading is system-dependent, so please check with your system administrator if you have any issues.
 
 ## ⌨️ Command line interface (CLI)
 
