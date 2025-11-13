@@ -520,22 +520,31 @@ void init_excluded(const char *filename) {
     fp = fopen(path, "r");
     if (fp == NULL)
         exit(EXIT_FAILURE);
-
-    char line[8192];
     
-    n_excluded = 0;
-
-    if (fgets(line, 8192, fp)) {
-        for (int i = 0; i < n_atoms; i++) {
-            bool excl = (line[i] == '1');
-            excluded[i] = excl;
-            if (excl) {
-                n_excluded++;
-            }
-        }
+    // --- dynamically read a full line ---
+    char *line = NULL;
+    size_t len = 0;
+    ssize_t read_len = getline(&line, &len, fp);
+    if (read_len == -1) {
+        fprintf(stderr, "Error: failed to read line from %s\n", path);
+        free(line);
+        fclose(fp);
+        exit(EXIT_FAILURE);
     }
 
+    // --- parse ---
+    n_excluded = 0;
+    for (int i = 0; i < n_atoms && i < read_len; i++) {
+        bool excl = (line[i] == '1');
+        excluded[i] = excl;
+        if (excl) n_excluded++;
+    }
+
+    printf("Number of excluded atoms: %d\n", n_excluded);
+
+    free(line);
     fclose(fp);
+
 }
 
 void init_torsions(const char* filename) {
