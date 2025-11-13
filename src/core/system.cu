@@ -1304,7 +1304,7 @@ void init_variables() {
 
     // First part of shrink topology, this needs to be done first as shake constraints are based on bonds
     exclude_qatom_definitions();
-    exclude_all_atoms_excluded_definitions();
+    //exclude_all_atoms_excluded_definitions();
     
     // Shake constraints, need to be initialized before last part of shrink_topology
     if (md.charge_groups) {

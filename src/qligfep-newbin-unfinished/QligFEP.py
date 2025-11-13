@@ -12,8 +12,8 @@ from subprocess import check_output
 from string import Template
 
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../share/')))
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../env/')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../Qgpu/')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../env/')))
 
 # Q-GPU native libraries
 import IO
@@ -294,7 +294,7 @@ class Write_Qfepfile():
         
 class Write_Runfile():
     def __init__(self,wd,oldFEP,cluster):
-        self.qdyn = SETTINGS.ROOT + 'bin/qdyn.py '
+        self.qdyn = SETTINGS.ROOT + 'src/bin/qdyn.py '
         self.qfep = SETTINGS.ROOT + 'bin/qfep.py '
         self.wd = wd
         self.oldFEProot = oldFEP.split('/')[-1]                
@@ -307,7 +307,7 @@ class Write_Runfile():
 
         for i, mdfile in enumerate(globaldata['MDs']):
             if i == 0:
-                command = "    os.system('python {} -t {} -m {}.json -f {} -d {} --clean')\n".format(self.qdyn,
+                command = "    os.system('python {} -c q7-gpu -t {} -m {}.json -f {} -d {} --clean')\n".format(self.qdyn,
                                                                             self.topology,
                                                                             mdfile,
                                                                             self.fepfile,
@@ -315,7 +315,7 @@ class Write_Runfile():
                                                                            )
             else:
                 restart = globaldata['MDs'][i-1]
-                command = "    os.system('python {} -t {} -m ../../inputfiles/{}.json -f {} -d {} -r {}/dualtop/output --clean')\n".format(self.qdyn,
+                command = "    os.system('python {} -c q7-gpu -t {} -m ../../inputfiles/{}.json -f {} -d {} -r {}/dualtop/output --clean')\n".format(self.qdyn,
                                                                                   self.topology,
                                                                                   mdfile,
                                                                                   self.fepfile,
@@ -356,7 +356,7 @@ class Write_Runfile():
             'processors': self.n_processes
         }
 
-        with open('{}/share/templates/RUN.py'.format(SETTINGS.ROOT), 'r') as f, \
+        with open('{}/src/Qgpu/templates/RUN.py'.format(SETTINGS.ROOT), 'r') as f, \
              open(self.py,'w') as outfile:
             src = Template(f.read())
             result = src.substitute(d)
