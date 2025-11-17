@@ -1,2 +1,0 @@
-FEP_8e_8c protein/
-FEP_8d_8c protein/

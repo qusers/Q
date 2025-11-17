@@ -1,1 +1,0 @@
-Ligand_1,Ligand_2,Pred. ddG,Exp. ddG,CCC error
