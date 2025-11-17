@@ -1,4 +1,0 @@
-FEP_53-52 protein/
-FEP_33-31 protein/
-FEP_53-52 water/
-FEP_33-31 water/
