@@ -1014,13 +1014,13 @@ void reset_energies() {
 }
 
 void calc_bonded_forces() {
-    // if (run_gpu) {
-    //     E_bond_p.Uangle = calc_angle_forces_host(0, n_angles_solute);
-    //     E_bond_w.Uangle = calc_angle_forces_host(n_angles_solute, n_angles);
-    // } else {
+    if (run_gpu) {
+        E_bond_p.Uangle = calc_angle_forces_host(0, n_angles_solute);
+        E_bond_w.Uangle = calc_angle_forces_host(n_angles_solute, n_angles);
+    } else {
         E_bond_p.Uangle = calc_angle_forces(0, n_angles_solute);
         E_bond_w.Uangle = calc_angle_forces(n_angles_solute, n_angles);
-    // }
+    }
 
     E_bond_p.Ubond = calc_bond_forces(0, n_bonds_solute);
     E_bond_w.Ubond = calc_bond_forces(n_bonds_solute, n_bonds);
