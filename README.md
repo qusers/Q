@@ -1,6 +1,7 @@
 # QligFEP
 
 ## Table of Contents
+
 - [⚙️ Installation](#️-installation)
   - [🐧 Linux](#-linux)
   - [🍎 MacOS](#-macos)
@@ -105,7 +106,11 @@ Now you're set with the qligfep package. This includes the command-linde-interfa
 
 # 📊 Benchmarking
 
-For QligFEP performance results, please refer to our [benchmarking repository](https://github.com/qusers/qligfepv2-BenchmarkExperiments).
+To check and reproduce QligFEP performance results, please refer to our [benchmarking repository](https://github.com/qusers/qligfepv2-BenchmarkExperiments).
+
+For the preprint describing the benchmarking results, see:
+
+> Alencar Araripe D, Díaz Holguín A, Poso A, van Westen GJP, Åqvist J, Gutiérrez-de-Terán H, et al. QligFEP-2: an automated workflow for small molecule free energy calculations in Q. ChemRxiv. 2025; [doi:10.26434/chemrxiv-2025-x3r3z](https://doi.org/10.26434/chemrxiv-2025-x3r3z)
 
 # 📚 Citations: #
 Q6:       https://doi.org/10.1016/j.softx.2017.12.001
