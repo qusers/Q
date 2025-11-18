@@ -1,5 +1,22 @@
 # QligFEP
 
+## Table of Contents
+- [⚙️ Installation](#️-installation)
+  - [🐧 Linux](#-linux)
+  - [🍎 MacOS](#-macos)
+  - [🛠️ Compiling Q for HPC (MPI support)](#️-compiling-q-for-hpc-mpi-support)
+- [⌨️ Command line interface (CLI)](#️-command-line-interface-cli)
+- [📊 Benchmarking](#-benchmarking)
+- [📚 Citations](#-citations)
+- [Q-GPU](#q-gpu)
+  - [Authors](#authors)
+  - [Installation](#installation)
+  - [NOTE to the current version](#note-to-the-current-version)
+  - [Troubleshooting](#troubleshooting)
+  - [Testing](#testing)
+  - [Benchmarking](#benchmarking)
+- [VERSION NOTES](#version-notes)
+
 ## ⚙️ Installation
 
 We recommend that you use `mamba` or, preferably, its lightweight version `micromamba`. Please check this link on how to [install it](https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html).
@@ -86,7 +103,11 @@ Now you're set with the qligfep package. This includes the command-linde-interfa
 9. `qligfep_analyze`: CLI to analyze the results of a QligFEP simulation.
 10. `ligalign`: aligns a set of ligands to a reference ligand based on their maximum common substructure (MCS).
 
-# Citations: #
+# 📊 Benchmarking
+
+For QligFEP performance results, please refer to our [benchmarking repository](https://github.com/qusers/qligfepv2-BenchmarkExperiments).
+
+# 📚 Citations: #
 Q6:       https://doi.org/10.1016/j.softx.2017.12.001
 
 Q         https://doi.org/10.1016/S1093-3263(98)80006-5
