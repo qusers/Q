@@ -1,4 +1,4 @@
-#include "cuda/include/CudaBondForce.h"
+#include "cuda/include/CudaBondForce.cuh"
 #include "utils.h"
 
 namespace CudaBondForce {
