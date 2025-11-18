@@ -25,7 +25,6 @@ __global__ void calc_improper2_forces_kernel(int start, int end, improper_t* imp
 
     improper_t imp;
     cimproper_t cimp;
-    double improper = 0;
 
     imp = impropers[i];
     cimp = cimpropers[imp.code - 1];
@@ -81,7 +80,7 @@ __global__ void calc_improper2_forces_kernel(int start, int end, improper_t* imp
 
     // Forces
     f1 = sin(phi);
-    if (abs(f1) < 1E-12) f1 = 1E-12;
+    if (fabs(f1) < 1E-12) f1 = 1E-12;
     f1 = -1 / f1;
     // printf("f1 = %f phi = %f cos_phi = %f\n", f1, phi, cos_phi);
 

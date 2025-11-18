@@ -24,7 +24,6 @@ __global__ void calc_torsion_forces_kernel(int start, int end, torsion_t* torsio
     double cos_phi, phi;
     double arg, dv, f1;
     double ener;
-    double torsion = 0;
 
     torsion_t t;
     ctorsion_t ctors;
@@ -81,7 +80,7 @@ __global__ void calc_torsion_forces_kernel(int start, int end, torsion_t* torsio
 
     // Forces
     f1 = sin(phi);
-    if (abs(f1) < 1E-12) f1 = 1E-12;
+    if (fabs(f1) < 1E-12) f1 = 1E-12;
     f1 = -1 / f1;
 
     di.x = f1 * (rnk.x * (bjinv * bkinv) - cos_phi * rnj.x * bj2inv);

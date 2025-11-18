@@ -44,7 +44,7 @@ __global__ void calc_angle_forces_kernel(int start, int end, angle_t* angles, co
     double dv = cang.kth * dtheta;
 
     double f1 = sin(theta);
-    if (abs(f1) < 1e-12) {
+    if (fabs(f1) < 1e-12) {
         f1 = -1.0e12;
     } else {
         f1 = -1.0 / f1;
