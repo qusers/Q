@@ -75,15 +75,16 @@ Check [here](/src/QligFEP/settings/settings.py) for a list of different HPCs we 
 
 Now you're set with the qligfep package. This includes the command-linde-interfaces (CLIs):
 
-1. `qparams`: used to generate ligand parameters;
+1. `qcog`: calculates the center of geometry (COG) of a ligand in a PDB/SDF file. If multiple ligands are found in sdf, the program will calculate the COG for all of them
 2. `pdb2amber`: formats a PDB file to be used with Q's implementation of the AMBER forcefield;
-3. `qlomap`: wraps `Lomap` to generate the `.json` perturbation mapping;
-4. `qmapfep`: in-house developed method to generate the `.json` perturbation mapping, interactively visualize and add or remove edges.
-5. `qligfep`: main CLI for running QligFEP simulations.
-6. `setupFEP`: sets up all the the QligFEP files for a simulation, including protein and water systems.
-7. `qligfep_analyze`: CLI to analyze the results of a QligFEP simulation.
-8. `qcog`: calculates the center of geometry (COG) of a ligand in a PDB/SDF file. If multiple ligands are found in sdf, the program will calculate the COG for all of them
-9. `qprep_prot`: creates an input file for qprep (fortran program) and runs it to either: 1) solvate the protein structure; 2) create the water sphere.
+3. `qprep_prot`: creates an input file for qprep (fortran program) and runs it to either: 1) solvate the protein structure; 2) create the water sphere.
+4. `qparams`: used to generate ligand parameters;
+5. `qlomap`: wraps `Lomap` to generate the `.json` perturbation mapping;
+6. `qmapfep`: in-house developed method to generate the `.json` perturbation mapping, interactively visualize and add or remove edges.
+7. `qligfep`: main CLI for running QligFEP simulations.
+8. `setupFEP`: sets up all the the QligFEP files for a simulation, including protein and water systems.
+9. `qligfep_analyze`: CLI to analyze the results of a QligFEP simulation.
+10. `ligalign`: aligns a set of ligands to a reference ligand based on their maximum common substructure (MCS).
 
 # Citations: #
 Q6:       https://doi.org/10.1016/j.softx.2017.12.001
@@ -95,6 +96,9 @@ QligFEP:  https://doi.org/10.1186/s13321-019-0348-5
 QresFEP:  https://doi.org/10.1021/acs.jctc.9b00538
 
 # Q-GPU #
+
+> Note: the Q-GPU version is under active development and a publication describing its methods and performance is in preparation. For now, please refrain from using this version until the publication is out.
+
 Version control of **Q-GPU**, an adaptation of **Q** version 5.06 running on GPUs.
 
 **Q** is a set of Molecular Dynamics (MD) tools tailored to the following specific kinds of free energy calculations:
