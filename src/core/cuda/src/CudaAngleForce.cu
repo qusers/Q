@@ -89,12 +89,16 @@ double calc_angle_forces_host(int start, int end) {
         check_cudaMalloc((void**)&d_cangles, n_cangles * sizeof(cangle_t));
         check_cudaMalloc((void**)&d_dvelocities, n_atoms * sizeof(dvel_t));
         check_cudaMalloc((void**)&d_energy_sum, sizeof(double));
+    
+
+
+        // This data is constant, copy once
+        cudaMemcpy(d_angles, angles, n_angles * sizeof(angle_t), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_cangles, cangles, n_cangles * sizeof(cangle_t), cudaMemcpyHostToDevice);
     }
 
     // copy data to device
-    cudaMemcpy(d_angles, angles, n_angles * sizeof(angle_t), cudaMemcpyHostToDevice);
     cudaMemcpy(d_coords, coords, n_atoms * sizeof(coord_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_cangles, cangles, n_cangles * sizeof(cangle_t), cudaMemcpyHostToDevice);
     cudaMemcpy(d_dvelocities, dvelocities, n_atoms * sizeof(dvel_t), cudaMemcpyHostToDevice);
 
     double h_energy_sum = 0.0;
