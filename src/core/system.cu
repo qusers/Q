@@ -7,7 +7,10 @@
 #include "restraints.h"
 #include "qatoms.h"
 #include "shake.h"
-#include "cuda/include/CudaAngleForce.h"
+#include "cuda/include/CudaAngleForce.cuh"
+#include "cuda/include/CudaBondForce.cuh"
+#include "cuda/include/CudaTorsionForce.cuh"
+#include "cuda/include/CudaImproper2Force.cuh"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1017,19 +1020,28 @@ void calc_bonded_forces() {
     if (run_gpu) {
         E_bond_p.Uangle = calc_angle_forces_host(0, n_angles_solute);
         E_bond_w.Uangle = calc_angle_forces_host(n_angles_solute, n_angles);
+
+        E_bond_p.Ubond = calc_bond_forces_host(0, n_bonds_solute);
+        E_bond_w.Ubond = calc_bond_forces_host(n_bonds_solute, n_bonds);
+
+        E_bond_p.Utor = calc_torsion_forces_host(0, n_torsions_solute);
+        E_bond_w.Utor = calc_torsion_forces_host(n_torsions_solute, n_torsions);
+
+        E_bond_p.Uimp = calc_improper2_forces_host(0, n_impropers_solute);
+        E_bond_w.Uimp = calc_improper2_forces_host(n_impropers_solute, n_impropers);
     } else {
         E_bond_p.Uangle = calc_angle_forces(0, n_angles_solute);
         E_bond_w.Uangle = calc_angle_forces(n_angles_solute, n_angles);
+
+        E_bond_p.Ubond = calc_bond_forces(0, n_bonds_solute);
+        E_bond_w.Ubond = calc_bond_forces(n_bonds_solute, n_bonds);
+
+        E_bond_p.Utor = calc_torsion_forces(0, n_torsions_solute);
+        E_bond_w.Utor = calc_torsion_forces(n_torsions_solute, n_torsions);
+
+        E_bond_p.Uimp = calc_improper2_forces(0, n_impropers_solute);
+        E_bond_w.Uimp = calc_improper2_forces(n_impropers_solute, n_impropers);
     }
-
-    E_bond_p.Ubond = calc_bond_forces(0, n_bonds_solute);
-    E_bond_w.Ubond = calc_bond_forces(n_bonds_solute, n_bonds);
-
-    E_bond_p.Utor = calc_torsion_forces(0, n_torsions_solute);
-    E_bond_w.Utor = calc_torsion_forces(n_torsions_solute, n_torsions);
-
-    E_bond_p.Uimp = calc_improper2_forces(0, n_impropers_solute);
-    E_bond_w.Uimp = calc_improper2_forces(n_impropers_solute, n_impropers);
 }
 
 void calc_integration_step(int iteration) {
