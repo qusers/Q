@@ -6,4 +6,6 @@ __global__ void calc_torsion_forces_kernel(int start, int end, torsion_t* torsio
 
 double calc_torsion_forces_host(int start, int end);
 
+void cleanup_torsion_force();
+
 #endif

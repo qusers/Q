@@ -3,7 +3,7 @@
 #include "utils.h"
 
 namespace CudaImproper2Force {
-bool initialized = false;
+bool is_initialized = false;
 improper_t* d_impropers = nullptr;
 cimproper_t* d_cimpropers = nullptr;
 coord_t* d_coords = nullptr;
@@ -131,15 +131,16 @@ __global__ void calc_improper2_forces_kernel(int start, int end, improper_t* imp
 double calc_improper2_forces_host(int start, int end) {
     using namespace CudaImproper2Force;
     int N = end - start;
+    if (N <= 0) return 0.0;
     int blockSize = 256;
     int numBlocks = (N + blockSize - 1) / blockSize;
-    if (!initialized) {
+    if (!is_initialized) {
         check_cudaMalloc((void**)&d_impropers, sizeof(improper_t) * n_impropers);
         check_cudaMalloc((void**)&d_cimpropers, sizeof(cimproper_t) * n_cimpropers);
         check_cudaMalloc((void**)&d_coords, sizeof(coord_t) * n_atoms);
         check_cudaMalloc((void**)&d_dvelocities, sizeof(dvel_t) * n_atoms);
         check_cudaMalloc((void**)&d_energy_sum, sizeof(double));
-        initialized = true;
+        is_initialized = true;
     }
 
     cudaMemcpy(d_impropers, impropers, sizeof(improper_t) * n_impropers, cudaMemcpyHostToDevice);
@@ -154,4 +155,16 @@ double calc_improper2_forces_host(int start, int end) {
     cudaMemcpy(&energy, d_energy_sum, sizeof(double), cudaMemcpyDeviceToHost);
     cudaMemcpy(dvelocities, d_dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyDeviceToHost);
     return energy;
+}
+
+void cleanup_improper2_force() {
+    using namespace CudaImproper2Force;
+    if (is_initialized) {
+        cudaFree(d_impropers);
+        cudaFree(d_cimpropers);
+        cudaFree(d_coords);
+        cudaFree(d_dvelocities);
+        cudaFree(d_energy_sum);
+        is_initialized = false;
+    }
 }

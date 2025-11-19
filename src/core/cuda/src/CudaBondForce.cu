@@ -66,3 +66,15 @@ double calc_bond_forces_host(int start, int end) {
     cudaMemcpy(dvelocities, d_dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyDeviceToHost);
     return zero;
 }
+
+void cleanup_bond_force() {
+    using namespace CudaBondForce;
+    if (is_initialized) {
+        cudaFree(d_bonds);
+        cudaFree(d_coords);
+        cudaFree(d_cbonds);
+        cudaFree(d_dvelocities);
+        cudaFree(d_energy_sum);
+        is_initialized = false;
+    }
+}

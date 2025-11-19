@@ -966,6 +966,7 @@ void calc_integration() {
     }
     
     clean_variables();
+
 }
 
 void reset_energies() {
@@ -1464,4 +1465,12 @@ void clean_variables() {
     free(EQ_nonbond_qw);
     free(EQ_nonbond_qx);
     free(EQ_restraint);
+
+    // gpu variables
+    if (run_gpu) {
+        cleanup_angle_force();
+        cleanup_bond_force();
+        cleanup_improper2_force();
+        cleanup_torsion_force();
+    }
 }

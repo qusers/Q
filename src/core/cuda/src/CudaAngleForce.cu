@@ -113,3 +113,15 @@ double calc_angle_forces_host(int start, int end) {
     cudaMemcpy(dvelocities, d_dvelocities, n_atoms * sizeof(dvel_t), cudaMemcpyDeviceToHost);
     return h_energy_sum;
 }
+
+void cleanup_angle_force() {
+    using namespace CudaAngleForce;
+    if (is_initialized) {
+        cudaFree(d_angles);
+        cudaFree(d_coords);
+        cudaFree(d_cangles);
+        cudaFree(d_dvelocities);
+        cudaFree(d_energy_sum);
+        is_initialized = false;
+    }
+}

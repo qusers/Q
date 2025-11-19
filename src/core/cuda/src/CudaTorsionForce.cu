@@ -154,3 +154,15 @@ double calc_torsion_forces_host(int start, int end) {
     cudaMemcpy(dvelocities, d_dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyDeviceToHost);
     return zero;
 }
+
+void cleanup_torsion_force() {
+    using namespace CudaTorsionForce;
+    if (is_initialized) {
+        cudaFree(d_torsions);
+        cudaFree(d_ctorsions);
+        cudaFree(d_coords);
+        cudaFree(d_dvelocities);
+        cudaFree(d_energy_sum);
+        is_initialized = false;
+    }
+}

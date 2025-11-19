@@ -6,4 +6,6 @@ __global__ void calc_improper2_forces_kernel(int start, int end, improper_t* imp
 
 double calc_improper2_forces_host(int start, int end);
 
+void cleanup_improper2_force();
+
 #endif
