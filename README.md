@@ -125,7 +125,6 @@ QligFEP:  https://doi.org/10.1186/s13321-019-0348-5
 QresFEP:  https://doi.org/10.1021/acs.jctc.9b00538
 
 # ⏩ Q-GPU
-# ⏩ Q-GPU
 
 **Q-GPU** is an adaptation of **Q** version 5.06 to run on GPUs.
 
