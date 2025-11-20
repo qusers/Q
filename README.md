@@ -1,22 +1,25 @@
 # QligFEP
 
+**Q** is a set of Molecular Dynamics (MD) tools tailored to the following specific kinds of free energy calculations:
+
+1. Free Energy Perturbation (FEP)
+2. Empirical Valence Bond (EVB)
+3. Linear Interaction Energies (LIE)
+
+This repository is devoted to **QligFEP**, an automated workflow for small molecule free energy calculations in Q.
+
 ## Table of Contents
 
 - [⚙️ Installation](#️-installation)
-  - [🐧 Linux](#-linux)
-  - [🍎 MacOS](#-macos)
-  - [🛠️ Compiling Q for HPC (MPI support)](#️-compiling-q-for-hpc-mpi-support)
+  - [Linux](#linux)
+  - [MacOS](#macos)
+  - [Compiling Q for HPC (MPI support)](#️compiling-q-for-hpc-mpi-support)
 - [⌨️ Command line interface (CLI)](#️-command-line-interface-cli)
 - [📊 Benchmarking](#-benchmarking)
 - [📚 Citations](#-citations)
-- [Q-GPU](#q-gpu)
-  - [Authors](#authors)
-  - [Installation](#installation)
-  - [NOTE to the current version](#note-to-the-current-version)
-  - [Troubleshooting](#troubleshooting)
+- [⏩ Q-GPU](#-q-gpu)
+  - [Note to the current version](#note-to-the-current-version)
   - [Testing](#testing)
-  - [Benchmarking](#benchmarking)
-- [VERSION NOTES](#version-notes)
 
 ## ⚙️ Installation
 
@@ -24,7 +27,7 @@ We recommend that you use `mamba` or, preferably, its lightweight version `micro
 
 Once you have `micromamba` installed and have already cloned this repo, you can create the environment with:
 
-### 🐧 Linux
+### Linux
 ```bash
 micromamba create -n qligfep_new python=3.11
 micromamba activate qligfep_new
@@ -46,7 +49,7 @@ micromamba create -n qligfep_new python=3.11 gfortran=11.3.0 openff-toolkit=0.16
 ```
 </details>
 
-### 🍎 MacOS
+### MacOS
 
 Similar to Linux, [clone the repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository), enter the `Q` directory with `cd Q/`, create the environment and install:
 
@@ -67,7 +70,7 @@ micromamba create -n qligfep_new python=3.11 gfortran=11.3.0 openff-toolkit=0.16
 ```
 </details>
 
-### 🛠️ Compiling Q for HPC (MPI support)
+### Compiling Q for HPC (MPI support)
 
 > 🖥️ **For HPC users only**: If you need MPI support for parallel simulations on HPC systems, you'll need to manually compile the MPI version of Q.
 
@@ -112,7 +115,7 @@ For the preprint describing the benchmarking results, see:
 
 > Alencar Araripe D, Díaz Holguín A, Poso A, van Westen GJP, Åqvist J, Gutiérrez-de-Terán H, et al. QligFEP-2: an automated workflow for small molecule free energy calculations in Q. ChemRxiv. 2025; [doi:10.26434/chemrxiv-2025-x3r3z](https://doi.org/10.26434/chemrxiv-2025-x3r3z)
 
-# 📚 Citations: #
+# 📚 Citations
 Q6:       https://doi.org/10.1016/j.softx.2017.12.001
 
 Q         https://doi.org/10.1016/S1093-3263(98)80006-5
@@ -121,92 +124,18 @@ QligFEP:  https://doi.org/10.1186/s13321-019-0348-5
 
 QresFEP:  https://doi.org/10.1021/acs.jctc.9b00538
 
-# Q-GPU #
+# ⏩ Q-GPU
 
-> Note: the Q-GPU version is under active development and a publication describing its methods and performance is in preparation. For now, please refrain from using this version until the publication is out.
+**Q-GPU** is an adaptation of **Q** version 5.06 to run on GPUs.
 
-Version control of **Q-GPU**, an adaptation of **Q** version 5.06 running on GPUs.
-
-**Q** is a set of Molecular Dynamics (MD) tools tailored to the following specific kinds of free energy calculations:
-
-1. Free Energy Perturbation (FEP)
-2. Empirical Valence Bond (EVB)
-3. Linear Interaction Energies (LIE)
-
-This version includes a translation of the original **Q** fortran code to C/CUDA and Python.
-
-
-## Authors ##
-Chiel Jespers, David Araripe, Willem Jespers, Mauricio Esguerra, Johan Åqvist, Hugo Gutiérrez‐de‐Terán
-
-
-## Installation ##
-The frontend is built on Python and will run in versions > 3.6. It mainly uses native python libraries and only needs numpy as additional package with no further dependencies.
-
-To compile the qdyn engine source code, you need a CUDA compiler. The code has been tested with the following versions:
-
-- CUDA/10.1.243
-
-To succesfully install and compile the code (Fortran):
-
-```bash
-unset SSH_ASKPASS
-mkdir ~/software
-cd ~/software
-git clone https://yourgitusernamehere@github.com/qusers/qgpu.git
-cd Q
-git checkout refactor/qligfep-david
-cd src/q6
-make
-```
-
-After this, also install the python package. You should be able to do it through:
-```bash
-cd Q
-conda env create -f environment.yml
-conda activate qligfep_new
-# make sure you have the correct environment installed
-python -m pip install -e .
-```
-
-After succesful compilation of **Q-GPU** you have to add the program to your system path by modifying your shell initiation script. 
-If your shell is bash, you can add the following lines to your .bashrc file using a text editor. The following assumes that your user name is "johndoe" and the home directory is "/Users/johndoe/":
-
-```bash
-SOFT=/Users/johndoe/software
-export QDIR=$SOFT/qgpu
-export PATH=$QDIR/bin:$QDIR/src:$PATH  
-```
-Where $SOFT will be the place where your software folder is located at, e.g. /Users/johndoe/software
-
-Once the q binaries are declared in your path you should be able to call all q binaries from your terminal.
-To test that the path to your compiled **Q** binaries has been correctly assigned you can issue the following commands in the terminal:
-
-```bash
-source ~/.bashrc
-env | grep qgpu
-
-QDIR=/Users/johndoe/software/qgpu
-```
-
-Additiontally you can search for the main **Q-GPU** binary file with:
-
-```bash
-which qdyn
-```
-
-
-## NOTE to the current version ##
-The Qprep tool from **Q** is needed for the preparation of molecular topology files required by the MD engine Qdyn. Currently, Qprep is provided as fortran code, which compiles on CPUs. The workflow for a **Q-GPU** free energy simulation consists then in:
+## Note to the current version
+The Qprep tool from **Q** is needed for the preparation of molecular topology files required by the MD engine Qdyn. Currently, Qprep is provided as fortran code, which is compiled upon installation. The workflow for a **Q-GPU** free energy simulation consists then in:
 
 - An initial topology preparation stage that runs on a regular CPU  
 - MD sampling using Qdyn, which runs on a CUDA-based GPU  
 - The FEP analysis tool (qfep) provided in python (running both in GPU or CPU)  
 
-
-## Troubleshooting ##
-If you receive error messages during compilation please report them to the program authors including the compiler used (e.g. CUDA), the compiler version (e.e. 10.1.243), and the error message.
-
+> ⚠️ Integration with the QligFEP workflow is currently under active development and not yet available. For now, we only provide instructions to run our test cases.publication describing Q-GPU and its performance is in preparation Please refrain from using this version until the publication is out.
 
 ## Testing ##
 **Q-GPU** includes various tests that compare the output of the original fortran code with the C/CUDA code. They are situated in the test folder and include:
@@ -214,26 +143,37 @@ If you receive error messages during compilation please report them to the progr
 1. interactions  
 2. physical-properties  
 
-The first folder includes test cases for the different type of interactions in **Q**, that is water-water (w-w), solute-solute (p-p) and Qatom-Qatom (q-q) interactions, and any mixture thereof.
-These tests run a single point energy calculation and are compared with the output from Q5.07. The tests can be run separately following the instructions in each folder, or all at once using the run_test.py script (TODO!).
+The first folder includes test cases for the different type of interactions in **Q**, that is water-water (w-w), solute-solute (p-p) and Qatom-Qatom (q-q) interactions, and any mixture thereof. These tests run a single point energy calculation and are compared with the output from Q5.07.
 
-In the second folder, we provide test cases for the calculation of solvation free energies of side-chain mimics, and several protein-ligand binding cases (CDk2 and A2aAR, TODO!). The details for such calculations are described in our QligFEP paper:
+To compile the code and run the tests, you must checkout the GPU feature branch and build the components individually in their respective folders.
 
-- Jespers et al. (<https://doi.org/10.1186/s13321-019-0348-5>).
+**Prerequisites:**
+*   Installation of QligFEP environment as described above.
+*   A CUDA compiler (Tested on CUDA/10.1.243)
 
-## Benchmarking ##
+**Steps:**
 
-We have included a benchmark set of water spheres of sizes 10-30A (in increments of 5). Table generated with https://www.tablesgenerator.com/markdown_tables
+1.  **Checkout the feature branch:**
+    ```bash
+    git checkout feature/qgpu
+    ```
 
-| sphere | cpu Intel(R) Xeon(R) CPU E5-2650 v4 @ 2.20GHz Time in seconds | gpu NVIDIA GeForce GTX 1080  Time in seconds |
-|--------|:-------------------------------------------------------------:|:--------------------------------------------:|
-| 10A    |                                                         6.838 |                                        1.988 |
-| 15A    |                                                        60.698 |                                        4.882 |
-| 20A    |                                                       368.657 |                                       19.233 |
-| 25A    |                                                      1257.150 |                                       59.948 |
-| 30A    |                                                      4060.083 |                                      192.180 |
+2.  **Build the test suite (q6):**
+    Navigate to the `q6` folder and build:
+    ```bash
+    cd src/q6
+    make
+    ```
 
-# VERSION NOTES: #
+3.  **Build the QGPU engine (core):**
+    Navigate to the `core` folder and build:
+    ```bash
+    cd ../core
+    make
+    ```
 
-**19/08/2020**  
-Generating first version of **Q-GPU** readme.  
+4.  **Run the tests:**
+    Once compiled, you can run the test scripts.
+    ```bash
+    python runTEST.py
+    ```
