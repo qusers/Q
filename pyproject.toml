@@ -10,7 +10,14 @@ readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 # keywords = [""]
-authors = [{ name = "Willem Jespers", email = "w.jespers@lacdr.leidenuniv.nl" }]
+authors = [{ name = "Willem Jespers", email = "w.jespers@rug.nl" },
+           { name = "Chiel Jespers", email = "m.jespers@lacdr.leidenuniv.nl" },
+           { name = "David Araripe", email = "david.araripe@rug.nl" },
+           { name = "Shen Guo", email = "g.shen@rug.nl" },
+           { name = "Mauricio Esguerra" },
+           { name = "Johan Åqvist" },
+           { name = "Hugo Gutiérrez de Terán" }
+]
 # maintainers = [{ name = "", email = "" }] # TODO
 classifiers = [
     "License :: OSI Approved :: GNU General Public License v2 (GPLv2)",
@@ -90,13 +97,13 @@ ignore = [
 ]
 
 [project.scripts]
-qligfep = "QligFEP.CLI.qligfep_cli:main_exe"
-qmapfep = "QligFEP.CLI.qmapfep_cli:main_exe"
-setupFEP = "QligFEP.CLI.setupFEP:main_exe"
+qcog = "QligFEP.CLI.cog_cli:main_exe"
+pdb2amber = "QligFEP.CLI.pdb_to_amber:main_exe"
+qprep_prot = "QligFEP.CLI.qprep_cli:main_exe"
 qparams = "QligFEP.CLI.qparams_cli:main_exe"
 qlomap = "QligFEP.CLI.lomap_wrap_cli:main_exe"
-pdb2amber = "QligFEP.CLI.pdb_to_amber:main_exe"
+qmapfep = "QligFEP.CLI.qmapfep_cli:main_exe"
+qligfep = "QligFEP.CLI.qligfep_cli:main_exe"
+setupFEP = "QligFEP.CLI.setupFEP:main_exe"
 qligfep_analyze = "QligFEP.analyze_FEP:main_exe"
-qprep_prot = "QligFEP.CLI.qprep_cli:main_exe"
-qcog = "QligFEP.CLI.cog_cli:main_exe"
 ligalign = "QligFEP.CLI.lig_align_cli:main_exe"
