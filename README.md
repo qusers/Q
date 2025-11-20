@@ -125,6 +125,7 @@ QligFEP:  https://doi.org/10.1186/s13321-019-0348-5
 QresFEP:  https://doi.org/10.1021/acs.jctc.9b00538
 
 # ⏩ Q-GPU
+# ⏩ Q-GPU
 
 **Q-GPU** is an adaptation of **Q** version 5.06 to run on GPUs.
 
@@ -135,7 +136,7 @@ The Qprep tool from **Q** is needed for the preparation of molecular topology fi
 - MD sampling using Qdyn, which runs on a CUDA-based GPU  
 - The FEP analysis tool (qfep) provided in python (running both in GPU or CPU)  
 
-> ⚠️ Integration with the QligFEP workflow is currently under active development and not yet available. For now, we only provide instructions to run our test cases.publication describing Q-GPU and its performance is in preparation Please refrain from using this version until the publication is out.
+> ⚠️ Integration with the QligFEP workflow is currently under active development and not yet available. For now, we only provide instructions to run our test cases. A publication describing Q-GPU and its performance is in preparation. Please refrain from using this version until the publication is out.
 
 ## Testing ##
 **Q-GPU** includes various tests that compare the output of the original fortran code with the C/CUDA code. They are situated in the test folder and include:
@@ -162,7 +163,7 @@ To compile the code and run the tests, you must checkout the GPU feature branch 
     Navigate to the `q6` folder and build:
     ```bash
     cd src/q6
-    make
+    make test
     ```
 
 3.  **Build the QGPU engine (core):**
@@ -175,5 +176,5 @@ To compile the code and run the tests, you must checkout the GPU feature branch 
 4.  **Run the tests:**
     Once compiled, you can run the test scripts.
     ```bash
-    python runTEST.py
+    python runTEST.py -a gpu -t 100
     ```
