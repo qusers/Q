@@ -11,6 +11,7 @@
 #include "cuda/include/CudaBondForce.cuh"
 #include "cuda/include/CudaTorsionForce.cuh"
 #include "cuda/include/CudaImproper2Force.cuh"
+#include "cuda/include/CudaPshellForce.cuh"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1119,7 +1120,11 @@ void calc_integration_step(int iteration) {
             calc_polx_w_forces(iteration);
         }
     }
-    calc_pshell_forces();
+    if (run_gpu) {
+        calc_pshell_forces_host();
+    } else {
+        calc_pshell_forces();
+    }
     calc_restrseq_forces();
     calc_restrdis_forces();
 
@@ -1472,5 +1477,6 @@ void clean_variables() {
         cleanup_bond_force();
         cleanup_improper2_force();
         cleanup_torsion_force();
+        cleanup_pshell_force();
     }
 }
