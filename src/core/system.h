@@ -614,6 +614,7 @@ void init_energies();
  */
 
 extern double Ndegf, Ndegfree, Ndegf_solvent, Ndegf_solute, Ndegfree_solvent, Ndegfree_solute;
+extern double Tscale_solute, Tscale_solvent;
 void calc_temperature();
 
 /* =============================================
