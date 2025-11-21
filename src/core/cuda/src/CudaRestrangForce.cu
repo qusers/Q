@@ -152,4 +152,15 @@ void calc_restrang_force_host() {
 }
 
 void cleanup_restrang_force() {
+    using namespace CudaRestrangeForce;
+    if (is_initialized) {
+        cudaFree(d_restrangs);
+        cudaFree(d_coords);
+        cudaFree(d_lambdas);
+        cudaFree(d_velocities);
+        cudaFree(d_EQ_restraint);
+        cudaFree(d_E_restraint);
+        cudaFree(d_restrdists);
+        is_initialized = false;
+    }
 }
