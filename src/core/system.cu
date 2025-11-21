@@ -11,6 +11,7 @@
 #include "cuda/include/CudaBondForce.cuh"
 #include "cuda/include/CudaTorsionForce.cuh"
 #include "cuda/include/CudaImproper2Force.cuh"
+#include "cuda/include/CudaNonbondedQQForce.cuh"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1131,7 +1132,12 @@ void calc_integration_step(int iteration) {
 
     // Q-Q nonbonded interactions
     clock_t start_qq = clock();
-    calc_nonbonded_qq_forces();
+
+    if (run_gpu) {
+        calc_nonbonded_qq_forces_host();
+    } else {
+        calc_nonbonded_qq_forces();
+    }
     clock_t end_qq = clock();
 
     // Q-atom bonded interactions: loop over Q-atom states
@@ -1472,5 +1478,6 @@ void clean_variables() {
         cleanup_bond_force();
         cleanup_improper2_force();
         cleanup_torsion_force();
+        cleanup_nonbonded_qq_force();
     }
 }
