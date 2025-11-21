@@ -11,6 +11,7 @@
 #include "cuda/include/CudaBondForce.cuh"
 #include "cuda/include/CudaTorsionForce.cuh"
 #include "cuda/include/CudaImproper2Force.cuh"
+#include "cuda/include/CudaRestrwallForce.cuh"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1125,7 +1126,11 @@ void calc_integration_step(int iteration) {
 
     calc_restrpos_forces();
     calc_restrang_forces();
-    calc_restrwall_forces();
+    if (run_gpu) {
+        calc_restrwall_forces_host();
+    } else {
+        calc_restrwall_forces();
+    }
     
     clock_t end_restraints = clock();
 
@@ -1472,5 +1477,6 @@ void clean_variables() {
         cleanup_bond_force();
         cleanup_improper2_force();
         cleanup_torsion_force();
+        cleanup_restrwall_force();
     }
 }
