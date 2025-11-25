@@ -1,7 +1,10 @@
+#include <iostream>
+
 #include "cuda/include/CudaLeapfrog.cuh"
+#include "cuda/include/CudaShakeConstraints.cuh"
 #include "utils.h"
 
-namespace CUDALeapfrog {
+namespace CudaLeapfrog {
 bool is_initialized = false;
 atype_t* d_atypes = nullptr;
 catype_t* d_catypes = nullptr;
@@ -10,11 +13,7 @@ dvel_t* d_dvelocities = nullptr;
 coord_t* d_coords = nullptr;
 coord_t* d_xcoords = nullptr;
 
-}  // namespace CUDALeapfrog
-
-
-
-
+}  // namespace CudaLeapfrog
 
 __global__ void calc_leapfrog_kernel(
     atype_t* atypes,
@@ -27,8 +26,7 @@ __global__ void calc_leapfrog_kernel(
     int n_atoms_solute,
     double Tscale_solute,
     double Tscale_solvent,
-    double dt
-) {
+    double dt) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_atoms) return;
     int i = idx;
@@ -54,7 +52,7 @@ __global__ void calc_leapfrog_kernel(
 }
 
 void calc_leapfrog_host() {
-    using namespace CUDALeapfrog;
+    using namespace CudaLeapfrog;
     if (!is_initialized) {
         check_cudaMalloc((void**)&d_atypes, sizeof(atype_t) * n_atypes);
         check_cudaMalloc((void**)&d_catypes, sizeof(catype_t) * n_catypes);
@@ -85,15 +83,34 @@ void calc_leapfrog_host() {
         n_atoms_solute,
         Tscale_solute,
         Tscale_solvent,
-        dt
-    );
+        dt);
     cudaDeviceSynchronize();
+
     cudaMemcpy(velocities, d_velocities, sizeof(vel_t) * n_atoms, cudaMemcpyDeviceToHost);
     cudaMemcpy(dvelocities, d_dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyDeviceToHost);
     cudaMemcpy(coords, d_coords, sizeof(coord_t) * n_atoms, cudaMemcpyDeviceToHost);
     cudaMemcpy(xcoords, d_xcoords, sizeof(coord_t) * n_atoms, cudaMemcpyDeviceToHost);
 
-    
+    // shake
+    printf("n_shake_constraints: %d\n", n_shake_constraints);
+    if (n_shake_constraints > 0) {
+        calc_shake_constraints_host();
+        for (int i = 0; i < n_atoms; i++) {
+            velocities[i].x = (coords[i].x - xcoords[i].x) / dt;
+            velocities[i].y = (coords[i].y - xcoords[i].y) / dt;
+            velocities[i].z = (coords[i].z - xcoords[i].z) / dt;
+        }
+    }
 }
 void cleanup_leapfrog() {
+    using namespace CudaLeapfrog;
+    if (is_initialized) {
+        cudaFree(d_atypes);
+        cudaFree(d_catypes);
+        cudaFree(d_velocities);
+        cudaFree(d_dvelocities);
+        cudaFree(d_coords);
+        cudaFree(d_xcoords);
+        is_initialized = false;
+    }
 }

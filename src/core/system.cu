@@ -11,6 +11,7 @@
 #include "cuda/include/CudaBondForce.cuh"
 #include "cuda/include/CudaTorsionForce.cuh"
 #include "cuda/include/CudaImproper2Force.cuh"
+#include "cuda/include/CudaLeapfrog.cuh"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1144,7 +1145,12 @@ void calc_integration_step(int iteration) {
     clock_t end_qatoms = clock();
 
     // Now apply leapfrog integration
-    calc_leapfrog();
+    if (run_gpu) {
+        calc_leapfrog_host();
+
+    } else {
+        calc_leapfrog();
+    }
 
     // Recalculate temperature and kinetic energy for output
     calc_temperature();
