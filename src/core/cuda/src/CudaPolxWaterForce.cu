@@ -88,6 +88,7 @@ __global__ void calc_polx_water_forces_kernel(
 
     int il = water_rank[idx];
     int is = water_shell[idx];
+    if (is < 0) return; // water not in any shell this step
 
     int wi, ii;
     coord_t rmu, rcu, f1O, f1H1, f1H2, f2;
@@ -240,6 +241,12 @@ void calc_polx_water_forces_host(int iteration) {
     cudaMemcpy(tdum, d_tdum, n_waters * sizeof(double), cudaMemcpyDeviceToHost);
     cudaMemcpy(polx_list_sh, d_list_sh, n_max_inshell * n_shells * sizeof(int), cudaMemcpyDeviceToHost);
 
+    // Reset per-water metadata; only waters placed in shells will be overwritten in sort_waters().
+    for (int i = 0; i < n_waters; i++) {
+        water_rank[i] = -1;
+        water_shell[i] = -1;
+    }
+
     // printf("Sorting %d waters in %d shells\n", n_waters, n_shells);
     sort_waters();
     // printf("Sorted %d waters in %d shells\n", n_waters, n_shells);
@@ -272,7 +279,8 @@ void calc_polx_water_forces_host(int iteration) {
     cudaMemcpy(&energy, d_energy, sizeof(double), cudaMemcpyDeviceToHost);
     E_restraint.Upolx += energy;
     cudaMemcpy(wshells, d_wshells, n_shells * sizeof(shell_t), cudaMemcpyDeviceToHost);
-    cudaMemcpy(dvelocities, d_velocities, n_atoms_solute * sizeof(dvel_t), cudaMemcpyDeviceToHost);
+    // Copy back forces for all atoms (solute + solvent); water forces were being dropped.
+    cudaMemcpy(dvelocities, d_velocities, n_atoms * sizeof(dvel_t), cudaMemcpyDeviceToHost);
 }
 
 void cleanup_polx_water_force(
@@ -288,6 +296,8 @@ void cleanup_polx_water_force(
         cudaFree(d_theta0);
         cudaFree(d_tdum);
         cudaFree(d_energy);
+        cudaFree(d_water_rank);
+        cudaFree(d_water_shell);
 
         delete[] water_rank;
         delete[] water_shell;
