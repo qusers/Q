@@ -11,6 +11,7 @@
 #include "cuda/include/CudaBondForce.cuh"
 #include "cuda/include/CudaTorsionForce.cuh"
 #include "cuda/include/CudaImproper2Force.cuh"
+#include "cuda/include/CudaPolxWaterForce.cuh"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1116,7 +1117,11 @@ void calc_integration_step(int iteration) {
     if (n_waters > 0) {
         calc_radix_w_forces();
         if (md.polarisation) {
-            calc_polx_w_forces(iteration);
+            if (run_gpu) {
+                calc_polx_water_forces_host(iteration);
+            } else {
+                calc_polx_w_forces(iteration);
+            }
         }
     }
     calc_pshell_forces();
