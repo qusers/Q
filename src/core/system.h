@@ -64,7 +64,7 @@ extern int n_molecules;
 
 extern char base_folder[1024];
 
-extern double dt;
+extern double dt, tau_T;
 
 extern bool run_gpu;
 

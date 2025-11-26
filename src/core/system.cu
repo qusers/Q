@@ -12,6 +12,15 @@
 #include "cuda/include/CudaTorsionForce.cuh"
 #include "cuda/include/CudaImproper2Force.cuh"
 #include "cuda/include/CudaLeapfrog.cuh"
+#include "cuda/include/CudaNonbondedQQForce.cuh"
+#include "cuda/include/CudaRestrwallForce.cuh"
+#include "cuda/include/CudaRestrangForce.cuh"
+#include "cuda/include/CudaRestrposForce.cuh"
+#include "cuda/include/CudaRestrdisForce.cuh"
+#include "cuda/include/CudaRestrseqForce.cuh"
+#include "cuda/include/CudaPshellForce.cuh"
+#include "cuda/include/CudaRadixWaterForce.cuh"
+#include "cuda/include/CudaTemperature.cuh"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1060,7 +1069,11 @@ void calc_integration_step(int iteration) {
     reset_energies();
 
     // Determine temperature and kinetic energy
-    calc_temperature();
+    if (run_gpu) {
+        calc_temperature_host();
+    } else {
+        calc_temperature();
+    }
 
     // Determine acceleration
     clock_t start = clock();
@@ -1115,24 +1128,44 @@ void calc_integration_step(int iteration) {
 
     // Calculate restraints
     if (n_waters > 0) {
-        calc_radix_w_forces();
+        if (run_gpu) {
+            calc_radix_water_forces_host();
+        } else {
+            calc_radix_w_forces();
+        }
+
         if (md.polarisation) {
             calc_polx_w_forces(iteration);
         }
     }
-    calc_pshell_forces();
-    calc_restrseq_forces();
-    calc_restrdis_forces();
 
-    calc_restrpos_forces();
-    calc_restrang_forces();
-    calc_restrwall_forces();
+    if (run_gpu) {
+        calc_pshell_forces_host();
+        calc_restrseq_forces_host();
+        calc_restrdis_forces_host();
+        calc_restrpos_forces_host();
+        calc_restrang_force_host();
+        calc_restrwall_forces_host();
+    } else {
+        calc_pshell_forces();
+        calc_restrseq_forces();
+        calc_restrdis_forces();
+        calc_restrpos_forces();
+        calc_restrang_forces();
+        calc_restrwall_forces();
+    }
+    
     
     clock_t end_restraints = clock();
 
     // Q-Q nonbonded interactions
     clock_t start_qq = clock();
-    calc_nonbonded_qq_forces();
+
+    if (run_gpu) {
+        calc_nonbonded_qq_forces_host();
+    } else {
+        calc_nonbonded_qq_forces();
+    }
     clock_t end_qq = clock();
 
     // Q-atom bonded interactions: loop over Q-atom states
@@ -1153,7 +1186,11 @@ void calc_integration_step(int iteration) {
     }
 
     // Recalculate temperature and kinetic energy for output
-    calc_temperature();
+    if (run_gpu) {
+        calc_temperature_host();
+    } else {
+        calc_temperature();
+    }
 
     // Update total potential energies with an average of all states
     for (int state = 0; state < n_lambdas; state++) {
@@ -1478,5 +1515,15 @@ void clean_variables() {
         cleanup_bond_force();
         cleanup_improper2_force();
         cleanup_torsion_force();
+        cleanup_nonbonded_qq_force();
+        cleanup_restrwall_force();
+        cleanup_restrang_force();
+        cleanup_restrpos_force();
+        cleanup_restrdis_force();
+        cleanup_restrseq_force();
+        cleanup_pshell_force();
+        cleanup_temperature();
+        cleanup_radix_water_force();
+        cleanup_leapfrog();
     }
 }
