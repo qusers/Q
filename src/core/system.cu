@@ -11,6 +11,7 @@
 #include "cuda/include/CudaBondForce.cuh"
 #include "cuda/include/CudaTorsionForce.cuh"
 #include "cuda/include/CudaImproper2Force.cuh"
+#include "cuda/include/CudaTemperature.cuh"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1059,7 +1060,11 @@ void calc_integration_step(int iteration) {
     reset_energies();
 
     // Determine temperature and kinetic energy
-    calc_temperature();
+    if (run_gpu) {
+        calc_temperature_host();
+    } else {
+        calc_temperature();
+    }
 
     // Determine acceleration
     clock_t start = clock();
@@ -1147,7 +1152,11 @@ void calc_integration_step(int iteration) {
     calc_leapfrog();
 
     // Recalculate temperature and kinetic energy for output
-    calc_temperature();
+    if (run_gpu) {
+        calc_temperature_host();
+    } else {
+        calc_temperature();
+    }
 
     // Update total potential energies with an average of all states
     for (int state = 0; state < n_lambdas; state++) {
