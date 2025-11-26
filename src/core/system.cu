@@ -11,6 +11,7 @@
 #include "cuda/include/CudaBondForce.cuh"
 #include "cuda/include/CudaTorsionForce.cuh"
 #include "cuda/include/CudaImproper2Force.cuh"
+#include "cuda/include/CudaPolxWaterForce.cuh"
 #include "cuda/include/CudaLeapfrog.cuh"
 #include "cuda/include/CudaNonbondedQQForce.cuh"
 #include "cuda/include/CudaRestrwallForce.cuh"
@@ -1135,7 +1136,11 @@ void calc_integration_step(int iteration) {
         }
 
         if (md.polarisation) {
-            calc_polx_w_forces(iteration);
+            if (run_gpu) {
+                calc_polx_water_forces_host(iteration);
+            } else {
+                calc_polx_w_forces(iteration);
+            }
         }
     }
 
@@ -1525,5 +1530,6 @@ void clean_variables() {
         cleanup_temperature();
         cleanup_radix_water_force();
         cleanup_leapfrog();
+        cleanup_polx_water_force();
     }
 }
