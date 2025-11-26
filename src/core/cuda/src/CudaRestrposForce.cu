@@ -6,7 +6,7 @@ namespace CudaRestrposForce {
 bool is_initialized = false;
 restrpos_t* d_restrpos = nullptr;
 coord_t* d_coords = nullptr;
-double* d_lambda = nullptr;
+double* d_lambdas = nullptr;
 E_restraint_t* d_EQ_restraint = nullptr;
 double* d_E_restraint = nullptr;
 dvel_t* d_dvelocities = nullptr;
@@ -69,13 +69,13 @@ void calc_restrpos_forces_host() {
     if (!is_initialized) {
         check_cudaMalloc((void**)&d_restrpos, sizeof(restrpos_t) * n_restrspos);
         check_cudaMalloc((void**)&d_coords, sizeof(coord_t) * n_atoms);
-        check_cudaMalloc((void**)&d_lambda, sizeof(double));
+        check_cudaMalloc((void**)&d_lambdas, sizeof(double) * n_lambdas);
         check_cudaMalloc((void**)&d_EQ_restraint, sizeof(E_restraint_t) * n_lambdas);
         check_cudaMalloc((void**)&d_E_restraint, sizeof(double));
         check_cudaMalloc((void**)&d_dvelocities, sizeof(dvel_t) * n_atoms);
 
         cudaMemcpy(d_restrpos, restrspos, sizeof(restrpos_t) * n_restrspos, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_lambda, &lambdas, sizeof(double), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_lambdas, lambdas, sizeof(double) * n_lambdas, cudaMemcpyHostToDevice);
         is_initialized = true;
     }
     cudaMemcpy(d_coords, coords, sizeof(coord_t) * n_atoms, cudaMemcpyHostToDevice);
@@ -90,7 +90,7 @@ void calc_restrpos_forces_host() {
         d_restrpos,
         n_restrspos,
         d_coords,
-        d_lambda,
+        d_lambdas,
         n_lambdas,
         d_EQ_restraint,
         d_E_restraint,
@@ -106,7 +106,7 @@ void cleanup_restrpos_force() {
     if (is_initialized) {
         cudaFree(d_restrpos);
         cudaFree(d_coords);
-        cudaFree(d_lambda);
+        cudaFree(d_lambdas);
         cudaFree(d_EQ_restraint);
         cudaFree(d_E_restraint);
         cudaFree(d_dvelocities);
