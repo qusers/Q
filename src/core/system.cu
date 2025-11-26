@@ -11,6 +11,7 @@
 #include "cuda/include/CudaBondForce.cuh"
 #include "cuda/include/CudaTorsionForce.cuh"
 #include "cuda/include/CudaImproper2Force.cuh"
+#include "cuda/include/CudaRestrseqForce.cuh"
 #include "cuda/include/CudaPshellForce.cuh"
 #include "cuda/include/CudaRadixWaterForce.cuh"
 #include "cuda/include/CudaTemperature.cuh"
@@ -1131,12 +1132,19 @@ void calc_integration_step(int iteration) {
             calc_polx_w_forces(iteration);
         }
     }
+
+    
+
     if (run_gpu) {
         calc_pshell_forces_host();
     } else {
         calc_pshell_forces();
     }
-    calc_restrseq_forces();
+    if (run_gpu) {
+        calc_restrseq_forces_host();
+    } else {
+        calc_restrseq_forces();
+    }
     calc_restrdis_forces();
 
     calc_restrpos_forces();
@@ -1492,6 +1500,7 @@ void clean_variables() {
         cleanup_bond_force();
         cleanup_improper2_force();
         cleanup_torsion_force();
+        cleanup_restrseq_force();
         cleanup_pshell_force();
         cleanup_temperature();
         cleanup_radix_water_force();
