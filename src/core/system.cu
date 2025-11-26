@@ -11,6 +11,7 @@
 #include "cuda/include/CudaBondForce.cuh"
 #include "cuda/include/CudaTorsionForce.cuh"
 #include "cuda/include/CudaImproper2Force.cuh"
+#include "cuda/include/CudaRadixWaterForce.cuh"
 #include "cuda/include/CudaTemperature.cuh"
 
 #include <stdio.h>
@@ -1119,7 +1120,12 @@ void calc_integration_step(int iteration) {
 
     // Calculate restraints
     if (n_waters > 0) {
-        calc_radix_w_forces();
+        if (run_gpu) {
+            calc_radix_water_forces_host();
+        } else {
+            calc_radix_w_forces();
+        }
+
         if (md.polarisation) {
             calc_polx_w_forces(iteration);
         }
@@ -1481,5 +1487,7 @@ void clean_variables() {
         cleanup_bond_force();
         cleanup_improper2_force();
         cleanup_torsion_force();
+        cleanup_temperature();
+        cleanup_radix_water_force();
     }
 }
