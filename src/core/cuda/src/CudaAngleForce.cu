@@ -1,16 +1,7 @@
 #include "cuda/include/CudaAngleForce.cuh"
 #include "utils.h"
 #include "cuda/include/CudaUtility.cuh"
-
-namespace CudaAngleForce {
-bool is_initialized = false;
-angle_t* d_angles = nullptr;
-coord_t* d_coords = nullptr;
-cangle_t* d_cangles = nullptr;
-dvel_t* d_dvelocities = nullptr;
-double* d_energy_sum = nullptr;
-}  // namespace CudaAngleForce
-
+#include "cuda/include/CudaContext.cuh"
 
 __global__ void calc_angle_forces_kernel(int start, int end, angle_t* angles, coord_t* coords, cangle_t* cangles, dvel_t* dvelocities, double* energy_sum) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x + start;
@@ -76,52 +67,29 @@ __global__ void calc_angle_forces_kernel(int start, int end, angle_t* angles, co
 }
 
 double calc_angle_forces_host(int start, int end) {
-    using namespace CudaAngleForce;
     int N = end - start;
     if (N <= 0) return 0.0;
     int blockSize = 256;
     int numBlocks = (N + blockSize - 1) / blockSize;
 
-    if (!is_initialized) {
-        is_initialized = true;
-        check_cudaMalloc((void**)&d_angles, n_angles * sizeof(angle_t));
-        check_cudaMalloc((void**)&d_coords, n_atoms * sizeof(coord_t));
-        check_cudaMalloc((void**)&d_cangles, n_cangles * sizeof(cangle_t));
-        check_cudaMalloc((void**)&d_dvelocities, n_atoms * sizeof(dvel_t));
-        check_cudaMalloc((void**)&d_energy_sum, sizeof(double));
-    
 
-
-        // This data is constant, copy once
-        cudaMemcpy(d_angles, angles, n_angles * sizeof(angle_t), cudaMemcpyHostToDevice);
-        cudaMemcpy(d_cangles, cangles, n_cangles * sizeof(cangle_t), cudaMemcpyHostToDevice);
-    }
-
-    // copy data to device
-    cudaMemcpy(d_coords, coords, n_atoms * sizeof(coord_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_dvelocities, dvelocities, n_atoms * sizeof(dvel_t), cudaMemcpyHostToDevice);
+    CudaContext& ctx = CudaContext::instance();
+    // todo: now have to do that, after moving all to CudaContext, can remove it
+    ctx.sync_all_to_device();
 
     double h_energy_sum = 0.0;
+    double *d_energy_sum;
+    check_cudaMalloc((void**)&d_energy_sum, sizeof(double));
     cudaMemcpy(d_energy_sum, &h_energy_sum, sizeof(double), cudaMemcpyHostToDevice);
 
     // launch kernel
-    calc_angle_forces_kernel<<<numBlocks, blockSize>>>(start, end, d_angles, d_coords, d_cangles, d_dvelocities, d_energy_sum);
+    calc_angle_forces_kernel<<<numBlocks, blockSize>>>(start, end, ctx.d_angles, ctx.d_coords, ctx.d_cangles, ctx.d_dvelocities, d_energy_sum);
     cudaDeviceSynchronize();
 
+    // todo: Now have to do that, after moving all to CudaContext, can remove it
     // copy results back to host
     cudaMemcpy(&h_energy_sum, d_energy_sum, sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(dvelocities, d_dvelocities, n_atoms * sizeof(dvel_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(dvelocities, ctx.d_dvelocities, n_atoms * sizeof(dvel_t), cudaMemcpyDeviceToHost);
+    cudaFree(d_energy_sum);
     return h_energy_sum;
-}
-
-void cleanup_angle_force() {
-    using namespace CudaAngleForce;
-    if (is_initialized) {
-        cudaFree(d_angles);
-        cudaFree(d_coords);
-        cudaFree(d_cangles);
-        cudaFree(d_dvelocities);
-        cudaFree(d_energy_sum);
-        is_initialized = false;
-    }
 }

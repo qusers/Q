@@ -22,6 +22,7 @@
 #include "cuda/include/CudaPshellForce.cuh"
 #include "cuda/include/CudaRadixWaterForce.cuh"
 #include "cuda/include/CudaTemperature.cuh"
+#include "cuda/include/CudaContext.cuh"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1137,7 +1138,8 @@ void calc_integration_step(int iteration) {
 
         if (md.polarisation) {
             if (run_gpu) {
-                calc_polx_water_forces_host(iteration);
+                // calc_polx_water_forces_host(iteration);
+                calc_polx_w_forces(iteration); // todo: polx water gpu version has bug!!!
             } else {
                 calc_polx_w_forces(iteration);
             }
@@ -1423,6 +1425,8 @@ void init_variables() {
     write_header("coords.csv");
     write_header("velocities.csv");
     write_energy_header();
+
+    CudaContext::instance().init();
 }
 
 void clean_variables() {
@@ -1516,7 +1520,6 @@ void clean_variables() {
 
     // gpu variables
     if (run_gpu) {
-        cleanup_angle_force();
         cleanup_bond_force();
         cleanup_improper2_force();
         cleanup_torsion_force();
