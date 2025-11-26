@@ -397,7 +397,7 @@ def run(args):
         work(process_num, logs_dir, command, steps)
         
         print(f"Completed benchmark for {process_num} processes.\n")
-        time.sleep(2)  # brief pause between runs
+        time.sleep(30)  # brief pause between runs
     
     
     
