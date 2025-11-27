@@ -1529,7 +1529,6 @@ void clean_variables() {
         cleanup_restrdis_force();
         cleanup_restrseq_force();
         cleanup_temperature();
-        cleanup_radix_water_force();
         cleanup_polx_water_force();
     }
 }
