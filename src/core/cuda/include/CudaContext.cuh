@@ -5,16 +5,26 @@
 #include "system.h"
 #include "utils.h"
 
-// CudaContext explicitly owns device buffers shared by CUDA kernels.
-// Add/remove members to match the data you want to keep on the GPU.
 class CudaContext {
    public:
+    /*
+    Common data
+    */
     coord_t* d_coords = nullptr;
     dvel_t* d_dvelocities = nullptr;
     vel_t* d_velocities = nullptr;
 
+    /*
+    Used in CudaAngleForce.cu
+    */
     angle_t* d_angles = nullptr;
-    cangle_t* d_cangles = nullptr;
+    cangle_t* d_cangles = nullptr; 
+
+    /*
+    Used in CudaBondForce.cu
+    */
+    bond_t* d_bonds = nullptr;
+    cbond_t* d_cbonds = nullptr;
 
     static CudaContext& instance() {
         static CudaContext ctx;
