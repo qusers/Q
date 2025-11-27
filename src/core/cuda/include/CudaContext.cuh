@@ -77,6 +77,12 @@ class CudaContext {
     bool* d_shell = nullptr;
     coord_t* d_coords_top = nullptr;
 
+    /*
+    Used in CudaRestrangForce.cu
+    */
+    restrang_t* d_restrangs = nullptr;
+    E_restraint_t* d_EQ_restraint = nullptr;
+    restrdis_t* d_restrdists = nullptr;
 
     static CudaContext& instance() {
         static CudaContext ctx;
