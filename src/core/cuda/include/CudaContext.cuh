@@ -95,6 +95,11 @@ class CudaContext {
     restrseq_t* d_restrseqs = nullptr;
     bool* d_heavy = nullptr;
 
+    /*
+    Used in CudaRestrwallForce.cu
+    */
+    restrwall_t* d_restrwalls = nullptr;
+
 
 
     static CudaContext& instance() {

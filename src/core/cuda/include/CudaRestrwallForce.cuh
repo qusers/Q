@@ -3,6 +3,5 @@
 #include "system.h"
 
 void calc_restrwall_forces_host();
-void cleanup_restrwall_force();
 
 #endif

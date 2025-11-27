@@ -51,6 +51,7 @@ void CudaContext::init() {
     check_cudaMalloc((void**)&d_restrseqs, sizeof(restrseq_t) * n_restrseqs);
     check_cudaMalloc((void**)&d_heavy, sizeof(bool) * n_atoms);
 
+    check_cudaMalloc((void**)&d_restrwalls, sizeof(restrwall_t) * n_restrwalls);
     sync_all_to_device();
 }
 
@@ -93,6 +94,7 @@ void CudaContext::sync_all_to_device() {
 
     sync_array_to_device<restrseq_t>(d_restrseqs, restrseqs, n_restrseqs);
     sync_array_to_device<bool>(d_heavy, heavy, n_atoms);
+    sync_array_to_device<restrwall_t>(d_restrwalls, restrwalls, n_restrwalls);
 }
 
 void CudaContext::sync_all_to_host() {
@@ -133,6 +135,7 @@ void CudaContext::sync_all_to_host() {
 
     sync_array_to_host<restrseq_t>(restrseqs, d_restrseqs, n_restrseqs);
     sync_array_to_host<bool>(heavy, d_heavy, n_atoms);
+    sync_array_to_host<restrwall_t>(restrwalls, d_restrwalls, n_restrwalls);
 }
 
 void CudaContext::free() {
