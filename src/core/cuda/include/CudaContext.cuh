@@ -100,6 +100,12 @@ class CudaContext {
     */
     restrwall_t* d_restrwalls = nullptr;
 
+    /*
+    Used in CudaTorsionForce.cu
+    */
+    torsion_t* d_torsions = nullptr;
+    ctorsion_t* d_ctorsions = nullptr;
+
 
 
     static CudaContext& instance() {

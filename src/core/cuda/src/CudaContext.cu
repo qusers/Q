@@ -52,6 +52,10 @@ void CudaContext::init() {
     check_cudaMalloc((void**)&d_heavy, sizeof(bool) * n_atoms);
 
     check_cudaMalloc((void**)&d_restrwalls, sizeof(restrwall_t) * n_restrwalls);
+
+    check_cudaMalloc((void**)&d_torsions, sizeof(torsion_t) * n_torsions);
+    check_cudaMalloc((void**)&d_ctorsions, sizeof(ctorsion_t) * n_ctorsions);
+
     sync_all_to_device();
 }
 
@@ -95,6 +99,9 @@ void CudaContext::sync_all_to_device() {
     sync_array_to_device<restrseq_t>(d_restrseqs, restrseqs, n_restrseqs);
     sync_array_to_device<bool>(d_heavy, heavy, n_atoms);
     sync_array_to_device<restrwall_t>(d_restrwalls, restrwalls, n_restrwalls);
+
+    sync_array_to_device<torsion_t>(d_torsions, torsions, n_torsions);
+    sync_array_to_device<ctorsion_t>(d_ctorsions, ctorsions, n_ctorsions);
 }
 
 void CudaContext::sync_all_to_host() {
@@ -136,6 +143,9 @@ void CudaContext::sync_all_to_host() {
     sync_array_to_host<restrseq_t>(restrseqs, d_restrseqs, n_restrseqs);
     sync_array_to_host<bool>(heavy, d_heavy, n_atoms);
     sync_array_to_host<restrwall_t>(restrwalls, d_restrwalls, n_restrwalls);
+
+    sync_array_to_host<torsion_t>(torsions, d_torsions, n_torsions);
+    sync_array_to_host<ctorsion_t>(ctorsions, d_ctorsions, n_ctorsions);
 }
 
 void CudaContext::free() {
