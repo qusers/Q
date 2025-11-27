@@ -1532,7 +1532,6 @@ void clean_variables() {
         cleanup_pshell_force();
         cleanup_temperature();
         cleanup_radix_water_force();
-        cleanup_leapfrog();
         cleanup_polx_water_force();
     }
 }

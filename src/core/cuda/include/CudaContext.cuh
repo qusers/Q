@@ -35,6 +35,8 @@ class CudaContext {
     /*
     Used in CudaLeapfrog.cu
     */
+    atype_t* d_atypes = nullptr;
+    catype_t* d_catypes = nullptr;
 
 
     /*

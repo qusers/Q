@@ -18,6 +18,9 @@ void CudaContext::init() {
     check_cudaMalloc((void**)&d_winv, sizeof(double) * n_atoms);
     check_cudaMalloc((void**)&d_xcoords, sizeof(coord_t) * n_atoms);
 
+    check_cudaMalloc((void**)&d_atypes, sizeof(atype_t) * n_atypes);
+    check_cudaMalloc((void**)&d_catypes, sizeof(catype_t) * n_catypes);
+
     check_cudaMalloc((void**)&d_mol_shake_offset, sizeof(int) * n_molecules);  // calculation data, not initialized in the beginning.
 
     sync_all_to_device();
@@ -38,6 +41,9 @@ void CudaContext::sync_all_to_device() {
     sync_array_to_device<shake_bond_t>(d_shake_bonds, shake_bonds, n_shake_constraints);
     sync_array_to_device<double>(d_winv, winv, n_atoms);
     sync_array_to_device<coord_t>(d_xcoords, xcoords, n_atoms);
+
+    sync_array_to_device<atype_t>(d_atypes, atypes, n_atypes);
+    sync_array_to_device<catype_t>(d_catypes, catypes, n_catypes);
 }
 
 void CudaContext::sync_all_to_host() {
@@ -55,6 +61,9 @@ void CudaContext::sync_all_to_host() {
     sync_array_to_host<shake_bond_t>(shake_bonds, d_shake_bonds, n_shake_constraints);
     sync_array_to_host<double>(winv, d_winv, n_atoms);
     sync_array_to_host<coord_t>(xcoords, d_xcoords, n_atoms);
+
+    sync_array_to_host<atype_t>(atypes, d_atypes, n_atypes);
+    sync_array_to_host<catype_t>(catypes, d_catypes, n_catypes);
 }
 
 void CudaContext::free() {

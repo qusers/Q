@@ -3,6 +3,5 @@
 #include "system.h"
 
 void calc_leapfrog_host();
-void cleanup_leapfrog();
 
 #endif

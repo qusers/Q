@@ -1,19 +1,9 @@
 #include <iostream>
 
+#include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaLeapfrog.cuh"
 #include "cuda/include/CudaShakeConstraints.cuh"
 #include "utils.h"
-
-namespace CudaLeapfrog {
-bool is_initialized = false;
-atype_t* d_atypes = nullptr;
-catype_t* d_catypes = nullptr;
-vel_t* d_velocities = nullptr;
-dvel_t* d_dvelocities = nullptr;
-coord_t* d_coords = nullptr;
-coord_t* d_xcoords = nullptr;
-
-}  // namespace CudaLeapfrog
 
 __global__ void calc_leapfrog_kernel(
     atype_t* atypes,
@@ -52,23 +42,14 @@ __global__ void calc_leapfrog_kernel(
 }
 
 void calc_leapfrog_host() {
-    using namespace CudaLeapfrog;
-    if (!is_initialized) {
-        check_cudaMalloc((void**)&d_atypes, sizeof(atype_t) * n_atypes);
-        check_cudaMalloc((void**)&d_catypes, sizeof(catype_t) * n_catypes);
-        check_cudaMalloc((void**)&d_velocities, sizeof(vel_t) * n_atoms);
-        check_cudaMalloc((void**)&d_dvelocities, sizeof(dvel_t) * n_atoms);
-        check_cudaMalloc((void**)&d_coords, sizeof(coord_t) * n_atoms);
-        check_cudaMalloc((void**)&d_xcoords, sizeof(coord_t) * n_atoms);
-
-        cudaMemcpy(d_atypes, atypes, sizeof(atype_t) * n_atypes, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_catypes, catypes, sizeof(catype_t) * n_catypes, cudaMemcpyHostToDevice);
-
-        is_initialized = true;
-    }
-    cudaMemcpy(d_velocities, velocities, sizeof(vel_t) * n_atoms, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_dvelocities, dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_coords, coords, sizeof(coord_t) * n_atoms, cudaMemcpyHostToDevice);
+    CudaContext& ctx = CudaContext::instance();
+    ctx.sync_all_to_device();
+    auto d_atypes = ctx.d_atypes;
+    auto d_catypes = ctx.d_catypes;
+    auto d_velocities = ctx.d_velocities;
+    auto d_dvelocities = ctx.d_dvelocities;
+    auto d_coords = ctx.d_coords;
+    auto d_xcoords = ctx.d_xcoords;
 
     int blockSize = 256;
     int numBlocks = (n_atoms + blockSize - 1) / blockSize;
@@ -100,17 +81,5 @@ void calc_leapfrog_host() {
             velocities[i].y = (coords[i].y - xcoords[i].y) / dt;
             velocities[i].z = (coords[i].z - xcoords[i].z) / dt;
         }
-    }
-}
-void cleanup_leapfrog() {
-    using namespace CudaLeapfrog;
-    if (is_initialized) {
-        cudaFree(d_atypes);
-        cudaFree(d_catypes);
-        cudaFree(d_velocities);
-        cudaFree(d_dvelocities);
-        cudaFree(d_coords);
-        cudaFree(d_xcoords);
-        is_initialized = false;
     }
 }
