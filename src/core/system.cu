@@ -1523,7 +1523,6 @@ void clean_variables() {
     // gpu variables
     if (run_gpu) {
         cleanup_torsion_force();
-        cleanup_nonbonded_qq_force();
         cleanup_restrwall_force();
         cleanup_restrang_force();
         cleanup_restrpos_force();

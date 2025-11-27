@@ -3,6 +3,5 @@
 #include "system.h"
 
 void calc_nonbonded_qq_forces_host();
-void cleanup_nonbonded_qq_force();
 
 #endif

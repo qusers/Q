@@ -38,7 +38,6 @@ class CudaContext {
     atype_t* d_atypes = nullptr;
     catype_t* d_catypes = nullptr;
 
-
     /*
     Used in CudaShakeConstraints.cu
     */
@@ -47,6 +46,19 @@ class CudaContext {
     double* d_winv = nullptr;
     coord_t* d_xcoords = nullptr;
     int* d_mol_shake_offset = nullptr;
+
+    /*
+    Used in CudaNonbondedQQForce.cu
+    */
+    q_atom_t* d_q_atoms = nullptr;
+    q_charge_t* d_q_charges = nullptr;
+    int* d_LJ_matrix = nullptr;
+    bool* d_excluded = nullptr;
+    q_elscale_t* d_q_elscales = nullptr;
+    q_catype_t* d_q_catypes = nullptr;
+    q_atype_t* d_q_atypes = nullptr;
+    E_nonbonded_t* d_EQ_nonbond_qq = nullptr;
+    double* d_lambdas = nullptr;
 
     static CudaContext& instance() {
         static CudaContext ctx;
