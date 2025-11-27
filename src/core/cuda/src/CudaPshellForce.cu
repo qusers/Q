@@ -1,15 +1,6 @@
+#include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaPshellForce.cuh"
 #include "utils.h"
-namespace CudaPshellForce {
-bool is_initialized = false;
-bool* d_shell;
-bool* d_excluded;
-coord_t* d_coords;
-coord_t* d_coords_top;
-double* d_ufix_energy;
-double* d_ushell_energy;
-dvel_t* d_dvelocities;
-}  // namespace CudaPshellForce
 
 __global__ void calc_pshell_force_kernel(
     int n_atoms_solute,
@@ -50,27 +41,22 @@ __global__ void calc_pshell_force_kernel(
 }
 
 void calc_pshell_forces_host() {
-    using namespace CudaPshellForce;
-    if (!is_initialized) {
-        check_cudaMalloc((void**)&d_shell, sizeof(bool) * n_atoms);
-        check_cudaMalloc((void**)&d_excluded, sizeof(bool) * n_atoms);
-        check_cudaMalloc((void**)&d_coords, sizeof(coord_t) * n_atoms);
-        check_cudaMalloc((void**)&d_coords_top, sizeof(coord_t) * n_atoms);
-        check_cudaMalloc((void**)&d_ufix_energy, sizeof(double));
-        check_cudaMalloc((void**)&d_ushell_energy, sizeof(double));
-        check_cudaMalloc((void**)&d_dvelocities, sizeof(dvel_t) * n_atoms);
+    CudaContext& ctx = CudaContext::instance();
+    ctx.sync_all_to_device();
 
-        cudaMemcpy(d_shell, shell, sizeof(bool) * n_atoms, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_excluded, excluded, sizeof(bool) * n_atoms, cudaMemcpyHostToDevice);
-        is_initialized = true;
-    }
+    auto d_shell = ctx.d_shell;
+    auto d_excluded = ctx.d_excluded;
+    auto d_coords = ctx.d_coords;
+    auto d_coords_top = ctx.d_coords_top;
+    auto d_dvelocities = ctx.d_dvelocities;
 
-    cudaMemcpy(d_coords, coords, sizeof(coord_t) * n_atoms, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_coords_top, coords_top, sizeof(coord_t) * n_atoms, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_dvelocities, dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyHostToDevice);
-
+    double* d_ufix_energy;
+    double* d_ushell_energy;
+    check_cudaMalloc((void**)&d_ufix_energy, sizeof(double));
+    check_cudaMalloc((void**)&d_ushell_energy, sizeof(double));
     cudaMemset(d_ufix_energy, 0, sizeof(double));
     cudaMemset(d_ushell_energy, 0, sizeof(double));
+
     int blockSize = 256;
     int numBlocks = (n_atoms_solute + blockSize - 1) / blockSize;
     calc_pshell_force_kernel<<<numBlocks, blockSize>>>(
@@ -89,22 +75,7 @@ void calc_pshell_forces_host() {
     cudaMemcpy(&ushell_energy, d_ushell_energy, sizeof(double), cudaMemcpyDeviceToHost);
     cudaMemcpy(dvelocities, d_dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyDeviceToHost);
 
-
     E_restraint.Ufix += ufix_energy;
     E_restraint.Ushell += ushell_energy;
-}
-
-void cleanup_pshell_force() {
-    using namespace CudaPshellForce;
-    if (is_initialized) {
-        cudaFree(d_shell);
-        cudaFree(d_excluded);
-        cudaFree(d_coords);
-        cudaFree(d_coords_top);
-        cudaFree(d_ufix_energy);
-        cudaFree(d_ushell_energy);
-        cudaFree(d_dvelocities);
-        is_initialized = false;
-    }
-
+    // ctx.sync_all_to_host();
 }

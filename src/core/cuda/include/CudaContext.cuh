@@ -71,6 +71,13 @@ class CudaContext {
     int* d_water_shell = nullptr;
     int* d_water_rank = nullptr;
 
+    /*
+    Used in CudaPshellForce.cu
+    */
+    bool* d_shell = nullptr;
+    coord_t* d_coords_top = nullptr;
+
+
     static CudaContext& instance() {
         static CudaContext ctx;
         return ctx;

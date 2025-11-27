@@ -41,6 +41,9 @@ void CudaContext::init() {
     check_cudaMalloc((void**)&d_water_rank, n_waters * sizeof(int));               // calculation data, not initialized in the beginning.
     check_cudaMalloc((void**)&d_water_shell, n_waters * sizeof(int));              // calculation data, not initialized in the beginning.
 
+    check_cudaMalloc((void**)&d_shell, sizeof(bool) * n_atoms);
+    check_cudaMalloc((void**)&d_coords_top, sizeof(coord_t) * n_atoms);
+
     sync_all_to_device();
 }
 
@@ -73,6 +76,9 @@ void CudaContext::sync_all_to_device() {
     sync_array_to_device<E_nonbonded_t>(d_EQ_nonbond_qq, EQ_nonbond_qq, n_lambdas);
     sync_array_to_device<double>(d_lambdas, lambdas, n_lambdas);
     sync_array_to_device<shell_t>(d_wshells, wshells, n_shells);
+
+    sync_array_to_device<bool>(d_shell, shell, n_atoms);
+    sync_array_to_device<coord_t>(d_coords_top, coords_top, n_atoms);
 }
 
 void CudaContext::sync_all_to_host() {
@@ -94,15 +100,18 @@ void CudaContext::sync_all_to_host() {
     sync_array_to_host<atype_t>(atypes, d_atypes, n_atypes);
     sync_array_to_host<catype_t>(catypes, d_catypes, n_catypes);
 
-    sync_array_to_device<q_atom_t>(q_atoms, d_q_atoms, n_qatoms);
-    sync_array_to_device<q_charge_t>(q_charges, d_q_charges, n_qatoms * n_lambdas);
-    sync_array_to_device<int>(LJ_matrix, d_LJ_matrix, n_atoms_solute * n_atoms_solute);
-    sync_array_to_device<bool>(excluded, d_excluded, n_atoms);
-    sync_array_to_device<q_elscale_t>(q_elscales, d_q_elscales, n_qelscales);
-    sync_array_to_device<q_catype_t>(q_catypes, d_q_catypes, n_qcatypes);
-    sync_array_to_device<q_atype_t>(q_atypes, d_q_atypes, n_qatoms * n_lambdas);
-    sync_array_to_device<E_nonbonded_t>(EQ_nonbond_qq, d_EQ_nonbond_qq, n_lambdas);
-    sync_array_to_device<double>(lambdas, d_lambdas, n_lambdas);
+    sync_array_to_host<q_atom_t>(q_atoms, d_q_atoms, n_qatoms);
+    sync_array_to_host<q_charge_t>(q_charges, d_q_charges, n_qatoms * n_lambdas);
+    sync_array_to_host<int>(LJ_matrix, d_LJ_matrix, n_atoms_solute * n_atoms_solute);
+    sync_array_to_host<bool>(excluded, d_excluded, n_atoms);
+    sync_array_to_host<q_elscale_t>(q_elscales, d_q_elscales, n_qelscales);
+    sync_array_to_host<q_catype_t>(q_catypes, d_q_catypes, n_qcatypes);
+    sync_array_to_host<q_atype_t>(q_atypes, d_q_atypes, n_qatoms * n_lambdas);
+    sync_array_to_host<E_nonbonded_t>(EQ_nonbond_qq, d_EQ_nonbond_qq, n_lambdas);
+    sync_array_to_host<double>(lambdas, d_lambdas, n_lambdas);
+    sync_array_to_host<shell_t>(wshells, d_wshells, n_shells);
+    sync_array_to_host<bool>(shell, d_shell, n_atoms);
+    sync_array_to_host<coord_t>(coords, d_coords_top, n_atoms);
 }
 
 void CudaContext::free() {
