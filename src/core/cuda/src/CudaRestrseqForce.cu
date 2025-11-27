@@ -1,19 +1,7 @@
+#include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaRestrseqForce.cuh"
-#include "utils.h"
 #include "iostream"
-
-namespace CudaRestrseqForce {
-bool is_initialized = false;
-restrseq_t* d_restrseq = nullptr;
-coord_t* d_coords = nullptr;
-coord_t* d_coords_top = nullptr;
-double* d_upres_energy = nullptr;
-atype_t* d_atypes = nullptr;
-catype_t* d_catypes = nullptr;
-bool* d_heavy = nullptr;
-dvel_t* d_velocities = nullptr;
-
-}  // namespace CudaRestrseqForce
+#include "utils.h"
 
 __global__ void calc_restrseq_forces_kernel(
     int n_restrseqs,
@@ -112,7 +100,7 @@ __global__ void calc_restrseq_forces_kernel(
                 r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
                 ener = .5 * k * r2;
                 atomicAdd(upres_energy, ener);
-                
+
                 atomicAdd(&dvelocities[i].x, k * dr.x);
                 atomicAdd(&dvelocities[i].y, k * dr.y);
                 atomicAdd(&dvelocities[i].z, k * dr.z);
@@ -122,29 +110,19 @@ __global__ void calc_restrseq_forces_kernel(
 }
 
 void calc_restrseq_forces_host() {
-    using namespace CudaRestrseqForce;
-    if (!is_initialized) {
-        check_cudaMalloc((void**)&d_restrseq, sizeof(restrseq_t) * n_restrseqs);
-        check_cudaMalloc((void**)&d_coords, sizeof(coord_t) * n_atoms);
-        check_cudaMalloc((void**)&d_coords_top, sizeof(coord_t) * n_atoms);
-        check_cudaMalloc((void**)&d_upres_energy, sizeof(double));
-        check_cudaMalloc((void**)&d_atypes, sizeof(atype_t) * n_atypes);
-        check_cudaMalloc((void**)&d_catypes, sizeof(catype_t) * n_catypes);
-        check_cudaMalloc((void**)&d_heavy, sizeof(bool) * n_atoms);
-        check_cudaMalloc((void**)&d_velocities, sizeof(dvel_t) * n_atoms);
-
-        cudaMemcpy(d_restrseq, restrseqs, sizeof(restrseq_t) * n_restrseqs, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_atypes, atypes, sizeof(atype_t) * n_atypes, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_catypes, catypes, sizeof(catype_t) * n_catypes, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_heavy, heavy, sizeof(bool) * n_atoms, cudaMemcpyHostToDevice);
-
-        is_initialized = true;
-    }
-
-    cudaMemcpy(d_coords, coords, sizeof(coord_t) * n_atoms, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_coords_top, coords_top, sizeof(coord_t) * n_atoms, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_velocities, dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyHostToDevice);
+    CudaContext& ctx = CudaContext::instance();
+    auto d_restrseq = ctx.d_restrseqs;
+    auto d_coords = ctx.d_coords;
+    auto d_coords_top = ctx.d_coords_top;
+    auto d_atypes = ctx.d_atypes;
+    auto d_catypes = ctx.d_catypes;
+    auto d_heavy = ctx.d_heavy;
+    auto d_dvelocities = ctx.d_dvelocities;
+    double* d_upres_energy;
+    check_cudaMalloc((void**)&d_upres_energy, sizeof(double));
     cudaMemset(d_upres_energy, 0, sizeof(double));
+    ctx.sync_all_to_device();
+
     int blockSize = 256;
     int numBlocks = (n_restrseqs + blockSize - 1) / blockSize;
     calc_restrseq_forces_kernel<<<numBlocks, blockSize>>>(
@@ -155,28 +133,12 @@ void calc_restrseq_forces_host() {
         d_atypes,
         d_catypes,
         d_heavy,
-        d_velocities,
-        d_upres_energy
-    );
+        d_dvelocities,
+        d_upres_energy);
     cudaDeviceSynchronize();
     double upres_energy;
     cudaMemcpy(&upres_energy, d_upres_energy, sizeof(double), cudaMemcpyDeviceToHost);
     E_restraint.Upres = upres_energy;
     printf("Restrseq U_upres: %f\n", upres_energy);
-    cudaMemcpy(dvelocities, d_velocities, sizeof(dvel_t) * n_atoms, cudaMemcpyDeviceToHost);
-}
-
-void cleanup_restrseq_force() {
-    using namespace CudaRestrseqForce;
-    if (is_initialized) {
-        cudaFree(d_restrseq);
-        cudaFree(d_coords);
-        cudaFree(d_coords_top);
-        cudaFree(d_upres_energy);
-        cudaFree(d_atypes);
-        cudaFree(d_catypes);
-        cudaFree(d_heavy);
-        cudaFree(d_velocities);
-        is_initialized = false;
-    }
+    cudaMemcpy(dvelocities, d_dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyDeviceToHost);
 }

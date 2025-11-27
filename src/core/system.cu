@@ -1524,7 +1524,6 @@ void clean_variables() {
     if (run_gpu) {
         cleanup_torsion_force();
         cleanup_restrwall_force();
-        cleanup_restrseq_force();
         cleanup_temperature();
         cleanup_polx_water_force();
     }
