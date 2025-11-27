@@ -1525,7 +1525,6 @@ void clean_variables() {
         cleanup_torsion_force();
         cleanup_restrwall_force();
         cleanup_restrpos_force();
-        cleanup_restrdis_force();
         cleanup_restrseq_force();
         cleanup_temperature();
         cleanup_polx_water_force();

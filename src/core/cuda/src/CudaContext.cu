@@ -87,8 +87,6 @@ void CudaContext::sync_all_to_device() {
     sync_array_to_device<restrang_t>(d_restrangs, restrangs, n_restrangs);
     sync_array_to_device<E_restraint_t>(d_EQ_restraint, EQ_restraint, n_lambdas);
     sync_array_to_device<restrdis_t>(d_restrdists, restrdists, n_restrdists);
-
-
 }
 
 void CudaContext::sync_all_to_host() {
