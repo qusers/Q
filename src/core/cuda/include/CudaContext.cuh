@@ -84,6 +84,14 @@ class CudaContext {
     E_restraint_t* d_EQ_restraint = nullptr;
     restrdis_t* d_restrdists = nullptr;
 
+    /*
+    Used in CudaRestrposForce.cu
+    */
+
+    restrpos_t* d_restrpos = nullptr;
+
+
+
     static CudaContext& instance() {
         static CudaContext ctx;
         return ctx;
