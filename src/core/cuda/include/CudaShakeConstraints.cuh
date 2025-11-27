@@ -4,6 +4,6 @@
 
 int calc_shake_constraints_host();
 
-void init_shake_constraints_data();
+void init_shake_constraints_kernel_data();
 
 #endif

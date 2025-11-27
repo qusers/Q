@@ -1139,8 +1139,8 @@ void calc_integration_step(int iteration) {
 
         if (md.polarisation) {
             if (run_gpu) {
-                // calc_polx_water_forces_host(iteration);
-                calc_polx_w_forces(iteration); // todo: polx water gpu version has bug!!!
+                calc_polx_water_forces_host(iteration);
+                // calc_polx_w_forces(iteration); // todo: polx water gpu version has bug!!!
             } else {
                 calc_polx_w_forces(iteration);
             }
@@ -1428,7 +1428,7 @@ void init_variables() {
     write_energy_header();
 
     CudaContext::instance().init();
-    init_shake_constraints_data();
+    init_shake_constraints_kernel_data();
 }
 
 void clean_variables() {

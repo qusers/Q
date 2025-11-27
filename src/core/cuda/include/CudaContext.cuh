@@ -60,6 +60,17 @@ class CudaContext {
     E_nonbonded_t* d_EQ_nonbond_qq = nullptr;
     double* d_lambdas = nullptr;
 
+    /*
+    Used in CudaPolxWaterForce.cu
+    */
+    shell_t* d_wshells = nullptr;
+    int* d_list_sh = nullptr;
+    double* d_theta = nullptr;
+    double* d_theta0 = nullptr;
+    double* d_tdum = nullptr;
+    int* d_water_shell = nullptr;
+    int* d_water_rank = nullptr;
+
     static CudaContext& instance() {
         static CudaContext ctx;
         return ctx;

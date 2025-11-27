@@ -33,6 +33,14 @@ void CudaContext::init() {
     check_cudaMalloc((void**)&d_EQ_nonbond_qq, sizeof(E_nonbonded_t) * n_lambdas);
     check_cudaMalloc((void**)&d_lambdas, sizeof(double) * n_lambdas);
 
+    check_cudaMalloc((void**)&d_wshells, n_shells * sizeof(shell_t));
+    check_cudaMalloc((void**)&d_list_sh, n_max_inshell * n_shells * sizeof(int));  // calculation data, not initialized in the beginning.
+    check_cudaMalloc((void**)&d_theta, n_waters * sizeof(double));                 // calculation data, not initialized in the beginning.
+    check_cudaMalloc((void**)&d_theta0, n_waters * sizeof(double));                // calculation data, not initialized in the beginning.
+    check_cudaMalloc((void**)&d_tdum, n_waters * sizeof(double));                  // calculation data, not initialized in the beginning.
+    check_cudaMalloc((void**)&d_water_rank, n_waters * sizeof(int));               // calculation data, not initialized in the beginning.
+    check_cudaMalloc((void**)&d_water_shell, n_waters * sizeof(int));              // calculation data, not initialized in the beginning.
+
     sync_all_to_device();
 }
 
@@ -64,6 +72,7 @@ void CudaContext::sync_all_to_device() {
     sync_array_to_device<q_atype_t>(d_q_atypes, q_atypes, n_qatoms * n_lambdas);
     sync_array_to_device<E_nonbonded_t>(d_EQ_nonbond_qq, EQ_nonbond_qq, n_lambdas);
     sync_array_to_device<double>(d_lambdas, lambdas, n_lambdas);
+    sync_array_to_device<shell_t>(d_wshells, wshells, n_shells);
 }
 
 void CudaContext::sync_all_to_host() {

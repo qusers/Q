@@ -89,7 +89,7 @@ __global__ void calc_shake_constraints_kernel(
     }
 }
 
-void init_shake_constraints_data() {
+void init_shake_constraints_kernel_data() {
     int* mol_shake_offset_host = (int*)malloc(sizeof(int) * n_molecules);
     mol_shake_offset_host[0] = 0;
     for (int i = 1; i < n_molecules; i++) {
