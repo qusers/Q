@@ -32,6 +32,20 @@ class CudaContext {
     improper_t* d_impropers = nullptr;
     cimproper_t* d_cimpropers = nullptr;
 
+    /*
+    Used in CudaLeapfrog.cu
+    */
+
+
+    /*
+    Used in CudaShakeConstraints.cu
+    */
+    int* d_mol_n_shakes = nullptr;
+    shake_bond_t* d_shake_bonds = nullptr;
+    double* d_winv = nullptr;
+    coord_t* d_xcoords = nullptr;
+    int* d_mol_shake_offset = nullptr;
+
     static CudaContext& instance() {
         static CudaContext ctx;
         return ctx;

@@ -1,18 +1,8 @@
 #include <iostream>
 
+#include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaShakeConstraints.cuh"
 #include "utils.h"
-
-namespace CudaShakeConstraints {
-bool is_initialized = false;
-int* d_mol_n_shakes = nullptr;
-shake_bond_t* d_shake_bonds = nullptr;
-coord_t* d_coords = nullptr;
-coord_t* d_xcoords = nullptr;
-double* d_winv = nullptr;
-int* d_total_iterations = nullptr;
-int* d_mol_shake_offset = nullptr;
-}  // namespace CudaShakeConstraints
 
 __global__ void calc_shake_constraints_kernel(
     int n_molecules,
@@ -99,41 +89,35 @@ __global__ void calc_shake_constraints_kernel(
     }
 }
 
-int calc_shake_constraints_host() {
-    using namespace CudaShakeConstraints;
-
-    if (!is_initialized) {
-        check_cudaMalloc((void**)&d_mol_n_shakes, sizeof(int) * n_molecules);
-        check_cudaMalloc((void**)&d_shake_bonds, sizeof(shake_bond_t) * n_shake_constraints);
-        check_cudaMalloc((void**)&d_coords, sizeof(coord_t) * n_atoms);
-        check_cudaMalloc((void**)&d_xcoords, sizeof(coord_t) * n_atoms);
-        check_cudaMalloc((void**)&d_winv, sizeof(double) * n_atoms);
-        check_cudaMalloc((void**)&d_total_iterations, sizeof(int));
-        check_cudaMalloc((void**)&d_mol_shake_offset, sizeof(int) * n_molecules);
-
-        cudaMemcpy(d_mol_n_shakes, mol_n_shakes, sizeof(int) * n_molecules, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_shake_bonds, shake_bonds, sizeof(shake_bond_t) * n_shake_constraints, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_winv, winv, sizeof(double) * n_atoms, cudaMemcpyHostToDevice);
-
-        int* mol_shake_offset_host = (int*)malloc(sizeof(int) * n_molecules);
-        mol_shake_offset_host[0] = 0;
-        for (int i = 1; i < n_molecules; i++) {
-            mol_shake_offset_host[i] = mol_shake_offset_host[i - 1] + mol_n_shakes[i - 1];
-        }
-        cudaMemcpy(d_mol_shake_offset, mol_shake_offset_host, sizeof(int) * n_molecules, cudaMemcpyHostToDevice);
-
-        free(mol_shake_offset_host);
-
-        is_initialized = true;
+void init_shake_constraints_data() {
+    int* mol_shake_offset_host = (int*)malloc(sizeof(int) * n_molecules);
+    mol_shake_offset_host[0] = 0;
+    for (int i = 1; i < n_molecules; i++) {
+        mol_shake_offset_host[i] = mol_shake_offset_host[i - 1] + mol_n_shakes[i - 1];
     }
 
-    cudaMemcpy(d_coords, coords, sizeof(coord_t) * n_atoms, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_xcoords, xcoords, sizeof(coord_t) * n_atoms, cudaMemcpyHostToDevice);
+    CudaContext& ctx = CudaContext::instance();
+    cudaMemcpy(ctx.d_mol_shake_offset, mol_shake_offset_host, sizeof(int) * n_molecules, cudaMemcpyHostToDevice);
+    free(mol_shake_offset_host);
+}
+
+int calc_shake_constraints_host() {
+    int* d_total_iterations;
+    check_cudaMalloc((void**)&d_total_iterations, sizeof(int));
     int total_iterations_host = 0;
     cudaMemcpy(d_total_iterations, &total_iterations_host, sizeof(int), cudaMemcpyHostToDevice);
 
     int blocks = n_molecules;
     int threads = 32;
+
+    CudaContext& ctx = CudaContext::instance();
+    auto d_mol_n_shakes = ctx.d_mol_n_shakes;
+    auto d_shake_bonds = ctx.d_shake_bonds;
+    auto d_coords = ctx.d_coords;
+    auto d_xcoords = ctx.d_xcoords;
+    auto d_winv = ctx.d_winv;
+    auto d_mol_shake_offset = ctx.d_mol_shake_offset;
+
     calc_shake_constraints_kernel<<<blocks, threads>>>(
         n_molecules,
         d_mol_n_shakes,
@@ -147,19 +131,4 @@ int calc_shake_constraints_host() {
     cudaMemcpy(&total_iterations_host, d_total_iterations, sizeof(int), cudaMemcpyDeviceToHost);
     cudaMemcpy(coords, d_coords, sizeof(coord_t) * n_atoms, cudaMemcpyDeviceToHost);
     return total_iterations_host;
-}
-
-void cleanup_shake_constraints() {
-    using namespace CudaShakeConstraints;
-
-    if (is_initialized) {
-        cudaFree(d_mol_n_shakes);
-        cudaFree(d_shake_bonds);
-        cudaFree(d_coords);
-        cudaFree(d_xcoords);
-        cudaFree(d_winv);
-        cudaFree(d_total_iterations);
-        cudaFree(d_mol_shake_offset);
-        is_initialized = false;
-    }
 }

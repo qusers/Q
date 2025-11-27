@@ -23,6 +23,7 @@
 #include "cuda/include/CudaRadixWaterForce.cuh"
 #include "cuda/include/CudaTemperature.cuh"
 #include "cuda/include/CudaContext.cuh"
+#include "cuda/include/CudaShakeConstraints.cuh"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1427,6 +1428,7 @@ void init_variables() {
     write_energy_header();
 
     CudaContext::instance().init();
+    init_shake_constraints_data();
 }
 
 void clean_variables() {
