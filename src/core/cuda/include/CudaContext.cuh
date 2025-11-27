@@ -18,13 +18,19 @@ class CudaContext {
     Used in CudaAngleForce.cu
     */
     angle_t* d_angles = nullptr;
-    cangle_t* d_cangles = nullptr; 
+    cangle_t* d_cangles = nullptr;
 
     /*
     Used in CudaBondForce.cu
     */
     bond_t* d_bonds = nullptr;
     cbond_t* d_cbonds = nullptr;
+
+    /*
+    Used in CudaImproper2Force.cu
+    */
+    improper_t* d_impropers = nullptr;
+    cimproper_t* d_cimpropers = nullptr;
 
     static CudaContext& instance() {
         static CudaContext ctx;
