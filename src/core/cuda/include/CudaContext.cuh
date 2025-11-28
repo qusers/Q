@@ -106,6 +106,12 @@ class CudaContext {
     torsion_t* d_torsions = nullptr;
     ctorsion_t* d_ctorsions = nullptr;
 
+    /*
+    Used in CudaNonbondedPPForce.cu
+    */
+    ccharge_t* d_ccharges;
+    charge_t *d_charges;
+    p_atom_t *d_p_atoms;
 
 
     static CudaContext& instance() {

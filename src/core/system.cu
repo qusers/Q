@@ -24,6 +24,7 @@
 #include "cuda/include/CudaTemperature.cuh"
 #include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaShakeConstraints.cuh"
+#include "cuda/include/CudaNonbondedPPForce.cuh"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1092,7 +1093,7 @@ void calc_integration_step(int iteration) {
         calc_nonbonded_qp_forces_host();
         end_qp = clock();
         start_pp = clock();
-        calc_nonbonded_pp_forces_host();
+        calc_nonbonded_pp_forces_host_v2();
         end_pp = clock();
     }
     else {
@@ -1525,5 +1526,6 @@ void clean_variables() {
         cleanup_torsion_force();
         cleanup_temperature();
         cleanup_polx_water_force();
+        cleanup_nonbonded_pp_force();
     }
 }

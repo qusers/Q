@@ -56,6 +56,10 @@ void CudaContext::init() {
     check_cudaMalloc((void**)&d_torsions, sizeof(torsion_t) * n_torsions);
     check_cudaMalloc((void**)&d_ctorsions, sizeof(ctorsion_t) * n_ctorsions);
 
+    check_cudaMalloc((void**)&d_ccharges, sizeof(ccharge_t) * n_ccharges);
+    check_cudaMalloc((void**)&d_charges, sizeof(charge_t) * n_charges);
+    check_cudaMalloc((void**)&d_p_atoms, sizeof(p_atom_t) * n_patoms);
+
     sync_all_to_device();
 }
 
@@ -102,6 +106,10 @@ void CudaContext::sync_all_to_device() {
 
     sync_array_to_device<torsion_t>(d_torsions, torsions, n_torsions);
     sync_array_to_device<ctorsion_t>(d_ctorsions, ctorsions, n_ctorsions);
+
+    sync_array_to_device<ccharge_t>(d_ccharges, ccharges, n_ccharges);
+    sync_array_to_device<charge_t>(d_charges, charges, n_charges);
+    sync_array_to_device<p_atom_t>(d_p_atoms, p_atoms, n_patoms);
 }
 
 void CudaContext::sync_all_to_host() {
@@ -146,6 +154,10 @@ void CudaContext::sync_all_to_host() {
 
     sync_array_to_host<torsion_t>(torsions, d_torsions, n_torsions);
     sync_array_to_host<ctorsion_t>(ctorsions, d_ctorsions, n_ctorsions);
+
+    sync_array_to_host<ccharge_t>(ccharges, d_ccharges, n_ccharges);
+    sync_array_to_host<charge_t>(charges, d_charges, n_charges);
+    sync_array_to_host<p_atom_t>(p_atoms, d_p_atoms, n_patoms);
 }
 
 void CudaContext::free() {
