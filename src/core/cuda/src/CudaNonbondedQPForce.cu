@@ -6,6 +6,8 @@
 
 namespace CudaNonbondedQPForce {
 bool is_initialized = false;
+double *D_QP_Evdw, *D_QP_Ecoul, *h_QP_Evdw, *h_QP_Ecoul;
+calc_qp_t *QP_MAT, *h_QP_MAT;
 
 struct calc_qw_t {
     dvel_t Q;
@@ -24,61 +26,41 @@ struct calc_qp_t {
 void calc_nonbonded_qp_forces_host_v2() {
     using namespace CudaNonbondedQPForce;
 
-    int mem_size_X = n_atoms_solute * sizeof(coord_t);
-    int mem_size_DV_X = n_atoms_solute * sizeof(dvel_t);
-    int mem_size_QP_MAT = n_qatoms * n_patoms * sizeof(calc_qp_t);
-    int mem_size_QQ_MAT = n_qatoms * n_qatoms * sizeof(dvel_t);
-
-    int mem_size_qcatypes = n_qcatypes * sizeof(q_catype_t);
-    int mem_size_qatypes = n_qatoms * n_lambdas * sizeof(q_atype_t);
-    int mem_size_qcharges = n_qatoms * n_lambdas * sizeof(q_charge_t);
-    int mem_size_qatoms = n_qatoms * sizeof(q_atom_t);
-    int mem_size_lambdas = n_lambdas * sizeof(double);
-
-    int mem_size_ccharges = n_ccharges * sizeof(ccharge_t);
-    int mem_size_charges = n_atoms * sizeof(charge_t);
-    int mem_size_catypes = n_catypes * sizeof(catype_t);
-    int mem_size_atypes = n_atoms * sizeof(atype_t);
-    int mem_size_patoms = n_patoms * sizeof(p_atom_t);
-    int mem_size_LJ_matrix = n_atoms_solute * n_atoms_solute * sizeof(int);
-    int mem_size_excluded = n_atoms * sizeof(bool);
-
     int n_blocks_q = (n_qatoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
     int n_blocks_p = (n_patoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
-    // TODO make Evdw & Ecoul work for # of states > 2
-    int mem_size_QP_Evdw = min(n_lambdas, 2) * n_blocks_q * n_blocks_p * sizeof(double);
-    int mem_size_QP_Ecoul = min(n_lambdas, 2) * n_blocks_q * n_blocks_p * sizeof(double);
-
     if (!is_initialized) {
-        printf("Allocating D_qcatypes\n");
+        // TODO make Evdw & Ecoul work for # of states > 2
+        int mem_size_QP_Evdw = min(n_lambdas, 2) * n_blocks_q * n_blocks_p * sizeof(double);
+        int mem_size_QP_Ecoul = min(n_lambdas, 2) * n_blocks_q * n_blocks_p * sizeof(double);
+        int mem_size_QP_MAT = n_qatoms * n_patoms * sizeof(calc_qp_t);
 
-#ifdef DEBUG
-        printf("Allocating QP_MAT\n");
-#endif
-        check_cudaMalloc((void**)&QP_MAT, mem_size_QP_MAT);
-#ifdef DEBUG
-        printf("Allocating QP_MAT\n");
-#endif
-        check_cudaMalloc((void**)&QQ_MAT, mem_size_QQ_MAT);
-
-#ifdef DEBUG
-        printf("Allocating D_QP_Evdw\n");
-#endif
         check_cudaMalloc((void**)&D_QP_Evdw, mem_size_QP_Evdw);
-#ifdef DEBUG
-        printf("Allocating D_QP_Ecoul\n");
-#endif
         check_cudaMalloc((void**)&D_QP_Ecoul, mem_size_QP_Ecoul);
-
-        check_cudaMalloc((void**)&D_QP_evdw_TOT, sizeof(double));
-        check_cudaMalloc((void**)&D_QP_ecoul_TOT, sizeof(double));
-
         h_QP_Evdw = (double*)malloc(mem_size_QP_Evdw);
         h_QP_Ecoul = (double*)malloc(mem_size_QP_Ecoul);
 
+        check_cudaMalloc((void**)&QP_MAT, mem_size_QP_MAT);
         h_QP_MAT = (calc_qp_t*)malloc(mem_size_QP_MAT);
+
         is_initialized = true;
     }
+
+    CudaContext& ctx = CudaContext::instance();
+    auto X = ctx.d_coords;
+    auto DV_X = ctx.d_dvelocities;
+    auto D_qcatypes = ctx.d_q_catypes;
+    auto D_qatypes = ctx.d_q_atypes;
+    auto D_qcharges = ctx.d_q_charges;
+    auto D_patoms = ctx.d_p_atoms;
+    auto D_qatoms = ctx.d_q_atoms;
+    auto D_lambdas = ctx.d_lambdas;
+    auto D_LJ_matrix = ctx.d_LJ_matrix;
+    auto D_excluded = ctx.d_excluded;
+    auto D_catypes = ctx.d_catypes;
+    auto D_atypes = ctx.d_atypes;
+    auto D_ccharges = ctx.d_ccharges;
+    auto D_charges = ctx.d_charges;
+    ctx.sync_all_to_device();
 
     dim3 threads, grid;
 
@@ -107,7 +89,7 @@ void calc_nonbonded_qp_forces_host_v2() {
 
     cudaMemcpy(dvelocities, DV_X, mem_size_DV_X, cudaMemcpyDeviceToHost);
 
-    // TODO make Evdw & Ecoul work for # of states > 2
+    // TODO: make Evdw & Ecoul work for # of states > 2
     for (int state = 0; state < min(2, n_lambdas); state++) {
         calc_energy_sum<<<1, threads>>>(n_blocks_q, n_blocks_p, D_QP_evdw_TOT, D_QP_ecoul_TOT, &D_QP_Evdw[state * n_blocks_p * n_blocks_q], &D_QP_Ecoul[state * n_blocks_p * n_blocks_q], false);
 
