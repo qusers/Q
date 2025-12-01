@@ -278,7 +278,6 @@ void calc_nonbonded_ww_forces_host_v2() {
     CudaContext& ctx = CudaContext::instance();
     auto W = ctx.d_coords + n_atoms_solute;
     auto DV_W = ctx.d_dvelocities + n_atoms_solute;
-    ctx.sync_all_to_device();
 
     // Optimize thread block configuration
     const int thread_num_x = 32;  // Keep at 32 for better warp utilization

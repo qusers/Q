@@ -63,7 +63,7 @@ void calc_radix_water_forces_host() {
     int numBlocks = (oxygen_atoms + blockSize - 1) / blockSize;
 
     CudaContext& ctx = CudaContext::instance();
-    ctx.sync_all_to_device();
+    // ctx.sync_all_to_device();
 
     auto d_coords = ctx.d_coords;
     auto d_dvelocities = ctx.d_dvelocities;

@@ -170,7 +170,6 @@ void sort_waters() {
             for (int jl = 0; jl < wshells[is].n_inshell; jl++) {
                 // printf("Searching water %d in shell %d, total number: %d\n", jl, is, wshells[is].n_inshell);
                 jw = polx_list_sh[jl * n_shells + is];
-                // printf("zzzzzzzzz %d\n", jw);
                 // printf("Water %d in shell %d has theta %f\n", jw, is, tdum[jw] * 180 / M_PI);
                 if (tdum[jw] < tmin) {
                     jmin = jw;
@@ -203,7 +202,8 @@ void calc_polx_water_forces_host(int iteration) {
 
         is_initialized = true;
     }
-    ctx.sync_all_to_device();
+    // ctx.sync_all_to_device();
+    cudaMemcpy(ctx.d_wshells, wshells, n_shells * sizeof(shell_t), cudaMemcpyHostToDevice);
 
     coord_t* d_coords = ctx.d_coords;
     dvel_t* d_dvelocities = ctx.d_dvelocities;

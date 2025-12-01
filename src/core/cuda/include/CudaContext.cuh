@@ -128,6 +128,7 @@ class CudaContext {
 
     void sync_all_to_device();
     void sync_all_to_host();
+    void reset_energies();
 
    private:
     CudaContext() = default;

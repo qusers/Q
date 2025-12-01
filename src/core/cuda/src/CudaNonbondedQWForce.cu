@@ -304,9 +304,7 @@ void calc_nonbonded_qw_forces_host_v2() {
 #ifdef DEBUG
         printf("Allocating QW_MAT\n");
 #endif
-        printf("zzzzzzzzzzz %d %d %d\n", mem_size_MAT, n_qatoms, n_waters);
         check_cudaMalloc((void**)&QW_MAT, mem_size_MAT);
-        printf("lllllllllllllll\n");
 
 #ifdef DEBUG
         printf("Allocating D_QW_Evdw\n");
@@ -326,7 +324,6 @@ void calc_nonbonded_qw_forces_host_v2() {
         h_QW_MAT = (calc_qw_t*)malloc(mem_size_MAT);
         is_initialized = true;
     }
-    printf("zzzz\n");
     
 
     CudaContext& ctx = CudaContext::instance();
@@ -337,7 +334,6 @@ void calc_nonbonded_qw_forces_host_v2() {
     auto D_qcharges = ctx.d_q_charges;
     auto D_qatoms = ctx.d_q_atoms;
     auto D_lambdas = ctx.d_lambdas;
-    ctx.sync_all_to_device();
 
     dim3 threads, grid;
 

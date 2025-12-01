@@ -2,6 +2,7 @@
 #include "cuda/include/CudaRestrposForce.cuh"
 #include "cuda/include/CudaUtility.cuh"
 #include "utils.h"
+#include <iostream>
 
 __global__ void calc_restrpos_forces_kernel(
     restrpos_t* restrspos,
@@ -55,6 +56,7 @@ __global__ void calc_restrpos_forces_kernel(
     }
 }
 void calc_restrpos_forces_host() {
+    if (n_restrspos == 0) return;
     double* d_E_restraint;
     double val = 0.0;
     check_cudaMalloc((void**)&d_E_restraint, sizeof(double));
@@ -66,7 +68,6 @@ void calc_restrpos_forces_host() {
     auto d_lambdas = ctx.d_lambdas;
     auto d_EQ_restraint = ctx.d_EQ_restraint;
     auto d_dvelocities = ctx.d_dvelocities;
-    ctx.sync_all_to_device();
 
     int blockSize = 256;
     int numBlocks = (n_restrspos + blockSize - 1) / blockSize;
@@ -84,4 +85,5 @@ void calc_restrpos_forces_host() {
     cudaMemcpy(&val, d_E_restraint, sizeof(double), cudaMemcpyDeviceToHost);
     E_restraint.Urestr += val;
     cudaMemcpy(EQ_restraint, d_EQ_restraint, sizeof(E_restraint_t) * n_lambdas, cudaMemcpyDeviceToHost);
+    cudaFree(d_E_restraint);
 }

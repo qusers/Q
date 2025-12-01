@@ -42,7 +42,6 @@ double calc_bond_forces_host(int start, int end) {
     cudaMemcpy(d_energy_sum, &energy, sizeof(double), cudaMemcpyHostToDevice);
 
     CudaContext& context = CudaContext::instance();
-    context.sync_all_to_device();
     bond_t* d_bonds = context.d_bonds;
     coord_t* d_coords = context.d_coords;
     cbond_t* d_cbonds = context.d_cbonds;

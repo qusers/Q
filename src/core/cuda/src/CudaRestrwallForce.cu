@@ -46,8 +46,8 @@ __global__ void calc_restrwall_forces_kernel(
 }
 
 void calc_restrwall_forces_host() {
+    if (n_restrwalls == 0) return;
     CudaContext& ctx = CudaContext::instance();
-    ctx.sync_all_to_device();
     auto d_restrwalls = ctx.d_restrwalls;
     auto d_coords = ctx.d_coords;
     auto d_dvelocities = ctx.d_dvelocities;

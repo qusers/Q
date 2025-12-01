@@ -257,7 +257,6 @@ void calc_nonbonded_pp_forces_host_v2() {
     auto D_patoms = ctx.d_p_atoms;
     auto D_LJ_matrix = ctx.d_LJ_matrix;
     auto D_excluded = ctx.d_excluded;
-    ctx.sync_all_to_device();
 
     dim3 threads, grid;
 

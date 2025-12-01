@@ -71,7 +71,6 @@ __global__ void calc_restrdis_forces_kernel(
 
 void calc_restrdis_forces_host() {
     CudaContext& ctx = CudaContext::instance();
-    ctx.sync_all_to_device();
     auto d_restrdists = ctx.d_restrdists;
     auto d_coords = ctx.d_coords;
     auto d_lambdas = ctx.d_lambdas;

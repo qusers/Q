@@ -74,8 +74,12 @@ double calc_angle_forces_host(int start, int end) {
 
 
     CudaContext& ctx = CudaContext::instance();
+    auto d_angles = ctx.d_angles;
+    auto d_coords = ctx.d_coords;
+    auto d_cangles = ctx.d_cangles;
+    auto d_dvelocities = ctx.d_dvelocities;
     // todo: now have to do that, after moving all to CudaContext, can remove it
-    ctx.sync_all_to_device();
+    // ctx.sync_all_to_device();
 
     double h_energy_sum = 0.0;
     double *d_energy_sum;
@@ -83,7 +87,7 @@ double calc_angle_forces_host(int start, int end) {
     cudaMemcpy(d_energy_sum, &h_energy_sum, sizeof(double), cudaMemcpyHostToDevice);
 
     // launch kernel
-    calc_angle_forces_kernel<<<numBlocks, blockSize>>>(start, end, ctx.d_angles, ctx.d_coords, ctx.d_cangles, ctx.d_dvelocities, d_energy_sum);
+    calc_angle_forces_kernel<<<numBlocks, blockSize>>>(start, end, d_angles, d_coords, d_cangles, d_dvelocities, d_energy_sum);
     cudaDeviceSynchronize();
 
     // todo: Now have to do that, after moving all to CudaContext, can remove it

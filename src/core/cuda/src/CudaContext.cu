@@ -162,3 +162,9 @@ void CudaContext::sync_all_to_host() {
 
 void CudaContext::free() {
 }
+
+void CudaContext::reset_energies() {
+    cudaMemset(d_dvelocities, 0, sizeof(dvel_t) * n_atoms);
+    cudaMemset(d_EQ_nonbond_qq, 0, sizeof(E_nonbonded_t) * n_lambdas);
+    cudaMemset(d_EQ_restraint, 0, sizeof(E_restraint_t) * n_lambdas);
+}

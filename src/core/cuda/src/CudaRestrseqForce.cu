@@ -121,7 +121,7 @@ void calc_restrseq_forces_host() {
     double* d_upres_energy;
     check_cudaMalloc((void**)&d_upres_energy, sizeof(double));
     cudaMemset(d_upres_energy, 0, sizeof(double));
-    ctx.sync_all_to_device();
+    // ctx.sync_all_to_device();
 
     int blockSize = 256;
     int numBlocks = (n_restrseqs + blockSize - 1) / blockSize;

@@ -99,6 +99,7 @@ __global__ void calc_restrang_force_kernel(
 }
 
 void calc_restrang_force_host() {
+    if (n_restrangs == 0) return;
     CudaContext& ctx = CudaContext::instance();
 
     auto d_restrangs = ctx.d_restrangs;
@@ -107,7 +108,6 @@ void calc_restrang_force_host() {
     auto d_dvelocities = ctx.d_dvelocities;
     auto d_EQ_restraint = ctx.d_EQ_restraint;
     auto d_restrdists = ctx.d_restrdists;
-    ctx.sync_all_to_device();
 
     double* d_E_restraint;
     double val = 0;

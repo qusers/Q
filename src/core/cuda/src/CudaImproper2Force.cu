@@ -132,7 +132,7 @@ double calc_improper2_forces_host(int start, int end) {
     cudaMemcpy(d_energy_sum, &energy, sizeof(double), cudaMemcpyHostToDevice);
 
     CudaContext& context = CudaContext::instance();
-    context.sync_all_to_device();
+    // context.sync_all_to_device();
     coord_t* d_coords = context.d_coords;
     dvel_t* d_dvelocities = context.d_dvelocities;
     improper_t* d_impropers = context.d_impropers;

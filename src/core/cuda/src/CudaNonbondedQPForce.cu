@@ -300,7 +300,6 @@ void calc_nonbonded_qp_forces_host_v2() {
     auto D_atypes = ctx.d_atypes;
     auto D_ccharges = ctx.d_ccharges;
     auto D_charges = ctx.d_charges;
-    ctx.sync_all_to_device();
 
     dim3 threads, grid;
 

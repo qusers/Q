@@ -43,7 +43,6 @@ __global__ void calc_leapfrog_kernel(
 
 void calc_leapfrog_host() {
     CudaContext& ctx = CudaContext::instance();
-    ctx.sync_all_to_device();
     auto d_atypes = ctx.d_atypes;
     auto d_catypes = ctx.d_catypes;
     auto d_velocities = ctx.d_velocities;

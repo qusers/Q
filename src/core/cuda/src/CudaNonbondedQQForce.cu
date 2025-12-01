@@ -95,7 +95,7 @@ __global__ void calc_nonbonded_qq_forces_kernel(
 
 void calc_nonbonded_qq_forces_host() {
     CudaContext& ctx = CudaContext::instance();
-    ctx.sync_all_to_device();
+    // ctx.sync_all_to_device();
     auto d_q_atoms = ctx.d_q_atoms;
     auto d_q_charges = ctx.d_q_charges;
     auto d_LJ_matrix = ctx.d_LJ_matrix;

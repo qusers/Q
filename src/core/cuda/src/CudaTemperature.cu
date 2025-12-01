@@ -70,7 +70,6 @@ void calc_temperature_host() {
     catype_t* d_catypes = ctx.d_catypes;
     vel_t* d_velocities = ctx.d_velocities;
     bool* d_excluded = ctx.d_excluded;
-    ctx.sync_all_to_device();
 
     int blockSize = 256;
     int numBlocks = (n_atoms + blockSize - 1) / blockSize;

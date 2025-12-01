@@ -42,7 +42,7 @@ __global__ void calc_pshell_force_kernel(
 
 void calc_pshell_forces_host() {
     CudaContext& ctx = CudaContext::instance();
-    ctx.sync_all_to_device();
+    // ctx.sync_all_to_device();
 
     auto d_shell = ctx.d_shell;
     auto d_excluded = ctx.d_excluded;
