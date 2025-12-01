@@ -769,6 +769,7 @@ void calc_temperature() {
             printf(">>> WARNING: hot atom %d: %f\n", i, ener/Boltz/3);
         }
     }
+    printf("%f %f %f | %f %f %f\n", Temp_solute, Tfree_solute, Texcl_solute, Temp_solvent, Tfree_solvent, Texcl_solvent);
 
     Tfree = Tfree_solute + Tfree_solvent;
     Temp = Temp_solute + Temp_solvent;
@@ -1075,6 +1076,10 @@ void calc_integration_step(int iteration) {
 
     // Reset derivatives & energies
     reset_energies();
+    if (run_gpu) {
+        CudaContext &ctx = CudaContext::instance();
+        ctx.reset_energies();
+    }
 
     // Determine temperature and kinetic energy
     if (run_gpu) {
@@ -1114,17 +1119,12 @@ void calc_integration_step(int iteration) {
     if (n_waters > 0) {
         if (run_gpu) {
             start_ww = clock();
-            printf("wwwww\n");
             calc_nonbonded_ww_forces_host_v2();
-            printf("wwwww done\n");
             end_ww = clock();
             start_pw = clock();
-            printf("ppppp\n");
             calc_nonbonded_pw_forces_host_v2();
-            printf("ppppp done\n");
             end_pw = clock();
             calc_nonbonded_qw_forces_host_v2();
-            printf("qwqwqwqw done\n");
         }
         else {
             start_ww = clock();
@@ -1209,7 +1209,9 @@ void calc_integration_step(int iteration) {
     } else {
         calc_temperature();
     }
-
+    if (run_gpu) {
+        CudaContext::instance().sync_all_to_device();
+    }
     // Update total potential energies with an average of all states
     for (int state = 0; state < n_lambdas; state++) {
         if (lambdas[state] == 0) {
