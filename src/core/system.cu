@@ -25,6 +25,10 @@
 #include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaShakeConstraints.cuh"
 #include "cuda/include/CudaNonbondedPPForce.cuh"
+#include "cuda/include/CudaNonbondedQPForce.cuh"
+#include "cuda/include/CudaNonbondedQWForce.cuh"
+#include "cuda/include/CudaNonbondedPWForce.cuh"
+#include "cuda/include/CudaNonbondedWWForce.cuh"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1090,7 +1094,7 @@ void calc_integration_step(int iteration) {
     clock_t start_pp, end_pp, start_qp, end_qp;
     if (run_gpu) {
         start_qp = clock();
-        calc_nonbonded_qp_forces_host();
+        calc_nonbonded_qp_forces_host_v2();
         end_qp = clock();
         start_pp = clock();
         calc_nonbonded_pp_forces_host_v2();
@@ -1110,12 +1114,17 @@ void calc_integration_step(int iteration) {
     if (n_waters > 0) {
         if (run_gpu) {
             start_ww = clock();
-            calc_nonbonded_ww_forces_host();
+            printf("wwwww\n");
+            calc_nonbonded_ww_forces_host_v2();
+            printf("wwwww done\n");
             end_ww = clock();
             start_pw = clock();
-            calc_nonbonded_pw_forces_host();
+            printf("ppppp\n");
+            calc_nonbonded_pw_forces_host_v2();
+            printf("ppppp done\n");
             end_pw = clock();
-            calc_nonbonded_qw_forces_host();
+            calc_nonbonded_qw_forces_host_v2();
+            printf("qwqwqwqw done\n");
         }
         else {
             start_ww = clock();
