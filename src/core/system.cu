@@ -1209,9 +1209,6 @@ void calc_integration_step(int iteration) {
     } else {
         calc_temperature();
     }
-    if (run_gpu) {
-        CudaContext::instance().sync_all_to_device();
-    }
     // Update total potential energies with an average of all states
     for (int state = 0; state < n_lambdas; state++) {
         if (lambdas[state] == 0) {
