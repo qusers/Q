@@ -224,7 +224,7 @@ __global__ void calc_qp_dvel_matrix(int n_qatoms, int n_patoms, int n_lambdas, i
     __syncthreads();
 
     calc_qp_t qp;
-    memset(&qp, 0, sizeof(calc_qw_t));
+    memset(&qp, 0, sizeof(calc_qp_t));
 
     int row = by * BLOCK_SIZE + ty;
     int column = bx * BLOCK_SIZE + tx;
