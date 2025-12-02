@@ -1,7 +1,6 @@
-#ifndef CUDA_LEAPFROG_H
-#define CUDA_LEAPFROG_H
+#pragma once
 #include "system.h"
 
+void init_leapfrog_kernel_data();
 void calc_leapfrog_host();
-
-#endif
+void cleanup_leapfrog();

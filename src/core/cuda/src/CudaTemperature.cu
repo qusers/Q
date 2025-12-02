@@ -46,16 +46,6 @@ __global__ void calc_temperature_kernel(int n_atoms, int n_atoms_solute, atype_t
 void calc_temperature_host() {
     printf("Ndegf = %f, Ndegfree = %f, n_excluded = %d, Ndegfree_solvent = %f, Ndegfree_solute = %f\n", Ndegf, Ndegfree, n_excluded, Ndegfree_solvent, Ndegfree_solute);
     using namespace CudaTemperature;
-    if (!is_initialized) {
-        check_cudaMalloc((void**)&d_Temp_solute, sizeof(double));
-        check_cudaMalloc((void**)&d_Tfree_solute, sizeof(double));
-        check_cudaMalloc((void**)&d_Texcl_solute, sizeof(double));
-        check_cudaMalloc((void**)&d_Temp_solvent, sizeof(double));
-        check_cudaMalloc((void**)&d_Tfree_solvent, sizeof(double));
-        check_cudaMalloc((void**)&d_Texcl_solvent, sizeof(double));
-        is_initialized = true;
-    }
-
     double h_Temp_solute = 0.0, h_Tfree_solute = 0.0, h_Texcl_solute = 0.0, h_Temp_solvent = 0.0, h_Tfree_solvent = 0.0, h_Texcl_solvent = 0.0;
 
     cudaMemcpy(d_Temp_solute, &h_Temp_solute, sizeof(double), cudaMemcpyHostToDevice);
@@ -101,6 +91,19 @@ void calc_temperature_host() {
         Tscale_solute = Tscale_solvent;
     }
     printf("Tscale = %f, tau_T = %f, Temp = %f, Tfree = %f\n", Tscale_solvent, tau_T, Temp, Tfree);
+}
+
+void init_temperature_kernel_data() {
+    using namespace CudaTemperature;
+    if (!is_initialized) {
+        check_cudaMalloc((void**)&d_Temp_solute, sizeof(double));
+        check_cudaMalloc((void**)&d_Tfree_solute, sizeof(double));
+        check_cudaMalloc((void**)&d_Texcl_solute, sizeof(double));
+        check_cudaMalloc((void**)&d_Temp_solvent, sizeof(double));
+        check_cudaMalloc((void**)&d_Tfree_solvent, sizeof(double));
+        check_cudaMalloc((void**)&d_Texcl_solvent, sizeof(double));
+        is_initialized = true;
+    }
 }
 
 void cleanup_temperature() {

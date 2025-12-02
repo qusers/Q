@@ -1,7 +1,13 @@
 #include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaPshellForce.cuh"
 #include "utils.h"
+#include <iostream>
+namespace CudaPshellForce {
+bool is_initialized = false;
+double* d_ufix_energy;
+double* d_ushell_energy;
 
+}  // namespace CudaPshellForce
 __global__ void calc_pshell_force_kernel(
     int n_atoms_solute,
     bool* shell,
@@ -42,7 +48,7 @@ __global__ void calc_pshell_force_kernel(
 
 void calc_pshell_forces_host() {
     CudaContext& ctx = CudaContext::instance();
-    // ctx.sync_all_to_device();
+    using namespace CudaPshellForce;
 
     auto d_shell = ctx.d_shell;
     auto d_excluded = ctx.d_excluded;
@@ -50,10 +56,6 @@ void calc_pshell_forces_host() {
     auto d_coords_top = ctx.d_coords_top;
     auto d_dvelocities = ctx.d_dvelocities;
 
-    double* d_ufix_energy;
-    double* d_ushell_energy;
-    check_cudaMalloc((void**)&d_ufix_energy, sizeof(double));
-    check_cudaMalloc((void**)&d_ushell_energy, sizeof(double));
     cudaMemset(d_ufix_energy, 0, sizeof(double));
     cudaMemset(d_ushell_energy, 0, sizeof(double));
 
@@ -78,4 +80,22 @@ void calc_pshell_forces_host() {
     E_restraint.Ufix += ufix_energy;
     E_restraint.Ushell += ushell_energy;
     // ctx.sync_all_to_host();
+}
+
+void init_pshell_force_kernel_data() {
+    using namespace CudaPshellForce;
+    if (!is_initialized) {
+        check_cudaMalloc((void**)&d_ufix_energy, sizeof(double));
+        check_cudaMalloc((void**)&d_ushell_energy, sizeof(double));
+        is_initialized = true;
+    }
+}
+
+void cleanup_pshell_force() {
+    using namespace CudaPshellForce;
+    if (is_initialized) {
+        cudaFree(d_ufix_energy);
+        cudaFree(d_ushell_energy);
+        is_initialized = false;
+    }
 }

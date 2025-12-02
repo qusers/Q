@@ -21,7 +21,6 @@ void CudaContext::init() {
     check_cudaMalloc((void**)&d_atypes, sizeof(atype_t) * n_atypes);
     check_cudaMalloc((void**)&d_catypes, sizeof(catype_t) * n_catypes);
 
-    check_cudaMalloc((void**)&d_mol_shake_offset, sizeof(int) * n_molecules);  // calculation data, not initialized in the beginning.
 
     check_cudaMalloc((void**)&d_q_atoms, sizeof(q_atom_t) * n_qatoms);
     check_cudaMalloc((void**)&d_q_charges, sizeof(q_charge_t) * n_qatoms * n_lambdas);
@@ -34,13 +33,6 @@ void CudaContext::init() {
     check_cudaMalloc((void**)&d_lambdas, sizeof(double) * n_lambdas);
 
     check_cudaMalloc((void**)&d_wshells, n_shells * sizeof(shell_t));
-    check_cudaMalloc((void**)&d_list_sh, n_max_inshell * n_shells * sizeof(int));  // calculation data, not initialized in the beginning.
-    check_cudaMalloc((void**)&d_theta, n_waters * sizeof(double));                 // calculation data, not initialized in the beginning.
-    check_cudaMalloc((void**)&d_theta0, n_waters * sizeof(double));                // calculation data, not initialized in the beginning.
-    check_cudaMalloc((void**)&d_tdum, n_waters * sizeof(double));                  // calculation data, not initialized in the beginning.
-    check_cudaMalloc((void**)&d_water_rank, n_waters * sizeof(int));               // calculation data, not initialized in the beginning.
-    check_cudaMalloc((void**)&d_water_shell, n_waters * sizeof(int));              // calculation data, not initialized in the beginning.
-
     check_cudaMalloc((void**)&d_shell, sizeof(bool) * n_atoms);
     check_cudaMalloc((void**)&d_coords_top, sizeof(coord_t) * n_atoms);
 

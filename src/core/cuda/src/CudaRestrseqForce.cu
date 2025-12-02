@@ -3,6 +3,10 @@
 #include "iostream"
 #include "utils.h"
 
+namespace CudaRestrseqForce {
+bool is_initialized = false;
+double* d_upres_energy;
+}  // namespace CudaRestrseqForce
 __global__ void calc_restrseq_forces_kernel(
     int n_restrseqs,
     restrseq_t* restrseqs,
@@ -110,6 +114,7 @@ __global__ void calc_restrseq_forces_kernel(
 }
 
 void calc_restrseq_forces_host() {
+    using namespace CudaRestrseqForce;
     CudaContext& ctx = CudaContext::instance();
     auto d_restrseq = ctx.d_restrseqs;
     auto d_coords = ctx.d_coords;
@@ -118,8 +123,6 @@ void calc_restrseq_forces_host() {
     auto d_catypes = ctx.d_catypes;
     auto d_heavy = ctx.d_heavy;
     auto d_dvelocities = ctx.d_dvelocities;
-    double* d_upres_energy;
-    check_cudaMalloc((void**)&d_upres_energy, sizeof(double));
     cudaMemset(d_upres_energy, 0, sizeof(double));
     // ctx.sync_all_to_device();
 
@@ -141,4 +144,20 @@ void calc_restrseq_forces_host() {
     E_restraint.Upres = upres_energy;
     printf("Restrseq U_upres: %f\n", upres_energy);
     cudaMemcpy(dvelocities, d_dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyDeviceToHost);
+}
+
+void init_restrseq_force_kernel_data() {
+    using namespace CudaRestrseqForce;
+    if (!is_initialized) {
+        check_cudaMalloc((void**)&d_upres_energy, sizeof(double));
+        is_initialized = true;
+    }
+}
+
+void cleanup_restrseq_force() {
+    using namespace CudaRestrseqForce;
+    if (is_initialized) {
+        cudaFree(d_upres_energy);
+        is_initialized = false;
+    }
 }

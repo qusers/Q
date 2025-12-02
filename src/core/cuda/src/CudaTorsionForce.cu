@@ -130,10 +130,6 @@ double calc_torsion_forces_host(int start, int end) {
     if (N <= 0) return 0.0;
     int blockSize = 256;
     int numBlocks = (N + blockSize - 1) / blockSize;
-    if (!is_initialized) {
-        check_cudaMalloc((void**)&d_energy_sum, sizeof(double));
-        is_initialized = true;
-    }
 
     double zero = 0.0;
     cudaMemcpy(d_energy_sum, &zero, sizeof(double), cudaMemcpyHostToDevice);
@@ -149,6 +145,16 @@ double calc_torsion_forces_host(int start, int end) {
     cudaMemcpy(&zero, d_energy_sum, sizeof(double), cudaMemcpyDeviceToHost);
     cudaMemcpy(dvelocities, d_dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyDeviceToHost);
     return zero;
+}
+
+
+
+void init_torsion_force_kernel_data() {
+    using namespace CudaTorsionForce;
+    if (!is_initialized) {
+        check_cudaMalloc((void**)&d_energy_sum, sizeof(double));
+        is_initialized = true;
+    }
 }
 
 void cleanup_torsion_force() {

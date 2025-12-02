@@ -249,25 +249,6 @@ void calc_nonbonded_ww_forces_host_v2() {
     int mem_size_W = N * sizeof(coord_t);
     int mem_size_DV_W = N * sizeof(dvel_t);
 
-    if (!is_initialized) {
-        catype_t catype_ow;                // Atom type of first O, H atom
-        ccharge_t ccharge_ow, ccharge_hw;  // Charge of first O, H atom
-
-        catype_ow = catypes[atypes[n_atoms_solute].code - 1];
-        ccharge_ow = ccharges[charges[n_atoms_solute].code - 1];
-        ccharge_hw = ccharges[charges[n_atoms_solute + 1].code - 1];
-
-        A_OO = pow(catype_ow.aii_normal, 2);
-        B_OO = pow(catype_ow.bii_normal, 2);
-
-        crg_ow = ccharge_ow.charge;
-        crg_hw = ccharge_hw.charge;
-
-        check_cudaMalloc((void**)&D_WW_evdw_TOT, sizeof(double));
-        check_cudaMalloc((void**)&D_WW_ecoul_TOT, sizeof(double));
-        is_initialized = true;
-    }
-
     WW_evdw_TOT = 0;
     WW_ecoul_TOT = 0;
     cudaMemcpy(D_WW_evdw_TOT, &WW_evdw_TOT, sizeof(double),
@@ -307,6 +288,28 @@ void calc_nonbonded_ww_forces_host_v2() {
                cudaMemcpyDeviceToHost);
     E_nonbond_ww.Uvdw += WW_evdw_TOT;
     E_nonbond_ww.Ucoul += WW_ecoul_TOT;
+}
+
+void init_nonbonded_ww_force_kernel_data() {
+    using namespace CudaNonbondedWWForce;
+    if (!is_initialized) {
+        catype_t catype_ow;                // Atom type of first O, H atom
+        ccharge_t ccharge_ow, ccharge_hw;  // Charge of first O, H atom
+
+        catype_ow = catypes[atypes[n_atoms_solute].code - 1];
+        ccharge_ow = ccharges[charges[n_atoms_solute].code - 1];
+        ccharge_hw = ccharges[charges[n_atoms_solute + 1].code - 1];
+
+        A_OO = pow(catype_ow.aii_normal, 2);
+        B_OO = pow(catype_ow.bii_normal, 2);
+
+        crg_ow = ccharge_ow.charge;
+        crg_hw = ccharge_hw.charge;
+
+        check_cudaMalloc((void**)&D_WW_evdw_TOT, sizeof(double));
+        check_cudaMalloc((void**)&D_WW_ecoul_TOT, sizeof(double));
+        is_initialized = true;
+    }
 }
 
 void cleanup_nonbonded_ww_force() {

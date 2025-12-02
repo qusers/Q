@@ -1,7 +1,10 @@
 #include "cuda/include/CudaBondForce.cuh"
 #include "cuda/include/CudaContext.cuh"
 #include "utils.h"
-
+namespace CudaBondForce {
+bool is_initialized = false;
+double* d_energy_sum;
+}  // namespace CudaBondForce
 __global__ void calc_bond_forces_kernel(int start, int end, bond_t* bonds, coord_t* coords, cbond_t* cbonds, dvel_t* dvelocities, double* energy_sum) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x + start;
     if (idx >= end) return;
@@ -33,12 +36,11 @@ __global__ void calc_bond_forces_kernel(int start, int end, bond_t* bonds, coord
 double calc_bond_forces_host(int start, int end) {
     int N = end - start;
     if (N <= 0) return 0.0;
+    using namespace CudaBondForce;
     int blockSize = 256;
     int numBlocks = (N + blockSize - 1) / blockSize;
 
     double energy = 0.0;
-    double* d_energy_sum;
-    check_cudaMalloc((void**)&d_energy_sum, sizeof(double));
     cudaMemcpy(d_energy_sum, &energy, sizeof(double), cudaMemcpyHostToDevice);
 
     CudaContext& context = CudaContext::instance();
@@ -52,6 +54,21 @@ double calc_bond_forces_host(int start, int end) {
     cudaMemcpy(&energy, d_energy_sum, sizeof(double), cudaMemcpyDeviceToHost);
     cudaMemcpy(dvelocities, d_dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyDeviceToHost);
 
-    cudaFree(d_energy_sum);
     return energy;
+}
+
+void init_bond_force_kernel_data() {
+    using namespace CudaBondForce;
+    if (!is_initialized) {
+        check_cudaMalloc((void**)&d_energy_sum, sizeof(double));
+        is_initialized = true;
+    }
+}
+
+void cleanup_bond_force() {
+    using namespace CudaBondForce;
+    if (is_initialized) {
+        cudaFree(d_energy_sum);
+        is_initialized = false;
+    }
 }

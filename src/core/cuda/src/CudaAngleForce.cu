@@ -1,7 +1,12 @@
 #include "cuda/include/CudaAngleForce.cuh"
-#include "utils.h"
-#include "cuda/include/CudaUtility.cuh"
 #include "cuda/include/CudaContext.cuh"
+#include "cuda/include/CudaUtility.cuh"
+#include "utils.h"
+
+namespace CudaAngleForce {
+bool is_initialized = false;
+double* d_energy_sum;
+}  // namespace CudaAngleForce
 
 __global__ void calc_angle_forces_kernel(int start, int end, angle_t* angles, coord_t* coords, cangle_t* cangles, dvel_t* dvelocities, double* energy_sum) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x + start;
@@ -69,9 +74,9 @@ __global__ void calc_angle_forces_kernel(int start, int end, angle_t* angles, co
 double calc_angle_forces_host(int start, int end) {
     int N = end - start;
     if (N <= 0) return 0.0;
+    using namespace CudaAngleForce;
     int blockSize = 256;
     int numBlocks = (N + blockSize - 1) / blockSize;
-
 
     CudaContext& ctx = CudaContext::instance();
     auto d_angles = ctx.d_angles;
@@ -82,8 +87,6 @@ double calc_angle_forces_host(int start, int end) {
     // ctx.sync_all_to_device();
 
     double h_energy_sum = 0.0;
-    double *d_energy_sum;
-    check_cudaMalloc((void**)&d_energy_sum, sizeof(double));
     cudaMemcpy(d_energy_sum, &h_energy_sum, sizeof(double), cudaMemcpyHostToDevice);
 
     // launch kernel
@@ -94,6 +97,21 @@ double calc_angle_forces_host(int start, int end) {
     // copy results back to host
     cudaMemcpy(&h_energy_sum, d_energy_sum, sizeof(double), cudaMemcpyDeviceToHost);
     cudaMemcpy(dvelocities, ctx.d_dvelocities, n_atoms * sizeof(dvel_t), cudaMemcpyDeviceToHost);
-    cudaFree(d_energy_sum);
     return h_energy_sum;
+}
+
+void init_angle_force_kernel_data() {
+    using namespace CudaAngleForce;
+    if (!is_initialized) {
+        check_cudaMalloc((void**)&d_energy_sum, sizeof(double));
+        is_initialized = true;
+    }
+}
+
+void cleanup_angle_force() {
+    using namespace CudaAngleForce;
+    if (is_initialized) {
+        cudaFree(d_energy_sum);
+        is_initialized = false;
+    }
 }

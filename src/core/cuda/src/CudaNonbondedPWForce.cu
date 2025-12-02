@@ -277,32 +277,6 @@ void calc_nonbonded_pw_forces_host_v2() {
     int mem_size_PW_Evdw = n_blocks_p * n_blocks_w * sizeof(double);
     int mem_size_PW_Ecoul = n_blocks_p * n_blocks_w * sizeof(double);
 
-    if (!is_initialized) {
-#ifdef DEBUG
-        printf("Allocating PW_MAT\n");
-#endif
-        check_cudaMalloc((void**)&PW_MAT, mem_size_PW_MAT);
-
-#ifdef DEBUG
-        printf("Allocating D_PW_Evdw\n");
-#endif
-        check_cudaMalloc((void**)&D_PW_Evdw, mem_size_PW_Evdw);
-#ifdef DEBUG
-        printf("Allocating D_PW_Ecoul\n");
-#endif
-        check_cudaMalloc((void**)&D_PW_Ecoul, mem_size_PW_Ecoul);
-
-        check_cudaMalloc((void**)&D_PW_evdw_TOT, sizeof(double));
-        check_cudaMalloc((void**)&D_PW_ecoul_TOT, sizeof(double));
-
-#ifdef DEBUG
-        printf("All GPU solvent memory allocated\n");
-#endif
-
-        h_PW_MAT = (calc_pw_t*)malloc(mem_size_PW_MAT);
-        is_initialized = true;
-    }
-
     CudaContext& ctx = CudaContext::instance();
     auto X = ctx.d_coords;
     auto DV_X = ctx.d_dvelocities;
@@ -355,6 +329,41 @@ void calc_nonbonded_pw_forces_host_v2() {
     // for (int i = 0; i < n_atoms; i++) {
     //     printf("dvelocities[%d] = %f %f %f\n", i, dvelocities[i].x, dvelocities[i].y, dvelocities[i].z);
     // }
+}
+
+void init_nonbonded_pw_force_kernel_data() {
+    using namespace CudaNonbondedPWForce;
+    if (!is_initialized) {
+        int mem_size_PW_MAT = 3 * n_waters * n_patoms * sizeof(calc_pw_t);
+
+        int n_blocks_p = (n_patoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        int n_blocks_w = (3 * n_waters + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        int mem_size_PW_Evdw = n_blocks_p * n_blocks_w * sizeof(double);
+        int mem_size_PW_Ecoul = n_blocks_p * n_blocks_w * sizeof(double);
+#ifdef DEBUG
+        printf("Allocating PW_MAT\n");
+#endif
+        check_cudaMalloc((void**)&PW_MAT, mem_size_PW_MAT);
+
+#ifdef DEBUG
+        printf("Allocating D_PW_Evdw\n");
+#endif
+        check_cudaMalloc((void**)&D_PW_Evdw, mem_size_PW_Evdw);
+#ifdef DEBUG
+        printf("Allocating D_PW_Ecoul\n");
+#endif
+        check_cudaMalloc((void**)&D_PW_Ecoul, mem_size_PW_Ecoul);
+
+        check_cudaMalloc((void**)&D_PW_evdw_TOT, sizeof(double));
+        check_cudaMalloc((void**)&D_PW_ecoul_TOT, sizeof(double));
+
+#ifdef DEBUG
+        printf("All GPU solvent memory allocated\n");
+#endif
+
+        h_PW_MAT = (calc_pw_t*)malloc(mem_size_PW_MAT);
+        is_initialized = true;
+    }
 }
 
 void cleanup_nonbonded_pw_force() {

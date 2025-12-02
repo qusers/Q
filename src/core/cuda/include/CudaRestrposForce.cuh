@@ -1,7 +1,7 @@
-#ifndef CUDA_RESTRPOS_FORCE_CUH
-#define CUDA_RESTRPOS_FORCE_CUH
+#pragma once
 #include "system.h"
 
+void init_restrpos_force_kernel_data();
 void calc_restrpos_forces_host();
 
-#endif  // CUDA_RESTRPOS_FORCE_CUH
+void cleanup_restrpos_force();

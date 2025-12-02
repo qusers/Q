@@ -1,7 +1,6 @@
-#ifndef CUDA_BOND_FORCE_H
-#define CUDA_BOND_FORCE_H
+#pragma once
 #include "system.h"
 
+void init_bond_force_kernel_data();
 double calc_bond_forces_host(int start, int end);
-
-#endif
+void cleanup_bond_force();

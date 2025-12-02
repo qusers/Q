@@ -2,6 +2,10 @@
 #include "cuda/include/CudaRestrangForce.cuh"
 #include "cuda/include/CudaUtility.cuh"
 #include "utils.h"
+namespace CudaRestrangForce {
+bool is_initialized = false;
+double* d_E_restraint;
+}  // namespace CudaRestrangForce
 
 __global__ void calc_restrang_force_kernel(
     restrang_t* restrangs,
@@ -100,6 +104,7 @@ __global__ void calc_restrang_force_kernel(
 
 void calc_restrang_force_host() {
     if (n_restrangs == 0) return;
+    using namespace CudaRestrangForce;
     CudaContext& ctx = CudaContext::instance();
 
     auto d_restrangs = ctx.d_restrangs;
@@ -109,9 +114,7 @@ void calc_restrang_force_host() {
     auto d_EQ_restraint = ctx.d_EQ_restraint;
     auto d_restrdists = ctx.d_restrdists;
 
-    double* d_E_restraint;
     double val = 0;
-    check_cudaMalloc((void**)&d_E_restraint, sizeof(double));
     cudaMemcpy(d_E_restraint, &val, sizeof(double), cudaMemcpyHostToDevice);
 
     int blockSize = 256;
@@ -133,4 +136,20 @@ void calc_restrang_force_host() {
     cudaMemcpy(EQ_restraint, d_EQ_restraint, sizeof(E_restraint_t) * n_lambdas, cudaMemcpyDeviceToHost);
     cudaMemcpy(&val, d_E_restraint, sizeof(double), cudaMemcpyDeviceToHost);
     E_restraint.Urestr += val;
+}
+
+void init_restrang_force_kernel_data() {
+    using namespace CudaRestrangForce;
+    if (!is_initialized) {
+        check_cudaMalloc((void**)&d_E_restraint, sizeof(double));
+        is_initialized = true;
+    }
+}
+
+void cleanup_restrang_force() {
+    using namespace CudaRestrangForce;
+    if (is_initialized) {
+        cudaFree(d_E_restraint);
+        is_initialized = false;
+    }
 }

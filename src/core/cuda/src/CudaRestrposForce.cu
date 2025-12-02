@@ -1,8 +1,14 @@
+#include <iostream>
+
 #include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaRestrposForce.cuh"
 #include "cuda/include/CudaUtility.cuh"
 #include "utils.h"
-#include <iostream>
+
+namespace CudaRestrposForce {
+bool is_initialized = false;
+double* d_E_restraint;
+}  // namespace CudaRestrposForce
 
 __global__ void calc_restrpos_forces_kernel(
     restrpos_t* restrspos,
@@ -57,9 +63,8 @@ __global__ void calc_restrpos_forces_kernel(
 }
 void calc_restrpos_forces_host() {
     if (n_restrspos == 0) return;
-    double* d_E_restraint;
+    using namespace CudaRestrposForce;
     double val = 0.0;
-    check_cudaMalloc((void**)&d_E_restraint, sizeof(double));
     cudaMemcpy(d_E_restraint, &val, sizeof(double), cudaMemcpyHostToDevice);
 
     CudaContext& ctx = CudaContext::instance();
@@ -85,5 +90,20 @@ void calc_restrpos_forces_host() {
     cudaMemcpy(&val, d_E_restraint, sizeof(double), cudaMemcpyDeviceToHost);
     E_restraint.Urestr += val;
     cudaMemcpy(EQ_restraint, d_EQ_restraint, sizeof(E_restraint_t) * n_lambdas, cudaMemcpyDeviceToHost);
-    cudaFree(d_E_restraint);
+}
+
+void init_restrpos_force_kernel_data() {
+    using namespace CudaRestrposForce;
+    if (!is_initialized) {
+        check_cudaMalloc((void**)&d_E_restraint, sizeof(double));
+        is_initialized = true;
+    }
+}
+
+void cleanup_restrpos_force() {
+    using namespace CudaRestrposForce;
+    if (is_initialized) {
+        cudaFree(d_E_restraint);
+        is_initialized = false;
+    }
 }

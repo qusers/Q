@@ -4,6 +4,10 @@
 #include "cuda/include/CudaRestrdisForce.cuh"
 #include "cuda/include/CudaUtility.cuh"
 #include "utils.h"
+namespace CudaRestrdisForce {
+bool is_initialized = false;
+double* d_E_restraint;
+}  // namespace CudaRestrdisForce
 
 __global__ void calc_restrdis_forces_kernel(
     restrdis_t* restrdists,
@@ -70,6 +74,7 @@ __global__ void calc_restrdis_forces_kernel(
 }
 
 void calc_restrdis_forces_host() {
+    using namespace CudaRestrdisForce;
     CudaContext& ctx = CudaContext::instance();
     auto d_restrdists = ctx.d_restrdists;
     auto d_coords = ctx.d_coords;
@@ -77,8 +82,6 @@ void calc_restrdis_forces_host() {
     auto d_dvelocities = ctx.d_dvelocities;
     auto d_EQ_restraint = ctx.d_EQ_restraint;
 
-    double* d_E_restraint;
-    check_cudaMalloc((void**)&d_E_restraint, sizeof(double));
     cudaMemset(d_E_restraint, 0, sizeof(double));
 
     int blockSize = 256;
@@ -99,5 +102,20 @@ void calc_restrdis_forces_host() {
     cudaMemcpy(&ener, d_E_restraint, sizeof(double), cudaMemcpyDeviceToHost);
     printf("Energy restraint: %f\n", ener);
     E_restraint.Urestr += ener;
-    cudaFree(d_E_restraint);
+}
+
+void init_restrdis_force_kernel_data() {
+    using namespace CudaRestrdisForce;
+    if (!is_initialized) {
+        check_cudaMalloc((void**)&d_E_restraint, sizeof(double));
+        is_initialized = true;
+    }
+}
+
+void cleanup_restrdis_force() {
+    using namespace CudaRestrdisForce;
+    if (is_initialized) {
+        cudaFree(d_E_restraint);
+        is_initialized = false;
+    }
 }

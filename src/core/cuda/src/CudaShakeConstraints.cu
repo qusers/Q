@@ -4,6 +4,13 @@
 #include "cuda/include/CudaShakeConstraints.cuh"
 #include "utils.h"
 
+namespace CudaShakeConstraints {
+
+bool is_initialized = false;
+int* d_mol_shake_offset;
+int* d_total_iterations;
+}  // namespace CudaShakeConstraints
+
 __global__ void calc_shake_constraints_kernel(
     int n_molecules,
     int* mol_n_shakes,
@@ -90,20 +97,34 @@ __global__ void calc_shake_constraints_kernel(
 }
 
 void init_shake_constraints_kernel_data() {
-    int* mol_shake_offset_host = (int*)malloc(sizeof(int) * n_molecules);
-    mol_shake_offset_host[0] = 0;
-    for (int i = 1; i < n_molecules; i++) {
-        mol_shake_offset_host[i] = mol_shake_offset_host[i - 1] + mol_n_shakes[i - 1];
-    }
+    using namespace CudaShakeConstraints;
+    if (!is_initialized) {
+        int* mol_shake_offset_host = (int*)malloc(sizeof(int) * n_molecules);
+        mol_shake_offset_host[0] = 0;
+        for (int i = 1; i < n_molecules; i++) {
+            mol_shake_offset_host[i] = mol_shake_offset_host[i - 1] + mol_n_shakes[i - 1];
+        }
+        check_cudaMalloc((void**)&d_mol_shake_offset, sizeof(int) * n_molecules);  // calculation data, not initialized in the beginning.
+        cudaMemcpy(d_mol_shake_offset, mol_shake_offset_host, sizeof(int) * n_molecules, cudaMemcpyHostToDevice);
+        free(mol_shake_offset_host);
 
-    CudaContext& ctx = CudaContext::instance();
-    cudaMemcpy(ctx.d_mol_shake_offset, mol_shake_offset_host, sizeof(int) * n_molecules, cudaMemcpyHostToDevice);
-    free(mol_shake_offset_host);
+        check_cudaMalloc((void**)&d_total_iterations, sizeof(int));
+
+        is_initialized = true;
+    }
+}
+
+void cleanup_shake_constraints() {
+    using namespace CudaShakeConstraints;
+    if (is_initialized) {
+        cudaFree(d_mol_shake_offset);
+        cudaFree(d_total_iterations);
+        is_initialized = false;
+    }
 }
 
 int calc_shake_constraints_host() {
-    int* d_total_iterations;
-    check_cudaMalloc((void**)&d_total_iterations, sizeof(int));
+    using namespace CudaShakeConstraints;
     int total_iterations_host = 0;
     cudaMemcpy(d_total_iterations, &total_iterations_host, sizeof(int), cudaMemcpyHostToDevice);
 
@@ -116,7 +137,6 @@ int calc_shake_constraints_host() {
     auto d_coords = ctx.d_coords;
     auto d_xcoords = ctx.d_xcoords;
     auto d_winv = ctx.d_winv;
-    auto d_mol_shake_offset = ctx.d_mol_shake_offset;
 
     calc_shake_constraints_kernel<<<blocks, threads>>>(
         n_molecules,

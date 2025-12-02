@@ -1316,6 +1316,30 @@ void calc_integration_step(int iteration) {
 
 }
 
+void init_cuda_kernel_data() {
+    init_angle_force_kernel_data();
+    init_bond_force_kernel_data();
+    init_improper2_force_kernel_data();
+    init_leapfrog_kernel_data();
+    init_nonbonded_pp_force_kernel_data();
+    init_nonbonded_pw_force_kernel_data();
+    init_nonbonded_qp_force_kernel_data();
+    init_nonbonded_qq_force_kernel_data();
+    init_nonbonded_qw_force_kernel_data();
+    init_nonbonded_ww_force_kernel_data();
+    init_polx_water_force_kernel_data();
+    init_pshell_force_kernel_data();
+    init_radix_water_force_kernel_data();
+    init_restrang_force_kernel_data();
+    init_restrdis_force_kernel_data();
+    init_restrpos_force_kernel_data();
+    init_restrseq_force_kernel_data();
+    init_restrwall_force_kernel_data();
+    init_shake_constraints_kernel_data();
+    init_temperature_kernel_data();
+    init_torsion_force_kernel_data();
+}
+
 void init_variables() {
     // From MD file
     init_md("md.csv");
@@ -1437,7 +1461,7 @@ void init_variables() {
     write_energy_header();
 
     CudaContext::instance().init();
-    init_shake_constraints_kernel_data();
+    init_cuda_kernel_data();
 }
 
 void clean_variables() {
@@ -1531,9 +1555,27 @@ void clean_variables() {
 
     // gpu variables
     if (run_gpu) {
-        cleanup_torsion_force();
-        cleanup_temperature();
-        cleanup_polx_water_force();
+        cleanup_angle_force();
+        cleanup_bond_force();
+        cleanup_improper2_force();
+        cleanup_leapfrog();
         cleanup_nonbonded_pp_force();
+        cleanup_nonbonded_pw_force();
+        cleanup_nonbonded_qp_force();
+        cleanup_nonbonded_qq_force();
+        cleanup_nonbonded_qw_force();
+        cleanup_nonbonded_ww_force();
+        cleanup_polx_water_force();
+        cleanup_pshell_force();
+        cleanup_radix_water_force();
+        cleanup_restrang_force();
+        cleanup_restrdis_force();
+        cleanup_restrpos_force();
+        cleanup_restrseq_force();
+        cleanup_restrwall_force();
+        cleanup_shake_constraints();
+        cleanup_temperature();
+        cleanup_torsion_force();
+
     }
 }

@@ -1,7 +1,6 @@
-#ifndef CUDA_RADIX_WATER_FORCE_CU
-#define CUDA_RADIX_WATER_FORCE_CU
+#pragma once
 #include "system.h"
 
+void init_radix_water_force_kernel_data();
 void calc_radix_water_forces_host();
-
-#endif
+void cleanup_radix_water_force();

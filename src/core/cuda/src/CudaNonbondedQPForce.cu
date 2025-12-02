@@ -265,25 +265,6 @@ void calc_nonbonded_qp_forces_host_v2() {
 
     int n_blocks_q = (n_qatoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
     int n_blocks_p = (n_patoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
-    if (!is_initialized) {
-        // TODO make Evdw & Ecoul work for # of states > 2
-        int mem_size_QP_Evdw = min(n_lambdas, 2) * n_blocks_q * n_blocks_p * sizeof(double);
-        int mem_size_QP_Ecoul = min(n_lambdas, 2) * n_blocks_q * n_blocks_p * sizeof(double);
-        int mem_size_QP_MAT = n_qatoms * n_patoms * sizeof(calc_qp_t);
-
-        check_cudaMalloc((void**)&D_QP_Evdw, mem_size_QP_Evdw);
-        check_cudaMalloc((void**)&D_QP_Ecoul, mem_size_QP_Ecoul);
-        h_QP_Evdw = (double*)malloc(mem_size_QP_Evdw);
-        h_QP_Ecoul = (double*)malloc(mem_size_QP_Ecoul);
-
-        check_cudaMalloc((void**)&QP_MAT, mem_size_QP_MAT);
-        h_QP_MAT = (calc_qp_t*)malloc(mem_size_QP_MAT);
-
-        check_cudaMalloc((void**)&D_QP_evdw_TOT, sizeof(double));
-        check_cudaMalloc((void**)&D_QP_ecoul_TOT, sizeof(double));
-
-        is_initialized = true;
-    }
 
     CudaContext& ctx = CudaContext::instance();
     auto X = ctx.d_coords;
@@ -340,6 +321,32 @@ void calc_nonbonded_qp_forces_host_v2() {
     }
 }
 
+void init_nonbonded_qp_force_kernel_data() {
+    using namespace CudaNonbondedQPForce;
+
+    if (!is_initialized) {
+        int n_blocks_q = (n_qatoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        int n_blocks_p = (n_patoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        // TODO make Evdw & Ecoul work for # of states > 2
+        int mem_size_QP_Evdw = min(n_lambdas, 2) * n_blocks_q * n_blocks_p * sizeof(double);
+        int mem_size_QP_Ecoul = min(n_lambdas, 2) * n_blocks_q * n_blocks_p * sizeof(double);
+        int mem_size_QP_MAT = n_qatoms * n_patoms * sizeof(calc_qp_t);
+
+        check_cudaMalloc((void**)&D_QP_Evdw, mem_size_QP_Evdw);
+        check_cudaMalloc((void**)&D_QP_Ecoul, mem_size_QP_Ecoul);
+        h_QP_Evdw = (double*)malloc(mem_size_QP_Evdw);
+        h_QP_Ecoul = (double*)malloc(mem_size_QP_Ecoul);
+
+        check_cudaMalloc((void**)&QP_MAT, mem_size_QP_MAT);
+        h_QP_MAT = (calc_qp_t*)malloc(mem_size_QP_MAT);
+
+        check_cudaMalloc((void**)&D_QP_evdw_TOT, sizeof(double));
+        check_cudaMalloc((void**)&D_QP_ecoul_TOT, sizeof(double));
+
+        is_initialized = true;
+    }
+}
+
 void cleanup_nonbonded_qp_force() {
     using namespace CudaNonbondedQPForce;
 
@@ -350,6 +357,8 @@ void cleanup_nonbonded_qp_force() {
         free(h_QP_Ecoul);
         cudaFree(QP_MAT);
         free(h_QP_MAT);
+        cudaFree(D_QP_evdw_TOT);
+        cudaFree(D_QP_ecoul_TOT);
 
         is_initialized = false;
     }

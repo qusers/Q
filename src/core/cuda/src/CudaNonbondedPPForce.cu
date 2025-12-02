@@ -219,33 +219,9 @@ __global__ void calc_energy_sum(int rows, int columns, double* Evdw_TOT, double*
 void calc_nonbonded_pp_forces_host_v2() {
     using namespace CudaNonbondedPPForce;
 
-    int mem_size_X = n_atoms_solute * sizeof(coord_t);
     int mem_size_DV_X = n_atoms_solute * sizeof(dvel_t);
 
-    int mem_size_PP_MAT = n_patoms * n_patoms * sizeof(dvel_t);
     int n_blocks = (n_patoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
-    int mem_size_PP_Evdw = n_blocks * n_blocks * sizeof(double);
-    int mem_size_PP_Ecoul = n_blocks * n_blocks * sizeof(double);
-
-    if (!is_initialized) {
-        is_initialized = true;
-
-#ifdef DEBUG
-        printf("Allocating PP_MAT\n");
-#endif
-        check_cudaMalloc((void**)&PP_MAT, mem_size_PP_MAT);
-#ifdef DEBUG
-        printf("Allocating D_PP_Evdw\n");
-#endif
-        check_cudaMalloc((void**)&D_PP_Evdw, mem_size_PP_Evdw);
-#ifdef DEBUG
-        printf("Allocating D_PP_Ecoul\n");
-#endif
-        check_cudaMalloc((void**)&D_PP_Ecoul, mem_size_PP_Ecoul);
-
-        check_cudaMalloc((void**)&D_PP_evdw_TOT, sizeof(double));
-        check_cudaMalloc((void**)&D_PP_ecoul_TOT, sizeof(double));
-    }
 
     CudaContext& ctx = CudaContext::instance();
     auto X = ctx.d_coords;
@@ -280,6 +256,8 @@ void calc_nonbonded_pp_forces_host_v2() {
         }
     }
 #endif
+    cudaMemset(D_PP_evdw_TOT, 0, sizeof(double));
+    cudaMemset(D_PP_ecoul_TOT, 0, sizeof(double));
 
     calc_energy_sum<<<1, threads>>>(n_blocks, n_blocks, D_PP_evdw_TOT, D_PP_ecoul_TOT, D_PP_Evdw, D_PP_Ecoul, true);
     double PP_evdw_TOT, PP_ecoul_TOT;
@@ -288,6 +266,36 @@ void calc_nonbonded_pp_forces_host_v2() {
 
     E_nonbond_pp.Uvdw += PP_evdw_TOT;
     E_nonbond_pp.Ucoul += PP_ecoul_TOT;
+}
+
+void init_nonbonded_pp_force_kernel_data() {
+    using namespace CudaNonbondedPPForce;
+
+    if (!is_initialized) {
+        int n_blocks = (n_patoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+        int mem_size_PP_MAT = n_patoms * n_patoms * sizeof(dvel_t);
+
+        int mem_size_PP_Evdw = n_blocks * n_blocks * sizeof(double);
+        int mem_size_PP_Ecoul = n_blocks * n_blocks * sizeof(double);
+#ifdef DEBUG
+        printf("Allocating PP_MAT\n");
+#endif
+        check_cudaMalloc((void**)&PP_MAT, mem_size_PP_MAT);
+#ifdef DEBUG
+        printf("Allocating D_PP_Evdw\n");
+#endif
+        check_cudaMalloc((void**)&D_PP_Evdw, mem_size_PP_Evdw);
+#ifdef DEBUG
+        printf("Allocating D_PP_Ecoul\n");
+#endif
+        check_cudaMalloc((void**)&D_PP_Ecoul, mem_size_PP_Ecoul);
+
+        check_cudaMalloc((void**)&D_PP_evdw_TOT, sizeof(double));
+        check_cudaMalloc((void**)&D_PP_ecoul_TOT, sizeof(double));
+
+        is_initialized = true;
+    }
 }
 
 void cleanup_nonbonded_pp_force() {

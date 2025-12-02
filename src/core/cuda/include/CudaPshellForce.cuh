@@ -1,6 +1,7 @@
-#ifndef CUDA_PSHELL_FORCE_CUH
-#define CUDA_PSHELL_FORCE_CUH
+#pragma once
 #include "system.h"
+void init_pshell_force_kernel_data();
+
 void calc_pshell_forces_host();
 
-#endif  // CUDA_PSHELL_FORCE_CUH
+void cleanup_pshell_force();

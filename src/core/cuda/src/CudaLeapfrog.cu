@@ -5,6 +5,10 @@
 #include "cuda/include/CudaShakeConstraints.cuh"
 #include "utils.h"
 
+namespace CudaLeapfrog {
+
+}
+
 __global__ void calc_leapfrog_kernel(
     atype_t* atypes,
     catype_t* catypes,
@@ -82,3 +86,7 @@ void calc_leapfrog_host() {
         }
     }
 }
+
+void init_leapfrog_kernel_data() {}
+
+void cleanup_leapfrog() {}

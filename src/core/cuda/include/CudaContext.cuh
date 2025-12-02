@@ -45,7 +45,6 @@ class CudaContext {
     shake_bond_t* d_shake_bonds = nullptr;
     double* d_winv = nullptr;
     coord_t* d_xcoords = nullptr;
-    int* d_mol_shake_offset = nullptr;
 
     /*
     Used in CudaNonbondedQQForce.cu
@@ -64,13 +63,6 @@ class CudaContext {
     Used in CudaPolxWaterForce.cu
     */
     shell_t* d_wshells = nullptr;
-    int* d_list_sh = nullptr;
-    double* d_theta = nullptr;
-    double* d_theta0 = nullptr;
-    double* d_tdum = nullptr;
-    int* d_water_shell = nullptr;
-    int* d_water_rank = nullptr;
-
     /*
     Used in CudaPshellForce.cu
     */

@@ -1,7 +1,8 @@
+#include <iostream>
+
 #include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaNonbondedQWForce.cuh"
 #include "utils.h"
-#include <iostream>
 
 namespace CudaNonbondedQWForce {
 struct calc_qw_t {
@@ -293,39 +294,6 @@ void calc_nonbonded_qw_forces_host_v2() {
     int mem_size_QW_Evdw = min(n_lambdas, 2) * n_blocks_q * n_blocks_w * sizeof(double);
     int mem_size_QW_Ecoul = min(n_lambdas, 2) * n_blocks_q * n_blocks_w * sizeof(double);
 
-    if (!is_initialized) {
-        catype_t catype_ow;  // Atom type of first O atom
-
-        catype_ow = catypes[atypes[n_atoms_solute].code - 1];
-
-        A_O = catype_ow.aii_normal;
-        B_O = catype_ow.bii_normal;
-
-#ifdef DEBUG
-        printf("Allocating QW_MAT\n");
-#endif
-        check_cudaMalloc((void**)&QW_MAT, mem_size_MAT);
-
-#ifdef DEBUG
-        printf("Allocating D_QW_Evdw\n");
-#endif
-        check_cudaMalloc((void**)&D_QW_Evdw, mem_size_QW_Evdw);
-#ifdef DEBUG
-        printf("Allocating D_QW_Ecoul\n");
-#endif
-        check_cudaMalloc((void**)&D_QW_Ecoul, mem_size_QW_Ecoul);
-
-        check_cudaMalloc((void**)&D_QW_evdw_TOT, sizeof(double));
-        check_cudaMalloc((void**)&D_QW_ecoul_TOT, sizeof(double));
-
-        h_QW_Evdw = (double*)malloc(mem_size_QW_Evdw);
-        h_QW_Ecoul = (double*)malloc(mem_size_QW_Ecoul);
-
-        h_QW_MAT = (calc_qw_t*)malloc(mem_size_MAT);
-        is_initialized = true;
-    }
-    
-
     CudaContext& ctx = CudaContext::instance();
     auto X = ctx.d_coords;
     auto DV_X = ctx.d_dvelocities;
@@ -373,6 +341,47 @@ void calc_nonbonded_qw_forces_host_v2() {
 
         EQ_nonbond_qw[state].Uvdw += QW_evdw_TOT;
         EQ_nonbond_qw[state].Ucoul += QW_ecoul_TOT;
+    }
+}
+
+void init_nonbonded_qw_force_kernel_data() {
+    using namespace CudaNonbondedQWForce;
+    if (!is_initialized) {
+        catype_t catype_ow;  // Atom type of first O atom
+
+        catype_ow = catypes[atypes[n_atoms_solute].code - 1];
+
+        A_O = catype_ow.aii_normal;
+        B_O = catype_ow.bii_normal;
+
+        int n_blocks_q = (n_qatoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        int n_blocks_w = (n_waters + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        int mem_size_MAT = 3 * n_waters * n_qatoms * sizeof(calc_qw_t);
+
+        int mem_size_QW_Evdw = min(n_lambdas, 2) * n_blocks_q * n_blocks_w * sizeof(double);
+        int mem_size_QW_Ecoul = min(n_lambdas, 2) * n_blocks_q * n_blocks_w * sizeof(double);
+#ifdef DEBUG
+        printf("Allocating QW_MAT\n");
+#endif
+        check_cudaMalloc((void**)&QW_MAT, mem_size_MAT);
+
+#ifdef DEBUG
+        printf("Allocating D_QW_Evdw\n");
+#endif
+        check_cudaMalloc((void**)&D_QW_Evdw, mem_size_QW_Evdw);
+#ifdef DEBUG
+        printf("Allocating D_QW_Ecoul\n");
+#endif
+        check_cudaMalloc((void**)&D_QW_Ecoul, mem_size_QW_Ecoul);
+
+        check_cudaMalloc((void**)&D_QW_evdw_TOT, sizeof(double));
+        check_cudaMalloc((void**)&D_QW_ecoul_TOT, sizeof(double));
+
+        h_QW_Evdw = (double*)malloc(mem_size_QW_Evdw);
+        h_QW_Ecoul = (double*)malloc(mem_size_QW_Ecoul);
+
+        h_QW_MAT = (calc_qw_t*)malloc(mem_size_MAT);
+        is_initialized = true;
     }
 }
 

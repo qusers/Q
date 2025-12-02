@@ -4,6 +4,11 @@
 #include "cuda/include/CudaRestrwallForce.cuh"
 #include "utils.h"
 
+namespace CudaRestrwallForce {
+bool is_initialized = false;
+double* d_energies;
+}  // namespace CudaRestrwallForce
+
 __global__ void calc_restrwall_forces_kernel(
     restrwall_t* restrwalls,
     int n_restrwalls,
@@ -47,13 +52,12 @@ __global__ void calc_restrwall_forces_kernel(
 
 void calc_restrwall_forces_host() {
     if (n_restrwalls == 0) return;
+    using namespace CudaRestrwallForce;
     CudaContext& ctx = CudaContext::instance();
     auto d_restrwalls = ctx.d_restrwalls;
     auto d_coords = ctx.d_coords;
     auto d_dvelocities = ctx.d_dvelocities;
     auto d_heavy = ctx.d_heavy;
-    double* d_energies;
-    check_cudaMalloc((void**)&d_energies, sizeof(double));
     cudaMemset(d_energies, 0, sizeof(double));
 
     int blockSize = 256;
@@ -70,5 +74,20 @@ void calc_restrwall_forces_host() {
     cudaMemcpy(dvelocities, d_dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyDeviceToHost);
     printf("Restrwall energy: %f\n", h_energy);
     E_restraint.Upres += h_energy;
-    cudaFree(d_energies);
+}
+
+void init_restrwall_force_kernel_data() {
+    using namespace CudaRestrwallForce;
+    if (!is_initialized) {
+        check_cudaMalloc((void**)&d_energies, sizeof(double));
+        is_initialized = true;
+    }
+}
+
+void cleanup_restrwall_force() {
+    using namespace CudaRestrwallForce;
+    if (is_initialized) {
+        cudaFree(d_energies);
+        is_initialized = false;
+    }
 }

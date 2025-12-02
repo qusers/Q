@@ -130,3 +130,6 @@ void calc_nonbonded_qq_forces_host() {
     cudaMemcpy(EQ_nonbond_qq, d_EQ_nonbond_qq, sizeof(E_nonbonded_t) * n_lambdas, cudaMemcpyDeviceToHost);
     cudaMemcpy(dvelocities, d_dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyDeviceToHost);
 }
+
+void init_nonbonded_qq_force_kernel_data() {}
+void cleanup_nonbonded_qq_force() {}
