@@ -68,7 +68,7 @@ void calc_restrpos_forces_host() {
     cudaMemcpy(d_E_restraint, &val, sizeof(double), cudaMemcpyHostToDevice);
 
     CudaContext& ctx = CudaContext::instance();
-    auto d_restrpos = ctx.d_restrpos;
+    auto d_restrspos = ctx.d_restrspos;
     auto d_coords = ctx.d_coords;
     auto d_lambdas = ctx.d_lambdas;
     auto d_EQ_restraint = ctx.d_EQ_restraint;
@@ -77,7 +77,7 @@ void calc_restrpos_forces_host() {
     int blockSize = 256;
     int numBlocks = (n_restrspos + blockSize - 1) / blockSize;
     calc_restrpos_forces_kernel<<<numBlocks, blockSize>>>(
-        d_restrpos,
+        d_restrspos,
         n_restrspos,
         d_coords,
         d_lambdas,

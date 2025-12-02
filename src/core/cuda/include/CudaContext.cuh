@@ -79,7 +79,7 @@ class CudaContext {
     /*
     Used in CudaRestrposForce.cu
     */
-    restrpos_t* d_restrpos = nullptr;
+    restrpos_t* d_restrspos = nullptr;
 
     /*
     Used in CudaRestrseqForce.cu
