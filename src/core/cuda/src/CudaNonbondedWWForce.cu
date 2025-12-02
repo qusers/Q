@@ -1,4 +1,3 @@
-#pragma once
 #include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaNonbondedWWForce.cuh"
 namespace CudaNonbondedWWForce {

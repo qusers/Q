@@ -138,7 +138,7 @@ void CudaContext::sync_all_to_host() {
     sync_array_to_host<double>(lambdas, d_lambdas, n_lambdas);
     sync_array_to_host<shell_t>(wshells, d_wshells, n_shells);
     sync_array_to_host<bool>(shell, d_shell, n_atoms);
-    sync_array_to_host<coord_t>(coords, d_coords_top, n_atoms);
+    sync_array_to_host<coord_t>(coords_top, d_coords_top, n_atoms);
 
     sync_array_to_host<restrang_t>(restrangs, d_restrangs, n_restrangs);
     sync_array_to_host<E_restraint_t>(EQ_restraint, d_EQ_restraint, n_lambdas);
@@ -159,6 +159,55 @@ void CudaContext::sync_all_to_host() {
 }
 
 void CudaContext::free() {
+    cudaFree(d_coords);
+    cudaFree(d_dvelocities);
+    cudaFree(d_velocities);
+    cudaFree(d_angles);
+    cudaFree(d_cangles);
+    cudaFree(d_bonds);
+    cudaFree(d_cbonds);
+    cudaFree(d_impropers);
+    cudaFree(d_cimpropers);
+
+    cudaFree(d_atypes);
+    cudaFree(d_catypes);
+
+    cudaFree(d_mol_n_shakes);
+    cudaFree(d_shake_bonds);
+    cudaFree(d_winv);
+    cudaFree(d_xcoords);
+
+    cudaFree(d_q_atoms);
+    cudaFree(d_q_charges);
+    cudaFree(d_LJ_matrix);
+    cudaFree(d_excluded);
+    cudaFree(d_q_elscales);
+    cudaFree(d_q_catypes);
+    cudaFree(d_q_atypes);
+    cudaFree(d_EQ_nonbond_qq);
+    cudaFree(d_lambdas);
+
+    cudaFree(d_wshells);
+    cudaFree(d_shell);
+    cudaFree(d_coords_top);
+
+    cudaFree(d_restrangs);
+    cudaFree(d_EQ_restraint);
+    cudaFree(d_restrdists);
+
+    cudaFree(d_restrspos);
+
+    cudaFree(d_restrseqs);
+    cudaFree(d_heavy);
+
+    cudaFree(d_restrwalls);
+
+    cudaFree(d_torsions);
+    cudaFree(d_ctorsions);
+
+    cudaFree(d_ccharges);
+    cudaFree(d_charges);
+    cudaFree(d_p_atoms);
 }
 
 void CudaContext::reset_energies() {
