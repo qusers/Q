@@ -1,19 +1,6 @@
+#include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaNonbondedQQForce.cuh"
 #include "utils.h"
-namespace CudaNonbondedQQForce {
-bool is_initialized = false;
-q_atom_t* d_q_atoms = nullptr;
-q_charge_t* d_q_charges = nullptr;
-int* d_LJ_matrix = nullptr;
-bool* d_excluded = nullptr;
-q_elscale_t* d_q_elscales = nullptr;
-q_catype_t* d_q_catypes = nullptr;
-q_atype_t* d_q_atypes = nullptr;
-coord_t* d_coords = nullptr;
-E_nonbonded_t* d_EQ_nonbond_qq = nullptr;
-dvel_t* d_dvelocities = nullptr;
-double* d_lambdas = nullptr;
-}  // namespace CudaNonbondedQQForce
 
 __global__ void calc_nonbonded_qq_forces_kernel(
     q_atom_t* q_atoms,
@@ -107,34 +94,20 @@ __global__ void calc_nonbonded_qq_forces_kernel(
 }
 
 void calc_nonbonded_qq_forces_host() {
-    using namespace CudaNonbondedQQForce;
-    if (!is_initialized) {
-        check_cudaMalloc((void**)&d_q_atoms, sizeof(q_atom_t) * n_qatoms);
-        check_cudaMalloc((void**)&d_q_charges, sizeof(q_charge_t) * n_qatoms * n_lambdas);
-        check_cudaMalloc((void**)&d_LJ_matrix, sizeof(int) * n_atoms_solute * n_atoms_solute);
-        check_cudaMalloc((void**)&d_excluded, sizeof(bool) * n_atoms);
-        check_cudaMalloc((void**)&d_q_elscales, sizeof(q_elscale_t) * n_qelscales);
-        check_cudaMalloc((void**)&d_q_catypes, sizeof(q_catype_t) * n_qcatypes);
-        check_cudaMalloc((void**)&d_q_atypes, sizeof(q_atype_t) * n_qatoms * n_lambdas);
-        check_cudaMalloc((void**)&d_coords, sizeof(coord_t) * n_atoms);
-        check_cudaMalloc((void**)&d_EQ_nonbond_qq, sizeof(E_nonbonded_t) * n_lambdas);
-        check_cudaMalloc((void**)&d_dvelocities, sizeof(dvel_t) * n_atoms);
-        check_cudaMalloc((void**)&d_lambdas, sizeof(double) * n_lambdas);
+    CudaContext& ctx = CudaContext::instance();
+    // ctx.sync_all_to_device();
+    auto d_q_atoms = ctx.d_q_atoms;
+    auto d_q_charges = ctx.d_q_charges;
+    auto d_LJ_matrix = ctx.d_LJ_matrix;
+    auto d_excluded = ctx.d_excluded;
+    auto d_q_elscales = ctx.d_q_elscales;
+    auto d_q_catypes = ctx.d_q_catypes;
+    auto d_q_atypes = ctx.d_q_atypes;
+    auto d_coords = ctx.d_coords;
+    auto d_EQ_nonbond_qq = ctx.d_EQ_nonbond_qq;
+    auto d_dvelocities = ctx.d_dvelocities;
+    auto d_lambdas = ctx.d_lambdas;
 
-        cudaMemcpy(d_q_atoms, q_atoms, sizeof(q_atom_t) * n_qatoms, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_q_charges, q_charges, sizeof(q_charge_t) * n_qatoms * n_lambdas, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_LJ_matrix, LJ_matrix, sizeof(int) * n_atoms_solute * n_atoms_solute, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_excluded, excluded, sizeof(bool) * n_atoms, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_q_elscales, q_elscales, sizeof(q_elscale_t) * n_qelscales, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_q_catypes, q_catypes, sizeof(q_catype_t) * n_qcatypes, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_q_atypes, q_atypes, sizeof(q_atype_t) * n_qatoms * n_lambdas, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_lambdas, lambdas, sizeof(double) * n_lambdas, cudaMemcpyHostToDevice);
-
-        is_initialized = true;
-    }
-    cudaMemcpy(d_coords, coords, sizeof(coord_t) * n_atoms, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_dvelocities, dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_EQ_nonbond_qq, EQ_nonbond_qq, sizeof(E_nonbonded_t) * n_lambdas, cudaMemcpyHostToDevice);
     int blockSize = 256;
     int numBlocks = (n_qatoms + blockSize - 1) / blockSize;
     calc_nonbonded_qq_forces_kernel<<<numBlocks, blockSize>>>(
@@ -157,20 +130,6 @@ void calc_nonbonded_qq_forces_host() {
     cudaMemcpy(EQ_nonbond_qq, d_EQ_nonbond_qq, sizeof(E_nonbonded_t) * n_lambdas, cudaMemcpyDeviceToHost);
     cudaMemcpy(dvelocities, d_dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyDeviceToHost);
 }
-void cleanup_nonbonded_qq_force() {
-    using namespace CudaNonbondedQQForce;
-    if (is_initialized) {
-        cudaFree(d_q_atoms);
-        cudaFree(d_q_charges);
-        cudaFree(d_LJ_matrix);
-        cudaFree(d_excluded);
-        cudaFree(d_q_elscales);
-        cudaFree(d_q_catypes);
-        cudaFree(d_q_atypes);
-        cudaFree(d_coords);
-        cudaFree(d_EQ_nonbond_qq);
-        cudaFree(d_dvelocities);
-        cudaFree(d_lambdas);
-        is_initialized = false;
-    }
-}
+
+void init_nonbonded_qq_force_kernel_data() {}
+void cleanup_nonbonded_qq_force() {}

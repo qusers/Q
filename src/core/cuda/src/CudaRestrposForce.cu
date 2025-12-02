@@ -1,16 +1,13 @@
+#include <iostream>
+
+#include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaRestrposForce.cuh"
 #include "cuda/include/CudaUtility.cuh"
 #include "utils.h"
 
 namespace CudaRestrposForce {
 bool is_initialized = false;
-restrpos_t* d_restrpos = nullptr;
-coord_t* d_coords = nullptr;
-double* d_lambdas = nullptr;
-E_restraint_t* d_EQ_restraint = nullptr;
-double* d_E_restraint = nullptr;
-dvel_t* d_dvelocities = nullptr;
-
+double* d_E_restraint;
 }  // namespace CudaRestrposForce
 
 __global__ void calc_restrpos_forces_kernel(
@@ -65,29 +62,22 @@ __global__ void calc_restrpos_forces_kernel(
     }
 }
 void calc_restrpos_forces_host() {
+    if (n_restrspos == 0) return;
     using namespace CudaRestrposForce;
-    if (!is_initialized) {
-        check_cudaMalloc((void**)&d_restrpos, sizeof(restrpos_t) * n_restrspos);
-        check_cudaMalloc((void**)&d_coords, sizeof(coord_t) * n_atoms);
-        check_cudaMalloc((void**)&d_lambdas, sizeof(double) * n_lambdas);
-        check_cudaMalloc((void**)&d_EQ_restraint, sizeof(E_restraint_t) * n_lambdas);
-        check_cudaMalloc((void**)&d_E_restraint, sizeof(double));
-        check_cudaMalloc((void**)&d_dvelocities, sizeof(dvel_t) * n_atoms);
-
-        cudaMemcpy(d_restrpos, restrspos, sizeof(restrpos_t) * n_restrspos, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_lambdas, lambdas, sizeof(double) * n_lambdas, cudaMemcpyHostToDevice);
-        is_initialized = true;
-    }
-    cudaMemcpy(d_coords, coords, sizeof(coord_t) * n_atoms, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_dvelocities, dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_EQ_restraint, EQ_restraint, sizeof(E_restraint_t) * n_lambdas, cudaMemcpyHostToDevice);
     double val = 0.0;
     cudaMemcpy(d_E_restraint, &val, sizeof(double), cudaMemcpyHostToDevice);
+
+    CudaContext& ctx = CudaContext::instance();
+    auto d_restrspos = ctx.d_restrspos;
+    auto d_coords = ctx.d_coords;
+    auto d_lambdas = ctx.d_lambdas;
+    auto d_EQ_restraint = ctx.d_EQ_restraint;
+    auto d_dvelocities = ctx.d_dvelocities;
 
     int blockSize = 256;
     int numBlocks = (n_restrspos + blockSize - 1) / blockSize;
     calc_restrpos_forces_kernel<<<numBlocks, blockSize>>>(
-        d_restrpos,
+        d_restrspos,
         n_restrspos,
         d_coords,
         d_lambdas,
@@ -101,15 +91,19 @@ void calc_restrpos_forces_host() {
     E_restraint.Urestr += val;
     cudaMemcpy(EQ_restraint, d_EQ_restraint, sizeof(E_restraint_t) * n_lambdas, cudaMemcpyDeviceToHost);
 }
+
+void init_restrpos_force_kernel_data() {
+    using namespace CudaRestrposForce;
+    if (!is_initialized) {
+        check_cudaMalloc((void**)&d_E_restraint, sizeof(double));
+        is_initialized = true;
+    }
+}
+
 void cleanup_restrpos_force() {
     using namespace CudaRestrposForce;
     if (is_initialized) {
-        cudaFree(d_restrpos);
-        cudaFree(d_coords);
-        cudaFree(d_lambdas);
-        cudaFree(d_EQ_restraint);
         cudaFree(d_E_restraint);
-        cudaFree(d_dvelocities);
         is_initialized = false;
     }
 }

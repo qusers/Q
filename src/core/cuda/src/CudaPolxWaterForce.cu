@@ -1,26 +1,24 @@
 #include <iostream>
 
+#include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaPolxWaterForce.cuh"
 #include "utils.h"
 
 namespace CudaPolxWaterForce {
 bool is_initialized = false;
-shell_t* d_wshells = nullptr;
-int* d_list_sh = nullptr; // use 1d array to simulate 2d array
-coord_t* d_coords = nullptr;
-dvel_t* d_velocities = nullptr;
-double* d_theta = nullptr;
-double* d_theta0 = nullptr;
-double* d_tdum = nullptr;
-double* d_energy = nullptr;
-
-int *d_water_shell = nullptr;
-int *d_water_rank = nullptr;
 
 // in host
 int* water_shell = nullptr;
 int* water_rank = nullptr;
-int* polx_list_sh = nullptr; // use 1d array to simulate 2d array
+int* polx_list_sh = nullptr;  // use 1d array to simulate 2d array
+
+double* d_energy;
+int* d_list_sh = nullptr;
+double* d_theta = nullptr;
+double* d_theta0 = nullptr;
+double* d_tdum = nullptr;
+int* d_water_shell = nullptr;
+int* d_water_rank = nullptr;
 
 }  // namespace CudaPolxWaterForce
 
@@ -88,7 +86,7 @@ __global__ void calc_polx_water_forces_kernel(
 
     int il = water_rank[idx];
     int is = water_shell[idx];
-    if (is < 0) return; // water not in any shell this step
+    if (is < 0) return;  // water not in any shell this step
 
     int wi, ii;
     coord_t rmu, rcu, f1O, f1H1, f1H2, f2;
@@ -180,7 +178,6 @@ void sort_waters() {
             for (int jl = 0; jl < wshells[is].n_inshell; jl++) {
                 // printf("Searching water %d in shell %d, total number: %d\n", jl, is, wshells[is].n_inshell);
                 jw = polx_list_sh[jl * n_shells + is];
-                // printf("zzzzzzzzz %d\n", jw);
                 // printf("Water %d in shell %d has theta %f\n", jw, is, tdum[jw] * 180 / M_PI);
                 if (tdum[jw] < tmin) {
                     jmin = jw;
@@ -197,6 +194,8 @@ void sort_waters() {
 }
 
 void calc_polx_water_forces_host(int iteration) {
+    CudaContext& ctx = CudaContext::instance();
+
     for (int is = 0; is < n_shells; is++) {
         wshells[is].n_inshell = 0;
         if (iteration == 0) {
@@ -204,31 +203,14 @@ void calc_polx_water_forces_host(int iteration) {
         }
     }
     using namespace CudaPolxWaterForce;
-    if (!is_initialized) {
-        check_cudaMalloc((void**)&d_wshells, n_shells * sizeof(shell_t));
-        // todo: change the dimension
-        check_cudaMalloc((void**)&d_list_sh, n_max_inshell * n_shells * sizeof(int));
 
-        check_cudaMalloc((void**)&d_coords, n_atoms * sizeof(coord_t));
-        check_cudaMalloc((void**)&d_velocities, n_atoms * sizeof(dvel_t));
-        check_cudaMalloc((void**)&d_theta, n_waters * sizeof(double));
-        check_cudaMalloc((void**)&d_theta0, n_waters * sizeof(double));
-        check_cudaMalloc((void**)&d_tdum, n_waters * sizeof(double));
-        check_cudaMalloc((void**)&d_energy, sizeof(double));
-        check_cudaMalloc((void**)&d_water_rank, n_waters * sizeof(int));
-        check_cudaMalloc((void**)&d_water_shell, n_waters * sizeof(int));
+    // ctx.sync_all_to_device();
+    cudaMemcpy(ctx.d_wshells, wshells, n_shells * sizeof(shell_t), cudaMemcpyHostToDevice);
 
-        water_rank = new int[n_waters];
-        water_shell = new int[n_waters];
-        polx_list_sh = new int[n_max_inshell * n_shells];
+    coord_t* d_coords = ctx.d_coords;
+    dvel_t* d_dvelocities = ctx.d_dvelocities;
+    shell_t* d_wshells = ctx.d_wshells;
 
-        is_initialized = true;
-    }
-    cudaMemcpy(d_wshells, wshells, n_shells * sizeof(shell_t), cudaMemcpyHostToDevice);
-
-    cudaMemset(d_energy, 0, sizeof(double));
-    cudaMemcpy(d_coords, coords, n_atoms * sizeof(coord_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_velocities, dvelocities, n_atoms * sizeof(dvel_t), cudaMemcpyHostToDevice);
     int blockSize = 256;
     int numBlocks = (n_waters + blockSize - 1) / blockSize;
     // printf("Calculated theta for %d waters in %d shells\n", n_waters, n_shells);
@@ -270,38 +252,51 @@ void calc_polx_water_forces_host(int iteration) {
     }
 
     // Calculate energy and force
-
-    check_cudaMalloc((void**)&d_energy, sizeof(double));
+    cudaMemset(d_energy, 0, sizeof(double));
     calc_polx_water_forces_kernel<<<numBlocks, blockSize>>>(
-        n_waters, n_atoms_solute, d_wshells, d_coords, d_velocities, topo,
+        n_waters, n_atoms_solute, d_wshells, d_coords, d_dvelocities, topo,
         d_theta, md, d_energy, d_water_rank, d_water_shell);
     double energy;
     cudaMemcpy(&energy, d_energy, sizeof(double), cudaMemcpyDeviceToHost);
     E_restraint.Upolx += energy;
     cudaMemcpy(wshells, d_wshells, n_shells * sizeof(shell_t), cudaMemcpyDeviceToHost);
     // Copy back forces for all atoms (solute + solvent); water forces were being dropped.
-    cudaMemcpy(dvelocities, d_velocities, n_atoms * sizeof(dvel_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(dvelocities, d_dvelocities, n_atoms * sizeof(dvel_t), cudaMemcpyDeviceToHost);
 }
 
-void cleanup_polx_water_force(
+void init_polx_water_force_kernel_data() {
+    using namespace CudaPolxWaterForce;
+    if (!is_initialized) {
+        water_rank = new int[n_waters];
+        water_shell = new int[n_waters];
+        polx_list_sh = new int[n_max_inshell * n_shells];
 
-) {
+        check_cudaMalloc((void**)&d_energy, sizeof(double));
+        check_cudaMalloc((void**)&d_list_sh, n_max_inshell * n_shells * sizeof(int));
+        check_cudaMalloc((void**)&d_theta, n_waters * sizeof(double));
+        check_cudaMalloc((void**)&d_theta0, n_waters * sizeof(double));
+        check_cudaMalloc((void**)&d_tdum, n_waters * sizeof(double));
+        check_cudaMalloc((void**)&d_water_rank, n_waters * sizeof(int));
+        check_cudaMalloc((void**)&d_water_shell, n_waters * sizeof(int));
+
+        is_initialized = true;
+    }
+}
+
+void cleanup_polx_water_force() {
     using namespace CudaPolxWaterForce;
     if (is_initialized) {
-        cudaFree(d_wshells);
+        delete[] water_rank;
+        delete[] water_shell;
+        delete[] polx_list_sh;
+
+        cudaFree(d_energy);
         cudaFree(d_list_sh);
-        cudaFree(d_coords);
-        cudaFree(d_velocities);
         cudaFree(d_theta);
         cudaFree(d_theta0);
         cudaFree(d_tdum);
-        cudaFree(d_energy);
         cudaFree(d_water_rank);
         cudaFree(d_water_shell);
-
-        delete[] water_rank;
-        delete[] water_shell;
-
         is_initialized = false;
     }
 }

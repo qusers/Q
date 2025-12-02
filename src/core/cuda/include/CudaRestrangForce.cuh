@@ -1,8 +1,7 @@
-#ifndef CUDA_RESTRANG_FORCE_CUH
-#define CUDA_RESTRANG_FORCE_CUH
+#pragma once
 #include "system.h"
 
+void init_restrang_force_kernel_data();
 void calc_restrang_force_host();
-void cleanup_restrang_force();
 
-#endif  // CUDA_RESTRANG_FORCE_CUH
+void cleanup_restrang_force();

@@ -1,13 +1,10 @@
+#include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaTorsionForce.cuh"
 #include "cuda/include/CudaUtility.cuh"
 #include "utils.h"
 
 namespace CudaTorsionForce {
 bool is_initialized = false;
-torsion_t* d_torsions = nullptr;
-ctorsion_t* d_ctorsions = nullptr;
-coord_t* d_coords = nullptr;
-dvel_t* d_dvelocities = nullptr;
 double* d_energy_sum = nullptr;
 }  // namespace CudaTorsionForce
 
@@ -133,21 +130,16 @@ double calc_torsion_forces_host(int start, int end) {
     if (N <= 0) return 0.0;
     int blockSize = 256;
     int numBlocks = (N + blockSize - 1) / blockSize;
-    if (!is_initialized) {
-        check_cudaMalloc((void**)&d_torsions, sizeof(torsion_t) * n_torsions);
-        check_cudaMalloc((void**)&d_ctorsions, sizeof(ctorsion_t) * n_ctorsions);
-        check_cudaMalloc((void**)&d_coords, sizeof(coord_t) * n_atoms);
-        check_cudaMalloc((void**)&d_dvelocities, sizeof(dvel_t) * n_atoms);
-        check_cudaMalloc((void**)&d_energy_sum, sizeof(double));
-        is_initialized = true;
-    }
 
-    cudaMemcpy(d_torsions, torsions, sizeof(torsion_t) * n_torsions, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_ctorsions, ctorsions, sizeof(ctorsion_t) * n_ctorsions, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_coords, coords, sizeof(coord_t) * n_atoms, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_dvelocities, dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyHostToDevice);
     double zero = 0.0;
     cudaMemcpy(d_energy_sum, &zero, sizeof(double), cudaMemcpyHostToDevice);
+
+    CudaContext& ctx = CudaContext::instance();
+    coord_t* d_coords = ctx.d_coords;
+    dvel_t* d_dvelocities = ctx.d_dvelocities;
+    torsion_t* d_torsions = ctx.d_torsions;
+    ctorsion_t* d_ctorsions = ctx.d_ctorsions;
+
     calc_torsion_forces_kernel<<<numBlocks, blockSize>>>(start, end, d_torsions, d_ctorsions, d_coords, d_dvelocities, d_energy_sum);
     cudaDeviceSynchronize();
     cudaMemcpy(&zero, d_energy_sum, sizeof(double), cudaMemcpyDeviceToHost);
@@ -155,13 +147,19 @@ double calc_torsion_forces_host(int start, int end) {
     return zero;
 }
 
+
+
+void init_torsion_force_kernel_data() {
+    using namespace CudaTorsionForce;
+    if (!is_initialized) {
+        check_cudaMalloc((void**)&d_energy_sum, sizeof(double));
+        is_initialized = true;
+    }
+}
+
 void cleanup_torsion_force() {
     using namespace CudaTorsionForce;
     if (is_initialized) {
-        cudaFree(d_torsions);
-        cudaFree(d_ctorsions);
-        cudaFree(d_coords);
-        cudaFree(d_dvelocities);
         cudaFree(d_energy_sum);
         is_initialized = false;
     }

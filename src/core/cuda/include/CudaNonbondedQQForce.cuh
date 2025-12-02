@@ -1,8 +1,7 @@
-#ifndef CUDA_NONBONDED_QQ_FORCE_H
-#define CUDA_NONBONDED_QQ_FORCE_H
+#pragma once
 #include "system.h"
 
+void init_nonbonded_qq_force_kernel_data();
 void calc_nonbonded_qq_forces_host();
-void cleanup_nonbonded_qq_force();
 
-#endif
+void cleanup_nonbonded_qq_force();

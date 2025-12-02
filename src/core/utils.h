@@ -15,6 +15,9 @@ double to_radians(double degrees);
  * =============================================
  */
 
+#include <cuda_runtime.h>
+
+void check_cuda(cudaError_t status);
 void check_cudaMalloc(void** devPtr, size_t size);
 
 #endif /* __UTILS_H__ */

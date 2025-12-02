@@ -1,9 +1,6 @@
-#ifndef CUDA_BOND_FORCE_H
-#define CUDA_BOND_FORCE_H
+#pragma once
 #include "system.h"
 
-__global__ void calc_bond_forces_kernel(int start, int end, bond_t* bonds, coord_t *coords, cbond_t *cbonds, dvel_t *dvelocities, double *energy_sum);
+void init_bond_force_kernel_data();
 double calc_bond_forces_host(int start, int end);
-
 void cleanup_bond_force();
-#endif
