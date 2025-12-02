@@ -769,7 +769,6 @@ void calc_temperature() {
             printf(">>> WARNING: hot atom %d: %f\n", i, ener/Boltz/3);
         }
     }
-    printf("%f %f %f | %f %f %f\n", Temp_solute, Tfree_solute, Texcl_solute, Temp_solvent, Tfree_solvent, Texcl_solvent);
 
     Tfree = Tfree_solute + Tfree_solvent;
     Temp = Temp_solute + Temp_solvent;
