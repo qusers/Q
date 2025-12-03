@@ -13,7 +13,9 @@ This repository is devoted to **QligFEP**, an automated workflow for small molec
 - [⚙️ Installation](#️-installation)
   - [Linux](#linux)
   - [MacOS](#macos)
-  - [Compiling Q for HPC (MPI support)](#️compiling-q-for-hpc-mpi-support)
+  - [Compiling Q for HPC (MPI support)](#compiling-q-for-hpc-mpi-support)
+  - [Compiling Q for local use (non-MPI)](#compiling-q-for-local-use-non-mpi)
+  - [Setting up HPC configurations](#setting-up-hpc-configurations)
 - [⌨️ Command line interface (CLI)](#️-command-line-interface-cli)
 - [📊 Benchmarking](#-benchmarking)
 - [📚 Citations](#-citations)
@@ -72,25 +74,62 @@ micromamba create -n qligfep_new python=3.11 gfortran=11.3.0 openff-toolkit=0.16
 
 ### Compiling Q for HPC (MPI support)
 
-> 🖥️ **For HPC users only**: If you need MPI support for parallel simulations on HPC systems, you'll need to manually compile the MPI version of Q.
+> [!IMPORTANT]
+> The current Q implementation relies on `slurm` for job management and submission. The basic `qprep` tool for topology creation is automatically compiled during pip installation and is sufficient for preparing inputs. When submitting jobs, QligFEP uses the MPI-enabled `qdynp` program (_p for parallel_) to run the molecular dynamics simulations. To actually run these simulations, you need to compile Q as described below:
 
-The basic `qprep` tool is automatically compiled during pip installation and is sufficient for local use. However, for running parallel simulations on HPC systems, you need to compile the MPI-enabled version:
+On your HPC system, load the appropriate modules (system-dependent). We recommend using the GCC compiler suite and OpenMPI, as those are commonly available and compatible with `qdynp`. To check for module availability, use the command `module spider openmpi` or `module avail openmpi`.
 
-On your HPC system, load the appropriate modules (system-dependent):
+In the output, look for a version compiled with GCC (e.g., `OpenMPI/4.1.4-GCC-11.3.0`) and load it using the `module load` command. After loading the module, navigate to the `src/q6` folder in the Q repository and compile both the serial and MPI versions of Q with the commands `make all` and `make mpi`. In the example, we show how to do this on the Snellius, the Dutch national supercomputer:
 
-_Example for Snellius_:
 ```bash
 module load 2021
 module load gompi/2021a
 ```
 
-Then compile the MPI version:
+Then compile the serial and the MPI-enabled versions of Q:
 ```bash
 cd src/q6
+make all COMP=gcc
 make mpi COMP=gcc
 ```
 
-Check [here](/src/QligFEP/settings/settings.py) for a list of different HPCs we have successfully ran RBFE simulations on. Module availability and loading is system-dependent, so please check with your system administrator if you have any issues.
+> [!TIP]
+> Module names and versions are system-dependent. When in doubt, reach out to your system administrator. In general, we recommend finding an OpenMPI module compiled with GCC version 11.3.0. Users can also refer to the `settings.py` file in this repository, which outlines the modules we used on other HPC systems, as [described below](#setting-up-hpc-configurations).
+
+### Compiling Q for local use (non-MPI)
+
+For your convenience, our base environment installation includes `gfortran=11.3.0`, which enables you to compile Q locally without MPI support. This is useful for testing purposes. To compile it, navigate to the `src/q6` folder in the Q repository and run:
+```bash
+cd src/q6
+make all COMP=gcc
+```
+
+## Setting up HPC configurations
+
+Currently, we require job configurations to be set in the `settings.py` file located in `src/QligFEP/settings/`. Check [here](/src/QligFEP/settings/settings.py) for a list of different HPCs we have successfully ran RBFE simulations on. To add your own HPC system, please follow the format used in the file. In the example, we show how to add a custom HPC configuration named `MY_HPC`:
+
+```python
+MY_HPC = {
+    "NODES": "1",  # We recommend not to change this
+    "NTASKS": "8",  # Number tasks (processes). Check the preprint for guidance on this value
+    "TIME": "0-06:00:00",  # time for job execution; formatted as d-hh:mm:ss
+        "MODULES": nljoin(
+        [
+            "module purge",  # Clear all loaded modules
+            "module load OpenMPI/4.1.4-GCC-11.3.0",  # Load the MPI module used for compiling Q
+        ]
+    ),
+    **Q_PATHS, # Keep this line as is; it passes the paths to Q executables
+}
+
+CLUSTER_DICT = {
+    "CSB": CSB,
+    # ...
+    "MY_HPC": MY_HPC, # Make sure to add your HPC configuration here to use it on the CLI
+}
+```
+
+When using the created configuration, make sure to pass the cluster name (e.g., `MY_HPC`) to the `qligfep` or to the `setupFEP` CLI using the `--cluster` argument.
 
 ## ⌨️ Command line interface (CLI)
 
@@ -107,13 +146,17 @@ Now you're set with the qligfep package. This includes the command-linde-interfa
 9. `qligfep_analyze`: CLI to analyze the results of a QligFEP simulation.
 10. `ligalign`: aligns a set of ligands to a reference ligand based on their maximum common substructure (MCS).
 
+## Tutorials
+
+We are working on the documentation and tutorials for QligFEP. In the meantime, please refer to the Tyk2 case study available in the [tutorials directory](/tutorials/Tyk2/README.md). In addition to that, you can check the [benchmarking section](#-benchmarking) below, which contains the link to our benchmarking repository with scripts to reproduce the results.
+
 # 📊 Benchmarking
 
 To check and reproduce QligFEP performance results, please refer to our [benchmarking repository](https://github.com/qusers/qligfepv2-BenchmarkExperiments).
 
 For the preprint describing the benchmarking results, see:
 
-> Alencar Araripe D, Díaz Holguín A, Poso A, van Westen GJP, Åqvist J, Gutiérrez-de-Terán H, et al. QligFEP-2: an automated workflow for small molecule free energy calculations in Q. ChemRxiv. 2025; [doi:10.26434/chemrxiv-2025-x3r3z](https://doi.org/10.26434/chemrxiv-2025-x3r3z)
+> Alencar Araripe D, Díaz Holguín A, Poso A, van Westen GJP, Åqvist J, Gutiérrez-de-Terán H, et al. Doing More with Less: Accurate and Scalable Ligand Free Energy Calculations by Focusing on the Binding Site. ChemRxiv. 2025; [doi:10.26434/chemrxiv-2025-x3r3z](https://doi.org/10.26434/chemrxiv-2025-x3r3z-v3)
 
 # 📚 Citations
 Q6:       https://doi.org/10.1016/j.softx.2017.12.001
