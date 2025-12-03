@@ -73,15 +73,12 @@ micromamba create -n qligfep_new python=3.11 gfortran=11.3.0 openff-toolkit=0.16
 
 ### Compiling Q for HPC (MPI support)
 
-> **Important**: The current Q implementation relies on `slurm` for job management and submission. When submitting jobs, QligFEP uses the MPI-enabled `qdynp` program (_p for parallel_) to run the molecular dynamics simulations. In addition to installing QligFEP, you need to compile it.
-
-The basic `qprep` tool is automatically compiled during pip installation and is sufficient for input preparation. When using Q, you first need to compile it, as described below:
+> [!IMPORTANT]
+> The current Q implementation relies on `slurm` for job management and submission. The basic `qprep` tool for topology creation is automatically compiled during pip installation and is sufficient for preparing inputs. When submitting jobs, QligFEP uses the MPI-enabled `qdynp` program (_p for parallel_) to run the molecular dynamics simulations. To actually run these simulations, you need to compile Q as described below:
 
 On your HPC system, load the appropriate modules (system-dependent). We recommend using the GCC compiler suite and OpenMPI, as those are commonly available and compatible. To check for module availability, use the command `module spider openmpi` or `module avail openmpi`.
 
-In the output, look for a version compiled with GCC (e.g., `OpenMPI/4.1.4-GCC-11.3.0`) and load it using the `module load` command. If you have trouble finding the right modules, please contact your system administrator.
-
-After loading these modules, navigate to the `src/q6` folder in the Q repository and compile both the serial and MPI versions of Q. In the example, we show how to do this on the Snellius, the Dutch national supercomputer:
+In the output, look for a version compiled with GCC (e.g., `OpenMPI/4.1.4-GCC-11.3.0`) and load it using the `module load` command. After loading the module, navigate to the `src/q6` folder in the Q repository and compile both the serial and MPI versions of Q with the commands `make all` and `make mpi`. In the example, we show how to do this on the Snellius, the Dutch national supercomputer:
 
 _Example_:
 ```bash
@@ -89,15 +86,15 @@ module load 2021
 module load gompi/2021a
 ```
 
-> [!TIP]
-> Module names and versions are system-dependent. When in doubt, reach out to your system administrator.
-
 Then compile the serial and the MPI-enabled versions of Q:
 ```bash
 cd src/q6
 make all COMP=gcc
 make mpi COMP=gcc
 ```
+
+> [!TIP]
+> Module names and versions are system-dependent. When in doubt, reach out to your system administrator. In general, we recommend finding an OpenMPI module compiled with GCC version 11.3.0. Users can also refer to the `settings.py` file in this repository, which outlines the modules we used on other HPC systems, as [described below](#setting-up-hpc-configurations).
 
 ## Setting up HPC configurations
 
