@@ -81,7 +81,6 @@ On your HPC system, load the appropriate modules (system-dependent). We recommen
 
 In the output, look for a version compiled with GCC (e.g., `OpenMPI/4.1.4-GCC-11.3.0`) and load it using the `module load` command. After loading the module, navigate to the `src/q6` folder in the Q repository and compile both the serial and MPI versions of Q with the commands `make all` and `make mpi`. In the example, we show how to do this on the Snellius, the Dutch national supercomputer:
 
-_Example_:
 ```bash
 module load 2021
 module load gompi/2021a
