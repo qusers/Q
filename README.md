@@ -149,7 +149,7 @@ Now you're set with the qligfep package. This includes the command-linde-interfa
 
 ## Tutorials
 
-We are working on the documentation and tutorials for QligFEP. In the meantime, please refer to the Tyk2 case study available in the [tutorials directory](/tutorials/Tyk2/README.md). In addition to that, you can check the [benchmarking section](#-benchmarking), which contains all the input files and step-by-step instructions to run the benchmark sets.
+We are working on the documentation and tutorials for QligFEP. In the meantime, please refer to the Tyk2 case study available in the [tutorials directory](/tutorials/Tyk2/README.md). In addition to that, you can check the [benchmarking section](#-benchmarking) below, which contains the link to our benchmarking repository with scripts to reproduce the results.
 
 # 📊 Benchmarking
 
