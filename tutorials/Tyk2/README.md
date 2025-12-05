@@ -54,17 +54,21 @@ Now that the `lomap.json` was created under `tyk2_ligands/lomap.json`, let's use
 
 ```bash
 cd ../  # Go back to tutorials/Tyk2 directory
-qmapfep -i ligprep/tyk2_ligands.sdf -wd . -l ligprep/tyk2_ligands/lomap.json 
+qmapfep -i ligprep/tyk2_ligands.sdf -wd . -l ligprep/tyk2_ligands/lomap.json
 ```
 
-Two new files should be created: **qmapfep.html** and **tyk2_ligands.json**. To visualize the perturbation network, open the `qmapfep.html` file in your browser.
+A new file is created: `qmapfep.html`. To visualize the perturbation network, open the `qmapfep.html` file in your browser and upload the generated `ligprep/tyk2_ligands.json` file through the button on the top right corner of the screen. Upon loading the file, the perturbation network will be available as an interactive graph:
+
+<p align="center">
+    <img width="480" src="../Tyk2/imgs/Tyk2-qmapfep.png">
+</p>
 
 <details>
-  <summary>How to open the file?</summary>
+  <summary>How to open the qmapfep.html?</summary>
 
 If you're working on Windows WSL, you can open the current directory using the `explorer.exe .` command. In the new folder displayed to you, click on the file `qmapfep.html` to open it in your default browser.
 
-For macOS, simply type `open .` on the terminal.
+For macOS, type `open .` on the terminal to open the current directory in Finder. Then, double click on the `qmapfep.html` file to open it in your default browser.
 
 </details>
 
