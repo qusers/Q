@@ -509,11 +509,10 @@ class FepReader:
                 )
                 raise ValueError("exp_key is None - cannot prepare dataframe with experimental data")
 
-            # For custom keys, edges have "{key}", for our suite they have "ddg_value" or "dg_value"
-            # First try the key directly for custom keys
+            # For custom keys, edges have "delta_{node key}", which needs to be passed by the user
+            # The keys we use for experimental values are "ddg_value" (edge) or "dg_value" (node)
             expected_col = f"{self.exp_key}"
             if expected_col not in df.columns:
-                # Fall back to checking for standard naming (dg_value/ddg_value)
                 if "dg_value" in df.columns:
                     expected_col = "dg_value"
                 elif "ddg_value" in df.columns:
@@ -521,12 +520,12 @@ class FepReader:
                 else:
                     available_cols = [col for col in df.columns if "delta_" in col or "_value" in col or "dg" in col.lower()]
                     logger.error(
-                        f"Expected experimental data column 'delta_{self.exp_key}' not found in edges data. "
+                        f"Expected experimental data column '{self.exp_key}' not found in edges data. "
                         f"Available columns that might contain experimental data: {', '.join(available_cols) if available_cols else 'none'}. "
-                        f"Please check that your experimental key '{self.exp_key}' matches the data in your mapping JSON file."
+                        f"Please check for the correct key with experimental value on your mapping JSON file."
                     )
                     raise KeyError(
-                        f"Column 'delta_{self.exp_key}' not found. Check your mapping JSON file has the correct experimental data."
+                        f"Column '{self.exp_key}' not found. Check your mapping JSON file has the correct experimental data."
                     )
 
             df = (
