@@ -1,5 +1,6 @@
 #include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaNonbondedWWForce.cuh"
+#include <iostream>
 namespace CudaNonbondedWWForce {
 
 bool is_initialized = false;
@@ -42,210 +43,129 @@ __device__ __forceinline__ void calculate_unforce_bound(
     }
 }
 
-template <const int Thread_x, const int Thread_y, const int Block_x,
-          const int Block_y>
-__global__ void
-calc_ww(const int N, const double crg_ow, const double crg_hw,
-        const double A_OO, const double B_OO, const topo_t D_topo,
-        coord_t* __restrict__ W, dvel_t* __restrict__ DV_W,
-        double* __restrict__ Evdw_TOT, double* __restrict__ ecoul_TOT) {
-    // Calculate block boundaries
-    int NX = N;
-    int NY = (N + 1) / 2;
-    int x_cal_num = blockDim.x * Block_x;
-    int y_cal_num = blockDim.y * Block_y;
-    int block_x_left_begin = 1 + blockIdx.x * x_cal_num;
-    int block_y_left_begin = blockIdx.y * y_cal_num;
-    int block_x_left_end = min(block_x_left_begin + x_cal_num - 1, NX - 1);
-    int block_y_left_end = min(block_y_left_begin + y_cal_num - 1, NY - 1);
-
-    // Shared memory declarations with padding to avoid bank conflicts
-    __shared__ coord_t p[2 * Thread_x * Block_x + 1];
-    __shared__ coord_t q[2 * Thread_y * Block_y + 1];
-    __shared__ double sum_row_x[2 * Thread_y * Block_y + 1];
-    __shared__ double sum_row_y[2 * Thread_y * Block_y + 1];
-    __shared__ double sum_row_z[2 * Thread_y * Block_y + 1];
-
-    __shared__ double block_ecoul[(Thread_x * Thread_y + 31) / 32],
-        block_evdw[(Thread_x * Thread_y + 31) / 32];
-
-    // Thread indices
-    int thread_y_left_begin = block_y_left_begin + threadIdx.y * Block_y;
-    int thread_x_left_begin = block_x_left_begin + threadIdx.x * Block_x;
-    int cur_thread_num = blockDim.x * threadIdx.y + threadIdx.x;
-    int thread_num = blockDim.x * blockDim.y;
-
-// Optimized coordinate loading with coalesced memory access
-#pragma unroll
-    for (int i = cur_thread_num; i < x_cal_num && block_x_left_begin + i < NX; i += thread_num) {
-        p[i] = W[block_x_left_begin + i];
-        p[x_cal_num + i] = W[N - (block_x_left_begin + i)];
+__device__ __forceinline__ void idx2xy(int n, int t, int& x, int& y) {
+    x = (int)floorf((2 * n + 1 - sqrtf((2 * n + 1) * (2 * n + 1) - 8 * t)) * 0.5f);
+    y = t - (x * n - (x * (x - 1) >> 1));
+    if (y < 0) {
+        x--;
+        y += (n - x);
     }
+    y += x;
+}
 
+__device__ __forceinline__ double shfl(double v, int srcLane, unsigned mask = 0xffffffffu) {
+    int2 a = *reinterpret_cast<int2*>(&v);
+    a.x = __shfl_sync(mask, a.x, srcLane);
+    a.y = __shfl_sync(mask, a.y, srcLane);
+    return *reinterpret_cast<double*>(&a);
+}
+
+__device__ __forceinline__ coord_t shfl_coord(coord_t v, int srcLane, unsigned mask = 0xffffffffu) {
+    v.x = shfl(v.x, srcLane, mask);
+    v.y = shfl(v.y, srcLane, mask);
+    v.z = shfl(v.z, srcLane, mask);
+    return v;
+}
+
+__global__ void calc_ww(const int N, const double crg_ow, const double crg_hw,
+                        const double A_OO, const double B_OO, const topo_t D_topo,
+                        coord_t* __restrict__ W, dvel_t* __restrict__ DV_W,
+                        double* __restrict__ Evdw_TOT, double* __restrict__ ecoul_TOT) {
+    const int warpsPerBlock = blockDim.x >> 5;  // THREAD_BLOCK_SIZE / 32
+    const int tid = threadIdx.x;
+    const int lane = tid & 31;
+    const int warpInBlock = tid >> 5;
+
+    const int tile = blockIdx.x * warpsPerBlock + warpInBlock;
+
+    // Map tile -> (x,y) with y>=x (upper triangle)
+    int x, y;
+    idx2xy((N + 31) >> 5, tile, x, y);  // nBlocks = ceil(N/32)
+
+    const int baseX = x << 5;  // x*32
+    const int baseY = y << 5;  // y*32
+
+    const int rowIdx = baseY + lane;
+    const int colIdx0 = baseX + lane;  // lane's "original atom2"
+
+    coord_t invalid = {-1e9, -1e9, -1e9};
+    coord_t row = (rowIdx < N ? W[rowIdx] : invalid);
+
+    // "col" state that will be rotated around the warp
+    int colIdx = colIdx0;
+    coord_t col = (colIdx < N ? W[colIdx] : invalid);
+
+    // Accumulators
+    double3 rowForce = {0.0, 0.0, 0.0};
+    double3 colForce = {0.0, 0.0, 0.0};
+
+    double evdw_sum = 0.0;
+    double ecoul_sum = 0.0;
+
+    const unsigned mask = 0xffffffffu;
+
+// 32-step warp rotation = warp-synchronous "reduction" for atom2
 #pragma unroll
-    for (int i = cur_thread_num; i < y_cal_num && block_y_left_begin + i < NY; i += thread_num) {
-        q[i] = W[block_y_left_begin + i];
-        q[y_cal_num + i] = W[N - 1 - (block_y_left_begin + i)];
-    }
+    for (int i = 0; i < 32; i++) {
+        // Skip invalid lanes / out-of-range atoms
+        if (rowIdx < N && colIdx < N) {
+            // For diagonal tile, only compute each pair once
+            if (x != y || colIdx > rowIdx) {
+                double evdw = 0.0, ecoul = 0.0, dv = 0.0, tx, ty, tz;
+                calculate_unforce_bound(rowIdx, colIdx, row, col, D_topo,
+                                        crg_ow, crg_hw, A_OO, B_OO,
+                                        evdw, ecoul, dv, tx, ty, tz);
 
-// Initialize sum arrays
-#pragma unroll
-    for (int i = cur_thread_num; i < y_cal_num && block_y_left_begin + i < NY; i += thread_num) {
-        sum_row_x[i] = sum_row_x[y_cal_num + i] = 0;
-        sum_row_y[i] = sum_row_y[y_cal_num + i] = 0;
-        sum_row_z[i] = sum_row_z[y_cal_num + i] = 0;
-    }
-    __syncthreads();
-    // Initialize column sums
-    double sum_col_x[2 * Block_x], sum_col_y[2 * Block_x], sum_col_z[2 * Block_x];
-#pragma unroll
-    for (int i = 0; i < Block_x; i++) {
-        sum_col_x[i] = sum_col_x[Block_x + i] = 0;
-        sum_col_y[i] = sum_col_y[Block_x + i] = 0;
-        sum_col_z[i] = sum_col_z[Block_x + i] = 0;
-    }
+                evdw_sum += evdw;
+                ecoul_sum += ecoul;
+                double v_x = dv * tx;
+                double v_y = dv * ty;
+                double v_z = dv * tz;
 
-    // Main computation loop with reduced thread divergence
-    double evdw_tot = 0, ecoul_tot = 0;
-#pragma unroll
-    for (int i = 0; i < Block_x; i++) {
-        int i2 = i;
-        int x = thread_x_left_begin + i2;
-        if (x >= NX) continue;
+                colForce.x += v_x;
+                colForce.y += v_y;
+                colForce.z += v_z;
 
-        int offset_x = x - block_x_left_begin;
-        const coord_t& now_p0 = p[offset_x];
-        const coord_t& now_p1 = p[x_cal_num + offset_x];
-
-#pragma unroll
-        for (int j = 0; j < Block_y; j++) {
-            int j2 = (j + threadIdx.x) % Block_y;
-            int y = thread_y_left_begin + j2;
-            if (y >= NY) continue;
-
-            // Optimized condition check
-            if (y >= x && (N % 2 == 0 || y != NY - 1)) {
-                int offset_y = y - block_y_left_begin;
-                double evdw = 0, ecoul = 0, dv = 0;
-                double tmpx = 0, tmpy = 0, tmpz = 0;
-
-                int y2 = N - 1 - y;
-                int x2 = N - x;
-                calculate_unforce_bound(y2, x2, q[y_cal_num + offset_y], now_p1, D_topo,
-                                        crg_ow, crg_hw, A_OO, B_OO, evdw, ecoul, dv,
-                                        tmpx, tmpy, tmpz);
-
-                evdw_tot += evdw;
-                ecoul_tot += ecoul;
-                double v_x = dv * tmpx;
-                double v_y = dv * tmpy;
-                double v_z = dv * tmpz;
-
-                sum_col_x[Block_x + i2] += v_x;
-                sum_col_y[Block_x + i2] += v_y;
-                sum_col_z[Block_x + i2] += v_z;
-                sum_row_x[y_cal_num + offset_y] -= v_x;
-                sum_row_y[y_cal_num + offset_y] -= v_y;
-                sum_row_z[y_cal_num + offset_y] -= v_z;
-            } else if (y < x) {
-                int offset_y = y - block_y_left_begin;
-                double evdw = 0, ecoul = 0, dv = 0;
-                double tmpx = 0, tmpy = 0, tmpz = 0;
-
-                calculate_unforce_bound(y, x, q[offset_y], now_p0, D_topo, crg_ow,
-                                        crg_hw, A_OO, B_OO, evdw, ecoul, dv, tmpx, tmpy,
-                                        tmpz);
-
-                evdw_tot += evdw;
-                ecoul_tot += ecoul;
-                double v_x = dv * tmpx;
-                double v_y = dv * tmpy;
-                double v_z = dv * tmpz;
-
-                sum_col_x[i2] += v_x;
-                sum_col_y[i2] += v_y;
-                sum_col_z[i2] += v_z;
-                sum_row_x[offset_y] -= v_x;
-                sum_row_y[offset_y] -= v_y;
-                sum_row_z[offset_y] -= v_z;
+                rowForce.x -= v_x;
+                rowForce.y -= v_y;
+                rowForce.z -= v_z;
             }
         }
+
+        // Rotate (colIdx, col, colForce) so the "atom2 packet" visits every lane.
+        const int src = (lane + 1) & 31;  // cyclic shift
+        colIdx = __shfl_sync(mask, colIdx, src);
+        col = shfl_coord(col, src, mask);
+        colForce.x = shfl(colForce.x, src, mask);
+        colForce.y = shfl(colForce.y, src, mask);
+        colForce.z = shfl(colForce.z, src, mask);
     }
 
-// Optimized reduction using warp-level primitives
-#pragma unroll
-    for (unsigned w = 16; w >= 1; w /= 2) {
-        ecoul_tot += __shfl_down_sync(0xffffffff, ecoul_tot, w);
-        evdw_tot += __shfl_down_sync(0xffffffff, evdw_tot, w);
+    // Write forces: one atomic per atom (row + "original atom2")
+    if (rowIdx < N) {
+        atomicAdd(&DV_W[rowIdx].x, rowForce.x);
+        atomicAdd(&DV_W[rowIdx].y, rowForce.y);
+        atomicAdd(&DV_W[rowIdx].z, rowForce.z);
+    }
+    if (colIdx0 < N) {
+        atomicAdd(&DV_W[colIdx0].x, colForce.x);
+        atomicAdd(&DV_W[colIdx0].y, colForce.y);
+        atomicAdd(&DV_W[colIdx0].z, colForce.z);
     }
 
-    // Store block results
-    int warp_id = cur_thread_num / warpSize;
-    int lane_id = cur_thread_num % warpSize;
-    if (lane_id == 0) {
-        block_evdw[warp_id] = evdw_tot;
-        block_ecoul[warp_id] = ecoul_tot;
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        evdw_sum += __shfl_down_sync(0xffffffffu, evdw_sum, offset);
+        ecoul_sum += __shfl_down_sync(0xffffffffu, ecoul_sum, offset);
     }
-    __syncthreads();
-
-    // Final reduction
-    if (warp_id == 0) {
-        double val1 = (lane_id < (Thread_x * Thread_y + 31) / 32) ? block_ecoul[lane_id] : 0;
-        double val2 = (lane_id < (Thread_x * Thread_y + 31) / 32) ? block_evdw[lane_id] : 0;
-
-#pragma unroll
-        for (unsigned w = 16; w >= 1; w /= 2) {
-            val1 += __shfl_down_sync(0xffffffff, val1, w);
-            val2 += __shfl_down_sync(0xffffffff, val2, w);
-        }
-
-        if (lane_id == 0) {
-            atomicAdd(ecoul_TOT, val1);
-            atomicAdd(Evdw_TOT, val2);
-        }
-    }
-
-// Optimized row reduction
-#pragma unroll
-    for (int i = cur_thread_num; i < y_cal_num && block_y_left_begin + i < NY; i += thread_num) {
-        int idx = block_y_left_begin + i;
-        if (idx < block_x_left_end) {
-            atomicAdd(&DV_W[idx].x, sum_row_x[i]);
-            atomicAdd(&DV_W[idx].y, sum_row_y[i]);
-            atomicAdd(&DV_W[idx].z, sum_row_z[i]);
-        }
-        if (idx >= block_x_left_begin) {
-            idx = N - 1 - idx;
-            atomicAdd(&DV_W[idx].x, sum_row_x[i + y_cal_num]);
-            atomicAdd(&DV_W[idx].y, sum_row_y[i + y_cal_num]);
-            atomicAdd(&DV_W[idx].z, sum_row_z[i + y_cal_num]);
-        }
-    }
-
-// Optimized column reduction
-#pragma unroll
-    for (int i = 0; i < Block_x; i++) {
-        int i2 = (i + threadIdx.y) % Block_x;
-        int idx = thread_x_left_begin + i2;
-        if (idx < N) {
-            if (block_y_left_begin < idx) {
-                atomicAdd(&DV_W[idx].x, sum_col_x[i2]);
-                atomicAdd(&DV_W[idx].y, sum_col_y[i2]);
-                atomicAdd(&DV_W[idx].z, sum_col_z[i2]);
-            }
-            if (block_y_left_end >= idx) {
-                atomicAdd(&DV_W[N - idx].x, sum_col_x[i2 + Block_x]);
-                atomicAdd(&DV_W[N - idx].y, sum_col_y[i2 + Block_x]);
-                atomicAdd(&DV_W[N - idx].z, sum_col_z[i2 + Block_x]);
-            }
-        }
+    if (lane == 0) {
+        atomicAdd(Evdw_TOT, evdw_sum);
+        atomicAdd(ecoul_TOT, ecoul_sum);
     }
 }
 }  // namespace CudaNonbondedWWForce
 void calc_nonbonded_ww_forces_host_v2() {
     using namespace CudaNonbondedWWForce;
     int N = 3 * n_waters;
-    int mem_size_W = N * sizeof(coord_t);
     int mem_size_DV_W = N * sizeof(dvel_t);
 
     WW_evdw_TOT = 0;
@@ -259,24 +179,22 @@ void calc_nonbonded_ww_forces_host_v2() {
     auto W = ctx.d_coords + n_atoms_solute;
     auto DV_W = ctx.d_dvelocities + n_atoms_solute;
 
-    // Optimize thread block configuration
-    const int thread_num_x = 32;  // Keep at 32 for better warp utilization
-    const int thread_num_y = 1;   // Keep at 1 for better memory coalescing
-    dim3 block_sz = dim3(thread_num_x, thread_num_y);
+    const int thread_num = 128;
+    dim3 block_sz = dim3(thread_num);
 
-    const int N_ITERATION_Y = 32;  // Keep at 32 for better memory access pattern
-    const int N_ITERATION_X = 1;   // Keep at 1 for better memory coalescing
+    int tile_num_per_block = thread_num / 32;
+    int nBlocks = (N + 31) / 32;
+    int total_tiles = nBlocks * (nBlocks + 1) / 2;
 
-    int block_element_sz_x = N_ITERATION_X * block_sz.x;
-    int block_element_sz_y = N_ITERATION_Y * block_sz.y;
+    int grid_sz = (total_tiles + tile_num_per_block - 1) / tile_num_per_block;
+    dim3 grid = dim3(grid_sz);
 
-    int grid_sz_x = (N - 1 + block_element_sz_x - 1) / (block_element_sz_x);
-    int grid_sz_y = ((N + 1) / 2 + block_element_sz_y - 1) / block_element_sz_y;
-    dim3 grid = dim3(grid_sz_x, grid_sz_y);
-
-    calc_ww<thread_num_x, thread_num_y, N_ITERATION_X, N_ITERATION_Y>
-        <<<grid, block_sz>>>(N, crg_ow, crg_hw, A_OO, B_OO, topo, W, DV_W,
-                             D_WW_evdw_TOT, D_WW_ecoul_TOT);
+    auto err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA Error: " << cudaGetErrorString(err) << std::endl;
+    }
+    calc_ww<<<grid, block_sz>>>(N, crg_ow, crg_hw, A_OO, B_OO, topo, W, DV_W,
+                                D_WW_evdw_TOT, D_WW_ecoul_TOT);
 
     cudaDeviceSynchronize();
     cudaMemcpy(&dvelocities[n_atoms_solute], DV_W, mem_size_DV_W,
@@ -285,6 +203,11 @@ void calc_nonbonded_ww_forces_host_v2() {
                cudaMemcpyDeviceToHost);
     cudaMemcpy(&WW_ecoul_TOT, D_WW_ecoul_TOT, sizeof(double),
                cudaMemcpyDeviceToHost);
+    
+    
+
+
+    printf("WW E_vdw: %f, E_coul: %f\n", WW_evdw_TOT, WW_ecoul_TOT);
     E_nonbond_ww.Uvdw += WW_evdw_TOT;
     E_nonbond_ww.Ucoul += WW_ecoul_TOT;
 }
