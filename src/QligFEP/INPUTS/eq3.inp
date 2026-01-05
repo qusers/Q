@@ -3,9 +3,9 @@ steps                     NSTEPS2
 stepsize                  STEPSIZE
 temperature               150
 bath_coupling             STEPSIZE
+shake_solvent             off
 shake_hydrogens           STEPTOGGLE
 shake_solute              off
-shake_solvent             off
 lrf                       on
 separate_scaling          on
 
