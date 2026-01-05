@@ -1,25 +1,24 @@
 #include <stdexcept>
 
+#include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaRadixWaterForce.cuh"
 #include "cuda/include/CudaUtility.cuh"
 #include "utils.h"
-
 namespace CudaRadixWaterForce {
 bool is_initialized = false;
-coord_t* d_coords = nullptr;
-dvel_t* d_dvelocities = nullptr;
-double* d_energy = nullptr;
+double* d_energy;
 }  // namespace CudaRadixWaterForce
+
 __global__ void calc_radix_water_forces_kernel(
-    coord_t* coords, 
-    double shift, 
+    coord_t* coords,
+    double shift,
     int n_atoms_solute,
     int n_atoms,
     topo_t topo,
     md_t md,
     double Dwmz,
     double awmz,
-    dvel_t* dvelocities, 
+    dvel_t* dvelocities,
     double* energy) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     i = n_atoms_solute + i * 3;  // Process only oxygen atoms of water molecules
@@ -60,6 +59,7 @@ void calc_radix_water_forces_host() {
     if (water_atoms == 0) {
         return;
     }
+    using namespace CudaRadixWaterForce;
     int blockSize = 256;
     if (water_atoms % 3 != 0) {
         throw std::runtime_error("Number of water atoms is not a multiple of 3");
@@ -67,16 +67,11 @@ void calc_radix_water_forces_host() {
     int oxygen_atoms = water_atoms / 3;
     int numBlocks = (oxygen_atoms + blockSize - 1) / blockSize;
 
-    using namespace CudaRadixWaterForce;
-    if (!is_initialized) {
-        check_cudaMalloc((void**)&d_coords, sizeof(coord_t) * n_atoms);
-        check_cudaMalloc((void**)&d_dvelocities, sizeof(dvel_t) * n_atoms);
-        check_cudaMalloc((void**)&d_energy, sizeof(double));
-        is_initialized = true;
-    }
+    CudaContext& ctx = CudaContext::instance();
+    // ctx.sync_all_to_device();
 
-    cudaMemcpy(d_coords, coords, sizeof(coord_t) * n_atoms, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_dvelocities, dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyHostToDevice);
+    auto d_coords = ctx.d_coords;
+    auto d_dvelocities = ctx.d_dvelocities;
     double energy = 0.0;
     cudaMemcpy(d_energy, &energy, sizeof(double), cudaMemcpyHostToDevice);
 
@@ -86,27 +81,33 @@ void calc_radix_water_forces_host() {
     } else {
         shift = 0;
     }
-    calc_radix_water_forces_kernel<<<numBlocks, blockSize>>>(d_coords, 
-        shift, 
-        n_atoms_solute, 
-        n_atoms, 
-        topo, 
-        md, 
-        Dwmz, 
-        awmz, 
-        d_dvelocities, 
-        d_energy);
+    calc_radix_water_forces_kernel<<<numBlocks, blockSize>>>(d_coords,
+                                                             shift,
+                                                             n_atoms_solute,
+                                                             n_atoms,
+                                                             topo,
+                                                             md,
+                                                             Dwmz,
+                                                             awmz,
+                                                             d_dvelocities,
+                                                             d_energy);
     cudaDeviceSynchronize();
     cudaMemcpy(dvelocities, d_dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyDeviceToHost);
     cudaMemcpy(&energy, d_energy, sizeof(double), cudaMemcpyDeviceToHost);
     E_restraint.Uradx += energy;
 }
 
+void init_radix_water_force_kernel_data() {
+    using namespace CudaRadixWaterForce;
+    if (!is_initialized) {
+        check_cudaMalloc((void**)&d_energy, sizeof(double));
+        is_initialized = true;
+    }
+}
+
 void cleanup_radix_water_force() {
     using namespace CudaRadixWaterForce;
     if (is_initialized) {
-        cudaFree(d_coords);
-        cudaFree(d_dvelocities);
         cudaFree(d_energy);
         is_initialized = false;
     }

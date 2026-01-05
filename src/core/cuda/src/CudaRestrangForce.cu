@@ -1,17 +1,11 @@
+#include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaRestrangForce.cuh"
 #include "cuda/include/CudaUtility.cuh"
 #include "utils.h"
-
-namespace CudaRestrangeForce {
+namespace CudaRestrangForce {
 bool is_initialized = false;
-restrang_t* d_restrangs = nullptr;
-coord_t* d_coords = nullptr;
-double* d_lambdas = nullptr;
-dvel_t* d_velocities = nullptr;
-E_restraint_t* d_EQ_restraint = nullptr;
-double* d_E_restraint = nullptr;
-restrdis_t* d_restrdists = nullptr;
-}  // namespace CudaRestrangeForce
+double* d_E_restraint;
+}  // namespace CudaRestrangForce
 
 __global__ void calc_restrang_force_kernel(
     restrang_t* restrangs,
@@ -86,7 +80,6 @@ __global__ void calc_restrang_force_kernel(
     dk.y = f1 * (dr.y / (rij * rjk) - cos_th * dr2.y / r2jk);
     dk.z = f1 * (dr.z / (rij * rjk) - cos_th * dr2.z / r2jk);
 
-
     atomicAdd(&dvelocities[i].x, dv * di.x);
     atomicAdd(&dvelocities[i].y, dv * di.y);
     atomicAdd(&dvelocities[i].z, dv * di.z);
@@ -110,26 +103,20 @@ __global__ void calc_restrang_force_kernel(
 }
 
 void calc_restrang_force_host() {
-    using namespace CudaRestrangeForce;
-    if (!is_initialized) {
-        check_cudaMalloc((void**)&d_restrangs, sizeof(restrang_t) * n_restrangs);
-        check_cudaMalloc((void**)&d_coords, sizeof(coord_t) * n_atoms);
-        check_cudaMalloc((void**)&d_lambdas, sizeof(double) * n_lambdas);
-        check_cudaMalloc((void**)&d_velocities, sizeof(dvel_t) * n_atoms);
-        check_cudaMalloc((void**)&d_EQ_restraint, sizeof(E_restraint_t) * n_lambdas);
-        check_cudaMalloc((void**)&d_E_restraint, sizeof(double));
-        check_cudaMalloc((void**)&d_restrdists, sizeof(restrdis_t) * n_restrdists);
+    if (n_restrangs == 0) return;
+    using namespace CudaRestrangForce;
+    CudaContext& ctx = CudaContext::instance();
 
-        cudaMemcpy(d_restrangs, restrangs, sizeof(restrang_t) * n_restrangs, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_lambdas, lambdas, sizeof(double) * n_lambdas, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_restrdists, restrdists, sizeof(restrdis_t) * n_restrdists, cudaMemcpyHostToDevice);
-        is_initialized = true;
-    }
-    cudaMemcpy(d_coords, coords, sizeof(coord_t) * n_atoms, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_velocities, dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_EQ_restraint, EQ_restraint, sizeof(E_restraint_t) * n_lambdas, cudaMemcpyHostToDevice);
+    auto d_restrangs = ctx.d_restrangs;
+    auto d_coords = ctx.d_coords;
+    auto d_lambdas = ctx.d_lambdas;
+    auto d_dvelocities = ctx.d_dvelocities;
+    auto d_EQ_restraint = ctx.d_EQ_restraint;
+    auto d_restrdists = ctx.d_restrdists;
+
     double val = 0;
     cudaMemcpy(d_E_restraint, &val, sizeof(double), cudaMemcpyHostToDevice);
+
     int blockSize = 256;
     int numBlocks = (n_restrangs + blockSize - 1) / blockSize;
     calc_restrang_force_kernel<<<numBlocks, blockSize>>>(
@@ -139,28 +126,30 @@ void calc_restrang_force_host() {
         n_atoms,
         d_lambdas,
         n_lambdas,
-        d_velocities,
+        d_dvelocities,
         d_EQ_restraint,
         d_E_restraint,
         d_restrdists);
     cudaDeviceSynchronize();
     cudaMemcpy(coords, d_coords, sizeof(coord_t) * n_atoms, cudaMemcpyDeviceToHost);
-    cudaMemcpy(dvelocities, d_velocities, sizeof(dvel_t) * n_atoms, cudaMemcpyDeviceToHost);
+    cudaMemcpy(dvelocities, d_dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyDeviceToHost);
     cudaMemcpy(EQ_restraint, d_EQ_restraint, sizeof(E_restraint_t) * n_lambdas, cudaMemcpyDeviceToHost);
     cudaMemcpy(&val, d_E_restraint, sizeof(double), cudaMemcpyDeviceToHost);
     E_restraint.Urestr += val;
 }
 
+void init_restrang_force_kernel_data() {
+    using namespace CudaRestrangForce;
+    if (!is_initialized) {
+        check_cudaMalloc((void**)&d_E_restraint, sizeof(double));
+        is_initialized = true;
+    }
+}
+
 void cleanup_restrang_force() {
-    using namespace CudaRestrangeForce;
+    using namespace CudaRestrangForce;
     if (is_initialized) {
-        cudaFree(d_restrangs);
-        cudaFree(d_coords);
-        cudaFree(d_lambdas);
-        cudaFree(d_velocities);
-        cudaFree(d_EQ_restraint);
         cudaFree(d_E_restraint);
-        cudaFree(d_restrdists);
         is_initialized = false;
     }
 }

@@ -1,3 +1,4 @@
+#include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaTemperature.cuh"
 #include "cuda/include/CudaUtility.cuh"
 #include "iostream"
@@ -5,10 +6,6 @@
 
 namespace CudaTemperature {
 bool is_initialized = false;
-atype_t* d_atypes;
-catype_t* d_catypes;
-vel_t* d_velocities;
-bool* d_excluded;
 double* d_Temp_solute;
 double* d_Tfree_solute;
 double* d_Texcl_solute;
@@ -49,26 +46,6 @@ __global__ void calc_temperature_kernel(int n_atoms, int n_atoms_solute, atype_t
 void calc_temperature_host() {
     printf("Ndegf = %f, Ndegfree = %f, n_excluded = %d, Ndegfree_solvent = %f, Ndegfree_solute = %f\n", Ndegf, Ndegfree, n_excluded, Ndegfree_solvent, Ndegfree_solute);
     using namespace CudaTemperature;
-    if (!is_initialized) {
-        check_cudaMalloc((void**)&d_atypes, sizeof(atype_t) * n_atypes);
-        check_cudaMalloc((void**)&d_catypes, sizeof(catype_t) * n_catypes);
-        check_cudaMalloc((void**)&d_velocities, sizeof(vel_t) * n_atoms);
-        check_cudaMalloc((void**)&d_excluded, sizeof(bool) * n_atoms);
-        check_cudaMalloc((void**)&d_Temp_solute, sizeof(double));
-        check_cudaMalloc((void**)&d_Tfree_solute, sizeof(double));
-        check_cudaMalloc((void**)&d_Texcl_solute, sizeof(double));
-        check_cudaMalloc((void**)&d_Temp_solvent, sizeof(double));
-        check_cudaMalloc((void**)&d_Tfree_solvent, sizeof(double));
-        check_cudaMalloc((void**)&d_Texcl_solvent, sizeof(double));
-
-        cudaMemcpy(d_atypes, atypes, sizeof(atype_t) * n_atypes, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_catypes, catypes, sizeof(catype_t) * n_catypes, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_excluded, excluded, sizeof(bool) * n_atoms, cudaMemcpyHostToDevice);
-
-        is_initialized = true;
-    }
-    cudaMemcpy(d_velocities, velocities, sizeof(vel_t) * n_atoms, cudaMemcpyHostToDevice);
-
     double h_Temp_solute = 0.0, h_Tfree_solute = 0.0, h_Texcl_solute = 0.0, h_Temp_solvent = 0.0, h_Tfree_solvent = 0.0, h_Texcl_solvent = 0.0;
 
     cudaMemcpy(d_Temp_solute, &h_Temp_solute, sizeof(double), cudaMemcpyHostToDevice);
@@ -78,6 +55,11 @@ void calc_temperature_host() {
     cudaMemcpy(d_Tfree_solvent, &h_Tfree_solvent, sizeof(double), cudaMemcpyHostToDevice);
     cudaMemcpy(d_Texcl_solvent, &h_Texcl_solvent, sizeof(double), cudaMemcpyHostToDevice);
 
+    CudaContext& ctx = CudaContext::instance();
+    atype_t* d_atypes = ctx.d_atypes;
+    catype_t* d_catypes = ctx.d_catypes;
+    vel_t* d_velocities = ctx.d_velocities;
+    bool* d_excluded = ctx.d_excluded;
 
     int blockSize = 256;
     int numBlocks = (n_atoms + blockSize - 1) / blockSize;
@@ -111,13 +93,22 @@ void calc_temperature_host() {
     printf("Tscale = %f, tau_T = %f, Temp = %f, Tfree = %f\n", Tscale_solvent, tau_T, Temp, Tfree);
 }
 
+void init_temperature_kernel_data() {
+    using namespace CudaTemperature;
+    if (!is_initialized) {
+        check_cudaMalloc((void**)&d_Temp_solute, sizeof(double));
+        check_cudaMalloc((void**)&d_Tfree_solute, sizeof(double));
+        check_cudaMalloc((void**)&d_Texcl_solute, sizeof(double));
+        check_cudaMalloc((void**)&d_Temp_solvent, sizeof(double));
+        check_cudaMalloc((void**)&d_Tfree_solvent, sizeof(double));
+        check_cudaMalloc((void**)&d_Texcl_solvent, sizeof(double));
+        is_initialized = true;
+    }
+}
+
 void cleanup_temperature() {
     using namespace CudaTemperature;
     if (is_initialized) {
-        cudaFree(d_atypes);
-        cudaFree(d_catypes);
-        cudaFree(d_velocities);
-        cudaFree(d_excluded);
         cudaFree(d_Temp_solute);
         cudaFree(d_Tfree_solute);
         cudaFree(d_Texcl_solute);
@@ -125,5 +116,5 @@ void cleanup_temperature() {
         cudaFree(d_Tfree_solvent);
         cudaFree(d_Texcl_solvent);
         is_initialized = false;
-    }   
+    }
 }

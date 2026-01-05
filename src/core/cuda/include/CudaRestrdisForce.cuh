@@ -1,10 +1,7 @@
-#ifndef CUDA_RESTRDIS_FORCE_CUH
-#define CUDA_RESTRDIS_FORCE_CUH
+#pragma once
 #include "system.h"
-__global__ void calc_restrdis_forces_kernel();
 
+void init_restrdis_force_kernel_data();
 void calc_restrdis_forces_host();
 
 void cleanup_restrdis_force();
-
-#endif
