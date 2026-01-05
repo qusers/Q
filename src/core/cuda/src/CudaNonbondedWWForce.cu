@@ -157,6 +157,7 @@ __global__ void calc_ww(const int N, const double crg_ow, const double crg_hw,
         evdw_sum += __shfl_down_sync(0xffffffffu, evdw_sum, offset);
         ecoul_sum += __shfl_down_sync(0xffffffffu, ecoul_sum, offset);
     }
+    // printf("evdw_sum: %f, ecoul_sum: %f\n", evdw_sum, ecoul_sum);
     if (lane == 0) {
         atomicAdd(Evdw_TOT, evdw_sum);
         atomicAdd(ecoul_TOT, ecoul_sum);
@@ -189,10 +190,6 @@ void calc_nonbonded_ww_forces_host_v2() {
     int grid_sz = (total_tiles + tile_num_per_block - 1) / tile_num_per_block;
     dim3 grid = dim3(grid_sz);
 
-    auto err = cudaGetLastError();
-    if (err != cudaSuccess) {
-        std::cerr << "CUDA Error: " << cudaGetErrorString(err) << std::endl;
-    }
     calc_ww<<<grid, block_sz>>>(N, crg_ow, crg_hw, A_OO, B_OO, topo, W, DV_W,
                                 D_WW_evdw_TOT, D_WW_ecoul_TOT);
 
@@ -207,7 +204,7 @@ void calc_nonbonded_ww_forces_host_v2() {
     
 
 
-    printf("WW E_vdw: %f, E_coul: %f\n", WW_evdw_TOT, WW_ecoul_TOT);
+    // printf("WW E_vdw: %f, E_coul: %f\n", WW_evdw_TOT, WW_ecoul_TOT);
     E_nonbond_ww.Uvdw += WW_evdw_TOT;
     E_nonbond_ww.Ucoul += WW_ecoul_TOT;
 }
