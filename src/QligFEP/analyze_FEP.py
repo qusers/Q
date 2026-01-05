@@ -482,9 +482,9 @@ class FepReader:
             for fep in self.feps:
                 fep_dict = self.data["result"][method][fep]
                 if fep_dict["from"] == _from and fep_dict["to"] == _to:
-                    avg_val = fep_dict[f"{method}_avg"] if not np.isnan(fep_dict[f"{method}_avg"]) else None
-                    sem_val = fep_dict[f"{method}_sem"] if not np.isnan(fep_dict[f"{method}_sem"]) else None
-                    std_val = fep_dict[f"{method}_std"] if not np.isnan(fep_dict[f"{method}_std"]) else None
+                    avg_val = fep_dict[f"{method}_avg"] if not pd.isna(fep_dict[f"{method}_avg"]) else None
+                    sem_val = fep_dict[f"{method}_sem"] if not pd.isna(fep_dict[f"{method}_sem"]) else None
+                    std_val = fep_dict[f"{method}_std"] if not pd.isna(fep_dict[f"{method}_std"]) else None
 
                     edge.update(
                         {
@@ -499,34 +499,30 @@ class FepReader:
             with output_file.open("w") as f:
                 json.dump(self.mapping_json, f, indent=4)
 
-    def prepare_df(self, json_dict, experimental_data: bool = True):
+    @staticmethod
+    def prepare_df(json_dict, experimental_data: bool = True, exp_key: Optional[str] = None) -> pd.DataFrame:
         df = pd.DataFrame(json_dict["edges"])
         if experimental_data:
-            if self.exp_key is None:
-                logger.error(
-                    "No experimental key has been set. Call load_experimental_data() first "
-                    "or set experimental_data=False."
-                )
-                raise ValueError("exp_key is None - cannot prepare dataframe with experimental data")
-
             # For custom keys, edges have "delta_{node key}", which needs to be passed by the user
             # The keys we use for experimental values are "ddg_value" (edge) or "dg_value" (node)
-            expected_col = f"{self.exp_key}"
-            if expected_col not in df.columns:
+            if exp_key is None:
                 if "dg_value" in df.columns:
                     expected_col = "dg_value"
                 elif "ddg_value" in df.columns:
                     expected_col = "ddg_value"
-                else:
-                    available_cols = [col for col in df.columns if "delta_" in col or "_value" in col or "dg" in col.lower()]
-                    logger.error(
-                        f"Expected experimental data column '{self.exp_key}' not found in edges data. "
-                        f"Available columns that might contain experimental data: {', '.join(available_cols) if available_cols else 'none'}. "
-                        f"Please check for the correct key with experimental value on your mapping JSON file."
-                    )
-                    raise KeyError(
-                        f"Column '{self.exp_key}' not found. Check your mapping JSON file has the correct experimental data."
-                    )
+            else:
+                expected_col = exp_key
+
+            if expected_col not in df.columns:
+                available_cols = [col for col in df.columns if "delta_" in col or "_value" in col or "dg" in col.lower()]
+                logger.error(
+                    f"Expected experimental data column '{exp_key}' not found in edges data. "
+                    f"Available columns that might contain experimental data: {', '.join(available_cols) if available_cols else 'none'}. "
+                    f"Please check for the correct key with experimental value on your mapping JSON file."
+                )
+                raise KeyError(
+                    f"Column '{exp_key}' not found. Check your mapping JSON file has the correct experimental data."
+                )
 
             df = (
                 df.assign(
