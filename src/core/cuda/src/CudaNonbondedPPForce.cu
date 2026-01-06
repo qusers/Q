@@ -214,9 +214,7 @@ __global__ void calc_pp(
         if (x_excluded || y_excluded) {
             return false;
         }
-
-    
-        bool bond23 = (D_LJ_matrix[y_atom * n_atoms_solute + x_atom] == 3);
+        bool bond23 = (D_LJ_matrix[x_atom * n_atoms_solute + y_atom] == 3);
         if (bond23) {
             return false;
         }
@@ -258,13 +256,13 @@ __global__ void calc_pp(
             evdw_sum += evdw;
             ecoul_sum += ecoul;
             double3 d = {y_coord.x - x_coord.x, y_coord.y - x_coord.y, y_coord.z - x_coord.z};
-            x_force.x += dv * d.x;
-            x_force.y += dv * d.y;
-            x_force.z += dv * d.z;
+            x_force.x -= dv * d.x;
+            x_force.y -= dv * d.y;
+            x_force.z -= dv * d.z;
 
-            y_force.x -= dv * d.x;
-            y_force.y -= dv * d.y;
-            y_force.z -= dv * d.z;
+            y_force.x += dv * d.x;
+            y_force.y += dv * d.y;
+            y_force.z += dv * d.z;
         }
         do_shuffle();
     }
