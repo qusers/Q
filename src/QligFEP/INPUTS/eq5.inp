@@ -3,7 +3,7 @@ steps                     NSTEPS1
 stepsize                  STEPSIZE
 temperature               T_VAR
 bath_coupling             10.0
-shake_solvent             off
+shake_solvent             on
 shake_hydrogens           STEPTOGGLE
 shake_solute              off
 lrf                       on
