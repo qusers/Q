@@ -112,7 +112,7 @@ __device__ void calculate_unforce_bound(
     double& evdw,
     double& ecoul,
     double& dv) {
-    double3 d = {y.x - x.x, y.y - x.y, y.z - x.z};
+    double3 d = {x.x - y.x, x.y - y.y, x.z - y.z};
 
     double r2 = 1.0 / (d.x * d.x + d.y * d.y + d.z * d.z);
     double r = sqrt(r2);
@@ -255,14 +255,15 @@ __global__ void calc_pp(
                 D_topo.coulomb_constant, scaling, evdw, ecoul, dv);
             evdw_sum += evdw;
             ecoul_sum += ecoul;
-            double3 d = {y_coord.x - x_coord.x, y_coord.y - x_coord.y, y_coord.z - x_coord.z};
-            x_force.x -= dv * d.x;
-            x_force.y -= dv * d.y;
-            x_force.z -= dv * d.z;
+            double3 d = {x_coord.x - y_coord.x, x_coord.y - y_coord.y, x_coord.z - y_coord.z};
+            y_force.x -= dv * d.x;
+            y_force.y -= dv * d.y;
+            y_force.z -= dv * d.z;
 
-            y_force.x += dv * d.x;
-            y_force.y += dv * d.y;
-            y_force.z += dv * d.z;
+            x_force.x += dv * d.x;
+            x_force.y += dv * d.y;
+            x_force.z += dv * d.z;
+
         }
         do_shuffle();
     }
