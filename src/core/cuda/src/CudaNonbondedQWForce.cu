@@ -124,14 +124,13 @@ __global__ void calc_qw_dvel_vector_column(int n_qatoms, int n_waters, dvel_t* D
 }
 
 __device__ void calc_qw_dvel_matrix_incr(int row, int qi, int column, int n_lambdas, int n_qatoms, double crg_ow, double crg_hw, double A_O, double B_O,
-                                         coord_t* Qs, coord_t* Ws, double Evdw_S[BLOCK_SIZE][2 * BLOCK_SIZE], double Ecoul_S[BLOCK_SIZE][2 * BLOCK_SIZE], calc_qw_t* qw,
-                                         q_catype_t* D_qcatypes, q_atype_t* D_qatypes, q_charge_t* D_qcharges, q_atom_t* D_qatoms, double* D_lambdas, topo_t D_topo) {
+                                         coord_t* Qs, coord_t* Ws, double Evdw_S[BLOCK_SIZE][BLOCK_SIZE], double Ecoul_S[BLOCK_SIZE][BLOCK_SIZE], calc_qw_t* qw,
+                                         q_catype_t* D_qcatypes, q_charge_t* D_qcharges, q_atom_t* D_qatoms, topo_t D_topo) {
     int j;
     coord_t dO, dH1, dH2;
     double r2O, rH1, rH2, r6O, rO, r2H1, r2H2;
     double dvO, dvH1, dvH2;
     double V_a, V_b, VelO, VelH1, VelH2;
-    q_atype_t qa_type;
     q_catype_t qi_type;
     double ai_aii, ai_bii;
 
@@ -160,28 +159,25 @@ __device__ void calc_qw_dvel_matrix_incr(int row, int qi, int column, int n_lamb
     dvH1 = 0;
     dvH2 = 0;
 
-    for (int state = 0; state < n_lambdas; state++) {
-        qa_type = D_qatypes[qi + n_qatoms * state];
-        qi_type = D_qcatypes[qa_type.code - 1];
+    qi_type = D_qcatypes[qi];
 
-        ai_aii = qi_type.Ai;
-        ai_bii = qi_type.Bi;
+    ai_aii = qi_type.Ai;
+    ai_bii = qi_type.Bi;
 
-        V_a = ai_aii * A_O / (r6O * r6O);
-        V_b = ai_bii * B_O / (r6O);
+    V_a = ai_aii * A_O / (r6O * r6O);
+    V_b = ai_bii * B_O / (r6O);
 
-        VelO = D_topo.coulomb_constant * crg_ow * D_qcharges[qi + n_qatoms * state].q * rO;
-        VelH1 = D_topo.coulomb_constant * crg_hw * D_qcharges[qi + n_qatoms * state].q * rH1;
-        VelH2 = D_topo.coulomb_constant * crg_hw * D_qcharges[qi + n_qatoms * state].q * rH2;
+    VelO = D_topo.coulomb_constant * crg_ow * D_qcharges[qi].q * rO;
+    VelH1 = D_topo.coulomb_constant * crg_hw * D_qcharges[qi].q * rH1;
+    VelH2 = D_topo.coulomb_constant * crg_hw * D_qcharges[qi].q * rH2;
 
-        dvO += r2O * (-VelO - (12 * V_a - 6 * V_b)) * D_lambdas[state];
-        dvH1 -= r2H1 * VelH1 * D_lambdas[state];
-        dvH2 -= r2H2 * VelH2 * D_lambdas[state];
+    dvO += r2O * (-VelO - (12 * V_a - 6 * V_b));
+    dvH1 -= r2H1 * VelH1;
+    dvH2 -= r2H2 * VelH2;
 
-        // Update Q totals
-        Ecoul_S[row][state * BLOCK_SIZE + column] += (VelO + VelH1 + VelH2);
-        Evdw_S[row][state * BLOCK_SIZE + column] += (V_a - V_b);
-    }
+    // Update Q totals
+    Ecoul_S[row][column] += (VelO + VelH1 + VelH2);
+    Evdw_S[row][column] += (V_a - V_b);
 
     // Note r6O is not the usual 1/rO^6, but rather rO^6. be careful!!!
 
@@ -204,7 +200,7 @@ __device__ void calc_qw_dvel_matrix_incr(int row, int qi, int column, int n_lamb
 
 __global__ void calc_qw_dvel_matrix(int n_qatoms, int n_waters, int n_lambdas, double crg_ow, double crg_hw, double A_O, double B_O,
                                     coord_t* X, coord_t* W, double* Evdw, double* Ecoul, calc_qw_t* MAT,
-                                    q_catype_t* D_qcatypes, q_atype_t* D_qatypes, q_charge_t* D_qcharges, q_atom_t* D_qatoms, double* D_lambdas, topo_t D_topo) {
+                                    q_catype_t* D_qcatypes, q_charge_t* D_qcharges, q_atom_t* D_qatoms, topo_t D_topo) {
     // Block index
     int bx = blockIdx.x;
     int by = blockIdx.y;
@@ -214,8 +210,8 @@ __global__ void calc_qw_dvel_matrix(int n_qatoms, int n_waters, int n_lambdas, d
     int ty = threadIdx.y;
 
     // TODO implement >2 states on GPU
-    __shared__ double Evdw_S[BLOCK_SIZE][2 * BLOCK_SIZE];
-    __shared__ double Ecoul_S[BLOCK_SIZE][2 * BLOCK_SIZE];
+    __shared__ double Evdw_S[BLOCK_SIZE][BLOCK_SIZE];
+    __shared__ double Ecoul_S[BLOCK_SIZE][BLOCK_SIZE];
 
     Ecoul_S[ty][tx] = 0;
     Evdw_S[ty][tx] = 0;
@@ -250,29 +246,26 @@ __global__ void calc_qw_dvel_matrix(int n_qatoms, int n_waters, int n_lambdas, d
     int column = bx * BLOCK_SIZE + tx;
 
     calc_qw_dvel_matrix_incr(ty, aStart + ty, tx, n_lambdas, n_qatoms, crg_ow, crg_hw, A_O, B_O, Qs, Ws, Evdw_S, Ecoul_S,
-                             &qw, D_qcatypes, D_qatypes, D_qcharges, D_qatoms, D_lambdas, D_topo);
+                             &qw, D_qcatypes, D_qcharges, D_qatoms, D_topo);
 
     MAT[column + n_waters * row] = qw;
 
     __syncthreads();
 
     int rowlen = (n_waters + BLOCK_SIZE - 1) / BLOCK_SIZE;
-    int collen = (n_qatoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
     if (tx == 0 && ty == 0) {
         // TODO implement >2 states on GPU
-        for (int state = 0; state < min(2, n_lambdas); state++) {
-            double tot_Evdw = 0;
-            double tot_Ecoul = 0;
-            for (int i = 0; i < BLOCK_SIZE; i++) {
-                for (int j = 0; j < BLOCK_SIZE; j++) {
-                    tot_Evdw += Evdw_S[i][j + state * BLOCK_SIZE];
-                    tot_Ecoul += Ecoul_S[i][j + state * BLOCK_SIZE];
-                }
+        double tot_Evdw = 0;
+        double tot_Ecoul = 0;
+        for (int i = 0; i < BLOCK_SIZE; i++) {
+            for (int j = 0; j < BLOCK_SIZE; j++) {
+                tot_Evdw += Evdw_S[i][j + BLOCK_SIZE];
+                tot_Ecoul += Ecoul_S[i][j + BLOCK_SIZE];
             }
-            Evdw[rowlen * collen * state + rowlen * by + bx] = tot_Evdw;
-            Ecoul[rowlen * collen * state + rowlen * by + bx] = tot_Ecoul;
         }
+        Evdw[rowlen * by + bx] = tot_Evdw;
+        Ecoul[rowlen * by + bx] = tot_Ecoul;
     }
 
     __syncthreads();
@@ -282,36 +275,27 @@ __global__ void calc_qw_dvel_matrix(int n_qatoms, int n_waters, int n_lambdas, d
 void calc_nonbonded_qw_forces_host_v2() {
     using namespace CudaNonbondedQWForce;
 
-    int mem_size_X = n_atoms_solute * sizeof(coord_t);
-    int mem_size_W = 3 * n_waters * sizeof(coord_t);
     int mem_size_DV_X = n_atoms_solute * sizeof(dvel_t);
     int mem_size_DV_W = 3 * n_waters * sizeof(dvel_t);
-    int mem_size_MAT = 3 * n_waters * n_qatoms * sizeof(calc_qw_t);
 
     int n_blocks_q = (n_qatoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
     int n_blocks_w = (n_waters + BLOCK_SIZE - 1) / BLOCK_SIZE;
-    // TODO make Evdw & Ecoul work for # of states > 2
-    int mem_size_QW_Evdw = min(n_lambdas, 2) * n_blocks_q * n_blocks_w * sizeof(double);
-    int mem_size_QW_Ecoul = min(n_lambdas, 2) * n_blocks_q * n_blocks_w * sizeof(double);
 
     CudaContext& ctx = CudaContext::instance();
     auto X = ctx.d_coords;
     auto DV_X = ctx.d_dvelocities;
-    auto D_qcatypes = ctx.d_q_catypes;
-    auto D_qatypes = ctx.d_q_atypes;
-    auto D_qcharges = ctx.d_q_charges;
+    auto D_qcatypes = ctx.d_q_aggregate_catypes;
+    auto D_qcharges = ctx.d_q_aggregate_charges;
     auto D_qatoms = ctx.d_q_atoms;
-    auto D_lambdas = ctx.d_lambdas;
 
     dim3 threads, grid;
 
     threads = dim3(BLOCK_SIZE, BLOCK_SIZE);
     grid = dim3((n_waters + BLOCK_SIZE - 1) / threads.x, (n_qatoms + BLOCK_SIZE - 1) / threads.y);
 
-    double evdw, ecoul;
 
     calc_qw_dvel_matrix<<<grid, threads>>>(n_qatoms, n_waters, n_lambdas, crg_ow, crg_hw, A_O, B_O, X, X + n_atoms_solute, D_QW_Evdw, D_QW_Ecoul,
-                                           QW_MAT, D_qcatypes, D_qatypes, D_qcharges, D_qatoms, D_lambdas, topo);
+                                           QW_MAT, D_qcatypes, D_qcharges, D_qatoms, topo);
     calc_qw_dvel_vector_column<<<((n_waters + BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_qatoms, n_waters, DV_X, DV_X + n_atoms_solute, QW_MAT);
     calc_qw_dvel_vector_row<<<((n_qatoms + BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE>>>(n_qatoms, n_waters, DV_X, DV_X + n_atoms_solute, QW_MAT, D_qatoms);
 
@@ -331,17 +315,15 @@ void calc_nonbonded_qw_forces_host_v2() {
     cudaMemcpy(dvelocities, DV_X, mem_size_DV_X, cudaMemcpyDeviceToHost);
     cudaMemcpy(&dvelocities[n_atoms_solute], DV_X + n_atoms_solute, mem_size_DV_W, cudaMemcpyDeviceToHost);
 
-    // TODO make Evdw & Ecoul work for # of states > 2
-    for (int state = 0; state < min(2, n_lambdas); state++) {
-        calc_energy_sum<<<1, threads>>>(n_blocks_q, n_blocks_w, D_QW_evdw_TOT, D_QW_ecoul_TOT, &D_QW_Evdw[state * n_blocks_w * n_blocks_q],
-                                        &D_QW_Ecoul[state * n_blocks_w * n_blocks_q], false);
+    calc_energy_sum<<<1, threads>>>(n_blocks_q, n_blocks_w, D_QW_evdw_TOT, D_QW_ecoul_TOT, D_QW_Evdw,
+                                    D_QW_Ecoul, false);
 
-        cudaMemcpy(&QW_evdw_TOT, D_QW_evdw_TOT, sizeof(double), cudaMemcpyDeviceToHost);
-        cudaMemcpy(&QW_ecoul_TOT, D_QW_ecoul_TOT, sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&QW_evdw_TOT, D_QW_evdw_TOT, sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&QW_ecoul_TOT, D_QW_ecoul_TOT, sizeof(double), cudaMemcpyDeviceToHost);
 
-        EQ_nonbond_qw[state].Uvdw += QW_evdw_TOT;
-        EQ_nonbond_qw[state].Ucoul += QW_ecoul_TOT;
-    }
+    E_nonbond_qx.Uvdw += QW_evdw_TOT;
+    E_nonbond_qx.Ucoul += QW_ecoul_TOT;
+    printf("QW Energy: Evdw = %f Ecoul = %f\n", QW_evdw_TOT, QW_ecoul_TOT);
 }
 
 void init_nonbonded_qw_force_kernel_data() {
@@ -358,8 +340,8 @@ void init_nonbonded_qw_force_kernel_data() {
         int n_blocks_w = (n_waters + BLOCK_SIZE - 1) / BLOCK_SIZE;
         int mem_size_MAT = 3 * n_waters * n_qatoms * sizeof(calc_qw_t);
 
-        int mem_size_QW_Evdw = min(n_lambdas, 2) * n_blocks_q * n_blocks_w * sizeof(double);
-        int mem_size_QW_Ecoul = min(n_lambdas, 2) * n_blocks_q * n_blocks_w * sizeof(double);
+        int mem_size_QW_Evdw = n_blocks_q * n_blocks_w * sizeof(double);
+        int mem_size_QW_Ecoul = n_blocks_q * n_blocks_w * sizeof(double);
 #ifdef DEBUG
         printf("Allocating QW_MAT\n");
 #endif

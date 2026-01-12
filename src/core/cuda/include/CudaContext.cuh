@@ -59,6 +59,9 @@ class CudaContext {
     E_nonbonded_t* d_EQ_nonbond_qq = nullptr;
     double* d_lambdas = nullptr;
 
+    q_charge_t* d_q_aggregate_charges = nullptr;
+    q_catype_t* d_q_aggregate_catypes = nullptr;
+
     /*
     Used in CudaPolxWaterForce.cu
     */
@@ -123,6 +126,8 @@ class CudaContext {
 
    private:
     CudaContext() = default;
+
+    void init_data_for_q();
 
     void free();
 

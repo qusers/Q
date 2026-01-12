@@ -1,6 +1,7 @@
 #include <iostream>
 
 #include "cuda/include/CudaContext.cuh"
+#include <vector>
 
 void CudaContext::init() {
     check_cudaMalloc((void**)&d_coords, sizeof(coord_t) * n_atoms);
@@ -53,6 +54,8 @@ void CudaContext::init() {
     check_cudaMalloc((void**)&d_ccharges, sizeof(ccharge_t) * n_ccharges);
     check_cudaMalloc((void**)&d_charges, sizeof(charge_t) * n_charges);
     check_cudaMalloc((void**)&d_p_atoms, sizeof(p_atom_t) * n_patoms);
+
+    init_data_for_q();
 
     sync_all_to_device();
 }
@@ -183,7 +186,6 @@ void CudaContext::free() {
     cudaFree(d_excluded);
     cudaFree(d_q_elscales);
     cudaFree(d_q_catypes);
-    cudaFree(d_q_atypes);
     cudaFree(d_EQ_nonbond_qq);
     cudaFree(d_lambdas);
 
@@ -208,10 +210,47 @@ void CudaContext::free() {
     cudaFree(d_ccharges);
     cudaFree(d_charges);
     cudaFree(d_p_atoms);
+
+    cudaFree(d_q_aggregate_charges);
+    cudaFree(d_q_aggregate_catypes);
 }
 
 void CudaContext::reset_energies() {
     cudaMemset(d_dvelocities, 0, sizeof(dvel_t) * n_atoms);
     cudaMemset(d_EQ_nonbond_qq, 0, sizeof(E_nonbonded_t) * n_lambdas);
     cudaMemset(d_EQ_restraint, 0, sizeof(E_restraint_t) * n_lambdas);
+}
+
+void CudaContext::init_data_for_q() {
+
+    // Additional initialization for q-related data can be added here if needed
+
+    // q charges
+    std::vector<q_charge_t> charges(n_qatoms, q_charge_t{0.0});
+    for (int i = 0; i < n_qatoms; i++) {
+        double q = 0;
+        for (int state = 0; state < n_lambdas; state++) {
+            q += q_charges[state * n_qatoms + i].q * lambdas[state];
+        }
+        charges[i].q = q;
+    }
+    check_cudaMalloc((void**)&d_q_aggregate_charges, sizeof(q_charge_t) * n_qatoms);
+    check_cuda(cudaMemcpy(d_q_aggregate_charges, charges.data(), sizeof(q_charge_t) * n_qatoms, cudaMemcpyHostToDevice));
+
+    
+    // q atypes
+    std::vector<q_catype_t> atypes(n_qatoms, q_catype_t{"", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
+    for (int i = 0; i < n_qatoms; i++) {
+        for (int state = 0; state < n_lambdas; state++) {
+            atypes[i].Ai += q_catypes[q_atypes[state * n_qatoms + i].code - 1].Ai * lambdas[state];
+            atypes[i].Bi += q_catypes[q_atypes[state * n_qatoms + i].code - 1].Bi * lambdas[state];
+            atypes[i].Ci += q_catypes[q_atypes[state * n_qatoms + i].code - 1].Ci * lambdas[state];
+            atypes[i].ai += q_catypes[q_atypes[state * n_qatoms + i].code - 1].ai * lambdas[state];
+            atypes[i].Ai_14 += q_catypes[q_atypes[state * n_qatoms + i].code - 1].Ai_14 * lambdas[state];
+            atypes[i].Bi_14 += q_catypes[q_atypes[state * n_qatoms + i].code - 1].Bi_14 * lambdas[state];
+            atypes[i].m += q_catypes[q_atypes[state * n_qatoms + i].code - 1].m * lambdas[state];
+        }
+    }
+    check_cudaMalloc((void**)&d_q_aggregate_catypes, sizeof(q_catype_t) * n_qatoms);
+    check_cuda(cudaMemcpy(d_q_aggregate_catypes, atypes.data(), sizeof(q_catype_t) * n_qatoms, cudaMemcpyHostToDevice));
 }

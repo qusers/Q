@@ -1,3 +1,4 @@
+#include <iostream>
 #include "system.h"
 #include "utils.h"
 #include "parse.h"
@@ -1094,7 +1095,6 @@ void calc_integration_step(int iteration) {
     calc_bonded_forces();
 
     clock_t end_bonded = clock();
-
     clock_t start_pp, end_pp, start_qp, end_qp;
     if (run_gpu) {
         start_qp = clock();

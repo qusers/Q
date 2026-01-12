@@ -1,6 +1,7 @@
 #include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaNonbondedQQForce.cuh"
 #include "utils.h"
+#include <iostream>
 
 __global__ void calc_nonbonded_qq_forces_kernel(
     q_atom_t* q_atoms,
@@ -129,6 +130,9 @@ void calc_nonbonded_qq_forces_host() {
     cudaDeviceSynchronize();
     cudaMemcpy(EQ_nonbond_qq, d_EQ_nonbond_qq, sizeof(E_nonbonded_t) * n_lambdas, cudaMemcpyDeviceToHost);
     cudaMemcpy(dvelocities, d_dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyDeviceToHost);
+    for (int i = 0; i < n_lambdas; i++) {
+        printf("QQ Energy State %d: Evdw = %f Ecoul = %f\n", i, EQ_nonbond_qq[i].Uvdw, EQ_nonbond_qq[i].Ucoul);
+    }
 }
 
 void init_nonbonded_qq_force_kernel_data() {}
