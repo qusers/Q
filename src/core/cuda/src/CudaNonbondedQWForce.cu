@@ -260,8 +260,8 @@ __global__ void calc_qw_dvel_matrix(int n_qatoms, int n_waters, int n_lambdas, d
         double tot_Ecoul = 0;
         for (int i = 0; i < BLOCK_SIZE; i++) {
             for (int j = 0; j < BLOCK_SIZE; j++) {
-                tot_Evdw += Evdw_S[i][j + BLOCK_SIZE];
-                tot_Ecoul += Ecoul_S[i][j + BLOCK_SIZE];
+                tot_Evdw += Evdw_S[i][j];
+                tot_Ecoul += Ecoul_S[i][j];
             }
         }
         Evdw[rowlen * by + bx] = tot_Evdw;
