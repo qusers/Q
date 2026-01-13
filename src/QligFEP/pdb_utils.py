@@ -442,6 +442,17 @@ def write_dataframe_to_pdb(df, output_file, header: Optional[str] = None):
             file.write(pdb_line)
 
 
+def reindex_pdb_residues(pdb_path: Path, out_pdb_path: Path):
+    pdb_df = read_pdb_to_dataframe(pdb_path)
+    uniq_indexes = pdb_df.set_index(
+        ["residue_seq_number", "residue_name", "chain_id", "insertion_code"]
+    ).index
+    resn_mapping = {resn: idx for idx, resn in enumerate(uniq_indexes.unique(), 1)}
+    pdb_df["residue_seq_number"] = uniq_indexes.map(resn_mapping)
+    pdb_df["insertion_code"] = ""
+    write_dataframe_to_pdb(pdb_df, str(out_pdb_path.resolve().absolute()))
+
+
 def sdf_to_pdb(in_sdf_file, out_pdb_file):
     """Converts an SDF file to a PDB file.
 

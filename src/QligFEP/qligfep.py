@@ -20,6 +20,7 @@ from .pdb_utils import (
     pdb_parse_in,
     pdb_parse_out,
     read_pdb_to_dataframe,
+    reindex_pdb_residues,
     rm_HOH_clash_NN,
 )
 from .restraints.restraint_setter import RestraintSetter
@@ -1151,6 +1152,9 @@ class QligFEP:
         replacements["SOLUTEDENS"] = f"{density:.5f}"
 
         with open(qprep_in) as infile, open(qprep_out, "w") as outfile:
+            # We reindex the residues prior to defining the cysbonds because Q considers
+            # the first residue to be always 1, regardless of the numbering in the PDB file.
+            reindex_pdb_residues(Path(writedir) / self.pdb_fname, Path(writedir) / self.pdb_fname)
             cysbond_str = handle_cysbonds(
                 self.cysbond, Path(writedir) / self.pdb_fname, comment_out=(self.system != "protein")
             )
