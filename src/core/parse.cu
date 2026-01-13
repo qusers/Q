@@ -753,7 +753,6 @@ void init_ngbrs14(const char* filename) {
                 int jx = (lineI + i + 1) % lines;
                 // if (ix < 100 && jx < 100) printf("i = %d j = %d\n", ix+1, jx+1);
                 LJ_matrix[ix * n_atoms_solute + jx] = 1;
-                LJ_matrix[jx * n_atoms_solute + ix] = 1;
             }
         }
         lineI++;
@@ -798,7 +797,6 @@ void init_ngbrs23(const char* filename) {
                 int jx = (lineI + i + 1) % lines;
                 // if (ix < 100 && jx < 100) printf("i = %d j = %d\n", ix+1, jx+1);
                 LJ_matrix[ix * n_atoms_solute + jx] = 3;
-                LJ_matrix[jx * n_atoms_solute + ix] = 3;
             }
         }
         lineI++;
@@ -821,7 +819,6 @@ void init_ngbrs14_long(const char* filename) {
         int ix = atoi(file.buffer[i+1][0])-1;
         int jx = atoi(file.buffer[i+1][1])-1;
         LJ_matrix[ix * n_atoms_solute + jx] = 1;
-        LJ_matrix[jx * n_atoms_solute + ix] = 1;
     }
 
     clean_csv(file);
@@ -841,7 +838,6 @@ void init_ngbrs23_long(const char* filename) {
         int ix = atoi(file.buffer[i+1][0])-1;
         int jx = atoi(file.buffer[i+1][1])-1;
         LJ_matrix[ix * n_atoms_solute + jx] = 3;
-        LJ_matrix[jx * n_atoms_solute + ix] = 3;
     }
 
     clean_csv(file);
