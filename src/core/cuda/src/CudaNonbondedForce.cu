@@ -68,9 +68,8 @@ __device__ void calculate_unforce_bound(
     double& ecoul,
     double& dv) {
     double3 d = {x.x - y.x, x.y - y.y, x.z - y.z};
-
-    double r2 = 1.0 / (d.x * d.x + d.y * d.y + d.z * d.z);
-    double r = sqrt(r2);
+    double r = rsqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+    double r2 = r * r;
     double r6 = r2 * r2 * r2;
 
     ecoul = scaling * coulomb_constant * x_charge * y_charge * r;
@@ -210,9 +209,9 @@ __global__ void calc_nonbonded_force_kernel(
         y_charge = __shfl_sync(mask, y_charge, src);
         y_type = shfl_catype(y_type, src, mask);
 
-        y_force.x = __shfl_sync(mask, y_force.x, src);
-        y_force.y = __shfl_sync(mask, y_force.y, src);
-        y_force.z = __shfl_sync(mask, y_force.z, src);
+        y_force.x = shfl(y_force.x, src, mask);
+        y_force.y = shfl(y_force.y, src, mask);
+        y_force.z = shfl(y_force.z, src, mask);
     };
 
     for (int i = 0; i < 32; i++) {
@@ -283,7 +282,7 @@ __global__ void calc_nonbonded_force_kernel(
 std::pair<double, double> calc_nonbonded_force_host(int nx, int ny, int* x_idx_list, int* y_idx_list, bool symmetric) {
     using namespace CudaNonbondedForce;
     CudaContext& context = CudaContext::instance();
-    const int thread_num = 128;
+    const int thread_num = 256;
     dim3 block_sz = dim3(thread_num);
 
     int tile_num_per_block = thread_num >> 5;
