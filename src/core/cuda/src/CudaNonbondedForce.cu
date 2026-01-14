@@ -156,6 +156,18 @@ __global__ void calc_nonbonded_force_kernel(
     catype_t x_type = (x_atom_idx >= 0) ? d_catypes[d_atypes[x_atom_idx].code - 1] : catype_t{};
     catype_t y_type = (y_atom_idx >= 0) ? d_catypes[d_atypes[y_atom_idx].code - 1] : catype_t{};
 
+    if (x_atom_idx >= n_atoms_solute && y_atom_idx >= n_atoms_solute) {
+        // Special handling for water-water interactions: LJ only between oxygens
+        if ((x_atom_idx - n_atoms_solute) % 3 != 0) {
+            x_type.aii_normal = 0.0;
+            x_type.bii_normal = 0.0;
+        }
+        if ((y_atom_idx - n_atoms_solute) % 3 != 0) {
+            y_type.aii_normal = 0.0;
+            y_type.bii_normal = 0.0;
+        }
+    }
+
     double3 x_force = {0.0, 0.0, 0.0};
     double3 y_force = {0.0, 0.0, 0.0};
 
@@ -166,9 +178,7 @@ __global__ void calc_nonbonded_force_kernel(
 
     auto lj_code = [&](int ix, int iy) -> int {
         if (ix < 0 || iy < 0 || ix >= n_atoms_solute || iy >= n_atoms_solute) return 0;
-        int a = min(ix, iy);
-        int b = max(ix, iy);
-        return d_LJ_matrix[a * n_atoms_solute + b];
+        return d_LJ_matrix[ix * n_atoms_solute + iy];
     };
 
     auto is_valid = [&]() -> bool {
@@ -213,15 +223,6 @@ __global__ void calc_nonbonded_force_kernel(
             double bi_bii = bond14 ? x_type.bii_1_4 : x_type.bii_normal;
             double aj_aii = bond14 ? y_type.aii_1_4 : y_type.aii_normal;
             double bj_bii = bond14 ? y_type.bii_1_4 : y_type.bii_normal;
-
-            // Match legacy water-water behavior: LJ only between oxygens
-            if (x_atom_idx >= n_atoms_solute && y_atom_idx >= n_atoms_solute) {
-                bool x_is_O = ((x_atom_idx - n_atoms_solute) % 3) == 0;
-                bool y_is_O = ((y_atom_idx - n_atoms_solute) % 3) == 0;
-                if (!(x_is_O && y_is_O)) {
-                    ai_aii = bi_bii = aj_aii = bj_bii = 0.0;
-                }
-            }
 
             double evdw = 0, ecoul = 0, dv = 0;
 
