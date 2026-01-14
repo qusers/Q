@@ -21,6 +21,7 @@ void init_nonbonded_ww_force_kernel_data() {
     if (!is_initialized) {
         if (crg_ow == 0 || crg_hw == 0) {
             // Initialize water charges once (used by QW kernels too)
+            // todo: Don't do that in here ...
             ccharge_t ccharge_ow = ccharges[charges[n_atoms_solute].code - 1];
             ccharge_t ccharge_hw = ccharges[charges[n_atoms_solute + 1].code - 1];
             crg_ow = ccharge_ow.charge;

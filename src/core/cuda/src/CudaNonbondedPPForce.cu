@@ -9,6 +9,7 @@
 namespace CudaNonbondedPPForce {
 bool is_initialized = false;
 int* d_x_idx_list = nullptr;
+int nx;
 }  // namespace CudaNonbondedPPForce
 
 void init_nonbonded_pp_force_kernel_data() {
@@ -17,23 +18,26 @@ void init_nonbonded_pp_force_kernel_data() {
     if (!is_initialized) {
         is_initialized = true;
         std::vector<int> x_idx_list;
-        x_idx_list.resize(n_patoms);
         for (int i = 0; i < n_patoms; i++) {
-            x_idx_list[i] = p_atoms[i].a - 1;
+            int id = p_atoms[i].a - 1;
+            if (!excluded[id]) {
+                x_idx_list.push_back(id);
+            }
         }
+        nx = x_idx_list.size();
 
-        check_cudaMalloc((void**)&d_x_idx_list, sizeof(int) * n_patoms);
+        check_cudaMalloc((void**)&d_x_idx_list, sizeof(int) * x_idx_list.size());
         cudaMemcpy(
             d_x_idx_list,
             x_idx_list.data(),
-            sizeof(int) * n_patoms,
+            sizeof(int) * x_idx_list.size(),
             cudaMemcpyHostToDevice);
     }
 }
 
 void calc_nonbonded_pp_forces_host_v2() {
-    int nx = n_patoms;
-    int ny = n_patoms;
+    int nx = CudaNonbondedPPForce::nx;
+    int ny = nx;
 
     auto result = calc_nonbonded_force_host(
         nx,
@@ -54,5 +58,6 @@ void cleanup_nonbonded_pp_force() {
         is_initialized = false;
         cudaFree(d_x_idx_list);
         d_x_idx_list = nullptr;
+        nx = 0;
     }
 }

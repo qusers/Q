@@ -71,6 +71,12 @@ __device__ void calculate_unforce_bound(
     double r = rsqrt(d.x * d.x + d.y * d.y + d.z * d.z);
     double r2 = r * r;
     double r6 = r2 * r2 * r2;
+    // double v_a = r6 * r6;
+    // double v_b = r6;
+    // ecoul = r;
+    // evdw = v_a - v_b;
+    // dv = r2 * (-ecoul - v_a + v_b);
+    
 
     ecoul = scaling * coulomb_constant * x_charge * y_charge * r;
 
