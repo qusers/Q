@@ -341,6 +341,7 @@ void calc_nonbonded_qw_forces_host_v2() {
 
         EQ_nonbond_qw[state].Uvdw += QW_evdw_TOT;
         EQ_nonbond_qw[state].Ucoul += QW_ecoul_TOT;
+        printf("QW Force State %d: E_vdw = %f E_coul = %f\n", state, QW_evdw_TOT, QW_ecoul_TOT);
     }
 }
 

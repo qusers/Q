@@ -178,6 +178,13 @@ __global__ void calc_nonbonded_force_kernel(
 
         if (x_excluded || y_excluded) return false;
 
+        // Skip interactions within the same rigid water molecule
+        if (x_atom_idx >= n_atoms_solute && y_atom_idx >= n_atoms_solute) {
+            int wx = (x_atom_idx - n_atoms_solute) / 3;
+            int wy = (y_atom_idx - n_atoms_solute) / 3;
+            if (wx == wy) return false;
+        }
+
         bool bond23 = lj_code(x_atom_idx, y_atom_idx) == 3;
         if (bond23) return false;
 
@@ -206,6 +213,15 @@ __global__ void calc_nonbonded_force_kernel(
             double bi_bii = bond14 ? x_type.bii_1_4 : x_type.bii_normal;
             double aj_aii = bond14 ? y_type.aii_1_4 : y_type.aii_normal;
             double bj_bii = bond14 ? y_type.bii_1_4 : y_type.bii_normal;
+
+            // Match legacy water-water behavior: LJ only between oxygens
+            if (x_atom_idx >= n_atoms_solute && y_atom_idx >= n_atoms_solute) {
+                bool x_is_O = ((x_atom_idx - n_atoms_solute) % 3) == 0;
+                bool y_is_O = ((y_atom_idx - n_atoms_solute) % 3) == 0;
+                if (!(x_is_O && y_is_O)) {
+                    ai_aii = bi_bii = aj_aii = bj_bii = 0.0;
+                }
+            }
 
             double evdw = 0, ecoul = 0, dv = 0;
 
@@ -306,7 +322,6 @@ std::pair<double, double> calc_nonbonded_force_host(int nx, int ny, int* x_idx_l
     double evdw_tot = 0, ecoul_tot = 0;
     cudaMemcpy(&evdw_tot, d_evdw_total, sizeof(double), cudaMemcpyDeviceToHost);
     cudaMemcpy(&ecoul_tot, d_ecoul_total, sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(dvelocities, context.d_dvelocities, n_atoms * sizeof(dvel_t), cudaMemcpyDeviceToHost);
 
     return {evdw_tot, ecoul_tot};
 }
