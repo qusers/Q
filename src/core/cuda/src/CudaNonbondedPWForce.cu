@@ -1,9 +1,9 @@
+#include <iostream>
 #include <vector>
 
 #include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaNonbondedForce.cuh"
 #include "cuda/include/CudaNonbondedPWForce.cuh"
-#include <iostream>
 
 namespace CudaNonbondedPWForce {
 // Declare any necessary static variables or device pointers here
@@ -14,11 +14,17 @@ int nx, ny;
 
 }  // namespace CudaNonbondedPWForce
 void calc_nonbonded_pw_forces_host_v2() {
-    int nx = CudaNonbondedPWForce::nx;
-    int ny = CudaNonbondedPWForce::ny;
-
     using namespace CudaNonbondedPWForce;
-    auto result = calc_nonbonded_force_host(nx, ny, d_x_idx_list, d_y_idx_list, false);
+
+    auto result = calc_nonbonded_force_host(
+        nx, ny,
+        d_x_idx_list, d_y_idx_list, false,
+        CudaContext::instance().d_p_charge_types,
+        CudaContext::instance().d_w_charge_types,
+        CudaContext::instance().d_charge_table_all,
+        CudaContext::instance().d_p_catype_types,
+        CudaContext::instance().d_w_catype_types,
+        CudaContext::instance().d_catype_table_all);
     printf("Nonbonded PW Force (Host) - VdW: %f, Coulomb: %f\n", result.first, result.second);
 
     E_nonbond_pw.Uvdw = result.first;

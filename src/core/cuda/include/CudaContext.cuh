@@ -2,6 +2,10 @@
 
 #include <cuda_runtime.h>
 
+#include <array>
+#include <map>
+#include <vector>
+
 #include "system.h"
 #include "utils.h"
 
@@ -105,6 +109,19 @@ class CudaContext {
     charge_t* d_charges;
     p_atom_t* d_p_atoms;
 
+    /*
+    Other helper arrays
+    */
+    ccharge_t* d_charge_table_all;  // Device copy of h_charge_table_all
+    catype_t* d_catype_table_all;   // Device copy of h_catype_table_all
+    std::map<std::array<double, 6>, int> catype_to_type_host;
+    int* d_p_charge_types;
+    int* d_w_charge_types;
+    int* d_q_charge_types;  // [0, lambdas * n_qatoms) is the normal q_charge_type, [lambdas * n_qatoms, ... ) is the lambda-scaled q_charge_type]
+    int* d_p_catype_types;
+    int* d_w_catype_types;
+    int* d_q_catype_types;  // [0, lambdas * n_qatoms) is the normal q_catype_type, [lambdas * n_qatoms, ... ) is the lambda-scaled q_catype_type]
+
     static CudaContext& instance() {
         static CudaContext ctx;
         return ctx;
@@ -121,6 +138,16 @@ class CudaContext {
     void sync_all_to_host();
     void reset_energies();
 
+    std::array<double, 6> get_catype_key(const catype_t& catype) {
+        return {
+            catype.aii_normal,
+            catype.bii_normal,
+            catype.aii_polar,
+            catype.bii_polar,
+            catype.aii_1_4,
+            catype.bii_1_4};
+    }
+
    private:
     CudaContext() = default;
 
@@ -129,6 +156,9 @@ class CudaContext {
     ~CudaContext() { free(); }
     CudaContext(const CudaContext&) = delete;
     CudaContext& operator=(const CudaContext&) = delete;
+
+    void initialize_charge_tables_host();
+    void initialize_catype_tables_host();
 };
 template <typename T>
 void CudaContext::sync_array_to_device(T* dst, const T* src, int count) {

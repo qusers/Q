@@ -21,7 +21,6 @@ void CudaContext::init() {
     check_cudaMalloc((void**)&d_atypes, sizeof(atype_t) * n_atypes);
     check_cudaMalloc((void**)&d_catypes, sizeof(catype_t) * n_catypes);
 
-
     check_cudaMalloc((void**)&d_q_atoms, sizeof(q_atom_t) * n_qatoms);
     check_cudaMalloc((void**)&d_q_charges, sizeof(q_charge_t) * n_qatoms * n_lambdas);
     check_cudaMalloc((void**)&d_LJ_matrix, sizeof(int) * n_atoms_solute * n_atoms_solute);
@@ -53,6 +52,9 @@ void CudaContext::init() {
     check_cudaMalloc((void**)&d_ccharges, sizeof(ccharge_t) * n_ccharges);
     check_cudaMalloc((void**)&d_charges, sizeof(charge_t) * n_charges);
     check_cudaMalloc((void**)&d_p_atoms, sizeof(p_atom_t) * n_patoms);
+
+    initialize_charge_tables_host();
+    initialize_catype_tables_host();
 
     sync_all_to_device();
 }
@@ -214,4 +216,165 @@ void CudaContext::reset_energies() {
     cudaMemset(d_dvelocities, 0, sizeof(dvel_t) * n_atoms);
     cudaMemset(d_EQ_nonbond_qq, 0, sizeof(E_nonbonded_t) * n_lambdas);
     cudaMemset(d_EQ_restraint, 0, sizeof(E_restraint_t) * n_lambdas);
+}
+
+void CudaContext::initialize_charge_tables_host() {
+    std::map<double, int> charge_to_type_host;
+    std::vector<ccharge_t> h_charge_table_all;  // h_charge_table_all[charge type] = (code, charge)
+
+    auto add_charge = [&](double charge) {
+        if (charge_to_type_host.count(charge) == 0) {
+            int sz = h_charge_table_all.size();
+            ccharge_t new_ccharge;
+            new_ccharge.code = sz;
+            new_ccharge.charge = charge;
+            h_charge_table_all.push_back(new_ccharge);
+            charge_to_type_host[charge] = sz;
+        }
+    };
+
+    for (int i = 0; i < n_ccharges; i++) {
+        double charge = ccharges[i].charge;
+        add_charge(charge);
+    }
+    for (int state = 0; state < n_lambdas; state++) {
+        for (int i = 0; i < n_qatoms; i++) {
+            double charge = q_charges[i * n_lambdas + state].q;
+            add_charge(charge);
+            charge *= lambdas[state];
+            add_charge(charge);
+        }
+    }
+
+    std::vector<int> p_charge_types(n_patoms);
+    for (int i = 0; i < n_patoms; i++) {
+        int id = p_atoms[i].a - 1;
+        double charge = ccharges[charges[id].code - 1].charge;
+        p_charge_types[i] = charge_to_type_host[charge];
+    }
+
+    std::vector<int> q_charge_types(n_qatoms * n_lambdas * 2);
+    for (int state = 0; state < n_lambdas; state++) {
+        for (int i = 0; i < n_qatoms; i++) {
+            double charge = q_charges[i * n_lambdas + state].q;
+            q_charge_types[state * n_qatoms + i] = charge_to_type_host[charge];
+            charge *= lambdas[state];
+            q_charge_types[state * n_qatoms + i + n_qatoms * n_lambdas] = charge_to_type_host[charge];
+        }
+    }
+
+    std::vector<int> w_charge_types(n_atoms - n_atoms_solute);
+    for (int i = n_atoms_solute; i < n_atoms; i++) {
+        double charge = ccharges[charges[i].code - 1].charge;
+        w_charge_types[i - n_atoms_solute] = charge_to_type_host[charge];
+    }
+
+    check_cudaMalloc((void**)&d_charge_table_all, sizeof(ccharge_t) * h_charge_table_all.size());
+    cudaMemcpy(d_charge_table_all, h_charge_table_all.data(), sizeof(ccharge_t) * h_charge_table_all.size(), cudaMemcpyHostToDevice);
+    check_cudaMalloc((void**)&d_p_charge_types, sizeof(int) * p_charge_types.size());
+    cudaMemcpy(d_p_charge_types, p_charge_types.data(), sizeof(int) * p_charge_types.size(), cudaMemcpyHostToDevice);
+    check_cudaMalloc((void**)&d_q_charge_types, sizeof(int) * q_charge_types.size());
+    cudaMemcpy(d_q_charge_types, q_charge_types.data(), sizeof(int) * q_charge_types.size(), cudaMemcpyHostToDevice);
+    check_cudaMalloc((void**)&d_w_charge_types, sizeof(int) * w_charge_types.size());
+    cudaMemcpy(d_w_charge_types, w_charge_types.data(), sizeof(int) * w_charge_types.size(), cudaMemcpyHostToDevice);
+}
+
+void CudaContext::initialize_catype_tables_host() {
+    std::vector<catype_t> h_catype_table_all;  // h_catype_table_all[catype code] = catype_t
+    catype_to_type_host.clear();
+
+    auto add_catype = [&](catype_t catype) {
+        auto key = get_catype_key(catype);
+        if (catype_to_type_host.count(key) == 0) {
+            int sz = h_catype_table_all.size();
+            catype.code = sz;
+            h_catype_table_all.push_back(catype);
+            catype_to_type_host[key] = sz;
+        }
+    };
+
+    for (int i = 0; i < n_catypes; i++) {
+        add_catype(catypes[i]);
+    }
+
+    for (int state = 0; state < n_lambdas; state++) {
+        for (int i = 0; i < n_qatoms; i++) {
+            auto catype = q_catypes[i * n_lambdas + state];
+
+            catype_t new_catype;
+            new_catype.m = catype.m;
+            new_catype.aii_normal = catype.Ai;
+            new_catype.bii_normal = catype.Bi;
+            new_catype.aii_polar = catype.Ci;
+            new_catype.bii_polar = catype.ai;
+            new_catype.aii_1_4 = catype.Ai_14;
+            new_catype.bii_1_4 = catype.Bi_14;
+
+            add_catype(new_catype);
+
+            new_catype.m *= lambdas[state];
+            new_catype.aii_normal *= lambdas[state];
+            new_catype.bii_normal *= lambdas[state];
+            new_catype.aii_polar *= lambdas[state];
+            new_catype.bii_polar *= lambdas[state];
+            new_catype.aii_1_4 *= lambdas[state];
+            new_catype.bii_1_4 *= lambdas[state];
+            add_catype(new_catype);
+        }
+    }
+
+    std::vector<int> p_catype_types(n_patoms);
+    for (int i = 0; i < n_patoms; i++) {
+        int id = p_atoms[i].a - 1;
+        auto catype = catypes[atypes[id].code - 1];
+        auto key = get_catype_key(catype);
+        p_catype_types[i] = catype_to_type_host[key];
+    }
+
+    std::vector<int> q_catype_types(n_qatoms * n_lambdas * 2);
+    for (int state = 0; state < n_lambdas; state++) {
+        for (int i = 0; i < n_qatoms; i++) {
+            auto catype = q_catypes[i * n_lambdas + state];
+
+            catype_t normal_catype;
+            normal_catype.m = catype.m;
+            normal_catype.aii_normal = catype.Ai;
+            normal_catype.bii_normal = catype.Bi;
+            normal_catype.aii_polar = catype.Ci;
+            normal_catype.bii_polar = catype.ai;
+            normal_catype.aii_1_4 = catype.Ai_14;
+            normal_catype.bii_1_4 = catype.Bi_14;
+
+            auto key_normal = get_catype_key(normal_catype);
+            q_catype_types[state * n_qatoms + i] = catype_to_type_host[key_normal];
+
+            catype_t scaled_catype;
+            scaled_catype.m = catype.m * lambdas[state];
+            scaled_catype.aii_normal = catype.Ai * lambdas[state];
+            scaled_catype.bii_normal = catype.Bi * lambdas[state];
+            scaled_catype.aii_polar = catype.Ci * lambdas[state];
+            scaled_catype.bii_polar = catype.ai * lambdas[state];
+            scaled_catype.aii_1_4 = catype.Ai_14 * lambdas[state];
+            scaled_catype.bii_1_4 = catype.Bi_14 * lambdas[state];
+
+            auto key_scaled = get_catype_key(scaled_catype);
+            q_catype_types[state * n_qatoms + i + n_qatoms * n_lambdas] = catype_to_type_host[key_scaled];
+        }
+    }
+
+    std::vector<int> w_catype_types(n_atoms - n_atoms_solute);
+    for (int i = n_atoms_solute; i < n_atoms; i++) {
+        auto catype = catypes[atypes[i].code - 1];
+        auto key = get_catype_key(catype);
+        w_catype_types[i - n_atoms_solute] = catype_to_type_host[key];
+    }
+
+    check_cudaMalloc((void**)&d_catype_table_all, sizeof(catype_t) * h_catype_table_all.size());
+    cudaMemcpy(d_catype_table_all, h_catype_table_all.data(), sizeof(catype_t) * h_catype_table_all.size(), cudaMemcpyHostToDevice);
+    check_cudaMalloc((void**)&d_p_catype_types, sizeof(int) * p_catype_types.size());
+    cudaMemcpy(d_p_catype_types, p_catype_types.data(), sizeof(int) * p_catype_types.size(), cudaMemcpyHostToDevice);
+    check_cudaMalloc((void**)&d_q_catype_types, sizeof(int) * q_catype_types.size());
+    cudaMemcpy(d_q_catype_types, q_catype_types.data(), sizeof(int) * q_catype_types.size(), cudaMemcpyHostToDevice);
+    check_cudaMalloc((void**)&d_w_catype_types, sizeof(int) * w_catype_types.size());
+    cudaMemcpy(d_w_catype_types, w_catype_types.data(), sizeof(int) * w_catype_types.size(), cudaMemcpyHostToDevice);
 }

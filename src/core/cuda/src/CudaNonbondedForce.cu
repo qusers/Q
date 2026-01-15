@@ -90,11 +90,13 @@ __global__ void calc_nonbonded_force_kernel(
     const int nx,
     const int ny,
 
-    const charge_t* D_charges,
-    const ccharge_t* D_ccharges,
+    const int* x_charges_types,
+    const int* y_charges_types,
+    const ccharge_t* ccharges_table,
 
-    const atype_t* d_atypes,
-    const catype_t* d_catypes,
+    const int* x_atypes_types,
+    const int* y_atypes_types,
+    const catype_t* catypes_table,
 
     const topo_t d_topo,
 
@@ -155,11 +157,11 @@ __global__ void calc_nonbonded_force_kernel(
     bool x_excluded = (x_atom_idx >= 0) ? d_excluded[x_atom_idx] : true;
     bool y_excluded = (y_atom_idx >= 0) ? d_excluded[y_atom_idx] : true;
 
-    double x_charge = (x_atom_idx >= 0) ? D_ccharges[D_charges[x_atom_idx].code - 1].charge : 0.0;
-    double y_charge = (y_atom_idx >= 0) ? D_ccharges[D_charges[y_atom_idx].code - 1].charge : 0.0;
+    double x_charge = (x_atom_idx >= 0) ? ccharges_table[x_charges_types[x_idx]].charge : 0.0;
+    double y_charge = (y_atom_idx >= 0) ? ccharges_table[y_charges_types[y_idx]].charge : 0.0;
 
-    catype_t x_type = (x_atom_idx >= 0) ? d_catypes[d_atypes[x_atom_idx].code - 1] : catype_t{};
-    catype_t y_type = (y_atom_idx >= 0) ? d_catypes[d_atypes[y_atom_idx].code - 1] : catype_t{};
+    catype_t x_type = (x_atom_idx >= 0) ? catypes_table[x_atypes_types[x_idx]] : catype_t{};
+    catype_t y_type = (y_atom_idx >= 0) ? catypes_table[y_atypes_types[y_idx]] : catype_t{};
 
     if (x_atom_idx >= n_atoms_solute && y_atom_idx >= n_atoms_solute) {
         // Special handling for water-water interactions: LJ only between oxygens
@@ -285,7 +287,21 @@ __global__ void calc_nonbonded_force_kernel(
 
 }  // namespace CudaNonbondedForce
 
-std::pair<double, double> calc_nonbonded_force_host(int nx, int ny, int* x_idx_list, int* y_idx_list, bool symmetric) {
+std::pair<double, double> calc_nonbonded_force_host(
+    int nx, 
+    int ny, 
+    int* x_idx_list, 
+    int* y_idx_list, 
+    bool symmetric, 
+
+    const int* x_charges_types, 
+    const int* y_charges_types,
+    const ccharge_t* ccharges_table,
+
+    const int* x_atypes_types, 
+    const int* y_atypes_types,
+    const catype_t* catypes_table
+) {
     using namespace CudaNonbondedForce;
     CudaContext& context = CudaContext::instance();
     const int thread_num = 256;
@@ -307,10 +323,12 @@ std::pair<double, double> calc_nonbonded_force_host(int nx, int ny, int* x_idx_l
     calc_nonbonded_force_kernel<<<grid, block_sz>>>(
         nx,
         ny,
-        context.d_charges,
-        context.d_ccharges,
-        context.d_atypes,
-        context.d_catypes,
+        x_charges_types,
+        y_charges_types,
+        ccharges_table,
+        x_atypes_types,
+        y_atypes_types,
+        catypes_table,
         topo,
         context.d_excluded,
         context.d_LJ_matrix,

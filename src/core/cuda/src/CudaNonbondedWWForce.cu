@@ -11,7 +11,15 @@ int* d_x_idx_list = nullptr;
 }  // namespace CudaNonbondedWWForce
 void calc_nonbonded_ww_forces_host_v2() {
     using namespace CudaNonbondedWWForce;
-    auto result = calc_nonbonded_force_host(n_waters * 3, n_waters * 3, d_x_idx_list, d_x_idx_list, true);
+    auto result = calc_nonbonded_force_host(
+        n_waters * 3, n_waters * 3,
+        d_x_idx_list, d_x_idx_list, true,
+        CudaContext::instance().d_w_charge_types,
+        CudaContext::instance().d_w_charge_types,
+        CudaContext::instance().d_charge_table_all,
+        CudaContext::instance().d_w_catype_types,
+        CudaContext::instance().d_w_catype_types,
+        CudaContext::instance().d_catype_table_all);
     E_nonbond_ww.Uvdw = result.first;
     E_nonbond_ww.Ucoul = result.second;
 }
