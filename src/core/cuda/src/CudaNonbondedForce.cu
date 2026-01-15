@@ -157,23 +157,16 @@ __global__ void calc_nonbonded_force_kernel(
     bool x_excluded = (x_atom_idx >= 0) ? d_excluded[x_atom_idx] : true;
     bool y_excluded = (y_atom_idx >= 0) ? d_excluded[y_atom_idx] : true;
 
-    double x_charge = (x_atom_idx >= 0) ? ccharges_table[x_charges_types[x_idx]].charge : 0.0;
-    double y_charge = (y_atom_idx >= 0) ? ccharges_table[y_charges_types[y_idx]].charge : 0.0;
+    int x_charge_type_idx = (x_idx < nx) ? x_charges_types[x_idx] : -1;
+    int y_charge_type_idx = (y_idx < ny) ? y_charges_types[y_idx] : -1;
+    double x_charge = (x_atom_idx >= 0 && x_charge_type_idx >= 0) ? ccharges_table[x_charge_type_idx].charge : 0.0;
+    double y_charge = (y_atom_idx >= 0 && y_charge_type_idx >= 0) ? ccharges_table[y_charge_type_idx].charge : 0.0;
 
-    catype_t x_type = (x_atom_idx >= 0) ? catypes_table[x_atypes_types[x_idx]] : catype_t{};
-    catype_t y_type = (y_atom_idx >= 0) ? catypes_table[y_atypes_types[y_idx]] : catype_t{};
+    int x_catype_type_idx = (x_idx < nx) ? x_atypes_types[x_idx] : -1;
+    int y_catype_type_idx = (y_idx < ny) ? y_atypes_types[y_idx] : -1;
+    catype_t x_type = (x_atom_idx >= 0 && x_catype_type_idx >= 0) ? catypes_table[x_catype_type_idx] : catype_t{};
+    catype_t y_type = (y_atom_idx >= 0 && y_catype_type_idx >= 0) ? catypes_table[y_catype_type_idx] : catype_t{};
 
-    if (x_atom_idx >= n_atoms_solute && y_atom_idx >= n_atoms_solute) {
-        // Special handling for water-water interactions: LJ only between oxygens
-        if ((x_atom_idx - n_atoms_solute) % 3 != 0) {
-            x_type.aii_normal = 0.0;
-            x_type.bii_normal = 0.0;
-        }
-        if ((y_atom_idx - n_atoms_solute) % 3 != 0) {
-            y_type.aii_normal = 0.0;
-            y_type.bii_normal = 0.0;
-        }
-    }
 
     double3 x_force = {0.0, 0.0, 0.0};
     double3 y_force = {0.0, 0.0, 0.0};
@@ -230,6 +223,15 @@ __global__ void calc_nonbonded_force_kernel(
             double bi_bii = bond14 ? x_type.bii_1_4 : x_type.bii_normal;
             double aj_aii = bond14 ? y_type.aii_1_4 : y_type.aii_normal;
             double bj_bii = bond14 ? y_type.bii_1_4 : y_type.bii_normal;
+
+             // Match legacy water-water behavior: LJ only between oxygens
+            if (x_atom_idx >= n_atoms_solute && y_atom_idx >= n_atoms_solute) {
+                bool x_is_O = ((x_atom_idx - n_atoms_solute) % 3) == 0;
+                bool y_is_O = ((y_atom_idx - n_atoms_solute) % 3) == 0;
+                if (!(x_is_O && y_is_O)) {
+                    ai_aii = bi_bii = aj_aii = bj_bii = 0.0;
+                }
+            }
 
             double evdw = 0, ecoul = 0, dv = 0;
 

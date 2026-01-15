@@ -118,9 +118,17 @@ class CudaContext {
     int* d_p_charge_types;
     int* d_w_charge_types;
     int* d_q_charge_types;  // [0, lambdas * n_qatoms) is the normal q_charge_type, [lambdas * n_qatoms, ... ) is the lambda-scaled q_charge_type]
+    
     int* d_p_catype_types;
     int* d_w_catype_types;
     int* d_q_catype_types;  // [0, lambdas * n_qatoms) is the normal q_catype_type, [lambdas * n_qatoms, ... ) is the lambda-scaled q_catype_type]
+
+    int *d_p_atoms_list;
+    int *d_w_atoms_list;
+    int *d_q_atoms_list;
+    std::vector<int> h_p_atoms_list;
+    std::vector<int> h_w_atoms_list;
+    std::vector<int> h_q_atoms_list;
 
     static CudaContext& instance() {
         static CudaContext ctx;
@@ -159,6 +167,7 @@ class CudaContext {
 
     void initialize_charge_tables_host();
     void initialize_catype_tables_host();
+    void initialize_atom_lists_host();
 };
 template <typename T>
 void CudaContext::sync_array_to_device(T* dst, const T* src, int count) {
