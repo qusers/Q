@@ -1,0 +1,20 @@
+rl /zfsdata/data/david/Q/src/QligFEP/FF/AMBER14sb.lib 
+rl jmc_28.lib
+rl jmc_30_renumber.lib
+rprm AMBER14sb_jmc_28_jmc_30_merged.prm 
+! TO DO Change if protein system is used
+rp jmc_28_jmc_30.pdb 
+! solvation - density adapted to membrane proteins
+set solvent_pack 2.3
+set solute_density 0.05794
+boundary 1 -4.63 26.456 -30.617 25
+solvate -4.63 26.456 -30.617 25 4 water.pdb
+!addbond at1 at2 y
+maketop MKC_p 
+writetop dualtop.top 
+wp top_p.pdb y 
+rt dualtop.top
+mask none
+mask not excluded 
+wp complexnotexcluded.pdb y 
+q 

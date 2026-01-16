@@ -1,0 +1,18 @@
+###Parameter File###
+#this is a parameter file, which describes how to do the transformation between state 0 and state 1
+#this is read the main script, and is how all edges are processed
+#number of reps is how many neq 0-->1 and 1-->0 simulations will be done per folder. This is adjusted in order to balance your total steps
+#number of steps eq5 is how many steps equilibration between eq5 and the first neq simulation is done - adjust depending on the difference between your molecules.
+#number of steps eq6 is the spacing between your neq simulations - recommended to be >250
+#number of steps neq describes the length of the neq simulation is steps. recommended to be >16k
+#L parameter describes the steepness of the sigmoid l(t) = 1/[1+e^L(t-0.5)]- higher L parameters result in more time spent near lambda=0 and lambda=1, lower parameters result in a near-linear change in lambda over time. Recommended to be between 4 and 16
+#if a linear schedule is desired, L should be set to 0.0001 to avoid messing with the code
+
+
+
+number_of_reps = 5 
+number_of_steps_eq5 = 5000
+number_of_steps_eq6 = 1000
+number_of_steps_neq = 50000
+L_parameter = 8
+
