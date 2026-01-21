@@ -118,7 +118,9 @@ __global__ void calc_nonbonded_force_kernel(
     bool disable_water_h_lj,
 
     // helper variables
-    const int n_atoms_solute
+    const int n_atoms_solute,
+    const int n_qelscales,
+    const q_elscale_t* d_qelscales  // todo: Now doesn't use it. Should optimize it later
 
 ) {
     const int x_block_num = (nx + 31) >> 5;
@@ -235,6 +237,13 @@ __global__ void calc_nonbonded_force_kernel(
             double aj_aii = bond14 ? y_type.aii_1_4 : y_type.aii_normal;
             double bj_bii = bond14 ? y_type.bii_1_4 : y_type.bii_normal;
 
+            for (int k = 0; k < n_qelscales; k++) {
+                q_elscale_t qscale = d_qelscales[k];
+                if ((x_charge_type_idx == qscale.qi) || (y_charge_type_idx == qscale.qj)) {
+                    scaling *= qscale.mu;
+                }
+            }
+
             double evdw = 0, ecoul = 0, dv = 0;
 
             calculate_unforce_bound(
@@ -344,7 +353,9 @@ std::pair<double, double> calc_nonbonded_force_host(
         d_ecoul_total,
         symmetric,
         disable_water_h_lj,
-        n_atoms_solute);
+        n_atoms_solute,
+        n_qelscales,
+        context.d_q_elscales);
 
     cudaDeviceSynchronize();
 
