@@ -76,7 +76,6 @@ __device__ void calculate_unforce_bound(
     // ecoul = r;
     // evdw = v_a - v_b;
     // dv = r2 * (-ecoul - v_a + v_b);
-    
 
     ecoul = scaling * coulomb_constant * x_charge * y_charge * r;
 
@@ -115,6 +114,8 @@ __global__ void calc_nonbonded_force_kernel(
     double* ecoul_tot,
 
     bool symmetric,
+
+    bool disable_water_h_lj,
 
     // helper variables
     const int n_atoms_solute
@@ -167,7 +168,6 @@ __global__ void calc_nonbonded_force_kernel(
     catype_t x_type = (x_atom_idx >= 0 && x_catype_type_idx >= 0) ? catypes_table[x_catype_type_idx] : catype_t{};
     catype_t y_type = (y_atom_idx >= 0 && y_catype_type_idx >= 0) ? catypes_table[y_catype_type_idx] : catype_t{};
 
-
     double3 x_force = {0.0, 0.0, 0.0};
     double3 y_force = {0.0, 0.0, 0.0};
 
@@ -215,6 +215,17 @@ __global__ void calc_nonbonded_force_kernel(
         y_force.z = shfl(y_force.z, src, mask);
     };
 
+    if (disable_water_h_lj) {
+        if (x_atom_idx >= n_atoms_solute && ((x_atom_idx - n_atoms_solute) % 3 != 0)) {
+            x_type.aii_normal = 0.0;
+            x_type.bii_normal = 0.0;
+        }
+        if (y_atom_idx >= n_atoms_solute && ((y_atom_idx - n_atoms_solute) % 3 != 0)) {
+            y_type.aii_normal = 0.0;
+            y_type.bii_normal = 0.0;
+        }
+    }
+
     for (int i = 0; i < 32; i++) {
         if (is_valid()) {
             bool bond14 = lj_code(x_atom_idx, y_atom_idx) == 1;
@@ -223,15 +234,6 @@ __global__ void calc_nonbonded_force_kernel(
             double bi_bii = bond14 ? x_type.bii_1_4 : x_type.bii_normal;
             double aj_aii = bond14 ? y_type.aii_1_4 : y_type.aii_normal;
             double bj_bii = bond14 ? y_type.bii_1_4 : y_type.bii_normal;
-
-             // Match legacy water-water behavior: LJ only between oxygens
-            if (x_atom_idx >= n_atoms_solute && y_atom_idx >= n_atoms_solute) {
-                bool x_is_O = ((x_atom_idx - n_atoms_solute) % 3) == 0;
-                bool y_is_O = ((y_atom_idx - n_atoms_solute) % 3) == 0;
-                if (!(x_is_O && y_is_O)) {
-                    ai_aii = bi_bii = aj_aii = bj_bii = 0.0;
-                }
-            }
 
             double evdw = 0, ecoul = 0, dv = 0;
 
@@ -290,20 +292,20 @@ __global__ void calc_nonbonded_force_kernel(
 }  // namespace CudaNonbondedForce
 
 std::pair<double, double> calc_nonbonded_force_host(
-    int nx, 
-    int ny, 
-    int* x_idx_list, 
-    int* y_idx_list, 
-    bool symmetric, 
+    int nx,
+    int ny,
+    int* x_idx_list,
+    int* y_idx_list,
+    bool symmetric,
 
-    const int* x_charges_types, 
+    const int* x_charges_types,
     const int* y_charges_types,
     const ccharge_t* ccharges_table,
 
-    const int* x_atypes_types, 
+    const int* x_atypes_types,
     const int* y_atypes_types,
-    const catype_t* catypes_table
-) {
+    const catype_t* catypes_table,
+    bool disable_water_h_lj) {
     using namespace CudaNonbondedForce;
     CudaContext& context = CudaContext::instance();
     const int thread_num = 256;
@@ -341,6 +343,7 @@ std::pair<double, double> calc_nonbonded_force_host(
         d_evdw_total,
         d_ecoul_total,
         symmetric,
+        disable_water_h_lj,
         n_atoms_solute);
 
     cudaDeviceSynchronize();

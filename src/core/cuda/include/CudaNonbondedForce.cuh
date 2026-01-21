@@ -16,7 +16,8 @@ std::pair<double, double> calc_nonbonded_force_host(
 
     const int* x_atypes_types, 
     const int* y_atypes_types,
-    const catype_t* catypes_table
+    const catype_t* catypes_table,
+    bool disable_water_h_lj = false
 );
 
 void cleanup_nonbonded_force();
