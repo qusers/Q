@@ -76,14 +76,19 @@ def get_restraints_for_pair(mol1_path: Path, mol2_path: Path, method_config: dic
     return {str(k): v for k, v in restraints.items()}
 
 
-def generate_golden_for_dataset(
-    sdf_path: Path, output_dir: Path, max_pairs: int = MAX_PAIRS_PER_DATASET
-) -> int:
-    """Generate golden files for a single dataset."""
-    dataset_name = sdf_path.stem.replace("_ligands", "")
-    dataset_output = output_dir / dataset_name
-    dataset_output.mkdir(parents=True, exist_ok=True)
+def generate_golden_for_dataset(sdf_path: Path, max_pairs: int = MAX_PAIRS_PER_DATASET) -> dict:
+    """Generate golden data for a single dataset.
 
+    Returns a dict with structure:
+    {
+        "pair1_pair2": {
+            "element_p": {...},
+            "element_strict": {...},
+            ...
+        },
+        ...
+    }
+    """
     supplier = Chem.SDMolSupplier(str(sdf_path))
     mols = [
         (m, m.GetProp("_Name") if m.HasProp("_Name") else f"mol_{i}")
@@ -93,16 +98,16 @@ def generate_golden_for_dataset(
 
     if len(mols) < 2:
         print(f"  Skipping {sdf_path.name}: fewer than 2 molecules")
-        return 0
+        return {}
 
-    count = 0
+    dataset_data = {}
     pairs_processed = 0
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
 
         for i, (mol1, name1) in enumerate(mols):
-            for j, (mol2, name2) in enumerate(mols[i + 1 :], start=i + 1):
+            for mol2, name2 in mols[i + 1 :]:
                 if pairs_processed >= max_pairs:
                     break
 
@@ -111,24 +116,26 @@ def generate_golden_for_dataset(
                 write_mol_to_sdf(mol1, mol1_path)
                 write_mol_to_sdf(mol2, mol2_path)
 
+                pair_key = f"{name1}_{name2}"
+                pair_data = {}
+
                 for method in METHODS:
                     method_name = method["name"]
-                    golden_file = dataset_output / f"{name1}_{name2}_{method_name}.json"
-
                     try:
                         restraints = get_restraints_for_pair(mol1_path, mol2_path, method)
-                        with open(golden_file, "w") as f:
-                            json.dump(restraints, f, indent=2, sort_keys=True)
-                        count += 1
+                        pair_data[method_name] = restraints
                     except Exception as e:
-                        print(f"  Error for {name1}_{name2}_{method_name}: {e}")
+                        print(f"  Error for {pair_key}/{method_name}: {e}")
+
+                if pair_data:
+                    dataset_data[pair_key] = pair_data
 
                 pairs_processed += 1
 
             if pairs_processed >= max_pairs:
                 break
 
-    return count
+    return dataset_data
 
 
 def main():
@@ -151,12 +158,18 @@ def main():
     print(f"Max pairs per dataset: {args.max_pairs}")
     print()
 
-    total_count = 0
+    total_pairs = 0
     for sdf_path in tqdm(sdf_files, desc="Datasets"):
-        count = generate_golden_for_dataset(sdf_path, GOLDEN_DIR, args.max_pairs)
-        total_count += count
+        dataset_name = sdf_path.stem.replace("_ligands", "")
+        dataset_data = generate_golden_for_dataset(sdf_path, args.max_pairs)
 
-    print(f"\nGenerated {total_count} golden files in {GOLDEN_DIR}")
+        if dataset_data:
+            golden_file = GOLDEN_DIR / f"{dataset_name}.json"
+            with open(golden_file, "w") as f:
+                json.dump(dataset_data, f, indent=2, sort_keys=True)
+            total_pairs += len(dataset_data)
+
+    print(f"\nGenerated {len(sdf_files)} golden files ({total_pairs} pairs) in {GOLDEN_DIR}")
 
 
 if __name__ == "__main__":

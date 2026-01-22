@@ -69,33 +69,46 @@ def temp_work_dir() -> Generator[Path, None, None]:
 class GoldenFileManager:
     """Helper class for golden file (snapshot) testing.
 
-    Handles loading, saving, and comparing golden files for regression tests.
+    Handles loading and comparing golden files for regression tests.
+    Golden files are stored as one JSON file per dataset with structure:
+    {
+        "lig1_lig2": {
+            "element_p": {"0": 0, ...},
+            "element_strict": {...},
+            ...
+        },
+        ...
+    }
     """
 
     def __init__(self, golden_dir: Path):
         self.golden_dir = golden_dir
+        self._cache: dict[str, dict] = {}
 
-    def get_golden_path(self, dataset: str, lig1: str, lig2: str, method: str) -> Path:
-        """Get path to golden file for a specific ligand pair and method."""
-        dataset_dir = self.golden_dir / dataset
-        dataset_dir.mkdir(parents=True, exist_ok=True)
-        return dataset_dir / f"{lig1}_{lig2}_{method}.json"
+    def _load_dataset(self, dataset: str) -> dict | None:
+        """Load and cache a dataset's golden file."""
+        if dataset in self._cache:
+            return self._cache[dataset]
 
-    def load_golden(self, dataset: str, lig1: str, lig2: str, method: str) -> dict | None:
-        """Load golden file if it exists, otherwise return None."""
-        golden_path = self.get_golden_path(dataset, lig1, lig2, method)
+        golden_path = self.golden_dir / f"{dataset}.json"
         if golden_path.exists():
             with open(golden_path) as f:
-                return json.load(f)
+                self._cache[dataset] = json.load(f)
+            return self._cache[dataset]
         return None
 
-    def save_golden(self, data: dict, dataset: str, lig1: str, lig2: str, method: str) -> Path:
-        """Save data to golden file."""
-        golden_path = self.get_golden_path(dataset, lig1, lig2, method)
-        golden_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(golden_path, "w") as f:
-            json.dump(data, f, indent=2, sort_keys=True)
-        return golden_path
+    def load_golden(self, dataset: str, lig1: str, lig2: str, method: str) -> dict | None:
+        """Load golden data for a specific ligand pair and method."""
+        dataset_data = self._load_dataset(dataset)
+        if dataset_data is None:
+            return None
+
+        pair_key = f"{lig1}_{lig2}"
+        pair_data = dataset_data.get(pair_key)
+        if pair_data is None:
+            return None
+
+        return pair_data.get(method)
 
     def compare(self, actual: dict, dataset: str, lig1: str, lig2: str, method: str) -> tuple[bool, str]:
         """Compare actual output to golden file.
@@ -105,7 +118,7 @@ class GoldenFileManager:
         """
         expected = self.load_golden(dataset, lig1, lig2, method)
         if expected is None:
-            return False, f"Golden file not found for {dataset}/{lig1}_{lig2}_{method}"
+            return False, f"Golden data not found for {dataset}/{lig1}_{lig2}/{method}"
 
         # Convert keys to strings for comparison (JSON loads int keys as strings)
         actual_str_keys = {str(k): v for k, v in actual.items()}

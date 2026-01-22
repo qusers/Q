@@ -61,9 +61,9 @@ class TestRestraintConsistencyGolden:
 
         method_config = METHOD_CONFIGS[method_name]
 
-        # Test first 3 pairs (matching golden file generation)
+        # Test first 5 pairs (matching golden file generation)
         pairs_tested = 0
-        max_pairs = 3
+        max_pairs = 5
 
         for i, (mol1, name1) in enumerate(mols):
             for mol2, name2 in mols[i + 1 :]:
