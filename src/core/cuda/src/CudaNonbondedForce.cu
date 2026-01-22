@@ -237,12 +237,13 @@ __global__ void calc_nonbonded_force_kernel(
             double aj_aii = bond14 ? y_type.aii_1_4 : y_type.aii_normal;
             double bj_bii = bond14 ? y_type.bii_1_4 : y_type.bii_normal;
 
-            for (int k = 0; k < n_qelscales; k++) {
-                q_elscale_t qscale = d_qelscales[k];
-                if ((x_charge_type_idx == qscale.qi) || (y_charge_type_idx == qscale.qj)) {
-                    scaling *= qscale.mu;
-                }
-            }
+            // todo: Now the idx is wrong, should optimize it later
+            // for (int k = 0; k < n_qelscales; k++) {
+            //     q_elscale_t qscale = d_qelscales[k];
+            //     if ((x_charge_type_idx == qscale.qi) && (y_charge_type_idx == qscale.qj)) {
+            //         scaling *= qscale.mu;
+            //     }
+            // }
 
             double evdw = 0, ecoul = 0, dv = 0;
 
