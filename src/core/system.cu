@@ -29,6 +29,7 @@
 #include "cuda/include/CudaNonbondedQWForce.cuh"
 #include "cuda/include/CudaNonbondedPWForce.cuh"
 #include "cuda/include/CudaNonbondedWWForce.cuh"
+#include "cuda/include/CudaNonbondedForce.cuh"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1320,6 +1321,7 @@ void init_cuda_kernel_data() {
     init_bond_force_kernel_data();
     init_improper2_force_kernel_data();
     init_leapfrog_kernel_data();
+    init_nonbonded_force_kernel_data();
     init_nonbonded_pp_force_kernel_data();
     init_nonbonded_pw_force_kernel_data();
     init_nonbonded_qp_force_kernel_data();
@@ -1564,6 +1566,7 @@ void clean_variables() {
         cleanup_nonbonded_qq_force();
         cleanup_nonbonded_qw_force();
         cleanup_nonbonded_ww_force();
+        cleanup_nonbonded_force();
         cleanup_polx_water_force();
         cleanup_pshell_force();
         cleanup_radix_water_force();
