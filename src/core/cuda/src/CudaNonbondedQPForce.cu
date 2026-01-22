@@ -31,8 +31,8 @@ void calc_nonbonded_qp_forces_host_v2() {
             CudaContext::instance().d_p_catype_types,
             CudaContext::instance().d_catype_table_all, false);
 
-        EQ_nonbond_qp[state].Uvdw += result.first / lambdas[state];
-        EQ_nonbond_qp[state].Ucoul += result.second / lambdas[state];
+        EQ_nonbond_qp[state].Uvdw = result.first / lambdas[state];
+        EQ_nonbond_qp[state].Ucoul = result.second / lambdas[state];
         // printf("Nonbonded QP Force State %d: Uvdw = %f, Ucoul = %f\n", state, result.first, result.second);
     }
 }
