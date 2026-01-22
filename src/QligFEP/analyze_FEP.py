@@ -442,8 +442,18 @@ class FepReader:
             _to = self.data[self.system][fep]["to"]
 
             # search ligands in the edges
+            ddG = None
             for edge in self.mapping_json["edges"]:
                 if edge["from"] == _from and edge["to"] == _to:
+                    if exp_key not in edge:
+                        logger.error(
+                            f"Experimental key '{exp_key}' not found in edge {_from} -> {_to}. "
+                            f"Available keys in this edge: {', '.join(edge.keys())}. "
+                            f"Please check your mapping JSON file and ensure the experimental key is correct."
+                        )
+                        raise KeyError(
+                            f"Key '{exp_key}' not found in edge data. Check your mapping JSON file."
+                        )
                     ddG = edge[exp_key]
                     break
 
@@ -472,9 +482,9 @@ class FepReader:
             for fep in self.feps:
                 fep_dict = self.data["result"][method][fep]
                 if fep_dict["from"] == _from and fep_dict["to"] == _to:
-                    avg_val = fep_dict[f"{method}_avg"] if not np.isnan(fep_dict[f"{method}_avg"]) else None
-                    sem_val = fep_dict[f"{method}_sem"] if not np.isnan(fep_dict[f"{method}_sem"]) else None
-                    std_val = fep_dict[f"{method}_std"] if not np.isnan(fep_dict[f"{method}_std"]) else None
+                    avg_val = fep_dict[f"{method}_avg"] if not pd.isna(fep_dict[f"{method}_avg"]) else None
+                    sem_val = fep_dict[f"{method}_sem"] if not pd.isna(fep_dict[f"{method}_sem"]) else None
+                    std_val = fep_dict[f"{method}_std"] if not pd.isna(fep_dict[f"{method}_std"]) else None
 
                     edge.update(
                         {
@@ -490,14 +500,34 @@ class FepReader:
                 json.dump(self.mapping_json, f, indent=4)
 
     @staticmethod
-    def prepare_df(json_dict, experimental_data: bool = True):
-        pref = "dg" if "dg_error" in json_dict["edges"][0] else "ddg"
+    def prepare_df(json_dict, experimental_data: bool = True, exp_key: Optional[str] = None) -> pd.DataFrame:
         df = pd.DataFrame(json_dict["edges"])
         if experimental_data:
+            # For custom keys, edges have "delta_{node key}", which needs to be passed by the user
+            # The keys we use for experimental values are "ddg_value" (edge) or "dg_value" (node)
+            if exp_key is None:
+                if "dg_value" in df.columns:
+                    expected_col = "dg_value"
+                elif "ddg_value" in df.columns:
+                    expected_col = "ddg_value"
+            else:
+                expected_col = exp_key
+
+            if expected_col not in df.columns:
+                available_cols = [col for col in df.columns if "delta_" in col or "_value" in col or "dg" in col.lower()]
+                logger.error(
+                    f"Expected experimental data column '{exp_key}' not found in edges data. "
+                    f"Available columns that might contain experimental data: {', '.join(available_cols) if available_cols else 'none'}. "
+                    f"Please check for the correct key with experimental value on your mapping JSON file."
+                )
+                raise KeyError(
+                    f"Column '{exp_key}' not found. Check your mapping JSON file has the correct experimental data."
+                )
+
             df = (
                 df.assign(
-                    ddg_value=lambda x: x[pref + "_value"],
-                    residual=lambda x: x[pref + "_value"] - x["Q_ddG_avg"],
+                    ddg_value=lambda x: x[expected_col],
+                    residual=lambda x: x[expected_col] - x["Q_ddG_avg"],
                     residual_abs=lambda x: x["residual"].abs(),
                 )
                 .sort_values("residual_abs", ascending=False)
@@ -646,7 +676,7 @@ class FepReader:
         # set labels, make it square and add legend
         plt.title(
             f"{(target_name + ' ' if target_name is not None else '')}"
-            r"$\Delta\Delta \text{G}_{\text{BAR}}$ ($\mathrm{N}="
+            r"$\Delta\Delta \mathrm{G}_{\mathrm{BAR}}$ ($\mathrm{N}="
             f"{len(exp_values)}$)"
         )
         plt.xlabel("$\Delta\Delta G_{exp} (kcal/mol)$")  # noqa: W605
@@ -887,7 +917,7 @@ def main(args: argparse.Namespace):
         results_df = fep_reader.prepare_df(results_json)
         if fep_reader.ignored_edges:
             results_df = results_df.query("~fep_name.isin(@fep_reader.ignored_edges)").reset_index(drop=True)
-        fig, ax = fep_reader.create_ddG_plot(results_df=results_df)
+        fig, _ = fep_reader.create_ddG_plot(results_df=results_df)
         fig.savefig(f"{args.target}_ddG_plot.png", dpi=300, bbox_inches="tight")
     else:
         results_json = json.loads((Path.cwd() / results_file).read_text())
