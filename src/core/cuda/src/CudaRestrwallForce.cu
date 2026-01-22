@@ -71,7 +71,6 @@ void calc_restrwall_forces_host() {
     cudaDeviceSynchronize();
     double h_energy;
     cudaMemcpy(&h_energy, d_energies, sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(dvelocities, d_dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyDeviceToHost);
     printf("Restrwall energy: %f\n", h_energy);
     E_restraint.Upres += h_energy;
 }

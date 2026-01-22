@@ -47,7 +47,6 @@ void CudaHandler::initialize() {
         init_restrdis_force_kernel_data();
         init_restrpos_force_kernel_data();
         init_restrseq_force_kernel_data();
-        init_restrseq_force_kernel_data();
         init_restrwall_force_kernel_data();
         init_shake_constraints_kernel_data();
         init_temperature_kernel_data();

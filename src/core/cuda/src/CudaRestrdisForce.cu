@@ -96,7 +96,6 @@ void calc_restrdis_forces_host() {
         d_EQ_restraint,
         d_E_restraint);
     cudaDeviceSynchronize();
-    cudaMemcpy(dvelocities, d_dvelocities, n_atoms * sizeof(dvel_t), cudaMemcpyDeviceToHost);
     cudaMemcpy(EQ_restraint, d_EQ_restraint, sizeof(E_restraint_t) * n_lambdas, cudaMemcpyDeviceToHost);
     double ener;
     cudaMemcpy(&ener, d_E_restraint, sizeof(double), cudaMemcpyDeviceToHost);

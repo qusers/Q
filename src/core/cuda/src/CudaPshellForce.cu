@@ -75,7 +75,6 @@ void calc_pshell_forces_host() {
     double ushell_energy;
     cudaMemcpy(&ufix_energy, d_ufix_energy, sizeof(double), cudaMemcpyDeviceToHost);
     cudaMemcpy(&ushell_energy, d_ushell_energy, sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(dvelocities, d_dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyDeviceToHost);
 
     E_restraint.Ufix += ufix_energy;
     E_restraint.Ushell += ushell_energy;
