@@ -89,6 +89,18 @@ class Read_Topology(object):
         cnt = 0
         switch = 0
 
+        # Initialize vdW parameter lists to detect missing sections
+        Aii_normal = []
+        Bii_normal = []
+        Aii_polar = []
+        Bii_polar = []
+        Aii_14 = []
+        Bii_14 = []
+        Masses = []
+
+        # Track which vdW format was detected: 'geometric' or 'arithmetic'
+        vdw_format_detected = None
+
         with open(self.top) as infile:
             for line in infile:
                     
@@ -162,11 +174,11 @@ class Read_Topology(object):
                                                                                                    
                 if 'Masses' in line:
                     block = 15
-                    Masses = []
                     continue
-                                                                                                                   
+
                 # Geometric vdW format (vdw_rule=1): sqrt(Aii), sqrt(Bii)
                 if 'sqrt (Aii) normal' in line:
+                    vdw_format_detected = 'geometric'
                     Aii_normal = []
                     block = 16
                     continue
@@ -198,6 +210,7 @@ class Read_Topology(object):
 
                 # Arithmetic vdW format (vdw_rule=2): R*, epsilon
                 if 'R* normal:' in line:
+                    vdw_format_detected = 'arithmetic'
                     Aii_normal = []
                     block = 16
                     continue
@@ -480,7 +493,33 @@ class Read_Topology(object):
                             l = '1'
 
                         self.data['excluded'].append(l)
-        
+
+        # Validate vdW rule
+        if self.data['vdw_rule'] is None:
+            print("FATAL: vdW combination rule not specified in topology")
+            sys.exit()
+
+        if self.data['vdw_rule'] not in ('1', '2'):
+            print("FATAL: Invalid vdW combination rule '{}' (must be 1 or 2)".format(
+                self.data['vdw_rule']))
+            sys.exit()
+
+        # Validate format matches declared rule
+        if vdw_format_detected is None:
+            print("FATAL: No vdW parameter sections found in topology")
+            sys.exit()
+
+        expected_format = 'geometric' if self.data['vdw_rule'] == '1' else 'arithmetic'
+        if vdw_format_detected != expected_format:
+            print("FATAL: vdw_rule={} but found {} format section headers".format(
+                self.data['vdw_rule'], vdw_format_detected))
+            sys.exit()
+
+        # Validate all vdW parameter sections were populated
+        if not Aii_normal or not Bii_normal or not Aii_polar or not Bii_polar or not Aii_14 or not Bii_14:
+            print("FATAL: Missing required vdW parameter sections in topology")
+            sys.exit()
+
         # header construct
         self.data['header'] = header
         
