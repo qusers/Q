@@ -1,6 +1,7 @@
 // TODO: Add impropers, bond pairs
 #include "system.h"
 #include "qatoms.h"
+#include "vdw_rules.h"
 #include "utils.h"
 #include <math.h>
 #include <stdio.h>
@@ -57,6 +58,7 @@ void calc_nonbonded_qp_forces() {
             r6 = r2 * r2 * r2;
             r2 = 1 / r2;
             r = sqrt(r2);
+            double r6inv = r2 * r2 * r2;  // 1/r^6 for vdW calculation
 
             for (int state = 0; state < n_lambdas; state++) {
                 qi_type = q_catypes[q_atypes[qi + n_qatoms * state].code - 1];
@@ -68,8 +70,11 @@ void calc_nonbonded_qp_forces() {
                 aj_bii = bond14 ? aj_type.bii_1_4 : aj_type.bii_normal;
 
                 Vel = topo.coulomb_constant * scaling * q_charges[qi + n_qatoms * state].q * ccharges[charges[j].code - 1].charge * r;
-                V_a = ai_aii * aj_aii / (r6 * r6);
-                V_b = ai_bii * aj_bii / r6;
+                if (topo.vdw_rule == VDW_GEOMETRIC) {
+                    calc_vdw_geometric(ai_aii, aj_aii, ai_bii, aj_bii, r6inv, &V_a, &V_b);
+                } else {
+                    calc_vdw_arithmetic(ai_aii, aj_aii, ai_bii, aj_bii, r6inv, &V_a, &V_b);
+                }
                 dv = r2 * (-Vel - (12 * V_a - 6 * V_b)) * lambdas[state];
 
                 // Update forces
@@ -296,6 +301,7 @@ void calc_nonbonded_qw_forces() {
             r6O = r2O * r2O * r2O;
             r2O = 1.0 / r2O;
             rO = sqrt(r2O);
+            double r6Oinv = r2O * r2O * r2O;  // 1/r^6 for vdW calculation
             r2H1 = rH1 * rH1;
             r2H2 = rH2 * rH2;
 
@@ -310,8 +316,11 @@ void calc_nonbonded_qw_forces() {
                 ai_aii = qi_type.Ai;
                 ai_bii = qi_type.Bi;
 
-                V_a = ai_aii * A_O / (r6O * r6O);
-                V_b = ai_bii * B_O / (r6O);
+                if (topo.vdw_rule == VDW_GEOMETRIC) {
+                    calc_vdw_geometric(ai_aii, A_O, ai_bii, B_O, r6Oinv, &V_a, &V_b);
+                } else {
+                    calc_vdw_arithmetic(ai_aii, A_O, ai_bii, B_O, r6Oinv, &V_a, &V_b);
+                }
 
                 VelO = topo.coulomb_constant * crg_ow * q_charges[qi + n_qatoms * state].q * rO;
                 VelH1 = topo.coulomb_constant * crg_hw * q_charges[qi + n_qatoms * state].q * rH1;
@@ -493,8 +502,11 @@ void calc_nonbonded_qq_forces() {
                 ai_bii = bond14 ? qi_type.Bi_14 : qi_type.Bi;
                 aj_bii = bond14 ? qj_type.Bi_14 : qj_type.Bi;
 
-                V_a = r6a * r6a * ai_aii * aj_aii;
-                V_b = r6a * ai_bii * aj_bii;
+                if (topo.vdw_rule == VDW_GEOMETRIC) {
+                    calc_vdw_geometric(ai_aii, aj_aii, ai_bii, aj_bii, r6a, &V_a, &V_b);
+                } else {
+                    calc_vdw_arithmetic(ai_aii, aj_aii, ai_bii, aj_bii, r6a, &V_a, &V_b);
+                }
                 dva = r2a * ( -Vela -12 * V_a + 6 * V_b) * lambdas[state];
 
                 dvelocities[ai].x -= dva * da.x;
@@ -760,6 +772,7 @@ __device__ void calc_qw_dvel_matrix_incr(int row, int qi, int column, int n_lamb
     r6O = r2O * r2O * r2O;
     r2O = 1.0 / r2O;
     rO = sqrt(r2O);
+    double r6Oinv = r2O * r2O * r2O;  // 1/r^6 for vdW calculation
     r2H1 = rH1 * rH1;
     r2H2 = rH2 * rH2;
 
@@ -775,8 +788,11 @@ __device__ void calc_qw_dvel_matrix_incr(int row, int qi, int column, int n_lamb
         ai_aii = qi_type.Ai;
         ai_bii = qi_type.Bi;
 
-        V_a = ai_aii * A_O / (r6O * r6O);
-        V_b = ai_bii * B_O / (r6O);
+        if (D_topo.vdw_rule == VDW_GEOMETRIC) {
+            calc_vdw_geometric(ai_aii, A_O, ai_bii, B_O, r6Oinv, &V_a, &V_b);
+        } else {
+            calc_vdw_arithmetic(ai_aii, A_O, ai_bii, B_O, r6Oinv, &V_a, &V_b);
+        }
 
         VelO = D_topo.coulomb_constant * crg_ow * D_qcharges[qi + n_qatoms * state].q * rO;
         VelH1 = D_topo.coulomb_constant * crg_hw * D_qcharges[qi + n_qatoms * state].q * rH1;
@@ -988,6 +1004,7 @@ __device__ void calc_qp_dvel_matrix_incr(int row, int qi, int column, int pj, in
     r6 = r2 * r2 * r2;
     r2 = 1 / r2;
     r = sqrt(r2);
+    double r6inv = r2 * r2 * r2;  // 1/r^6 for vdW calculation
 
     for (int state = 0; state < n_lambdas; state++) {
         qi_type = D_qcatypes[D_qatypes[qi + n_qatoms * state].code - 1];
@@ -999,8 +1016,11 @@ __device__ void calc_qp_dvel_matrix_incr(int row, int qi, int column, int pj, in
         aj_bii = bond14 ? aj_type.bii_1_4 : aj_type.bii_normal;
 
         Vel = D_topo.coulomb_constant * scaling * D_qcharges[qi + n_qatoms * state].q * D_ccharges[D_charges[j].code - 1].charge * r;
-        V_a = ai_aii * aj_aii / (r6 * r6);
-        V_b = ai_bii * aj_bii / r6;
+        if (D_topo.vdw_rule == VDW_GEOMETRIC) {
+            calc_vdw_geometric(ai_aii, aj_aii, ai_bii, aj_bii, r6inv, &V_a, &V_b);
+        } else {
+            calc_vdw_arithmetic(ai_aii, aj_aii, ai_bii, aj_bii, r6inv, &V_a, &V_b);
+        }
         dv = r2 * (-Vel - (12 * V_a - 6 * V_b)) * D_lambdas[state];
 
         // if (state == 0 && qi == 0 && pj == 1) {

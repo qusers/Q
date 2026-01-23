@@ -214,6 +214,7 @@ struct topo_t {
     coord_t solvent_center;
     double el14_scale;
     double coulomb_constant;
+    int vdw_rule;  // 1=geometric, 2=arithmetic
 };
 
 struct cgrp_t {
