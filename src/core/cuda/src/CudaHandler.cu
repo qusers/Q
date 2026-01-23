@@ -206,6 +206,10 @@ void CudaHandler::run_iteration(int iteration) {
     // 7. update totals and print outputs like CPU path
     update_energy_totals();
     print_outputs(iteration);
+    // Append output files
+    write_coords(iteration);
+    write_velocities(iteration);
+    write_energies(iteration);    
 }
 
 void CudaHandler::update_energy_totals() {
