@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 Q_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 QDYN_PY="$Q_ROOT/src/bin/qdyn.py"
-QDYN_MAIN="$Q_ROOT/src/bin/qdyn_main"
+QDYN_MAIN="$Q_ROOT/bin/qdyn_main"
 WORKDIR="cuda_workdir"
 
 PREPROCESS_ONLY=false
