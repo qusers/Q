@@ -41,13 +41,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest"]
-
-[tool.pytest.ini_options]
-testpaths = ["test"]
-filterwarnings = [
-    # third-party (gufe/pydantic) deprecation surfaced when importing the package
-    "ignore:.*pydantic.config.Extra.*:DeprecationWarning",
+test = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-timeout>=2.0",
 ]
 
 [tool.setuptools]
@@ -104,6 +101,21 @@ select = [
 ]
 ignore = [
     "E501" # line too long
+]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "tutorial: marks tests that run tutorial workflow steps",
+    "golden: marks golden file regression tests",
+    "fep_setup: marks FEP setup specific tests",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    # third-party (gufe/pydantic) deprecation surfaced when importing the package
+    "ignore:.*pydantic.config.Extra.*:DeprecationWarning",
 ]
 
 [project.scripts]
