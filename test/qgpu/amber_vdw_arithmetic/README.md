@@ -26,24 +26,47 @@ The topology file (`dualtop.top`) contains `FF_TYPE 2`, indicating arithmetic vd
 | `AMBER14sb_ejm_31_ejm_42_merged.prm` | Merged parameter file |
 | `ejm_31.lib` | Ligand 1 library |
 | `ejm_42_renumber.lib` | Ligand 2 library (renumbered) |
-| `run_fortran.sh` | Run qdyn6 (Fortran) |
-| `run_cuda.sh` | Run qgpu (CUDA) |
+| `run_fortran.sh` | Run qdyn (Fortran) |
+| `run_cuda.sh` | Run qgpu (CUDA) via Python preprocessing |
 | `compare_energies.sh` | Compare outputs |
 | `compare_energies.py` | Python energy comparison script |
 
+## Requirements
+
+- **Fortran (qdyn)**: macOS or Linux, compiled from `src/q6/`
+- **CUDA (qgpu)**: Linux with NVIDIA GPU and CUDA toolkit
+  - The CUDA binary (`src/bin/qdyn_main`) is Linux ELF format
+  - On macOS, only preprocessing validation is possible
+
 ## Running the Test
+
+### On Linux (full test)
 
 ```bash
 cd test/qgpu/amber_vdw_arithmetic
 
 # 1. Run Fortran reference
-./run_fortran.sh ../../../bin/qdyn6
+./run_fortran.sh ../../../src/q6/bin/q6/qdyn
 
-# 2. Run CUDA implementation
-./run_cuda.sh ../../../bin/qgpu
+# 2. Run CUDA implementation (requires NVIDIA GPU)
+./run_cuda.sh
 
 # 3. Compare and validate
 ./compare_energies.sh
+```
+
+### On macOS (preprocessing validation only)
+
+```bash
+cd test/qgpu/amber_vdw_arithmetic
+
+# 1. Run Fortran reference (works on macOS)
+./run_fortran.sh ../../../src/q6/bin/q6/qdyn
+
+# 2. Validate preprocessing generates correct CSV files
+./run_cuda.sh --preprocess-only
+
+# This verifies that vdw_rule=2 is correctly written to topo.csv
 ```
 
 ## Validation Criteria
@@ -56,6 +79,19 @@ Step 0 energies must match within **0.01 kcal/mol**:
 - Q-surr energies (vdW and electrostatic)
 
 ## Expected Output
+
+### Preprocessing validation (macOS)
+
+```
+QGPU Arithmetic vdW Validation Test
+====================================
+...
+Preprocessing completed successfully.
+CSV files generated in: cuda_workdir/dualtop/
+PASS: vdw_rule = 2 (arithmetic) correctly set in topo.csv
+```
+
+### Energy comparison (Linux)
 
 ```
 Comparing step 0 energies (tolerance: 0.01 kcal/mol)
@@ -78,3 +114,12 @@ If the test fails:
 4. Check that the CUDA kernel is using the arithmetic combination formula:
    - σ_ij = (σ_i + σ_j) / 2
    - ε_ij = sqrt(ε_i * ε_j)
+
+## Implementation Details
+
+The vdW combination rule is controlled by:
+
+- **Fortran**: `FF_TYPE 2` in topology header → `ivdw_rule = 2`
+- **CUDA**: Python preprocessing writes `2` to line 9 of `topo.csv`
+
+The arithmetic rule is parsed from topology sections labeled `R* normal:` and `epsilon normal:` (as opposed to `sqrt (Aii) normal:` and `sqrt (Bii) normal:` for geometric).
