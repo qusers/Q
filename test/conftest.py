@@ -1,35 +1,167 @@
 """Shared pytest fixtures for QligFEP test suite.
 
-Provides paths to test resources, temporary directories, and golden file helpers.
+Provides paths to test resources, temporary directories, golden file helpers,
+FEP output parsers, and golden file generation functions.
 """
 
+import argparse
 import json
+import re
 import shutil
+import subprocess
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
 
 import pytest
 
-# Root paths
+
+# -----------------------------------------------------------------------------
+# Path Configuration
+# -----------------------------------------------------------------------------
+
 TEST_DIR = Path(__file__).parent
 PROJECT_ROOT = TEST_DIR.parent
-QLIGFEP_TEST_DIR = TEST_DIR / "QligFEP"
+QLIGFEP_TEST_DIR = TEST_DIR / "qligfep"
 RESOURCES_DIR = QLIGFEP_TEST_DIR / "resources"
-GOLDEN_DIR = QLIGFEP_TEST_DIR / "golden_restraints"
+GOLDEN_RESTRAINTS_DIR = QLIGFEP_TEST_DIR / "golden_restraints"
+GOLDEN_FEP_SETUP_DIR = QLIGFEP_TEST_DIR / "golden_fep_setup"
 TUTORIALS_DIR = PROJECT_ROOT / "tutorials"
+
+
+# -----------------------------------------------------------------------------
+# FEP Output Parsers (inlined from fep_parsers.py)
+# -----------------------------------------------------------------------------
+
+
+def parse_distance_restraints(md_content: str) -> list[tuple[int, int, float]]:
+    """Extract (lig1_atom, lig2_atom, force) from [distance_restraints] section."""
+    restraints = []
+    in_section = False
+
+    for line in md_content.splitlines():
+        line = line.strip()
+
+        if line.startswith("[distance_restraints]"):
+            in_section = True
+            continue
+        if in_section and line.startswith("["):
+            break
+        if in_section and line:
+            parts = line.split()
+            if len(parts) >= 5:
+                lig1_atom = int(parts[0])
+                lig2_atom = int(parts[1])
+                force = float(parts[4])
+                restraints.append((lig1_atom, lig2_atom, force))
+
+    return restraints
+
+
+def parse_sequence_restraints(md_content: str) -> bool:
+    """Check if [sequence_restraints] section has content."""
+    in_section = False
+
+    for line in md_content.splitlines():
+        line = line.strip()
+
+        if line.startswith("[sequence_restraints]"):
+            in_section = True
+            continue
+        if in_section and line.startswith("["):
+            break
+        if in_section and line:
+            return True
+
+    return False
+
+
+def parse_topology_header(top_content: str) -> tuple[int, int]:
+    """Extract (total_atoms, solute_atoms) from topology header.
+
+    The header line format is:
+    '    7603    4753 = Total no. of atoms, no. of solute atoms.'
+    """
+    for line in top_content.splitlines():
+        match = re.match(r"\s*(\d+)\s+(\d+)\s*=\s*Total no\. of atoms", line)
+        if match:
+            return int(match.group(1)), int(match.group(2))
+
+    raise ValueError("Could not parse topology header")
+
+
+def parse_fep_atom_count(fep_content: str) -> int:
+    """Count entries in [atoms] section of FEP file."""
+    count = 0
+    in_section = False
+
+    for line in fep_content.splitlines():
+        line = line.strip()
+
+        if line.startswith("[atoms]"):
+            in_section = True
+            continue
+        if in_section and line.startswith("["):
+            break
+        if in_section and line:
+            count += 1
+
+    return count
+
+
+def get_lig_start_indices(pdb_content: str) -> tuple[int, int]:
+    """Find first atom index for LIG and LID residues in combined PDB."""
+    lig_start = None
+    lid_start = None
+
+    for line in pdb_content.splitlines():
+        if not (line.startswith("ATOM") or line.startswith("HETATM")):
+            continue
+
+        atom_num = int(line[6:11].strip())
+        resname = line[17:20].strip()
+
+        if resname == "LIG" and lig_start is None:
+            lig_start = atom_num
+        elif resname == "LID" and lid_start is None:
+            lid_start = atom_num
+
+        if lig_start is not None and lid_start is not None:
+            break
+
+    if lig_start is None or lid_start is None:
+        raise ValueError("Could not find LIG and LID residues in PDB")
+
+    return lig_start, lid_start
+
+
+def normalize_restraints(
+    restraints: list[tuple[int, int, float]], lig1_start: int, lig2_start: int
+) -> tuple[list[int], list[int]]:
+    """Convert absolute indices to relative (0-based from each ligand start).
+
+    Returns (lig1_relative_indices, lig2_relative_indices).
+    """
+    lig1_indices = [r[0] - lig1_start for r in restraints]
+    lig2_indices = [r[1] - lig2_start for r in restraints]
+    return lig1_indices, lig2_indices
+
+
+# -----------------------------------------------------------------------------
+# Pytest Fixtures
+# -----------------------------------------------------------------------------
 
 
 @pytest.fixture
 def test_resources_path() -> Path:
-    """Path to test/QligFEP/resources/ containing SDF datasets."""
+    """Path to test/qligfep/resources/ containing SDF datasets."""
     return RESOURCES_DIR
 
 
 @pytest.fixture
 def golden_restraints_path() -> Path:
     """Path to golden restraint files directory."""
-    return GOLDEN_DIR
+    return GOLDEN_RESTRAINTS_DIR
 
 
 @pytest.fixture
@@ -64,6 +196,11 @@ def temp_work_dir() -> Generator[Path, None, None]:
         yield temp_dir
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+# -----------------------------------------------------------------------------
+# Golden File Manager for Restraint Tests
+# -----------------------------------------------------------------------------
 
 
 class GoldenFileManager:
@@ -179,3 +316,495 @@ def get_ligand_pairs_from_sdf(sdf_path: Path, max_pairs: int | None = None) -> l
             if max_pairs and len(pairs) >= max_pairs:
                 return pairs
     return pairs
+
+
+# -----------------------------------------------------------------------------
+# FEP Golden File Manager
+# -----------------------------------------------------------------------------
+
+
+class FEPGoldenFileManager:
+    """Helper class for FEP setup golden file (snapshot) testing.
+
+    Validates FEP setup output structure rather than exact values.
+    """
+
+    def __init__(self, golden_dir: Path):
+        self.golden_dir = golden_dir
+        self._cache: dict[str, dict] = {}
+
+    def _load_dataset(self, dataset: str) -> dict | None:
+        """Load and cache a dataset's golden file."""
+        if dataset in self._cache:
+            return self._cache[dataset]
+
+        golden_path = self.golden_dir / f"{dataset}.json"
+        if golden_path.exists():
+            with open(golden_path) as f:
+                self._cache[dataset] = json.load(f)
+            return self._cache[dataset]
+        return None
+
+    def load_golden(self, dataset: str, pair_key: str, system: str) -> dict | None:
+        """Load golden data for a specific ligand pair and system (water/protein)."""
+        dataset_data = self._load_dataset(dataset)
+        if dataset_data is None:
+            return None
+
+        pair_data = dataset_data.get(pair_key)
+        if pair_data is None:
+            return None
+
+        return pair_data.get(system)
+
+    def compare_distance_restraints(
+        self, actual_lig1: list[int], actual_lig2: list[int], expected: dict
+    ) -> tuple[bool, str]:
+        """Compare distance restraints against golden expectations."""
+        expected_count = expected.get("count", 0)
+        expected_lig1 = expected.get("lig1_indices", [])
+        expected_lig2 = expected.get("lig2_indices", [])
+
+        if len(actual_lig1) != expected_count:
+            return False, f"Restraint count mismatch: {len(actual_lig1)} != {expected_count}"
+
+        if actual_lig1 != expected_lig1:
+            return False, f"LIG1 indices mismatch: {actual_lig1} != {expected_lig1}"
+
+        if actual_lig2 != expected_lig2:
+            return False, f"LIG2 indices mismatch: {actual_lig2} != {expected_lig2}"
+
+        return True, "Match"
+
+    def compare_topology(self, actual_solute_atoms: int, expected: dict) -> tuple[bool, str]:
+        """Compare topology solute atom count against golden expectations."""
+        if "solute_atoms" in expected:
+            if actual_solute_atoms != expected["solute_atoms"]:
+                return False, f"Solute atoms mismatch: {actual_solute_atoms} != {expected['solute_atoms']}"
+        elif "solute_atoms_min" in expected and actual_solute_atoms < expected["solute_atoms_min"]:
+            return (
+                False,
+                f"Solute atoms below minimum: {actual_solute_atoms} < {expected['solute_atoms_min']}",
+            )
+        return True, "Match"
+
+    def compare_fep_atoms(self, actual_count: int, expected: dict) -> tuple[bool, str]:
+        """Compare FEP atom count against golden expectations."""
+        expected_count = expected.get("total_fep_atoms", 0)
+        if actual_count != expected_count:
+            return False, f"FEP atom count mismatch: {actual_count} != {expected_count}"
+        return True, "Match"
+
+
+@pytest.fixture
+def fep_golden_manager() -> FEPGoldenFileManager:
+    """FEPGoldenFileManager instance for FEP setup snapshot testing."""
+    return FEPGoldenFileManager(GOLDEN_FEP_SETUP_DIR)
+
+
+# -----------------------------------------------------------------------------
+# Golden File Generation - Restraints
+# -----------------------------------------------------------------------------
+
+# Methods to generate golden files for
+RESTRAINT_METHODS = [
+    {
+        "name": "element_p",
+        "atom_compare_method": "element",
+        "strict_surround": False,
+        "ignore_surround_atom_type": False,
+    },
+    {
+        "name": "element_strict",
+        "atom_compare_method": "element",
+        "strict_surround": True,
+        "ignore_surround_atom_type": False,
+    },
+    {
+        "name": "heavyatom_p",
+        "atom_compare_method": "heavyatom",
+        "strict_surround": False,
+        "ignore_surround_atom_type": False,
+    },
+    {
+        "name": "heavyatom_strict",
+        "atom_compare_method": "heavyatom",
+        "strict_surround": True,
+        "ignore_surround_atom_type": False,
+    },
+]
+
+# Maximum pairs per dataset to avoid combinatorial explosion
+MAX_PAIRS_PER_DATASET = 5
+
+
+def _write_mol_to_sdf(mol, path: Path) -> Path:
+    """Write a single molecule to an SDF file."""
+    from rdkit import Chem
+
+    writer = Chem.SDWriter(str(path))
+    writer.write(mol)
+    writer.close()
+    return path
+
+
+def _get_restraints_for_pair(mol1_path: Path, mol2_path: Path, method_config: dict) -> dict:
+    """Get restraints for a molecule pair with given method configuration."""
+    from QligFEP.restraints.restraint_setter import RestraintSetter
+
+    rsetter = RestraintSetter(mol1_path, mol2_path)
+    restraints = rsetter.set_restraints(
+        atom_compare_method=method_config["atom_compare_method"],
+        strict_surround=method_config["strict_surround"],
+        ignore_surround_atom_type=method_config["ignore_surround_atom_type"],
+    )
+    # Convert int keys to strings for JSON serialization
+    return {str(k): v for k, v in restraints.items()}
+
+
+def _generate_golden_for_dataset(sdf_path: Path, max_pairs: int = MAX_PAIRS_PER_DATASET) -> dict:
+    """Generate golden data for a single dataset.
+
+    Returns a dict with structure:
+    {
+        "pair1_pair2": {
+            "element_p": {...},
+            "element_strict": {...},
+            ...
+        },
+        ...
+    }
+    """
+    from rdkit import Chem
+
+    supplier = Chem.SDMolSupplier(str(sdf_path))
+    mols = [
+        (m, m.GetProp("_Name") if m.HasProp("_Name") else f"mol_{i}")
+        for i, m in enumerate(supplier)
+        if m is not None
+    ]
+
+    if len(mols) < 2:
+        print(f"  Skipping {sdf_path.name}: fewer than 2 molecules")
+        return {}
+
+    dataset_data = {}
+    pairs_processed = 0
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir = Path(tmpdir)
+
+        for i, (mol1, name1) in enumerate(mols):
+            for mol2, name2 in mols[i + 1 :]:
+                if pairs_processed >= max_pairs:
+                    break
+
+                mol1_path = tmpdir / "mol1.sdf"
+                mol2_path = tmpdir / "mol2.sdf"
+                _write_mol_to_sdf(mol1, mol1_path)
+                _write_mol_to_sdf(mol2, mol2_path)
+
+                pair_key = f"{name1}_{name2}"
+                pair_data = {}
+
+                for method in RESTRAINT_METHODS:
+                    method_name = method["name"]
+                    try:
+                        restraints = _get_restraints_for_pair(mol1_path, mol2_path, method)
+                        pair_data[method_name] = restraints
+                    except Exception as e:
+                        print(f"  Error for {pair_key}/{method_name}: {e}")
+
+                if pair_data:
+                    dataset_data[pair_key] = pair_data
+
+                pairs_processed += 1
+
+            if pairs_processed >= max_pairs:
+                break
+
+    return dataset_data
+
+
+def generate_all_restraint_golden_files(max_pairs: int = MAX_PAIRS_PER_DATASET, dataset: str | None = None):
+    """Entry point for pytest --generate-restraint-golden command."""
+    from tqdm import tqdm
+
+    GOLDEN_RESTRAINTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    sdf_files = sorted(RESOURCES_DIR.glob("*.sdf"))
+
+    if dataset:
+        sdf_files = [f for f in sdf_files if dataset in f.stem]
+
+    print(f"Generating golden files for {len(sdf_files)} datasets...")
+    print(f"Methods: {[m['name'] for m in RESTRAINT_METHODS]}")
+    print(f"Max pairs per dataset: {max_pairs}")
+    print()
+
+    total_pairs = 0
+    for sdf_path in tqdm(sdf_files, desc="Datasets"):
+        dataset_name = sdf_path.stem.replace("_ligands", "")
+        dataset_data = _generate_golden_for_dataset(sdf_path, max_pairs)
+
+        if dataset_data:
+            golden_file = GOLDEN_RESTRAINTS_DIR / f"{dataset_name}.json"
+            with open(golden_file, "w") as f:
+                json.dump(dataset_data, f, indent=2, sort_keys=True)
+            total_pairs += len(dataset_data)
+
+    print(f"\nGenerated {len(sdf_files)} golden files ({total_pairs} pairs) in {GOLDEN_RESTRAINTS_DIR}")
+
+
+# -----------------------------------------------------------------------------
+# Golden File Generation - FEP Setup
+# -----------------------------------------------------------------------------
+
+# Test pairs from lomap.json (sorted by weight)
+FEP_TEST_PAIRS = [
+    ("ejm_31", "ejm_42"),  # weight 0.90
+    ("ejm_31", "ejm_50"),  # weight 0.90
+    ("ejm_31", "ejm_45"),  # weight 0.74
+]
+
+FEP_SYSTEMS = ["water", "protein"]
+
+# Ligands needed for test pairs
+FEP_REQUIRED_LIGANDS = ["ejm_31", "ejm_42", "ejm_45", "ejm_50"]
+
+
+def _extract_ligands_from_sdf(src_sdf: Path, dest_dir: Path, ligand_names: list[str]) -> dict[str, Path]:
+    """Extract specific ligands from multi-molecule SDF to individual files."""
+    from rdkit import Chem
+
+    supplier = Chem.SDMolSupplier(str(src_sdf))
+    extracted = {}
+
+    for mol in supplier:
+        if mol is None:
+            continue
+        name = mol.GetProp("_Name") if mol.HasProp("_Name") else None
+        if name in ligand_names:
+            out_path = dest_dir / f"{name}.sdf"
+            writer = Chem.SDWriter(str(out_path))
+            writer.write(mol)
+            writer.close()
+            extracted[name] = out_path
+
+    missing = set(ligand_names) - set(extracted.keys())
+    if missing:
+        raise ValueError(f"Could not find ligands: {missing}")
+
+    return extracted
+
+
+def _run_qparams(work_dir: Path, sdf_path: Path) -> None:
+    """Run qparams to generate .lib/.prm files for a ligand."""
+    cmd = [
+        "micromamba",
+        "run",
+        "-n",
+        "qligfep_new",
+        "qparams",
+        "-i",
+        str(sdf_path),
+        "-nagl",
+        "-log",
+        "warning",
+    ]
+    result = subprocess.run(cmd, cwd=work_dir, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"qparams failed for {sdf_path.name}:")
+        print(result.stderr)
+        raise RuntimeError(f"qparams failed for {sdf_path.name}")
+
+
+def _run_qligfep(work_dir: Path, lig1: str, lig2: str, system: str, random_state: int = 42) -> Path:
+    """Run qligfep to set up FEP for a ligand pair.
+
+    Returns the path to the FEP output directory.
+    Note: Using windows=3 because windows=1 causes division by zero with sigmoidal sampling.
+    """
+    cmd = [
+        "micromamba",
+        "run",
+        "-n",
+        "qligfep_new",
+        "qligfep",
+        "-l1",
+        lig1,
+        "-l2",
+        lig2,
+        "-FF",
+        "AMBER14sb",
+        "-s",
+        system,
+        "-c",
+        "LOCAL",
+        "-r",
+        "25",
+        "-w",
+        "3",
+        "-rs",
+        str(random_state),
+        "-log",
+        "warning",
+    ]
+    result = subprocess.run(cmd, cwd=work_dir, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"qligfep failed for {lig1}_{lig2} ({system}):")
+        print(result.stderr)
+        raise RuntimeError(f"qligfep failed for {lig1}_{lig2} ({system})")
+
+    return work_dir / f"FEP_{lig1}_{lig2}" / "inputfiles"
+
+
+def _parse_fep_output(inputfiles_dir: Path, lig1: str, lig2: str) -> dict:
+    """Parse FEP output files and extract structural data."""
+    md_file = inputfiles_dir / "md_0500_0500.inp"
+    fep_file = inputfiles_dir / "FEP1.fep"
+    top_file = inputfiles_dir / "dualtop.top"
+    pdb_file = inputfiles_dir / f"{lig1}_{lig2}.pdb"
+
+    md_content = md_file.read_text()
+    fep_content = fep_file.read_text()
+    top_content = top_file.read_text()
+    pdb_content = pdb_file.read_text()
+
+    # Parse distance restraints
+    restraints = parse_distance_restraints(md_content)
+    lig1_start, lig2_start = get_lig_start_indices(pdb_content)
+    lig1_indices, lig2_indices = normalize_restraints(restraints, lig1_start, lig2_start)
+
+    # Get force from first restraint (should be same for all)
+    force = restraints[0][2] if restraints else 0.5
+
+    # Parse other sections
+    has_seq_restraints = parse_sequence_restraints(md_content)
+    total_atoms, solute_atoms = parse_topology_header(top_content)
+    fep_atom_count = parse_fep_atom_count(fep_content)
+
+    return {
+        "distance_restraints": {
+            "count": len(restraints),
+            "lig1_indices": lig1_indices,
+            "lig2_indices": lig2_indices,
+            "force": force,
+        },
+        "sequence_restraints_present": has_seq_restraints,
+        "topology": {
+            "solute_atoms": solute_atoms,
+        },
+        "fep_file": {
+            "total_fep_atoms": fep_atom_count,
+        },
+    }
+
+
+def _generate_fep_golden_data() -> dict:
+    """Run FEP setup for all test pairs and systems, collect golden data."""
+    golden_data = {}
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        work_dir = Path(tmpdir)
+
+        # Copy source files
+        src_sdf = TUTORIALS_DIR / "Tyk2" / "ligprep" / "tyk2_ligands.sdf"
+        src_protein = TUTORIALS_DIR / "Tyk2" / "setupFEP" / "amber" / "protein_neutralized.pdb"
+        src_water = TUTORIALS_DIR / "Tyk2" / "setupFEP" / "amber" / "water.pdb"
+
+        # Copy water.pdb and protein.pdb to work directory
+        shutil.copy(src_water, work_dir / "water.pdb")
+        shutil.copy(src_protein, work_dir / "protein.pdb")
+
+        print(f"Working in: {work_dir}")
+        print("Extracting ligands from SDF...")
+
+        # Extract ligands
+        ligand_paths = _extract_ligands_from_sdf(src_sdf, work_dir, FEP_REQUIRED_LIGANDS)
+
+        # Run qparams for each ligand
+        print("Running qparams for each ligand...")
+        for lig_name, sdf_path in ligand_paths.items():
+            print(f"  {lig_name}...")
+            _run_qparams(work_dir, sdf_path)
+
+        # Run qligfep for each pair and system
+        for lig1, lig2 in FEP_TEST_PAIRS:
+            pair_key = f"{lig1}_{lig2}"
+            golden_data[pair_key] = {}
+
+            for system in FEP_SYSTEMS:
+                print(f"Running qligfep for {pair_key} ({system})...")
+                inputfiles_dir = _run_qligfep(work_dir, lig1, lig2, system)
+
+                # Parse output
+                data = _parse_fep_output(inputfiles_dir, lig1, lig2)
+                golden_data[pair_key][system] = data
+
+                # Clean up FEP directory for next run
+                fep_dir = work_dir / f"FEP_{lig1}_{lig2}"
+                shutil.rmtree(fep_dir)
+
+    return golden_data
+
+
+def generate_all_fep_golden_files():
+    """Entry point for pytest --generate-fep-golden command."""
+    print("Generating FEP setup golden files...")
+
+    golden_data = _generate_fep_golden_data()
+
+    # Ensure golden directory exists
+    GOLDEN_FEP_SETUP_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Save golden data
+    golden_path = GOLDEN_FEP_SETUP_DIR / "tyk2.json"
+    with open(golden_path, "w") as f:
+        json.dump(golden_data, f, indent=2)
+
+    print(f"\nGolden data saved to: {golden_path}")
+
+    # Print summary
+    print("\nSummary:")
+    for pair_key, pair_data in golden_data.items():
+        print(f"\n{pair_key}:")
+        for system, data in pair_data.items():
+            dr = data["distance_restraints"]
+            print(f"  {system}:")
+            print(f"    distance_restraints: {dr['count']} pairs")
+            print(f"    sequence_restraints_present: {data['sequence_restraints_present']}")
+            print(f"    solute_atoms: {data['topology']['solute_atoms']}")
+            print(f"    fep_atoms: {data['fep_file']['total_fep_atoms']}")
+
+
+# -----------------------------------------------------------------------------
+# Pytest hooks for golden file generation
+# -----------------------------------------------------------------------------
+
+
+def pytest_addoption(parser):
+    """Register command-line options for golden file generation."""
+    parser.addoption(
+        "--generate-restraint-golden",
+        action="store_true",
+        default=False,
+        help="Generate golden files for RestraintSetter tests",
+    )
+    parser.addoption(
+        "--generate-fep-golden",
+        action="store_true",
+        default=False,
+        help="Generate golden files for FEP setup tests",
+    )
+
+
+def pytest_configure(config):
+    """Run golden file generation if requested."""
+    if config.getoption("--generate-restraint-golden"):
+        generate_all_restraint_golden_files()
+        raise SystemExit(0)
+
+    if config.getoption("--generate-fep-golden"):
+        generate_all_fep_golden_files()
+        raise SystemExit(0)
