@@ -803,8 +803,8 @@ def pytest_configure(config):
     """Run golden file generation if requested."""
     if config.getoption("--generate-restraint-golden"):
         generate_all_restraint_golden_files()
-        raise SystemExit(0)
+        pytest.exit("Golden restraint files generated successfully", returncode=0)
 
     if config.getoption("--generate-fep-golden"):
         generate_all_fep_golden_files()
-        raise SystemExit(0)
+        pytest.exit("Golden FEP setup files generated successfully", returncode=0)
