@@ -44,6 +44,7 @@ class Topology():
                      'topdir'           : None,
                      'coulomb'          : None,
                      '14scaling'        : None,
+                     'vdw_rule'         : None,
                     }
 
 class Read_Topology(object):
@@ -152,6 +153,7 @@ class Read_Topology(object):
                     continue
                                                                                    
                 if 'vdW combination rule' in line:
+                    self.data['vdw_rule'] = line.split()[0]
                     block = 13
                     continue
                                                                                    
@@ -163,32 +165,64 @@ class Read_Topology(object):
                     Masses = []
                     continue
                                                                                                                    
+                # Geometric vdW format (vdw_rule=1): sqrt(Aii), sqrt(Bii)
                 if 'sqrt (Aii) normal' in line:
                     Aii_normal = []
                     block = 16
                     continue
-                                                                                                                   
+
                 if 'sqrt (Bii) normal' in line:
                     Bii_normal = []
                     block = 17
                     continue
-                                                                                                                   
+
                 if 'sqrt (Aii) polar' in line:
                     Aii_polar = []
                     block = 18
                     continue
-                                                                                                                   
+
                 if 'sqrt (Bii) polar' in line:
                     Bii_polar = []
                     block = 19
                     continue
-                    
+
                 if 'sqrt (Aii) 1-4' in line:
                     Aii_14 = []
                     block = 20
                     continue
-                    
+
                 if 'sqrt (Bii) 1-4' in line:
+                    Bii_14 = []
+                    block = 21
+                    continue
+
+                # Arithmetic vdW format (vdw_rule=2): R*, epsilon
+                if 'R* normal:' in line:
+                    Aii_normal = []
+                    block = 16
+                    continue
+
+                if 'epsilon normal:' in line:
+                    Bii_normal = []
+                    block = 17
+                    continue
+
+                if 'R* polar:' in line:
+                    Aii_polar = []
+                    block = 18
+                    continue
+
+                if 'epsilon polar:' in line:
+                    Bii_polar = []
+                    block = 19
+                    continue
+
+                if 'R* 1-4:' in line:
+                    Aii_14 = []
+                    block = 20
+                    continue
+
+                if 'epsilon 1-4:' in line:
                     Bii_14 = []
                     block = 21
                     continue
@@ -711,20 +745,21 @@ class Write_Topology(object):
             
         #Topo.csv
         with open(self.wd + '/topo.csv','w') as outfile:
-            outfile.write('7\n')
+            outfile.write('8\n')
             outfile.write(self.data['solvtype'] + '\n')
             outfile.write(self.data['exclusion'] + '\n')
             outfile.write(self.data['radii'] + '\n')
             outfile.write('{};{};{}\n'.format(self.data['solucenter'][0],
                                               self.data['solucenter'][1],
                                               self.data['solucenter'][2],))
-            
+
             outfile.write('{};{};{}\n'.format(self.data['solvcenter'][0],
                                               self.data['solvcenter'][1],
                                               self.data['solvcenter'][2],))
-            
+
             outfile.write(self.data['14scaling'] + '\n')
             outfile.write(self.data['coulomb'] + '\n')
+            outfile.write(self.data['vdw_rule'] + '\n')
 
         # Charge groups
         with open(self.wd + '/charge_groups.csv','w') as outfile:
