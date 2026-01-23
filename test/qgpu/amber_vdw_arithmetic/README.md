@@ -119,7 +119,11 @@ If the test fails:
 
 The vdW combination rule is controlled by:
 
-- **Fortran**: `FF_TYPE 2` in topology header → `ivdw_rule = 2`
-- **CUDA**: Python preprocessing writes `2` to line 9 of `topo.csv`
+
+**Fortran**: Right after section defining the number of atom types (`= No. of atom types`). For example:
+- Geometric: `1 = vdW combination rule (1 = Geom. / 2 = Arit.)` (see [example](../../q6/test1/nc12/lig_w.top))
+- Arithmetic: `2 = vdW combination rule (1 = Geom. / 2 = Arit.)` (see [example](./dualtop.top))
+
+**CUDA**: Python preprocessing writes either `1` or `2` to line 9 of `topo.csv` (generated with [topology.py](../../../src/Qgpu/topology.py))
 
 The arithmetic rule is parsed from topology sections labeled `R* normal:` and `epsilon normal:` (as opposed to `sqrt (Aii) normal:` and `sqrt (Bii) normal:` for geometric).
