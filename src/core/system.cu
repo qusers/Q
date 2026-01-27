@@ -8,7 +8,7 @@
 #include "qatoms.h"
 #include "shake.h"
 
-#include "CudaHandler.cuh"
+#include "cuda/include/CudaHandler.cuh"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -957,7 +957,7 @@ void write_energies(int iteration) {
 }
 
 void cpu_run(int n_steps) {
-    for (int i = 0; i <= md.steps; i++) {
+    for (int i = 0; i <= n_steps; i++) {
         calc_integration_step(i);
     }
 }

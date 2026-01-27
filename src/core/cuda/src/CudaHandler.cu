@@ -1,6 +1,6 @@
 #include <iostream>
 
-#include "CudaHandler.cuh"
+#include "cuda/include/CudaHandler.cuh"
 #include "cuda/include/CudaAngleForce.cuh"
 #include "cuda/include/CudaBondForce.cuh"
 #include "cuda/include/CudaContext.cuh"
