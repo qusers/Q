@@ -46,9 +46,9 @@ def parse_arguments() -> argparse.Namespace:
         dest="am1bcc",
         action="store_true",
         help=(
-            "Use the AM1-BCC method to calculate partial charges instead of NAGL. "
-            "NAGL is the default method and is faster, but AM1-BCC may be needed "
-            "for molecules outside NAGL's training domain."
+            "Use the AM1-BCC method to calculate partial charges instead of NAGL. NAGL is the default "
+            "method and is faster, but AM1-BCC may be needed for molecules outside NAGL's training domain. "
+            "See https://github.com/openforcefield/openff-nagl-models for available NAGL models."
         ),
     )
     parser.add_argument(
@@ -59,6 +59,16 @@ def parse_arguments() -> argparse.Namespace:
         help=(
             "OpenFF forcefield file to use for ligand parameters. Defaults to openff-2.3.0.offxml. "
             "See https://github.com/openforcefield/openff-forcefields for available forcefields."
+        ),
+    )
+    parser.add_argument(
+        "-nagl-model",
+        "--nagl-model",
+        dest="nagl_model",
+        default="openff-gnn-am1bcc-1.0.0.pt",
+        help=(
+            "NAGL model to use for partial charge assignment. Defaults to openff-gnn-am1bcc-1.0.0.pt. "
+            "See https://github.com/openforcefield/openff-nagl-models for available models."
         ),
     )
     parser.add_argument(
@@ -97,7 +107,11 @@ def main(args: argparse.Namespace) -> None:
     setup_logger(level=args.log)
     if args.lff == "OpenFF":
         openff2q = OpenFF2Q(
-            args.input, nagl=not args.am1bcc, n_jobs=args.parallel, forcefield=args.forcefield
+            args.input,
+            nagl=not args.am1bcc,
+            n_jobs=args.parallel,
+            forcefield=args.forcefield,
+            nagl_model=args.nagl_model,
         )
         openff2q.process_ligands()
         if args.pcof:
