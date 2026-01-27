@@ -29,9 +29,9 @@ cd tutorials/Tyk2/ligprep
 
 ## Ligand parameters
 
-We then need to generate the ligand parameter, library, and pdb files. For this we use NAGL for a faster calculation of the partial charges. This is still experimental, so for your own experiments, please use the default method ([AM1-BCC](https://pubmed.ncbi.nlm.nih.gov/12395429/)) simply by not adding the `-nagl` flag.
+We then need to generate the ligand parameter, library, and pdb files. The default method uses NAGL for fast calculation of partial charges. For molecules that fall outside NAGL's training domain, you can use the [AM1-BCC](https://pubmed.ncbi.nlm.nih.gov/12395429/) method by adding the `-am1bcc` flag.
 ```bash
-qparams -i tyk2_ligands.sdf -p 4 -nagl
+qparams -i tyk2_ligands.sdf -p 4
 ```
 Create your perturbation network using lomap:
 ```bash
