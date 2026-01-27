@@ -23,13 +23,13 @@ void calc_nonbonded_qw_forces_host_v2() {
             CudaContext::instance().d_q_atoms_list,
             CudaContext::instance().d_w_atoms_list,
             false,
-            CudaContext::instance().d_q_charge_types + state * nx + nx * n_lambdas,
+            CudaContext::instance().d_q_charge_types + state * nx,
             CudaContext::instance().d_w_charge_types,
             CudaContext::instance().d_charge_table_all,
-            CudaContext::instance().d_q_catype_types + state * nx + nx * n_lambdas,
+            CudaContext::instance().d_q_catype_types + state * nx,
             CudaContext::instance().d_w_catype_types,
             CudaContext::instance().d_catype_table_all,
-            true);
+            true, lambdas[state]);
 
         EQ_nonbond_qw[state].Uvdw += result.first / lambdas[state];
         EQ_nonbond_qw[state].Ucoul += result.second / lambdas[state];
