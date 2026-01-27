@@ -1,0 +1,362 @@
+{
+  "ejm_31_ejm_42": {
+    "water": {
+      "distance_restraints": {
+        "count": 21,
+        "lig1_indices": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20
+        ],
+        "lig2_indices": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20
+        ],
+        "force": 0.5
+      },
+      "sequence_restraints_present": true,
+      "topology": {
+        "solute_atoms": 67
+      },
+      "fep_file": {
+        "total_fep_atoms": 67
+      }
+    },
+    "protein": {
+      "distance_restraints": {
+        "count": 21,
+        "lig1_indices": [
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30
+        ],
+        "lig2_indices": [
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30
+        ],
+        "force": 0.5
+      },
+      "sequence_restraints_present": false,
+      "topology": {
+        "solute_atoms": 4747
+      },
+      "fep_file": {
+        "total_fep_atoms": 67
+      }
+    }
+  },
+  "ejm_31_ejm_50": {
+    "water": {
+      "distance_restraints": {
+        "count": 21,
+        "lig1_indices": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20
+        ],
+        "lig2_indices": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20
+        ],
+        "force": 0.5
+      },
+      "sequence_restraints_present": true,
+      "topology": {
+        "solute_atoms": 65
+      },
+      "fep_file": {
+        "total_fep_atoms": 65
+      }
+    },
+    "protein": {
+      "distance_restraints": {
+        "count": 21,
+        "lig1_indices": [
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30
+        ],
+        "lig2_indices": [
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30
+        ],
+        "force": 0.5
+      },
+      "sequence_restraints_present": false,
+      "topology": {
+        "solute_atoms": 4745
+      },
+      "fep_file": {
+        "total_fep_atoms": 65
+      }
+    }
+  },
+  "ejm_31_ejm_45": {
+    "water": {
+      "distance_restraints": {
+        "count": 21,
+        "lig1_indices": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20
+        ],
+        "lig2_indices": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20
+        ],
+        "force": 0.5
+      },
+      "sequence_restraints_present": true,
+      "topology": {
+        "solute_atoms": 71
+      },
+      "fep_file": {
+        "total_fep_atoms": 71
+      }
+    },
+    "protein": {
+      "distance_restraints": {
+        "count": 21,
+        "lig1_indices": [
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30
+        ],
+        "lig2_indices": [
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30
+        ],
+        "force": 0.5
+      },
+      "sequence_restraints_present": false,
+      "topology": {
+        "solute_atoms": 4751
+      },
+      "fep_file": {
+        "total_fep_atoms": 71
+      }
+    }
+  }
+}
