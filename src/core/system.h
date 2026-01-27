@@ -164,6 +164,7 @@ struct ctorsion_t {
     double k;
     double n;
     double d;
+    double paths;
 };
 
 struct improper_t {

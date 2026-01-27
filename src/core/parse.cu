@@ -600,6 +600,8 @@ void init_ctorsions(const char* filename) {
         ctorsion.k = strtod(file.buffer[i+1][1], &eptr);
         ctorsion.n = strtod(file.buffer[i+1][2], &eptr);
         ctorsion.d = strtod(file.buffer[i+1][3], &eptr);
+        ctorsion.paths = strtod(file.buffer[i+1][4], &eptr);
+        ctorsion.paths = 1.0 / (ctorsion.paths);
 
         ctorsions[i] = ctorsion;
     }

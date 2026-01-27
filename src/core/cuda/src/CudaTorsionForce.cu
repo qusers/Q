@@ -72,8 +72,8 @@ __global__ void calc_torsion_forces_kernel(int start, int end, torsion_t* torsio
 
     // Energy
     arg = ctors.n * phi - to_radians_device(ctors.d);
-    ener = ctors.k * (1 + cos(arg));
-    dv = -ctors.n * ctors.k * sin(arg);
+    ener = ctors.k * (1 + cos(arg)) * ctors.paths;
+    dv = -ctors.n * ctors.k * sin(arg) * ctors.paths;
 
     // Forces
     f1 = sin(phi);
