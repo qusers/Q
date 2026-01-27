@@ -45,6 +45,7 @@ class OpenFF2Q(MoleculeIO):
         nagl: bool = True,
         n_jobs: int = 1,
         forcefield: str = "openff-2.3.0.offxml",
+        nagl_model: str = "openff-gnn-am1bcc-1.0.0.pt",
     ):
         """Initializes a new instance of OpenFF2Q to process the `.sdf` input as lig.
 
@@ -61,6 +62,8 @@ class OpenFF2Q(MoleculeIO):
             n_jobs: number of jobs to calculate the partial charges in parallel.
             forcefield: OpenFF forcefield file to use for ligand parameters. Defaults to "openff-2.3.0.offxml".
                 See https://github.com/openforcefield/openff-forcefields for available forcefields.
+            nagl_model: NAGL model to use for partial charge assignment. Defaults to "openff-gnn-am1bcc-1.0.0.pt".
+                See https://github.com/openforcefield/openff-nagl-models for available models.
         """
         super().__init__(lig, pattern=pattern, reindex_hydrogens=reindex_hydrogens)
         self.n_jobs = n_jobs
@@ -70,7 +73,7 @@ class OpenFF2Q(MoleculeIO):
         self.topologies, self.parameters = self.set_topologies_and_parameters()
         self.charges_list_magnitude = {}  # store charge magnitude for each ligand
         self.total_charges = {}  # store the total charges
-        self._set_nagl(nagl=nagl)
+        self._set_nagl(nagl=nagl, nagl_model=nagl_model)
 
     def _set_forcefield(self, ffstring: Optional[str]) -> ForceField:
         if ffstring is None:
@@ -80,14 +83,19 @@ class OpenFF2Q(MoleculeIO):
         logger.debug(f"Forcefield for the ligand parameters: {ffstring}")
         return ForceField(ffstring)
 
-    def _set_nagl(self, nagl: bool):
-        """Set the forcefield to be used to calculate the molecules' partial charges."""
+    def _set_nagl(self, nagl: bool, nagl_model: str = "openff-gnn-am1bcc-1.0.0.pt"):
+        """Set the NAGL model to be used for partial charge calculation.
+
+        Args:
+            nagl: if True, use NAGL for charge assignment. If False, use AM1-BCC.
+            nagl_model: NAGL model file to use. Defaults to "openff-gnn-am1bcc-1.0.0.pt".
+        """
         if nagl:
             self.nagl = NAGLToolkitWrapper()
             # Implementation following the OMSF demo @ Naturalis, Leiden:
             # https://github.com/openforcefield/symposium_2024_demo/tree/main
-            logger.debug("Warming up the NAGL toolkit")
-            self.nagl_partial_charg_str = "openff-gnn-am1bcc-1.0.0.pt"
+            logger.debug(f"Warming up the NAGL toolkit with model: {nagl_model}")
+            self.nagl_partial_charg_str = nagl_model
             self.nagl.assign_partial_charges(Molecule.from_smiles("C"), self.nagl_partial_charg_str)
         else:
             self.nagl_partial_charg_str = None
