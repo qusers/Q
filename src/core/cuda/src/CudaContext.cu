@@ -306,7 +306,7 @@ void CudaContext::initialize_charge_tables_host() {
     }
 
     int h_q_atoms_size = h_q_atoms_list.size();
-    std::vector<int> q_charge_types(h_q_atoms_size * n_lambdas * 2);
+    std::vector<int> q_charge_types(h_q_atoms_size * n_lambdas);
     std::map<int, int> q_idx;
     for (int i = 0; i < n_qatoms; i++) {
         int id = q_atoms[i].a - 1;
@@ -320,8 +320,6 @@ void CudaContext::initialize_charge_tables_host() {
             int id = h_q_atoms_list[i];
             double charge = q_charges[q_idx[id] + n_qatoms * state].q;
             q_charge_types[state * h_q_atoms_size + i] = charge_to_type_host[charge];
-            charge *= lambdas[state];
-            q_charge_types[state * h_q_atoms_size + i + h_q_atoms_size * n_lambdas] = charge_to_type_host[charge];
         }
     }
 
@@ -376,15 +374,6 @@ void CudaContext::initialize_catype_tables_host() {
             new_catype.bii_1_4 = catype.Bi_14;
 
             add_catype(new_catype);
-
-            new_catype.m *= lambdas[state];
-            new_catype.aii_normal *= lambdas[state];
-            new_catype.bii_normal *= lambdas[state];
-            new_catype.aii_polar *= lambdas[state];
-            new_catype.bii_polar *= lambdas[state];
-            new_catype.aii_1_4 *= lambdas[state];
-            new_catype.bii_1_4 *= lambdas[state];
-            add_catype(new_catype);
         }
     }
 
@@ -397,7 +386,7 @@ void CudaContext::initialize_catype_tables_host() {
     }
 
     int h_q_atoms_size = h_q_atoms_list.size();
-    std::vector<int> q_catype_types(h_q_atoms_size * n_lambdas * 2);
+    std::vector<int> q_catype_types(h_q_atoms_size * n_lambdas);
     std::map<int, int> q_idx;
     for (int i = 0; i < n_qatoms; i++) {
         int id = q_atoms[i].a - 1;
@@ -424,18 +413,6 @@ void CudaContext::initialize_catype_tables_host() {
 
             auto key_normal = get_catype_key(normal_catype);
             q_catype_types[state * h_q_atoms_size + i] = catype_to_type_host[key_normal];
-
-            catype_t scaled_catype;
-            scaled_catype.m = catype.m * lambdas[state];
-            scaled_catype.aii_normal = catype.Ai * lambdas[state];
-            scaled_catype.bii_normal = catype.Bi * lambdas[state];
-            scaled_catype.aii_polar = catype.Ci * lambdas[state];
-            scaled_catype.bii_polar = catype.ai * lambdas[state];
-            scaled_catype.aii_1_4 = catype.Ai_14 * lambdas[state];
-            scaled_catype.bii_1_4 = catype.Bi_14 * lambdas[state];
-
-            auto key_scaled = get_catype_key(scaled_catype);
-            q_catype_types[state * h_q_atoms_size + i + h_q_atoms_size * n_lambdas] = catype_to_type_host[key_scaled];
         }
     }
 
