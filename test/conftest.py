@@ -877,7 +877,6 @@ def _run_qparams(work_dir: Path, sdf_path: Path) -> None:
         "qparams",
         "-i",
         str(sdf_path),
-        "-nagl",
         "-log",
         "warning",
     ]
