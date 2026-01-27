@@ -143,7 +143,6 @@ double calc_torsion_forces_host(int start, int end) {
     calc_torsion_forces_kernel<<<numBlocks, blockSize>>>(start, end, d_torsions, d_ctorsions, d_coords, d_dvelocities, d_energy_sum);
     cudaDeviceSynchronize();
     cudaMemcpy(&zero, d_energy_sum, sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(dvelocities, d_dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyDeviceToHost);
     return zero;
 }
 

@@ -261,7 +261,6 @@ void calc_polx_water_forces_host(int iteration) {
     E_restraint.Upolx += energy;
     cudaMemcpy(wshells, d_wshells, n_shells * sizeof(shell_t), cudaMemcpyDeviceToHost);
     // Copy back forces for all atoms (solute + solvent); water forces were being dropped.
-    cudaMemcpy(dvelocities, d_dvelocities, n_atoms * sizeof(dvel_t), cudaMemcpyDeviceToHost);
 }
 
 void init_polx_water_force_kernel_data() {

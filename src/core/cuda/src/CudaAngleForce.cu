@@ -96,7 +96,6 @@ double calc_angle_forces_host(int start, int end) {
     // todo: Now have to do that, after moving all to CudaContext, can remove it
     // copy results back to host
     cudaMemcpy(&h_energy_sum, d_energy_sum, sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(dvelocities, ctx.d_dvelocities, n_atoms * sizeof(dvel_t), cudaMemcpyDeviceToHost);
     return h_energy_sum;
 }
 

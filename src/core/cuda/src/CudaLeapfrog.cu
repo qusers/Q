@@ -76,6 +76,7 @@ void calc_leapfrog_host() {
     cudaMemcpy(xcoords, d_xcoords, sizeof(coord_t) * n_atoms, cudaMemcpyDeviceToHost);
 
     // shake
+    // todo: Here is some problem, it writes into cpu memory, but we use gpu..
     printf("n_shake_constraints: %d\n", n_shake_constraints);
     if (n_shake_constraints > 0) {
         calc_shake_constraints_host();

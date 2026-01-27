@@ -35,8 +35,8 @@ void calc_nonbonded_pp_forces_host_v2() {
         CudaContext::instance().d_p_catype_types,
         CudaContext::instance().d_catype_table_all, false);
     printf("Nonbonded PP Force: Uvdw = %f, Ucoul = %f\n", result.first, result.second);
-    E_nonbond_pp.Uvdw += result.first;
-    E_nonbond_pp.Ucoul += result.second;
+    E_nonbond_pp.Uvdw = result.first;
+    E_nonbond_pp.Ucoul = result.second;
 }
 
 void cleanup_nonbonded_pp_force() {
