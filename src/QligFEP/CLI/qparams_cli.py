@@ -41,14 +41,24 @@ def parse_arguments() -> argparse.Namespace:
         type=int,
     )
     parser.add_argument(
-        "-nagl",
-        "--use_nagl",
-        dest="nagl",
+        "-am1bcc",
+        "--use_am1bcc",
+        dest="am1bcc",
         action="store_true",
         help=(
-            "Use the NAGL method to calculate the charges of the molecules using OpenFF. "
-            "This method is faster than the default one, but it does not cover all the "
-            "possible cases. Defaults to False."
+            "Use the AM1-BCC method to calculate partial charges instead of NAGL. "
+            "NAGL is the default method and is faster, but AM1-BCC may be needed "
+            "for molecules outside NAGL's training domain."
+        ),
+    )
+    parser.add_argument(
+        "-ff",
+        "--forcefield",
+        dest="forcefield",
+        default="openff-2.3.0.offxml",
+        help=(
+            "OpenFF forcefield file to use for ligand parameters. Defaults to openff-2.3.0.offxml. "
+            "See https://github.com/openforcefield/openff-forcefields for available forcefields."
         ),
     )
     parser.add_argument(
@@ -86,7 +96,9 @@ def parse_arguments() -> argparse.Namespace:
 def main(args: argparse.Namespace) -> None:
     setup_logger(level=args.log)
     if args.lff == "OpenFF":
-        openff2q = OpenFF2Q(args.input, nagl=args.nagl, n_jobs=args.parallel)
+        openff2q = OpenFF2Q(
+            args.input, nagl=not args.am1bcc, n_jobs=args.parallel, forcefield=args.forcefield
+        )
         openff2q.process_ligands()
         if args.pcof:
             openff2q.write_cofactor_plus_ff_files(args.pff)
