@@ -103,7 +103,6 @@ class TestFEPSetupConsistencyGolden:
                 "qparams",
                 "-i",
                 str(sdf_path),
-                "-nagl",
                 "-log",
                 "error",
             ]
