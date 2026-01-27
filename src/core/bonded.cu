@@ -223,8 +223,8 @@ double calc_torsion_forces(int start, int end) {
         
         // Energy
         arg = ctors.n * phi - to_radians(ctors.d);
-        ener = ctors.k * (1 + cos(arg));
-        dv = - ctors.n * ctors.k * sin(arg);
+        ener = ctors.k * (1 + cos(arg)) * ctors.paths;
+        dv = - ctors.n * ctors.k * sin(arg) * ctors.paths;
 
         // Forces
         f1 = sin(phi);
