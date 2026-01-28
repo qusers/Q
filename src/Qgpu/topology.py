@@ -7,6 +7,7 @@ import sys
 # Q-GPU libraries
 import IO
 
+
 class Topology():
     def __init__(self):
         self.data = {'header'           : {},
@@ -494,7 +495,7 @@ class Read_Topology(object):
 
                         self.data['excluded'].append(l)
 
-        # Validate vdW rule
+        # exit when vdW rule was not specified
         if self.data['vdw_rule'] is None:
             print("FATAL: vdW combination rule not specified in topology")
             sys.exit()
@@ -504,7 +505,7 @@ class Read_Topology(object):
                 self.data['vdw_rule']))
             sys.exit()
 
-        # Validate format matches declared rule
+        # validate format matches declared rule
         if vdw_format_detected is None:
             print("FATAL: No vdW parameter sections found in topology")
             sys.exit()
@@ -515,7 +516,7 @@ class Read_Topology(object):
                 self.data['vdw_rule'], vdw_format_detected))
             sys.exit()
 
-        # Validate all vdW parameter sections were populated
+        # validate all vdW parameter sections were populated
         if not Aii_normal or not Bii_normal or not Aii_polar or not Bii_polar or not Aii_14 or not Bii_14:
             print("FATAL: Missing required vdW parameter sections in topology")
             sys.exit()
