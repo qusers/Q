@@ -45,8 +45,8 @@ __device__ __host__ inline void calc_vdw_arithmetic(
     double R2 = Rstar_ij * Rstar_ij;
     double R6 = R2 * R2 * R2;
 
-    *V_a = sqrt_eps_ij * R6 * R6 * r6 * r6;  // eps * R^12 * r^-12
-    *V_b = 2.0 * sqrt_eps_ij * R6 * r6;       // 2 * eps * R^6 * r^-6
+    *V_a = sqrt_eps_ij * R6 * R6 * r6 * r6;  // sqrt(eps_i * eps_j) * R^12 * r^-12
+    *V_b = 2.0 * sqrt_eps_ij * R6 * r6;       // 2 * sqrt(eps_i * eps_j) * R^6 * r^-6
 }
 
 #endif /* __VDW_RULES_H__ */
