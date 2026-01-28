@@ -7,29 +7,8 @@
 #include "restraints.h"
 #include "qatoms.h"
 #include "shake.h"
-#include "cuda/include/CudaAngleForce.cuh"
-#include "cuda/include/CudaBondForce.cuh"
-#include "cuda/include/CudaTorsionForce.cuh"
-#include "cuda/include/CudaImproper2Force.cuh"
-#include "cuda/include/CudaPolxWaterForce.cuh"
-#include "cuda/include/CudaLeapfrog.cuh"
-#include "cuda/include/CudaNonbondedQQForce.cuh"
-#include "cuda/include/CudaRestrwallForce.cuh"
-#include "cuda/include/CudaRestrangForce.cuh"
-#include "cuda/include/CudaRestrposForce.cuh"
-#include "cuda/include/CudaRestrdisForce.cuh"
-#include "cuda/include/CudaRestrseqForce.cuh"
-#include "cuda/include/CudaPshellForce.cuh"
-#include "cuda/include/CudaRadixWaterForce.cuh"
-#include "cuda/include/CudaTemperature.cuh"
-#include "cuda/include/CudaContext.cuh"
-#include "cuda/include/CudaShakeConstraints.cuh"
-#include "cuda/include/CudaNonbondedPPForce.cuh"
-#include "cuda/include/CudaNonbondedQPForce.cuh"
-#include "cuda/include/CudaNonbondedQWForce.cuh"
-#include "cuda/include/CudaNonbondedPWForce.cuh"
-#include "cuda/include/CudaNonbondedWWForce.cuh"
-#include "cuda/include/CudaNonbondedForce.cuh"
+
+#include "cuda/include/CudaHandler.cuh"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -977,15 +956,23 @@ void write_energies(int iteration) {
     fclose (fp);
 }
 
-void calc_integration() {
-    init_variables();
-
-    for (int i = 0; i <= md.steps; i++) {
+void cpu_run(int n_steps) {
+    for (int i = 0; i <= n_steps; i++) {
         calc_integration_step(i);
     }
-    
-    clean_variables();
+}
 
+void calc_integration() {
+    init_variables();
+    if (run_gpu) {
+        auto &handler = CudaHandler::instance();
+        handler.initialize();
+        handler.run(md.steps + 1);
+        handler.shutdown();
+    } else {
+        cpu_run(md.steps);
+    }
+    clean_variables();
 }
 
 void reset_energies() {
@@ -1037,31 +1024,17 @@ void reset_energies() {
 }
 
 void calc_bonded_forces() {
-    if (run_gpu) {
-        E_bond_p.Uangle = calc_angle_forces_host(0, n_angles_solute);
-        E_bond_w.Uangle = calc_angle_forces_host(n_angles_solute, n_angles);
+    E_bond_p.Uangle = calc_angle_forces(0, n_angles_solute);
+    E_bond_w.Uangle = calc_angle_forces(n_angles_solute, n_angles);
 
-        E_bond_p.Ubond = calc_bond_forces_host(0, n_bonds_solute);
-        E_bond_w.Ubond = calc_bond_forces_host(n_bonds_solute, n_bonds);
+    E_bond_p.Ubond = calc_bond_forces(0, n_bonds_solute);
+    E_bond_w.Ubond = calc_bond_forces(n_bonds_solute, n_bonds);
 
-        E_bond_p.Utor = calc_torsion_forces_host(0, n_torsions_solute);
-        E_bond_w.Utor = calc_torsion_forces_host(n_torsions_solute, n_torsions);
+    E_bond_p.Utor = calc_torsion_forces(0, n_torsions_solute);
+    E_bond_w.Utor = calc_torsion_forces(n_torsions_solute, n_torsions);
 
-        E_bond_p.Uimp = calc_improper2_forces_host(0, n_impropers_solute);
-        E_bond_w.Uimp = calc_improper2_forces_host(n_impropers_solute, n_impropers);
-    } else {
-        E_bond_p.Uangle = calc_angle_forces(0, n_angles_solute);
-        E_bond_w.Uangle = calc_angle_forces(n_angles_solute, n_angles);
-
-        E_bond_p.Ubond = calc_bond_forces(0, n_bonds_solute);
-        E_bond_w.Ubond = calc_bond_forces(n_bonds_solute, n_bonds);
-
-        E_bond_p.Utor = calc_torsion_forces(0, n_torsions_solute);
-        E_bond_w.Utor = calc_torsion_forces(n_torsions_solute, n_torsions);
-
-        E_bond_p.Uimp = calc_improper2_forces(0, n_impropers_solute);
-        E_bond_w.Uimp = calc_improper2_forces(n_impropers_solute, n_impropers);
-    }
+    E_bond_p.Uimp = calc_improper2_forces(0, n_impropers_solute);
+    E_bond_w.Uimp = calc_improper2_forces(n_impropers_solute, n_impropers);
 }
 
 void calc_integration_step(int iteration) {
@@ -1076,17 +1049,9 @@ void calc_integration_step(int iteration) {
 
     // Reset derivatives & energies
     reset_energies();
-    if (run_gpu) {
-        CudaContext &ctx = CudaContext::instance();
-        ctx.reset_energies();
-    }
 
     // Determine temperature and kinetic energy
-    if (run_gpu) {
-        calc_temperature_host();
-    } else {
-        calc_temperature();
-    }
+    calc_temperature();
 
     // Determine acceleration
     clock_t start = clock();
@@ -1097,81 +1062,41 @@ void calc_integration_step(int iteration) {
     clock_t end_bonded = clock();
 
     clock_t start_pp, end_pp, start_qp, end_qp;
-    if (run_gpu) {
-        start_qp = clock();
-        calc_nonbonded_qp_forces_host_v2();
-        end_qp = clock();
-        start_pp = clock();
-        calc_nonbonded_pp_forces_host_v2();
-        end_pp = clock();
-    }
-    else {
-        start_qp = clock();
-        calc_nonbonded_qp_forces();
-        end_qp = clock();
-        start_pp = clock();
-        calc_nonbonded_pp_forces();
-        end_pp = clock();
-    }
+    start_qp = clock();
+    calc_nonbonded_qp_forces();
+    end_qp = clock();
+    start_pp = clock();
+    calc_nonbonded_pp_forces();
+    end_pp = clock();
 
     clock_t start_ww, end_ww, start_pw, end_pw;
     // Now solvent interactions
     if (n_waters > 0) {
-        if (run_gpu) {
-            start_ww = clock();
-            calc_nonbonded_ww_forces_host_v2();
-            end_ww = clock();
-            start_pw = clock();
-            calc_nonbonded_pw_forces_host_v2();
-            end_pw = clock();
-            calc_nonbonded_qw_forces_host_v2();
-        }
-        else {
-            start_ww = clock();
-            calc_nonbonded_ww_forces();
-            end_ww = clock();
-            start_pw = clock();
-            calc_nonbonded_pw_forces();
-            end_pw = clock();
-            calc_nonbonded_qw_forces();
-        }
+        start_ww = clock();
+        calc_nonbonded_ww_forces();
+        end_ww = clock();
+        start_pw = clock();
+        calc_nonbonded_pw_forces();
+        end_pw = clock();
+        calc_nonbonded_qw_forces();
     }
 
     clock_t end_nonbonded = clock();
 
     // Calculate restraints
     if (n_waters > 0) {
-        if (run_gpu) {
-            calc_radix_water_forces_host();
-        } else {
-            calc_radix_w_forces();
-        }
-
+        calc_radix_w_forces();
         if (md.polarisation) {
-            if (run_gpu) {
-                calc_polx_water_forces_host(iteration);
-                // calc_polx_w_forces(iteration); // todo: polx water gpu version has bug!!!
-            } else {
-                calc_polx_w_forces(iteration);
-            }
+            calc_polx_w_forces(iteration);
         }
     }
 
-    if (run_gpu) {
-        calc_pshell_forces_host();
-        calc_restrseq_forces_host();
-        calc_restrdis_forces_host();
-        calc_restrpos_forces_host();
-        calc_restrang_force_host();
-        calc_restrwall_forces_host();
-    } else {
-        calc_pshell_forces();
-        calc_restrseq_forces();
-        calc_restrdis_forces();
-        calc_restrpos_forces();
-        calc_restrang_forces();
-        calc_restrwall_forces();
-    }
+    calc_pshell_forces();
+    calc_restrseq_forces();
+    calc_restrdis_forces();
+    calc_restrpos_forces();
+    calc_restrang_forces();
+    calc_restrwall_forces();
     
     
     clock_t end_restraints = clock();
@@ -1179,11 +1104,7 @@ void calc_integration_step(int iteration) {
     // Q-Q nonbonded interactions
     clock_t start_qq = clock();
 
-    if (run_gpu) {
-        calc_nonbonded_qq_forces_host();
-    } else {
-        calc_nonbonded_qq_forces();
-    }
+    calc_nonbonded_qq_forces();
     clock_t end_qq = clock();
 
     // Q-atom bonded interactions: loop over Q-atom states
@@ -1196,19 +1117,10 @@ void calc_integration_step(int iteration) {
     clock_t end_qatoms = clock();
 
     // Now apply leapfrog integration
-    if (run_gpu) {
-        calc_leapfrog_host();
-
-    } else {
-        calc_leapfrog();
-    }
+    calc_leapfrog();
 
     // Recalculate temperature and kinetic energy for output
-    if (run_gpu) {
-        calc_temperature_host();
-    } else {
-        calc_temperature();
-    }
+    calc_temperature();
     // Update total potential energies with an average of all states
     for (int state = 0; state < n_lambdas; state++) {
         if (lambdas[state] == 0) {
@@ -1316,30 +1228,6 @@ void calc_integration_step(int iteration) {
 
 }
 
-void init_cuda_kernel_data() {
-    init_angle_force_kernel_data();
-    init_bond_force_kernel_data();
-    init_improper2_force_kernel_data();
-    init_leapfrog_kernel_data();
-    init_nonbonded_force_kernel_data();
-    init_nonbonded_pp_force_kernel_data();
-    init_nonbonded_pw_force_kernel_data();
-    init_nonbonded_qp_force_kernel_data();
-    init_nonbonded_qq_force_kernel_data();
-    init_nonbonded_qw_force_kernel_data();
-    init_nonbonded_ww_force_kernel_data();
-    init_polx_water_force_kernel_data();
-    init_pshell_force_kernel_data();
-    init_radix_water_force_kernel_data();
-    init_restrang_force_kernel_data();
-    init_restrdis_force_kernel_data();
-    init_restrpos_force_kernel_data();
-    init_restrseq_force_kernel_data();
-    init_restrwall_force_kernel_data();
-    init_shake_constraints_kernel_data();
-    init_temperature_kernel_data();
-    init_torsion_force_kernel_data();
-}
 
 void init_variables() {
     // From MD file
@@ -1461,8 +1349,6 @@ void init_variables() {
     write_header("velocities.csv");
     write_energy_header();
 
-    CudaContext::instance().init();
-    init_cuda_kernel_data();
 }
 
 void clean_variables() {
@@ -1553,31 +1439,4 @@ void clean_variables() {
     free(EQ_nonbond_qw);
     free(EQ_nonbond_qx);
     free(EQ_restraint);
-
-    // gpu variables
-    if (run_gpu) {
-        cleanup_angle_force();
-        cleanup_bond_force();
-        cleanup_improper2_force();
-        cleanup_leapfrog();
-        cleanup_nonbonded_pp_force();
-        cleanup_nonbonded_pw_force();
-        cleanup_nonbonded_qp_force();
-        cleanup_nonbonded_qq_force();
-        cleanup_nonbonded_qw_force();
-        cleanup_nonbonded_ww_force();
-        cleanup_nonbonded_force();
-        cleanup_polx_water_force();
-        cleanup_pshell_force();
-        cleanup_radix_water_force();
-        cleanup_restrang_force();
-        cleanup_restrdis_force();
-        cleanup_restrpos_force();
-        cleanup_restrseq_force();
-        cleanup_restrwall_force();
-        cleanup_shake_constraints();
-        cleanup_temperature();
-        cleanup_torsion_force();
-
-    }
 }

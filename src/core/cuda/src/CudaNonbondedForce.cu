@@ -63,6 +63,7 @@ __device__ void calculate_unforce_bound(
     const double scaling,
 
     const int vdw_rule,
+    const double lambda,
 
     double& evdw,
     double& ecoul,
@@ -77,7 +78,7 @@ __device__ void calculate_unforce_bound(
     // evdw = v_a - v_b;
     // dv = r2 * (-ecoul - v_a + v_b);
 
-    ecoul = scaling * coulomb_constant * x_charge * y_charge * r;
+    ecoul = scaling * coulomb_constant * x_charge * y_charge * r * lambda;
 
     double v_a, v_b;
     if (vdw_rule == VDW_GEOMETRIC) {
@@ -85,6 +86,8 @@ __device__ void calculate_unforce_bound(
     } else {
         calc_vdw_arithmetic(x_aii, y_aii, x_bii, y_bii, r6, &v_a, &v_b);
     }
+    v_a *= lambda;
+    v_b *= lambda;
     evdw = v_a - v_b;
     dv = r2 * (-ecoul - 12.0 * v_a + 6.0 * v_b);
 }
@@ -124,6 +127,7 @@ __global__ void calc_nonbonded_force_kernel(
     // helper variables
     const int n_atoms_solute,
     const int n_qelscales,
+    const double lambda,
     const q_elscale_t* d_qelscales  // todo: Now doesn't use it. Should optimize it later
 
 ) {
@@ -263,6 +267,7 @@ __global__ void calc_nonbonded_force_kernel(
                 d_topo.coulomb_constant,
                 scaling,
                 d_topo.vdw_rule,
+                lambda,
                 evdw,
                 ecoul,
                 dv);
@@ -320,7 +325,7 @@ std::pair<double, double> calc_nonbonded_force_host(
     const int* x_atypes_types,
     const int* y_atypes_types,
     const catype_t* catypes_table,
-    bool disable_water_h_lj) {
+    const bool disable_water_h_lj, const double lambda) {
     using namespace CudaNonbondedForce;
     CudaContext& context = CudaContext::instance();
     const int thread_num = 256;
@@ -361,6 +366,7 @@ std::pair<double, double> calc_nonbonded_force_host(
         disable_water_h_lj,
         n_atoms_solute,
         n_qelscales,
+        lambda,
         context.d_q_elscales);
 
     cudaDeviceSynchronize();

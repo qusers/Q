@@ -143,7 +143,6 @@ void calc_restrseq_forces_host() {
     cudaMemcpy(&upres_energy, d_upres_energy, sizeof(double), cudaMemcpyDeviceToHost);
     E_restraint.Upres = upres_energy;
     printf("Restrseq U_upres: %f\n", upres_energy);
-    cudaMemcpy(dvelocities, d_dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyDeviceToHost);
 }
 
 void init_restrseq_force_kernel_data() {

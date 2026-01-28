@@ -709,7 +709,7 @@ class Write_Topology(object):
         with open(self.wd + '/ctorsions.csv','w') as outfile:
             outfile.write('{}\n'.format(len(self.data['ctorsions'])))
             for key in keys:
-                outfile.write('{};{};{};{}\n'.format(key,
+                outfile.write('{};{};{};{};{}\n'.format(key,
                                                      self.data['ctorsions'][key][0],
                                                      self.data['ctorsions'][key][1],
                                                      self.data['ctorsions'][key][2],

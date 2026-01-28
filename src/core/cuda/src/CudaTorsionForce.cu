@@ -72,8 +72,8 @@ __global__ void calc_torsion_forces_kernel(int start, int end, torsion_t* torsio
 
     // Energy
     arg = ctors.n * phi - to_radians_device(ctors.d);
-    ener = ctors.k * (1 + cos(arg));
-    dv = -ctors.n * ctors.k * sin(arg);
+    ener = ctors.k * (1 + cos(arg)) * ctors.paths;
+    dv = -ctors.n * ctors.k * sin(arg) * ctors.paths;
 
     // Forces
     f1 = sin(phi);
@@ -143,7 +143,6 @@ double calc_torsion_forces_host(int start, int end) {
     calc_torsion_forces_kernel<<<numBlocks, blockSize>>>(start, end, d_torsions, d_ctorsions, d_coords, d_dvelocities, d_energy_sum);
     cudaDeviceSynchronize();
     cudaMemcpy(&zero, d_energy_sum, sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(dvelocities, d_dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyDeviceToHost);
     return zero;
 }
 
