@@ -2,9 +2,12 @@
 
 Provides paths to test resources, temporary directories, golden file helpers,
 FEP output parsers, and golden file generation functions.
+
+To generate golden files, run pytest with the following options:
+    pytest --generate-restraint-golden
+    pytest --generate-fep-golden
 """
 
-import argparse
 import json
 import re
 import shutil
@@ -14,7 +17,6 @@ from collections.abc import Generator
 from pathlib import Path
 
 import pytest
-
 
 # -----------------------------------------------------------------------------
 # Path Configuration
@@ -107,6 +109,115 @@ def parse_fep_atom_count(fep_content: str) -> int:
             count += 1
 
     return count
+
+
+def parse_inp_file(content: str) -> dict:
+    """Parse a Q .inp file into a structured dict with all sections.
+
+    Returns a dict with section names as keys. For key-value sections (like [MD]),
+    the value is a dict of settings. For list sections (like [distance_restraints]),
+    the value is a list of parsed entries.
+    """
+    result = {}
+    current_section = None
+    current_data: dict | list = {}
+
+    for line in content.splitlines():
+        line_stripped = line.strip()
+
+        # Skip empty lines
+        if not line_stripped:
+            continue
+
+        # Check for section header
+        if line_stripped.startswith("[") and line_stripped.endswith("]"):
+            # Save previous section
+            if current_section is not None:
+                result[current_section] = current_data
+
+            current_section = line_stripped[1:-1]
+
+            # Determine section type (list vs dict)
+            if current_section in ("distance_restraints", "sequence_restraints", "trajectory_atoms"):
+                current_data = []
+            else:
+                current_data = {}
+            continue
+
+        # Parse content based on section type
+        if current_section is None:
+            continue
+
+        if isinstance(current_data, list):
+            # List section - just store the line
+            current_data.append(line_stripped)
+        else:
+            # Key-value section - parse "key value" format
+            parts = line_stripped.split(None, 1)
+            if len(parts) == 2:
+                current_data[parts[0]] = parts[1]
+            elif len(parts) == 1:
+                # Handle lines with just a value (like lambdas section content)
+                current_data["_value"] = parts[0]
+
+    # Save last section
+    if current_section is not None:
+        result[current_section] = current_data
+
+    return result
+
+
+def parse_submission_script(content: str) -> dict:
+    """Extract key settings from a SLURM submission script.
+
+    Returns dict with:
+    - seeds: list of seed values
+    - temperatures: list of temperature values
+    - fepfiles: list of FEP files
+    - array_size: SBATCH array size
+    - partition: SBATCH partition
+    """
+    result = {
+        "seeds": [],
+        "temperatures": [],
+        "fepfiles": [],
+        "array_size": None,
+        "partition": None,
+    }
+
+    for line in content.splitlines():
+        line = line.strip()
+
+        # Parse seeds array
+        if line.startswith("seeds=("):
+            # Extract values from seeds=(1 2 3) format
+            match = re.search(r"seeds=\(([^)]+)\)", line)
+            if match:
+                result["seeds"] = [int(x) for x in match.group(1).split()]
+
+        # Parse temperatures array
+        elif line.startswith("temperatures=("):
+            match = re.search(r"temperatures=\(([^)]+)\)", line)
+            if match:
+                result["temperatures"] = [int(x) for x in match.group(1).split()]
+
+        # Parse fepfiles array
+        elif line.startswith("fepfiles=("):
+            match = re.search(r"fepfiles=\(([^)]+)\)", line)
+            if match:
+                result["fepfiles"] = match.group(1).split()
+
+        # Parse SBATCH array
+        elif line.startswith("#SBATCH --array="):
+            match = re.search(r"--array=(\d+)-(\d+)", line)
+            if match:
+                result["array_size"] = int(match.group(2)) - int(match.group(1)) + 1
+
+        # Parse SBATCH partition
+        elif line.startswith("#SBATCH -p "):
+            result["partition"] = line.split()[-1]
+
+    return result
 
 
 def get_lig_start_indices(pdb_content: str) -> tuple[int, int]:
@@ -400,6 +511,164 @@ class FEPGoldenFileManager:
 def fep_golden_manager() -> FEPGoldenFileManager:
     """FEPGoldenFileManager instance for FEP setup snapshot testing."""
     return FEPGoldenFileManager(GOLDEN_FEP_SETUP_DIR)
+
+
+# -----------------------------------------------------------------------------
+# Input File Golden Manager
+# -----------------------------------------------------------------------------
+
+
+class InputFileGoldenManager:
+    """Compare generated .inp files against golden references.
+
+    Validates that FEP input files match expected structure and values.
+    Golden files are stored as raw .inp files that can be parsed and compared.
+    """
+
+    def __init__(self, golden_dir: Path):
+        self.golden_dir = golden_dir
+        self._cache: dict[str, dict] = {}
+
+    def load_golden_inp(self, filename: str) -> dict:
+        """Load and parse a golden .inp file.
+
+        Args:
+            filename: Name of the .inp file (e.g., "eq1.inp")
+
+        Returns:
+            Parsed inp file as a dict of sections
+        """
+        cache_key = str(self.golden_dir / filename)
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
+        golden_path = self.golden_dir / filename
+        if not golden_path.exists():
+            raise FileNotFoundError(f"Golden file not found: {golden_path}")
+
+        content = golden_path.read_text()
+        parsed = parse_inp_file(content)
+        self._cache[cache_key] = parsed
+        return parsed
+
+    def load_golden_submission_script(self) -> dict:
+        """Load and parse the golden submission script."""
+        # Look for any run*.sh file
+        scripts = list(self.golden_dir.glob("run*.sh"))
+        if not scripts:
+            raise FileNotFoundError(f"No submission script found in {self.golden_dir}")
+
+        content = scripts[0].read_text()
+        return parse_submission_script(content)
+
+    def compare_inp_files(self, actual: dict, expected: dict, ignore_keys: list[str] | None = None) -> tuple[bool, str]:
+        """Compare parsed .inp file structures.
+
+        Args:
+            actual: Parsed actual .inp file
+            expected: Parsed expected (golden) .inp file
+            ignore_keys: List of section/key combinations to ignore (e.g., ["MD.random_seed"])
+
+        Returns:
+            Tuple of (match: bool, message: str)
+        """
+        ignore_keys = ignore_keys or []
+        differences = []
+
+        # Check all expected sections exist
+        for section in expected:
+            if section not in actual:
+                differences.append(f"Missing section: [{section}]")
+                continue
+
+            expected_section = expected[section]
+            actual_section = actual[section]
+
+            # Compare section contents
+            if isinstance(expected_section, dict):
+                for key, expected_value in expected_section.items():
+                    ignore_path = f"{section}.{key}"
+                    if ignore_path in ignore_keys:
+                        continue
+
+                    if key not in actual_section:
+                        differences.append(f"[{section}] missing key: {key}")
+                    elif actual_section[key] != expected_value:
+                        differences.append(
+                            f"[{section}].{key}: expected '{expected_value}', got '{actual_section[key]}'"
+                        )
+
+                # Check for extra keys in actual
+                for key in actual_section:
+                    if key not in expected_section:
+                        ignore_path = f"{section}.{key}"
+                        if ignore_path not in ignore_keys:
+                            differences.append(f"[{section}] extra key: {key}")
+
+            elif isinstance(expected_section, list):
+                if len(actual_section) != len(expected_section):
+                    differences.append(
+                        f"[{section}] length mismatch: expected {len(expected_section)}, got {len(actual_section)}"
+                    )
+                else:
+                    for i, (exp_line, act_line) in enumerate(zip(expected_section, actual_section)):
+                        if exp_line != act_line:
+                            differences.append(f"[{section}][{i}]: expected '{exp_line}', got '{act_line}'")
+
+        # Check for extra sections in actual
+        for section in actual:
+            if section not in expected:
+                differences.append(f"Extra section: [{section}]")
+
+        if differences:
+            return False, "; ".join(differences[:5])  # Limit to first 5 differences
+        return True, "Match"
+
+    def compare_submission_scripts(self, actual: dict, expected: dict) -> tuple[bool, str]:
+        """Compare submission script settings.
+
+        Args:
+            actual: Parsed actual script
+            expected: Parsed expected (golden) script
+
+        Returns:
+            Tuple of (match: bool, message: str)
+        """
+        differences = []
+
+        # Compare seeds count (not values, as they're random)
+        if len(actual.get("seeds", [])) != len(expected.get("seeds", [])):
+            differences.append(
+                f"Seeds count mismatch: expected {len(expected.get('seeds', []))}, got {len(actual.get('seeds', []))}"
+            )
+
+        # Compare temperatures
+        if actual.get("temperatures") != expected.get("temperatures"):
+            differences.append(
+                f"Temperatures mismatch: expected {expected.get('temperatures')}, got {actual.get('temperatures')}"
+            )
+
+        # Compare fepfiles
+        if actual.get("fepfiles") != expected.get("fepfiles"):
+            differences.append(
+                f"FEP files mismatch: expected {expected.get('fepfiles')}, got {actual.get('fepfiles')}"
+            )
+
+        # Compare array size
+        if actual.get("array_size") != expected.get("array_size"):
+            differences.append(
+                f"Array size mismatch: expected {expected.get('array_size')}, got {actual.get('array_size')}"
+            )
+
+        if differences:
+            return False, "; ".join(differences)
+        return True, "Match"
+
+
+@pytest.fixture
+def input_file_golden_manager() -> InputFileGoldenManager:
+    """InputFileGoldenManager instance for FEP input file snapshot testing."""
+    return InputFileGoldenManager(GOLDEN_FEP_SETUP_DIR / "tyk2_ejm_31_ejm_45")
 
 
 # -----------------------------------------------------------------------------
