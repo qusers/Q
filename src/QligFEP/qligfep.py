@@ -25,6 +25,12 @@ from .pdb_utils import (
 )
 from .restraints.restraint_setter import RestraintSetter
 from .settings.settings import CLUSTER_DICT, CONFIGS
+from .templates import get_equilibration_configs, get_production_config, render_md_input
+from .templates.sections import (
+    format_distance_restraints,
+    format_sequence_restraint,
+    format_water_restraint,
+)
 
 
 class QligFEP:
@@ -59,7 +65,6 @@ class QligFEP:
         neq_L: float = 8.0,
         neq_schedule: Literal["sigmoidal", "linear"] = "sigmoidal",
     ):
-        self.replacements = {}  # TODO: make this explicit in the future
         self.timestep = timestep
         self.lig1 = lig1
         self.lig2 = lig2
@@ -118,24 +123,6 @@ class QligFEP:
             return np.random.default_rng().integers(0, 32767, size=int(self.replicates))
         rng = np.random.default_rng(random_state)
         return rng.integers(0, 32767, size=int(self.replicates))
-
-    def set_timestep(self):
-        if self.timestep == "1fs":
-            logger.debug("Using 1fs timestep")
-            self.replacements["NSTEPS1"] = "100000"
-            self.replacements["NSTEPS2"] = "10000"
-            self.replacements["STEPSIZE"] = "1.0"
-            self.replacements["STEPTOGGLE"] = "off"
-
-        elif self.timestep == "2fs":
-            logger.debug("Using 2fs timestep")
-            self.replacements["NSTEPS1"] = "50000"
-            self.replacements["NSTEPS2"] = "5000"
-            self.replacements["STEPSIZE"] = "2.0"
-            self.replacements["STEPTOGGLE"] = "on"
-
-        else:
-            raise ValueError("Timestep not recognized")
 
     def makedir(self):
         lignames = f"{self.lig1}_{self.lig2}"
@@ -510,14 +497,6 @@ class QligFEP:
         if restraint_method == "overlap":
             reslist = ["LIG", "LID"]
             torestraint_list = overlapping_pairs(pdbfile, reslist)
-
-            if self.ABS:
-                with open(pdbfile) as infile:
-                    for line in infile:
-                        if line[13].strip() == "O":
-                            line = pdb_parse_in(line)
-                            self.ABS_waters.append(int(line[1]) + self.atomoffset)
-
         else:
             parent_write_dir = Path(writedir).parent
 
@@ -705,137 +684,287 @@ class QligFEP:
                 if line == "[sequence_restraints]\n":
                     for line in restlist:
                         outfile.write(line)
-        file_list1.append("md_0500_0500.inp")
+    def _format_restraints_for_eq(
+        self,
+        overlapping_atoms: list,
+        lig_size1: int,
+        lig_size2: int,
+        eq_config,
+        dr_force: float,
+    ) -> tuple[str, str]:
+        """Format distance and sequence restraints for an equilibration stage.
 
-        for lambdas in [lambda_1, lambda_2]:
-            index += 1
-            filename_N = "md_0500_0500"
-            filenr = -1
+        Args:
+            overlapping_atoms: List of [atom1, atom2] pairs for distance restraints
+            lig_size1: Number of atoms in ligand 1
+            lig_size2: Number of atoms in ligand 2
+            eq_config: EquilibrationConfig for this stage
+            dr_force: Distance restraint force to use for eq5 (production dr_force)
 
-            for line in lambdas:
-                filenr += 1
-                if index == 1:
-                    lambda1 = lambda_1[filenr]
-                    lambda2 = lambda_2[filenr]
+        Returns:
+            Tuple of (distance_restraints_str, sequence_restraints_str)
+        """
+        # Distance restraints: use config force, or dr_force for eq5
+        force = (
+            eq_config.distance_restraint_force if eq_config.distance_restraint_force is not None else dr_force
+        )
+        distance_restraints = format_distance_restraints([(a, b) for a, b in overlapping_atoms], force=force)
 
-                elif index == 2:
-                    lambda1 = lambda_2[filenr]
-                    lambda2 = lambda_1[filenr]
+        # Sequence restraints depend on system type and stage
+        if eq_config.use_water_restraint:
+            # eq5/production: water systems use water restraint, protein systems have none
+            if self.system in ("water", "vacuum"):
+                sequence_restraints = format_water_restraint(
+                    self.atomoffset + 1,
+                    self.atomoffset + lig_size1 + lig_size2,
+                    force=1.0,
+                )
+            else:  # protein
+                sequence_restraints = ""
+        else:
+            # eq1-eq4: water/vacuum systems use sequence restraints, protein systems also do
+            if self.system in ("water", "vacuum", "protein"):
+                sequence_restraints = format_sequence_restraint(
+                    self.atomoffset + 1,
+                    self.atomoffset + lig_size1 + lig_size2,
+                    force=eq_config.sequence_restraint_force,
+                )
+            else:
+                sequence_restraints = ""
 
-                filename = "md_" + lambda1.replace(".", "") + "_" + lambda2.replace(".", "")
-                replacements["FLOAT_LAMBDA1"] = lambda1
-                replacements["FLOAT_LAMBDA2"] = lambda2
-                replacements["FILE"] = filename
-                replacements["FILE_N"] = filename_N
+        return distance_restraints, sequence_restraints
 
-                # Consider putting this in a function seeing as it is called multiple times
-                pattern = re.compile(r"\b(" + "|".join(replacements.keys()) + r")\b")
-                file_in = CONFIGS["INPUT_DIR"] + "/md_XXXX_XXXX.inp"
-                file_out = writedir + "/" + filename + ".inp"
+    def write_md_files(
+        self,
+        lambdas: list[str],
+        writedir: str,
+        lig_size1: int,
+        lig_size2: int,
+        overlapping_atoms: list,
+    ) -> list[list[str]]:
+        """Write equilibration and production MD input files using templates module.
 
-                with open(file_in) as infile, open(file_out, "w") as outfile:
-                    for line in infile:
-                        line = pattern.sub(lambda x: replacements[x.group()], line)
-                        outfile.write(line)
-                        if line == "[distance_restraints]\n":
-                            for line in overlapping_atoms:
-                                outfile.write(f"{line[0]:d} {line[1]:d} 0.0 0.1 {self.dr_force:.1f} 0\n")
+        Args:
+            lambdas: List of lambda values for the FEP windows
+            writedir: Directory to write files to (inputfiles subdirectory)
+            lig_size1: Number of atoms in ligand 1
+            lig_size2: Number of atoms in ligand 2
+            overlapping_atoms: List of [atom1, atom2] pairs for distance restraints
 
-                    if line == "[sequence_restraints]\n":
-                        for line in restlist:
-                            outfile.write(line)
-                filename_N = filename
+        Returns:
+            List of three file lists: [eq_files + md_start, forward_lambda_files, reverse_lambda_files]
+        """
+        file_list1 = []  # eq files + initial md file
+        file_list2 = []  # forward lambda files
+        file_list3 = []  # reverse lambda files
 
-                if index == 1:
-                    file_list2.append(filename + ".inp")
+        # Determine equilibration lambdas based on start mode
+        if self.start == "0.5":
+            eq_lambda1, eq_lambda2 = "0.500", "0.500"
+        else:  # start == "0.0" or "1"
+            eq_lambda1, eq_lambda2 = "1.000", "0.000"
 
-                elif index == 2:
-                    file_list3.append(filename + ".inp")
+        # Get configurations
+        eq_configs = get_equilibration_configs(self.timestep, int(self.sphereradius))
+        prod_config = get_production_config(self.timestep, int(self.sphereradius), self.dr_force)
+
+        # Write equilibration files (eq1-eq5)
+        for i, eq_config in enumerate(eq_configs):
+            dr_str, seq_str = self._format_restraints_for_eq(
+                overlapping_atoms, lig_size1, lig_size2, eq_config, self.dr_force
+            )
+
+            restart_file = f"eq{i}.re" if i > 0 else None
+
+            content = render_md_input(
+                params=eq_config.params,
+                lambda1=eq_lambda1,
+                lambda2=eq_lambda2,
+                trajectory_file=f"{eq_config.name}.dcd",
+                final_file=f"{eq_config.name}.re",
+                restart_file=restart_file,
+                distance_restraints=dr_str,
+                sequence_restraints=seq_str,
+                is_eq1=(i == 0),
+            )
+
+            filepath = Path(writedir) / f"{eq_config.name}.inp"
+            filepath.write_text(content)
+            file_list1.append(f"{eq_config.name}.inp")
+            logger.debug(f"Writing {eq_config.name}.inp")
+
+        # Format restraints for production files
+        prod_dr_str = format_distance_restraints([(a, b) for a, b in overlapping_atoms], force=self.dr_force)
+        if self.system in ("water", "vacuum"):
+            prod_seq_str = format_water_restraint(
+                self.atomoffset + 1,
+                self.atomoffset + lig_size1 + lig_size2,
+                force=1.0,
+            )
+        else:  # protein
+            prod_seq_str = ""
+
+        # Write production files based on start mode
+        if self.start == "0.5":
+            file_list1, file_list2, file_list3 = self._write_production_05(
+                lambdas, writedir, prod_config, prod_dr_str, prod_seq_str, file_list1
+            )
+        else:
+            file_list1, file_list2, file_list3 = self._write_production_1(
+                lambdas, writedir, prod_config, prod_dr_str, prod_seq_str, file_list1
+            )
+
         return [file_list1, file_list2, file_list3]
 
-    def write_MD_1(self, lambdas, writedir, lig_size1, lig_size2, overlapping_atoms):
-        replacements = self.replacements
-        totallambda = len(lambdas)
-        file_list_1 = []
-        file_list_2 = []
-        file_list_3 = []
-        replacements = {}
-        lig_total = lig_size1 + lig_size2
+    def _write_production_05(
+        self,
+        lambdas: list[str],
+        writedir: str,
+        prod_config,
+        dr_str: str,
+        seq_str: str,
+        file_list1: list[str],
+    ) -> tuple[list[str], list[str], list[str]]:
+        """Write production MD files for start=0.5 mode.
 
-        replacements["ATOM_START_LIG1"] = f"{self.atomoffset + 1:<6}"
-        replacements["ATOM_END_LIG1"] = f"{self.atomoffset + lig_size1:<7}"
-        replacements["ATOM_START_LIG2"] = f"{self.atomoffset + lig_size1 + 1:<6}"
-        replacements["ATOM_END_LIG2"] = f"{self.atomoffset + lig_size1 + lig_size2:<7}"
-        replacements["SPHERE"] = self.sphereradius
-        replacements["ATOM_END"] = f"{self.atomoffset + lig_total:<6}"
-        replacements["EQ_LAMBDA"] = "1.000 0.000"
+        Starts from 0.500/0.500, then branches in both directions.
+        """
+        file_list2 = []
+        file_list3 = []
 
-        if self.system == "water" or self.system == "vacuum":
-            replacements["WATER_RESTRAINT"] = "{:<7}{:<7} 1.0 0 1   ".format(
-                self.atomoffset + 1, self.atomoffset + lig_size1 + lig_size2
-            )
-        elif self.system == "protein":
-            replacements["WATER_RESTRAINT"] = ""
+        # Split lambdas into forward and reverse from center
+        lambda_1 = []
+        lambda_2 = []
+        block = 0
+        for lmbda in lambdas:
+            if lmbda == "0.500":
+                block = 1
+            if block == 0:
+                lambda_1.append(lmbda)
+            if block == 1:
+                lambda_2.append(lmbda)
 
-        for eq_file_in in sorted(glob.glob(CONFIGS["ROOT_DIR"] + "/INPUTS/eq[1-5].inp")):
-            eq_file = eq_file_in.split("/")[-1:][0]
-            eq_file_out = writedir + "/" + eq_file
-            with open(eq_file_in) as infile:
-                with open(eq_file_out, "w") as outfile:
-                    for line in infile:
-                        line = replace(line, replacements)
-                        outfile.write(line)
-                        if line == "[distance_restraints]\n":
-                            for line in overlapping_atoms:
-                                outfile.write(f"{line[0]:d} {line[1]:d} 0.0 0.2 0.5 0\n")
-                file_list_1.append(eq_file)
+        lambda_1 = lambda_1[::-1]
+        lambda_2 = lambda_2[1:]
 
-        file_in = CONFIGS["INPUT_DIR"] + "/md_1000_0000.inp"
-        file_out = writedir + "/md_1000_0000.inp"
-        with open(file_in) as infile, open(file_out, "w") as outfile:
-            for line in infile:
-                line = replace(line, replacements)
-                outfile.write(line)
-                if line == "[distance_restraints]\n":
-                    for line in overlapping_atoms:
-                        outfile.write(f"{line[0]:d} {line[1]:d} 0.0 0.2 0.5 0\n")
+        # Write initial md_0500_0500.inp
+        content = render_md_input(
+            params=prod_config.params,
+            lambda1="0.500",
+            lambda2="0.500",
+            trajectory_file="md_0500_0500.dcd",
+            final_file="md_0500_0500.re",
+            restart_file="eq5.re",
+            energy_file="md_0500_0500.en",
+            distance_restraints=dr_str,
+            sequence_restraints=seq_str,
+        )
+        filepath = Path(writedir) / "md_0500_0500.inp"
+        filepath.write_text(content)
+        file_list1.append("md_0500_0500.inp")
 
-        file_list_1.append("md_1000_0000.inp")
-        filenr = 0
+        # Write lambda window files
+        for index, lambda_list in enumerate([lambda_1, lambda_2], start=1):
+            filename_N = "md_0500_0500"
 
-        for lambd in lambdas:
-            if lambd == "1.000":
-                filename_N = "md_1000_0000"
-                continue
-            else:
-                step_n = totallambda - filenr - 2
+            for filenr, _ in enumerate(lambda_list):
+                if index == 1:
+                    l1 = lambda_1[filenr]
+                    l2 = lambda_2[filenr]
+                else:
+                    l1 = lambda_2[filenr]
+                    l2 = lambda_1[filenr]
 
-                lambda1 = lambd
-                lambda2 = lambdas[step_n]
-                filename = "md_" + lambda1.replace(".", "") + "_" + lambda2.replace(".", "")
-                replacements["FLOAT_LAMBDA1"] = lambda1
-                replacements["FLOAT_LAMBDA2"] = lambda2
-                replacements["FILE"] = filename
-                replacements["FILE_N"] = filename_N
+                filename = f"md_{l1.replace('.', '')}_{l2.replace('.', '')}"
 
-                # Move to functio
-                pattern = re.compile(r"\b(" + "|".join(replacements.keys()) + r")\b")
-                file_in = CONFIGS["INPUT_DIR"] + "/md_XXXX_XXXX.inp"
-                file_out = writedir + "/" + filename + ".inp"
-
-                with open(file_in) as infile, open(file_out, "w") as outfile:
-                    for line in infile:
-                        line = pattern.sub(lambda x: replacements[x.group()], line)
-                        outfile.write(line)
-                        if line == "[distance_restraints]\n":
-                            for line in overlapping_atoms:
-                                outfile.write(f"{line[0]:d} {line[1]:d} 0.0 0.1 0.5 0\n")
+                content = render_md_input(
+                    params=prod_config.params,
+                    lambda1=l1,
+                    lambda2=l2,
+                    trajectory_file=f"{filename}.dcd",
+                    final_file=f"{filename}.re",
+                    restart_file=f"{filename_N}.re",
+                    energy_file=f"{filename}.en",
+                    distance_restraints=dr_str,
+                    sequence_restraints=seq_str,
+                )
+                filepath = Path(writedir) / f"{filename}.inp"
+                filepath.write_text(content)
 
                 filename_N = filename
-                filenr += 1
-                file_list_2.append(filename + ".inp")
 
-        return [file_list_1, file_list_2, file_list_3]
+                if index == 1:
+                    file_list2.append(f"{filename}.inp")
+                else:
+                    file_list3.append(f"{filename}.inp")
+
+        return file_list1, file_list2, file_list3
+
+    def _write_production_1(
+        self,
+        lambdas: list[str],
+        writedir: str,
+        prod_config,
+        dr_str: str,
+        seq_str: str,
+        file_list1: list[str],
+    ) -> tuple[list[str], list[str], list[str]]:
+        """Write production MD files for start=0.0/1 mode.
+
+        Starts from 1.000/0.000 and goes through all windows sequentially.
+        """
+        file_list2 = []
+        file_list3 = []
+        total_lambda = len(lambdas)
+
+        # Write initial md_1000_0000.inp
+        content = render_md_input(
+            params=prod_config.params,
+            lambda1="1.000",
+            lambda2="0.000",
+            trajectory_file="md_1000_0000.dcd",
+            final_file="md_1000_0000.re",
+            restart_file="eq5.re",
+            energy_file="md_1000_0000.en",
+            distance_restraints=dr_str,
+            sequence_restraints=seq_str,
+        )
+        filepath = Path(writedir) / "md_1000_0000.inp"
+        filepath.write_text(content)
+        file_list1.append("md_1000_0000.inp")
+
+        filename_N = "md_1000_0000"
+        filenr = 0
+
+        for lmbda in lambdas:
+            if lmbda == "1.000":
+                continue
+
+            step_n = total_lambda - filenr - 2
+            l1 = lmbda
+            l2 = lambdas[step_n]
+
+            filename = f"md_{l1.replace('.', '')}_{l2.replace('.', '')}"
+
+            content = render_md_input(
+                params=prod_config.params,
+                lambda1=l1,
+                lambda2=l2,
+                trajectory_file=f"{filename}.dcd",
+                final_file=f"{filename}.re",
+                restart_file=f"{filename_N}.re",
+                energy_file=f"{filename}.en",
+                distance_restraints=dr_str,
+                sequence_restraints=seq_str,
+            )
+            filepath = Path(writedir) / f"{filename}.inp"
+            filepath.write_text(content)
+
+            filename_N = filename
+            filenr += 1
+            file_list2.append(f"{filename}.inp")
+
+        return file_list1, file_list2, file_list3
 
     def _write_endpoint_file(
         self, file_out, eq_lambda, steps, overlapping_atoms, restlist, lambda_scaling=None
