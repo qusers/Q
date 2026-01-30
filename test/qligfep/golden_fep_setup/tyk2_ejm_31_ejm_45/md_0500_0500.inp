@@ -2,7 +2,7 @@
 steps                     5000
 stepsize                  2.0
 temperature               T_VAR
-bath_coupling             10
+bath_coupling             10.0
 shake_solvent             on
 shake_hydrogens           on
 shake_solute              off
