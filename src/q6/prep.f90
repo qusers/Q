@@ -199,6 +199,11 @@ module prep
   logical                         :: topo_ok = .false.
   logical                         :: ff_ok = .false.
 
+! --- error collection for PDB validation (report all errors at once)
+  integer, parameter              :: max_pdb_errors = 500
+  character(len=200)              :: pdb_errors(max_pdb_errors)
+  integer                         :: npdb_errors = 0
+
 !       memory management
   integer, private                :: alloc_status
   !private subroutine
@@ -206,6 +211,19 @@ module prep
 
 
 contains
+
+subroutine add_pdb_error(msg)
+!!-------------------------------------------------------------------------------
+!!  Adds an error message to the PDB error collection array.
+!!  Used to collect all PDB validation errors before reporting them.
+!!-------------------------------------------------------------------------------
+  character(len=*), intent(in)   :: msg
+  if (npdb_errors < max_pdb_errors) then
+    npdb_errors = npdb_errors + 1
+    pdb_errors(npdb_errors) = msg
+  end if
+end subroutine add_pdb_error
+
 
 subroutine prep_startup
 !!------------------------------------------------------------------------------
@@ -3876,6 +3894,7 @@ subroutine readpdb()
 
 !  character atnam_tmp * 4, resnam_tmp * 4
   character(len=80)         :: line
+  character(len=200)        :: error_msg
   integer resnum_tmp, oldnum, irec, i, atom_id(max_atlib), j
   real(kind=dp)             :: xtmp(3)
 !  real xtmp(3)
@@ -3884,6 +3903,8 @@ subroutine readpdb()
   logical                   :: last_line_was_gap
   integer                   :: atoms, residues, molecules
 
+  ! Reset error collection at start
+  npdb_errors = 0
 
   write( *, * )
   call get_string_arg(pdb_file, '-----> Name of PDB file: ')
@@ -3981,10 +4002,10 @@ subroutine readpdb()
               heavy(res(nres)%start - 1 + i) = .true.
               makeH(res(nres)%start - 1 + i) = .false.
               if(atom_id(i) == 0) then !not found
-                write(*, '(/,a,a,a,i5,/)') '>>> Heavy atom ',&
+                write(error_msg, '(a,a,a,i5)') '>>> Heavy atom ',&
                   lib(res(nres)%irc )%atnam(i), &
                   ' missing in residue ', oldnum
-                goto 210
+                call add_pdb_error(error_msg)
               end if
             else !hydrogen
               heavy(res(nres)%start - 1 + i) = .false.
@@ -4010,9 +4031,12 @@ subroutine readpdb()
           end if
         end do
         if(.not.res_found) then
-          write( * , '(/,a,a,/)') '>>> Residue not found in library: ', &
+          write(error_msg, '(a,a)') '>>> Residue not found in library: ', &
             resnam_tmp
-          goto 210
+          call add_pdb_error(error_msg)
+          ! Skip this residue - decrement nres and continue to next atom
+          nres = nres - 1
+          cycle
         end if
         !clear atom read flags
         do i = 1, lib(res(nres)%irc )%nat
@@ -4067,10 +4091,10 @@ subroutine readpdb()
       end do !i
 
       if(.not.at_found) then
-        write( * , '(/,a,a,a,i5,a,a,/)') '>>> Atom ', atnam_tmp, &
+        write(error_msg, '(a,a,a,i5,a,a)') '>>> Atom ', atnam_tmp, &
           ' in residue no. ', resnum_tmp, ' not found in library entry for ', &
           lib(res(nres)%irc)%nam
-        goto 210
+        call add_pdb_error(error_msg)
       end if !.not.at_found
     end if !line type
   end do
@@ -4097,9 +4121,9 @@ subroutine readpdb()
         heavy(res(nres)%start - 1 + i) = .true.
         makeH(res(nres)%start - 1 + i) = .false.
         if(atom_id(i) == 0) then !it was not found
-          write( * , '(/,a,a,a,i5,/)') '>>> Heavy atom ', &
+          write(error_msg, '(a,a,a,i5)') '>>> Heavy atom ', &
             lib(res(nres)%irc )%atnam(i),' missing in residue ',oldnum
-          goto 210
+          call add_pdb_error(error_msg)
         end if
       else !it is a hydrogen
         heavy(res(nres)%start - 1 + i) = .false.
@@ -4109,6 +4133,18 @@ subroutine readpdb()
         end if
       end if
     end do
+  end if
+
+  ! Check if any errors were collected during PDB parsing
+  if (npdb_errors > 0) then
+    write(*, '(/,a,i5,a)') 'Found ', npdb_errors, ' atom/residue error(s):'
+    write(*, '(a)') '----------------------------------------'
+    do i = 1, npdb_errors
+      write(*, '(a)') trim(pdb_errors(i))
+    end do
+    write(*, '(a,/)') '----------------------------------------'
+    npdb_errors = 0  ! Reset for next attempt
+    goto 210
   end if
 
   nwat = (nat_pro - nat_solute) / 3
