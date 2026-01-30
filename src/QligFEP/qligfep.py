@@ -10,10 +10,9 @@ import numpy as np
 import pandas as pd
 from sklearn.neighbors import NearestNeighbors
 
-from .CLI.qprep_cli import qprep_error_check
 from .CLI.utils import get_avail_restraint_methods, handle_cysbonds
 from .functions import COG, kT, overlapping_pairs, sigmoid
-from .IO import get_force_field_paths, replace, run_command
+from .IO import get_force_field_paths, qprep_error_check, replace, run_qprep
 from .logger import logger
 from .pdb_utils import (
     calculate_distance,
@@ -1365,12 +1364,7 @@ class QligFEP:
     def qprep(self, writedir):
         os.chdir(writedir)
         cluster_options = CLUSTER_DICT[self.cluster]
-        qprep = cluster_options["QPREP"]
-        logger.info(f"Running QPREP from path {qprep}")
-        options = " < qprep.inp > qprep.out"
-        # Somehow Q is very annoying with this < > input style so had to implement
-        # another function that just calls os.system instead of using the preferred
-        # subprocess module....
-        run_command(qprep, options, string=True)
-        qprep_error_check(Path("qprep.out"), self.FF)
+        qprep_path = cluster_options["QPREP"]
+        logger.info(f"Running QPREP from path {qprep_path}")
+        run_qprep(qprep_path, "qprep.inp", "qprep.out", self.FF)
         os.chdir("../../")
