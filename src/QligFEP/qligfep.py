@@ -16,6 +16,7 @@ from .IO import get_force_field_paths, qprep_error_check, replace, run_qprep
 from .logger import logger
 from .pdb_utils import (
     calculate_distance,
+    filter_out_of_sphere_fragments,
     pdb_parse_in,
     pdb_parse_out,
     read_pdb_to_dataframe,
@@ -24,7 +25,15 @@ from .pdb_utils import (
 )
 from .restraints.restraint_setter import RestraintSetter
 from .settings.settings import CLUSTER_DICT, CONFIGS
-from .templates import get_equilibration_configs, get_production_config, render_md_input
+from .templates import (
+    QprepFEPParameters,
+    format_energy_files,
+    get_equilibration_configs,
+    get_production_config,
+    render_md_input,
+    render_qfep_input,
+    render_qprep_fep_input,
+)
 from .templates.sections import (
     format_distance_restraints,
     format_sequence_restraint,
@@ -1178,29 +1187,17 @@ class QligFEP:
                     outfile.write(outline[1:])
 
     def write_qfep(self, windows, lambdas):
-        qfep_in = CONFIGS["ROOT_DIR"] + "/INPUTS/qfep.inp"
         qfep_out = self.write_dir + "/inputfiles/qfep.inp"
-        i = 0
-        total_l = len(lambdas)
-
         # TO DO: multiple files will need to be written out for temperature range
-        k_T = kT(float(self.temperature))
-        replacements = {}
-        replacements["kT"] = str(k_T)
-        replacements["WINDOWS"] = str(windows)
-        replacements["TOTAL_L"] = str(total_l)
-        with open(qfep_in) as infile, open(qfep_out, "w") as outfile:
-            for line in infile:
-                line = replace(line, replacements)
-                outfile.write(line)
-
-            if line == "!ENERGY_FILES\n":
-                for i in range(0, total_l):
-                    j = -(i + 1)
-                    lambda1 = lambdas[i]
-                    lambda2 = lambdas[j]
-                    filename = "md_" + lambda1.replace(".", "") + "_" + lambda2.replace(".", "") + ".en\n"
-                    outfile.write(filename)
+        energy_files = format_energy_files(lambdas)
+        content = render_qfep_input(
+            total_lambdas=len(lambdas),
+            temperature=float(self.temperature),
+            windows=windows,
+            energy_files=energy_files,
+        )
+        with open(qfep_out, "w") as outfile:
+            outfile.write(content)
 
     def avoid_water_protein_clashes(self, writedir, header: Optional[str] = None, save_removed: bool = False):
         """Function to remove water molecules too close to protein & ligands | ligands (water leg).
@@ -1235,6 +1232,73 @@ class QligFEP:
             save_removed=save_removed,
         )
 
+    def _get_cog_from_water(self, writedir: str) -> list[float]:
+        """Extract COG from water.pdb TITLE line.
+
+        Args:
+            writedir: directory where inputfiles are written (e.g., FEP_lig1_lig2/inputfiles)
+
+        Returns:
+            list[float]: [x, y, z] coordinates of center of geometry
+        """
+        cog_regex = re.compile(r"([-]?\d{1,3}\.\d{3})\s+([-]?\d{1,3}\.\d{3})\s+([-]?\d{1,3}\.\d{3})")
+        water_pdb_path = Path(writedir).parents[1] / "water.pdb"
+
+        if water_pdb_path.exists():
+            first_lines = water_pdb_path.read_text().split("\n")[:3]
+            for line in first_lines:
+                if line.startswith("TITLE"):
+                    matches = cog_regex.search(line)
+                    if matches:
+                        return [float(x) for x in matches.groups()]
+
+        # Fallback: calculate from ligand
+        logger.debug("COG not found in water.pdb TITLE, calculating from ligand.")
+        return list(COG(self.lig1 + ".pdb"))
+
+    def _update_offsets_from_pdb(self, pdb_path: Path) -> None:
+        """Update atomoffset and residueoffset from filtered PDB.
+
+        After filtering fragments from the protein PDB, the atom and residue
+        numbering may have changed. This method recalculates the offsets.
+
+        Args:
+            pdb_path: Path to the (filtered) merged PDB file
+        """
+        pdb_df = read_pdb_to_dataframe(pdb_path)
+        protein_atoms = pdb_df[~pdb_df["residue_name"].isin(["HOH", "LIG", "LID"])]
+        if not protein_atoms.empty:
+            self.atomoffset = int(protein_atoms["atom_serial_number"].max())
+            self.residueoffset = int(protein_atoms["residue_seq_number"].max())
+            logger.debug(f"Updated offsets: atomoffset={self.atomoffset}, residueoffset={self.residueoffset}")
+
+    def filter_protein_fragments(self, writedir: str) -> tuple[int, int]:
+        """Filter merged PDB to remove molecular fragments completely outside sphere.
+
+        Uses MDAnalysis topology-based fragment detection. Entire chains, cofactors,
+        lipids, or other molecular units are removed if ALL their atoms are outside
+        the simulation sphere.
+
+        Args:
+            writedir: directory where inputfiles are written (e.g., FEP_lig1_lig2/inputfiles)
+
+        Returns:
+            Tuple of (original_atom_count, filtered_atom_count)
+        """
+        cog = self._get_cog_from_water(writedir)
+        merged_pdb = Path(writedir) / self.pdb_fname
+
+        orig_count, filt_count = filter_out_of_sphere_fragments(
+            merged_pdb, cog, float(self.sphereradius)
+        )
+
+        # Update offsets if structure was filtered
+        if filt_count < orig_count:
+            self._update_offsets_from_pdb(merged_pdb)
+            logger.info(f"Filtered structure: {orig_count} → {filt_count} atoms ({orig_count - filt_count} removed)")
+
+        return orig_count, filt_count
+
     def write_qprep(self, writedir):
         """Write the qprep.inp file for Q. If the system is water, the center of geometry
         will be calculated from the lig1's atoms coordinates. If the system is protein, it
@@ -1244,85 +1308,80 @@ class QligFEP:
         Args:
             writedir: directory in which QligFEP will write the input files.
         """
-        replacements = {}
-        cog = None
-        cog_regex = re.compile(r"([-]?\d{1,3}\.\d{3})\s+([-]?\d{1,3}\.\d{3})\s+([-]?\d{1,3}\.\d{3})")
-        # see if the water.pdb file has a COG from qprep
-        first_lines = (Path(writedir).parents[1] / "water.pdb").read_text().split("\n")[:3]
-        for line in first_lines:
-            if line.startswith("TITLE"):
-                _matches = cog_regex.search(line)
-                center = " ".join(_matches.groups()) if _matches else None
-                if _matches is None:
-                    logger.warning(f"Failed to extract COG from line:\n{line}")
-                    logger.info("Will calculate the COG from the ligand atoms.")
-        center = COG(self.lig1 + ".pdb") if cog is None or self.system == "water" else cog
-        center = f"{center[0]} {center[1]} {center[2]}"
-        self.cog = [float(coord) for coord in center.split()]
-        qprep_in = CONFIGS["ROOT_DIR"] + "/INPUTS/qprep.inp"
+        self.cog = self._get_cog_from_water(writedir)
+        center = f"{self.cog[0]} {self.cog[1]} {self.cog[2]}"
+
         qprep_out = writedir + "/qprep.inp"
-        replacements["FF_LIB"] = self.lib_file
-        replacements["LIG1"] = self.lig1 + ".lib"
-        replacements["LIG2"] = self.lig2 + "_renumber.lib"
-        replacements["LIGPRM"] = self.FF + "_" + self.lig1 + "_" + self.lig2 + "_merged.prm"
-        replacements["LIGPDB"] = self.lig1 + "_" + self.lig2 + ".pdb"
-        replacements["CENTER"] = center
-        replacements["SPHERE"] = self.sphereradius
+
+        # Determine solvent specification
         if self.system == "vacuum":
-            replacements["solvate"] = "!solvate"
-        if self.system == "water":
-            replacements["SOLVENT"] = "1 HOH"
-        if self.system == "protein":
-            replacements["SOLVENT"] = "4 water.pdb"
+            solvent = ""
+            solvate = False
+        elif self.system == "water":
+            solvent = "1 HOH"
+            solvate = True
+        else:  # protein
+            solvent = "4 water.pdb"
+            solvate = True
 
         pdb_df = read_pdb_to_dataframe(Path(writedir) / self.pdb_fname)
         density = self.get_sphere_density(pdb_df) if self.system == "protein" else 0.05794
-        replacements["SOLUTEDENS"] = f"{density:.5f}"
 
-        with open(qprep_in) as infile, open(qprep_out, "w") as outfile:
-            # We reindex the residues prior to defining the cysbonds because Q considers
-            # the first residue to be always 1, regardless of the numbering in the PDB file.
-            reindex_pdb_residues(Path(writedir) / self.pdb_fname, Path(writedir) / self.pdb_fname)
-            cysbond_str = handle_cysbonds(
-                self.cysbond, Path(writedir) / self.pdb_fname, comment_out=(self.system != "protein")
-            )
-            if self.system == "protein" and self.cysbond == "auto" and cysbond_str != "":
-                # cysbond shouldn't be there if the AA is out of the sphere radius
-                new_cysbond_str = ""
-                for line in cysbond_str.strip().split("\n"):
-                    parts = line.split()
-                    resn1, at1 = parts[1].split(":")
-                    resn1 = int(resn1)
-                    resn2, at2 = parts[2].split(":")
-                    resn2 = int(resn2)
+        # We reindex the residues prior to defining the cysbonds because Q considers
+        # the first residue to be always 1, regardless of the numbering in the PDB file.
+        reindex_pdb_residues(Path(writedir) / self.pdb_fname, Path(writedir) / self.pdb_fname)
+        cysbond_str = handle_cysbonds(
+            self.cysbond, Path(writedir) / self.pdb_fname, comment_out=(self.system != "protein")
+        )
+        if self.system == "protein" and self.cysbond == "auto" and cysbond_str != "":
+            # cysbond shouldn't be there if the AA is out of the sphere radius
+            new_cysbond_str = ""
+            for line in cysbond_str.strip().split("\n"):
+                parts = line.split()
+                resn1, at1 = parts[1].split(":")
+                resn1 = int(resn1)
+                resn2, at2 = parts[2].split(":")
+                resn2 = int(resn2)
 
-                    atom1 = pdb_df.query("residue_seq_number == @resn1 & atom_name == @at1")
-                    atom2 = pdb_df.query("residue_seq_number == @resn2 & atom_name == @at2")
-                    if not atom1.empty and not atom2.empty:
-                        atom1_coords = atom1[["x", "y", "z"]].values[0]
-                        atom2_coords = atom2[["x", "y", "z"]].values[0]
+                atom1 = pdb_df.query("residue_seq_number == @resn1 & atom_name == @at1")
+                atom2 = pdb_df.query("residue_seq_number == @resn2 & atom_name == @at2")
+                if not atom1.empty and not atom2.empty:
+                    atom1_coords = atom1[["x", "y", "z"]].values[0]
+                    atom2_coords = atom2[["x", "y", "z"]].values[0]
 
-                        dist1 = calculate_distance(atom1_coords, self.cog)
-                        dist2 = calculate_distance(atom2_coords, self.cog)
-                        logger.debug(
-                            f"{resn1}:{at1} and {resn2}:{at2} within {dist1} and {dist2} of the COG."
-                        )
-                        if dist1 <= int(self.sphereradius) and dist2 <= int(self.sphereradius):
-                            new_cysbond_str += line + "\n"
-                        else:
-                            logger.info(
-                                f"Excluding cysbond {line}; one or both atoms are outside the sphere radius."
-                            )
+                    dist1 = calculate_distance(atom1_coords, self.cog)
+                    dist2 = calculate_distance(atom2_coords, self.cog)
+                    logger.debug(
+                        f"{resn1}:{at1} and {resn2}:{at2} within {dist1} and {dist2} of the COG."
+                    )
+                    if dist1 <= int(self.sphereradius) and dist2 <= int(self.sphereradius):
+                        new_cysbond_str += line + "\n"
                     else:
-                        logger.warning(f"Atom information not found for bond {line}.")
-                if new_cysbond_str:
-                    cysbond_str = new_cysbond_str
-            for line in infile:
-                line = replace(line, replacements)
-                if line == "!addbond at1 at2 y\n" and cysbond_str != "":
-                    outfile.write(cysbond_str)
-                    continue
-                outfile.write(line)
+                        logger.info(
+                            f"Excluding cysbond {line}; one or both atoms are outside the sphere radius."
+                        )
+                else:
+                    logger.warning(f"Atom information not found for bond {line}.")
+            if new_cysbond_str:
+                cysbond_str = new_cysbond_str
+
+        params = QprepFEPParameters(
+            ff_lib=self.lib_file,
+            lig1_lib=self.lig1 + ".lib",
+            lig2_lib=self.lig2 + "_renumber.lib",
+            ligand_prm=self.FF + "_" + self.lig1 + "_" + self.lig2 + "_merged.prm",
+            ligand_pdb=self.lig1 + "_" + self.lig2 + ".pdb",
+            center=center,
+            sphere_radius=self.sphereradius,
+            solute_density=f"{density:.5f}",
+            solvent=solvent,
+            cysbonds=cysbond_str,
+            solvate=solvate,
+        )
+
+        content = render_qprep_fep_input(params)
+        with open(qprep_out, "w") as outfile:
+            outfile.write(content)
 
     def get_sphere_density(self, pdb_df: pd.DataFrame) -> float:
         """Calculate the solute density for the FEP system taking into consideration the different

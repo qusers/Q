@@ -117,6 +117,10 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         inputdir, header=f"{run.sphereradius}.0 SPHERE", save_removed=(args.log in ["trace", "debug"])
     )
 
+    # Filter out molecular fragments completely outside the sphere (protein systems only)
+    if run.system == "protein":
+        run.filter_protein_fragments(inputdir)
+
     logger.debug("Writing the QPREP files & running qprep")
     run.write_qprep(inputdir)
     run.qprep(inputdir)

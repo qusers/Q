@@ -2,10 +2,12 @@
 
 import math
 import re
+import warnings
 from pathlib import Path
 from string import ascii_uppercase
 from typing import Optional, Union
 
+import MDAnalysis as mda
 import numpy as np
 import pandas as pd
 from rdkit import Chem
@@ -470,3 +472,169 @@ def sdf_to_pdb(in_sdf_file, out_pdb_file):
                 print("overwriting")
                 f.write(Chem.MolToPDBBlock(mol_with_h))
             break
+
+
+def filter_pdb_by_sphere(
+    pdb_input: Path,
+    pdb_output: Path,
+    center: list[float],
+    radius: float,
+    exclude_residues: set[str] = None,
+) -> tuple[int, int]:
+    """Filter PDB keeping only fragments with atoms inside the sphere.
+
+    Uses MDAnalysis topology-based fragment detection (bond connectivity)
+    rather than relying on chain IDs. Entire molecular fragments are preserved
+    if any atom is within the sphere radius.
+
+    Args:
+        pdb_input: Input PDB file path
+        pdb_output: Output PDB file path
+        center: [x, y, z] coordinates of sphere center
+        radius: Sphere radius in Angstroms
+        exclude_residues: Residue names to exclude from filtering (handled separately).
+            Defaults to {"HOH", "LIG", "LID"}.
+
+    Returns:
+        Tuple of (original_atom_count, filtered_atom_count)
+    """
+    if exclude_residues is None:
+        exclude_residues = {"HOH", "LIG", "LID"}
+
+    # Custom vdW radii for ions that are common in PDB files but not in MDAnalysis defaults
+    # Includes both standard element names and force field-specific naming conventions
+    custom_vdwradii = {
+        # Standard element names
+        "Na": 2.27,   # Sodium
+        "K": 2.75,    # Potassium
+        "Cl": 1.75,   # Chloride
+        "Ca": 2.31,   # Calcium
+        "Mg": 1.73,   # Magnesium
+        "Zn": 1.39,   # Zinc
+        "Fe": 1.56,   # Iron
+        "Cu": 1.40,   # Copper
+        "Mn": 1.39,   # Manganese
+        # AMBER force field naming conventions
+        "SOD": 2.27,  # Sodium (AMBER)
+        "MAG": 1.73,  # Magnesium (AMBER)
+        "CHL": 1.75,  # Chloride (AMBER)
+        "ZIN": 1.39,  # Zinc (AMBER)
+        # OPLS force field naming conventions
+        "MG2": 1.73,  # Magnesium (OPLS)
+        "Na+": 2.27,  # Sodium (OPLS)
+    }
+
+    # Suppress expected MDAnalysis warnings (missing CRYST1, missing chain IDs, etc.)
+    # These are harmless for our topology-based fragment detection
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Unit cell dimensions not found")
+        warnings.filterwarnings("ignore", message="Found missing chainIDs")
+        warnings.filterwarnings("ignore", message="Found no information for attr")
+        warnings.filterwarnings("ignore", message="Element information is missing")
+
+        try:
+            # Load Universe without guessing bonds initially
+            u = mda.Universe(str(pdb_input))
+            # Then guess bonds with custom vdW radii (MDAnalysis 3.0 compatible)
+            u.guess_TopologyAttrs(to_guess=["bonds"], vdwradii=custom_vdwradii)
+        except Exception as e:
+            logger.warning(f"Could not load PDB with MDAnalysis: {e}")
+            return 0, 0
+
+        original_count = u.atoms.n_atoms
+
+        if original_count == 0:
+            # Empty PDB file
+            Path(pdb_output).write_text("END\n")
+            return 0, 0
+
+        # Build selection string for the sphere volume
+        cx, cy, cz = center
+        volume_selection = f"point {cx} {cy} {cz} {radius}"
+
+        # Build exclusion string for specified residues
+        if exclude_residues:
+            exclude_str = " or ".join([f"resname {r}" for r in exclude_residues])
+        else:
+            exclude_str = None
+
+        # Select: (fragments touching sphere) PLUS (excluded residues that touch sphere)
+        # This ensures LIG/LID/HOH in sphere are kept, but their fragments don't pull in distant atoms
+        # MDAnalysis's "same fragment as" expands selection to complete connected molecules
+        if exclude_str:
+            # For non-excluded residues: keep whole fragment if any atom in sphere
+            # For excluded residues: only keep them if they're in sphere (no fragment expansion)
+            non_excluded_in_sphere = f"(same fragment as (({volume_selection}) and not ({exclude_str})))"
+            excluded_in_sphere = f"(({exclude_str}) and ({volume_selection}))"
+            selection = f"{non_excluded_in_sphere} or {excluded_in_sphere}"
+        else:
+            selection = f"same fragment as ({volume_selection})"
+
+        try:
+            kept_atoms = u.select_atoms(selection)
+        except Exception as e:
+            logger.warning(f"MDAnalysis selection failed: {e}. Keeping all atoms.")
+            kept_atoms = u.atoms
+
+        filtered_count = kept_atoms.n_atoms
+
+        if filtered_count == 0:
+            # All atoms outside sphere
+            Path(pdb_output).write_text("END\n")
+            return original_count, 0
+
+        # Write filtered structure
+        kept_atoms.write(str(pdb_output))
+
+    return original_count, filtered_count
+
+
+def filter_out_of_sphere_fragments(
+    pdb_path: Path,
+    center: list[float],
+    radius: float,
+    exclude_residues: set[str] = None,
+) -> tuple[int, int]:
+    """Remove molecular fragments completely outside the sphere radius.
+
+    Uses MDAnalysis topology-based fragment detection for robust filtering
+    that doesn't depend on chain ID labels. Modifies the PDB file in place.
+
+    Args:
+        pdb_path: Path to PDB file (will be modified in place)
+        center: [x, y, z] sphere center coordinates
+        radius: Sphere radius in Angstroms
+        exclude_residues: Residue names to exclude from fragment expansion.
+            Defaults to {"HOH", "LIG", "LID"}.
+
+    Returns:
+        Tuple of (original_atom_count, filtered_atom_count)
+    """
+    if exclude_residues is None:
+        exclude_residues = {"HOH", "LIG", "LID"}
+
+    # Use a temporary output file, then replace the original
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".pdb", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+
+    try:
+        orig_count, filt_count = filter_pdb_by_sphere(
+            pdb_path, tmp_path, center, radius, exclude_residues
+        )
+
+        if filt_count < orig_count:
+            # Move filtered file to original location
+            import shutil
+
+            shutil.move(str(tmp_path), str(pdb_path))
+        else:
+            # No change needed, remove temp file
+            tmp_path.unlink(missing_ok=True)
+
+        return orig_count, filt_count
+    except Exception as e:
+        # Clean up on error
+        tmp_path.unlink(missing_ok=True)
+        raise e
