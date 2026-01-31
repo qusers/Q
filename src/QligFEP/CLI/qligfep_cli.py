@@ -47,7 +47,6 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     param_dict.update(kwargs)
     setup_logger(level=args.log.upper())
     run = QligFEP(**param_dict)
-    run.set_timestep()
 
     writedir = run.makedir()
     inputdir = writedir + "/inputfiles"
@@ -102,6 +101,10 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         inputdir, header=f"{run.sphereradius}.0 SPHERE", save_removed=(args.log in ["trace", "debug"])
     )
 
+    # Filter out molecular fragments completely outside the sphere (protein systems only)
+    if run.system == "protein":
+        run.filter_protein_fragments(inputdir)
+
     logger.debug("Writing the QPREP files & running qprep")
     run.write_qprep(inputdir)
     run.qprep(inputdir)
@@ -111,13 +114,8 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
 
     # Handling the correct offset here
     logger.debug("Writing the MD files")
-    if args.start == "0.5":
-        file_list = run.write_MD_05(lambdas, inputdir, lig_size1, lig_size2, overlapping_atoms)
-        run.write_runfile(inputdir, file_list)
-
-    if args.start == "1":
-        file_list = run.write_MD_1(lambdas, inputdir, lig_size1, lig_size2, overlapping_atoms)
-        run.write_runfile(inputdir, file_list)
+    file_list = run.write_md_files(lambdas, inputdir, lig_size1, lig_size2, overlapping_atoms)
+    run.write_runfile(inputdir, file_list)
     logger.debug(f"Generated files: {file_list}")
     logger.debug("Writing the submit files")
     run.write_submitfile(writedir)

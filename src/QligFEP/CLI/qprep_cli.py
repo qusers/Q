@@ -1,54 +1,26 @@
 """Module containing the command line interface for the qprep fortran program."""
 
 import argparse
-import re
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
 
-from ..IO import get_force_field_paths, run_command
+from ..IO import get_force_field_paths, run_qprep
 from ..logger import logger, setup_logger
 from ..pdb_utils import (
     append_pdb_to_another,
     read_pdb_to_dataframe,
     write_dataframe_to_pdb,
 )
-from ..settings.settings import CONFIGS, FF_DIR
+from ..settings.settings import CONFIGS
+from ..templates import QprepProteinParameters, render_qprep_protein_input
 from ._popc_utils import (
     convert_pymemdyn_to_unified_dataframe,
     df_to_pdb_corrected_element,
     has_pop_residues,
 )
 from .utils import handle_cysbonds
-
-# NOTE: cysbonds will have \n after each bond -> `maketop MKC_p` is in a different line
-qprep_inp_content = """rl {ff_lib_path}
-rprm {ff_prm_path}
-! TO DO Change if protein system is used
-rp {pdb_file_path}
-! set solute_density 0.05794
-! NOTE, this is now large for water system, change for protein system
-set solvent_pack {solvent_pack}
-boundary 1 {cog} {sphereradius}
-solvate {cog} {sphereradius} 1 HOH
-{cysbond}maketop MKC_p
-writetop dualtop.top
-wp top_p.pdb y
-rt dualtop.top
-mask none
-mask not excluded
-wp complexnotexcluded.pdb y
-q
-"""
-
-
-class QprepError(Exception):
-    pass
-
-
-class QprepAtomLibMissingError(Exception):
-    pass
 
 
 class ProteinNeutralizer:
@@ -299,48 +271,6 @@ class ProteinNeutralizer:
                     logger.debug(f"    Atoms removed: {', '.join(mod_info['atoms_removed'])}")
 
 
-def qprep_error_check(qprep_out_path: Path, ff_name) -> None:
-    """Check for errors in the qprep.out file and raise an exception if any are found.
-
-    Args:
-        qprep_out_path: Path to the qprep.out file.
-        ff_name: name of the forcefield to point user to the .lib & .prm files.
-
-    Raises:
-        QprepError: ff any errors are found in the qprep.out file.
-    """
-    error_pat = re.compile(r"ERROR\:\s", re.IGNORECASE)
-    missing_lib_pat = re.compile(
-        r">>> Atom ...?.? in residue no\.\s+\d+ not found in library entry for [A-Z]+"
-        r"|>>> Heavy atom ...?.? missing in residue\s+ [0-9]+"
-    )
-    outfile_lines = qprep_out_path.read_text().split("\n")
-    error_lines = []
-    missing_atomlib_lines = []
-    for line in outfile_lines:
-        if error_pat.findall(line):
-            error_lines.append(line)
-            logger.error(
-                f"Errors found in qprep output file {qprep_out_path}. Please check if the amino "
-                "acids in your pdb file match the residue & atom conventions on the forcefield .lib & .prm files:\n"
-                f"{FF_DIR/ ff_name}.prm & {FF_DIR/ ff_name}.lib"
-            )
-        if missing_lib_pat.findall(line):
-            missing_atomlib_lines.append(line)
-            logger.error(
-                f"Errors found in qprep output file {qprep_out_path}. "
-                "Your protein file likely contains atoms that are not present in the forcefield's .lib & .prm files:, \n"
-                f"{FF_DIR/ ff_name}.prm & {FF_DIR/ ff_name}.lib"
-            )
-
-    if error_lines:
-        error_message = {"\n".join(error_lines)}
-        raise QprepError(error_message)
-    if missing_atomlib_lines:
-        error_message = {"\n".join(missing_atomlib_lines)}
-        raise QprepAtomLibMissingError(error_message)
-
-
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -566,28 +496,23 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
 
     cysbonds = handle_cysbonds(args.cysbond, pdb_file, comment_out=True)
 
-    if args is not None:
-        param_dict = {
-            "pdb_file_path": pdb_file,
-            "cog": cog,
-            "ff_lib_path": ff_lib_path,
-            "ff_prm_path": ff_prm_path,
-            "sphereradius": sphereradius,
-            "cysbond": cysbonds,
-            "solvent_pack": formatted_solvent_pack,
-        }
-    else:
-        param_dict = {**kwargs}
+    params = QprepProteinParameters(
+        ff_lib_path=ff_lib_path,
+        ff_prm_path=ff_prm_path,
+        pdb_file_path=pdb_file,
+        cog=cog,
+        sphere_radius=sphereradius,
+        solvent_pack=formatted_solvent_pack,
+        cysbonds=cysbonds,
+    )
 
     if qprep_inp_path.exists():
         logger.warning("qprep.inp already exists!! Overwriting...")
     with qprep_inp_path.open("w") as qprep_inp_f:
-        qprep_inp_f.write(qprep_inp_content.format(**param_dict))
+        qprep_inp_f.write(render_qprep_protein_input(params))
 
-    options = " < qprep.inp > qprep.out"
-    logger.debug(f"Running command {qprep_path} {options}")
-    run_command(qprep_path, options, string=True)
-    qprep_error_check(qprep_out_path, args.FF)
+    logger.debug(f"Running qprep from {qprep_path}")
+    run_qprep(qprep_path, "qprep.inp", "qprep.out", args.FF)
     logger.info("qprep run finished. Check the output `qprep.out` for more information.")
 
     # Log lipid conversion summary if performed
@@ -600,7 +525,11 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         )
 
     # Log neutralization summary if performed and charged residues were found
-    if neutralization_stats and not args.skip_neutralization and neutralization_stats['total_charged_residues'] > 0:
+    if (
+        neutralization_stats
+        and not args.skip_neutralization
+        and neutralization_stats["total_charged_residues"] > 0
+    ):
         logger.info(
             "NEUTRALIZATION SUMMARY\n"
             f"Total charged residues processed: {neutralization_stats['total_charged_residues']}\n"
@@ -644,7 +573,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     euclidean_distances = oxygen_subset[["x", "y", "z"]].sub(cog).pow(2).sum(1).apply(np.sqrt)
     outside = np.where(euclidean_distances > args.sphereradius * 1.05)[0]  # we add a tolerance of 5%
     if outside.shape[0] > 0:
-        outside_HOH_residues = oxygen_subset.iloc[outside].residue_seq_number.unique()
+        outside_HOH_residues = oxygen_subset.iloc[outside].residue_seq_number.unique()  # noqa: F841
         logger.warning(f"Found {outside.shape[0]} water molecules outside the sphere radius.")
         logger.warning("Removing these water molecules from the water.pdb file.")
         todrop_idxs = water_df.query("residue_seq_number in @outside_HOH_residues").index

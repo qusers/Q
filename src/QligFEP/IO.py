@@ -2,17 +2,103 @@ import os
 import re
 import shlex
 import stat
+import subprocess
 from pathlib import Path
-from subprocess import check_output
 
 import numpy as np
 import pandas as pd
 
 from .functions import sigmoid
 from .logger import logger
-from .settings.settings import CONFIGS
+from .settings.settings import CONFIGS, FF_DIR
 
 qfep_error_regex = re.compile(r"ERROR:")
+
+
+class QprepError(Exception):
+    """Raised when qprep encounters a general error."""
+
+    pass
+
+
+class QprepAtomLibMissingError(Exception):
+    """Raised when qprep encounters atom/residue not found in library."""
+
+    pass
+
+
+def qprep_error_check(qprep_out_path: Path, ff_name: str) -> None:
+    """Check for errors in the qprep.out file and raise an exception if any are found.
+
+    Args:
+        qprep_out_path: Path to the qprep.out file.
+        ff_name: name of the forcefield to point user to the .lib & .prm files.
+
+    Raises:
+        QprepError: If any errors are found in the qprep.out file.
+        QprepAtomLibMissingError: If atom/residue library mismatches are found.
+    """
+    error_pat = re.compile(r"ERROR\:\s", re.IGNORECASE)
+    missing_lib_pat = re.compile(
+        r">>> Atom ...?.? in residue no\.\s+\d+ not found in library entry for [A-Z]+"
+        r"|>>> Heavy atom ...?.? missing in residue\s+ [0-9]+"
+    )
+    outfile_lines = qprep_out_path.read_text().split("\n")
+    error_lines = []
+    missing_atomlib_lines = []
+    for line in outfile_lines:
+        if error_pat.findall(line):
+            error_lines.append(line)
+            logger.error(
+                f"Errors found in qprep output file {qprep_out_path}. Please check if the amino "
+                "acids in your pdb file match the residue & atom conventions on the forcefield .lib & .prm files:\n"
+                f"{FF_DIR/ ff_name}.prm & {FF_DIR/ ff_name}.lib"
+            )
+        if missing_lib_pat.findall(line):
+            missing_atomlib_lines.append(line)
+            logger.error(
+                f"Errors found in qprep output file {qprep_out_path}. "
+                "Your protein file likely contains atoms that are not present in the forcefield's .lib & .prm files:, \n"
+                f"{FF_DIR/ ff_name}.prm & {FF_DIR/ ff_name}.lib"
+            )
+
+    if error_lines:
+        error_message = "\n".join(error_lines)
+        raise QprepError(error_message)
+    if missing_atomlib_lines:
+        error_message = "\n".join(missing_atomlib_lines)
+        raise QprepAtomLibMissingError(error_message)
+
+
+def run_qprep(
+    qprep_path: str,
+    input_file: str = "qprep.inp",
+    output_file: str = "qprep.out",
+    ff_name: str = "AMBER14sb",
+) -> subprocess.CompletedProcess:
+    """Run qprep and check for errors.
+
+    Args:
+        qprep_path: Path to qprep executable.
+        input_file: Input file name (default: qprep.inp).
+        output_file: Output file name for inspection (default: qprep.out).
+        ff_name: Force field name for error messages.
+
+    Returns:
+        CompletedProcess result.
+
+    Raises:
+        QprepError: On general qprep errors.
+        QprepAtomLibMissingError: On atom/residue library mismatches.
+    """
+    cmd = f"{qprep_path} {input_file} > {output_file}"
+    result = subprocess.run(cmd, shell=True, text=True)
+
+    # Always check for errors in output file
+    qprep_error_check(Path(output_file), ff_name)
+
+    return result
+
 
 ## Some useful objects TO DO add GLH etc.
 charged_res = {"HIS": {"HD1": "HID", "HE2": "HIE"}, "GLU": {"HE2": "GLH"}, "ASP": {"HD2": "ASH"}}
@@ -59,19 +145,27 @@ def replace(string, replacements):
 
 def run_command(executable, options, string=False):
     """
-    Takes three variables, the executable location and its options as strings and a tag if the
-    options need to be split or not (e.g. Q runs with one string), and runs the program.
-    Returns the output of that program as an unformatted string.
-    """
-    if string is False:
-        args = shlex.split(executable + options)
-        out = check_output(args)
-        print(" ".join(args))
-    else:
-        os.system(executable + options)
-        out = None
+    Runs a command and returns the result.
 
-    return out
+    Args:
+        executable: The executable path
+        options: Command options as a string
+        string: If True, run as a shell command (for programs like Q that need one string).
+                If False, split the command into args.
+
+    Returns:
+        For string=False: stdout as bytes (for backward compatibility)
+        For string=True: CompletedProcess result
+    """
+    if string:
+        cmd = f"{executable}{options}"
+        result = subprocess.run(cmd, shell=True, text=True)
+        return result
+    else:
+        args = shlex.split(f"{executable}{options}")
+        print(" ".join(args))
+        result = subprocess.run(args, capture_output=True, check=True)
+        return result.stdout
 
 
 def AA(AA):

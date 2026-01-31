@@ -1,0 +1,170 @@
+"""Equilibration stage configurations for FEP simulations."""
+
+from dataclasses import dataclass
+from typing import Literal
+
+from .md_template import MDParameters
+
+
+@dataclass
+class EquilibrationConfig:
+    """Configuration for a single equilibration stage.
+
+    Attributes:
+        name: Stage name (eq1, eq2, etc.)
+        params: MD simulation parameters
+        sequence_restraint_force: Force constant for sequence restraints (eq1-eq4)
+        distance_restraint_force: Force constant for distance restraints. If None,
+            use the production dr_force value (eq5 uses production force).
+        use_water_restraint: If True, use WATER_RESTRAINT placeholder instead of
+            atom-range sequence restraints (eq5 only)
+    """
+
+    name: str
+    params: MDParameters
+    sequence_restraint_force: float
+    distance_restraint_force: float | None
+    use_water_restraint: bool = False
+
+
+# ============================================================
+# Explicit parameter dictionaries - can be imported and inspected
+# ============================================================
+
+# eq1 is identical for both timesteps (fixed small timestep for initial equilibration)
+EQ1_PARAMS = dict(
+    steps=10000,
+    stepsize=0.1,
+    temperature=1,
+    bath_coupling=0.2,
+    shake_hydrogens=True,
+    interval_output=5,
+)
+
+# 2fs timestep variants
+EQ2_2FS_PARAMS = dict(
+    steps=5000,
+    stepsize=2.0,
+    temperature=50,
+    bath_coupling=2.0,
+    shake_hydrogens=True,
+    interval_output=5,
+)
+
+EQ3_2FS_PARAMS = dict(
+    steps=5000,
+    stepsize=2.0,
+    temperature=150,
+    bath_coupling=2.0,
+    shake_hydrogens=True,
+    interval_output=5,
+)
+
+EQ4_2FS_PARAMS = dict(
+    steps=5000,
+    stepsize=2.0,
+    temperature=275,
+    bath_coupling=2.0,
+    shake_hydrogens=True,
+    interval_output=5,
+)
+
+EQ5_2FS_PARAMS = dict(
+    steps=50000,
+    stepsize=2.0,
+    temperature="T_VAR",
+    bath_coupling=10.0,
+    shake_hydrogens=True,
+    interval_output=25,
+)
+
+# 1fs timestep variants
+EQ2_1FS_PARAMS = dict(
+    steps=10000,
+    stepsize=1.0,
+    temperature=50,
+    bath_coupling=1.0,
+    shake_hydrogens=False,
+    interval_output=5,
+)
+
+EQ3_1FS_PARAMS = dict(
+    steps=10000,
+    stepsize=1.0,
+    temperature=150,
+    bath_coupling=1.0,
+    shake_hydrogens=False,
+    interval_output=5,
+)
+
+EQ4_1FS_PARAMS = dict(
+    steps=10000,
+    stepsize=1.0,
+    temperature=275,
+    bath_coupling=1.0,
+    shake_hydrogens=False,
+    interval_output=5,
+)
+
+EQ5_1FS_PARAMS = dict(
+    steps=100000,
+    stepsize=1.0,
+    temperature="T_VAR",
+    bath_coupling=10.0,
+    shake_hydrogens=False,
+    interval_output=25,
+)
+
+# ============================================================
+# Config tuples: (name, params_dict, seq_restraint_force, dr_force, use_water_restraint)
+# ============================================================
+
+_CONFIGS_2FS = [
+    ("eq1", EQ1_PARAMS, 10.0, 1.5, False),
+    ("eq2", EQ2_2FS_PARAMS, 10.0, 1.5, False),
+    ("eq3", EQ3_2FS_PARAMS, 5.0, 1.5, False),
+    ("eq4", EQ4_2FS_PARAMS, 2.5, 1.5, False),
+    ("eq5", EQ5_2FS_PARAMS, 0.0, None, True),  # dr_force=None means use production dr_force
+]
+
+_CONFIGS_1FS = [
+    ("eq1", EQ1_PARAMS, 10.0, 1.5, False),
+    ("eq2", EQ2_1FS_PARAMS, 10.0, 1.5, False),
+    ("eq3", EQ3_1FS_PARAMS, 5.0, 1.5, False),
+    ("eq4", EQ4_1FS_PARAMS, 2.5, 1.5, False),
+    ("eq5", EQ5_1FS_PARAMS, 0.0, None, True),  # dr_force=None means use production dr_force
+]
+
+
+def get_equilibration_configs(
+    timestep: Literal["1fs", "2fs"],
+    shell_radius: int,
+) -> list[EquilibrationConfig]:
+    """Return equilibration configurations for the given timestep.
+
+    The equilibration protocol consists of 5 stages:
+    - eq1: Initial equilibration at 1K with small timestep (0.1fs)
+    - eq2: Heating to 50K
+    - eq3: Heating to 150K
+    - eq4: Heating to 275K
+    - eq5: Final equilibration at target temperature (T_VAR)
+
+    Args:
+        timestep: Simulation timestep ("1fs" or "2fs")
+        shell_radius: Spherical boundary radius
+
+    Returns:
+        List of EquilibrationConfig for eq1 through eq5
+    """
+    raw_configs = _CONFIGS_2FS if timestep == "2fs" else _CONFIGS_1FS
+
+    return [
+        EquilibrationConfig(
+            name=name,
+            params=MDParameters(**params, shell_radius=shell_radius),
+            sequence_restraint_force=seq_force,
+            distance_restraint_force=dr_force,
+            use_water_restraint=use_water,
+        )
+        for name, params, seq_force, dr_force, use_water in raw_configs
+    ]

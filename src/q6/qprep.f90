@@ -314,7 +314,7 @@ end subroutine shutdown
   
 subroutine commandlineoptions
 !!  subroutine  commandlineoptions
-!!  
+!!  Parses command line: handles -v/-h flags and optional positional input file
 !!-------------------------------------------------------------------------------
 do i = 1, command_argument_count()
   call get_command_argument(i, arg)
@@ -326,9 +326,15 @@ do i = 1, command_argument_count()
     call print_help()
     stop
   case default
-    print '(a,a,/)', 'Unrecognized command-line option: ', arg
-    call print_help()
-    stop
+    ! Check if it looks like a flag (starts with -)
+    if (arg(1:1) == '-') then
+      print '(a,a,/)', 'Unrecognized command-line option: ', arg
+      call print_help()
+      stop
+    else
+      ! Positional argument: treat as input filename
+      fileName = arg
+    endif
   end select
 end do
 end subroutine commandlineoptions
@@ -336,40 +342,38 @@ end subroutine commandlineoptions
 
 subroutine print_help()
 !!  subroutine  print_help
-!!  
+!!  Prints usage information
 !!-------------------------------------------------------------------------------
   print '(a)', 'usage:'
-  print '(a)', 'qprep [OPTION]'
-  print '(a)', '  or'
-  print '(a)', 'qprep < inputfile.inp > outputfile.out'
+  print '(a)', '  qprep [OPTIONS] [inputfile]'
   print '(a)', ''
-  print '(a)', 'Without options, qprep goes into interactive mode.'
+  print '(a)', 'Without arguments, qprep runs in interactive mode.'
   print '(a)', ''
-  print '(a)', 'qprep [OPTION]:'
-  print '(a)', ''
+  print '(a)', 'Options:'
   print '(a)', '  -v, --version     print version information and exit'
-  print '(a)', '  -h, --help        print usage information and exit'
+  print '(a)', '  -h, --help        print this help message and exit'
+  print '(a)', ''
+  print '(a)', 'Examples:'
+  print '(a)', '  qprep                         # interactive mode'
+  print '(a)', '  qprep input.inp               # file input, stdout output'
+  print '(a)', '  qprep input.inp > out.log     # redirect output to file'
 end subroutine print_help
 
 
 logical function check_inputfile(infilename)
 !! function: check_inputfile
-!! Determine if qprep is to be run from command line or from input file  
+!! Checks if fileName was set by commandlineoptions (positional input file)
 !!-------------------------------------------------------------------------------
-  !local variables
-  integer :: num_args
   character(200), intent(OUT) :: infilename
   character(300) :: text
 
-  ! read name of input file from the command line
-  num_args = command_argument_count()
-  if (num_args .lt. 1) then
+  if (fileName == '') then
     check_inputfile = .false.
     return
   endif
 
-  call getarg(num_args, infilename)
-  text = 'Reading input from '//infilename
+  infilename = fileName
+  text = 'Reading input from '//trim(infilename)
   call centered_heading(trim(text), '-')
   check_inputfile = .true.
 end function check_inputfile

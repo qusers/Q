@@ -10,13 +10,13 @@ import numpy as np
 import pandas as pd
 from sklearn.neighbors import NearestNeighbors
 
-from .CLI.qprep_cli import qprep_error_check
 from .CLI.utils import get_avail_restraint_methods, handle_cysbonds
 from .functions import COG, kT, overlapping_pairs, sigmoid
-from .IO import get_force_field_paths, replace, run_command
+from .IO import get_force_field_paths, qprep_error_check, replace, run_qprep
 from .logger import logger
 from .pdb_utils import (
     calculate_distance,
+    filter_out_of_sphere_fragments,
     pdb_parse_in,
     pdb_parse_out,
     read_pdb_to_dataframe,
@@ -25,6 +25,20 @@ from .pdb_utils import (
 )
 from .restraints.restraint_setter import RestraintSetter
 from .settings.settings import CLUSTER_DICT, CONFIGS
+from .templates import (
+    QprepFEPParameters,
+    format_energy_files,
+    get_equilibration_configs,
+    get_production_config,
+    render_md_input,
+    render_qfep_input,
+    render_qprep_fep_input,
+)
+from .templates.sections import (
+    format_distance_restraints,
+    format_sequence_restraint,
+    format_water_restraint,
+)
 
 
 class QligFEP:
@@ -52,7 +66,6 @@ class QligFEP:
         random_state: Optional[int] = 42,
         wath_ligand_only: bool = False,
     ):
-        self.replacements = {}  # TODO: make this explicit in the future
         self.timestep = timestep
         self.lig1 = lig1
         self.lig2 = lig2
@@ -72,9 +85,6 @@ class QligFEP:
         self.water_thresh = water_thresh
         self.dr_force = dr_force  # dr for distance restraint
         self.wath_ligand_only = wath_ligand_only
-        # Temporary until flag is here
-        self.ABS = False  # True
-        self.ABS_waters = []
         self.write_dir = None
         self.pdb_fname = f"{self.lig1}_{self.lig2}.pdb"
         self.seeds = self.set_seeds(random_state)
@@ -104,24 +114,6 @@ class QligFEP:
             return np.random.default_rng().integers(0, 32767, size=int(self.replicates))
         rng = np.random.default_rng(random_state)
         return rng.integers(0, 32767, size=int(self.replicates))
-
-    def set_timestep(self):
-        if self.timestep == "1fs":
-            logger.debug("Using 1fs timestep")
-            self.replacements["NSTEPS1"] = "100000"
-            self.replacements["NSTEPS2"] = "10000"
-            self.replacements["STEPSIZE"] = "1.0"
-            self.replacements["STEPTOGGLE"] = "off"
-
-        elif self.timestep == "2fs":
-            logger.debug("Using 2fs timestep")
-            self.replacements["NSTEPS1"] = "50000"
-            self.replacements["NSTEPS2"] = "5000"
-            self.replacements["STEPSIZE"] = "2.0"
-            self.replacements["STEPTOGGLE"] = "on"
-
-        else:
-            raise ValueError("Timestep not recognized")
 
     def makedir(self):
         lignames = f"{self.lig1}_{self.lig2}"
@@ -496,14 +488,6 @@ class QligFEP:
         if restraint_method == "overlap":
             reslist = ["LIG", "LID"]
             torestraint_list = overlapping_pairs(pdbfile, reslist)
-
-            if self.ABS:
-                with open(pdbfile) as infile:
-                    for line in infile:
-                        if line[13].strip() == "O":
-                            line = pdb_parse_in(line)
-                            self.ABS_waters.append(int(line[1]) + self.atomoffset)
-
         else:
             parent_write_dir = Path(writedir).parent
 
@@ -580,230 +564,287 @@ class QligFEP:
             )
         return torestraint_list
 
-    def write_MD_05(self, lambdas, writedir, lig_size1, lig_size2, overlapping_atoms):
-        replacements = self.replacements
-        file_list1 = []
+    def _format_restraints_for_eq(
+        self,
+        overlapping_atoms: list,
+        lig_size1: int,
+        lig_size2: int,
+        eq_config,
+        dr_force: float,
+    ) -> tuple[str, str]:
+        """Format distance and sequence restraints for an equilibration stage.
+
+        Args:
+            overlapping_atoms: List of [atom1, atom2] pairs for distance restraints
+            lig_size1: Number of atoms in ligand 1
+            lig_size2: Number of atoms in ligand 2
+            eq_config: EquilibrationConfig for this stage
+            dr_force: Distance restraint force to use for eq5 (production dr_force)
+
+        Returns:
+            Tuple of (distance_restraints_str, sequence_restraints_str)
+        """
+        # Distance restraints: use config force, or dr_force for eq5
+        force = (
+            eq_config.distance_restraint_force if eq_config.distance_restraint_force is not None else dr_force
+        )
+        distance_restraints = format_distance_restraints([(a, b) for a, b in overlapping_atoms], force=force)
+
+        # Sequence restraints depend on system type and stage
+        if eq_config.use_water_restraint:
+            # eq5/production: water systems use water restraint, protein systems have none
+            if self.system in ("water", "vacuum"):
+                sequence_restraints = format_water_restraint(
+                    self.atomoffset + 1,
+                    self.atomoffset + lig_size1 + lig_size2,
+                    force=1.0,
+                )
+            else:  # protein
+                sequence_restraints = ""
+        else:
+            # eq1-eq4: water/vacuum systems use sequence restraints, protein systems also do
+            if self.system in ("water", "vacuum", "protein"):
+                sequence_restraints = format_sequence_restraint(
+                    self.atomoffset + 1,
+                    self.atomoffset + lig_size1 + lig_size2,
+                    force=eq_config.sequence_restraint_force,
+                )
+            else:
+                sequence_restraints = ""
+
+        return distance_restraints, sequence_restraints
+
+    def write_md_files(
+        self,
+        lambdas: list[str],
+        writedir: str,
+        lig_size1: int,
+        lig_size2: int,
+        overlapping_atoms: list,
+    ) -> list[list[str]]:
+        """Write equilibration and production MD input files using templates module.
+
+        Args:
+            lambdas: List of lambda values for the FEP windows
+            writedir: Directory to write files to (inputfiles subdirectory)
+            lig_size1: Number of atoms in ligand 1
+            lig_size2: Number of atoms in ligand 2
+            overlapping_atoms: List of [atom1, atom2] pairs for distance restraints
+
+        Returns:
+            List of three file lists: [eq_files + md_start, forward_lambda_files, reverse_lambda_files]
+        """
+        file_list1 = []  # eq files + initial md file
+        file_list2 = []  # forward lambda files
+        file_list3 = []  # reverse lambda files
+
+        # Determine equilibration lambdas based on start mode
+        if self.start == "0.5":
+            eq_lambda1, eq_lambda2 = "0.500", "0.500"
+        else:  # start == "0.0" or "1"
+            eq_lambda1, eq_lambda2 = "1.000", "0.000"
+
+        # Get configurations
+        eq_configs = get_equilibration_configs(self.timestep, int(self.sphereradius))
+        prod_config = get_production_config(self.timestep, int(self.sphereradius), self.dr_force)
+
+        # Write equilibration files (eq1-eq5)
+        for i, eq_config in enumerate(eq_configs):
+            dr_str, seq_str = self._format_restraints_for_eq(
+                overlapping_atoms, lig_size1, lig_size2, eq_config, self.dr_force
+            )
+
+            restart_file = f"eq{i}.re" if i > 0 else None
+
+            content = render_md_input(
+                params=eq_config.params,
+                lambda1=eq_lambda1,
+                lambda2=eq_lambda2,
+                trajectory_file=f"{eq_config.name}.dcd",
+                final_file=f"{eq_config.name}.re",
+                restart_file=restart_file,
+                distance_restraints=dr_str,
+                sequence_restraints=seq_str,
+                is_eq1=(i == 0),
+            )
+
+            filepath = Path(writedir) / f"{eq_config.name}.inp"
+            filepath.write_text(content)
+            file_list1.append(f"{eq_config.name}.inp")
+            logger.debug(f"Writing {eq_config.name}.inp")
+
+        # Format restraints for production files
+        prod_dr_str = format_distance_restraints([(a, b) for a, b in overlapping_atoms], force=self.dr_force)
+        if self.system in ("water", "vacuum"):
+            prod_seq_str = format_water_restraint(
+                self.atomoffset + 1,
+                self.atomoffset + lig_size1 + lig_size2,
+                force=1.0,
+            )
+        else:  # protein
+            prod_seq_str = ""
+
+        # Write production files based on start mode
+        if self.start == "0.5":
+            file_list1, file_list2, file_list3 = self._write_production_05(
+                lambdas, writedir, prod_config, prod_dr_str, prod_seq_str, file_list1
+            )
+        else:
+            file_list1, file_list2, file_list3 = self._write_production_1(
+                lambdas, writedir, prod_config, prod_dr_str, prod_seq_str, file_list1
+            )
+
+        return [file_list1, file_list2, file_list3]
+
+    def _write_production_05(
+        self,
+        lambdas: list[str],
+        writedir: str,
+        prod_config,
+        dr_str: str,
+        seq_str: str,
+        file_list1: list[str],
+    ) -> tuple[list[str], list[str], list[str]]:
+        """Write production MD files for start=0.5 mode.
+
+        Starts from 0.500/0.500, then branches in both directions.
+        """
         file_list2 = []
         file_list3 = []
-        lig_total = lig_size1 + lig_size2
+
+        # Split lambdas into forward and reverse from center
         lambda_1 = []
         lambda_2 = []
         block = 0
-        index = 0
-        cnt = -1
-        restlist = []
-
-        for line in lambdas:
-            if line == "0.500":
+        for lmbda in lambdas:
+            if lmbda == "0.500":
                 block = 1
-
             if block == 0:
-                lambda_1.append(line)
-
+                lambda_1.append(lmbda)
             if block == 1:
-                lambda_2.append(line)
+                lambda_2.append(lmbda)
 
         lambda_1 = lambda_1[::-1]
         lambda_2 = lambda_2[1:]
-        replacements["ATOM_START_LIG1"] = f"{self.atomoffset + 1:<6}"
-        replacements["ATOM_END_LIG1"] = f"{self.atomoffset + lig_size1:<7}"
-        replacements["ATOM_START_LIG2"] = f"{self.atomoffset + lig_size1 + 1:<6}"
-        replacements["ATOM_END_LIG2"] = f"{self.atomoffset + lig_size1 + lig_size2:<7}"
-        replacements["SPHERE"] = self.sphereradius
-        replacements["ATOM_END"] = f"{self.atomoffset + lig_total:<6}"
-        replacements["EQ_LAMBDA"] = "0.500 0.500"
 
-        if self.system == "water" or self.system == "vacuum":
-            if self.ABS is False:
-                replacements["WATER_RESTRAINT"] = "{:<7}{:<7} 1.0 0 1   \n".format(
-                    self.atomoffset + 1, self.atomoffset + lig_size1 + lig_size2
-                )
-
-            else:
-                replacements["WATER_RESTRAINT"] = "{:<7}{:<7} 1.0 0 1   \n".format(
-                    self.atomoffset + 1, self.atomoffset + lig_size1
-                )
-
-                for i in range(
-                    self.atomoffset + 1 + lig_size1,
-                    self.atomoffset + 2 + lig_size1 + lig_size2,
-                ):
-                    cnt += 1
-                    if cnt == 0:
-                        rest = f"{i:<7}{i:<7} 1.0 0 1   \n"
-                        restlist.append(rest)
-
-                    if cnt == 2:
-                        cnt = -1
-
-        elif self.system == "protein":
-            replacements["WATER_RESTRAINT"] = ""
-
-        # WRITING THE EQUILIBRATION INPUT FILES (eq1-5.inp), NOT PART OF THE FEP YET
-        for eq_file_in in sorted(glob.glob(CONFIGS["ROOT_DIR"] + "/INPUTS/eq*.inp")):
-            eq_file = eq_file_in.split("/")[-1:][0]
-            rest_force = 1.5 if eq_file != "eq5.inp" else self.dr_force  # 1.5 for eq1-4
-            logger.debug(f"Writing {eq_file}")
-            eq_file_out = writedir + "/" + eq_file
-
-            with open(eq_file_in) as infile, open(eq_file_out, "w") as outfile:
-                for line in infile:
-                    line = replace(line, replacements)
-                    outfile.write(line)
-                    if line == "[distance_restraints]\n":
-                        for line in overlapping_atoms:
-                            outfile.write(f"{line[0]:d} {line[1]:d} 0.0 0.1 {rest_force:.1f} 0\n")
-
-                    if line == "[sequence_restraints]\n":
-                        for line in restlist:
-                            outfile.write(line)
-            file_list1.append(eq_file)
-
-        # WRITING THE FEP MOLECULAR DYNAMICS INPUT FILES (e.g.: md_0500_0500.inp)
-        file_in = CONFIGS["INPUT_DIR"] + "/md_0500_0500.inp"
-        file_out = writedir + "/md_0500_0500.inp"
-        with open(file_in) as infile, open(file_out, "w") as outfile:
-            for line in infile:
-                line = replace(line, replacements)
-                outfile.write(line)
-                if line == "[distance_restraints]\n":
-                    for line in overlapping_atoms:
-                        outfile.write(f"{line[0]:d} {line[1]:d} 0.0 0.1 {self.dr_force:.1f} 0\n")
-
-                if line == "[sequence_restraints]\n":
-                    for line in restlist:
-                        outfile.write(line)
+        # Write initial md_0500_0500.inp
+        content = render_md_input(
+            params=prod_config.params,
+            lambda1="0.500",
+            lambda2="0.500",
+            trajectory_file="md_0500_0500.dcd",
+            final_file="md_0500_0500.re",
+            restart_file="eq5.re",
+            energy_file="md_0500_0500.en",
+            distance_restraints=dr_str,
+            sequence_restraints=seq_str,
+        )
+        filepath = Path(writedir) / "md_0500_0500.inp"
+        filepath.write_text(content)
         file_list1.append("md_0500_0500.inp")
 
-        for lambdas in [lambda_1, lambda_2]:
-            index += 1
+        # Write lambda window files
+        for index, lambda_list in enumerate([lambda_1, lambda_2], start=1):
             filename_N = "md_0500_0500"
-            filenr = -1
 
-            for line in lambdas:
-                filenr += 1
+            for filenr, _ in enumerate(lambda_list):
                 if index == 1:
-                    lambda1 = lambda_1[filenr]
-                    lambda2 = lambda_2[filenr]
+                    l1 = lambda_1[filenr]
+                    l2 = lambda_2[filenr]
+                else:
+                    l1 = lambda_2[filenr]
+                    l2 = lambda_1[filenr]
 
-                elif index == 2:
-                    lambda1 = lambda_2[filenr]
-                    lambda2 = lambda_1[filenr]
+                filename = f"md_{l1.replace('.', '')}_{l2.replace('.', '')}"
 
-                filename = "md_" + lambda1.replace(".", "") + "_" + lambda2.replace(".", "")
-                replacements["FLOAT_LAMBDA1"] = lambda1
-                replacements["FLOAT_LAMBDA2"] = lambda2
-                replacements["FILE"] = filename
-                replacements["FILE_N"] = filename_N
+                content = render_md_input(
+                    params=prod_config.params,
+                    lambda1=l1,
+                    lambda2=l2,
+                    trajectory_file=f"{filename}.dcd",
+                    final_file=f"{filename}.re",
+                    restart_file=f"{filename_N}.re",
+                    energy_file=f"{filename}.en",
+                    distance_restraints=dr_str,
+                    sequence_restraints=seq_str,
+                )
+                filepath = Path(writedir) / f"{filename}.inp"
+                filepath.write_text(content)
 
-                # Consider putting this in a function seeing as it is called multiple times
-                pattern = re.compile(r"\b(" + "|".join(replacements.keys()) + r")\b")
-                file_in = CONFIGS["INPUT_DIR"] + "/md_XXXX_XXXX.inp"
-                file_out = writedir + "/" + filename + ".inp"
-
-                with open(file_in) as infile, open(file_out, "w") as outfile:
-                    for line in infile:
-                        line = pattern.sub(lambda x: replacements[x.group()], line)
-                        outfile.write(line)
-                        if line == "[distance_restraints]\n":
-                            for line in overlapping_atoms:
-                                outfile.write(f"{line[0]:d} {line[1]:d} 0.0 0.1 {self.dr_force:.1f} 0\n")
-
-                    if line == "[sequence_restraints]\n":
-                        for line in restlist:
-                            outfile.write(line)
                 filename_N = filename
 
                 if index == 1:
-                    file_list2.append(filename + ".inp")
+                    file_list2.append(f"{filename}.inp")
+                else:
+                    file_list3.append(f"{filename}.inp")
 
-                elif index == 2:
-                    file_list3.append(filename + ".inp")
-        return [file_list1, file_list2, file_list3]
+        return file_list1, file_list2, file_list3
 
-    def write_MD_1(self, lambdas, writedir, lig_size1, lig_size2, overlapping_atoms):
-        replacements = self.replacements
-        totallambda = len(lambdas)
-        file_list_1 = []
-        file_list_2 = []
-        file_list_3 = []
-        replacements = {}
-        lig_total = lig_size1 + lig_size2
+    def _write_production_1(
+        self,
+        lambdas: list[str],
+        writedir: str,
+        prod_config,
+        dr_str: str,
+        seq_str: str,
+        file_list1: list[str],
+    ) -> tuple[list[str], list[str], list[str]]:
+        """Write production MD files for start=0.0/1 mode.
 
-        replacements["ATOM_START_LIG1"] = f"{self.atomoffset + 1:<6}"
-        replacements["ATOM_END_LIG1"] = f"{self.atomoffset + lig_size1:<7}"
-        replacements["ATOM_START_LIG2"] = f"{self.atomoffset + lig_size1 + 1:<6}"
-        replacements["ATOM_END_LIG2"] = f"{self.atomoffset + lig_size1 + lig_size2:<7}"
-        replacements["SPHERE"] = self.sphereradius
-        replacements["ATOM_END"] = f"{self.atomoffset + lig_total:<6}"
-        replacements["EQ_LAMBDA"] = "1.000 0.000"
+        Starts from 1.000/0.000 and goes through all windows sequentially.
+        """
+        file_list2 = []
+        file_list3 = []
+        total_lambda = len(lambdas)
 
-        if self.system == "water" or self.system == "vacuum":
-            replacements["WATER_RESTRAINT"] = "{:<7}{:<7} 1.0 0 1   ".format(
-                self.atomoffset + 1, self.atomoffset + lig_size1 + lig_size2
-            )
-        elif self.system == "protein":
-            replacements["WATER_RESTRAINT"] = ""
+        # Write initial md_1000_0000.inp
+        content = render_md_input(
+            params=prod_config.params,
+            lambda1="1.000",
+            lambda2="0.000",
+            trajectory_file="md_1000_0000.dcd",
+            final_file="md_1000_0000.re",
+            restart_file="eq5.re",
+            energy_file="md_1000_0000.en",
+            distance_restraints=dr_str,
+            sequence_restraints=seq_str,
+        )
+        filepath = Path(writedir) / "md_1000_0000.inp"
+        filepath.write_text(content)
+        file_list1.append("md_1000_0000.inp")
 
-        for eq_file_in in sorted(glob.glob(CONFIGS["ROOT_DIR"] + "/INPUTS/eq*.inp")):
-            eq_file = eq_file_in.split("/")[-1:][0]
-            eq_file_out = writedir + "/" + eq_file
-            with open(eq_file_in) as infile:
-                with open(eq_file_out, "w") as outfile:
-                    for line in infile:
-                        line = replace(line, replacements)
-                        outfile.write(line)
-                        if line == "[distance_restraints]\n":
-                            for line in overlapping_atoms:
-                                outfile.write(f"{line[0]:d} {line[1]:d} 0.0 0.2 0.5 0\n")
-                file_list_1.append(eq_file)
-
-        file_in = CONFIGS["INPUT_DIR"] + "/md_1000_0000.inp"
-        file_out = writedir + "/md_1000_0000.inp"
-        with open(file_in) as infile, open(file_out, "w") as outfile:
-            for line in infile:
-                line = replace(line, replacements)
-                outfile.write(line)
-                if line == "[distance_restraints]\n":
-                    for line in overlapping_atoms:
-                        outfile.write(f"{line[0]:d} {line[1]:d} 0.0 0.2 0.5 0\n")
-
-        file_list_1.append("md_1000_0000.inp")
+        filename_N = "md_1000_0000"
         filenr = 0
 
-        for lambd in lambdas:
-            if lambd == "1.000":
-                filename_N = "md_1000_0000"
+        for lmbda in lambdas:
+            if lmbda == "1.000":
                 continue
-            else:
-                step_n = totallambda - filenr - 2
 
-                lambda1 = lambd
-                lambda2 = lambdas[step_n]
-                filename = "md_" + lambda1.replace(".", "") + "_" + lambda2.replace(".", "")
-                replacements["FLOAT_LAMBDA1"] = lambda1
-                replacements["FLOAT_LAMBDA2"] = lambda2
-                replacements["FILE"] = filename
-                replacements["FILE_N"] = filename_N
+            step_n = total_lambda - filenr - 2
+            l1 = lmbda
+            l2 = lambdas[step_n]
 
-                # Move to functio
-                pattern = re.compile(r"\b(" + "|".join(replacements.keys()) + r")\b")
-                file_in = CONFIGS["INPUT_DIR"] + "/md_XXXX_XXXX.inp"
-                file_out = writedir + "/" + filename + ".inp"
+            filename = f"md_{l1.replace('.', '')}_{l2.replace('.', '')}"
 
-                with open(file_in) as infile, open(file_out, "w") as outfile:
-                    for line in infile:
-                        line = pattern.sub(lambda x: replacements[x.group()], line)
-                        outfile.write(line)
-                        if line == "[distance_restraints]\n":
-                            for line in overlapping_atoms:
-                                outfile.write(f"{line[0]:d} {line[1]:d} 0.0 0.1 0.5 0\n")
+            content = render_md_input(
+                params=prod_config.params,
+                lambda1=l1,
+                lambda2=l2,
+                trajectory_file=f"{filename}.dcd",
+                final_file=f"{filename}.re",
+                restart_file=f"{filename_N}.re",
+                energy_file=f"{filename}.en",
+                distance_restraints=dr_str,
+                sequence_restraints=seq_str,
+            )
+            filepath = Path(writedir) / f"{filename}.inp"
+            filepath.write_text(content)
 
-                filename_N = filename
-                filenr += 1
-                file_list_2.append(filename + ".inp")
+            filename_N = filename
+            filenr += 1
+            file_list2.append(f"{filename}.inp")
 
-        return [file_list_1, file_list_2, file_list_3]
+        return file_list1, file_list2, file_list3
 
     def write_submitfile(self, writedir):
         replacements = {}
@@ -905,29 +946,17 @@ class QligFEP:
                     outfile.write(outline[1:])
 
     def write_qfep(self, windows, lambdas):
-        qfep_in = CONFIGS["ROOT_DIR"] + "/INPUTS/qfep.inp"
         qfep_out = self.write_dir + "/inputfiles/qfep.inp"
-        i = 0
-        total_l = len(lambdas)
-
         # TO DO: multiple files will need to be written out for temperature range
-        k_T = kT(float(self.temperature))
-        replacements = {}
-        replacements["kT"] = str(k_T)
-        replacements["WINDOWS"] = str(windows)
-        replacements["TOTAL_L"] = str(total_l)
-        with open(qfep_in) as infile, open(qfep_out, "w") as outfile:
-            for line in infile:
-                line = replace(line, replacements)
-                outfile.write(line)
-
-            if line == "!ENERGY_FILES\n":
-                for i in range(0, total_l):
-                    j = -(i + 1)
-                    lambda1 = lambdas[i]
-                    lambda2 = lambdas[j]
-                    filename = "md_" + lambda1.replace(".", "") + "_" + lambda2.replace(".", "") + ".en\n"
-                    outfile.write(filename)
+        energy_files = format_energy_files(lambdas)
+        content = render_qfep_input(
+            total_lambdas=len(lambdas),
+            temperature=float(self.temperature),
+            windows=windows,
+            energy_files=energy_files,
+        )
+        with open(qfep_out, "w") as outfile:
+            outfile.write(content)
 
     def avoid_water_protein_clashes(self, writedir, header: Optional[str] = None, save_removed: bool = False):
         """Function to remove water molecules too close to protein & ligands | ligands (water leg).
@@ -962,6 +991,73 @@ class QligFEP:
             save_removed=save_removed,
         )
 
+    def _get_cog_from_water(self, writedir: str) -> list[float]:
+        """Extract COG from water.pdb TITLE line.
+
+        Args:
+            writedir: directory where inputfiles are written (e.g., FEP_lig1_lig2/inputfiles)
+
+        Returns:
+            list[float]: [x, y, z] coordinates of center of geometry
+        """
+        cog_regex = re.compile(r"([-]?\d{1,3}\.\d{3})\s+([-]?\d{1,3}\.\d{3})\s+([-]?\d{1,3}\.\d{3})")
+        water_pdb_path = Path(writedir).parents[1] / "water.pdb"
+
+        if water_pdb_path.exists():
+            first_lines = water_pdb_path.read_text().split("\n")[:3]
+            for line in first_lines:
+                if line.startswith("TITLE"):
+                    matches = cog_regex.search(line)
+                    if matches:
+                        return [float(x) for x in matches.groups()]
+
+        # Fallback: calculate from ligand
+        logger.debug("COG not found in water.pdb TITLE, calculating from ligand.")
+        return list(COG(self.lig1 + ".pdb"))
+
+    def _update_offsets_from_pdb(self, pdb_path: Path) -> None:
+        """Update atomoffset and residueoffset from filtered PDB.
+
+        After filtering fragments from the protein PDB, the atom and residue
+        numbering may have changed. This method recalculates the offsets.
+
+        Args:
+            pdb_path: Path to the (filtered) merged PDB file
+        """
+        pdb_df = read_pdb_to_dataframe(pdb_path)
+        protein_atoms = pdb_df[~pdb_df["residue_name"].isin(["HOH", "LIG", "LID"])]
+        if not protein_atoms.empty:
+            self.atomoffset = int(protein_atoms["atom_serial_number"].max())
+            self.residueoffset = int(protein_atoms["residue_seq_number"].max())
+            logger.debug(f"Updated offsets: atomoffset={self.atomoffset}, residueoffset={self.residueoffset}")
+
+    def filter_protein_fragments(self, writedir: str) -> tuple[int, int]:
+        """Filter merged PDB to remove molecular fragments completely outside sphere.
+
+        Uses MDAnalysis topology-based fragment detection. Entire chains, cofactors,
+        lipids, or other molecular units are removed if ALL their atoms are outside
+        the simulation sphere.
+
+        Args:
+            writedir: directory where inputfiles are written (e.g., FEP_lig1_lig2/inputfiles)
+
+        Returns:
+            Tuple of (original_atom_count, filtered_atom_count)
+        """
+        cog = self._get_cog_from_water(writedir)
+        merged_pdb = Path(writedir) / self.pdb_fname
+
+        orig_count, filt_count = filter_out_of_sphere_fragments(
+            merged_pdb, cog, float(self.sphereradius)
+        )
+
+        # Update offsets if structure was filtered
+        if filt_count < orig_count:
+            self._update_offsets_from_pdb(merged_pdb)
+            logger.info(f"Filtered structure: {orig_count} → {filt_count} atoms ({orig_count - filt_count} removed)")
+
+        return orig_count, filt_count
+
     def write_qprep(self, writedir):
         """Write the qprep.inp file for Q. If the system is water, the center of geometry
         will be calculated from the lig1's atoms coordinates. If the system is protein, it
@@ -971,85 +1067,80 @@ class QligFEP:
         Args:
             writedir: directory in which QligFEP will write the input files.
         """
-        replacements = {}
-        cog = None
-        cog_regex = re.compile(r"([-]?\d{1,3}\.\d{3})\s+([-]?\d{1,3}\.\d{3})\s+([-]?\d{1,3}\.\d{3})")
-        # see if the water.pdb file has a COG from qprep
-        first_lines = (Path(writedir).parents[1] / "water.pdb").read_text().split("\n")[:3]
-        for line in first_lines:
-            if line.startswith("TITLE"):
-                _matches = cog_regex.search(line)
-                center = " ".join(_matches.groups()) if _matches else None
-                if _matches is None:
-                    logger.warning(f"Failed to extract COG from line:\n{line}")
-                    logger.info("Will calculate the COG from the ligand atoms.")
-        center = COG(self.lig1 + ".pdb") if cog is None or self.system == "water" else cog
-        center = f"{center[0]} {center[1]} {center[2]}"
-        self.cog = [float(coord) for coord in center.split()]
-        qprep_in = CONFIGS["ROOT_DIR"] + "/INPUTS/qprep.inp"
+        self.cog = self._get_cog_from_water(writedir)
+        center = f"{self.cog[0]} {self.cog[1]} {self.cog[2]}"
+
         qprep_out = writedir + "/qprep.inp"
-        replacements["FF_LIB"] = self.lib_file
-        replacements["LIG1"] = self.lig1 + ".lib"
-        replacements["LIG2"] = self.lig2 + "_renumber.lib"
-        replacements["LIGPRM"] = self.FF + "_" + self.lig1 + "_" + self.lig2 + "_merged.prm"
-        replacements["LIGPDB"] = self.lig1 + "_" + self.lig2 + ".pdb"
-        replacements["CENTER"] = center
-        replacements["SPHERE"] = self.sphereradius
+
+        # Determine solvent specification
         if self.system == "vacuum":
-            replacements["solvate"] = "!solvate"
-        if self.system == "water":
-            replacements["SOLVENT"] = "1 HOH"
-        if self.system == "protein":
-            replacements["SOLVENT"] = "4 water.pdb"
+            solvent = ""
+            solvate = False
+        elif self.system == "water":
+            solvent = "1 HOH"
+            solvate = True
+        else:  # protein
+            solvent = "4 water.pdb"
+            solvate = True
 
         pdb_df = read_pdb_to_dataframe(Path(writedir) / self.pdb_fname)
         density = self.get_sphere_density(pdb_df) if self.system == "protein" else 0.05794
-        replacements["SOLUTEDENS"] = f"{density:.5f}"
 
-        with open(qprep_in) as infile, open(qprep_out, "w") as outfile:
-            # We reindex the residues prior to defining the cysbonds because Q considers
-            # the first residue to be always 1, regardless of the numbering in the PDB file.
-            reindex_pdb_residues(Path(writedir) / self.pdb_fname, Path(writedir) / self.pdb_fname)
-            cysbond_str = handle_cysbonds(
-                self.cysbond, Path(writedir) / self.pdb_fname, comment_out=(self.system != "protein")
-            )
-            if self.system == "protein" and self.cysbond == "auto" and cysbond_str != "":
-                # cysbond shouldn't be there if the AA is out of the sphere radius
-                new_cysbond_str = ""
-                for line in cysbond_str.strip().split("\n"):
-                    parts = line.split()
-                    resn1, at1 = parts[1].split(":")
-                    resn1 = int(resn1)
-                    resn2, at2 = parts[2].split(":")
-                    resn2 = int(resn2)
+        # We reindex the residues prior to defining the cysbonds because Q considers
+        # the first residue to be always 1, regardless of the numbering in the PDB file.
+        reindex_pdb_residues(Path(writedir) / self.pdb_fname, Path(writedir) / self.pdb_fname)
+        cysbond_str = handle_cysbonds(
+            self.cysbond, Path(writedir) / self.pdb_fname, comment_out=(self.system != "protein")
+        )
+        if self.system == "protein" and self.cysbond == "auto" and cysbond_str != "":
+            # cysbond shouldn't be there if the AA is out of the sphere radius
+            new_cysbond_str = ""
+            for line in cysbond_str.strip().split("\n"):
+                parts = line.split()
+                resn1, at1 = parts[1].split(":")
+                resn1 = int(resn1)
+                resn2, at2 = parts[2].split(":")
+                resn2 = int(resn2)
 
-                    atom1 = pdb_df.query("residue_seq_number == @resn1 & atom_name == @at1")
-                    atom2 = pdb_df.query("residue_seq_number == @resn2 & atom_name == @at2")
-                    if not atom1.empty and not atom2.empty:
-                        atom1_coords = atom1[["x", "y", "z"]].values[0]
-                        atom2_coords = atom2[["x", "y", "z"]].values[0]
+                atom1 = pdb_df.query("residue_seq_number == @resn1 & atom_name == @at1")
+                atom2 = pdb_df.query("residue_seq_number == @resn2 & atom_name == @at2")
+                if not atom1.empty and not atom2.empty:
+                    atom1_coords = atom1[["x", "y", "z"]].values[0]
+                    atom2_coords = atom2[["x", "y", "z"]].values[0]
 
-                        dist1 = calculate_distance(atom1_coords, self.cog)
-                        dist2 = calculate_distance(atom2_coords, self.cog)
-                        logger.debug(
-                            f"{resn1}:{at1} and {resn2}:{at2} within {dist1} and {dist2} of the COG."
-                        )
-                        if dist1 <= int(self.sphereradius) and dist2 <= int(self.sphereradius):
-                            new_cysbond_str += line + "\n"
-                        else:
-                            logger.info(
-                                f"Excluding cysbond {line}; one or both atoms are outside the sphere radius."
-                            )
+                    dist1 = calculate_distance(atom1_coords, self.cog)
+                    dist2 = calculate_distance(atom2_coords, self.cog)
+                    logger.debug(
+                        f"{resn1}:{at1} and {resn2}:{at2} within {dist1} and {dist2} of the COG."
+                    )
+                    if dist1 <= int(self.sphereradius) and dist2 <= int(self.sphereradius):
+                        new_cysbond_str += line + "\n"
                     else:
-                        logger.warning(f"Atom information not found for bond {line}.")
-                if new_cysbond_str:
-                    cysbond_str = new_cysbond_str
-            for line in infile:
-                line = replace(line, replacements)
-                if line == "!addbond at1 at2 y\n" and cysbond_str != "":
-                    outfile.write(cysbond_str)
-                    continue
-                outfile.write(line)
+                        logger.info(
+                            f"Excluding cysbond {line}; one or both atoms are outside the sphere radius."
+                        )
+                else:
+                    logger.warning(f"Atom information not found for bond {line}.")
+            if new_cysbond_str:
+                cysbond_str = new_cysbond_str
+
+        params = QprepFEPParameters(
+            ff_lib=self.lib_file,
+            lig1_lib=self.lig1 + ".lib",
+            lig2_lib=self.lig2 + "_renumber.lib",
+            ligand_prm=self.FF + "_" + self.lig1 + "_" + self.lig2 + "_merged.prm",
+            ligand_pdb=self.lig1 + "_" + self.lig2 + ".pdb",
+            center=center,
+            sphere_radius=self.sphereradius,
+            solute_density=f"{density:.5f}",
+            solvent=solvent,
+            cysbonds=cysbond_str,
+            solvate=solvate,
+        )
+
+        content = render_qprep_fep_input(params)
+        with open(qprep_out, "w") as outfile:
+            outfile.write(content)
 
     def get_sphere_density(self, pdb_df: pd.DataFrame) -> float:
         """Calculate the solute density for the FEP system taking into consideration the different
@@ -1091,12 +1182,7 @@ class QligFEP:
     def qprep(self, writedir):
         os.chdir(writedir)
         cluster_options = CLUSTER_DICT[self.cluster]
-        qprep = cluster_options["QPREP"]
-        logger.info(f"Running QPREP from path {qprep}")
-        options = " < qprep.inp > qprep.out"
-        # Somehow Q is very annoying with this < > input style so had to implement
-        # another function that just calls os.system instead of using the preferred
-        # subprocess module....
-        run_command(qprep, options, string=True)
-        qprep_error_check(Path("qprep.out"), self.FF)
+        qprep_path = cluster_options["QPREP"]
+        logger.info(f"Running QPREP from path {qprep_path}")
+        run_qprep(qprep_path, "qprep.inp", "qprep.out", self.FF)
         os.chdir("../../")
