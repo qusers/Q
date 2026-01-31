@@ -99,9 +99,9 @@ class TestQparams:
         sdf_copy = temp_work_dir / tyk2_sdf.name
         shutil.copy(tyk2_sdf, sdf_copy)
 
-        # Use NAGL for faster execution in tests
+        # NAGL is now the default for faster execution
         result = run_cli_command(
-            ["qparams", "-i", str(sdf_copy), "-p", "2", "-nagl"],
+            ["qparams", "-i", str(sdf_copy), "-p", "2"],
             cwd=temp_work_dir,
             timeout=600,  # 10 minutes for charge calculation
         )
