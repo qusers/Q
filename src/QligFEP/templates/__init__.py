@@ -64,6 +64,17 @@ from QligFEP.templates.production import (
     ProductionConfig,
     get_production_config,
 )
+from QligFEP.templates.qfep import (
+    calculate_kT,
+    format_energy_files,
+    render_qfep_input,
+)
+from QligFEP.templates.qprep import (
+    QprepFEPParameters,
+    QprepProteinParameters,
+    render_qprep_fep_input,
+    render_qprep_protein_input,
+)
 from QligFEP.templates.sections import (
     format_distance_restraints,
     format_sequence_restraint,
@@ -93,4 +104,13 @@ __all__ = [
     # Sections
     "format_distance_restraints",
     "format_sequence_restraint",
+    # Qfep
+    "calculate_kT",
+    "format_energy_files",
+    "render_qfep_input",
+    # Qprep
+    "QprepFEPParameters",
+    "QprepProteinParameters",
+    "render_qprep_fep_input",
+    "render_qprep_protein_input",
 ]
