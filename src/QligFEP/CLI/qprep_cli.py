@@ -14,32 +14,13 @@ from ..pdb_utils import (
     write_dataframe_to_pdb,
 )
 from ..settings.settings import CONFIGS
+from ..templates import QprepProteinParameters, render_qprep_protein_input
 from ._popc_utils import (
     convert_pymemdyn_to_unified_dataframe,
     df_to_pdb_corrected_element,
     has_pop_residues,
 )
 from .utils import handle_cysbonds
-
-# NOTE: cysbonds will have \n after each bond -> `maketop MKC_p` is in a different line
-qprep_inp_content = """rl {ff_lib_path}
-rprm {ff_prm_path}
-! TO DO Change if protein system is used
-rp {pdb_file_path}
-! set solute_density 0.05794
-! NOTE, this is now large for water system, change for protein system
-set solvent_pack {solvent_pack}
-boundary 1 {cog} {sphereradius}
-solvate {cog} {sphereradius} 1 HOH
-{cysbond}maketop MKC_p
-writetop dualtop.top
-wp top_p.pdb y
-rt dualtop.top
-mask none
-mask not excluded
-wp complexnotexcluded.pdb y
-q
-"""
 
 
 class ProteinNeutralizer:
@@ -515,23 +496,20 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
 
     cysbonds = handle_cysbonds(args.cysbond, pdb_file, comment_out=True)
 
-    if args is not None:
-        param_dict = {
-            "pdb_file_path": pdb_file,
-            "cog": cog,
-            "ff_lib_path": ff_lib_path,
-            "ff_prm_path": ff_prm_path,
-            "sphereradius": sphereradius,
-            "cysbond": cysbonds,
-            "solvent_pack": formatted_solvent_pack,
-        }
-    else:
-        param_dict = {**kwargs}
+    params = QprepProteinParameters(
+        ff_lib_path=ff_lib_path,
+        ff_prm_path=ff_prm_path,
+        pdb_file_path=pdb_file,
+        cog=cog,
+        sphere_radius=sphereradius,
+        solvent_pack=formatted_solvent_pack,
+        cysbonds=cysbonds,
+    )
 
     if qprep_inp_path.exists():
         logger.warning("qprep.inp already exists!! Overwriting...")
     with qprep_inp_path.open("w") as qprep_inp_f:
-        qprep_inp_f.write(qprep_inp_content.format(**param_dict))
+        qprep_inp_f.write(render_qprep_protein_input(params))
 
     logger.debug(f"Running qprep from {qprep_path}")
     run_qprep(qprep_path, "qprep.inp", "qprep.out", args.FF)
