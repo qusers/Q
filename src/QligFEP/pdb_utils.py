@@ -502,18 +502,18 @@ def filter_pdb_by_sphere(
         exclude_residues = {"HOH", "LIG", "LID"}
 
     # Custom vdW radii for ions that are common in PDB files but not in MDAnalysis defaults
-    # Includes both standard element names and force field-specific naming conventions
+    # Includes both standard element names and (Q) force field-specific naming conventions
     custom_vdwradii = {
         # Standard element names
-        "Na": 2.27,   # Sodium
-        "K": 2.75,    # Potassium
-        "Cl": 1.75,   # Chloride
-        "Ca": 2.31,   # Calcium
-        "Mg": 1.73,   # Magnesium
-        "Zn": 1.39,   # Zinc
-        "Fe": 1.56,   # Iron
-        "Cu": 1.40,   # Copper
-        "Mn": 1.39,   # Manganese
+        "Na": 2.27,  # Sodium
+        "K": 2.75,  # Potassium
+        "Cl": 1.75,  # Chloride
+        "Ca": 2.31,  # Calcium
+        "Mg": 1.73,  # Magnesium
+        "Zn": 1.39,  # Zinc
+        "Fe": 1.56,  # Iron
+        "Cu": 1.40,  # Copper
+        "Mn": 1.39,  # Manganese
         # AMBER force field naming conventions
         "SOD": 2.27,  # Sodium (AMBER)
         "MAG": 1.73,  # Magnesium (AMBER)
@@ -522,6 +522,12 @@ def filter_pdb_by_sphere(
         # OPLS force field naming conventions
         "MG2": 1.73,  # Magnesium (OPLS)
         "Na+": 2.27,  # Sodium (OPLS)
+        # Non-standard element records with formal charges
+        # These occur when formal charges are written in the element column (e.g., "O1-" parsed as "O1")
+        "O1": 1.52,  # Oxygen (parsed from O1- element record)
+        "N1": 1.55,  # Nitrogen (parsed from N1+ element record)
+        # Note - all values come from MDAnalysis itself:
+        # https://github.com/MDAnalysis/mdanalysis/blob/develop/package/MDAnalysis/guesser/tables.py
     }
 
     # Suppress expected MDAnalysis warnings (missing CRYST1, missing chain IDs, etc.)
@@ -553,10 +559,7 @@ def filter_pdb_by_sphere(
         volume_selection = f"point {cx} {cy} {cz} {radius}"
 
         # Build exclusion string for specified residues
-        if exclude_residues:
-            exclude_str = " or ".join([f"resname {r}" for r in exclude_residues])
-        else:
-            exclude_str = None
+        exclude_str = " or ".join([f"resname {r}" for r in exclude_residues]) if exclude_residues else None
 
         # Select: (fragments touching sphere) PLUS (excluded residues that touch sphere)
         # This ensures LIG/LID/HOH in sphere are kept, but their fragments don't pull in distant atoms
@@ -620,9 +623,7 @@ def filter_out_of_sphere_fragments(
         tmp_path = Path(tmp.name)
 
     try:
-        orig_count, filt_count = filter_pdb_by_sphere(
-            pdb_path, tmp_path, center, radius, exclude_residues
-        )
+        orig_count, filt_count = filter_pdb_by_sphere(pdb_path, tmp_path, center, radius, exclude_residues)
 
         if filt_count < orig_count:
             # Move filtered file to original location
