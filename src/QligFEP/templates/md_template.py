@@ -19,7 +19,7 @@ class MDParameters:
     bath_coupling: float
 
     # Shake settings
-    shake_solvent: bool = True
+    shake_solvent: bool = True  # Should be always on - we use rigid water models
     shake_hydrogens: bool = True
     shake_solute: bool = False
 

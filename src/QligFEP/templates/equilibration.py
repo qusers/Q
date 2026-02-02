@@ -8,7 +8,22 @@ from .md_template import MDParameters
 
 @dataclass
 class EquilibrationConfig:
-    """Configuration for a single equilibration stage.
+    """Data class for a single equilibration stage. These parameters are used to
+    override the defaults in MDParameters (see method get_equilibration_configs).
+
+    To render a full configuration:
+
+    >>> from QligFEP.templates import get_equilibration_configs, render_md_input
+    >>> configs = get_equilibration_configs("2fs", shell_radius=25)
+    >>> eq5 = configs[4]
+    >>> content = render_md_input(
+    ...     params=eq5.params,
+    ...     lambda1="0.500",
+    ...     lambda2="0.500",
+    ...     trajectory_file="eq5.dcd",
+    ...     final_file="eq5.re",
+    ...     restart_file="eq4.re",
+    ... )
 
     Attributes:
         name: Stage name (eq1, eq2, etc.)
@@ -27,9 +42,9 @@ class EquilibrationConfig:
     use_water_restraint: bool = False
 
 
-# ============================================================
-# Explicit parameter dictionaries - can be imported and inspected
-# ============================================================
+# ======================================================================
+# Equilibration parameter sets used to override defaults in MDParameters
+# ======================================================================
 
 # eq1 is identical for both timesteps (fixed small timestep for initial equilibration)
 EQ1_PARAMS = dict(
@@ -37,7 +52,7 @@ EQ1_PARAMS = dict(
     stepsize=0.1,
     temperature=1,
     bath_coupling=0.2,
-    shake_hydrogens=True,
+    shake_hydrogens=False,
     interval_output=5,
 )
 
@@ -47,7 +62,7 @@ EQ2_2FS_PARAMS = dict(
     stepsize=2.0,
     temperature=50,
     bath_coupling=2.0,
-    shake_hydrogens=True,
+    shake_hydrogens=False,
     interval_output=5,
 )
 
@@ -56,7 +71,7 @@ EQ3_2FS_PARAMS = dict(
     stepsize=2.0,
     temperature=150,
     bath_coupling=2.0,
-    shake_hydrogens=True,
+    shake_hydrogens=False,
     interval_output=5,
 )
 
@@ -65,7 +80,7 @@ EQ4_2FS_PARAMS = dict(
     stepsize=2.0,
     temperature=275,
     bath_coupling=2.0,
-    shake_hydrogens=True,
+    shake_hydrogens=False,
     interval_output=5,
 )
 
@@ -115,9 +130,9 @@ EQ5_1FS_PARAMS = dict(
     interval_output=25,
 )
 
-# ============================================================
+# ======================================================================================
 # Config tuples: (name, params_dict, seq_restraint_force, dr_force, use_water_restraint)
-# ============================================================
+# ======================================================================================
 
 _CONFIGS_2FS = [
     ("eq1", EQ1_PARAMS, 10.0, 1.5, False),
