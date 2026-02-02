@@ -48,8 +48,8 @@ def compile_qprep():
             f"The qprep binary could not be compiled automatically.\n"
             f"Please install gfortran and manually compile:\n"
             f"  cd {q6_dir}\n"
-            f"  make qprep COMP={comp_flag}\n",
-            file=sys.stderr
+            f"  make qprep-only COMP={comp_flag}\n",
+            file=sys.stderr,
         )
         return False
 
@@ -61,19 +61,14 @@ def compile_qprep():
     print(f"Using compiler configuration: COMP={comp_flag}\n")
 
     try:
-        subprocess.run(
-            ["make", "clean"],
-            cwd=q6_dir,
-            check=False,
-            capture_output=True
-        )
+        subprocess.run(["make", "clean"], cwd=q6_dir, check=False, capture_output=True)
 
         result = subprocess.run(
-            ["make", "qprep", f"COMP={comp_flag}"],
+            ["make", "qprep-only", f"COMP={comp_flag}"],
             cwd=q6_dir,
             check=True,
             capture_output=True,
-            text=True
+            text=True,
         )
 
         print(result.stdout)
@@ -103,7 +98,7 @@ def compile_qprep():
             f"Command: {' '.join(e.cmd)}\n"
             f"Output: {e.stdout}\n"
             f"Error: {e.stderr}",
-            file=sys.stderr
+            file=sys.stderr,
         )
         return False
 
@@ -113,21 +108,21 @@ class BuildWithFortran(_build_py):
 
     def run(self):
         """Execute the build, including Fortran compilation."""
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("Building QligFEP - Compiling Fortran qprep binary")
-        print("="*70)
+        print("=" * 70)
 
         compile_qprep()
 
-        print("="*70)
+        print("=" * 70)
         print("Continuing with Python package build")
-        print("="*70 + "\n")
+        print("=" * 70 + "\n")
 
         super().run()
 
 
 setup(
     cmdclass={
-        'build_py': BuildWithFortran,
+        "build_py": BuildWithFortran,
     }
 )

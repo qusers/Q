@@ -155,7 +155,7 @@ default: what
 ################################################################################
 all:    qfep qprep qdyn qdyn_neq qdum qcalc move1 move2
 
-qprep:  qprep
+qprep-only: qprep move_qprep move1
 
 test:   qfep qprep qdyn_test qdum qcalc move1 move4
 
@@ -175,7 +175,7 @@ clean:
 	-rm -f *.o  *.mod *.M *.kmo *.il *.oo
 
 nuke:
-	-rm -rf *.o  *.mod *.M *.kmo *.il *.oo qfep qdynp qdyn qdyn_neq qprep qcalc \
+	-rm -rf *.o  *.mod *.M *.kmo *.il *.oo obj/ bin/ \
 	qdum ../../bin/q6 ../../obj
 
 qcalc qdyn qdyn_neq qdyn_test qdum qdynp qprep qfep: misc.o mpiglob.o
@@ -368,6 +368,9 @@ move3:
 
 move4:
 	mkdir -p bin/q6 ; mv qfep qprep qdyn_test qdum qcalc bin/q6
+
+move_qprep:
+	mkdir -p bin/q6 ; mv qprep bin/q6
 
 ################################################################################
 
