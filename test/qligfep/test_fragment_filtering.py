@@ -66,9 +66,7 @@ class TestFilterPdbBySphere:
         center = [0.897, 26.524, 8.756]
         radius = 20.0  # At this radius, chain B has 0 atoms
 
-        orig_count, filt_count = filter_pdb_by_sphere(
-            input_pdb, output_pdb, center, radius
-        )
+        orig_count, filt_count = filter_pdb_by_sphere(input_pdb, output_pdb, center, radius)
 
         # Verify significant atom reduction
         assert filt_count < orig_count, "Filtered should have fewer atoms than original"
@@ -91,9 +89,7 @@ class TestFilterPdbBySphere:
         center = [0.897, 26.524, 8.756]
         radius = 30.0  # At this radius, chain B should have atoms
 
-        orig_count, filt_count = filter_pdb_by_sphere(
-            input_pdb, output_pdb, center, radius
-        )
+        orig_count, filt_count = filter_pdb_by_sphere(input_pdb, output_pdb, center, radius)
 
         # With large radius, both chains should be preserved
         filtered_df = read_pdb_to_dataframe(output_pdb)
@@ -118,9 +114,7 @@ class TestFilterPdbBySphere:
         center = [-8.0, 5.0, 30.0]  # Approximate from 4eiy structure
         radius = 25.0
 
-        orig_count, filt_count = filter_pdb_by_sphere(
-            input_pdb, output_pdb, center, radius
-        )
+        orig_count, filt_count = filter_pdb_by_sphere(input_pdb, output_pdb, center, radius)
 
         # Verify POP reduction
         filtered_df = read_pdb_to_dataframe(output_pdb)
@@ -155,9 +149,7 @@ END
         center = [0.0, 0.0, 0.0]
         radius = 10.0  # Enough to include LIG, LID, HOH, chain A
 
-        orig_count, filt_count = filter_pdb_by_sphere(
-            input_pdb, output_pdb, center, radius
-        )
+        orig_count, filt_count = filter_pdb_by_sphere(input_pdb, output_pdb, center, radius)
 
         filtered_df = read_pdb_to_dataframe(output_pdb)
         resnames = filtered_df["residue_name"].unique()
@@ -190,9 +182,7 @@ END
         center = [0.0, 0.0, 0.0]
         radius = 10.0
 
-        orig_count, filt_count = filter_pdb_by_sphere(
-            input_pdb, output_pdb, center, radius
-        )
+        orig_count, filt_count = filter_pdb_by_sphere(input_pdb, output_pdb, center, radius)
 
         assert filt_count < orig_count, "Distant residue should be removed"
 
@@ -223,7 +213,10 @@ class TestFilterOutOfSphereFragments:
 
     def test_modifies_file_in_place(self, cdk2_protein_path, temp_pdb_dir):
         """Verify the function modifies the PDB file in place."""
-        from QligFEP.pdb_utils import filter_out_of_sphere_fragments, read_pdb_to_dataframe
+        from QligFEP.pdb_utils import (
+            filter_out_of_sphere_fragments,
+            read_pdb_to_dataframe,
+        )
 
         pdb_path = temp_pdb_dir / "cdk2.pdb"
         shutil.copy(cdk2_protein_path, pdb_path)
@@ -287,9 +280,7 @@ class TestFragmentFilteringIntegration:
         center = [0.897, 26.524, 8.756]
         radius = 20.0
 
-        orig_count, filt_count = filter_pdb_by_sphere(
-            input_pdb, output_pdb, center, radius
-        )
+        orig_count, filt_count = filter_pdb_by_sphere(input_pdb, output_pdb, center, radius)
 
         # Get atom counts per chain
         orig_df = read_pdb_to_dataframe(input_pdb)
@@ -346,9 +337,7 @@ class TestFragmentFilteringIntegration:
         center = [-8.0, 5.0, 30.0]
         radius = 25.0
 
-        orig_count, filt_count = filter_pdb_by_sphere(
-            input_pdb, output_pdb, center, radius
-        )
+        orig_count, filt_count = filter_pdb_by_sphere(input_pdb, output_pdb, center, radius)
 
         filt_df = read_pdb_to_dataframe(output_pdb)
         filt_pop = filt_df[filt_df["residue_name"] == "POP"]["residue_seq_number"].nunique()
@@ -368,6 +357,50 @@ class TestFragmentFilteringIntegration:
 
 class TestEdgeCases:
     """Test edge cases and error handling."""
+
+    def test_nonstandard_element_records_with_charges(self, temp_pdb_dir):
+        """PDB with formal charges embedded in element column should still work.
+
+        Some PDB files (e.g., from membrane protein systems) have non-standard
+        element records like "O1-" or "N1+" in columns 77-78. MDAnalysis parses
+        these as elements "O1" and "N1" which are unknown and would cause bond
+        guessing to fail without custom vdW radii.
+        """
+        from QligFEP.pdb_utils import filter_pdb_by_sphere, read_pdb_to_dataframe
+
+        input_pdb = temp_pdb_dir / "charged_elements.pdb"
+        output_pdb = temp_pdb_dir / "charged_elements_filtered.pdb"
+
+        # Simulate PDB content with non-standard element records (formal charges in element column)
+        # The element column is positions 77-78 (0-indexed: 76-78)
+        pdb_content = """\
+ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00  0.00          C
+ATOM      2  C   ALA A   1       1.500   0.000   0.000  1.00  0.00          C
+ATOM      3  N   ALA A   1       0.000   1.500   0.000  1.00  0.00          N
+ATOM      4  O   ALA A   1       0.000   0.000   1.500  1.00  0.00          O
+ATOM     10  OE2 GLU A   2       5.000   0.000   0.000  1.00  0.00          O1-
+ATOM     11  NZ  LYS A   3       6.000   0.000   0.000  1.00  0.00          N1+
+ATOM     12  NA  SOD A   4       7.000   0.000   0.000  1.00  0.00          Na1+
+ATOM    100  CA  ALA B   1     100.000 100.000 100.000  1.00  0.00          C
+ATOM    101  C   ALA B   1     101.500 100.000 100.000  1.00  0.00          C
+END
+"""
+        input_pdb.write_text(pdb_content)
+
+        center = [0.0, 0.0, 0.0]
+        radius = 10.0  # Should include chain A but not chain B
+
+        # This should not fail even with O1-, N1+, Na1+ element records
+        orig, filt = filter_pdb_by_sphere(input_pdb, output_pdb, center, radius)
+
+        # Verify filtering worked (chain B removed)
+        assert orig > filt, "Filtering should have occurred"
+        assert filt > 0, "Some atoms should remain"
+
+        filtered_df = read_pdb_to_dataframe(output_pdb)
+        chain_ids = filtered_df["chain_id"].unique()
+        assert "B" not in chain_ids, "Distant chain B should be removed"
+        assert "A" in chain_ids, "Chain A should be preserved"
 
     def test_all_fragments_outside_sphere(self, temp_pdb_dir):
         """When all fragments are outside, should preserve nothing (or raise error)."""
