@@ -51,6 +51,38 @@ class TestMDParameters:
 
         assert params.temperature == "T_VAR"
 
+    def test_minimize_default_values(self):
+        """Verify minimization is disabled by default."""
+        params = MDParameters(
+            steps=5000,
+            stepsize=2.0,
+            temperature=298,
+            bath_coupling=10.0,
+        )
+
+        assert params.minimize is False
+        assert params.max_minimize_steps == 1000
+        assert params.minimize_tolerance == 0.1
+        assert params.minimize_step_size == 0.001
+
+    def test_minimize_custom_values(self):
+        """Verify custom minimization parameters."""
+        params = MDParameters(
+            steps=5000,
+            stepsize=2.0,
+            temperature=298,
+            bath_coupling=10.0,
+            minimize=True,
+            max_minimize_steps=2000,
+            minimize_tolerance=0.05,
+            minimize_step_size=0.0005,
+        )
+
+        assert params.minimize is True
+        assert params.max_minimize_steps == 2000
+        assert params.minimize_tolerance == 0.05
+        assert params.minimize_step_size == 0.0005
+
 
 class TestRenderMdInput:
     """Tests for render_md_input function."""
@@ -83,6 +115,42 @@ class TestRenderMdInput:
         assert "[lambdas]" in content
         assert "0.500 0.500" in content
         assert "[distance_restraints]" in content
+        # minimize disabled by default - no minimize lines in output
+        assert "minimize" not in content
+
+    def test_render_eq1_with_minimize(self):
+        """Verify eq1 renders minimize parameters when enabled."""
+        configs = get_equilibration_configs("2fs", shell_radius=25)
+        eq1 = configs[0]
+
+        content = render_md_input(
+            params=eq1.params,
+            lambda1="0.500",
+            lambda2="0.500",
+            trajectory_file="eq1.dcd",
+            final_file="eq1.re",
+            is_eq1=True,
+        )
+
+        assert "minimize                  on" in content
+        assert "max_minimize_steps        1000" in content
+        assert "minimize_tolerance        0.1" in content
+        assert "minimize_step_size        0.001" in content
+
+    def test_render_eq2_without_minimize(self):
+        """Verify eq2-eq5 do not render minimize parameters."""
+        configs = get_equilibration_configs("2fs", shell_radius=25)
+
+        for config in configs[1:]:
+            content = render_md_input(
+                params=config.params,
+                lambda1="0.500",
+                lambda2="0.500",
+                trajectory_file=f"{config.name}.dcd",
+                final_file=f"{config.name}.re",
+                restart_file="eq_prev.re",
+            )
+            assert "minimize" not in content, f"{config.name} should not have minimize"
 
     def test_render_eq1_with_random_seed(self):
         """Verify eq1 includes random_seed and initial_temperature."""
@@ -197,11 +265,12 @@ class TestEquilibrationConfigs:
         configs = get_equilibration_configs("2fs", shell_radius=25)
         eq1 = configs[0]
 
-        assert eq1.params.steps == 10000
+        assert eq1.params.steps == 5000
         assert eq1.params.stepsize == 0.1
         assert eq1.params.temperature == 1
         assert eq1.params.bath_coupling == 0.2
-        assert eq1.params.shake_hydrogens is True
+        assert eq1.params.shake_hydrogens is False
+        assert eq1.params.minimize is True
         assert eq1.sequence_restraint_force == 10.0
         assert eq1.distance_restraint_force == 1.5
 
@@ -228,8 +297,8 @@ class TestEquilibrationConfigs:
         assert eq2_2fs.params.stepsize == 2.0
         assert eq2_1fs.params.stepsize == 1.0
 
-        # shake_hydrogens differs
-        assert eq2_2fs.params.shake_hydrogens is True
+        # shake_hydrogens off for eq1-eq4 regardless of timestep
+        assert eq2_2fs.params.shake_hydrogens is False
         assert eq2_1fs.params.shake_hydrogens is False
 
     def test_temperature_progression(self):

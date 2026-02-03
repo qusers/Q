@@ -53,6 +53,12 @@ class MDParameters:
     topology: str = "dualtop.top"
     fep_file: str = "FEP_VAR"
 
+    # Energy minimization (steepest descent before MD)
+    minimize: bool = False
+    max_minimize_steps: int = 1000
+    minimize_tolerance: float = 0.1  # kcal/mol/Å
+    minimize_step_size: float = 0.001  # Å
+
 
 def _bool_to_onoff(val: bool) -> str:
     """Convert boolean to 'on'/'off' string."""
@@ -107,6 +113,13 @@ def render_md_input(
     lines.append(f"shake_solute              {_bool_to_onoff(params.shake_solute)}")
     lines.append(f"lrf                       {_bool_to_onoff(params.lrf)}")
     lines.append(f"separate_scaling          {_bool_to_onoff(params.separate_scaling)}")
+
+    # Energy minimization settings (only output if enabled)
+    if params.minimize:
+        lines.append(f"minimize                  {_bool_to_onoff(params.minimize)}")
+        lines.append(f"max_minimize_steps        {params.max_minimize_steps}")
+        lines.append(f"minimize_tolerance        {params.minimize_tolerance}")
+        lines.append(f"minimize_step_size        {params.minimize_step_size}")
     lines.append("")
 
     # [cut-offs] section
