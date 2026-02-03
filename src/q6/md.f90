@@ -2317,6 +2317,16 @@ subroutine init_nodes
     deallocate(temp_lambda)
   end if
 
+  ! energy minimization parameters
+  call MPI_Bcast(do_minimize, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+  if (ierr .ne. 0) call die('init_nodes/MPI_Bcast do_minimize')
+  call MPI_Bcast(max_min_steps, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+  if (ierr .ne. 0) call die('init_nodes/MPI_Bcast max_min_steps')
+  call MPI_Bcast(min_tol, 1, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+  if (ierr .ne. 0) call die('init_nodes/MPI_Bcast min_tol')
+  call MPI_Bcast(min_step, 1, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+  if (ierr .ne. 0) call die('init_nodes/MPI_Bcast min_step')
+
   if (nodeid .eq. 0) then
     call centered_heading('End of initiation', '-')
     print *
@@ -3980,6 +3990,7 @@ subroutine md_run
   integer                         :: min_iter, min_phase
   real(8)                         :: min_grms, min_E_last, min_alpha
   real(8)                         :: dx, max_disp, fmax, fi
+  logical                         :: min_converged
   parameter (max_disp = 0.1d0)   ! maximum displacement per coordinate per step (Angstrom)
   parameter (fmax = 1000.0d0)    ! maximum force per component for force capping (kcal/mol/A)
 
@@ -4068,6 +4079,7 @@ subroutine md_run
     do min_iter = 1, max_min_steps
       call pot_energy
 
+      min_converged = .false.
       if (nodeid .eq. 0) then
         ! Zero NaN forces
         do i = 1, natom
@@ -4089,9 +4101,17 @@ subroutine md_run
         if (min_grms .lt. min_tol) then
           write(*,'(a,i6,a,f10.4)') 'Phase 1 converged at step ', &
             min_iter, ', RMS force = ', min_grms
-          exit
+          min_converged = .true.
         end if
+      end if
 
+#if defined(USE_MPI)
+      call MPI_Bcast(min_converged, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+      if (ierr .ne. 0) call die('minimize/MPI_Bcast min_converged')
+#endif
+      if (min_converged) exit
+
+      if (nodeid .eq. 0) then
         ! Steepest descent step with displacement cap
         do i = 1, natom
           if (iqatom(i) .eq. 0) then
@@ -4119,6 +4139,12 @@ subroutine md_run
       write(*,*)
     end if
 
+    ! Broadcast Phase 1 coordinates to slaves before Phase 2
+#if defined(USE_MPI)
+    call MPI_Bcast(x, nat3, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    if (ierr .ne. 0) call die('minimize/MPI_Bcast x phase1')
+#endif
+
     min_bonded_only = .false.
 
     ! ---- Phase 2: Full force field with force capping ----
@@ -4137,6 +4163,7 @@ subroutine md_run
       end if
       call pot_energy
 
+      min_converged = .false.
       if (nodeid .eq. 0) then
         ! Zero NaN forces and cap large forces
         do i = 1, natom
@@ -4164,9 +4191,17 @@ subroutine md_run
         if (min_grms .lt. min_tol) then
           write(*,'(a,i6,a,f10.4)') 'Phase 2 converged at step ', &
             min_iter, ', RMS force = ', min_grms
-          exit
+          min_converged = .true.
         end if
+      end if
 
+#if defined(USE_MPI)
+      call MPI_Bcast(min_converged, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+      if (ierr .ne. 0) call die('minimize/MPI_Bcast min_converged')
+#endif
+      if (min_converged) exit
+
+      if (nodeid .eq. 0) then
         ! Steepest descent step with displacement cap
         do i = 1, natom
           if (iqatom(i) .eq. 0) then
@@ -4186,6 +4221,12 @@ subroutine md_run
           end if
         end do
       end if
+
+      ! Broadcast updated coordinates to slaves for next step's nonbonds
+#if defined(USE_MPI)
+      call MPI_Bcast(x, nat3, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+      if (ierr .ne. 0) call die('minimize/MPI_Bcast x phase2')
+#endif
     end do
 
     if (nodeid .eq. 0) then
