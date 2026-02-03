@@ -1758,7 +1758,7 @@ integer function genh(j, residue)
   real(8),parameter                :: max_dx = 1. !max_dx is max distance of line search step in first CG iteration (�)
   real(8)                          :: local_min = 30
   real(8)                          :: tors_fk = 10.
-  integer, parameter               :: max_cg_iterations = 100, max_line_iterations = 35
+  integer, parameter               :: max_cg_iterations = 200, max_line_iterations = 35
   integer                          :: cgiter, lineiter
   real(8)                          :: bnd0
   integer                          :: nHang, Hang_atom(max_conn)
@@ -1774,7 +1774,7 @@ integer function genh(j, residue)
   real(8)                          :: phi, phi_deg, sgn, dVtors, arg, dH(3)
   logical                          :: flipped
   integer                          :: setH
-  integer, parameter               :: nsetH = 5   !number of times to flip, if local min, and retry
+  integer, parameter               :: nsetH = 10  !number of times to restart with new random position if stuck in local min
         
   genH = 0
   xj(:) = xtop(3*j-2:3*j)
@@ -1857,7 +1857,7 @@ integer function genh(j, residue)
           !                               write(*,9, advance='no') cgiter
 9         format('cg step',i3,':')
           !do line search
-          dx_line = max_dx*2.**(-cgiter)
+          dx_line = max_dx*0.9**cgiter
           flipped = .false.
           do lineiter = 1, max_line_iterations
             Vtot = 0
@@ -1967,11 +1967,15 @@ integer function genh(j, residue)
           dVlast(:) = dVtot(:) - gamma*dVlast(:)
         end do  !cgiter
 
-        !Check if local min -> restart iteration ; problem with conversion
+        !Check if local min -> restart with new random position
         if(Vtot > local_min) then
-          !it's a local min - flip 180 deg.
-          dVlast(:) = -dVlast(:)
-          xH(:) = xj(:) - rjH(:)
+          !stuck in local min - try new random starting position
+          do axis = 1,3
+            xH(axis) = randm() - 0.5
+          end do
+          bond_length = sqrt(dot_product(xH,xH))
+          xH(:) = xH(:) / bond_length * bnd0
+          xH(:) = xH(:) + xj(:)
         else
           exit
         end if
