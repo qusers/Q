@@ -93,6 +93,13 @@ module md
   logical                   :: shake_hydrogens
   logical                   :: separate_scaling
 
+  ! --- Energy minimization parameters
+  logical                   :: do_minimize = .false.
+  integer                   :: max_min_steps = 1000
+  real(8)                   :: min_tol = 0.1      ! kcal/mol/Å convergence tolerance
+  real(8)                   :: min_step = 0.001   ! step size in Å
+  logical                   :: min_bonded_only = .false.  ! Flag to skip nonbonded during minimization
+
   ! --- Non-bonded strategy
   logical                   :: use_LRF
   integer                   :: NBcycle
@@ -2764,6 +2771,26 @@ logical function initialize()
     end if
 22  format ('R.M.S. force will be calculated.')
 
+    ! --- Energy minimization
+    yes = prm_get_logical_by_key('minimize', do_minimize, .false.)
+    if(do_minimize) then
+      write(*,'(a)') 'Energy minimization enabled before MD.'
+      if(.not. prm_get_integer_by_key('max_minimize_steps', max_min_steps)) then
+        max_min_steps = 1000
+      end if
+      if(.not. prm_get_real8_by_key('minimize_tolerance', min_tol)) then
+        min_tol = 0.1
+      end if
+      if(.not. prm_get_real8_by_key('minimize_step_size', min_step)) then
+        min_step = 0.001
+      end if
+      write(*,2001) max_min_steps
+      write(*,2002) min_tol
+      write(*,2003) min_step
+2001  format ('Max minimize steps  =',i10)
+2002  format ('Minimize tolerance  =',f10.4,' kcal/mol/A')
+2003  format ('Minimize step size  =',f10.6,' A')
+    end if
 
     ! --- Rcpp, Rcww, Rcpw, Rcq, RcLRF
     if(.not. prm_open_section('cut-offs')) then
@@ -3850,6 +3877,16 @@ subroutine temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
       if ( Ekin .gt. Ekinmax ) then
         ! hot atom warning
         write (*,180) i,2.*Ekin/boltz/3.
+        ! zero velocity and remove from temperature accumulators
+        v(i3+1) = 0.0
+        v(i3+2) = 0.0
+        v(i3+3) = 0.0
+        Temp_solute = Temp_solute - Ekin
+        if( use_PBC .or. ( (.not. use_PBC) .and. (.not. excl(i)) ) ) then
+          Tfree_solute = Tfree_solute - Ekin
+        else
+          Texcl_solute = Texcl_solute - Ekin
+        end if
       end if
     end do
 
@@ -3875,6 +3912,16 @@ subroutine temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
       if ( Ekin .gt. Ekinmax ) then
         ! hot atom warning
         write (*,180) i,2.*Ekin/boltz/3.
+        ! zero velocity and remove from temperature accumulators
+        v(i3+1) = 0.0
+        v(i3+2) = 0.0
+        v(i3+3) = 0.0
+        Temp_solvent = Temp_solvent - Ekin
+        if( use_PBC .or. ( (.not. use_PBC) .and. (.not. excl(i)) ) ) then
+          Tfree_solvent = Tfree_solvent - Ekin
+        else
+          Texcl_solvent = Texcl_solvent - Ekin
+        end if
       end if
     end do
 
@@ -3929,6 +3976,12 @@ subroutine md_run
   real(8)                         :: Tscale_solute,Tscale_solvent
   real(8)                         :: time0, time1, time_per_step, startloop
   integer(4)                      :: time_completion
+  ! minimization local variables
+  integer                         :: min_iter, min_phase
+  real(8)                         :: min_grms, min_E_last, min_alpha
+  real(8)                         :: dx, max_disp, fmax, fi
+  parameter (max_disp = 0.1d0)   ! maximum displacement per coordinate per step (Angstrom)
+  parameter (fmax = 1000.0d0)    ! maximum force per component for force capping (kcal/mol/A)
 
 #if defined(PROFILING)
   real(8)                         :: start_loop_time1, start_loop_time2
@@ -3993,6 +4046,153 @@ subroutine md_run
     startloop = rtime()
   end if
 
+  !***********************************************************************
+  !       ENERGY MINIMIZATION (steepest descent, before MD)
+  !***********************************************************************
+  if (do_minimize) then
+    if (nodeid .eq. 0) then
+      call centered_heading('Energy Minimization', '-')
+      write(*,'(a)') 'Two-phase steepest descent energy minimization:'
+      write(*,'(a)') '  Phase 1: Bonded terms only (fixes geometric strain)'
+      write(*,'(a)') '  Phase 2: Full force field with force capping'
+      write(*,*)
+    end if
+
+    ! ---- Phase 1: Bonded-only minimization ----
+    if (nodeid .eq. 0) then
+      write(*,'(a)') '--- Phase 1: Bonded-only minimization ---'
+    end if
+    min_bonded_only = .true.
+    min_alpha = min_step
+
+    do min_iter = 1, max_min_steps
+      call pot_energy
+
+      if (nodeid .eq. 0) then
+        ! Zero NaN forces
+        do i = 1, natom
+          i3 = 3*(i-1)
+          if (d(i3+1) .ne. d(i3+1)) d(i3+1) = 0.0
+          if (d(i3+2) .ne. d(i3+2)) d(i3+2) = 0.0
+          if (d(i3+3) .ne. d(i3+3)) d(i3+3) = 0.0
+        end do
+
+        min_grms = sqrt(dot_product(d(1:nat3), d(1:nat3))/nat3)
+
+        if (mod(min_iter, 500) .eq. 1 .or. min_iter .eq. 1) then
+          write(*,130) min_iter, E%p%bond + E%p%angle + E%p%torsion, &
+            min_grms, min_alpha
+130       format('Min step ',i6,': E_bonded = ',f14.4, &
+            ', RMS = ',f10.4,', step = ',es8.1)
+        end if
+
+        if (min_grms .lt. min_tol) then
+          write(*,'(a,i6,a,f10.4)') 'Phase 1 converged at step ', &
+            min_iter, ', RMS force = ', min_grms
+          exit
+        end if
+
+        ! Steepest descent step with displacement cap
+        do i = 1, natom
+          if (iqatom(i) .eq. 0) then
+            i3 = 3*(i-1)
+            dx = -min_alpha * d(i3+1) * winv(i)
+            if (dx .gt. max_disp) dx = max_disp
+            if (dx .lt. -max_disp) dx = -max_disp
+            x(i3+1) = x(i3+1) + dx
+            dx = -min_alpha * d(i3+2) * winv(i)
+            if (dx .gt. max_disp) dx = max_disp
+            if (dx .lt. -max_disp) dx = -max_disp
+            x(i3+2) = x(i3+2) + dx
+            dx = -min_alpha * d(i3+3) * winv(i)
+            if (dx .gt. max_disp) dx = max_disp
+            if (dx .lt. -max_disp) dx = -max_disp
+            x(i3+3) = x(i3+3) + dx
+          end if
+        end do
+      end if
+    end do
+
+    if (nodeid .eq. 0) then
+      write(*,'(a,f14.4)') 'Phase 1 final bonded energy: ', &
+        E%p%bond + E%p%angle + E%p%torsion
+      write(*,*)
+    end if
+
+    min_bonded_only = .false.
+
+    ! ---- Phase 2: Full force field with force capping ----
+    if (nodeid .eq. 0) then
+      write(*,'(a)') '--- Phase 2: Full force field minimization ---'
+    end if
+    min_alpha = min_step
+
+    ! Build initial pair lists for nonbonded interactions
+    call make_pair_lists
+
+    do min_iter = 1, max_min_steps
+      ! Rebuild pair lists periodically as atoms move
+      if (mod(min_iter, NBcycle) .eq. 1 .and. min_iter .gt. 1) then
+        call make_pair_lists
+      end if
+      call pot_energy
+
+      if (nodeid .eq. 0) then
+        ! Zero NaN forces and cap large forces
+        do i = 1, natom
+          i3 = 3*(i-1)
+          do j = 1, 3
+            fi = d(i3+j)
+            if (fi .ne. fi) then
+              d(i3+j) = 0.0
+            else if (fi .gt. fmax) then
+              d(i3+j) = fmax
+            else if (fi .lt. -fmax) then
+              d(i3+j) = -fmax
+            end if
+          end do
+        end do
+
+        min_grms = sqrt(dot_product(d(1:nat3), d(1:nat3))/nat3)
+
+        if (mod(min_iter, 500) .eq. 1 .or. min_iter .eq. 1) then
+          write(*,131) min_iter, E%potential, min_grms, min_alpha
+131       format('Min step ',i6,': E_total = ',es14.4, &
+            ', RMS = ',f10.4,', step = ',es8.1)
+        end if
+
+        if (min_grms .lt. min_tol) then
+          write(*,'(a,i6,a,f10.4)') 'Phase 2 converged at step ', &
+            min_iter, ', RMS force = ', min_grms
+          exit
+        end if
+
+        ! Steepest descent step with displacement cap
+        do i = 1, natom
+          if (iqatom(i) .eq. 0) then
+            i3 = 3*(i-1)
+            dx = -min_alpha * d(i3+1) * winv(i)
+            if (dx .gt. max_disp) dx = max_disp
+            if (dx .lt. -max_disp) dx = -max_disp
+            x(i3+1) = x(i3+1) + dx
+            dx = -min_alpha * d(i3+2) * winv(i)
+            if (dx .gt. max_disp) dx = max_disp
+            if (dx .lt. -max_disp) dx = -max_disp
+            x(i3+2) = x(i3+2) + dx
+            dx = -min_alpha * d(i3+3) * winv(i)
+            if (dx .gt. max_disp) dx = max_disp
+            if (dx .lt. -max_disp) dx = -max_disp
+            x(i3+3) = x(i3+3) + dx
+          end if
+        end do
+      end if
+    end do
+
+    if (nodeid .eq. 0) then
+      write(*,'(a,es14.4)') 'Phase 2 final total energy:  ', E%potential
+      write(*,*)
+    end if
+  end if
 
   !***********************************************************************
   !       begin MAIN DYNAMICS LOOP (Verlet leap-frog algorithm)
@@ -4199,7 +4399,7 @@ end if
 ! write final trajectory image when istep = nsteps
 #ifndef DUM
 if (nodeid .eq. 0) then
-  if ( mod(istep,itrj_cycle) == 0) call write_trj
+  if ( itrj_cycle > 0 .and. mod(istep,itrj_cycle) == 0) call write_trj
 end if
 #endif
 
@@ -13351,8 +13551,10 @@ subroutine pot_energy
   start_loop_time2 = rtime()
 #endif
 
-  ! classical nonbonds
-  call pot_energy_nonbonds
+  ! classical nonbonds (skip if doing bonded-only minimization)
+  if (.not. min_bonded_only) then
+    call pot_energy_nonbonds
+  end if
 #if defined (PROFILING)
   profile(10)%time = profile(10)%time + rtime() - start_loop_time2
 #endif
@@ -13369,32 +13571,36 @@ subroutine pot_energy
     profile(8)%time = profile(8)%time + rtime() - start_loop_time1
 #endif
 
-    ! various restraints
-    if( .not. use_PBC ) then
-      call fix_shell     !Restrain all excluded atoms plus heavy solute atoms in the inner shell.
-    end if
+    ! various restraints (skip during bonded-only minimization)
+    if (.not. min_bonded_only) then
+      if( .not. use_PBC ) then
+        call fix_shell     !Restrain all excluded atoms plus heavy solute atoms in the inner shell.
+      end if
 
-    call p_restrain       !Seq. restraints, dist. restaints, etc
+      call p_restrain       !Seq. restraints, dist. restaints, etc
 
-    if( .not. use_PBC ) then
-      if(nwat > 0) then
-        call restrain_solvent
-        if (wpol_restr) call watpol
+      if( .not. use_PBC ) then
+        if(nwat > 0) then
+          call restrain_solvent
+          if (wpol_restr) call watpol
+        end if
       end if
     end if
 
-    ! q-q nonbonded interactions
-    if(.not. qq_use_library_charges) then
-      if(ivdw_rule .eq. 1 ) then
-        call nonbond_qq
-      elseif ( ivdw_rule .eq. 2 ) then
-        call nonbon2_qq
-      end if
-    else
-      if ( ivdw_rule .eq. 1 ) then
-        call nonbond_qq_lib_charges
-      else if ( ivdw_rule .eq. 2 ) then
-        call nonbon2_qq_lib_charges
+    ! q-q nonbonded interactions (skip if doing bonded-only minimization)
+    if (.not. min_bonded_only) then
+      if(.not. qq_use_library_charges) then
+        if(ivdw_rule .eq. 1 ) then
+          call nonbond_qq
+        elseif ( ivdw_rule .eq. 2 ) then
+          call nonbon2_qq
+        end if
+      else
+        if ( ivdw_rule .eq. 1 ) then
+          call nonbond_qq_lib_charges
+        else if ( ivdw_rule .eq. 2 ) then
+          call nonbon2_qq_lib_charges
+        end if
       end if
     end if
 
