@@ -1932,8 +1932,6 @@ integer function genh(j, residue)
               dVtot(:) = dVtot(:) + dV(:)
             end if
 
-            ! NOTE: Steric check moved to post-positioning for efficiency
-
             if(cgiter == 1 .and. lineiter == 1) then
               !its the start of the search, use the gradient vector
               dvLast(:) = dVtot(:)
