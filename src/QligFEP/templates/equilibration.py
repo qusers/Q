@@ -47,13 +47,15 @@ class EquilibrationConfig:
 # ======================================================================
 
 # eq1 is identical for both timesteps (fixed small timestep for initial equilibration)
+# Minimization is enabled for eq1 to relax initial geometries before MD
 EQ1_PARAMS = dict(
-    steps=10000,
+    steps=5000,  # with minimization, I expect we can use fewer steps here
     stepsize=0.1,
     temperature=1,
     bath_coupling=0.2,
     shake_hydrogens=False,
     interval_output=5,
+    minimize=True,
 )
 
 # 2fs timestep variants

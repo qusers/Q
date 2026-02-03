@@ -1,5 +1,5 @@
 [MD]
-steps                     10000
+steps                     5000
 stepsize                  0.1
 temperature               1
 bath_coupling             0.2
@@ -10,6 +10,10 @@ shake_hydrogens           off
 shake_solute              off
 lrf                       on
 separate_scaling          on
+minimize                  on
+max_minimize_steps        1000
+minimize_tolerance        0.1
+minimize_step_size        0.001
 
 [cut-offs]
 solute_solvent            10
