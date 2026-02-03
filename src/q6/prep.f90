@@ -1756,7 +1756,7 @@ integer function genh(j, residue)
   real(8),parameter                :: convergence_criterum = 0.1
   real(8),parameter                :: dV_scale = 0.025
   real(8),parameter                :: max_dx = 1. !max_dx is max distance of line search step in first CG iteration (�)
-  real(8)                          :: local_min = 30
+  real(8)                          :: local_min = 50  ! Increased to account for steric repulsion
   real(8)                          :: tors_fk = 10.
   integer, parameter               :: max_cg_iterations = 200, max_line_iterations = 35
   integer                          :: cgiter, lineiter
@@ -1775,7 +1775,13 @@ integer function genh(j, residue)
   logical                          :: flipped
   integer                          :: setH
   integer, parameter               :: nsetH = 10  !number of times to restart with new random position if stuck in local min
-        
+  ! Steric repulsion variables - prevents H from being placed on top of other atoms
+  integer                          :: iatom
+  real(8)                          :: xi(3), riH(3), distH, V_steric, dV_steric
+  real(8), parameter               :: steric_cutoff = 2.5  ! Angstrom - check atoms within this distance
+  real(8), parameter               :: steric_k = 20.0      ! Force constant (reduced for gentler repulsion)
+  real(8), parameter               :: steric_sigma = 1.2   ! Minimum allowed distance to heavy atoms
+
   genH = 0
   xj(:) = xtop(3*j-2:3*j)
         
@@ -1925,6 +1931,9 @@ integer function genh(j, residue)
               dV(:) = dVtors*cross_product(rjk, dH)
               dVtot(:) = dVtot(:) + dV(:)
             end if
+
+            ! NOTE: Steric check moved to post-positioning for efficiency
+
             if(cgiter == 1 .and. lineiter == 1) then
               !its the start of the search, use the gradient vector
               dvLast(:) = dVtot(:)
@@ -1990,6 +1999,28 @@ integer function genh(j, residue)
       end if
       !copy coordinates to topology
       xtop(3*H-2:3*H) = xH(:)
+
+      ! Post-positioning clash check: if H is too close to any heavy atom, flip it
+      do iatom = 1, nat_pro
+        if (iatom == j .or. iatom == H) cycle
+        if (makeH(iatom)) cycle
+        if (.not. heavy(iatom)) cycle
+
+        xi(:) = xtop(3*iatom-2:3*iatom)
+        riH(:) = xH(:) - xi(:)
+        distH = sqrt(dot_product(riH, riH))
+
+        if (distH < steric_sigma) then
+          ! Clash detected! Flip H to opposite side of parent atom j
+          rjH(:) = xH(:) - xj(:)
+          xH(:) = xj(:) - rjH(:)  ! Flip 180 degrees
+          xtop(3*H-2:3*H) = xH(:)
+          write(*,'(a,i6,a,i6,a,f6.3,a)') '>>> Flipped hydrogen ', H, &
+            ' (clash with atom ', iatom, ' at ', distH, ' A)'
+          exit  ! Only flip once
+        end if
+      end do
+
       !clear makeH flag
       makeH(H) = .false.
       genH = genH + 1
