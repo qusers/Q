@@ -4066,6 +4066,7 @@ subroutine md_run
       write(*,'(a)') 'Two-phase steepest descent energy minimization:'
       write(*,'(a)') '  Phase 1: Bonded terms only (fixes geometric strain)'
       write(*,'(a)') '  Phase 2: Full force field with force capping'
+      write(*,'(a)') 'Q-atoms and solvent atoms are frozen during minimization.'
       write(*,*)
     end if
 
@@ -4113,7 +4114,8 @@ subroutine md_run
 
       if (nodeid .eq. 0) then
         ! Steepest descent step with displacement cap
-        do i = 1, natom
+        ! Only move solute non-Q atoms; solvent is frozen (SHAKE-constrained)
+        do i = 1, nat_solute
           if (iqatom(i) .eq. 0) then
             i3 = 3*(i-1)
             dx = -min_alpha * d(i3+1) * winv(i)
@@ -4203,7 +4205,8 @@ subroutine md_run
 
       if (nodeid .eq. 0) then
         ! Steepest descent step with displacement cap
-        do i = 1, natom
+        ! Only move solute non-Q atoms; solvent is frozen (SHAKE-constrained)
+        do i = 1, nat_solute
           if (iqatom(i) .eq. 0) then
             i3 = 3*(i-1)
             dx = -min_alpha * d(i3+1) * winv(i)
