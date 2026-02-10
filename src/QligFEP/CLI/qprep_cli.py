@@ -10,6 +10,7 @@ from ..IO import get_force_field_paths, run_qprep
 from ..logger import logger, setup_logger
 from ..pdb_utils import (
     append_pdb_to_another,
+    filter_out_of_sphere_fragments,
     read_pdb_to_dataframe,
     write_dataframe_to_pdb,
 )
@@ -404,6 +405,18 @@ def parse_arguments() -> argparse.Namespace:
             "residues. Salt bridge partners will also be neutralized. Defaults to 4.0Å."
         ),
     )
+    parser.add_argument(
+        "-skip-ff",
+        "--skip-fragment-filter",
+        dest="skip_fragment_filter",
+        action="store_true",
+        help=(
+            "Skip filtering molecular fragments outside the simulation sphere. "
+            "Fragment filtering removes entire chains, cofactors, or lipids that are "
+            "completely outside the sphere radius, reducing system size for faster "
+            "downstream FEP setup."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -490,6 +503,20 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     pdb_file = str(processed_pdb_path)
     pdb_path = processed_pdb_path
     logger.info(f"Final processed protein saved as: {processed_pdb_path}")
+
+    # Step 5: Filter out-of-sphere molecular fragments (chains, cofactors, lipids)
+    if not args.skip_fragment_filter:
+        center_coords = [float(coord) for coord in args.cog]
+        orig_count, filt_count = filter_out_of_sphere_fragments(
+            processed_pdb_path, center_coords, float(args.sphereradius)
+        )
+        if filt_count < orig_count:
+            logger.info(
+                f"Fragment filtering: {orig_count} → {filt_count} atoms "
+                f"({orig_count - filt_count} removed)"
+            )
+        else:
+            logger.info("Fragment filtering: no fragments outside sphere to remove")
 
     qprep_inp_path = cwd / "qprep.inp"
     qprep_out_path = cwd / "qprep.out"
