@@ -116,8 +116,38 @@ class MoleculeIO:
             logger.warning(f"Hydrogens not at the end of the atom list for molecule {mol.name}. Reindexed.")
         return Molecule.from_rdkit(rdkit_mol, hydrogens_are_explicit=True)
 
+    def _rdkit_to_openff(self, rdkit_mol: Chem.Mol, hydrogens_are_explicit: bool) -> Molecule:
+        """Convert an RDKit molecule to an OpenFF Molecule with stereochemistry handling.
+
+        Args:
+            rdkit_mol: the RDKit molecule to convert.
+            hydrogens_are_explicit: if True, the molecule's hydrogens are treated as
+                the complete set (no implicit H will be added). If False, OpenFF may
+                add hydrogens based on valence.
+
+        Returns:
+            The converted OpenFF Molecule.
+        """
+        try:
+            return Molecule.from_rdkit(rdkit_mol, hydrogens_are_explicit=hydrogens_are_explicit)
+        except UndefinedStereochemistryError:
+            logger.warning(
+                "Undefined stereochemistry in the input file!! Will try to process the ligands anyway."
+            )
+            return Molecule.from_rdkit(
+                rdkit_mol, hydrogens_are_explicit=hydrogens_are_explicit, allow_undefined_stereo=True
+            )
+
     def _parse_mol(self, ligpath: Union[Path, str]) -> tuple[list[Molecule], list[str]]:
-        """Function to parse a .sdf file into a list of Molecule objects and their names.
+        """Parse a .sdf file into a list of Molecule objects and their names.
+
+        Loads via RDKit first to inspect the original hydrogen state, then converts
+        to OpenFF molecules with explicit control over hydrogen handling:
+        - If a molecule has explicit H in the input, they are preserved exactly
+          (hydrogens_are_explicit=True) to respect the user's protonation choices.
+        - If a molecule has no explicit H, OpenFF adds them automatically and a
+          warning is emitted since the auto-generated protonation may not match
+          the intended pH.
 
         Args:
             ligpath: path to the .sdf file to be processed.
@@ -127,22 +157,43 @@ class MoleculeIO:
         """
         if isinstance(ligpath, Path):
             ligpath = str(ligpath)
-        try:
-            mols = Molecule.from_file(ligpath)
-        except UndefinedStereochemistryError:
-            logger.warning(
-                "Undefined stereochemistry in the input file!! Will try to process the ligands anyway."
-            )
-            mols = Molecule.from_file(ligpath, allow_undefined_stereo=True)
-        except Exception as e:
-            logger.error(f"Error processing file {ligpath}: {e}")
-            return [], []
 
-        mols = [mols] if not isinstance(mols, list) else mols
-        lig_names = [mol.name if mol.name else f"lig_{idx}" for idx, mol in enumerate(mols)]
+        supplier = Chem.SDMolSupplier(ligpath, removeHs=False)
+        mols = []
+        lig_names = []
+
+        for idx, rdkit_mol in enumerate(supplier):
+            if rdkit_mol is None:
+                logger.error(f"Failed to parse molecule at index {idx} in {ligpath}")
+                continue
+
+            name = rdkit_mol.GetProp("_Name") if rdkit_mol.HasProp("_Name") else f"lig_{idx}"
+            input_h = sum(1 for a in rdkit_mol.GetAtoms() if a.GetAtomicNum() == 1)
+            has_explicit_h = input_h > 0
+
+            try:
+                off_mol = self._rdkit_to_openff(rdkit_mol, hydrogens_are_explicit=has_explicit_h)
+            except Exception as e:
+                logger.error(f"Error converting molecule '{name}' from {ligpath}: {e}")
+                continue
+
+            if not has_explicit_h:
+                loaded_h = sum(1 for a in off_mol.atoms if a.atomic_number == 1)
+                if loaded_h > 0:
+                    logger.warning(
+                        f"Molecule '{name}': {loaded_h} hydrogen atoms were automatically added "
+                        f"(input had none). Auto-generated hydrogens may not reflect the correct "
+                        f"protonation state for your target pH. Consider preparing your molecules "
+                        f"with explicit hydrogens before running qparams."
+                    )
+
+            off_mol.name = name
+            mols.append(off_mol)
+            lig_names.append(name)
+
         if self._reindex_hydrogens:
             mols = [self._force_H_reindexing(mol) for mol in mols]
-        for mol, name in zip(mols, lig_names):  # update name property
+        for mol, name in zip(mols, lig_names):
             mol.name = name
         return mols, lig_names
 
