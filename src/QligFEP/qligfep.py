@@ -10,7 +10,8 @@ import numpy as np
 import pandas as pd
 from sklearn.neighbors import NearestNeighbors
 
-from .CLI.utils import get_avail_restraint_methods, handle_cysbonds
+from .CLI.utils import handle_cysbonds
+from .scoring import parse_restraint_method
 from .functions import COG, kT, overlapping_pairs, sigmoid
 from .IO import get_force_field_paths, qprep_error_check, replace, run_qprep
 from .logger import logger
@@ -489,23 +490,13 @@ class QligFEP:
         Returns:
             list: list of overlapping atoms.
         """
-        pattern = r"_(\d+\.?\d*)"  # check for the optional atom max distance
-        match = re.search(pattern, restraint_method)
-        if match:
-            atom_max_distance = float(match.group(1))
-            restraint_method = re.sub(pattern, "", restraint_method)
-        else:
-            atom_max_distance = 0.95
-
-        avail_methods = get_avail_restraint_methods()
-        if restraint_method not in avail_methods:
-            raise ValueError(f"Method {restraint_method} not recognized. Please use one of {avail_methods}")
-
         pdbfile = writedir + f"/inputfiles/{self.lig1}_{self.lig2}.pdb"
         if restraint_method == "overlap":
             reslist = ["LIG", "LID"]
             torestraint_list = overlapping_pairs(pdbfile, reslist)
         else:
+            parsed = parse_restraint_method(restraint_method)
+            atom_max_distance = parsed.pop("kartograf_max_atom_distance", 0.95)
             parent_write_dir = Path(writedir).parent
 
             if self.system == "protein":  # In this case order of elements in PDB file is: prot, LIG, LID, HOH
@@ -533,18 +524,8 @@ class QligFEP:
             else:
                 logger.debug(f'Loading sdf for restraint calculation:\nlig1:"{lig1_path}"\nlig2"{lig2_path}"')
                 rsetter = RestraintSetter(lig1_path, lig2_path, kartograf_max_atom_distance=atom_max_distance)
-                if restraint_method == "kartograf":
-                    restraints = rsetter.set_restraints(kartograf_native=True)
-                else:
-                    atom_compare_method, permissiveness_lvl = restraint_method.split("_")
-                    if permissiveness_lvl == "p":
-                        params = {"strict_surround": False}
-                    elif permissiveness_lvl == "ls":
-                        params = {"strict_surround": True, "ignore_surround_atom_type": True}
-                    elif permissiveness_lvl == "strict":
-                        params = {"strict_surround": True, "ignore_surround_atom_type": False}
-                    restraints = rsetter.set_restraints(atom_compare_method=atom_compare_method, **params)
-                    logger.debug(f"Restraints set using {restraint_method} method. Parameters: {params}")
+                restraints = rsetter.set_restraints(**parsed)
+                logger.debug(f"Restraints set using {restraint_method} method. Parameters: {parsed}")
                 if strict_check:  # Good to check in case sdf in directory doesn't belong to the structure
                     rdLig1 = rsetter.molA.to_rdkit()
                     rdLig2 = rsetter.molB.to_rdkit()
