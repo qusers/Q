@@ -85,11 +85,18 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             sys_dir.mkdir()
 
     if args.json_map is None:  # Try to load a json file from cwd
-        json_files = list(cwd.glob("*.json"))
-        if len(json_files) == 1:
-            args.json_map = json_files[0]
+        mapping_json = cwd / "mapping.json"
+        lomap_json = cwd / "lomap.json"
+        if mapping_json.exists():
+            args.json_map = mapping_json
+        elif lomap_json.exists():
+            args.json_map = lomap_json
         else:
-            raise FileNotFoundError("No QmapFEP json file found in the current directory")
+            json_files = list(cwd.glob("*.json"))
+            if len(json_files) == 1:
+                args.json_map = json_files[0]
+            else:
+                raise FileNotFoundError("No mapping json file found in the current directory")
 
     lig_pairs = ligpairs_from_json(args.json_map)
     for system, sys_dir in zip(systems, sys_directories):
