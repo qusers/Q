@@ -93,7 +93,7 @@ class RestraintScorer:
         if self._kartograf_native:
             self._kartograf_scorer = MappingVolumeRatioScorer()
 
-    def __call__(self, mapping: AtomMapping, *args, **kwargs) -> float:
+    def __call__(self, mapping: AtomMapping) -> float:
         if self._kartograf_native:
             return self._kartograf_scorer(mapping)
 
