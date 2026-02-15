@@ -36,6 +36,7 @@ class KonnektorWrap:
         restraint_method: str = "heavyatom_p",
         processes: int = 1,
         verbose: str = "info",
+        central_ligand: Optional[str] = None,
     ):
         self.inp = inp
         self.network_type = network
@@ -43,6 +44,7 @@ class KonnektorWrap:
         self.restraint_method = restraint_method
         self.processes = processes
         self.verbose = verbose
+        self.central_ligand = central_ligand
         self.nodes = {}
 
         self.out = self._parse_output(out)
@@ -199,7 +201,27 @@ class KonnektorWrap:
 
         components = self._load_components()
         logger.info(f"Generating {self.network_type} network for {len(components)} ligands...")
-        network = generator.generate_ligand_network(components)
+
+        # Resolve central ligand for star networks
+        gen_kwargs = {}
+        if self.central_ligand is not None:
+            if self.network_type != "star":
+                logger.warning(f"--central_ligand is only used with star networks, ignoring for '{self.network_type}'.")
+            else:
+                central_comp = None
+                for comp in components:
+                    if comp.name == self.central_ligand:
+                        central_comp = comp
+                        break
+                if central_comp is None:
+                    available = [c.name for c in components]
+                    raise ValueError(
+                        f"Central ligand '{self.central_ligand}' not found. Available: {available}"
+                    )
+                gen_kwargs["central_component"] = central_comp
+                logger.info(f"Using '{self.central_ligand}' as central node for star network.")
+
+        network = generator.generate_ligand_network(components, **gen_kwargs)
 
         result = self._network_to_dict(network)
 
@@ -242,6 +264,10 @@ def parse_arguments() -> argparse.Namespace:
         "-v", "--verbose", type=str, default="info",
         help="Verbosity level. Default: info.",
     )
+    parser.add_argument(
+        "-cl", "--central_ligand", type=str, default=None,
+        help="Central ligand name for star networks. Must match a molecule name in the input SDF.",
+    )
     return parser.parse_args()
 
 
@@ -255,6 +281,7 @@ def main(args):
         restraint_method=args.restraint_method,
         processes=args.processes,
         verbose=args.verbose,
+        central_ligand=args.central_ligand,
     )
     kw.run()
 
