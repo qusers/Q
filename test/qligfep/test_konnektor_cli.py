@@ -99,6 +99,30 @@ class TestNetworkTopologies:
         actual_names = set(tyk2_mst_result["nodes"].keys())
         assert actual_names == expected_names
 
+    def test_star_with_central_ligand(self, tyk2_sdf):
+        """Star with central_ligand should connect all edges to that ligand."""
+        tmpdir = Path(tempfile.mkdtemp())
+        central = "ejm_31"
+        kw = KonnektorWrap(inp=str(tyk2_sdf), out=str(tmpdir), network="star", central_ligand=central)
+        result = kw.run()
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+        # Every edge should have ejm_31 as either 'from' or 'to'
+        for edge in result["edges"]:
+            assert central in (edge["from"], edge["to"]), (
+                f"Edge {edge['from']} -> {edge['to']} does not involve central ligand '{central}'"
+            )
+        # Should still have N-1 edges
+        assert len(result["edges"]) == len(result["nodes"]) - 1
+
+    def test_star_with_invalid_central_ligand_raises(self, tyk2_sdf):
+        """Passing a non-existent central ligand name should raise ValueError."""
+        tmpdir = Path(tempfile.mkdtemp())
+        kw = KonnektorWrap(inp=str(tyk2_sdf), out=str(tmpdir), network="star", central_ligand="nonexistent")
+        with pytest.raises(ValueError, match="not found"):
+            kw.run()
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
 
 class TestChargeHandling:
     def test_charged_perturbations_flagged(self, cmet_sdf):

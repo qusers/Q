@@ -62,8 +62,11 @@ qkonnektor -i tyk2_ligands.sdf
 
 To try a different topology or scoring method:
 ```bash
-# Star network
+# Star network (konnektor picks the best central node automatically)
 qkonnektor -i tyk2_ligands.sdf -n star
+
+# Star network with a specific central ligand (e.g. one with experimental data)
+qkonnektor -i tyk2_ligands.sdf -n star -cl ejm_31
 
 # MST with kartograf volume-ratio scoring instead of restraint-based scoring
 qkonnektor -i tyk2_ligands.sdf -s kartograf
@@ -71,6 +74,8 @@ qkonnektor -i tyk2_ligands.sdf -s kartograf
 # MST with a specific restraint method and custom atom distance threshold
 qkonnektor -i tyk2_ligands.sdf -rest element_strict_1.2
 ```
+
+The `-cl` / `--central_ligand` flag is only used with star networks. The name must match a molecule name from the input SDF. When omitted, konnektor selects the central node that maximizes the overall network score.
 
 This generates a `mapping.json` file inside a `tyk2_ligands/` directory. The output format is compatible with `setupFEP`, `qmapfep`, and `qligfep_analyze`.
 
