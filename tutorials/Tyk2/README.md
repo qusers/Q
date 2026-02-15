@@ -33,29 +33,74 @@ We then need to generate the ligand parameter, library, and pdb files. The defau
 ```bash
 qparams -i tyk2_ligands.sdf -p 4
 ```
-Create your perturbation network using lomap:
+Create your perturbation network. You can use either `qlomap` (LOMAP) or `qkonnektor` (konnektor) for this step.
+
+### Option A: Using qlomap
+
 ```bash
 qlomap -i tyk2_ligands.sdf -exp r_exp_dg
 ```
 `-exp r_exp_dg` reads the experimental dG from the `r_exp_dg` SDF property and stores each edge's experimental ΔΔG as `ddg_value` (the perturbation `from → to`, i.e. `dG(to) - dG(from)`) in `lomap.json`. Omit the flag if your ligands have no experimental values.
+
+This generates a `lomap.json` file inside a `tyk2_ligands/` directory.
+
+### Option B: Using qkonnektor
+
+`qkonnektor` offers more control over the network topology and scoring. It supports three network types:
+
+| Network | Flag | Description |
+|---------|------|-------------|
+| Minimal Spanning Tree | `-n mst` | Fewest edges (N-1), maximizes total score. Efficient but fragile to single edge failures. |
+| Star | `-n star` | All edges connect to a central node. Good when one ligand is a natural reference. |
+| Cyclic | `-n cyclic` | Adds redundant edges for cycle closure. More robust to individual edge failures. |
+
+By default, `qkonnektor` scores edges using the same `RestraintSetter` atom mapping that `setupFEP` uses for distance restraints. This means the network score directly reflects how well each pair's atoms can be mapped — pairs that produce more restraints are scored higher.
+
+To generate an MST network (default):
+```bash
+qkonnektor -i tyk2_ligands.sdf
+```
+
+To try a different topology or scoring method:
+```bash
+# Star network
+qkonnektor -i tyk2_ligands.sdf -n star
+
+# MST with kartograf volume-ratio scoring instead of restraint-based scoring
+qkonnektor -i tyk2_ligands.sdf -s kartograf
+
+# MST with a specific restraint method and custom atom distance threshold
+qkonnektor -i tyk2_ligands.sdf -rest element_strict_1.2
+```
+
+This generates a `mapping.json` file inside a `tyk2_ligands/` directory. The output format is compatible with `setupFEP`, `qmapfep`, and `qligfep_analyze`.
+
+### Copy files to setupFEP
+
 Now, let's create a directory for your perturbations and copy the files we generated to it:
 ```bash
 cd ../
-# Copy the files ligand files:
+# Copy the ligand files:
 cp ligprep/*.pdb ligprep/*.prm ligprep/*.lib setupFEP/
-# Copy the separate .sdf files and the lomap.json file:
+# Copy the separate .sdf files and the mapping json file:
+# If you used qlomap:
 cp ligprep/tyk2_ligands/*.sdf ligprep/tyk2_ligands/lomap.json setupFEP/
+# If you used qkonnektor:
+# cp ligprep/tyk2_ligands/*.sdf ligprep/tyk2_ligands/mapping.json setupFEP/
 ```
 
 ## Visualize the perturbation network
 
-Visualizing and interacting with the generated perturbation network from `qlomap` is possible by using the `qmapfep` program. For this, _make sure you're working locally (not on a remote machine)_.
+Visualizing and interacting with the generated perturbation network is possible using the `qmapfep` program. This works with the output from either `qlomap` or `qkonnektor`. Make sure you're _working locally (not on a remote machine)_.
 
-Now that the `lomap.json` was created under `tyk2_ligands/lomap.json`, let's use both the input `.sdf` file and the generated mapping `.json` file to crate the visualizer. From the main Tyk2 directory, run:
+From the main Tyk2 directory, run (use whichever json file you generated):
 
 ```bash
 cd ../  # Go back to tutorials/Tyk2 directory
+# With lomap.json:
 qmapfep -i ligprep/tyk2_ligands.sdf -wd . -l ligprep/tyk2_ligands/lomap.json
+# With mapping.json:
+# qmapfep -i ligprep/tyk2_ligands.sdf -wd . -l ligprep/tyk2_ligands/mapping.json
 ```
 
 A new file is created: `qmapfep.html`. To visualize the perturbation network, open the `qmapfep.html` file in your browser and upload the generated `ligprep/tyk2_ligands.json` file through the button on the top right corner of the screen. Upon loading the file, the perturbation network will be available as an interactive graph:
@@ -101,7 +146,7 @@ Done! No we move both the protein and the water `.pdb` files to the same directo
 ```bash
 cp protein.pdb water.pdb ../
 ```
-The next step is creating the job submission files to run the FEP calculations on HPC systems. This can be done per-edge by using the `qligfep` command line program, or done for all edges within your perturbation network by using the `setupFEP` command and specifying the file with your perturbation network - in this case, `lomap.json`.
+The next step is creating the job submission files to run the FEP calculations on HPC systems. This can be done per-edge by using the `qligfep` command line program, or done for all edges within your perturbation network by using the `setupFEP` command and specifying the file with your perturbation network.
 
 ## Setup FEP
 
@@ -110,11 +155,19 @@ For preparing the files, navigate to the setupFEP directory and run:
 cd ../  # Go back to setupFEP directory if you're still in setupFEP/amber
 setupFEP -FF AMBER14sb -r 25 -ts 2fs -j lomap.json -clean dcd -rs 42 -c SNELLIUS
 ```
+
+If you used `qkonnektor` instead of `qlomap`, pass the `mapping.json` file:
+```bash
+setupFEP -FF AMBER14sb -r 25 -ts 2fs -j mapping.json -clean dcd -rs 42 -c SNELLIUS
+```
+
+**Note**: If you omit the `-j` flag, `setupFEP` will auto-discover JSON files in the current directory, checking for `mapping.json` first, then `lomap.json`, then any single `.json` file.
+
 The explanation of the flags is as follows:
 - `-FF AMBER14sb`: The forcefield to be used in the calculations;
 - `-r 25`: The radius of the water sphere;
 - `-ts 2fs`: The timestep for the simulation;
-- `-j lomap.json`: The perturbation network generated by lomap;
+- `-j lomap.json`: The perturbation network (from `qlomap` or `qkonnektor`);
 - `-clean dcd`: The suffix of the files to be removed within the job run. Removing the `.dcd` files will save a lot of space, since they are the largest files generated by the simulation;
 - `-rs 42`: The random seed for the simulation.
 - `-c SNELLIUS`: The cluster for which the job submission files will be generated. This takes configurations from the `CLUSTER_DICT` global variable within the [settings.py](../../src/QligFEP/settings/settings.py#L139-L150) module.
