@@ -9190,7 +9190,12 @@ subroutine nonbond_monitor
               r6 = 1._8/r6
             end if
           endif
-          Vel  = qi*qj*r
+          if (softcore_method == SC_BEUTLER_COUL .and. do_sc .and. &
+              sc_lookup(sc_1,sc_2,istate) > 0) then
+            Vel = qi*qj / (r6_hc+sc_lookup(sc_1,sc_2,istate))**(1.0_8/6.0_8)
+          else
+            Vel = qi*qj*r
+          end if
           if(ivdw_rule==1) then !geometric comb. rule
             Vvdw = aLJi*aLJj*r6*r6 - bLJi*bLJj*r6
           else !arithmetic
@@ -9699,9 +9704,9 @@ subroutine nonbon2_qq
       r12  = r6*r6
 
       ! calculate Vel, V_a, V_b and dv
-      Vel  = qi*qj*r*el_scale
-      if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
       if (qvdw_flag .and. jq /= 0 .and. iLJ .eq. 2 ) then
+        Vel  = qi*qj*r*el_scale
+        if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
         V_a = aLJ*exp(-bLJ/r)
         V_b = 0.0
         dv  = r2*( -Vel -bLJ*V_a/r )*EQ(istate)%lambda
@@ -9710,7 +9715,16 @@ subroutine nonbon2_qq
         aLJ  = aLJ*aLJ*aLJ
         V_a  = bLJ*aLJ*aLJ*r12
         V_b  = 2.0*bLJ*aLJ*r6
-        dv  = r2*( -Vel -(12.*V_a -6.*V_b)*r6*r6_hc )*EQ(istate)%lambda
+        if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,jq+natyps,istate) > 0) then
+          Vel = qi*qj*el_scale / (r6_hc+sc_lookup(iq,jq+natyps,istate))**(1.0_8/6.0_8)
+          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+          dv  = r2*( -Vel -(12.*V_a -6.*V_b) )*(r6*r6_hc)*EQ(istate)%lambda
+        else
+          Vel  = qi*qj*r*el_scale
+          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+          dv  = r2*( -Vel -(12.*V_a -6.*V_b)*r6*r6_hc )*EQ(istate)%lambda
+        end if
       endif
 
       ! update forces
@@ -9802,9 +9816,9 @@ subroutine nonbon2_qq_lib_charges
       r    = sqrt ( r2 )
 
       ! calculate Vel, V_a, V_b and dv
-      Vel  = qi*qj*r*el_scale
-      if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
       if (qvdw_flag .and. jq /= 0 .and. iLJ .eq. 2 ) then
+        Vel  = qi*qj*r*el_scale
+        if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
         V_a = aLJ*exp(-bLJ/r)
         V_b = qbvdw(iaci,1)*qbvdw(iacj,1)*r6
         dv  = r2*( -Vel -bLJ*V_a/r +6.*V_b )*EQ(istate)%lambda
@@ -9818,7 +9832,16 @@ subroutine nonbon2_qq_lib_charges
         aLJ  = aLJ*aLJ*aLJ
         V_a  = bLJ*aLJ*aLJ*r12
         V_b  = 2.0*bLJ*aLJ*r6
-        dv  = r2*( -Vel -(12.*V_a -6.*V_b)*r6*r6_hc )*EQ(istate)%lambda
+        if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,jq+natyps,istate) > 0) then
+          Vel = qi*qj*el_scale / (r6_hc+sc_lookup(iq,jq+natyps,istate))**(1.0_8/6.0_8)
+          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+          dv  = r2*( -Vel -(12.*V_a -6.*V_b) )*(r6*r6_hc)*EQ(istate)%lambda
+        else
+          Vel  = qi*qj*r*el_scale
+          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+          dv  = r2*( -Vel -(12.*V_a -6.*V_b)*r6*r6_hc )*EQ(istate)%lambda
+        end if
       endif
 
       ! update forces
@@ -9910,11 +9933,18 @@ subroutine nonbon2_qp
       aLJ  = aLJ*aLJ*aLJ
 
       ! calculate qi, Vel, V_a, V_b and dv
-      Vel  = qcrg(iq,istate)*crg(j)*r
-      if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
       V_a  = bLJ*aLJ*aLJ*r6*r6
       V_b  = 2.0*bLJ*aLJ*r6
-      dv   = r2*( -Vel -(12.*V_a -6.*V_b)*r6*r6_hc )*EQ(istate)%lambda   !softcore r6*r6_hc is (r^6/(r^6+alpha))
+      if (softcore_method == SC_BEUTLER_COUL .and. &
+          sc_lookup(iq,iacj,istate) > 0) then
+        Vel = qcrg(iq,istate)*crg(j) / (r6_hc+sc_lookup(iq,iacj,istate))**(1.0_8/6.0_8)
+        if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+        dv  = r2*( -Vel -(12.*V_a -6.*V_b) )*(r6*r6_hc)*EQ(istate)%lambda
+      else
+        Vel  = qcrg(iq,istate)*crg(j)*r
+        if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+        dv   = r2*( -Vel -(12.*V_a -6.*V_b)*r6*r6_hc )*EQ(istate)%lambda
+      end if
 
       ! update forces
       d(i3+1) = d(i3+1) - dv*dx1
@@ -10015,11 +10045,18 @@ subroutine nonbon2_qp_box
       aLJ  = aLJ*aLJ*aLJ
 
       ! calculate qi, Vel, V_a, V_b and dv
-      Vel  = qcrg(iq,istate)*crg(j)*r
-      if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
       V_a  = bLJ*aLJ*aLJ*r6*r6
       V_b  = 2.0*bLJ*aLJ*r6
-      dv   = r2*( -Vel -(12.*V_a -6.*V_b)*r6*r6_hc )*EQ(istate)%lambda
+      if (softcore_method == SC_BEUTLER_COUL .and. &
+          sc_lookup(iq,iacj,istate) > 0) then
+        Vel = qcrg(iq,istate)*crg(j) / (r6_hc+sc_lookup(iq,iacj,istate))**(1.0_8/6.0_8)
+        if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+        dv  = r2*( -Vel -(12.*V_a -6.*V_b) )*(r6*r6_hc)*EQ(istate)%lambda
+      else
+        Vel  = qcrg(iq,istate)*crg(j)*r
+        if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+        dv   = r2*( -Vel -(12.*V_a -6.*V_b)*r6*r6_hc )*EQ(istate)%lambda
+      end if
 
       ! update forces
       d(i3+1) = d(i3+1) - dv*dx1
@@ -10148,12 +10185,28 @@ subroutine nonbon2_qw
 
 
         ! calculate qi, Vel, V_a, V_b and dv
-        VelO = crg_ow*qcrg(iq,istate)*rO
-        VelH1 = crg_hw*qcrg(iq,istate)*rH1
-        VelH2 = crg_hw*qcrg(iq,istate)*rH2
-        dvO  = dvO  + r2O *( -VelO  -(12.*V_aO  -6.*V_bO )*r6O/r6O_hc)*EQ(istate)%lambda
-        dvH1 = dvH1 + r2H1*( -VelH1 -(12.*V_aH1 -6.*V_bH1)*r6H1/r6H1_hc)*EQ(istate)%lambda
-        dvH2 = dvH2 + r2H2*( -VelH2 -(12.*V_aH2 -6.*V_bH2)*r6H2/r6H2_hc)*EQ(istate)%lambda
+        ! Oxygen
+        if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,iac_ow,istate) > 0) then
+          VelO = crg_ow*qcrg(iq,istate) * r6O**(1.0_8/6.0_8)
+          dvO  = dvO  + r2O *( -VelO  -(12.*V_aO  -6.*V_bO ))*(r6O/r6O_hc)*EQ(istate)%lambda
+        else
+          VelO = crg_ow*qcrg(iq,istate)*rO
+          dvO  = dvO  + r2O *( -VelO  -(12.*V_aO  -6.*V_bO )*r6O/r6O_hc)*EQ(istate)%lambda
+        end if
+        ! Hydrogens
+        if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,iac_hw,istate) > 0) then
+          VelH1 = crg_hw*qcrg(iq,istate) * r6H1**(1.0_8/6.0_8)
+          VelH2 = crg_hw*qcrg(iq,istate) * r6H2**(1.0_8/6.0_8)
+          dvH1 = dvH1 + r2H1*( -VelH1 -(12.*V_aH1 -6.*V_bH1))*(r6H1/r6H1_hc)*EQ(istate)%lambda
+          dvH2 = dvH2 + r2H2*( -VelH2 -(12.*V_aH2 -6.*V_bH2))*(r6H2/r6H2_hc)*EQ(istate)%lambda
+        else
+          VelH1 = crg_hw*qcrg(iq,istate)*rH1
+          VelH2 = crg_hw*qcrg(iq,istate)*rH2
+          dvH1 = dvH1 + r2H1*( -VelH1 -(12.*V_aH1 -6.*V_bH1)*r6H1/r6H1_hc)*EQ(istate)%lambda
+          dvH2 = dvH2 + r2H2*( -VelH2 -(12.*V_aH2 -6.*V_bH2)*r6H2/r6H2_hc)*EQ(istate)%lambda
+        end if
         ! update q-water energies
         EQ(istate)%qw%el  = EQ(istate)%qw%el + VelO + VelH1 + VelH2
         EQ(istate)%qw%vdw = EQ(istate)%qw%vdw + V_aO + V_aH1 + V_aH2 - V_bO - V_bH1 - V_bH2
@@ -10306,13 +10359,28 @@ subroutine nonbon2_qw_box
 
 
         ! calculate qi, Vel, V_a, V_b and dv
-        VelO = crg_ow*qcrg(iq,istate)*rO
-        VelH1 = crg_hw*qcrg(iq,istate)*rH1
-        VelH2 = crg_hw*qcrg(iq,istate)*rH2
-
-        dvO  = dvO  + r2O *( -VelO  -(12.*V_aO  -6.*V_bO )*r6O/r6O_hc)*EQ(istate)%lambda    !r6O/r6O_hc softcore
-        dvH1 = dvH1 + r2H1*( -VelH1 -(12.*V_aH1 -6.*V_bH1)*r6H1/r6H1_hc)*EQ(istate)%lambda  !r6H1/r6H1_hc softcore
-        dvH2 = dvH2 + r2H2*( -VelH2 -(12.*V_aH2 -6.*V_bH2)*r6H2/r6H2_hc)*EQ(istate)%lambda  !r6H2/r6H2_hc softcore
+        ! Oxygen
+        if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,iac_ow,istate) > 0) then
+          VelO = crg_ow*qcrg(iq,istate) * r6O**(1.0_8/6.0_8)
+          dvO  = dvO  + r2O *( -VelO  -(12.*V_aO  -6.*V_bO ))*(r6O/r6O_hc)*EQ(istate)%lambda
+        else
+          VelO = crg_ow*qcrg(iq,istate)*rO
+          dvO  = dvO  + r2O *( -VelO  -(12.*V_aO  -6.*V_bO )*r6O/r6O_hc)*EQ(istate)%lambda
+        end if
+        ! Hydrogens
+        if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,iac_hw,istate) > 0) then
+          VelH1 = crg_hw*qcrg(iq,istate) * r6H1**(1.0_8/6.0_8)
+          VelH2 = crg_hw*qcrg(iq,istate) * r6H2**(1.0_8/6.0_8)
+          dvH1 = dvH1 + r2H1*( -VelH1 -(12.*V_aH1 -6.*V_bH1))*(r6H1/r6H1_hc)*EQ(istate)%lambda
+          dvH2 = dvH2 + r2H2*( -VelH2 -(12.*V_aH2 -6.*V_bH2))*(r6H2/r6H2_hc)*EQ(istate)%lambda
+        else
+          VelH1 = crg_hw*qcrg(iq,istate)*rH1
+          VelH2 = crg_hw*qcrg(iq,istate)*rH2
+          dvH1 = dvH1 + r2H1*( -VelH1 -(12.*V_aH1 -6.*V_bH1)*r6H1/r6H1_hc)*EQ(istate)%lambda
+          dvH2 = dvH2 + r2H2*( -VelH2 -(12.*V_aH2 -6.*V_bH2)*r6H2/r6H2_hc)*EQ(istate)%lambda
+        end if
         ! update q-water energies
         EQ(istate)%qw%el  = EQ(istate)%qw%el + VelO + VelH1 + VelH2
         EQ(istate)%qw%vdw = EQ(istate)%qw%vdw + V_aO + V_aH1 + V_aH2 - V_bO - V_bH1 - V_bH2
@@ -11079,16 +11147,24 @@ subroutine nonbond_qq
       r    = sqrt ( r2 )
 
       ! calculate Vel, V_a, V_b and dv
-      Vel  = qi*qj*r*el_scale
-      if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
       if (qvdw_flag .and. jq /= 0 .and. iLJ .eq. 2 ) then
+        Vel  = qi*qj*r*el_scale
         V_a = aLJ*exp(-bLJ/r)
         V_b = 0.0
         dv  = r2*( -Vel -bLJ*V_a/r )*EQ(istate)%lambda
       else
         V_a = aLJ*r12
         V_b = bLJ*r6
-        dv  = r2*( -Vel - (12.*V_a - 6.*V_b)*r6_hc*r6 )*EQ(istate)%lambda
+        if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,natyps+jq,istate) > 0) then
+          Vel = qi*qj*el_scale / (r6_hc+sc_lookup(iq,natyps+jq,istate))**(1.0_8/6.0_8)
+          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+          dv  = r2*( -Vel -(12.*V_a -6.*V_b) )*(r6_hc*r6)*EQ(istate)%lambda
+        else
+          Vel = qi*qj*r*el_scale
+          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+          dv  = r2*( -Vel -(12.*V_a -6.*V_b)*r6_hc*r6 )*EQ(istate)%lambda
+        end if
       endif
 
       ! update forces
@@ -11186,16 +11262,24 @@ subroutine nonbond_qq_lib_charges
       r    = sqrt ( r2 )
 
       ! calculate Vel, V_a, V_b and dv
-      Vel  = qi*qj*r*el_scale
-      if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
       if (qvdw_flag .and. jq /= 0 .and. iLJ .eq. 2 ) then
+        Vel  = qi*qj*r*el_scale
         V_a = aLJ*exp(-bLJ/r)
         V_b = 0.0
         dv  = r2*( -Vel -bLJ*V_a/r )*EQ(istate)%lambda
       else
         V_a = aLJ*r12
         V_b = bLJ*r6
-        dv  = r2*( -Vel -(12.*V_a -6.*V_b)*r6_hc*r6 )*EQ(istate)%lambda
+        if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,natyps+jq,istate) > 0) then
+          Vel = qi*qj*el_scale / (r6_hc+sc_lookup(iq,natyps+jq,istate))**(1.0_8/6.0_8)
+          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+          dv  = r2*( -Vel -(12.*V_a -6.*V_b) )*(r6_hc*r6)*EQ(istate)%lambda
+        else
+          Vel = qi*qj*r*el_scale
+          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+          dv  = r2*( -Vel -(12.*V_a -6.*V_b)*r6_hc*r6 )*EQ(istate)%lambda
+        end if
       endif
 
       ! update forces
@@ -11423,13 +11507,19 @@ subroutine nonbond_qp_qvdw
       bLJ  = qbvdw(iaci,qLJ)*iaclib(iacj)%bvdw(iLJ)
 
       ! calculate qi, Vel, V_a, V_b and dv
-      Vel  = qcrg(iq,istate)*crg(j)*r
-      if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
-
       r6_sc = r6 + sc_lookup(iq,iacj,istate) !sc_lookup is softcore fix MPA
       V_a  = aLJ/(r6_sc*r6_sc)
       V_b  = bLJ/(r6_sc)
-      dv   = r2*( -Vel -(12.*V_a -6.*V_b)*(r6/r6_sc) )*EQ(istate)%lambda  !r6 is r^6 not 1/r^6, r6_sc is r^6+sc not 1/(r^6+sc)
+      if (softcore_method == SC_BEUTLER_COUL .and. &
+          sc_lookup(iq,iacj,istate) > 0) then
+        Vel = qcrg(iq,istate)*crg(j) / r6_sc**(1.0_8/6.0_8)
+        if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+        dv  = r2*( -Vel -(12.*V_a -6.*V_b) )*(r6/r6_sc)*EQ(istate)%lambda
+      else
+        Vel = qcrg(iq,istate)*crg(j)*r
+        if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+        dv  = r2*( -Vel -(12.*V_a -6.*V_b)*(r6/r6_sc) )*EQ(istate)%lambda
+      end if
 
       ! update forces
       d(i3+1) = d(i3+1) - dv*dx1
@@ -11516,14 +11606,19 @@ subroutine nonbond_qp_qvdw_box
       bLJ  = qbvdw(iaci,qLJ)*iaclib(iacj)%bvdw(iLJ)
 
       ! calculate qi, Vel, V_a, V_b and dv
-      Vel  = qcrg(iq,istate)*crg(j)*r
-      if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
-
-
       r6_sc = r6 + sc_lookup(iq,iacj,istate)        !sc_lookup is softcore fix MPA
       V_a  = aLJ/(r6_sc*r6_sc)
-      V_b  = bLJ/r6_sc         !sc_lookup is softcore fix MPA
-      dv   = r2*( -Vel - ( (12.*V_a - 6.*V_b)*(r6/r6_sc) ) )*EQ(istate)%lambda  !r6 is r^6 not 1/r^6, r6_sc is r^6+sc not 1/(r^6+sc)
+      V_b  = bLJ/r6_sc
+      if (softcore_method == SC_BEUTLER_COUL .and. &
+          sc_lookup(iq,iacj,istate) > 0) then
+        Vel = qcrg(iq,istate)*crg(j) / r6_sc**(1.0_8/6.0_8)
+        if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+        dv  = r2*( -Vel -(12.*V_a -6.*V_b) )*(r6/r6_sc)*EQ(istate)%lambda
+      else
+        Vel = qcrg(iq,istate)*crg(j)*r
+        if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+        dv  = r2*( -Vel -( (12.*V_a -6.*V_b)*(r6/r6_sc) ) )*EQ(istate)%lambda
+      end if
 
       ! update forces
       d(i3+1) = d(i3+1) - dv*dx1
@@ -11621,19 +11716,22 @@ subroutine nonbond_qw_spc
           V_b  = bLJ*bO(iLJ)/(r6O_sc)
         end if
         ! calculate qi, Vel, V_a, V_b and dv
-        VelO = crg_ow*qcrg(iq,istate)*rO
+        if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,iac_ow,istate) > 0) then
+          VelO = crg_ow*qcrg(iq,istate) / r6O_sc**(1.0_8/6.0_8)
+          dvO  = dvO + r2O*( -VelO -(12.*V_a -6.*V_b) )*(r6O_hc/r6O_sc)*EQ(istate)%lambda
+        else
+          VelO = crg_ow*qcrg(iq,istate)*rO
+          dvO  = dvO + r2O*( -VelO -( (12.*V_a -6.*V_b)*(r6O_hc/r6O_sc) ))*EQ(istate)%lambda
+        end if
         VelH1 = crg_hw*qcrg(iq,istate)*rH1
         VelH2 = crg_hw*qcrg(iq,istate)*rH2
-        dvO  = dvO  + r2O*( -VelO -( (12.*V_a - 6.*V_b)*(r6O_hc/r6O_sc) ))*EQ(istate)%lambda
         dvH1 = dvH1 - r2H1*VelH1*EQ(istate)%lambda
         dvH2 = dvH2 - r2H2*VelH2*EQ(istate)%lambda
         ! update q-water energies
         EQ(istate)%qw%el  = EQ(istate)%qw%el + VelO + VelH1 + VelH2
         EQ(istate)%qw%vdw = EQ(istate)%qw%vdw + V_a - V_b
       end do !istate
-
-      ! if qvdw_flag is true, then r6O is not the usual 1/rO^6, but rather rO^6. be careful!!! MPA
-
 
       ! update forces on Q-atom
       d(3*i-2) = d(3*i-2) - dvO*dxO - dvH1*dxH1 - dvH2*dxH2
@@ -11755,10 +11853,16 @@ subroutine nonbond_qw_spc_box
           V_b  = bLJ*bO(iLJ)/r6O_sc
         end if
         ! calculate qi, Vel, V_a, V_b and dv
-        VelO = crg_ow*qcrg(iq,istate)*rO
+        if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,iac_ow,istate) > 0) then
+          VelO = crg_ow*qcrg(iq,istate) / r6O_sc**(1.0_8/6.0_8)
+          dvO  = dvO + r2O*( -VelO -(12.*V_a -6.*V_b) )*(r6O_hc/r6O_sc)*EQ(istate)%lambda
+        else
+          VelO = crg_ow*qcrg(iq,istate)*rO
+          dvO  = dvO + r2O*( -VelO -( (12.*V_a -6.*V_b)*(r6O_hc/r6O_sc) ))*EQ(istate)%lambda
+        end if
         VelH1 = crg_hw*qcrg(iq,istate)*rH1
         VelH2 = crg_hw*qcrg(iq,istate)*rH2
-        dvO  = dvO  + r2O*( -VelO -( (12.*V_a - 6.*V_b)*(r6O_hc/r6O_sc) ))*EQ(istate)%lambda
         dvH1 = dvH1 - r2H1*VelH1*EQ(istate)%lambda
         dvH2 = dvH2 - r2H2*VelH2*EQ(istate)%lambda
         ! update q-water energies
@@ -11883,12 +11987,30 @@ subroutine nonbond_qw_3atom
           V_b3 = qbvdw(qiac(iq,istate),1)*b3(iLJ3)/(r6_3_sc)
         end if
         ! calculate  Vel, V_a, V_b and dv
-        Vel1 = crg1*qcrg(iq,istate)*r_1
-        Vel2 = crg2*qcrg(iq,istate)*r_2
-        Vel3 = crg3*qcrg(iq,istate)*r_3
-        dv1 = dv1 + r2_1*(-Vel1- ((12.*V_a1-6.*V_b1)*(r6_1_hc/r6_1_sc)) )*EQ(istate)%lambda
-        dv2 = dv2 + r2_2*(-Vel2- ((12.*V_a2-6.*V_b2)*(r6_2_hc/r6_2_sc)) )*EQ(istate)%lambda
-        dv3 = dv3 + r2_3*(-Vel3- ((12.*V_a3-6.*V_b3)*(r6_3_hc/r6_3_sc)) )*EQ(istate)%lambda
+        if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,iac1,istate) > 0) then
+          Vel1 = crg1*qcrg(iq,istate) / r6_1_sc**(1.0_8/6.0_8)
+          dv1 = dv1 + r2_1*(-Vel1 -(12.*V_a1-6.*V_b1))*(r6_1_hc/r6_1_sc)*EQ(istate)%lambda
+        else
+          Vel1 = crg1*qcrg(iq,istate)*r_1
+          dv1 = dv1 + r2_1*(-Vel1- ((12.*V_a1-6.*V_b1)*(r6_1_hc/r6_1_sc)) )*EQ(istate)%lambda
+        end if
+        if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,iac2,istate) > 0) then
+          Vel2 = crg2*qcrg(iq,istate) / r6_2_sc**(1.0_8/6.0_8)
+          dv2 = dv2 + r2_2*(-Vel2 -(12.*V_a2-6.*V_b2))*(r6_2_hc/r6_2_sc)*EQ(istate)%lambda
+        else
+          Vel2 = crg2*qcrg(iq,istate)*r_2
+          dv2 = dv2 + r2_2*(-Vel2- ((12.*V_a2-6.*V_b2)*(r6_2_hc/r6_2_sc)) )*EQ(istate)%lambda
+        end if
+        if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,iac3,istate) > 0) then
+          Vel3 = crg3*qcrg(iq,istate) / r6_3_sc**(1.0_8/6.0_8)
+          dv3 = dv3 + r2_3*(-Vel3 -(12.*V_a3-6.*V_b3))*(r6_3_hc/r6_3_sc)*EQ(istate)%lambda
+        else
+          Vel3 = crg3*qcrg(iq,istate)*r_3
+          dv3 = dv3 + r2_3*(-Vel3- ((12.*V_a3-6.*V_b3)*(r6_3_hc/r6_3_sc)) )*EQ(istate)%lambda
+        end if
         ! update q-water energies
         EQ(istate)%qw%el  = EQ(istate)%qw%el + Vel1 + Vel2 + Vel3
         EQ(istate)%qw%vdw = EQ(istate)%qw%vdw + V_a1 - V_b1 &
@@ -12032,12 +12154,30 @@ subroutine nonbond_qw_3atom_box
 
         end if
         ! calculate  Vel, V_a, V_b and dv
-        Vel1 = crg1*qcrg(iq,istate)*r_1
-        Vel2 = crg2*qcrg(iq,istate)*r_2
-        Vel3 = crg3*qcrg(iq,istate)*r_3
-        dv1 = dv1 + r2_1*(-Vel1- ((12.*V_a1-6.*V_b1)*(r6_1_hc/r6_1_sc)) )*EQ(istate)%lambda
-        dv2 = dv2 + r2_2*(-Vel2- ((12.*V_a2-6.*V_b2)*(r6_2_hc/r6_2_sc)) )*EQ(istate)%lambda
-        dv3 = dv3 + r2_3*(-Vel3- ((12.*V_a3-6.*V_b3)*(r6_3_hc/r6_3_sc)) )*EQ(istate)%lambda
+        if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,iac1,istate) > 0) then
+          Vel1 = crg1*qcrg(iq,istate) / r6_1_sc**(1.0_8/6.0_8)
+          dv1 = dv1 + r2_1*(-Vel1 -(12.*V_a1-6.*V_b1))*(r6_1_hc/r6_1_sc)*EQ(istate)%lambda
+        else
+          Vel1 = crg1*qcrg(iq,istate)*r_1
+          dv1 = dv1 + r2_1*(-Vel1- ((12.*V_a1-6.*V_b1)*(r6_1_hc/r6_1_sc)) )*EQ(istate)%lambda
+        end if
+        if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,iac2,istate) > 0) then
+          Vel2 = crg2*qcrg(iq,istate) / r6_2_sc**(1.0_8/6.0_8)
+          dv2 = dv2 + r2_2*(-Vel2 -(12.*V_a2-6.*V_b2))*(r6_2_hc/r6_2_sc)*EQ(istate)%lambda
+        else
+          Vel2 = crg2*qcrg(iq,istate)*r_2
+          dv2 = dv2 + r2_2*(-Vel2- ((12.*V_a2-6.*V_b2)*(r6_2_hc/r6_2_sc)) )*EQ(istate)%lambda
+        end if
+        if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,iac3,istate) > 0) then
+          Vel3 = crg3*qcrg(iq,istate) / r6_3_sc**(1.0_8/6.0_8)
+          dv3 = dv3 + r2_3*(-Vel3 -(12.*V_a3-6.*V_b3))*(r6_3_hc/r6_3_sc)*EQ(istate)%lambda
+        else
+          Vel3 = crg3*qcrg(iq,istate)*r_3
+          dv3 = dv3 + r2_3*(-Vel3- ((12.*V_a3-6.*V_b3)*(r6_3_hc/r6_3_sc)) )*EQ(istate)%lambda
+        end if
         ! update q-water energies
         EQ(istate)%qw%el  = EQ(istate)%qw%el + Vel1 + Vel2 + Vel3
         EQ(istate)%qw%vdw = EQ(istate)%qw%vdw + V_a1 - V_b1 &
