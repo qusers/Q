@@ -51,7 +51,9 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         param_dict = {}
     param_dict.update(kwargs)
     setup_logger(level=args.log.upper())
+    softcore_method = param_dict.pop("softcore_method", "standard")
     run = QligFEP(**param_dict)
+    param_dict["softcore_method"] = softcore_method
 
     writedir = run.makedir()
     inputdir = writedir + "/inputfiles"
@@ -123,7 +125,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     logger.debug("Writing FEP files")
     run.write_FEP_file(
         change_charges, change_vdw, FEP_vdw, inputdir, lig_size1, lig_size2,
-        softcore_method=param_dict.get("softcore_method", "standard"),
+        softcore_method=softcore_method,
     )
     overlapping_atoms = run.set_restraints(writedir, args.restraint_method, strict_check=True)
 
