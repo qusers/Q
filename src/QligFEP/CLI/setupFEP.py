@@ -52,6 +52,8 @@ def create_call(**kwargs):
         )
     if "protein_charge" in kwargs and kwargs["protein_charge"] is not None:
         template += " -pq {protein_charge}"
+    if "softcore_method" in kwargs and kwargs["softcore_method"] != "standard":
+        template += " -sc {softcore_method}"
     return template.format(**kwargs)
 
 
@@ -160,6 +162,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 neq_L=args.neq_L,
                 neq_schedule=args.neq_schedule,
                 protein_charge=protein_charge,
+                softcore_method=args.softcore_method,
             )
             command = create_call(**call_kwargs)
             logger.info(f"Submitting the command:\n{command}")

@@ -310,6 +310,20 @@ def parse_arguments(program: str) -> argparse.Namespace:
         help="NEQ only: lambda switching schedule. Defaults to `sigmoidal`.",
     )
     parser.add_argument(
+        "-sc",
+        "--softcore-method",
+        dest="softcore_method",
+        type=str,
+        default="standard",
+        choices=["standard", "beutler_coul", "gapsys"],
+        help=(
+            "Soft-core method for nonbonded interactions during FEP. "
+            "'standard' applies soft-core only to LJ (current default). "
+            "'beutler_coul' extends soft-core to Coulomb via a modified effective distance. "
+            "'gapsys' uses force-based linearization below a critical radius for both LJ and Coulomb."
+        ),
+    )
+    parser.add_argument(
         "-log",
         "--log-level",
         dest="log",
