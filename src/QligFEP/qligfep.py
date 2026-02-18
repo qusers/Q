@@ -314,7 +314,9 @@ class QligFEP:
                 FEP_vdw.append(line2)
         return FEP_vdw
 
-    def write_FEP_file(self, change_charges, change_vdw, FEP_vdw, writedir, lig_size1, lig_size2):
+    def write_FEP_file(
+        self, change_charges, change_vdw, FEP_vdw, writedir, lig_size1, lig_size2, softcore_method="standard"
+    ):
         lig_size1 = int(lig_size1)
         lig_size2 = int(lig_size2)
         lig_tot = lig_size1 + lig_size2
@@ -332,7 +334,10 @@ class QligFEP:
             outfile.write("!info: " + self.lig1 + " --> " + self.lig2 + "\n")
             outfile.write("[FEP]\n")
             outfile.write("states 2\n")
-            outfile.write("softcore_use_max_potential on\n\n")
+            outfile.write("softcore_use_max_potential on\n")
+            if softcore_method != "standard":
+                outfile.write(f"softcore_method {softcore_method}\n")
+            outfile.write("\n")
 
             # defining the atom order taken user given offset into account
             outfile.write("[atoms]\n")

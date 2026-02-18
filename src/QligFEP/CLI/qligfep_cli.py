@@ -43,6 +43,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "dr_force": args.dr_force,
             "random_state": args.random_state,
             "wath_ligand_only": args.wath_ligand_only,
+            "softcore_method": args.softcore_method,
         }
         if args.protein_charge is not None:
             param_dict["protein_charge"] = args.protein_charge
@@ -71,6 +72,9 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         elif k == "protein_charge":
             if v is not None:
                 command_str += f" -pq {v}"
+        elif k == "softcore_method":
+            if v != "standard":
+                command_str += f" --softcore-method {v}"
         else:
             command_str += f" --{k} {v}"
     command_str += f" --restraint_method {args.restraint_method}"
@@ -117,7 +121,10 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     run.write_qprep(inputdir)
     run.qprep(inputdir)
     logger.debug("Writing FEP files")
-    run.write_FEP_file(change_charges, change_vdw, FEP_vdw, inputdir, lig_size1, lig_size2)
+    run.write_FEP_file(
+        change_charges, change_vdw, FEP_vdw, inputdir, lig_size1, lig_size2,
+        softcore_method=param_dict.get("softcore_method", "standard"),
+    )
     overlapping_atoms = run.set_restraints(writedir, args.restraint_method, strict_check=True)
 
     # Build wall restraints for counter-ions (after qprep so top_p.pdb exists)
