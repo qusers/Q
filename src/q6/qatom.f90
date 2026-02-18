@@ -35,6 +35,11 @@ module qatom
   !       Constants
   real(8), private                        :: pi, deg2rad  !set in sub startup
 
+  ! Soft-core method identifiers
+  integer, parameter                      :: SC_STANDARD    = 0
+  integer, parameter                      :: SC_BEUTLER_COUL = 1
+  integer, parameter                      :: SC_GAPSYS      = 2
+
   !-----------------------------------------------------------------------
   !       fep/evb information
   !-----------------------------------------------------------------------
@@ -158,6 +163,15 @@ module qatom
   real(8)                                 :: sc_aq,sc_bq,sc_aj,sc_bj,alpha_max_tmp
   logical                                 :: softcore_use_max_potential
 
+  ! Soft-core method configuration
+  integer                                 :: softcore_method = SC_STANDARD
+  real(8)                                 :: gapsys_alpha_lj = 0.85_8
+  real(8)                                 :: gapsys_alpha_q  = 0.3_8
+  real(8)                                 :: gapsys_sigma_lj = 0.3_8
+  ! Gapsys linearization radii: (nqat, natyps+nqat, nstates)
+  real(8), allocatable                    :: gapsys_lj_rsc(:,:,:)
+  real(8), allocatable                    :: gapsys_q_rsc(:,:,:)
+
   !-----------------------------------------------------------------------
   !       fep/evb energies
   !-----------------------------------------------------------------------
@@ -194,11 +208,11 @@ end subroutine qatom_startup
 
 
 subroutine qatom_shutdown
-!!-------------------------------------------------------------------------------  
+!!-------------------------------------------------------------------------------
 !!  subroutine **qatom_shutdown**
-!!  
-!!  
-!!-------------------------------------------------------------------------------    
+!!
+!!
+!!-------------------------------------------------------------------------------
   integer                              :: alloc_status
   deallocate(EQ, stat=alloc_status)
   deallocate(iqseq, qiac, iqexpnb, jqexpnb, qcrg, stat=alloc_status)
@@ -214,6 +228,8 @@ subroutine qatom_shutdown
   deallocate(exspec, stat=alloc_status)
   deallocate(offd, offd2, stat=alloc_status)
   if (allocated(qq_el_scale)) deallocate(qq_el_scale)
+  if (allocated(gapsys_lj_rsc)) deallocate(gapsys_lj_rsc)
+  if (allocated(gapsys_q_rsc)) deallocate(gapsys_q_rsc)
 end subroutine qatom_shutdown
 
 
@@ -296,6 +312,43 @@ logical function qatom_load_atoms(fep_file)
        end if
        yes = prm_get_logical_by_key('qq_use_library_charges', qq_use_library_charges, .false.)
        yes = prm_get_logical_by_key('softcore_use_max_potential', softcore_use_max_potential, .false.)
+
+       ! Parse soft-core method selection
+       softcore_method = SC_STANDARD
+       if(prm_get_string_by_key('softcore_method', word)) then
+          call upcase(word)
+          select case(trim(word))
+          case('STANDARD')
+             softcore_method = SC_STANDARD
+          case('BEUTLER_COUL')
+             softcore_method = SC_BEUTLER_COUL
+          case('GAPSYS')
+             softcore_method = SC_GAPSYS
+          case default
+             write(*,'(a,a)') '>>>>> ERROR: Unknown softcore_method: ', trim(word)
+             qatom_load_atoms = .false.
+             return
+          end select
+       end if
+
+       ! Parse Gapsys-specific parameters (only relevant when method=gapsys)
+       if(softcore_method == SC_GAPSYS) then
+          yes = prm_get_real8_by_key('gapsys_scale_linpoint_lj', gapsys_alpha_lj, 0.85_8)
+          yes = prm_get_real8_by_key('gapsys_scale_linpoint_q', gapsys_alpha_q, 0.3_8)
+          yes = prm_get_real8_by_key('gapsys_sigma_lj', gapsys_sigma_lj, 0.3_8)
+       end if
+
+       ! Print selected soft-core method
+       select case(softcore_method)
+       case(SC_STANDARD)
+          write(*,'(a)') 'Soft-core method: standard (LJ only)'
+       case(SC_BEUTLER_COUL)
+          write(*,'(a)') 'Soft-core method: beutler_coul (LJ + Coulomb)'
+       case(SC_GAPSYS)
+          write(*,'(a,f6.3,a,f6.3,a,f6.3)') &
+               'Soft-core method: gapsys (alpha_lj=', gapsys_alpha_lj, &
+               ' alpha_q=', gapsys_alpha_q, ' sigma_lj=', gapsys_sigma_lj, ')'
+       end select
 
        offset = -1 
        !should an offset be applied to topology atom numbers?
@@ -1758,5 +1811,107 @@ logical function bond_harmonic_in_any_state(k)
     end do
 547 format('>>>>> ERROR: Bond',i3,' is harmonic in state',i2)   
 end function bond_harmonic_in_any_state
+
+!-------------------------------------------------------------------------
+
+subroutine softcore_init_gapsys(nstates_in)
+!!-------------------------------------------------------------------------------
+!!  Compute Gapsys linearization radii for LJ and Coulomb interactions.
+!!  Must be called after lambdas (EQ%lambda) and softcore (sc_lookup) are set.
+!!  Allocates and fills gapsys_lj_rsc and gapsys_q_rsc arrays.
+!!-------------------------------------------------------------------------------
+  integer, intent(in) :: nstates_in
+  integer :: iq, jt, istate, iaci, iacj
+  real(8) :: lambda_st, sigma, C6, C12, qi, qj_dummy
+  real(8) :: r_sc_lj, r_sc_q
+
+  if(softcore_method /= SC_GAPSYS) return
+
+  ! Allocate linearization radius lookup tables
+  if(allocated(gapsys_lj_rsc)) deallocate(gapsys_lj_rsc)
+  if(allocated(gapsys_q_rsc))  deallocate(gapsys_q_rsc)
+  allocate(gapsys_lj_rsc(nqat, natyps+nqat, nstates_in))
+  allocate(gapsys_q_rsc(nqat, natyps+nqat, nstates_in))
+
+  gapsys_lj_rsc(:,:,:) = 0.0_8
+  gapsys_q_rsc(:,:,:)  = 0.0_8
+
+  do istate = 1, nstates_in
+    lambda_st = EQ(istate)%lambda
+    if(lambda_st < 1.0e-10_8) cycle  ! no softening at lambda=0
+
+    do iq = 1, nqat
+      if(alpha_max(iq, istate) < 1.0e-6_8) cycle  ! no softcore for this q-atom/state
+
+      qi = qcrg(iq, istate)
+      iaci = qiac(iq, istate)
+
+      ! Q-atom vs surroundings (atom types 1..natyps)
+      do jt = 1, natyps
+        if(ivdw_rule == VDW_GEOMETRIC) then
+          C12 = qavdw(iaci,1) * iaclib(jt)%avdw(1)
+          C6  = qbvdw(iaci,1) * iaclib(jt)%bvdw(1)
+        else
+          ! arithmetic rule: sigma = (R*_i + R*_j), eps = sqrt(eps_i * eps_j)
+          sigma = qavdw(iaci,1) + iaclib(jt)%avdw(1)
+          C6  = qbvdw(iaci,1) * iaclib(jt)%bvdw(1)
+        end if
+
+        ! LJ linearization radius
+        if(ivdw_rule == VDW_GEOMETRIC) then
+          if(C6 > 0 .and. C12 > 0) then
+            sigma = (C12/C6)**(1.0_8/6.0_8)
+          else
+            sigma = gapsys_sigma_lj
+          end if
+        else
+          ! sigma is already (R*_i + R*_j) from arithmetic rule
+          if(sigma < 1.0e-10_8) sigma = gapsys_sigma_lj
+        end if
+        r_sc_lj = gapsys_alpha_lj * ((26.0_8/7.0_8) * sigma**6 * lambda_st)**(1.0_8/6.0_8)
+        gapsys_lj_rsc(iq, jt, istate) = r_sc_lj
+
+        ! Coulomb linearization radius (use dummy charge=0 for protein atoms)
+        ! For q-protein, we don't know the specific partner charge at this point,
+        ! so we compute a conservative estimate using |qi| only.
+        ! The actual partner charge is applied in the nonbonded routine.
+        r_sc_q = gapsys_alpha_q * (1.0_8 + abs(qi)) * lambda_st**(1.0_8/6.0_8)
+        gapsys_q_rsc(iq, jt, istate) = r_sc_q
+      end do
+
+      ! Q-atom vs Q-atoms (indices natyps+1..natyps+nqat)
+      do jt = 1, nqat
+        iacj = qiac(jt, istate)
+        if(ivdw_rule == VDW_GEOMETRIC) then
+          C12 = qavdw(iaci,1) * qavdw(iacj,1)
+          C6  = qbvdw(iaci,1) * qbvdw(iacj,1)
+        else
+          sigma = qavdw(iaci,1) + qavdw(iacj,1)
+          C6  = qbvdw(iaci,1) * qbvdw(iacj,1)
+        end if
+
+        ! LJ linearization radius
+        if(ivdw_rule == VDW_GEOMETRIC) then
+          if(C6 > 0 .and. C12 > 0) then
+            sigma = (C12/C6)**(1.0_8/6.0_8)
+          else
+            sigma = gapsys_sigma_lj
+          end if
+        else
+          if(sigma < 1.0e-10_8) sigma = gapsys_sigma_lj
+        end if
+        r_sc_lj = gapsys_alpha_lj * ((26.0_8/7.0_8) * sigma**6 * lambda_st)**(1.0_8/6.0_8)
+        gapsys_lj_rsc(iq, jt+natyps, istate) = r_sc_lj
+
+        ! Coulomb linearization radius
+        qj_dummy = qcrg(jt, istate)
+        r_sc_q = gapsys_alpha_q * (1.0_8 + abs(qi*qj_dummy)) * lambda_st**(1.0_8/6.0_8)
+        gapsys_q_rsc(iq, jt+natyps, istate) = r_sc_q
+      end do
+    end do
+  end do
+
+  write(*,'(a)') 'Gapsys linearization radii initialized.'
+end subroutine softcore_init_gapsys
 
 end module qatom
