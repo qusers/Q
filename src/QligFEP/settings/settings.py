@@ -19,8 +19,18 @@ BIN = Q_DIR / "bin/q6"
 if not BIN.exists():
     raise FileNotFoundError(
         f"Could not find {BIN}.\n"
-        "Please make sure you have compiled q6 by running "
-        f"`make all && make mpi` in the {Q_DIR} directory."
+        "The qprep binary was not compiled during installation.\n"
+        "This can happen if gfortran was not available during pip install.\n\n"
+        "To fix this, please:\n"
+        "  1. Install gfortran:\n"
+        "     micromamba install gfortran -c conda-forge\n"
+        "  2. Recompile qprep manually:\n"
+        f"     cd {Q_DIR}\n"
+        "     make qprep COMP=gcc\n"
+        "     mkdir -p bin/q6 && mv qprep bin/q6/\n\n"
+        "For HPC users who need MPI support, also run:\n"
+        f"     cd {Q_DIR}\n"
+        "     make mpi COMP=gcc\n"
     )
 
 # some example schrodinger directory

@@ -515,8 +515,10 @@ class QligFEP:
                     f"System {self.system} not supported by this distance "
                     "restraint method. Please use 'protein' or 'water'."
                 )
-            subset_lig1 = pdb_df.query("residue_name == 'LIG'")
-            subset_lig2 = pdb_df.query("residue_name == 'LID'")
+            subset_lig1 = pdb_df.query("residue_name == 'LIG'").reset_index()
+            subset_lig2 = pdb_df.query("residue_name == 'LID'").reset_index()
+            logger.debug(f"Subset LIG shape: {subset_lig1.shape}")
+            logger.debug(f"Subset LID shape: {subset_lig2.shape}")
             lig1_path = parent_write_dir / f"{self.lig1}.sdf"
             lig2_path = parent_write_dir / f"{self.lig2}.sdf"
             if not lig1_path.exists() or not lig2_path.exists():
@@ -545,8 +547,17 @@ class QligFEP:
                     rdLig1 = rsetter.molA.to_rdkit()
                     rdLig2 = rsetter.molB.to_rdkit()
                     for AtomIdx_Lig1, AtomIdx_Lig2 in restraints.items():
-                        rowLig1 = subset_lig1.iloc[AtomIdx_Lig1]
-                        rowLig2 = subset_lig2.iloc[AtomIdx_Lig2]
+                        try:
+                            rowLig1 = subset_lig1.iloc[AtomIdx_Lig1]
+                            rowLig2 = subset_lig2.iloc[AtomIdx_Lig2]
+                        except IndexError:
+                            qprep_out_path = Path(writedir) / "qprep.out"
+                            logger.error(
+                                f"Index error for atom {AtomIdx_Lig1} in LIG or {AtomIdx_Lig2} in LID. "
+                                "It's likely coming from a qprep failure.\nPlease check the qprep output at "
+                                f"{qprep_out_path}."
+                            )
+                            qprep_error_check(qprep_out_path, self.FF)
                         atom1_in_pdb = rowLig1["atom_name"].strip("1234567890")
                         atom1_in_rdkit = rdLig1.GetAtomWithIdx(AtomIdx_Lig1).GetSymbol()
                         atom2_in_pdb = rowLig2["atom_name"].strip("1234567890")
