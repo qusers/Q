@@ -11,6 +11,7 @@ import pandas as pd
 from sklearn.neighbors import NearestNeighbors
 
 from .CLI.utils import handle_cysbonds
+from .counter_ions import minimize_coulomb_on_sphere
 from .scoring import parse_restraint_method
 from .functions import COG, kT, overlapping_pairs, sigmoid
 from .IO import get_force_field_paths, qprep_error_check, replace, run_qprep
@@ -38,6 +39,7 @@ from .templates import (
 from .templates.sections import (
     format_distance_restraints,
     format_sequence_restraint,
+    format_wall_restraints,
     format_water_restraint,
 )
 
@@ -106,6 +108,8 @@ class QligFEP:
         self.write_dir = None
         self.pdb_fname = f"{self.lig1}_{self.lig2}.pdb"
         self.seeds = self.set_seeds(random_state)
+        self.n_counter_ions = 0
+        self.ion_type = None
 
         if self.system == "protein":
             # Get last atom and residue from complexfile!
@@ -214,6 +218,11 @@ class QligFEP:
                             atomtypes.append([merged_molsize, "DUM", j])
 
         molsize_lig2 = merged_molsize - molsize_lig1
+
+        # Compute formal charges from partial charge sums
+        self.charge_lig1 = round(sum(float(c[1]) for c in charges[:molsize_lig1]))
+        self.charge_lig2 = round(sum(float(c[2]) for c in charges[molsize_lig1:]))
+
         return ([changes_1, changes_2], [charges, atomtypes], [molsize_lig1, molsize_lig2])
 
     def change_lib(self, replacements, writedir):
@@ -323,9 +332,12 @@ class QligFEP:
         lig_size1 = int(lig_size1)
         lig_size2 = int(lig_size2)
         lig_tot = lig_size1 + lig_size2
+        exclude_residues = ["HOH", "LIG", "LID"]
+        if self.system == "water" and self.n_counter_ions > 0:
+            exclude_residues.extend(["SOD", "CLA"])
         self.atomoffset = (
             read_pdb_to_dataframe(Path(writedir) / "top_p.pdb")
-            .query("~residue_name.isin(['HOH', 'LIG', 'LID'])")
+            .query("~residue_name.isin(@exclude_residues)")
             .shape[0]
         )
 
@@ -412,6 +424,59 @@ class QligFEP:
                 atchange = f"{atnr:5}"
                 line = line[0:6] + atchange + line[11:22] + resnr + line[26:]
                 outfile.write(line)
+
+    def place_counter_ions(self, writedir: str) -> int:
+        """Place counter-ions in the combined PDB to neutralize charge differences.
+
+        Only applicable for water system when ligands have different formal charges.
+        Ions are placed on a sphere (radius = sphereradius - 11) centered on the
+        ligand COG to maximize separation via Coulomb minimization.
+
+        Args:
+            writedir: Directory containing the combined PDB (inputfiles subdirectory).
+
+        Returns:
+            Number of counter-ions placed.
+        """
+        delta_q = self.charge_lig1 - self.charge_lig2
+        if delta_q == 0 or self.system != "water":
+            return 0
+
+        n_ions = abs(delta_q)
+        self.ion_type = "CLA" if delta_q > 0 else "SOD"
+        self.n_counter_ions = n_ions
+
+        cog = np.array(COG(self.lig1 + ".pdb"))
+        ion_radius = int(self.sphereradius) - 11
+        ion_xyz = minimize_coulomb_on_sphere(n_ions, ion_radius, cog, seed=42)
+
+        # Read existing PDB to get last atom serial and residue number
+        pdb_path = Path(writedir) / self.pdb_fname
+        pdb_text = pdb_path.read_text()
+        last_atnr = 0
+        last_resnr = 0
+        for line in pdb_text.splitlines():
+            if line.startswith(("ATOM", "HETATM")):
+                try:
+                    last_atnr = max(last_atnr, int(line[6:11]))
+                    last_resnr = max(last_resnr, int(line[22:26]))
+                except (ValueError, IndexError):
+                    continue
+
+        # Append ion ATOM lines to the combined PDB
+        with open(pdb_path, "a") as outfile:
+            for i in range(n_ions):
+                atnr = last_atnr + 1 + i
+                resnr = last_resnr + 1 + i
+                x, y, z = ion_xyz[i]
+                ion_name = self.ion_type
+                line = (
+                    f"ATOM  {atnr:5d}  {ion_name:<3s} {ion_name:<4s} {resnr:4d}    "
+                    f"{x:8.3f}{y:8.3f}{z:8.3f}  0.00  0.00\n"
+                )
+                outfile.write(line)
+
+        return n_ions
 
     def write_water_pdb(self, writedir):
         header = self.sphereradius + ".0 SPHERE\n"
@@ -730,6 +795,7 @@ class QligFEP:
         lig_size1: int,
         lig_size2: int,
         overlapping_atoms: list,
+        wall_restraints: str = "",
     ) -> list[list[str]]:
         """Write equilibration and production MD input files using templates module.
 
@@ -739,6 +805,7 @@ class QligFEP:
             lig_size1: Number of atoms in ligand 1
             lig_size2: Number of atoms in ligand 2
             overlapping_atoms: List of [atom1, atom2] pairs for distance restraints
+            wall_restraints: Pre-formatted wall restraints for counter-ions
 
         Returns:
             List of three file lists: [eq_files + md_start, forward_lambda_files, reverse_lambda_files]
@@ -774,6 +841,7 @@ class QligFEP:
                 restart_file=restart_file,
                 distance_restraints=dr_str,
                 sequence_restraints=seq_str,
+                wall_restraints=wall_restraints,
                 is_eq1=(i == 0),
             )
 
@@ -796,11 +864,11 @@ class QligFEP:
         # Write production files based on start mode
         if self.start == "0.5":
             file_list1, file_list2, file_list3 = self._write_production_05(
-                lambdas, writedir, prod_config, prod_dr_str, prod_seq_str, file_list1
+                lambdas, writedir, prod_config, prod_dr_str, prod_seq_str, file_list1, wall_restraints
             )
         else:
             file_list1, file_list2, file_list3 = self._write_production_1(
-                lambdas, writedir, prod_config, prod_dr_str, prod_seq_str, file_list1
+                lambdas, writedir, prod_config, prod_dr_str, prod_seq_str, file_list1, wall_restraints
             )
 
         return [file_list1, file_list2, file_list3]
@@ -813,6 +881,7 @@ class QligFEP:
         dr_str: str,
         seq_str: str,
         file_list1: list[str],
+        wall_str: str = "",
     ) -> tuple[list[str], list[str], list[str]]:
         """Write production MD files for start=0.5 mode.
 
@@ -847,6 +916,7 @@ class QligFEP:
             energy_file="md_0500_0500.en",
             distance_restraints=dr_str,
             sequence_restraints=seq_str,
+            wall_restraints=wall_str,
         )
         filepath = Path(writedir) / "md_0500_0500.inp"
         filepath.write_text(content)
@@ -876,6 +946,7 @@ class QligFEP:
                     energy_file=f"{filename}.en",
                     distance_restraints=dr_str,
                     sequence_restraints=seq_str,
+                    wall_restraints=wall_str,
                 )
                 filepath = Path(writedir) / f"{filename}.inp"
                 filepath.write_text(content)
@@ -897,6 +968,7 @@ class QligFEP:
         dr_str: str,
         seq_str: str,
         file_list1: list[str],
+        wall_str: str = "",
     ) -> tuple[list[str], list[str], list[str]]:
         """Write production MD files for start=0.0/1 mode.
 
@@ -917,6 +989,7 @@ class QligFEP:
             energy_file="md_1000_0000.en",
             distance_restraints=dr_str,
             sequence_restraints=seq_str,
+            wall_restraints=wall_str,
         )
         filepath = Path(writedir) / "md_1000_0000.inp"
         filepath.write_text(content)
@@ -945,6 +1018,7 @@ class QligFEP:
                 energy_file=f"{filename}.en",
                 distance_restraints=dr_str,
                 sequence_restraints=seq_str,
+                wall_restraints=wall_str,
             )
             filepath = Path(writedir) / f"{filename}.inp"
             filepath.write_text(content)
