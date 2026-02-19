@@ -73,6 +73,7 @@ def render_md_input(
     final_file: str,
     distance_restraints: str = "",
     sequence_restraints: str = "",
+    wall_restraints: str = "",
     restart_file: str | None = None,
     energy_file: str | None = None,
     is_eq1: bool = False,
@@ -87,6 +88,7 @@ def render_md_input(
         final_file: Final restart filename (e.g., "eq1.re")
         distance_restraints: Pre-formatted distance restraints section
         sequence_restraints: Pre-formatted sequence restraints section
+        wall_restraints: Pre-formatted wall restraints section (for counter-ions)
         restart_file: Restart input filename (None for eq1)
         energy_file: Energy output filename (None for equilibration)
         is_eq1: True for eq1.inp which has random_seed and initial_temperature
@@ -183,6 +185,11 @@ def render_md_input(
     # [distance_restraints] section
     lines.append("[distance_restraints]")
     lines.append(distance_restraints)
+    lines.append("")
+
+    # [wall_restraints] section (for counter-ions)
+    lines.append("[wall_restraints]")
+    lines.append(wall_restraints)
     lines.append("")
 
     return "\n".join(lines)

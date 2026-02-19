@@ -59,3 +59,25 @@ def format_water_restraint(
         Formatted water restraint line
     """
     return f"{atom_start:<7}{atom_end:<7} {force:.1f} 0 1   "
+
+
+def format_wall_restraints(
+    atom_start: int,
+    atom_end: int,
+    radius: float,
+    force: float = 1.0,
+) -> str:
+    """Format a wall restraint line to keep atoms within a spherical boundary.
+
+    Used to prevent counter-ions from drifting to the sphere edge.
+
+    Args:
+        atom_start: First atom index of the restrained range
+        atom_end: Last atom index of the restrained range
+        radius: Wall restraint radius
+        force: Force constant (default 1.0)
+
+    Returns:
+        Formatted wall restraint line
+    """
+    return f"{atom_start} {atom_end} {radius:.1f} {force:.1f} 0 0 0"
