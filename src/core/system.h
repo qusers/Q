@@ -247,6 +247,7 @@ extern int n_torsions_solute;
 extern int n_excluded;
 extern int n_cgrps_solute;
 extern int n_cgrps_solvent;
+extern int iuse_switch_atom;
 
 extern angle_t *angles;
 extern atype_t *atypes;
@@ -503,6 +504,8 @@ extern restrwall_t *restrwalls;
 extern bool *shell;
 
 void init_pshells();
+void init_pshells_with_switch_atoms();
+void init_pshells_with_centroids();
 void init_restrseqs(char* filename);
 
 struct shell_t {

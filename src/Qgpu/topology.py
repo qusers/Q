@@ -161,7 +161,9 @@ class Read_Topology(object):
                     solute_cgp = int(line[1])
                     total_cgp = int(line[0])
                     solvent_cgp = total_cgp - solute_cgp
+                    iuse_switch_atom = int(line[2]) if len(line) > 2 and line[2].isdigit() else 1
                     self.data['charge_group_total'] = ['{}'.format(solute_cgp),'{}'.format(solvent_cgp)]
+                    self.data['iuse_switch_atom'] = iuse_switch_atom
                     switch = 1
                     continue
                                                                                    
@@ -805,8 +807,9 @@ class Write_Topology(object):
         with open(self.wd + '/charge_groups.csv','w') as outfile:
             # TO DO ADD LINE TOTALS
             outfile.write('{}\n'.format(self.data['charge_groups'][0]))
-            outfile.write('{};{}\n'.format(self.data['charge_group_total'][0],
-                                           self.data['charge_group_total'][1]))
+            outfile.write('{};{};{}\n'.format(self.data['charge_group_total'][0],
+                                           self.data['charge_group_total'][1],
+                                           self.data.get('iuse_switch_atom', 1)))
 
             for charge_group in self.data['charge_groups'][1]:
                 outfile.write('{};{}\n'.format(charge_group[0][0],charge_group[0][1]))

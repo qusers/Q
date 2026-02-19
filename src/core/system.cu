@@ -69,6 +69,7 @@ int n_ngbrs14;
 int n_excluded;
 int n_cgrps_solute;
 int n_cgrps_solvent;
+int iuse_switch_atom;
 
 coord_t* coords_top;
 bond_t* bonds;
@@ -530,44 +531,96 @@ void init_pshells() {
     printf("n_heavy = %d, n_inshell = %d\n", n_heavy, n_inshell);
 }
 
-void init_pshells_with_charge_groups() {
-    double mass, r2, rin2;
+// Marks heavy atoms for the shell/excluded arrays.
+// Shared between switch-atom and centroid shell init paths.
+static int mark_heavy_atoms() {
+    int n_heavy = 0;
+    for (int i = 0; i < n_atoms; i++) {
+        double mass = catypes[atypes[i].code-1].m;
+        if (mass < 4.0) {
+            heavy[i] = false;
+        } else {
+            heavy[i] = true;
+            n_heavy++;
+        }
+    }
+    return n_heavy;
+}
+
+// Shell init using switch atom distance (matches Fortran make_shell).
+// Used when iuse_switch_atom == 1.
+void init_pshells_with_switch_atoms() {
+    double r2, rin2;
 
     heavy = (bool*) calloc(n_atoms, sizeof(bool));
     shell = (bool*) calloc(n_atoms, sizeof(bool));
     rin2 = pow(md.shell_radius, 2);
 
-    int n_heavy = 0, n_inshell = 0;
-
-    for (int i = 0; i < n_atoms; i++) {
-        mass = catypes[atypes[i].code-1].m;
-        if (mass < 4.0) {
-            heavy[i] = false;
-        }
-        else {
-            heavy[i] = true;
-            n_heavy++;
-        }
-    }
+    int n_heavy = mark_heavy_atoms();
+    int n_inshell = 0;
 
     for (int grp = 0; grp < n_cgrps_solute; grp++) {
         cgrp_t cgrp = charge_groups[grp];
         int i = cgrp.iswitch-1;
         if (heavy[i] && !excluded[i] && i < n_atoms_solute) {
-            r2 = pow(coords_top[i].x - topo.solute_center.x, 2) 
+            r2 = pow(coords_top[i].x - topo.solute_center.x, 2)
                 + pow(coords_top[i].y - topo.solute_center.y, 2)
                 + pow(coords_top[i].z - topo.solute_center.z, 2);
-            bool switch_atom_in_shell = r2 > rin2;
+            bool in_shell = r2 > rin2;
             for (int j = 0; j < cgrp.n_atoms; j++) {
-                shell[cgrp.a[j]-1] = switch_atom_in_shell;
-                if (switch_atom_in_shell) {
+                shell[cgrp.a[j]-1] = in_shell;
+                if (in_shell) {
                     n_inshell++;
                 }
             }
         }
     }
 
-    printf("(with charge groups): n_heavy = %d, n_inshell = %d\n", n_heavy, n_inshell);
+    printf("(switch atoms): n_heavy = %d, n_inshell = %d\n", n_heavy, n_inshell);
+}
+
+// Shell init using charge group centroid distance (matches Fortran make_shell2).
+// Used when iuse_switch_atom == 0.
+void init_pshells_with_centroids() {
+    double r2, rin2;
+
+    heavy = (bool*) calloc(n_atoms, sizeof(bool));
+    shell = (bool*) calloc(n_atoms, sizeof(bool));
+    rin2 = pow(md.shell_radius, 2);
+
+    int n_heavy = mark_heavy_atoms();
+    int n_inshell = 0;
+
+    for (int grp = 0; grp < n_cgrps_solute; grp++) {
+        cgrp_t cgrp = charge_groups[grp];
+        int i = cgrp.iswitch-1;
+        if (heavy[i] && !excluded[i] && i < n_atoms_solute) {
+            // Compute centroid of charge group
+            double cx = 0, cy = 0, cz = 0;
+            for (int j = 0; j < cgrp.n_atoms; j++) {
+                int ai = cgrp.a[j]-1;
+                cx += coords_top[ai].x;
+                cy += coords_top[ai].y;
+                cz += coords_top[ai].z;
+            }
+            cx /= cgrp.n_atoms;
+            cy /= cgrp.n_atoms;
+            cz /= cgrp.n_atoms;
+
+            r2 = pow(cx - topo.solute_center.x, 2)
+                + pow(cy - topo.solute_center.y, 2)
+                + pow(cz - topo.solute_center.z, 2);
+            bool in_shell = r2 > rin2;
+            for (int j = 0; j < cgrp.n_atoms; j++) {
+                shell[cgrp.a[j]-1] = in_shell;
+                if (in_shell) {
+                    n_inshell++;
+                }
+            }
+        }
+    }
+
+    printf("(centroids): n_heavy = %d, n_inshell = %d\n", n_heavy, n_inshell);
 }
 
 void init_restrseqs() {
@@ -1300,7 +1353,11 @@ void init_variables() {
     
     // Shake constraints, need to be initialized before last part of shrink_topology
     if (md.charge_groups) {
-        init_pshells_with_charge_groups();
+        if (iuse_switch_atom == 1) {
+            init_pshells_with_switch_atoms();
+        } else {
+            init_pshells_with_centroids();
+        }
     }
     else {
         init_pshells();
