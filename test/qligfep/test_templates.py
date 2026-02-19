@@ -12,6 +12,7 @@ from QligFEP.templates import (
 from QligFEP.templates.sections import (
     format_distance_restraints,
     format_sequence_restraint,
+    format_wall_restraints,
     format_water_restraint,
 )
 
@@ -393,6 +394,68 @@ class TestSectionFormatters:
         assert "4681" in result
         assert "4751" in result
         assert "1.0 0 1" in result
+
+    def test_format_wall_restraints(self):
+        """Verify wall restraint formatting for counter-ions."""
+        result = format_wall_restraints(4752, 4753, radius=20.0, force=1.0)
+        assert result == "4752 4753 20.0 1.0 0 0 0"
+
+    def test_format_wall_restraints_custom_force(self):
+        """Verify wall restraint with non-default force."""
+        result = format_wall_restraints(100, 102, radius=15.0, force=2.5)
+        assert result == "100 102 15.0 2.5 0 0 0"
+
+
+class TestWallRestraintsInMdInput:
+    """Tests for wall_restraints parameter in render_md_input."""
+
+    def test_wall_restraints_section_present(self):
+        """Verify [wall_restraints] section appears in rendered output."""
+        params = MDParameters(
+            steps=5000, stepsize=2.0, temperature=298, bath_coupling=10.0, shell_radius=25
+        )
+        wall_str = "100 102 20.0 1.0 0 0 0"
+        content = render_md_input(
+            params=params,
+            lambda1="0.500",
+            lambda2="0.500",
+            trajectory_file="test.dcd",
+            final_file="test.re",
+            wall_restraints=wall_str,
+        )
+        assert "[wall_restraints]" in content
+        assert "100 102 20.0 1.0 0 0 0" in content
+
+    def test_wall_restraints_empty_by_default(self):
+        """Verify [wall_restraints] section is present but empty when not provided."""
+        params = MDParameters(
+            steps=5000, stepsize=2.0, temperature=298, bath_coupling=10.0, shell_radius=25
+        )
+        content = render_md_input(
+            params=params,
+            lambda1="0.500",
+            lambda2="0.500",
+            trajectory_file="test.dcd",
+            final_file="test.re",
+        )
+        assert "[wall_restraints]" in content
+
+    def test_wall_restraints_after_distance_restraints(self):
+        """Verify [wall_restraints] appears after [distance_restraints]."""
+        params = MDParameters(
+            steps=5000, stepsize=2.0, temperature=298, bath_coupling=10.0, shell_radius=25
+        )
+        content = render_md_input(
+            params=params,
+            lambda1="0.500",
+            lambda2="0.500",
+            trajectory_file="test.dcd",
+            final_file="test.re",
+            wall_restraints="100 102 20.0 1.0 0 0 0",
+        )
+        dr_idx = content.index("[distance_restraints]")
+        wr_idx = content.index("[wall_restraints]")
+        assert wr_idx > dr_idx
 
 
 class TestGoldenFileComparison:
