@@ -958,7 +958,7 @@ void init_charge_groups(const char *filename) {
 
     n_cgrps_solute = atoi(file.buffer[1][0]);
     n_cgrps_solvent = atoi(file.buffer[1][1]);
-    iuse_switch_atom = (file.buffer[1][2] != NULL) ? atoi(file.buffer[1][2]) : 1;
+    iuse_switch_atom = atoi(file.buffer[1][2]);
 
     int n_charge_groups = n_cgrps_solute + n_cgrps_solvent;
 
