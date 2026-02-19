@@ -12,7 +12,6 @@ from sklearn.neighbors import NearestNeighbors
 
 from .CLI.utils import handle_cysbonds
 from .counter_ions import minimize_coulomb_on_sphere
-from .scoring import parse_restraint_method
 from .functions import COG, kT, overlapping_pairs, sigmoid
 from .IO import get_force_field_paths, qprep_error_check, replace, run_qprep
 from .logger import logger
@@ -26,6 +25,7 @@ from .pdb_utils import (
     rm_HOH_clash_NN,
 )
 from .restraints.restraint_setter import RestraintSetter
+from .scoring import parse_restraint_method
 from .settings.settings import CLUSTER_DICT, CONFIGS
 from .templates import (
     QprepFEPParameters,
@@ -109,6 +109,7 @@ class QligFEP:
         self.pdb_fname = f"{self.lig1}_{self.lig2}.pdb"
         self.seeds = self.set_seeds(random_state)
         self.n_counter_ions = 0
+        # counter ion type to neutralized charge-changing perturbations (e.g., SOD or CLA)
         self.ion_type = None
 
         if self.system == "protein":
@@ -334,7 +335,7 @@ class QligFEP:
         lig_tot = lig_size1 + lig_size2
         exclude_residues = ["HOH", "LIG", "LID"]
         if self.system == "water" and self.n_counter_ions > 0:
-            exclude_residues.extend(["SOD", "CLA"])
+            exclude_residues.append(self.ion_type)
         self.atomoffset = (
             read_pdb_to_dataframe(Path(writedir) / "top_p.pdb")
             .query("~residue_name.isin(@exclude_residues)")
@@ -443,7 +444,15 @@ class QligFEP:
             return 0
 
         n_ions = abs(delta_q)
-        self.ion_type = "CLA" if delta_q > 0 else "SOD"
+        # Temporary: in the future let's have standard 2-letter code for ions and not
+        # these made up names for Q because it demands for 3-letter residue names...
+        CHLORIDE_NAME = {
+            "AMBER14sb": "CHL",
+            "OPLS2015": "CLA",
+            "CHARMM36": "CLA",
+        }
+        chloride = CHLORIDE_NAME.get(self.FF, "CLA")
+        self.ion_type = chloride if delta_q > 0 else "SOD"
         self.n_counter_ions = n_ions
 
         cog = np.array(COG(self.lig1 + ".pdb"))
@@ -1343,14 +1352,14 @@ class QligFEP:
         cog = self._get_cog_from_water(writedir)
         merged_pdb = Path(writedir) / self.pdb_fname
 
-        orig_count, filt_count = filter_out_of_sphere_fragments(
-            merged_pdb, cog, float(self.sphereradius)
-        )
+        orig_count, filt_count = filter_out_of_sphere_fragments(merged_pdb, cog, float(self.sphereradius))
 
         # Update offsets if structure was filtered
         if filt_count < orig_count:
             self._update_offsets_from_pdb(merged_pdb)
-            logger.info(f"Filtered structure: {orig_count} → {filt_count} atoms ({orig_count - filt_count} removed)")
+            logger.info(
+                f"Filtered structure: {orig_count} → {filt_count} atoms ({orig_count - filt_count} removed)"
+            )
 
         return orig_count, filt_count
 
@@ -1406,9 +1415,7 @@ class QligFEP:
 
                     dist1 = calculate_distance(atom1_coords, self.cog)
                     dist2 = calculate_distance(atom2_coords, self.cog)
-                    logger.debug(
-                        f"{resn1}:{at1} and {resn2}:{at2} within {dist1} and {dist2} of the COG."
-                    )
+                    logger.debug(f"{resn1}:{at1} and {resn2}:{at2} within {dist1} and {dist2} of the COG.")
                     if dist1 <= int(self.sphereradius) and dist2 <= int(self.sphereradius):
                         new_cysbond_str += line + "\n"
                     else:

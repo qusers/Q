@@ -143,7 +143,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     wall_restraints_str = ""
     if run.n_counter_ions > 0:
         pdb_df = read_pdb_to_dataframe(Path(inputdir) / "top_p.pdb")
-        ion_df = pdb_df[pdb_df["residue_name"].isin(["SOD", "CLA"])]
+        ion_df = pdb_df[pdb_df["residue_name"] == run.ion_type]
         first_ion = int(ion_df["atom_serial_number"].min())
         last_ion = int(ion_df["atom_serial_number"].max())
         wall_radius = int(run.sphereradius) - 5
