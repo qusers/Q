@@ -236,4 +236,16 @@ def parse_arguments(program: str) -> argparse.Namespace:
         help="Set the log level for the logger. Defaults to `info`.",
         choices=["trace", "debug", "info", "warning", "error", "critical"],
     )
+    if program == "QligFEP":
+        parser.add_argument(
+            "-pq",
+            "--protein_charge",
+            dest="protein_charge",
+            type=int,
+            default=None,
+            help=(
+                "Total charge from the protein leg's qprep output. Used by setupFEP to pass "
+                "the protein system charge so the water leg can match it with counter-ions."
+            ),
+        )
     return parser.parse_args()

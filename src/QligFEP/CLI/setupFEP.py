@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
+from ..IO import parse_qprep_total_charge
 from ..logger import logger, setup_logger
 from .parser_base import parse_arguments
 
@@ -22,7 +23,7 @@ def ligpairs_from_json(json_file):
         edges = json_dict["edges"]  # should be a list of dictionaries
     except KeyError as kerr:
         raise KeyError('Could not find "edges" in json file') from kerr
-    ligpairs = [(e["from"], e["to"]) for e in edges]
+    ligpairs = [(e["from"], e["to"], e.get("same_charge")) for e in edges]
     return ligpairs
 
 
@@ -43,6 +44,8 @@ def create_call(**kwargs):
         template += " -wath {water_thresh}"
     if "wath_ligand_only" in kwargs and kwargs["wath_ligand_only"]:
         template += " -wath-ligo"
+    if "protein_charge" in kwargs and kwargs["protein_charge"] is not None:
+        template += " -pq {protein_charge}"
     return template.format(**kwargs)
 
 
@@ -99,14 +102,30 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 raise FileNotFoundError("No mapping json file found in the current directory")
 
     lig_pairs = ligpairs_from_json(args.json_map)
+    protein_dir = cwd / "2.protein"
     for system, sys_dir in zip(systems, sys_directories):
-        for pair in lig_pairs:
-            lig1 = pair[0]
-            lig2 = pair[1]
+        for lig1, lig2, same_charge in lig_pairs:
+
+            # For cross-charge water edges, look up the protein leg's total charge
+            # so counter-ions can match the protein system's charge
+            protein_charge = None
+            charge_change = same_charge is False  # explicit False, not None
+            if system == "water" and charge_change:
+                qprep_out = protein_dir / f"FEP_{lig1}_{lig2}" / "inputfiles" / "qprep.out"
+                if qprep_out.exists():
+                    protein_charge = parse_qprep_total_charge(qprep_out)
+                    logger.info(
+                        f"Protein leg charge for {lig1}->{lig2}: {protein_charge} " f"(from {qprep_out})"
+                    )
+                elif args.water_only:
+                    raise FileNotFoundError(
+                        f"--water_only requires the protein leg to be set up first. "
+                        f"Could not find {qprep_out}"
+                    )
 
             temp_dir = cwd / f"FEP_{lig1}_{lig2}"
             to_clean = " ".join(args.to_clean) if args.to_clean is not None else None
-            command = create_call(
+            call_kwargs = dict(
                 lig1=lig1,
                 lig2=lig2,
                 FF=args.FF,
@@ -127,10 +146,12 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 water_thresh=args.water_thresh,
                 log=args.log,
                 wath_ligand_only=args.wath_ligand_only,
+                protein_charge=protein_charge,
             )
+            command = create_call(**call_kwargs)
             logger.info(f"Submitting the command:\n{command}")
             dst = sys_dir / f"FEP_{lig1}_{lig2}"
-            os.system(command)
+            os.system(command)  # noqa: S605 - command built from validated args
             shutil.move(temp_dir, dst)
 
 

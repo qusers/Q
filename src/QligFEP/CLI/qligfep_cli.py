@@ -44,6 +44,8 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "random_state": args.random_state,
             "wath_ligand_only": args.wath_ligand_only,
         }
+        if args.protein_charge is not None:
+            param_dict["protein_charge"] = args.protein_charge
     else:
         param_dict = {}
     param_dict.update(kwargs)
@@ -66,6 +68,9 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 command_str += f" --{k}".replace("_", "-")
         elif k == "dr_force":
             command_str += f" --{k} {v}".replace("dr_force", "distance_restraint_force")
+        elif k == "protein_charge":
+            if v is not None:
+                command_str += f" -pq {v}"
         else:
             command_str += f" --{k} {v}"
     command_str += f" --restraint_method {args.restraint_method}"

@@ -204,3 +204,43 @@ class TestExceptionClasses:
         assert issubclass(QprepAtomLibMissingError, Exception)
 
 
+class TestParseQprepTotalCharge:
+    """Tests for parse_qprep_total_charge() function."""
+
+    def test_parse_real_qprep_out(self):
+        """Parse the real Tyk2 qprep.out and expect total charge = 7."""
+        from QligFEP.IO import parse_qprep_total_charge
+
+        qprep_out = Path(__file__).parents[2] / "tutorials" / "Tyk2" / "setupFEP" / "FEP_ejm_31_ejm_42" / "inputfiles" / "qprep.out"
+        assert qprep_out.exists(), f"Test fixture not found: {qprep_out}"
+        charge = parse_qprep_total_charge(qprep_out)
+        assert charge == 7
+
+    def test_parse_missing_charge_line_raises(self, tmp_path):
+        """Raise ValueError when the charge line is not found."""
+        from QligFEP.IO import parse_qprep_total_charge
+
+        fake_out = tmp_path / "qprep.out"
+        fake_out.write_text("some random output\nno charge info here\n")
+        with pytest.raises(ValueError, match="total charge"):
+            parse_qprep_total_charge(fake_out)
+
+    def test_parse_negative_charge(self, tmp_path):
+        """Parse a negative total charge correctly."""
+        from QligFEP.IO import parse_qprep_total_charge
+
+        fake_out = tmp_path / "qprep.out"
+        fake_out.write_text("total charge of not excluded:  -3.00\n")
+        charge = parse_qprep_total_charge(fake_out)
+        assert charge == -3
+
+    def test_parse_zero_charge(self, tmp_path):
+        """Parse zero total charge correctly."""
+        from QligFEP.IO import parse_qprep_total_charge
+
+        fake_out = tmp_path / "qprep.out"
+        fake_out.write_text("total charge of not excluded:   0.00\n")
+        charge = parse_qprep_total_charge(fake_out)
+        assert charge == 0
+
+
