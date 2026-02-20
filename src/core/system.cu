@@ -150,6 +150,7 @@ void exclude_qatom_definitions() {
     int qai = 0, qbi = 0, qii = 0, qti = 0;
 
     excluded = 0;
+    int solute_excluded = 0;
     if (n_qangles > 0) {
         for (int i = 0; i < n_angles; i++) {
             if (angles[i].ai == q_angles[qai].ai
@@ -157,6 +158,7 @@ void exclude_qatom_definitions() {
              && angles[i].ak == q_angles[qai].ak) {
                 qai++;
                 excluded++;
+                if (i < n_angles_solute) solute_excluded++;
             }
             else {
                 angles[ai] = angles[i];
@@ -164,15 +166,18 @@ void exclude_qatom_definitions() {
             }
         }
         n_angles -= excluded;
+        n_angles_solute -= solute_excluded;
     }
 
     excluded = 0;
+    solute_excluded = 0;
     if (n_qbonds > 0) {
         for (int i = 0; i < n_bonds; i++) {
             if (bonds[i].ai == q_bonds[qbi].ai
              && bonds[i].aj == q_bonds[qbi].aj) {
                 qbi++;
                 excluded++;
+                if (i < n_bonds_solute) solute_excluded++;
             }
             else {
                 bonds[bi] = bonds[i];
@@ -180,6 +185,7 @@ void exclude_qatom_definitions() {
             }
         }
         n_bonds -= excluded;
+        n_bonds_solute -= solute_excluded;
     }
 
     // excluded = 0;
@@ -199,6 +205,7 @@ void exclude_qatom_definitions() {
     // n_impropers -= excluded;
 
     excluded = 0;
+    solute_excluded = 0;
     if (n_qtorsions > 0) {
         for (int i = 0; i < n_torsions; i++) {
             if (torsions[i].ai == q_torsions[qti].ai
@@ -207,6 +214,7 @@ void exclude_qatom_definitions() {
              && torsions[i].al == q_torsions[qti].al) {
                 qti++;
                 excluded++;
+                if (i < n_torsions_solute) solute_excluded++;
             }
             else {
                 torsions[ti] = torsions[i];
@@ -214,6 +222,7 @@ void exclude_qatom_definitions() {
             }
         }
         n_torsions -= excluded;
+        n_torsions_solute -= solute_excluded;
     }
 
     // TODO: add exclusion pairs
@@ -288,18 +297,21 @@ void exclude_all_atoms_excluded_definitions() {
 
 void exclude_shaken_definitions() {
     int excluded;
+    int solute_excluded;
     int bi = 0;
     int si = 0;
     int ang_i = 0;
     int ai, aj;
 
     excluded = 0;
+    solute_excluded = 0;
     if (n_shake_constraints > 0) {
         for (int i = 0; i < n_bonds; i++) {
             if (bonds[i].ai == shake_bonds[si].ai
              && bonds[i].aj == shake_bonds[si].aj) {
                 si++;
                 excluded++;
+                if (i < n_bonds_solute) solute_excluded++;
             }
             else {
                 bonds[bi] = bonds[i];
@@ -307,16 +319,19 @@ void exclude_shaken_definitions() {
             }
         }
         n_bonds -= excluded;
+        n_bonds_solute -= solute_excluded;
     }
 
     excluded = 0;
+    solute_excluded = 0;
     if (n_shake_constraints > 0) {
+        // Mark angles whose terminal atoms (i and k) match a shaken bond
         for (int i = 0; i < n_shake_constraints; i++) {
             ai = shake_bonds[i].ai;
             aj = shake_bonds[i].aj;
             for (int j = 0; j < n_angles; j++) {
-                if ( (angles[j].ai == ai && angles[j].aj == aj)
-                    || (angles[j].ai == aj && angles[j].ak == aj) ) {
+                if ( (angles[j].ai == ai && angles[j].ak == aj)
+                    || (angles[j].ai == aj && angles[j].ak == ai) ) {
                     angles[j].code = 0;
                     break;
                 }
@@ -326,12 +341,15 @@ void exclude_shaken_definitions() {
         for (int i = 0; i < n_angles; i++) {
             if (angles[i].code == 0) {
                 excluded++;
+                if (i < n_angles_solute) solute_excluded++;
             }
             else {
                 angles[ang_i] = angles[i];
                 ang_i++;
             }
         }
+        n_angles -= excluded;
+        n_angles_solute -= solute_excluded;
     }
 }
 
