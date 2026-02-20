@@ -150,7 +150,7 @@ class TestSetupFEPCompatibility:
 
         pairs = ligpairs_from_json(str(json_path))
         assert len(pairs) > 0
-        for lig1, lig2 in pairs:
+        for lig1, lig2, same_charge in pairs:
             assert isinstance(lig1, str)
             assert isinstance(lig2, str)
 

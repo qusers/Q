@@ -75,6 +75,7 @@ class QligFEP:
         neq_relax_steps: int = 5000,
         neq_L: float = 8.0,
         neq_schedule: Literal["sigmoidal", "linear"] = "sigmoidal",
+        protein_charge: Optional[int] = None,
     ):
         self.timestep = timestep
         self.lig1 = lig1
@@ -111,6 +112,7 @@ class QligFEP:
         self.n_counter_ions = 0
         # counter ion type to neutralized charge-changing perturbations (e.g., SOD or CLA)
         self.ion_type = None
+        self.protein_charge = protein_charge
 
         if self.system == "protein":
             # Get last atom and residue from complexfile!
@@ -433,6 +435,10 @@ class QligFEP:
         Ions are placed on a sphere (radius = sphereradius - 11) centered on the
         ligand COG to maximize separation via Coulomb minimization.
 
+        When protein_charge is provided (via setupFEP), the water leg is set up to
+        match the protein leg's total system charge so that electrostatic artifacts
+        from the charged sphere cancel in the ddG calculation.
+
         Args:
             writedir: Directory containing the combined PDB (inputfiles subdirectory).
 
@@ -443,7 +449,6 @@ class QligFEP:
         if delta_q == 0 or self.system != "water":
             return 0
 
-        n_ions = abs(delta_q)
         # Temporary: in the future let's have standard 2-letter code for ions and not
         # these made up names for Q because it demands for 3-letter residue names...
         CHLORIDE_NAME = {
@@ -452,7 +457,20 @@ class QligFEP:
             "CHARMM36": "CLA",
         }
         chloride = CHLORIDE_NAME.get(self.FF, "CLA")
-        self.ion_type = chloride if delta_q > 0 else "SOD"
+
+        if self.protein_charge is not None:
+            water_charge = self.charge_lig1 + self.charge_lig2
+            ions_charge = self.protein_charge - water_charge
+            n_ions = abs(ions_charge)
+            self.ion_type = chloride if ions_charge < 0 else "SOD"
+            logger.info(
+                f"Matching protein leg charge {self.protein_charge}: "
+                f"placing {n_ions} {self.ion_type} ion(s)"
+            )
+        else:
+            n_ions = abs(delta_q)
+            self.ion_type = chloride if delta_q > 0 else "SOD"
+
         self.n_counter_ions = n_ions
 
         cog = np.array(COG(self.lig1 + ".pdb"))

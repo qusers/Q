@@ -51,6 +51,8 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "neq_L": args.neq_L,
             "neq_schedule": args.neq_schedule,
         }
+        if args.protein_charge is not None:
+            param_dict["protein_charge"] = args.protein_charge
     else:
         param_dict = {}
     param_dict.update(kwargs)
@@ -81,6 +83,9 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             command_str += f" --neq-steepness {v}"
         elif k in ("neq_reps", "neq_steps", "neq_eq_steps", "neq_relax_steps", "neq_schedule"):
             command_str += f" --{k.replace('_', '-')} {v}"
+        elif k == "protein_charge":
+            if v is not None:
+                command_str += f" -pq {v}"
         else:
             command_str += f" --{k} {v}"
     command_str += f" --restraint_method {args.restraint_method}"

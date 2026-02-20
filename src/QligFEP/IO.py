@@ -27,6 +27,30 @@ class QprepAtomLibMissingError(Exception):
     pass
 
 
+def parse_qprep_total_charge(qprep_out_path: Path) -> int:
+    """Parse the total system charge from a qprep.out file.
+
+    Reads the "total charge of not excluded: X.00" line and returns the integer charge.
+
+    Args:
+        qprep_out_path: Path to the qprep.out file.
+
+    Returns:
+        Integer total charge of the system within the simulation sphere.
+
+    Raises:
+        ValueError: If the charge line is not found in the file.
+    """
+    charge_pat = re.compile(r"total charge of not excluded:\s*([-]?\d+\.\d+)")
+    for line in qprep_out_path.read_text().splitlines():
+        match = charge_pat.search(line)
+        if match:
+            return round(float(match.group(1)))
+    raise ValueError(
+        f"Could not find 'total charge of not excluded' in {qprep_out_path}"
+    )
+
+
 def qprep_error_check(qprep_out_path: Path, ff_name: str) -> None:
     """Check for errors in the qprep.out file and raise an exception if any are found.
 
