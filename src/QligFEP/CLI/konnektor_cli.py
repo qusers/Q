@@ -15,7 +15,9 @@ from .lomap_wrap_cli import LomapWrap
 
 NETWORK_GENERATORS = {
     "mst": "MinimalSpanningTreeNetworkGenerator",
+    "rmst": "RedundantMinimalSpanningTreeNetworkGenerator",
     "star": "StarNetworkGenerator",
+    "nedges": "NNodeEdgesNetworkGenerator",
     "cyclic": "CyclicNetworkGenerator",
 }
 
@@ -23,8 +25,8 @@ NETWORK_GENERATORS = {
 class KonnektorWrap:
     """Generate perturbation networks using konnektor.
 
-    Supports MST, star, and cyclic network topologies with either
-    RestraintSetter-based or kartograf volume ratio scoring.
+    Supports MST, redundant MST, star, n-edges, and cyclic network topologies
+    with either RestraintSetter-based or kartograf volume ratio scoring.
     """
 
     def __init__(
@@ -37,6 +39,8 @@ class KonnektorWrap:
         processes: int = 1,
         verbose: str = "info",
         central_ligand: Optional[str] = None,
+        n_redundancy: int = 2,
+        connectivity: int = 3,
     ):
         self.inp = inp
         self.network_type = network
@@ -45,6 +49,8 @@ class KonnektorWrap:
         self.processes = processes
         self.verbose = verbose
         self.central_ligand = central_ligand
+        self.n_redundancy = n_redundancy
+        self.connectivity = connectivity
         self.nodes = {}
 
         self.out = self._parse_output(out)
@@ -88,21 +94,27 @@ class KonnektorWrap:
         from konnektor.network_planners import (
             CyclicNetworkGenerator,
             MinimalSpanningTreeNetworkGenerator,
+            NNodeEdgesNetworkGenerator,
+            RedundantMinimalSpanningTreeNetworkGenerator,
             StarNetworkGenerator,
         )
 
+        common_kwargs = dict(mappers=[mapper], scorer=scorer, n_processes=self.processes)
+
         generators = {
-            "mst": MinimalSpanningTreeNetworkGenerator,
-            "star": StarNetworkGenerator,
-            "cyclic": CyclicNetworkGenerator,
+            "mst": lambda: MinimalSpanningTreeNetworkGenerator(**common_kwargs),
+            "rmst": lambda: RedundantMinimalSpanningTreeNetworkGenerator(
+                **common_kwargs, n_redundancy=self.n_redundancy,
+            ),
+            "star": lambda: StarNetworkGenerator(**common_kwargs),
+            "nedges": lambda: NNodeEdgesNetworkGenerator(
+                **common_kwargs, target_component_connectivity=self.connectivity,
+            ),
+            "cyclic": lambda: CyclicNetworkGenerator(**common_kwargs),
         }
         if self.network_type not in generators:
             raise ValueError(f"Unknown network type '{self.network_type}'. Choose from: {list(generators.keys())}")
-        return generators[self.network_type](
-            mappers=[mapper],
-            scorer=scorer,
-            n_processes=self.processes,
-        )
+        return generators[self.network_type]()
 
     def _load_components(self) -> list[SmallMoleculeComponent]:
         """Load SDF files from directory as SmallMoleculeComponents."""
@@ -246,7 +258,7 @@ def parse_arguments() -> argparse.Namespace:
     )
     parser.add_argument(
         "-n", "--network", type=str, default="mst", choices=list(NETWORK_GENERATORS.keys()),
-        help="Network topology: mst, star, or cyclic. Default: mst.",
+        help="Network topology: mst, rmst, star, nedges, or cyclic. Default: mst.",
     )
     parser.add_argument(
         "-s", "--scorer", type=str, default="restraint", choices=["restraint", "kartograf"],
@@ -268,6 +280,14 @@ def parse_arguments() -> argparse.Namespace:
         "-cl", "--central_ligand", type=str, default=None,
         help="Central ligand name for star networks. Must match a molecule name in the input SDF.",
     )
+    parser.add_argument(
+        "--n_redundancy", type=int, default=2,
+        help="Number of redundant MST iterations (only for rmst network). Default: 2.",
+    )
+    parser.add_argument(
+        "--connectivity", type=int, default=3,
+        help="Minimum edges per node (only for nedges network). Default: 3.",
+    )
     return parser.parse_args()
 
 
@@ -282,6 +302,8 @@ def main(args):
         processes=args.processes,
         verbose=args.verbose,
         central_ligand=args.central_ligand,
+        n_redundancy=args.n_redundancy,
+        connectivity=args.connectivity,
     )
     kw.run()
 
