@@ -1,3 +1,6 @@
+"""Converts old Fortran-stype QligFEP .inp files to qgpy JSON format. 
+Generates run.py, topology, FEP, MD, and qfep files for GPU execution.
+"""
 import argparse
 import re
 import glob
@@ -7,6 +10,7 @@ import stat
 import shlex
 import sys
 import json
+from collections import deque
 from random import randrange
 from subprocess import check_output
 from string import Template
@@ -23,10 +27,71 @@ import md       as MD
 import fep      as FEP
 
 # This needs to be fixed!!
-globaldata = {           
+globaldata = {
               'Temp'       : [],
               'MDs'        : []
              }
+
+
+def parse_restart_deps(inp_files):
+    """Parse [files] sections from .inp files to build a restart dependency map.
+
+    Returns dict mapping each file stem to its restart dependency stem,
+    or None if the file has no restart (i.e. it's the root).
+    """
+    deps = {}
+    for inp_path in inp_files:
+        stem = os.path.basename(inp_path).split('.')[0]
+        restart_dep = None
+        in_files_block = False
+
+        with open(inp_path) as f:
+            for line in f:
+                stripped = line.strip()
+                if stripped.startswith('[') and stripped.endswith(']'):
+                    in_files_block = (stripped == '[files]')
+                    continue
+                if in_files_block:
+                    parts = stripped.split()
+                    if len(parts) >= 2 and parts[0] == 'restart':
+                        # restart field is like "eq1.re" - extract stem
+                        restart_dep = parts[1].split('.')[0]
+
+        deps[stem] = restart_dep
+    return deps
+
+
+def execution_order(restart_deps):
+    """Compute execution order from restart dependency map.
+
+    Produces radial interleaved order: eq1→eq5→midpoint, then
+    forward/reverse pairs expanding outward from the midpoint (current default with start = 0.5).
+    Children are sorted descending so forward chain (first lambda > 0.5)
+    comes before reverse chain (first lambda < 0.5).
+    """
+    # Build children map (inverse of dependency)
+    children = {}
+    root = None
+    for node, parent in restart_deps.items():
+        if parent is None:
+            root = node
+        else:
+            children.setdefault(parent, []).append(node)
+
+    # Sort children descending so forward chain comes before reverse
+    for parent in children:
+        children[parent].sort(reverse=True)
+
+    # BFS from root
+    order = []
+    queue = deque([root])
+    while queue:
+        node = queue.popleft()
+        order.append(node)
+        for child in children.get(node, []):
+            queue.append(child)
+
+    return order
 
 class Random():
     """
@@ -128,16 +193,29 @@ class Write_MD():
         self.oldFEProot = oldFEP.split('/')[-1]
         self.lambdas = []
 
-        eq = sorted(glob.glob('{}/inputfiles/eq*.inp'.format(oldFEP)))
-        md = sorted(glob.glob('{}/inputfiles/md*.inp'.format(oldFEP)))[::-1]
-        mdfiles = eq + md
-        
+        # Collect all eq and md .inp files
+        all_inp = sorted(glob.glob('{}/inputfiles/eq*.inp'.format(oldFEP))) + \
+                  sorted(glob.glob('{}/inputfiles/md*.inp'.format(oldFEP)))
+
+        # Build restart dependency graph w/ correct execution order
+        restart_deps = parse_restart_deps(all_inp)
+        globaldata['restart_deps'] = restart_deps
+        bfs_order = execution_order(restart_deps)
+
+        # Map stems to full paths for lookup
+        inp_by_stem = {}
+        for f in all_inp:
+            stem = os.path.basename(f).split('.')[0]
+            inp_by_stem[stem] = f
+
+        mdfiles = [inp_by_stem[stem] for stem in bfs_order]
+
         for replicate in globaldata['randrep']:
             for i, md in enumerate(mdfiles):
                 self.mdroot = md.split('/')[-1]
                 self.mdroot = self.mdroot.split('.')[0]
                 if not self.mdroot in globaldata['MDs']:
-                    globaldata['MDs'].append(self.mdroot) 
+                    globaldata['MDs'].append(self.mdroot)
 
                 md_data = self.construct(md)
                 
@@ -305,8 +383,11 @@ class Write_Runfile():
         self.topology = '../../inputfiles/dualtop.json'
         self.fepfile  = '../../inputfiles/FEP1.json'
 
-        for i, mdfile in enumerate(globaldata['MDs']):
-            if i == 0:
+        restart_deps = globaldata['restart_deps']
+        for mdfile in globaldata['MDs']:
+            restart = restart_deps[mdfile]
+            if restart is None:
+                # Root step (eq1): no restart flag
                 command = "    os.system('python {} -c q7-gpu -t {} -m {}.json -f {} -d {} --clean')\n".format(self.qdyn,
                                                                             self.topology,
                                                                             mdfile,
@@ -314,31 +395,17 @@ class Write_Runfile():
                                                                             mdfile
                                                                            )
             else:
-                restart = globaldata['MDs'][i-1]
                 command = "    os.system('python {} -c q7-gpu -t {} -m ../../inputfiles/{}.json -f {} -d {} -r {}/dualtop/output --clean')\n".format(self.qdyn,
                                                                                   self.topology,
                                                                                   mdfile,
                                                                                   self.fepfile,
                                                                                   mdfile,
                                                                                   restart
-                                                                           )                
+                                                                           )
             self.commands.append(command)
-            
-        # add the qfep command:
+
+        # add the qfep command
         command = "    os.system('python {} -d out -i ../../inputfiles/qfep.json')\n".format(self.qfep)
-        self.commands.append(command)
-        
-        # Clean up commands
-        command = "    shutil.move('out/qfep.out', '../../results/qfep-{:02d}.out'.format(i))\n"
-        self.commands.append(command)
-        
-        command = "    os.chdir('../../')\n"
-        self.commands.append(command)        
-        
-        command = "    os.system('tar -cvf raw_data-{:02d}.tar.gz 298.0/{:02d}'.format(i,i))\n"
-        self.commands.append(command)
-        
-        command = "    shutil.rmtree('298.0/{:02d}'.format(i))\n"
         self.commands.append(command)
         
         for T in globaldata['Temp']:
