@@ -123,6 +123,56 @@ class TestNetworkTopologies:
             kw.run()
         shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_redundant_mst_has_more_edges_than_mst(self, tyk2_sdf):
+        """Redundant MST should have more edges than a plain MST."""
+        tmpdir = Path(tempfile.mkdtemp())
+        kw = KonnektorWrap(inp=str(tyk2_sdf), out=str(tmpdir), network="rmst")
+        result = kw.run()
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+        n_nodes = len(result["nodes"])
+        n_edges = len(result["edges"])
+        # Must have more edges than MST (N-1) due to redundancy
+        assert n_edges > n_nodes - 1
+
+    def test_redundant_mst_custom_redundancy(self, tyk2_sdf):
+        """Redundant MST with n_redundancy=3 should have more edges than n_redundancy=2."""
+        tmpdir2 = Path(tempfile.mkdtemp())
+        tmpdir3 = Path(tempfile.mkdtemp())
+
+        kw2 = KonnektorWrap(inp=str(tyk2_sdf), out=str(tmpdir2), network="rmst", n_redundancy=2)
+        result2 = kw2.run()
+        kw3 = KonnektorWrap(inp=str(tyk2_sdf), out=str(tmpdir3), network="rmst", n_redundancy=3)
+        result3 = kw3.run()
+
+        shutil.rmtree(tmpdir2, ignore_errors=True)
+        shutil.rmtree(tmpdir3, ignore_errors=True)
+
+        assert len(result3["edges"]) >= len(result2["edges"])
+
+    def test_nedges_produces_connected_network(self, tyk2_sdf):
+        """N-edges network should produce a valid connected graph."""
+        tmpdir = Path(tempfile.mkdtemp())
+        kw = KonnektorWrap(inp=str(tyk2_sdf), out=str(tmpdir), network="nedges", connectivity=3)
+        result = kw.run()
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+        n_nodes = len(result["nodes"])
+        n_edges = len(result["edges"])
+        # At minimum a connected graph has N-1 edges
+        assert n_edges >= n_nodes - 1
+
+    def test_cyclic_has_more_edges_than_mst(self, tyk2_sdf):
+        """Cyclic network should have more edges than MST due to cycle closure."""
+        tmpdir = Path(tempfile.mkdtemp())
+        kw = KonnektorWrap(inp=str(tyk2_sdf), out=str(tmpdir), network="cyclic")
+        result = kw.run()
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+        n_nodes = len(result["nodes"])
+        n_edges = len(result["edges"])
+        assert n_edges > n_nodes - 1
+
 
 class TestChargeHandling:
     def test_charged_perturbations_flagged(self, cmet_sdf):
