@@ -37,20 +37,22 @@ class KonnektorWrap:
         scorer: str = "restraint",
         restraint_method: str = "heavyatom_p",
         processes: int = 1,
-        verbose: str = "info",
+        log_level: str = "info",
         central_ligand: Optional[str] = None,
         n_redundancy: int = 2,
         connectivity: int = 3,
+        separate_charges: bool = False,
     ):
         self.inp = inp
         self.network_type = network
         self.scorer_type = scorer
         self.restraint_method = restraint_method
         self.processes = processes
-        self.verbose = verbose
+        self.log_level = log_level
         self.central_ligand = central_ligand
         self.n_redundancy = n_redundancy
         self.connectivity = connectivity
+        self.separate_charges = separate_charges
         self.nodes = {}
 
         self.out = self._parse_output(out)
@@ -104,16 +106,20 @@ class KonnektorWrap:
         generators = {
             "mst": lambda: MinimalSpanningTreeNetworkGenerator(**common_kwargs),
             "rmst": lambda: RedundantMinimalSpanningTreeNetworkGenerator(
-                **common_kwargs, n_redundancy=self.n_redundancy,
+                **common_kwargs,
+                n_redundancy=self.n_redundancy,
             ),
             "star": lambda: StarNetworkGenerator(**common_kwargs),
             "nedges": lambda: NNodeEdgesNetworkGenerator(
-                **common_kwargs, target_component_connectivity=self.connectivity,
+                **common_kwargs,
+                target_component_connectivity=self.connectivity,
             ),
             "cyclic": lambda: CyclicNetworkGenerator(**common_kwargs),
         }
         if self.network_type not in generators:
-            raise ValueError(f"Unknown network type '{self.network_type}'. Choose from: {list(generators.keys())}")
+            raise ValueError(
+                f"Unknown network type '{self.network_type}'. Choose from: {list(generators.keys())}"
+            )
         return generators[self.network_type]()
 
     def _load_components(self) -> list[SmallMoleculeComponent]:
@@ -201,24 +207,14 @@ class KonnektorWrap:
 
         return {"nodes": self.nodes, "edges": edges}
 
-    def run(self) -> dict:
-        """Generate the perturbation network and write mapping.json.
-
-        Returns:
-            Dictionary with 'nodes' and 'edges' keys.
-        """
-        mapper = KartografAtomMapper(atom_map_hydrogens=False)
-        scorer = self._build_scorer()
-        generator = self._build_generator(mapper, scorer)
-
-        components = self._load_components()
-        logger.info(f"Generating {self.network_type} network for {len(components)} ligands...")
-
-        # Resolve central ligand for star networks
+    def _generate_network(self, generator, components) -> dict:
+        """Generate a single network from components and return edge list."""
         gen_kwargs = {}
         if self.central_ligand is not None:
             if self.network_type != "star":
-                logger.warning(f"--central_ligand is only used with star networks, ignoring for '{self.network_type}'.")
+                logger.warning(
+                    f"--central_ligand is only used with star networks, ignoring for '{self.network_type}'."
+                )
             else:
                 central_comp = None
                 for comp in components:
@@ -233,9 +229,47 @@ class KonnektorWrap:
                 gen_kwargs["central_component"] = central_comp
                 logger.info(f"Using '{self.central_ligand}' as central node for star network.")
 
-        network = generator.generate_ligand_network(components, **gen_kwargs)
+        return generator.generate_ligand_network(components, **gen_kwargs)
 
-        result = self._network_to_dict(network)
+    def run(self) -> dict:
+        """Generate the perturbation network and write mapping.json.
+
+        Returns:
+            Dictionary with 'nodes' and 'edges' keys.
+        """
+        mapper = KartografAtomMapper(atom_map_hydrogens=False, map_exact_ring_matches_only=True)
+        scorer = self._build_scorer()
+        generator = self._build_generator(mapper, scorer)
+
+        components = self._load_components()
+        logger.info(f"Generating {self.network_type} network for {len(components)} ligands...")
+
+        if self.separate_charges:
+            from konnektor.network_tools.clustering.charge_clustering import (
+                ChargeClusterer,
+            )
+
+            clusters = ChargeClusterer().cluster_compounds(components)
+            logger.info(
+                f"Separated ligands into {len(clusters)} charge groups: "
+                f"{', '.join(f'charge {c}: {len(v)} ligands' for c, v in sorted(clusters.items()))}"
+            )
+
+            all_edges = []
+            for charge, cluster_components in sorted(clusters.items()):
+                if len(cluster_components) < 2:
+                    logger.warning(
+                        f"Charge group {charge} has only {len(cluster_components)} ligand(s), skipping network generation."
+                    )
+                    continue
+                network = self._generate_network(generator, cluster_components)
+                result = self._network_to_dict(network)
+                all_edges.extend(result["edges"])
+
+            result = {"nodes": self.nodes, "edges": all_edges}
+        else:
+            network = self._generate_network(generator, components)
+            result = self._network_to_dict(network)
 
         # Write JSON output
         outpath = Path(self.out) / "mapping.json"
@@ -249,50 +283,87 @@ class KonnektorWrap:
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate perturbation networks using konnektor.")
     parser.add_argument(
-        "-i", "--input", type=str, required=True,
+        "-i",
+        "--input",
+        type=str,
+        required=True,
         help="SDF file or directory of SDF files.",
     )
     parser.add_argument(
-        "-o", "--output", type=str, default=None,
+        "-o",
+        "--output",
+        type=str,
+        default=None,
         help="Output directory. Defaults to input stem or directory.",
     )
     parser.add_argument(
-        "-n", "--network", type=str, default="mst", choices=list(NETWORK_GENERATORS.keys()),
+        "-n",
+        "--network",
+        type=str,
+        default="mst",
+        choices=list(NETWORK_GENERATORS.keys()),
         help="Network topology: mst, rmst, star, nedges, or cyclic. Default: mst.",
     )
     parser.add_argument(
-        "-s", "--scorer", type=str, default="restraint", choices=["restraint", "kartograf"],
+        "-s",
+        "--scorer",
+        type=str,
+        default="restraint",
+        choices=["restraint", "kartograf"],
         help="Scorer type. Default: restraint.",
     )
     parser.add_argument(
-        "-rest", "--restraint_method", type=str, default="heavyatom_p",
+        "-rest",
+        "--restraint_method",
+        type=str,
+        default="heavyatom_p",
         help="Restraint method (when scorer=restraint). Default: heavyatom_p.",
     )
     parser.add_argument(
-        "-p", "--processes", type=int, default=1,
+        "-p",
+        "--processes",
+        type=int,
+        default=1,
         help="Parallel processes for scoring. Default: 1.",
     )
     parser.add_argument(
-        "-v", "--verbose", type=str, default="info",
-        help="Verbosity level. Default: info.",
+        "-log",
+        "--log-level",
+        dest="log",
+        default="info",
+        choices=["trace", "debug", "info", "warning", "error", "critical"],
+        help="Set the log level for the logger. Defaults to `info`.",
     )
     parser.add_argument(
-        "-cl", "--central_ligand", type=str, default=None,
+        "-cl",
+        "--central_ligand",
+        type=str,
+        default=None,
         help="Central ligand name for star networks. Must match a molecule name in the input SDF.",
     )
     parser.add_argument(
-        "--n_redundancy", type=int, default=2,
+        "--n_redundancy",
+        type=int,
+        default=2,
         help="Number of redundant MST iterations (only for rmst network). Default: 2.",
     )
     parser.add_argument(
-        "--connectivity", type=int, default=3,
+        "--connectivity",
+        type=int,
+        default=3,
         help="Minimum edges per node (only for nedges network). Default: 3.",
+    )
+    parser.add_argument(
+        "--separate_charges",
+        action="store_true",
+        default=False,
+        help="Generate separate networks per charge group, avoiding cross-charge perturbations.",
     )
     return parser.parse_args()
 
 
 def main(args):
-    setup_logger(level=args.verbose)
+    setup_logger(level=args.log)
     kw = KonnektorWrap(
         inp=args.input,
         out=args.output,
@@ -300,10 +371,11 @@ def main(args):
         scorer=args.scorer,
         restraint_method=args.restraint_method,
         processes=args.processes,
-        verbose=args.verbose,
+        log_level=args.log,
         central_ligand=args.central_ligand,
         n_redundancy=args.n_redundancy,
         connectivity=args.connectivity,
+        separate_charges=args.separate_charges,
     )
     kw.run()
 
