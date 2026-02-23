@@ -10,7 +10,8 @@ import numpy as np
 import pandas as pd
 from sklearn.neighbors import NearestNeighbors
 
-from .CLI.utils import get_avail_restraint_methods, handle_cysbonds
+from .CLI.utils import handle_cysbonds
+from .counter_ions import minimize_coulomb_on_sphere
 from .functions import COG, kT, overlapping_pairs, sigmoid
 from .IO import get_force_field_paths, qprep_error_check, replace, run_qprep
 from .logger import logger
@@ -24,6 +25,7 @@ from .pdb_utils import (
     rm_HOH_clash_NN,
 )
 from .restraints.restraint_setter import RestraintSetter
+from .scoring import parse_restraint_method
 from .settings.settings import CLUSTER_DICT, CONFIGS
 from .templates import (
     QprepFEPParameters,
@@ -37,6 +39,7 @@ from .templates import (
 from .templates.sections import (
     format_distance_restraints,
     format_sequence_restraint,
+    format_wall_restraints,
     format_water_restraint,
 )
 
@@ -65,6 +68,7 @@ class QligFEP:
         dr_force: float = 0.5,
         random_state: Optional[int] = 42,
         wath_ligand_only: bool = False,
+        protein_charge: Optional[int] = None,
     ):
         self.timestep = timestep
         self.lig1 = lig1
@@ -88,6 +92,10 @@ class QligFEP:
         self.write_dir = None
         self.pdb_fname = f"{self.lig1}_{self.lig2}.pdb"
         self.seeds = self.set_seeds(random_state)
+        self.n_counter_ions = 0
+        # counter ion type to neutralized charge-changing perturbations (e.g., SOD or CLA)
+        self.ion_type = None
+        self.protein_charge = protein_charge
 
         if self.system == "protein":
             # Get last atom and residue from complexfile!
@@ -196,6 +204,11 @@ class QligFEP:
                             atomtypes.append([merged_molsize, "DUM", j])
 
         molsize_lig2 = merged_molsize - molsize_lig1
+
+        # Compute formal charges from partial charge sums
+        self.charge_lig1 = round(sum(float(c[1]) for c in charges[:molsize_lig1]))
+        self.charge_lig2 = round(sum(float(c[2]) for c in charges[molsize_lig1:]))
+
         return ([changes_1, changes_2], [charges, atomtypes], [molsize_lig1, molsize_lig2])
 
     def change_lib(self, replacements, writedir):
@@ -305,9 +318,12 @@ class QligFEP:
         lig_size1 = int(lig_size1)
         lig_size2 = int(lig_size2)
         lig_tot = lig_size1 + lig_size2
+        exclude_residues = ["HOH", "LIG", "LID"]
+        if self.system == "water" and self.n_counter_ions > 0:
+            exclude_residues.append(self.ion_type)
         self.atomoffset = (
             read_pdb_to_dataframe(Path(writedir) / "top_p.pdb")
-            .query("~residue_name.isin(['HOH', 'LIG', 'LID'])")
+            .query("~residue_name.isin(@exclude_residues)")
             .shape[0]
         )
 
@@ -395,6 +411,83 @@ class QligFEP:
                 line = line[0:6] + atchange + line[11:22] + resnr + line[26:]
                 outfile.write(line)
 
+    def place_counter_ions(self, writedir: str) -> int:
+        """Place counter-ions in the combined PDB to neutralize charge differences.
+
+        Only applicable for water system when ligands have different formal charges.
+        Ions are placed on a sphere (radius = sphereradius - 11) centered on the
+        ligand COG to maximize separation via Coulomb minimization.
+
+        When protein_charge is provided (via setupFEP), the water leg is set up to
+        match the protein leg's total system charge so that electrostatic artifacts
+        from the charged sphere cancel in the ddG calculation.
+
+        Args:
+            writedir: Directory containing the combined PDB (inputfiles subdirectory).
+
+        Returns:
+            Number of counter-ions placed.
+        """
+        delta_q = self.charge_lig1 - self.charge_lig2
+        if delta_q == 0 or self.system != "water":
+            return 0
+
+        # Temporary: in the future let's have standard 2-letter code for ions and not
+        # these made up names for Q because it demands for 3-letter residue names...
+        CHLORIDE_NAME = {
+            "AMBER14sb": "CHL",
+            "OPLS2015": "CLA",
+            "CHARMM36": "CLA",
+        }
+        chloride = CHLORIDE_NAME.get(self.FF, "CLA")
+
+        if self.protein_charge is not None:
+            water_charge = self.charge_lig1 + self.charge_lig2
+            ions_charge = self.protein_charge - water_charge
+            n_ions = abs(ions_charge)
+            self.ion_type = chloride if ions_charge < 0 else "SOD"
+            logger.info(
+                f"Matching protein leg charge {self.protein_charge}: "
+                f"placing {n_ions} {self.ion_type} ion(s)"
+            )
+        else:
+            n_ions = abs(delta_q)
+            self.ion_type = chloride if delta_q > 0 else "SOD"
+
+        self.n_counter_ions = n_ions
+
+        cog = np.array(COG(self.lig1 + ".pdb"))
+        ion_radius = int(self.sphereradius) - 11
+        ion_xyz = minimize_coulomb_on_sphere(n_ions, ion_radius, cog, seed=42)
+
+        # Read existing PDB to get last atom serial and residue number
+        pdb_path = Path(writedir) / self.pdb_fname
+        pdb_text = pdb_path.read_text()
+        last_atnr = 0
+        last_resnr = 0
+        for line in pdb_text.splitlines():
+            if line.startswith(("ATOM", "HETATM")):
+                try:
+                    last_atnr = max(last_atnr, int(line[6:11]))
+                    last_resnr = max(last_resnr, int(line[22:26]))
+                except (ValueError, IndexError):
+                    continue
+
+        # Append ion ATOM lines to the combined PDB
+        with open(pdb_path, "a") as outfile:
+            for i in range(n_ions):
+                atnr = last_atnr + 1 + i
+                resnr = last_resnr + 1 + i
+                x, y, z = ion_xyz[i]
+                ion_name = self.ion_type
+                line = (
+                    f"ATOM  {atnr:5d}  {ion_name:<3s} {ion_name:<4s} {resnr:4d}    "
+                    f"{x:8.3f}{y:8.3f}{z:8.3f}  0.00  0.00\n"
+                )
+                outfile.write(line)
+
+        return n_ions
+
     def write_water_pdb(self, writedir):
         header = self.sphereradius + ".0 SPHERE\n"
         with open("water.pdb") as infile, open(writedir + "/water.pdb", "w") as outfile:
@@ -472,23 +565,13 @@ class QligFEP:
         Returns:
             list: list of overlapping atoms.
         """
-        pattern = r"_(\d+\.?\d*)"  # check for the optional atom max distance
-        match = re.search(pattern, restraint_method)
-        if match:
-            atom_max_distance = float(match.group(1))
-            restraint_method = re.sub(pattern, "", restraint_method)
-        else:
-            atom_max_distance = 0.95
-
-        avail_methods = get_avail_restraint_methods()
-        if restraint_method not in avail_methods:
-            raise ValueError(f"Method {restraint_method} not recognized. Please use one of {avail_methods}")
-
         pdbfile = writedir + f"/inputfiles/{self.lig1}_{self.lig2}.pdb"
         if restraint_method == "overlap":
             reslist = ["LIG", "LID"]
             torestraint_list = overlapping_pairs(pdbfile, reslist)
         else:
+            parsed = parse_restraint_method(restraint_method)
+            atom_max_distance = parsed.pop("kartograf_max_atom_distance", 0.95)
             parent_write_dir = Path(writedir).parent
 
             if self.system == "protein":  # In this case order of elements in PDB file is: prot, LIG, LID, HOH
@@ -516,18 +599,8 @@ class QligFEP:
             else:
                 logger.debug(f'Loading sdf for restraint calculation:\nlig1:"{lig1_path}"\nlig2"{lig2_path}"')
                 rsetter = RestraintSetter(lig1_path, lig2_path, kartograf_max_atom_distance=atom_max_distance)
-                if restraint_method == "kartograf":
-                    restraints = rsetter.set_restraints(kartograf_native=True)
-                else:
-                    atom_compare_method, permissiveness_lvl = restraint_method.split("_")
-                    if permissiveness_lvl == "p":
-                        params = {"strict_surround": False}
-                    elif permissiveness_lvl == "ls":
-                        params = {"strict_surround": True, "ignore_surround_atom_type": True}
-                    elif permissiveness_lvl == "strict":
-                        params = {"strict_surround": True, "ignore_surround_atom_type": False}
-                    restraints = rsetter.set_restraints(atom_compare_method=atom_compare_method, **params)
-                    logger.debug(f"Restraints set using {restraint_method} method. Parameters: {params}")
+                restraints = rsetter.set_restraints(**parsed)
+                logger.debug(f"Restraints set using {restraint_method} method. Parameters: {parsed}")
                 if strict_check:  # Good to check in case sdf in directory doesn't belong to the structure
                     rdLig1 = rsetter.molA.to_rdkit()
                     rdLig2 = rsetter.molB.to_rdkit()
@@ -621,6 +694,7 @@ class QligFEP:
         lig_size1: int,
         lig_size2: int,
         overlapping_atoms: list,
+        wall_restraints: str = "",
     ) -> list[list[str]]:
         """Write equilibration and production MD input files using templates module.
 
@@ -630,6 +704,7 @@ class QligFEP:
             lig_size1: Number of atoms in ligand 1
             lig_size2: Number of atoms in ligand 2
             overlapping_atoms: List of [atom1, atom2] pairs for distance restraints
+            wall_restraints: Pre-formatted wall restraints for counter-ions
 
         Returns:
             List of three file lists: [eq_files + md_start, forward_lambda_files, reverse_lambda_files]
@@ -665,6 +740,7 @@ class QligFEP:
                 restart_file=restart_file,
                 distance_restraints=dr_str,
                 sequence_restraints=seq_str,
+                wall_restraints=wall_restraints,
                 is_eq1=(i == 0),
             )
 
@@ -687,11 +763,11 @@ class QligFEP:
         # Write production files based on start mode
         if self.start == "0.5":
             file_list1, file_list2, file_list3 = self._write_production_05(
-                lambdas, writedir, prod_config, prod_dr_str, prod_seq_str, file_list1
+                lambdas, writedir, prod_config, prod_dr_str, prod_seq_str, file_list1, wall_restraints
             )
         else:
             file_list1, file_list2, file_list3 = self._write_production_1(
-                lambdas, writedir, prod_config, prod_dr_str, prod_seq_str, file_list1
+                lambdas, writedir, prod_config, prod_dr_str, prod_seq_str, file_list1, wall_restraints
             )
 
         return [file_list1, file_list2, file_list3]
@@ -704,6 +780,7 @@ class QligFEP:
         dr_str: str,
         seq_str: str,
         file_list1: list[str],
+        wall_str: str = "",
     ) -> tuple[list[str], list[str], list[str]]:
         """Write production MD files for start=0.5 mode.
 
@@ -738,6 +815,7 @@ class QligFEP:
             energy_file="md_0500_0500.en",
             distance_restraints=dr_str,
             sequence_restraints=seq_str,
+            wall_restraints=wall_str,
         )
         filepath = Path(writedir) / "md_0500_0500.inp"
         filepath.write_text(content)
@@ -767,6 +845,7 @@ class QligFEP:
                     energy_file=f"{filename}.en",
                     distance_restraints=dr_str,
                     sequence_restraints=seq_str,
+                    wall_restraints=wall_str,
                 )
                 filepath = Path(writedir) / f"{filename}.inp"
                 filepath.write_text(content)
@@ -788,6 +867,7 @@ class QligFEP:
         dr_str: str,
         seq_str: str,
         file_list1: list[str],
+        wall_str: str = "",
     ) -> tuple[list[str], list[str], list[str]]:
         """Write production MD files for start=0.0/1 mode.
 
@@ -808,6 +888,7 @@ class QligFEP:
             energy_file="md_1000_0000.en",
             distance_restraints=dr_str,
             sequence_restraints=seq_str,
+            wall_restraints=wall_str,
         )
         filepath = Path(writedir) / "md_1000_0000.inp"
         filepath.write_text(content)
@@ -836,6 +917,7 @@ class QligFEP:
                 energy_file=f"{filename}.en",
                 distance_restraints=dr_str,
                 sequence_restraints=seq_str,
+                wall_restraints=wall_str,
             )
             filepath = Path(writedir) / f"{filename}.inp"
             filepath.write_text(content)
@@ -1047,14 +1129,14 @@ class QligFEP:
         cog = self._get_cog_from_water(writedir)
         merged_pdb = Path(writedir) / self.pdb_fname
 
-        orig_count, filt_count = filter_out_of_sphere_fragments(
-            merged_pdb, cog, float(self.sphereradius)
-        )
+        orig_count, filt_count = filter_out_of_sphere_fragments(merged_pdb, cog, float(self.sphereradius))
 
         # Update offsets if structure was filtered
         if filt_count < orig_count:
             self._update_offsets_from_pdb(merged_pdb)
-            logger.info(f"Filtered structure: {orig_count} → {filt_count} atoms ({orig_count - filt_count} removed)")
+            logger.info(
+                f"Filtered structure: {orig_count} → {filt_count} atoms ({orig_count - filt_count} removed)"
+            )
 
         return orig_count, filt_count
 
@@ -1110,9 +1192,7 @@ class QligFEP:
 
                     dist1 = calculate_distance(atom1_coords, self.cog)
                     dist2 = calculate_distance(atom2_coords, self.cog)
-                    logger.debug(
-                        f"{resn1}:{at1} and {resn2}:{at2} within {dist1} and {dist2} of the COG."
-                    )
+                    logger.debug(f"{resn1}:{at1} and {resn2}:{at2} within {dist1} and {dist2} of the COG.")
                     if dist1 <= int(self.sphereradius) and dist2 <= int(self.sphereradius):
                         new_cysbond_str += line + "\n"
                     else:

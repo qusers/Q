@@ -9,7 +9,9 @@ from typing import Optional
 from QligFEP import __version__
 
 from ..logger import logger, setup_logger
+from ..pdb_utils import read_pdb_to_dataframe
 from ..qligfep import QligFEP
+from ..templates.sections import format_wall_restraints
 from .parser_base import parse_arguments
 
 
@@ -42,6 +44,8 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "random_state": args.random_state,
             "wath_ligand_only": args.wath_ligand_only,
         }
+        if args.protein_charge is not None:
+            param_dict["protein_charge"] = args.protein_charge
     else:
         param_dict = {}
     param_dict.update(kwargs)
@@ -64,6 +68,9 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 command_str += f" --{k}".replace("_", "-")
         elif k == "dr_force":
             command_str += f" --{k} {v}".replace("dr_force", "distance_restraint_force")
+        elif k == "protein_charge":
+            if v is not None:
+                command_str += f" -pq {v}"
         else:
             command_str += f" --{k} {v}"
     command_str += f" --restraint_method {args.restraint_method}"
@@ -91,6 +98,11 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     logger.debug("Writing PDB files")
     run.merge_pdbs(inputdir)
 
+    # Place counter-ions for charge-changing perturbations (water system only)
+    n_ions = run.place_counter_ions(inputdir)
+    if n_ions > 0:
+        logger.info(f"Placed {n_ions} {run.ion_type} counter-ion(s) for charge-changing perturbation")
+
     run.write_water_pdb(inputdir)
 
     logger.debug("Getting the lambdas")
@@ -108,9 +120,22 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     run.write_FEP_file(change_charges, change_vdw, FEP_vdw, inputdir, lig_size1, lig_size2)
     overlapping_atoms = run.set_restraints(writedir, args.restraint_method, strict_check=True)
 
+    # Build wall restraints for counter-ions (after qprep so top_p.pdb exists)
+    wall_restraints_str = ""
+    if run.n_counter_ions > 0:
+        pdb_df = read_pdb_to_dataframe(Path(inputdir) / "top_p.pdb")
+        ion_df = pdb_df[pdb_df["residue_name"] == run.ion_type]
+        first_ion = int(ion_df["atom_serial_number"].min())
+        last_ion = int(ion_df["atom_serial_number"].max())
+        wall_radius = int(run.sphereradius) - 5
+        wall_restraints_str = format_wall_restraints(first_ion, last_ion, wall_radius, force=1.0)
+        logger.debug(f"Wall restraints for ions: atoms {first_ion}-{last_ion}, radius {wall_radius}")
+
     # Handling the correct offset here
     logger.debug("Writing the MD files")
-    file_list = run.write_md_files(lambdas, inputdir, lig_size1, lig_size2, overlapping_atoms)
+    file_list = run.write_md_files(
+        lambdas, inputdir, lig_size1, lig_size2, overlapping_atoms, wall_restraints=wall_restraints_str
+    )
     run.write_runfile(inputdir, file_list)
     logger.debug(f"Generated files: {file_list}")
     logger.debug("Writing the submit files")

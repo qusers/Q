@@ -78,6 +78,7 @@ from QligFEP.templates.qprep import (
 from QligFEP.templates.sections import (
     format_distance_restraints,
     format_sequence_restraint,
+    format_wall_restraints,
 )
 
 __all__ = [
@@ -104,6 +105,7 @@ __all__ = [
     # Sections
     "format_distance_restraints",
     "format_sequence_restraint",
+    "format_wall_restraints",
     # Qfep
     "calculate_kT",
     "format_energy_files",
