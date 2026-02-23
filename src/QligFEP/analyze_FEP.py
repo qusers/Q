@@ -509,7 +509,9 @@ class FepReader:
                 expected_col = exp_key
 
             if expected_col not in df.columns:
-                available_cols = [col for col in df.columns if "delta_" in col or "_value" in col or "dg" in col.lower()]
+                available_cols = [
+                    col for col in df.columns if "delta_" in col or "_value" in col or "dg" in col.lower()
+                ]
                 logger.error(
                     f"Expected experimental data column '{exp_key}' not found in edges data. "
                     f"Available columns that might contain experimental data: {', '.join(available_cols) if available_cols else 'none'}. "
@@ -602,7 +604,7 @@ class FepReader:
             min_val = xylims[0]
             max_val = xylims[1]
         else:
-            all_values = avg_values + exp_values
+            all_values = [*avg_values, *exp_values]
             min_val = min(all_values) - margin
             max_val = max(all_values) + margin
 
