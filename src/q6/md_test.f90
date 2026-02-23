@@ -14681,6 +14681,25 @@ subroutine pot_energy
     end do
 #endif
 
+    ! Zero nonbonded energies for states with lambda ≈ 0.
+    ! At exact FEP endpoints, the ghost ligand's intra-molecular VdW
+    ! can overflow when re-evaluated with real atom types (both atoms
+    ! have alpha=0, so softcore doesn't activate). These energies are
+    ! physically meaningless since the configuration was never sampled
+    ! under that state's Hamiltonian. Zeroing them prevents overflow
+    ! in the energy file without affecting dynamics (lambda=0 states
+    ! contribute zero force).
+    do istate = 1, nstates
+      if (EQ(istate)%lambda < 1.0e-9_8) then
+        EQ(istate)%qq%el  = 0.0_8
+        EQ(istate)%qq%vdw = 0.0_8
+        EQ(istate)%qp%el  = 0.0_8
+        EQ(istate)%qp%vdw = 0.0_8
+        EQ(istate)%qw%el  = 0.0_8
+        EQ(istate)%qw%vdw = 0.0_8
+      end if
+    end do
+
     ! q-atom energy summary
     do istate = 1, nstates
       ! update EQ
