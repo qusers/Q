@@ -1522,6 +1522,9 @@ subroutine get_fep
       qbvdw(:,3) = sqrt( qbvdw(:,3) )
     end if
 
+    !Compute Gapsys linearization radii if method is gapsys
+    if (softcore_method == SC_GAPSYS) call softcore_init_gapsys(nstates)
+
     !remove redefined bonded interactions from topology
     if(nqbond > 0 .or. nqangle > 0 .or. nqtor > 0 .or. nqimp > 0 ) then
       write(*,*)
@@ -2276,6 +2279,22 @@ subroutine init_nodes
   !Broadcast sc_lookup(nqat,natyps+nqat,nstates)
   call MPI_Bcast(sc_lookup, size(sc_lookup), MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
   if (ierr .ne. 0) call die('init_nodes/MPI_Bcast sc_lookup')
+
+  !Broadcast softcore_method
+  call MPI_Bcast(softcore_method, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+  if (ierr .ne. 0) call die('init_nodes/MPI_Bcast softcore_method')
+
+  !Broadcast Gapsys linearization radii
+  if (softcore_method == SC_GAPSYS) then
+    if (nodeid .ne. 0) then
+      allocate(gapsys_lj_rsc(nqat, natyps+nqat, nstates))
+      allocate(gapsys_q_rsc(nqat, natyps+nqat, nstates))
+    end if
+    call MPI_Bcast(gapsys_lj_rsc, size(gapsys_lj_rsc), MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    if (ierr .ne. 0) call die('init_nodes/MPI_Bcast gapsys_lj_rsc')
+    call MPI_Bcast(gapsys_q_rsc, size(gapsys_q_rsc), MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    if (ierr .ne. 0) call die('init_nodes/MPI_Bcast gapsys_q_rsc')
+  end if
 
   ! integer(AI) ::  iqseq(nqat)
   !Change to mpi_type_create  (AI)
