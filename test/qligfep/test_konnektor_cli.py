@@ -186,6 +186,30 @@ class TestChargeHandling:
         same_charges = [e["same_charge"] for e in result["edges"]]
         assert not all(same_charges), "Expected some edges with same_charge=False in cmet dataset"
 
+    def test_separate_charges_no_cross_charge_edges(self, cmet_sdf):
+        """With separate_charges=True, no edges should cross charge boundaries."""
+        tmpdir = Path(tempfile.mkdtemp())
+        kw = KonnektorWrap(inp=str(cmet_sdf), out=str(tmpdir), network="mst", separate_charges=True)
+        result = kw.run()
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+        for edge in result["edges"]:
+            assert edge["same_charge"], (
+                f"Edge {edge['from']} -> {edge['to']} crosses charge boundary with separate_charges=True"
+            )
+
+    def test_separate_charges_all_nodes_present(self, cmet_sdf):
+        """With separate_charges=True, all ligands should still appear in nodes."""
+        tmpdir = Path(tempfile.mkdtemp())
+        kw = KonnektorWrap(inp=str(cmet_sdf), out=str(tmpdir), network="mst", separate_charges=True)
+        result = kw.run()
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+        supplier = Chem.SDMolSupplier(str(cmet_sdf))
+        expected_names = {m.GetProp("_Name") for m in supplier if m is not None}
+        actual_names = set(result["nodes"].keys())
+        assert actual_names == expected_names
+
 
 class TestSetupFEPCompatibility:
     def test_output_compatible_with_setupFEP(self, tyk2_sdf, tyk2_output_dir):
