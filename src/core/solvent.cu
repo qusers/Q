@@ -1,5 +1,6 @@
 #include "system.h"
 #include "solvent.h"
+#include "vdw_rules.h"
 #include "utils.h"
 
 #include <stdio.h>
@@ -40,8 +41,19 @@ void calc_nonbonded_ww_forces() {
         ccharge_ow = ccharges[charges[n_atoms_solute].code - 1];
         ccharge_hw = ccharges[charges[n_atoms_solute+1].code - 1];
 
-        A_OO = pow(catype_ow.aii_normal, 2);
-        B_OO = pow(catype_ow.bii_normal, 2);
+        if (topo.vdw_rule == VDW_GEOMETRIC) {
+            // Geometric: A_OO = sqrt(A) * sqrt(A) = A
+            A_OO = pow(catype_ow.aii_normal, 2);
+            B_OO = pow(catype_ow.bii_normal, 2);
+        } else {
+            // Arithmetic: R*_OO = R*_O + R*_O = 2*R*_O
+            double Rstar_OO = 2.0 * catype_ow.aii_normal;
+            double eps_OO = pow(catype_ow.bii_normal, 2);  // sqrt(eps) * sqrt(eps) = eps
+            double R6_OO = pow(Rstar_OO, 6);
+            // Pre-compute coefficients for V_a = A_OO * r6^2 and V_b = B_OO * r6
+            A_OO = eps_OO * R6_OO * R6_OO;
+            B_OO = 2.0 * eps_OO * R6_OO;
+        }
 
         crg_ow = ccharge_ow.charge;
         crg_hw = ccharge_hw.charge;
@@ -538,8 +550,19 @@ void calc_nonbonded_ww_forces_host() {
         ccharge_ow = ccharges[charges[n_atoms_solute].code - 1];
         ccharge_hw = ccharges[charges[n_atoms_solute + 1].code - 1];
 
-        A_OO = pow(catype_ow.aii_normal, 2);
-        B_OO = pow(catype_ow.bii_normal, 2);
+        if (topo.vdw_rule == VDW_GEOMETRIC) {
+            // Geometric: A_OO = sqrt(A) * sqrt(A) = A
+            A_OO = pow(catype_ow.aii_normal, 2);
+            B_OO = pow(catype_ow.bii_normal, 2);
+        } else {
+            // Arithmetic: R*_OO = R*_O + R*_O = 2*R*_O
+            double Rstar_OO = 2.0 * catype_ow.aii_normal;
+            double eps_OO = pow(catype_ow.bii_normal, 2);  // sqrt(eps) * sqrt(eps) = eps
+            double R6_OO = pow(Rstar_OO, 6);
+            // Pre-compute coefficients for V_a = A_OO * r6^2 and V_b = B_OO * r6
+            A_OO = eps_OO * R6_OO * R6_OO;
+            B_OO = 2.0 * eps_OO * R6_OO;
+        }
 
         crg_ow = ccharge_ow.charge;
         crg_hw = ccharge_hw.charge;
@@ -624,8 +647,11 @@ void calc_nonbonded_pw_forces() {
             ai_bii = ai_type.bii_normal;
             aj_bii = aj_type.bii_normal;
 
-            V_a = r6a * r6a * ai_aii * aj_aii;
-            V_b = r6a * ai_bii * aj_bii;
+            if (topo.vdw_rule == VDW_GEOMETRIC) {
+                calc_vdw_geometric(ai_aii, aj_aii, ai_bii, aj_bii, r6a, &V_a, &V_b);
+            } else {
+                calc_vdw_arithmetic(ai_aii, aj_aii, ai_bii, aj_bii, r6a, &V_a, &V_b);
+            }
             dva = r2a * ( -Vela -12 * V_a + 6 * V_b);
 
             dvelocities[i].x -= dva * da.x;
@@ -1190,8 +1216,11 @@ __device__ void calc_pw_dvel_matrix_incr(int row, int pi, int column, int j, int
     ai_bii = ai_type.bii_normal;
     aj_bii = aj_type.bii_normal;
 
-    V_a = r6a * r6a * ai_aii * aj_aii;
-    V_b = r6a * ai_bii * aj_bii;
+    if (D_topo.vdw_rule == VDW_GEOMETRIC) {
+        calc_vdw_geometric(ai_aii, aj_aii, ai_bii, aj_bii, r6a, &V_a, &V_b);
+    } else {
+        calc_vdw_arithmetic(ai_aii, aj_aii, ai_bii, aj_bii, r6a, &V_a, &V_b);
+    }
     dva = r2a * ( -Vela -12 * V_a + 6 * V_b);
 
 

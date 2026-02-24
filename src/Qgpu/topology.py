@@ -7,6 +7,7 @@ import sys
 # Q-GPU libraries
 import IO
 
+
 class Topology():
     def __init__(self):
         self.data = {'header'           : {},
@@ -44,6 +45,7 @@ class Topology():
                      'topdir'           : None,
                      'coulomb'          : None,
                      '14scaling'        : None,
+                     'vdw_rule'         : None,
                     }
 
 class Read_Topology(object):
@@ -87,6 +89,18 @@ class Read_Topology(object):
         header = {}
         cnt = 0
         switch = 0
+
+        # Initialize vdW parameter lists to detect missing sections
+        Aii_normal = []
+        Bii_normal = []
+        Aii_polar = []
+        Bii_polar = []
+        Aii_14 = []
+        Bii_14 = []
+        Masses = []
+
+        # Track which vdW format was detected: 'geometric' or 'arithmetic'
+        vdw_format_detected = None
 
         with open(self.top) as infile:
             for line in infile:
@@ -147,11 +161,14 @@ class Read_Topology(object):
                     solute_cgp = int(line[1])
                     total_cgp = int(line[0])
                     solvent_cgp = total_cgp - solute_cgp
+                    iuse_switch_atom = int(line[2]) if len(line) > 2 and line[2].isdigit() else 1
                     self.data['charge_group_total'] = ['{}'.format(solute_cgp),'{}'.format(solvent_cgp)]
+                    self.data['iuse_switch_atom'] = iuse_switch_atom
                     switch = 1
                     continue
                                                                                    
                 if 'vdW combination rule' in line:
+                    self.data['vdw_rule'] = line.split()[0]
                     block = 13
                     continue
                                                                                    
@@ -160,35 +177,68 @@ class Read_Topology(object):
                                                                                                    
                 if 'Masses' in line:
                     block = 15
-                    Masses = []
                     continue
-                                                                                                                   
+
+                # Geometric vdW format (vdw_rule=1): sqrt(Aii), sqrt(Bii)
                 if 'sqrt (Aii) normal' in line:
+                    vdw_format_detected = 'geometric'
                     Aii_normal = []
                     block = 16
                     continue
-                                                                                                                   
+
                 if 'sqrt (Bii) normal' in line:
                     Bii_normal = []
                     block = 17
                     continue
-                                                                                                                   
+
                 if 'sqrt (Aii) polar' in line:
                     Aii_polar = []
                     block = 18
                     continue
-                                                                                                                   
+
                 if 'sqrt (Bii) polar' in line:
                     Bii_polar = []
                     block = 19
                     continue
-                    
+
                 if 'sqrt (Aii) 1-4' in line:
                     Aii_14 = []
                     block = 20
                     continue
-                    
+
                 if 'sqrt (Bii) 1-4' in line:
+                    Bii_14 = []
+                    block = 21
+                    continue
+
+                # Arithmetic vdW format (vdw_rule=2): R*, epsilon
+                if 'R* normal:' in line:
+                    vdw_format_detected = 'arithmetic'
+                    Aii_normal = []
+                    block = 16
+                    continue
+
+                if 'epsilon normal:' in line:
+                    Bii_normal = []
+                    block = 17
+                    continue
+
+                if 'R* polar:' in line:
+                    Aii_polar = []
+                    block = 18
+                    continue
+
+                if 'epsilon polar:' in line:
+                    Bii_polar = []
+                    block = 19
+                    continue
+
+                if 'R* 1-4:' in line:
+                    Aii_14 = []
+                    block = 20
+                    continue
+
+                if 'epsilon 1-4:' in line:
                     Bii_14 = []
                     block = 21
                     continue
@@ -446,7 +496,33 @@ class Read_Topology(object):
                             l = '1'
 
                         self.data['excluded'].append(l)
-        
+
+        # exit when vdW rule was not specified
+        if self.data['vdw_rule'] is None:
+            print("FATAL: vdW combination rule not specified in topology")
+            sys.exit()
+
+        if self.data['vdw_rule'] not in ('1', '2'):
+            print("FATAL: Invalid vdW combination rule '{}' (must be 1 or 2)".format(
+                self.data['vdw_rule']))
+            sys.exit()
+
+        # validate format matches declared rule
+        if vdw_format_detected is None:
+            print("FATAL: No vdW parameter sections found in topology")
+            sys.exit()
+
+        expected_format = 'geometric' if self.data['vdw_rule'] == '1' else 'arithmetic'
+        if vdw_format_detected != expected_format:
+            print("FATAL: vdw_rule={} but found {} format section headers".format(
+                self.data['vdw_rule'], vdw_format_detected))
+            sys.exit()
+
+        # validate all vdW parameter sections were populated
+        if not Aii_normal or not Bii_normal or not Aii_polar or not Bii_polar or not Aii_14 or not Bii_14:
+            print("FATAL: Missing required vdW parameter sections in topology")
+            sys.exit()
+
         # header construct
         self.data['header'] = header
         
@@ -711,27 +787,29 @@ class Write_Topology(object):
             
         #Topo.csv
         with open(self.wd + '/topo.csv','w') as outfile:
-            outfile.write('7\n')
+            outfile.write('8\n')
             outfile.write(self.data['solvtype'] + '\n')
             outfile.write(self.data['exclusion'] + '\n')
             outfile.write(self.data['radii'] + '\n')
             outfile.write('{};{};{}\n'.format(self.data['solucenter'][0],
                                               self.data['solucenter'][1],
                                               self.data['solucenter'][2],))
-            
+
             outfile.write('{};{};{}\n'.format(self.data['solvcenter'][0],
                                               self.data['solvcenter'][1],
                                               self.data['solvcenter'][2],))
-            
+
             outfile.write(self.data['14scaling'] + '\n')
             outfile.write(self.data['coulomb'] + '\n')
+            outfile.write(self.data['vdw_rule'] + '\n')
 
         # Charge groups
         with open(self.wd + '/charge_groups.csv','w') as outfile:
             # TO DO ADD LINE TOTALS
             outfile.write('{}\n'.format(self.data['charge_groups'][0]))
-            outfile.write('{};{}\n'.format(self.data['charge_group_total'][0],
-                                           self.data['charge_group_total'][1]))
+            outfile.write('{};{};{}\n'.format(self.data['charge_group_total'][0],
+                                           self.data['charge_group_total'][1],
+                                           self.data.get('iuse_switch_atom', 1)))
 
             for charge_group in self.data['charge_groups'][1]:
                 outfile.write('{};{}\n'.format(charge_group[0][0],charge_group[0][1]))

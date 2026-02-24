@@ -5,7 +5,7 @@ import os
 import sys
 import json
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../qligfep-newbin-unfinished/')))
 
 import qfep
 

@@ -1,5 +1,6 @@
 #include "system.h"
 #include "nonbonded.h"
+#include "vdw_rules.h"
 #include "utils.h"
 #include <stdio.h>
 
@@ -69,8 +70,11 @@ void calc_nonbonded_pp_forces() {
             ai_bii = bond14 ? ai_type.bii_1_4 : ai_type.bii_normal;
             aj_bii = bond14 ? aj_type.bii_1_4 : aj_type.bii_normal;
 
-            V_a = r6a * r6a * ai_aii * aj_aii;
-            V_b = r6a * ai_bii * aj_bii;
+            if (topo.vdw_rule == VDW_GEOMETRIC) {
+                calc_vdw_geometric(ai_aii, aj_aii, ai_bii, aj_bii, r6a, &V_a, &V_b);
+            } else {
+                calc_vdw_arithmetic(ai_aii, aj_aii, ai_bii, aj_bii, r6a, &V_a, &V_b);
+            }
             dva = r2a * ( -Vela -12 * V_a + 6 * V_b);
 
             dvelocities[i].x -= dva * da.x;
@@ -202,8 +206,11 @@ __device__ void calc_pp_dvel_matrix_incr(int row, int pi, int column, int pj,
     ai_bii = bond14 ? ai_type.bii_1_4 : ai_type.bii_normal;
     aj_bii = bond14 ? aj_type.bii_1_4 : aj_type.bii_normal;
 
-    V_a = r6a * r6a * ai_aii * aj_aii;
-    V_b = r6a * ai_bii * aj_bii;
+    if (D_topo.vdw_rule == VDW_GEOMETRIC) {
+        calc_vdw_geometric(ai_aii, aj_aii, ai_bii, aj_bii, r6a, &V_a, &V_b);
+    } else {
+        calc_vdw_arithmetic(ai_aii, aj_aii, ai_bii, aj_bii, r6a, &V_a, &V_b);
+    }
     dva = r2a * ( -Vela -12 * V_a + 6 * V_b);
 
     patom_a->x = -dva * da.x;

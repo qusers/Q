@@ -3,6 +3,7 @@
 #include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaNonbondedForce.cuh"
 #include "system.h"
+#include "vdw_rules.h"
 
 namespace CudaNonbondedForce {
 bool is_initialized = false;
@@ -45,9 +46,6 @@ __device__ __forceinline__ catype_t shfl_catype(catype_t v, int srcLane, unsigne
 }
 
 __device__ void calculate_unforce_bound(
-    // const int x_idx,
-    // const int y_idx,
-
     const coord_t& x,
     const coord_t& y,
 
@@ -64,6 +62,7 @@ __device__ void calculate_unforce_bound(
 
     const double scaling,
 
+    const int vdw_rule,
     const double lambda,
 
     double& evdw,
@@ -81,8 +80,12 @@ __device__ void calculate_unforce_bound(
 
     ecoul = scaling * coulomb_constant * x_charge * y_charge * r * lambda;
 
-    double v_a = r6 * r6 * x_aii * y_aii;
-    double v_b = r6 * x_bii * y_bii;
+    double v_a, v_b;
+    if (vdw_rule == VDW_GEOMETRIC) {
+        calc_vdw_geometric(x_aii, y_aii, x_bii, y_bii, r6, &v_a, &v_b);
+    } else {
+        calc_vdw_arithmetic(x_aii, y_aii, x_bii, y_bii, r6, &v_a, &v_b);
+    }
     v_a *= lambda;
     v_b *= lambda;
     evdw = v_a - v_b;
@@ -263,6 +266,7 @@ __global__ void calc_nonbonded_force_kernel(
                 bj_bii,
                 d_topo.coulomb_constant,
                 scaling,
+                d_topo.vdw_rule,
                 lambda,
                 evdw,
                 ecoul,

@@ -12,16 +12,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../s
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../env/')))
 
 # Q-GPU packages
-import IO
-import defaults     as DEFAULTS
-import md           as MD
-import settings     as SETTINGS
-import fep          as FEP
-import topology     as TOPOLOGY
-import mask         as MASK
-import trajectory   as TRAJECTORY
-import calc         as CALC
-import energy       as ENERGY
+from Qgpu import calc         as CALC
+from Qgpu import energy       as ENERGY
+
 
 class Create_Environment(object):
     """

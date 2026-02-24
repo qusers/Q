@@ -242,6 +242,7 @@ class bcolors:
 
 class Compare(object):
     def __init__(self,data):
+        compare.ENERGY_TOLERANCE = data.get('tolerance', 0.0)
         total_energies_Q6 = []
         total_energies_QGPU = []
         top = '{}'.format(data['topfile'][:-4])
@@ -513,6 +514,13 @@ if __name__ == "__main__":
                         default = None,
                         required = False,
                         help = "Specify a particular phase of the perturbation")
+
+    parser.add_argument('--tolerance',
+                        dest = "tolerance",
+                        type = float,
+                        default = 0.0,
+                        required = False,
+                        help = "Energy comparison tolerance (default: 0.0 = exact match)")
 
     args = parser.parse_args()
     

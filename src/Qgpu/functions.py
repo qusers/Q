@@ -1,5 +1,53 @@
-import IO
 import numpy as np
+
+def pdb_parse_in(line, include=('ATOM','HETATM')):
+    """
+    Takes a pdb file line and parses it into a list, according to Atomic Coordinate Entry Format 
+    v3.3
+    """
+    at_entry = []
+    line = line.strip('\n')
+    if line.startswith(include):
+        at_entry.append(line[0:6])              #  0 ATOM/HETATM
+        at_entry.append(int(line[6:11]))        #  1 ATOM serial number
+        at_entry.append(line[12:16].strip())    #  2 ATOM name
+        at_entry.append(line[16:17])            #  3 Alternate location indicator
+        at_entry.append(line[17:21].strip())    #  4 Residue name
+        at_entry.append(line[21:22])            #  5 Chain identifier
+        at_entry.append(int(line[22:26]))       #  6 Residue sequence number
+        at_entry.append(line[26:27])            #  7 Code for insertion of residue
+        at_entry.append(float(line[30:38]))     #  8 Orthogonal coordinates for X
+        at_entry.append(float(line[38:46]))     #  9 Orthogonal coordinates for Y
+        at_entry.append(float(line[46:54]))     # 10 Orthogonal coordinates for Z
+        # These entries can be empty
+        try:
+            at_entry.append(float(line[54:60])) # 11 Occupancy
+            
+        except: # TODO: add the correct exception
+            at_entry.append(0.0)                # 11 Empty Occupancy
+            
+        try:
+            at_entry.append(float(line[60:66])) # 12 Temperature factor
+            
+        except:
+            at_entry.append(0.0)                # 12 Empty Temperature factor
+            
+        try:
+            at_entry.append(line[76:78])        # 13 Element symbol
+            
+        except:
+            at_entry.append('  ')               # 13 Empty Element symbol
+            
+        try:
+            at_entry.append(line[78:80])        # 14 Charge on atom
+            
+        except:
+            at_entry.append('  ')               # 14 Empty charge
+        
+    else:
+        at_entry = line
+    
+    return at_entry
 
 def MB(mass, P_ref):
     kB      = (1.380649)*(10**-23)   # J/K
@@ -98,7 +146,7 @@ def overlapping_pairs(pdbfile, reslist, include=('ATOM', 'HETATM')):
     with open(pdbfile) as infile:
         for line in infile:
             if line.startswith(include):
-                line_parse = IO.pdb_parse_in(line)
+                line_parse = pdb_parse_in(line)
                 if line_parse[4] in reslist:
                     coordinates.append([line_parse[1],
                                         line_parse[8],

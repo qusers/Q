@@ -1,5 +1,6 @@
 #include "parse.h"
 #include "system.h"
+#include "vdw_rules.h"
 #include <stdio.h>
 #include <unistd.h>
 
@@ -350,6 +351,15 @@ void init_topo(const char *filename) {
 
     topo.el14_scale = strtod(file.buffer[6][0], &eptr);
     topo.coulomb_constant = strtod(file.buffer[7][0], &eptr);
+    topo.vdw_rule = atoi(file.buffer[8][0]);
+    #ifdef VERBOSE
+    printf("read %d into vdw_rule (1=geometric, 2=arithmetic)\n", topo.vdw_rule);
+    #endif
+
+    if (topo.vdw_rule != VDW_GEOMETRIC && topo.vdw_rule != VDW_ARITHMETIC) {
+        printf(">>> FATAL: Invalid vdw_rule %d. Must be 1 (geometric) or 2 (arithmetic). Exiting...\n", topo.vdw_rule);
+        exit(EXIT_FAILURE);
+    }
 
     clean_csv(file);
 }
@@ -881,6 +891,19 @@ void init_catypes(const char* filename) {
         catypes[i] = catype;
     }
 
+    // Preprocess bii parameters for arithmetic rule: convert ε to √ε
+    // This matches Fortran md.f90:14747-14752 preprocessing
+    if (topo.vdw_rule == VDW_ARITHMETIC) {
+        for (int i = 0; i < n_catypes; i++) {
+            catypes[i].bii_normal = sqrt(fabs(catypes[i].bii_normal));
+            catypes[i].bii_polar = sqrt(fabs(catypes[i].bii_polar));
+            catypes[i].bii_1_4 = sqrt(fabs(catypes[i].bii_1_4));
+        }
+        #ifdef VERBOSE
+        printf("Preprocessed catypes bii parameters for arithmetic vdW rule\n");
+        #endif
+    }
+
     clean_csv(file);
 }
 
@@ -935,6 +958,7 @@ void init_charge_groups(const char *filename) {
 
     n_cgrps_solute = atoi(file.buffer[1][0]);
     n_cgrps_solvent = atoi(file.buffer[1][1]);
+    iuse_switch_atom = atoi(file.buffer[1][2]);
 
     int n_charge_groups = n_cgrps_solute + n_cgrps_solvent;
 
@@ -1054,6 +1078,17 @@ void init_qcatypes(const char*filename) {
         q_catypes[i].Ai_14 = strtod(file.buffer[i+1][5], &eptr);
         q_catypes[i].Bi_14 = strtod(file.buffer[i+1][6], &eptr);
         q_catypes[i].m = strtod(file.buffer[i+1][7], &eptr);
+    }
+
+    // Preprocess Bi parameters for arithmetic rule: convert ε to √ε
+    if (topo.vdw_rule == VDW_ARITHMETIC) {
+        for (int i = 0; i < n_qcatypes; i++) {
+            q_catypes[i].Bi = sqrt(fabs(q_catypes[i].Bi));
+            q_catypes[i].Bi_14 = sqrt(fabs(q_catypes[i].Bi_14));
+        }
+        #ifdef VERBOSE
+        printf("Preprocessed q_catypes Bi parameters for arithmetic vdW rule\n");
+        #endif
     }
 
     clean_csv(file);
