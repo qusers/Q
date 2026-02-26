@@ -50,7 +50,7 @@ class EquilibrationConfig:
 # Minimization is enabled for eq1 to relax initial geometries before MD
 EQ1_PARAMS = dict(
     steps=5000,  # with minimization, I expect we can use fewer steps here
-    stepsize=0.1,
+    stepsize=0.2,
     temperature=1,
     bath_coupling=0.2,
     shake_hydrogens=False,
@@ -64,7 +64,7 @@ EQ2_2FS_PARAMS = dict(
     stepsize=2.0,
     temperature=50,
     bath_coupling=2.0,
-    shake_hydrogens=False,
+    shake_hydrogens=True,
     interval_output=5,
 )
 
@@ -73,7 +73,7 @@ EQ3_2FS_PARAMS = dict(
     stepsize=2.0,
     temperature=150,
     bath_coupling=2.0,
-    shake_hydrogens=False,
+    shake_hydrogens=True,
     interval_output=5,
 )
 
@@ -82,7 +82,7 @@ EQ4_2FS_PARAMS = dict(
     stepsize=2.0,
     temperature=275,
     bath_coupling=2.0,
-    shake_hydrogens=False,
+    shake_hydrogens=True,
     interval_output=5,
 )
 
