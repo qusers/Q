@@ -465,7 +465,7 @@ class GlobalLigandAligner(MoleculeIO):
 
     def cleanup(self) -> None:
         """Clean up the temporary directory used for the ligand alignment operations."""
-        logger.debug(f"Temporary directory {self.temp_dir.name} cleaned up")
         if self.temp_dir:
+            logger.debug(f"Temporary directory {self.temp_dir.name} cleaned up")
             self.temp_dir.cleanup()
             self.temp_dir = None
