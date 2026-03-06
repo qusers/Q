@@ -1,10 +1,13 @@
 """Scoring functions for perturbation network edge quality based on atom mapping similarity."""
 
 import re
+from functools import partial
 
+import numpy as np
 from gufe import AtomMapping
 from kartograf import SmallMoleculeComponent
 from kartograf.atom_mapping_scorer import MappingVolumeRatioScorer
+from lomap import default_lomap_score
 from rdkit import Chem
 
 from .CLI.utils import get_avail_restraint_methods
@@ -114,5 +117,35 @@ class RestraintScorer:
         score = n_restrained**2 / (nheavy_A * nheavy_B)
         logger.debug(
             f"RestraintScorer: n_restrained={n_restrained}, nheavy_A={nheavy_A}, nheavy_B={nheavy_B}, score={score:.4f}"
+        )
+        return score
+
+
+class RestraintLomapScorer:
+    """Score atom mappings as sqrt(lomap_score * restraint_score).
+
+    LOMAP's heuristic rules detect alchemically difficult transformations (ring breaking,
+    charge changes, heteroatom swaps, etc.) while the RestraintScorer captures spatial
+    overlap quality. The product ensures only edges that are both alchemically tractable
+    and spatially well-matched get high scores.
+
+    Args:
+        restraint_method: restraint method string for RestraintScorer.
+        charge_changes_score: LOMAP's penalty for charge-changing edges (0.0 blocks them,
+            0.5 halves their score, 1.0 no penalty). Default: 0.0.
+    """
+
+    def __init__(self, restraint_method: str = "heavyatom_p", charge_changes_score: float = 0.0):
+        self._restraint_scorer = RestraintScorer(restraint_method=restraint_method)
+        self._lomap_score = partial(default_lomap_score, charge_changes_score=charge_changes_score)
+
+    def __call__(self, mapping: AtomMapping) -> float:
+        lomap = self._lomap_score(mapping)
+        if lomap == 0.0:
+            return 0.0
+        restraint = self._restraint_scorer(mapping)
+        score = np.sqrt(lomap * restraint)
+        logger.debug(
+            f"RestraintLomapScorer: lomap={lomap:.4f}, restraint={restraint:.4f}, combined={score:.4f}"
         )
         return score
