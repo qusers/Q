@@ -277,8 +277,8 @@ def golden_restraints_path() -> Path:
 
 @pytest.fixture
 def all_sdf_files(test_resources_path: Path) -> list[Path]:
-    """All SDF files available in test resources."""
-    return sorted(test_resources_path.glob("*.sdf"))
+    """All ligand dataset SDF files in test resources."""
+    return sorted(test_resources_path.glob("*_ligands.sdf"))
 
 
 @pytest.fixture
