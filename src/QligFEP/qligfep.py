@@ -719,6 +719,11 @@ class QligFEP:
         else:  # start == "0.0" or "1"
             eq_lambda1, eq_lambda2 = "1.000", "0.000"
 
+        # if self.n_counter_ions > 0:
+        #     logger.info(
+        #         "Charged perturbation detected, doubling production steps to accommodate counter-water transformations."
+        #     )
+
         # Get configurations
         eq_configs = get_equilibration_configs(self.timestep, int(self.sphereradius))
         prod_config = get_production_config(self.timestep, int(self.sphereradius), self.dr_force)

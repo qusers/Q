@@ -10,7 +10,7 @@ from rdkit import Chem
 
 from ..chemIO import MoleculeIO
 from ..logger import logger, setup_logger
-from ..scoring import RestraintScorer
+from ..scoring import RestraintLomapScorer, RestraintScorer
 from .lomap_wrap_cli import LomapWrap
 
 NETWORK_GENERATORS = {
@@ -34,7 +34,7 @@ class KonnektorWrap:
         inp: str,
         out: Optional[str] = None,
         network: str = "mst",
-        scorer: str = "restraint",
+        scorer: str = "combined",
         restraint_method: str = "heavyatom_p",
         processes: int = 1,
         log_level: str = "info",
@@ -42,6 +42,7 @@ class KonnektorWrap:
         n_redundancy: int = 2,
         connectivity: int = 3,
         separate_charges: bool = False,
+        charge_changes_score: float = 0.0,
     ):
         self.inp = inp
         self.network_type = network
@@ -53,6 +54,7 @@ class KonnektorWrap:
         self.n_redundancy = n_redundancy
         self.connectivity = connectivity
         self.separate_charges = separate_charges
+        self.charge_changes_score = charge_changes_score
         self.nodes = {}
 
         self.out = self._parse_output(out)
@@ -88,6 +90,11 @@ class KonnektorWrap:
             from kartograf.atom_mapping_scorer import MappingVolumeRatioScorer
 
             return MappingVolumeRatioScorer()
+        elif self.scorer_type == "combined":
+            return RestraintLomapScorer(
+                restraint_method=self.restraint_method,
+                charge_changes_score=self.charge_changes_score,
+            )
         else:
             return RestraintScorer(restraint_method=self.restraint_method)
 
@@ -308,9 +315,9 @@ def parse_arguments() -> argparse.Namespace:
         "-s",
         "--scorer",
         type=str,
-        default="restraint",
-        choices=["restraint", "kartograf"],
-        help="Scorer type. Default: restraint.",
+        default="combined",
+        choices=["restraint", "kartograf", "combined"],
+        help="Scorer type. 'combined' uses lomap heuristics * restraint overlap. Default: combined.",
     )
     parser.add_argument(
         "-rest",
@@ -359,6 +366,13 @@ def parse_arguments() -> argparse.Namespace:
         default=False,
         help="Generate separate networks per charge group, avoiding cross-charge perturbations.",
     )
+    parser.add_argument(
+        "--charge_changes_score",
+        type=float,
+        default=0.0,
+        help="LOMAP penalty for charge-changing edges (only with scorer=combined). "
+        "0.0 blocks them, 0.5 halves their score, 1.0 no penalty. Default: 0.0.",
+    )
     return parser.parse_args()
 
 
@@ -376,6 +390,7 @@ def main(args):
         n_redundancy=args.n_redundancy,
         connectivity=args.connectivity,
         separate_charges=args.separate_charges,
+        charge_changes_score=args.charge_changes_score,
     )
     kw.run()
 
