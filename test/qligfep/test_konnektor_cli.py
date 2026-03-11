@@ -271,3 +271,23 @@ class TestUserDefinedProperties:
         # Check if any edge has delta_ prefixed keys
         has_deltas = any(any(k.startswith("delta_") for k in e.keys()) for e in result["edges"])
         assert has_deltas, "Expected delta_ properties on edges from numerical SDF properties"
+
+    def test_delta_sign_convention_is_to_minus_from(self, tyk2_mst_result):
+        """Delta values on edges must follow to-minus-from convention.
+
+        Q's thermodynamic cycle computes ddG = dG(to) - dG(from), so
+        experimental deltas must use the same sign convention.
+        """
+        nodes = tyk2_mst_result["nodes"]
+        for edge in tyk2_mst_result["edges"]:
+            from_name = edge["from"]
+            to_name = edge["to"]
+            for key in edge:
+                if not key.startswith("delta_"):
+                    continue
+                prop_key = key[len("delta_"):]
+                expected = nodes[to_name][prop_key] - nodes[from_name][prop_key]
+                assert edge[key] == pytest.approx(expected), (
+                    f"Edge {from_name}->{to_name}: {key} = {edge[key]}, "
+                    f"expected to-from = {expected}"
+                )

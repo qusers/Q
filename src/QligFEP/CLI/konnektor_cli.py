@@ -200,7 +200,7 @@ class KonnektorWrap:
             # Compute delta for numerical properties
             for key in extra_numerical_keys:
                 try:
-                    delta = self.nodes[from_name][key] - self.nodes[to_name][key]
+                    delta = self.nodes[to_name][key] - self.nodes[from_name][key]
                     edge[f"delta_{key}"] = delta
                 except (TypeError, KeyError):
                     logger.info(f"Could not compute delta_{key} for {from_name} | {to_name}")
