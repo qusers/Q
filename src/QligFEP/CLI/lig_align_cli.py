@@ -1,4 +1,4 @@
-"""Module with the CLI to align ligands to a reference ligand using kcombu."""
+"""Module with the CLI to align ligands to a reference ligand using kcombu or rdShapeAlign."""
 
 import argparse
 import sys
@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 from MolClusterkit.mcs import MCSClustering
 
-from ..lig_aligner import GlobalLigandAligner
+from ..lig_aligner import GlobalLigandAligner, ShapeLigandAligner
 from ..logger import logger, setup_logger
 
 
@@ -68,6 +68,21 @@ def parse_arguments() -> argparse.Namespace:
         type=int,
     ),
     parser.add_argument(
+        "-m",
+        "--method",
+        dest="method",
+        default="kcombu",
+        choices=["kcombu", "shape"],
+        help="Alignment method: 'kcombu' (MCS-based via fkcombu) or 'shape' (RDKit shape+color). Defaults to 'kcombu'.",
+    )
+    parser.add_argument(
+        "--opt-param",
+        dest="opt_param",
+        type=float,
+        default=0.5,
+        help="Shape vs color optimization balance for 'shape' method: 0=color, 0.5=equal, 1=shape. Defaults to 0.5.",
+    )
+    parser.add_argument(
         "-log",
         "--log-level",
         dest="log",
@@ -79,18 +94,57 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _find_reference(aligner, ref_name):
+    """Resolve the reference ligand name, auto-selecting via MCS if not provided."""
+    if ref_name is not None:
+        if ref_name not in aligner.lig_names:
+            logger.error(
+                "The reference ligand is not in the input ligands. See the ligands names with the `lig_names` attribute."
+            )
+            logger.info(f"lig_names; {aligner.lig_names}")
+            raise ValueError(f"The reference ligand {ref_name} is not in the input ligands.")
+        logger.info(f"Aligning ligands to reference: {ref_name}")
+        return ref_name
+
+    smiles_list = [mol.to_smiles() for mol in aligner.molecules]
+    mcs_kwargs = {
+        # "atomCompare": "CompareElements", # just leave as default
+        "bondCompare": "CompareOrderExact",
+        "ringCompare": "StrictRingFusion",
+        "ringMatchesRingOnly": True,
+        "completeRingsOnly": True,
+        "timeout": 20,
+    }
+    mcs_cluster = MCSClustering(smiles_list, **mcs_kwargs)
+    logger.info(
+        "Reference not provided. Scoring ligands based on Maximum Common "
+        "Substructure to find the reference."
+    )
+    _, simi_matrix = mcs_cluster.compute_similarity_matrix()
+
+    highest_score_idx = simi_matrix.sum(axis=1).argmax()
+    return aligner.lig_names[highest_score_idx]
+
+
 def main(args: argparse.Namespace):
     """Main function to align the ligands."""
 
     # setup the logger with the desired log level
     setup_logger(level=args.log)
 
-    aligner = GlobalLigandAligner(
-        args.input,
-        n_threads=args.parallel,
-        tempdir="to_align_ligands",
-        delete_tempdir=args.rm,
-    )
+    if args.method == "shape":
+        aligner = ShapeLigandAligner(
+            args.input,
+            opt_param=args.opt_param,
+        )
+    else:
+        aligner = GlobalLigandAligner(
+            args.input,
+            n_threads=args.parallel,
+            tempdir="to_align_ligands",
+            delete_tempdir=args.rm,
+        )
+
     if aligner.lig_files != []:
         is_aligned = [f.name.endswith("_aligned.sdf") for f in aligner.lig_files]
         if any(is_aligned):
@@ -103,34 +157,12 @@ def main(args: argparse.Namespace):
             logger.info(f"Aligned files: {aligned_files}")
             sys.exit(1)
 
-    if args.ref is None:
-        smiles_list = [mol.to_smiles() for mol in aligner.molecules]
-        mcs_kwargs = {
-            "atomCompare": "CompareElements",
-            "bondCompare": "CompareAny",
-            "ringCompare": "StrictRingFusion",
-        }
-        mcs_cluster = MCSClustering(smiles_list, **mcs_kwargs)
-        logger.info(
-            "Reference not provided. Scoring ligands based on Maximum Common "
-            "Substructure to find the reference."
-        )
-        _, simi_matrix = mcs_cluster.compute_similarity_matrix()
+    reference_name = _find_reference(aligner, args.ref)
 
-        highest_score_idx = simi_matrix.sum(axis=1).argmax()
-        reference_name = aligner.lig_names[highest_score_idx]
+    if args.method == "shape":
+        aligner.align(reference_name)
     else:
-        reference_name = args.ref
-        if reference_name not in aligner.lig_names:
-            logger.error(
-                "The reference ligand is not in the input ligands. See the ligands names with the `lig_names` attribute."
-            )
-            logger.info(f"lig_names; {aligner.lig_names}")
-            raise ValueError(f"The reference ligand {reference_name} is not in the input ligands.")
-        logger.info(f"Aligning ligands to reference: {reference_name}")
-
-    # run the alignment using kcombu
-    aligner.kcombu_align(reference_name)
+        aligner.kcombu_align(reference_name)
 
     output = Path(args.output)
     if output.exists():
