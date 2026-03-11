@@ -146,8 +146,7 @@ Now you're set with the qligfep package. This includes the command-linde-interfa
 7. `qligfep`: main CLI for running QligFEP simulations.
 8. `setupFEP`: sets up all the QligFEP files for a simulation, including protein and water systems. Pass `--neq` to set up the non-equilibrium (NEQ²) workflow instead of the windowed one.
 9. `qligfep_analyze`: CLI to analyze the results of a QligFEP simulation.
-10. `ligalign`: aligns a set of ligands to a reference ligand based on their maximum common substructure (MCS).
-11. `qligfep_neq_analyze`: CLI to analyze the results of a non-equilibrium (NEQ²) QligFEP simulation.
+10. `qligfep_neq_analyze`: CLI to analyze the results of a non-equilibrium (NEQ²) QligFEP simulation.
 
 ## Tutorials
 
