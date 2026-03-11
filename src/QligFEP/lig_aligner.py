@@ -87,6 +87,7 @@ class fkcombuLigandAligner(MoleculeIO):
         self.n_threads = n_threads
         self.reference_mol: Optional[Molecule] = None
         self.aligned_molecules: dict[str, Molecule] = {}
+        self.alignment_scores: dict[str, dict[str, float]] = {}
         self.temp_dir: Optional[tempfile.TemporaryDirectory] = None
         self.fkparams = self._process_fkparams(
             {"P": protein, "E": energy.upper(), "S": search.upper(), "SD": steep_descend, **fkcombu_params},
@@ -110,6 +111,39 @@ class fkcombuLigandAligner(MoleculeIO):
                 "fkcombu not installed. To install, run the command `micromamba install michellab::fkcombu`."
             )
         return str(fkcombu_exe)
+
+    @staticmethod
+    def options() -> dict[str, str]:
+        """Parse the fkcombu -h output and return a dict mapping option flags to descriptions.
+
+        Returns:
+            Dict mapping option names (e.g. "-T", "-E") to their descriptions.
+
+        Raises:
+            ImportError: If fkcombu is not installed.
+        """
+        fkcombu_exe = shutil.which("fkcombu")
+        if fkcombu_exe is None:
+            raise ImportError(
+                "fkcombu not installed. To install, run the command `micromamba install michellab::fkcombu`."
+            )
+
+        result = subprocess.run([fkcombu_exe, "-h"], capture_output=True, text=True)
+        help_text = result.stdout + result.stderr
+
+        options = {}
+        for line in help_text.splitlines():
+            line = line.strip()
+            if not line or line.startswith(">") or line.startswith("$") or line.startswith("<"):
+                continue
+            # Option lines start with a dash, e.g. " -T   :target molecule ..."
+            if line.startswith("-"):
+                parts = line.split(":", 1)
+                if len(parts) == 2:
+                    flag = parts[0].strip().split()[0]  # first token is the flag
+                    description = parts[1].strip()
+                    options[flag] = description
+        return options
 
     def _process_fkparams(self, fkparams: dict[str, Any], connectivity, top_constraint_tol) -> dict[str, str]:
         """Process and validate fkcombu parameters, called during initialization."""
@@ -175,7 +209,49 @@ class fkcombuLigandAligner(MoleculeIO):
         self.write_sdf_separate(temp_path)
         return temp_path
 
-    def _run_kcombu(self, mol_path, reference_path, output_file) -> None:
+    # Scores that are only meaningful when MCS atom matching was performed (NATOM_MATCH > 0)
+    _MCS_DEPENDENT_SCORES = ("TANIMOTO", "RMSD_MATCH", "NATOM_MATCH")
+    # Scores to extract from fkcombu output
+    _SCORE_KEYS = ("TANIMOTO", "TANIMOTO_VOL", "RMSD_MATCH", "NATOM_MATCH", "Etotal")
+
+    def _parse_kcombu_output(self, stdout: str) -> dict[str, float]:
+        """Parse fkcombu key-value stdout lines into a scores dict.
+
+        Only non-comment lines (not starting with #) are parsed. When NATOM_MATCH is 0
+        (no MCS was computed, e.g. with -E V), MCS-dependent scores are excluded since
+        their zero values are not meaningful.
+
+        Args:
+            stdout: Raw stdout string from fkcombu.
+
+        Returns:
+            Dict mapping score names to their values.
+        """
+        kv_pairs = {}
+        for line in stdout.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) == 2:
+                kv_pairs[parts[0]] = parts[1]
+
+        scores = {}
+        for key in self._SCORE_KEYS:
+            if key in kv_pairs:
+                if key == "NATOM_MATCH":
+                    scores[key] = int(kv_pairs[key])
+                else:
+                    scores[key] = float(kv_pairs[key])
+
+        # Exclude MCS-dependent scores when no MCS was computed
+        if scores.get("NATOM_MATCH", 0) == 0:
+            for key in self._MCS_DEPENDENT_SCORES:
+                scores.pop(key, None)
+
+        return scores
+
+    def _run_kcombu(self, mol_path, reference_path, output_file) -> dict[str, float]:
         """Run fkcombu to align a molecule to a reference and write the aligned molecule
         to an output file.
 
@@ -183,6 +259,9 @@ class fkcombuLigandAligner(MoleculeIO):
             mol_path: path to the molecule to be aligned.
             reference_path: path to the reference molecule.
             output_file: path to save the aligned molecule to.
+
+        Returns:
+            Dict of alignment scores parsed from fkcombu stdout.
         """
 
         command = self.fkcombu_command + [
@@ -195,11 +274,13 @@ class fkcombuLigandAligner(MoleculeIO):
         ]
         logger.debug(f"Running kcombu: {' '.join(command)}")
         try:
-            subprocess.run(command, capture_output=True, text=True)
+            result = subprocess.run(command, capture_output=True, text=True)
+            return self._parse_kcombu_output(result.stdout + result.stderr)
         except subprocess.CalledProcessError as e:
             logger.error(f"kcombu process error: {e}")
         except Exception as e:
             logger.error(f"Unexpected error running kcombu: {e}")
+        return {}
 
     def _load_aligned_molecules(self, temp_path: Path) -> list[Molecule]:
         """Load aligned molecules from temporary files into memory.
@@ -304,7 +385,7 @@ class fkcombuLigandAligner(MoleculeIO):
 
     def align_single_molecule(
         self, molecule: Union[str, Molecule], reference: Union[str, Molecule]
-    ) -> Molecule:
+    ) -> tuple[Molecule, dict[str, float]]:
         """
         Align a single molecule to a reference molecule.
 
@@ -313,7 +394,7 @@ class fkcombuLigandAligner(MoleculeIO):
             reference: The reference molecule (either a Molecule object or a name of a molecule in self.molecules)
 
         Returns:
-            The aligned Molecule object
+            Tuple of (aligned Molecule object, dict of alignment scores).
         """
         temp_path = self._setup_temp_dir()
 
@@ -333,7 +414,7 @@ class fkcombuLigandAligner(MoleculeIO):
 
         output_path = temp_path / f"aligned{self.SDF_EXTENSION}"
 
-        self._run_kcombu(molecule_path, reference_path, output_path)
+        scores = self._run_kcombu(molecule_path, reference_path, output_path)
 
         self._transfer_sdf_metadata(molecule_path, output_path)
         aligned_molecule = Molecule.from_file(str(output_path))
@@ -341,7 +422,7 @@ class fkcombuLigandAligner(MoleculeIO):
         if self.temp_dir:
             self.temp_dir.cleanup()
 
-        return aligned_molecule
+        return aligned_molecule, scores
 
     def kcombu_align(
         self, reference: Union[str, Molecule], molecules_to_align: Optional[list[Union[str, Molecule]]] = None
@@ -385,7 +466,7 @@ class fkcombuLigandAligner(MoleculeIO):
         logger.info(f"Aligning {len(molecules_to_align)} molecules to ref `{self.refname}` with kcombu...")
 
         with ThreadPoolExecutor(max_workers=self.n_threads) as executor:
-            futures = []
+            futures = {}
             for mol in molecules_to_align:
                 mol_path = temp_path / f"{mol.name}{self.SDF_EXTENSION}"
                 mol.to_file(str(mol_path), file_format="sdf")
@@ -396,11 +477,14 @@ class fkcombuLigandAligner(MoleculeIO):
                     reference_path=self.reference_path,
                     output_file=output_file,
                 )
-                futures.append(executor.submit(partial_func))
+                futures[executor.submit(partial_func)] = mol.name
 
             for future in tqdm(as_completed(futures), total=len(futures), desc="Aligning ligands"):
+                mol_name = futures[future]
                 try:
-                    future.result()
+                    scores = future.result()
+                    if scores:
+                        self.alignment_scores[mol_name] = scores
                 except Exception as e:
                     logger.error(f"Error in kcombu alignment: {e}")
 
@@ -425,9 +509,13 @@ class fkcombuLigandAligner(MoleculeIO):
         """
         writer = Chem.SDWriter(output_name)
 
-        # Write aligned molecules
-        for _, mol in self.aligned_molecules.items():
-            writer.write(mol.to_rdkit())
+        # Write aligned molecules with alignment scores as SDF properties
+        for name, mol in self.aligned_molecules.items():
+            rdkit_mol = mol.to_rdkit()
+            if name in self.alignment_scores:
+                for score_key, score_val in self.alignment_scores[name].items():
+                    rdkit_mol.SetProp(f"Align_{score_key}", f"{score_val}")
+            writer.write(rdkit_mol)
 
         # Process and write reference ligands if specified
         if ref_names:
