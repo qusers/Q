@@ -323,6 +323,13 @@ module md
   integer(ai), allocatable         :: cgp_mol(:)           ! (ncgp_solute) molecule index per CG
   logical, allocatable             :: mol_has_cross_excl(:) ! (nmol) molecule has cross-mol exclusions
 
+  ! CSR (Compressed Sparse Row) lookup for long-range exclusions and 1-4 pairs.
+  ! Replaces O(nexlong) linear scan with O(log k) binary search per atom pair.
+  integer, allocatable             :: exlong_start(:)    ! (nat_solute+1) row pointers
+  integer(ai), allocatable         :: exlong_partner(:)  ! sorted excluded partner atoms
+  integer, allocatable             :: l14long_start(:)   ! (nat_solute+1) row pointers
+  integer(ai), allocatable         :: l14long_partner(:) ! sorted 1-4 partner atoms
+
   type(node_assignment_type)       :: calculation_assignment
 
   !shake types & variables
@@ -1125,6 +1132,134 @@ subroutine build_cross_mol_flags
       ' cross-molecule exclusion entries found; flagged molecules will use full scan'
   end if
 end subroutine build_cross_mol_flags
+
+
+subroutine build_exclusion_csr
+  ! Build CSR lookup tables from listexlong and list14long.
+  ! Each atom gets a sorted list of its long-range exclusion/1-4 partners,
+  ! enabling O(log k) binary search instead of O(N) linear scan.
+  integer :: nl, a, b, i, j, tmp, n
+  integer, allocatable :: count(:)
+
+  ! --- Build exlong CSR ---
+  allocate(exlong_start(nat_solute+1), stat=alloc_status)
+  call check_alloc('exlong CSR row pointers')
+
+  allocate(count(nat_solute))
+  count(:) = 0
+  do nl = 1, nexlong
+    a = listexlong(1, nl);  b = listexlong(2, nl)
+    if (a >= 1 .and. a <= nat_solute) count(a) = count(a) + 1
+    if (b >= 1 .and. b <= nat_solute) count(b) = count(b) + 1
+  end do
+
+  exlong_start(1) = 1
+  do i = 1, nat_solute
+    exlong_start(i+1) = exlong_start(i) + count(i)
+  end do
+
+  n = exlong_start(nat_solute+1) - 1
+  allocate(exlong_partner(max(n,1)), stat=alloc_status)
+  call check_alloc('exlong CSR partner array')
+  count(:) = 0
+  do nl = 1, nexlong
+    a = listexlong(1, nl);  b = listexlong(2, nl)
+    if (a >= 1 .and. a <= nat_solute) then
+      count(a) = count(a) + 1
+      exlong_partner(exlong_start(a) + count(a) - 1) = b
+    end if
+    if (b >= 1 .and. b <= nat_solute) then
+      count(b) = count(b) + 1
+      exlong_partner(exlong_start(b) + count(b) - 1) = a
+    end if
+  end do
+
+  ! Sort each row (insertion sort — rows are tiny, typically 1-3 entries)
+  do i = 1, nat_solute
+    do j = exlong_start(i)+1, exlong_start(i+1)-1
+      tmp = exlong_partner(j)
+      nl = j - 1
+      do while (nl >= exlong_start(i) .and. exlong_partner(nl) > tmp)
+        exlong_partner(nl+1) = exlong_partner(nl)
+        nl = nl - 1
+      end do
+      exlong_partner(nl+1) = tmp
+    end do
+  end do
+
+  ! --- Build l14long CSR ---
+  allocate(l14long_start(nat_solute+1), stat=alloc_status)
+  call check_alloc('l14long CSR row pointers')
+
+  count(:) = 0
+  do nl = 1, n14long
+    a = list14long(1, nl);  b = list14long(2, nl)
+    if (a >= 1 .and. a <= nat_solute) count(a) = count(a) + 1
+    if (b >= 1 .and. b <= nat_solute) count(b) = count(b) + 1
+  end do
+
+  l14long_start(1) = 1
+  do i = 1, nat_solute
+    l14long_start(i+1) = l14long_start(i) + count(i)
+  end do
+
+  n = l14long_start(nat_solute+1) - 1
+  allocate(l14long_partner(max(n,1)), stat=alloc_status)
+  call check_alloc('l14long CSR partner array')
+  count(:) = 0
+  do nl = 1, n14long
+    a = list14long(1, nl);  b = list14long(2, nl)
+    if (a >= 1 .and. a <= nat_solute) then
+      count(a) = count(a) + 1
+      l14long_partner(l14long_start(a) + count(a) - 1) = b
+    end if
+    if (b >= 1 .and. b <= nat_solute) then
+      count(b) = count(b) + 1
+      l14long_partner(l14long_start(b) + count(b) - 1) = a
+    end if
+  end do
+
+  do i = 1, nat_solute
+    do j = l14long_start(i)+1, l14long_start(i+1)-1
+      tmp = l14long_partner(j)
+      nl = j - 1
+      do while (nl >= l14long_start(i) .and. l14long_partner(nl) > tmp)
+        l14long_partner(nl+1) = l14long_partner(nl)
+        nl = nl - 1
+      end do
+      l14long_partner(nl+1) = tmp
+    end do
+  end do
+
+  deallocate(count)
+  write(*,'(a,i6,a,i6,a)') 'Built exclusion CSR: ', nexlong, ' excl + ', n14long, ' 1-4 long-range pairs indexed'
+end subroutine build_exclusion_csr
+
+
+logical function csr_search(row_start, partners, atom, target)
+  ! Binary search for target in partners(row_start(atom) : row_start(atom+1)-1)
+  integer, intent(in)     :: row_start(:)
+  integer(ai), intent(in) :: partners(:)
+  integer, intent(in)     :: atom
+  integer(ai), intent(in) :: target
+  integer :: lo, hi, mid
+
+  lo = row_start(atom)
+  hi = row_start(atom+1) - 1
+  csr_search = .false.
+
+  do while (lo <= hi)
+    mid = (lo + hi) / 2
+    if (partners(mid) == target) then
+      csr_search = .true.
+      return
+    else if (partners(mid) < target) then
+      lo = mid + 1
+    else
+      hi = mid - 1
+    end if
+  end do
+end function csr_search
 
 
 subroutine make_nbqqlist
@@ -2371,6 +2506,7 @@ subroutine init_nodes
   call MPI_Bcast(listexlong, 2*nexlong, MPI_INTEGER4, 0, MPI_COMM_WORLD, ierr)
   if (ierr .ne. 0) call die('init_nodes/MPI_Bcast listexlong')
   call build_cross_mol_flags
+  call build_exclusion_csr
 
   ! --- data from the QATOM module ---
 
@@ -4731,12 +4867,7 @@ subroutine nbpp_count(npp, nppcgp)
               if ( listex(i-j,j) ) cycle jaloop
             end if
           else
-            do nl = 1, nexlong
-              if ( (listexlong(1,nl) .eq. i .and. &
-                listexlong(2,nl) .eq. j      ) .or. &
-                (listexlong(1,nl) .eq. j .and. &
-                listexlong(2,nl) .eq. i      ) ) cycle jaloop
-            end do
+            if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
           end if
 
           ! passed all tests -- count the pair
@@ -4843,12 +4974,7 @@ subroutine nbpplis2
               if ( listex(i-j,j) ) cycle jaloop
             end if
           else if (.not. cross_mol) then
-            do nl = 1, nexlong
-              if ( (listexlong(1,nl) .eq. i .and. &
-                listexlong(2,nl) .eq. j      ) .or. &
-                (listexlong(1,nl) .eq. j .and. &
-                listexlong(2,nl) .eq. i      ) ) cycle jaloop
-            end do
+            if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
           end if
 
           ! if out of space then make more space
@@ -4866,14 +4992,7 @@ subroutine nbpplis2
               if ( list14(i-j,j) ) nbpp(nbpp_pair)%LJcod = 3
             end if
           else if (.not. cross_mol) then
-            do nl = 1, n14long
-              if ( (list14long(1,nl) .eq. i .and. &
-                list14long(2,nl) .eq. j      ) .or. &
-                (list14long(1,nl) .eq. j .and. &
-                list14long(2,nl) .eq. i      ) ) then
-                nbpp(nbpp_pair)%LJcod = 3
-              end if
-            end do
+            if (csr_search(l14long_start, l14long_partner, i, j)) nbpp(nbpp_pair)%LJcod = 3
           end if
 
         end do jaloop
@@ -4986,12 +5105,7 @@ subroutine nbpplis2_box
               if ( listex(i-j,j) ) cycle jaloop
             end if
           else if (.not. cross_mol) then
-            do nl = 1, nexlong
-              if ( (listexlong(1,nl) .eq. i .and. &
-                listexlong(2,nl) .eq. j      ) .or. &
-                (listexlong(1,nl) .eq. j .and. &
-                listexlong(2,nl) .eq. i      ) ) cycle jaloop
-            end do
+            if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
           end if
 
           ! if out of space then make more space
@@ -5010,14 +5124,7 @@ subroutine nbpplis2_box
               if ( list14(i-j,j) ) nbpp(nbpp_pair)%LJcod = 3
             end if
           else if (.not. cross_mol) then
-            do nl = 1, n14long
-              if ( (list14long(1,nl) .eq. i .and. &
-                list14long(2,nl) .eq. j      ) .or. &
-                (list14long(1,nl) .eq. j .and. &
-                list14long(2,nl) .eq. i      ) ) then
-                nbpp(nbpp_pair)%LJcod = 3
-              end if
-            end do
+            if (csr_search(l14long_start, l14long_partner, i, j)) nbpp(nbpp_pair)%LJcod = 3
           end if
 
         end do jaloop
@@ -5133,12 +5240,7 @@ subroutine nbpplis2_box_lrf
                 if ( listex(i-j,j) ) cycle jaloop
               end if
             else if (.not. cross_mol) then
-              do nl = 1, nexlong
-                if ( (listexlong(1,nl) .eq. i .and. &
-                  listexlong(2,nl) .eq. j      ) .or. &
-                  (listexlong(1,nl) .eq. j .and. &
-                  listexlong(2,nl) .eq. i      ) ) cycle jaloop
-              end do
+              if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
             end if
 
             ! if out of space then make more space
@@ -5157,14 +5259,7 @@ subroutine nbpplis2_box_lrf
                 if ( list14(i-j,j) ) nbpp(nbpp_pair)%LJcod = 3
               end if
             else if (.not. cross_mol) then
-              do nl = 1, n14long
-                if ( (list14long(1,nl) .eq. i .and. &
-                  list14long(2,nl) .eq. j      ) .or. &
-                  (list14long(1,nl) .eq. j .and. &
-                  list14long(2,nl) .eq. i      ) ) then
-                  nbpp(nbpp_pair)%LJcod = 3
-                end if
-              end do
+              if (csr_search(l14long_start, l14long_partner, i, j)) nbpp(nbpp_pair)%LJcod = 3
             end if
 
           end do jaloop
@@ -5426,12 +5521,7 @@ subroutine nbpplis2_lrf
                 if ( listex(i-j,j) ) cycle jaloop
               end if
             else if (.not. cross_mol) then
-              do nl = 1, nexlong
-                if ( (listexlong(1,nl) .eq. i .and. &
-                  listexlong(2,nl) .eq. j      ) .or. &
-                  (listexlong(1,nl) .eq. j .and. &
-                  listexlong(2,nl) .eq. i      ) ) cycle jaloop
-              end do
+              if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
             end if
 
             ! if out of space then make more space
@@ -5449,13 +5539,7 @@ subroutine nbpplis2_lrf
                 if ( list14(i-j,j) ) nbpp(nbpp_pair)%LJcod = 3
               end if
             else if (.not. cross_mol) then
-              do nl = 1, n14long
-                if ( (list14long(1,nl) .eq. i .and. &
-                  list14long(2,nl) .eq. j      ) .or. &
-                  (list14long(1,nl) .eq. j .and. &
-                  list14long(2,nl) .eq. i      ) ) &
-                  nbpp(nbpp_pair)%LJcod = 3
-              end do
+              if (csr_search(l14long_start, l14long_partner, i, j)) nbpp(nbpp_pair)%LJcod = 3
             end if
 
 
@@ -5688,11 +5772,7 @@ subroutine nbpplist
               if ( listex(i-j, j) ) cycle jaloop
             end if
           else if (.not. cross_mol) then
-            do nl = 1, nexlong
-              if ((listexlong(1, nl) .eq. i .and. listexlong(2, nl) .eq. j) .or. &
-                (listexlong(1, nl) .eq. j .and. listexlong(2, nl) .eq. i) ) &
-                cycle jaloop
-            end do
+            if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
           end if
 
           ! if out of space then make more space
@@ -5712,11 +5792,7 @@ subroutine nbpplist
               if ( list14(i-j, j) ) nbpp(nbpp_pair)%LJcod = 3
             end if
           else if (.not. cross_mol) then
-            do nl = 1, n14long
-              if ((list14long(1, nl) .eq. i .and. list14long(2, nl) .eq. j) .or. &
-                (list14long(1, nl) .eq. j .and. list14long(2, nl) .eq. i)) &
-                nbpp(nbpp_pair)%LJcod = 3
-            end do
+            if (csr_search(l14long_start, l14long_partner, i, j)) nbpp(nbpp_pair)%LJcod = 3
           end if
         end do jaloop
       end do ialoop
@@ -5832,11 +5908,7 @@ subroutine nbpplist_box
               if ( listex(i-j, j) ) cycle jaloop
             end if
           else if (.not. cross_mol) then
-            do nl = 1, nexlong
-              if ((listexlong(1, nl) .eq. i .and. listexlong(2, nl) .eq. j) .or. &
-                (listexlong(1, nl) .eq. j .and. listexlong(2, nl) .eq. i) ) &
-                cycle jaloop
-            end do
+            if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
           end if
 
           ! if out of space then make more space
@@ -5857,11 +5929,7 @@ subroutine nbpplist_box
               if ( list14(i-j, j) ) nbpp(nbpp_pair)%LJcod = 3
             end if
           else if (.not. cross_mol) then
-            do nl = 1, n14long
-              if ((list14long(1, nl) .eq. i .and. list14long(2, nl) .eq. j) .or. &
-                (list14long(1, nl) .eq. j .and. list14long(2, nl) .eq. i)) &
-                nbpp(nbpp_pair)%LJcod = 3
-            end do
+            if (csr_search(l14long_start, l14long_partner, i, j)) nbpp(nbpp_pair)%LJcod = 3
           end if
         end do jaloop
       end do ialoop
@@ -5967,13 +6035,7 @@ subroutine nbpplist_lrf
                 if ( listex(i-j,j) ) cycle jaloop
               end if
             else if (.not. cross_mol) then
-              do nl = 1, nexlong
-                if ( (listexlong(1,nl) .eq. i .and. &
-                  listexlong(2,nl) .eq. j      ) .or. &
-                  (listexlong(1,nl) .eq. j .and. &
-                  listexlong(2,nl) .eq. i ) ) &
-                  cycle jaloop
-              end do
+              if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
             end if
 
             ! if out of space then make more space
@@ -5993,13 +6055,7 @@ subroutine nbpplist_lrf
                 if ( list14(i-j,j) ) nbpp(nbpp_pair)%LJcod = 3
               end if
             else if (.not. cross_mol) then
-              do nl = 1, n14long
-                if ( (list14long(1,nl) .eq. i .and. &
-                  list14long(2,nl) .eq. j      ) .or. &
-                  (list14long(1,nl) .eq. j .and. &
-                  list14long(2,nl) .eq. i      ) ) &
-                  nbpp(nbpp_pair)%LJcod = 3
-              end do
+              if (csr_search(l14long_start, l14long_partner, i, j)) nbpp(nbpp_pair)%LJcod = 3
             end if
           end do jaloop
         end do ialoop
@@ -6240,11 +6296,7 @@ subroutine nbpplist_box_lrf
                 if ( listex(i-j, j) ) cycle jaloop
               end if
             else if (.not. cross_mol) then
-              do nl = 1, nexlong
-                if ((listexlong(1, nl) .eq. i .and. listexlong(2, nl) .eq. j) .or. &
-                  (listexlong(1, nl) .eq. j .and. listexlong(2, nl) .eq. i) ) &
-                  cycle jaloop
-              end do
+              if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
             end if
 
             ! if out of space then make more space
@@ -6265,11 +6317,7 @@ subroutine nbpplist_box_lrf
                 if ( list14(i-j, j) ) nbpp(nbpp_pair)%LJcod = 3
               end if
             else if (.not. cross_mol) then
-              do nl = 1, n14long
-                if ((list14long(1, nl) .eq. i .and. list14long(2, nl) .eq. j) .or. &
-                  (list14long(1, nl) .eq. j .and. list14long(2, nl) .eq. i)) &
-                  nbpp(nbpp_pair)%LJcod = 3
-              end do
+              if (csr_search(l14long_start, l14long_partner, i, j)) nbpp(nbpp_pair)%LJcod = 3
             end if
 
           end do jaloop
@@ -9250,14 +9298,7 @@ subroutine nbmonitorlist
                 if ( list14(atomj-atomi, atomj) ) LJ_code = 3
               end if
             else
-              do nl = 1, n14long
-                if ((list14long(1, nl) .eq. atomi &
-                  .and. list14long(2, nl) .eq. atomj) .or. &
-                  (list14long(1, nl) .eq. atomj &
-                  .and. list14long(2, nl) .eq. atomi)) then
-                  LJ_code = 3
-                endif
-              end do
+              if (csr_search(l14long_start, l14long_partner, atomi, atomj)) LJ_code = 3
             endif   !kolla 1-4 interaktioner
           else      !at least one is Q-atom
             !check Q-Q pairlist to find LJ-code
@@ -15472,6 +15513,7 @@ subroutine prep_sim
   call allocate_cgp_bounds
   call compute_cgp_mol
   call build_cross_mol_flags
+  call build_exclusion_csr
 
   !       Prepare an array of inverse masses
   winv(:) = 1./iaclib(iac(:))%mass
