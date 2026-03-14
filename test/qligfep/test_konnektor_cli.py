@@ -263,31 +263,50 @@ class TestUserDefinedProperties:
                 break
         assert has_extra_props, "Expected user-defined SDF properties in nodes"
 
-    def test_delta_properties_on_edges(self, tyk2_sdf, tyk2_output_dir):
-        """Numerical user-defined properties should produce delta_* fields on edges."""
+    def test_no_exp_key_no_deltas(self, tyk2_sdf, tyk2_output_dir):
+        """Without exp_key, nodes keep original props and edges have no deltas."""
         kw = KonnektorWrap(inp=str(tyk2_sdf), out=str(tyk2_output_dir), network="mst")
         result = kw.run()
 
-        # Check if any edge has delta_ prefixed keys
-        has_deltas = any(any(k.startswith("delta_") for k in e.keys()) for e in result["edges"])
-        assert has_deltas, "Expected delta_ properties on edges from numerical SDF properties"
+        # Nodes should still have original property names
+        has_original = any("r_exp_dg" in node for node in result["nodes"].values())
+        assert has_original, "Expected original 'r_exp_dg' property on nodes"
 
-    def test_delta_sign_convention_is_to_minus_from(self, tyk2_mst_result):
-        """Delta values on edges must follow to-minus-from convention.
+        # Edges should have no delta_ or ddg_value keys
+        for edge in result["edges"]:
+            delta_keys = [k for k in edge if k.startswith("delta_") or k == "ddg_value"]
+            assert delta_keys == [], f"Edge has unexpected keys: {delta_keys}"
 
-        Q's thermodynamic cycle computes ddG = dG(to) - dG(from), so
-        experimental deltas must use the same sign convention.
-        """
-        nodes = tyk2_mst_result["nodes"]
-        for edge in tyk2_mst_result["edges"]:
-            from_name = edge["from"]
-            to_name = edge["to"]
-            for key in edge:
-                if not key.startswith("delta_"):
-                    continue
-                prop_key = key[len("delta_"):]
-                expected = nodes[to_name][prop_key] - nodes[from_name][prop_key]
-                assert edge[key] == pytest.approx(expected), (
-                    f"Edge {from_name}->{to_name}: {key} = {edge[key]}, "
-                    f"expected to-from = {expected}"
-                )
+
+class TestExpKey:
+    @pytest.fixture
+    def tyk2_result_with_exp_key(self, tyk2_sdf):
+        """Run KonnektorWrap with exp_key on tyk2."""
+        tmpdir = Path(tempfile.mkdtemp())
+        kw = KonnektorWrap(inp=str(tyk2_sdf), out=str(tmpdir), network="mst", exp_key="r_exp_dg")
+        result = kw.run()
+        yield result
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_exp_key_renames_to_dg_value_on_nodes(self, tyk2_result_with_exp_key):
+        """When exp_key is set, nodes should have dg_value, not the original key."""
+        for name, node in tyk2_result_with_exp_key["nodes"].items():
+            assert "dg_value" in node, f"Node '{name}' missing 'dg_value'"
+            assert "r_exp_dg" not in node, f"Node '{name}' still has original 'r_exp_dg'"
+
+    def test_exp_key_computes_ddg_value_on_edges(self, tyk2_result_with_exp_key):
+        """Edges should have ddg_value = dg_value(to) - dg_value(from)."""
+        nodes = tyk2_result_with_exp_key["nodes"]
+        for edge in tyk2_result_with_exp_key["edges"]:
+            assert "ddg_value" in edge, f"Edge {edge['from']}->{edge['to']} missing 'ddg_value'"
+            expected = nodes[edge["to"]]["dg_value"] - nodes[edge["from"]]["dg_value"]
+            assert edge["ddg_value"] == pytest.approx(expected), (
+                f"Edge {edge['from']}->{edge['to']}: ddg_value={edge['ddg_value']}, "
+                f"expected {expected}"
+            )
+
+    def test_exp_key_no_delta_prefix_keys(self, tyk2_result_with_exp_key):
+        """No edge should have any key starting with delta_."""
+        for edge in tyk2_result_with_exp_key["edges"]:
+            delta_keys = [k for k in edge if k.startswith("delta_")]
+            assert delta_keys == [], f"Edge {edge['from']}->{edge['to']} has delta_ keys: {delta_keys}"

@@ -600,7 +600,7 @@ class MapGen:
                 "label": node_id,
                 "shape": "image",
                 "image": f"./img/{node_id}.png",
-                "payload": {"dG": "Test", "dGexpt": node_data.get("ddg_value", None)},
+                "payload": {"dG": "Test", "dGexpt": node_data.get("dg_value", None)},
             }
             adapted_data["nodes"].append(adapted_node)
 
