@@ -38,11 +38,11 @@ Create your perturbation network. You can use either `qlomap` (LOMAP) or `qkonne
 ### Option A: Using qlomap
 
 ```bash
-qlomap -i tyk2_ligands.sdf -exp r_exp_dg
+qlomap -i tyk2_ligands.sdf --exp-key r_exp_dg
 ```
-`-exp r_exp_dg` reads the experimental dG from the `r_exp_dg` SDF property and stores each edge's experimental ΔΔG as `ddg_value` (the perturbation `from → to`, i.e. `dG(to) - dG(from)`) in `lomap.json`. Omit the flag if your ligands have no experimental values.
+`--exp-key r_exp_dg` reads the experimental dG from the `r_exp_dg` SDF property and stores each edge's experimental ΔΔG as `ddg_value` (the perturbation `from → to`, i.e. `dG(to) - dG(from)`) in `lomap.json`. Omit the flag if your ligands have no experimental values.
 
-This generates a `lomap.json` file inside a `tyk2_ligands/` directory.
+This generates a `lomap.json` file inside a `tyk2_ligands/` directory. The `--exp-key` flag tells `qlomap` which SDF property holds the experimental binding free energy. It gets standardized to `dg_value` on nodes (absolute) and `ddg_value` on edges (relative, to-minus-from). Omit it if your ligands don't have experimental data.
 
 ### Option B: Using qkonnektor
 
@@ -58,22 +58,22 @@ By default, `qkonnektor` scores edges using the same `RestraintSetter` atom mapp
 
 To generate an MST network (default):
 ```bash
-qkonnektor -i tyk2_ligands.sdf
+qkonnektor -i tyk2_ligands.sdf --exp-key r_exp_dg
 ```
 
 To try a different topology or scoring method:
 ```bash
 # Star network (konnektor picks the best central node automatically)
-qkonnektor -i tyk2_ligands.sdf -n star
+qkonnektor -i tyk2_ligands.sdf --exp-key r_exp_dg -n star
 
 # Star network with a specific central ligand (e.g. one with experimental data)
-qkonnektor -i tyk2_ligands.sdf -n star -cl ejm_31
+qkonnektor -i tyk2_ligands.sdf --exp-key r_exp_dg -n star -cl ejm_31
 
 # MST with kartograf volume-ratio scoring instead of restraint-based scoring
-qkonnektor -i tyk2_ligands.sdf -s kartograf
+qkonnektor -i tyk2_ligands.sdf --exp-key r_exp_dg -s kartograf
 
 # MST with a specific restraint method and custom atom distance threshold
-qkonnektor -i tyk2_ligands.sdf -rest element_strict_1.2
+qkonnektor -i tyk2_ligands.sdf --exp-key r_exp_dg -rest element_strict_1.2
 ```
 
 The `-cl` / `--central_ligand` flag is only used with star networks. The name must match a molecule name from the input SDF. When omitted, konnektor selects the central node that maximizes the overall network score.
