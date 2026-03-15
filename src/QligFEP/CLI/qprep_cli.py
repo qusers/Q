@@ -57,8 +57,6 @@ class ProteinNeutralizer:
 
     def neutralize_outside_residues(self, pdb_file, salt_bridge_cutoff=4.0):
         """Find and neutralize charged residues outside the sphere boundary"""
-        logger.info(f"Neutralizing charged residues outside {self.rest_bound:.1f}Å boundary")
-
         df = read_pdb_to_dataframe(pdb_file)
         return self.neutralize_outside_residues_dataframe(df, salt_bridge_cutoff)
 
