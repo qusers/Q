@@ -73,24 +73,22 @@ def qprep_error_check(qprep_out_path: Path, ff_name: str) -> None:
     for line in outfile_lines:
         if error_pat.findall(line):
             error_lines.append(line)
-            logger.error(
-                f"Errors found in qprep output file {qprep_out_path}. Please check if the amino "
-                "acids in your pdb file match the residue & atom conventions on the forcefield .lib & .prm files:\n"
-                f"{FF_DIR/ ff_name}.prm & {FF_DIR/ ff_name}.lib"
-            )
         if missing_lib_pat.findall(line):
             missing_atomlib_lines.append(line)
-            logger.error(
-                f"Errors found in qprep output file {qprep_out_path}. "
-                "Your protein file likely contains atoms that are not present in the forcefield's .lib & .prm files:, \n"
-                f"{FF_DIR/ ff_name}.prm & {FF_DIR/ ff_name}.lib"
-            )
 
     if error_lines:
         error_message = "\n".join(error_lines)
+        logger.error(
+            f"Found {len(error_lines)} error(s) in {qprep_out_path}. Check residue & atom names "
+            f"against {FF_DIR / ff_name}.lib:\n{error_message}"
+        )
         raise QprepError(error_message)
     if missing_atomlib_lines:
         error_message = "\n".join(missing_atomlib_lines)
+        logger.error(
+            f"Found {len(missing_atomlib_lines)} atom/residue mismatch(es) in {qprep_out_path}. "
+            f"Check against {FF_DIR / ff_name}.lib:\n{error_message}"
+        )
         raise QprepAtomLibMissingError(error_message)
 
 
