@@ -15,6 +15,40 @@ from tqdm import tqdm
 from .chemIO import MoleculeIO
 from .logger import logger
 
+# def find_best_reference(molecules: list[Molecule], lig_names: list[str]) -> str:
+#     """Find the molecule with the highest aggregate MCS similarity to all others.
+
+#     Computes a pairwise MCS similarity matrix and returns the name of the molecule
+#     whose total similarity to all others is highest, making it a good alignment reference.
+
+#     Args:
+#         molecules: List of Molecule objects to compare.
+#         lig_names: List of molecule names corresponding to `molecules`.
+
+#     Returns:
+#         Name of the best reference molecule.
+#     """
+#     from MolClusterkit.mcs import MCSClustering
+
+#     smiles_list = [mol.to_smiles() for mol in molecules]
+#     mcs_kwargs = {
+#         "bondCompare": "CompareOrderExact",
+#         "ringCompare": "StrictRingFusion",
+#         "ringMatchesRingOnly": True,
+#         "completeRingsOnly": True,
+#         "timeout": 20,
+#     }
+#     mcs_cluster = MCSClustering(smiles_list, **mcs_kwargs)
+#     logger.info(
+#         "Scoring ligands based on Maximum Common Substructure to find the best reference."
+#     )
+#     _, simi_matrix = mcs_cluster.compute_similarity_matrix()
+
+#     highest_score_idx = simi_matrix.sum(axis=1).argmax()
+#     best_ref = lig_names[highest_score_idx]
+#     logger.info(f"Best reference molecule: {best_ref}")
+#     return best_ref
+
 
 class fkcombuLigandAligner(MoleculeIO):
     """Align ligands based on three-dimensional coordinates using the fkcombu program.
@@ -51,6 +85,8 @@ class fkcombuLigandAligner(MoleculeIO):
         steep_descend: bool = True,
         connectivity: str = "t",
         top_constraint_tol: Optional[int] = None,
+        atom_type: str = "X",
+        bond_type: str = "X",
         **fkcombu_params,
     ):
         """
@@ -59,7 +95,7 @@ class fkcombuLigandAligner(MoleculeIO):
 
         For more information on fkcombu, see their docs:
             https://pdbj.org/kcombu/doc/README_fkcombu.html
-        For information on the `connectivity`, `top_constraint_tol` parameters, see:
+        For information on the `connectivity`, `top_constraint_tol`, `atom_type` parameters, see:
             https://pdbj.org/kcombu/doc/README_pkcombu.html
 
         Args:
@@ -78,6 +114,19 @@ class fkcombuLigandAligner(MoleculeIO):
                 flexible correspondences are needed, use `t` together with the `top_constraint_tol` parameter.
             top_constraint_tol: the maximum number of bonds (shortest path) allowed as a tolerance for
                 not breaking the connectivity of the MCS. Only used if `connectivity` is set to `t`.
+            atom_type: fkcombu atom type classification for MCS matching. Controls how strictly atoms
+                must match during MCS calculation. Options:
+                - `X`: ignore atom types entirely (topology-only matching, best for FEP)
+                - `E`: element-only (C, N, O must match)
+                - `T`: element + bond count + ring status
+                - `K`: combu-recommend 12-type classification (fkcombu default)
+                Defaults to `X` because FEP transmutes atom types — the MCS should capture the
+                shared scaffold regardless of element identity.
+            bond_type: fkcombu bond type classification for MCS matching. Options:
+                - `X`: ignore bond types (default, good for FEP)
+                - `C`: care about SDF/MOL2 bond types
+                - `R`: distinguish rotatable vs non-rotatable
+                Defaults to `X`.
 
         Raises:
             FileNotFoundError: If the kcombu executable is not found.
@@ -90,7 +139,8 @@ class fkcombuLigandAligner(MoleculeIO):
         self.alignment_scores: dict[str, dict[str, float]] = {}
         self.temp_dir: Optional[tempfile.TemporaryDirectory] = None
         self.fkparams = self._process_fkparams(
-            {"P": protein, "E": energy.upper(), "S": search.upper(), "SD": steep_descend, **fkcombu_params},
+            {"P": protein, "E": energy.upper(), "S": search.upper(), "SD": steep_descend,
+             "at": atom_type.upper(), "bo": bond_type.upper(), **fkcombu_params},
             connectivity.upper(),
             top_constraint_tol,
         )
@@ -152,6 +202,8 @@ class fkcombuLigandAligner(MoleculeIO):
             "E": ("A", "V"),  # Energy calculation method; [A]tom-match, [V]olume-overlap
             "S": ("F", "R", "N"),  # Search method; [F]lexible, [R]igid, [N]othing
             "SD": ("T", "F"),  # Perform Gradient-based Steepest Descent fitting
+            "at": ("X", "E", "T", "K", "D"),  # Atom type classification for MCS
+            "bo": ("X", "C", "R"),  # Bond type classification for MCS
         }
         processed_params = {}
 
