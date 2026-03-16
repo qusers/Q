@@ -480,11 +480,20 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         has_pop, pop_count = has_pop_residues(pdb_data)
         if has_pop:
             logger.info(f"Detected {pop_count} POP lipid residue(s) with AMBER14sb forcefield")
-            logger.info("Converting pymemdyn POPC atom names to unified format compatible with AMBER14sb")
-            logger.info("Note: Qprep will add missing hydrogens automatically during topology generation")
-            pdb_data = convert_pymemdyn_to_unified_dataframe(pdb_data)
-            processing_steps.append("lipid_renamed")
-            lipid_conversion_performed = True
+            # Check if POP atoms are already in Q/Lipid21 convention (e.g., from memprep -oqc)
+            # Pymemdyn uses N4/P8; Q/Lipid21 uses N31/P31 — these never overlap
+            pop_atoms = set(pdb_data[pdb_data["residue_name"] == "POP"]["atom_name"])
+            pymemdyn_markers = {"N4", "P8", "C5", "C6", "O7"}
+            unified_markers = {"N31", "P31", "O31", "O32"}
+            if unified_markers & pop_atoms:
+                logger.info("POP atoms already in Q/Lipid21 convention (e.g., from memprep -oqc) — skipping conversion")
+            elif pymemdyn_markers & pop_atoms:
+                logger.info("Converting pymemdyn POPC atom names to unified format compatible with AMBER14sb")
+                pdb_data = convert_pymemdyn_to_unified_dataframe(pdb_data)
+                processing_steps.append("lipid_renamed")
+                lipid_conversion_performed = True
+            else:
+                logger.warning("POP atoms detected but naming convention is unclear — skipping conversion to be safe")
 
     # Create final processed PDB file with descriptive name
     if processing_steps:
