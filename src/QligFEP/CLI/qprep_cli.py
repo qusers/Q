@@ -451,14 +451,14 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     if not crystal_waters_df.empty:
         logger.info(f"Removing {len(crystal_waters_df)} crystal water molecules")
         pdb_data = pdb_data.query("residue_name != 'HOH'")
-        processing_steps.append("noHOH")
+        processing_steps.append("extracted waters to water.pdb")
 
     # Step 2: Add cofactors if provided
     if args.cofactors:
         logger.info(f"Adding {len(args.cofactors)} cofactor(s)")
         for cofactor in args.cofactors:
             pdb_data = append_pdb_to_another(pdb_data, cwd / cofactor, ignore_waters=True)
-        processing_steps.append("cofactors")
+        processing_steps.append("added cofactors")
 
     # Step 3: Neutralization
     neutralization_stats = None
@@ -470,7 +470,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         pdb_data, neutralization_stats = neutralizer.neutralize_outside_residues_dataframe(
             pdb_data, args.salt_bridge_cutoff
         )
-        processing_steps.append("neutralized")
+        processing_steps.append("neutralized out-of-sphere residues")
         logger.info("Charged residues neutralized")
 
     # Step 4: POPC lipid renaming (only for AMBER14sb with POP residues)
@@ -486,19 +486,23 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             pymemdyn_markers = {"N4", "P8", "C5", "C6", "O7"}
             unified_markers = {"N31", "P31", "O31", "O32"}
             if unified_markers & pop_atoms:
-                logger.info("POP atoms already in Q/Lipid21 convention (e.g., from memprep -oqc) — skipping conversion")
+                logger.info(
+                    "POP atoms already in Q/Lipid21 convention (e.g., from memprep -oqc) — skipping conversion"
+                )
             elif pymemdyn_markers & pop_atoms:
                 logger.info("Converting pymemdyn POPC atom names to unified format compatible with AMBER14sb")
                 pdb_data = convert_pymemdyn_to_unified_dataframe(pdb_data)
-                processing_steps.append("lipid_renamed")
+                processing_steps.append("renamed lipid atoms to match Amber14sb convention")
                 lipid_conversion_performed = True
             else:
-                logger.warning("POP atoms detected but naming convention is unclear — skipping conversion to be safe")
+                logger.warning(
+                    "POP atoms detected but naming convention is unclear — skipping conversion to be safe"
+                )
 
-    # Create final processed PDB file with descriptive name
+    # Write the processed protein to a predictable filename
     if processing_steps:
-        processed_stem = f"{original_stem}_{'_'.join(processing_steps)}"
-        processed_pdb_path = pdb_path.with_name(f"{processed_stem}.pdb")
+        processed_pdb_path = pdb_path.with_name("protein_processed.pdb")
+        logger.info(f"Processing steps applied: {', '.join(processing_steps)}")
     else:
         processed_pdb_path = pdb_path
 
