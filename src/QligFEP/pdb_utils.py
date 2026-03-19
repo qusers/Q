@@ -333,6 +333,8 @@ def disulfide_search(npdb, min_dist=1.8, max_dist=4.0):
     renamed = bool(residues_to_rename)
     for i in residues_to_rename:
         npdb[i] = [x.replace("CYS", "CYX") if "CYS" in x or "CYD" in x else x for x in npdb[i]]
+        # Remove HG atom — CYX (disulfide) has no thiol hydrogen
+        npdb[i] = [x for x in npdb[i] if " HG " not in x]
 
     return npdb, cysbonds, renamed
 
