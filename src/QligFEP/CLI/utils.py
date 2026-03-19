@@ -72,7 +72,8 @@ def handle_cysbonds(input_config: str, pdb_file: Path, comment_out: bool = True)
         qprep_lines = ""
     elif input_config != "":
         input_config = input_config.split(",")
-        qprep_lines = "".join([f"!addbond {b.split('_')[0]} {b.split('_')[1]} y\n" for b in input_config])
+        addbond = "!addbond" if comment_out else "addbond"
+        qprep_lines = "".join([f"{addbond} {b.split('_')[0]} {b.split('_')[1]} y\n" for b in input_config])
     else:
         raise ValueError(f"Invalid cysbond input: {input_config}. Please check the input format.")
     return qprep_lines
