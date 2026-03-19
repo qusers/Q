@@ -340,6 +340,8 @@ def disulfide_search(npdb, min_dist=1.8, max_dist_cyx=4.0, max_dist_cys=2.5):
             # Use wide range only when both residues are CYX/CYD (confirmed disulfide
             # partners). Mixed CYX+CYS pairs use the strict cutoff to avoid false
             # positives from free cysteines that happen to be near a disulfide.
+            either_is_cyx = (res_i["resname"] in ("CYX", "CYD") or
+                             res_j["resname"] in ("CYX", "CYD"))
             both_are_cyx = (res_i["resname"] in ("CYX", "CYD") and
                             res_j["resname"] in ("CYX", "CYD"))
             max_dist = max_dist_cyx if both_are_cyx else max_dist_cys
