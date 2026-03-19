@@ -300,7 +300,8 @@ def unnest_pdb(npdb):
     return [atm for res in npdb for atm in res]
 
 
-def disulfide_search(npdb, min_dist=1.8, max_dist=2.2):
+def disulfide_search(npdb, min_dist=1.8, max_dist=4.0):
+    """Original code said 2.2; but I changed to 3.2 because of this paper: https://pubs.acs.org/doi/10.1021/jz900214e"""
     residues_to_rename = set()
     cysbonds = []
     for i in range(len(npdb)):
