@@ -337,9 +337,12 @@ def disulfide_search(npdb, min_dist=1.8, max_dist_cyx=4.0, max_dist_cys=2.5):
         for res_j in cys_residues[ii + 1:]:
             distance = math.sqrt(sum((a - b) ** 2 for a, b in zip(res_i["coords"], res_j["coords"])))
 
-            # Use wide range if either residue is CYX/CYD (intentional disulfide label)
-            either_is_cyx = res_i["resname"] in ("CYX", "CYD") or res_j["resname"] in ("CYX", "CYD")
-            max_dist = max_dist_cyx if either_is_cyx else max_dist_cys
+            # Use wide range only when both residues are CYX/CYD (confirmed disulfide
+            # partners). Mixed CYX+CYS pairs use the strict cutoff to avoid false
+            # positives from free cysteines that happen to be near a disulfide.
+            both_are_cyx = (res_i["resname"] in ("CYX", "CYD") and
+                            res_j["resname"] in ("CYX", "CYD"))
+            max_dist = max_dist_cyx if both_are_cyx else max_dist_cys
 
             if min_dist <= distance <= max_dist:
                 residues_to_rename.update({res_i["idx"], res_j["idx"]})
