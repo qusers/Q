@@ -304,12 +304,13 @@ def disulfide_search(npdb, min_dist=1.8, max_dist_cyx=4.0, max_dist_cys=2.5):
     """Detect disulfide bonds using distance-dependent criteria.
 
     Uses two detection ranges:
-    - CYX/CYD residues (already labeled as disulfide): wide range (1.8-4.0A) to catch
-      bonds that were stretched during membrane embedding minimization.
-    - CYS residues (free thiols): strict range (1.8-2.5A) to avoid false positives
+    - CYX/CYD residues (already labeled as disulfide): wide range (1.8-4.0Å) to catch
+      cases where the disulfide bond was poorly resolved in the structure, leading to
+      long SG-SG distances.
+    - CYS residues (free thiols): strict range (1.8-2.5Å) to avoid false positives
       from nearby cysteines that happen to be geometrically close.
 
-    Reference for extended range: https://pubs.acs.org/doi/10.1021/jz900214e
+    Reference for extended range (up to 3.2Å): https://pubs.acs.org/doi/10.1021/jz900214e
     """
     residues_to_rename = set()
     cysbonds = []
@@ -327,23 +328,26 @@ def disulfide_search(npdb, min_dist=1.8, max_dist_cyx=4.0, max_dist_cys=2.5):
         sg_idx = np.where(np.char.find(npdb[i], "SG") != -1)[0][0]
         res_info = npdb[i][sg_idx][17:27].strip()
         atom_number = npdb[i][sg_idx][6:11].strip()
-        cys_residues.append({
-            "idx": i, "resname": resname, "coords": (x, y, z),
-            "res_info": res_info, "atom_number": atom_number,
-        })
+        cys_residues.append(
+            {
+                "idx": i,
+                "resname": resname,
+                "coords": (x, y, z),
+                "res_info": res_info,
+                "atom_number": atom_number,
+            }
+        )
 
     # Find disulfide pairs with appropriate distance cutoffs
     for ii, res_i in enumerate(cys_residues):
-        for res_j in cys_residues[ii + 1:]:
+        for res_j in cys_residues[ii + 1 :]:
             distance = math.sqrt(sum((a - b) ** 2 for a, b in zip(res_i["coords"], res_j["coords"])))
 
             # Use wide range only when both residues are CYX/CYD (confirmed disulfide
             # partners). Mixed CYX+CYS pairs use the strict cutoff to avoid false
             # positives from free cysteines that happen to be near a disulfide.
-            either_is_cyx = (res_i["resname"] in ("CYX", "CYD") or
-                             res_j["resname"] in ("CYX", "CYD"))
-            both_are_cyx = (res_i["resname"] in ("CYX", "CYD") and
-                            res_j["resname"] in ("CYX", "CYD"))
+            either_is_cyx = res_i["resname"] in ("CYX", "CYD") or res_j["resname"] in ("CYX", "CYD")
+            both_are_cyx = res_i["resname"] in ("CYX", "CYD") and res_j["resname"] in ("CYX", "CYD")
             max_dist = max_dist_cyx if both_are_cyx else max_dist_cys
 
             if min_dist <= distance <= max_dist:
@@ -353,7 +357,9 @@ def disulfide_search(npdb, min_dist=1.8, max_dist_cyx=4.0, max_dist_cys=2.5):
                     f"({distance:.2f} Å, {'CYX-labeled' if either_is_cyx else 'distance-based'})"
                 )
                 logger.debug(f"Bond between residues `{res_i['res_info']}` and `{res_j['res_info']}`.")
-                cysbonds.append((f"{res_i['res_info'].split()[-1]}:SG", f"{res_j['res_info'].split()[-1]}:SG"))
+                cysbonds.append(
+                    (f"{res_i['res_info'].split()[-1]}:SG", f"{res_j['res_info'].split()[-1]}:SG")
+                )
 
     renamed = bool(residues_to_rename)
     for i in residues_to_rename:
