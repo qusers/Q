@@ -1,4 +1,4 @@
-"""Tests for the RestraintScorer and parse_restraint_method utility."""
+"""Tests for the RestraintScorer, RestraintLomapScorer, and parse_restraint_method utility."""
 
 import tempfile
 from pathlib import Path
@@ -6,7 +6,11 @@ from pathlib import Path
 import pytest
 from rdkit import Chem
 
-from QligFEP.scoring import RestraintScorer, parse_restraint_method
+from QligFEP.scoring import (
+    RestraintLomapScorer,
+    RestraintScorer,
+    parse_restraint_method,
+)
 
 RESOURCES_DIR = Path(__file__).parent / "resources"
 
@@ -129,8 +133,12 @@ class TestRestraintScorer:
             writer.write(tyk2_mols[name])
             writer.close()
 
-        molA = _ensure_hydrogens_reindexed(SmallMoleculeComponent.from_sdf_file(str(Path(tmpdir) / "ejm_31.sdf")))
-        molB = _ensure_hydrogens_reindexed(SmallMoleculeComponent.from_sdf_file(str(Path(tmpdir) / "ejm_49.sdf")))
+        molA = _ensure_hydrogens_reindexed(
+            SmallMoleculeComponent.from_sdf_file(str(Path(tmpdir) / "ejm_31.sdf"))
+        )
+        molB = _ensure_hydrogens_reindexed(
+            SmallMoleculeComponent.from_sdf_file(str(Path(tmpdir) / "ejm_49.sdf"))
+        )
         mapper = KartografAtomMapper(atom_map_hydrogens=False)
         mapping = next(mapper.suggest_mappings(molA, molB))
 
@@ -224,3 +232,96 @@ class TestParseRestraintMethod:
         """Parse distance as integer '2'."""
         result = parse_restraint_method("element_p_2")
         assert result["kartograf_max_atom_distance"] == 2.0
+
+
+class TestRestraintLomapScorer:
+    def test_returns_geometric_mean_of_lomap_and_restraint(self, tyk2_sdf_pair):
+        """Combined score should be sqrt(lomap_score * restraint_score)."""
+        import numpy as np
+        from kartograf import KartografAtomMapper, SmallMoleculeComponent
+        from lomap import default_lomap_score
+
+        molA = SmallMoleculeComponent.from_sdf_file(str(tyk2_sdf_pair["ejm_31"]))
+        molB = SmallMoleculeComponent.from_sdf_file(str(tyk2_sdf_pair["ejm_42"]))
+        mapper = KartografAtomMapper(atom_map_hydrogens=False)
+        mapping = next(mapper.suggest_mappings(molA, molB))
+
+        scorer = RestraintLomapScorer(restraint_method="heavyatom_p")
+        combined = scorer(mapping)
+
+        # Compute expected values independently
+        lomap_score = default_lomap_score(mapping)
+        restraint_score = RestraintScorer(restraint_method="heavyatom_p")(mapping)
+        expected = np.sqrt(lomap_score * restraint_score)
+
+        assert combined == pytest.approx(expected)
+        assert 0.0 <= combined <= 1.0
+
+    def test_same_charge_pair_gets_nonzero_score(self, tyk2_sdf_pair):
+        """Same-charge pair should get a nonzero score (lomap doesn't penalize)."""
+        from kartograf import KartografAtomMapper, SmallMoleculeComponent
+
+        molA = SmallMoleculeComponent.from_sdf_file(str(tyk2_sdf_pair["ejm_31"]))
+        molB = SmallMoleculeComponent.from_sdf_file(str(tyk2_sdf_pair["ejm_42"]))
+        mapper = KartografAtomMapper(atom_map_hydrogens=False)
+        mapping = next(mapper.suggest_mappings(molA, molB))
+
+        scorer = RestraintLomapScorer(restraint_method="heavyatom_p")
+        score = scorer(mapping)
+
+        assert score > 0.0
+
+    def test_charge_change_blocked_by_default(self, cmet_charged_pair):
+        """Charge-changing pairs should score 0.0 with default charge_changes_score."""
+        from kartograf import KartografAtomMapper, SmallMoleculeComponent
+
+        molA = SmallMoleculeComponent.from_sdf_file(str(cmet_charged_pair["neutral"]))
+        molB = SmallMoleculeComponent.from_sdf_file(str(cmet_charged_pair["charged"]))
+        mapper = KartografAtomMapper(atom_map_hydrogens=False)
+        mapping = next(mapper.suggest_mappings(molA, molB))
+
+        scorer = RestraintLomapScorer(restraint_method="heavyatom_p")
+        score = scorer(mapping)
+
+        assert score == 0.0
+
+    def test_charge_change_allowed_with_nonzero_param(self, cmet_charged_pair):
+        """With charge_changes_score > 0, charge-changing pairs get a nonzero score."""
+        from kartograf import KartografAtomMapper, SmallMoleculeComponent
+
+        molA = SmallMoleculeComponent.from_sdf_file(str(cmet_charged_pair["neutral"]))
+        molB = SmallMoleculeComponent.from_sdf_file(str(cmet_charged_pair["charged"]))
+        mapper = KartografAtomMapper(atom_map_hydrogens=False)
+        mapping = next(mapper.suggest_mappings(molA, molB))
+
+        scorer = RestraintLomapScorer(restraint_method="heavyatom_p", charge_changes_score=0.5)
+        score = scorer(mapping)
+
+        assert score > 0.0
+
+    def test_charge_change_score_penalizes_vs_same_charge(self, tyk2_sdf_pair, cmet_charged_pair):
+        """Even with charge_changes_score=0.5, a charge-change edge scores lower than same-charge."""
+        from kartograf import KartografAtomMapper, SmallMoleculeComponent
+
+        # Same-charge pair
+        molA = SmallMoleculeComponent.from_sdf_file(str(tyk2_sdf_pair["ejm_31"]))
+        molB = SmallMoleculeComponent.from_sdf_file(str(tyk2_sdf_pair["ejm_42"]))
+        mapper = KartografAtomMapper(atom_map_hydrogens=False)
+        same_mapping = next(mapper.suggest_mappings(molA, molB))
+
+        # Charge-change pair
+        molC = SmallMoleculeComponent.from_sdf_file(str(cmet_charged_pair["neutral"]))
+        molD = SmallMoleculeComponent.from_sdf_file(str(cmet_charged_pair["charged"]))
+        charge_mapping = next(mapper.suggest_mappings(molC, molD))
+
+        scorer = RestraintLomapScorer(restraint_method="heavyatom_p", charge_changes_score=0.5)
+        same_score = scorer(same_mapping)
+        charge_score = scorer(charge_mapping)
+
+        # The charge-change penalty (0.5) should make its lomap component lower
+        # We can't compare directly since they're different molecule pairs,
+        # but the charge_score should be bounded by sqrt(charge_changes_score * restraint_score)
+        import numpy as np
+
+        restraint_only = RestraintScorer(restraint_method="heavyatom_p")(charge_mapping)
+        assert charge_score <= np.sqrt(0.5 * restraint_only) + 1e-10

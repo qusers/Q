@@ -1,6 +1,6 @@
 [MD]
 steps                     5000
-stepsize                  0.1
+stepsize                  0.2
 temperature               1
 bath_coupling             0.2
 random_seed               SEED_VAR

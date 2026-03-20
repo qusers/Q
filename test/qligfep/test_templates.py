@@ -267,7 +267,7 @@ class TestEquilibrationConfigs:
         eq1 = configs[0]
 
         assert eq1.params.steps == 5000
-        assert eq1.params.stepsize == 0.1
+        assert eq1.params.stepsize == 0.2
         assert eq1.params.temperature == 1
         assert eq1.params.bath_coupling == 0.2
         assert eq1.params.shake_hydrogens is False
@@ -298,8 +298,8 @@ class TestEquilibrationConfigs:
         assert eq2_2fs.params.stepsize == 2.0
         assert eq2_1fs.params.stepsize == 1.0
 
-        # shake_hydrogens off for eq1-eq4 regardless of timestep
-        assert eq2_2fs.params.shake_hydrogens is False
+        # shake_hydrogens on for 2fs (needed for larger timestep), off for 1fs
+        assert eq2_2fs.params.shake_hydrogens is True
         assert eq2_1fs.params.shake_hydrogens is False
 
     def test_temperature_progression(self):

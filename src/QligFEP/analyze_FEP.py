@@ -503,13 +503,22 @@ class FepReader:
     def prepare_df(json_dict, experimental_data: bool = True, exp_key: Optional[str] = None) -> pd.DataFrame:
         df = pd.DataFrame(json_dict["edges"])
         if experimental_data:
-            # For custom keys, edges have "delta_{node key}", which needs to be passed by the user
-            # The keys we use for experimental values are "ddg_value" (edge) or "dg_value" (node)
+            # The standardized keys are "dg_value" (node absolute) and "ddg_value" (edge relative)
             if exp_key is None:
-                if "dg_value" in df.columns:
-                    expected_col = "dg_value"
-                elif "ddg_value" in df.columns:
+                if "ddg_value" in df.columns:
                     expected_col = "ddg_value"
+                elif "dg_value" in df.columns:
+                    expected_col = "dg_value"
+                else:
+                    available_cols = [
+                        col for col in df.columns if "_value" in col or "dg" in col.lower()
+                    ]
+                    raise KeyError(
+                        f"No experimental data column found. "
+                        f"Expected 'ddg_value' or 'dg_value' in edges. "
+                        f"Available candidates: {', '.join(available_cols) if available_cols else 'none'}. "
+                        f"Pass exp_key to specify the column name."
+                    )
             else:
                 expected_col = exp_key
 
