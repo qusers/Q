@@ -2505,8 +2505,10 @@ subroutine init_nodes
   if (ierr .ne. 0) call die('init_nodes/MPI_Bcast list14long')
   call MPI_Bcast(listexlong, 2*nexlong, MPI_INTEGER4, 0, MPI_COMM_WORLD, ierr)
   if (ierr .ne. 0) call die('init_nodes/MPI_Bcast listexlong')
-  call build_cross_mol_flags
-  call build_exclusion_csr
+  if (nodeid .ne. 0) then
+    call build_cross_mol_flags
+    call build_exclusion_csr
+  end if
 
   ! --- data from the QATOM module ---
 
