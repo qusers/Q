@@ -317,6 +317,19 @@ module md
   type(lrf_type), allocatable      :: lrf(:)
   type(lrf_type), allocatable      :: old_lrf(:)  !for constant pressure: MC_volume routine
 
+  ! Bounding sphere data for charge group pair list pre-filtering
+  real(8), allocatable             :: cgp_bound_cent(:,:)  ! (3, ncgp_solute) CG centroids
+  real(8), allocatable             :: cgp_bound_rad(:)     ! (ncgp_solute)    max atom-centroid dist
+  integer(ai), allocatable         :: cgp_mol(:)           ! (ncgp_solute) molecule index per CG
+  logical, allocatable             :: mol_has_cross_excl(:) ! (nmol) molecule has cross-mol exclusions
+
+  ! CSR (Compressed Sparse Row) lookup for long-range exclusions and 1-4 pairs.
+  ! Replaces O(nexlong) linear scan with O(log k) binary search per atom pair.
+  integer, allocatable             :: exlong_start(:)    ! (nat_solute+1) row pointers
+  integer(ai), allocatable         :: exlong_partner(:)  ! sorted excluded partner atoms
+  integer, allocatable             :: l14long_start(:)   ! (nat_solute+1) row pointers
+  integer(ai), allocatable         :: l14long_partner(:) ! sorted 1-4 partner atoms
+
   type(node_assignment_type)       :: calculation_assignment
 
   !shake types & variables
@@ -511,6 +524,13 @@ subroutine allocate_lrf_arrays
 
   call check_alloc('LRF arrays')
 end subroutine allocate_lrf_arrays
+
+
+subroutine allocate_cgp_bounds
+  allocate(cgp_bound_cent(3, ncgp_solute), cgp_bound_rad(ncgp_solute), &
+           cgp_mol(ncgp_solute), stat=alloc_status)
+  call check_alloc('charge group bounding sphere and molecule arrays')
+end subroutine allocate_cgp_bounds
 
 
 #if defined(USE_MPI)
@@ -1024,6 +1044,222 @@ subroutine cgp_centers
   end do
 
 end subroutine cgp_centers
+
+
+subroutine compute_cgp_bounds
+  ! Compute bounding spheres (centroid + max radius) for all solute charge groups.
+  ! Used as a conservative pre-filter in pair list construction to skip
+  ! charge group pairs that cannot have any atom pair within the cutoff.
+  integer  :: ig, i, i3
+  real(8)  :: cent(3), dr2, max_dr2
+
+  do ig = 1, ncgp_solute
+    ! Compute centroid
+    cent(:) = 0.
+    do i = cgp(ig)%first, cgp(ig)%last
+      i3 = cgpatom(i)*3
+      cent(:) = cent(:) + x(i3-2:i3)
+    end do
+    cent(:) = cent(:) / real(cgp(ig)%last - cgp(ig)%first + 1)
+    cgp_bound_cent(:, ig) = cent(:)
+
+    ! Compute max distance from centroid to any atom in the group
+    max_dr2 = 0.
+    do i = cgp(ig)%first, cgp(ig)%last
+      i3 = cgpatom(i)*3
+      dr2 = (x(i3-2) - cent(1))**2 + (x(i3-1) - cent(2))**2 + (x(i3) - cent(3))**2
+      if (dr2 > max_dr2) max_dr2 = dr2
+    end do
+    cgp_bound_rad(ig) = sqrt(max_dr2)
+  end do
+end subroutine compute_cgp_bounds
+
+
+subroutine compute_cgp_mol
+  ! Map each solute charge group to its molecule index using istart_mol.
+  integer :: ig, atom_idx, mol
+  do ig = 1, ncgp_solute
+    atom_idx = cgpatom(cgp(ig)%first)
+    do mol = 1, nmol
+      if (atom_idx >= istart_mol(mol) .and. atom_idx < istart_mol(mol+1)) then
+        cgp_mol(ig) = mol
+        exit
+      end if
+    end do
+  end do
+end subroutine compute_cgp_mol
+
+
+subroutine build_cross_mol_flags
+  ! Scan exclusion/1-4 lists and flag molecules that have cross-molecule entries.
+  ! Flagged molecules will NOT get the exclusion scan skip optimization.
+  integer :: nl, i, j, mol_i, mol_j, mol, count_cross
+  allocate(mol_has_cross_excl(nmol), stat=alloc_status)
+  call check_alloc('cross-molecule exclusion flags')
+  mol_has_cross_excl(:) = .false.
+
+  count_cross = 0
+  do nl = 1, nexlong
+    i = listexlong(1, nl);  j = listexlong(2, nl)
+    if (iqatom(i) /= 0 .or. iqatom(j) /= 0) cycle
+    mol_i = 0; mol_j = 0
+    do mol = 1, nmol
+      if (i >= istart_mol(mol) .and. i < istart_mol(mol+1)) mol_i = mol
+      if (j >= istart_mol(mol) .and. j < istart_mol(mol+1)) mol_j = mol
+    end do
+    if (mol_i /= mol_j) then
+      mol_has_cross_excl(mol_i) = .true.
+      mol_has_cross_excl(mol_j) = .true.
+      count_cross = count_cross + 1
+    end if
+  end do
+  do nl = 1, n14long
+    i = list14long(1, nl);  j = list14long(2, nl)
+    if (iqatom(i) /= 0 .or. iqatom(j) /= 0) cycle
+    mol_i = 0; mol_j = 0
+    do mol = 1, nmol
+      if (i >= istart_mol(mol) .and. i < istart_mol(mol+1)) mol_i = mol
+      if (j >= istart_mol(mol) .and. j < istart_mol(mol+1)) mol_j = mol
+    end do
+    if (mol_i /= mol_j) then
+      mol_has_cross_excl(mol_i) = .true.
+      mol_has_cross_excl(mol_j) = .true.
+      count_cross = count_cross + 1
+    end if
+  end do
+  if (count_cross > 0) then
+    write(*,'(a,i6,a)') 'Note: ', count_cross, &
+      ' cross-molecule exclusion entries found; flagged molecules will use full scan'
+  end if
+end subroutine build_cross_mol_flags
+
+
+subroutine build_exclusion_csr
+  ! Build CSR lookup tables from listexlong and list14long.
+  ! Each atom gets a sorted list of its long-range exclusion/1-4 partners,
+  ! enabling O(log k) binary search instead of O(N) linear scan.
+  integer :: nl, a, b, i, j, tmp, n
+  integer, allocatable :: count(:)
+
+  ! --- Build exlong CSR ---
+  allocate(exlong_start(nat_solute+1), stat=alloc_status)
+  call check_alloc('exlong CSR row pointers')
+
+  allocate(count(nat_solute))
+  count(:) = 0
+  do nl = 1, nexlong
+    a = listexlong(1, nl);  b = listexlong(2, nl)
+    if (a >= 1 .and. a <= nat_solute) count(a) = count(a) + 1
+    if (b >= 1 .and. b <= nat_solute) count(b) = count(b) + 1
+  end do
+
+  exlong_start(1) = 1
+  do i = 1, nat_solute
+    exlong_start(i+1) = exlong_start(i) + count(i)
+  end do
+
+  n = exlong_start(nat_solute+1) - 1
+  allocate(exlong_partner(max(n,1)), stat=alloc_status)
+  call check_alloc('exlong CSR partner array')
+  count(:) = 0
+  do nl = 1, nexlong
+    a = listexlong(1, nl);  b = listexlong(2, nl)
+    if (a >= 1 .and. a <= nat_solute) then
+      count(a) = count(a) + 1
+      exlong_partner(exlong_start(a) + count(a) - 1) = b
+    end if
+    if (b >= 1 .and. b <= nat_solute) then
+      count(b) = count(b) + 1
+      exlong_partner(exlong_start(b) + count(b) - 1) = a
+    end if
+  end do
+
+  ! Sort each row (insertion sort — rows are tiny, typically 1-3 entries)
+  do i = 1, nat_solute
+    do j = exlong_start(i)+1, exlong_start(i+1)-1
+      tmp = exlong_partner(j)
+      nl = j - 1
+      do while (nl >= exlong_start(i) .and. exlong_partner(nl) > tmp)
+        exlong_partner(nl+1) = exlong_partner(nl)
+        nl = nl - 1
+      end do
+      exlong_partner(nl+1) = tmp
+    end do
+  end do
+
+  ! --- Build l14long CSR ---
+  allocate(l14long_start(nat_solute+1), stat=alloc_status)
+  call check_alloc('l14long CSR row pointers')
+
+  count(:) = 0
+  do nl = 1, n14long
+    a = list14long(1, nl);  b = list14long(2, nl)
+    if (a >= 1 .and. a <= nat_solute) count(a) = count(a) + 1
+    if (b >= 1 .and. b <= nat_solute) count(b) = count(b) + 1
+  end do
+
+  l14long_start(1) = 1
+  do i = 1, nat_solute
+    l14long_start(i+1) = l14long_start(i) + count(i)
+  end do
+
+  n = l14long_start(nat_solute+1) - 1
+  allocate(l14long_partner(max(n,1)), stat=alloc_status)
+  call check_alloc('l14long CSR partner array')
+  count(:) = 0
+  do nl = 1, n14long
+    a = list14long(1, nl);  b = list14long(2, nl)
+    if (a >= 1 .and. a <= nat_solute) then
+      count(a) = count(a) + 1
+      l14long_partner(l14long_start(a) + count(a) - 1) = b
+    end if
+    if (b >= 1 .and. b <= nat_solute) then
+      count(b) = count(b) + 1
+      l14long_partner(l14long_start(b) + count(b) - 1) = a
+    end if
+  end do
+
+  do i = 1, nat_solute
+    do j = l14long_start(i)+1, l14long_start(i+1)-1
+      tmp = l14long_partner(j)
+      nl = j - 1
+      do while (nl >= l14long_start(i) .and. l14long_partner(nl) > tmp)
+        l14long_partner(nl+1) = l14long_partner(nl)
+        nl = nl - 1
+      end do
+      l14long_partner(nl+1) = tmp
+    end do
+  end do
+
+  deallocate(count)
+  write(*,'(a,i6,a,i6,a)') 'Built exclusion CSR: ', nexlong, ' excl + ', n14long, ' 1-4 long-range pairs indexed'
+end subroutine build_exclusion_csr
+
+
+logical function csr_search(row_start, partners, atom, target)
+  ! Binary search for target in partners(row_start(atom) : row_start(atom+1)-1)
+  integer, intent(in)     :: row_start(:)
+  integer(ai), intent(in) :: partners(:)
+  integer, intent(in)     :: atom
+  integer(ai), intent(in) :: target
+  integer :: lo, hi, mid
+
+  lo = row_start(atom)
+  hi = row_start(atom+1) - 1
+  csr_search = .false.
+
+  do while (lo <= hi)
+    mid = (lo + hi) / 2
+    if (partners(mid) == target) then
+      csr_search = .true.
+      return
+    else if (partners(mid) < target) then
+      lo = mid + 1
+    else
+      hi = mid - 1
+    end if
+  end do
+end function csr_search
 
 
 subroutine make_nbqqlist
@@ -2237,6 +2473,10 @@ subroutine init_nodes
   call MPI_Type_free(mpitype_batch, ierr)
   if (ierr .ne. 0) call die('init_nodes/MPI_Type_free')
 
+  ! Bounding sphere arrays for pair list pre-filtering
+  if (nodeid .ne. 0) call allocate_cgp_bounds
+  call compute_cgp_mol
+
   ! iaclib
   ftype(:) = MPI_REAL8
   blockcnt(1) = 1                                 ! real(8) mass
@@ -2265,6 +2505,8 @@ subroutine init_nodes
   if (ierr .ne. 0) call die('init_nodes/MPI_Bcast list14long')
   call MPI_Bcast(listexlong, 2*nexlong, MPI_INTEGER4, 0, MPI_COMM_WORLD, ierr)
   if (ierr .ne. 0) call die('init_nodes/MPI_Bcast listexlong')
+  call build_cross_mol_flags
+  call build_exclusion_csr
 
   ! --- data from the QATOM module ---
 
@@ -3775,6 +4017,9 @@ subroutine make_pair_lists
     start_loop_time = rtime()
 #endif
 
+    ! Recompute bounding spheres for the pre-filter (only useful for lis2 routines)
+    if (iuse_switch_atom == 0) call compute_cgp_bounds
+
     if( use_PBC ) then
       if (.not. use_LRF)then
         !cutoff
@@ -4622,12 +4867,7 @@ subroutine nbpp_count(npp, nppcgp)
               if ( listex(i-j,j) ) cycle jaloop
             end if
           else
-            do nl = 1, nexlong
-              if ( (listexlong(1,nl) .eq. i .and. &
-                listexlong(2,nl) .eq. j      ) .or. &
-                (listexlong(1,nl) .eq. j .and. &
-                listexlong(2,nl) .eq. i      ) ) cycle jaloop
-            end do
+            if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
           end if
 
           ! passed all tests -- count the pair
@@ -4648,7 +4888,7 @@ subroutine nbpplis2
    ! local variables
   integer                                         :: i,j,ig,jg,ia,ja,i3,j3,nl,inside
   real(8)                                         :: rcut2,r2
-
+  logical                                         :: cross_mol
 
   ! for spherical boundary
   !       This routine makes a list of non-bonded solute-solute atom pairs
@@ -4678,34 +4918,37 @@ subroutine nbpplis2
       ja = cgp(jg)%iswitch
       if ( excl(ja) ) cycle jgloop
 
+      ! Bounding sphere pre-filter: skip if centroids too far for any atom pair within cutoff
+      r2 = ( cgp_bound_cent(1,ig) - cgp_bound_cent(1,jg) )**2 &
+        +( cgp_bound_cent(2,ig) - cgp_bound_cent(2,jg) )**2 &
+        +( cgp_bound_cent(3,ig) - cgp_bound_cent(3,jg) )**2
+      if ( r2 > (Rcpp + cgp_bound_rad(ig) + cgp_bound_rad(jg))**2 ) cycle jgloop
+
       !             --- outside cutoff ? ---
       inside = 0
       ia = cgp(ig)%first
       do while ((ia .le. cgp(ig)%last) .and. (inside .eq. 0))
         i = cgpatom(ia)
         i3 = 3*i-3
-
         ja = cgp(jg)%first
         do while ((ja .le. cgp(jg)%last) .and. (inside .eq. 0))
           j = cgpatom(ja)
           j3 = 3*j-3
-
-
           r2 = ( x(i3+1) -x(j3+1) )**2 &
             +( x(i3+2) -x(j3+2) )**2 &
             +( x(i3+3) -x(j3+3) )**2
-
           if ( r2 .le. rcut2 ) then
-            ! one atom pair is within cutoff: set inside
             inside = 1
           end if
-
           ja = ja + 1
         end do
-
         ia = ia + 1
       end do
       if (inside .eq. 0) cycle jgloop
+
+      cross_mol = (cgp_mol(ig) /= cgp_mol(jg)) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(ig))) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(jg)))
 
       ialoop:    do ia = cgp(ig)%first, cgp(ig)%last
         i = cgpatom(ia)
@@ -4730,13 +4973,8 @@ subroutine nbpplis2
             else
               if ( listex(i-j,j) ) cycle jaloop
             end if
-          else
-            do nl = 1, nexlong
-              if ( (listexlong(1,nl) .eq. i .and. &
-                listexlong(2,nl) .eq. j      ) .or. &
-                (listexlong(1,nl) .eq. j .and. &
-                listexlong(2,nl) .eq. i      ) ) cycle jaloop
-            end do
+          else if (.not. cross_mol) then
+            if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
           end if
 
           ! if out of space then make more space
@@ -4753,24 +4991,18 @@ subroutine nbpplis2
             else
               if ( list14(i-j,j) ) nbpp(nbpp_pair)%LJcod = 3
             end if
-          else
-            do nl = 1, n14long
-              if ( (list14long(1,nl) .eq. i .and. &
-                list14long(2,nl) .eq. j      ) .or. &
-                (list14long(1,nl) .eq. j .and. &
-                list14long(2,nl) .eq. i      ) ) then
-                nbpp(nbpp_pair)%LJcod = 3
-              end if
-            end do
+          else if (.not. cross_mol) then
+            if (csr_search(l14long_start, l14long_partner, i, j)) nbpp(nbpp_pair)%LJcod = 3
           end if
 
         end do jaloop
       end do ialoop
     end do jgloop
   end do igloop
-#if defined (PROFILING) 
+
+#if defined (PROFILING)
   profile(3)%time = profile(3)%time + rtime() - start_loop_time
-#endif 
+#endif
 
 end subroutine nbpplis2
 
@@ -4782,6 +5014,7 @@ subroutine nbpplis2_box
   integer                   :: i,j,ig,jg,ia,ja,i3,j3,nl,inside
   real(8)                   :: rcut2,r2
   real(8)                   :: dx, dy, dz
+  logical                   :: cross_mol
 
 #if defined (PROFILING)
   real(8)                   :: start_loop_time
@@ -4804,13 +5037,22 @@ subroutine nbpplis2_box
         ((ig .lt. jg) .and. (mod(ig+jg,2) .eq. 1)) ) &
         cycle jgloop
 
+      ! Bounding sphere pre-filter with minimum image convention
+      dx = cgp_bound_cent(1,ig) - cgp_bound_cent(1,jg)
+      dy = cgp_bound_cent(2,ig) - cgp_bound_cent(2,jg)
+      dz = cgp_bound_cent(3,ig) - cgp_bound_cent(3,jg)
+      dx = dx - boxlength(1)*nint( dx*inv_boxl(1) )
+      dy = dy - boxlength(2)*nint( dy*inv_boxl(2) )
+      dz = dz - boxlength(3)*nint( dz*inv_boxl(3) )
+      r2 = dx**2 + dy**2 + dz**2
+      if ( r2 > (Rcpp + cgp_bound_rad(ig) + cgp_bound_rad(jg))**2 ) cycle jgloop
+
       !             --- outside cutoff ? ---
       inside = 0
       ia = cgp(ig)%first
       do while ((ia .le. cgp(ig)%last) .and. (inside .eq. 0))
         i = cgpatom(ia)
         i3 = 3*i-3
-
         ja = cgp(jg)%first
         do while ((ja .le. cgp(jg)%last) .and. (inside .eq. 0))
           j = cgpatom(ja)
@@ -4822,25 +5064,22 @@ subroutine nbpplis2_box
           dy = dy - boxlength(2)*nint( dy*inv_boxl(2) )
           dz = dz - boxlength(3)*nint( dz*inv_boxl(3) )
           r2 = dx**2 + dy**2 + dz**2
-
           if ( r2 .le. rcut2 ) then
-            ! one atom pair is within cutoff: set inside
             inside = 1
-
             if (nbpp_cgp_pair .eq. size(nbpp_cgp, 1) )  call reallocate_nbpp_cgp
-
             nbpp_cgp_pair = nbpp_cgp_pair + 1
             nbpp_cgp(nbpp_cgp_pair)%i = i
             nbpp_cgp(nbpp_cgp_pair)%j = j
-
           end if
-
           ja = ja + 1
         end do
-
         ia = ia + 1
       end do
       if (inside .eq. 0) cycle jgloop
+
+      cross_mol = (cgp_mol(ig) /= cgp_mol(jg)) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(ig))) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(jg)))
 
       ialoop:    do ia = cgp(ig)%first, cgp(ig)%last
         i = cgpatom(ia)
@@ -4865,13 +5104,8 @@ subroutine nbpplis2_box
             else
               if ( listex(i-j,j) ) cycle jaloop
             end if
-          else
-            do nl = 1, nexlong
-              if ( (listexlong(1,nl) .eq. i .and. &
-                listexlong(2,nl) .eq. j      ) .or. &
-                (listexlong(1,nl) .eq. j .and. &
-                listexlong(2,nl) .eq. i      ) ) cycle jaloop
-            end do
+          else if (.not. cross_mol) then
+            if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
           end if
 
           ! if out of space then make more space
@@ -4889,15 +5123,8 @@ subroutine nbpplis2_box
             else
               if ( list14(i-j,j) ) nbpp(nbpp_pair)%LJcod = 3
             end if
-          else
-            do nl = 1, n14long
-              if ( (list14long(1,nl) .eq. i .and. &
-                list14long(2,nl) .eq. j      ) .or. &
-                (list14long(1,nl) .eq. j .and. &
-                list14long(2,nl) .eq. i      ) ) then
-                nbpp(nbpp_pair)%LJcod = 3
-              end if
-            end do
+          else if (.not. cross_mol) then
+            if (csr_search(l14long_start, l14long_partner, i, j)) nbpp(nbpp_pair)%LJcod = 3
           end if
 
         end do jaloop
@@ -4920,6 +5147,7 @@ subroutine nbpplis2_box_lrf
   real(8)                                               ::dr(3)
   real(8)                                               ::boxshiftx, boxshifty, boxshiftz
   integer                                               ::inside_LRF, is3
+  logical                                               :: cross_mol
   ! for periodic boundary conditions
   !     This routine makes a list of non-bonded solute-solute atom pairs
   !     excluding any Q-atoms.
@@ -4941,6 +5169,16 @@ subroutine nbpplis2_box_lrf
         ((ig .lt. jg) .and. (mod(ig+jg,2) .eq. 1)) ) &
         cycle jgloop
 
+      ! Bounding sphere pre-filter with minimum image: skip if outside LRF cutoff
+      dx = cgp_bound_cent(1,ig) - cgp_bound_cent(1,jg)
+      dy = cgp_bound_cent(2,ig) - cgp_bound_cent(2,jg)
+      dz = cgp_bound_cent(3,ig) - cgp_bound_cent(3,jg)
+      dx = dx - boxlength(1)*nint( dx*inv_boxl(1) )
+      dy = dy - boxlength(2)*nint( dy*inv_boxl(2) )
+      dz = dz - boxlength(3)*nint( dz*inv_boxl(3) )
+      r2 = dx**2 + dy**2 + dz**2
+      if ( r2 > (RcLRF + cgp_bound_rad(ig) + cgp_bound_rad(jg))**2 ) cycle jgloop
+
       !             --- outside cutoff ? ---
       inside = 0
       inside_LRF = 0
@@ -4948,7 +5186,6 @@ subroutine nbpplis2_box_lrf
       do while ((ia .le. cgp(ig)%last) .and. (inside .eq. 0))
         i = cgpatom(ia)
         i3 = 3*i-3
-
         ja = cgp(jg)%first
         do while ((ja .le. cgp(jg)%last) .and. (inside .eq. 0))
           j = cgpatom(ja)
@@ -4960,13 +5197,9 @@ subroutine nbpplis2_box_lrf
           dy = dy - boxlength(2)*nint( dy*inv_boxl(2) )
           dz = dz - boxlength(3)*nint( dz*inv_boxl(3) )
           r2 = dx**2 + dy**2 + dz**2
-
           if ( r2 .le. rcut2 ) then
-            ! one atom pair is within cutoff: set inside
             inside = 1
-
             if (nbpp_cgp_pair .eq. size(nbpp_cgp, 1) )  call reallocate_nbpp_cgp
-
             nbpp_cgp_pair = nbpp_cgp_pair + 1
             nbpp_cgp(nbpp_cgp_pair)%i = i
             nbpp_cgp(nbpp_cgp_pair)%j = j
@@ -4979,6 +5212,10 @@ subroutine nbpplis2_box_lrf
       end do
 
       if (inside .eq. 1) then
+        cross_mol = (cgp_mol(ig) /= cgp_mol(jg)) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(ig))) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(jg)))
+
         ialoop:    do ia = cgp(ig)%first, cgp(ig)%last
           i = cgpatom(ia)
 
@@ -5002,13 +5239,8 @@ subroutine nbpplis2_box_lrf
               else
                 if ( listex(i-j,j) ) cycle jaloop
               end if
-            else
-              do nl = 1, nexlong
-                if ( (listexlong(1,nl) .eq. i .and. &
-                  listexlong(2,nl) .eq. j      ) .or. &
-                  (listexlong(1,nl) .eq. j .and. &
-                  listexlong(2,nl) .eq. i      ) ) cycle jaloop
-              end do
+            else if (.not. cross_mol) then
+              if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
             end if
 
             ! if out of space then make more space
@@ -5026,15 +5258,8 @@ subroutine nbpplis2_box_lrf
               else
                 if ( list14(i-j,j) ) nbpp(nbpp_pair)%LJcod = 3
               end if
-            else
-              do nl = 1, n14long
-                if ( (list14long(1,nl) .eq. i .and. &
-                  list14long(2,nl) .eq. j      ) .or. &
-                  (list14long(1,nl) .eq. j .and. &
-                  list14long(2,nl) .eq. i      ) ) then
-                  nbpp(nbpp_pair)%LJcod = 3
-                end if
-              end do
+            else if (.not. cross_mol) then
+              if (csr_search(l14long_start, l14long_partner, i, j)) nbpp(nbpp_pair)%LJcod = 3
             end if
 
           end do jaloop
@@ -5193,6 +5418,7 @@ subroutine nbpplis2_lrf
   real(8)                                         :: rcut2,r2,field0,field1,field2
   real(8)                                         :: dr(3)
   real(8)                                         ::      RcLRF2
+  logical                                         :: cross_mol
 
   !       This routine makes a list of non-bonded solute-solute atom pairs
   !       excluding any Q-atoms.
@@ -5224,29 +5450,58 @@ subroutine nbpplis2_lrf
       if ( excl(ja) ) cycle jgloop
 
       !             --- outside cutoff ? ---
+      ! Bounding sphere pre-filter: skip expensive all-atom check if centroids too far
+      r2 = ( cgp_bound_cent(1,ig) - cgp_bound_cent(1,jg) )**2 &
+        +( cgp_bound_cent(2,ig) - cgp_bound_cent(2,jg) )**2 &
+        +( cgp_bound_cent(3,ig) - cgp_bound_cent(3,jg) )**2
+      if ( r2 > (Rcpp + cgp_bound_rad(ig) + cgp_bound_rad(jg))**2 ) then
+        ! Definitely outside Rcpp. Compute r2 for LRF gate using last atom pair.
+        inside = .false.
+        i = cgpatom(cgp(ig)%last)
+        j = cgpatom(cgp(jg)%last)
+        i3 = 3*i-3
+        j3 = 3*j-3
+        r2 = ( x(i3+1) -x(j3+1) )**2 &
+          +( x(i3+2) -x(j3+2) )**2 &
+          +( x(i3+3) -x(j3+3) )**2
+      else
       inside = .false.
-      pairloop:       do ia=cgp(ig)%first, cgp(ig)%last
+      ia = cgp(ig)%first
+      do while ((ia .le. cgp(ig)%last) .and. (.not. inside))
         i = cgpatom(ia)
         i3 = 3*i-3
-
-        do ja=cgp(jg)%first, cgp(jg)%last
+        ja = cgp(jg)%first
+        do while ((ja .le. cgp(jg)%last) .and. (.not. inside))
           j = cgpatom(ja)
           j3 = 3*j-3
-
           r2 = ( x(i3+1) -x(j3+1) )**2 &
             +( x(i3+2) -x(j3+2) )**2 &
             +( x(i3+3) -x(j3+3) )**2
-
-          if ( r2 <= rcut2 ) then
-            ! one atom pair is within cutoff: set inside
+          if ( r2 .le. rcut2 ) then
             inside = .true.
-            exit pairloop
           end if
+          ja = ja + 1
         end do
-      end do pairloop
+        ia = ia + 1
+      end do
+
+      if (.not. inside) then
+        i = cgpatom(cgp(ig)%last)
+        j = cgpatom(cgp(jg)%last)
+        i3 = 3*i-3
+        j3 = 3*j-3
+        r2 = ( x(i3+1) -x(j3+1) )**2 &
+          +( x(i3+2) -x(j3+2) )**2 &
+          +( x(i3+3) -x(j3+3) )**2
+      end if
+      end if ! bounding sphere pre-filter else branch
 
       !             --- inside cutoff ? ---
       if (inside) then
+        cross_mol = (cgp_mol(ig) /= cgp_mol(jg)) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(ig))) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(jg)))
+
         ialoop:                 do ia = cgp(ig)%first, cgp(ig)%last
           i = cgpatom(ia)
 
@@ -5265,13 +5520,8 @@ subroutine nbpplis2_lrf
               else
                 if ( listex(i-j,j) ) cycle jaloop
               end if
-            else
-              do nl = 1, nexlong
-                if ( (listexlong(1,nl) .eq. i .and. &
-                  listexlong(2,nl) .eq. j      ) .or. &
-                  (listexlong(1,nl) .eq. j .and. &
-                  listexlong(2,nl) .eq. i      ) ) cycle jaloop
-              end do
+            else if (.not. cross_mol) then
+              if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
             end if
 
             ! if out of space then make more space
@@ -5288,14 +5538,8 @@ subroutine nbpplis2_lrf
               else
                 if ( list14(i-j,j) ) nbpp(nbpp_pair)%LJcod = 3
               end if
-            else
-              do nl = 1, n14long
-                if ( (list14long(1,nl) .eq. i .and. &
-                  list14long(2,nl) .eq. j      ) .or. &
-                  (list14long(1,nl) .eq. j .and. &
-                  list14long(2,nl) .eq. i      ) ) &
-                  nbpp(nbpp_pair)%LJcod = 3
-              end do
+            else if (.not. cross_mol) then
+              if (csr_search(l14long_start, l14long_partner, i, j)) nbpp(nbpp_pair)%LJcod = 3
             end if
 
 
@@ -5440,6 +5684,7 @@ subroutine nbpplist
   integer                                         :: i,j,ig,jg,ia,ja,i3,j3,nl
   real(8)                                         :: rcut2,r2
   integer                                         :: LJ_code
+  logical                                         :: cross_mol
 
   ! For use with spherical boundary
   !       This routine makes a list of non-bonded solute-solute atom pairs
@@ -5488,6 +5733,10 @@ subroutine nbpplist
       ! skip if outside cutoff
       if ( r2 .gt. rcut2 ) cycle jgloop
 
+      cross_mol = (cgp_mol(ig) /= cgp_mol(jg)) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(ig))) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(jg)))
+
       ialoop: do ia = cgp(ig)%first, cgp(ig)%last
         ! for every atom in the charge group (of the outermost loop):
         i = cgpatom(ia)
@@ -5522,12 +5771,8 @@ subroutine nbpplist
             else
               if ( listex(i-j, j) ) cycle jaloop
             end if
-          else
-            do nl = 1, nexlong
-              if ((listexlong(1, nl) .eq. i .and. listexlong(2, nl) .eq. j) .or. &
-                (listexlong(1, nl) .eq. j .and. listexlong(2, nl) .eq. i) ) &
-                cycle jaloop
-            end do
+          else if (.not. cross_mol) then
+            if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
           end if
 
           ! if out of space then make more space
@@ -5546,22 +5791,16 @@ subroutine nbpplist
             else
               if ( list14(i-j, j) ) nbpp(nbpp_pair)%LJcod = 3
             end if
-          else
-
-
-            do nl = 1, n14long
-              if ((list14long(1, nl) .eq. i .and. list14long(2, nl) .eq. j) .or. &
-                (list14long(1, nl) .eq. j .and. list14long(2, nl) .eq. i)) &
-                nbpp(nbpp_pair)%LJcod = 3
-            end do
+          else if (.not. cross_mol) then
+            if (csr_search(l14long_start, l14long_partner, i, j)) nbpp(nbpp_pair)%LJcod = 3
           end if
         end do jaloop
       end do ialoop
     end do jgloop
   end do igloop
-#if defined (PROFILING) 
+#if defined (PROFILING)
   profile(3)%time = profile(3)%time + rtime() - start_loop_time
-#endif 
+#endif
 
 end subroutine nbpplist
 
@@ -5573,6 +5812,7 @@ subroutine nbpplist_box
   real(8)                                               :: rcut2,r2
   integer                                               :: LJ_code
   real(8)                                               :: dx, dy, dz
+  logical                                               :: cross_mol
 
   ! For use with periodic boundary conditions
   !     This routine makes a list of non-bonded solute-solute atom pairs
@@ -5629,6 +5869,10 @@ subroutine nbpplist_box
       nbpp_cgp(nbpp_cgp_pair)%i = ig_sw !the switching atoms of the charge groups in the pair
       nbpp_cgp(nbpp_cgp_pair)%j = jg_sw
 
+      cross_mol = (cgp_mol(ig) /= cgp_mol(jg)) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(ig))) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(jg)))
+
       ialoop: do ia = cgp(ig)%first, cgp(ig)%last
         ! for every atom in the charge group ig (of the outermost loop):
         i = cgpatom(ia)
@@ -5663,12 +5907,8 @@ subroutine nbpplist_box
             else
               if ( listex(i-j, j) ) cycle jaloop
             end if
-          else
-            do nl = 1, nexlong
-              if ((listexlong(1, nl) .eq. i .and. listexlong(2, nl) .eq. j) .or. &
-                (listexlong(1, nl) .eq. j .and. listexlong(2, nl) .eq. i) ) &
-                cycle jaloop
-            end do
+          else if (.not. cross_mol) then
+            if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
           end if
 
           ! if out of space then make more space
@@ -5688,21 +5928,16 @@ subroutine nbpplist_box
             else
               if ( list14(i-j, j) ) nbpp(nbpp_pair)%LJcod = 3
             end if
-          else
-
-            do nl = 1, n14long
-              if ((list14long(1, nl) .eq. i .and. list14long(2, nl) .eq. j) .or. &
-                (list14long(1, nl) .eq. j .and. list14long(2, nl) .eq. i)) &
-                nbpp(nbpp_pair)%LJcod = 3
-            end do
+          else if (.not. cross_mol) then
+            if (csr_search(l14long_start, l14long_partner, i, j)) nbpp(nbpp_pair)%LJcod = 3
           end if
         end do jaloop
       end do ialoop
     end do jgloop
   end do igloop
-#if defined (PROFILING) 
+#if defined (PROFILING)
   profile(3)%time = profile(3)%time + rtime() - start_loop_time
-#endif 
+#endif
 
 end subroutine nbpplist_box
 
@@ -5715,6 +5950,7 @@ subroutine nbpplist_lrf
   real(8)                                         :: dr(3)
   integer                                         :: LJ_code
   real(8)                                         ::      RcLRF2
+  logical                                         :: cross_mol
 
 #if defined (PROFILING)
   real(8)                                         :: start_loop_time
@@ -5762,6 +5998,10 @@ subroutine nbpplist_lrf
 
       ! inside cutoff?
       if ( r2 .le. rcut2 ) then
+        cross_mol = (cgp_mol(ig) /= cgp_mol(jg)) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(ig))) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(jg)))
+
         ialoop: do ia = cgp(ig)%first, cgp(ig)%last
 
           ! skip if q-atom
@@ -5794,14 +6034,8 @@ subroutine nbpplist_lrf
               else
                 if ( listex(i-j,j) ) cycle jaloop
               end if
-            else
-              do nl = 1, nexlong
-                if ( (listexlong(1,nl) .eq. i .and. &
-                  listexlong(2,nl) .eq. j      ) .or. &
-                  (listexlong(1,nl) .eq. j .and. &
-                  listexlong(2,nl) .eq. i ) ) &
-                  cycle jaloop
-              end do
+            else if (.not. cross_mol) then
+              if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
             end if
 
             ! if out of space then make more space
@@ -5820,14 +6054,8 @@ subroutine nbpplist_lrf
               else
                 if ( list14(i-j,j) ) nbpp(nbpp_pair)%LJcod = 3
               end if
-            else
-              do nl = 1, n14long
-                if ( (list14long(1,nl) .eq. i .and. &
-                  list14long(2,nl) .eq. j      ) .or. &
-                  (list14long(1,nl) .eq. j .and. &
-                  list14long(2,nl) .eq. i      ) ) &
-                  nbpp(nbpp_pair)%LJcod = 3
-              end do
+            else if (.not. cross_mol) then
+              if (csr_search(l14long_start, l14long_partner, i, j)) nbpp(nbpp_pair)%LJcod = 3
             end if
           end do jaloop
         end do ialoop
@@ -5968,6 +6196,7 @@ subroutine nbpplist_box_lrf
   real(8)                                               :: rcut2,r2
   integer                                               :: LJ_code
   real(8)                                               :: dx, dy, dz
+  logical                                               :: cross_mol
 
   real(8)                                               ::RcLRF2,field0, field1, field2
   real(8)                                               ::dr(3)
@@ -6028,6 +6257,10 @@ subroutine nbpplist_box_lrf
         nbpp_cgp(nbpp_cgp_pair)%i = ig_sw !the switching atoms of the charge groups in the pair
         nbpp_cgp(nbpp_cgp_pair)%j = jg_sw
 
+        cross_mol = (cgp_mol(ig) /= cgp_mol(jg)) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(ig))) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(jg)))
+
         ialoop: do ia = cgp(ig)%first, cgp(ig)%last
           ! for every atom in the charge group ig (of the outermost loop):
           i = cgpatom(ia)
@@ -6062,12 +6295,8 @@ subroutine nbpplist_box_lrf
               else
                 if ( listex(i-j, j) ) cycle jaloop
               end if
-            else
-              do nl = 1, nexlong
-                if ((listexlong(1, nl) .eq. i .and. listexlong(2, nl) .eq. j) .or. &
-                  (listexlong(1, nl) .eq. j .and. listexlong(2, nl) .eq. i) ) &
-                  cycle jaloop
-              end do
+            else if (.not. cross_mol) then
+              if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
             end if
 
             ! if out of space then make more space
@@ -6087,13 +6316,8 @@ subroutine nbpplist_box_lrf
               else
                 if ( list14(i-j, j) ) nbpp(nbpp_pair)%LJcod = 3
               end if
-            else
-
-              do nl = 1, n14long
-                if ((list14long(1, nl) .eq. i .and. list14long(2, nl) .eq. j) .or. &
-                  (list14long(1, nl) .eq. j .and. list14long(2, nl) .eq. i)) &
-                  nbpp(nbpp_pair)%LJcod = 3
-              end do
+            else if (.not. cross_mol) then
+              if (csr_search(l14long_start, l14long_partner, i, j)) nbpp(nbpp_pair)%LJcod = 3
             end if
 
           end do jaloop
@@ -9074,14 +9298,7 @@ subroutine nbmonitorlist
                 if ( list14(atomj-atomi, atomj) ) LJ_code = 3
               end if
             else
-              do nl = 1, n14long
-                if ((list14long(1, nl) .eq. atomi &
-                  .and. list14long(2, nl) .eq. atomj) .or. &
-                  (list14long(1, nl) .eq. atomj &
-                  .and. list14long(2, nl) .eq. atomi)) then
-                  LJ_code = 3
-                endif
-              end do
+              if (csr_search(l14long_start, l14long_partner, atomi, atomj)) LJ_code = 3
             endif   !kolla 1-4 interaktioner
           else      !at least one is Q-atom
             !check Q-Q pairlist to find LJ-code
@@ -15291,6 +15508,12 @@ subroutine prep_sim
       end do
     end do
   end if
+
+  ! Bounding sphere arrays for pair list pre-filtering (always needed)
+  call allocate_cgp_bounds
+  call compute_cgp_mol
+  call build_cross_mol_flags
+  call build_exclusion_csr
 
   !       Prepare an array of inverse masses
   winv(:) = 1./iaclib(iac(:))%mass
