@@ -566,6 +566,19 @@ class QligFEP:
             list: list of overlapping atoms.
         """
         pdbfile = writedir + f"/inputfiles/{self.lig1}_{self.lig2}.pdb"
+        if self.system == "protein":
+            pdb_df = read_pdb_to_dataframe(Path(pdbfile).parent / "top_p.pdb")
+        elif self.system == "water":
+            pdb_df = read_pdb_to_dataframe(pdbfile)
+        else:
+            raise ValueError(
+                f"System {self.system} not supported by this distance "
+                "restraint method. Please use 'protein' or 'water'."
+            )
+        subset_lig1 = pdb_df.query("residue_name == 'LIG'").reset_index()
+        subset_lig2 = pdb_df.query("residue_name == 'LID'").reset_index()
+        logger.debug(f"Subset LIG shape: {subset_lig1.shape}")
+        logger.debug(f"Subset LID shape: {subset_lig2.shape}")
         if restraint_method == "overlap":
             reslist = ["LIG", "LID"]
             torestraint_list = overlapping_pairs(pdbfile, reslist)
@@ -573,20 +586,6 @@ class QligFEP:
             parsed = parse_restraint_method(restraint_method)
             atom_max_distance = parsed.pop("kartograf_max_atom_distance", 0.95)
             parent_write_dir = Path(writedir).parent
-
-            if self.system == "protein":  # In this case order of elements in PDB file is: prot, LIG, LID, HOH
-                pdb_df = read_pdb_to_dataframe(Path(pdbfile).parent / "top_p.pdb")
-            elif self.system == "water":  # Here both top_p.pdb
-                pdb_df = read_pdb_to_dataframe(pdbfile)
-            else:
-                raise ValueError(
-                    f"System {self.system} not supported by this distance "
-                    "restraint method. Please use 'protein' or 'water'."
-                )
-            subset_lig1 = pdb_df.query("residue_name == 'LIG'").reset_index()
-            subset_lig2 = pdb_df.query("residue_name == 'LID'").reset_index()
-            logger.debug(f"Subset LIG shape: {subset_lig1.shape}")
-            logger.debug(f"Subset LID shape: {subset_lig2.shape}")
             lig1_path = parent_write_dir / f"{self.lig1}.sdf"
             lig2_path = parent_write_dir / f"{self.lig2}.sdf"
             if not lig1_path.exists() or not lig2_path.exists():

@@ -43,6 +43,7 @@ class KonnektorWrap:
         connectivity: int = 3,
         separate_charges: bool = False,
         charge_changes_score: float = 0.0,
+        exp_key: Optional[str] = None,
     ):
         self.inp = inp
         self.network_type = network
@@ -55,6 +56,7 @@ class KonnektorWrap:
         self.connectivity = connectivity
         self.separate_charges = separate_charges
         self.charge_changes_score = charge_changes_score
+        self.exp_key = exp_key
         self.nodes = {}
 
         self.out = self._parse_output(out)
@@ -149,6 +151,16 @@ class KonnektorWrap:
             extra_data = LomapWrap.extract_user_defined_properties(sdf_file)
             self.nodes[name] = {"smiles": smiles, "formal_charge": formal_charge, **extra_data}
 
+        # Rename experimental key to standardized dg_value on nodes
+        if self.exp_key:
+            for name, node in self.nodes.items():
+                if self.exp_key not in node:
+                    raise KeyError(
+                        f"exp_key '{self.exp_key}' not found in node '{name}'. "
+                        f"Available keys: {', '.join(k for k in node if k not in ('smiles', 'formal_charge'))}"
+                    )
+                node["dg_value"] = node.pop(self.exp_key)
+
         return components
 
     def _network_to_dict(self, network) -> dict:
@@ -171,13 +183,6 @@ class KonnektorWrap:
         node_names = sorted(self.nodes.keys())
         name_to_idx = {name: idx for idx, name in enumerate(node_names)}
 
-        # Find which node properties are numerical (for delta computation)
-        extra_numerical_keys = set()
-        for node_data in self.nodes.values():
-            for k, v in node_data.items():
-                if k not in ("smiles", "formal_charge") and isinstance(v, (int, float)):
-                    extra_numerical_keys.add(k)
-
         edges = []
         same_charges = []
         for mapping in network.edges:
@@ -197,13 +202,8 @@ class KonnektorWrap:
                 "same_charge": same_charge,
             }
 
-            # Compute delta for numerical properties
-            for key in extra_numerical_keys:
-                try:
-                    delta = self.nodes[to_name][key] - self.nodes[from_name][key]
-                    edge[f"delta_{key}"] = delta
-                except (TypeError, KeyError):
-                    logger.info(f"Could not compute delta_{key} for {from_name} | {to_name}")
+            if self.exp_key:
+                edge["ddg_value"] = self.nodes[to_name]["dg_value"] - self.nodes[from_name]["dg_value"]
 
             edges.append(edge)
 
@@ -373,6 +373,13 @@ def parse_arguments() -> argparse.Namespace:
         help="LOMAP penalty for charge-changing edges (only with scorer=combined). "
         "0.0 blocks them, 0.5 halves their score, 1.0 no penalty. Default: 0.0.",
     )
+    parser.add_argument(
+        "--exp-key",
+        "-exp",
+        type=str,
+        default=None,
+        help="SDF property containing experimental dG. Stored as dg_value on nodes, ddg_value on edges.",
+    )
     return parser.parse_args()
 
 
@@ -391,6 +398,7 @@ def main(args):
         connectivity=args.connectivity,
         separate_charges=args.separate_charges,
         charge_changes_score=args.charge_changes_score,
+        exp_key=args.exp_key,
     )
     kw.run()
 

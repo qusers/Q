@@ -19,9 +19,10 @@ from ..logger import logger
 class LomapWrap:
     """Class to wrap the lomap package for the QligFEP CLI."""
 
-    def __init__(self, inp: str, out: Optional[str] = None, time=30, verbose="info", **kwargs):
+    def __init__(self, inp: str, out: Optional[str] = None, time=30, verbose="info", exp_key: Optional[str] = None, **kwargs):
         self.nodes = {}
         self.inp = inp
+        self.exp_key = exp_key
         self.out = self._parse_output(out)
         self.cores = self._setup_cores()
         self.lomap_args = {
@@ -158,17 +159,24 @@ class LomapWrap:
         db_mol = lomap.DBMolecules(**self.lomap_args)
         rundir = db_mol.options["directory"]
 
-        extra_data_numerical = []
         for lomap_mol in db_mol._list:
             mol = lomap_mol.getMolecule()
             molpath = Path(rundir) / lomap_mol.getName()
             extra_data = self.extract_user_defined_properties(molpath)
-            extra_data_numerical.extend([k for k, v in extra_data.items() if isinstance(v, (int, float))])
             name = molpath.stem  # remove the file extension
             smiles = Chem.MolToSmiles(mol)
             formal_charge = Chem.GetFormalCharge(mol)
             self.nodes.update({name: {"smiles": smiles, "formal_charge": formal_charge, **extra_data}})
-        extra_data_numerical = list(set(extra_data_numerical))  # keep unique
+
+        # Rename experimental key to standardized dg_value on nodes
+        if self.exp_key:
+            for name, node in self.nodes.items():
+                if self.exp_key not in node:
+                    raise KeyError(
+                        f"exp_key '{self.exp_key}' not found in node '{name}'. "
+                        f"Available keys: {', '.join(k for k in node if k not in ('smiles', 'formal_charge'))}"
+                    )
+                node["dg_value"] = node.pop(self.exp_key)
 
         # Calculate the similarity matrices
         strict, loose = db_mol.build_matrices()
@@ -180,25 +188,11 @@ class LomapWrap:
         for edge in result_dict["edges"]:
             _from = edge["from"]
             _to = edge["to"]
-            # check for the same formal charge
             same = self.nodes[_to]["formal_charge"] == self.nodes[_from]["formal_charge"]
-            for key in extra_data_numerical:
-                try:
-                    delta = self.nodes[_from][key] - self.nodes[_to][key]
-                    edge.update({f"delta_{key}": delta})
-                except TypeError:
-                    logger.warning(
-                        f"The {key} property is not numerical for one the ligands: {_from} | {_to}"
-                    )
-                    edge.update({f"delta_{key}": None})
-                except KeyError:
-                    logger.info(
-                        f"The {key} property is not present for one the ligands: {_from} | {_to} "
-                        "Information won't be kept in edge..."
-                    )
+            if self.exp_key:
+                edge["ddg_value"] = self.nodes[_to]["dg_value"] - self.nodes[_from]["dg_value"]
             edge.update({"same_charge": same})
             same_charges.append(same)
-            # update the potential ddG value
         if all(same_charges):
             logger.info("All ligands have the same formal charge.")
         else:
@@ -234,12 +228,19 @@ def parse_arguments() -> argparse.Namespace:
         "--time", "-t", type=int, default=30, help="Maximum time in seconds used to perform the MCS search."
     )
     parser.add_argument("--verbose", "-v", type=str, default="info", help="Verbosity level.")
+    parser.add_argument(
+        "--exp-key",
+        "-exp",
+        type=str,
+        default=None,
+        help="SDF property containing experimental dG. Stored as dg_value on nodes, ddg_value on edges.",
+    )
     return parser.parse_args()
 
 
 def main(args):
     # TODO: could implement other lomap arguemnts here
-    lomap = LomapWrap(args.input, args.output, args.time, args.verbose)
+    lomap = LomapWrap(args.input, args.output, args.time, args.verbose, exp_key=args.exp_key)
     lomap.run_lomap()
 
 

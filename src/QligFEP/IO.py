@@ -73,24 +73,22 @@ def qprep_error_check(qprep_out_path: Path, ff_name: str) -> None:
     for line in outfile_lines:
         if error_pat.findall(line):
             error_lines.append(line)
-            logger.error(
-                f"Errors found in qprep output file {qprep_out_path}. Please check if the amino "
-                "acids in your pdb file match the residue & atom conventions on the forcefield .lib & .prm files:\n"
-                f"{FF_DIR/ ff_name}.prm & {FF_DIR/ ff_name}.lib"
-            )
         if missing_lib_pat.findall(line):
             missing_atomlib_lines.append(line)
-            logger.error(
-                f"Errors found in qprep output file {qprep_out_path}. "
-                "Your protein file likely contains atoms that are not present in the forcefield's .lib & .prm files:, \n"
-                f"{FF_DIR/ ff_name}.prm & {FF_DIR/ ff_name}.lib"
-            )
 
     if error_lines:
         error_message = "\n".join(error_lines)
+        logger.error(
+            f"Found {len(error_lines)} error(s) in {qprep_out_path}. Check residue & atom names "
+            f"against {FF_DIR / ff_name}.lib:\n{error_message}"
+        )
         raise QprepError(error_message)
     if missing_atomlib_lines:
         error_message = "\n".join(missing_atomlib_lines)
+        logger.error(
+            f"Found {len(missing_atomlib_lines)} atom/residue mismatch(es) in {qprep_out_path}. "
+            f"Check against {FF_DIR / ff_name}.lib:\n{error_message}"
+        )
         raise QprepAtomLibMissingError(error_message)
 
 
@@ -159,6 +157,78 @@ def get_force_field_paths(force_field: str):
         lib_file = str(ff_path_obj.with_suffix(".lib").resolve().absolute())
         prm_file = str(ff_path_obj.with_suffix(".prm").resolve().absolute())
     return lib_file, prm_file
+
+
+def parse_lib(force_field: str = "AMBER14sb") -> dict:
+    """Parse a Q force field .lib file into a dict of residue entries.
+
+    Args:
+        force_field: Force field name (e.g., 'AMBER14sb') or path to .lib file.
+
+    Returns:
+        Dict mapping residue names to their entries. Each entry has:
+        - 'atoms': list of dicts with 'name', 'type', 'charge'
+        - 'comment': the text after the residue name on the header line
+    """
+    lib_path, _ = get_force_field_paths(force_field)
+    residues = {}
+    current_res = None
+    section = None
+
+    with open(lib_path) as f:
+        for line in f:
+            line = line.rstrip("\n")
+            # Residue header: {RESNAME}  ! comment
+            m = re.match(r"^\{(\w+)\}\s*(.*)", line)
+            if m:
+                current_res = m.group(1)
+                comment = m.group(2).lstrip("! ").strip()
+                residues[current_res] = {"atoms": [], "comment": comment}
+                section = None
+                continue
+            if current_res is None:
+                continue
+            stripped = line.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                section = stripped[1:-1]
+                continue
+            if section == "atoms" and stripped and not stripped.startswith("*"):
+                parts = stripped.split()
+                if len(parts) >= 4:
+                    try:
+                        charge = float(parts[3])
+                    except ValueError:
+                        continue
+                    residues[current_res]["atoms"].append(
+                        {"name": parts[1], "type": parts[2], "charge": charge}
+                    )
+    return residues
+
+
+def lookup_residue(query: str, force_field: str = "AMBER14sb"):
+    """Look up residue(s) in a Q force field .lib file. Prints matching entries.
+
+    Usage from CLI:
+        python -c "from QligFEP.IO import lookup_residue; lookup_residue('SOD')"
+        python -c "from QligFEP.IO import lookup_residue; lookup_residue('HI')"  # partial match
+
+    Args:
+        query: Residue name or partial name to search for (case-insensitive).
+        force_field: Force field name. Default: AMBER14sb.
+    """
+    residues = parse_lib(force_field)
+    query_upper = query.upper()
+    matches = {k: v for k, v in residues.items() if query_upper in k}
+    if not matches:
+        print(f"No residues matching '{query}' in {force_field}.lib")
+        return
+
+    for resname, entry in sorted(matches.items()):
+        total_charge = sum(a["charge"] for a in entry["atoms"])
+        print(f"\n{resname}  ({entry['comment']})  total_charge={total_charge:.2f}")
+        print(f"  {'atom_name':<10s} {'atom_type':<10s} {'charge':>8s}")
+        for atom in entry["atoms"]:
+            print(f"  {atom['name']:<10s} {atom['type']:<10s} {atom['charge']:>8.4f}")
 
 
 def replace(string, replacements):
