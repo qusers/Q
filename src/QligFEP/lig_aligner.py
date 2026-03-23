@@ -87,6 +87,7 @@ class fkcombuLigandAligner(MoleculeIO):
         top_constraint_tol: Optional[int] = None,
         atom_type: str = "X",
         bond_type: str = "X",
+        scaffold_lock: bool = False,
         **fkcombu_params,
     ):
         """
@@ -127,10 +128,23 @@ class fkcombuLigandAligner(MoleculeIO):
                 - `C`: care about SDF/MOL2 bond types
                 - `R`: distinguish rotatable vs non-rotatable
                 Defaults to `X`.
+            scaffold_lock: If True, freeze the rigid-body pose (translation + rotation)
+                and only allow rotatable bond optimization. Prevents fkcombu from
+                displacing the scaffold that BiasedConformerGenerator placed precisely.
+                Also limits initial torsion randomization to ±30° to prevent R-group
+                flipping, and softens protein clash penalty so minor contacts (resolvable
+                by FEP equilibration) don't drive substituent rotations. Defaults to False.
 
         Raises:
             FileNotFoundError: If the kcombu executable is not found.
         """
+        if scaffold_lock:
+            fkcombu_params.setdefault("rgrnd", False)    # don't randomize rigid-body pose
+            fkcombu_params.setdefault("xtr", 0.0)        # freeze translation
+            fkcombu_params.setdefault("xro", 0.0)        # freeze rotation
+            fkcombu_params.setdefault("xroini", 30.0)    # limit initial torsion to ±30°
+            fkcombu_params.setdefault("wepc", 0.3)       # soften protein clash
+            fkcombu_params.setdefault("cfstp", False)     # don't stamp torsions from reference
         super().__init__(lig, pattern=pattern, reindex_hydrogens=reindex_hydrogens)
         self.kcombu_exe = self._set_fkcombu_exe()
         self.n_threads = n_threads
