@@ -22,6 +22,8 @@ module md
   use trj
   use mpiglob
   use qatom
+  use lincs
+  use settle
 
   implicit none
 
@@ -92,6 +94,13 @@ module md
   logical                   :: shake_solvent, shake_solute
   logical                   :: shake_hydrogens
   logical                   :: separate_scaling
+
+  ! constraint method selection
+  integer, parameter        :: CONSTRAINT_SHAKE  = 0
+  integer, parameter        :: CONSTRAINT_LINCS  = 1
+  integer, parameter        :: CONSTRAINT_SETTLE = 2
+  integer                   :: solvent_constraint_method = CONSTRAINT_SHAKE
+  integer                   :: solute_constraint_method  = CONSTRAINT_LINCS
 
   ! --- Energy minimization parameters
   logical                   :: do_minimize = .false.
@@ -2590,6 +2599,12 @@ subroutine init_nodes
   call MPI_Bcast(min_step, 1, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
   if (ierr .ne. 0) call die('init_nodes/MPI_Bcast min_step')
 
+  ! constraint method parameters
+  call MPI_Bcast(solute_constraint_method, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+  if (ierr .ne. 0) call die('init_nodes/MPI_Bcast solute_constraint_method')
+  call MPI_Bcast(solvent_constraint_method, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+  if (ierr .ne. 0) call die('init_nodes/MPI_Bcast solvent_constraint_method')
+
   if (nodeid .eq. 0) then
     call centered_heading('End of initiation', '-')
     print *
@@ -2633,8 +2648,8 @@ subroutine init_shake
       !new molecule
       mol = mol +1
     end do
-    !skip redefined bonds
-    if(bnd(b)%cod == 0) cycle
+    !skip redefined bonds (cod=0) and LINCS-claimed bonds (cod=-1)
+    if(bnd(b)%cod <= 0) cycle
     if((shake_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja))) .or. &
       (shake_solute .and. ia <= nat_solute) .or. &
       (shake_solvent .and. ia > nat_solute)) then
@@ -2676,8 +2691,8 @@ subroutine init_shake
       mol = mol +1
       shake_mol(mol)%nconstraints = 0
     end do
-    !skip redefined bonds
-    if(bnd(b)%cod == 0) cycle
+    !skip redefined bonds (cod=0) and LINCS-claimed bonds (cod=-1)
+    if(bnd(b)%cod <= 0) cycle
     if((shake_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja))) .or.&
       (shake_solute .and. ia <= nat_solute) .or. &
       (shake_solvent .and. ia > nat_solute)) then
@@ -2783,24 +2798,248 @@ subroutine init_shake
 end subroutine init_shake
 
 
-subroutine initial_shaking
-!!!--------------------------------------------------------------------------------
-!!  subroutine  **initial_shaking**
+subroutine init_constraints
+!!-------------------------------------------------------------------------------
+!!  Initialize bond constraints using the selected methods:
+!!    solute_constraint_method  = SHAKE or LINCS
+!!    solvent_constraint_method = SHAKE or SETTLE
 !!
-!!!--------------------------------------------------------------------------------
-  integer                        :: niter
+!!  Non-SHAKE solute methods claim their bonds first (cod=-1).
+!!  SETTLE claims water bonds (cod=-1). Then init_shake handles the rest.
+!!-------------------------------------------------------------------------------
+  integer :: b, ia, ja, angle, k
+  integer :: solute_count, settle_count
+  real(8) :: solute_exclshk
 
-  xx(:)=x(:)
-  niter=shake(xx, x)
+  ! solute constraint working arrays
+  integer :: max_solute_constraints, nc
+  integer, allocatable :: l_ai(:), l_aj(:), l_fep_idx(:)
+  real(8), allocatable :: l_target(:), l_inv_mi(:), l_inv_mj(:)
+  integer :: fep_count
+
+  ! SETTLE init
+  real(8) :: dOH_settle, angle_HOH_settle, massO_settle, massH_settle
+
+  !---------------------------------------------------------------------------
+  ! Solute constraints (LINCS or SHAKE)
+  !---------------------------------------------------------------------------
+  solute_count = 0
+  solute_exclshk = 0.0d0
+
+  if (solute_constraint_method == CONSTRAINT_LINCS) then
+
+    max_solute_constraints = 0
+    do b = 1, nbonds
+      ia = bnd(b)%i
+      ja = bnd(b)%j
+      if (bnd(b)%cod <= 0) cycle
+      if (ia > nat_solute) cycle
+      if ((shake_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja))) .or. &
+          shake_solute) then
+        max_solute_constraints = max_solute_constraints + 1
+      end if
+    end do
+    max_solute_constraints = max_solute_constraints + nqshake
+
+    if (max_solute_constraints > 0) then
+      allocate(l_ai(max_solute_constraints))
+      allocate(l_aj(max_solute_constraints))
+      allocate(l_target(max_solute_constraints))
+      allocate(l_inv_mi(max_solute_constraints))
+      allocate(l_inv_mj(max_solute_constraints))
+      allocate(l_fep_idx(max(nqshake, 1)))
+
+      nc = 0
+      do b = 1, nbonds
+        ia = bnd(b)%i
+        ja = bnd(b)%j
+        if (bnd(b)%cod <= 0) cycle
+        if (ia > nat_solute) cycle
+
+        if ((shake_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja))) .or. &
+            shake_solute) then
+
+          nc = nc + 1
+          l_ai(nc) = ia
+          l_aj(nc) = ja
+          l_target(nc) = bondlib(bnd(b)%cod)%bnd0
+          l_inv_mi(nc) = dble(winv(ia))
+          l_inv_mj(nc) = dble(winv(ja))
+
+          if (.not. use_PBC) then
+            if (excl(ia)) solute_exclshk = solute_exclshk + 0.5d0
+            if (excl(ja)) solute_exclshk = solute_exclshk + 0.5d0
+          end if
+
+          bnd(b)%cod = -1
+        end if
+      end do
+
+      ! add FEP constraints
+      fep_count = 0
+      do b = 1, nqshake
+        ia = iqshake(b)
+        ja = jqshake(b)
+
+        do k = 1, nc
+          if ((l_ai(k) == ia .and. l_aj(k) == ja) .or. &
+              (l_ai(k) == ja .and. l_aj(k) == ia)) then
+            l_target(k) = dot_product(EQ(1:nstates)%lambda, qshake_dist(b,1:nstates))
+            fep_count = fep_count + 1
+            l_fep_idx(fep_count) = k
+            goto 200
+          end if
+        end do
+
+        nc = nc + 1
+        l_ai(nc) = ia
+        l_aj(nc) = ja
+        l_target(nc) = dot_product(EQ(1:nstates)%lambda, qshake_dist(b,1:nstates))
+        l_inv_mi(nc) = dble(winv(ia))
+        l_inv_mj(nc) = dble(winv(ja))
+        fep_count = fep_count + 1
+        l_fep_idx(fep_count) = nc
+
+200     continue
+      end do
+
+      if (nc > 0) then
+        call setup_lincs(nc, l_ai, l_aj, l_target, l_inv_mi, l_inv_mj, &
+                          fep_count, l_fep_idx, 4)
+
+        ! clear angles where both end atoms are constrained
+        do k = 1, nc
+          ia = l_ai(k)
+          ja = l_aj(k)
+          do angle = 1, nangles
+            if ((ang(angle)%i == ia .and. ang(angle)%k == ja) .or. &
+                (ang(angle)%i == ja .and. ang(angle)%k == ia)) then
+              ang(angle)%cod = 0
+              exit
+            end if
+          end do
+        end do
+      end if
+
+      solute_count = nc
+      deallocate(l_ai, l_aj, l_target, l_inv_mi, l_inv_mj, l_fep_idx)
+    end if
+  end if
+
+  write(*,120) solute_constraint_method, solute_count
+120 format(/,'Solute constraint method (0=SHAKE,1=LINCS) = ',i1, &
+           ', constraints = ',i8)
+
+  !---------------------------------------------------------------------------
+  ! Solvent constraints: SETTLE or SHAKE
+  !---------------------------------------------------------------------------
+  settle_count = 0
+
+  if (solvent_constraint_method == CONSTRAINT_SETTLE .and. nwat > 0) then
+    ! extract water geometry from first water molecule's bonds
+    ia = nat_solute + 1  ! first O
+    ja = nat_solute + 2  ! first H1
+    dOH_settle = 0.0d0
+    angle_HOH_settle = 0.0d0
+
+    ! find O-H bond length from topology
+    do b = 1, nbonds
+      if (bnd(b)%cod <= 0) cycle
+      if ((bnd(b)%i == ia .and. bnd(b)%j == ja) .or. &
+          (bnd(b)%i == ja .and. bnd(b)%j == ia)) then
+        dOH_settle = bondlib(bnd(b)%cod)%bnd0
+        exit
+      end if
+    end do
+
+    ! find H-O-H angle from topology
+    do b = 1, nangles
+      if (ang(b)%cod <= 0) cycle
+      if (ang(b)%i == ja .and. ang(b)%j == ia .and. ang(b)%k == ia + 2) then
+        angle_HOH_settle = anglib(ang(b)%cod)%ang0
+        exit
+      end if
+      if (ang(b)%i == ia + 2 .and. ang(b)%j == ia .and. ang(b)%k == ja) then
+        angle_HOH_settle = anglib(ang(b)%cod)%ang0
+        exit
+      end if
+    end do
+
+    if (dOH_settle <= 0.0d0) then
+      call die('SETTLE: could not find O-H bond length from topology')
+    end if
+    if (angle_HOH_settle <= 0.0d0) then
+      call die('SETTLE: could not find H-O-H angle from topology')
+    end if
+
+    massO_settle = 1.0d0 / dble(winv(ia))
+    massH_settle = 1.0d0 / dble(winv(ja))
+
+    call setup_settle(dOH_settle, angle_HOH_settle, massO_settle, massH_settle)
+    use_settle = .true.
+    settle_nwat = nwat
+
+    write(*,'(a,f8.4,a,f8.2,a)') &
+      'SETTLE: dOH = ', dOH_settle, ' A, angle = ', &
+      angle_HOH_settle * 180.0d0 / 3.14159265358979323846d0, ' deg'
+    write(*,'(a,i8)') 'SETTLE: water molecules = ', nwat
+
+    ! mark all solvent bonds so SHAKE ignores them
+    settle_count = 0
+    do b = 1, nbonds
+      if (bnd(b)%cod <= 0) cycle
+      if (bnd(b)%i > nat_solute .or. bnd(b)%j > nat_solute) then
+        settle_count = settle_count + 1
+        bnd(b)%cod = -1
+      end if
+    end do
+  end if
+
+  !---------------------------------------------------------------------------
+  ! SHAKE: remaining bonds not claimed by LINCS/SETTLE
+  !---------------------------------------------------------------------------
+  call init_shake
+
+  ! adjust DoF for non-SHAKE solute constraints
+  shake_constraints = shake_constraints + solute_count + settle_count
+  Ndegf = Ndegf - solute_count - settle_count
+  Ndegfree = Ndegfree - solute_count + int(solute_exclshk) - settle_count
+  Ndegf_solute = Ndegf_solute - solute_count
+  Ndegfree_solute = Ndegfree_solute - solute_count + int(solute_exclshk)
+
+  write(*,130) solute_count, settle_count, &
+               shake_constraints - solute_count - settle_count, shake_constraints
+  write(*,131) Ndegf, Ndegfree
+130 format('Constraints: solute=',i6,' settle=',i6,' shake=',i6,' total=',i8)
+131 format('Degrees of freedom: total = ',i8,', free = ',i8)
+
+end subroutine init_constraints
+
+
+subroutine initial_shaking
+!!-------------------------------------------------------------------------------
+!!  Apply initial constraints to positions and velocities.
+!!  Dispatches to the selected solute and solvent constraint methods.
+!!-------------------------------------------------------------------------------
+  integer :: niter
+
+  ! constrain positions: solute method then solvent method
+  xx(:) = x(:)
+  if (use_lincs) call lincs_positions(xx, x)
+  if (use_settle) call settle_positions(settle_nwat, nat_solute, xx, x, winv)
+  niter = shake(xx, x)
   write(*,100) 'x', niter
 100 format('Initial ',a,'-shaking required',i4,&
-    ' interations per molecule on average.')
+    ' iterations per molecule on average.')
 
-  xx(:)=x(:)-dt*v(:)
-  niter=shake(x, xx)
+  ! constrain velocities
+  xx(:) = x(:) - dt*v(:)
+  if (use_lincs) call lincs_positions(x, xx)
+  if (use_settle) call settle_positions(settle_nwat, nat_solute, x, xx, winv)
+  niter = shake(x, xx)
   write(*,100) 'v', niter
 
-  v(:)=(x(:)-xx(:))/dt
+  v(:) = (x(:) - xx(:)) / dt
 
 end subroutine initial_shaking
 
@@ -3028,6 +3267,40 @@ logical function initialize()
     end if
     write(*,17) 'all bonds to hydrogen', onoff(shake_hydrogens)
 
+    ! constraint method selection (overrides default LINCS/SHAKE dispatch)
+    instring = 'lincs'
+    yes = prm_get_string_by_key('solute_constraint', instring, 'lincs')
+    do i = 1, len_trim(instring)
+      j = ichar(instring(i:i))
+      if (j >= 97 .and. j <= 122) instring(i:i) = char(j - 32)
+    end do
+    select case (trim(instring))
+    case ('SHAKE')
+      solute_constraint_method = CONSTRAINT_SHAKE
+    case ('LINCS')
+      solute_constraint_method = CONSTRAINT_LINCS
+    case default
+      write(*,'(a,a)') '>>> Error: unknown solute_constraint: ', trim(instring)
+      initialize = .false.
+    end select
+    write(*,'(a,a)') 'Solute constraint method  = ', trim(instring)
+
+    instring = 'shake'
+    yes = prm_get_string_by_key('solvent_constraint', instring, 'shake')
+    do i = 1, len_trim(instring)
+      j = ichar(instring(i:i))
+      if (j >= 97 .and. j <= 122) instring(i:i) = char(j - 32)
+    end do
+    select case (trim(instring))
+    case ('SHAKE')
+      solvent_constraint_method = CONSTRAINT_SHAKE
+    case ('SETTLE')
+      solvent_constraint_method = CONSTRAINT_SETTLE
+    case default
+      write(*,'(a,a)') '>>> Error: unknown solvent_constraint: ', trim(instring)
+      initialize = .false.
+    end select
+    write(*,'(a,a)') 'Solvent constraint method = ', trim(instring)
 
     yes = prm_get_logical_by_key('lrf', use_LRF, .false.)
     if(use_LRF) then
@@ -4623,11 +4896,13 @@ subroutine md_run
       profile(11)%time = profile(11)%time + rtime() - start_loop_time1
 #endif
 
-      ! shake if necessary
-      if(shake_constraints > 0) then
-        niter=shake(xx, x)
-        v(:) = (x(:) - xx(:)) / dt
+      ! apply bond constraints: solute method, then solvent method
+      if (use_lincs) call lincs_positions(xx, x)
+      if (use_settle) call settle_positions(settle_nwat, nat_solute, xx, x, winv)
+      if (shake_constraints > 0) then
+        niter = shake(xx, x)
       end if
+      v(:) = (x(:) - xx(:)) / dt
 
       ! --- end of time step ---
 #if defined (PROFILING)
