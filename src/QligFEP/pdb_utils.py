@@ -448,14 +448,25 @@ def read_pdb_to_dataframe(pdb_file):
     return df
 
 
-def write_dataframe_to_pdb(df, output_file, header: Optional[str] = None):
+def write_dataframe_to_pdb(
+    df, output_file, header: Optional[str] = None, ter_after_indices: Optional[set[int]] = None
+):
     """Save a DataFrame object created from read_pdb_to_dataframe function to a PDB file.
+
+    Automatically inserts TER records at chain_id transitions. Additional TER positions
+    (e.g., gaps from residue cropping) can be specified via ter_after_indices.
 
     Args:
         df: DataFrame object containing the parsed PDB file.
         output_file: name of the output file (include .pdb extension).
         header: if desired, a header to be added to the PDB file. Defaults to None.
+        ter_after_indices: extra DataFrame indices after which to write a TER record,
+            in addition to auto-detected chain breaks. Defaults to None.
     """
+    ter_positions = detect_chain_breaks(df)
+    if ter_after_indices is not None:
+        ter_positions |= ter_after_indices
+
     df = df.copy()
     with open(output_file, "w") as file:
         if header is not None:
@@ -464,7 +475,7 @@ def write_dataframe_to_pdb(df, output_file, header: Optional[str] = None):
             df["temp_factor"] = df["temp_factor"].apply(lambda x: f"{x:.2f}")
         if df["occupancy"].dtype == "float64":
             df["occupancy"] = df["occupancy"].apply(lambda x: f"{x:.2f}")
-        for _, row in df.iterrows():
+        for idx, row in df.iterrows():
             pdb_line = (
                 f"{row['record_type']:<6}{row['atom_serial_number']:>5} "
                 f"{row['atom_name']:<4}{row['alt_loc']:<1}{row['residue_name']:<4}"  # residue_name:>4 for N- & C- termini
@@ -472,10 +483,42 @@ def write_dataframe_to_pdb(df, output_file, header: Optional[str] = None):
                 f"{row['x']:>8.3f}{row['y']:>8.3f}{row['z']:>8.3f}{row['occupancy']:>6}"
                 f"{row['temp_factor']:>6}          {row['element_symbol']:>2}{row['charge']:>2}\n"
             )
-            # except ValueError as e:
-            #     logger.error(f"{row.values}")
-            #     raise ValueError from e
             file.write(pdb_line)
+            if idx in ter_positions:
+                file.write(
+                    f"TER   {int(row['atom_serial_number']) + 1:>5}      "
+                    f"{row['residue_name']:>3} {row['chain_id']:>1}{row['residue_seq_number']:>4}\n"
+                )
+
+
+def detect_chain_breaks(df: pd.DataFrame) -> set[int]:
+    """Find DataFrame indices where TER records should be inserted.
+
+    Detects chain boundaries by looking for chain_id changes between
+    consecutive ATOM/HETATM records.
+
+    Args:
+        df: DataFrame from read_pdb_to_dataframe.
+
+    Returns:
+        Set of DataFrame indices corresponding to the last atom before each chain break.
+    """
+    atom_df = df[df["record_type"].isin(("ATOM", "HETATM"))]
+    if atom_df.empty:
+        return set()
+
+    chain_ids = atom_df["chain_id"]
+    changed = chain_ids != chain_ids.shift(1)
+    # Indices where chain_id changes (skip first row — nothing before it)
+    change_positions = atom_df.index[changed][1:]
+
+    ter_indices = set()
+    for pos in change_positions:
+        loc = atom_df.index.get_loc(pos)
+        prev_idx = atom_df.index[loc - 1]
+        ter_indices.add(prev_idx)
+
+    return ter_indices
 
 
 def reindex_pdb_residues(pdb_path: Path, out_pdb_path: Path):
