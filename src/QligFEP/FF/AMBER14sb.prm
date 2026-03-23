@@ -1,7 +1,7 @@
 *--------------------------------------------------------------------------------
 *
 * Q-FF parameters: Amber ff14SB ported from AmberTools16 by M. Purg (October 2016)
-* and by D. Araripe (phosaa14SB & lipid21 (POPC) parameters, added in 2024)
+* and by D. Araripe (phosaa14SB & lipid21 (POPC), 2024; DNA BSC1, 2026)
 * Options section adapted from qamber95.prm
 *
 * v0.2
@@ -116,6 +116,9 @@ oP               1.6612        0.0     0.2100     1.6612     0.8306      16.00
 oS               1.6837        0.0     0.1700     1.6837     0.8418      16.00
 oT               1.6837        0.0     0.1700     1.6837     0.8418      16.00
 pA               2.1000        0.0     0.2000     2.1000     1.0500      30.97
+CE               1.9080        0.0     0.1094     1.9080     0.0547      12.01 ! DNA BSC1 C3'
+C1               1.9080        0.0     0.0860     1.9080     0.0430      12.01 ! DNA BSC1 C8 (purine Ade)
+C2               1.9080        0.0     0.0860     1.9080     0.0430      12.01 ! DNA BSC1 C5/C6 (pyrimidine Thy)
 
 ! Ligand vdW parameters
 ! End ligand vdW parameters
@@ -347,6 +350,19 @@ oH           pA                642.4       1.62
 cC           nN                956.4       1.34
 cA           nN                661.2       1.46
 hN           nN                820.4       1.01
+CE           H1                680.0      1.090 ! DNA BSC1
+CE           CT                620.0      1.526
+OS           CE                640.0      1.410
+CE           OH                640.0      1.410
+C1           H5                734.0      1.080
+C1           Nstar             880.0      1.371
+C1           NB               1058.0      1.304
+C            C2                820.0      1.444
+C2           C2               1098.0      1.350
+C2           CT                634.0      1.510
+C2           HA                734.0      1.080
+C2           H4                734.0      1.080
+C2           Nstar             896.0      1.365
 
 ! Ligand bond parameters
 ! End ligand bond parameters
@@ -957,6 +973,40 @@ hE           cA           nN                 99.6      109.3
 nN           cC           oC                151.7      122.0
 cB           cA           oH                136.4      110.2
 cB           cA           hE                 94.1      110.5
+CT           CE           CT                 80.0      109.50 ! DNA BSC1
+H1           CE           CT                100.0      109.50
+H1           CE           OS                100.0      109.50
+H1           CT           CE                100.0      109.50
+CI           CT           CE                 80.0      109.50
+CE           CT           OS                100.0      109.50
+CE           CT           H1                100.0      109.50
+CE           CT           CT                 80.0      109.50
+CE           CT           HC                100.0      109.50
+OS           CE           H1                100.0      109.50
+OS           CE           CT                100.0      109.50
+P            OS           CE                200.0      120.50
+H1           CE           OH                100.0      109.50
+CE           OH           HO                110.0      108.50
+CT           CE           OH                100.0      109.50
+H5           C1           Nstar             100.0      123.05
+H5           C1           NB                100.0      123.05
+Nstar        C1           NB                140.0      113.90
+CB           Nstar        C1                140.0      105.40
+C1           Nstar        CT                140.0      128.80
+CB           NB           C1                140.0      103.80
+C2           C            NA                140.0      114.10
+C2           C            O                 160.0      125.30
+HC           CT           C2                100.0      109.50
+C            Nstar        C2                140.0      121.60
+C2           Nstar        CT                140.0      121.20
+C            C2           C2                126.0      120.70
+C2           C2           CT                140.0      119.70
+C2           C2           HA                100.0      119.70
+C2           C2           H4                100.0      119.70
+C2           C2           Nstar             140.0      121.20
+C            C2           CT                140.0      119.70
+C            C2           HA                100.0      119.70
+H4           C2           Nstar             100.0      119.10
 
 ! Zero fc dual topology angles
 3C           CX           2C                  0.0      120.0
@@ -1911,6 +1961,56 @@ hE           cA           cB           cB               0.0000   2.0        0.0 
 hE           cA           cB           hB               0.0000   2.0        0.0   1.0
 oH           cA           cB           hB               0.0000   2.0        0.0   1.0
 cC           cD           cD           cB               0.1556   3.0        0.0   1.0
+?            CE           OS           ?                1.1500   3.0        0.0   3.0 ! DNA BSC1
+?            CE           OH           ?                0.5000   3.0        0.0   3.0
+?            CE           CT           ?                1.4000   3.0        0.0   9.0
+?            C1           Nstar        ?                6.8000   2.0      180.0   4.0
+?            C1           NB           ?               20.0000   2.0      180.0   2.0
+?            C            C2           ?                8.7000   2.0      180.0   4.0
+?            C2           C2           ?               26.6000   2.0      180.0   4.0
+?            C2           CT           ?                0.0000   3.0        0.0   6.0
+?            C2           Nstar        ?                7.4000   2.0      180.0   4.0
+HC           CT           C2           C2               0.3800   3.0      180.0   1.0
+HC           CT           C2           C2               1.1500   1.0        0.0   1.0
+C2           C2           C            O                2.1750   2.0      180.0   1.0
+C2           C2           C            O                0.3000   3.0        0.0   1.0
+CE           CT           CI           OS               1.1780   1.0      191.0   1.0
+CE           CT           CI           OS               0.0921   2.0      295.6   1.0
+CE           CT           CI           OS               0.9628   3.0      348.1   1.0
+CE           CT           CI           OH               1.1780   1.0      191.0   1.0
+CE           CT           CI           OH               0.0921   2.0      295.6   1.0
+CE           CT           CI           OH               0.9628   3.0      348.1   1.0
+H1           CI           CT           CE               0.1600   3.0        0.0   1.0
+CE           CT           OS           CT               0.3833   3.0        0.0   1.0
+CE           CT           OS           CT               0.1000   2.0      180.0   1.0
+OS           CE           CT           OS               0.1440   3.0        0.0   1.0
+OS           CE           CT           OS               1.1750   2.0        0.0   1.0
+OH           CE           CT           OS               0.1440   3.0        0.0   1.0
+OH           CE           CT           OS               1.1750   2.0        0.0   1.0
+P            OS           CE           CT               1.0799   1.0      297.8   1.0
+P            OS           CE           CT               0.3190   2.0      200.6   1.0
+P            OS           CE           CT               0.0548   3.0      151.6   1.0
+HO           OH           CE           CT               1.0799   1.0      297.8   1.0
+HO           OH           CE           CT               0.3190   2.0      200.6   1.0
+HO           OH           CE           CT               0.0548   3.0      151.6   1.0
+OS           P            OS           CE               0.3219   1.0       65.9   1.0
+OS           P            OS           CE               0.5446   2.0        5.5   1.0
+OS           P            OS           CE               0.7971   3.0      295.5   1.0
+CT           CT           CE           CT               1.2000   1.0       38.5   1.0
+CT           CT           CE           CT               0.9000   3.0       -2.2   1.0
+CT           CE           CT           OS               1.2000   1.0      322.4   1.0
+OS           CT           Nstar        C1               0.4100   3.0      225.4   1.0
+OS           CT           Nstar        C1               1.9100   2.0        0.7   1.0
+OS           CT           Nstar        C1               0.9100   1.0      120.1   1.0
+OS           CT           Nstar        CK               0.4400   3.0      219.8   1.0
+OS           CT           Nstar        CK               1.7300   2.0        4.0   1.0
+OS           CT           Nstar        CK               0.8100   1.0       87.5   1.0
+OS           CT           Nstar        C2               0.1700   3.0      210.9   1.0
+OS           CT           Nstar        C2               1.6700   2.0        4.7   1.0
+OS           CT           Nstar        C2               0.9900   1.0      188.0   1.0
+OS           CT           Nstar        CM               0.2600   3.0      209.6   1.0
+OS           CT           Nstar        CM               1.5200   2.0        7.8   1.0
+OS           CT           Nstar        CM               1.0300   1.0      184.8   1.0
 
 ! Ligand torsion parameters
 ! End ligand torsion parameters
@@ -1987,6 +2087,15 @@ cB           cD           cB           hB                  1.1      180.0
 cD           nN           cC           oC                  1.1      180.0
 cD           oC           cC           oS                 10.5      180.0
 cA           cC           nN           hN                  1.1      180.0
+?            C1           H5           ?                   1.1      180.0 ! DNA BSC1
+C1           Nstar        CB           CT                  1.0      180.0
+?            C2           H4           ?                   1.1      180.0
+?            C2           HA           ?                   1.1      180.0
+C            Nstar        C2           CT                  1.0      180.0
+C            C2           C2           CT                  1.1      180.0
+C2           CA           N2           NC                  1.1      180.0
+C2           C2           CT           HA                  1.1      180.0
+C2           C            H4           O                   1.1      180.0
 
 ! Ligand improper parameters
 ! End ligand improper parameters
