@@ -1,6 +1,7 @@
 """Base MD template and render function for Q input files."""
 
 from dataclasses import dataclass
+from textwrap import dedent
 
 
 @dataclass
@@ -60,7 +61,7 @@ class MDParameters:
     minimize_step_size: float = 0.001  # Å
 
 
-def _bool_to_onoff(val: bool) -> str:
+def onoff(val: bool) -> str:
     """Convert boolean to 'on'/'off' string."""
     return "on" if val else "off"
 
@@ -96,100 +97,88 @@ def render_md_input(
     Returns:
         Complete .inp file content as string
     """
-    lines = []
+    # Pre-build optional sections (empty string = omitted from output)
+    equilibration_start = (
+        ("random_seed               SEED_VAR\n" "initial_temperature       1\n") if is_eq1 else ""
+    )
 
-    # [MD] section
-    lines.append("[MD]")
-    lines.append(f"steps                     {params.steps}")
-    lines.append(f"stepsize                  {params.stepsize}")
-    lines.append(f"temperature               {params.temperature}")
-    lines.append(f"bath_coupling             {params.bath_coupling}")
+    minimization_settings = (
+        (
+            f"minimize                  on\n"
+            f"max_minimize_steps        {params.max_minimize_steps}\n"
+            f"minimize_tolerance        {params.minimize_tolerance}\n"
+            f"minimize_step_size        {params.minimize_step_size}\n"
+        )
+        if params.minimize
+        else ""
+    )
 
-    # eq1 has random_seed and initial_temperature (set by job submission script)
-    if is_eq1:
-        lines.append("random_seed               SEED_VAR")
-        lines.append("initial_temperature       1")
+    energy_interval = (
+        (f"energy                    {params.interval_energy}\n")
+        if params.interval_energy is not None
+        else ""
+    )
 
-    lines.append(f"shake_solvent             {_bool_to_onoff(params.shake_solvent)}")
-    lines.append(f"shake_hydrogens           {_bool_to_onoff(params.shake_hydrogens)}")
-    lines.append(f"shake_solute              {_bool_to_onoff(params.shake_solute)}")
-    lines.append(f"lrf                       {_bool_to_onoff(params.lrf)}")
-    lines.append(f"separate_scaling          {_bool_to_onoff(params.separate_scaling)}")
+    restart_file_name = f"restart                   {restart_file}\n" if restart_file else ""
+    energy_file_name = f"energy                    {energy_file}\n" if energy_file else ""
 
-    # Energy minimization settings (only output if enabled)
-    if params.minimize:
-        lines.append(f"minimize                  {_bool_to_onoff(params.minimize)}")
-        lines.append(f"max_minimize_steps        {params.max_minimize_steps}")
-        lines.append(f"minimize_tolerance        {params.minimize_tolerance}")
-        lines.append(f"minimize_step_size        {params.minimize_step_size}")
-    lines.append("")
+    template = f"""\
+    [MD]
+    steps                     {params.steps}
+    stepsize                  {params.stepsize}
+    temperature               {params.temperature}
+    bath_coupling             {params.bath_coupling}
+    {equilibration_start}\
+    shake_solvent             {onoff(params.shake_solvent)}
+    shake_hydrogens           {onoff(params.shake_hydrogens)}
+    shake_solute              {onoff(params.shake_solute)}
+    lrf                       {onoff(params.lrf)}
+    separate_scaling          {onoff(params.separate_scaling)}
+    {minimization_settings}\
 
-    # [cut-offs] section
-    lines.append("[cut-offs]")
-    lines.append(f"solute_solvent            {params.cutoff_solute_solvent}")
-    lines.append(f"solute_solute             {params.cutoff_solute_solute}")
-    lines.append(f"solvent_solvent           {params.cutoff_solvent_solvent}")
-    lines.append(f"q_atom                    {params.cutoff_q_atom}")
-    lines.append(f"lrf                       {params.cutoff_lrf}")
-    lines.append("")
+    [cut-offs]
+    solute_solvent            {params.cutoff_solute_solvent}
+    solute_solute             {params.cutoff_solute_solute}
+    solvent_solvent           {params.cutoff_solvent_solvent}
+    q_atom                    {params.cutoff_q_atom}
+    lrf                       {params.cutoff_lrf}
 
-    # [sphere] section
-    lines.append("[sphere]")
-    lines.append(f"shell_force               {params.shell_force}")
-    lines.append(f"shell_radius              {params.shell_radius}")
-    lines.append("")
+    [sphere]
+    shell_force               {params.shell_force}
+    shell_radius              {params.shell_radius}
 
-    # [solvent] section
-    lines.append("[solvent]")
-    lines.append(f"radial_force              {params.radial_force}")
-    lines.append(f"polarisation              {_bool_to_onoff(params.polarisation)}")
-    lines.append(f"polarisation_force        {params.polarisation_force}")
-    lines.append("")
+    [solvent]
+    radial_force              {params.radial_force}
+    polarisation              {onoff(params.polarisation)}
+    polarisation_force        {params.polarisation_force}
 
-    # [intervals] section
-    lines.append("[intervals]")
-    lines.append(f"output                    {params.interval_output}")
-    if params.interval_energy is not None:
-        lines.append(f"energy                    {params.interval_energy}")
-    lines.append(f"trajectory                {params.interval_trajectory}")
-    lines.append(f"non_bond                  {params.interval_non_bond}")
-    lines.append("")
+    [intervals]
+    output                    {params.interval_output}
+    {energy_interval}\
+    trajectory                {params.interval_trajectory}
+    non_bond                  {params.interval_non_bond}
 
-    # [files] section
-    lines.append("[files]")
-    lines.append(f"topology                  {params.topology}")
-    lines.append(f"trajectory                {trajectory_file}")
-    if restart_file:
-        lines.append(f"restart                   {restart_file}")
-    if energy_file:
-        lines.append(f"energy                    {energy_file}")
-    lines.append(f"final                     {final_file}")
-    lines.append(f"fep                       {params.fep_file}")
-    lines.append("")
+    [files]
+    topology                  {params.topology}
+    trajectory                {trajectory_file}
+    {restart_file_name}\
+    {energy_file_name}\
+    final                     {final_file}
+    fep                       {params.fep_file}
 
-    # [trajectory_atoms] section
-    lines.append("[trajectory_atoms]")
-    lines.append("not excluded")
-    lines.append("")
+    [trajectory_atoms]
+    not excluded
 
-    # [lambdas] section
-    lines.append("[lambdas]")
-    lines.append(f"{lambda1} {lambda2}")
-    lines.append("")
+    [lambdas]
+    {lambda1} {lambda2}
 
-    # [sequence_restraints] section
-    lines.append("[sequence_restraints]")
-    lines.append(sequence_restraints)
-    lines.append("")
+    [sequence_restraints]
+    {sequence_restraints}
 
-    # [distance_restraints] section
-    lines.append("[distance_restraints]")
-    lines.append(distance_restraints)
-    lines.append("")
+    [distance_restraints]
+    {distance_restraints}
 
-    # [wall_restraints] section (for counter-ions)
-    lines.append("[wall_restraints]")
-    lines.append(wall_restraints)
-    lines.append("")
-
-    return "\n".join(lines)
+    [wall_restraints]
+    {wall_restraints}
+    """
+    return dedent(template)
