@@ -47,6 +47,21 @@ Q_PATHS = {
     "QCALC": str(BIN / "qcalc"),
 }
 
+# Bare paths for local execution (Python template handles formatting, not shell assignment)
+Q_PATHS_LOCAL = {
+    "QDYN": str((BIN / "qdyn").absolute()),
+    "QPREP": str(BIN / "qprep"),
+    "QFEP": str(BIN / "qfep"),
+    "QCALC": str(BIN / "qcalc"),
+}
+
+Q_PATHS_LOCALP = {
+    "QDYN": str((BIN / "qdynp").absolute()),
+    "QPREP": str(BIN / "qprep"),
+    "QFEP": str(BIN / "qfep"),
+    "QCALC": str(BIN / "qcalc"),
+}
+
 CONFIGS = {
     "ROOT_DIR": str(ROOT_DIR),
     "FF_DIR": str(FF_DIR),
@@ -148,10 +163,20 @@ DARDEL = {
 
 LOCAL = {
     "NODES": "1",
+    "NTASKS": "1",
+    "TIME": "0-24:00:00",  # d-hh:mm:ss
+    "MODULES": "\n",
+    "USE_MPI": False,
+    **Q_PATHS_LOCAL,
+}
+
+LOCALP = {
+    "NODES": "1",
     "NTASKS": str(cpu_count()),
     "TIME": "0-24:00:00",  # d-hh:mm:ss
     "MODULES": "\n",
-    **Q_PATHS,
+    "USE_MPI": True,
+    **Q_PATHS_LOCALP,
 }
 
 CLUSTER_DICT = {
@@ -165,4 +190,5 @@ CLUSTER_DICT = {
     "TETRA": TETRA,
     "DARDEL": DARDEL,
     "LOCAL": LOCAL,
+    "LOCALP": LOCALP,
 }

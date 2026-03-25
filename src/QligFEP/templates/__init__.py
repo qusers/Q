@@ -75,6 +75,7 @@ from QligFEP.templates.qprep import (
     render_qprep_fep_input,
     render_qprep_protein_input,
 )
+from QligFEP.templates.run_local import LocalRunConfig, render_local_run
 from QligFEP.templates.sections import (
     format_distance_restraints,
     format_sequence_restraint,
@@ -115,4 +116,7 @@ __all__ = [
     "QprepProteinParameters",
     "render_qprep_fep_input",
     "render_qprep_protein_input",
+    # Local run script
+    "LocalRunConfig",
+    "render_local_run",
 ]

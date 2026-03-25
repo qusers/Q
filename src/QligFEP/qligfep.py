@@ -36,6 +36,7 @@ from .templates import (
     render_qfep_input,
     render_qprep_fep_input,
 )
+from .templates.run_local import LocalRunConfig, render_local_run
 from .templates.sections import (
     format_distance_restraints,
     format_sequence_restraint,
@@ -1179,6 +1180,8 @@ class QligFEP:
             logger.warning(f"Could not change permission for {tgt}")
 
     def write_submitfile(self, writedir):
+        if self.cluster in ("LOCAL", "LOCALP"):
+            return
         replacements = {}
         replacements["RUNFILE"] = "run" + self.cluster + ".sh"
         submit_in = CONFIGS["ROOT_DIR"] + "/INPUTS/FEP_submit.sh"
@@ -1194,7 +1197,51 @@ class QligFEP:
         except:
             print("WARNING: Could not change permission for " + submit_out)
 
+    def _write_local_runfile(self, writedir, file_list):
+        """Generate a local run script using the Python template."""
+        cluster_config = CLUSTER_DICT[self.cluster]
+        eq_basenames = [Path(f).stem for f in sorted(glob.glob(writedir + "/eq*.inp"))]
+
+        # Collect MD basenames in execution order
+        if self.start == "1":
+            md_basenames = [Path(f).stem for f in reversed(sorted(glob.glob(writedir + "/md*.inp")))]
+        elif self.start == "0.5":
+            md_1 = file_list[1]
+            md_2 = file_list[2]
+            md_basenames = ["md_0500_0500"]
+            for i in range(len(md_1)):
+                md_basenames.append(Path(md_1[i]).stem)
+                md_basenames.append(Path(md_2[i]).stem)
+
+        config = LocalRunConfig(
+            qdyn_path=cluster_config["QDYN"],
+            qfep_path=cluster_config["QFEP"],
+            use_mpi=cluster_config["USE_MPI"],
+            ntasks=int(cluster_config["NTASKS"]),
+            temperatures=self.temperature.split(","),
+            seeds=self.seeds,
+            eq_files=eq_basenames,
+            md_files=md_basenames,
+            fep_files=["FEP1.fep"],
+            final_md_restart="md_0000_1000.re",
+            cleanup_patterns=self.to_clean if self.to_clean else None,
+        )
+
+        script_content = render_local_run(config)
+        tgt = writedir + "/run" + self.cluster + ".sh"
+        with open(tgt, "w") as outfile:
+            outfile.write(script_content)
+
+        try:
+            st = os.stat(tgt)
+            os.chmod(tgt, st.st_mode | stat.S_IEXEC)
+        except Exception:
+            logger.warning(f"Could not change permission for {tgt}")
+
     def write_runfile(self, writedir, file_list):
+        if self.cluster in ("LOCAL", "LOCALP"):
+            self._write_local_runfile(writedir, file_list)
+            return
 
         src = CONFIGS["INPUT_DIR"] + "/run.sh"
         tgt = writedir + "/run" + self.cluster + ".sh"
@@ -1258,7 +1305,7 @@ class QligFEP:
                                 f"time mpirun -n $SLURM_NTASKS --bind-to core $qdyn {file_base}.inp"
                                 f" > {file_base}.log\n"
                             )
-                        outfile.write(outline)
+                            outfile.write(outline)
 
                     elif self.start == "0.5":
                         outline = "time mpirun -n $SLURM_NTASKS --bind-to core $qdyn md_0500_0500.inp > md_0500_0500.log\n\n"
