@@ -1,4 +1,5 @@
 // TODO: Add impropers
+#include "cpu/include/md_types.h"
 
 #include "system.h"
 #include "bonded.h"
