@@ -1,6 +1,7 @@
 #include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaRestrangForce.cuh"
 #include "cuda/include/CudaUtility.cuh"
+#include "cpu/include/context.h"
 #include "utils.h"
 namespace CudaRestrangForce {
 bool is_initialized = false;
@@ -11,13 +12,11 @@ __global__ void calc_restrang_force_kernel(
     restrang_t* restrangs,
     int n_restrangs,
     coord_t* coords,
-    int n_atoms,
     double* lambdas,
     int n_lambdas,
     dvel_t* dvelocities,
     E_restraint_t* EQ_restraint,
-    double* E_restraint,
-    restrdis_t* restrdists) {
+    double* E_restraint) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_restrangs) return;
     int ir = idx;
@@ -38,9 +37,9 @@ __global__ void calc_restrang_force_kernel(
     dr.z = coords[i].z - coords[j].z;
 
     // distance from atom k to atom j
-    dr.x = coords[k].x - coords[j].x;
-    dr.y = coords[k].y - coords[j].y;
-    dr.z = coords[k].z - coords[j].z;
+    dr2.x = coords[k].x - coords[j].x;
+    dr2.y = coords[k].y - coords[j].y;
+    dr2.z = coords[k].z - coords[j].z;
 
     if (restrangs[ir].ipsi != 0) {
         lambda = lambdas[state];
@@ -67,7 +66,7 @@ __global__ void calc_restrang_force_kernel(
     dv = lambda * restrangs[ir].k * dth;
 
     f1 = sin(th);
-    if (abs(f1) < 1E-12) {
+    if (fabs(f1) < 1E-12) {
         f1 = -1E-12;
     } else {
         f1 = -1 / f1;
@@ -90,7 +89,7 @@ __global__ void calc_restrang_force_kernel(
     atomicAdd(&dvelocities[j].y, -dv * (di.y + dk.y));
     atomicAdd(&dvelocities[j].z, -dv * (di.z + dk.z));
 
-    if (restrdists[ir].ipsi == 0) {
+    if (restrangs[ir].ipsi == 0) {
         for (int k = 0; k < n_lambdas; k++) {
             atomicAdd(&EQ_restraint[k].Urestr, ener);
         }
@@ -103,7 +102,8 @@ __global__ void calc_restrang_force_kernel(
 }
 
 void calc_restrang_force_host() {
-    if (n_restrangs == 0) return;
+    auto& host = Context::instance();
+    if (host.n_restrangs == 0) return;
     using namespace CudaRestrangForce;
     CudaContext& ctx = CudaContext::instance();
 
@@ -112,29 +112,25 @@ void calc_restrang_force_host() {
     auto d_lambdas = ctx.d_lambdas;
     auto d_dvelocities = ctx.d_dvelocities;
     auto d_EQ_restraint = ctx.d_EQ_restraint;
-    auto d_restrdists = ctx.d_restrdists;
 
     double val = 0;
     cudaMemcpy(d_E_restraint, &val, sizeof(double), cudaMemcpyHostToDevice);
 
     int blockSize = 256;
-    int numBlocks = (n_restrangs + blockSize - 1) / blockSize;
+    int numBlocks = (host.n_restrangs + blockSize - 1) / blockSize;
     calc_restrang_force_kernel<<<numBlocks, blockSize>>>(
         d_restrangs,
-        n_restrangs,
+        host.n_restrangs,
         d_coords,
-        n_atoms,
         d_lambdas,
-        n_lambdas,
+        host.n_lambdas,
         d_dvelocities,
         d_EQ_restraint,
-        d_E_restraint,
-        d_restrdists);
+        d_E_restraint);
     cudaDeviceSynchronize();
-    cudaMemcpy(coords, d_coords, sizeof(coord_t) * n_atoms, cudaMemcpyDeviceToHost);
-    cudaMemcpy(EQ_restraint, d_EQ_restraint, sizeof(E_restraint_t) * n_lambdas, cudaMemcpyDeviceToHost);
+    cudaMemcpy(host.EQ_restraint.data(), d_EQ_restraint, sizeof(E_restraint_t) * host.n_lambdas, cudaMemcpyDeviceToHost);
     cudaMemcpy(&val, d_E_restraint, sizeof(double), cudaMemcpyDeviceToHost);
-    E_restraint.Urestr += val;
+    host.E_restraint.Upres += val;
 }
 
 void init_restrang_force_kernel_data() {

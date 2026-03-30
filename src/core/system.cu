@@ -1346,9 +1346,4 @@ void clean_variables() {
     ctx.EQ_nonbond_qx.clear();
     ctx.EQ_restraint.clear();
 
-    if (ctx.run_gpu) {
-        clean_d_solvent();
-        clean_d_qatoms();
-        clean_d_patoms();
-    }
 }

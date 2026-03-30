@@ -1,5 +1,7 @@
 #include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaPshellForce.cuh"
+#include "cpu/include/constants.h"
+#include "cpu/include/context.h"
 #include "utils.h"
 #include <iostream>
 namespace CudaPshellForce {
@@ -48,6 +50,7 @@ __global__ void calc_pshell_force_kernel(
 
 void calc_pshell_forces_host() {
     CudaContext& ctx = CudaContext::instance();
+    auto& host = Context::instance();
     using namespace CudaPshellForce;
 
     auto d_shell = ctx.d_shell;
@@ -60,9 +63,9 @@ void calc_pshell_forces_host() {
     cudaMemset(d_ushell_energy, 0, sizeof(double));
 
     int blockSize = 256;
-    int numBlocks = (n_atoms_solute + blockSize - 1) / blockSize;
+    int numBlocks = (host.n_atoms_solute + blockSize - 1) / blockSize;
     calc_pshell_force_kernel<<<numBlocks, blockSize>>>(
-        n_atoms_solute,
+        host.n_atoms_solute,
         d_shell,
         d_excluded,
         d_coords,
@@ -76,8 +79,8 @@ void calc_pshell_forces_host() {
     cudaMemcpy(&ufix_energy, d_ufix_energy, sizeof(double), cudaMemcpyDeviceToHost);
     cudaMemcpy(&ushell_energy, d_ushell_energy, sizeof(double), cudaMemcpyDeviceToHost);
 
-    E_restraint.Ufix += ufix_energy;
-    E_restraint.Ushell += ushell_energy;
+    host.E_restraint.Ufix += ufix_energy;
+    host.E_restraint.Ushell += ushell_energy;
     // ctx.sync_all_to_host();
 }
 

@@ -10,7 +10,6 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
     auto &ctx = Context::instance();
-    bool run_gpu;
 
     if (argc > 2) {
         ctx.run_gpu = strcmp(argv[1], "--gpu") == 0;

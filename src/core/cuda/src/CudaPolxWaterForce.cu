@@ -1,5 +1,8 @@
 #include <iostream>
+#include <math.h>
 
+#include "cpu/include/context.h"
+#include "cpu/include/constants.h"
 #include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaPolxWaterForce.cuh"
 #include "utils.h"
@@ -167,116 +170,119 @@ __global__ void calc_polx_water_forces_kernel(
 
 void sort_waters() {
     using namespace CudaPolxWaterForce;
+    auto& ctx = Context::instance();
 
     int imin, jmin, jw;
     double tmin;
     // Sort the waters according to theta
-    for (int is = 0; is < n_shells; is++) {
+    for (int is = 0; is < ctx.n_shells; is++) {
         imin = 0;
-        for (int il = 0; il < wshells[is].n_inshell; il++) {
+        for (int il = 0; il < ctx.wshells[is].n_inshell; il++) {
             tmin = 2 * M_PI;
-            for (int jl = 0; jl < wshells[is].n_inshell; jl++) {
-                // printf("Searching water %d in shell %d, total number: %d\n", jl, is, wshells[is].n_inshell);
-                jw = polx_list_sh[jl * n_shells + is];
-                // printf("Water %d in shell %d has theta %f\n", jw, is, tdum[jw] * 180 / M_PI);
-                if (tdum[jw] < tmin) {
+            for (int jl = 0; jl < ctx.wshells[is].n_inshell; jl++) {
+                // printf("Searching water %d in shell %d, total number: %d\n", jl, is, ctx.wshells[is].n_inshell);
+                jw = polx_list_sh[jl * ctx.n_shells + is];
+                // printf("Water %d in shell %d has theta %f\n", jw, is, ctx.tdum[jw] * 180 / M_PI);
+                if (ctx.tdum[jw] < tmin) {
                     jmin = jw;
-                    tmin = tdum[jw];
+                    tmin = ctx.tdum[jw];
                 }
             }
-            nsort[imin][is] = jmin;
+            ctx.nsort[imin][is] = jmin;
             water_rank[jmin] = imin;
             water_shell[jmin] = is;
             imin++;
-            tdum[jmin] = 99999;
+            ctx.tdum[jmin] = 99999;
         }
     }
 }
 
 void calc_polx_water_forces_host(int iteration) {
-    CudaContext& ctx = CudaContext::instance();
+    CudaContext& cuda_ctx = CudaContext::instance();
+    auto& ctx = Context::instance();
 
-    for (int is = 0; is < n_shells; is++) {
-        wshells[is].n_inshell = 0;
+    for (int is = 0; is < ctx.n_shells; is++) {
+        ctx.wshells[is].n_inshell = 0;
         if (iteration == 0) {
-            wshells[is].theta_corr = 0;
+            ctx.wshells[is].theta_corr = 0;
         }
     }
     using namespace CudaPolxWaterForce;
 
-    // ctx.sync_all_to_device();
-    cudaMemcpy(ctx.d_wshells, wshells, n_shells * sizeof(shell_t), cudaMemcpyHostToDevice);
+    // cuda_ctx.sync_all_to_device();
+    cudaMemcpy(cuda_ctx.d_wshells, ctx.wshells.data(), ctx.n_shells * sizeof(shell_t), cudaMemcpyHostToDevice);
 
-    coord_t* d_coords = ctx.d_coords;
-    dvel_t* d_dvelocities = ctx.d_dvelocities;
-    shell_t* d_wshells = ctx.d_wshells;
+    coord_t* d_coords = cuda_ctx.d_coords;
+    dvel_t* d_dvelocities = cuda_ctx.d_dvelocities;
+    shell_t* d_wshells = cuda_ctx.d_wshells;
 
     int blockSize = 256;
-    int numBlocks = (n_waters + blockSize - 1) / blockSize;
-    // printf("Calculated theta for %d waters in %d shells\n", n_waters, n_shells);
+    int numBlocks = (ctx.n_waters + blockSize - 1) / blockSize;
+    // printf("Calculated theta for %d waters in %d shells\n", ctx.n_waters, ctx.n_shells);
     calc_polx_theta_and_shells<<<numBlocks, blockSize>>>(
-        n_waters, n_shells, n_atoms_solute, d_coords, topo, d_wshells, d_list_sh, d_theta, d_theta0, d_tdum);
-    // printf("Calculated theta for %d waters in %d shells\n", n_waters, n_shells);
+        ctx.n_waters, ctx.n_shells, ctx.n_atoms_solute, d_coords, ctx.topo, d_wshells, d_list_sh, d_theta, d_theta0, d_tdum);
+    // printf("Calculated theta for %d waters in %d shells\n", ctx.n_waters, ctx.n_shells);
 
     // todo: sort in cpu now..
-    cudaMemcpy(wshells, d_wshells, n_shells * sizeof(shell_t), cudaMemcpyDeviceToHost);
-    cudaMemcpy(tdum, d_tdum, n_waters * sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(polx_list_sh, d_list_sh, n_max_inshell * n_shells * sizeof(int), cudaMemcpyDeviceToHost);
+    cudaMemcpy(ctx.wshells.data(), d_wshells, ctx.n_shells * sizeof(shell_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(ctx.tdum.data(), d_tdum, ctx.n_waters * sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(polx_list_sh, d_list_sh, ctx.n_max_inshell * ctx.n_shells * sizeof(int), cudaMemcpyDeviceToHost);
 
     // Reset per-water metadata; only waters placed in shells will be overwritten in sort_waters().
-    for (int i = 0; i < n_waters; i++) {
+    for (int i = 0; i < ctx.n_waters; i++) {
         water_rank[i] = -1;
         water_shell[i] = -1;
     }
 
-    // printf("Sorting %d waters in %d shells\n", n_waters, n_shells);
+    // printf("Sorting %d waters in %d shells\n", ctx.n_waters, ctx.n_shells);
     sort_waters();
-    // printf("Sorted %d waters in %d shells\n", n_waters, n_shells);
+    // printf("Sorted %d waters in %d shells\n", ctx.n_waters, ctx.n_shells);
 
-    cudaMemcpy(d_water_rank, water_rank, n_waters * sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_water_shell, water_shell, n_waters * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_water_rank, water_rank, ctx.n_waters * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_water_shell, water_shell, ctx.n_waters * sizeof(int), cudaMemcpyHostToDevice);
 
     // Update theta_corr, averages
     if (iteration != 0 && iteration % itdis_update == 0) {
-        for (int is = 0; is < n_shells; is++) {
+        for (int is = 0; is < ctx.n_shells; is++) {
             printf("SHELL %d\n", is);
-            wshells[is].avtheta /= (double)itdis_update;
-            wshells[is].avn_inshell /= (double)itdis_update;
-            wshells[is].theta_corr = wshells[is].theta_corr + wshells[is].avtheta - acos(wshells[is].cstb);
+            ctx.wshells[is].avtheta /= (double)itdis_update;
+            ctx.wshells[is].avn_inshell /= (double)itdis_update;
+            ctx.wshells[is].theta_corr = ctx.wshells[is].theta_corr + ctx.wshells[is].avtheta - acos(ctx.wshells[is].cstb);
             printf("average theta = %f, average in shell = %f, theta_corr = %f\n",
-                   wshells[is].avtheta * 180 / M_PI, wshells[is].avn_inshell, wshells[is].theta_corr * 180 / M_PI);
-            wshells[is].avtheta = 0;
-            wshells[is].avn_inshell = 0;
+                   ctx.wshells[is].avtheta * 180 / M_PI, ctx.wshells[is].avn_inshell, ctx.wshells[is].theta_corr * 180 / M_PI);
+            ctx.wshells[is].avtheta = 0;
+            ctx.wshells[is].avn_inshell = 0;
         }
-        cudaMemcpy(d_wshells, wshells, n_shells * sizeof(shell_t), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_wshells, ctx.wshells.data(), ctx.n_shells * sizeof(shell_t), cudaMemcpyHostToDevice);
     }
 
     // Calculate energy and force
     cudaMemset(d_energy, 0, sizeof(double));
     calc_polx_water_forces_kernel<<<numBlocks, blockSize>>>(
-        n_waters, n_atoms_solute, d_wshells, d_coords, d_dvelocities, topo,
-        d_theta, md, d_energy, d_water_rank, d_water_shell);
+        ctx.n_waters, ctx.n_atoms_solute, d_wshells, d_coords, d_dvelocities, ctx.topo,
+        d_theta, ctx.md, d_energy, d_water_rank, d_water_shell);
     double energy;
     cudaMemcpy(&energy, d_energy, sizeof(double), cudaMemcpyDeviceToHost);
-    E_restraint.Upolx += energy;
-    cudaMemcpy(wshells, d_wshells, n_shells * sizeof(shell_t), cudaMemcpyDeviceToHost);
+    ctx.E_restraint.Upolx += energy;
+    cudaMemcpy(ctx.wshells.data(), d_wshells, ctx.n_shells * sizeof(shell_t), cudaMemcpyDeviceToHost);
     // Copy back forces for all atoms (solute + solvent); water forces were being dropped.
 }
 
 void init_polx_water_force_kernel_data() {
     using namespace CudaPolxWaterForce;
+    auto& ctx = Context::instance();
     if (!is_initialized) {
-        water_rank = new int[n_waters];
-        water_shell = new int[n_waters];
-        polx_list_sh = new int[n_max_inshell * n_shells];
+        water_rank = new int[ctx.n_waters];
+        water_shell = new int[ctx.n_waters];
+        polx_list_sh = new int[ctx.n_max_inshell * ctx.n_shells];
 
         check_cudaMalloc((void**)&d_energy, sizeof(double));
-        check_cudaMalloc((void**)&d_list_sh, n_max_inshell * n_shells * sizeof(int));
-        check_cudaMalloc((void**)&d_theta, n_waters * sizeof(double));
-        check_cudaMalloc((void**)&d_theta0, n_waters * sizeof(double));
-        check_cudaMalloc((void**)&d_tdum, n_waters * sizeof(double));
-        check_cudaMalloc((void**)&d_water_rank, n_waters * sizeof(int));
-        check_cudaMalloc((void**)&d_water_shell, n_waters * sizeof(int));
+        check_cudaMalloc((void**)&d_list_sh, ctx.n_max_inshell * ctx.n_shells * sizeof(int));
+        check_cudaMalloc((void**)&d_theta, ctx.n_waters * sizeof(double));
+        check_cudaMalloc((void**)&d_theta0, ctx.n_waters * sizeof(double));
+        check_cudaMalloc((void**)&d_tdum, ctx.n_waters * sizeof(double));
+        check_cudaMalloc((void**)&d_water_rank, ctx.n_waters * sizeof(int));
+        check_cudaMalloc((void**)&d_water_shell, ctx.n_waters * sizeof(int));
 
         is_initialized = true;
     }

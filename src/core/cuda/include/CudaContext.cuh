@@ -6,6 +6,7 @@
 #include <map>
 #include <vector>
 
+#include "cpu/include/md_types.h"
 #include "system.h"
 #include "utils.h"
 

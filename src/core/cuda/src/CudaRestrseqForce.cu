@@ -1,5 +1,6 @@
 #include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaRestrseqForce.cuh"
+#include "cpu/include/context.h"
 #include "iostream"
 #include "utils.h"
 
@@ -65,7 +66,7 @@ __global__ void calc_restrseq_forces_kernel(
     // Mass center
     else if (restrseqs[s].to_center == 2) {
         for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
-            if (heavy[i] || restrseqs[i].ih) {
+            if (heavy[i] || restrseqs[s].ih) {
                 mass = catypes[atypes[i].code - 1].m;
                 totmass += mass;
                 dr.x += (coords[i].x - coords_top[i].x) * mass;
@@ -114,6 +115,8 @@ __global__ void calc_restrseq_forces_kernel(
 }
 
 void calc_restrseq_forces_host() {
+    auto& host = Context::instance();
+    if (host.n_restrseqs == 0) return;
     using namespace CudaRestrseqForce;
     CudaContext& ctx = CudaContext::instance();
     auto d_restrseq = ctx.d_restrseqs;
@@ -127,9 +130,9 @@ void calc_restrseq_forces_host() {
     // ctx.sync_all_to_device();
 
     int blockSize = 256;
-    int numBlocks = (n_restrseqs + blockSize - 1) / blockSize;
+    int numBlocks = (host.n_restrseqs + blockSize - 1) / blockSize;
     calc_restrseq_forces_kernel<<<numBlocks, blockSize>>>(
-        n_restrseqs,
+        host.n_restrseqs,
         d_restrseq,
         d_coords,
         d_coords_top,
@@ -141,7 +144,7 @@ void calc_restrseq_forces_host() {
     cudaDeviceSynchronize();
     double upres_energy;
     cudaMemcpy(&upres_energy, d_upres_energy, sizeof(double), cudaMemcpyDeviceToHost);
-    E_restraint.Upres = upres_energy;
+    host.E_restraint.Upres = upres_energy;
     printf("Restrseq U_upres: %f\n", upres_energy);
 }
 

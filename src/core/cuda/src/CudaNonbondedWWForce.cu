@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 
+#include "cpu/include/context.h"
 #include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaNonbondedForce.cuh"
 #include "cuda/include/CudaNonbondedWWForce.cuh"
@@ -24,8 +25,9 @@ void calc_nonbonded_ww_forces_host_v2() {
         CudaContext::instance().d_w_catype_types,
         CudaContext::instance().d_w_catype_types,
         CudaContext::instance().d_catype_table_all, true);
-    E_nonbond_ww.Uvdw = result.first;
-    E_nonbond_ww.Ucoul = result.second;
+    Context& host = Context::instance();
+    host.E_nonbond_ww.Uvdw = result.first;
+    host.E_nonbond_ww.Ucoul = result.second;
 }
 
 void init_nonbonded_ww_force_kernel_data() {

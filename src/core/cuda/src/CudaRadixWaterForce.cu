@@ -1,5 +1,7 @@
 #include <stdexcept>
 
+#include "cpu/include/constants.h"
+#include "cpu/include/context.h"
 #include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaRadixWaterForce.cuh"
 #include "cuda/include/CudaUtility.cuh"
@@ -55,7 +57,8 @@ __global__ void calc_radix_water_forces_kernel(
 }
 
 void calc_radix_water_forces_host() {
-    int water_atoms = n_atoms - n_atoms_solute;
+    auto& host = Context::instance();
+    int water_atoms = host.n_atoms - host.n_atoms_solute;
     if (water_atoms == 0) {
         return;
     }
@@ -72,29 +75,30 @@ void calc_radix_water_forces_host() {
 
     auto d_coords = ctx.d_coords;
     auto d_dvelocities = ctx.d_dvelocities;
-    double energy = 0.0;
-    cudaMemcpy(d_energy, &energy, sizeof(double), cudaMemcpyHostToDevice);
+    check_cuda(cudaMemset(d_energy, 0, sizeof(double)));
 
     double shift;
-    if (md.radial_force != 0) {
-        shift = sqrt(Boltz * Tfree / md.radial_force);
+    if (host.md.radial_force != 0) {
+        shift = sqrt(Boltz * host.Tfree / host.md.radial_force);
     } else {
         shift = 0;
     }
+
+    double energy = 0.0;
     calc_radix_water_forces_kernel<<<numBlocks, blockSize>>>(d_coords,
                                                              shift,
-                                                             n_atoms_solute,
-                                                             n_atoms,
-                                                             topo,
-                                                             md,
-                                                             Dwmz,
-                                                             awmz,
+                                                             host.n_atoms_solute,
+                                                             host.n_atoms,
+                                                             host.topo,
+                                                             host.md,
+                                                             host.Dwmz,
+                                                             host.awmz,
                                                              d_dvelocities,
                                                              d_energy);
-    cudaDeviceSynchronize();
-    cudaMemcpy(dvelocities, d_dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyDeviceToHost);
-    cudaMemcpy(&energy, d_energy, sizeof(double), cudaMemcpyDeviceToHost);
-    E_restraint.Uradx += energy;
+    check_cuda(cudaDeviceSynchronize());
+    check_cuda(cudaMemcpy(host.dvelocities.data(), d_dvelocities, sizeof(dvel_t) * host.n_atoms, cudaMemcpyDeviceToHost));
+    check_cuda(cudaMemcpy(&energy, d_energy, sizeof(double), cudaMemcpyDeviceToHost));
+    host.E_restraint.Uradx += energy;
 }
 
 void init_radix_water_force_kernel_data() {

@@ -1,7 +1,9 @@
 #include <iostream>
 
+#include "cpu/include/context.h"
 #include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaNonbondedForce.cuh"
+#include "cpu/include/constants.h"
 #include "system.h"
 #include "vdw_rules.h"
 
@@ -327,6 +329,7 @@ std::pair<double, double> calc_nonbonded_force_host(
     const catype_t* catypes_table,
     const bool disable_water_h_lj, const double lambda) {
     using namespace CudaNonbondedForce;
+    Context& host = Context::instance();
     CudaContext& context = CudaContext::instance();
     const int thread_num = 256;
     dim3 block_sz = dim3(thread_num);
@@ -353,7 +356,7 @@ std::pair<double, double> calc_nonbonded_force_host(
         x_atypes_types,
         y_atypes_types,
         catypes_table,
-        topo,
+        host.topo,
         context.d_excluded,
         context.d_LJ_matrix,
         x_idx_list,
@@ -364,8 +367,8 @@ std::pair<double, double> calc_nonbonded_force_host(
         d_ecoul_total,
         symmetric,
         disable_water_h_lj,
-        n_atoms_solute,
-        n_qelscales,
+        host.n_atoms_solute,
+        host.n_qelscales,
         lambda,
         context.d_q_elscales);
 

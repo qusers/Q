@@ -1,5 +1,6 @@
 #include <iostream>
 
+#include "cpu/include/context.h"
 #include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaLeapfrog.cuh"
 #include "cuda/include/CudaShakeConstraints.cuh"
@@ -46,7 +47,8 @@ __global__ void calc_leapfrog_kernel(
 }
 
 void calc_leapfrog_host() {
-    CudaContext& ctx = CudaContext::instance();
+    auto& host = Context::instance();
+    auto& ctx = CudaContext::instance();
     auto d_atypes = ctx.d_atypes;
     auto d_catypes = ctx.d_catypes;
     auto d_velocities = ctx.d_velocities;
@@ -55,7 +57,7 @@ void calc_leapfrog_host() {
     auto d_xcoords = ctx.d_xcoords;
 
     int blockSize = 256;
-    int numBlocks = (n_atoms + blockSize - 1) / blockSize;
+    int numBlocks = (host.n_atoms + blockSize - 1) / blockSize;
     calc_leapfrog_kernel<<<numBlocks, blockSize>>>(
         d_atypes,
         d_catypes,
@@ -63,27 +65,27 @@ void calc_leapfrog_host() {
         d_dvelocities,
         d_coords,
         d_xcoords,
-        n_atoms,
-        n_atoms_solute,
-        Tscale_solute,
-        Tscale_solvent,
-        dt);
-    cudaDeviceSynchronize();
+        host.n_atoms,
+        host.n_atoms_solute,
+        host.Tscale_solute,
+        host.Tscale_solvent,
+        host.dt);
+    check_cuda(cudaDeviceSynchronize());
 
-    cudaMemcpy(velocities, d_velocities, sizeof(vel_t) * n_atoms, cudaMemcpyDeviceToHost);
-    cudaMemcpy(dvelocities, d_dvelocities, sizeof(dvel_t) * n_atoms, cudaMemcpyDeviceToHost);
-    cudaMemcpy(coords, d_coords, sizeof(coord_t) * n_atoms, cudaMemcpyDeviceToHost);
-    cudaMemcpy(xcoords, d_xcoords, sizeof(coord_t) * n_atoms, cudaMemcpyDeviceToHost);
+    check_cuda(cudaMemcpy(host.velocities.data(), d_velocities, sizeof(vel_t) * host.n_atoms, cudaMemcpyDeviceToHost));
+    check_cuda(cudaMemcpy(host.dvelocities.data(), d_dvelocities, sizeof(dvel_t) * host.n_atoms, cudaMemcpyDeviceToHost));
+    check_cuda(cudaMemcpy(host.coords.data(), d_coords, sizeof(coord_t) * host.n_atoms, cudaMemcpyDeviceToHost));
+    check_cuda(cudaMemcpy(host.xcoords.data(), d_xcoords, sizeof(coord_t) * host.n_atoms, cudaMemcpyDeviceToHost));
 
     // shake
     // todo: Here is some problem, it writes into cpu memory, but we use gpu..
-    printf("n_shake_constraints: %d\n", n_shake_constraints);
-    if (n_shake_constraints > 0) {
+    printf("n_shake_constraints: %d\n", host.n_shake_constraints);
+    if (host.n_shake_constraints > 0) {
         calc_shake_constraints_host();
-        for (int i = 0; i < n_atoms; i++) {
-            velocities[i].x = (coords[i].x - xcoords[i].x) / dt;
-            velocities[i].y = (coords[i].y - xcoords[i].y) / dt;
-            velocities[i].z = (coords[i].z - xcoords[i].z) / dt;
+        for (int i = 0; i < host.n_atoms; i++) {
+            host.velocities[i].x = (host.coords[i].x - host.xcoords[i].x) / host.dt;
+            host.velocities[i].y = (host.coords[i].y - host.xcoords[i].y) / host.dt;
+            host.velocities[i].z = (host.coords[i].z - host.xcoords[i].z) / host.dt;
         }
     }
 }
