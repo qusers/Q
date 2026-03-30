@@ -9,25 +9,6 @@
 #include <math.h>
 #include <stdio.h>
 
-// Device pointers
-calc_qw_t *QW_MAT, *h_QW_MAT;
-calc_qp_t *QP_MAT, *h_QP_MAT;
-dvel_t *QQ_MAT;
-
-double *D_QP_Evdw, *D_QP_Ecoul, *h_QP_Evdw, *h_QP_Ecoul;
-double *D_QP_evdw_TOT, *D_QP_ecoul_TOT, QP_evdw_TOT, QP_ecoul_TOT;
-
-double *D_QW_Evdw, *D_QW_Ecoul, *h_QW_Evdw, *h_QW_Ecoul;
-double *D_QW_evdw_TOT, *D_QW_ecoul_TOT, QW_evdw_TOT, QW_ecoul_TOT;
-
-// Constants pointers
-q_catype_t *D_qcatypes;
-q_atype_t *D_qatypes;
-q_charge_t *D_qcharges;
-q_atom_t *D_qatoms;
-double *D_lambdas;
-
-bool qp_gpu_set = false;
 
 void calc_nonbonded_qp_forces() {
     auto &ctx = Context::instance();
