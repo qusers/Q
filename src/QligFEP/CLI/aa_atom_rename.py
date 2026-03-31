@@ -1,4 +1,18 @@
-"""Module containing dictionaries and functions to help handling non-default amino acid naming"""
+"""Module containing dictionaries and functions to help handling non-default atom naming.
+
+Covers amino acids, DNA nucleotides (Maestro -> AMBER14sb), and ions.
+"""
+
+# Sugar hydrogen renaming shared across all DNA nucleotide types (Maestro -> AMBER14sb)
+_DNA_SUGAR_RENAME = {
+    "H5'1": "H5'",
+    "H5'2": "H5''",
+    "HC4'": "H4'",
+    "HC3'": "H3'",
+    "H2'1": "H2'",
+    "H2'2": "H2''",
+    "HC1'": "H1'",
+}
 
 rename_mapping = {
     "ACE": {
@@ -123,5 +137,35 @@ rename_mapping = {
     "ILE": {
         "2HG": "HG3",
         "1HG": "HG2",
+    },
+    # DNA nucleotides: Maestro hydrogen naming -> AMBER14sb (BSC1)
+    "DA": {
+        **_DNA_SUGAR_RENAME,
+        "HC8": "H8",
+        "H6_1": "H61",
+        "H6_2": "H62",
+        "HC2": "H2",
+    },
+    "DC": {
+        **_DNA_SUGAR_RENAME,
+        "H4_1": "H41",
+        "H4_2": "H42",
+        "HC5": "H5",
+        "HC6": "H6",
+    },
+    "DG": {
+        **_DNA_SUGAR_RENAME,
+        "HC8": "H8",
+        "HN1": "H1",
+        "H2_1": "H21",
+        "H2_2": "H22",
+    },
+    "DT": {
+        **_DNA_SUGAR_RENAME,
+        "HN3": "H3",
+        "H7_1": "H71",
+        "H7_2": "H72",
+        "H7_3": "H73",
+        "HC6": "H6",
     },
 }

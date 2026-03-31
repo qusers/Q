@@ -116,6 +116,28 @@ def extract_and_replace(line, old_name, new_name):
         return line[:12] + f" {new_atom_name:<3}" + line[16:]
 
 
+def _fix_duplicate_backbone_h(pdb_lines):
+    """Rename duplicate backbone H atoms to H1, H2 before nest_pdb.
+
+    Maestro exports N-terminal residues with multiple atoms named "H" instead of
+    H1, H2, H3. nest_pdb splits on duplicate atom names, so we must rename them
+    before nesting to keep the residue intact.
+    """
+    # Group lines by (chain, resnum, resname) to find duplicates
+    residue_h_indices = {}
+    for idx, line in enumerate(pdb_lines):
+        if line.startswith(("ATOM", "HETATM")) and line[12:16].strip() == "H":
+            key = line[17:27]  # residue identifier (resname + chain + resnum)
+            residue_h_indices.setdefault(key, []).append(idx)
+
+    for key, indices in residue_h_indices.items():
+        if len(indices) >= 2:
+            for count, idx in enumerate(indices, start=1):
+                line = pdb_lines[idx]
+                pdb_lines[idx] = line[:12] + f" H{count} " + line[16:]
+    return pdb_lines
+
+
 def fix_pdb(pdb_path: Path, rename_mapping=rename_mapping, out_name=None):
     renamed_pdb_path = (
         pdb_path.with_name(pdb_path.stem + "_renamed.pdb") if out_name is None else Path(out_name)
@@ -123,16 +145,23 @@ def fix_pdb(pdb_path: Path, rename_mapping=rename_mapping, out_name=None):
     with open(pdb_path) as f:
         pdb_lines = f.readlines()
 
+    pdb_lines = _fix_duplicate_backbone_h(pdb_lines)
     npdb = nest_pdb(pdb_lines)
     npdb = asp_search(npdb)
     npdb = glu_search(npdb)  # TODO; check if this one is necessary
     npdb = histidine_search(npdb)
 
     for i, res in enumerate(npdb):
-        resname = res[-1][17:21].rstrip()
+        resname = res[-1][17:21].strip()
         if resname == "NMA":  # we use NME in our FF library
             npdb[i] = [x.replace("NMA", "NME") for x in npdb[i]]
             resname = "NME"
+        elif resname == "MG":
+            for j, line in enumerate(npdb[i]):
+                if line.startswith(("ATOM", "HETATM")):
+                    # Atom name (cols 12-15) and residue name (cols 17-20)
+                    npdb[i][j] = line[:12] + "MAG " + line[16:17] + "MAG " + line[21:]
+            resname = "MAG"
         npdb[i] = correct_numbered_atom_names(npdb[i])
         npdb[i] = correct_amino_acid_atom_names(npdb[i], resname, rename_mapping)
 
@@ -244,6 +273,25 @@ def histidine_search(npdb):
     return npdb
 
 
+def _count_atom(npdb_i, atomname):
+    """Count how many times an atom name appears in a residue's PDB lines."""
+    return sum(1 for line in npdb_i if line[12:16].strip() == atomname)
+
+
+def _rename_duplicate_h_to_h1_h2(npdb_i):
+    """Rename duplicate H atoms to H1, H2 for N-terminal residues from Maestro.
+
+    Maestro sometimes exports N-terminal residues with multiple atoms named "H"
+    instead of H1, H2, H3. This renames them sequentially.
+    """
+    h_count = 0
+    for j, line in enumerate(npdb_i):
+        if line[12:16].strip() == "H":
+            h_count += 1
+            npdb_i[j] = line[:12] + f" H{h_count} " + line[16:]
+    return npdb_i
+
+
 def nc_termini_search(npdb):
 
     NATURAL_AA = (
@@ -252,23 +300,39 @@ def nc_termini_search(npdb):
     ).split(";")
 
     for i in range(len(npdb)):
-        resname = npdb[i][0][17:21].rstrip()
+        resname = npdb[i][0][17:21].strip()
         if resname in NATURAL_AA:
             if resname in ["CYM", "ASH", "GLH", "LYN"]:
                 continue  # no parameter for those on C or N terminus
+
             H3_present = atom_is_present(npdb[i], "H3")  # n-terminus
+            H1_present = _count_atom(npdb[i], "H1") >= 1  # exact match (Maestro N-terminal)
+            H2_present = _count_atom(npdb[i], "H2") >= 1  # exact match (avoid HH22 false positive)
+            duplicate_H = _count_atom(npdb[i], "H") >= 2  # Maestro duplicate H on N-terminal
             OXT_present = atom_is_present(npdb[i], "OXT")  # c-terminus
-            if H3_present:
+            HXT_present = _count_atom(npdb[i], "HXT") >= 1  # c-terminus (Maestro convention)
+
+            is_n_terminal = H3_present or (H1_present and H2_present) or duplicate_H
+            is_c_terminal = OXT_present
+
+            if is_n_terminal:
                 if resname == "HYP":
                     logger.error(
                         "No parameters available for n-terminal HYP residue!!! Please check your structure"
                     )
                 else:
+                    if duplicate_H:
+                        # Re-rename H→H1,H2 (the aa rename mapping may have undone our earlier fix)
+                        npdb[i] = _rename_duplicate_h_to_h1_h2(npdb[i])
                     npdb[i] = [x.replace(f"{resname} ", f"N{resname}") for x in npdb[i]]
-            if OXT_present:
+            if HXT_present:
+                # Remove HXT (Maestro C-terminal H). Don't relabel as C-terminal since
+                # the PDB lacks OXT (heavy atom) which qprep can't add automatically.
+                npdb[i] = [line for line in npdb[i] if line[12:16].strip() != "HXT"]
+            if is_c_terminal:
                 npdb[i] = [x.replace(f"{resname} ", f"C{resname}") for x in npdb[i]]
-            if H3_present and OXT_present:
-                raise ValueError(f"residue {npdb[i]} has both H3 and OXT atoms")
+            if is_n_terminal and is_c_terminal:
+                raise ValueError(f"residue {npdb[i]} has both N-terminal and C-terminal atoms")
     return npdb
 
 
