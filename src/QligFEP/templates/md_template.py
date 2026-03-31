@@ -98,29 +98,31 @@ def render_md_input(
         Complete .inp file content as string
     """
     # Pre-build optional sections (empty string = omitted from output)
+    # Optional multi-line sections: each line must carry 4-space indentation
+    # matching the template, so that dedent strips it uniformly.
     equilibration_start = (
-        ("random_seed               SEED_VAR\n" "initial_temperature       1\n") if is_eq1 else ""
+        ("    random_seed               SEED_VAR\n" "    initial_temperature       1\n") if is_eq1 else ""
     )
 
     minimization_settings = (
         (
-            f"minimize                  on\n"
-            f"max_minimize_steps        {params.max_minimize_steps}\n"
-            f"minimize_tolerance        {params.minimize_tolerance}\n"
-            f"minimize_step_size        {params.minimize_step_size}\n"
+            f"    minimize                  on\n"
+            f"    max_minimize_steps        {params.max_minimize_steps}\n"
+            f"    minimize_tolerance        {params.minimize_tolerance}\n"
+            f"    minimize_step_size        {params.minimize_step_size}\n"
         )
         if params.minimize
         else ""
     )
 
     energy_interval = (
-        (f"energy                    {params.interval_energy}\n")
+        f"    energy                    {params.interval_energy}\n"
         if params.interval_energy is not None
         else ""
     )
 
-    restart_file_name = f"restart                   {restart_file}\n" if restart_file else ""
-    energy_file_name = f"energy                    {energy_file}\n" if energy_file else ""
+    restart_file_name = f"    restart                   {restart_file}\n" if restart_file else ""
+    energy_file_name = f"    energy                    {energy_file}\n" if energy_file else ""
 
     template = f"""\
     [MD]
@@ -128,13 +130,13 @@ def render_md_input(
     stepsize                  {params.stepsize}
     temperature               {params.temperature}
     bath_coupling             {params.bath_coupling}
-    {equilibration_start}\
+{equilibration_start}\
     shake_solvent             {onoff(params.shake_solvent)}
     shake_hydrogens           {onoff(params.shake_hydrogens)}
     shake_solute              {onoff(params.shake_solute)}
     lrf                       {onoff(params.lrf)}
     separate_scaling          {onoff(params.separate_scaling)}
-    {minimization_settings}\
+{minimization_settings}\
 
     [cut-offs]
     solute_solvent            {params.cutoff_solute_solvent}
@@ -154,15 +156,15 @@ def render_md_input(
 
     [intervals]
     output                    {params.interval_output}
-    {energy_interval}\
+{energy_interval}\
     trajectory                {params.interval_trajectory}
     non_bond                  {params.interval_non_bond}
 
     [files]
     topology                  {params.topology}
     trajectory                {trajectory_file}
-    {restart_file_name}\
-    {energy_file_name}\
+{restart_file_name}\
+{energy_file_name}\
     final                     {final_file}
     fep                       {params.fep_file}
 
