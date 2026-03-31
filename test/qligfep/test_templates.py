@@ -88,6 +88,63 @@ class TestMDParameters:
 class TestRenderMdInput:
     """Tests for render_md_input function."""
 
+    @staticmethod
+    def _assert_no_leading_whitespace(content: str) -> None:
+        """Assert that no non-blank line has leading whitespace."""
+        for i, line in enumerate(content.splitlines(), 1):
+            if line.strip():  # skip blank lines
+                assert line == line.lstrip(), (
+                    f"Line {i} has unexpected leading whitespace: {line!r}"
+                )
+
+    def test_eq1_indentation(self):
+        """Verify eq1 output has no leading whitespace (exercises equilibration_start + minimization_settings)."""
+        configs = get_equilibration_configs("2fs", shell_radius=25)
+        eq1 = configs[0]
+
+        content = render_md_input(
+            params=eq1.params,
+            lambda1="0.500",
+            lambda2="0.500",
+            trajectory_file="eq1.dcd",
+            final_file="eq1.re",
+            is_eq1=True,
+        )
+        self._assert_no_leading_whitespace(content)
+
+    def test_production_indentation(self):
+        """Verify production MD output has no leading whitespace (exercises energy_interval + restart + energy files)."""
+        config = get_production_config("2fs", shell_radius=25)
+
+        content = render_md_input(
+            params=config.params,
+            lambda1="0.500",
+            lambda2="0.500",
+            trajectory_file="md_0500_0500.dcd",
+            final_file="md_0500_0500.re",
+            restart_file="eq5.re",
+            energy_file="md_0500_0500.en",
+        )
+        self._assert_no_leading_whitespace(content)
+
+    def test_basic_indentation(self):
+        """Verify basic rendering (no optional sections) has no leading whitespace."""
+        params = MDParameters(
+            steps=5000,
+            stepsize=2.0,
+            temperature=298,
+            bath_coupling=10.0,
+            shell_radius=25,
+        )
+        content = render_md_input(
+            params=params,
+            lambda1="0.500",
+            lambda2="0.500",
+            trajectory_file="test.dcd",
+            final_file="test.re",
+        )
+        self._assert_no_leading_whitespace(content)
+
     def test_render_basic_file(self):
         """Verify basic MD input file rendering."""
         params = MDParameters(
