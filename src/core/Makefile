@@ -1,9 +1,9 @@
 CC = nvcc
-CFLAGS = -O3 -std=c++17 -arch=sm_89 -I./cuda/include -I./cpu/include -I.
+CFLAGS = -O3 -std=c++17 -arch=sm_89 -I./cuda/include -I./common/include -I./cpu/include -I.
 
 # collect all .cu files except main.cu
 SRCS = $(filter-out main.cu, $(wildcard *.cu cuda/src/*.cu))
-CPPSRCS = $(wildcard cpu/*.cpp cpu/src/*.cpp)
+CPPSRCS = $(wildcard common/*.cpp common/src/*.cpp cpu/*.cpp cpu/src/*.cpp)
 OBJS = $(SRCS:.cu=.o) $(CPPSRCS:.cpp=.o)
 
 all: qdyn move
@@ -18,7 +18,7 @@ qdyn: main.o $(OBJS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f *.o cuda/src/*.o ../../bin/qdyn
+	rm -f *.o cuda/src/*.o common/*.o common/src/*.o cpu/*.o cpu/src/*.o ../../bin/qdyn
 
 move:
 	mkdir -p ../../bin
