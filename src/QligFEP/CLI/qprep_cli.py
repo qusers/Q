@@ -12,6 +12,7 @@ from ..pdb_utils import (
     append_pdb_to_another,
     filter_out_of_sphere_fragments,
     read_pdb_to_dataframe,
+    reindex_pdb_residues,
     write_dataframe_to_pdb,
 )
 from ..settings.settings import CONFIGS
@@ -24,8 +25,8 @@ from ._popc_utils import (
 from .utils import handle_cysbonds
 
 
-class ProteinNeutralizer:
-    """Protein neutralizer for out-of-sphere charged residues in qprep workflow"""
+class Neutralizer:
+    """Neutralizes out-of-sphere charged residues (protein and DNA) in the qprep workflow."""
 
     def __init__(self, center_coords, radius=25.0, boundary_offset=3.0):
         self.center = np.array(center_coords)
@@ -36,11 +37,17 @@ class ProteinNeutralizer:
         # Define charged residues and their neutral forms + key atoms for distance calculation
         # Format: 'charged': ['neutral', 'key_atom', charge]
         self.charged_residues = {
+            # Protein residues
             "GLU": ["GLH", "CD", -1],  # Glutamic acid -> neutral glutamic acid
             "ASP": ["ASH", "CG", -1],  # Aspartic acid -> neutral aspartic acid
             "ARG": ["ARN", "CZ", +1],  # Arginine -> neutral arginine
             "LYS": ["LYN", "NZ", +1],  # Lysine -> neutral lysine
             "HIP": ["HID", "CG", +1],  # Histidine (protonated) -> histidine (delta protonated)
+            # DNA nucleotides (phosphate backbone carries -1 charge each)
+            "DA": ["DAN", "C1'", -1],
+            "DC": ["DCN", "C1'", -1],
+            "DG": ["DGN", "C1'", -1],
+            "DT": ["DTN", "C1'", -1],
         }
 
         # Statistics tracking
@@ -64,32 +71,47 @@ class ProteinNeutralizer:
         """Find and neutralize charged residues outside the sphere boundary for a DataFrame"""
         logger.info(f"Neutralizing charged residues outside {self.rest_bound:.1f}Å boundary")
 
-        charged_residues_info = self._find_charged_residues(df)
+        # N-terminal neutralization runs unconditionally (independent of side chain charges)
+        modified_df = self._neutralize_nterminals(df)
+
+        charged_residues_info = self._find_charged_residues(modified_df)
 
         if not charged_residues_info:
             logger.info("No charged residues found in the PDB data")
-            return df, self.stats
+            return modified_df, self.stats
+
+        # Separate protein and DNA charged residues for different handling
+        protein_charged = [r for r in charged_residues_info if r["residue_name"] not in self._DNA_RESIDUES]
+        dna_charged = [r for r in charged_residues_info if r["residue_name"] in self._DNA_RESIDUES]
 
         self.stats["total_charged_residues"] = len(charged_residues_info)
-        logger.info(f"Found {len(charged_residues_info)} charged residues")
+        logger.info(
+            f"Found {len(charged_residues_info)} charged residues ({len(protein_charged)} protein, {len(dna_charged)} DNA)"
+        )
 
-        # Classify residues by distance to center
-        outside_residues, inside_residues = self._classify_residues_by_distance(charged_residues_info)
+        # Classify PROTEIN residues by distance to center (uses rest_bound)
+        outside_residues, inside_residues = self._classify_residues_by_distance(protein_charged)
         self.stats["residues_outside_boundary"] = len(outside_residues)
 
         # Track original charge
         self.stats["original_total_charge"] = sum(res["charge"] for res in charged_residues_info)
 
-        # Find salt bridges between outside and inside residues
+        # Find salt bridges between outside and inside protein residues
         salt_bridge_pairs = self._find_salt_bridges(outside_residues, inside_residues, salt_bridge_cutoff)
         self.stats["salt_bridges_neutralized"] = len(salt_bridge_pairs)
 
-        # Neutralize residues outside boundary and their salt bridge partners
-        residues_to_modify = outside_residues + salt_bridge_pairs
-        self.stats["residues_neutralized"] = len(residues_to_modify)
+        protein_to_modify = outside_residues + salt_bridge_pairs
 
-        # Modify the dataframe
-        modified_df = self._modify_residues(df, residues_to_modify)
+        # Find DNA nucleotides outside the neutralization boundary (C1' > rest_bound)
+        dna_to_neutralize = self._find_outside_dna(df)
+
+        self.stats["residues_neutralized"] = len(protein_to_modify) + len(dna_to_neutralize)
+
+        # Modify the dataframe: protein side chains neutralized at rest_bound,
+        # DNA outside boundary removed with 5' terminal capping
+        modified_df = self._modify_residues(modified_df, protein_to_modify)
+        if dna_to_neutralize:
+            modified_df = self._remove_and_cap_outside_dna(modified_df, dna_to_neutralize)
 
         # Track final charge and remaining outside charged residues
         self.stats["final_total_charge"] = sum(
@@ -218,6 +240,156 @@ class ProteinNeutralizer:
             if atoms_to_remove:
                 logger.debug(f"Removed atoms: {', '.join(atoms_to_remove)}")
 
+        return modified_df
+
+    _DNA_RESIDUES = {"DA", "DC", "DG", "DT"}
+
+    def _neutralize_nterminals(self, df):
+        """Convert N-terminal residues outside the neutralization boundary to internal forms.
+
+        In AMBER14sb, N-terminal residues are named "N" + internal name (e.g. NILE → ILE)
+        and carry +1 charge from the protonated NH3+ group. Converting to internal form
+        removes this charge by renaming H1→H and removing H2, H3.
+        """
+        modified_df = df.copy()
+        nterm_mask = modified_df["residue_name"].str.startswith("N") & (
+            modified_df["residue_name"].str.len() > 3
+        )
+        if not nterm_mask.any():
+            return modified_df
+
+        nterm_residues = modified_df[nterm_mask].groupby(["chain_id", "residue_seq_number", "residue_name"])
+        n_converted = 0
+
+        for (chain, res_num, nterm_name), group in nterm_residues:
+            n_atom = group[group["atom_name"] == "N"]
+            if len(n_atom) == 0:
+                continue
+            dist = np.linalg.norm(n_atom[["x", "y", "z"]].values[0] - self.center)
+            if dist <= self.rest_bound:
+                continue
+
+            internal_name = nterm_name[1:]  # NILE → ILE, NGLY → GLY, etc.
+            mask = (modified_df["chain_id"] == chain) & (modified_df["residue_seq_number"] == res_num)
+            modified_df.loc[mask, "residue_name"] = internal_name
+            h1_mask = mask & (modified_df["atom_name"] == "H1")
+            modified_df.loc[h1_mask, "atom_name"] = "H"
+            for hatom in ["H2", "H3"]:
+                h_mask = mask & (modified_df["atom_name"] == hatom)
+                modified_df = modified_df.drop(modified_df[h_mask].index)
+            logger.debug(
+                f"Neutralized N-terminal {nterm_name} -> {internal_name} "
+                f"at {chain}:{res_num} (N: {dist:.2f}Å)"
+            )
+            n_converted += 1
+
+        if n_converted > 0:
+            logger.info(f"Neutralized {n_converted} N-terminal residues outside boundary")
+        return modified_df
+
+    def _find_outside_dna(self, df):
+        """Find DNA nucleotides whose C1' atom is outside the sphere radius.
+
+        DNA in the restrained shell (between rest_bound and radius) is kept
+        with its native charges, consistent with how protein residues in the
+        shell are handled. Only DNA beyond the sphere radius is removed, as
+        Q would exclude these via charge-group-based exclusion, leaving their
+        phosphate charges as static artifacts.
+        """
+        outside = []
+        for res_name in self._DNA_RESIDUES:
+            residues = df[df["residue_name"] == res_name]
+            if len(residues) == 0:
+                continue
+            for (chain, res_num), group in residues.groupby(["chain_id", "residue_seq_number"]):
+                c1_row = group[group["atom_name"] == "C1'"]
+                if len(c1_row) == 0:
+                    logger.warning(f"C1' not found in {res_name} {chain}:{res_num}")
+                    continue
+                c1_coords = c1_row[["x", "y", "z"]].values[0]
+                c1_dist = np.linalg.norm(c1_coords - self.center)
+                if c1_dist > self.radius:
+                    outside.append(
+                        {
+                            "residue_name": res_name,
+                            "chain_id": chain,
+                            "residue_seq_number": res_num,
+                            "charge": self.charged_residues[res_name][2],
+                            "neutral_form": self.charged_residues[res_name][0],
+                            "distance": c1_dist,
+                        }
+                    )
+                    logger.debug(
+                        f"DNA {res_name} {chain}:{res_num} outside sphere "
+                        f"(C1': {c1_dist:.2f}Å > {self.radius:.1f}Å)"
+                    )
+        if outside:
+            logger.info(f"Found {len(outside)} DNA nucleotides outside sphere radius")
+        return outside
+
+    _DNA_5PRIME = {"DA": "DA5", "DC": "DC5", "DG": "DG5", "DT": "DT5"}
+
+    def _remove_and_cap_outside_dna(self, df, fully_outside_residues):
+        """Remove fully-outside DNA and cap the inside boundary residues.
+
+        All DNA nucleotides fully outside the sphere are removed. The last
+        inside-sphere residue on each chain boundary is converted to a
+        5' terminal form (removing the phosphodiester linkage to the now-absent
+        upstream residue) when the removed DNA was on its 5' side.
+        """
+        modified_df = df.copy()
+        if not fully_outside_residues:
+            return modified_df
+
+        # Group outside residues by chain
+        outside_by_chain = {}
+        for r in fully_outside_residues:
+            outside_by_chain.setdefault(r["chain_id"], []).append(r)
+
+        # Find all DNA residue numbers per chain (inside + outside)
+        all_dna_by_chain = {}
+        for res_name in self._DNA_RESIDUES:
+            for (chain, res_num), _ in df[df["residue_name"] == res_name].groupby(
+                ["chain_id", "residue_seq_number"]
+            ):
+                all_dna_by_chain.setdefault(chain, set()).add(res_num)
+
+        # Remove all fully-outside DNA
+        for r in fully_outside_residues:
+            mask = (modified_df["chain_id"] == r["chain_id"]) & (
+                modified_df["residue_seq_number"] == r["residue_seq_number"]
+            )
+            modified_df = modified_df.drop(modified_df[mask].index)
+            logger.debug(f"Removed out-of-sphere DNA {r['chain_id']}:{r['residue_seq_number']}")
+
+        # Cap inside boundary residues where removed DNA was upstream (5' side)
+        n_caps = 0
+        for chain, outside_list in outside_by_chain.items():
+            outside_resnums = {r["residue_seq_number"] for r in outside_list}
+            inside_resnums = sorted(all_dna_by_chain.get(chain, set()) - outside_resnums)
+            if not inside_resnums:
+                continue
+
+            first_inside = min(inside_resnums)
+            has_removed_upstream = any(rn < first_inside for rn in outside_resnums)
+            if not has_removed_upstream:
+                continue
+
+            mask = (modified_df["chain_id"] == chain) & (modified_df["residue_seq_number"] == first_inside)
+            old_name = modified_df.loc[mask, "residue_name"].iloc[0]
+            if old_name in self._DNA_5PRIME:
+                new_name = self._DNA_5PRIME[old_name]
+                modified_df.loc[mask, "residue_name"] = new_name
+                for atom in ["P", "OP1", "OP2", "HP"]:
+                    atom_mask = mask & (modified_df["atom_name"] == atom)
+                    modified_df = modified_df.drop(modified_df[atom_mask].index)
+                logger.debug(f"5' terminal cap: {old_name} -> {new_name} at {chain}:{first_inside}")
+                n_caps += 1
+
+        logger.info(
+            f"Removed {len(fully_outside_residues)} out-of-sphere DNA nucleotides, "
+            f"applied {n_caps} 5' terminal caps"
+        )
         return modified_df
 
     def _get_atoms_to_remove(self, old_name, new_name):
@@ -465,7 +637,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     if not args.skip_neutralization:
         logger.info("Neutralizing charged residues outside spherical boundary")
         center_coords = [float(coord) for coord in args.cog]
-        neutralizer = ProteinNeutralizer(center_coords, args.sphereradius, args.neutralize_boundary_offset)
+        neutralizer = Neutralizer(center_coords, args.sphereradius, args.neutralize_boundary_offset)
         # Neutralize the protein and get statistics
         pdb_data, neutralization_stats = neutralizer.neutralize_outside_residues_dataframe(
             pdb_data, args.salt_bridge_cutoff
@@ -515,7 +687,12 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     pdb_path = processed_pdb_path
     logger.info(f"Final processed protein saved as: {processed_pdb_path}")
 
-    # Step 5: Filter out-of-sphere molecular fragments (chains, cofactors, lipids)
+    # Step 5: Reindex residues so that every residue has a unique number.
+    # Q/qprep ignores chain IDs, so multi-chain systems (e.g. protein + DNA)
+    # that reuse residue numbers across chains will collide without this step.
+    reindex_pdb_residues(processed_pdb_path, processed_pdb_path)
+
+    # Step 6: Filter out-of-sphere molecular fragments (chains, cofactors, lipids)
     if not args.skip_fragment_filter:
         center_coords = [float(coord) for coord in args.cog]
         orig_count, filt_count = filter_out_of_sphere_fragments(
