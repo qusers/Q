@@ -1,0 +1,258 @@
+#pragma once
+
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "common/include/md_types.h"
+
+class Context {
+   public:
+
+    static Context& instance() {
+        static Context ctx;
+        return ctx;
+    }
+
+    /* =============================================
+     * == GENERAL
+     * =============================================
+     */
+
+    int n_atoms = 0;
+    int n_atoms_solute = 0;
+    int n_patoms = 0;
+    int n_qatoms = 0;
+    int n_waters = 0;
+    int n_molecules = 0;
+
+    std::string base_folder;
+    double dt = 0.0;
+    double tau_T = 0.0;
+
+    bool run_gpu = false;
+
+    /* =============================================
+     * == FROM MD FILE
+     * =============================================
+     */
+
+    md_t md;
+    bool separate_scaling = false;
+
+    /* =============================================
+     * == FROM TOPOLOGY FILE
+     * =============================================
+     */
+
+    int n_coords = 0;
+    int n_bonds = 0;
+    int n_bonds_solute = 0;
+    int n_cbonds = 0;
+    int n_angles = 0;
+    int n_angles_solute = 0;
+    int n_cangles = 0;
+    int n_torsions = 0;
+    int n_torsions_solute = 0;
+    int n_ctorsions = 0;
+    int n_impropers = 0;
+    int n_impropers_solute = 0;
+    int n_cimpropers = 0;
+    int n_charges = 0;
+    int n_ccharges = 0;
+    int n_atypes = 0;
+    int n_catypes = 0;
+    int n_ngbrs23 = 0;
+    int n_ngbrs14 = 0;
+    int n_excluded = 0;
+    int n_cgrps_solute = 0;
+    int n_cgrps_solvent = 0;
+    int iuse_switch_atom = 0;
+
+    std::vector<coord_t> coords_top;
+    std::vector<bond_t> bonds;
+    std::vector<cbond_t> cbonds;
+    std::vector<angle_t> angles;
+    std::vector<cangle_t> cangles;
+    std::vector<torsion_t> torsions;
+    std::vector<ctorsion_t> ctorsions;
+    std::vector<improper_t> impropers;
+    std::vector<cimproper_t> cimpropers;
+    std::vector<charge_t> charges;
+    std::vector<ccharge_t> ccharges;
+    std::vector<atype_t> atypes;
+    std::vector<catype_t> catypes;
+    std::vector<int> LJ_matrix;
+    std::unique_ptr<bool[]> excluded;
+    std::unique_ptr<bool[]> heavy;
+    std::vector<int> molecules;
+    std::vector<double> winv;
+    std::vector<cgrp_t> charge_groups;
+
+    topo_t topo = {};
+
+    /* =============================================
+     * == FROM FEP FILE
+     * =============================================
+     */
+
+    int n_lambdas = 0;
+    std::vector<double> lambdas;
+
+    int n_qangcouples = 0;
+    int n_qangles = 0;
+    int n_qbonds = 0;
+    int n_qcangles = 0;
+    int n_qcatypes = 0;
+    int n_qcbonds = 0;
+    int n_qcimpropers = 0;
+    int n_qctorsions = 0;
+    int n_qelscales = 0;
+    int n_qexclpairs = 0;
+    int n_qimprcouples = 0;
+    int n_qimpropers = 0;
+    int n_qoffdiags = 0;
+    int n_qshakes = 0;
+    int n_qsoftpairs = 0;
+    int n_qsoftcores = 0;
+    int n_qtorcouples = 0;
+    int n_qtorsions = 0;
+
+    std::vector<q_angcouple_t> q_angcouples;
+    std::vector<q_atom_t> q_atoms;
+    std::vector<q_cangle_t> q_cangles;
+    std::vector<q_catype_t> q_catypes;
+    std::vector<q_cbond_t> q_cbonds;
+    std::vector<q_cimproper_t> q_cimpropers;
+    std::vector<q_ctorsion_t> q_ctorsions;
+    std::vector<q_offdiag_t> q_offdiags;
+    std::vector<q_imprcouple_t> q_imprcouples;
+    std::vector<q_softpair_t> q_softpairs;
+    std::vector<q_torcouple_t> q_torcouples;
+
+    std::vector<q_angle_t> q_angles;
+    std::vector<q_atype_t> q_atypes;
+    std::vector<q_bond_t> q_bonds;
+    std::vector<q_charge_t> q_charges;
+    std::vector<q_elscale_t> q_elscales;
+    std::vector<q_exclpair_t> q_exclpairs;
+    std::vector<q_improper_t> q_impropers;
+    std::vector<q_shake_t> q_shakes;
+    std::vector<q_softcore_t> q_softcores;
+    std::vector<q_torsion_t> q_torsions;
+
+    /* =============================================
+     * == RESTRAINTS
+     * =============================================
+     */
+
+    int n_restrseqs = 0;
+    int n_restrspos = 0;
+    int n_restrdists = 0;
+    int n_restrangs = 0;
+    int n_restrwalls = 0;
+
+    std::vector<restrseq_t> restrseqs;
+    std::vector<restrpos_t> restrspos;
+    std::vector<restrdis_t> restrdists;
+    std::vector<restrang_t> restrangs;
+    std::vector<restrwall_t> restrwalls;
+
+    std::unique_ptr<bool[]> shell;
+
+    /* =============================================
+     * == SHELLS / SOLVENT
+     * =============================================
+     */
+
+    double crgQtot = 0.0;
+    double Dwmz = 0.0;
+    double awmz = 0.0;
+
+    std::vector<double> theta;
+    std::vector<double> theta0;
+    std::vector<double> tdum;
+    int n_max_inshell = 0;
+    int n_shells = 0;
+    std::vector<std::vector<int>> list_sh;
+    std::vector<std::vector<int>> nsort;
+    std::vector<shell_t> wshells;
+
+    /* =============================================
+     * == SHAKE
+     * =============================================
+     */
+
+    int n_shake_constraints = 0;
+    std::vector<int> mol_n_shakes;
+    std::vector<shake_bond_t> shake_bonds;
+
+    /* =============================================
+     * == CALCULATED IN THE INTEGRATION
+     * =============================================
+     */
+
+    std::vector<p_atom_t> p_atoms;
+    std::vector<coord_t> coords;
+    std::vector<coord_t> xcoords;
+    std::vector<vel_t> velocities;
+    std::vector<dvel_t> dvelocities;
+
+    energy_t E_total = {};
+    std::vector<energy_t> EQ_total;
+
+    E_bonded_t E_bond_p = {};
+    E_bonded_t E_bond_w = {};
+    E_bonded_t E_bond_q = {};
+    std::vector<E_bonded_t> EQ_bond;
+
+    E_nonbonded_t E_nonbond_pp = {};
+    E_nonbonded_t E_nonbond_pw = {};
+    E_nonbonded_t E_nonbond_ww = {};
+    E_nonbonded_t E_nonbond_qx = {};
+    std::vector<E_nonbonded_t> EQ_nonbond_qq;
+    std::vector<E_nonbonded_t> EQ_nonbond_qp;
+    std::vector<E_nonbonded_t> EQ_nonbond_qw;
+    std::vector<E_nonbonded_t> EQ_nonbond_qx;
+
+    E_restraint_t E_restraint = {};
+    std::vector<E_restraint_t> EQ_restraint;
+
+    double Temp = 0.0;
+    double Tfree = 0.0;
+    double Texcl = 0.0;
+    double Tscale = 1.0;
+    double A_O = 0.0;
+    double A_OO = 0.0;
+    double B_O = 0.0;
+    double B_OO = 0.0;
+    double crg_ow = 0.0;
+    double crg_hw = 0.0;
+    double mu_w = 0.0;
+
+    /* =============================================
+     * == ENERGY & TEMPERATURE
+     * =============================================
+     */
+
+    double Ndegf = 0.0;
+    double Ndegfree = 0.0;
+    double Ndegf_solvent = 0.0;
+    double Ndegf_solute = 0.0;
+    double Ndegfree_solvent = 0.0;
+    double Ndegfree_solute = 0.0;
+    double Tscale_solute = 0.0;
+    double Tscale_solvent = 0.0;
+
+   private:
+    Context() = default;
+    ~Context() {}
+
+    Context(const Context&) = delete;
+    Context& operator=(const Context&) = delete;
+
+
+
+
+};
+
