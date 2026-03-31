@@ -1,8 +1,10 @@
 // TODO: Add impropers
+#include "cpu/include/context.h"
 
 #include "system.h"
 #include "bonded.h"
 #include "utils.h"
+#include <cmath>
 #include <stdio.h>
 
 /* =============================================
@@ -11,6 +13,7 @@
  */
 
 double calc_angle_forces(int start, int end) {
+    auto &ctx = Context::instance();
     int aii, aji, aki;
 
     coord_t ai, aj, ak;
@@ -24,14 +27,14 @@ double calc_angle_forces(int start, int end) {
     double angle = 0;
 
     for (int i = start; i < end; i++) {
-        aii = angles[i].ai - 1;
-        aji = angles[i].aj - 1;
-        aki = angles[i].ak - 1;
-        ai = coords[aii];
-        aj = coords[aji];
-        ak = coords[aki];
+        aii = ctx.angles[i].ai - 1;
+        aji = ctx.angles[i].aj - 1;
+        aki = ctx.angles[i].ak - 1;
+        ai = ctx.coords[aii];
+        aj = ctx.coords[aji];
+        ak = ctx.coords[aki];
 
-        cangle = cangles[angles[i].code - 1];
+        cangle = ctx.cangles[ctx.angles[i].code - 1];
 
         rji.x = ai.x - aj.x;
         rji.y = ai.y - aj.y;
@@ -64,7 +67,7 @@ double calc_angle_forces(int start, int end) {
         dv = cangle.kth*dth;
 
         f1 = sin(th);
-        if (abs(f1) < 1.0E-12) {
+        if (std::fabs(f1) < 1.0E-12) {
             // Avoid division by zero
             f1 = -1.0E12;
         }
@@ -84,17 +87,17 @@ double calc_angle_forces(int start, int end) {
         dk.y = f1 * ( rji.y * bjiinv * bjkinv - cos_th * rjk.y * bjk2inv);
         dk.z = f1 * ( rji.z * bjiinv * bjkinv - cos_th * rjk.z * bjk2inv);
 
-        dvelocities[aii].x += dv * di.x;
-        dvelocities[aii].y += dv * di.y;
-        dvelocities[aii].z += dv * di.z;
+        ctx.dvelocities[aii].x += dv * di.x;
+        ctx.dvelocities[aii].y += dv * di.y;
+        ctx.dvelocities[aii].z += dv * di.z;
 
-        dvelocities[aki].x += dv * dk.x;
-        dvelocities[aki].y += dv * dk.y;
-        dvelocities[aki].z += dv * dk.z;
+        ctx.dvelocities[aki].x += dv * dk.x;
+        ctx.dvelocities[aki].y += dv * dk.y;
+        ctx.dvelocities[aki].z += dv * dk.z;
 
-        dvelocities[aji].x -= dv * (di.x + dk.x);
-        dvelocities[aji].y -= dv * (di.y + dk.y);
-        dvelocities[aji].z -= dv * (di.z + dk.z);
+        ctx.dvelocities[aji].x -= dv * (di.x + dk.x);
+        ctx.dvelocities[aji].y -= dv * (di.y + dk.y);
+        ctx.dvelocities[aji].z -= dv * (di.z + dk.z);
 
         // printf("ANGLE ener = %f\n", ener);
     }
@@ -103,6 +106,7 @@ double calc_angle_forces(int start, int end) {
 }
 
 double calc_bond_forces(int start, int end) {
+    auto &ctx = Context::instance();
     int aii, aji;
     coord_t ai, aj, dx;
     cbond_t cbond;
@@ -110,12 +114,12 @@ double calc_bond_forces(int start, int end) {
     double bond = 0;
 
     for (int i = start; i < end; i++) {
-        aii = bonds[i].ai-1;
-        aji = bonds[i].aj-1;
-        ai = coords[aii];
-        aj = coords[aji];
+        aii = ctx.bonds[i].ai-1;
+        aji = ctx.bonds[i].aj-1;
+        ai = ctx.coords[aii];
+        aj = ctx.coords[aji];
 
-        cbond = cbonds[bonds[i].code-1];
+        cbond = ctx.cbonds[ctx.bonds[i].code-1];
 
         // Calculate distance vector, norm of distance vector
         dx.x = aj.x - ai.x;
@@ -133,13 +137,13 @@ double calc_bond_forces(int start, int end) {
         // Update forces
         ampl = cbond.kb * ddx / dx1;
 
-        dvelocities[aji].x += ampl * dx.x;
-        dvelocities[aji].y += ampl * dx.y;
-        dvelocities[aji].z += ampl * dx.z;
+        ctx.dvelocities[aji].x += ampl * dx.x;
+        ctx.dvelocities[aji].y += ampl * dx.y;
+        ctx.dvelocities[aji].z += ampl * dx.z;
 
-        dvelocities[aii].x -= ampl * dx.x;
-        dvelocities[aii].y -= ampl * dx.y;
-        dvelocities[aii].z -= ampl * dx.z;
+        ctx.dvelocities[aii].x -= ampl * dx.x;
+        ctx.dvelocities[aii].y -= ampl * dx.y;
+        ctx.dvelocities[aii].z -= ampl * dx.z;
 
         // printf("BOND %d %d ener = %f\n", aii, aji, ener);
     }
@@ -148,6 +152,7 @@ double calc_bond_forces(int start, int end) {
 }
 
 double calc_torsion_forces(int start, int end) {
+    auto &ctx = Context::instance();
     int aii, aji, aki, ali;
 
     coord_t ai, aj, ak, al;
@@ -164,18 +169,18 @@ double calc_torsion_forces(int start, int end) {
     ctorsion_t ctors;
 
     for (int i = start; i < end; i++) {
-        t = torsions[i];
-        ctors = ctorsions[t.code - 1];
+        t = ctx.torsions[i];
+        ctors = ctx.ctorsions[t.code - 1];
 
         aii = t.ai - 1;
         aji = t.aj - 1;
         aki = t.ak - 1;
         ali = t.al - 1;
 
-        ai = coords[aii];
-        aj = coords[aji];
-        ak = coords[aki];
-        al = coords[ali];
+        ai = ctx.coords[aii];
+        aj = ctx.coords[aji];
+        ak = ctx.coords[aki];
+        al = ctx.coords[ali];
 
         rji.x = ai.x - aj.x;
         rji.y = ai.y - aj.y;
@@ -228,7 +233,7 @@ double calc_torsion_forces(int start, int end) {
 
         // Forces
         f1 = sin(phi);
-        if (abs(f1) < 1E-12) f1 = 1E-12;
+        if (std::fabs(f1) < 1E-12) f1 = 1E-12;
         f1 = -1 / f1;
 
         di.x = f1 * (rnk.x * (bjinv * bkinv) - cos_phi * rnj.x * bj2inv);
@@ -261,27 +266,28 @@ double calc_torsion_forces(int start, int end) {
         // Update energy and forces
         torsion += ener;
 
-        dvelocities[aii].x += dv * dpi.x;
-        dvelocities[aii].y += dv * dpi.y;
-        dvelocities[aii].z += dv * dpi.z;
+        ctx.dvelocities[aii].x += dv * dpi.x;
+        ctx.dvelocities[aii].y += dv * dpi.y;
+        ctx.dvelocities[aii].z += dv * dpi.z;
 
-        dvelocities[aji].x += dv * dpj.x;
-        dvelocities[aji].y += dv * dpj.y;
-        dvelocities[aji].z += dv * dpj.z;
+        ctx.dvelocities[aji].x += dv * dpj.x;
+        ctx.dvelocities[aji].y += dv * dpj.y;
+        ctx.dvelocities[aji].z += dv * dpj.z;
 
-        dvelocities[aki].x += dv * dpk.x;
-        dvelocities[aki].y += dv * dpk.y;
-        dvelocities[aki].z += dv * dpk.z;
+        ctx.dvelocities[aki].x += dv * dpk.x;
+        ctx.dvelocities[aki].y += dv * dpk.y;
+        ctx.dvelocities[aki].z += dv * dpk.z;
 
-        dvelocities[ali].x += dv * dpl.x;
-        dvelocities[ali].y += dv * dpl.y;
-        dvelocities[ali].z += dv * dpl.z;
+        ctx.dvelocities[ali].x += dv * dpl.x;
+        ctx.dvelocities[ali].y += dv * dpl.y;
+        ctx.dvelocities[ali].z += dv * dpl.z;
     }
 
     return torsion;
 }
 
 double calc_improper2_forces(int start, int end) {
+    auto &ctx = Context::instance();
     int aii, aji, aki, ali;
 
     coord_t ai, aj, ak, al;
@@ -295,18 +301,18 @@ double calc_improper2_forces(int start, int end) {
     double improper = 0;
 
     for (int i = start; i < end; i++) {
-        imp = impropers[i];
-        cimp = cimpropers[imp.code - 1];
+        imp = ctx.impropers[i];
+        cimp = ctx.cimpropers[imp.code - 1];
 
         aii = imp.ai - 1;
         aji = imp.aj - 1;
         aki = imp.ak - 1;
         ali = imp.al - 1;
 
-        ai = coords[aii];
-        aj = coords[aji];
-        ak = coords[aki];
-        al = coords[ali];
+        ai = ctx.coords[aii];
+        aj = ctx.coords[aji];
+        ak = ctx.coords[aki];
+        al = ctx.coords[ali];
 
         rji.x = ai.x - aj.x;
         rji.y = ai.y - aj.y;
@@ -351,7 +357,7 @@ double calc_improper2_forces(int start, int end) {
 
         // Forces
         f1 = sin(phi);
-        if (abs(f1) < 1E-12) f1 = 1E-12;
+        if (std::fabs(f1) < 1E-12) f1 = 1E-12;
         f1 = -1 / f1;
         // printf("f1 = %f phi = %f cos_phi = %f\n", f1, phi, cos_phi);
 
@@ -385,21 +391,21 @@ double calc_improper2_forces(int start, int end) {
         // Update energy and forces
         improper += ener;
 
-        dvelocities[aii].x += dv * dpi.x;
-        dvelocities[aii].y += dv * dpi.y;
-        dvelocities[aii].z += dv * dpi.z;
+        ctx.dvelocities[aii].x += dv * dpi.x;
+        ctx.dvelocities[aii].y += dv * dpi.y;
+        ctx.dvelocities[aii].z += dv * dpi.z;
 
-        dvelocities[aji].x += dv * dpj.x;
-        dvelocities[aji].y += dv * dpj.y;
-        dvelocities[aji].z += dv * dpj.z;
+        ctx.dvelocities[aji].x += dv * dpj.x;
+        ctx.dvelocities[aji].y += dv * dpj.y;
+        ctx.dvelocities[aji].z += dv * dpj.z;
 
-        dvelocities[aki].x += dv * dpk.x;
-        dvelocities[aki].y += dv * dpk.y;
-        dvelocities[aki].z += dv * dpk.z;
+        ctx.dvelocities[aki].x += dv * dpk.x;
+        ctx.dvelocities[aki].y += dv * dpk.y;
+        ctx.dvelocities[aki].z += dv * dpk.z;
 
-        dvelocities[ali].x += dv * dpl.x;
-        dvelocities[ali].y += dv * dpl.y;
-        dvelocities[ali].z += dv * dpl.z;
+        ctx.dvelocities[ali].x += dv * dpl.x;
+        ctx.dvelocities[ali].y += dv * dpl.y;
+        ctx.dvelocities[ali].z += dv * dpl.z;
     }
 
     return improper;

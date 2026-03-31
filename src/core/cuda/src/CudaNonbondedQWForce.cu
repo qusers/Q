@@ -1,6 +1,7 @@
 #include <vector>
 #include <iostream>
 
+#include "cpu/include/context.h"
 #include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaNonbondedForce.cuh"
 #include "cuda/include/CudaNonbondedQWForce.cuh"
@@ -16,7 +17,8 @@ void calc_nonbonded_qw_forces_host_v2() {
     int nx = CudaContext::instance().h_q_atoms_list.size();
     int ny = CudaContext::instance().h_w_atoms_list.size();
 
-    for (int state = 0; state < n_lambdas; state++) {
+    Context& host = Context::instance();
+    for (int state = 0; state < host.n_lambdas; state++) {
         auto result = calc_nonbonded_force_host(
             nx,
             ny,
@@ -29,10 +31,10 @@ void calc_nonbonded_qw_forces_host_v2() {
             CudaContext::instance().d_q_catype_types + state * nx,
             CudaContext::instance().d_w_catype_types,
             CudaContext::instance().d_catype_table_all,
-            true, lambdas[state]);
+            true, host.lambdas[state]);
 
-        EQ_nonbond_qw[state].Uvdw = result.first / lambdas[state];
-        EQ_nonbond_qw[state].Ucoul = result.second / lambdas[state];
+        host.EQ_nonbond_qw[state].Uvdw = result.first / host.lambdas[state];
+        host.EQ_nonbond_qw[state].Ucoul = result.second / host.lambdas[state];
         // printf("Nonbonded QW Force State %d: Uvdw = %f, Ucoul = %f\n", state, result.first, result.second);
     }
 }

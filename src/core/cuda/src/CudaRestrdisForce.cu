@@ -3,6 +3,7 @@
 #include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaRestrdisForce.cuh"
 #include "cuda/include/CudaUtility.cuh"
+#include "cpu/include/context.h"
 #include "utils.h"
 namespace CudaRestrdisForce {
 bool is_initialized = false;
@@ -74,6 +75,8 @@ __global__ void calc_restrdis_forces_kernel(
 }
 
 void calc_restrdis_forces_host() {
+    auto& host = Context::instance();
+    if (host.n_restrdists == 0) return;
     using namespace CudaRestrdisForce;
     CudaContext& ctx = CudaContext::instance();
     auto d_restrdists = ctx.d_restrdists;
@@ -85,22 +88,22 @@ void calc_restrdis_forces_host() {
     cudaMemset(d_E_restraint, 0, sizeof(double));
 
     int blockSize = 256;
-    int numBlocks = (n_restrdists + blockSize - 1) / blockSize;
+    int numBlocks = (host.n_restrdists + blockSize - 1) / blockSize;
     calc_restrdis_forces_kernel<<<numBlocks, blockSize>>>(
         d_restrdists,
-        n_restrdists,
+        host.n_restrdists,
         d_coords,
         d_lambdas,
-        n_lambdas,
+        host.n_lambdas,
         d_dvelocities,
         d_EQ_restraint,
         d_E_restraint);
     cudaDeviceSynchronize();
-    cudaMemcpy(EQ_restraint, d_EQ_restraint, sizeof(E_restraint_t) * n_lambdas, cudaMemcpyDeviceToHost);
+    cudaMemcpy(host.EQ_restraint.data(), d_EQ_restraint, sizeof(E_restraint_t) * host.n_lambdas, cudaMemcpyDeviceToHost);
     double ener;
     cudaMemcpy(&ener, d_E_restraint, sizeof(double), cudaMemcpyDeviceToHost);
     printf("Energy restraint: %f\n", ener);
-    E_restraint.Urestr += ener;
+    host.E_restraint.Upres += ener;
 }
 
 void init_restrdis_force_kernel_data() {

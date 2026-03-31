@@ -11,8 +11,6 @@
 #define __host__
 #endif
 
-#define VDW_GEOMETRIC 1
-#define VDW_ARITHMETIC 2
 
 // Geometric rule: A_ij = sqrt(A_i) * sqrt(A_j), B_ij = sqrt(B_i) * sqrt(B_j)
 // Energy: V = A_ij * r^-12 - B_ij * r^-6

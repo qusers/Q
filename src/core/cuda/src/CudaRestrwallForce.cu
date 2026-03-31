@@ -2,6 +2,7 @@
 
 #include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaRestrwallForce.cuh"
+#include "cpu/include/context.h"
 #include "utils.h"
 
 namespace CudaRestrwallForce {
@@ -23,11 +24,12 @@ __global__ void calc_restrwall_forces_kernel(
     coord_t dr;
 
     int ir = idx;
+    k = restrwalls[ir].k;
     for (int i = restrwalls[ir].ai - 1; i < restrwalls[ir].aj - 1; i++) {
         if (heavy[i] || restrwalls[ir].ih) {
             dr.x = coords[i].x - topo.solvent_center.x;
             dr.y = coords[i].y - topo.solvent_center.y;
-            dr.x = coords[i].x - topo.solvent_center.x;
+            dr.z = coords[i].z - topo.solvent_center.z;
 
             b = sqrt(pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2));
             db = b - restrwalls[ir].d;
@@ -51,7 +53,8 @@ __global__ void calc_restrwall_forces_kernel(
 }
 
 void calc_restrwall_forces_host() {
-    if (n_restrwalls == 0) return;
+    auto& host = Context::instance();
+    if (host.n_restrwalls == 0) return;
     using namespace CudaRestrwallForce;
     CudaContext& ctx = CudaContext::instance();
     auto d_restrwalls = ctx.d_restrwalls;
@@ -61,18 +64,18 @@ void calc_restrwall_forces_host() {
     cudaMemset(d_energies, 0, sizeof(double));
 
     int blockSize = 256;
-    int numBlocks = (n_restrwalls + blockSize - 1) / blockSize;
+    int numBlocks = (host.n_restrwalls + blockSize - 1) / blockSize;
     calc_restrwall_forces_kernel<<<numBlocks, blockSize>>>(
         d_restrwalls,
-        n_restrwalls,
+        host.n_restrwalls,
         d_coords,
         d_energies,
-        d_dvelocities, d_heavy, topo);
+        d_dvelocities, d_heavy, host.topo);
     cudaDeviceSynchronize();
     double h_energy;
     cudaMemcpy(&h_energy, d_energies, sizeof(double), cudaMemcpyDeviceToHost);
     printf("Restrwall energy: %f\n", h_energy);
-    E_restraint.Upres += h_energy;
+    host.E_restraint.Upres += h_energy;
 }
 
 void init_restrwall_force_kernel_data() {

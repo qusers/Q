@@ -1,6 +1,8 @@
 #include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaTemperature.cuh"
 #include "cuda/include/CudaUtility.cuh"
+#include "cpu/include/constants.h"
+#include "cpu/include/context.h"
 #include "iostream"
 #include "utils.h"
 
@@ -39,12 +41,14 @@ __global__ void calc_temperature_kernel(int n_atoms, int n_atoms_solute, atype_t
         }
     }
     if (ener > ekinmax) {
-        printf(">>> WARNING: hot atom %d: %f\n", idx, ener / Boltz / 3);
+        printf(">>> WARNING: hot atom %d: %f\n", idx, ener / boltz / 3);
     }
 }
 
 void calc_temperature_host() {
-    printf("Ndegf = %f, Ndegfree = %f, n_excluded = %d, Ndegfree_solvent = %f, Ndegfree_solute = %f\n", Ndegf, Ndegfree, n_excluded, Ndegfree_solvent, Ndegfree_solute);
+    auto& host = Context::instance();
+    printf("Ndegf = %f, Ndegfree = %f, n_excluded = %d, Ndegfree_solvent = %f, Ndegfree_solute = %f\n",
+           host.Ndegf, host.Ndegfree, host.n_excluded, host.Ndegfree_solvent, host.Ndegfree_solute);
     using namespace CudaTemperature;
     double h_Temp_solute = 0.0, h_Tfree_solute = 0.0, h_Texcl_solute = 0.0, h_Temp_solvent = 0.0, h_Tfree_solvent = 0.0, h_Texcl_solvent = 0.0;
 
@@ -62,10 +66,10 @@ void calc_temperature_host() {
     bool* d_excluded = ctx.d_excluded;
 
     int blockSize = 256;
-    int numBlocks = (n_atoms + blockSize - 1) / blockSize;
+    int numBlocks = (host.n_atoms + blockSize - 1) / blockSize;
 
-    double Ekinmax = 1000.0 * Ndegf * Boltz * md.temperature / 2.0 / n_atoms;
-    calc_temperature_kernel<<<numBlocks, blockSize>>>(n_atoms, n_atoms_solute, d_atypes, d_catypes, d_velocities, d_excluded, Boltz, Ekinmax,
+    double Ekinmax = 1000.0 * host.Ndegf * Boltz * host.md.temperature / 2.0 / host.n_atoms;
+    calc_temperature_kernel<<<numBlocks, blockSize>>>(host.n_atoms, host.n_atoms_solute, d_atypes, d_catypes, d_velocities, d_excluded, Boltz, Ekinmax,
                                                       d_Temp_solute, d_Tfree_solute, d_Texcl_solute, d_Temp_solvent, d_Tfree_solvent, d_Texcl_solvent);
 
     cudaDeviceSynchronize();
@@ -75,22 +79,22 @@ void calc_temperature_host() {
     cudaMemcpy(&h_Temp_solvent, d_Temp_solvent, sizeof(double), cudaMemcpyDeviceToHost);
     cudaMemcpy(&h_Tfree_solvent, d_Tfree_solvent, sizeof(double), cudaMemcpyDeviceToHost);
     cudaMemcpy(&h_Texcl_solvent, d_Texcl_solvent, sizeof(double), cudaMemcpyDeviceToHost);
-    Tfree = h_Tfree_solute + h_Tfree_solvent;
-    Temp = h_Temp_solute + h_Temp_solvent;
+    host.Tfree = h_Tfree_solute + h_Tfree_solvent;
+    host.Temp = h_Temp_solute + h_Temp_solvent;
 
-    E_total.Ukin = Temp;
+    host.E_total.Ukin = host.Temp;
 
-    Temp = 2.0 * Temp / Boltz / Ndegf;
-    Tfree = 2.0 * Tfree / Boltz / Ndegfree;
+    host.Temp = 2.0 * host.Temp / Boltz / host.Ndegf;
+    host.Tfree = 2.0 * host.Tfree / Boltz / host.Ndegfree;
 
-    if (separate_scaling) {
-        if (h_Tfree_solvent != 0) Tscale_solvent = sqrt(1 + (dt / tau_T) * (md.temperature / h_Tfree_solvent - 1.0));
-        if (h_Tfree_solute != 0) Tscale_solute = sqrt(1 + (dt / tau_T) * (md.temperature / h_Tfree_solute - 1.0));
+    if (host.separate_scaling) {
+        if (h_Tfree_solvent != 0) host.Tscale_solvent = sqrt(1 + (host.dt / host.tau_T) * (host.md.temperature / h_Tfree_solvent - 1.0));
+        if (h_Tfree_solute != 0) host.Tscale_solute = sqrt(1 + (host.dt / host.tau_T) * (host.md.temperature / h_Tfree_solute - 1.0));
     } else {
-        if (Tfree != 0) Tscale_solvent = sqrt(1 + (dt / tau_T) * (md.temperature / Tfree - 1.0));
-        Tscale_solute = Tscale_solvent;
+        if (host.Tfree != 0) host.Tscale_solvent = sqrt(1 + (host.dt / host.tau_T) * (host.md.temperature / host.Tfree - 1.0));
+        host.Tscale_solute = host.Tscale_solvent;
     }
-    printf("Tscale = %f, tau_T = %f, Temp = %f, Tfree = %f\n", Tscale_solvent, tau_T, Temp, Tfree);
+    printf("Tscale = %f, tau_T = %f, Temp = %f, Tfree = %f\n", host.Tscale_solvent, host.tau_T, host.Temp, host.Tfree);
 }
 
 void init_temperature_kernel_data() {

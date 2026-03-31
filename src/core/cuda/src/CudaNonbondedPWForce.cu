@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 
+#include "cpu/include/context.h"
 #include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaNonbondedForce.cuh"
 #include "cuda/include/CudaNonbondedPWForce.cuh"
@@ -28,8 +29,9 @@ void calc_nonbonded_pw_forces_host_v2() {
         CudaContext::instance().d_catype_table_all, false);
     // printf("Nonbonded PW Force (Host) - VdW: %f, Coulomb: %f\n", result.first, result.second);
 
-    E_nonbond_pw.Uvdw = result.first;
-    E_nonbond_pw.Ucoul = result.second;
+    Context& host = Context::instance();
+    host.E_nonbond_pw.Uvdw = result.first;
+    host.E_nonbond_pw.Ucoul = result.second;
 }
 
 void init_nonbonded_pw_force_kernel_data() {

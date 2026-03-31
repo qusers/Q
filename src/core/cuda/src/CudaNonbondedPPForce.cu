@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 
+#include "cpu/include/context.h"
 #include "cuda/include/CudaContext.cuh"
 #include "cuda/include/CudaNonbondedForce.cuh"
 #include "cuda/include/CudaNonbondedPPForce.cuh"
@@ -35,8 +36,10 @@ void calc_nonbonded_pp_forces_host_v2() {
         CudaContext::instance().d_p_catype_types,
         CudaContext::instance().d_catype_table_all, false);
     printf("Nonbonded PP Force: Uvdw = %f, Ucoul = %f\n", result.first, result.second);
-    E_nonbond_pp.Uvdw = result.first;
-    E_nonbond_pp.Ucoul = result.second;
+
+    Context& host = Context::instance();
+    host.E_nonbond_pp.Uvdw = result.first;
+    host.E_nonbond_pp.Ucoul = result.second;
 }
 
 void cleanup_nonbonded_pp_force() {
