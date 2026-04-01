@@ -1,0 +1,22 @@
+#pragma once
+
+#include "handler.h"
+
+
+class CpuHandler : public Handler {
+   public:
+    static CpuHandler& instance() {
+        static CpuHandler h;
+        return h;
+    }
+
+    void initialize() override;
+    void shutdown() override;
+
+   protected:
+    void calc_internal_forces(int iteration) override;
+    void calc_nonbonded_forces() override;
+    void calc_temperature() override;
+    void calc_leapfrog() override;
+    CpuHandler() = default;
+};
