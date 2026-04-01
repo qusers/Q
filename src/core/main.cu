@@ -9,17 +9,10 @@
 void calc_integration() {
     auto& ctx = Context::instance();
     init_variables();
-    if (ctx.run_gpu) {
-        auto& handler = CudaHandler::instance();
-        handler.initialize();
-        handler.run(ctx.md.steps + 0);
-        handler.shutdown();
-    } else {
-        auto& handler = CpuHandler::instance();
-        handler.initialize();
-        handler.run(ctx.md.steps + 0);
-        handler.shutdown();
-    }
+    Handler& handler = ctx.run_gpu ? static_cast<Handler&>(CudaHandler::instance()) : static_cast<Handler&>(CpuHandler::instance());
+    handler.initialize();
+    handler.run(ctx.md.steps);
+    handler.shutdown();
     clean_variables();
 }
 
