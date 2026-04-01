@@ -71,8 +71,9 @@ class Neutralizer:
         """Find and neutralize charged residues outside the sphere boundary for a DataFrame"""
         logger.info(f"Neutralizing charged residues outside {self.rest_bound:.1f}Å boundary")
 
-        # N-terminal neutralization runs unconditionally (independent of side chain charges)
+        # Terminal neutralization runs unconditionally (independent of side chain charges)
         modified_df = self._neutralize_nterminals(df)
+        modified_df = self._neutralize_cterminals(modified_df)
 
         charged_residues_info = self._find_charged_residues(modified_df)
 
@@ -285,6 +286,46 @@ class Neutralizer:
 
         if n_converted > 0:
             logger.info(f"Neutralized {n_converted} N-terminal residues outside boundary")
+        return modified_df
+
+    def _neutralize_cterminals(self, df):
+        """Convert C-terminal residues outside the neutralization boundary to internal forms.
+
+        In AMBER14sb, C-terminal residues are named "C" + internal name (e.g. CALA → ALA)
+        and carry -1 charge from the deprotonated COO- group. Converting to internal form
+        removes this charge by stripping the "C" prefix and removing OXT.
+        """
+        modified_df = df.copy()
+        cterm_mask = modified_df["residue_name"].str.startswith("C") & (
+            modified_df["residue_name"].str.len() > 3
+        )
+        if not cterm_mask.any():
+            return modified_df
+
+        cterm_residues = modified_df[cterm_mask].groupby(["chain_id", "residue_seq_number", "residue_name"])
+        n_converted = 0
+
+        for (chain, res_num, cterm_name), group in cterm_residues:
+            n_atom = group[group["atom_name"] == "N"]
+            if len(n_atom) == 0:
+                continue
+            dist = np.linalg.norm(n_atom[["x", "y", "z"]].values[0] - self.center)
+            if dist <= self.rest_bound:
+                continue
+
+            internal_name = cterm_name[1:]  # CALA → ALA, CGLY → GLY, etc.
+            mask = (modified_df["chain_id"] == chain) & (modified_df["residue_seq_number"] == res_num)
+            modified_df.loc[mask, "residue_name"] = internal_name
+            oxt_mask = mask & (modified_df["atom_name"] == "OXT")
+            modified_df = modified_df.drop(modified_df[oxt_mask].index)
+            logger.debug(
+                f"Neutralized C-terminal {cterm_name} -> {internal_name} "
+                f"at {chain}:{res_num} (N: {dist:.2f}Å)"
+            )
+            n_converted += 1
+
+        if n_converted > 0:
+            logger.info(f"Neutralized {n_converted} C-terminal residues outside boundary")
         return modified_df
 
     def _find_outside_dna(self, df):
