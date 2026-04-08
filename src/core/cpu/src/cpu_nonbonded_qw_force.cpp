@@ -27,7 +27,7 @@ void calc_nonbonded_qw_forces() {
     // Loop over O-atoms, q-atoms
     for (int j = ctx.n_atoms_solute; j < ctx.n_atoms; j += 3) {
         for (int qi = 0; qi < ctx.n_qatoms; qi++) {
-            i = ctx.q_atoms[qi].a - 1;
+            i = ctx.q_atoms[qi];
             if (ctx.excluded[i] || ctx.excluded[j]) continue;
             dO.x = ctx.coords[j].x - ctx.coords[i].x;
             dO.y = ctx.coords[j].y - ctx.coords[i].y;
@@ -65,9 +65,9 @@ void calc_nonbonded_qw_forces() {
                     calc_vdw_arithmetic(ai_aii, ctx.A_O, ai_bii, ctx.B_O, r6Oinv, &V_a, &V_b);
                 }
 
-                VelO = ctx.topo.coulomb_constant * ctx.crg_ow * ctx.q_charges[qi + ctx.n_qatoms * state].q * rO;
-                VelH1 = ctx.topo.coulomb_constant * ctx.crg_hw * ctx.q_charges[qi + ctx.n_qatoms * state].q * rH1;
-                VelH2 = ctx.topo.coulomb_constant * ctx.crg_hw * ctx.q_charges[qi + ctx.n_qatoms * state].q * rH2;
+                VelO = ctx.topo.coulomb_constant * ctx.crg_ow * ctx.q_charges[qi + ctx.n_qatoms * state].charge * rO;
+                VelH1 = ctx.topo.coulomb_constant * ctx.crg_hw * ctx.q_charges[qi + ctx.n_qatoms * state].charge * rH1;
+                VelH2 = ctx.topo.coulomb_constant * ctx.crg_hw * ctx.q_charges[qi + ctx.n_qatoms * state].charge * rH2;
 
                 // if (state == 0 && qi == 1) printf("j = %d ai__aii = %f A_O = %f B_O = %f V_a = %f V_b = %f r6O = %f\n", j, ai_aii, A_O, B_O, V_a, V_b, r6O);
 

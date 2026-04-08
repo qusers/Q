@@ -1054,6 +1054,7 @@ void init_qatoms(const char* filename) {
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     ctx.n_qatoms = 0;
+    ctx.q_atoms.clear();
 
     if (file.n_lines < 1) {
         clean_csv(file);
@@ -1064,7 +1065,7 @@ void init_qatoms(const char* filename) {
     ctx.q_atoms.resize(ctx.n_qatoms);
 
     for (int i = 0; i < ctx.n_qatoms; i++) {
-        ctx.q_atoms[i].a = atoi(file.buffer[i + 1][0]);
+        ctx.q_atoms[i] = atoi(file.buffer[i + 1][0]) - 1;
     }
 
     clean_csv(file);
@@ -1376,7 +1377,7 @@ void init_qcharges(const char* filename) {
     for (int i = 0; i < ctx.n_qatoms; i++) {
         for (int j = 0; j < ctx.n_lambdas; j++) {
             char* eptr;
-            ctx.q_charges[i + j * ctx.n_qatoms].q = strtod(file.buffer[i + j * ctx.n_qatoms + 1][0], &eptr);
+            ctx.q_charges[i + j * ctx.n_qatoms].charge = strtod(file.buffer[i + j * ctx.n_qatoms + 1][0], &eptr);
         }
     }
 

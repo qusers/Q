@@ -119,27 +119,27 @@ class Context {
     int n_qtorsions = 0;
 
     std::vector<q_angcouple_t> q_angcouples;
-    std::vector<q_atom_t> q_atoms;
-    std::vector<q_cangle_t> q_cangles;
+    std::vector<int> q_atoms;
+    std::vector<cangle_t> q_cangles;
     std::vector<q_catype_t> q_catypes;
-    std::vector<q_cbond_t> q_cbonds;
+    std::vector<cbond_t> q_cbonds;
     std::vector<q_cimproper_t> q_cimpropers;
-    std::vector<q_ctorsion_t> q_ctorsions;
+    std::vector<ctorsion_t> q_ctorsions;
     std::vector<q_offdiag_t> q_offdiags;
     std::vector<q_imprcouple_t> q_imprcouples;
     std::vector<q_softpair_t> q_softpairs;
     std::vector<q_torcouple_t> q_torcouples;
 
-    std::vector<q_angle_t> q_angles;
+    std::vector<angle_t> q_angles;
     std::vector<q_atype_t> q_atypes;
-    std::vector<q_bond_t> q_bonds;
-    std::vector<q_charge_t> q_charges;
+    std::vector<bond_t> q_bonds;
+    std::vector<ccharge_t> q_charges;
     std::vector<q_elscale_t> q_elscales;
     std::vector<q_exclpair_t> q_exclpairs;
     std::vector<q_improper_t> q_impropers;
     std::vector<q_shake_t> q_shakes;
     std::vector<q_softcore_t> q_softcores;
-    std::vector<q_torsion_t> q_torsions;
+    std::vector<torsion_t> q_torsions;
 
     /* =============================================
      * == RESTRAINTS
@@ -192,7 +192,7 @@ class Context {
      * =============================================
      */
 
-    std::vector<p_atom_t> p_atoms;
+    std::vector<int> p_atoms;
     std::vector<coord_t> coords;
     std::vector<coord_t> xcoords;
     std::vector<vel_t> velocities;
@@ -255,4 +255,3 @@ class Context {
 
 
 };
-

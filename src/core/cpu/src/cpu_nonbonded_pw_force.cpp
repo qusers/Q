@@ -13,7 +13,7 @@ void calc_nonbonded_pw_forces() {
     }
 
     for (int pi = 0; pi < ctx.n_patoms; ++pi) {
-        const int atom_i = ctx.p_atoms[pi].a - 1;
+        const int atom_i = ctx.p_atoms[pi];
         for (int atom_j = ctx.n_atoms_solute; atom_j < ctx.n_atoms; ++atom_j) {
             if (ctx.excluded[atom_i] || ctx.excluded[atom_j]) {
                 continue;

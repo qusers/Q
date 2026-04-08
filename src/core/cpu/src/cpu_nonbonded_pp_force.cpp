@@ -21,8 +21,8 @@ void calc_nonbonded_pp_forces() {
 
     for (int pi = 0; pi < ctx.n_patoms; pi++) {
         for (int pj = pi + 1; pj < ctx.n_patoms; pj++) {
-            i = ctx.p_atoms[pi].a - 1;
-            j = ctx.p_atoms[pj].a - 1;
+            i = ctx.p_atoms[pi];
+            j = ctx.p_atoms[pj];
             bond23 = ctx.LJ_matrix[i * ctx.n_atoms_solute + j] == 3;
             bond14 = ctx.LJ_matrix[i * ctx.n_atoms_solute + j] == 1;
 

@@ -54,8 +54,8 @@ class CudaContext {
     /*
     Used in cuda_nonbonded_qq_force.cu
     */
-    q_atom_t* d_q_atoms = nullptr;
-    q_charge_t* d_q_charges = nullptr;
+    int* d_q_atoms = nullptr;
+    ccharge_t* d_q_charges = nullptr;
     int* d_LJ_matrix = nullptr;
     bool* d_excluded = nullptr;
     q_elscale_t* d_q_elscales = nullptr;
@@ -108,7 +108,7 @@ class CudaContext {
     */
     ccharge_t* d_ccharges;
     charge_t* d_charges;
-    p_atom_t* d_p_atoms;
+    int* d_p_atoms = nullptr;
 
     /*
     Other helper arrays

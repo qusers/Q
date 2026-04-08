@@ -555,10 +555,10 @@ void init_patoms() {
     int pi = 0;
     int qi = 0;
     for (int i = 0; i < ctx.n_atoms_solute; i++) {
-        if (ctx.n_qatoms > 0 && qi < ctx.n_qatoms && i == ctx.q_atoms[qi].a - 1) {
+        if (qi < ctx.n_qatoms && i == ctx.q_atoms[qi]) {
             qi++;
         } else {
-            ctx.p_atoms[pi].a = i + 1;
+            ctx.p_atoms[pi] = i;
             pi++;
         }
     }

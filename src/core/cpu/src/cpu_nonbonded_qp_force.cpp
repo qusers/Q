@@ -19,8 +19,8 @@ void calc_nonbonded_qp_forces() {
 
     for (int qi = 0; qi < ctx.n_qatoms; qi++) {
         for (int pj = 0; pj < ctx.n_patoms; pj++) {
-            i = ctx.q_atoms[qi].a - 1;
-            j = ctx.p_atoms[pj].a - 1;
+            i = ctx.q_atoms[qi];
+            j = ctx.p_atoms[pj];
 
             bond23 = ctx.LJ_matrix[i * ctx.n_atoms_solute + j] == 3;
             bond14 = ctx.LJ_matrix[i * ctx.n_atoms_solute + j] == 1;
@@ -50,7 +50,7 @@ void calc_nonbonded_qp_forces() {
                 ai_bii = bond14 ? qi_type.Bi_14 : qi_type.Bi;
                 aj_bii = bond14 ? aj_type.bii_1_4 : aj_type.bii_normal;
 
-                Vel = ctx.topo.coulomb_constant * scaling * ctx.q_charges[qi + ctx.n_qatoms * state].q * ctx.ccharges[ctx.charges[j].code - 1].charge * r;
+                Vel = ctx.topo.coulomb_constant * scaling * ctx.q_charges[qi + ctx.n_qatoms * state].charge * ctx.ccharges[ctx.charges[j].code - 1].charge * r;
                 if (ctx.topo.vdw_rule == VDW_GEOMETRIC) {
                     calc_vdw_geometric(ai_aii, aj_aii, ai_bii, aj_bii, r6inv, &V_a, &V_b);
                 } else {

@@ -19,7 +19,8 @@ void calc_qangle_forces(int state) {
         ic = ctx.q_angles[i + ctx.n_qangles * state].code - 1;
 
         // Skip if angle not present (code 0)
-        if (ic == 0) {
+        // todo: Test it!!
+        if (ic < 0) {
             continue;
         }
 

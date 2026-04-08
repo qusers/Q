@@ -22,11 +22,11 @@ void calc_nonbonded_qq_forces() {
     for (int state = 0; state < ctx.n_lambdas; state++) {
         for (int qi = 0; qi < ctx.n_qatoms; qi++) {
             for (int qj = qi + 1; qj < ctx.n_qatoms; qj++) {
-                ai = ctx.q_atoms[qi].a - 1;
-                aj = ctx.q_atoms[qj].a - 1;
+                ai = ctx.q_atoms[qi];
+                aj = ctx.q_atoms[qj];
 
-                crg_i = ctx.q_charges[qi + ctx.n_qatoms * state].q;
-                crg_j = ctx.q_charges[qj + ctx.n_qatoms * state].q;
+                crg_i = ctx.q_charges[qi + ctx.n_qatoms * state].charge;
+                crg_j = ctx.q_charges[qj + ctx.n_qatoms * state].charge;
 
                 bond23 = ctx.LJ_matrix[ai * ctx.n_atoms_solute + aj] == 3;
                 bond14 = ctx.LJ_matrix[ai * ctx.n_atoms_solute + aj] == 1;
