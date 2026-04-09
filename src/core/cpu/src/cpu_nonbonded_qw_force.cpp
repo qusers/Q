@@ -12,7 +12,7 @@ void calc_nonbonded_qw_forces() {
     double r2O, rH1, rH2, r6O, rO, r2H1, r2H2;
     double dvO, dvH1, dvH2;
     double V_a, V_b, VelO, VelH1, VelH2;
-    q_catype_t qi_type;
+    catype_t qi_type;
     double ai_aii, ai_bii;
 
     if (ctx.A_O == 0) {
@@ -56,8 +56,8 @@ void calc_nonbonded_qw_forces() {
             for (int state = 0; state < ctx.n_lambdas; state++) {
                 qi_type = ctx.q_catypes[ctx.q_atypes[qi + ctx.n_qatoms * state].code - 1];
 
-                ai_aii = qi_type.Ai;
-                ai_bii = qi_type.Bi;
+                ai_aii = qi_type.aii_normal;
+                ai_bii = qi_type.bii_normal;
 
                 if (ctx.topo.vdw_rule == VDW_GEOMETRIC) {
                     calc_vdw_geometric(ai_aii, ctx.A_O, ai_bii, ctx.B_O, r6Oinv, &V_a, &V_b);

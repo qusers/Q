@@ -126,8 +126,8 @@ struct catype_t {
     double m;
     double aii_normal;
     double bii_normal;
-    double aii_polar;
-    double bii_polar;
+    // double aii_polar;
+    // double bii_polar;
     double aii_1_4;
     double bii_1_4;
 };
@@ -153,21 +153,6 @@ struct q_angcouple_t {
     int acode;
     int bcode;
 }; // no use
-
-struct q_atype_t {
-    int code;
-};
-
-struct q_catype_t {
-    char name[10];
-    double Ai;
-    double Bi;
-    double Ci;
-    double ai;
-    double Ai_14;
-    double Bi_14;
-    double m;
-};
 
 struct q_cimproper_t {
     double k;

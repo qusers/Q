@@ -121,7 +121,7 @@ class Context {
     std::vector<q_angcouple_t> q_angcouples;
     std::vector<int> q_atoms;
     std::vector<cangle_t> q_cangles;
-    std::vector<q_catype_t> q_catypes;
+    std::vector<catype_t> q_catypes;
     std::vector<cbond_t> q_cbonds;
     std::vector<q_cimproper_t> q_cimpropers;
     std::vector<ctorsion_t> q_ctorsions;
@@ -131,7 +131,7 @@ class Context {
     std::vector<q_torcouple_t> q_torcouples;
 
     std::vector<angle_t> q_angles;
-    std::vector<q_atype_t> q_atypes;
+    std::vector<atype_t> q_atypes;
     std::vector<bond_t> q_bonds;
     std::vector<ccharge_t> q_charges;
     std::vector<q_elscale_t> q_elscales;

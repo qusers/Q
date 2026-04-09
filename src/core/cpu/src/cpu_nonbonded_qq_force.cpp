@@ -11,7 +11,7 @@ void calc_nonbonded_qq_forces() {
     int ai, aj;
     double crg_i, crg_j;
     double elscale, scaling;
-    q_catype_t qi_type, qj_type;
+    catype_t qi_type, qj_type;
     bool bond23, bond14;
     coord_t da;
     double r2a, ra, r6a;
@@ -55,10 +55,10 @@ void calc_nonbonded_qq_forces() {
 
                 Vela = scaling * ctx.topo.coulomb_constant * crg_i * crg_j * ra * elscale;
 
-                ai_aii = bond14 ? qi_type.Ai_14 : qi_type.Ai;
-                aj_aii = bond14 ? qj_type.Ai_14 : qj_type.Ai;
-                ai_bii = bond14 ? qi_type.Bi_14 : qi_type.Bi;
-                aj_bii = bond14 ? qj_type.Bi_14 : qj_type.Bi;
+                ai_aii = bond14 ? qi_type.aii_1_4 : qi_type.aii_normal;
+                aj_aii = bond14 ? qj_type.aii_1_4 : qj_type.aii_normal;
+                ai_bii = bond14 ? qi_type.bii_1_4 : qi_type.bii_normal;
+                aj_bii = bond14 ? qj_type.bii_1_4 : qj_type.bii_normal;
 
                 if (ctx.topo.vdw_rule == VDW_GEOMETRIC) {
                     calc_vdw_geometric(ai_aii, aj_aii, ai_bii, aj_bii, r6a, &V_a, &V_b);

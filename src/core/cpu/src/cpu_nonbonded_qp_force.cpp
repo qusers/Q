@@ -12,7 +12,7 @@ void calc_nonbonded_qp_forces() {
     coord_t da;
     double r2, r6, r;
     double ai_aii, aj_aii, ai_bii, aj_bii;
-    q_catype_t qi_type;
+    catype_t qi_type;
     catype_t aj_type;
     bool bond23, bond14;
     double scaling, Vel, V_a, V_b, dv;
@@ -45,9 +45,9 @@ void calc_nonbonded_qp_forces() {
                 qi_type = ctx.q_catypes[ctx.q_atypes[qi + ctx.n_qatoms * state].code - 1];
                 aj_type = ctx.catypes[ctx.atypes[j].code - 1];
 
-                ai_aii = bond14 ? qi_type.Ai_14 : qi_type.Ai;
+                ai_aii = bond14 ? qi_type.aii_1_4 : qi_type.aii_normal;
                 aj_aii = bond14 ? aj_type.aii_1_4 : aj_type.aii_normal;
-                ai_bii = bond14 ? qi_type.Bi_14 : qi_type.Bi;
+                ai_bii = bond14 ? qi_type.bii_1_4 : qi_type.bii_normal;
                 aj_bii = bond14 ? aj_type.bii_1_4 : aj_type.bii_normal;
 
                 Vel = ctx.topo.coulomb_constant * scaling * ctx.q_charges[qi + ctx.n_qatoms * state].charge * ctx.ccharges[ctx.charges[j].code - 1].charge * r;

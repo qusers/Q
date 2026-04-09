@@ -40,8 +40,6 @@ __device__ __forceinline__ catype_t shfl_catype(catype_t v, int srcLane, unsigne
     v.m = shfl(v.m, srcLane, mask);
     v.aii_normal = shfl(v.aii_normal, srcLane, mask);
     v.bii_normal = shfl(v.bii_normal, srcLane, mask);
-    v.aii_polar = shfl(v.aii_polar, srcLane, mask);
-    v.bii_polar = shfl(v.bii_polar, srcLane, mask);
     v.aii_1_4 = shfl(v.aii_1_4, srcLane, mask);
     v.bii_1_4 = shfl(v.bii_1_4, srcLane, mask);
     return v;
