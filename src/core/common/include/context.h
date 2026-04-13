@@ -82,6 +82,9 @@ class Context {
     std::vector<ccharge_t> ccharges;
     std::vector<atype_t> atypes;
     std::vector<catype_t> catypes;
+    std::vector<int> atom_to_qi;
+    std::vector<ccharge_t> unified_ccharges;
+    std::vector<catype_t> unified_catypes;
     std::vector<int> LJ_matrix;
     std::unique_ptr<bool[]> excluded;
     std::unique_ptr<bool[]> heavy;
@@ -243,6 +246,42 @@ class Context {
     double Ndegfree_solute = 0.0;
     double Tscale_solute = 0.0;
     double Tscale_solvent = 0.0;
+
+    int n_parameter_states() const {
+        return n_lambdas > 0 ? n_lambdas : 1;
+    }
+
+    int unified_parameter_code(int atom_idx, int state) const {
+        const int qi = atom_to_qi[atom_idx];
+        if (qi == -1 || state == 0) {
+            return atom_idx + 1;
+        }
+        return n_atoms + (state - 1) * n_qatoms + qi + 1;
+    }
+
+    int unified_charge_code(int atom_idx, int state) const {
+        return unified_parameter_code(atom_idx, state);
+    }
+
+    const ccharge_t& unified_ccharge_by_code(int code) const {
+        return unified_ccharges[code - 1];
+    }
+
+    const ccharge_t& unified_ccharge(int atom_idx, int state) const {
+        return unified_ccharge_by_code(unified_charge_code(atom_idx, state));
+    }
+
+    int unified_atype_code(int atom_idx, int state) const {
+        return unified_parameter_code(atom_idx, state);
+    }
+
+    const catype_t& unified_catype_by_code(int code) const {
+        return unified_catypes[code - 1];
+    }
+
+    const catype_t& unified_catype(int atom_idx, int state) const {
+        return unified_catype_by_code(unified_atype_code(atom_idx, state));
+    }
 
    private:
     Context() = default;

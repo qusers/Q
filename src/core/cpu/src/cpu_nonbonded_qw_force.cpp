@@ -12,13 +12,10 @@ void calc_nonbonded_qw_forces() {
     double r2O, rH1, rH2, r6O, rO, r2H1, r2H2;
     double dvO, dvH1, dvH2;
     double V_a, V_b, VelO, VelH1, VelH2;
-    catype_t qi_type;
     double ai_aii, ai_bii;
 
     if (ctx.A_O == 0) {
-        catype_t catype_ow;  // Atom type of first O, H atom
-
-        catype_ow = ctx.catypes[ctx.atypes[ctx.n_atoms_solute].code - 1];
+        const catype_t& catype_ow = ctx.unified_catype(ctx.n_atoms_solute, 0);
 
         ctx.A_O = catype_ow.aii_normal;
         ctx.B_O = catype_ow.bii_normal;
@@ -54,7 +51,7 @@ void calc_nonbonded_qw_forces() {
             dvH2 = 0;
 
             for (int state = 0; state < ctx.n_lambdas; state++) {
-                qi_type = ctx.q_catypes[ctx.q_atypes[qi + ctx.n_qatoms * state].code - 1];
+                const catype_t& qi_type = ctx.unified_catype(i, state);
 
                 ai_aii = qi_type.aii_normal;
                 ai_bii = qi_type.bii_normal;
@@ -65,9 +62,10 @@ void calc_nonbonded_qw_forces() {
                     calc_vdw_arithmetic(ai_aii, ctx.A_O, ai_bii, ctx.B_O, r6Oinv, &V_a, &V_b);
                 }
 
-                VelO = ctx.topo.coulomb_constant * ctx.crg_ow * ctx.q_charges[qi + ctx.n_qatoms * state].charge * rO;
-                VelH1 = ctx.topo.coulomb_constant * ctx.crg_hw * ctx.q_charges[qi + ctx.n_qatoms * state].charge * rH1;
-                VelH2 = ctx.topo.coulomb_constant * ctx.crg_hw * ctx.q_charges[qi + ctx.n_qatoms * state].charge * rH2;
+                const double q_charge = ctx.unified_ccharge(i, state).charge;
+                VelO = ctx.topo.coulomb_constant * ctx.crg_ow * q_charge * rO;
+                VelH1 = ctx.topo.coulomb_constant * ctx.crg_hw * q_charge * rH1;
+                VelH2 = ctx.topo.coulomb_constant * ctx.crg_hw * q_charge * rH2;
 
                 // if (state == 0 && qi == 1) printf("j = %d ai__aii = %f A_O = %f B_O = %f V_a = %f V_b = %f r6O = %f\n", j, ai_aii, A_O, B_O, V_a, V_b, r6O);
 

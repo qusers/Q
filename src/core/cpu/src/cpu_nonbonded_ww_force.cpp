@@ -8,9 +8,9 @@ void init_water_parameters(Context& ctx) {
     const int oxygen_index = ctx.n_atoms_solute;
     const int hydrogen_index = oxygen_index + 1;
 
-    const catype_t catype_ow = ctx.catypes[ctx.atypes[oxygen_index].code - 1];
-    const ccharge_t ccharge_ow = ctx.ccharges[ctx.charges[oxygen_index].code - 1];
-    const ccharge_t ccharge_hw = ctx.ccharges[ctx.charges[hydrogen_index].code - 1];
+    const catype_t& catype_ow = ctx.unified_catype(oxygen_index, 0);
+    const ccharge_t& ccharge_ow = ctx.unified_ccharge(oxygen_index, 0);
+    const ccharge_t& ccharge_hw = ctx.unified_ccharge(hydrogen_index, 0);
 
     if (ctx.topo.vdw_rule == VDW_GEOMETRIC) {
         ctx.A_OO = catype_ow.aii_normal * catype_ow.aii_normal;

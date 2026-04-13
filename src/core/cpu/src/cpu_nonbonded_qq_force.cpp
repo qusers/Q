@@ -11,7 +11,6 @@ void calc_nonbonded_qq_forces() {
     int ai, aj;
     double crg_i, crg_j;
     double elscale, scaling;
-    catype_t qi_type, qj_type;
     bool bond23, bond14;
     coord_t da;
     double r2a, ra, r6a;
@@ -25,8 +24,8 @@ void calc_nonbonded_qq_forces() {
                 ai = ctx.q_atoms[qi];
                 aj = ctx.q_atoms[qj];
 
-                crg_i = ctx.q_charges[qi + ctx.n_qatoms * state].charge;
-                crg_j = ctx.q_charges[qj + ctx.n_qatoms * state].charge;
+                crg_i = ctx.unified_ccharge(ai, state).charge;
+                crg_j = ctx.unified_ccharge(aj, state).charge;
 
                 bond23 = ctx.LJ_matrix[ai * ctx.n_atoms_solute + aj] == 3;
                 bond14 = ctx.LJ_matrix[ai * ctx.n_atoms_solute + aj] == 1;
@@ -43,8 +42,8 @@ void calc_nonbonded_qq_forces() {
                     }
                 }
 
-                qi_type = ctx.q_catypes[ctx.q_atypes[qi + ctx.n_qatoms * state].code - 1];
-                qj_type = ctx.q_catypes[ctx.q_atypes[qj + ctx.n_qatoms * state].code - 1];
+                const catype_t& qi_type = ctx.unified_catype(ai, state);
+                const catype_t& qj_type = ctx.unified_catype(aj, state);
 
                 da.x = ctx.coords[aj].x - ctx.coords[ai].x;
                 da.y = ctx.coords[aj].y - ctx.coords[ai].y;
