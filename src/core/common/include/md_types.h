@@ -126,8 +126,8 @@ struct catype_t {
     double m;
     double aii_normal;
     double bii_normal;
-    double aii_polar;
-    double bii_polar;
+    // double aii_polar;
+    // double bii_polar;
     double aii_1_4;
     double bii_1_4;
 };
@@ -149,67 +149,15 @@ struct cgrp_t {
     int* a;
 };
 
-struct q_angcouple_t {
+struct q_angcouple_t { 
     int acode;
     int bcode;
-};
-
-struct q_angle_t {
-    int ai;
-    int aj;
-    int ak;
-    int code;
-};
-
-struct q_atom_t {
-    int a;
-};
-
-struct q_atype_t {
-    int code;
-};
-
-struct q_bond_t {
-    int ai;
-    int aj;
-    int code;
-};
-
-struct q_cangle_t {
-    double kth;
-    double th0;
-};
-
-struct q_catype_t {
-    char name[10];
-    double Ai;
-    double Bi;
-    double Ci;
-    double ai;
-    double Ai_14;
-    double Bi_14;
-    double m;
-};
-
-struct q_cbond_t {
-    double kb;
-    double b0;
-};
-
-struct q_charge_t {
-    double q;
-};
+}; // no use
 
 struct q_cimproper_t {
     double k;
     double phi0;
-};
-
-struct q_ctorsion_t {
-    double k;
-    double n;
-    double d;
-};
+}; // no use
 
 struct q_elscale_t {
     int qi;
@@ -221,12 +169,12 @@ struct q_exclpair_t {
     int ai;
     int aj;
     int excl;
-};
+}; // no use
 
 struct q_imprcouple_t {
     int icode;
     int bcode;
-};
+}; // no use
 
 struct q_improper_t {
     int ai;
@@ -234,7 +182,7 @@ struct q_improper_t {
     int ak;
     int al;
     int code;
-};
+}; // no use
 
 struct q_offdiag_t {
     int i;
@@ -243,35 +191,27 @@ struct q_offdiag_t {
     int ql;
     double Aij;
     double muij;
-};
+}; // no use
 
 struct q_shake_t {
     int ai;
     int aj;
     double dist;
-};
+}; // no use
 
 struct q_softcore_t {
     double s;
-};
+}; // no use
 
 struct q_softpair_t {
     int qi;
     int qj;
-};
+}; // no use
 
 struct q_torcouple_t {
     int tcode;
     int bcode;
-};
-
-struct q_torsion_t {
-    int ai;
-    int aj;
-    int ak;
-    int al;
-    int code;
-};
+}; // no use
 
 /* =============================================
  * == RESTRAINTS
@@ -283,7 +223,7 @@ struct restrseq_t {
     int aj;
     double k;
     bool ih;
-    int to_center; // Flag for restraining to geom. or mass center
+    int to_center;  // Flag for restraining to geom. or mass center
 };
 
 struct restrpos_t {
@@ -340,10 +280,6 @@ struct shake_bond_t {
  * == CALCUTED IN THE INTEGRATION
  * =============================================
  */
-
-struct p_atom_t {
-    int a;
-};
 
 struct vel_t {
     double x;

@@ -911,8 +911,9 @@ void init_catypes(const char* filename) {
         catype.m = strtod(file.buffer[i + 1][1], &eptr);
         catype.aii_normal = strtod(file.buffer[i + 1][2], &eptr);
         catype.bii_normal = strtod(file.buffer[i + 1][3], &eptr);
-        catype.aii_polar = strtod(file.buffer[i + 1][4], &eptr);
-        catype.bii_polar = strtod(file.buffer[i + 1][5], &eptr);
+        // Legacy polar columns are currently unused.
+        strtod(file.buffer[i + 1][4], &eptr);
+        strtod(file.buffer[i + 1][5], &eptr);
         catype.aii_1_4 = strtod(file.buffer[i + 1][6], &eptr);
         catype.bii_1_4 = strtod(file.buffer[i + 1][7], &eptr);
 
@@ -924,7 +925,6 @@ void init_catypes(const char* filename) {
     if (ctx.topo.vdw_rule == VDW_ARITHMETIC) {
         for (int i = 0; i < ctx.n_catypes; i++) {
             ctx.catypes[i].bii_normal = sqrt(fabs(ctx.catypes[i].bii_normal));
-            ctx.catypes[i].bii_polar = sqrt(fabs(ctx.catypes[i].bii_polar));
             ctx.catypes[i].bii_1_4 = sqrt(fabs(ctx.catypes[i].bii_1_4));
         }
 #ifdef VERBOSE
@@ -1054,6 +1054,7 @@ void init_qatoms(const char* filename) {
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     ctx.n_qatoms = 0;
+    ctx.q_atoms.clear();
 
     if (file.n_lines < 1) {
         clean_csv(file);
@@ -1064,7 +1065,7 @@ void init_qatoms(const char* filename) {
     ctx.q_atoms.resize(ctx.n_qatoms);
 
     for (int i = 0; i < ctx.n_qatoms; i++) {
-        ctx.q_atoms[i].a = atoi(file.buffer[i + 1][0]);
+        ctx.q_atoms[i] = atoi(file.buffer[i + 1][0]) - 1;
     }
 
     clean_csv(file);
@@ -1109,21 +1110,22 @@ void init_qcatypes(const char* filename) {
 
     for (int i = 0; i < ctx.n_qcatypes; i++) {
         char* eptr;
-        strcpy(ctx.q_catypes[i].name, file.buffer[i + 1][0]);
-        ctx.q_catypes[i].Ai = strtod(file.buffer[i + 1][1], &eptr);
-        ctx.q_catypes[i].Bi = strtod(file.buffer[i + 1][2], &eptr);
-        ctx.q_catypes[i].Ci = strtod(file.buffer[i + 1][3], &eptr);
-        ctx.q_catypes[i].ai = strtod(file.buffer[i + 1][4], &eptr);
-        ctx.q_catypes[i].Ai_14 = strtod(file.buffer[i + 1][5], &eptr);
-        ctx.q_catypes[i].Bi_14 = strtod(file.buffer[i + 1][6], &eptr);
+        ctx.q_catypes[i].code = i + 1;
+        ctx.q_catypes[i].aii_normal = strtod(file.buffer[i + 1][1], &eptr);
+        ctx.q_catypes[i].bii_normal = strtod(file.buffer[i + 1][2], &eptr);
+        // Legacy q_catype Ci/ai columns are currently unused.
+        strtod(file.buffer[i + 1][3], &eptr);
+        strtod(file.buffer[i + 1][4], &eptr);
+        ctx.q_catypes[i].aii_1_4 = strtod(file.buffer[i + 1][5], &eptr);
+        ctx.q_catypes[i].bii_1_4 = strtod(file.buffer[i + 1][6], &eptr);
         ctx.q_catypes[i].m = strtod(file.buffer[i + 1][7], &eptr);
     }
 
     // Preprocess Bi parameters for arithmetic rule: convert ε to √ε
     if (ctx.topo.vdw_rule == VDW_ARITHMETIC) {
         for (int i = 0; i < ctx.n_qcatypes; i++) {
-            ctx.q_catypes[i].Bi = sqrt(fabs(ctx.q_catypes[i].Bi));
-            ctx.q_catypes[i].Bi_14 = sqrt(fabs(ctx.q_catypes[i].Bi_14));
+            ctx.q_catypes[i].bii_normal = sqrt(fabs(ctx.q_catypes[i].bii_normal));
+            ctx.q_catypes[i].bii_1_4 = sqrt(fabs(ctx.q_catypes[i].bii_1_4));
         }
 #ifdef VERBOSE
         printf("Preprocessed q_catypes Bi parameters for arithmetic vdW rule\n");
@@ -1376,7 +1378,7 @@ void init_qcharges(const char* filename) {
     for (int i = 0; i < ctx.n_qatoms; i++) {
         for (int j = 0; j < ctx.n_lambdas; j++) {
             char* eptr;
-            ctx.q_charges[i + j * ctx.n_qatoms].q = strtod(file.buffer[i + j * ctx.n_qatoms + 1][0], &eptr);
+            ctx.q_charges[i + j * ctx.n_qatoms].charge = strtod(file.buffer[i + j * ctx.n_qatoms + 1][0], &eptr);
         }
     }
 

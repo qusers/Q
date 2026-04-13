@@ -13,17 +13,17 @@ void calc_nonbonded_pw_forces() {
     }
 
     for (int pi = 0; pi < ctx.n_patoms; ++pi) {
-        const int atom_i = ctx.p_atoms[pi].a - 1;
+        const int atom_i = ctx.p_atoms[pi];
         for (int atom_j = ctx.n_atoms_solute; atom_j < ctx.n_atoms; ++atom_j) {
             if (ctx.excluded[atom_i] || ctx.excluded[atom_j]) {
                 continue;
             }
 
-            const double qi = ctx.ccharges[ctx.charges[atom_i].code - 1].charge;
-            const double qj = ctx.ccharges[ctx.charges[atom_j].code - 1].charge;
+            const double qi = ctx.unified_ccharge(atom_i, 0).charge;
+            const double qj = ctx.unified_ccharge(atom_j, 0).charge;
 
-            const catype_t atom_i_type = ctx.catypes[ctx.atypes[atom_i].code - 1];
-            const catype_t atom_j_type = ctx.catypes[ctx.atypes[atom_j].code - 1];
+            const catype_t& atom_i_type = ctx.unified_catype(atom_i, 0);
+            const catype_t& atom_j_type = ctx.unified_catype(atom_j, 0);
 
             double v_a = 0.0;
             double v_b = 0.0;

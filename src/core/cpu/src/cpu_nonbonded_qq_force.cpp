@@ -11,7 +11,6 @@ void calc_nonbonded_qq_forces() {
     int ai, aj;
     double crg_i, crg_j;
     double elscale, scaling;
-    q_catype_t qi_type, qj_type;
     bool bond23, bond14;
     coord_t da;
     double r2a, ra, r6a;
@@ -22,11 +21,11 @@ void calc_nonbonded_qq_forces() {
     for (int state = 0; state < ctx.n_lambdas; state++) {
         for (int qi = 0; qi < ctx.n_qatoms; qi++) {
             for (int qj = qi + 1; qj < ctx.n_qatoms; qj++) {
-                ai = ctx.q_atoms[qi].a - 1;
-                aj = ctx.q_atoms[qj].a - 1;
+                ai = ctx.q_atoms[qi];
+                aj = ctx.q_atoms[qj];
 
-                crg_i = ctx.q_charges[qi + ctx.n_qatoms * state].q;
-                crg_j = ctx.q_charges[qj + ctx.n_qatoms * state].q;
+                crg_i = ctx.unified_ccharge(ai, state).charge;
+                crg_j = ctx.unified_ccharge(aj, state).charge;
 
                 bond23 = ctx.LJ_matrix[ai * ctx.n_atoms_solute + aj] == 3;
                 bond14 = ctx.LJ_matrix[ai * ctx.n_atoms_solute + aj] == 1;
@@ -43,8 +42,8 @@ void calc_nonbonded_qq_forces() {
                     }
                 }
 
-                qi_type = ctx.q_catypes[ctx.q_atypes[qi + ctx.n_qatoms * state].code - 1];
-                qj_type = ctx.q_catypes[ctx.q_atypes[qj + ctx.n_qatoms * state].code - 1];
+                const catype_t& qi_type = ctx.unified_catype(ai, state);
+                const catype_t& qj_type = ctx.unified_catype(aj, state);
 
                 da.x = ctx.coords[aj].x - ctx.coords[ai].x;
                 da.y = ctx.coords[aj].y - ctx.coords[ai].y;
@@ -55,10 +54,10 @@ void calc_nonbonded_qq_forces() {
 
                 Vela = scaling * ctx.topo.coulomb_constant * crg_i * crg_j * ra * elscale;
 
-                ai_aii = bond14 ? qi_type.Ai_14 : qi_type.Ai;
-                aj_aii = bond14 ? qj_type.Ai_14 : qj_type.Ai;
-                ai_bii = bond14 ? qi_type.Bi_14 : qi_type.Bi;
-                aj_bii = bond14 ? qj_type.Bi_14 : qj_type.Bi;
+                ai_aii = bond14 ? qi_type.aii_1_4 : qi_type.aii_normal;
+                aj_aii = bond14 ? qj_type.aii_1_4 : qj_type.aii_normal;
+                ai_bii = bond14 ? qi_type.bii_1_4 : qi_type.bii_normal;
+                aj_bii = bond14 ? qj_type.bii_1_4 : qj_type.bii_normal;
 
                 if (ctx.topo.vdw_rule == VDW_GEOMETRIC) {
                     calc_vdw_geometric(ai_aii, aj_aii, ai_bii, aj_bii, r6a, &V_a, &V_b);

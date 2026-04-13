@@ -54,13 +54,12 @@ class CudaContext {
     /*
     Used in cuda_nonbonded_qq_force.cu
     */
-    q_atom_t* d_q_atoms = nullptr;
-    q_charge_t* d_q_charges = nullptr;
+    int* d_q_atoms = nullptr;
+    ccharge_t* d_q_charges = nullptr;
     int* d_LJ_matrix = nullptr;
     bool* d_excluded = nullptr;
     q_elscale_t* d_q_elscales = nullptr;
-    q_catype_t* d_q_catypes = nullptr;
-    q_atype_t* d_q_atypes = nullptr;
+    atype_t* d_q_atypes = nullptr;
     E_nonbonded_t* d_EQ_nonbond_qq = nullptr;
     double* d_lambdas = nullptr;
 
@@ -108,14 +107,14 @@ class CudaContext {
     */
     ccharge_t* d_ccharges;
     charge_t* d_charges;
-    p_atom_t* d_p_atoms;
+    int* d_p_atoms = nullptr;
 
     /*
     Other helper arrays
     */
     ccharge_t* d_charge_table_all;  // Device copy of h_charge_table_all
     catype_t* d_catype_table_all;   // Device copy of h_catype_table_all
-    std::map<std::array<double, 6>, int> catype_to_type_host;
+    std::map<std::array<double, 4>, int> catype_to_type_host;
     int* d_p_charge_types;
     int* d_w_charge_types;
     int* d_q_charge_types;  // [0, lambdas * n_qatoms) is the normal q_charge_type, [lambdas * n_qatoms, ... ) is the lambda-scaled q_charge_type]
@@ -147,12 +146,10 @@ class CudaContext {
     void sync_all_to_host();
     void reset_energies();
 
-    std::array<double, 6> get_catype_key(const catype_t& catype) {
+    std::array<double, 4> get_catype_key(const catype_t& catype) {
         return {
             catype.aii_normal,
             catype.bii_normal,
-            catype.aii_polar,
-            catype.bii_polar,
             catype.aii_1_4,
             catype.bii_1_4};
     }

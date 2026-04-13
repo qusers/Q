@@ -82,6 +82,9 @@ class Context {
     std::vector<ccharge_t> ccharges;
     std::vector<atype_t> atypes;
     std::vector<catype_t> catypes;
+    std::vector<int> atom_to_qi;
+    std::vector<ccharge_t> unified_ccharges;
+    std::vector<catype_t> unified_catypes;
     std::vector<int> LJ_matrix;
     std::unique_ptr<bool[]> excluded;
     std::unique_ptr<bool[]> heavy;
@@ -119,27 +122,27 @@ class Context {
     int n_qtorsions = 0;
 
     std::vector<q_angcouple_t> q_angcouples;
-    std::vector<q_atom_t> q_atoms;
-    std::vector<q_cangle_t> q_cangles;
-    std::vector<q_catype_t> q_catypes;
-    std::vector<q_cbond_t> q_cbonds;
+    std::vector<int> q_atoms;
+    std::vector<cangle_t> q_cangles;
+    std::vector<catype_t> q_catypes;
+    std::vector<cbond_t> q_cbonds;
     std::vector<q_cimproper_t> q_cimpropers;
-    std::vector<q_ctorsion_t> q_ctorsions;
+    std::vector<ctorsion_t> q_ctorsions;
     std::vector<q_offdiag_t> q_offdiags;
     std::vector<q_imprcouple_t> q_imprcouples;
     std::vector<q_softpair_t> q_softpairs;
     std::vector<q_torcouple_t> q_torcouples;
 
-    std::vector<q_angle_t> q_angles;
-    std::vector<q_atype_t> q_atypes;
-    std::vector<q_bond_t> q_bonds;
-    std::vector<q_charge_t> q_charges;
+    std::vector<angle_t> q_angles;
+    std::vector<atype_t> q_atypes;
+    std::vector<bond_t> q_bonds;
+    std::vector<ccharge_t> q_charges;
     std::vector<q_elscale_t> q_elscales;
     std::vector<q_exclpair_t> q_exclpairs;
     std::vector<q_improper_t> q_impropers;
     std::vector<q_shake_t> q_shakes;
     std::vector<q_softcore_t> q_softcores;
-    std::vector<q_torsion_t> q_torsions;
+    std::vector<torsion_t> q_torsions;
 
     /* =============================================
      * == RESTRAINTS
@@ -192,7 +195,7 @@ class Context {
      * =============================================
      */
 
-    std::vector<p_atom_t> p_atoms;
+    std::vector<int> p_atoms;
     std::vector<coord_t> coords;
     std::vector<coord_t> xcoords;
     std::vector<vel_t> velocities;
@@ -244,6 +247,42 @@ class Context {
     double Tscale_solute = 0.0;
     double Tscale_solvent = 0.0;
 
+    int n_parameter_states() const {
+        return n_lambdas > 0 ? n_lambdas : 1;
+    }
+
+    int unified_parameter_code(int atom_idx, int state) const {
+        const int qi = atom_to_qi[atom_idx];
+        if (qi == -1 || state == 0) {
+            return atom_idx + 1;
+        }
+        return n_atoms + (state - 1) * n_qatoms + qi + 1;
+    }
+
+    int unified_charge_code(int atom_idx, int state) const {
+        return unified_parameter_code(atom_idx, state);
+    }
+
+    const ccharge_t& unified_ccharge_by_code(int code) const {
+        return unified_ccharges[code - 1];
+    }
+
+    const ccharge_t& unified_ccharge(int atom_idx, int state) const {
+        return unified_ccharge_by_code(unified_charge_code(atom_idx, state));
+    }
+
+    int unified_atype_code(int atom_idx, int state) const {
+        return unified_parameter_code(atom_idx, state);
+    }
+
+    const catype_t& unified_catype_by_code(int code) const {
+        return unified_catypes[code - 1];
+    }
+
+    const catype_t& unified_catype(int atom_idx, int state) const {
+        return unified_catype_by_code(unified_atype_code(atom_idx, state));
+    }
+
    private:
     Context() = default;
     ~Context() {}
@@ -255,4 +294,3 @@ class Context {
 
 
 };
-

@@ -17,12 +17,10 @@ void calc_nonbonded_pp_forces() {
     double crg_i, crg_j;
     double ai_aii, aj_aii, ai_bii, aj_bii;
     int i, j;
-    catype_t ai_type, aj_type;
-
     for (int pi = 0; pi < ctx.n_patoms; pi++) {
         for (int pj = pi + 1; pj < ctx.n_patoms; pj++) {
-            i = ctx.p_atoms[pi].a - 1;
-            j = ctx.p_atoms[pj].a - 1;
+            i = ctx.p_atoms[pi];
+            j = ctx.p_atoms[pj];
             bond23 = ctx.LJ_matrix[i * ctx.n_atoms_solute + j] == 3;
             bond14 = ctx.LJ_matrix[i * ctx.n_atoms_solute + j] == 1;
 
@@ -31,11 +29,11 @@ void calc_nonbonded_pp_forces() {
 
             scaling = bond14 ? ctx.topo.el14_scale : 1;
 
-            crg_i = ctx.ccharges[ctx.charges[i].code - 1].charge;
-            crg_j = ctx.ccharges[ctx.charges[j].code - 1].charge;
+            crg_i = ctx.unified_ccharge(i, 0).charge;
+            crg_j = ctx.unified_ccharge(j, 0).charge;
 
-            ai_type = ctx.catypes[ctx.atypes[i].code - 1];
-            aj_type = ctx.catypes[ctx.atypes[j].code - 1];
+            const catype_t& ai_type = ctx.unified_catype(i, 0);
+            const catype_t& aj_type = ctx.unified_catype(j, 0);
 
             da.x = ctx.coords[j].x - ctx.coords[i].x;
             da.y = ctx.coords[j].y - ctx.coords[i].y;

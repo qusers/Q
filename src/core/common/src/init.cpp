@@ -263,8 +263,7 @@ void init_wshells() {
         cbond_t cbondw = ctx.cbonds[ctx.bonds[ctx.n_atoms_solute].code - 1];
         cangle_t canglew = ctx.cangles[ctx.angles[ctx.n_atoms_solute].code - 1];
 
-        ccharge_t ccharge_ow = ctx.ccharges[ctx.charges[ctx.n_atoms_solute].code - 1];
-        ctx.crg_ow = ccharge_ow.charge;
+        ctx.crg_ow = ctx.unified_ccharge(ctx.n_atoms_solute, 0).charge;
 
         ctx.mu_w = -ctx.crg_ow * cbondw.b0 * cos(canglew.th0 / 2);
     }
@@ -555,11 +554,69 @@ void init_patoms() {
     int pi = 0;
     int qi = 0;
     for (int i = 0; i < ctx.n_atoms_solute; i++) {
-        if (ctx.n_qatoms > 0 && qi < ctx.n_qatoms && i == ctx.q_atoms[qi].a - 1) {
+        if (qi < ctx.n_qatoms && i == ctx.q_atoms[qi]) {
             qi++;
         } else {
-            ctx.p_atoms[pi].a = i + 1;
+            ctx.p_atoms[pi] = i;
             pi++;
+        }
+    }
+}
+
+// Build a compact atom/state lookup layer on top of the normal and Q parameter
+// tables. Base codes 1..n_atoms hold the default atom entries, while only Q
+// states above 0 get appended as extra codes.
+static void init_unified_atom_parameters() {
+    auto& ctx = Context::instance();
+    const int n_states = ctx.n_parameter_states();
+
+    ctx.atom_to_qi.assign(ctx.n_atoms, -1);
+    for (int qi = 0; qi < ctx.n_qatoms; qi++) {
+        ctx.atom_to_qi[ctx.q_atoms[qi]] = qi;
+    }
+
+    const int n_extra_q_states = n_states > 0 ? n_states - 1 : 0;
+    const int n_codes = ctx.n_atoms + ctx.n_qatoms * n_extra_q_states;
+    ctx.unified_ccharges.resize(n_codes);
+    ctx.unified_catypes.resize(n_codes);
+
+    for (int atom_idx = 0; atom_idx < ctx.n_atoms; atom_idx++) {
+        const int unified_code = atom_idx + 1;
+        const int qi = ctx.atom_to_qi[atom_idx];
+
+        ccharge_t resolved_charge = {};
+        resolved_charge.code = unified_code;
+
+        catype_t resolved_type = {};
+        resolved_type.code = unified_code;
+
+        if (qi != -1 && ctx.n_lambdas > 0) {
+            resolved_charge.charge = ctx.q_charges[qi].charge;
+            resolved_type = ctx.q_catypes[ctx.q_atypes[qi].code - 1];
+            resolved_type.code = unified_code;
+        } else {
+            resolved_charge.charge = ctx.ccharges[ctx.charges[atom_idx].code - 1].charge;
+            resolved_type = ctx.catypes[ctx.atypes[atom_idx].code - 1];
+            resolved_type.code = unified_code;
+        }
+
+        ctx.unified_ccharges[unified_code - 1] = resolved_charge;
+        ctx.unified_catypes[unified_code - 1] = resolved_type;
+    }
+
+    for (int state = 1; state < n_states; state++) {
+        for (int qi = 0; qi < ctx.n_qatoms; qi++) {
+            const int unified_code = ctx.n_atoms + (state - 1) * ctx.n_qatoms + qi + 1;
+
+            ccharge_t resolved_charge = {};
+            resolved_charge.code = unified_code;
+            resolved_charge.charge = ctx.q_charges[qi + state * ctx.n_qatoms].charge;
+
+            catype_t resolved_type = ctx.q_catypes[ctx.q_atypes[qi + state * ctx.n_qatoms].code - 1];
+            resolved_type.code = unified_code;
+
+            ctx.unified_ccharges[unified_code - 1] = resolved_charge;
+            ctx.unified_catypes[unified_code - 1] = resolved_type;
         }
     }
 }
@@ -649,6 +706,8 @@ void init_variables() {
     // Now remove shaken bonds
     exclude_shaken_definitions();
 
+    init_unified_atom_parameters();
+
     // Init random seed from MD file
     srand(ctx.md.random_seed);
 
@@ -706,6 +765,9 @@ void clean_variables() {
     ctx.cbonds.clear();
     ctx.ccharges.clear();
     ctx.charges.clear();
+    ctx.atom_to_qi.clear();
+    ctx.unified_ccharges.clear();
+    ctx.unified_catypes.clear();
     ctx.cimpropers.clear();
     ctx.coords.clear();
     ctx.coords_top.clear();
