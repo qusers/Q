@@ -8,6 +8,7 @@
 #include "cuda/include/cuda_improper2_force.cuh"
 #include "cuda/include/cuda_leapfrog.cuh"
 #include "cuda/include/cuda_nonbonded_force.cuh"
+#include "cuda/include/cuda_nonbonded_14_force.cuh"
 #include "cuda/include/cuda_nonbonded_pp_force.cuh"
 #include "cuda/include/cuda_nonbonded_pw_force.cuh"
 #include "cuda/include/cuda_nonbonded_qp_force.cuh"
@@ -34,6 +35,7 @@ void CudaHandler::initialize() {
         init_improper2_force_kernel_data();
         init_leapfrog_kernel_data();
         init_nonbonded_force_kernel_data();
+        init_nonbonded_14_force_kernel_data();
         init_nonbonded_pp_force_kernel_data();
         init_nonbonded_pw_force_kernel_data();
         init_nonbonded_qp_force_kernel_data();
@@ -67,6 +69,7 @@ void CudaHandler::shutdown() {
         cleanup_nonbonded_qq_force();
         cleanup_nonbonded_qw_force();
         cleanup_nonbonded_ww_force();
+        cleanup_nonbonded_14_force();
         cleanup_nonbonded_force();
         cleanup_polx_water_force();
         cleanup_pshell_force();
@@ -119,6 +122,7 @@ void CudaHandler::calc_nonbonded_forces() {
     calc_nonbonded_pw_forces_host_v2();
     calc_nonbonded_qw_forces_host_v2();
     calc_nonbonded_qq_forces_host();
+    calc_nonbonded_14_forces_host();
 }
 
 void CudaHandler::calc_temperature() {

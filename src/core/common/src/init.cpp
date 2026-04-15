@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +14,51 @@
 #include "output.h"
 #include "parse.h"
 #include "init.h"
+
+static void finalize_ngbrs14_host() {
+    auto& ctx = Context::instance();
+
+    for (auto& pair : ctx.ngbrs_14) {
+        if (pair.x > pair.y) {
+            std::swap(pair.x, pair.y);
+        }
+    }
+
+    ctx.ngbrs_14.erase(
+        std::remove_if(ctx.ngbrs_14.begin(), ctx.ngbrs_14.end(), [&ctx](const int3& pair) {
+            if (pair.x < 0 || pair.y < 0 || pair.x >= ctx.n_atoms_solute || pair.y >= ctx.n_atoms_solute) {
+                return true;
+            }
+            if (pair.x == pair.y) {
+                return true;
+            }
+            return ctx.LJ_matrix[pair.x * ctx.n_atoms_solute + pair.y] != 1;
+        }),
+        ctx.ngbrs_14.end());
+
+    std::sort(ctx.ngbrs_14.begin(), ctx.ngbrs_14.end(), [](const int3& lhs, const int3& rhs) {
+        if (lhs.x != rhs.x) return lhs.x < rhs.x;
+        return lhs.y < rhs.y;
+    });
+    ctx.ngbrs_14.erase(
+        std::unique(ctx.ngbrs_14.begin(), ctx.ngbrs_14.end(), [](const int3& lhs, const int3& rhs) {
+            return lhs.x == rhs.x && lhs.y == rhs.y;
+        }),
+        ctx.ngbrs_14.end());
+
+    for (auto& pair : ctx.ngbrs_14) {
+        const bool ai_is_q = ctx.atom_to_qi[pair.x] != -1;
+        const bool aj_is_q = ctx.atom_to_qi[pair.y] != -1;
+        if (ai_is_q && aj_is_q) {
+            pair.z = NONBONDED_14_QQ;
+        } else if (ai_is_q || aj_is_q) {
+            pair.z = NONBONDED_14_QP;
+        } else {
+            pair.z = NONBONDED_14_PP;
+        }
+    }
+    ctx.n_ngbrs14 = static_cast<int>(ctx.ngbrs_14.size());
+}
 
 // Remove bonds, angles, torsions and impropers which are excluded or changed in the FEP file
 void exclude_qatom_definitions() {
@@ -664,8 +710,8 @@ void init_variables() {
     }
 
     // From FEP file
-    init_qangcouples("q_angcouples.csv");
     init_qatoms("q_atoms.csv");
+    init_qangcouples("q_angcouples.csv");
     init_qcangles("q_cangles.csv");
     init_qcatypes("q_catypes.csv");
     init_qcbonds("q_cbonds.csv");
@@ -746,6 +792,8 @@ void init_variables() {
     write_header("coords.csv");
     write_header("velocities.csv");
     write_energy_header();
+
+    finalize_ngbrs14_host();
 }
 
 void clean_variables() {

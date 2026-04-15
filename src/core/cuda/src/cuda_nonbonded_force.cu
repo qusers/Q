@@ -205,8 +205,8 @@ __global__ void calc_nonbonded_force_kernel(
             if (wx == wy) return false;
         }
 
-        bool bond23 = lj_code(x_atom_idx, y_atom_idx) == 3;
-        if (bond23) return false;
+        int lj_relation = lj_code(x_atom_idx, y_atom_idx);
+        if (lj_relation == 1 || lj_relation == 3) return false;
 
         return true;
     };
@@ -238,12 +238,11 @@ __global__ void calc_nonbonded_force_kernel(
 
     for (int i = 0; i < 32; i++) {
         if (is_valid()) {
-            bool bond14 = lj_code(x_atom_idx, y_atom_idx) == 1;
-            double scaling = bond14 ? d_topo.el14_scale : 1.0;
-            double ai_aii = bond14 ? x_type.aii_1_4 : x_type.aii_normal;
-            double bi_bii = bond14 ? x_type.bii_1_4 : x_type.bii_normal;
-            double aj_aii = bond14 ? y_type.aii_1_4 : y_type.aii_normal;
-            double bj_bii = bond14 ? y_type.bii_1_4 : y_type.bii_normal;
+            double scaling = 1.0;
+            double ai_aii = x_type.aii_normal;
+            double bi_bii = x_type.bii_normal;
+            double aj_aii = y_type.aii_normal;
+            double bj_bii = y_type.bii_normal;
 
             // todo: Now the idx is wrong, should optimize it later
             // for (int k = 0; k < n_qelscales; k++) {

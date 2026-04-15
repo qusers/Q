@@ -33,7 +33,6 @@ void calc_nonbonded_qq_forces_host() {
 
         host.EQ_nonbond_qq[state].Uvdw = result.first / host.lambdas[state];
         host.EQ_nonbond_qq[state].Ucoul = result.second / host.lambdas[state];
-        printf("Nonbonded QQ Force State %d: Uvdw = %f, Ucoul = %f\n", state, result.first, result.second);
     }
 }
 

@@ -789,6 +789,8 @@ void init_ngbrs14(const char* filename) {
                 // if (ix < 100 && jx < 100) printf("i = %d j = %d\n", ix+1, jx+1);
                 ctx.LJ_matrix[ix * ctx.n_atoms_solute + jx] = 1;
                 ctx.LJ_matrix[jx * ctx.n_atoms_solute + ix] = 1;
+
+                ctx.ngbrs_14.push_back({ix, jx, NONBONDED_14_PP}); // the type may is wrong, just set in here
             }
         }
         lineI++;
@@ -858,6 +860,12 @@ void init_ngbrs14_long(const char* filename) {
         int jx = atoi(file.buffer[i + 1][1]) - 1;
         ctx.LJ_matrix[ix * ctx.n_atoms_solute + jx] = 1;
         ctx.LJ_matrix[jx * ctx.n_atoms_solute + ix] = 1;
+
+
+        int mi_x = std::min(ix, jx);
+        int mx_x = std::max(ix, jx);
+        ctx.ngbrs_14.push_back({mi_x, mx_x, NONBONDED_14_PP}); // the type may is wrong, just set in here
+
     }
 
     clean_csv(file);
