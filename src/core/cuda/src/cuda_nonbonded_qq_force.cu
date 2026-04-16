@@ -26,10 +26,9 @@ void calc_nonbonded_qq_forces_host() {
             true,
             CudaContext::instance().d_q_charge_types + state * n,
             CudaContext::instance().d_q_charge_types + state * n,
-            CudaContext::instance().d_charge_table_all,
             CudaContext::instance().d_q_catype_types + state * n,
             CudaContext::instance().d_q_catype_types + state * n,
-            CudaContext::instance().d_catype_table_all, false, host.lambdas[state]);
+            false, host.lambdas[state]);
 
         host.EQ_nonbond_qq[state].Uvdw = result.first / host.lambdas[state];
         host.EQ_nonbond_qq[state].Ucoul = result.second / host.lambdas[state];

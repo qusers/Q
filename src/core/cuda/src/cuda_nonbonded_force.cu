@@ -4,7 +4,6 @@
 #include "cuda_context.cuh"
 #include "cuda_nonbonded_force.cuh"
 #include "constants.h"
-#include "vdw_rules.h"
 #include "cuda_utility.cuh"
 
 namespace CudaNonbondedForce {
@@ -35,34 +34,16 @@ __device__ __forceinline__ coord_t shfl_coord(coord_t v, int srcLane, unsigned m
     return v;
 }
 
-__device__ __forceinline__ catype_t shfl_catype(catype_t v, int srcLane, unsigned mask = 0xffffffffu) {
-    v.code = __shfl_sync(mask, v.code, srcLane);
-    v.m = shfl(v.m, srcLane, mask);
-    v.aii_normal = shfl(v.aii_normal, srcLane, mask);
-    v.bii_normal = shfl(v.bii_normal, srcLane, mask);
-    v.aii_1_4 = shfl(v.aii_1_4, srcLane, mask);
-    v.bii_1_4 = shfl(v.bii_1_4, srcLane, mask);
-    return v;
-}
-
 __device__ void calculate_unforce_bound(
     const coord_t& x,
     const coord_t& y,
 
-    const double x_charge,
-    const double y_charge,
-
-    const double x_aii,
-    const double y_aii,
-
-    const double x_bii,
-    const double y_bii,
+    const double charge_product,
+    const vdw_pair_param_t& pair_param,
 
     const double coulomb_constant,
 
     const double scaling,
-
-    const int vdw_rule,
     const double lambda,
 
     double& evdw,
@@ -78,16 +59,10 @@ __device__ void calculate_unforce_bound(
     // evdw = v_a - v_b;
     // dv = r2 * (-ecoul - v_a + v_b);
 
-    ecoul = scaling * coulomb_constant * x_charge * y_charge * r * lambda;
+    ecoul = scaling * coulomb_constant * charge_product * r * lambda;
 
-    double v_a, v_b;
-    if (vdw_rule == VDW_GEOMETRIC) {
-        calc_vdw_geometric(x_aii, y_aii, x_bii, y_bii, r6, &v_a, &v_b);
-    } else {
-        calc_vdw_arithmetic(x_aii, y_aii, x_bii, y_bii, r6, &v_a, &v_b);
-    }
-    v_a *= lambda;
-    v_b *= lambda;
+    double v_a = pair_param.a * r6 * r6 * lambda;
+    double v_b = pair_param.b * r6 * lambda;
     evdw = v_a - v_b;
     dv = r2 * (-ecoul - 12.0 * v_a + 6.0 * v_b);
 }
@@ -98,11 +73,11 @@ __global__ void calc_nonbonded_force_kernel(
 
     const int* x_charges_types,
     const int* y_charges_types,
-    const ccharge_t* ccharges_table,
+    const double* charge_pair_products,
 
     const int* x_atypes_types,
     const int* y_atypes_types,
-    const catype_t* catypes_table,
+    const vdw_pair_param_t* catype_pair_params,
 
     const topo_t d_topo,
 
@@ -126,6 +101,10 @@ __global__ void calc_nonbonded_force_kernel(
 
     // helper variables
     const int n_atoms_solute,
+    const int n_charge_types,
+    const int zero_charge_type,
+    const int n_catype_types,
+    const int zero_catype_type,
     const int n_qelscales,
     const double lambda,
     const q_elscale_t* d_qelscales  // todo: Now doesn't use it. Should optimize it later
@@ -168,15 +147,11 @@ __global__ void calc_nonbonded_force_kernel(
     bool x_excluded = (x_atom_idx >= 0) ? d_excluded[x_atom_idx] : true;
     bool y_excluded = (y_atom_idx >= 0) ? d_excluded[y_atom_idx] : true;
 
-    int x_charge_type_idx = (x_idx < nx) ? x_charges_types[x_idx] : -1;
-    int y_charge_type_idx = (y_idx < ny) ? y_charges_types[y_idx] : -1;
-    double x_charge = (x_atom_idx >= 0 && x_charge_type_idx >= 0) ? ccharges_table[x_charge_type_idx].charge : 0.0;
-    double y_charge = (y_atom_idx >= 0 && y_charge_type_idx >= 0) ? ccharges_table[y_charge_type_idx].charge : 0.0;
+    int x_charge_type_idx = (x_idx < nx) ? x_charges_types[x_idx] : zero_charge_type;
+    int y_charge_type_idx = (y_idx < ny) ? y_charges_types[y_idx] : zero_charge_type;
 
     int x_catype_type_idx = (x_idx < nx) ? x_atypes_types[x_idx] : -1;
     int y_catype_type_idx = (y_idx < ny) ? y_atypes_types[y_idx] : -1;
-    catype_t x_type = (x_atom_idx >= 0 && x_catype_type_idx >= 0) ? catypes_table[x_catype_type_idx] : catype_t{};
-    catype_t y_type = (y_atom_idx >= 0 && y_catype_type_idx >= 0) ? catypes_table[y_catype_type_idx] : catype_t{};
 
     double3 x_force = {0.0, 0.0, 0.0};
     double3 y_force = {0.0, 0.0, 0.0};
@@ -217,8 +192,8 @@ __global__ void calc_nonbonded_force_kernel(
         y_atom_idx = __shfl_sync(mask, y_atom_idx, src);
         y_coord = shfl_coord(y_coord, src, mask);
         y_excluded = __shfl_sync(mask, y_excluded, src);
-        y_charge = __shfl_sync(mask, y_charge, src);
-        y_type = shfl_catype(y_type, src, mask);
+        y_charge_type_idx = __shfl_sync(mask, y_charge_type_idx, src);
+        y_catype_type_idx = __shfl_sync(mask, y_catype_type_idx, src);
 
         y_force.x = shfl(y_force.x, src, mask);
         y_force.y = shfl(y_force.y, src, mask);
@@ -226,23 +201,22 @@ __global__ void calc_nonbonded_force_kernel(
     };
 
     if (disable_water_h_lj) {
-        if (x_atom_idx >= n_atoms_solute && ((x_atom_idx - n_atoms_solute) % 3 != 0)) {
-            x_type.aii_normal = 0.0;
-            x_type.bii_normal = 0.0;
+        if (x_atom_idx >= n_atoms_solute && ((x_atom_idx - n_atoms_solute) % 3 != 0) && x_catype_type_idx >= 0) {
+            x_catype_type_idx = zero_catype_type;
         }
-        if (y_atom_idx >= n_atoms_solute && ((y_atom_idx - n_atoms_solute) % 3 != 0)) {
-            y_type.aii_normal = 0.0;
-            y_type.bii_normal = 0.0;
+        if (y_atom_idx >= n_atoms_solute && ((y_atom_idx - n_atoms_solute) % 3 != 0) && y_catype_type_idx >= 0) {
+            y_catype_type_idx = zero_catype_type;
         }
     }
+
+    const int charge_pair_row = x_charge_type_idx * n_charge_types;
+    const int pair_row = (x_catype_type_idx >= 0) ? x_catype_type_idx * n_catype_types : 0;
 
     for (int i = 0; i < 32; i++) {
         if (is_valid()) {
             double scaling = 1.0;
-            double ai_aii = x_type.aii_normal;
-            double bi_bii = x_type.bii_normal;
-            double aj_aii = y_type.aii_normal;
-            double bj_bii = y_type.bii_normal;
+            double charge_product = charge_pair_products[charge_pair_row + y_charge_type_idx];
+            vdw_pair_param_t pair_param = catype_pair_params[pair_row + y_catype_type_idx];
 
             // todo: Now the idx is wrong, should optimize it later
             // for (int k = 0; k < n_qelscales; k++) {
@@ -257,15 +231,10 @@ __global__ void calc_nonbonded_force_kernel(
             calculate_unforce_bound(
                 x_coord,
                 y_coord,
-                x_charge,
-                y_charge,
-                ai_aii,
-                aj_aii,
-                bi_bii,
-                bj_bii,
+                charge_product,
+                pair_param,
                 d_topo.coulomb_constant,
                 scaling,
-                d_topo.vdw_rule,
                 lambda,
                 evdw,
                 ecoul,
@@ -319,11 +288,8 @@ std::pair<double, double> calc_nonbonded_force_host(
 
     const int* x_charges_types,
     const int* y_charges_types,
-    const ccharge_t* ccharges_table,
-
     const int* x_atypes_types,
     const int* y_atypes_types,
-    const catype_t* catypes_table,
     const bool disable_water_h_lj, const double lambda) {
     using namespace CudaNonbondedForce;
     Context& host = Context::instance();
@@ -349,10 +315,10 @@ std::pair<double, double> calc_nonbonded_force_host(
         ny,
         x_charges_types,
         y_charges_types,
-        ccharges_table,
+        context.d_charge_pair_products,
         x_atypes_types,
         y_atypes_types,
-        catypes_table,
+        context.d_catype_pair_params,
         host.topo,
         context.d_excluded,
         context.d_LJ_matrix,
@@ -365,6 +331,10 @@ std::pair<double, double> calc_nonbonded_force_host(
         symmetric,
         disable_water_h_lj,
         host.n_atoms_solute,
+        context.n_charge_types,
+        context.zero_charge_type,
+        context.n_catype_types,
+        context.zero_catype_type,
         host.n_qelscales,
         lambda,
         context.d_q_elscales);

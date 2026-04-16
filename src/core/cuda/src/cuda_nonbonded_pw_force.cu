@@ -23,10 +23,9 @@ void calc_nonbonded_pw_forces_host_v2() {
         false,
         CudaContext::instance().d_p_charge_types,
         CudaContext::instance().d_w_charge_types,
-        CudaContext::instance().d_charge_table_all,
         CudaContext::instance().d_p_catype_types,
         CudaContext::instance().d_w_catype_types,
-        CudaContext::instance().d_catype_table_all, false);
+        false);
     // printf("Nonbonded PW Force (Host) - VdW: %f, Coulomb: %f\n", result.first, result.second);
 
     Context& host = Context::instance();

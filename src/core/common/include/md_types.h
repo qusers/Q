@@ -132,6 +132,11 @@ struct catype_t {
     double bii_1_4;
 };
 
+struct vdw_pair_param_t {
+    double a;
+    double b;
+};
+
 struct topo_t {
     int solvent_type;
     double exclusion_radius;

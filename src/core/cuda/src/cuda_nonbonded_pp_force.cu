@@ -31,10 +31,9 @@ void calc_nonbonded_pp_forces_host_v2() {
         true,  // symmetric
         CudaContext::instance().d_p_charge_types,
         CudaContext::instance().d_p_charge_types,
-        CudaContext::instance().d_charge_table_all,
         CudaContext::instance().d_p_catype_types,
         CudaContext::instance().d_p_catype_types,
-        CudaContext::instance().d_catype_table_all, false);
+        false);
 
     Context& host = Context::instance();
     host.E_nonbond_pp.Uvdw = result.first;
