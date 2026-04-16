@@ -21,10 +21,9 @@ void calc_nonbonded_ww_forces_host_v2() {
         true,
         CudaContext::instance().d_w_charge_types,
         CudaContext::instance().d_w_charge_types,
-        CudaContext::instance().d_charge_table_all,
         CudaContext::instance().d_w_catype_types,
         CudaContext::instance().d_w_catype_types,
-        CudaContext::instance().d_catype_table_all, true);
+        true);
     Context& host = Context::instance();
     host.E_nonbond_ww.Uvdw = result.first;
     host.E_nonbond_ww.Ucoul = result.second;

@@ -1,5 +1,7 @@
 #include "cuda_context.cuh"
 #include "context.h"
+#include "common/include/constants.h"
+#include "common/include/vdw_rules.h"
 
 void CudaContext::init() {
     auto& host = Context::instance();
@@ -220,7 +222,9 @@ void CudaContext::free() {
     cudaFree(d_charges);
     cudaFree(d_p_atoms);
     cudaFree(d_charge_table_all);
+    cudaFree(d_charge_pair_products);
     cudaFree(d_catype_table_all);
+    cudaFree(d_catype_pair_params);
     cudaFree(d_unified_ccharges);
     cudaFree(d_unified_catypes);
     cudaFree(d_ngbrs_14);
@@ -235,10 +239,16 @@ void CudaContext::free() {
     cudaFree(d_q_atoms_list);
 
     d_charge_table_all = nullptr;
+    d_charge_pair_products = nullptr;
     d_catype_table_all = nullptr;
+    d_catype_pair_params = nullptr;
     d_unified_ccharges = nullptr;
     d_unified_catypes = nullptr;
     d_ngbrs_14 = nullptr;
+    n_charge_types = 0;
+    zero_charge_type = -1;
+    n_catype_types = 0;
+    zero_catype_type = -1;
     d_p_charge_types = nullptr;
     d_w_charge_types = nullptr;
     d_q_charge_types = nullptr;
@@ -308,7 +318,7 @@ void CudaContext::initialize_charge_tables_host() {
     std::map<double, int> charge_to_type_host;
     std::vector<ccharge_t> h_charge_table_all;  // h_charge_table_all[charge type] = (code, charge)
 
-    auto add_charge = [&](double charge) {
+    auto add_charge = [&](double charge) -> int {
         if (charge_to_type_host.count(charge) == 0) {
             int sz = h_charge_table_all.size();
             ccharge_t new_ccharge;
@@ -317,6 +327,7 @@ void CudaContext::initialize_charge_tables_host() {
             h_charge_table_all.push_back(new_ccharge);
             charge_to_type_host[charge] = sz;
         }
+        return charge_to_type_host[charge];
     };
 
     for (int i = 0; i < host.n_ccharges; i++) {
@@ -329,6 +340,16 @@ void CudaContext::initialize_charge_tables_host() {
             add_charge(charge);
             charge *= host.lambdas[state];
             add_charge(charge);
+        }
+    }
+
+    zero_charge_type = add_charge(0.0);
+    n_charge_types = static_cast<int>(h_charge_table_all.size());
+
+    std::vector<double> h_charge_pair_products(n_charge_types * n_charge_types);
+    for (int i = 0; i < n_charge_types; i++) {
+        for (int j = 0; j < n_charge_types; j++) {
+            h_charge_pair_products[i * n_charge_types + j] = h_charge_table_all[i].charge * h_charge_table_all[j].charge;
         }
     }
 
@@ -367,6 +388,8 @@ void CudaContext::initialize_charge_tables_host() {
 
     check_cudaMalloc((void**)&d_charge_table_all, sizeof(ccharge_t) * h_charge_table_all.size());
     cudaMemcpy(d_charge_table_all, h_charge_table_all.data(), sizeof(ccharge_t) * h_charge_table_all.size(), cudaMemcpyHostToDevice);
+    check_cudaMalloc((void**)&d_charge_pair_products, sizeof(double) * h_charge_pair_products.size());
+    cudaMemcpy(d_charge_pair_products, h_charge_pair_products.data(), sizeof(double) * h_charge_pair_products.size(), cudaMemcpyHostToDevice);
     check_cudaMalloc((void**)&d_p_charge_types, sizeof(int) * p_charge_types.size());
     cudaMemcpy(d_p_charge_types, p_charge_types.data(), sizeof(int) * p_charge_types.size(), cudaMemcpyHostToDevice);
     check_cudaMalloc((void**)&d_q_charge_types, sizeof(int) * q_charge_types.size());
@@ -381,7 +404,7 @@ void CudaContext::initialize_catype_tables_host() {
     std::vector<catype_t> h_catype_table_all;  // h_catype_table_all[catype code] = catype_t
     catype_to_type_host.clear();
 
-    auto add_catype = [&](catype_t catype) {
+    auto add_catype = [&](catype_t catype) -> int {
         auto key = get_catype_key(catype);
         if (catype_to_type_host.count(key) == 0) {
             int sz = h_catype_table_all.size();
@@ -389,6 +412,7 @@ void CudaContext::initialize_catype_tables_host() {
             h_catype_table_all.push_back(catype);
             catype_to_type_host[key] = sz;
         }
+        return catype_to_type_host[key];
     };
 
     for (int i = 0; i < host.n_catypes; i++) {
@@ -399,6 +423,25 @@ void CudaContext::initialize_catype_tables_host() {
         for (int i = 0; i < host.n_qatoms; i++) {
             const atype_t& qat = host.q_atypes[i + host.n_qatoms * state];
             add_catype(host.q_catypes[qat.code - 1]);
+        }
+    }
+
+    catype_t zero_catype = {};
+    zero_catype_type = add_catype(zero_catype);
+    n_catype_types = static_cast<int>(h_catype_table_all.size());
+
+    std::vector<vdw_pair_param_t> h_catype_pair_params(n_catype_types * n_catype_types);
+    for (int i = 0; i < n_catype_types; i++) {
+        for (int j = 0; j < n_catype_types; j++) {
+            const catype_t& ci = h_catype_table_all[i];
+            const catype_t& cj = h_catype_table_all[j];
+            vdw_pair_param_t pair_param = {};
+            if (host.topo.vdw_rule == VDW_GEOMETRIC) {
+                calc_vdw_geometric(ci.aii_normal, cj.aii_normal, ci.bii_normal, cj.bii_normal, 1.0, &pair_param.a, &pair_param.b);
+            } else {
+                calc_vdw_arithmetic(ci.aii_normal, cj.aii_normal, ci.bii_normal, cj.bii_normal, 1.0, &pair_param.a, &pair_param.b);
+            }
+            h_catype_pair_params[i * n_catype_types + j] = pair_param;
         }
     }
 
@@ -443,6 +486,8 @@ void CudaContext::initialize_catype_tables_host() {
 
     check_cudaMalloc((void**)&d_catype_table_all, sizeof(catype_t) * h_catype_table_all.size());
     cudaMemcpy(d_catype_table_all, h_catype_table_all.data(), sizeof(catype_t) * h_catype_table_all.size(), cudaMemcpyHostToDevice);
+    check_cudaMalloc((void**)&d_catype_pair_params, sizeof(vdw_pair_param_t) * h_catype_pair_params.size());
+    cudaMemcpy(d_catype_pair_params, h_catype_pair_params.data(), sizeof(vdw_pair_param_t) * h_catype_pair_params.size(), cudaMemcpyHostToDevice);
     check_cudaMalloc((void**)&d_p_catype_types, sizeof(int) * p_catype_types.size());
     cudaMemcpy(d_p_catype_types, p_catype_types.data(), sizeof(int) * p_catype_types.size(), cudaMemcpyHostToDevice);
     check_cudaMalloc((void**)&d_q_catype_types, sizeof(int) * q_catype_types.size());

@@ -113,11 +113,17 @@ class CudaContext {
     Other helper arrays
     */
     ccharge_t* d_charge_table_all;  // Device copy of h_charge_table_all
+    double* d_charge_pair_products = nullptr;
     catype_t* d_catype_table_all;   // Device copy of h_catype_table_all
+    vdw_pair_param_t* d_catype_pair_params = nullptr;
     ccharge_t* d_unified_ccharges = nullptr;
     catype_t* d_unified_catypes = nullptr;
     int3* d_ngbrs_14 = nullptr;
     std::map<std::array<double, 4>, int> catype_to_type_host;
+    int n_charge_types = 0;
+    int zero_charge_type = -1;
+    int n_catype_types = 0;
+    int zero_catype_type = -1;
     int* d_p_charge_types;
     int* d_w_charge_types;
     int* d_q_charge_types;  // [0, lambdas * n_qatoms) is the normal q_charge_type, [lambdas * n_qatoms, ... ) is the lambda-scaled q_charge_type]
