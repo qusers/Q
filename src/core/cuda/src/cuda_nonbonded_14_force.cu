@@ -25,6 +25,7 @@ __device__ __forceinline__ int unified_parameter_index(
     }
     return n_atoms + (state - 1) * n_qatoms + qi;
 }
+// todo: lambda only has 2, so we can simplify it and only call once.
 
 __device__ void calculate_nonbonded_14_pair(
     const coord_t& x,
@@ -193,13 +194,6 @@ void calc_nonbonded_14_forces_host() {
     auto& host = Context::instance();
 
     if (host.n_ngbrs14 == 0) return;
-
-    if (host.n_lambdas <= 0) {
-        Nonbonded14EnergyBuckets energies = calc_nonbonded_14_force_state_host(0, 1.0, true);
-        host.E_nonbond_pp.Uvdw += energies.evdw[NONBONDED_14_PP];
-        host.E_nonbond_pp.Ucoul += energies.ecoul[NONBONDED_14_PP];
-        return;
-    }
 
     for (int state = 0; state < host.n_lambdas; state++) {
         const double lambda = host.lambdas[state];
