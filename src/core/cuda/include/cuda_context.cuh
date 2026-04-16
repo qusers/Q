@@ -114,6 +114,9 @@ class CudaContext {
     */
     ccharge_t* d_charge_table_all;  // Device copy of h_charge_table_all
     catype_t* d_catype_table_all;   // Device copy of h_catype_table_all
+    ccharge_t* d_unified_ccharges = nullptr;
+    catype_t* d_unified_catypes = nullptr;
+    int3* d_ngbrs_14 = nullptr;
     std::map<std::array<double, 4>, int> catype_to_type_host;
     int* d_p_charge_types;
     int* d_w_charge_types;
@@ -166,6 +169,7 @@ class CudaContext {
     void initialize_charge_tables_host();
     void initialize_catype_tables_host();
     void initialize_atom_lists_host();
+    void initialize_ngbrs14_host();
 };
 template <typename T>
 void CudaContext::sync_array_to_device(T* dst, const T* src, int count) {

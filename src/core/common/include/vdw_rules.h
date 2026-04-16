@@ -4,11 +4,6 @@
 
 #include <math.h>
 
-// Handle CUDA keywords for non-CUDA compilation
-#ifndef __CUDACC__
-#define __device__
-#define __host__
-#endif
 
 // Geometric rule: A_ij = sqrt(A_i) * sqrt(A_j), B_ij = sqrt(B_i) * sqrt(B_j)
 // Energy: V = A_ij * r^-12 - B_ij * r^-6

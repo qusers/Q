@@ -3,8 +3,11 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <array>
+#include <vector_types.h>
 
 #include "common/include/md_types.h"
+#include "common/include/nonbonded_14_mode.h"
 
 class Context {
    public:
@@ -86,6 +89,9 @@ class Context {
     std::vector<ccharge_t> unified_ccharges;
     std::vector<catype_t> unified_catypes;
     std::vector<int> LJ_matrix;
+
+    std::vector<int3> ngbrs_14;
+
     std::unique_ptr<bool[]> excluded;
     std::unique_ptr<bool[]> heavy;
     std::vector<int> molecules;
