@@ -18,6 +18,7 @@
 
 static void finalize_ngbrs14_host() {
     auto& ctx = Context::instance();
+    auto &LJ_matrix = ctx.LJ_matrix->cpu_data_p;
 
     for (auto& pair : ctx.ngbrs_14) {
         if (pair.x > pair.y) {
@@ -26,14 +27,14 @@ static void finalize_ngbrs14_host() {
     }
 
     ctx.ngbrs_14.erase(
-        std::remove_if(ctx.ngbrs_14.begin(), ctx.ngbrs_14.end(), [&ctx](const int3& pair) {
+        std::remove_if(ctx.ngbrs_14.begin(), ctx.ngbrs_14.end(), [&ctx, &LJ_matrix](const int3& pair) {
             if (pair.x < 0 || pair.y < 0 || pair.x >= ctx.n_atoms_solute || pair.y >= ctx.n_atoms_solute) {
                 return true;
             }
             if (pair.x == pair.y) {
                 return true;
             }
-            return ctx.LJ_matrix[pair.x * ctx.n_atoms_solute + pair.y] != 1;
+            return LJ_matrix[pair.x * ctx.n_atoms_solute + pair.y] != 1;
         }),
         ctx.ngbrs_14.end());
 
@@ -857,7 +858,7 @@ void clean_variables() {
     ctx.heavy.reset();
     ctx.impropers.reset();
     ctx.torsions.reset();
-    ctx.LJ_matrix.clear();
+    ctx.LJ_matrix.reset();
     ctx.molecules.clear();
     ctx.q_angcouples.clear();
     ctx.q_atoms.clear();

@@ -802,6 +802,7 @@ void init_ccharges(const char* filename) {
 
 void init_ngbrs14(const char* filename) {
     auto& ctx = Context::instance();
+    auto &LJ_matrix = ctx.LJ_matrix->cpu_data_p;
     FILE* fp;
 
     char path[1024];
@@ -835,8 +836,8 @@ void init_ngbrs14(const char* filename) {
                 int ix = lineI;
                 int jx = (lineI + i + 1) % lines;
                 // if (ix < 100 && jx < 100) printf("i = %d j = %d\n", ix+1, jx+1);
-                ctx.LJ_matrix[ix * ctx.n_atoms_solute + jx] = 1;
-                ctx.LJ_matrix[jx * ctx.n_atoms_solute + ix] = 1;
+                LJ_matrix[ix * ctx.n_atoms_solute + jx] = 1;
+                LJ_matrix[jx * ctx.n_atoms_solute + ix] = 1;
 
                 ctx.ngbrs_14.push_back({ix, jx, NONBONDED_14_PP}); // the type may is wrong, just set in here
             }
@@ -849,6 +850,7 @@ void init_ngbrs14(const char* filename) {
 
 void init_ngbrs23(const char* filename) {
     auto& ctx = Context::instance();
+    auto &LJ_matrix = ctx.LJ_matrix->cpu_data_p;
     FILE* fp;
 
     char path[1024];
@@ -882,8 +884,8 @@ void init_ngbrs23(const char* filename) {
                 int ix = lineI;
                 int jx = (lineI + i + 1) % lines;
                 // if (ix < 100 && jx < 100) printf("i = %d j = %d\n", ix+1, jx+1);
-                ctx.LJ_matrix[ix * ctx.n_atoms_solute + jx] = 3;
-                ctx.LJ_matrix[jx * ctx.n_atoms_solute + ix] = 3;
+                LJ_matrix[ix * ctx.n_atoms_solute + jx] = 3;
+                LJ_matrix[jx * ctx.n_atoms_solute + ix] = 3;
             }
         }
         lineI++;
@@ -894,6 +896,7 @@ void init_ngbrs23(const char* filename) {
 
 void init_ngbrs14_long(const char* filename) {
     auto& ctx = Context::instance();
+    auto &LJ_matrix = ctx.LJ_matrix->cpu_data_p;
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     if (file.n_lines < 1) {
@@ -906,8 +909,8 @@ void init_ngbrs14_long(const char* filename) {
     for (int i = 0; i < n_ngbrs14_long; i++) {
         int ix = atoi(file.buffer[i + 1][0]) - 1;
         int jx = atoi(file.buffer[i + 1][1]) - 1;
-        ctx.LJ_matrix[ix * ctx.n_atoms_solute + jx] = 1;
-        ctx.LJ_matrix[jx * ctx.n_atoms_solute + ix] = 1;
+        LJ_matrix[ix * ctx.n_atoms_solute + jx] = 1;
+        LJ_matrix[jx * ctx.n_atoms_solute + ix] = 1;
 
 
         int mi_x = std::min(ix, jx);
@@ -921,6 +924,7 @@ void init_ngbrs14_long(const char* filename) {
 
 void init_ngbrs23_long(const char* filename) {
     auto& ctx = Context::instance();
+    auto &LJ_matrix = ctx.LJ_matrix->cpu_data_p;
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     if (file.n_lines < 1) {
@@ -933,8 +937,8 @@ void init_ngbrs23_long(const char* filename) {
     for (int i = 0; i < n_ngbrs23_long; i++) {
         int ix = atoi(file.buffer[i + 1][0]) - 1;
         int jx = atoi(file.buffer[i + 1][1]) - 1;
-        ctx.LJ_matrix[ix * ctx.n_atoms_solute + jx] = 3;
-        ctx.LJ_matrix[jx * ctx.n_atoms_solute + ix] = 3;
+        LJ_matrix[ix * ctx.n_atoms_solute + jx] = 3;
+        LJ_matrix[jx * ctx.n_atoms_solute + ix] = 3;
     }
 
     clean_csv(file);
@@ -942,7 +946,7 @@ void init_ngbrs23_long(const char* filename) {
 
 void init_LJ_matrix() {
     auto& ctx = Context::instance();
-    ctx.LJ_matrix.assign(ctx.n_atoms_solute * ctx.n_atoms_solute, 0);
+    ctx.LJ_matrix = std::make_unique<HostDeviceBuffer<int>>(ctx.n_atoms_solute * ctx.n_atoms_solute, true, ctx.run_gpu);
 }
 
 void init_catypes(const char* filename) {

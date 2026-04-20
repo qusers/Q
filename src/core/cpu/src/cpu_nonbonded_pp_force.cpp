@@ -10,6 +10,7 @@ void calc_nonbonded_pp_forces() {
     auto& ctx = Context::instance();
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
+    auto &LJ_matrix = ctx.LJ_matrix->cpu_data_p;
     bool bond14, bond23;
     double scaling;
     coord_t da;
@@ -23,8 +24,8 @@ void calc_nonbonded_pp_forces() {
         for (int pj = pi + 1; pj < ctx.n_patoms; pj++) {
             i = ctx.p_atoms[pi];
             j = ctx.p_atoms[pj];
-            bond23 = ctx.LJ_matrix[i * ctx.n_atoms_solute + j] == 3;
-            bond14 = ctx.LJ_matrix[i * ctx.n_atoms_solute + j] == 1;
+            bond23 = LJ_matrix[i * ctx.n_atoms_solute + j] == 3;
+            bond14 = LJ_matrix[i * ctx.n_atoms_solute + j] == 1;
 
             if (bond23) continue;
             if (ctx.excluded[i] || ctx.excluded[j]) continue;

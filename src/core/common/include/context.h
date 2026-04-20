@@ -36,12 +36,16 @@ class Context {
 
     md_t md;
 
+    /*
+    */
     std::unique_ptr<HostDeviceBuffer<coord_t>> coords_init;
     std::unique_ptr<HostDeviceBuffer<coord_t>> coords;
     std::unique_ptr<HostDeviceBuffer<vel_t>> velocities;
     std::unique_ptr<HostDeviceBuffer<dvel_t>> dvelocities;
 
 
+    /*
+    */
     int n_angles = 0;
     int n_angles_solute = 0;
     int n_cangles = 0;
@@ -65,6 +69,9 @@ class Context {
     std::unique_ptr<HostDeviceBuffer<cimproper_t>> cimpropers;
 
     
+    /*
+    
+    */
     int n_charges = 0;
     int n_ccharges = 0;
     std::unique_ptr<HostDeviceBuffer<charge_t>> charges;
@@ -73,6 +80,16 @@ class Context {
     int n_catypes = 0;
     std::unique_ptr<HostDeviceBuffer<atype_t>> atypes;
     std::unique_ptr<HostDeviceBuffer<catype_t>> catypes;
+
+
+
+
+
+    /*
+    */
+    std::unique_ptr<HostDeviceBuffer<int>> LJ_matrix;
+
+
     int n_ngbrs23 = 0;
     int n_ngbrs14 = 0;
     int n_excluded = 0;
@@ -83,7 +100,6 @@ class Context {
     std::vector<int> atom_to_qi;
     std::vector<ccharge_t> unified_ccharges;
     std::vector<catype_t> unified_catypes;
-    std::vector<int> LJ_matrix;
 
     std::vector<int3> ngbrs_14;
 

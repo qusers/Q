@@ -10,6 +10,7 @@ void calc_nonbonded_qq_forces() {
     auto& ctx = Context::instance();
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
+    auto &LJ_matrix = ctx.LJ_matrix->cpu_data_p;
     int ai, aj;
     double crg_i, crg_j;
     double elscale, scaling;
@@ -29,8 +30,8 @@ void calc_nonbonded_qq_forces() {
                 crg_i = ctx.unified_ccharge(ai, state).charge;
                 crg_j = ctx.unified_ccharge(aj, state).charge;
 
-                bond23 = ctx.LJ_matrix[ai * ctx.n_atoms_solute + aj] == 3;
-                bond14 = ctx.LJ_matrix[ai * ctx.n_atoms_solute + aj] == 1;
+                bond23 = LJ_matrix[ai * ctx.n_atoms_solute + aj] == 3;
+                bond14 = LJ_matrix[ai * ctx.n_atoms_solute + aj] == 1;
 
                 if (bond23) continue;
                 if (ctx.excluded[ai] || ctx.excluded[aj]) continue;
