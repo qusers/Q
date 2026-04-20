@@ -106,7 +106,7 @@ void calc_restrang_force_host() {
     using namespace CudaRestrangForce;
     CudaContext& ctx = CudaContext::instance();
 
-    auto d_restrangs = ctx.d_restrangs;
+    auto d_restrangs = host.restrangs->gpu_data_p;
     auto d_coords = host.coords->gpu_data_p;
     auto d_lambdas = ctx.d_lambdas;
     auto d_dvelocities = host.dvelocities->gpu_data_p;

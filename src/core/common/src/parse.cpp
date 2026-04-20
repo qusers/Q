@@ -294,7 +294,8 @@ void init_md(const char* filename) {
 
     // [angle_restraints]
     ctx.n_restrangs = atoi(file.buffer[k][0]);
-    ctx.restrangs.resize(ctx.n_restrangs);
+    ctx.restrangs = std::make_unique<HostDeviceBuffer<restrang_t>>(ctx.n_restrangs, true, ctx.run_gpu);
+    auto &restrangs = ctx.restrangs->cpu_data_p;
     printf("reading in %d angle restraints (%s in file)\n", ctx.n_restrangs, file.buffer[k][1]);
     k++;
     for (int i = 0; i < ctx.n_restrangs; i++) {
@@ -307,8 +308,12 @@ void init_md(const char* filename) {
         restrang.ang = strtod(file.buffer[k][4], &eptr);
         restrang.k = strtod(file.buffer[k][5], &eptr);
 
-        ctx.restrangs[i] = restrang;
+        restrangs[i] = restrang;
         k++;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.restrangs->upload();
     }
 
     // [wall_restraints]

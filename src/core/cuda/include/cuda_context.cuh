@@ -41,7 +41,6 @@ class CudaContext {
     /*
     Used in cuda_restrang_force.cu
     */
-    restrang_t* d_restrangs = nullptr;
     E_restraint_t* d_EQ_restraint = nullptr;
     restrdis_t* d_restrdists = nullptr;
 

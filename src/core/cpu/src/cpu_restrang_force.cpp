@@ -9,6 +9,7 @@ void calc_restrang_forces() {
     auto& ctx = Context::instance();
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
+    auto &restrangs = ctx.restrangs->cpu_data_p;
 
     int state, i, j, k;
     coord_t dr, dr2, di, dk;
@@ -16,10 +17,10 @@ void calc_restrang_forces() {
     double dth, dv, ener, f1;
 
     for (int ir = 0; ir < ctx.n_restrangs; ir++) {
-        state = ctx.restrangs[ir].ipsi - 1;
-        i = ctx.restrangs[ir].ai - 1;
-        j = ctx.restrangs[ir].aj - 1;
-        k = ctx.restrangs[ir].ak - 1;
+        state = restrangs[ir].ipsi - 1;
+        i = restrangs[ir].ai - 1;
+        j = restrangs[ir].aj - 1;
+        k = restrangs[ir].ak - 1;
 
         dr.x = coords[i].x - coords[j].x;
         dr.y = coords[i].y - coords[j].y;
@@ -29,7 +30,7 @@ void calc_restrang_forces() {
         dr2.y = coords[k].y - coords[j].y;
         dr2.z = coords[k].z - coords[j].z;
 
-        if (ctx.restrangs[ir].ipsi != 0) {
+        if (restrangs[ir].ipsi != 0) {
             lambda = ctx.lambdas[state];
         } else {
             lambda = 1;
@@ -52,10 +53,10 @@ void calc_restrang_forces() {
         }
 
         th = acos(cos_th);
-        dth = th - to_radians(ctx.restrangs[ir].ang);
+        dth = th - to_radians(restrangs[ir].ang);
 
-        ener = .5 * ctx.restrangs[ir].k * pow(dth, 2);
-        dv = lambda * ctx.restrangs[ir].k * dth;
+        ener = .5 * restrangs[ir].k * pow(dth, 2);
+        dv = lambda * restrangs[ir].k * dth;
 
         f1 = sin(th);
         if (fabs(f1) < 1E-12) {
@@ -81,7 +82,7 @@ void calc_restrang_forces() {
         dvelocities[j].y -= dv * (di.y + dk.y);
         dvelocities[j].z -= dv * (di.z + dk.z);
 
-        if (ctx.restrangs[ir].ipsi == 0) {
+        if (restrangs[ir].ipsi == 0) {
             for (int lambda_idx = 0; lambda_idx < ctx.n_lambdas; lambda_idx++) {
                 ctx.EQ_restraint[lambda_idx].Urestr += ener;
             }
