@@ -275,7 +275,8 @@ void init_md(const char* filename) {
 
     // [distance_restraints]
     ctx.n_restrdists = atoi(file.buffer[k][0]);
-    ctx.restrdists.resize(ctx.n_restrdists);
+    ctx.restrdists = std::make_unique<HostDeviceBuffer<restrdis_t>>(ctx.n_restrdists, true, ctx.run_gpu);
+    auto &restrdists = ctx.restrdists->cpu_data_p;
     printf("reading in %d distance restraints (%s in file)\n", ctx.n_restrdists, file.buffer[k][1]);
     k++;
     for (int i = 0; i < ctx.n_restrdists; i++) {
@@ -288,8 +289,12 @@ void init_md(const char* filename) {
         restrdist.k = strtod(file.buffer[k][4], &eptr);
         restrdist.ipsi = atoi(file.buffer[k][5]);
 
-        ctx.restrdists[i] = restrdist;
+        restrdists[i] = restrdist;
         k++;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.restrdists->upload();
     }
 
     // [angle_restraints]

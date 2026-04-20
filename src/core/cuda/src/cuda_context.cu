@@ -21,7 +21,6 @@ void CudaContext::init() {
     check_cudaMalloc((void**)&d_shell, sizeof(bool) * host.n_atoms);
 
     check_cudaMalloc((void**)&d_EQ_restraint, sizeof(E_restraint_t) * host.n_lambdas);
-    check_cudaMalloc((void**)&d_restrdists, sizeof(restrdis_t) * host.n_restrdists);
 
     check_cudaMalloc((void**)&d_restrseqs, sizeof(restrseq_t) * host.n_restrseqs);
     check_cudaMalloc((void**)&d_heavy, sizeof(bool) * host.n_atoms);
@@ -63,7 +62,6 @@ void CudaContext::sync_all_to_device() {
     sync_array_to_device<bool>(d_shell, host.shell.get(), host.n_atoms);
 
     sync_array_to_device<E_restraint_t>(d_EQ_restraint, host.EQ_restraint.data(), host.n_lambdas);
-    sync_array_to_device<restrdis_t>(d_restrdists, host.restrdists.data(), host.n_restrdists);
 
     sync_array_to_device<restrseq_t>(d_restrseqs, host.restrseqs.data(), host.n_restrseqs);
     sync_array_to_device<bool>(d_heavy, host.heavy.get(), host.n_atoms);
@@ -96,7 +94,6 @@ void CudaContext::sync_all_to_host() {
     sync_array_to_host<bool>(host.shell.get(), d_shell, host.n_atoms);
 
     sync_array_to_host<E_restraint_t>(host.EQ_restraint.data(), d_EQ_restraint, host.n_lambdas);
-    sync_array_to_host<restrdis_t>(host.restrdists.data(), d_restrdists, host.n_restrdists);
 
     sync_array_to_host<restrseq_t>(host.restrseqs.data(), d_restrseqs, host.n_restrseqs);
     sync_array_to_host<bool>(host.heavy.get(), d_heavy, host.n_atoms);
@@ -123,7 +120,6 @@ void CudaContext::free() {
     cudaFree(d_shell);
 
     cudaFree(d_EQ_restraint);
-    cudaFree(d_restrdists);
 
     cudaFree(d_restrseqs);
     cudaFree(d_heavy);

@@ -78,7 +78,7 @@ void calc_restrdis_forces_host() {
     if (host.n_restrdists == 0) return;
     using namespace CudaRestrdisForce;
     CudaContext& ctx = CudaContext::instance();
-    auto d_restrdists = ctx.d_restrdists;
+    auto d_restrdists = host.restrdists->gpu_data_p;
     auto d_coords = host.coords->gpu_data_p;
     auto d_lambdas = ctx.d_lambdas;
     auto d_dvelocities = host.dvelocities->gpu_data_p;

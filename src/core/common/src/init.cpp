@@ -889,6 +889,7 @@ void clean_variables() {
     ctx.nsort.clear();
     ctx.restrseqs.clear();
     ctx.restrangs.reset();
+    ctx.restrdists.reset();
     ctx.restrspos.reset();
     ctx.shell.reset();
     ctx.velocities.reset();
