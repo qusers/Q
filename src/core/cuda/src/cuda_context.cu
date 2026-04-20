@@ -7,7 +7,6 @@ void CudaContext::init() {
     auto& host = Context::instance();
 
     check_cudaMalloc((void**)&d_q_elscales, sizeof(q_elscale_t) * host.n_qelscales);
-    check_cudaMalloc((void**)&d_q_atypes, sizeof(atype_t) * host.n_qatoms * host.n_lambdas);
     check_cudaMalloc((void**)&d_EQ_nonbond_qq, sizeof(E_nonbonded_t) * host.n_lambdas);
     check_cudaMalloc((void**)&d_lambdas, sizeof(double) * host.n_lambdas);
 
@@ -42,7 +41,6 @@ void CudaContext::sync_all_to_device() {
     host.excluded->upload();
 
     sync_array_to_device<q_elscale_t>(d_q_elscales, host.q_elscales.data(), host.n_qelscales);
-    sync_array_to_device<atype_t>(d_q_atypes, host.q_atypes.data(), host.n_qatoms * host.n_lambdas);
     sync_array_to_device<E_nonbonded_t>(d_EQ_nonbond_qq, host.EQ_nonbond_qq.data(), host.n_lambdas);
     sync_array_to_device<double>(d_lambdas, host.lambdas.data(), host.n_lambdas);
     sync_array_to_device<shell_t>(d_wshells, host.wshells.data(), host.n_shells);
@@ -69,7 +67,6 @@ void CudaContext::sync_all_to_host() {
     host.excluded->download();
 
     sync_array_to_host<q_elscale_t>(host.q_elscales.data(), d_q_elscales, host.n_qelscales);
-    sync_array_to_host<atype_t>(host.q_atypes.data(), d_q_atypes, host.n_qatoms * host.n_lambdas);
     sync_array_to_host<E_nonbonded_t>(host.EQ_nonbond_qq.data(), d_EQ_nonbond_qq, host.n_lambdas);
     sync_array_to_host<double>(host.lambdas.data(), d_lambdas, host.n_lambdas);
     sync_array_to_host<shell_t>(host.wshells.data(), d_wshells, host.n_shells);
@@ -83,7 +80,6 @@ void CudaContext::sync_all_to_host() {
 
 void CudaContext::free() {
     cudaFree(d_q_elscales);
-    cudaFree(d_q_atypes);
     cudaFree(d_EQ_nonbond_qq);
     cudaFree(d_lambdas);
 
