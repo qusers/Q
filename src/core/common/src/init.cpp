@@ -920,7 +920,7 @@ void clean_variables() {
     ctx.q_charges.clear();
     ctx.q_angles.clear();
     ctx.q_bonds.clear();
-    ctx.q_elscales.clear();
+    ctx.q_elscales.reset();
     ctx.q_exclpairs.clear();
     ctx.q_impropers.clear();
     ctx.q_shakes.clear();

@@ -176,7 +176,7 @@ class Context {
     std::vector<atype_t> q_atypes;
     std::vector<bond_t> q_bonds;
     std::vector<ccharge_t> q_charges;
-    std::vector<q_elscale_t> q_elscales;
+    std::unique_ptr<HostDeviceBuffer<q_elscale_t>> q_elscales;
     std::vector<q_exclpair_t> q_exclpairs;
     std::vector<q_improper_t> q_impropers;
     std::vector<q_shake_t> q_shakes;

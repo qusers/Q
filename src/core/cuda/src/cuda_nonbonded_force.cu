@@ -337,7 +337,7 @@ std::pair<double, double> calc_nonbonded_force_host(
         context.zero_catype_type,
         host.n_qelscales,
         lambda,
-        context.d_q_elscales);
+        host.q_elscales->gpu_data_p);
 
     cudaDeviceSynchronize();
 

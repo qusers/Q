@@ -12,6 +12,7 @@ void calc_nonbonded_qq_forces() {
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
     auto &LJ_matrix = ctx.LJ_matrix->cpu_data_p;
     auto *excluded = ctx.excluded->cpu_data_p;
+    auto *q_elscales = ctx.q_elscales->cpu_data_p;
     int ai, aj;
     double crg_i, crg_j;
     double elscale, scaling;
@@ -41,8 +42,8 @@ void calc_nonbonded_qq_forces() {
 
                 elscale = 1;
                 for (int k = 0; k < ctx.n_qelscales; k++) {
-                    if (ctx.q_elscales[k + ctx.n_qelscales * state].qi == qi + 1 && ctx.q_elscales[k + ctx.n_qelscales * state].qj == qj + 1) {
-                        elscale = ctx.q_elscales[k + ctx.n_qelscales * state].mu;
+                    if (q_elscales[k + ctx.n_qelscales * state].qi == qi + 1 && q_elscales[k + ctx.n_qelscales * state].qj == qj + 1) {
+                        elscale = q_elscales[k + ctx.n_qelscales * state].mu;
                     }
                 }
 

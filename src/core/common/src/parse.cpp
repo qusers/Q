@@ -1490,20 +1490,27 @@ void init_qelscales(const char* filename) {
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     if (file.n_lines < 1) {
+        ctx.n_qelscales = 0;
+        ctx.q_elscales = std::make_unique<HostDeviceBuffer<q_elscale_t>>(0, true, ctx.run_gpu);
         clean_csv(file);
         return;
     }
 
     ctx.n_qelscales = atoi(file.buffer[0][0]) / ctx.n_lambdas;
-    ctx.q_elscales.resize(ctx.n_qelscales * ctx.n_lambdas);
+    ctx.q_elscales = std::make_unique<HostDeviceBuffer<q_elscale_t>>(ctx.n_qelscales * ctx.n_lambdas, true, ctx.run_gpu);
+    auto *q_elscales = ctx.q_elscales->cpu_data_p;
 
     for (int i = 0; i < ctx.n_qelscales; i++) {
         for (int j = 0; j < ctx.n_lambdas; j++) {
             char* eptr;
-            ctx.q_elscales[i + j * ctx.n_qelscales].qi = atoi(file.buffer[i + j * ctx.n_qelscales + 1][0]);
-            ctx.q_elscales[i + j * ctx.n_qelscales].qj = atoi(file.buffer[i + j * ctx.n_qelscales + 1][1]);
-            ctx.q_elscales[i + j * ctx.n_qelscales].mu = strtod(file.buffer[i + j * ctx.n_qelscales + 1][2], &eptr);
+            q_elscales[i + j * ctx.n_qelscales].qi = atoi(file.buffer[i + j * ctx.n_qelscales + 1][0]);
+            q_elscales[i + j * ctx.n_qelscales].qj = atoi(file.buffer[i + j * ctx.n_qelscales + 1][1]);
+            q_elscales[i + j * ctx.n_qelscales].mu = strtod(file.buffer[i + j * ctx.n_qelscales + 1][2], &eptr);
         }
+    }
+
+    if (ctx.run_gpu) {
+        ctx.q_elscales->upload();
     }
 
     clean_csv(file);
