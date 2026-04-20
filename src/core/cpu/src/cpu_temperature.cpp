@@ -14,6 +14,7 @@ void calc_temperature() {
     auto &atypes = ctx.atypes->cpu_data_p;
     auto &catypes = ctx.catypes->cpu_data_p;
     auto &velocities = ctx.velocities->cpu_data_p;
+    auto *excluded = ctx.excluded->cpu_data_p;
     printf("Ndegf = %f, Ndegfree = %f, n_excluded = %d, Ndegfree_solvent = %f, Ndegfree_solute = %f\n",
            ctx.Ndegf, ctx.Ndegfree, ctx.n_excluded, ctx.Ndegfree_solvent, ctx.Ndegfree_solute);
     ctx.Temp = 0;
@@ -29,7 +30,7 @@ void calc_temperature() {
         mass_i = catypes[atypes[i].code - 1].m;
         ener = .5 * mass_i * (pow(velocities[i].x, 2) + pow(velocities[i].y, 2) + pow(velocities[i].z, 2));
         Temp_solute += ener;
-        if (!ctx.excluded[i]) {
+        if (!excluded[i]) {
             Tfree_solute += ener;
         } else {
             Texcl_solute += ener;
@@ -43,7 +44,7 @@ void calc_temperature() {
         mass_i = catypes[atypes[i].code - 1].m;
         ener = .5 * mass_i * (pow(velocities[i].x, 2) + pow(velocities[i].y, 2) + pow(velocities[i].z, 2));
         Temp_solvent += ener;
-        if (!ctx.excluded[i]) {
+        if (!excluded[i]) {
             Tfree_solvent += ener;
         } else {
             Texcl_solvent += ener;

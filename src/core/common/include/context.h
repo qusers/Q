@@ -36,6 +36,7 @@ class Context {
     md_t md;
 
     /*
+    
     */
     std::unique_ptr<HostDeviceBuffer<coord_t>> coords;
     std::unique_ptr<HostDeviceBuffer<vel_t>> velocities;
@@ -96,12 +97,13 @@ class Context {
     std::unique_ptr<HostDeviceBuffer<bool>> heavy;
     std::unique_ptr<HostDeviceBuffer<coord_t>> coords_init;
 
+    std::unique_ptr<HostDeviceBuffer<bool>> excluded;
 
 
     /*
+    Pair
     */
     std::unique_ptr<HostDeviceBuffer<int>> LJ_matrix;
-
 
     int n_ngbrs23 = 0;
     int n_ngbrs14 = 0;
@@ -116,7 +118,6 @@ class Context {
 
     std::vector<int3> ngbrs_14;
 
-    std::unique_ptr<bool[]> excluded;
     std::vector<int> molecules;
     std::vector<double> winv;
     std::vector<cgrp_t> charge_groups;

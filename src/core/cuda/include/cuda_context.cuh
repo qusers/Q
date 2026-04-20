@@ -23,7 +23,6 @@ class CudaContext {
     /*
     Used in cuda_nonbonded_qq_force.cu
     */
-    bool* d_excluded = nullptr;
     q_elscale_t* d_q_elscales = nullptr;
     atype_t* d_q_atypes = nullptr;
     E_nonbonded_t* d_EQ_nonbond_qq = nullptr;

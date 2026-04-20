@@ -58,11 +58,10 @@ void calc_temperature_host() {
     cudaMemcpy(d_Tfree_solvent, &h_Tfree_solvent, sizeof(double), cudaMemcpyHostToDevice);
     cudaMemcpy(d_Texcl_solvent, &h_Texcl_solvent, sizeof(double), cudaMemcpyHostToDevice);
 
-    CudaContext& ctx = CudaContext::instance();
     atype_t* d_atypes = host.atypes->gpu_data_p;
     catype_t* d_catypes = host.catypes->gpu_data_p;
     vel_t* d_velocities = host.velocities->gpu_data_p;
-    bool* d_excluded = ctx.d_excluded;
+    bool* d_excluded = host.excluded->gpu_data_p;
 
     int blockSize = 256;
     int numBlocks = (host.n_atoms + blockSize - 1) / blockSize;

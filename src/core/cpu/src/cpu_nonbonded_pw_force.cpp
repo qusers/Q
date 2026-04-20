@@ -10,6 +10,7 @@ void calc_nonbonded_pw_forces() {
     auto& ctx = Context::instance();
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
+    auto *excluded = ctx.excluded->cpu_data_p;
     if (ctx.n_waters == 0 || ctx.n_patoms == 0) {
         return;
     }
@@ -17,7 +18,7 @@ void calc_nonbonded_pw_forces() {
     for (int pi = 0; pi < ctx.n_patoms; ++pi) {
         const int atom_i = ctx.p_atoms[pi];
         for (int atom_j = ctx.n_atoms_solute; atom_j < ctx.n_atoms; ++atom_j) {
-            if (ctx.excluded[atom_i] || ctx.excluded[atom_j]) {
+            if (excluded[atom_i] || excluded[atom_j]) {
                 continue;
             }
 

@@ -9,6 +9,7 @@ void calc_nonbonded_qw_forces() {
     auto& ctx = Context::instance();
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
+    auto *excluded = ctx.excluded->cpu_data_p;
     int i;
     coord_t dO, dH1, dH2;
     double r2O, rH1, rH2, r6O, rO, r2H1, r2H2;
@@ -27,7 +28,7 @@ void calc_nonbonded_qw_forces() {
     for (int j = ctx.n_atoms_solute; j < ctx.n_atoms; j += 3) {
         for (int qi = 0; qi < ctx.n_qatoms; qi++) {
             i = ctx.q_atoms[qi];
-            if (ctx.excluded[i] || ctx.excluded[j]) continue;
+            if (excluded[i] || excluded[j]) continue;
             dO.x = coords[j].x - coords[i].x;
             dO.y = coords[j].y - coords[i].y;
             dO.z = coords[j].z - coords[i].z;

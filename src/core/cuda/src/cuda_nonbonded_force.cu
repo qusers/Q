@@ -320,7 +320,7 @@ std::pair<double, double> calc_nonbonded_force_host(
         y_atypes_types,
         context.d_catype_pair_params,
         host.topo,
-        context.d_excluded,
+        host.excluded->gpu_data_p,
         host.LJ_matrix->gpu_data_p,
         x_idx_list,
         y_idx_list,

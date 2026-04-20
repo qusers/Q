@@ -146,6 +146,7 @@ void exclude_qatom_definitions() {
 
 void exclude_all_atoms_excluded_definitions() {
     auto& ctx = Context::instance();
+    auto *excluded = ctx.excluded->cpu_data_p;
     int n_excl;
     int ai = 0, bi = 0, ii = 0, ti = 0;
     auto &impropers = ctx.impropers->cpu_data_p;
@@ -182,7 +183,7 @@ void exclude_all_atoms_excluded_definitions() {
 
     n_excl = 0;
     for (int i = 0; i < ctx.n_impropers; i++) {
-        if (ctx.excluded[impropers[i].ai - 1] && ctx.excluded[impropers[i].aj - 1] && ctx.excluded[impropers[i].ak - 1] && ctx.excluded[impropers[i].al - 1]) {
+        if (excluded[impropers[i].ai - 1] && excluded[impropers[i].aj - 1] && excluded[impropers[i].ak - 1] && excluded[impropers[i].al - 1]) {
             n_excl++;
         } else {
             impropers[ii] = impropers[i];
@@ -194,7 +195,7 @@ void exclude_all_atoms_excluded_definitions() {
 
     n_excl = 0;
     for (int i = 0; i < ctx.n_torsions; i++) {
-        if (ctx.excluded[torsions[i].ai - 1] && ctx.excluded[torsions[i].aj - 1] && ctx.excluded[torsions[i].ak - 1] && ctx.excluded[torsions[i].al - 1]) {
+        if (excluded[torsions[i].ai - 1] && excluded[torsions[i].aj - 1] && excluded[torsions[i].ak - 1] && excluded[torsions[i].al - 1]) {
             n_excl++;
         } else {
             torsions[ti] = torsions[i];
@@ -387,6 +388,7 @@ void init_pshells() {
     auto &atypes = ctx.atypes->cpu_data_p;
     auto &catypes = ctx.catypes->cpu_data_p;
     auto &coords_init = ctx.coords_init->cpu_data_p;
+    auto *excluded = ctx.excluded->cpu_data_p;
     double mass, r2, rin2;
 
     ctx.heavy = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
@@ -409,7 +411,7 @@ void init_pshells() {
             n_heavy++;
         }
 
-        if (heavy[i] && !ctx.excluded[i] && i < ctx.n_atoms_solute) {
+        if (heavy[i] && !excluded[i] && i < ctx.n_atoms_solute) {
             r2 = pow(coords_init[i].x - ctx.topo.solute_center.x, 2) + pow(coords_init[i].y - ctx.topo.solute_center.y, 2) + pow(coords_init[i].z - ctx.topo.solute_center.z, 2);
             if (r2 > rin2) {
                 ctx.shell[i] = true;
@@ -451,6 +453,7 @@ static int mark_heavy_atoms(Context& ctx) {
 void init_pshells_with_switch_atoms() {
     auto& ctx = Context::instance();
     auto &coords_init = ctx.coords_init->cpu_data_p;
+    auto *excluded = ctx.excluded->cpu_data_p;
     bool *heavy = nullptr;
     double r2, rin2;
 
@@ -469,7 +472,7 @@ void init_pshells_with_switch_atoms() {
     for (int grp = 0; grp < ctx.n_cgrps_solute; grp++) {
         cgrp_t cgrp = ctx.charge_groups[grp];
         int i = cgrp.iswitch - 1;
-        if (heavy[i] && !ctx.excluded[i] && i < ctx.n_atoms_solute) {
+        if (heavy[i] && !excluded[i] && i < ctx.n_atoms_solute) {
             r2 = pow(coords_init[i].x - ctx.topo.solute_center.x, 2) + pow(coords_init[i].y - ctx.topo.solute_center.y, 2) + pow(coords_init[i].z - ctx.topo.solute_center.z, 2);
             bool in_shell = r2 > rin2;
             for (int j = 0; j < cgrp.n_atoms; j++) {
@@ -493,6 +496,7 @@ void init_pshells_with_switch_atoms() {
 void init_pshells_with_centroids() {
     auto& ctx = Context::instance();
     auto &coords_init = ctx.coords_init->cpu_data_p;
+    auto *excluded = ctx.excluded->cpu_data_p;
     bool *heavy = nullptr;
     double r2, rin2;
 
@@ -511,7 +515,7 @@ void init_pshells_with_centroids() {
     for (int grp = 0; grp < ctx.n_cgrps_solute; grp++) {
         cgrp_t cgrp = ctx.charge_groups[grp];
         int i = cgrp.iswitch - 1;
-        if (heavy[i] && !ctx.excluded[i] && i < ctx.n_atoms_solute) {
+        if (heavy[i] && !excluded[i] && i < ctx.n_atoms_solute) {
             // Compute centroid of charge group
             double cx = 0, cy = 0, cz = 0;
             for (int j = 0; j < cgrp.n_atoms; j++) {
@@ -569,6 +573,7 @@ void init_restrseqs() {
 void init_shake() {
     auto& ctx = Context::instance();
     auto *heavy = ctx.heavy->cpu_data_p;
+    auto *excluded = ctx.excluded->cpu_data_p;
     int ai, aj;
     int mol = 0;
     int shake;
@@ -593,8 +598,8 @@ void init_shake() {
             ctx.mol_n_shakes[mol]++;
             ctx.n_shake_constraints++;
 
-            if (ctx.excluded[ai]) excl_shake += 0.5;
-            if (ctx.excluded[aj]) excl_shake += 0.5;
+            if (excluded[ai]) excl_shake += 0.5;
+            if (excluded[aj]) excl_shake += 0.5;
         }
     }
 

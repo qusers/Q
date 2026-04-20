@@ -168,7 +168,7 @@ static Nonbonded14EnergyBuckets calc_nonbonded_14_force_state_host(
         n_ngbrs_14,
         context.d_ngbrs_14,
         host.topo,
-        context.d_excluded,
+        host.excluded->gpu_data_p,
         d_atom_to_qi,
         context.d_unified_ccharges,
         context.d_unified_catypes,

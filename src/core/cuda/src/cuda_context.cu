@@ -11,7 +11,6 @@ void CudaContext::init() {
     check_cudaMalloc((void**)&d_winv, sizeof(double) * host.n_atoms);
     check_cudaMalloc((void**)&d_xcoords, sizeof(coord_t) * host.n_atoms);
 
-    check_cudaMalloc((void**)&d_excluded, sizeof(bool) * host.n_atoms);
     check_cudaMalloc((void**)&d_q_elscales, sizeof(q_elscale_t) * host.n_qelscales);
     check_cudaMalloc((void**)&d_q_atypes, sizeof(atype_t) * host.n_qatoms * host.n_lambdas);
     check_cudaMalloc((void**)&d_EQ_nonbond_qq, sizeof(E_nonbonded_t) * host.n_lambdas);
@@ -41,13 +40,13 @@ void CudaContext::sync_all_to_device() {
     host.velocities->upload();
     host.LJ_matrix->upload();
     host.heavy->upload();
+    host.excluded->upload();
 
     sync_array_to_device<int>(d_mol_n_shakes, host.mol_n_shakes.data(), host.n_molecules);
     sync_array_to_device<shake_bond_t>(d_shake_bonds, host.shake_bonds.data(), host.n_shake_constraints);
     sync_array_to_device<double>(d_winv, host.winv.data(), host.n_atoms);
     sync_array_to_device<coord_t>(d_xcoords, host.xcoords.data(), host.n_atoms);
 
-    sync_array_to_device<bool>(d_excluded, host.excluded.get(), host.n_atoms);
     sync_array_to_device<q_elscale_t>(d_q_elscales, host.q_elscales.data(), host.n_qelscales);
     sync_array_to_device<atype_t>(d_q_atypes, host.q_atypes.data(), host.n_qatoms * host.n_lambdas);
     sync_array_to_device<E_nonbonded_t>(d_EQ_nonbond_qq, host.EQ_nonbond_qq.data(), host.n_lambdas);
@@ -69,13 +68,13 @@ void CudaContext::sync_all_to_host() {
     host.dvelocities->download();
     host.velocities->download();
     host.LJ_matrix->download();
+    host.excluded->download();
 
     sync_array_to_host<int>(host.mol_n_shakes.data(), d_mol_n_shakes, host.n_molecules);
     sync_array_to_host<shake_bond_t>(host.shake_bonds.data(), d_shake_bonds, host.n_shake_constraints);
     sync_array_to_host<double>(host.winv.data(), d_winv, host.n_atoms);
     sync_array_to_host<coord_t>(host.xcoords.data(), d_xcoords, host.n_atoms);
 
-    sync_array_to_host<bool>(host.excluded.get(), d_excluded, host.n_atoms);
     sync_array_to_host<q_elscale_t>(host.q_elscales.data(), d_q_elscales, host.n_qelscales);
     sync_array_to_host<atype_t>(host.q_atypes.data(), d_q_atypes, host.n_qatoms * host.n_lambdas);
     sync_array_to_host<E_nonbonded_t>(host.EQ_nonbond_qq.data(), d_EQ_nonbond_qq, host.n_lambdas);
@@ -95,7 +94,6 @@ void CudaContext::free() {
     cudaFree(d_winv);
     cudaFree(d_xcoords);
 
-    cudaFree(d_excluded);
     cudaFree(d_q_elscales);
     cudaFree(d_q_atypes);
     cudaFree(d_EQ_nonbond_qq);
@@ -154,11 +152,12 @@ void CudaContext::reset_energies() {
 
 void CudaContext::initialize_atom_lists_host() {
     auto& host = Context::instance();
+    auto *excluded = host.excluded->cpu_data_p;
 
     h_p_atoms_list.clear();
     for (int i = 0; i < host.n_patoms; i++) {
         int id = host.p_atoms[i];
-        if (!host.excluded[id]) {
+        if (!excluded[id]) {
             h_p_atoms_list.push_back(id);
         }
     }
@@ -166,7 +165,7 @@ void CudaContext::initialize_atom_lists_host() {
     h_w_atoms_list.clear();
     for (int i = host.n_atoms_solute; i < host.n_atoms; i++) {
         int id = i;
-        if (!host.excluded[id]) {
+        if (!excluded[id]) {
             h_w_atoms_list.push_back(id);
         }
     }
@@ -175,7 +174,7 @@ void CudaContext::initialize_atom_lists_host() {
     h_q_atoms_list.clear();
     for (int i = 0; i < host.n_qatoms; i++) {
         int id = host.q_atoms[i];
-        if (!host.excluded[id]) {
+        if (!excluded[id]) {
             h_q_atoms_list.push_back(id);
         }
     }
@@ -199,6 +198,7 @@ void CudaContext::initialize_ngbrs14_host() {
 
 void CudaContext::initialize_charge_tables_host() {
     auto& host = Context::instance();
+    auto *excluded = host.excluded->cpu_data_p;
     auto &charges = host.charges->cpu_data_p;
     auto &ccharges = host.ccharges->cpu_data_p;
 
@@ -252,7 +252,7 @@ void CudaContext::initialize_charge_tables_host() {
     std::map<int, int> q_idx;
     for (int i = 0; i < host.n_qatoms; i++) {
         int id = host.q_atoms[i];
-        if (!host.excluded[id]) {
+        if (!excluded[id]) {
             q_idx[id] = i;
         }
     }
@@ -287,6 +287,7 @@ void CudaContext::initialize_charge_tables_host() {
 
 void CudaContext::initialize_catype_tables_host() {
     auto& host = Context::instance();
+    auto *excluded = host.excluded->cpu_data_p;
     auto &atypes = host.atypes->cpu_data_p;
     auto &catypes = host.catypes->cpu_data_p;
 
@@ -347,7 +348,7 @@ void CudaContext::initialize_catype_tables_host() {
     std::map<int, int> q_idx;
     for (int i = 0; i < host.n_qatoms; i++) {
         int id = host.q_atoms[i];
-        if (!host.excluded[id]) {
+        if (!excluded[id]) {
             q_idx[id] = i;
         }
     }

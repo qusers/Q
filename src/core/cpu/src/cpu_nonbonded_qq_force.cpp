@@ -11,6 +11,7 @@ void calc_nonbonded_qq_forces() {
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
     auto &LJ_matrix = ctx.LJ_matrix->cpu_data_p;
+    auto *excluded = ctx.excluded->cpu_data_p;
     int ai, aj;
     double crg_i, crg_j;
     double elscale, scaling;
@@ -34,7 +35,7 @@ void calc_nonbonded_qq_forces() {
                 bond14 = LJ_matrix[ai * ctx.n_atoms_solute + aj] == 1;
 
                 if (bond23) continue;
-                if (ctx.excluded[ai] || ctx.excluded[aj]) continue;
+                if (excluded[ai] || excluded[aj]) continue;
 
                 scaling = bond14 ? ctx.topo.el14_scale : 1;
 

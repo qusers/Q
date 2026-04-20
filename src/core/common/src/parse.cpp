@@ -575,9 +575,10 @@ void init_cangles(const char* filename) {
 
 void init_excluded(const char* filename) {
     auto& ctx = Context::instance();
-    ctx.excluded = std::make_unique<bool[]>(ctx.n_atoms);
+    ctx.excluded = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
+    auto *excluded = ctx.excluded->cpu_data_p;
     for (int i = 0; i < ctx.n_atoms; ++i) {
-        ctx.excluded[i] = false;
+        excluded[i] = false;
     }
     ctx.n_excluded = 0;
 
@@ -611,8 +612,12 @@ void init_excluded(const char* filename) {
     ctx.n_excluded = 0;
     for (int i = 0; i < ctx.n_atoms && i < read_len; i++) {
         bool excl = (line[i] == '1');
-        ctx.excluded[i] = excl;
+        excluded[i] = excl;
         if (excl) ctx.n_excluded++;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.excluded->upload();
     }
 
     printf("Number of excluded atoms: %d\n", ctx.n_excluded);
