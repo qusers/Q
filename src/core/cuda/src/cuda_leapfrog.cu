@@ -51,9 +51,9 @@ void calc_leapfrog_host() {
     auto& ctx = CudaContext::instance();
     auto d_atypes = host.atypes->gpu_data_p;
     auto d_catypes = host.catypes->gpu_data_p;
-    auto d_velocities = ctx.d_velocities;
-    auto d_dvelocities = ctx.d_dvelocities;
-    auto d_coords = ctx.d_coords;
+    auto d_velocities = host.velocities->gpu_data_p;
+    auto d_dvelocities = host.dvelocities->gpu_data_p;
+    auto d_coords = host.coords->gpu_data_p;
     auto d_xcoords = ctx.d_xcoords;
 
     int blockSize = 256;
@@ -72,9 +72,9 @@ void calc_leapfrog_host() {
         host.dt);
     check_cuda(cudaDeviceSynchronize());
 
-    check_cuda(cudaMemcpy(host.velocities.data(), d_velocities, sizeof(vel_t) * host.n_atoms, cudaMemcpyDeviceToHost));
-    check_cuda(cudaMemcpy(host.dvelocities.data(), d_dvelocities, sizeof(dvel_t) * host.n_atoms, cudaMemcpyDeviceToHost));
-    check_cuda(cudaMemcpy(host.coords.data(), d_coords, sizeof(coord_t) * host.n_atoms, cudaMemcpyDeviceToHost));
+    host.velocities->download();
+    host.dvelocities->download();
+    host.coords->download();
     check_cuda(cudaMemcpy(host.xcoords.data(), d_xcoords, sizeof(coord_t) * host.n_atoms, cudaMemcpyDeviceToHost));
 
     // shake
@@ -82,10 +82,12 @@ void calc_leapfrog_host() {
     printf("n_shake_constraints: %d\n", host.n_shake_constraints);
     if (host.n_shake_constraints > 0) {
         calc_shake_constraints_host();
+        auto &velocities = host.velocities->cpu_data_p;
+        auto &coords = host.coords->cpu_data_p;
         for (int i = 0; i < host.n_atoms; i++) {
-            host.velocities[i].x = (host.coords[i].x - host.xcoords[i].x) / host.dt;
-            host.velocities[i].y = (host.coords[i].y - host.xcoords[i].y) / host.dt;
-            host.velocities[i].z = (host.coords[i].z - host.xcoords[i].z) / host.dt;
+            velocities[i].x = (coords[i].x - host.xcoords[i].x) / host.dt;
+            velocities[i].y = (coords[i].y - host.xcoords[i].y) / host.dt;
+            velocities[i].z = (coords[i].z - host.xcoords[i].z) / host.dt;
         }
     }
 }

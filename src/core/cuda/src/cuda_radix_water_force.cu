@@ -72,8 +72,8 @@ void calc_radix_water_forces_host() {
     CudaContext& ctx = CudaContext::instance();
     // ctx.sync_all_to_device();
 
-    auto d_coords = ctx.d_coords;
-    auto d_dvelocities = ctx.d_dvelocities;
+    auto d_coords = host.coords->gpu_data_p;
+    auto d_dvelocities = host.dvelocities->gpu_data_p;
     check_cuda(cudaMemset(d_energy, 0, sizeof(double)));
 
     double shift;
@@ -95,7 +95,7 @@ void calc_radix_water_forces_host() {
                                                              d_dvelocities,
                                                              d_energy);
     check_cuda(cudaDeviceSynchronize());
-    check_cuda(cudaMemcpy(host.dvelocities.data(), d_dvelocities, sizeof(dvel_t) * host.n_atoms, cudaMemcpyDeviceToHost));
+    host.dvelocities->download();
     check_cuda(cudaMemcpy(&energy, d_energy, sizeof(double), cudaMemcpyDeviceToHost));
     host.E_restraint.Uradx += energy;
 }

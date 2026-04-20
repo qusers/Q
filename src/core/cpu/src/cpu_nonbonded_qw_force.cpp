@@ -7,6 +7,8 @@
 #include "vdw_rules.h"
 void calc_nonbonded_qw_forces() {
     auto& ctx = Context::instance();
+    auto &coords = ctx.coords->cpu_data_p;
+    auto &dvelocities = ctx.dvelocities->cpu_data_p;
     int i;
     coord_t dO, dH1, dH2;
     double r2O, rH1, rH2, r6O, rO, r2H1, r2H2;
@@ -26,15 +28,15 @@ void calc_nonbonded_qw_forces() {
         for (int qi = 0; qi < ctx.n_qatoms; qi++) {
             i = ctx.q_atoms[qi];
             if (ctx.excluded[i] || ctx.excluded[j]) continue;
-            dO.x = ctx.coords[j].x - ctx.coords[i].x;
-            dO.y = ctx.coords[j].y - ctx.coords[i].y;
-            dO.z = ctx.coords[j].z - ctx.coords[i].z;
-            dH1.x = ctx.coords[j + 1].x - ctx.coords[i].x;
-            dH1.y = ctx.coords[j + 1].y - ctx.coords[i].y;
-            dH1.z = ctx.coords[j + 1].z - ctx.coords[i].z;
-            dH2.x = ctx.coords[j + 2].x - ctx.coords[i].x;
-            dH2.y = ctx.coords[j + 2].y - ctx.coords[i].y;
-            dH2.z = ctx.coords[j + 2].z - ctx.coords[i].z;
+            dO.x = coords[j].x - coords[i].x;
+            dO.y = coords[j].y - coords[i].y;
+            dO.z = coords[j].z - coords[i].z;
+            dH1.x = coords[j + 1].x - coords[i].x;
+            dH1.y = coords[j + 1].y - coords[i].y;
+            dH1.z = coords[j + 1].z - coords[i].z;
+            dH2.x = coords[j + 2].x - coords[i].x;
+            dH2.y = coords[j + 2].y - coords[i].y;
+            dH2.z = coords[j + 2].z - coords[i].z;
             r2O = pow(dO.x, 2) + pow(dO.y, 2) + pow(dO.z, 2);
             rH1 = sqrt(1.0 / (pow(dH1.x, 2) + pow(dH1.y, 2) + pow(dH1.z, 2)));
             rH2 = sqrt(1.0 / (pow(dH2.x, 2) + pow(dH2.y, 2) + pow(dH2.z, 2)));
@@ -80,20 +82,20 @@ void calc_nonbonded_qw_forces() {
             // Note r6O is not the usual 1/rO^6, but rather rO^6. be careful!!!
 
             // Update forces on Q-atom
-            ctx.dvelocities[i].x -= (dvO * dO.x + dvH1 * dH1.x + dvH2 * dH2.x);
-            ctx.dvelocities[i].y -= (dvO * dO.y + dvH1 * dH1.y + dvH2 * dH2.y);
-            ctx.dvelocities[i].z -= (dvO * dO.z + dvH1 * dH1.z + dvH2 * dH2.z);
+            dvelocities[i].x -= (dvO * dO.x + dvH1 * dH1.x + dvH2 * dH2.x);
+            dvelocities[i].y -= (dvO * dO.y + dvH1 * dH1.y + dvH2 * dH2.y);
+            dvelocities[i].z -= (dvO * dO.z + dvH1 * dH1.z + dvH2 * dH2.z);
 
             // Update forces on water
-            ctx.dvelocities[j].x += dvO * dO.x;
-            ctx.dvelocities[j].y += dvO * dO.y;
-            ctx.dvelocities[j].z += dvO * dO.z;
-            ctx.dvelocities[j + 1].x += dvH1 * dH1.x;
-            ctx.dvelocities[j + 1].y += dvH1 * dH1.y;
-            ctx.dvelocities[j + 1].z += dvH1 * dH1.z;
-            ctx.dvelocities[j + 2].x += dvH2 * dH2.x;
-            ctx.dvelocities[j + 2].y += dvH2 * dH2.y;
-            ctx.dvelocities[j + 2].z += dvH2 * dH2.z;
+            dvelocities[j].x += dvO * dO.x;
+            dvelocities[j].y += dvO * dO.y;
+            dvelocities[j].z += dvO * dO.z;
+            dvelocities[j + 1].x += dvH1 * dH1.x;
+            dvelocities[j + 1].y += dvH1 * dH1.y;
+            dvelocities[j + 1].z += dvH1 * dH1.z;
+            dvelocities[j + 2].x += dvH2 * dH2.x;
+            dvelocities[j + 2].y += dvH2 * dH2.y;
+            dvelocities[j + 2].z += dvH2 * dH2.z;
         }
     }
 

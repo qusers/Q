@@ -8,6 +8,8 @@
 
 void calc_nonbonded_qq_forces() {
     auto& ctx = Context::instance();
+    auto &coords = ctx.coords->cpu_data_p;
+    auto &dvelocities = ctx.dvelocities->cpu_data_p;
     int ai, aj;
     double crg_i, crg_j;
     double elscale, scaling;
@@ -45,9 +47,9 @@ void calc_nonbonded_qq_forces() {
                 const catype_t& qi_type = ctx.unified_catype(ai, state);
                 const catype_t& qj_type = ctx.unified_catype(aj, state);
 
-                da.x = ctx.coords[aj].x - ctx.coords[ai].x;
-                da.y = ctx.coords[aj].y - ctx.coords[ai].y;
-                da.z = ctx.coords[aj].z - ctx.coords[ai].z;
+                da.x = coords[aj].x - coords[ai].x;
+                da.y = coords[aj].y - coords[ai].y;
+                da.z = coords[aj].z - coords[ai].z;
                 r2a = 1 / (pow(da.x, 2) + pow(da.y, 2) + pow(da.z, 2));
                 ra = sqrt(r2a);
                 r6a = r2a * r2a * r2a;
@@ -66,13 +68,13 @@ void calc_nonbonded_qq_forces() {
                 }
                 dva = r2a * (-Vela - 12 * V_a + 6 * V_b) * ctx.lambdas[state];
 
-                ctx.dvelocities[ai].x -= dva * da.x;
-                ctx.dvelocities[ai].y -= dva * da.y;
-                ctx.dvelocities[ai].z -= dva * da.z;
+                dvelocities[ai].x -= dva * da.x;
+                dvelocities[ai].y -= dva * da.y;
+                dvelocities[ai].z -= dva * da.z;
 
-                ctx.dvelocities[aj].x += dva * da.x;
-                ctx.dvelocities[aj].y += dva * da.y;
-                ctx.dvelocities[aj].z += dva * da.z;
+                dvelocities[aj].x += dva * da.x;
+                dvelocities[aj].y += dva * da.y;
+                dvelocities[aj].z += dva * da.z;
 
                 ctx.EQ_nonbond_qq[state].Ucoul += Vela;
                 ctx.EQ_nonbond_qq[state].Uvdw += (V_a - V_b);

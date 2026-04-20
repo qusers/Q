@@ -86,6 +86,7 @@ void write_energy_header() {
 // Write step number, coordinates of atoms to coordinate output file
 void write_coords(int iteration) {
     auto& ctx = Context::instance();
+    auto &coords = ctx.coords->cpu_data_p;
     if (iteration % ctx.md.trajectory != 0) return;
     FILE* fp;
     int i;
@@ -97,7 +98,7 @@ void write_coords(int iteration) {
 
     fprintf(fp, "%d\n", iteration / ctx.md.trajectory);
     for (i = 0; i < ctx.n_atoms; i++) {
-        fprintf(fp, "%f;%f;%f\n", ctx.coords[i].x, ctx.coords[i].y, ctx.coords[i].z);
+        fprintf(fp, "%f;%f;%f\n", coords[i].x, coords[i].y, coords[i].z);
     }
 
     fclose(fp);
@@ -106,6 +107,7 @@ void write_coords(int iteration) {
 // Write step number, velocities of atoms to coordinate output file
 void write_velocities(int iteration) {
     auto& ctx = Context::instance();
+    auto &velocities = ctx.velocities->cpu_data_p;
     if (iteration % ctx.md.trajectory != 0) return;
     FILE* fp;
     int i;
@@ -117,7 +119,7 @@ void write_velocities(int iteration) {
 
     fprintf(fp, "%d\n", iteration / ctx.md.trajectory);
     for (i = 0; i < ctx.n_atoms; i++) {
-        fprintf(fp, "%f;%f;%f\n", ctx.velocities[i].x, ctx.velocities[i].y, ctx.velocities[i].z);
+        fprintf(fp, "%f;%f;%f\n", velocities[i].x, velocities[i].y, velocities[i].z);
     }
 
     fclose(fp);

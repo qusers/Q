@@ -6,10 +6,6 @@
 void CudaContext::init() {
     auto& host = Context::instance();
 
-    check_cudaMalloc((void**)&d_coords, sizeof(coord_t) * host.n_atoms);
-    check_cudaMalloc((void**)&d_dvelocities, sizeof(dvel_t) * host.n_atoms);
-    check_cudaMalloc((void**)&d_velocities, sizeof(vel_t) * host.n_atoms);
-
     check_cudaMalloc((void**)&d_mol_n_shakes, sizeof(int) * host.n_molecules);
     check_cudaMalloc((void**)&d_shake_bonds, sizeof(shake_bond_t) * host.n_shake_constraints);
     check_cudaMalloc((void**)&d_winv, sizeof(double) * host.n_atoms);
@@ -53,9 +49,9 @@ void CudaContext::init() {
 void CudaContext::sync_all_to_device() {
     auto& host = Context::instance();
 
-    sync_array_to_device<coord_t>(d_coords, host.coords.data(), host.n_atoms);
-    sync_array_to_device<dvel_t>(d_dvelocities, host.dvelocities.data(), host.n_atoms);
-    sync_array_to_device<vel_t>(d_velocities, host.velocities.data(), host.n_atoms);
+    host.coords->upload();
+    host.dvelocities->upload();
+    host.velocities->upload();
 
     sync_array_to_device<int>(d_mol_n_shakes, host.mol_n_shakes.data(), host.n_molecules);
     sync_array_to_device<shake_bond_t>(d_shake_bonds, host.shake_bonds.data(), host.n_shake_constraints);
@@ -92,9 +88,9 @@ void CudaContext::sync_all_to_device() {
 void CudaContext::sync_all_to_host() {
     auto& host = Context::instance();
 
-    sync_array_to_host<coord_t>(host.coords.data(), d_coords, host.n_atoms);
-    sync_array_to_host<dvel_t>(host.dvelocities.data(), d_dvelocities, host.n_atoms);
-    sync_array_to_host<vel_t>(host.velocities.data(), d_velocities, host.n_atoms);
+    host.coords->download();
+    host.dvelocities->download();
+    host.velocities->download();
 
     sync_array_to_host<int>(host.mol_n_shakes.data(), d_mol_n_shakes, host.n_molecules);
     sync_array_to_host<shake_bond_t>(host.shake_bonds.data(), d_shake_bonds, host.n_shake_constraints);
@@ -128,10 +124,6 @@ void CudaContext::sync_all_to_host() {
 }
 
 void CudaContext::free() {
-    cudaFree(d_coords);
-    cudaFree(d_dvelocities);
-    cudaFree(d_velocities);
-
     cudaFree(d_mol_n_shakes);
     cudaFree(d_shake_bonds);
     cudaFree(d_winv);
@@ -202,7 +194,7 @@ void CudaContext::free() {
 
 void CudaContext::reset_energies() {
     auto& host = Context::instance();
-    cudaMemset(d_dvelocities, 0, sizeof(dvel_t) * host.n_atoms);
+    cudaMemset(host.dvelocities->gpu_data_p, 0, sizeof(dvel_t) * host.n_atoms);
     cudaMemset(d_EQ_nonbond_qq, 0, sizeof(E_nonbonded_t) * host.n_lambdas);
     cudaMemset(d_EQ_restraint, 0, sizeof(E_restraint_t) * host.n_lambdas);
 }

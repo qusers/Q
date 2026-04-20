@@ -138,8 +138,8 @@ double calc_improper2_forces_host(int start, int end) {
     CudaContext& context = CudaContext::instance();
     // context.sync_all_to_device();
     auto& host_ctx = Context::instance();
-    coord_t* d_coords = context.d_coords;
-    dvel_t* d_dvelocities = context.d_dvelocities;
+    coord_t* d_coords = host_ctx.coords->gpu_data_p;
+    dvel_t* d_dvelocities = host_ctx.dvelocities->gpu_data_p;
     improper_t* d_impropers = host_ctx.impropers->gpu_data_p;
     cimproper_t* d_cimpropers = host_ctx.cimpropers->gpu_data_p;
 

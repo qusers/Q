@@ -7,6 +7,8 @@
 
 void calc_restrang_forces() {
     auto& ctx = Context::instance();
+    auto &coords = ctx.coords->cpu_data_p;
+    auto &dvelocities = ctx.dvelocities->cpu_data_p;
 
     int state, i, j, k;
     coord_t dr, dr2, di, dk;
@@ -19,13 +21,13 @@ void calc_restrang_forces() {
         j = ctx.restrangs[ir].aj - 1;
         k = ctx.restrangs[ir].ak - 1;
 
-        dr.x = ctx.coords[i].x - ctx.coords[j].x;
-        dr.y = ctx.coords[i].y - ctx.coords[j].y;
-        dr.z = ctx.coords[i].z - ctx.coords[j].z;
+        dr.x = coords[i].x - coords[j].x;
+        dr.y = coords[i].y - coords[j].y;
+        dr.z = coords[i].z - coords[j].z;
 
-        dr2.x = ctx.coords[k].x - ctx.coords[j].x;
-        dr2.y = ctx.coords[k].y - ctx.coords[j].y;
-        dr2.z = ctx.coords[k].z - ctx.coords[j].z;
+        dr2.x = coords[k].x - coords[j].x;
+        dr2.y = coords[k].y - coords[j].y;
+        dr2.z = coords[k].z - coords[j].z;
 
         if (ctx.restrangs[ir].ipsi != 0) {
             lambda = ctx.lambdas[state];
@@ -69,15 +71,15 @@ void calc_restrang_forces() {
         dk.y = f1 * (dr.y / (rij * rjk) - cos_th * dr2.y / r2jk);
         dk.z = f1 * (dr.z / (rij * rjk) - cos_th * dr2.z / r2jk);
 
-        ctx.dvelocities[i].x += dv * di.x;
-        ctx.dvelocities[i].y += dv * di.y;
-        ctx.dvelocities[i].z += dv * di.z;
-        ctx.dvelocities[k].x += dv * dk.x;
-        ctx.dvelocities[k].y += dv * dk.y;
-        ctx.dvelocities[k].z += dv * dk.z;
-        ctx.dvelocities[j].x -= dv * (di.x + dk.x);
-        ctx.dvelocities[j].y -= dv * (di.y + dk.y);
-        ctx.dvelocities[j].z -= dv * (di.z + dk.z);
+        dvelocities[i].x += dv * di.x;
+        dvelocities[i].y += dv * di.y;
+        dvelocities[i].z += dv * di.z;
+        dvelocities[k].x += dv * dk.x;
+        dvelocities[k].y += dv * dk.y;
+        dvelocities[k].z += dv * dk.z;
+        dvelocities[j].x -= dv * (di.x + dk.x);
+        dvelocities[j].y -= dv * (di.y + dk.y);
+        dvelocities[j].z -= dv * (di.z + dk.z);
 
         if (ctx.restrangs[ir].ipsi == 0) {
             for (int lambda_idx = 0; lambda_idx < ctx.n_lambdas; lambda_idx++) {

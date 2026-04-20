@@ -7,6 +7,8 @@
 
 double calc_angle_forces(int start, int end) {
     auto& ctx = Context::instance();
+    auto &coords = ctx.coords->cpu_data_p;
+    auto &dvelocities = ctx.dvelocities->cpu_data_p;
     int aii, aji, aki;
 
     coord_t ai, aj, ak;
@@ -26,9 +28,9 @@ double calc_angle_forces(int start, int end) {
         aii = angles[i].ai - 1;
         aji = angles[i].aj - 1;
         aki = angles[i].ak - 1;
-        ai = ctx.coords[aii];
-        aj = ctx.coords[aji];
-        ak = ctx.coords[aki];
+        ai = coords[aii];
+        aj = coords[aji];
+        ak = coords[aki];
 
         cangle = cangles[angles[i].code - 1];
 
@@ -81,17 +83,17 @@ double calc_angle_forces(int start, int end) {
         dk.y = f1 * (rji.y * bjiinv * bjkinv - cos_th * rjk.y * bjk2inv);
         dk.z = f1 * (rji.z * bjiinv * bjkinv - cos_th * rjk.z * bjk2inv);
 
-        ctx.dvelocities[aii].x += dv * di.x;
-        ctx.dvelocities[aii].y += dv * di.y;
-        ctx.dvelocities[aii].z += dv * di.z;
+        dvelocities[aii].x += dv * di.x;
+        dvelocities[aii].y += dv * di.y;
+        dvelocities[aii].z += dv * di.z;
 
-        ctx.dvelocities[aki].x += dv * dk.x;
-        ctx.dvelocities[aki].y += dv * dk.y;
-        ctx.dvelocities[aki].z += dv * dk.z;
+        dvelocities[aki].x += dv * dk.x;
+        dvelocities[aki].y += dv * dk.y;
+        dvelocities[aki].z += dv * dk.z;
 
-        ctx.dvelocities[aji].x -= dv * (di.x + dk.x);
-        ctx.dvelocities[aji].y -= dv * (di.y + dk.y);
-        ctx.dvelocities[aji].z -= dv * (di.z + dk.z);
+        dvelocities[aji].x -= dv * (di.x + dk.x);
+        dvelocities[aji].y -= dv * (di.y + dk.y);
+        dvelocities[aji].z -= dv * (di.z + dk.z);
 
         // printf("ANGLE ener = %f\n", ener);
     }

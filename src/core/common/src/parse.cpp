@@ -390,19 +390,22 @@ void init_coords(const char* filename) {
     ctx.n_atoms_solute = atoi(file.buffer[1][0]);
 
     ctx.coords_init = std::make_unique<HostDeviceBuffer<coord_t>>(ctx.n_atoms, true, ctx.run_gpu);
-    ctx.coords.resize(ctx.n_atoms);
+    ctx.coords = std::make_unique<HostDeviceBuffer<coord_t>>(ctx.n_atoms, true, ctx.run_gpu);
+    auto &coords = ctx.coords->cpu_data_p;
+    auto &coords_init = ctx.coords_init->cpu_data_p;
 
     for (int i = 0; i < file.n_lines; i++) {
         char* eptr;
 
-        ctx.coords[i].x = strtod(file.buffer[i + 2][0], &eptr);
-        ctx.coords[i].y = strtod(file.buffer[i + 2][1], &eptr);
-        ctx.coords[i].z = strtod(file.buffer[i + 2][2], &eptr);
+        coords[i].x = strtod(file.buffer[i + 2][0], &eptr);
+        coords[i].y = strtod(file.buffer[i + 2][1], &eptr);
+        coords[i].z = strtod(file.buffer[i + 2][2], &eptr);
 
-        ctx.coords_init->cpu_data_p[i] = ctx.coords[i];
+        coords_init[i] = coords[i];
     }
 
     if (ctx.run_gpu) {
+        ctx.coords->upload();
         ctx.coords_init->upload();
     }
 
@@ -1607,11 +1610,12 @@ void init_icoords(const char* filename) {
         return;
     }
 
+    auto &coords = ctx.coords->cpu_data_p;
     for (int i = 0; i < ctx.n_atoms; i++) {
         char* eptr;
-        ctx.coords[i].x = strtod(file.buffer[i + 1][0], &eptr);
-        ctx.coords[i].y = strtod(file.buffer[i + 1][1], &eptr);
-        ctx.coords[i].z = strtod(file.buffer[i + 1][2], &eptr);
+        coords[i].x = strtod(file.buffer[i + 1][0], &eptr);
+        coords[i].y = strtod(file.buffer[i + 1][1], &eptr);
+        coords[i].z = strtod(file.buffer[i + 1][2], &eptr);
     }
 
     clean_csv(file);
@@ -1626,11 +1630,12 @@ void init_ivelocities(const char* filename) {
         return;
     }
 
+    auto &velocities = ctx.velocities->cpu_data_p;
     for (int i = 0; i < ctx.n_atoms; i++) {
         char* eptr;
-        ctx.velocities[i].x = strtod(file.buffer[i + 1][0], &eptr);
-        ctx.velocities[i].y = strtod(file.buffer[i + 1][1], &eptr);
-        ctx.velocities[i].z = strtod(file.buffer[i + 1][2], &eptr);
+        velocities[i].x = strtod(file.buffer[i + 1][0], &eptr);
+        velocities[i].y = strtod(file.buffer[i + 1][1], &eptr);
+        velocities[i].z = strtod(file.buffer[i + 1][2], &eptr);
     }
 
     clean_csv(file);

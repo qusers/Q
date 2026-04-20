@@ -265,7 +265,8 @@ void init_velocities() {
     auto& ctx = Context::instance();
     auto &atypes = ctx.atypes->cpu_data_p;
     auto &catypes = ctx.catypes->cpu_data_p;
-    ctx.velocities.resize(ctx.n_atoms);
+    ctx.velocities = std::make_unique<HostDeviceBuffer<vel_t>>(ctx.n_atoms, true, ctx.run_gpu);
+    auto &velocities = ctx.velocities->cpu_data_p;
 
     // If not previous value set, use a Maxwell distribution to fill velocities
     double kT = Boltz * ctx.md.initial_temperature;
@@ -274,15 +275,19 @@ void init_velocities() {
         mass = catypes[atypes[i].code - 1].m;
         sd = sqrt(kT / mass);
 
-        ctx.velocities[i].x = gauss(0, sd);
-        ctx.velocities[i].y = gauss(0, sd);
-        ctx.velocities[i].z = gauss(0, sd);
+        velocities[i].x = gauss(0, sd);
+        velocities[i].y = gauss(0, sd);
+        velocities[i].z = gauss(0, sd);
+    }
+
+    if (ctx.run_gpu) {
+        ctx.velocities->upload();
     }
 }
 
 void init_dvelocities() {
     auto& ctx = Context::instance();
-    ctx.dvelocities.assign(ctx.n_atoms, {});
+    ctx.dvelocities = std::make_unique<HostDeviceBuffer<dvel_t>>(ctx.n_atoms, true, ctx.run_gpu);
 }
 
 void init_xcoords() {
@@ -846,7 +851,7 @@ void clean_variables() {
     ctx.unified_ccharges.clear();
     ctx.unified_catypes.clear();
     ctx.cimpropers.reset();
-    ctx.coords.clear();
+    ctx.coords.reset();
     ctx.ctorsions.reset();
     ctx.excluded.reset();
     ctx.heavy.reset();
@@ -883,8 +888,8 @@ void clean_variables() {
     ctx.nsort.clear();
     ctx.restrseqs.clear();
     ctx.shell.reset();
-    ctx.velocities.clear();
-    ctx.dvelocities.clear();
+    ctx.velocities.reset();
+    ctx.dvelocities.reset();
     ctx.xcoords.clear();
     ctx.mol_n_shakes.clear();
     ctx.shake_bonds.clear();

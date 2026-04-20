@@ -6,6 +6,8 @@
 
 void calc_restrpos_forces() {
     auto& ctx = Context::instance();
+    auto &coords = ctx.coords->cpu_data_p;
+    auto &dvelocities = ctx.dvelocities->cpu_data_p;
 
     int state, i;
     coord_t dr;
@@ -15,9 +17,9 @@ void calc_restrpos_forces() {
         state = ctx.restrspos[ir].ipsi - 1;
         i = ctx.restrspos[ir].a - 1;
 
-        dr.x = ctx.coords[i].x - ctx.restrspos[ir].x.x;
-        dr.y = ctx.coords[i].y - ctx.restrspos[ir].x.y;
-        dr.z = ctx.coords[i].z - ctx.restrspos[ir].x.z;
+        dr.x = coords[i].x - ctx.restrspos[ir].x.x;
+        dr.y = coords[i].y - ctx.restrspos[ir].x.y;
+        dr.z = coords[i].z - ctx.restrspos[ir].x.z;
 
         if (ctx.restrspos[ir].ipsi != 0) {
             lambda = ctx.lambdas[state];
@@ -31,9 +33,9 @@ void calc_restrpos_forces() {
 
         ener = .5 * ctx.restrspos[ir].k.x * x2 + .5 * ctx.restrspos[ir].k.y * y2 + .5 * ctx.restrspos[ir].k.z * z2;
 
-        ctx.dvelocities[i].x += ctx.restrspos[ir].k.x * dr.x * lambda;
-        ctx.dvelocities[i].y += ctx.restrspos[ir].k.y * dr.y * lambda;
-        ctx.dvelocities[i].z += ctx.restrspos[ir].k.z * dr.z * lambda;
+        dvelocities[i].x += ctx.restrspos[ir].k.x * dr.x * lambda;
+        dvelocities[i].y += ctx.restrspos[ir].k.y * dr.y * lambda;
+        dvelocities[i].z += ctx.restrspos[ir].k.z * dr.z * lambda;
 
         if (ctx.restrspos[ir].ipsi == 0) {
             for (int k = 0; k < ctx.n_lambdas; k++) {

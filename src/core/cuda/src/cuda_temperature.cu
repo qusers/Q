@@ -61,7 +61,7 @@ void calc_temperature_host() {
     CudaContext& ctx = CudaContext::instance();
     atype_t* d_atypes = host.atypes->gpu_data_p;
     catype_t* d_catypes = host.catypes->gpu_data_p;
-    vel_t* d_velocities = ctx.d_velocities;
+    vel_t* d_velocities = host.velocities->gpu_data_p;
     bool* d_excluded = ctx.d_excluded;
 
     int blockSize = 256;

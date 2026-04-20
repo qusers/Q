@@ -94,23 +94,25 @@ int calc_shake_constraints(coord_t* coords, coord_t* xcoords) {
 
 void initial_shaking() {
     auto& ctx = Context::instance();
+    auto &coords = ctx.coords->cpu_data_p;
+    auto &velocities = ctx.velocities->cpu_data_p;
 
     for (int i = 0; i < ctx.n_atoms; i++) {
-        ctx.xcoords[i].x = ctx.coords[i].x;
-        ctx.xcoords[i].y = ctx.coords[i].y;
-        ctx.xcoords[i].z = ctx.coords[i].z;
+        ctx.xcoords[i].x = coords[i].x;
+        ctx.xcoords[i].y = coords[i].y;
+        ctx.xcoords[i].z = coords[i].z;
     }
-    calc_shake_constraints(ctx.coords.data(), ctx.xcoords.data());
+    calc_shake_constraints(coords, ctx.xcoords.data());
     for (int i = 0; i < ctx.n_atoms; i++) {
-        ctx.xcoords[i].x = ctx.coords[i].x - ctx.dt * ctx.velocities[i].x;
-        ctx.xcoords[i].y = ctx.coords[i].y - ctx.dt * ctx.velocities[i].y;
-        ctx.xcoords[i].z = ctx.coords[i].z - ctx.dt * ctx.velocities[i].z;
+        ctx.xcoords[i].x = coords[i].x - ctx.dt * velocities[i].x;
+        ctx.xcoords[i].y = coords[i].y - ctx.dt * velocities[i].y;
+        ctx.xcoords[i].z = coords[i].z - ctx.dt * velocities[i].z;
     }
-    calc_shake_constraints(ctx.xcoords.data(), ctx.coords.data());
+    calc_shake_constraints(ctx.xcoords.data(), coords);
     for (int i = 0; i < ctx.n_atoms; i++) {
-        ctx.velocities[i].x = (ctx.coords[i].x - ctx.xcoords[i].x) / ctx.dt;
-        ctx.velocities[i].y = (ctx.coords[i].y - ctx.xcoords[i].y) / ctx.dt;
-        ctx.velocities[i].z = (ctx.coords[i].z - ctx.xcoords[i].z) / ctx.dt;
+        velocities[i].x = (coords[i].x - ctx.xcoords[i].x) / ctx.dt;
+        velocities[i].y = (coords[i].y - ctx.xcoords[i].y) / ctx.dt;
+        velocities[i].z = (coords[i].z - ctx.xcoords[i].z) / ctx.dt;
     }
 }
 
@@ -118,15 +120,16 @@ void stop_cm_translation() {
     auto& ctx = Context::instance();
     auto &atypes = ctx.atypes->cpu_data_p;
     auto &catypes = ctx.catypes->cpu_data_p;
+    auto &velocities = ctx.velocities->cpu_data_p;
     double total_mass = 0;
     coord_t vcm = {};
 
     for (int ai = 0; ai < ctx.n_atoms; ai++) {
         const double rmass = catypes[atypes[ai].code - 1].m;
         total_mass += rmass;
-        vcm.x += ctx.velocities[ai].x * rmass;
-        vcm.y += ctx.velocities[ai].y;
-        vcm.z += ctx.velocities[ai].z;
+        vcm.x += velocities[ai].x * rmass;
+        vcm.y += velocities[ai].y;
+        vcm.z += velocities[ai].z;
     }
 
     vcm.x /= total_mass;
@@ -134,8 +137,8 @@ void stop_cm_translation() {
     vcm.z /= total_mass;
 
     for (int ai = 0; ai < ctx.n_atoms; ai++) {
-        ctx.velocities[ai].x -= vcm.x;
-        ctx.velocities[ai].y -= vcm.y;
-        ctx.velocities[ai].z -= vcm.z;
+        velocities[ai].x -= vcm.x;
+        velocities[ai].y -= vcm.y;
+        velocities[ai].z -= vcm.z;
     }
 }

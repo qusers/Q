@@ -140,7 +140,7 @@ int calc_shake_constraints_host() {
     CudaContext& ctx = CudaContext::instance();
     auto d_mol_n_shakes = ctx.d_mol_n_shakes;
     auto d_shake_bonds = ctx.d_shake_bonds;
-    auto d_coords = ctx.d_coords;
+    auto d_coords = host.coords->gpu_data_p;
     auto d_xcoords = ctx.d_xcoords;
     auto d_winv = ctx.d_winv;
 
@@ -155,6 +155,6 @@ int calc_shake_constraints_host() {
         d_mol_shake_offset);
     cudaDeviceSynchronize();
     cudaMemcpy(&total_iterations_host, d_total_iterations, sizeof(int), cudaMemcpyDeviceToHost);
-    cudaMemcpy(host.coords.data(), d_coords, sizeof(coord_t) * host.n_atoms, cudaMemcpyDeviceToHost);
+    host.coords->download();
     return host.n_molecules == 0 ? 0 : total_iterations_host / host.n_molecules;
 }

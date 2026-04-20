@@ -41,9 +41,11 @@ void accumulate_pair_force(Context& ctx,
                            double vdw_a,
                            double vdw_b,
                            E_nonbonded_t& energy) {
-    const double dx = ctx.coords[atom_j].x - ctx.coords[atom_i].x;
-    const double dy = ctx.coords[atom_j].y - ctx.coords[atom_i].y;
-    const double dz = ctx.coords[atom_j].z - ctx.coords[atom_i].z;
+    auto &coords = ctx.coords->cpu_data_p;
+    auto &dvelocities = ctx.dvelocities->cpu_data_p;
+    const double dx = coords[atom_j].x - coords[atom_i].x;
+    const double dy = coords[atom_j].y - coords[atom_i].y;
+    const double dz = coords[atom_j].z - coords[atom_i].z;
 
     const double r2inv = 1.0 / (dx * dx + dy * dy + dz * dz);
     const double rinv = std::sqrt(r2inv);
@@ -61,13 +63,13 @@ void accumulate_pair_force(Context& ctx,
 
     const double scale = r2inv * dva;
 
-    ctx.dvelocities[atom_i].x -= scale * dx;
-    ctx.dvelocities[atom_i].y -= scale * dy;
-    ctx.dvelocities[atom_i].z -= scale * dz;
+    dvelocities[atom_i].x -= scale * dx;
+    dvelocities[atom_i].y -= scale * dy;
+    dvelocities[atom_i].z -= scale * dz;
 
-    ctx.dvelocities[atom_j].x += scale * dx;
-    ctx.dvelocities[atom_j].y += scale * dy;
-    ctx.dvelocities[atom_j].z += scale * dz;
+    dvelocities[atom_j].x += scale * dx;
+    dvelocities[atom_j].y += scale * dy;
+    dvelocities[atom_j].z += scale * dz;
 
     energy.Ucoul += ecoul;
     energy.Uvdw += evdw;

@@ -94,6 +94,7 @@ void Handler::print_outputs(int iteration) {
 
 void Handler::reset_energies() {
     auto& host = Context::instance();
+    auto &dvelocities = host.dvelocities->cpu_data_p;
     host.E_total.Upot = 0;
     host.E_bond_p.Uangle = 0;
     host.E_bond_p.Ubond = 0;
@@ -121,7 +122,8 @@ void Handler::reset_energies() {
     host.E_restraint.Ushell = 0;
     host.E_restraint.Upres = 0;
     host.E_restraint.Urestr = 0;
-    for (auto& dvel : host.dvelocities) {
+    for (int i = 0; i < host.n_atoms; i++) {
+        auto& dvel = dvelocities[i];
         dvel.x = 0;
         dvel.y = 0;
         dvel.z = 0;

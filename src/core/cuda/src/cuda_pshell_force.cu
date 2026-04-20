@@ -55,9 +55,9 @@ void calc_pshell_forces_host() {
 
     auto d_shell = ctx.d_shell;
     auto d_excluded = ctx.d_excluded;
-    auto d_coords = ctx.d_coords;
+    auto d_coords = host.coords->gpu_data_p;
     auto d_coords_init = host.coords_init->gpu_data_p;
-    auto d_dvelocities = ctx.d_dvelocities;
+    auto d_dvelocities = host.dvelocities->gpu_data_p;
 
     cudaMemset(d_ufix_energy, 0, sizeof(double));
     cudaMemset(d_ushell_energy, 0, sizeof(double));

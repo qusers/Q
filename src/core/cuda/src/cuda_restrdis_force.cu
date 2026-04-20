@@ -79,9 +79,9 @@ void calc_restrdis_forces_host() {
     using namespace CudaRestrdisForce;
     CudaContext& ctx = CudaContext::instance();
     auto d_restrdists = ctx.d_restrdists;
-    auto d_coords = ctx.d_coords;
+    auto d_coords = host.coords->gpu_data_p;
     auto d_lambdas = ctx.d_lambdas;
-    auto d_dvelocities = ctx.d_dvelocities;
+    auto d_dvelocities = host.dvelocities->gpu_data_p;
     auto d_EQ_restraint = ctx.d_EQ_restraint;
 
     cudaMemset(d_E_restraint, 0, sizeof(double));

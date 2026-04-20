@@ -7,6 +7,8 @@
 
 void calc_qtorsion_forces(int state) {
     auto& ctx = Context::instance();
+    auto &coords = ctx.coords->cpu_data_p;
+    auto &dvelocities = ctx.dvelocities->cpu_data_p;
     int ic;
     int ai, aj, ak, al;
     coord_t rji, rjk, rkl, rnj, rnk, rki, rlj;
@@ -29,15 +31,15 @@ void calc_qtorsion_forces(int state) {
         ak = ctx.q_torsions[i + ctx.n_qtorsions * state].ak - 1;
         al = ctx.q_torsions[i + ctx.n_qtorsions * state].al - 1;
 
-        rji.x = ctx.coords[ai].x - ctx.coords[aj].x;
-        rji.y = ctx.coords[ai].y - ctx.coords[aj].y;
-        rji.z = ctx.coords[ai].z - ctx.coords[aj].z;
-        rjk.x = ctx.coords[ak].x - ctx.coords[aj].x;
-        rjk.y = ctx.coords[ak].y - ctx.coords[aj].y;
-        rjk.z = ctx.coords[ak].z - ctx.coords[aj].z;
-        rkl.x = ctx.coords[al].x - ctx.coords[ak].x;
-        rkl.y = ctx.coords[al].y - ctx.coords[ak].y;
-        rkl.z = ctx.coords[al].z - ctx.coords[ak].z;
+        rji.x = coords[ai].x - coords[aj].x;
+        rji.y = coords[ai].y - coords[aj].y;
+        rji.z = coords[ai].z - coords[aj].z;
+        rjk.x = coords[ak].x - coords[aj].x;
+        rjk.y = coords[ak].y - coords[aj].y;
+        rjk.z = coords[ak].z - coords[aj].z;
+        rkl.x = coords[al].x - coords[ak].x;
+        rkl.y = coords[al].y - coords[ak].y;
+        rkl.z = coords[al].z - coords[ak].z;
         rnj.x = rji.y * rjk.z - rji.z * rjk.y;
         rnj.y = rji.z * rjk.x - rji.x * rjk.z;
         rnj.z = rji.x * rjk.y - rji.y * rjk.x;
@@ -108,20 +110,20 @@ void calc_qtorsion_forces(int state) {
         // Update energy and forces
         ctx.EQ_bond[state].Utor += ener;
 
-        ctx.dvelocities[ai].x += dv * dpi.x;
-        ctx.dvelocities[ai].y += dv * dpi.y;
-        ctx.dvelocities[ai].z += dv * dpi.z;
+        dvelocities[ai].x += dv * dpi.x;
+        dvelocities[ai].y += dv * dpi.y;
+        dvelocities[ai].z += dv * dpi.z;
 
-        ctx.dvelocities[aj].x += dv * dpj.x;
-        ctx.dvelocities[aj].y += dv * dpj.y;
-        ctx.dvelocities[aj].z += dv * dpj.z;
+        dvelocities[aj].x += dv * dpj.x;
+        dvelocities[aj].y += dv * dpj.y;
+        dvelocities[aj].z += dv * dpj.z;
 
-        ctx.dvelocities[ak].x += dv * dpk.x;
-        ctx.dvelocities[ak].y += dv * dpk.y;
-        ctx.dvelocities[ak].z += dv * dpk.z;
+        dvelocities[ak].x += dv * dpk.x;
+        dvelocities[ak].y += dv * dpk.y;
+        dvelocities[ak].z += dv * dpk.z;
 
-        ctx.dvelocities[al].x += dv * dpl.x;
-        ctx.dvelocities[al].y += dv * dpl.y;
-        ctx.dvelocities[al].z += dv * dpl.z;
+        dvelocities[al].x += dv * dpl.x;
+        dvelocities[al].y += dv * dpl.y;
+        dvelocities[al].z += dv * dpl.z;
     }
 }

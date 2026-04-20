@@ -37,6 +37,9 @@ class Context {
     md_t md;
 
     std::unique_ptr<HostDeviceBuffer<coord_t>> coords_init;
+    std::unique_ptr<HostDeviceBuffer<coord_t>> coords;
+    std::unique_ptr<HostDeviceBuffer<vel_t>> velocities;
+    std::unique_ptr<HostDeviceBuffer<dvel_t>> dvelocities;
 
 
     int n_angles = 0;
@@ -194,10 +197,7 @@ class Context {
      */
 
     std::vector<int> p_atoms;
-    std::vector<coord_t> coords;
     std::vector<coord_t> xcoords;
-    std::vector<vel_t> velocities;
-    std::vector<dvel_t> dvelocities;
 
     energy_t E_total = {};
     std::vector<energy_t> EQ_total;

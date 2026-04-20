@@ -81,9 +81,9 @@ double calc_angle_forces_host(int start, int end) {
     CudaContext& ctx = CudaContext::instance();
     auto &host_ctx = Context::instance();
     auto d_angles = host_ctx.angles->gpu_data_p;
-    auto d_coords = ctx.d_coords;
+    auto d_coords = host_ctx.coords->gpu_data_p;
     auto d_cangles = host_ctx.cangles->gpu_data_p;
-    auto d_dvelocities = ctx.d_dvelocities;
+    auto d_dvelocities = host_ctx.dvelocities->gpu_data_p;
     // todo: now have to do that, after moving all to CudaContext, can remove it
     // ctx.sync_all_to_device();
 

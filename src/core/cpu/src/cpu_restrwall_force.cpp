@@ -6,6 +6,8 @@
 
 void calc_restrwall_forces() {
     auto& ctx = Context::instance();
+    auto &coords = ctx.coords->cpu_data_p;
+    auto &dvelocities = ctx.dvelocities->cpu_data_p;
 
     double k, b, db, ener, dv, fexp;
     coord_t dr;
@@ -14,9 +16,9 @@ void calc_restrwall_forces() {
         k = ctx.restrwalls[ir].k;
         for (int i = ctx.restrwalls[ir].ai - 1; i < ctx.restrwalls[ir].aj - 1; i++) {
             if (ctx.heavy[i] || ctx.restrwalls[ir].ih) {
-                dr.x = ctx.coords[i].x - ctx.topo.solvent_center.x;
-                dr.y = ctx.coords[i].y - ctx.topo.solvent_center.y;
-                dr.z = ctx.coords[i].z - ctx.topo.solvent_center.z;
+                dr.x = coords[i].x - ctx.topo.solvent_center.x;
+                dr.y = coords[i].y - ctx.topo.solvent_center.y;
+                dr.z = coords[i].z - ctx.topo.solvent_center.z;
 
                 b = sqrt(pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2));
                 db = b - ctx.restrwalls[ir].d;
@@ -31,9 +33,9 @@ void calc_restrwall_forces() {
                 }
                 ctx.E_restraint.Upres += ener;
 
-                ctx.dvelocities[i].x += dv * dr.x;
-                ctx.dvelocities[i].y += dv * dr.y;
-                ctx.dvelocities[i].z += dv * dr.z;
+                dvelocities[i].x += dv * dr.x;
+                dvelocities[i].y += dv * dr.y;
+                dvelocities[i].z += dv * dr.z;
             }
         }
     }

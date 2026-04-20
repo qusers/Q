@@ -8,6 +8,8 @@ void calc_restrseq_forces() {
     auto& ctx = Context::instance();
     auto &atypes = ctx.atypes->cpu_data_p;
     auto &catypes = ctx.catypes->cpu_data_p;
+    auto &coords = ctx.coords->cpu_data_p;
+    auto &dvelocities = ctx.dvelocities->cpu_data_p;
 
     double k, mass, totmass;
     coord_t dr;
@@ -26,9 +28,9 @@ void calc_restrseq_forces() {
             for (int i = ctx.restrseqs[s].ai - 1; i < ctx.restrseqs[s].aj - 1; i++) {
                 if (ctx.heavy[i] || ctx.restrseqs[s].ih) {
                     n_ctr++;
-                    dr.x += (ctx.coords[i].x - ctx.coords_init->cpu_data_p[i].x);
-                    dr.y += (ctx.coords[i].y - ctx.coords_init->cpu_data_p[i].y);
-                    dr.z += (ctx.coords[i].z - ctx.coords_init->cpu_data_p[i].z);
+                    dr.x += (coords[i].x - ctx.coords_init->cpu_data_p[i].x);
+                    dr.y += (coords[i].y - ctx.coords_init->cpu_data_p[i].y);
+                    dr.z += (coords[i].z - ctx.coords_init->cpu_data_p[i].z);
                 }
             }
 
@@ -43,9 +45,9 @@ void calc_restrseq_forces() {
                 for (int i = ctx.restrseqs[s].ai - 1; i < ctx.restrseqs[s].aj - 1; i++) {
                     if (ctx.heavy[i] || ctx.restrseqs[s].ih) {
                         mass = catypes[atypes[i].code - 1].m;
-                        ctx.dvelocities[i].x += (k * dr.x * mass / 12.010);
-                        ctx.dvelocities[i].y += (k * dr.y * mass / 12.010);
-                        ctx.dvelocities[i].z += (k * dr.z * mass / 12.010);
+                        dvelocities[i].x += (k * dr.x * mass / 12.010);
+                        dvelocities[i].y += (k * dr.y * mass / 12.010);
+                        dvelocities[i].z += (k * dr.z * mass / 12.010);
                     }
                 }
             }
@@ -54,9 +56,9 @@ void calc_restrseq_forces() {
                 if (ctx.heavy[i] || ctx.restrseqs[s].ih) {
                     mass = catypes[atypes[i].code - 1].m;
                     totmass += mass;
-                    dr.x += (ctx.coords[i].x - ctx.coords_init->cpu_data_p[i].x) * mass;
-                    dr.y += (ctx.coords[i].y - ctx.coords_init->cpu_data_p[i].y) * mass;
-                    dr.z += (ctx.coords[i].z - ctx.coords_init->cpu_data_p[i].z) * mass;
+                    dr.x += (coords[i].x - ctx.coords_init->cpu_data_p[i].x) * mass;
+                    dr.y += (coords[i].y - ctx.coords_init->cpu_data_p[i].y) * mass;
+                    dr.z += (coords[i].z - ctx.coords_init->cpu_data_p[i].z) * mass;
                 }
             }
 
@@ -70,26 +72,26 @@ void calc_restrseq_forces() {
 
                 for (int i = ctx.restrseqs[s].ai - 1; i < ctx.restrseqs[s].aj - 1; i++) {
                     if (ctx.heavy[i] || ctx.restrseqs[s].ih) {
-                        ctx.dvelocities[i].x += k * dr.x;
-                        ctx.dvelocities[i].y += k * dr.y;
-                        ctx.dvelocities[i].z += k * dr.z;
+                        dvelocities[i].x += k * dr.x;
+                        dvelocities[i].y += k * dr.y;
+                        dvelocities[i].z += k * dr.z;
                     }
                 }
             }
         } else {
             for (int i = ctx.restrseqs[s].ai - 1; i < ctx.restrseqs[s].aj - 1; i++) {
                 if (ctx.heavy[i] || ctx.restrseqs[s].ih) {
-                    dr.x = ctx.coords[i].x - ctx.coords_init->cpu_data_p[i].x;
-                    dr.y = ctx.coords[i].y - ctx.coords_init->cpu_data_p[i].y;
-                    dr.z = ctx.coords[i].z - ctx.coords_init->cpu_data_p[i].z;
+                    dr.x = coords[i].x - ctx.coords_init->cpu_data_p[i].x;
+                    dr.y = coords[i].y - ctx.coords_init->cpu_data_p[i].y;
+                    dr.z = coords[i].z - ctx.coords_init->cpu_data_p[i].z;
 
                     r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
                     ener = .5 * k * r2;
                     ctx.E_restraint.Upres += ener;
 
-                    ctx.dvelocities[i].x += k * dr.x;
-                    ctx.dvelocities[i].y += k * dr.y;
-                    ctx.dvelocities[i].z += k * dr.z;
+                    dvelocities[i].x += k * dr.x;
+                    dvelocities[i].y += k * dr.y;
+                    dvelocities[i].z += k * dr.z;
                 }
             }
         }

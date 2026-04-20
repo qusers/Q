@@ -47,9 +47,9 @@ double calc_bond_forces_host(int start, int end) {
     CudaContext& context = CudaContext::instance();
     auto& host_ctx = Context::instance();
     bond_t* d_bonds = host_ctx.bonds->gpu_data_p;
-    coord_t* d_coords = context.d_coords;
+    coord_t* d_coords = host_ctx.coords->gpu_data_p;
     cbond_t* d_cbonds = host_ctx.cbonds->gpu_data_p;
-    dvel_t* d_dvelocities = context.d_dvelocities;
+    dvel_t* d_dvelocities = host_ctx.dvelocities->gpu_data_p;
 
     calc_bond_forces_kernel<<<numBlocks, blockSize>>>(start, end, d_bonds, d_coords, d_cbonds, d_dvelocities, d_energy_sum);
     cudaDeviceSynchronize();

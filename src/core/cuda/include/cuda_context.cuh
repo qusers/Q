@@ -13,13 +13,6 @@
 class CudaContext {
    public:
     /*
-    Common data
-    */
-    coord_t* d_coords = nullptr;
-    dvel_t* d_dvelocities = nullptr;
-    vel_t* d_velocities = nullptr;
-
-    /*
     Used in cuda_shake_constraints.cu
     */
     int* d_mol_n_shakes = nullptr;

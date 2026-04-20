@@ -8,6 +8,8 @@
 
 void calc_polx_w_forces(int iteration) {
     auto& ctx = Context::instance();
+    auto &coords = ctx.coords->cpu_data_p;
+    auto &dvelocities = ctx.dvelocities->cpu_data_p;
 
     int wi, imin, jw, ii, iis, jmin;
     double tmin;
@@ -30,9 +32,9 @@ void calc_polx_w_forces(int iteration) {
 
         wi = ctx.n_atoms_solute + 3 * i;
 
-        rmu.x = ctx.coords[wi + 1].x + ctx.coords[wi + 2].x - 2 * ctx.coords[wi].x;
-        rmu.y = ctx.coords[wi + 1].y + ctx.coords[wi + 2].y - 2 * ctx.coords[wi].y;
-        rmu.z = ctx.coords[wi + 1].z + ctx.coords[wi + 2].z - 2 * ctx.coords[wi].z;
+        rmu.x = coords[wi + 1].x + coords[wi + 2].x - 2 * coords[wi].x;
+        rmu.y = coords[wi + 1].y + coords[wi + 2].y - 2 * coords[wi].y;
+        rmu.z = coords[wi + 1].z + coords[wi + 2].z - 2 * coords[wi].z;
 
         rm = sqrt(pow(rmu.x, 2) + pow(rmu.y, 2) + pow(rmu.z, 2));
 
@@ -40,9 +42,9 @@ void calc_polx_w_forces(int iteration) {
         rmu.y /= rm;
         rmu.z /= rm;
 
-        rcu.x = ctx.coords[wi].x - ctx.topo.solvent_center.x;
-        rcu.y = ctx.coords[wi].y - ctx.topo.solvent_center.y;
-        rcu.z = ctx.coords[wi].z - ctx.topo.solvent_center.z;
+        rcu.x = coords[wi].x - ctx.topo.solvent_center.x;
+        rcu.y = coords[wi].y - ctx.topo.solvent_center.y;
+        rcu.z = coords[wi].z - ctx.topo.solvent_center.z;
         rc = sqrt(pow(rcu.x, 2) + pow(rcu.y, 2) + pow(rcu.z, 2));
         rcu.x /= rc;
         rcu.y /= rc;
@@ -129,9 +131,9 @@ void calc_polx_w_forces(int iteration) {
 
             wi = ctx.n_atoms_solute + 3 * ii;
 
-            rmu.x = ctx.coords[wi + 1].x + ctx.coords[wi + 2].x - 2 * ctx.coords[wi].x;
-            rmu.y = ctx.coords[wi + 1].y + ctx.coords[wi + 2].y - 2 * ctx.coords[wi].y;
-            rmu.z = ctx.coords[wi + 1].z + ctx.coords[wi + 2].z - 2 * ctx.coords[wi].z;
+            rmu.x = coords[wi + 1].x + coords[wi + 2].x - 2 * coords[wi].x;
+            rmu.y = coords[wi + 1].y + coords[wi + 2].y - 2 * coords[wi].y;
+            rmu.z = coords[wi + 1].z + coords[wi + 2].z - 2 * coords[wi].z;
 
             rm = sqrt(pow(rmu.x, 2) + pow(rmu.y, 2) + pow(rmu.z, 2));
 
@@ -139,9 +141,9 @@ void calc_polx_w_forces(int iteration) {
             rmu.y /= rm;
             rmu.z /= rm;
 
-            rcu.x = ctx.coords[wi].x - ctx.topo.solvent_center.x;
-            rcu.y = ctx.coords[wi].y - ctx.topo.solvent_center.y;
-            rcu.z = ctx.coords[wi].z - ctx.topo.solvent_center.z;
+            rcu.x = coords[wi].x - ctx.topo.solvent_center.x;
+            rcu.y = coords[wi].y - ctx.topo.solvent_center.y;
+            rcu.z = coords[wi].z - ctx.topo.solvent_center.z;
             rc = sqrt(pow(rcu.x, 2) + pow(rcu.y, 2) + pow(rcu.z, 2));
             rcu.x /= rc;
             rcu.y /= rc;
@@ -175,15 +177,15 @@ void calc_polx_w_forces(int iteration) {
             f2.y = (rmu.y - rcu.y * cos_th) / rc;
             f2.z = (rmu.z - rcu.z * cos_th) / rc;
 
-            ctx.dvelocities[wi].x += f0 * (f1O.x + f2.x);
-            ctx.dvelocities[wi].y += f0 * (f1O.y + f2.y);
-            ctx.dvelocities[wi].z += f0 * (f1O.z + f2.z);
-            ctx.dvelocities[wi + 1].x += f0 * f1H1.x;
-            ctx.dvelocities[wi + 1].y += f0 * f1H1.y;
-            ctx.dvelocities[wi + 1].z += f0 * f1H1.z;
-            ctx.dvelocities[wi + 2].x += f0 * f1H2.x;
-            ctx.dvelocities[wi + 2].y += f0 * f1H2.y;
-            ctx.dvelocities[wi + 2].z += f0 * f1H2.z;
+            dvelocities[wi].x += f0 * (f1O.x + f2.x);
+            dvelocities[wi].y += f0 * (f1O.y + f2.y);
+            dvelocities[wi].z += f0 * (f1O.z + f2.z);
+            dvelocities[wi + 1].x += f0 * f1H1.x;
+            dvelocities[wi + 1].y += f0 * f1H1.y;
+            dvelocities[wi + 1].z += f0 * f1H1.z;
+            dvelocities[wi + 2].x += f0 * f1H2.x;
+            dvelocities[wi + 2].y += f0 * f1H2.y;
+            dvelocities[wi + 2].z += f0 * f1H2.z;
         }
 
         ctx.wshells[is].avtheta += avtdum / (double)ctx.wshells[is].n_inshell;

@@ -136,8 +136,8 @@ double calc_torsion_forces_host(int start, int end) {
 
     CudaContext& ctx = CudaContext::instance();
     auto& host_ctx = Context::instance();
-    coord_t* d_coords = ctx.d_coords;
-    dvel_t* d_dvelocities = ctx.d_dvelocities;
+    coord_t* d_coords = host_ctx.coords->gpu_data_p;
+    dvel_t* d_dvelocities = host_ctx.dvelocities->gpu_data_p;
     torsion_t* d_torsions = host_ctx.torsions->gpu_data_p;
     ctorsion_t* d_ctorsions = host_ctx.ctorsions->gpu_data_p;
 

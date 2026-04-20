@@ -212,8 +212,8 @@ void calc_polx_water_forces_host(int iteration) {
     // cuda_ctx.sync_all_to_device();
     cudaMemcpy(cuda_ctx.d_wshells, ctx.wshells.data(), ctx.n_shells * sizeof(shell_t), cudaMemcpyHostToDevice);
 
-    coord_t* d_coords = cuda_ctx.d_coords;
-    dvel_t* d_dvelocities = cuda_ctx.d_dvelocities;
+    coord_t* d_coords = ctx.coords->gpu_data_p;
+    dvel_t* d_dvelocities = ctx.dvelocities->gpu_data_p;
     shell_t* d_wshells = cuda_ctx.d_wshells;
 
     int blockSize = 256;

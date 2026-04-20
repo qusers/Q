@@ -107,9 +107,9 @@ void calc_restrang_force_host() {
     CudaContext& ctx = CudaContext::instance();
 
     auto d_restrangs = ctx.d_restrangs;
-    auto d_coords = ctx.d_coords;
+    auto d_coords = host.coords->gpu_data_p;
     auto d_lambdas = ctx.d_lambdas;
-    auto d_dvelocities = ctx.d_dvelocities;
+    auto d_dvelocities = host.dvelocities->gpu_data_p;
     auto d_EQ_restraint = ctx.d_EQ_restraint;
 
     double val = 0;

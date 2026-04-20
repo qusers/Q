@@ -8,6 +8,8 @@ double calc_bond_forces(int start, int end) {
     auto& ctx = Context::instance();
     auto &bonds = ctx.bonds->cpu_data_p;
     auto &cbonds = ctx.cbonds->cpu_data_p;
+    auto &coords = ctx.coords->cpu_data_p;
+    auto &dvelocities = ctx.dvelocities->cpu_data_p;
     int aii, aji;
     coord_t ai, aj, dx;
     cbond_t cbond;
@@ -17,8 +19,8 @@ double calc_bond_forces(int start, int end) {
     for (int i = start; i < end; i++) {
         aii = bonds[i].ai - 1;
         aji = bonds[i].aj - 1;
-        ai = ctx.coords[aii];
-        aj = ctx.coords[aji];
+        ai = coords[aii];
+        aj = coords[aji];
 
         cbond = cbonds[bonds[i].code - 1];
 
@@ -38,13 +40,13 @@ double calc_bond_forces(int start, int end) {
         // Update forces
         ampl = cbond.kb * ddx / dx1;
 
-        ctx.dvelocities[aji].x += ampl * dx.x;
-        ctx.dvelocities[aji].y += ampl * dx.y;
-        ctx.dvelocities[aji].z += ampl * dx.z;
+        dvelocities[aji].x += ampl * dx.x;
+        dvelocities[aji].y += ampl * dx.y;
+        dvelocities[aji].z += ampl * dx.z;
 
-        ctx.dvelocities[aii].x -= ampl * dx.x;
-        ctx.dvelocities[aii].y -= ampl * dx.y;
-        ctx.dvelocities[aii].z -= ampl * dx.z;
+        dvelocities[aii].x -= ampl * dx.x;
+        dvelocities[aii].y -= ampl * dx.y;
+        dvelocities[aii].z -= ampl * dx.z;
     }
 
     return bond;
