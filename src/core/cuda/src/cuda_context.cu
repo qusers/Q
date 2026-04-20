@@ -9,8 +9,6 @@ void CudaContext::init() {
     check_cudaMalloc((void**)&d_coords, sizeof(coord_t) * host.n_atoms);
     check_cudaMalloc((void**)&d_dvelocities, sizeof(dvel_t) * host.n_atoms);
     check_cudaMalloc((void**)&d_velocities, sizeof(vel_t) * host.n_atoms);
-    check_cudaMalloc((void**)&d_bonds, sizeof(bond_t) * host.n_bonds);
-    check_cudaMalloc((void**)&d_cbonds, sizeof(cbond_t) * host.n_cbonds);
     check_cudaMalloc((void**)&d_impropers, sizeof(improper_t) * host.n_impropers);
     check_cudaMalloc((void**)&d_cimpropers, sizeof(cimproper_t) * host.n_cimpropers);
 
@@ -68,8 +66,6 @@ void CudaContext::sync_all_to_device() {
     sync_array_to_device<coord_t>(d_coords, host.coords.data(), host.n_atoms);
     sync_array_to_device<dvel_t>(d_dvelocities, host.dvelocities.data(), host.n_atoms);
     sync_array_to_device<vel_t>(d_velocities, host.velocities.data(), host.n_atoms);
-    sync_array_to_device<bond_t>(d_bonds, host.bonds.data(), host.n_bonds);
-    sync_array_to_device<cbond_t>(d_cbonds, host.cbonds.data(), host.n_cbonds);
     sync_array_to_device<improper_t>(d_impropers, host.impropers.data(), host.n_impropers);
     sync_array_to_device<cimproper_t>(d_cimpropers, host.cimpropers.data(), host.n_cimpropers);
 
@@ -119,8 +115,6 @@ void CudaContext::sync_all_to_host() {
     sync_array_to_host<coord_t>(host.coords.data(), d_coords, host.n_atoms);
     sync_array_to_host<dvel_t>(host.dvelocities.data(), d_dvelocities, host.n_atoms);
     sync_array_to_host<vel_t>(host.velocities.data(), d_velocities, host.n_atoms);
-    sync_array_to_host<bond_t>(host.bonds.data(), d_bonds, host.n_bonds);
-    sync_array_to_host<cbond_t>(host.cbonds.data(), d_cbonds, host.n_cbonds);
     sync_array_to_host<improper_t>(host.impropers.data(), d_impropers, host.n_impropers);
     sync_array_to_host<cimproper_t>(host.cimpropers.data(), d_cimpropers, host.n_cimpropers);
 
@@ -167,8 +161,6 @@ void CudaContext::free() {
     cudaFree(d_coords);
     cudaFree(d_dvelocities);
     cudaFree(d_velocities);
-    cudaFree(d_bonds);
-    cudaFree(d_cbonds);
     cudaFree(d_impropers);
     cudaFree(d_cimpropers);
 

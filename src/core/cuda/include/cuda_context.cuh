@@ -20,12 +20,6 @@ class CudaContext {
     vel_t* d_velocities = nullptr;
 
     /*
-    Used in cuda_bond_force.cu
-    */
-    bond_t* d_bonds = nullptr;
-    cbond_t* d_cbonds = nullptr;
-
-    /*
     Used in cuda_improper2_force.cu
     */
     improper_t* d_impropers = nullptr;
@@ -159,7 +153,7 @@ class CudaContext {
    private:
     CudaContext() = default;
 
-    void free();
+   void free();
 
     ~CudaContext() { free(); }
     CudaContext(const CudaContext&) = delete;

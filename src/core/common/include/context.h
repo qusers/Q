@@ -62,6 +62,8 @@ class Context {
     int n_bonds = 0;
     int n_bonds_solute = 0;
     int n_cbonds = 0;
+    std::unique_ptr<HostDeviceBuffer<bond_t>> bonds;
+    std::unique_ptr<HostDeviceBuffer<cbond_t>> cbonds;
     int n_torsions = 0;
     int n_torsions_solute = 0;
     int n_ctorsions = 0;
@@ -79,12 +81,6 @@ class Context {
     int n_cgrps_solvent = 0;
     int iuse_switch_atom = 0;
 
-
-
-    std::vector<bond_t> bonds;
-    std::vector<cbond_t> cbonds;
-    // std::vector<angle_t> angles;
-    // std::vector<cangle_t> cangles;
     std::vector<torsion_t> torsions;
     std::vector<ctorsion_t> ctorsions;
     std::vector<improper_t> impropers;

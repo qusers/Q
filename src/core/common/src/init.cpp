@@ -8,6 +8,7 @@
 
 #include "constants.h"
 #include "context.h"
+#include "cuda_context.cuh"
 #include "cpu_handler.h"
 #include "cpu_shake.h"
 #include "cpu_utils.h"
@@ -70,6 +71,7 @@ void exclude_qatom_definitions() {
     excluded = 0;
     int solute_excluded = 0;
 
+    auto &bonds = ctx.bonds->cpu_data_p;
     auto &angles = ctx.angles->cpu_data_p;
 
     if (ctx.n_qangles > 0) {
@@ -91,12 +93,12 @@ void exclude_qatom_definitions() {
     solute_excluded = 0;
     if (ctx.n_qbonds > 0) {
         for (int i = 0; i < ctx.n_bonds; i++) {
-            if (ctx.bonds[i].ai == ctx.q_bonds[qbi].ai && ctx.bonds[i].aj == ctx.q_bonds[qbi].aj) {
+            if (bonds[i].ai == ctx.q_bonds[qbi].ai && bonds[i].aj == ctx.q_bonds[qbi].aj) {
                 qbi++;
                 excluded++;
                 if (i < ctx.n_bonds_solute) solute_excluded++;
             } else {
-                ctx.bonds[bi] = ctx.bonds[i];
+                bonds[bi] = bonds[i];
                 bi++;
             }
         }
@@ -210,14 +212,15 @@ void exclude_shaken_definitions() {
 
     excluded = 0;
     solute_excluded = 0;
+    auto &bonds = ctx.bonds->cpu_data_p;
     if (ctx.n_shake_constraints > 0) {
         for (int i = 0; i < ctx.n_bonds; i++) {
-            if (ctx.bonds[i].ai == ctx.shake_bonds[si].ai && ctx.bonds[i].aj == ctx.shake_bonds[si].aj) {
+            if (bonds[i].ai == ctx.shake_bonds[si].ai && bonds[i].aj == ctx.shake_bonds[si].aj) {
                 si++;
                 excluded++;
                 if (i < ctx.n_bonds_solute) solute_excluded++;
             } else {
-                ctx.bonds[bi] = ctx.bonds[i];
+                bonds[bi] = bonds[i];
                 bi++;
             }
         }
@@ -308,11 +311,13 @@ void init_wshells() {
     auto& ctx = Context::instance();
     int n_inshell;
     double drs, router, ri, dr, Vshell, rshell;
+    auto &bonds = ctx.bonds->cpu_data_p;
+    auto &cbonds = ctx.cbonds->cpu_data_p;
     auto &angles = ctx.angles->cpu_data_p;
     auto &cangles = ctx.cangles->cpu_data_p;
     if (ctx.mu_w == 0) {
         // Get water properties from first water molecule
-        cbond_t cbondw = ctx.cbonds[ctx.bonds[ctx.n_atoms_solute].code - 1];
+        cbond_t cbondw = cbonds[bonds[ctx.n_atoms_solute].code - 1];
         cangle_t canglew = cangles[angles[ctx.n_atoms_solute].code - 1];
 
         ctx.crg_ow = ctx.unified_ccharge(ctx.n_atoms_solute, 0).charge;
@@ -526,13 +531,15 @@ void init_shake() {
     int shake;
     int n_solute_shake_constraints = 0;
     double excl_shake = 0;
+    auto &bonds = ctx.bonds->cpu_data_p;
+    auto &cbonds = ctx.cbonds->cpu_data_p;
 
     ctx.n_shake_constraints = 0;
     ctx.mol_n_shakes.assign(ctx.n_molecules, 0);
 
     for (int bi = 0; bi < ctx.n_bonds; bi++) {
-        ai = ctx.bonds[bi].ai - 1;
-        aj = ctx.bonds[bi].aj - 1;
+        ai = bonds[bi].ai - 1;
+        aj = bonds[bi].aj - 1;
 
         while (mol + 1 < ctx.n_molecules && ai + 1 >= ctx.molecules[mol + 1]) {
             // new molecule
@@ -552,8 +559,8 @@ void init_shake() {
     mol = 0;
     shake = 0;
     for (int bi = 0; bi < ctx.n_bonds; bi++) {
-        ai = ctx.bonds[bi].ai - 1;
-        aj = ctx.bonds[bi].aj - 1;
+        ai = bonds[bi].ai - 1;
+        aj = bonds[bi].aj - 1;
 
         while (mol + 1 < ctx.n_molecules && ai + 1 >= ctx.molecules[mol + 1]) {
             // new molecule
@@ -563,7 +570,7 @@ void init_shake() {
         if ((ctx.md.shake_hydrogens && (!ctx.heavy[ai] || !ctx.heavy[aj])) || (ctx.md.shake_solute && ai + 1 <= ctx.n_atoms_solute) || (ctx.md.shake_solvent && ai + 1 > ctx.n_atoms_solute)) {
             ctx.shake_bonds[shake].ai = ai + 1;
             ctx.shake_bonds[shake].aj = aj + 1;
-            ctx.shake_bonds[shake].dist2 = pow(ctx.cbonds[ctx.bonds[bi].code - 1].b0, 2);
+            ctx.shake_bonds[shake].dist2 = pow(cbonds[bonds[bi].code - 1].b0, 2);
             shake++;
         }
     }
@@ -803,7 +810,14 @@ void init_variables() {
 }
 
 void clean_variables() {
+    // auto &gpu_ctx = CudaContext::instance();
+    // gpu_ctx.free();
     auto& ctx = Context::instance();
+    ctx.angles.reset();
+    ctx.cangles.reset();
+    ctx.bonds.reset();
+    ctx.cbonds.reset();
+    ctx.coords_init.reset();
 
     for (auto& charge_group : ctx.charge_groups) {
         delete[] charge_group.a;
@@ -812,9 +826,7 @@ void clean_variables() {
     ctx.charge_groups.clear();
 
     ctx.atypes.clear();
-    ctx.bonds.clear();
     ctx.catypes.clear();
-    ctx.cbonds.clear();
     ctx.ccharges.clear();
     ctx.charges.clear();
     ctx.atom_to_qi.clear();
@@ -822,7 +834,6 @@ void clean_variables() {
     ctx.unified_catypes.clear();
     ctx.cimpropers.clear();
     ctx.coords.clear();
-    ctx.coords_init.reset();
     ctx.ctorsions.clear();
     ctx.excluded.reset();
     ctx.heavy.reset();

@@ -6,6 +6,8 @@
 
 double calc_bond_forces(int start, int end) {
     auto& ctx = Context::instance();
+    auto &bonds = ctx.bonds->cpu_data_p;
+    auto &cbonds = ctx.cbonds->cpu_data_p;
     int aii, aji;
     coord_t ai, aj, dx;
     cbond_t cbond;
@@ -13,12 +15,12 @@ double calc_bond_forces(int start, int end) {
     double bond = 0;
 
     for (int i = start; i < end; i++) {
-        aii = ctx.bonds[i].ai - 1;
-        aji = ctx.bonds[i].aj - 1;
+        aii = bonds[i].ai - 1;
+        aji = bonds[i].aj - 1;
         ai = ctx.coords[aii];
         aj = ctx.coords[aji];
 
-        cbond = ctx.cbonds[ctx.bonds[i].code - 1];
+        cbond = cbonds[bonds[i].code - 1];
 
         // Calculate distance vector, norm of distance vector
         dx.x = aj.x - ai.x;

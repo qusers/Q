@@ -423,8 +423,8 @@ void init_bonds(const char* filename) {
 
     ctx.n_bonds = atoi(file.buffer[0][0]);
     ctx.n_bonds_solute = atoi(file.buffer[1][0]);
-
-    ctx.bonds.resize(ctx.n_bonds);
+    ctx.bonds = std::make_unique<HostDeviceBuffer<bond_t>>(ctx.n_bonds, true, ctx.run_gpu);
+    auto &bonds = ctx.bonds->cpu_data_p;
 
     for (int i = 0; i < ctx.n_bonds; i++) {
         bond_t bond;
@@ -433,7 +433,11 @@ void init_bonds(const char* filename) {
         bond.aj = atoi(file.buffer[i + 2][1]);
         bond.code = atoi(file.buffer[i + 2][2]);
 
-        ctx.bonds[i] = bond;
+        bonds[i] = bond;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.bonds->upload();
     }
 
     clean_csv(file);
@@ -451,7 +455,8 @@ void init_cbonds(const char* filename) {
     }
 
     ctx.n_cbonds = atoi(file.buffer[0][0]);
-    ctx.cbonds.resize(ctx.n_cbonds);
+    ctx.cbonds = std::make_unique<HostDeviceBuffer<cbond_t>>(ctx.n_cbonds, true, ctx.run_gpu);
+    auto &cbonds = ctx.cbonds->cpu_data_p;
 
     for (int i = 0; i < ctx.n_cbonds; i++) {
         cbond_t cbond;
@@ -461,7 +466,11 @@ void init_cbonds(const char* filename) {
         cbond.kb = strtod(file.buffer[i + 1][1], &eptr);
         cbond.b0 = strtod(file.buffer[i + 1][2], &eptr);
 
-        ctx.cbonds[i] = cbond;
+        cbonds[i] = cbond;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.cbonds->upload();
     }
 
     clean_csv(file);
