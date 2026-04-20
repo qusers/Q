@@ -116,11 +116,13 @@ void initial_shaking() {
 
 void stop_cm_translation() {
     auto& ctx = Context::instance();
+    auto &atypes = ctx.atypes->cpu_data_p;
+    auto &catypes = ctx.catypes->cpu_data_p;
     double total_mass = 0;
     coord_t vcm = {};
 
     for (int ai = 0; ai < ctx.n_atoms; ai++) {
-        const double rmass = ctx.catypes[ctx.atypes[ai].code - 1].m;
+        const double rmass = catypes[atypes[ai].code - 1].m;
         total_mass += rmass;
         vcm.x += ctx.velocities[ai].x * rmass;
         vcm.y += ctx.velocities[ai].y;

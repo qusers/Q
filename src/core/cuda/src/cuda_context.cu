@@ -15,9 +15,6 @@ void CudaContext::init() {
     check_cudaMalloc((void**)&d_winv, sizeof(double) * host.n_atoms);
     check_cudaMalloc((void**)&d_xcoords, sizeof(coord_t) * host.n_atoms);
 
-    check_cudaMalloc((void**)&d_atypes, sizeof(atype_t) * host.n_atypes);
-    check_cudaMalloc((void**)&d_catypes, sizeof(catype_t) * host.n_catypes);
-
     check_cudaMalloc((void**)&d_q_atoms, sizeof(int) * host.n_qatoms);
     check_cudaMalloc((void**)&d_q_charges, sizeof(ccharge_t) * host.n_qatoms * host.n_lambdas);
     check_cudaMalloc((void**)&d_LJ_matrix, sizeof(int) * host.n_atoms_solute * host.n_atoms_solute);
@@ -67,9 +64,6 @@ void CudaContext::sync_all_to_device() {
     sync_array_to_device<double>(d_winv, host.winv.data(), host.n_atoms);
     sync_array_to_device<coord_t>(d_xcoords, host.xcoords.data(), host.n_atoms);
 
-    sync_array_to_device<atype_t>(d_atypes, host.atypes.data(), host.n_atypes);
-    sync_array_to_device<catype_t>(d_catypes, host.catypes.data(), host.n_catypes);
-
     sync_array_to_device<int>(d_q_atoms, host.q_atoms.data(), host.n_qatoms);
     sync_array_to_device<ccharge_t>(d_q_charges, host.q_charges.data(), host.n_qatoms * host.n_lambdas);
     sync_array_to_device<int>(d_LJ_matrix, host.LJ_matrix.data(), host.n_atoms_solute * host.n_atoms_solute);
@@ -111,9 +105,6 @@ void CudaContext::sync_all_to_host() {
     sync_array_to_host<double>(host.winv.data(), d_winv, host.n_atoms);
     sync_array_to_host<coord_t>(host.xcoords.data(), d_xcoords, host.n_atoms);
 
-    sync_array_to_host<atype_t>(host.atypes.data(), d_atypes, host.n_atypes);
-    sync_array_to_host<catype_t>(host.catypes.data(), d_catypes, host.n_catypes);
-
     sync_array_to_host<int>(host.q_atoms.data(), d_q_atoms, host.n_qatoms);
     sync_array_to_host<ccharge_t>(host.q_charges.data(), d_q_charges, host.n_qatoms * host.n_lambdas);
     sync_array_to_host<int>(host.LJ_matrix.data(), d_LJ_matrix, host.n_atoms_solute * host.n_atoms_solute);
@@ -146,9 +137,6 @@ void CudaContext::free() {
     cudaFree(d_coords);
     cudaFree(d_dvelocities);
     cudaFree(d_velocities);
-
-    cudaFree(d_atypes);
-    cudaFree(d_catypes);
 
     cudaFree(d_mol_n_shakes);
     cudaFree(d_shake_bonds);
@@ -360,6 +348,8 @@ void CudaContext::initialize_charge_tables_host() {
 
 void CudaContext::initialize_catype_tables_host() {
     auto& host = Context::instance();
+    auto &atypes = host.atypes->cpu_data_p;
+    auto &catypes = host.catypes->cpu_data_p;
 
     std::vector<catype_t> h_catype_table_all;  // h_catype_table_all[catype code] = catype_t
     catype_to_type_host.clear();
@@ -376,7 +366,7 @@ void CudaContext::initialize_catype_tables_host() {
     };
 
     for (int i = 0; i < host.n_catypes; i++) {
-        add_catype(host.catypes[i]);
+        add_catype(catypes[i]);
     }
 
     for (int state = 0; state < host.n_lambdas; state++) {
@@ -408,7 +398,7 @@ void CudaContext::initialize_catype_tables_host() {
     std::vector<int> p_catype_types(h_p_atoms_list.size());
     for (int i = 0; i < static_cast<int>(h_p_atoms_list.size()); i++) {
         int id = h_p_atoms_list[i];
-        auto catype = host.catypes[host.atypes[id].code - 1];
+        auto catype = catypes[atypes[id].code - 1];
         auto key = get_catype_key(catype);
         p_catype_types[i] = catype_to_type_host[key];
     }
@@ -437,7 +427,7 @@ void CudaContext::initialize_catype_tables_host() {
     std::vector<int> w_catype_types(h_w_atoms_size);
     for (int i = 0; i < h_w_atoms_size; i++) {
         int id = h_w_atoms_list[i];
-        auto catype = host.catypes[host.atypes[id].code - 1];
+        auto catype = catypes[atypes[id].code - 1];
         auto key = get_catype_key(catype);
         w_catype_types[i] = catype_to_type_host[key];
         // printf("Water atom %d: catype code %d mapped to %d, data: m=%f, aii_normal=%f, bii_normal=%f, aii_polar=%f, bii_polar=%f, aii_1_4=%f, bii_1_4=%f\n", id, atypes[id].code, w_catype_types[i], catype.m, catype.aii_normal, catype.bii_normal, catype.aii_polar, catype.bii_polar, catype.aii_1_4, catype.bii_1_4);

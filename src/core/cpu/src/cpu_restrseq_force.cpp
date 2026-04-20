@@ -6,6 +6,8 @@
 
 void calc_restrseq_forces() {
     auto& ctx = Context::instance();
+    auto &atypes = ctx.atypes->cpu_data_p;
+    auto &catypes = ctx.catypes->cpu_data_p;
 
     double k, mass, totmass;
     coord_t dr;
@@ -40,7 +42,7 @@ void calc_restrseq_forces() {
 
                 for (int i = ctx.restrseqs[s].ai - 1; i < ctx.restrseqs[s].aj - 1; i++) {
                     if (ctx.heavy[i] || ctx.restrseqs[s].ih) {
-                        mass = ctx.catypes[ctx.atypes[i].code - 1].m;
+                        mass = catypes[atypes[i].code - 1].m;
                         ctx.dvelocities[i].x += (k * dr.x * mass / 12.010);
                         ctx.dvelocities[i].y += (k * dr.y * mass / 12.010);
                         ctx.dvelocities[i].z += (k * dr.z * mass / 12.010);
@@ -50,7 +52,7 @@ void calc_restrseq_forces() {
         } else if (ctx.restrseqs[s].to_center == 2) {
             for (int i = ctx.restrseqs[s].ai - 1; i < ctx.restrseqs[s].aj - 1; i++) {
                 if (ctx.heavy[i] || ctx.restrseqs[s].ih) {
-                    mass = ctx.catypes[ctx.atypes[i].code - 1].m;
+                    mass = catypes[atypes[i].code - 1].m;
                     totmass += mass;
                     dr.x += (ctx.coords[i].x - ctx.coords_init->cpu_data_p[i].x) * mass;
                     dr.y += (ctx.coords[i].y - ctx.coords_init->cpu_data_p[i].y) * mass;

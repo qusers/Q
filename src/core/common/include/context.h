@@ -60,12 +60,14 @@ class Context {
     int n_cimpropers = 0;
     std::unique_ptr<HostDeviceBuffer<improper_t>> impropers;
     std::unique_ptr<HostDeviceBuffer<cimproper_t>> cimpropers;
-    
+
     
     int n_charges = 0;
     int n_ccharges = 0;
     int n_atypes = 0;
     int n_catypes = 0;
+    std::unique_ptr<HostDeviceBuffer<atype_t>> atypes;
+    std::unique_ptr<HostDeviceBuffer<catype_t>> catypes;
     int n_ngbrs23 = 0;
     int n_ngbrs14 = 0;
     int n_excluded = 0;
@@ -75,8 +77,6 @@ class Context {
 
     std::vector<charge_t> charges;
     std::vector<ccharge_t> ccharges;
-    std::vector<atype_t> atypes;
-    std::vector<catype_t> catypes;
     std::vector<int> atom_to_qi;
     std::vector<ccharge_t> unified_ccharges;
     std::vector<catype_t> unified_catypes;

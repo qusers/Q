@@ -263,13 +263,15 @@ void exclude_shaken_definitions() {
 
 void init_velocities() {
     auto& ctx = Context::instance();
+    auto &atypes = ctx.atypes->cpu_data_p;
+    auto &catypes = ctx.catypes->cpu_data_p;
     ctx.velocities.resize(ctx.n_atoms);
 
     // If not previous value set, use a Maxwell distribution to fill velocities
     double kT = Boltz * ctx.md.initial_temperature;
     double sd, mass;
     for (int i = 0; i < ctx.n_atoms; i++) {
-        mass = ctx.catypes[ctx.atypes[i].code - 1].m;
+        mass = catypes[atypes[i].code - 1].m;
         sd = sqrt(kT / mass);
 
         ctx.velocities[i].x = gauss(0, sd);
@@ -290,9 +292,11 @@ void init_xcoords() {
 
 void init_inv_mass() {
     auto& ctx = Context::instance();
+    auto &atypes = ctx.atypes->cpu_data_p;
+    auto &catypes = ctx.catypes->cpu_data_p;
     ctx.winv.resize(ctx.n_atoms);
     for (int ai = 0; ai < ctx.n_atoms; ai++) {
-        ctx.winv[ai] = 1 / ctx.catypes[ctx.atypes[ai].code - 1].m;
+        ctx.winv[ai] = 1 / catypes[atypes[ai].code - 1].m;
     }
 }
 
@@ -374,6 +378,8 @@ void init_wshells() {
 
 void init_pshells() {
     auto& ctx = Context::instance();
+    auto &atypes = ctx.atypes->cpu_data_p;
+    auto &catypes = ctx.catypes->cpu_data_p;
     double mass, r2, rin2;
 
     ctx.heavy = std::make_unique<bool[]>(ctx.n_atoms);
@@ -387,7 +393,7 @@ void init_pshells() {
     int n_heavy = 0, n_inshell = 0;
 
     for (int i = 0; i < ctx.n_atoms; i++) {
-        mass = ctx.catypes[ctx.atypes[i].code - 1].m;
+        mass = catypes[atypes[i].code - 1].m;
         if (mass < 4.0) {
             ctx.heavy[i] = false;
         } else {
@@ -412,9 +418,11 @@ void init_pshells() {
 // Marks heavy atoms for the shell/excluded arrays.
 // Shared between switch-atom and centroid shell init paths.
 static int mark_heavy_atoms(Context& ctx) {
+    auto &atypes = ctx.atypes->cpu_data_p;
+    auto &catypes = ctx.catypes->cpu_data_p;
     int n_heavy = 0;
     for (int i = 0; i < ctx.n_atoms; i++) {
-        double mass = ctx.catypes[ctx.atypes[i].code - 1].m;
+        double mass = catypes[atypes[i].code - 1].m;
         if (mass < 4.0) {
             ctx.heavy[i] = false;
         } else {
@@ -630,6 +638,8 @@ void init_patoms() {
 // states above 0 get appended as extra codes.
 static void init_unified_atom_parameters() {
     auto& ctx = Context::instance();
+    auto &atypes = ctx.atypes->cpu_data_p;
+    auto &catypes = ctx.catypes->cpu_data_p;
     const int n_states = ctx.n_parameter_states();
 
     ctx.atom_to_qi.assign(ctx.n_atoms, -1);
@@ -658,7 +668,7 @@ static void init_unified_atom_parameters() {
             resolved_type.code = unified_code;
         } else {
             resolved_charge.charge = ctx.ccharges[ctx.charges[atom_idx].code - 1].charge;
-            resolved_type = ctx.catypes[ctx.atypes[atom_idx].code - 1];
+            resolved_type = catypes[atypes[atom_idx].code - 1];
             resolved_type.code = unified_code;
         }
 
@@ -826,8 +836,8 @@ void clean_variables() {
     }
     ctx.charge_groups.clear();
 
-    ctx.atypes.clear();
-    ctx.catypes.clear();
+    ctx.atypes.reset();
+    ctx.catypes.reset();
     ctx.ccharges.clear();
     ctx.charges.clear();
     ctx.atom_to_qi.clear();

@@ -20,12 +20,6 @@ class CudaContext {
     vel_t* d_velocities = nullptr;
 
     /*
-    Used in cuda_leapfrog.cu
-    */
-    atype_t* d_atypes = nullptr;
-    catype_t* d_catypes = nullptr;
-
-    /*
     Used in cuda_shake_constraints.cu
     */
     int* d_mol_n_shakes = nullptr;

@@ -5,11 +5,13 @@
 
 void calc_leapfrog() {
     auto& ctx = Context::instance();
+    auto &atypes = ctx.atypes->cpu_data_p;
+    auto &catypes = ctx.catypes->cpu_data_p;
     double mass_i;
     double winv_i;
 
     for (int i = 0; i < ctx.n_atoms_solute; i++) {
-        mass_i = ctx.catypes[ctx.atypes[i].code - 1].m;
+        mass_i = catypes[atypes[i].code - 1].m;
         winv_i = 1 / mass_i;
 
         ctx.velocities[i].x = (ctx.velocities[i].x - ctx.dvelocities[i].x * ctx.dt * winv_i) * ctx.Tscale_solute;
@@ -26,7 +28,7 @@ void calc_leapfrog() {
     }
 
     for (int i = ctx.n_atoms_solute; i < ctx.n_atoms; i++) {
-        mass_i = ctx.catypes[ctx.atypes[i].code - 1].m;
+        mass_i = catypes[atypes[i].code - 1].m;
         winv_i = 1 / mass_i;
 
         ctx.velocities[i].x = (ctx.velocities[i].x - ctx.dvelocities[i].x * ctx.dt * winv_i) * ctx.Tscale_solvent;

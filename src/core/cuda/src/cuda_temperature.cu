@@ -59,8 +59,8 @@ void calc_temperature_host() {
     cudaMemcpy(d_Texcl_solvent, &h_Texcl_solvent, sizeof(double), cudaMemcpyHostToDevice);
 
     CudaContext& ctx = CudaContext::instance();
-    atype_t* d_atypes = ctx.d_atypes;
-    catype_t* d_catypes = ctx.d_catypes;
+    atype_t* d_atypes = host.atypes->gpu_data_p;
+    catype_t* d_catypes = host.catypes->gpu_data_p;
     vel_t* d_velocities = ctx.d_velocities;
     bool* d_excluded = ctx.d_excluded;
 

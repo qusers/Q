@@ -946,7 +946,8 @@ void init_catypes(const char* filename) {
     }
 
     ctx.n_catypes = atoi(file.buffer[0][0]);
-    ctx.catypes.resize(ctx.n_catypes);
+    ctx.catypes = std::make_unique<HostDeviceBuffer<catype_t>>(ctx.n_catypes, true, ctx.run_gpu);
+    auto &catypes = ctx.catypes->cpu_data_p;
 
     for (int i = 0; i < ctx.n_catypes; i++) {
         catype_t catype;
@@ -962,19 +963,23 @@ void init_catypes(const char* filename) {
         catype.aii_1_4 = strtod(file.buffer[i + 1][6], &eptr);
         catype.bii_1_4 = strtod(file.buffer[i + 1][7], &eptr);
 
-        ctx.catypes[i] = catype;
+        catypes[i] = catype;
     }
 
     // Preprocess bii parameters for arithmetic rule: convert ε to √ε
     // This matches Fortran md.f90:14747-14752 preprocessing
     if (ctx.topo.vdw_rule == VDW_ARITHMETIC) {
         for (int i = 0; i < ctx.n_catypes; i++) {
-            ctx.catypes[i].bii_normal = sqrt(fabs(ctx.catypes[i].bii_normal));
-            ctx.catypes[i].bii_1_4 = sqrt(fabs(ctx.catypes[i].bii_1_4));
+            catypes[i].bii_normal = sqrt(fabs(catypes[i].bii_normal));
+            catypes[i].bii_1_4 = sqrt(fabs(catypes[i].bii_1_4));
         }
 #ifdef VERBOSE
         printf("Preprocessed catypes bii parameters for arithmetic vdW rule\n");
 #endif
+    }
+
+    if (ctx.run_gpu) {
+        ctx.catypes->upload();
     }
 
     clean_csv(file);
@@ -993,14 +998,19 @@ void init_atypes(const char* filename) {
 
     ctx.n_atypes = atoi(file.buffer[0][0]);
 
-    ctx.atypes.resize(ctx.n_atypes);
+    ctx.atypes = std::make_unique<HostDeviceBuffer<atype_t>>(ctx.n_atypes, true, ctx.run_gpu);
+    auto &atypes = ctx.atypes->cpu_data_p;
     for (int i = 0; i < ctx.n_atypes; i++) {
         atype_t atype;
 
         atype.a = atoi(file.buffer[i + 1][0]);
         atype.code = atoi(file.buffer[i + 1][1]);
 
-        ctx.atypes[i] = atype;
+        atypes[i] = atype;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.atypes->upload();
     }
 
     clean_csv(file);

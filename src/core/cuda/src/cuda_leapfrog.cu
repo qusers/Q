@@ -49,8 +49,8 @@ __global__ void calc_leapfrog_kernel(
 void calc_leapfrog_host() {
     auto& host = Context::instance();
     auto& ctx = CudaContext::instance();
-    auto d_atypes = ctx.d_atypes;
-    auto d_catypes = ctx.d_catypes;
+    auto d_atypes = host.atypes->gpu_data_p;
+    auto d_catypes = host.catypes->gpu_data_p;
     auto d_velocities = ctx.d_velocities;
     auto d_dvelocities = ctx.d_dvelocities;
     auto d_coords = ctx.d_coords;
