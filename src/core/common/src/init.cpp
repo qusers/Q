@@ -301,9 +301,14 @@ void init_inv_mass() {
     auto& ctx = Context::instance();
     auto &atypes = ctx.atypes->cpu_data_p;
     auto &catypes = ctx.catypes->cpu_data_p;
-    ctx.winv.resize(ctx.n_atoms);
+    ctx.winv = std::make_unique<HostDeviceBuffer<double>>(ctx.n_atoms, true, ctx.run_gpu);
+    auto *winv = ctx.winv->cpu_data_p;
     for (int ai = 0; ai < ctx.n_atoms; ai++) {
-        ctx.winv[ai] = 1 / catypes[atypes[ai].code - 1].m;
+        winv[ai] = 1 / catypes[atypes[ai].code - 1].m;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.winv->upload();
     }
 }
 
@@ -888,6 +893,7 @@ void clean_variables() {
     ctx.excluded.reset();
     ctx.heavy.reset();
     ctx.impropers.reset();
+    ctx.winv.reset();
     ctx.torsions.reset();
     ctx.LJ_matrix.reset();
     ctx.molecules.clear();

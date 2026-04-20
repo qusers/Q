@@ -9,6 +9,7 @@
 
 int calc_shake_constraints(coord_t* coords, coord_t* xcoords) {
     auto& ctx = Context::instance();
+    auto *winv = ctx.winv->cpu_data_p;
     int total_iterations = 0;
     int shake = 0;
 
@@ -45,14 +46,14 @@ int calc_shake_constraints(coord_t* coords, coord_t* xcoords) {
                     xxij.y = xcoords[ai].y - xcoords[aj].y;
                     xxij.z = xcoords[ai].z - xcoords[aj].z;
                     scp = xij.x * xxij.x + xij.y * xxij.y + xij.z * xxij.z;
-                    corr = diff / (2.0 * scp * (ctx.winv[ai] + ctx.winv[aj]));
+                    corr = diff / (2.0 * scp * (winv[ai] + winv[aj]));
 
-                    coords[ai].x += xxij.x * corr * ctx.winv[ai];
-                    coords[ai].y += xxij.y * corr * ctx.winv[ai];
-                    coords[ai].z += xxij.z * corr * ctx.winv[ai];
-                    coords[aj].x -= xxij.x * corr * ctx.winv[aj];
-                    coords[aj].y -= xxij.y * corr * ctx.winv[aj];
-                    coords[aj].z -= xxij.z * corr * ctx.winv[aj];
+                    coords[ai].x += xxij.x * corr * winv[ai];
+                    coords[ai].y += xxij.y * corr * winv[ai];
+                    coords[ai].z += xxij.z * corr * winv[ai];
+                    coords[aj].x -= xxij.x * corr * winv[aj];
+                    coords[aj].y -= xxij.y * corr * winv[aj];
+                    coords[aj].z -= xxij.z * corr * winv[aj];
                 }
             }
 

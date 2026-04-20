@@ -142,7 +142,7 @@ int calc_shake_constraints_host() {
     auto d_shake_bonds = ctx.d_shake_bonds;
     auto d_coords = host.coords->gpu_data_p;
     auto d_xcoords = ctx.d_xcoords;
-    auto d_winv = ctx.d_winv;
+    auto d_winv = host.winv->gpu_data_p;
 
     calc_shake_constraints_kernel<<<blocks, threads>>>(
         host.n_molecules,

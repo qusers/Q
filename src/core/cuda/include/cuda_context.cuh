@@ -17,7 +17,6 @@ class CudaContext {
     */
     int* d_mol_n_shakes = nullptr;
     shake_bond_t* d_shake_bonds = nullptr;
-    double* d_winv = nullptr;
     coord_t* d_xcoords = nullptr;
 
     /*
