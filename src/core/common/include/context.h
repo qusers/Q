@@ -64,6 +64,8 @@ class Context {
     
     int n_charges = 0;
     int n_ccharges = 0;
+    std::unique_ptr<HostDeviceBuffer<charge_t>> charges;
+    std::unique_ptr<HostDeviceBuffer<ccharge_t>> ccharges;
     int n_atypes = 0;
     int n_catypes = 0;
     std::unique_ptr<HostDeviceBuffer<atype_t>> atypes;
@@ -75,8 +77,6 @@ class Context {
     int n_cgrps_solvent = 0;
     int iuse_switch_atom = 0;
 
-    std::vector<charge_t> charges;
-    std::vector<ccharge_t> ccharges;
     std::vector<int> atom_to_qi;
     std::vector<ccharge_t> unified_ccharges;
     std::vector<catype_t> unified_catypes;

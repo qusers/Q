@@ -74,8 +74,6 @@ class CudaContext {
     /*
     Used in cuda_nonbonded_pp_force.cu
     */
-    ccharge_t* d_ccharges;
-    charge_t* d_charges;
     int* d_p_atoms = nullptr;
 
     /*

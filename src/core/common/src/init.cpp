@@ -638,6 +638,8 @@ void init_patoms() {
 // states above 0 get appended as extra codes.
 static void init_unified_atom_parameters() {
     auto& ctx = Context::instance();
+    auto &charges = ctx.charges->cpu_data_p;
+    auto &ccharges = ctx.ccharges->cpu_data_p;
     auto &atypes = ctx.atypes->cpu_data_p;
     auto &catypes = ctx.catypes->cpu_data_p;
     const int n_states = ctx.n_parameter_states();
@@ -667,7 +669,7 @@ static void init_unified_atom_parameters() {
             resolved_type = ctx.q_catypes[ctx.q_atypes[qi].code - 1];
             resolved_type.code = unified_code;
         } else {
-            resolved_charge.charge = ctx.ccharges[ctx.charges[atom_idx].code - 1].charge;
+            resolved_charge.charge = ccharges[charges[atom_idx].code - 1].charge;
             resolved_type = catypes[atypes[atom_idx].code - 1];
             resolved_type.code = unified_code;
         }
@@ -838,8 +840,8 @@ void clean_variables() {
 
     ctx.atypes.reset();
     ctx.catypes.reset();
-    ctx.ccharges.clear();
-    ctx.charges.clear();
+    ctx.ccharges.reset();
+    ctx.charges.reset();
     ctx.atom_to_qi.clear();
     ctx.unified_ccharges.clear();
     ctx.unified_catypes.clear();

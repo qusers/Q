@@ -746,8 +746,8 @@ void init_charges(const char* filename) {
     }
 
     ctx.n_charges = atoi(file.buffer[0][0]);
-
-    ctx.charges.resize(ctx.n_charges);
+    ctx.charges = std::make_unique<HostDeviceBuffer<charge_t>>(ctx.n_charges, true, ctx.run_gpu);
+    auto &charges = ctx.charges->cpu_data_p;
 
     for (int i = 0; i < ctx.n_charges; i++) {
         charge_t charge;
@@ -755,7 +755,11 @@ void init_charges(const char* filename) {
         charge.a = atoi(file.buffer[i + 1][0]);
         charge.code = atoi(file.buffer[i + 1][1]);
 
-        ctx.charges[i] = charge;
+        charges[i] = charge;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.charges->upload();
     }
 
     clean_csv(file);
@@ -773,8 +777,8 @@ void init_ccharges(const char* filename) {
     }
 
     ctx.n_ccharges = atoi(file.buffer[0][0]);
-
-    ctx.ccharges.resize(ctx.n_ccharges);
+    ctx.ccharges = std::make_unique<HostDeviceBuffer<ccharge_t>>(ctx.n_ccharges, true, ctx.run_gpu);
+    auto &ccharges = ctx.ccharges->cpu_data_p;
 
     for (int i = 0; i < ctx.n_ccharges; i++) {
         ccharge_t ccharge;
@@ -783,7 +787,11 @@ void init_ccharges(const char* filename) {
         ccharge.code = atoi(file.buffer[i + 1][0]);
         ccharge.charge = strtod(file.buffer[i + 1][1], &eptr);
 
-        ctx.ccharges[i] = ccharge;
+        ccharges[i] = ccharge;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.ccharges->upload();
     }
 
     clean_csv(file);
