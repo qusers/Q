@@ -6,8 +6,6 @@
 void CudaContext::init() {
     auto& host = Context::instance();
 
-    check_cudaMalloc((void**)&d_xcoords, sizeof(coord_t) * host.n_atoms);
-
     check_cudaMalloc((void**)&d_q_elscales, sizeof(q_elscale_t) * host.n_qelscales);
     check_cudaMalloc((void**)&d_q_atypes, sizeof(atype_t) * host.n_qatoms * host.n_lambdas);
     check_cudaMalloc((void**)&d_EQ_nonbond_qq, sizeof(E_nonbonded_t) * host.n_lambdas);
@@ -36,13 +34,12 @@ void CudaContext::sync_all_to_device() {
     host.dvelocities->upload();
     host.velocities->upload();
     host.LJ_matrix->upload();
+    host.xcoords->upload();
     host.winv->upload();
     host.mol_n_shakes->upload();
     host.shake_bonds->upload();
     host.heavy->upload();
     host.excluded->upload();
-
-    sync_array_to_device<coord_t>(d_xcoords, host.xcoords.data(), host.n_atoms);
 
     sync_array_to_device<q_elscale_t>(d_q_elscales, host.q_elscales.data(), host.n_qelscales);
     sync_array_to_device<atype_t>(d_q_atypes, host.q_atypes.data(), host.n_qatoms * host.n_lambdas);
@@ -65,12 +62,11 @@ void CudaContext::sync_all_to_host() {
     host.dvelocities->download();
     host.velocities->download();
     host.LJ_matrix->download();
+    host.xcoords->download();
     host.winv->download();
     host.mol_n_shakes->download();
     host.shake_bonds->download();
     host.excluded->download();
-
-    sync_array_to_host<coord_t>(host.xcoords.data(), d_xcoords, host.n_atoms);
 
     sync_array_to_host<q_elscale_t>(host.q_elscales.data(), d_q_elscales, host.n_qelscales);
     sync_array_to_host<atype_t>(host.q_atypes.data(), d_q_atypes, host.n_qatoms * host.n_lambdas);
@@ -86,8 +82,6 @@ void CudaContext::sync_all_to_host() {
 }
 
 void CudaContext::free() {
-    cudaFree(d_xcoords);
-
     cudaFree(d_q_elscales);
     cudaFree(d_q_atypes);
     cudaFree(d_EQ_nonbond_qq);

@@ -112,8 +112,7 @@ class Context {
     int n_shake_constraints = 0;
     std::unique_ptr<HostDeviceBuffer<int>> mol_n_shakes;
     std::unique_ptr<HostDeviceBuffer<shake_bond_t>> shake_bonds;
-
-
+    std::unique_ptr<HostDeviceBuffer<coord_t>> xcoords; // todo: It's just a temporary variables...
     /**/
 
     int n_ngbrs23 = 0;
@@ -221,7 +220,6 @@ class Context {
      */
 
     std::vector<int> p_atoms;
-    std::vector<coord_t> xcoords;
 
     energy_t E_total = {};
     std::vector<energy_t> EQ_total;

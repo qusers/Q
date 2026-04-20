@@ -99,23 +99,24 @@ void initial_shaking() {
     auto& ctx = Context::instance();
     auto &coords = ctx.coords->cpu_data_p;
     auto &velocities = ctx.velocities->cpu_data_p;
+    auto *xcoords = ctx.xcoords->cpu_data_p;
 
     for (int i = 0; i < ctx.n_atoms; i++) {
-        ctx.xcoords[i].x = coords[i].x;
-        ctx.xcoords[i].y = coords[i].y;
-        ctx.xcoords[i].z = coords[i].z;
+        xcoords[i].x = coords[i].x;
+        xcoords[i].y = coords[i].y;
+        xcoords[i].z = coords[i].z;
     }
-    calc_shake_constraints(coords, ctx.xcoords.data());
+    calc_shake_constraints(coords, xcoords);
     for (int i = 0; i < ctx.n_atoms; i++) {
-        ctx.xcoords[i].x = coords[i].x - ctx.dt * velocities[i].x;
-        ctx.xcoords[i].y = coords[i].y - ctx.dt * velocities[i].y;
-        ctx.xcoords[i].z = coords[i].z - ctx.dt * velocities[i].z;
+        xcoords[i].x = coords[i].x - ctx.dt * velocities[i].x;
+        xcoords[i].y = coords[i].y - ctx.dt * velocities[i].y;
+        xcoords[i].z = coords[i].z - ctx.dt * velocities[i].z;
     }
-    calc_shake_constraints(ctx.xcoords.data(), coords);
+    calc_shake_constraints(xcoords, coords);
     for (int i = 0; i < ctx.n_atoms; i++) {
-        velocities[i].x = (coords[i].x - ctx.xcoords[i].x) / ctx.dt;
-        velocities[i].y = (coords[i].y - ctx.xcoords[i].y) / ctx.dt;
-        velocities[i].z = (coords[i].z - ctx.xcoords[i].z) / ctx.dt;
+        velocities[i].x = (coords[i].x - xcoords[i].x) / ctx.dt;
+        velocities[i].y = (coords[i].y - xcoords[i].y) / ctx.dt;
+        velocities[i].z = (coords[i].z - xcoords[i].z) / ctx.dt;
     }
 }
 

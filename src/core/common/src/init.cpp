@@ -295,7 +295,7 @@ void init_dvelocities() {
 
 void init_xcoords() {
     auto& ctx = Context::instance();
-    ctx.xcoords.resize(ctx.n_atoms);
+    ctx.xcoords = std::make_unique<HostDeviceBuffer<coord_t>>(ctx.n_atoms, true, ctx.run_gpu);
 }
 
 void init_inv_mass() {
@@ -940,7 +940,7 @@ void clean_variables() {
     ctx.shell.reset();
     ctx.velocities.reset();
     ctx.dvelocities.reset();
-    ctx.xcoords.clear();
+    ctx.xcoords.reset();
     ctx.mol_n_shakes.reset();
     ctx.shake_bonds.reset();
     ctx.EQ_total.clear();

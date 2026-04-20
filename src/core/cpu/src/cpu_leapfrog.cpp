@@ -10,6 +10,7 @@ void calc_leapfrog() {
     auto &coords = ctx.coords->cpu_data_p;
     auto &velocities = ctx.velocities->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
+    auto *xcoords = ctx.xcoords->cpu_data_p;
     double mass_i;
     double winv_i;
 
@@ -21,9 +22,9 @@ void calc_leapfrog() {
         velocities[i].y = (velocities[i].y - dvelocities[i].y * ctx.dt * winv_i) * ctx.Tscale_solute;
         velocities[i].z = (velocities[i].z - dvelocities[i].z * ctx.dt * winv_i) * ctx.Tscale_solute;
 
-        ctx.xcoords[i].x = coords[i].x;
-        ctx.xcoords[i].y = coords[i].y;
-        ctx.xcoords[i].z = coords[i].z;
+        xcoords[i].x = coords[i].x;
+        xcoords[i].y = coords[i].y;
+        xcoords[i].z = coords[i].z;
 
         coords[i].x += velocities[i].x * ctx.dt;
         coords[i].y += velocities[i].y * ctx.dt;
@@ -38,9 +39,9 @@ void calc_leapfrog() {
         velocities[i].y = (velocities[i].y - dvelocities[i].y * ctx.dt * winv_i) * ctx.Tscale_solvent;
         velocities[i].z = (velocities[i].z - dvelocities[i].z * ctx.dt * winv_i) * ctx.Tscale_solvent;
 
-        ctx.xcoords[i].x = coords[i].x;
-        ctx.xcoords[i].y = coords[i].y;
-        ctx.xcoords[i].z = coords[i].z;
+        xcoords[i].x = coords[i].x;
+        xcoords[i].y = coords[i].y;
+        xcoords[i].z = coords[i].z;
 
         coords[i].x += velocities[i].x * ctx.dt;
         coords[i].y += velocities[i].y * ctx.dt;
@@ -48,11 +49,11 @@ void calc_leapfrog() {
     }
 
     if (ctx.n_shake_constraints > 0) {
-        calc_shake_constraints(coords, ctx.xcoords.data());
+        calc_shake_constraints(coords, xcoords);
         for (int i = 0; i < ctx.n_atoms; i++) {
-            velocities[i].x = (coords[i].x - ctx.xcoords[i].x) / ctx.dt;
-            velocities[i].y = (coords[i].y - ctx.xcoords[i].y) / ctx.dt;
-            velocities[i].z = (coords[i].z - ctx.xcoords[i].z) / ctx.dt;
+            velocities[i].x = (coords[i].x - xcoords[i].x) / ctx.dt;
+            velocities[i].y = (coords[i].y - xcoords[i].y) / ctx.dt;
+            velocities[i].z = (coords[i].z - xcoords[i].z) / ctx.dt;
         }
     }
 }

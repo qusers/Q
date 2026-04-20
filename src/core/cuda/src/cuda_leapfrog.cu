@@ -48,13 +48,12 @@ __global__ void calc_leapfrog_kernel(
 
 void calc_leapfrog_host() {
     auto& host = Context::instance();
-    auto& ctx = CudaContext::instance();
     auto d_atypes = host.atypes->gpu_data_p;
     auto d_catypes = host.catypes->gpu_data_p;
     auto d_velocities = host.velocities->gpu_data_p;
     auto d_dvelocities = host.dvelocities->gpu_data_p;
     auto d_coords = host.coords->gpu_data_p;
-    auto d_xcoords = ctx.d_xcoords;
+    auto d_xcoords = host.xcoords->gpu_data_p;
 
     int blockSize = 256;
     int numBlocks = (host.n_atoms + blockSize - 1) / blockSize;
@@ -75,7 +74,7 @@ void calc_leapfrog_host() {
     host.velocities->download();
     host.dvelocities->download();
     host.coords->download();
-    check_cuda(cudaMemcpy(host.xcoords.data(), d_xcoords, sizeof(coord_t) * host.n_atoms, cudaMemcpyDeviceToHost));
+    host.xcoords->download();
 
     // shake
     // todo: Here is some problem, it writes into cpu memory, but we use gpu..
@@ -84,10 +83,11 @@ void calc_leapfrog_host() {
         calc_shake_constraints_host();
         auto &velocities = host.velocities->cpu_data_p;
         auto &coords = host.coords->cpu_data_p;
+        auto *xcoords = host.xcoords->cpu_data_p;
         for (int i = 0; i < host.n_atoms; i++) {
-            velocities[i].x = (coords[i].x - host.xcoords[i].x) / host.dt;
-            velocities[i].y = (coords[i].y - host.xcoords[i].y) / host.dt;
-            velocities[i].z = (coords[i].z - host.xcoords[i].z) / host.dt;
+            velocities[i].x = (coords[i].x - xcoords[i].x) / host.dt;
+            velocities[i].y = (coords[i].y - xcoords[i].y) / host.dt;
+            velocities[i].z = (coords[i].z - xcoords[i].z) / host.dt;
         }
     }
 }
