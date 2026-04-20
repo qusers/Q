@@ -19,15 +19,18 @@ double calc_angle_forces(int start, int end) {
     double ener;
     double angle = 0;
 
+    auto &angles = ctx.angles->cpu_data_p;
+    auto &cangles = ctx.cangles->cpu_data_p;
+
     for (int i = start; i < end; i++) {
-        aii = ctx.angles[i].ai - 1;
-        aji = ctx.angles[i].aj - 1;
-        aki = ctx.angles[i].ak - 1;
+        aii = angles[i].ai - 1;
+        aji = angles[i].aj - 1;
+        aki = angles[i].ak - 1;
         ai = ctx.coords[aii];
         aj = ctx.coords[aji];
         ak = ctx.coords[aki];
 
-        cangle = ctx.cangles[ctx.angles[i].code - 1];
+        cangle = cangles[angles[i].code - 1];
 
         rji.x = ai.x - aj.x;
         rji.y = ai.y - aj.y;

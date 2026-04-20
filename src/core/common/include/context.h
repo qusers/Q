@@ -50,13 +50,19 @@ class Context {
      * =============================================
      */
 
+    std::unique_ptr<HostDeviceBuffer<coord_t>> coords_init;
+
+
+    int n_angles = 0;
+    int n_angles_solute = 0;
+    int n_cangles = 0;
+    std::unique_ptr<HostDeviceBuffer<angle_t>> angles;
+    std::unique_ptr<HostDeviceBuffer<cangle_t>> cangles;
+
     int n_coords = 0;
     int n_bonds = 0;
     int n_bonds_solute = 0;
     int n_cbonds = 0;
-    int n_angles = 0;
-    int n_angles_solute = 0;
-    int n_cangles = 0;
     int n_torsions = 0;
     int n_torsions_solute = 0;
     int n_ctorsions = 0;
@@ -74,14 +80,12 @@ class Context {
     int n_cgrps_solvent = 0;
     int iuse_switch_atom = 0;
 
-    std::unique_ptr<HostDeviceBuffer<coord_t>> coords_init;
-
 
 
     std::vector<bond_t> bonds;
     std::vector<cbond_t> cbonds;
-    std::vector<angle_t> angles;
-    std::vector<cangle_t> cangles;
+    // std::vector<angle_t> angles;
+    // std::vector<cangle_t> cangles;
     std::vector<torsion_t> torsions;
     std::vector<ctorsion_t> ctorsions;
     std::vector<improper_t> impropers;

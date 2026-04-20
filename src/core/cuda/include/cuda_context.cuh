@@ -20,12 +20,6 @@ class CudaContext {
     vel_t* d_velocities = nullptr;
 
     /*
-    Used in cuda_angle_force.cu
-    */
-    angle_t* d_angles = nullptr;
-    cangle_t* d_cangles = nullptr;
-
-    /*
     Used in cuda_bond_force.cu
     */
     bond_t* d_bonds = nullptr;

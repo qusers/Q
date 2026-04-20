@@ -1,6 +1,7 @@
 #include "cuda/include/cuda_angle_force.cuh"
 #include "cuda/include/cuda_context.cuh"
 #include "cuda/include/cuda_utility.cuh"
+#include "context.h"
 
 namespace CudaAngleForce {
 bool is_initialized = false;
@@ -78,9 +79,10 @@ double calc_angle_forces_host(int start, int end) {
     int numBlocks = (N + blockSize - 1) / blockSize;
 
     CudaContext& ctx = CudaContext::instance();
-    auto d_angles = ctx.d_angles;
+    auto &host_ctx = Context::instance();
+    auto d_angles = host_ctx.angles->gpu_data_p;
     auto d_coords = ctx.d_coords;
-    auto d_cangles = ctx.d_cangles;
+    auto d_cangles = host_ctx.cangles->gpu_data_p;
     auto d_dvelocities = ctx.d_dvelocities;
     // todo: now have to do that, after moving all to CudaContext, can remove it
     // ctx.sync_all_to_device();

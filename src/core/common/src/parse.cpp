@@ -483,8 +483,8 @@ void init_angles(const char* filename) {
 
     ctx.n_angles = atoi(file.buffer[0][0]);
     ctx.n_angles_solute = atoi(file.buffer[1][0]);
-
-    ctx.angles.resize(ctx.n_angles);
+    ctx.angles = std::make_unique<HostDeviceBuffer<angle_t>>(ctx.n_angles, true, ctx.run_gpu);
+    auto &angles = ctx.angles->cpu_data_p;
 
     for (int i = 0; i < ctx.n_angles; i++) {
         angle_t angle;
@@ -494,8 +494,13 @@ void init_angles(const char* filename) {
         angle.ak = atoi(file.buffer[i + 2][2]);
         angle.code = atoi(file.buffer[i + 2][3]);
 
-        ctx.angles[i] = angle;
+        angles[i] = angle;
     }
+
+    if (ctx.run_gpu) {
+        ctx.angles->upload();
+    }
+
 
     clean_csv(file);
 }
@@ -512,7 +517,8 @@ void init_cangles(const char* filename) {
     }
 
     ctx.n_cangles = atoi(file.buffer[0][0]);
-    ctx.cangles.resize(ctx.n_cangles);
+    ctx.cangles = std::make_unique<HostDeviceBuffer<cangle_t>>(ctx.n_cangles, true, ctx.run_gpu);
+    auto &cangles = ctx.cangles->cpu_data_p;
 
     for (int i = 0; i < ctx.n_cangles; i++) {
         cangle_t cangle;
@@ -522,7 +528,11 @@ void init_cangles(const char* filename) {
         cangle.kth = strtod(file.buffer[i + 1][1], &eptr);
         cangle.th0 = strtod(file.buffer[i + 1][2], &eptr);
 
-        ctx.cangles[i] = cangle;
+        cangles[i] = cangle;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.cangles->upload();
     }
 
     clean_csv(file);

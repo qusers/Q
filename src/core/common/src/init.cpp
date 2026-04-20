@@ -69,14 +69,17 @@ void exclude_qatom_definitions() {
 
     excluded = 0;
     int solute_excluded = 0;
+
+    auto &angles = ctx.angles->cpu_data_p;
+
     if (ctx.n_qangles > 0) {
         for (int i = 0; i < ctx.n_angles; i++) {
-            if (ctx.angles[i].ai == ctx.q_angles[qai].ai && ctx.angles[i].aj == ctx.q_angles[qai].aj && ctx.angles[i].ak == ctx.q_angles[qai].ak) {
+            if (angles[i].ai == ctx.q_angles[qai].ai && angles[i].aj == ctx.q_angles[qai].aj && angles[i].ak == ctx.q_angles[qai].ak) {
                 qai++;
                 excluded++;
                 if (i < ctx.n_angles_solute) solute_excluded++;
             } else {
-                ctx.angles[ai] = ctx.angles[i];
+                angles[ai] = angles[i];
                 ai++;
             }
         }
@@ -224,25 +227,26 @@ void exclude_shaken_definitions() {
 
     excluded = 0;
     solute_excluded = 0;
+    auto &angles = ctx.angles->cpu_data_p;
     if (ctx.n_shake_constraints > 0) {
         // Mark angles whose terminal atoms (i and k) match a shaken bond
         for (int i = 0; i < ctx.n_shake_constraints; i++) {
             ai = ctx.shake_bonds[i].ai;
             aj = ctx.shake_bonds[i].aj;
             for (int j = 0; j < ctx.n_angles; j++) {
-                if ((ctx.angles[j].ai == ai && ctx.angles[j].ak == aj) || (ctx.angles[j].ai == aj && ctx.angles[j].ak == ai)) {
-                    ctx.angles[j].code = 0;
+                if ((angles[j].ai == ai && angles[j].ak == aj) || (angles[j].ai == aj && angles[j].ak == ai)) {
+                    angles[j].code = 0;
                     break;
                 }
             }
         }
 
         for (int i = 0; i < ctx.n_angles; i++) {
-            if (ctx.angles[i].code == 0) {
+            if (angles[i].code == 0) {
                 excluded++;
                 if (i < ctx.n_angles_solute) solute_excluded++;
             } else {
-                ctx.angles[ang_i] = ctx.angles[i];
+                angles[ang_i] = angles[i];
                 ang_i++;
             }
         }
@@ -304,10 +308,12 @@ void init_wshells() {
     auto& ctx = Context::instance();
     int n_inshell;
     double drs, router, ri, dr, Vshell, rshell;
+    auto &angles = ctx.angles->cpu_data_p;
+    auto &cangles = ctx.cangles->cpu_data_p;
     if (ctx.mu_w == 0) {
         // Get water properties from first water molecule
         cbond_t cbondw = ctx.cbonds[ctx.bonds[ctx.n_atoms_solute].code - 1];
-        cangle_t canglew = ctx.cangles[ctx.angles[ctx.n_atoms_solute].code - 1];
+        cangle_t canglew = cangles[angles[ctx.n_atoms_solute].code - 1];
 
         ctx.crg_ow = ctx.unified_ccharge(ctx.n_atoms_solute, 0).charge;
 
@@ -805,10 +811,8 @@ void clean_variables() {
     }
     ctx.charge_groups.clear();
 
-    ctx.angles.clear();
     ctx.atypes.clear();
     ctx.bonds.clear();
-    ctx.cangles.clear();
     ctx.catypes.clear();
     ctx.cbonds.clear();
     ctx.ccharges.clear();
