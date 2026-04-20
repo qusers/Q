@@ -59,7 +59,6 @@ class Context {
     std::unique_ptr<HostDeviceBuffer<angle_t>> angles;
     std::unique_ptr<HostDeviceBuffer<cangle_t>> cangles;
 
-    int n_coords = 0;
     int n_bonds = 0;
     int n_bonds_solute = 0;
     int n_cbonds = 0;

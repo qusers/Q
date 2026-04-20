@@ -377,7 +377,6 @@ void init_coords(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 1, ctx.base_folder.c_str());
 
-    ctx.n_coords = 0;
     ctx.n_atoms = 0;
     ctx.n_atoms_solute = 0;
 
@@ -386,8 +385,7 @@ void init_coords(const char* filename) {
         return;
     }
 
-    ctx.n_coords = atoi(file.buffer[0][0]);
-    ctx.n_atoms = ctx.n_coords;
+    ctx.n_atoms = atoi(file.buffer[0][0]);
 
     ctx.n_atoms_solute = atoi(file.buffer[1][0]);
 
