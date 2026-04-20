@@ -44,11 +44,6 @@ class CudaContext {
     E_restraint_t* d_EQ_restraint = nullptr;
 
     /*
-    Used in cuda_nonbonded_pp_force.cu
-    */
-    int* d_p_atoms = nullptr;
-
-    /*
     Other helper arrays
     */
     ccharge_t* d_charge_table_all;  // Device copy of h_charge_table_all
