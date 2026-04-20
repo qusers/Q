@@ -24,8 +24,6 @@ void CudaContext::init() {
     check_cudaMalloc((void**)&d_EQ_restraint, sizeof(E_restraint_t) * host.n_lambdas);
     check_cudaMalloc((void**)&d_restrdists, sizeof(restrdis_t) * host.n_restrdists);
 
-    check_cudaMalloc((void**)&d_restrspos, sizeof(restrpos_t) * host.n_restrspos);
-
     check_cudaMalloc((void**)&d_restrseqs, sizeof(restrseq_t) * host.n_restrseqs);
     check_cudaMalloc((void**)&d_heavy, sizeof(bool) * host.n_atoms);
 
@@ -49,6 +47,7 @@ void CudaContext::sync_all_to_device() {
     host.coords->upload();
     host.dvelocities->upload();
     host.velocities->upload();
+    host.LJ_matrix->upload();
 
     sync_array_to_device<int>(d_mol_n_shakes, host.mol_n_shakes.data(), host.n_molecules);
     sync_array_to_device<shake_bond_t>(d_shake_bonds, host.shake_bonds.data(), host.n_shake_constraints);
@@ -68,8 +67,6 @@ void CudaContext::sync_all_to_device() {
     sync_array_to_device<E_restraint_t>(d_EQ_restraint, host.EQ_restraint.data(), host.n_lambdas);
     sync_array_to_device<restrdis_t>(d_restrdists, host.restrdists.data(), host.n_restrdists);
 
-    sync_array_to_device<restrpos_t>(d_restrspos, host.restrspos.data(), host.n_restrspos);
-
     sync_array_to_device<restrseq_t>(d_restrseqs, host.restrseqs.data(), host.n_restrseqs);
     sync_array_to_device<bool>(d_heavy, host.heavy.get(), host.n_atoms);
     sync_array_to_device<restrwall_t>(d_restrwalls, host.restrwalls.data(), host.n_restrwalls);
@@ -85,6 +82,7 @@ void CudaContext::sync_all_to_host() {
     host.coords->download();
     host.dvelocities->download();
     host.velocities->download();
+    host.LJ_matrix->download();
 
     sync_array_to_host<int>(host.mol_n_shakes.data(), d_mol_n_shakes, host.n_molecules);
     sync_array_to_host<shake_bond_t>(host.shake_bonds.data(), d_shake_bonds, host.n_shake_constraints);
@@ -102,8 +100,6 @@ void CudaContext::sync_all_to_host() {
     sync_array_to_host<restrang_t>(host.restrangs.data(), d_restrangs, host.n_restrangs);
     sync_array_to_host<E_restraint_t>(host.EQ_restraint.data(), d_EQ_restraint, host.n_lambdas);
     sync_array_to_host<restrdis_t>(host.restrdists.data(), d_restrdists, host.n_restrdists);
-
-    sync_array_to_host<restrpos_t>(host.restrspos.data(), d_restrspos, host.n_restrspos);
 
     sync_array_to_host<restrseq_t>(host.restrseqs.data(), d_restrseqs, host.n_restrseqs);
     sync_array_to_host<bool>(host.heavy.get(), d_heavy, host.n_atoms);
@@ -132,8 +128,6 @@ void CudaContext::free() {
     cudaFree(d_restrangs);
     cudaFree(d_EQ_restraint);
     cudaFree(d_restrdists);
-
-    cudaFree(d_restrspos);
 
     cudaFree(d_restrseqs);
     cudaFree(d_heavy);

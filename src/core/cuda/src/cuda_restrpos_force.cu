@@ -69,7 +69,7 @@ void calc_restrpos_forces_host() {
     cudaMemcpy(d_E_restraint, &val, sizeof(double), cudaMemcpyHostToDevice);
 
     CudaContext& ctx = CudaContext::instance();
-    auto d_restrspos = ctx.d_restrspos;
+    auto d_restrspos = host.restrspos->gpu_data_p;
     auto d_coords = host.coords->gpu_data_p;
     auto d_lambdas = ctx.d_lambdas;
     auto d_EQ_restraint = ctx.d_EQ_restraint;

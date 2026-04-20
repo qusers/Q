@@ -46,11 +46,6 @@ class CudaContext {
     restrdis_t* d_restrdists = nullptr;
 
     /*
-    Used in cuda_restrpos_force.cu
-    */
-    restrpos_t* d_restrspos = nullptr;
-
-    /*
     Used in cuda_restrseq_force.cu
     */
     restrseq_t* d_restrseqs = nullptr;
