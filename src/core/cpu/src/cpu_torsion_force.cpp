@@ -7,6 +7,8 @@
 
 double calc_torsion_forces(int start, int end) {
     auto& ctx = Context::instance();
+    auto &torsions = ctx.torsions->cpu_data_p;
+    auto &ctorsions = ctx.ctorsions->cpu_data_p;
     int aii, aji, aki, ali;
 
     coord_t ai, aj, ak, al;
@@ -23,8 +25,8 @@ double calc_torsion_forces(int start, int end) {
     ctorsion_t ctors;
 
     for (int i = start; i < end; i++) {
-        t = ctx.torsions[i];
-        ctors = ctx.ctorsions[t.code - 1];
+        t = torsions[i];
+        ctors = ctorsions[t.code - 1];
 
         aii = t.ai - 1;
         aji = t.aj - 1;

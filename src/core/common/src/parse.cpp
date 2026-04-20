@@ -607,8 +607,8 @@ void init_torsions(const char* filename) {
 
     ctx.n_torsions = atoi(file.buffer[0][0]);
     ctx.n_torsions_solute = atoi(file.buffer[1][0]);
-
-    ctx.torsions.resize(ctx.n_torsions);
+    ctx.torsions = std::make_unique<HostDeviceBuffer<torsion_t>>(ctx.n_torsions, true, ctx.run_gpu);
+    auto &torsions = ctx.torsions->cpu_data_p;
 
     for (int i = 0; i < ctx.n_torsions; i++) {
         torsion_t torsion;
@@ -619,7 +619,11 @@ void init_torsions(const char* filename) {
         torsion.al = atoi(file.buffer[i + 2][3]);
         torsion.code = atoi(file.buffer[i + 2][4]);
 
-        ctx.torsions[i] = torsion;
+        torsions[i] = torsion;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.torsions->upload();
     }
 
     clean_csv(file);
@@ -637,8 +641,8 @@ void init_ctorsions(const char* filename) {
     }
 
     ctx.n_ctorsions = atoi(file.buffer[0][0]);
-
-    ctx.ctorsions.resize(ctx.n_ctorsions);
+    ctx.ctorsions = std::make_unique<HostDeviceBuffer<ctorsion_t>>(ctx.n_ctorsions, true, ctx.run_gpu);
+    auto &ctorsions = ctx.ctorsions->cpu_data_p;
 
     for (int i = 0; i < ctx.n_ctorsions; i++) {
         ctorsion_t ctorsion;
@@ -651,7 +655,11 @@ void init_ctorsions(const char* filename) {
         ctorsion.paths = strtod(file.buffer[i + 1][4], &eptr);
         ctorsion.paths = 1.0 / (ctorsion.paths);
 
-        ctx.ctorsions[i] = ctorsion;
+        ctorsions[i] = ctorsion;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.ctorsions->upload();
     }
 
     clean_csv(file);

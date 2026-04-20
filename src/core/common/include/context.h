@@ -67,6 +67,8 @@ class Context {
     int n_torsions = 0;
     int n_torsions_solute = 0;
     int n_ctorsions = 0;
+    std::unique_ptr<HostDeviceBuffer<torsion_t>> torsions;
+    std::unique_ptr<HostDeviceBuffer<ctorsion_t>> ctorsions;
     int n_impropers = 0;
     int n_impropers_solute = 0;
     int n_cimpropers = 0;
@@ -81,8 +83,6 @@ class Context {
     int n_cgrps_solvent = 0;
     int iuse_switch_atom = 0;
 
-    std::vector<torsion_t> torsions;
-    std::vector<ctorsion_t> ctorsions;
     std::vector<improper_t> impropers;
     std::vector<cimproper_t> cimpropers;
     std::vector<charge_t> charges;

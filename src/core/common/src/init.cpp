@@ -73,6 +73,7 @@ void exclude_qatom_definitions() {
 
     auto &bonds = ctx.bonds->cpu_data_p;
     auto &angles = ctx.angles->cpu_data_p;
+    auto &torsions = ctx.torsions->cpu_data_p;
 
     if (ctx.n_qangles > 0) {
         for (int i = 0; i < ctx.n_angles; i++) {
@@ -126,12 +127,12 @@ void exclude_qatom_definitions() {
     solute_excluded = 0;
     if (ctx.n_qtorsions > 0) {
         for (int i = 0; i < ctx.n_torsions; i++) {
-            if (ctx.torsions[i].ai == ctx.q_torsions[qti].ai && ctx.torsions[i].aj == ctx.q_torsions[qti].aj && ctx.torsions[i].ak == ctx.q_torsions[qti].ak && ctx.torsions[i].al == ctx.q_torsions[qti].al) {
+            if (torsions[i].ai == ctx.q_torsions[qti].ai && torsions[i].aj == ctx.q_torsions[qti].aj && torsions[i].ak == ctx.q_torsions[qti].ak && torsions[i].al == ctx.q_torsions[qti].al) {
                 qti++;
                 excluded++;
                 if (i < ctx.n_torsions_solute) solute_excluded++;
             } else {
-                ctx.torsions[ti] = ctx.torsions[i];
+                torsions[ti] = torsions[i];
                 ti++;
             }
         }
@@ -146,6 +147,7 @@ void exclude_all_atoms_excluded_definitions() {
     auto& ctx = Context::instance();
     int n_excl;
     int ai = 0, bi = 0, ii = 0, ti = 0;
+    auto &torsions = ctx.torsions->cpu_data_p;
 
     // n_excl = 0;
     // for (int i = 0; i < n_angles; i++) {
@@ -190,10 +192,10 @@ void exclude_all_atoms_excluded_definitions() {
 
     n_excl = 0;
     for (int i = 0; i < ctx.n_torsions; i++) {
-        if (ctx.excluded[ctx.torsions[i].ai - 1] && ctx.excluded[ctx.torsions[i].aj - 1] && ctx.excluded[ctx.torsions[i].ak - 1] && ctx.excluded[ctx.torsions[i].al - 1]) {
+        if (ctx.excluded[torsions[i].ai - 1] && ctx.excluded[torsions[i].aj - 1] && ctx.excluded[torsions[i].ak - 1] && ctx.excluded[torsions[i].al - 1]) {
             n_excl++;
         } else {
-            ctx.torsions[ti] = ctx.torsions[i];
+            torsions[ti] = torsions[i];
             ti++;
         }
     }
@@ -810,8 +812,6 @@ void init_variables() {
 }
 
 void clean_variables() {
-    // auto &gpu_ctx = CudaContext::instance();
-    // gpu_ctx.free();
     auto& ctx = Context::instance();
     ctx.angles.reset();
     ctx.cangles.reset();
@@ -834,11 +834,11 @@ void clean_variables() {
     ctx.unified_catypes.clear();
     ctx.cimpropers.clear();
     ctx.coords.clear();
-    ctx.ctorsions.clear();
+    ctx.ctorsions.reset();
     ctx.excluded.reset();
     ctx.heavy.reset();
     ctx.impropers.clear();
-    ctx.torsions.clear();
+    ctx.torsions.reset();
     ctx.LJ_matrix.clear();
     ctx.molecules.clear();
     ctx.q_angcouples.clear();

@@ -84,12 +84,6 @@ class CudaContext {
     restrwall_t* d_restrwalls = nullptr;
 
     /*
-    Used in cuda_torsion_force.cu
-    */
-    torsion_t* d_torsions = nullptr;
-    ctorsion_t* d_ctorsions = nullptr;
-
-    /*
     Used in cuda_nonbonded_pp_force.cu
     */
     ccharge_t* d_ccharges;
