@@ -1,47 +1,49 @@
 #pragma once
 
+#include <vector_types.h>
+
+#include <array>
 #include <memory>
 #include <string>
 #include <vector>
-#include <array>
-#include <vector_types.h>
 
 #include "common/include/md_types.h"
 #include "common/include/nonbonded_14_mode.h"
+#include "host_device_buffer.h"
 
 class Context {
    public:
-
     static Context& instance() {
         static Context ctx;
         return ctx;
     }
+    /* =============================================
+     * == CONFIG
+     * =============================================
+     */
+
+    std::string base_folder;
+    bool run_gpu = false;
 
     /* =============================================
      * == GENERAL
      * =============================================
      */
-
-    int n_atoms = 0;
-    int n_atoms_solute = 0;
+    int n_atoms = 0;         // the total number of atoms
+    int n_atoms_solute = 0;  // the total number of solute number, in our system [0, n_atoms_solute) are solute, [n_atoms_solute, n_atoms) are water atoms
     int n_patoms = 0;
     int n_qatoms = 0;
     int n_waters = 0;
     int n_molecules = 0;
 
-    std::string base_folder;
     double dt = 0.0;
     double tau_T = 0.0;
-
-    bool run_gpu = false;
 
     /* =============================================
      * == FROM MD FILE
      * =============================================
      */
-
     md_t md;
-    bool separate_scaling = false;
 
     /* =============================================
      * == FROM TOPOLOGY FILE
@@ -72,7 +74,10 @@ class Context {
     int n_cgrps_solvent = 0;
     int iuse_switch_atom = 0;
 
-    std::vector<coord_t> coords_top;
+    std::unique_ptr<HostDeviceBuffer<coord_t>> coords_init;
+
+
+
     std::vector<bond_t> bonds;
     std::vector<cbond_t> cbonds;
     std::vector<angle_t> angles;
@@ -244,6 +249,7 @@ class Context {
      * =============================================
      */
 
+    bool separate_scaling = false;
     double Ndegf = 0.0;
     double Ndegfree = 0.0;
     double Ndegf_solvent = 0.0;
@@ -295,8 +301,4 @@ class Context {
 
     Context(const Context&) = delete;
     Context& operator=(const Context&) = delete;
-
-
-
-
 };

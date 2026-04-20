@@ -71,7 +71,6 @@ class CudaContext {
     Used in cuda_pshell_force.cu
     */
     bool* d_shell = nullptr;
-    coord_t* d_coords_top = nullptr;
 
     /*
     Used in cuda_restrang_force.cu

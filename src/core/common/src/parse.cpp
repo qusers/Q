@@ -391,8 +391,8 @@ void init_coords(const char* filename) {
 
     ctx.n_atoms_solute = atoi(file.buffer[1][0]);
 
+    ctx.coords_init = std::make_unique<HostDeviceBuffer<coord_t>>(ctx.n_atoms, true, ctx.run_gpu);
     ctx.coords.resize(ctx.n_atoms);
-    ctx.coords_top.resize(ctx.n_atoms);
 
     for (int i = 0; i < file.n_lines; i++) {
         char* eptr;
@@ -401,7 +401,11 @@ void init_coords(const char* filename) {
         ctx.coords[i].y = strtod(file.buffer[i + 2][1], &eptr);
         ctx.coords[i].z = strtod(file.buffer[i + 2][2], &eptr);
 
-        ctx.coords_top[i] = ctx.coords[i];
+        ctx.coords_init->cpu_data_p[i] = ctx.coords[i];
+    }
+
+    if (ctx.run_gpu) {
+        ctx.coords_init->upload();
     }
 
     clean_csv(file);

@@ -19,9 +19,9 @@ void calc_pshell_forces() {
                 k = k_pshell;
             }
 
-            dr.x = ctx.coords[i].x - ctx.coords_top[i].x;
-            dr.y = ctx.coords[i].y - ctx.coords_top[i].y;
-            dr.z = ctx.coords[i].z - ctx.coords_top[i].z;
+            dr.x = ctx.coords[i].x - ctx.coords_init->cpu_data_p[i].x;
+            dr.y = ctx.coords[i].y - ctx.coords_init->cpu_data_p[i].y;
+            dr.z = ctx.coords[i].z - ctx.coords_init->cpu_data_p[i].z;
             r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
             ener = 0.5 * k * r2;
 

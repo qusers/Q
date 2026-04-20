@@ -24,9 +24,9 @@ void calc_restrseq_forces() {
             for (int i = ctx.restrseqs[s].ai - 1; i < ctx.restrseqs[s].aj - 1; i++) {
                 if (ctx.heavy[i] || ctx.restrseqs[s].ih) {
                     n_ctr++;
-                    dr.x += (ctx.coords[i].x - ctx.coords_top[i].x);
-                    dr.y += (ctx.coords[i].y - ctx.coords_top[i].y);
-                    dr.z += (ctx.coords[i].z - ctx.coords_top[i].z);
+                    dr.x += (ctx.coords[i].x - ctx.coords_init->cpu_data_p[i].x);
+                    dr.y += (ctx.coords[i].y - ctx.coords_init->cpu_data_p[i].y);
+                    dr.z += (ctx.coords[i].z - ctx.coords_init->cpu_data_p[i].z);
                 }
             }
 
@@ -52,9 +52,9 @@ void calc_restrseq_forces() {
                 if (ctx.heavy[i] || ctx.restrseqs[s].ih) {
                     mass = ctx.catypes[ctx.atypes[i].code - 1].m;
                     totmass += mass;
-                    dr.x += (ctx.coords[i].x - ctx.coords_top[i].x) * mass;
-                    dr.y += (ctx.coords[i].y - ctx.coords_top[i].y) * mass;
-                    dr.z += (ctx.coords[i].z - ctx.coords_top[i].z) * mass;
+                    dr.x += (ctx.coords[i].x - ctx.coords_init->cpu_data_p[i].x) * mass;
+                    dr.y += (ctx.coords[i].y - ctx.coords_init->cpu_data_p[i].y) * mass;
+                    dr.z += (ctx.coords[i].z - ctx.coords_init->cpu_data_p[i].z) * mass;
                 }
             }
 
@@ -77,9 +77,9 @@ void calc_restrseq_forces() {
         } else {
             for (int i = ctx.restrseqs[s].ai - 1; i < ctx.restrseqs[s].aj - 1; i++) {
                 if (ctx.heavy[i] || ctx.restrseqs[s].ih) {
-                    dr.x = ctx.coords[i].x - ctx.coords_top[i].x;
-                    dr.y = ctx.coords[i].y - ctx.coords_top[i].y;
-                    dr.z = ctx.coords[i].z - ctx.coords_top[i].z;
+                    dr.x = ctx.coords[i].x - ctx.coords_init->cpu_data_p[i].x;
+                    dr.y = ctx.coords[i].y - ctx.coords_init->cpu_data_p[i].y;
+                    dr.z = ctx.coords[i].z - ctx.coords_init->cpu_data_p[i].z;
 
                     r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
                     ener = .5 * k * r2;

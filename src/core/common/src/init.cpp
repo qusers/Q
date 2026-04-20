@@ -382,7 +382,7 @@ void init_pshells() {
         }
 
         if (ctx.heavy[i] && !ctx.excluded[i] && i < ctx.n_atoms_solute) {
-            r2 = pow(ctx.coords_top[i].x - ctx.topo.solute_center.x, 2) + pow(ctx.coords_top[i].y - ctx.topo.solute_center.y, 2) + pow(ctx.coords_top[i].z - ctx.topo.solute_center.z, 2);
+            r2 = pow(ctx.coords_init->cpu_data_p[i].x - ctx.topo.solute_center.x, 2) + pow(ctx.coords_init->cpu_data_p[i].y - ctx.topo.solute_center.y, 2) + pow(ctx.coords_init->cpu_data_p[i].z - ctx.topo.solute_center.z, 2);
             if (r2 > rin2) {
                 ctx.shell[i] = true;
                 n_inshell++;
@@ -432,7 +432,7 @@ void init_pshells_with_switch_atoms() {
         cgrp_t cgrp = ctx.charge_groups[grp];
         int i = cgrp.iswitch - 1;
         if (ctx.heavy[i] && !ctx.excluded[i] && i < ctx.n_atoms_solute) {
-            r2 = pow(ctx.coords_top[i].x - ctx.topo.solute_center.x, 2) + pow(ctx.coords_top[i].y - ctx.topo.solute_center.y, 2) + pow(ctx.coords_top[i].z - ctx.topo.solute_center.z, 2);
+            r2 = pow(ctx.coords_init->cpu_data_p[i].x - ctx.topo.solute_center.x, 2) + pow(ctx.coords_init->cpu_data_p[i].y - ctx.topo.solute_center.y, 2) + pow(ctx.coords_init->cpu_data_p[i].z - ctx.topo.solute_center.z, 2);
             bool in_shell = r2 > rin2;
             for (int j = 0; j < cgrp.n_atoms; j++) {
                 ctx.shell[cgrp.a[j] - 1] = in_shell;
@@ -471,9 +471,9 @@ void init_pshells_with_centroids() {
             double cx = 0, cy = 0, cz = 0;
             for (int j = 0; j < cgrp.n_atoms; j++) {
                 int ai = cgrp.a[j] - 1;
-                cx += ctx.coords_top[ai].x;
-                cy += ctx.coords_top[ai].y;
-                cz += ctx.coords_top[ai].z;
+                cx += ctx.coords_init->cpu_data_p[ai].x;
+                cy += ctx.coords_init->cpu_data_p[ai].y;
+                cz += ctx.coords_init->cpu_data_p[ai].z;
             }
             cx /= cgrp.n_atoms;
             cy /= cgrp.n_atoms;
@@ -818,7 +818,7 @@ void clean_variables() {
     ctx.unified_catypes.clear();
     ctx.cimpropers.clear();
     ctx.coords.clear();
-    ctx.coords_top.clear();
+    ctx.coords_init.reset();
     ctx.ctorsions.clear();
     ctx.excluded.reset();
     ctx.heavy.reset();
