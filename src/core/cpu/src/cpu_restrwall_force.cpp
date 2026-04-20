@@ -8,28 +8,29 @@ void calc_restrwall_forces() {
     auto& ctx = Context::instance();
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
+    auto &restrwalls = ctx.restrwalls->cpu_data_p;
 
     double k, b, db, ener, dv, fexp;
     coord_t dr;
 
     for (int ir = 0; ir < ctx.n_restrwalls; ir++) {
-        k = ctx.restrwalls[ir].k;
-        for (int i = ctx.restrwalls[ir].ai - 1; i < ctx.restrwalls[ir].aj - 1; i++) {
-            if (ctx.heavy[i] || ctx.restrwalls[ir].ih) {
+        k = restrwalls[ir].k;
+        for (int i = restrwalls[ir].ai - 1; i < restrwalls[ir].aj - 1; i++) {
+            if (ctx.heavy[i] || restrwalls[ir].ih) {
                 dr.x = coords[i].x - ctx.topo.solvent_center.x;
                 dr.y = coords[i].y - ctx.topo.solvent_center.y;
                 dr.z = coords[i].z - ctx.topo.solvent_center.z;
 
                 b = sqrt(pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2));
-                db = b - ctx.restrwalls[ir].d;
+                db = b - restrwalls[ir].d;
 
                 if (db > 0) {
-                    ener = .5 * k * pow(db, 2) - ctx.restrwalls[ir].dMorse;
+                    ener = .5 * k * pow(db, 2) - restrwalls[ir].dMorse;
                     dv = k * db / b;
                 } else {
-                    fexp = exp(ctx.restrwalls[ir].aMorse * db);
-                    ener = ctx.restrwalls[ir].dMorse * (fexp * fexp - 2 * fexp);
-                    dv = -2 * ctx.restrwalls[ir].dMorse * ctx.restrwalls[ir].aMorse * (fexp - fexp * fexp) / b;
+                    fexp = exp(restrwalls[ir].aMorse * db);
+                    ener = restrwalls[ir].dMorse * (fexp * fexp - 2 * fexp);
+                    dv = -2 * restrwalls[ir].dMorse * restrwalls[ir].aMorse * (fexp - fexp * fexp) / b;
                 }
                 ctx.E_restraint.Upres += ener;
 

@@ -22,10 +22,7 @@ void CudaContext::init() {
 
     check_cudaMalloc((void**)&d_EQ_restraint, sizeof(E_restraint_t) * host.n_lambdas);
 
-    check_cudaMalloc((void**)&d_restrseqs, sizeof(restrseq_t) * host.n_restrseqs);
     check_cudaMalloc((void**)&d_heavy, sizeof(bool) * host.n_atoms);
-
-    check_cudaMalloc((void**)&d_restrwalls, sizeof(restrwall_t) * host.n_restrwalls);
 
     check_cudaMalloc((void**)&d_p_atoms, sizeof(int) * host.n_patoms);
     check_cudaMalloc((void**)&d_unified_ccharges, sizeof(ccharge_t) * host.unified_ccharges.size());
@@ -63,9 +60,7 @@ void CudaContext::sync_all_to_device() {
 
     sync_array_to_device<E_restraint_t>(d_EQ_restraint, host.EQ_restraint.data(), host.n_lambdas);
 
-    sync_array_to_device<restrseq_t>(d_restrseqs, host.restrseqs.data(), host.n_restrseqs);
     sync_array_to_device<bool>(d_heavy, host.heavy.get(), host.n_atoms);
-    sync_array_to_device<restrwall_t>(d_restrwalls, host.restrwalls.data(), host.n_restrwalls);
 
     sync_array_to_device<int>(d_p_atoms, host.p_atoms.data(), host.n_patoms);
     sync_array_to_device<ccharge_t>(d_unified_ccharges, host.unified_ccharges.data(), host.unified_ccharges.size());
@@ -95,9 +90,7 @@ void CudaContext::sync_all_to_host() {
 
     sync_array_to_host<E_restraint_t>(host.EQ_restraint.data(), d_EQ_restraint, host.n_lambdas);
 
-    sync_array_to_host<restrseq_t>(host.restrseqs.data(), d_restrseqs, host.n_restrseqs);
     sync_array_to_host<bool>(host.heavy.get(), d_heavy, host.n_atoms);
-    sync_array_to_host<restrwall_t>(host.restrwalls.data(), d_restrwalls, host.n_restrwalls);
 
     sync_array_to_host<int>(host.p_atoms.data(), d_p_atoms, host.n_patoms);
     sync_array_to_host<ccharge_t>(host.unified_ccharges.data(), d_unified_ccharges, host.unified_ccharges.size());
@@ -121,10 +114,7 @@ void CudaContext::free() {
 
     cudaFree(d_EQ_restraint);
 
-    cudaFree(d_restrseqs);
     cudaFree(d_heavy);
-
-    cudaFree(d_restrwalls);
 
     cudaFree(d_p_atoms);
     cudaFree(d_charge_table_all);

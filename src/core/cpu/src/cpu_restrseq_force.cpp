@@ -10,13 +10,14 @@ void calc_restrseq_forces() {
     auto &catypes = ctx.catypes->cpu_data_p;
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
+    auto &restrseqs = ctx.restrseqs->cpu_data_p;
 
     double k, mass, totmass;
     coord_t dr;
     double r2, ener;
 
     for (int s = 0; s < ctx.n_restrseqs; s++) {
-        k = ctx.restrseqs[s].k;
+        k = restrseqs[s].k;
 
         dr.x = 0;
         dr.y = 0;
@@ -24,9 +25,9 @@ void calc_restrseq_forces() {
         int n_ctr = 0;
         totmass = 0;
 
-        if (ctx.restrseqs[s].to_center == 1) {
-            for (int i = ctx.restrseqs[s].ai - 1; i < ctx.restrseqs[s].aj - 1; i++) {
-                if (ctx.heavy[i] || ctx.restrseqs[s].ih) {
+        if (restrseqs[s].to_center == 1) {
+            for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
+                if (ctx.heavy[i] || restrseqs[s].ih) {
                     n_ctr++;
                     dr.x += (coords[i].x - ctx.coords_init->cpu_data_p[i].x);
                     dr.y += (coords[i].y - ctx.coords_init->cpu_data_p[i].y);
@@ -42,8 +43,8 @@ void calc_restrseq_forces() {
                 ener = .5 * k * r2;
                 ctx.E_restraint.Upres += ener;
 
-                for (int i = ctx.restrseqs[s].ai - 1; i < ctx.restrseqs[s].aj - 1; i++) {
-                    if (ctx.heavy[i] || ctx.restrseqs[s].ih) {
+                for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
+                    if (ctx.heavy[i] || restrseqs[s].ih) {
                         mass = catypes[atypes[i].code - 1].m;
                         dvelocities[i].x += (k * dr.x * mass / 12.010);
                         dvelocities[i].y += (k * dr.y * mass / 12.010);
@@ -51,9 +52,9 @@ void calc_restrseq_forces() {
                     }
                 }
             }
-        } else if (ctx.restrseqs[s].to_center == 2) {
-            for (int i = ctx.restrseqs[s].ai - 1; i < ctx.restrseqs[s].aj - 1; i++) {
-                if (ctx.heavy[i] || ctx.restrseqs[s].ih) {
+        } else if (restrseqs[s].to_center == 2) {
+            for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
+                if (ctx.heavy[i] || restrseqs[s].ih) {
                     mass = catypes[atypes[i].code - 1].m;
                     totmass += mass;
                     dr.x += (coords[i].x - ctx.coords_init->cpu_data_p[i].x) * mass;
@@ -70,8 +71,8 @@ void calc_restrseq_forces() {
                 ener = .5 * k * r2;
                 ctx.E_restraint.Upres += ener;
 
-                for (int i = ctx.restrseqs[s].ai - 1; i < ctx.restrseqs[s].aj - 1; i++) {
-                    if (ctx.heavy[i] || ctx.restrseqs[s].ih) {
+                for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
+                    if (ctx.heavy[i] || restrseqs[s].ih) {
                         dvelocities[i].x += k * dr.x;
                         dvelocities[i].y += k * dr.y;
                         dvelocities[i].z += k * dr.z;
@@ -79,8 +80,8 @@ void calc_restrseq_forces() {
                 }
             }
         } else {
-            for (int i = ctx.restrseqs[s].ai - 1; i < ctx.restrseqs[s].aj - 1; i++) {
-                if (ctx.heavy[i] || ctx.restrseqs[s].ih) {
+            for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
+                if (ctx.heavy[i] || restrseqs[s].ih) {
                     dr.x = coords[i].x - ctx.coords_init->cpu_data_p[i].x;
                     dr.y = coords[i].y - ctx.coords_init->cpu_data_p[i].y;
                     dr.z = coords[i].z - ctx.coords_init->cpu_data_p[i].z;

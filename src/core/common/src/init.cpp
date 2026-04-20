@@ -524,7 +524,7 @@ void init_pshells_with_centroids() {
 void init_restrseqs() {
     auto& ctx = Context::instance();
     ctx.n_restrseqs = 1;
-    ctx.restrseqs.resize(1);
+    ctx.restrseqs = std::make_unique<HostDeviceBuffer<restrseq_t>>(1, true, ctx.run_gpu);
 
     restrseq_t seq;
     seq.ai = 1;
@@ -533,7 +533,11 @@ void init_restrseqs() {
     seq.ih = 0;
     seq.to_center = 2;
 
-    ctx.restrseqs[0] = seq;
+    ctx.restrseqs->cpu_data_p[0] = seq;
+
+    if (ctx.run_gpu) {
+        ctx.restrseqs->upload();
+    }
 }
 
 /* =============================================
@@ -887,10 +891,11 @@ void clean_variables() {
     ctx.tdum.clear();
     ctx.list_sh.clear();
     ctx.nsort.clear();
-    ctx.restrseqs.clear();
+    ctx.restrseqs.reset();
     ctx.restrangs.reset();
     ctx.restrdists.reset();
     ctx.restrspos.reset();
+    ctx.restrwalls.reset();
     ctx.shell.reset();
     ctx.velocities.reset();
     ctx.dvelocities.reset();

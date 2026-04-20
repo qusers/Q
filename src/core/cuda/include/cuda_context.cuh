@@ -43,16 +43,7 @@ class CudaContext {
     */
     E_restraint_t* d_EQ_restraint = nullptr;
 
-    /*
-    Used in cuda_restrseq_force.cu
-    */
-    restrseq_t* d_restrseqs = nullptr;
     bool* d_heavy = nullptr;
-
-    /*
-    Used in cuda_restrwall_force.cu
-    */
-    restrwall_t* d_restrwalls = nullptr;
 
     /*
     Used in cuda_nonbonded_pp_force.cu

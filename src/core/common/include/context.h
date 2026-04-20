@@ -77,6 +77,12 @@ class Context {
 
     int n_restrdists = 0;
     std::unique_ptr<HostDeviceBuffer<restrdis_t>> restrdists;
+
+    int n_restrseqs = 0;
+    std::unique_ptr<HostDeviceBuffer<restrseq_t>> restrseqs;
+    int n_restrwalls = 0;
+    std::unique_ptr<HostDeviceBuffer<restrwall_t>> restrwalls;
+
     /*
     
     */
@@ -174,13 +180,7 @@ class Context {
      * =============================================
      */
 
-    int n_restrseqs = 0;
-    int n_restrwalls = 0;
-
-    std::vector<restrseq_t> restrseqs;
-    std::vector<restrwall_t> restrwalls;
-
-    std::unique_ptr<bool[]> shell;
+        std::unique_ptr<bool[]> shell;
 
     /* =============================================
      * == SHELLS / SOLVENT

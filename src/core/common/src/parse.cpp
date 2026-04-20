@@ -226,7 +226,8 @@ void init_md(const char* filename) {
     printf("k = %d\n", k);
     ctx.n_restrseqs = atoi(file.buffer[k][0]);
     printf("reading in %d sequence restraints (%s in file)\n", ctx.n_restrseqs, file.buffer[k][1]);
-    ctx.restrseqs.resize(ctx.n_restrseqs);
+    ctx.restrseqs = std::make_unique<HostDeviceBuffer<restrseq_t>>(ctx.n_restrseqs, true, ctx.run_gpu);
+    auto &restrseqs = ctx.restrseqs->cpu_data_p;
     k++;
     for (int i = 0; i < ctx.n_restrseqs; i++) {
         restrseq_t restrseq;
@@ -237,8 +238,12 @@ void init_md(const char* filename) {
         restrseq.ih = strcmp(file.buffer[k][3], "1") == 0;
         restrseq.to_center = atoi(file.buffer[k][4]);
 
-        ctx.restrseqs[i] = restrseq;
+        restrseqs[i] = restrseq;
         k++;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.restrseqs->upload();
     }
 
     // [position_restraints]
@@ -323,7 +328,8 @@ void init_md(const char* filename) {
 
     // [wall_restraints]
     ctx.n_restrwalls = atoi(file.buffer[k][0]);
-    ctx.restrwalls.resize(ctx.n_restrwalls);
+    ctx.restrwalls = std::make_unique<HostDeviceBuffer<restrwall_t>>(ctx.n_restrwalls, true, ctx.run_gpu);
+    auto &restrwalls = ctx.restrwalls->cpu_data_p;
     printf("reading in %d wall restraints (%s in file)\n", ctx.n_restrwalls, file.buffer[k][1]);
     k++;
     for (int i = 0; i < ctx.n_restrwalls; i++) {
@@ -337,8 +343,12 @@ void init_md(const char* filename) {
         restrwall.aMorse = strtod(file.buffer[k][5], &eptr);
         restrwall.ih = strcmp(file.buffer[k][6], "1") == 0;
 
-        ctx.restrwalls[i] = restrwall;
+        restrwalls[i] = restrwall;
         k++;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.restrwalls->upload();
     }
 
     clean_csv(file);

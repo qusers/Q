@@ -55,10 +55,10 @@ void calc_restrwall_forces_host() {
     auto& host = Context::instance();
     if (host.n_restrwalls == 0) return;
     using namespace CudaRestrwallForce;
-    CudaContext& ctx = CudaContext::instance();
-    auto d_restrwalls = ctx.d_restrwalls;
+    auto d_restrwalls = host.restrwalls->gpu_data_p;
     auto d_coords = host.coords->gpu_data_p;
     auto d_dvelocities = host.dvelocities->gpu_data_p;
+    CudaContext& ctx = CudaContext::instance();
     auto d_heavy = ctx.d_heavy;
     cudaMemset(d_energies, 0, sizeof(double));
 
