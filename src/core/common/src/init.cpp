@@ -386,12 +386,14 @@ void init_pshells() {
     auto& ctx = Context::instance();
     auto &atypes = ctx.atypes->cpu_data_p;
     auto &catypes = ctx.catypes->cpu_data_p;
+    auto &coords_init = ctx.coords_init->cpu_data_p;
     double mass, r2, rin2;
 
-    ctx.heavy = std::make_unique<bool[]>(ctx.n_atoms);
+    ctx.heavy = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
+    auto *heavy = ctx.heavy->cpu_data_p;
     ctx.shell = std::make_unique<bool[]>(ctx.n_atoms);
     for (int i = 0; i < ctx.n_atoms; ++i) {
-        ctx.heavy[i] = false;
+        heavy[i] = false;
         ctx.shell[i] = false;
     }
     rin2 = pow(shell_default * ctx.topo.exclusion_radius, 2);
@@ -401,14 +403,14 @@ void init_pshells() {
     for (int i = 0; i < ctx.n_atoms; i++) {
         mass = catypes[atypes[i].code - 1].m;
         if (mass < 4.0) {
-            ctx.heavy[i] = false;
+            heavy[i] = false;
         } else {
-            ctx.heavy[i] = true;
+            heavy[i] = true;
             n_heavy++;
         }
 
-        if (ctx.heavy[i] && !ctx.excluded[i] && i < ctx.n_atoms_solute) {
-            r2 = pow(ctx.coords_init->cpu_data_p[i].x - ctx.topo.solute_center.x, 2) + pow(ctx.coords_init->cpu_data_p[i].y - ctx.topo.solute_center.y, 2) + pow(ctx.coords_init->cpu_data_p[i].z - ctx.topo.solute_center.z, 2);
+        if (heavy[i] && !ctx.excluded[i] && i < ctx.n_atoms_solute) {
+            r2 = pow(coords_init[i].x - ctx.topo.solute_center.x, 2) + pow(coords_init[i].y - ctx.topo.solute_center.y, 2) + pow(coords_init[i].z - ctx.topo.solute_center.z, 2);
             if (r2 > rin2) {
                 ctx.shell[i] = true;
                 n_inshell++;
@@ -416,6 +418,10 @@ void init_pshells() {
                 ctx.shell[i] = false;
             }
         }
+    }
+
+    if (ctx.run_gpu) {
+        ctx.heavy->upload();
     }
 
     printf("n_heavy = %d, n_inshell = %d\n", n_heavy, n_inshell);
@@ -426,13 +432,14 @@ void init_pshells() {
 static int mark_heavy_atoms(Context& ctx) {
     auto &atypes = ctx.atypes->cpu_data_p;
     auto &catypes = ctx.catypes->cpu_data_p;
+    auto *heavy = ctx.heavy->cpu_data_p;
     int n_heavy = 0;
     for (int i = 0; i < ctx.n_atoms; i++) {
         double mass = catypes[atypes[i].code - 1].m;
         if (mass < 4.0) {
-            ctx.heavy[i] = false;
+            heavy[i] = false;
         } else {
-            ctx.heavy[i] = true;
+            heavy[i] = true;
             n_heavy++;
         }
     }
@@ -443,12 +450,15 @@ static int mark_heavy_atoms(Context& ctx) {
 // Used when iuse_switch_atom == 1.
 void init_pshells_with_switch_atoms() {
     auto& ctx = Context::instance();
+    auto &coords_init = ctx.coords_init->cpu_data_p;
+    bool *heavy = nullptr;
     double r2, rin2;
 
-    ctx.heavy = std::make_unique<bool[]>(ctx.n_atoms);
+    ctx.heavy = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
+    heavy = ctx.heavy->cpu_data_p;
     ctx.shell = std::make_unique<bool[]>(ctx.n_atoms);
     for (int i = 0; i < ctx.n_atoms; ++i) {
-        ctx.heavy[i] = false;
+        heavy[i] = false;
         ctx.shell[i] = false;
     }
     rin2 = pow(ctx.md.shell_radius, 2);
@@ -459,8 +469,8 @@ void init_pshells_with_switch_atoms() {
     for (int grp = 0; grp < ctx.n_cgrps_solute; grp++) {
         cgrp_t cgrp = ctx.charge_groups[grp];
         int i = cgrp.iswitch - 1;
-        if (ctx.heavy[i] && !ctx.excluded[i] && i < ctx.n_atoms_solute) {
-            r2 = pow(ctx.coords_init->cpu_data_p[i].x - ctx.topo.solute_center.x, 2) + pow(ctx.coords_init->cpu_data_p[i].y - ctx.topo.solute_center.y, 2) + pow(ctx.coords_init->cpu_data_p[i].z - ctx.topo.solute_center.z, 2);
+        if (heavy[i] && !ctx.excluded[i] && i < ctx.n_atoms_solute) {
+            r2 = pow(coords_init[i].x - ctx.topo.solute_center.x, 2) + pow(coords_init[i].y - ctx.topo.solute_center.y, 2) + pow(coords_init[i].z - ctx.topo.solute_center.z, 2);
             bool in_shell = r2 > rin2;
             for (int j = 0; j < cgrp.n_atoms; j++) {
                 ctx.shell[cgrp.a[j] - 1] = in_shell;
@@ -471,6 +481,10 @@ void init_pshells_with_switch_atoms() {
         }
     }
 
+    if (ctx.run_gpu) {
+        ctx.heavy->upload();
+    }
+
     printf("(switch atoms): n_heavy = %d, n_inshell = %d\n", n_heavy, n_inshell);
 }
 
@@ -478,12 +492,15 @@ void init_pshells_with_switch_atoms() {
 // Used when iuse_switch_atom == 0.
 void init_pshells_with_centroids() {
     auto& ctx = Context::instance();
+    auto &coords_init = ctx.coords_init->cpu_data_p;
+    bool *heavy = nullptr;
     double r2, rin2;
 
-    ctx.heavy = std::make_unique<bool[]>(ctx.n_atoms);
+    ctx.heavy = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
+    heavy = ctx.heavy->cpu_data_p;
     ctx.shell = std::make_unique<bool[]>(ctx.n_atoms);
     for (int i = 0; i < ctx.n_atoms; ++i) {
-        ctx.heavy[i] = false;
+        heavy[i] = false;
         ctx.shell[i] = false;
     }
     rin2 = pow(ctx.md.shell_radius, 2);
@@ -494,14 +511,14 @@ void init_pshells_with_centroids() {
     for (int grp = 0; grp < ctx.n_cgrps_solute; grp++) {
         cgrp_t cgrp = ctx.charge_groups[grp];
         int i = cgrp.iswitch - 1;
-        if (ctx.heavy[i] && !ctx.excluded[i] && i < ctx.n_atoms_solute) {
+        if (heavy[i] && !ctx.excluded[i] && i < ctx.n_atoms_solute) {
             // Compute centroid of charge group
             double cx = 0, cy = 0, cz = 0;
             for (int j = 0; j < cgrp.n_atoms; j++) {
                 int ai = cgrp.a[j] - 1;
-                cx += ctx.coords_init->cpu_data_p[ai].x;
-                cy += ctx.coords_init->cpu_data_p[ai].y;
-                cz += ctx.coords_init->cpu_data_p[ai].z;
+                cx += coords_init[ai].x;
+                cy += coords_init[ai].y;
+                cz += coords_init[ai].z;
             }
             cx /= cgrp.n_atoms;
             cy /= cgrp.n_atoms;
@@ -516,6 +533,10 @@ void init_pshells_with_centroids() {
                 }
             }
         }
+    }
+
+    if (ctx.run_gpu) {
+        ctx.heavy->upload();
     }
 
     printf("(centroids): n_heavy = %d, n_inshell = %d\n", n_heavy, n_inshell);
@@ -547,6 +568,7 @@ void init_restrseqs() {
 
 void init_shake() {
     auto& ctx = Context::instance();
+    auto *heavy = ctx.heavy->cpu_data_p;
     int ai, aj;
     int mol = 0;
     int shake;
@@ -567,7 +589,7 @@ void init_shake() {
             mol += 1;
         }
 
-        if ((ctx.md.shake_hydrogens && (!ctx.heavy[ai] || !ctx.heavy[aj])) || (ctx.md.shake_solute && ai + 1 <= ctx.n_atoms_solute) || (ctx.md.shake_solvent && ai + 1 > ctx.n_atoms_solute)) {
+        if ((ctx.md.shake_hydrogens && (!heavy[ai] || !heavy[aj])) || (ctx.md.shake_solute && ai + 1 <= ctx.n_atoms_solute) || (ctx.md.shake_solvent && ai + 1 > ctx.n_atoms_solute)) {
             ctx.mol_n_shakes[mol]++;
             ctx.n_shake_constraints++;
 
@@ -588,7 +610,7 @@ void init_shake() {
             mol += 1;
         }
 
-        if ((ctx.md.shake_hydrogens && (!ctx.heavy[ai] || !ctx.heavy[aj])) || (ctx.md.shake_solute && ai + 1 <= ctx.n_atoms_solute) || (ctx.md.shake_solvent && ai + 1 > ctx.n_atoms_solute)) {
+        if ((ctx.md.shake_hydrogens && (!heavy[ai] || !heavy[aj])) || (ctx.md.shake_solute && ai + 1 <= ctx.n_atoms_solute) || (ctx.md.shake_solvent && ai + 1 > ctx.n_atoms_solute)) {
             ctx.shake_bonds[shake].ai = ai + 1;
             ctx.shake_bonds[shake].aj = aj + 1;
             ctx.shake_bonds[shake].dist2 = pow(cbonds[bonds[bi].code - 1].b0, 2);

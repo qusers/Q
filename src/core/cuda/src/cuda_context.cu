@@ -22,8 +22,6 @@ void CudaContext::init() {
 
     check_cudaMalloc((void**)&d_EQ_restraint, sizeof(E_restraint_t) * host.n_lambdas);
 
-    check_cudaMalloc((void**)&d_heavy, sizeof(bool) * host.n_atoms);
-
     check_cudaMalloc((void**)&d_p_atoms, sizeof(int) * host.n_patoms);
     check_cudaMalloc((void**)&d_unified_ccharges, sizeof(ccharge_t) * host.unified_ccharges.size());
     check_cudaMalloc((void**)&d_unified_catypes, sizeof(catype_t) * host.unified_catypes.size());
@@ -43,6 +41,7 @@ void CudaContext::sync_all_to_device() {
     host.dvelocities->upload();
     host.velocities->upload();
     host.LJ_matrix->upload();
+    host.heavy->upload();
 
     sync_array_to_device<int>(d_mol_n_shakes, host.mol_n_shakes.data(), host.n_molecules);
     sync_array_to_device<shake_bond_t>(d_shake_bonds, host.shake_bonds.data(), host.n_shake_constraints);
@@ -59,8 +58,6 @@ void CudaContext::sync_all_to_device() {
     sync_array_to_device<bool>(d_shell, host.shell.get(), host.n_atoms);
 
     sync_array_to_device<E_restraint_t>(d_EQ_restraint, host.EQ_restraint.data(), host.n_lambdas);
-
-    sync_array_to_device<bool>(d_heavy, host.heavy.get(), host.n_atoms);
 
     sync_array_to_device<int>(d_p_atoms, host.p_atoms.data(), host.n_patoms);
     sync_array_to_device<ccharge_t>(d_unified_ccharges, host.unified_ccharges.data(), host.unified_ccharges.size());
@@ -90,8 +87,6 @@ void CudaContext::sync_all_to_host() {
 
     sync_array_to_host<E_restraint_t>(host.EQ_restraint.data(), d_EQ_restraint, host.n_lambdas);
 
-    sync_array_to_host<bool>(host.heavy.get(), d_heavy, host.n_atoms);
-
     sync_array_to_host<int>(host.p_atoms.data(), d_p_atoms, host.n_patoms);
     sync_array_to_host<ccharge_t>(host.unified_ccharges.data(), d_unified_ccharges, host.unified_ccharges.size());
     sync_array_to_host<catype_t>(host.unified_catypes.data(), d_unified_catypes, host.unified_catypes.size());
@@ -113,8 +108,6 @@ void CudaContext::free() {
     cudaFree(d_shell);
 
     cudaFree(d_EQ_restraint);
-
-    cudaFree(d_heavy);
 
     cudaFree(d_p_atoms);
     cudaFree(d_charge_table_all);

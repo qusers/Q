@@ -33,12 +33,10 @@ class Context {
     int n_molecules = 0;
     double dt = 0.0;
     double tau_T = 0.0;
-
     md_t md;
 
     /*
     */
-    std::unique_ptr<HostDeviceBuffer<coord_t>> coords_init;
     std::unique_ptr<HostDeviceBuffer<coord_t>> coords;
     std::unique_ptr<HostDeviceBuffer<vel_t>> velocities;
     std::unique_ptr<HostDeviceBuffer<dvel_t>> dvelocities;
@@ -95,7 +93,8 @@ class Context {
     std::unique_ptr<HostDeviceBuffer<atype_t>> atypes;
     std::unique_ptr<HostDeviceBuffer<catype_t>> catypes;
 
-
+    std::unique_ptr<HostDeviceBuffer<bool>> heavy;
+    std::unique_ptr<HostDeviceBuffer<coord_t>> coords_init;
 
 
 
@@ -118,7 +117,6 @@ class Context {
     std::vector<int3> ngbrs_14;
 
     std::unique_ptr<bool[]> excluded;
-    std::unique_ptr<bool[]> heavy;
     std::vector<int> molecules;
     std::vector<double> winv;
     std::vector<cgrp_t> charge_groups;

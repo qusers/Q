@@ -9,6 +9,7 @@ void calc_restrwall_forces() {
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
     auto &restrwalls = ctx.restrwalls->cpu_data_p;
+    auto *heavy = ctx.heavy->cpu_data_p;
 
     double k, b, db, ener, dv, fexp;
     coord_t dr;
@@ -16,7 +17,7 @@ void calc_restrwall_forces() {
     for (int ir = 0; ir < ctx.n_restrwalls; ir++) {
         k = restrwalls[ir].k;
         for (int i = restrwalls[ir].ai - 1; i < restrwalls[ir].aj - 1; i++) {
-            if (ctx.heavy[i] || restrwalls[ir].ih) {
+            if (heavy[i] || restrwalls[ir].ih) {
                 dr.x = coords[i].x - ctx.topo.solvent_center.x;
                 dr.y = coords[i].y - ctx.topo.solvent_center.y;
                 dr.z = coords[i].z - ctx.topo.solvent_center.z;

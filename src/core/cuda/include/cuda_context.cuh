@@ -43,8 +43,6 @@ class CudaContext {
     */
     E_restraint_t* d_EQ_restraint = nullptr;
 
-    bool* d_heavy = nullptr;
-
     /*
     Used in cuda_nonbonded_pp_force.cu
     */

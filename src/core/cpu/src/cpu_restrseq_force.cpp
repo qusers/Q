@@ -11,6 +11,7 @@ void calc_restrseq_forces() {
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
     auto &restrseqs = ctx.restrseqs->cpu_data_p;
+    auto *heavy = ctx.heavy->cpu_data_p;
 
     double k, mass, totmass;
     coord_t dr;
@@ -27,7 +28,7 @@ void calc_restrseq_forces() {
 
         if (restrseqs[s].to_center == 1) {
             for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
-                if (ctx.heavy[i] || restrseqs[s].ih) {
+                if (heavy[i] || restrseqs[s].ih) {
                     n_ctr++;
                     dr.x += (coords[i].x - ctx.coords_init->cpu_data_p[i].x);
                     dr.y += (coords[i].y - ctx.coords_init->cpu_data_p[i].y);
@@ -44,7 +45,7 @@ void calc_restrseq_forces() {
                 ctx.E_restraint.Upres += ener;
 
                 for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
-                    if (ctx.heavy[i] || restrseqs[s].ih) {
+                    if (heavy[i] || restrseqs[s].ih) {
                         mass = catypes[atypes[i].code - 1].m;
                         dvelocities[i].x += (k * dr.x * mass / 12.010);
                         dvelocities[i].y += (k * dr.y * mass / 12.010);
@@ -54,7 +55,7 @@ void calc_restrseq_forces() {
             }
         } else if (restrseqs[s].to_center == 2) {
             for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
-                if (ctx.heavy[i] || restrseqs[s].ih) {
+                if (heavy[i] || restrseqs[s].ih) {
                     mass = catypes[atypes[i].code - 1].m;
                     totmass += mass;
                     dr.x += (coords[i].x - ctx.coords_init->cpu_data_p[i].x) * mass;
@@ -72,7 +73,7 @@ void calc_restrseq_forces() {
                 ctx.E_restraint.Upres += ener;
 
                 for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
-                    if (ctx.heavy[i] || restrseqs[s].ih) {
+                    if (heavy[i] || restrseqs[s].ih) {
                         dvelocities[i].x += k * dr.x;
                         dvelocities[i].y += k * dr.y;
                         dvelocities[i].z += k * dr.z;
@@ -81,7 +82,7 @@ void calc_restrseq_forces() {
             }
         } else {
             for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
-                if (ctx.heavy[i] || restrseqs[s].ih) {
+                if (heavy[i] || restrseqs[s].ih) {
                     dr.x = coords[i].x - ctx.coords_init->cpu_data_p[i].x;
                     dr.y = coords[i].y - ctx.coords_init->cpu_data_p[i].y;
                     dr.z = coords[i].z - ctx.coords_init->cpu_data_p[i].z;

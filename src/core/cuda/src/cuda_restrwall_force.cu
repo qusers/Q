@@ -58,8 +58,7 @@ void calc_restrwall_forces_host() {
     auto d_restrwalls = host.restrwalls->gpu_data_p;
     auto d_coords = host.coords->gpu_data_p;
     auto d_dvelocities = host.dvelocities->gpu_data_p;
-    CudaContext& ctx = CudaContext::instance();
-    auto d_heavy = ctx.d_heavy;
+    auto d_heavy = host.heavy->gpu_data_p;
     cudaMemset(d_energies, 0, sizeof(double));
 
     int blockSize = 256;

@@ -122,8 +122,7 @@ void calc_restrseq_forces_host() {
     auto d_coords_init = host.coords_init->gpu_data_p;
     auto d_atypes = host.atypes->gpu_data_p;
     auto d_catypes = host.catypes->gpu_data_p;
-    CudaContext& ctx = CudaContext::instance();
-    auto d_heavy = ctx.d_heavy;
+    auto d_heavy = host.heavy->gpu_data_p;
     auto d_dvelocities = host.dvelocities->gpu_data_p;
     cudaMemset(d_upres_energy, 0, sizeof(double));
     // ctx.sync_all_to_device();
