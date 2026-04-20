@@ -106,6 +106,12 @@ class Context {
     */
     std::unique_ptr<HostDeviceBuffer<int>> LJ_matrix;
 
+    /*
+    Shake
+    */
+    int n_shake_constraints = 0;
+    std::unique_ptr<HostDeviceBuffer<int>> mol_n_shakes;
+    std::unique_ptr<HostDeviceBuffer<shake_bond_t>> shake_bonds;
 
 
     /**/
@@ -208,9 +214,6 @@ class Context {
      * =============================================
      */
 
-    int n_shake_constraints = 0;
-    std::vector<int> mol_n_shakes;
-    std::vector<shake_bond_t> shake_bonds;
 
     /* =============================================
      * == CALCULATED IN THE INTEGRATION

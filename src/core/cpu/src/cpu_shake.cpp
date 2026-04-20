@@ -10,23 +10,25 @@
 int calc_shake_constraints(coord_t* coords, coord_t* xcoords) {
     auto& ctx = Context::instance();
     auto *winv = ctx.winv->cpu_data_p;
+    auto *mol_n_shakes = ctx.mol_n_shakes->cpu_data_p;
+    auto *shake_bonds = ctx.shake_bonds->cpu_data_p;
     int total_iterations = 0;
     int shake = 0;
 
     for (int mol = 0; mol < ctx.n_molecules; mol++) {
-        if (ctx.mol_n_shakes[mol] == 0) {
+        if (mol_n_shakes[mol] == 0) {
             continue;
         }
         int n_iterations = 0;
 
         bool converged = false;
         do {
-            for (int i = 0; i < ctx.mol_n_shakes[mol]; i++) {
-                ctx.shake_bonds[shake + i].ready = false;
+            for (int i = 0; i < mol_n_shakes[mol]; i++) {
+                shake_bonds[shake + i].ready = false;
             }
 
-            for (int i = 0; i < ctx.mol_n_shakes[mol]; i++) {
-                shake_bond_t& shake_bond = ctx.shake_bonds[shake + i];
+            for (int i = 0; i < mol_n_shakes[mol]; i++) {
+                shake_bond_t& shake_bond = shake_bonds[shake + i];
                 if (!shake_bond.ready) {
                     const int ai = shake_bond.ai - 1;
                     const int aj = shake_bond.aj - 1;
@@ -60,8 +62,8 @@ int calc_shake_constraints(coord_t* coords, coord_t* xcoords) {
             n_iterations++;
 
             converged = true;
-            for (int i = 0; i < ctx.mol_n_shakes[mol]; i++) {
-                if (!ctx.shake_bonds[shake + i].ready) {
+            for (int i = 0; i < mol_n_shakes[mol]; i++) {
+                if (!shake_bonds[shake + i].ready) {
                     converged = false;
                     break;
                 }
@@ -69,9 +71,9 @@ int calc_shake_constraints(coord_t* coords, coord_t* xcoords) {
         } while (n_iterations < shake_max_iter && !converged);
 
         if (!converged) {
-            for (int i = 0; i < ctx.mol_n_shakes[mol]; i++) {
-                const int ai = ctx.shake_bonds[shake + i].ai - 1;
-                const int aj = ctx.shake_bonds[shake + i].aj - 1;
+            for (int i = 0; i < mol_n_shakes[mol]; i++) {
+                const int ai = shake_bonds[shake + i].ai - 1;
+                const int aj = shake_bonds[shake + i].aj - 1;
                 coord_t xxij;
                 double xxij2;
 
@@ -80,12 +82,12 @@ int calc_shake_constraints(coord_t* coords, coord_t* xcoords) {
                 xxij.z = xcoords[ai].z - xcoords[aj].z;
                 xxij2 = std::pow(xxij.x, 2) + std::pow(xxij.y, 2) + std::pow(xxij.z, 2);
                 std::printf(">>> Shake failed, i = %d,j = %d, d = %f, d0 = %f", ai, aj, std::sqrt(xxij2),
-                            ctx.shake_bonds[shake + i].dist2);
+                            shake_bonds[shake + i].dist2);
             }
             std::exit(EXIT_FAILURE);
         }
 
-        shake += ctx.mol_n_shakes[mol];
+        shake += mol_n_shakes[mol];
         total_iterations += n_iterations;
     }
 

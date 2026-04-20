@@ -15,8 +15,6 @@ class CudaContext {
     /*
     Used in cuda_shake_constraints.cu
     */
-    int* d_mol_n_shakes = nullptr;
-    shake_bond_t* d_shake_bonds = nullptr;
     coord_t* d_xcoords = nullptr;
 
     /*

@@ -99,13 +99,14 @@ __global__ void calc_shake_constraints_kernel(
 
 void init_shake_constraints_kernel_data() {
     auto& host = Context::instance();
+    auto *mol_n_shakes = host.mol_n_shakes->cpu_data_p;
     using namespace CudaShakeConstraints;
     if (!is_initialized) {
         if (host.n_molecules > 0) {
             int* mol_shake_offset_host = (int*)malloc(sizeof(int) * host.n_molecules);
             mol_shake_offset_host[0] = 0;
             for (int i = 1; i < host.n_molecules; i++) {
-                mol_shake_offset_host[i] = mol_shake_offset_host[i - 1] + host.mol_n_shakes[i - 1];
+                mol_shake_offset_host[i] = mol_shake_offset_host[i - 1] + mol_n_shakes[i - 1];
             }
             check_cudaMalloc((void**)&d_mol_shake_offset, sizeof(int) * host.n_molecules);
             cudaMemcpy(d_mol_shake_offset, mol_shake_offset_host, sizeof(int) * host.n_molecules, cudaMemcpyHostToDevice);
@@ -138,8 +139,8 @@ int calc_shake_constraints_host() {
     int threads = 32;
 
     CudaContext& ctx = CudaContext::instance();
-    auto d_mol_n_shakes = ctx.d_mol_n_shakes;
-    auto d_shake_bonds = ctx.d_shake_bonds;
+    auto d_mol_n_shakes = host.mol_n_shakes->gpu_data_p;
+    auto d_shake_bonds = host.shake_bonds->gpu_data_p;
     auto d_coords = host.coords->gpu_data_p;
     auto d_xcoords = ctx.d_xcoords;
     auto d_winv = host.winv->gpu_data_p;
