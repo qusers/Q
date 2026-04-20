@@ -25,30 +25,16 @@ class Context {
     std::string base_folder;
     bool run_gpu = false;
 
-    /* =============================================
-     * == GENERAL
-     * =============================================
-     */
     int n_atoms = 0;         // the total number of atoms
     int n_atoms_solute = 0;  // the total number of solute number, in our system [0, n_atoms_solute) are solute, [n_atoms_solute, n_atoms) are water atoms
     int n_patoms = 0;
     int n_qatoms = 0;
     int n_waters = 0;
     int n_molecules = 0;
-
     double dt = 0.0;
     double tau_T = 0.0;
 
-    /* =============================================
-     * == FROM MD FILE
-     * =============================================
-     */
     md_t md;
-
-    /* =============================================
-     * == FROM TOPOLOGY FILE
-     * =============================================
-     */
 
     std::unique_ptr<HostDeviceBuffer<coord_t>> coords_init;
 
@@ -72,6 +58,10 @@ class Context {
     int n_impropers = 0;
     int n_impropers_solute = 0;
     int n_cimpropers = 0;
+    std::unique_ptr<HostDeviceBuffer<improper_t>> impropers;
+    std::unique_ptr<HostDeviceBuffer<cimproper_t>> cimpropers;
+    
+    
     int n_charges = 0;
     int n_ccharges = 0;
     int n_atypes = 0;
@@ -83,8 +73,6 @@ class Context {
     int n_cgrps_solvent = 0;
     int iuse_switch_atom = 0;
 
-    std::vector<improper_t> impropers;
-    std::vector<cimproper_t> cimpropers;
     std::vector<charge_t> charges;
     std::vector<ccharge_t> ccharges;
     std::vector<atype_t> atypes;

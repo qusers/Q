@@ -7,6 +7,8 @@
 
 double calc_improper2_forces(int start, int end) {
     auto& ctx = Context::instance();
+    auto &impropers = ctx.impropers->cpu_data_p;
+    auto &cimpropers = ctx.cimpropers->cpu_data_p;
     int aii, aji, aki, ali;
 
     coord_t ai, aj, ak, al;
@@ -20,8 +22,8 @@ double calc_improper2_forces(int start, int end) {
     double improper = 0;
 
     for (int i = start; i < end; i++) {
-        imp = ctx.impropers[i];
-        cimp = ctx.cimpropers[imp.code - 1];
+        imp = impropers[i];
+        cimp = cimpropers[imp.code - 1];
 
         aii = imp.ai - 1;
         aji = imp.aj - 1;

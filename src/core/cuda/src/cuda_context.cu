@@ -9,8 +9,6 @@ void CudaContext::init() {
     check_cudaMalloc((void**)&d_coords, sizeof(coord_t) * host.n_atoms);
     check_cudaMalloc((void**)&d_dvelocities, sizeof(dvel_t) * host.n_atoms);
     check_cudaMalloc((void**)&d_velocities, sizeof(vel_t) * host.n_atoms);
-    check_cudaMalloc((void**)&d_impropers, sizeof(improper_t) * host.n_impropers);
-    check_cudaMalloc((void**)&d_cimpropers, sizeof(cimproper_t) * host.n_cimpropers);
 
     check_cudaMalloc((void**)&d_mol_n_shakes, sizeof(int) * host.n_molecules);
     check_cudaMalloc((void**)&d_shake_bonds, sizeof(shake_bond_t) * host.n_shake_constraints);
@@ -63,8 +61,6 @@ void CudaContext::sync_all_to_device() {
     sync_array_to_device<coord_t>(d_coords, host.coords.data(), host.n_atoms);
     sync_array_to_device<dvel_t>(d_dvelocities, host.dvelocities.data(), host.n_atoms);
     sync_array_to_device<vel_t>(d_velocities, host.velocities.data(), host.n_atoms);
-    sync_array_to_device<improper_t>(d_impropers, host.impropers.data(), host.n_impropers);
-    sync_array_to_device<cimproper_t>(d_cimpropers, host.cimpropers.data(), host.n_cimpropers);
 
     sync_array_to_device<int>(d_mol_n_shakes, host.mol_n_shakes.data(), host.n_molecules);
     sync_array_to_device<shake_bond_t>(d_shake_bonds, host.shake_bonds.data(), host.n_shake_constraints);
@@ -109,8 +105,6 @@ void CudaContext::sync_all_to_host() {
     sync_array_to_host<coord_t>(host.coords.data(), d_coords, host.n_atoms);
     sync_array_to_host<dvel_t>(host.dvelocities.data(), d_dvelocities, host.n_atoms);
     sync_array_to_host<vel_t>(host.velocities.data(), d_velocities, host.n_atoms);
-    sync_array_to_host<improper_t>(host.impropers.data(), d_impropers, host.n_impropers);
-    sync_array_to_host<cimproper_t>(host.cimpropers.data(), d_cimpropers, host.n_cimpropers);
 
     sync_array_to_host<int>(host.mol_n_shakes.data(), d_mol_n_shakes, host.n_molecules);
     sync_array_to_host<shake_bond_t>(host.shake_bonds.data(), d_shake_bonds, host.n_shake_constraints);
@@ -152,8 +146,6 @@ void CudaContext::free() {
     cudaFree(d_coords);
     cudaFree(d_dvelocities);
     cudaFree(d_velocities);
-    cudaFree(d_impropers);
-    cudaFree(d_cimpropers);
 
     cudaFree(d_atypes);
     cudaFree(d_catypes);

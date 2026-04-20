@@ -20,12 +20,6 @@ class CudaContext {
     vel_t* d_velocities = nullptr;
 
     /*
-    Used in cuda_improper2_force.cu
-    */
-    improper_t* d_impropers = nullptr;
-    cimproper_t* d_cimpropers = nullptr;
-
-    /*
     Used in cuda_leapfrog.cu
     */
     atype_t* d_atypes = nullptr;

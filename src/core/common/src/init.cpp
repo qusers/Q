@@ -147,6 +147,7 @@ void exclude_all_atoms_excluded_definitions() {
     auto& ctx = Context::instance();
     int n_excl;
     int ai = 0, bi = 0, ii = 0, ti = 0;
+    auto &impropers = ctx.impropers->cpu_data_p;
     auto &torsions = ctx.torsions->cpu_data_p;
 
     // n_excl = 0;
@@ -180,10 +181,10 @@ void exclude_all_atoms_excluded_definitions() {
 
     n_excl = 0;
     for (int i = 0; i < ctx.n_impropers; i++) {
-        if (ctx.excluded[ctx.impropers[i].ai - 1] && ctx.excluded[ctx.impropers[i].aj - 1] && ctx.excluded[ctx.impropers[i].ak - 1] && ctx.excluded[ctx.impropers[i].al - 1]) {
+        if (ctx.excluded[impropers[i].ai - 1] && ctx.excluded[impropers[i].aj - 1] && ctx.excluded[impropers[i].ak - 1] && ctx.excluded[impropers[i].al - 1]) {
             n_excl++;
         } else {
-            ctx.impropers[ii] = ctx.impropers[i];
+            impropers[ii] = impropers[i];
             ii++;
         }
     }
@@ -832,12 +833,12 @@ void clean_variables() {
     ctx.atom_to_qi.clear();
     ctx.unified_ccharges.clear();
     ctx.unified_catypes.clear();
-    ctx.cimpropers.clear();
+    ctx.cimpropers.reset();
     ctx.coords.clear();
     ctx.ctorsions.reset();
     ctx.excluded.reset();
     ctx.heavy.reset();
-    ctx.impropers.clear();
+    ctx.impropers.reset();
     ctx.torsions.reset();
     ctx.LJ_matrix.clear();
     ctx.molecules.clear();

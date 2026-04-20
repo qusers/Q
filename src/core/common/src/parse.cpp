@@ -679,8 +679,8 @@ void init_impropers(const char* filename) {
 
     ctx.n_impropers = atoi(file.buffer[0][0]);
     ctx.n_impropers_solute = atoi(file.buffer[1][0]);
-
-    ctx.impropers.resize(ctx.n_impropers);
+    ctx.impropers = std::make_unique<HostDeviceBuffer<improper_t>>(ctx.n_impropers, true, ctx.run_gpu);
+    auto &impropers = ctx.impropers->cpu_data_p;
 
     for (int i = 0; i < ctx.n_impropers; i++) {
         improper_t improper;
@@ -691,7 +691,11 @@ void init_impropers(const char* filename) {
         improper.al = atoi(file.buffer[i + 2][3]);
         improper.code = atoi(file.buffer[i + 2][4]);
 
-        ctx.impropers[i] = improper;
+        impropers[i] = improper;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.impropers->upload();
     }
 
     clean_csv(file);
@@ -709,8 +713,8 @@ void init_cimpropers(const char* filename) {
     }
 
     ctx.n_cimpropers = atoi(file.buffer[0][0]);
-
-    ctx.cimpropers.resize(ctx.n_cimpropers);
+    ctx.cimpropers = std::make_unique<HostDeviceBuffer<cimproper_t>>(ctx.n_cimpropers, true, ctx.run_gpu);
+    auto &cimpropers = ctx.cimpropers->cpu_data_p;
 
     for (int i = 0; i < ctx.n_cimpropers; i++) {
         cimproper_t cimproper;
@@ -720,7 +724,11 @@ void init_cimpropers(const char* filename) {
         cimproper.k = strtod(file.buffer[i + 1][1], &eptr);
         cimproper.phi0 = strtod(file.buffer[i + 1][2], &eptr);
 
-        ctx.cimpropers[i] = cimproper;
+        cimpropers[i] = cimproper;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.cimpropers->upload();
     }
 
     clean_csv(file);
