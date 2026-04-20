@@ -11,7 +11,6 @@ void CudaContext::init() {
     check_cudaMalloc((void**)&d_winv, sizeof(double) * host.n_atoms);
     check_cudaMalloc((void**)&d_xcoords, sizeof(coord_t) * host.n_atoms);
 
-    check_cudaMalloc((void**)&d_q_atoms, sizeof(int) * host.n_qatoms);
     check_cudaMalloc((void**)&d_q_charges, sizeof(ccharge_t) * host.n_qatoms * host.n_lambdas);
     check_cudaMalloc((void**)&d_LJ_matrix, sizeof(int) * host.n_atoms_solute * host.n_atoms_solute);
     check_cudaMalloc((void**)&d_excluded, sizeof(bool) * host.n_atoms);
@@ -58,7 +57,6 @@ void CudaContext::sync_all_to_device() {
     sync_array_to_device<double>(d_winv, host.winv.data(), host.n_atoms);
     sync_array_to_device<coord_t>(d_xcoords, host.xcoords.data(), host.n_atoms);
 
-    sync_array_to_device<int>(d_q_atoms, host.q_atoms.data(), host.n_qatoms);
     sync_array_to_device<ccharge_t>(d_q_charges, host.q_charges.data(), host.n_qatoms * host.n_lambdas);
     sync_array_to_device<int>(d_LJ_matrix, host.LJ_matrix.data(), host.n_atoms_solute * host.n_atoms_solute);
     sync_array_to_device<bool>(d_excluded, host.excluded.get(), host.n_atoms);
@@ -97,7 +95,6 @@ void CudaContext::sync_all_to_host() {
     sync_array_to_host<double>(host.winv.data(), d_winv, host.n_atoms);
     sync_array_to_host<coord_t>(host.xcoords.data(), d_xcoords, host.n_atoms);
 
-    sync_array_to_host<int>(host.q_atoms.data(), d_q_atoms, host.n_qatoms);
     sync_array_to_host<ccharge_t>(host.q_charges.data(), d_q_charges, host.n_qatoms * host.n_lambdas);
     sync_array_to_host<int>(host.LJ_matrix.data(), d_LJ_matrix, host.n_atoms_solute * host.n_atoms_solute);
     sync_array_to_host<bool>(host.excluded.get(), d_excluded, host.n_atoms);
@@ -129,7 +126,6 @@ void CudaContext::free() {
     cudaFree(d_winv);
     cudaFree(d_xcoords);
 
-    cudaFree(d_q_atoms);
     cudaFree(d_q_charges);
     cudaFree(d_LJ_matrix);
     cudaFree(d_excluded);
