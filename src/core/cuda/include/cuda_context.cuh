@@ -13,11 +13,6 @@
 class CudaContext {
    public:
     /*
-    Used in cuda_shake_constraints.cu
-    */
-    E_nonbonded_t* d_EQ_nonbond_qq = nullptr;
-
-    /*
     Used in cuda_restrang_force.cu
     */
     E_restraint_t* d_EQ_restraint = nullptr;

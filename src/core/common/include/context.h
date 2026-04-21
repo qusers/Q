@@ -128,6 +128,10 @@ class Context {
     std::unique_ptr<HostDeviceBuffer<double>> lambdas; // Actually length is only 2..
 
     /*
+    Energy
+    */
+
+    /*
     */
 
     int n_ngbrs23 = 0;
