@@ -19,11 +19,6 @@ class CudaContext {
     double* d_lambdas = nullptr;
 
     /*
-    Used in cuda_polx_water_force.cu
-    */
-    shell_t* d_wshells = nullptr;
-
-    /*
     Used in cuda_restrang_force.cu
     */
     E_restraint_t* d_EQ_restraint = nullptr;

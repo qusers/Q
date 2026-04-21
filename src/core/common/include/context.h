@@ -118,6 +118,7 @@ class Context {
     Water
     */
 
+    std::unique_ptr<HostDeviceBuffer<shell_t>> wshells;
 
 
 
@@ -214,7 +215,6 @@ class Context {
     int n_shells = 0;
     std::vector<std::vector<int>> list_sh;
     std::vector<std::vector<int>> nsort;
-    std::vector<shell_t> wshells;
 
     /* =============================================
      * == SHAKE

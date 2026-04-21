@@ -348,7 +348,8 @@ void init_wshells() {
     drs = wpolr_layer / drouter;
 
     ctx.n_shells = (int)floor(-0.5 + sqrt(2 * drs + 0.25));
-    ctx.wshells.resize(ctx.n_shells);
+    ctx.wshells = std::make_unique<HostDeviceBuffer<shell_t>>(ctx.n_shells, true, ctx.run_gpu);
+    auto *wshells = ctx.wshells->cpu_data_p;
 
     printf("n_shells = %d\n", ctx.n_shells);
 
@@ -356,12 +357,12 @@ void init_wshells() {
     ctx.n_max_inshell = 0;
 
     for (int i = 0; i < ctx.n_shells; i++) {
-        ctx.wshells[i].avtheta = 0;
-        ctx.wshells[i].avn_inshell = 0;
-        ctx.wshells[i].router = router;
+        wshells[i].avtheta = 0;
+        wshells[i].avn_inshell = 0;
+        wshells[i].router = router;
         dr = drouter * (i + 1);
         ri = router - dr;
-        ctx.wshells[i].dr = dr;
+        wshells[i].dr = dr;
         Vshell = pow(router, 3) - pow(ri, 3);
         n_inshell = (int)floor(4 * M_PI / 3 * Vshell * rho_water);
         if (n_inshell > ctx.n_max_inshell) {
@@ -370,13 +371,13 @@ void init_wshells() {
         rshell = pow(0.5 * (pow(router, 3) + pow(ri, 3)), 1.0 / 3.0);
 
         // --- Note below: 0.98750 = (1-1/epsilon) for water
-        ctx.wshells[i].cstb = ctx.crgQtot * 0.98750 / (rho_water * ctx.mu_w * 4 * M_PI * pow(rshell, 2));
+        wshells[i].cstb = ctx.crgQtot * 0.98750 / (rho_water * ctx.mu_w * 4 * M_PI * pow(rshell, 2));
 
         router -= dr;
     }
 
     // rc > wshells[n_shells-1].router - wshells[n_shells-1].dr
-    printf("shell 0: (%f, %f). shell 1: (%f, %f). shell 2: (%f, %f).\n", ctx.wshells[0].router, ctx.wshells[0].router - ctx.wshells[0].dr, ctx.wshells[1].router, ctx.wshells[1].router - ctx.wshells[1].dr, ctx.wshells[2].router, ctx.wshells[2].router - ctx.wshells[2].dr);
+    printf("shell 0: (%f, %f). shell 1: (%f, %f). shell 2: (%f, %f).\n", wshells[0].router, wshells[0].router - wshells[0].dr, wshells[1].router, wshells[1].router - wshells[1].dr, wshells[2].router, wshells[2].router - wshells[2].dr);
 
     ctx.n_max_inshell = ctx.n_waters;  // Make largest a little bigger just in case
 
@@ -387,6 +388,10 @@ void init_wshells() {
 
     ctx.list_sh.assign(ctx.n_max_inshell, std::vector<int>(ctx.n_shells, 0));
     ctx.nsort.assign(ctx.n_max_inshell, std::vector<int>(ctx.n_shells, 0));
+
+    if (ctx.run_gpu) {
+        ctx.wshells->upload();
+    }
 }
 
 void init_pshells() {
@@ -932,7 +937,7 @@ void clean_variables() {
     ctx.q_shakes.clear();
     ctx.q_softcores.clear();
     ctx.q_torsions.clear();
-    ctx.wshells.clear();
+    ctx.wshells.reset();
     ctx.theta.clear();
     ctx.theta0.clear();
     ctx.tdum.clear();
