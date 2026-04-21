@@ -399,10 +399,11 @@ void init_pshells() {
 
     ctx.heavy = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
     auto *heavy = ctx.heavy->cpu_data_p;
-    ctx.shell = std::make_unique<bool[]>(ctx.n_atoms);
+    ctx.shell = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
+    auto *shell = ctx.shell->cpu_data_p;
     for (int i = 0; i < ctx.n_atoms; ++i) {
         heavy[i] = false;
-        ctx.shell[i] = false;
+        shell[i] = false;
     }
     rin2 = pow(shell_default * ctx.topo.exclusion_radius, 2);
 
@@ -420,16 +421,17 @@ void init_pshells() {
         if (heavy[i] && !excluded[i] && i < ctx.n_atoms_solute) {
             r2 = pow(coords_init[i].x - ctx.topo.solute_center.x, 2) + pow(coords_init[i].y - ctx.topo.solute_center.y, 2) + pow(coords_init[i].z - ctx.topo.solute_center.z, 2);
             if (r2 > rin2) {
-                ctx.shell[i] = true;
+                shell[i] = true;
                 n_inshell++;
             } else {
-                ctx.shell[i] = false;
+                shell[i] = false;
             }
         }
     }
 
     if (ctx.run_gpu) {
         ctx.heavy->upload();
+        ctx.shell->upload();
     }
 
     printf("n_heavy = %d, n_inshell = %d\n", n_heavy, n_inshell);
@@ -465,10 +467,11 @@ void init_pshells_with_switch_atoms() {
 
     ctx.heavy = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
     heavy = ctx.heavy->cpu_data_p;
-    ctx.shell = std::make_unique<bool[]>(ctx.n_atoms);
+    ctx.shell = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
+    auto *shell = ctx.shell->cpu_data_p;
     for (int i = 0; i < ctx.n_atoms; ++i) {
         heavy[i] = false;
-        ctx.shell[i] = false;
+        shell[i] = false;
     }
     rin2 = pow(ctx.md.shell_radius, 2);
 
@@ -482,7 +485,7 @@ void init_pshells_with_switch_atoms() {
             r2 = pow(coords_init[i].x - ctx.topo.solute_center.x, 2) + pow(coords_init[i].y - ctx.topo.solute_center.y, 2) + pow(coords_init[i].z - ctx.topo.solute_center.z, 2);
             bool in_shell = r2 > rin2;
             for (int j = 0; j < cgrp.n_atoms; j++) {
-                ctx.shell[cgrp.a[j] - 1] = in_shell;
+                shell[cgrp.a[j] - 1] = in_shell;
                 if (in_shell) {
                     n_inshell++;
                 }
@@ -492,6 +495,7 @@ void init_pshells_with_switch_atoms() {
 
     if (ctx.run_gpu) {
         ctx.heavy->upload();
+        ctx.shell->upload();
     }
 
     printf("(switch atoms): n_heavy = %d, n_inshell = %d\n", n_heavy, n_inshell);
@@ -508,10 +512,11 @@ void init_pshells_with_centroids() {
 
     ctx.heavy = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
     heavy = ctx.heavy->cpu_data_p;
-    ctx.shell = std::make_unique<bool[]>(ctx.n_atoms);
+    ctx.shell = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
+    auto *shell = ctx.shell->cpu_data_p;
     for (int i = 0; i < ctx.n_atoms; ++i) {
         heavy[i] = false;
-        ctx.shell[i] = false;
+        shell[i] = false;
     }
     rin2 = pow(ctx.md.shell_radius, 2);
 
@@ -537,7 +542,7 @@ void init_pshells_with_centroids() {
             r2 = pow(cx - ctx.topo.solute_center.x, 2) + pow(cy - ctx.topo.solute_center.y, 2) + pow(cz - ctx.topo.solute_center.z, 2);
             bool in_shell = r2 > rin2;
             for (int j = 0; j < cgrp.n_atoms; j++) {
-                ctx.shell[cgrp.a[j] - 1] = in_shell;
+                shell[cgrp.a[j] - 1] = in_shell;
                 if (in_shell) {
                     n_inshell++;
                 }
@@ -547,6 +552,7 @@ void init_pshells_with_centroids() {
 
     if (ctx.run_gpu) {
         ctx.heavy->upload();
+        ctx.shell->upload();
     }
 
     printf("(centroids): n_heavy = %d, n_inshell = %d\n", n_heavy, n_inshell);

@@ -10,12 +10,13 @@ void calc_pshell_forces() {
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
     auto *excluded = ctx.excluded->cpu_data_p;
+    auto *shell = ctx.shell->cpu_data_p;
 
     coord_t dr;
     double k, r2, ener;
 
     for (int i = 0; i < ctx.n_atoms_solute; i++) {
-        if (ctx.shell[i] || excluded[i]) {
+        if (shell[i] || excluded[i]) {
             if (excluded[i]) {
                 k = k_fix;
             } else {
@@ -31,7 +32,7 @@ void calc_pshell_forces() {
             if (excluded[i]) {
                 ctx.E_restraint.Ufix += ener;
             }
-            if (ctx.shell[i]) {
+            if (shell[i]) {
                 ctx.E_restraint.Ushell += ener;
             }
 

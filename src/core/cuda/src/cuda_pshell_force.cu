@@ -52,7 +52,7 @@ void calc_pshell_forces_host() {
     auto& host = Context::instance();
     using namespace CudaPshellForce;
 
-    auto d_shell = CudaContext::instance().d_shell;
+    auto d_shell = host.shell->gpu_data_p;
     auto d_excluded = host.excluded->gpu_data_p;
     auto d_coords = host.coords->gpu_data_p;
     auto d_coords_init = host.coords_init->gpu_data_p;

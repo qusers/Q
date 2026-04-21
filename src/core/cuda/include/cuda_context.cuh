@@ -22,10 +22,6 @@ class CudaContext {
     Used in cuda_polx_water_force.cu
     */
     shell_t* d_wshells = nullptr;
-    /*
-    Used in cuda_pshell_force.cu
-    */
-    bool* d_shell = nullptr;
 
     /*
     Used in cuda_restrang_force.cu

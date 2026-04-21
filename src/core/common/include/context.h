@@ -83,7 +83,7 @@ class Context {
     std::unique_ptr<HostDeviceBuffer<restrwall_t>> restrwalls;
 
     /*
-    
+    Atom Info
     */
     int n_charges = 0;
     int n_ccharges = 0;
@@ -101,6 +101,7 @@ class Context {
 
     std::unique_ptr<HostDeviceBuffer<double>> winv;
 
+    std::unique_ptr<HostDeviceBuffer<bool>> shell;
     /*
     Pair
     */
@@ -113,7 +114,16 @@ class Context {
     std::unique_ptr<HostDeviceBuffer<int>> mol_n_shakes;
     std::unique_ptr<HostDeviceBuffer<shake_bond_t>> shake_bonds;
     std::unique_ptr<HostDeviceBuffer<coord_t>> xcoords; // todo: It's just a temporary variables...
-    /**/
+    /*
+    Water
+    */
+
+
+
+
+    /*
+    
+    */
 
     int n_ngbrs23 = 0;
     int n_ngbrs14 = 0;
@@ -187,8 +197,6 @@ class Context {
      * == RESTRAINTS
      * =============================================
      */
-
-        std::unique_ptr<bool[]> shell;
 
     /* =============================================
      * == SHELLS / SOLVENT
