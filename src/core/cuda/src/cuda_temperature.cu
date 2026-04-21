@@ -1,4 +1,3 @@
-#include "cuda/include/cuda_context.cuh"
 #include "cuda/include/cuda_temperature.cuh"
 #include "cuda/include/cuda_utility.cuh"
 #include "common/include/constants.h"

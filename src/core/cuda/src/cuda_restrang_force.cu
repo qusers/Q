@@ -1,4 +1,3 @@
-#include "cuda/include/cuda_context.cuh"
 #include "cuda/include/cuda_restrang_force.cuh"
 #include "cuda/include/cuda_utility.cuh"
 #include "common/include/context.h"
@@ -104,7 +103,6 @@ void calc_restrang_force_host() {
     auto& host = Context::instance();
     if (host.n_restrangs == 0) return;
     using namespace CudaRestrangForce;
-    CudaContext& ctx = CudaContext::instance();
 
     auto d_restrangs = host.restrangs->gpu_data_p;
     auto d_coords = host.coords->gpu_data_p;

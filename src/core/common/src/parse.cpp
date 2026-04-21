@@ -873,7 +873,7 @@ void init_ngbrs14(const char* filename) {
                 LJ_matrix[ix * ctx.n_atoms_solute + jx] = 1;
                 LJ_matrix[jx * ctx.n_atoms_solute + ix] = 1;
 
-                ctx.ngbrs_14.push_back({ix, jx, NONBONDED_14_PP}); // the type may is wrong, just set in here
+                ctx.ngbrs_14_builder.push_back({ix, jx, NONBONDED_14_PP}); // the type may is wrong, just set in here
             }
         }
         lineI++;
@@ -949,7 +949,7 @@ void init_ngbrs14_long(const char* filename) {
 
         int mi_x = std::min(ix, jx);
         int mx_x = std::max(ix, jx);
-        ctx.ngbrs_14.push_back({mi_x, mx_x, NONBONDED_14_PP}); // the type may is wrong, just set in here
+        ctx.ngbrs_14_builder.push_back({mi_x, mx_x, NONBONDED_14_PP}); // the type may is wrong, just set in here
 
     }
 

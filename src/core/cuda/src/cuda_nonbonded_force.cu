@@ -1,7 +1,6 @@
 #include <iostream>
 
 #include "context.h"
-#include "cuda_context.cuh"
 #include "cuda_nonbonded_force.cuh"
 #include "constants.h"
 #include "cuda_utility.cuh"
@@ -293,7 +292,6 @@ std::pair<double, double> calc_nonbonded_force_host(
     const bool disable_water_h_lj, const double lambda) {
     using namespace CudaNonbondedForce;
     Context& host = Context::instance();
-    CudaContext& context = CudaContext::instance();
     const int thread_num = 256;
     dim3 block_sz = dim3(thread_num);
 
@@ -315,10 +313,10 @@ std::pair<double, double> calc_nonbonded_force_host(
         ny,
         x_charges_types,
         y_charges_types,
-        context.d_charge_pair_products,
+        host.charge_pair_products->gpu_data_p,
         x_atypes_types,
         y_atypes_types,
-        context.d_catype_pair_params,
+        host.catype_pair_params->gpu_data_p,
         host.topo,
         host.excluded->gpu_data_p,
         host.LJ_matrix->gpu_data_p,
@@ -331,10 +329,10 @@ std::pair<double, double> calc_nonbonded_force_host(
         symmetric,
         disable_water_h_lj,
         host.n_atoms_solute,
-        context.n_charge_types,
-        context.zero_charge_type,
-        context.n_catype_types,
-        context.zero_catype_type,
+        host.n_charge_types,
+        host.zero_charge_type,
+        host.n_catype_types,
+        host.zero_catype_type,
         host.n_qelscales,
         lambda,
         host.q_elscales->gpu_data_p);

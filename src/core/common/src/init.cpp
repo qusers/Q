@@ -8,7 +8,6 @@
 
 #include "constants.h"
 #include "context.h"
-#include "cuda_context.cuh"
 #include "cpu_handler.h"
 #include "cpu_shake.h"
 #include "cpu_utils.h"
@@ -19,15 +18,16 @@
 static void finalize_ngbrs14_host() {
     auto& ctx = Context::instance();
     auto &LJ_matrix = ctx.LJ_matrix->cpu_data_p;
+    auto &ngbrs_14 = ctx.ngbrs_14_builder;
 
-    for (auto& pair : ctx.ngbrs_14) {
+    for (auto& pair : ngbrs_14) {
         if (pair.x > pair.y) {
             std::swap(pair.x, pair.y);
         }
     }
 
-    ctx.ngbrs_14.erase(
-        std::remove_if(ctx.ngbrs_14.begin(), ctx.ngbrs_14.end(), [&ctx, &LJ_matrix](const int3& pair) {
+    ngbrs_14.erase(
+        std::remove_if(ngbrs_14.begin(), ngbrs_14.end(), [&ctx, &LJ_matrix](const int3& pair) {
             if (pair.x < 0 || pair.y < 0 || pair.x >= ctx.n_atoms_solute || pair.y >= ctx.n_atoms_solute) {
                 return true;
             }
@@ -36,19 +36,19 @@ static void finalize_ngbrs14_host() {
             }
             return LJ_matrix[pair.x * ctx.n_atoms_solute + pair.y] != 1;
         }),
-        ctx.ngbrs_14.end());
+        ngbrs_14.end());
 
-    std::sort(ctx.ngbrs_14.begin(), ctx.ngbrs_14.end(), [](const int3& lhs, const int3& rhs) {
+    std::sort(ngbrs_14.begin(), ngbrs_14.end(), [](const int3& lhs, const int3& rhs) {
         if (lhs.x != rhs.x) return lhs.x < rhs.x;
         return lhs.y < rhs.y;
     });
-    ctx.ngbrs_14.erase(
-        std::unique(ctx.ngbrs_14.begin(), ctx.ngbrs_14.end(), [](const int3& lhs, const int3& rhs) {
+    ngbrs_14.erase(
+        std::unique(ngbrs_14.begin(), ngbrs_14.end(), [](const int3& lhs, const int3& rhs) {
             return lhs.x == rhs.x && lhs.y == rhs.y;
         }),
-        ctx.ngbrs_14.end());
+        ngbrs_14.end());
 
-    for (auto& pair : ctx.ngbrs_14) {
+    for (auto& pair : ngbrs_14) {
         const bool ai_is_q = ctx.atom_to_qi[pair.x] != -1;
         const bool aj_is_q = ctx.atom_to_qi[pair.y] != -1;
         if (ai_is_q && aj_is_q) {
@@ -59,7 +59,12 @@ static void finalize_ngbrs14_host() {
             pair.z = NONBONDED_14_PP;
         }
     }
-    ctx.n_ngbrs14 = static_cast<int>(ctx.ngbrs_14.size());
+    ctx.ngbrs_14 = std::make_unique<HostDeviceBuffer<int3>>(ngbrs_14.size(), true, ctx.run_gpu);
+    if (!ngbrs_14.empty()) {
+        std::copy(ngbrs_14.begin(), ngbrs_14.end(), ctx.ngbrs_14->cpu_data_p);
+    }
+    ctx.n_ngbrs14 = static_cast<int>(ctx.ngbrs_14->length);
+    ngbrs_14.clear();
 }
 
 // Remove bonds, angles, torsions and impropers which are excluded or changed in the FEP file
@@ -712,8 +717,10 @@ static void init_unified_atom_parameters() {
 
     const int n_extra_q_states = n_states > 0 ? n_states - 1 : 0;
     const int n_codes = ctx.n_atoms + ctx.n_qatoms * n_extra_q_states;
-    ctx.unified_ccharges.resize(n_codes);
-    ctx.unified_catypes.resize(n_codes);
+    ctx.unified_ccharges = std::make_unique<HostDeviceBuffer<ccharge_t>>(n_codes, true, ctx.run_gpu);
+    ctx.unified_catypes = std::make_unique<HostDeviceBuffer<catype_t>>(n_codes, true, ctx.run_gpu);
+    auto *unified_ccharges = ctx.unified_ccharges->cpu_data_p;
+    auto *unified_catypes = ctx.unified_catypes->cpu_data_p;
 
     for (int atom_idx = 0; atom_idx < ctx.n_atoms; atom_idx++) {
         const int unified_code = atom_idx + 1;
@@ -735,8 +742,8 @@ static void init_unified_atom_parameters() {
             resolved_type.code = unified_code;
         }
 
-        ctx.unified_ccharges[unified_code - 1] = resolved_charge;
-        ctx.unified_catypes[unified_code - 1] = resolved_type;
+        unified_ccharges[unified_code - 1] = resolved_charge;
+        unified_catypes[unified_code - 1] = resolved_type;
     }
 
     for (int state = 1; state < n_states; state++) {
@@ -750,8 +757,8 @@ static void init_unified_atom_parameters() {
             catype_t resolved_type = ctx.q_catypes[ctx.q_atypes[qi + state * ctx.n_qatoms].code - 1];
             resolved_type.code = unified_code;
 
-            ctx.unified_ccharges[unified_code - 1] = resolved_charge;
-            ctx.unified_catypes[unified_code - 1] = resolved_type;
+            unified_ccharges[unified_code - 1] = resolved_charge;
+            unified_catypes[unified_code - 1] = resolved_type;
         }
     }
 }
@@ -904,8 +911,28 @@ void clean_variables() {
     ctx.ccharges.reset();
     ctx.charges.reset();
     ctx.atom_to_qi.clear();
-    ctx.unified_ccharges.clear();
-    ctx.unified_catypes.clear();
+    ctx.unified_ccharges.reset();
+    ctx.unified_catypes.reset();
+    ctx.ngbrs_14.reset();
+    ctx.ngbrs_14_builder.clear();
+    ctx.p_atoms_list.reset();
+    ctx.w_atoms_list.reset();
+    ctx.q_atoms_list.reset();
+    ctx.charge_table_all.reset();
+    ctx.charge_pair_products.reset();
+    ctx.p_charge_types.reset();
+    ctx.w_charge_types.reset();
+    ctx.q_charge_types.reset();
+    ctx.catype_table_all.reset();
+    ctx.catype_pair_params.reset();
+    ctx.p_catype_types.reset();
+    ctx.w_catype_types.reset();
+    ctx.q_catype_types.reset();
+    ctx.catype_to_type_host.clear();
+    ctx.n_charge_types = 0;
+    ctx.zero_charge_type = -1;
+    ctx.n_catype_types = 0;
+    ctx.zero_catype_type = -1;
     ctx.cimpropers.reset();
     ctx.coords.reset();
     ctx.ctorsions.reset();

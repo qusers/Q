@@ -1,7 +1,6 @@
 #include "constants.h"
 #include "common/include/context.h"
 #include "common/include/vdw_rules.h"
-#include "cuda/include/cuda_context.cuh"
 #include "cuda/include/cuda_nonbonded_14_force.cuh"
 #include "cuda_utility.cuh"
 
@@ -153,7 +152,6 @@ static Nonbonded14EnergyBuckets calc_nonbonded_14_force_state_host(
     using namespace CudaNonbonded14Force;
 
     auto& host = Context::instance();
-    auto& context = CudaContext::instance();
     const int n_ngbrs_14 = host.n_ngbrs14;
     Nonbonded14EnergyBuckets energies = {};
     if (n_ngbrs_14 == 0) return energies;
@@ -166,12 +164,12 @@ static Nonbonded14EnergyBuckets calc_nonbonded_14_force_state_host(
 
     calc_nonbonded_14_force_kernel<<<num_blocks, block_size>>>(
         n_ngbrs_14,
-        context.d_ngbrs_14,
+        host.ngbrs_14->gpu_data_p,
         host.topo,
         host.excluded->gpu_data_p,
         d_atom_to_qi,
-        context.d_unified_ccharges,
-        context.d_unified_catypes,
+        host.unified_ccharges->gpu_data_p,
+        host.unified_catypes->gpu_data_p,
         host.coords->gpu_data_p,
         host.dvelocities->gpu_data_p,
         d_evdw_totals,

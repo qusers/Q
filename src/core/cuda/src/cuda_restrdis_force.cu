@@ -1,6 +1,5 @@
 #include <iostream>
 
-#include "cuda/include/cuda_context.cuh"
 #include "cuda/include/cuda_restrdis_force.cuh"
 #include "cuda/include/cuda_utility.cuh"
 #include "common/include/context.h"
@@ -77,7 +76,6 @@ void calc_restrdis_forces_host() {
     auto& host = Context::instance();
     if (host.n_restrdists == 0) return;
     using namespace CudaRestrdisForce;
-    CudaContext& ctx = CudaContext::instance();
     auto d_restrdists = host.restrdists->gpu_data_p;
     auto d_coords = host.coords->gpu_data_p;
     auto d_lambdas = host.lambdas->gpu_data_p;

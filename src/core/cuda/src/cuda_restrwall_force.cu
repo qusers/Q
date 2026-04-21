@@ -1,6 +1,5 @@
 #include <iostream>
 
-#include "cuda/include/cuda_context.cuh"
 #include "cuda/include/cuda_restrwall_force.cuh"
 #include "common/include/context.h"
 

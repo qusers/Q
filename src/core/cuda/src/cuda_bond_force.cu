@@ -1,5 +1,4 @@
 #include "cuda/include/cuda_bond_force.cuh"
-#include "cuda/include/cuda_context.cuh"
 #include "context.h"
 #include "cuda_utility.cuh"
 namespace CudaBondForce {
@@ -44,7 +43,6 @@ double calc_bond_forces_host(int start, int end) {
     double energy = 0.0;
     cudaMemcpy(d_energy_sum, &energy, sizeof(double), cudaMemcpyHostToDevice);
 
-    CudaContext& context = CudaContext::instance();
     auto& host_ctx = Context::instance();
     bond_t* d_bonds = host_ctx.bonds->gpu_data_p;
     coord_t* d_coords = host_ctx.coords->gpu_data_p;

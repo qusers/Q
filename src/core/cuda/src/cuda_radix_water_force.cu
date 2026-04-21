@@ -2,7 +2,6 @@
 
 #include "common/include/constants.h"
 #include "common/include/context.h"
-#include "cuda/include/cuda_context.cuh"
 #include "cuda/include/cuda_radix_water_force.cuh"
 #include "cuda/include/cuda_utility.cuh"
 namespace CudaRadixWaterForce {
@@ -68,9 +67,6 @@ void calc_radix_water_forces_host() {
     }
     int oxygen_atoms = water_atoms / 3;
     int numBlocks = (oxygen_atoms + blockSize - 1) / blockSize;
-
-    CudaContext& ctx = CudaContext::instance();
-    // ctx.sync_all_to_device();
 
     auto d_coords = host.coords->gpu_data_p;
     auto d_dvelocities = host.dvelocities->gpu_data_p;

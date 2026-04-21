@@ -1,4 +1,3 @@
-#include "cuda/include/cuda_context.cuh"
 #include "cuda/include/cuda_pshell_force.cuh"
 #include "common/include/constants.h"
 #include "common/include/context.h"

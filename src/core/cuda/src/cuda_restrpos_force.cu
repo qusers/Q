@@ -1,6 +1,5 @@
 #include <iostream>
 
-#include "cuda/include/cuda_context.cuh"
 #include "cuda/include/cuda_restrpos_force.cuh"
 #include "cuda/include/cuda_utility.cuh"
 #include "common/include/context.h"
@@ -68,7 +67,6 @@ void calc_restrpos_forces_host() {
     double val = 0.0;
     cudaMemcpy(d_E_restraint, &val, sizeof(double), cudaMemcpyHostToDevice);
 
-    CudaContext& ctx = CudaContext::instance();
     auto d_restrspos = host.restrspos->gpu_data_p;
     auto d_coords = host.coords->gpu_data_p;
     auto d_lambdas = host.lambdas->gpu_data_p;

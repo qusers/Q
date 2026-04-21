@@ -2,7 +2,6 @@
 #include <vector>
 
 #include "common/include/context.h"
-#include "cuda/include/cuda_context.cuh"
 #include "cuda/include/cuda_nonbonded_force.cuh"
 #include "cuda/include/cuda_nonbonded_pp_force.cuh"
 #include "cuda_utility.cuh"
@@ -20,22 +19,21 @@ void init_nonbonded_pp_force_kernel_data() {
 }
 
 void calc_nonbonded_pp_forces_host_v2() {
-    int nx = CudaContext::instance().h_p_atoms_list.size();
+    Context& host = Context::instance();
+    int nx = static_cast<int>(host.p_atoms_list->length);
     int ny = nx;
 
     auto result = calc_nonbonded_force_host(
         nx,
         ny,
-        CudaContext::instance().d_p_atoms_list,
-        CudaContext::instance().d_p_atoms_list,
+        host.p_atoms_list->gpu_data_p,
+        host.p_atoms_list->gpu_data_p,
         true,  // symmetric
-        CudaContext::instance().d_p_charge_types,
-        CudaContext::instance().d_p_charge_types,
-        CudaContext::instance().d_p_catype_types,
-        CudaContext::instance().d_p_catype_types,
+        host.p_charge_types->gpu_data_p,
+        host.p_charge_types->gpu_data_p,
+        host.p_catype_types->gpu_data_p,
+        host.p_catype_types->gpu_data_p,
         false);
-
-    Context& host = Context::instance();
     host.E_nonbond_pp.Uvdw = result.first;
     host.E_nonbond_pp.Ucoul = result.second;
 }

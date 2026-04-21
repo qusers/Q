@@ -1,6 +1,5 @@
 #include <iostream>
 
-#include "cuda/include/cuda_context.cuh"
 #include "cuda/include/cuda_shake_constraints.cuh"
 #include "common/include/constants.h"
 #include "common/include/context.h"
@@ -138,7 +137,6 @@ int calc_shake_constraints_host() {
     int blocks = host.n_molecules;
     int threads = 32;
 
-    CudaContext& ctx = CudaContext::instance();
     auto d_mol_n_shakes = host.mol_n_shakes->gpu_data_p;
     auto d_shake_bonds = host.shake_bonds->gpu_data_p;
     auto d_coords = host.coords->gpu_data_p;

@@ -3,7 +3,6 @@
 #include "common/include/context.h"
 #include "cuda/include/cuda_angle_force.cuh"
 #include "cuda/include/cuda_bond_force.cuh"
-#include "cuda/include/cuda_context.cuh"
 #include "cuda/include/cuda_handler.cuh"
 #include "cuda/include/cuda_improper2_force.cuh"
 #include "cuda/include/cuda_leapfrog.cuh"
@@ -29,7 +28,7 @@
 
 void CudaHandler::initialize() {
     if (!initialized_) {
-        ctx_.init();
+        Context::instance().cuda_initialize_helpers();
         init_angle_force_kernel_data();
         init_bond_force_kernel_data();
         init_improper2_force_kernel_data();
@@ -82,6 +81,7 @@ void CudaHandler::shutdown() {
         cleanup_shake_constraints();
         cleanup_temperature();
         cleanup_torsion_force();
+        Context::instance().cuda_free_helpers();
         initialized_ = false;
     }
 }
@@ -135,5 +135,5 @@ void CudaHandler::calc_leapfrog() {
 
 void CudaHandler::reset_energies() {
     Handler::reset_energies();
-    ctx_.reset_energies();
+    Context::instance().cuda_reset_energies();
 }

@@ -1,5 +1,4 @@
 #include "cuda/include/cuda_angle_force.cuh"
-#include "cuda/include/cuda_context.cuh"
 #include "cuda/include/cuda_utility.cuh"
 #include "context.h"
 
@@ -78,7 +77,6 @@ double calc_angle_forces_host(int start, int end) {
     int blockSize = 256;
     int numBlocks = (N + blockSize - 1) / blockSize;
 
-    CudaContext& ctx = CudaContext::instance();
     auto &host_ctx = Context::instance();
     auto d_angles = host_ctx.angles->gpu_data_p;
     auto d_coords = host_ctx.coords->gpu_data_p;

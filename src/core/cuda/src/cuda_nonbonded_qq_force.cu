@@ -2,7 +2,6 @@
 #include <iostream>
 
 #include "common/include/context.h"
-#include "cuda/include/cuda_context.cuh"
 #include "cuda/include/cuda_nonbonded_force.cuh"
 #include "cuda/include/cuda_nonbonded_qq_force.cuh"
 #include "cuda_utility.cuh"
@@ -17,18 +16,18 @@ void calc_nonbonded_qq_forces_host() {
 
     Context& host = Context::instance();
     auto *lambdas = host.lambdas->cpu_data_p;
-    int n = CudaContext::instance().h_q_atoms_list.size();
+    int n = static_cast<int>(host.q_atoms_list->length);
     for (int state = 0; state < host.n_lambdas; state++) {
         auto result = calc_nonbonded_force_host(
             n,
             n,
-            CudaContext::instance().d_q_atoms_list,
-            CudaContext::instance().d_q_atoms_list,
+            host.q_atoms_list->gpu_data_p,
+            host.q_atoms_list->gpu_data_p,
             true,
-            CudaContext::instance().d_q_charge_types + state * n,
-            CudaContext::instance().d_q_charge_types + state * n,
-            CudaContext::instance().d_q_catype_types + state * n,
-            CudaContext::instance().d_q_catype_types + state * n,
+            host.q_charge_types->gpu_data_p + state * n,
+            host.q_charge_types->gpu_data_p + state * n,
+            host.q_catype_types->gpu_data_p + state * n,
+            host.q_catype_types->gpu_data_p + state * n,
             false, lambdas[state]);
 
         host.EQ_nonbond_qq[state].Uvdw = result.first / lambdas[state];

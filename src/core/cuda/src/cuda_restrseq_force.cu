@@ -1,4 +1,3 @@
-#include "cuda/include/cuda_context.cuh"
 #include "cuda/include/cuda_restrseq_force.cuh"
 #include "common/include/context.h"
 #include "iostream"

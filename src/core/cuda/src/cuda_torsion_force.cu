@@ -1,4 +1,3 @@
-#include "cuda/include/cuda_context.cuh"
 #include "cuda/include/cuda_torsion_force.cuh"
 #include "cuda/include/cuda_utility.cuh"
 #include "context.h"
@@ -134,7 +133,6 @@ double calc_torsion_forces_host(int start, int end) {
     double zero = 0.0;
     cudaMemcpy(d_energy_sum, &zero, sizeof(double), cudaMemcpyHostToDevice);
 
-    CudaContext& ctx = CudaContext::instance();
     auto& host_ctx = Context::instance();
     coord_t* d_coords = host_ctx.coords->gpu_data_p;
     dvel_t* d_dvelocities = host_ctx.dvelocities->gpu_data_p;

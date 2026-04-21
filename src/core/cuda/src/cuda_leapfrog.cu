@@ -1,7 +1,6 @@
 #include <iostream>
 
 #include "common/include/context.h"
-#include "cuda/include/cuda_context.cuh"
 #include "cuda/include/cuda_leapfrog.cuh"
 #include "cuda/include/cuda_shake_constraints.cuh"
 #include "cuda_utility.cuh"

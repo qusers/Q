@@ -3,12 +3,14 @@
 #include <vector_types.h>
 
 #include <array>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "common/include/md_types.h"
 #include "common/include/nonbonded_14_mode.h"
+#include "common/include/vdw_rules.h"
 #include "host_device_buffer.h"
 
 class Context {
@@ -144,10 +146,32 @@ class Context {
     int iuse_switch_atom = 0;
 
     std::vector<int> atom_to_qi;
-    std::vector<ccharge_t> unified_ccharges;
-    std::vector<catype_t> unified_catypes;
+    std::unique_ptr<HostDeviceBuffer<ccharge_t>> unified_ccharges;
+    std::unique_ptr<HostDeviceBuffer<catype_t>> unified_catypes;
+    std::unique_ptr<HostDeviceBuffer<int3>> ngbrs_14;
+    std::vector<int3> ngbrs_14_builder;
 
-    std::vector<int3> ngbrs_14;
+    std::unique_ptr<HostDeviceBuffer<int>> p_atoms_list;
+    std::unique_ptr<HostDeviceBuffer<int>> w_atoms_list;
+    std::unique_ptr<HostDeviceBuffer<int>> q_atoms_list;
+
+    std::unique_ptr<HostDeviceBuffer<ccharge_t>> charge_table_all;
+    std::unique_ptr<HostDeviceBuffer<double>> charge_pair_products;
+    std::unique_ptr<HostDeviceBuffer<int>> p_charge_types;
+    std::unique_ptr<HostDeviceBuffer<int>> w_charge_types;
+    std::unique_ptr<HostDeviceBuffer<int>> q_charge_types;
+
+    std::unique_ptr<HostDeviceBuffer<catype_t>> catype_table_all;
+    std::unique_ptr<HostDeviceBuffer<vdw_pair_param_t>> catype_pair_params;
+    std::unique_ptr<HostDeviceBuffer<int>> p_catype_types;
+    std::unique_ptr<HostDeviceBuffer<int>> w_catype_types;
+    std::unique_ptr<HostDeviceBuffer<int>> q_catype_types;
+
+    std::map<std::array<double, 4>, int> catype_to_type_host;
+    int n_charge_types = 0;
+    int zero_charge_type = -1;
+    int n_catype_types = 0;
+    int zero_catype_type = -1;
 
     std::vector<int> molecules;
     std::vector<cgrp_t> charge_groups;
@@ -301,7 +325,7 @@ class Context {
     }
 
     const ccharge_t& unified_ccharge_by_code(int code) const {
-        return unified_ccharges[code - 1];
+        return unified_ccharges->cpu_data_p[code - 1];
     }
 
     const ccharge_t& unified_ccharge(int atom_idx, int state) const {
@@ -313,16 +337,27 @@ class Context {
     }
 
     const catype_t& unified_catype_by_code(int code) const {
-        return unified_catypes[code - 1];
+        return unified_catypes->cpu_data_p[code - 1];
     }
 
     const catype_t& unified_catype(int atom_idx, int state) const {
         return unified_catype_by_code(unified_atype_code(atom_idx, state));
     }
 
+    void cuda_initialize_helpers();
+    void cuda_free_helpers();
+    void cuda_reset_energies();
+    void cuda_sync_all_to_device();
+    void cuda_sync_all_to_host();
+
    private:
     Context() = default;
     ~Context() {}
+
+    void cuda_initialize_atom_lists_host();
+    void cuda_initialize_ngbrs14_host();
+    void cuda_initialize_charge_tables_host();
+    void cuda_initialize_catype_tables_host();
 
     Context(const Context&) = delete;
     Context& operator=(const Context&) = delete;
