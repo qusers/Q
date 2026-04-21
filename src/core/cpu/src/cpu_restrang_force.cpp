@@ -10,6 +10,7 @@ void calc_restrang_forces() {
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
     auto &restrangs = ctx.restrangs->cpu_data_p;
+    auto *lambdas = ctx.lambdas->cpu_data_p;
 
     int state, i, j, k;
     coord_t dr, dr2, di, dk;
@@ -31,7 +32,7 @@ void calc_restrang_forces() {
         dr2.z = coords[k].z - coords[j].z;
 
         if (restrangs[ir].ipsi != 0) {
-            lambda = ctx.lambdas[state];
+            lambda = lambdas[state];
         } else {
             lambda = 1;
         }

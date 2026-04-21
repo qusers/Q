@@ -10,6 +10,7 @@ void calc_qangle_forces(int state) {
     auto& ctx = Context::instance();
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
+    auto *lambdas = ctx.lambdas->cpu_data_p;
     int ic;
     int ai, aj, ak;
     coord_t rji, rjk;
@@ -53,7 +54,7 @@ void calc_qangle_forces(int state) {
         ener = .5 * ctx.q_cangles[ic].kth * pow(dth, 2);
         ctx.EQ_bond[state].Uangle += ener;
 
-        dv = ctx.q_cangles[ic].kth * dth * ctx.lambdas[state];
+        dv = ctx.q_cangles[ic].kth * dth * lambdas[state];
         f1 = sin(th);
         if (abs(f1) < 1E-12) {
             f1 = 1E-12;

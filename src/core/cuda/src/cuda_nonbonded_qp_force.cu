@@ -19,6 +19,7 @@ void calc_nonbonded_qp_forces_host_v2() {
     int ny = CudaContext::instance().h_p_atoms_list.size();
     
     Context& host = Context::instance();
+    auto *lambdas = host.lambdas->cpu_data_p;
     for (int state = 0; state < host.n_lambdas; state++) {
         auto result = calc_nonbonded_force_host(
             nx,
@@ -30,10 +31,10 @@ void calc_nonbonded_qp_forces_host_v2() {
             CudaContext::instance().d_p_charge_types,
             CudaContext::instance().d_q_catype_types + state * nx,
             CudaContext::instance().d_p_catype_types,
-            false, host.lambdas[state]);
+            false, lambdas[state]);
 
-        host.EQ_nonbond_qp[state].Uvdw = result.first / host.lambdas[state];
-        host.EQ_nonbond_qp[state].Ucoul = result.second / host.lambdas[state];
+        host.EQ_nonbond_qp[state].Uvdw = result.first / lambdas[state];
+        host.EQ_nonbond_qp[state].Ucoul = result.second / lambdas[state];
         // printf("Nonbonded QP Force State %d: Uvdw = %f, Ucoul = %f\n", state, result.first, result.second);
     }
 }

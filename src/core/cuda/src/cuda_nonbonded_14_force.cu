@@ -192,11 +192,12 @@ static Nonbonded14EnergyBuckets calc_nonbonded_14_force_state_host(
 
 void calc_nonbonded_14_forces_host() {
     auto& host = Context::instance();
+    auto *lambdas = host.lambdas->cpu_data_p;
 
     if (host.n_ngbrs14 == 0) return;
 
     for (int state = 0; state < host.n_lambdas; state++) {
-        const double lambda = host.lambdas[state];
+        const double lambda = lambdas[state];
         const bool include_pp = (state == 0);
         Nonbonded14EnergyBuckets energies = calc_nonbonded_14_force_state_host(state, lambda, include_pp);
 

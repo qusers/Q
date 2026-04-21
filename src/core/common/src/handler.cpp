@@ -44,8 +44,9 @@ void Handler::run(int num_iterations) {
 
 void Handler::update_energy_totals() {
     auto& host = Context::instance();
+    auto *lambdas = host.lambdas->cpu_data_p;
     for (int state = 0; state < host.n_lambdas; state++) {
-        if (host.lambdas[state] == 0) {
+        if (lambdas[state] == 0) {
             host.EQ_bond[state].Uangle = 0;
             host.EQ_bond[state].Ubond = 0;
             host.EQ_bond[state].Utor = 0;
@@ -65,15 +66,15 @@ void Handler::update_energy_totals() {
         host.EQ_total[state].Utot = host.EQ_bond[state].Ubond + host.EQ_bond[state].Uangle + host.EQ_bond[state].Utor + host.EQ_bond[state].Uimp +
                                     host.EQ_nonbond_qx[state].Ucoul + host.EQ_nonbond_qx[state].Uvdw + host.EQ_restraint[state].Urestr;
 
-        host.E_bond_q.Ubond += host.EQ_bond[state].Ubond * host.lambdas[state];
-        host.E_bond_q.Uangle += host.EQ_bond[state].Uangle * host.lambdas[state];
-        host.E_bond_q.Utor += host.EQ_bond[state].Utor * host.lambdas[state];
-        host.E_bond_q.Uimp += host.EQ_bond[state].Uimp * host.lambdas[state];
-        host.E_nonbond_qx.Ucoul += host.EQ_nonbond_qx[state].Ucoul * host.lambdas[state];
-        host.E_nonbond_qx.Uvdw += host.EQ_nonbond_qx[state].Uvdw * host.lambdas[state];
+        host.E_bond_q.Ubond += host.EQ_bond[state].Ubond * lambdas[state];
+        host.E_bond_q.Uangle += host.EQ_bond[state].Uangle * lambdas[state];
+        host.E_bond_q.Utor += host.EQ_bond[state].Utor * lambdas[state];
+        host.E_bond_q.Uimp += host.EQ_bond[state].Uimp * lambdas[state];
+        host.E_nonbond_qx.Ucoul += host.EQ_nonbond_qx[state].Ucoul * lambdas[state];
+        host.E_nonbond_qx.Uvdw += host.EQ_nonbond_qx[state].Uvdw * lambdas[state];
 
         // Update protein restraint energies with an average of all states
-        host.E_restraint.Upres += host.EQ_restraint[state].Urestr * host.lambdas[state];
+        host.E_restraint.Upres += host.EQ_restraint[state].Urestr * lambdas[state];
     }
 
     // Update totals

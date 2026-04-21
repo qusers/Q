@@ -8,6 +8,7 @@ void calc_qbond_forces(int state) {
     auto& ctx = Context::instance();
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
+    auto *lambdas = ctx.lambdas->cpu_data_p;
     int ic;
     int ai, aj;
     double b, db, ener, dv;
@@ -32,7 +33,7 @@ void calc_qbond_forces(int state) {
 
         ener = 0.5 * ctx.q_cbonds[ic].kb * pow(db, 2);
         ctx.EQ_bond[state].Ubond += ener;
-        dv = db * ctx.q_cbonds[ic].kb * ctx.lambdas[state] / b;
+        dv = db * ctx.q_cbonds[ic].kb * lambdas[state] / b;
 
         dvelocities[ai].x -= dv * rij.x;
         dvelocities[ai].y -= dv * rij.y;

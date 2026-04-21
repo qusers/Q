@@ -123,7 +123,11 @@ class Context {
 
 
     /*
-    
+    FEP
+    */
+    std::unique_ptr<HostDeviceBuffer<double>> lambdas; // Actually length is only 2..
+
+    /*
     */
 
     int n_ngbrs23 = 0;
@@ -150,7 +154,6 @@ class Context {
      */
 
     int n_lambdas = 0;
-    std::vector<double> lambdas;
 
     int n_qangcouples = 0;
     int n_qangles = 0;

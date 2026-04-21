@@ -9,6 +9,7 @@ void calc_qtorsion_forces(int state) {
     auto& ctx = Context::instance();
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
+    auto *lambdas = ctx.lambdas->cpu_data_p;
     int ic;
     int ai, aj, ak, al;
     coord_t rji, rjk, rkl, rnj, rnk, rki, rlj;
@@ -71,7 +72,7 @@ void calc_qtorsion_forces(int state) {
         // Energy
         arg = ctx.q_ctorsions[ic].n * phi - to_radians(ctx.q_ctorsions[ic].d);
         ener = ctx.q_ctorsions[ic].k * (1 + cos(arg));
-        dv = -ctx.q_ctorsions[ic].n * ctx.q_ctorsions[ic].k * sin(arg) * ctx.lambdas[state];
+        dv = -ctx.q_ctorsions[ic].n * ctx.q_ctorsions[ic].k * sin(arg) * lambdas[state];
 
         // Forces
         f1 = sin(phi);

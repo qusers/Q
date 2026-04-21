@@ -7,6 +7,7 @@
 #include "vdw_rules.h"
 void calc_nonbonded_qw_forces() {
     auto& ctx = Context::instance();
+    auto *lambdas = ctx.lambdas->cpu_data_p;
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
     auto *excluded = ctx.excluded->cpu_data_p;
@@ -72,9 +73,9 @@ void calc_nonbonded_qw_forces() {
 
                 // if (state == 0 && qi == 1) printf("j = %d ai__aii = %f A_O = %f B_O = %f V_a = %f V_b = %f r6O = %f\n", j, ai_aii, A_O, B_O, V_a, V_b, r6O);
 
-                dvO += r2O * (-VelO - (12 * V_a - 6 * V_b)) * ctx.lambdas[state];
-                dvH1 -= r2H1 * VelH1 * ctx.lambdas[state];
-                dvH2 -= r2H2 * VelH2 * ctx.lambdas[state];
+                dvO += r2O * (-VelO - (12 * V_a - 6 * V_b)) * lambdas[state];
+                dvH1 -= r2H1 * VelH1 * lambdas[state];
+                dvH2 -= r2H2 * VelH2 * lambdas[state];
 
                 ctx.EQ_nonbond_qw[state].Ucoul += (VelO + VelH1 + VelH2);
                 ctx.EQ_nonbond_qw[state].Uvdw += (V_a - V_b);

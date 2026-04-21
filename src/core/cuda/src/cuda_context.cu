@@ -7,7 +7,6 @@ void CudaContext::init() {
     auto& host = Context::instance();
 
     check_cudaMalloc((void**)&d_EQ_nonbond_qq, sizeof(E_nonbonded_t) * host.n_lambdas);
-    check_cudaMalloc((void**)&d_lambdas, sizeof(double) * host.n_lambdas);
 
     check_cudaMalloc((void**)&d_EQ_restraint, sizeof(E_restraint_t) * host.n_lambdas);
 
@@ -38,8 +37,8 @@ void CudaContext::sync_all_to_device() {
     host.q_elscales->upload();
     host.shell->upload();
     host.wshells->upload();
+    host.lambdas->upload();
     sync_array_to_device<E_nonbonded_t>(d_EQ_nonbond_qq, host.EQ_nonbond_qq.data(), host.n_lambdas);
-    sync_array_to_device<double>(d_lambdas, host.lambdas.data(), host.n_lambdas);
 
     sync_array_to_device<E_restraint_t>(d_EQ_restraint, host.EQ_restraint.data(), host.n_lambdas);
 
@@ -62,8 +61,8 @@ void CudaContext::sync_all_to_host() {
     host.q_elscales->download();
     host.shell->download();
     host.wshells->download();
+    host.lambdas->download();
     sync_array_to_host<E_nonbonded_t>(host.EQ_nonbond_qq.data(), d_EQ_nonbond_qq, host.n_lambdas);
-    sync_array_to_host<double>(host.lambdas.data(), d_lambdas, host.n_lambdas);
 
     sync_array_to_host<E_restraint_t>(host.EQ_restraint.data(), d_EQ_restraint, host.n_lambdas);
 
@@ -73,7 +72,6 @@ void CudaContext::sync_all_to_host() {
 
 void CudaContext::free() {
     cudaFree(d_EQ_nonbond_qq);
-    cudaFree(d_lambdas);
 
     cudaFree(d_EQ_restraint);
 
@@ -198,7 +196,7 @@ void CudaContext::initialize_charge_tables_host() {
         for (int i = 0; i < host.n_qatoms; i++) {
             double charge = host.q_charges[i + host.n_qatoms * state].charge;
             add_charge(charge);
-            charge *= host.lambdas[state];
+            charge *= host.lambdas->cpu_data_p[state];
             add_charge(charge);
         }
     }

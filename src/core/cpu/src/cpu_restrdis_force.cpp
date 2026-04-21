@@ -9,6 +9,7 @@ void calc_restrdis_forces() {
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
     auto &restrdists = ctx.restrdists->cpu_data_p;
+    auto *lambdas = ctx.lambdas->cpu_data_p;
 
     int state, i, j;
     coord_t dr;
@@ -24,7 +25,7 @@ void calc_restrdis_forces() {
         dr.z = coords[j].z - coords[i].z;
 
         if (restrdists[ir].ipsi != 0) {
-            lambda = ctx.lambdas[state];
+            lambda = lambdas[state];
         } else {
             lambda = 1;
         }

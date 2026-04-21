@@ -3,6 +3,7 @@
 
 void print_energies() {
     auto& host = Context::instance();
+    auto *lambdas = host.lambdas->cpu_data_p;
     printf("[temperature]\n");
     printf("Temp\t%f\n", host.Temp);
     printf("\n");
@@ -34,7 +35,7 @@ void print_energies() {
     printf("[q-energies]\n");
     printf("lambda\tSUM\tUbond\tUangle\tUtor\tUimp\tUcoul\tUvdw\tUrestr\n");
     for (int state = 0; state < host.n_lambdas; state++) {
-        printf("%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\n", host.lambdas[state], host.EQ_total[state].Utot, host.EQ_bond[state].Ubond,
+        printf("%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\n", lambdas[state], host.EQ_total[state].Utot, host.EQ_bond[state].Ubond,
                host.EQ_bond[state].Uangle, host.EQ_bond[state].Utor, host.EQ_bond[state].Uimp, host.EQ_nonbond_qx[state].Ucoul, host.EQ_nonbond_qx[state].Uvdw, host.EQ_restraint[state].Urestr);
     }
     printf("\n");
@@ -64,6 +65,7 @@ void write_header(const char* filename) {
 // Write header (number of atoms & lambdas) to output file
 void write_energy_header() {
     auto& ctx = Context::instance();
+    auto *lambdas = ctx.lambdas->cpu_data_p;
     FILE* fp;
 
     char path[1024];
@@ -77,7 +79,7 @@ void write_energy_header() {
     fprintf(fp, "%d\n", ctx.n_lambdas);
 
     for (int state = 0; state < ctx.n_lambdas; state++) {
-        fprintf(fp, "%f\n", ctx.lambdas[state]);
+        fprintf(fp, "%f\n", lambdas[state]);
     }
 
     fclose(fp);
@@ -128,6 +130,7 @@ void write_velocities(int iteration) {
 // Write step number, energies of atoms to coordinate output file
 void write_energies(int iteration) {
     auto& ctx = Context::instance();
+    auto *lambdas = ctx.lambdas->cpu_data_p;
     if (iteration % ctx.md.energy != 0) return;
     FILE* fp;
 
@@ -169,7 +172,7 @@ void write_energies(int iteration) {
     fprintf(fp, "[q-energies]\n");
     fprintf(fp, "lambda\tSUM\tUbond\tUangle\tUtor\tUimp\tUcoul\tUvdw\tUrestr\n");
     for (int state = 0; state < ctx.n_lambdas; state++) {
-        fprintf(fp, "%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\n", ctx.lambdas[state], ctx.EQ_total[state].Utot, ctx.EQ_bond[state].Ubond,
+        fprintf(fp, "%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\n", lambdas[state], ctx.EQ_total[state].Utot, ctx.EQ_bond[state].Ubond,
                 ctx.EQ_bond[state].Uangle, ctx.EQ_bond[state].Utor, ctx.EQ_bond[state].Uimp, ctx.EQ_nonbond_qx[state].Ucoul, ctx.EQ_nonbond_qx[state].Uvdw, ctx.EQ_restraint[state].Urestr);
     }
     fprintf(fp, "\n");

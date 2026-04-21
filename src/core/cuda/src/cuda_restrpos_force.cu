@@ -71,7 +71,7 @@ void calc_restrpos_forces_host() {
     CudaContext& ctx = CudaContext::instance();
     auto d_restrspos = host.restrspos->gpu_data_p;
     auto d_coords = host.coords->gpu_data_p;
-    auto d_lambdas = ctx.d_lambdas;
+    auto d_lambdas = host.lambdas->gpu_data_p;
     auto d_EQ_restraint = ctx.d_EQ_restraint;
     auto d_dvelocities = host.dvelocities->gpu_data_p;
 

@@ -16,6 +16,7 @@ void calc_nonbonded_qq_forces_host() {
     using namespace CudaNonbondedQQForce;
 
     Context& host = Context::instance();
+    auto *lambdas = host.lambdas->cpu_data_p;
     int n = CudaContext::instance().h_q_atoms_list.size();
     for (int state = 0; state < host.n_lambdas; state++) {
         auto result = calc_nonbonded_force_host(
@@ -28,10 +29,10 @@ void calc_nonbonded_qq_forces_host() {
             CudaContext::instance().d_q_charge_types + state * n,
             CudaContext::instance().d_q_catype_types + state * n,
             CudaContext::instance().d_q_catype_types + state * n,
-            false, host.lambdas[state]);
+            false, lambdas[state]);
 
-        host.EQ_nonbond_qq[state].Uvdw = result.first / host.lambdas[state];
-        host.EQ_nonbond_qq[state].Ucoul = result.second / host.lambdas[state];
+        host.EQ_nonbond_qq[state].Uvdw = result.first / lambdas[state];
+        host.EQ_nonbond_qq[state].Ucoul = result.second / lambdas[state];
     }
 }
 

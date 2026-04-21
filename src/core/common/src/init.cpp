@@ -937,6 +937,7 @@ void clean_variables() {
     ctx.q_shakes.clear();
     ctx.q_softcores.clear();
     ctx.q_torsions.clear();
+    ctx.lambdas.reset();
     ctx.wshells.reset();
     ctx.theta.clear();
     ctx.theta0.clear();

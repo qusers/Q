@@ -9,6 +9,7 @@ void calc_restrpos_forces() {
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
     auto &restrspos = ctx.restrspos->cpu_data_p;
+    auto *lambdas = ctx.lambdas->cpu_data_p;
 
     int state, i;
     coord_t dr;
@@ -23,7 +24,7 @@ void calc_restrpos_forces() {
         dr.z = coords[i].z - restrspos[ir].x.z;
 
         if (restrspos[ir].ipsi != 0) {
-            lambda = ctx.lambdas[state];
+            lambda = lambdas[state];
         } else {
             lambda = 1;
         }

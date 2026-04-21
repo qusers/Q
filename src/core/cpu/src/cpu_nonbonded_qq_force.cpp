@@ -8,6 +8,7 @@
 
 void calc_nonbonded_qq_forces() {
     auto& ctx = Context::instance();
+    auto *lambdas = ctx.lambdas->cpu_data_p;
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
     auto &LJ_matrix = ctx.LJ_matrix->cpu_data_p;
@@ -69,7 +70,7 @@ void calc_nonbonded_qq_forces() {
                 } else {
                     calc_vdw_arithmetic(ai_aii, aj_aii, ai_bii, aj_bii, r6a, &V_a, &V_b);
                 }
-                dva = r2a * (-Vela - 12 * V_a + 6 * V_b) * ctx.lambdas[state];
+                dva = r2a * (-Vela - 12 * V_a + 6 * V_b) * lambdas[state];
 
                 dvelocities[ai].x -= dva * da.x;
                 dvelocities[ai].y -= dva * da.y;
