@@ -131,6 +131,8 @@ class Context {
     Energy
     */
 
+    std::unique_ptr<HostDeviceBuffer<E_restraint_t>> EQ_restraint;
+
     /*
     */
 
@@ -254,7 +256,6 @@ class Context {
     std::vector<E_nonbonded_t> EQ_nonbond_qx;
 
     E_restraint_t E_restraint = {};
-    std::vector<E_restraint_t> EQ_restraint;
 
     double Temp = 0.0;
     double Tfree = 0.0;

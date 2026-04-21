@@ -110,7 +110,7 @@ void calc_restrang_force_host() {
     auto d_coords = host.coords->gpu_data_p;
     auto d_lambdas = host.lambdas->gpu_data_p;
     auto d_dvelocities = host.dvelocities->gpu_data_p;
-    auto d_EQ_restraint = ctx.d_EQ_restraint;
+    auto d_EQ_restraint = host.EQ_restraint->gpu_data_p;
 
     double val = 0;
     cudaMemcpy(d_E_restraint, &val, sizeof(double), cudaMemcpyHostToDevice);
@@ -127,7 +127,7 @@ void calc_restrang_force_host() {
         d_EQ_restraint,
         d_E_restraint);
     cudaDeviceSynchronize();
-    cudaMemcpy(host.EQ_restraint.data(), d_EQ_restraint, sizeof(E_restraint_t) * host.n_lambdas, cudaMemcpyDeviceToHost);
+    host.EQ_restraint->download();
     cudaMemcpy(&val, d_E_restraint, sizeof(double), cudaMemcpyDeviceToHost);
     host.E_restraint.Upres += val;
 }

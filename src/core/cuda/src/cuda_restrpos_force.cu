@@ -72,7 +72,7 @@ void calc_restrpos_forces_host() {
     auto d_restrspos = host.restrspos->gpu_data_p;
     auto d_coords = host.coords->gpu_data_p;
     auto d_lambdas = host.lambdas->gpu_data_p;
-    auto d_EQ_restraint = ctx.d_EQ_restraint;
+    auto d_EQ_restraint = host.EQ_restraint->gpu_data_p;
     auto d_dvelocities = host.dvelocities->gpu_data_p;
 
     int blockSize = 256;
@@ -89,7 +89,7 @@ void calc_restrpos_forces_host() {
     cudaDeviceSynchronize();
     cudaMemcpy(&val, d_E_restraint, sizeof(double), cudaMemcpyDeviceToHost);
     host.E_restraint.Upres += val;
-    cudaMemcpy(host.EQ_restraint.data(), d_EQ_restraint, sizeof(E_restraint_t) * host.n_lambdas, cudaMemcpyDeviceToHost);
+    host.EQ_restraint->download();
 }
 
 void init_restrpos_force_kernel_data() {

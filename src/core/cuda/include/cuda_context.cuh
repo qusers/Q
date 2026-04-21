@@ -13,11 +13,6 @@
 class CudaContext {
    public:
     /*
-    Used in cuda_restrang_force.cu
-    */
-    E_restraint_t* d_EQ_restraint = nullptr;
-
-    /*
     Other helper arrays
     */
     ccharge_t* d_charge_table_all;  // Device copy of h_charge_table_all

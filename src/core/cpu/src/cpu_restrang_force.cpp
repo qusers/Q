@@ -11,6 +11,7 @@ void calc_restrang_forces() {
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
     auto &restrangs = ctx.restrangs->cpu_data_p;
     auto *lambdas = ctx.lambdas->cpu_data_p;
+    auto *EQ_restraint = ctx.EQ_restraint->cpu_data_p;
 
     int state, i, j, k;
     coord_t dr, dr2, di, dk;
@@ -85,13 +86,13 @@ void calc_restrang_forces() {
 
         if (restrangs[ir].ipsi == 0) {
             for (int lambda_idx = 0; lambda_idx < ctx.n_lambdas; lambda_idx++) {
-                ctx.EQ_restraint[lambda_idx].Urestr += ener;
+                EQ_restraint[lambda_idx].Urestr += ener;
             }
             if (ctx.n_lambdas == 0) {
                 ctx.E_restraint.Upres += ener;
             }
         } else {
-            ctx.EQ_restraint[state].Urestr += ener;
+            EQ_restraint[state].Urestr += ener;
         }
     }
 }

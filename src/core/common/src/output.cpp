@@ -4,6 +4,7 @@
 void print_energies() {
     auto& host = Context::instance();
     auto *lambdas = host.lambdas->cpu_data_p;
+    auto *EQ_restraint = host.EQ_restraint->cpu_data_p;
     printf("[temperature]\n");
     printf("Temp\t%f\n", host.Temp);
     printf("\n");
@@ -36,7 +37,7 @@ void print_energies() {
     printf("lambda\tSUM\tUbond\tUangle\tUtor\tUimp\tUcoul\tUvdw\tUrestr\n");
     for (int state = 0; state < host.n_lambdas; state++) {
         printf("%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\n", lambdas[state], host.EQ_total[state].Utot, host.EQ_bond[state].Ubond,
-               host.EQ_bond[state].Uangle, host.EQ_bond[state].Utor, host.EQ_bond[state].Uimp, host.EQ_nonbond_qx[state].Ucoul, host.EQ_nonbond_qx[state].Uvdw, host.EQ_restraint[state].Urestr);
+               host.EQ_bond[state].Uangle, host.EQ_bond[state].Utor, host.EQ_bond[state].Uimp, host.EQ_nonbond_qx[state].Ucoul, host.EQ_nonbond_qx[state].Uvdw, EQ_restraint[state].Urestr);
     }
     printf("\n");
 
@@ -131,6 +132,7 @@ void write_velocities(int iteration) {
 void write_energies(int iteration) {
     auto& ctx = Context::instance();
     auto *lambdas = ctx.lambdas->cpu_data_p;
+    auto *EQ_restraint = ctx.EQ_restraint->cpu_data_p;
     if (iteration % ctx.md.energy != 0) return;
     FILE* fp;
 
@@ -173,7 +175,7 @@ void write_energies(int iteration) {
     fprintf(fp, "lambda\tSUM\tUbond\tUangle\tUtor\tUimp\tUcoul\tUvdw\tUrestr\n");
     for (int state = 0; state < ctx.n_lambdas; state++) {
         fprintf(fp, "%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\n", lambdas[state], ctx.EQ_total[state].Utot, ctx.EQ_bond[state].Ubond,
-                ctx.EQ_bond[state].Uangle, ctx.EQ_bond[state].Utor, ctx.EQ_bond[state].Uimp, ctx.EQ_nonbond_qx[state].Ucoul, ctx.EQ_nonbond_qx[state].Uvdw, ctx.EQ_restraint[state].Urestr);
+                ctx.EQ_bond[state].Uangle, ctx.EQ_bond[state].Utor, ctx.EQ_bond[state].Uimp, ctx.EQ_nonbond_qx[state].Ucoul, ctx.EQ_nonbond_qx[state].Uvdw, EQ_restraint[state].Urestr);
     }
     fprintf(fp, "\n");
 

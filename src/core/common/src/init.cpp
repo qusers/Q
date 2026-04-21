@@ -870,7 +870,7 @@ void init_variables() {
     ctx.EQ_nonbond_qp.assign(ctx.n_lambdas, {});
     ctx.EQ_nonbond_qw.assign(ctx.n_lambdas, {});
     ctx.EQ_nonbond_qx.assign(ctx.n_lambdas, {});
-    ctx.EQ_restraint.assign(ctx.n_lambdas, {});
+    ctx.EQ_restraint = std::make_unique<HostDeviceBuffer<E_restraint_t>>(ctx.n_lambdas, true, ctx.run_gpu);
 
     if (ctx.n_shake_constraints > 0) {
         initial_shaking();
@@ -961,5 +961,5 @@ void clean_variables() {
     ctx.EQ_nonbond_qp.clear();
     ctx.EQ_nonbond_qw.clear();
     ctx.EQ_nonbond_qx.clear();
-    ctx.EQ_restraint.clear();
+    ctx.EQ_restraint.reset();
 }

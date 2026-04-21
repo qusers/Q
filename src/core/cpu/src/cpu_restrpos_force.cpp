@@ -10,6 +10,7 @@ void calc_restrpos_forces() {
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
     auto &restrspos = ctx.restrspos->cpu_data_p;
     auto *lambdas = ctx.lambdas->cpu_data_p;
+    auto *EQ_restraint = ctx.EQ_restraint->cpu_data_p;
 
     int state, i;
     coord_t dr;
@@ -41,13 +42,13 @@ void calc_restrpos_forces() {
 
         if (restrspos[ir].ipsi == 0) {
             for (int k = 0; k < ctx.n_lambdas; k++) {
-                ctx.EQ_restraint[k].Urestr += ener;
+                EQ_restraint[k].Urestr += ener;
             }
             if (ctx.n_lambdas == 0) {
                 ctx.E_restraint.Upres += ener;
             }
         } else {
-            ctx.EQ_restraint[state].Urestr += ener;
+            EQ_restraint[state].Urestr += ener;
         }
     }
 }

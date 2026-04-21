@@ -6,8 +6,6 @@
 void CudaContext::init() {
     auto& host = Context::instance();
 
-    check_cudaMalloc((void**)&d_EQ_restraint, sizeof(E_restraint_t) * host.n_lambdas);
-
     check_cudaMalloc((void**)&d_unified_ccharges, sizeof(ccharge_t) * host.unified_ccharges.size());
     check_cudaMalloc((void**)&d_unified_catypes, sizeof(catype_t) * host.unified_catypes.size());
 
@@ -36,8 +34,7 @@ void CudaContext::sync_all_to_device() {
     host.shell->upload();
     host.wshells->upload();
     host.lambdas->upload();
-
-    sync_array_to_device<E_restraint_t>(d_EQ_restraint, host.EQ_restraint.data(), host.n_lambdas);
+    host.EQ_restraint->upload();
 
     sync_array_to_device<ccharge_t>(d_unified_ccharges, host.unified_ccharges.data(), host.unified_ccharges.size());
     sync_array_to_device<catype_t>(d_unified_catypes, host.unified_catypes.data(), host.unified_catypes.size());
@@ -59,16 +56,13 @@ void CudaContext::sync_all_to_host() {
     host.shell->download();
     host.wshells->download();
     host.lambdas->download();
-
-    sync_array_to_host<E_restraint_t>(host.EQ_restraint.data(), d_EQ_restraint, host.n_lambdas);
+    host.EQ_restraint->download();
 
     sync_array_to_host<ccharge_t>(host.unified_ccharges.data(), d_unified_ccharges, host.unified_ccharges.size());
     sync_array_to_host<catype_t>(host.unified_catypes.data(), d_unified_catypes, host.unified_catypes.size());
 }
 
 void CudaContext::free() {
-    cudaFree(d_EQ_restraint);
-
     cudaFree(d_charge_table_all);
     cudaFree(d_charge_pair_products);
     cudaFree(d_catype_table_all);
@@ -111,7 +105,7 @@ void CudaContext::free() {
 void CudaContext::reset_energies() {
     auto& host = Context::instance();
     cudaMemset(host.dvelocities->gpu_data_p, 0, sizeof(dvel_t) * host.n_atoms);
-    cudaMemset(d_EQ_restraint, 0, sizeof(E_restraint_t) * host.n_lambdas);
+    cudaMemset(host.EQ_restraint->gpu_data_p, 0, sizeof(E_restraint_t) * host.n_lambdas);
 }
 
 void CudaContext::initialize_atom_lists_host() {

@@ -82,7 +82,7 @@ void calc_restrdis_forces_host() {
     auto d_coords = host.coords->gpu_data_p;
     auto d_lambdas = host.lambdas->gpu_data_p;
     auto d_dvelocities = host.dvelocities->gpu_data_p;
-    auto d_EQ_restraint = ctx.d_EQ_restraint;
+    auto d_EQ_restraint = host.EQ_restraint->gpu_data_p;
 
     cudaMemset(d_E_restraint, 0, sizeof(double));
 
@@ -98,7 +98,7 @@ void calc_restrdis_forces_host() {
         d_EQ_restraint,
         d_E_restraint);
     cudaDeviceSynchronize();
-    cudaMemcpy(host.EQ_restraint.data(), d_EQ_restraint, sizeof(E_restraint_t) * host.n_lambdas, cudaMemcpyDeviceToHost);
+    host.EQ_restraint->download();
     double ener;
     cudaMemcpy(&ener, d_E_restraint, sizeof(double), cudaMemcpyDeviceToHost);
     printf("Energy restraint: %f\n", ener);
