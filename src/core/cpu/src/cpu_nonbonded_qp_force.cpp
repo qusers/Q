@@ -8,6 +8,11 @@
 
 void calc_nonbonded_qp_forces() {
     auto& ctx = Context::instance();
+    auto *lambdas = ctx.lambdas->cpu_data_p;
+    auto &coords = ctx.coords->cpu_data_p;
+    auto &dvelocities = ctx.dvelocities->cpu_data_p;
+    auto &LJ_matrix = ctx.LJ_matrix->cpu_data_p;
+    auto *excluded = ctx.excluded->cpu_data_p;
     int i, j;
     coord_t da;
     double r2, r6, r;
@@ -20,17 +25,17 @@ void calc_nonbonded_qp_forces() {
             i = ctx.q_atoms[qi];
             j = ctx.p_atoms[pj];
 
-            bond23 = ctx.LJ_matrix[i * ctx.n_atoms_solute + j] == 3;
-            bond14 = ctx.LJ_matrix[i * ctx.n_atoms_solute + j] == 1;
+            bond23 = LJ_matrix[i * ctx.n_atoms_solute + j] == 3;
+            bond14 = LJ_matrix[i * ctx.n_atoms_solute + j] == 1;
 
             if (bond23) continue;
-            if (ctx.excluded[i] || ctx.excluded[j]) continue;
+            if (excluded[i] || excluded[j]) continue;
 
             scaling = bond14 ? ctx.topo.el14_scale : 1;
 
-            da.x = ctx.coords[j].x - ctx.coords[i].x;
-            da.y = ctx.coords[j].y - ctx.coords[i].y;
-            da.z = ctx.coords[j].z - ctx.coords[i].z;
+            da.x = coords[j].x - coords[i].x;
+            da.y = coords[j].y - coords[i].y;
+            da.z = coords[j].z - coords[i].z;
 
             r2 = pow(da.x, 2) + pow(da.y, 2) + pow(da.z, 2);
 
@@ -54,15 +59,15 @@ void calc_nonbonded_qp_forces() {
                 } else {
                     calc_vdw_arithmetic(ai_aii, aj_aii, ai_bii, aj_bii, r6inv, &V_a, &V_b);
                 }
-                dv = r2 * (-Vel - (12 * V_a - 6 * V_b)) * ctx.lambdas[state];
+                dv = r2 * (-Vel - (12 * V_a - 6 * V_b)) * lambdas[state];
 
                 // Update forces
-                ctx.dvelocities[i].x -= dv * da.x;
-                ctx.dvelocities[i].y -= dv * da.y;
-                ctx.dvelocities[i].z -= dv * da.z;
-                ctx.dvelocities[j].x += dv * da.x;
-                ctx.dvelocities[j].y += dv * da.y;
-                ctx.dvelocities[j].z += dv * da.z;
+                dvelocities[i].x -= dv * da.x;
+                dvelocities[i].y -= dv * da.y;
+                dvelocities[i].z -= dv * da.z;
+                dvelocities[j].x += dv * da.x;
+                dvelocities[j].y += dv * da.y;
+                dvelocities[j].z += dv * da.z;
 
                 // Update Q totals
                 ctx.EQ_nonbond_qp[state].Ucoul += Vel;

@@ -1,4 +1,3 @@
-#include "cuda/include/cuda_context.cuh"
 #include "cuda/include/cuda_restrseq_force.cuh"
 #include "common/include/context.h"
 #include "iostream"
@@ -11,7 +10,7 @@ __global__ void calc_restrseq_forces_kernel(
     int n_restrseqs,
     restrseq_t* restrseqs,
     coord_t* coords,
-    coord_t* coords_top,
+    coord_t* coords_init,
     atype_t* atypes,
     catype_t* catypes,
     bool* heavy,
@@ -37,9 +36,9 @@ __global__ void calc_restrseq_forces_kernel(
         for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
             if (heavy[i] || restrseqs[s].ih) {
                 n_ctr++;
-                dr.x += (coords[i].x - coords_top[i].x);
-                dr.y += (coords[i].y - coords_top[i].y);
-                dr.z += (coords[i].z - coords_top[i].z);
+                dr.x += (coords[i].x - coords_init[i].x);
+                dr.y += (coords[i].y - coords_init[i].y);
+                dr.z += (coords[i].z - coords_init[i].z);
             }
         }
 
@@ -68,9 +67,9 @@ __global__ void calc_restrseq_forces_kernel(
             if (heavy[i] || restrseqs[s].ih) {
                 mass = catypes[atypes[i].code - 1].m;
                 totmass += mass;
-                dr.x += (coords[i].x - coords_top[i].x) * mass;
-                dr.y += (coords[i].y - coords_top[i].y) * mass;
-                dr.z += (coords[i].z - coords_top[i].z) * mass;
+                dr.x += (coords[i].x - coords_init[i].x) * mass;
+                dr.y += (coords[i].y - coords_init[i].y) * mass;
+                dr.z += (coords[i].z - coords_init[i].z) * mass;
             }
         }
 
@@ -97,9 +96,9 @@ __global__ void calc_restrseq_forces_kernel(
     else {
         for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
             if (heavy[i] || restrseqs[s].ih) {
-                dr.x = coords[i].x - coords_top[i].x;
-                dr.y = coords[i].y - coords_top[i].y;
-                dr.z = coords[i].z - coords_top[i].z;
+                dr.x = coords[i].x - coords_init[i].x;
+                dr.y = coords[i].y - coords_init[i].y;
+                dr.z = coords[i].z - coords_init[i].z;
 
                 r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
                 ener = .5 * k * r2;
@@ -117,14 +116,13 @@ void calc_restrseq_forces_host() {
     auto& host = Context::instance();
     if (host.n_restrseqs == 0) return;
     using namespace CudaRestrseqForce;
-    CudaContext& ctx = CudaContext::instance();
-    auto d_restrseq = ctx.d_restrseqs;
-    auto d_coords = ctx.d_coords;
-    auto d_coords_top = ctx.d_coords_top;
-    auto d_atypes = ctx.d_atypes;
-    auto d_catypes = ctx.d_catypes;
-    auto d_heavy = ctx.d_heavy;
-    auto d_dvelocities = ctx.d_dvelocities;
+    auto d_restrseq = host.restrseqs->gpu_data_p;
+    auto d_coords = host.coords->gpu_data_p;
+    auto d_coords_init = host.coords_init->gpu_data_p;
+    auto d_atypes = host.atypes->gpu_data_p;
+    auto d_catypes = host.catypes->gpu_data_p;
+    auto d_heavy = host.heavy->gpu_data_p;
+    auto d_dvelocities = host.dvelocities->gpu_data_p;
     cudaMemset(d_upres_energy, 0, sizeof(double));
     // ctx.sync_all_to_device();
 
@@ -134,7 +132,7 @@ void calc_restrseq_forces_host() {
         host.n_restrseqs,
         d_restrseq,
         d_coords,
-        d_coords_top,
+        d_coords_init,
         d_atypes,
         d_catypes,
         d_heavy,

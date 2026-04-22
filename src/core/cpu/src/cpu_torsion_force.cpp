@@ -7,6 +7,10 @@
 
 double calc_torsion_forces(int start, int end) {
     auto& ctx = Context::instance();
+    auto &torsions = ctx.torsions->cpu_data_p;
+    auto &ctorsions = ctx.ctorsions->cpu_data_p;
+    auto &coords = ctx.coords->cpu_data_p;
+    auto &dvelocities = ctx.dvelocities->cpu_data_p;
     int aii, aji, aki, ali;
 
     coord_t ai, aj, ak, al;
@@ -23,18 +27,18 @@ double calc_torsion_forces(int start, int end) {
     ctorsion_t ctors;
 
     for (int i = start; i < end; i++) {
-        t = ctx.torsions[i];
-        ctors = ctx.ctorsions[t.code - 1];
+        t = torsions[i];
+        ctors = ctorsions[t.code - 1];
 
         aii = t.ai - 1;
         aji = t.aj - 1;
         aki = t.ak - 1;
         ali = t.al - 1;
 
-        ai = ctx.coords[aii];
-        aj = ctx.coords[aji];
-        ak = ctx.coords[aki];
-        al = ctx.coords[ali];
+        ai = coords[aii];
+        aj = coords[aji];
+        ak = coords[aki];
+        al = coords[ali];
 
         rji.x = ai.x - aj.x;
         rji.y = ai.y - aj.y;
@@ -119,21 +123,21 @@ double calc_torsion_forces(int start, int end) {
         // Update energy and forces
         torsion += ener;
 
-        ctx.dvelocities[aii].x += dv * dpi.x;
-        ctx.dvelocities[aii].y += dv * dpi.y;
-        ctx.dvelocities[aii].z += dv * dpi.z;
+        dvelocities[aii].x += dv * dpi.x;
+        dvelocities[aii].y += dv * dpi.y;
+        dvelocities[aii].z += dv * dpi.z;
 
-        ctx.dvelocities[aji].x += dv * dpj.x;
-        ctx.dvelocities[aji].y += dv * dpj.y;
-        ctx.dvelocities[aji].z += dv * dpj.z;
+        dvelocities[aji].x += dv * dpj.x;
+        dvelocities[aji].y += dv * dpj.y;
+        dvelocities[aji].z += dv * dpj.z;
 
-        ctx.dvelocities[aki].x += dv * dpk.x;
-        ctx.dvelocities[aki].y += dv * dpk.y;
-        ctx.dvelocities[aki].z += dv * dpk.z;
+        dvelocities[aki].x += dv * dpk.x;
+        dvelocities[aki].y += dv * dpk.y;
+        dvelocities[aki].z += dv * dpk.z;
 
-        ctx.dvelocities[ali].x += dv * dpl.x;
-        ctx.dvelocities[ali].y += dv * dpl.y;
-        ctx.dvelocities[ali].z += dv * dpl.z;
+        dvelocities[ali].x += dv * dpl.x;
+        dvelocities[ali].y += dv * dpl.y;
+        dvelocities[ali].z += dv * dpl.z;
     }
 
     return torsion;

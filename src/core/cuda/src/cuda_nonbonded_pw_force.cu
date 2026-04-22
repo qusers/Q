@@ -2,7 +2,6 @@
 #include <vector>
 
 #include "common/include/context.h"
-#include "cuda/include/cuda_context.cuh"
 #include "cuda/include/cuda_nonbonded_force.cuh"
 #include "cuda/include/cuda_nonbonded_pw_force.cuh"
 
@@ -14,21 +13,20 @@ bool is_initialized = false;
 void calc_nonbonded_pw_forces_host_v2() {
     using namespace CudaNonbondedPWForce;
 
-    int nx = CudaContext::instance().h_p_atoms_list.size();
-    int ny = CudaContext::instance().h_w_atoms_list.size();
+    Context& host = Context::instance();
+    int nx = static_cast<int>(host.p_atoms_list->length);
+    int ny = static_cast<int>(host.w_atoms_list->length);
     auto result = calc_nonbonded_force_host(
         nx, ny,
-        CudaContext::instance().d_p_atoms_list,
-        CudaContext::instance().d_w_atoms_list,
+        host.p_atoms_list->gpu_data_p,
+        host.w_atoms_list->gpu_data_p,
         false,
-        CudaContext::instance().d_p_charge_types,
-        CudaContext::instance().d_w_charge_types,
-        CudaContext::instance().d_p_catype_types,
-        CudaContext::instance().d_w_catype_types,
+        host.p_charge_types->gpu_data_p,
+        host.w_charge_types->gpu_data_p,
+        host.p_catype_types->gpu_data_p,
+        host.w_catype_types->gpu_data_p,
         false);
     // printf("Nonbonded PW Force (Host) - VdW: %f, Coulomb: %f\n", result.first, result.second);
-
-    Context& host = Context::instance();
     host.E_nonbond_pw.Uvdw = result.first;
     host.E_nonbond_pw.Ucoul = result.second;
 }

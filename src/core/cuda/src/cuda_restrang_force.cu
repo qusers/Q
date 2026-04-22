@@ -1,4 +1,3 @@
-#include "cuda/include/cuda_context.cuh"
 #include "cuda/include/cuda_restrang_force.cuh"
 #include "cuda/include/cuda_utility.cuh"
 #include "common/include/context.h"
@@ -104,13 +103,12 @@ void calc_restrang_force_host() {
     auto& host = Context::instance();
     if (host.n_restrangs == 0) return;
     using namespace CudaRestrangForce;
-    CudaContext& ctx = CudaContext::instance();
 
-    auto d_restrangs = ctx.d_restrangs;
-    auto d_coords = ctx.d_coords;
-    auto d_lambdas = ctx.d_lambdas;
-    auto d_dvelocities = ctx.d_dvelocities;
-    auto d_EQ_restraint = ctx.d_EQ_restraint;
+    auto d_restrangs = host.restrangs->gpu_data_p;
+    auto d_coords = host.coords->gpu_data_p;
+    auto d_lambdas = host.lambdas->gpu_data_p;
+    auto d_dvelocities = host.dvelocities->gpu_data_p;
+    auto d_EQ_restraint = host.EQ_restraint->gpu_data_p;
 
     double val = 0;
     cudaMemcpy(d_E_restraint, &val, sizeof(double), cudaMemcpyHostToDevice);
@@ -127,7 +125,7 @@ void calc_restrang_force_host() {
         d_EQ_restraint,
         d_E_restraint);
     cudaDeviceSynchronize();
-    cudaMemcpy(host.EQ_restraint.data(), d_EQ_restraint, sizeof(E_restraint_t) * host.n_lambdas, cudaMemcpyDeviceToHost);
+    host.EQ_restraint->download();
     cudaMemcpy(&val, d_E_restraint, sizeof(double), cudaMemcpyDeviceToHost);
     host.E_restraint.Upres += val;
 }

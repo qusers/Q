@@ -1,6 +1,5 @@
 #include <iostream>
 
-#include "cuda/include/cuda_context.cuh"
 #include "cuda/include/cuda_restrdis_force.cuh"
 #include "cuda/include/cuda_utility.cuh"
 #include "common/include/context.h"
@@ -77,12 +76,11 @@ void calc_restrdis_forces_host() {
     auto& host = Context::instance();
     if (host.n_restrdists == 0) return;
     using namespace CudaRestrdisForce;
-    CudaContext& ctx = CudaContext::instance();
-    auto d_restrdists = ctx.d_restrdists;
-    auto d_coords = ctx.d_coords;
-    auto d_lambdas = ctx.d_lambdas;
-    auto d_dvelocities = ctx.d_dvelocities;
-    auto d_EQ_restraint = ctx.d_EQ_restraint;
+    auto d_restrdists = host.restrdists->gpu_data_p;
+    auto d_coords = host.coords->gpu_data_p;
+    auto d_lambdas = host.lambdas->gpu_data_p;
+    auto d_dvelocities = host.dvelocities->gpu_data_p;
+    auto d_EQ_restraint = host.EQ_restraint->gpu_data_p;
 
     cudaMemset(d_E_restraint, 0, sizeof(double));
 
@@ -98,7 +96,7 @@ void calc_restrdis_forces_host() {
         d_EQ_restraint,
         d_E_restraint);
     cudaDeviceSynchronize();
-    cudaMemcpy(host.EQ_restraint.data(), d_EQ_restraint, sizeof(E_restraint_t) * host.n_lambdas, cudaMemcpyDeviceToHost);
+    host.EQ_restraint->download();
     double ener;
     cudaMemcpy(&ener, d_E_restraint, sizeof(double), cudaMemcpyDeviceToHost);
     printf("Energy restraint: %f\n", ener);

@@ -64,5 +64,4 @@ void clean_variables();
 // void write_energies(int iteration);
 
 void calc_integration();
-void calc_integration_step(int iteration);
 

@@ -6,54 +6,59 @@
 
 void calc_restrdis_forces() {
     auto& ctx = Context::instance();
+    auto &coords = ctx.coords->cpu_data_p;
+    auto &dvelocities = ctx.dvelocities->cpu_data_p;
+    auto &restrdists = ctx.restrdists->cpu_data_p;
+    auto *lambdas = ctx.lambdas->cpu_data_p;
+    auto *EQ_restraint = ctx.EQ_restraint->cpu_data_p;
 
     int state, i, j;
     coord_t dr;
     double lambda, b, db, dv, ener;
 
     for (int ir = 0; ir < ctx.n_restrdists; ir++) {
-        state = ctx.restrdists[ir].ipsi - 1;
-        i = ctx.restrdists[ir].ai - 1;
-        j = ctx.restrdists[ir].aj - 1;
+        state = restrdists[ir].ipsi - 1;
+        i = restrdists[ir].ai - 1;
+        j = restrdists[ir].aj - 1;
 
-        dr.x = ctx.coords[j].x - ctx.coords[i].x;
-        dr.y = ctx.coords[j].y - ctx.coords[i].y;
-        dr.z = ctx.coords[j].z - ctx.coords[i].z;
+        dr.x = coords[j].x - coords[i].x;
+        dr.y = coords[j].y - coords[i].y;
+        dr.z = coords[j].z - coords[i].z;
 
-        if (ctx.restrdists[ir].ipsi != 0) {
-            lambda = ctx.lambdas[state];
+        if (restrdists[ir].ipsi != 0) {
+            lambda = lambdas[state];
         } else {
             lambda = 1;
         }
 
         b = sqrt(pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2));
-        if (b < ctx.restrdists[ir].d1) {
-            db = b - ctx.restrdists[ir].d1;
-        } else if (b > ctx.restrdists[ir].d2) {
-            db = b - ctx.restrdists[ir].d2;
+        if (b < restrdists[ir].d1) {
+            db = b - restrdists[ir].d1;
+        } else if (b > restrdists[ir].d2) {
+            db = b - restrdists[ir].d2;
         } else {
             continue;
         }
 
-        ener = .5 * ctx.restrdists[ir].k * pow(db, 2);
-        dv = lambda * ctx.restrdists[ir].k * db / b;
+        ener = .5 * restrdists[ir].k * pow(db, 2);
+        dv = lambda * restrdists[ir].k * db / b;
 
-        ctx.dvelocities[j].x += dr.x * dv;
-        ctx.dvelocities[j].y += dr.y * dv;
-        ctx.dvelocities[j].z += dr.z * dv;
-        ctx.dvelocities[i].x -= dr.x * dv;
-        ctx.dvelocities[i].y -= dr.y * dv;
-        ctx.dvelocities[i].z -= dr.z * dv;
+        dvelocities[j].x += dr.x * dv;
+        dvelocities[j].y += dr.y * dv;
+        dvelocities[j].z += dr.z * dv;
+        dvelocities[i].x -= dr.x * dv;
+        dvelocities[i].y -= dr.y * dv;
+        dvelocities[i].z -= dr.z * dv;
 
-        if (ctx.restrdists[ir].ipsi == 0) {
+        if (restrdists[ir].ipsi == 0) {
             for (int k = 0; k < ctx.n_lambdas; k++) {
-                ctx.EQ_restraint[k].Urestr += ener;
+                EQ_restraint[k].Urestr += ener;
             }
             if (ctx.n_lambdas == 0) {
                 ctx.E_restraint.Upres += ener;
             }
         } else {
-            ctx.EQ_restraint[state].Urestr += ener;
+            EQ_restraint[state].Urestr += ener;
         }
     }
 }

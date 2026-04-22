@@ -1,4 +1,3 @@
-#include "cuda/include/cuda_context.cuh"
 #include "cuda/include/cuda_pshell_force.cuh"
 #include "common/include/constants.h"
 #include "common/include/context.h"
@@ -15,7 +14,7 @@ __global__ void calc_pshell_force_kernel(
     bool* shell,
     bool* excluded,
     coord_t* coords,
-    coord_t* coords_top,
+    coord_t* coords_init,
     double* ufix_energy,
     double* ushell_energy,
     dvel_t* dvelocities) {
@@ -32,9 +31,9 @@ __global__ void calc_pshell_force_kernel(
         } else {
             k = k_pshell;
         }
-        dr.x = coords[i].x - coords_top[i].x;
-        dr.y = coords[i].y - coords_top[i].y;
-        dr.z = coords[i].z - coords_top[i].z;
+        dr.x = coords[i].x - coords_init[i].x;
+        dr.y = coords[i].y - coords_init[i].y;
+        dr.z = coords[i].z - coords_init[i].z;
         r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
         ener = 0.5 * k * r2;
         // printf("dr = %f %f %f\n", dr.x, dr.y, dr.z);
@@ -49,15 +48,14 @@ __global__ void calc_pshell_force_kernel(
 }
 
 void calc_pshell_forces_host() {
-    CudaContext& ctx = CudaContext::instance();
     auto& host = Context::instance();
     using namespace CudaPshellForce;
 
-    auto d_shell = ctx.d_shell;
-    auto d_excluded = ctx.d_excluded;
-    auto d_coords = ctx.d_coords;
-    auto d_coords_top = ctx.d_coords_top;
-    auto d_dvelocities = ctx.d_dvelocities;
+    auto d_shell = host.shell->gpu_data_p;
+    auto d_excluded = host.excluded->gpu_data_p;
+    auto d_coords = host.coords->gpu_data_p;
+    auto d_coords_init = host.coords_init->gpu_data_p;
+    auto d_dvelocities = host.dvelocities->gpu_data_p;
 
     cudaMemset(d_ufix_energy, 0, sizeof(double));
     cudaMemset(d_ushell_energy, 0, sizeof(double));
@@ -69,7 +67,7 @@ void calc_pshell_forces_host() {
         d_shell,
         d_excluded,
         d_coords,
-        d_coords_top,
+        d_coords_init,
         d_ufix_energy,
         d_ushell_energy,
         d_dvelocities);

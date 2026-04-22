@@ -1,6 +1,6 @@
-#include "cuda/include/cuda_context.cuh"
 #include "cuda/include/cuda_improper2_force.cuh"
 #include "cuda/include/cuda_utility.cuh"
+#include "context.h"
 
 namespace CudaImproper2Force {
 bool is_initialized = false;
@@ -134,12 +134,11 @@ double calc_improper2_forces_host(int start, int end) {
     double energy = 0.0;
     cudaMemcpy(d_energy_sum, &energy, sizeof(double), cudaMemcpyHostToDevice);
 
-    CudaContext& context = CudaContext::instance();
-    // context.sync_all_to_device();
-    coord_t* d_coords = context.d_coords;
-    dvel_t* d_dvelocities = context.d_dvelocities;
-    improper_t* d_impropers = context.d_impropers;
-    cimproper_t* d_cimpropers = context.d_cimpropers;
+    auto& host_ctx = Context::instance();
+    coord_t* d_coords = host_ctx.coords->gpu_data_p;
+    dvel_t* d_dvelocities = host_ctx.dvelocities->gpu_data_p;
+    improper_t* d_impropers = host_ctx.impropers->gpu_data_p;
+    cimproper_t* d_cimpropers = host_ctx.cimpropers->gpu_data_p;
 
     calc_improper2_forces_kernel<<<numBlocks, blockSize>>>(start, end, d_impropers, d_cimpropers, d_coords, d_dvelocities, d_energy_sum);
     cudaDeviceSynchronize();

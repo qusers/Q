@@ -215,18 +215,23 @@ void init_md(const char* filename) {
 #ifdef VERBOSE
     printf("reading in %d lambdas (%s in file)\n", ctx.n_lambdas, file.buffer[k][1]);
 #endif
-    ctx.lambdas.resize(ctx.n_lambdas);
+    ctx.lambdas = std::make_unique<HostDeviceBuffer<double>>(ctx.n_lambdas, true, ctx.run_gpu);
+    auto *lambdas = ctx.lambdas->cpu_data_p;
     k++;
     for (int i = 0; i < ctx.n_lambdas; i++) {
-        ctx.lambdas[i] = strtod(file.buffer[k][0], &eptr);
+        lambdas[i] = strtod(file.buffer[k][0], &eptr);
         k++;
+    }
+    if (ctx.run_gpu) {
+        ctx.lambdas->upload();
     }
 
     // [sequence_restraints]
     printf("k = %d\n", k);
     ctx.n_restrseqs = atoi(file.buffer[k][0]);
     printf("reading in %d sequence restraints (%s in file)\n", ctx.n_restrseqs, file.buffer[k][1]);
-    ctx.restrseqs.resize(ctx.n_restrseqs);
+    ctx.restrseqs = std::make_unique<HostDeviceBuffer<restrseq_t>>(ctx.n_restrseqs, true, ctx.run_gpu);
+    auto &restrseqs = ctx.restrseqs->cpu_data_p;
     k++;
     for (int i = 0; i < ctx.n_restrseqs; i++) {
         restrseq_t restrseq;
@@ -237,14 +242,19 @@ void init_md(const char* filename) {
         restrseq.ih = strcmp(file.buffer[k][3], "1") == 0;
         restrseq.to_center = atoi(file.buffer[k][4]);
 
-        ctx.restrseqs[i] = restrseq;
+        restrseqs[i] = restrseq;
         k++;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.restrseqs->upload();
     }
 
     // [position_restraints]
     ctx.n_restrspos = atoi(file.buffer[k][0]);
     printf("reading in %d position restraints\n (%s in file )", ctx.n_restrspos, file.buffer[k][1]);
-    ctx.restrspos.resize(ctx.n_restrspos);
+    ctx.restrspos = std::make_unique<HostDeviceBuffer<restrpos_t>>(ctx.n_restrspos, true, ctx.run_gpu);
+    auto &restrspos = ctx.restrspos->cpu_data_p;
     k++;
     for (int i = 0; i < ctx.n_restrspos; i++) {
         restrpos_t restrpos;
@@ -264,13 +274,18 @@ void init_md(const char* filename) {
         restrpos.x = r_x;
         restrpos.k = r_k;
 
-        ctx.restrspos[i] = restrpos;
+        restrspos[i] = restrpos;
         k++;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.restrspos->upload();
     }
 
     // [distance_restraints]
     ctx.n_restrdists = atoi(file.buffer[k][0]);
-    ctx.restrdists.resize(ctx.n_restrdists);
+    ctx.restrdists = std::make_unique<HostDeviceBuffer<restrdis_t>>(ctx.n_restrdists, true, ctx.run_gpu);
+    auto &restrdists = ctx.restrdists->cpu_data_p;
     printf("reading in %d distance restraints (%s in file)\n", ctx.n_restrdists, file.buffer[k][1]);
     k++;
     for (int i = 0; i < ctx.n_restrdists; i++) {
@@ -283,13 +298,18 @@ void init_md(const char* filename) {
         restrdist.k = strtod(file.buffer[k][4], &eptr);
         restrdist.ipsi = atoi(file.buffer[k][5]);
 
-        ctx.restrdists[i] = restrdist;
+        restrdists[i] = restrdist;
         k++;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.restrdists->upload();
     }
 
     // [angle_restraints]
     ctx.n_restrangs = atoi(file.buffer[k][0]);
-    ctx.restrangs.resize(ctx.n_restrangs);
+    ctx.restrangs = std::make_unique<HostDeviceBuffer<restrang_t>>(ctx.n_restrangs, true, ctx.run_gpu);
+    auto &restrangs = ctx.restrangs->cpu_data_p;
     printf("reading in %d angle restraints (%s in file)\n", ctx.n_restrangs, file.buffer[k][1]);
     k++;
     for (int i = 0; i < ctx.n_restrangs; i++) {
@@ -302,13 +322,18 @@ void init_md(const char* filename) {
         restrang.ang = strtod(file.buffer[k][4], &eptr);
         restrang.k = strtod(file.buffer[k][5], &eptr);
 
-        ctx.restrangs[i] = restrang;
+        restrangs[i] = restrang;
         k++;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.restrangs->upload();
     }
 
     // [wall_restraints]
     ctx.n_restrwalls = atoi(file.buffer[k][0]);
-    ctx.restrwalls.resize(ctx.n_restrwalls);
+    ctx.restrwalls = std::make_unique<HostDeviceBuffer<restrwall_t>>(ctx.n_restrwalls, true, ctx.run_gpu);
+    auto &restrwalls = ctx.restrwalls->cpu_data_p;
     printf("reading in %d wall restraints (%s in file)\n", ctx.n_restrwalls, file.buffer[k][1]);
     k++;
     for (int i = 0; i < ctx.n_restrwalls; i++) {
@@ -322,8 +347,12 @@ void init_md(const char* filename) {
         restrwall.aMorse = strtod(file.buffer[k][5], &eptr);
         restrwall.ih = strcmp(file.buffer[k][6], "1") == 0;
 
-        ctx.restrwalls[i] = restrwall;
+        restrwalls[i] = restrwall;
         k++;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.restrwalls->upload();
     }
 
     clean_csv(file);
@@ -377,7 +406,6 @@ void init_coords(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 1, ctx.base_folder.c_str());
 
-    ctx.n_coords = 0;
     ctx.n_atoms = 0;
     ctx.n_atoms_solute = 0;
 
@@ -386,22 +414,28 @@ void init_coords(const char* filename) {
         return;
     }
 
-    ctx.n_coords = atoi(file.buffer[0][0]);
-    ctx.n_atoms = ctx.n_coords;
+    ctx.n_atoms = atoi(file.buffer[0][0]);
 
     ctx.n_atoms_solute = atoi(file.buffer[1][0]);
 
-    ctx.coords.resize(ctx.n_atoms);
-    ctx.coords_top.resize(ctx.n_atoms);
+    ctx.coords_init = std::make_unique<HostDeviceBuffer<coord_t>>(ctx.n_atoms, true, ctx.run_gpu);
+    ctx.coords = std::make_unique<HostDeviceBuffer<coord_t>>(ctx.n_atoms, true, ctx.run_gpu);
+    auto &coords = ctx.coords->cpu_data_p;
+    auto &coords_init = ctx.coords_init->cpu_data_p;
 
     for (int i = 0; i < file.n_lines; i++) {
         char* eptr;
 
-        ctx.coords[i].x = strtod(file.buffer[i + 2][0], &eptr);
-        ctx.coords[i].y = strtod(file.buffer[i + 2][1], &eptr);
-        ctx.coords[i].z = strtod(file.buffer[i + 2][2], &eptr);
+        coords[i].x = strtod(file.buffer[i + 2][0], &eptr);
+        coords[i].y = strtod(file.buffer[i + 2][1], &eptr);
+        coords[i].z = strtod(file.buffer[i + 2][2], &eptr);
 
-        ctx.coords_top[i] = ctx.coords[i];
+        coords_init[i] = coords[i];
+    }
+
+    if (ctx.run_gpu) {
+        ctx.coords->upload();
+        ctx.coords_init->upload();
     }
 
     clean_csv(file);
@@ -421,8 +455,8 @@ void init_bonds(const char* filename) {
 
     ctx.n_bonds = atoi(file.buffer[0][0]);
     ctx.n_bonds_solute = atoi(file.buffer[1][0]);
-
-    ctx.bonds.resize(ctx.n_bonds);
+    ctx.bonds = std::make_unique<HostDeviceBuffer<bond_t>>(ctx.n_bonds, true, ctx.run_gpu);
+    auto &bonds = ctx.bonds->cpu_data_p;
 
     for (int i = 0; i < ctx.n_bonds; i++) {
         bond_t bond;
@@ -431,7 +465,11 @@ void init_bonds(const char* filename) {
         bond.aj = atoi(file.buffer[i + 2][1]);
         bond.code = atoi(file.buffer[i + 2][2]);
 
-        ctx.bonds[i] = bond;
+        bonds[i] = bond;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.bonds->upload();
     }
 
     clean_csv(file);
@@ -449,7 +487,8 @@ void init_cbonds(const char* filename) {
     }
 
     ctx.n_cbonds = atoi(file.buffer[0][0]);
-    ctx.cbonds.resize(ctx.n_cbonds);
+    ctx.cbonds = std::make_unique<HostDeviceBuffer<cbond_t>>(ctx.n_cbonds, true, ctx.run_gpu);
+    auto &cbonds = ctx.cbonds->cpu_data_p;
 
     for (int i = 0; i < ctx.n_cbonds; i++) {
         cbond_t cbond;
@@ -459,7 +498,11 @@ void init_cbonds(const char* filename) {
         cbond.kb = strtod(file.buffer[i + 1][1], &eptr);
         cbond.b0 = strtod(file.buffer[i + 1][2], &eptr);
 
-        ctx.cbonds[i] = cbond;
+        cbonds[i] = cbond;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.cbonds->upload();
     }
 
     clean_csv(file);
@@ -479,8 +522,8 @@ void init_angles(const char* filename) {
 
     ctx.n_angles = atoi(file.buffer[0][0]);
     ctx.n_angles_solute = atoi(file.buffer[1][0]);
-
-    ctx.angles.resize(ctx.n_angles);
+    ctx.angles = std::make_unique<HostDeviceBuffer<angle_t>>(ctx.n_angles, true, ctx.run_gpu);
+    auto &angles = ctx.angles->cpu_data_p;
 
     for (int i = 0; i < ctx.n_angles; i++) {
         angle_t angle;
@@ -490,8 +533,13 @@ void init_angles(const char* filename) {
         angle.ak = atoi(file.buffer[i + 2][2]);
         angle.code = atoi(file.buffer[i + 2][3]);
 
-        ctx.angles[i] = angle;
+        angles[i] = angle;
     }
+
+    if (ctx.run_gpu) {
+        ctx.angles->upload();
+    }
+
 
     clean_csv(file);
 }
@@ -508,7 +556,8 @@ void init_cangles(const char* filename) {
     }
 
     ctx.n_cangles = atoi(file.buffer[0][0]);
-    ctx.cangles.resize(ctx.n_cangles);
+    ctx.cangles = std::make_unique<HostDeviceBuffer<cangle_t>>(ctx.n_cangles, true, ctx.run_gpu);
+    auto &cangles = ctx.cangles->cpu_data_p;
 
     for (int i = 0; i < ctx.n_cangles; i++) {
         cangle_t cangle;
@@ -518,7 +567,11 @@ void init_cangles(const char* filename) {
         cangle.kth = strtod(file.buffer[i + 1][1], &eptr);
         cangle.th0 = strtod(file.buffer[i + 1][2], &eptr);
 
-        ctx.cangles[i] = cangle;
+        cangles[i] = cangle;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.cangles->upload();
     }
 
     clean_csv(file);
@@ -526,9 +579,10 @@ void init_cangles(const char* filename) {
 
 void init_excluded(const char* filename) {
     auto& ctx = Context::instance();
-    ctx.excluded = std::make_unique<bool[]>(ctx.n_atoms);
+    ctx.excluded = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
+    auto *excluded = ctx.excluded->cpu_data_p;
     for (int i = 0; i < ctx.n_atoms; ++i) {
-        ctx.excluded[i] = false;
+        excluded[i] = false;
     }
     ctx.n_excluded = 0;
 
@@ -562,8 +616,12 @@ void init_excluded(const char* filename) {
     ctx.n_excluded = 0;
     for (int i = 0; i < ctx.n_atoms && i < read_len; i++) {
         bool excl = (line[i] == '1');
-        ctx.excluded[i] = excl;
+        excluded[i] = excl;
         if (excl) ctx.n_excluded++;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.excluded->upload();
     }
 
     printf("Number of excluded atoms: %d\n", ctx.n_excluded);
@@ -586,8 +644,8 @@ void init_torsions(const char* filename) {
 
     ctx.n_torsions = atoi(file.buffer[0][0]);
     ctx.n_torsions_solute = atoi(file.buffer[1][0]);
-
-    ctx.torsions.resize(ctx.n_torsions);
+    ctx.torsions = std::make_unique<HostDeviceBuffer<torsion_t>>(ctx.n_torsions, true, ctx.run_gpu);
+    auto &torsions = ctx.torsions->cpu_data_p;
 
     for (int i = 0; i < ctx.n_torsions; i++) {
         torsion_t torsion;
@@ -598,7 +656,11 @@ void init_torsions(const char* filename) {
         torsion.al = atoi(file.buffer[i + 2][3]);
         torsion.code = atoi(file.buffer[i + 2][4]);
 
-        ctx.torsions[i] = torsion;
+        torsions[i] = torsion;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.torsions->upload();
     }
 
     clean_csv(file);
@@ -616,8 +678,8 @@ void init_ctorsions(const char* filename) {
     }
 
     ctx.n_ctorsions = atoi(file.buffer[0][0]);
-
-    ctx.ctorsions.resize(ctx.n_ctorsions);
+    ctx.ctorsions = std::make_unique<HostDeviceBuffer<ctorsion_t>>(ctx.n_ctorsions, true, ctx.run_gpu);
+    auto &ctorsions = ctx.ctorsions->cpu_data_p;
 
     for (int i = 0; i < ctx.n_ctorsions; i++) {
         ctorsion_t ctorsion;
@@ -630,7 +692,11 @@ void init_ctorsions(const char* filename) {
         ctorsion.paths = strtod(file.buffer[i + 1][4], &eptr);
         ctorsion.paths = 1.0 / (ctorsion.paths);
 
-        ctx.ctorsions[i] = ctorsion;
+        ctorsions[i] = ctorsion;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.ctorsions->upload();
     }
 
     clean_csv(file);
@@ -650,8 +716,8 @@ void init_impropers(const char* filename) {
 
     ctx.n_impropers = atoi(file.buffer[0][0]);
     ctx.n_impropers_solute = atoi(file.buffer[1][0]);
-
-    ctx.impropers.resize(ctx.n_impropers);
+    ctx.impropers = std::make_unique<HostDeviceBuffer<improper_t>>(ctx.n_impropers, true, ctx.run_gpu);
+    auto &impropers = ctx.impropers->cpu_data_p;
 
     for (int i = 0; i < ctx.n_impropers; i++) {
         improper_t improper;
@@ -662,7 +728,11 @@ void init_impropers(const char* filename) {
         improper.al = atoi(file.buffer[i + 2][3]);
         improper.code = atoi(file.buffer[i + 2][4]);
 
-        ctx.impropers[i] = improper;
+        impropers[i] = improper;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.impropers->upload();
     }
 
     clean_csv(file);
@@ -680,8 +750,8 @@ void init_cimpropers(const char* filename) {
     }
 
     ctx.n_cimpropers = atoi(file.buffer[0][0]);
-
-    ctx.cimpropers.resize(ctx.n_cimpropers);
+    ctx.cimpropers = std::make_unique<HostDeviceBuffer<cimproper_t>>(ctx.n_cimpropers, true, ctx.run_gpu);
+    auto &cimpropers = ctx.cimpropers->cpu_data_p;
 
     for (int i = 0; i < ctx.n_cimpropers; i++) {
         cimproper_t cimproper;
@@ -691,7 +761,11 @@ void init_cimpropers(const char* filename) {
         cimproper.k = strtod(file.buffer[i + 1][1], &eptr);
         cimproper.phi0 = strtod(file.buffer[i + 1][2], &eptr);
 
-        ctx.cimpropers[i] = cimproper;
+        cimpropers[i] = cimproper;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.cimpropers->upload();
     }
 
     clean_csv(file);
@@ -709,8 +783,8 @@ void init_charges(const char* filename) {
     }
 
     ctx.n_charges = atoi(file.buffer[0][0]);
-
-    ctx.charges.resize(ctx.n_charges);
+    ctx.charges = std::make_unique<HostDeviceBuffer<charge_t>>(ctx.n_charges, true, ctx.run_gpu);
+    auto &charges = ctx.charges->cpu_data_p;
 
     for (int i = 0; i < ctx.n_charges; i++) {
         charge_t charge;
@@ -718,7 +792,11 @@ void init_charges(const char* filename) {
         charge.a = atoi(file.buffer[i + 1][0]);
         charge.code = atoi(file.buffer[i + 1][1]);
 
-        ctx.charges[i] = charge;
+        charges[i] = charge;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.charges->upload();
     }
 
     clean_csv(file);
@@ -736,8 +814,8 @@ void init_ccharges(const char* filename) {
     }
 
     ctx.n_ccharges = atoi(file.buffer[0][0]);
-
-    ctx.ccharges.resize(ctx.n_ccharges);
+    ctx.ccharges = std::make_unique<HostDeviceBuffer<ccharge_t>>(ctx.n_ccharges, true, ctx.run_gpu);
+    auto &ccharges = ctx.ccharges->cpu_data_p;
 
     for (int i = 0; i < ctx.n_ccharges; i++) {
         ccharge_t ccharge;
@@ -746,7 +824,11 @@ void init_ccharges(const char* filename) {
         ccharge.code = atoi(file.buffer[i + 1][0]);
         ccharge.charge = strtod(file.buffer[i + 1][1], &eptr);
 
-        ctx.ccharges[i] = ccharge;
+        ccharges[i] = ccharge;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.ccharges->upload();
     }
 
     clean_csv(file);
@@ -754,6 +836,7 @@ void init_ccharges(const char* filename) {
 
 void init_ngbrs14(const char* filename) {
     auto& ctx = Context::instance();
+    auto &LJ_matrix = ctx.LJ_matrix->cpu_data_p;
     FILE* fp;
 
     char path[1024];
@@ -787,10 +870,10 @@ void init_ngbrs14(const char* filename) {
                 int ix = lineI;
                 int jx = (lineI + i + 1) % lines;
                 // if (ix < 100 && jx < 100) printf("i = %d j = %d\n", ix+1, jx+1);
-                ctx.LJ_matrix[ix * ctx.n_atoms_solute + jx] = 1;
-                ctx.LJ_matrix[jx * ctx.n_atoms_solute + ix] = 1;
+                LJ_matrix[ix * ctx.n_atoms_solute + jx] = 1;
+                LJ_matrix[jx * ctx.n_atoms_solute + ix] = 1;
 
-                ctx.ngbrs_14.push_back({ix, jx, NONBONDED_14_PP}); // the type may is wrong, just set in here
+                ctx.ngbrs_14_builder.push_back({ix, jx, NONBONDED_14_PP}); // the type may is wrong, just set in here
             }
         }
         lineI++;
@@ -801,6 +884,7 @@ void init_ngbrs14(const char* filename) {
 
 void init_ngbrs23(const char* filename) {
     auto& ctx = Context::instance();
+    auto &LJ_matrix = ctx.LJ_matrix->cpu_data_p;
     FILE* fp;
 
     char path[1024];
@@ -834,8 +918,8 @@ void init_ngbrs23(const char* filename) {
                 int ix = lineI;
                 int jx = (lineI + i + 1) % lines;
                 // if (ix < 100 && jx < 100) printf("i = %d j = %d\n", ix+1, jx+1);
-                ctx.LJ_matrix[ix * ctx.n_atoms_solute + jx] = 3;
-                ctx.LJ_matrix[jx * ctx.n_atoms_solute + ix] = 3;
+                LJ_matrix[ix * ctx.n_atoms_solute + jx] = 3;
+                LJ_matrix[jx * ctx.n_atoms_solute + ix] = 3;
             }
         }
         lineI++;
@@ -846,6 +930,7 @@ void init_ngbrs23(const char* filename) {
 
 void init_ngbrs14_long(const char* filename) {
     auto& ctx = Context::instance();
+    auto &LJ_matrix = ctx.LJ_matrix->cpu_data_p;
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     if (file.n_lines < 1) {
@@ -858,13 +943,13 @@ void init_ngbrs14_long(const char* filename) {
     for (int i = 0; i < n_ngbrs14_long; i++) {
         int ix = atoi(file.buffer[i + 1][0]) - 1;
         int jx = atoi(file.buffer[i + 1][1]) - 1;
-        ctx.LJ_matrix[ix * ctx.n_atoms_solute + jx] = 1;
-        ctx.LJ_matrix[jx * ctx.n_atoms_solute + ix] = 1;
+        LJ_matrix[ix * ctx.n_atoms_solute + jx] = 1;
+        LJ_matrix[jx * ctx.n_atoms_solute + ix] = 1;
 
 
         int mi_x = std::min(ix, jx);
         int mx_x = std::max(ix, jx);
-        ctx.ngbrs_14.push_back({mi_x, mx_x, NONBONDED_14_PP}); // the type may is wrong, just set in here
+        ctx.ngbrs_14_builder.push_back({mi_x, mx_x, NONBONDED_14_PP}); // the type may is wrong, just set in here
 
     }
 
@@ -873,6 +958,7 @@ void init_ngbrs14_long(const char* filename) {
 
 void init_ngbrs23_long(const char* filename) {
     auto& ctx = Context::instance();
+    auto &LJ_matrix = ctx.LJ_matrix->cpu_data_p;
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     if (file.n_lines < 1) {
@@ -885,8 +971,8 @@ void init_ngbrs23_long(const char* filename) {
     for (int i = 0; i < n_ngbrs23_long; i++) {
         int ix = atoi(file.buffer[i + 1][0]) - 1;
         int jx = atoi(file.buffer[i + 1][1]) - 1;
-        ctx.LJ_matrix[ix * ctx.n_atoms_solute + jx] = 3;
-        ctx.LJ_matrix[jx * ctx.n_atoms_solute + ix] = 3;
+        LJ_matrix[ix * ctx.n_atoms_solute + jx] = 3;
+        LJ_matrix[jx * ctx.n_atoms_solute + ix] = 3;
     }
 
     clean_csv(file);
@@ -894,7 +980,7 @@ void init_ngbrs23_long(const char* filename) {
 
 void init_LJ_matrix() {
     auto& ctx = Context::instance();
-    ctx.LJ_matrix.assign(ctx.n_atoms_solute * ctx.n_atoms_solute, 0);
+    ctx.LJ_matrix = std::make_unique<HostDeviceBuffer<int>>(ctx.n_atoms_solute * ctx.n_atoms_solute, true, ctx.run_gpu);
 }
 
 void init_catypes(const char* filename) {
@@ -909,7 +995,8 @@ void init_catypes(const char* filename) {
     }
 
     ctx.n_catypes = atoi(file.buffer[0][0]);
-    ctx.catypes.resize(ctx.n_catypes);
+    ctx.catypes = std::make_unique<HostDeviceBuffer<catype_t>>(ctx.n_catypes, true, ctx.run_gpu);
+    auto &catypes = ctx.catypes->cpu_data_p;
 
     for (int i = 0; i < ctx.n_catypes; i++) {
         catype_t catype;
@@ -925,19 +1012,23 @@ void init_catypes(const char* filename) {
         catype.aii_1_4 = strtod(file.buffer[i + 1][6], &eptr);
         catype.bii_1_4 = strtod(file.buffer[i + 1][7], &eptr);
 
-        ctx.catypes[i] = catype;
+        catypes[i] = catype;
     }
 
     // Preprocess bii parameters for arithmetic rule: convert ε to √ε
     // This matches Fortran md.f90:14747-14752 preprocessing
     if (ctx.topo.vdw_rule == VDW_ARITHMETIC) {
         for (int i = 0; i < ctx.n_catypes; i++) {
-            ctx.catypes[i].bii_normal = sqrt(fabs(ctx.catypes[i].bii_normal));
-            ctx.catypes[i].bii_1_4 = sqrt(fabs(ctx.catypes[i].bii_1_4));
+            catypes[i].bii_normal = sqrt(fabs(catypes[i].bii_normal));
+            catypes[i].bii_1_4 = sqrt(fabs(catypes[i].bii_1_4));
         }
 #ifdef VERBOSE
         printf("Preprocessed catypes bii parameters for arithmetic vdW rule\n");
 #endif
+    }
+
+    if (ctx.run_gpu) {
+        ctx.catypes->upload();
     }
 
     clean_csv(file);
@@ -956,14 +1047,19 @@ void init_atypes(const char* filename) {
 
     ctx.n_atypes = atoi(file.buffer[0][0]);
 
-    ctx.atypes.resize(ctx.n_atypes);
+    ctx.atypes = std::make_unique<HostDeviceBuffer<atype_t>>(ctx.n_atypes, true, ctx.run_gpu);
+    auto &atypes = ctx.atypes->cpu_data_p;
     for (int i = 0; i < ctx.n_atypes; i++) {
         atype_t atype;
 
         atype.a = atoi(file.buffer[i + 1][0]);
         atype.code = atoi(file.buffer[i + 1][1]);
 
-        ctx.atypes[i] = atype;
+        atypes[i] = atype;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.atypes->upload();
     }
 
     clean_csv(file);
@@ -1398,20 +1494,27 @@ void init_qelscales(const char* filename) {
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     if (file.n_lines < 1) {
+        ctx.n_qelscales = 0;
+        ctx.q_elscales = std::make_unique<HostDeviceBuffer<q_elscale_t>>(0, true, ctx.run_gpu);
         clean_csv(file);
         return;
     }
 
     ctx.n_qelscales = atoi(file.buffer[0][0]) / ctx.n_lambdas;
-    ctx.q_elscales.resize(ctx.n_qelscales * ctx.n_lambdas);
+    ctx.q_elscales = std::make_unique<HostDeviceBuffer<q_elscale_t>>(ctx.n_qelscales * ctx.n_lambdas, true, ctx.run_gpu);
+    auto *q_elscales = ctx.q_elscales->cpu_data_p;
 
     for (int i = 0; i < ctx.n_qelscales; i++) {
         for (int j = 0; j < ctx.n_lambdas; j++) {
             char* eptr;
-            ctx.q_elscales[i + j * ctx.n_qelscales].qi = atoi(file.buffer[i + j * ctx.n_qelscales + 1][0]);
-            ctx.q_elscales[i + j * ctx.n_qelscales].qj = atoi(file.buffer[i + j * ctx.n_qelscales + 1][1]);
-            ctx.q_elscales[i + j * ctx.n_qelscales].mu = strtod(file.buffer[i + j * ctx.n_qelscales + 1][2], &eptr);
+            q_elscales[i + j * ctx.n_qelscales].qi = atoi(file.buffer[i + j * ctx.n_qelscales + 1][0]);
+            q_elscales[i + j * ctx.n_qelscales].qj = atoi(file.buffer[i + j * ctx.n_qelscales + 1][1]);
+            q_elscales[i + j * ctx.n_qelscales].mu = strtod(file.buffer[i + j * ctx.n_qelscales + 1][2], &eptr);
         }
+    }
+
+    if (ctx.run_gpu) {
+        ctx.q_elscales->upload();
     }
 
     clean_csv(file);
@@ -1552,11 +1655,12 @@ void init_icoords(const char* filename) {
         return;
     }
 
+    auto &coords = ctx.coords->cpu_data_p;
     for (int i = 0; i < ctx.n_atoms; i++) {
         char* eptr;
-        ctx.coords[i].x = strtod(file.buffer[i + 1][0], &eptr);
-        ctx.coords[i].y = strtod(file.buffer[i + 1][1], &eptr);
-        ctx.coords[i].z = strtod(file.buffer[i + 1][2], &eptr);
+        coords[i].x = strtod(file.buffer[i + 1][0], &eptr);
+        coords[i].y = strtod(file.buffer[i + 1][1], &eptr);
+        coords[i].z = strtod(file.buffer[i + 1][2], &eptr);
     }
 
     clean_csv(file);
@@ -1571,11 +1675,12 @@ void init_ivelocities(const char* filename) {
         return;
     }
 
+    auto &velocities = ctx.velocities->cpu_data_p;
     for (int i = 0; i < ctx.n_atoms; i++) {
         char* eptr;
-        ctx.velocities[i].x = strtod(file.buffer[i + 1][0], &eptr);
-        ctx.velocities[i].y = strtod(file.buffer[i + 1][1], &eptr);
-        ctx.velocities[i].z = strtod(file.buffer[i + 1][2], &eptr);
+        velocities[i].x = strtod(file.buffer[i + 1][0], &eptr);
+        velocities[i].y = strtod(file.buffer[i + 1][1], &eptr);
+        velocities[i].z = strtod(file.buffer[i + 1][2], &eptr);
     }
 
     clean_csv(file);

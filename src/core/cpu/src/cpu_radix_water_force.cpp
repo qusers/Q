@@ -7,6 +7,8 @@
 
 void calc_radix_w_forces() {
     auto& ctx = Context::instance();
+    auto &coords = ctx.coords->cpu_data_p;
+    auto &dvelocities = ctx.dvelocities->cpu_data_p;
 
     double b, db, ener, dv, fexp;
     coord_t dr;
@@ -19,9 +21,9 @@ void calc_radix_w_forces() {
     }
 
     for (int i = ctx.n_atoms_solute; i < ctx.n_atoms; i += 3) {
-        dr.x = ctx.coords[i].x - ctx.topo.solvent_center.x;
-        dr.y = ctx.coords[i].y - ctx.topo.solvent_center.y;
-        dr.z = ctx.coords[i].z - ctx.topo.solvent_center.z;
+        dr.x = coords[i].x - ctx.topo.solvent_center.x;
+        dr.y = coords[i].y - ctx.topo.solvent_center.y;
+        dr.z = coords[i].z - ctx.topo.solvent_center.z;
         b = sqrt(pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2));
         db = b - (ctx.topo.solvent_radius - shift);
 
@@ -38,8 +40,8 @@ void calc_radix_w_forces() {
         }
 
         ctx.E_restraint.Uradx += ener;
-        ctx.dvelocities[i].x += dv * dr.x;
-        ctx.dvelocities[i].y += dv * dr.y;
-        ctx.dvelocities[i].z += dv * dr.z;
+        dvelocities[i].x += dv * dr.x;
+        dvelocities[i].y += dv * dr.y;
+        dvelocities[i].z += dv * dr.z;
     }
 }

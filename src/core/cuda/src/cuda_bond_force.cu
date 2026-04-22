@@ -1,5 +1,5 @@
 #include "cuda/include/cuda_bond_force.cuh"
-#include "cuda/include/cuda_context.cuh"
+#include "context.h"
 #include "cuda_utility.cuh"
 namespace CudaBondForce {
 bool is_initialized = false;
@@ -43,11 +43,11 @@ double calc_bond_forces_host(int start, int end) {
     double energy = 0.0;
     cudaMemcpy(d_energy_sum, &energy, sizeof(double), cudaMemcpyHostToDevice);
 
-    CudaContext& context = CudaContext::instance();
-    bond_t* d_bonds = context.d_bonds;
-    coord_t* d_coords = context.d_coords;
-    cbond_t* d_cbonds = context.d_cbonds;
-    dvel_t* d_dvelocities = context.d_dvelocities;
+    auto& host_ctx = Context::instance();
+    bond_t* d_bonds = host_ctx.bonds->gpu_data_p;
+    coord_t* d_coords = host_ctx.coords->gpu_data_p;
+    cbond_t* d_cbonds = host_ctx.cbonds->gpu_data_p;
+    dvel_t* d_dvelocities = host_ctx.dvelocities->gpu_data_p;
 
     calc_bond_forces_kernel<<<numBlocks, blockSize>>>(start, end, d_bonds, d_coords, d_cbonds, d_dvelocities, d_energy_sum);
     cudaDeviceSynchronize();

@@ -6,13 +6,19 @@
 
 void calc_restrseq_forces() {
     auto& ctx = Context::instance();
+    auto &atypes = ctx.atypes->cpu_data_p;
+    auto &catypes = ctx.catypes->cpu_data_p;
+    auto &coords = ctx.coords->cpu_data_p;
+    auto &dvelocities = ctx.dvelocities->cpu_data_p;
+    auto &restrseqs = ctx.restrseqs->cpu_data_p;
+    auto *heavy = ctx.heavy->cpu_data_p;
 
     double k, mass, totmass;
     coord_t dr;
     double r2, ener;
 
     for (int s = 0; s < ctx.n_restrseqs; s++) {
-        k = ctx.restrseqs[s].k;
+        k = restrseqs[s].k;
 
         dr.x = 0;
         dr.y = 0;
@@ -20,13 +26,13 @@ void calc_restrseq_forces() {
         int n_ctr = 0;
         totmass = 0;
 
-        if (ctx.restrseqs[s].to_center == 1) {
-            for (int i = ctx.restrseqs[s].ai - 1; i < ctx.restrseqs[s].aj - 1; i++) {
-                if (ctx.heavy[i] || ctx.restrseqs[s].ih) {
+        if (restrseqs[s].to_center == 1) {
+            for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
+                if (heavy[i] || restrseqs[s].ih) {
                     n_ctr++;
-                    dr.x += (ctx.coords[i].x - ctx.coords_top[i].x);
-                    dr.y += (ctx.coords[i].y - ctx.coords_top[i].y);
-                    dr.z += (ctx.coords[i].z - ctx.coords_top[i].z);
+                    dr.x += (coords[i].x - ctx.coords_init->cpu_data_p[i].x);
+                    dr.y += (coords[i].y - ctx.coords_init->cpu_data_p[i].y);
+                    dr.z += (coords[i].z - ctx.coords_init->cpu_data_p[i].z);
                 }
             }
 
@@ -38,23 +44,23 @@ void calc_restrseq_forces() {
                 ener = .5 * k * r2;
                 ctx.E_restraint.Upres += ener;
 
-                for (int i = ctx.restrseqs[s].ai - 1; i < ctx.restrseqs[s].aj - 1; i++) {
-                    if (ctx.heavy[i] || ctx.restrseqs[s].ih) {
-                        mass = ctx.catypes[ctx.atypes[i].code - 1].m;
-                        ctx.dvelocities[i].x += (k * dr.x * mass / 12.010);
-                        ctx.dvelocities[i].y += (k * dr.y * mass / 12.010);
-                        ctx.dvelocities[i].z += (k * dr.z * mass / 12.010);
+                for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
+                    if (heavy[i] || restrseqs[s].ih) {
+                        mass = catypes[atypes[i].code - 1].m;
+                        dvelocities[i].x += (k * dr.x * mass / 12.010);
+                        dvelocities[i].y += (k * dr.y * mass / 12.010);
+                        dvelocities[i].z += (k * dr.z * mass / 12.010);
                     }
                 }
             }
-        } else if (ctx.restrseqs[s].to_center == 2) {
-            for (int i = ctx.restrseqs[s].ai - 1; i < ctx.restrseqs[s].aj - 1; i++) {
-                if (ctx.heavy[i] || ctx.restrseqs[s].ih) {
-                    mass = ctx.catypes[ctx.atypes[i].code - 1].m;
+        } else if (restrseqs[s].to_center == 2) {
+            for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
+                if (heavy[i] || restrseqs[s].ih) {
+                    mass = catypes[atypes[i].code - 1].m;
                     totmass += mass;
-                    dr.x += (ctx.coords[i].x - ctx.coords_top[i].x) * mass;
-                    dr.y += (ctx.coords[i].y - ctx.coords_top[i].y) * mass;
-                    dr.z += (ctx.coords[i].z - ctx.coords_top[i].z) * mass;
+                    dr.x += (coords[i].x - ctx.coords_init->cpu_data_p[i].x) * mass;
+                    dr.y += (coords[i].y - ctx.coords_init->cpu_data_p[i].y) * mass;
+                    dr.z += (coords[i].z - ctx.coords_init->cpu_data_p[i].z) * mass;
                 }
             }
 
@@ -66,28 +72,28 @@ void calc_restrseq_forces() {
                 ener = .5 * k * r2;
                 ctx.E_restraint.Upres += ener;
 
-                for (int i = ctx.restrseqs[s].ai - 1; i < ctx.restrseqs[s].aj - 1; i++) {
-                    if (ctx.heavy[i] || ctx.restrseqs[s].ih) {
-                        ctx.dvelocities[i].x += k * dr.x;
-                        ctx.dvelocities[i].y += k * dr.y;
-                        ctx.dvelocities[i].z += k * dr.z;
+                for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
+                    if (heavy[i] || restrseqs[s].ih) {
+                        dvelocities[i].x += k * dr.x;
+                        dvelocities[i].y += k * dr.y;
+                        dvelocities[i].z += k * dr.z;
                     }
                 }
             }
         } else {
-            for (int i = ctx.restrseqs[s].ai - 1; i < ctx.restrseqs[s].aj - 1; i++) {
-                if (ctx.heavy[i] || ctx.restrseqs[s].ih) {
-                    dr.x = ctx.coords[i].x - ctx.coords_top[i].x;
-                    dr.y = ctx.coords[i].y - ctx.coords_top[i].y;
-                    dr.z = ctx.coords[i].z - ctx.coords_top[i].z;
+            for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
+                if (heavy[i] || restrseqs[s].ih) {
+                    dr.x = coords[i].x - ctx.coords_init->cpu_data_p[i].x;
+                    dr.y = coords[i].y - ctx.coords_init->cpu_data_p[i].y;
+                    dr.z = coords[i].z - ctx.coords_init->cpu_data_p[i].z;
 
                     r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
                     ener = .5 * k * r2;
                     ctx.E_restraint.Upres += ener;
 
-                    ctx.dvelocities[i].x += k * dr.x;
-                    ctx.dvelocities[i].y += k * dr.y;
-                    ctx.dvelocities[i].z += k * dr.z;
+                    dvelocities[i].x += k * dr.x;
+                    dvelocities[i].y += k * dr.y;
+                    dvelocities[i].z += k * dr.z;
                 }
             }
         }

@@ -44,8 +44,10 @@ void Handler::run(int num_iterations) {
 
 void Handler::update_energy_totals() {
     auto& host = Context::instance();
+    auto *lambdas = host.lambdas->cpu_data_p;
+    auto *EQ_restraint = host.EQ_restraint->cpu_data_p;
     for (int state = 0; state < host.n_lambdas; state++) {
-        if (host.lambdas[state] == 0) {
+        if (lambdas[state] == 0) {
             host.EQ_bond[state].Uangle = 0;
             host.EQ_bond[state].Ubond = 0;
             host.EQ_bond[state].Utor = 0;
@@ -56,24 +58,24 @@ void Handler::update_energy_totals() {
             host.EQ_nonbond_qp[state].Uvdw = 0;
             host.EQ_nonbond_qw[state].Ucoul = 0;
             host.EQ_nonbond_qw[state].Uvdw = 0;
-            host.EQ_restraint[state].Urestr = 0;
+            EQ_restraint[state].Urestr = 0;
         }
 
         host.EQ_nonbond_qx[state].Ucoul = host.EQ_nonbond_qq[state].Ucoul + host.EQ_nonbond_qp[state].Ucoul + host.EQ_nonbond_qw[state].Ucoul;
         host.EQ_nonbond_qx[state].Uvdw = host.EQ_nonbond_qq[state].Uvdw + host.EQ_nonbond_qp[state].Uvdw + host.EQ_nonbond_qw[state].Uvdw;
 
         host.EQ_total[state].Utot = host.EQ_bond[state].Ubond + host.EQ_bond[state].Uangle + host.EQ_bond[state].Utor + host.EQ_bond[state].Uimp +
-                                    host.EQ_nonbond_qx[state].Ucoul + host.EQ_nonbond_qx[state].Uvdw + host.EQ_restraint[state].Urestr;
+                                    host.EQ_nonbond_qx[state].Ucoul + host.EQ_nonbond_qx[state].Uvdw + EQ_restraint[state].Urestr;
 
-        host.E_bond_q.Ubond += host.EQ_bond[state].Ubond * host.lambdas[state];
-        host.E_bond_q.Uangle += host.EQ_bond[state].Uangle * host.lambdas[state];
-        host.E_bond_q.Utor += host.EQ_bond[state].Utor * host.lambdas[state];
-        host.E_bond_q.Uimp += host.EQ_bond[state].Uimp * host.lambdas[state];
-        host.E_nonbond_qx.Ucoul += host.EQ_nonbond_qx[state].Ucoul * host.lambdas[state];
-        host.E_nonbond_qx.Uvdw += host.EQ_nonbond_qx[state].Uvdw * host.lambdas[state];
+        host.E_bond_q.Ubond += host.EQ_bond[state].Ubond * lambdas[state];
+        host.E_bond_q.Uangle += host.EQ_bond[state].Uangle * lambdas[state];
+        host.E_bond_q.Utor += host.EQ_bond[state].Utor * lambdas[state];
+        host.E_bond_q.Uimp += host.EQ_bond[state].Uimp * lambdas[state];
+        host.E_nonbond_qx.Ucoul += host.EQ_nonbond_qx[state].Ucoul * lambdas[state];
+        host.E_nonbond_qx.Uvdw += host.EQ_nonbond_qx[state].Uvdw * lambdas[state];
 
         // Update protein restraint energies with an average of all states
-        host.E_restraint.Upres += host.EQ_restraint[state].Urestr * host.lambdas[state];
+        host.E_restraint.Upres += EQ_restraint[state].Urestr * lambdas[state];
     }
 
     // Update totals
@@ -94,6 +96,8 @@ void Handler::print_outputs(int iteration) {
 
 void Handler::reset_energies() {
     auto& host = Context::instance();
+    auto &dvelocities = host.dvelocities->cpu_data_p;
+    auto *EQ_restraint = host.EQ_restraint->cpu_data_p;
     host.E_total.Upot = 0;
     host.E_bond_p.Uangle = 0;
     host.E_bond_p.Ubond = 0;
@@ -121,7 +125,8 @@ void Handler::reset_energies() {
     host.E_restraint.Ushell = 0;
     host.E_restraint.Upres = 0;
     host.E_restraint.Urestr = 0;
-    for (auto& dvel : host.dvelocities) {
+    for (int i = 0; i < host.n_atoms; i++) {
+        auto& dvel = dvelocities[i];
         dvel.x = 0;
         dvel.y = 0;
         dvel.z = 0;
@@ -140,6 +145,6 @@ void Handler::reset_energies() {
         host.EQ_nonbond_qx[state].Ucoul = 0;
         host.EQ_nonbond_qx[state].Uvdw = 0;
         host.EQ_total[state].Utot = 0;
-        host.EQ_restraint[state].Urestr = 0;
+        EQ_restraint[state].Urestr = 0;
     }
 }

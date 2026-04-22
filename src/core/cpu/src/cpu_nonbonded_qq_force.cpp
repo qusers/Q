@@ -8,6 +8,12 @@
 
 void calc_nonbonded_qq_forces() {
     auto& ctx = Context::instance();
+    auto *lambdas = ctx.lambdas->cpu_data_p;
+    auto &coords = ctx.coords->cpu_data_p;
+    auto &dvelocities = ctx.dvelocities->cpu_data_p;
+    auto &LJ_matrix = ctx.LJ_matrix->cpu_data_p;
+    auto *excluded = ctx.excluded->cpu_data_p;
+    auto *q_elscales = ctx.q_elscales->cpu_data_p;
     int ai, aj;
     double crg_i, crg_j;
     double elscale, scaling;
@@ -27,27 +33,27 @@ void calc_nonbonded_qq_forces() {
                 crg_i = ctx.unified_ccharge(ai, state).charge;
                 crg_j = ctx.unified_ccharge(aj, state).charge;
 
-                bond23 = ctx.LJ_matrix[ai * ctx.n_atoms_solute + aj] == 3;
-                bond14 = ctx.LJ_matrix[ai * ctx.n_atoms_solute + aj] == 1;
+                bond23 = LJ_matrix[ai * ctx.n_atoms_solute + aj] == 3;
+                bond14 = LJ_matrix[ai * ctx.n_atoms_solute + aj] == 1;
 
                 if (bond23) continue;
-                if (ctx.excluded[ai] || ctx.excluded[aj]) continue;
+                if (excluded[ai] || excluded[aj]) continue;
 
                 scaling = bond14 ? ctx.topo.el14_scale : 1;
 
                 elscale = 1;
                 for (int k = 0; k < ctx.n_qelscales; k++) {
-                    if (ctx.q_elscales[k + ctx.n_qelscales * state].qi == qi + 1 && ctx.q_elscales[k + ctx.n_qelscales * state].qj == qj + 1) {
-                        elscale = ctx.q_elscales[k + ctx.n_qelscales * state].mu;
+                    if (q_elscales[k + ctx.n_qelscales * state].qi == qi + 1 && q_elscales[k + ctx.n_qelscales * state].qj == qj + 1) {
+                        elscale = q_elscales[k + ctx.n_qelscales * state].mu;
                     }
                 }
 
                 const catype_t& qi_type = ctx.unified_catype(ai, state);
                 const catype_t& qj_type = ctx.unified_catype(aj, state);
 
-                da.x = ctx.coords[aj].x - ctx.coords[ai].x;
-                da.y = ctx.coords[aj].y - ctx.coords[ai].y;
-                da.z = ctx.coords[aj].z - ctx.coords[ai].z;
+                da.x = coords[aj].x - coords[ai].x;
+                da.y = coords[aj].y - coords[ai].y;
+                da.z = coords[aj].z - coords[ai].z;
                 r2a = 1 / (pow(da.x, 2) + pow(da.y, 2) + pow(da.z, 2));
                 ra = sqrt(r2a);
                 r6a = r2a * r2a * r2a;
@@ -64,15 +70,15 @@ void calc_nonbonded_qq_forces() {
                 } else {
                     calc_vdw_arithmetic(ai_aii, aj_aii, ai_bii, aj_bii, r6a, &V_a, &V_b);
                 }
-                dva = r2a * (-Vela - 12 * V_a + 6 * V_b) * ctx.lambdas[state];
+                dva = r2a * (-Vela - 12 * V_a + 6 * V_b) * lambdas[state];
 
-                ctx.dvelocities[ai].x -= dva * da.x;
-                ctx.dvelocities[ai].y -= dva * da.y;
-                ctx.dvelocities[ai].z -= dva * da.z;
+                dvelocities[ai].x -= dva * da.x;
+                dvelocities[ai].y -= dva * da.y;
+                dvelocities[ai].z -= dva * da.z;
 
-                ctx.dvelocities[aj].x += dva * da.x;
-                ctx.dvelocities[aj].y += dva * da.y;
-                ctx.dvelocities[aj].z += dva * da.z;
+                dvelocities[aj].x += dva * da.x;
+                dvelocities[aj].y += dva * da.y;
+                dvelocities[aj].z += dva * da.z;
 
                 ctx.EQ_nonbond_qq[state].Ucoul += Vela;
                 ctx.EQ_nonbond_qq[state].Uvdw += (V_a - V_b);

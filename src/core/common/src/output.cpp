@@ -3,6 +3,8 @@
 
 void print_energies() {
     auto& host = Context::instance();
+    auto *lambdas = host.lambdas->cpu_data_p;
+    auto *EQ_restraint = host.EQ_restraint->cpu_data_p;
     printf("[temperature]\n");
     printf("Temp\t%f\n", host.Temp);
     printf("\n");
@@ -34,8 +36,8 @@ void print_energies() {
     printf("[q-energies]\n");
     printf("lambda\tSUM\tUbond\tUangle\tUtor\tUimp\tUcoul\tUvdw\tUrestr\n");
     for (int state = 0; state < host.n_lambdas; state++) {
-        printf("%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\n", host.lambdas[state], host.EQ_total[state].Utot, host.EQ_bond[state].Ubond,
-               host.EQ_bond[state].Uangle, host.EQ_bond[state].Utor, host.EQ_bond[state].Uimp, host.EQ_nonbond_qx[state].Ucoul, host.EQ_nonbond_qx[state].Uvdw, host.EQ_restraint[state].Urestr);
+        printf("%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\n", lambdas[state], host.EQ_total[state].Utot, host.EQ_bond[state].Ubond,
+               host.EQ_bond[state].Uangle, host.EQ_bond[state].Utor, host.EQ_bond[state].Uimp, host.EQ_nonbond_qx[state].Ucoul, host.EQ_nonbond_qx[state].Uvdw, EQ_restraint[state].Urestr);
     }
     printf("\n");
 
@@ -64,6 +66,7 @@ void write_header(const char* filename) {
 // Write header (number of atoms & lambdas) to output file
 void write_energy_header() {
     auto& ctx = Context::instance();
+    auto *lambdas = ctx.lambdas->cpu_data_p;
     FILE* fp;
 
     char path[1024];
@@ -77,7 +80,7 @@ void write_energy_header() {
     fprintf(fp, "%d\n", ctx.n_lambdas);
 
     for (int state = 0; state < ctx.n_lambdas; state++) {
-        fprintf(fp, "%f\n", ctx.lambdas[state]);
+        fprintf(fp, "%f\n", lambdas[state]);
     }
 
     fclose(fp);
@@ -86,6 +89,7 @@ void write_energy_header() {
 // Write step number, coordinates of atoms to coordinate output file
 void write_coords(int iteration) {
     auto& ctx = Context::instance();
+    auto &coords = ctx.coords->cpu_data_p;
     if (iteration % ctx.md.trajectory != 0) return;
     FILE* fp;
     int i;
@@ -97,7 +101,7 @@ void write_coords(int iteration) {
 
     fprintf(fp, "%d\n", iteration / ctx.md.trajectory);
     for (i = 0; i < ctx.n_atoms; i++) {
-        fprintf(fp, "%f;%f;%f\n", ctx.coords[i].x, ctx.coords[i].y, ctx.coords[i].z);
+        fprintf(fp, "%f;%f;%f\n", coords[i].x, coords[i].y, coords[i].z);
     }
 
     fclose(fp);
@@ -106,6 +110,7 @@ void write_coords(int iteration) {
 // Write step number, velocities of atoms to coordinate output file
 void write_velocities(int iteration) {
     auto& ctx = Context::instance();
+    auto &velocities = ctx.velocities->cpu_data_p;
     if (iteration % ctx.md.trajectory != 0) return;
     FILE* fp;
     int i;
@@ -117,7 +122,7 @@ void write_velocities(int iteration) {
 
     fprintf(fp, "%d\n", iteration / ctx.md.trajectory);
     for (i = 0; i < ctx.n_atoms; i++) {
-        fprintf(fp, "%f;%f;%f\n", ctx.velocities[i].x, ctx.velocities[i].y, ctx.velocities[i].z);
+        fprintf(fp, "%f;%f;%f\n", velocities[i].x, velocities[i].y, velocities[i].z);
     }
 
     fclose(fp);
@@ -126,6 +131,8 @@ void write_velocities(int iteration) {
 // Write step number, energies of atoms to coordinate output file
 void write_energies(int iteration) {
     auto& ctx = Context::instance();
+    auto *lambdas = ctx.lambdas->cpu_data_p;
+    auto *EQ_restraint = ctx.EQ_restraint->cpu_data_p;
     if (iteration % ctx.md.energy != 0) return;
     FILE* fp;
 
@@ -167,8 +174,8 @@ void write_energies(int iteration) {
     fprintf(fp, "[q-energies]\n");
     fprintf(fp, "lambda\tSUM\tUbond\tUangle\tUtor\tUimp\tUcoul\tUvdw\tUrestr\n");
     for (int state = 0; state < ctx.n_lambdas; state++) {
-        fprintf(fp, "%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\n", ctx.lambdas[state], ctx.EQ_total[state].Utot, ctx.EQ_bond[state].Ubond,
-                ctx.EQ_bond[state].Uangle, ctx.EQ_bond[state].Utor, ctx.EQ_bond[state].Uimp, ctx.EQ_nonbond_qx[state].Ucoul, ctx.EQ_nonbond_qx[state].Uvdw, ctx.EQ_restraint[state].Urestr);
+        fprintf(fp, "%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\n", lambdas[state], ctx.EQ_total[state].Utot, ctx.EQ_bond[state].Ubond,
+                ctx.EQ_bond[state].Uangle, ctx.EQ_bond[state].Utor, ctx.EQ_bond[state].Uimp, ctx.EQ_nonbond_qx[state].Ucoul, ctx.EQ_nonbond_qx[state].Uvdw, EQ_restraint[state].Urestr);
     }
     fprintf(fp, "\n");
 

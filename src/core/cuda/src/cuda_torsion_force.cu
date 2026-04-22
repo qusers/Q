@@ -1,6 +1,6 @@
-#include "cuda/include/cuda_context.cuh"
 #include "cuda/include/cuda_torsion_force.cuh"
 #include "cuda/include/cuda_utility.cuh"
+#include "context.h"
 
 namespace CudaTorsionForce {
 bool is_initialized = false;
@@ -133,11 +133,11 @@ double calc_torsion_forces_host(int start, int end) {
     double zero = 0.0;
     cudaMemcpy(d_energy_sum, &zero, sizeof(double), cudaMemcpyHostToDevice);
 
-    CudaContext& ctx = CudaContext::instance();
-    coord_t* d_coords = ctx.d_coords;
-    dvel_t* d_dvelocities = ctx.d_dvelocities;
-    torsion_t* d_torsions = ctx.d_torsions;
-    ctorsion_t* d_ctorsions = ctx.d_ctorsions;
+    auto& host_ctx = Context::instance();
+    coord_t* d_coords = host_ctx.coords->gpu_data_p;
+    dvel_t* d_dvelocities = host_ctx.dvelocities->gpu_data_p;
+    torsion_t* d_torsions = host_ctx.torsions->gpu_data_p;
+    ctorsion_t* d_ctorsions = host_ctx.ctorsions->gpu_data_p;
 
     calc_torsion_forces_kernel<<<numBlocks, blockSize>>>(start, end, d_torsions, d_ctorsions, d_coords, d_dvelocities, d_energy_sum);
     cudaDeviceSynchronize();

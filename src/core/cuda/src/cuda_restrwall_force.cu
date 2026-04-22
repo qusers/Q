@@ -1,6 +1,5 @@
 #include <iostream>
 
-#include "cuda/include/cuda_context.cuh"
 #include "cuda/include/cuda_restrwall_force.cuh"
 #include "common/include/context.h"
 
@@ -55,11 +54,10 @@ void calc_restrwall_forces_host() {
     auto& host = Context::instance();
     if (host.n_restrwalls == 0) return;
     using namespace CudaRestrwallForce;
-    CudaContext& ctx = CudaContext::instance();
-    auto d_restrwalls = ctx.d_restrwalls;
-    auto d_coords = ctx.d_coords;
-    auto d_dvelocities = ctx.d_dvelocities;
-    auto d_heavy = ctx.d_heavy;
+    auto d_restrwalls = host.restrwalls->gpu_data_p;
+    auto d_coords = host.coords->gpu_data_p;
+    auto d_dvelocities = host.dvelocities->gpu_data_p;
+    auto d_heavy = host.heavy->gpu_data_p;
     cudaMemset(d_energies, 0, sizeof(double));
 
     int blockSize = 256;

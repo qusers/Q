@@ -7,34 +7,38 @@
 
 void calc_pshell_forces() {
     auto& ctx = Context::instance();
+    auto &coords = ctx.coords->cpu_data_p;
+    auto &dvelocities = ctx.dvelocities->cpu_data_p;
+    auto *excluded = ctx.excluded->cpu_data_p;
+    auto *shell = ctx.shell->cpu_data_p;
 
     coord_t dr;
     double k, r2, ener;
 
     for (int i = 0; i < ctx.n_atoms_solute; i++) {
-        if (ctx.shell[i] || ctx.excluded[i]) {
-            if (ctx.excluded[i]) {
+        if (shell[i] || excluded[i]) {
+            if (excluded[i]) {
                 k = k_fix;
             } else {
                 k = k_pshell;
             }
 
-            dr.x = ctx.coords[i].x - ctx.coords_top[i].x;
-            dr.y = ctx.coords[i].y - ctx.coords_top[i].y;
-            dr.z = ctx.coords[i].z - ctx.coords_top[i].z;
+            dr.x = coords[i].x - ctx.coords_init->cpu_data_p[i].x;
+            dr.y = coords[i].y - ctx.coords_init->cpu_data_p[i].y;
+            dr.z = coords[i].z - ctx.coords_init->cpu_data_p[i].z;
             r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
             ener = 0.5 * k * r2;
 
-            if (ctx.excluded[i]) {
+            if (excluded[i]) {
                 ctx.E_restraint.Ufix += ener;
             }
-            if (ctx.shell[i]) {
+            if (shell[i]) {
                 ctx.E_restraint.Ushell += ener;
             }
 
-            ctx.dvelocities[i].x += k * dr.x;
-            ctx.dvelocities[i].y += k * dr.y;
-            ctx.dvelocities[i].z += k * dr.z;
+            dvelocities[i].x += k * dr.x;
+            dvelocities[i].y += k * dr.y;
+            dvelocities[i].z += k * dr.z;
         }
     }
 }

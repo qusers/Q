@@ -8,6 +8,10 @@
 
 void calc_nonbonded_pp_forces() {
     auto& ctx = Context::instance();
+    auto &coords = ctx.coords->cpu_data_p;
+    auto &dvelocities = ctx.dvelocities->cpu_data_p;
+    auto &LJ_matrix = ctx.LJ_matrix->cpu_data_p;
+    auto *excluded = ctx.excluded->cpu_data_p;
     bool bond14, bond23;
     double scaling;
     coord_t da;
@@ -21,11 +25,11 @@ void calc_nonbonded_pp_forces() {
         for (int pj = pi + 1; pj < ctx.n_patoms; pj++) {
             i = ctx.p_atoms[pi];
             j = ctx.p_atoms[pj];
-            bond23 = ctx.LJ_matrix[i * ctx.n_atoms_solute + j] == 3;
-            bond14 = ctx.LJ_matrix[i * ctx.n_atoms_solute + j] == 1;
+            bond23 = LJ_matrix[i * ctx.n_atoms_solute + j] == 3;
+            bond14 = LJ_matrix[i * ctx.n_atoms_solute + j] == 1;
 
             if (bond23) continue;
-            if (ctx.excluded[i] || ctx.excluded[j]) continue;
+            if (excluded[i] || excluded[j]) continue;
 
             scaling = bond14 ? ctx.topo.el14_scale : 1;
 
@@ -35,9 +39,9 @@ void calc_nonbonded_pp_forces() {
             const catype_t& ai_type = ctx.unified_catype(i, 0);
             const catype_t& aj_type = ctx.unified_catype(j, 0);
 
-            da.x = ctx.coords[j].x - ctx.coords[i].x;
-            da.y = ctx.coords[j].y - ctx.coords[i].y;
-            da.z = ctx.coords[j].z - ctx.coords[i].z;
+            da.x = coords[j].x - coords[i].x;
+            da.y = coords[j].y - coords[i].y;
+            da.z = coords[j].z - coords[i].z;
             r2a = 1 / (std::pow(da.x, 2) + std::pow(da.y, 2) + std::pow(da.z, 2));
             ra = sqrt(r2a);
             r6a = r2a * r2a * r2a;
@@ -56,13 +60,13 @@ void calc_nonbonded_pp_forces() {
             }
             dva = r2a * (-Vela - 12 * V_a + 6 * V_b);
 
-            ctx.dvelocities[i].x -= dva * da.x;
-            ctx.dvelocities[i].y -= dva * da.y;
-            ctx.dvelocities[i].z -= dva * da.z;
+            dvelocities[i].x -= dva * da.x;
+            dvelocities[i].y -= dva * da.y;
+            dvelocities[i].z -= dva * da.z;
 
-            ctx.dvelocities[j].x += dva * da.x;
-            ctx.dvelocities[j].y += dva * da.y;
-            ctx.dvelocities[j].z += dva * da.z;
+            dvelocities[j].x += dva * da.x;
+            dvelocities[j].y += dva * da.y;
+            dvelocities[j].z += dva * da.z;
 
             ctx.E_nonbond_pp.Ucoul += Vela;
             ctx.E_nonbond_pp.Uvdw += (V_a - V_b);

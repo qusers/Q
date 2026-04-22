@@ -9,23 +9,26 @@
 
 int calc_shake_constraints(coord_t* coords, coord_t* xcoords) {
     auto& ctx = Context::instance();
+    auto *winv = ctx.winv->cpu_data_p;
+    auto *mol_n_shakes = ctx.mol_n_shakes->cpu_data_p;
+    auto *shake_bonds = ctx.shake_bonds->cpu_data_p;
     int total_iterations = 0;
     int shake = 0;
 
     for (int mol = 0; mol < ctx.n_molecules; mol++) {
-        if (ctx.mol_n_shakes[mol] == 0) {
+        if (mol_n_shakes[mol] == 0) {
             continue;
         }
         int n_iterations = 0;
 
         bool converged = false;
         do {
-            for (int i = 0; i < ctx.mol_n_shakes[mol]; i++) {
-                ctx.shake_bonds[shake + i].ready = false;
+            for (int i = 0; i < mol_n_shakes[mol]; i++) {
+                shake_bonds[shake + i].ready = false;
             }
 
-            for (int i = 0; i < ctx.mol_n_shakes[mol]; i++) {
-                shake_bond_t& shake_bond = ctx.shake_bonds[shake + i];
+            for (int i = 0; i < mol_n_shakes[mol]; i++) {
+                shake_bond_t& shake_bond = shake_bonds[shake + i];
                 if (!shake_bond.ready) {
                     const int ai = shake_bond.ai - 1;
                     const int aj = shake_bond.aj - 1;
@@ -45,22 +48,22 @@ int calc_shake_constraints(coord_t* coords, coord_t* xcoords) {
                     xxij.y = xcoords[ai].y - xcoords[aj].y;
                     xxij.z = xcoords[ai].z - xcoords[aj].z;
                     scp = xij.x * xxij.x + xij.y * xxij.y + xij.z * xxij.z;
-                    corr = diff / (2.0 * scp * (ctx.winv[ai] + ctx.winv[aj]));
+                    corr = diff / (2.0 * scp * (winv[ai] + winv[aj]));
 
-                    coords[ai].x += xxij.x * corr * ctx.winv[ai];
-                    coords[ai].y += xxij.y * corr * ctx.winv[ai];
-                    coords[ai].z += xxij.z * corr * ctx.winv[ai];
-                    coords[aj].x -= xxij.x * corr * ctx.winv[aj];
-                    coords[aj].y -= xxij.y * corr * ctx.winv[aj];
-                    coords[aj].z -= xxij.z * corr * ctx.winv[aj];
+                    coords[ai].x += xxij.x * corr * winv[ai];
+                    coords[ai].y += xxij.y * corr * winv[ai];
+                    coords[ai].z += xxij.z * corr * winv[ai];
+                    coords[aj].x -= xxij.x * corr * winv[aj];
+                    coords[aj].y -= xxij.y * corr * winv[aj];
+                    coords[aj].z -= xxij.z * corr * winv[aj];
                 }
             }
 
             n_iterations++;
 
             converged = true;
-            for (int i = 0; i < ctx.mol_n_shakes[mol]; i++) {
-                if (!ctx.shake_bonds[shake + i].ready) {
+            for (int i = 0; i < mol_n_shakes[mol]; i++) {
+                if (!shake_bonds[shake + i].ready) {
                     converged = false;
                     break;
                 }
@@ -68,9 +71,9 @@ int calc_shake_constraints(coord_t* coords, coord_t* xcoords) {
         } while (n_iterations < shake_max_iter && !converged);
 
         if (!converged) {
-            for (int i = 0; i < ctx.mol_n_shakes[mol]; i++) {
-                const int ai = ctx.shake_bonds[shake + i].ai - 1;
-                const int aj = ctx.shake_bonds[shake + i].aj - 1;
+            for (int i = 0; i < mol_n_shakes[mol]; i++) {
+                const int ai = shake_bonds[shake + i].ai - 1;
+                const int aj = shake_bonds[shake + i].aj - 1;
                 coord_t xxij;
                 double xxij2;
 
@@ -79,12 +82,12 @@ int calc_shake_constraints(coord_t* coords, coord_t* xcoords) {
                 xxij.z = xcoords[ai].z - xcoords[aj].z;
                 xxij2 = std::pow(xxij.x, 2) + std::pow(xxij.y, 2) + std::pow(xxij.z, 2);
                 std::printf(">>> Shake failed, i = %d,j = %d, d = %f, d0 = %f", ai, aj, std::sqrt(xxij2),
-                            ctx.shake_bonds[shake + i].dist2);
+                            shake_bonds[shake + i].dist2);
             }
             std::exit(EXIT_FAILURE);
         }
 
-        shake += ctx.mol_n_shakes[mol];
+        shake += mol_n_shakes[mol];
         total_iterations += n_iterations;
     }
 
@@ -94,37 +97,43 @@ int calc_shake_constraints(coord_t* coords, coord_t* xcoords) {
 
 void initial_shaking() {
     auto& ctx = Context::instance();
+    auto &coords = ctx.coords->cpu_data_p;
+    auto &velocities = ctx.velocities->cpu_data_p;
+    auto *xcoords = ctx.xcoords->cpu_data_p;
 
     for (int i = 0; i < ctx.n_atoms; i++) {
-        ctx.xcoords[i].x = ctx.coords[i].x;
-        ctx.xcoords[i].y = ctx.coords[i].y;
-        ctx.xcoords[i].z = ctx.coords[i].z;
+        xcoords[i].x = coords[i].x;
+        xcoords[i].y = coords[i].y;
+        xcoords[i].z = coords[i].z;
     }
-    calc_shake_constraints(ctx.coords.data(), ctx.xcoords.data());
+    calc_shake_constraints(coords, xcoords);
     for (int i = 0; i < ctx.n_atoms; i++) {
-        ctx.xcoords[i].x = ctx.coords[i].x - ctx.dt * ctx.velocities[i].x;
-        ctx.xcoords[i].y = ctx.coords[i].y - ctx.dt * ctx.velocities[i].y;
-        ctx.xcoords[i].z = ctx.coords[i].z - ctx.dt * ctx.velocities[i].z;
+        xcoords[i].x = coords[i].x - ctx.dt * velocities[i].x;
+        xcoords[i].y = coords[i].y - ctx.dt * velocities[i].y;
+        xcoords[i].z = coords[i].z - ctx.dt * velocities[i].z;
     }
-    calc_shake_constraints(ctx.xcoords.data(), ctx.coords.data());
+    calc_shake_constraints(xcoords, coords);
     for (int i = 0; i < ctx.n_atoms; i++) {
-        ctx.velocities[i].x = (ctx.coords[i].x - ctx.xcoords[i].x) / ctx.dt;
-        ctx.velocities[i].y = (ctx.coords[i].y - ctx.xcoords[i].y) / ctx.dt;
-        ctx.velocities[i].z = (ctx.coords[i].z - ctx.xcoords[i].z) / ctx.dt;
+        velocities[i].x = (coords[i].x - xcoords[i].x) / ctx.dt;
+        velocities[i].y = (coords[i].y - xcoords[i].y) / ctx.dt;
+        velocities[i].z = (coords[i].z - xcoords[i].z) / ctx.dt;
     }
 }
 
 void stop_cm_translation() {
     auto& ctx = Context::instance();
+    auto &atypes = ctx.atypes->cpu_data_p;
+    auto &catypes = ctx.catypes->cpu_data_p;
+    auto &velocities = ctx.velocities->cpu_data_p;
     double total_mass = 0;
     coord_t vcm = {};
 
     for (int ai = 0; ai < ctx.n_atoms; ai++) {
-        const double rmass = ctx.catypes[ctx.atypes[ai].code - 1].m;
+        const double rmass = catypes[atypes[ai].code - 1].m;
         total_mass += rmass;
-        vcm.x += ctx.velocities[ai].x * rmass;
-        vcm.y += ctx.velocities[ai].y;
-        vcm.z += ctx.velocities[ai].z;
+        vcm.x += velocities[ai].x * rmass;
+        vcm.y += velocities[ai].y;
+        vcm.z += velocities[ai].z;
     }
 
     vcm.x /= total_mass;
@@ -132,8 +141,8 @@ void stop_cm_translation() {
     vcm.z /= total_mass;
 
     for (int ai = 0; ai < ctx.n_atoms; ai++) {
-        ctx.velocities[ai].x -= vcm.x;
-        ctx.velocities[ai].y -= vcm.y;
-        ctx.velocities[ai].z -= vcm.z;
+        velocities[ai].x -= vcm.x;
+        velocities[ai].y -= vcm.y;
+        velocities[ai].z -= vcm.z;
     }
 }

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "handler.h"
-#include "cuda_context.cuh"
 
 class CudaHandler : public Handler {
    public:
@@ -19,7 +18,6 @@ class CudaHandler : public Handler {
 
    protected:
     bool initialized_ = false;
-    CudaContext& ctx_ = CudaContext::instance();
 
     void calc_internal_forces(int iteration) override;
     void calc_nonbonded_forces() override;

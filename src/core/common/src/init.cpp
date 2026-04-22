@@ -17,36 +17,38 @@
 
 static void finalize_ngbrs14_host() {
     auto& ctx = Context::instance();
+    auto &LJ_matrix = ctx.LJ_matrix->cpu_data_p;
+    auto &ngbrs_14 = ctx.ngbrs_14_builder;
 
-    for (auto& pair : ctx.ngbrs_14) {
+    for (auto& pair : ngbrs_14) {
         if (pair.x > pair.y) {
             std::swap(pair.x, pair.y);
         }
     }
 
-    ctx.ngbrs_14.erase(
-        std::remove_if(ctx.ngbrs_14.begin(), ctx.ngbrs_14.end(), [&ctx](const int3& pair) {
+    ngbrs_14.erase(
+        std::remove_if(ngbrs_14.begin(), ngbrs_14.end(), [&ctx, &LJ_matrix](const int3& pair) {
             if (pair.x < 0 || pair.y < 0 || pair.x >= ctx.n_atoms_solute || pair.y >= ctx.n_atoms_solute) {
                 return true;
             }
             if (pair.x == pair.y) {
                 return true;
             }
-            return ctx.LJ_matrix[pair.x * ctx.n_atoms_solute + pair.y] != 1;
+            return LJ_matrix[pair.x * ctx.n_atoms_solute + pair.y] != 1;
         }),
-        ctx.ngbrs_14.end());
+        ngbrs_14.end());
 
-    std::sort(ctx.ngbrs_14.begin(), ctx.ngbrs_14.end(), [](const int3& lhs, const int3& rhs) {
+    std::sort(ngbrs_14.begin(), ngbrs_14.end(), [](const int3& lhs, const int3& rhs) {
         if (lhs.x != rhs.x) return lhs.x < rhs.x;
         return lhs.y < rhs.y;
     });
-    ctx.ngbrs_14.erase(
-        std::unique(ctx.ngbrs_14.begin(), ctx.ngbrs_14.end(), [](const int3& lhs, const int3& rhs) {
+    ngbrs_14.erase(
+        std::unique(ngbrs_14.begin(), ngbrs_14.end(), [](const int3& lhs, const int3& rhs) {
             return lhs.x == rhs.x && lhs.y == rhs.y;
         }),
-        ctx.ngbrs_14.end());
+        ngbrs_14.end());
 
-    for (auto& pair : ctx.ngbrs_14) {
+    for (auto& pair : ngbrs_14) {
         const bool ai_is_q = ctx.atom_to_qi[pair.x] != -1;
         const bool aj_is_q = ctx.atom_to_qi[pair.y] != -1;
         if (ai_is_q && aj_is_q) {
@@ -57,7 +59,12 @@ static void finalize_ngbrs14_host() {
             pair.z = NONBONDED_14_PP;
         }
     }
-    ctx.n_ngbrs14 = static_cast<int>(ctx.ngbrs_14.size());
+    ctx.ngbrs_14 = std::make_unique<HostDeviceBuffer<int3>>(ngbrs_14.size(), true, ctx.run_gpu);
+    if (!ngbrs_14.empty()) {
+        std::copy(ngbrs_14.begin(), ngbrs_14.end(), ctx.ngbrs_14->cpu_data_p);
+    }
+    ctx.n_ngbrs14 = static_cast<int>(ctx.ngbrs_14->length);
+    ngbrs_14.clear();
 }
 
 // Remove bonds, angles, torsions and impropers which are excluded or changed in the FEP file
@@ -69,14 +76,19 @@ void exclude_qatom_definitions() {
 
     excluded = 0;
     int solute_excluded = 0;
+
+    auto &bonds = ctx.bonds->cpu_data_p;
+    auto &angles = ctx.angles->cpu_data_p;
+    auto &torsions = ctx.torsions->cpu_data_p;
+
     if (ctx.n_qangles > 0) {
         for (int i = 0; i < ctx.n_angles; i++) {
-            if (ctx.angles[i].ai == ctx.q_angles[qai].ai && ctx.angles[i].aj == ctx.q_angles[qai].aj && ctx.angles[i].ak == ctx.q_angles[qai].ak) {
+            if (angles[i].ai == ctx.q_angles[qai].ai && angles[i].aj == ctx.q_angles[qai].aj && angles[i].ak == ctx.q_angles[qai].ak) {
                 qai++;
                 excluded++;
                 if (i < ctx.n_angles_solute) solute_excluded++;
             } else {
-                ctx.angles[ai] = ctx.angles[i];
+                angles[ai] = angles[i];
                 ai++;
             }
         }
@@ -88,12 +100,12 @@ void exclude_qatom_definitions() {
     solute_excluded = 0;
     if (ctx.n_qbonds > 0) {
         for (int i = 0; i < ctx.n_bonds; i++) {
-            if (ctx.bonds[i].ai == ctx.q_bonds[qbi].ai && ctx.bonds[i].aj == ctx.q_bonds[qbi].aj) {
+            if (bonds[i].ai == ctx.q_bonds[qbi].ai && bonds[i].aj == ctx.q_bonds[qbi].aj) {
                 qbi++;
                 excluded++;
                 if (i < ctx.n_bonds_solute) solute_excluded++;
             } else {
-                ctx.bonds[bi] = ctx.bonds[i];
+                bonds[bi] = bonds[i];
                 bi++;
             }
         }
@@ -121,12 +133,12 @@ void exclude_qatom_definitions() {
     solute_excluded = 0;
     if (ctx.n_qtorsions > 0) {
         for (int i = 0; i < ctx.n_torsions; i++) {
-            if (ctx.torsions[i].ai == ctx.q_torsions[qti].ai && ctx.torsions[i].aj == ctx.q_torsions[qti].aj && ctx.torsions[i].ak == ctx.q_torsions[qti].ak && ctx.torsions[i].al == ctx.q_torsions[qti].al) {
+            if (torsions[i].ai == ctx.q_torsions[qti].ai && torsions[i].aj == ctx.q_torsions[qti].aj && torsions[i].ak == ctx.q_torsions[qti].ak && torsions[i].al == ctx.q_torsions[qti].al) {
                 qti++;
                 excluded++;
                 if (i < ctx.n_torsions_solute) solute_excluded++;
             } else {
-                ctx.torsions[ti] = ctx.torsions[i];
+                torsions[ti] = torsions[i];
                 ti++;
             }
         }
@@ -139,8 +151,11 @@ void exclude_qatom_definitions() {
 
 void exclude_all_atoms_excluded_definitions() {
     auto& ctx = Context::instance();
+    auto *excluded = ctx.excluded->cpu_data_p;
     int n_excl;
     int ai = 0, bi = 0, ii = 0, ti = 0;
+    auto &impropers = ctx.impropers->cpu_data_p;
+    auto &torsions = ctx.torsions->cpu_data_p;
 
     // n_excl = 0;
     // for (int i = 0; i < n_angles; i++) {
@@ -173,10 +188,10 @@ void exclude_all_atoms_excluded_definitions() {
 
     n_excl = 0;
     for (int i = 0; i < ctx.n_impropers; i++) {
-        if (ctx.excluded[ctx.impropers[i].ai - 1] && ctx.excluded[ctx.impropers[i].aj - 1] && ctx.excluded[ctx.impropers[i].ak - 1] && ctx.excluded[ctx.impropers[i].al - 1]) {
+        if (excluded[impropers[i].ai - 1] && excluded[impropers[i].aj - 1] && excluded[impropers[i].ak - 1] && excluded[impropers[i].al - 1]) {
             n_excl++;
         } else {
-            ctx.impropers[ii] = ctx.impropers[i];
+            impropers[ii] = impropers[i];
             ii++;
         }
     }
@@ -185,10 +200,10 @@ void exclude_all_atoms_excluded_definitions() {
 
     n_excl = 0;
     for (int i = 0; i < ctx.n_torsions; i++) {
-        if (ctx.excluded[ctx.torsions[i].ai - 1] && ctx.excluded[ctx.torsions[i].aj - 1] && ctx.excluded[ctx.torsions[i].ak - 1] && ctx.excluded[ctx.torsions[i].al - 1]) {
+        if (excluded[torsions[i].ai - 1] && excluded[torsions[i].aj - 1] && excluded[torsions[i].ak - 1] && excluded[torsions[i].al - 1]) {
             n_excl++;
         } else {
-            ctx.torsions[ti] = ctx.torsions[i];
+            torsions[ti] = torsions[i];
             ti++;
         }
     }
@@ -204,17 +219,19 @@ void exclude_shaken_definitions() {
     int si = 0;
     int ang_i = 0;
     int ai, aj;
+    auto &shake_bonds = ctx.shake_bonds->cpu_data_p;
 
     excluded = 0;
     solute_excluded = 0;
+    auto &bonds = ctx.bonds->cpu_data_p;
     if (ctx.n_shake_constraints > 0) {
         for (int i = 0; i < ctx.n_bonds; i++) {
-            if (ctx.bonds[i].ai == ctx.shake_bonds[si].ai && ctx.bonds[i].aj == ctx.shake_bonds[si].aj) {
+            if (bonds[i].ai == shake_bonds[si].ai && bonds[i].aj == shake_bonds[si].aj) {
                 si++;
                 excluded++;
                 if (i < ctx.n_bonds_solute) solute_excluded++;
             } else {
-                ctx.bonds[bi] = ctx.bonds[i];
+                bonds[bi] = bonds[i];
                 bi++;
             }
         }
@@ -224,25 +241,26 @@ void exclude_shaken_definitions() {
 
     excluded = 0;
     solute_excluded = 0;
+    auto &angles = ctx.angles->cpu_data_p;
     if (ctx.n_shake_constraints > 0) {
         // Mark angles whose terminal atoms (i and k) match a shaken bond
         for (int i = 0; i < ctx.n_shake_constraints; i++) {
-            ai = ctx.shake_bonds[i].ai;
-            aj = ctx.shake_bonds[i].aj;
+            ai = shake_bonds[i].ai;
+            aj = shake_bonds[i].aj;
             for (int j = 0; j < ctx.n_angles; j++) {
-                if ((ctx.angles[j].ai == ai && ctx.angles[j].ak == aj) || (ctx.angles[j].ai == aj && ctx.angles[j].ak == ai)) {
-                    ctx.angles[j].code = 0;
+                if ((angles[j].ai == ai && angles[j].ak == aj) || (angles[j].ai == aj && angles[j].ak == ai)) {
+                    angles[j].code = 0;
                     break;
                 }
             }
         }
 
         for (int i = 0; i < ctx.n_angles; i++) {
-            if (ctx.angles[i].code == 0) {
+            if (angles[i].code == 0) {
                 excluded++;
                 if (i < ctx.n_angles_solute) solute_excluded++;
             } else {
-                ctx.angles[ang_i] = ctx.angles[i];
+                angles[ang_i] = angles[i];
                 ang_i++;
             }
         }
@@ -253,36 +271,50 @@ void exclude_shaken_definitions() {
 
 void init_velocities() {
     auto& ctx = Context::instance();
-    ctx.velocities.resize(ctx.n_atoms);
+    auto &atypes = ctx.atypes->cpu_data_p;
+    auto &catypes = ctx.catypes->cpu_data_p;
+    ctx.velocities = std::make_unique<HostDeviceBuffer<vel_t>>(ctx.n_atoms, true, ctx.run_gpu);
+    auto &velocities = ctx.velocities->cpu_data_p;
 
     // If not previous value set, use a Maxwell distribution to fill velocities
     double kT = Boltz * ctx.md.initial_temperature;
     double sd, mass;
     for (int i = 0; i < ctx.n_atoms; i++) {
-        mass = ctx.catypes[ctx.atypes[i].code - 1].m;
+        mass = catypes[atypes[i].code - 1].m;
         sd = sqrt(kT / mass);
 
-        ctx.velocities[i].x = gauss(0, sd);
-        ctx.velocities[i].y = gauss(0, sd);
-        ctx.velocities[i].z = gauss(0, sd);
+        velocities[i].x = gauss(0, sd);
+        velocities[i].y = gauss(0, sd);
+        velocities[i].z = gauss(0, sd);
+    }
+
+    if (ctx.run_gpu) {
+        ctx.velocities->upload();
     }
 }
 
 void init_dvelocities() {
     auto& ctx = Context::instance();
-    ctx.dvelocities.assign(ctx.n_atoms, {});
+    ctx.dvelocities = std::make_unique<HostDeviceBuffer<dvel_t>>(ctx.n_atoms, true, ctx.run_gpu);
 }
 
 void init_xcoords() {
     auto& ctx = Context::instance();
-    ctx.xcoords.resize(ctx.n_atoms);
+    ctx.xcoords = std::make_unique<HostDeviceBuffer<coord_t>>(ctx.n_atoms, true, ctx.run_gpu);
 }
 
 void init_inv_mass() {
     auto& ctx = Context::instance();
-    ctx.winv.resize(ctx.n_atoms);
+    auto &atypes = ctx.atypes->cpu_data_p;
+    auto &catypes = ctx.catypes->cpu_data_p;
+    ctx.winv = std::make_unique<HostDeviceBuffer<double>>(ctx.n_atoms, true, ctx.run_gpu);
+    auto *winv = ctx.winv->cpu_data_p;
     for (int ai = 0; ai < ctx.n_atoms; ai++) {
-        ctx.winv[ai] = 1 / ctx.catypes[ctx.atypes[ai].code - 1].m;
+        winv[ai] = 1 / catypes[atypes[ai].code - 1].m;
+    }
+
+    if (ctx.run_gpu) {
+        ctx.winv->upload();
     }
 }
 
@@ -304,10 +336,14 @@ void init_wshells() {
     auto& ctx = Context::instance();
     int n_inshell;
     double drs, router, ri, dr, Vshell, rshell;
+    auto &bonds = ctx.bonds->cpu_data_p;
+    auto &cbonds = ctx.cbonds->cpu_data_p;
+    auto &angles = ctx.angles->cpu_data_p;
+    auto &cangles = ctx.cangles->cpu_data_p;
     if (ctx.mu_w == 0) {
         // Get water properties from first water molecule
-        cbond_t cbondw = ctx.cbonds[ctx.bonds[ctx.n_atoms_solute].code - 1];
-        cangle_t canglew = ctx.cangles[ctx.angles[ctx.n_atoms_solute].code - 1];
+        cbond_t cbondw = cbonds[bonds[ctx.n_atoms_solute].code - 1];
+        cangle_t canglew = cangles[angles[ctx.n_atoms_solute].code - 1];
 
         ctx.crg_ow = ctx.unified_ccharge(ctx.n_atoms_solute, 0).charge;
 
@@ -317,7 +353,8 @@ void init_wshells() {
     drs = wpolr_layer / drouter;
 
     ctx.n_shells = (int)floor(-0.5 + sqrt(2 * drs + 0.25));
-    ctx.wshells.resize(ctx.n_shells);
+    ctx.wshells = std::make_unique<HostDeviceBuffer<shell_t>>(ctx.n_shells, true, ctx.run_gpu);
+    auto *wshells = ctx.wshells->cpu_data_p;
 
     printf("n_shells = %d\n", ctx.n_shells);
 
@@ -325,12 +362,12 @@ void init_wshells() {
     ctx.n_max_inshell = 0;
 
     for (int i = 0; i < ctx.n_shells; i++) {
-        ctx.wshells[i].avtheta = 0;
-        ctx.wshells[i].avn_inshell = 0;
-        ctx.wshells[i].router = router;
+        wshells[i].avtheta = 0;
+        wshells[i].avn_inshell = 0;
+        wshells[i].router = router;
         dr = drouter * (i + 1);
         ri = router - dr;
-        ctx.wshells[i].dr = dr;
+        wshells[i].dr = dr;
         Vshell = pow(router, 3) - pow(ri, 3);
         n_inshell = (int)floor(4 * M_PI / 3 * Vshell * rho_water);
         if (n_inshell > ctx.n_max_inshell) {
@@ -339,13 +376,13 @@ void init_wshells() {
         rshell = pow(0.5 * (pow(router, 3) + pow(ri, 3)), 1.0 / 3.0);
 
         // --- Note below: 0.98750 = (1-1/epsilon) for water
-        ctx.wshells[i].cstb = ctx.crgQtot * 0.98750 / (rho_water * ctx.mu_w * 4 * M_PI * pow(rshell, 2));
+        wshells[i].cstb = ctx.crgQtot * 0.98750 / (rho_water * ctx.mu_w * 4 * M_PI * pow(rshell, 2));
 
         router -= dr;
     }
 
     // rc > wshells[n_shells-1].router - wshells[n_shells-1].dr
-    printf("shell 0: (%f, %f). shell 1: (%f, %f). shell 2: (%f, %f).\n", ctx.wshells[0].router, ctx.wshells[0].router - ctx.wshells[0].dr, ctx.wshells[1].router, ctx.wshells[1].router - ctx.wshells[1].dr, ctx.wshells[2].router, ctx.wshells[2].router - ctx.wshells[2].dr);
+    printf("shell 0: (%f, %f). shell 1: (%f, %f). shell 2: (%f, %f).\n", wshells[0].router, wshells[0].router - wshells[0].dr, wshells[1].router, wshells[1].router - wshells[1].dr, wshells[2].router, wshells[2].router - wshells[2].dr);
 
     ctx.n_max_inshell = ctx.n_waters;  // Make largest a little bigger just in case
 
@@ -356,40 +393,55 @@ void init_wshells() {
 
     ctx.list_sh.assign(ctx.n_max_inshell, std::vector<int>(ctx.n_shells, 0));
     ctx.nsort.assign(ctx.n_max_inshell, std::vector<int>(ctx.n_shells, 0));
+
+    if (ctx.run_gpu) {
+        ctx.wshells->upload();
+    }
 }
 
 void init_pshells() {
     auto& ctx = Context::instance();
+    auto &atypes = ctx.atypes->cpu_data_p;
+    auto &catypes = ctx.catypes->cpu_data_p;
+    auto &coords_init = ctx.coords_init->cpu_data_p;
+    auto *excluded = ctx.excluded->cpu_data_p;
     double mass, r2, rin2;
 
-    ctx.heavy = std::make_unique<bool[]>(ctx.n_atoms);
-    ctx.shell = std::make_unique<bool[]>(ctx.n_atoms);
+    ctx.heavy = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
+    auto *heavy = ctx.heavy->cpu_data_p;
+    ctx.shell = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
+    auto *shell = ctx.shell->cpu_data_p;
     for (int i = 0; i < ctx.n_atoms; ++i) {
-        ctx.heavy[i] = false;
-        ctx.shell[i] = false;
+        heavy[i] = false;
+        shell[i] = false;
     }
     rin2 = pow(shell_default * ctx.topo.exclusion_radius, 2);
 
     int n_heavy = 0, n_inshell = 0;
 
     for (int i = 0; i < ctx.n_atoms; i++) {
-        mass = ctx.catypes[ctx.atypes[i].code - 1].m;
+        mass = catypes[atypes[i].code - 1].m;
         if (mass < 4.0) {
-            ctx.heavy[i] = false;
+            heavy[i] = false;
         } else {
-            ctx.heavy[i] = true;
+            heavy[i] = true;
             n_heavy++;
         }
 
-        if (ctx.heavy[i] && !ctx.excluded[i] && i < ctx.n_atoms_solute) {
-            r2 = pow(ctx.coords_top[i].x - ctx.topo.solute_center.x, 2) + pow(ctx.coords_top[i].y - ctx.topo.solute_center.y, 2) + pow(ctx.coords_top[i].z - ctx.topo.solute_center.z, 2);
+        if (heavy[i] && !excluded[i] && i < ctx.n_atoms_solute) {
+            r2 = pow(coords_init[i].x - ctx.topo.solute_center.x, 2) + pow(coords_init[i].y - ctx.topo.solute_center.y, 2) + pow(coords_init[i].z - ctx.topo.solute_center.z, 2);
             if (r2 > rin2) {
-                ctx.shell[i] = true;
+                shell[i] = true;
                 n_inshell++;
             } else {
-                ctx.shell[i] = false;
+                shell[i] = false;
             }
         }
+    }
+
+    if (ctx.run_gpu) {
+        ctx.heavy->upload();
+        ctx.shell->upload();
     }
 
     printf("n_heavy = %d, n_inshell = %d\n", n_heavy, n_inshell);
@@ -398,13 +450,16 @@ void init_pshells() {
 // Marks heavy atoms for the shell/excluded arrays.
 // Shared between switch-atom and centroid shell init paths.
 static int mark_heavy_atoms(Context& ctx) {
+    auto &atypes = ctx.atypes->cpu_data_p;
+    auto &catypes = ctx.catypes->cpu_data_p;
+    auto *heavy = ctx.heavy->cpu_data_p;
     int n_heavy = 0;
     for (int i = 0; i < ctx.n_atoms; i++) {
-        double mass = ctx.catypes[ctx.atypes[i].code - 1].m;
+        double mass = catypes[atypes[i].code - 1].m;
         if (mass < 4.0) {
-            ctx.heavy[i] = false;
+            heavy[i] = false;
         } else {
-            ctx.heavy[i] = true;
+            heavy[i] = true;
             n_heavy++;
         }
     }
@@ -415,13 +470,18 @@ static int mark_heavy_atoms(Context& ctx) {
 // Used when iuse_switch_atom == 1.
 void init_pshells_with_switch_atoms() {
     auto& ctx = Context::instance();
+    auto &coords_init = ctx.coords_init->cpu_data_p;
+    auto *excluded = ctx.excluded->cpu_data_p;
+    bool *heavy = nullptr;
     double r2, rin2;
 
-    ctx.heavy = std::make_unique<bool[]>(ctx.n_atoms);
-    ctx.shell = std::make_unique<bool[]>(ctx.n_atoms);
+    ctx.heavy = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
+    heavy = ctx.heavy->cpu_data_p;
+    ctx.shell = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
+    auto *shell = ctx.shell->cpu_data_p;
     for (int i = 0; i < ctx.n_atoms; ++i) {
-        ctx.heavy[i] = false;
-        ctx.shell[i] = false;
+        heavy[i] = false;
+        shell[i] = false;
     }
     rin2 = pow(ctx.md.shell_radius, 2);
 
@@ -431,16 +491,21 @@ void init_pshells_with_switch_atoms() {
     for (int grp = 0; grp < ctx.n_cgrps_solute; grp++) {
         cgrp_t cgrp = ctx.charge_groups[grp];
         int i = cgrp.iswitch - 1;
-        if (ctx.heavy[i] && !ctx.excluded[i] && i < ctx.n_atoms_solute) {
-            r2 = pow(ctx.coords_top[i].x - ctx.topo.solute_center.x, 2) + pow(ctx.coords_top[i].y - ctx.topo.solute_center.y, 2) + pow(ctx.coords_top[i].z - ctx.topo.solute_center.z, 2);
+        if (heavy[i] && !excluded[i] && i < ctx.n_atoms_solute) {
+            r2 = pow(coords_init[i].x - ctx.topo.solute_center.x, 2) + pow(coords_init[i].y - ctx.topo.solute_center.y, 2) + pow(coords_init[i].z - ctx.topo.solute_center.z, 2);
             bool in_shell = r2 > rin2;
             for (int j = 0; j < cgrp.n_atoms; j++) {
-                ctx.shell[cgrp.a[j] - 1] = in_shell;
+                shell[cgrp.a[j] - 1] = in_shell;
                 if (in_shell) {
                     n_inshell++;
                 }
             }
         }
+    }
+
+    if (ctx.run_gpu) {
+        ctx.heavy->upload();
+        ctx.shell->upload();
     }
 
     printf("(switch atoms): n_heavy = %d, n_inshell = %d\n", n_heavy, n_inshell);
@@ -450,13 +515,18 @@ void init_pshells_with_switch_atoms() {
 // Used when iuse_switch_atom == 0.
 void init_pshells_with_centroids() {
     auto& ctx = Context::instance();
+    auto &coords_init = ctx.coords_init->cpu_data_p;
+    auto *excluded = ctx.excluded->cpu_data_p;
+    bool *heavy = nullptr;
     double r2, rin2;
 
-    ctx.heavy = std::make_unique<bool[]>(ctx.n_atoms);
-    ctx.shell = std::make_unique<bool[]>(ctx.n_atoms);
+    ctx.heavy = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
+    heavy = ctx.heavy->cpu_data_p;
+    ctx.shell = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
+    auto *shell = ctx.shell->cpu_data_p;
     for (int i = 0; i < ctx.n_atoms; ++i) {
-        ctx.heavy[i] = false;
-        ctx.shell[i] = false;
+        heavy[i] = false;
+        shell[i] = false;
     }
     rin2 = pow(ctx.md.shell_radius, 2);
 
@@ -466,14 +536,14 @@ void init_pshells_with_centroids() {
     for (int grp = 0; grp < ctx.n_cgrps_solute; grp++) {
         cgrp_t cgrp = ctx.charge_groups[grp];
         int i = cgrp.iswitch - 1;
-        if (ctx.heavy[i] && !ctx.excluded[i] && i < ctx.n_atoms_solute) {
+        if (heavy[i] && !excluded[i] && i < ctx.n_atoms_solute) {
             // Compute centroid of charge group
             double cx = 0, cy = 0, cz = 0;
             for (int j = 0; j < cgrp.n_atoms; j++) {
                 int ai = cgrp.a[j] - 1;
-                cx += ctx.coords_top[ai].x;
-                cy += ctx.coords_top[ai].y;
-                cz += ctx.coords_top[ai].z;
+                cx += coords_init[ai].x;
+                cy += coords_init[ai].y;
+                cz += coords_init[ai].z;
             }
             cx /= cgrp.n_atoms;
             cy /= cgrp.n_atoms;
@@ -482,12 +552,17 @@ void init_pshells_with_centroids() {
             r2 = pow(cx - ctx.topo.solute_center.x, 2) + pow(cy - ctx.topo.solute_center.y, 2) + pow(cz - ctx.topo.solute_center.z, 2);
             bool in_shell = r2 > rin2;
             for (int j = 0; j < cgrp.n_atoms; j++) {
-                ctx.shell[cgrp.a[j] - 1] = in_shell;
+                shell[cgrp.a[j] - 1] = in_shell;
                 if (in_shell) {
                     n_inshell++;
                 }
             }
         }
+    }
+
+    if (ctx.run_gpu) {
+        ctx.heavy->upload();
+        ctx.shell->upload();
     }
 
     printf("(centroids): n_heavy = %d, n_inshell = %d\n", n_heavy, n_inshell);
@@ -496,7 +571,7 @@ void init_pshells_with_centroids() {
 void init_restrseqs() {
     auto& ctx = Context::instance();
     ctx.n_restrseqs = 1;
-    ctx.restrseqs.resize(1);
+    ctx.restrseqs = std::make_unique<HostDeviceBuffer<restrseq_t>>(1, true, ctx.run_gpu);
 
     restrseq_t seq;
     seq.ai = 1;
@@ -505,7 +580,11 @@ void init_restrseqs() {
     seq.ih = 0;
     seq.to_center = 2;
 
-    ctx.restrseqs[0] = seq;
+    ctx.restrseqs->cpu_data_p[0] = seq;
+
+    if (ctx.run_gpu) {
+        ctx.restrseqs->upload();
+    }
 }
 
 /* =============================================
@@ -515,56 +594,67 @@ void init_restrseqs() {
 
 void init_shake() {
     auto& ctx = Context::instance();
+    auto *heavy = ctx.heavy->cpu_data_p;
+    auto *excluded = ctx.excluded->cpu_data_p;
     int ai, aj;
     int mol = 0;
     int shake;
     int n_solute_shake_constraints = 0;
     double excl_shake = 0;
+    auto &bonds = ctx.bonds->cpu_data_p;
+    auto &cbonds = ctx.cbonds->cpu_data_p;
 
     ctx.n_shake_constraints = 0;
-    ctx.mol_n_shakes.assign(ctx.n_molecules, 0);
+    ctx.mol_n_shakes = std::make_unique<HostDeviceBuffer<int>>(ctx.n_molecules, true, ctx.run_gpu);
+    auto *mol_n_shakes = ctx.mol_n_shakes->cpu_data_p;
 
     for (int bi = 0; bi < ctx.n_bonds; bi++) {
-        ai = ctx.bonds[bi].ai - 1;
-        aj = ctx.bonds[bi].aj - 1;
+        ai = bonds[bi].ai - 1;
+        aj = bonds[bi].aj - 1;
 
         while (mol + 1 < ctx.n_molecules && ai + 1 >= ctx.molecules[mol + 1]) {
             // new molecule
             mol += 1;
         }
 
-        if ((ctx.md.shake_hydrogens && (!ctx.heavy[ai] || !ctx.heavy[aj])) || (ctx.md.shake_solute && ai + 1 <= ctx.n_atoms_solute) || (ctx.md.shake_solvent && ai + 1 > ctx.n_atoms_solute)) {
-            ctx.mol_n_shakes[mol]++;
+        if ((ctx.md.shake_hydrogens && (!heavy[ai] || !heavy[aj])) || (ctx.md.shake_solute && ai + 1 <= ctx.n_atoms_solute) || (ctx.md.shake_solvent && ai + 1 > ctx.n_atoms_solute)) {
+            mol_n_shakes[mol]++;
             ctx.n_shake_constraints++;
 
-            if (ctx.excluded[ai]) excl_shake += 0.5;
-            if (ctx.excluded[aj]) excl_shake += 0.5;
+            if (excluded[ai]) excl_shake += 0.5;
+            if (excluded[aj]) excl_shake += 0.5;
         }
     }
 
-    ctx.shake_bonds.resize(ctx.n_shake_constraints);
+    ctx.shake_bonds = std::make_unique<HostDeviceBuffer<shake_bond_t>>(ctx.n_shake_constraints, true, ctx.run_gpu);
+    auto *shake_bonds = ctx.shake_bonds->cpu_data_p;
     mol = 0;
     shake = 0;
     for (int bi = 0; bi < ctx.n_bonds; bi++) {
-        ai = ctx.bonds[bi].ai - 1;
-        aj = ctx.bonds[bi].aj - 1;
+        ai = bonds[bi].ai - 1;
+        aj = bonds[bi].aj - 1;
 
         while (mol + 1 < ctx.n_molecules && ai + 1 >= ctx.molecules[mol + 1]) {
             // new molecule
             mol += 1;
         }
 
-        if ((ctx.md.shake_hydrogens && (!ctx.heavy[ai] || !ctx.heavy[aj])) || (ctx.md.shake_solute && ai + 1 <= ctx.n_atoms_solute) || (ctx.md.shake_solvent && ai + 1 > ctx.n_atoms_solute)) {
-            ctx.shake_bonds[shake].ai = ai + 1;
-            ctx.shake_bonds[shake].aj = aj + 1;
-            ctx.shake_bonds[shake].dist2 = pow(ctx.cbonds[ctx.bonds[bi].code - 1].b0, 2);
+        if ((ctx.md.shake_hydrogens && (!heavy[ai] || !heavy[aj])) || (ctx.md.shake_solute && ai + 1 <= ctx.n_atoms_solute) || (ctx.md.shake_solvent && ai + 1 > ctx.n_atoms_solute)) {
+            shake_bonds[shake].ai = ai + 1;
+            shake_bonds[shake].aj = aj + 1;
+            shake_bonds[shake].dist2 = pow(cbonds[bonds[bi].code - 1].b0, 2);
             shake++;
         }
     }
 
     // Get total number of shake constraints in solute (used for separate scaling of temperatures)
     for (int i = 0; i < ctx.n_molecules - ctx.n_waters; i++) {
-        n_solute_shake_constraints += ctx.mol_n_shakes[i];
+        n_solute_shake_constraints += mol_n_shakes[i];
+    }
+
+    if (ctx.run_gpu) {
+        ctx.mol_n_shakes->upload();
+        ctx.shake_bonds->upload();
     }
 
     ctx.Ndegf = 3 * ctx.n_atoms - ctx.n_shake_constraints;
@@ -614,6 +704,10 @@ void init_patoms() {
 // states above 0 get appended as extra codes.
 static void init_unified_atom_parameters() {
     auto& ctx = Context::instance();
+    auto &charges = ctx.charges->cpu_data_p;
+    auto &ccharges = ctx.ccharges->cpu_data_p;
+    auto &atypes = ctx.atypes->cpu_data_p;
+    auto &catypes = ctx.catypes->cpu_data_p;
     const int n_states = ctx.n_parameter_states();
 
     ctx.atom_to_qi.assign(ctx.n_atoms, -1);
@@ -623,8 +717,10 @@ static void init_unified_atom_parameters() {
 
     const int n_extra_q_states = n_states > 0 ? n_states - 1 : 0;
     const int n_codes = ctx.n_atoms + ctx.n_qatoms * n_extra_q_states;
-    ctx.unified_ccharges.resize(n_codes);
-    ctx.unified_catypes.resize(n_codes);
+    ctx.unified_ccharges = std::make_unique<HostDeviceBuffer<ccharge_t>>(n_codes, true, ctx.run_gpu);
+    ctx.unified_catypes = std::make_unique<HostDeviceBuffer<catype_t>>(n_codes, true, ctx.run_gpu);
+    auto *unified_ccharges = ctx.unified_ccharges->cpu_data_p;
+    auto *unified_catypes = ctx.unified_catypes->cpu_data_p;
 
     for (int atom_idx = 0; atom_idx < ctx.n_atoms; atom_idx++) {
         const int unified_code = atom_idx + 1;
@@ -641,13 +737,13 @@ static void init_unified_atom_parameters() {
             resolved_type = ctx.q_catypes[ctx.q_atypes[qi].code - 1];
             resolved_type.code = unified_code;
         } else {
-            resolved_charge.charge = ctx.ccharges[ctx.charges[atom_idx].code - 1].charge;
-            resolved_type = ctx.catypes[ctx.atypes[atom_idx].code - 1];
+            resolved_charge.charge = ccharges[charges[atom_idx].code - 1].charge;
+            resolved_type = catypes[atypes[atom_idx].code - 1];
             resolved_type.code = unified_code;
         }
 
-        ctx.unified_ccharges[unified_code - 1] = resolved_charge;
-        ctx.unified_catypes[unified_code - 1] = resolved_type;
+        unified_ccharges[unified_code - 1] = resolved_charge;
+        unified_catypes[unified_code - 1] = resolved_type;
     }
 
     for (int state = 1; state < n_states; state++) {
@@ -661,8 +757,8 @@ static void init_unified_atom_parameters() {
             catype_t resolved_type = ctx.q_catypes[ctx.q_atypes[qi + state * ctx.n_qatoms].code - 1];
             resolved_type.code = unified_code;
 
-            ctx.unified_ccharges[unified_code - 1] = resolved_charge;
-            ctx.unified_catypes[unified_code - 1] = resolved_type;
+            unified_ccharges[unified_code - 1] = resolved_charge;
+            unified_catypes[unified_code - 1] = resolved_type;
         }
     }
 }
@@ -781,7 +877,7 @@ void init_variables() {
     ctx.EQ_nonbond_qp.assign(ctx.n_lambdas, {});
     ctx.EQ_nonbond_qw.assign(ctx.n_lambdas, {});
     ctx.EQ_nonbond_qx.assign(ctx.n_lambdas, {});
-    ctx.EQ_restraint.assign(ctx.n_lambdas, {});
+    ctx.EQ_restraint = std::make_unique<HostDeviceBuffer<E_restraint_t>>(ctx.n_lambdas, true, ctx.run_gpu);
 
     if (ctx.n_shake_constraints > 0) {
         initial_shaking();
@@ -798,6 +894,11 @@ void init_variables() {
 
 void clean_variables() {
     auto& ctx = Context::instance();
+    ctx.angles.reset();
+    ctx.cangles.reset();
+    ctx.bonds.reset();
+    ctx.cbonds.reset();
+    ctx.coords_init.reset();
 
     for (auto& charge_group : ctx.charge_groups) {
         delete[] charge_group.a;
@@ -805,26 +906,42 @@ void clean_variables() {
     }
     ctx.charge_groups.clear();
 
-    ctx.angles.clear();
-    ctx.atypes.clear();
-    ctx.bonds.clear();
-    ctx.cangles.clear();
-    ctx.catypes.clear();
-    ctx.cbonds.clear();
-    ctx.ccharges.clear();
-    ctx.charges.clear();
+    ctx.atypes.reset();
+    ctx.catypes.reset();
+    ctx.ccharges.reset();
+    ctx.charges.reset();
     ctx.atom_to_qi.clear();
-    ctx.unified_ccharges.clear();
-    ctx.unified_catypes.clear();
-    ctx.cimpropers.clear();
-    ctx.coords.clear();
-    ctx.coords_top.clear();
-    ctx.ctorsions.clear();
+    ctx.unified_ccharges.reset();
+    ctx.unified_catypes.reset();
+    ctx.ngbrs_14.reset();
+    ctx.ngbrs_14_builder.clear();
+    ctx.p_atoms_list.reset();
+    ctx.w_atoms_list.reset();
+    ctx.q_atoms_list.reset();
+    ctx.charge_table_all.reset();
+    ctx.charge_pair_products.reset();
+    ctx.p_charge_types.reset();
+    ctx.w_charge_types.reset();
+    ctx.q_charge_types.reset();
+    ctx.catype_table_all.reset();
+    ctx.catype_pair_params.reset();
+    ctx.p_catype_types.reset();
+    ctx.w_catype_types.reset();
+    ctx.q_catype_types.reset();
+    ctx.catype_to_type_host.clear();
+    ctx.n_charge_types = 0;
+    ctx.zero_charge_type = -1;
+    ctx.n_catype_types = 0;
+    ctx.zero_catype_type = -1;
+    ctx.cimpropers.reset();
+    ctx.coords.reset();
+    ctx.ctorsions.reset();
     ctx.excluded.reset();
     ctx.heavy.reset();
-    ctx.impropers.clear();
-    ctx.torsions.clear();
-    ctx.LJ_matrix.clear();
+    ctx.impropers.reset();
+    ctx.winv.reset();
+    ctx.torsions.reset();
+    ctx.LJ_matrix.reset();
     ctx.molecules.clear();
     ctx.q_angcouples.clear();
     ctx.q_atoms.clear();
@@ -841,30 +958,35 @@ void clean_variables() {
     ctx.q_charges.clear();
     ctx.q_angles.clear();
     ctx.q_bonds.clear();
-    ctx.q_elscales.clear();
+    ctx.q_elscales.reset();
     ctx.q_exclpairs.clear();
     ctx.q_impropers.clear();
     ctx.q_shakes.clear();
     ctx.q_softcores.clear();
     ctx.q_torsions.clear();
-    ctx.wshells.clear();
+    ctx.lambdas.reset();
+    ctx.wshells.reset();
     ctx.theta.clear();
     ctx.theta0.clear();
     ctx.tdum.clear();
     ctx.list_sh.clear();
     ctx.nsort.clear();
-    ctx.restrseqs.clear();
+    ctx.restrseqs.reset();
+    ctx.restrangs.reset();
+    ctx.restrdists.reset();
+    ctx.restrspos.reset();
+    ctx.restrwalls.reset();
     ctx.shell.reset();
-    ctx.velocities.clear();
-    ctx.dvelocities.clear();
-    ctx.xcoords.clear();
-    ctx.mol_n_shakes.clear();
-    ctx.shake_bonds.clear();
+    ctx.velocities.reset();
+    ctx.dvelocities.reset();
+    ctx.xcoords.reset();
+    ctx.mol_n_shakes.reset();
+    ctx.shake_bonds.reset();
     ctx.EQ_total.clear();
     ctx.EQ_bond.clear();
     ctx.EQ_nonbond_qq.clear();
     ctx.EQ_nonbond_qp.clear();
     ctx.EQ_nonbond_qw.clear();
     ctx.EQ_nonbond_qx.clear();
-    ctx.EQ_restraint.clear();
+    ctx.EQ_restraint.reset();
 }
