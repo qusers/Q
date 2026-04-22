@@ -348,7 +348,6 @@ class Context {
     void cuda_free_helpers();
     void cuda_reset_energies();
     void cuda_sync_all_to_device();
-    void cuda_sync_all_to_host();
 
    private:
     Context() = default;

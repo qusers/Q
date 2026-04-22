@@ -61,38 +61,6 @@ void Context::cuda_sync_all_to_device() {
     q_catype_types->upload();
 }
 
-void Context::cuda_sync_all_to_host() {
-    coords->download();
-    dvelocities->download();
-    velocities->download();
-    LJ_matrix->download();
-    xcoords->download();
-    winv->download();
-    mol_n_shakes->download();
-    shake_bonds->download();
-    excluded->download();
-    q_elscales->download();
-    shell->download();
-    wshells->download();
-    lambdas->download();
-    EQ_restraint->download();
-    unified_ccharges->download();
-    unified_catypes->download();
-    ngbrs_14->download();
-    p_atoms_list->download();
-    w_atoms_list->download();
-    q_atoms_list->download();
-    charge_table_all->download();
-    charge_pair_products->download();
-    p_charge_types->download();
-    w_charge_types->download();
-    q_charge_types->download();
-    catype_table_all->download();
-    catype_pair_params->download();
-    p_catype_types->download();
-    w_catype_types->download();
-    q_catype_types->download();
-}
 
 void Context::cuda_free_helpers() {
     unified_ccharges.reset();
