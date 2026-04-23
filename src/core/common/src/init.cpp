@@ -722,7 +722,6 @@ void init_variables() {
         exit(EXIT_FAILURE);
     }
 
-    // From topology file
     parse_topo("topo.csv");
 
     parse_angles("angles.csv");

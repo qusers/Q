@@ -8,6 +8,7 @@
 
 void calc_integration() {
     auto& ctx = Context::instance();
+    ctx.init();
     init_variables();
     Handler& handler = ctx.run_gpu ? static_cast<Handler&>(CudaHandler::instance()) : static_cast<Handler&>(CpuHandler::instance());
     handler.initialize();
