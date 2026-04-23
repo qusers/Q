@@ -1,67 +1,26 @@
 #pragma once
 
 #define __PROFILING__
-//#define DEBUG
+// #define DEBUG
 #define VERBOSE
 
-
-void init_variables();
-void clean_variables();
-
-/* =============================================
- * == DEVICE SETTINGS
- * =============================================
- */
-
-/* =============================================
- * == GENERAL
- * =============================================
- */
-
-/* =============================================
- * == FROM MD FILE
- * =============================================
- */
-
+void exclude_qatom_definitions();
+void init_pshells_from_charge_groups();
+void exclude_shaken_definitions();
+void init_unified_atom_parameters();
+void init_patoms();
+void initial_shaking();
+void stop_cm_translation();
+void finalize_ngbrs14();
+void init_atoms_list();
+void initialize_charge_tables();
+void initialize_catype_tables();
+void init_inv_mass();
+void write_headers();
 void init_pshells();
-void init_pshells_with_switch_atoms();
-void init_pshells_with_centroids();
-void init_restrseqs(char* filename);
-
-
+void init_shake();
+void init_velocities();
 void init_water_sphere();
 void init_wshells();
 
-/* =============================================
- * == SHAKE
- * =============================================
- */
-
-void init_shake();
-
-
-void init_velocities();
-void init_dvelocities();
-void init_energies();
-
-/* =============================================
- * == ENERGY & TEMPERATURE
- * =============================================
- */
-
-
-/* =============================================
- * == INTEGRATION METHODS
- * =============================================
- */
-
-void init_variables();
-void clean_variables();
-// void write_header(const char *filename);
-// void write_energy_header();
-// void write_coords(int iteration);
-// void write_velocities(int iteration);
-// void write_energies(int iteration);
-
-void calc_integration();
 

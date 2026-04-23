@@ -8,20 +8,20 @@
 
 void calc_integration() {
     auto& ctx = Context::instance();
-    init_variables();
+    ctx.init();
+    write_headers();
     Handler& handler = ctx.run_gpu ? static_cast<Handler&>(CudaHandler::instance()) : static_cast<Handler&>(CpuHandler::instance());
     handler.initialize();
     handler.run(ctx.md.steps);
     handler.shutdown();
-    clean_variables();
 }
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         printf(">>> FATAL: Input file folder expected. Exiting...\n");
-        exit(EXIT_FAILURE);
+        return EXIT_FAILURE;
     }
-    auto& ctx = Context::instance();
+    Context ctx;
 
     if (argc > 2) {
         ctx.run_gpu = strcmp(argv[1], "--gpu") == 0;
@@ -33,5 +33,5 @@ int main(int argc, char* argv[]) {
 
     calc_integration();
 
-    exit(EXIT_SUCCESS);
+    return EXIT_SUCCESS;
 }

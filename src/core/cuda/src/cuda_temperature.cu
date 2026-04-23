@@ -45,8 +45,6 @@ __global__ void calc_temperature_kernel(int n_atoms, int n_atoms_solute, atype_t
 
 void calc_temperature_host() {
     auto& host = Context::instance();
-    printf("Ndegf = %f, Ndegfree = %f, n_excluded = %d, Ndegfree_solvent = %f, Ndegfree_solute = %f\n",
-           host.Ndegf, host.Ndegfree, host.n_excluded, host.Ndegfree_solvent, host.Ndegfree_solute);
     using namespace CudaTemperature;
     double h_Temp_solute = 0.0, h_Tfree_solute = 0.0, h_Texcl_solute = 0.0, h_Temp_solvent = 0.0, h_Tfree_solvent = 0.0, h_Texcl_solvent = 0.0;
 

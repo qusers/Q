@@ -15,8 +15,6 @@ void calc_temperature() {
     auto &catypes = ctx.catypes->cpu_data_p;
     auto &velocities = ctx.velocities->cpu_data_p;
     auto *excluded = ctx.excluded->cpu_data_p;
-    printf("Ndegf = %f, Ndegfree = %f, n_excluded = %d, Ndegfree_solvent = %f, Ndegfree_solute = %f\n",
-           ctx.Ndegf, ctx.Ndegfree, ctx.n_excluded, ctx.Ndegfree_solvent, ctx.Ndegfree_solute);
     ctx.Temp = 0;
     ctx.Tfree = 0;
     double Temp_solute = 0, Tfree_solute = 0, Texcl_solute = 0;
