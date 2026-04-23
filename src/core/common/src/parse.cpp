@@ -873,7 +873,6 @@ void init_ngbrs14(const char* filename) {
                 LJ_matrix[ix * ctx.n_atoms_solute + jx] = 1;
                 LJ_matrix[jx * ctx.n_atoms_solute + ix] = 1;
 
-                ctx.ngbrs_14_builder.push_back({ix, jx, NONBONDED_14_PP}); // the type may is wrong, just set in here
             }
         }
         lineI++;
@@ -945,11 +944,6 @@ void init_ngbrs14_long(const char* filename) {
         int jx = atoi(file.buffer[i + 1][1]) - 1;
         LJ_matrix[ix * ctx.n_atoms_solute + jx] = 1;
         LJ_matrix[jx * ctx.n_atoms_solute + ix] = 1;
-
-
-        int mi_x = std::min(ix, jx);
-        int mx_x = std::max(ix, jx);
-        ctx.ngbrs_14_builder.push_back({mi_x, mx_x, NONBONDED_14_PP}); // the type may is wrong, just set in here
 
     }
 
@@ -1086,44 +1080,41 @@ void init_molecules(const char* filename) {
     clean_csv(file);
 }
 
-void init_charge_groups(const char* filename) {
+charge_group_config_t read_charge_groups(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
+    charge_group_config_t config;
 
     if (file.n_lines < 1) {
         clean_csv(file);
-        return;
+        return config;
     }
 
-    ctx.n_cgrps_solute = atoi(file.buffer[1][0]);
-    ctx.n_cgrps_solvent = atoi(file.buffer[1][1]);
-    ctx.iuse_switch_atom = atoi(file.buffer[1][2]);
+    config.n_cgrps_solute = atoi(file.buffer[1][0]);
+    config.n_cgrps_solvent = atoi(file.buffer[1][1]);
+    config.iuse_switch_atom = atoi(file.buffer[1][2]);
 
-    int n_charge_groups = ctx.n_cgrps_solute + ctx.n_cgrps_solvent;
+    int n_charge_groups = config.n_cgrps_solute + config.n_cgrps_solvent;
 
-    ctx.charge_groups.resize(n_charge_groups);
+    config.charge_groups.resize(n_charge_groups);
 
     int line_nr = 2;
-    int n_atoms_crgp = 0;
 
     for (int i = 0; i < n_charge_groups; i++) {
-        cgrp_t charge_group;
-
-        n_atoms_crgp = atoi(file.buffer[line_nr][0]);
-        charge_group.n_atoms = n_atoms_crgp;
+        auto& charge_group = config.charge_groups[i];
+        int n_atoms_crgp = atoi(file.buffer[line_nr][0]);
         charge_group.iswitch = atoi(file.buffer[line_nr][1]);
-        charge_group.a = new int[n_atoms_crgp];
+        charge_group.atoms.resize(n_atoms_crgp);
 
         line_nr++;
-        for (int j = 0; j < charge_group.n_atoms; j++) {
-            charge_group.a[j] = atoi(file.buffer[line_nr][0]);
+        for (int j = 0; j < n_atoms_crgp; j++) {
+            charge_group.atoms[j] = atoi(file.buffer[line_nr][0]);
             line_nr++;
         }
-
-        ctx.charge_groups[i] = charge_group;
     }
 
     clean_csv(file);
+    return config;
 }
 
 /* =============================================
@@ -1681,6 +1672,10 @@ void init_ivelocities(const char* filename) {
         velocities[i].x = strtod(file.buffer[i + 1][0], &eptr);
         velocities[i].y = strtod(file.buffer[i + 1][1], &eptr);
         velocities[i].z = strtod(file.buffer[i + 1][2], &eptr);
+    }
+
+    if (ctx.run_gpu) {
+        ctx.velocities->upload();
     }
 
     clean_csv(file);

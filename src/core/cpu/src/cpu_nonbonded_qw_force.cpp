@@ -18,15 +18,12 @@ void calc_nonbonded_qw_forces() {
     double V_a, V_b, VelO, VelH1, VelH2;
     double ai_aii, ai_bii;
 
-    if (ctx.A_O == 0) {
-        const catype_t& catype_ow = ctx.unified_catype(ctx.n_atoms_solute, 0);
-
-        ctx.A_O = catype_ow.aii_normal;
-        ctx.B_O = catype_ow.bii_normal;
-    }
-
     // Loop over O-atoms, q-atoms
     for (int j = ctx.n_atoms_solute; j < ctx.n_atoms; j += 3) {
+        const catype_t& ow_type = ctx.unified_catype(j, 0);
+        const double ow_charge = ctx.unified_ccharge(j, 0).charge;
+        const double hw1_charge = ctx.unified_ccharge(j + 1, 0).charge;
+        const double hw2_charge = ctx.unified_ccharge(j + 2, 0).charge;
         for (int qi = 0; qi < ctx.n_qatoms; qi++) {
             i = ctx.q_atoms[qi];
             if (excluded[i] || excluded[j]) continue;
@@ -61,15 +58,15 @@ void calc_nonbonded_qw_forces() {
                 ai_bii = qi_type.bii_normal;
 
                 if (ctx.topo.vdw_rule == VDW_GEOMETRIC) {
-                    calc_vdw_geometric(ai_aii, ctx.A_O, ai_bii, ctx.B_O, r6Oinv, &V_a, &V_b);
+                    calc_vdw_geometric(ai_aii, ow_type.aii_normal, ai_bii, ow_type.bii_normal, r6Oinv, &V_a, &V_b);
                 } else {
-                    calc_vdw_arithmetic(ai_aii, ctx.A_O, ai_bii, ctx.B_O, r6Oinv, &V_a, &V_b);
+                    calc_vdw_arithmetic(ai_aii, ow_type.aii_normal, ai_bii, ow_type.bii_normal, r6Oinv, &V_a, &V_b);
                 }
 
                 const double q_charge = ctx.unified_ccharge(i, state).charge;
-                VelO = ctx.topo.coulomb_constant * ctx.crg_ow * q_charge * rO;
-                VelH1 = ctx.topo.coulomb_constant * ctx.crg_hw * q_charge * rH1;
-                VelH2 = ctx.topo.coulomb_constant * ctx.crg_hw * q_charge * rH2;
+                VelO = ctx.topo.coulomb_constant * ow_charge * q_charge * rO;
+                VelH1 = ctx.topo.coulomb_constant * hw1_charge * q_charge * rH1;
+                VelH2 = ctx.topo.coulomb_constant * hw2_charge * q_charge * rH2;
 
                 // if (state == 0 && qi == 1) printf("j = %d ai__aii = %f A_O = %f B_O = %f V_a = %f V_b = %f r6O = %f\n", j, ai_aii, A_O, B_O, V_a, V_b, r6O);
 

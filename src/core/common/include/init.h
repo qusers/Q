@@ -24,8 +24,6 @@ void clean_variables();
  */
 
 void init_pshells();
-void init_pshells_with_switch_atoms();
-void init_pshells_with_centroids();
 void init_restrseqs(char* filename);
 
 
@@ -64,4 +62,3 @@ void clean_variables();
 // void write_energies(int iteration);
 
 void calc_integration();
-

@@ -1,11 +1,24 @@
 #ifndef __PARSE_H__
 #define __PARSE_H__
 
+#include <vector>
 
 struct csvfile_t {
     char ***buffer;
     int n_lines;
     int ext;
+};
+
+struct charge_group_t {
+    int iswitch = 0;
+    std::vector<int> atoms;
+};
+
+struct charge_group_config_t {
+    int n_cgrps_solute = 0;
+    int n_cgrps_solvent = 0;
+    int iuse_switch_atom = 0;
+    std::vector<charge_group_t> charge_groups;
 };
 
 csvfile_t read_csv(const char *filename, int ext, const char *base_folder);
@@ -45,7 +58,7 @@ void init_catypes(const char *filename);
 void init_atypes(const char *filename);
 void init_excluded(const char *filename);
 void init_molecules(const char *filename);
-void init_charge_groups(const char *filename);
+charge_group_config_t read_charge_groups(const char *filename);
 
 /* =============================================
  * == FROM FEP FILE

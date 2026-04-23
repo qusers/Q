@@ -4,33 +4,18 @@
 #include "context.h"
 #include "vdw_rules.h"
 
-void init_water_parameters(Context& ctx) {
-    const int oxygen_index = ctx.n_atoms_solute;
-    const int hydrogen_index = oxygen_index + 1;
-
-    const catype_t& catype_ow = ctx.unified_catype(oxygen_index, 0);
-    const ccharge_t& ccharge_ow = ctx.unified_ccharge(oxygen_index, 0);
-    const ccharge_t& ccharge_hw = ctx.unified_ccharge(hydrogen_index, 0);
-
+namespace {
+void calc_oxygen_vdw_parameters(const Context& ctx, int oxygen_i, int oxygen_j, double* vdw_a, double* vdw_b) {
+    const catype_t& oi_type = ctx.unified_catype(oxygen_i, 0);
+    const catype_t& oj_type = ctx.unified_catype(oxygen_j, 0);
     if (ctx.topo.vdw_rule == VDW_GEOMETRIC) {
-        ctx.A_OO = catype_ow.aii_normal * catype_ow.aii_normal;
-        ctx.B_OO = catype_ow.bii_normal * catype_ow.bii_normal;
+        *vdw_a = oi_type.aii_normal * oj_type.aii_normal;
+        *vdw_b = oi_type.bii_normal * oj_type.bii_normal;
     } else {
-        const double rstar_oo = 2.0 * catype_ow.aii_normal;
-        const double eps_oo = catype_ow.bii_normal * catype_ow.bii_normal;
-        const double r2_oo = rstar_oo * rstar_oo;
-        const double r6_oo = r2_oo * r2_oo * r2_oo;
-        ctx.A_OO = eps_oo * r6_oo * r6_oo;
-        ctx.B_OO = 2.0 * eps_oo * r6_oo;
+        calc_vdw_arithmetic(oi_type.aii_normal, oj_type.aii_normal, oi_type.bii_normal, oj_type.bii_normal, 1.0, vdw_a, vdw_b);
     }
-
-    ctx.crg_ow = ccharge_ow.charge;
-    ctx.crg_hw = ccharge_hw.charge;
 }
-
-inline double water_charge(const Context& ctx, int atom_offset) {
-    return atom_offset == 0 ? ctx.crg_ow : ctx.crg_hw;
-}
+}  // namespace
 
 void accumulate_pair_force(Context& ctx,
                            int atom_i,
@@ -81,22 +66,23 @@ void calc_nonbonded_ww_forces() {
         return;
     }
 
-    init_water_parameters(ctx);
-
     for (int water_i = 0; water_i < ctx.n_waters; ++water_i) {
         const int base_i = ctx.n_atoms_solute + 3 * water_i;
         for (int water_j = water_i + 1; water_j < ctx.n_waters; ++water_j) {
             const int base_j = ctx.n_atoms_solute + 3 * water_j;
+            double oxygen_vdw_a = 0.0;
+            double oxygen_vdw_b = 0.0;
+            calc_oxygen_vdw_parameters(ctx, base_i, base_j, &oxygen_vdw_a, &oxygen_vdw_b);
             for (int atom_i = 0; atom_i < 3; ++atom_i) {
                 for (int atom_j = 0; atom_j < 3; ++atom_j) {
                     accumulate_pair_force(ctx,
                                           base_i + atom_i,
                                           base_j + atom_j,
-                                          water_charge(ctx, atom_i),
-                                          water_charge(ctx, atom_j),
+                                          ctx.unified_ccharge(base_i + atom_i, 0).charge,
+                                          ctx.unified_ccharge(base_j + atom_j, 0).charge,
                                           atom_i == 0 && atom_j == 0,
-                                          ctx.A_OO,
-                                          ctx.B_OO,
+                                          oxygen_vdw_a,
+                                          oxygen_vdw_b,
                                           ctx.E_nonbond_ww);
                 }
             }

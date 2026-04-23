@@ -18,53 +18,33 @@
 static void finalize_ngbrs14_host() {
     auto& ctx = Context::instance();
     auto &LJ_matrix = ctx.LJ_matrix->cpu_data_p;
-    auto &ngbrs_14 = ctx.ngbrs_14_builder;
+    std::vector<int3> ngbrs_14;
+    ngbrs_14.reserve(ctx.n_atoms_solute);
 
-    for (auto& pair : ngbrs_14) {
-        if (pair.x > pair.y) {
-            std::swap(pair.x, pair.y);
-        }
-    }
-
-    ngbrs_14.erase(
-        std::remove_if(ngbrs_14.begin(), ngbrs_14.end(), [&ctx, &LJ_matrix](const int3& pair) {
-            if (pair.x < 0 || pair.y < 0 || pair.x >= ctx.n_atoms_solute || pair.y >= ctx.n_atoms_solute) {
-                return true;
+    for (int i = 0; i < ctx.n_atoms_solute; i++) {
+        for (int j = i + 1; j < ctx.n_atoms_solute; j++) {
+            if (LJ_matrix[i * ctx.n_atoms_solute + j] == 1) {
+                int pair_type = NONBONDED_14_PP;
+                const bool ai_is_q = ctx.atom_to_qi[i] != -1;
+                const bool aj_is_q = ctx.atom_to_qi[j] != -1;
+                if (ai_is_q && aj_is_q) {
+                    pair_type = NONBONDED_14_QQ;
+                } else if (ai_is_q || aj_is_q) {
+                    pair_type = NONBONDED_14_QP;
+                }
+                ngbrs_14.push_back({i, j, pair_type});
             }
-            if (pair.x == pair.y) {
-                return true;
-            }
-            return LJ_matrix[pair.x * ctx.n_atoms_solute + pair.y] != 1;
-        }),
-        ngbrs_14.end());
-
-    std::sort(ngbrs_14.begin(), ngbrs_14.end(), [](const int3& lhs, const int3& rhs) {
-        if (lhs.x != rhs.x) return lhs.x < rhs.x;
-        return lhs.y < rhs.y;
-    });
-    ngbrs_14.erase(
-        std::unique(ngbrs_14.begin(), ngbrs_14.end(), [](const int3& lhs, const int3& rhs) {
-            return lhs.x == rhs.x && lhs.y == rhs.y;
-        }),
-        ngbrs_14.end());
-
-    for (auto& pair : ngbrs_14) {
-        const bool ai_is_q = ctx.atom_to_qi[pair.x] != -1;
-        const bool aj_is_q = ctx.atom_to_qi[pair.y] != -1;
-        if (ai_is_q && aj_is_q) {
-            pair.z = NONBONDED_14_QQ;
-        } else if (ai_is_q || aj_is_q) {
-            pair.z = NONBONDED_14_QP;
-        } else {
-            pair.z = NONBONDED_14_PP;
         }
     }
     ctx.ngbrs_14 = std::make_unique<HostDeviceBuffer<int3>>(ngbrs_14.size(), true, ctx.run_gpu);
     if (!ngbrs_14.empty()) {
         std::copy(ngbrs_14.begin(), ngbrs_14.end(), ctx.ngbrs_14->cpu_data_p);
     }
+    if (ctx.run_gpu) {
+        ctx.LJ_matrix->upload();
+        ctx.ngbrs_14->upload();
+    }
     ctx.n_ngbrs14 = static_cast<int>(ctx.ngbrs_14->length);
-    ngbrs_14.clear();
 }
 
 // Remove bonds, angles, torsions and impropers which are excluded or changed in the FEP file
@@ -340,15 +320,11 @@ void init_wshells() {
     auto &cbonds = ctx.cbonds->cpu_data_p;
     auto &angles = ctx.angles->cpu_data_p;
     auto &cangles = ctx.cangles->cpu_data_p;
-    if (ctx.mu_w == 0) {
-        // Get water properties from first water molecule
-        cbond_t cbondw = cbonds[bonds[ctx.n_atoms_solute].code - 1];
-        cangle_t canglew = cangles[angles[ctx.n_atoms_solute].code - 1];
-
-        ctx.crg_ow = ctx.unified_ccharge(ctx.n_atoms_solute, 0).charge;
-
-        ctx.mu_w = -ctx.crg_ow * cbondw.b0 * cos(canglew.th0 / 2);
-    }
+    // Get water properties from the first water molecule.
+    cbond_t cbondw = cbonds[bonds[ctx.n_atoms_solute].code - 1];
+    cangle_t canglew = cangles[angles[ctx.n_atoms_solute].code - 1];
+    const double crg_ow = ctx.unified_ccharge(ctx.n_atoms_solute, 0).charge;
+    const double mu_w = -crg_ow * cbondw.b0 * cos(canglew.th0 / 2);
 
     drs = wpolr_layer / drouter;
 
@@ -376,7 +352,7 @@ void init_wshells() {
         rshell = pow(0.5 * (pow(router, 3) + pow(ri, 3)), 1.0 / 3.0);
 
         // --- Note below: 0.98750 = (1-1/epsilon) for water
-        wshells[i].cstb = ctx.crgQtot * 0.98750 / (rho_water * ctx.mu_w * 4 * M_PI * pow(rshell, 2));
+        wshells[i].cstb = ctx.crgQtot * 0.98750 / (rho_water * mu_w * 4 * M_PI * pow(rshell, 2));
 
         router -= dr;
     }
@@ -466,93 +442,59 @@ static int mark_heavy_atoms(Context& ctx) {
     return n_heavy;
 }
 
-// Shell init using switch atom distance (matches Fortran make_shell).
-// Used when iuse_switch_atom == 1.
-void init_pshells_with_switch_atoms() {
-    auto& ctx = Context::instance();
-    auto &coords_init = ctx.coords_init->cpu_data_p;
-    auto *excluded = ctx.excluded->cpu_data_p;
-    bool *heavy = nullptr;
-    double r2, rin2;
-
+static void allocate_pshell_buffers(Context& ctx) {
     ctx.heavy = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
-    heavy = ctx.heavy->cpu_data_p;
+    auto *heavy = ctx.heavy->cpu_data_p;
     ctx.shell = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
     auto *shell = ctx.shell->cpu_data_p;
     for (int i = 0; i < ctx.n_atoms; ++i) {
         heavy[i] = false;
         shell[i] = false;
     }
-    rin2 = pow(ctx.md.shell_radius, 2);
-
-    int n_heavy = mark_heavy_atoms(ctx);
-    int n_inshell = 0;
-
-    for (int grp = 0; grp < ctx.n_cgrps_solute; grp++) {
-        cgrp_t cgrp = ctx.charge_groups[grp];
-        int i = cgrp.iswitch - 1;
-        if (heavy[i] && !excluded[i] && i < ctx.n_atoms_solute) {
-            r2 = pow(coords_init[i].x - ctx.topo.solute_center.x, 2) + pow(coords_init[i].y - ctx.topo.solute_center.y, 2) + pow(coords_init[i].z - ctx.topo.solute_center.z, 2);
-            bool in_shell = r2 > rin2;
-            for (int j = 0; j < cgrp.n_atoms; j++) {
-                shell[cgrp.a[j] - 1] = in_shell;
-                if (in_shell) {
-                    n_inshell++;
-                }
-            }
-        }
-    }
-
-    if (ctx.run_gpu) {
-        ctx.heavy->upload();
-        ctx.shell->upload();
-    }
-
-    printf("(switch atoms): n_heavy = %d, n_inshell = %d\n", n_heavy, n_inshell);
 }
 
-// Shell init using charge group centroid distance (matches Fortran make_shell2).
-// Used when iuse_switch_atom == 0.
-void init_pshells_with_centroids() {
+static void init_pshells_from_charge_groups(const charge_group_config_t& charge_groups) {
     auto& ctx = Context::instance();
     auto &coords_init = ctx.coords_init->cpu_data_p;
     auto *excluded = ctx.excluded->cpu_data_p;
-    bool *heavy = nullptr;
     double r2, rin2;
+    const bool use_switch_atom = charge_groups.iuse_switch_atom == 1;
 
-    ctx.heavy = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
-    heavy = ctx.heavy->cpu_data_p;
-    ctx.shell = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
+    allocate_pshell_buffers(ctx);
+    auto *heavy = ctx.heavy->cpu_data_p;
     auto *shell = ctx.shell->cpu_data_p;
-    for (int i = 0; i < ctx.n_atoms; ++i) {
-        heavy[i] = false;
-        shell[i] = false;
-    }
     rin2 = pow(ctx.md.shell_radius, 2);
 
     int n_heavy = mark_heavy_atoms(ctx);
     int n_inshell = 0;
 
-    for (int grp = 0; grp < ctx.n_cgrps_solute; grp++) {
-        cgrp_t cgrp = ctx.charge_groups[grp];
-        int i = cgrp.iswitch - 1;
+    for (int grp = 0; grp < charge_groups.n_cgrps_solute; grp++) {
+        const auto& charge_group = charge_groups.charge_groups[grp];
+        int i = charge_group.iswitch - 1;
         if (heavy[i] && !excluded[i] && i < ctx.n_atoms_solute) {
-            // Compute centroid of charge group
-            double cx = 0, cy = 0, cz = 0;
-            for (int j = 0; j < cgrp.n_atoms; j++) {
-                int ai = cgrp.a[j] - 1;
-                cx += coords_init[ai].x;
-                cy += coords_init[ai].y;
-                cz += coords_init[ai].z;
+            double cx = coords_init[i].x;
+            double cy = coords_init[i].y;
+            double cz = coords_init[i].z;
+            if (!use_switch_atom) {
+                cx = 0.0;
+                cy = 0.0;
+                cz = 0.0;
+                for (int atom : charge_group.atoms) {
+                    int ai = atom - 1;
+                    cx += coords_init[ai].x;
+                    cy += coords_init[ai].y;
+                    cz += coords_init[ai].z;
+                }
+                double inv_atoms = 1.0 / static_cast<double>(charge_group.atoms.size());
+                cx *= inv_atoms;
+                cy *= inv_atoms;
+                cz *= inv_atoms;
             }
-            cx /= cgrp.n_atoms;
-            cy /= cgrp.n_atoms;
-            cz /= cgrp.n_atoms;
 
             r2 = pow(cx - ctx.topo.solute_center.x, 2) + pow(cy - ctx.topo.solute_center.y, 2) + pow(cz - ctx.topo.solute_center.z, 2);
             bool in_shell = r2 > rin2;
-            for (int j = 0; j < cgrp.n_atoms; j++) {
-                shell[cgrp.a[j] - 1] = in_shell;
+            for (int atom : charge_group.atoms) {
+                shell[atom - 1] = in_shell;
                 if (in_shell) {
                     n_inshell++;
                 }
@@ -565,7 +507,7 @@ void init_pshells_with_centroids() {
         ctx.shell->upload();
     }
 
-    printf("(centroids): n_heavy = %d, n_inshell = %d\n", n_heavy, n_inshell);
+    printf("(%s): n_heavy = %d, n_inshell = %d\n", use_switch_atom ? "switch atoms" : "centroids", n_heavy, n_inshell);
 }
 
 void init_restrseqs() {
@@ -660,15 +602,14 @@ void init_shake() {
     ctx.Ndegf = 3 * ctx.n_atoms - ctx.n_shake_constraints;
     ctx.Ndegfree = ctx.Ndegf - 3 * ctx.n_excluded + excl_shake;
 
-    ctx.Ndegf_solvent = ctx.Ndegf - 3 * ctx.n_atoms_solute + n_solute_shake_constraints;
-    ctx.Ndegf_solute = ctx.Ndegf - ctx.Ndegf_solvent;
+    const double Ndegf_solvent = ctx.Ndegf - 3 * ctx.n_atoms_solute + n_solute_shake_constraints;
 
-    ctx.Ndegfree_solvent = ctx.Ndegfree - (ctx.n_shake_constraints - n_solute_shake_constraints);
-    ctx.Ndegfree_solute = ctx.Ndegfree - ctx.Ndegfree_solvent;
+    const double Ndegfree_solvent = ctx.Ndegfree - (ctx.n_shake_constraints - n_solute_shake_constraints);
+    const double Ndegfree_solute = ctx.Ndegfree - Ndegfree_solvent;
 
     printf("n_shake_constrains = %d, n_solute_shake_constraints = %d, excl_shake = %f\n", ctx.n_shake_constraints, n_solute_shake_constraints, excl_shake);
 
-    if (ctx.Ndegfree_solvent * ctx.Ndegfree_solute == 0) {
+    if (Ndegfree_solvent * Ndegfree_solute == 0) {
         ctx.separate_scaling = false;
     } else {
         ctx.separate_scaling = true;
@@ -761,6 +702,11 @@ static void init_unified_atom_parameters() {
             unified_catypes[unified_code - 1] = resolved_type;
         }
     }
+
+    if (ctx.run_gpu) {
+        ctx.unified_ccharges->upload();
+        ctx.unified_catypes->upload();
+    }
 }
 
 void init_variables() {
@@ -801,10 +747,6 @@ void init_variables() {
     init_ngbrs23_long("ngbrs23long.csv");
     // init_restrseqs();
     init_inv_mass();
-    if (ctx.md.charge_groups) {
-        init_charge_groups("charge_groups.csv");
-    }
-
     // From FEP file
     init_qatoms("q_atoms.csv");
     init_qangcouples("q_angcouples.csv");
@@ -835,11 +777,7 @@ void init_variables() {
 
     // Shake constraints, need to be initialized before last part of shrink_topology
     if (ctx.md.charge_groups) {
-        if (ctx.iuse_switch_atom == 1) {
-            init_pshells_with_switch_atoms();
-        } else {
-            init_pshells_with_centroids();
-        }
+        init_pshells_from_charge_groups(read_charge_groups("charge_groups.csv"));
     } else {
         init_pshells();
     }
@@ -900,12 +838,6 @@ void clean_variables() {
     ctx.cbonds.reset();
     ctx.coords_init.reset();
 
-    for (auto& charge_group : ctx.charge_groups) {
-        delete[] charge_group.a;
-        charge_group.a = nullptr;
-    }
-    ctx.charge_groups.clear();
-
     ctx.atypes.reset();
     ctx.catypes.reset();
     ctx.ccharges.reset();
@@ -914,21 +846,17 @@ void clean_variables() {
     ctx.unified_ccharges.reset();
     ctx.unified_catypes.reset();
     ctx.ngbrs_14.reset();
-    ctx.ngbrs_14_builder.clear();
     ctx.p_atoms_list.reset();
     ctx.w_atoms_list.reset();
     ctx.q_atoms_list.reset();
-    ctx.charge_table_all.reset();
     ctx.charge_pair_products.reset();
     ctx.p_charge_types.reset();
     ctx.w_charge_types.reset();
     ctx.q_charge_types.reset();
-    ctx.catype_table_all.reset();
     ctx.catype_pair_params.reset();
     ctx.p_catype_types.reset();
     ctx.w_catype_types.reset();
     ctx.q_catype_types.reset();
-    ctx.catype_to_type_host.clear();
     ctx.n_charge_types = 0;
     ctx.zero_charge_type = -1;
     ctx.n_catype_types = 0;
