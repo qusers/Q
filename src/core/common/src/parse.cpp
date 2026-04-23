@@ -139,9 +139,6 @@ void parse_md(const char* filename) {
         lambdas[i] = strtod(file.buffer[k][0], &eptr);
         k++;
     }
-    if (ctx.run_gpu) {
-        ctx.lambdas->upload();
-    }
 
     // [sequence_restraints]
     printf("k = %d\n", k);
@@ -163,9 +160,6 @@ void parse_md(const char* filename) {
         k++;
     }
 
-    if (ctx.run_gpu) {
-        ctx.restrseqs->upload();
-    }
 
     // [position_restraints]
     ctx.n_restrspos = atoi(file.buffer[k][0]);
@@ -195,10 +189,6 @@ void parse_md(const char* filename) {
         k++;
     }
 
-    if (ctx.run_gpu) {
-        ctx.restrspos->upload();
-    }
-
     // [distance_restraints]
     ctx.n_restrdists = atoi(file.buffer[k][0]);
     ctx.restrdists = std::make_unique<HostDeviceBuffer<restrdis_t>>(ctx.n_restrdists, true, ctx.run_gpu);
@@ -219,10 +209,6 @@ void parse_md(const char* filename) {
         k++;
     }
 
-    if (ctx.run_gpu) {
-        ctx.restrdists->upload();
-    }
-
     // [angle_restraints]
     ctx.n_restrangs = atoi(file.buffer[k][0]);
     ctx.restrangs = std::make_unique<HostDeviceBuffer<restrang_t>>(ctx.n_restrangs, true, ctx.run_gpu);
@@ -241,10 +227,6 @@ void parse_md(const char* filename) {
 
         restrangs[i] = restrang;
         k++;
-    }
-
-    if (ctx.run_gpu) {
-        ctx.restrangs->upload();
     }
 
     // [wall_restraints]
@@ -268,9 +250,6 @@ void parse_md(const char* filename) {
         k++;
     }
 
-    if (ctx.run_gpu) {
-        ctx.restrwalls->upload();
-    }
 }
 
 /* =============================================
@@ -344,11 +323,6 @@ void parse_coords(const char* filename) {
 
         coords_init[i] = coords[i];
     }
-
-    if (ctx.run_gpu) {
-        ctx.coords->upload();
-        ctx.coords_init->upload();
-    }
 }
 
 void parse_bonds(const char* filename) {
@@ -377,9 +351,6 @@ void parse_bonds(const char* filename) {
         bonds[i] = bond;
     }
 
-    if (ctx.run_gpu) {
-        ctx.bonds->upload();
-    }
 }
 
 void parse_cbonds(const char* filename) {
@@ -407,9 +378,6 @@ void parse_cbonds(const char* filename) {
         cbonds[i] = cbond;
     }
 
-    if (ctx.run_gpu) {
-        ctx.cbonds->upload();
-    }
 }
 
 void parse_angles(const char* filename) {
@@ -439,9 +407,6 @@ void parse_angles(const char* filename) {
         angles[i] = angle;
     }
 
-    if (ctx.run_gpu) {
-        ctx.angles->upload();
-    }
 }
 
 void parse_cangles(const char* filename) {
@@ -469,9 +434,6 @@ void parse_cangles(const char* filename) {
         cangles[i] = cangle;
     }
 
-    if (ctx.run_gpu) {
-        ctx.cangles->upload();
-    }
 }
 
 void parse_excluded(const char* filename) {
@@ -517,9 +479,6 @@ void parse_excluded(const char* filename) {
         if (excl) ctx.n_excluded++;
     }
 
-    if (ctx.run_gpu) {
-        ctx.excluded->upload();
-    }
 
     printf("Number of excluded atoms: %d\n", ctx.n_excluded);
 
@@ -555,9 +514,6 @@ void parse_torsions(const char* filename) {
         torsions[i] = torsion;
     }
 
-    if (ctx.run_gpu) {
-        ctx.torsions->upload();
-    }
 }
 
 void parse_ctorsions(const char* filename) {
@@ -588,9 +544,6 @@ void parse_ctorsions(const char* filename) {
         ctorsions[i] = ctorsion;
     }
 
-    if (ctx.run_gpu) {
-        ctx.ctorsions->upload();
-    }
 }
 
 void parse_impropers(const char* filename) {
@@ -621,9 +574,6 @@ void parse_impropers(const char* filename) {
         impropers[i] = improper;
     }
 
-    if (ctx.run_gpu) {
-        ctx.impropers->upload();
-    }
 }
 
 void parse_cimpropers(const char* filename) {
@@ -651,9 +601,6 @@ void parse_cimpropers(const char* filename) {
         cimpropers[i] = cimproper;
     }
 
-    if (ctx.run_gpu) {
-        ctx.cimpropers->upload();
-    }
 }
 
 void parse_charges(const char* filename) {
@@ -679,9 +626,6 @@ void parse_charges(const char* filename) {
         charges[i] = charge;
     }
 
-    if (ctx.run_gpu) {
-        ctx.charges->upload();
-    }
 }
 
 void parse_ccharges(const char* filename) {
@@ -708,9 +652,6 @@ void parse_ccharges(const char* filename) {
         ccharges[i] = ccharge;
     }
 
-    if (ctx.run_gpu) {
-        ctx.ccharges->upload();
-    }
 }
 
 void parse_ngbrs14(const char* filename) {
@@ -848,6 +789,11 @@ void parse_ngbrs23_long(const char* filename) {
 void parse_LJ_matrix() {
     auto& ctx = Context::instance();
     ctx.LJ_matrix = std::make_unique<HostDeviceBuffer<int>>(ctx.n_atoms_solute * ctx.n_atoms_solute, true, ctx.run_gpu);
+    parse_ngbrs14("ngbrs14.csv");
+    parse_ngbrs23("ngbrs23.csv");
+    parse_ngbrs14_long("ngbrs14long.csv");
+    parse_ngbrs23_long("ngbrs23long.csv");
+
 }
 
 void parse_catypes(const char* filename) {
@@ -893,9 +839,6 @@ void parse_catypes(const char* filename) {
 #endif
     }
 
-    if (ctx.run_gpu) {
-        ctx.catypes->upload();
-    }
 }
 
 void parse_atypes(const char* filename) {
@@ -921,9 +864,6 @@ void parse_atypes(const char* filename) {
         atypes[i] = atype;
     }
 
-    if (ctx.run_gpu) {
-        ctx.atypes->upload();
-    }
 }
 
 void parse_molecules(const char* filename) {
@@ -944,13 +884,13 @@ void parse_molecules(const char* filename) {
     }
 }
 
-charge_group_config_t read_charge_groups(const char* filename) {
+void parse_charge_groups(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
     charge_group_config_t config;
 
     if (file.n_lines < 1) {
-        return config;
+        return;
     }
 
     config.n_cgrps_solute = atoi(file.buffer[1][0]);
@@ -975,7 +915,7 @@ charge_group_config_t read_charge_groups(const char* filename) {
             line_nr++;
         }
     }
-    return config;
+    ctx.charge_group_config = config;
 }
 
 /* =============================================
@@ -1319,9 +1259,6 @@ void parse_qelscales(const char* filename) {
         }
     }
 
-    if (ctx.run_gpu) {
-        ctx.q_elscales->upload();
-    }
 }
 
 void parse_qexclpairs(const char* filename) {

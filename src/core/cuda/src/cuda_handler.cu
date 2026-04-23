@@ -28,7 +28,6 @@
 
 void CudaHandler::initialize() {
     if (!initialized_) {
-        Context::instance().cuda_initialize_helpers();
         init_angle_force_kernel_data();
         init_bond_force_kernel_data();
         init_improper2_force_kernel_data();
@@ -81,7 +80,6 @@ void CudaHandler::shutdown() {
         cleanup_shake_constraints();
         cleanup_temperature();
         cleanup_torsion_force();
-        Context::instance().cuda_free_helpers();
         initialized_ = false;
     }
 }

@@ -2,18 +2,7 @@
 #define __PARSE_H__
 
 #include <vector>
-
-struct charge_group_t {
-    int iswitch = 0;
-    std::vector<int> atoms;
-};
-
-struct charge_group_config_t {
-    int n_cgrps_solute = 0;
-    int n_cgrps_solvent = 0;
-    int iuse_switch_atom = 0;
-    std::vector<charge_group_t> charge_groups;
-};
+#include "md_types.h"
 
 
 /* =============================================
@@ -50,7 +39,7 @@ void parse_catypes(const char *filename);
 void parse_atypes(const char *filename);
 void parse_excluded(const char *filename);
 void parse_molecules(const char *filename);
-charge_group_config_t read_charge_groups(const char *filename);
+void parse_charge_groups(const char *filename);
 
 /* =============================================
  * == FROM FEP FILE

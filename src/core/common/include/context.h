@@ -15,10 +15,10 @@
 
 class Context {
    public:
-    static Context& instance() {
-        static Context ctx;
-        return ctx;
-    }
+    Context();
+    ~Context();
+
+    static Context& instance();
     /*
     Config
     */
@@ -39,6 +39,7 @@ class Context {
     int n_excluded = 0;
     int n_lambdas = 0;
     bool separate_scaling = false;
+    charge_group_config_t charge_group_config;
 
     /*
     Atoms move variables
@@ -125,6 +126,7 @@ class Context {
     /*
     Shake
     */
+
     int n_shake_constraints = 0;
     std::unique_ptr<HostDeviceBuffer<int>> mol_n_shakes;
     std::unique_ptr<HostDeviceBuffer<shake_bond_t>> shake_bonds;
@@ -293,22 +295,21 @@ class Context {
         return unified_catype_by_code(unified_atype_code(atom_idx, state));
     }
 
-    void cuda_initialize_helpers();
-    void cuda_free_helpers();
     void cuda_reset_energies();
 
     void init();
+    void preprocess_data();
 
 
    private:
-    Context() = default;
-    ~Context() {}
-
-    void cuda_initialize_atom_lists_host();
-    void cuda_initialize_ngbrs14_host();
-    void cuda_initialize_charge_tables_host();
-    void cuda_initialize_catype_tables_host();
+    static Context* current_;
 
     Context(const Context&) = delete;
     Context& operator=(const Context&) = delete;
+    Context(Context&&) = delete;
+    Context& operator=(Context&&) = delete;
+
+    void init_data_from_files();
+    void gpu_data_upload();
+
 };
