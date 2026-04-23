@@ -3,21 +3,6 @@
 
 #include <vector>
 
-struct csvfile_t {
-    char ***buffer = nullptr;
-    int n_lines = 0;
-    int ext = 0;
-
-    csvfile_t() = default;
-    csvfile_t(const csvfile_t&) = delete;
-    csvfile_t& operator=(const csvfile_t&) = delete;
-    csvfile_t(csvfile_t&& other) noexcept;
-    csvfile_t& operator=(csvfile_t&& other) noexcept;
-    ~csvfile_t();
-
-    void reset() noexcept;
-};
-
 struct charge_group_t {
     int iswitch = 0;
     std::vector<int> atoms;
@@ -30,7 +15,6 @@ struct charge_group_config_t {
     std::vector<charge_group_t> charge_groups;
 };
 
-csvfile_t read_csv(const char *filename, int ext, const char *base_folder);
 
 /* =============================================
  * == FROM MD FILE
