@@ -712,7 +712,7 @@ static void init_unified_atom_parameters() {
 void init_variables() {
     auto& ctx = Context::instance();
     // From MD file
-    init_md("md.csv");
+    parse_md("md.csv");
 
     ctx.dt = time_unit * ctx.md.stepsize;
     ctx.tau_T = time_unit * ctx.md.bath_coupling;
@@ -723,53 +723,53 @@ void init_variables() {
     }
 
     // From topology file
-    init_topo("topo.csv");
+    parse_topo("topo.csv");
 
-    init_angles("angles.csv");
-    init_atypes("atypes.csv");
-    init_bonds("bonds.csv");
-    init_cangles("cangles.csv");
-    init_catypes("catypes.csv");
-    init_cbonds("cbonds.csv");
-    init_ccharges("ccharges.csv");
-    init_charges("charges.csv");
-    init_cimpropers("cimpropers.csv");
-    init_coords("coords.csv");
-    init_ctorsions("ctorsions.csv");
-    init_excluded("excluded.csv");
-    init_molecules("molecules.csv");
-    init_impropers("impropers.csv");
-    init_torsions("torsions.csv");
-    init_LJ_matrix();
-    init_ngbrs14("ngbrs14.csv");
-    init_ngbrs23("ngbrs23.csv");
-    init_ngbrs14_long("ngbrs14long.csv");
-    init_ngbrs23_long("ngbrs23long.csv");
+    parse_angles("angles.csv");
+    parse_atypes("atypes.csv");
+    parse_bonds("bonds.csv");
+    parse_cangles("cangles.csv");
+    parse_catypes("catypes.csv");
+    parse_cbonds("cbonds.csv");
+    parse_ccharges("ccharges.csv");
+    parse_charges("charges.csv");
+    parse_cimpropers("cimpropers.csv");
+    parse_coords("coords.csv");
+    parse_ctorsions("ctorsions.csv");
+    parse_excluded("excluded.csv");
+    parse_molecules("molecules.csv");
+    parse_impropers("impropers.csv");
+    parse_torsions("torsions.csv");
+    parse_LJ_matrix();
+    parse_ngbrs14("ngbrs14.csv");
+    parse_ngbrs23("ngbrs23.csv");
+    parse_ngbrs14_long("ngbrs14long.csv");
+    parse_ngbrs23_long("ngbrs23long.csv");
     // init_restrseqs();
     init_inv_mass();
     // From FEP file
-    init_qatoms("q_atoms.csv");
-    init_qangcouples("q_angcouples.csv");
-    init_qcangles("q_cangles.csv");
-    init_qcatypes("q_catypes.csv");
-    init_qcbonds("q_cbonds.csv");
-    init_qcimpropers("q_cimpropers.csv");
-    init_qctorsions("q_ctorsions.csv");
-    init_qoffdiags("q_offdiags.csv");
-    init_qimprcouples("q_imprcouples.csv");
-    init_qsoftpairs("q_softpairs.csv");
-    init_qtorcouples("q_torcouples.csv");
+    parse_qatoms("q_atoms.csv");
+    parse_qangcouples("q_angcouples.csv");
+    parse_qcangles("q_cangles.csv");
+    parse_qcatypes("q_catypes.csv");
+    parse_qcbonds("q_cbonds.csv");
+    parse_qcimpropers("q_cimpropers.csv");
+    parse_qctorsions("q_ctorsions.csv");
+    parse_qoffdiags("q_offdiags.csv");
+    parse_qimprcouples("q_imprcouples.csv");
+    parse_qsoftpairs("q_softpairs.csv");
+    parse_qtorcouples("q_torcouples.csv");
 
-    init_qangles("q_angles.csv");
-    init_qatypes("q_atypes.csv");
-    init_qbonds("q_bonds.csv");
-    init_qcharges("q_charges.csv");
-    init_qelscales("q_elscales.csv");
-    init_qexclpairs("q_exclpairs.csv");
-    init_qimpropers("q_impropers.csv");
-    init_qshakes("q_shakes.csv");
-    init_qsoftcores("q_softcores.csv");
-    init_qtorsions("q_torsions.csv");
+    parse_qangles("q_angles.csv");
+    parse_qatypes("q_atypes.csv");
+    parse_qbonds("q_bonds.csv");
+    parse_qcharges("q_charges.csv");
+    parse_qelscales("q_elscales.csv");
+    parse_qexclpairs("q_exclpairs.csv");
+    parse_qimpropers("q_impropers.csv");
+    parse_qshakes("q_shakes.csv");
+    parse_qsoftcores("q_softcores.csv");
+    parse_qtorsions("q_torsions.csv");
 
     // First part of shrink topology, this needs to be done first as shake constraints are based on bonds
     exclude_qatom_definitions();
@@ -798,8 +798,8 @@ void init_variables() {
     init_xcoords();
 
     // From input file
-    init_icoords("i_coords.csv");
-    init_ivelocities("i_velocities.csv");
+    parse_icoords("i_coords.csv");
+    parse_ivelocities("i_velocities.csv");
 
     // Init waters, boundary restrains
     ctx.n_waters = (ctx.n_atoms - ctx.n_atoms_solute) / 3;

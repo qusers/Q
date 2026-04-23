@@ -9,6 +9,53 @@
 #include "common/include/constants.h"
 #include "common/include/context.h"
 
+csvfile_t::csvfile_t(csvfile_t&& other) noexcept
+    : buffer(other.buffer), n_lines(other.n_lines), ext(other.ext) {
+    other.buffer = nullptr;
+    other.n_lines = 0;
+    other.ext = 0;
+}
+
+csvfile_t& csvfile_t::operator=(csvfile_t&& other) noexcept {
+    if (this != &other) {
+        reset();
+        buffer = other.buffer;
+        n_lines = other.n_lines;
+        ext = other.ext;
+
+        other.buffer = nullptr;
+        other.n_lines = 0;
+        other.ext = 0;
+    }
+
+    return *this;
+}
+
+csvfile_t::~csvfile_t() {
+    reset();
+}
+
+void csvfile_t::reset() noexcept {
+    if (buffer == nullptr || n_lines <= 0) {
+        buffer = nullptr;
+        n_lines = 0;
+        ext = 0;
+        return;
+    }
+
+    for (int i = 0; i <= n_lines + ext; i++) {
+        for (int j = 0; j < N_COLUMNS; j++) {
+            free(buffer[i][j]);
+        }
+        free(buffer[i]);
+    }
+    free(buffer);
+
+    buffer = nullptr;
+    n_lines = 0;
+    ext = 0;
+}
+
 csvfile_t read_csv(const char* filename, int ext, const char* base_folder) {
     csvfile_t retval;
 
@@ -77,24 +124,13 @@ csvfile_t read_csv(const char* filename, int ext, const char* base_folder) {
     return retval;
 }
 
-void clean_csv(csvfile_t file) {
-    if (file.n_lines > 0) {
-        for (int i = 0; i <= file.n_lines + file.ext; i++) {
-            for (int j = 0; j < N_COLUMNS; j++) {
-                free(file.buffer[i][j]);
-            }
-            free(file.buffer[i]);
-        }
-        free(file.buffer);
-    }
-}
 
 /* =============================================
  * == FROM MD FILE
  * =============================================
  */
 
-void init_md(const char* filename) {
+void parse_md(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
     auto& md = ctx.md;
@@ -354,8 +390,6 @@ void init_md(const char* filename) {
     if (ctx.run_gpu) {
         ctx.restrwalls->upload();
     }
-
-    clean_csv(file);
 }
 
 /* =============================================
@@ -363,7 +397,7 @@ void init_md(const char* filename) {
  * =============================================
  */
 
-void init_topo(const char* filename) {
+void parse_topo(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
     auto& topo = ctx.topo;
@@ -398,11 +432,9 @@ void init_topo(const char* filename) {
         printf(">>> FATAL: Invalid vdw_rule %d. Must be 1 (geometric) or 2 (arithmetic). Exiting...\n", topo.vdw_rule);
         exit(EXIT_FAILURE);
     }
-
-    clean_csv(file);
 }
 
-void init_coords(const char* filename) {
+void parse_coords(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 1, ctx.base_folder.c_str());
 
@@ -410,7 +442,6 @@ void init_coords(const char* filename) {
     ctx.n_atoms_solute = 0;
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -437,11 +468,9 @@ void init_coords(const char* filename) {
         ctx.coords->upload();
         ctx.coords_init->upload();
     }
-
-    clean_csv(file);
 }
 
-void init_bonds(const char* filename) {
+void parse_bonds(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 1, ctx.base_folder.c_str());
 
@@ -449,7 +478,6 @@ void init_bonds(const char* filename) {
     ctx.n_bonds_solute = 0;
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -471,18 +499,15 @@ void init_bonds(const char* filename) {
     if (ctx.run_gpu) {
         ctx.bonds->upload();
     }
-
-    clean_csv(file);
 }
 
-void init_cbonds(const char* filename) {
+void parse_cbonds(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     ctx.n_cbonds = 0;
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -504,11 +529,9 @@ void init_cbonds(const char* filename) {
     if (ctx.run_gpu) {
         ctx.cbonds->upload();
     }
-
-    clean_csv(file);
 }
 
-void init_angles(const char* filename) {
+void parse_angles(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 1, ctx.base_folder.c_str());
 
@@ -516,7 +539,6 @@ void init_angles(const char* filename) {
     ctx.n_angles_solute = 0;
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -539,19 +561,15 @@ void init_angles(const char* filename) {
     if (ctx.run_gpu) {
         ctx.angles->upload();
     }
-
-
-    clean_csv(file);
 }
 
-void init_cangles(const char* filename) {
+void parse_cangles(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     ctx.n_cangles = 0;
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -573,11 +591,9 @@ void init_cangles(const char* filename) {
     if (ctx.run_gpu) {
         ctx.cangles->upload();
     }
-
-    clean_csv(file);
 }
 
-void init_excluded(const char* filename) {
+void parse_excluded(const char* filename) {
     auto& ctx = Context::instance();
     ctx.excluded = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
     auto *excluded = ctx.excluded->cpu_data_p;
@@ -630,7 +646,7 @@ void init_excluded(const char* filename) {
     fclose(fp);
 }
 
-void init_torsions(const char* filename) {
+void parse_torsions(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 1, ctx.base_folder.c_str());
 
@@ -638,7 +654,6 @@ void init_torsions(const char* filename) {
     ctx.n_torsions_solute = 0;
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -662,18 +677,15 @@ void init_torsions(const char* filename) {
     if (ctx.run_gpu) {
         ctx.torsions->upload();
     }
-
-    clean_csv(file);
 }
 
-void init_ctorsions(const char* filename) {
+void parse_ctorsions(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     ctx.n_ctorsions = 0;
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -698,11 +710,9 @@ void init_ctorsions(const char* filename) {
     if (ctx.run_gpu) {
         ctx.ctorsions->upload();
     }
-
-    clean_csv(file);
 }
 
-void init_impropers(const char* filename) {
+void parse_impropers(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 1, ctx.base_folder.c_str());
 
@@ -710,7 +720,6 @@ void init_impropers(const char* filename) {
     ctx.n_impropers_solute = 0;
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -734,18 +743,15 @@ void init_impropers(const char* filename) {
     if (ctx.run_gpu) {
         ctx.impropers->upload();
     }
-
-    clean_csv(file);
 }
 
-void init_cimpropers(const char* filename) {
+void parse_cimpropers(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     ctx.n_cimpropers = 0;
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -767,18 +773,15 @@ void init_cimpropers(const char* filename) {
     if (ctx.run_gpu) {
         ctx.cimpropers->upload();
     }
-
-    clean_csv(file);
 }
 
-void init_charges(const char* filename) {
+void parse_charges(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     ctx.n_charges = 0;
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -798,18 +801,15 @@ void init_charges(const char* filename) {
     if (ctx.run_gpu) {
         ctx.charges->upload();
     }
-
-    clean_csv(file);
 }
 
-void init_ccharges(const char* filename) {
+void parse_ccharges(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     ctx.n_ccharges = 0;
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -830,11 +830,9 @@ void init_ccharges(const char* filename) {
     if (ctx.run_gpu) {
         ctx.ccharges->upload();
     }
-
-    clean_csv(file);
 }
 
-void init_ngbrs14(const char* filename) {
+void parse_ngbrs14(const char* filename) {
     auto& ctx = Context::instance();
     auto &LJ_matrix = ctx.LJ_matrix->cpu_data_p;
     FILE* fp;
@@ -881,7 +879,7 @@ void init_ngbrs14(const char* filename) {
     fclose(fp);
 }
 
-void init_ngbrs23(const char* filename) {
+void parse_ngbrs23(const char* filename) {
     auto& ctx = Context::instance();
     auto &LJ_matrix = ctx.LJ_matrix->cpu_data_p;
     FILE* fp;
@@ -927,13 +925,12 @@ void init_ngbrs23(const char* filename) {
     fclose(fp);
 }
 
-void init_ngbrs14_long(const char* filename) {
+void parse_ngbrs14_long(const char* filename) {
     auto& ctx = Context::instance();
     auto &LJ_matrix = ctx.LJ_matrix->cpu_data_p;
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -946,17 +943,14 @@ void init_ngbrs14_long(const char* filename) {
         LJ_matrix[jx * ctx.n_atoms_solute + ix] = 1;
 
     }
-
-    clean_csv(file);
 }
 
-void init_ngbrs23_long(const char* filename) {
+void parse_ngbrs23_long(const char* filename) {
     auto& ctx = Context::instance();
     auto &LJ_matrix = ctx.LJ_matrix->cpu_data_p;
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -968,23 +962,20 @@ void init_ngbrs23_long(const char* filename) {
         LJ_matrix[ix * ctx.n_atoms_solute + jx] = 3;
         LJ_matrix[jx * ctx.n_atoms_solute + ix] = 3;
     }
-
-    clean_csv(file);
 }
 
-void init_LJ_matrix() {
+void parse_LJ_matrix() {
     auto& ctx = Context::instance();
     ctx.LJ_matrix = std::make_unique<HostDeviceBuffer<int>>(ctx.n_atoms_solute * ctx.n_atoms_solute, true, ctx.run_gpu);
 }
 
-void init_catypes(const char* filename) {
+void parse_catypes(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     ctx.n_catypes = 0;
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -1024,18 +1015,15 @@ void init_catypes(const char* filename) {
     if (ctx.run_gpu) {
         ctx.catypes->upload();
     }
-
-    clean_csv(file);
 }
 
-void init_atypes(const char* filename) {
+void parse_atypes(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     ctx.n_atypes = 0;
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -1055,18 +1043,15 @@ void init_atypes(const char* filename) {
     if (ctx.run_gpu) {
         ctx.atypes->upload();
     }
-
-    clean_csv(file);
 }
 
-void init_molecules(const char* filename) {
+void parse_molecules(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     ctx.n_molecules = 0;
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -1076,8 +1061,6 @@ void init_molecules(const char* filename) {
     for (int i = 0; i < ctx.n_molecules; i++) {
         ctx.molecules[i] = atoi(file.buffer[i + 1][0]);
     }
-
-    clean_csv(file);
 }
 
 charge_group_config_t read_charge_groups(const char* filename) {
@@ -1086,7 +1069,6 @@ charge_group_config_t read_charge_groups(const char* filename) {
     charge_group_config_t config;
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return config;
     }
 
@@ -1112,8 +1094,6 @@ charge_group_config_t read_charge_groups(const char* filename) {
             line_nr++;
         }
     }
-
-    clean_csv(file);
     return config;
 }
 
@@ -1122,14 +1102,13 @@ charge_group_config_t read_charge_groups(const char* filename) {
  * =============================================
  */
 
-void init_qangcouples(const char* filename) {
+void parse_qangcouples(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     ctx.n_qangcouples = 0;
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -1140,11 +1119,9 @@ void init_qangcouples(const char* filename) {
         ctx.q_angcouples[i].acode = atoi(file.buffer[i + 1][0]);
         ctx.q_angcouples[i].bcode = atoi(file.buffer[i + 1][1]);
     }
-
-    clean_csv(file);
 }
 
-void init_qatoms(const char* filename) {
+void parse_qatoms(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
@@ -1152,7 +1129,6 @@ void init_qatoms(const char* filename) {
     ctx.q_atoms.clear();
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -1162,18 +1138,15 @@ void init_qatoms(const char* filename) {
     for (int i = 0; i < ctx.n_qatoms; i++) {
         ctx.q_atoms[i] = atoi(file.buffer[i + 1][0]) - 1;
     }
-
-    clean_csv(file);
 }
 
-void init_qcangles(const char* filename) {
+void parse_qcangles(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     ctx.n_qcangles = 0;
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -1185,18 +1158,15 @@ void init_qcangles(const char* filename) {
         ctx.q_cangles[i].kth = strtod(file.buffer[i + 1][0], &eptr);
         ctx.q_cangles[i].th0 = strtod(file.buffer[i + 1][1], &eptr);
     }
-
-    clean_csv(file);
 }
 
-void init_qcatypes(const char* filename) {
+void parse_qcatypes(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     ctx.n_qcatypes = 0;
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -1226,18 +1196,15 @@ void init_qcatypes(const char* filename) {
         printf("Preprocessed q_catypes Bi parameters for arithmetic vdW rule\n");
 #endif
     }
-
-    clean_csv(file);
 }
 
-void init_qcbonds(const char* filename) {
+void parse_qcbonds(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     ctx.n_qcbonds = 0;
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -1249,18 +1216,15 @@ void init_qcbonds(const char* filename) {
         ctx.q_cbonds[i].kb = strtod(file.buffer[i + 1][0], &eptr);
         ctx.q_cbonds[i].b0 = strtod(file.buffer[i + 1][1], &eptr);
     }
-
-    clean_csv(file);
 }
 
-void init_qcimpropers(const char* filename) {
+void parse_qcimpropers(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     ctx.n_qcimpropers = 0;
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -1272,18 +1236,15 @@ void init_qcimpropers(const char* filename) {
         ctx.q_cimpropers[i].k = strtod(file.buffer[i + 1][0], &eptr);
         ctx.q_cimpropers[i].phi0 = strtod(file.buffer[i + 1][1], &eptr);
     }
-
-    clean_csv(file);
 }
 
-void init_qctorsions(const char* filename) {
+void parse_qctorsions(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     ctx.n_qctorsions = 0;
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -1296,18 +1257,15 @@ void init_qctorsions(const char* filename) {
         ctx.q_ctorsions[i].n = strtod(file.buffer[i + 1][1], &eptr);
         ctx.q_ctorsions[i].d = strtod(file.buffer[i + 1][2], &eptr);
     }
-
-    clean_csv(file);
 }
 
-void init_qoffdiags(const char* filename) {
+void parse_qoffdiags(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     ctx.n_qoffdiags = 0;
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -1323,18 +1281,15 @@ void init_qoffdiags(const char* filename) {
         ctx.q_offdiags[i].Aij = strtod(file.buffer[i + 1][4], &eptr);
         ctx.q_offdiags[i].muij = strtod(file.buffer[i + 1][5], &eptr);
     }
-
-    clean_csv(file);
 }
 
-void init_qimprcouples(const char* filename) {
+void parse_qimprcouples(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     ctx.n_qimprcouples = 0;
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -1345,18 +1300,15 @@ void init_qimprcouples(const char* filename) {
         ctx.q_imprcouples[i].icode = atoi(file.buffer[i + 1][0]);
         ctx.q_imprcouples[i].bcode = atoi(file.buffer[i + 1][1]);
     }
-
-    clean_csv(file);
 }
 
-void init_qsoftpairs(const char* filename) {
+void parse_qsoftpairs(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     ctx.n_qsoftpairs = 0;
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -1367,18 +1319,15 @@ void init_qsoftpairs(const char* filename) {
         ctx.q_softpairs[i].qi = atoi(file.buffer[i + 1][0]);
         ctx.q_softpairs[i].qj = atoi(file.buffer[i + 1][1]);
     }
-
-    clean_csv(file);
 }
 
-void init_qtorcouples(const char* filename) {
+void parse_qtorcouples(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     ctx.n_qtorcouples = 0;
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -1389,16 +1338,13 @@ void init_qtorcouples(const char* filename) {
         ctx.q_torcouples[i].tcode = atoi(file.buffer[i + 1][0]);
         ctx.q_torcouples[i].bcode = atoi(file.buffer[i + 1][1]);
     }
-
-    clean_csv(file);
 }
 
-void init_qangles(const char* filename) {
+void parse_qangles(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -1413,16 +1359,13 @@ void init_qangles(const char* filename) {
             ctx.q_angles[i + j * ctx.n_qangles].code = atoi(file.buffer[i + j * ctx.n_qangles + 1][3]);
         }
     }
-
-    clean_csv(file);
 }
 
-void init_qatypes(const char* filename) {
+void parse_qatypes(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -1432,16 +1375,13 @@ void init_qatypes(const char* filename) {
             ctx.q_atypes[i + j * ctx.n_qatoms].code = atoi(file.buffer[i + j * ctx.n_qatoms + 1][0]);
         }
     }
-
-    clean_csv(file);
 }
 
-void init_qbonds(const char* filename) {
+void parse_qbonds(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -1455,16 +1395,13 @@ void init_qbonds(const char* filename) {
             ctx.q_bonds[i + j * ctx.n_qbonds].code = atoi(file.buffer[i + j * ctx.n_qbonds + 1][2]);
         }
     }
-
-    clean_csv(file);
 }
 
-void init_qcharges(const char* filename) {
+void parse_qcharges(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -1476,18 +1413,15 @@ void init_qcharges(const char* filename) {
             ctx.q_charges[i + j * ctx.n_qatoms].charge = strtod(file.buffer[i + j * ctx.n_qatoms + 1][0], &eptr);
         }
     }
-
-    clean_csv(file);
 }
 
-void init_qelscales(const char* filename) {
+void parse_qelscales(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     if (file.n_lines < 1) {
         ctx.n_qelscales = 0;
         ctx.q_elscales = std::make_unique<HostDeviceBuffer<q_elscale_t>>(0, true, ctx.run_gpu);
-        clean_csv(file);
         return;
     }
 
@@ -1507,16 +1441,13 @@ void init_qelscales(const char* filename) {
     if (ctx.run_gpu) {
         ctx.q_elscales->upload();
     }
-
-    clean_csv(file);
 }
 
-void init_qexclpairs(const char* filename) {
+void parse_qexclpairs(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -1530,16 +1461,13 @@ void init_qexclpairs(const char* filename) {
             ctx.q_exclpairs[i + j * ctx.n_qexclpairs].excl = atoi(file.buffer[i + j * ctx.n_qexclpairs + 1][2]);
         }
     }
-
-    clean_csv(file);
 }
 
-void init_qimpropers(const char* filename) {
+void parse_qimpropers(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -1555,16 +1483,13 @@ void init_qimpropers(const char* filename) {
             ctx.q_impropers[i + j * ctx.n_qimpropers].code = atoi(file.buffer[i + j * ctx.n_qimpropers + 1][4]);
         }
     }
-
-    clean_csv(file);
 }
 
-void init_qshakes(const char* filename) {
+void parse_qshakes(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -1579,16 +1504,13 @@ void init_qshakes(const char* filename) {
             ctx.q_shakes[i + j * ctx.n_qshakes].dist = strtod(file.buffer[i + j * ctx.n_qshakes + 1][2], &eptr);
         }
     }
-
-    clean_csv(file);
 }
 
-void init_qsoftcores(const char* filename) {
+void parse_qsoftcores(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -1603,16 +1525,13 @@ void init_qsoftcores(const char* filename) {
             ctx.q_softcores[i + j * ctx.n_qsoftcores].s = strtod(file.buffer[i + j * ctx.n_qsoftcores + 1][0], &eptr);
         }
     }
-
-    clean_csv(file);
 }
 
-void init_qtorsions(const char* filename) {
+void parse_qtorsions(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -1628,8 +1547,6 @@ void init_qtorsions(const char* filename) {
             ctx.q_torsions[i + j * ctx.n_qtorsions].code = atoi(file.buffer[i + j * ctx.n_qtorsions + 1][4]);
         }
     }
-
-    clean_csv(file);
 }
 
 /* =============================================
@@ -1637,12 +1554,11 @@ void init_qtorsions(const char* filename) {
  * =============================================
  */
 
-void init_icoords(const char* filename) {
+void parse_icoords(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -1653,16 +1569,13 @@ void init_icoords(const char* filename) {
         coords[i].y = strtod(file.buffer[i + 1][1], &eptr);
         coords[i].z = strtod(file.buffer[i + 1][2], &eptr);
     }
-
-    clean_csv(file);
 }
 
-void init_ivelocities(const char* filename) {
+void parse_ivelocities(const char* filename) {
     auto& ctx = Context::instance();
     csvfile_t file = read_csv(filename, 0, ctx.base_folder.c_str());
 
     if (file.n_lines < 1) {
-        clean_csv(file);
         return;
     }
 
@@ -1677,6 +1590,4 @@ void init_ivelocities(const char* filename) {
     if (ctx.run_gpu) {
         ctx.velocities->upload();
     }
-
-    clean_csv(file);
 }
