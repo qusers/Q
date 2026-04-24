@@ -19,7 +19,13 @@ __device__ __forceinline__ void idx2xy(int n, int t, int& x, int& y) {
     y += x;
 }
 
-__device__ __forceinline__ double shfl(double v, int srcLane, unsigned mask = 0xffffffffu) {
+template <typename T>
+__device__ __forceinline__ T shfl_value(T v, int srcLane, unsigned mask = 0xffffffffu) {
+    return __shfl_sync(mask, v, srcLane);
+}
+
+template <>
+__device__ __forceinline__ double shfl_value(double v, int srcLane, unsigned mask) {
     int2 a = *reinterpret_cast<int2*>(&v);
     a.x = __shfl_sync(mask, a.x, srcLane);
     a.y = __shfl_sync(mask, a.y, srcLane);
@@ -27,9 +33,9 @@ __device__ __forceinline__ double shfl(double v, int srcLane, unsigned mask = 0x
 }
 
 __device__ __forceinline__ coord_t shfl_coord(coord_t v, int srcLane, unsigned mask = 0xffffffffu) {
-    v.x = shfl(v.x, srcLane, mask);
-    v.y = shfl(v.y, srcLane, mask);
-    v.z = shfl(v.z, srcLane, mask);
+    v.x = shfl_value(v.x, srcLane, mask);
+    v.y = shfl_value(v.y, srcLane, mask);
+    v.z = shfl_value(v.z, srcLane, mask);
     return v;
 }
 
@@ -37,7 +43,7 @@ __device__ void calculate_unforce_bound(
     const coord_t& x,
     const coord_t& y,
 
-    const double charge_product,
+    const real_t charge_product,
     const vdw_pair_param_t& pair_param,
 
     const double coulomb_constant,
@@ -48,10 +54,12 @@ __device__ void calculate_unforce_bound(
     double& evdw,
     double& ecoul,
     double& dv) {
-    double3 d = {x.x - y.x, x.y - y.y, x.z - y.z};
-    double r = rsqrt(d.x * d.x + d.y * d.y + d.z * d.z);
-    double r2 = r * r;
-    double r6 = r2 * r2 * r2;
+    const real_t dx = x.x - y.x;
+    const real_t dy = x.y - y.y;
+    const real_t dz = x.z - y.z;
+    const real_t r = rsqrt(dx * dx + dy * dy + dz * dz);
+    const real_t r2 = r * r;
+    const real_t r6 = r2 * r2 * r2;
     // double v_a = r6 * r6;
     // double v_b = r6;
     // ecoul = r;
@@ -60,8 +68,8 @@ __device__ void calculate_unforce_bound(
 
     ecoul = scaling * coulomb_constant * charge_product * r * lambda;
 
-    double v_a = pair_param.a * r6 * r6 * lambda;
-    double v_b = pair_param.b * r6 * lambda;
+    const real_t v_a = pair_param.a * r6 * r6 * static_cast<real_t>(lambda);
+    const real_t v_b = pair_param.b * r6 * static_cast<real_t>(lambda);
     evdw = v_a - v_b;
     dv = r2 * (-ecoul - 12.0 * v_a + 6.0 * v_b);
 }
@@ -72,7 +80,7 @@ __global__ void calc_nonbonded_force_kernel(
 
     const int* x_charges_types,
     const int* y_charges_types,
-    const double* charge_pair_products,
+    const real_t* charge_pair_products,
 
     const int* x_atypes_types,
     const int* y_atypes_types,
@@ -139,7 +147,7 @@ __global__ void calc_nonbonded_force_kernel(
     int x_atom_idx = (x_idx < nx) ? x_idx_list[x_idx] : -1;
     int y_atom_idx = (y_idx < ny) ? y_idx_list[y_idx] : -1;
 
-    coord_t invalid = {-1e9, -1e9, -1e9};
+    coord_t invalid = {static_cast<real_t>(-1e9), static_cast<real_t>(-1e9), static_cast<real_t>(-1e9)};
     coord_t x_coord = (x_atom_idx >= 0) ? d_coords[x_atom_idx] : invalid;
     coord_t y_coord = (y_atom_idx >= 0) ? d_coords[y_atom_idx] : invalid;
 
@@ -194,9 +202,9 @@ __global__ void calc_nonbonded_force_kernel(
         y_charge_type_idx = __shfl_sync(mask, y_charge_type_idx, src);
         y_catype_type_idx = __shfl_sync(mask, y_catype_type_idx, src);
 
-        y_force.x = shfl(y_force.x, src, mask);
-        y_force.y = shfl(y_force.y, src, mask);
-        y_force.z = shfl(y_force.z, src, mask);
+        y_force.x = shfl_value(y_force.x, src, mask);
+        y_force.y = shfl_value(y_force.y, src, mask);
+        y_force.z = shfl_value(y_force.z, src, mask);
     };
 
     if (disable_water_h_lj) {
@@ -214,7 +222,7 @@ __global__ void calc_nonbonded_force_kernel(
     for (int i = 0; i < 32; i++) {
         if (is_valid()) {
             double scaling = 1.0;
-            double charge_product = charge_pair_products[charge_pair_row + y_charge_type_idx];
+            real_t charge_product = charge_pair_products[charge_pair_row + y_charge_type_idx];
             vdw_pair_param_t pair_param = catype_pair_params[pair_row + y_catype_type_idx];
 
             // todo: Now the idx is wrong, should optimize it later
@@ -242,14 +250,16 @@ __global__ void calc_nonbonded_force_kernel(
             evdw_sum += evdw;
             ecoul_sum += ecoul;
 
-            double3 d = {x_coord.x - y_coord.x, x_coord.y - y_coord.y, x_coord.z - y_coord.z};
-            y_force.x -= dv * d.x;
-            y_force.y -= dv * d.y;
-            y_force.z -= dv * d.z;
+            const real_t dx = x_coord.x - y_coord.x;
+            const real_t dy = x_coord.y - y_coord.y;
+            const real_t dz = x_coord.z - y_coord.z;
+            y_force.x -= dv * dx;
+            y_force.y -= dv * dy;
+            y_force.z -= dv * dz;
 
-            x_force.x += dv * d.x;
-            x_force.y += dv * d.y;
-            x_force.z += dv * d.z;
+            x_force.x += dv * dx;
+            x_force.y += dv * dy;
+            x_force.z += dv * dz;
         }
         do_shuffle();
     }

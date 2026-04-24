@@ -4,15 +4,10 @@
 
 #include <math.h>
 
-
-// Geometric rule: A_ij = sqrt(A_i) * sqrt(A_j), B_ij = sqrt(B_i) * sqrt(B_j)
-// Energy: V = A_ij * r^-12 - B_ij * r^-6
-// Parameters: ai_aii, aj_aii are sqrt(A_i), sqrt(A_j)
-//             ai_bii, aj_bii are sqrt(B_i), sqrt(B_j)
-//             r6 is 1/r^6
+template <typename Real>
 __device__ __host__ inline void calc_vdw_geometric(
-    double ai_aii, double aj_aii, double ai_bii, double aj_bii,
-    double r6, double* V_a, double* V_b) {
+    Real ai_aii, Real aj_aii, Real ai_bii, Real aj_bii,
+    Real r6, Real* V_a, Real* V_b) {
     *V_a = r6 * r6 * ai_aii * aj_aii;
     *V_b = r6 * ai_bii * aj_bii;
 }
@@ -24,16 +19,17 @@ __device__ __host__ inline void calc_vdw_geometric(
 //             ai_aii, aj_aii store R*_i, R*_j (vdW radius)
 //             ai_bii, aj_bii store sqrt(eps_i), sqrt(eps_j) (after preprocessing)
 //             r6 is 1/r^6
+template <typename Real>
 __device__ __host__ inline void calc_vdw_arithmetic(
-    double Rstar_i, double Rstar_j, double sqrt_eps_i, double sqrt_eps_j,
-    double r6, double* V_a, double* V_b) {
-    double Rstar_ij = Rstar_i + Rstar_j;           // Arithmetic combination
-    double sqrt_eps_ij = sqrt_eps_i * sqrt_eps_j;  // Geometric combination (already sqrt)
+    Real Rstar_i, Real Rstar_j, Real sqrt_eps_i, Real sqrt_eps_j,
+    Real r6, Real* V_a, Real* V_b) {
+    Real Rstar_ij = Rstar_i + Rstar_j;           // Arithmetic combination
+    Real sqrt_eps_ij = sqrt_eps_i * sqrt_eps_j;  // Geometric combination (already sqrt)
 
     // Compute R6 = (R*_ij)^6
-    double R2 = Rstar_ij * Rstar_ij;
-    double R6 = R2 * R2 * R2;
+    Real R2 = Rstar_ij * Rstar_ij;
+    Real R6 = R2 * R2 * R2;
 
     *V_a = sqrt_eps_ij * R6 * R6 * r6 * r6;  // sqrt(eps_i * eps_j) * R^12 * r^-12
-    *V_b = 2.0 * sqrt_eps_ij * R6 * r6;      // 2 * sqrt(eps_i * eps_j) * R^6 * r^-6
+    *V_b = static_cast<Real>(2.0) * sqrt_eps_ij * R6 * r6;  // 2 * sqrt(eps_i * eps_j) * R^6 * r^-6
 }
