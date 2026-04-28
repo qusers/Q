@@ -5,6 +5,7 @@ import csv
 import json
 import math
 import os
+import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -128,6 +129,13 @@ def write_summary(rows, out_dir, metadata):
     return summary_csv, meta_json
 
 
+def cleanup_test_artifacts(out_dir, test_name):
+    test_dir = Path(out_dir) / test_name
+    if test_dir.exists():
+        shutil.rmtree(test_dir)
+        print(f"Removed intermediate run data: {test_dir}")
+
+
 def run_qgpu_concurrency_sweep(args, test_name, qgpu_bin, prepared_data_dir, qgpu_runs_dir):
     batch_rows = []
     process_rows = []
@@ -152,6 +160,8 @@ def run_qgpu_concurrency_sweep(args, test_name, qgpu_bin, prepared_data_dir, qgp
                     f"{batch_row['failed_processes']} QGPU process(es) failed for {test_name} "
                     f"at concurrency {concurrency}, repeat {repeat}. Logs are under {run_dir}"
                 )
+            if not args.keep_run_data:
+                shutil.rmtree(run_dir)
     return batch_rows, process_rows
 
 
@@ -271,11 +281,14 @@ def collect(args):
                         "repeat": args.repeat,
                         "gpu_only": args.gpu_only,
                         "concurrency": args.concurrency,
+                        "keep_run_data": args.keep_run_data,
                         "fortran_bin": str(fortran_bin) if fortran_bin is not None else None,
                         "prep_fortran_bin": str(prep_fortran_bin),
                         "qgpu_bin": str(qgpu_bin),
                     },
                 )
+                if not args.keep_run_data:
+                    cleanup_test_artifacts(out_dir, test_name)
     finally:
         raw_path = write_raw_records(raw_records, out_dir)
         concurrency_path = (
@@ -300,6 +313,7 @@ def collect(args):
             "repeat": args.repeat,
             "gpu_only": args.gpu_only,
             "concurrency": args.concurrency,
+            "keep_run_data": args.keep_run_data,
             "fortran_bin": str(fortran_bin) if fortran_bin is not None else None,
             "prep_fortran_bin": str(prep_fortran_bin),
             "qgpu_bin": str(qgpu_bin),
@@ -503,6 +517,11 @@ def parse_args():
         "--gpu-only",
         action="store_true",
         help="Skip timed Fortran qdyn runs and collect only QGPU performance.",
+    )
+    collect_parser.add_argument(
+        "--keep-run-data",
+        action="store_true",
+        help="Keep per-test run directories and logs. By default successful intermediate data is deleted.",
     )
     collect_parser.add_argument("--out", help="Output directory.")
     collect_parser.add_argument(
