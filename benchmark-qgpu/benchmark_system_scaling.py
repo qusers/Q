@@ -1,0 +1,413 @@
+#!/usr/bin/env python3
+
+import argparse
+import csv
+import json
+import math
+import os
+import sys
+from datetime import datetime
+from pathlib import Path
+from statistics import median
+
+os.environ.setdefault("MPLCONFIGDIR", "/tmp/qgpu-benchmark-matplotlib")
+
+import matplotlib
+
+matplotlib.use("Agg")
+from matplotlib import pyplot as plt
+
+from benchmark_test import (
+    ROOT,
+    ns_per_day,
+    prepare_qgpu_input,
+    prepare_restart_with_qdyn_test,
+    resolve_fortran_bin,
+    resolve_qgpu_bin,
+    resolve_test_data,
+    run_fortran_repeats,
+    run_qgpu_repeats,
+    write_md_input,
+)
+
+
+def default_collect_out():
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return ROOT / "benchmark-qgpu" / "results" / f"{stamp}_system_scaling"
+
+
+def count_atoms(prepared_data_dir):
+    coords_path = Path(prepared_data_dir) / "coords.csv"
+    if not coords_path.exists():
+        raise FileNotFoundError(f"coords.csv not found: {coords_path}")
+    with open(coords_path, encoding="utf-8") as coords_f:
+        return int(coords_f.readline().strip())
+
+
+def successful_times(records):
+    return [float(record["wall_seconds"]) for record in records if int(record["return_code"]) == 0]
+
+
+def write_raw_records(records, out_dir):
+    path = out_dir / "system_scaling_raw.csv"
+    fieldnames = [
+        "test",
+        "runner",
+        "repeat",
+        "command",
+        "return_code",
+        "wall_seconds",
+        "steps",
+        "ns_per_day",
+        "stdout",
+        "stderr",
+    ]
+    with open(path, "w", newline="", encoding="utf-8") as csv_f:
+        writer = csv.DictWriter(csv_f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(records)
+    return path
+
+
+def write_summary(rows, out_dir, metadata):
+    summary_csv = out_dir / "system_scaling.csv"
+    meta_json = out_dir / "system_scaling_meta.json"
+
+    fieldnames = [
+        "test",
+        "atoms",
+        "steps",
+        "fortran_wall_median_s",
+        "qgpu_wall_median_s",
+        "fortran_ns_per_day",
+        "qgpu_ns_per_day",
+        "speedup_x",
+        "fortran_repeats",
+        "qgpu_repeats",
+    ]
+    with open(summary_csv, "w", newline="", encoding="utf-8") as csv_f:
+        writer = csv.DictWriter(csv_f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    with open(meta_json, "w", encoding="utf-8") as json_f:
+        json.dump(metadata, json_f, indent=2)
+
+    return summary_csv, meta_json
+
+
+def collect_one_test(args, test_name, out_dir, fortran_bin, prep_fortran_bin, qgpu_bin):
+    test_dir = out_dir / test_name
+    fortran_dir = test_dir / "fortran"
+    prep_dir = test_dir / "qgpu_prepare"
+    qgpu_runs_dir = test_dir / "qgpu_runs"
+    fortran_dir.mkdir(parents=True, exist_ok=True)
+
+    data = resolve_test_data(test_name, args.steps, args.lambda_name, args.shake)
+    print(f"Preparing {test_name}")
+    write_md_input(data, fortran_dir)
+
+    print(f"Running Fortran qdyn for {test_name} ({args.repeat} repeat(s))")
+    fortran_records, fortran_ok = run_fortran_repeats(data, fortran_bin, fortran_dir, args.repeat, args.steps)
+    if not fortran_ok:
+        return None, fortran_records
+
+    print(f"Preparing QGPU input for {test_name}")
+    prepare_restart_with_qdyn_test(data, prep_fortran_bin, fortran_dir)
+    prepared_data_dir = prepare_qgpu_input(data, fortran_dir, prep_dir)
+    atoms = count_atoms(prepared_data_dir)
+
+    print(f"Running QGPU for {test_name} ({args.repeat} repeat(s))")
+    qgpu_records = run_qgpu_repeats(data, qgpu_bin, prepared_data_dir, qgpu_runs_dir, args.repeat, args.steps)
+
+    fortran_times = successful_times(fortran_records)
+    qgpu_times = successful_times(qgpu_records)
+    if not fortran_times or not qgpu_times:
+        return None, [*fortran_records, *qgpu_records]
+
+    fortran_wall = median(fortran_times)
+    qgpu_wall = median(qgpu_times)
+    row = {
+        "test": test_name,
+        "atoms": atoms,
+        "steps": args.steps,
+        "fortran_wall_median_s": fortran_wall,
+        "qgpu_wall_median_s": qgpu_wall,
+        "fortran_ns_per_day": ns_per_day(args.steps, fortran_wall),
+        "qgpu_ns_per_day": ns_per_day(args.steps, qgpu_wall),
+        "speedup_x": fortran_wall / qgpu_wall if qgpu_wall > 0 else "",
+        "fortran_repeats": len(fortran_records),
+        "qgpu_repeats": len(qgpu_records),
+    }
+    return row, [*fortran_records, *qgpu_records]
+
+
+def collect(args):
+    out_dir = Path(args.out).expanduser().resolve() if args.out else default_collect_out()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    fortran_bin = resolve_fortran_bin(args.fortran_bin)
+    prep_fortran_bin = resolve_fortran_bin(args.prep_fortran_bin)
+    qgpu_bin = resolve_qgpu_bin(args.qgpu_bin)
+
+    rows = []
+    raw_records = []
+    try:
+        for test_name in args.test:
+            row, records = collect_one_test(args, test_name, out_dir, fortran_bin, prep_fortran_bin, qgpu_bin)
+            raw_records.extend(records)
+            write_raw_records(raw_records, out_dir)
+            if row is not None:
+                rows.append(row)
+                write_summary(
+                    rows,
+                    out_dir,
+                    {
+                        "created_at": datetime.now().isoformat(timespec="seconds"),
+                        "tests": args.test,
+                        "steps": args.steps,
+                        "repeat": args.repeat,
+                        "fortran_bin": str(fortran_bin),
+                        "prep_fortran_bin": str(prep_fortran_bin),
+                        "qgpu_bin": str(qgpu_bin),
+                    },
+                )
+    finally:
+        raw_path = write_raw_records(raw_records, out_dir)
+
+    failures = [record for record in raw_records if int(record["return_code"]) != 0]
+    if failures:
+        first = failures[0]
+        raise RuntimeError(
+            f"{first['runner']} failed for {first['test']} repeat {first['repeat']}. "
+            f"Logs: stdout={first['stdout']} stderr={first['stderr']}; raw CSV: {raw_path}"
+        )
+
+    summary_csv, meta_json = write_summary(
+        rows,
+        out_dir,
+        {
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "tests": args.test,
+            "steps": args.steps,
+            "repeat": args.repeat,
+            "fortran_bin": str(fortran_bin),
+            "prep_fortran_bin": str(prep_fortran_bin),
+            "qgpu_bin": str(qgpu_bin),
+        },
+    )
+    print(f"Summary CSV: {summary_csv}")
+    print(f"Raw CSV: {raw_path}")
+    print(f"Metadata JSON: {meta_json}")
+    return 0
+
+
+def load_rows(csv_path):
+    rows = []
+    with open(csv_path, newline="", encoding="utf-8") as csv_f:
+        reader = csv.DictReader(csv_f)
+        for row in reader:
+            parsed = dict(row)
+            for key in [
+                "atoms",
+                "steps",
+                "fortran_wall_median_s",
+                "qgpu_wall_median_s",
+                "fortran_ns_per_day",
+                "qgpu_ns_per_day",
+                "speedup_x",
+            ]:
+                parsed[key] = float(parsed[key])
+            rows.append(parsed)
+    if not rows:
+        raise RuntimeError(f"No rows found in {csv_path}")
+    return rows
+
+
+def fmt_atoms(atoms):
+    atoms = int(atoms)
+    if atoms >= 1000:
+        return f"{atoms / 1000:.1f}k atoms"
+    return f"{atoms} atoms"
+
+
+def annotate_bars(ax, bars, formatter):
+    for bar in bars:
+        height = bar.get_height()
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            height,
+            formatter(height),
+            ha="center",
+            va="bottom",
+            fontsize=8,
+            weight="bold",
+        )
+
+
+def plot_speedup(rows, out_path, title):
+    labels = [row["test"] for row in rows]
+    speedups = [row["speedup_x"] for row in rows]
+    atoms = [row["atoms"] for row in rows]
+
+    fig, (ax, panel) = plt.subplots(
+        1,
+        2,
+        figsize=(9.2, 3.3),
+        gridspec_kw={"width_ratios": [4.3, 1.55]},
+    )
+    x = range(len(rows))
+    bars = ax.bar(x, speedups, color="#0b71c8", width=0.62)
+    annotate_bars(ax, bars, lambda value: f"{value:.1f}x")
+    ax.set_title(title, loc="left", fontsize=13, weight="bold", color="#113b5f")
+    ax.set_ylabel("Speedup vs Fortran (x)")
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(labels)
+    ax.grid(axis="y", color="#e5e8ee", linewidth=0.8)
+    ax.set_axisbelow(True)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    for xpos, atom_count in zip(x, atoms):
+        ax.text(xpos, -0.08, fmt_atoms(atom_count), transform=ax.get_xaxis_transform(), ha="center", va="top", fontsize=8)
+
+    best = max(rows, key=lambda row: row["speedup_x"])
+    panel.set_facecolor("#eef5fd")
+    for spine in panel.spines.values():
+        spine.set_color("#8ab9ef")
+    panel.set_xticks([])
+    panel.set_yticks([])
+    panel.text(0.5, 0.80, "Best", ha="center", va="center", fontsize=12, weight="bold", color="#0b3970")
+    panel.text(0.5, 0.55, f"{best['speedup_x']:.1f}x", ha="center", va="center", fontsize=30, weight="bold", color="#003c7f")
+    panel.text(0.5, 0.35, "speedup", ha="center", va="center", fontsize=13, weight="bold", color="#0b3970")
+    panel.text(0.5, 0.18, best["test"], ha="center", va="center", fontsize=10, color="#0b3970")
+    panel.text(0.5, 0.08, fmt_atoms(best["atoms"]), ha="center", va="center", fontsize=9, color="#0b3970")
+
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=220)
+    plt.close(fig)
+
+
+def plot_nsday(rows, out_path, title):
+    labels = [row["test"] for row in rows]
+    x = list(range(len(rows)))
+    width = 0.34
+
+    fig, ax = plt.subplots(figsize=(8.6, 3.5))
+    fortran = [row["fortran_ns_per_day"] for row in rows]
+    qgpu = [row["qgpu_ns_per_day"] for row in rows]
+    bars_cpu = ax.bar([i - width / 2 for i in x], fortran, width, label="Fortran CPU", color="#9b9b9b")
+    bars_gpu = ax.bar([i + width / 2 for i in x], qgpu, width, label="QGPU", color="#0b71c8")
+    annotate_bars(ax, bars_cpu, lambda value: f"{value:.1f}")
+    annotate_bars(ax, bars_gpu, lambda value: f"{value:.1f}")
+    ax.set_title(title, loc="left", fontsize=13, weight="bold", color="#113b5f")
+    ax.set_ylabel("ns/day")
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.grid(axis="y", color="#e5e8ee", linewidth=0.8)
+    ax.set_axisbelow(True)
+    ax.legend(frameon=False, loc="best")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    for xpos, row in zip(x, rows):
+        ax.text(xpos, -0.08, fmt_atoms(row["atoms"]), transform=ax.get_xaxis_transform(), ha="center", va="top", fontsize=8)
+
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=220)
+    plt.close(fig)
+
+
+def plot_atoms(rows, out_path, title):
+    fig, ax = plt.subplots(figsize=(6.5, 3.8))
+    xs = [row["atoms"] for row in rows]
+    ys = [row["speedup_x"] for row in rows]
+    ax.plot(xs, ys, color="#0b71c8", marker="o", linewidth=1.8)
+    for row in rows:
+        ax.text(row["atoms"], row["speedup_x"], f" {row['test']} ({row['speedup_x']:.1f}x)", va="center", fontsize=8)
+    ax.set_title(title, loc="left", fontsize=13, weight="bold", color="#113b5f")
+    ax.set_xlabel("Atoms")
+    ax.set_ylabel("Speedup vs Fortran (x)")
+    ax.grid(True, color="#e5e8ee", linewidth=0.8)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=220)
+    plt.close(fig)
+
+
+def plot(args):
+    rows = load_rows(Path(args.csv).expanduser().resolve())
+    rows.sort(key=lambda row: row["atoms"] if args.sort == "atoms" else row["test"])
+    out_path = Path(args.out).expanduser().resolve()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if args.metric == "speedup":
+        plot_speedup(rows, out_path, args.title)
+    elif args.metric == "nsday":
+        plot_nsday(rows, out_path, args.title)
+    elif args.metric == "atoms":
+        plot_atoms(rows, out_path, args.title)
+    else:
+        raise SystemExit(f"Unknown metric: {args.metric}")
+
+    print(f"Plot written to: {out_path}")
+    return 0
+
+
+def positive_int(value):
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be >= 1")
+    return parsed
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Collect and plot QGPU scaling across molecular systems.")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    collect_parser = subparsers.add_parser("collect", help="Run Fortran/QGPU benchmark for multiple tests.")
+    collect_parser.add_argument("--test", nargs="+", required=True, help="runTEST.py test names.")
+    collect_parser.add_argument("--steps", type=positive_int, required=True, help="MD steps.")
+    collect_parser.add_argument("--lambda", dest="lambda_name", default=None, help="Perturbation lambda suffix, e.g. eq5.")
+    collect_parser.add_argument("--shake", action="store_true", help="Enable shake.")
+    collect_parser.add_argument("--repeat", type=positive_int, default=1, help="Repeats per runner per system.")
+    collect_parser.add_argument("--out", help="Output directory.")
+    collect_parser.add_argument(
+        "--fortran-bin",
+        default=str(ROOT / "src" / "q6" / "bin" / "q6" / "qdyn"),
+        help="Path to production Fortran qdyn binary.",
+    )
+    collect_parser.add_argument(
+        "--prep-fortran-bin",
+        default=str(ROOT / "src" / "q6" / "bin" / "q6" / "qdyn_test"),
+        help="Path to qdyn_test used only to prepare QGPU restart CSVs.",
+    )
+    collect_parser.add_argument("--qgpu-bin", help="Path to QGPU qdyn binary.")
+
+    plot_parser = subparsers.add_parser("plot", help="Plot system scaling from system_scaling.csv.")
+    plot_parser.add_argument("csv", help="system_scaling.csv from collect.")
+    plot_parser.add_argument("--out", required=True, help="Output PNG path.")
+    plot_parser.add_argument(
+        "--metric",
+        choices=["speedup", "nsday", "atoms"],
+        default="speedup",
+        help="Plot style.",
+    )
+    plot_parser.add_argument("--sort", choices=["atoms", "test"], default="atoms", help="System order.")
+    plot_parser.add_argument("--title", default="Performance Across Molecular Systems", help="Plot title.")
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    if args.command == "collect":
+        return collect(args)
+    if args.command == "plot":
+        return plot(args)
+    raise SystemExit(f"Unknown command: {args.command}")
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1)
