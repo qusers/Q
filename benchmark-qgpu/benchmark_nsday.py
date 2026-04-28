@@ -32,6 +32,9 @@ from benchmark_test import (
 )
 
 
+RESTART_INIT_STEPS = 1
+
+
 def read_steps_from_md_csv(data_dir):
     md_path = Path(data_dir) / "md.csv"
     if not md_path.exists():
@@ -50,15 +53,25 @@ def default_collect_out(label):
 
 
 def prepare_from_test(args, out_dir):
-    data = resolve_test_data(args.test, args.steps, args.lambda_name, args.shake)
+    init_data = resolve_test_data(args.test, RESTART_INIT_STEPS, args.lambda_name, args.shake)
+    benchmark_data = resolve_test_data(args.test, args.steps, args.lambda_name, args.shake)
     fortran_dir = out_dir / "prepare" / args.test / "fortran"
     prep_dir = out_dir / "prepare" / args.test / "qgpu_prepare"
     fortran_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Preparing QGPU input for {args.test} in {out_dir}")
-    write_md_input(data, fortran_dir)
-    prepare_restart_with_qdyn_test(data, resolve_fortran_bin(args.prep_fortran_bin), fortran_dir)
-    return prepare_qgpu_input(data, fortran_dir, prep_dir)
+    print(f"Preparing QGPU restart for {args.test} with {RESTART_INIT_STEPS} MD step(s) in {out_dir}")
+    write_md_input(init_data, fortran_dir)
+    prepare_restart_with_qdyn_test(init_data, resolve_fortran_bin(args.prep_fortran_bin), fortran_dir)
+
+    print(f"Writing QGPU benchmark input for {args.test} with {args.steps} MD step(s)")
+    write_md_input(benchmark_data, fortran_dir)
+    prepared_data_dir = prepare_qgpu_input(benchmark_data, fortran_dir, prep_dir)
+    prepared_steps = read_steps_from_md_csv(prepared_data_dir)
+    if prepared_steps != args.steps:
+        raise RuntimeError(
+            f"Prepared QGPU input has {prepared_steps} steps, expected {args.steps}: {prepared_data_dir}"
+        )
+    return prepared_data_dir
 
 
 def resolve_collect_data_dir(args, out_dir):
