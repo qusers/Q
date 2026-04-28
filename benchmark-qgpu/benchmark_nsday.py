@@ -324,6 +324,10 @@ def load_plot_series(csv_paths, metric):
 
 def plot(args):
     metric = args.metric
+    metric_labels = {
+        "total_ns_per_day": "Total Throughput (ns/day)",
+        "mean_process_ns_per_day": "Mean Per-Process Throughput (ns/day)",
+    }
     series = load_plot_series([Path(path).expanduser().resolve() for path in args.csv], metric)
     out_path = Path(args.out).expanduser().resolve()
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -369,7 +373,7 @@ def plot(args):
     ax.text(0.0, 1.14, args.title, transform=ax.transAxes, fontsize=13, weight="bold", color="#0f5f18")
     ax.text(0.0, 1.07, args.subtitle, transform=ax.transAxes, fontsize=9, style="italic", color="#253142")
     ax.set_xlabel("Concurrent Simulations")
-    ax.set_ylabel("Throughput (ns/day)")
+    ax.set_ylabel(metric_labels[metric])
     ax.grid(axis="y", color="#e3e7ed", linewidth=0.8)
     ax.set_axisbelow(True)
     ax.spines["top"].set_visible(False)
