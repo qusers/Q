@@ -1,18 +1,21 @@
 #include "cpu_nonbonded_ww_force.h"
 
+#include <cmath>
+
 #include "constants.h"
 #include "context.h"
 #include "vdw_rules.h"
 
 namespace {
-void calc_oxygen_vdw_parameters(const Context& ctx, int oxygen_i, int oxygen_j, double* vdw_a, double* vdw_b) {
+void calc_oxygen_vdw_parameters(const Context& ctx, int oxygen_i, int oxygen_j, real_t* vdw_a, real_t* vdw_b) {
     const catype_t& oi_type = ctx.unified_catype(oxygen_i, 0);
     const catype_t& oj_type = ctx.unified_catype(oxygen_j, 0);
     if (ctx.topo.vdw_rule == VDW_GEOMETRIC) {
         *vdw_a = oi_type.aii_normal * oj_type.aii_normal;
         *vdw_b = oi_type.bii_normal * oj_type.bii_normal;
     } else {
-        calc_vdw_arithmetic(oi_type.aii_normal, oj_type.aii_normal, oi_type.bii_normal, oj_type.bii_normal, 1.0, vdw_a, vdw_b);
+        calc_vdw_arithmetic(
+            oi_type.aii_normal, oj_type.aii_normal, oi_type.bii_normal, oj_type.bii_normal, static_cast<real_t>(1.0), vdw_a, vdw_b);
     }
 }
 }  // namespace
@@ -20,33 +23,33 @@ void calc_oxygen_vdw_parameters(const Context& ctx, int oxygen_i, int oxygen_j, 
 void accumulate_pair_force(Context& ctx,
                            int atom_i,
                            int atom_j,
-                           double qi,
-                           double qj,
+                           real_t qi,
+                           real_t qj,
                            bool include_vdw,
-                           double vdw_a,
-                           double vdw_b,
+                           real_t vdw_a,
+                           real_t vdw_b,
                            E_nonbonded_t& energy) {
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
-    const double dx = coords[atom_j].x - coords[atom_i].x;
-    const double dy = coords[atom_j].y - coords[atom_i].y;
-    const double dz = coords[atom_j].z - coords[atom_i].z;
+    const real_t dx = coords[atom_j].x - coords[atom_i].x;
+    const real_t dy = coords[atom_j].y - coords[atom_i].y;
+    const real_t dz = coords[atom_j].z - coords[atom_i].z;
 
-    const double r2inv = 1.0 / (dx * dx + dy * dy + dz * dz);
-    const double rinv = std::sqrt(r2inv);
-    const double ecoul = ctx.topo.coulomb_constant * qi * qj * rinv;
+    const real_t r2inv = static_cast<real_t>(1.0) / (dx * dx + dy * dy + dz * dz);
+    const real_t rinv = static_cast<real_t>(std::sqrt(r2inv));
+    const real_t ecoul = static_cast<real_t>(ctx.topo.coulomb_constant) * qi * qj * rinv;
 
-    double evdw = 0.0;
-    double dva = -ecoul;
+    real_t evdw = 0.0;
+    real_t dva = -ecoul;
     if (include_vdw) {
-        const double r6inv = r2inv * r2inv * r2inv;
-        const double v_a = vdw_a * r6inv * r6inv;
-        const double v_b = vdw_b * r6inv;
+        const real_t r6inv = r2inv * r2inv * r2inv;
+        const real_t v_a = vdw_a * r6inv * r6inv;
+        const real_t v_b = vdw_b * r6inv;
         evdw = v_a - v_b;
-        dva -= 12.0 * v_a - 6.0 * v_b;
+        dva -= static_cast<real_t>(12.0) * v_a - static_cast<real_t>(6.0) * v_b;
     }
 
-    const double scale = r2inv * dva;
+    const real_t scale = r2inv * dva;
 
     dvelocities[atom_i].x -= scale * dx;
     dvelocities[atom_i].y -= scale * dy;
@@ -56,8 +59,8 @@ void accumulate_pair_force(Context& ctx,
     dvelocities[atom_j].y += scale * dy;
     dvelocities[atom_j].z += scale * dz;
 
-    energy.Ucoul += ecoul;
-    energy.Uvdw += evdw;
+    energy.Ucoul += static_cast<double>(ecoul);
+    energy.Uvdw += static_cast<double>(evdw);
 }
 
 void calc_nonbonded_ww_forces() {
@@ -70,8 +73,8 @@ void calc_nonbonded_ww_forces() {
         const int base_i = ctx.n_atoms_solute + 3 * water_i;
         for (int water_j = water_i + 1; water_j < ctx.n_waters; ++water_j) {
             const int base_j = ctx.n_atoms_solute + 3 * water_j;
-            double oxygen_vdw_a = 0.0;
-            double oxygen_vdw_b = 0.0;
+            real_t oxygen_vdw_a = 0.0;
+            real_t oxygen_vdw_b = 0.0;
             calc_oxygen_vdw_parameters(ctx, base_i, base_j, &oxygen_vdw_a, &oxygen_vdw_b);
             for (int atom_i = 0; atom_i < 3; ++atom_i) {
                 for (int atom_j = 0; atom_j < 3; ++atom_j) {

@@ -29,12 +29,12 @@ __device__ __forceinline__ int unified_parameter_index(
 __device__ void calculate_nonbonded_14_pair(
     const coord_t& x,
     const coord_t& y,
-    double x_charge,
-    double y_charge,
-    double x_aii,
-    double y_aii,
-    double x_bii,
-    double y_bii,
+    real_t x_charge,
+    real_t y_charge,
+    real_t x_aii,
+    real_t y_aii,
+    real_t x_bii,
+    real_t y_bii,
     double coulomb_constant,
     double scaling,
     int vdw_rule,
@@ -42,15 +42,17 @@ __device__ void calculate_nonbonded_14_pair(
     double& evdw,
     double& ecoul,
     double& dv) {
-    const double3 d = {x.x - y.x, x.y - y.y, x.z - y.z};
-    const double r = rsqrt(d.x * d.x + d.y * d.y + d.z * d.z);
-    const double r2 = r * r;
-    const double r6 = r2 * r2 * r2;
+    const real_t dx = x.x - y.x;
+    const real_t dy = x.y - y.y;
+    const real_t dz = x.z - y.z;
+    const real_t r = rsqrt(dx * dx + dy * dy + dz * dz);
+    const real_t r2 = r * r;
+    const real_t r6 = r2 * r2 * r2;
 
     ecoul = scaling * coulomb_constant * x_charge * y_charge * r * lambda;
 
-    double v_a = 0.0;
-    double v_b = 0.0;
+    real_t v_a = 0.0;
+    real_t v_b = 0.0;
     if (vdw_rule == VDW_GEOMETRIC) {
         calc_vdw_geometric(x_aii, y_aii, x_bii, y_bii, r6, &v_a, &v_b);
     } else {
@@ -124,13 +126,15 @@ __global__ void calc_nonbonded_14_force_kernel(
         ecoul,
         dv);
 
-    const double3 d = {rj.x - ri.x, rj.y - ri.y, rj.z - ri.z};
-    atomicAdd(&d_dvelocities[ai].x, -dv * d.x);
-    atomicAdd(&d_dvelocities[ai].y, -dv * d.y);
-    atomicAdd(&d_dvelocities[ai].z, -dv * d.z);
-    atomicAdd(&d_dvelocities[aj].x, dv * d.x);
-    atomicAdd(&d_dvelocities[aj].y, dv * d.y);
-    atomicAdd(&d_dvelocities[aj].z, dv * d.z);
+    const real_t dx = rj.x - ri.x;
+    const real_t dy = rj.y - ri.y;
+    const real_t dz = rj.z - ri.z;
+    atomicAdd(&d_dvelocities[ai].x, -dv * dx);
+    atomicAdd(&d_dvelocities[ai].y, -dv * dy);
+    atomicAdd(&d_dvelocities[ai].z, -dv * dz);
+    atomicAdd(&d_dvelocities[aj].x, dv * dx);
+    atomicAdd(&d_dvelocities[aj].y, dv * dy);
+    atomicAdd(&d_dvelocities[aj].z, dv * dz);
 
     atomicAdd(&evdw_totals[mode], evdw);
     atomicAdd(&ecoul_totals[mode], ecoul);

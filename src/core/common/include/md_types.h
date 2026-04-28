@@ -2,6 +2,8 @@
 
 #include <string>
 #include <vector>
+
+#include "common/include/precision.h"
 /* =============================================
  * == FROM MD FILE
  * =============================================
@@ -47,9 +49,9 @@ struct md_t {
 };
 
 struct coord_t {
-    double x;
-    double y;
-    double z;
+    real_t x;
+    real_t y;
+    real_t z;
 };
 
 struct bond_t {
@@ -114,7 +116,7 @@ struct charge_t {
 
 struct ccharge_t {
     int code;
-    double charge;
+    real_t charge;
 };
 
 struct atype_t {
@@ -125,17 +127,17 @@ struct atype_t {
 struct catype_t {
     int code;
     double m;
-    double aii_normal;
-    double bii_normal;
+    real_t aii_normal;
+    real_t bii_normal;
     // double aii_polar;
     // double bii_polar;
-    double aii_1_4;
-    double bii_1_4;
+    real_t aii_1_4;
+    real_t bii_1_4;
 };
 
 struct vdw_pair_param_t {
-    double a;
-    double b;
+    real_t a;
+    real_t b;
 };
 
 struct topo_t {
@@ -302,9 +304,9 @@ struct shake_bond_t {
  */
 
 struct vel_t {
-    double x;
-    double y;
-    double z;
+    real_t x;
+    real_t y;
+    real_t z;
 };
 
 struct dvel_t {
