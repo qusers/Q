@@ -95,10 +95,8 @@ def run_concurrency_batch(qgpu_bin, prepared_data_dir, run_dir, concurrency, ste
         shutil.rmtree(run_dir)
     run_dir.mkdir(parents=True)
 
-    processes = []
-    process_rows = []
     command_template = None
-    batch_start = time.perf_counter()
+    launch_specs = []
     for index in range(1, concurrency + 1):
         proc_dir = run_dir / f"proc_{index:03d}"
         data_dir = proc_dir / prepared_data_dir.name
@@ -109,20 +107,34 @@ def run_concurrency_batch(qgpu_bin, prepared_data_dir, run_dir, concurrency, ste
         stderr_path = proc_dir / "qgpu.err"
         args = [str(qgpu_bin), "--gpu", str(data_dir)]
         command_template = command_text([str(qgpu_bin), "--gpu", "<data_dir>"])
-        stdout_f = open(stdout_path, "w", encoding="utf-8")
-        stderr_f = open(stderr_path, "w", encoding="utf-8")
-        proc_start = time.perf_counter()
-        process = subprocess.Popen(args, cwd=ROOT, stdout=stdout_f, stderr=stderr_f)
-        processes.append(
+        launch_specs.append(
             {
                 "index": index,
+                "args": args,
+                "stdout": stdout_path,
+                "stderr": stderr_path,
+                "command": command_text(args),
+            }
+        )
+
+    processes = []
+    process_rows = []
+    batch_start = time.perf_counter()
+    for spec in launch_specs:
+        stdout_f = open(spec["stdout"], "w", encoding="utf-8")
+        stderr_f = open(spec["stderr"], "w", encoding="utf-8")
+        proc_start = time.perf_counter()
+        process = subprocess.Popen(spec["args"], cwd=ROOT, stdout=stdout_f, stderr=stderr_f)
+        processes.append(
+            {
+                "index": spec["index"],
                 "process": process,
                 "stdout_file": stdout_f,
                 "stderr_file": stderr_f,
-                "stdout": stdout_path,
-                "stderr": stderr_path,
+                "stdout": spec["stdout"],
+                "stderr": spec["stderr"],
                 "start": proc_start,
-                "command": command_text(args),
+                "command": spec["command"],
             }
         )
 
@@ -324,22 +336,45 @@ def plot(args):
     )
     palette = ["#1f77b4", "#43a047", "#f57c00", "#7b1fa2", "#00838f"]
     all_points = []
+    all_xs = sorted({x for item in series for x in item["xs"]})
     for index, item in enumerate(series):
         color = palette[index % len(palette)]
         ax.plot(item["xs"], item["ys"], marker="o", linewidth=1.8, markersize=4.5, color=color, label=item["label"])
         for x, y in zip(item["xs"], item["ys"]):
             all_points.append((y, item["label"], x))
-            ax.text(x, y, f"{y:.1f}", ha="center", va="bottom", fontsize=8, weight="bold", color="#253142")
+            ax.annotate(
+                f"{y:.1f}",
+                xy=(x, y),
+                xytext=(0, 6),
+                textcoords="offset points",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+                weight="bold",
+                color="#253142",
+            )
 
-    ax.set_title(args.title, loc="left", fontsize=13, weight="bold", color="#0f5f18")
-    ax.text(0.0, 1.02, args.subtitle, transform=ax.transAxes, fontsize=9, style="italic", color="#253142")
+    y_values = [point[0] for point in all_points]
+    y_min = min(y_values)
+    y_max = max(y_values)
+    y_span = y_max - y_min
+    y_pad = max(y_span * 0.22, y_max * 0.035, 0.5)
+    ax.set_ylim(max(0, y_min - y_pad * 0.35), y_max + y_pad)
+    ax.set_xticks(all_xs)
+    if len(all_xs) == 1:
+        ax.set_xlim(all_xs[0] - 0.5, all_xs[0] + 0.5)
+    else:
+        ax.set_xlim(all_xs[0] - 0.1, all_xs[-1] + 0.1)
+
+    ax.text(0.0, 1.14, args.title, transform=ax.transAxes, fontsize=13, weight="bold", color="#0f5f18")
+    ax.text(0.0, 1.07, args.subtitle, transform=ax.transAxes, fontsize=9, style="italic", color="#253142")
     ax.set_xlabel("Concurrent Simulations")
     ax.set_ylabel("Throughput (ns/day)")
     ax.grid(axis="y", color="#e3e7ed", linewidth=0.8)
     ax.set_axisbelow(True)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.legend(frameon=False, loc="upper left", fontsize=8)
+    ax.legend(frameon=False, loc="upper right", fontsize=8)
 
     best_points = sorted(all_points, reverse=True)
     best = best_points[0]
@@ -363,7 +398,7 @@ def plot(args):
         panel.axhline(0.12, xmin=0.12, xmax=0.88, color="#7fbf79", linewidth=0.8)
         panel.text(0.5, 0.05, f"{second[0]:.1f} ns/day", ha="center", va="bottom", fontsize=10, weight="bold", color="#14751c")
 
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0, 1, 0.9))
     fig.savefig(out_path, dpi=220)
     plt.close(fig)
     print(f"Plot written to: {out_path}")
