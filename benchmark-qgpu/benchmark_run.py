@@ -350,7 +350,12 @@ def work(max_procs, logs_dir, command, steps):
 def run(args):
     data_dir = os.path.expanduser(args.data_dir)   # e.g., TEST/water
     bin_path = os.path.expanduser(args.bin)        # e.g., /path/to/qdyn
-    max_procs = int(args.max_processes)
+    if getattr(args, "concurrency", None):
+        concurrency = sorted(dict.fromkeys(int(value) for value in args.concurrency))
+    elif args.max_processes is not None:
+        concurrency = list(range(1, int(args.max_processes) + 1))
+    else:
+        raise ValueError("Pass --concurrency or --max_processes.")
 
     if not os.path.isdir(data_dir):
         raise FileNotFoundError(f"data_dir not found: {data_dir}")
@@ -386,7 +391,7 @@ def run(args):
     os.makedirs(logs_dir, exist_ok=True)
     work(1, logs_dir, f'"{bin_path}" "{data_dir}"', steps)
     
-    for process_num in range(1, max_procs + 1):
+    for process_num in concurrency:
         print(f"Will run {process_num} processes in parallel:")
         logs_dir = os.path.join(current_dir, f"benchmark_logs/{process_num:02d}_procs")
         os.makedirs(logs_dir, exist_ok=True)
@@ -405,4 +410,3 @@ def run(args):
     # generate report
     out_html = os.path.join(current_dir, "benchmark_report.html")
     make_html_report(logs_root, out_html)
-

@@ -346,12 +346,24 @@ def plot(args):
         ax.plot(item["xs"], item["ys"], marker="o", linewidth=1.8, markersize=4.5, color=color, label=item["label"])
         for x, y in zip(item["xs"], item["ys"]):
             all_points.append((y, item["label"], x))
+            if len(item["xs"]) == 1:
+                x_offset = 0
+                ha = "center"
+            elif x == item["xs"][0]:
+                x_offset = 6
+                ha = "left"
+            elif x == item["xs"][-1]:
+                x_offset = -6
+                ha = "right"
+            else:
+                x_offset = 0
+                ha = "center"
             ax.annotate(
                 f"{y:.1f}",
                 xy=(x, y),
-                xytext=(0, 6),
+                xytext=(x_offset, 6),
                 textcoords="offset points",
-                ha="center",
+                ha=ha,
                 va="bottom",
                 fontsize=8,
                 weight="bold",
@@ -368,7 +380,8 @@ def plot(args):
     if len(all_xs) == 1:
         ax.set_xlim(all_xs[0] - 0.5, all_xs[0] + 0.5)
     else:
-        ax.set_xlim(all_xs[0] - 0.1, all_xs[-1] + 0.1)
+        x_pad = max((all_xs[-1] - all_xs[0]) * 0.06, 0.25)
+        ax.set_xlim(all_xs[0] - x_pad, all_xs[-1] + x_pad)
 
     ax.text(0.0, 1.14, args.title, transform=ax.transAxes, fontsize=13, weight="bold", color="#0f5f18")
     ax.text(0.0, 1.07, args.subtitle, transform=ax.transAxes, fontsize=9, style="italic", color="#253142")
@@ -378,7 +391,8 @@ def plot(args):
     ax.set_axisbelow(True)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.legend(frameon=False, loc="upper right", fontsize=8)
+    if len(series) > 1:
+        ax.legend(frameon=False, loc="upper left", bbox_to_anchor=(0.0, 1.01), ncols=2, fontsize=8)
 
     best_points = sorted(all_points, reverse=True)
     best = best_points[0]
