@@ -29,6 +29,7 @@ from benchmark_test import (
     run_qgpu_repeats,
     write_md_input,
 )
+from benchmark_nsday import run_concurrency_batch
 
 
 RESTART_INIT_STEPS = 1
@@ -78,6 +79,27 @@ def write_raw_records(records, out_dir):
     return path
 
 
+def write_qgpu_concurrency_records(records, out_dir):
+    path = out_dir / "system_scaling_qgpu_concurrency.csv"
+    fieldnames = [
+        "test",
+        "label",
+        "concurrency",
+        "repeat",
+        "steps",
+        "batch_wall_seconds",
+        "total_ns_per_day",
+        "mean_process_ns_per_day",
+        "failed_processes",
+        "command",
+    ]
+    with open(path, "w", newline="", encoding="utf-8") as csv_f:
+        writer = csv.DictWriter(csv_f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(records)
+    return path
+
+
 def write_summary(rows, out_dir, metadata):
     summary_csv = out_dir / "system_scaling.csv"
     meta_json = out_dir / "system_scaling_meta.json"
@@ -90,6 +112,7 @@ def write_summary(rows, out_dir, metadata):
         "qgpu_wall_median_s",
         "fortran_ns_per_day",
         "qgpu_ns_per_day",
+        "qgpu_best_concurrency",
         "speedup_x",
         "fortran_repeats",
         "qgpu_repeats",
@@ -103,6 +126,33 @@ def write_summary(rows, out_dir, metadata):
         json.dump(metadata, json_f, indent=2)
 
     return summary_csv, meta_json
+
+
+def run_qgpu_concurrency_sweep(args, test_name, qgpu_bin, prepared_data_dir, qgpu_runs_dir):
+    batch_rows = []
+    process_rows = []
+    for concurrency in args.concurrency:
+        for repeat in range(1, args.repeat + 1):
+            run_dir = qgpu_runs_dir / f"c{concurrency:03d}" / f"repeat_{repeat:03d}"
+            print(f"Running QGPU for {test_name}: concurrency={concurrency}, repeat={repeat}")
+            batch_row, rows = run_concurrency_batch(
+                qgpu_bin=qgpu_bin,
+                prepared_data_dir=prepared_data_dir,
+                run_dir=run_dir,
+                concurrency=concurrency,
+                steps=args.steps,
+                label=test_name,
+                repeat=repeat,
+            )
+            batch_row["test"] = test_name
+            batch_rows.append(batch_row)
+            process_rows.extend(rows)
+            if batch_row["failed_processes"]:
+                raise RuntimeError(
+                    f"{batch_row['failed_processes']} QGPU process(es) failed for {test_name} "
+                    f"at concurrency {concurrency}, repeat {repeat}. Logs are under {run_dir}"
+                )
+    return batch_rows, process_rows
 
 
 def collect_one_test(args, test_name, out_dir, fortran_bin, prep_fortran_bin, qgpu_bin):
@@ -131,7 +181,7 @@ def collect_one_test(args, test_name, out_dir, fortran_bin, prep_fortran_bin, qg
         print(f"Running Fortran qdyn for {test_name} ({args.repeat} repeat(s))")
         fortran_records, fortran_ok = run_fortran_repeats(data, fortran_bin, fortran_dir, args.repeat, args.steps)
         if not fortran_ok:
-            return None, fortran_records
+            return None, fortran_records, []
         fortran_times = successful_times(fortran_records)
 
         print(f"Preparing QGPU input for {test_name}")
@@ -140,28 +190,53 @@ def collect_one_test(args, test_name, out_dir, fortran_bin, prep_fortran_bin, qg
     prepared_data_dir = prepare_qgpu_input(data, fortran_dir, prep_dir)
     atoms = count_atoms(prepared_data_dir)
 
-    print(f"Running QGPU for {test_name} ({args.repeat} repeat(s))")
-    qgpu_records = run_qgpu_repeats(data, qgpu_bin, prepared_data_dir, qgpu_runs_dir, args.repeat, args.steps)
+    qgpu_concurrency_rows = []
+    if args.concurrency:
+        qgpu_records = []
+        qgpu_concurrency_rows, _ = run_qgpu_concurrency_sweep(
+            args, test_name, qgpu_bin, prepared_data_dir, qgpu_runs_dir
+        )
+    else:
+        print(f"Running QGPU for {test_name} ({args.repeat} repeat(s))")
+        qgpu_records = run_qgpu_repeats(data, qgpu_bin, prepared_data_dir, qgpu_runs_dir, args.repeat, args.steps)
 
     qgpu_times = successful_times(qgpu_records)
-    if not qgpu_times or (not args.gpu_only and not fortran_times):
-        return None, [*fortran_records, *qgpu_records]
+    if args.concurrency:
+        successful_batches = [row for row in qgpu_concurrency_rows if int(row["failed_processes"]) == 0]
+        if not successful_batches:
+            return None, [*fortran_records, *qgpu_records], qgpu_concurrency_rows
+        best_qgpu = max(successful_batches, key=lambda row: float(row["total_ns_per_day"]))
+        qgpu_wall = float(best_qgpu["batch_wall_seconds"])
+        qgpu_ns_day = float(best_qgpu["total_ns_per_day"])
+        qgpu_best_concurrency = int(best_qgpu["concurrency"])
+        qgpu_repeat_count = len(qgpu_concurrency_rows)
+    else:
+        if not qgpu_times:
+            return None, [*fortran_records, *qgpu_records], qgpu_concurrency_rows
+        qgpu_wall = median(qgpu_times)
+        qgpu_ns_day = ns_per_day(args.steps, qgpu_wall)
+        qgpu_best_concurrency = 1
+        qgpu_repeat_count = len(qgpu_records)
+
+    if not args.gpu_only and not fortran_times:
+        return None, [*fortran_records, *qgpu_records], qgpu_concurrency_rows
 
     fortran_wall = median(fortran_times) if fortran_times else None
-    qgpu_wall = median(qgpu_times)
+    fortran_ns_day = ns_per_day(args.steps, fortran_wall) if fortran_wall is not None else None
     row = {
         "test": test_name,
         "atoms": atoms,
         "steps": args.steps,
         "fortran_wall_median_s": fortran_wall if fortran_wall is not None else "",
         "qgpu_wall_median_s": qgpu_wall,
-        "fortran_ns_per_day": ns_per_day(args.steps, fortran_wall) if fortran_wall is not None else "",
-        "qgpu_ns_per_day": ns_per_day(args.steps, qgpu_wall),
-        "speedup_x": fortran_wall / qgpu_wall if fortran_wall is not None and qgpu_wall > 0 else "",
+        "fortran_ns_per_day": fortran_ns_day if fortran_ns_day is not None else "",
+        "qgpu_ns_per_day": qgpu_ns_day,
+        "qgpu_best_concurrency": qgpu_best_concurrency,
+        "speedup_x": qgpu_ns_day / fortran_ns_day if fortran_ns_day is not None and fortran_ns_day > 0 else "",
         "fortran_repeats": len(fortran_records),
-        "qgpu_repeats": len(qgpu_records),
+        "qgpu_repeats": qgpu_repeat_count,
     }
-    return row, [*fortran_records, *qgpu_records]
+    return row, [*fortran_records, *qgpu_records], qgpu_concurrency_rows
 
 
 def collect(args):
@@ -173,11 +248,17 @@ def collect(args):
 
     rows = []
     raw_records = []
+    qgpu_concurrency_records = []
     try:
         for test_name in args.test:
-            row, records = collect_one_test(args, test_name, out_dir, fortran_bin, prep_fortran_bin, qgpu_bin)
+            row, records, concurrency_records = collect_one_test(
+                args, test_name, out_dir, fortran_bin, prep_fortran_bin, qgpu_bin
+            )
             raw_records.extend(records)
+            qgpu_concurrency_records.extend(concurrency_records)
             write_raw_records(raw_records, out_dir)
+            if args.concurrency:
+                write_qgpu_concurrency_records(qgpu_concurrency_records, out_dir)
             if row is not None:
                 rows.append(row)
                 write_summary(
@@ -189,6 +270,7 @@ def collect(args):
                         "steps": args.steps,
                         "repeat": args.repeat,
                         "gpu_only": args.gpu_only,
+                        "concurrency": args.concurrency,
                         "fortran_bin": str(fortran_bin) if fortran_bin is not None else None,
                         "prep_fortran_bin": str(prep_fortran_bin),
                         "qgpu_bin": str(qgpu_bin),
@@ -196,6 +278,9 @@ def collect(args):
                 )
     finally:
         raw_path = write_raw_records(raw_records, out_dir)
+        concurrency_path = (
+            write_qgpu_concurrency_records(qgpu_concurrency_records, out_dir) if args.concurrency else None
+        )
 
     failures = [record for record in raw_records if int(record["return_code"]) != 0]
     if failures:
@@ -214,6 +299,7 @@ def collect(args):
             "steps": args.steps,
             "repeat": args.repeat,
             "gpu_only": args.gpu_only,
+            "concurrency": args.concurrency,
             "fortran_bin": str(fortran_bin) if fortran_bin is not None else None,
             "prep_fortran_bin": str(prep_fortran_bin),
             "qgpu_bin": str(qgpu_bin),
@@ -221,6 +307,8 @@ def collect(args):
     )
     print(f"Summary CSV: {summary_csv}")
     print(f"Raw CSV: {raw_path}")
+    if concurrency_path is not None:
+        print(f"QGPU concurrency CSV: {concurrency_path}")
     print(f"Metadata JSON: {meta_json}")
     return 0
 
@@ -238,9 +326,10 @@ def load_rows(csv_path):
                 "qgpu_wall_median_s",
                 "fortran_ns_per_day",
                 "qgpu_ns_per_day",
+                "qgpu_best_concurrency",
                 "speedup_x",
             ]:
-                parsed[key] = parse_optional_float(parsed[key])
+                parsed[key] = parse_optional_float(parsed.get(key))
             rows.append(parsed)
     if not rows:
         raise RuntimeError(f"No rows found in {csv_path}")
@@ -321,15 +410,17 @@ def plot_nsday(rows, out_path, title):
     fortran = [row["fortran_ns_per_day"] for row in rows]
     qgpu = [row["qgpu_ns_per_day"] for row in rows]
     has_fortran = any(math.isfinite(value) for value in fortran)
+    has_concurrency = any(math.isfinite(row["qgpu_best_concurrency"]) and row["qgpu_best_concurrency"] > 1 for row in rows)
+    qgpu_label = "QGPU best total" if has_concurrency else "QGPU"
     if has_fortran:
         bars_cpu = ax.bar([i - width / 2 for i in x], fortran, width, label="Fortran CPU", color="#9b9b9b")
-        bars_gpu = ax.bar([i + width / 2 for i in x], qgpu, width, label="QGPU", color="#0b71c8")
+        bars_gpu = ax.bar([i + width / 2 for i in x], qgpu, width, label=qgpu_label, color="#0b71c8")
         annotate_bars(ax, bars_cpu, lambda value: f"{value:.1f}")
     else:
-        bars_gpu = ax.bar(x, qgpu, width * 1.55, label="QGPU", color="#0b71c8")
+        bars_gpu = ax.bar(x, qgpu, width * 1.55, label=qgpu_label, color="#0b71c8")
     annotate_bars(ax, bars_gpu, lambda value: f"{value:.1f}")
     ax.set_title(title, loc="left", fontsize=13, weight="bold", color="#113b5f")
-    ax.set_ylabel("ns/day")
+    ax.set_ylabel("Best total ns/day" if has_concurrency else "ns/day")
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
     ax.grid(axis="y", color="#e5e8ee", linewidth=0.8)
@@ -402,6 +493,12 @@ def parse_args():
     collect_parser.add_argument("--lambda", dest="lambda_name", default=None, help="Perturbation lambda suffix, e.g. eq5.")
     collect_parser.add_argument("--shake", action="store_true", help="Enable shake.")
     collect_parser.add_argument("--repeat", type=positive_int, default=1, help="Repeats per runner per system.")
+    collect_parser.add_argument(
+        "--concurrency",
+        type=positive_int,
+        nargs="+",
+        help="Concurrent QGPU instance counts to sweep; summary uses the maximum total ns/day.",
+    )
     collect_parser.add_argument(
         "--gpu-only",
         action="store_true",
