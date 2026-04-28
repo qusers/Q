@@ -31,6 +31,9 @@ from benchmark_test import (
 )
 
 
+RESTART_INIT_STEPS = 1
+
+
 def default_collect_out():
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return ROOT / "benchmark-qgpu" / "results" / f"{stamp}_system_scaling"
@@ -46,6 +49,12 @@ def count_atoms(prepared_data_dir):
 
 def successful_times(records):
     return [float(record["wall_seconds"]) for record in records if int(record["return_code"]) == 0]
+
+
+def parse_optional_float(value):
+    if value in (None, ""):
+        return float("nan")
+    return float(value)
 
 
 def write_raw_records(records, out_dir):
@@ -104,38 +113,51 @@ def collect_one_test(args, test_name, out_dir, fortran_bin, prep_fortran_bin, qg
     fortran_dir.mkdir(parents=True, exist_ok=True)
 
     data = resolve_test_data(test_name, args.steps, args.lambda_name, args.shake)
-    print(f"Preparing {test_name}")
-    write_md_input(data, fortran_dir)
+    fortran_records = []
+    fortran_times = []
 
-    print(f"Running Fortran qdyn for {test_name} ({args.repeat} repeat(s))")
-    fortran_records, fortran_ok = run_fortran_repeats(data, fortran_bin, fortran_dir, args.repeat, args.steps)
-    if not fortran_ok:
-        return None, fortran_records
+    if args.gpu_only:
+        init_data = resolve_test_data(test_name, RESTART_INIT_STEPS, args.lambda_name, args.shake)
+        print(f"Preparing QGPU restart for {test_name} with {RESTART_INIT_STEPS} MD step(s)")
+        write_md_input(init_data, fortran_dir)
+        prepare_restart_with_qdyn_test(init_data, prep_fortran_bin, fortran_dir)
 
-    print(f"Preparing QGPU input for {test_name}")
-    prepare_restart_with_qdyn_test(data, prep_fortran_bin, fortran_dir)
+        print(f"Writing QGPU benchmark input for {test_name} with {args.steps} MD step(s)")
+        write_md_input(data, fortran_dir)
+    else:
+        print(f"Preparing {test_name}")
+        write_md_input(data, fortran_dir)
+
+        print(f"Running Fortran qdyn for {test_name} ({args.repeat} repeat(s))")
+        fortran_records, fortran_ok = run_fortran_repeats(data, fortran_bin, fortran_dir, args.repeat, args.steps)
+        if not fortran_ok:
+            return None, fortran_records
+        fortran_times = successful_times(fortran_records)
+
+        print(f"Preparing QGPU input for {test_name}")
+        prepare_restart_with_qdyn_test(data, prep_fortran_bin, fortran_dir)
+
     prepared_data_dir = prepare_qgpu_input(data, fortran_dir, prep_dir)
     atoms = count_atoms(prepared_data_dir)
 
     print(f"Running QGPU for {test_name} ({args.repeat} repeat(s))")
     qgpu_records = run_qgpu_repeats(data, qgpu_bin, prepared_data_dir, qgpu_runs_dir, args.repeat, args.steps)
 
-    fortran_times = successful_times(fortran_records)
     qgpu_times = successful_times(qgpu_records)
-    if not fortran_times or not qgpu_times:
+    if not qgpu_times or (not args.gpu_only and not fortran_times):
         return None, [*fortran_records, *qgpu_records]
 
-    fortran_wall = median(fortran_times)
+    fortran_wall = median(fortran_times) if fortran_times else None
     qgpu_wall = median(qgpu_times)
     row = {
         "test": test_name,
         "atoms": atoms,
         "steps": args.steps,
-        "fortran_wall_median_s": fortran_wall,
+        "fortran_wall_median_s": fortran_wall if fortran_wall is not None else "",
         "qgpu_wall_median_s": qgpu_wall,
-        "fortran_ns_per_day": ns_per_day(args.steps, fortran_wall),
+        "fortran_ns_per_day": ns_per_day(args.steps, fortran_wall) if fortran_wall is not None else "",
         "qgpu_ns_per_day": ns_per_day(args.steps, qgpu_wall),
-        "speedup_x": fortran_wall / qgpu_wall if qgpu_wall > 0 else "",
+        "speedup_x": fortran_wall / qgpu_wall if fortran_wall is not None and qgpu_wall > 0 else "",
         "fortran_repeats": len(fortran_records),
         "qgpu_repeats": len(qgpu_records),
     }
@@ -145,7 +167,7 @@ def collect_one_test(args, test_name, out_dir, fortran_bin, prep_fortran_bin, qg
 def collect(args):
     out_dir = Path(args.out).expanduser().resolve() if args.out else default_collect_out()
     out_dir.mkdir(parents=True, exist_ok=True)
-    fortran_bin = resolve_fortran_bin(args.fortran_bin)
+    fortran_bin = None if args.gpu_only else resolve_fortran_bin(args.fortran_bin)
     prep_fortran_bin = resolve_fortran_bin(args.prep_fortran_bin)
     qgpu_bin = resolve_qgpu_bin(args.qgpu_bin)
 
@@ -166,7 +188,8 @@ def collect(args):
                         "tests": args.test,
                         "steps": args.steps,
                         "repeat": args.repeat,
-                        "fortran_bin": str(fortran_bin),
+                        "gpu_only": args.gpu_only,
+                        "fortran_bin": str(fortran_bin) if fortran_bin is not None else None,
                         "prep_fortran_bin": str(prep_fortran_bin),
                         "qgpu_bin": str(qgpu_bin),
                     },
@@ -190,7 +213,8 @@ def collect(args):
             "tests": args.test,
             "steps": args.steps,
             "repeat": args.repeat,
-            "fortran_bin": str(fortran_bin),
+            "gpu_only": args.gpu_only,
+            "fortran_bin": str(fortran_bin) if fortran_bin is not None else None,
             "prep_fortran_bin": str(prep_fortran_bin),
             "qgpu_bin": str(qgpu_bin),
         },
@@ -216,7 +240,7 @@ def load_rows(csv_path):
                 "qgpu_ns_per_day",
                 "speedup_x",
             ]:
-                parsed[key] = float(parsed[key])
+                parsed[key] = parse_optional_float(parsed[key])
             rows.append(parsed)
     if not rows:
         raise RuntimeError(f"No rows found in {csv_path}")
@@ -245,6 +269,8 @@ def annotate_bars(ax, bars, formatter):
 
 
 def plot_speedup(rows, out_path, title):
+    if not any(math.isfinite(row["speedup_x"]) for row in rows):
+        raise RuntimeError("speedup plot requires Fortran data. Use --metric nsday for --gpu-only results.")
     labels = [row["test"] for row in rows]
     speedups = [row["speedup_x"] for row in rows]
     atoms = [row["atoms"] for row in rows]
@@ -294,9 +320,13 @@ def plot_nsday(rows, out_path, title):
     fig, ax = plt.subplots(figsize=(8.6, 3.5))
     fortran = [row["fortran_ns_per_day"] for row in rows]
     qgpu = [row["qgpu_ns_per_day"] for row in rows]
-    bars_cpu = ax.bar([i - width / 2 for i in x], fortran, width, label="Fortran CPU", color="#9b9b9b")
-    bars_gpu = ax.bar([i + width / 2 for i in x], qgpu, width, label="QGPU", color="#0b71c8")
-    annotate_bars(ax, bars_cpu, lambda value: f"{value:.1f}")
+    has_fortran = any(math.isfinite(value) for value in fortran)
+    if has_fortran:
+        bars_cpu = ax.bar([i - width / 2 for i in x], fortran, width, label="Fortran CPU", color="#9b9b9b")
+        bars_gpu = ax.bar([i + width / 2 for i in x], qgpu, width, label="QGPU", color="#0b71c8")
+        annotate_bars(ax, bars_cpu, lambda value: f"{value:.1f}")
+    else:
+        bars_gpu = ax.bar(x, qgpu, width * 1.55, label="QGPU", color="#0b71c8")
     annotate_bars(ax, bars_gpu, lambda value: f"{value:.1f}")
     ax.set_title(title, loc="left", fontsize=13, weight="bold", color="#113b5f")
     ax.set_ylabel("ns/day")
@@ -318,13 +348,16 @@ def plot_nsday(rows, out_path, title):
 def plot_atoms(rows, out_path, title):
     fig, ax = plt.subplots(figsize=(6.5, 3.8))
     xs = [row["atoms"] for row in rows]
-    ys = [row["speedup_x"] for row in rows]
+    has_speedup = any(math.isfinite(row["speedup_x"]) for row in rows)
+    value_key = "speedup_x" if has_speedup else "qgpu_ns_per_day"
+    ys = [row[value_key] for row in rows]
     ax.plot(xs, ys, color="#0b71c8", marker="o", linewidth=1.8)
     for row in rows:
-        ax.text(row["atoms"], row["speedup_x"], f" {row['test']} ({row['speedup_x']:.1f}x)", va="center", fontsize=8)
+        suffix = f"{row['speedup_x']:.1f}x" if has_speedup else f"{row['qgpu_ns_per_day']:.1f} ns/day"
+        ax.text(row["atoms"], row[value_key], f" {row['test']} ({suffix})", va="center", fontsize=8)
     ax.set_title(title, loc="left", fontsize=13, weight="bold", color="#113b5f")
     ax.set_xlabel("Atoms")
-    ax.set_ylabel("Speedup vs Fortran (x)")
+    ax.set_ylabel("Speedup vs Fortran (x)" if has_speedup else "QGPU ns/day")
     ax.grid(True, color="#e5e8ee", linewidth=0.8)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -369,6 +402,11 @@ def parse_args():
     collect_parser.add_argument("--lambda", dest="lambda_name", default=None, help="Perturbation lambda suffix, e.g. eq5.")
     collect_parser.add_argument("--shake", action="store_true", help="Enable shake.")
     collect_parser.add_argument("--repeat", type=positive_int, default=1, help="Repeats per runner per system.")
+    collect_parser.add_argument(
+        "--gpu-only",
+        action="store_true",
+        help="Skip timed Fortran qdyn runs and collect only QGPU performance.",
+    )
     collect_parser.add_argument("--out", help="Output directory.")
     collect_parser.add_argument(
         "--fortran-bin",
