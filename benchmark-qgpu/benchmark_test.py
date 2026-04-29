@@ -52,6 +52,21 @@ def command_text(args):
     return " ".join(shlex.quote(str(arg)) for arg in args)
 
 
+def split_mpirun_args(args):
+    if args is None:
+        return []
+    if isinstance(args, str):
+        return shlex.split(args)
+    return [str(arg) for arg in args]
+
+
+def build_fortran_command(fortran_bin, input_file, mpi_procs=None, mpirun_bin="mpirun", mpirun_args=None):
+    command = [str(fortran_bin), input_file]
+    if mpi_procs is None:
+        return command
+    return [str(mpirun_bin), "-np", str(mpi_procs), *split_mpirun_args(mpirun_args), *command]
+
+
 def resolve_qgpu_bin(path):
     if path:
         candidate = Path(path).expanduser()
@@ -149,7 +164,16 @@ def write_md_input(data, fortran_dir):
         runTEST.create_MD_input(data)
 
 
-def run_fortran_repeats(data, fortran_bin, fortran_dir, repeat, steps):
+def run_fortran_repeats(
+    data,
+    fortran_bin,
+    fortran_dir,
+    repeat,
+    steps,
+    mpi_procs=None,
+    mpirun_bin="mpirun",
+    mpirun_args=None,
+):
     records = []
     saw_success = False
 
@@ -158,7 +182,13 @@ def run_fortran_repeats(data, fortran_bin, fortran_dir, repeat, steps):
         stderr_name = "fortran.err" if repeat == 1 else f"fortran_{index}.err"
         stdout_path = fortran_dir / stdout_name
         stderr_path = fortran_dir / stderr_name
-        args = [str(fortran_bin), "eq1.inp"]
+        args = build_fortran_command(
+            fortran_bin,
+            "eq1.inp",
+            mpi_procs=mpi_procs,
+            mpirun_bin=mpirun_bin,
+            mpirun_args=mpirun_args,
+        )
         return_code, wall_seconds = run_timed(args, fortran_dir, stdout_path, stderr_path)
         if return_code == 0:
             saw_success = True
@@ -180,20 +210,33 @@ def run_fortran_repeats(data, fortran_bin, fortran_dir, repeat, steps):
     return records, saw_success
 
 
-def prepare_restart_with_qdyn_test(data, prep_fortran_bin, fortran_dir):
+def prepare_restart_with_qdyn_test(data, prep_fortran_bin, fortran_dir, prep_steps=None):
+    input_path = fortran_dir / "eq1.inp"
+    original_input = input_path.read_text(encoding="utf-8")
+    parse_data = data
+    if prep_steps is not None:
+        prep_data = dict(data)
+        prep_data["timestep"] = str(prep_steps)
+        write_md_input(prep_data, fortran_dir)
+        parse_data = prep_data
+
     stdout_path = fortran_dir / "restart_prep_qdyn_test.log"
     stderr_path = fortran_dir / "restart_prep_qdyn_test.err"
     args = [str(prep_fortran_bin), "eq1.inp"]
-    return_code, _ = run_timed(args, fortran_dir, stdout_path, stderr_path)
-    if return_code != 0:
-        raise RuntimeError(
-            "QGPU restart preparation failed. "
-            f"Command: {command_text(args)} Logs: stdout={stdout_path} stderr={stderr_path}"
-        )
+    try:
+        return_code, _ = run_timed(args, fortran_dir, stdout_path, stderr_path)
+        if return_code != 0:
+            raise RuntimeError(
+                "QGPU restart preparation failed. "
+                f"Command: {command_text(args)} Logs: stdout={stdout_path} stderr={stderr_path}"
+            )
 
-    shutil.copyfile(stdout_path, fortran_dir / "eq1.log")
-    with pushd(fortran_dir):
-        runTEST.Parse_Q6_data(data)
+        shutil.copyfile(stdout_path, fortran_dir / "eq1.log")
+        with pushd(fortran_dir):
+            runTEST.Parse_Q6_data(parse_data)
+    finally:
+        if prep_steps is not None:
+            input_path.write_text(original_input, encoding="utf-8")
 
 
 def prepare_qgpu_input(data, fortran_dir, prep_dir):
@@ -277,6 +320,23 @@ def write_summary_csv(records, out_dir):
     return csv_path
 
 
+def read_summary_csv(csv_path):
+    records = []
+    with open(csv_path, newline="", encoding="utf-8") as csv_f:
+        reader = csv.DictReader(csv_f)
+        for row in reader:
+            parsed = dict(row)
+            parsed["repeat"] = int(parsed["repeat"])
+            parsed["return_code"] = int(parsed["return_code"])
+            parsed["wall_seconds"] = float(parsed["wall_seconds"])
+            parsed["steps"] = int(parsed["steps"])
+            parsed["ns_per_day"] = float(parsed["ns_per_day"]) if parsed.get("ns_per_day") else None
+            records.append(parsed)
+    if not records:
+        raise RuntimeError(f"No records found in {csv_path}")
+    return records
+
+
 def summarize(records, args, qgpu_bin, fortran_bin, prep_fortran_bin):
     by_test = {}
     for record in records:
@@ -286,8 +346,8 @@ def summarize(records, args, qgpu_bin, fortran_bin, prep_fortran_bin):
     for test_name in sorted(by_test):
         fortran_records = by_test[test_name].get("fortran", [])
         qgpu_records = by_test[test_name].get("qgpu", [])
-        fortran_ok = [r["wall_seconds"] for r in fortran_records if r["return_code"] == 0]
-        qgpu_ok = [r["wall_seconds"] for r in qgpu_records if r["return_code"] == 0]
+        fortran_ok = [float(r["wall_seconds"]) for r in fortran_records if int(r["return_code"]) == 0]
+        qgpu_ok = [float(r["wall_seconds"]) for r in qgpu_records if int(r["return_code"]) == 0]
         if not fortran_ok or not qgpu_ok:
             continue
         fortran_median = median(fortran_ok)
@@ -313,6 +373,10 @@ def summarize(records, args, qgpu_bin, fortran_bin, prep_fortran_bin):
             "lambda": args.lambda_name,
             "shake": args.shake,
             "repeat": args.repeat,
+            "restart_prep_steps": getattr(args, "restart_prep_steps", None),
+            "fortran_mpi_procs": getattr(args, "fortran_mpi_procs", None),
+            "mpirun_bin": getattr(args, "mpirun_bin", None),
+            "mpirun_args": getattr(args, "mpirun_args", None),
         },
         "binaries": {
             "fortran": str(fortran_bin),
@@ -321,6 +385,17 @@ def summarize(records, args, qgpu_bin, fortran_bin, prep_fortran_bin):
         },
         "tests": tests,
     }
+
+
+def summarize_for_plot(records):
+    args = argparse.Namespace(
+        test=sorted({record["test"] for record in records}),
+        steps=sorted({int(record["steps"]) for record in records}),
+        lambda_name=None,
+        shake=None,
+        repeat=None,
+    )
+    return summarize(records, args, qgpu_bin="<from summary.csv>", fortran_bin="<from summary.csv>", prep_fortran_bin="")
 
 
 def write_summary_json(summary, out_dir):
@@ -402,6 +477,28 @@ def plot_speedup(summary, out_dir):
     return png_path
 
 
+def plot_summary_csv(args):
+    csv_path = Path(args.csv).expanduser().resolve()
+    records = read_summary_csv(csv_path)
+    summary = summarize_for_plot(records)
+    if args.out:
+        out_path = Path(args.out).expanduser().resolve()
+        out_dir = out_path.parent
+        out_dir.mkdir(parents=True, exist_ok=True)
+        png_path = plot_speedup(summary, out_dir)
+        if png_path != out_path:
+            if out_path.exists():
+                out_path.unlink()
+            png_path.rename(out_path)
+            png_path = out_path
+    else:
+        png_path = plot_speedup(summary, csv_path.parent)
+    if png_path is None:
+        raise RuntimeError("No successful Fortran/QGPU pairs found to plot.")
+    print(f"Speedup plot: {png_path}")
+    return 0
+
+
 def default_out_dir(test_names):
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     label = test_names[0] if len(test_names) == 1 else "multi"
@@ -409,6 +506,13 @@ def default_out_dir(test_names):
 
 
 def parse_args():
+    if len(sys.argv) > 1 and sys.argv[1] == "plot":
+        parser = argparse.ArgumentParser(description="Plot benchmark_test.py speedup from an existing summary.csv.")
+        parser.add_argument("command", choices=["plot"])
+        parser.add_argument("csv", help="summary.csv written by benchmark_test.py.")
+        parser.add_argument("--out", help="Output PNG path. Defaults to speedup.png next to the CSV.")
+        return parser.parse_args()
+
     parser = argparse.ArgumentParser(description="Benchmark Fortran vs QGPU for runTEST.py test cases.")
     parser.add_argument("--test", nargs="+", help="Test name(s) from test/runTEST.py.")
     parser.add_argument("--list-tests", action="store_true", help="List available tests and exit.")
@@ -418,9 +522,31 @@ def parse_args():
     parser.add_argument("--repeat", type=int, default=1, help="Number of repeats for each runner.")
     parser.add_argument("--out", default=None, help="Output directory.")
     parser.add_argument(
+        "--restart-prep-steps",
+        type=int,
+        default=1,
+        help="MD steps used only for qdyn_test restart preparation. Defaults to 1.",
+    )
+    parser.add_argument(
         "--fortran-bin",
         default=str(ROOT / "src" / "q6" / "bin" / "q6" / "qdyn"),
-        help="Path to production Fortran qdyn binary used for timed Fortran runs.",
+        help="Path to production Fortran qdyn/qdynp binary used for timed Fortran runs.",
+    )
+    parser.add_argument(
+        "--fortran-mpi-procs",
+        type=int,
+        default=None,
+        help="Run the timed Fortran binary through mpirun with this many MPI ranks.",
+    )
+    parser.add_argument(
+        "--mpirun-bin",
+        default="mpirun",
+        help="MPI launcher to use with --fortran-mpi-procs. Defaults to mpirun.",
+    )
+    parser.add_argument(
+        "--mpirun-args",
+        default=None,
+        help='Extra MPI launcher arguments, quoted as one string, e.g. "--bind-to core".',
     )
     parser.add_argument(
         "--prep-fortran-bin",
@@ -432,6 +558,8 @@ def parse_args():
 
 
 def validate_args(args):
+    if getattr(args, "command", None) == "plot":
+        return
     if args.list_tests:
         return
     if not args.test:
@@ -442,11 +570,18 @@ def validate_args(args):
         raise SystemExit("--steps must be >= 1.")
     if args.repeat < 1:
         raise SystemExit("--repeat must be >= 1.")
+    if args.restart_prep_steps < 1:
+        raise SystemExit("--restart-prep-steps must be >= 1.")
+    if args.fortran_mpi_procs is not None and args.fortran_mpi_procs < 1:
+        raise SystemExit("--fortran-mpi-procs must be >= 1.")
 
 
 def main():
     args = parse_args()
     validate_args(args)
+
+    if getattr(args, "command", None) == "plot":
+        return plot_summary_csv(args)
 
     testinfo = runTEST.get_default_testinfo()
     if args.list_tests:
@@ -473,16 +608,34 @@ def main():
             print(f"Preparing Fortran input for {test_name} in {fortran_dir}")
             write_md_input(data, fortran_dir)
 
-            print(f"Running Fortran for {test_name} ({args.repeat} repeat(s))")
+            if args.fortran_mpi_procs is None:
+                print(f"Running Fortran for {test_name} ({args.repeat} repeat(s))")
+            else:
+                print(
+                    f"Running Fortran for {test_name} with {args.fortran_mpi_procs} MPI rank(s) "
+                    f"({args.repeat} repeat(s))"
+                )
             fortran_records, fortran_ok = run_fortran_repeats(
-                data, fortran_bin, fortran_dir, args.repeat, args.steps
+                data,
+                fortran_bin,
+                fortran_dir,
+                args.repeat,
+                args.steps,
+                mpi_procs=args.fortran_mpi_procs,
+                mpirun_bin=args.mpirun_bin,
+                mpirun_args=args.mpirun_args,
             )
             all_records.extend(fortran_records)
             if not fortran_ok:
                 continue
 
-            print(f"Preparing QGPU restart with qdyn_test for {test_name}")
-            prepare_restart_with_qdyn_test(data, prep_fortran_bin, fortran_dir)
+            print(f"Preparing QGPU restart with qdyn_test for {test_name} ({args.restart_prep_steps} step(s))")
+            prepare_restart_with_qdyn_test(
+                data,
+                prep_fortran_bin,
+                fortran_dir,
+                prep_steps=args.restart_prep_steps,
+            )
 
             print(f"Preparing QGPU CSV input for {test_name}")
             prepared_data_dir = prepare_qgpu_input(data, fortran_dir, prep_dir)
