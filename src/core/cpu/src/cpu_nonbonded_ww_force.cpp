@@ -59,8 +59,8 @@ void accumulate_pair_force(Context& ctx,
     dvelocities[atom_j].y += scale * dy;
     dvelocities[atom_j].z += scale * dz;
 
-    energy.Ucoul += static_cast<double>(ecoul);
-    energy.Uvdw += static_cast<double>(evdw);
+    energy.Ucoul += static_cast<real_t>(ecoul);
+    energy.Uvdw += static_cast<real_t>(evdw);
 }
 
 void calc_nonbonded_ww_forces() {

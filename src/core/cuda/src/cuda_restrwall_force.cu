@@ -5,20 +5,20 @@
 
 namespace CudaRestrwallForce {
 bool is_initialized = false;
-double* d_energies;
+real_t* d_energies;
 }  // namespace CudaRestrwallForce
 
 __global__ void calc_restrwall_forces_kernel(
     restrwall_t* restrwalls,
     int n_restrwalls,
     coord_t* coords,
-    double* energies,
+    real_t* energies,
     dvel_t* dvelocities,
     bool* heavy, topo_t topo) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_restrwalls) return;
 
-    double k, b, db, ener, dv, fexp;
+    real_t k, b, db, ener, dv, fexp;
     coord_t dr;
 
     int ir = idx;
@@ -58,7 +58,7 @@ void calc_restrwall_forces_host() {
     auto d_coords = host.coords->gpu_data_p;
     auto d_dvelocities = host.dvelocities->gpu_data_p;
     auto d_heavy = host.heavy->gpu_data_p;
-    cudaMemset(d_energies, 0, sizeof(double));
+    cudaMemset(d_energies, 0, sizeof(real_t));
 
     int blockSize = 256;
     int numBlocks = (host.n_restrwalls + blockSize - 1) / blockSize;
@@ -69,8 +69,8 @@ void calc_restrwall_forces_host() {
         d_energies,
         d_dvelocities, d_heavy, host.topo);
     cudaDeviceSynchronize();
-    double h_energy;
-    cudaMemcpy(&h_energy, d_energies, sizeof(double), cudaMemcpyDeviceToHost);
+    real_t h_energy;
+    cudaMemcpy(&h_energy, d_energies, sizeof(real_t), cudaMemcpyDeviceToHost);
     printf("Restrwall energy: %f\n", h_energy);
     host.E_restraint.Upres += h_energy;
 }
@@ -78,7 +78,7 @@ void calc_restrwall_forces_host() {
 void init_restrwall_force_kernel_data() {
     using namespace CudaRestrwallForce;
     if (!is_initialized) {
-        check_cudaMalloc((void**)&d_energies, sizeof(double));
+        check_cudaMalloc((void**)&d_energies, sizeof(real_t));
         is_initialized = true;
     }
 }

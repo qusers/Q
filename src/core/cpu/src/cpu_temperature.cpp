@@ -17,11 +17,11 @@ void calc_temperature() {
     auto *excluded = ctx.excluded->cpu_data_p;
     ctx.Temp = 0;
     ctx.Tfree = 0;
-    double Temp_solute = 0, Tfree_solute = 0, Texcl_solute = 0;
-    double Tfree_solvent = 0, Temp_solvent = 0, Texcl_solvent = 0;
-    double Ekinmax = 1000.0 * ctx.Ndegf * Boltz * ctx.md.temperature / 2.0 / ctx.n_atoms;
-    double ener;
-    double mass_i;
+    real_t Temp_solute = 0, Tfree_solute = 0, Texcl_solute = 0;
+    real_t Tfree_solvent = 0, Temp_solvent = 0, Texcl_solvent = 0;
+    real_t Ekinmax = 1000.0 * ctx.Ndegf * Boltz * ctx.md.temperature / 2.0 / ctx.n_atoms;
+    real_t ener;
+    real_t mass_i;
 
     ctx.Temp = 0;
     for (int i = 0; i < ctx.n_atoms_solute; i++) {

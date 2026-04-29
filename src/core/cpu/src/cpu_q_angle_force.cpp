@@ -14,8 +14,8 @@ void calc_qangle_forces(int state) {
     int ic;
     int ai, aj, ak;
     coord_t rji, rjk;
-    double bji, bjk;
-    double cos_th, th, dth, ener, dv, f1;
+    real_t bji, bjk;
+    real_t cos_th, th, dth, ener, dv, f1;
     coord_t di, dk;
 
     for (int i = 0; i < ctx.n_qangles; i++) {

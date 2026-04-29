@@ -11,7 +11,7 @@ void calc_qbond_forces(int state) {
     auto *lambdas = ctx.lambdas->cpu_data_p;
     int ic;
     int ai, aj;
-    double b, db, ener, dv;
+    real_t b, db, ener, dv;
     coord_t rij;
 
     for (int i = 0; i < ctx.n_qbonds; i++) {

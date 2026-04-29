@@ -12,29 +12,29 @@
 struct md_t {
     // [MD]
     int steps;
-    double stepsize;
-    double temperature;
+    real_t stepsize;
+    real_t temperature;
     char thermostat[40];
-    double bath_coupling;
+    real_t bath_coupling;
     int random_seed;
-    double initial_temperature;
+    real_t initial_temperature;
     bool shake_solvent;
     bool shake_solute;
     bool shake_hydrogens;
     bool lrf;
     bool charge_groups;
     // [cut-offs]
-    double solute_solute;
-    double solvent_solvent;
-    double solute_solvent;
-    double q_atom;
+    real_t solute_solute;
+    real_t solvent_solvent;
+    real_t solute_solvent;
+    real_t q_atom;
     // [sphere]
-    double shell_radius;  // Note: this is for the pshell
-    double shell_force;   // Note: this is for the pshell
+    real_t shell_radius;  // Note: this is for the pshell
+    real_t shell_force;   // Note: this is for the pshell
     // [solvent]
-    double radial_force;
+    real_t radial_force;
     bool polarisation;
-    double polarisation_force;
+    real_t polarisation_force;
     // [intervals]
     int non_bond;
     int output;
@@ -62,8 +62,8 @@ struct bond_t {
 
 struct cbond_t {
     int code;
-    double kb;
-    double b0;
+    real_t kb;
+    real_t b0;
 };
 
 struct angle_t {
@@ -75,8 +75,8 @@ struct angle_t {
 
 struct cangle_t {
     int code;
-    double kth;
-    double th0;
+    real_t kth;
+    real_t th0;
 };
 
 struct torsion_t {
@@ -89,10 +89,10 @@ struct torsion_t {
 
 struct ctorsion_t {
     int code;
-    double k;
-    double n;
-    double d;
-    double paths;
+    real_t k;
+    real_t n;
+    real_t d;
+    real_t paths;
 };
 
 struct improper_t {
@@ -105,8 +105,8 @@ struct improper_t {
 
 struct cimproper_t {
     int code;
-    double k;
-    double phi0;
+    real_t k;
+    real_t phi0;
 };
 
 struct charge_t {
@@ -126,11 +126,11 @@ struct atype_t {
 
 struct catype_t {
     int code;
-    double m;
+    real_t m;
     real_t aii_normal;
     real_t bii_normal;
-    // double aii_polar;
-    // double bii_polar;
+    // real_t aii_polar;
+    // real_t bii_polar;
     real_t aii_1_4;
     real_t bii_1_4;
 };
@@ -142,12 +142,12 @@ struct vdw_pair_param_t {
 
 struct topo_t {
     int solvent_type;
-    double exclusion_radius;
-    double solvent_radius;
+    real_t exclusion_radius;
+    real_t solvent_radius;
     coord_t solute_center;
     coord_t solvent_center;
-    double el14_scale;
-    double coulomb_constant;
+    real_t el14_scale;
+    real_t coulomb_constant;
     int vdw_rule;  // 1=geometric, 2=arithmetic
 };
 
@@ -177,14 +177,14 @@ struct q_angcouple_t {
 }; // no use
 
 struct q_cimproper_t {
-    double k;
-    double phi0;
+    real_t k;
+    real_t phi0;
 }; // no use
 
 struct q_elscale_t {
     int qi;
     int qj;
-    double mu;
+    real_t mu;
 };
 
 struct q_exclpair_t {
@@ -211,18 +211,18 @@ struct q_offdiag_t {
     int j;
     int qk;
     int ql;
-    double Aij;
-    double muij;
+    real_t Aij;
+    real_t muij;
 }; // no use
 
 struct q_shake_t {
     int ai;
     int aj;
-    double dist;
+    real_t dist;
 }; // no use
 
 struct q_softcore_t {
-    double s;
+    real_t s;
 }; // no use
 
 struct q_softpair_t {
@@ -243,7 +243,7 @@ struct q_torcouple_t {
 struct restrseq_t {
     int ai;
     int aj;
-    double k;
+    real_t k;
     bool ih;
     int to_center;  // Flag for restraining to geom. or mass center
 };
@@ -258,32 +258,32 @@ struct restrpos_t {
 struct restrdis_t {
     int ai, aj;
     int ipsi;
-    double d1, d2;
-    double k;
+    real_t d1, d2;
+    real_t k;
     char itext[20], jtext[20];
 };
 
 struct restrang_t {
     int ai, aj, ak;
     int ipsi;
-    double ang;
-    double k;
+    real_t ang;
+    real_t k;
 };
 
 struct restrwall_t {
     int ai, aj;
-    double d, k, aMorse, dMorse;
+    real_t d, k, aMorse, dMorse;
     bool ih;
 };
 
 struct shell_t {
     int n_inshell;
-    double theta_corr;
-    double avtheta;
-    double avn_inshell;
-    double router;
-    double dr;
-    double cstb;
+    real_t theta_corr;
+    real_t avtheta;
+    real_t avn_inshell;
+    real_t router;
+    real_t dr;
+    real_t cstb;
 };
 
 /* =============================================
@@ -294,7 +294,7 @@ struct shell_t {
 struct shake_bond_t {
     int ai;
     int aj;
-    double dist2;
+    real_t dist2;
     bool ready;
 };
 
@@ -316,28 +316,28 @@ struct dvel_t {
 };
 
 struct E_bonded_t {
-    double Ubond;
-    double Uangle;
-    double Utor;
-    double Uimp;
+    real_t Ubond;
+    real_t Uangle;
+    real_t Utor;
+    real_t Uimp;
 };
 
 struct E_nonbonded_t {
-    double Ucoul;
-    double Uvdw;
+    real_t Ucoul;
+    real_t Uvdw;
 };
 
 struct E_restraint_t {
-    double Uradx;
-    double Upolx;
-    double Ufix;
-    double Ushell;
-    double Upres;
-    double Urestr;
+    real_t Uradx;
+    real_t Upolx;
+    real_t Ufix;
+    real_t Ushell;
+    real_t Upres;
+    real_t Urestr;
 };
 
 struct energy_t {
-    double Ukin;
-    double Upot;
-    double Utot;
+    real_t Ukin;
+    real_t Upot;
+    real_t Utot;
 };

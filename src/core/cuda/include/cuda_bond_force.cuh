@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/include/precision.h"
+
 void init_bond_force_kernel_data();
-double calc_bond_forces_host(int start, int end);
+real_t calc_bond_forces_host(int start, int end);
 void cleanup_bond_force();

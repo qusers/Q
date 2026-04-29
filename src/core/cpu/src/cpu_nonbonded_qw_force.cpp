@@ -75,8 +75,8 @@ void calc_nonbonded_qw_forces() {
                 dvH1 -= r2H1 * VelH1 * lambda;
                 dvH2 -= r2H2 * VelH2 * lambda;
 
-                ctx.EQ_nonbond_qw[state].Ucoul += static_cast<double>(VelO + VelH1 + VelH2);
-                ctx.EQ_nonbond_qw[state].Uvdw += static_cast<double>(V_a - V_b);
+                ctx.EQ_nonbond_qw[state].Ucoul += static_cast<real_t>(VelO + VelH1 + VelH2);
+                ctx.EQ_nonbond_qw[state].Uvdw += static_cast<real_t>(V_a - V_b);
             }
 
             // Note r6O is not the usual 1/rO^6, but rather rO^6. be careful!!!
