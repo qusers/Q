@@ -48,7 +48,7 @@ __global__ void calc_shake_constraints_kernel(
                     xij.x = coords[ai].x - coords[aj].x;
                     xij.y = coords[ai].y - coords[aj].y;
                     xij.z = coords[ai].z - coords[aj].z;
-                    xij2 = pow(xij.x, 2) + pow(xij.y, 2) + pow(xij.z, 2);
+                    xij2 = xij.x * xij.x + xij.y * xij.y + xij.z * xij.z;
                     diff = shake_bonds[shake + i].dist2 - xij2;
                     if (fabs(diff) < shake_tol * shake_bonds[shake + i].dist2) {
                         shake_bonds[shake + i].ready = true;
@@ -86,7 +86,7 @@ __global__ void calc_shake_constraints_kernel(
                 xxij.x = xcoords[ai].x - xcoords[aj].x;
                 xxij.y = xcoords[ai].y - xcoords[aj].y;
                 xxij.z = xcoords[ai].z - xcoords[aj].z;
-                xxij2 = pow(xxij.x, 2) + pow(xxij.y, 2) + pow(xxij.z, 2);
+                xxij2 = xxij.x * xxij.x + xxij.y * xxij.y + xxij.z * xxij.z;
                 printf(">>> Shake failed, i = %d,j = %d, d = %f, d0 = %f", ai, aj, sqrt(xxij2), shake_bonds[shake + i].dist2);
             }
             return;
@@ -154,6 +154,5 @@ int calc_shake_constraints_host() {
         d_mol_shake_offset);
     cudaDeviceSynchronize();
     cudaMemcpy(&total_iterations_host, d_total_iterations, sizeof(int), cudaMemcpyDeviceToHost);
-    host.coords->download();
     return host.n_molecules == 0 ? 0 : total_iterations_host / host.n_molecules;
 }

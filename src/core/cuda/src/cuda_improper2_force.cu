@@ -51,8 +51,8 @@ __global__ void calc_improper2_forces_kernel(int start, int end, improper_t* imp
     rnk.y = -rjk.z * rkl.x + rjk.x * rkl.z;
     rnk.z = -rjk.x * rkl.y + rjk.y * rkl.x;
 
-    bj2inv = 1 / (pow(rnj.x, 2) + pow(rnj.y, 2) + pow(rnj.z, 2));
-    bk2inv = 1 / (pow(rnk.x, 2) + pow(rnk.y, 2) + pow(rnk.z, 2));
+    bj2inv = 1 / (rnj.x * rnj.x + rnj.y * rnj.y + rnj.z * rnj.z);
+    bk2inv = 1 / (rnk.x * rnk.x + rnk.y * rnk.y + rnk.z * rnk.z);
     bjinv = sqrt(bj2inv);
     bkinv = sqrt(bk2inv);
 

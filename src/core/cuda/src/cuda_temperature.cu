@@ -19,7 +19,10 @@ __global__ void calc_temperature_kernel(int n_atoms, int n_atoms_solute, atype_t
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_atoms) return;
     double mass_i = catypes[atypes[idx].code - 1].m;
-    double ener = .5 * mass_i * (pow(velocities[idx].x, 2) + pow(velocities[idx].y, 2) + pow(velocities[idx].z, 2));
+    const double vx = velocities[idx].x;
+    const double vy = velocities[idx].y;
+    const double vz = velocities[idx].z;
+    double ener = .5 * mass_i * (vx * vx + vy * vy + vz * vz);
     bool is_solute = (idx < n_atoms_solute);
     bool is_excluded = excluded[idx];
 

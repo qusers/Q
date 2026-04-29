@@ -9,6 +9,20 @@ namespace CudaNonbondedForce {
 bool is_initialized = false;
 double *d_evdw_total, *d_ecoul_total;
 
+struct nonbond_vec_t {
+    nonbond_work_t x;
+    nonbond_work_t y;
+    nonbond_work_t z;
+};
+
+__device__ __forceinline__ nonbond_work_t nonbond_rsqrt(nonbond_work_t value) {
+#ifdef QDYN_SPFP
+    return rsqrtf(value);
+#else
+    return rsqrt(value);
+#endif
+}
+
 __device__ __forceinline__ void idx2xy(int n, int t, int& x, int& y) {
     x = (int)floorf((2 * n + 1 - sqrtf((2 * n + 1) * (2 * n + 1) - 8 * t)) * 0.5f);
     y = t - (x * n - (x * (x - 1) >> 1));
@@ -46,20 +60,20 @@ __device__ void calculate_unforce_bound(
     const real_t charge_product,
     const vdw_pair_param_t& pair_param,
 
-    const double coulomb_constant,
+    const nonbond_work_t coulomb_constant,
 
-    const double scaling,
-    const double lambda,
+    const nonbond_work_t scaling,
+    const nonbond_work_t lambda,
 
-    double& evdw,
-    double& ecoul,
-    double& dv) {
-    const real_t dx = x.x - y.x;
-    const real_t dy = x.y - y.y;
-    const real_t dz = x.z - y.z;
-    const real_t r = rsqrt(dx * dx + dy * dy + dz * dz);
-    const real_t r2 = r * r;
-    const real_t r6 = r2 * r2 * r2;
+    nonbond_work_t& evdw,
+    nonbond_work_t& ecoul,
+    nonbond_work_t& dv) {
+    const nonbond_work_t dx = static_cast<nonbond_work_t>(x.x - y.x);
+    const nonbond_work_t dy = static_cast<nonbond_work_t>(x.y - y.y);
+    const nonbond_work_t dz = static_cast<nonbond_work_t>(x.z - y.z);
+    const nonbond_work_t r = nonbond_rsqrt(dx * dx + dy * dy + dz * dz);
+    const nonbond_work_t r2 = r * r;
+    const nonbond_work_t r6 = r2 * r2 * r2;
     // double v_a = r6 * r6;
     // double v_b = r6;
     // ecoul = r;
@@ -68,10 +82,10 @@ __device__ void calculate_unforce_bound(
 
     ecoul = scaling * coulomb_constant * charge_product * r * lambda;
 
-    const real_t v_a = pair_param.a * r6 * r6 * static_cast<real_t>(lambda);
-    const real_t v_b = pair_param.b * r6 * static_cast<real_t>(lambda);
+    const nonbond_work_t v_a = static_cast<nonbond_work_t>(pair_param.a) * r6 * r6 * lambda;
+    const nonbond_work_t v_b = static_cast<nonbond_work_t>(pair_param.b) * r6 * lambda;
     evdw = v_a - v_b;
-    dv = r2 * (-ecoul - 12.0 * v_a + 6.0 * v_b);
+    dv = r2 * (-ecoul - static_cast<nonbond_work_t>(12.0) * v_a + static_cast<nonbond_work_t>(6.0) * v_b);
 }
 
 __global__ void calc_nonbonded_force_kernel(
@@ -160,8 +174,8 @@ __global__ void calc_nonbonded_force_kernel(
     int x_catype_type_idx = (x_idx < nx) ? x_atypes_types[x_idx] : -1;
     int y_catype_type_idx = (y_idx < ny) ? y_atypes_types[y_idx] : -1;
 
-    double3 x_force = {0.0, 0.0, 0.0};
-    double3 y_force = {0.0, 0.0, 0.0};
+    nonbond_vec_t x_force = {0.0, 0.0, 0.0};
+    nonbond_vec_t y_force = {0.0, 0.0, 0.0};
 
     double evdw_sum = 0.0;
     double ecoul_sum = 0.0;
@@ -216,12 +230,14 @@ __global__ void calc_nonbonded_force_kernel(
         }
     }
 
+    const nonbond_work_t kernel_lambda = static_cast<nonbond_work_t>(lambda);
+    const nonbond_work_t coulomb_constant = static_cast<nonbond_work_t>(d_topo.coulomb_constant);
     const int charge_pair_row = x_charge_type_idx * n_charge_types;
     const int pair_row = (x_catype_type_idx >= 0) ? x_catype_type_idx * n_catype_types : 0;
 
     for (int i = 0; i < 32; i++) {
         if (is_valid()) {
-            double scaling = 1.0;
+            nonbond_work_t scaling = static_cast<nonbond_work_t>(1.0);
             real_t charge_product = charge_pair_products[charge_pair_row + y_charge_type_idx];
             vdw_pair_param_t pair_param = catype_pair_params[pair_row + y_catype_type_idx];
 
@@ -233,16 +249,16 @@ __global__ void calc_nonbonded_force_kernel(
             //     }
             // }
 
-            double evdw = 0, ecoul = 0, dv = 0;
+            nonbond_work_t evdw = 0, ecoul = 0, dv = 0;
 
             calculate_unforce_bound(
                 x_coord,
                 y_coord,
                 charge_product,
                 pair_param,
-                d_topo.coulomb_constant,
+                coulomb_constant,
                 scaling,
-                lambda,
+                kernel_lambda,
                 evdw,
                 ecoul,
                 dv);
@@ -250,9 +266,9 @@ __global__ void calc_nonbonded_force_kernel(
             evdw_sum += evdw;
             ecoul_sum += ecoul;
 
-            const real_t dx = x_coord.x - y_coord.x;
-            const real_t dy = x_coord.y - y_coord.y;
-            const real_t dz = x_coord.z - y_coord.z;
+            const nonbond_work_t dx = static_cast<nonbond_work_t>(x_coord.x - y_coord.x);
+            const nonbond_work_t dy = static_cast<nonbond_work_t>(x_coord.y - y_coord.y);
+            const nonbond_work_t dz = static_cast<nonbond_work_t>(x_coord.z - y_coord.z);
             y_force.x -= dv * dx;
             y_force.y -= dv * dy;
             y_force.z -= dv * dz;

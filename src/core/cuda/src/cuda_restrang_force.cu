@@ -45,8 +45,8 @@ __global__ void calc_restrang_force_kernel(
         lambda = 1;
     }
 
-    r2ij = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
-    r2jk = pow(dr2.x, 2) + pow(dr2.y, 2) + pow(dr2.z, 2);
+    r2ij = dr.x * dr.x + dr.y * dr.y + dr.z * dr.z;
+    r2jk = dr2.x * dr2.x + dr2.y * dr2.y + dr2.z * dr2.z;
 
     rij = sqrt(r2ij);
     rjk = sqrt(r2jk);
@@ -60,7 +60,7 @@ __global__ void calc_restrang_force_kernel(
     th = acos(cos_th);
     dth = th - to_radians_device(restrangs[ir].ang);
 
-    ener = .5 * restrangs[ir].k * pow(dth, 2);
+    ener = .5 * restrangs[ir].k * dth * dth;
     dv = lambda * restrangs[ir].k * dth;
 
     f1 = sin(th);
