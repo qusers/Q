@@ -310,9 +310,9 @@ struct vel_t {
 };
 
 struct dvel_t {
-    double x;
-    double y;
-    double z;
+    force_accum_t x;
+    force_accum_t y;
+    force_accum_t z;
 };
 
 struct E_bonded_t {

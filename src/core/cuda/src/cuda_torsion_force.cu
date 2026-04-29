@@ -76,7 +76,7 @@ __global__ void calc_torsion_forces_kernel(int start, int end, torsion_t* torsio
 
     // Forces
     f1 = sin(phi);
-    if (fabs(f1) < 1E-12) f1 = 1E-12;
+    if (fabs(f1) < k_singular_sin_epsilon) f1 = copysign(k_singular_sin_epsilon, f1);
     f1 = -1 / f1;
 
     di.x = f1 * (rnk.x * (bjinv * bkinv) - cos_phi * rnj.x * bj2inv);

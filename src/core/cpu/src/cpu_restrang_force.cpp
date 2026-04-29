@@ -61,8 +61,8 @@ void calc_restrang_forces() {
         dv = lambda * restrangs[ir].k * dth;
 
         f1 = sin(th);
-        if (fabs(f1) < 1E-12) {
-            f1 = -1E-12;
+        if (fabs(f1) < k_singular_sin_epsilon) {
+            f1 = -1.0 / k_singular_sin_epsilon;
         } else {
             f1 = -1 / f1;
         }

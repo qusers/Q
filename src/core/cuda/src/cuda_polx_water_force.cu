@@ -136,7 +136,7 @@ __global__ void calc_polx_water_forces_kernel(
     if (cos_th > 1) cos_th = 1;
     if (cos_th < -1) cos_th = -1;
     f0 = sin(acos(cos_th));
-    if (abs(f0) < 1.0E-12) f0 = 1.0E-12;
+    if (abs(f0) < k_singular_sin_epsilon) f0 = k_singular_sin_epsilon;
     f0 = -1.0 / f0;
     f0 *= dv;
 
