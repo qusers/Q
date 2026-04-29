@@ -18,7 +18,7 @@ void calc_nonbonded_qp_forces() {
     real_t r2, r;
     real_t ai_aii, aj_aii, ai_bii, aj_bii;
     bool bond23, bond14;
-    double scaling;
+    real_t scaling;
     real_t Vel, V_a, V_b, dv;
 
     for (int qi = 0; qi < ctx.n_qatoms; qi++) {
@@ -70,8 +70,8 @@ void calc_nonbonded_qp_forces() {
                 dvelocities[j].z += dv * da.z;
 
                 // Update Q totals
-                ctx.EQ_nonbond_qp[state].Ucoul += static_cast<double>(Vel);
-                ctx.EQ_nonbond_qp[state].Uvdw += static_cast<double>(V_a - V_b);
+                ctx.EQ_nonbond_qp[state].Ucoul += static_cast<real_t>(Vel);
+                ctx.EQ_nonbond_qp[state].Uvdw += static_cast<real_t>(V_a - V_b);
             }
         }
     }

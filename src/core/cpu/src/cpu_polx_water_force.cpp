@@ -13,12 +13,12 @@ void calc_polx_w_forces(int iteration) {
     auto *wshells = ctx.wshells->cpu_data_p;
 
     int wi, imin, jw, ii, iis, jmin;
-    double tmin;
+    real_t tmin;
     coord_t rmu, rcu, f1O, f1H1, f1H2, f2;
-    double rm, rc;
-    double cos_th;
-    double avtdum, arg, f0, dv;
-    double ener;
+    real_t rm, rc;
+    real_t cos_th;
+    real_t avtdum, arg, f0, dv;
+    real_t ener;
 
     for (int is = 0; is < ctx.n_shells; is++) {
         wshells[is].n_inshell = 0;
@@ -93,8 +93,8 @@ void calc_polx_w_forces(int iteration) {
     if (iteration != 0 && iteration % itdis_update == 0) {
         for (int is = 0; is < ctx.n_shells; is++) {
             printf("SHELL %d\n", is);
-            wshells[is].avtheta /= (double)itdis_update;
-            wshells[is].avn_inshell /= (double)itdis_update;
+            wshells[is].avtheta /= (real_t)itdis_update;
+            wshells[is].avn_inshell /= (real_t)itdis_update;
             wshells[is].theta_corr =
                 wshells[is].theta_corr + wshells[is].avtheta - acos(wshells[is].cstb);
             printf("average theta = %f, average in shell = %f, theta_corr = %f\n",
@@ -113,7 +113,7 @@ void calc_polx_w_forces(int iteration) {
         avtdum = 0;
         for (int il = 0; il < wshells[is].n_inshell; il++) {
             ii = ctx.nsort[il][is];
-            arg = 1 + ((1 - 2 * (double)(il + 1)) / (double)wshells[is].n_inshell);
+            arg = 1 + ((1 - 2 * (real_t)(il + 1)) / (real_t)wshells[is].n_inshell);
             ctx.theta0[il] = acos(arg);
             ctx.theta0[il] = ctx.theta0[il] - 3 * sin(ctx.theta0[il]) * wshells[is].cstb / 2;
             if (ctx.theta0[il] < 0) {
@@ -189,7 +189,7 @@ void calc_polx_w_forces(int iteration) {
             dvelocities[wi + 2].z += f0 * f1H2.z;
         }
 
-        wshells[is].avtheta += avtdum / (double)wshells[is].n_inshell;
+        wshells[is].avtheta += avtdum / (real_t)wshells[is].n_inshell;
         wshells[is].avn_inshell += wshells[is].n_inshell;
     }
 }

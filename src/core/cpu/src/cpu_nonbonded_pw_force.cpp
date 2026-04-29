@@ -66,8 +66,8 @@ void calc_nonbonded_pw_forces() {
             dvelocities[atom_j].y += scale * dy;
             dvelocities[atom_j].z += scale * dz;
 
-            ctx.E_nonbond_pw.Ucoul += static_cast<double>(ecoul);
-            ctx.E_nonbond_pw.Uvdw += static_cast<double>(v_a - v_b);
+            ctx.E_nonbond_pw.Ucoul += static_cast<real_t>(ecoul);
+            ctx.E_nonbond_pw.Uvdw += static_cast<real_t>(v_a - v_b);
         }
     }
 }

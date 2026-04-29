@@ -17,7 +17,7 @@ __global__ void calc_shake_constraints_kernel(
     shake_bond_t* shake_bonds,
     coord_t* coords,
     coord_t* xcoords,
-    double* winv,
+    real_t* winv,
     int* total_iterations,
     int* mol_shake_offset) {
     int idx = blockIdx.x;
@@ -26,7 +26,7 @@ __global__ void calc_shake_constraints_kernel(
     int mol = idx;
 
     int ai, aj, n_iterations, shake;
-    double xij2, diff, corr, scp, xxij2;
+    real_t xij2, diff, corr, scp, xxij2;
     coord_t xij, xxij;
 
     if (mol_n_shakes[mol] == 0) return;

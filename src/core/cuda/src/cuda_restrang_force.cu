@@ -3,26 +3,26 @@
 #include "common/include/context.h"
 namespace CudaRestrangForce {
 bool is_initialized = false;
-double* d_E_restraint;
+real_t* d_E_restraint;
 }  // namespace CudaRestrangForce
 
 __global__ void calc_restrang_force_kernel(
     restrang_t* restrangs,
     int n_restrangs,
     coord_t* coords,
-    double* lambdas,
+    real_t* lambdas,
     int n_lambdas,
     dvel_t* dvelocities,
     E_restraint_t* EQ_restraint,
-    double* E_restraint) {
+    real_t* E_restraint) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_restrangs) return;
     int ir = idx;
 
     int state, i, j, k;
     coord_t dr, dr2, di, dk;
-    double lambda, r2ij, r2jk, rij, rjk, cos_th, th;
-    double dth, dv, ener, f1;
+    real_t lambda, r2ij, r2jk, rij, rjk, cos_th, th;
+    real_t dth, dv, ener, f1;
 
     state = restrangs[ir].ipsi - 1;
     i = restrangs[ir].ai - 1;
@@ -110,8 +110,8 @@ void calc_restrang_force_host() {
     auto d_dvelocities = host.dvelocities->gpu_data_p;
     auto d_EQ_restraint = host.EQ_restraint->gpu_data_p;
 
-    double val = 0;
-    cudaMemcpy(d_E_restraint, &val, sizeof(double), cudaMemcpyHostToDevice);
+    real_t val = 0;
+    cudaMemcpy(d_E_restraint, &val, sizeof(real_t), cudaMemcpyHostToDevice);
 
     int blockSize = 256;
     int numBlocks = (host.n_restrangs + blockSize - 1) / blockSize;
@@ -126,14 +126,14 @@ void calc_restrang_force_host() {
         d_E_restraint);
     cudaDeviceSynchronize();
     host.EQ_restraint->download();
-    cudaMemcpy(&val, d_E_restraint, sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&val, d_E_restraint, sizeof(real_t), cudaMemcpyDeviceToHost);
     host.E_restraint.Upres += val;
 }
 
 void init_restrang_force_kernel_data() {
     using namespace CudaRestrangForce;
     if (!is_initialized) {
-        check_cudaMalloc((void**)&d_E_restraint, sizeof(double));
+        check_cudaMalloc((void**)&d_E_restraint, sizeof(real_t));
         is_initialized = true;
     }
 }

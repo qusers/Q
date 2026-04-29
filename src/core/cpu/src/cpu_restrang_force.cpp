@@ -15,8 +15,8 @@ void calc_restrang_forces() {
 
     int state, i, j, k;
     coord_t dr, dr2, di, dk;
-    double lambda, r2ij, r2jk, rij, rjk, cos_th, th;
-    double dth, dv, ener, f1;
+    real_t lambda, r2ij, r2jk, rij, rjk, cos_th, th;
+    real_t dth, dv, ener, f1;
 
     for (int ir = 0; ir < ctx.n_restrangs; ir++) {
         state = restrangs[ir].ipsi - 1;

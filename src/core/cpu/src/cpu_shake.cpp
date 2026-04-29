@@ -34,7 +34,7 @@ int calc_shake_constraints(coord_t* coords, coord_t* xcoords) {
                     const int aj = shake_bond.aj - 1;
                     coord_t xij;
                     coord_t xxij;
-                    double xij2, diff, corr, scp;
+                    real_t xij2, diff, corr, scp;
 
                     xij.x = coords[ai].x - coords[aj].x;
                     xij.y = coords[ai].y - coords[aj].y;
@@ -75,7 +75,7 @@ int calc_shake_constraints(coord_t* coords, coord_t* xcoords) {
                 const int ai = shake_bonds[shake + i].ai - 1;
                 const int aj = shake_bonds[shake + i].aj - 1;
                 coord_t xxij;
-                double xxij2;
+                real_t xxij2;
 
                 xxij.x = xcoords[ai].x - xcoords[aj].x;
                 xxij.y = xcoords[ai].y - xcoords[aj].y;
@@ -125,11 +125,11 @@ void stop_cm_translation() {
     auto &atypes = ctx.atypes->cpu_data_p;
     auto &catypes = ctx.catypes->cpu_data_p;
     auto &velocities = ctx.velocities->cpu_data_p;
-    double total_mass = 0;
+    real_t total_mass = 0;
     coord_t vcm = {};
 
     for (int ai = 0; ai < ctx.n_atoms; ai++) {
-        const double rmass = catypes[atypes[ai].code - 1].m;
+        const real_t rmass = catypes[atypes[ai].code - 1].m;
         total_mass += rmass;
         vcm.x += velocities[ai].x * rmass;
         vcm.y += velocities[ai].y;
