@@ -158,8 +158,8 @@ void calc_polx_w_forces(int iteration) {
                 cos_th = -1;
             }
             f0 = sin(acos(cos_th));
-            if (fabs(f0) < 1.0E-12) {
-                f0 = 1.0E-12;
+            if (fabs(f0) < k_singular_sin_epsilon) {
+                f0 = k_singular_sin_epsilon;
             }
             f0 = -1.0 / f0;
             f0 *= dv;

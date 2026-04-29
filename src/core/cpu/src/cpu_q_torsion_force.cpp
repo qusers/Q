@@ -76,8 +76,8 @@ void calc_qtorsion_forces(int state) {
 
         // Forces
         f1 = sin(phi);
-        if (abs(f1) < 1E-12) {
-            f1 = 1E-12;
+        if (fabs(f1) < k_singular_sin_epsilon) {
+            f1 = copysign(k_singular_sin_epsilon, f1);
         }
         f1 = -1 / f1;
 

@@ -79,8 +79,8 @@ double calc_improper2_forces(int start, int end) {
 
         // Forces
         f1 = sin(phi);
-        if (std::fabs(f1) < 1E-12) {
-            f1 = 1E-12;
+        if (std::fabs(f1) < k_singular_sin_epsilon) {
+            f1 = std::copysign(k_singular_sin_epsilon, f1);
         }
         f1 = -1 / f1;
 
