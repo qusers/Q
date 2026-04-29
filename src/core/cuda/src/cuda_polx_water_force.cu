@@ -46,7 +46,7 @@ __global__ void calc_polx_theta_and_shells(
     rmu.y = coords[wi + 1].y + coords[wi + 2].y - 2 * coords[wi].y;
     rmu.z = coords[wi + 1].z + coords[wi + 2].z - 2 * coords[wi].z;
 
-    rm = sqrt(pow(rmu.x, 2) + pow(rmu.y, 2) + pow(rmu.z, 2));
+    rm = sqrt(rmu.x * rmu.x + rmu.y * rmu.y + rmu.z * rmu.z);
 
     rmu.x /= rm;
     rmu.y /= rm;
@@ -55,7 +55,7 @@ __global__ void calc_polx_theta_and_shells(
     rcu.x = coords[wi].x - topo.solvent_center.x;
     rcu.y = coords[wi].y - topo.solvent_center.y;
     rcu.z = coords[wi].z - topo.solvent_center.z;
-    rc = sqrt(pow(rcu.x, 2) + pow(rcu.y, 2) + pow(rcu.z, 2));
+    rc = sqrt(rcu.x * rcu.x + rcu.y * rcu.y + rcu.z * rcu.z);
     rcu.x /= rc;
     rcu.y /= rc;
     rcu.z /= rc;
@@ -106,18 +106,19 @@ __global__ void calc_polx_water_forces_kernel(
     if (theta_val > M_PI) theta_val = M_PI;
 
     avtdum += theta[ii];
-    ener = .5 * md.polarisation_force * pow(theta[ii] - theta_val + wshells[is].theta_corr, 2);
+    const double dtheta = theta[ii] - theta_val + wshells[is].theta_corr;
+    ener = .5 * md.polarisation_force * dtheta * dtheta;
     // E_restraint.Upolx += ener;
     atomicAdd(energy, ener);
 
-    dv = md.polarisation_force * (theta[ii] - theta_val + wshells[is].theta_corr);
+    dv = md.polarisation_force * dtheta;
     wi = n_atoms_solute + 3 * ii;
 
     rmu.x = coords[wi + 1].x + coords[wi + 2].x - 2 * coords[wi].x;
     rmu.y = coords[wi + 1].y + coords[wi + 2].y - 2 * coords[wi].y;
     rmu.z = coords[wi + 1].z + coords[wi + 2].z - 2 * coords[wi].z;
 
-    rm = sqrt(pow(rmu.x, 2) + pow(rmu.y, 2) + pow(rmu.z, 2));
+    rm = sqrt(rmu.x * rmu.x + rmu.y * rmu.y + rmu.z * rmu.z);
 
     rmu.x /= rm;
     rmu.y /= rm;
@@ -126,7 +127,7 @@ __global__ void calc_polx_water_forces_kernel(
     rcu.x = coords[wi].x - topo.solvent_center.x;
     rcu.y = coords[wi].y - topo.solvent_center.y;
     rcu.z = coords[wi].z - topo.solvent_center.z;
-    rc = sqrt(pow(rcu.x, 2) + pow(rcu.y, 2) + pow(rcu.z, 2));
+    rc = sqrt(rcu.x * rcu.x + rcu.y * rcu.y + rcu.z * rcu.z);
     rcu.x /= rc;
     rcu.y /= rc;
     rcu.z /= rc;

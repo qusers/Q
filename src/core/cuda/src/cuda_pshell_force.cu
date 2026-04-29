@@ -34,7 +34,7 @@ __global__ void calc_pshell_force_kernel(
         dr.x = coords[i].x - coords_init[i].x;
         dr.y = coords[i].y - coords_init[i].y;
         dr.z = coords[i].z - coords_init[i].z;
-        r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
+        r2 = dr.x * dr.x + dr.y * dr.y + dr.z * dr.z;
         ener = 0.5 * k * r2;
         // printf("dr = %f %f %f\n", dr.x, dr.y, dr.z);
 
