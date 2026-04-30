@@ -88,11 +88,6 @@ void Handler::update_energy_totals() {
 }
 
 void Handler::print_outputs(int iteration) {
-    auto& host = Context::instance();
-    if (host.run_gpu && host.md.trajectory != 0 && iteration % host.md.trajectory == 0) {
-        host.coords->download();
-        host.velocities->download();
-    }
     print_energies();
     write_coords(iteration);
     write_velocities(iteration);

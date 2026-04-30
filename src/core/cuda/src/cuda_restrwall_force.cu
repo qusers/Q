@@ -29,11 +29,11 @@ __global__ void calc_restrwall_forces_kernel(
             dr.y = coords[i].y - topo.solvent_center.y;
             dr.z = coords[i].z - topo.solvent_center.z;
 
-            b = sqrt(dr.x * dr.x + dr.y * dr.y + dr.z * dr.z);
+            b = sqrt(pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2));
             db = b - restrwalls[ir].d;
 
             if (db > 0) {
-                ener = .5 * k * db * db - restrwalls[ir].dMorse;
+                ener = .5 * k * pow(db, 2) - restrwalls[ir].dMorse;
                 dv = k * db / b;
             } else {
                 fexp = exp(restrwalls[ir].aMorse * db);

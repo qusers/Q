@@ -15,14 +15,14 @@ void calc_nonbonded_qq_forces() {
     auto *excluded = ctx.excluded->cpu_data_p;
     auto *q_elscales = ctx.q_elscales->cpu_data_p;
     int ai, aj;
-    real_t crg_i, crg_j;
+    double crg_i, crg_j;
     double elscale, scaling;
     bool bond23, bond14;
     coord_t da;
-    real_t r2a, ra, r6a;
-    real_t Vela, V_a, V_b;
-    real_t dva;
-    real_t ai_aii, aj_aii, ai_bii, aj_bii;
+    double r2a, ra, r6a;
+    double Vela, V_a, V_b;
+    double dva;
+    double ai_aii, aj_aii, ai_bii, aj_bii;
 
     for (int state = 0; state < ctx.n_lambdas; state++) {
         for (int qi = 0; qi < ctx.n_qatoms; qi++) {
@@ -54,11 +54,11 @@ void calc_nonbonded_qq_forces() {
                 da.x = coords[aj].x - coords[ai].x;
                 da.y = coords[aj].y - coords[ai].y;
                 da.z = coords[aj].z - coords[ai].z;
-                r2a = static_cast<real_t>(1.0) / (da.x * da.x + da.y * da.y + da.z * da.z);
-                ra = static_cast<real_t>(std::sqrt(r2a));
+                r2a = 1 / (pow(da.x, 2) + pow(da.y, 2) + pow(da.z, 2));
+                ra = sqrt(r2a);
                 r6a = r2a * r2a * r2a;
 
-                Vela = static_cast<real_t>(scaling * ctx.topo.coulomb_constant * elscale) * crg_i * crg_j * ra;
+                Vela = scaling * ctx.topo.coulomb_constant * crg_i * crg_j * ra * elscale;
 
                 ai_aii = bond14 ? qi_type.aii_1_4 : qi_type.aii_normal;
                 aj_aii = bond14 ? qj_type.aii_1_4 : qj_type.aii_normal;
@@ -70,8 +70,7 @@ void calc_nonbonded_qq_forces() {
                 } else {
                     calc_vdw_arithmetic(ai_aii, aj_aii, ai_bii, aj_bii, r6a, &V_a, &V_b);
                 }
-                dva = r2a * (-Vela - static_cast<real_t>(12.0) * V_a + static_cast<real_t>(6.0) * V_b) *
-                      static_cast<real_t>(lambdas[state]);
+                dva = r2a * (-Vela - 12 * V_a + 6 * V_b) * lambdas[state];
 
                 dvelocities[ai].x -= dva * da.x;
                 dvelocities[ai].y -= dva * da.y;
@@ -81,8 +80,8 @@ void calc_nonbonded_qq_forces() {
                 dvelocities[aj].y += dva * da.y;
                 dvelocities[aj].z += dva * da.z;
 
-                ctx.EQ_nonbond_qq[state].Ucoul += static_cast<double>(Vela);
-                ctx.EQ_nonbond_qq[state].Uvdw += static_cast<double>(V_a - V_b);
+                ctx.EQ_nonbond_qq[state].Ucoul += Vela;
+                ctx.EQ_nonbond_qq[state].Uvdw += (V_a - V_b);
             }
         }
     }

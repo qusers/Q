@@ -29,18 +29,18 @@ __global__ void calc_radix_water_forces_kernel(
     dr.x = coords[i].x - topo.solvent_center.x;
     dr.y = coords[i].y - topo.solvent_center.y;
     dr.z = coords[i].z - topo.solvent_center.z;
-    double b = sqrt(dr.x * dr.x + dr.y * dr.y + dr.z * dr.z);
+    double b = sqrt(pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2));
     double db = b - (topo.solvent_radius - shift);
 
     double ener, dv;
     if (db > 0) {
-        ener = 0.5 * md.radial_force * db * db - Dwmz;
+        ener = 0.5 * md.radial_force * pow(db, 2) - Dwmz;
         dv = md.radial_force * db / b;
     } else {
         if (b > 0.0) {
             double fexp = exp(awmz * db);
-            ener = Dwmz * (fexp * fexp - 2 * fexp);
-            dv = -2 * Dwmz * awmz * (fexp - fexp * fexp) / b;
+            ener = Dwmz * (pow(fexp, 2) - 2 * fexp);
+            dv = -2 * Dwmz * awmz * (fexp - pow(fexp, 2)) / b;
         } else {
             dv = 0;
             ener = 0;
@@ -91,6 +91,7 @@ void calc_radix_water_forces_host() {
                                                              d_dvelocities,
                                                              d_energy);
     check_cuda(cudaDeviceSynchronize());
+    host.dvelocities->download();
     check_cuda(cudaMemcpy(&energy, d_energy, sizeof(double), cudaMemcpyDeviceToHost));
     host.E_restraint.Uradx += energy;
 }

@@ -12,14 +12,6 @@ int* d_atom_to_qi = nullptr;
 double* d_evdw_totals = nullptr;
 double* d_ecoul_totals = nullptr;
 
-__device__ __forceinline__ nonbond_work_t nonbond14_rsqrt(nonbond_work_t value) {
-#ifdef QDYN_SPFP
-    return rsqrtf(value);
-#else
-    return rsqrt(value);
-#endif
-}
-
 __device__ __forceinline__ int unified_parameter_index(
     int atom_idx,
     int state,
@@ -37,53 +29,37 @@ __device__ __forceinline__ int unified_parameter_index(
 __device__ void calculate_nonbonded_14_pair(
     const coord_t& x,
     const coord_t& y,
-    real_t x_charge,
-    real_t y_charge,
-    real_t x_aii,
-    real_t y_aii,
-    real_t x_bii,
-    real_t y_bii,
-    nonbond_work_t coulomb_constant,
-    nonbond_work_t scaling,
+    double x_charge,
+    double y_charge,
+    double x_aii,
+    double y_aii,
+    double x_bii,
+    double y_bii,
+    double coulomb_constant,
+    double scaling,
     int vdw_rule,
-    nonbond_work_t lambda,
-    nonbond_work_t& evdw,
-    nonbond_work_t& ecoul,
-    nonbond_work_t& dv) {
-    const nonbond_work_t dx = static_cast<nonbond_work_t>(x.x - y.x);
-    const nonbond_work_t dy = static_cast<nonbond_work_t>(x.y - y.y);
-    const nonbond_work_t dz = static_cast<nonbond_work_t>(x.z - y.z);
-    const nonbond_work_t r = nonbond14_rsqrt(dx * dx + dy * dy + dz * dz);
-    const nonbond_work_t r2 = r * r;
-    const nonbond_work_t r6 = r2 * r2 * r2;
+    double lambda,
+    double& evdw,
+    double& ecoul,
+    double& dv) {
+    const double3 d = {x.x - y.x, x.y - y.y, x.z - y.z};
+    const double r = rsqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+    const double r2 = r * r;
+    const double r6 = r2 * r2 * r2;
 
     ecoul = scaling * coulomb_constant * x_charge * y_charge * r * lambda;
 
-    nonbond_work_t v_a = 0.0;
-    nonbond_work_t v_b = 0.0;
+    double v_a = 0.0;
+    double v_b = 0.0;
     if (vdw_rule == VDW_GEOMETRIC) {
-        calc_vdw_geometric(
-            static_cast<nonbond_work_t>(x_aii),
-            static_cast<nonbond_work_t>(y_aii),
-            static_cast<nonbond_work_t>(x_bii),
-            static_cast<nonbond_work_t>(y_bii),
-            r6,
-            &v_a,
-            &v_b);
+        calc_vdw_geometric(x_aii, y_aii, x_bii, y_bii, r6, &v_a, &v_b);
     } else {
-        calc_vdw_arithmetic(
-            static_cast<nonbond_work_t>(x_aii),
-            static_cast<nonbond_work_t>(y_aii),
-            static_cast<nonbond_work_t>(x_bii),
-            static_cast<nonbond_work_t>(y_bii),
-            r6,
-            &v_a,
-            &v_b);
+        calc_vdw_arithmetic(x_aii, y_aii, x_bii, y_bii, r6, &v_a, &v_b);
     }
     v_a *= lambda;
     v_b *= lambda;
     evdw = v_a - v_b;
-    dv = r2 * (-ecoul - static_cast<nonbond_work_t>(12.0) * v_a + static_cast<nonbond_work_t>(6.0) * v_b);
+    dv = r2 * (-ecoul - 12.0 * v_a + 6.0 * v_b);
 }
 
 __global__ void calc_nonbonded_14_force_kernel(
@@ -126,10 +102,10 @@ __global__ void calc_nonbonded_14_force_kernel(
     const coord_t ri = d_coords[ai];
     const coord_t rj = d_coords[aj];
 
-    nonbond_work_t evdw = 0.0;
-    nonbond_work_t ecoul = 0.0;
-    nonbond_work_t dv = 0.0;
-    const nonbond_work_t pair_lambda = static_cast<nonbond_work_t>((mode == NONBONDED_14_PP) ? 1.0 : lambda);
+    double evdw = 0.0;
+    double ecoul = 0.0;
+    double dv = 0.0;
+    const double pair_lambda = (mode == NONBONDED_14_PP) ? 1.0 : lambda;
 
     calculate_nonbonded_14_pair(
         ri,
@@ -140,23 +116,21 @@ __global__ void calc_nonbonded_14_force_kernel(
         aj_type.aii_1_4,
         ai_type.bii_1_4,
         aj_type.bii_1_4,
-        static_cast<nonbond_work_t>(d_topo.coulomb_constant),
-        static_cast<nonbond_work_t>(d_topo.el14_scale),
+        d_topo.coulomb_constant,
+        d_topo.el14_scale,
         d_topo.vdw_rule,
         pair_lambda,
         evdw,
         ecoul,
         dv);
 
-    const nonbond_work_t dx = static_cast<nonbond_work_t>(rj.x - ri.x);
-    const nonbond_work_t dy = static_cast<nonbond_work_t>(rj.y - ri.y);
-    const nonbond_work_t dz = static_cast<nonbond_work_t>(rj.z - ri.z);
-    atomicAdd(&d_dvelocities[ai].x, -dv * dx);
-    atomicAdd(&d_dvelocities[ai].y, -dv * dy);
-    atomicAdd(&d_dvelocities[ai].z, -dv * dz);
-    atomicAdd(&d_dvelocities[aj].x, dv * dx);
-    atomicAdd(&d_dvelocities[aj].y, dv * dy);
-    atomicAdd(&d_dvelocities[aj].z, dv * dz);
+    const double3 d = {rj.x - ri.x, rj.y - ri.y, rj.z - ri.z};
+    atomicAdd(&d_dvelocities[ai].x, -dv * d.x);
+    atomicAdd(&d_dvelocities[ai].y, -dv * d.y);
+    atomicAdd(&d_dvelocities[ai].z, -dv * d.z);
+    atomicAdd(&d_dvelocities[aj].x, dv * d.x);
+    atomicAdd(&d_dvelocities[aj].y, dv * d.y);
+    atomicAdd(&d_dvelocities[aj].z, dv * d.z);
 
     atomicAdd(&evdw_totals[mode], evdw);
     atomicAdd(&ecoul_totals[mode], ecoul);

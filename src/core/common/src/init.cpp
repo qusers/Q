@@ -77,11 +77,9 @@ void initialize_catype_tables() {
             const catype_t& cj = h_catype_table_all[j];
             vdw_pair_param_t pair_param = {};
             if (ctx.topo.vdw_rule == VDW_GEOMETRIC) {
-                calc_vdw_geometric(
-                    ci.aii_normal, cj.aii_normal, ci.bii_normal, cj.bii_normal, static_cast<real_t>(1.0), &pair_param.a, &pair_param.b);
+                calc_vdw_geometric(ci.aii_normal, cj.aii_normal, ci.bii_normal, cj.bii_normal, 1.0, &pair_param.a, &pair_param.b);
             } else {
-                calc_vdw_arithmetic(
-                    ci.aii_normal, cj.aii_normal, ci.bii_normal, cj.bii_normal, static_cast<real_t>(1.0), &pair_param.a, &pair_param.b);
+                calc_vdw_arithmetic(ci.aii_normal, cj.aii_normal, ci.bii_normal, cj.bii_normal, 1.0, &pair_param.a, &pair_param.b);
             }
             h_catype_pair_params[i * ctx.n_catype_types + j] = pair_param;
         }
@@ -170,11 +168,10 @@ void initialize_charge_tables() {
     ctx.zero_charge_type = add_charge(0.0);
     ctx.n_charge_types = static_cast<int>(h_charge_table_all.size());
 
-    std::vector<real_t> h_charge_pair_products(ctx.n_charge_types * ctx.n_charge_types);
+    std::vector<double> h_charge_pair_products(ctx.n_charge_types * ctx.n_charge_types);
     for (int i = 0; i < ctx.n_charge_types; i++) {
         for (int j = 0; j < ctx.n_charge_types; j++) {
-            h_charge_pair_products[i * ctx.n_charge_types + j] =
-                static_cast<real_t>(h_charge_table_all[i].charge * h_charge_table_all[j].charge);
+            h_charge_pair_products[i * ctx.n_charge_types + j] = h_charge_table_all[i].charge * h_charge_table_all[j].charge;
         }
     }
 
@@ -916,3 +913,4 @@ void write_headers() {
     write_header("velocities.csv");
     write_energy_header();
 }
+

@@ -48,14 +48,14 @@ __global__ void calc_angle_forces_kernel(int start, int end, angle_t* angles, co
     atomicAdd(energy_sum, energy);
 
     coord_t di = {
-        static_cast<real_t>(f1 * (rjk.x / (rji_length * rjk_length) - cos_theta * rji.x / (rji_length * rji_length))),
-        static_cast<real_t>(f1 * (rjk.y / (rji_length * rjk_length) - cos_theta * rji.y / (rji_length * rji_length))),
-        static_cast<real_t>(f1 * (rjk.z / (rji_length * rjk_length) - cos_theta * rji.z / (rji_length * rji_length)))};
+        f1 * (rjk.x / (rji_length * rjk_length) - cos_theta * rji.x / (rji_length * rji_length)),
+        f1 * (rjk.y / (rji_length * rjk_length) - cos_theta * rji.y / (rji_length * rji_length)),
+        f1 * (rjk.z / (rji_length * rjk_length) - cos_theta * rji.z / (rji_length * rji_length))};
 
     coord_t dk = {
-        static_cast<real_t>(f1 * (rji.x / (rji_length * rjk_length) - cos_theta * rjk.x / (rjk_length * rjk_length))),
-        static_cast<real_t>(f1 * (rji.y / (rji_length * rjk_length) - cos_theta * rjk.y / (rjk_length * rjk_length))),
-        static_cast<real_t>(f1 * (rji.z / (rji_length * rjk_length) - cos_theta * rjk.z / (rjk_length * rjk_length)))};
+        f1 * (rji.x / (rji_length * rjk_length) - cos_theta * rjk.x / (rjk_length * rjk_length)),
+        f1 * (rji.y / (rji_length * rjk_length) - cos_theta * rjk.y / (rjk_length * rjk_length)),
+        f1 * (rji.z / (rji_length * rjk_length) - cos_theta * rjk.z / (rjk_length * rjk_length))};
 
     atomicAdd(&dvelocities[i].x, dv * di.x);
     atomicAdd(&dvelocities[i].y, dv * di.y);

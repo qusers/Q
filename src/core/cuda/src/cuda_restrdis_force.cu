@@ -40,7 +40,7 @@ __global__ void calc_restrdis_forces_kernel(
         lambda = 1;
     }
 
-    b = sqrt(dr.x * dr.x + dr.y * dr.y + dr.z * dr.z);
+    b = sqrt(pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2));
     if (b < restrdists[ir].d1) {
         db = b - restrdists[ir].d1;
     } else if (b > restrdists[ir].d2) {
@@ -50,7 +50,7 @@ __global__ void calc_restrdis_forces_kernel(
         return;
     }
 
-    ener = .5 * restrdists[ir].k * db * db;
+    ener = .5 * restrdists[ir].k * pow(db, 2);
     dv = lambda * restrdists[ir].k * db / b;
 
     atomicAdd(&dvelocities[j].x, dr.x * dv);

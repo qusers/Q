@@ -46,7 +46,7 @@ __global__ void calc_restrseq_forces_kernel(
             dr.x /= n_ctr;
             dr.y /= n_ctr;
             dr.z /= n_ctr;
-            r2 = dr.x * dr.x + dr.y * dr.y + dr.z * dr.z;
+            r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
             ener = .5 * k * r2;
             atomicAdd(upres_energy, ener);
 
@@ -77,7 +77,7 @@ __global__ void calc_restrseq_forces_kernel(
             dr.x /= totmass;
             dr.y /= totmass;
             dr.z /= totmass;
-            r2 = dr.x * dr.x + dr.y * dr.y + dr.z * dr.z;
+            r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
             ener = .5 * k * r2;
             atomicAdd(upres_energy, ener);
 
@@ -100,7 +100,7 @@ __global__ void calc_restrseq_forces_kernel(
                 dr.y = coords[i].y - coords_init[i].y;
                 dr.z = coords[i].z - coords_init[i].z;
 
-                r2 = dr.x * dr.x + dr.y * dr.y + dr.z * dr.z;
+                r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
                 ener = .5 * k * r2;
                 atomicAdd(upres_energy, ener);
 

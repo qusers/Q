@@ -187,7 +187,7 @@ class Context {
     std::unique_ptr<HostDeviceBuffer<int>> p_atoms_list;
     std::unique_ptr<HostDeviceBuffer<int>> w_atoms_list;
     std::unique_ptr<HostDeviceBuffer<int>> q_atoms_list;
-    std::unique_ptr<HostDeviceBuffer<real_t>> charge_pair_products;
+    std::unique_ptr<HostDeviceBuffer<double>> charge_pair_products;
     std::unique_ptr<HostDeviceBuffer<int>> p_charge_types;
     std::unique_ptr<HostDeviceBuffer<int>> w_charge_types;
     std::unique_ptr<HostDeviceBuffer<int>> q_charge_types;

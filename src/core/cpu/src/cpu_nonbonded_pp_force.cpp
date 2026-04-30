@@ -15,10 +15,11 @@ void calc_nonbonded_pp_forces() {
     bool bond14, bond23;
     double scaling;
     coord_t da;
-    real_t r2a, ra, r6a;
-    real_t V_a, V_b;
-    real_t crg_i, crg_j;
-    real_t ai_aii, aj_aii, ai_bii, aj_bii;
+    double r2a, ra, r6a;
+    double Vela, V_a, V_b;
+    double dva;
+    double crg_i, crg_j;
+    double ai_aii, aj_aii, ai_bii, aj_bii;
     int i, j;
     for (int pi = 0; pi < ctx.n_patoms; pi++) {
         for (int pj = pi + 1; pj < ctx.n_patoms; pj++) {
@@ -41,11 +42,11 @@ void calc_nonbonded_pp_forces() {
             da.x = coords[j].x - coords[i].x;
             da.y = coords[j].y - coords[i].y;
             da.z = coords[j].z - coords[i].z;
-            r2a = static_cast<real_t>(1.0) / (da.x * da.x + da.y * da.y + da.z * da.z);
-            ra = static_cast<real_t>(std::sqrt(r2a));
+            r2a = 1 / (std::pow(da.x, 2) + std::pow(da.y, 2) + std::pow(da.z, 2));
+            ra = sqrt(r2a);
             r6a = r2a * r2a * r2a;
 
-            const real_t Vela = static_cast<real_t>(scaling * ctx.topo.coulomb_constant) * crg_i * crg_j * ra;
+            Vela = scaling * ctx.topo.coulomb_constant * crg_i * crg_j * ra;
 
             ai_aii = bond14 ? ai_type.aii_1_4 : ai_type.aii_normal;
             aj_aii = bond14 ? aj_type.aii_1_4 : aj_type.aii_normal;
@@ -57,7 +58,7 @@ void calc_nonbonded_pp_forces() {
             } else {
                 calc_vdw_arithmetic(ai_aii, aj_aii, ai_bii, aj_bii, r6a, &V_a, &V_b);
             }
-            const real_t dva = r2a * (-Vela - static_cast<real_t>(12.0) * V_a + static_cast<real_t>(6.0) * V_b);
+            dva = r2a * (-Vela - 12 * V_a + 6 * V_b);
 
             dvelocities[i].x -= dva * da.x;
             dvelocities[i].y -= dva * da.y;
@@ -67,8 +68,8 @@ void calc_nonbonded_pp_forces() {
             dvelocities[j].y += dva * da.y;
             dvelocities[j].z += dva * da.z;
 
-            ctx.E_nonbond_pp.Ucoul += static_cast<double>(Vela);
-            ctx.E_nonbond_pp.Uvdw += static_cast<double>(V_a - V_b);
+            ctx.E_nonbond_pp.Ucoul += Vela;
+            ctx.E_nonbond_pp.Uvdw += (V_a - V_b);
         }
     }
 }

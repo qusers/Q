@@ -22,21 +22,21 @@ void calc_nonbonded_pw_forces() {
                 continue;
             }
 
-            const real_t qi = ctx.unified_ccharge(atom_i, 0).charge;
-            const real_t qj = ctx.unified_ccharge(atom_j, 0).charge;
+            const double qi = ctx.unified_ccharge(atom_i, 0).charge;
+            const double qj = ctx.unified_ccharge(atom_j, 0).charge;
 
             const catype_t& atom_i_type = ctx.unified_catype(atom_i, 0);
             const catype_t& atom_j_type = ctx.unified_catype(atom_j, 0);
 
-            real_t v_a = 0.0;
-            real_t v_b = 0.0;
-            const real_t dx = coords[atom_j].x - coords[atom_i].x;
-            const real_t dy = coords[atom_j].y - coords[atom_i].y;
-            const real_t dz = coords[atom_j].z - coords[atom_i].z;
-            const real_t r2inv = static_cast<real_t>(1.0) / (dx * dx + dy * dy + dz * dz);
-            const real_t rinv = static_cast<real_t>(std::sqrt(r2inv));
-            const real_t r6inv = r2inv * r2inv * r2inv;
-            const real_t ecoul = static_cast<real_t>(ctx.topo.coulomb_constant) * qi * qj * rinv;
+            double v_a = 0.0;
+            double v_b = 0.0;
+            const double dx = coords[atom_j].x - coords[atom_i].x;
+            const double dy = coords[atom_j].y - coords[atom_i].y;
+            const double dz = coords[atom_j].z - coords[atom_i].z;
+            const double r2inv = 1.0 / (dx * dx + dy * dy + dz * dz);
+            const double rinv = std::sqrt(r2inv);
+            const double r6inv = r2inv * r2inv * r2inv;
+            const double ecoul = ctx.topo.coulomb_constant * qi * qj * rinv;
 
             if (ctx.topo.vdw_rule == VDW_GEOMETRIC) {
                 calc_vdw_geometric(atom_i_type.aii_normal,
@@ -56,7 +56,7 @@ void calc_nonbonded_pw_forces() {
                                     &v_b);
             }
 
-            const real_t scale = r2inv * (-ecoul - static_cast<real_t>(12.0) * v_a + static_cast<real_t>(6.0) * v_b);
+            const double scale = r2inv * (-ecoul - 12.0 * v_a + 6.0 * v_b);
 
             dvelocities[atom_i].x -= scale * dx;
             dvelocities[atom_i].y -= scale * dy;
@@ -66,8 +66,8 @@ void calc_nonbonded_pw_forces() {
             dvelocities[atom_j].y += scale * dy;
             dvelocities[atom_j].z += scale * dz;
 
-            ctx.E_nonbond_pw.Ucoul += static_cast<double>(ecoul);
-            ctx.E_nonbond_pw.Uvdw += static_cast<double>(v_a - v_b);
+            ctx.E_nonbond_pw.Ucoul += ecoul;
+            ctx.E_nonbond_pw.Uvdw += (v_a - v_b);
         }
     }
 }
