@@ -90,7 +90,28 @@ def resolve_collect_data_dir(args, out_dir):
     return data_dir, args.steps
 
 
-def run_concurrency_batch(qgpu_bin, prepared_data_dir, run_dir, concurrency, steps, label, repeat):
+def cleanup_successful_task_data(processes):
+    removed = 0
+    for item in processes:
+        if item["return_code"] != 0:
+            continue
+        data_dir = item["data_dir"]
+        if data_dir.exists():
+            shutil.rmtree(data_dir)
+            removed += 1
+    return removed
+
+
+def run_concurrency_batch(
+    qgpu_bin,
+    prepared_data_dir,
+    run_dir,
+    concurrency,
+    steps,
+    label,
+    repeat,
+    cleanup_run_data=False,
+):
     if run_dir.exists():
         shutil.rmtree(run_dir)
     run_dir.mkdir(parents=True)
@@ -113,6 +134,7 @@ def run_concurrency_batch(qgpu_bin, prepared_data_dir, run_dir, concurrency, ste
                 "args": args,
                 "stdout": stdout_path,
                 "stderr": stderr_path,
+                "data_dir": data_dir,
                 "command": command_text(args),
             }
         )
@@ -133,6 +155,7 @@ def run_concurrency_batch(qgpu_bin, prepared_data_dir, run_dir, concurrency, ste
                 "stderr_file": stderr_f,
                 "stdout": spec["stdout"],
                 "stderr": spec["stderr"],
+                "data_dir": spec["data_dir"],
                 "start": proc_start,
                 "command": spec["command"],
             }
@@ -172,6 +195,12 @@ def run_concurrency_batch(qgpu_bin, prepared_data_dir, run_dir, concurrency, ste
 
     batch_wall_seconds = time.perf_counter() - batch_start
     failed = sum(1 for row in process_rows if row["return_code"] != 0)
+
+    if cleanup_run_data:
+        removed_task_data = cleanup_successful_task_data(processes)
+        if removed_task_data:
+            print(f"Removed copied QGPU data for {removed_task_data} successful task(s) under {run_dir}")
+
     total_ns_per_day = concurrency * steps * TIME_STEP_NS * 86400 / batch_wall_seconds
     mean_process_ns_per_day = (
         sum(float(row["process_ns_per_day"]) for row in process_rows if row["process_ns_per_day"] != "")
@@ -255,6 +284,7 @@ def collect(args):
                 steps=steps,
                 label=label,
                 repeat=repeat,
+                cleanup_run_data=not args.keep_run_data,
             )
             batch_rows.append(batch_row)
             process_rows.extend(rows)
@@ -269,6 +299,7 @@ def collect(args):
                         "qgpu_bin": str(qgpu_bin),
                         "prepared_data_dir": str(prepared_data_dir),
                         "steps": steps,
+                        "keep_run_data": args.keep_run_data,
                     },
                 )
                 raise RuntimeError(
@@ -291,6 +322,7 @@ def collect(args):
             "steps": steps,
             "concurrency": args.concurrency,
             "repeat": args.repeat,
+            "keep_run_data": args.keep_run_data,
         },
     )
     print(f"Summary CSV: {summary_csv}")
@@ -457,6 +489,14 @@ def parse_args():
         help="Path to qdyn_test used only when preparing from --test.",
     )
     collect_parser.add_argument("--pause-seconds", type=float, default=0.0, help="Pause between batches.")
+    collect_parser.add_argument(
+        "--keep-run-data",
+        action="store_true",
+        help=(
+            "Keep per-task copied QGPU input/output directories. By default successful task data is "
+            "deleted after logs and timing are recorded."
+        ),
+    )
 
     plot_parser = subparsers.add_parser("plot", help="Plot ns/day vs concurrency from one or more CSV files.")
     plot_parser.add_argument("csv", nargs="+", help="One or more nsday_summary.csv files from collect.")

@@ -210,7 +210,15 @@ def run_fortran_repeats(
     return records, saw_success
 
 
-def prepare_restart_with_qdyn_test(data, prep_fortran_bin, fortran_dir, prep_steps=None):
+def prepare_restart_with_qdyn_test(
+    data,
+    prep_fortran_bin,
+    fortran_dir,
+    prep_steps=None,
+    mpi_procs=None,
+    mpirun_bin="mpirun",
+    mpirun_args=None,
+):
     input_path = fortran_dir / "eq1.inp"
     original_input = input_path.read_text(encoding="utf-8")
     parse_data = data
@@ -222,7 +230,13 @@ def prepare_restart_with_qdyn_test(data, prep_fortran_bin, fortran_dir, prep_ste
 
     stdout_path = fortran_dir / "restart_prep_qdyn_test.log"
     stderr_path = fortran_dir / "restart_prep_qdyn_test.err"
-    args = [str(prep_fortran_bin), "eq1.inp"]
+    args = build_fortran_command(
+        prep_fortran_bin,
+        "eq1.inp",
+        mpi_procs=mpi_procs,
+        mpirun_bin=mpirun_bin,
+        mpirun_args=mpirun_args,
+    )
     try:
         return_code, _ = run_timed(args, fortran_dir, stdout_path, stderr_path)
         if return_code != 0:
@@ -529,8 +543,8 @@ def parse_args():
     )
     parser.add_argument(
         "--fortran-bin",
-        default=str(ROOT / "src" / "q6" / "bin" / "q6" / "qdyn"),
-        help="Path to production Fortran qdyn/qdynp binary used for timed Fortran runs.",
+        default=None,
+        help="Path to production Fortran binary used for timed Fortran runs. Defaults to qdynp with MPI, otherwise qdyn.",
     )
     parser.add_argument(
         "--fortran-mpi-procs",
@@ -590,7 +604,12 @@ def main():
         return 0
 
     qgpu_bin = resolve_qgpu_bin(args.qgpu_bin)
-    fortran_bin = resolve_fortran_bin(args.fortran_bin)
+    default_fortran_bin = (
+        ROOT / "src" / "q6" / "bin" / "q6" / "qdynp"
+        if args.fortran_mpi_procs is not None
+        else ROOT / "src" / "q6" / "bin" / "q6" / "qdyn"
+    )
+    fortran_bin = resolve_fortran_bin(args.fortran_bin or default_fortran_bin)
     prep_fortran_bin = resolve_fortran_bin(args.prep_fortran_bin)
     out_dir = Path(args.out).expanduser().resolve() if args.out else default_out_dir(args.test)
     out_dir.mkdir(parents=True, exist_ok=True)

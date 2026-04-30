@@ -221,16 +221,34 @@ def collect(args):
         fortran_dir, prep_dir, prepared_data_dir, reference_dir = copy_reference_inputs(args.reference_dir, out_dir)
         prep_fortran_bin = None
     else:
-        prep_fortran_bin = resolve_fortran_bin(args.prep_fortran_bin)
+        default_prep_fortran_bin = (
+            ROOT / "src" / "q6" / "bin" / "q6" / "qdynp"
+            if args.prep_fortran_mpi_procs is not None
+            else ROOT / "src" / "q6" / "bin" / "q6" / "qdyn_test"
+        )
+        prep_fortran_bin = resolve_fortran_bin(args.prep_fortran_bin or default_prep_fortran_bin)
         data = resolve_test_data(args.test, args.steps, args.lambda_name, args.shake)
 
         fortran_dir = out_dir / "fortran_reference"
         prep_dir = out_dir / "qgpu_prepare"
         fortran_dir.mkdir(parents=True, exist_ok=True)
 
-        print(f"Preparing Fortran reference for {args.test}")
+        if args.prep_fortran_mpi_procs is None:
+            print(f"Preparing Fortran reference for {args.test}")
+        else:
+            print(
+                f"Preparing Fortran reference for {args.test} "
+                f"with {args.prep_fortran_mpi_procs} MPI rank(s)"
+            )
         write_md_input(data, fortran_dir)
-        prepare_restart_with_qdyn_test(data, prep_fortran_bin, fortran_dir)
+        prepare_restart_with_qdyn_test(
+            data,
+            prep_fortran_bin,
+            fortran_dir,
+            mpi_procs=args.prep_fortran_mpi_procs,
+            mpirun_bin=args.mpirun_bin,
+            mpirun_args=args.mpirun_args,
+        )
 
         print("Preparing QGPU input")
         prepared_data_dir = prepare_qgpu_input(data, fortran_dir, prep_dir)
@@ -255,6 +273,9 @@ def collect(args):
             "shake": args.shake,
             "qgpu_bin": str(qgpu_bin),
             "prep_fortran_bin": str(prep_fortran_bin) if prep_fortran_bin is not None else None,
+            "prep_fortran_mpi_procs": args.prep_fortran_mpi_procs,
+            "mpirun_bin": args.mpirun_bin,
+            "mpirun_args": args.mpirun_args,
             "reference_dir": str(reference_dir) if reference_dir is not None else None,
             "prepared_qgpu_input": str(prepared_data_dir),
             "fortran_energy": str(fortran_energy_path),
@@ -411,8 +432,24 @@ def parse_args():
     )
     collect_parser.add_argument(
         "--prep-fortran-bin",
-        default=str(ROOT / "src" / "q6" / "bin" / "q6" / "qdyn_test"),
-        help="Path to qdyn_test used to generate Fortran reference data.",
+        default=None,
+        help="Path to Fortran binary used to generate reference data. Defaults to qdynp with MPI, otherwise qdyn_test.",
+    )
+    collect_parser.add_argument(
+        "--prep-fortran-mpi-procs",
+        type=positive_int,
+        default=None,
+        help="Run the Fortran reference preparation through mpirun with this many MPI ranks.",
+    )
+    collect_parser.add_argument(
+        "--mpirun-bin",
+        default="mpirun",
+        help="MPI launcher to use with --prep-fortran-mpi-procs. Defaults to mpirun.",
+    )
+    collect_parser.add_argument(
+        "--mpirun-args",
+        default=None,
+        help='Extra MPI launcher arguments, quoted as one string, e.g. "--bind-to core".',
     )
     collect_parser.add_argument(
         "--tolerance",
