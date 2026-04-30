@@ -56,8 +56,8 @@ void calc_qangle_forces(int state) {
 
         dv = ctx.q_cangles[ic].kth * dth * lambdas[state];
         f1 = sin(th);
-        if (fabs(f1) < k_singular_sin_epsilon) {
-            f1 = k_singular_sin_epsilon;
+        if (abs(f1) < 1E-12) {
+            f1 = 1E-12;
         }
         f1 = -1.0 / f1;
 

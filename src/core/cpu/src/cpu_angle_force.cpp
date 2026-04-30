@@ -64,9 +64,9 @@ double calc_angle_forces(int start, int end) {
         dv = cangle.kth * dth;
 
         f1 = sin(th);
-        if (std::fabs(f1) < k_singular_sin_epsilon) {
+        if (std::fabs(f1) < 1.0E-12) {
             // Avoid division by zero
-            f1 = -1.0 / k_singular_sin_epsilon;
+            f1 = -1.0E12;
         } else {
             f1 = -1.0 / f1;
         }

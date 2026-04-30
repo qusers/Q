@@ -9,19 +9,18 @@ namespace CudaNonbondedForce {
 bool is_initialized = false;
 double *d_evdw_total, *d_ecoul_total;
 
-template <typename WorkT>
 struct nonbond_vec_t {
-    WorkT x;
-    WorkT y;
-    WorkT z;
+    nonbond_work_t x;
+    nonbond_work_t y;
+    nonbond_work_t z;
 };
 
-__device__ __forceinline__ float nonbond_rsqrt(float value) {
+__device__ __forceinline__ nonbond_work_t nonbond_rsqrt(nonbond_work_t value) {
+#ifdef QDYN_SPFP
     return rsqrtf(value);
-}
-
-__device__ __forceinline__ double nonbond_rsqrt(double value) {
+#else
     return rsqrt(value);
+#endif
 }
 
 __device__ __forceinline__ void idx2xy(int n, int t, int& x, int& y) {
@@ -54,7 +53,6 @@ __device__ __forceinline__ coord_t shfl_coord(coord_t v, int srcLane, unsigned m
     return v;
 }
 
-template <typename WorkT>
 __device__ void calculate_unforce_bound(
     const coord_t& x,
     const coord_t& y,
@@ -62,20 +60,20 @@ __device__ void calculate_unforce_bound(
     const real_t charge_product,
     const vdw_pair_param_t& pair_param,
 
-    const WorkT coulomb_constant,
+    const nonbond_work_t coulomb_constant,
 
-    const WorkT scaling,
-    const WorkT lambda,
+    const nonbond_work_t scaling,
+    const nonbond_work_t lambda,
 
-    WorkT& evdw,
-    WorkT& ecoul,
-    WorkT& dv) {
-    const WorkT dx = static_cast<WorkT>(x.x - y.x);
-    const WorkT dy = static_cast<WorkT>(x.y - y.y);
-    const WorkT dz = static_cast<WorkT>(x.z - y.z);
-    const WorkT r = nonbond_rsqrt(dx * dx + dy * dy + dz * dz);
-    const WorkT r2 = r * r;
-    const WorkT r6 = r2 * r2 * r2;
+    nonbond_work_t& evdw,
+    nonbond_work_t& ecoul,
+    nonbond_work_t& dv) {
+    const nonbond_work_t dx = static_cast<nonbond_work_t>(x.x - y.x);
+    const nonbond_work_t dy = static_cast<nonbond_work_t>(x.y - y.y);
+    const nonbond_work_t dz = static_cast<nonbond_work_t>(x.z - y.z);
+    const nonbond_work_t r = nonbond_rsqrt(dx * dx + dy * dy + dz * dz);
+    const nonbond_work_t r2 = r * r;
+    const nonbond_work_t r6 = r2 * r2 * r2;
     // double v_a = r6 * r6;
     // double v_b = r6;
     // ecoul = r;
@@ -84,13 +82,12 @@ __device__ void calculate_unforce_bound(
 
     ecoul = scaling * coulomb_constant * charge_product * r * lambda;
 
-    const WorkT v_a = static_cast<WorkT>(pair_param.a) * r6 * r6 * lambda;
-    const WorkT v_b = static_cast<WorkT>(pair_param.b) * r6 * lambda;
+    const nonbond_work_t v_a = static_cast<nonbond_work_t>(pair_param.a) * r6 * r6 * lambda;
+    const nonbond_work_t v_b = static_cast<nonbond_work_t>(pair_param.b) * r6 * lambda;
     evdw = v_a - v_b;
-    dv = r2 * (-ecoul - static_cast<WorkT>(12.0) * v_a + static_cast<WorkT>(6.0) * v_b);
+    dv = r2 * (-ecoul - static_cast<nonbond_work_t>(12.0) * v_a + static_cast<nonbond_work_t>(6.0) * v_b);
 }
 
-template <typename WorkT>
 __global__ void calc_nonbonded_force_kernel(
     const int nx,
     const int ny,
@@ -177,8 +174,8 @@ __global__ void calc_nonbonded_force_kernel(
     int x_catype_type_idx = (x_idx < nx) ? x_atypes_types[x_idx] : -1;
     int y_catype_type_idx = (y_idx < ny) ? y_atypes_types[y_idx] : -1;
 
-    nonbond_vec_t<WorkT> x_force = {0.0, 0.0, 0.0};
-    nonbond_vec_t<WorkT> y_force = {0.0, 0.0, 0.0};
+    nonbond_vec_t x_force = {0.0, 0.0, 0.0};
+    nonbond_vec_t y_force = {0.0, 0.0, 0.0};
 
     double evdw_sum = 0.0;
     double ecoul_sum = 0.0;
@@ -233,14 +230,14 @@ __global__ void calc_nonbonded_force_kernel(
         }
     }
 
-    const WorkT kernel_lambda = static_cast<WorkT>(lambda);
-    const WorkT coulomb_constant = static_cast<WorkT>(d_topo.coulomb_constant);
+    const nonbond_work_t kernel_lambda = static_cast<nonbond_work_t>(lambda);
+    const nonbond_work_t coulomb_constant = static_cast<nonbond_work_t>(d_topo.coulomb_constant);
     const int charge_pair_row = x_charge_type_idx * n_charge_types;
     const int pair_row = (x_catype_type_idx >= 0) ? x_catype_type_idx * n_catype_types : 0;
 
     for (int i = 0; i < 32; i++) {
         if (is_valid()) {
-            WorkT scaling = static_cast<WorkT>(1.0);
+            nonbond_work_t scaling = static_cast<nonbond_work_t>(1.0);
             real_t charge_product = charge_pair_products[charge_pair_row + y_charge_type_idx];
             vdw_pair_param_t pair_param = catype_pair_params[pair_row + y_catype_type_idx];
 
@@ -252,7 +249,7 @@ __global__ void calc_nonbonded_force_kernel(
             //     }
             // }
 
-            WorkT evdw = 0, ecoul = 0, dv = 0;
+            nonbond_work_t evdw = 0, ecoul = 0, dv = 0;
 
             calculate_unforce_bound(
                 x_coord,
@@ -269,9 +266,9 @@ __global__ void calc_nonbonded_force_kernel(
             evdw_sum += evdw;
             ecoul_sum += ecoul;
 
-            const WorkT dx = static_cast<WorkT>(x_coord.x - y_coord.x);
-            const WorkT dy = static_cast<WorkT>(x_coord.y - y_coord.y);
-            const WorkT dz = static_cast<WorkT>(x_coord.z - y_coord.z);
+            const nonbond_work_t dx = static_cast<nonbond_work_t>(x_coord.x - y_coord.x);
+            const nonbond_work_t dy = static_cast<nonbond_work_t>(x_coord.y - y_coord.y);
+            const nonbond_work_t dz = static_cast<nonbond_work_t>(x_coord.z - y_coord.z);
             y_force.x -= dv * dx;
             y_force.y -= dv * dy;
             y_force.z -= dv * dz;
@@ -337,39 +334,34 @@ std::pair<double, double> calc_nonbonded_force_host(
     cudaMemset(d_ecoul_total, 0, sizeof(double));
     cudaMemset(d_evdw_total, 0, sizeof(double));
 
-    auto launch_kernel = [&](auto work_tag) {
-        using WorkT = decltype(work_tag);
-        calc_nonbonded_force_kernel<WorkT><<<grid, block_sz>>>(
-            nx,
-            ny,
-            x_charges_types,
-            y_charges_types,
-            host.charge_pair_products->gpu_data_p,
-            x_atypes_types,
-            y_atypes_types,
-            host.catype_pair_params->gpu_data_p,
-            host.topo,
-            host.excluded->gpu_data_p,
-            host.LJ_matrix->gpu_data_p,
-            x_idx_list,
-            y_idx_list,
-            host.coords->gpu_data_p,
-            host.dvelocities->gpu_data_p,
-            d_evdw_total,
-            d_ecoul_total,
-            symmetric,
-            disable_water_h_lj,
-            host.n_atoms_solute,
-            host.n_charge_types,
-            host.zero_charge_type,
-            host.n_catype_types,
-            host.zero_catype_type,
-            host.n_qelscales,
-            lambda,
-            host.q_elscales->gpu_data_p);
-    };
-
-    launch_kernel(nonbond_work_t{});
+    calc_nonbonded_force_kernel<<<grid, block_sz>>>(
+        nx,
+        ny,
+        x_charges_types,
+        y_charges_types,
+        host.charge_pair_products->gpu_data_p,
+        x_atypes_types,
+        y_atypes_types,
+        host.catype_pair_params->gpu_data_p,
+        host.topo,
+        host.excluded->gpu_data_p,
+        host.LJ_matrix->gpu_data_p,
+        x_idx_list,
+        y_idx_list,
+        host.coords->gpu_data_p,
+        host.dvelocities->gpu_data_p,
+        d_evdw_total,
+        d_ecoul_total,
+        symmetric,
+        disable_water_h_lj,
+        host.n_atoms_solute,
+        host.n_charge_types,
+        host.zero_charge_type,
+        host.n_catype_types,
+        host.zero_catype_type,
+        host.n_qelscales,
+        lambda,
+        host.q_elscales->gpu_data_p);
 
     cudaDeviceSynchronize();
 
