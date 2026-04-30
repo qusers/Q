@@ -16,7 +16,7 @@ void calc_nonbonded_qq_forces() {
     auto *q_elscales = ctx.q_elscales->cpu_data_p;
     int ai, aj;
     real_t crg_i, crg_j;
-    real_t elscale, scaling;
+    double elscale, scaling;
     bool bond23, bond14;
     coord_t da;
     real_t r2a, ra, r6a;
@@ -81,8 +81,8 @@ void calc_nonbonded_qq_forces() {
                 dvelocities[aj].y += dva * da.y;
                 dvelocities[aj].z += dva * da.z;
 
-                ctx.EQ_nonbond_qq[state].Ucoul += static_cast<real_t>(Vela);
-                ctx.EQ_nonbond_qq[state].Uvdw += static_cast<real_t>(V_a - V_b);
+                ctx.EQ_nonbond_qq[state].Ucoul += static_cast<double>(Vela);
+                ctx.EQ_nonbond_qq[state].Uvdw += static_cast<double>(V_a - V_b);
             }
         }
     }

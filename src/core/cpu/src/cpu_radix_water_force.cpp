@@ -10,9 +10,9 @@ void calc_radix_w_forces() {
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
 
-    real_t b, db, ener, dv, fexp;
+    double b, db, ener, dv, fexp;
     coord_t dr;
-    real_t shift;
+    double shift;
 
     if (ctx.md.radial_force != 0) {
         shift = sqrt(Boltz * ctx.Tfree / ctx.md.radial_force);

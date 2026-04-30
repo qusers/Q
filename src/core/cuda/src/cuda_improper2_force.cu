@@ -4,10 +4,10 @@
 
 namespace CudaImproper2Force {
 bool is_initialized = false;
-real_t* d_energy_sum;
+double* d_energy_sum;
 }  // namespace CudaImproper2Force
 
-__global__ void calc_improper2_forces_kernel(int start, int end, improper_t* impropers, cimproper_t* cimpropers, coord_t* coords, dvel_t* dvelocities, real_t* energy_sum) {
+__global__ void calc_improper2_forces_kernel(int start, int end, improper_t* impropers, cimproper_t* cimpropers, coord_t* coords, dvel_t* dvelocities, double* energy_sum) {
     int i = blockIdx.x * blockDim.x + threadIdx.x + start;
     if (i >= end) return;
 
@@ -15,8 +15,8 @@ __global__ void calc_improper2_forces_kernel(int start, int end, improper_t* imp
 
     coord_t ai, aj, ak, al;
     coord_t rji, rjk, rkl, rnj, rnk, rki, rlj;
-    real_t bj2inv, bk2inv, bjinv, bkinv;
-    real_t cos_phi, phi, arg, ener, dv, f1;
+    double bj2inv, bk2inv, bjinv, bkinv;
+    double cos_phi, phi, arg, ener, dv, f1;
     coord_t di, dl, dpi, dpj, dpk, dpl;
 
     improper_t imp;
@@ -124,15 +124,15 @@ __global__ void calc_improper2_forces_kernel(int start, int end, improper_t* imp
     atomicAdd(&dvelocities[ali].z, dv * dpl.z);
 }
 
-real_t calc_improper2_forces_host(int start, int end) {
+double calc_improper2_forces_host(int start, int end) {
     int N = end - start;
     if (N <= 0) return 0.0;
     using namespace CudaImproper2Force;
     int blockSize = 256;
     int numBlocks = (N + blockSize - 1) / blockSize;
 
-    real_t energy = 0.0;
-    cudaMemcpy(d_energy_sum, &energy, sizeof(real_t), cudaMemcpyHostToDevice);
+    double energy = 0.0;
+    cudaMemcpy(d_energy_sum, &energy, sizeof(double), cudaMemcpyHostToDevice);
 
     auto& host_ctx = Context::instance();
     coord_t* d_coords = host_ctx.coords->gpu_data_p;
@@ -142,14 +142,14 @@ real_t calc_improper2_forces_host(int start, int end) {
 
     calc_improper2_forces_kernel<<<numBlocks, blockSize>>>(start, end, d_impropers, d_cimpropers, d_coords, d_dvelocities, d_energy_sum);
     cudaDeviceSynchronize();
-    cudaMemcpy(&energy, d_energy_sum, sizeof(real_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&energy, d_energy_sum, sizeof(double), cudaMemcpyDeviceToHost);
     return energy;
 }
 
 void init_improper2_force_kernel_data() {
     using namespace CudaImproper2Force;
     if (!is_initialized) {
-        check_cudaMalloc((void**)&d_energy_sum, sizeof(real_t));
+        check_cudaMalloc((void**)&d_energy_sum, sizeof(double));
         is_initialized = true;
     }
 }

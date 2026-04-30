@@ -132,7 +132,7 @@ void parse_md(const char* filename) {
 #ifdef VERBOSE
     printf("reading in %d lambdas (%s in file)\n", ctx.n_lambdas, file.buffer[k][1]);
 #endif
-    ctx.lambdas = std::make_unique<HostDeviceBuffer<real_t>>(ctx.n_lambdas, true, ctx.run_gpu);
+    ctx.lambdas = std::make_unique<HostDeviceBuffer<double>>(ctx.n_lambdas, true, ctx.run_gpu);
     auto *lambdas = ctx.lambdas->cpu_data_p;
     k++;
     for (int i = 0; i < ctx.n_lambdas; i++) {

@@ -4,10 +4,10 @@
 
 namespace CudaAngleForce {
 bool is_initialized = false;
-real_t* d_energy_sum;
+double* d_energy_sum;
 }  // namespace CudaAngleForce
 
-__global__ void calc_angle_forces_kernel(int start, int end, angle_t* angles, coord_t* coords, cangle_t* cangles, dvel_t* dvelocities, real_t* energy_sum) {
+__global__ void calc_angle_forces_kernel(int start, int end, angle_t* angles, coord_t* coords, cangle_t* cangles, dvel_t* dvelocities, double* energy_sum) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x + start;
     if (idx >= end) return;
 
@@ -24,22 +24,21 @@ __global__ void calc_angle_forces_kernel(int start, int end, angle_t* angles, co
     coord_t rji = {ri.x - rj.x, ri.y - rj.y, ri.z - rj.z};
     coord_t rjk = {rk.x - rj.x, rk.y - rj.y, rk.z - rj.z};
 
-    real_t rji_length = sqrt(rji.x * rji.x + rji.y * rji.y + rji.z * rji.z);
-    real_t rjk_length = sqrt(rjk.x * rjk.x + rjk.y * rjk.y + rjk.z * rjk.z);
+    double rji_length = sqrt(rji.x * rji.x + rji.y * rji.y + rji.z * rji.z);
+    double rjk_length = sqrt(rjk.x * rjk.x + rjk.y * rjk.y + rjk.z * rjk.z);
 
-    real_t cos_theta = (rji.x * rjk.x + rji.y * rjk.y + rji.z * rjk.z) / (rji_length * rjk_length);
+    double cos_theta = (rji.x * rjk.x + rji.y * rjk.y + rji.z * rjk.z) / (rji_length * rjk_length);
 
-    cos_theta = cos_theta > static_cast<real_t>(1.0) ? static_cast<real_t>(1.0) : cos_theta;
-    cos_theta = cos_theta < static_cast<real_t>(-1.0) ? static_cast<real_t>(-1.0) : cos_theta;
-    real_t theta = acos(cos_theta);
+    cos_theta = fmax(fmin(cos_theta, 1.0), -1.0);  // Clamp value to avoid NaNs
+    double theta = acos(cos_theta);
 
-    real_t dtheta = theta - to_radians_device(cang.th0);
-    real_t energy = 0.5 * cang.kth * dtheta * dtheta;
+    double dtheta = theta - to_radians_device(cang.th0);
+    double energy = 0.5 * cang.kth * dtheta * dtheta;
 
     // calculate force magnitude
-    real_t dv = cang.kth * dtheta;
+    double dv = cang.kth * dtheta;
 
-    real_t f1 = sin(theta);
+    double f1 = sin(theta);
     if (fabs(f1) < k_singular_sin_epsilon) {
         f1 = -1.0 / k_singular_sin_epsilon;
     } else {
@@ -71,7 +70,7 @@ __global__ void calc_angle_forces_kernel(int start, int end, angle_t* angles, co
     atomicAdd(&dvelocities[j].z, -dv * (di.z + dk.z));
 }
 
-real_t calc_angle_forces_host(int start, int end) {
+double calc_angle_forces_host(int start, int end) {
     int N = end - start;
     if (N <= 0) return 0.0;
     using namespace CudaAngleForce;
@@ -86,8 +85,8 @@ real_t calc_angle_forces_host(int start, int end) {
     // todo: now have to do that, after moving all to CudaContext, can remove it
     // ctx.sync_all_to_device();
 
-    real_t h_energy_sum = 0.0;
-    cudaMemcpy(d_energy_sum, &h_energy_sum, sizeof(real_t), cudaMemcpyHostToDevice);
+    double h_energy_sum = 0.0;
+    cudaMemcpy(d_energy_sum, &h_energy_sum, sizeof(double), cudaMemcpyHostToDevice);
 
     // launch kernel
     calc_angle_forces_kernel<<<numBlocks, blockSize>>>(start, end, d_angles, d_coords, d_cangles, d_dvelocities, d_energy_sum);
@@ -95,14 +94,14 @@ real_t calc_angle_forces_host(int start, int end) {
 
     // todo: Now have to do that, after moving all to CudaContext, can remove it
     // copy results back to host
-    cudaMemcpy(&h_energy_sum, d_energy_sum, sizeof(real_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&h_energy_sum, d_energy_sum, sizeof(double), cudaMemcpyDeviceToHost);
     return h_energy_sum;
 }
 
 void init_angle_force_kernel_data() {
     using namespace CudaAngleForce;
     if (!is_initialized) {
-        check_cudaMalloc((void**)&d_energy_sum, sizeof(real_t));
+        check_cudaMalloc((void**)&d_energy_sum, sizeof(double));
         is_initialized = true;
     }
 }

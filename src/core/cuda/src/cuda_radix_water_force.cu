@@ -6,20 +6,20 @@
 #include "cuda/include/cuda_utility.cuh"
 namespace CudaRadixWaterForce {
 bool is_initialized = false;
-real_t* d_energy;
+double* d_energy;
 }  // namespace CudaRadixWaterForce
 
 __global__ void calc_radix_water_forces_kernel(
     coord_t* coords,
-    real_t shift,
+    double shift,
     int n_atoms_solute,
     int n_atoms,
     topo_t topo,
     md_t md,
-    real_t Dwmz,
-    real_t awmz,
+    double Dwmz,
+    double awmz,
     dvel_t* dvelocities,
-    real_t* energy) {
+    double* energy) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     i = n_atoms_solute + i * 3;  // Process only oxygen atoms of water molecules
     if (i >= n_atoms) return;
@@ -29,16 +29,16 @@ __global__ void calc_radix_water_forces_kernel(
     dr.x = coords[i].x - topo.solvent_center.x;
     dr.y = coords[i].y - topo.solvent_center.y;
     dr.z = coords[i].z - topo.solvent_center.z;
-    real_t b = sqrt(dr.x * dr.x + dr.y * dr.y + dr.z * dr.z);
-    real_t db = b - (topo.solvent_radius - shift);
+    double b = sqrt(dr.x * dr.x + dr.y * dr.y + dr.z * dr.z);
+    double db = b - (topo.solvent_radius - shift);
 
-    real_t ener, dv;
+    double ener, dv;
     if (db > 0) {
         ener = 0.5 * md.radial_force * db * db - Dwmz;
         dv = md.radial_force * db / b;
     } else {
         if (b > 0.0) {
-            real_t fexp = exp(awmz * db);
+            double fexp = exp(awmz * db);
             ener = Dwmz * (fexp * fexp - 2 * fexp);
             dv = -2 * Dwmz * awmz * (fexp - fexp * fexp) / b;
         } else {
@@ -70,16 +70,16 @@ void calc_radix_water_forces_host() {
 
     auto d_coords = host.coords->gpu_data_p;
     auto d_dvelocities = host.dvelocities->gpu_data_p;
-    check_cuda(cudaMemset(d_energy, 0, sizeof(real_t)));
+    check_cuda(cudaMemset(d_energy, 0, sizeof(double)));
 
-    real_t shift;
+    double shift;
     if (host.md.radial_force != 0) {
         shift = sqrt(Boltz * host.Tfree / host.md.radial_force);
     } else {
         shift = 0;
     }
 
-    real_t energy = 0.0;
+    double energy = 0.0;
     calc_radix_water_forces_kernel<<<numBlocks, blockSize>>>(d_coords,
                                                              shift,
                                                              host.n_atoms_solute,
@@ -91,14 +91,14 @@ void calc_radix_water_forces_host() {
                                                              d_dvelocities,
                                                              d_energy);
     check_cuda(cudaDeviceSynchronize());
-    check_cuda(cudaMemcpy(&energy, d_energy, sizeof(real_t), cudaMemcpyDeviceToHost));
+    check_cuda(cudaMemcpy(&energy, d_energy, sizeof(double), cudaMemcpyDeviceToHost));
     host.E_restraint.Uradx += energy;
 }
 
 void init_radix_water_force_kernel_data() {
     using namespace CudaRadixWaterForce;
     if (!is_initialized) {
-        check_cudaMalloc((void**)&d_energy, sizeof(real_t));
+        check_cudaMalloc((void**)&d_energy, sizeof(double));
         is_initialized = true;
     }
 }

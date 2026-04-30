@@ -9,8 +9,8 @@ bool is_initialized = false;
 constexpr int kNonbonded14ModeCount = 3;
 
 int* d_atom_to_qi = nullptr;
-real_t* d_evdw_totals = nullptr;
-real_t* d_ecoul_totals = nullptr;
+double* d_evdw_totals = nullptr;
+double* d_ecoul_totals = nullptr;
 
 __device__ __forceinline__ nonbond_work_t nonbond14_rsqrt(nonbond_work_t value) {
 #ifdef QDYN_SPFP
@@ -96,13 +96,13 @@ __global__ void calc_nonbonded_14_force_kernel(
     const catype_t* unified_catypes,
     const coord_t* d_coords,
     dvel_t* d_dvelocities,
-    real_t* evdw_totals,
-    real_t* ecoul_totals,
+    double* evdw_totals,
+    double* ecoul_totals,
     bool include_pp,
     int state,
     int n_atoms,
     int n_qatoms,
-    real_t lambda) {
+    double lambda) {
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_pairs) return;
 
@@ -166,14 +166,14 @@ __global__ void calc_nonbonded_14_force_kernel(
 
 namespace {
 struct Nonbonded14EnergyBuckets {
-    real_t evdw[CudaNonbonded14Force::kNonbonded14ModeCount] = {};
-    real_t ecoul[CudaNonbonded14Force::kNonbonded14ModeCount] = {};
+    double evdw[CudaNonbonded14Force::kNonbonded14ModeCount] = {};
+    double ecoul[CudaNonbonded14Force::kNonbonded14ModeCount] = {};
 };
 }
 
 static Nonbonded14EnergyBuckets calc_nonbonded_14_force_state_host(
     int state,
-    real_t lambda,
+    double lambda,
     bool include_pp) {
     using namespace CudaNonbonded14Force;
 
@@ -182,8 +182,8 @@ static Nonbonded14EnergyBuckets calc_nonbonded_14_force_state_host(
     Nonbonded14EnergyBuckets energies = {};
     if (n_ngbrs_14 == 0) return energies;
 
-    cudaMemset(d_ecoul_totals, 0, sizeof(real_t) * kNonbonded14ModeCount);
-    cudaMemset(d_evdw_totals, 0, sizeof(real_t) * kNonbonded14ModeCount);
+    cudaMemset(d_ecoul_totals, 0, sizeof(double) * kNonbonded14ModeCount);
+    cudaMemset(d_evdw_totals, 0, sizeof(double) * kNonbonded14ModeCount);
 
     const int block_size = 256;
     const int num_blocks = (n_ngbrs_14 + block_size - 1) / block_size;
@@ -208,8 +208,8 @@ static Nonbonded14EnergyBuckets calc_nonbonded_14_force_state_host(
 
     cudaDeviceSynchronize();
 
-    cudaMemcpy(energies.evdw, d_evdw_totals, sizeof(real_t) * kNonbonded14ModeCount, cudaMemcpyDeviceToHost);
-    cudaMemcpy(energies.ecoul, d_ecoul_totals, sizeof(real_t) * kNonbonded14ModeCount, cudaMemcpyDeviceToHost);
+    cudaMemcpy(energies.evdw, d_evdw_totals, sizeof(double) * kNonbonded14ModeCount, cudaMemcpyDeviceToHost);
+    cudaMemcpy(energies.ecoul, d_ecoul_totals, sizeof(double) * kNonbonded14ModeCount, cudaMemcpyDeviceToHost);
 
     return energies;
 }
@@ -221,7 +221,7 @@ void calc_nonbonded_14_forces_host() {
     if (host.n_ngbrs14 == 0) return;
 
     for (int state = 0; state < host.n_lambdas; state++) {
-        const real_t lambda = lambdas[state];
+        const double lambda = lambdas[state];
         const bool include_pp = (state == 0);
         Nonbonded14EnergyBuckets energies = calc_nonbonded_14_force_state_host(state, lambda, include_pp);
 
@@ -248,8 +248,8 @@ void init_nonbonded_14_force_kernel_data() {
     check_cudaMalloc((void**)&d_atom_to_qi, sizeof(int) * host.atom_to_qi.size());
     check_cuda(cudaMemcpy(d_atom_to_qi, host.atom_to_qi.data(), sizeof(int) * host.atom_to_qi.size(), cudaMemcpyHostToDevice));
 
-    check_cudaMalloc((void**)&d_evdw_totals, sizeof(real_t) * kNonbonded14ModeCount);
-    check_cudaMalloc((void**)&d_ecoul_totals, sizeof(real_t) * kNonbonded14ModeCount);
+    check_cudaMalloc((void**)&d_evdw_totals, sizeof(double) * kNonbonded14ModeCount);
+    check_cudaMalloc((void**)&d_ecoul_totals, sizeof(double) * kNonbonded14ModeCount);
 
     is_initialized = true;
 }

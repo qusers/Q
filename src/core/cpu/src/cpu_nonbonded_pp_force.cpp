@@ -13,7 +13,7 @@ void calc_nonbonded_pp_forces() {
     auto &LJ_matrix = ctx.LJ_matrix->cpu_data_p;
     auto *excluded = ctx.excluded->cpu_data_p;
     bool bond14, bond23;
-    real_t scaling;
+    double scaling;
     coord_t da;
     real_t r2a, ra, r6a;
     real_t V_a, V_b;
@@ -67,8 +67,8 @@ void calc_nonbonded_pp_forces() {
             dvelocities[j].y += dva * da.y;
             dvelocities[j].z += dva * da.z;
 
-            ctx.E_nonbond_pp.Ucoul += static_cast<real_t>(Vela);
-            ctx.E_nonbond_pp.Uvdw += static_cast<real_t>(V_a - V_b);
+            ctx.E_nonbond_pp.Ucoul += static_cast<double>(Vela);
+            ctx.E_nonbond_pp.Uvdw += static_cast<double>(V_a - V_b);
         }
     }
 }

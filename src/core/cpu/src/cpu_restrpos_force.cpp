@@ -14,7 +14,7 @@ void calc_restrpos_forces() {
 
     int state, i;
     coord_t dr;
-    real_t lambda, ener, x2, y2, z2;
+    double lambda, ener, x2, y2, z2;
 
     for (int ir = 0; ir < ctx.n_restrspos; ir++) {
         state = restrspos[ir].ipsi - 1;

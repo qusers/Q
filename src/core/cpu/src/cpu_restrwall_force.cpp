@@ -11,7 +11,7 @@ void calc_restrwall_forces() {
     auto &restrwalls = ctx.restrwalls->cpu_data_p;
     auto *heavy = ctx.heavy->cpu_data_p;
 
-    real_t k, b, db, ener, dv, fexp;
+    double k, b, db, ener, dv, fexp;
     coord_t dr;
 
     for (int ir = 0; ir < ctx.n_restrwalls; ir++) {

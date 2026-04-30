@@ -18,20 +18,20 @@ __global__ void calc_leapfrog_kernel(
     coord_t* xcoords,
     int n_atoms,
     int n_atoms_solute,
-    real_t Tscale_solute,
-    real_t Tscale_solvent,
-    real_t dt) {
+    double Tscale_solute,
+    double Tscale_solvent,
+    double dt) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_atoms) return;
     int i = idx;
 
     // Kernel implementation goes here
-    real_t mass_i, winv_i;
+    double mass_i, winv_i;
 
     mass_i = catypes[atypes[i].code - 1].m;
 
     winv_i = 1 / mass_i;
-    real_t scale = (i < n_atoms_solute) ? Tscale_solute : Tscale_solvent;
+    double scale = (i < n_atoms_solute) ? Tscale_solute : Tscale_solvent;
     velocities[i].x = (velocities[i].x - dvelocities[i].x * dt * winv_i) * scale;
     velocities[i].y = (velocities[i].y - dvelocities[i].y * dt * winv_i) * scale;
     velocities[i].z = (velocities[i].z - dvelocities[i].z * dt * winv_i) * scale;
@@ -50,7 +50,7 @@ __global__ void update_velocities_from_positions_kernel(
     const coord_t* coords,
     const coord_t* xcoords,
     int n_atoms,
-    real_t dt) {
+    double dt) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_atoms) return;
 

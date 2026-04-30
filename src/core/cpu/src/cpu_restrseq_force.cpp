@@ -13,9 +13,9 @@ void calc_restrseq_forces() {
     auto &restrseqs = ctx.restrseqs->cpu_data_p;
     auto *heavy = ctx.heavy->cpu_data_p;
 
-    real_t k, mass, totmass;
+    double k, mass, totmass;
     coord_t dr;
-    real_t r2, ener;
+    double r2, ener;
 
     for (int s = 0; s < ctx.n_restrseqs; s++) {
         k = restrseqs[s].k;

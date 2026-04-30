@@ -5,7 +5,7 @@
 #include "context.h"
 #include "cpu_utils.h"
 
-real_t calc_angle_forces(int start, int end) {
+double calc_angle_forces(int start, int end) {
     auto& ctx = Context::instance();
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
@@ -15,11 +15,11 @@ real_t calc_angle_forces(int start, int end) {
     coord_t rji, rjk;
     coord_t di, dk;
 
-    real_t bji2inv, bjk2inv, bjiinv, bjkinv;
+    double bji2inv, bjk2inv, bjiinv, bjkinv;
     cangle_t cangle;
-    real_t cos_th, th, dth, dv, f1;
-    real_t ener;
-    real_t angle = 0;
+    double cos_th, th, dth, dv, f1;
+    double ener;
+    double angle = 0;
 
     auto &angles = ctx.angles->cpu_data_p;
     auto &cangles = ctx.cangles->cpu_data_p;

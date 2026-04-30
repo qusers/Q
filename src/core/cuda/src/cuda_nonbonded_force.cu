@@ -7,7 +7,7 @@
 
 namespace CudaNonbondedForce {
 bool is_initialized = false;
-real_t *d_evdw_total, *d_ecoul_total;
+double *d_evdw_total, *d_ecoul_total;
 
 template <typename WorkT>
 struct nonbond_vec_t {
@@ -20,11 +20,9 @@ __device__ __forceinline__ float nonbond_rsqrt(float value) {
     return rsqrtf(value);
 }
 
-#ifndef QDYN_SPFP
 __device__ __forceinline__ double nonbond_rsqrt(double value) {
     return rsqrt(value);
 }
-#endif
 
 __device__ __forceinline__ void idx2xy(int n, int t, int& x, int& y) {
     x = (int)floorf((2 * n + 1 - sqrtf((2 * n + 1) * (2 * n + 1) - 8 * t)) * 0.5f);
@@ -41,7 +39,6 @@ __device__ __forceinline__ T shfl_value(T v, int srcLane, unsigned mask = 0xffff
     return __shfl_sync(mask, v, srcLane);
 }
 
-#ifndef QDYN_SPFP
 template <>
 __device__ __forceinline__ double shfl_value(double v, int srcLane, unsigned mask) {
     int2 a = *reinterpret_cast<int2*>(&v);
@@ -49,7 +46,6 @@ __device__ __forceinline__ double shfl_value(double v, int srcLane, unsigned mas
     a.y = __shfl_sync(mask, a.y, srcLane);
     return *reinterpret_cast<double*>(&a);
 }
-#endif
 
 __device__ __forceinline__ coord_t shfl_coord(coord_t v, int srcLane, unsigned mask = 0xffffffffu) {
     v.x = shfl_value(v.x, srcLane, mask);
@@ -80,8 +76,8 @@ __device__ void calculate_unforce_bound(
     const WorkT r = nonbond_rsqrt(dx * dx + dy * dy + dz * dz);
     const WorkT r2 = r * r;
     const WorkT r6 = r2 * r2 * r2;
-    // real_t v_a = r6 * r6;
-    // real_t v_b = r6;
+    // double v_a = r6 * r6;
+    // double v_b = r6;
     // ecoul = r;
     // evdw = v_a - v_b;
     // dv = r2 * (-ecoul - v_a + v_b);
@@ -120,8 +116,8 @@ __global__ void calc_nonbonded_force_kernel(
 
     dvel_t* d_dvelocities,
 
-    real_t* evdw_tot,
-    real_t* ecoul_tot,
+    double* evdw_tot,
+    double* ecoul_tot,
 
     bool symmetric,
 
@@ -134,7 +130,7 @@ __global__ void calc_nonbonded_force_kernel(
     const int n_catype_types,
     const int zero_catype_type,
     const int n_qelscales,
-    const real_t lambda,
+    const double lambda,
     const q_elscale_t* d_qelscales  // todo: Now doesn't use it. Should optimize it later
 
 ) {
@@ -184,8 +180,8 @@ __global__ void calc_nonbonded_force_kernel(
     nonbond_vec_t<WorkT> x_force = {0.0, 0.0, 0.0};
     nonbond_vec_t<WorkT> y_force = {0.0, 0.0, 0.0};
 
-    real_t evdw_sum = 0.0;
-    real_t ecoul_sum = 0.0;
+    double evdw_sum = 0.0;
+    double ecoul_sum = 0.0;
 
     const unsigned mask = 0xffffffffu;
 
@@ -311,7 +307,7 @@ __global__ void calc_nonbonded_force_kernel(
 
 }  // namespace CudaNonbondedForce
 
-std::pair<real_t, real_t> calc_nonbonded_force_host(
+std::pair<double, double> calc_nonbonded_force_host(
     int nx,
     int ny,
     int* x_idx_list,
@@ -322,7 +318,7 @@ std::pair<real_t, real_t> calc_nonbonded_force_host(
     const int* y_charges_types,
     const int* x_atypes_types,
     const int* y_atypes_types,
-    const bool disable_water_h_lj, const real_t lambda) {
+    const bool disable_water_h_lj, const double lambda) {
     using namespace CudaNonbondedForce;
     Context& host = Context::instance();
     const int thread_num = 256;
@@ -338,8 +334,8 @@ std::pair<real_t, real_t> calc_nonbonded_force_host(
 
     dim3 grid = dim3(grid_sz);
 
-    cudaMemset(d_ecoul_total, 0, sizeof(real_t));
-    cudaMemset(d_evdw_total, 0, sizeof(real_t));
+    cudaMemset(d_ecoul_total, 0, sizeof(double));
+    cudaMemset(d_evdw_total, 0, sizeof(double));
 
     auto launch_kernel = [&](auto work_tag) {
         using WorkT = decltype(work_tag);
@@ -377,9 +373,9 @@ std::pair<real_t, real_t> calc_nonbonded_force_host(
 
     cudaDeviceSynchronize();
 
-    real_t evdw_tot = 0, ecoul_tot = 0;
-    cudaMemcpy(&evdw_tot, d_evdw_total, sizeof(real_t), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&ecoul_tot, d_ecoul_total, sizeof(real_t), cudaMemcpyDeviceToHost);
+    double evdw_tot = 0, ecoul_tot = 0;
+    cudaMemcpy(&evdw_tot, d_evdw_total, sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&ecoul_tot, d_ecoul_total, sizeof(double), cudaMemcpyDeviceToHost);
 
     return {evdw_tot, ecoul_tot};
 }
@@ -387,8 +383,8 @@ std::pair<real_t, real_t> calc_nonbonded_force_host(
 void init_nonbonded_force_kernel_data() {
     using namespace CudaNonbondedForce;
     if (!is_initialized) {
-        check_cudaMalloc((void**)&d_evdw_total, sizeof(real_t));
-        check_cudaMalloc((void**)&d_ecoul_total, sizeof(real_t));
+        check_cudaMalloc((void**)&d_evdw_total, sizeof(double));
+        check_cudaMalloc((void**)&d_ecoul_total, sizeof(double));
         is_initialized = true;
     }
 }

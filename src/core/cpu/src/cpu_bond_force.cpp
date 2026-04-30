@@ -4,7 +4,7 @@
 
 #include "context.h"
 
-real_t calc_bond_forces(int start, int end) {
+double calc_bond_forces(int start, int end) {
     auto& ctx = Context::instance();
     auto &bonds = ctx.bonds->cpu_data_p;
     auto &cbonds = ctx.cbonds->cpu_data_p;
@@ -13,8 +13,8 @@ real_t calc_bond_forces(int start, int end) {
     int aii, aji;
     coord_t ai, aj, dx;
     cbond_t cbond;
-    real_t dx2, dx1, ddx, ener, ampl;
-    real_t bond = 0;
+    double dx2, dx1, ddx, ener, ampl;
+    double bond = 0;
 
     for (int i = start; i < end; i++) {
         aii = bonds[i].ai - 1;

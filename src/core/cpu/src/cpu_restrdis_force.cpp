@@ -14,7 +14,7 @@ void calc_restrdis_forces() {
 
     int state, i, j;
     coord_t dr;
-    real_t lambda, b, db, dv, ener;
+    double lambda, b, db, dv, ener;
 
     for (int ir = 0; ir < ctx.n_restrdists; ir++) {
         state = restrdists[ir].ipsi - 1;

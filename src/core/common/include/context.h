@@ -32,8 +32,8 @@ class Context {
     int n_qatoms = 0;
     int n_waters = 0;
     int n_molecules = 0;
-    real_t dt = 0.0;
-    real_t tau_T = 0.0;
+    double dt = 0.0;
+    double tau_T = 0.0;
     md_t md;
     topo_t topo;
     int n_excluded = 0;
@@ -108,7 +108,7 @@ class Context {
 
     std::unique_ptr<HostDeviceBuffer<bool>> excluded;
 
-    std::unique_ptr<HostDeviceBuffer<real_t>> winv;
+    std::unique_ptr<HostDeviceBuffer<double>> winv;
 
     std::unique_ptr<HostDeviceBuffer<bool>> shell;
 
@@ -137,12 +137,12 @@ class Context {
     Water
     */
     std::unique_ptr<HostDeviceBuffer<shell_t>> wshells;
-    real_t crgQtot = 0.0;
-    real_t Dwmz = 0.0;
-    real_t awmz = 0.0;
-    std::vector<real_t> theta;
-    std::vector<real_t> theta0;
-    std::vector<real_t> tdum;
+    double crgQtot = 0.0;
+    double Dwmz = 0.0;
+    double awmz = 0.0;
+    std::vector<double> theta;
+    std::vector<double> theta0;
+    std::vector<double> tdum;
     int n_max_inshell = 0;
     int n_shells = 0;
     std::vector<std::vector<int>> list_sh;
@@ -152,7 +152,7 @@ class Context {
     /*
     FEP
     */
-    std::unique_ptr<HostDeviceBuffer<real_t>> lambdas; // Actually length is only 2..
+    std::unique_ptr<HostDeviceBuffer<double>> lambdas; // Actually length is only 2..
 
     /*
     Energy
@@ -206,13 +206,13 @@ class Context {
     Temperature
     */
 
-    real_t Temp = 0.0;
-    real_t Tfree = 0.0;
-    real_t Ndegf = 0.0;
-    real_t Ndegfree = 0.0;
+    double Temp = 0.0;
+    double Tfree = 0.0;
+    double Ndegf = 0.0;
+    double Ndegfree = 0.0;
 
-    real_t Tscale_solute = 0.0;
-    real_t Tscale_solvent = 0.0;
+    double Tscale_solute = 0.0;
+    double Tscale_solvent = 0.0;
     /*
     Info for FEP
     */

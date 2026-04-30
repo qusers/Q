@@ -11,8 +11,8 @@ void calc_leapfrog() {
     auto &velocities = ctx.velocities->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
     auto *xcoords = ctx.xcoords->cpu_data_p;
-    real_t mass_i;
-    real_t winv_i;
+    double mass_i;
+    double winv_i;
 
     for (int i = 0; i < ctx.n_atoms_solute; i++) {
         mass_i = catypes[atypes[i].code - 1].m;
