@@ -38,6 +38,9 @@ import compare  # noqa: E402
 import energy as ENERGY  # noqa: E402
 
 
+RESTART_INIT_STEPS = 1
+
+
 def default_collect_out(test_name):
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return ROOT / "benchmark-qgpu" / "results" / f"{stamp}_{test_name}_correctness"
@@ -113,6 +116,31 @@ def copy_reference_inputs(reference_dir, out_dir):
     shutil.copytree(source_fortran_dir, fortran_dir)
     shutil.copytree(source_prepared_dir, prepared_data_dir)
     return fortran_dir, prep_dir, prepared_data_dir, reference_dir
+
+
+def velocity_atom_count(path):
+    with open(path, encoding="utf-8") as velocity_f:
+        first_line = velocity_f.readline().strip()
+    return int(first_line) if first_line else 0
+
+
+def ensure_restart_velocities(data, fortran_dir, restart_fortran_bin):
+    velocity_path = fortran_dir / "velocities.csv"
+    if velocity_path.exists() and velocity_atom_count(velocity_path) > 0:
+        return None
+
+    restart_dir = fortran_dir.parent / "fortran_restart_reference"
+    if restart_dir.exists():
+        shutil.rmtree(restart_dir)
+    restart_dir.mkdir(parents=True)
+
+    print(f"Preparing QGPU restart velocities with {restart_fortran_bin}")
+    write_md_input(dict(data), restart_dir)
+    prepare_restart_with_qdyn_test(data, restart_fortran_bin, restart_dir, prep_steps=RESTART_INIT_STEPS)
+
+    shutil.copyfile(restart_dir / "coords.csv", fortran_dir / "coords.csv")
+    shutil.copyfile(restart_dir / "velocities.csv", velocity_path)
+    return restart_dir
 
 
 def build_correctness_rows(fortran_data, qgpu_data, tolerance):
@@ -249,6 +277,8 @@ def collect(args):
             mpirun_bin=args.mpirun_bin,
             mpirun_args=args.mpirun_args,
         )
+        restart_fortran_bin = resolve_fortran_bin(args.restart_fortran_bin)
+        restart_dir = ensure_restart_velocities(data, fortran_dir, restart_fortran_bin)
 
         print("Preparing QGPU input")
         prepared_data_dir = prepare_qgpu_input(data, fortran_dir, prep_dir)
@@ -276,6 +306,8 @@ def collect(args):
             "prep_fortran_mpi_procs": args.prep_fortran_mpi_procs,
             "mpirun_bin": args.mpirun_bin,
             "mpirun_args": args.mpirun_args,
+            "restart_fortran_bin": str(restart_fortran_bin) if prep_fortran_bin is not None else None,
+            "restart_reference_dir": str(restart_dir) if prep_fortran_bin is not None and restart_dir is not None else None,
             "reference_dir": str(reference_dir) if reference_dir is not None else None,
             "prepared_qgpu_input": str(prepared_data_dir),
             "fortran_energy": str(fortran_energy_path),
@@ -450,6 +482,11 @@ def parse_args():
         "--mpirun-args",
         default=None,
         help='Extra MPI launcher arguments, quoted as one string, e.g. "--bind-to core".',
+    )
+    collect_parser.add_argument(
+        "--restart-fortran-bin",
+        default=str(ROOT / "src" / "q6" / "bin" / "q6" / "qdyn_test"),
+        help="Fortran binary used to regenerate QGPU restart velocities if the reference binary does not print them.",
     )
     collect_parser.add_argument(
         "--tolerance",
