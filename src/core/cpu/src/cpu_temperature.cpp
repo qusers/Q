@@ -61,6 +61,8 @@ void calc_temperature() {
     ctx.Tfree = 2.0 * ctx.Tfree / Boltz / ctx.Ndegfree;
 
     if (ctx.separate_scaling) {
+        Tfree_solvent = 2.0 * Tfree_solvent / Boltz / ctx.Ndegfree_solvent;
+        Tfree_solute = 2.0 * Tfree_solute / Boltz / ctx.Ndegfree_solute;
         if (Tfree_solvent != 0) ctx.Tscale_solvent = sqrt(1 + (ctx.dt / ctx.tau_T) * (ctx.md.temperature / Tfree_solvent - 1.0));
         if (Tfree_solute != 0) ctx.Tscale_solute = sqrt(1 + (ctx.dt / ctx.tau_T) * (ctx.md.temperature / Tfree_solute - 1.0));
     } else {

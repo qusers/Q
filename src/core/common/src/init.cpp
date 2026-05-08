@@ -484,6 +484,13 @@ void exclude_shaken_definitions() {
 
 void init_velocities() {
     auto& ctx = Context::instance();
+    if (ctx.velocities) {
+        if (ctx.run_gpu) {
+            ctx.velocities->upload();
+        }
+        return;
+    }
+
     auto& atypes = ctx.atypes->cpu_data_p;
     auto& catypes = ctx.catypes->cpu_data_p;
     ctx.velocities = std::make_unique<HostDeviceBuffer<vel_t>>(ctx.n_atoms, true, ctx.run_gpu);
@@ -805,17 +812,17 @@ void init_shake() {
     ctx.Ndegf = 3 * ctx.n_atoms - ctx.n_shake_constraints;
     ctx.Ndegfree = ctx.Ndegf - 3 * ctx.n_excluded + excl_shake;
 
-    const double Ndegf_solvent = ctx.Ndegf - 3 * ctx.n_atoms_solute + n_solute_shake_constraints;
-
-    const double Ndegfree_solvent = ctx.Ndegfree - (ctx.n_shake_constraints - n_solute_shake_constraints);
-    const double Ndegfree_solute = ctx.Ndegfree - Ndegfree_solvent;
+    ctx.Ndegf_solvent = 3 * (ctx.n_atoms - ctx.n_atoms_solute) - (ctx.n_shake_constraints - n_solute_shake_constraints);
+    ctx.Ndegf_solute = ctx.Ndegf - ctx.Ndegf_solvent;
+    ctx.Ndegfree_solvent = 3 * (ctx.n_atoms - ctx.n_atoms_solute) - (ctx.n_shake_constraints - n_solute_shake_constraints);
+    ctx.Ndegfree_solute = ctx.Ndegfree - ctx.Ndegfree_solvent;
 
     printf("n_shake_constrains = %d, n_solute_shake_constraints = %d, excl_shake = %f\n", ctx.n_shake_constraints, n_solute_shake_constraints, excl_shake);
 
-    if (Ndegfree_solvent * Ndegfree_solute == 0) {
+    if (ctx.Ndegfree_solvent * ctx.Ndegfree_solute == 0) {
         ctx.separate_scaling = false;
     } else {
-        ctx.separate_scaling = true;
+        ctx.separate_scaling = ctx.md.separate_scaling;
     }
 }
 
@@ -913,4 +920,3 @@ void write_headers() {
     write_header("velocities.csv");
     write_energy_header();
 }
-

@@ -1,6 +1,7 @@
 #include "handler.h"
 
 #include "output.h"
+#include "q_output.h"
 
 void Handler::run_iteration(int iteration) {
     printf("================================================\n");
@@ -92,6 +93,7 @@ void Handler::print_outputs(int iteration) {
     write_coords(iteration);
     write_velocities(iteration);
     write_energies(iteration);
+    q_output_step(iteration);
 }
 
 void Handler::reset_energies() {

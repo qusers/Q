@@ -6,6 +6,7 @@
 #include "constants.h"
 #include "init.h"
 #include "parse.h"
+#include "q_input.h"
 
 Context* Context::current_ = nullptr;
 
@@ -46,6 +47,14 @@ void Context::cuda_reset_energies() {
 }
 
 void Context::init_data_from_files() {
+    if (q_input_mode == Q_INPUT_NATIVE) {
+        if (n_lambdas > 2) {
+            printf(">>> FATAL: More than 2 states not supported on GPU architecture. Exiting...\n");
+            exit(EXIT_FAILURE);
+        }
+        return;
+    }
+
     parse_md("md.csv");
     if (n_lambdas > 2) {
         printf(">>> FATAL: More than 2 states not supported on GPU architecture. Exiting...\n");
@@ -139,7 +148,7 @@ void Context::preprocess_data() {
     EQ_nonbond_qx.assign(n_lambdas, {});
     EQ_restraint = std::make_unique<HostDeviceBuffer<E_restraint_t>>(n_lambdas, true, run_gpu);
 
-    if (n_shake_constraints > 0) {
+    if (n_shake_constraints > 0 || (q_input_mode == Q_INPUT_NATIVE && q_native_fresh_start && md.random_seed > 0)) {
         initial_shaking();
         stop_cm_translation();
     }

@@ -1,9 +1,10 @@
 #include "output.h"
 #include "context.h"
+#include "q_input.h"
 
 void print_energies() {
     auto& host = Context::instance();
-    auto *lambdas = host.lambdas->cpu_data_p;
+    auto *lambdas = host.lambdas ? host.lambdas->cpu_data_p : nullptr;
     auto *EQ_restraint = host.EQ_restraint->cpu_data_p;
     printf("[temperature]\n");
     printf("Temp\t%f\n", host.Temp);
@@ -50,6 +51,7 @@ void print_energies() {
 
 // Write header (number of atoms) to output file
 void write_header(const char* filename) {
+    if (q_input_mode == Q_INPUT_NATIVE) return;
     auto& ctx = Context::instance();
     FILE* fp;
 
@@ -65,8 +67,9 @@ void write_header(const char* filename) {
 
 // Write header (number of atoms & lambdas) to output file
 void write_energy_header() {
+    if (q_input_mode == Q_INPUT_NATIVE) return;
     auto& ctx = Context::instance();
-    auto *lambdas = ctx.lambdas->cpu_data_p;
+    auto *lambdas = ctx.lambdas ? ctx.lambdas->cpu_data_p : nullptr;
     FILE* fp;
 
     char path[1024];
@@ -88,8 +91,10 @@ void write_energy_header() {
 
 // Write step number, coordinates of atoms to coordinate output file
 void write_coords(int iteration) {
+    if (q_input_mode == Q_INPUT_NATIVE) return;
     auto& ctx = Context::instance();
     auto &coords = ctx.coords->cpu_data_p;
+    if (ctx.md.trajectory <= 0) return;
     if (iteration % ctx.md.trajectory != 0) return;
     FILE* fp;
     int i;
@@ -109,8 +114,10 @@ void write_coords(int iteration) {
 
 // Write step number, velocities of atoms to coordinate output file
 void write_velocities(int iteration) {
+    if (q_input_mode == Q_INPUT_NATIVE) return;
     auto& ctx = Context::instance();
     auto &velocities = ctx.velocities->cpu_data_p;
+    if (ctx.md.trajectory <= 0) return;
     if (iteration % ctx.md.trajectory != 0) return;
     FILE* fp;
     int i;
@@ -130,9 +137,11 @@ void write_velocities(int iteration) {
 
 // Write step number, energies of atoms to coordinate output file
 void write_energies(int iteration) {
+    if (q_input_mode == Q_INPUT_NATIVE) return;
     auto& ctx = Context::instance();
-    auto *lambdas = ctx.lambdas->cpu_data_p;
+    auto *lambdas = ctx.lambdas ? ctx.lambdas->cpu_data_p : nullptr;
     auto *EQ_restraint = ctx.EQ_restraint->cpu_data_p;
+    if (ctx.md.energy <= 0) return;
     if (iteration % ctx.md.energy != 0) return;
     FILE* fp;
 

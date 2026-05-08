@@ -20,6 +20,7 @@ struct md_t {
     bool shake_solute;
     bool shake_hydrogens;
     bool lrf;
+    bool separate_scaling = false;
     bool charge_groups;
     // [cut-offs]
     double solute_solute;

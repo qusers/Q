@@ -210,6 +210,10 @@ class Context {
     double Tfree = 0.0;
     double Ndegf = 0.0;
     double Ndegfree = 0.0;
+    double Ndegf_solute = 0.0;
+    double Ndegfree_solute = 0.0;
+    double Ndegf_solvent = 0.0;
+    double Ndegfree_solvent = 0.0;
 
     double Tscale_solute = 0.0;
     double Tscale_solvent = 0.0;
