@@ -205,10 +205,12 @@ class TestSoftcoreFEPFileFormat:
                 cleanup_fep_dir(fep_work_dir)
 
     @pytest.mark.slow
-    def test_softcore_section_has_alpha_values(self, fep_work_dir):
-        """Verify [softcore] section has alpha values for all atoms."""
+    def test_softcore_section_has_alpha_values_standard(self, fep_work_dir):
+        """Default (standard) softcore uses asymmetric alpha: each atom has
+        alpha=20 in its ghost state and 0 in its real state. Preserves
+        reproducibility of historical Q runs."""
         try:
-            fep_file = run_qligfep(fep_work_dir)
+            fep_file = run_qligfep(fep_work_dir)  # default = standard
             content = fep_file.read_text()
 
             in_softcore = False
@@ -225,12 +227,81 @@ class TestSoftcoreFEPFileFormat:
 
             assert len(softcore_lines) > 0, "No entries in [softcore] section"
 
-            # Each line should have: atom_index alpha_state1 alpha_state2
             for line in softcore_lines:
                 parts = line.split()
                 assert len(parts) == 3, f"Expected 3 columns in softcore line, got: {line}"
-                # Alpha values should be 0 or 20 (disappearing/appearing atoms)
                 alpha1, alpha2 = int(parts[1]), int(parts[2])
-                assert {alpha1, alpha2} == {0, 20}, f"Unexpected alpha values: {alpha1}, {alpha2}"
+                # Asymmetric (legacy) pattern: one column 0, the other 20.
+                assert {alpha1, alpha2} == {0, 20}, (
+                    f"Expected legacy asymmetric (0, 20) alphas, got: ({alpha1}, {alpha2})"
+                )
+        finally:
+            cleanup_fep_dir(fep_work_dir)
+
+    @pytest.mark.slow
+    def test_softcore_section_is_symmetric_beutler_coul(self, fep_work_dir):
+        """Under softcore_method=beutler_coul, every Q-atom must have
+        alpha1 == alpha2 in [softcore]. The (1-lambda_state)^2 scaling
+        in qatom.f90:softcore_scale_beutler turns softcore on/off per state
+        at runtime, so symmetric alpha in the file is required for correct
+        endpoint behavior."""
+        try:
+            fep_file = run_qligfep(fep_work_dir, softcore_method="beutler_coul")
+            content = fep_file.read_text()
+
+            in_softcore = False
+            softcore_lines = []
+            for line in content.splitlines():
+                stripped = line.strip()
+                if stripped == "[softcore]":
+                    in_softcore = True
+                    continue
+                if in_softcore and stripped.startswith("["):
+                    break
+                if in_softcore and stripped:
+                    softcore_lines.append(stripped)
+
+            assert len(softcore_lines) > 0, "No entries in [softcore] section"
+
+            for line in softcore_lines:
+                parts = line.split()
+                alpha1, alpha2 = int(parts[1]), int(parts[2])
+                assert (alpha1, alpha2) == (20, 20), (
+                    f"Expected symmetric (20, 20) alphas under beutler_coul, "
+                    f"got: ({alpha1}, {alpha2})"
+                )
+        finally:
+            cleanup_fep_dir(fep_work_dir)
+
+    @pytest.mark.slow
+    def test_softcore_section_is_asymmetric_gapsys(self, fep_work_dir):
+        """Gapsys keeps the legacy asymmetric softcore pattern. Gapsys' own
+        formulation differs from Beutler and isn't covered by the
+        (1-lambda)^2 scaling."""
+        try:
+            fep_file = run_qligfep(fep_work_dir, softcore_method="gapsys")
+            content = fep_file.read_text()
+
+            in_softcore = False
+            softcore_lines = []
+            for line in content.splitlines():
+                stripped = line.strip()
+                if stripped == "[softcore]":
+                    in_softcore = True
+                    continue
+                if in_softcore and stripped.startswith("["):
+                    break
+                if in_softcore and stripped:
+                    softcore_lines.append(stripped)
+
+            assert len(softcore_lines) > 0, "No entries in [softcore] section"
+
+            for line in softcore_lines:
+                parts = line.split()
+                alpha1, alpha2 = int(parts[1]), int(parts[2])
+                assert {alpha1, alpha2} == {0, 20}, (
+                    f"Expected legacy asymmetric (0, 20) under gapsys, "
+                    f"got: ({alpha1}, {alpha2})"
+                )
         finally:
             cleanup_fep_dir(fep_work_dir)
