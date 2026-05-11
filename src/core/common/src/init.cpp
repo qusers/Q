@@ -25,6 +25,9 @@ std::unique_ptr<HostDeviceBuffer<T>> make_host_device_buffer_from_vector(
     if (!src.empty()) {
         std::copy(src.begin(), src.end(), buffer->cpu_data_p);
     }
+    if (run_gpu) {
+        buffer->upload();
+    }
     return buffer;
 }
 
@@ -121,10 +124,11 @@ void initialize_catype_tables() {
     }
     printf("Total water atom number: %lu, w_catype_types size: %lu\n", ctx.w_atoms_list->length, w_catype_types_cpu.size());
 
-    ctx.catype_pair_params = make_host_device_buffer_from_vector(h_catype_pair_params, ctx.run_gpu);
-    ctx.p_catype_types = make_host_device_buffer_from_vector(p_catype_types_cpu, ctx.run_gpu);
-    ctx.q_catype_types = make_host_device_buffer_from_vector(q_catype_types_cpu, ctx.run_gpu);
-    ctx.w_catype_types = make_host_device_buffer_from_vector(w_catype_types_cpu, ctx.run_gpu);
+    bool run_gpu = ctx.command_info.requested_gpu;
+    ctx.catype_pair_params = make_host_device_buffer_from_vector(h_catype_pair_params, run_gpu);
+    ctx.p_catype_types = make_host_device_buffer_from_vector(p_catype_types_cpu, run_gpu);
+    ctx.q_catype_types = make_host_device_buffer_from_vector(q_catype_types_cpu, run_gpu);
+    ctx.w_catype_types = make_host_device_buffer_from_vector(w_catype_types_cpu, run_gpu);
 }
 
 
@@ -206,10 +210,11 @@ void initialize_charge_tables() {
         w_charge_types_cpu[i] = charge_to_type_host[charge];
     }
 
-    ctx.charge_pair_products = make_host_device_buffer_from_vector(h_charge_pair_products, ctx.run_gpu);
-    ctx.p_charge_types = make_host_device_buffer_from_vector(p_charge_types_cpu, ctx.run_gpu);
-    ctx.q_charge_types = make_host_device_buffer_from_vector(q_charge_types_cpu, ctx.run_gpu);
-    ctx.w_charge_types = make_host_device_buffer_from_vector(w_charge_types_cpu, ctx.run_gpu);
+    bool run_gpu = ctx.command_info.requested_gpu;
+    ctx.charge_pair_products = make_host_device_buffer_from_vector(h_charge_pair_products, run_gpu);
+    ctx.p_charge_types = make_host_device_buffer_from_vector(p_charge_types_cpu, run_gpu);
+    ctx.q_charge_types = make_host_device_buffer_from_vector(q_charge_types_cpu, run_gpu);
+    ctx.w_charge_types = make_host_device_buffer_from_vector(w_charge_types_cpu, run_gpu);
 }
 
 void init_atoms_list() {
@@ -243,9 +248,10 @@ void init_atoms_list() {
         }
     }
 
-    ctx.p_atoms_list = make_host_device_buffer_from_vector(h_p_atoms_list, ctx.run_gpu);
-    ctx.w_atoms_list = make_host_device_buffer_from_vector(h_w_atoms_list, ctx.run_gpu);
-    ctx.q_atoms_list = make_host_device_buffer_from_vector(h_q_atoms_list, ctx.run_gpu);
+    bool run_gpu = ctx.command_info.requested_gpu;
+    ctx.p_atoms_list = make_host_device_buffer_from_vector(h_p_atoms_list, run_gpu);
+    ctx.w_atoms_list = make_host_device_buffer_from_vector(h_w_atoms_list, run_gpu);
+    ctx.q_atoms_list = make_host_device_buffer_from_vector(h_q_atoms_list, run_gpu);
 }
 
 void finalize_ngbrs14() {
@@ -269,11 +275,12 @@ void finalize_ngbrs14() {
             }
         }
     }
-    ctx.ngbrs_14 = std::make_unique<HostDeviceBuffer<int3>>(ngbrs_14.size(), true, ctx.run_gpu);
+    bool run_gpu = ctx.command_info.requested_gpu;
+    ctx.ngbrs_14 = std::make_unique<HostDeviceBuffer<int3>>(ngbrs_14.size(), true, run_gpu);
     if (!ngbrs_14.empty()) {
         std::copy(ngbrs_14.begin(), ngbrs_14.end(), ctx.ngbrs_14->cpu_data_p);
     }
-    if (ctx.run_gpu) {
+    if (run_gpu) {
         ctx.LJ_matrix->upload();
         ctx.ngbrs_14->upload();
     }
@@ -485,7 +492,7 @@ void exclude_shaken_definitions() {
 void init_velocities() {
     auto& ctx = Context::instance();
     if (ctx.velocities) {
-        if (ctx.run_gpu) {
+        if (ctx.command_info.requested_gpu) {
             ctx.velocities->upload();
         }
         return;
@@ -493,7 +500,7 @@ void init_velocities() {
 
     auto& atypes = ctx.atypes->cpu_data_p;
     auto& catypes = ctx.catypes->cpu_data_p;
-    ctx.velocities = std::make_unique<HostDeviceBuffer<vel_t>>(ctx.n_atoms, true, ctx.run_gpu);
+    ctx.velocities = std::make_unique<HostDeviceBuffer<vel_t>>(ctx.n_atoms, true, ctx.command_info.requested_gpu);
     auto& velocities = ctx.velocities->cpu_data_p;
 
     // If not previous value set, use a Maxwell distribution to fill velocities
@@ -508,8 +515,9 @@ void init_velocities() {
         velocities[i].z = gauss(0, sd);
     }
 
-    // From input file
-    parse_ivelocities("i_velocities.csv");
+    if (ctx.command_info.requested_gpu) {
+        ctx.velocities->upload();
+    }
 }
 
 
@@ -518,12 +526,15 @@ void init_inv_mass() {
     auto& ctx = Context::instance();
     auto& atypes = ctx.atypes->cpu_data_p;
     auto& catypes = ctx.catypes->cpu_data_p;
-    ctx.winv = std::make_unique<HostDeviceBuffer<double>>(ctx.n_atoms, true, ctx.run_gpu);
+    ctx.winv = std::make_unique<HostDeviceBuffer<double>>(ctx.n_atoms, true, ctx.command_info.requested_gpu);
     auto* winv = ctx.winv->cpu_data_p;
     for (int ai = 0; ai < ctx.n_atoms; ai++) {
         winv[ai] = 1 / catypes[atypes[ai].code - 1].m;
     }
 
+    if (ctx.command_info.requested_gpu) {
+        ctx.winv->upload();
+    }
 }
 
 /* =============================================
@@ -557,7 +568,7 @@ void init_wshells() {
     drs = wpolr_layer / drouter;
 
     ctx.n_shells = (int)floor(-0.5 + sqrt(2 * drs + 0.25));
-    ctx.wshells = std::make_unique<HostDeviceBuffer<shell_t>>(ctx.n_shells, true, ctx.run_gpu);
+    ctx.wshells = std::make_unique<HostDeviceBuffer<shell_t>>(ctx.n_shells, true, ctx.command_info.requested_gpu);
     auto* wshells = ctx.wshells->cpu_data_p;
 
     printf("n_shells = %d\n", ctx.n_shells);
@@ -598,7 +609,7 @@ void init_wshells() {
     ctx.list_sh.assign(ctx.n_max_inshell, std::vector<int>(ctx.n_shells, 0));
     ctx.nsort.assign(ctx.n_max_inshell, std::vector<int>(ctx.n_shells, 0));
 
-    if (ctx.run_gpu) {
+    if (ctx.command_info.requested_gpu) {
         ctx.wshells->upload();
     }
 }
@@ -611,9 +622,9 @@ void init_pshells() {
     auto* excluded = ctx.excluded->cpu_data_p;
     double mass, r2, rin2;
 
-    ctx.heavy = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
+    ctx.heavy = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.command_info.requested_gpu);
     auto* heavy = ctx.heavy->cpu_data_p;
-    ctx.shell = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
+    ctx.shell = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.command_info.requested_gpu);
     auto* shell = ctx.shell->cpu_data_p;
     for (int i = 0; i < ctx.n_atoms; ++i) {
         heavy[i] = false;
@@ -643,7 +654,7 @@ void init_pshells() {
         }
     }
 
-    if (ctx.run_gpu) {
+    if (ctx.command_info.requested_gpu) {
         ctx.heavy->upload();
         ctx.shell->upload();
     }
@@ -671,9 +682,9 @@ static int mark_heavy_atoms(Context& ctx) {
 }
 
 static void allocate_pshell_buffers(Context& ctx) {
-    ctx.heavy = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
+    ctx.heavy = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.command_info.requested_gpu);
     auto* heavy = ctx.heavy->cpu_data_p;
-    ctx.shell = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
+    ctx.shell = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.command_info.requested_gpu);
     auto* shell = ctx.shell->cpu_data_p;
     for (int i = 0; i < ctx.n_atoms; ++i) {
         heavy[i] = false;
@@ -731,7 +742,7 @@ void init_pshells_from_charge_groups() {
         }
     }
 
-    if (ctx.run_gpu) {
+    if (ctx.command_info.requested_gpu) {
         ctx.heavy->upload();
         ctx.shell->upload();
     }
@@ -757,7 +768,7 @@ void init_shake() {
     auto& cbonds = ctx.cbonds->cpu_data_p;
 
     ctx.n_shake_constraints = 0;
-    ctx.mol_n_shakes = std::make_unique<HostDeviceBuffer<int>>(ctx.n_molecules, true, ctx.run_gpu);
+    ctx.mol_n_shakes = std::make_unique<HostDeviceBuffer<int>>(ctx.n_molecules, true, ctx.command_info.requested_gpu);
     auto* mol_n_shakes = ctx.mol_n_shakes->cpu_data_p;
 
     for (int bi = 0; bi < ctx.n_bonds; bi++) {
@@ -778,7 +789,7 @@ void init_shake() {
         }
     }
 
-    ctx.shake_bonds = std::make_unique<HostDeviceBuffer<shake_bond_t>>(ctx.n_shake_constraints, true, ctx.run_gpu);
+    ctx.shake_bonds = std::make_unique<HostDeviceBuffer<shake_bond_t>>(ctx.n_shake_constraints, true, ctx.command_info.requested_gpu);
     auto* shake_bonds = ctx.shake_bonds->cpu_data_p;
     mol = 0;
     shake = 0;
@@ -804,7 +815,7 @@ void init_shake() {
         n_solute_shake_constraints += mol_n_shakes[i];
     }
 
-    if (ctx.run_gpu) {
+    if (ctx.command_info.requested_gpu) {
         ctx.mol_n_shakes->upload();
         ctx.shake_bonds->upload();
     }
@@ -868,8 +879,8 @@ void init_unified_atom_parameters() {
 
     const int n_extra_q_states = n_states > 0 ? n_states - 1 : 0;
     const int n_codes = ctx.n_atoms + ctx.n_qatoms * n_extra_q_states;
-    ctx.unified_ccharges = std::make_unique<HostDeviceBuffer<ccharge_t>>(n_codes, true, ctx.run_gpu);
-    ctx.unified_catypes = std::make_unique<HostDeviceBuffer<catype_t>>(n_codes, true, ctx.run_gpu);
+    ctx.unified_ccharges = std::make_unique<HostDeviceBuffer<ccharge_t>>(n_codes, true, ctx.command_info.requested_gpu);
+    ctx.unified_catypes = std::make_unique<HostDeviceBuffer<catype_t>>(n_codes, true, ctx.command_info.requested_gpu);
     auto* unified_ccharges = ctx.unified_ccharges->cpu_data_p;
     auto* unified_catypes = ctx.unified_catypes->cpu_data_p;
 
@@ -911,6 +922,11 @@ void init_unified_atom_parameters() {
             unified_ccharges[unified_code - 1] = resolved_charge;
             unified_catypes[unified_code - 1] = resolved_type;
         }
+    }
+
+    if (ctx.command_info.requested_gpu) {
+        ctx.unified_ccharges->upload();
+        ctx.unified_catypes->upload();
     }
 }
 

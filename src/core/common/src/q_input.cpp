@@ -3,6 +3,8 @@
 
 #include "constants.h"
 #include "context.h"
+#include "helpers.h"
+#include "str_helpers.h"
 
 #include <algorithm>
 #include <cctype>
@@ -20,87 +22,7 @@
 #include <vector>
 
 q_input_mode_t q_input_mode = Q_INPUT_CSV;
-bool q_native_fresh_start = false;
 
-static void fatal(const std::string &message) {
-    printf(">>> FATAL: %s\n", message.c_str());
-    exit(EXIT_FAILURE);
-}
-
-static bool file_exists(const std::string &path) {
-    return access(path.c_str(), F_OK) == 0;
-}
-
-static std::string trim(const std::string &value) {
-    size_t first = value.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos) return "";
-    size_t last = value.find_last_not_of(" \t\r\n");
-    return value.substr(first, last - first + 1);
-}
-
-static std::string strip_comment(const std::string &line) {
-    size_t bang = line.find('!');
-    if (bang == std::string::npos) return trim(line);
-    return trim(line.substr(0, bang));
-}
-
-static std::string lower_normalized(std::string value) {
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
-        if (c == '_') return '-';
-        return (char) std::tolower(c);
-    });
-    return value;
-}
-
-static std::vector<std::string> split_ws(const std::string &line) {
-    std::vector<std::string> fields;
-    std::istringstream iss(line);
-    std::string field;
-    while (iss >> field) fields.push_back(field);
-    return fields;
-}
-
-static std::vector<std::vector<std::string> > split_groups(const std::vector<std::string> &flat, size_t width) {
-    std::vector<std::vector<std::string> > groups;
-    for (size_t i = 0; i + width <= flat.size(); i += width) {
-        groups.push_back(std::vector<std::string>(flat.begin() + i, flat.begin() + i + width));
-    }
-    return groups;
-}
-
-static std::string dirname_of(const std::string &path) {
-    size_t slash = path.find_last_of('/');
-    if (slash == std::string::npos) return ".";
-    if (slash == 0) return "/";
-    return path.substr(0, slash);
-}
-
-static bool is_absolute(const std::string &path) {
-    return !path.empty() && path[0] == '/';
-}
-
-static std::string join_path(const std::string &left, const std::string &right) {
-    if (left.empty() || left == ".") return right;
-    if (!right.empty() && right[0] == '/') return right;
-    if (left[left.size() - 1] == '/') return left + right;
-    return left + "/" + right;
-}
-
-static std::string resolve_existing_or_cwd(const std::string &value, const std::string &input_dir) {
-    if (value.empty()) return "";
-    if (is_absolute(value)) return value;
-    std::string input_relative = join_path(input_dir, value);
-    if (file_exists(input_relative)) return input_relative;
-    char cwd[1024];
-    if (getcwd(cwd, sizeof(cwd)) == NULL) fatal("Could not determine current working directory.");
-    return join_path(cwd, value);
-}
-
-static std::string resolve_output_path(const std::string &value, const std::string &input_dir) {
-    if (value.empty()) return "";
-    if (is_absolute(value)) return value;
-    return join_path(input_dir, value);
-}
 
 static std::string bool_value(const std::map<std::string, std::string> &values, const std::string &key, const std::string &fallback) {
     std::map<std::string, std::string>::const_iterator it = values.find(key);
@@ -569,14 +491,6 @@ static void complete_fep_defaults(FepData &fep, const TopData &top) {
     }
 }
 
-static int to_int(const std::string &value) {
-    return atoi(value.c_str());
-}
-
-static double to_double(const std::string &value) {
-    return atof(value.c_str());
-}
-
 static int row_int(const std::vector<std::string> &row, size_t index, int fallback = 0) {
     return index < row.size() ? to_int(row[index]) : fallback;
 }
@@ -601,9 +515,7 @@ static void set_md_context(const MDInput &input) {
     md.steps = atoi(value_or(mdv, "steps", "0").c_str());
     md.stepsize = atof(value_or(mdv, "stepsize", "0").c_str());
     md.temperature = atof(value_or(mdv, "temperature", "0").c_str());
-    std::string thermostat = value_or(mdv, "thermostat", "berendsen");
-    strncpy(md.thermostat, thermostat.c_str(), sizeof(md.thermostat) - 1);
-    md.thermostat[sizeof(md.thermostat) - 1] = '\0';
+    md.thermostat = value_or(mdv, "thermostat", "berendsen");
     md.bath_coupling = atof(value_or(mdv, "bath-coupling", value_or(mdv, "bath_coupling", "1")).c_str());
     md.random_seed = atoi(value_or(mdv, "random-seed", value_or(mdv, "random_seed", "1")).c_str());
     md.initial_temperature = atof(value_or(mdv, "initial-temperature", value_or(mdv, "initial_temperature", value_or(mdv, "temperature", "0"))).c_str());
@@ -635,12 +547,12 @@ static void set_md_context(const MDInput &input) {
         }
     }
     ctx.n_lambdas = (int) lambdas_flat.size();
-    ctx.lambdas = std::make_unique<HostDeviceBuffer<double>>(ctx.n_lambdas, true, ctx.run_gpu);
+    ctx.lambdas = std::make_unique<HostDeviceBuffer<double>>(ctx.n_lambdas, true, ctx.command_info.requested_gpu);
     for (int i = 0; i < ctx.n_lambdas; i++) ctx.lambdas->cpu_data_p[i] = to_double(lambdas_flat[i]);
 
     std::vector<std::vector<std::string> > seq = input.lists.count("sequence-restraints") ? input.lists.find("sequence-restraints")->second : std::vector<std::vector<std::string> >();
     ctx.n_restrseqs = (int) seq.size();
-    ctx.restrseqs = std::make_unique<HostDeviceBuffer<restrseq_t>>(ctx.n_restrseqs, true, ctx.run_gpu);
+    ctx.restrseqs = std::make_unique<HostDeviceBuffer<restrseq_t>>(ctx.n_restrseqs, true, ctx.command_info.requested_gpu);
     for (int i = 0; i < ctx.n_restrseqs; i++) {
         restrseq_t r = {};
         r.ai = row_int(seq[i], 0);
@@ -653,7 +565,7 @@ static void set_md_context(const MDInput &input) {
 
     std::vector<std::vector<std::string> > pos = input.lists.count("atom-restraints") ? input.lists.find("atom-restraints")->second : std::vector<std::vector<std::string> >();
     ctx.n_restrspos = (int) pos.size();
-    ctx.restrspos = std::make_unique<HostDeviceBuffer<restrpos_t>>(ctx.n_restrspos, true, ctx.run_gpu);
+    ctx.restrspos = std::make_unique<HostDeviceBuffer<restrpos_t>>(ctx.n_restrspos, true, ctx.command_info.requested_gpu);
     for (int i = 0; i < ctx.n_restrspos; i++) {
         restrpos_t r = {};
         r.a = row_int(pos[i], 0);
@@ -665,7 +577,7 @@ static void set_md_context(const MDInput &input) {
 
     std::vector<std::vector<std::string> > dist = input.lists.count("distance-restraints") ? input.lists.find("distance-restraints")->second : std::vector<std::vector<std::string> >();
     ctx.n_restrdists = (int) dist.size();
-    ctx.restrdists = std::make_unique<HostDeviceBuffer<restrdis_t>>(ctx.n_restrdists, true, ctx.run_gpu);
+    ctx.restrdists = std::make_unique<HostDeviceBuffer<restrdis_t>>(ctx.n_restrdists, true, ctx.command_info.requested_gpu);
     for (int i = 0; i < ctx.n_restrdists; i++) {
         restrdis_t r = {};
         r.ai = row_int(dist[i], 0);
@@ -679,7 +591,7 @@ static void set_md_context(const MDInput &input) {
 
     std::vector<std::vector<std::string> > angle = input.lists.count("angle-restraints") ? input.lists.find("angle-restraints")->second : std::vector<std::vector<std::string> >();
     ctx.n_restrangs = (int) angle.size();
-    ctx.restrangs = std::make_unique<HostDeviceBuffer<restrang_t>>(ctx.n_restrangs, true, ctx.run_gpu);
+    ctx.restrangs = std::make_unique<HostDeviceBuffer<restrang_t>>(ctx.n_restrangs, true, ctx.command_info.requested_gpu);
     for (int i = 0; i < ctx.n_restrangs; i++) {
         restrang_t r = {};
         r.ai = row_int(angle[i], 0);
@@ -693,7 +605,7 @@ static void set_md_context(const MDInput &input) {
 
     std::vector<std::vector<std::string> > wall = input.lists.count("wall-restraints") ? input.lists.find("wall-restraints")->second : std::vector<std::vector<std::string> >();
     ctx.n_restrwalls = (int) wall.size();
-    ctx.restrwalls = std::make_unique<HostDeviceBuffer<restrwall_t>>(ctx.n_restrwalls, true, ctx.run_gpu);
+    ctx.restrwalls = std::make_unique<HostDeviceBuffer<restrwall_t>>(ctx.n_restrwalls, true, ctx.command_info.requested_gpu);
     for (int i = 0; i < ctx.n_restrwalls; i++) {
         restrwall_t r = {};
         r.ai = row_int(wall[i], 0);
@@ -744,8 +656,8 @@ static void set_topology_context(const TopData &top, const std::vector<std::vect
 
     ctx.n_atoms = (int) top.coords.size();
     ctx.n_atoms_solute = to_int(top.natoms_solute);
-    ctx.coords_init = std::make_unique<HostDeviceBuffer<coord_t>>(ctx.n_atoms, true, ctx.run_gpu);
-    ctx.coords = std::make_unique<HostDeviceBuffer<coord_t>>(ctx.n_atoms, true, ctx.run_gpu);
+    ctx.coords_init = std::make_unique<HostDeviceBuffer<coord_t>>(ctx.n_atoms, true, ctx.command_info.requested_gpu);
+    ctx.coords = std::make_unique<HostDeviceBuffer<coord_t>>(ctx.n_atoms, true, ctx.command_info.requested_gpu);
     for (int i = 0; i < ctx.n_atoms; i++) {
         ctx.coords_init->cpu_data_p[i] = row_coord(top.coords[i]);
         ctx.coords->cpu_data_p[i] = row_coord(input_coords[i]);
@@ -762,29 +674,23 @@ static void set_topology_context(const TopData &top, const std::vector<std::vect
     if (ctx.topo.vdw_rule == 0) ctx.topo.vdw_rule = VDW_GEOMETRIC;
 
     ctx.n_atypes = (int) top.atypes.size();
-    ctx.atypes = std::make_unique<HostDeviceBuffer<atype_t>>(ctx.n_atypes, true, ctx.run_gpu);
+    ctx.atypes = std::make_unique<HostDeviceBuffer<atype_t>>(ctx.n_atypes, true, ctx.command_info.requested_gpu);
     for (int i = 0; i < ctx.n_atypes; i++) ctx.atypes->cpu_data_p[i] = {top.atypes[i].first, top.atypes[i].second};
 
     ctx.n_catypes = (int) top.catypes.size();
-    ctx.catypes = std::make_unique<HostDeviceBuffer<catype_t>>(ctx.n_catypes, true, ctx.run_gpu);
+    ctx.catypes = std::make_unique<HostDeviceBuffer<catype_t>>(ctx.n_catypes, true, ctx.command_info.requested_gpu);
     int idx = 0;
     for (std::map<int, std::vector<std::string> >::const_iterator it = top.catypes.begin(); it != top.catypes.end(); ++it, ++idx) {
         const std::vector<std::string> &r = it->second;
         ctx.catypes->cpu_data_p[idx] = {it->first, row_double(r, 0), row_double(r, 1), row_double(r, 2), row_double(r, 5), row_double(r, 6)};
     }
-    if (ctx.topo.vdw_rule == VDW_ARITHMETIC) {
-        for (int i = 0; i < ctx.n_catypes; i++) {
-            ctx.catypes->cpu_data_p[i].bii_normal = sqrt(fabs(ctx.catypes->cpu_data_p[i].bii_normal));
-            ctx.catypes->cpu_data_p[i].bii_1_4 = sqrt(fabs(ctx.catypes->cpu_data_p[i].bii_1_4));
-        }
-    }
 
     ctx.n_charges = (int) top.charges.size();
-    ctx.charges = std::make_unique<HostDeviceBuffer<charge_t>>(ctx.n_charges, true, ctx.run_gpu);
+    ctx.charges = std::make_unique<HostDeviceBuffer<charge_t>>(ctx.n_charges, true, ctx.command_info.requested_gpu);
     for (int i = 0; i < ctx.n_charges; i++) ctx.charges->cpu_data_p[i] = {top.charges[i].first, top.charges[i].second};
 
     ctx.n_ccharges = (int) top.ccharges.size();
-    ctx.ccharges = std::make_unique<HostDeviceBuffer<ccharge_t>>(ctx.n_ccharges, true, ctx.run_gpu);
+    ctx.ccharges = std::make_unique<HostDeviceBuffer<ccharge_t>>(ctx.n_ccharges, true, ctx.command_info.requested_gpu);
     idx = 0;
     for (std::map<int, std::string>::const_iterator it = top.ccharges.begin(); it != top.ccharges.end(); ++it, ++idx) {
         ctx.ccharges->cpu_data_p[idx] = {it->first, to_double(it->second)};
@@ -792,11 +698,11 @@ static void set_topology_context(const TopData &top, const std::vector<std::vect
 
     ctx.n_bonds = (int) top.bonds.size();
     ctx.n_bonds_solute = to_int(top.nbonds_solute);
-    ctx.bonds = std::make_unique<HostDeviceBuffer<bond_t>>(ctx.n_bonds, true, ctx.run_gpu);
+    ctx.bonds = std::make_unique<HostDeviceBuffer<bond_t>>(ctx.n_bonds, true, ctx.command_info.requested_gpu);
     for (int i = 0; i < ctx.n_bonds; i++) ctx.bonds->cpu_data_p[i] = {row_int(top.bonds[i], 0), row_int(top.bonds[i], 1), row_int(top.bonds[i], 2)};
 
     ctx.n_cbonds = (int) top.cbonds.size();
-    ctx.cbonds = std::make_unique<HostDeviceBuffer<cbond_t>>(ctx.n_cbonds, true, ctx.run_gpu);
+    ctx.cbonds = std::make_unique<HostDeviceBuffer<cbond_t>>(ctx.n_cbonds, true, ctx.command_info.requested_gpu);
     idx = 0;
     for (std::map<int, std::vector<std::string> >::const_iterator it = top.cbonds.begin(); it != top.cbonds.end(); ++it, ++idx) {
         ctx.cbonds->cpu_data_p[idx] = {it->first, row_double(it->second, 0), row_double(it->second, 1)};
@@ -804,11 +710,11 @@ static void set_topology_context(const TopData &top, const std::vector<std::vect
 
     ctx.n_angles = (int) top.angles.size();
     ctx.n_angles_solute = to_int(top.nangles_solute);
-    ctx.angles = std::make_unique<HostDeviceBuffer<angle_t>>(ctx.n_angles, true, ctx.run_gpu);
+    ctx.angles = std::make_unique<HostDeviceBuffer<angle_t>>(ctx.n_angles, true, ctx.command_info.requested_gpu);
     for (int i = 0; i < ctx.n_angles; i++) ctx.angles->cpu_data_p[i] = {row_int(top.angles[i], 0), row_int(top.angles[i], 1), row_int(top.angles[i], 2), row_int(top.angles[i], 3)};
 
     ctx.n_cangles = (int) top.cangles.size();
-    ctx.cangles = std::make_unique<HostDeviceBuffer<cangle_t>>(ctx.n_cangles, true, ctx.run_gpu);
+    ctx.cangles = std::make_unique<HostDeviceBuffer<cangle_t>>(ctx.n_cangles, true, ctx.command_info.requested_gpu);
     idx = 0;
     for (std::map<int, std::vector<std::string> >::const_iterator it = top.cangles.begin(); it != top.cangles.end(); ++it, ++idx) {
         ctx.cangles->cpu_data_p[idx] = {it->first, row_double(it->second, 0), row_double(it->second, 1)};
@@ -816,11 +722,11 @@ static void set_topology_context(const TopData &top, const std::vector<std::vect
 
     ctx.n_torsions = (int) top.torsions.size();
     ctx.n_torsions_solute = to_int(top.ntorsions_solute);
-    ctx.torsions = std::make_unique<HostDeviceBuffer<torsion_t>>(ctx.n_torsions, true, ctx.run_gpu);
+    ctx.torsions = std::make_unique<HostDeviceBuffer<torsion_t>>(ctx.n_torsions, true, ctx.command_info.requested_gpu);
     for (int i = 0; i < ctx.n_torsions; i++) ctx.torsions->cpu_data_p[i] = {row_int(top.torsions[i], 0), row_int(top.torsions[i], 1), row_int(top.torsions[i], 2), row_int(top.torsions[i], 3), row_int(top.torsions[i], 4)};
 
     ctx.n_ctorsions = (int) top.ctorsions.size();
-    ctx.ctorsions = std::make_unique<HostDeviceBuffer<ctorsion_t>>(ctx.n_ctorsions, true, ctx.run_gpu);
+    ctx.ctorsions = std::make_unique<HostDeviceBuffer<ctorsion_t>>(ctx.n_ctorsions, true, ctx.command_info.requested_gpu);
     idx = 0;
     for (std::map<int, std::vector<std::string> >::const_iterator it = top.ctorsions.begin(); it != top.ctorsions.end(); ++it, ++idx) {
         double paths = row_double(it->second, 3);
@@ -829,11 +735,11 @@ static void set_topology_context(const TopData &top, const std::vector<std::vect
 
     ctx.n_impropers = (int) top.impropers.size();
     ctx.n_impropers_solute = to_int(top.nimpropers_solute);
-    ctx.impropers = std::make_unique<HostDeviceBuffer<improper_t>>(ctx.n_impropers, true, ctx.run_gpu);
+    ctx.impropers = std::make_unique<HostDeviceBuffer<improper_t>>(ctx.n_impropers, true, ctx.command_info.requested_gpu);
     for (int i = 0; i < ctx.n_impropers; i++) ctx.impropers->cpu_data_p[i] = {row_int(top.impropers[i], 0), row_int(top.impropers[i], 1), row_int(top.impropers[i], 2), row_int(top.impropers[i], 3), row_int(top.impropers[i], 4)};
 
     ctx.n_cimpropers = (int) top.cimpropers.size();
-    ctx.cimpropers = std::make_unique<HostDeviceBuffer<cimproper_t>>(ctx.n_cimpropers, true, ctx.run_gpu);
+    ctx.cimpropers = std::make_unique<HostDeviceBuffer<cimproper_t>>(ctx.n_cimpropers, true, ctx.command_info.requested_gpu);
     idx = 0;
     for (std::map<int, std::vector<std::string> >::const_iterator it = top.cimpropers.begin(); it != top.cimpropers.end(); ++it, ++idx) {
         ctx.cimpropers->cpu_data_p[idx] = {it->first, row_double(it->second, 0), row_double(it->second, 1)};
@@ -843,7 +749,7 @@ static void set_topology_context(const TopData &top, const std::vector<std::vect
     ctx.molecules.resize(ctx.n_molecules);
     for (int i = 0; i < ctx.n_molecules; i++) ctx.molecules[i] = to_int(top.molecules[i]);
 
-    ctx.excluded = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.run_gpu);
+    ctx.excluded = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.command_info.requested_gpu);
     ctx.n_excluded = 0;
     for (int i = 0; i < ctx.n_atoms; i++) {
         bool excl = (size_t) i < top.excluded.size() && top.excluded[i] == "1";
@@ -851,7 +757,7 @@ static void set_topology_context(const TopData &top, const std::vector<std::vect
         if (excl) ctx.n_excluded++;
     }
 
-    ctx.LJ_matrix = std::make_unique<HostDeviceBuffer<int>>(ctx.n_atoms_solute * ctx.n_atoms_solute, true, ctx.run_gpu);
+    ctx.LJ_matrix = std::make_unique<HostDeviceBuffer<int>>(ctx.n_atoms_solute * ctx.n_atoms_solute, true, ctx.command_info.requested_gpu);
     set_lj_from_short_lines(top.ngbr14, 1);
     set_lj_from_short_lines(top.ngbr23, 3);
     set_lj_from_long_rows(top.ngbr14long, 1);
@@ -874,7 +780,7 @@ static void set_topology_context(const TopData &top, const std::vector<std::vect
 
 static void set_velocities_context(const std::vector<std::vector<std::string> > &input_velocities) {
     Context &ctx = Context::instance();
-    ctx.velocities = std::make_unique<HostDeviceBuffer<vel_t>>(ctx.n_atoms, true, ctx.run_gpu);
+    ctx.velocities = std::make_unique<HostDeviceBuffer<vel_t>>(ctx.n_atoms, true, ctx.command_info.requested_gpu);
     for (int i = 0; i < ctx.n_atoms; i++) {
         ctx.velocities->cpu_data_p[i] = {row_double(input_velocities[i], 0), row_double(input_velocities[i], 1), row_double(input_velocities[i], 2)};
     }
@@ -921,12 +827,6 @@ static void set_fep_context(const FepData &fep) {
         ctx.q_catypes[i].aii_1_4 = row_double(r, 5);
         ctx.q_catypes[i].bii_1_4 = row_double(r, 6);
         ctx.q_catypes[i].m = row_double(r, 7);
-    }
-    if (ctx.topo.vdw_rule == VDW_ARITHMETIC) {
-        for (int i = 0; i < ctx.n_qcatypes; i++) {
-            ctx.q_catypes[i].bii_normal = sqrt(fabs(ctx.q_catypes[i].bii_normal));
-            ctx.q_catypes[i].bii_1_4 = sqrt(fabs(ctx.q_catypes[i].bii_1_4));
-        }
     }
 
     ctx.q_atypes.resize(ctx.n_qatoms * ctx.n_lambdas);
@@ -1052,7 +952,7 @@ static void set_fep_context(const FepData &fep) {
     }
 
     ctx.n_qelscales = ctx.n_lambdas > 0 ? (int) fep.q_elscales.size() / ctx.n_lambdas : 0;
-    ctx.q_elscales = std::make_unique<HostDeviceBuffer<q_elscale_t>>(ctx.n_qelscales * ctx.n_lambdas, true, ctx.run_gpu);
+    ctx.q_elscales = std::make_unique<HostDeviceBuffer<q_elscale_t>>(ctx.n_qelscales * ctx.n_lambdas, true, ctx.command_info.requested_gpu);
     for (int s = 0; s < ctx.n_lambdas; s++) {
         for (int i = 0; i < ctx.n_qelscales; i++) {
             const std::vector<std::string> &row = fep.q_elscales[i + s * ctx.n_qelscales];
@@ -1221,7 +1121,6 @@ void q_prepare_input(const char *input_file, const char *workdir) {
 
     std::vector<std::vector<std::string> > input_coords;
     std::vector<std::vector<std::string> > input_velocities;
-    q_native_fresh_start = restart_file.empty();
     if (!restart_file.empty()) {
         read_restart_csv_inputs(restart_file, input_coords, input_velocities);
     }

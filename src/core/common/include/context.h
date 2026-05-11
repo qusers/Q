@@ -8,8 +8,10 @@
 #include <string>
 #include <vector>
 
+#include "command_parser.h"
 #include "common/include/md_types.h"
 #include "common/include/nonbonded_14_mode.h"
+#include "common/include/parse.h"
 #include "common/include/vdw_rules.h"
 #include "host_device_buffer.h"
 
@@ -22,22 +24,21 @@ class Context {
     /*
     Config
     */
+    CommandInfo command_info;
 
-    std::string base_folder;
-    bool run_gpu = false;
-
-    int n_atoms = 0;         // the total number of atoms
-    int n_atoms_solute = 0;  // the total number of solute number, in our system [0, n_atoms_solute) are solute, [n_atoms_solute, n_atoms) are water atoms
-    int n_patoms = 0;
-    int n_qatoms = 0;
-    int n_waters = 0;
-    int n_molecules = 0;
-    double dt = 0.0;
-    double tau_T = 0.0;
+    int n_atoms;         // the total number of atoms
+    int n_atoms_solute;  // the total number of solute number, in our system [0, n_atoms_solute) are solute, [n_atoms_solute, n_atoms) are water atoms
+    int n_patoms;
+    int n_qatoms;
+    int n_waters;
+    int n_molecules;
+    double dt;
+    double tau_T;
     md_t md;
     topo_t topo;
-    int n_excluded = 0;
-    int n_lambdas = 0;
+    NativeOutputConfig native_output;
+    int n_excluded;
+    int n_lambdas;
     bool separate_scaling = false;
     charge_group_config_t charge_group_config;
 
@@ -48,58 +49,56 @@ class Context {
     std::unique_ptr<HostDeviceBuffer<vel_t>> velocities;
     std::unique_ptr<HostDeviceBuffer<dvel_t>> dvelocities;
 
-
     /*
     Bond forces
     */
-    int n_angles = 0;
-    int n_angles_solute = 0;
-    int n_cangles = 0;
+    int n_angles;
+    int n_angles_solute;
+    int n_cangles;
     std::unique_ptr<HostDeviceBuffer<angle_t>> angles;
     std::unique_ptr<HostDeviceBuffer<cangle_t>> cangles;
 
-    int n_bonds = 0;
-    int n_bonds_solute = 0;
-    int n_cbonds = 0;
+    int n_bonds;
+    int n_bonds_solute;
+    int n_cbonds;
     std::unique_ptr<HostDeviceBuffer<bond_t>> bonds;
     std::unique_ptr<HostDeviceBuffer<cbond_t>> cbonds;
-    int n_torsions = 0;
-    int n_torsions_solute = 0;
-    int n_ctorsions = 0;
+    int n_torsions;
+    int n_torsions_solute;
+    int n_ctorsions;
     std::unique_ptr<HostDeviceBuffer<torsion_t>> torsions;
     std::unique_ptr<HostDeviceBuffer<ctorsion_t>> ctorsions;
-    int n_impropers = 0;
-    int n_impropers_solute = 0;
-    int n_cimpropers = 0;
+    int n_impropers;
+    int n_impropers_solute;
+    int n_cimpropers;
     std::unique_ptr<HostDeviceBuffer<improper_t>> impropers;
     std::unique_ptr<HostDeviceBuffer<cimproper_t>> cimpropers;
 
-    int n_restrspos = 0;
+    int n_restrspos;
     std::unique_ptr<HostDeviceBuffer<restrpos_t>> restrspos;
 
-    int n_restrangs = 0;
+    int n_restrangs;
     std::unique_ptr<HostDeviceBuffer<restrang_t>> restrangs;
-    
 
-    int n_restrdists = 0;
+    int n_restrdists;
     std::unique_ptr<HostDeviceBuffer<restrdis_t>> restrdists;
 
-    int n_restrseqs = 0;
+    int n_restrseqs;
     std::unique_ptr<HostDeviceBuffer<restrseq_t>> restrseqs;
-    int n_restrwalls = 0;
+    int n_restrwalls;
     std::unique_ptr<HostDeviceBuffer<restrwall_t>> restrwalls;
 
-    int n_ngbrs14 = 0;
+    int n_ngbrs14;
     std::unique_ptr<HostDeviceBuffer<int3>> ngbrs_14;
     /*
     Atom Info
     */
-    int n_charges = 0;
-    int n_ccharges = 0;
+    int n_charges;
+    int n_ccharges;
     std::unique_ptr<HostDeviceBuffer<charge_t>> charges;
     std::unique_ptr<HostDeviceBuffer<ccharge_t>> ccharges;
-    int n_atypes = 0;
-    int n_catypes = 0;
+    int n_atypes;
+    int n_catypes;
     std::unique_ptr<HostDeviceBuffer<atype_t>> atypes;
     std::unique_ptr<HostDeviceBuffer<catype_t>> catypes;
 
@@ -127,58 +126,55 @@ class Context {
     Shake
     */
 
-    int n_shake_constraints = 0;
+    int n_shake_constraints;
     std::unique_ptr<HostDeviceBuffer<int>> mol_n_shakes;
     std::unique_ptr<HostDeviceBuffer<shake_bond_t>> shake_bonds;
-    std::unique_ptr<HostDeviceBuffer<coord_t>> xcoords; // todo: It's just a temporary variables...
+    std::unique_ptr<HostDeviceBuffer<coord_t>> xcoords;  // todo: It's just a temporary variables...
     std::vector<int> molecules;
 
     /*
     Water
     */
     std::unique_ptr<HostDeviceBuffer<shell_t>> wshells;
-    double crgQtot = 0.0;
-    double Dwmz = 0.0;
-    double awmz = 0.0;
+    double crgQtot;
+    double Dwmz;
+    double awmz;
     std::vector<double> theta;
     std::vector<double> theta0;
     std::vector<double> tdum;
-    int n_max_inshell = 0;
-    int n_shells = 0;
+    int n_max_inshell;
+    int n_shells;
     std::vector<std::vector<int>> list_sh;
     std::vector<std::vector<int>> nsort;
-
 
     /*
     FEP
     */
-    std::unique_ptr<HostDeviceBuffer<double>> lambdas; // Actually length is only 2..
+    std::unique_ptr<HostDeviceBuffer<double>> lambdas;  // Actually length is only 2..
 
     /*
     Energy
     */
 
     std::unique_ptr<HostDeviceBuffer<E_restraint_t>> EQ_restraint;
-    energy_t E_total = {};
+    energy_t E_total;
     std::vector<energy_t> EQ_total;
 
-    E_bonded_t E_bond_p = {};
-    E_bonded_t E_bond_w = {};
-    E_bonded_t E_bond_q = {};
+    E_bonded_t E_bond_p;
+    E_bonded_t E_bond_w;
+    E_bonded_t E_bond_q;
     std::vector<E_bonded_t> EQ_bond;
 
-    E_nonbonded_t E_nonbond_pp = {};
-    E_nonbonded_t E_nonbond_pw = {};
-    E_nonbonded_t E_nonbond_ww = {};
-    E_nonbonded_t E_nonbond_qx = {};
+    E_nonbonded_t E_nonbond_pp;
+    E_nonbonded_t E_nonbond_pw;
+    E_nonbonded_t E_nonbond_ww;
+    E_nonbonded_t E_nonbond_qx;
     std::vector<E_nonbonded_t> EQ_nonbond_qq;
     std::vector<E_nonbonded_t> EQ_nonbond_qp;
     std::vector<E_nonbonded_t> EQ_nonbond_qw;
     std::vector<E_nonbonded_t> EQ_nonbond_qx;
 
-    E_restraint_t E_restraint = {};
-
-
+    E_restraint_t E_restraint;
 
     /*
     Pre compute Info for non bonded calculation
@@ -197,48 +193,48 @@ class Context {
     std::unique_ptr<HostDeviceBuffer<int>> w_catype_types;
     std::unique_ptr<HostDeviceBuffer<int>> q_catype_types;
 
-    int n_charge_types = 0;
+    int n_charge_types;
     int zero_charge_type = -1;
-    int n_catype_types = 0;
+    int n_catype_types;
     int zero_catype_type = -1;
 
     /*
     Temperature
     */
 
-    double Temp = 0.0;
-    double Tfree = 0.0;
-    double Ndegf = 0.0;
-    double Ndegfree = 0.0;
-    double Ndegf_solute = 0.0;
-    double Ndegfree_solute = 0.0;
-    double Ndegf_solvent = 0.0;
-    double Ndegfree_solvent = 0.0;
+    double Temp;
+    double Tfree;
+    double Ndegf;
+    double Ndegfree;
+    double Ndegf_solute;
+    double Ndegfree_solute;
+    double Ndegf_solvent;
+    double Ndegfree_solvent;
 
-    double Tscale_solute = 0.0;
-    double Tscale_solvent = 0.0;
+    double Tscale_solute;
+    double Tscale_solvent;
     /*
     Info for FEP
     */
 
-    int n_qangcouples = 0;
-    int n_qangles = 0;
-    int n_qbonds = 0;
-    int n_qcangles = 0;
-    int n_qcatypes = 0;
-    int n_qcbonds = 0;
-    int n_qcimpropers = 0;
-    int n_qctorsions = 0;
-    int n_qelscales = 0;
-    int n_qexclpairs = 0;
-    int n_qimprcouples = 0;
-    int n_qimpropers = 0;
-    int n_qoffdiags = 0;
-    int n_qshakes = 0;
-    int n_qsoftpairs = 0;
-    int n_qsoftcores = 0;
-    int n_qtorcouples = 0;
-    int n_qtorsions = 0;
+    int n_qangcouples;
+    int n_qangles;
+    int n_qbonds;
+    int n_qcangles;
+    int n_qcatypes;
+    int n_qcbonds;
+    int n_qcimpropers;
+    int n_qctorsions;
+    int n_qelscales;
+    int n_qexclpairs;
+    int n_qimprcouples;
+    int n_qimpropers;
+    int n_qoffdiags;
+    int n_qshakes;
+    int n_qsoftpairs;
+    int n_qsoftcores;
+    int n_qtorcouples;
+    int n_qtorsions;
 
     std::vector<q_angcouple_t> q_angcouples;
     std::vector<cangle_t> q_cangles;
@@ -261,7 +257,6 @@ class Context {
     std::vector<q_shake_t> q_shakes;
     std::vector<q_softcore_t> q_softcores;
     std::vector<torsion_t> q_torsions;
-
 
     int n_parameter_states() const {
         return n_lambdas > 0 ? n_lambdas : 1;
@@ -304,7 +299,6 @@ class Context {
     void init();
     void preprocess_data();
 
-
    private:
     static Context* current_;
 
@@ -314,6 +308,4 @@ class Context {
     Context& operator=(Context&&) = delete;
 
     void init_data_from_files();
-    void gpu_data_upload();
-
 };

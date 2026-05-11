@@ -2,17 +2,13 @@
 
 #include <string>
 #include <vector>
-/* =============================================
- * == FROM MD FILE
- * =============================================
- */
 
 struct md_t {
     // [MD]
     int steps;
     double stepsize;
     double temperature;
-    char thermostat[40];
+    std::string thermostat;
     double bath_coupling;
     int random_seed;
     double initial_temperature;

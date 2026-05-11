@@ -28,18 +28,6 @@ static std::ofstream q_energy_stream;
 static std::vector<int> q_traj_atoms;
 static bool q_output_ready = false;
 
-static void fatal(const std::string &message) {
-    printf(">>> FATAL: %s\n", message.c_str());
-    exit(EXIT_FAILURE);
-}
-
-static std::string dirname_of(const std::string &path) {
-    size_t slash = path.find_last_of('/');
-    if (slash == std::string::npos) return ".";
-    if (slash == 0) return "/";
-    return path.substr(0, slash);
-}
-
 static void make_dir_recursive(const std::string &path) {
     if (path.empty() || path == ".") return;
     std::string current;
@@ -61,13 +49,6 @@ static void make_dir_recursive(const std::string &path) {
         if (next == std::string::npos) break;
         pos = next + 1;
     }
-}
-
-static std::string trim(std::string value) {
-    size_t first = value.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos) return "";
-    size_t last = value.find_last_not_of(" \t\r\n");
-    return value.substr(first, last - first + 1);
 }
 
 static std::string lower(std::string value) {
