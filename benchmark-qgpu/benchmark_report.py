@@ -85,6 +85,7 @@ def make_html_report(logs_root: str, out_html: str):
         mem_means = [v["mem_util_mean"] for v in vals if math.isfinite(v["mem_util_mean"])]
         mem_peaks = [v["mem_util_peak"] for v in vals if math.isfinite(v["mem_util_peak"])]
         tmp_ns_per_day = [v["ns_per_day"] for v in vals if math.isfinite(v["ns_per_day"])]
+        total_ns_per_day = statistics.mean(tmp_ns_per_day) * p if tmp_ns_per_day else float("nan")
 
         
         rc_bad = sum(1 for v in vals if v["rc"] != 0)
@@ -99,7 +100,7 @@ def make_html_report(logs_root: str, out_html: str):
         gpu_util_peak.append(statistics.mean(util_peak) if util_peak else float("nan"))
         util_mem_mean.append(statistics.mean(mem_means) if mem_means else float("nan"))
         util_mem_peak.append(statistics.mean(mem_peaks) if mem_peaks else float("nan"))
-        ns_per_day.append(statistics.mean(tmp_ns_per_day) if tmp_ns_per_day else float("nan"))
+        ns_per_day.append(total_ns_per_day)
         
         
         Tn = max(walls) if walls else float("nan")
@@ -126,7 +127,7 @@ def make_html_report(logs_root: str, out_html: str):
             "vram_util_peak": statistics.mean(mem_peaks) if mem_peaks else float("nan"),
             "Tn": Tn,
             "speedup": speedup,
-            "ns_per_day": statistics.mean(tmp_ns_per_day) if tmp_ns_per_day else float("nan"),
+            "ns_per_day": total_ns_per_day,
         })
 
 
@@ -156,4 +157,3 @@ def make_html_report(logs_root: str, out_html: str):
     with open(out_html, "w", encoding="utf-8") as f:
         f.write(html_out)
     print(f"Report written to: {out_html}")
-
