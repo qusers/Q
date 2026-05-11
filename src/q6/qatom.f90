@@ -1655,85 +1655,7 @@ logical function qatom_load_fep(fep_file)
 
           end do
 
-          do i=1,nqat  !make the sc_lookup table
-             do i2=1,nstates   
-                do j=1,natyps !do q-surroundings first
-
-                   if (softcore_use_max_potential) then
-                      sc_aq = qavdw(qiac(i,i2),1)
-                      sc_bq = qbvdw(qiac(i,i2),1)
-                      sc_aj = iaclib(j)%avdw(1)
-                      sc_bj = iaclib(j)%bvdw(1)
-                      if (alpha_max(i,i2) /= 0) then
-                         if (ivdw_rule == 1) then !geometric vdw rule
-                            sc_lookup(i,j,i2) = (-sc_bq*sc_bj+sqrt(sc_bq*sc_bq*sc_bj* & 
-                                 sc_bj+4*alpha_max(i,i2)*sc_aq*sc_aj))/(2*alpha_max(i,i2))
-                         else !arithmetic vdw rule. OBS some epsilons (q atom epsilons, sc_bq)
-                            !       have not been square rooted yet. We'll take this into account
-                            !   when calculating the sc_lookup
-                            sc_lookup(i,j,i2) = (-2*sqrt(sc_bq)*sc_bj+2*sqrt(sc_bq*sc_bj**2+ & 
-                                 alpha_max(i,i2)*sqrt(sc_bq)*sc_bj))*(sc_aq+sc_aj)**6/(2*alpha_max(i,i2))
-                         end if
-                      end if
-                   else  !user has not requested alpha calculation, each q-atom has the same alpha for every atom type
-                      sc_lookup(i,j,i2) = alpha_max(i,i2)
-                   end if
-
-
-                end do
-
-                do j=1,nqat  !now do q-q
-                   if ((alpha_max(i,i2) .gt. 1E-6) .or. (alpha_max(j,i2) .gt. 1E-6)) then !if both alphas are 0 then no need to calculate alphas
-                      sc_aq = qavdw(qiac(i,i2),1)
-                      sc_bq = qbvdw(qiac(i,i2),1)
-                      sc_aj = qavdw(qiac(j,i2),1)
-                      sc_bj = qbvdw(qiac(j,i2),1)
-
-                      if (softcore_use_max_potential) then  !use the smallest alpha_max of the two q atoms
-                         alpha_max_tmp = min ( alpha_max(i,i2), alpha_max(j,i2) )
-
-                         if ((alpha_max(i,i2) == 0) .or. (alpha_max(j,i2) == 0)) then !unless one of them is zero
-                            alpha_max_tmp = max ( alpha_max(i,i2), alpha_max(j,i2) )
-                         end if
-
-
-
-                      else  !use the largest alpha_max if we're using plain alphas
-                         alpha_max_tmp = max ( alpha_max(i,i2), alpha_max(j,i2) )
-                      end if
-
-
-                      if (softcore_use_max_potential) then
-
-                         if (ivdw_rule == 1) then !geometric vdw rule
-                            sc_lookup(i,j+natyps,i2) = (-sc_bq*sc_bj+ & 
-                                 sqrt(sc_bq*sc_bq*sc_bj*sc_bj+ & 
-                                 4*alpha_max_tmp*sc_aq*sc_aj))/(2*alpha_max_tmp)
-                         else !arithmetic vdw rule   OBS some epsilons (q atom epsilons, sc_bq and sc_bj)
-                            !       have not been square-rooted yet. We'll take this into account
-                            !   when calculating the sc_lookup
-                            sc_lookup(i,j+natyps,i2) = (-2*sqrt(sc_bq*sc_bj)+ & 
-                                 2*sqrt(sc_bq*sc_bj+alpha_max_tmp*sqrt(sc_bq*sc_bj)))* & 
-                                 (sc_aq+sc_aj)**6/(2*alpha_max_tmp)
-                         end if
-
-                      else  !user has not requested alpha calculation, each q-atom has the same alpha for every atom type
-                         sc_lookup(i,j+natyps,i2) = alpha_max_tmp
-                      end if !softcore_use_max_potential
-
-                   end if
-
-
-                end do
-
-
-
-
-
-             end do  ! states
-
-
-          end do !softcore lookup table
+          call populate_sc_lookup(alpha_max)
        end if
     end if  !prm_open_section(section)   softcore
 
@@ -1811,6 +1733,141 @@ logical function bond_harmonic_in_any_state(k)
     end do
 547 format('>>>>> ERROR: Bond',i3,' is harmonic in state',i2)   
 end function bond_harmonic_in_any_state
+
+!-------------------------------------------------------------------------
+
+subroutine populate_sc_lookup(alpha_in)
+!!-------------------------------------------------------------------------------
+!! Fill sc_lookup(nqat, natyps+nqat, nstates) from a per-state alpha array.
+!! Body is the original sc_lookup-fill loop from qatom_load_fep, parameterised
+!! on the source alpha array so softcore_scale_beutler can call it with a
+!! per-state-scaled alpha. With `softcore_use_max_potential on`, alpha_in is
+!! the target VdW max-potential at r=0; the quadratic here solves for the r^6
+!! softcore offset that produces that max-potential.
+!!-------------------------------------------------------------------------------
+  real(8), intent(in) :: alpha_in(:,:)
+  integer :: i, j
+
+  sc_lookup(:,:,:) = 0.0_8
+
+  do i = 1, nqat
+     do i2 = 1, nstates
+        do j = 1, natyps  ! q-atom vs surrounding atom types
+
+           if (softcore_use_max_potential) then
+              sc_aq = qavdw(qiac(i,i2),1)
+              sc_bq = qbvdw(qiac(i,i2),1)
+              sc_aj = iaclib(j)%avdw(1)
+              sc_bj = iaclib(j)%bvdw(1)
+              if (alpha_in(i,i2) /= 0) then
+                 if (ivdw_rule == 1) then ! geometric vdw rule
+                    sc_lookup(i,j,i2) = (-sc_bq*sc_bj+sqrt(sc_bq*sc_bq*sc_bj* &
+                         sc_bj+4*alpha_in(i,i2)*sc_aq*sc_aj))/(2*alpha_in(i,i2))
+                 else ! arithmetic vdw rule: q-atom epsilons not yet sqrt'd
+                    sc_lookup(i,j,i2) = (-2*sqrt(sc_bq)*sc_bj+2*sqrt(sc_bq*sc_bj**2+ &
+                         alpha_in(i,i2)*sqrt(sc_bq)*sc_bj))*(sc_aq+sc_aj)**6/(2*alpha_in(i,i2))
+                 end if
+              end if
+           else  ! plain alpha: identical for every (i, atom-type) pair
+              sc_lookup(i,j,i2) = alpha_in(i,i2)
+           end if
+
+        end do
+
+        do j = 1, nqat  ! q-atom vs q-atom
+           if ((alpha_in(i,i2) .gt. 1E-6) .or. (alpha_in(j,i2) .gt. 1E-6)) then
+              sc_aq = qavdw(qiac(i,i2),1)
+              sc_bq = qbvdw(qiac(i,i2),1)
+              sc_aj = qavdw(qiac(j,i2),1)
+              sc_bj = qbvdw(qiac(j,i2),1)
+
+              if (softcore_use_max_potential) then  ! min of the two, unless one is zero
+                 alpha_max_tmp = min ( alpha_in(i,i2), alpha_in(j,i2) )
+                 if ((alpha_in(i,i2) == 0) .or. (alpha_in(j,i2) == 0)) then
+                    alpha_max_tmp = max ( alpha_in(i,i2), alpha_in(j,i2) )
+                 end if
+              else
+                 alpha_max_tmp = max ( alpha_in(i,i2), alpha_in(j,i2) )
+              end if
+
+              if (softcore_use_max_potential) then
+                 if (ivdw_rule == 1) then
+                    sc_lookup(i,j+natyps,i2) = (-sc_bq*sc_bj+ &
+                         sqrt(sc_bq*sc_bq*sc_bj*sc_bj+ &
+                         4*alpha_max_tmp*sc_aq*sc_aj))/(2*alpha_max_tmp)
+                 else
+                    sc_lookup(i,j+natyps,i2) = (-2*sqrt(sc_bq*sc_bj)+ &
+                         2*sqrt(sc_bq*sc_bj+alpha_max_tmp*sqrt(sc_bq*sc_bj)))* &
+                         (sc_aq+sc_aj)**6/(2*alpha_max_tmp)
+                 end if
+              else
+                 sc_lookup(i,j+natyps,i2) = alpha_max_tmp
+              end if
+           end if
+        end do
+
+     end do  ! states
+  end do  ! softcore lookup table
+end subroutine populate_sc_lookup
+
+!-------------------------------------------------------------------------
+
+subroutine softcore_scale_beutler(nstates_in)
+!!-------------------------------------------------------------------------------
+!! Multiply the per-state r^6 softcore offset in sc_lookup by (1 - lambda_s)^2,
+!! producing the Beutler 1994 (Chem Phys Lett 222:529) Eq. 7 form for SC_BEUTLER_COUL:
+!!
+!!   V_LJ = eps * [ 1/(alpha*(1-lambda)^2 + (r/sigma)^6)^2
+!!                  - 1/(alpha*(1-lambda)^2 + (r/sigma)^6) ]
+!!
+!! Coulomb uses the s=p=6 case of Beutler's generalized Eq. 9:
+!!
+!!   V_C  = q_i*q_j / [alpha_C*(1-lambda)^2 + r^6]^(1/6)
+!!
+!! NOT Eq. 8 (p=2, the form Beutler favored). The s=p=6 choice lets LJ and
+!! Coulomb share the same r^6 offset (sc_lookup is reused for both); the trade-off
+!! is the high-order root in the Coulomb denominator. Both forms are valid under
+!! Beutler's Eq. 9 criterion (s>1, p>1) and remove the singularity at r=0.
+!!
+!! Consequence per window:
+!!   lambda_s = 1 (coupled endpoint):   offset = 0   -> standard LJ + Coulomb.
+!!   lambda_s = 0 (decoupled endpoint): offset = full -> bounded V at r=0,
+!!                                                       protects per-state energy
+!!                                                       evaluation against collapsed
+!!                                                       ghost-atom configurations.
+!!   intermediate:                      offset = full * (1 - lambda_s)^2.
+!!
+!! The scaling is applied to the r^6 offset itself, not to the alpha value in the
+!! FEP file. Under softcore_use_max_potential, that alpha is interpreted as the
+!! target max V at r=0 and is mapped to an offset via the quadratic in
+!! populate_sc_lookup. Beutler's (1-lambda)^2 factor lives on the offset; scaling
+!! the max-V target would propagate inversely through the quadratic and produce
+!! larger (not smaller) offsets at intermediate lambdas.
+!!
+!! Preconditions: sc_lookup must already be populated from alpha_max, and
+!! EQ(:)%lambda must be set. Call from get_fep, after qatom_load_fep returns.
+!! Restart-safe: sc_lookup is rebuilt from alpha_max on every fep load, so the
+!! scaling never stacks across restarts.
+!!-------------------------------------------------------------------------------
+  integer, intent(in) :: nstates_in
+  integer :: istate
+  real(8) :: scale, lam
+
+  if (softcore_method /= SC_BEUTLER_COUL) return
+
+  do istate = 1, nstates_in
+     lam = EQ(istate)%lambda
+     if (lam < -1.0e-6_8 .or. lam > 1.0_8 + 1.0e-6_8) then
+        write(*,'(a,i0,a,f8.4)') &
+             'WARNING: softcore_scale_beutler: lambda for state ', istate, &
+             ' is outside [0,1]: ', lam
+     end if
+     scale = (1.0_8 - lam)**2
+     sc_lookup(:, :, istate) = sc_lookup(:, :, istate) * scale
+  end do
+
+  write(*,'(a)') 'Beutler softcore r^6 offset scaled by (1 - lambda_state)^2.'
+end subroutine softcore_scale_beutler
 
 !-------------------------------------------------------------------------
 

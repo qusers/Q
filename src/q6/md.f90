@@ -1765,6 +1765,11 @@ subroutine get_fep
       qbvdw(:,3) = sqrt( qbvdw(:,3) )
     end if
 
+    !Scale Beutler softcore alpha by (1 - lambda_state)^2 (textbook Beutler 1994 Eq. 7).
+    !softcore_scale_beutler and softcore_init_gapsys each self-guard on softcore_method,
+    !so their order is irrelevant; only one ever does work.
+    if (softcore_method == SC_BEUTLER_COUL) call softcore_scale_beutler(nstates)
+
     !Compute Gapsys linearization radii if method is gapsys
     if (softcore_method == SC_GAPSYS) call softcore_init_gapsys(nstates)
 
