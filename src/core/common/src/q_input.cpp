@@ -3,6 +3,8 @@
 
 #include "constants.h"
 #include "context.h"
+#include "helpers.h"
+#include "str_helpers.h"
 
 #include <algorithm>
 #include <cctype>
@@ -22,85 +24,6 @@
 q_input_mode_t q_input_mode = Q_INPUT_CSV;
 bool q_native_fresh_start = false;
 
-static void fatal(const std::string &message) {
-    printf(">>> FATAL: %s\n", message.c_str());
-    exit(EXIT_FAILURE);
-}
-
-static bool file_exists(const std::string &path) {
-    return access(path.c_str(), F_OK) == 0;
-}
-
-static std::string trim(const std::string &value) {
-    size_t first = value.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos) return "";
-    size_t last = value.find_last_not_of(" \t\r\n");
-    return value.substr(first, last - first + 1);
-}
-
-static std::string strip_comment(const std::string &line) {
-    size_t bang = line.find('!');
-    if (bang == std::string::npos) return trim(line);
-    return trim(line.substr(0, bang));
-}
-
-static std::string lower_normalized(std::string value) {
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
-        if (c == '_') return '-';
-        return (char) std::tolower(c);
-    });
-    return value;
-}
-
-static std::vector<std::string> split_ws(const std::string &line) {
-    std::vector<std::string> fields;
-    std::istringstream iss(line);
-    std::string field;
-    while (iss >> field) fields.push_back(field);
-    return fields;
-}
-
-static std::vector<std::vector<std::string> > split_groups(const std::vector<std::string> &flat, size_t width) {
-    std::vector<std::vector<std::string> > groups;
-    for (size_t i = 0; i + width <= flat.size(); i += width) {
-        groups.push_back(std::vector<std::string>(flat.begin() + i, flat.begin() + i + width));
-    }
-    return groups;
-}
-
-static std::string dirname_of(const std::string &path) {
-    size_t slash = path.find_last_of('/');
-    if (slash == std::string::npos) return ".";
-    if (slash == 0) return "/";
-    return path.substr(0, slash);
-}
-
-static bool is_absolute(const std::string &path) {
-    return !path.empty() && path[0] == '/';
-}
-
-static std::string join_path(const std::string &left, const std::string &right) {
-    if (left.empty() || left == ".") return right;
-    if (!right.empty() && right[0] == '/') return right;
-    if (left[left.size() - 1] == '/') return left + right;
-    return left + "/" + right;
-}
-
-static std::string resolve_existing_or_cwd(const std::string &value, const std::string &input_dir) {
-    if (value.empty()) return "";
-    if (is_absolute(value)) return value;
-    std::string input_relative = join_path(input_dir, value);
-    if (file_exists(input_relative)) return input_relative;
-    char cwd[1024];
-    if (getcwd(cwd, sizeof(cwd)) == NULL) fatal("Could not determine current working directory.");
-    return join_path(cwd, value);
-}
-
-static std::string resolve_output_path(const std::string &value, const std::string &input_dir) {
-    if (value.empty()) return "";
-    if (is_absolute(value)) return value;
-    return join_path(input_dir, value);
-}
 
 static std::string bool_value(const std::map<std::string, std::string> &values, const std::string &key, const std::string &fallback) {
     std::map<std::string, std::string>::const_iterator it = values.find(key);

@@ -56,7 +56,7 @@ void write_header(const char* filename) {
     FILE* fp;
 
     char path[1024];
-    sprintf(path, "%s/output/%s", ctx.base_folder.c_str(), filename);
+    sprintf(path, "%s/output/%s", ctx.command_info.csv_dir.c_str(), filename);
 
     fp = fopen(path, "w");
 
@@ -73,7 +73,7 @@ void write_energy_header() {
     FILE* fp;
 
     char path[1024];
-    sprintf(path, "%s/output/%s", ctx.base_folder.c_str(), "energies.csv");
+    sprintf(path, "%s/output/%s", ctx.command_info.csv_dir.c_str(), "energies.csv");
 
     fp = fopen(path, "w");
 
@@ -100,7 +100,7 @@ void write_coords(int iteration) {
     int i;
 
     char path[1024];
-    sprintf(path, "%s/output/%s", ctx.base_folder.c_str(), "coords.csv");
+    sprintf(path, "%s/output/%s", ctx.command_info.csv_dir.c_str(), "coords.csv");
 
     fp = fopen(path, "a");
 
@@ -123,7 +123,7 @@ void write_velocities(int iteration) {
     int i;
 
     char path[1024];
-    sprintf(path, "%s/output/%s", ctx.base_folder.c_str(), "velocities.csv");
+    sprintf(path, "%s/output/%s", ctx.command_info.csv_dir.c_str(), "velocities.csv");
 
     fp = fopen(path, "a");
 
@@ -146,7 +146,7 @@ void write_energies(int iteration) {
     FILE* fp;
 
     char path[1024];
-    sprintf(path, "%s/output/%s", ctx.base_folder.c_str(), "energies.csv");
+    sprintf(path, "%s/output/%s", ctx.command_info.csv_dir.c_str(), "energies.csv");
 
     fp = fopen(path, "a");
 
