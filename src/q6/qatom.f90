@@ -165,12 +165,18 @@ module qatom
 
   ! Soft-core method configuration
   integer                                 :: softcore_method = SC_STANDARD
+  ! Gapsys 2012 soft-core parameters (J. Chem. Theory Comput. 8, 2373; SI Eqs. 1.1-1.4).
+  ! Defaults follow the paper (alpha_LJ=0.85, alpha_Q=0.3, sigma_Q=1.0).
   real(8)                                 :: gapsys_alpha_lj = 0.85_8
   real(8)                                 :: gapsys_alpha_q  = 0.3_8
-  real(8)                                 :: gapsys_sigma_lj = 0.3_8
-  ! Gapsys linearization radii: (nqat, natyps+nqat, nstates)
+  real(8)                                 :: gapsys_sigma_lj = 0.3_8   ! LJ sigma fallback for dummy atoms (C6=C12=0)
+  real(8)                                 :: gapsys_sigma_q  = 1.0_8   ! Paper Eq. 5 charge weighting (sigma_Q)
+  ! Gapsys LJ linearization radii: shape (nqat, natyps+nqat, nstates).
   real(8), allocatable                    :: gapsys_lj_rsc(:,:,:)
-  real(8), allocatable                    :: gapsys_q_rsc(:,:,:)
+  ! Gapsys Coulomb lambda-dependent factor: alpha_Q * (1 - lambda_state)^(1/6).
+  ! Shape (nqat, nstates). The partner-charge factor (1 + sigma_Q*|q_i*q_j|)
+  ! is multiplied at runtime in the nonbonded routines where q_j is known.
+  real(8), allocatable                    :: gapsys_q_lambda_factor(:,:)
 
   !-----------------------------------------------------------------------
   !       fep/evb energies
@@ -229,7 +235,7 @@ subroutine qatom_shutdown
   deallocate(offd, offd2, stat=alloc_status)
   if (allocated(qq_el_scale)) deallocate(qq_el_scale)
   if (allocated(gapsys_lj_rsc)) deallocate(gapsys_lj_rsc)
-  if (allocated(gapsys_q_rsc)) deallocate(gapsys_q_rsc)
+  if (allocated(gapsys_q_lambda_factor)) deallocate(gapsys_q_lambda_factor)
 end subroutine qatom_shutdown
 
 
@@ -336,6 +342,7 @@ logical function qatom_load_atoms(fep_file)
           yes = prm_get_real8_by_key('gapsys_scale_linpoint_lj', gapsys_alpha_lj, 0.85_8)
           yes = prm_get_real8_by_key('gapsys_scale_linpoint_q', gapsys_alpha_q, 0.3_8)
           yes = prm_get_real8_by_key('gapsys_sigma_lj', gapsys_sigma_lj, 0.3_8)
+          yes = prm_get_real8_by_key('gapsys_sigma_q',  gapsys_sigma_q,  1.0_8)
        end if
 
        ! Print selected soft-core method
@@ -345,9 +352,11 @@ logical function qatom_load_atoms(fep_file)
        case(SC_BEUTLER_COUL)
           write(*,'(a)') 'Soft-core method: beutler_coul (LJ + Coulomb)'
        case(SC_GAPSYS)
-          write(*,'(a,f6.3,a,f6.3,a,f6.3)') &
+          write(*,'(a,f6.3,a,f6.3,a,f6.3,a,f6.3,a)') &
                'Soft-core method: gapsys (alpha_lj=', gapsys_alpha_lj, &
-               ' alpha_q=', gapsys_alpha_q, ' sigma_lj=', gapsys_sigma_lj, ')'
+               ' alpha_q=', gapsys_alpha_q, &
+               ' sigma_lj=', gapsys_sigma_lj, &
+               ' sigma_q=', gapsys_sigma_q, ')'
        end select
 
        offset = -1 
@@ -1873,67 +1882,89 @@ end subroutine softcore_scale_beutler
 
 subroutine softcore_init_gapsys(nstates_in)
 !!-------------------------------------------------------------------------------
-!!  Compute Gapsys linearization radii for LJ and Coulomb interactions.
-!!  Must be called after lambdas (EQ%lambda) and softcore (sc_lookup) are set.
-!!  Allocates and fills gapsys_lj_rsc and gapsys_q_rsc arrays.
+!! Compute Gapsys (Gapsys, Seeliger, de Groot 2012, JCTC 8, 2373) soft-core
+!! linearization radii. Must be called after lambdas (EQ%lambda) are set.
+!!
+!! Lambda convention (Q vs paper):
+!!   The paper uses a global lambda with H = (1-lambda)*H_A + lambda*H_B.
+!!   In the paper's formulas r_sc_A ~ lambda^(1/6), r_sc_B ~ (1-lambda)^(1/6),
+!!   so the decoupled state (lambda=1 for A, lambda=0 for B) always carries
+!!   full soft-core. Q uses per-state lambdas where EQ(istate)%lambda = 1 means
+!!   the state is fully coupled (real, hard-core expected) and = 0 means fully
+!!   decoupled (ghost, full soft-core expected). Translating to Q's convention
+!!   gives r_sc ~ (1 - EQ(istate)%lambda)^(1/6).
+!!
+!! LJ radius (paper Eq. before Eq. 5, SI Eq. before 1.1, in Q convention):
+!!   r_LJ = alpha_LJ * [(26/7) * sigma^6 * (1 - lambda_state)]^(1/6)
+!! Coulomb radius (paper Eq. 5, SI S9, in Q convention):
+!!   r_Q  = alpha_Q  * (1 + sigma_Q*|q_i*q_j|) * (1 - lambda_state)^(1/6)
+!!
+!! We pre-compute the LJ radius per (q-atom, partner-type-or-q-atom, state).
+!! For Coulomb, only the partner-charge-independent factor
+!!     alpha_Q * (1 - lambda_state)^(1/6)
+!! is pre-computed per (q-atom, state); the (1 + sigma_Q*|q_i*q_j|) factor is
+!! applied at runtime in each nonbonded routine, where the partner charge q_j
+!! is in scope. This makes Q-protein, Q-water, and Q-Q Coulomb soft-core all
+!! faithfully match paper Eq. 5 (the per-type lookup approach in any prior
+!! formulation could only use |q_i| for Q-protein because the partner charge
+!! is per-atom, not per-type, which dropped the q_j dependence).
 !!-------------------------------------------------------------------------------
   integer, intent(in) :: nstates_in
   integer :: iq, jt, istate, iaci, iacj
-  real(8) :: lambda_st, sigma, C6, C12, qi, qj_dummy
-  real(8) :: r_sc_lj, r_sc_q
+  real(8) :: lambda_st, one_minus_lambda, sigma, C6, C12
+  real(8) :: r_sc_lj
 
   if(softcore_method /= SC_GAPSYS) return
 
-  ! Allocate linearization radius lookup tables
-  if(allocated(gapsys_lj_rsc)) deallocate(gapsys_lj_rsc)
-  if(allocated(gapsys_q_rsc))  deallocate(gapsys_q_rsc)
+  ! Allocate linearization lookups
+  if(allocated(gapsys_lj_rsc))          deallocate(gapsys_lj_rsc)
+  if(allocated(gapsys_q_lambda_factor)) deallocate(gapsys_q_lambda_factor)
   allocate(gapsys_lj_rsc(nqat, natyps+nqat, nstates_in))
-  allocate(gapsys_q_rsc(nqat, natyps+nqat, nstates_in))
+  allocate(gapsys_q_lambda_factor(nqat, nstates_in))
 
-  gapsys_lj_rsc(:,:,:) = 0.0_8
-  gapsys_q_rsc(:,:,:)  = 0.0_8
+  gapsys_lj_rsc(:,:,:)        = 0.0_8
+  gapsys_q_lambda_factor(:,:) = 0.0_8
 
   do istate = 1, nstates_in
-    lambda_st = EQ(istate)%lambda
-    if(lambda_st < 1.0e-10_8) cycle  ! no softening at lambda=0
+    lambda_st        = EQ(istate)%lambda
+    one_minus_lambda = 1.0_8 - lambda_st
+    ! Coupled endpoint (lambda_state = 1): r_sc = 0 and the runtime
+    ! "r < r_sc" branch is never taken. Leave both arrays at zero for
+    ! this state -- standard LJ/Coulomb applies, as required.
+    if(one_minus_lambda < 1.0e-10_8) cycle
 
     do iq = 1, nqat
-      if(alpha_max(iq, istate) < 1.0e-6_8) cycle  ! no softcore for this q-atom/state
+      if(alpha_max(iq, istate) < 1.0e-6_8) cycle  ! soft-core disabled for this q-atom/state
 
-      qi = qcrg(iq, istate)
       iaci = qiac(iq, istate)
+
+      ! Coulomb: lambda-dependent factor only (partner-charge factor at runtime).
+      gapsys_q_lambda_factor(iq, istate) = &
+           gapsys_alpha_q * one_minus_lambda**(1.0_8/6.0_8)
 
       ! Q-atom vs surroundings (atom types 1..natyps)
       do jt = 1, natyps
         if(ivdw_rule == VDW_GEOMETRIC) then
           C12 = qavdw(iaci,1) * iaclib(jt)%avdw(1)
           C6  = qbvdw(iaci,1) * iaclib(jt)%bvdw(1)
-        else
-          ! arithmetic rule: sigma = (R*_i + R*_j), eps = sqrt(eps_i * eps_j)
-          sigma = qavdw(iaci,1) + iaclib(jt)%avdw(1)
-          C6  = qbvdw(iaci,1) * iaclib(jt)%bvdw(1)
-        end if
-
-        ! LJ linearization radius
-        if(ivdw_rule == VDW_GEOMETRIC) then
-          if(C6 > 0 .and. C12 > 0) then
+          if(C6 > 0.0_8 .and. C12 > 0.0_8) then
             sigma = (C12/C6)**(1.0_8/6.0_8)
           else
-            sigma = gapsys_sigma_lj
+            sigma = gapsys_sigma_lj  ! Fallback for DUM atoms
           end if
-        else
-          ! sigma is already (R*_i + R*_j) from arithmetic rule
+        else  ! arithmetic (Lorentz-Berthelot) rule:
+          ! Q's arithmetic libraries (AMBER14sb.prm, CHARMM36.prm) store
+          ! R* = R_min/2 per atom (Q's standard LJ formula consumes R_min^12
+          ! and 2*R_min^6 directly). The sum qavdw + avdw therefore yields
+          ! R_min_pair, NOT sigma_pair. Gapsys's r_sc formula expects sigma
+          ! (zero-crossing radius), so divide by 2^(1/6) to convert
+          ! R_min_pair to sigma_pair.
+          sigma = (qavdw(iaci,1) + iaclib(jt)%avdw(1)) / 2.0_8**(1.0_8/6.0_8)
           if(sigma < 1.0e-10_8) sigma = gapsys_sigma_lj
         end if
-        r_sc_lj = gapsys_alpha_lj * ((26.0_8/7.0_8) * sigma**6 * lambda_st)**(1.0_8/6.0_8)
+        r_sc_lj = gapsys_alpha_lj * &
+                  ((26.0_8/7.0_8) * sigma**6 * one_minus_lambda)**(1.0_8/6.0_8)
         gapsys_lj_rsc(iq, jt, istate) = r_sc_lj
-
-        ! Coulomb linearization radius (use dummy charge=0 for protein atoms)
-        ! For q-protein, we don't know the specific partner charge at this point,
-        ! so we compute a conservative estimate using |qi| only.
-        ! The actual partner charge is applied in the nonbonded routine.
-        r_sc_q = gapsys_alpha_q * (1.0_8 + abs(qi)) * lambda_st**(1.0_8/6.0_8)
-        gapsys_q_rsc(iq, jt, istate) = r_sc_q
       end do
 
       ! Q-atom vs Q-atoms (indices natyps+1..natyps+nqat)
@@ -1942,33 +1973,83 @@ subroutine softcore_init_gapsys(nstates_in)
         if(ivdw_rule == VDW_GEOMETRIC) then
           C12 = qavdw(iaci,1) * qavdw(iacj,1)
           C6  = qbvdw(iaci,1) * qbvdw(iacj,1)
-        else
-          sigma = qavdw(iaci,1) + qavdw(iacj,1)
-          C6  = qbvdw(iaci,1) * qbvdw(iacj,1)
-        end if
-
-        ! LJ linearization radius
-        if(ivdw_rule == VDW_GEOMETRIC) then
-          if(C6 > 0 .and. C12 > 0) then
+          if(C6 > 0.0_8 .and. C12 > 0.0_8) then
             sigma = (C12/C6)**(1.0_8/6.0_8)
           else
             sigma = gapsys_sigma_lj
           end if
-        else
+        else  ! arithmetic rule: same R*-to-sigma conversion as Q-protein above.
+          sigma = (qavdw(iaci,1) + qavdw(iacj,1)) / 2.0_8**(1.0_8/6.0_8)
           if(sigma < 1.0e-10_8) sigma = gapsys_sigma_lj
         end if
-        r_sc_lj = gapsys_alpha_lj * ((26.0_8/7.0_8) * sigma**6 * lambda_st)**(1.0_8/6.0_8)
+        r_sc_lj = gapsys_alpha_lj * &
+                  ((26.0_8/7.0_8) * sigma**6 * one_minus_lambda)**(1.0_8/6.0_8)
         gapsys_lj_rsc(iq, jt+natyps, istate) = r_sc_lj
-
-        ! Coulomb linearization radius
-        qj_dummy = qcrg(jt, istate)
-        r_sc_q = gapsys_alpha_q * (1.0_8 + abs(qi*qj_dummy)) * lambda_st**(1.0_8/6.0_8)
-        gapsys_q_rsc(iq, jt+natyps, istate) = r_sc_q
       end do
     end do
   end do
 
-  write(*,'(a)') 'Gapsys linearization radii initialized.'
+  write(*,'(a)') 'Gapsys linearization radii initialized (1-lambda_state convention, SI Eqs. 1.1-1.4).'
 end subroutine softcore_init_gapsys
+
+!-------------------------------------------------------------------------
+
+pure subroutine gapsys_eval_lj(C12, C6, r_sc_lj, r_ij, V_lin, F_lin)
+!!-------------------------------------------------------------------------------
+!! Gapsys 2012 SI Eq. 1.1 (force) and Eq. 1.3 (energy) for r_ij < r_sc_lj.
+!! V_lin(r) = a*r^2 - b*r + c with
+!!   a = 78*C12/r_sc^14 - 21*C6/r_sc^8
+!!   b = 168*C12/r_sc^13 - 48*C6/r_sc^7
+!!   c = 91*C12/r_sc^12 - 28*C6/r_sc^6
+!! F_radial_lin(r) = -dV/dr = -2*a*r + b
+!! Continuity at r_sc verified by SI Eqs. 2.1, 2.3 (the limits reduce to the
+!! classical LJ force and potential).
+!!-------------------------------------------------------------------------------
+  real(8), intent(in)  :: C12, C6, r_sc_lj, r_ij
+  real(8), intent(out) :: V_lin, F_lin
+  real(8) :: inv, inv2, inv6, inv7, inv8, inv12, inv13, inv14
+  real(8) :: a_lj, b_lj, c_lj
+
+  inv   = 1.0_8 / r_sc_lj
+  inv2  = inv*inv
+  inv6  = inv2*inv2*inv2
+  inv7  = inv6*inv
+  inv8  = inv6*inv2
+  inv12 = inv6*inv6
+  inv13 = inv12*inv
+  inv14 = inv12*inv2
+  a_lj  = 78.0_8  * C12 * inv14 - 21.0_8 * C6 * inv8
+  b_lj  = 168.0_8 * C12 * inv13 - 48.0_8 * C6 * inv7
+  c_lj  = 91.0_8  * C12 * inv12 - 28.0_8 * C6 * inv6
+  V_lin = a_lj*r_ij*r_ij - b_lj*r_ij + c_lj
+  F_lin = -2.0_8*a_lj*r_ij + b_lj
+end subroutine gapsys_eval_lj
+
+!-------------------------------------------------------------------------
+
+pure subroutine gapsys_eval_q(qq, r_sc_q, r_ij, V_lin, F_lin)
+!!-------------------------------------------------------------------------------
+!! Gapsys 2012 SI Eq. 1.2 (force) and Eq. 1.4 (energy) for r_ij < r_sc_q.
+!! qq must be the fully-scaled product q_i*q_j (caller multiplies any 1-4 or
+!! electrostatic scaling factor in advance).
+!! V_lin(r) = a*r^2 - b*r + c with
+!!   a = qq/r_sc^3, b = 3*qq/r_sc^2, c = 3*qq/r_sc
+!! F_radial_lin(r) = -dV/dr = -2*a*r + b
+!! Continuity at r_sc verified by SI Eqs. 2.2, 2.4.
+!!-------------------------------------------------------------------------------
+  real(8), intent(in)  :: qq, r_sc_q, r_ij
+  real(8), intent(out) :: V_lin, F_lin
+  real(8) :: inv, inv2, inv3
+  real(8) :: a_q, b_q, c_q
+
+  inv   = 1.0_8 / r_sc_q
+  inv2  = inv*inv
+  inv3  = inv2*inv
+  a_q   = qq * inv3
+  b_q   = 3.0_8 * qq * inv2
+  c_q   = 3.0_8 * qq * inv
+  V_lin = a_q*r_ij*r_ij - b_q*r_ij + c_q
+  F_lin = -2.0_8*a_q*r_ij + b_q
+end subroutine gapsys_eval_q
 
 end module qatom
