@@ -4,10 +4,10 @@
 
 namespace CudaImproper2Force {
 bool is_initialized = false;
-double* d_energy_sum;
+real_t* d_energy_sum;
 }  // namespace CudaImproper2Force
 
-__global__ void calc_improper2_forces_kernel(int start, int end, improper_t* impropers, cimproper_t* cimpropers, coord_t* coords, dvel_t* dvelocities, double* energy_sum) {
+__global__ void calc_improper2_forces_kernel(int start, int end, improper_t* impropers, cimproper_t* cimpropers, coord_t* coords, dvel_t* dvelocities, real_t* energy_sum) {
     int i = blockIdx.x * blockDim.x + threadIdx.x + start;
     if (i >= end) return;
 
@@ -15,8 +15,8 @@ __global__ void calc_improper2_forces_kernel(int start, int end, improper_t* imp
 
     coord_t ai, aj, ak, al;
     coord_t rji, rjk, rkl, rnj, rnk, rki, rlj;
-    double bj2inv, bk2inv, bjinv, bkinv;
-    double cos_phi, phi, arg, ener, dv, f1;
+    real_t bj2inv, bk2inv, bjinv, bkinv;
+    real_t cos_phi, phi, arg, ener, dv, f1;
     coord_t di, dl, dpi, dpj, dpk, dpl;
 
     improper_t imp;
@@ -51,8 +51,8 @@ __global__ void calc_improper2_forces_kernel(int start, int end, improper_t* imp
     rnk.y = -rjk.z * rkl.x + rjk.x * rkl.z;
     rnk.z = -rjk.x * rkl.y + rjk.y * rkl.x;
 
-    bj2inv = 1 / (pow(rnj.x, 2) + pow(rnj.y, 2) + pow(rnj.z, 2));
-    bk2inv = 1 / (pow(rnk.x, 2) + pow(rnk.y, 2) + pow(rnk.z, 2));
+    bj2inv = 1 / (rnj.x * rnj.x + rnj.y * rnj.y + rnj.z * rnj.z);
+    bk2inv = 1 / (rnk.x * rnk.x + rnk.y * rnk.y + rnk.z * rnk.z);
     bjinv = sqrt(bj2inv);
     bkinv = sqrt(bk2inv);
 
@@ -76,7 +76,7 @@ __global__ void calc_improper2_forces_kernel(int start, int end, improper_t* imp
 
     // Forces
     f1 = sin(phi);
-    if (fabs(f1) < 1E-12) f1 = 1E-12;
+    if (fabs(f1) < k_singular_sin_epsilon) f1 = copysign(k_singular_sin_epsilon, f1);
     f1 = -1 / f1;
     // printf("f1 = %f phi = %f cos_phi = %f\n", f1, phi, cos_phi);
 
@@ -124,15 +124,15 @@ __global__ void calc_improper2_forces_kernel(int start, int end, improper_t* imp
     atomicAdd(&dvelocities[ali].z, dv * dpl.z);
 }
 
-double calc_improper2_forces_host(int start, int end) {
+real_t calc_improper2_forces_host(int start, int end) {
     int N = end - start;
     if (N <= 0) return 0.0;
     using namespace CudaImproper2Force;
     int blockSize = 256;
     int numBlocks = (N + blockSize - 1) / blockSize;
 
-    double energy = 0.0;
-    cudaMemcpy(d_energy_sum, &energy, sizeof(double), cudaMemcpyHostToDevice);
+    real_t energy = 0.0;
+    cudaMemcpy(d_energy_sum, &energy, sizeof(real_t), cudaMemcpyHostToDevice);
 
     auto& host_ctx = Context::instance();
     coord_t* d_coords = host_ctx.coords->gpu_data_p;
@@ -142,14 +142,14 @@ double calc_improper2_forces_host(int start, int end) {
 
     calc_improper2_forces_kernel<<<numBlocks, blockSize>>>(start, end, d_impropers, d_cimpropers, d_coords, d_dvelocities, d_energy_sum);
     cudaDeviceSynchronize();
-    cudaMemcpy(&energy, d_energy_sum, sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&energy, d_energy_sum, sizeof(real_t), cudaMemcpyDeviceToHost);
     return energy;
 }
 
 void init_improper2_force_kernel_data() {
     using namespace CudaImproper2Force;
     if (!is_initialized) {
-        check_cudaMalloc((void**)&d_energy_sum, sizeof(double));
+        check_cudaMalloc((void**)&d_energy_sum, sizeof(real_t));
         is_initialized = true;
     }
 }
