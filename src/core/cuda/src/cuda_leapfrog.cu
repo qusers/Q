@@ -88,6 +88,7 @@ void calc_leapfrog_host() {
             velocities[i].y = (coords[i].y - xcoords[i].y) / host.dt;
             velocities[i].z = (coords[i].z - xcoords[i].z) / host.dt;
         }
+        host.velocities->upload();
     }
 }
 

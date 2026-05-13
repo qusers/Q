@@ -128,7 +128,13 @@ class Context {
     */
 
     int n_shake_constraints;
+    int n_shake_groups;
     std::unique_ptr<HostDeviceBuffer<int>> mol_n_shakes;
+    std::unique_ptr<HostDeviceBuffer<int>> mol_n_shake_groups;
+    std::unique_ptr<HostDeviceBuffer<int>> mol_shake_group_offset;
+    std::unique_ptr<HostDeviceBuffer<int>> shake_group_offset;
+    std::unique_ptr<HostDeviceBuffer<int>> shake_group_size;
+    std::unique_ptr<HostDeviceBuffer<int>> shake_group_indices;
     std::unique_ptr<HostDeviceBuffer<shake_bond_t>> shake_bonds;
     std::unique_ptr<HostDeviceBuffer<coord_t>> xcoords;  // todo: It's just a temporary variables...
     std::vector<int> molecules;

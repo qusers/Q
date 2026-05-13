@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <vector>
 
 #include "constants.h"
 #include "context.h"
@@ -435,7 +436,6 @@ void exclude_shaken_definitions() {
     int excluded;
     int solute_excluded;
     int bi = 0;
-    int si = 0;
     int ang_i = 0;
     int ai, aj;
     auto& shake_bonds = ctx.shake_bonds->cpu_data_p;
@@ -443,20 +443,17 @@ void exclude_shaken_definitions() {
     excluded = 0;
     solute_excluded = 0;
     auto& bonds = ctx.bonds->cpu_data_p;
-    if (ctx.n_shake_constraints > 0) {
-        for (int i = 0; i < ctx.n_bonds; i++) {
-            if (bonds[i].ai == shake_bonds[si].ai && bonds[i].aj == shake_bonds[si].aj) {
-                si++;
-                excluded++;
-                if (i < ctx.n_bonds_solute) solute_excluded++;
-            } else {
-                bonds[bi] = bonds[i];
-                bi++;
-            }
+    for (int i = 0; i < ctx.n_bonds; i++) {
+        if (bonds[i].code <= 0) {
+            excluded++;
+            if (i < ctx.n_bonds_solute) solute_excluded++;
+        } else {
+            bonds[bi] = bonds[i];
+            bi++;
         }
-        ctx.n_bonds -= excluded;
-        ctx.n_bonds_solute -= solute_excluded;
     }
+    ctx.n_bonds -= excluded;
+    ctx.n_bonds_solute -= solute_excluded;
 
     excluded = 0;
     solute_excluded = 0;
@@ -759,58 +756,165 @@ void init_shake() {
     auto* heavy = ctx.heavy->cpu_data_p;
     auto* excluded = ctx.excluded->cpu_data_p;
     int ai, aj;
-    int mol = 0;
-    int shake;
     int n_solute_shake_constraints = 0;
     double excl_shake = 0;
     auto& bonds = ctx.bonds->cpu_data_p;
     auto& cbonds = ctx.cbonds->cpu_data_p;
+    auto* lambdas = ctx.lambdas ? ctx.lambdas->cpu_data_p : nullptr;
+    std::vector<std::vector<shake_bond_t>> shakes_by_mol(ctx.n_molecules);
+
+    auto molecule_for_atom = [&ctx](int atom) {
+        int mol = 0;
+        while (mol + 1 < ctx.n_molecules && atom >= ctx.molecules[mol + 1]) {
+            mol += 1;
+        }
+        return mol;
+    };
+
+    auto add_or_replace_shake = [&shakes_by_mol](int mol, int atom_i, int atom_j, double dist2) {
+        for (auto& shake_bond : shakes_by_mol[mol]) {
+            if ((shake_bond.ai == atom_i && shake_bond.aj == atom_j) ||
+                (shake_bond.ai == atom_j && shake_bond.aj == atom_i)) {
+                shake_bond.ai = atom_i;
+                shake_bond.aj = atom_j;
+                shake_bond.dist2 = dist2;
+                shake_bond.ready = false;
+                return;
+            }
+        }
+
+        shake_bond_t shake_bond = {};
+        shake_bond.ai = atom_i;
+        shake_bond.aj = atom_j;
+        shake_bond.dist2 = dist2;
+        shake_bond.ready = false;
+        shakes_by_mol[mol].push_back(shake_bond);
+    };
 
     ctx.n_shake_constraints = 0;
-    ctx.mol_n_shakes = std::make_unique<HostDeviceBuffer<int>>(ctx.n_molecules, true, ctx.command_info.requested_gpu);
-    auto* mol_n_shakes = ctx.mol_n_shakes->cpu_data_p;
 
     for (int bi = 0; bi < ctx.n_bonds; bi++) {
+        if (bonds[bi].code == 0) continue;
+
         ai = bonds[bi].ai - 1;
         aj = bonds[bi].aj - 1;
 
-        while (mol + 1 < ctx.n_molecules && ai + 1 >= ctx.molecules[mol + 1]) {
-            // new molecule
-            mol += 1;
-        }
-
         if ((ctx.md.shake_hydrogens && (!heavy[ai] || !heavy[aj])) || (ctx.md.shake_solute && ai + 1 <= ctx.n_atoms_solute) || (ctx.md.shake_solvent && ai + 1 > ctx.n_atoms_solute)) {
-            mol_n_shakes[mol]++;
-            ctx.n_shake_constraints++;
+            int mol = molecule_for_atom(ai + 1);
+            add_or_replace_shake(mol, ai + 1, aj + 1, pow(cbonds[bonds[bi].code - 1].b0, 2));
 
+            // qgpu currently has no PBC/use_PBC flag. This follows the existing
+            // non-PBC accounting and matches Fortran when use_PBC is false.
             if (excluded[ai]) excl_shake += 0.5;
             if (excluded[aj]) excl_shake += 0.5;
+            bonds[bi].code = -1;
         }
+    }
+
+    for (int qi = 0; qi < ctx.n_qshakes; qi++) {
+        const q_shake_t& first_state = ctx.q_shakes[qi];
+        if (first_state.ai <= 0 || first_state.aj <= 0) continue;
+
+        double dist = 0.0;
+        for (int state = 0; state < ctx.n_lambdas; state++) {
+            const q_shake_t& q_shake = ctx.q_shakes[qi + state * ctx.n_qshakes];
+            dist += lambdas[state] * q_shake.dist;
+        }
+
+        int mol = molecule_for_atom(first_state.ai);
+        add_or_replace_shake(mol, first_state.ai, first_state.aj, dist * dist);
+    }
+
+    ctx.mol_n_shakes = std::make_unique<HostDeviceBuffer<int>>(ctx.n_molecules, true, ctx.command_info.requested_gpu);
+    auto* mol_n_shakes = ctx.mol_n_shakes->cpu_data_p;
+    for (int mol = 0; mol < ctx.n_molecules; mol++) {
+        mol_n_shakes[mol] = static_cast<int>(shakes_by_mol[mol].size());
+        ctx.n_shake_constraints += mol_n_shakes[mol];
     }
 
     ctx.shake_bonds = std::make_unique<HostDeviceBuffer<shake_bond_t>>(ctx.n_shake_constraints, true, ctx.command_info.requested_gpu);
     auto* shake_bonds = ctx.shake_bonds->cpu_data_p;
-    mol = 0;
-    shake = 0;
-    for (int bi = 0; bi < ctx.n_bonds; bi++) {
-        ai = bonds[bi].ai - 1;
-        aj = bonds[bi].aj - 1;
-
-        while (mol + 1 < ctx.n_molecules && ai + 1 >= ctx.molecules[mol + 1]) {
-            // new molecule
-            mol += 1;
-        }
-
-        if ((ctx.md.shake_hydrogens && (!heavy[ai] || !heavy[aj])) || (ctx.md.shake_solute && ai + 1 <= ctx.n_atoms_solute) || (ctx.md.shake_solvent && ai + 1 > ctx.n_atoms_solute)) {
-            shake_bonds[shake].ai = ai + 1;
-            shake_bonds[shake].aj = aj + 1;
-            shake_bonds[shake].dist2 = pow(cbonds[bonds[bi].code - 1].b0, 2);
+    int shake = 0;
+    for (int mol = 0; mol < ctx.n_molecules; mol++) {
+        for (const auto& shake_bond : shakes_by_mol[mol]) {
+            shake_bonds[shake] = shake_bond;
             shake++;
         }
     }
 
+    std::vector<int> mol_n_shake_groups(ctx.n_molecules, 0);
+    std::vector<int> mol_shake_group_offset(ctx.n_molecules, 0);
+    std::vector<int> shake_group_offset;
+    std::vector<int> shake_group_size;
+    std::vector<int> shake_group_indices;
+    int max_groups_per_molecule = 0;
+    int max_group_size = 0;
+
+    auto constraints_conflict = [shake_bonds](int lhs, int rhs) {
+        const auto& a = shake_bonds[lhs];
+        const auto& b = shake_bonds[rhs];
+        return a.ai == b.ai || a.ai == b.aj || a.aj == b.ai || a.aj == b.aj;
+    };
+
+    int mol_shake_offset = 0;
+    for (int mol = 0; mol < ctx.n_molecules; mol++) {
+        std::vector<std::vector<int>> groups;
+        for (int local_shake = 0; local_shake < mol_n_shakes[mol]; local_shake++) {
+            const int shake_index = mol_shake_offset + local_shake;
+            bool placed = false;
+            for (auto& group : groups) {
+                bool can_place = true;
+                for (const int grouped_shake : group) {
+                    if (constraints_conflict(shake_index, grouped_shake)) {
+                        can_place = false;
+                        break;
+                    }
+                }
+                if (can_place) {
+                    group.push_back(shake_index);
+                    placed = true;
+                    break;
+                }
+            }
+
+            if (!placed) {
+                groups.push_back({shake_index});
+            }
+        }
+
+        mol_shake_group_offset[mol] = static_cast<int>(shake_group_offset.size());
+        mol_n_shake_groups[mol] = static_cast<int>(groups.size());
+        max_groups_per_molecule = std::max(max_groups_per_molecule, mol_n_shake_groups[mol]);
+
+        for (const auto& group : groups) {
+            for (size_t i = 0; i < group.size(); i++) {
+                for (size_t j = i + 1; j < group.size(); j++) {
+                    if (constraints_conflict(group[i], group[j])) {
+                        printf(">>> FATAL: SHAKE group contains constraints sharing an atom\n");
+                        exit(EXIT_FAILURE);
+                    }
+                }
+            }
+
+            shake_group_offset.push_back(static_cast<int>(shake_group_indices.size()));
+            shake_group_size.push_back(static_cast<int>(group.size()));
+            max_group_size = std::max(max_group_size, static_cast<int>(group.size()));
+            shake_group_indices.insert(shake_group_indices.end(), group.begin(), group.end());
+        }
+
+        mol_shake_offset += mol_n_shakes[mol];
+    }
+
+    ctx.n_shake_groups = static_cast<int>(shake_group_offset.size());
+    ctx.mol_n_shake_groups = make_host_device_buffer_from_vector(mol_n_shake_groups, ctx.command_info.requested_gpu);
+    ctx.mol_shake_group_offset = make_host_device_buffer_from_vector(mol_shake_group_offset, ctx.command_info.requested_gpu);
+    ctx.shake_group_offset = make_host_device_buffer_from_vector(shake_group_offset, ctx.command_info.requested_gpu);
+    ctx.shake_group_size = make_host_device_buffer_from_vector(shake_group_size, ctx.command_info.requested_gpu);
+    ctx.shake_group_indices = make_host_device_buffer_from_vector(shake_group_indices, ctx.command_info.requested_gpu);
+
     // Get total number of shake constraints in solute (used for separate scaling of temperatures)
-    for (int i = 0; i < ctx.n_molecules - ctx.n_waters; i++) {
+    int n_waters = (ctx.n_atoms - ctx.n_atoms_solute) / 3;
+    for (int i = 0; i < ctx.n_molecules - n_waters; i++) {
         n_solute_shake_constraints += mol_n_shakes[i];
     }
 
@@ -827,6 +931,8 @@ void init_shake() {
     ctx.Ndegfree_solvent = 3 * (ctx.n_atoms - ctx.n_atoms_solute) - (ctx.n_shake_constraints - n_solute_shake_constraints);
     ctx.Ndegfree_solute = ctx.Ndegfree - ctx.Ndegfree_solvent;
 
+    printf("n_molecules = %d\n", ctx.n_molecules);
+    printf("n_shake_groups = %d, max_groups_per_molecule = %d, max_group_size = %d\n", ctx.n_shake_groups, max_groups_per_molecule, max_group_size);
     printf("n_shake_constrains = %d, n_solute_shake_constraints = %d, excl_shake = %f\n", ctx.n_shake_constraints, n_solute_shake_constraints, excl_shake);
 
     if (ctx.Ndegfree_solvent * ctx.Ndegfree_solute == 0) {
@@ -928,4 +1034,3 @@ void init_unified_atom_parameters() {
         ctx.unified_catypes->upload();
     }
 }
-

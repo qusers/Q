@@ -21,12 +21,12 @@ int calc_shake_constraints(coord_t* coords, coord_t* xcoords) {
         }
         int n_iterations = 0;
 
+        for (int i = 0; i < mol_n_shakes[mol]; i++) {
+            shake_bonds[shake + i].ready = false;
+        }
+
         bool converged = false;
         do {
-            for (int i = 0; i < mol_n_shakes[mol]; i++) {
-                shake_bonds[shake + i].ready = false;
-            }
-
             for (int i = 0; i < mol_n_shakes[mol]; i++) {
                 shake_bond_t& shake_bond = shake_bonds[shake + i];
                 if (!shake_bond.ready) {
@@ -72,6 +72,7 @@ int calc_shake_constraints(coord_t* coords, coord_t* xcoords) {
 
         if (!converged) {
             for (int i = 0; i < mol_n_shakes[mol]; i++) {
+                if (shake_bonds[shake + i].ready) continue;
                 const int ai = shake_bonds[shake + i].ai - 1;
                 const int aj = shake_bonds[shake + i].aj - 1;
                 coord_t xxij;
@@ -81,8 +82,8 @@ int calc_shake_constraints(coord_t* coords, coord_t* xcoords) {
                 xxij.y = xcoords[ai].y - xcoords[aj].y;
                 xxij.z = xcoords[ai].z - xcoords[aj].z;
                 xxij2 = std::pow(xxij.x, 2) + std::pow(xxij.y, 2) + std::pow(xxij.z, 2);
-                std::printf(">>> Shake failed, i = %d,j = %d, d = %f, d0 = %f", ai, aj, std::sqrt(xxij2),
-                            shake_bonds[shake + i].dist2);
+                std::printf(">>> Shake failed, i = %d,j = %d, d = %f, d0 = %f\n", ai + 1, aj + 1, std::sqrt(xxij2),
+                            std::sqrt(shake_bonds[shake + i].dist2));
             }
             std::exit(EXIT_FAILURE);
         }
