@@ -20,6 +20,92 @@ import compare
 
 lambdas = ['eq5', '0744_0256', '0998_0002']
 
+
+def get_default_testinfo():
+    return {
+                'p-p'               : [
+                                        'benzene-vacuum.top',
+                                        '20'
+                                      ],
+                'q-p_benzene'       : [
+                                       'Na-benzene-vacuum.top',
+                                       '20',
+                                       'FEP_benzene.fep'
+                                      ],
+                'q-p_Na'            : [
+                                       'Na-benzene-vacuum.top',
+                                       '20',
+                                       'FEP_Na.fep'
+                                      ],
+                'q-p-w_benzene'     : [
+                                       'Na-benzene-water.top',
+                                       '20',
+                                       'FEP_benzene.fep'
+                                      ],
+                'q-p-w_Na'          : [
+                                       'Na-benzene-water.top',
+                                       '20',
+                                       'FEP_Na.fep'
+                                      ],
+                'q-q'               : [
+                                       'benzene-vacuum.top',
+                                       '20',
+                                       'FEP_benzene.fep'
+                                      ],
+                'w-p'               : [
+                                       'benzene-water.top',
+                                       '20'
+                                      ],
+                'w-q'               : [
+                                       'benzene-water.top',
+                                       '20',
+                                       'FEP_benzene.fep'
+                                      ],
+                'w-w'               : [
+                                       'water.top',
+                                       '20'
+                                      ],
+                'boundary'          : [
+                                       'ala_wat.top',
+                                       '14'
+                                      ],
+                'polypeptide'       : [
+                                       'ala_wat.top',
+                                       '15'
+                                      ],
+                'polypeptide25'     : [
+                                       'ala_wat25.top',
+                                       '25'
+                                      ],
+                'q-q-large_vac'     : [
+                                       'dualtop_vacuum.top',
+                                       '22',
+                                       'dualtop.fep'
+                                      ],
+                'cdk2'              : [
+                                       'cdk2.top',
+                                       '22',
+                                       'FEPm_cdk2.fep',
+                                       'restraints_cdk2.inp'
+                                      ],
+                'thrombin'          : [
+                                       'thrombin.top',
+                                       '25',
+                                       'FEPm_thrombin.fep',
+                                       'restraints_thrombin.inp'
+                                      ],
+            }
+
+
+def resolve_path(path, base_dir=None):
+    if path is None:
+        return None
+    if os.path.isabs(path):
+        return path
+    if base_dir is not None:
+        return os.path.abspath(os.path.join(base_dir, path))
+    return os.path.abspath(path)
+
 class Create_Environment(object):
     """
         Creates the workdirectory environment.
@@ -112,7 +198,7 @@ class create_MD_input(object):
         _inv_lambda = None
         # Check if a lambda has been specified
 
-        if len(data['testinfo'][test]) >= 3 and data['lambda'] is not None:
+        if data.get('fep_path') is not None and data['lambda'] is not None:
             if not data['lambda'].startswith('eq'):
                 str_lambda = data['lambda'].split("_")[0]
                 str_inv_lambda = data['lambda'].split("_")[1]
@@ -156,31 +242,32 @@ energy                    0
 trajectory                0
 
 [files]
-topology                  {}{}
+topology                  {}
 final                     eq1.re
 """.format(data['timestep'],
            shake, shake, shake,
            data['testinfo'][data['test']][1],
-           data['topdir'],
-           data['topfile'])
-        if len(data['testinfo'][test]) >= 3:
-            filename = data['testinfo'][data['test']][2]
+           data['topology_path'])
+        if data.get('fep_path') is not None:
+            filename = data['fep_path']
+            fep_name = os.path.basename(filename)
 
             fep_part = """fep                       {}{}
 
 [lambdas]
-""".format(data['inputdir'], filename)
+""".format("" if os.path.isabs(filename) else "",
+           filename)
             if _lambda is not None:
                 fep_part += _lambda + " " + _inv_lambda + "\n"
             else:
-                if filename.startswith("FEPm"):
+                if fep_name.startswith("FEPm"):
                     fep_part += "0.500 0.500\n"
                 else:
                     fep_part += "1.000 0.000\n"
             md_content = md_content + fep_part
         # Check if there are boundary conditions
-        if len(data['testinfo'][test]) >= 4:
-            filename = data['inputdir'] + '/' + data['testinfo'][data['test']][3]
+        if data.get('restraints_path') is not None:
+            filename = data['restraints_path']
             with open(filename, 'r') as f:
                 restraint_part = f.read()
                 md_content = md_content + restraint_part
@@ -199,6 +286,15 @@ class Run_Q6(object):
             result = subprocess.run(args, cwd=run_dir, stdout=outfile, stderr=subprocess.STDOUT)
         if result.returncode != 0:
             raise RuntimeError('Q6 failed with exit code {}'.format(result.returncode))
+        with open(log_path) as infile:
+            q6_log = infile.read()
+        if 'ABNORMAL TERMINATION' in q6_log or 'STOP qdyn terminated abnormally' in q6_log:
+            reason = 'unknown reason'
+            for line in q6_log.splitlines():
+                if '>>> Error:' in line:
+                    reason = line.strip()
+                    break
+            raise RuntimeError('Q6 terminated abnormally: {}'.format(reason))
 
 class Parse_Q6_data(object):
     def __init__(self,data):
@@ -275,16 +371,14 @@ def prepare_qgpu_csv_input(data):
     os.mkdir(csv_dir)
     os.mkdir(os.path.join(csv_dir, 'output'))
 
-    top_file = '{}{}'.format(data['topdir'], data['topfile'])
-    top_data = TOPOLOGY.Read_Topology(top_file).Q()
+    top_data = TOPOLOGY.Read_Topology(data['topology_path']).Q()
     TOPOLOGY.Write_Topology(top_data).CSV(csv_dir + '/')
 
     md_data = MD.Read_MD('eq1.inp').Q()
     MD.Write_MD(md_data).CSV(csv_dir + '/')
 
-    if len(data['testinfo'][data['test']]) >= 3:
-        fep_file = '{}{}'.format(data['inputdir'], data['testinfo'][data['test']][2])
-        fep_data = FEP.Read_Fep(fep_file).Q()
+    if data.get('fep_path') is not None:
+        fep_data = FEP.Read_Fep(data['fep_path']).Q()
     else:
         fep_data = FEP.Read_Fep(None).EMPTY()
     FEP.Write_Fep(fep_data).CSV(csv_dir + '/')
@@ -425,12 +519,13 @@ class Compare(object):
 
         final_key = data.get('q6_final_key')
         ordered_keys = sorted(Q6_data.keys(), key=lambda key: int(key) if str(key).isdigit() else 10**12)
+        comparable_keys = [key for key in ordered_keys if key != final_key]
+        if not comparable_keys:
+            raise RuntimeError('No Q6 energy frames were parsed from {}'.format(Q6_data_file))
 
         # loop over each step and run the comparison
         compared = False
-        for key in ordered_keys:
-            if key == final_key:
-                continue
+        for key in comparable_keys:
             compared = True
             #print('Comparing energies for frame {}'.format(key))
             Q6_tmp = Q6_data[key]
@@ -506,8 +601,28 @@ class Init(object):
         self.data = data
         self.data['curdir'] = os.getcwd()
         self.data['executable'] = sys.executable
-        self.data['topdir'] = '{}test/data/topology/'.format(settings.ROOT)
-        self.data['inputdir']   = '{}test/data/inputs/'.format(settings.ROOT)
+        self.data['topdir'] = os.path.join(settings.ROOT, 'test/data/topology')
+        self.data['inputdir'] = os.path.join(settings.ROOT, 'test/data/inputs')
+
+        if self.data['wd'] is None:
+            self.data['wd'] = self.data['curdir'] + '/'
+        if self.data['wd'][-1] != '/':
+            self.data['wd'] = self.data['wd'] + '/'
+
+        self.data['testinfo'] = get_default_testinfo()
+
+        if self.data['custom_top'] is not None:
+            custom_info = [
+                os.path.basename(self.data['custom_top']),
+                self.data['custom_shell_radius']
+            ]
+            if self.data['custom_fep'] is not None:
+                custom_info.append(os.path.basename(self.data['custom_fep']))
+            if self.data['custom_restraints'] is not None:
+                while len(custom_info) < 3:
+                    custom_info.append(None)
+                custom_info.append(os.path.basename(self.data['custom_restraints']))
+            self.data['testinfo'][self.data['custom_name']] = custom_info
 
         if self.data['inp'] is not None:
             self.run_direct_inputs()
@@ -515,85 +630,6 @@ class Init(object):
 
         # Step = step + 1
         self.data['timestep'] = '{}'.format(int(self.data['timestep'])+1)
-
-        if self.data['wd'] is None:
-            self.data['wd'] = self.data['curdir'] + '/'
-        if self.data['wd'][-1] != '/':
-            self.data['wd'] = self.data['wd'] + '/'
-
-        self.data['testinfo'] = {
-                    'p-p'               : [
-                                            'benzene-vacuum.top',
-                                            '20'
-                                          ],
-                    'q-p_benzene'       : [
-                                           'Na-benzene-vacuum.top',
-                                           '20',
-                                           'FEP_benzene.fep'
-                                          ],
-                    'q-p_Na'            : [
-                                           'Na-benzene-vacuum.top',
-                                           '20',
-                                           'FEP_Na.fep'
-                                          ],
-                    'q-p-w_benzene'     : [
-                                           'Na-benzene-water.top',
-                                           '20',
-                                           'FEP_benzene.fep'
-                                          ],
-                    'q-p-w_Na'          : [
-                                           'Na-benzene-water.top',
-                                           '20',
-                                           'FEP_Na.fep'
-                                          ],
-                    'q-q'               : [
-                                           'benzene-vacuum.top',
-                                           '20',
-                                           'FEP_benzene.fep'
-                                          ],
-                    'w-p'               : [
-                                           'benzene-water.top',
-                                           '20'
-                                          ],
-                    'w-q'               : [
-                                           'benzene-water.top',
-                                           '20',
-                                           'FEP_benzene.fep'                                            
-                                          ],
-                    'w-w'               : [
-                                           'water.top',
-                                           '20'
-                                          ],
-                    'boundary'          : [
-                                           'ala_wat.top',
-                                           '14'
-                                          ],
-                    'polypeptide'       : [
-                                           'ala_wat.top',
-                                           '15'                       
-                                          ],
-                    'polypeptide25'     : [
-                                           'ala_wat25.top',
-                                           '25'
-                                          ],
-                    'q-q-large_vac'     : [
-                                           'dualtop_vacuum.top',
-                                           '22',
-                                           'dualtop.fep'
-                                          ],
-                    'cdk2'              : [
-                                           'cdk2.top',
-                                           '22',
-                                           'FEPm_cdk2.fep',
-                                           'restraints_cdk2.inp'
-                                          ],
-                    'thrombin'          : [
-                                           'thrombin.top',
-                                           '25',
-                                           'FEPm_thrombin.fep',
-                                           'restraints_thrombin.inp'
-                                          ],
-                }
 
         tests = data['testinfo'].keys()
         if self.data['run'] is not None:
@@ -603,9 +639,21 @@ class Init(object):
             self.data['test'] = test
             self.data['curtest'] = self.data['wd'] + test
             _topfile = data['testinfo'][data['test']][0]
-            if len(data['testinfo'][test]) >= 3 and data['lambda'] is not None:
+            if len(data['testinfo'][test]) >= 3 and data['lambda'] is not None and test != self.data['custom_name']:
                 _topfile = _topfile.split(".")[0] + "_" + data['lambda'] + "." + _topfile.split(".")[1]
             self.data['topfile'] = _topfile
+            if test == self.data['custom_name'] and self.data['custom_top'] is not None:
+                self.data['topology_path'] = self.data['custom_top']
+                self.data['fep_path'] = self.data['custom_fep']
+                self.data['restraints_path'] = self.data['custom_restraints']
+            else:
+                self.data['topology_path'] = os.path.join(self.data['topdir'], self.data['topfile'])
+                self.data['fep_path'] = None
+                self.data['restraints_path'] = None
+                if len(data['testinfo'][test]) >= 3:
+                    self.data['fep_path'] = os.path.join(self.data['inputdir'], data['testinfo'][test][2])
+                if len(data['testinfo'][test]) >= 4:
+                    self.data['restraints_path'] = os.path.join(self.data['inputdir'], data['testinfo'][test][3])
             # INIT
             Create_Environment(self.data)
             
@@ -737,6 +785,36 @@ if __name__ == "__main__":
                         required = False,
                         help = "Specify a particular phase of the perturbation")
 
+    parser.add_argument('--custom-top',
+                        dest = "custom_top",
+                        default = None,
+                        required = False,
+                        help = "Path to a custom topology file to add as a test")
+
+    parser.add_argument('--custom-shell-radius',
+                        dest = "custom_shell_radius",
+                        default = '25',
+                        required = False,
+                        help = "Shell radius to use with --custom-top")
+
+    parser.add_argument('--custom-fep',
+                        dest = "custom_fep",
+                        default = None,
+                        required = False,
+                        help = "Optional FEP file for --custom-top")
+
+    parser.add_argument('--custom-restraints',
+                        dest = "custom_restraints",
+                        default = None,
+                        required = False,
+                        help = "Optional restraints file for --custom-top")
+
+    parser.add_argument('--custom-name',
+                        dest = "custom_name",
+                        default = 'custom',
+                        required = False,
+                        help = "Test name to use with --custom-top")
+
     parser.add_argument('--tolerance',
                         dest = "tolerance",
                         type = float,
@@ -779,5 +857,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.inp is None and args.timestep is None:
         parser.error('-t/--timestep is required unless --inp is used')
-    
-    START = Init(vars(args))
+
+    data = vars(args)
+    data['custom_top'] = resolve_path(data['custom_top'])
+    data['custom_fep'] = resolve_path(data['custom_fep'])
+    data['custom_restraints'] = resolve_path(data['custom_restraints'])
+
+    START = Init(data)
