@@ -1,16 +1,10 @@
 #include "handler.h"
 
-#include "output.h"
+#include "csv_out.h"
+#include "native_out.h"
+#include "std_output.h"
 
 void Handler::run_iteration(int iteration) {
-    printf("================================================\n");
-    if (iteration > 0) {
-        printf("== STEP %d\n", iteration);
-    } else {
-        printf("== INITIAL ENERGIES\n");
-    }
-    printf("================================================\n");
-
     reset_energies();
 
     // 1. temperature calculation
@@ -36,16 +30,25 @@ void Handler::run_iteration(int iteration) {
     print_outputs(iteration);
 }
 
+void Handler::initialize() {
+    create_outputs();
+    init_outputs();
+    initialize_backend();
+}
+
 void Handler::run(int num_iterations) {
     for (int i = 0; i < num_iterations; i++) {
         run_iteration(i);
     }
+    finish_outputs();
+    shutdown_outputs();
+    outputs_.clear();
 }
 
 void Handler::update_energy_totals() {
     auto& host = Context::instance();
-    auto *lambdas = host.lambdas->cpu_data_p;
-    auto *EQ_restraint = host.EQ_restraint->cpu_data_p;
+    auto* lambdas = host.lambdas->cpu_data_p;
+    auto* EQ_restraint = host.EQ_restraint->cpu_data_p;
     for (int state = 0; state < host.n_lambdas; state++) {
         if (lambdas[state] == 0) {
             host.EQ_bond[state].Uangle = 0;
@@ -88,16 +91,44 @@ void Handler::update_energy_totals() {
 }
 
 void Handler::print_outputs(int iteration) {
-    print_energies();
-    write_coords(iteration);
-    write_velocities(iteration);
-    write_energies(iteration);
+    for (auto& output : outputs_) {
+        output->output(ctx, iteration);
+    }
+}
+
+void Handler::create_outputs() {
+    outputs_.clear();
+    outputs_.push_back(std::make_unique<StdOutput>());
+
+    if (ctx.command_info.input_mode == CommandInputMode::Csv) {
+        outputs_.push_back(std::make_unique<CsvOutput>(ctx.command_info.csv_dir));
+    } else {
+        outputs_.push_back(std::make_unique<NativeOutput>(ctx.native_output));
+    }
+}
+
+void Handler::init_outputs() {
+    for (auto& output : outputs_) {
+        output->init(ctx);
+    }
+}
+
+void Handler::finish_outputs() {
+    for (auto& output : outputs_) {
+        output->finish(ctx);
+    }
+}
+
+void Handler::shutdown_outputs() {
+    for (auto& output : outputs_) {
+        output->shutdown();
+    }
 }
 
 void Handler::reset_energies() {
     auto& host = Context::instance();
-    auto &dvelocities = host.dvelocities->cpu_data_p;
-    auto *EQ_restraint = host.EQ_restraint->cpu_data_p;
+    auto& dvelocities = host.dvelocities->cpu_data_p;
+    auto* EQ_restraint = host.EQ_restraint->cpu_data_p;
     host.E_total.Upot = 0;
     host.E_bond_p.Uangle = 0;
     host.E_bond_p.Ubond = 0;

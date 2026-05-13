@@ -1,0 +1,21 @@
+#pragma once
+#include "context.h"
+
+class BaseOutput {
+   public:
+    BaseOutput() {}
+    virtual ~BaseOutput() = default;
+    virtual void init(Context& ctx) {}
+    virtual void finish(Context& ctx) {}
+    virtual void shutdown() {}
+    void output(Context& ctx, int iteration) {
+        output_trajectory(ctx, iteration);
+        output_energy(ctx, iteration);
+        output_restart(ctx, iteration);
+    }
+
+   protected:
+    virtual void output_trajectory(Context& ctx, int iteration) = 0;
+    virtual void output_energy(Context& ctx, int iteration) = 0;
+    virtual void output_restart(Context& ctx, int iteration) {}
+};

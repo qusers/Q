@@ -132,8 +132,8 @@ void stop_cm_translation() {
         const double rmass = catypes[atypes[ai].code - 1].m;
         total_mass += rmass;
         vcm.x += velocities[ai].x * rmass;
-        vcm.y += velocities[ai].y;
-        vcm.z += velocities[ai].z;
+        vcm.y += velocities[ai].y * rmass;
+        vcm.z += velocities[ai].z * rmass;
     }
 
     vcm.x /= total_mass;

@@ -43,7 +43,7 @@ __device__ void calculate_nonbonded_14_pair(
     double& ecoul,
     double& dv) {
     const double3 d = {x.x - y.x, x.y - y.y, x.z - y.z};
-    const double r = rsqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+    const double r = 1.0 / sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
     const double r2 = r * r;
     const double r6 = r2 * r2 * r2;
 
@@ -190,19 +190,19 @@ static Nonbonded14EnergyBuckets calc_nonbonded_14_force_state_host(
 
 void calc_nonbonded_14_forces_host() {
     auto& host = Context::instance();
-    auto *lambdas = host.lambdas->cpu_data_p;
 
     if (host.n_ngbrs14 == 0) return;
 
+    Nonbonded14EnergyBuckets pp_energies = calc_nonbonded_14_force_state_host(0, 1.0, true);
+    host.E_nonbond_pp.Uvdw += pp_energies.evdw[NONBONDED_14_PP];
+    host.E_nonbond_pp.Ucoul += pp_energies.ecoul[NONBONDED_14_PP];
+
+    if (host.n_lambdas == 0) return;
+
+    auto *lambdas = host.lambdas->cpu_data_p;
     for (int state = 0; state < host.n_lambdas; state++) {
         const double lambda = lambdas[state];
-        const bool include_pp = (state == 0);
-        Nonbonded14EnergyBuckets energies = calc_nonbonded_14_force_state_host(state, lambda, include_pp);
-
-        if (include_pp) {
-            host.E_nonbond_pp.Uvdw += energies.evdw[NONBONDED_14_PP];
-            host.E_nonbond_pp.Ucoul += energies.ecoul[NONBONDED_14_PP];
-        }
+        Nonbonded14EnergyBuckets energies = calc_nonbonded_14_force_state_host(state, lambda, false);
 
         if (lambda != 0.0) {
             host.EQ_nonbond_qp[state].Uvdw += energies.evdw[NONBONDED_14_QP] / lambda;

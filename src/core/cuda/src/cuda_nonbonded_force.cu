@@ -49,7 +49,7 @@ __device__ void calculate_unforce_bound(
     double& ecoul,
     double& dv) {
     double3 d = {x.x - y.x, x.y - y.y, x.z - y.z};
-    double r = rsqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+    double r = 1.0 / sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
     double r2 = r * r;
     double r6 = r2 * r2 * r2;
     // double v_a = r6 * r6;

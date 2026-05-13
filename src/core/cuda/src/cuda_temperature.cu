@@ -83,6 +83,8 @@ void calc_temperature_host() {
     host.Tfree = 2.0 * host.Tfree / Boltz / host.Ndegfree;
 
     if (host.separate_scaling) {
+        h_Tfree_solvent = 2.0 * h_Tfree_solvent / Boltz / host.Ndegfree_solvent;
+        h_Tfree_solute = 2.0 * h_Tfree_solute / Boltz / host.Ndegfree_solute;
         if (h_Tfree_solvent != 0) host.Tscale_solvent = sqrt(1 + (host.dt / host.tau_T) * (host.md.temperature / h_Tfree_solvent - 1.0));
         if (h_Tfree_solute != 0) host.Tscale_solute = sqrt(1 + (host.dt / host.tau_T) * (host.md.temperature / h_Tfree_solute - 1.0));
     } else {
