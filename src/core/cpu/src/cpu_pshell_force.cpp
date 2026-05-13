@@ -13,7 +13,7 @@ void calc_pshell_forces() {
     auto *shell = ctx.shell->cpu_data_p;
 
     coord_t dr;
-    double k, r2, ener;
+    real_t k, r2, ener;
 
     for (int i = 0; i < ctx.n_atoms_solute; i++) {
         if (shell[i] || excluded[i]) {

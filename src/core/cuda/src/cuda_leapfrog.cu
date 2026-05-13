@@ -18,20 +18,20 @@ __global__ void calc_leapfrog_kernel(
     coord_t* xcoords,
     int n_atoms,
     int n_atoms_solute,
-    double Tscale_solute,
-    double Tscale_solvent,
-    double dt) {
+    real_t Tscale_solute,
+    real_t Tscale_solvent,
+    real_t dt) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_atoms) return;
     int i = idx;
 
     // Kernel implementation goes here
-    double mass_i, winv_i;
+    real_t mass_i, winv_i;
 
     mass_i = catypes[atypes[i].code - 1].m;
 
     winv_i = 1 / mass_i;
-    double scale = (i < n_atoms_solute) ? Tscale_solute : Tscale_solvent;
+    real_t scale = (i < n_atoms_solute) ? Tscale_solute : Tscale_solvent;
     velocities[i].x = (velocities[i].x - dvelocities[i].x * dt * winv_i) * scale;
     velocities[i].y = (velocities[i].y - dvelocities[i].y * dt * winv_i) * scale;
     velocities[i].z = (velocities[i].z - dvelocities[i].z * dt * winv_i) * scale;
@@ -43,6 +43,20 @@ __global__ void calc_leapfrog_kernel(
     coords[i].x += velocities[i].x * dt;
     coords[i].y += velocities[i].y * dt;
     coords[i].z += velocities[i].z * dt;
+}
+
+__global__ void update_velocities_from_positions_kernel(
+    vel_t* velocities,
+    const coord_t* coords,
+    const coord_t* xcoords,
+    int n_atoms,
+    real_t dt) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= n_atoms) return;
+
+    velocities[idx].x = (coords[idx].x - xcoords[idx].x) / dt;
+    velocities[idx].y = (coords[idx].y - xcoords[idx].y) / dt;
+    velocities[idx].z = (coords[idx].z - xcoords[idx].z) / dt;
 }
 
 void calc_leapfrog_host() {
@@ -70,25 +84,17 @@ void calc_leapfrog_host() {
         host.dt);
     check_cuda(cudaDeviceSynchronize());
 
-    host.velocities->download();
-    host.dvelocities->download();
-    host.coords->download();
-    host.xcoords->download();
-
     // shake
-    // todo: Here is some problem, it writes into cpu memory, but we use gpu..
     printf("n_shake_constraints: %d\n", host.n_shake_constraints);
     if (host.n_shake_constraints > 0) {
         calc_shake_constraints_host();
-        auto &velocities = host.velocities->cpu_data_p;
-        auto &coords = host.coords->cpu_data_p;
-        auto *xcoords = host.xcoords->cpu_data_p;
-        for (int i = 0; i < host.n_atoms; i++) {
-            velocities[i].x = (coords[i].x - xcoords[i].x) / host.dt;
-            velocities[i].y = (coords[i].y - xcoords[i].y) / host.dt;
-            velocities[i].z = (coords[i].z - xcoords[i].z) / host.dt;
-        }
-        host.velocities->upload();
+        update_velocities_from_positions_kernel<<<numBlocks, blockSize>>>(
+            d_velocities,
+            d_coords,
+            d_xcoords,
+            host.n_atoms,
+            host.dt);
+        check_cuda(cudaDeviceSynchronize());
     }
 }
 

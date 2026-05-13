@@ -15,10 +15,10 @@ void calc_qtorsion_forces(int state) {
     coord_t rji, rjk, rkl, rnj, rnk, rki, rlj;
     coord_t di, dl, dpi, dpj, dpk, dpl;
 
-    double bj2inv, bk2inv, bjinv, bkinv;
-    double bj, bk, cos_phi, phi;
-    double arg, dv, f1;
-    double ener;
+    real_t bj2inv, bk2inv, bjinv, bkinv;
+    real_t bj, bk, cos_phi, phi;
+    real_t arg, dv, f1;
+    real_t ener;
 
     for (int i = 0; i < ctx.n_qtorsions; i++) {
         ic = ctx.q_torsions[i + ctx.n_qtorsions * state].code;
@@ -76,8 +76,8 @@ void calc_qtorsion_forces(int state) {
 
         // Forces
         f1 = sin(phi);
-        if (abs(f1) < 1E-12) {
-            f1 = 1E-12;
+        if (fabs(f1) < k_singular_sin_epsilon) {
+            f1 = copysign(k_singular_sin_epsilon, f1);
         }
         f1 = -1 / f1;
 

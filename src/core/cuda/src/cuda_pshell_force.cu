@@ -5,8 +5,8 @@
 #include <iostream>
 namespace CudaPshellForce {
 bool is_initialized = false;
-double* d_ufix_energy;
-double* d_ushell_energy;
+real_t* d_ufix_energy;
+real_t* d_ushell_energy;
 
 }  // namespace CudaPshellForce
 __global__ void calc_pshell_force_kernel(
@@ -15,14 +15,14 @@ __global__ void calc_pshell_force_kernel(
     bool* excluded,
     coord_t* coords,
     coord_t* coords_init,
-    double* ufix_energy,
-    double* ushell_energy,
+    real_t* ufix_energy,
+    real_t* ushell_energy,
     dvel_t* dvelocities) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_atoms_solute) return;
 
     coord_t dr;
-    double k, r2, ener;
+    real_t k, r2, ener;
 
     if (shell[i] || excluded[i]) {
         // printf("i = %d excluded = %s shell = %s\n", i, excluded[i] ? "True" : "False", shell[i] ? "True" : "False");
@@ -34,7 +34,7 @@ __global__ void calc_pshell_force_kernel(
         dr.x = coords[i].x - coords_init[i].x;
         dr.y = coords[i].y - coords_init[i].y;
         dr.z = coords[i].z - coords_init[i].z;
-        r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
+        r2 = dr.x * dr.x + dr.y * dr.y + dr.z * dr.z;
         ener = 0.5 * k * r2;
         // printf("dr = %f %f %f\n", dr.x, dr.y, dr.z);
 
@@ -57,8 +57,8 @@ void calc_pshell_forces_host() {
     auto d_coords_init = host.coords_init->gpu_data_p;
     auto d_dvelocities = host.dvelocities->gpu_data_p;
 
-    cudaMemset(d_ufix_energy, 0, sizeof(double));
-    cudaMemset(d_ushell_energy, 0, sizeof(double));
+    cudaMemset(d_ufix_energy, 0, sizeof(real_t));
+    cudaMemset(d_ushell_energy, 0, sizeof(real_t));
 
     int blockSize = 256;
     int numBlocks = (host.n_atoms_solute + blockSize - 1) / blockSize;
@@ -72,10 +72,10 @@ void calc_pshell_forces_host() {
         d_ushell_energy,
         d_dvelocities);
     cudaDeviceSynchronize();
-    double ufix_energy;
-    double ushell_energy;
-    cudaMemcpy(&ufix_energy, d_ufix_energy, sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&ushell_energy, d_ushell_energy, sizeof(double), cudaMemcpyDeviceToHost);
+    real_t ufix_energy;
+    real_t ushell_energy;
+    cudaMemcpy(&ufix_energy, d_ufix_energy, sizeof(real_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&ushell_energy, d_ushell_energy, sizeof(real_t), cudaMemcpyDeviceToHost);
 
     host.E_restraint.Ufix += ufix_energy;
     host.E_restraint.Ushell += ushell_energy;
@@ -85,8 +85,8 @@ void calc_pshell_forces_host() {
 void init_pshell_force_kernel_data() {
     using namespace CudaPshellForce;
     if (!is_initialized) {
-        check_cudaMalloc((void**)&d_ufix_energy, sizeof(double));
-        check_cudaMalloc((void**)&d_ushell_energy, sizeof(double));
+        check_cudaMalloc((void**)&d_ufix_energy, sizeof(real_t));
+        check_cudaMalloc((void**)&d_ushell_energy, sizeof(real_t));
         is_initialized = true;
     }
 }

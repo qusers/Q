@@ -29,7 +29,7 @@ class ParseResult {
     int n_torsions_solute = 0;
     int n_impropers_solute = 0;
 
-    std::vector<double> lambdas;
+    std::vector<real_t> lambdas;
     std::vector<coord_t> coords_init;
     std::vector<coord_t> coords;
     std::vector<vel_t> velocities;
@@ -278,4 +278,3 @@ class BaseParser {
 
     virtual void parse_q_softcores() = 0;
 };
-

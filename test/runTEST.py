@@ -307,12 +307,12 @@ class Parse_Q6_data(object):
         with open('eq1.log') as infile:
             for line in infile:
                 if len(line.strip()) < 2:
-                    continue        
+                    continue
 
                 if 'At_ID' in line and block == 0:
                     line = line.split()
                     velocities.append(float(line[3]))
-                
+
                 if 'Energy summary at step' in line:
                     step = line.split()[-2]
                     Q_energies[step] = {}
