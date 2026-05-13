@@ -33,8 +33,8 @@ class Context {
     int n_qatoms;
     int n_waters;
     int n_molecules;
-    double dt;
-    double tau_T;
+    real_t dt = 0.0;
+    real_t tau_T = 0.0;
     md_t md;
     topo_t topo;
     NativeOutputConfig native_output;
@@ -108,7 +108,7 @@ class Context {
 
     std::unique_ptr<HostDeviceBuffer<bool>> excluded;
 
-    std::unique_ptr<HostDeviceBuffer<double>> winv;
+    std::unique_ptr<HostDeviceBuffer<real_t>> winv;
 
     std::unique_ptr<HostDeviceBuffer<bool>> shell;
 
@@ -137,12 +137,12 @@ class Context {
     Water
     */
     std::unique_ptr<HostDeviceBuffer<shell_t>> wshells;
-    double crgQtot;
-    double Dwmz;
-    double awmz;
-    std::vector<double> theta;
-    std::vector<double> theta0;
-    std::vector<double> tdum;
+    real_t crgQtot = 0.0;
+    real_t Dwmz = 0.0;
+    real_t awmz = 0.0;
+    std::vector<real_t> theta;
+    std::vector<real_t> theta0;
+    std::vector<real_t> tdum;
     int n_max_inshell;
     int n_shells;
     std::vector<std::vector<int>> list_sh;
@@ -151,7 +151,7 @@ class Context {
     /*
     FEP
     */
-    std::unique_ptr<HostDeviceBuffer<double>> lambdas;  // Actually length is only 2..
+    std::unique_ptr<HostDeviceBuffer<real_t>> lambdas;  // Actually length is only 2..
 
     /*
     Energy
@@ -184,7 +184,7 @@ class Context {
     std::unique_ptr<HostDeviceBuffer<int>> p_atoms_list;
     std::unique_ptr<HostDeviceBuffer<int>> w_atoms_list;
     std::unique_ptr<HostDeviceBuffer<int>> q_atoms_list;
-    std::unique_ptr<HostDeviceBuffer<double>> charge_pair_products;
+    std::unique_ptr<HostDeviceBuffer<real_t>> charge_pair_products;
     std::unique_ptr<HostDeviceBuffer<int>> p_charge_types;
     std::unique_ptr<HostDeviceBuffer<int>> w_charge_types;
     std::unique_ptr<HostDeviceBuffer<int>> q_charge_types;
@@ -203,17 +203,17 @@ class Context {
     Temperature
     */
 
-    double Temp;
-    double Tfree;
-    double Ndegf;
-    double Ndegfree;
-    double Ndegf_solute;
-    double Ndegfree_solute;
-    double Ndegf_solvent;
-    double Ndegfree_solvent;
+    real_t Temp = 0.0;
+    real_t Tfree = 0.0;
+    real_t Ndegf = 0.0;
+    real_t Ndegfree = 0.0;
+    real_t Ndegf_solute = 0.0;
+    real_t Ndegfree_solute = 0.0;
+    real_t Ndegf_solvent = 0.0;
+    real_t Ndegfree_solvent = 0.0;
 
-    double Tscale_solute;
-    double Tscale_solvent;
+    real_t Tscale_solute = 0.0;
+    real_t Tscale_solvent = 0.0;
     /*
     Info for FEP
     */

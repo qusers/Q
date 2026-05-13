@@ -14,11 +14,11 @@ int* water_shell = nullptr;
 int* water_rank = nullptr;
 int* polx_list_sh = nullptr;  // use 1d array to simulate 2d array
 
-double* d_energy;
+real_t* d_energy;
 int* d_list_sh = nullptr;
-double* d_theta = nullptr;
-double* d_theta0 = nullptr;
-double* d_tdum = nullptr;
+real_t* d_theta = nullptr;
+real_t* d_theta0 = nullptr;
+real_t* d_tdum = nullptr;
 int* d_water_shell = nullptr;
 int* d_water_rank = nullptr;
 
@@ -27,15 +27,15 @@ int* d_water_rank = nullptr;
 __global__ void calc_polx_theta_and_shells(
     int n_waters, int n_shells, int n_atoms_solute,
     coord_t* coords, topo_t topo, shell_t* wshells, int* list_sh,
-    double* theta, double* theta0, double* tdum) {
+    real_t* theta, real_t* theta0, real_t* tdum) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_waters) return;
     int i = idx;
 
     int wi, iis;
     coord_t rmu, rcu;
-    double rm, rc;
-    double cos_th;
+    real_t rm, rc;
+    real_t cos_th;
 
     theta[i] = 0;
     theta0[i] = 0;
@@ -46,7 +46,7 @@ __global__ void calc_polx_theta_and_shells(
     rmu.y = coords[wi + 1].y + coords[wi + 2].y - 2 * coords[wi].y;
     rmu.z = coords[wi + 1].z + coords[wi + 2].z - 2 * coords[wi].z;
 
-    rm = sqrt(pow(rmu.x, 2) + pow(rmu.y, 2) + pow(rmu.z, 2));
+    rm = sqrt(rmu.x * rmu.x + rmu.y * rmu.y + rmu.z * rmu.z);
 
     rmu.x /= rm;
     rmu.y /= rm;
@@ -55,7 +55,7 @@ __global__ void calc_polx_theta_and_shells(
     rcu.x = coords[wi].x - topo.solvent_center.x;
     rcu.y = coords[wi].y - topo.solvent_center.y;
     rcu.z = coords[wi].z - topo.solvent_center.z;
-    rc = sqrt(pow(rcu.x, 2) + pow(rcu.y, 2) + pow(rcu.z, 2));
+    rc = sqrt(rcu.x * rcu.x + rcu.y * rcu.y + rcu.z * rcu.z);
     rcu.x /= rc;
     rcu.y /= rc;
     rcu.z /= rc;
@@ -81,7 +81,7 @@ __global__ void calc_polx_theta_and_shells(
 __global__ void calc_polx_water_forces_kernel(
     int n_waters, int n_atoms_solute, shell_t* wshells,
     coord_t* coords, dvel_t* dvelocities, topo_t topo,
-    double* theta, md_t md, double* energy,
+    real_t* theta, md_t md, real_t* energy,
     int* water_rank, int* water_shell) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_waters) return;
@@ -92,32 +92,33 @@ __global__ void calc_polx_water_forces_kernel(
 
     int wi, ii;
     coord_t rmu, rcu, f1O, f1H1, f1H2, f2;
-    double rm, rc;
-    double cos_th;
-    double avtdum, arg, f0, dv;
-    double ener;
+    real_t rm, rc;
+    real_t cos_th;
+    real_t avtdum, arg, f0, dv;
+    real_t ener;
 
     avtdum = 0;
     ii = idx;
-    arg = 1 + ((1 - 2 * (double)(il + 1)) / (double)wshells[is].n_inshell);
-    double theta_val = acos(arg);
+    arg = 1 + ((1 - 2 * (real_t)(il + 1)) / (real_t)wshells[is].n_inshell);
+    real_t theta_val = acos(arg);
     theta_val = theta_val - 3 * sin(theta_val) * wshells[is].cstb / 2;
     if (theta_val < 0) theta_val = 0;
     if (theta_val > M_PI) theta_val = M_PI;
 
     avtdum += theta[ii];
-    ener = .5 * md.polarisation_force * pow(theta[ii] - theta_val + wshells[is].theta_corr, 2);
+    const real_t dtheta = theta[ii] - theta_val + wshells[is].theta_corr;
+    ener = .5 * md.polarisation_force * dtheta * dtheta;
     // E_restraint.Upolx += ener;
     atomicAdd(energy, ener);
 
-    dv = md.polarisation_force * (theta[ii] - theta_val + wshells[is].theta_corr);
+    dv = md.polarisation_force * dtheta;
     wi = n_atoms_solute + 3 * ii;
 
     rmu.x = coords[wi + 1].x + coords[wi + 2].x - 2 * coords[wi].x;
     rmu.y = coords[wi + 1].y + coords[wi + 2].y - 2 * coords[wi].y;
     rmu.z = coords[wi + 1].z + coords[wi + 2].z - 2 * coords[wi].z;
 
-    rm = sqrt(pow(rmu.x, 2) + pow(rmu.y, 2) + pow(rmu.z, 2));
+    rm = sqrt(rmu.x * rmu.x + rmu.y * rmu.y + rmu.z * rmu.z);
 
     rmu.x /= rm;
     rmu.y /= rm;
@@ -126,7 +127,7 @@ __global__ void calc_polx_water_forces_kernel(
     rcu.x = coords[wi].x - topo.solvent_center.x;
     rcu.y = coords[wi].y - topo.solvent_center.y;
     rcu.z = coords[wi].z - topo.solvent_center.z;
-    rc = sqrt(pow(rcu.x, 2) + pow(rcu.y, 2) + pow(rcu.z, 2));
+    rc = sqrt(rcu.x * rcu.x + rcu.y * rcu.y + rcu.z * rcu.z);
     rcu.x /= rc;
     rcu.y /= rc;
     rcu.z /= rc;
@@ -135,7 +136,7 @@ __global__ void calc_polx_water_forces_kernel(
     if (cos_th > 1) cos_th = 1;
     if (cos_th < -1) cos_th = -1;
     f0 = sin(acos(cos_th));
-    if (abs(f0) < 1.0E-12) f0 = 1.0E-12;
+    if (abs(f0) < k_singular_sin_epsilon) f0 = k_singular_sin_epsilon;
     f0 = -1.0 / f0;
     f0 *= dv;
 
@@ -163,7 +164,7 @@ __global__ void calc_polx_water_forces_kernel(
     atomicAdd(&dvelocities[wi + 2].y, f0 * (f1H2.y));
     atomicAdd(&dvelocities[wi + 2].z, f0 * (f1H2.z));
 
-    atomicAdd(&wshells[is].avtheta, avtdum / (double)wshells[is].n_inshell);
+    atomicAdd(&wshells[is].avtheta, avtdum / (real_t)wshells[is].n_inshell);
     atomicAdd(&wshells[is].avn_inshell, wshells[is].n_inshell);
 }
 
@@ -173,7 +174,7 @@ void sort_waters() {
     auto *wshells = ctx.wshells->cpu_data_p;
 
     int imin, jmin, jw;
-    double tmin;
+    real_t tmin;
     // Sort the waters according to theta
     for (int is = 0; is < ctx.n_shells; is++) {
         imin = 0;
@@ -223,7 +224,7 @@ void calc_polx_water_forces_host(int iteration) {
 
     // todo: sort in cpu now..
     ctx.wshells->download();
-    cudaMemcpy(ctx.tdum.data(), d_tdum, ctx.n_waters * sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(ctx.tdum.data(), d_tdum, ctx.n_waters * sizeof(real_t), cudaMemcpyDeviceToHost);
     cudaMemcpy(polx_list_sh, d_list_sh, ctx.n_max_inshell * ctx.n_shells * sizeof(int), cudaMemcpyDeviceToHost);
 
     // Reset per-water metadata; only waters placed in shells will be overwritten in sort_waters().
@@ -243,8 +244,8 @@ void calc_polx_water_forces_host(int iteration) {
     if (iteration != 0 && iteration % itdis_update == 0) {
         for (int is = 0; is < ctx.n_shells; is++) {
             printf("SHELL %d\n", is);
-            wshells[is].avtheta /= (double)itdis_update;
-            wshells[is].avn_inshell /= (double)itdis_update;
+            wshells[is].avtheta /= (real_t)itdis_update;
+            wshells[is].avn_inshell /= (real_t)itdis_update;
             wshells[is].theta_corr = wshells[is].theta_corr + wshells[is].avtheta - acos(wshells[is].cstb);
             printf("average theta = %f, average in shell = %f, theta_corr = %f\n",
                    wshells[is].avtheta * 180 / M_PI, wshells[is].avn_inshell, wshells[is].theta_corr * 180 / M_PI);
@@ -255,12 +256,12 @@ void calc_polx_water_forces_host(int iteration) {
     }
 
     // Calculate energy and force
-    cudaMemset(d_energy, 0, sizeof(double));
+    cudaMemset(d_energy, 0, sizeof(real_t));
     calc_polx_water_forces_kernel<<<numBlocks, blockSize>>>(
         ctx.n_waters, ctx.n_atoms_solute, d_wshells, d_coords, d_dvelocities, ctx.topo,
         d_theta, ctx.md, d_energy, d_water_rank, d_water_shell);
-    double energy;
-    cudaMemcpy(&energy, d_energy, sizeof(double), cudaMemcpyDeviceToHost);
+    real_t energy;
+    cudaMemcpy(&energy, d_energy, sizeof(real_t), cudaMemcpyDeviceToHost);
     ctx.E_restraint.Upolx += energy;
     ctx.wshells->download();
     // Copy back forces for all atoms (solute + solvent); water forces were being dropped.
@@ -274,11 +275,11 @@ void init_polx_water_force_kernel_data() {
         water_shell = new int[ctx.n_waters];
         polx_list_sh = new int[ctx.n_max_inshell * ctx.n_shells];
 
-        check_cudaMalloc((void**)&d_energy, sizeof(double));
+        check_cudaMalloc((void**)&d_energy, sizeof(real_t));
         check_cudaMalloc((void**)&d_list_sh, ctx.n_max_inshell * ctx.n_shells * sizeof(int));
-        check_cudaMalloc((void**)&d_theta, ctx.n_waters * sizeof(double));
-        check_cudaMalloc((void**)&d_theta0, ctx.n_waters * sizeof(double));
-        check_cudaMalloc((void**)&d_tdum, ctx.n_waters * sizeof(double));
+        check_cudaMalloc((void**)&d_theta, ctx.n_waters * sizeof(real_t));
+        check_cudaMalloc((void**)&d_theta0, ctx.n_waters * sizeof(real_t));
+        check_cudaMalloc((void**)&d_tdum, ctx.n_waters * sizeof(real_t));
         check_cudaMalloc((void**)&d_water_rank, ctx.n_waters * sizeof(int));
         check_cudaMalloc((void**)&d_water_shell, ctx.n_waters * sizeof(int));
 

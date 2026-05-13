@@ -5,7 +5,7 @@
 #include "context.h"
 #include "cpu_utils.h"
 
-double calc_improper2_forces(int start, int end) {
+real_t calc_improper2_forces(int start, int end) {
     auto& ctx = Context::instance();
     auto &impropers = ctx.impropers->cpu_data_p;
     auto &cimpropers = ctx.cimpropers->cpu_data_p;
@@ -15,13 +15,13 @@ double calc_improper2_forces(int start, int end) {
 
     coord_t ai, aj, ak, al;
     coord_t rji, rjk, rkl, rnj, rnk, rki, rlj;
-    double bj2inv, bk2inv, bjinv, bkinv;
-    double cos_phi, phi, arg, ener, dv, f1;
+    real_t bj2inv, bk2inv, bjinv, bkinv;
+    real_t cos_phi, phi, arg, ener, dv, f1;
     coord_t di, dl, dpi, dpj, dpk, dpl;
 
     improper_t imp;
     cimproper_t cimp;
-    double improper = 0;
+    real_t improper = 0;
 
     for (int i = start; i < end; i++) {
         imp = impropers[i];
@@ -79,8 +79,8 @@ double calc_improper2_forces(int start, int end) {
 
         // Forces
         f1 = sin(phi);
-        if (std::fabs(f1) < 1E-12) {
-            f1 = 1E-12;
+        if (std::fabs(f1) < k_singular_sin_epsilon) {
+            f1 = std::copysign(k_singular_sin_epsilon, f1);
         }
         f1 = -1 / f1;
 

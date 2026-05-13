@@ -15,8 +15,8 @@ void calc_restrang_forces() {
 
     int state, i, j, k;
     coord_t dr, dr2, di, dk;
-    double lambda, r2ij, r2jk, rij, rjk, cos_th, th;
-    double dth, dv, ener, f1;
+    real_t lambda, r2ij, r2jk, rij, rjk, cos_th, th;
+    real_t dth, dv, ener, f1;
 
     for (int ir = 0; ir < ctx.n_restrangs; ir++) {
         state = restrangs[ir].ipsi - 1;
@@ -61,8 +61,8 @@ void calc_restrang_forces() {
         dv = lambda * restrangs[ir].k * dth;
 
         f1 = sin(th);
-        if (fabs(f1) < 1E-12) {
-            f1 = -1E-12;
+        if (fabs(f1) < k_singular_sin_epsilon) {
+            f1 = -1.0 / k_singular_sin_epsilon;
         } else {
             f1 = -1 / f1;
         }

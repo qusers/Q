@@ -13,17 +13,17 @@ void calc_nonbonded_qw_forces() {
     auto *excluded = ctx.excluded->cpu_data_p;
     int i;
     coord_t dO, dH1, dH2;
-    double r2O, rH1, rH2, r6O, rO, r2H1, r2H2;
-    double dvO, dvH1, dvH2;
-    double V_a, V_b, VelO, VelH1, VelH2;
-    double ai_aii, ai_bii;
+    real_t r2O, rH1, rH2, rO, r2H1, r2H2;
+    real_t dvO, dvH1, dvH2;
+    real_t V_a, V_b, VelO, VelH1, VelH2;
+    real_t ai_aii, ai_bii;
 
     // Loop over O-atoms, q-atoms
     for (int j = ctx.n_atoms_solute; j < ctx.n_atoms; j += 3) {
         const catype_t& ow_type = ctx.unified_catype(j, 0);
-        const double ow_charge = ctx.unified_ccharge(j, 0).charge;
-        const double hw1_charge = ctx.unified_ccharge(j + 1, 0).charge;
-        const double hw2_charge = ctx.unified_ccharge(j + 2, 0).charge;
+        const real_t ow_charge = ctx.unified_ccharge(j, 0).charge;
+        const real_t hw1_charge = ctx.unified_ccharge(j + 1, 0).charge;
+        const real_t hw2_charge = ctx.unified_ccharge(j + 2, 0).charge;
         for (int qi = 0; qi < ctx.n_qatoms; qi++) {
             i = ctx.q_atoms[qi];
             if (excluded[i] || excluded[j]) continue;
@@ -36,13 +36,12 @@ void calc_nonbonded_qw_forces() {
             dH2.x = coords[j + 2].x - coords[i].x;
             dH2.y = coords[j + 2].y - coords[i].y;
             dH2.z = coords[j + 2].z - coords[i].z;
-            r2O = pow(dO.x, 2) + pow(dO.y, 2) + pow(dO.z, 2);
-            rH1 = sqrt(1.0 / (pow(dH1.x, 2) + pow(dH1.y, 2) + pow(dH1.z, 2)));
-            rH2 = sqrt(1.0 / (pow(dH2.x, 2) + pow(dH2.y, 2) + pow(dH2.z, 2)));
-            r6O = r2O * r2O * r2O;
-            r2O = 1.0 / r2O;
-            rO = sqrt(r2O);
-            double r6Oinv = r2O * r2O * r2O;  // 1/r^6 for vdW calculation
+            r2O = dO.x * dO.x + dO.y * dO.y + dO.z * dO.z;
+            rH1 = static_cast<real_t>(std::sqrt(static_cast<real_t>(1.0) / (dH1.x * dH1.x + dH1.y * dH1.y + dH1.z * dH1.z)));
+            rH2 = static_cast<real_t>(std::sqrt(static_cast<real_t>(1.0) / (dH2.x * dH2.x + dH2.y * dH2.y + dH2.z * dH2.z)));
+            r2O = static_cast<real_t>(1.0) / r2O;
+            rO = static_cast<real_t>(std::sqrt(r2O));
+            const real_t r6Oinv = r2O * r2O * r2O;  // 1/r^6 for vdW calculation
             r2H1 = rH1 * rH1;
             r2H2 = rH2 * rH2;
 
@@ -63,19 +62,21 @@ void calc_nonbonded_qw_forces() {
                     calc_vdw_arithmetic(ai_aii, ow_type.aii_normal, ai_bii, ow_type.bii_normal, r6Oinv, &V_a, &V_b);
                 }
 
-                const double q_charge = ctx.unified_ccharge(i, state).charge;
-                VelO = ctx.topo.coulomb_constant * ow_charge * q_charge * rO;
-                VelH1 = ctx.topo.coulomb_constant * hw1_charge * q_charge * rH1;
-                VelH2 = ctx.topo.coulomb_constant * hw2_charge * q_charge * rH2;
+                const real_t q_charge = ctx.unified_ccharge(i, state).charge;
+                const real_t coulomb_constant = static_cast<real_t>(ctx.topo.coulomb_constant);
+                VelO = coulomb_constant * ow_charge * q_charge * rO;
+                VelH1 = coulomb_constant * hw1_charge * q_charge * rH1;
+                VelH2 = coulomb_constant * hw2_charge * q_charge * rH2;
 
                 // if (state == 0 && qi == 1) printf("j = %d ai__aii = %f A_O = %f B_O = %f V_a = %f V_b = %f r6O = %f\n", j, ai_aii, A_O, B_O, V_a, V_b, r6O);
 
-                dvO += r2O * (-VelO - (12 * V_a - 6 * V_b)) * lambdas[state];
-                dvH1 -= r2H1 * VelH1 * lambdas[state];
-                dvH2 -= r2H2 * VelH2 * lambdas[state];
+                const real_t lambda = static_cast<real_t>(lambdas[state]);
+                dvO += r2O * (-VelO - (static_cast<real_t>(12.0) * V_a - static_cast<real_t>(6.0) * V_b)) * lambda;
+                dvH1 -= r2H1 * VelH1 * lambda;
+                dvH2 -= r2H2 * VelH2 * lambda;
 
-                ctx.EQ_nonbond_qw[state].Ucoul += (VelO + VelH1 + VelH2);
-                ctx.EQ_nonbond_qw[state].Uvdw += (V_a - V_b);
+                ctx.EQ_nonbond_qw[state].Ucoul += static_cast<real_t>(VelO + VelH1 + VelH2);
+                ctx.EQ_nonbond_qw[state].Uvdw += static_cast<real_t>(V_a - V_b);
             }
 
             // Note r6O is not the usual 1/rO^6, but rather rO^6. be careful!!!

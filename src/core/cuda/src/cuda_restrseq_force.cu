@@ -4,7 +4,7 @@
 
 namespace CudaRestrseqForce {
 bool is_initialized = false;
-double* d_upres_energy;
+real_t* d_upres_energy;
 }  // namespace CudaRestrseqForce
 __global__ void calc_restrseq_forces_kernel(
     int n_restrseqs,
@@ -15,13 +15,13 @@ __global__ void calc_restrseq_forces_kernel(
     catype_t* catypes,
     bool* heavy,
     dvel_t* dvelocities,
-    double* upres_energy) {
+    real_t* upres_energy) {
     int s = blockIdx.x * blockDim.x + threadIdx.x;
     if (s >= n_restrseqs) return;
 
-    double k, mass, totmass;
+    real_t k, mass, totmass;
     coord_t dr;
-    double r2, ener;
+    real_t r2, ener;
 
     k = restrseqs[s].k;
 
@@ -46,7 +46,7 @@ __global__ void calc_restrseq_forces_kernel(
             dr.x /= n_ctr;
             dr.y /= n_ctr;
             dr.z /= n_ctr;
-            r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
+            r2 = dr.x * dr.x + dr.y * dr.y + dr.z * dr.z;
             ener = .5 * k * r2;
             atomicAdd(upres_energy, ener);
 
@@ -77,7 +77,7 @@ __global__ void calc_restrseq_forces_kernel(
             dr.x /= totmass;
             dr.y /= totmass;
             dr.z /= totmass;
-            r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
+            r2 = dr.x * dr.x + dr.y * dr.y + dr.z * dr.z;
             ener = .5 * k * r2;
             atomicAdd(upres_energy, ener);
 
@@ -100,7 +100,7 @@ __global__ void calc_restrseq_forces_kernel(
                 dr.y = coords[i].y - coords_init[i].y;
                 dr.z = coords[i].z - coords_init[i].z;
 
-                r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
+                r2 = dr.x * dr.x + dr.y * dr.y + dr.z * dr.z;
                 ener = .5 * k * r2;
                 atomicAdd(upres_energy, ener);
 
@@ -123,7 +123,7 @@ void calc_restrseq_forces_host() {
     auto d_catypes = host.catypes->gpu_data_p;
     auto d_heavy = host.heavy->gpu_data_p;
     auto d_dvelocities = host.dvelocities->gpu_data_p;
-    cudaMemset(d_upres_energy, 0, sizeof(double));
+    cudaMemset(d_upres_energy, 0, sizeof(real_t));
     // ctx.sync_all_to_device();
 
     int blockSize = 256;
@@ -139,8 +139,8 @@ void calc_restrseq_forces_host() {
         d_dvelocities,
         d_upres_energy);
     cudaDeviceSynchronize();
-    double upres_energy;
-    cudaMemcpy(&upres_energy, d_upres_energy, sizeof(double), cudaMemcpyDeviceToHost);
+    real_t upres_energy;
+    cudaMemcpy(&upres_energy, d_upres_energy, sizeof(real_t), cudaMemcpyDeviceToHost);
     host.E_restraint.Upres = upres_energy;
     printf("Restrseq U_upres: %f\n", upres_energy);
 }
@@ -148,7 +148,7 @@ void calc_restrseq_forces_host() {
 void init_restrseq_force_kernel_data() {
     using namespace CudaRestrseqForce;
     if (!is_initialized) {
-        check_cudaMalloc((void**)&d_upres_energy, sizeof(double));
+        check_cudaMalloc((void**)&d_upres_energy, sizeof(real_t));
         is_initialized = true;
     }
 }

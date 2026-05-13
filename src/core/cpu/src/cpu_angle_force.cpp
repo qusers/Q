@@ -5,7 +5,7 @@
 #include "context.h"
 #include "cpu_utils.h"
 
-double calc_angle_forces(int start, int end) {
+real_t calc_angle_forces(int start, int end) {
     auto& ctx = Context::instance();
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
@@ -15,11 +15,11 @@ double calc_angle_forces(int start, int end) {
     coord_t rji, rjk;
     coord_t di, dk;
 
-    double bji2inv, bjk2inv, bjiinv, bjkinv;
+    real_t bji2inv, bjk2inv, bjiinv, bjkinv;
     cangle_t cangle;
-    double cos_th, th, dth, dv, f1;
-    double ener;
-    double angle = 0;
+    real_t cos_th, th, dth, dv, f1;
+    real_t ener;
+    real_t angle = 0;
 
     auto &angles = ctx.angles->cpu_data_p;
     auto &cangles = ctx.cangles->cpu_data_p;
@@ -64,9 +64,9 @@ double calc_angle_forces(int start, int end) {
         dv = cangle.kth * dth;
 
         f1 = sin(th);
-        if (std::fabs(f1) < 1.0E-12) {
+        if (std::fabs(f1) < k_singular_sin_epsilon) {
             // Avoid division by zero
-            f1 = -1.0E12;
+            f1 = -1.0 / k_singular_sin_epsilon;
         } else {
             f1 = -1.0 / f1;
         }

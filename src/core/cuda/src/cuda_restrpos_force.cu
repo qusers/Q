@@ -6,17 +6,17 @@
 
 namespace CudaRestrposForce {
 bool is_initialized = false;
-double* d_E_restraint;
+real_t* d_E_restraint;
 }  // namespace CudaRestrposForce
 
 __global__ void calc_restrpos_forces_kernel(
     restrpos_t* restrspos,
     int n_restrspos,
     coord_t* coords,
-    double* lambdas,
+    real_t* lambdas,
     int n_lambdas,
     E_restraint_t* EQ_restraint,
-    double* E_restraint,
+    real_t* E_restraint,
     dvel_t* dvelocities) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_restrspos) return;
@@ -24,7 +24,7 @@ __global__ void calc_restrpos_forces_kernel(
 
     int state, i;
     coord_t dr;
-    double lambda, ener, x2, y2, z2;
+    real_t lambda, ener, x2, y2, z2;
 
     state = restrspos[ir].ipsi - 1;
     i = restrspos[ir].a - 1;
@@ -39,9 +39,9 @@ __global__ void calc_restrpos_forces_kernel(
         lambda = 1;
     }
 
-    x2 = pow(dr.x, 2);
-    y2 = pow(dr.y, 2);
-    z2 = pow(dr.z, 2);
+    x2 = dr.x * dr.x;
+    y2 = dr.y * dr.y;
+    z2 = dr.z * dr.z;
 
     ener = .5 * restrspos[ir].k.x * x2 + .5 * restrspos[ir].k.y * y2 + .5 * restrspos[ir].k.z * z2;
 
@@ -64,8 +64,8 @@ void calc_restrpos_forces_host() {
     auto& host = Context::instance();
     if (host.n_restrspos == 0) return;
     using namespace CudaRestrposForce;
-    double val = 0.0;
-    cudaMemcpy(d_E_restraint, &val, sizeof(double), cudaMemcpyHostToDevice);
+    real_t val = 0.0;
+    cudaMemcpy(d_E_restraint, &val, sizeof(real_t), cudaMemcpyHostToDevice);
 
     auto d_restrspos = host.restrspos->gpu_data_p;
     auto d_coords = host.coords->gpu_data_p;
@@ -85,7 +85,7 @@ void calc_restrpos_forces_host() {
         d_E_restraint,
         d_dvelocities);
     cudaDeviceSynchronize();
-    cudaMemcpy(&val, d_E_restraint, sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&val, d_E_restraint, sizeof(real_t), cudaMemcpyDeviceToHost);
     host.E_restraint.Upres += val;
     host.EQ_restraint->download();
 }
@@ -93,7 +93,7 @@ void calc_restrpos_forces_host() {
 void init_restrpos_force_kernel_data() {
     using namespace CudaRestrposForce;
     if (!is_initialized) {
-        check_cudaMalloc((void**)&d_E_restraint, sizeof(double));
+        check_cudaMalloc((void**)&d_E_restraint, sizeof(real_t));
         is_initialized = true;
     }
 }

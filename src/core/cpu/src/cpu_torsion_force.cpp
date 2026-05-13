@@ -5,7 +5,7 @@
 #include "context.h"
 #include "cpu_utils.h"
 
-double calc_torsion_forces(int start, int end) {
+real_t calc_torsion_forces(int start, int end) {
     auto& ctx = Context::instance();
     auto &torsions = ctx.torsions->cpu_data_p;
     auto &ctorsions = ctx.ctorsions->cpu_data_p;
@@ -17,11 +17,11 @@ double calc_torsion_forces(int start, int end) {
     coord_t rji, rjk, rkl, rnj, rnk, rki, rlj;
     coord_t di, dl, dpi, dpj, dpk, dpl;
 
-    double bj2inv, bk2inv, bjinv, bkinv;
-    double cos_phi, phi;
-    double arg, dv, f1;
-    double ener;
-    double torsion = 0;
+    real_t bj2inv, bk2inv, bjinv, bkinv;
+    real_t cos_phi, phi;
+    real_t arg, dv, f1;
+    real_t ener;
+    real_t torsion = 0;
 
     torsion_t t;
     ctorsion_t ctors;
@@ -88,8 +88,8 @@ double calc_torsion_forces(int start, int end) {
 
         // Forces
         f1 = sin(phi);
-        if (std::fabs(f1) < 1E-12) {
-            f1 = 1E-12;
+        if (std::fabs(f1) < k_singular_sin_epsilon) {
+            f1 = std::copysign(k_singular_sin_epsilon, f1);
         }
         f1 = -1 / f1;
 
