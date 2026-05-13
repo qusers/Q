@@ -4,17 +4,13 @@
 #include <vector>
 
 #include "common/include/precision.h"
-/* =============================================
- * == FROM MD FILE
- * =============================================
- */
 
 struct md_t {
     // [MD]
     int steps;
     double stepsize;
     double temperature;
-    char thermostat[40];
+    std::string thermostat;
     double bath_coupling;
     int random_seed;
     double initial_temperature;
@@ -22,6 +18,7 @@ struct md_t {
     bool shake_solute;
     bool shake_hydrogens;
     bool lrf;
+    bool separate_scaling = false;
     bool charge_groups;
     // [cut-offs]
     double solute_solute;

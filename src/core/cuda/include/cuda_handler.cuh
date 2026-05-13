@@ -9,9 +9,6 @@ class CudaHandler : public Handler {
         return handler;
     }
 
-    // Allocate device resources and prepare kernel state.
-    void initialize() override;
-
     // Release device resources.
     void shutdown() override;
 
@@ -19,6 +16,7 @@ class CudaHandler : public Handler {
    protected:
     bool initialized_ = false;
 
+    void initialize_backend() override;
     void calc_internal_forces(int iteration) override;
     void calc_nonbonded_forces() override;
     void calc_temperature() override;

@@ -10,10 +10,10 @@ class CpuHandler : public Handler {
         return h;
     }
 
-    void initialize() override;
     void shutdown() override;
 
    protected:
+    void initialize_backend() override;
     void calc_internal_forces(int iteration) override;
     void calc_nonbonded_forces() override;
     void calc_temperature() override;

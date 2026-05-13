@@ -23,9 +23,9 @@
   <small>Logs root: {{ logs_root }}</small>
 
   <div class="chart">
-  <h2>Simulation performance (ns/day)</h2>
+  <h2>Simulation throughput (total ns/day)</h2>
   <div id="nsday-chart"></div>
-  <div class="note">Simulated nanoseconds per wall-clock day.</div>
+  <div class="note">Total simulated nanoseconds per wall-clock day across all concurrent processes.</div>
   </div>
 
   <div class="chart">
@@ -209,8 +209,8 @@ function lineChart(containerId, cfg) {
   });
 
   lineChart("nsday-chart", {
-    xLabel: "Processes", yLabel: "ns/day", xs: payload.procs,
-    series: [{ label: "Performance (ns/day)", ys: payload.ns_per_day }]
+    xLabel: "Processes", yLabel: "total ns/day", xs: payload.procs,
+    series: [{ label: "Total throughput (ns/day)", ys: payload.ns_per_day }]
   });
 
 
@@ -233,7 +233,7 @@ function lineChart(containerId, cfg) {
       <th>GPU util mean (%)</th><th>GPU util peak (%)</th>
       <th>VRAM util mean (%)</th><th>VRAM util peak (%)</th>
       <th>Speedup (×)</th>
-      <th>ns/day</th>
+      <th>Total ns/day</th>
     </tr>`;
   table.appendChild(thead);
 
