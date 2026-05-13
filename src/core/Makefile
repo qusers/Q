@@ -1,6 +1,11 @@
 CC = nvcc
 CFLAGS = -O3 -std=c++17 -arch=sm_89 -I./cuda/include -I./common/include -I./cpu/include -I.
 DEPFLAGS = -MMD -MF $(@:.o=.d)
+SPFP ?= 0
+
+ifeq ($(SPFP),1)
+CFLAGS += -DQDYN_SPFP
+endif
 
 # collect all .cu files except main.cu
 SRCS = $(filter-out main.cu, $(wildcard *.cu cuda/src/*.cu))
@@ -10,6 +15,14 @@ OBJS = $(SRCS:.cu=.o) $(CPPSRCS:.cpp=.o)
 DEPS = $(MAIN_OBJ:.o=.d) $(OBJS:.o=.d)
 
 all: qdyn move
+
+double:
+	$(MAKE) clean
+	$(MAKE) SPFP=0 all
+
+spfp:
+	$(MAKE) clean
+	$(MAKE) SPFP=1 all
 
 qdyn: $(MAIN_OBJ) $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^
@@ -28,3 +41,5 @@ move:
 	mv qdyn ../../bin/
 
 -include $(DEPS)
+
+.PHONY: all clean move double spfp
