@@ -382,15 +382,15 @@ def parse_qgpu_log(filename):
                 continue
 
             parts = line.split()
-            if block == 'temperature' and len(parts) >= 2:
+            if block == 'temperature' and len(parts) >= 2 and parts[0] == 'Temp':
                 current['temperature'][parts[0]] = float(parts[1])
-            elif block == 'bonded' and len(parts) >= 5:
+            elif block == 'bonded' and len(parts) >= 5 and parts[0] in current['bonded']:
                 current['bonded'][parts[0]] = [float(x) for x in parts[1:5]]
-            elif block == 'nonbonded' and len(parts) >= 3:
+            elif block == 'nonbonded' and len(parts) >= 3 and parts[0] in current['nonbonded']:
                 current['nonbonded'][parts[0]] = [float(x) for x in parts[1:3]]
-            elif block == 'restraint' and len(parts) >= 2:
+            elif block == 'restraint' and len(parts) >= 2 and parts[0] in current['restraint']:
                 current['restraint'][parts[0]] = float(parts[1])
-            elif block == 'q-energies' and len(parts) >= 9:
+            elif block == 'q-energies' and len(parts) >= 9 and parts[0].replace('.', '', 1).isdigit():
                 current['q-energies']['lambda'].append(float(parts[0]))
                 current['q-energies']['SUM'].append(float(parts[1]))
                 current['q-energies']['Ubond'].append(float(parts[2]))
@@ -400,7 +400,7 @@ def parse_qgpu_log(filename):
                 current['q-energies']['Ucoul'].append(float(parts[6]))
                 current['q-energies']['Uvdw'].append(float(parts[7]))
                 current['q-energies']['Urestr'].append(float(parts[8]))
-            elif block == 'total' and len(parts) >= 2:
+            elif block == 'total' and len(parts) >= 2 and parts[0] in current['total']:
                 current['total'][parts[0]] = float(parts[1])
 
     if current is not None:
