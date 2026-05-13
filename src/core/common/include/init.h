@@ -16,11 +16,9 @@ void init_atoms_list();
 void initialize_charge_tables();
 void initialize_catype_tables();
 void init_inv_mass();
-void write_headers();
 void init_pshells();
 void init_shake();
 void init_velocities();
 void init_water_sphere();
 void init_wshells();
-
 

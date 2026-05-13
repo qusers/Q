@@ -26,6 +26,7 @@ class Context {
     */
     CommandInfo command_info;
 
+    bool fresh_start;
     int n_atoms;         // the total number of atoms
     int n_atoms_solute;  // the total number of solute number, in our system [0, n_atoms_solute) are solute, [n_atoms_solute, n_atoms) are water atoms
     int n_patoms;

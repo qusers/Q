@@ -14,7 +14,6 @@
 #include "cpu_handler.h"
 #include "cpu_shake.h"
 #include "cpu_utils.h"
-#include "output.h"
 #include "parse.h"
 
 template <typename T>
@@ -930,9 +929,3 @@ void init_unified_atom_parameters() {
     }
 }
 
-void write_headers() {
-    // Write header to file
-    write_header("coords.csv");
-    write_header("velocities.csv");
-    write_energy_header();
-}

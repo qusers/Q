@@ -3,15 +3,19 @@
 #include <cstdio>
 
 void StdOutput::output_trajectory(Context& ctx, int iteration) {
-    (void) ctx;
-    (void) iteration;
 }
 
 void StdOutput::output_energy(Context& ctx, int iteration) {
-    (void) iteration;
-
     auto* lambdas = ctx.lambdas ? ctx.lambdas->cpu_data_p : nullptr;
     auto* EQ_restraint = ctx.EQ_restraint->cpu_data_p;
+
+    std::printf("================================================\n");
+    if (iteration > 0) {
+        std::printf("== STEP %d\n", iteration);
+    } else {
+        std::printf("== INITIAL ENERGIES\n");
+    }
+    std::printf("================================================\n");
 
     std::printf("[temperature]\n");
     std::printf("Temp\t%f\n", ctx.Temp);

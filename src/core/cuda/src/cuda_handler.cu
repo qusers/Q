@@ -38,7 +38,7 @@
 #include "cuda/include/cuda_temperature.cuh"
 #include "cuda/include/cuda_torsion_force.cuh"
 
-void CudaHandler::initialize() {
+void CudaHandler::initialize_backend() {
     if (!initialized_) {
         init_angle_force_kernel_data();
         init_bond_force_kernel_data();

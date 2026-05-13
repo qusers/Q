@@ -52,7 +52,7 @@ void calc_q_bonded_forces(Context& ctx) {
 
 }  // namespace
 
-void CpuHandler::initialize() {
+void CpuHandler::initialize_backend() {
 }
 
 void CpuHandler::shutdown() {

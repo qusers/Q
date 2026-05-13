@@ -10,10 +10,8 @@
 #include "init.h"
 #include "inp_parser.h"
 #include "parse.h"
-#include "q_input.h"
 
 Context* Context::current_ = nullptr;
-bool q_native_fresh_start = false;
 
 namespace {
 template <typename T>
@@ -107,6 +105,7 @@ void upload_preprocessed_topology(Context& ctx) {
 void apply_parse_result(Context& ctx, const ParseResult& parsed) {
     validate_parse_result(parsed);
 
+    ctx.fresh_start = parsed.fresh_start;
     bool run_gpu = ctx.command_info.requested_gpu;
 
     ctx.md = parsed.md;
@@ -253,15 +252,11 @@ void Context::cuda_reset_energies() {
 void Context::init_data_from_files() {
     std::unique_ptr<BaseParser> parser;
     if (command_info.input_mode == CommandInputMode::Csv) {
-        q_input_mode = Q_INPUT_CSV;
         parser = std::make_unique<CsvParser>(command_info.csv_dir);
     } else {
-        q_input_mode = Q_INPUT_NATIVE;
         parser = std::make_unique<InpParser>(command_info.input_file);
     }
     ParseResult parser_result = parser->parse();
-    q_native_fresh_start = parser_result.fresh_start;
-
     apply_parse_result(*this, parser_result);
 
     if (n_lambdas > 2) {
@@ -316,7 +311,7 @@ void Context::preprocess_data() {
     EQ_nonbond_qx.assign(n_lambdas, {});
     EQ_restraint = std::make_unique<HostDeviceBuffer<E_restraint_t>>(n_lambdas, true, command_info.requested_gpu);
 
-    if (n_shake_constraints > 0 || (q_input_mode == Q_INPUT_NATIVE && q_native_fresh_start && md.random_seed > 0)) {
+    if (n_shake_constraints > 0 || (fresh_start && md.random_seed > 0)) {
         initial_shaking();
         stop_cm_translation();
         if (command_info.requested_gpu) {
