@@ -766,7 +766,7 @@ void InpParser::parse_md() {
     md.polarisation_force = parse_double(value_or(solvent, "polarisation-force", value_or(solvent, "polarisation_force", "20.0")));
     md.non_bond = parse_int(value_or(intervals, "non-bond", value_or(intervals, "non_bond", "25")));
     md.output = parse_int(value_or(intervals, "output", "5"));
-    md.energy = parse_int(value_or(intervals, "energy", "1"));
+    md.energy = parse_int(value_or(intervals, "energy", "0"));
     md.trajectory = parse_int(value_or(intervals, "trajectory", "100"));
 
     result.native_output.final_file = resolve_output_path_local(value_or(files, "final", ""), input_dir_);
