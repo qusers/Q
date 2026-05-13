@@ -10,8 +10,13 @@ namespace CudaShakeConstraints {
 
 bool is_initialized = false;
 int* d_mol_shake_offset;
-int* d_total_iterations;
 int* d_failed;
+
+#ifdef QDYN_SPFP
+constexpr constraint_work_t k_shake_squared_tol = static_cast<constraint_work_t>(2.0 * shake_tol);
+#else
+constexpr constraint_work_t k_shake_squared_tol = static_cast<constraint_work_t>(shake_tol);
+#endif
 }  // namespace CudaShakeConstraints
 
 __global__ void calc_shake_constraints_kernel(
@@ -26,7 +31,6 @@ __global__ void calc_shake_constraints_kernel(
     coord_t* coords,
     coord_t* xcoords,
     real_t* winv,
-    int* total_iterations,
     int* failed,
     int* mol_shake_offset) {
     int idx = blockIdx.x;
@@ -37,8 +41,9 @@ __global__ void calc_shake_constraints_kernel(
     if (mol_shake_count == 0) return;
 
     int ai, aj;
-    real_t xij2, diff, corr, scp, xxij2;
-    coord_t xij, xxij;
+    constraint_work_t xij2, diff, corr, scp, current_dist2;
+    constraint_work_t xij_x, xij_y, xij_z;
+    constraint_work_t xxij_x, xxij_y, xxij_z;
     __shared__ int mol_converged;
 
     int shake = mol_shake_offset[mol];
@@ -63,26 +68,28 @@ __global__ void calc_shake_constraints_kernel(
                     ai = shake_bonds[shake_i].ai - 1;
                     aj = shake_bonds[shake_i].aj - 1;
 
-                    xij.x = coords[ai].x - coords[aj].x;
-                    xij.y = coords[ai].y - coords[aj].y;
-                    xij.z = coords[ai].z - coords[aj].z;
-                    xij2 = xij.x * xij.x + xij.y * xij.y + xij.z * xij.z;
-                    diff = shake_bonds[shake_i].dist2 - xij2;
-                    if (fabs(diff) < shake_tol * shake_bonds[shake_i].dist2) {
+                    xij_x = static_cast<constraint_work_t>(coords[ai].x) - static_cast<constraint_work_t>(coords[aj].x);
+                    xij_y = static_cast<constraint_work_t>(coords[ai].y) - static_cast<constraint_work_t>(coords[aj].y);
+                    xij_z = static_cast<constraint_work_t>(coords[ai].z) - static_cast<constraint_work_t>(coords[aj].z);
+                    xij2 = xij_x * xij_x + xij_y * xij_y + xij_z * xij_z;
+                    const constraint_work_t target_dist2 = static_cast<constraint_work_t>(shake_bonds[shake_i].dist2);
+                    diff = target_dist2 - xij2;
+                    if (fabs(diff) <= CudaShakeConstraints::k_shake_squared_tol * target_dist2) {
                         shake_bonds[shake_i].ready = true;
+                        continue;
                     }
-                    xxij.x = xcoords[ai].x - xcoords[aj].x;
-                    xxij.y = xcoords[ai].y - xcoords[aj].y;
-                    xxij.z = xcoords[ai].z - xcoords[aj].z;
-                    scp = xij.x * xxij.x + xij.y * xxij.y + xij.z * xxij.z;
-                    corr = diff / (2 * scp * (winv[ai] + winv[aj]));
+                    xxij_x = static_cast<constraint_work_t>(xcoords[ai].x) - static_cast<constraint_work_t>(xcoords[aj].x);
+                    xxij_y = static_cast<constraint_work_t>(xcoords[ai].y) - static_cast<constraint_work_t>(xcoords[aj].y);
+                    xxij_z = static_cast<constraint_work_t>(xcoords[ai].z) - static_cast<constraint_work_t>(xcoords[aj].z);
+                    scp = xij_x * xxij_x + xij_y * xxij_y + xij_z * xxij_z;
+                    corr = diff / (constraint_work_t{2} * scp * (static_cast<constraint_work_t>(winv[ai]) + static_cast<constraint_work_t>(winv[aj])));
 
-                    coords[ai].x += xxij.x * corr * winv[ai];
-                    coords[ai].y += xxij.y * corr * winv[ai];
-                    coords[ai].z += xxij.z * corr * winv[ai];
-                    coords[aj].x -= xxij.x * corr * winv[aj];
-                    coords[aj].y -= xxij.y * corr * winv[aj];
-                    coords[aj].z -= xxij.z * corr * winv[aj];
+                    coords[ai].x += static_cast<real_t>(xxij_x * corr * static_cast<constraint_work_t>(winv[ai]));
+                    coords[ai].y += static_cast<real_t>(xxij_y * corr * static_cast<constraint_work_t>(winv[ai]));
+                    coords[ai].z += static_cast<real_t>(xxij_z * corr * static_cast<constraint_work_t>(winv[ai]));
+                    coords[aj].x -= static_cast<real_t>(xxij_x * corr * static_cast<constraint_work_t>(winv[aj]));
+                    coords[aj].y -= static_cast<real_t>(xxij_y * corr * static_cast<constraint_work_t>(winv[aj]));
+                    coords[aj].z -= static_cast<real_t>(xxij_z * corr * static_cast<constraint_work_t>(winv[aj]));
                 }
             }
             __syncthreads();
@@ -109,17 +116,15 @@ __global__ void calc_shake_constraints_kernel(
                 ai = shake_bonds[shake + i].ai - 1;
                 aj = shake_bonds[shake + i].aj - 1;
 
-                xxij.x = xcoords[ai].x - xcoords[aj].x;
-                xxij.y = xcoords[ai].y - xcoords[aj].y;
-                xxij.z = xcoords[ai].z - xcoords[aj].z;
-                xxij2 = xxij.x * xxij.x + xxij.y * xxij.y + xxij.z * xxij.z;
-                printf(">>> Shake failed, i = %d,j = %d, d = %f, d0 = %f\n", ai + 1, aj + 1, sqrt(xxij2), sqrt(shake_bonds[shake + i].dist2));
+                xij_x = static_cast<constraint_work_t>(coords[ai].x) - static_cast<constraint_work_t>(coords[aj].x);
+                xij_y = static_cast<constraint_work_t>(coords[ai].y) - static_cast<constraint_work_t>(coords[aj].y);
+                xij_z = static_cast<constraint_work_t>(coords[ai].z) - static_cast<constraint_work_t>(coords[aj].z);
+                current_dist2 = xij_x * xij_x + xij_y * xij_y + xij_z * xij_z;
+                printf(">>> Shake failed, i = %d,j = %d, d = %f, d0 = %f\n", ai + 1, aj + 1, sqrt(current_dist2), sqrt(static_cast<constraint_work_t>(shake_bonds[shake + i].dist2)));
             }
             atomicExch(failed, 1);
             return;
         }
-
-        atomicAdd(total_iterations, n_iterations);
     }
 }
 
@@ -139,7 +144,6 @@ void init_shake_constraints_kernel_data() {
             free(mol_shake_offset_host);
         }
 
-        check_cudaMalloc((void**)&d_total_iterations, sizeof(int));
         check_cudaMalloc((void**)&d_failed, sizeof(int));
 
         is_initialized = true;
@@ -150,7 +154,6 @@ void cleanup_shake_constraints() {
     using namespace CudaShakeConstraints;
     if (is_initialized) {
         cudaFree(d_mol_shake_offset);
-        cudaFree(d_total_iterations);
         cudaFree(d_failed);
         is_initialized = false;
     }
@@ -160,9 +163,7 @@ int calc_shake_constraints_host() {
     auto& host = Context::instance();
     if (host.n_molecules == 0 || host.n_shake_constraints == 0) return 0;
     using namespace CudaShakeConstraints;
-    int total_iterations_host = 0;
     int failed_host = 0;
-    check_cuda(cudaMemcpy(d_total_iterations, &total_iterations_host, sizeof(int), cudaMemcpyHostToDevice));
     check_cuda(cudaMemcpy(d_failed, &failed_host, sizeof(int), cudaMemcpyHostToDevice));
 
     int blocks = host.n_molecules;
@@ -191,16 +192,14 @@ int calc_shake_constraints_host() {
         d_coords,
         d_xcoords,
         d_winv,
-        d_total_iterations,
         d_failed,
         d_mol_shake_offset);
     check_cuda(cudaDeviceSynchronize());
     check_cuda(cudaMemcpy(&failed_host, d_failed, sizeof(int), cudaMemcpyDeviceToHost));
-    check_cuda(cudaMemcpy(&total_iterations_host, d_total_iterations, sizeof(int), cudaMemcpyDeviceToHost));
     host.coords->download();
     if (failed_host != 0) {
         std::printf(">>> FATAL: shake failure\n");
         std::exit(EXIT_FAILURE);
     }
-    return host.n_molecules == 0 ? 0 : total_iterations_host / host.n_molecules;
+    return 0;
 }

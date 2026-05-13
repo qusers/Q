@@ -5,7 +5,7 @@ using real_t = float;
 using nonbond_work_t = float;
 using force_accum_t = float;
 using energy_accum_t = float;
-using constraint_work_t = float;
+using constraint_work_t = double;
 #else
 using real_t = double;
 using nonbond_work_t = double;
