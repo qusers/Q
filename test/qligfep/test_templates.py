@@ -145,6 +145,38 @@ class TestRenderMdInput:
         )
         self._assert_no_leading_whitespace(content)
 
+    def test_indentation_with_multiline_restraints(self):
+        """Multi-line restraint sections must not leave stray indentation on any line.
+
+        Regression: caller-provided distance_restraints is multi-line and flush-left,
+        which previously broke dedent's common-prefix calculation and left the template's
+        4-space indent on every other line of the rendered output.
+        """
+        params = MDParameters(
+            steps=5000,
+            stepsize=2.0,
+            temperature="T_VAR",
+            bath_coupling=10.0,
+            shell_radius=15,
+            interval_energy=10,
+        )
+        distance_restraints = "\n".join(f"{i} {i + 33} 0.0 0.1 0.5 0" for i in range(1, 22))
+        sequence_restraints = "1      75      1.0 0 1   "
+        wall_restraints = "76 78 12.0 1.0 0 0 0"
+        content = render_md_input(
+            params=params,
+            lambda1="0.500",
+            lambda2="0.500",
+            trajectory_file="md_0500_0500.dcd",
+            final_file="md_0500_0500.re",
+            restart_file="eq5.re",
+            energy_file="md_0500_0500.en",
+            distance_restraints=distance_restraints,
+            sequence_restraints=sequence_restraints,
+            wall_restraints=wall_restraints,
+        )
+        self._assert_no_leading_whitespace(content)
+
     def test_render_basic_file(self):
         """Verify basic MD input file rendering."""
         params = MDParameters(
