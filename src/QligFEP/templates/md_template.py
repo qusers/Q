@@ -1,7 +1,6 @@
 """Base MD template and render function for Q input files."""
 
 from dataclasses import dataclass
-from textwrap import dedent
 
 
 @dataclass
@@ -97,90 +96,90 @@ def render_md_input(
     Returns:
         Complete .inp file content as string
     """
-    # Pre-build optional sections (empty string = omitted from output)
-    # Optional multi-line sections: each line must carry 4-space indentation
-    # matching the template, so that dedent strips it uniformly.
+    # Pre-build optional sections (empty string = omitted from output).
+    # The template literal below is written flush-left so the rendered output
+    # carries no leading whitespace regardless of how multi-line restraint
+    # sections are passed in.
     equilibration_start = (
-        ("    random_seed               SEED_VAR\n" "    initial_temperature       1\n") if is_eq1 else ""
+        "random_seed               SEED_VAR\ninitial_temperature       1\n" if is_eq1 else ""
     )
 
     minimization_settings = (
         (
-            f"    minimize                  on\n"
-            f"    max_minimize_steps        {params.max_minimize_steps}\n"
-            f"    minimize_tolerance        {params.minimize_tolerance}\n"
-            f"    minimize_step_size        {params.minimize_step_size}\n"
+            f"minimize                  on\n"
+            f"max_minimize_steps        {params.max_minimize_steps}\n"
+            f"minimize_tolerance        {params.minimize_tolerance}\n"
+            f"minimize_step_size        {params.minimize_step_size}\n"
         )
         if params.minimize
         else ""
     )
 
     energy_interval = (
-        f"    energy                    {params.interval_energy}\n"
+        f"energy                    {params.interval_energy}\n"
         if params.interval_energy is not None
         else ""
     )
 
-    restart_file_name = f"    restart                   {restart_file}\n" if restart_file else ""
-    energy_file_name = f"    energy                    {energy_file}\n" if energy_file else ""
+    restart_file_name = f"restart                   {restart_file}\n" if restart_file else ""
+    energy_file_name = f"energy                    {energy_file}\n" if energy_file else ""
 
-    template = f"""\
-    [MD]
-    steps                     {params.steps}
-    stepsize                  {params.stepsize}
-    temperature               {params.temperature}
-    bath_coupling             {params.bath_coupling}
+    return f"""\
+[MD]
+steps                     {params.steps}
+stepsize                  {params.stepsize}
+temperature               {params.temperature}
+bath_coupling             {params.bath_coupling}
 {equilibration_start}\
-    shake_solvent             {onoff(params.shake_solvent)}
-    shake_hydrogens           {onoff(params.shake_hydrogens)}
-    shake_solute              {onoff(params.shake_solute)}
-    lrf                       {onoff(params.lrf)}
-    separate_scaling          {onoff(params.separate_scaling)}
+shake_solvent             {onoff(params.shake_solvent)}
+shake_hydrogens           {onoff(params.shake_hydrogens)}
+shake_solute              {onoff(params.shake_solute)}
+lrf                       {onoff(params.lrf)}
+separate_scaling          {onoff(params.separate_scaling)}
 {minimization_settings}\
 
-    [cut-offs]
-    solute_solvent            {params.cutoff_solute_solvent}
-    solute_solute             {params.cutoff_solute_solute}
-    solvent_solvent           {params.cutoff_solvent_solvent}
-    q_atom                    {params.cutoff_q_atom}
-    lrf                       {params.cutoff_lrf}
+[cut-offs]
+solute_solvent            {params.cutoff_solute_solvent}
+solute_solute             {params.cutoff_solute_solute}
+solvent_solvent           {params.cutoff_solvent_solvent}
+q_atom                    {params.cutoff_q_atom}
+lrf                       {params.cutoff_lrf}
 
-    [sphere]
-    shell_force               {params.shell_force}
-    shell_radius              {params.shell_radius}
+[sphere]
+shell_force               {params.shell_force}
+shell_radius              {params.shell_radius}
 
-    [solvent]
-    radial_force              {params.radial_force}
-    polarisation              {onoff(params.polarisation)}
-    polarisation_force        {params.polarisation_force}
+[solvent]
+radial_force              {params.radial_force}
+polarisation              {onoff(params.polarisation)}
+polarisation_force        {params.polarisation_force}
 
-    [intervals]
-    output                    {params.interval_output}
+[intervals]
+output                    {params.interval_output}
 {energy_interval}\
-    trajectory                {params.interval_trajectory}
-    non_bond                  {params.interval_non_bond}
+trajectory                {params.interval_trajectory}
+non_bond                  {params.interval_non_bond}
 
-    [files]
-    topology                  {params.topology}
-    trajectory                {trajectory_file}
+[files]
+topology                  {params.topology}
+trajectory                {trajectory_file}
 {restart_file_name}\
 {energy_file_name}\
-    final                     {final_file}
-    fep                       {params.fep_file}
+final                     {final_file}
+fep                       {params.fep_file}
 
-    [trajectory_atoms]
-    not excluded
+[trajectory_atoms]
+not excluded
 
-    [lambdas]
-    {lambda1} {lambda2}
+[lambdas]
+{lambda1} {lambda2}
 
-    [sequence_restraints]
-    {sequence_restraints}
+[sequence_restraints]
+{sequence_restraints}
 
-    [distance_restraints]
-    {distance_restraints}
+[distance_restraints]
+{distance_restraints}
 
-    [wall_restraints]
-    {wall_restraints}
-    """
-    return dedent(template)
+[wall_restraints]
+{wall_restraints}
+"""
