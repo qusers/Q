@@ -324,6 +324,22 @@ def parse_arguments(program: str) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "-cm",
+        "--charge-method",
+        dest="charge_method",
+        type=str,
+        default="ion_match",
+        choices=["none", "ion_match", "coalchemical_water"],
+        help=(
+            "Strategy for handling FEP edges that change the ligand net charge. "
+            "'ion_match' (default) adds Cl-/Na+ counter-ions to the water leg so its total "
+            "charge matches the protein leg. "
+            "'coalchemical_water' turns a real water in the water leg into a co-alchemical Na+/Cl- "
+            "(O <-> ion, H <-> DUM). "
+            "'none' disables all neutralization (raw ddG retains the Born artifact)."
+        ),
+    )
+    parser.add_argument(
         "-log",
         "--log-level",
         dest="log",

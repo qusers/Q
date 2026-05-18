@@ -5436,3 +5436,20 @@
     [charge_groups]
         O    H1   H2
 *------------------------------------------------------------------
+{CWT}                 ! Co-alchemical counter-water (TIP3P geometry); no `solvent 1` flag so qprep treats it as a solute
+    [info]
+        SYBYLtype  GROUP
+    [atoms]
+         1 O      OT          -0.834
+         2 H1     HT           0.417
+         3 H2     HT           0.417
+    [bonds]
+       O    H1
+       O    H2
+       H1   H2 !for shake
+    [connections]
+
+    [impropers]
+    [charge_groups]
+        O    H1   H2
+*------------------------------------------------------------------

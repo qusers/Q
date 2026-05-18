@@ -44,6 +44,25 @@ from .templates.sections import (
     format_water_restraint,
 )
 
+WATER_ATOM_TYPES = {
+    "AMBER14sb": ("OW", "HW"),
+    "OPLS2015": ("OT", "HT"),
+    "CHARMM36": ("OT", "HT"),
+}
+
+TIP3P_CHARGE_O = -0.834
+TIP3P_CHARGE_H = 0.417
+
+CHLORIDE_NAME = {
+    "AMBER14sb": "CHL",
+    "OPLS2015": "CLA",
+    "CHARMM36": "CLA",
+}
+
+# Residue name for the co-alchemical counter-water. Must not be HOH, since
+# qprep treats HOH as solvent and the counter-water needs to be a solute.
+COUNTER_WATER_RESNAME = "CWT"
+
 
 class QligFEP:
     """
@@ -77,6 +96,7 @@ class QligFEP:
         neq_L: float = 8.0,
         neq_schedule: Literal["sigmoidal", "linear"] = "sigmoidal",
         protein_charge: Optional[int] = None,
+        charge_method: str = "ion_match",
     ):
         self.timestep = timestep
         self.lig1 = lig1
@@ -114,6 +134,18 @@ class QligFEP:
         # counter ion type to neutralized charge-changing perturbations (e.g., SOD or CLA)
         self.ion_type = None
         self.protein_charge = protein_charge
+        valid_charge_methods = ("none", "ion_match", "coalchemical_water")
+        if charge_method not in valid_charge_methods:
+            raise ValueError(f"charge_method={charge_method!r} not in {valid_charge_methods}")
+        self.charge_method = charge_method
+        # Populated by read_files() once formal charges are known.
+        self.same_charge: Optional[bool] = None
+        # Co-alchemical water state, populated by place_counter_water() when
+        # charge_method == "coalchemical_water". Each entry is a dict with
+        # keys "topology_indices" (3 ints) and "qatoms" (3 Q-atom descriptors).
+        self.counter_water_atoms: list = []
+        # VdW lines for ion + water atom types, written into the FEP file.
+        self.counter_ion_vdw: list = []
 
         if self.system == "protein":
             # Get last atom and residue from complexfile!
@@ -226,6 +258,7 @@ class QligFEP:
         # Compute formal charges from partial charge sums
         self.charge_lig1 = round(sum(float(c[1]) for c in charges[:molsize_lig1]))
         self.charge_lig2 = round(sum(float(c[2]) for c in charges[molsize_lig1:]))
+        self.same_charge = self.charge_lig1 == self.charge_lig2
 
         return ([changes_1, changes_2], [charges, atomtypes], [molsize_lig1, molsize_lig2])
 
@@ -338,14 +371,22 @@ class QligFEP:
         lig_size1 = int(lig_size1)
         lig_size2 = int(lig_size2)
         lig_tot = lig_size1 + lig_size2
-        exclude_residues = ["HOH", "LIG", "LID"]
-        if self.system == "water" and self.n_counter_ions > 0:
+        exclude_residues = ["HOH", "LIG", "LID", COUNTER_WATER_RESNAME]
+        if self.system == "water" and self.n_counter_ions > 0 and self.ion_type:
+            # Method 1 (real ion in water leg) excludes the ion residue too.
             exclude_residues.append(self.ion_type)
         self.atomoffset = (
             read_pdb_to_dataframe(Path(writedir) / "top_p.pdb")
             .query("~residue_name.isin(@exclude_residues)")
             .shape[0]
         )
+
+        # Counter-water Q-atom topology indices (3 per counter-water). Empty
+        # unless place_counter_water() populated them (Method 3 only).
+        cw_topo_indices = []
+        if self.counter_water_atoms:
+            for cw in self.counter_water_atoms:
+                cw_topo_indices.extend(cw["topology_indices"])
 
         with open(writedir + "/FEP1.fep", "w") as outfile:
             total_atoms = len(change_charges)
@@ -361,6 +402,9 @@ class QligFEP:
             outfile.write("[atoms]\n")
             for i in range(1, total_atoms + 1):
                 outfile.write(f"{str(i):5}{str(i + self.atomoffset):5}\n")
+            for idx, topo_idx in enumerate(cw_topo_indices):
+                q_idx = total_atoms + 1 + idx
+                outfile.write(f"{str(q_idx):5}{str(topo_idx):5}\n")
             outfile.write("\n\n")
 
             # changing charges
@@ -368,12 +412,21 @@ class QligFEP:
 
             for line in change_charges:
                 outfile.write(f"{line[0]:<5}{line[1]:>10}{line[2]:>10}\n")
+            if self.counter_water_atoms:
+                q_idx = total_atoms
+                for cw in self.counter_water_atoms:
+                    for qatom in cw["qatoms"]:
+                        q_idx += 1
+                        outfile.write(f"{q_idx:<5}{qatom['charge_s1']:>10}{qatom['charge_s2']:>10}\n")
             outfile.write("\n\n")
 
             # add the Q atomtypes
             outfile.write("[atom_types]\n")
             for line in FEP_vdw:
                 outfile.write(line + "\n")
+            if self.counter_ion_vdw:
+                for vdw_line in self.counter_ion_vdw:
+                    outfile.write(vdw_line + "\n")
 
             outfile.write("DUM       0.0000    0.0000    0         0         0.0000    0.0000    1.0080")
             outfile.write("\n\n")
@@ -385,6 +438,16 @@ class QligFEP:
 
             for i in range(1 + lig_size1, lig_tot + 1):
                 outfile.write("{:<5}{:>10}{:>10}\n".format(str(i), "20", "0"))
+            if self.counter_water_atoms:
+                q_idx = total_atoms
+                for cw in self.counter_water_atoms:
+                    for qatom in cw["qatoms"]:
+                        q_idx += 1
+                        outfile.write(
+                            "{:<5}{:>10}{:>10}\n".format(
+                                str(q_idx), qatom["softcore_s1"], qatom["softcore_s2"]
+                            )
+                        )
 
             outfile.write("\n\n")
 
@@ -392,6 +455,12 @@ class QligFEP:
             outfile.write("[change_atoms]\n")
             for line in change_vdw:
                 outfile.write(f"{line[0]:<5}{line[1]:>10}{line[2]:>10}\n")
+            if self.counter_water_atoms:
+                q_idx = total_atoms
+                for cw in self.counter_water_atoms:
+                    for qatom in cw["qatoms"]:
+                        q_idx += 1
+                        outfile.write(f"{q_idx:<5}{qatom['type_s1']:>10}{qatom['type_s2']:>10}\n")
 
     def merge_pdbs(self, writedir):
         replacements = {}
@@ -454,6 +523,8 @@ class QligFEP:
         delta_q = self.charge_lig1 - self.charge_lig2
         if delta_q == 0 or self.system != "water":
             return 0
+        if self.charge_method != "ion_match":
+            return 0
 
         # Temporary: in the future let's have standard 2-letter code for ions and not
         # these made up names for Q because it demands for 3-letter residue names...
@@ -510,6 +581,258 @@ class QligFEP:
                 outfile.write(line)
 
         return n_ions
+
+    def place_counter_water(self, writedir: str) -> int:
+        """Co-alchemical counter-water placement (Method 3).
+
+        Appends one or more water residues (CWT) to the merged PDB as solute
+        atoms. In the FEP, each counter-water oxygen perturbs between a real
+        water oxygen and a Na+/Cl- ion, with its two hydrogens perturbing
+        between real H and DUM. The net effect is a charge-conserving swap
+        across the two FEP endpoints, with no softcore needed (both ends have
+        finite VdW for O <-> ion, and the H <-> DUM pair is zero VdW on both
+        sides). Must be called BEFORE qprep so the waters become solute atoms.
+
+        Args:
+            writedir: Inputfiles directory containing the merged PDB.
+
+        Returns:
+            Number of counter-waters placed.
+        """
+        delta_q = self.charge_lig1 - self.charge_lig2
+        if delta_q == 0:
+            return 0
+        if self.charge_method != "coalchemical_water":
+            return 0
+
+        chloride = CHLORIDE_NAME.get(self.FF, "CLA")
+        if self.FF not in WATER_ATOM_TYPES:
+            raise ValueError(
+                f"coalchemical_water mode does not have water atom types defined for FF={self.FF}; "
+                f"supported FFs: {sorted(WATER_ATOM_TYPES)}"
+            )
+        water_o, water_h = WATER_ATOM_TYPES[self.FF]
+        n_ions = abs(delta_q)
+
+        # Choose state assignment that minimizes absolute system charge at each
+        # endpoint. If lig2 has smaller |q|, the ion is "real" in state 1 (lig1
+        # endpoint); otherwise it's real in state 2.
+        ion_real_in_state1 = abs(self.charge_lig2) <= abs(self.charge_lig1)
+        if ion_real_in_state1:
+            ion_real_charge = (self.charge_lig2 - self.charge_lig1) / n_ions
+        else:
+            ion_real_charge = (self.charge_lig1 - self.charge_lig2) / n_ions
+        self.ion_type = chloride if ion_real_charge < 0 else "SOD"
+        ion_real_charge = round(ion_real_charge)
+
+        if ion_real_in_state1:
+            o_qatom = {
+                "charge_s1": float(ion_real_charge),
+                "charge_s2": TIP3P_CHARGE_O,
+                "type_s1": self.ion_type,
+                "type_s2": water_o,
+                "softcore_s1": "0",
+                "softcore_s2": "0",
+            }
+            h_qatom = {
+                "charge_s1": 0.0,
+                "charge_s2": TIP3P_CHARGE_H,
+                "type_s1": "DUM",
+                "type_s2": water_h,
+                "softcore_s1": "0",
+                "softcore_s2": "0",
+            }
+        else:
+            o_qatom = {
+                "charge_s1": TIP3P_CHARGE_O,
+                "charge_s2": float(ion_real_charge),
+                "type_s1": water_o,
+                "type_s2": self.ion_type,
+                "softcore_s1": "0",
+                "softcore_s2": "0",
+            }
+            h_qatom = {
+                "charge_s1": TIP3P_CHARGE_H,
+                "charge_s2": 0.0,
+                "type_s1": water_h,
+                "type_s2": "DUM",
+                "softcore_s1": "0",
+                "softcore_s2": "0",
+            }
+
+        vdw_lines = [self._read_vdw_from_ff(self.ion_type), self._read_vdw_from_ff(water_o)]
+        try:
+            vdw_lines.append(self._read_vdw_from_ff(water_h))
+        except ValueError:
+            # Some FFs omit HW from [atom_types] because its VdW is zero.
+            pass
+
+        pdb_path = Path(writedir) / self.pdb_fname
+        pdb_df = read_pdb_to_dataframe(pdb_path)
+        lig_df = pdb_df[pdb_df["residue_name"] == "LIG"]
+        lig_cog = np.array([lig_df["x"].mean(), lig_df["y"].mean(), lig_df["z"].mean()])
+
+        sphere_r = int(self.sphereradius)
+        target_dist = max(sphere_r - 11.0, 10.0)
+        if sphere_r - 5.0 - 10.0 < 3.0:
+            logger.warning(
+                f"Sphere radius {sphere_r}A is narrow for counter-water placement: "
+                f"valid distance band is only {sphere_r - 5.0 - 10.0:.1f}A wide. "
+                f"Consider a larger sphere for charge-changing perturbations."
+            )
+
+        placement_dir = self._counter_water_direction(pdb_df, lig_cog)
+
+        positions = []
+        for i in range(n_ions):
+            if i == 0:
+                positions.append(lig_cog + placement_dir * target_dist)
+                continue
+            angle = 2.0 * np.pi * i / n_ions
+            cos_a, sin_a = np.cos(angle), np.sin(angle)
+            perp = np.cross(placement_dir, [0, 0, 1])
+            if np.linalg.norm(perp) < 1e-6:
+                perp = np.cross(placement_dir, [0, 1, 0])
+            perp = perp / np.linalg.norm(perp)
+            rotated = placement_dir * cos_a + perp * sin_a
+            rotated = rotated / np.linalg.norm(rotated)
+            positions.append(lig_cog + rotated * target_dist)
+
+        last_serial = int(pdb_df["atom_serial_number"].max())
+        last_resseq = int(pdb_df["residue_seq_number"].max())
+        resname = COUNTER_WATER_RESNAME
+
+        def _pdb_atom(serial, name, resseq, pos, element):
+            return pdb_parse_out(
+                [
+                    "ATOM  ",
+                    serial,
+                    name,
+                    " ",
+                    resname,
+                    " ",
+                    resseq,
+                    " ",
+                    *pos,
+                    1.00,
+                    0.00,
+                    element,
+                    "  ",
+                ]
+            )
+
+        self.counter_water_atoms = []
+        with open(pdb_path, "a") as fh:
+            for i, o_pos in enumerate(positions):
+                resseq = last_resseq + 1 + i
+                o_serial = last_serial + 1 + i * 3
+                h1_serial = o_serial + 1
+                h2_serial = o_serial + 2
+                h1_pos, h2_pos = self._tip3p_hydrogen_positions(o_pos, placement_dir)
+                fh.write(_pdb_atom(o_serial, "O", resseq, o_pos, " O") + "\n")
+                fh.write(_pdb_atom(h1_serial, "H1", resseq, h1_pos, " H") + "\n")
+                fh.write(_pdb_atom(h2_serial, "H2", resseq, h2_pos, " H") + "\n")
+                self.counter_water_atoms.append(
+                    {
+                        "topology_indices": [o_serial, h1_serial, h2_serial],
+                        "qatoms": [o_qatom, h_qatom.copy(), h_qatom.copy()],
+                    }
+                )
+
+        self.n_counter_ions = n_ions
+        self.counter_ion_vdw = vdw_lines
+        logger.info(
+            f"Placed {n_ions} counter-water(s) for {self.ion_type} swap "
+            f"({o_qatom['type_s1']} -> {o_qatom['type_s2']})"
+        )
+        return n_ions
+
+    def update_counter_water_indices(self, writedir: str) -> None:
+        """Refresh counter-water topology indices after qprep renumbers atoms.
+
+        qprep emits a fresh top_p.pdb whose serial numbers may differ from the
+        ones we wrote into the merged PDB. We locate the CWT residues by name
+        and overwrite each entry's topology_indices.
+        """
+        if not self.counter_water_atoms:
+            return
+        pdb_df = read_pdb_to_dataframe(Path(writedir) / "top_p.pdb")
+        cwt_df = pdb_df[pdb_df["residue_name"] == COUNTER_WATER_RESNAME]
+        if len(cwt_df) == 0:
+            raise ValueError(
+                f"No {COUNTER_WATER_RESNAME} residues found in top_p.pdb after qprep. "
+                "Check that cwt.lib is loaded in qprep.inp."
+            )
+        cwt_resseqs = sorted(cwt_df["residue_seq_number"].unique())
+        if len(cwt_resseqs) != len(self.counter_water_atoms):
+            raise ValueError(
+                f"Expected {len(self.counter_water_atoms)} CWT residues in top_p.pdb, "
+                f"found {len(cwt_resseqs)}"
+            )
+        for i, resseq in enumerate(cwt_resseqs):
+            res_atoms = cwt_df[cwt_df["residue_seq_number"] == resseq].sort_values("atom_serial_number")
+            topo_indices = res_atoms["atom_serial_number"].astype(int).tolist()
+            self.counter_water_atoms[i]["topology_indices"] = topo_indices
+
+    @staticmethod
+    def _tip3p_hydrogen_positions(o_pos, direction):
+        """Compute the two H positions for a TIP3P water given the O and a
+        reference direction. TIP3P: O-H = 0.9572 A, H-O-H = 104.52 deg."""
+        bond_length = 0.9572
+        half_angle = np.radians(104.52 / 2.0)
+        z = direction / np.linalg.norm(direction)
+        perp = np.cross(z, [1, 0, 0])
+        if np.linalg.norm(perp) < 1e-6:
+            perp = np.cross(z, [0, 1, 0])
+        x = perp / np.linalg.norm(perp)
+        h1_dir = z * np.cos(half_angle) + x * np.sin(half_angle)
+        h2_dir = z * np.cos(half_angle) - x * np.sin(half_angle)
+        return o_pos + bond_length * h1_dir, o_pos + bond_length * h2_dir
+
+    def _counter_water_direction(self, pdb_df, lig_cog):
+        """Pick a placement direction for the counter-water that points away
+        from the protein bulk (or +x in pure water systems)."""
+        non_lig_residues = {"LIG", "LID", "HOH"}
+        protein_df = pdb_df[~pdb_df["residue_name"].isin(non_lig_residues)]
+        if len(protein_df) > 0:
+            protein_com = np.array([protein_df["x"].mean(), protein_df["y"].mean(), protein_df["z"].mean()])
+            direction = lig_cog - protein_com
+            norm = np.linalg.norm(direction)
+            if norm > 1e-6:
+                return direction / norm
+        return np.array([1.0, 0.0, 0.0])
+
+    def _read_vdw_from_ff(self, atom_type: str) -> str:
+        """Pull a VdW parameter line for `atom_type` from the FF .prm file and
+        format it for the FEP [atom_types] block."""
+        in_atom_types = False
+        with open(self.prm_file) as fh:
+            for line in fh:
+                if line.strip() == "[atom_types]":
+                    in_atom_types = True
+                    continue
+                if in_atom_types and line.startswith("["):
+                    break
+                if in_atom_types:
+                    parts = line.split()
+                    if parts and parts[0] == atom_type:
+                        return (
+                            f"{parts[0]:10}{parts[1]:10}{parts[3]:10}"
+                            f"{str(0):10}{str(0):10}"
+                            f"{parts[4]:10}{parts[5]:10}{parts[6]:10}"
+                        )
+        raise ValueError(f"Atom type {atom_type!r} not found in {self.prm_file}")
+
+    def _format_counter_water_restraint(self) -> str:
+        """Sequence-restraint lines pinning each counter-water oxygen, applied
+        across all eq and production stages. Returns "" if no counter-waters."""
+        if not self.counter_water_atoms:
+            return ""
+        lines = []
+        for cw in self.counter_water_atoms:
+            o_idx = cw["topology_indices"][0]
+            lines.append(format_sequence_restraint(o_idx, o_idx, force=1.0))
+        return "\n".join(lines)
 
     def write_water_pdb(self, writedir):
         header = self.sphereradius + ".0 SPHERE\n"
@@ -846,6 +1169,10 @@ class QligFEP:
         file_list2 = []  # forward lambda files
         file_list3 = []  # reverse lambda files
 
+        # Sequence restraint pinning the counter-water oxygen(s), if any.
+        # Appended to every eq and production stage's sequence_restraints.
+        cw_restraint = self._format_counter_water_restraint()
+
         # Determine equilibration lambdas based on start mode
         if self.start == "0.5":
             eq_lambda1, eq_lambda2 = "0.500", "0.500"
@@ -866,6 +1193,8 @@ class QligFEP:
             dr_str, seq_str = self._format_restraints_for_eq(
                 overlapping_atoms, lig_size1, lig_size2, eq_config, self.dr_force
             )
+            if cw_restraint:
+                seq_str = f"{seq_str}\n{cw_restraint}" if seq_str else cw_restraint
 
             restart_file = f"eq{i}.re" if i > 0 else None
 
@@ -897,6 +1226,8 @@ class QligFEP:
             )
         else:  # protein
             prod_seq_str = ""
+        if cw_restraint:
+            prod_seq_str = f"{prod_seq_str}\n{cw_restraint}" if prod_seq_str else cw_restraint
 
         # Write production files based on start mode
         if self.start == "0.5":

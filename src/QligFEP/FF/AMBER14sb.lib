@@ -4975,6 +4975,16 @@
        O    H2
        H1   H2 !for shake
 *--------------------------------------------------------------------------------
+{CWT} !Co-alchemical counter-water (TIP3P geometry); no `solvent 1` flag so qprep treats it as a solute
+    [atoms]
+         1 O       OW         -0.8340
+         2 H1      HW          0.4170
+         3 H2      HW          0.4170
+    [bonds]
+       O    H1
+       O    H2
+       H1   H2 !for shake
+*--------------------------------------------------------------------------------
 {SOD}            !charge: 1.00 ||  Sodium Ion, HFE set for TIP3P water from Li et al., JCTC, 2015, 11, 1645
     [atoms]
          1 SOD    SOD          1.00
