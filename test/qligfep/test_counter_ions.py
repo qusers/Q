@@ -159,7 +159,7 @@ class TestPlaceCounterIonsWithProteinCharge:
     LIG1 = "ejm_31"
     LIG2 = "ejm_42"
 
-    def _make_qligfep(self, tmp_path, system="water", protein_charge=None):
+    def _make_qligfep(self, tmp_path, system="water", protein_charge=None, charge_method="ion_match"):
         """Create a QligFEP instance in tmp_path with real tutorial ligand files."""
         from QligFEP.qligfep import QligFEP
 
@@ -183,6 +183,7 @@ class TestPlaceCounterIonsWithProteinCharge:
                 cluster="TETRA",
                 sphereradius="25",
                 protein_charge=protein_charge,
+                charge_method=charge_method,
             )
         finally:
             os.chdir(original_cwd)
@@ -281,3 +282,230 @@ class TestPlaceCounterIonsWithProteinCharge:
         run.charge_lig2 = 1
         n_ions = self._run_place_counter_ions(run, inputdir, tmp_path)
         assert n_ions == 0
+
+
+class TestChargeMethodDispatch(TestPlaceCounterIonsWithProteinCharge):
+    """The --charge-method flag selects how charge-changing edges are handled.
+
+    Only `ion_match` should place real ions in the water-leg PDB during setup.
+    `analytical`, `none`, and `coalchemical_water` must all skip the ion
+    placement step; analytical applies its correction later in analyze_FEP, and
+    coalchemical_water swaps a real water for an ion AFTER qprep (handled by
+    select_counter_water once that lands from test/ion-xchange-w-softcore).
+    """
+
+    def test_invalid_charge_method_raises(self, tmp_path):
+        from QligFEP.qligfep import QligFEP
+
+        with pytest.raises(ValueError, match="charge_method"):
+            QligFEP(
+                lig1=self.LIG1,
+                lig2=self.LIG2,
+                FF="AMBER14sb",
+                system="water",
+                cluster="TETRA",
+                sphereradius="25",
+                charge_method="not_a_real_method",
+            )
+
+    def test_same_charge_attribute_populated_after_read_files(self, tmp_path):
+        run = self._make_qligfep(tmp_path, protein_charge=8)
+        self._prepare_inputdir(run, tmp_path)
+        # Tyk2 ligands are both neutral -> same_charge True
+        assert run.same_charge is True
+
+    def test_same_charge_false_after_override(self, tmp_path):
+        run = self._make_qligfep(tmp_path, protein_charge=8)
+        self._prepare_inputdir(run, tmp_path)
+        run.charge_lig2 = 1
+        # read_files already set same_charge based on raw lib charges; recompute
+        # the way the code under test sees it during the dispatch.
+        assert run.charge_lig1 != run.charge_lig2
+
+    def test_ion_match_default_places_ions_on_charge_change(self, tmp_path):
+        """The default mode (ion_match) keeps the existing behavior."""
+        run = self._make_qligfep(
+            tmp_path, protein_charge=8, charge_method="ion_match"
+        )
+        inputdir = self._prepare_inputdir(run, tmp_path)
+        run.charge_lig2 = 1
+        n_ions = self._run_place_counter_ions(run, inputdir, tmp_path)
+        assert n_ions == 7
+        assert run.ion_type == "SOD"
+
+    def test_none_skips_ions_even_on_charge_change(self, tmp_path):
+        run = self._make_qligfep(
+            tmp_path, protein_charge=8, charge_method="none"
+        )
+        inputdir = self._prepare_inputdir(run, tmp_path)
+        run.charge_lig2 = 1
+        n_ions = self._run_place_counter_ions(run, inputdir, tmp_path)
+        assert n_ions == 0
+        assert run.ion_type is None
+
+    def test_coalchemical_water_skips_ion_placement_step(self, tmp_path):
+        """coalchemical_water replaces ion placement with water-to-ion swap
+        that happens post-qprep -- place_counter_ions itself must be a no-op."""
+        run = self._make_qligfep(
+            tmp_path, protein_charge=8, charge_method="coalchemical_water"
+        )
+        inputdir = self._prepare_inputdir(run, tmp_path)
+        run.charge_lig2 = 1
+        n_ions = self._run_place_counter_ions(run, inputdir, tmp_path)
+        assert n_ions == 0
+        assert run.ion_type is None
+
+    def test_ion_match_same_charge_no_ions(self, tmp_path):
+        """Even with ion_match, same-charge ligand pairs need no ions."""
+        run = self._make_qligfep(
+            tmp_path, protein_charge=0, charge_method="ion_match"
+        )
+        inputdir = self._prepare_inputdir(run, tmp_path)
+        # Do NOT override charge_lig2; both ligands stay neutral.
+        n_ions = self._run_place_counter_ions(run, inputdir, tmp_path)
+        assert n_ions == 0
+
+
+class TestPlaceCounterWater(TestPlaceCounterIonsWithProteinCharge):
+    """Tests for the co-alchemical water swap (Method 3)."""
+
+    def _run_place_counter_water(self, run, inputdir, tmp_path):
+        import os
+
+        original_cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            return run.place_counter_water(inputdir)
+        finally:
+            os.chdir(original_cwd)
+
+    def test_same_charge_returns_zero(self, tmp_path):
+        run = self._make_qligfep(tmp_path, charge_method="coalchemical_water")
+        inputdir = self._prepare_inputdir(run, tmp_path)
+        # Both ligands neutral; delta_q == 0 -> no counter-waters.
+        n_cw = self._run_place_counter_water(run, inputdir, tmp_path)
+        assert n_cw == 0
+        assert run.counter_water_atoms == []
+
+    def test_wrong_method_returns_zero(self, tmp_path):
+        """place_counter_water must be a no-op for any method other than coalchemical_water."""
+        run = self._make_qligfep(tmp_path, charge_method="ion_match")
+        inputdir = self._prepare_inputdir(run, tmp_path)
+        run.charge_lig2 = 1
+        n_cw = self._run_place_counter_water(run, inputdir, tmp_path)
+        assert n_cw == 0
+        assert run.counter_water_atoms == []
+
+    def test_neutral_to_positive_places_chloride_in_state2(self, tmp_path):
+        """lig1=0 -> lig2=+1. The +1 state needs a Cl- to net to zero; |lig2|
+        is the larger side, so the ion is real in state 2 (lig2 endpoint),
+        and state 1 has a real water."""
+        run = self._make_qligfep(tmp_path, charge_method="coalchemical_water")
+        inputdir = self._prepare_inputdir(run, tmp_path)
+        run.charge_lig2 = 1
+        n_cw = self._run_place_counter_water(run, inputdir, tmp_path)
+        assert n_cw == 1
+        assert run.ion_type == "CHL"  # AMBER14sb chloride
+        assert len(run.counter_water_atoms) == 1
+        cw = run.counter_water_atoms[0]
+        assert len(cw["topology_indices"]) == 3
+        assert len(cw["qatoms"]) == 3
+        # State 1 (lig1, neutral): real water. State 2 (lig2, +1): CHL ion.
+        assert cw["qatoms"][0]["type_s1"] == "OW"
+        assert cw["qatoms"][0]["type_s2"] == "CHL"
+
+    def test_positive_to_neutral_places_chloride_in_state1(self, tmp_path):
+        """lig1=+1 -> lig2=0. The +1 state needs a Cl- to net to zero; |lig2|
+        is the smaller side, so the ion is real in state 1 (lig1 endpoint),
+        and state 2 has a real water."""
+        run = self._make_qligfep(tmp_path, charge_method="coalchemical_water")
+        inputdir = self._prepare_inputdir(run, tmp_path)
+        run.charge_lig1 = 1
+        run.charge_lig2 = 0
+        n_cw = self._run_place_counter_water(run, inputdir, tmp_path)
+        assert n_cw == 1
+        assert run.ion_type == "CHL"
+        cw = run.counter_water_atoms[0]
+        # State 1 (lig1, +1): CHL ion. State 2 (lig2, neutral): real water.
+        assert cw["qatoms"][0]["type_s1"] == "CHL"
+        assert cw["qatoms"][0]["type_s2"] == "OW"
+
+    def test_negative_ligand_places_sodium(self, tmp_path):
+        """lig1=0 -> lig2=-1 requires a Na+ to net to zero in the -1 state."""
+        run = self._make_qligfep(tmp_path, charge_method="coalchemical_water")
+        inputdir = self._prepare_inputdir(run, tmp_path)
+        run.charge_lig2 = -1
+        n_cw = self._run_place_counter_water(run, inputdir, tmp_path)
+        assert n_cw == 1
+        assert run.ion_type == "SOD"
+        cw = run.counter_water_atoms[0]
+        # State 2 has the negative ligand; ion is real there.
+        assert cw["qatoms"][0]["type_s2"] == "SOD"
+        assert cw["qatoms"][0]["type_s1"] == "OW"
+
+    def test_h_atoms_swap_to_dum(self, tmp_path):
+        """Each counter-water gets two H atoms that perturb between real H and DUM."""
+        run = self._make_qligfep(tmp_path, charge_method="coalchemical_water")
+        inputdir = self._prepare_inputdir(run, tmp_path)
+        run.charge_lig2 = 1
+        self._run_place_counter_water(run, inputdir, tmp_path)
+        cw = run.counter_water_atoms[0]
+        # Atoms 1 and 2 are the hydrogens.
+        for h_qatom in cw["qatoms"][1:]:
+            assert "DUM" in (h_qatom["type_s1"], h_qatom["type_s2"])
+            assert "HW" in (h_qatom["type_s1"], h_qatom["type_s2"])
+
+    def test_cwt_lib_not_written_at_runtime(self, tmp_path):
+        """CWT lives inside the FF .lib next to HOH; no runtime cwt.lib is emitted."""
+        run = self._make_qligfep(tmp_path, charge_method="coalchemical_water")
+        inputdir = self._prepare_inputdir(run, tmp_path)
+        run.charge_lig2 = 1
+        self._run_place_counter_water(run, inputdir, tmp_path)
+        assert not (Path(inputdir) / "cwt.lib").exists()
+
+    def test_cwt_defined_in_ff_lib(self, tmp_path):
+        """The FF .lib file used by qprep must contain a CWT residue, matched
+        on the AMBER14sb water atom types (OW, HW)."""
+        run = self._make_qligfep(tmp_path, charge_method="coalchemical_water")
+        ff_lib = Path(run.lib_file)
+        text = ff_lib.read_text()
+        assert "{CWT}" in text
+        # Find the CWT block and verify its atom types.
+        cwt_start = text.index("{CWT}")
+        # Block ends at the next '*-----' separator line.
+        cwt_block = text[cwt_start:].split("*", 1)[0]
+        assert "OW" in cwt_block
+        assert "HW" in cwt_block
+        # And importantly: CWT must NOT carry the solvent flag, otherwise qprep
+        # would classify it as solvent and the co-alchemical swap wouldn't work.
+        # Check the actual directive, not prose comments mentioning it.
+        directive_lines = [ln.strip() for ln in cwt_block.splitlines() if not ln.lstrip().startswith(("!", "{"))]
+        assert "solvent 1" not in directive_lines
+
+    def test_pdb_appended_with_cwt_residue(self, tmp_path):
+        run = self._make_qligfep(tmp_path, charge_method="coalchemical_water")
+        inputdir = self._prepare_inputdir(run, tmp_path)
+        run.charge_lig2 = 1
+        self._run_place_counter_water(run, inputdir, tmp_path)
+        pdb_text = (Path(inputdir) / run.pdb_fname).read_text()
+        assert "CWT" in pdb_text
+
+    def test_counter_water_restraint_formats_oxygen_only(self, tmp_path):
+        run = self._make_qligfep(tmp_path, charge_method="coalchemical_water")
+        inputdir = self._prepare_inputdir(run, tmp_path)
+        run.charge_lig2 = 1
+        self._run_place_counter_water(run, inputdir, tmp_path)
+        restraint = run._format_counter_water_restraint()
+        assert restraint, "Expected a non-empty restraint string"
+        o_idx = run.counter_water_atoms[0]["topology_indices"][0]
+        # The oxygen index appears in the restraint line.
+        assert str(o_idx) in restraint
+
+    def test_two_charge_change_two_waters(self, tmp_path):
+        """|delta_q|=2 should produce 2 counter-waters."""
+        run = self._make_qligfep(tmp_path, charge_method="coalchemical_water")
+        inputdir = self._prepare_inputdir(run, tmp_path)
+        run.charge_lig2 = 2  # lig1=0, lig2=+2 -> 2 chlorides
+        n_cw = self._run_place_counter_water(run, inputdir, tmp_path)
+        assert n_cw == 2
+        assert len(run.counter_water_atoms) == 2

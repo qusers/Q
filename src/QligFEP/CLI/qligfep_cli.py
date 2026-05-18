@@ -44,6 +44,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "random_state": args.random_state,
             "wath_ligand_only": args.wath_ligand_only,
             "softcore_method": args.softcore_method,
+            "charge_method": args.charge_method,
         }
         if args.protein_charge is not None:
             param_dict["protein_charge"] = args.protein_charge
@@ -77,6 +78,9 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         elif k == "softcore_method":
             if v != "standard":
                 command_str += f" --softcore-method {v}"
+        elif k == "charge_method":
+            if v != "ion_match":
+                command_str += f" --charge-method {v}"
         else:
             command_str += f" --{k} {v}"
     command_str += f" --restraint_method {args.restraint_method}"
@@ -104,10 +108,29 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     logger.debug("Writing PDB files")
     run.merge_pdbs(inputdir)
 
-    # Place counter-ions for charge-changing perturbations (water system only)
-    n_ions = run.place_counter_ions(inputdir)
-    if n_ions > 0:
-        logger.info(f"Placed {n_ions} {run.ion_type} counter-ion(s) for charge-changing perturbation")
+    # Dispatch on --charge-method for the pre-qprep step.
+    # 'ion_match' places real Cl-/Na+ ions in the water-leg PDB before qprep.
+    # 'coalchemical_water' appends real waters as solute atoms before qprep
+    #   so qprep includes them in the topology; their Q-atom indices are then
+    #   refreshed from top_p.pdb after qprep renumbers atoms.
+    # 'none' does nothing at setup time.
+    charge_method = param_dict.get("charge_method", "ion_match")
+    if charge_method == "ion_match":
+        n_ions = run.place_counter_ions(inputdir)
+        if n_ions > 0:
+            logger.info(
+                f"Placed {n_ions} {run.ion_type} counter-ion(s) for charge-changing perturbation"
+            )
+    elif charge_method == "coalchemical_water":
+        n_cw = run.place_counter_water(inputdir)
+        if n_cw > 0:
+            logger.info(
+                f"Placed {n_cw} co-alchemical counter-water(s) ({run.ion_type} swap)"
+            )
+    elif charge_method == "none" and run.same_charge is False:
+        logger.warning(
+            "charge_method=none on a charge-changing edge: ddG will retain the Born artifact"
+        )
 
     run.write_water_pdb(inputdir)
 
@@ -122,6 +145,11 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     logger.debug("Writing the QPREP files & running qprep")
     run.write_qprep(inputdir)
     run.qprep(inputdir)
+
+    # Refresh the counter-water topology indices: qprep renumbers atoms.
+    if charge_method == "coalchemical_water":
+        run.update_counter_water_indices(inputdir)
+
     logger.debug("Writing FEP files")
     run.write_FEP_file(
         change_charges, change_vdw, FEP_vdw, inputdir, lig_size1, lig_size2,
