@@ -1,5 +1,5 @@
 CC = nvcc
-CFLAGS = -O3 -std=c++17 -arch=sm_89 -I./cuda/include -I./common/include -I./cpu/include -I.
+CFLAGS = -O3 -std=c++17 -arch=sm_86 -I./cuda/include -I./common/include -I./cpu/include -I.
 DEPFLAGS = -MMD -MF $(@:.o=.d)
 SPFP ?= 0
 
