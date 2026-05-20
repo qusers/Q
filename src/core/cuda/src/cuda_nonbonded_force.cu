@@ -1,6 +1,7 @@
 #include <iostream>
 
 #include "context.h"
+#include "cuda/include/cuda_force_accum.cuh"
 #include "cuda_nonbonded_force.cuh"
 #include "constants.h"
 #include "cuda_utility.cuh"
@@ -118,7 +119,7 @@ __global__ void calc_nonbonded_force_kernel(
 
     const coord_t* d_coords,
 
-    dvel_t* d_dvelocities,
+    cuda_dvel_t* d_dvelocities,
 
     real_t* evdw_tot,
     real_t* ecoul_tot,
@@ -288,15 +289,15 @@ __global__ void calc_nonbonded_force_kernel(
     }
 
     if (x_atom_idx >= 0) {
-        atomicAdd(&d_dvelocities[x_atom_idx].x, x_force.x);
-        atomicAdd(&d_dvelocities[x_atom_idx].y, x_force.y);
-        atomicAdd(&d_dvelocities[x_atom_idx].z, x_force.z);
+        atomic_add_force_component(&d_dvelocities[x_atom_idx].x, static_cast<real_t>(x_force.x));
+        atomic_add_force_component(&d_dvelocities[x_atom_idx].y, static_cast<real_t>(x_force.y));
+        atomic_add_force_component(&d_dvelocities[x_atom_idx].z, static_cast<real_t>(x_force.z));
     }
 
     if (y_atom_idx >= 0) {
-        atomicAdd(&d_dvelocities[y_atom_idx].x, y_force.x);
-        atomicAdd(&d_dvelocities[y_atom_idx].y, y_force.y);
-        atomicAdd(&d_dvelocities[y_atom_idx].z, y_force.z);
+        atomic_add_force_component(&d_dvelocities[y_atom_idx].x, static_cast<real_t>(y_force.x));
+        atomic_add_force_component(&d_dvelocities[y_atom_idx].y, static_cast<real_t>(y_force.y));
+        atomic_add_force_component(&d_dvelocities[y_atom_idx].z, static_cast<real_t>(y_force.z));
     }
 
     for (int offset = 16; offset > 0; offset >>= 1) {
@@ -358,7 +359,7 @@ std::pair<real_t, real_t> calc_nonbonded_force_host(
             x_idx_list,
             y_idx_list,
             host.coords->gpu_data_p,
-            host.dvelocities->gpu_data_p,
+            cuda_force_accum_buffer(host),
             d_evdw_total,
             d_ecoul_total,
             symmetric,

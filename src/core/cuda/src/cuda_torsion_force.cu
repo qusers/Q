@@ -1,4 +1,5 @@
 #include "cuda/include/cuda_torsion_force.cuh"
+#include "cuda/include/cuda_force_accum.cuh"
 #include "cuda/include/cuda_utility.cuh"
 #include "context.h"
 
@@ -7,7 +8,7 @@ bool is_initialized = false;
 real_t* d_energy_sum = nullptr;
 }  // namespace CudaTorsionForce
 
-__global__ void calc_torsion_forces_kernel(int start, int end, torsion_t* torsions, ctorsion_t* ctorsions, coord_t* coords, dvel_t* dvelocities, real_t* energy_sum) {
+__global__ void calc_torsion_forces_kernel(int start, int end, torsion_t* torsions, ctorsion_t* ctorsions, coord_t* coords, cuda_dvel_t* dvelocities, real_t* energy_sum) {
     int i = blockIdx.x * blockDim.x + threadIdx.x + start;
     if (i >= end) return;
     int aii, aji, aki, ali;
@@ -110,18 +111,18 @@ __global__ void calc_torsion_forces_kernel(int start, int end, torsion_t* torsio
     // Update energy and forces
     atomicAdd(energy_sum, ener);
 
-    atomicAdd(&dvelocities[aii].x, dv * dpi.x);
-    atomicAdd(&dvelocities[aii].y, dv * dpi.y);
-    atomicAdd(&dvelocities[aii].z, dv * dpi.z);
-    atomicAdd(&dvelocities[aji].x, dv * dpj.x);
-    atomicAdd(&dvelocities[aji].y, dv * dpj.y);
-    atomicAdd(&dvelocities[aji].z, dv * dpj.z);
-    atomicAdd(&dvelocities[aki].x, dv * dpk.x);
-    atomicAdd(&dvelocities[aki].y, dv * dpk.y);
-    atomicAdd(&dvelocities[aki].z, dv * dpk.z);
-    atomicAdd(&dvelocities[ali].x, dv * dpl.x);
-    atomicAdd(&dvelocities[ali].y, dv * dpl.y);
-    atomicAdd(&dvelocities[ali].z, dv * dpl.z);
+    atomic_add_force_component(&dvelocities[aii].x, dv * dpi.x);
+    atomic_add_force_component(&dvelocities[aii].y, dv * dpi.y);
+    atomic_add_force_component(&dvelocities[aii].z, dv * dpi.z);
+    atomic_add_force_component(&dvelocities[aji].x, dv * dpj.x);
+    atomic_add_force_component(&dvelocities[aji].y, dv * dpj.y);
+    atomic_add_force_component(&dvelocities[aji].z, dv * dpj.z);
+    atomic_add_force_component(&dvelocities[aki].x, dv * dpk.x);
+    atomic_add_force_component(&dvelocities[aki].y, dv * dpk.y);
+    atomic_add_force_component(&dvelocities[aki].z, dv * dpk.z);
+    atomic_add_force_component(&dvelocities[ali].x, dv * dpl.x);
+    atomic_add_force_component(&dvelocities[ali].y, dv * dpl.y);
+    atomic_add_force_component(&dvelocities[ali].z, dv * dpl.z);
 }
 
 real_t calc_torsion_forces_host(int start, int end) {
@@ -136,7 +137,7 @@ real_t calc_torsion_forces_host(int start, int end) {
 
     auto& host_ctx = Context::instance();
     coord_t* d_coords = host_ctx.coords->gpu_data_p;
-    dvel_t* d_dvelocities = host_ctx.dvelocities->gpu_data_p;
+    auto d_dvelocities = cuda_force_accum_buffer(host_ctx);
     torsion_t* d_torsions = host_ctx.torsions->gpu_data_p;
     ctorsion_t* d_ctorsions = host_ctx.ctorsions->gpu_data_p;
 

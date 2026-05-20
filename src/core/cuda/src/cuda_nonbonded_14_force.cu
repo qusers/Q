@@ -1,6 +1,7 @@
 #include "constants.h"
 #include "common/include/context.h"
 #include "common/include/vdw_rules.h"
+#include "cuda/include/cuda_force_accum.cuh"
 #include "cuda/include/cuda_nonbonded_14_force.cuh"
 #include "cuda_utility.cuh"
 
@@ -95,7 +96,7 @@ __global__ void calc_nonbonded_14_force_kernel(
     const ccharge_t* unified_ccharges,
     const catype_t* unified_catypes,
     const coord_t* d_coords,
-    dvel_t* d_dvelocities,
+    cuda_dvel_t* d_dvelocities,
     real_t* evdw_totals,
     real_t* ecoul_totals,
     bool include_pp,
@@ -151,12 +152,12 @@ __global__ void calc_nonbonded_14_force_kernel(
     const nonbond_work_t dx = static_cast<nonbond_work_t>(rj.x - ri.x);
     const nonbond_work_t dy = static_cast<nonbond_work_t>(rj.y - ri.y);
     const nonbond_work_t dz = static_cast<nonbond_work_t>(rj.z - ri.z);
-    atomicAdd(&d_dvelocities[ai].x, -dv * dx);
-    atomicAdd(&d_dvelocities[ai].y, -dv * dy);
-    atomicAdd(&d_dvelocities[ai].z, -dv * dz);
-    atomicAdd(&d_dvelocities[aj].x, dv * dx);
-    atomicAdd(&d_dvelocities[aj].y, dv * dy);
-    atomicAdd(&d_dvelocities[aj].z, dv * dz);
+    atomic_add_force_component(&d_dvelocities[ai].x, static_cast<real_t>(-dv * dx));
+    atomic_add_force_component(&d_dvelocities[ai].y, static_cast<real_t>(-dv * dy));
+    atomic_add_force_component(&d_dvelocities[ai].z, static_cast<real_t>(-dv * dz));
+    atomic_add_force_component(&d_dvelocities[aj].x, static_cast<real_t>(dv * dx));
+    atomic_add_force_component(&d_dvelocities[aj].y, static_cast<real_t>(dv * dy));
+    atomic_add_force_component(&d_dvelocities[aj].z, static_cast<real_t>(dv * dz));
 
     atomicAdd(&evdw_totals[mode], evdw);
     atomicAdd(&ecoul_totals[mode], ecoul);
@@ -197,7 +198,7 @@ static Nonbonded14EnergyBuckets calc_nonbonded_14_force_state_host(
         host.unified_ccharges->gpu_data_p,
         host.unified_catypes->gpu_data_p,
         host.coords->gpu_data_p,
-        host.dvelocities->gpu_data_p,
+        cuda_force_accum_buffer(host),
         d_evdw_totals,
         d_ecoul_totals,
         include_pp,

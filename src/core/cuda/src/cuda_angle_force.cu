@@ -1,4 +1,5 @@
 #include "cuda/include/cuda_angle_force.cuh"
+#include "cuda/include/cuda_force_accum.cuh"
 #include "cuda/include/cuda_utility.cuh"
 #include "context.h"
 
@@ -7,7 +8,7 @@ bool is_initialized = false;
 real_t* d_energy_sum;
 }  // namespace CudaAngleForce
 
-__global__ void calc_angle_forces_kernel(int start, int end, angle_t* angles, coord_t* coords, cangle_t* cangles, dvel_t* dvelocities, real_t* energy_sum) {
+__global__ void calc_angle_forces_kernel(int start, int end, angle_t* angles, coord_t* coords, cangle_t* cangles, cuda_dvel_t* dvelocities, real_t* energy_sum) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x + start;
     if (idx >= end) return;
 
@@ -58,17 +59,17 @@ __global__ void calc_angle_forces_kernel(int start, int end, angle_t* angles, co
         static_cast<real_t>(f1 * (rji.y / (rji_length * rjk_length) - cos_theta * rjk.y / (rjk_length * rjk_length))),
         static_cast<real_t>(f1 * (rji.z / (rji_length * rjk_length) - cos_theta * rjk.z / (rjk_length * rjk_length)))};
 
-    atomicAdd(&dvelocities[i].x, dv * di.x);
-    atomicAdd(&dvelocities[i].y, dv * di.y);
-    atomicAdd(&dvelocities[i].z, dv * di.z);
+    atomic_add_force_component(&dvelocities[i].x, dv * di.x);
+    atomic_add_force_component(&dvelocities[i].y, dv * di.y);
+    atomic_add_force_component(&dvelocities[i].z, dv * di.z);
 
-    atomicAdd(&dvelocities[k].x, dv * dk.x);
-    atomicAdd(&dvelocities[k].y, dv * dk.y);
-    atomicAdd(&dvelocities[k].z, dv * dk.z);
+    atomic_add_force_component(&dvelocities[k].x, dv * dk.x);
+    atomic_add_force_component(&dvelocities[k].y, dv * dk.y);
+    atomic_add_force_component(&dvelocities[k].z, dv * dk.z);
 
-    atomicAdd(&dvelocities[j].x, -dv * (di.x + dk.x));
-    atomicAdd(&dvelocities[j].y, -dv * (di.y + dk.y));
-    atomicAdd(&dvelocities[j].z, -dv * (di.z + dk.z));
+    atomic_add_force_component(&dvelocities[j].x, -dv * (di.x + dk.x));
+    atomic_add_force_component(&dvelocities[j].y, -dv * (di.y + dk.y));
+    atomic_add_force_component(&dvelocities[j].z, -dv * (di.z + dk.z));
 }
 
 real_t calc_angle_forces_host(int start, int end) {
@@ -82,7 +83,7 @@ real_t calc_angle_forces_host(int start, int end) {
     auto d_angles = host_ctx.angles->gpu_data_p;
     auto d_coords = host_ctx.coords->gpu_data_p;
     auto d_cangles = host_ctx.cangles->gpu_data_p;
-    auto d_dvelocities = host_ctx.dvelocities->gpu_data_p;
+    auto d_dvelocities = cuda_force_accum_buffer(host_ctx);
     // todo: now have to do that, after moving all to CudaContext, can remove it
     // ctx.sync_all_to_device();
 

@@ -248,6 +248,9 @@ Context& Context::instance() {
 
 void Context::cuda_reset_energies() {
     cudaMemset(dvelocities->gpu_data_p, 0, sizeof(dvel_t) * n_atoms);
+    if (fixed_dvelocities) {
+        cudaMemset(fixed_dvelocities->gpu_data_p, 0, sizeof(fixed_dvel_t) * n_atoms);
+    }
     cudaMemset(EQ_restraint->gpu_data_p, 0, sizeof(E_restraint_t) * n_lambdas);
 }
 
@@ -298,6 +301,9 @@ void Context::preprocess_data() {
     init_velocities();
 
     dvelocities = std::make_unique<HostDeviceBuffer<dvel_t>>(n_atoms, true, command_info.requested_gpu);
+    if (command_info.requested_gpu) {
+        fixed_dvelocities = std::make_unique<HostDeviceBuffer<fixed_dvel_t>>(n_atoms, false, true);
+    }
     xcoords = std::make_unique<HostDeviceBuffer<coord_t>>(n_atoms, true, command_info.requested_gpu);
 
     if (n_waters > 0) {

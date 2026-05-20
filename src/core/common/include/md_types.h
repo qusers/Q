@@ -313,6 +313,14 @@ struct dvel_t {
     force_accum_t z;
 };
 
+struct fixed_dvel_t {
+    force_fixed_storage_t x;
+    force_fixed_storage_t y;
+    force_fixed_storage_t z;
+};
+
+using cuda_dvel_t = fixed_dvel_t;
+
 struct E_bonded_t {
     real_t Ubond;
     real_t Uangle;

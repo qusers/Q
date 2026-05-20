@@ -1,5 +1,6 @@
 #include "cuda/include/cuda_restrseq_force.cuh"
 #include "common/include/context.h"
+#include "cuda/include/cuda_force_accum.cuh"
 #include "iostream"
 
 namespace CudaRestrseqForce {
@@ -14,7 +15,7 @@ __global__ void calc_restrseq_forces_kernel(
     atype_t* atypes,
     catype_t* catypes,
     bool* heavy,
-    dvel_t* dvelocities,
+    cuda_dvel_t* dvelocities,
     real_t* upres_energy) {
     int s = blockIdx.x * blockDim.x + threadIdx.x;
     if (s >= n_restrseqs) return;
@@ -53,9 +54,9 @@ __global__ void calc_restrseq_forces_kernel(
             for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
                 if (heavy[i] || restrseqs[s].ih) {
                     mass = catypes[atypes[i].code - 1].m;
-                    atomicAdd(&dvelocities[i].x, (k * dr.x * mass / 12.010));
-                    atomicAdd(&dvelocities[i].y, (k * dr.y * mass / 12.010));
-                    atomicAdd(&dvelocities[i].z, (k * dr.z * mass / 12.010));
+                    atomic_add_force_component(&dvelocities[i].x, (k * dr.x * mass / 12.010));
+                    atomic_add_force_component(&dvelocities[i].y, (k * dr.y * mass / 12.010));
+                    atomic_add_force_component(&dvelocities[i].z, (k * dr.z * mass / 12.010));
                 }
             }
         }
@@ -84,9 +85,9 @@ __global__ void calc_restrseq_forces_kernel(
             for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
                 if (heavy[i] || restrseqs[s].ih) {
                     mass = catypes[atypes[i].code - 1].m;
-                    atomicAdd(&dvelocities[i].x, k * dr.x);
-                    atomicAdd(&dvelocities[i].y, k * dr.y);
-                    atomicAdd(&dvelocities[i].z, k * dr.z);
+                    atomic_add_force_component(&dvelocities[i].x, k * dr.x);
+                    atomic_add_force_component(&dvelocities[i].y, k * dr.y);
+                    atomic_add_force_component(&dvelocities[i].z, k * dr.z);
                 }
             }
         }
@@ -104,9 +105,9 @@ __global__ void calc_restrseq_forces_kernel(
                 ener = .5 * k * r2;
                 atomicAdd(upres_energy, ener);
 
-                atomicAdd(&dvelocities[i].x, k * dr.x);
-                atomicAdd(&dvelocities[i].y, k * dr.y);
-                atomicAdd(&dvelocities[i].z, k * dr.z);
+                atomic_add_force_component(&dvelocities[i].x, k * dr.x);
+                atomic_add_force_component(&dvelocities[i].y, k * dr.y);
+                atomic_add_force_component(&dvelocities[i].z, k * dr.z);
             }
         }
     }
@@ -122,7 +123,7 @@ void calc_restrseq_forces_host() {
     auto d_atypes = host.atypes->gpu_data_p;
     auto d_catypes = host.catypes->gpu_data_p;
     auto d_heavy = host.heavy->gpu_data_p;
-    auto d_dvelocities = host.dvelocities->gpu_data_p;
+    auto d_dvelocities = cuda_force_accum_buffer(host);
     cudaMemset(d_upres_energy, 0, sizeof(real_t));
     // ctx.sync_all_to_device();
 

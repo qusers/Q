@@ -2,6 +2,7 @@
 
 #include "common/include/constants.h"
 #include "common/include/context.h"
+#include "cuda/include/cuda_force_accum.cuh"
 #include "cuda/include/cuda_radix_water_force.cuh"
 #include "cuda/include/cuda_utility.cuh"
 namespace CudaRadixWaterForce {
@@ -18,7 +19,7 @@ __global__ void calc_radix_water_forces_kernel(
     md_t md,
     real_t Dwmz,
     real_t awmz,
-    dvel_t* dvelocities,
+    cuda_dvel_t* dvelocities,
     real_t* energy) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     i = n_atoms_solute + i * 3;  // Process only oxygen atoms of water molecules
@@ -49,9 +50,9 @@ __global__ void calc_radix_water_forces_kernel(
 
     // Update energy and forces
     atomicAdd(energy, ener);
-    atomicAdd(&dvelocities[i].x, dv * dr.x);
-    atomicAdd(&dvelocities[i].y, dv * dr.y);
-    atomicAdd(&dvelocities[i].z, dv * dr.z);
+    atomic_add_force_component(&dvelocities[i].x, dv * dr.x);
+    atomic_add_force_component(&dvelocities[i].y, dv * dr.y);
+    atomic_add_force_component(&dvelocities[i].z, dv * dr.z);
 }
 
 void calc_radix_water_forces_host() {
@@ -69,7 +70,7 @@ void calc_radix_water_forces_host() {
     int numBlocks = (oxygen_atoms + blockSize - 1) / blockSize;
 
     auto d_coords = host.coords->gpu_data_p;
-    auto d_dvelocities = host.dvelocities->gpu_data_p;
+    auto d_dvelocities = cuda_force_accum_buffer(host);
     check_cuda(cudaMemset(d_energy, 0, sizeof(real_t)));
 
     real_t shift;

@@ -1,4 +1,5 @@
 #include "cuda/include/cuda_temperature.cuh"
+#include "cuda/include/cuda_force_accum.cuh"
 #include "cuda/include/cuda_utility.cuh"
 #include "common/include/constants.h"
 #include "common/include/context.h"
@@ -6,16 +7,17 @@
 
 namespace CudaTemperature {
 bool is_initialized = false;
-real_t* d_Temp_solute;
-real_t* d_Tfree_solute;
-real_t* d_Texcl_solute;
-real_t* d_Temp_solvent;
-real_t* d_Tfree_solvent;
-real_t* d_Texcl_solvent;
+force_fixed_storage_t* d_Temp_solute;
+force_fixed_storage_t* d_Tfree_solute;
+force_fixed_storage_t* d_Texcl_solute;
+force_fixed_storage_t* d_Temp_solvent;
+force_fixed_storage_t* d_Tfree_solvent;
+force_fixed_storage_t* d_Texcl_solvent;
 }  // namespace CudaTemperature
 
 __global__ void calc_temperature_kernel(int n_atoms, int n_atoms_solute, atype_t* atypes, catype_t* catypes, vel_t* velocities, bool* excluded, real_t boltz, real_t ekinmax,
-                                        real_t* Temp_solute, real_t* Tfree_solute, real_t* Texcl_solute, real_t* Temp_solvent, real_t* Tfree_solvent, real_t* Texcl_solvent) {
+                                        force_fixed_storage_t* Temp_solute, force_fixed_storage_t* Tfree_solute, force_fixed_storage_t* Texcl_solute,
+                                        force_fixed_storage_t* Temp_solvent, force_fixed_storage_t* Tfree_solvent, force_fixed_storage_t* Texcl_solvent) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_atoms) return;
     real_t mass_i = catypes[atypes[idx].code - 1].m;
@@ -27,18 +29,18 @@ __global__ void calc_temperature_kernel(int n_atoms, int n_atoms_solute, atype_t
     bool is_excluded = excluded[idx];
 
     if (is_solute) {
-        atomicAdd(Temp_solute, ener);
+        atomic_add_force_component(Temp_solute, ener);
         if (!is_excluded) {
-            atomicAdd(Tfree_solute, ener);
+            atomic_add_force_component(Tfree_solute, ener);
         } else {
-            atomicAdd(Texcl_solute, ener);
+            atomic_add_force_component(Texcl_solute, ener);
         }
     } else {
-        atomicAdd(Temp_solvent, ener);
+        atomic_add_force_component(Temp_solvent, ener);
         if (!is_excluded) {
-            atomicAdd(Tfree_solvent, ener);
+            atomic_add_force_component(Tfree_solvent, ener);
         } else {
-            atomicAdd(Texcl_solvent, ener);
+            atomic_add_force_component(Texcl_solvent, ener);
         }
     }
     if (ener > ekinmax) {
@@ -49,14 +51,14 @@ __global__ void calc_temperature_kernel(int n_atoms, int n_atoms_solute, atype_t
 void calc_temperature_host() {
     auto& host = Context::instance();
     using namespace CudaTemperature;
-    real_t h_Temp_solute = 0.0, h_Tfree_solute = 0.0, h_Texcl_solute = 0.0, h_Temp_solvent = 0.0, h_Tfree_solvent = 0.0, h_Texcl_solvent = 0.0;
+    real_t h_Temp_solute = 0.0, h_Tfree_solute = 0.0, h_Temp_solvent = 0.0, h_Tfree_solvent = 0.0;
 
-    cudaMemcpy(d_Temp_solute, &h_Temp_solute, sizeof(real_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_Tfree_solute, &h_Tfree_solute, sizeof(real_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_Texcl_solute, &h_Texcl_solute, sizeof(real_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_Temp_solvent, &h_Temp_solvent, sizeof(real_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_Tfree_solvent, &h_Tfree_solvent, sizeof(real_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_Texcl_solvent, &h_Texcl_solvent, sizeof(real_t), cudaMemcpyHostToDevice);
+    cudaMemset(d_Temp_solute, 0, sizeof(force_fixed_storage_t));
+    cudaMemset(d_Tfree_solute, 0, sizeof(force_fixed_storage_t));
+    cudaMemset(d_Texcl_solute, 0, sizeof(force_fixed_storage_t));
+    cudaMemset(d_Temp_solvent, 0, sizeof(force_fixed_storage_t));
+    cudaMemset(d_Tfree_solvent, 0, sizeof(force_fixed_storage_t));
+    cudaMemset(d_Texcl_solvent, 0, sizeof(force_fixed_storage_t));
 
     atype_t* d_atypes = host.atypes->gpu_data_p;
     catype_t* d_catypes = host.catypes->gpu_data_p;
@@ -71,12 +73,18 @@ void calc_temperature_host() {
                                                       d_Temp_solute, d_Tfree_solute, d_Texcl_solute, d_Temp_solvent, d_Tfree_solvent, d_Texcl_solvent);
 
     cudaDeviceSynchronize();
-    cudaMemcpy(&h_Temp_solute, d_Temp_solute, sizeof(real_t), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&h_Tfree_solute, d_Tfree_solute, sizeof(real_t), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&h_Texcl_solute, d_Texcl_solute, sizeof(real_t), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&h_Temp_solvent, d_Temp_solvent, sizeof(real_t), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&h_Tfree_solvent, d_Tfree_solvent, sizeof(real_t), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&h_Texcl_solvent, d_Texcl_solvent, sizeof(real_t), cudaMemcpyDeviceToHost);
+    force_fixed_storage_t temp_solute_fixed = 0;
+    force_fixed_storage_t tfree_solute_fixed = 0;
+    force_fixed_storage_t temp_solvent_fixed = 0;
+    force_fixed_storage_t tfree_solvent_fixed = 0;
+    cudaMemcpy(&temp_solute_fixed, d_Temp_solute, sizeof(force_fixed_storage_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&tfree_solute_fixed, d_Tfree_solute, sizeof(force_fixed_storage_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&temp_solvent_fixed, d_Temp_solvent, sizeof(force_fixed_storage_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&tfree_solvent_fixed, d_Tfree_solvent, sizeof(force_fixed_storage_t), cudaMemcpyDeviceToHost);
+    h_Temp_solute = fixed_to_force(force_fixed_from_storage(temp_solute_fixed));
+    h_Tfree_solute = fixed_to_force(force_fixed_from_storage(tfree_solute_fixed));
+    h_Temp_solvent = fixed_to_force(force_fixed_from_storage(temp_solvent_fixed));
+    h_Tfree_solvent = fixed_to_force(force_fixed_from_storage(tfree_solvent_fixed));
     host.Tfree = h_Tfree_solute + h_Tfree_solvent;
     host.Temp = h_Temp_solute + h_Temp_solvent;
 
@@ -100,12 +108,12 @@ void calc_temperature_host() {
 void init_temperature_kernel_data() {
     using namespace CudaTemperature;
     if (!is_initialized) {
-        check_cudaMalloc((void**)&d_Temp_solute, sizeof(real_t));
-        check_cudaMalloc((void**)&d_Tfree_solute, sizeof(real_t));
-        check_cudaMalloc((void**)&d_Texcl_solute, sizeof(real_t));
-        check_cudaMalloc((void**)&d_Temp_solvent, sizeof(real_t));
-        check_cudaMalloc((void**)&d_Tfree_solvent, sizeof(real_t));
-        check_cudaMalloc((void**)&d_Texcl_solvent, sizeof(real_t));
+        check_cudaMalloc((void**)&d_Temp_solute, sizeof(force_fixed_storage_t));
+        check_cudaMalloc((void**)&d_Tfree_solute, sizeof(force_fixed_storage_t));
+        check_cudaMalloc((void**)&d_Texcl_solute, sizeof(force_fixed_storage_t));
+        check_cudaMalloc((void**)&d_Temp_solvent, sizeof(force_fixed_storage_t));
+        check_cudaMalloc((void**)&d_Tfree_solvent, sizeof(force_fixed_storage_t));
+        check_cudaMalloc((void**)&d_Texcl_solvent, sizeof(force_fixed_storage_t));
         is_initialized = true;
     }
 }

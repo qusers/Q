@@ -1,4 +1,5 @@
 #include "cuda/include/cuda_restrang_force.cuh"
+#include "cuda/include/cuda_force_accum.cuh"
 #include "cuda/include/cuda_utility.cuh"
 #include "common/include/context.h"
 namespace CudaRestrangForce {
@@ -12,7 +13,7 @@ __global__ void calc_restrang_force_kernel(
     coord_t* coords,
     real_t* lambdas,
     int n_lambdas,
-    dvel_t* dvelocities,
+    cuda_dvel_t* dvelocities,
     E_restraint_t* EQ_restraint,
     real_t* E_restraint) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -77,15 +78,15 @@ __global__ void calc_restrang_force_kernel(
     dk.y = f1 * (dr.y / (rij * rjk) - cos_th * dr2.y / r2jk);
     dk.z = f1 * (dr.z / (rij * rjk) - cos_th * dr2.z / r2jk);
 
-    atomicAdd(&dvelocities[i].x, dv * di.x);
-    atomicAdd(&dvelocities[i].y, dv * di.y);
-    atomicAdd(&dvelocities[i].z, dv * di.z);
-    atomicAdd(&dvelocities[k].x, dv * dk.x);
-    atomicAdd(&dvelocities[k].y, dv * dk.y);
-    atomicAdd(&dvelocities[k].z, dv * dk.z);
-    atomicAdd(&dvelocities[j].x, -dv * (di.x + dk.x));
-    atomicAdd(&dvelocities[j].y, -dv * (di.y + dk.y));
-    atomicAdd(&dvelocities[j].z, -dv * (di.z + dk.z));
+    atomic_add_force_component(&dvelocities[i].x, dv * di.x);
+    atomic_add_force_component(&dvelocities[i].y, dv * di.y);
+    atomic_add_force_component(&dvelocities[i].z, dv * di.z);
+    atomic_add_force_component(&dvelocities[k].x, dv * dk.x);
+    atomic_add_force_component(&dvelocities[k].y, dv * dk.y);
+    atomic_add_force_component(&dvelocities[k].z, dv * dk.z);
+    atomic_add_force_component(&dvelocities[j].x, -dv * (di.x + dk.x));
+    atomic_add_force_component(&dvelocities[j].y, -dv * (di.y + dk.y));
+    atomic_add_force_component(&dvelocities[j].z, -dv * (di.z + dk.z));
 
     if (restrangs[ir].ipsi == 0) {
         for (int k = 0; k < n_lambdas; k++) {
@@ -107,7 +108,7 @@ void calc_restrang_force_host() {
     auto d_restrangs = host.restrangs->gpu_data_p;
     auto d_coords = host.coords->gpu_data_p;
     auto d_lambdas = host.lambdas->gpu_data_p;
-    auto d_dvelocities = host.dvelocities->gpu_data_p;
+    auto d_dvelocities = cuda_force_accum_buffer(host);
     auto d_EQ_restraint = host.EQ_restraint->gpu_data_p;
 
     real_t val = 0;

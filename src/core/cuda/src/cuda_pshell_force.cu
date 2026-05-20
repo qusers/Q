@@ -1,6 +1,7 @@
 #include "cuda/include/cuda_pshell_force.cuh"
 #include "common/include/constants.h"
 #include "common/include/context.h"
+#include "cuda/include/cuda_force_accum.cuh"
 #include "cuda_utility.cuh"
 #include <iostream>
 namespace CudaPshellForce {
@@ -17,7 +18,7 @@ __global__ void calc_pshell_force_kernel(
     coord_t* coords_init,
     real_t* ufix_energy,
     real_t* ushell_energy,
-    dvel_t* dvelocities) {
+    cuda_dvel_t* dvelocities) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_atoms_solute) return;
 
@@ -41,9 +42,9 @@ __global__ void calc_pshell_force_kernel(
         if (excluded[i]) atomicAdd(ufix_energy, ener);
         if (shell[i]) atomicAdd(ushell_energy, ener);
 
-        atomicAdd(&dvelocities[i].x, k * dr.x);
-        atomicAdd(&dvelocities[i].y, k * dr.y);
-        atomicAdd(&dvelocities[i].z, k * dr.z);
+        atomic_add_force_component(&dvelocities[i].x, k * dr.x);
+        atomic_add_force_component(&dvelocities[i].y, k * dr.y);
+        atomic_add_force_component(&dvelocities[i].z, k * dr.z);
     }
 }
 
@@ -55,7 +56,7 @@ void calc_pshell_forces_host() {
     auto d_excluded = host.excluded->gpu_data_p;
     auto d_coords = host.coords->gpu_data_p;
     auto d_coords_init = host.coords_init->gpu_data_p;
-    auto d_dvelocities = host.dvelocities->gpu_data_p;
+    auto d_dvelocities = cuda_force_accum_buffer(host);
 
     cudaMemset(d_ufix_energy, 0, sizeof(real_t));
     cudaMemset(d_ushell_energy, 0, sizeof(real_t));

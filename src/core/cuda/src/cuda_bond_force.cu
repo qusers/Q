@@ -1,11 +1,12 @@
 #include "cuda/include/cuda_bond_force.cuh"
+#include "cuda/include/cuda_force_accum.cuh"
 #include "context.h"
 #include "cuda_utility.cuh"
 namespace CudaBondForce {
 bool is_initialized = false;
 real_t* d_energy_sum;
 }  // namespace CudaBondForce
-__global__ void calc_bond_forces_kernel(int start, int end, bond_t* bonds, coord_t* coords, cbond_t* cbonds, dvel_t* dvelocities, real_t* energy_sum) {
+__global__ void calc_bond_forces_kernel(int start, int end, bond_t* bonds, coord_t* coords, cbond_t* cbonds, cuda_dvel_t* dvelocities, real_t* energy_sum) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x + start;
     if (idx >= end) return;
     bond_t bond = bonds[idx];
@@ -25,12 +26,12 @@ __global__ void calc_bond_forces_kernel(int start, int end, bond_t* bonds, coord
 
     // update forces
     real_t f = cbond.kb * dr / r;
-    atomicAdd(&dvelocities[bond.aj - 1].x, f * dx);
-    atomicAdd(&dvelocities[bond.aj - 1].y, f * dy);
-    atomicAdd(&dvelocities[bond.aj - 1].z, f * dz);
-    atomicAdd(&dvelocities[bond.ai - 1].x, -f * dx);
-    atomicAdd(&dvelocities[bond.ai - 1].y, -f * dy);
-    atomicAdd(&dvelocities[bond.ai - 1].z, -f * dz);
+    atomic_add_force_component(&dvelocities[bond.aj - 1].x, f * dx);
+    atomic_add_force_component(&dvelocities[bond.aj - 1].y, f * dy);
+    atomic_add_force_component(&dvelocities[bond.aj - 1].z, f * dz);
+    atomic_add_force_component(&dvelocities[bond.ai - 1].x, -f * dx);
+    atomic_add_force_component(&dvelocities[bond.ai - 1].y, -f * dy);
+    atomic_add_force_component(&dvelocities[bond.ai - 1].z, -f * dz);
 }
 
 real_t calc_bond_forces_host(int start, int end) {
@@ -47,7 +48,7 @@ real_t calc_bond_forces_host(int start, int end) {
     bond_t* d_bonds = host_ctx.bonds->gpu_data_p;
     coord_t* d_coords = host_ctx.coords->gpu_data_p;
     cbond_t* d_cbonds = host_ctx.cbonds->gpu_data_p;
-    dvel_t* d_dvelocities = host_ctx.dvelocities->gpu_data_p;
+    auto d_dvelocities = cuda_force_accum_buffer(host_ctx);
 
     calc_bond_forces_kernel<<<numBlocks, blockSize>>>(start, end, d_bonds, d_coords, d_cbonds, d_dvelocities, d_energy_sum);
     cudaDeviceSynchronize();

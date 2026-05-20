@@ -1,6 +1,7 @@
 #include <iostream>
 
 #include "cuda/include/cuda_restrpos_force.cuh"
+#include "cuda/include/cuda_force_accum.cuh"
 #include "cuda/include/cuda_utility.cuh"
 #include "common/include/context.h"
 
@@ -17,7 +18,7 @@ __global__ void calc_restrpos_forces_kernel(
     int n_lambdas,
     E_restraint_t* EQ_restraint,
     real_t* E_restraint,
-    dvel_t* dvelocities) {
+    cuda_dvel_t* dvelocities) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_restrspos) return;
     int ir = idx;
@@ -45,9 +46,9 @@ __global__ void calc_restrpos_forces_kernel(
 
     ener = .5 * restrspos[ir].k.x * x2 + .5 * restrspos[ir].k.y * y2 + .5 * restrspos[ir].k.z * z2;
 
-    atomicAdd(&dvelocities[i].x, restrspos[ir].k.x * dr.x * lambda);
-    atomicAdd(&dvelocities[i].y, restrspos[ir].k.y * dr.y * lambda);
-    atomicAdd(&dvelocities[i].z, restrspos[ir].k.z * dr.z * lambda);
+    atomic_add_force_component(&dvelocities[i].x, restrspos[ir].k.x * dr.x * lambda);
+    atomic_add_force_component(&dvelocities[i].y, restrspos[ir].k.y * dr.y * lambda);
+    atomic_add_force_component(&dvelocities[i].z, restrspos[ir].k.z * dr.z * lambda);
 
     if (restrspos[ir].ipsi == 0) {
         for (int k = 0; k < n_lambdas; k++) {
@@ -71,7 +72,7 @@ void calc_restrpos_forces_host() {
     auto d_coords = host.coords->gpu_data_p;
     auto d_lambdas = host.lambdas->gpu_data_p;
     auto d_EQ_restraint = host.EQ_restraint->gpu_data_p;
-    auto d_dvelocities = host.dvelocities->gpu_data_p;
+    auto d_dvelocities = cuda_force_accum_buffer(host);
 
     int blockSize = 256;
     int numBlocks = (host.n_restrspos + blockSize - 1) / blockSize;

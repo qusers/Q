@@ -1,6 +1,7 @@
 #include <iostream>
 
 #include "cuda/include/cuda_restrdis_force.cuh"
+#include "cuda/include/cuda_force_accum.cuh"
 #include "cuda/include/cuda_utility.cuh"
 #include "common/include/context.h"
 namespace CudaRestrdisForce {
@@ -14,7 +15,7 @@ __global__ void calc_restrdis_forces_kernel(
     coord_t* coords,
     real_t* lambdas,
     int n_lambdas,
-    dvel_t* dvelocities,
+    cuda_dvel_t* dvelocities,
     E_restraint_t* EQ_restraint,
     real_t* E_restraint) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -53,12 +54,12 @@ __global__ void calc_restrdis_forces_kernel(
     ener = .5 * restrdists[ir].k * db * db;
     dv = lambda * restrdists[ir].k * db / b;
 
-    atomicAdd(&dvelocities[j].x, dr.x * dv);
-    atomicAdd(&dvelocities[j].y, dr.y * dv);
-    atomicAdd(&dvelocities[j].z, dr.z * dv);
-    atomicAdd(&dvelocities[i].x, -dr.x * dv);
-    atomicAdd(&dvelocities[i].y, -dr.y * dv);
-    atomicAdd(&dvelocities[i].z, -dr.z * dv);
+    atomic_add_force_component(&dvelocities[j].x, dr.x * dv);
+    atomic_add_force_component(&dvelocities[j].y, dr.y * dv);
+    atomic_add_force_component(&dvelocities[j].z, dr.z * dv);
+    atomic_add_force_component(&dvelocities[i].x, -dr.x * dv);
+    atomic_add_force_component(&dvelocities[i].y, -dr.y * dv);
+    atomic_add_force_component(&dvelocities[i].z, -dr.z * dv);
 
     if (restrdists[ir].ipsi == 0) {
         for (int k = 0; k < n_lambdas; k++) {
@@ -79,7 +80,7 @@ void calc_restrdis_forces_host() {
     auto d_restrdists = host.restrdists->gpu_data_p;
     auto d_coords = host.coords->gpu_data_p;
     auto d_lambdas = host.lambdas->gpu_data_p;
-    auto d_dvelocities = host.dvelocities->gpu_data_p;
+    auto d_dvelocities = cuda_force_accum_buffer(host);
     auto d_EQ_restraint = host.EQ_restraint->gpu_data_p;
 
     cudaMemset(d_E_restraint, 0, sizeof(real_t));

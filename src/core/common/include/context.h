@@ -49,6 +49,7 @@ class Context {
     std::unique_ptr<HostDeviceBuffer<coord_t>> coords;
     std::unique_ptr<HostDeviceBuffer<vel_t>> velocities;
     std::unique_ptr<HostDeviceBuffer<dvel_t>> dvelocities;
+    std::unique_ptr<HostDeviceBuffer<fixed_dvel_t>> fixed_dvelocities;
 
     /*
     Bond forces

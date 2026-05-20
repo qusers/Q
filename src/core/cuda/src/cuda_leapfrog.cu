@@ -1,19 +1,19 @@
 #include <iostream>
 
 #include "common/include/context.h"
+#include "cuda/include/cuda_force_accum.cuh"
 #include "cuda/include/cuda_leapfrog.cuh"
 #include "cuda/include/cuda_shake_constraints.cuh"
 #include "cuda_utility.cuh"
 
 namespace CudaLeapfrog {
-
 }
 
 __global__ void calc_leapfrog_kernel(
     atype_t* atypes,
     catype_t* catypes,
     vel_t* velocities,
-    dvel_t* dvelocities,
+    cuda_dvel_t* dvelocities,
     coord_t* coords,
     coord_t* xcoords,
     int n_atoms,
@@ -32,9 +32,12 @@ __global__ void calc_leapfrog_kernel(
 
     winv_i = 1 / mass_i;
     real_t scale = (i < n_atoms_solute) ? Tscale_solute : Tscale_solvent;
-    velocities[i].x = (velocities[i].x - dvelocities[i].x * dt * winv_i) * scale;
-    velocities[i].y = (velocities[i].y - dvelocities[i].y * dt * winv_i) * scale;
-    velocities[i].z = (velocities[i].z - dvelocities[i].z * dt * winv_i) * scale;
+    const real_t dvel_x = force_accum_component_value(dvelocities[i].x);
+    const real_t dvel_y = force_accum_component_value(dvelocities[i].y);
+    const real_t dvel_z = force_accum_component_value(dvelocities[i].z);
+    velocities[i].x = (velocities[i].x - dvel_x * dt * winv_i) * scale;
+    velocities[i].y = (velocities[i].y - dvel_y * dt * winv_i) * scale;
+    velocities[i].z = (velocities[i].z - dvel_z * dt * winv_i) * scale;
 
     xcoords[i].x = coords[i].x;
     xcoords[i].y = coords[i].y;
@@ -50,7 +53,7 @@ void calc_leapfrog_host() {
     auto d_atypes = host.atypes->gpu_data_p;
     auto d_catypes = host.catypes->gpu_data_p;
     auto d_velocities = host.velocities->gpu_data_p;
-    auto d_dvelocities = host.dvelocities->gpu_data_p;
+    auto d_dvelocities = cuda_force_accum_buffer(host);
     auto d_coords = host.coords->gpu_data_p;
     auto d_xcoords = host.xcoords->gpu_data_p;
 
@@ -71,7 +74,6 @@ void calc_leapfrog_host() {
     check_cuda(cudaDeviceSynchronize());
 
     host.velocities->download();
-    host.dvelocities->download();
     host.coords->download();
     host.xcoords->download();
 

@@ -1,8 +1,10 @@
 #include <iostream>
 #include <math.h>
+#include <vector>
 
 #include "common/include/context.h"
 #include "common/include/constants.h"
+#include "cuda/include/cuda_force_accum.cuh"
 #include "cuda/include/cuda_polx_water_force.cuh"
 #include "cuda_utility.cuh"
 
@@ -19,6 +21,7 @@ int* d_list_sh = nullptr;
 real_t* d_theta = nullptr;
 real_t* d_theta0 = nullptr;
 real_t* d_tdum = nullptr;
+force_fixed_storage_t* d_avtheta_fixed = nullptr;
 int* d_water_shell = nullptr;
 int* d_water_rank = nullptr;
 
@@ -80,9 +83,10 @@ __global__ void calc_polx_theta_and_shells(
 
 __global__ void calc_polx_water_forces_kernel(
     int n_waters, int n_atoms_solute, shell_t* wshells,
-    coord_t* coords, dvel_t* dvelocities, topo_t topo,
+    coord_t* coords, cuda_dvel_t* dvelocities, topo_t topo,
     real_t* theta, md_t md, real_t* energy,
-    int* water_rank, int* water_shell) {
+    int* water_rank, int* water_shell,
+    force_fixed_storage_t* avtheta_fixed) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_waters) return;
 
@@ -154,17 +158,17 @@ __global__ void calc_polx_water_forces_kernel(
     f2.y = (rmu.y - rcu.y * cos_th) / rc;
     f2.z = (rmu.z - rcu.z * cos_th) / rc;
 
-    atomicAdd(&dvelocities[wi].x, f0 * (f1O.x + f2.x));
-    atomicAdd(&dvelocities[wi].y, f0 * (f1O.y + f2.y));
-    atomicAdd(&dvelocities[wi].z, f0 * (f1O.z + f2.z));
-    atomicAdd(&dvelocities[wi + 1].x, f0 * (f1H1.x));
-    atomicAdd(&dvelocities[wi + 1].y, f0 * (f1H1.y));
-    atomicAdd(&dvelocities[wi + 1].z, f0 * (f1H1.z));
-    atomicAdd(&dvelocities[wi + 2].x, f0 * (f1H2.x));
-    atomicAdd(&dvelocities[wi + 2].y, f0 * (f1H2.y));
-    atomicAdd(&dvelocities[wi + 2].z, f0 * (f1H2.z));
+    atomic_add_force_component(&dvelocities[wi].x, f0 * (f1O.x + f2.x));
+    atomic_add_force_component(&dvelocities[wi].y, f0 * (f1O.y + f2.y));
+    atomic_add_force_component(&dvelocities[wi].z, f0 * (f1O.z + f2.z));
+    atomic_add_force_component(&dvelocities[wi + 1].x, f0 * (f1H1.x));
+    atomic_add_force_component(&dvelocities[wi + 1].y, f0 * (f1H1.y));
+    atomic_add_force_component(&dvelocities[wi + 1].z, f0 * (f1H1.z));
+    atomic_add_force_component(&dvelocities[wi + 2].x, f0 * (f1H2.x));
+    atomic_add_force_component(&dvelocities[wi + 2].y, f0 * (f1H2.y));
+    atomic_add_force_component(&dvelocities[wi + 2].z, f0 * (f1H2.z));
 
-    atomicAdd(&wshells[is].avtheta, avtdum / (real_t)wshells[is].n_inshell);
+    atomic_add_force_component(&avtheta_fixed[is], avtdum / (real_t)wshells[is].n_inshell);
     atomicAdd(&wshells[is].avn_inshell, real_t(1));
 }
 
@@ -202,16 +206,24 @@ void calc_polx_water_forces_host(int iteration) {
     auto& ctx = Context::instance();
     auto *wshells = ctx.wshells->cpu_data_p;
 
+    using namespace CudaPolxWaterForce;
+    if (ctx.n_shells > 0) {
+        std::vector<force_fixed_storage_t> avtheta_fixed(ctx.n_shells);
+        cudaMemcpy(avtheta_fixed.data(), d_avtheta_fixed, ctx.n_shells * sizeof(force_fixed_storage_t), cudaMemcpyDeviceToHost);
+        for (int is = 0; is < ctx.n_shells; is++) {
+            wshells[is].avtheta = fixed_to_force(force_fixed_from_storage(avtheta_fixed[is]));
+        }
+    }
+
     for (int is = 0; is < ctx.n_shells; is++) {
         wshells[is].n_inshell = 0;
         if (iteration == 0 && !ctx.has_restart_wshell_theta_corr) {
             wshells[is].theta_corr = 0;
         }
     }
-    using namespace CudaPolxWaterForce;
 
     coord_t* d_coords = ctx.coords->gpu_data_p;
-    dvel_t* d_dvelocities = ctx.dvelocities->gpu_data_p;
+    auto d_dvelocities = cuda_force_accum_buffer(ctx);
     shell_t* d_wshells = ctx.wshells->gpu_data_p;
     ctx.wshells->upload();
 
@@ -252,6 +264,7 @@ void calc_polx_water_forces_host(int iteration) {
             wshells[is].avtheta = 0;
             wshells[is].avn_inshell = 0;
         }
+        cudaMemset(d_avtheta_fixed, 0, ctx.n_shells * sizeof(force_fixed_storage_t));
         ctx.wshells->upload();
     }
 
@@ -259,11 +272,18 @@ void calc_polx_water_forces_host(int iteration) {
     cudaMemset(d_energy, 0, sizeof(real_t));
     calc_polx_water_forces_kernel<<<numBlocks, blockSize>>>(
         ctx.n_waters, ctx.n_atoms_solute, d_wshells, d_coords, d_dvelocities, ctx.topo,
-        d_theta, ctx.md, d_energy, d_water_rank, d_water_shell);
+        d_theta, ctx.md, d_energy, d_water_rank, d_water_shell, d_avtheta_fixed);
     real_t energy;
     cudaMemcpy(&energy, d_energy, sizeof(real_t), cudaMemcpyDeviceToHost);
     ctx.E_restraint.Upolx += energy;
     ctx.wshells->download();
+    if (ctx.n_shells > 0) {
+        std::vector<force_fixed_storage_t> avtheta_fixed(ctx.n_shells);
+        cudaMemcpy(avtheta_fixed.data(), d_avtheta_fixed, ctx.n_shells * sizeof(force_fixed_storage_t), cudaMemcpyDeviceToHost);
+        for (int is = 0; is < ctx.n_shells; is++) {
+            wshells[is].avtheta = fixed_to_force(force_fixed_from_storage(avtheta_fixed[is]));
+        }
+    }
     // Copy back forces for all atoms (solute + solvent); water forces were being dropped.
 }
 
@@ -280,6 +300,8 @@ void init_polx_water_force_kernel_data() {
         check_cudaMalloc((void**)&d_theta, ctx.n_waters * sizeof(real_t));
         check_cudaMalloc((void**)&d_theta0, ctx.n_waters * sizeof(real_t));
         check_cudaMalloc((void**)&d_tdum, ctx.n_waters * sizeof(real_t));
+        check_cudaMalloc((void**)&d_avtheta_fixed, ctx.n_shells * sizeof(force_fixed_storage_t));
+        cudaMemset(d_avtheta_fixed, 0, ctx.n_shells * sizeof(force_fixed_storage_t));
         check_cudaMalloc((void**)&d_water_rank, ctx.n_waters * sizeof(int));
         check_cudaMalloc((void**)&d_water_shell, ctx.n_waters * sizeof(int));
 
@@ -299,6 +321,7 @@ void cleanup_polx_water_force() {
         cudaFree(d_theta);
         cudaFree(d_theta0);
         cudaFree(d_tdum);
+        cudaFree(d_avtheta_fixed);
         cudaFree(d_water_rank);
         cudaFree(d_water_shell);
         is_initialized = false;

@@ -1,6 +1,7 @@
 #include <iostream>
 
 #include "cuda/include/cuda_restrwall_force.cuh"
+#include "cuda/include/cuda_force_accum.cuh"
 #include "common/include/context.h"
 
 namespace CudaRestrwallForce {
@@ -13,7 +14,7 @@ __global__ void calc_restrwall_forces_kernel(
     int n_restrwalls,
     coord_t* coords,
     real_t* energies,
-    dvel_t* dvelocities,
+    cuda_dvel_t* dvelocities,
     bool* heavy, topo_t topo) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_restrwalls) return;
@@ -43,9 +44,9 @@ __global__ void calc_restrwall_forces_kernel(
 
             atomicAdd(energies, ener);
 
-            atomicAdd(&dvelocities[i].x, dv * dr.x);
-            atomicAdd(&dvelocities[i].y, dv * dr.y);
-            atomicAdd(&dvelocities[i].z, dv * dr.z);
+            atomic_add_force_component(&dvelocities[i].x, dv * dr.x);
+            atomic_add_force_component(&dvelocities[i].y, dv * dr.y);
+            atomic_add_force_component(&dvelocities[i].z, dv * dr.z);
         }
     }
 }
@@ -56,7 +57,7 @@ void calc_restrwall_forces_host() {
     using namespace CudaRestrwallForce;
     auto d_restrwalls = host.restrwalls->gpu_data_p;
     auto d_coords = host.coords->gpu_data_p;
-    auto d_dvelocities = host.dvelocities->gpu_data_p;
+    auto d_dvelocities = cuda_force_accum_buffer(host);
     auto d_heavy = host.heavy->gpu_data_p;
     cudaMemset(d_energies, 0, sizeof(real_t));
 
