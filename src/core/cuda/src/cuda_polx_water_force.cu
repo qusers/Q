@@ -139,10 +139,9 @@ __global__ void calc_polx_water_forces_kernel(
     cos_th = rmu.x * rcu.x + rmu.y * rcu.y + rmu.z * rcu.z;
     if (cos_th > 1) cos_th = 1;
     if (cos_th < -1) cos_th = -1;
-    f0 = sin(acos(cos_th));
-    if (abs(f0) < k_singular_sin_epsilon) f0 = k_singular_sin_epsilon;
-    f0 = -1.0 / f0;
-    f0 *= dv;
+    const real_t sin2_th = fmax(real_t(0), real_t(1) - cos_th * cos_th);
+    const real_t sin_eff = sqrt(sin2_th + real_t(k_polx_sin_softening * k_polx_sin_softening));
+    f0 = -dv / sin_eff;
 
     f1O.x = -2 * (rcu.x - rmu.x * cos_th) / rm;
     f1O.y = -2 * (rcu.y - rmu.y * cos_th) / rm;

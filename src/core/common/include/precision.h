@@ -63,6 +63,8 @@ QDYN_HOST_DEVICE inline real_t fixed_to_force(force_fixed_t value) {
 
 #ifdef QDYN_SPFP
 constexpr double k_singular_sin_epsilon = 1.0e-6;
+constexpr double k_polx_sin_softening = 1.0e-3;
 #else
 constexpr double k_singular_sin_epsilon = 1.0e-12;
+constexpr double k_polx_sin_softening = 1.0e-6;
 #endif
