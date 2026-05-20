@@ -98,14 +98,14 @@ void CudaHandler::shutdown() {
 
 void CudaHandler::calc_internal_forces(int iteration) {
     auto& host = Context::instance();
-    if (host.n_qatoms > 0 && host.n_lambdas > 0) {
-        for (int state = 0; state < host.n_lambdas; state++) {
-            calc_qangle_forces(state);
-            calc_qbond_forces(state);
-            calc_qtorsion_forces(state);
-        }
-        host.dvelocities->upload();
-    }
+    // if (host.n_qatoms > 0 && host.n_lambdas > 0) {
+    //     for (int state = 0; state < host.n_lambdas; state++) {
+    //         calc_qangle_forces(state);
+    //         calc_qbond_forces(state);
+    //         calc_qtorsion_forces(state);
+    //     }
+    //     host.dvelocities->upload();
+    // }
 
     host.E_bond_p.Uangle = calc_angle_forces_host(0, host.n_angles_solute);
     host.E_bond_w.Uangle = calc_angle_forces_host(host.n_angles_solute, host.n_angles);
@@ -120,13 +120,10 @@ void CudaHandler::calc_internal_forces(int iteration) {
     host.E_bond_w.Uimp = calc_improper2_forces_host(host.n_impropers_solute, host.n_impropers);
 
     if (host.n_waters > 0) {
-        host.dvelocities->download();
-        calc_radix_w_forces();
+        calc_radix_water_forces_host();
         if (host.md.polarisation) {
-            calc_polx_w_forces(iteration);
+            calc_polx_water_forces_host(iteration);
         }
-        host.dvelocities->upload();
-        host.wshells->upload();
     }
 
     calc_pshell_forces_host();
@@ -138,7 +135,6 @@ void CudaHandler::calc_internal_forces(int iteration) {
 }
 
 void CudaHandler::calc_nonbonded_forces() {
-    auto& host = Context::instance();
     calc_nonbonded_qp_forces_host_v2();
     calc_nonbonded_pp_forces_host_v2();
     calc_nonbonded_ww_forces_host_v2();
