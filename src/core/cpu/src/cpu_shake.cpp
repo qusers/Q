@@ -78,9 +78,9 @@ int calc_shake_constraints(coord_t* coords, coord_t* xcoords) {
                 coord_t xxij;
                 real_t xxij2;
 
-                xxij.x = xcoords[ai].x - xcoords[aj].x;
-                xxij.y = xcoords[ai].y - xcoords[aj].y;
-                xxij.z = xcoords[ai].z - xcoords[aj].z;
+                xxij.x = coords[ai].x - coords[aj].x;
+                xxij.y = coords[ai].y - coords[aj].y;
+                xxij.z = coords[ai].z - coords[aj].z;
                 xxij2 = std::pow(xxij.x, 2) + std::pow(xxij.y, 2) + std::pow(xxij.z, 2);
                 std::printf(">>> Shake failed, i = %d,j = %d, d = %f, d0 = %f\n", ai + 1, aj + 1, std::sqrt(xxij2),
                             std::sqrt(shake_bonds[shake + i].dist2));

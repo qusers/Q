@@ -2,9 +2,9 @@
 #include <cstdlib>
 #include <iostream>
 
-#include "cuda/include/cuda_shake_constraints.cuh"
 #include "common/include/constants.h"
 #include "common/include/context.h"
+#include "cuda/include/cuda_shake_constraints.cuh"
 
 namespace CudaShakeConstraints {
 
@@ -13,7 +13,7 @@ int* d_mol_shake_offset;
 int* d_failed;
 
 #ifdef QDYN_SPFP
-constexpr constraint_work_t k_shake_squared_tol = static_cast<constraint_work_t>(2.0 * shake_tol);
+constexpr constraint_work_t k_shake_squared_tol = static_cast<constraint_work_t>(shake_tol);
 #else
 constexpr constraint_work_t k_shake_squared_tol = static_cast<constraint_work_t>(shake_tol);
 #endif
@@ -76,7 +76,6 @@ __global__ void calc_shake_constraints_kernel(
                     diff = target_dist2 - xij2;
                     if (fabs(diff) <= CudaShakeConstraints::k_shake_squared_tol * target_dist2) {
                         shake_bonds[shake_i].ready = true;
-                        continue;
                     }
                     xxij_x = static_cast<constraint_work_t>(xcoords[ai].x) - static_cast<constraint_work_t>(xcoords[aj].x);
                     xxij_y = static_cast<constraint_work_t>(xcoords[ai].y) - static_cast<constraint_work_t>(xcoords[aj].y);
@@ -120,7 +119,11 @@ __global__ void calc_shake_constraints_kernel(
                 xij_y = static_cast<constraint_work_t>(coords[ai].y) - static_cast<constraint_work_t>(coords[aj].y);
                 xij_z = static_cast<constraint_work_t>(coords[ai].z) - static_cast<constraint_work_t>(coords[aj].z);
                 current_dist2 = xij_x * xij_x + xij_y * xij_y + xij_z * xij_z;
-                printf(">>> Shake failed, i = %d,j = %d, d = %f, d0 = %f\n", ai + 1, aj + 1, sqrt(current_dist2), sqrt(static_cast<constraint_work_t>(shake_bonds[shake + i].dist2)));
+                printf(">>> Shake failed, i = %d,j = %d, d = %f, ai.x = %f, ai.y = %f, ai.z = %f, aj.x = %f, aj.y = %f, aj.z = %f, d0 = %f\n", 
+                    ai + 1, aj + 1, sqrt(current_dist2), 
+                     coords[ai].x, coords[ai].y, coords[ai].z,
+                     coords[aj].x, coords[aj].y, coords[aj].z,
+                     sqrt(static_cast<constraint_work_t>(shake_bonds[shake + i].dist2)));
             }
             atomicExch(failed, 1);
             return;
