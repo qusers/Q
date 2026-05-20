@@ -14,6 +14,7 @@ struct md_t {
     real_t bath_coupling;
     int random_seed;
     real_t initial_temperature;
+    bool has_initial_temperature = false;
     bool shake_solvent;
     bool shake_solute;
     bool shake_hydrogens;

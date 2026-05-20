@@ -22,7 +22,7 @@ void calc_polx_w_forces(int iteration) {
 
     for (int is = 0; is < ctx.n_shells; is++) {
         wshells[is].n_inshell = 0;
-        if (iteration == 0) {
+        if (iteration == 0 && !ctx.has_restart_wshell_theta_corr) {
             wshells[is].theta_corr = 0;
         }
     }

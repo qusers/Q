@@ -33,6 +33,8 @@ class ParseResult {
     std::vector<coord_t> coords_init;
     std::vector<coord_t> coords;
     std::vector<vel_t> velocities;
+    bool has_restart_wshell_theta_corr = false;
+    std::vector<real_t> restart_wshell_theta_corr;
 
     std::vector<bond_t> bonds;
     std::vector<cbond_t> cbonds;

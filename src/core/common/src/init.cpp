@@ -15,6 +15,7 @@
 #include "cpu_handler.h"
 #include "cpu_shake.h"
 #include "cpu_utils.h"
+#include "helpers.h"
 #include "parse.h"
 
 template <typename T>
@@ -490,7 +491,8 @@ void exclude_shaken_definitions() {
 
 void init_velocities() {
     auto& ctx = Context::instance();
-    if (ctx.velocities) {
+    const bool generate_initial_velocities = ctx.md.has_initial_temperature && ctx.md.random_seed > 0;
+    if (ctx.velocities && !generate_initial_velocities) {
         if (ctx.command_info.requested_gpu) {
             ctx.velocities->upload();
         }
@@ -499,7 +501,9 @@ void init_velocities() {
 
     auto& atypes = ctx.atypes->cpu_data_p;
     auto& catypes = ctx.catypes->cpu_data_p;
-    ctx.velocities = std::make_unique<HostDeviceBuffer<vel_t>>(ctx.n_atoms, true, ctx.command_info.requested_gpu);
+    if (!ctx.velocities) {
+        ctx.velocities = std::make_unique<HostDeviceBuffer<vel_t>>(ctx.n_atoms, true, ctx.command_info.requested_gpu);
+    }
     auto& velocities = ctx.velocities->cpu_data_p;
 
     // If not previous value set, use a Maxwell distribution to fill velocities
@@ -549,20 +553,58 @@ void init_water_sphere() {
     printf("Dwmz = %f, awmz = %f\n", ctx.Dwmz, ctx.awmz);
 }
 
+void init_water_shell_parameters() {
+    auto& ctx = Context::instance();
+    if (ctx.n_waters <= 0) return;
+
+    if (ctx.n_atoms_solute < 0 || ctx.n_atoms_solute >= ctx.n_atoms) {
+        fatal("Water shell initialization requires solvent atoms.");
+    }
+    if (ctx.n_bonds_solute < 0 || ctx.n_bonds_solute >= ctx.n_bonds) {
+        fatal("Water shell initialization requires a solvent bond before SHAKE removes topology.");
+    }
+    if (ctx.n_angles_solute < 0 || ctx.n_angles_solute >= ctx.n_angles) {
+        fatal("Water shell initialization requires a solvent angle before SHAKE removes topology.");
+    }
+    if (ctx.n_atoms_solute >= ctx.n_charges) {
+        fatal("Water shell initialization cannot read the first solvent atom charge.");
+    }
+
+    auto& bonds = ctx.bonds->cpu_data_p;
+    auto& cbonds = ctx.cbonds->cpu_data_p;
+    auto& angles = ctx.angles->cpu_data_p;
+    auto& cangles = ctx.cangles->cpu_data_p;
+    auto& charges = ctx.charges->cpu_data_p;
+    auto& ccharges = ctx.ccharges->cpu_data_p;
+
+    const bond_t& water_bond = bonds[ctx.n_bonds_solute];
+    const angle_t& water_angle = angles[ctx.n_angles_solute];
+    if (water_bond.code <= 0 || water_bond.code > ctx.n_cbonds) {
+        fatal("Water shell initialization found an invalid solvent bond code.");
+    }
+    if (water_angle.code <= 0 || water_angle.code > ctx.n_cangles) {
+        fatal("Water shell initialization found an invalid solvent angle code.");
+    }
+
+    const int oxygen_charge_code = charges[ctx.n_atoms_solute].code;
+    if (oxygen_charge_code <= 0 || oxygen_charge_code > ctx.n_ccharges) {
+        fatal("Water shell initialization found an invalid solvent oxygen charge code.");
+    }
+
+    const cbond_t cbondw = cbonds[water_bond.code - 1];
+    const cangle_t canglew = cangles[water_angle.code - 1];
+    const real_t crg_ow = ccharges[oxygen_charge_code - 1].charge;
+    ctx.water_mu = -crg_ow * cbondw.b0 * cos(canglew.th0 / 2);
+}
+
 // ONLY call if there are actually solvent atoms, or get segfaulted
 void init_wshells() {
     auto& ctx = Context::instance();
     int n_inshell;
     real_t drs, router, ri, dr, Vshell, rshell;
-    auto& bonds = ctx.bonds->cpu_data_p;
-    auto& cbonds = ctx.cbonds->cpu_data_p;
-    auto& angles = ctx.angles->cpu_data_p;
-    auto& cangles = ctx.cangles->cpu_data_p;
-    // Get water properties from the first water molecule.
-    cbond_t cbondw = cbonds[bonds[ctx.n_atoms_solute].code - 1];
-    cangle_t canglew = cangles[angles[ctx.n_atoms_solute].code - 1];
-    const real_t crg_ow = ctx.unified_ccharge(ctx.n_atoms_solute, 0).charge;
-    const real_t mu_w = -crg_ow * cbondw.b0 * cos(canglew.th0 / 2);
+    if (ctx.water_mu == 0) {
+        fatal("Water shell parameters were not initialized before water shell setup.");
+    }
 
     drs = wpolr_layer / drouter;
 
@@ -590,9 +632,27 @@ void init_wshells() {
         rshell = pow(0.5 * (pow(router, 3) + pow(ri, 3)), 1.0 / 3.0);
 
         // --- Note below: 0.98750 = (1-1/epsilon) for water
-        wshells[i].cstb = ctx.crgQtot * 0.98750 / (rho_water * mu_w * 4 * M_PI * pow(rshell, 2));
+        wshells[i].cstb = ctx.crgQtot * 0.98750 / (rho_water * ctx.water_mu * 4 * M_PI * pow(rshell, 2));
 
         router -= dr;
+    }
+
+    if (ctx.has_restart_wshell_theta_corr) {
+        if (static_cast<int>(ctx.restart_wshell_theta_corr.size()) == ctx.n_shells) {
+            for (int i = 0; i < ctx.n_shells; i++) {
+                wshells[i].theta_corr = ctx.restart_wshell_theta_corr[i];
+            }
+        } else {
+            printf(">>> WARNING: Failed to read polarization restraint data from restart file.\n");
+            ctx.has_restart_wshell_theta_corr = false;
+            for (int i = 0; i < ctx.n_shells; i++) {
+                wshells[i].theta_corr = 0;
+            }
+        }
+    } else {
+        for (int i = 0; i < ctx.n_shells; i++) {
+            wshells[i].theta_corr = 0;
+        }
     }
 
     // rc > wshells[n_shells-1].router - wshells[n_shells-1].dr

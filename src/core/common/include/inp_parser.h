@@ -108,6 +108,8 @@ class InpParser : public BaseParser {
     std::unique_ptr<FepData> fep_;
     std::vector<std::vector<std::string>> run_coords_;
     std::vector<std::vector<std::string>> run_velocities_;
+    bool restart_has_wshell_theta_corr_ = false;
+    std::vector<real_t> restart_wshell_theta_corr_;
 
     std::string input_dir_;
     std::string topology_file_;

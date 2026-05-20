@@ -19,6 +19,6 @@ void init_inv_mass();
 void init_pshells();
 void init_shake();
 void init_velocities();
+void init_water_shell_parameters();
 void init_water_sphere();
 void init_wshells();
-

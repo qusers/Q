@@ -165,7 +165,7 @@ __global__ void calc_polx_water_forces_kernel(
     atomicAdd(&dvelocities[wi + 2].z, f0 * (f1H2.z));
 
     atomicAdd(&wshells[is].avtheta, avtdum / (real_t)wshells[is].n_inshell);
-    atomicAdd(&wshells[is].avn_inshell, wshells[is].n_inshell);
+    atomicAdd(&wshells[is].avn_inshell, real_t(1));
 }
 
 void sort_waters() {
@@ -204,7 +204,7 @@ void calc_polx_water_forces_host(int iteration) {
 
     for (int is = 0; is < ctx.n_shells; is++) {
         wshells[is].n_inshell = 0;
-        if (iteration == 0) {
+        if (iteration == 0 && !ctx.has_restart_wshell_theta_corr) {
             wshells[is].theta_corr = 0;
         }
     }

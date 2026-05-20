@@ -54,6 +54,10 @@ void append_double(std::vector<char>& buffer, double value) {
     append_bytes(buffer, &value, sizeof(value));
 }
 
+void append_float(std::vector<char>& buffer, float value) {
+    append_bytes(buffer, &value, sizeof(value));
+}
+
 void append_char_fixed(std::vector<char>& buffer, const std::string& value, size_t width) {
     std::vector<char> field(width, ' ');
     size_t ncopy = std::min(value.size(), width);
@@ -88,6 +92,19 @@ void write_restart_record(std::ofstream& out,
         append_double(payload, x);
         append_double(payload, y);
         append_double(payload, z);
+    }
+    write_record(out, payload.data(), static_cast<int32_t>(payload.size()));
+}
+
+void write_restart_wshell_theta_corr_record(std::ofstream& out, Context& ctx) {
+    if (!ctx.wshells || ctx.n_shells <= 0) return;
+
+    int32_t n_shells = ctx.n_shells;
+    std::vector<char> payload;
+    append_int32(payload, n_shells);
+    const shell_t* wshells = ctx.wshells->cpu_data_p;
+    for (int i = 0; i < ctx.n_shells; i++) {
+        append_float(payload, static_cast<float>(wshells[i].theta_corr));
     }
     write_record(out, payload.data(), static_cast<int32_t>(payload.size()));
 }
@@ -286,4 +303,5 @@ void NativeOutput::write_restart_file(Context& ctx) const {
 
     write_restart_record(out, ctx.coords->cpu_data_p, nullptr, ctx.n_atoms, false);
     write_restart_record(out, nullptr, ctx.velocities->cpu_data_p, ctx.n_atoms, true);
+    write_restart_wshell_theta_corr_record(out, ctx);
 }

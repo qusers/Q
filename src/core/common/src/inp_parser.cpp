@@ -27,6 +27,10 @@ std::string value_or(const std::map<std::string, std::string>& values, const std
     return it->second;
 }
 
+bool has_value(const std::map<std::string, std::string>& values, const std::string& key) {
+    return values.find(key) != values.end();
+}
+
 std::string bool_value(const std::map<std::string, std::string>& values, const std::string& key, const std::string& fallback) {
     auto it = values.find(key);
     if (it == values.end()) return fallback;
@@ -173,7 +177,30 @@ std::vector<std::vector<std::string>> unpack_restart_vector(const std::vector<ch
     return rows;
 }
 
-void read_restart_vectors(const std::string& path, std::vector<std::vector<std::string>>& coords, std::vector<std::vector<std::string>>& velocities) {
+std::vector<real_t> unpack_restart_wshell_theta_corr(const std::vector<char>& payload) {
+    if (payload.size() < sizeof(int32_t)) throw parse_error("Invalid restart water polarisation record.");
+
+    int32_t n_shells = 0;
+    std::memcpy(&n_shells, payload.data(), sizeof(int32_t));
+    if (n_shells <= 0) throw parse_error("Invalid restart water polarisation shell count.");
+
+    const size_t expected = sizeof(int32_t) + static_cast<size_t>(n_shells) * sizeof(float);
+    if (payload.size() != expected) throw parse_error("Invalid restart water polarisation record length.");
+
+    const float* values = reinterpret_cast<const float*>(payload.data() + sizeof(int32_t));
+    std::vector<real_t> theta_corr;
+    theta_corr.reserve(n_shells);
+    for (int i = 0; i < n_shells; i++) {
+        theta_corr.push_back(static_cast<real_t>(values[i]));
+    }
+    return theta_corr;
+}
+
+void read_restart_vectors(const std::string& path,
+                          std::vector<std::vector<std::string>>& coords,
+                          std::vector<std::vector<std::string>>& velocities,
+                          bool& has_wshell_theta_corr,
+                          std::vector<real_t>& wshell_theta_corr) {
     std::ifstream in(path.c_str(), std::ios::binary);
     if (!in) throw parse_error("Could not open restart file " + path);
 
@@ -183,6 +210,13 @@ void read_restart_vectors(const std::string& path, std::vector<std::vector<std::
     if (!read_fortran_record(in, payload)) throw parse_error("Could not read restart velocities.");
     velocities = unpack_restart_vector(payload);
     if (coords.size() != velocities.size()) throw parse_error("Restart coordinate and velocity atom counts differ.");
+
+    has_wshell_theta_corr = false;
+    wshell_theta_corr.clear();
+    if (read_fortran_record(in, payload)) {
+        wshell_theta_corr = unpack_restart_wshell_theta_corr(payload);
+        has_wshell_theta_corr = true;
+    }
 }
 
 double q_randm(int& seed) {
@@ -704,13 +738,20 @@ void InpParser::ensure_run_start_vectors() {
 
     result.fresh_start = restart_file_.empty();
     if (!restart_file_.empty()) {
-        read_restart_vectors(restart_file_, run_coords_, run_velocities_);
+        read_restart_vectors(restart_file_, run_coords_, run_velocities_, restart_has_wshell_theta_corr_, restart_wshell_theta_corr_);
+        result.has_restart_wshell_theta_corr = restart_has_wshell_theta_corr_;
+        result.restart_wshell_theta_corr = restart_wshell_theta_corr_;
     } else {
+        restart_has_wshell_theta_corr_ = false;
+        restart_wshell_theta_corr_.clear();
         run_coords_ = top_->coords;
 
         const auto& mdv = input_->keyed.count("md") ? input_->keyed["md"] : std::map<std::string, std::string>();
         int seed = parse_int(value_or(mdv, "random-seed", value_or(mdv, "random_seed", "1")));
-        double temperature = parse_double(value_or(mdv, "initial-temperature", value_or(mdv, "initial_temperature", value_or(mdv, "temperature", "0"))));
+        if (!has_value(mdv, "initial-temperature") && !has_value(mdv, "initial_temperature")) {
+            throw parse_error("Fresh-start Q input requires initial_temperature.");
+        }
+        double temperature = parse_double(value_or(mdv, "initial-temperature", value_or(mdv, "initial_temperature", "0")));
         if (seed <= 0) throw parse_error("Fresh-start Q input requires a positive random_seed.");
 
         double kT = Boltz * temperature;
@@ -748,7 +789,8 @@ void InpParser::parse_md() {
     md.thermostat = value_or(mdv, "thermostat", "berendsen");
     md.bath_coupling = parse_double(value_or(mdv, "bath-coupling", value_or(mdv, "bath_coupling", "1")));
     md.random_seed = parse_int(value_or(mdv, "random-seed", value_or(mdv, "random_seed", "1")));
-    md.initial_temperature = parse_double(value_or(mdv, "initial-temperature", value_or(mdv, "initial_temperature", value_or(mdv, "temperature", "0"))));
+    md.has_initial_temperature = has_value(mdv, "initial-temperature") || has_value(mdv, "initial_temperature");
+    md.initial_temperature = md.has_initial_temperature ? parse_double(value_or(mdv, "initial-temperature", value_or(mdv, "initial_temperature", "0"))) : 0;
     md.shake_solvent = is_on_value(mdv, "shake-solvent", bool_value(mdv, "shake_solvent", "off"));
     md.shake_solute = is_on_value(mdv, "shake-solute", bool_value(mdv, "shake_solute", "off"));
     md.shake_hydrogens = is_on_value(mdv, "shake-hydrogens", bool_value(mdv, "shake_hydrogens", "off"));

@@ -93,6 +93,7 @@ void CsvParser::parse_md() {
     md.bath_coupling = row_double(file.rows[4], 1);
     md.random_seed = row_int(file.rows[5], 1);
     md.initial_temperature = row_double(file.rows[6], 1);
+    md.has_initial_temperature = true;
     md.shake_solvent = row_on(file.rows[7], 1);
     md.shake_solute = row_on(file.rows[8], 1);
     md.shake_hydrogens = row_on(file.rows[9], 1);
@@ -241,6 +242,7 @@ void CsvParser::parse_coords() {
         throw std::runtime_error("CSV restart requires both i_coords.csv and i_velocities.csv.");
     }
     result.fresh_start = !has_restart_coords;
+    result.md.has_initial_temperature = result.fresh_start;
 
     CsvRows file = read_csv_rows(coords_path, false);
     if (file.count == 0) {

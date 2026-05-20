@@ -11,7 +11,7 @@ static void calc_integration() {
     ctx.init();
     Handler& handler = ctx.command_info.requested_gpu ? static_cast<Handler&>(CudaHandler::instance()) : static_cast<Handler&>(CpuHandler::instance());
     handler.initialize();
-    handler.run(ctx.md.steps);
+    handler.run(ctx.md.steps + 1);
     handler.shutdown();
 }
 

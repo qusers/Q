@@ -111,6 +111,8 @@ void apply_parse_result(Context& ctx, const ParseResult& parsed) {
     ctx.md = parsed.md;
     ctx.topo = parsed.topo;
     ctx.native_output = parsed.native_output;
+    ctx.has_restart_wshell_theta_corr = parsed.has_restart_wshell_theta_corr;
+    ctx.restart_wshell_theta_corr = parsed.restart_wshell_theta_corr;
 
     ctx.n_atoms = static_cast<int>(parsed.coords_init.size());
     ctx.n_atoms_solute = parsed.n_atoms_solute;
@@ -267,6 +269,7 @@ void Context::init_data_from_files() {
 void Context::preprocess_data() {
     dt = time_unit * md.stepsize;
     tau_T = time_unit * md.bath_coupling;
+    n_waters = (n_atoms - n_atoms_solute) / 3;
     init_inv_mass();
     exclude_qatom_definitions();
 
@@ -277,6 +280,7 @@ void Context::preprocess_data() {
         init_pshells();
     }
 
+    init_water_shell_parameters();
     init_shake();
 
     // Now remove shaken bonds
@@ -296,7 +300,6 @@ void Context::preprocess_data() {
     dvelocities = std::make_unique<HostDeviceBuffer<dvel_t>>(n_atoms, true, command_info.requested_gpu);
     xcoords = std::make_unique<HostDeviceBuffer<coord_t>>(n_atoms, true, command_info.requested_gpu);
 
-    n_waters = (n_atoms - n_atoms_solute) / 3;
     if (n_waters > 0) {
         init_water_sphere();
         init_wshells();
@@ -311,7 +314,7 @@ void Context::preprocess_data() {
     EQ_nonbond_qx.assign(n_lambdas, {});
     EQ_restraint = std::make_unique<HostDeviceBuffer<E_restraint_t>>(n_lambdas, true, command_info.requested_gpu);
 
-    if (n_shake_constraints > 0 || (fresh_start && md.random_seed > 0)) {
+    if (md.has_initial_temperature && md.random_seed > 0) {
         initial_shaking();
         stop_cm_translation();
         if (command_info.requested_gpu) {

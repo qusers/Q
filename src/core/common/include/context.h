@@ -144,11 +144,14 @@ class Context {
     */
     std::unique_ptr<HostDeviceBuffer<shell_t>> wshells;
     real_t crgQtot = 0.0;
+    real_t water_mu = 0.0;
     real_t Dwmz = 0.0;
     real_t awmz = 0.0;
     std::vector<real_t> theta;
     std::vector<real_t> theta0;
     std::vector<real_t> tdum;
+    bool has_restart_wshell_theta_corr = false;
+    std::vector<real_t> restart_wshell_theta_corr;
     int n_max_inshell;
     int n_shells;
     std::vector<std::vector<int>> list_sh;
