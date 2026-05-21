@@ -448,6 +448,25 @@ def read_pdb_to_dataframe(pdb_file):
     return df
 
 
+def residue_atom_serial_range(pdb_df, residue_names: Union[str, list[str]]) -> Optional[tuple[int, int]]:
+    """Return the (first, last) atom serial numbers for the given residue name(s).
+
+    Returns None when no atoms match, so callers can skip building restraints
+    rather than operating on an empty selection.
+
+    Args:
+        pdb_df: DataFrame from read_pdb_to_dataframe.
+        residue_names: A residue name or list of residue names to select.
+    """
+    if isinstance(residue_names, str):
+        residue_names = [residue_names]
+    matched = pdb_df[pdb_df["residue_name"].isin(residue_names)]
+    if matched.empty:
+        return None
+    serials = matched["atom_serial_number"].astype(int)
+    return int(serials.min()), int(serials.max())
+
+
 def write_dataframe_to_pdb(
     df, output_file, header: Optional[str] = None, ter_after_indices: Optional[set[int]] = None
 ):

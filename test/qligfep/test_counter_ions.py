@@ -324,9 +324,7 @@ class TestChargeMethodDispatch(TestPlaceCounterIonsWithProteinCharge):
 
     def test_ion_match_default_places_ions_on_charge_change(self, tmp_path):
         """The default mode (ion_match) keeps the existing behavior."""
-        run = self._make_qligfep(
-            tmp_path, protein_charge=8, charge_method="ion_match"
-        )
+        run = self._make_qligfep(tmp_path, protein_charge=8, charge_method="ion_match")
         inputdir = self._prepare_inputdir(run, tmp_path)
         run.charge_lig2 = 1
         n_ions = self._run_place_counter_ions(run, inputdir, tmp_path)
@@ -334,9 +332,7 @@ class TestChargeMethodDispatch(TestPlaceCounterIonsWithProteinCharge):
         assert run.ion_type == "SOD"
 
     def test_none_skips_ions_even_on_charge_change(self, tmp_path):
-        run = self._make_qligfep(
-            tmp_path, protein_charge=8, charge_method="none"
-        )
+        run = self._make_qligfep(tmp_path, protein_charge=8, charge_method="none")
         inputdir = self._prepare_inputdir(run, tmp_path)
         run.charge_lig2 = 1
         n_ions = self._run_place_counter_ions(run, inputdir, tmp_path)
@@ -346,9 +342,7 @@ class TestChargeMethodDispatch(TestPlaceCounterIonsWithProteinCharge):
     def test_coalchemical_water_skips_ion_placement_step(self, tmp_path):
         """coalchemical_water replaces ion placement with water-to-ion swap
         that happens post-qprep -- place_counter_ions itself must be a no-op."""
-        run = self._make_qligfep(
-            tmp_path, protein_charge=8, charge_method="coalchemical_water"
-        )
+        run = self._make_qligfep(tmp_path, protein_charge=8, charge_method="coalchemical_water")
         inputdir = self._prepare_inputdir(run, tmp_path)
         run.charge_lig2 = 1
         n_ions = self._run_place_counter_ions(run, inputdir, tmp_path)
@@ -357,9 +351,7 @@ class TestChargeMethodDispatch(TestPlaceCounterIonsWithProteinCharge):
 
     def test_ion_match_same_charge_no_ions(self, tmp_path):
         """Even with ion_match, same-charge ligand pairs need no ions."""
-        run = self._make_qligfep(
-            tmp_path, protein_charge=0, charge_method="ion_match"
-        )
+        run = self._make_qligfep(tmp_path, protein_charge=0, charge_method="ion_match")
         inputdir = self._prepare_inputdir(run, tmp_path)
         # Do NOT override charge_lig2; both ligands stay neutral.
         n_ions = self._run_place_counter_ions(run, inputdir, tmp_path)
@@ -479,7 +471,9 @@ class TestPlaceCounterWater(TestPlaceCounterIonsWithProteinCharge):
         # And importantly: CWT must NOT carry the solvent flag, otherwise qprep
         # would classify it as solvent and the co-alchemical swap wouldn't work.
         # Check the actual directive, not prose comments mentioning it.
-        directive_lines = [ln.strip() for ln in cwt_block.splitlines() if not ln.lstrip().startswith(("!", "{"))]
+        directive_lines = [
+            ln.strip() for ln in cwt_block.splitlines() if not ln.lstrip().startswith(("!", "{"))
+        ]
         assert "solvent 1" not in directive_lines
 
     def test_pdb_appended_with_cwt_residue(self, tmp_path):
@@ -509,3 +503,47 @@ class TestPlaceCounterWater(TestPlaceCounterIonsWithProteinCharge):
         n_cw = self._run_place_counter_water(run, inputdir, tmp_path)
         assert n_cw == 2
         assert len(run.counter_water_atoms) == 2
+
+
+class TestResidueAtomSerialRange:
+    """Tests for selecting the atom-serial range of counter-ion/counter-water residues.
+
+    Wall restraints are built from this range. For the ion_match method the
+    residues are named after the ion (e.g. SOD); for coalchemical_water they are
+    named CWT. Both must resolve, and an absent selection must yield None rather
+    than NaN.
+    """
+
+    @staticmethod
+    def _df(rows):
+        import pandas as pd
+
+        return pd.DataFrame(rows, columns=["residue_name", "atom_serial_number"])
+
+    def test_coalchemical_water_cwt_range(self):
+        """CWT counter-waters resolve even when the ion_type name is absent."""
+        from QligFEP.pdb_utils import residue_atom_serial_range
+
+        df = self._df([("LIG", 1), ("LIG", 2), ("CWT", 3), ("CWT", 4), ("CWT", 5), ("HOH", 6)])
+        assert residue_atom_serial_range(df, ["SOD", "CWT"]) == (3, 5)
+
+    def test_ion_match_sod_range(self):
+        """Real SOD counter-ions resolve to their serial range."""
+        from QligFEP.pdb_utils import residue_atom_serial_range
+
+        df = self._df([("LIG", 1), ("SOD", 2), ("SOD", 3), ("HOH", 4)])
+        assert residue_atom_serial_range(df, ["SOD", "CWT"]) == (2, 3)
+
+    def test_no_match_returns_none(self):
+        """No matching residue returns None instead of producing NaN."""
+        from QligFEP.pdb_utils import residue_atom_serial_range
+
+        df = self._df([("LIG", 1), ("HOH", 2)])
+        assert residue_atom_serial_range(df, ["SOD", "CWT"]) is None
+
+    def test_accepts_single_residue_name(self):
+        """A bare string residue name is treated as a single-element list."""
+        from QligFEP.pdb_utils import residue_atom_serial_range
+
+        df = self._df([("CWT", 7), ("CWT", 9), ("HOH", 10)])
+        assert residue_atom_serial_range(df, "CWT") == (7, 9)

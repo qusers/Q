@@ -9,8 +9,8 @@ from typing import Optional
 from QligFEP import __version__
 
 from ..logger import logger, setup_logger
-from ..pdb_utils import read_pdb_to_dataframe
-from ..qligfep import QligFEP
+from ..pdb_utils import read_pdb_to_dataframe, residue_atom_serial_range
+from ..qligfep import COUNTER_WATER_RESNAME, QligFEP
 from ..templates.sections import format_wall_restraints
 from .parser_base import parse_arguments
 
@@ -133,19 +133,13 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     if charge_method == "ion_match":
         n_ions = run.place_counter_ions(inputdir)
         if n_ions > 0:
-            logger.info(
-                f"Placed {n_ions} {run.ion_type} counter-ion(s) for charge-changing perturbation"
-            )
+            logger.info(f"Placed {n_ions} {run.ion_type} counter-ion(s) for charge-changing perturbation")
     elif charge_method == "coalchemical_water":
         n_cw = run.place_counter_water(inputdir)
         if n_cw > 0:
-            logger.info(
-                f"Placed {n_cw} co-alchemical counter-water(s) ({run.ion_type} swap)"
-            )
+            logger.info(f"Placed {n_cw} co-alchemical counter-water(s) ({run.ion_type} swap)")
     elif charge_method == "none" and run.same_charge is False:
-        logger.warning(
-            "charge_method=none on a charge-changing edge: ddG will retain the Born artifact"
-        )
+        logger.warning("charge_method=none on a charge-changing edge: ddG will retain the Born artifact")
 
     run.write_water_pdb(inputdir)
 
@@ -168,7 +162,12 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
 
     logger.debug("Writing FEP files")
     run.write_FEP_file(
-        change_charges, change_vdw, FEP_vdw, inputdir, lig_size1, lig_size2,
+        change_charges,
+        change_vdw,
+        FEP_vdw,
+        inputdir,
+        lig_size1,
+        lig_size2,
         softcore_method=softcore_method,
     )
     overlapping_atoms = run.set_restraints(writedir, args.restraint_method, strict_check=True)
@@ -181,16 +180,16 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         logger.debug("Writing the submit files")
         run.write_submitfile(writedir)
         return
-    # Build wall restraints for counter-ions (after qprep so top_p.pdb exists)
+    # Build wall restraints for counter-ions or coalchemical waters (after qprep so top_p.pdb exists).
     wall_restraints_str = ""
     if run.n_counter_ions > 0:
         pdb_df = read_pdb_to_dataframe(Path(inputdir) / "top_p.pdb")
-        ion_df = pdb_df[pdb_df["residue_name"] == run.ion_type]
-        first_ion = int(ion_df["atom_serial_number"].min())
-        last_ion = int(ion_df["atom_serial_number"].max())
-        wall_radius = int(run.sphereradius) - 5
-        wall_restraints_str = format_wall_restraints(first_ion, last_ion, wall_radius, force=1.0)
-        logger.debug(f"Wall restraints for ions: atoms {first_ion}-{last_ion}, radius {wall_radius}")
+        atom_range = residue_atom_serial_range(pdb_df, [run.ion_type, COUNTER_WATER_RESNAME])
+        if atom_range is not None:
+            first_ion, last_ion = atom_range
+            wall_radius = int(run.sphereradius) - 5
+            wall_restraints_str = format_wall_restraints(first_ion, last_ion, wall_radius, force=1.0)
+            logger.debug(f"Wall restraints for counter atoms: {first_ion}-{last_ion}, radius {wall_radius}")
 
     # Handling the correct offset here
     logger.debug("Writing the MD files")
