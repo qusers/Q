@@ -46,9 +46,7 @@ def parse_qprep_total_charge(qprep_out_path: Path) -> int:
         match = charge_pat.search(line)
         if match:
             return round(float(match.group(1)))
-    raise ValueError(
-        f"Could not find 'total charge of not excluded' in {qprep_out_path}"
-    )
+    raise ValueError(f"Could not find 'total charge of not excluded' in {qprep_out_path}")
 
 
 def qprep_error_check(qprep_out_path: Path, ff_name: str) -> None:
@@ -456,8 +454,9 @@ def get_lambdas(windows, sampling):
 
     if sampling == "sigmoidal":
         for i in range(0, step + 1):
+            # lambda 2 + lambda 1 should be 1.0
             lmbda1 = f"{0.5 * (sigmoid(float(i)/float(step), k) + 1):.3f}"
-            lmbda2 = f"{0.5 * (-sigmoid(float(i)/float(step), k) + 1):.3f}"
+            lmbda2 = f"{1.0 - float(lmbda1):.3f}"
             lmbda_1.append(lmbda1)
             lmbda_2.append(lmbda2)
 
