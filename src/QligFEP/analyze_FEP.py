@@ -16,6 +16,7 @@ from cinnabar import stats as cstats
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
+from .charge_correction import collect_leg_corr
 from .IO import read_qfep, read_qfep_verbose, run_command
 from .logger import logger, setup_logger
 from .settings.settings import Q_PATHS
@@ -63,6 +64,8 @@ class FepReader:
         self.verbose_dgBar = []
         self.run_data = []  # store the runtime, seed and comment for each replicate
         self.ignored_edges = []  # store edges that were ignored if allow_missing_edges is True
+        self.verbose_corr = []  # per-window charge-correction curves (when .corr logs are present)
+        self.corr_results = {}  # per-fep ddG charge-correction integral (protein - water), unscaled
 
     def _load_mapping_json(self, json_file: str) -> dict:
         with open(json_file) as json_file:
@@ -348,6 +351,18 @@ class FepReader:
                 energies[repID] = replicate_energies
                 failed_replicates.extend(failed)
 
+            # Reduce the charge-correction observable if .corr logs are present
+            # (run done with --correction-logging). Pools all replicate windows.
+            corr_windows, corr_integral = collect_leg_corr(
+                [rep.parent for rep in replicate_qfep_files]
+            )
+            if corr_windows is not None:
+                self.data[self.system][fep].update({"corr_integral": corr_integral})
+                self.verbose_corr.append(
+                    pd.DataFrame(corr_windows).assign(fep=fep, system=self.system)
+                )
+                logger.debug(f"    charge-correction leg integral ({fep}): {corr_integral:.3f}")
+
             # Calculate statistics for each energy method
             all_energies_arr = []
             for mname in self.methods_list:
@@ -424,6 +439,11 @@ class FepReader:
                         }
                     }
                 )
+            # Charge-correction integral: protein leg minus water leg (unscaled).
+            w_corr = w_fep.get("corr_integral")
+            p_corr = p_fep.get("corr_integral")
+            if w_corr is not None and p_corr is not None:
+                self.corr_results[fep] = p_corr - w_corr
             self.feps.append(fep)
 
     def load_experimental_data(self, exp_key: str):
@@ -493,6 +513,8 @@ class FepReader:
                             "Q_ddG_std": std_val,
                         }
                     )
+                    if fep in self.corr_results:
+                        edge["Q_corr_integral"] = self.corr_results[fep]
         if output_file is not None:
             if isinstance(output_file, str):
                 output_file = Path(output_file)
@@ -939,6 +961,8 @@ def main(args: argparse.Namespace):
         verbose_qEnergies.to_csv(f"{args.target}_qEnergies_verbose.csv", index=False)
         verbose_dgBar.to_csv(f"{args.target}_dgBar_verbose.csv", index=False)
         pd.DataFrame(fep_reader.run_data).to_csv(f"{args.target}_run_data.csv", index=False)
+        if fep_reader.verbose_corr:
+            pd.concat(fep_reader.verbose_corr).to_csv(f"{args.target}_corr_verbose.csv", index=False)
 
 
 def main_exe():
