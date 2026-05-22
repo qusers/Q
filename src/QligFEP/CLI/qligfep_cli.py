@@ -45,6 +45,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "wath_ligand_only": args.wath_ligand_only,
             "softcore_method": args.softcore_method,
             "charge_method": args.charge_method,
+            "correction_logging": args.correction_logging,
         }
         if args.protein_charge is not None:
             param_dict["protein_charge"] = args.protein_charge
@@ -81,6 +82,9 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         elif k == "charge_method":
             if v != "ion_match":
                 command_str += f" --charge-method {v}"
+        elif k == "correction_logging":
+            if v:
+                command_str += " --correction-logging"
         else:
             command_str += f" --{k} {v}"
     command_str += f" --restraint_method {args.restraint_method}"

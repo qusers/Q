@@ -547,6 +547,111 @@ class TestWallRestraintsInMdInput:
         assert wr_idx > dr_idx
 
 
+class TestCorrectionInMdInput:
+    """Tests for the optional [correction] section in render_md_input."""
+
+    @staticmethod
+    def _params(interval_energy=None):
+        return MDParameters(
+            steps=5000,
+            stepsize=2.0,
+            temperature="T_VAR",
+            bath_coupling=10.0,
+            shell_radius=25,
+            interval_energy=interval_energy,
+        )
+
+    def test_no_correction_section_by_default(self):
+        """Without correction_file, no [correction] section is emitted."""
+        content = render_md_input(
+            params=self._params(interval_energy=10),
+            lambda1="0.500",
+            lambda2="0.500",
+            trajectory_file="md_0500_0500.dcd",
+            final_file="md_0500_0500.re",
+            restart_file="eq5.re",
+            energy_file="md_0500_0500.en",
+        )
+        assert "[correction]" not in content
+
+    def test_correction_disabled_output_is_byte_identical(self):
+        """correction_file=None must not change the rendered bytes at all."""
+        kwargs = dict(
+            params=self._params(interval_energy=10),
+            lambda1="0.500",
+            lambda2="0.500",
+            trajectory_file="md_0500_0500.dcd",
+            final_file="md_0500_0500.re",
+            restart_file="eq5.re",
+            energy_file="md_0500_0500.en",
+        )
+        assert render_md_input(**kwargs) == render_md_input(correction_file=None, **kwargs)
+
+    def test_correction_section_present_when_enabled(self):
+        """With correction_file set, the [correction] section carries file/interval/kernel."""
+        content = render_md_input(
+            params=self._params(interval_energy=10),
+            lambda1="0.500",
+            lambda2="0.500",
+            trajectory_file="md_0500_0500.dcd",
+            final_file="md_0500_0500.re",
+            restart_file="eq5.re",
+            energy_file="md_0500_0500.en",
+            correction_file="md_0500_0500.corr",
+        )
+        assert "[correction]" in content
+        assert "file                      md_0500_0500.corr" in content
+        assert "interval                  10" in content
+        assert "kernel                    1" in content
+
+    def test_correction_interval_matches_energy_interval(self):
+        """The correction sampling interval follows interval_energy."""
+        content = render_md_input(
+            params=self._params(interval_energy=25),
+            lambda1="0.500",
+            lambda2="0.500",
+            trajectory_file="md.dcd",
+            final_file="md.re",
+            restart_file="eq5.re",
+            energy_file="md.en",
+            correction_file="md.corr",
+        )
+        # within the [correction] block, interval is the energy interval
+        block = content.split("[correction]", 1)[1]
+        assert "interval                  25" in block
+
+    def test_correction_interval_falls_back_to_output(self):
+        """When interval_energy is None, the correction interval uses interval_output."""
+        params = self._params(interval_energy=None)
+        params.interval_output = 7
+        content = render_md_input(
+            params=params,
+            lambda1="0.500",
+            lambda2="0.500",
+            trajectory_file="md.dcd",
+            final_file="md.re",
+            correction_file="md.corr",
+        )
+        block = content.split("[correction]", 1)[1]
+        assert "interval                  7" in block
+
+    def test_correction_section_no_leading_whitespace(self):
+        """The [correction] block must keep the flush-left invariant."""
+        content = render_md_input(
+            params=self._params(interval_energy=10),
+            lambda1="0.500",
+            lambda2="0.500",
+            trajectory_file="md.dcd",
+            final_file="md.re",
+            restart_file="eq5.re",
+            energy_file="md.en",
+            correction_file="md.corr",
+        )
+        for i, line in enumerate(content.splitlines(), 1):
+            if line.strip():
+                assert line == line.lstrip(), f"Line {i} has leading whitespace: {line!r}"
+
+
 class TestGoldenFileComparison:
     """Tests comparing rendered output against golden files."""
 

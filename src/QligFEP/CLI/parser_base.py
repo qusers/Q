@@ -266,6 +266,17 @@ def parse_arguments(program: str) -> argparse.Namespace:
         help="Set the log level for the logger. Defaults to `info`.",
         choices=["trace", "debug", "info", "warning", "error", "critical"],
     )
+    parser.add_argument(
+        "--correction-logging",
+        dest="correction_logging",
+        action="store_true",
+        default=False,
+        help=(
+            "Emit a [correction] section in each production window's .inp so qdyn logs "
+            "the charge-correction electrostatic observable to a <window>.corr file. "
+            "Off by default; required to gather data for the post-hoc charged-edge correction."
+        ),
+    )
     if program == "QligFEP":
         parser.add_argument(
             "-pq",

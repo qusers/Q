@@ -50,6 +50,8 @@ def create_call(**kwargs):
         template += " -sc {softcore_method}"
     if "charge_method" in kwargs and kwargs["charge_method"] != "ion_match":
         template += " -cm {charge_method}"
+    if "correction_logging" in kwargs and kwargs["correction_logging"]:
+        template += " --correction-logging"
     return template.format(**kwargs)
 
 
@@ -153,6 +155,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 protein_charge=protein_charge,
                 softcore_method=args.softcore_method,
                 charge_method=args.charge_method,
+                correction_logging=args.correction_logging,
             )
             command = create_call(**call_kwargs)
             logger.info(f"Submitting the command:\n{command}")
