@@ -17024,27 +17024,51 @@ end subroutine write_trj
 !-----------------------------------------------------------------------
 
 subroutine write_qcorr(step)
-! Logs a geometry-based electrostatic observable for the post-hoc charge
-! correction. For each Q-atom (charge scaled per FEP state via qcrg) it sums the
-! interaction with every charged non-Q solute atom, screened by eps(r)=r so the
-! kernel is ke/r^2. Energy-only diagnostic: it reads x, crg, qcrg and EQ%lambda
-! but never modifies forces, energies, dynamics or the BAR estimate. Called on
-! node 0 only, where x is already broadcast and summed.
+! Logs geometry-based electrostatic observables for the post-hoc charge
+! correction, all with the eps(r)=r screened kernel ke/r^2 over charged non-Q
+! solute atoms. Two observables are written per frame:
+!   U_obs(state) = sum_iq sum_j qcrg(iq,state)*crg(j)*ke/r_ij^2  (full per-atom
+!     charge distribution -> U_obs(2)-U_obs(1) is the distributed correction);
+!   phi_cog      = sum_j crg(j)*ke/r(cog,j)^2  (potential at the Q-atom centroid;
+!     dq*<phi_cog> is the net-charge monopole correction, faithful to the
+!     validated static model).
+! Energy-only diagnostic: reads x, crg, qcrg and EQ%lambda but never modifies
+! forces, energies, dynamics or BAR. Called on node 0 only, where x is summed.
   integer, intent(in)             :: step
-  integer                         :: iq, ia, j, istate, i3, j3
+  integer                         :: iq, ia, j, istate, i3, j3, nq_in
   real(8)                         :: dx, dy, dz, r2, kern
+  real(8)                         :: cogx, cogy, cogz, phi_cog
   real(8)                         :: u_obs(nstates)
 
-  u_obs(:) = 0.0
+  ! ligand centroid = geometric center of the Q-atoms
+  cogx = 0.0; cogy = 0.0; cogz = 0.0; nq_in = 0
   do iq = 1, nqat
     ia = iqseq(iq)
     if (ia <= 0 .or. ia > nat_solute) cycle
     i3 = 3*ia - 3
-    do j = 1, nat_solute
-      if (iqatom(j) /= 0) cycle      ! skip Q-atoms
-      if (excl(j)) cycle             ! skip excluded atoms
-      if (crg(j) == 0.0) cycle       ! skip uncharged atoms
-      j3 = 3*j - 3
+    cogx = cogx + x(i3+1); cogy = cogy + x(i3+2); cogz = cogz + x(i3+3)
+    nq_in = nq_in + 1
+  end do
+  if (nq_in > 0) then
+    cogx = cogx / nq_in; cogy = cogy / nq_in; cogz = cogz / nq_in
+  end if
+
+  u_obs(:) = 0.0
+  phi_cog = 0.0
+  do j = 1, nat_solute
+    if (iqatom(j) /= 0) cycle        ! skip Q-atoms
+    if (excl(j)) cycle               ! skip excluded atoms
+    if (crg(j) == 0.0) cycle         ! skip uncharged atoms
+    j3 = 3*j - 3
+    ! monopole: potential at the ligand centroid
+    dx = cogx - x(j3+1); dy = cogy - x(j3+2); dz = cogz - x(j3+3)
+    r2 = dx*dx + dy*dy + dz*dz
+    if (r2 >= 1.0e-6) phi_cog = phi_cog + crg(j) * qcorr_ke / r2
+    ! full distribution: per-Q-atom interaction
+    do iq = 1, nqat
+      ia = iqseq(iq)
+      if (ia <= 0 .or. ia > nat_solute) cycle
+      i3 = 3*ia - 3
       dx = x(i3+1) - x(j3+1)
       dy = x(i3+2) - x(j3+2)
       dz = x(i3+3) - x(j3+3)
@@ -17058,7 +17082,7 @@ subroutine write_qcorr(step)
   end do
 
   write(qcorr_unit, '(i10,100(1x,es16.8))') step, &
-    (EQ(istate)%lambda, istate=1,nstates), (u_obs(istate), istate=1,nstates)
+    (EQ(istate)%lambda, istate=1,nstates), (u_obs(istate), istate=1,nstates), phi_cog
 
 end subroutine write_qcorr
 
