@@ -90,6 +90,7 @@ class QligFEP:
         wath_ligand_only: bool = False,
         protein_charge: Optional[int] = None,
         charge_method: str = "ion_match",
+        correction_logging: bool = False,
     ):
         self.timestep = timestep
         self.lig1 = lig1
@@ -121,6 +122,9 @@ class QligFEP:
         if charge_method not in valid_charge_methods:
             raise ValueError(f"charge_method={charge_method!r} not in {valid_charge_methods}")
         self.charge_method = charge_method
+        # When True, production windows emit a [correction] section logging the
+        # charge-correction observable to a <window>.corr file beside each .en.
+        self.correction_logging = correction_logging
         # Populated by read_files() once formal charges are known.
         self.same_charge: Optional[bool] = None
         # Co-alchemical water state, populated by place_counter_water() when
@@ -1155,6 +1159,7 @@ class QligFEP:
             final_file="md_0500_0500.re",
             restart_file="eq5.re",
             energy_file="md_0500_0500.en",
+            correction_file="md_0500_0500.corr" if self.correction_logging else None,
             distance_restraints=dr_str,
             sequence_restraints=seq_str,
             wall_restraints=wall_str,
@@ -1185,6 +1190,7 @@ class QligFEP:
                     final_file=f"{filename}.re",
                     restart_file=f"{filename_N}.re",
                     energy_file=f"{filename}.en",
+                    correction_file=f"{filename}.corr" if self.correction_logging else None,
                     distance_restraints=dr_str,
                     sequence_restraints=seq_str,
                     wall_restraints=wall_str,
@@ -1228,6 +1234,7 @@ class QligFEP:
             final_file="md_1000_0000.re",
             restart_file="eq5.re",
             energy_file="md_1000_0000.en",
+            correction_file="md_1000_0000.corr" if self.correction_logging else None,
             distance_restraints=dr_str,
             sequence_restraints=seq_str,
             wall_restraints=wall_str,
@@ -1257,6 +1264,7 @@ class QligFEP:
                 final_file=f"{filename}.re",
                 restart_file=f"{filename_N}.re",
                 energy_file=f"{filename}.en",
+                correction_file=f"{filename}.corr" if self.correction_logging else None,
                 distance_restraints=dr_str,
                 sequence_restraints=seq_str,
                 wall_restraints=wall_str,

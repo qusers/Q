@@ -76,6 +76,7 @@ def render_md_input(
     wall_restraints: str = "",
     restart_file: str | None = None,
     energy_file: str | None = None,
+    correction_file: str | None = None,
     is_eq1: bool = False,
 ) -> str:
     """Render an MD input file from parameters.
@@ -91,6 +92,8 @@ def render_md_input(
         wall_restraints: Pre-formatted wall restraints section (for counter-ions)
         restart_file: Restart input filename (None for eq1)
         energy_file: Energy output filename (None for equilibration)
+        correction_file: Charge-correction observable log filename (None to disable
+            the optional [correction] section); sampled at the energy interval.
         is_eq1: True for eq1.inp which has random_seed and initial_temperature
 
     Returns:
@@ -123,6 +126,22 @@ def render_md_input(
 
     restart_file_name = f"restart                   {restart_file}\n" if restart_file else ""
     energy_file_name = f"energy                    {energy_file}\n" if energy_file else ""
+
+    # Optional [correction] block; "\n" alone reproduces the blank line that
+    # otherwise separates [files] from [trajectory_atoms], so output is
+    # byte-identical when correction logging is disabled.
+    if correction_file is not None:
+        correction_interval = (
+            params.interval_energy if params.interval_energy is not None else params.interval_output
+        )
+        correction_block = (
+            f"\n[correction]\n"
+            f"interval                  {correction_interval}\n"
+            f"file                      {correction_file}\n"
+            f"kernel                    1\n\n"
+        )
+    else:
+        correction_block = "\n"
 
     return f"""\
 [MD]
@@ -167,8 +186,7 @@ trajectory                {trajectory_file}
 {energy_file_name}\
 final                     {final_file}
 fep                       {params.fep_file}
-
-[trajectory_atoms]
+{correction_block}[trajectory_atoms]
 not excluded
 
 [lambdas]
