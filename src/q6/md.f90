@@ -115,6 +115,14 @@ module md
   !*Petra Wennerstrom added 2001-10-23
   integer                   :: ivolume_cycle
 
+  ! --- Charge-correction observable logger (additive; inactive unless a
+  !     [correction] section is present in the input file)
+  logical                   :: do_qcorr = .false.
+  integer                   :: iqcorr_cycle = 0
+  integer                   :: qcorr_kernel = 1
+  integer, parameter        :: qcorr_unit = 15
+  real(8), parameter        :: qcorr_ke = 332.0637
+
   ! --- Protein boundary
   logical                   :: exclude_bonded
   real(8)                   :: fk_pshell
@@ -174,6 +182,7 @@ module md
   character(len=200)        :: ene_file
   character(len=200)        :: exrstr_file
   character(len=200)        :: xwat_file
+  character(len=200)        :: qcorr_file
 
 
   ! --- Restraints
@@ -1618,6 +1627,7 @@ subroutine close_output_files
     close (3)
     if ( itrj_cycle .gt. 0 ) close (10)
     if ( iene_cycle .gt. 0 ) close (11)
+    if ( do_qcorr ) close (qcorr_unit)
 end subroutine close_output_files
 
 
@@ -1641,6 +1651,11 @@ subroutine open_files
       open (unit=12, file=exrstr_file, status='old', form='unformatted', action='read', err=12)
     end if
 
+    ! --> charge-correction observable log (15, formatted text)
+    if ( do_qcorr ) then
+      open (unit=qcorr_unit, file=qcorr_file, status='unknown', form='formatted', action='write', err=15)
+    end if
+
     return
 
     ! crude error handling
@@ -1648,6 +1663,7 @@ subroutine open_files
 3   call die('error opening final coordinates file.')
 11  call die('error opening energy output file.')
 12  call die('error opening position restraints file.')
+15  call die('error opening charge-correction log file.')
 
 end subroutine open_files
 
@@ -3392,6 +3408,23 @@ logical function initialize()
       end if
     end if
 
+    ! --- optional charge-correction observable logger
+    if(prm_open_section('correction')) then
+      do_qcorr = .true.
+      yes = prm_get_integer_by_key('interval', iqcorr_cycle, 100)
+      yes = prm_get_integer_by_key('kernel', qcorr_kernel, 1)
+      if(.not. prm_get_string_by_key('file', qcorr_file)) then
+        write(*,'(a)') '>>> ERROR: [correction] section requires a file keyword.'
+        initialize = .false.
+      end if
+      if(qcorr_kernel /= 1) then
+        write(*,'(a)') '>>> ERROR: [correction] only kernel 1 (eps(r)=r) is supported.'
+        initialize = .false.
+      end if
+      write(*,'(a,a,a,i0,a,i0,a)') 'Charge-correction log = ', trim(qcorr_file), &
+        ' (interval ', iqcorr_cycle, ', kernel ', qcorr_kernel, ')'
+    end if
+
     ! --- states, EQ
     nstates = 0
     if(prm_open_section('lambdas')) then
@@ -4681,6 +4714,10 @@ subroutine md_run
       if ( mod(istep, iene_cycle) == 0 .and. istep > 0) then
         ! nrgy_put_ene(unit, e2, OFFD): print 'e2'=EQ and OFFD to unit 'unit'=11
         call put_ene(11, EQ, OFFD)
+      end if
+      ! charge-correction observable (energy-only diagnostic; never affects forces/BAR)
+      if ( do_qcorr ) then
+        if ( mod(istep,iqcorr_cycle) == 0 .and. istep > 0) call write_qcorr(istep)
       end if
       ! end-of-line, then call write_out, which will print a report on E and EQ
       if ( mod(istep,iout_cycle) == 0 ) then
@@ -16983,6 +17020,47 @@ subroutine write_trj
   end if
 
 end subroutine write_trj
+
+!-----------------------------------------------------------------------
+
+subroutine write_qcorr(step)
+! Logs a geometry-based electrostatic observable for the post-hoc charge
+! correction. For each Q-atom (charge scaled per FEP state via qcrg) it sums the
+! interaction with every charged non-Q solute atom, screened by eps(r)=r so the
+! kernel is ke/r^2. Energy-only diagnostic: it reads x, crg, qcrg and EQ%lambda
+! but never modifies forces, energies, dynamics or the BAR estimate. Called on
+! node 0 only, where x is already broadcast and summed.
+  integer, intent(in)             :: step
+  integer                         :: iq, ia, j, istate, i3, j3
+  real(8)                         :: dx, dy, dz, r2, kern
+  real(8)                         :: u_obs(nstates)
+
+  u_obs(:) = 0.0
+  do iq = 1, nqat
+    ia = iqseq(iq)
+    if (ia <= 0 .or. ia > nat_solute) cycle
+    i3 = 3*ia - 3
+    do j = 1, nat_solute
+      if (iqatom(j) /= 0) cycle      ! skip Q-atoms
+      if (excl(j)) cycle             ! skip excluded atoms
+      if (crg(j) == 0.0) cycle       ! skip uncharged atoms
+      j3 = 3*j - 3
+      dx = x(i3+1) - x(j3+1)
+      dy = x(i3+2) - x(j3+2)
+      dz = x(i3+3) - x(j3+3)
+      r2 = dx*dx + dy*dy + dz*dz
+      if (r2 < 1.0e-6) cycle
+      kern = qcorr_ke / r2           ! kernel 1: eps(r)=r screening
+      do istate = 1, nstates
+        u_obs(istate) = u_obs(istate) + qcrg(iq,istate) * crg(j) * kern
+      end do
+    end do
+  end do
+
+  write(qcorr_unit, '(i10,100(1x,es16.8))') step, &
+    (EQ(istate)%lambda, istate=1,nstates), (u_obs(istate), istate=1,nstates)
+
+end subroutine write_qcorr
 
 !-----------------------------------------------------------------------
 
