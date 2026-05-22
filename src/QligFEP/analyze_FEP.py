@@ -353,15 +353,20 @@ class FepReader:
 
             # Reduce the charge-correction observable if .corr logs are present
             # (run done with --correction-logging). Pools all replicate windows.
-            corr_windows, corr_integral = collect_leg_corr(
+            corr_windows, corr_u_integral, corr_phi_integral = collect_leg_corr(
                 [rep.parent for rep in replicate_qfep_files]
             )
             if corr_windows is not None:
-                self.data[self.system][fep].update({"corr_integral": corr_integral})
+                self.data[self.system][fep].update(
+                    {"corr_u_integral": corr_u_integral, "corr_phi_integral": corr_phi_integral}
+                )
                 self.verbose_corr.append(
                     pd.DataFrame(corr_windows).assign(fep=fep, system=self.system)
                 )
-                logger.debug(f"    charge-correction leg integral ({fep}): {corr_integral:.3f}")
+                logger.debug(
+                    f"    charge-correction leg integrals ({fep}): "
+                    f"U={corr_u_integral:.3f}, phi={corr_phi_integral:.3f}"
+                )
 
             # Calculate statistics for each energy method
             all_energies_arr = []
@@ -439,11 +444,11 @@ class FepReader:
                         }
                     }
                 )
-            # Charge-correction integral: protein leg minus water leg (unscaled).
-            w_corr = w_fep.get("corr_integral")
-            p_corr = p_fep.get("corr_integral")
-            if w_corr is not None and p_corr is not None:
-                self.corr_results[fep] = p_corr - w_corr
+            # Charge-correction integrals: protein leg minus water leg (unscaled).
+            w_u, p_u = w_fep.get("corr_u_integral"), p_fep.get("corr_u_integral")
+            w_phi, p_phi = w_fep.get("corr_phi_integral"), p_fep.get("corr_phi_integral")
+            if w_u is not None and p_u is not None:
+                self.corr_results[fep] = {"u": p_u - w_u, "phi": p_phi - w_phi}
             self.feps.append(fep)
 
     def load_experimental_data(self, exp_key: str):
@@ -514,7 +519,8 @@ class FepReader:
                         }
                     )
                     if fep in self.corr_results:
-                        edge["Q_corr_integral"] = self.corr_results[fep]
+                        edge["Q_corr_integral"] = self.corr_results[fep]["u"]
+                        edge["Q_corr_phi_integral"] = self.corr_results[fep]["phi"]
         if output_file is not None:
             if isinstance(output_file, str):
                 output_file = Path(output_file)
