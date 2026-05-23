@@ -26,7 +26,9 @@ void calc_temperature() {
     ctx.Temp = 0;
     for (int i = 0; i < ctx.n_atoms_solute; i++) {
         mass_i = catypes[atypes[i].code - 1].m;
-        ener = .5 * mass_i * (pow(velocities[i].x, 2) + pow(velocities[i].y, 2) + pow(velocities[i].z, 2));
+        ener = .5 * mass_i * (velocities[i].x * velocities[i].x +
+                               velocities[i].y * velocities[i].y +
+                               velocities[i].z * velocities[i].z);
         Temp_solute += ener;
         if (!excluded[i]) {
             Tfree_solute += ener;
@@ -34,13 +36,15 @@ void calc_temperature() {
             Texcl_solute += ener;
         }
         if (ener > Ekinmax) {
-            printf(">>> WARNING: hot atom %d: %f\n", i, ener / Boltz / 3);
+            printf(">>> WARNING: hot atom %d: %f\n", i, 2.0 * ener / Boltz / 3.0);
         }
     }
 
     for (int i = ctx.n_atoms_solute; i < ctx.n_atoms; i++) {
         mass_i = catypes[atypes[i].code - 1].m;
-        ener = .5 * mass_i * (pow(velocities[i].x, 2) + pow(velocities[i].y, 2) + pow(velocities[i].z, 2));
+        ener = .5 * mass_i * (velocities[i].x * velocities[i].x +
+                               velocities[i].y * velocities[i].y +
+                               velocities[i].z * velocities[i].z);
         Temp_solvent += ener;
         if (!excluded[i]) {
             Tfree_solvent += ener;
@@ -48,7 +52,7 @@ void calc_temperature() {
             Texcl_solvent += ener;
         }
         if (ener > Ekinmax) {
-            printf(">>> WARNING: hot atom %d: %f\n", i, ener / Boltz / 3);
+            printf(">>> WARNING: hot atom %d: %f\n", i, 2.0 * ener / Boltz / 3.0);
         }
     }
 

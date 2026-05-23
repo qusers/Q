@@ -4,6 +4,7 @@
 
 #include "constants.h"
 #include "context.h"
+#include "coulomb.h"
 #include "vdw_rules.h"
 
 void calc_nonbonded_pp_forces() {
@@ -45,7 +46,7 @@ void calc_nonbonded_pp_forces() {
             ra = static_cast<real_t>(std::sqrt(r2a));
             r6a = r2a * r2a * r2a;
 
-            const real_t Vela = static_cast<real_t>(scaling * ctx.topo.coulomb_constant) * crg_i * crg_j * ra;
+            const real_t Vela = fortran_coulomb_energy(crg_i, crg_j, ra, ctx.topo.coulomb_constant, scaling);
 
             ai_aii = bond14 ? ai_type.aii_1_4 : ai_type.aii_normal;
             aj_aii = bond14 ? aj_type.aii_1_4 : aj_type.aii_normal;

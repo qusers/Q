@@ -4,6 +4,7 @@
 
 #include "context.h"
 #include "cpu_utils.h"
+#include "common/include/fortran_real.h"
 
 real_t calc_torsion_forces(int start, int end) {
     auto& ctx = Context::instance();
@@ -26,7 +27,7 @@ real_t calc_torsion_forces(int start, int end) {
     torsion_t t;
     ctorsion_t ctors;
 
-    for (int i = start; i < end; i++) {
+    for (int i = end - 1; i >= start; --i) {
         t = torsions[i];
         ctors = ctorsions[t.code - 1];
 
@@ -60,8 +61,8 @@ real_t calc_torsion_forces(int start, int end) {
         rnk.y = -rjk.z * rkl.x + rjk.x * rkl.z;
         rnk.z = -rjk.x * rkl.y + rjk.y * rkl.x;
 
-        bj2inv = 1 / (pow(rnj.x, 2) + pow(rnj.y, 2) + pow(rnj.z, 2));
-        bk2inv = 1 / (pow(rnk.x, 2) + pow(rnk.y, 2) + pow(rnk.z, 2));
+        bj2inv = 1 / (rnj.x * rnj.x + rnj.y * rnj.y + rnj.z * rnj.z);
+        bk2inv = 1 / (rnk.x * rnk.x + rnk.y * rnk.y + rnk.z * rnk.z);
         bjinv = sqrt(bj2inv);
         bkinv = sqrt(bk2inv);
 
@@ -82,14 +83,15 @@ real_t calc_torsion_forces(int start, int end) {
         }
 
         // Energy
-        arg = ctors.n * phi - to_radians(ctors.d);
+        arg = ctors.n * phi - fortran_radians_from_degrees(ctors.d);
         ener = ctors.k * (1 + cos(arg)) * ctors.paths;
-        dv = -ctors.n * ctors.k * sin(arg) * ctors.paths;
+        const real_t torsion_force_k = fortran_real(static_cast<double>(ctors.n) * static_cast<double>(ctors.k));
+        dv = -torsion_force_k * sin(arg) * ctors.paths;
 
         // Forces
         f1 = sin(phi);
         if (std::fabs(f1) < k_singular_sin_epsilon) {
-            f1 = std::copysign(k_singular_sin_epsilon, f1);
+            f1 = k_singular_sin_epsilon;
         }
         f1 = -1 / f1;
 

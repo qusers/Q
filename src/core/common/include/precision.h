@@ -25,7 +25,7 @@ using constraint_work_t = double;
 using force_fixed_t = long long;
 using force_fixed_storage_t = unsigned long long;
 
-constexpr double k_force_fixed_scale = 1.0e8;
+constexpr double k_force_fixed_scale = 1.0e10;
 constexpr double k_force_fixed_max_scaled = 9.2233720368547758e18;
 
 QDYN_HOST_DEVICE inline force_fixed_t force_to_fixed(double value) {

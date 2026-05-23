@@ -2,6 +2,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "constants.h"
 #include "context.h"
@@ -10,6 +11,7 @@ void calc_polx_w_forces(int iteration) {
     auto& ctx = Context::instance();
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
+    auto *excluded = ctx.excluded->cpu_data_p;
     auto *wshells = ctx.wshells->cpu_data_p;
 
     int wi, imin, jw, ii, iis, jmin;
@@ -32,12 +34,13 @@ void calc_polx_w_forces(int iteration) {
         ctx.theta0[i] = 0;
 
         wi = ctx.n_atoms_solute + 3 * i;
+        if (excluded[wi]) continue;
 
         rmu.x = coords[wi + 1].x + coords[wi + 2].x - 2 * coords[wi].x;
         rmu.y = coords[wi + 1].y + coords[wi + 2].y - 2 * coords[wi].y;
         rmu.z = coords[wi + 1].z + coords[wi + 2].z - 2 * coords[wi].z;
 
-        rm = sqrt(pow(rmu.x, 2) + pow(rmu.y, 2) + pow(rmu.z, 2));
+        rm = sqrt(rmu.x * rmu.x + rmu.y * rmu.y + rmu.z * rmu.z);
 
         rmu.x /= rm;
         rmu.y /= rm;
@@ -46,7 +49,7 @@ void calc_polx_w_forces(int iteration) {
         rcu.x = coords[wi].x - ctx.topo.solvent_center.x;
         rcu.y = coords[wi].y - ctx.topo.solvent_center.y;
         rcu.z = coords[wi].z - ctx.topo.solvent_center.z;
-        rc = sqrt(pow(rcu.x, 2) + pow(rcu.y, 2) + pow(rcu.z, 2));
+        rc = sqrt(rcu.x * rcu.x + rcu.y * rcu.y + rcu.z * rcu.z);
         rcu.x /= rc;
         rcu.y /= rc;
         rcu.z /= rc;
@@ -76,7 +79,7 @@ void calc_polx_w_forces(int iteration) {
     for (int is = 0; is < ctx.n_shells; is++) {
         imin = 0;
         for (int il = 0; il < wshells[is].n_inshell; il++) {
-            tmin = 2 * M_PI;
+            tmin = 2 * static_cast<real_t>(q_fortran_pi);
             for (int jl = 0; jl < wshells[is].n_inshell; jl++) {
                 jw = ctx.list_sh[jl][is];
                 if (ctx.tdum[jw] < tmin) {
@@ -93,13 +96,28 @@ void calc_polx_w_forces(int iteration) {
     if (iteration != 0 && iteration % itdis_update == 0) {
         for (int is = 0; is < ctx.n_shells; is++) {
             printf("SHELL %d\n", is);
-            wshells[is].avtheta /= (real_t)itdis_update;
-            wshells[is].avn_inshell /= (real_t)itdis_update;
+            const float avtheta_f = static_cast<float>(wshells[is].avtheta) / static_cast<float>(itdis_update);
+            wshells[is].avtheta = static_cast<real_t>(avtheta_f);
+            wshells[is].avn_inshell /= static_cast<real_t>(itdis_update);
             wshells[is].theta_corr =
-                wshells[is].theta_corr + wshells[is].avtheta - acos(wshells[is].cstb);
+                static_cast<real_t>(static_cast<float>(
+                    static_cast<float>(wshells[is].theta_corr) + avtheta_f -
+                    acosf(static_cast<float>(wshells[is].cstb))));
+            if (const char* debug = getenv("QGPU_WPOL_DEBUG_UPDATE")) {
+                if (debug[0] != '\0') {
+                    printf("QGPU_WPOL_UPDATE iter=%d shell=%d avtheta=%.17g avn_inshell=%.17g cstb=%.17g acos_cstb=%.17g theta_corr=%.17g\n",
+                           iteration,
+                           is + 1,
+                           static_cast<double>(wshells[is].avtheta),
+                           static_cast<double>(wshells[is].avn_inshell),
+                           static_cast<double>(wshells[is].cstb),
+                           static_cast<double>(static_cast<real_t>(acosf(static_cast<float>(wshells[is].cstb)))),
+                           static_cast<double>(wshells[is].theta_corr));
+                }
+            }
             printf("average theta = %f, average in shell = %f, theta_corr = %f\n",
-                   wshells[is].avtheta * 180 / M_PI, wshells[is].avn_inshell,
-                   wshells[is].theta_corr * 180 / M_PI);
+                   wshells[is].avtheta * 180 / static_cast<real_t>(q_fortran_pi), wshells[is].avn_inshell,
+                   wshells[is].theta_corr * 180 / static_cast<real_t>(q_fortran_pi));
             wshells[is].avtheta = 0;
             wshells[is].avn_inshell = 0;
         }
@@ -113,22 +131,24 @@ void calc_polx_w_forces(int iteration) {
         avtdum = 0;
         for (int il = 0; il < wshells[is].n_inshell; il++) {
             ii = ctx.nsort[il][is];
-            arg = 1 + ((1 - 2 * (real_t)(il + 1)) / (real_t)wshells[is].n_inshell);
+            const float arg_f = 1.0f + ((1.0f - 2.0f * static_cast<float>(il + 1)) /
+                                        static_cast<float>(wshells[is].n_inshell));
+            arg = static_cast<real_t>(arg_f);
             ctx.theta0[il] = acos(arg);
             ctx.theta0[il] = ctx.theta0[il] - 3 * sin(ctx.theta0[il]) * wshells[is].cstb / 2;
             if (ctx.theta0[il] < 0) {
                 ctx.theta0[il] = 0;
             }
-            if (ctx.theta0[il] > M_PI) {
-                ctx.theta0[il] = M_PI;
+            if (ctx.theta0[il] > static_cast<real_t>(q_fortran_pi)) {
+                ctx.theta0[il] = static_cast<real_t>(q_fortran_pi);
             }
 
             avtdum += ctx.theta[ii];
-            ener = .5 * ctx.md.polarisation_force *
-                   pow(ctx.theta[ii] - ctx.theta0[il] + wshells[is].theta_corr, 2);
+            const real_t dtheta = ctx.theta[ii] - ctx.theta0[il] + wshells[is].theta_corr;
+            ener = static_cast<real_t>(0.5) * ctx.md.polarisation_force * dtheta * dtheta;
             ctx.E_restraint.Upolx += ener;
 
-            dv = ctx.md.polarisation_force * (ctx.theta[ii] - ctx.theta0[il] + wshells[is].theta_corr);
+            dv = ctx.md.polarisation_force * dtheta;
 
             wi = ctx.n_atoms_solute + 3 * ii;
 
@@ -136,7 +156,7 @@ void calc_polx_w_forces(int iteration) {
             rmu.y = coords[wi + 1].y + coords[wi + 2].y - 2 * coords[wi].y;
             rmu.z = coords[wi + 1].z + coords[wi + 2].z - 2 * coords[wi].z;
 
-            rm = sqrt(pow(rmu.x, 2) + pow(rmu.y, 2) + pow(rmu.z, 2));
+            rm = sqrt(rmu.x * rmu.x + rmu.y * rmu.y + rmu.z * rmu.z);
 
             rmu.x /= rm;
             rmu.y /= rm;
@@ -145,7 +165,7 @@ void calc_polx_w_forces(int iteration) {
             rcu.x = coords[wi].x - ctx.topo.solvent_center.x;
             rcu.y = coords[wi].y - ctx.topo.solvent_center.y;
             rcu.z = coords[wi].z - ctx.topo.solvent_center.z;
-            rc = sqrt(pow(rcu.x, 2) + pow(rcu.y, 2) + pow(rcu.z, 2));
+            rc = sqrt(rcu.x * rcu.x + rcu.y * rcu.y + rcu.z * rcu.z);
             rcu.x /= rc;
             rcu.y /= rc;
             rcu.z /= rc;
@@ -157,9 +177,12 @@ void calc_polx_w_forces(int iteration) {
             if (cos_th < -1) {
                 cos_th = -1;
             }
-            const real_t sin2_th = fmax(real_t(0), real_t(1) - cos_th * cos_th);
-            const real_t sin_eff = sqrt(sin2_th + real_t(k_polx_sin_softening * k_polx_sin_softening));
-            f0 = -dv / sin_eff;
+            f0 = sin(acos(cos_th));
+            if (fabs(f0) < real_t(1.0e-12)) {
+                f0 = real_t(1.0e-12);
+            }
+            f0 = static_cast<real_t>(-1.0) / f0;
+            f0 = dv * f0;
 
             f1O.x = -2 * (rcu.x - rmu.x * cos_th) / rm;
             f1O.y = -2 * (rcu.y - rmu.y * cos_th) / rm;
@@ -186,7 +209,20 @@ void calc_polx_w_forces(int iteration) {
             dvelocities[wi + 2].z += f0 * f1H2.z;
         }
 
-        wshells[is].avtheta += avtdum / (real_t)wshells[is].n_inshell;
+        const real_t shell_avg_theta = avtdum / static_cast<real_t>(wshells[is].n_inshell);
+        if (const char* debug = getenv("QGPU_WPOL_DEBUG_AVG")) {
+            if (debug[0] != '\0') {
+                printf("QGPU_WPOL_AVG iter=%d shell=%d n=%d avtdum=%.17g avg=%.17g avtheta_before=%.17g\n",
+                       iteration,
+                       is + 1,
+                       wshells[is].n_inshell,
+                       static_cast<double>(avtdum),
+                       static_cast<double>(shell_avg_theta),
+                       static_cast<double>(wshells[is].avtheta));
+            }
+        }
+        wshells[is].avtheta = static_cast<real_t>(static_cast<float>(
+            static_cast<float>(wshells[is].avtheta) + shell_avg_theta));
         wshells[is].avn_inshell += wshells[is].n_inshell;
     }
 }

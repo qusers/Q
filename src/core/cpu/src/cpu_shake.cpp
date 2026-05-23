@@ -48,7 +48,8 @@ int calc_shake_constraints(coord_t* coords, coord_t* xcoords) {
                     xxij.y = xcoords[ai].y - xcoords[aj].y;
                     xxij.z = xcoords[ai].z - xcoords[aj].z;
                     scp = xij.x * xxij.x + xij.y * xxij.y + xij.z * xxij.z;
-                    corr = diff / (2.0 * scp * (winv[ai] + winv[aj]));
+                    const real_t winv_sum = static_cast<real_t>(static_cast<float>(winv[ai] + winv[aj]));
+                    corr = diff / (2.0 * scp * winv_sum);
 
                     coords[ai].x += xxij.x * corr * winv[ai];
                     coords[ai].y += xxij.y * corr * winv[ai];

@@ -102,6 +102,7 @@ class ParseResult {
     std::vector<q_exclpair_t> q_exclpairs;
     std::vector<q_shake_t> q_shakes;
     std::vector<q_softcore_t> q_softcores;
+    bool q_softcore_use_max_potential = false;
 };
 
 class BaseParser {

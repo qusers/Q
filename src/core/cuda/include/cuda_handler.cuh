@@ -22,5 +22,6 @@ class CudaHandler : public Handler {
     void calc_temperature() override;
     void calc_leapfrog() override;
 
+    void prepare_force_dump() override;
     void reset_energies() override;
 };

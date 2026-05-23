@@ -5,6 +5,7 @@
 #include "cuda_nonbonded_force.cuh"
 #include "constants.h"
 #include "cuda_utility.cuh"
+#include "softcore.h"
 
 namespace CudaNonbondedForce {
 bool is_initialized = false;
@@ -71,6 +72,7 @@ __device__ void calculate_unforce_bound(
 
     const WorkT scaling,
     const WorkT lambda,
+    const WorkT softcore_lookup,
 
     WorkT& evdw,
     WorkT& ecoul,
@@ -87,12 +89,21 @@ __device__ void calculate_unforce_bound(
     // evdw = v_a - v_b;
     // dv = r2 * (-ecoul - v_a + v_b);
 
-    ecoul = scaling * coulomb_constant * charge_product * r * lambda;
+    ecoul = scaling * charge_product * r * lambda;
 
-    const WorkT v_a = static_cast<WorkT>(pair_param.a) * r6 * r6 * lambda;
-    const WorkT v_b = static_cast<WorkT>(pair_param.b) * r6 * lambda;
-    evdw = v_a - v_b;
-    dv = r2 * (-ecoul - static_cast<WorkT>(12.0) * v_a + static_cast<WorkT>(6.0) * v_b);
+    WorkT v_a = 0;
+    WorkT v_b = 0;
+    WorkT force_lj_term = 0;
+    q_softcore_lj(
+        static_cast<WorkT>(pair_param.a),
+        static_cast<WorkT>(pair_param.b),
+        r6,
+        softcore_lookup,
+        &v_a,
+        &v_b,
+        &force_lj_term);
+    evdw = (v_a - v_b) * lambda;
+    dv = r2 * (-ecoul - force_lj_term * lambda);
 }
 
 template <typename WorkT>
@@ -103,6 +114,7 @@ __global__ void calc_nonbonded_force_kernel(
     const int* x_charges_types,
     const int* y_charges_types,
     const real_t* charge_pair_products,
+    const real_t* q_charge_pair_products,
 
     const int* x_atypes_types,
     const int* y_atypes_types,
@@ -136,7 +148,12 @@ __global__ void calc_nonbonded_force_kernel(
     const int zero_catype_type,
     const int n_qelscales,
     const real_t lambda,
-    const q_elscale_t* d_qelscales  // todo: Now doesn't use it. Should optimize it later
+    const q_elscale_t* d_qelscales,  // todo: Now doesn't use it. Should optimize it later
+    const bool softcore_enabled,
+    const real_t* d_q_softcore_values,
+    const int* d_atom_to_qi,
+    const bool softcore_use_max_potential,
+    const bool use_q_charge_product
 
 ) {
     const int x_block_num = (nx + 31) >> 5;
@@ -181,6 +198,10 @@ __global__ void calc_nonbonded_force_kernel(
 
     int x_catype_type_idx = (x_idx < nx) ? x_atypes_types[x_idx] : -1;
     int y_catype_type_idx = (y_idx < ny) ? y_atypes_types[y_idx] : -1;
+    int x_qi = (softcore_enabled && x_atom_idx >= 0) ? d_atom_to_qi[x_atom_idx] : -1;
+    int y_qi = (softcore_enabled && y_atom_idx >= 0) ? d_atom_to_qi[y_atom_idx] : -1;
+    real_t x_softcore_alpha = (x_qi >= 0) ? d_q_softcore_values[x_qi] : static_cast<real_t>(0.0);
+    real_t y_softcore_alpha = (y_qi >= 0) ? d_q_softcore_values[y_qi] : static_cast<real_t>(0.0);
 
     nonbond_vec_t<WorkT> x_force = {0.0, 0.0, 0.0};
     nonbond_vec_t<WorkT> y_force = {0.0, 0.0, 0.0};
@@ -223,6 +244,8 @@ __global__ void calc_nonbonded_force_kernel(
         y_excluded = __shfl_sync(mask, y_excluded, src);
         y_charge_type_idx = __shfl_sync(mask, y_charge_type_idx, src);
         y_catype_type_idx = __shfl_sync(mask, y_catype_type_idx, src);
+        y_qi = __shfl_sync(mask, y_qi, src);
+        y_softcore_alpha = shfl_value(y_softcore_alpha, src, mask);
 
         y_force.x = shfl_value(y_force.x, src, mask);
         y_force.y = shfl_value(y_force.y, src, mask);
@@ -246,8 +269,28 @@ __global__ void calc_nonbonded_force_kernel(
     for (int i = 0; i < 32; i++) {
         if (is_valid()) {
             WorkT scaling = static_cast<WorkT>(1.0);
-            real_t charge_product = charge_pair_products[charge_pair_row + y_charge_type_idx];
+            const real_t* charge_products = use_q_charge_product ? q_charge_pair_products : charge_pair_products;
+            real_t charge_product = charge_products[charge_pair_row + y_charge_type_idx];
             vdw_pair_param_t pair_param = catype_pair_params[pair_row + y_catype_type_idx];
+            WorkT softcore_lookup = static_cast<WorkT>(0.0);
+
+            if (softcore_enabled) {
+                WorkT alpha = static_cast<WorkT>(0.0);
+                const WorkT x_alpha = static_cast<WorkT>(x_softcore_alpha);
+                const WorkT y_alpha = static_cast<WorkT>(y_softcore_alpha);
+                if (x_qi >= 0 && y_qi >= 0) {
+                    alpha = q_softcore_pair_value(x_alpha, y_alpha, softcore_use_max_potential);
+                } else if (x_qi >= 0) {
+                    alpha = x_alpha;
+                } else if (y_qi >= 0) {
+                    alpha = y_alpha;
+                }
+                softcore_lookup = q_softcore_lookup_value(
+                    alpha,
+                    static_cast<WorkT>(pair_param.a),
+                    static_cast<WorkT>(pair_param.b),
+                    softcore_use_max_potential);
+            }
 
             // todo: Now the idx is wrong, should optimize it later
             // for (int k = 0; k < n_qelscales; k++) {
@@ -267,6 +310,7 @@ __global__ void calc_nonbonded_force_kernel(
                 coulomb_constant,
                 scaling,
                 kernel_lambda,
+                softcore_lookup,
                 evdw,
                 ecoul,
                 dv);
@@ -323,7 +367,12 @@ std::pair<real_t, real_t> calc_nonbonded_force_host(
     const int* y_charges_types,
     const int* x_atypes_types,
     const int* y_atypes_types,
-    const bool disable_water_h_lj, const real_t lambda) {
+    const bool disable_water_h_lj, const real_t lambda,
+    const bool softcore_enabled,
+    const real_t* q_softcore_values,
+    const int* atom_to_qi,
+    const bool softcore_use_max_potential,
+    const bool use_q_charge_product) {
     using namespace CudaNonbondedForce;
     Context& host = Context::instance();
     const int thread_num = 256;
@@ -350,6 +399,7 @@ std::pair<real_t, real_t> calc_nonbonded_force_host(
             x_charges_types,
             y_charges_types,
             host.charge_pair_products->gpu_data_p,
+            host.q_charge_pair_products->gpu_data_p,
             x_atypes_types,
             y_atypes_types,
             host.catype_pair_params->gpu_data_p,
@@ -371,7 +421,12 @@ std::pair<real_t, real_t> calc_nonbonded_force_host(
             host.zero_catype_type,
             host.n_qelscales,
             lambda,
-            host.q_elscales->gpu_data_p);
+            host.q_elscales->gpu_data_p,
+            softcore_enabled,
+            q_softcore_values,
+            atom_to_qi,
+            softcore_use_max_potential,
+            use_q_charge_product);
     };
 
     launch_kernel(nonbond_work_t{});

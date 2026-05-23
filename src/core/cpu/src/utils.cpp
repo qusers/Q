@@ -1,6 +1,7 @@
 #include <math.h>
 #include <stdio.h>
 
+#include "constants.h"
 #include "common/include/precision.h"
 
 // Get a value from a gaussian distributed random variable with
@@ -17,9 +18,9 @@ real_t gauss(real_t mean, real_t sd) {
 
 
 real_t to_degrees(real_t radians) {
-    return radians * (180.0 / M_PI);
+    return radians * (180.0 / static_cast<real_t>(q_fortran_pi));
 }
 
 real_t to_radians(real_t degrees) {
-    return degrees * (M_PI / 180.0);
+    return degrees * (static_cast<real_t>(q_fortran_pi) / 180.0);
 }

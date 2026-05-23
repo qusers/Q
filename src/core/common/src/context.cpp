@@ -219,9 +219,11 @@ void apply_parse_result(Context& ctx, const ParseResult& parsed) {
     ctx.q_shakes = parsed.q_shakes;
     ctx.n_qsoftcores = per_lambda_count(parsed.q_softcores.size(), ctx.n_lambdas);
     ctx.q_softcores = parsed.q_softcores;
+    ctx.q_softcore_use_max_potential = parsed.q_softcore_use_max_potential;
 
     set_lj_matrix(ctx, parsed);
 }
+
 }  // namespace
 
 Context::Context() {

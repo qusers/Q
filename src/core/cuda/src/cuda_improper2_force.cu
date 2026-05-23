@@ -1,6 +1,7 @@
 #include "cuda/include/cuda_improper2_force.cuh"
 #include "cuda/include/cuda_force_accum.cuh"
 #include "cuda/include/cuda_utility.cuh"
+#include "common/include/fortran_real.h"
 #include "context.h"
 
 namespace CudaImproper2Force {
@@ -71,13 +72,13 @@ __global__ void calc_improper2_forces_kernel(int start, int end, improper_t* imp
     }
 
     // Energy
-    arg = 2 * phi - to_radians_device(cimp.phi0);
+    arg = 2 * phi - fortran_radians_from_degrees(cimp.phi0);
     ener = cimp.k * (1 + cos(arg));
     dv = -2 * cimp.k * sin(arg);
 
     // Forces
     f1 = sin(phi);
-    if (fabs(f1) < k_singular_sin_epsilon) f1 = copysign(k_singular_sin_epsilon, f1);
+    if (fabs(f1) < k_singular_sin_epsilon) f1 = k_singular_sin_epsilon;
     f1 = -1 / f1;
     // printf("f1 = %f phi = %f cos_phi = %f\n", f1, phi, cos_phi);
 

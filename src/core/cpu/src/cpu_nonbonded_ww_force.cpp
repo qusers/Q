@@ -4,6 +4,7 @@
 
 #include "constants.h"
 #include "context.h"
+#include "coulomb.h"
 #include "vdw_rules.h"
 
 namespace {
@@ -37,7 +38,7 @@ void accumulate_pair_force(Context& ctx,
 
     const real_t r2inv = static_cast<real_t>(1.0) / (dx * dx + dy * dy + dz * dz);
     const real_t rinv = static_cast<real_t>(std::sqrt(r2inv));
-    const real_t ecoul = static_cast<real_t>(ctx.topo.coulomb_constant) * qi * qj * rinv;
+    const real_t ecoul = fortran_coulomb_energy(qi, qj, rinv, ctx.topo.coulomb_constant);
 
     real_t evdw = 0.0;
     real_t dva = -ecoul;

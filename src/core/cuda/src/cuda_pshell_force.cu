@@ -18,6 +18,7 @@ __global__ void calc_pshell_force_kernel(
     coord_t* coords_init,
     real_t* ufix_energy,
     real_t* ushell_energy,
+    real_t shell_force,
     cuda_dvel_t* dvelocities) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_atoms_solute) return;
@@ -30,7 +31,7 @@ __global__ void calc_pshell_force_kernel(
         if (excluded[i]) {
             k = k_fix;
         } else {
-            k = k_pshell;
+            k = shell_force;
         }
         dr.x = coords[i].x - coords_init[i].x;
         dr.y = coords[i].y - coords_init[i].y;
@@ -71,6 +72,7 @@ void calc_pshell_forces_host() {
         d_coords_init,
         d_ufix_energy,
         d_ushell_energy,
+        host.md.shell_force,
         d_dvelocities);
     cudaDeviceSynchronize();
     real_t ufix_energy;

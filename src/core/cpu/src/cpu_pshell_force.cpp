@@ -20,7 +20,7 @@ void calc_pshell_forces() {
             if (excluded[i]) {
                 k = k_fix;
             } else {
-                k = k_pshell;
+                k = ctx.md.shell_force;
             }
 
             dr.x = coords[i].x - ctx.coords_init->cpu_data_p[i].x;
