@@ -120,6 +120,9 @@ module md
   logical                   :: do_qcorr = .false.
   integer                   :: iqcorr_cycle = 0
   integer                   :: qcorr_kernel = 1
+  ! Number of trailing Q-atoms (the co-alchemical counter-water, appended last
+  ! by QligFEP) to drop from the phi_cog centroid; 0 keeps all (default).
+  integer                   :: qcorr_exclude_last = 0
   integer, parameter        :: qcorr_unit = 15
   real(8), parameter        :: qcorr_ke = 332.0637
 
@@ -3413,6 +3416,7 @@ logical function initialize()
       do_qcorr = .true.
       yes = prm_get_integer_by_key('interval', iqcorr_cycle, 100)
       yes = prm_get_integer_by_key('kernel', qcorr_kernel, 1)
+      yes = prm_get_integer_by_key('exclude_last', qcorr_exclude_last, 0)
       if(.not. prm_get_string_by_key('file', qcorr_file)) then
         write(*,'(a)') '>>> ERROR: [correction] section requires a file keyword.'
         initialize = .false.
@@ -3421,8 +3425,9 @@ logical function initialize()
         write(*,'(a)') '>>> ERROR: [correction] only kernel 1 (eps(r)=r) is supported.'
         initialize = .false.
       end if
-      write(*,'(a,a,a,i0,a,i0,a)') 'Charge-correction log = ', trim(qcorr_file), &
-        ' (interval ', iqcorr_cycle, ', kernel ', qcorr_kernel, ')'
+      write(*,'(a,a,a,i0,a,i0,a,i0,a)') 'Charge-correction log = ', trim(qcorr_file), &
+        ' (interval ', iqcorr_cycle, ', kernel ', qcorr_kernel, &
+        ', centroid excludes last ', qcorr_exclude_last, ' Q-atoms)'
     end if
 
     ! --- states, EQ
@@ -17040,9 +17045,12 @@ subroutine write_qcorr(step)
   real(8)                         :: cogx, cogy, cogz, phi_cog
   real(8)                         :: u_obs(nstates)
 
-  ! ligand centroid = geometric center of the Q-atoms
+  ! ligand centroid = geometric center of the ligand Q-atoms. The co-alchemical
+  ! counter-water (when present) is appended last in the Q-atom list and sits far
+  ! from the ligand, so qcorr_exclude_last of the trailing Q-atoms are dropped
+  ! here to keep the centroid on the ligand. qcorr_exclude_last = 0 keeps all.
   cogx = 0.0; cogy = 0.0; cogz = 0.0; nq_in = 0
-  do iq = 1, nqat
+  do iq = 1, nqat - qcorr_exclude_last
     ia = iqseq(iq)
     if (ia <= 0 .or. ia > nat_solute) cycle
     i3 = 3*ia - 3

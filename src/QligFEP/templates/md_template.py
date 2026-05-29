@@ -77,6 +77,7 @@ def render_md_input(
     restart_file: str | None = None,
     energy_file: str | None = None,
     correction_file: str | None = None,
+    correction_exclude_last: int = 0,
     is_eq1: bool = False,
 ) -> str:
     """Render an MD input file from parameters.
@@ -94,6 +95,10 @@ def render_md_input(
         energy_file: Energy output filename (None for equilibration)
         correction_file: Charge-correction observable log filename (None to disable
             the optional [correction] section); sampled at the energy interval.
+        correction_exclude_last: Number of trailing Q-atoms — the co-alchemical
+            counter-water, appended last in the FEP [atoms] list — to drop from
+            the phi_cog centroid (they sit far from the ligand and bias it). 0
+            (default) disables it, preserving byte-identical output.
         is_eq1: True for eq1.inp which has random_seed and initial_temperature
 
     Returns:
@@ -134,11 +139,18 @@ def render_md_input(
         correction_interval = (
             params.interval_energy if params.interval_energy is not None else params.interval_output
         )
+        exclude_line = (
+            f"exclude_last              {correction_exclude_last}\n"
+            if correction_exclude_last > 0
+            else ""
+        )
         correction_block = (
             f"\n[correction]\n"
             f"interval                  {correction_interval}\n"
             f"file                      {correction_file}\n"
-            f"kernel                    1\n\n"
+            f"kernel                    1\n"
+            f"{exclude_line}"
+            f"\n"
         )
     else:
         correction_block = "\n"

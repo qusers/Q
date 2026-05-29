@@ -821,6 +821,14 @@ class QligFEP:
             lines.append(format_sequence_restraint(o_idx, o_idx, force=1.0))
         return "\n".join(lines)
 
+    @property
+    def n_counter_water_qatoms(self) -> int:
+        """Number of co-alchemical counter-water Q-atoms. They are appended last
+        in the FEP [atoms] list, so the charge-correction logger excludes this
+        many trailing Q-atoms from the phi_cog centroid (they sit far from the
+        ligand and would otherwise bias it)."""
+        return sum(len(cw["topology_indices"]) for cw in self.counter_water_atoms)
+
     def write_water_pdb(self, writedir):
         header = self.sphereradius + ".0 SPHERE\n"
         with open("water.pdb") as infile, open(writedir + "/water.pdb", "w") as outfile:
@@ -1160,6 +1168,7 @@ class QligFEP:
             restart_file="eq5.re",
             energy_file="md_0500_0500.en",
             correction_file="md_0500_0500.corr" if self.correction_logging else None,
+            correction_exclude_last=self.n_counter_water_qatoms,
             distance_restraints=dr_str,
             sequence_restraints=seq_str,
             wall_restraints=wall_str,
@@ -1191,6 +1200,7 @@ class QligFEP:
                     restart_file=f"{filename_N}.re",
                     energy_file=f"{filename}.en",
                     correction_file=f"{filename}.corr" if self.correction_logging else None,
+                    correction_exclude_last=self.n_counter_water_qatoms,
                     distance_restraints=dr_str,
                     sequence_restraints=seq_str,
                     wall_restraints=wall_str,
@@ -1235,6 +1245,7 @@ class QligFEP:
             restart_file="eq5.re",
             energy_file="md_1000_0000.en",
             correction_file="md_1000_0000.corr" if self.correction_logging else None,
+            correction_exclude_last=self.n_counter_water_qatoms,
             distance_restraints=dr_str,
             sequence_restraints=seq_str,
             wall_restraints=wall_str,
@@ -1265,6 +1276,7 @@ class QligFEP:
                 restart_file=f"{filename_N}.re",
                 energy_file=f"{filename}.en",
                 correction_file=f"{filename}.corr" if self.correction_logging else None,
+                correction_exclude_last=self.n_counter_water_qatoms,
                 distance_restraints=dr_str,
                 sequence_restraints=seq_str,
                 wall_restraints=wall_str,
