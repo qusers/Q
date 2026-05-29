@@ -651,6 +651,55 @@ class TestCorrectionInMdInput:
             if line.strip():
                 assert line == line.lstrip(), f"Line {i} has leading whitespace: {line!r}"
 
+    def test_correction_no_exclude_last_by_default(self):
+        """Correction logging without counter-waters emits no exclude_last key."""
+        content = render_md_input(
+            params=self._params(interval_energy=10),
+            lambda1="0.500",
+            lambda2="0.500",
+            trajectory_file="md.dcd",
+            final_file="md.re",
+            restart_file="eq5.re",
+            energy_file="md.en",
+            correction_file="md.corr",
+        )
+        block = content.split("[correction]", 1)[1]
+        assert "exclude_last" not in block
+
+    def test_correction_exclude_last_emitted_when_set(self):
+        """correction_exclude_last>0 drops the trailing co-alchemical-water Q-atoms
+        from the centroid by telling the engine how many to skip."""
+        content = render_md_input(
+            params=self._params(interval_energy=10),
+            lambda1="0.500",
+            lambda2="0.500",
+            trajectory_file="md.dcd",
+            final_file="md.re",
+            restart_file="eq5.re",
+            energy_file="md.en",
+            correction_file="md.corr",
+            correction_exclude_last=3,
+        )
+        block = content.split("[correction]", 1)[1]
+        exclude_lines = [ln for ln in block.splitlines() if ln.startswith("exclude_last")]
+        assert len(exclude_lines) == 1
+        assert exclude_lines[0].split() == ["exclude_last", "3"]
+
+    def test_correction_exclude_last_zero_is_byte_identical(self):
+        """correction_exclude_last=0 (the default) renders identically to omitting it,
+        preserving byte-identical output for ion-match / no-charge-method runs."""
+        kwargs = dict(
+            params=self._params(interval_energy=10),
+            lambda1="0.500",
+            lambda2="0.500",
+            trajectory_file="md.dcd",
+            final_file="md.re",
+            restart_file="eq5.re",
+            energy_file="md.en",
+            correction_file="md.corr",
+        )
+        assert render_md_input(**kwargs) == render_md_input(correction_exclude_last=0, **kwargs)
+
 
 class TestGoldenFileComparison:
     """Tests comparing rendered output against golden files."""
