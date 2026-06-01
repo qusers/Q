@@ -149,7 +149,7 @@ void CudaHandler::calc_nonbonded_forces() {
 }
 
 void CudaHandler::calc_temperature() {
-    ::calc_temperature();
+    ::calc_temperature_host();
 }
 
 void CudaHandler::calc_leapfrog() {
