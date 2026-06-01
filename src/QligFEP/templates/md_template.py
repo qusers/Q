@@ -140,7 +140,7 @@ def render_md_input(
             params.interval_energy if params.interval_energy is not None else params.interval_output
         )
         exclude_line = (
-            f"exclude_last              {correction_exclude_last}\n"
+            f"exclude_last_qatoms       {correction_exclude_last}\n"
             if correction_exclude_last > 0
             else ""
         )
