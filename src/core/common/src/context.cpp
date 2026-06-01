@@ -122,6 +122,7 @@ void apply_parse_result(Context& ctx, const ParseResult& parsed) {
     ctx.coords_init = buffer_from_vector(parsed.coords_init, run_gpu);
     ctx.coords = buffer_from_vector(parsed.coords, run_gpu);
     ctx.velocities = buffer_from_vector(parsed.velocities, run_gpu);
+    ctx.restart_theta_corr = parsed.restart_theta_corr;
 
     ctx.n_lambdas = static_cast<int>(parsed.lambdas.size());
     ctx.lambdas = buffer_from_vector(parsed.lambdas, run_gpu);

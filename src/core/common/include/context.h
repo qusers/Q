@@ -143,6 +143,7 @@ class Context {
     std::vector<real_t> theta;
     std::vector<real_t> theta0;
     std::vector<real_t> tdum;
+    std::vector<real_t> restart_theta_corr;
     int n_max_inshell;
     int n_shells;
     std::vector<std::vector<int>> list_sh;

@@ -579,6 +579,8 @@ void init_wshells() {
     ctx.n_max_inshell = 0;
 
     for (int i = 0; i < ctx.n_shells; i++) {
+        wshells[i].n_inshell = 0;
+        wshells[i].theta_corr = 0;
         wshells[i].avtheta = 0;
         wshells[i].avn_inshell = 0;
         wshells[i].router = router;
@@ -596,6 +598,12 @@ void init_wshells() {
         wshells[i].cstb = ctx.crgQtot * 0.98750 / (rho_water * mu_w * 4 * M_PI * pow(rshell, 2));
 
         router -= dr;
+    }
+
+    if (ctx.restart_theta_corr.size() == static_cast<size_t>(ctx.n_shells)) {
+        for (int i = 0; i < ctx.n_shells; i++) {
+            wshells[i].theta_corr = ctx.restart_theta_corr[i];
+        }
     }
 
     // rc > wshells[n_shells-1].router - wshells[n_shells-1].dr

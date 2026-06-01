@@ -204,9 +204,6 @@ void calc_polx_water_forces_host(int iteration) {
 
     for (int is = 0; is < ctx.n_shells; is++) {
         wshells[is].n_inshell = 0;
-        if (iteration == 0) {
-            wshells[is].theta_corr = 0;
-        }
     }
     using namespace CudaPolxWaterForce;
 

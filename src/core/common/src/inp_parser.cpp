@@ -173,7 +173,28 @@ std::vector<std::vector<std::string>> unpack_restart_vector(const std::vector<ch
     return rows;
 }
 
-void read_restart_vectors(const std::string& path, std::vector<std::vector<std::string>>& coords, std::vector<std::vector<std::string>>& velocities) {
+std::vector<real_t> unpack_restart_theta_corr(const std::vector<char>& payload) {
+    if (payload.size() < sizeof(int32_t)) return {};
+
+    int32_t n_shells = 0;
+    std::memcpy(&n_shells, payload.data(), sizeof(int32_t));
+    if (n_shells <= 0) return {};
+
+    size_t expected = sizeof(int32_t) + static_cast<size_t>(n_shells) * sizeof(float);
+    if (payload.size() != expected) return {};
+
+    std::vector<real_t> theta_corr(n_shells);
+    const float* values = reinterpret_cast<const float*>(payload.data() + sizeof(int32_t));
+    for (int i = 0; i < n_shells; i++) {
+        theta_corr[i] = static_cast<real_t>(values[i]);
+    }
+    return theta_corr;
+}
+
+void read_restart_vectors(const std::string& path,
+                          std::vector<std::vector<std::string>>& coords,
+                          std::vector<std::vector<std::string>>& velocities,
+                          std::vector<real_t>& theta_corr) {
     std::ifstream in(path.c_str(), std::ios::binary);
     if (!in) throw parse_error("Could not open restart file " + path);
 
@@ -183,6 +204,11 @@ void read_restart_vectors(const std::string& path, std::vector<std::vector<std::
     if (!read_fortran_record(in, payload)) throw parse_error("Could not read restart velocities.");
     velocities = unpack_restart_vector(payload);
     if (coords.size() != velocities.size()) throw parse_error("Restart coordinate and velocity atom counts differ.");
+
+    theta_corr.clear();
+    if (read_fortran_record(in, payload)) {
+        theta_corr = unpack_restart_theta_corr(payload);
+    }
 }
 
 double q_randm(int& seed) {
@@ -704,9 +730,10 @@ void InpParser::ensure_run_start_vectors() {
 
     result.fresh_start = restart_file_.empty();
     if (!restart_file_.empty()) {
-        read_restart_vectors(restart_file_, run_coords_, run_velocities_);
+        read_restart_vectors(restart_file_, run_coords_, run_velocities_, result.restart_theta_corr);
     } else {
         run_coords_ = top_->coords;
+        result.restart_theta_corr.clear();
 
         const auto& mdv = input_->keyed.count("md") ? input_->keyed["md"] : std::map<std::string, std::string>();
         int seed = parse_int(value_or(mdv, "random-seed", value_or(mdv, "random_seed", "1")));
