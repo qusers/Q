@@ -20,6 +20,7 @@ program qdyn
 
   use md_test
   use mpiglob
+  use debug, only: output_ctx_in_file
 
 #if defined (_DF_VERSION_)
   use dfport ! portability lib for signals. Used in windows.
@@ -116,6 +117,8 @@ program qdyn
   ! count non-bonded pairs to get the maximum number, then distribute them 
   ! among the nodes
   call distribute_nonbonds
+
+  call output_ctx_in_file
 
   ! do the work!
   call md_run
@@ -321,4 +324,3 @@ integer(4) function sigabrt_handler(sig_num)
   call die('kill signal')
   sigabrt_handler = 1
 end function sigabrt_handler
-

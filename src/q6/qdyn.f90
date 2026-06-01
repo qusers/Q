@@ -117,6 +117,13 @@ program qdyn
   ! among the nodes
   call distribute_nonbonds
 
+  
+
+
+
+
+
+
   ! do the work!
   call md_run
 
