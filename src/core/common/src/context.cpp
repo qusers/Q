@@ -311,7 +311,7 @@ void Context::preprocess_data() {
     EQ_nonbond_qx.assign(n_lambdas, {});
     EQ_restraint = std::make_unique<HostDeviceBuffer<E_restraint_t>>(n_lambdas, true, command_info.requested_gpu);
 
-    if (n_shake_constraints > 0 || (fresh_start && md.random_seed > 0)) {
+    if (fresh_start && md.random_seed > 0) {
         initial_shaking();
         stop_cm_translation();
         if (command_info.requested_gpu) {
