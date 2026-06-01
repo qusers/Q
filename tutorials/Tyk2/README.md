@@ -262,6 +262,102 @@ Further, the generated `lomap_ddG.json` file can be used together with the syste
 
 This is yet to be incorporated in this repo, work in progress 🚧.
 
+# Non-equilibrium (NEQ) FEP
+
+The steps above describe the *equilibrium* FEP protocol, where ~100 fixed-lambda windows
+are sampled and combined with `qfep`. QligFEP can also set up *non-equilibrium* (NEQ) FEP.
+Instead of fixed windows, NEQ drives lambda from one end state to the other over the course
+of a single short simulation (a "switch") with the `qdyn_neq` engine, accumulating the
+switching work. Running many forward (lambda 0→1) and reverse (lambda 1→0) switches yields
+two work distributions, and the free energy is obtained from the Bennett Acceptance Ratio
+(BAR) over them. The relative binding free energy is `ddG = dF_protein - dF_water`.
+
+NEQ reuses the **exact same preparation** as the equilibrium workflow above (ligand
+parameters, perturbation network, water sphere). Only the `setupFEP` and analysis steps
+change, so simply follow the tutorial up to and including the [Water sphere](#water-sphere)
+step, then continue here.
+
+## Prerequisites
+
+The non-equilibrium engine `qdyn_neq` is built together with the other binaries by
+`make all` (run in `src/q6`), so no extra build step is needed beyond the
+[Prerequisites](#prerequisites) above.
+
+## Setup NEQ FEP
+
+From the `setupFEP` directory (the same place you ran the equilibrium `setupFEP`), run:
+
+```bash
+setupFEP -FF AMBER14sb -r 25 -ts 2fs -j lomap.json -rs 42 -c SNELLIUS \
+    --neq --neq-reps 5 --neq-steps 50000 --neq-eq-steps 1000 -L 8 --neq-schedule sigmoidal
+```
+
+The shared flags (`-FF`, `-r`, `-ts`, `-j`, `-rs`, `-c`) behave exactly as in the
+equilibrium setup. The NEQ-specific flags are:
+
+- `--neq`: switch QligFEP into non-equilibrium mode. In this mode the windowed parameters
+  `-w/--windows` and `-S/--sampling` are not used;
+- `--neq-reps 5`: number of forward/reverse switching pairs run per replicate;
+- `--neq-steps 50000`: length of each lambda-switching simulation in MD steps
+  (recommended > 16000);
+- `--neq-eq-steps 1000`: endpoint equilibration steps between successive switches
+  (recommended > 250);
+- `-L 8` (`--neq-steepness`): steepness of the sigmoidal lambda schedule
+  l(t) = 1/[1+e^(L(t-0.5))]; higher values spend more time near lambda = 0 and lambda = 1,
+  lower values approach a linear schedule (recommended 4–16);
+- `--neq-schedule sigmoidal`: the switching schedule (`sigmoidal` or `linear`).
+
+As with the equilibrium setup this creates `1.water` and `2.protein` directories with one
+`FEP_<lig1>_<lig2>` folder per edge. Each `inputfiles/` directory now contains the standard
+equilibration files (`eq1`–`eq5`), the endpoint-equilibration templates (`eq6_0`, `eq6_1`),
+and the switching templates (`neq_0`, `neq_1`) — instead of the ~100 `md_xxxx_xxxx.inp`
+window files. You can confirm the switching schedule was written into the inputs with:
+
+```bash
+tail -n 4 2.protein/FEP_ejm_31_ejm_42/inputfiles/neq_0.inp
+```
+
+which shows the appended section that activates the lambda switching:
+
+```text
+[lambda_scaling]
+scaling_parameter          sigmoidal
+L_sigmoid        8.0
+```
+
+## Job submission
+
+Submission is identical to the equilibrium workflow: each `FEP_<lig1>_<lig2>` directory has
+a `FEP_submit.sh` script. Use the same [`submitFEPjobs`](#job-submission) function to submit
+a whole leg. Each replicate (SLURM array task) runs `eq1`–`eq5`, then loops the requested
+number of forward/reverse switches, writing the switching work to `neq_1_*.log` (forward)
+and `neq_0_*.log` (reverse).
+
+## Analysis
+
+Once the calculations finish, estimate the free energies with `qligfep_neq_analyze`, which
+reads the work from the switching logs, runs BAR with a bootstrap uncertainty, and writes a
+per-edge results table:
+
+```bash
+qligfep_neq_analyze -pr 2.protein -wr 1.water -T 298 -o neq_results.csv
+```
+
+Where the options are:
+
+- `-pr 2.protein` / `-wr 1.water`: the protein- and water-leg directories holding the
+  `FEP_*` edges;
+- `-T 298`: temperature (K) used for the kcal/mol conversion;
+- `-o neq_results.csv`: output CSV with `ddG_kcal`, the per-leg `dF`, the work-distribution
+  overlap, and the number of forward/reverse switches per edge.
+
+> **Note on work units.** By default the analyzer reproduces the original implementation,
+> which treats the switching work as if it were in units of k_BT (`--work-units kT`). The
+> work written by `qdyn_neq` is in kcal/mol, so the physically consistent BAR factor is
+> `beta = 1/(k_B*T)`; pass `--work-units kcal` for that. This affects the absolute free
+> energies and should be confirmed against the original implementation before reporting
+> numbers — see the note in `src/QligFEP/analyze_neq.py`.
+
 <!-- 
 # Ligand parameter generation
 
