@@ -8,7 +8,9 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <map>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -124,6 +126,12 @@ std::vector<std::string> split_state_row(const std::string& value) {
     return split_ws(value);
 }
 
+std::string precise_double_string(double value) {
+    std::ostringstream out;
+    out << std::setprecision(17) << value;
+    return out.str();
+}
+
 void add_short_neighbors(const std::vector<std::string>& lines, std::vector<std::pair<int, int>>& out) {
     out.clear();
     int n_lines = static_cast<int>(lines.size());
@@ -168,7 +176,7 @@ std::vector<std::vector<std::string>> unpack_restart_vector(const std::vector<ch
     std::vector<std::vector<std::string>> rows;
     rows.reserve(nat3 / 3);
     for (int i = 0; i < nat3; i += 3) {
-        rows.push_back({std::to_string(values[i]), std::to_string(values[i + 1]), std::to_string(values[i + 2])});
+        rows.push_back({precise_double_string(values[i]), precise_double_string(values[i + 1]), precise_double_string(values[i + 2])});
     }
     return rows;
 }

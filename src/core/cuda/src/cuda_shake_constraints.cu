@@ -35,11 +35,11 @@ __global__ void calc_shake_constraints_kernel(
 
     bool converged = false;
     if (threadIdx.x == 0) {
-        do {
-            for (int i = 0; i < mol_n_shakes[mol]; i++) {
-                shake_bonds[shake + i].ready = false;
-            }
+        for (int i = 0; i < mol_n_shakes[mol]; i++) {
+            shake_bonds[shake + i].ready = false;
+        }
 
+        do {
             for (int i = 0; i < mol_n_shakes[mol]; i++) {
                 if (!shake_bonds[shake + i].ready) {
                     ai = shake_bonds[shake + i].ai - 1;

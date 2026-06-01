@@ -21,12 +21,12 @@ int calc_shake_constraints(coord_t* coords, coord_t* xcoords) {
         }
         int n_iterations = 0;
 
+        for (int i = 0; i < mol_n_shakes[mol]; i++) {
+            shake_bonds[shake + i].ready = false;
+        }
+
         bool converged = false;
         do {
-            for (int i = 0; i < mol_n_shakes[mol]; i++) {
-                shake_bonds[shake + i].ready = false;
-            }
-
             for (int i = 0; i < mol_n_shakes[mol]; i++) {
                 shake_bond_t& shake_bond = shake_bonds[shake + i];
                 if (!shake_bond.ready) {

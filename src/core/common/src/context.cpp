@@ -268,6 +268,7 @@ void Context::init_data_from_files() {
 void Context::preprocess_data() {
     dt = time_unit * md.stepsize;
     tau_T = time_unit * md.bath_coupling;
+    n_waters = (n_atoms - n_atoms_solute) / 3;
     init_inv_mass();
     exclude_qatom_definitions();
 
@@ -297,7 +298,6 @@ void Context::preprocess_data() {
     dvelocities = std::make_unique<HostDeviceBuffer<dvel_t>>(n_atoms, true, command_info.requested_gpu);
     xcoords = std::make_unique<HostDeviceBuffer<coord_t>>(n_atoms, true, command_info.requested_gpu);
 
-    n_waters = (n_atoms - n_atoms_solute) / 3;
     if (n_waters > 0) {
         init_water_sphere();
         init_wshells();

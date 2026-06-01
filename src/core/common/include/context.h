@@ -31,7 +31,7 @@ class Context {
     int n_atoms_solute;  // the total number of solute number, in our system [0, n_atoms_solute) are solute, [n_atoms_solute, n_atoms) are water atoms
     int n_patoms;
     int n_qatoms;
-    int n_waters;
+    int n_waters = 0;
     int n_molecules;
     real_t dt = 0.0;
     real_t tau_T = 0.0;
