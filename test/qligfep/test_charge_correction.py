@@ -41,6 +41,31 @@ class TestReadCorrFile:
         with pytest.raises(ValueError):
             read_corr_file(f)
 
+    def test_accepts_hash_prefixed_header(self, tmp_path):
+        # write_qcorr in md.f90 prepends a self-documenting `# key = value`
+        # header. np.loadtxt skips `#` lines, so the parsed data must be
+        # identical to a header-less file.
+        lam = [0.3, 0.7]
+        frames = [[1.0, -2.0], [3.0, -4.0]]
+        phi = -7.0
+        no_header = _write_corr(tmp_path / "nohdr.corr", lam=lam, frames=frames, phi=phi)
+        with_header = tmp_path / "hdr.corr"
+        with_header.write_text(
+            "# Q on-the-fly charge correction logger\n"
+            "# columns       = istep  lambda(1..N)  U_obs(1..N)  phi_cog\n"
+            "# nstates       = 2\n"
+            "# qcorr_ke      = 332.063690    (engine pre-scales crg/qcrg by sqrt(qcorr_ke))\n"
+            "# kernel        = 1             (screened Coulomb, eps(r) = r)\n"
+            "# interval      = 10\n"
+            "# exclude_last_qatoms = 0\n"
+            + no_header.read_text()
+        )
+        l_n, u_n, p_n = read_corr_file(no_header)
+        l_h, u_h, p_h = read_corr_file(with_header)
+        np.testing.assert_array_equal(l_n, l_h)
+        np.testing.assert_array_equal(u_n, u_h)
+        np.testing.assert_array_equal(p_n, p_h)
+
 
 class TestReduceWindows:
     def test_pools_replicates_by_window_basename(self, tmp_path):

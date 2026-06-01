@@ -1655,8 +1655,27 @@ subroutine open_files
     end if
 
     ! --> charge-correction observable log (15, formatted text)
+    ! Header lines use the `#` prefix so numpy.loadtxt-based readers
+    ! (QligFEP.charge_correction.read_corr_file) skip them automatically.
     if ( do_qcorr ) then
       open (unit=qcorr_unit, file=qcorr_file, status='unknown', form='formatted', action='write', err=15)
+      write(qcorr_unit, '(a)') '# Q on-the-fly charge correction logger'
+      write(qcorr_unit, '(a)') '# columns             = istep  lambda1  lambda2  U_obs(state=1)  U_obs(state=2)  phi_cog'
+      write(qcorr_unit, '(a)') '#   istep              step number; sampled every `interval` MD steps.'
+      write(qcorr_unit, '(a)') '#   lambda(s)          lambda value for state s (state 1: initial, state 2: final; they sum to 1).'
+      write(qcorr_unit, '(a)') '#   U_obs(s)           Sum_iq Sum_j qcrg(iq,s) * crg(j) * k_e / r_ij^2 with eps(r) = r screening;'
+      write(qcorr_unit, '(a)') '#                      U_obs(2) - U_obs(1) is the distributed (full) charge-correction integrand.'
+      write(qcorr_unit, '(a)') '#   phi_cog            Sum_j crg(j) * k_e / r(cog,j)^2 at the ligand Q-atom centroid;'
+      write(qcorr_unit, '(a)') '#                      dq_ligand * <phi_cog>_lambda is the monopole charge-correction integrand.'
+      write(qcorr_unit, '(a,i0)')      '# nstates              = ', nstates
+      write(qcorr_unit, '(a,f12.6,a)') '# qcorr_ke             = ', qcorr_ke, &
+        '    (engine pre-scales crg/qcrg by sqrt(qcorr_ke))'
+      write(qcorr_unit, '(a,i0,a)')    '# kernel               = ', qcorr_kernel, &
+        '             (screened Coulomb, eps(r) = r)'
+      write(qcorr_unit, '(a,i0,a)')    '# interval             = ', iqcorr_cycle, &
+        '             (MD steps between samples)'
+      write(qcorr_unit, '(a,i0,a)')    '# exclude_last_qatoms  = ', qcorr_exclude_last, &
+        '             (trailing Q-atoms dropped from centroid)'
     end if
 
     return
@@ -3416,7 +3435,7 @@ logical function initialize()
       do_qcorr = .true.
       yes = prm_get_integer_by_key('interval', iqcorr_cycle, 100)
       yes = prm_get_integer_by_key('kernel', qcorr_kernel, 1)
-      yes = prm_get_integer_by_key('exclude_last', qcorr_exclude_last, 0)
+      yes = prm_get_integer_by_key('exclude_last_qatoms', qcorr_exclude_last, 0)
       if(.not. prm_get_string_by_key('file', qcorr_file)) then
         write(*,'(a)') '>>> ERROR: [correction] section requires a file keyword.'
         initialize = .false.
