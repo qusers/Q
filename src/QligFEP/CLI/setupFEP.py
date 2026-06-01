@@ -43,6 +43,11 @@ def create_call(**kwargs):
         template += " -wath {water_thresh}"
     if "wath_ligand_only" in kwargs and kwargs["wath_ligand_only"]:
         template += " -wath-ligo"
+    if kwargs.get("neq"):
+        template += (
+            " --neq --neq-reps {neq_reps} --neq-steps {neq_steps} "
+            "--neq-eq-steps {neq_eq_steps} -L {neq_L} --neq-schedule {neq_schedule}"
+        )
     return template.format(**kwargs)
 
 
@@ -120,6 +125,12 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 water_thresh=args.water_thresh,
                 log=args.log,
                 wath_ligand_only=args.wath_ligand_only,
+                neq=args.neq,
+                neq_reps=args.neq_reps,
+                neq_steps=args.neq_steps,
+                neq_eq_steps=args.neq_eq_steps,
+                neq_L=args.neq_L,
+                neq_schedule=args.neq_schedule,
             )
             logger.info(f"Submitting the command:\n{command}")
             dst = sys_dir / f"FEP_{lig1}_{lig2}"

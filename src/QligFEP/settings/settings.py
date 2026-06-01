@@ -41,6 +41,7 @@ EXE = ".exe"
 
 Q_PATHS = {
     "QDYN": "qdyn=" + str((BIN / "qdynp").absolute()),
+    "QDYN_NEQ": "qdyn_neq=" + str((BIN / "qdyn_neq").absolute()),
     "QPREP": str(BIN / "qprep"),
     "QFEP": str(BIN / "qfep"),
     "QCALC": str(BIN / "qcalc"),

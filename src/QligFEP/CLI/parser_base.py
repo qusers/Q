@@ -228,6 +228,75 @@ def parse_arguments(program: str) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "-neq",
+        "--neq",
+        dest="neq",
+        action="store_true",
+        help=(
+            "Set up a non-equilibrium (NEQ) FEP instead of the windowed equilibrium approach. "
+            "Instead of many fixed-lambda windows, NEQ runs the `qdyn_neq` engine to drive lambda "
+            "from one endpoint to the other over a single simulation, accumulating the switching "
+            "work. Free energies are obtained from BAR over the forward/reverse work distributions "
+            "(see `qligfep_neq_analyze`). When set, the windowed parameters `--windows` and "
+            "`--sampling` are not used."
+        ),
+    )
+    parser.add_argument(
+        "-neqr",
+        "--neq-reps",
+        dest="neq_reps",
+        type=int,
+        default=5,
+        help=(
+            "NEQ only: number of forward/reverse switching pairs run per replicate. Each replicate "
+            "keeps a continuous endpoint equilibration and fires a forward and reverse switch from "
+            "successive snapshots to decorrelate the work samples. Defaults to 5."
+        ),
+    )
+    parser.add_argument(
+        "-neqs",
+        "--neq-steps",
+        dest="neq_steps",
+        type=int,
+        default=50000,
+        help=(
+            "NEQ only: length of each lambda-switching simulation in MD steps. Recommended >16000. "
+            "Defaults to 50000."
+        ),
+    )
+    parser.add_argument(
+        "-neqes",
+        "--neq-eq-steps",
+        dest="neq_eq_steps",
+        type=int,
+        default=1000,
+        help=(
+            "NEQ only: number of endpoint equilibration steps between successive switches "
+            "(spacing). Recommended >250. Defaults to 1000."
+        ),
+    )
+    parser.add_argument(
+        "-L",
+        "--neq-steepness",
+        dest="neq_L",
+        type=float,
+        default=8.0,
+        help=(
+            "NEQ only: steepness `L` of the sigmoidal lambda schedule l(t) = 1/[1+e^(L(t-0.5))]. "
+            "Higher L spends more time near lambda=0 and lambda=1; lower L approaches a linear "
+            "schedule. Recommended between 4 and 16. Defaults to 8. Ignored when "
+            "`--neq-schedule linear` is used."
+        ),
+    )
+    parser.add_argument(
+        "-neqsched",
+        "--neq-schedule",
+        dest="neq_schedule",
+        default="sigmoidal",
+        choices=["sigmoidal", "linear"],
+        help="NEQ only: lambda switching schedule. Defaults to `sigmoidal`.",
+    )
+    parser.add_argument(
         "-log",
         "--log-level",
         dest="log",
