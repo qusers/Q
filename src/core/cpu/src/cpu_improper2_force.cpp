@@ -4,7 +4,6 @@
 
 #include "context.h"
 #include "cpu_utils.h"
-#include "common/include/fortran_real.h"
 
 real_t calc_improper2_forces(int start, int end) {
     auto& ctx = Context::instance();
@@ -24,7 +23,7 @@ real_t calc_improper2_forces(int start, int end) {
     cimproper_t cimp;
     real_t improper = 0;
 
-    for (int i = end - 1; i >= start; --i) {
+    for (int i = start; i < end; i++) {
         imp = impropers[i];
         cimp = cimpropers[imp.code - 1];
 
@@ -54,8 +53,8 @@ real_t calc_improper2_forces(int start, int end) {
         rnk.y = -rjk.z * rkl.x + rjk.x * rkl.z;
         rnk.z = -rjk.x * rkl.y + rjk.y * rkl.x;
 
-        bj2inv = 1 / (rnj.x * rnj.x + rnj.y * rnj.y + rnj.z * rnj.z);
-        bk2inv = 1 / (rnk.x * rnk.x + rnk.y * rnk.y + rnk.z * rnk.z);
+        bj2inv = 1 / (pow(rnj.x, 2) + pow(rnj.y, 2) + pow(rnj.z, 2));
+        bk2inv = 1 / (pow(rnk.x, 2) + pow(rnk.y, 2) + pow(rnk.z, 2));
         bjinv = sqrt(bj2inv);
         bkinv = sqrt(bk2inv);
 
@@ -74,14 +73,14 @@ real_t calc_improper2_forces(int start, int end) {
         }
 
         // Energy
-        arg = 2 * phi - fortran_radians_from_degrees(cimp.phi0);
+        arg = 2 * phi - to_radians(cimp.phi0);
         ener = cimp.k * (1 + cos(arg));
         dv = -2 * cimp.k * sin(arg);
 
         // Forces
         f1 = sin(phi);
         if (std::fabs(f1) < k_singular_sin_epsilon) {
-            f1 = k_singular_sin_epsilon;
+            f1 = std::copysign(k_singular_sin_epsilon, f1);
         }
         f1 = -1 / f1;
 

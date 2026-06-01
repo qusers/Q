@@ -1,7 +1,6 @@
 #include "cuda/include/cuda_torsion_force.cuh"
 #include "cuda/include/cuda_force_accum.cuh"
 #include "cuda/include/cuda_utility.cuh"
-#include "common/include/fortran_real.h"
 #include "context.h"
 
 namespace CudaTorsionForce {
@@ -73,14 +72,13 @@ __global__ void calc_torsion_forces_kernel(int start, int end, torsion_t* torsio
     }
 
     // Energy
-    arg = ctors.n * phi - fortran_radians_from_degrees(ctors.d);
+    arg = ctors.n * phi - to_radians_device(ctors.d);
     ener = ctors.k * (1 + cos(arg)) * ctors.paths;
-    const real_t torsion_force_k = fortran_real(static_cast<double>(ctors.n) * static_cast<double>(ctors.k));
-    dv = -torsion_force_k * sin(arg) * ctors.paths;
+    dv = -ctors.n * ctors.k * sin(arg) * ctors.paths;
 
     // Forces
     f1 = sin(phi);
-    if (fabs(f1) < k_singular_sin_epsilon) f1 = k_singular_sin_epsilon;
+    if (fabs(f1) < k_singular_sin_epsilon) f1 = copysign(k_singular_sin_epsilon, f1);
     f1 = -1 / f1;
 
     di.x = f1 * (rnk.x * (bjinv * bkinv) - cos_phi * rnj.x * bj2inv);

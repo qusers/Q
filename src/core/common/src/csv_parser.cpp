@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "constants.h"
-#include "common/include/fortran_real.h"
 
 namespace {
 struct CsvRows {
@@ -111,7 +110,6 @@ void CsvParser::parse_md() {
 
     md.radial_force = row_double(file.rows[18], 1);
     md.polarisation = true;
-    md.charge_correction = true;
     md.polarisation_force = row_double(file.rows[20], 1);
 
     md.non_bond = row_int(file.rows[21], 1);
@@ -318,12 +316,7 @@ void CsvParser::parse_ctorsions() {
     result.ctorsions.resize(file.count);
     for (int i = 0; i < file.count; i++) {
         double paths = row_double(file.rows[i], 4);
-        result.ctorsions[i] = {
-            row_int(file.rows[i], 0),
-            fortran_real(row_double(file.rows[i], 1)),
-            fortran_real(row_double(file.rows[i], 2)),
-            fortran_real(row_double(file.rows[i], 3)),
-            fortran_inverse_paths(paths)};
+        result.ctorsions[i] = {row_int(file.rows[i], 0), row_double(file.rows[i], 1), row_double(file.rows[i], 2), row_double(file.rows[i], 3), paths == 0.0 ? 0.0 : 1.0 / paths};
     }
 }
 
@@ -340,10 +333,7 @@ void CsvParser::parse_cimpropers() {
     CsvRows file = read_csv_rows(path_for("cimpropers.csv"));
     result.cimpropers.resize(file.count);
     for (int i = 0; i < file.count; i++) {
-        result.cimpropers[i] = {
-            row_int(file.rows[i], 0),
-            fortran_real(row_double(file.rows[i], 1)),
-            fortran_real(row_double(file.rows[i], 2))};
+        result.cimpropers[i] = {row_int(file.rows[i], 0), row_double(file.rows[i], 1), row_double(file.rows[i], 2)};
     }
 }
 

@@ -15,7 +15,6 @@ class NativeOutput : public BaseOutput {
     void init(Context& ctx) override;
     void finish(Context& ctx) override;
     void shutdown() override;
-    void output_final(Context& ctx, int iteration) override;
 
    protected:
     void output_trajectory(Context& ctx, int iteration) override;

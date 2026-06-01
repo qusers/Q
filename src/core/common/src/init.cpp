@@ -12,7 +12,6 @@
 
 #include "constants.h"
 #include "context.h"
-#include "coulomb.h"
 #include "cpu_handler.h"
 #include "cpu_shake.h"
 #include "cpu_utils.h"
@@ -177,20 +176,10 @@ void initialize_charge_tables() {
     ctx.n_charge_types = static_cast<int>(h_charge_table_all.size());
 
     std::vector<real_t> h_charge_pair_products(ctx.n_charge_types * ctx.n_charge_types);
-    std::vector<real_t> h_q_charge_pair_products(ctx.n_charge_types * ctx.n_charge_types);
     for (int i = 0; i < ctx.n_charge_types; i++) {
         for (int j = 0; j < ctx.n_charge_types; j++) {
-            // Fortran scales and rounds charges in prep_sim, then rounds the charge product.
             h_charge_pair_products[i * ctx.n_charge_types + j] =
-                fortran_charge_product(
-                    h_charge_table_all[i].charge,
-                    h_charge_table_all[j].charge,
-                    ctx.topo.coulomb_constant);
-            h_q_charge_pair_products[i * ctx.n_charge_types + j] =
-                fortran_q_charge_product(
-                    h_charge_table_all[i].charge,
-                    h_charge_table_all[j].charge,
-                    ctx.topo.coulomb_constant);
+                static_cast<real_t>(h_charge_table_all[i].charge * h_charge_table_all[j].charge);
         }
     }
 
@@ -227,7 +216,6 @@ void initialize_charge_tables() {
 
     bool run_gpu = ctx.command_info.requested_gpu;
     ctx.charge_pair_products = make_host_device_buffer_from_vector(h_charge_pair_products, run_gpu);
-    ctx.q_charge_pair_products = make_host_device_buffer_from_vector(h_q_charge_pair_products, run_gpu);
     ctx.p_charge_types = make_host_device_buffer_from_vector(p_charge_types_cpu, run_gpu);
     ctx.q_charge_types = make_host_device_buffer_from_vector(q_charge_types_cpu, run_gpu);
     ctx.w_charge_types = make_host_device_buffer_from_vector(w_charge_types_cpu, run_gpu);
@@ -315,7 +303,6 @@ void exclude_qatom_definitions() {
 
     auto& bonds = ctx.bonds->cpu_data_p;
     auto& angles = ctx.angles->cpu_data_p;
-    auto& impropers = ctx.impropers->cpu_data_p;
     auto& torsions = ctx.torsions->cpu_data_p;
 
     if (ctx.n_qangles > 0) {
@@ -350,28 +337,21 @@ void exclude_qatom_definitions() {
         ctx.n_bonds_solute -= solute_excluded;
     }
 
-    excluded = 0;
-    solute_excluded = 0;
-    if (ctx.n_qimpropers > 0) {
-        for (int i = 0; i < ctx.n_impropers; i++) {
-            const bool is_q_improper =
-                qii < ctx.n_qimpropers &&
-                impropers[i].ai == ctx.q_impropers[qii].ai &&
-                impropers[i].aj == ctx.q_impropers[qii].aj &&
-                impropers[i].ak == ctx.q_impropers[qii].ak &&
-                impropers[i].al == ctx.q_impropers[qii].al;
-            if (is_q_improper) {
-                qii++;
-                excluded++;
-                if (i < ctx.n_impropers_solute) solute_excluded++;
-            } else {
-                impropers[ii] = impropers[i];
-                ii++;
-            }
-        }
-        ctx.n_impropers -= excluded;
-        ctx.n_impropers_solute -= solute_excluded;
-    }
+    // excluded = 0;
+    // for (int i = 0; i < n_impropers; i++) {
+    //     if (impropers[i].ai == q_impropers[qai][0].ai
+    //      && impropers[i].aj == q_impropers[qai][0].aj
+    //      && impropers[i].ak == q_impropers[qai][0].ak
+    //      && impropers[i].al == q_impropers[qai][0].al) {
+    //         qii++;
+    //         excluded++;
+    //     }
+    //     else {
+    //         impropers[ii] = impropers[i];
+    //         ii++;
+    //     }
+    // }
+    // n_impropers -= excluded;
 
     excluded = 0;
     solute_excluded = 0;
@@ -512,13 +492,12 @@ void exclude_shaken_definitions() {
 void init_velocities() {
     auto& ctx = Context::instance();
     const bool generate_initial_velocities = ctx.md.has_initial_temperature && ctx.md.random_seed > 0;
-    if (ctx.velocities && ctx.velocities->length == static_cast<size_t>(ctx.n_atoms)) {
+    if (ctx.velocities && !generate_initial_velocities) {
         if (ctx.command_info.requested_gpu) {
             ctx.velocities->upload();
         }
         return;
     }
-    if (ctx.velocities && !generate_initial_velocities) return;
 
     auto& atypes = ctx.atypes->cpu_data_p;
     auto& catypes = ctx.catypes->cpu_data_p;
@@ -553,8 +532,7 @@ void init_inv_mass() {
     ctx.winv = std::make_unique<HostDeviceBuffer<real_t>>(ctx.n_atoms, true, ctx.command_info.requested_gpu);
     auto* winv = ctx.winv->cpu_data_p;
     for (int ai = 0; ai < ctx.n_atoms; ai++) {
-        // Fortran qdyn stores winv(:) as default REAL, so round the inverse mass once.
-        winv[ai] = static_cast<real_t>(static_cast<float>(1.0 / catypes[atypes[ai].code - 1].m));
+        winv[ai] = 1 / catypes[atypes[ai].code - 1].m;
     }
 
     if (ctx.command_info.requested_gpu) {
@@ -569,28 +547,8 @@ void init_inv_mass() {
 
 void init_water_sphere() {
     auto& ctx = Context::instance();
-    auto* lambdas = ctx.lambdas->cpu_data_p;
-
-    ctx.crgQtot = 0.0;
-    if (ctx.md.charge_correction) {
-        for (int qi = 0; qi < ctx.n_qatoms; qi++) {
-            for (int state = 0; state < ctx.n_lambdas; state++) {
-                ctx.crgQtot +=
-                    static_cast<real_t>(static_cast<float>(ctx.q_charges[qi + state * ctx.n_qatoms].charge)) *
-                    lambdas[state];
-            }
-        }
-    }
-
-    ctx.Dwmz = static_cast<real_t>(0.26f) *
-                   exp(static_cast<real_t>(-0.19f) *
-                       (ctx.topo.solvent_radius - static_cast<real_t>(15.0f))) +
-               static_cast<real_t>(0.74f);
-    ctx.awmz = static_cast<real_t>(0.2f) /
-                   (static_cast<real_t>(1.0f) +
-                    exp(static_cast<real_t>(0.4f) *
-                        (ctx.topo.solvent_radius - static_cast<real_t>(25.0f)))) +
-               static_cast<real_t>(0.3f);
+    ctx.Dwmz = 0.26 * exp(-0.19 * (ctx.topo.solvent_radius - 15)) + 0.74;
+    ctx.awmz = 0.2 / (1 + exp(0.4 * (ctx.topo.solvent_radius - 25))) + 0.3;
 
     printf("Dwmz = %f, awmz = %f\n", ctx.Dwmz, ctx.awmz);
 }
@@ -602,11 +560,11 @@ void init_water_shell_parameters() {
     if (ctx.n_atoms_solute < 0 || ctx.n_atoms_solute >= ctx.n_atoms) {
         fatal("Water shell initialization requires solvent atoms.");
     }
-    if (ctx.n_bonds <= 0) {
-        fatal("Water shell initialization requires a bond before SHAKE removes topology.");
+    if (ctx.n_bonds_solute < 0 || ctx.n_bonds_solute >= ctx.n_bonds) {
+        fatal("Water shell initialization requires a solvent bond before SHAKE removes topology.");
     }
-    if (ctx.n_angles <= 0) {
-        fatal("Water shell initialization requires an angle before SHAKE removes topology.");
+    if (ctx.n_angles_solute < 0 || ctx.n_angles_solute >= ctx.n_angles) {
+        fatal("Water shell initialization requires a solvent angle before SHAKE removes topology.");
     }
     if (ctx.n_atoms_solute >= ctx.n_charges) {
         fatal("Water shell initialization cannot read the first solvent atom charge.");
@@ -619,8 +577,8 @@ void init_water_shell_parameters() {
     auto& charges = ctx.charges->cpu_data_p;
     auto& ccharges = ctx.ccharges->cpu_data_p;
 
-    const bond_t& water_bond = bonds[ctx.n_bonds - 1];
-    const angle_t& water_angle = angles[ctx.n_angles - 1];
+    const bond_t& water_bond = bonds[ctx.n_bonds_solute];
+    const angle_t& water_angle = angles[ctx.n_angles_solute];
     if (water_bond.code <= 0 || water_bond.code > ctx.n_cbonds) {
         fatal("Water shell initialization found an invalid solvent bond code.");
     }
@@ -635,10 +593,8 @@ void init_water_shell_parameters() {
 
     const cbond_t cbondw = cbonds[water_bond.code - 1];
     const cangle_t canglew = cangles[water_angle.code - 1];
-    const real_t crg_ow = static_cast<real_t>(static_cast<float>(ccharges[oxygen_charge_code - 1].charge));
-    const real_t pi = static_cast<real_t>(q_fortran_pi);
-    ctx.water_mu = static_cast<real_t>(static_cast<float>(
-        -crg_ow * cbondw.b0 * cos(canglew.th0 * pi / static_cast<real_t>(360.0))));
+    const real_t crg_ow = ccharges[oxygen_charge_code - 1].charge;
+    ctx.water_mu = -crg_ow * cbondw.b0 * cos(canglew.th0 / 2);
 }
 
 // ONLY call if there are actually solvent atoms, or get segfaulted
@@ -669,18 +625,14 @@ void init_wshells() {
         ri = router - dr;
         wshells[i].dr = dr;
         Vshell = pow(router, 3) - pow(ri, 3);
-        const real_t pi = static_cast<real_t>(q_fortran_pi);
-        n_inshell = (int)floor(static_cast<real_t>(4.0) * pi / static_cast<real_t>(3.0) * Vshell * rho_water);
+        n_inshell = (int)floor(4 * M_PI / 3 * Vshell * rho_water);
         if (n_inshell > ctx.n_max_inshell) {
             ctx.n_max_inshell = n_inshell;
         }
-        rshell = pow(0.5 * (pow(router, 3) + pow(ri, 3)), static_cast<real_t>(1.0f / 3.0f));
+        rshell = pow(0.5 * (pow(router, 3) + pow(ri, 3)), 1.0 / 3.0);
 
         // --- Note below: 0.98750 = (1-1/epsilon) for water
-        const real_t rho_mu_4 =
-            static_cast<real_t>(static_cast<float>(rho_water * ctx.water_mu * static_cast<real_t>(4.0f)));
-        wshells[i].cstb = static_cast<real_t>(static_cast<float>(
-            ctx.crgQtot * static_cast<real_t>(0.98750f) / (rho_mu_4 * pi * pow(rshell, 2))));
+        wshells[i].cstb = ctx.crgQtot * 0.98750 / (rho_water * ctx.water_mu * 4 * M_PI * pow(rshell, 2));
 
         router -= dr;
     }
@@ -912,8 +864,7 @@ void init_shake() {
 
         if ((ctx.md.shake_hydrogens && (!heavy[ai] || !heavy[aj])) || (ctx.md.shake_solute && ai + 1 <= ctx.n_atoms_solute) || (ctx.md.shake_solvent && ai + 1 > ctx.n_atoms_solute)) {
             int mol = molecule_for_atom(ai + 1);
-            const real_t b0 = cbonds[bonds[bi].code - 1].b0;
-            add_or_replace_shake(mol, ai + 1, aj + 1, b0 * b0);
+            add_or_replace_shake(mol, ai + 1, aj + 1, pow(cbonds[bonds[bi].code - 1].b0, 2));
 
             // qgpu currently has no PBC/use_PBC flag. This follows the existing
             // non-PBC accounting and matches Fortran when use_PBC is false.
@@ -1093,15 +1044,6 @@ void init_unified_atom_parameters() {
     for (int qi = 0; qi < ctx.n_qatoms; qi++) {
         ctx.atom_to_qi[ctx.q_atoms[qi]] = qi;
     }
-    ctx.atom_to_qi_lookup = make_host_device_buffer_from_vector(ctx.atom_to_qi, ctx.command_info.requested_gpu);
-
-    std::vector<real_t> q_softcore_values(ctx.n_lambdas * ctx.n_qatoms, static_cast<real_t>(0.0));
-    for (int state = 0; state < ctx.n_lambdas; state++) {
-        for (int qi = 0; qi < ctx.n_qatoms; qi++) {
-            q_softcore_values[state * ctx.n_qatoms + qi] = ctx.q_softcore_value(qi, state);
-        }
-    }
-    ctx.q_softcore_values = make_host_device_buffer_from_vector(q_softcore_values, ctx.command_info.requested_gpu);
 
     const int n_extra_q_states = n_states > 0 ? n_states - 1 : 0;
     const int n_codes = ctx.n_atoms + ctx.n_qatoms * n_extra_q_states;

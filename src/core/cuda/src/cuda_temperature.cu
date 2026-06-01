@@ -44,7 +44,7 @@ __global__ void calc_temperature_kernel(int n_atoms, int n_atoms_solute, atype_t
         }
     }
     if (ener > ekinmax) {
-        printf(">>> WARNING: hot atom %d: %f\n", idx, 2.0 * ener / boltz / 3.0);
+        printf(">>> WARNING: hot atom %d: %f\n", idx, ener / boltz / 3);
     }
 }
 

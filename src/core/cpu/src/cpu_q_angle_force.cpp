@@ -19,11 +19,11 @@ void calc_qangle_forces(int state) {
     coord_t di, dk;
 
     for (int i = 0; i < ctx.n_qangles; i++) {
-        ic = ctx.q_angles[i + ctx.n_qangles * state].code;
+        ic = ctx.q_angles[i + ctx.n_qangles * state].code - 1;
 
         // Skip if angle not present (code 0)
         // todo: Test it!!
-        if (ic == 0) {
+        if (ic < 0) {
             continue;
         }
 

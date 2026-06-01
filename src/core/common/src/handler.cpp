@@ -1,49 +1,8 @@
 #include "handler.h"
 
-#include <cstdlib>
-#include <fstream>
-#include <iomanip>
-#include <sstream>
-#include <stdexcept>
-
 #include "csv_out.h"
 #include "native_out.h"
 #include "std_output.h"
-
-namespace {
-
-const char* force_dump_path() {
-    const char* path = std::getenv("QGPU_FORCE_DUMP");
-    if (path == nullptr || path[0] == '\0') return nullptr;
-    return path;
-}
-
-const char* force_dump_dir() {
-    const char* path = std::getenv("QGPU_FORCE_DUMP_DIR");
-    if (path == nullptr || path[0] == '\0') return nullptr;
-    return path;
-}
-
-void dump_forces(Context& ctx, const std::string& path, int iteration, const char* group = nullptr) {
-    std::ofstream out(path);
-    if (!out) {
-        throw std::runtime_error(std::string("Could not write force dump ") + path);
-    }
-
-    auto* dvelocities = ctx.dvelocities->cpu_data_p;
-    out << "# iteration " << iteration << "\n";
-    if (group != nullptr) out << "# group " << group << "\n";
-    out << "# atom_index dvel_x dvel_y dvel_z\n";
-    out << std::setprecision(17);
-    for (int i = 0; i < ctx.n_atoms; i++) {
-        out << (i + 1) << ' '
-            << dvelocities[i].x << ' '
-            << dvelocities[i].y << ' '
-            << dvelocities[i].z << '\n';
-    }
-}
-
-}  // namespace
 
 void Handler::run_iteration(int iteration) {
     reset_energies();
@@ -71,21 +30,6 @@ void Handler::run_iteration(int iteration) {
     print_outputs(iteration);
 }
 
-void Handler::run_final_iteration(int iteration) {
-    reset_energies();
-
-    calc_temperature();
-    calc_internal_forces(iteration);
-    calc_nonbonded_forces();
-    if (const char* path = force_dump_path()) {
-        prepare_force_dump();
-        dump_forces(ctx, path, iteration);
-    }
-    update_energy_totals();
-
-    print_final_outputs(iteration);
-}
-
 void Handler::initialize() {
     create_outputs();
     init_outputs();
@@ -96,7 +40,6 @@ void Handler::run(int num_iterations) {
     for (int i = 0; i < num_iterations; i++) {
         run_iteration(i);
     }
-    run_final_iteration(num_iterations);
     finish_outputs();
     shutdown_outputs();
     outputs_.clear();
@@ -147,25 +90,9 @@ void Handler::update_energy_totals() {
     host.E_total.Utot = host.E_total.Upot + host.E_total.Ukin;
 }
 
-void Handler::dump_force_group(const std::string& group, int iteration) {
-    const char* dir = force_dump_dir();
-    if (dir == nullptr) return;
-
-    std::ostringstream path;
-    path << dir << '/' << group << '_' << iteration << ".forces";
-    prepare_force_dump();
-    dump_forces(ctx, path.str(), iteration, group.c_str());
-}
-
 void Handler::print_outputs(int iteration) {
     for (auto& output : outputs_) {
         output->output(ctx, iteration);
-    }
-}
-
-void Handler::print_final_outputs(int iteration) {
-    for (auto& output : outputs_) {
-        output->output_final(ctx, iteration);
     }
 }
 
@@ -196,9 +123,6 @@ void Handler::shutdown_outputs() {
     for (auto& output : outputs_) {
         output->shutdown();
     }
-}
-
-void Handler::prepare_force_dump() {
 }
 
 void Handler::reset_energies() {

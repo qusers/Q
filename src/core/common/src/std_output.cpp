@@ -5,20 +5,12 @@
 void StdOutput::output_trajectory(Context& ctx, int iteration) {
 }
 
-void StdOutput::output_final(Context& ctx, int iteration) {
-    output_energy(ctx, iteration);
-}
-
 void StdOutput::output_energy(Context& ctx, int iteration) {
-    if (iteration > 0 && iteration < ctx.md.steps && (ctx.md.output <= 0 || iteration % ctx.md.output != 0)) return;
-
     auto* lambdas = ctx.lambdas ? ctx.lambdas->cpu_data_p : nullptr;
     auto* EQ_restraint = ctx.EQ_restraint->cpu_data_p;
 
     std::printf("================================================\n");
-    if (iteration >= ctx.md.steps) {
-        std::printf("== FINAL ENERGIES\n");
-    } else if (iteration > 0) {
+    if (iteration > 0) {
         std::printf("== STEP %d\n", iteration);
     } else {
         std::printf("== INITIAL ENERGIES\n");

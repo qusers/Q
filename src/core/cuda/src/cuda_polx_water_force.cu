@@ -1,6 +1,5 @@
 #include <iostream>
 #include <math.h>
-#include <stdlib.h>
 #include <vector>
 
 #include "common/include/context.h"
@@ -30,7 +29,7 @@ int* d_water_rank = nullptr;
 
 __global__ void calc_polx_theta_and_shells(
     int n_waters, int n_shells, int n_atoms_solute,
-    coord_t* coords, bool* excluded, topo_t topo, shell_t* wshells, int* list_sh,
+    coord_t* coords, topo_t topo, shell_t* wshells, int* list_sh,
     real_t* theta, real_t* theta0, real_t* tdum) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_waters) return;
@@ -45,7 +44,6 @@ __global__ void calc_polx_theta_and_shells(
     theta0[i] = 0;
 
     wi = n_atoms_solute + 3 * i;
-    if (excluded[wi]) return;
 
     rmu.x = coords[wi + 1].x + coords[wi + 2].x - 2 * coords[wi].x;
     rmu.y = coords[wi + 1].y + coords[wi + 2].y - 2 * coords[wi].y;
@@ -105,13 +103,11 @@ __global__ void calc_polx_water_forces_kernel(
 
     avtdum = 0;
     ii = idx;
-    const float arg_f = 1.0f + ((1.0f - 2.0f * static_cast<float>(il + 1)) /
-                                static_cast<float>(wshells[is].n_inshell));
-    arg = static_cast<real_t>(arg_f);
+    arg = 1 + ((1 - 2 * (real_t)(il + 1)) / (real_t)wshells[is].n_inshell);
     real_t theta_val = acos(arg);
     theta_val = theta_val - 3 * sin(theta_val) * wshells[is].cstb / 2;
     if (theta_val < 0) theta_val = 0;
-    if (theta_val > static_cast<real_t>(q_fortran_pi)) theta_val = static_cast<real_t>(q_fortran_pi);
+    if (theta_val > M_PI) theta_val = M_PI;
 
     avtdum += theta[ii];
     const real_t dtheta = theta[ii] - theta_val + wshells[is].theta_corr;
@@ -143,11 +139,9 @@ __global__ void calc_polx_water_forces_kernel(
     cos_th = rmu.x * rcu.x + rmu.y * rcu.y + rmu.z * rcu.z;
     if (cos_th > 1) cos_th = 1;
     if (cos_th < -1) cos_th = -1;
-    real_t sin_th = sin(acos(cos_th));
-    if (fabs(sin_th) < real_t(1.0e-12)) {
-        sin_th = real_t(1.0e-12);
-    }
-    f0 = -dv / sin_th;
+    const real_t sin2_th = fmax(real_t(0), real_t(1) - cos_th * cos_th);
+    const real_t sin_eff = sqrt(sin2_th + real_t(k_polx_sin_softening * k_polx_sin_softening));
+    f0 = -dv / sin_eff;
 
     f1O.x = -2 * (rcu.x - rmu.x * cos_th) / rm;
     f1O.y = -2 * (rcu.y - rmu.y * cos_th) / rm;
@@ -188,7 +182,7 @@ void sort_waters() {
     for (int is = 0; is < ctx.n_shells; is++) {
         imin = 0;
         for (int il = 0; il < wshells[is].n_inshell; il++) {
-            tmin = 2 * static_cast<real_t>(q_fortran_pi);
+            tmin = 2 * M_PI;
             for (int jl = 0; jl < wshells[is].n_inshell; jl++) {
                 // printf("Searching water %d in shell %d, total number: %d\n", jl, is, wshells[is].n_inshell);
                 jw = polx_list_sh[jl * ctx.n_shells + is];
@@ -228,7 +222,6 @@ void calc_polx_water_forces_host(int iteration) {
     }
 
     coord_t* d_coords = ctx.coords->gpu_data_p;
-    bool* d_excluded = ctx.excluded->gpu_data_p;
     auto d_dvelocities = cuda_force_accum_buffer(ctx);
     shell_t* d_wshells = ctx.wshells->gpu_data_p;
     ctx.wshells->upload();
@@ -237,7 +230,7 @@ void calc_polx_water_forces_host(int iteration) {
     int numBlocks = (ctx.n_waters + blockSize - 1) / blockSize;
     // printf("Calculated theta for %d waters in %d shells\n", ctx.n_waters, ctx.n_shells);
     calc_polx_theta_and_shells<<<numBlocks, blockSize>>>(
-        ctx.n_waters, ctx.n_shells, ctx.n_atoms_solute, d_coords, d_excluded, ctx.topo, d_wshells, d_list_sh, d_theta, d_theta0, d_tdum);
+        ctx.n_waters, ctx.n_shells, ctx.n_atoms_solute, d_coords, ctx.topo, d_wshells, d_list_sh, d_theta, d_theta0, d_tdum);
     // printf("Calculated theta for %d waters in %d shells\n", ctx.n_waters, ctx.n_shells);
 
     // todo: sort in cpu now..
@@ -262,29 +255,11 @@ void calc_polx_water_forces_host(int iteration) {
     if (iteration != 0 && iteration % itdis_update == 0) {
         for (int is = 0; is < ctx.n_shells; is++) {
             printf("SHELL %d\n", is);
-            const float avtheta_f = static_cast<float>(wshells[is].avtheta) / static_cast<float>(itdis_update);
-            wshells[is].avtheta = static_cast<real_t>(avtheta_f);
-            wshells[is].avn_inshell /= static_cast<real_t>(itdis_update);
-            wshells[is].theta_corr =
-                static_cast<real_t>(static_cast<float>(
-                    static_cast<float>(wshells[is].theta_corr) + avtheta_f -
-                    acosf(static_cast<float>(wshells[is].cstb))));
-            if (const char* debug = getenv("QGPU_WPOL_DEBUG_UPDATE")) {
-                if (debug[0] != '\0') {
-                    printf("QGPU_WPOL_UPDATE iter=%d shell=%d avtheta=%.17g avn_inshell=%.17g cstb=%.17g acos_cstb=%.17g theta_corr=%.17g\n",
-                           iteration,
-                           is + 1,
-                           static_cast<double>(wshells[is].avtheta),
-                           static_cast<double>(wshells[is].avn_inshell),
-                           static_cast<double>(wshells[is].cstb),
-                           static_cast<double>(static_cast<real_t>(acosf(static_cast<float>(wshells[is].cstb)))),
-                           static_cast<double>(wshells[is].theta_corr));
-                }
-            }
+            wshells[is].avtheta /= (real_t)itdis_update;
+            wshells[is].avn_inshell /= (real_t)itdis_update;
+            wshells[is].theta_corr = wshells[is].theta_corr + wshells[is].avtheta - acos(wshells[is].cstb);
             printf("average theta = %f, average in shell = %f, theta_corr = %f\n",
-                   wshells[is].avtheta * 180 / static_cast<real_t>(q_fortran_pi),
-                   wshells[is].avn_inshell,
-                   wshells[is].theta_corr * 180 / static_cast<real_t>(q_fortran_pi));
+                   wshells[is].avtheta * 180 / M_PI, wshells[is].avn_inshell, wshells[is].theta_corr * 180 / M_PI);
             wshells[is].avtheta = 0;
             wshells[is].avn_inshell = 0;
         }
@@ -305,12 +280,8 @@ void calc_polx_water_forces_host(int iteration) {
         std::vector<force_fixed_storage_t> avtheta_fixed(ctx.n_shells);
         cudaMemcpy(avtheta_fixed.data(), d_avtheta_fixed, ctx.n_shells * sizeof(force_fixed_storage_t), cudaMemcpyDeviceToHost);
         for (int is = 0; is < ctx.n_shells; is++) {
-            const real_t avtheta = static_cast<real_t>(static_cast<float>(
-                fixed_to_force(force_fixed_from_storage(avtheta_fixed[is]))));
-            wshells[is].avtheta = avtheta;
-            avtheta_fixed[is] = force_fixed_to_storage(force_to_fixed(static_cast<double>(avtheta)));
+            wshells[is].avtheta = fixed_to_force(force_fixed_from_storage(avtheta_fixed[is]));
         }
-        cudaMemcpy(d_avtheta_fixed, avtheta_fixed.data(), ctx.n_shells * sizeof(force_fixed_storage_t), cudaMemcpyHostToDevice);
     }
     // Copy back forces for all atoms (solute + solvent); water forces were being dropped.
 }

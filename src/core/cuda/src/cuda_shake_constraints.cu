@@ -81,9 +81,7 @@ __global__ void calc_shake_constraints_kernel(
                     xxij_y = static_cast<constraint_work_t>(xcoords[ai].y) - static_cast<constraint_work_t>(xcoords[aj].y);
                     xxij_z = static_cast<constraint_work_t>(xcoords[ai].z) - static_cast<constraint_work_t>(xcoords[aj].z);
                     scp = xij_x * xxij_x + xij_y * xxij_y + xij_z * xxij_z;
-                    const constraint_work_t winv_sum = static_cast<constraint_work_t>(
-                        static_cast<float>(static_cast<real_t>(winv[ai]) + static_cast<real_t>(winv[aj])));
-                    corr = diff / (constraint_work_t{2} * scp * winv_sum);
+                    corr = diff / (constraint_work_t{2} * scp * (static_cast<constraint_work_t>(winv[ai]) + static_cast<constraint_work_t>(winv[aj])));
 
                     coords[ai].x += static_cast<real_t>(xxij_x * corr * static_cast<constraint_work_t>(winv[ai]));
                     coords[ai].y += static_cast<real_t>(xxij_y * corr * static_cast<constraint_work_t>(winv[ai]));

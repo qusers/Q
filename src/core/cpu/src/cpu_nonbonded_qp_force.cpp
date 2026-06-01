@@ -4,8 +4,6 @@
 
 #include "constants.h"
 #include "context.h"
-#include "coulomb.h"
-#include "softcore.h"
 #include "vdw_rules.h"
 
 void calc_nonbonded_qp_forces() {
@@ -19,7 +17,6 @@ void calc_nonbonded_qp_forces() {
     coord_t da;
     real_t r2, r;
     real_t ai_aii, aj_aii, ai_bii, aj_bii;
-    real_t pair_a, pair_b, lookup_pair_a, lookup_pair_b, force_lj_term;
     bool bond23, bond14;
     real_t scaling;
     real_t Vel, V_a, V_b, dv;
@@ -55,33 +52,14 @@ void calc_nonbonded_qp_forces() {
                 ai_bii = bond14 ? qi_type.bii_1_4 : qi_type.bii_normal;
                 aj_bii = bond14 ? aj_type.bii_1_4 : aj_type.bii_normal;
 
-                Vel = fortran_coulomb_energy(
-                    ctx.unified_ccharge(i, state).charge,
-                    ctx.unified_ccharge(j, state).charge,
-                    r,
-                    ctx.topo.coulomb_constant,
-                    scaling);
+                Vel = static_cast<real_t>(ctx.topo.coulomb_constant * scaling) *
+                      ctx.unified_ccharge(i, state).charge * ctx.unified_ccharge(j, state).charge * r;
                 if (ctx.topo.vdw_rule == VDW_GEOMETRIC) {
-                    calc_vdw_geometric(ai_aii, aj_aii, ai_bii, aj_bii, static_cast<real_t>(1.0), &pair_a, &pair_b);
+                    calc_vdw_geometric(ai_aii, aj_aii, ai_bii, aj_bii, r6inv, &V_a, &V_b);
                 } else {
-                    calc_vdw_arithmetic(ai_aii, aj_aii, ai_bii, aj_bii, static_cast<real_t>(1.0), &pair_a, &pair_b);
+                    calc_vdw_arithmetic(ai_aii, aj_aii, ai_bii, aj_bii, r6inv, &V_a, &V_b);
                 }
-                lookup_pair_a = pair_a;
-                lookup_pair_b = pair_b;
-                if (bond14 && ctx.q_softcore_use_max_potential) {
-                    if (ctx.topo.vdw_rule == VDW_GEOMETRIC) {
-                        calc_vdw_geometric(qi_type.aii_normal, aj_type.aii_normal, qi_type.bii_normal, aj_type.bii_normal, static_cast<real_t>(1.0), &lookup_pair_a, &lookup_pair_b);
-                    } else {
-                        calc_vdw_arithmetic(qi_type.aii_normal, aj_type.aii_normal, qi_type.bii_normal, aj_type.bii_normal, static_cast<real_t>(1.0), &lookup_pair_a, &lookup_pair_b);
-                    }
-                }
-                const real_t softcore_lookup = q_softcore_lookup_value(
-                    ctx.q_softcore_value(qi, state),
-                    lookup_pair_a,
-                    lookup_pair_b,
-                    ctx.q_softcore_use_max_potential);
-                q_softcore_lj(pair_a, pair_b, r6inv, softcore_lookup, &V_a, &V_b, &force_lj_term);
-                dv = r2 * (-Vel - force_lj_term) * lambdas[state];
+                dv = r2 * (-Vel - (12 * V_a - 6 * V_b)) * lambdas[state];
 
                 // Update forces
                 dvelocities[i].x -= dv * da.x;

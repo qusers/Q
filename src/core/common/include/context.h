@@ -114,7 +114,6 @@ class Context {
     std::unique_ptr<HostDeviceBuffer<bool>> shell;
 
     std::vector<int> atom_to_qi;
-    std::unique_ptr<HostDeviceBuffer<int>> atom_to_qi_lookup;
     std::unique_ptr<HostDeviceBuffer<ccharge_t>> unified_ccharges;
     std::unique_ptr<HostDeviceBuffer<catype_t>> unified_catypes;
 
@@ -196,7 +195,6 @@ class Context {
     std::unique_ptr<HostDeviceBuffer<int>> w_atoms_list;
     std::unique_ptr<HostDeviceBuffer<int>> q_atoms_list;
     std::unique_ptr<HostDeviceBuffer<real_t>> charge_pair_products;
-    std::unique_ptr<HostDeviceBuffer<real_t>> q_charge_pair_products;
     std::unique_ptr<HostDeviceBuffer<int>> p_charge_types;
     std::unique_ptr<HostDeviceBuffer<int>> w_charge_types;
     std::unique_ptr<HostDeviceBuffer<int>> q_charge_types;
@@ -246,7 +244,6 @@ class Context {
     int n_qshakes;
     int n_qsoftpairs;
     int n_qsoftcores;
-    bool q_softcore_use_max_potential = false;
     int n_qtorcouples;
     int n_qtorsions;
 
@@ -270,15 +267,7 @@ class Context {
     std::vector<q_improper_t> q_impropers;
     std::vector<q_shake_t> q_shakes;
     std::vector<q_softcore_t> q_softcores;
-    std::unique_ptr<HostDeviceBuffer<real_t>> q_softcore_values;
     std::vector<torsion_t> q_torsions;
-
-    real_t q_softcore_value(int qi, int state) const {
-        if (qi < 0 || qi >= n_qsoftcores || state < 0 || state >= n_lambdas) {
-            return static_cast<real_t>(0.0);
-        }
-        return q_softcores[qi + state * n_qsoftcores].s;
-    }
 
     int n_parameter_states() const {
         return n_lambdas > 0 ? n_lambdas : 1;

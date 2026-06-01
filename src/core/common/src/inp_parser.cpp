@@ -8,15 +8,12 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <iomanip>
 #include <map>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 #include "constants.h"
-#include "common/include/fortran_real.h"
 #include "str_helpers.h"
 
 namespace {
@@ -49,12 +46,6 @@ int parse_int(const std::string& value) {
 
 double parse_double(const std::string& value) {
     return std::atof(value.c_str());
-}
-
-std::string restart_double_string(double value) {
-    std::ostringstream out;
-    out << std::setprecision(17) << value;
-    return out.str();
 }
 
 int row_int(const std::vector<std::string>& row, size_t index, int fallback = 0) {
@@ -181,7 +172,7 @@ std::vector<std::vector<std::string>> unpack_restart_vector(const std::vector<ch
     std::vector<std::vector<std::string>> rows;
     rows.reserve(nat3 / 3);
     for (int i = 0; i < nat3; i += 3) {
-        rows.push_back({restart_double_string(values[i]), restart_double_string(values[i + 1]), restart_double_string(values[i + 2])});
+        rows.push_back({std::to_string(values[i]), std::to_string(values[i + 1]), std::to_string(values[i + 2])});
     }
     return rows;
 }
@@ -298,7 +289,6 @@ struct InpParser::TopData {
 
 struct InpParser::FepData {
     int states = 0;
-    bool softcore_use_max_potential = false;
     std::vector<std::string> q_atoms;
     std::vector<std::vector<std::string>> q_atypes;
     std::vector<std::vector<std::string>> q_charges;
@@ -650,15 +640,6 @@ void InpParser::ensure_fep() {
             case 1:
                 if (f.size() >= 2) fep_->q_atoms.push_back(f[1]);
                 break;
-            case 2:
-                if (f.size() >= 2 &&
-                    lower_normalized(f[0]) == "softcore-use-max-potential") {
-                    const std::string value = lower_normalized(f[1]);
-                    fep_->softcore_use_max_potential =
-                        value == "on" || value == "true" ||
-                        value == "yes" || value == "1";
-                }
-                break;
             case 3:
                 for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_charges[s].push_back(f[s + 1]);
                 break;
@@ -707,31 +688,6 @@ void InpParser::ensure_fep() {
                 break;
             case 24: fep_->q_offdiags.push_back(f); break;
             default: break;
-        }
-    }
-
-    auto count_state_rows = [](const std::vector<std::vector<std::string>>& rows) {
-        size_t total = 0;
-        for (const auto& state : rows) total += state.size();
-        return total;
-    };
-    auto reject_rows = [](const char* section, size_t rows, const char* reason) {
-        if (rows > 0) {
-            throw parse_error(std::string("Unsupported FEP section [") + section + "] contains " + std::to_string(rows) + " row(s): " + reason + ".");
-        }
-    };
-
-    reject_rows("soft_pairs", count_state_rows(fep_->q_softpairs), "QGPU does not apply soft-pair nonbonded semantics");
-    reject_rows("excluded_pairs", count_state_rows(fep_->q_exclpairs), "QGPU does not apply FEP-specific excluded-pair semantics");
-    reject_rows("angle_couplings", fep_->q_angcouples.size(), "QGPU does not apply Morse-bond angle coupling terms");
-    reject_rows("torsion_couplings", fep_->q_torcouples.size(), "QGPU does not apply Morse-bond torsion coupling terms");
-    reject_rows("improper_couplings", fep_->q_imprcouples.size(), "QGPU does not apply Morse-bond improper coupling terms");
-    reject_rows("off-diagonals", fep_->q_offdiags.size(), "QGPU does not apply EVB/offdiagonal energy terms");
-
-    for (size_t i = 1; i < fep_->q_cbonds.size(); i++) {
-        if (fep_->q_cbonds[i].size() > 2) {
-            throw parse_error("Unsupported FEP [bond_types] row " + std::to_string(i) +
-                              ": Morse Q bonds are not implemented; only harmonic Q bond types are supported.");
         }
     }
 
@@ -848,15 +804,8 @@ void InpParser::parse_md() {
     md.shell_radius = parse_double(value_or(sphere, "shell-radius", value_or(sphere, "shell_radius", "0")));
     md.shell_force = parse_double(value_or(sphere, "shell-force", value_or(sphere, "shell_force", "10.0")));
     md.radial_force = parse_double(value_or(solvent, "radial-force", value_or(solvent, "radial_force", "60.0")));
-    md.polarisation = is_on_value(solvent, "polarisation", bool_value(solvent, "polarization", "on"));
-    md.charge_correction = is_on_value(
-        solvent,
-        "charge-correction",
-        bool_value(solvent, "charge_correction", md.polarisation ? "on" : "off"));
-    md.polarisation_force = parse_double(value_or(
-        solvent,
-        "polarisation-force",
-        value_or(solvent, "polarisation_force", value_or(solvent, "polarization-force", value_or(solvent, "polarization_force", "20.0")))));
+    md.polarisation = true;
+    md.polarisation_force = parse_double(value_or(solvent, "polarisation-force", value_or(solvent, "polarisation_force", "20.0")));
     md.non_bond = parse_int(value_or(intervals, "non-bond", value_or(intervals, "non_bond", "25")));
     md.output = parse_int(value_or(intervals, "output", "5"));
     md.energy = parse_int(value_or(intervals, "energy", "0"));
@@ -992,12 +941,7 @@ void InpParser::parse_ctorsions() {
     result.ctorsions.clear();
     for (const auto& item : top_->ctorsions) {
         double paths = row_double(item.second, 3);
-        result.ctorsions.push_back({
-            item.first,
-            fortran_real(row_double(item.second, 0)),
-            fortran_real(row_double(item.second, 1)),
-            fortran_real(row_double(item.second, 2)),
-            fortran_inverse_paths(paths)});
+        result.ctorsions.push_back({item.first, row_double(item.second, 0), row_double(item.second, 1), row_double(item.second, 2), paths == 0.0 ? 0.0 : 1.0 / paths});
     }
 }
 
@@ -1011,12 +955,7 @@ void InpParser::parse_impropers() {
 void InpParser::parse_cimpropers() {
     ensure_topology();
     result.cimpropers.clear();
-    for (const auto& item : top_->cimpropers) {
-        result.cimpropers.push_back({
-            item.first,
-            fortran_real(row_double(item.second, 0)),
-            fortran_real(row_double(item.second, 1))});
-    }
+    for (const auto& item : top_->cimpropers) result.cimpropers.push_back({item.first, row_double(item.second, 0), row_double(item.second, 1)});
 }
 
 void InpParser::parse_restrspos() {}
@@ -1301,7 +1240,6 @@ void InpParser::parse_q_shakes() {
 void InpParser::parse_q_softcores() {
     ensure_fep();
     int n_lambdas = static_cast<int>(result.lambdas.size());
-    result.q_softcore_use_max_potential = fep_->softcore_use_max_potential;
     size_t total = 0;
     for (const auto& state : fep_->q_softcores) total += state.size();
     int n_qsoftcores = n_lambdas > 0 ? static_cast<int>(total) / n_lambdas : 0;

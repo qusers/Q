@@ -8,11 +8,11 @@
 
 void calc_bonded_forces() {
     auto& ctx = Context::instance();
-    ctx.E_bond_p.Ubond = calc_bond_forces(0, ctx.n_bonds_solute);
-    ctx.E_bond_w.Ubond = calc_bond_forces(ctx.n_bonds_solute, ctx.n_bonds);
-
     ctx.E_bond_p.Uangle = calc_angle_forces(0, ctx.n_angles_solute);
     ctx.E_bond_w.Uangle = calc_angle_forces(ctx.n_angles_solute, ctx.n_angles);
+
+    ctx.E_bond_p.Ubond = calc_bond_forces(0, ctx.n_bonds_solute);
+    ctx.E_bond_w.Ubond = calc_bond_forces(ctx.n_bonds_solute, ctx.n_bonds);
 
     ctx.E_bond_p.Utor = calc_torsion_forces(0, ctx.n_torsions_solute);
     ctx.E_bond_w.Utor = calc_torsion_forces(ctx.n_torsions_solute, ctx.n_torsions);

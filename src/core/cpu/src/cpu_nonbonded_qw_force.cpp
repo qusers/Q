@@ -4,8 +4,6 @@
 
 #include "constants.h"
 #include "context.h"
-#include "coulomb.h"
-#include "softcore.h"
 #include "vdw_rules.h"
 void calc_nonbonded_qw_forces() {
     auto& ctx = Context::instance();
@@ -18,7 +16,6 @@ void calc_nonbonded_qw_forces() {
     real_t r2O, rH1, rH2, rO, r2H1, r2H2;
     real_t dvO, dvH1, dvH2;
     real_t V_a, V_b, VelO, VelH1, VelH2;
-    real_t pair_a, pair_b, force_lj_term;
     real_t ai_aii, ai_bii;
 
     // Loop over O-atoms, q-atoms
@@ -60,26 +57,21 @@ void calc_nonbonded_qw_forces() {
                 ai_bii = qi_type.bii_normal;
 
                 if (ctx.topo.vdw_rule == VDW_GEOMETRIC) {
-                    calc_vdw_geometric(ai_aii, ow_type.aii_normal, ai_bii, ow_type.bii_normal, static_cast<real_t>(1.0), &pair_a, &pair_b);
+                    calc_vdw_geometric(ai_aii, ow_type.aii_normal, ai_bii, ow_type.bii_normal, r6Oinv, &V_a, &V_b);
                 } else {
-                    calc_vdw_arithmetic(ai_aii, ow_type.aii_normal, ai_bii, ow_type.bii_normal, static_cast<real_t>(1.0), &pair_a, &pair_b);
+                    calc_vdw_arithmetic(ai_aii, ow_type.aii_normal, ai_bii, ow_type.bii_normal, r6Oinv, &V_a, &V_b);
                 }
-                const real_t softcore_lookup = q_softcore_lookup_value(
-                    ctx.q_softcore_value(qi, state),
-                    pair_a,
-                    pair_b,
-                    ctx.q_softcore_use_max_potential);
-                q_softcore_lj(pair_a, pair_b, r6Oinv, softcore_lookup, &V_a, &V_b, &force_lj_term);
 
                 const real_t q_charge = ctx.unified_ccharge(i, state).charge;
-                VelO = fortran_coulomb_energy(ow_charge, q_charge, rO, ctx.topo.coulomb_constant);
-                VelH1 = fortran_coulomb_energy(hw1_charge, q_charge, rH1, ctx.topo.coulomb_constant);
-                VelH2 = fortran_coulomb_energy(hw2_charge, q_charge, rH2, ctx.topo.coulomb_constant);
+                const real_t coulomb_constant = static_cast<real_t>(ctx.topo.coulomb_constant);
+                VelO = coulomb_constant * ow_charge * q_charge * rO;
+                VelH1 = coulomb_constant * hw1_charge * q_charge * rH1;
+                VelH2 = coulomb_constant * hw2_charge * q_charge * rH2;
 
                 // if (state == 0 && qi == 1) printf("j = %d ai__aii = %f A_O = %f B_O = %f V_a = %f V_b = %f r6O = %f\n", j, ai_aii, A_O, B_O, V_a, V_b, r6O);
 
                 const real_t lambda = static_cast<real_t>(lambdas[state]);
-                dvO += r2O * (-VelO - force_lj_term) * lambda;
+                dvO += r2O * (-VelO - (static_cast<real_t>(12.0) * V_a - static_cast<real_t>(6.0) * V_b)) * lambda;
                 dvH1 -= r2H1 * VelH1 * lambda;
                 dvH2 -= r2H2 * VelH2 * lambda;
 

@@ -19,10 +19,6 @@ void calc_nonbonded_qw_forces_host_v2() {
     int ny = static_cast<int>(host.w_atoms_list->length);
     auto *lambdas = host.lambdas->cpu_data_p;
     for (int state = 0; state < host.n_lambdas; state++) {
-        const bool softcore_enabled = host.n_qsoftcores > 0;
-        const real_t* softcore_values = softcore_enabled
-            ? host.q_softcore_values->gpu_data_p + state * host.n_qatoms
-            : nullptr;
         auto result = calc_nonbonded_force_host(
             nx,
             ny,
@@ -33,12 +29,7 @@ void calc_nonbonded_qw_forces_host_v2() {
             host.w_charge_types->gpu_data_p,
             host.q_catype_types->gpu_data_p + state * nx,
             host.w_catype_types->gpu_data_p,
-            true,
-            lambdas[state],
-            softcore_enabled,
-            softcore_values,
-            host.atom_to_qi_lookup->gpu_data_p,
-            host.q_softcore_use_max_potential);
+            true, lambdas[state]);
 
         host.EQ_nonbond_qw[state].Uvdw = result.first / lambdas[state];
         host.EQ_nonbond_qw[state].Ucoul = result.second / lambdas[state];

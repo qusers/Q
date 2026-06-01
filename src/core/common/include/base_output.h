@@ -13,7 +13,6 @@ class BaseOutput {
         output_energy(ctx, iteration);
         output_restart(ctx, iteration);
     }
-    virtual void output_final(Context& ctx, int iteration) {}
 
    protected:
     virtual void output_trajectory(Context& ctx, int iteration) = 0;

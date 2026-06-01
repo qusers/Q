@@ -12,7 +12,6 @@ real_t* d_energy;
 
 __global__ void calc_radix_water_forces_kernel(
     coord_t* coords,
-    bool* excluded,
     real_t shift,
     int n_atoms_solute,
     int n_atoms,
@@ -25,7 +24,6 @@ __global__ void calc_radix_water_forces_kernel(
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     i = n_atoms_solute + i * 3;  // Process only oxygen atoms of water molecules
     if (i >= n_atoms) return;
-    if (excluded[i]) return;
 
     coord_t dr;
 
@@ -72,7 +70,6 @@ void calc_radix_water_forces_host() {
     int numBlocks = (oxygen_atoms + blockSize - 1) / blockSize;
 
     auto d_coords = host.coords->gpu_data_p;
-    auto d_excluded = host.excluded->gpu_data_p;
     auto d_dvelocities = cuda_force_accum_buffer(host);
     check_cuda(cudaMemset(d_energy, 0, sizeof(real_t)));
 
@@ -85,7 +82,6 @@ void calc_radix_water_forces_host() {
 
     real_t energy = 0.0;
     calc_radix_water_forces_kernel<<<numBlocks, blockSize>>>(d_coords,
-                                                             d_excluded,
                                                              shift,
                                                              host.n_atoms_solute,
                                                              host.n_atoms,
