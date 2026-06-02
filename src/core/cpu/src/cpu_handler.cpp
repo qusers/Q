@@ -28,26 +28,28 @@
 namespace {
 
 void calc_restraint_forces(int iteration, Context& ctx) {
+    calc_pshell_forces();
+    calc_restrseq_forces();
+    calc_restrpos_forces();
+    calc_restrdis_forces();
+    calc_restrang_forces();
+    calc_restrwall_forces();
+
     if (ctx.n_waters > 0) {
         calc_radix_w_forces();
         if (ctx.md.polarisation) {
             calc_polx_w_forces(iteration);
+            debug_dvelocities();
         }
     }
 
-    calc_pshell_forces();
-    calc_restrseq_forces();
-    calc_restrdis_forces();
-    calc_restrpos_forces();
-    calc_restrang_forces();
-    calc_restrwall_forces();
 }
 
 void calc_q_bonded_forces(Context& ctx) {
     for (int state = 0; state < ctx.n_lambdas; state++) {
         calc_qangle_forces(state);
         calc_qbond_forces(state);
-        calc_qtorsion_forces(state);
+        // calc_qtorsion_forces(state);
     }
 }
 
@@ -63,7 +65,10 @@ void CpuHandler::calc_internal_forces(int iteration) {
 
     calc_bonded_forces();
     calc_restraint_forces(iteration, ctx);
-    calc_q_bonded_forces(ctx);
+    // calc_q_bonded_forces(ctx);
+
+    calc_nonbonded_qq_forces();
+
 }
 
 void CpuHandler::calc_nonbonded_forces() {

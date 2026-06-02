@@ -31,6 +31,7 @@ struct md_t {
     // [solvent]
     real_t radial_force;
     bool polarisation;
+    bool charge_correction;
     real_t polarisation_force;
     // [intervals]
     int non_bond;

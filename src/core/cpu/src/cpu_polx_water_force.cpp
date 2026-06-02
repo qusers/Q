@@ -1,4 +1,5 @@
 #include "cpu_polx_water_force.h"
+#include "debug.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -10,6 +11,7 @@ void calc_polx_w_forces(int iteration) {
     auto& ctx = Context::instance();
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
+    auto &exclude = ctx.excluded->cpu_data_p;
     auto *wshells = ctx.wshells->cpu_data_p;
 
     int wi, imin, jw, ii, iis, jmin;
@@ -19,7 +21,8 @@ void calc_polx_w_forces(int iteration) {
     real_t cos_th;
     real_t avtdum, arg, f0, dv;
     real_t ener;
-
+    std::ostringstream ss;
+    ss << std::fixed << std::setprecision(8);
     for (int is = 0; is < ctx.n_shells; is++) {
         wshells[is].n_inshell = 0;
     }
@@ -29,12 +32,13 @@ void calc_polx_w_forces(int iteration) {
         ctx.theta0[i] = 0;
 
         wi = ctx.n_atoms_solute + 3 * i;
+        if (exclude[wi]) continue;
 
         rmu.x = coords[wi + 1].x + coords[wi + 2].x - 2 * coords[wi].x;
         rmu.y = coords[wi + 1].y + coords[wi + 2].y - 2 * coords[wi].y;
         rmu.z = coords[wi + 1].z + coords[wi + 2].z - 2 * coords[wi].z;
 
-        rm = sqrt(pow(rmu.x, 2) + pow(rmu.y, 2) + pow(rmu.z, 2));
+        rm = sqrt(rmu.x * rmu.x + rmu.y * rmu.y + rmu.z * rmu.z);
 
         rmu.x /= rm;
         rmu.y /= rm;
@@ -43,7 +47,7 @@ void calc_polx_w_forces(int iteration) {
         rcu.x = coords[wi].x - ctx.topo.solvent_center.x;
         rcu.y = coords[wi].y - ctx.topo.solvent_center.y;
         rcu.z = coords[wi].z - ctx.topo.solvent_center.z;
-        rc = sqrt(pow(rcu.x, 2) + pow(rcu.y, 2) + pow(rcu.z, 2));
+        rc = sqrt(rcu.x * rcu.x + rcu.y * rcu.y + rcu.z * rcu.z);
         rcu.x /= rc;
         rcu.y /= rc;
         rcu.z /= rc;
@@ -64,16 +68,17 @@ void calc_polx_w_forces(int iteration) {
                     break;
                 }
             }
-
             wshells[iis].n_inshell += 1;
             ctx.list_sh[wshells[iis].n_inshell - 1][iis] = i;
+            // ss << wi << ' ' << iis + 1 << '\n';
         }
     }
-
+    // debug(ss.str());
+    const real_t PI = 4.0 * atanf(1.0);
     for (int is = 0; is < ctx.n_shells; is++) {
         imin = 0;
         for (int il = 0; il < wshells[is].n_inshell; il++) {
-            tmin = 2 * M_PI;
+            tmin = 2.0 * PI;
             for (int jl = 0; jl < wshells[is].n_inshell; jl++) {
                 jw = ctx.list_sh[jl][is];
                 if (ctx.tdum[jw] < tmin) {
@@ -90,8 +95,8 @@ void calc_polx_w_forces(int iteration) {
     if (iteration != 0 && iteration % itdis_update == 0) {
         for (int is = 0; is < ctx.n_shells; is++) {
             printf("SHELL %d\n", is);
-            wshells[is].avtheta /= (real_t)itdis_update;
-            wshells[is].avn_inshell /= (real_t)itdis_update;
+            wshells[is].avtheta /= (float)itdis_update;
+            wshells[is].avn_inshell /= (float)itdis_update;
             wshells[is].theta_corr =
                 wshells[is].theta_corr + wshells[is].avtheta - acos(wshells[is].cstb);
             printf("average theta = %f, average in shell = %f, theta_corr = %f\n",
@@ -110,15 +115,17 @@ void calc_polx_w_forces(int iteration) {
         avtdum = 0;
         for (int il = 0; il < wshells[is].n_inshell; il++) {
             ii = ctx.nsort[il][is];
-            arg = 1 + ((1 - 2 * (real_t)(il + 1)) / (real_t)wshells[is].n_inshell);
+            arg = 1.0f + ((1.0f - 2.0f * (float)(il + 1)) / (float)wshells[is].n_inshell);
             ctx.theta0[il] = acos(arg);
             ctx.theta0[il] = ctx.theta0[il] - 3 * sin(ctx.theta0[il]) * wshells[is].cstb / 2;
             if (ctx.theta0[il] < 0) {
                 ctx.theta0[il] = 0;
             }
-            if (ctx.theta0[il] > M_PI) {
-                ctx.theta0[il] = M_PI;
+            if (ctx.theta0[il] > PI) {
+                ctx.theta0[il] = PI;
             }
+
+
 
             avtdum += ctx.theta[ii];
             ener = .5 * ctx.md.polarisation_force *
@@ -133,7 +140,7 @@ void calc_polx_w_forces(int iteration) {
             rmu.y = coords[wi + 1].y + coords[wi + 2].y - 2 * coords[wi].y;
             rmu.z = coords[wi + 1].z + coords[wi + 2].z - 2 * coords[wi].z;
 
-            rm = sqrt(pow(rmu.x, 2) + pow(rmu.y, 2) + pow(rmu.z, 2));
+            rm = sqrt(rmu.x * rmu.x + rmu.y * rmu.y + rmu.z * rmu.z);
 
             rmu.x /= rm;
             rmu.y /= rm;
@@ -142,7 +149,7 @@ void calc_polx_w_forces(int iteration) {
             rcu.x = coords[wi].x - ctx.topo.solvent_center.x;
             rcu.y = coords[wi].y - ctx.topo.solvent_center.y;
             rcu.z = coords[wi].z - ctx.topo.solvent_center.z;
-            rc = sqrt(pow(rcu.x, 2) + pow(rcu.y, 2) + pow(rcu.z, 2));
+            rc = sqrt(rcu.x * rcu.x + rcu.y * rcu.y + rcu.z * rcu.z);
             rcu.x /= rc;
             rcu.y /= rc;
             rcu.z /= rc;
@@ -155,11 +162,12 @@ void calc_polx_w_forces(int iteration) {
                 cos_th = -1;
             }
             f0 = sin(acos(cos_th));
-            if (fabs(f0) < k_singular_sin_epsilon) {
-                f0 = k_singular_sin_epsilon;
+            if (fabs(f0) < (float)k_singular_sin_epsilon) {
+                f0 = (float)k_singular_sin_epsilon;
             }
-            f0 = -1.0 / f0;
+            f0 = -1.0f / f0;
             f0 *= dv;
+            ss << ii << ' ' << f0 << '\n';
 
             f1O.x = -2 * (rcu.x - rmu.x * cos_th) / rm;
             f1O.y = -2 * (rcu.y - rmu.y * cos_th) / rm;
@@ -186,7 +194,8 @@ void calc_polx_w_forces(int iteration) {
             dvelocities[wi + 2].z += f0 * f1H2.z;
         }
 
-        wshells[is].avtheta += avtdum / (real_t)wshells[is].n_inshell;
+        wshells[is].avtheta += avtdum / (float)wshells[is].n_inshell;
         wshells[is].avn_inshell += wshells[is].n_inshell;
     }
+    debug(ss.str());
 }

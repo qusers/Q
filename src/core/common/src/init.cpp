@@ -546,8 +546,18 @@ void init_inv_mass() {
 
 void init_water_sphere() {
     auto& ctx = Context::instance();
-    ctx.Dwmz = 0.26 * exp(-0.19 * (ctx.topo.solvent_radius - 15)) + 0.74;
-    ctx.awmz = 0.2 / (1 + exp(0.4 * (ctx.topo.solvent_radius - 25))) + 0.3;
+    ctx.crgQtot = 0.0;
+    if (ctx.md.charge_correction && ctx.n_lambdas > 0) {
+        auto* lambdas = ctx.lambdas->cpu_data_p;
+        for (int state = 0; state < ctx.n_lambdas; state++) {
+            for (int qi = 0; qi < ctx.n_qatoms; qi++) {
+                ctx.crgQtot += ctx.q_charges[qi + ctx.n_qatoms * state].charge * lambdas[state];
+            }
+        }
+    }
+
+    ctx.Dwmz = 0.26f * exp(-0.19f * (ctx.topo.solvent_radius - 15)) + 0.74f;
+    ctx.awmz = 0.2f / (1 + exp(0.4f * (ctx.topo.solvent_radius - 25))) + 0.3f;
 
     printf("Dwmz = %f, awmz = %f\n", ctx.Dwmz, ctx.awmz);
 }
@@ -557,15 +567,13 @@ void init_wshells() {
     auto& ctx = Context::instance();
     int n_inshell;
     real_t drs, router, ri, dr, Vshell, rshell;
-    auto& bonds = ctx.bonds->cpu_data_p;
     auto& cbonds = ctx.cbonds->cpu_data_p;
-    auto& angles = ctx.angles->cpu_data_p;
     auto& cangles = ctx.cangles->cpu_data_p;
-    // Get water properties from the first water molecule.
-    cbond_t cbondw = cbonds[bonds[ctx.n_atoms_solute].code - 1];
-    cangle_t canglew = cangles[angles[ctx.n_atoms_solute].code - 1];
+    // Match Fortran wat_shells, which uses the last topology water bond/angle codes.
+    cbond_t cbondw = cbonds[ctx.n_cbonds - 1];
+    cangle_t canglew = cangles[ctx.n_cangles - 1];
     const real_t crg_ow = ctx.unified_ccharge(ctx.n_atoms_solute, 0).charge;
-    const real_t mu_w = -crg_ow * cbondw.b0 * cos(canglew.th0 / 2);
+    const real_t mu_w = -crg_ow * cbondw.b0 * cos(to_radians(canglew.th0) / 2);
 
     drs = wpolr_layer / drouter;
 

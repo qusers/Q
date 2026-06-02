@@ -109,6 +109,7 @@ void CsvParser::parse_md() {
 
     md.radial_force = row_double(file.rows[18], 1);
     md.polarisation = true;
+    md.charge_correction = md.polarisation;
     md.polarisation_force = row_double(file.rows[20], 1);
 
     md.non_bond = row_int(file.rows[21], 1);

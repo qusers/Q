@@ -797,7 +797,12 @@ void InpParser::parse_md() {
     md.shell_radius = parse_double(value_or(sphere, "shell-radius", value_or(sphere, "shell_radius", "0")));
     md.shell_force = parse_double(value_or(sphere, "shell-force", value_or(sphere, "shell_force", "10.0")));
     md.radial_force = parse_double(value_or(solvent, "radial-force", value_or(solvent, "radial_force", "60.0")));
-    md.polarisation = true;
+    const std::string polarisation_value = bool_value(solvent, "polarisation", bool_value(solvent, "polarization", "on"));
+    md.polarisation = polarisation_value == "on";
+    md.charge_correction = is_on_value(
+        solvent,
+        "charge-correction",
+        bool_value(solvent, "charge_correction", md.polarisation ? "on" : "off"));
     md.polarisation_force = parse_double(value_or(solvent, "polarisation-force", value_or(solvent, "polarisation_force", "20.0")));
     md.non_bond = parse_int(value_or(intervals, "non-bond", value_or(intervals, "non_bond", "25")));
     md.output = parse_int(value_or(intervals, "output", "5"));

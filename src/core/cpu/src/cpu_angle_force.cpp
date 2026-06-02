@@ -101,7 +101,7 @@ real_t calc_angle_forces(int start, int end) {
 
         // printf("ANGLE ener = %f\n", ener);
     }
-    debug(ss.str());
+    // debug(ss.str());
 
     return angle;
 }
