@@ -206,12 +206,12 @@ class Context {
 
     real_t Temp = 0.0;
     real_t Tfree = 0.0;
-    real_t Ndegf = 0.0;
-    real_t Ndegfree = 0.0;
-    real_t Ndegf_solute = 0.0;
-    real_t Ndegfree_solute = 0.0;
-    real_t Ndegf_solvent = 0.0;
-    real_t Ndegfree_solvent = 0.0;
+    int Ndegf = 0;
+    int Ndegfree = 0;
+    int Ndegf_solute = 0;
+    int Ndegfree_solute = 0;
+    int Ndegf_solvent = 0;
+    int Ndegfree_solvent = 0;
 
     real_t Tscale_solute = 0.0;
     real_t Tscale_solvent = 0.0;

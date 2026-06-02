@@ -3,6 +3,7 @@
 #include "constants.h"
 #include "context.h"
 #include "math.h"
+#include "debug.h"
 
 /* =============================================
  * == ENERGY & TEMPERATURE
@@ -37,6 +38,8 @@ void calc_temperature() {
             printf(">>> WARNING: hot atom %d: %f\n", i, ener / Boltz / 3);
         }
     }
+    std::ostringstream ss;
+    ss << std::fixed << std::setprecision(8);
 
     for (int i = ctx.n_atoms_solute; i < ctx.n_atoms; i++) {
         mass_i = catypes[atypes[i].code - 1].m;
@@ -57,17 +60,25 @@ void calc_temperature() {
 
     ctx.E_total.Ukin = ctx.Temp;
 
-    ctx.Temp = 2.0 * ctx.Temp / Boltz / ctx.Ndegf;
-    ctx.Tfree = 2.0 * ctx.Tfree / Boltz / ctx.Ndegfree;
+    ctx.Temp = 2.0 * ctx.Temp / Boltz / (float)ctx.Ndegf;
+    
+    ctx.Tfree = 2.0 * ctx.Tfree / Boltz / (float)ctx.Ndegfree;
 
     if (ctx.separate_scaling) {
-        Tfree_solvent = 2.0 * Tfree_solvent / Boltz / ctx.Ndegfree_solvent;
-        Tfree_solute = 2.0 * Tfree_solute / Boltz / ctx.Ndegfree_solute;
+        Tfree_solvent = 2.0 * Tfree_solvent / Boltz / (float)ctx.Ndegfree_solvent;
+        Tfree_solute = 2.0 * Tfree_solute / Boltz / (float)ctx.Ndegfree_solute;
         if (Tfree_solvent != 0) ctx.Tscale_solvent = sqrt(1 + (ctx.dt / ctx.tau_T) * (ctx.md.temperature / Tfree_solvent - 1.0));
         if (Tfree_solute != 0) ctx.Tscale_solute = sqrt(1 + (ctx.dt / ctx.tau_T) * (ctx.md.temperature / Tfree_solute - 1.0));
     } else {
         if (ctx.Tfree != 0) ctx.Tscale_solvent = sqrt(1 + (ctx.dt / ctx.tau_T) * (ctx.md.temperature / ctx.Tfree - 1.0));
         ctx.Tscale_solute = ctx.Tscale_solvent;
     }
+
+
+    ss << ctx.E_total.Ukin << ' ' << ctx.Temp << ' ' << ctx.Tfree << ' ' << ctx.Tscale_solvent << ' ' << ctx.Tscale_solute;
+
+    debug(ss.str());
+
+
     printf("Tscale = %f, tau_T = %f, Temp = %f, Tfree = %f\n", ctx.Tscale_solvent, ctx.tau_T, ctx.Temp, ctx.Tfree);
 }
