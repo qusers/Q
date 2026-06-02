@@ -101,8 +101,31 @@ def test_step_counts_and_restraints(neq_inputs):
 def test_per_replicate_placeholders_left_for_runscript(neq_inputs):
     _, tmp_path, _ = neq_inputs
     text = (tmp_path / "neq_0.inp").read_text()
-    for placeholder in ["RESTART_VAR", "FINAL_VAR", "T_VAR", "FEP_VAR"]:
+    for placeholder in ["RESTARTFILE", "FINALFILE", "T_VAR", "FEP_VAR"]:
         assert placeholder in text
+
+
+def test_restart_final_placeholders_survive_temperature_sed(neq_inputs):
+    # The run script runs `sed s/T_VAR/<temp>/` over every .inp; the restart/final
+    # placeholders must not contain "T_VAR" as a substring or they get corrupted
+    # (regression: "RESTART_VAR" -> "RESTAR298").
+    _, tmp_path, _ = neq_inputs
+    for name in ["eq6_0.inp", "neq_0.inp"]:
+        lines = (tmp_path / name).read_text().splitlines()
+        restart_line = next(line for line in lines if line.startswith("restart"))
+        final_line = next(line for line in lines if line.startswith("final"))
+        assert "T_VAR" not in restart_line and "T_VAR" not in final_line
+        assert restart_line.split()[1] == "RESTARTFILE"
+        assert final_line.split()[1] == "FINALFILE"
+
+
+def test_files_section_declares_trajectory(neq_inputs):
+    # Q aborts with "Invalid data in input file" if [intervals] enables trajectory output
+    # but [files] has no trajectory entry (regression).
+    _, tmp_path, _ = neq_inputs
+    for name in ["eq6_0.inp", "neq_0.inp"]:
+        files_section = (tmp_path / name).read_text().split("[files]")[1].split("\n[")[0]
+        assert any(line.startswith("trajectory") for line in files_section.splitlines())
 
 
 def test_neq_runfile_uses_serial_qdyn_neq(tmp_path):

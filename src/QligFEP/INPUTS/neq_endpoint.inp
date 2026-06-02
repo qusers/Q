@@ -32,8 +32,9 @@ non_bond                  25
 
 [files]
 topology                  dualtop.top
-restart                   RESTART_VAR
-final                     FINAL_VAR
+trajectory                neq.dcd
+restart                   RESTARTFILE
+final                     FINALFILE
 fep                       FEP_VAR
 
 [trajectory_atoms]

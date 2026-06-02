@@ -85,13 +85,13 @@ cp eq5.re eq6_1_prev.re
 for rep in $(seq 0 $((neq_reps - 1))); do
     for s in 0 1; do
         # endpoint equilibration step (decorrelates successive switch starts)
-        sed "s|RESTART_VAR|eq6_${s}_prev.re|; s|FINAL_VAR|eq6_${s}_${rep}.re|" \
+        sed "s|RESTARTFILE|eq6_${s}_prev.re|; s|FINALFILE|eq6_${s}_${rep}.re|" \
             eq6_${s}.inp > eq6_${s}_run${rep}.inp
         time $qdyn_neq eq6_${s}_run${rep}.inp > eq6_${s}_${rep}.log
         cp eq6_${s}_${rep}.re eq6_${s}_prev.re
         # switching run: lambda is driven by the [lambda_scaling] section and the
         # accumulated work is written to the log (parsed by qligfep_neq_analyze)
-        sed "s|RESTART_VAR|eq6_${s}_${rep}.re|; s|FINAL_VAR|neq_${s}_${rep}.re|" \
+        sed "s|RESTARTFILE|eq6_${s}_${rep}.re|; s|FINALFILE|neq_${s}_${rep}.re|" \
             neq_${s}.inp > neq_${s}_run${rep}.inp
         time $qdyn_neq neq_${s}_run${rep}.inp > neq_${s}_${rep}.log
     done
