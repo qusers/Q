@@ -370,6 +370,53 @@ module md
 !-------------------------------------------------------------------------------
 contains
 
+subroutine add_debug(message)
+  character(*), intent(in) :: message
+  integer :: unit
+  logical, save :: initialized = .false.
+
+  if (nodeid .ne. 0) return
+
+  if (.not. initialized) then
+    open(newunit=unit, file='debug2.txt', status='replace', action='write')
+    close(unit)
+    initialized = .true.
+  end if
+
+  open(newunit=unit, file='debug2.txt', status='unknown', &
+       position='append', action='write')
+  write(unit,'(a)') trim(message)
+  close(unit)
+end subroutine add_debug
+
+
+subroutine debug_dvelocities()
+  integer :: unit
+  integer :: i, i3
+  logical, save :: flag2 = .false.
+
+  if (nodeid .ne. 0) return
+
+  if (.not. flag2) then
+    open(newunit=unit, file='dvelocities_debug.txt', status='replace', action='write')
+    close(unit)
+    flag2 = .true.
+  end if
+
+  open(newunit=unit, file='dvelocities_debug.txt', status='unknown', &
+       position='append', action='write')
+
+  write(unit,'(i0)') natom
+  do i = 1, natom
+    i3 = 3 * i
+    write(unit,'(i0,1x,f0.8,1x,f0.8,1x,f0.8)') i, d(i3 - 2), d(i3 - 1), d(i3)
+  end do
+
+  write(unit,'(a)') '*******************************************************************************************'
+  close(unit)
+end subroutine debug_dvelocities
+
+
 
 subroutine md_startup
 !!--------------------------------------------------------------------------------
@@ -3828,6 +3875,7 @@ subroutine temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
     !locals
     integer                        :: i, i3
     real(8)                        :: Ekin
+    character(len=256)             :: dbg_line
 
     Temp = 0.
     Temp_solute = 0.
@@ -3853,6 +3901,8 @@ subroutine temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
       end if
     end do
 
+    ! write(dbg_line, '(f0.8,1x,f0.8,1x,f0.8)')  Temp_solute, Tfree_solute, Texcl_solute
+    ! call add_debug(dbg_line)
     Tfree_solvent = 0.
     Temp_solvent = 0.
     Texcl_solvent = 0.
@@ -3878,20 +3928,29 @@ subroutine temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
       end if
     end do
 
+    ! write(dbg_line, '(f0.8,1x,f0.8,1x,f0.8)')  Temp_solvent, Tfree_solvent, Texcl_solvent
+    ! call add_debug(dbg_line)
+
     Tfree = Tfree_solvent + Tfree_solute
     Temp = Temp_solute + Temp_solvent
 
     E%kinetic = Temp
 
     Temp  = 2.0*Temp/boltz/real(Ndegf)
+
+
+    ! write(dbg_line, '(f0.8,1x,f0.8,1x,i0)')  Tfree, boltz, Ndegfree
+    ! call add_debug(dbg_line)
+
     Tfree = 2.0*Tfree/boltz/real(Ndegfree)
 
+    ! write(dbg_line, '(f0.8,1x)') Tfree
+    ! call add_debug(dbg_line)
+
     if (detail_temps) then
-      Temp_solute  = 2.0*Temp_solute /boltz/real(Ndegf_solute)
       Tfree_solute = 2.0*Tfree_solute/boltz/real(Ndegfree_solute)
       if ( Ndegf_solute .ne. Ndegfree_solute) Texcl_solute = 2.0*Texcl_solute/boltz/real(Ndegf_solute - Ndegfree_solute)
 
-      Temp_solvent  = 2.0*Temp_solvent /boltz/real(Ndegf_solvent)
       Tfree_solvent = 2.0*Tfree_solvent/boltz/real(Ndegfree_solvent) ! Eq. S2 Marrink2010
       if ( Ndegf_solvent .ne. Ndegfree_solvent) Texcl_solvent = 2.0*Texcl_solvent/boltz/real(Ndegf_solvent - Ndegfree_solvent)
     end if
@@ -3907,6 +3966,9 @@ subroutine temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
       Tscale_solvent = sqrt ( 1 + dt/tau_T * Tscale_solvent )
       Tscale_solute = Tscale_solvent
     end if
+
+    ! write(dbg_line, '(f0.8,1x,f0.8,1x,f0.8,1x,f0.8,1x,f0.8)') E%kinetic, Temp, Tfree, Tscale_solvent, Tscale_solute
+    ! call add_debug(dbg_line)
 
 
 180 format ('>>> WARNING: hot atom, i =',i10,' Temp(i)=',f10.2)
@@ -8978,6 +9040,10 @@ subroutine nonbon2_pp
   real(8)                                         :: Velb,V_ab,V_bb,dvb
   type(NB_TYPE), pointer          :: pa
   type(NB_TYPE), pointer          :: pb
+  character(len=256)              :: dbg_line
+  real(8)                         :: scalinga
+  real(8)                         :: scalingb
+
 
   ! global variables used:
   !  iaclib, x, crg, el14_scale, d, E
@@ -9018,10 +9084,14 @@ subroutine nonbon2_pp
     ! calculate Vel and dv
     Vela  = crg(pa%i)*crg(pa%j)*ra  
     Velb  = crg(pb%i)*crg(pb%j)*rb  
+    scalinga = 1.0
+    scalingb = 1.0
     if ( pa%LJcod .eq. 3 ) then
+      scalinga = el14_scale
       Vela = Vela*el14_scale
     end if
     if ( pb%LJcod .eq. 3 ) then
+      scalingb = el14_scale
       Velb = Velb*el14_scale
     end if
     V_aa  = bLJa*aLJa*aLJa*r6a*r6a 
@@ -9047,6 +9117,15 @@ subroutine nonbon2_pp
 
     ! update energies
     E%pp%el  = E%pp%el + Vela + Velb
+
+    ! write(dbg_line, '(i0,1x,i0,1x,f0.8,1x,f0.8,1x,f0.8,1x,f0.8,1x,f0.8,1x,f0.8)') pa%i, pa%j, Vela, scalinga, coulomb_constant, crg(pa%i), crg(pa%j), ra
+    ! call add_debug(dbg_line)
+    ! write(dbg_line, '(i0,1x,i0,1x,f0.8,1x,f0.8,1x,f0.8,1x,f0.8,1x,f0.8,1x,f0.8)') pb%i, pb%j, Velb, scalingb, coulomb_constant, crg(pb%i), crg(pb%j), rb
+    ! call add_debug(dbg_line)
+    ! write(dbg_line, '(i0,1x,i0,1x,f0.8,1x,f0.8,1x)') pa%i, pa%j, V_aa, V_ba
+    ! call add_debug(dbg_line)
+    ! write(dbg_line, '(i0,1x,i0,1x,f0.8,1x,f0.8,1x)') pb%i, pb%j, V_ab, V_bb
+    ! call add_debug(dbg_line)
     E%pp%vdw = E%pp%vdw + V_aa - V_ba + V_ab - V_bb
   end do
 
@@ -9083,6 +9162,9 @@ subroutine nonbon2_pp
     d(pa%j*3-0) = d(pa%j*3-0) + dva*dx3a
 
     E%pp%el  = E%pp%el + Vela 
+
+    ! write(dbg_line, '(i0,1x,i0,1x,f0.8,1x,f0.8,1x)') pa%i, pa%j, V_aa, V_ba
+    ! call add_debug(dbg_line)
     E%pp%vdw = E%pp%vdw + V_aa - V_ba 
   end if
 
@@ -13574,6 +13656,7 @@ subroutine pot_energy_nonbonds
         end if
       case(VDW_ARITHMETIC)
         call nonbon2_pp
+        call debug_dvelocities
         call nonbon2_qp
         if(natom > nat_solute) then !if any solvent
           call nonbon2_pw

@@ -20,6 +20,7 @@ program qdyn
 
   use md
   use mpiglob
+  use debug, only: output_ctx_in_file
 
 #if defined (_DF_VERSION_)
   use dfport ! portability lib for signals. Used in windows.
@@ -117,9 +118,8 @@ program qdyn
   ! among the nodes
   call distribute_nonbonds
 
-  
 
-
+  call output_ctx_in_file
 
 
 

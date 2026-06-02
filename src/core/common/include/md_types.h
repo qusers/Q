@@ -113,7 +113,7 @@ struct charge_t {
 
 struct ccharge_t {
     int code;
-    real_t charge;
+    float charge;
 };
 
 struct atype_t {

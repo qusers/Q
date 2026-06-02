@@ -10,11 +10,14 @@ void Handler::run_iteration(int iteration) {
     // 1. temperature calculation
     calc_temperature();
 
-    // 2. bonded forces and some constraints calculations
-    calc_internal_forces(iteration);
+
 
     // 3. nonbonded forces
     calc_nonbonded_forces();
+
+
+    // 2. bonded forces and some constraints calculations
+    calc_internal_forces(iteration);
 
     // 5. leapfrog integration
     calc_leapfrog();

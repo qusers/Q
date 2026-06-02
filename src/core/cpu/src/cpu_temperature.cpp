@@ -75,9 +75,9 @@ void calc_temperature() {
     }
 
 
-    ss << ctx.E_total.Ukin << ' ' << ctx.Temp << ' ' << ctx.Tfree << ' ' << ctx.Tscale_solvent << ' ' << ctx.Tscale_solute;
+    // ss << ctx.E_total.Ukin << ' ' << ctx.Temp << ' ' << ctx.Tfree << ' ' << ctx.Tscale_solvent << ' ' << ctx.Tscale_solute;
 
-    debug(ss.str());
+    // debug(ss.str());
 
 
     printf("Tscale = %f, tau_T = %f, Temp = %f, Tfree = %f\n", ctx.Tscale_solvent, ctx.tau_T, ctx.Temp, ctx.Tfree);

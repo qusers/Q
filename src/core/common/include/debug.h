@@ -46,6 +46,7 @@ inline void output_dvelocity(std::ofstream& file, const dvel_t& x) {
 inline void output_dvelocities(std::ofstream& file, const HostDeviceBuffer<dvel_t>& dvelocities) {
     file << dvelocities.length << '\n';
     for (int i = 0; i < dvelocities.length; i++) {
+        file << i << ' ';
         output_dvelocity(file, dvelocities.cpu_data_p[i]);
     }
 }
@@ -115,4 +116,19 @@ inline void debug(const std::string& s) {
     std::ofstream file("./debug.txt", std::ios::app);
     file << std::fixed << std::setprecision(8);
     file << s << '\n';
+}
+
+inline void debug_dvelocities() {
+    static bool flag2 = false;
+    if (!flag2) {
+        std::ofstream("./dvelocities_debug.txt", std::ios::trunc).close();
+        flag2 = true;
+    }
+
+    std::ofstream file("./dvelocities_debug.txt", std::ios::app);
+    file << std::fixed << std::setprecision(8);
+
+    auto& ctx = Context::instance();
+    output_dvelocities(file, *ctx.dvelocities);
+    file << "*******************************************************************************************\n";
 }

@@ -23,6 +23,7 @@
 #include "cpu_restrseq_force.h"
 #include "cpu_restrwall_force.h"
 #include "cpu_temperature.h"
+#include "debug.h"
 
 namespace {
 
@@ -66,8 +67,10 @@ void CpuHandler::calc_internal_forces(int iteration) {
 }
 
 void CpuHandler::calc_nonbonded_forces() {
-    calc_nonbonded_qp_forces();
     calc_nonbonded_pp_forces();
+    debug_dvelocities();
+
+    calc_nonbonded_qp_forces();
     calc_nonbonded_ww_forces();
     calc_nonbonded_pw_forces();
     calc_nonbonded_qw_forces();
