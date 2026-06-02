@@ -397,6 +397,10 @@ subroutine debug_dvelocities()
 
   if (nodeid .ne. 0) return
 
+
+  if (flag2) return
+
+
   if (.not. flag2) then
     open(newunit=unit, file='dvelocities_debug.txt', status='replace', action='write')
     close(unit)
@@ -867,6 +871,7 @@ real(8) function angle(istart, iend)
   real(8)                                         :: bjiinv, bjkinv, bji2inv, bjk2inv
   real(8)                                         :: scp,angv,da,dv,f1
   real(8)                                         :: rji(3),rjk(3),di(3),dk(3)
+  character(len=256)                              :: dbg_line
 
   ! global variables used:
   ! ang, x, anglib, d
@@ -913,6 +918,10 @@ real(8) function angle(istart, iend)
 
     ! calculate da and dv
     da = angv - anglib(ic)%ang0
+
+    ! write(dbg_line, '(i0,1x,i0,1x,i0,1x,f0.8)') i, j, k, da
+    ! call add_debug(dbg_line)
+
     angle = angle + 0.5*anglib(ic)%fk*da**2
     dv = anglib(ic)%fk*da
 
@@ -13163,6 +13172,7 @@ subroutine p_restrain
     end if
   end do
 
+
   ! atom-atom distance restraints (Q-state dependent)
   do ir = 1, nrstr_dist
     istate = rstdis(ir)%ipsi
@@ -13471,6 +13481,7 @@ subroutine pot_energy
         call nonbond_qq
       elseif ( ivdw_rule .eq. 2 ) then
         call nonbon2_qq
+        call debug_dvelocities
       end if
     else
       if ( ivdw_rule .eq. 1 ) then
@@ -13656,7 +13667,6 @@ subroutine pot_energy_nonbonds
         end if
       case(VDW_ARITHMETIC)
         call nonbon2_pp
-        call debug_dvelocities
         call nonbon2_qp
         if(natom > nat_solute) then !if any solvent
           call nonbon2_pw
@@ -15209,6 +15219,8 @@ subroutine watpol
   real(8)                                         :: tmin,arg,avtdum,dv,f0
   real(8), save                                   :: f1(9),f2(3)
   real(8), save                                   :: rmu(3),rcu(3)
+  character(len=256)             :: dbg_line
+
 
   ! global variables used:
   !  E, wshell, bndw0, deg2rad, angw0, nwat, theta, theta0, nat_pro, x, xwcent,
@@ -15254,6 +15266,9 @@ subroutine watpol
       end do
       wshell(is)%n_insh = wshell(is)%n_insh + 1
       list_sh(wshell(is)%n_insh,is) = iw
+
+      ! write(dbg_line, '(i0,1x,i0)') i, is
+      ! call add_debug(dbg_line)
     end if
   end do
 
@@ -15304,6 +15319,7 @@ subroutine watpol
       if ( theta0(il) .lt. 0.0 ) theta0(il) = 0.0
       if ( theta0(il) .gt. pi)   theta0(il) = pi
 
+
       avtdum = avtdum + theta(iw)
 
       E%restraint%water_pol = E%restraint%water_pol + 0.5*fkwpol* &
@@ -15339,6 +15355,9 @@ subroutine watpol
       if ( abs(f0) .lt. 1.e-12 ) f0 = 1.e-12
       f0 = -1.0 / f0
       f0 = dv*f0
+
+      ! write(dbg_line, '(i0,1x,f0.8)') iw, f0
+      ! call add_debug(dbg_line)
 
       f1(1) = -2.*(rcu(1)-rmu(1)*scp)/rm
       f1(2) = -2.*(rcu(2)-rmu(2)*scp)/rm

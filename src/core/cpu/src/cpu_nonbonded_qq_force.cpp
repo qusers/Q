@@ -15,7 +15,7 @@ void calc_nonbonded_qq_forces() {
     auto *excluded = ctx.excluded->cpu_data_p;
     auto *q_elscales = ctx.q_elscales->cpu_data_p;
     int ai, aj;
-    real_t crg_i, crg_j;
+    float crg_i, crg_j;
     real_t elscale, scaling;
     bool bond23, bond14;
     coord_t da;
@@ -32,6 +32,8 @@ void calc_nonbonded_qq_forces() {
 
                 crg_i = ctx.unified_ccharge(ai, state).charge;
                 crg_j = ctx.unified_ccharge(aj, state).charge;
+                crg_i *= sqrt(ctx.topo.coulomb_constant);
+                crg_j *= sqrt(ctx.topo.coulomb_constant);
 
                 bond23 = LJ_matrix[ai * ctx.n_atoms_solute + aj] == 3;
                 bond14 = LJ_matrix[ai * ctx.n_atoms_solute + aj] == 1;
@@ -58,7 +60,7 @@ void calc_nonbonded_qq_forces() {
                 ra = static_cast<real_t>(std::sqrt(r2a));
                 r6a = r2a * r2a * r2a;
 
-                Vela = static_cast<real_t>(scaling * ctx.topo.coulomb_constant * elscale) * crg_i * crg_j * ra;
+                Vela =  crg_i * crg_j * ra * elscale * scaling;
 
                 ai_aii = bond14 ? qi_type.aii_1_4 : qi_type.aii_normal;
                 aj_aii = bond14 ? qj_type.aii_1_4 : qj_type.aii_normal;

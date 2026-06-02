@@ -167,7 +167,7 @@ void calc_polx_w_forces(int iteration) {
             }
             f0 = -1.0f / f0;
             f0 *= dv;
-            ss << ii << ' ' << f0 << '\n';
+            // ss << ii << ' ' << f0 << '\n';
 
             f1O.x = -2 * (rcu.x - rmu.x * cos_th) / rm;
             f1O.y = -2 * (rcu.y - rmu.y * cos_th) / rm;
@@ -197,5 +197,5 @@ void calc_polx_w_forces(int iteration) {
         wshells[is].avtheta += avtdum / (float)wshells[is].n_inshell;
         wshells[is].avn_inshell += wshells[is].n_inshell;
     }
-    debug(ss.str());
+    // debug(ss.str());
 }

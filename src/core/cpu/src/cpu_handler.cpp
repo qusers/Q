@@ -39,7 +39,6 @@ void calc_restraint_forces(int iteration, Context& ctx) {
         calc_radix_w_forces();
         if (ctx.md.polarisation) {
             calc_polx_w_forces(iteration);
-            debug_dvelocities();
         }
     }
 
@@ -68,6 +67,7 @@ void CpuHandler::calc_internal_forces(int iteration) {
     // calc_q_bonded_forces(ctx);
 
     calc_nonbonded_qq_forces();
+    debug_dvelocities();
 
 }
 
