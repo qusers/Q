@@ -30,9 +30,9 @@ void calc_restrpos_forces() {
             lambda = 1;
         }
 
-        x2 = pow(dr.x, 2);
-        y2 = pow(dr.y, 2);
-        z2 = pow(dr.z, 2);
+        x2 = dr.x * dr.x;
+        y2 = dr.y * dr.y;
+        z2 = dr.z * dr.z;
 
         ener = .5 * restrspos[ir].k.x * x2 + .5 * restrspos[ir].k.y * y2 + .5 * restrspos[ir].k.z * z2;
 
