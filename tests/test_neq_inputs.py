@@ -136,6 +136,7 @@ def test_neq_runfile_uses_serial_qdyn_neq(tmp_path):
     assert "$qdyn_neq" in script
     assert "qdyn_neq=" in script  # the QDYN_NEQ binary path was substituted in
     assert "mpirun" not in script  # qdyn_neq is serial
+    assert "#SBATCH --ntasks-per-node=1" in script  # serial -> one core (budget)
     assert "neq_reps=3" in script
     assert "#SBATCH --array=1-4" in script
     assert "qfep" not in script  # NEQ uses BAR, not the windowed qfep step

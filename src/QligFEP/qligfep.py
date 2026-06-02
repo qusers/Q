@@ -898,6 +898,7 @@ class QligFEP:
         replacements = CLUSTER_DICT[self.cluster]
         replacements["FEPS"] = "FEP1.fep"
         replacements["NEQ_REPS"] = str(self.neq_reps)
+        replacements["NTASKS"] = "1"  # qdyn_neq is serial, so reserve a single core
         with open(src) as infile, open(tgt, "w") as outfile:
             for line in infile:
                 if line.strip() == "#SBATCH --array=1-TOTAL_JOBS":

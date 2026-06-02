@@ -2,7 +2,7 @@
 #
 #SBATCH --nodes=NODES
 #SBATCH --ntasks-per-node=NTASKS
-#SBATCH --mem-per-cpu=512  # more than enough for 25A sphere size FEP
+#SBATCH --mem-per-cpu=4000  # qdyn_neq is serial; one core with enough memory
 #SBATCH -A ACCOUNT
 #              d-hh:mm:ss
 #SBATCH --time=TIME
