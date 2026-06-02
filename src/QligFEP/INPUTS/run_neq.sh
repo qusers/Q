@@ -2,7 +2,7 @@
 #
 #SBATCH --nodes=NODES
 #SBATCH --ntasks-per-node=NTASKS
-#SBATCH --mem-per-cpu=2000
+#SBATCH --mem-per-cpu=1700  # stay at/below the per-core memory so billing matches the core count
 #SBATCH -A ACCOUNT
 #              d-hh:mm:ss
 #SBATCH --time=TIME
