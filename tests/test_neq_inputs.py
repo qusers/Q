@@ -128,15 +128,18 @@ def test_files_section_declares_trajectory(neq_inputs):
         assert any(line.startswith("trajectory") for line in files_section.splitlines())
 
 
-def test_neq_runfile_uses_serial_qdyn_neq(tmp_path):
+def test_neq_runfile_parallelizes_switches(tmp_path):
     run = make_run()
     run.write_MD_neq(str(tmp_path), 10, 12, [(1, 2)])
     run.write_neq_runfile(str(tmp_path), [])
     script = (tmp_path / "runSNELLIUS.sh").read_text()
-    assert "$qdyn_neq" in script
-    assert "qdyn_neq=" in script  # the QDYN_NEQ binary path was substituted in
-    assert "mpirun" not in script  # qdyn_neq is serial
-    assert "#SBATCH --ntasks-per-node=1" in script  # serial -> one core (budget)
+    # equilibration uses the MPI engine across all cores; switches use the serial engine
+    assert "qdyn=" in script and "$qdyn " in script  # qdynp (MPI) for equilibration
+    assert "qdyn_neq=" in script and "$qdyn_neq " in script  # qdyn_neq (serial) for switches
+    # switches are packed one-per-core via mpirun binding (Snellius bills the whole node)
+    assert "mpirun" in script
+    assert "--bind-to core" in script
+    assert "#SBATCH --ntasks-per-node=16" in script  # use the billed cores
     assert "neq_reps=3" in script
     assert "#SBATCH --array=1-4" in script
     assert "qfep" not in script  # NEQ uses BAR, not the windowed qfep step

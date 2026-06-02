@@ -2,7 +2,7 @@
 #
 #SBATCH --nodes=NODES
 #SBATCH --ntasks-per-node=NTASKS
-#SBATCH --mem-per-cpu=4000  # qdyn_neq is serial; one core with enough memory
+#SBATCH --mem-per-cpu=2000
 #SBATCH -A ACCOUNT
 #              d-hh:mm:ss
 #SBATCH --time=TIME
@@ -20,11 +20,13 @@ runs=${#seeds[@]}
 workdir="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
 inputfiles=$workdir/inputfiles
 fepfile=FEPS
+ncores=$SLURM_NTASKS
 
 # Debug prints
 echo "Number of temperatures: ${#temperatures[@]}"
 echo "Number of runs: $runs"
 echo "Array task ID: $SLURM_ARRAY_TASK_ID"
+echo "Cores available: $ncores"
 
 # Validate inputs
 if [ -z "$runs" ] || [ "$runs" -eq 0 ]; then
@@ -43,10 +45,11 @@ run_num=$((TID % runs + 1))
 temperature=${temperatures[$temp_idx]}
 seed=${seeds[$run_num-1]}
 
-## Load modules for qdyn_neq
+## Load modules
 MODULES
 
-## define qdyn_neq location
+## define the MPI equilibration engine (qdynp) and serial switching engine (qdyn_neq)
+QDYN
 QDYN_NEQ
 
 starttime=$(date +%s)
@@ -70,31 +73,56 @@ sed -i "s/SEED_VAR/$seed/" eq1.inp
 sed -i "s/T_VAR/$temperature/" *.inp
 sed -i "s/FEP_VAR/$fepfile/" *.inp
 
-# Equilibration eq1 -> eq5 (no [lambda_scaling] section: plain equilibrium MD)
+# 1) Equilibration eq1 -> eq5 with the MPI engine across all cores (fixed lambda)
 for i in 1 2 3 4 5; do
-    time $qdyn_neq eq$i.inp > eq$i.log
+    time mpirun -np $ncores --bind-to core $qdyn eq$i.inp > eq$i.log
 done
 
-# Seed both endpoint equilibrations from the equilibrated eq5 snapshot
+# 2) Endpoint equilibration chain (MPI): one continuous trajectory per endpoint,
+# saving a checkpoint per replicate to decorrelate the switch starting points.
+# State 0 sits at lambda (0 1), state 1 at (1 0).
 cp eq5.re eq6_0_prev.re
 cp eq5.re eq6_1_prev.re
-
-# For each realization, advance a continuous endpoint equilibration (eq6) and
-# fire a switch from each fresh snapshot. State 0 sweeps lambda 0->1 (reverse,
-# logged as neq_0); state 1 sweeps lambda 1->0 (forward, logged as neq_1).
 for rep in $(seq 0 $((neq_reps - 1))); do
     for s in 0 1; do
-        # endpoint equilibration step (decorrelates successive switch starts)
         sed "s|RESTARTFILE|eq6_${s}_prev.re|; s|FINALFILE|eq6_${s}_${rep}.re|" \
             eq6_${s}.inp > eq6_${s}_run${rep}.inp
-        time $qdyn_neq eq6_${s}_run${rep}.inp > eq6_${s}_${rep}.log
+        time mpirun -np $ncores --bind-to core $qdyn eq6_${s}_run${rep}.inp > eq6_${s}_${rep}.log
         cp eq6_${s}_${rep}.re eq6_${s}_prev.re
-        # switching run: lambda is driven by the [lambda_scaling] section and the
-        # accumulated work is written to the log (parsed by qligfep_neq_analyze)
+    done
+done
+
+# 3) Lambda switches with the serial engine, one per core. Each switch only needs
+# its own eq6 checkpoint, so they are independent and run concurrently: mpirun
+# launches one rank per switch, --bind-to core pins each to its own core, and the
+# launcher routes each rank to its (input, log) pair. State 1 (1->0) is the forward
+# work logged as neq_1; state 0 (0->1) is the reverse work logged as neq_0.
+: > switch_list.txt
+for rep in $(seq 0 $((neq_reps - 1))); do
+    for s in 0 1; do
         sed "s|RESTARTFILE|eq6_${s}_${rep}.re|; s|FINALFILE|neq_${s}_${rep}.re|" \
             neq_${s}.inp > neq_${s}_run${rep}.inp
-        time $qdyn_neq neq_${s}_run${rep}.inp > neq_${s}_${rep}.log
+        echo "neq_${s}_run${rep}.inp neq_${s}_${rep}.log" >> switch_list.txt
     done
+done
+
+cat > neq_launch.sh <<EOF
+#!/bin/bash
+# one switch per MPI rank: read this rank's (input, log) from the list
+idx=\$(( OMPI_COMM_WORLD_RANK + 1 + \${BATCH_OFFSET:-0} ))
+line=\$(sed -n "\${idx}p" switch_list.txt)
+[ -z "\$line" ] && exit 0
+set -- \$line
+$qdyn_neq "\$1" > "\$2"
+EOF
+chmod +x neq_launch.sh
+
+nsw=$(wc -l < switch_list.txt)
+for (( off=0; off<nsw; off+=ncores )); do
+    remaining=$(( nsw - off ))
+    np=$(( remaining < ncores ? remaining : ncores ))
+    export BATCH_OFFSET=$off
+    time mpirun -x BATCH_OFFSET --bind-to core -np $np ./neq_launch.sh
 done
 
 #CLEANUP
