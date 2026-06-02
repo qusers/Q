@@ -5,6 +5,7 @@
 #include "constants.h"
 #include "context.h"
 #include "vdw_rules.h"
+#include "debug.h"
 
 void calc_nonbonded_qp_forces() {
     auto& ctx = Context::instance();
@@ -20,6 +21,7 @@ void calc_nonbonded_qp_forces() {
     bool bond23, bond14;
     real_t scaling;
     real_t Vel, V_a, V_b, dv;
+
 
     for (int qi = 0; qi < ctx.n_qatoms; qi++) {
         for (int pj = 0; pj < ctx.n_patoms; pj++) {
@@ -52,8 +54,12 @@ void calc_nonbonded_qp_forces() {
                 ai_bii = bond14 ? qi_type.bii_1_4 : qi_type.bii_normal;
                 aj_bii = bond14 ? aj_type.bii_1_4 : aj_type.bii_normal;
 
-                Vel = static_cast<real_t>(ctx.topo.coulomb_constant * scaling) *
-                      ctx.unified_ccharge(i, state).charge * ctx.unified_ccharge(j, state).charge * r;
+                float crg_i = ctx.unified_ccharge(i, state).charge;
+                float crg_j = ctx.unified_ccharge(j, state).charge;
+                crg_i *= sqrt(ctx.topo.coulomb_constant);
+                crg_j *= sqrt(ctx.topo.coulomb_constant);
+
+                Vel = crg_i * crg_j * r * scaling;
                 if (ctx.topo.vdw_rule == VDW_GEOMETRIC) {
                     calc_vdw_geometric(ai_aii, aj_aii, ai_bii, aj_bii, r6inv, &V_a, &V_b);
                 } else {
