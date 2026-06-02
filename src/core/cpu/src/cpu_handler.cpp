@@ -68,13 +68,11 @@ void CpuHandler::calc_internal_forces(int iteration) {
 
 void CpuHandler::calc_nonbonded_forces() {
     calc_nonbonded_pp_forces();
-    debug_dvelocities();
-
     calc_nonbonded_qp_forces();
-    calc_nonbonded_ww_forces();
     calc_nonbonded_pw_forces();
     calc_nonbonded_qw_forces();
-    calc_nonbonded_qq_forces();
+    calc_nonbonded_ww_forces();
+    // calc_nonbonded_qq_forces();
 }
 
 void CpuHandler::calc_temperature() {

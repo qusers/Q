@@ -86,10 +86,10 @@ struct torsion_t {
 
 struct ctorsion_t {
     int code;
-    real_t k;
-    real_t n;
-    real_t d;
-    real_t paths;
+    float k;
+    float n;
+    float d;
+    float paths;
 };
 
 struct improper_t {
@@ -102,8 +102,8 @@ struct improper_t {
 
 struct cimproper_t {
     int code;
-    real_t k;
-    real_t phi0;
+    float k;
+    float phi0;
 };
 
 struct charge_t {

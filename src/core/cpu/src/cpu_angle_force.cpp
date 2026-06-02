@@ -1,4 +1,5 @@
 #include "cpu_angle_force.h"
+#include "debug.h"
 
 #include <math.h>
 
@@ -24,6 +25,8 @@ real_t calc_angle_forces(int start, int end) {
     auto &angles = ctx.angles->cpu_data_p;
     auto &cangles = ctx.cangles->cpu_data_p;
 
+    std::ostringstream ss;
+    ss << std::fixed << std::setprecision(8);
     for (int i = start; i < end; i++) {
         aii = angles[i].ai - 1;
         aji = angles[i].aj - 1;
@@ -43,23 +46,24 @@ real_t calc_angle_forces(int start, int end) {
         rjk.z = ak.z - aj.z;
 
         // Calculate inverse of norm of dist vector and their squares
-        bji2inv = 1 / (rji.x * rji.x + rji.y * rji.y + rji.z * rji.z);
-        bjk2inv = 1 / (rjk.x * rjk.x + rjk.y * rjk.y + rjk.z * rjk.z);
+        bji2inv = 1.0 / (rji.x * rji.x + rji.y * rji.y + rji.z * rji.z);
+        bjk2inv = 1.0 / (rjk.x * rjk.x + rjk.y * rjk.y + rjk.z * rjk.z);
         bjiinv = sqrt(bji2inv);
         bjkinv = sqrt(bjk2inv);
 
         // Calculate cosine of angle and angle (th)
         cos_th = (rji.x * rjk.x + rji.y * rjk.y + rji.z * rjk.z) * bjiinv * bjkinv;
 
-        if (cos_th > 1) {
-            cos_th = 1;
-        } else if (cos_th < -1) {
-            cos_th = -1;
+        if (cos_th > 1.0) {
+            cos_th = 1.0;
+        } else if (cos_th < -1.0) {
+            cos_th = -1.0;
         }
 
         th = acos(cos_th);
 
         dth = th - to_radians(cangle.th0);
+        ss << aii << ' ' << aji << ' ' << aki << ' ' << dth << '\n';
         ener = .5 * cangle.kth * pow(dth, 2);
         dv = cangle.kth * dth;
 
@@ -97,6 +101,7 @@ real_t calc_angle_forces(int start, int end) {
 
         // printf("ANGLE ener = %f\n", ener);
     }
+    debug(ss.str());
 
     return angle;
 }

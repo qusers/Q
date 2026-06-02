@@ -20,6 +20,10 @@ real_t to_degrees(real_t radians) {
     return radians * (180.0 / M_PI);
 }
 
+
+
+
 real_t to_radians(real_t degrees) {
-    return degrees * (M_PI / 180.0);
+    const real_t PI = 4.0 * atanf(1.0);
+    return degrees * (PI / 180.0);
 }
