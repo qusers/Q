@@ -242,6 +242,19 @@ def parse_arguments(program: str) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--single-hamiltonian",
+        dest="single_hamiltonian",
+        action="store_true",
+        help=(
+            "Enable single-Hamiltonian (parameter-interpolation) FEP: lambda "
+            "interpolates eps/sigma/q within one Hamiltonian wrapped in the "
+            "soft-core, so the soft-core actually fires (future-prospect-softcore.md "
+            "9.2). Use together with '-sc gapsys'. Writes 'single_hamiltonian on' to "
+            "the FEP file; the dual-topology layout is kept and the engine adds "
+            "cross-ligand exclusion automatically."
+        ),
+    )
+    parser.add_argument(
         "-cm",
         "--charge-method",
         dest="charge_method",

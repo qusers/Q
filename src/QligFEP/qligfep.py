@@ -349,7 +349,8 @@ class QligFEP:
         return FEP_vdw
 
     def write_FEP_file(
-        self, change_charges, change_vdw, FEP_vdw, writedir, lig_size1, lig_size2, softcore_method="standard"
+        self, change_charges, change_vdw, FEP_vdw, writedir, lig_size1, lig_size2,
+        softcore_method="standard", single_hamiltonian=False,
     ):
         lig_size1 = int(lig_size1)
         lig_size2 = int(lig_size2)
@@ -379,6 +380,8 @@ class QligFEP:
             outfile.write("softcore_use_max_potential on\n")
             if softcore_method != "standard":
                 outfile.write(f"softcore_method {softcore_method}\n")
+            if single_hamiltonian:
+                outfile.write("single_hamiltonian on\n")
             outfile.write("\n")
 
             # defining the atom order taken user given offset into account

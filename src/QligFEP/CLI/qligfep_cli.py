@@ -44,6 +44,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "random_state": args.random_state,
             "wath_ligand_only": args.wath_ligand_only,
             "softcore_method": args.softcore_method,
+            "single_hamiltonian": args.single_hamiltonian,
             "charge_method": args.charge_method,
         }
         if args.protein_charge is not None:
@@ -53,8 +54,10 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     param_dict.update(kwargs)
     setup_logger(level=args.log.upper())
     softcore_method = param_dict.pop("softcore_method", "standard")
+    single_hamiltonian = param_dict.pop("single_hamiltonian", False)
     run = QligFEP(**param_dict)
     param_dict["softcore_method"] = softcore_method
+    param_dict["single_hamiltonian"] = single_hamiltonian
 
     writedir = run.makedir()
     inputdir = writedir + "/inputfiles"
@@ -78,6 +81,9 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         elif k == "softcore_method":
             if v != "standard":
                 command_str += f" --softcore-method {v}"
+        elif k == "single_hamiltonian":
+            if v:
+                command_str += " --single-hamiltonian"
         elif k == "charge_method":
             if v != "ion_match":
                 command_str += f" --charge-method {v}"
@@ -153,6 +159,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         lig_size1,
         lig_size2,
         softcore_method=softcore_method,
+        single_hamiltonian=single_hamiltonian,
     )
     overlapping_atoms = run.set_restraints(writedir, args.restraint_method, strict_check=True)
 
