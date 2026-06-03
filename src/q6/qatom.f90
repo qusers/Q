@@ -201,6 +201,17 @@ module qatom
   ! co-located and would clash once both carry partial epsilon at intermediate
   ! lambda (soft-core bounds a pair but not the sum over many pairs).
   integer, allocatable                    :: sh_group(:)
+  ! Foreign-lambda free-energy estimator (Phase 2): at each energy-output step
+  ! the single-Hamiltonian q-atom nonbonded energy is re-evaluated at every
+  ! listed coupling value and written to <ene_file>.fl for offline BAR/MBAR.
+  ! Only the q nonbonded energy depends on lambda, so U(lc')-U(lc) = qx(lc')-qx(lc).
+  integer                                 :: n_foreign_lambda = 0
+  real(8), allocatable                    :: foreign_lambda(:)
+  ! Scratch interpolation arrays (sized like sh_*) for the foreign-lambda re-eval,
+  ! so the run-lambda sh_* arrays driving the forces are never disturbed.
+  real(8), allocatable                    :: shf_avdw(:,:), shf_bvdw(:,:)
+  real(8), allocatable                    :: shf_qcrg(:), shf_decouple(:)
+  integer, allocatable                    :: shf_group(:)
 
   !-----------------------------------------------------------------------
   !       fep/evb energies
@@ -265,6 +276,12 @@ subroutine qatom_shutdown
   if (allocated(sh_qcrg)) deallocate(sh_qcrg)
   if (allocated(sh_decouple)) deallocate(sh_decouple)
   if (allocated(sh_group)) deallocate(sh_group)
+  if (allocated(shf_avdw)) deallocate(shf_avdw)
+  if (allocated(shf_bvdw)) deallocate(shf_bvdw)
+  if (allocated(shf_qcrg)) deallocate(shf_qcrg)
+  if (allocated(shf_decouple)) deallocate(shf_decouple)
+  if (allocated(shf_group)) deallocate(shf_group)
+  if (allocated(foreign_lambda)) deallocate(foreign_lambda)
 end subroutine qatom_shutdown
 
 
@@ -2048,31 +2065,50 @@ subroutine single_h_init(nstates_in)
 !! for a single interpolated potential.
 !!-------------------------------------------------------------------------------
   integer, intent(in) :: nstates_in
-  integer :: iq, slot, ia, ib, nslot
-  real(8) :: lc, oml, aA, aB, bA, bB
-  logical :: dum_a, dum_b
-  real(8), parameter :: TINY_LJ = 1.0e-10_8
+  integer :: nslot
 
   if(.not. use_single_hamiltonian) return
 
-  lc  = EQ(2)%lambda          ! coupling: 0 = endpoint A, 1 = endpoint B
-  oml = 1.0_8 - lc
   nslot = size(qavdw, 2)
 
-  if(allocated(sh_avdw))     deallocate(sh_avdw)
-  if(allocated(sh_bvdw))     deallocate(sh_bvdw)
-  if(allocated(sh_qcrg))     deallocate(sh_qcrg)
-  if(allocated(sh_decouple)) deallocate(sh_decouple)
-  if(allocated(sh_group))    deallocate(sh_group)
-  allocate(sh_avdw(nqat, nslot), sh_bvdw(nqat, nslot))
-  allocate(sh_qcrg(nqat), sh_decouple(nqat), sh_group(nqat))
+  if(allocated(sh_avdw))  deallocate(sh_avdw, sh_bvdw, sh_qcrg, sh_decouple, sh_group)
+  if(allocated(shf_avdw)) deallocate(shf_avdw, shf_bvdw, shf_qcrg, shf_decouple, shf_group)
+  allocate(sh_avdw(nqat, nslot),  sh_bvdw(nqat, nslot),  sh_qcrg(nqat),  sh_decouple(nqat),  sh_group(nqat))
+  allocate(shf_avdw(nqat, nslot), shf_bvdw(nqat, nslot), shf_qcrg(nqat), shf_decouple(nqat), shf_group(nqat))
+
+  ! Interpolate at the run's coupling lambda_c = EQ(2)%lambda (0 = A, 1 = B).
+  call single_h_interp(EQ(2)%lambda, sh_avdw, sh_bvdw, sh_qcrg, sh_decouple, sh_group)
+
+  write(*,'(a,i4,a,i4,a,i4,a)') &
+       'Single-Hamiltonian groups: vanishing(1)=', count(sh_group==1), &
+       ' appearing(2)=', count(sh_group==2), &
+       ' shared(0)=', count(sh_group==0), '.'
+end subroutine single_h_init
+
+!-------------------------------------------------------------------------
+
+subroutine single_h_interp(lc, avdw, bvdw, qcrg_o, decouple, group)
+!! Fill per-q-atom interpolated LJ/charge + decoupling factor + topology group
+!! at coupling lc (0 = endpoint A = state 1, 1 = endpoint B = state 2), in Q's
+!! storage convention. Used both for the run's lambda (-> sh_*) and for the
+!! foreign-lambda free-energy re-evaluation (-> shf_*).
+  real(8), intent(in)  :: lc
+  real(8), intent(out) :: avdw(:,:), bvdw(:,:), qcrg_o(:), decouple(:)
+  integer, intent(out) :: group(:)
+  integer :: iq, slot, ia, ib, nslot
+  real(8) :: oml, aA, aB, bA, bB
+  logical :: dum_a, dum_b
+  real(8), parameter :: TINY_LJ = 1.0e-10_8
+
+  oml = 1.0_8 - lc
+  nslot = size(qavdw, 2)
 
   do iq = 1, nqat
     ia = qiac(iq, 1)          ! endpoint-A LJ type index
     ib = qiac(iq, 2)          ! endpoint-B LJ type index
 
     ! Interpolated charge (real(4) endpoints, real(8) result).
-    sh_qcrg(iq) = oml*real(qcrg(iq,1),8) + lc*real(qcrg(iq,2),8)
+    qcrg_o(iq) = oml*real(qcrg(iq,1),8) + lc*real(qcrg(iq,2),8)
 
     ! Per-slot LJ interpolation, respecting Q's storage convention.
     do slot = 1, nslot
@@ -2080,13 +2116,13 @@ subroutine single_h_init(nstates_in)
       bA = qbvdw(ia,slot); bB = qbvdw(ib,slot)
       if(ivdw_rule == VDW_GEOMETRIC) then
         ! avdw = sqrt(C12), bvdw = sqrt(C6): interpolate C12/C6 linearly.
-        sh_avdw(iq,slot) = sqrt(oml*aA*aA + lc*aB*aB)
-        sh_bvdw(iq,slot) = sqrt(oml*bA*bA + lc*bB*bB)
+        avdw(iq,slot) = sqrt(oml*aA*aA + lc*aB*aB)
+        bvdw(iq,slot) = sqrt(oml*bA*bA + lc*bB*bB)
       else
         ! arithmetic: avdw = R* (interpolate linearly); bvdw = sqrt(eps)
         ! (interpolate eps = bvdw^2 linearly, store sqrt for the multiply rule).
-        sh_avdw(iq,slot) = oml*aA + lc*aB
-        sh_bvdw(iq,slot) = sqrt(oml*bA*bA + lc*bB*bB)
+        avdw(iq,slot) = oml*aA + lc*aB
+        bvdw(iq,slot) = sqrt(oml*bA*bA + lc*bB*bB)
       end if
     end do
 
@@ -2096,22 +2132,17 @@ subroutine single_h_init(nstates_in)
     dum_a = (abs(aA) < TINY_LJ .and. abs(bA) < TINY_LJ)
     dum_b = (abs(aB) < TINY_LJ .and. abs(bB) < TINY_LJ)
     if(dum_b .and. .not. dum_a) then
-      sh_group(iq)    = 1       ! vanishing (real -> DUM): real at lc=0
-      sh_decouple(iq) = lc
+      group(iq)    = 1       ! vanishing (real -> DUM): real at lc=0
+      decouple(iq) = lc
     else if(dum_a .and. .not. dum_b) then
-      sh_group(iq)    = 2       ! appearing (DUM -> real): real at lc=1
-      sh_decouple(iq) = oml
+      group(iq)    = 2       ! appearing (DUM -> real): real at lc=1
+      decouple(iq) = oml
     else
-      sh_group(iq)    = 0       ! shared / single-topology (real both ends)
-      sh_decouple(iq) = 0.0_8
+      group(iq)    = 0       ! shared / single-topology (real both ends)
+      decouple(iq) = 0.0_8
     end if
   end do
-
-  write(*,'(a,i4,a,i4,a,i4,a)') &
-       'Single-Hamiltonian groups: vanishing(1)=', count(sh_group==1), &
-       ' appearing(2)=', count(sh_group==2), &
-       ' shared(0)=', count(sh_group==0), '.'
-end subroutine single_h_init
+end subroutine single_h_interp
 
 !-------------------------------------------------------------------------
 

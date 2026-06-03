@@ -1618,6 +1618,7 @@ subroutine close_output_files
     close (3)
     if ( itrj_cycle .gt. 0 ) close (10)
     if ( iene_cycle .gt. 0 ) close (11)
+    if ( use_single_hamiltonian .and. n_foreign_lambda > 0 .and. iene_cycle > 0 ) close (17)
 end subroutine close_output_files
 
 
@@ -1635,6 +1636,9 @@ subroutine open_files
     if ( iene_cycle .gt. 0 ) then
       open (unit=11, file=ene_file, status='unknown', form='unformatted', action='write', err=11)
     end if
+
+    ! (single-Hamiltonian foreign-lambda file is opened lazily in
+    !  write_foreign_lambda, after get_fep has set use_single_hamiltonian.)
 
     ! --> external file for implicit position restraints (12)
     if ( implicit_rstr_from_file .eq. 1 ) then
@@ -3442,6 +3446,29 @@ logical function initialize()
       end if
     end if
 
+    ! --- optional [foreign_lambdas]: coupling values (lambda_c, state-2 weight)
+    !     at which to also evaluate the single-Hamiltonian q-energy each output
+    !     frame, for offline BAR/MBAR. Two passes: count, then read.
+    n_foreign_lambda = 0
+    if(prm_open_section('foreign_lambdas')) then
+      do while(prm_get_field(instring))
+        n_foreign_lambda = n_foreign_lambda + 1
+      end do
+    end if
+    if(n_foreign_lambda > 0) then
+      allocate(foreign_lambda(n_foreign_lambda), stat=alloc_status)
+      call check_alloc('foreign lambda list')
+      if(prm_open_section('foreign_lambdas')) then
+        i = 0
+        do while(prm_get_field(instring))
+          i = i + 1
+          read(instring, *, iostat=fstat) foreign_lambda(i)
+        end do
+      end if
+      write(*,97) n_foreign_lambda
+97    format('foreign-lambda BAR: q-energy re-evaluated at ',i3,' coupling values/frame')
+    end if
+
     !       --- restraints:
     write (*,'(/,a)') 'Listing of restraining data:'
 
@@ -4695,6 +4722,7 @@ subroutine md_run
       if ( mod(istep, iene_cycle) == 0 .and. istep > 0) then
         ! nrgy_put_ene(unit, e2, OFFD): print 'e2'=EQ and OFFD to unit 'unit'=11
         call put_ene(11, EQ, OFFD)
+        if (use_single_hamiltonian .and. n_foreign_lambda > 0) call write_foreign_lambda(istep)
       end if
       ! end-of-line, then call write_out, which will print a report on E and EQ
       if ( mod(istep,iout_cycle) == 0 ) then
@@ -11128,6 +11156,177 @@ subroutine nonbon2_qw_singleh
     end do !iq
   end do !jw
 end subroutine nonbon2_qw_singleh
+
+!-----------------------------------------------------------------------
+subroutine write_foreign_lambda(istep)
+  ! Write one row to the foreign-lambda file: step, then the single-Hamiltonian
+  ! q-atom nonbonded energy (el+vdw) re-evaluated at each listed coupling value.
+  ! Only the q nonbonded energy depends on lambda, so these rows are sufficient
+  ! for offline BAR/MBAR between adjacent windows.
+  integer, intent(in) :: istep
+  integer :: k
+  real(8) :: qel, qvdw
+  logical, save :: fl_opened = .false.
+  ! Lazy open: get_fep (which sets use_single_hamiltonian) runs after open_files,
+  ! so the file is created on the first energy-output step instead.
+  if(.not. fl_opened) then
+    open(unit=17, file=trim(ene_file)//'.fl', status='unknown', form='formatted', action='write')
+    write(17,'(a,1x,100f9.5)') '# foreign_lambda', foreign_lambda(1:n_foreign_lambda)
+    fl_opened = .true.
+  end if
+  write(17,'(i10)', advance='no') istep
+  do k = 1, n_foreign_lambda
+    call single_h_qx_energy(foreign_lambda(k), qel, qvdw)
+    write(17,'(1x,es16.8)', advance='no') qel + qvdw
+  end do
+  write(17,*)
+end subroutine write_foreign_lambda
+
+!-----------------------------------------------------------------------
+subroutine single_h_qx_energy(lc, qx_el, qx_vdw)
+  ! Energy-only re-evaluation of the single-Hamiltonian q-atom nonbonded energy
+  ! at an arbitrary coupling lc, into scratch shf_* (so the run-lambda sh_* used
+  ! by the force routines are untouched). Mirrors the energy math of the three
+  ! nonbon2_*_singleh force routines; no forces are computed.
+  real(8), intent(in)  :: lc
+  real(8), intent(out) :: qx_el, qx_vdw
+  integer :: ip,iq,jq,i,j,i3,j3,iacj,iLJ,islot,jw,iaci,iLJO,iLJH
+  real(8) :: qi,qj,aLJ,bLJ,dx1,dx2,dx3,r2,r,r6,r12,r6_hc
+  real(8) :: Vel,V_a,V_b,dist,omc,sigma6,r_sc_lj,gap_qq,gap_F,el_scale
+  real(8) :: aLJO,bLJO,aLJH,bLJH,sigma6O,sigma6H
+  real(8) :: dxO,dyO,dzO,dxH1,dyH1,dzH1,dxH2,dyH2,dzH2
+  real(8) :: rO,r2O,r6O,rH1,r2H1,r6H1,rH2,r2H2,r6H2
+  real(8) :: VelO,VelH1,VelH2,V_aO,V_bO,V_aH1,V_bH1,V_aH2,V_bH2,gap_qq_o,gap_qq_h
+  real(8), save :: aO(2),bO(2),aH(2),bH(2)
+  integer, save :: iac_ow=0, iac_hw=0
+
+  call single_h_interp(lc, shf_avdw, shf_bvdw, shf_qcrg, shf_decouple, shf_group)
+  qx_el = 0._8; qx_vdw = 0._8
+
+  ! ---- Q-Q and close Q-protein (nbqq) ----
+  do ip = 1, nbqq_pair(1)
+    iq = nbqq(ip,1)%iq; i = iqseq(iq); j = nbqq(ip,1)%j; jq = nbqq(ip,1)%jq
+    i3 = i*3-3; j3 = j*3-3; iLJ = nbqq(ip,1)%LJcod; el_scale = nbqq(ip,1)%el_scale
+    if(iLJ == 2) cycle
+    qi = shf_qcrg(iq)
+    aLJ = shf_avdw(iq,iLJ); bLJ = shf_bvdw(iq,iLJ)
+    if(jq /= 0) then
+      aLJ = aLJ + shf_avdw(jq,iLJ); bLJ = bLJ*shf_bvdw(jq,iLJ)
+      qj = shf_qcrg(jq); omc = max(shf_decouple(iq), shf_decouple(jq))
+    else
+      iacj = iac(j); aLJ = aLJ + iaclib(iacj)%avdw(iLJ); bLJ = bLJ*iaclib(iacj)%bvdw(iLJ)
+      qj = crg(j); omc = shf_decouple(iq)
+    end if
+    dx1 = x(j3+1)-x(i3+1); dx2 = x(j3+2)-x(i3+2); dx3 = x(j3+3)-x(i3+3)
+    r2 = dx1*dx1+dx2*dx2+dx3*dx3; r6_hc = r2*r2*r2; r6 = 1._8/r6_hc
+    r2 = 1._8/r2; r = sqrt(r2); r12 = r6*r6; dist = 1._8/r
+    aLJ = aLJ*aLJ; aLJ = aLJ*aLJ*aLJ; sigma6 = aLJ*0.5_8
+    V_a = bLJ*aLJ*aLJ*r12; V_b = 2._8*bLJ*aLJ*r6
+    gap_qq = qi*qj*el_scale; if(iLJ == 3) gap_qq = gap_qq*el14_scale
+    if(softcore_method == SC_GAPSYS .and. omc > 0._8) then
+      r_sc_lj = gapsys_alpha_lj*((26._8/7._8)*sigma6*omc)**(1._8/6._8)
+      if(dist < r_sc_lj .and. r_sc_lj > 0._8) then
+        call gapsys_eval_lj(bLJ*aLJ*aLJ, 2._8*bLJ*aLJ, r_sc_lj, dist, V_a, gap_F); V_b = 0._8
+        call gapsys_eval_q(gap_qq, r_sc_lj, dist, Vel, gap_F)
+      else
+        Vel = gap_qq*r
+      end if
+    else
+      Vel = gap_qq*r
+    end if
+    qx_el = qx_el + Vel; qx_vdw = qx_vdw + V_a - V_b
+  end do
+
+  ! ---- bulk Q-protein (nbqp) ----
+  do ip = 1, nbqp_pair
+    iq = nbqp(ip)%i; i = iqseq(iq); j = nbqp(ip)%j; i3 = i*3-3; j3 = j*3-3
+    iacj = iac(j); iLJ = nbqp(ip)%LJcod; islot = iLJ; if(iLJ == 2) islot = 1
+    qi = shf_qcrg(iq); qj = crg(j); omc = shf_decouple(iq)
+    aLJ = shf_avdw(iq,islot) + iaclib(iacj)%avdw(iLJ)
+    bLJ = shf_bvdw(iq,islot) * iaclib(iacj)%bvdw(iLJ)
+    dx1 = x(j3+1)-x(i3+1); dx2 = x(j3+2)-x(i3+2); dx3 = x(j3+3)-x(i3+3)
+    r2 = dx1*dx1+dx2*dx2+dx3*dx3; r6_hc = r2*r2*r2; r6 = 1._8/r6_hc
+    r2 = 1._8/r2; r = sqrt(r2); dist = 1._8/r
+    aLJ = aLJ*aLJ; aLJ = aLJ*aLJ*aLJ; sigma6 = aLJ*0.5_8
+    V_a = bLJ*aLJ*aLJ*r6*r6; V_b = 2._8*bLJ*aLJ*r6
+    gap_qq = qi*qj; if(iLJ == 3) gap_qq = gap_qq*el14_scale
+    if(softcore_method == SC_GAPSYS .and. omc > 0._8) then
+      r_sc_lj = gapsys_alpha_lj*((26._8/7._8)*sigma6*omc)**(1._8/6._8)
+      if(dist < r_sc_lj .and. r_sc_lj > 0._8) then
+        call gapsys_eval_lj(bLJ*aLJ*aLJ, 2._8*bLJ*aLJ, r_sc_lj, dist, V_a, gap_F); V_b = 0._8
+        call gapsys_eval_q(gap_qq, r_sc_lj, dist, Vel, gap_F)
+      else
+        Vel = gap_qq*r
+      end if
+    else
+      Vel = gap_qq*r
+    end if
+    qx_el = qx_el + Vel; qx_vdw = qx_vdw + V_a - V_b
+  end do
+
+  ! ---- Q-water (nbqw) ----
+  if(iac_ow == 0) then
+    iac_ow = iac(nat_solute + 1); iac_hw = iac(nat_solute + 2)
+    aO(1:2) = iaclib(iac_ow)%avdw(1:2); bO(1:2) = iaclib(iac_ow)%bvdw(1:2)
+    aH(1:2) = iaclib(iac_hw)%avdw(1:2); bH(1:2) = iaclib(iac_hw)%bvdw(1:2)
+  end if
+  do jw = 1, nbqw_pair
+    j = nbqw(jw)
+    do iq = 1, nqat
+      i = iqseq(iq)
+      dxO = x(3*j-2)-x(3*i-2); dyO = x(3*j-1)-x(3*i-1); dzO = x(3*j)-x(3*i)
+      dxH1 = x(3*j+1)-x(3*i-2); dyH1 = x(3*j+2)-x(3*i-1); dzH1 = x(3*j+3)-x(3*i)
+      dxH2 = x(3*j+4)-x(3*i-2); dyH2 = x(3*j+5)-x(3*i-1); dzH2 = x(3*j+6)-x(3*i)
+      r2O = 1._8/(dxO*dxO+dyO*dyO+dzO*dzO)
+      r2H1 = 1._8/(dxH1*dxH1+dyH1*dyH1+dzH1*dzH1)
+      r2H2 = 1._8/(dxH2*dxH2+dyH2*dyH2+dzH2*dzH2)
+      rO = sqrt(r2O); r6O = r2O*r2O*r2O
+      rH1 = sqrt(r2H1); r6H1 = r2H1*r2H1*r2H1
+      rH2 = sqrt(r2H2); r6H2 = r2H2*r2H2*r2H2
+      iaci = iac(i); iLJO = LJcod(iac_ow,iaci); iLJH = LJcod(iac_hw,iaci); omc = shf_decouple(iq)
+      aLJO = shf_avdw(iq,1)+aO(iLJO); bLJO = shf_bvdw(iq,1)*bO(iLJO)
+      aLJH = shf_avdw(iq,1)+aH(iLJH); bLJH = shf_bvdw(iq,1)*bH(iLJH)
+      aLJO = aLJO*aLJO; aLJO = aLJO*aLJO*aLJO
+      aLJH = aLJH*aLJH; aLJH = aLJH*aLJH*aLJH
+      sigma6O = aLJO*0.5_8; sigma6H = aLJH*0.5_8
+      V_aO = bLJO*aLJO*aLJO*r6O*r6O; V_bO = 2._8*bLJO*aLJO*r6O
+      V_aH1 = bLJH*aLJH*aLJH*r6H1*r6H1; V_bH1 = 2._8*bLJH*aLJH*r6H1
+      V_aH2 = bLJH*aLJH*aLJH*r6H2*r6H2; V_bH2 = 2._8*bLJH*aLJH*r6H2
+      gap_qq_o = crg_ow*shf_qcrg(iq); gap_qq_h = crg_hw*shf_qcrg(iq)
+      if(softcore_method == SC_GAPSYS .and. omc > 0._8) then
+        ! O
+        r_sc_lj = gapsys_alpha_lj*((26._8/7._8)*sigma6O*omc)**(1._8/6._8)
+        dist = 1._8/rO
+        if(dist < r_sc_lj .and. r_sc_lj > 0._8) then
+          call gapsys_eval_lj(bLJO*aLJO*aLJO, 2._8*bLJO*aLJO, r_sc_lj, dist, V_aO, gap_F); V_bO = 0._8
+          call gapsys_eval_q(gap_qq_o, r_sc_lj, dist, VelO, gap_F)
+        else
+          VelO = gap_qq_o*rO
+        end if
+        ! H1/H2 (share sigma6H)
+        r_sc_lj = gapsys_alpha_lj*((26._8/7._8)*sigma6H*omc)**(1._8/6._8)
+        dist = 1._8/rH1
+        if(dist < r_sc_lj .and. r_sc_lj > 0._8) then
+          call gapsys_eval_lj(bLJH*aLJH*aLJH, 2._8*bLJH*aLJH, r_sc_lj, dist, V_aH1, gap_F); V_bH1 = 0._8
+          call gapsys_eval_q(gap_qq_h, r_sc_lj, dist, VelH1, gap_F)
+        else
+          VelH1 = gap_qq_h*rH1
+        end if
+        dist = 1._8/rH2
+        if(dist < r_sc_lj .and. r_sc_lj > 0._8) then
+          call gapsys_eval_lj(bLJH*aLJH*aLJH, 2._8*bLJH*aLJH, r_sc_lj, dist, V_aH2, gap_F); V_bH2 = 0._8
+          call gapsys_eval_q(gap_qq_h, r_sc_lj, dist, VelH2, gap_F)
+        else
+          VelH2 = gap_qq_h*rH2
+        end if
+      else
+        VelO = gap_qq_o*rO; VelH1 = gap_qq_h*rH1; VelH2 = gap_qq_h*rH2
+      end if
+      qx_el = qx_el + VelO + VelH1 + VelH2
+      qx_vdw = qx_vdw + V_aO + V_aH1 + V_aH2 - V_bO - V_bH1 - V_bH2
+    end do
+  end do
+end subroutine single_h_qx_energy
 
 !-----------------------------------------------------------------------
 !******PWadded 2001-10-23
