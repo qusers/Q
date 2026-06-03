@@ -178,6 +178,30 @@ module qatom
   ! is multiplied at runtime in the nonbonded routines where q_j is known.
   real(8), allocatable                    :: gapsys_q_lambda_factor(:,:)
 
+  ! Single-Hamiltonian (parameter-interpolation) FEP, future-prospect-softcore.md
+  ! 9.2. When enabled, q-atom nonbonded interactions are evaluated from a single
+  ! lambda-interpolated parameter set eps(lambda)/sigma(lambda)/q(lambda) wrapped
+  ! in the soft-core, instead of per-state Hamiltonian mixing. Orthogonal to
+  ! softcore_method (which still selects the soft-core form). nstates stays 2:
+  ! state 1 = endpoint A, state 2 = endpoint B, coupling lambda_c = EQ(2)%lambda.
+  logical                                 :: use_single_hamiltonian = .false.
+  ! Per-q-atom interpolated LJ parameters at the run's coupling lambda_c, in Q's
+  ! storage convention (R*/sqrt(eps) for arithmetic, sqrt(C12)/sqrt(C6) for
+  ! geometric), per LJ slot. Filled by single_h_init.
+  real(8), allocatable                    :: sh_avdw(:,:), sh_bvdw(:,:)
+  ! Per-q-atom interpolated charge q(lambda_c).
+  real(8), allocatable                    :: sh_qcrg(:)
+  ! Decoupling factor in [0,1]: 0 = atom is fully real (no soft-core), growing to
+  ! 1 as the atom approaches its dummy endpoint. Drives the Gapsys r_sc so the
+  ! soft-core fires exactly where an atom is appearing/disappearing.
+  real(8), allocatable                    :: sh_decouple(:)
+  ! Topology group for cross-ligand exclusion: 1 = vanishing (real->DUM),
+  ! 2 = appearing (DUM->real), 0 = shared / single-topology. Q-Q nonbonded
+  ! between groups 1 and 2 is skipped: in dual topology the two ligands are
+  ! co-located and would clash once both carry partial epsilon at intermediate
+  ! lambda (soft-core bounds a pair but not the sum over many pairs).
+  integer, allocatable                    :: sh_group(:)
+
   !-----------------------------------------------------------------------
   !       fep/evb energies
   !-----------------------------------------------------------------------
@@ -236,6 +260,11 @@ subroutine qatom_shutdown
   if (allocated(qq_el_scale)) deallocate(qq_el_scale)
   if (allocated(gapsys_lj_rsc)) deallocate(gapsys_lj_rsc)
   if (allocated(gapsys_q_lambda_factor)) deallocate(gapsys_q_lambda_factor)
+  if (allocated(sh_avdw)) deallocate(sh_avdw)
+  if (allocated(sh_bvdw)) deallocate(sh_bvdw)
+  if (allocated(sh_qcrg)) deallocate(sh_qcrg)
+  if (allocated(sh_decouple)) deallocate(sh_decouple)
+  if (allocated(sh_group)) deallocate(sh_group)
 end subroutine qatom_shutdown
 
 
@@ -359,7 +388,14 @@ logical function qatom_load_atoms(fep_file)
                ' sigma_q=', gapsys_sigma_q, ')'
        end select
 
-       offset = -1 
+       ! Single-Hamiltonian (parameter-interpolation) FEP toggle, 9.2.
+       yes = prm_get_logical_by_key('single_hamiltonian', use_single_hamiltonian, .false.)
+       if(use_single_hamiltonian) then
+          write(*,'(a)') &
+               'Perturbation scheme: SINGLE-HAMILTONIAN (lambda-interpolated parameters)'
+       end if
+
+       offset = -1
        !should an offset be applied to topology atom numbers?
        if(prm_get_integer_by_key('offset', offset)) then
           !got an atom number offset
@@ -1991,6 +2027,106 @@ subroutine softcore_init_gapsys(nstates_in)
 
   write(*,'(a)') 'Gapsys linearization radii initialized (1-lambda_state convention, SI Eqs. 1.1-1.4).'
 end subroutine softcore_init_gapsys
+
+!-------------------------------------------------------------------------
+
+subroutine single_h_init(nstates_in)
+!!-------------------------------------------------------------------------------
+!! Pre-compute per-q-atom lambda-interpolated nonbonded parameters for the
+!! single-Hamiltonian FEP path (future-prospect-softcore.md 9.2). Must be called
+!! after lambdas (EQ%lambda) are set, and only when use_single_hamiltonian.
+!!
+!! nstates must be 2: state 1 is endpoint A, state 2 endpoint B. The single
+!! coupling parameter is lambda_c = EQ(2)%lambda (0 = A, 1 = B). Each q-atom's
+!! parameters are interpolated A->B once, in Q's storage convention so the
+!! existing pair-combination math (sum-of-R*, multiply-of-sqrt-eps for arithmetic;
+!! multiply-of-sqrt-C for geometric) is reused unchanged in the inner loops.
+!!
+!! sh_decouple drives the soft-core: it is 0 for an atom that is fully real
+!! (no singularity to bound) and rises toward 1 as the atom nears its dummy
+!! endpoint, mirroring Q's per-state (1 - lambda_state) soft-core convention but
+!! for a single interpolated potential.
+!!-------------------------------------------------------------------------------
+  integer, intent(in) :: nstates_in
+  integer :: iq, slot, ia, ib, nslot
+  real(8) :: lc, oml, aA, aB, bA, bB
+  logical :: dum_a, dum_b
+  real(8), parameter :: TINY_LJ = 1.0e-10_8
+
+  if(.not. use_single_hamiltonian) return
+
+  lc  = EQ(2)%lambda          ! coupling: 0 = endpoint A, 1 = endpoint B
+  oml = 1.0_8 - lc
+  nslot = size(qavdw, 2)
+
+  if(allocated(sh_avdw))     deallocate(sh_avdw)
+  if(allocated(sh_bvdw))     deallocate(sh_bvdw)
+  if(allocated(sh_qcrg))     deallocate(sh_qcrg)
+  if(allocated(sh_decouple)) deallocate(sh_decouple)
+  if(allocated(sh_group))    deallocate(sh_group)
+  allocate(sh_avdw(nqat, nslot), sh_bvdw(nqat, nslot))
+  allocate(sh_qcrg(nqat), sh_decouple(nqat), sh_group(nqat))
+
+  do iq = 1, nqat
+    ia = qiac(iq, 1)          ! endpoint-A LJ type index
+    ib = qiac(iq, 2)          ! endpoint-B LJ type index
+
+    ! Interpolated charge (real(4) endpoints, real(8) result).
+    sh_qcrg(iq) = oml*real(qcrg(iq,1),8) + lc*real(qcrg(iq,2),8)
+
+    ! Per-slot LJ interpolation, respecting Q's storage convention.
+    do slot = 1, nslot
+      aA = qavdw(ia,slot); aB = qavdw(ib,slot)
+      bA = qbvdw(ia,slot); bB = qbvdw(ib,slot)
+      if(ivdw_rule == VDW_GEOMETRIC) then
+        ! avdw = sqrt(C12), bvdw = sqrt(C6): interpolate C12/C6 linearly.
+        sh_avdw(iq,slot) = sqrt(oml*aA*aA + lc*aB*aB)
+        sh_bvdw(iq,slot) = sqrt(oml*bA*bA + lc*bB*bB)
+      else
+        ! arithmetic: avdw = R* (interpolate linearly); bvdw = sqrt(eps)
+        ! (interpolate eps = bvdw^2 linearly, store sqrt for the multiply rule).
+        sh_avdw(iq,slot) = oml*aA + lc*aB
+        sh_bvdw(iq,slot) = sqrt(oml*bA*bA + lc*bB*bB)
+      end if
+    end do
+
+    ! Decoupling factor + topology group from the normal-LJ (slot 1) endpoints.
+    aA = qavdw(ia,1); bA = qbvdw(ia,1)
+    aB = qavdw(ib,1); bB = qbvdw(ib,1)
+    dum_a = (abs(aA) < TINY_LJ .and. abs(bA) < TINY_LJ)
+    dum_b = (abs(aB) < TINY_LJ .and. abs(bB) < TINY_LJ)
+    if(dum_b .and. .not. dum_a) then
+      sh_group(iq)    = 1       ! vanishing (real -> DUM): real at lc=0
+      sh_decouple(iq) = lc
+    else if(dum_a .and. .not. dum_b) then
+      sh_group(iq)    = 2       ! appearing (DUM -> real): real at lc=1
+      sh_decouple(iq) = oml
+    else
+      sh_group(iq)    = 0       ! shared / single-topology (real both ends)
+      sh_decouple(iq) = 0.0_8
+    end if
+  end do
+
+  write(*,'(a,i4,a,i4,a,i4,a)') &
+       'Single-Hamiltonian groups: vanishing(1)=', count(sh_group==1), &
+       ' appearing(2)=', count(sh_group==2), &
+       ' shared(0)=', count(sh_group==0), '.'
+end subroutine single_h_init
+
+!-------------------------------------------------------------------------
+
+pure logical function sh_xlig_excluded(iq, jq)
+!! True when the Q-Q pair (iq, jq) crosses the two co-located dual-topology
+!! ligands (one vanishing, one appearing) under single-Hamiltonian mode, so its
+!! nonbonded interaction must be skipped. False for shared/single-topology atoms
+!! and whenever single-Hamiltonian mode is off.
+  integer, intent(in) :: iq, jq
+  sh_xlig_excluded = .false.
+  if(.not. use_single_hamiltonian) return
+  if(.not. allocated(sh_group)) return
+  if((sh_group(iq) == 1 .and. sh_group(jq) == 2) .or. &
+     (sh_group(iq) == 2 .and. sh_group(jq) == 1)) sh_xlig_excluded = .true.
+end function sh_xlig_excluded
 
 !-------------------------------------------------------------------------
 

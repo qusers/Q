@@ -1773,6 +1773,19 @@ subroutine get_fep
     !Compute Gapsys linearization radii if method is gapsys
     if (softcore_method == SC_GAPSYS) call softcore_init_gapsys(nstates)
 
+    !Single-Hamiltonian (parameter-interpolation) FEP setup, future-prospect-softcore.md 9.2.
+    if (use_single_hamiltonian) then
+      if (nstates /= 2) &
+        call die('single_hamiltonian requires exactly 2 FEP states (endpoints A and B)')
+      if (use_PBC) &
+        call die('single_hamiltonian is supported only with spherical boundary conditions, not PBC')
+      if (ivdw_rule /= VDW_ARITHMETIC) &
+        call die('single_hamiltonian currently supports only the arithmetic vdW rule (AMBER/CHARMM)')
+      if (.not. qvdw_flag) &
+        call die('single_hamiltonian requires q-atom vdW types in the FEP file ([change_atoms])')
+      call single_h_init(nstates)
+    end if
+
     !remove redefined bonded interactions from topology
     if(nqbond > 0 .or. nqangle > 0 .or. nqtor > 0 .or. nqimp > 0 ) then
       write(*,*)
@@ -7923,6 +7936,7 @@ integer function nbqq_count()
   !count Q-Q
   do iq = 1, nqat - 1
     do jq = iq + 1, nqat
+      if(sh_xlig_excluded(iq, jq)) cycle   !single-Hamiltonian cross-ligand skip
       do is = 1, nstates
         if(qconn(is, iqseq(jq), iq) > 3) then
           nbqq_pair(is) = nbqq_pair(is)+1
@@ -7961,6 +7975,7 @@ subroutine nbqqlist
   do iq = 1, nqat - 1
     do jq = iq + 1, nqat
       j = iqseq(jq)
+      if(sh_xlig_excluded(iq, jq)) cycle   !single-Hamiltonian cross-ligand skip
       do is = 1, nstates
         if(qconn(is, j, iq) > 3) then
           nbqq_pair(is) = nbqq_pair(is)+1
@@ -10778,6 +10793,332 @@ subroutine nonbon2_qw
     end do !iq
   end do !jw
 end subroutine nonbon2_qw
+
+!-----------------------------------------------------------------------
+! Single-Hamiltonian (parameter-interpolation) nonbonded routines, arithmetic
+! vdW rule, spherical boundary. future-prospect-softcore.md 9.2. Each q-atom's
+! LJ/charge is interpolated A->B once (sh_avdw/sh_bvdw/sh_qcrg from single_h_init)
+! and wrapped in the Gapsys soft-core whose radius is keyed on the per-atom
+! decoupling factor sh_decouple, so the soft-core fires exactly where an atom is
+! appearing/disappearing. No per-state lambda re-weighting: the force is the full
+! single-Hamiltonian gradient and energy goes (unweighted) into state 1.
+!-----------------------------------------------------------------------
+subroutine nonbon2_qq_singleh
+  integer :: ip,iq,jq,i,j,i3,j3,iacj,iLJ
+  real(8) :: qi,qj,aLJ,bLJ,dx1,dx2,dx3,r2,r,r6,r12,r6_hc
+  real(8) :: Vel,V_a,V_b,dv,el_scale,dist,omc,sigma6
+  real(8) :: r_sc_lj,r_sc_q,dv_lj,dv_el,gap_qq,gap_Flj,gap_Fq
+
+  do ip = 1, nbqq_pair(1)
+    iq   = nbqq(ip,1)%iq
+    i    = iqseq(iq)
+    j    = nbqq(ip,1)%j
+    jq   = nbqq(ip,1)%jq
+    i3   = i*3-3
+    j3   = j*3-3
+    iLJ  = nbqq(ip,1)%LJcod
+    el_scale = nbqq(ip,1)%el_scale
+    qi   = sh_qcrg(iq)
+
+    if(iLJ == 2) call die('single_hamiltonian: soft_pairs (LJcod 2) not supported')
+
+    aLJ = sh_avdw(iq,iLJ)
+    bLJ = sh_bvdw(iq,iLJ)
+    if(jq /= 0) then
+      aLJ = aLJ + sh_avdw(jq,iLJ)          ! R*_i(l) + R*_j(l)
+      bLJ = bLJ * sh_bvdw(jq,iLJ)          ! sqrt(eps_i(l))*sqrt(eps_j(l))
+      qj  = sh_qcrg(jq)
+      omc = max(sh_decouple(iq), sh_decouple(jq))
+    else
+      iacj = iac(j)
+      aLJ  = aLJ + iaclib(iacj)%avdw(iLJ)
+      bLJ  = bLJ * iaclib(iacj)%bvdw(iLJ)
+      qj   = crg(j)
+      omc  = sh_decouple(iq)
+    end if
+
+    dx1 = x(j3+1)-x(i3+1); dx2 = x(j3+2)-x(i3+2); dx3 = x(j3+3)-x(i3+3)
+    r2  = dx1*dx1+dx2*dx2+dx3*dx3
+    r6_hc = r2*r2*r2
+    r6  = 1._8/r6_hc
+    r2  = 1._8/r2
+    r   = sqrt(r2)
+    r12 = r6*r6
+    dist = 1._8/r
+
+    aLJ = aLJ*aLJ
+    aLJ = aLJ*aLJ*aLJ                      ! R_min_pair^6
+    sigma6 = aLJ*0.5_8                     ! sigma^6 = R_min^6 / 2 (arithmetic)
+    V_a = bLJ*aLJ*aLJ*r12                  ! C12/r^12
+    V_b = 2.0_8*bLJ*aLJ*r6                 ! C6/r^6
+
+    ! LJ with Gapsys soft-core keyed on the decoupling factor.
+    if(softcore_method == SC_GAPSYS .and. omc > 0._8) then
+      r_sc_lj = gapsys_alpha_lj*((26.0_8/7.0_8)*sigma6*omc)**(1.0_8/6.0_8)
+      if(dist < r_sc_lj .and. r_sc_lj > 0._8) then
+        call gapsys_eval_lj(bLJ*aLJ*aLJ, 2.0_8*bLJ*aLJ, r_sc_lj, dist, V_a, gap_Flj)
+        V_b   = 0._8
+        dv_lj = -gap_Flj/dist
+      else
+        dv_lj = r2*(-(12.*V_a - 6.*V_b))
+      end if
+    else
+      dv_lj = r2*(-(12.*V_a - 6.*V_b))
+    end if
+
+    ! Coulomb (interpolated charges) with Gapsys soft-core.
+    gap_qq = qi*qj*el_scale
+    if(iLJ == 3) gap_qq = gap_qq*el14_scale
+    if(softcore_method == SC_GAPSYS .and. omc > 0._8) then
+      r_sc_q = gapsys_alpha_q*(1.0_8 + gapsys_sigma_q*abs(qi*qj))*omc**(1.0_8/6.0_8)
+      if(dist < r_sc_q .and. r_sc_q > 0._8) then
+        call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel, gap_Fq)
+        dv_el = -gap_Fq/dist
+      else
+        Vel = gap_qq*r
+        dv_el = r2*(-Vel)
+      end if
+    else
+      Vel = gap_qq*r
+      dv_el = r2*(-Vel)
+    end if
+
+    dv = dv_lj + dv_el                     ! single Hamiltonian: no lambda weight
+
+    d(i3+1)=d(i3+1)-dv*dx1; d(i3+2)=d(i3+2)-dv*dx2; d(i3+3)=d(i3+3)-dv*dx3
+    d(j3+1)=d(j3+1)+dv*dx1; d(j3+2)=d(j3+2)+dv*dx2; d(j3+3)=d(j3+3)+dv*dx3
+
+    if(jq /= 0) then
+      EQ(1)%qq%el  = EQ(1)%qq%el  + Vel
+      EQ(1)%qq%vdw = EQ(1)%qq%vdw + V_a - V_b
+    else
+      EQ(1)%qp%el  = EQ(1)%qp%el  + Vel
+      EQ(1)%qp%vdw = EQ(1)%qp%vdw + V_a - V_b
+    end if
+  end do
+end subroutine nonbon2_qq_singleh
+
+!-----------------------------------------------------------------------
+subroutine nonbon2_qp_singleh
+  integer :: ip,iq,i,j,i3,j3,iacj,iLJ,islot
+  real(8) :: qi,qj,aLJ,bLJ,dx1,dx2,dx3,r2,r,r6,r6_hc
+  real(8) :: Vel,V_a,V_b,dv,dist,omc,sigma6
+  real(8) :: r_sc_lj,r_sc_q,dv_lj,dv_el,gap_qq,gap_Flj,gap_Fq
+
+  do ip = 1, nbqp_pair
+    iq   = nbqp(ip)%i
+    i    = iqseq(iq)
+    j    = nbqp(ip)%j
+    i3   = i*3-3
+    j3   = j*3-3
+    iacj = iac(j)
+    iLJ  = nbqp(ip)%LJcod
+    islot = iLJ
+    if(iLJ == 2) islot = 1                 ! q-atom exp-repulsion slot fallback
+
+    dx1 = x(j3+1)-x(i3+1); dx2 = x(j3+2)-x(i3+2); dx3 = x(j3+3)-x(i3+3)
+    r2  = dx1*dx1+dx2*dx2+dx3*dx3
+    r6_hc = r2*r2*r2
+    r6  = 1._8/r6_hc
+    r2  = 1._8/r2
+    r   = sqrt(r2)
+    dist = 1._8/r
+
+    qi  = sh_qcrg(iq)
+    qj  = crg(j)
+    omc = sh_decouple(iq)
+    aLJ = sh_avdw(iq,islot) + iaclib(iacj)%avdw(iLJ)
+    bLJ = sh_bvdw(iq,islot) * iaclib(iacj)%bvdw(iLJ)
+    aLJ = aLJ*aLJ
+    aLJ = aLJ*aLJ*aLJ                      ! R_min_pair^6
+    sigma6 = aLJ*0.5_8
+    V_a = bLJ*aLJ*aLJ*r6*r6
+    V_b = 2.0_8*bLJ*aLJ*r6
+
+    if(softcore_method == SC_GAPSYS .and. omc > 0._8) then
+      r_sc_lj = gapsys_alpha_lj*((26.0_8/7.0_8)*sigma6*omc)**(1.0_8/6.0_8)
+      if(dist < r_sc_lj .and. r_sc_lj > 0._8) then
+        call gapsys_eval_lj(bLJ*aLJ*aLJ, 2.0_8*bLJ*aLJ, r_sc_lj, dist, V_a, gap_Flj)
+        V_b   = 0._8
+        dv_lj = -gap_Flj/dist
+      else
+        dv_lj = r2*(-(12.*V_a - 6.*V_b))
+      end if
+    else
+      dv_lj = r2*(-(12.*V_a - 6.*V_b))
+    end if
+
+    gap_qq = qi*qj
+    if(iLJ == 3) gap_qq = gap_qq*el14_scale
+    if(softcore_method == SC_GAPSYS .and. omc > 0._8) then
+      r_sc_q = gapsys_alpha_q*(1.0_8 + gapsys_sigma_q*abs(qi*qj))*omc**(1.0_8/6.0_8)
+      if(dist < r_sc_q .and. r_sc_q > 0._8) then
+        call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel, gap_Fq)
+        dv_el = -gap_Fq/dist
+      else
+        Vel = gap_qq*r
+        dv_el = r2*(-Vel)
+      end if
+    else
+      Vel = gap_qq*r
+      dv_el = r2*(-Vel)
+    end if
+
+    dv = dv_lj + dv_el
+
+    d(i3+1)=d(i3+1)-dv*dx1; d(i3+2)=d(i3+2)-dv*dx2; d(i3+3)=d(i3+3)-dv*dx3
+    d(j3+1)=d(j3+1)+dv*dx1; d(j3+2)=d(j3+2)+dv*dx2; d(j3+3)=d(j3+3)+dv*dx3
+
+    EQ(1)%qp%el  = EQ(1)%qp%el  + Vel
+    EQ(1)%qp%vdw = EQ(1)%qp%vdw + V_a - V_b
+  end do
+end subroutine nonbon2_qp_singleh
+
+!-----------------------------------------------------------------------
+subroutine nonbon2_qw_singleh
+  integer :: jw,iq,i,j,iLJO,iLJH,iaci
+  real(8) :: aLJO,bLJO,aLJH,bLJH,sigma6O,sigma6H,omc
+  real(8) :: dxO,dyO,dzO,dxH1,dyH1,dzH1,dxH2,dyH2,dzH2
+  real(8) :: rO,r2O,r6O,rH1,r2H1,r6H1,rH2,r2H2,r6H2
+  real(8) :: VelO,VelH1,VelH2,dvO,dvH1,dvH2
+  real(8) :: V_aO,V_bO,V_aH1,V_bH1,V_aH2,V_bH2
+  real(8) :: dist,r_sc_lj,r_sc_q,dv_lj,dv_el,gap_qq_o,gap_qq_h,gap_Flj,gap_Fq
+  real(8), save :: aO(2),bO(2),aH(2),bH(2)
+  integer, save :: iac_ow=0, iac_hw=0
+
+  if(iac_ow == 0) then
+    iac_ow = iac(nat_solute + 1)
+    iac_hw = iac(nat_solute + 2)
+    aO(1:2) = iaclib(iac_ow)%avdw(1:2)
+    bO(1:2) = iaclib(iac_ow)%bvdw(1:2)
+    aH(1:2) = iaclib(iac_hw)%avdw(1:2)
+    bH(1:2) = iaclib(iac_hw)%bvdw(1:2)
+  end if
+
+  do jw = 1, nbqw_pair
+    j = nbqw(jw)
+    do iq = 1, nqat
+      i = iqseq(iq)
+      dxO  = x(3*j-2)-x(3*i-2); dyO  = x(3*j-1)-x(3*i-1); dzO  = x(3*j  )-x(3*i  )
+      dxH1 = x(3*j+1)-x(3*i-2); dyH1 = x(3*j+2)-x(3*i-1); dzH1 = x(3*j+3)-x(3*i  )
+      dxH2 = x(3*j+4)-x(3*i-2); dyH2 = x(3*j+5)-x(3*i-1); dzH2 = x(3*j+6)-x(3*i  )
+      r2O  = 1._8/(dxO*dxO + dyO*dyO + dzO*dzO)
+      r2H1 = 1._8/(dxH1*dxH1 + dyH1*dyH1 + dzH1*dzH1)
+      r2H2 = 1._8/(dxH2*dxH2 + dyH2*dyH2 + dzH2*dzH2)
+      rO = sqrt(r2O); r6O = r2O*r2O*r2O      ! r6O = 1/d^6
+      rH1 = sqrt(r2H1); r6H1 = r2H1*r2H1*r2H1
+      rH2 = sqrt(r2H2); r6H2 = r2H2*r2H2*r2H2
+
+      iaci = iac(i)
+      iLJO = LJcod(iac_ow, iaci)
+      iLJH = LJcod(iac_hw, iaci)
+      omc  = sh_decouple(iq)
+
+      aLJO = sh_avdw(iq,1) + aO(iLJO)
+      bLJO = sh_bvdw(iq,1) * bO(iLJO)
+      aLJH = sh_avdw(iq,1) + aH(iLJH)
+      bLJH = sh_bvdw(iq,1) * bH(iLJH)
+      aLJO = aLJO*aLJO; aLJO = aLJO*aLJO*aLJO
+      aLJH = aLJH*aLJH; aLJH = aLJH*aLJH*aLJH
+      sigma6O = aLJO*0.5_8
+      sigma6H = aLJH*0.5_8
+      V_aO = bLJO*aLJO*aLJO*r6O*r6O
+      V_bO = 2.0_8*bLJO*aLJO*r6O
+      V_aH1 = bLJH*aLJH*aLJH*r6H1*r6H1
+      V_bH1 = 2.0_8*bLJH*aLJH*r6H1
+      V_aH2 = bLJH*aLJH*aLJH*r6H2*r6H2
+      V_bH2 = 2.0_8*bLJH*aLJH*r6H2
+
+      gap_qq_o = crg_ow*sh_qcrg(iq)
+      gap_qq_h = crg_hw*sh_qcrg(iq)
+
+      ! ---- Oxygen ----
+      dist = 1._8/rO
+      if(softcore_method == SC_GAPSYS .and. omc > 0._8) then
+        r_sc_lj = gapsys_alpha_lj*((26.0_8/7.0_8)*sigma6O*omc)**(1.0_8/6.0_8)
+        if(dist < r_sc_lj .and. r_sc_lj > 0._8) then
+          call gapsys_eval_lj(bLJO*aLJO*aLJO, 2.0_8*bLJO*aLJO, r_sc_lj, dist, V_aO, gap_Flj)
+          V_bO = 0._8; dv_lj = -gap_Flj/dist
+        else
+          dv_lj = r2O*(-(12.*V_aO - 6.*V_bO))
+        end if
+        r_sc_q = gapsys_alpha_q*(1.0_8 + gapsys_sigma_q*abs(gap_qq_o))*omc**(1.0_8/6.0_8)
+        if(dist < r_sc_q .and. r_sc_q > 0._8) then
+          call gapsys_eval_q(gap_qq_o, r_sc_q, dist, VelO, gap_Fq)
+          dv_el = -gap_Fq/dist
+        else
+          VelO = gap_qq_o*rO; dv_el = r2O*(-VelO)
+        end if
+        dvO = dv_lj + dv_el
+      else
+        VelO = gap_qq_o*rO
+        dvO  = r2O*(-VelO -(12.*V_aO - 6.*V_bO))
+      end if
+
+      ! ---- Hydrogen 1 ----
+      dist = 1._8/rH1
+      if(softcore_method == SC_GAPSYS .and. omc > 0._8) then
+        r_sc_lj = gapsys_alpha_lj*((26.0_8/7.0_8)*sigma6H*omc)**(1.0_8/6.0_8)
+        if(dist < r_sc_lj .and. r_sc_lj > 0._8) then
+          call gapsys_eval_lj(bLJH*aLJH*aLJH, 2.0_8*bLJH*aLJH, r_sc_lj, dist, V_aH1, gap_Flj)
+          V_bH1 = 0._8; dv_lj = -gap_Flj/dist
+        else
+          dv_lj = r2H1*(-(12.*V_aH1 - 6.*V_bH1))
+        end if
+        r_sc_q = gapsys_alpha_q*(1.0_8 + gapsys_sigma_q*abs(gap_qq_h))*omc**(1.0_8/6.0_8)
+        if(dist < r_sc_q .and. r_sc_q > 0._8) then
+          call gapsys_eval_q(gap_qq_h, r_sc_q, dist, VelH1, gap_Fq)
+          dv_el = -gap_Fq/dist
+        else
+          VelH1 = gap_qq_h*rH1; dv_el = r2H1*(-VelH1)
+        end if
+        dvH1 = dv_lj + dv_el
+      else
+        VelH1 = gap_qq_h*rH1
+        dvH1  = r2H1*(-VelH1 -(12.*V_aH1 - 6.*V_bH1))
+      end if
+
+      ! ---- Hydrogen 2 ----
+      dist = 1._8/rH2
+      if(softcore_method == SC_GAPSYS .and. omc > 0._8) then
+        r_sc_lj = gapsys_alpha_lj*((26.0_8/7.0_8)*sigma6H*omc)**(1.0_8/6.0_8)
+        if(dist < r_sc_lj .and. r_sc_lj > 0._8) then
+          call gapsys_eval_lj(bLJH*aLJH*aLJH, 2.0_8*bLJH*aLJH, r_sc_lj, dist, V_aH2, gap_Flj)
+          V_bH2 = 0._8; dv_lj = -gap_Flj/dist
+        else
+          dv_lj = r2H2*(-(12.*V_aH2 - 6.*V_bH2))
+        end if
+        r_sc_q = gapsys_alpha_q*(1.0_8 + gapsys_sigma_q*abs(gap_qq_h))*omc**(1.0_8/6.0_8)
+        if(dist < r_sc_q .and. r_sc_q > 0._8) then
+          call gapsys_eval_q(gap_qq_h, r_sc_q, dist, VelH2, gap_Fq)
+          dv_el = -gap_Fq/dist
+        else
+          VelH2 = gap_qq_h*rH2; dv_el = r2H2*(-VelH2)
+        end if
+        dvH2 = dv_lj + dv_el
+      else
+        VelH2 = gap_qq_h*rH2
+        dvH2  = r2H2*(-VelH2 -(12.*V_aH2 - 6.*V_bH2))
+      end if
+
+      EQ(1)%qw%el  = EQ(1)%qw%el + VelO + VelH1 + VelH2
+      EQ(1)%qw%vdw = EQ(1)%qw%vdw + V_aO + V_aH1 + V_aH2 - V_bO - V_bH1 - V_bH2
+
+      d(3*i-2) = d(3*i-2) - dvO*dxO - dvH1*dxH1 - dvH2*dxH2
+      d(3*i-1) = d(3*i-1) - dvO*dyO - dvH1*dyH1 - dvH2*dyH2
+      d(3*i  ) = d(3*i  ) - dvO*dzO - dvH1*dzH1 - dvH2*dzH2
+      d(3*j-2) = d(3*j-2) + dvO*dxO
+      d(3*j-1) = d(3*j-1) + dvO*dyO
+      d(3*j  ) = d(3*j  ) + dvO*dzO
+      d(3*j+1) = d(3*j+1) + dvH1*dxH1
+      d(3*j+2) = d(3*j+2) + dvH1*dyH1
+      d(3*j+3) = d(3*j+3) + dvH1*dzH1
+      d(3*j+4) = d(3*j+4) + dvH2*dxH2
+      d(3*j+5) = d(3*j+5) + dvH2*dyH2
+      d(3*j+6) = d(3*j+6) + dvH2*dzH2
+    end do !iq
+  end do !jw
+end subroutine nonbon2_qw_singleh
 
 !-----------------------------------------------------------------------
 !******PWadded 2001-10-23
@@ -14914,7 +15255,9 @@ subroutine pot_energy
 
     ! q-q nonbonded interactions (skip if doing bonded-only minimization)
     if (.not. min_bonded_only) then
-      if(.not. qq_use_library_charges) then
+      if (use_single_hamiltonian) then
+        call nonbon2_qq_singleh
+      else if(.not. qq_use_library_charges) then
         if(ivdw_rule .eq. 1 ) then
           call nonbond_qq
         elseif ( ivdw_rule .eq. 2 ) then
@@ -14985,12 +15328,21 @@ subroutine pot_energy
       E%q%angle = E%q%angle + EQ(istate)%q%angle*EQ(istate)%lambda
       E%q%torsion   = E%q%torsion   + EQ(istate)%q%torsion  *EQ(istate)%lambda
       E%q%improper   = E%q%improper   + EQ(istate)%q%improper  *EQ(istate)%lambda
-      E%qx%el    = E%qx%el    + EQ(istate)%qx%el   *EQ(istate)%lambda
-      E%qx%vdw   = E%qx%vdw   + EQ(istate)%qx%vdw  *EQ(istate)%lambda
+      if (.not. use_single_hamiltonian) then
+        E%qx%el    = E%qx%el    + EQ(istate)%qx%el   *EQ(istate)%lambda
+        E%qx%vdw   = E%qx%vdw   + EQ(istate)%qx%vdw  *EQ(istate)%lambda
+      end if
 
       ! update E%restraint%protein with an average of all states
       E%restraint%protein = E%restraint%protein + EQ(istate)%restraint*EQ(istate)%lambda
     end do
+
+    ! Single-Hamiltonian: q-atom nonbonded is one lambda-interpolated potential
+    ! accumulated (unweighted) into state 1, so it enters E with weight 1.
+    if (use_single_hamiltonian) then
+      E%qx%el  = E%qx%el  + EQ(1)%qx%el
+      E%qx%vdw = E%qx%vdw + EQ(1)%qx%vdw
+    end if
 
     ! total energy summary
     E%restraint%total = E%restraint%fix + E%restraint%shell + &
@@ -15105,10 +15457,18 @@ subroutine pot_energy_nonbonds
         end if
       case(VDW_ARITHMETIC)
         call nonbon2_pp
-        call nonbon2_qp
+        if (use_single_hamiltonian) then
+          call nonbon2_qp_singleh
+        else
+          call nonbon2_qp
+        end if
         if(natom > nat_solute) then !if any solvent
           call nonbon2_pw
-          call nonbon2_qw !no SPC-specific optimized routines here
+          if (use_single_hamiltonian) then
+            call nonbon2_qw_singleh
+          else
+            call nonbon2_qw !no SPC-specific optimized routines here
+          end if
           call nonbon2_ww
         end if
     end select
