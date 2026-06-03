@@ -2,6 +2,7 @@
 
 #include "context.h"
 #include "cpu_shake.h"
+#include "debug.h"
 
 void calc_leapfrog() {
     auto& ctx = Context::instance();
@@ -56,4 +57,5 @@ void calc_leapfrog() {
             velocities[i].z = (coords[i].z - xcoords[i].z) / ctx.dt;
         }
     }
+    debug_coordinates();
 }

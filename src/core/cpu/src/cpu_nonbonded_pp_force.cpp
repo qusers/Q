@@ -46,8 +46,8 @@ void calc_nonbonded_pp_forces() {
             da.x = coords[j].x - coords[i].x;
             da.y = coords[j].y - coords[i].y;
             da.z = coords[j].z - coords[i].z;
-            r2a = static_cast<real_t>(1.0) / (da.x * da.x + da.y * da.y + da.z * da.z);
-            ra = static_cast<real_t>(std::sqrt(r2a));
+            r2a = 1.0f / (da.x * da.x + da.y * da.y + da.z * da.z);
+            ra = sqrt(r2a);
             r6a = r2a * r2a * r2a;
 
             crg_i *= sqrt(ctx.topo.coulomb_constant);

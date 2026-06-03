@@ -24,6 +24,7 @@ inline void output_charge_group_config(std::ofstream& file, const charge_group_c
 inline void output_coords(std::ofstream& file, const HostDeviceBuffer<coord_t>& coords) {
     file << coords.length << '\n';
     for (int i = 0; i < coords.length; i++) {
+        file << i << ' ';
         output_coord(file, coords.cpu_data_p[i]);
     }
 }
@@ -129,5 +130,20 @@ inline void debug_dvelocities() {
     file << std::scientific << std::setprecision(16);
     auto& ctx = Context::instance();
     output_dvelocities(file, *ctx.dvelocities);
+    file << "*******************************************************************************************\n";
+}
+
+
+inline void debug_coordinates() {
+    static bool flag3 = false;
+    if (!flag3) {
+        std::ofstream("./coordinates_debug.txt", std::ios::trunc).close();
+        // flag3 = true;
+    }
+
+    std::ofstream file("./coordinates_debug.txt", std::ios::app);
+    file << std::scientific << std::setprecision(16);
+    auto& ctx = Context::instance();
+    output_coords(file, *ctx.coords);
     file << "*******************************************************************************************\n";
 }
