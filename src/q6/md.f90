@@ -1783,7 +1783,8 @@ subroutine get_fep
         call die('single_hamiltonian currently supports only the arithmetic vdW rule (AMBER/CHARMM)')
       if (.not. qvdw_flag) &
         call die('single_hamiltonian requires q-atom vdW types in the FEP file ([change_atoms])')
-      call single_h_init(nstates)
+      ! single_h_init is called at the end of prep_sim, after qcrg is scaled by
+      ! sqrt(coulomb_constant), so the interpolated charges carry that factor.
     end if
 
     !remove redefined bonded interactions from topology
@@ -10870,7 +10871,11 @@ subroutine nonbon2_qq_singleh
     gap_qq = qi*qj*el_scale
     if(iLJ == 3) gap_qq = gap_qq*el14_scale
     if(softcore_method == SC_GAPSYS .and. omc > 0._8) then
-      r_sc_q = gapsys_alpha_q*(1.0_8 + gapsys_sigma_q*abs(qi*qj))*omc**(1.0_8/6.0_8)
+      ! Soften Coulomb over the same range as the LJ wall, so a penetrable
+      ! (LJ-softened) atom cannot be pulled through by an unbounded Coulomb
+      ! singularity. Required when vdW and Coulomb vanish simultaneously
+      ! (GROMACS sc-coul style); gapsys_alpha_q/sigma_q are not used here.
+      r_sc_q = r_sc_lj
       if(dist < r_sc_q .and. r_sc_q > 0._8) then
         call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel, gap_Fq)
         dv_el = -gap_Fq/dist
@@ -10951,7 +10956,11 @@ subroutine nonbon2_qp_singleh
     gap_qq = qi*qj
     if(iLJ == 3) gap_qq = gap_qq*el14_scale
     if(softcore_method == SC_GAPSYS .and. omc > 0._8) then
-      r_sc_q = gapsys_alpha_q*(1.0_8 + gapsys_sigma_q*abs(qi*qj))*omc**(1.0_8/6.0_8)
+      ! Soften Coulomb over the same range as the LJ wall, so a penetrable
+      ! (LJ-softened) atom cannot be pulled through by an unbounded Coulomb
+      ! singularity. Required when vdW and Coulomb vanish simultaneously
+      ! (GROMACS sc-coul style); gapsys_alpha_q/sigma_q are not used here.
+      r_sc_q = r_sc_lj
       if(dist < r_sc_q .and. r_sc_q > 0._8) then
         call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel, gap_Fq)
         dv_el = -gap_Fq/dist
@@ -11042,7 +11051,7 @@ subroutine nonbon2_qw_singleh
         else
           dv_lj = r2O*(-(12.*V_aO - 6.*V_bO))
         end if
-        r_sc_q = gapsys_alpha_q*(1.0_8 + gapsys_sigma_q*abs(gap_qq_o))*omc**(1.0_8/6.0_8)
+        r_sc_q = r_sc_lj   ! soften Coulomb over the same range as LJ (see nonbon2_qq_singleh)
         if(dist < r_sc_q .and. r_sc_q > 0._8) then
           call gapsys_eval_q(gap_qq_o, r_sc_q, dist, VelO, gap_Fq)
           dv_el = -gap_Fq/dist
@@ -11065,7 +11074,7 @@ subroutine nonbon2_qw_singleh
         else
           dv_lj = r2H1*(-(12.*V_aH1 - 6.*V_bH1))
         end if
-        r_sc_q = gapsys_alpha_q*(1.0_8 + gapsys_sigma_q*abs(gap_qq_h))*omc**(1.0_8/6.0_8)
+        r_sc_q = r_sc_lj   ! soften Coulomb over the same range as LJ (see nonbon2_qq_singleh)
         if(dist < r_sc_q .and. r_sc_q > 0._8) then
           call gapsys_eval_q(gap_qq_h, r_sc_q, dist, VelH1, gap_Fq)
           dv_el = -gap_Fq/dist
@@ -11088,7 +11097,7 @@ subroutine nonbon2_qw_singleh
         else
           dv_lj = r2H2*(-(12.*V_aH2 - 6.*V_bH2))
         end if
-        r_sc_q = gapsys_alpha_q*(1.0_8 + gapsys_sigma_q*abs(gap_qq_h))*omc**(1.0_8/6.0_8)
+        r_sc_q = r_sc_lj   ! soften Coulomb over the same range as LJ (see nonbon2_qq_singleh)
         if(dist < r_sc_q .and. r_sc_q > 0._8) then
           call gapsys_eval_q(gap_qq_h, r_sc_q, dist, VelH2, gap_Fq)
           dv_el = -gap_Fq/dist
@@ -15786,6 +15795,11 @@ subroutine prep_sim
   if(nqat > 0) then
     qcrg(:,:) = qcrg(:,:) * sqrt(coulomb_constant)
   end if
+
+  ! Single-Hamiltonian interpolation precompute: must run after qcrg is scaled
+  ! by sqrt(coulomb_constant) above (so sh_qcrg carries the factor) and before
+  ! make_nbqqlist (which uses sh_group for cross-ligand exclusion).
+  if (use_single_hamiltonian) call single_h_init(nstates)
 end subroutine prep_sim
 
 !-----------------------------------------------------------------------
