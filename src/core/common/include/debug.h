@@ -126,8 +126,7 @@ inline void debug_dvelocities() {
     }
 
     std::ofstream file("./dvelocities_debug.txt", std::ios::app);
-    file << std::fixed << std::setprecision(8);
-
+    file << std::scientific << std::setprecision(16);
     auto& ctx = Context::instance();
     output_dvelocities(file, *ctx.dvelocities);
     file << "*******************************************************************************************\n";

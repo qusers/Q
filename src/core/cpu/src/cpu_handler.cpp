@@ -68,7 +68,6 @@ void CpuHandler::calc_internal_forces(int iteration) {
 
     calc_nonbonded_qq_forces();
     debug_dvelocities();
-
 }
 
 void CpuHandler::calc_nonbonded_forces() {

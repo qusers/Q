@@ -167,7 +167,7 @@ void calc_polx_w_forces(int iteration) {
             }
             f0 = -1.0f / f0;
             f0 *= dv;
-            // ss << ii << ' ' << f0 << '\n';
+            ss << ii << ' ' << cos_th << '\n';
 
             f1O.x = -2 * (rcu.x - rmu.x * cos_th) / rm;
             f1O.y = -2 * (rcu.y - rmu.y * cos_th) / rm;

@@ -5,6 +5,7 @@
 #include "constants.h"
 #include "context.h"
 #include "vdw_rules.h"
+#include "debug.h"
 
 void calc_nonbonded_qq_forces() {
     auto& ctx = Context::instance();
@@ -15,7 +16,6 @@ void calc_nonbonded_qq_forces() {
     auto *excluded = ctx.excluded->cpu_data_p;
     auto *q_elscales = ctx.q_elscales->cpu_data_p;
     int ai, aj;
-    float crg_i, crg_j;
     real_t elscale, scaling;
     bool bond23, bond14;
     coord_t da;
@@ -24,16 +24,22 @@ void calc_nonbonded_qq_forces() {
     real_t dva;
     real_t ai_aii, aj_aii, ai_bii, aj_bii;
 
+    std::ostringstream ss;
+    ss << std::fixed << std::setprecision(8);
     for (int state = 0; state < ctx.n_lambdas; state++) {
         for (int qi = 0; qi < ctx.n_qatoms; qi++) {
             for (int qj = qi + 1; qj < ctx.n_qatoms; qj++) {
                 ai = ctx.q_atoms[qi];
                 aj = ctx.q_atoms[qj];
 
-                crg_i = ctx.unified_ccharge(ai, state).charge;
-                crg_j = ctx.unified_ccharge(aj, state).charge;
-                crg_i *= sqrt(ctx.topo.coulomb_constant);
-                crg_j *= sqrt(ctx.topo.coulomb_constant);
+                float _crg_i = ctx.unified_ccharge(ai, state).charge;
+                float _crg_j = ctx.unified_ccharge(aj, state).charge;
+                _crg_i *= sqrt(ctx.topo.coulomb_constant);
+                _crg_j *= sqrt(ctx.topo.coulomb_constant);
+                double crg_i = _crg_i;
+                double crg_j = _crg_j;
+
+
 
                 bond23 = LJ_matrix[ai * ctx.n_atoms_solute + aj] == 3;
                 bond14 = LJ_matrix[ai * ctx.n_atoms_solute + aj] == 1;
@@ -56,8 +62,8 @@ void calc_nonbonded_qq_forces() {
                 da.x = coords[aj].x - coords[ai].x;
                 da.y = coords[aj].y - coords[ai].y;
                 da.z = coords[aj].z - coords[ai].z;
-                r2a = static_cast<real_t>(1.0) / (da.x * da.x + da.y * da.y + da.z * da.z);
-                ra = static_cast<real_t>(std::sqrt(r2a));
+                r2a = 1.0f / (da.x * da.x + da.y * da.y + da.z * da.z);
+                ra = sqrt(r2a);
                 r6a = r2a * r2a * r2a;
 
                 Vela =  crg_i * crg_j * ra * elscale * scaling;
@@ -72,8 +78,7 @@ void calc_nonbonded_qq_forces() {
                 } else {
                     calc_vdw_arithmetic(ai_aii, aj_aii, ai_bii, aj_bii, r6a, &V_a, &V_b);
                 }
-                dva = r2a * (-Vela - static_cast<real_t>(12.0) * V_a + static_cast<real_t>(6.0) * V_b) *
-                      static_cast<real_t>(lambdas[state]);
+                dva = r2a * (-Vela - 12.0f * V_a + 6.0f * V_b) * lambdas[state];
 
                 dvelocities[ai].x -= dva * da.x;
                 dvelocities[ai].y -= dva * da.y;
@@ -84,10 +89,15 @@ void calc_nonbonded_qq_forces() {
                 dvelocities[aj].z += dva * da.z;
 
                 ctx.EQ_nonbond_qq[state].Ucoul += static_cast<real_t>(Vela);
+
+                ss << qi << ' ' << qj << ' ' << state << ' ' << dva << ' ' << da.x << ' ' << da.y << ' ' << da.z << '\n';
+
+
                 ctx.EQ_nonbond_qq[state].Uvdw += static_cast<real_t>(V_a - V_b);
             }
         }
     }
+    debug(ss.str());
 
 #ifdef DEBUG
     printf("q-q: Ecoul = %f Evdw = %f\n", ctx.EQ_nonbond_qq[0].Ucoul, ctx.EQ_nonbond_qq[0].Uvdw);
