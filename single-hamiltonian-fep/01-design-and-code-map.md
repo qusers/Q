@@ -1,5 +1,17 @@
 # Single-Hamiltonian FEP in Q — design and verified code map
 
+> **Status (2026-06-03):**
+> - Phase 1 (`02-phase1-results.md`): engine path for arithmetic/SBC, stable
+>   across λ in the pocket, Gapsys soft-core fires, flag-off non-breaking. ✓
+> - Phase 2 (`03-phase2-results.md`): foreign-λ BAR/MBAR estimator built and
+>   self-consistent, QligFEP `--single-hamiltonian` wired. **Open finding:** the
+>   dual-topology single-H ΔG does not converge to the multistate value (path
+>   detours over a +79 kcal intermediate where both half-ligands are co-present);
+>   the water leg crashes in dense solvent. Recommended next step: a true
+>   single-topology builder (no dual presence) — see `03-phase2-results.md`.
+> - Not done: geometric/OPLS routines; single-topology QligFEP builder.
+
+
 Worktree: `Q-single-hamiltonian-fep`, branch `feature/single-hamiltonian-fep`,
 based on `feature/softcore-methods-v2` (HEAD `be1c3a97`).
 
