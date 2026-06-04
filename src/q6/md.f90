@@ -10898,6 +10898,8 @@ subroutine nonbon2_qq_singleh
     ! Coulomb (interpolated charges) with Gapsys soft-core.
     gap_qq = qi*qj*el_scale
     if(iLJ == 3) gap_qq = gap_qq*el14_scale
+    ! Optionally linearize the intra-ligand Coulomb (q^2 convexity -> barrier).
+    if(jq /= 0) gap_qq = gap_qq*sh_intra_linfac(sh_group(iq), sh_group(jq), sh_decouple(iq))
     if(softcore_method == SC_GAPSYS .and. omc > 0._8) then
       ! Soften Coulomb over the same range as the LJ wall, so a penetrable
       ! (LJ-softened) atom cannot be pulled through by an unbounded Coulomb
@@ -11223,6 +11225,7 @@ subroutine single_h_qx_energy(lc, qx_el, qx_vdw)
     aLJ = aLJ*aLJ; aLJ = aLJ*aLJ*aLJ; sigma6 = aLJ*0.5_8
     V_a = bLJ*aLJ*aLJ*r12; V_b = 2._8*bLJ*aLJ*r6
     gap_qq = qi*qj*el_scale; if(iLJ == 3) gap_qq = gap_qq*el14_scale
+    if(jq /= 0) gap_qq = gap_qq*sh_intra_linfac(shf_group(iq), shf_group(jq), shf_decouple(iq))
     if(softcore_method == SC_GAPSYS .and. omc > 0._8) then
       r_sc_lj = gapsys_alpha_lj*((26._8/7._8)*sigma6*omc)**(1._8/6._8)
       if(dist < r_sc_lj .and. r_sc_lj > 0._8) then

@@ -185,6 +185,13 @@ module qatom
   ! softcore_method (which still selects the soft-core form). nstates stays 2:
   ! state 1 = endpoint A, state 2 = endpoint B, coupling lambda_c = EQ(2)%lambda.
   logical                                 :: use_single_hamiltonian = .false.
+  ! Linearize the intra-ligand Coulomb of a vanishing/appearing group. Both atoms
+  ! of such an intra pair carry the presence factor p = 1 - decouple, so their
+  ! interpolated-charge product is p^2*Q_i*Q_j -- convex in lambda, producing the
+  ! large mid-lambda barrier. Dividing by p recovers the linear p*Q_i*Q_j
+  ! (multistate energy-mixing) path. Off by default; only acts under
+  ! single_hamiltonian. See sh_intra_linfac.
+  logical                                 :: use_single_h_linear_intra = .false.
   ! Per-q-atom interpolated LJ parameters at the run's coupling lambda_c, in Q's
   ! storage convention (R*/sqrt(eps) for arithmetic, sqrt(C12)/sqrt(C6) for
   ! geometric), per LJ slot. Filled by single_h_init.
@@ -410,6 +417,9 @@ logical function qatom_load_atoms(fep_file)
        if(use_single_hamiltonian) then
           write(*,'(a)') &
                'Perturbation scheme: SINGLE-HAMILTONIAN (lambda-interpolated parameters)'
+          yes = prm_get_logical_by_key('single_h_linear_intra', use_single_h_linear_intra, .false.)
+          if(use_single_h_linear_intra) write(*,'(a)') &
+               '  single_h_linear_intra: intra-ligand Coulomb linearized (multistate energy-mixing path)'
        end if
 
        offset = -1
@@ -2158,6 +2168,28 @@ pure logical function sh_xlig_excluded(iq, jq)
   if((sh_group(iq) == 1 .and. sh_group(jq) == 2) .or. &
      (sh_group(iq) == 2 .and. sh_group(jq) == 1)) sh_xlig_excluded = .true.
 end function sh_xlig_excluded
+
+!-------------------------------------------------------------------------
+
+pure real(8) function sh_intra_linfac(group_i, group_j, decouple_i)
+!! Factor that linearizes the intra-ligand Coulomb of a vanishing/appearing group.
+!! When both atoms of a Q-Q pair are in the same non-shared group, their
+!! interpolated charges each carry the presence factor p = 1 - decouple, so the
+!! charge product is p^2*Q_i*Q_j (convex in lambda -> mid-lambda barrier). Dividing
+!! by p makes it p*Q_i*Q_j, the linear multistate energy-mixing path. Returns 1
+!! (no change) when the flag is off, the atoms differ in group, or either is
+!! shared (group 0) -- those products are already linear in lambda. decouple is
+!! equal for both atoms of a same-group pair, so decouple_i fixes p.
+  integer, intent(in) :: group_i, group_j
+  real(8), intent(in) :: decouple_i
+  real(8), parameter  :: TINY_P = 1.0e-6_8
+  real(8) :: p
+  sh_intra_linfac = 1.0_8
+  if(.not. use_single_h_linear_intra) return
+  if(group_i == 0 .or. group_i /= group_j) return
+  p = 1.0_8 - decouple_i
+  if(p > TINY_P) sh_intra_linfac = 1.0_8 / p
+end function sh_intra_linfac
 
 !-------------------------------------------------------------------------
 
