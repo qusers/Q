@@ -219,5 +219,6 @@ benchmark/FEP_ligand_binding/2.Q7/1.protein/
 benchmark/FEP_ligand_binding/2.Q7/2.water/
 
 !test/q6/**
+!test/qligfep/resources/**
 test/*.png
 
