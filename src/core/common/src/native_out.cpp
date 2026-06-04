@@ -143,6 +143,9 @@ void NativeOutput::init(Context& ctx) {
 
 void NativeOutput::finish(Context& ctx) {
     ensure_initialized(ctx);
+    if (ctx.md.trajectory > 0 && ctx.md.steps % ctx.md.trajectory == 0) {
+        write_trajectory_frame(ctx);
+    }
     write_restart_file(ctx);
 }
 
@@ -156,8 +159,8 @@ void NativeOutput::shutdown() {
 void NativeOutput::output_trajectory(Context& ctx, int iteration) {
     ensure_initialized(ctx);
 
-    int step = iteration + 1;
-    if (ctx.md.trajectory > 0 && step % ctx.md.trajectory == 0) {
+    int step = iteration;
+    if (ctx.md.trajectory > 0 && step > 0 && step % ctx.md.trajectory == 0) {
         write_trajectory_frame(ctx);
     }
 }
@@ -165,8 +168,8 @@ void NativeOutput::output_trajectory(Context& ctx, int iteration) {
 void NativeOutput::output_energy(Context& ctx, int iteration) {
     ensure_initialized(ctx);
 
-    int step = iteration + 1;
-    if (ctx.md.energy > 0 && step % ctx.md.energy == 0) {
+    int step = iteration;
+    if (ctx.md.energy > 0 && step > 0 && step % ctx.md.energy == 0) {
         write_energy_frame(ctx);
     }
 }
@@ -174,8 +177,8 @@ void NativeOutput::output_energy(Context& ctx, int iteration) {
 void NativeOutput::output_restart(Context& ctx, int iteration) {
     ensure_initialized(ctx);
 
-    int step = iteration + 1;
-    if (step > 0 && step % 1000 == 0) {
+    int step = iteration;
+    if (step % 1000 == 0) {
         write_restart_file(ctx);
     }
 }

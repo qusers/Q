@@ -32,6 +32,7 @@ class Handler {
     virtual void calc_leapfrog() = 0;
     virtual void initialize_backend() = 0;
 
+    void calc_final_potential(int iteration);
 
     void update_energy_totals();
     void print_outputs(int iteration);
