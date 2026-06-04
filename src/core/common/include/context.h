@@ -235,6 +235,7 @@ class Context {
     int n_qshakes;
     int n_qsoftpairs;
     int n_qsoftcores;
+    bool softcore_use_max_potential = false;
     int n_qtorcouples;
     int n_qtorsions;
 

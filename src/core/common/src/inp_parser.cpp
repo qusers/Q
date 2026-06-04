@@ -58,6 +58,12 @@ bool is_on_value(const std::map<std::string, std::string>& values, const std::st
     return bool_value(values, key, fallback) == "on";
 }
 
+bool is_on_token(const std::string& token) {
+    std::string value = lower_normalized(token);
+    if (value == "true" || value == "yes" || value == "1") return true;
+    return value == "on";
+}
+
 std::vector<std::vector<std::string>> checked_split_groups(const std::vector<std::string>& flat, size_t width) {
     if (width == 0) throw parse_error("Invalid grouped input width.");
     if (flat.size() % width != 0) {
@@ -289,6 +295,7 @@ struct InpParser::TopData {
 
 struct InpParser::FepData {
     int states = 0;
+    bool softcore_use_max_potential = false;
     std::vector<std::string> q_atoms;
     std::vector<std::vector<std::string>> q_atypes;
     std::vector<std::vector<std::string>> q_charges;
@@ -592,6 +599,7 @@ void InpParser::ensure_fep() {
     while (std::getline(first, raw)) {
         std::vector<std::string> f = split_ws(strip_comment(raw));
         if (f.size() >= 2 && f[0] == "states") fep_->states = parse_int(f[1]);
+        if (f.size() >= 2 && f[0] == "softcore_use_max_potential") fep_->softcore_use_max_potential = is_on_token(f[1]);
     }
 
     fep_->q_atypes.assign(fep_->states, {});
@@ -1237,6 +1245,7 @@ void InpParser::parse_q_shakes() {
 
 void InpParser::parse_q_softcores() {
     ensure_fep();
+    result.softcore_use_max_potential = fep_->softcore_use_max_potential;
     int n_lambdas = static_cast<int>(result.lambdas.size());
     size_t total = 0;
     for (const auto& state : fep_->q_softcores) total += state.size();
