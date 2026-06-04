@@ -63,11 +63,8 @@ CHLORIDE_NAME = {
 # qprep treats HOH as solvent and the counter-water needs to be a solute.
 COUNTER_WATER_RESNAME = "CWT"
 
-
-class DualTopologyFEP:
-    """
-    Create dual topology FEP files based on two ligands
-    """
+class FEP:
+    """Shared FEP setup machinery for dual- and single-topology builders."""
 
     def __init__(
         self,
@@ -172,322 +169,6 @@ class DualTopologyFEP:
         pattern = re.compile(r"\b(" + "|".join(replacements.keys()) + r")\b")
         replaced_string = pattern.sub(lambda x: replacements[x.group()], string)
         return replaced_string
-
-    def read_files(self):
-        changes_1 = {}
-        changes_2 = {}
-        charges = []
-        atomtypes = []
-        merged_molsize = 0
-
-        with open(self.lig1 + ".lib") as infile:
-            block = 0
-            for line in infile:
-                line = line.split()
-                if len(line) > 0:
-                    if line[0] == "[atoms]":
-                        block = 1
-                        continue
-                    if line[0] == "[bonds]":
-                        block = 2
-
-                if block == 1 and len(line) > 0:
-                    # construct for FEP file
-                    merged_molsize = merged_molsize + 1
-                    charges.append([merged_molsize, line[3], "0.000"])
-                    atomtypes.append([merged_molsize, line[2], "DUM"])
-
-                if block == 2:
-                    break
-
-            molsize_lig1 = len(atomtypes)
-
-        with open(self.lig2 + ".lib") as infile:
-            block = 0
-            for line in infile:
-                line = line.split()
-                if len(line) > 0:
-                    if line[0] == "[atoms]":
-                        block = 1
-                        continue
-                    if line[0] == "[bonds]":
-                        block = 2
-
-                if block == 1 and len(line) > 0:
-                    # construct for FEP file
-                    merged_molsize = merged_molsize + 1
-                    charges.append([merged_molsize, "0.000", line[3]])
-
-                    # adjustments to be made for lib and prm files
-                    cnt = 0
-                    for i in [line[1], line[2]]:
-                        cnt = cnt + 1
-                        if "AMBER14sb" in self.FF or "CHARMM36" in self.FF:
-                            j = "X" + i
-                        else:
-                            match = re.match(r"([a-z]+)([0-9]+)", i, re.I)
-                            if match:
-                                items = match.groups()
-                                j = str(items[0]) + str(int(items[1]) + int(molsize_lig1))
-
-                        if cnt == 1:
-                            changes_1[i] = j
-                        if cnt == 2:
-                            changes_2[i] = j
-                            atomtypes.append([merged_molsize, "DUM", j])
-
-        molsize_lig2 = merged_molsize - molsize_lig1
-
-        # Compute formal charges from partial charge sums
-        self.charge_lig1 = round(sum(float(c[1]) for c in charges[:molsize_lig1]))
-        self.charge_lig2 = round(sum(float(c[2]) for c in charges[molsize_lig1:]))
-        self.same_charge = self.charge_lig1 == self.charge_lig2
-
-        return ([changes_1, changes_2], [charges, atomtypes], [molsize_lig1, molsize_lig2])
-
-    def change_lib(self, replacements, writedir):
-        replacements["LIG"] = "LID"
-        pattern = re.compile(r"\b(" + "|".join(replacements.keys()) + r")\b")
-
-        with open(self.lig2 + ".lib") as infile:
-            file_replaced = []
-            for line in infile:
-                line2 = pattern.sub(lambda x: replacements[x.group()], line)
-                file_replaced.append(line2)
-
-        with open(writedir + "/" + self.lig2 + "_renumber.lib", "w") as outfile:
-            for line in file_replaced:
-                outfile.write(line)
-
-        shutil.copy(self.lig1 + ".lib", writedir + "/" + self.lig1 + ".lib")
-
-    def change_prm(self, replacements, writedir):
-        pattern = re.compile(r"\b(" + "|".join(replacements.keys()) + r")\b")
-        file1 = glob.glob(self.lig1 + ".prm")[0]
-        file2 = glob.glob(self.lig2 + ".prm")[0]
-        prm_file = self.prm_file
-        prm_merged = {"vdw": [], "bonds": [], "angle": [], "torsion": [], "improper": []}
-
-        for file in [file1, file2]:
-            with open(file) as infile:
-                block = 0
-                for line in infile:
-                    if file == file2:
-                        line = pattern.sub(lambda x: replacements[x.group()], line)
-                    if line == "[atom_types]\n":
-                        block = 1
-                        continue
-                    elif line == "[bonds]\n":
-                        block = 2
-                        continue
-                    elif line == "[angles]\n":
-                        block = 3
-                        continue
-                    elif line == "[torsions]\n":
-                        block = 4
-                        continue
-                    if line == "[impropers]\n":
-                        block = 5
-                        continue
-                    if block == 1:
-                        prm_merged["vdw"].append(line)
-
-                    elif block == 2:
-                        prm_merged["bonds"].append(line)
-
-                    elif block == 3:
-                        prm_merged["angle"].append(line)
-
-                    elif block == 4:
-                        prm_merged["torsion"].append(line)
-
-                    elif block == 5:
-                        prm_merged["improper"].append(line)
-
-        prm_fname = f"{writedir}/{self.FF}_{self.lig1}_{self.lig2}_merged.prm"
-        with open(prm_file) as infile, open(prm_fname, "w") as outfile:
-            for line in infile:
-                block = 0
-                outfile.write(line)
-                if len(line) > 1:
-                    if line == "! Ligand vdW parameters\n":
-                        block = 1
-                    elif line == "! Ligand bond parameters\n":
-                        block = 2
-                    elif line == "! Ligand angle parameters\n":
-                        block = 3
-                    elif line == "! Ligand torsion parameters\n":
-                        block = 4
-                    elif line == "! Ligand improper parameters\n":
-                        block = 5
-                # Read the parameters in from file and store them
-                if block == 1:
-                    for line in prm_merged["vdw"]:
-                        outfile.write(line)
-
-                elif block == 2:
-                    for line in prm_merged["bonds"]:
-                        outfile.write(line)
-                elif block == 3:
-                    for line in prm_merged["angle"]:
-                        outfile.write(line)
-                elif block == 4:
-                    for line in prm_merged["torsion"]:
-                        outfile.write(line)
-
-                elif block == 5:
-                    for line in prm_merged["improper"]:
-                        outfile.write(line)
-
-        # AND return the vdW list for the FEP file
-        FEP_vdw = []
-        for line in prm_merged["vdw"]:
-            if len(line) > 1 and line[0] != "!" and line[0:1]:
-                line = line.split()
-                line2 = f"{line[0]:10}{line[1]:10}{line[3]:10}{str(0):10}{str(0):10}{line[4]:10}{line[5]:10}{line[6]:10}"
-                FEP_vdw.append(line2)
-        return FEP_vdw
-
-    def write_FEP_file(
-        self, change_charges, change_vdw, FEP_vdw, writedir, lig_size1, lig_size2,
-        softcore_method="standard", single_hamiltonian=False,
-    ):
-        lig_size1 = int(lig_size1)
-        lig_size2 = int(lig_size2)
-        lig_tot = lig_size1 + lig_size2
-        exclude_residues = ["HOH", "LIG", "LID", COUNTER_WATER_RESNAME]
-        if self.system == "water" and self.n_counter_ions > 0 and self.ion_type:
-            # Method 1 (real ion in water leg) excludes the ion residue too.
-            exclude_residues.append(self.ion_type)
-        self.atomoffset = (
-            read_pdb_to_dataframe(Path(writedir) / "top_p.pdb")
-            .query("~residue_name.isin(@exclude_residues)")
-            .shape[0]
-        )
-
-        # Counter-water Q-atom topology indices (3 per counter-water). Empty
-        # unless place_counter_water() populated them (Method 3 only).
-        cw_topo_indices = []
-        if self.counter_water_atoms:
-            for cw in self.counter_water_atoms:
-                cw_topo_indices.extend(cw["topology_indices"])
-
-        with open(writedir + "/FEP1.fep", "w") as outfile:
-            total_atoms = len(change_charges)
-            outfile.write("!info: " + self.lig1 + " --> " + self.lig2 + "\n")
-            outfile.write("[FEP]\n")
-            outfile.write("states 2\n")
-            outfile.write("softcore_use_max_potential on\n")
-            if softcore_method != "standard":
-                outfile.write(f"softcore_method {softcore_method}\n")
-            if single_hamiltonian:
-                outfile.write("single_hamiltonian on\n")
-            outfile.write("\n")
-
-            # defining the atom order taken user given offset into account
-            outfile.write("[atoms]\n")
-            for i in range(1, total_atoms + 1):
-                outfile.write(f"{str(i):5}{str(i + self.atomoffset):5}\n")
-            for idx, topo_idx in enumerate(cw_topo_indices):
-                q_idx = total_atoms + 1 + idx
-                outfile.write(f"{str(q_idx):5}{str(topo_idx):5}\n")
-            outfile.write("\n\n")
-
-            # changing charges
-            outfile.write("[change_charges]\n")
-
-            for line in change_charges:
-                outfile.write(f"{line[0]:<5}{line[1]:>10}{line[2]:>10}\n")
-            if self.counter_water_atoms:
-                q_idx = total_atoms
-                for cw in self.counter_water_atoms:
-                    for qatom in cw["qatoms"]:
-                        q_idx += 1
-                        outfile.write(f"{q_idx:<5}{qatom['charge_s1']:>10}{qatom['charge_s2']:>10}\n")
-            outfile.write("\n\n")
-
-            # add the Q atomtypes
-            outfile.write("[atom_types]\n")
-            for line in FEP_vdw:
-                outfile.write(line + "\n")
-            if self.counter_ion_vdw:
-                for vdw_line in self.counter_ion_vdw:
-                    outfile.write(vdw_line + "\n")
-
-            outfile.write("DUM       0.0000    0.0000    0         0         0.0000    0.0000    1.0080")
-            outfile.write("\n\n")
-
-            outfile.write("[softcore]\n")
-            # ADD softcore
-            for i in range(1, lig_size1 + 1):
-                outfile.write("{:<5}{:>10}{:>10}\n".format(str(i), "0", "20"))
-
-            for i in range(1 + lig_size1, lig_tot + 1):
-                outfile.write("{:<5}{:>10}{:>10}\n".format(str(i), "20", "0"))
-            if self.counter_water_atoms:
-                q_idx = total_atoms
-                for cw in self.counter_water_atoms:
-                    for qatom in cw["qatoms"]:
-                        q_idx += 1
-                        outfile.write(
-                            "{:<5}{:>10}{:>10}\n".format(
-                                str(q_idx), qatom["softcore_s1"], qatom["softcore_s2"]
-                            )
-                        )
-
-            outfile.write("\n\n")
-
-            # changing atom types
-            outfile.write("[change_atoms]\n")
-            for line in change_vdw:
-                outfile.write(f"{line[0]:<5}{line[1]:>10}{line[2]:>10}\n")
-            if self.counter_water_atoms:
-                q_idx = total_atoms
-                for cw in self.counter_water_atoms:
-                    for qatom in cw["qatoms"]:
-                        q_idx += 1
-                        outfile.write(f"{q_idx:<5}{qatom['type_s1']:>10}{qatom['type_s2']:>10}\n")
-
-    def merge_pdbs(self, writedir):
-        replacements = {}
-        replacements["LIG"] = "LID"
-        file_replaced = []
-        atnr = self.atomoffset
-        with open(self.lig2 + ".pdb") as infile:
-            for line in infile:
-                if line.split()[0].strip() in self.include:
-                    atom1 = pdb_parse_in(line)
-                    atom1[4] = "LID"
-                    line = pdb_parse_out(atom1) + "\n"
-                    file_replaced.append(line)
-
-        with open(f"{self.lig1}.pdb") as infile, open(f"{writedir}/{self.pdb_fname}", "w") as outfile:
-            if self.system == "protein":
-                with open("protein.pdb") as protfile:
-                    contents = protfile.read()
-                    outfile.write(contents)
-                    if contents and not contents.endswith("\n"):
-                        outfile.write("\n")
-            for line in infile:
-                if line.split()[0].strip() in self.include:
-                    resnr = int(line[22:26])
-                    atnr += 1  # The atoms are not allowed to overlap in Q
-                    atom1 = pdb_parse_in(line)
-                    atom1[1] = atom1[1] + self.atomoffset
-                    atom1[6] = atom1[6] + self.residueoffset
-                    atom1[8] = float(atom1[8]) + 0.001
-                    atom1[9] = float(atom1[9]) + 0.001
-                    atom1[10] = float(atom1[10]) + 0.001
-                    line = pdb_parse_out(atom1) + "\n"
-                    outfile.write(line)
-
-            self.residueoffset = self.residueoffset + 2
-            resnr = f"{self.residueoffset:4}"
-            for line in file_replaced:
-                atnr = atnr + 1
-                atchange = f"{atnr:5}"
-                line = line[0:6] + atchange + line[11:22] + resnr + line[26:]
-                outfile.write(line)
 
     def place_counter_ions(self, writedir: str) -> int:
         """Place counter-ions in the combined PDB to neutralize charge differences.
@@ -862,6 +543,502 @@ class DualTopologyFEP:
 
         lambdas = lambdas[::-1]
         return lambdas
+
+    def write_submitfile(self, writedir):
+        if self.cluster in ("LOCAL", "LOCALP"):
+            return
+        replacements = {}
+        replacements["RUNFILE"] = "run" + self.cluster + ".sh"
+        submit_in = CONFIGS["ROOT_DIR"] + "/INPUTS/FEP_submit.sh"
+        submit_out = writedir + ("/FEP_submit.sh")
+        with open(submit_in) as infile, open(submit_out, "w") as outfile:
+            for line in infile:
+                line = replace(line, replacements)
+                outfile.write(line)
+
+        try:
+            st = os.stat(submit_out)
+            os.chmod(submit_out, st.st_mode | stat.S_IEXEC)
+        except:
+            print("WARNING: Could not change permission for " + submit_out)
+
+    def write_qfep(self, windows, lambdas):
+        qfep_out = self.write_dir + "/inputfiles/qfep.inp"
+        # TO DO: multiple files will need to be written out for temperature range
+        energy_files = format_energy_files(lambdas)
+        content = render_qfep_input(
+            total_lambdas=len(lambdas),
+            temperature=float(self.temperature),
+            windows=windows,
+            energy_files=energy_files,
+        )
+        with open(qfep_out, "w") as outfile:
+            outfile.write(content)
+
+    def avoid_water_protein_clashes(self, writedir, header: Optional[str] = None, save_removed: bool = False):
+        """Function to remove water molecules too close to protein & ligands | ligands (water leg).
+        Thresholds are the distances in Ångström from the protein & ligands | ligands atoms
+        to the nearest heavy atom in the water molecule (HOH).
+
+        The threshold used for the removal of these clashing water molecules are defined in the
+        `self.water_thresh` attribute.
+
+        Args:
+            writedir: directory in which QligFEP will write the input files.
+            header: header to be added to the water.pdb file. This detail is needed in Qprep's
+                current version (2024/07/21), as it doesn't recognize the radius when merging an
+                existing water.pdb file to the topology.
+            save_removed: whether to save the removed water molecules to a file. This is automatically
+                set to True in the `CLI` in case `--log-level` is passed as either `debug` or `trace`.
+        """
+        waterfile = Path(writedir) / "water.pdb"
+        protfile = Path(writedir) / self.pdb_fname
+        threshold = self.water_thresh
+        system_to_log = "protein & ligands" if self.system == "protein" else "ligands"
+
+        logger.info(f"Removing water molecules too close to {system_to_log} - threshold: {threshold} A.")
+        _, n_removed = rm_HOH_clash_NN(
+            pdb_df_query=read_pdb_to_dataframe(waterfile),
+            pdb_df_target=read_pdb_to_dataframe(protfile),
+            th=threshold,
+            output_file=waterfile,
+            heavy_only=True,
+            ligand_only=self.wath_ligand_only,
+            header=header,
+            save_removed=save_removed,
+        )
+
+    def _get_cog_from_water(self, writedir: str) -> list[float]:
+        """Extract COG from water.pdb TITLE line.
+
+        Args:
+            writedir: directory where inputfiles are written (e.g., FEP_lig1_lig2/inputfiles)
+
+        Returns:
+            list[float]: [x, y, z] coordinates of center of geometry
+        """
+        cog_regex = re.compile(r"([-]?\d{1,3}\.\d{3})\s+([-]?\d{1,3}\.\d{3})\s+([-]?\d{1,3}\.\d{3})")
+        water_pdb_path = Path(writedir).parents[1] / "water.pdb"
+
+        if water_pdb_path.exists():
+            first_lines = water_pdb_path.read_text().split("\n")[:3]
+            for line in first_lines:
+                if line.startswith("TITLE"):
+                    matches = cog_regex.search(line)
+                    if matches:
+                        return [float(x) for x in matches.groups()]
+
+        # Fallback: calculate from ligand
+        logger.debug("COG not found in water.pdb TITLE, calculating from ligand.")
+        return list(COG(self.lig1 + ".pdb"))
+
+    def _update_offsets_from_pdb(self, pdb_path: Path) -> None:
+        """Update atomoffset and residueoffset from filtered PDB.
+
+        After filtering fragments from the protein PDB, the atom and residue
+        numbering may have changed. This method recalculates the offsets.
+
+        Args:
+            pdb_path: Path to the (filtered) merged PDB file
+        """
+        pdb_df = read_pdb_to_dataframe(pdb_path)
+        protein_atoms = pdb_df[~pdb_df["residue_name"].isin(["HOH", "LIG", "LID"])]
+        if not protein_atoms.empty:
+            self.atomoffset = int(protein_atoms["atom_serial_number"].max())
+            self.residueoffset = int(protein_atoms["residue_seq_number"].max())
+            logger.debug(f"Updated offsets: atomoffset={self.atomoffset}, residueoffset={self.residueoffset}")
+
+    def filter_protein_fragments(self, writedir: str) -> tuple[int, int]:
+        """Filter merged PDB to remove molecular fragments completely outside sphere.
+
+        Uses MDAnalysis topology-based fragment detection. Entire chains, cofactors,
+        lipids, or other molecular units are removed if ALL their atoms are outside
+        the simulation sphere.
+
+        Args:
+            writedir: directory where inputfiles are written (e.g., FEP_lig1_lig2/inputfiles)
+
+        Returns:
+            Tuple of (original_atom_count, filtered_atom_count)
+        """
+        cog = self._get_cog_from_water(writedir)
+        merged_pdb = Path(writedir) / self.pdb_fname
+
+        orig_count, filt_count = filter_out_of_sphere_fragments(merged_pdb, cog, float(self.sphereradius))
+
+        # Update offsets if structure was filtered
+        if filt_count < orig_count:
+            self._update_offsets_from_pdb(merged_pdb)
+            logger.info(
+                f"Filtered structure: {orig_count} → {filt_count} atoms ({orig_count - filt_count} removed)"
+            )
+
+        return orig_count, filt_count
+
+    def get_sphere_density(self, pdb_df: pd.DataFrame) -> float:
+        """Calculate the solute density for the FEP system taking into consideration the different
+        densities for protein and lipids. The density is calculated as the weighted average
+        of the densities of the protein and lipids, where the weights are the number of atoms
+        in each.
+
+        Args:
+            pdb_df: DataFrame containing the PDB file information.
+
+        Returns:
+            float: The density of the system.
+        """
+        # regex with negative lookbehind to avoid matching NH, CH, OH (heavy atoms)
+        H_atom_regex = re.compile(r"(?<![NCO])H\d*")  # noqa: F841
+        protein_vol = 0.05794  # A**-3
+        lipid_vol = 0.03431  # A**-3 from octane
+
+        knn = NearestNeighbors(radius=float(self.sphereradius), metric="euclidean", n_jobs=4)
+        atom_coord_arr = pdb_df[["x", "y", "z"]].values
+        knn.fit(np.array(atom_coord_arr))
+        _, indices = knn.radius_neighbors(np.array(self.cog).reshape(1, -1))
+        heavy_atoms_df = (
+            pdb_df.iloc[indices[0]]
+            .query("residue_name != 'HOH'")
+            .query("~atom_name.str.match(@H_atom_regex)")
+        )
+        n_lipid_at = heavy_atoms_df.query("residue_name == 'POP'").shape[0]
+        if n_lipid_at == 0:
+            return 0.05794
+        n_protein_at = heavy_atoms_df.shape[0] - n_lipid_at
+
+        density = (n_protein_at * protein_vol + n_lipid_at * lipid_vol) / heavy_atoms_df.shape[0]
+        if density != 0.05794:
+            logger.info(f"Calculated solute density: {density:.5f} g/cm^3")
+
+        return density
+
+    def qprep(self, writedir):
+        os.chdir(writedir)
+        cluster_options = CLUSTER_DICT[self.cluster]
+        qprep_path = cluster_options["QPREP"]
+        logger.info(f"Running QPREP from path {qprep_path}")
+        run_qprep(qprep_path, "qprep.inp", "qprep.out", self.FF)
+        os.chdir("../../")
+
+
+class DualTopologyFEP(FEP):
+    """Create dual topology FEP files based on two ligands."""
+
+    def read_files(self):
+        changes_1 = {}
+        changes_2 = {}
+        charges = []
+        atomtypes = []
+        merged_molsize = 0
+
+        with open(self.lig1 + ".lib") as infile:
+            block = 0
+            for line in infile:
+                line = line.split()
+                if len(line) > 0:
+                    if line[0] == "[atoms]":
+                        block = 1
+                        continue
+                    if line[0] == "[bonds]":
+                        block = 2
+
+                if block == 1 and len(line) > 0:
+                    # construct for FEP file
+                    merged_molsize = merged_molsize + 1
+                    charges.append([merged_molsize, line[3], "0.000"])
+                    atomtypes.append([merged_molsize, line[2], "DUM"])
+
+                if block == 2:
+                    break
+
+            molsize_lig1 = len(atomtypes)
+
+        with open(self.lig2 + ".lib") as infile:
+            block = 0
+            for line in infile:
+                line = line.split()
+                if len(line) > 0:
+                    if line[0] == "[atoms]":
+                        block = 1
+                        continue
+                    if line[0] == "[bonds]":
+                        block = 2
+
+                if block == 1 and len(line) > 0:
+                    # construct for FEP file
+                    merged_molsize = merged_molsize + 1
+                    charges.append([merged_molsize, "0.000", line[3]])
+
+                    # adjustments to be made for lib and prm files
+                    cnt = 0
+                    for i in [line[1], line[2]]:
+                        cnt = cnt + 1
+                        if "AMBER14sb" in self.FF or "CHARMM36" in self.FF:
+                            j = "X" + i
+                        else:
+                            match = re.match(r"([a-z]+)([0-9]+)", i, re.I)
+                            if match:
+                                items = match.groups()
+                                j = str(items[0]) + str(int(items[1]) + int(molsize_lig1))
+
+                        if cnt == 1:
+                            changes_1[i] = j
+                        if cnt == 2:
+                            changes_2[i] = j
+                            atomtypes.append([merged_molsize, "DUM", j])
+
+        molsize_lig2 = merged_molsize - molsize_lig1
+
+        # Compute formal charges from partial charge sums
+        self.charge_lig1 = round(sum(float(c[1]) for c in charges[:molsize_lig1]))
+        self.charge_lig2 = round(sum(float(c[2]) for c in charges[molsize_lig1:]))
+        self.same_charge = self.charge_lig1 == self.charge_lig2
+
+        return ([changes_1, changes_2], [charges, atomtypes], [molsize_lig1, molsize_lig2])
+
+    def change_lib(self, replacements, writedir):
+        replacements["LIG"] = "LID"
+        pattern = re.compile(r"\b(" + "|".join(replacements.keys()) + r")\b")
+
+        with open(self.lig2 + ".lib") as infile:
+            file_replaced = []
+            for line in infile:
+                line2 = pattern.sub(lambda x: replacements[x.group()], line)
+                file_replaced.append(line2)
+
+        with open(writedir + "/" + self.lig2 + "_renumber.lib", "w") as outfile:
+            for line in file_replaced:
+                outfile.write(line)
+
+        shutil.copy(self.lig1 + ".lib", writedir + "/" + self.lig1 + ".lib")
+
+    def change_prm(self, replacements, writedir):
+        pattern = re.compile(r"\b(" + "|".join(replacements.keys()) + r")\b")
+        file1 = glob.glob(self.lig1 + ".prm")[0]
+        file2 = glob.glob(self.lig2 + ".prm")[0]
+        prm_file = self.prm_file
+        prm_merged = {"vdw": [], "bonds": [], "angle": [], "torsion": [], "improper": []}
+
+        for file in [file1, file2]:
+            with open(file) as infile:
+                block = 0
+                for line in infile:
+                    if file == file2:
+                        line = pattern.sub(lambda x: replacements[x.group()], line)
+                    if line == "[atom_types]\n":
+                        block = 1
+                        continue
+                    elif line == "[bonds]\n":
+                        block = 2
+                        continue
+                    elif line == "[angles]\n":
+                        block = 3
+                        continue
+                    elif line == "[torsions]\n":
+                        block = 4
+                        continue
+                    if line == "[impropers]\n":
+                        block = 5
+                        continue
+                    if block == 1:
+                        prm_merged["vdw"].append(line)
+
+                    elif block == 2:
+                        prm_merged["bonds"].append(line)
+
+                    elif block == 3:
+                        prm_merged["angle"].append(line)
+
+                    elif block == 4:
+                        prm_merged["torsion"].append(line)
+
+                    elif block == 5:
+                        prm_merged["improper"].append(line)
+
+        prm_fname = f"{writedir}/{self.FF}_{self.lig1}_{self.lig2}_merged.prm"
+        with open(prm_file) as infile, open(prm_fname, "w") as outfile:
+            for line in infile:
+                block = 0
+                outfile.write(line)
+                if len(line) > 1:
+                    if line == "! Ligand vdW parameters\n":
+                        block = 1
+                    elif line == "! Ligand bond parameters\n":
+                        block = 2
+                    elif line == "! Ligand angle parameters\n":
+                        block = 3
+                    elif line == "! Ligand torsion parameters\n":
+                        block = 4
+                    elif line == "! Ligand improper parameters\n":
+                        block = 5
+                # Read the parameters in from file and store them
+                if block == 1:
+                    for line in prm_merged["vdw"]:
+                        outfile.write(line)
+
+                elif block == 2:
+                    for line in prm_merged["bonds"]:
+                        outfile.write(line)
+                elif block == 3:
+                    for line in prm_merged["angle"]:
+                        outfile.write(line)
+                elif block == 4:
+                    for line in prm_merged["torsion"]:
+                        outfile.write(line)
+
+                elif block == 5:
+                    for line in prm_merged["improper"]:
+                        outfile.write(line)
+
+        # AND return the vdW list for the FEP file
+        FEP_vdw = []
+        for line in prm_merged["vdw"]:
+            if len(line) > 1 and line[0] != "!" and line[0:1]:
+                line = line.split()
+                line2 = f"{line[0]:10}{line[1]:10}{line[3]:10}{str(0):10}{str(0):10}{line[4]:10}{line[5]:10}{line[6]:10}"
+                FEP_vdw.append(line2)
+        return FEP_vdw
+
+    def write_FEP_file(
+        self, change_charges, change_vdw, FEP_vdw, writedir, lig_size1, lig_size2,
+        softcore_method="standard", single_hamiltonian=False,
+    ):
+        lig_size1 = int(lig_size1)
+        lig_size2 = int(lig_size2)
+        lig_tot = lig_size1 + lig_size2
+        exclude_residues = ["HOH", "LIG", "LID", COUNTER_WATER_RESNAME]
+        if self.system == "water" and self.n_counter_ions > 0 and self.ion_type:
+            # Method 1 (real ion in water leg) excludes the ion residue too.
+            exclude_residues.append(self.ion_type)
+        self.atomoffset = (
+            read_pdb_to_dataframe(Path(writedir) / "top_p.pdb")
+            .query("~residue_name.isin(@exclude_residues)")
+            .shape[0]
+        )
+
+        # Counter-water Q-atom topology indices (3 per counter-water). Empty
+        # unless place_counter_water() populated them (Method 3 only).
+        cw_topo_indices = []
+        if self.counter_water_atoms:
+            for cw in self.counter_water_atoms:
+                cw_topo_indices.extend(cw["topology_indices"])
+
+        with open(writedir + "/FEP1.fep", "w") as outfile:
+            total_atoms = len(change_charges)
+            outfile.write("!info: " + self.lig1 + " --> " + self.lig2 + "\n")
+            outfile.write("[FEP]\n")
+            outfile.write("states 2\n")
+            outfile.write("softcore_use_max_potential on\n")
+            if softcore_method != "standard":
+                outfile.write(f"softcore_method {softcore_method}\n")
+            if single_hamiltonian:
+                outfile.write("single_hamiltonian on\n")
+            outfile.write("\n")
+
+            # defining the atom order taken user given offset into account
+            outfile.write("[atoms]\n")
+            for i in range(1, total_atoms + 1):
+                outfile.write(f"{str(i):5}{str(i + self.atomoffset):5}\n")
+            for idx, topo_idx in enumerate(cw_topo_indices):
+                q_idx = total_atoms + 1 + idx
+                outfile.write(f"{str(q_idx):5}{str(topo_idx):5}\n")
+            outfile.write("\n\n")
+
+            # changing charges
+            outfile.write("[change_charges]\n")
+
+            for line in change_charges:
+                outfile.write(f"{line[0]:<5}{line[1]:>10}{line[2]:>10}\n")
+            if self.counter_water_atoms:
+                q_idx = total_atoms
+                for cw in self.counter_water_atoms:
+                    for qatom in cw["qatoms"]:
+                        q_idx += 1
+                        outfile.write(f"{q_idx:<5}{qatom['charge_s1']:>10}{qatom['charge_s2']:>10}\n")
+            outfile.write("\n\n")
+
+            # add the Q atomtypes
+            outfile.write("[atom_types]\n")
+            for line in FEP_vdw:
+                outfile.write(line + "\n")
+            if self.counter_ion_vdw:
+                for vdw_line in self.counter_ion_vdw:
+                    outfile.write(vdw_line + "\n")
+
+            outfile.write("DUM       0.0000    0.0000    0         0         0.0000    0.0000    1.0080")
+            outfile.write("\n\n")
+
+            outfile.write("[softcore]\n")
+            # ADD softcore
+            for i in range(1, lig_size1 + 1):
+                outfile.write("{:<5}{:>10}{:>10}\n".format(str(i), "0", "20"))
+
+            for i in range(1 + lig_size1, lig_tot + 1):
+                outfile.write("{:<5}{:>10}{:>10}\n".format(str(i), "20", "0"))
+            if self.counter_water_atoms:
+                q_idx = total_atoms
+                for cw in self.counter_water_atoms:
+                    for qatom in cw["qatoms"]:
+                        q_idx += 1
+                        outfile.write(
+                            "{:<5}{:>10}{:>10}\n".format(
+                                str(q_idx), qatom["softcore_s1"], qatom["softcore_s2"]
+                            )
+                        )
+
+            outfile.write("\n\n")
+
+            # changing atom types
+            outfile.write("[change_atoms]\n")
+            for line in change_vdw:
+                outfile.write(f"{line[0]:<5}{line[1]:>10}{line[2]:>10}\n")
+            if self.counter_water_atoms:
+                q_idx = total_atoms
+                for cw in self.counter_water_atoms:
+                    for qatom in cw["qatoms"]:
+                        q_idx += 1
+                        outfile.write(f"{q_idx:<5}{qatom['type_s1']:>10}{qatom['type_s2']:>10}\n")
+
+    def merge_pdbs(self, writedir):
+        replacements = {}
+        replacements["LIG"] = "LID"
+        file_replaced = []
+        atnr = self.atomoffset
+        with open(self.lig2 + ".pdb") as infile:
+            for line in infile:
+                if line.split()[0].strip() in self.include:
+                    atom1 = pdb_parse_in(line)
+                    atom1[4] = "LID"
+                    line = pdb_parse_out(atom1) + "\n"
+                    file_replaced.append(line)
+
+        with open(f"{self.lig1}.pdb") as infile, open(f"{writedir}/{self.pdb_fname}", "w") as outfile:
+            if self.system == "protein":
+                with open("protein.pdb") as protfile:
+                    contents = protfile.read()
+                    outfile.write(contents)
+                    if contents and not contents.endswith("\n"):
+                        outfile.write("\n")
+            for line in infile:
+                if line.split()[0].strip() in self.include:
+                    resnr = int(line[22:26])
+                    atnr += 1  # The atoms are not allowed to overlap in Q
+                    atom1 = pdb_parse_in(line)
+                    atom1[1] = atom1[1] + self.atomoffset
+                    atom1[6] = atom1[6] + self.residueoffset
+                    atom1[8] = float(atom1[8]) + 0.001
+                    atom1[9] = float(atom1[9]) + 0.001
+                    atom1[10] = float(atom1[10]) + 0.001
+                    line = pdb_parse_out(atom1) + "\n"
+                    outfile.write(line)
+
+            self.residueoffset = self.residueoffset + 2
+            resnr = f"{self.residueoffset:4}"
+            for line in file_replaced:
+                atnr = atnr + 1
+                atchange = f"{atnr:5}"
+                line = line[0:6] + atchange + line[11:22] + resnr + line[26:]
+                outfile.write(line)
 
     def set_restraints(self, writedir, restraint_method, strict_check: bool = True) -> list[list[int]]:
         """Function to set the restraints for FEP. Originally, this was performed on
@@ -1273,24 +1450,6 @@ class DualTopologyFEP:
 
         return file_list1, file_list2, file_list3
 
-    def write_submitfile(self, writedir):
-        if self.cluster in ("LOCAL", "LOCALP"):
-            return
-        replacements = {}
-        replacements["RUNFILE"] = "run" + self.cluster + ".sh"
-        submit_in = CONFIGS["ROOT_DIR"] + "/INPUTS/FEP_submit.sh"
-        submit_out = writedir + ("/FEP_submit.sh")
-        with open(submit_in) as infile, open(submit_out, "w") as outfile:
-            for line in infile:
-                line = replace(line, replacements)
-                outfile.write(line)
-
-        try:
-            st = os.stat(submit_out)
-            os.chmod(submit_out, st.st_mode | stat.S_IEXEC)
-        except:
-            print("WARNING: Could not change permission for " + submit_out)
-
     def _write_local_runfile(self, writedir, file_list):
         """Generate a local run script using the Python template."""
         cluster_config = CLUSTER_DICT[self.cluster]
@@ -1418,119 +1577,6 @@ class DualTopologyFEP:
                     outfile.write(rm_line)
                     outfile.write(outline[1:])
 
-    def write_qfep(self, windows, lambdas):
-        qfep_out = self.write_dir + "/inputfiles/qfep.inp"
-        # TO DO: multiple files will need to be written out for temperature range
-        energy_files = format_energy_files(lambdas)
-        content = render_qfep_input(
-            total_lambdas=len(lambdas),
-            temperature=float(self.temperature),
-            windows=windows,
-            energy_files=energy_files,
-        )
-        with open(qfep_out, "w") as outfile:
-            outfile.write(content)
-
-    def avoid_water_protein_clashes(self, writedir, header: Optional[str] = None, save_removed: bool = False):
-        """Function to remove water molecules too close to protein & ligands | ligands (water leg).
-        Thresholds are the distances in Ångström from the protein & ligands | ligands atoms
-        to the nearest heavy atom in the water molecule (HOH).
-
-        The threshold used for the removal of these clashing water molecules are defined in the
-        `self.water_thresh` attribute.
-
-        Args:
-            writedir: directory in which QligFEP will write the input files.
-            header: header to be added to the water.pdb file. This detail is needed in Qprep's
-                current version (2024/07/21), as it doesn't recognize the radius when merging an
-                existing water.pdb file to the topology.
-            save_removed: whether to save the removed water molecules to a file. This is automatically
-                set to True in the `CLI` in case `--log-level` is passed as either `debug` or `trace`.
-        """
-        waterfile = Path(writedir) / "water.pdb"
-        protfile = Path(writedir) / self.pdb_fname
-        threshold = self.water_thresh
-        system_to_log = "protein & ligands" if self.system == "protein" else "ligands"
-
-        logger.info(f"Removing water molecules too close to {system_to_log} - threshold: {threshold} A.")
-        _, n_removed = rm_HOH_clash_NN(
-            pdb_df_query=read_pdb_to_dataframe(waterfile),
-            pdb_df_target=read_pdb_to_dataframe(protfile),
-            th=threshold,
-            output_file=waterfile,
-            heavy_only=True,
-            ligand_only=self.wath_ligand_only,
-            header=header,
-            save_removed=save_removed,
-        )
-
-    def _get_cog_from_water(self, writedir: str) -> list[float]:
-        """Extract COG from water.pdb TITLE line.
-
-        Args:
-            writedir: directory where inputfiles are written (e.g., FEP_lig1_lig2/inputfiles)
-
-        Returns:
-            list[float]: [x, y, z] coordinates of center of geometry
-        """
-        cog_regex = re.compile(r"([-]?\d{1,3}\.\d{3})\s+([-]?\d{1,3}\.\d{3})\s+([-]?\d{1,3}\.\d{3})")
-        water_pdb_path = Path(writedir).parents[1] / "water.pdb"
-
-        if water_pdb_path.exists():
-            first_lines = water_pdb_path.read_text().split("\n")[:3]
-            for line in first_lines:
-                if line.startswith("TITLE"):
-                    matches = cog_regex.search(line)
-                    if matches:
-                        return [float(x) for x in matches.groups()]
-
-        # Fallback: calculate from ligand
-        logger.debug("COG not found in water.pdb TITLE, calculating from ligand.")
-        return list(COG(self.lig1 + ".pdb"))
-
-    def _update_offsets_from_pdb(self, pdb_path: Path) -> None:
-        """Update atomoffset and residueoffset from filtered PDB.
-
-        After filtering fragments from the protein PDB, the atom and residue
-        numbering may have changed. This method recalculates the offsets.
-
-        Args:
-            pdb_path: Path to the (filtered) merged PDB file
-        """
-        pdb_df = read_pdb_to_dataframe(pdb_path)
-        protein_atoms = pdb_df[~pdb_df["residue_name"].isin(["HOH", "LIG", "LID"])]
-        if not protein_atoms.empty:
-            self.atomoffset = int(protein_atoms["atom_serial_number"].max())
-            self.residueoffset = int(protein_atoms["residue_seq_number"].max())
-            logger.debug(f"Updated offsets: atomoffset={self.atomoffset}, residueoffset={self.residueoffset}")
-
-    def filter_protein_fragments(self, writedir: str) -> tuple[int, int]:
-        """Filter merged PDB to remove molecular fragments completely outside sphere.
-
-        Uses MDAnalysis topology-based fragment detection. Entire chains, cofactors,
-        lipids, or other molecular units are removed if ALL their atoms are outside
-        the simulation sphere.
-
-        Args:
-            writedir: directory where inputfiles are written (e.g., FEP_lig1_lig2/inputfiles)
-
-        Returns:
-            Tuple of (original_atom_count, filtered_atom_count)
-        """
-        cog = self._get_cog_from_water(writedir)
-        merged_pdb = Path(writedir) / self.pdb_fname
-
-        orig_count, filt_count = filter_out_of_sphere_fragments(merged_pdb, cog, float(self.sphereradius))
-
-        # Update offsets if structure was filtered
-        if filt_count < orig_count:
-            self._update_offsets_from_pdb(merged_pdb)
-            logger.info(
-                f"Filtered structure: {orig_count} → {filt_count} atoms ({orig_count - filt_count} removed)"
-            )
-
-        return orig_count, filt_count
-
     def write_qprep(self, writedir):
         """Write the qprep.inp file for Q. If the system is water, the center of geometry
         will be calculated from the lig1's atoms coordinates. If the system is protein, it
@@ -1612,48 +1658,3 @@ class DualTopologyFEP:
         content = render_qprep_fep_input(params)
         with open(qprep_out, "w") as outfile:
             outfile.write(content)
-
-    def get_sphere_density(self, pdb_df: pd.DataFrame) -> float:
-        """Calculate the solute density for the FEP system taking into consideration the different
-        densities for protein and lipids. The density is calculated as the weighted average
-        of the densities of the protein and lipids, where the weights are the number of atoms
-        in each.
-
-        Args:
-            pdb_df: DataFrame containing the PDB file information.
-
-        Returns:
-            float: The density of the system.
-        """
-        # regex with negative lookbehind to avoid matching NH, CH, OH (heavy atoms)
-        H_atom_regex = re.compile(r"(?<![NCO])H\d*")  # noqa: F841
-        protein_vol = 0.05794  # A**-3
-        lipid_vol = 0.03431  # A**-3 from octane
-
-        knn = NearestNeighbors(radius=float(self.sphereradius), metric="euclidean", n_jobs=4)
-        atom_coord_arr = pdb_df[["x", "y", "z"]].values
-        knn.fit(np.array(atom_coord_arr))
-        _, indices = knn.radius_neighbors(np.array(self.cog).reshape(1, -1))
-        heavy_atoms_df = (
-            pdb_df.iloc[indices[0]]
-            .query("residue_name != 'HOH'")
-            .query("~atom_name.str.match(@H_atom_regex)")
-        )
-        n_lipid_at = heavy_atoms_df.query("residue_name == 'POP'").shape[0]
-        if n_lipid_at == 0:
-            return 0.05794
-        n_protein_at = heavy_atoms_df.shape[0] - n_lipid_at
-
-        density = (n_protein_at * protein_vol + n_lipid_at * lipid_vol) / heavy_atoms_df.shape[0]
-        if density != 0.05794:
-            logger.info(f"Calculated solute density: {density:.5f} g/cm^3")
-
-        return density
-
-    def qprep(self, writedir):
-        os.chdir(writedir)
-        cluster_options = CLUSTER_DICT[self.cluster]
-        qprep_path = cluster_options["QPREP"]
-        logger.info(f"Running QPREP from path {qprep_path}")
-        run_qprep(qprep_path, "qprep.inp", "qprep.out", self.FF)
-        os.chdir("../../")
