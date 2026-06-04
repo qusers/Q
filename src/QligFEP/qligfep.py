@@ -720,6 +720,93 @@ class FEP:
         run_qprep(qprep_path, "qprep.inp", "qprep.out", self.FF)
         os.chdir("../../")
 
+    def change_prm(self, replacements, writedir):
+        pattern = re.compile(r"\b(" + "|".join(replacements.keys()) + r")\b")
+        file1 = glob.glob(self.lig1 + ".prm")[0]
+        file2 = glob.glob(self.lig2 + ".prm")[0]
+        prm_file = self.prm_file
+        prm_merged = {"vdw": [], "bonds": [], "angle": [], "torsion": [], "improper": []}
+
+        for file in [file1, file2]:
+            with open(file) as infile:
+                block = 0
+                for line in infile:
+                    if file == file2:
+                        line = pattern.sub(lambda x: replacements[x.group()], line)
+                    if line == "[atom_types]\n":
+                        block = 1
+                        continue
+                    elif line == "[bonds]\n":
+                        block = 2
+                        continue
+                    elif line == "[angles]\n":
+                        block = 3
+                        continue
+                    elif line == "[torsions]\n":
+                        block = 4
+                        continue
+                    if line == "[impropers]\n":
+                        block = 5
+                        continue
+                    if block == 1:
+                        prm_merged["vdw"].append(line)
+
+                    elif block == 2:
+                        prm_merged["bonds"].append(line)
+
+                    elif block == 3:
+                        prm_merged["angle"].append(line)
+
+                    elif block == 4:
+                        prm_merged["torsion"].append(line)
+
+                    elif block == 5:
+                        prm_merged["improper"].append(line)
+
+        prm_fname = f"{writedir}/{self.FF}_{self.lig1}_{self.lig2}_merged.prm"
+        with open(prm_file) as infile, open(prm_fname, "w") as outfile:
+            for line in infile:
+                block = 0
+                outfile.write(line)
+                if len(line) > 1:
+                    if line == "! Ligand vdW parameters\n":
+                        block = 1
+                    elif line == "! Ligand bond parameters\n":
+                        block = 2
+                    elif line == "! Ligand angle parameters\n":
+                        block = 3
+                    elif line == "! Ligand torsion parameters\n":
+                        block = 4
+                    elif line == "! Ligand improper parameters\n":
+                        block = 5
+                # Read the parameters in from file and store them
+                if block == 1:
+                    for line in prm_merged["vdw"]:
+                        outfile.write(line)
+
+                elif block == 2:
+                    for line in prm_merged["bonds"]:
+                        outfile.write(line)
+                elif block == 3:
+                    for line in prm_merged["angle"]:
+                        outfile.write(line)
+                elif block == 4:
+                    for line in prm_merged["torsion"]:
+                        outfile.write(line)
+
+                elif block == 5:
+                    for line in prm_merged["improper"]:
+                        outfile.write(line)
+
+        # AND return the vdW list for the FEP file
+        FEP_vdw = []
+        for line in prm_merged["vdw"]:
+            if len(line) > 1 and line[0] != "!" and line[0:1]:
+                line = line.split()
+                line2 = f"{line[0]:10}{line[1]:10}{line[3]:10}{str(0):10}{str(0):10}{line[4]:10}{line[5]:10}{line[6]:10}"
+                FEP_vdw.append(line2)
+        return FEP_vdw
+
 
 class DualTopologyFEP(FEP):
     """Create dual topology FEP files based on two ligands."""
@@ -811,93 +898,6 @@ class DualTopologyFEP(FEP):
                 outfile.write(line)
 
         shutil.copy(self.lig1 + ".lib", writedir + "/" + self.lig1 + ".lib")
-
-    def change_prm(self, replacements, writedir):
-        pattern = re.compile(r"\b(" + "|".join(replacements.keys()) + r")\b")
-        file1 = glob.glob(self.lig1 + ".prm")[0]
-        file2 = glob.glob(self.lig2 + ".prm")[0]
-        prm_file = self.prm_file
-        prm_merged = {"vdw": [], "bonds": [], "angle": [], "torsion": [], "improper": []}
-
-        for file in [file1, file2]:
-            with open(file) as infile:
-                block = 0
-                for line in infile:
-                    if file == file2:
-                        line = pattern.sub(lambda x: replacements[x.group()], line)
-                    if line == "[atom_types]\n":
-                        block = 1
-                        continue
-                    elif line == "[bonds]\n":
-                        block = 2
-                        continue
-                    elif line == "[angles]\n":
-                        block = 3
-                        continue
-                    elif line == "[torsions]\n":
-                        block = 4
-                        continue
-                    if line == "[impropers]\n":
-                        block = 5
-                        continue
-                    if block == 1:
-                        prm_merged["vdw"].append(line)
-
-                    elif block == 2:
-                        prm_merged["bonds"].append(line)
-
-                    elif block == 3:
-                        prm_merged["angle"].append(line)
-
-                    elif block == 4:
-                        prm_merged["torsion"].append(line)
-
-                    elif block == 5:
-                        prm_merged["improper"].append(line)
-
-        prm_fname = f"{writedir}/{self.FF}_{self.lig1}_{self.lig2}_merged.prm"
-        with open(prm_file) as infile, open(prm_fname, "w") as outfile:
-            for line in infile:
-                block = 0
-                outfile.write(line)
-                if len(line) > 1:
-                    if line == "! Ligand vdW parameters\n":
-                        block = 1
-                    elif line == "! Ligand bond parameters\n":
-                        block = 2
-                    elif line == "! Ligand angle parameters\n":
-                        block = 3
-                    elif line == "! Ligand torsion parameters\n":
-                        block = 4
-                    elif line == "! Ligand improper parameters\n":
-                        block = 5
-                # Read the parameters in from file and store them
-                if block == 1:
-                    for line in prm_merged["vdw"]:
-                        outfile.write(line)
-
-                elif block == 2:
-                    for line in prm_merged["bonds"]:
-                        outfile.write(line)
-                elif block == 3:
-                    for line in prm_merged["angle"]:
-                        outfile.write(line)
-                elif block == 4:
-                    for line in prm_merged["torsion"]:
-                        outfile.write(line)
-
-                elif block == 5:
-                    for line in prm_merged["improper"]:
-                        outfile.write(line)
-
-        # AND return the vdW list for the FEP file
-        FEP_vdw = []
-        for line in prm_merged["vdw"]:
-            if len(line) > 1 and line[0] != "!" and line[0:1]:
-                line = line.split()
-                line2 = f"{line[0]:10}{line[1]:10}{line[3]:10}{str(0):10}{str(0):10}{line[4]:10}{line[5]:10}{line[6]:10}"
-                FEP_vdw.append(line2)
-        return FEP_vdw
 
     def write_FEP_file(
         self, change_charges, change_vdw, FEP_vdw, writedir, lig_size1, lig_size2,
