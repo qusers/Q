@@ -123,7 +123,7 @@ inline void debug_dvelocities() {
     static bool flag2 = false;
     if (!flag2) {
         std::ofstream("./dvelocities_debug.txt", std::ios::trunc).close();
-        flag2 = true;
+        // flag2 = false;
     }
 
     std::ofstream file("./dvelocities_debug.txt", std::ios::app);

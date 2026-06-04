@@ -12,8 +12,10 @@ void StdOutput::output_energy(Context& ctx, int iteration) {
     std::printf("================================================\n");
     if (iteration > 0) {
         std::printf("== STEP %d\n", iteration);
-    } else {
+    } else if (iteration == 0) {
         std::printf("== INITIAL ENERGIES\n");
+    } else {
+        std::printf("== FINAL ENERGIES summary\n");
     }
     std::printf("================================================\n");
 
@@ -66,4 +68,8 @@ void StdOutput::output_energy(Context& ctx, int iteration) {
     std::printf("Upot\t%f\n", ctx.E_total.Upot);
     std::printf("Utot\t%f\n", ctx.E_total.Utot);
     std::printf("\n");
+}
+
+void StdOutput::finish(Context& ctx) {
+    output_energy(ctx, -1);
 }

@@ -7,14 +7,8 @@
 void Handler::run_iteration(int iteration) {
     reset_energies();
 
-    // 1. temperature calculation
-    calc_temperature();
-
-
-
     // 3. nonbonded forces
     calc_nonbonded_forces();
-
 
     // 2. bonded forces and some constraints calculations
     calc_internal_forces(iteration);
@@ -39,10 +33,22 @@ void Handler::initialize() {
     initialize_backend();
 }
 
+void Handler::calc_final_potential(int iteration) {
+    reset_energies();
+    calc_nonbonded_forces();
+    calc_internal_forces(iteration);
+    update_energy_totals();
+}
+
 void Handler::run(int num_iterations) {
+    // 1. temperature calculation
+    calc_temperature();
     for (int i = 0; i < num_iterations; i++) {
         run_iteration(i);
     }
+
+    calc_final_potential(num_iterations);
+
     finish_outputs();
     shutdown_outputs();
     outputs_.clear();

@@ -66,12 +66,12 @@ void CpuHandler::calc_internal_forces(int iteration) {
     calc_restraint_forces(iteration, ctx);
 
     calc_nonbonded_qq_forces();
+    debug_dvelocities();
     // calc_q_bonded_forces(ctx);
 }
 
 void CpuHandler::calc_nonbonded_forces() {
     calc_nonbonded_pp_forces();
-    debug_dvelocities();
     calc_nonbonded_qp_forces();
     calc_nonbonded_pw_forces();
     calc_nonbonded_qw_forces();
