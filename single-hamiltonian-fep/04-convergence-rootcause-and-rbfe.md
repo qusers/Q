@@ -122,3 +122,37 @@ requires identical protocols, and the water leg must actually run.
   and a clash penalty (water leg) that multistate avoids by using clean ghosts.
   These are intrinsic to making a whole ligand partially present, not bugs, and
   not schedule-fixable. Single-topology removes both at the source.
+
+## 6. Linearizing the intra-Coulomb: valid, but does not converge (key finding)
+
+`single_h_linear_intra` divides the same-group intra-ligand Coulomb by its
+presence factor, recovering the linear (multistate energy-mixing) path. It is
+thermodynamically valid (endpoints bit-preserved) and removes the enthalpic
+barrier: unit test gives Q-Q el(on)/(off) = 2.000 at lambda=0.5, and a chained
+sweep flattens the mid-lambda Q-SUM from -179 (humped) to -288.
+
+But the free energy does NOT converge. The 21-window chained run gives BAR = 72.3
+and MBAR = 70.6 (vs flag-off 30, true 53.7), with overlap still POOR (gaps
+4-24 kT) and MBAR again hitting its iteration cap. The bias merely flipped from
+low (30) to high (72); convergence did not improve.
+
+The reason is the decisive one for the whole project: the convergence cost is not
+the q^2 *shape* of the barrier, it is that dual-topology single-H -- on ANY path
+-- ramps each WHOLE ligand's intra-Coulomb from full (-217 kcal) to zero. That is
+a ~217 kcal per-ligand perturbation, i.e. ~18 kT of work per Delta-lambda=0.05
+window, regardless of linear vs quadratic scheduling.
+
+Multistate converges because it never ramps a whole ligand: it holds both ligands
+at FULL charge and reports the linear mix, so the per-window intra-Coulomb work is
+Delta-lambda * (U_B - U_A) = Delta-lambda * (-189 - (-217)) = Delta-lambda * (+28)
+-- the small congeneric *difference*, ~8x less work than the single-H whole-ligand
+ramp. That is the real source of multistate's good overlap.
+
+Single-topology gets the same advantage: the shared core (rdFMCS: 28 atoms / 20
+heavy, vs 1 unique heavy on ejm_31 and 4 on ejm_47) stays intact and morphs A->B
+(a small congeneric difference, like multistate), while only the ~15 unique atoms
+ramp -- and those get the soft-core. So single-topology, not linearized
+dual-topology, is what delivers "multistate-quality convergence + load-bearing
+soft-core." The linearization experiment confirmed the q^2 enthalpy diagnosis and,
+by failing to converge, proved that flattening the enthalpy is not sufficient --
+redirecting decisively to single-topology.
