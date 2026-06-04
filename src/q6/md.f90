@@ -413,12 +413,44 @@ subroutine debug_dvelocities()
   write(unit,'(i0)') natom
   do i = 1, natom
     i3 = 3 * i
-    write(unit,'(i0,1x,f0.8,1x,f0.8,1x,f0.8)') i, d(i3 - 2), d(i3 - 1), d(i3)
+    write(unit,'(i0,1x,es24.16,1x,es24.16,1x,es24.16)') i, d(i3 - 2), d(i3 - 1), d(i3)
+    ! write(unit,'(i0,1x,f0.8,1x,f0.8,1x,f0.8)') i, d(i3 - 2), d(i3 - 1), d(i3)
   end do
 
   write(unit,'(a)') '*******************************************************************************************'
   close(unit)
 end subroutine debug_dvelocities
+
+subroutine debug_coordinates()
+  integer :: unit
+  integer :: i, i3
+  logical, save :: flag2 = .false.
+
+  if (nodeid .ne. 0) return
+
+
+  if (flag2) return
+
+
+  if (.not. flag2) then
+    open(newunit=unit, file='coordinates_debug.txt', status='replace', action='write')
+    close(unit)
+    ! flag2 = .true.
+  end if
+
+  open(newunit=unit, file='coordinates_debug.txt', status='unknown', &
+       position='append', action='write')
+
+  write(unit,'(i0)') natom
+  do i = 1, natom
+    i3 = 3 * i
+    write(unit,'(i0,1x,es24.16,1x,es24.16,1x,es24.16)') i, x(i3 - 2), x(i3 - 1), x(i3)
+    ! write(unit,'(i0,1x,f0.8,1x,f0.8,1x,f0.8)') i, d(i3 - 2), d(i3 - 1), d(i3)
+  end do
+
+  write(unit,'(a)') '*******************************************************************************************'
+  close(unit)
+end subroutine debug_coordinates
 
 
 
@@ -4189,6 +4221,7 @@ subroutine md_run
         niter=shake(xx, x)
         v(:) = (x(:) - xx(:)) / dt
       end if
+      call debug_coordinates
 
       ! --- end of time step ---
 #if defined (PROFILING)
@@ -4275,13 +4308,13 @@ end if
 #endif
 
 ! write output for final step and final coords
-call make_pair_lists
-call pot_energy
-if (nodeid .eq. 0) then
-  write(*,*)
-  call write_out
-  call write_xfin
-end if
+! call make_pair_lists
+! call pot_energy
+! if (nodeid .eq. 0) then
+!   write(*,*)
+!   call write_out
+!   call write_xfin
+! end if
 
 
 
@@ -9479,6 +9512,7 @@ subroutine nonbon2_qq
   integer                                         :: ip,iq,jq,i,j,k,i3,j3,iaci,iacj,iLJ
   real(8)                                         :: qi,qj,aLJ,bLJ,dx1,dx2,dx3,r2,r,r6,r12,r6_hc
   real(8)                                         :: Vel,V_a,V_b,dv,el_scale
+  character(len=256)                              :: dbg_line
 
   do istate = 1, nstates
     ! for every state:
@@ -9540,6 +9574,7 @@ subroutine nonbon2_qq
       r2   = dx1*dx1 + dx2*dx2 + dx3*dx3
       r6_hc = r2*r2*r2  !for softcore
       r6   = r6_hc + sc_lookup(iq,jq+natyps,istate)  !softcore
+    !   r6 = r2 * r2 * r2
       r6   = 1._8/r6
       r2   = 1./r2
       r    = sqrt ( r2 )
@@ -9558,6 +9593,7 @@ subroutine nonbon2_qq
         V_a  = bLJ*aLJ*aLJ*r12
         V_b  = 2.0*bLJ*aLJ*r6
         dv  = r2*( -Vel -(12.*V_a -6.*V_b)*r6*r6_hc )*EQ(istate)%lambda
+        ! dv  = r2*( -Vel -(12.*V_a -6.*V_b))*EQ(istate)%lambda
       endif
 
       ! update forces
@@ -9572,6 +9608,11 @@ subroutine nonbon2_qq
       if ( jq /= 0 ) then
         EQ(istate)%qq%el  = EQ(istate)%qq%el + Vel
         EQ(istate)%qq%vdw = EQ(istate)%qq%vdw + V_a - V_b
+
+        write(dbg_line, '(i0,1x,i0,1x,i0,1x,f0.8,1x,f0.8,1x,f0.8,1x,f0.8,1x,f0.8)') iq, jq, istate, dv, dx1, dx2, dx3, sc_lookup(iq,jq+natyps,istate)
+        call add_debug(dbg_line)
+
+
       else
         EQ(istate)%qp%el  = EQ(istate)%qp%el + Vel
         EQ(istate)%qp%vdw = EQ(istate)%qp%vdw + V_a - V_b
@@ -13481,7 +13522,6 @@ subroutine pot_energy
         call nonbond_qq
       elseif ( ivdw_rule .eq. 2 ) then
         call nonbon2_qq
-        call debug_dvelocities
       end if
     else
       if ( ivdw_rule .eq. 1 ) then
@@ -15356,8 +15396,8 @@ subroutine watpol
       f0 = -1.0 / f0
       f0 = dv*f0
 
-      ! write(dbg_line, '(i0,1x,f0.8)') iw, f0
-      ! call add_debug(dbg_line)
+    !   write(dbg_line, '(i0,1x,f0.8)') iw, scp
+    !   call add_debug(dbg_line)
 
       f1(1) = -2.*(rcu(1)-rmu(1)*scp)/rm
       f1(2) = -2.*(rcu(2)-rmu(2)*scp)/rm
