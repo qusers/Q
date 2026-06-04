@@ -10,7 +10,7 @@ from QligFEP import __version__
 
 from ..logger import logger, setup_logger
 from ..pdb_utils import read_pdb_to_dataframe, residue_atom_serial_range
-from ..qligfep import COUNTER_WATER_RESNAME, QligFEP
+from ..qligfep import COUNTER_WATER_RESNAME, DualTopologyFEP
 from ..templates.sections import format_wall_restraints
 from .parser_base import parse_arguments
 
@@ -55,7 +55,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     setup_logger(level=args.log.upper())
     softcore_method = param_dict.pop("softcore_method", "standard")
     single_hamiltonian = param_dict.pop("single_hamiltonian", False)
-    run = QligFEP(**param_dict)
+    run = DualTopologyFEP(**param_dict)
     param_dict["softcore_method"] = softcore_method
     param_dict["single_hamiltonian"] = single_hamiltonian
 

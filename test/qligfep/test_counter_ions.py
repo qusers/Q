@@ -161,7 +161,7 @@ class TestPlaceCounterIonsWithProteinCharge:
 
     def _make_qligfep(self, tmp_path, system="water", protein_charge=None, charge_method="ion_match"):
         """Create a QligFEP instance in tmp_path with real tutorial ligand files."""
-        from QligFEP.qligfep import QligFEP
+        from QligFEP.qligfep import DualTopologyFEP
 
         # Copy ligand files to tmp_path
         for lig in (self.LIG1, self.LIG2):
@@ -175,7 +175,7 @@ class TestPlaceCounterIonsWithProteinCharge:
         original_cwd = os.getcwd()
         os.chdir(tmp_path)
         try:
-            run = QligFEP(
+            run = DualTopologyFEP(
                 lig1=self.LIG1,
                 lig2=self.LIG2,
                 FF="AMBER14sb",
@@ -295,10 +295,10 @@ class TestChargeMethodDispatch(TestPlaceCounterIonsWithProteinCharge):
     """
 
     def test_invalid_charge_method_raises(self, tmp_path):
-        from QligFEP.qligfep import QligFEP
+        from QligFEP.qligfep import DualTopologyFEP
 
         with pytest.raises(ValueError, match="charge_method"):
-            QligFEP(
+            DualTopologyFEP(
                 lig1=self.LIG1,
                 lig2=self.LIG2,
                 FF="AMBER14sb",

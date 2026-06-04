@@ -64,7 +64,7 @@ CHLORIDE_NAME = {
 COUNTER_WATER_RESNAME = "CWT"
 
 
-class QligFEP:
+class DualTopologyFEP:
     """
     Create dual topology FEP files based on two ligands
     """
