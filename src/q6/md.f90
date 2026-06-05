@@ -136,6 +136,16 @@ module md
   real(8)                   :: fkwpol
   logical                   :: wpol_restr, wpol_Born
   real(8)                   :: fk_wsphere, crgtot, crgQtot
+
+  ! --- Per-state finite-sphere Born correction (perstate_born_correction)
+  ! Opt-in. Adds the Born self-energy -C*Q_s^2 of the net sphere charge to each
+  ! state's EQ(istate)%total so its state-to-state difference enters dG for
+  ! charge-changing edges. C = qcorr_ke*(1-1/born_eps)/(2*rwat), or born_C_override.
+  logical                   :: perstate_born = .false.
+  real(8)                   :: born_eps = 80.0_8
+  real(8)                   :: born_C_override = -1.0_8
+  real(8)                   :: born_C = 0.0_8, born_crg_env = 0.0_8
+  real(8), allocatable      :: born_self_state(:)
   integer(ai), allocatable  :: list_sh(:,:), nsort(:,:)
   real(8),  allocatable     :: theta(:), theta0(:), tdum(:)
   integer                   :: nwpolr_shell, n_max_insh
@@ -3237,6 +3247,10 @@ logical function initialize()
           write(*,'(a)') '>>> ERROR: charge_correction on requires polarization on (section solvent)'
           initialize = .false.
         end if
+        ! opt-in per-state Born self-energy correction (default off)
+        yes = prm_get_logical_by_key('perstate_born_correction', perstate_born, .false.)
+        yes = prm_get_real8_by_key('born_dielectric', born_eps, 80.0_8)
+        yes = prm_get_real8_by_key('born_coefficient', born_C_override, -1.0_8)
         if(.not. prm_get_real8_by_key('polarization_force', fkwpol)) then
           write(*,'(a)') 'Solvent polarization force constant set to default'
           fkwpol = -1 ! this will be set in water_sphere, once target radius is known
@@ -15040,6 +15054,8 @@ subroutine pot_energy
       EQ(istate)%total =  EQ(istate)%q%bond + EQ(istate)%q%angle   &
         + EQ(istate)%q%torsion  + EQ(istate)%q%improper + EQ(istate)%qx%el &
         + EQ(istate)%qx%vdw  + EQ(istate)%restraint
+      ! per-state finite-sphere Born self-energy (constant per window, no force)
+      if (perstate_born) EQ(istate)%total = EQ(istate)%total + born_self_state(istate)
 
       ! update E with an average of all states
       E%q%bond  = E%q%bond  + EQ(istate)%q%bond *EQ(istate)%lambda
@@ -15399,8 +15415,11 @@ subroutine prep_sim
     if( .not. use_PBC ) then
       call wat_sphere
       if (wpol_restr) call wat_shells
+      call init_perstate_born
 
     else !compute charges of the system for box case 
+      if (perstate_born) call die('perstate_born_correction requires spherical &
+        &boundary (no PBC); the finite-sphere Born self-energy is undefined under PBC')
       !(done in subroutine wat_sphere for sphere case)
       !calc. total charge of non-Q-atoms
       crgtot = 0.0
@@ -16636,6 +16655,52 @@ subroutine wat_sphere
 100 format('Radial polarization force constant      = ',f10.2)
 
 end subroutine wat_sphere
+
+!-----------------------------------------------------------------------
+
+subroutine init_perstate_born
+  ! Precompute the per-state finite-sphere Born self-energy E_born(s) = -C*Q_s^2,
+  ! where Q_s = Q_env + sum_iq qcrg(iq,s) is the net sphere charge with the Q-region
+  ! in PURE state s (no lambda mixing), Q_env the non-excluded non-Q solute charge,
+  ! and C = qcorr_ke*(1-1/born_eps)/(2*rwat) (or born_C_override if > 0). The value is
+  ! constant per window; it is added to EQ(istate)%total each step and exerts no force.
+  integer :: i, s
+  real(8) :: q_s
+
+  if (.not. perstate_born) return
+
+  born_crg_env = 0.0_8
+  do i = 1, nat_solute
+    if (.not. excl(i) .and. iqatom(i) == 0) born_crg_env = born_crg_env + crg(i)
+  end do
+
+  if (born_C_override > 0.0_8) then
+    born_C = born_C_override
+  else
+    born_C = born_coefficient(qcorr_ke, born_eps, rwat)
+  end if
+
+  if (allocated(born_self_state)) deallocate(born_self_state)
+  allocate(born_self_state(nstates))
+
+  write(*,'(a)')       'Per-state Born correction (perstate_born_correction) : ON'
+  write(*,'(a,f10.2)') 'In-sphere environment charge Q_env      = ', born_crg_env
+  if (born_C_override > 0.0_8) then
+    write(*,'(a,f10.4,a)') 'Born coefficient C                      = ', born_C, ' (override)'
+  else
+    write(*,'(a,f10.4,a,f6.1,a,f6.2,a)') 'Born coefficient C                      = ', &
+      born_C, ' (eps=', born_eps, ', R=', rwat, ')'
+  end if
+  do s = 1, nstates
+    q_s = born_crg_env
+    do i = 1, nqat
+      q_s = q_s + qcrg(i, s)
+    end do
+    born_self_state(s) = born_self_energy(q_s, born_C)
+    write(*,'(a,i2,a,f8.2,a,f12.4)') 'State ', s, '  Q_s = ', q_s, &
+      '   E_born = ', born_self_state(s)
+  end do
+end subroutine init_perstate_born
 
 !-----------------------------------------------------------------------
 

@@ -46,6 +46,8 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "softcore_method": args.softcore_method,
             "charge_method": args.charge_method,
             "correction_logging": args.correction_logging,
+            "perstate_born": args.perstate_born,
+            "born_coefficient": args.born_coefficient,
         }
         if args.protein_charge is not None:
             param_dict["protein_charge"] = args.protein_charge

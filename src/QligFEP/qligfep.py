@@ -91,6 +91,8 @@ class QligFEP:
         protein_charge: Optional[int] = None,
         charge_method: str = "ion_match",
         correction_logging: bool = False,
+        perstate_born: bool = False,
+        born_coefficient: Optional[float] = None,
     ):
         self.timestep = timestep
         self.lig1 = lig1
@@ -125,6 +127,10 @@ class QligFEP:
         # When True, production windows emit a [correction] section logging the
         # charge-correction observable to a <window>.corr file beside each .en.
         self.correction_logging = correction_logging
+        # When True, production windows enable the engine's per-state Born
+        # self-energy correction; born_coefficient overrides the continuum C.
+        self.perstate_born = perstate_born
+        self.born_coefficient = born_coefficient
         # Populated by read_files() once formal charges are known.
         self.same_charge: Optional[bool] = None
         # Co-alchemical water state, populated by place_counter_water() when
@@ -1071,7 +1077,10 @@ class QligFEP:
 
         # Get configurations
         eq_configs = get_equilibration_configs(self.timestep, int(self.sphereradius))
-        prod_config = get_production_config(self.timestep, int(self.sphereradius), self.dr_force)
+        prod_config = get_production_config(
+            self.timestep, int(self.sphereradius), self.dr_force,
+            perstate_born=self.perstate_born, born_coefficient=self.born_coefficient,
+        )
 
         # Write equilibration files (eq1-eq5)
         for i, eq_config in enumerate(eq_configs):

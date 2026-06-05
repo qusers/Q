@@ -2052,4 +2052,31 @@ pure subroutine gapsys_eval_q(qq, r_sc_q, r_ij, V_lin, F_lin)
   F_lin = -2.0_8*a_q*r_ij + b_q
 end subroutine gapsys_eval_q
 
+!-------------------------------------------------------------------------
+
+pure function born_coefficient(ke, eps, radius) result(c)
+!!-------------------------------------------------------------------------------
+!! Finite-sphere Born coefficient C = k_e*(1-1/eps)/(2R) for a net charge enclosed
+!! by a sphere of radius R in a continuum of dielectric eps (King & Warshel 1989;
+!! Marelius et al. 1999). Multiplies Q^2 to give the boundary self-energy.
+!!-------------------------------------------------------------------------------
+  real(8), intent(in) :: ke, eps, radius
+  real(8)             :: c
+  c = ke * (1.0_8 - 1.0_8/eps) / (2.0_8 * radius)
+end function born_coefficient
+
+!-------------------------------------------------------------------------
+
+pure function born_self_energy(q_sphere, c) result(e)
+!!-------------------------------------------------------------------------------
+!! Finite-sphere Born self-energy E = -C*Q^2 of net sphere charge q_sphere.
+!! Evaluated per alchemical state, it enters EQ(istate)%total so its state-to-state
+!! difference -C*(Q2^2 - Q1^2) survives into ddG for charge-changing edges and
+!! cancels exactly for neutral edges (Q1 = Q2).
+!!-------------------------------------------------------------------------------
+  real(8), intent(in) :: q_sphere, c
+  real(8)             :: e
+  e = -c * q_sphere * q_sphere
+end function born_self_energy
+
 end module qatom

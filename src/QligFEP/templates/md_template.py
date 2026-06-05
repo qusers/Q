@@ -42,6 +42,9 @@ class MDParameters:
     radial_force: float = 60.0
     polarisation: bool = True
     polarisation_force: float = 20.0
+    # Opt-in per-state finite-sphere Born correction for net-charge-changing edges.
+    perstate_born: bool = False
+    born_coefficient: float | None = None  # override C (kcal/mol/e^2); None = engine continuum
 
     # Intervals
     interval_output: int = 5
@@ -155,6 +158,15 @@ def render_md_input(
     else:
         correction_block = "\n"
 
+    # Opt-in per-state Born correction keys in [solvent]; empty by default so the
+    # rendered output stays byte-identical when the correction is disabled.
+    if params.perstate_born:
+        born_settings = "perstate_born_correction  on\n"
+        if params.born_coefficient is not None:
+            born_settings += f"born_coefficient          {params.born_coefficient}\n"
+    else:
+        born_settings = ""
+
     return f"""\
 [MD]
 steps                     {params.steps}
@@ -184,6 +196,7 @@ shell_radius              {params.shell_radius}
 radial_force              {params.radial_force}
 polarisation              {onoff(params.polarisation)}
 polarisation_force        {params.polarisation_force}
+{born_settings}\
 
 [intervals]
 output                    {params.interval_output}

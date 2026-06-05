@@ -277,6 +277,27 @@ def parse_arguments(program: str) -> argparse.Namespace:
             "Off by default; required to gather data for the post-hoc charged-edge correction."
         ),
     )
+    parser.add_argument(
+        "--perstate-born-correction",
+        dest="perstate_born",
+        action="store_true",
+        default=False,
+        help=(
+            "Enable the engine's per-state finite-sphere Born self-energy correction in each "
+            "production window's [solvent] section, removing the net-charge boundary artifact "
+            "from charge-changing edges. Off by default (spherical boundary only)."
+        ),
+    )
+    parser.add_argument(
+        "--born-coefficient",
+        dest="born_coefficient",
+        type=float,
+        default=None,
+        help=(
+            "Override the Born coefficient C (kcal/mol/e^2) used by --perstate-born-correction. "
+            "Default: the engine's continuum value k_e(1-1/eps)/(2R)."
+        ),
+    )
     if program == "QligFEP":
         parser.add_argument(
             "-pq",

@@ -52,6 +52,10 @@ def create_call(**kwargs):
         template += " -cm {charge_method}"
     if "correction_logging" in kwargs and kwargs["correction_logging"]:
         template += " --correction-logging"
+    if "perstate_born" in kwargs and kwargs["perstate_born"]:
+        template += " --perstate-born-correction"
+    if "born_coefficient" in kwargs and kwargs["born_coefficient"] is not None:
+        template += " --born-coefficient {born_coefficient}"
     return template.format(**kwargs)
 
 
@@ -156,6 +160,8 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 softcore_method=args.softcore_method,
                 charge_method=args.charge_method,
                 correction_logging=args.correction_logging,
+                perstate_born=args.perstate_born,
+                born_coefficient=args.born_coefficient,
             )
             command = create_call(**call_kwargs)
             logger.info(f"Submitting the command:\n{command}")

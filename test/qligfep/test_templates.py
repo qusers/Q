@@ -701,6 +701,71 @@ class TestCorrectionInMdInput:
         assert render_md_input(**kwargs) == render_md_input(correction_exclude_last=0, **kwargs)
 
 
+class TestPerstateBornInMdInput:
+    """Tests for the opt-in perstate_born_correction key in the [solvent] section."""
+
+    @staticmethod
+    def _params(perstate_born=False, born_coefficient=None):
+        return MDParameters(
+            steps=5000,
+            stepsize=2.0,
+            temperature="T_VAR",
+            bath_coupling=10.0,
+            shell_radius=25,
+            interval_energy=10,
+            perstate_born=perstate_born,
+            born_coefficient=born_coefficient,
+        )
+
+    def _render(self, params):
+        return render_md_input(
+            params=params,
+            lambda1="0.500",
+            lambda2="0.500",
+            trajectory_file="md.dcd",
+            final_file="md.re",
+            restart_file="eq5.re",
+            energy_file="md.en",
+        )
+
+    def test_no_born_key_by_default(self):
+        """Without perstate_born, no perstate_born_correction key is emitted."""
+        assert "perstate_born_correction" not in self._render(self._params())
+
+    def test_born_disabled_output_is_byte_identical(self):
+        """perstate_born=False must not change the rendered bytes at all."""
+        assert self._render(self._params(perstate_born=False)) == self._render(
+            MDParameters(steps=5000, stepsize=2.0, temperature="T_VAR",
+                         bath_coupling=10.0, shell_radius=25, interval_energy=10)
+        )
+
+    def test_born_key_present_when_enabled(self):
+        """With perstate_born, the [solvent] section carries the on switch."""
+        content = self._render(self._params(perstate_born=True))
+        solvent = content.split("[solvent]", 1)[1].split("[intervals]", 1)[0]
+        assert "perstate_born_correction  on" in solvent
+
+    def test_born_no_coefficient_override_by_default(self):
+        """Enabling without an override emits no born_coefficient key (engine uses continuum C)."""
+        content = self._render(self._params(perstate_born=True))
+        assert "born_coefficient" not in content
+
+    def test_born_coefficient_override_emitted_when_set(self):
+        """A born_coefficient override is written into the [solvent] section."""
+        content = self._render(self._params(perstate_born=True, born_coefficient=7.26))
+        solvent = content.split("[solvent]", 1)[1].split("[intervals]", 1)[0]
+        lines = [ln for ln in solvent.splitlines() if ln.startswith("born_coefficient")]
+        assert len(lines) == 1
+        assert lines[0].split() == ["born_coefficient", "7.26"]
+
+    def test_born_section_no_leading_whitespace(self):
+        """The Born keys must keep the flush-left invariant."""
+        content = self._render(self._params(perstate_born=True, born_coefficient=7.26))
+        for i, line in enumerate(content.splitlines(), 1):
+            if line.strip():
+                assert line == line.lstrip(), f"Line {i} has leading whitespace: {line!r}"
+
+
 class TestGoldenFileComparison:
     """Tests comparing rendered output against golden files."""
 
