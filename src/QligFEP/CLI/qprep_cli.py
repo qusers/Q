@@ -274,7 +274,11 @@ class Neutralizer:
             mask = (modified_df["chain_id"] == chain) & (modified_df["residue_seq_number"] == res_num)
             modified_df.loc[mask, "residue_name"] = internal_name
             h1_mask = mask & (modified_df["atom_name"] == "H1")
-            modified_df.loc[h1_mask, "atom_name"] = "H"
+            if internal_name == "PRO":
+                # Proline's N is tertiary (bonded to CA, CD, prev-C) and has no backbone amide H.
+                modified_df = modified_df.drop(modified_df[h1_mask].index)
+            else:
+                modified_df.loc[h1_mask, "atom_name"] = "H"
             for hatom in ["H2", "H3"]:
                 h_mask = mask & (modified_df["atom_name"] == hatom)
                 modified_df = modified_df.drop(modified_df[h_mask].index)
