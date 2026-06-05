@@ -282,6 +282,8 @@ def nest_pdb(pdbarr: list[str]) -> list[list[str]]:
     residue = []
     usedatoms = []
     for line in pdbarr:
+        if not line.startswith(("ATOM", "HETATM")):
+            continue
         atom = line[12:17].strip()
         if not residue or line[17:27] != residue[-1][17:27] or atom in usedatoms:
             if residue:
