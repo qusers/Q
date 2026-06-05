@@ -245,6 +245,34 @@ class TestNeutralizerNTerminals:
         assert "H2" not in res["atom_name"].values
         assert "H3" not in res["atom_name"].values
 
+    def test_npro_outside_boundary_drops_backbone_h(self):
+        """NPRO outside rest_bound should become PRO with no backbone amide H.
+
+        Proline's nitrogen is tertiary (bonded to CA, CD, and previous-C only).
+        The standard PRO library entry in AMBER14sb has no N-H atom at all.
+        Naively renaming H1→H (as for NILE etc.) leaves an orphan H atom and
+        qprep aborts with "Too many atoms in residue PRO ...".
+        """
+        atoms = []
+        serial_base = 100
+        for i, (aname, elem) in enumerate(
+            [("N", "N"), ("CA", "C"), ("C", "C"), ("O", "O"),
+             ("CB", "C"), ("CG", "C"), ("CD", "C"),
+             ("H1", "H"), ("H2", "H")]
+        ):
+            atoms.append(_make_atom("ATOM", serial_base + i, aname, "NPRO", "F", 1, 30.0, 0.0, 0.0, elem))
+        df = pd.DataFrame(atoms)
+
+        neutralizer = self._make_neutralizer()
+        result_df, stats = neutralizer.neutralize_outside_residues_dataframe(df)
+
+        res = result_df[result_df["residue_seq_number"] == 1]
+        assert (res["residue_name"] == "PRO").all()
+        for forbidden in ("H", "H1", "H2", "H3"):
+            assert forbidden not in res["atom_name"].values, (
+                f"PRO library has no backbone amide H but found {forbidden!r}"
+            )
+
 
 def _build_cterm_residue(resname, chain, resnum, x, y, z):
     """Build a minimal C-terminal residue with N, CA, C, O, OXT atoms."""
