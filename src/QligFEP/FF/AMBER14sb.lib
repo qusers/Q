@@ -3452,6 +3452,43 @@
         head N
         tail C
 *--------------------------------------------------------------------------------
+{SEP}
+    [atoms]
+        1  N      N             -0.516300
+        2  H      H              0.293600
+        3  CA     CX            -0.278702
+        4  HA     H1             0.198553
+        5  CB     2C             0.253803
+        6  HB2    H1             0.043230
+        7  HB3    H1             0.043230
+        8  OG     OZ            -0.430343
+        9  P      P              1.387088
+       10  O1P    OX            -0.982953
+       11  O2P    OX            -0.982953
+       12  O3P    OX            -0.982953
+       13  C      C              0.536600
+       14  O      O             -0.581900
+    [bonds]
+        N     H
+        N     CA
+        CA    HA
+        CA    C
+        CA    CB
+        CB    HB3
+        CB    HB2
+        CB    OG
+        OG    P
+        P     O1P
+        P     O3P
+        P     O2P
+        C     O
+    [impropers]
+        -C    N     CA    H
+        CA    C     +N    O
+    [connections]
+        head N
+        tail C
+*--------------------------------------------------------------------------------
 {POP}
     [atoms]
         ! Phosphocholine head group (PC residue atoms)
@@ -5009,3 +5046,8 @@
     [charge_groups]
         ZIN  
 *--------------------------------------------------------------------------------
+{CAL}            !charge: 2.00 ||  Calcium Ion, CM set for TIP3P water from Li et al., JCTC, 2013, 9, 2733
+    [atoms]
+         1 CAL    CAL          2.00
+    [charge_groups]
+        CAL  
