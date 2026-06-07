@@ -2,14 +2,16 @@
 
 #include <cstddef>
 #include <cstring>
+#include <memory>
 #include <stdexcept>
+#include <vector>
 
 #include "cuda_runtime_utility.h"
 
 template <typename T>
 class HostDeviceBuffer {
    public:
-    size_t length = 0;       // number of elements
+    size_t length = 0;         // number of elements
     bool cpu_mem_flag = true;  // whether host memory exists
     bool gpu_mem_flag = true;  // whether device memory exists
 
@@ -19,6 +21,8 @@ class HostDeviceBuffer {
     HostDeviceBuffer(int length, bool cpu_mem_flag = true, bool gpu_mem_flag = true);
     HostDeviceBuffer(unsigned int length, bool cpu_mem_flag = true, bool gpu_mem_flag = true);
     HostDeviceBuffer(size_t length, bool cpu_mem_flag = true, bool gpu_mem_flag = true);
+
+    static std::unique_ptr<HostDeviceBuffer<T>> from_vector(const std::vector<T>& values, bool run_gpu);
 
     ~HostDeviceBuffer();
 
@@ -146,4 +150,18 @@ void HostDeviceBuffer<T>::download(T* buffer) {
     }
 
     check_cuda(cudaMemcpy(dst, gpu_data_p, length * sizeof(T), cudaMemcpyDeviceToHost));
+}
+
+template <typename T>
+std::unique_ptr<HostDeviceBuffer<T>> HostDeviceBuffer<T>::from_vector(
+    const std::vector<T>& values,
+    bool run_gpu) {
+    auto buffer = std::make_unique<HostDeviceBuffer<T>>(values.size(), true, run_gpu);
+    for (size_t i = 0; i < values.size(); i++) {
+        buffer->cpu_data_p[i] = values[i];
+    }
+    if (run_gpu) {
+        buffer->upload();
+    }
+    return buffer;
 }

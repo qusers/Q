@@ -7,11 +7,10 @@
 #include "constants.h"
 #include "context.h"
 
-int calc_shake_constraints(coord_t* coords, coord_t* xcoords) {
-    auto& ctx = Context::instance();
-    auto *winv = ctx.winv->cpu_data_p;
-    auto *mol_n_shakes = ctx.mol_n_shakes->cpu_data_p;
-    auto *shake_bonds = ctx.shake_bonds->cpu_data_p;
+int calc_shake_constraints(Context& ctx, coord_t* coords, coord_t* xcoords) {
+    auto* winv = ctx.winv->cpu_data_p;
+    auto* mol_n_shakes = ctx.shake_data.mol_n_shakes->cpu_data_p;
+    auto* shake_bonds = ctx.shake_data.shake_bonds->cpu_data_p;
     int total_iterations = 0;
     int shake = 0;
 
@@ -28,7 +27,7 @@ int calc_shake_constraints(coord_t* coords, coord_t* xcoords) {
         bool converged = false;
         do {
             for (int i = 0; i < mol_n_shakes[mol]; i++) {
-                shake_bond_t& shake_bond = shake_bonds[shake + i];
+                ShakeBond& shake_bond = shake_bonds[shake + i];
                 if (!shake_bond.ready) {
                     const int ai = shake_bond.ai - 1;
                     const int aj = shake_bond.aj - 1;
@@ -95,24 +94,23 @@ int calc_shake_constraints(coord_t* coords, coord_t* xcoords) {
     return ctx.n_molecules == 0 ? 0 : total_iterations / ctx.n_molecules;
 }
 
-void initial_shaking() {
-    auto& ctx = Context::instance();
-    auto &coords = ctx.coords->cpu_data_p;
-    auto &velocities = ctx.velocities->cpu_data_p;
-    auto *xcoords = ctx.xcoords->cpu_data_p;
+void initial_shaking(Context& ctx) {
+    auto& coords = ctx.coords->cpu_data_p;
+    auto& velocities = ctx.velocities->cpu_data_p;
+    auto* xcoords = ctx.xcoords->cpu_data_p;
 
     for (int i = 0; i < ctx.n_atoms; i++) {
         xcoords[i].x = coords[i].x;
         xcoords[i].y = coords[i].y;
         xcoords[i].z = coords[i].z;
     }
-    calc_shake_constraints(coords, xcoords);
+    calc_shake_constraints(ctx, coords, xcoords);
     for (int i = 0; i < ctx.n_atoms; i++) {
         xcoords[i].x = coords[i].x - ctx.dt * velocities[i].x;
         xcoords[i].y = coords[i].y - ctx.dt * velocities[i].y;
         xcoords[i].z = coords[i].z - ctx.dt * velocities[i].z;
     }
-    calc_shake_constraints(xcoords, coords);
+    calc_shake_constraints(ctx, xcoords, coords);
     for (int i = 0; i < ctx.n_atoms; i++) {
         velocities[i].x = (coords[i].x - xcoords[i].x) / ctx.dt;
         velocities[i].y = (coords[i].y - xcoords[i].y) / ctx.dt;
@@ -120,11 +118,10 @@ void initial_shaking() {
     }
 }
 
-void stop_cm_translation() {
-    auto& ctx = Context::instance();
-    auto &atypes = ctx.atypes->cpu_data_p;
-    auto &catypes = ctx.catypes->cpu_data_p;
-    auto &velocities = ctx.velocities->cpu_data_p;
+void stop_cm_translation(Context& ctx) {
+    auto& atypes = ctx.atypes->cpu_data_p;
+    auto& catypes = ctx.catypes->cpu_data_p;
+    auto& velocities = ctx.velocities->cpu_data_p;
     real_t total_mass = 0;
     coord_t vcm = {};
 

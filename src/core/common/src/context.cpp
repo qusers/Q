@@ -10,6 +10,7 @@
 #include "init.h"
 #include "inp_parser.h"
 #include "parse.h"
+#include "cpu_shake.h"
 
 Context* Context::current_ = nullptr;
 
@@ -279,10 +280,10 @@ void Context::preprocess_data() {
         init_pshells();
     }
 
-    init_shake();
+    init_shake(*this);
 
     // Now remove shaken bonds
-    exclude_shaken_definitions();
+    exclude_shaken_definitions(*this);
 
     preprocess_vdw_rule_parameters(*this);
     upload_preprocessed_topology(*this);
@@ -313,8 +314,8 @@ void Context::preprocess_data() {
     EQ_restraint = std::make_unique<HostDeviceBuffer<E_restraint_t>>(n_lambdas, true, command_info.requested_gpu);
 
     if (fresh_start && md.random_seed > 0) {
-        initial_shaking();
-        stop_cm_translation();
+        initial_shaking(*this);
+        stop_cm_translation(*this);
         if (command_info.requested_gpu) {
             coords->upload();
             velocities->upload();
