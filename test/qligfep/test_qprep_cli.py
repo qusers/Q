@@ -413,3 +413,35 @@ class TestFragmentFilteringInQprep:
         # Chain B should still be present when filtering is skipped
         df = read_pdb_to_dataframe(pdb_file)
         assert "B" in df["chain_id"].values, "Chain B should be preserved when filtering is skipped"
+
+
+class TestNeutralizerInsertionCode:
+    """Residues sharing a (chain, seq_number) via insertion codes must not collide.
+
+    A C-terminal NME cap is commonly numbered the same as the preceding residue
+    with an insertion code (e.g. GLU 167 and NME 167A). Neutralizing the GLU must
+    not rewrite the NME cap that shares chain+seq_number.
+    """
+
+    def _make_neutralizer(self, center=(0, 0, 0), radius=25.0, offset=3.0):
+        return Neutralizer(center, radius, offset)
+
+    def test_neutralizing_glu_does_not_touch_capped_nme(self):
+        # GLU 167 outside boundary (x=30 > rest_bound 22) -> should become GLH.
+        glu = _build_protein_residue("GLU", "A", 167, 30.0, 0.0, 0.0)
+        # NME cap sharing chain A + seq 167 but insertion code "A" -> must be untouched.
+        nme = []
+        for i, aname in enumerate(["N", "C", "H", "H1", "H2", "H3"]):
+            row = _make_atom("ATOM", 99000 + i, aname, "NME", "A", 167, 30.0, 0.0, 0.0, "H")
+            row["insertion_code"] = "A"
+            nme.append(row)
+        df = pd.DataFrame(glu + nme)
+
+        neutralizer = self._make_neutralizer()
+        out, _ = neutralizer.neutralize_outside_residues_dataframe(df)
+
+        nme_out = out[out["insertion_code"] == "A"]
+        assert (nme_out["residue_name"] == "NME").all(), "NME cap was corrupted by GLU neutralization"
+        assert sorted(nme_out["atom_name"]) == ["C", "H", "H1", "H2", "H3", "N"]
+        glu_out = out[(out["insertion_code"] == "") & (out["residue_name"].isin(["GLU", "GLH"]))]
+        assert (glu_out["residue_name"] == "GLH").all(), "GLU outside boundary should be neutralized to GLH"
