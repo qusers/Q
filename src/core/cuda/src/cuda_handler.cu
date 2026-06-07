@@ -60,7 +60,7 @@ void CudaHandler::initialize_backend() {
         init_restrpos_force_kernel_data();
         init_restrseq_force_kernel_data();
         init_restrwall_force_kernel_data();
-        init_shake_constraints_kernel_data();
+        init_shake_constraints_kernel_data(Context::instance());
         init_temperature_kernel_data();
         init_torsion_force_kernel_data();
         initialized_ = true;
