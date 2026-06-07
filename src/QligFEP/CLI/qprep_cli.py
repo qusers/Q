@@ -153,6 +153,7 @@ class Neutralizer:
                     "residue_name": res_name,
                     "chain_id": chain,
                     "residue_seq_number": res_num,
+                    "insertion_code": group["insertion_code"].iloc[0],
                     "key_atom": key_atom,
                     "key_atom_coords": key_atom_coords,
                     "distance": distance,
@@ -217,8 +218,14 @@ class Neutralizer:
             new_name = res_info["neutral_form"]
             distance = res_info["distance"]
 
-            # Change residue name and remove atoms based on residue type
-            mask = (modified_df["chain_id"] == chain) & (modified_df["residue_seq_number"] == res_num)
+            # Change residue name and remove atoms based on residue type. Match on
+            # insertion_code too: a cap (e.g. NME 167A) can share chain+seq_number
+            # with the residue being neutralized and must not be rewritten.
+            mask = (
+                (modified_df["chain_id"] == chain)
+                & (modified_df["residue_seq_number"] == res_num)
+                & (modified_df["insertion_code"] == res_info["insertion_code"])
+            )
             modified_df.loc[mask, "residue_name"] = new_name
             atoms_to_remove = self._get_atoms_to_remove(old_name, new_name)
 
@@ -271,7 +278,12 @@ class Neutralizer:
                 continue
 
             internal_name = nterm_name[1:]  # NILE → ILE, NGLY → GLY, etc.
-            mask = (modified_df["chain_id"] == chain) & (modified_df["residue_seq_number"] == res_num)
+            ins_code = group["insertion_code"].iloc[0]
+            mask = (
+                (modified_df["chain_id"] == chain)
+                & (modified_df["residue_seq_number"] == res_num)
+                & (modified_df["insertion_code"] == ins_code)
+            )
             modified_df.loc[mask, "residue_name"] = internal_name
             h1_mask = mask & (modified_df["atom_name"] == "H1")
             if internal_name == "PRO":
@@ -318,7 +330,12 @@ class Neutralizer:
                 continue
 
             internal_name = cterm_name[1:]  # CALA → ALA, CGLY → GLY, etc.
-            mask = (modified_df["chain_id"] == chain) & (modified_df["residue_seq_number"] == res_num)
+            ins_code = group["insertion_code"].iloc[0]
+            mask = (
+                (modified_df["chain_id"] == chain)
+                & (modified_df["residue_seq_number"] == res_num)
+                & (modified_df["insertion_code"] == ins_code)
+            )
             modified_df.loc[mask, "residue_name"] = internal_name
             oxt_mask = mask & (modified_df["atom_name"] == "OXT")
             modified_df = modified_df.drop(modified_df[oxt_mask].index)
