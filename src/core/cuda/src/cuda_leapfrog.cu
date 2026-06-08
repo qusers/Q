@@ -82,20 +82,18 @@ void calc_leapfrog_host() {
         host.Tscale_solute,
         host.Tscale_solvent,
         host.dt);
-    check_cuda(cudaDeviceSynchronize());
 
     // shake
-    printf("n_shake_constraints: %d\n", host.n_shake_constraints);
-    if (host.n_shake_constraints > 0) {
-        calc_shake_constraints_host();
+    if (host.shake_data.n_constraints > 0) {
+        calc_shake_constraints_host(host);
         update_velocities_from_positions_kernel<<<numBlocks, blockSize>>>(
             d_velocities,
             d_coords,
             d_xcoords,
             host.n_atoms,
             host.dt);
-        check_cuda(cudaDeviceSynchronize());
     }
+    check_cuda(cudaDeviceSynchronize());
 }
 
 void init_leapfrog_kernel_data() {}

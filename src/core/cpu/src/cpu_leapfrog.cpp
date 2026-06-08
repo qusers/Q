@@ -49,8 +49,8 @@ void calc_leapfrog() {
         coords[i].z += velocities[i].z * ctx.dt;
     }
 
-    if (ctx.n_shake_constraints > 0) {
-        calc_shake_constraints(coords, xcoords);
+    if (ctx.shake_data.n_constraints > 0) {
+        calc_shake_constraints(ctx, coords, xcoords);
         for (int i = 0; i < ctx.n_atoms; i++) {
             velocities[i].x = (coords[i].x - xcoords[i].x) / ctx.dt;
             velocities[i].y = (coords[i].y - xcoords[i].y) / ctx.dt;

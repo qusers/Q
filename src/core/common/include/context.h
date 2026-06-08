@@ -14,6 +14,7 @@
 #include "common/include/parse.h"
 #include "common/include/vdw_rules.h"
 #include "host_device_buffer.h"
+#include "shake.h"
 
 class Context {
    public:
@@ -127,9 +128,7 @@ class Context {
     Shake
     */
 
-    int n_shake_constraints;
-    std::unique_ptr<HostDeviceBuffer<int>> mol_n_shakes;
-    std::unique_ptr<HostDeviceBuffer<shake_bond_t>> shake_bonds;
+    ShakeData shake_data;
     std::unique_ptr<HostDeviceBuffer<coord_t>> xcoords;  // todo: It's just a temporary variables...
     std::vector<int> molecules;
 

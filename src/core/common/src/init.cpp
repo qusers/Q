@@ -31,13 +31,13 @@ std::unique_ptr<HostDeviceBuffer<T>> make_host_device_buffer_from_vector(
 }
 
 void initialize_catype_tables() {
-    auto &ctx = Context::instance();
-    auto *excluded = ctx.excluded->cpu_data_p;
-    auto &atypes = ctx.atypes->cpu_data_p;
-    auto &catypes = ctx.catypes->cpu_data_p;
-    auto *p_atoms_cpu = ctx.p_atoms_list->cpu_data_p;
-    auto *w_atoms_cpu = ctx.w_atoms_list->cpu_data_p;
-    auto *q_atoms_cpu = ctx.q_atoms_list->cpu_data_p;
+    auto& ctx = Context::instance();
+    auto* excluded = ctx.excluded->cpu_data_p;
+    auto& atypes = ctx.atypes->cpu_data_p;
+    auto& catypes = ctx.catypes->cpu_data_p;
+    auto* p_atoms_cpu = ctx.p_atoms_list->cpu_data_p;
+    auto* w_atoms_cpu = ctx.w_atoms_list->cpu_data_p;
+    auto* q_atoms_cpu = ctx.q_atoms_list->cpu_data_p;
 
     std::vector<catype_t> h_catype_table_all;
     std::map<std::array<real_t, 4>, int> catype_to_type_host;
@@ -132,17 +132,15 @@ void initialize_catype_tables() {
     ctx.w_catype_types = make_host_device_buffer_from_vector(w_catype_types_cpu, run_gpu);
 }
 
-
-
 void initialize_charge_tables() {
-    auto &ctx = Context::instance();
-    auto *excluded = ctx.excluded->cpu_data_p;
-    auto &charges = ctx.charges->cpu_data_p;
-    auto &ccharges = ctx.ccharges->cpu_data_p;
-    auto *lambda_values = ctx.lambdas->cpu_data_p;
-    auto *p_atoms_cpu = ctx.p_atoms_list->cpu_data_p;
-    auto *w_atoms_cpu = ctx.w_atoms_list->cpu_data_p;
-    auto *q_atoms_cpu = ctx.q_atoms_list->cpu_data_p;
+    auto& ctx = Context::instance();
+    auto* excluded = ctx.excluded->cpu_data_p;
+    auto& charges = ctx.charges->cpu_data_p;
+    auto& ccharges = ctx.ccharges->cpu_data_p;
+    auto* lambda_values = ctx.lambdas->cpu_data_p;
+    auto* p_atoms_cpu = ctx.p_atoms_list->cpu_data_p;
+    auto* w_atoms_cpu = ctx.w_atoms_list->cpu_data_p;
+    auto* q_atoms_cpu = ctx.q_atoms_list->cpu_data_p;
 
     std::map<real_t, int> charge_to_type_host;
     std::vector<ccharge_t> h_charge_table_all;
@@ -433,20 +431,19 @@ void exclude_all_atoms_excluded_definitions() {
     ctx.n_torsions -= n_excl;
 }
 
-void exclude_shaken_definitions() {
-    auto& ctx = Context::instance();
+void exclude_shaken_definitions(Context& ctx) {
     int excluded;
     int solute_excluded;
     int bi = 0;
     int si = 0;
     int ang_i = 0;
     int ai, aj;
-    auto& shake_bonds = ctx.shake_bonds->cpu_data_p;
+    auto& shake_bonds = ctx.shake_data.shake_bonds->cpu_data_p;
 
     excluded = 0;
     solute_excluded = 0;
     auto& bonds = ctx.bonds->cpu_data_p;
-    if (ctx.n_shake_constraints > 0) {
+    if (ctx.shake_data.n_constraints > 0) {
         for (int i = 0; i < ctx.n_bonds; i++) {
             if (bonds[i].ai == shake_bonds[si].ai && bonds[i].aj == shake_bonds[si].aj) {
                 si++;
@@ -464,9 +461,9 @@ void exclude_shaken_definitions() {
     excluded = 0;
     solute_excluded = 0;
     auto& angles = ctx.angles->cpu_data_p;
-    if (ctx.n_shake_constraints > 0) {
+    if (ctx.shake_data.n_constraints > 0) {
         // Mark angles whose terminal atoms (i and k) match a shaken bond
-        for (int i = 0; i < ctx.n_shake_constraints; i++) {
+        for (int i = 0; i < ctx.shake_data.n_constraints; i++) {
             ai = shake_bonds[i].ai;
             aj = shake_bonds[i].aj;
             for (int j = 0; j < ctx.n_angles; j++) {
@@ -521,8 +518,6 @@ void init_velocities() {
         ctx.velocities->upload();
     }
 }
-
-
 
 void init_inv_mass() {
     auto& ctx = Context::instance();
@@ -773,8 +768,7 @@ void init_pshells_from_charge_groups() {
  * =============================================
  */
 
-void init_shake() {
-    auto& ctx = Context::instance();
+void init_shake(Context& ctx) {
     auto* heavy = ctx.heavy->cpu_data_p;
     auto* excluded = ctx.excluded->cpu_data_p;
     int ai, aj;
@@ -785,9 +779,9 @@ void init_shake() {
     auto& bonds = ctx.bonds->cpu_data_p;
     auto& cbonds = ctx.cbonds->cpu_data_p;
 
-    ctx.n_shake_constraints = 0;
-    ctx.mol_n_shakes = std::make_unique<HostDeviceBuffer<int>>(ctx.n_molecules, true, ctx.command_info.requested_gpu);
-    auto* mol_n_shakes = ctx.mol_n_shakes->cpu_data_p;
+    ctx.shake_data.n_constraints = 0;
+    ctx.shake_data.mol_n_shakes = std::make_unique<HostDeviceBuffer<int>>(ctx.n_molecules, true, ctx.command_info.requested_gpu);
+    auto* mol_n_shakes = ctx.shake_data.mol_n_shakes->cpu_data_p;
 
     for (int bi = 0; bi < ctx.n_bonds; bi++) {
         ai = bonds[bi].ai - 1;
@@ -800,15 +794,15 @@ void init_shake() {
 
         if ((ctx.md.shake_hydrogens && (!heavy[ai] || !heavy[aj])) || (ctx.md.shake_solute && ai + 1 <= ctx.n_atoms_solute) || (ctx.md.shake_solvent && ai + 1 > ctx.n_atoms_solute)) {
             mol_n_shakes[mol]++;
-            ctx.n_shake_constraints++;
+            ctx.shake_data.n_constraints++;
 
             if (excluded[ai]) excl_shake += 0.5;
             if (excluded[aj]) excl_shake += 0.5;
         }
     }
 
-    ctx.shake_bonds = std::make_unique<HostDeviceBuffer<shake_bond_t>>(ctx.n_shake_constraints, true, ctx.command_info.requested_gpu);
-    auto* shake_bonds = ctx.shake_bonds->cpu_data_p;
+    ctx.shake_data.shake_bonds = std::make_unique<HostDeviceBuffer<ShakeBond>>(ctx.shake_data.n_constraints, true, ctx.command_info.requested_gpu);
+    auto* shake_bonds = ctx.shake_data.shake_bonds->cpu_data_p;
     mol = 0;
     shake = 0;
     for (int bi = 0; bi < ctx.n_bonds; bi++) {
@@ -834,25 +828,26 @@ void init_shake() {
     }
 
     if (ctx.command_info.requested_gpu) {
-        ctx.mol_n_shakes->upload();
-        ctx.shake_bonds->upload();
+        ctx.shake_data.mol_n_shakes->upload();
+        ctx.shake_data.shake_bonds->upload();
     }
 
-    ctx.Ndegf = 3 * ctx.n_atoms - ctx.n_shake_constraints;
+    ctx.Ndegf = 3 * ctx.n_atoms - ctx.shake_data.n_constraints;
     ctx.Ndegfree = ctx.Ndegf - 3 * ctx.n_excluded + excl_shake;
 
-    ctx.Ndegf_solvent = 3 * (ctx.n_atoms - ctx.n_atoms_solute) - (ctx.n_shake_constraints - n_solute_shake_constraints);
+    ctx.Ndegf_solvent = 3 * (ctx.n_atoms - ctx.n_atoms_solute) - (ctx.shake_data.n_constraints - n_solute_shake_constraints);
     ctx.Ndegf_solute = ctx.Ndegf - ctx.Ndegf_solvent;
-    ctx.Ndegfree_solvent = 3 * (ctx.n_atoms - ctx.n_atoms_solute) - (ctx.n_shake_constraints - n_solute_shake_constraints);
+    ctx.Ndegfree_solvent = 3 * (ctx.n_atoms - ctx.n_atoms_solute) - (ctx.shake_data.n_constraints - n_solute_shake_constraints);
     ctx.Ndegfree_solute = ctx.Ndegfree - ctx.Ndegfree_solvent;
 
-    printf("n_shake_constrains = %d, n_solute_shake_constraints = %d, excl_shake = %f\n", ctx.n_shake_constraints, n_solute_shake_constraints, excl_shake);
+    printf("n_shake_constrains = %d, n_solute_shake_constraints = %d, excl_shake = %f\n", ctx.shake_data.n_constraints, n_solute_shake_constraints, excl_shake);
 
     if (ctx.Ndegfree_solvent * ctx.Ndegfree_solute == 0) {
         ctx.separate_scaling = false;
     } else {
         ctx.separate_scaling = ctx.md.separate_scaling;
     }
+    ctx.shake_data.n_solute_constraints = n_solute_shake_constraints;
 }
 
 /* =============================================

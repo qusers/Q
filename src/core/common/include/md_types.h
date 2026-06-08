@@ -289,12 +289,7 @@ struct shell_t {
  * =============================================
  */
 
-struct shake_bond_t {
-    int ai;
-    int aj;
-    real_t dist2;
-    bool ready;
-};
+
 
 /* =============================================
  * == CALCUTED IN THE INTEGRATION
