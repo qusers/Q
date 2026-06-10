@@ -1,7 +1,7 @@
 #include <map>
-#include "constants.h"
 #include <unordered_map>
 
+#include "constants.h"
 #include "cuda_runtime_utility.h"
 #include "cuda_shake.cuh"
 
@@ -29,6 +29,10 @@ ShakeFastWater make_fast_water(int o, int h1, int h2, real_t roh2, real_t rhh2, 
 
     return ShakeFastWater{
         o, h1, h2, com_y, 1.0 / com_y, height - com_y, 0.5 * rhh, rhh, rhh * rhh, wo / total_mass, wh / total_mass};
+}
+
+__device__ real_t clamp_nonnegative(real_t value) {
+    return value > static_cast<real_t>(0) ? value : static_cast<real_t>(0);
 }
 
 }  // namespace
@@ -306,7 +310,7 @@ void CudaShake::init_backend(Context& ctx) {
     find_shake_fast_water(ctx, optimized);
     find_shake_network(ctx, optimized);
     find_fallback_shake_bond(ctx, optimized);
-
+    fallback_unconverged = std::make_unique<HostDeviceBuffer<int>>(1, true, true);
     is_init_backend = true;
 }
 
@@ -409,23 +413,26 @@ __global__ void calc_fast_water_shake_kernel(
     const real_t zc1d = trns13 * xc1 + trns23 * yc1 + trns33 * zc1;
 
     const real_t sinphi = za1d * water.ra_inv;
-    const real_t cosphi = sqrt(1.0 - sinphi * sinphi);
+    const real_t cosphi = sqrt(clamp_nonnegative(static_cast<real_t>(1) - sinphi * sinphi));
+    if (cosphi <= static_cast<real_t>(0)) return;
     const real_t sinpsi = (zb1d - zc1d) / (water.rhh * cosphi);
-    const real_t cospsi = sqrt(1.0 - sinpsi * sinpsi);
+    const real_t cospsi = sqrt(clamp_nonnegative(static_cast<real_t>(1) - sinpsi * sinpsi));
 
     const real_t ya2d = water.ra * cosphi;
     real_t xb2d = -water.rc * cospsi;
     const real_t yb2d = -water.rb * cosphi - water.rc * sinpsi * sinphi;
     const real_t yc2d = -water.rb * cosphi + water.rc * sinpsi * sinphi;
-    xb2d = -0.5 * sqrt(water.rhh2 - (yb2d - yc2d) * (yb2d - yc2d) - (zb1d - zc1d) * (zb1d - zc1d));
+    xb2d = -static_cast<real_t>(0.5) *
+           sqrt(clamp_nonnegative(water.rhh2 - (yb2d - yc2d) * (yb2d - yc2d) - (zb1d - zc1d) * (zb1d - zc1d)));
 
     const real_t alpa = xb2d * (xb0d - xc0d) + yb0d * yb2d + yc0d * yc2d;
     const real_t beta = xb2d * (yc0d - yb0d) + xb0d * yb2d + xc0d * yc2d;
     const real_t gama = xb0d * yb1d - xb1d * yb0d + xc0d * yc1d - xc1d * yc0d;
     const real_t al2be2 = alpa * alpa + beta * beta;
+    if (al2be2 <= static_cast<real_t>(0)) return;
 
-    const real_t sinthe = (alpa * gama - beta * sqrt(al2be2 - gama * gama)) / al2be2;
-    const real_t costhe = sqrt(1.0 - sinthe * sinthe);
+    const real_t sinthe = (alpa * gama - beta * sqrt(clamp_nonnegative(al2be2 - gama * gama))) / al2be2;
+    const real_t costhe = sqrt(clamp_nonnegative(static_cast<real_t>(1) - sinthe * sinthe));
 
     const real_t xa3d = -ya2d * sinthe;
     const real_t ya3d = ya2d * costhe;
@@ -446,8 +453,8 @@ __global__ void calc_fast_water_shake_kernel(
     coords[h2].x = xcom + trns11 * xc3d + trns12 * yc3d + trns13 * zc3d;
     coords[h2].y = ycom + trns21 * xc3d + trns22 * yc3d + trns23 * zc3d;
     coords[h2].z = zcom + trns31 * xc3d + trns32 * yc3d + trns33 * zc3d;
-}
 
+}
 
 __global__ void calc_h_star_shake_kernel(
     int n_shake_networks,
@@ -526,6 +533,67 @@ __global__ void calc_h_star_shake_kernel(
     }
 }
 
+__global__ void print_fallback_shake_failures_kernel(
+    int n_shakes,
+    ShakeBond* shake_bonds,
+    coord_t* coords) {
+    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= n_shakes) return;
+
+    const int ai = shake_bonds[idx].ai - 1;
+    const int aj = shake_bonds[idx].aj - 1;
+    const real_t dx = coords[ai].x - coords[aj].x;
+    const real_t dy = coords[ai].y - coords[aj].y;
+    const real_t dz = coords[ai].z - coords[aj].z;
+    const real_t dist2 = dx * dx + dy * dy + dz * dz;
+    if (fabs(shake_bonds[idx].dist2 - dist2) >= shake_tol * shake_bonds[idx].dist2) {
+        printf(">>> Shake failed, i = %d,j = %d, d = %f, d0 = %f\n",
+               ai,
+               aj,
+               static_cast<double>(sqrt(dist2)),
+               static_cast<double>(sqrt(shake_bonds[idx].dist2)));
+    }
+}
+
+__global__ void calc_fallback_shake_color_kernel(
+    int n_shakes,
+    ShakeBond* shake_bonds,
+    coord_t* coords,
+    coord_t* xcoords,
+    real_t* winv,
+    int* unconverged) {
+    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= n_shakes) return;
+
+    ShakeBond& shake_bond = shake_bonds[idx];
+    const int ai = shake_bond.ai - 1;
+    const int aj = shake_bond.aj - 1;
+    const real_t xij_x = coords[ai].x - coords[aj].x;
+    const real_t xij_y = coords[ai].y - coords[aj].y;
+    const real_t xij_z = coords[ai].z - coords[aj].z;
+    const real_t xij2 = xij_x * xij_x + xij_y * xij_y + xij_z * xij_z;
+    const real_t diff = shake_bond.dist2 - xij2;
+    if (fabs(diff) < shake_tol * shake_bond.dist2) return;
+
+    atomicExch(unconverged, 1);
+    const real_t xxij_x = xcoords[ai].x - xcoords[aj].x;
+    const real_t xxij_y = xcoords[ai].y - xcoords[aj].y;
+    const real_t xxij_z = xcoords[ai].z - xcoords[aj].z;
+    const real_t scp = xij_x * xxij_x + xij_y * xxij_y + xij_z * xxij_z;
+    const real_t inv_mass_sum = winv[ai] + winv[aj];
+    if (scp == static_cast<real_t>(0) || inv_mass_sum == static_cast<real_t>(0)) return;
+
+    const real_t corr = diff / (static_cast<real_t>(2) * scp * inv_mass_sum);
+    const real_t ai_scale = corr * winv[ai];
+    const real_t aj_scale = corr * winv[aj];
+    coords[ai].x += xxij_x * ai_scale;
+    coords[ai].y += xxij_y * ai_scale;
+    coords[ai].z += xxij_z * ai_scale;
+    coords[aj].x -= xxij_x * aj_scale;
+    coords[aj].y -= xxij_y * aj_scale;
+    coords[aj].z -= xxij_z * aj_scale;
+}
+
 void CudaShake::apply_to(Context& ctx, coord_t* d_coords, coord_t* d_xcoords) {
     if (shake_fast_waters->length > 0) {
         const int grid_blocks = (shake_fast_waters->length + kShakeThreads - 1) / kShakeThreads;
@@ -536,9 +604,37 @@ void CudaShake::apply_to(Context& ctx, coord_t* d_coords, coord_t* d_xcoords) {
         calc_h_star_shake_kernel<<<grid_blocks, kShakeThreads>>>(shake_networks->length, shake_networks->gpu_data_p, d_coords, d_xcoords);
     }
     if (fallback_shake_bonds->length > 0) {
+        int color_groups_num = fallback_color_offsets.size() - 1;
 
+        for (int n_iterations = 0; n_iterations < shake_max_iter; n_iterations++) {
+            fallback_unconverged->cpu_data_p[0] = false;
+            fallback_unconverged->upload();
+            for (int i = 0; i < color_groups_num; i++) {
+                const int offset = fallback_color_offsets[i];
+                const int bond_num = fallback_color_offsets[i + 1] - offset;
+                const int grid_blocks = (bond_num + kShakeThreads - 1) / kShakeThreads;
+                calc_fallback_shake_color_kernel<<<grid_blocks, kShakeThreads>>>(
+                    bond_num,
+                    fallback_shake_bonds->gpu_data_p + offset,
+                    d_coords,
+                    d_xcoords,
+                    ctx.winv->gpu_data_p,
+                    fallback_unconverged->gpu_data_p);
+            }
+            fallback_unconverged->download();
+            if (fallback_unconverged->cpu_data_p[0] == false) {
+                break;
+            }
+        }
 
-
+        if (fallback_unconverged->cpu_data_p[0]) {
+            int n_fallback_constraints = fallback_shake_bonds->length;
+            const int grid_blocks = (n_fallback_constraints + kShakeThreads - 1) / kShakeThreads;
+            print_fallback_shake_failures_kernel<<<grid_blocks, kShakeThreads>>>(
+                n_fallback_constraints,
+                fallback_shake_bonds->gpu_data_p,
+                d_coords);
+        }
     }
 }
 
