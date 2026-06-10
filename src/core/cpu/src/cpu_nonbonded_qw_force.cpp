@@ -21,9 +21,12 @@ void calc_nonbonded_qw_forces() {
     // Loop over O-atoms, q-atoms
     for (int j = ctx.n_atoms_solute; j < ctx.n_atoms; j += 3) {
         const catype_t& ow_type = ctx.unified_catype(j, 0);
-        const real_t ow_charge = ctx.unified_ccharge(j, 0).charge;
-        const real_t hw1_charge = ctx.unified_ccharge(j + 1, 0).charge;
-        const real_t hw2_charge = ctx.unified_ccharge(j + 2, 0).charge;
+        float ow_charge = ctx.unified_ccharge(j, 0).charge;
+        float hw1_charge = ctx.unified_ccharge(j + 1, 0).charge;
+        float hw2_charge = ctx.unified_ccharge(j + 2, 0).charge;
+        ow_charge *= sqrt(ctx.topo.coulomb_constant);
+        hw1_charge *= sqrt(ctx.topo.coulomb_constant);
+        hw2_charge *= sqrt(ctx.topo.coulomb_constant);
         for (int qi = 0; qi < ctx.n_qatoms; qi++) {
             i = ctx.q_atoms[qi];
             if (excluded[i] || excluded[j]) continue;
@@ -62,13 +65,11 @@ void calc_nonbonded_qw_forces() {
                     calc_vdw_arithmetic(ai_aii, ow_type.aii_normal, ai_bii, ow_type.bii_normal, r6Oinv, &V_a, &V_b);
                 }
 
-                const real_t q_charge = ctx.unified_ccharge(i, state).charge;
-                const real_t coulomb_constant = static_cast<real_t>(ctx.topo.coulomb_constant);
-                VelO = coulomb_constant * ow_charge * q_charge * rO;
-                VelH1 = coulomb_constant * hw1_charge * q_charge * rH1;
-                VelH2 = coulomb_constant * hw2_charge * q_charge * rH2;
+                const float q_charge = ctx.unified_ccharge(i, state).charge * sqrt(ctx.topo.coulomb_constant);
+                VelO =  ow_charge * q_charge * rO;
+                VelH1 = hw1_charge * q_charge * rH1;
+                VelH2 = hw2_charge * q_charge * rH2;
 
-                // if (state == 0 && qi == 1) printf("j = %d ai__aii = %f A_O = %f B_O = %f V_a = %f V_b = %f r6O = %f\n", j, ai_aii, A_O, B_O, V_a, V_b, r6O);
 
                 const real_t lambda = static_cast<real_t>(lambdas[state]);
                 dvO += r2O * (-VelO - (static_cast<real_t>(12.0) * V_a - static_cast<real_t>(6.0) * V_b)) * lambda;
@@ -99,7 +100,4 @@ void calc_nonbonded_qw_forces() {
         }
     }
 
-#ifdef DEBUG
-    printf("q-w: Ecoul = %f Evdw = %f\n", ctx.EQ_nonbond_qw[0].Ucoul, ctx.EQ_nonbond_qw[0].Uvdw);
-#endif
 }

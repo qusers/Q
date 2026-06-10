@@ -8,7 +8,9 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <map>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -54,6 +56,12 @@ double row_double(const std::vector<std::string>& row, size_t index, double fall
 
 bool is_on_value(const std::map<std::string, std::string>& values, const std::string& key, const std::string& fallback) {
     return bool_value(values, key, fallback) == "on";
+}
+
+bool is_on_token(const std::string& token) {
+    std::string value = lower_normalized(token);
+    if (value == "true" || value == "yes" || value == "1") return true;
+    return value == "on";
 }
 
 std::vector<std::vector<std::string>> checked_split_groups(const std::vector<std::string>& flat, size_t width) {
@@ -124,6 +132,12 @@ std::vector<std::string> split_state_row(const std::string& value) {
     return split_ws(value);
 }
 
+std::string precise_double_string(double value) {
+    std::ostringstream out;
+    out << std::setprecision(17) << value;
+    return out.str();
+}
+
 void add_short_neighbors(const std::vector<std::string>& lines, std::vector<std::pair<int, int>>& out) {
     out.clear();
     int n_lines = static_cast<int>(lines.size());
@@ -168,12 +182,33 @@ std::vector<std::vector<std::string>> unpack_restart_vector(const std::vector<ch
     std::vector<std::vector<std::string>> rows;
     rows.reserve(nat3 / 3);
     for (int i = 0; i < nat3; i += 3) {
-        rows.push_back({std::to_string(values[i]), std::to_string(values[i + 1]), std::to_string(values[i + 2])});
+        rows.push_back({precise_double_string(values[i]), precise_double_string(values[i + 1]), precise_double_string(values[i + 2])});
     }
     return rows;
 }
 
-void read_restart_vectors(const std::string& path, std::vector<std::vector<std::string>>& coords, std::vector<std::vector<std::string>>& velocities) {
+std::vector<real_t> unpack_restart_theta_corr(const std::vector<char>& payload) {
+    if (payload.size() < sizeof(int32_t)) return {};
+
+    int32_t n_shells = 0;
+    std::memcpy(&n_shells, payload.data(), sizeof(int32_t));
+    if (n_shells <= 0) return {};
+
+    size_t expected = sizeof(int32_t) + static_cast<size_t>(n_shells) * sizeof(float);
+    if (payload.size() != expected) return {};
+
+    std::vector<real_t> theta_corr(n_shells);
+    const float* values = reinterpret_cast<const float*>(payload.data() + sizeof(int32_t));
+    for (int i = 0; i < n_shells; i++) {
+        theta_corr[i] = static_cast<real_t>(values[i]);
+    }
+    return theta_corr;
+}
+
+void read_restart_vectors(const std::string& path,
+                          std::vector<std::vector<std::string>>& coords,
+                          std::vector<std::vector<std::string>>& velocities,
+                          std::vector<real_t>& theta_corr) {
     std::ifstream in(path.c_str(), std::ios::binary);
     if (!in) throw parse_error("Could not open restart file " + path);
 
@@ -183,6 +218,11 @@ void read_restart_vectors(const std::string& path, std::vector<std::vector<std::
     if (!read_fortran_record(in, payload)) throw parse_error("Could not read restart velocities.");
     velocities = unpack_restart_vector(payload);
     if (coords.size() != velocities.size()) throw parse_error("Restart coordinate and velocity atom counts differ.");
+
+    theta_corr.clear();
+    if (read_fortran_record(in, payload)) {
+        theta_corr = unpack_restart_theta_corr(payload);
+    }
 }
 
 double q_randm(int& seed) {
@@ -255,6 +295,7 @@ struct InpParser::TopData {
 
 struct InpParser::FepData {
     int states = 0;
+    bool softcore_use_max_potential = false;
     std::vector<std::string> q_atoms;
     std::vector<std::vector<std::string>> q_atypes;
     std::vector<std::vector<std::string>> q_charges;
@@ -558,6 +599,7 @@ void InpParser::ensure_fep() {
     while (std::getline(first, raw)) {
         std::vector<std::string> f = split_ws(strip_comment(raw));
         if (f.size() >= 2 && f[0] == "states") fep_->states = parse_int(f[1]);
+        if (f.size() >= 2 && f[0] == "softcore_use_max_potential") fep_->softcore_use_max_potential = is_on_token(f[1]);
     }
 
     fep_->q_atypes.assign(fep_->states, {});
@@ -704,9 +746,10 @@ void InpParser::ensure_run_start_vectors() {
 
     result.fresh_start = restart_file_.empty();
     if (!restart_file_.empty()) {
-        read_restart_vectors(restart_file_, run_coords_, run_velocities_);
+        read_restart_vectors(restart_file_, run_coords_, run_velocities_, result.restart_theta_corr);
     } else {
         run_coords_ = top_->coords;
+        result.restart_theta_corr.clear();
 
         const auto& mdv = input_->keyed.count("md") ? input_->keyed["md"] : std::map<std::string, std::string>();
         int seed = parse_int(value_or(mdv, "random-seed", value_or(mdv, "random_seed", "1")));
@@ -762,7 +805,12 @@ void InpParser::parse_md() {
     md.shell_radius = parse_double(value_or(sphere, "shell-radius", value_or(sphere, "shell_radius", "0")));
     md.shell_force = parse_double(value_or(sphere, "shell-force", value_or(sphere, "shell_force", "10.0")));
     md.radial_force = parse_double(value_or(solvent, "radial-force", value_or(solvent, "radial_force", "60.0")));
-    md.polarisation = true;
+    const std::string polarisation_value = bool_value(solvent, "polarisation", bool_value(solvent, "polarization", "on"));
+    md.polarisation = polarisation_value == "on";
+    md.charge_correction = is_on_value(
+        solvent,
+        "charge-correction",
+        bool_value(solvent, "charge_correction", md.polarisation ? "on" : "off"));
     md.polarisation_force = parse_double(value_or(solvent, "polarisation-force", value_or(solvent, "polarisation_force", "20.0")));
     md.non_bond = parse_int(value_or(intervals, "non-bond", value_or(intervals, "non_bond", "25")));
     md.output = parse_int(value_or(intervals, "output", "5"));
@@ -1197,6 +1245,7 @@ void InpParser::parse_q_shakes() {
 
 void InpParser::parse_q_softcores() {
     ensure_fep();
+    result.softcore_use_max_potential = fep_->softcore_use_max_potential;
     int n_lambdas = static_cast<int>(result.lambdas.size());
     size_t total = 0;
     for (const auto& state : fep_->q_softcores) total += state.size();

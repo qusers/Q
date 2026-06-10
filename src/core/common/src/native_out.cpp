@@ -54,6 +54,10 @@ void append_double(std::vector<char>& buffer, double value) {
     append_bytes(buffer, &value, sizeof(value));
 }
 
+void append_float(std::vector<char>& buffer, float value) {
+    append_bytes(buffer, &value, sizeof(value));
+}
+
 void append_char_fixed(std::vector<char>& buffer, const std::string& value, size_t width) {
     std::vector<char> field(width, ' ');
     size_t ncopy = std::min(value.size(), width);
@@ -88,6 +92,15 @@ void write_restart_record(std::ofstream& out,
         append_double(payload, x);
         append_double(payload, y);
         append_double(payload, z);
+    }
+    write_record(out, payload.data(), static_cast<int32_t>(payload.size()));
+}
+
+void write_theta_corr_record(std::ofstream& out, const shell_t* wshells, int n_shells) {
+    std::vector<char> payload;
+    append_int32(payload, n_shells);
+    for (int i = 0; i < n_shells; i++) {
+        append_float(payload, static_cast<float>(wshells[i].theta_corr));
     }
     write_record(out, payload.data(), static_cast<int32_t>(payload.size()));
 }
@@ -130,6 +143,9 @@ void NativeOutput::init(Context& ctx) {
 
 void NativeOutput::finish(Context& ctx) {
     ensure_initialized(ctx);
+    if (ctx.md.trajectory > 0 && ctx.md.steps % ctx.md.trajectory == 0) {
+        write_trajectory_frame(ctx);
+    }
     write_restart_file(ctx);
 }
 
@@ -143,8 +159,8 @@ void NativeOutput::shutdown() {
 void NativeOutput::output_trajectory(Context& ctx, int iteration) {
     ensure_initialized(ctx);
 
-    int step = iteration + 1;
-    if (ctx.md.trajectory > 0 && step % ctx.md.trajectory == 0) {
+    int step = iteration;
+    if (ctx.md.trajectory > 0 && step > 0 && step % ctx.md.trajectory == 0) {
         write_trajectory_frame(ctx);
     }
 }
@@ -152,8 +168,8 @@ void NativeOutput::output_trajectory(Context& ctx, int iteration) {
 void NativeOutput::output_energy(Context& ctx, int iteration) {
     ensure_initialized(ctx);
 
-    int step = iteration + 1;
-    if (ctx.md.energy > 0 && step % ctx.md.energy == 0) {
+    int step = iteration;
+    if (ctx.md.energy > 0 && step > 0 && step % ctx.md.energy == 0) {
         write_energy_frame(ctx);
     }
 }
@@ -161,8 +177,8 @@ void NativeOutput::output_energy(Context& ctx, int iteration) {
 void NativeOutput::output_restart(Context& ctx, int iteration) {
     ensure_initialized(ctx);
 
-    int step = iteration + 1;
-    if (step > 0 && step % 1000 == 0) {
+    int step = iteration;
+    if (step % 1000 == 0) {
         write_restart_file(ctx);
     }
 }
@@ -246,6 +262,11 @@ void NativeOutput::write_trajectory_frame(Context& ctx) {
     if (ctx.md.trajectory <= 0 || !trajectory_stream_) return;
 
     std::vector<float> axis(trajectory_atoms_indices_.size());
+
+    if (ctx.command_info.requested_gpu) {
+        ctx.coords->download();
+    }
+
     auto* coords = ctx.coords->cpu_data_p;
     for (size_t i = 0; i < trajectory_atoms_indices_.size(); i++) axis[i] = static_cast<float>(coords[trajectory_atoms_indices_[i]].x);
     write_record(trajectory_stream_, axis.data(), static_cast<int32_t>(axis.size() * sizeof(float)));
@@ -283,7 +304,17 @@ void NativeOutput::write_restart_file(Context& ctx) const {
     if (!out) {
         throw std::runtime_error("Could not write native final restart file " + config_.final_file);
     }
+    if (ctx.command_info.requested_gpu) {
+        ctx.coords->download();
+        ctx.velocities->download();
+    }
 
     write_restart_record(out, ctx.coords->cpu_data_p, nullptr, ctx.n_atoms, false);
     write_restart_record(out, nullptr, ctx.velocities->cpu_data_p, ctx.n_atoms, true);
+    if (ctx.md.polarisation && ctx.wshells && ctx.n_shells > 0) {
+        if (ctx.command_info.requested_gpu) {
+            ctx.wshells->download();
+        }
+        write_theta_corr_record(out, ctx.wshells->cpu_data_p, ctx.n_shells);
+    }
 }

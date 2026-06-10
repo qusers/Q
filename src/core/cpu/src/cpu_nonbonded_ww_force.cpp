@@ -23,8 +23,8 @@ void calc_oxygen_vdw_parameters(const Context& ctx, int oxygen_i, int oxygen_j, 
 void accumulate_pair_force(Context& ctx,
                            int atom_i,
                            int atom_j,
-                           real_t qi,
-                           real_t qj,
+                           float qi,
+                           float qj,
                            bool include_vdw,
                            real_t vdw_a,
                            real_t vdw_b,
@@ -35,9 +35,11 @@ void accumulate_pair_force(Context& ctx,
     const real_t dy = coords[atom_j].y - coords[atom_i].y;
     const real_t dz = coords[atom_j].z - coords[atom_i].z;
 
-    const real_t r2inv = static_cast<real_t>(1.0) / (dx * dx + dy * dy + dz * dz);
-    const real_t rinv = static_cast<real_t>(std::sqrt(r2inv));
-    const real_t ecoul = static_cast<real_t>(ctx.topo.coulomb_constant) * qi * qj * rinv;
+    const real_t r2inv = 1.0 / (dx * dx + dy * dy + dz * dz);
+    const real_t rinv = sqrt(r2inv);
+    qi *= sqrt(ctx.topo.coulomb_constant);
+    qj *= sqrt(ctx.topo.coulomb_constant);
+    const real_t ecoul = qi * qj * rinv;
 
     real_t evdw = 0.0;
     real_t dva = -ecoul;
@@ -59,8 +61,8 @@ void accumulate_pair_force(Context& ctx,
     dvelocities[atom_j].y += scale * dy;
     dvelocities[atom_j].z += scale * dz;
 
-    energy.Ucoul += static_cast<real_t>(ecoul);
-    energy.Uvdw += static_cast<real_t>(evdw);
+    energy.Ucoul += ecoul;
+    energy.Uvdw += evdw;
 }
 
 void calc_nonbonded_ww_forces() {

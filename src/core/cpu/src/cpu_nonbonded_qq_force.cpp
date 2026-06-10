@@ -15,7 +15,6 @@ void calc_nonbonded_qq_forces() {
     auto *excluded = ctx.excluded->cpu_data_p;
     auto *q_elscales = ctx.q_elscales->cpu_data_p;
     int ai, aj;
-    real_t crg_i, crg_j;
     real_t elscale, scaling;
     bool bond23, bond14;
     coord_t da;
@@ -30,8 +29,14 @@ void calc_nonbonded_qq_forces() {
                 ai = ctx.q_atoms[qi];
                 aj = ctx.q_atoms[qj];
 
-                crg_i = ctx.unified_ccharge(ai, state).charge;
-                crg_j = ctx.unified_ccharge(aj, state).charge;
+                float _crg_i = ctx.unified_ccharge(ai, state).charge;
+                float _crg_j = ctx.unified_ccharge(aj, state).charge;
+                _crg_i *= sqrt(ctx.topo.coulomb_constant);
+                _crg_j *= sqrt(ctx.topo.coulomb_constant);
+                double crg_i = _crg_i;
+                double crg_j = _crg_j;
+
+
 
                 bond23 = LJ_matrix[ai * ctx.n_atoms_solute + aj] == 3;
                 bond14 = LJ_matrix[ai * ctx.n_atoms_solute + aj] == 1;
@@ -54,11 +59,11 @@ void calc_nonbonded_qq_forces() {
                 da.x = coords[aj].x - coords[ai].x;
                 da.y = coords[aj].y - coords[ai].y;
                 da.z = coords[aj].z - coords[ai].z;
-                r2a = static_cast<real_t>(1.0) / (da.x * da.x + da.y * da.y + da.z * da.z);
-                ra = static_cast<real_t>(std::sqrt(r2a));
+                r2a = 1.0f / (da.x * da.x + da.y * da.y + da.z * da.z);
+                ra = sqrt(r2a);
                 r6a = r2a * r2a * r2a;
 
-                Vela = static_cast<real_t>(scaling * ctx.topo.coulomb_constant * elscale) * crg_i * crg_j * ra;
+                Vela =  crg_i * crg_j * ra * elscale * scaling;
 
                 ai_aii = bond14 ? qi_type.aii_1_4 : qi_type.aii_normal;
                 aj_aii = bond14 ? qj_type.aii_1_4 : qj_type.aii_normal;
@@ -70,8 +75,7 @@ void calc_nonbonded_qq_forces() {
                 } else {
                     calc_vdw_arithmetic(ai_aii, aj_aii, ai_bii, aj_bii, r6a, &V_a, &V_b);
                 }
-                dva = r2a * (-Vela - static_cast<real_t>(12.0) * V_a + static_cast<real_t>(6.0) * V_b) *
-                      static_cast<real_t>(lambdas[state]);
+                dva = r2a * (-Vela - 12.0f * V_a + 6.0f * V_b) * lambdas[state];
 
                 dvelocities[ai].x -= dva * da.x;
                 dvelocities[ai].y -= dva * da.y;
@@ -82,12 +86,10 @@ void calc_nonbonded_qq_forces() {
                 dvelocities[aj].z += dva * da.z;
 
                 ctx.EQ_nonbond_qq[state].Ucoul += static_cast<real_t>(Vela);
+
+
                 ctx.EQ_nonbond_qq[state].Uvdw += static_cast<real_t>(V_a - V_b);
             }
         }
     }
-
-#ifdef DEBUG
-    printf("q-q: Ecoul = %f Evdw = %f\n", ctx.EQ_nonbond_qq[0].Ucoul, ctx.EQ_nonbond_qq[0].Uvdw);
-#endif
 }

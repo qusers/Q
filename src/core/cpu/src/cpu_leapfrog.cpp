@@ -1,9 +1,9 @@
 #include "cpu_leapfrog.h"
 
 #include "context.h"
-#include "cpu_shake.h"
+#include "shake.h"
 
-void calc_leapfrog() {
+void calc_leapfrog(Shake &shake) {
     auto& ctx = Context::instance();
     auto &atypes = ctx.atypes->cpu_data_p;
     auto &catypes = ctx.catypes->cpu_data_p;
@@ -48,8 +48,9 @@ void calc_leapfrog() {
         coords[i].z += velocities[i].z * ctx.dt;
     }
 
-    if (ctx.n_shake_constraints > 0) {
-        calc_shake_constraints(coords, xcoords);
+    // do shake
+    if (shake.data().n_constraints > 0) {
+        shake.apply(ctx);
         for (int i = 0; i < ctx.n_atoms; i++) {
             velocities[i].x = (coords[i].x - xcoords[i].x) / ctx.dt;
             velocities[i].y = (coords[i].y - xcoords[i].y) / ctx.dt;

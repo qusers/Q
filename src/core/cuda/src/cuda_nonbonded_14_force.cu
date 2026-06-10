@@ -1,6 +1,6 @@
-#include "constants.h"
 #include "common/include/context.h"
 #include "common/include/vdw_rules.h"
+#include "constants.h"
 #include "cuda/include/cuda_nonbonded_14_force.cuh"
 #include "cuda_utility.cuh"
 
@@ -114,7 +114,11 @@ __global__ void calc_nonbonded_14_force_kernel(
     if (ai < 0 || aj < 0 || ai >= n_atoms || aj >= n_atoms || ai == aj) return;
     if (d_excluded[ai] || d_excluded[aj]) return;
     if (mode < NONBONDED_14_PP || mode > NONBONDED_14_QQ) return;
-    if (!include_pp && mode == NONBONDED_14_PP) return;
+    if (include_pp) {
+        if (mode != NONBONDED_14_PP) return;
+    } else {
+        if (mode == NONBONDED_14_PP) return;
+    }
 
     const int ai_param_idx = unified_parameter_index(ai, state, n_atoms, n_qatoms, atom_to_qi);
     const int aj_param_idx = unified_parameter_index(aj, state, n_atoms, n_qatoms, atom_to_qi);
@@ -169,7 +173,7 @@ struct Nonbonded14EnergyBuckets {
     real_t evdw[CudaNonbonded14Force::kNonbonded14ModeCount] = {};
     real_t ecoul[CudaNonbonded14Force::kNonbonded14ModeCount] = {};
 };
-}
+}  // namespace
 
 static Nonbonded14EnergyBuckets calc_nonbonded_14_force_state_host(
     int state,
@@ -225,7 +229,7 @@ void calc_nonbonded_14_forces_host() {
 
     if (host.n_lambdas == 0) return;
 
-    auto *lambdas = host.lambdas->cpu_data_p;
+    auto* lambdas = host.lambdas->cpu_data_p;
     for (int state = 0; state < host.n_lambdas; state++) {
         const real_t lambda = lambdas[state];
         Nonbonded14EnergyBuckets energies = calc_nonbonded_14_force_state_host(state, lambda, false);

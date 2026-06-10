@@ -5,9 +5,11 @@
 
 #include "base_output.h"
 #include "context.h"
+#include "shake.h"
 
 class Handler {
    public:
+    Shake& shake();
     virtual ~Handler() = default;
     virtual void initialize();
 
@@ -32,6 +34,7 @@ class Handler {
     virtual void calc_leapfrog() = 0;
     virtual void initialize_backend() = 0;
 
+    void calc_final_potential(int iteration);
 
     void update_energy_totals();
     void print_outputs(int iteration);
@@ -40,4 +43,7 @@ class Handler {
     void finish_outputs();
     void shutdown_outputs();
     virtual void reset_energies();
+
+    std::unique_ptr<Shake> shake_;
+    virtual std::unique_ptr<Shake> create_shake_backend() = 0;
 };

@@ -12,9 +12,9 @@
 #include "constants.h"
 #include "context.h"
 #include "cpu_handler.h"
-#include "cpu_shake.h"
 #include "cpu_utils.h"
 #include "parse.h"
+#include "shake.h"
 
 template <typename T>
 std::unique_ptr<HostDeviceBuffer<T>> make_host_device_buffer_from_vector(
@@ -31,13 +31,13 @@ std::unique_ptr<HostDeviceBuffer<T>> make_host_device_buffer_from_vector(
 }
 
 void initialize_catype_tables() {
-    auto &ctx = Context::instance();
-    auto *excluded = ctx.excluded->cpu_data_p;
-    auto &atypes = ctx.atypes->cpu_data_p;
-    auto &catypes = ctx.catypes->cpu_data_p;
-    auto *p_atoms_cpu = ctx.p_atoms_list->cpu_data_p;
-    auto *w_atoms_cpu = ctx.w_atoms_list->cpu_data_p;
-    auto *q_atoms_cpu = ctx.q_atoms_list->cpu_data_p;
+    auto& ctx = Context::instance();
+    auto* excluded = ctx.excluded->cpu_data_p;
+    auto& atypes = ctx.atypes->cpu_data_p;
+    auto& catypes = ctx.catypes->cpu_data_p;
+    auto* p_atoms_cpu = ctx.p_atoms_list->cpu_data_p;
+    auto* w_atoms_cpu = ctx.w_atoms_list->cpu_data_p;
+    auto* q_atoms_cpu = ctx.q_atoms_list->cpu_data_p;
 
     std::vector<catype_t> h_catype_table_all;
     std::map<std::array<real_t, 4>, int> catype_to_type_host;
@@ -132,17 +132,15 @@ void initialize_catype_tables() {
     ctx.w_catype_types = make_host_device_buffer_from_vector(w_catype_types_cpu, run_gpu);
 }
 
-
-
 void initialize_charge_tables() {
-    auto &ctx = Context::instance();
-    auto *excluded = ctx.excluded->cpu_data_p;
-    auto &charges = ctx.charges->cpu_data_p;
-    auto &ccharges = ctx.ccharges->cpu_data_p;
-    auto *lambda_values = ctx.lambdas->cpu_data_p;
-    auto *p_atoms_cpu = ctx.p_atoms_list->cpu_data_p;
-    auto *w_atoms_cpu = ctx.w_atoms_list->cpu_data_p;
-    auto *q_atoms_cpu = ctx.q_atoms_list->cpu_data_p;
+    auto& ctx = Context::instance();
+    auto* excluded = ctx.excluded->cpu_data_p;
+    auto& charges = ctx.charges->cpu_data_p;
+    auto& ccharges = ctx.ccharges->cpu_data_p;
+    auto* lambda_values = ctx.lambdas->cpu_data_p;
+    auto* p_atoms_cpu = ctx.p_atoms_list->cpu_data_p;
+    auto* w_atoms_cpu = ctx.w_atoms_list->cpu_data_p;
+    auto* q_atoms_cpu = ctx.q_atoms_list->cpu_data_p;
 
     std::map<real_t, int> charge_to_type_host;
     std::vector<ccharge_t> h_charge_table_all;
@@ -433,63 +431,6 @@ void exclude_all_atoms_excluded_definitions() {
     ctx.n_torsions -= n_excl;
 }
 
-void exclude_shaken_definitions() {
-    auto& ctx = Context::instance();
-    int excluded;
-    int solute_excluded;
-    int bi = 0;
-    int si = 0;
-    int ang_i = 0;
-    int ai, aj;
-    auto& shake_bonds = ctx.shake_bonds->cpu_data_p;
-
-    excluded = 0;
-    solute_excluded = 0;
-    auto& bonds = ctx.bonds->cpu_data_p;
-    if (ctx.n_shake_constraints > 0) {
-        for (int i = 0; i < ctx.n_bonds; i++) {
-            if (bonds[i].ai == shake_bonds[si].ai && bonds[i].aj == shake_bonds[si].aj) {
-                si++;
-                excluded++;
-                if (i < ctx.n_bonds_solute) solute_excluded++;
-            } else {
-                bonds[bi] = bonds[i];
-                bi++;
-            }
-        }
-        ctx.n_bonds -= excluded;
-        ctx.n_bonds_solute -= solute_excluded;
-    }
-
-    excluded = 0;
-    solute_excluded = 0;
-    auto& angles = ctx.angles->cpu_data_p;
-    if (ctx.n_shake_constraints > 0) {
-        // Mark angles whose terminal atoms (i and k) match a shaken bond
-        for (int i = 0; i < ctx.n_shake_constraints; i++) {
-            ai = shake_bonds[i].ai;
-            aj = shake_bonds[i].aj;
-            for (int j = 0; j < ctx.n_angles; j++) {
-                if ((angles[j].ai == ai && angles[j].ak == aj) || (angles[j].ai == aj && angles[j].ak == ai)) {
-                    angles[j].code = 0;
-                    break;
-                }
-            }
-        }
-
-        for (int i = 0; i < ctx.n_angles; i++) {
-            if (angles[i].code == 0) {
-                excluded++;
-                if (i < ctx.n_angles_solute) solute_excluded++;
-            } else {
-                angles[ang_i] = angles[i];
-                ang_i++;
-            }
-        }
-        ctx.n_angles -= excluded;
-        ctx.n_angles_solute -= solute_excluded;
-    }
-}
 
 void init_velocities() {
     auto& ctx = Context::instance();
@@ -522,8 +463,6 @@ void init_velocities() {
     }
 }
 
-
-
 void init_inv_mass() {
     auto& ctx = Context::instance();
     auto& atypes = ctx.atypes->cpu_data_p;
@@ -546,8 +485,18 @@ void init_inv_mass() {
 
 void init_water_sphere() {
     auto& ctx = Context::instance();
-    ctx.Dwmz = 0.26 * exp(-0.19 * (ctx.topo.solvent_radius - 15)) + 0.74;
-    ctx.awmz = 0.2 / (1 + exp(0.4 * (ctx.topo.solvent_radius - 25))) + 0.3;
+    ctx.crgQtot = 0.0;
+    if (ctx.md.charge_correction && ctx.n_lambdas > 0) {
+        auto* lambdas = ctx.lambdas->cpu_data_p;
+        for (int state = 0; state < ctx.n_lambdas; state++) {
+            for (int qi = 0; qi < ctx.n_qatoms; qi++) {
+                ctx.crgQtot += ctx.q_charges[qi + ctx.n_qatoms * state].charge * lambdas[state];
+            }
+        }
+    }
+
+    ctx.Dwmz = 0.26f * exp(-0.19f * (ctx.topo.solvent_radius - 15)) + 0.74f;
+    ctx.awmz = 0.2f / (1 + exp(0.4f * (ctx.topo.solvent_radius - 25))) + 0.3f;
 
     printf("Dwmz = %f, awmz = %f\n", ctx.Dwmz, ctx.awmz);
 }
@@ -557,15 +506,13 @@ void init_wshells() {
     auto& ctx = Context::instance();
     int n_inshell;
     real_t drs, router, ri, dr, Vshell, rshell;
-    auto& bonds = ctx.bonds->cpu_data_p;
     auto& cbonds = ctx.cbonds->cpu_data_p;
-    auto& angles = ctx.angles->cpu_data_p;
     auto& cangles = ctx.cangles->cpu_data_p;
-    // Get water properties from the first water molecule.
-    cbond_t cbondw = cbonds[bonds[ctx.n_atoms_solute].code - 1];
-    cangle_t canglew = cangles[angles[ctx.n_atoms_solute].code - 1];
+    // Match Fortran wat_shells, which uses the last topology water bond/angle codes.
+    cbond_t cbondw = cbonds[ctx.n_cbonds - 1];
+    cangle_t canglew = cangles[ctx.n_cangles - 1];
     const real_t crg_ow = ctx.unified_ccharge(ctx.n_atoms_solute, 0).charge;
-    const real_t mu_w = -crg_ow * cbondw.b0 * cos(canglew.th0 / 2);
+    const real_t mu_w = -crg_ow * cbondw.b0 * cos(to_radians(canglew.th0) / 2);
 
     drs = wpolr_layer / drouter;
 
@@ -579,6 +526,8 @@ void init_wshells() {
     ctx.n_max_inshell = 0;
 
     for (int i = 0; i < ctx.n_shells; i++) {
+        wshells[i].n_inshell = 0;
+        wshells[i].theta_corr = 0;
         wshells[i].avtheta = 0;
         wshells[i].avn_inshell = 0;
         wshells[i].router = router;
@@ -596,6 +545,12 @@ void init_wshells() {
         wshells[i].cstb = ctx.crgQtot * 0.98750 / (rho_water * mu_w * 4 * M_PI * pow(rshell, 2));
 
         router -= dr;
+    }
+
+    if (ctx.restart_theta_corr.size() == static_cast<size_t>(ctx.n_shells)) {
+        for (int i = 0; i < ctx.n_shells; i++) {
+            wshells[i].theta_corr = ctx.restart_theta_corr[i];
+        }
     }
 
     // rc > wshells[n_shells-1].router - wshells[n_shells-1].dr
@@ -752,85 +707,41 @@ void init_pshells_from_charge_groups() {
     printf("(%s): n_heavy = %d, n_inshell = %d\n", use_switch_atom ? "switch atoms" : "centroids", n_heavy, n_inshell);
 }
 
-/* =============================================
- * == SHAKE
- * =============================================
- */
 
-void init_shake() {
-    auto& ctx = Context::instance();
-    auto* heavy = ctx.heavy->cpu_data_p;
+void init_for_temperature(Context& ctx, Shake& shake) {
+    real_t excl_shake = 0.0;
     auto* excluded = ctx.excluded->cpu_data_p;
-    int ai, aj;
+
+    auto* shake_bonds = shake.data().shake_bonds->cpu_data_p;
+    int n_constraints = shake.data().n_constraints;
     int mol = 0;
-    int shake;
     int n_solute_shake_constraints = 0;
-    real_t excl_shake = 0;
-    auto& bonds = ctx.bonds->cpu_data_p;
-    auto& cbonds = ctx.cbonds->cpu_data_p;
+    for (int i = 0; i < n_constraints; i++) {
+        auto& shake_bond = shake_bonds[i];
+        const int ai = shake_bond.ai - 1;
+        const int aj = shake_bond.aj - 1;
 
-    ctx.n_shake_constraints = 0;
-    ctx.mol_n_shakes = std::make_unique<HostDeviceBuffer<int>>(ctx.n_molecules, true, ctx.command_info.requested_gpu);
-    auto* mol_n_shakes = ctx.mol_n_shakes->cpu_data_p;
-
-    for (int bi = 0; bi < ctx.n_bonds; bi++) {
-        ai = bonds[bi].ai - 1;
-        aj = bonds[bi].aj - 1;
-
+        if (excluded[ai]) excl_shake += 0.5;
+        if (excluded[aj]) excl_shake += 0.5;
         while (mol + 1 < ctx.n_molecules && ai + 1 >= ctx.molecules[mol + 1]) {
             // new molecule
             mol += 1;
         }
-
-        if ((ctx.md.shake_hydrogens && (!heavy[ai] || !heavy[aj])) || (ctx.md.shake_solute && ai + 1 <= ctx.n_atoms_solute) || (ctx.md.shake_solvent && ai + 1 > ctx.n_atoms_solute)) {
-            mol_n_shakes[mol]++;
-            ctx.n_shake_constraints++;
-
-            if (excluded[ai]) excl_shake += 0.5;
-            if (excluded[aj]) excl_shake += 0.5;
-        }
-    }
-
-    ctx.shake_bonds = std::make_unique<HostDeviceBuffer<shake_bond_t>>(ctx.n_shake_constraints, true, ctx.command_info.requested_gpu);
-    auto* shake_bonds = ctx.shake_bonds->cpu_data_p;
-    mol = 0;
-    shake = 0;
-    for (int bi = 0; bi < ctx.n_bonds; bi++) {
-        ai = bonds[bi].ai - 1;
-        aj = bonds[bi].aj - 1;
-
-        while (mol + 1 < ctx.n_molecules && ai + 1 >= ctx.molecules[mol + 1]) {
-            // new molecule
-            mol += 1;
+        if (mol < ctx.n_molecules - ctx.n_waters) {
+            n_solute_shake_constraints++;
         }
 
-        if ((ctx.md.shake_hydrogens && (!heavy[ai] || !heavy[aj])) || (ctx.md.shake_solute && ai + 1 <= ctx.n_atoms_solute) || (ctx.md.shake_solvent && ai + 1 > ctx.n_atoms_solute)) {
-            shake_bonds[shake].ai = ai + 1;
-            shake_bonds[shake].aj = aj + 1;
-            shake_bonds[shake].dist2 = pow(cbonds[bonds[bi].code - 1].b0, 2);
-            shake++;
-        }
     }
 
-    // Get total number of shake constraints in solute (used for separate scaling of temperatures)
-    for (int i = 0; i < ctx.n_molecules - ctx.n_waters; i++) {
-        n_solute_shake_constraints += mol_n_shakes[i];
-    }
-
-    if (ctx.command_info.requested_gpu) {
-        ctx.mol_n_shakes->upload();
-        ctx.shake_bonds->upload();
-    }
-
-    ctx.Ndegf = 3 * ctx.n_atoms - ctx.n_shake_constraints;
+    ctx.Ndegf = 3 * ctx.n_atoms - shake.data().n_constraints;
     ctx.Ndegfree = ctx.Ndegf - 3 * ctx.n_excluded + excl_shake;
 
-    ctx.Ndegf_solvent = 3 * (ctx.n_atoms - ctx.n_atoms_solute) - (ctx.n_shake_constraints - n_solute_shake_constraints);
+    ctx.Ndegf_solvent = 3 * (ctx.n_atoms - ctx.n_atoms_solute) - (shake.data().n_constraints - n_solute_shake_constraints);
     ctx.Ndegf_solute = ctx.Ndegf - ctx.Ndegf_solvent;
-    ctx.Ndegfree_solvent = 3 * (ctx.n_atoms - ctx.n_atoms_solute) - (ctx.n_shake_constraints - n_solute_shake_constraints);
+    ctx.Ndegfree_solvent = 3 * (ctx.n_atoms - ctx.n_atoms_solute) - (shake.data().n_constraints - n_solute_shake_constraints);
     ctx.Ndegfree_solute = ctx.Ndegfree - ctx.Ndegfree_solvent;
 
-    printf("n_shake_constrains = %d, n_solute_shake_constraints = %d, excl_shake = %f\n", ctx.n_shake_constraints, n_solute_shake_constraints, excl_shake);
+    printf("n_shake_constrains = %d, n_solute_shake_constraints = %d, excl_shake = %f\n", shake.data().n_constraints, n_solute_shake_constraints, excl_shake);
 
     if (ctx.Ndegfree_solvent * ctx.Ndegfree_solute == 0) {
         ctx.separate_scaling = false;
@@ -929,5 +840,30 @@ void init_unified_atom_parameters() {
     if (ctx.command_info.requested_gpu) {
         ctx.unified_ccharges->upload();
         ctx.unified_catypes->upload();
+    }
+}
+void stop_cm_translation(Context& ctx) {
+    auto& atypes = ctx.atypes->cpu_data_p;
+    auto& catypes = ctx.catypes->cpu_data_p;
+    auto& velocities = ctx.velocities->cpu_data_p;
+    real_t total_mass = 0;
+    coord_t vcm = {};
+
+    for (int ai = 0; ai < ctx.n_atoms; ai++) {
+        const real_t rmass = catypes[atypes[ai].code - 1].m;
+        total_mass += rmass;
+        vcm.x += velocities[ai].x * rmass;
+        vcm.y += velocities[ai].y * rmass;
+        vcm.z += velocities[ai].z * rmass;
+    }
+
+    vcm.x /= total_mass;
+    vcm.y /= total_mass;
+    vcm.z /= total_mass;
+
+    for (int ai = 0; ai < ctx.n_atoms; ai++) {
+        velocities[ai].x -= vcm.x;
+        velocities[ai].y -= vcm.y;
+        velocities[ai].z -= vcm.z;
     }
 }

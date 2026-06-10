@@ -31,6 +31,7 @@ struct md_t {
     // [solvent]
     real_t radial_force;
     bool polarisation;
+    bool charge_correction;
     real_t polarisation_force;
     // [intervals]
     int non_bond;
@@ -86,10 +87,10 @@ struct torsion_t {
 
 struct ctorsion_t {
     int code;
-    real_t k;
-    real_t n;
-    real_t d;
-    real_t paths;
+    float k;
+    float n;
+    float d;
+    float paths;
 };
 
 struct improper_t {
@@ -102,8 +103,8 @@ struct improper_t {
 
 struct cimproper_t {
     int code;
-    real_t k;
-    real_t phi0;
+    float k;
+    float phi0;
 };
 
 struct charge_t {
@@ -113,7 +114,7 @@ struct charge_t {
 
 struct ccharge_t {
     int code;
-    real_t charge;
+    float charge;
 };
 
 struct atype_t {
@@ -288,12 +289,7 @@ struct shell_t {
  * =============================================
  */
 
-struct shake_bond_t {
-    int ai;
-    int aj;
-    real_t dist2;
-    bool ready;
-};
+
 
 /* =============================================
  * == CALCUTED IN THE INTEGRATION

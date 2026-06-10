@@ -19,4 +19,6 @@ class CpuHandler : public Handler {
     void calc_temperature() override;
     void calc_leapfrog() override;
     CpuHandler() = default;
+
+    std::unique_ptr<Shake> create_shake_backend() override;
 };

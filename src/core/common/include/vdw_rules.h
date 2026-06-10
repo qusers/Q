@@ -31,5 +31,5 @@ __device__ __host__ inline void calc_vdw_arithmetic(
     Real R6 = R2 * R2 * R2;
 
     *V_a = sqrt_eps_ij * R6 * R6 * r6 * r6;  // sqrt(eps_i * eps_j) * R^12 * r^-12
-    *V_b = static_cast<Real>(2.0) * sqrt_eps_ij * R6 * r6;  // 2 * sqrt(eps_i * eps_j) * R^6 * r^-6
+    *V_b = 2.0f * sqrt_eps_ij * R6 * r6;  // 2 * sqrt(eps_i * eps_j) * R^6 * r^-6
 }

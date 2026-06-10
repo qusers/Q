@@ -10,6 +10,7 @@
 #include "init.h"
 #include "inp_parser.h"
 #include "parse.h"
+#include "shake.h"
 
 Context* Context::current_ = nullptr;
 
@@ -122,6 +123,7 @@ void apply_parse_result(Context& ctx, const ParseResult& parsed) {
     ctx.coords_init = buffer_from_vector(parsed.coords_init, run_gpu);
     ctx.coords = buffer_from_vector(parsed.coords, run_gpu);
     ctx.velocities = buffer_from_vector(parsed.velocities, run_gpu);
+    ctx.restart_theta_corr = parsed.restart_theta_corr;
 
     ctx.n_lambdas = static_cast<int>(parsed.lambdas.size());
     ctx.lambdas = buffer_from_vector(parsed.lambdas, run_gpu);
@@ -217,6 +219,7 @@ void apply_parse_result(Context& ctx, const ParseResult& parsed) {
     ctx.q_shakes = parsed.q_shakes;
     ctx.n_qsoftcores = per_lambda_count(parsed.q_softcores.size(), ctx.n_lambdas);
     ctx.q_softcores = parsed.q_softcores;
+    ctx.softcore_use_max_potential = parsed.softcore_use_max_potential;
 
     set_lj_matrix(ctx, parsed);
 }
@@ -264,12 +267,11 @@ void Context::init_data_from_files() {
     }
 }
 
-void Context::preprocess_data() {
+void Context::preprocess_data(Shake &shake) {
     dt = time_unit * md.stepsize;
     tau_T = time_unit * md.bath_coupling;
+    n_waters = (n_atoms - n_atoms_solute) / 3;
     init_inv_mass();
-    exclude_qatom_definitions();
-
     // Shake constraints, need to be initialized before last part of shrink_topology
     if (md.charge_groups) {
         init_pshells_from_charge_groups();
@@ -277,11 +279,9 @@ void Context::preprocess_data() {
         init_pshells();
     }
 
-    init_shake();
-
-    // Now remove shaken bonds
-    exclude_shaken_definitions();
-
+    exclude_qatom_definitions();
+    shake.init(*this);
+    init_for_temperature(*this, shake);
     preprocess_vdw_rule_parameters(*this);
     upload_preprocessed_topology(*this);
 
@@ -296,7 +296,6 @@ void Context::preprocess_data() {
     dvelocities = std::make_unique<HostDeviceBuffer<dvel_t>>(n_atoms, true, command_info.requested_gpu);
     xcoords = std::make_unique<HostDeviceBuffer<coord_t>>(n_atoms, true, command_info.requested_gpu);
 
-    n_waters = (n_atoms - n_atoms_solute) / 3;
     if (n_waters > 0) {
         init_water_sphere();
         init_wshells();
@@ -311,9 +310,9 @@ void Context::preprocess_data() {
     EQ_nonbond_qx.assign(n_lambdas, {});
     EQ_restraint = std::make_unique<HostDeviceBuffer<E_restraint_t>>(n_lambdas, true, command_info.requested_gpu);
 
-    if (n_shake_constraints > 0 || (fresh_start && md.random_seed > 0)) {
-        initial_shaking();
-        stop_cm_translation();
+    if (fresh_start && md.random_seed > 0) {
+        shake.initial_shake(*this);
+        stop_cm_translation(*this);
         if (command_info.requested_gpu) {
             coords->upload();
             velocities->upload();
@@ -330,5 +329,4 @@ void Context::preprocess_data() {
 
 void Context::init() {
     init_data_from_files();
-    preprocess_data();
 }

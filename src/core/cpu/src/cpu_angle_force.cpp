@@ -43,18 +43,18 @@ real_t calc_angle_forces(int start, int end) {
         rjk.z = ak.z - aj.z;
 
         // Calculate inverse of norm of dist vector and their squares
-        bji2inv = 1 / (rji.x * rji.x + rji.y * rji.y + rji.z * rji.z);
-        bjk2inv = 1 / (rjk.x * rjk.x + rjk.y * rjk.y + rjk.z * rjk.z);
+        bji2inv = 1.0 / (rji.x * rji.x + rji.y * rji.y + rji.z * rji.z);
+        bjk2inv = 1.0 / (rjk.x * rjk.x + rjk.y * rjk.y + rjk.z * rjk.z);
         bjiinv = sqrt(bji2inv);
         bjkinv = sqrt(bjk2inv);
 
         // Calculate cosine of angle and angle (th)
         cos_th = (rji.x * rjk.x + rji.y * rjk.y + rji.z * rjk.z) * bjiinv * bjkinv;
 
-        if (cos_th > 1) {
-            cos_th = 1;
-        } else if (cos_th < -1) {
-            cos_th = -1;
+        if (cos_th > 1.0) {
+            cos_th = 1.0;
+        } else if (cos_th < -1.0) {
+            cos_th = -1.0;
         }
 
         th = acos(cos_th);
@@ -95,7 +95,6 @@ real_t calc_angle_forces(int start, int end) {
         dvelocities[aji].y -= dv * (di.y + dk.y);
         dvelocities[aji].z -= dv * (di.z + dk.z);
 
-        // printf("ANGLE ener = %f\n", ener);
     }
 
     return angle;

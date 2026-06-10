@@ -15,6 +15,8 @@
 #include "common/include/vdw_rules.h"
 #include "host_device_buffer.h"
 
+class Shake;
+
 class Context {
    public:
     Context();
@@ -31,7 +33,7 @@ class Context {
     int n_atoms_solute;  // the total number of solute number, in our system [0, n_atoms_solute) are solute, [n_atoms_solute, n_atoms) are water atoms
     int n_patoms;
     int n_qatoms;
-    int n_waters;
+    int n_waters = 0;
     int n_molecules;
     real_t dt = 0.0;
     real_t tau_T = 0.0;
@@ -123,13 +125,6 @@ class Context {
     */
     std::unique_ptr<HostDeviceBuffer<int>> LJ_matrix;
 
-    /*
-    Shake
-    */
-
-    int n_shake_constraints;
-    std::unique_ptr<HostDeviceBuffer<int>> mol_n_shakes;
-    std::unique_ptr<HostDeviceBuffer<shake_bond_t>> shake_bonds;
     std::unique_ptr<HostDeviceBuffer<coord_t>> xcoords;  // todo: It's just a temporary variables...
     std::vector<int> molecules;
 
@@ -143,6 +138,7 @@ class Context {
     std::vector<real_t> theta;
     std::vector<real_t> theta0;
     std::vector<real_t> tdum;
+    std::vector<real_t> restart_theta_corr;
     int n_max_inshell;
     int n_shells;
     std::vector<std::vector<int>> list_sh;
@@ -205,12 +201,12 @@ class Context {
 
     real_t Temp = 0.0;
     real_t Tfree = 0.0;
-    real_t Ndegf = 0.0;
-    real_t Ndegfree = 0.0;
-    real_t Ndegf_solute = 0.0;
-    real_t Ndegfree_solute = 0.0;
-    real_t Ndegf_solvent = 0.0;
-    real_t Ndegfree_solvent = 0.0;
+    int Ndegf = 0;
+    int Ndegfree = 0;
+    int Ndegf_solute = 0;
+    int Ndegfree_solute = 0;
+    int Ndegf_solvent = 0;
+    int Ndegfree_solvent = 0;
 
     real_t Tscale_solute = 0.0;
     real_t Tscale_solvent = 0.0;
@@ -234,6 +230,7 @@ class Context {
     int n_qshakes;
     int n_qsoftpairs;
     int n_qsoftcores;
+    bool softcore_use_max_potential = false;
     int n_qtorcouples;
     int n_qtorsions;
 
@@ -298,7 +295,7 @@ class Context {
     void cuda_reset_energies();
 
     void init();
-    void preprocess_data();
+    void preprocess_data(Shake &shake);
 
    private:
     static Context* current_;

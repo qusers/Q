@@ -2,7 +2,6 @@
 
 #include "common/include/context.h"
 #include "cuda/include/cuda_leapfrog.cuh"
-#include "cuda/include/cuda_shake_constraints.cuh"
 #include "cuda_utility.cuh"
 
 namespace CudaLeapfrog {
@@ -59,7 +58,7 @@ __global__ void update_velocities_from_positions_kernel(
     velocities[idx].z = (coords[idx].z - xcoords[idx].z) / dt;
 }
 
-void calc_leapfrog_host() {
+void calc_leapfrog_host(Shake &shake) {
     auto& host = Context::instance();
     auto d_atypes = host.atypes->gpu_data_p;
     auto d_catypes = host.catypes->gpu_data_p;
@@ -82,20 +81,18 @@ void calc_leapfrog_host() {
         host.Tscale_solute,
         host.Tscale_solvent,
         host.dt);
-    check_cuda(cudaDeviceSynchronize());
 
     // shake
-    printf("n_shake_constraints: %d\n", host.n_shake_constraints);
-    if (host.n_shake_constraints > 0) {
-        calc_shake_constraints_host();
+    if (shake.data().n_constraints > 0) {
+        shake.apply(host);
         update_velocities_from_positions_kernel<<<numBlocks, blockSize>>>(
             d_velocities,
             d_coords,
             d_xcoords,
             host.n_atoms,
             host.dt);
-        check_cuda(cudaDeviceSynchronize());
     }
+    check_cuda(cudaDeviceSynchronize());
 }
 
 void init_leapfrog_kernel_data() {}

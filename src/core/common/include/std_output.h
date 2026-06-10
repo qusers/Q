@@ -10,4 +10,5 @@ class StdOutput : public BaseOutput {
    protected:
     void output_trajectory(Context& ctx, int iteration) override;
     void output_energy(Context& ctx, int iteration) override;
+    void finish(Context& ctx) override;
 };
