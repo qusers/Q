@@ -258,7 +258,7 @@ void CudaShake::find_fallback_shake_bond(Context& ctx, std::vector<bool>& optimi
     }
     fallback_color_offsets[fallback_bonds_by_color.size()] = fallback_shake_bonds.size();
 
-    this->fallback_color_offsets = HostDeviceBuffer<int>::from_vector(fallback_color_offsets, true);
+    this->fallback_color_offsets = fallback_color_offsets;
     this->fallback_shake_bonds = HostDeviceBuffer<ShakeBond>::from_vector(fallback_shake_bonds, true);
 }
 

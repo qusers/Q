@@ -8,18 +8,18 @@
 #include "cpu/include/cpu_nonbonded_qw_force.h"
 #include "cpu/include/cpu_nonbonded_ww_force.h"
 #include "cpu/include/cpu_polx_water_force.h"
-#include "cpu/include/cpu_temperature.h"
 #include "cpu/include/cpu_q_angle_force.h"
 #include "cpu/include/cpu_q_bond_force.h"
 #include "cpu/include/cpu_q_torsion_force.h"
 #include "cpu/include/cpu_radix_water_force.h"
+#include "cpu/include/cpu_temperature.h"
 #include "cuda/include/cuda_angle_force.cuh"
 #include "cuda/include/cuda_bond_force.cuh"
 #include "cuda/include/cuda_handler.cuh"
 #include "cuda/include/cuda_improper2_force.cuh"
 #include "cuda/include/cuda_leapfrog.cuh"
-#include "cuda/include/cuda_nonbonded_force.cuh"
 #include "cuda/include/cuda_nonbonded_14_force.cuh"
+#include "cuda/include/cuda_nonbonded_force.cuh"
 #include "cuda/include/cuda_nonbonded_pp_force.cuh"
 #include "cuda/include/cuda_nonbonded_pw_force.cuh"
 #include "cuda/include/cuda_nonbonded_qp_force.cuh"
@@ -34,12 +34,16 @@
 #include "cuda/include/cuda_restrpos_force.cuh"
 #include "cuda/include/cuda_restrseq_force.cuh"
 #include "cuda/include/cuda_restrwall_force.cuh"
-#include "cuda/include/cuda_shake_constraints.cuh"
 #include "cuda/include/cuda_temperature.cuh"
 #include "cuda/include/cuda_torsion_force.cuh"
+#include "cuda_shake.cuh"
+#include "init.h"
 
 void CudaHandler::initialize_backend() {
     if (!initialized_) {
+        shake_ = create_shake_backend();
+        ctx.preprocess_data(*shake_);
+
         init_angle_force_kernel_data();
         init_bond_force_kernel_data();
         init_improper2_force_kernel_data();
@@ -60,9 +64,9 @@ void CudaHandler::initialize_backend() {
         init_restrpos_force_kernel_data();
         init_restrseq_force_kernel_data();
         init_restrwall_force_kernel_data();
-        init_shake_constraints_kernel_data(Context::instance());
         init_temperature_kernel_data();
         init_torsion_force_kernel_data();
+
         initialized_ = true;
     }
 }
@@ -89,7 +93,6 @@ void CudaHandler::shutdown() {
         cleanup_restrpos_force();
         cleanup_restrseq_force();
         cleanup_restrwall_force();
-        cleanup_shake_constraints();
         cleanup_temperature();
         cleanup_torsion_force();
         initialized_ = false;
@@ -142,10 +145,14 @@ void CudaHandler::calc_temperature() {
 }
 
 void CudaHandler::calc_leapfrog() {
-    calc_leapfrog_host();
+    calc_leapfrog_host(*shake_);
 }
 
 void CudaHandler::reset_energies() {
     Handler::reset_energies();
     Context::instance().cuda_reset_energies();
+}
+
+std::unique_ptr<Shake> CudaHandler::create_shake_backend() {
+    return std::make_unique<CudaShake>();
 }

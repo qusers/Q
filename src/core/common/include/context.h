@@ -14,7 +14,8 @@
 #include "common/include/parse.h"
 #include "common/include/vdw_rules.h"
 #include "host_device_buffer.h"
-#include "shake.h"
+
+class Shake;
 
 class Context {
    public:
@@ -124,11 +125,6 @@ class Context {
     */
     std::unique_ptr<HostDeviceBuffer<int>> LJ_matrix;
 
-    /*
-    Shake
-    */
-
-    ShakeData shake_data;
     std::unique_ptr<HostDeviceBuffer<coord_t>> xcoords;  // todo: It's just a temporary variables...
     std::vector<int> molecules;
 
@@ -299,7 +295,7 @@ class Context {
     void cuda_reset_energies();
 
     void init();
-    void preprocess_data();
+    void preprocess_data(Shake &shake);
 
    private:
     static Context* current_;

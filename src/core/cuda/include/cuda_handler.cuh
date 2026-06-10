@@ -23,4 +23,5 @@ class CudaHandler : public Handler {
     void calc_leapfrog() override;
 
     void reset_energies() override;
+    std::unique_ptr<Shake> create_shake_backend() override;
 };

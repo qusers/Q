@@ -24,6 +24,8 @@
 #include "cpu_restrwall_force.h"
 #include "cpu_temperature.h"
 #include "debug.h"
+#include "cpu_shake_v2.h"
+#include "init.h"
 
 namespace {
 
@@ -55,6 +57,8 @@ void calc_q_bonded_forces(Context& ctx) {
 }  // namespace
 
 void CpuHandler::initialize_backend() {
+    shake_ = create_shake_backend();
+    ctx.preprocess_data(*shake_);
 }
 
 void CpuHandler::shutdown() {
@@ -84,5 +88,10 @@ void CpuHandler::calc_temperature() {
 }
 
 void CpuHandler::calc_leapfrog() {
-    ::calc_leapfrog();
+    ::calc_leapfrog(*shake_);
+}
+
+
+std::unique_ptr<Shake> CpuHandler::create_shake_backend() {
+    return std::make_unique<CpuShake>();
 }

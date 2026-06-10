@@ -10,7 +10,7 @@
 #include "init.h"
 #include "inp_parser.h"
 #include "parse.h"
-#include "cpu_shake.h"
+#include "shake.h"
 
 Context* Context::current_ = nullptr;
 
@@ -267,13 +267,11 @@ void Context::init_data_from_files() {
     }
 }
 
-void Context::preprocess_data() {
+void Context::preprocess_data(Shake &shake) {
     dt = time_unit * md.stepsize;
     tau_T = time_unit * md.bath_coupling;
     n_waters = (n_atoms - n_atoms_solute) / 3;
     init_inv_mass();
-    exclude_qatom_definitions();
-
     // Shake constraints, need to be initialized before last part of shrink_topology
     if (md.charge_groups) {
         init_pshells_from_charge_groups();
@@ -281,11 +279,9 @@ void Context::preprocess_data() {
         init_pshells();
     }
 
-    init_shake(*this);
-
-    // Now remove shaken bonds
-    exclude_shaken_definitions(*this);
-
+    exclude_qatom_definitions();
+    shake.init(*this);
+    init_for_temperature(*this, shake);
     preprocess_vdw_rule_parameters(*this);
     upload_preprocessed_topology(*this);
 
@@ -315,7 +311,7 @@ void Context::preprocess_data() {
     EQ_restraint = std::make_unique<HostDeviceBuffer<E_restraint_t>>(n_lambdas, true, command_info.requested_gpu);
 
     if (fresh_start && md.random_seed > 0) {
-        initial_shaking(*this);
+        shake.initial_shake(*this);
         stop_cm_translation(*this);
         if (command_info.requested_gpu) {
             coords->upload();
@@ -333,5 +329,4 @@ void Context::preprocess_data() {
 
 void Context::init() {
     init_data_from_files();
-    preprocess_data();
 }

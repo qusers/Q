@@ -5,9 +5,11 @@
 
 #include "base_output.h"
 #include "context.h"
+#include "shake.h"
 
 class Handler {
    public:
+    Shake& shake();
     virtual ~Handler() = default;
     virtual void initialize();
 
@@ -41,4 +43,7 @@ class Handler {
     void finish_outputs();
     void shutdown_outputs();
     virtual void reset_energies();
+
+    std::unique_ptr<Shake> shake_;
+    virtual std::unique_ptr<Shake> create_shake_backend() = 0;
 };

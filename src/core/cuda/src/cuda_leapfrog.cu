@@ -59,7 +59,7 @@ __global__ void update_velocities_from_positions_kernel(
     velocities[idx].z = (coords[idx].z - xcoords[idx].z) / dt;
 }
 
-void calc_leapfrog_host() {
+void calc_leapfrog_host(Shake &shake) {
     auto& host = Context::instance();
     auto d_atypes = host.atypes->gpu_data_p;
     auto d_catypes = host.catypes->gpu_data_p;
@@ -84,8 +84,8 @@ void calc_leapfrog_host() {
         host.dt);
 
     // shake
-    if (host.shake_data.n_constraints > 0) {
-        calc_shake_constraints_host(host);
+    if (shake.data().n_constraints > 0) {
+        shake.apply(host);
         update_velocities_from_positions_kernel<<<numBlocks, blockSize>>>(
             d_velocities,
             d_coords,

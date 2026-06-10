@@ -12,9 +12,9 @@
 #include "constants.h"
 #include "context.h"
 #include "cpu_handler.h"
-#include "cpu_shake.h"
 #include "cpu_utils.h"
 #include "parse.h"
+#include "shake.h"
 
 template <typename T>
 std::unique_ptr<HostDeviceBuffer<T>> make_host_device_buffer_from_vector(
@@ -431,62 +431,62 @@ void exclude_all_atoms_excluded_definitions() {
     ctx.n_torsions -= n_excl;
 }
 
-void exclude_shaken_definitions(Context& ctx) {
-    int excluded;
-    int solute_excluded;
-    int bi = 0;
-    int si = 0;
-    int ang_i = 0;
-    int ai, aj;
-    auto& shake_bonds = ctx.shake_data.shake_bonds->cpu_data_p;
+// void exclude_shaken_definitions(Context& ctx) {
+//     int excluded;
+//     int solute_excluded;
+//     int bi = 0;
+//     int si = 0;
+//     int ang_i = 0;
+//     int ai, aj;
+//     auto& shake_bonds = ctx.shake_data.shake_bonds->cpu_data_p;
 
-    excluded = 0;
-    solute_excluded = 0;
-    auto& bonds = ctx.bonds->cpu_data_p;
-    if (ctx.shake_data.n_constraints > 0) {
-        for (int i = 0; i < ctx.n_bonds; i++) {
-            if (bonds[i].ai == shake_bonds[si].ai && bonds[i].aj == shake_bonds[si].aj) {
-                si++;
-                excluded++;
-                if (i < ctx.n_bonds_solute) solute_excluded++;
-            } else {
-                bonds[bi] = bonds[i];
-                bi++;
-            }
-        }
-        ctx.n_bonds -= excluded;
-        ctx.n_bonds_solute -= solute_excluded;
-    }
+//     excluded = 0;
+//     solute_excluded = 0;
+//     auto& bonds = ctx.bonds->cpu_data_p;
+//     if (ctx.shake_data.n_constraints > 0) {
+//         for (int i = 0; i < ctx.n_bonds; i++) {
+//             if (bonds[i].ai == shake_bonds[si].ai && bonds[i].aj == shake_bonds[si].aj) {
+//                 si++;
+//                 excluded++;
+//                 if (i < ctx.n_bonds_solute) solute_excluded++;
+//             } else {
+//                 bonds[bi] = bonds[i];
+//                 bi++;
+//             }
+//         }
+//         ctx.n_bonds -= excluded;
+//         ctx.n_bonds_solute -= solute_excluded;
+//     }
 
-    excluded = 0;
-    solute_excluded = 0;
-    auto& angles = ctx.angles->cpu_data_p;
-    if (ctx.shake_data.n_constraints > 0) {
-        // Mark angles whose terminal atoms (i and k) match a shaken bond
-        for (int i = 0; i < ctx.shake_data.n_constraints; i++) {
-            ai = shake_bonds[i].ai;
-            aj = shake_bonds[i].aj;
-            for (int j = 0; j < ctx.n_angles; j++) {
-                if ((angles[j].ai == ai && angles[j].ak == aj) || (angles[j].ai == aj && angles[j].ak == ai)) {
-                    angles[j].code = 0;
-                    break;
-                }
-            }
-        }
+//     excluded = 0;
+//     solute_excluded = 0;
+//     auto& angles = ctx.angles->cpu_data_p;
+//     if (ctx.shake_data.n_constraints > 0) {
+//         // Mark angles whose terminal atoms (i and k) match a shaken bond
+//         for (int i = 0; i < ctx.shake_data.n_constraints; i++) {
+//             ai = shake_bonds[i].ai;
+//             aj = shake_bonds[i].aj;
+//             for (int j = 0; j < ctx.n_angles; j++) {
+//                 if ((angles[j].ai == ai && angles[j].ak == aj) || (angles[j].ai == aj && angles[j].ak == ai)) {
+//                     angles[j].code = 0;
+//                     break;
+//                 }
+//             }
+//         }
 
-        for (int i = 0; i < ctx.n_angles; i++) {
-            if (angles[i].code == 0) {
-                excluded++;
-                if (i < ctx.n_angles_solute) solute_excluded++;
-            } else {
-                angles[ang_i] = angles[i];
-                ang_i++;
-            }
-        }
-        ctx.n_angles -= excluded;
-        ctx.n_angles_solute -= solute_excluded;
-    }
-}
+//         for (int i = 0; i < ctx.n_angles; i++) {
+//             if (angles[i].code == 0) {
+//                 excluded++;
+//                 if (i < ctx.n_angles_solute) solute_excluded++;
+//             } else {
+//                 angles[ang_i] = angles[i];
+//                 ang_i++;
+//             }
+//         }
+//         ctx.n_angles -= excluded;
+//         ctx.n_angles_solute -= solute_excluded;
+//     }
+// }
 
 void init_velocities() {
     auto& ctx = Context::instance();
@@ -768,86 +768,128 @@ void init_pshells_from_charge_groups() {
  * =============================================
  */
 
-void init_shake(Context& ctx) {
-    auto* heavy = ctx.heavy->cpu_data_p;
+// void init_shake(Context& ctx) {
+//     auto* heavy = ctx.heavy->cpu_data_p;
+//     auto* excluded = ctx.excluded->cpu_data_p;
+//     int ai, aj;
+//     int mol = 0;
+//     int shake;
+//     int n_solute_shake_constraints = 0;
+//     real_t excl_shake = 0;
+//     auto& bonds = ctx.bonds->cpu_data_p;
+//     auto& cbonds = ctx.cbonds->cpu_data_p;
+
+//     ctx.shake_data.n_constraints = 0;
+//     ctx.shake_data.mol_n_shakes = std::make_unique<HostDeviceBuffer<int>>(ctx.n_molecules, true, ctx.command_info.requested_gpu);
+//     auto* mol_n_shakes = ctx.shake_data.mol_n_shakes->cpu_data_p;
+
+//     for (int bi = 0; bi < ctx.n_bonds; bi++) {
+//         ai = bonds[bi].ai - 1;
+//         aj = bonds[bi].aj - 1;
+
+//         while (mol + 1 < ctx.n_molecules && ai + 1 >= ctx.molecules[mol + 1]) {
+//             // new molecule
+//             mol += 1;
+//         }
+
+//         if ((ctx.md.shake_hydrogens && (!heavy[ai] || !heavy[aj])) || (ctx.md.shake_solute && ai + 1 <= ctx.n_atoms_solute) || (ctx.md.shake_solvent && ai + 1 > ctx.n_atoms_solute)) {
+//             mol_n_shakes[mol]++;
+//             ctx.shake_data.n_constraints++;
+
+//             if (excluded[ai]) excl_shake += 0.5;
+//             if (excluded[aj]) excl_shake += 0.5;
+//         }
+//     }
+
+//     ctx.shake_data.shake_bonds = std::make_unique<HostDeviceBuffer<ShakeBond>>(ctx.shake_data.n_constraints, true, ctx.command_info.requested_gpu);
+//     auto* shake_bonds = ctx.shake_data.shake_bonds->cpu_data_p;
+//     mol = 0;
+//     shake = 0;
+//     for (int bi = 0; bi < ctx.n_bonds; bi++) {
+//         ai = bonds[bi].ai - 1;
+//         aj = bonds[bi].aj - 1;
+
+//         while (mol + 1 < ctx.n_molecules && ai + 1 >= ctx.molecules[mol + 1]) {
+//             // new molecule
+//             mol += 1;
+//         }
+
+//         if ((ctx.md.shake_hydrogens && (!heavy[ai] || !heavy[aj])) || (ctx.md.shake_solute && ai + 1 <= ctx.n_atoms_solute) || (ctx.md.shake_solvent && ai + 1 > ctx.n_atoms_solute)) {
+//             shake_bonds[shake].ai = ai + 1;
+//             shake_bonds[shake].aj = aj + 1;
+//             shake_bonds[shake].dist2 = pow(cbonds[bonds[bi].code - 1].b0, 2);
+//             shake++;
+//         }
+//     }
+
+//     // Get total number of shake constraints in solute (used for separate scaling of temperatures)
+//     for (int i = 0; i < ctx.n_molecules - ctx.n_waters; i++) {
+//         n_solute_shake_constraints += mol_n_shakes[i];
+//     }
+
+//     if (ctx.command_info.requested_gpu) {
+//         ctx.shake_data.mol_n_shakes->upload();
+//         ctx.shake_data.shake_bonds->upload();
+//     }
+
+// ctx.Ndegf = 3 * ctx.n_atoms - ctx.shake_data.n_constraints;
+//     ctx.Ndegfree = ctx.Ndegf - 3 * ctx.n_excluded + excl_shake;
+
+//     ctx.Ndegf_solvent = 3 * (ctx.n_atoms - ctx.n_atoms_solute) - (ctx.shake_data.n_constraints - n_solute_shake_constraints);
+//     ctx.Ndegf_solute = ctx.Ndegf - ctx.Ndegf_solvent;
+//     ctx.Ndegfree_solvent = 3 * (ctx.n_atoms - ctx.n_atoms_solute) - (ctx.shake_data.n_constraints - n_solute_shake_constraints);
+//     ctx.Ndegfree_solute = ctx.Ndegfree - ctx.Ndegfree_solvent;
+
+//     printf("n_shake_constrains = %d, n_solute_shake_constraints = %d, excl_shake = %f\n", ctx.shake_data.n_constraints, n_solute_shake_constraints, excl_shake);
+
+//     if (ctx.Ndegfree_solvent * ctx.Ndegfree_solute == 0) {
+//         ctx.separate_scaling = false;
+//     } else {
+//         ctx.separate_scaling = ctx.md.separate_scaling;
+//     }
+//     ctx.shake_data.n_solute_constraints = n_solute_shake_constraints;
+// }
+
+void init_for_temperature(Context& ctx, Shake& shake) {
+    real_t excl_shake = 0.0;
     auto* excluded = ctx.excluded->cpu_data_p;
-    int ai, aj;
+
+    auto* shake_bonds = shake.data().shake_bonds->cpu_data_p;
+    int n_constraints = shake.data().n_constraints;
     int mol = 0;
-    int shake;
     int n_solute_shake_constraints = 0;
-    real_t excl_shake = 0;
-    auto& bonds = ctx.bonds->cpu_data_p;
-    auto& cbonds = ctx.cbonds->cpu_data_p;
+    for (int i = 0; i < n_constraints; i++) {
+        auto& shake_bond = shake_bonds[i];
+        const int ai = shake_bond.ai - 1;
+        const int aj = shake_bond.aj - 1;
 
-    ctx.shake_data.n_constraints = 0;
-    ctx.shake_data.mol_n_shakes = std::make_unique<HostDeviceBuffer<int>>(ctx.n_molecules, true, ctx.command_info.requested_gpu);
-    auto* mol_n_shakes = ctx.shake_data.mol_n_shakes->cpu_data_p;
-
-    for (int bi = 0; bi < ctx.n_bonds; bi++) {
-        ai = bonds[bi].ai - 1;
-        aj = bonds[bi].aj - 1;
-
+        if (excluded[ai]) excl_shake += 0.5;
+        if (excluded[aj]) excl_shake += 0.5;
         while (mol + 1 < ctx.n_molecules && ai + 1 >= ctx.molecules[mol + 1]) {
             // new molecule
             mol += 1;
         }
-
-        if ((ctx.md.shake_hydrogens && (!heavy[ai] || !heavy[aj])) || (ctx.md.shake_solute && ai + 1 <= ctx.n_atoms_solute) || (ctx.md.shake_solvent && ai + 1 > ctx.n_atoms_solute)) {
-            mol_n_shakes[mol]++;
-            ctx.shake_data.n_constraints++;
-
-            if (excluded[ai]) excl_shake += 0.5;
-            if (excluded[aj]) excl_shake += 0.5;
-        }
-    }
-
-    ctx.shake_data.shake_bonds = std::make_unique<HostDeviceBuffer<ShakeBond>>(ctx.shake_data.n_constraints, true, ctx.command_info.requested_gpu);
-    auto* shake_bonds = ctx.shake_data.shake_bonds->cpu_data_p;
-    mol = 0;
-    shake = 0;
-    for (int bi = 0; bi < ctx.n_bonds; bi++) {
-        ai = bonds[bi].ai - 1;
-        aj = bonds[bi].aj - 1;
-
-        while (mol + 1 < ctx.n_molecules && ai + 1 >= ctx.molecules[mol + 1]) {
-            // new molecule
-            mol += 1;
+        if (mol < ctx.n_molecules - ctx.n_waters) {
+            n_solute_shake_constraints++;
         }
 
-        if ((ctx.md.shake_hydrogens && (!heavy[ai] || !heavy[aj])) || (ctx.md.shake_solute && ai + 1 <= ctx.n_atoms_solute) || (ctx.md.shake_solvent && ai + 1 > ctx.n_atoms_solute)) {
-            shake_bonds[shake].ai = ai + 1;
-            shake_bonds[shake].aj = aj + 1;
-            shake_bonds[shake].dist2 = pow(cbonds[bonds[bi].code - 1].b0, 2);
-            shake++;
-        }
     }
 
-    // Get total number of shake constraints in solute (used for separate scaling of temperatures)
-    for (int i = 0; i < ctx.n_molecules - ctx.n_waters; i++) {
-        n_solute_shake_constraints += mol_n_shakes[i];
-    }
-
-    if (ctx.command_info.requested_gpu) {
-        ctx.shake_data.mol_n_shakes->upload();
-        ctx.shake_data.shake_bonds->upload();
-    }
-
-    ctx.Ndegf = 3 * ctx.n_atoms - ctx.shake_data.n_constraints;
+    ctx.Ndegf = 3 * ctx.n_atoms - shake.data().n_constraints;
     ctx.Ndegfree = ctx.Ndegf - 3 * ctx.n_excluded + excl_shake;
 
-    ctx.Ndegf_solvent = 3 * (ctx.n_atoms - ctx.n_atoms_solute) - (ctx.shake_data.n_constraints - n_solute_shake_constraints);
+    ctx.Ndegf_solvent = 3 * (ctx.n_atoms - ctx.n_atoms_solute) - (shake.data().n_constraints - n_solute_shake_constraints);
     ctx.Ndegf_solute = ctx.Ndegf - ctx.Ndegf_solvent;
-    ctx.Ndegfree_solvent = 3 * (ctx.n_atoms - ctx.n_atoms_solute) - (ctx.shake_data.n_constraints - n_solute_shake_constraints);
+    ctx.Ndegfree_solvent = 3 * (ctx.n_atoms - ctx.n_atoms_solute) - (shake.data().n_constraints - n_solute_shake_constraints);
     ctx.Ndegfree_solute = ctx.Ndegfree - ctx.Ndegfree_solvent;
 
-    printf("n_shake_constrains = %d, n_solute_shake_constraints = %d, excl_shake = %f\n", ctx.shake_data.n_constraints, n_solute_shake_constraints, excl_shake);
+    printf("n_shake_constrains = %d, n_solute_shake_constraints = %d, excl_shake = %f\n", shake.data().n_constraints, n_solute_shake_constraints, excl_shake);
 
     if (ctx.Ndegfree_solvent * ctx.Ndegfree_solute == 0) {
         ctx.separate_scaling = false;
     } else {
         ctx.separate_scaling = ctx.md.separate_scaling;
     }
-    ctx.shake_data.n_solute_constraints = n_solute_shake_constraints;
 }
 
 /* =============================================
@@ -940,5 +982,30 @@ void init_unified_atom_parameters() {
     if (ctx.command_info.requested_gpu) {
         ctx.unified_ccharges->upload();
         ctx.unified_catypes->upload();
+    }
+}
+void stop_cm_translation(Context& ctx) {
+    auto& atypes = ctx.atypes->cpu_data_p;
+    auto& catypes = ctx.catypes->cpu_data_p;
+    auto& velocities = ctx.velocities->cpu_data_p;
+    real_t total_mass = 0;
+    coord_t vcm = {};
+
+    for (int ai = 0; ai < ctx.n_atoms; ai++) {
+        const real_t rmass = catypes[atypes[ai].code - 1].m;
+        total_mass += rmass;
+        vcm.x += velocities[ai].x * rmass;
+        vcm.y += velocities[ai].y * rmass;
+        vcm.z += velocities[ai].z * rmass;
+    }
+
+    vcm.x /= total_mass;
+    vcm.y /= total_mass;
+    vcm.z /= total_mass;
+
+    for (int ai = 0; ai < ctx.n_atoms; ai++) {
+        velocities[ai].x -= vcm.x;
+        velocities[ai].y -= vcm.y;
+        velocities[ai].z -= vcm.z;
     }
 }

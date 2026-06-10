@@ -10,7 +10,7 @@
 static void calc_integration() {
     auto& ctx = Context::instance();
     ctx.init();
-    output_ctx_in_file(ctx);
+    // output_ctx_in_file(ctx);
     Handler& handler = ctx.command_info.requested_gpu ? static_cast<Handler&>(CudaHandler::instance()) : static_cast<Handler&>(CpuHandler::instance());
     handler.initialize();
     handler.run(ctx.md.steps);

@@ -28,9 +28,9 @@ void Handler::run_iteration(int iteration) {
 }
 
 void Handler::initialize() {
+    initialize_backend();
     create_outputs();
     init_outputs();
-    initialize_backend();
 }
 
 void Handler::calc_final_potential(int iteration) {
@@ -132,6 +132,10 @@ void Handler::shutdown_outputs() {
     for (auto& output : outputs_) {
         output->shutdown();
     }
+}
+
+Shake& Handler::shake() {
+    return *shake_;
 }
 
 void Handler::reset_energies() {
