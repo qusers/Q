@@ -23,7 +23,7 @@
 #include "cpu_restrseq_force.h"
 #include "cpu_restrwall_force.h"
 #include "cpu_temperature.h"
-#include "cpu_shake_v2.h"
+#include "cpu_shake.h"
 #include "init.h"
 
 namespace {

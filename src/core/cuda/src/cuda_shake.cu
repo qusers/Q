@@ -634,6 +634,7 @@ void CudaShake::apply_to(Context& ctx, coord_t* d_coords, coord_t* d_xcoords) {
                 n_fallback_constraints,
                 fallback_shake_bonds->gpu_data_p,
                 d_coords);
+            std::exit(EXIT_FAILURE);
         }
     }
 }

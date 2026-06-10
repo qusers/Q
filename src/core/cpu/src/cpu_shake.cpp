@@ -1,4 +1,4 @@
-#include "cpu_shake_v2.h"
+#include "cpu_shake.h"
 
 #include <cmath>
 #include <vector>
