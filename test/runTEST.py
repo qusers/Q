@@ -319,10 +319,12 @@ class Parse_Q6_data(object):
                     block = 1
                     continue
 
-                if 'FINAL' in line:
-                    # The last step in Q is our last step
+                if 'FINAL  Energy summary' in line:
+                    # The last step in Q is our last step. Match only the
+                    # final energy-summary header; FINAL Q-atom energies must
+                    # not clear the parsed summary frame.
                     step = data['timestep']
-                    Q_energies[data['timestep']] = {}
+                    Q_energies[step] = {}
                     data['q6_final_key'] = step
                     block = 1
                     continue
@@ -458,7 +460,11 @@ def parse_qgpu_log(filename):
             if not line:
                 continue
 
-            if line == '== INITIAL ENERGIES' or line.startswith('== STEP '):
+            if (
+                line == '== INITIAL ENERGIES'
+                or line.startswith('== STEP ')
+                or line.startswith('== FINAL ENERGIES')
+            ):
                 if current is not None:
                     frames.append(current)
                 current = empty_qgpu_energy()
