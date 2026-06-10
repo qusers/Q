@@ -370,89 +370,6 @@ module md
 !-------------------------------------------------------------------------------
 contains
 
-subroutine add_debug(message)
-  character(*), intent(in) :: message
-  integer :: unit
-  logical, save :: initialized = .false.
-
-  if (nodeid .ne. 0) return
-
-  if (.not. initialized) then
-    open(newunit=unit, file='debug2.txt', status='replace', action='write')
-    close(unit)
-    initialized = .true.
-  end if
-
-  open(newunit=unit, file='debug2.txt', status='unknown', &
-       position='append', action='write')
-  write(unit,'(a)') trim(message)
-  close(unit)
-end subroutine add_debug
-
-
-subroutine debug_dvelocities()
-  integer :: unit
-  integer :: i, i3
-  logical, save :: flag2 = .false.
-
-  if (nodeid .ne. 0) return
-
-
-  if (flag2) return
-
-
-  if (.not. flag2) then
-    open(newunit=unit, file='dvelocities_debug.txt', status='replace', action='write')
-    close(unit)
-    flag2 = .true.
-  end if
-
-  open(newunit=unit, file='dvelocities_debug.txt', status='unknown', &
-       position='append', action='write')
-
-  write(unit,'(i0)') natom
-  do i = 1, natom
-    i3 = 3 * i
-    write(unit,'(i0,1x,es24.16,1x,es24.16,1x,es24.16)') i, d(i3 - 2), d(i3 - 1), d(i3)
-    ! write(unit,'(i0,1x,f0.8,1x,f0.8,1x,f0.8)') i, d(i3 - 2), d(i3 - 1), d(i3)
-  end do
-
-  write(unit,'(a)') '*******************************************************************************************'
-  close(unit)
-end subroutine debug_dvelocities
-
-subroutine debug_coordinates()
-  integer :: unit
-  integer :: i, i3
-  logical, save :: flag2 = .false.
-
-  if (nodeid .ne. 0) return
-
-
-  if (flag2) return
-
-
-  if (.not. flag2) then
-    open(newunit=unit, file='coordinates_debug.txt', status='replace', action='write')
-    close(unit)
-    ! flag2 = .true.
-  end if
-
-  open(newunit=unit, file='coordinates_debug.txt', status='unknown', &
-       position='append', action='write')
-
-  write(unit,'(i0)') natom
-  do i = 1, natom
-    i3 = 3 * i
-    write(unit,'(i0,1x,es24.16,1x,es24.16,1x,es24.16)') i, x(i3 - 2), x(i3 - 1), x(i3)
-    ! write(unit,'(i0,1x,f0.8,1x,f0.8,1x,f0.8)') i, d(i3 - 2), d(i3 - 1), d(i3)
-  end do
-
-  write(unit,'(a)') '*******************************************************************************************'
-  close(unit)
-end subroutine debug_coordinates
-
-
 
 subroutine md_startup
 !!--------------------------------------------------------------------------------
@@ -903,7 +820,6 @@ real(8) function angle(istart, iend)
   real(8)                                         :: bjiinv, bjkinv, bji2inv, bjk2inv
   real(8)                                         :: scp,angv,da,dv,f1
   real(8)                                         :: rji(3),rjk(3),di(3),dk(3)
-  character(len=256)                              :: dbg_line
 
   ! global variables used:
   ! ang, x, anglib, d
@@ -950,10 +866,6 @@ real(8) function angle(istart, iend)
 
     ! calculate da and dv
     da = angv - anglib(ic)%ang0
-
-    ! write(dbg_line, '(i0,1x,i0,1x,i0,1x,f0.8)') i, j, k, da
-    ! call add_debug(dbg_line)
-
     angle = angle + 0.5*anglib(ic)%fk*da**2
     dv = anglib(ic)%fk*da
 
@@ -3916,7 +3828,6 @@ subroutine temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
     !locals
     integer                        :: i, i3
     real(8)                        :: Ekin
-    character(len=256)             :: dbg_line
 
     Temp = 0.
     Temp_solute = 0.
@@ -3942,8 +3853,6 @@ subroutine temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
       end if
     end do
 
-    ! write(dbg_line, '(f0.8,1x,f0.8,1x,f0.8)')  Temp_solute, Tfree_solute, Texcl_solute
-    ! call add_debug(dbg_line)
     Tfree_solvent = 0.
     Temp_solvent = 0.
     Texcl_solvent = 0.
@@ -3969,29 +3878,20 @@ subroutine temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
       end if
     end do
 
-    ! write(dbg_line, '(f0.8,1x,f0.8,1x,f0.8)')  Temp_solvent, Tfree_solvent, Texcl_solvent
-    ! call add_debug(dbg_line)
-
     Tfree = Tfree_solvent + Tfree_solute
     Temp = Temp_solute + Temp_solvent
 
     E%kinetic = Temp
 
     Temp  = 2.0*Temp/boltz/real(Ndegf)
-
-
-    ! write(dbg_line, '(f0.8,1x,f0.8,1x,i0)')  Tfree, boltz, Ndegfree
-    ! call add_debug(dbg_line)
-
     Tfree = 2.0*Tfree/boltz/real(Ndegfree)
 
-    ! write(dbg_line, '(f0.8,1x)') Tfree
-    ! call add_debug(dbg_line)
-
     if (detail_temps) then
+      Temp_solute  = 2.0*Temp_solute /boltz/real(Ndegf_solute)
       Tfree_solute = 2.0*Tfree_solute/boltz/real(Ndegfree_solute)
       if ( Ndegf_solute .ne. Ndegfree_solute) Texcl_solute = 2.0*Texcl_solute/boltz/real(Ndegf_solute - Ndegfree_solute)
 
+      Temp_solvent  = 2.0*Temp_solvent /boltz/real(Ndegf_solvent)
       Tfree_solvent = 2.0*Tfree_solvent/boltz/real(Ndegfree_solvent) ! Eq. S2 Marrink2010
       if ( Ndegf_solvent .ne. Ndegfree_solvent) Texcl_solvent = 2.0*Texcl_solvent/boltz/real(Ndegf_solvent - Ndegfree_solvent)
     end if
@@ -4007,9 +3907,6 @@ subroutine temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
       Tscale_solvent = sqrt ( 1 + dt/tau_T * Tscale_solvent )
       Tscale_solute = Tscale_solvent
     end if
-
-    ! write(dbg_line, '(f0.8,1x,f0.8,1x,f0.8,1x,f0.8,1x,f0.8)') E%kinetic, Temp, Tfree, Tscale_solvent, Tscale_solute
-    ! call add_debug(dbg_line)
 
 
 180 format ('>>> WARNING: hot atom, i =',i10,' Temp(i)=',f10.2)
@@ -4221,7 +4118,6 @@ subroutine md_run
         niter=shake(xx, x)
         v(:) = (x(:) - xx(:)) / dt
       end if
-      call debug_coordinates
 
       ! --- end of time step ---
 #if defined (PROFILING)
@@ -4308,13 +4204,13 @@ end if
 #endif
 
 ! write output for final step and final coords
-! call make_pair_lists
-! call pot_energy
-! if (nodeid .eq. 0) then
-!   write(*,*)
-!   call write_out
-!   call write_xfin
-! end if
+call make_pair_lists
+call pot_energy
+if (nodeid .eq. 0) then
+  write(*,*)
+  call write_out
+  call write_xfin
+end if
 
 
 
@@ -9082,10 +8978,6 @@ subroutine nonbon2_pp
   real(8)                                         :: Velb,V_ab,V_bb,dvb
   type(NB_TYPE), pointer          :: pa
   type(NB_TYPE), pointer          :: pb
-  character(len=256)              :: dbg_line
-  real(8)                         :: scalinga
-  real(8)                         :: scalingb
-
 
   ! global variables used:
   !  iaclib, x, crg, el14_scale, d, E
@@ -9126,14 +9018,10 @@ subroutine nonbon2_pp
     ! calculate Vel and dv
     Vela  = crg(pa%i)*crg(pa%j)*ra  
     Velb  = crg(pb%i)*crg(pb%j)*rb  
-    scalinga = 1.0
-    scalingb = 1.0
     if ( pa%LJcod .eq. 3 ) then
-      scalinga = el14_scale
       Vela = Vela*el14_scale
     end if
     if ( pb%LJcod .eq. 3 ) then
-      scalingb = el14_scale
       Velb = Velb*el14_scale
     end if
     V_aa  = bLJa*aLJa*aLJa*r6a*r6a 
@@ -9159,15 +9047,6 @@ subroutine nonbon2_pp
 
     ! update energies
     E%pp%el  = E%pp%el + Vela + Velb
-
-    ! write(dbg_line, '(i0,1x,i0,1x,f0.8,1x,f0.8,1x,f0.8,1x,f0.8,1x,f0.8,1x,f0.8)') pa%i, pa%j, Vela, scalinga, coulomb_constant, crg(pa%i), crg(pa%j), ra
-    ! call add_debug(dbg_line)
-    ! write(dbg_line, '(i0,1x,i0,1x,f0.8,1x,f0.8,1x,f0.8,1x,f0.8,1x,f0.8,1x,f0.8)') pb%i, pb%j, Velb, scalingb, coulomb_constant, crg(pb%i), crg(pb%j), rb
-    ! call add_debug(dbg_line)
-    ! write(dbg_line, '(i0,1x,i0,1x,f0.8,1x,f0.8,1x)') pa%i, pa%j, V_aa, V_ba
-    ! call add_debug(dbg_line)
-    ! write(dbg_line, '(i0,1x,i0,1x,f0.8,1x,f0.8,1x)') pb%i, pb%j, V_ab, V_bb
-    ! call add_debug(dbg_line)
     E%pp%vdw = E%pp%vdw + V_aa - V_ba + V_ab - V_bb
   end do
 
@@ -9204,9 +9083,6 @@ subroutine nonbon2_pp
     d(pa%j*3-0) = d(pa%j*3-0) + dva*dx3a
 
     E%pp%el  = E%pp%el + Vela 
-
-    ! write(dbg_line, '(i0,1x,i0,1x,f0.8,1x,f0.8,1x)') pa%i, pa%j, V_aa, V_ba
-    ! call add_debug(dbg_line)
     E%pp%vdw = E%pp%vdw + V_aa - V_ba 
   end if
 
@@ -9512,7 +9388,6 @@ subroutine nonbon2_qq
   integer                                         :: ip,iq,jq,i,j,k,i3,j3,iaci,iacj,iLJ
   real(8)                                         :: qi,qj,aLJ,bLJ,dx1,dx2,dx3,r2,r,r6,r12,r6_hc
   real(8)                                         :: Vel,V_a,V_b,dv,el_scale
-  character(len=256)                              :: dbg_line
 
   do istate = 1, nstates
     ! for every state:
@@ -9574,7 +9449,6 @@ subroutine nonbon2_qq
       r2   = dx1*dx1 + dx2*dx2 + dx3*dx3
       r6_hc = r2*r2*r2  !for softcore
       r6   = r6_hc + sc_lookup(iq,jq+natyps,istate)  !softcore
-    !   r6 = r2 * r2 * r2
       r6   = 1._8/r6
       r2   = 1./r2
       r    = sqrt ( r2 )
@@ -9593,7 +9467,6 @@ subroutine nonbon2_qq
         V_a  = bLJ*aLJ*aLJ*r12
         V_b  = 2.0*bLJ*aLJ*r6
         dv  = r2*( -Vel -(12.*V_a -6.*V_b)*r6*r6_hc )*EQ(istate)%lambda
-        ! dv  = r2*( -Vel -(12.*V_a -6.*V_b))*EQ(istate)%lambda
       endif
 
       ! update forces
@@ -9608,11 +9481,6 @@ subroutine nonbon2_qq
       if ( jq /= 0 ) then
         EQ(istate)%qq%el  = EQ(istate)%qq%el + Vel
         EQ(istate)%qq%vdw = EQ(istate)%qq%vdw + V_a - V_b
-
-        write(dbg_line, '(i0,1x,i0,1x,i0,1x,f0.8,1x,f0.8,1x,f0.8,1x,f0.8,1x,f0.8)') iq, jq, istate, dv, dx1, dx2, dx3, sc_lookup(iq,jq+natyps,istate)
-        call add_debug(dbg_line)
-
-
       else
         EQ(istate)%qp%el  = EQ(istate)%qp%el + Vel
         EQ(istate)%qp%vdw = EQ(istate)%qp%vdw + V_a - V_b
@@ -13213,7 +13081,6 @@ subroutine p_restrain
     end if
   end do
 
-
   ! atom-atom distance restraints (Q-state dependent)
   do ir = 1, nrstr_dist
     istate = rstdis(ir)%ipsi
@@ -15259,8 +15126,6 @@ subroutine watpol
   real(8)                                         :: tmin,arg,avtdum,dv,f0
   real(8), save                                   :: f1(9),f2(3)
   real(8), save                                   :: rmu(3),rcu(3)
-  character(len=256)             :: dbg_line
-
 
   ! global variables used:
   !  E, wshell, bndw0, deg2rad, angw0, nwat, theta, theta0, nat_pro, x, xwcent,
@@ -15306,9 +15171,6 @@ subroutine watpol
       end do
       wshell(is)%n_insh = wshell(is)%n_insh + 1
       list_sh(wshell(is)%n_insh,is) = iw
-
-      ! write(dbg_line, '(i0,1x,i0)') i, is
-      ! call add_debug(dbg_line)
     end if
   end do
 
@@ -15359,7 +15221,6 @@ subroutine watpol
       if ( theta0(il) .lt. 0.0 ) theta0(il) = 0.0
       if ( theta0(il) .gt. pi)   theta0(il) = pi
 
-
       avtdum = avtdum + theta(iw)
 
       E%restraint%water_pol = E%restraint%water_pol + 0.5*fkwpol* &
@@ -15395,9 +15256,6 @@ subroutine watpol
       if ( abs(f0) .lt. 1.e-12 ) f0 = 1.e-12
       f0 = -1.0 / f0
       f0 = dv*f0
-
-    !   write(dbg_line, '(i0,1x,f0.8)') iw, scp
-    !   call add_debug(dbg_line)
 
       f1(1) = -2.*(rcu(1)-rmu(1)*scp)/rm
       f1(2) = -2.*(rcu(2)-rmu(2)*scp)/rm

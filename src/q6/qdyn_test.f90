@@ -321,3 +321,4 @@ integer(4) function sigabrt_handler(sig_num)
   call die('kill signal')
   sigabrt_handler = 1
 end function sigabrt_handler
+

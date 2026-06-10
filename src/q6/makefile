@@ -205,14 +205,11 @@ qcalc: calc_base.o calc_chemscore.o calc_fit.o calc_geom.o calc_pmfscore.o \
 	calc_entropy.o calc_nb.o calc_xscore.o eigen.o qcalc.o
 	${FC} ${FFLAGS} ${FLIBS} $+ -o $@
 
-qdyn : md.o debug.o
+qdyn : md.o
 	${FC} ${FFLAGS} ${FLIBS} $+ -o $@
 
 qdyn_test : md_test.o #qdyn_test.o
 	${FC} ${FFLAGS} ${FLIBS} $+ -o $@
-
-debug.o: debug.f90 md.o mpiglob.o qatom.o topo.o
-	${FC} ${FFLAGS} ${FPP_FLG} -c debug.f90 -o debug.o
 
 qdum : md_dum.o
 	${FC} ${FFLAGS} ${FLIBS} $+ -o $@
@@ -324,7 +321,7 @@ qcalc.o: qcalc.f90 calc_chemscore.o calc_pmfscore.o calc_xscore.o trj.o \
 	calc_base.o calc_rms.o calc_fit.o calc_geom.o
 	${FC} ${FFLAGS} ${FPP_FLG} -c qcalc.f90
 
-qdyn.o: qdyn.f90 md.o mpiglob.o debug.o
+qdyn.o: qdyn.f90 md.o mpiglob.o
 	${FC} ${FFLAGS} ${FPP_FLG} -c qdyn.f90
 
 qdyn_test.o: qdyn_test.f90 md_test.o mpiglob.o
