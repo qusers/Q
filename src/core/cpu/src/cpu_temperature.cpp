@@ -3,7 +3,6 @@
 #include "constants.h"
 #include "context.h"
 #include "math.h"
-#include "debug.h"
 
 /* =============================================
  * == ENERGY & TEMPERATURE
@@ -38,8 +37,6 @@ void calc_temperature() {
             printf(">>> WARNING: hot atom %d: %f\n", i, ener / Boltz / 3);
         }
     }
-    std::ostringstream ss;
-    ss << std::fixed << std::setprecision(8);
 
     for (int i = ctx.n_atoms_solute; i < ctx.n_atoms; i++) {
         mass_i = catypes[atypes[i].code - 1].m;
@@ -73,11 +70,6 @@ void calc_temperature() {
         if (ctx.Tfree != 0) ctx.Tscale_solvent = sqrt(1 + (ctx.dt / ctx.tau_T) * (ctx.md.temperature / ctx.Tfree - 1.0));
         ctx.Tscale_solute = ctx.Tscale_solvent;
     }
-
-
-    // ss << ctx.E_total.Ukin << ' ' << ctx.Temp << ' ' << ctx.Tfree << ' ' << ctx.Tscale_solvent << ' ' << ctx.Tscale_solute;
-
-    // debug(ss.str());
 
 
     printf("Tscale = %f, tau_T = %f, Temp = %f, Tfree = %f\n", ctx.Tscale_solvent, ctx.tau_T, ctx.Temp, ctx.Tfree);

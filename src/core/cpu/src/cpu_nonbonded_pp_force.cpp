@@ -4,7 +4,6 @@
 
 #include "constants.h"
 #include "context.h"
-#include "debug.h"
 #include "vdw_rules.h"
 
 void calc_nonbonded_pp_forces() {
@@ -22,9 +21,6 @@ void calc_nonbonded_pp_forces() {
     real_t ai_aii, aj_aii, ai_bii, aj_bii;
     int i, j;
 
-    std::ostringstream ss;
-    ss << std::fixed << std::setprecision(8);
-    // ss << "nonbonded pp **********************************************\n";
     for (int pi = 0; pi < ctx.n_patoms; pi++) {
         for (int pj = pi + 1; pj < ctx.n_patoms; pj++) {
             i = ctx.p_atoms[pi];
@@ -76,14 +72,6 @@ void calc_nonbonded_pp_forces() {
 
             ctx.E_nonbond_pp.Ucoul += static_cast<real_t>(Vela);
             ctx.E_nonbond_pp.Uvdw += static_cast<real_t>(V_a - V_b);
-
-            // ss << pi << ' ' << pj << ' ' << Vela << ' ' << scaling << ' ' 
-            // << ctx.topo.coulomb_constant << ' ' << crg_i << ' ' << crg_j << ' ' << ra << '\n';
-
-            // ss << pi << ' ' << pj << ' ' << V_a << ' ' << V_b << '\n';
-
-
         }
     }
-    // debug(ss.str());
 }

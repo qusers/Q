@@ -5,7 +5,6 @@
 #include "context.h"
 #include "cpu_handler.h"
 #include "cuda_handler.cuh"
-#include "debug.h"
 
 static void calc_integration() {
     auto& ctx = Context::instance();

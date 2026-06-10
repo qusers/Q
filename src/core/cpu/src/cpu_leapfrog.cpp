@@ -1,7 +1,6 @@
 #include "cpu_leapfrog.h"
 
 #include "context.h"
-#include "debug.h"
 #include "shake.h"
 
 void calc_leapfrog(Shake &shake) {
@@ -58,5 +57,4 @@ void calc_leapfrog(Shake &shake) {
             velocities[i].z = (coords[i].z - xcoords[i].z) / ctx.dt;
         }
     }
-    debug_coordinates();
 }

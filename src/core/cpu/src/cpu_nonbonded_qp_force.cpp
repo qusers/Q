@@ -5,7 +5,6 @@
 #include "constants.h"
 #include "context.h"
 #include "vdw_rules.h"
-#include "debug.h"
 
 void calc_nonbonded_qp_forces() {
     auto& ctx = Context::instance();

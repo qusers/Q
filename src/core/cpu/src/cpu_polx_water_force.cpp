@@ -1,5 +1,4 @@
 #include "cpu_polx_water_force.h"
-#include "debug.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -21,8 +20,6 @@ void calc_polx_w_forces(int iteration) {
     real_t cos_th;
     real_t avtdum, arg, f0, dv;
     real_t ener;
-    std::ostringstream ss;
-    ss << std::fixed << std::setprecision(8);
     for (int is = 0; is < ctx.n_shells; is++) {
         wshells[is].n_inshell = 0;
     }
@@ -70,10 +67,8 @@ void calc_polx_w_forces(int iteration) {
             }
             wshells[iis].n_inshell += 1;
             ctx.list_sh[wshells[iis].n_inshell - 1][iis] = i;
-            // ss << wi << ' ' << iis + 1 << '\n';
         }
     }
-    // debug(ss.str());
     const real_t PI = 4.0 * atanf(1.0);
     for (int is = 0; is < ctx.n_shells; is++) {
         imin = 0;
@@ -167,7 +162,6 @@ void calc_polx_w_forces(int iteration) {
             }
             f0 = -1.0f / f0;
             f0 *= dv;
-            ss << ii << ' ' << cos_th << '\n';
 
             f1O.x = -2 * (rcu.x - rmu.x * cos_th) / rm;
             f1O.y = -2 * (rcu.y - rmu.y * cos_th) / rm;
@@ -197,5 +191,4 @@ void calc_polx_w_forces(int iteration) {
         wshells[is].avtheta += avtdum / (float)wshells[is].n_inshell;
         wshells[is].avn_inshell += wshells[is].n_inshell;
     }
-    // debug(ss.str());
 }

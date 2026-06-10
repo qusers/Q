@@ -100,7 +100,4 @@ void calc_nonbonded_qw_forces() {
         }
     }
 
-#ifdef DEBUG
-    printf("q-w: Ecoul = %f Evdw = %f\n", ctx.EQ_nonbond_qw[0].Ucoul, ctx.EQ_nonbond_qw[0].Uvdw);
-#endif
 }

@@ -5,7 +5,6 @@
 #include "cpu_bond_force.h"
 #include "cpu_improper2_force.h"
 #include "cpu_torsion_force.h"
-#include "debug.h"
 
 void calc_bonded_forces() {
     auto& ctx = Context::instance();

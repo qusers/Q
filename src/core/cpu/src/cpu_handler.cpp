@@ -23,7 +23,6 @@
 #include "cpu_restrseq_force.h"
 #include "cpu_restrwall_force.h"
 #include "cpu_temperature.h"
-#include "debug.h"
 #include "cpu_shake_v2.h"
 #include "init.h"
 
@@ -70,7 +69,6 @@ void CpuHandler::calc_internal_forces(int iteration) {
     calc_restraint_forces(iteration, ctx);
 
     calc_nonbonded_qq_forces();
-    debug_dvelocities();
     // calc_q_bonded_forces(ctx);
 }
 

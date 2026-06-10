@@ -5,7 +5,6 @@
 #include "constants.h"
 #include "context.h"
 #include "vdw_rules.h"
-#include "debug.h"
 
 void calc_nonbonded_qq_forces() {
     auto& ctx = Context::instance();
@@ -24,8 +23,6 @@ void calc_nonbonded_qq_forces() {
     real_t dva;
     real_t ai_aii, aj_aii, ai_bii, aj_bii;
 
-    std::ostringstream ss;
-    ss << std::fixed << std::setprecision(8);
     for (int state = 0; state < ctx.n_lambdas; state++) {
         for (int qi = 0; qi < ctx.n_qatoms; qi++) {
             for (int qj = qi + 1; qj < ctx.n_qatoms; qj++) {
@@ -90,16 +87,9 @@ void calc_nonbonded_qq_forces() {
 
                 ctx.EQ_nonbond_qq[state].Ucoul += static_cast<real_t>(Vela);
 
-                ss << qi << ' ' << qj << ' ' << state << ' ' << dva << ' ' << da.x << ' ' << da.y << ' ' << da.z << '\n';
-
 
                 ctx.EQ_nonbond_qq[state].Uvdw += static_cast<real_t>(V_a - V_b);
             }
         }
     }
-    debug(ss.str());
-
-#ifdef DEBUG
-    printf("q-q: Ecoul = %f Evdw = %f\n", ctx.EQ_nonbond_qq[0].Ucoul, ctx.EQ_nonbond_qq[0].Uvdw);
-#endif
 }

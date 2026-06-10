@@ -1,5 +1,4 @@
 #include "cpu_angle_force.h"
-#include "debug.h"
 
 #include <math.h>
 
@@ -25,8 +24,6 @@ real_t calc_angle_forces(int start, int end) {
     auto &angles = ctx.angles->cpu_data_p;
     auto &cangles = ctx.cangles->cpu_data_p;
 
-    std::ostringstream ss;
-    ss << std::fixed << std::setprecision(8);
     for (int i = start; i < end; i++) {
         aii = angles[i].ai - 1;
         aji = angles[i].aj - 1;
@@ -63,7 +60,6 @@ real_t calc_angle_forces(int start, int end) {
         th = acos(cos_th);
 
         dth = th - to_radians(cangle.th0);
-        ss << aii << ' ' << aji << ' ' << aki << ' ' << dth << '\n';
         ener = .5 * cangle.kth * pow(dth, 2);
         dv = cangle.kth * dth;
 
@@ -99,9 +95,7 @@ real_t calc_angle_forces(int start, int end) {
         dvelocities[aji].y -= dv * (di.y + dk.y);
         dvelocities[aji].z -= dv * (di.z + dk.z);
 
-        // printf("ANGLE ener = %f\n", ener);
     }
-    // debug(ss.str());
 
     return angle;
 }
