@@ -1,6 +1,8 @@
 #include "cpu_nonbonded_qp_force.h"
+#include "cpu_force_accumulation.h"
 
 #include <math.h>
+#include <vector>
 
 #include "constants.h"
 #include "context.h"
@@ -20,6 +22,8 @@ void calc_nonbonded_qp_forces() {
     bool bond23, bond14;
     real_t scaling;
     real_t Vel, V_a, V_b, dv;
+    std::vector<energy_accum_t> ucoul(ctx.n_lambdas, 0);
+    std::vector<energy_accum_t> uvdw(ctx.n_lambdas, 0);
 
 
     for (int qi = 0; qi < ctx.n_qatoms; qi++) {
@@ -67,17 +71,23 @@ void calc_nonbonded_qp_forces() {
                 dv = r2 * (-Vel - (12 * V_a - 6 * V_b)) * lambdas[state];
 
                 // Update forces
-                dvelocities[i].x -= dv * da.x;
-                dvelocities[i].y -= dv * da.y;
-                dvelocities[i].z -= dv * da.z;
-                dvelocities[j].x += dv * da.x;
-                dvelocities[j].y += dv * da.y;
-                dvelocities[j].z += dv * da.z;
+                add_force(dvelocities[i].x, -dv * da.x);
+                add_force(dvelocities[i].y, -dv * da.y);
+                add_force(dvelocities[i].z, -dv * da.z);
+
+                add_force(dvelocities[j].x, dv * da.x);
+                add_force(dvelocities[j].y, dv * da.y);
+                add_force(dvelocities[j].z, dv * da.z);
 
                 // Update Q totals
-                ctx.EQ_nonbond_qp[state].Ucoul += static_cast<real_t>(Vel);
-                ctx.EQ_nonbond_qp[state].Uvdw += static_cast<real_t>(V_a - V_b);
+                add_energy(ucoul[state], Vel);
+                add_energy(uvdw[state], V_a - V_b);
             }
         }
+    }
+
+    for (int state = 0; state < ctx.n_lambdas; state++) {
+        ctx.EQ_nonbond_qp[state].Ucoul += energy_from_accum(ucoul[state]);
+        ctx.EQ_nonbond_qp[state].Uvdw += energy_from_accum(uvdw[state]);
     }
 }

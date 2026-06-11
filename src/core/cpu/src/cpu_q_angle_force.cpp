@@ -1,4 +1,5 @@
 #include "cpu_q_angle_force.h"
+#include "cpu_force_accumulation.h"
 
 #include <math.h>
 
@@ -17,6 +18,7 @@ void calc_qangle_forces(int state) {
     real_t bji, bjk;
     real_t cos_th, th, dth, ener, dv, f1;
     coord_t di, dk;
+    energy_accum_t angle = 0;
 
     for (int i = 0; i < ctx.n_qangles; i++) {
         ic = ctx.q_angles[i + ctx.n_qangles * state].code - 1;
@@ -52,7 +54,7 @@ void calc_qangle_forces(int state) {
         th = acos(cos_th);
         dth = th - to_radians(ctx.q_cangles[ic].th0);
         ener = .5 * ctx.q_cangles[ic].kth * pow(dth, 2);
-        ctx.EQ_bond[state].Uangle += ener;
+        add_energy(angle, ener);
 
         dv = ctx.q_cangles[ic].kth * dth * lambdas[state];
         f1 = sin(th);
@@ -68,14 +70,20 @@ void calc_qangle_forces(int state) {
         dk.y = f1 * (rji.y / (bji * bjk) - cos_th * rjk.y / pow(bjk, 2));
         dk.z = f1 * (rji.z / (bji * bjk) - cos_th * rjk.z / pow(bjk, 2));
 
-        dvelocities[ai].x += dv * di.x;
-        dvelocities[ai].y += dv * di.y;
-        dvelocities[ai].z += dv * di.z;
-        dvelocities[ak].x += dv * dk.x;
-        dvelocities[ak].y += dv * dk.y;
-        dvelocities[ak].z += dv * dk.z;
-        dvelocities[aj].x -= dv * (di.x + dk.x);
-        dvelocities[aj].y -= dv * (di.y + dk.y);
-        dvelocities[aj].z -= dv * (di.z + dk.z);
+        add_force(dvelocities[ai].x, dv * di.x);
+        add_force(dvelocities[ai].y, dv * di.y);
+        add_force(dvelocities[ai].z, dv * di.z);
+
+
+        add_force(dvelocities[ak].x, dv * dk.x);
+        add_force(dvelocities[ak].y, dv * dk.y);
+        add_force(dvelocities[ak].z, dv * dk.z);
+
+
+        add_force(dvelocities[aj].x, -dv * (di.x + dk.x));
+        add_force(dvelocities[aj].y, -dv * (di.y + dk.y));
+        add_force(dvelocities[aj].z, -dv * (di.z + dk.z));
     }
+
+    ctx.EQ_bond[state].Uangle += energy_from_accum(angle);
 }

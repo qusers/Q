@@ -3,6 +3,7 @@
 #include <math.h>
 
 #include "context.h"
+#include "cpu_force_accumulation.h"
 
 void calc_restrseq_forces() {
     auto& ctx = Context::instance();
@@ -16,6 +17,7 @@ void calc_restrseq_forces() {
     real_t k, mass, totmass;
     coord_t dr;
     real_t r2, ener;
+    energy_accum_t upres = 0;
 
     for (int s = 0; s < ctx.n_restrseqs; s++) {
         k = restrseqs[s].k;
@@ -42,14 +44,15 @@ void calc_restrseq_forces() {
                 dr.z /= n_ctr;
                 r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
                 ener = .5 * k * r2;
-                ctx.E_restraint.Upres += ener;
+                add_energy(upres, ener);
 
                 for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
                     if (heavy[i] || restrseqs[s].ih) {
                         mass = catypes[atypes[i].code - 1].m;
-                        dvelocities[i].x += (k * dr.x * mass / 12.010);
-                        dvelocities[i].y += (k * dr.y * mass / 12.010);
-                        dvelocities[i].z += (k * dr.z * mass / 12.010);
+                        const real_t tmp = 12.010;
+                        add_force(dvelocities[i].x, k * dr.x * mass / tmp);
+                        add_force(dvelocities[i].y, k * dr.y * mass / tmp);
+                        add_force(dvelocities[i].z, k * dr.z * mass / tmp);
                     }
                 }
             }
@@ -70,13 +73,13 @@ void calc_restrseq_forces() {
                 dr.z /= totmass;
                 r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
                 ener = .5 * k * r2;
-                ctx.E_restraint.Upres += ener;
+                add_energy(upres, ener);
 
                 for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
                     if (heavy[i] || restrseqs[s].ih) {
-                        dvelocities[i].x += k * dr.x;
-                        dvelocities[i].y += k * dr.y;
-                        dvelocities[i].z += k * dr.z;
+                        add_force(dvelocities[i].x, k * dr.x);
+                        add_force(dvelocities[i].y, k * dr.y);
+                        add_force(dvelocities[i].z, k * dr.z);
                     }
                 }
             }
@@ -89,13 +92,15 @@ void calc_restrseq_forces() {
 
                     r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
                     ener = .5 * k * r2;
-                    ctx.E_restraint.Upres += ener;
+                    add_energy(upres, ener);
 
-                    dvelocities[i].x += k * dr.x;
-                    dvelocities[i].y += k * dr.y;
-                    dvelocities[i].z += k * dr.z;
+                    add_force(dvelocities[i].x, k * dr.x);
+                    add_force(dvelocities[i].y, k * dr.y);
+                    add_force(dvelocities[i].z, k * dr.z);
                 }
             }
         }
     }
+
+    ctx.E_restraint.Upres += energy_from_accum(upres);
 }

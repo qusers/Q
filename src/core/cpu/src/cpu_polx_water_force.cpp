@@ -1,4 +1,5 @@
 #include "cpu_polx_water_force.h"
+#include "cpu_force_accumulation.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -20,6 +21,7 @@ void calc_polx_w_forces(int iteration) {
     real_t cos_th;
     real_t avtdum, arg, f0, dv;
     real_t ener;
+    energy_accum_t upolx = 0;
     for (int is = 0; is < ctx.n_shells; is++) {
         wshells[is].n_inshell = 0;
     }
@@ -125,7 +127,7 @@ void calc_polx_w_forces(int iteration) {
             avtdum += ctx.theta[ii];
             ener = .5 * ctx.md.polarisation_force *
                    pow(ctx.theta[ii] - ctx.theta0[il] + wshells[is].theta_corr, 2);
-            ctx.E_restraint.Upolx += ener;
+            add_energy(upolx, ener);
 
             dv = ctx.md.polarisation_force * (ctx.theta[ii] - ctx.theta0[il] + wshells[is].theta_corr);
 
@@ -177,18 +179,23 @@ void calc_polx_w_forces(int iteration) {
             f2.y = (rmu.y - rcu.y * cos_th) / rc;
             f2.z = (rmu.z - rcu.z * cos_th) / rc;
 
-            dvelocities[wi].x += f0 * (f1O.x + f2.x);
-            dvelocities[wi].y += f0 * (f1O.y + f2.y);
-            dvelocities[wi].z += f0 * (f1O.z + f2.z);
-            dvelocities[wi + 1].x += f0 * f1H1.x;
-            dvelocities[wi + 1].y += f0 * f1H1.y;
-            dvelocities[wi + 1].z += f0 * f1H1.z;
-            dvelocities[wi + 2].x += f0 * f1H2.x;
-            dvelocities[wi + 2].y += f0 * f1H2.y;
-            dvelocities[wi + 2].z += f0 * f1H2.z;
+            add_force(dvelocities[wi].x, f0 * (f1O.x + f2.x));
+            add_force(dvelocities[wi].y, f0 * (f1O.y + f2.y));
+            add_force(dvelocities[wi].z, f0 * (f1O.z + f2.z));
+
+
+            add_force(dvelocities[wi + 1].x, f0 * f1H1.x);
+            add_force(dvelocities[wi + 1].y, f0 * f1H1.y);
+            add_force(dvelocities[wi + 1].z, f0 * f1H1.z);
+
+            add_force(dvelocities[wi + 2].x, f0 * f1H2.x);
+            add_force(dvelocities[wi + 2].y, f0 * f1H2.y);
+            add_force(dvelocities[wi + 2].z, f0 * f1H2.z);
         }
 
         wshells[is].avtheta += avtdum / (float)wshells[is].n_inshell;
         wshells[is].avn_inshell += wshells[is].n_inshell;
     }
+
+    ctx.E_restraint.Upolx += energy_from_accum(upolx);
 }

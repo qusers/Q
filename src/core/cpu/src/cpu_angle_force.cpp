@@ -1,4 +1,5 @@
 #include "cpu_angle_force.h"
+#include "cpu_force_accumulation.h"
 
 #include <math.h>
 
@@ -19,7 +20,7 @@ real_t calc_angle_forces(int start, int end) {
     cangle_t cangle;
     real_t cos_th, th, dth, dv, f1;
     real_t ener;
-    real_t angle = 0;
+    energy_accum_t angle = 0;
 
     auto &angles = ctx.angles->cpu_data_p;
     auto &cangles = ctx.cangles->cpu_data_p;
@@ -73,7 +74,7 @@ real_t calc_angle_forces(int start, int end) {
 
         // Update energies and forces
 
-        angle += ener;
+        add_energy(angle, ener);
 
         di.x = f1 * (rjk.x * bjiinv * bjkinv - cos_th * rji.x * bji2inv);
         di.y = f1 * (rjk.y * bjiinv * bjkinv - cos_th * rji.y * bji2inv);
@@ -83,19 +84,18 @@ real_t calc_angle_forces(int start, int end) {
         dk.y = f1 * (rji.y * bjiinv * bjkinv - cos_th * rjk.y * bjk2inv);
         dk.z = f1 * (rji.z * bjiinv * bjkinv - cos_th * rjk.z * bjk2inv);
 
-        dvelocities[aii].x += dv * di.x;
-        dvelocities[aii].y += dv * di.y;
-        dvelocities[aii].z += dv * di.z;
+        add_force(dvelocities[aii].x, dv * di.x);
+        add_force(dvelocities[aii].y, dv * di.y);
+        add_force(dvelocities[aii].z, dv * di.z);
 
-        dvelocities[aki].x += dv * dk.x;
-        dvelocities[aki].y += dv * dk.y;
-        dvelocities[aki].z += dv * dk.z;
+        add_force(dvelocities[aki].x, dv * dk.x);
+        add_force(dvelocities[aki].y, dv * dk.y);
+        add_force(dvelocities[aki].z, dv * dk.z);
 
-        dvelocities[aji].x -= dv * (di.x + dk.x);
-        dvelocities[aji].y -= dv * (di.y + dk.y);
-        dvelocities[aji].z -= dv * (di.z + dk.z);
-
+        add_force(dvelocities[aji].x, -dv * (di.x + dk.x));
+        add_force(dvelocities[aji].y, -dv * (di.y + dk.y));
+        add_force(dvelocities[aji].z, -dv * (di.z + dk.z));
     }
 
-    return angle;
+    return energy_from_accum(angle);
 }

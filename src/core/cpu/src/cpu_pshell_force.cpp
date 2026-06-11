@@ -4,6 +4,7 @@
 
 #include "constants.h"
 #include "context.h"
+#include "cpu_force_accumulation.h"
 
 void calc_pshell_forces() {
     auto& ctx = Context::instance();
@@ -14,6 +15,8 @@ void calc_pshell_forces() {
 
     coord_t dr;
     real_t k, r2, ener;
+    energy_accum_t ufix = 0;
+    energy_accum_t ushell = 0;
 
     for (int i = 0; i < ctx.n_atoms_solute; i++) {
         if (shell[i] || excluded[i]) {
@@ -30,15 +33,19 @@ void calc_pshell_forces() {
             ener = 0.5 * k * r2;
 
             if (excluded[i]) {
-                ctx.E_restraint.Ufix += ener;
+                add_energy(ufix, ener);
             }
             if (shell[i]) {
-                ctx.E_restraint.Ushell += ener;
+                add_energy(ushell, ener);
             }
 
-            dvelocities[i].x += k * dr.x;
-            dvelocities[i].y += k * dr.y;
-            dvelocities[i].z += k * dr.z;
+            add_force(dvelocities[i].x, k * dr.x);
+            add_force(dvelocities[i].y, k * dr.y);
+            add_force(dvelocities[i].z, k * dr.z);
+
         }
     }
+
+    ctx.E_restraint.Ufix += energy_from_accum(ufix);
+    ctx.E_restraint.Ushell += energy_from_accum(ushell);
 }

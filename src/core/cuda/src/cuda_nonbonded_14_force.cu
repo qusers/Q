@@ -2,6 +2,7 @@
 #include "common/include/vdw_rules.h"
 #include "constants.h"
 #include "cuda/include/cuda_nonbonded_14_force.cuh"
+#include "cuda_force_accumulation.cuh"
 #include "cuda_utility.cuh"
 
 namespace CudaNonbonded14Force {
@@ -9,16 +10,8 @@ bool is_initialized = false;
 constexpr int kNonbonded14ModeCount = 3;
 
 int* d_atom_to_qi = nullptr;
-real_t* d_evdw_totals = nullptr;
-real_t* d_ecoul_totals = nullptr;
-
-__device__ __forceinline__ nonbond_work_t nonbond14_rsqrt(nonbond_work_t value) {
-#ifdef QDYN_SPFP
-    return rsqrtf(value);
-#else
-    return rsqrt(value);
-#endif
-}
+energy_accum_t* d_evdw_totals = nullptr;
+energy_accum_t* d_ecoul_totals = nullptr;
 
 __device__ __forceinline__ int unified_parameter_index(
     int atom_idx,
@@ -43,47 +36,34 @@ __device__ void calculate_nonbonded_14_pair(
     real_t y_aii,
     real_t x_bii,
     real_t y_bii,
-    nonbond_work_t coulomb_constant,
-    nonbond_work_t scaling,
+    real_t coulomb_constant,
+    real_t scaling,
     int vdw_rule,
-    nonbond_work_t lambda,
-    nonbond_work_t& evdw,
-    nonbond_work_t& ecoul,
-    nonbond_work_t& dv) {
-    const nonbond_work_t dx = static_cast<nonbond_work_t>(x.x - y.x);
-    const nonbond_work_t dy = static_cast<nonbond_work_t>(x.y - y.y);
-    const nonbond_work_t dz = static_cast<nonbond_work_t>(x.z - y.z);
-    const nonbond_work_t r = nonbond14_rsqrt(dx * dx + dy * dy + dz * dz);
-    const nonbond_work_t r2 = r * r;
-    const nonbond_work_t r6 = r2 * r2 * r2;
+    real_t lambda,
+    real_t& evdw,
+    real_t& ecoul,
+    real_t& dv) {
+    const real_t dx = x.x - y.x;
+    const real_t dy = x.y - y.y;
+    const real_t dz = x.z - y.z;
+    const real_t r = rsqrt(dx * dx + dy * dy + dz * dz);
+    const real_t r2 = r * r;
+    const real_t r6 = r2 * r2 * r2;
 
     ecoul = scaling * coulomb_constant * x_charge * y_charge * r * lambda;
 
-    nonbond_work_t v_a = 0.0;
-    nonbond_work_t v_b = 0.0;
+    real_t v_a = 0.0;
+    real_t v_b = 0.0;
     if (vdw_rule == VDW_GEOMETRIC) {
         calc_vdw_geometric(
-            static_cast<nonbond_work_t>(x_aii),
-            static_cast<nonbond_work_t>(y_aii),
-            static_cast<nonbond_work_t>(x_bii),
-            static_cast<nonbond_work_t>(y_bii),
-            r6,
-            &v_a,
-            &v_b);
+            x_aii, y_aii, x_bii, y_bii, r6, &v_a, &v_b);
     } else {
-        calc_vdw_arithmetic(
-            static_cast<nonbond_work_t>(x_aii),
-            static_cast<nonbond_work_t>(y_aii),
-            static_cast<nonbond_work_t>(x_bii),
-            static_cast<nonbond_work_t>(y_bii),
-            r6,
-            &v_a,
-            &v_b);
+        calc_vdw_arithmetic(x_aii, y_aii, x_bii, y_bii, r6, &v_a, &v_b);
     }
     v_a *= lambda;
     v_b *= lambda;
     evdw = v_a - v_b;
-    dv = r2 * (-ecoul - static_cast<nonbond_work_t>(12.0) * v_a + static_cast<nonbond_work_t>(6.0) * v_b);
+    dv = r2 * (-ecoul - static_cast<real_t>(12.0) * v_a + static_cast<real_t>(6.0) * v_b);
 }
 
 __global__ void calc_nonbonded_14_force_kernel(
@@ -96,8 +76,8 @@ __global__ void calc_nonbonded_14_force_kernel(
     const catype_t* unified_catypes,
     const coord_t* d_coords,
     dvel_t* d_dvelocities,
-    real_t* evdw_totals,
-    real_t* ecoul_totals,
+    energy_accum_t* evdw_totals,
+    energy_accum_t* ecoul_totals,
     bool include_pp,
     int state,
     int n_atoms,
@@ -130,10 +110,10 @@ __global__ void calc_nonbonded_14_force_kernel(
     const coord_t ri = d_coords[ai];
     const coord_t rj = d_coords[aj];
 
-    nonbond_work_t evdw = 0.0;
-    nonbond_work_t ecoul = 0.0;
-    nonbond_work_t dv = 0.0;
-    const nonbond_work_t pair_lambda = static_cast<nonbond_work_t>((mode == NONBONDED_14_PP) ? 1.0 : lambda);
+    real_t evdw = 0.0;
+    real_t ecoul = 0.0;
+    real_t dv = 0.0;
+    const real_t pair_lambda = static_cast<real_t>((mode == NONBONDED_14_PP) ? 1.0 : lambda);
 
     calculate_nonbonded_14_pair(
         ri,
@@ -144,26 +124,26 @@ __global__ void calc_nonbonded_14_force_kernel(
         aj_type.aii_1_4,
         ai_type.bii_1_4,
         aj_type.bii_1_4,
-        static_cast<nonbond_work_t>(d_topo.coulomb_constant),
-        static_cast<nonbond_work_t>(d_topo.el14_scale),
+        d_topo.coulomb_constant,
+        d_topo.el14_scale,
         d_topo.vdw_rule,
         pair_lambda,
         evdw,
         ecoul,
         dv);
 
-    const nonbond_work_t dx = static_cast<nonbond_work_t>(rj.x - ri.x);
-    const nonbond_work_t dy = static_cast<nonbond_work_t>(rj.y - ri.y);
-    const nonbond_work_t dz = static_cast<nonbond_work_t>(rj.z - ri.z);
-    atomicAdd(&d_dvelocities[ai].x, -dv * dx);
-    atomicAdd(&d_dvelocities[ai].y, -dv * dy);
-    atomicAdd(&d_dvelocities[ai].z, -dv * dz);
-    atomicAdd(&d_dvelocities[aj].x, dv * dx);
-    atomicAdd(&d_dvelocities[aj].y, dv * dy);
-    atomicAdd(&d_dvelocities[aj].z, dv * dz);
+    const real_t dx = rj.x - ri.x;
+    const real_t dy = rj.y - ri.y;
+    const real_t dz = rj.z - ri.z;
+    atomic_add_force(&d_dvelocities[ai].x, -dv * dx);
+    atomic_add_force(&d_dvelocities[ai].y, -dv * dy);
+    atomic_add_force(&d_dvelocities[ai].z, -dv * dz);
+    atomic_add_force(&d_dvelocities[aj].x, dv * dx);
+    atomic_add_force(&d_dvelocities[aj].y, dv * dy);
+    atomic_add_force(&d_dvelocities[aj].z, dv * dz);
 
-    atomicAdd(&evdw_totals[mode], evdw);
-    atomicAdd(&ecoul_totals[mode], ecoul);
+    atomic_add_energy(&evdw_totals[mode], evdw);
+    atomic_add_energy(&ecoul_totals[mode], ecoul);
 }
 
 }  // namespace CudaNonbonded14Force
@@ -186,8 +166,8 @@ static Nonbonded14EnergyBuckets calc_nonbonded_14_force_state_host(
     Nonbonded14EnergyBuckets energies = {};
     if (n_ngbrs_14 == 0) return energies;
 
-    cudaMemset(d_ecoul_totals, 0, sizeof(real_t) * kNonbonded14ModeCount);
-    cudaMemset(d_evdw_totals, 0, sizeof(real_t) * kNonbonded14ModeCount);
+    cudaMemset(d_ecoul_totals, 0, sizeof(energy_accum_t) * kNonbonded14ModeCount);
+    cudaMemset(d_evdw_totals, 0, sizeof(energy_accum_t) * kNonbonded14ModeCount);
 
     const int block_size = 256;
     const int num_blocks = (n_ngbrs_14 + block_size - 1) / block_size;
@@ -212,8 +192,14 @@ static Nonbonded14EnergyBuckets calc_nonbonded_14_force_state_host(
 
     cudaDeviceSynchronize();
 
-    cudaMemcpy(energies.evdw, d_evdw_totals, sizeof(real_t) * kNonbonded14ModeCount, cudaMemcpyDeviceToHost);
-    cudaMemcpy(energies.ecoul, d_ecoul_totals, sizeof(real_t) * kNonbonded14ModeCount, cudaMemcpyDeviceToHost);
+    energy_accum_t evdw_accum[kNonbonded14ModeCount] = {};
+    energy_accum_t ecoul_accum[kNonbonded14ModeCount] = {};
+    cudaMemcpy(evdw_accum, d_evdw_totals, sizeof(energy_accum_t) * kNonbonded14ModeCount, cudaMemcpyDeviceToHost);
+    cudaMemcpy(ecoul_accum, d_ecoul_totals, sizeof(energy_accum_t) * kNonbonded14ModeCount, cudaMemcpyDeviceToHost);
+    for (int i = 0; i < kNonbonded14ModeCount; i++) {
+        energies.evdw[i] = energy_from_accum(evdw_accum[i]);
+        energies.ecoul[i] = energy_from_accum(ecoul_accum[i]);
+    }
 
     return energies;
 }
@@ -252,8 +238,8 @@ void init_nonbonded_14_force_kernel_data() {
     check_cudaMalloc((void**)&d_atom_to_qi, sizeof(int) * host.atom_to_qi.size());
     check_cuda(cudaMemcpy(d_atom_to_qi, host.atom_to_qi.data(), sizeof(int) * host.atom_to_qi.size(), cudaMemcpyHostToDevice));
 
-    check_cudaMalloc((void**)&d_evdw_totals, sizeof(real_t) * kNonbonded14ModeCount);
-    check_cudaMalloc((void**)&d_ecoul_totals, sizeof(real_t) * kNonbonded14ModeCount);
+    check_cudaMalloc((void**)&d_evdw_totals, sizeof(energy_accum_t) * kNonbonded14ModeCount);
+    check_cudaMalloc((void**)&d_ecoul_totals, sizeof(energy_accum_t) * kNonbonded14ModeCount);
 
     is_initialized = true;
 }

@@ -1,6 +1,7 @@
 #include "cuda/include/cuda_restrang_force.cuh"
 #include "cuda/include/cuda_utility.cuh"
 #include "common/include/context.h"
+#include "cuda_force_accumulation.cuh"
 namespace CudaRestrangForce {
 bool is_initialized = false;
 real_t* d_E_restraint;
@@ -77,15 +78,15 @@ __global__ void calc_restrang_force_kernel(
     dk.y = f1 * (dr.y / (rij * rjk) - cos_th * dr2.y / r2jk);
     dk.z = f1 * (dr.z / (rij * rjk) - cos_th * dr2.z / r2jk);
 
-    atomicAdd(&dvelocities[i].x, dv * di.x);
-    atomicAdd(&dvelocities[i].y, dv * di.y);
-    atomicAdd(&dvelocities[i].z, dv * di.z);
-    atomicAdd(&dvelocities[k].x, dv * dk.x);
-    atomicAdd(&dvelocities[k].y, dv * dk.y);
-    atomicAdd(&dvelocities[k].z, dv * dk.z);
-    atomicAdd(&dvelocities[j].x, -dv * (di.x + dk.x));
-    atomicAdd(&dvelocities[j].y, -dv * (di.y + dk.y));
-    atomicAdd(&dvelocities[j].z, -dv * (di.z + dk.z));
+    atomic_add_force(&dvelocities[i].x, dv * di.x);
+    atomic_add_force(&dvelocities[i].y, dv * di.y);
+    atomic_add_force(&dvelocities[i].z, dv * di.z);
+    atomic_add_force(&dvelocities[k].x, dv * dk.x);
+    atomic_add_force(&dvelocities[k].y, dv * dk.y);
+    atomic_add_force(&dvelocities[k].z, dv * dk.z);
+    atomic_add_force(&dvelocities[j].x, -dv * (di.x + dk.x));
+    atomic_add_force(&dvelocities[j].y, -dv * (di.y + dk.y));
+    atomic_add_force(&dvelocities[j].z, -dv * (di.z + dk.z));
 
     if (restrangs[ir].ipsi == 0) {
         for (int k = 0; k < n_lambdas; k++) {

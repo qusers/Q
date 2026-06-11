@@ -1,11 +1,12 @@
 #include "cuda/include/cuda_bond_force.cuh"
 #include "context.h"
 #include "cuda_utility.cuh"
+#include "cuda_force_accumulation.cuh"
 namespace CudaBondForce {
 bool is_initialized = false;
-real_t* d_energy_sum;
+energy_accum_t* d_energy_sum;
 }  // namespace CudaBondForce
-__global__ void calc_bond_forces_kernel(int start, int end, bond_t* bonds, coord_t* coords, cbond_t* cbonds, dvel_t* dvelocities, real_t* energy_sum) {
+__global__ void calc_bond_forces_kernel(int start, int end, bond_t* bonds, coord_t* coords, cbond_t* cbonds, dvel_t* dvelocities, energy_accum_t* energy_sum) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x + start;
     if (idx >= end) return;
     bond_t bond = bonds[idx];
@@ -19,18 +20,18 @@ __global__ void calc_bond_forces_kernel(int start, int end, bond_t* bonds, coord
     real_t r = sqrt(dx * dx + dy * dy + dz * dz);
 
     real_t dr = r - cbond.b0;
-    real_t energy = 0.5 * cbond.kb * dr * dr;
+    real_t energy = static_cast<real_t>(0.5) * cbond.kb * dr * dr;
 
-    atomicAdd(energy_sum, energy);
+    atomic_add_energy(energy_sum, energy);
 
     // update forces
     real_t f = cbond.kb * dr / r;
-    atomicAdd(&dvelocities[bond.aj - 1].x, f * dx);
-    atomicAdd(&dvelocities[bond.aj - 1].y, f * dy);
-    atomicAdd(&dvelocities[bond.aj - 1].z, f * dz);
-    atomicAdd(&dvelocities[bond.ai - 1].x, -f * dx);
-    atomicAdd(&dvelocities[bond.ai - 1].y, -f * dy);
-    atomicAdd(&dvelocities[bond.ai - 1].z, -f * dz);
+    atomic_add_force(&dvelocities[bond.aj - 1].x, f * dx);
+    atomic_add_force(&dvelocities[bond.aj - 1].y, f * dy);
+    atomic_add_force(&dvelocities[bond.aj - 1].z, f * dz);
+    atomic_add_force(&dvelocities[bond.ai - 1].x, -f * dx);
+    atomic_add_force(&dvelocities[bond.ai - 1].y, -f * dy);
+    atomic_add_force(&dvelocities[bond.ai - 1].z, -f * dz);
 }
 
 real_t calc_bond_forces_host(int start, int end) {
@@ -40,8 +41,8 @@ real_t calc_bond_forces_host(int start, int end) {
     int blockSize = 256;
     int numBlocks = (N + blockSize - 1) / blockSize;
 
-    real_t energy = 0.0;
-    cudaMemcpy(d_energy_sum, &energy, sizeof(real_t), cudaMemcpyHostToDevice);
+    energy_accum_t energy = 0;
+    cudaMemcpy(d_energy_sum, &energy, sizeof(energy_accum_t), cudaMemcpyHostToDevice);
 
     auto& host_ctx = Context::instance();
     bond_t* d_bonds = host_ctx.bonds->gpu_data_p;
@@ -51,15 +52,15 @@ real_t calc_bond_forces_host(int start, int end) {
 
     calc_bond_forces_kernel<<<numBlocks, blockSize>>>(start, end, d_bonds, d_coords, d_cbonds, d_dvelocities, d_energy_sum);
     cudaDeviceSynchronize();
-    cudaMemcpy(&energy, d_energy_sum, sizeof(real_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&energy, d_energy_sum, sizeof(energy_accum_t), cudaMemcpyDeviceToHost);
 
-    return energy;
+    return energy_from_accum(energy);
 }
 
 void init_bond_force_kernel_data() {
     using namespace CudaBondForce;
     if (!is_initialized) {
-        check_cudaMalloc((void**)&d_energy_sum, sizeof(real_t));
+        check_cudaMalloc((void**)&d_energy_sum, sizeof(energy_accum_t));
         is_initialized = true;
     }
 }

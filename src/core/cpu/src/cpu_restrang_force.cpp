@@ -1,8 +1,10 @@
 #include "cpu_restrang_force.h"
 
 #include <math.h>
+#include <vector>
 
 #include "context.h"
+#include "cpu_force_accumulation.h"
 #include "cpu_utils.h"
 
 void calc_restrang_forces() {
@@ -17,6 +19,8 @@ void calc_restrang_forces() {
     coord_t dr, dr2, di, dk;
     real_t lambda, r2ij, r2jk, rij, rjk, cos_th, th;
     real_t dth, dv, ener, f1;
+    std::vector<energy_accum_t> urestr(ctx.n_lambdas, 0);
+    energy_accum_t upres = 0;
 
     for (int ir = 0; ir < ctx.n_restrangs; ir++) {
         state = restrangs[ir].ipsi - 1;
@@ -74,25 +78,30 @@ void calc_restrang_forces() {
         dk.y = f1 * (dr.y / (rij * rjk) - cos_th * dr2.y / r2jk);
         dk.z = f1 * (dr.z / (rij * rjk) - cos_th * dr2.z / r2jk);
 
-        dvelocities[i].x += dv * di.x;
-        dvelocities[i].y += dv * di.y;
-        dvelocities[i].z += dv * di.z;
-        dvelocities[k].x += dv * dk.x;
-        dvelocities[k].y += dv * dk.y;
-        dvelocities[k].z += dv * dk.z;
-        dvelocities[j].x -= dv * (di.x + dk.x);
-        dvelocities[j].y -= dv * (di.y + dk.y);
-        dvelocities[j].z -= dv * (di.z + dk.z);
+        add_force(dvelocities[i].x, dv * di.x);
+        add_force(dvelocities[i].y, dv * di.y);
+        add_force(dvelocities[i].z, dv * di.z);
+        add_force(dvelocities[k].x, dv * dk.x);
+        add_force(dvelocities[k].y, dv * dk.y);
+        add_force(dvelocities[k].z, dv * dk.z);
+        add_force(dvelocities[j].x, -dv * (di.x + dk.x));
+        add_force(dvelocities[j].y, -dv * (di.y + dk.y));
+        add_force(dvelocities[j].z, -dv * (di.z + dk.z));
 
         if (restrangs[ir].ipsi == 0) {
             for (int lambda_idx = 0; lambda_idx < ctx.n_lambdas; lambda_idx++) {
-                EQ_restraint[lambda_idx].Urestr += ener;
+                add_energy(urestr[lambda_idx], ener);
             }
             if (ctx.n_lambdas == 0) {
-                ctx.E_restraint.Upres += ener;
+                add_energy(upres, ener);
             }
         } else {
-            EQ_restraint[state].Urestr += ener;
+            add_energy(urestr[state], ener);
         }
     }
+
+    for (int state = 0; state < ctx.n_lambdas; state++) {
+        EQ_restraint[state].Urestr += energy_from_accum(urestr[state]);
+    }
+    ctx.E_restraint.Upres += energy_from_accum(upres);
 }

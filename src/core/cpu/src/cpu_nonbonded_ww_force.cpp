@@ -5,6 +5,7 @@
 #include "constants.h"
 #include "context.h"
 #include "vdw_rules.h"
+#include "cpu_force_accumulation.h"
 
 namespace {
 void calc_oxygen_vdw_parameters(const Context& ctx, int oxygen_i, int oxygen_j, real_t* vdw_a, real_t* vdw_b) {
@@ -28,7 +29,8 @@ void accumulate_pair_force(Context& ctx,
                            bool include_vdw,
                            real_t vdw_a,
                            real_t vdw_b,
-                           E_nonbonded_t& energy) {
+                           energy_accum_t& ucoul,
+                           energy_accum_t& uvdw) {
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
     const real_t dx = coords[atom_j].x - coords[atom_i].x;
@@ -53,16 +55,16 @@ void accumulate_pair_force(Context& ctx,
 
     const real_t scale = r2inv * dva;
 
-    dvelocities[atom_i].x -= scale * dx;
-    dvelocities[atom_i].y -= scale * dy;
-    dvelocities[atom_i].z -= scale * dz;
+    add_force(dvelocities[atom_i].x, -scale * dx);
+    add_force(dvelocities[atom_i].y, -scale * dy);
+    add_force(dvelocities[atom_i].z, -scale * dz);
 
-    dvelocities[atom_j].x += scale * dx;
-    dvelocities[atom_j].y += scale * dy;
-    dvelocities[atom_j].z += scale * dz;
+    add_force(dvelocities[atom_j].x, scale * dx);
+    add_force(dvelocities[atom_j].y, scale * dy);
+    add_force(dvelocities[atom_j].z, scale * dz);
 
-    energy.Ucoul += ecoul;
-    energy.Uvdw += evdw;
+    add_energy(ucoul, ecoul);
+    add_energy(uvdw, evdw);
 }
 
 void calc_nonbonded_ww_forces() {
@@ -70,6 +72,8 @@ void calc_nonbonded_ww_forces() {
     if (ctx.n_waters <= 1) {
         return;
     }
+    energy_accum_t ucoul = 0;
+    energy_accum_t uvdw = 0;
 
     for (int water_i = 0; water_i < ctx.n_waters; ++water_i) {
         const int base_i = ctx.n_atoms_solute + 3 * water_i;
@@ -88,9 +92,12 @@ void calc_nonbonded_ww_forces() {
                                           atom_i == 0 && atom_j == 0,
                                           oxygen_vdw_a,
                                           oxygen_vdw_b,
-                                          ctx.E_nonbond_ww);
+                                          ucoul,
+                                          uvdw);
                 }
             }
         }
     }
+    ctx.E_nonbond_ww.Ucoul += energy_from_accum(ucoul);
+    ctx.E_nonbond_ww.Uvdw += energy_from_accum(uvdw);
 }

@@ -3,6 +3,7 @@
 #include <math.h>
 
 #include "context.h"
+#include "cpu_force_accumulation.h"
 
 void calc_restrwall_forces() {
     auto& ctx = Context::instance();
@@ -13,6 +14,7 @@ void calc_restrwall_forces() {
 
     real_t k, b, db, ener, dv, fexp;
     coord_t dr;
+    energy_accum_t upres = 0;
 
     for (int ir = 0; ir < ctx.n_restrwalls; ir++) {
         k = restrwalls[ir].k;
@@ -33,12 +35,14 @@ void calc_restrwall_forces() {
                     ener = restrwalls[ir].dMorse * (fexp * fexp - 2 * fexp);
                     dv = -2 * restrwalls[ir].dMorse * restrwalls[ir].aMorse * (fexp - fexp * fexp) / b;
                 }
-                ctx.E_restraint.Upres += ener;
+                add_energy(upres, ener);
 
-                dvelocities[i].x += dv * dr.x;
-                dvelocities[i].y += dv * dr.y;
-                dvelocities[i].z += dv * dr.z;
+                add_force(dvelocities[i].x, dv * dr.x);
+                add_force(dvelocities[i].y, dv * dr.y);
+                add_force(dvelocities[i].z, dv * dr.z);
             }
         }
     }
+
+    ctx.E_restraint.Upres += energy_from_accum(upres);
 }

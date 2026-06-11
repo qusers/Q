@@ -5,6 +5,7 @@
 #include "common/include/constants.h"
 #include "cuda/include/cuda_polx_water_force.cuh"
 #include "cuda_utility.cuh"
+#include "cuda_force_accumulation.cuh"
 
 namespace CudaPolxWaterForce {
 bool is_initialized = false;
@@ -14,7 +15,7 @@ int* water_shell = nullptr;
 int* water_rank = nullptr;
 int* polx_list_sh = nullptr;  // use 1d array to simulate 2d array
 
-real_t* d_energy;
+energy_accum_t* d_energy;
 int* d_list_sh = nullptr;
 real_t* d_theta = nullptr;
 real_t* d_theta0 = nullptr;
@@ -81,7 +82,7 @@ __global__ void calc_polx_theta_and_shells(
 __global__ void calc_polx_water_forces_kernel(
     int n_waters, int n_atoms_solute, shell_t* wshells,
     coord_t* coords, dvel_t* dvelocities, topo_t topo,
-    real_t* theta, md_t md, real_t* energy,
+    real_t* theta, md_t md, energy_accum_t* energy,
     int* water_rank, int* water_shell) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_waters) return;
@@ -109,7 +110,7 @@ __global__ void calc_polx_water_forces_kernel(
     const real_t dtheta = theta[ii] - theta_val + wshells[is].theta_corr;
     ener = .5 * md.polarisation_force * dtheta * dtheta;
     // E_restraint.Upolx += ener;
-    atomicAdd(energy, ener);
+    atomic_add_energy(energy, ener);
 
     dv = md.polarisation_force * dtheta;
     wi = n_atoms_solute + 3 * ii;
@@ -154,15 +155,15 @@ __global__ void calc_polx_water_forces_kernel(
     f2.y = (rmu.y - rcu.y * cos_th) / rc;
     f2.z = (rmu.z - rcu.z * cos_th) / rc;
 
-    atomicAdd(&dvelocities[wi].x, f0 * (f1O.x + f2.x));
-    atomicAdd(&dvelocities[wi].y, f0 * (f1O.y + f2.y));
-    atomicAdd(&dvelocities[wi].z, f0 * (f1O.z + f2.z));
-    atomicAdd(&dvelocities[wi + 1].x, f0 * (f1H1.x));
-    atomicAdd(&dvelocities[wi + 1].y, f0 * (f1H1.y));
-    atomicAdd(&dvelocities[wi + 1].z, f0 * (f1H1.z));
-    atomicAdd(&dvelocities[wi + 2].x, f0 * (f1H2.x));
-    atomicAdd(&dvelocities[wi + 2].y, f0 * (f1H2.y));
-    atomicAdd(&dvelocities[wi + 2].z, f0 * (f1H2.z));
+    atomic_add_force(&dvelocities[wi].x, f0 * (f1O.x + f2.x));
+    atomic_add_force(&dvelocities[wi].y, f0 * (f1O.y + f2.y));
+    atomic_add_force(&dvelocities[wi].z, f0 * (f1O.z + f2.z));
+    atomic_add_force(&dvelocities[wi + 1].x, f0 * (f1H1.x));
+    atomic_add_force(&dvelocities[wi + 1].y, f0 * (f1H1.y));
+    atomic_add_force(&dvelocities[wi + 1].z, f0 * (f1H1.z));
+    atomic_add_force(&dvelocities[wi + 2].x, f0 * (f1H2.x));
+    atomic_add_force(&dvelocities[wi + 2].y, f0 * (f1H2.y));
+    atomic_add_force(&dvelocities[wi + 2].z, f0 * (f1H2.z));
 
     atomicAdd(&wshells[is].avtheta, avtdum / (real_t)wshells[is].n_inshell);
     atomicAdd(&wshells[is].avn_inshell, wshells[is].n_inshell);
@@ -253,13 +254,13 @@ void calc_polx_water_forces_host(int iteration) {
     }
 
     // Calculate energy and force
-    cudaMemset(d_energy, 0, sizeof(real_t));
+    cudaMemset(d_energy, 0, sizeof(energy_accum_t));
     calc_polx_water_forces_kernel<<<numBlocks, blockSize>>>(
         ctx.n_waters, ctx.n_atoms_solute, d_wshells, d_coords, d_dvelocities, ctx.topo,
         d_theta, ctx.md, d_energy, d_water_rank, d_water_shell);
-    real_t energy;
-    cudaMemcpy(&energy, d_energy, sizeof(real_t), cudaMemcpyDeviceToHost);
-    ctx.E_restraint.Upolx += energy;
+    energy_accum_t energy;
+    cudaMemcpy(&energy, d_energy, sizeof(energy_accum_t), cudaMemcpyDeviceToHost);
+    ctx.E_restraint.Upolx += energy_from_accum(energy);
     ctx.wshells->download();
     // Copy back forces for all atoms (solute + solvent); water forces were being dropped.
 }
@@ -272,7 +273,7 @@ void init_polx_water_force_kernel_data() {
         water_shell = new int[ctx.n_waters];
         polx_list_sh = new int[ctx.n_max_inshell * ctx.n_shells];
 
-        check_cudaMalloc((void**)&d_energy, sizeof(real_t));
+        check_cudaMalloc((void**)&d_energy, sizeof(energy_accum_t));
         check_cudaMalloc((void**)&d_list_sh, ctx.n_max_inshell * ctx.n_shells * sizeof(int));
         check_cudaMalloc((void**)&d_theta, ctx.n_waters * sizeof(real_t));
         check_cudaMalloc((void**)&d_theta0, ctx.n_waters * sizeof(real_t));

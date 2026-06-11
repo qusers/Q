@@ -1,4 +1,5 @@
 #include "cpu_q_bond_force.h"
+#include "cpu_force_accumulation.h"
 
 #include <math.h>
 
@@ -13,6 +14,7 @@ void calc_qbond_forces(int state) {
     int ai, aj;
     real_t b, db, ener, dv;
     coord_t rij;
+    energy_accum_t bond = 0;
 
     for (int i = 0; i < ctx.n_qbonds; i++) {
         ic = ctx.q_bonds[i + ctx.n_qbonds * state].code;
@@ -32,14 +34,16 @@ void calc_qbond_forces(int state) {
         db = b - ctx.q_cbonds[ic].b0;
 
         ener = 0.5 * ctx.q_cbonds[ic].kb * pow(db, 2);
-        ctx.EQ_bond[state].Ubond += ener;
+        add_energy(bond, ener);
         dv = db * ctx.q_cbonds[ic].kb * lambdas[state] / b;
 
-        dvelocities[ai].x -= dv * rij.x;
-        dvelocities[ai].y -= dv * rij.y;
-        dvelocities[ai].z -= dv * rij.z;
-        dvelocities[aj].x += dv * rij.x;
-        dvelocities[aj].y += dv * rij.y;
-        dvelocities[aj].z += dv * rij.z;
+        add_force(dvelocities[ai].x, -dv * rij.x);
+        add_force(dvelocities[ai].y, -dv * rij.y);
+        add_force(dvelocities[ai].z, -dv * rij.z);
+        add_force(dvelocities[aj].x, dv * rij.x);
+        add_force(dvelocities[aj].y, dv * rij.y);
+        add_force(dvelocities[aj].z, dv * rij.z);
     }
+
+    ctx.EQ_bond[state].Ubond += energy_from_accum(bond);
 }

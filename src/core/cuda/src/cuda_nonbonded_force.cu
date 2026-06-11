@@ -4,10 +4,11 @@
 #include "cuda_nonbonded_force.cuh"
 #include "constants.h"
 #include "cuda_utility.cuh"
+#include "cuda_force_accumulation.cuh"
 
 namespace CudaNonbondedForce {
 bool is_initialized = false;
-real_t *d_evdw_total, *d_ecoul_total;
+energy_accum_t *d_evdw_total, *d_ecoul_total;
 
 template <typename WorkT>
 struct nonbond_vec_t {
@@ -15,16 +16,6 @@ struct nonbond_vec_t {
     WorkT y;
     WorkT z;
 };
-
-__device__ __forceinline__ float nonbond_rsqrt(float value) {
-    return rsqrtf(value);
-}
-
-#ifndef QDYN_SPFP
-__device__ __forceinline__ double nonbond_rsqrt(double value) {
-    return rsqrt(value);
-}
-#endif
 
 __device__ __forceinline__ void idx2xy(int n, int t, int& x, int& y) {
     x = (int)floorf((2 * n + 1 - sqrtf((2 * n + 1) * (2 * n + 1) - 8 * t)) * 0.5f);
@@ -77,7 +68,7 @@ __device__ void calculate_unforce_bound(
     const WorkT dx = static_cast<WorkT>(x.x - y.x);
     const WorkT dy = static_cast<WorkT>(x.y - y.y);
     const WorkT dz = static_cast<WorkT>(x.z - y.z);
-    const WorkT r = nonbond_rsqrt(dx * dx + dy * dy + dz * dz);
+    const WorkT r = rsqrt(dx * dx + dy * dy + dz * dz);
     const WorkT r2 = r * r;
     const WorkT r6 = r2 * r2 * r2;
     // real_t v_a = r6 * r6;
@@ -120,8 +111,8 @@ __global__ void calc_nonbonded_force_kernel(
 
     dvel_t* d_dvelocities,
 
-    real_t* evdw_tot,
-    real_t* ecoul_tot,
+    energy_accum_t* evdw_tot,
+    energy_accum_t* ecoul_tot,
 
     bool symmetric,
 
@@ -288,15 +279,15 @@ __global__ void calc_nonbonded_force_kernel(
     }
 
     if (x_atom_idx >= 0) {
-        atomicAdd(&d_dvelocities[x_atom_idx].x, x_force.x);
-        atomicAdd(&d_dvelocities[x_atom_idx].y, x_force.y);
-        atomicAdd(&d_dvelocities[x_atom_idx].z, x_force.z);
+        atomic_add_force(&d_dvelocities[x_atom_idx].x, x_force.x);
+        atomic_add_force(&d_dvelocities[x_atom_idx].y, x_force.y);
+        atomic_add_force(&d_dvelocities[x_atom_idx].z, x_force.z);
     }
 
     if (y_atom_idx >= 0) {
-        atomicAdd(&d_dvelocities[y_atom_idx].x, y_force.x);
-        atomicAdd(&d_dvelocities[y_atom_idx].y, y_force.y);
-        atomicAdd(&d_dvelocities[y_atom_idx].z, y_force.z);
+        atomic_add_force(&d_dvelocities[y_atom_idx].x, y_force.x);
+        atomic_add_force(&d_dvelocities[y_atom_idx].y, y_force.y);
+        atomic_add_force(&d_dvelocities[y_atom_idx].z, y_force.z);
     }
 
     for (int offset = 16; offset > 0; offset >>= 1) {
@@ -304,8 +295,8 @@ __global__ void calc_nonbonded_force_kernel(
         ecoul_sum += __shfl_down_sync(mask, ecoul_sum, offset);
     }
     if (lane == 0) {
-        atomicAdd(evdw_tot, evdw_sum);
-        atomicAdd(ecoul_tot, ecoul_sum);
+        atomic_add_energy(evdw_tot, evdw_sum);
+        atomic_add_energy(ecoul_tot, ecoul_sum);
     }
 }
 
@@ -338,8 +329,8 @@ std::pair<real_t, real_t> calc_nonbonded_force_host(
 
     dim3 grid = dim3(grid_sz);
 
-    cudaMemset(d_ecoul_total, 0, sizeof(real_t));
-    cudaMemset(d_evdw_total, 0, sizeof(real_t));
+    cudaMemset(d_ecoul_total, 0, sizeof(energy_accum_t));
+    cudaMemset(d_evdw_total, 0, sizeof(energy_accum_t));
 
     auto launch_kernel = [&](auto work_tag) {
         using WorkT = decltype(work_tag);
@@ -373,22 +364,22 @@ std::pair<real_t, real_t> calc_nonbonded_force_host(
             host.q_elscales->gpu_data_p);
     };
 
-    launch_kernel(nonbond_work_t{});
+    launch_kernel(real_t{});
 
     cudaDeviceSynchronize();
 
-    real_t evdw_tot = 0, ecoul_tot = 0;
-    cudaMemcpy(&evdw_tot, d_evdw_total, sizeof(real_t), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&ecoul_tot, d_ecoul_total, sizeof(real_t), cudaMemcpyDeviceToHost);
+    energy_accum_t evdw_tot = 0, ecoul_tot = 0;
+    cudaMemcpy(&evdw_tot, d_evdw_total, sizeof(energy_accum_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&ecoul_tot, d_ecoul_total, sizeof(energy_accum_t), cudaMemcpyDeviceToHost);
 
-    return {evdw_tot, ecoul_tot};
+    return {energy_from_accum(evdw_tot), energy_from_accum(ecoul_tot)};
 }
 
 void init_nonbonded_force_kernel_data() {
     using namespace CudaNonbondedForce;
     if (!is_initialized) {
-        check_cudaMalloc((void**)&d_evdw_total, sizeof(real_t));
-        check_cudaMalloc((void**)&d_ecoul_total, sizeof(real_t));
+        check_cudaMalloc((void**)&d_evdw_total, sizeof(energy_accum_t));
+        check_cudaMalloc((void**)&d_ecoul_total, sizeof(energy_accum_t));
         is_initialized = true;
     }
 }

@@ -3,6 +3,7 @@
 #include "cuda/include/cuda_restrdis_force.cuh"
 #include "cuda/include/cuda_utility.cuh"
 #include "common/include/context.h"
+#include "cuda_force_accumulation.cuh"
 namespace CudaRestrdisForce {
 bool is_initialized = false;
 real_t* d_E_restraint;
@@ -53,12 +54,12 @@ __global__ void calc_restrdis_forces_kernel(
     ener = .5 * restrdists[ir].k * db * db;
     dv = lambda * restrdists[ir].k * db / b;
 
-    atomicAdd(&dvelocities[j].x, dr.x * dv);
-    atomicAdd(&dvelocities[j].y, dr.y * dv);
-    atomicAdd(&dvelocities[j].z, dr.z * dv);
-    atomicAdd(&dvelocities[i].x, -dr.x * dv);
-    atomicAdd(&dvelocities[i].y, -dr.y * dv);
-    atomicAdd(&dvelocities[i].z, -dr.z * dv);
+    atomic_add_force(&dvelocities[j].x, dr.x * dv);
+    atomic_add_force(&dvelocities[j].y, dr.y * dv);
+    atomic_add_force(&dvelocities[j].z, dr.z * dv);
+    atomic_add_force(&dvelocities[i].x, -dr.x * dv);
+    atomic_add_force(&dvelocities[i].y, -dr.y * dv);
+    atomic_add_force(&dvelocities[i].z, -dr.z * dv);
 
     if (restrdists[ir].ipsi == 0) {
         for (int k = 0; k < n_lambdas; k++) {

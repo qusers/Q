@@ -1,4 +1,5 @@
 #include "cpu_bond_force.h"
+#include "cpu_force_accumulation.h"
 
 #include <math.h>
 
@@ -14,7 +15,7 @@ real_t calc_bond_forces(int start, int end) {
     coord_t ai, aj, dx;
     cbond_t cbond;
     real_t dx2, dx1, ddx, ener, ampl;
-    real_t bond = 0;
+    energy_accum_t bond = 0;
 
     for (int i = start; i < end; i++) {
         aii = bonds[i].ai - 1;
@@ -35,19 +36,19 @@ real_t calc_bond_forces(int start, int end) {
         ddx = dx1 - cbond.b0;
         ener = .5 * cbond.kb * ddx * ddx;
 
-        bond += ener;
+        add_energy(bond, ener);
 
         // Update forces
         ampl = cbond.kb * ddx / dx1;
 
-        dvelocities[aji].x += ampl * dx.x;
-        dvelocities[aji].y += ampl * dx.y;
-        dvelocities[aji].z += ampl * dx.z;
+        add_force(dvelocities[aji].x, ampl * dx.x);
+        add_force(dvelocities[aji].y, ampl * dx.y);
+        add_force(dvelocities[aji].z, ampl * dx.z);
 
-        dvelocities[aii].x -= ampl * dx.x;
-        dvelocities[aii].y -= ampl * dx.y;
-        dvelocities[aii].z -= ampl * dx.z;
+        add_force(dvelocities[aii].x, -ampl * dx.x);
+        add_force(dvelocities[aii].y, -ampl * dx.y);
+        add_force(dvelocities[aii].z, -ampl * dx.z);
     }
 
-    return bond;
+    return energy_from_accum(bond);
 }

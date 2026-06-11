@@ -5,12 +5,15 @@
 #include "constants.h"
 #include "context.h"
 #include "vdw_rules.h"
+#include "cpu_force_accumulation.h"
 
 void calc_nonbonded_pw_forces() {
     auto& ctx = Context::instance();
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
     auto *excluded = ctx.excluded->cpu_data_p;
+    energy_accum_t ucoul = 0;
+    energy_accum_t uvdw = 0;
     if (ctx.n_waters == 0 || ctx.n_patoms == 0) {
         return;
     }
@@ -60,16 +63,19 @@ void calc_nonbonded_pw_forces() {
 
             const real_t scale = r2inv * (-ecoul - static_cast<real_t>(12.0) * v_a + static_cast<real_t>(6.0) * v_b);
 
-            dvelocities[atom_i].x -= scale * dx;
-            dvelocities[atom_i].y -= scale * dy;
-            dvelocities[atom_i].z -= scale * dz;
+            add_force(dvelocities[atom_i].x, -scale * dx);
+            add_force(dvelocities[atom_i].y, -scale * dy);
+            add_force(dvelocities[atom_i].z, -scale * dz);
 
-            dvelocities[atom_j].x += scale * dx;
-            dvelocities[atom_j].y += scale * dy;
-            dvelocities[atom_j].z += scale * dz;
+            add_force(dvelocities[atom_j].x, scale * dx);
+            add_force(dvelocities[atom_j].y, scale * dy);
+            add_force(dvelocities[atom_j].z, scale * dz);
 
-            ctx.E_nonbond_pw.Ucoul += static_cast<real_t>(ecoul);
-            ctx.E_nonbond_pw.Uvdw += static_cast<real_t>(v_a - v_b);
+            add_energy(ucoul, ecoul);
+            add_energy(uvdw, v_a - v_b);
         }
     }
+
+    ctx.E_nonbond_pw.Ucoul += energy_from_accum(ucoul);
+    ctx.E_nonbond_pw.Uvdw += energy_from_accum(uvdw);
 }

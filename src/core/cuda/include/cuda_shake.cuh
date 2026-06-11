@@ -6,23 +6,23 @@ struct ShakeFastWater {
     int o;
     int h1;
     int h2;
-    real_t ra;
-    real_t ra_inv;
-    real_t rb;
-    real_t rc;
-    real_t rhh;
-    real_t rhh2;
-    real_t wo_div_wohh;
-    real_t wh_div_wohh;
+    double ra;
+    double ra_inv;
+    double rb;
+    double rc;
+    double rhh;
+    double rhh2;
+    double wo_div_wohh;
+    double wh_div_wohh;
 };
 
 struct ShakeNetwork {
     int center;
     int n_hydrogens;
     int hydrogens[3];  // at most 3
-    real_t dist2[3];
-    real_t center_winv;
-    real_t hydrogen_winv[3];
+    double dist2[3];
+    double center_winv;
+    double hydrogen_winv[3];
 };
 
 class CudaShake final : public Shake {

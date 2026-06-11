@@ -40,17 +40,19 @@ void CpuShake::initial_shake(Context& ctx) {
     apply_to(ctx, coords, xcoords);
 
     for (int i = 0; i < ctx.n_atoms; i++) {
-        xcoords[i].x = coords[i].x - ctx.dt * velocities[i].x;
-        xcoords[i].y = coords[i].y - ctx.dt * velocities[i].y;
-        xcoords[i].z = coords[i].z - ctx.dt * velocities[i].z;
+        const double dt = static_cast<double>(ctx.dt);
+        xcoords[i].x = static_cast<real_t>(static_cast<double>(coords[i].x) - dt * static_cast<double>(velocities[i].x));
+        xcoords[i].y = static_cast<real_t>(static_cast<double>(coords[i].y) - dt * static_cast<double>(velocities[i].y));
+        xcoords[i].z = static_cast<real_t>(static_cast<double>(coords[i].z) - dt * static_cast<double>(velocities[i].z));
     }
 
     apply_to(ctx, xcoords, coords);
 
     for (int i = 0; i < ctx.n_atoms; i++) {
-        velocities[i].x = (coords[i].x - xcoords[i].x) / ctx.dt;
-        velocities[i].y = (coords[i].y - xcoords[i].y) / ctx.dt;
-        velocities[i].z = (coords[i].z - xcoords[i].z) / ctx.dt;
+        const double dt = static_cast<double>(ctx.dt);
+        velocities[i].x = static_cast<real_t>((static_cast<double>(coords[i].x) - static_cast<double>(xcoords[i].x)) / dt);
+        velocities[i].y = static_cast<real_t>((static_cast<double>(coords[i].y) - static_cast<double>(xcoords[i].y)) / dt);
+        velocities[i].z = static_cast<real_t>((static_cast<double>(coords[i].z) - static_cast<double>(xcoords[i].z)) / dt);
     }
 }
 
@@ -88,10 +90,12 @@ void CpuShake::apply_to(Context& ctx, coord_t* coords, coord_t* xcoords) {
                 const int ai = shake_bonds[shake + i].ai - 1;
                 const int aj = shake_bonds[shake + i].aj - 1;
 
-                coord_t xij = {coords[ai].x - coords[aj].x, coords[ai].y - coords[aj].y, coords[ai].z - coords[aj].z};
+                const double xij_x = static_cast<double>(coords[ai].x) - static_cast<double>(coords[aj].x);
+                const double xij_y = static_cast<double>(coords[ai].y) - static_cast<double>(coords[aj].y);
+                const double xij_z = static_cast<double>(coords[ai].z) - static_cast<double>(coords[aj].z);
 
-                real_t current_dist2 = xij.x * xij.x + xij.y * xij.y + xij.z * xij.z;
-                real_t diff = shake_bonds[shake + i].dist2 - current_dist2;
+                const double current_dist2 = xij_x * xij_x + xij_y * xij_y + xij_z * xij_z;
+                const double diff = shake_bonds[shake + i].dist2 - current_dist2;
 
                 if (std::abs(diff) < shake_tol * shake_bonds[shake + i].dist2) {
                     ready[shake + i] = true;
@@ -99,22 +103,24 @@ void CpuShake::apply_to(Context& ctx, coord_t* coords, coord_t* xcoords) {
                     converged = false;
                 }
 
-                coord_t xxij = {xcoords[ai].x - xcoords[aj].x, xcoords[ai].y - xcoords[aj].y,
-                                xcoords[ai].z - xcoords[aj].z};
-                real_t scp = xij.x * xxij.x + xij.y * xxij.y + xij.z * xxij.z;
-                real_t corr = diff / (2.0 * scp * (winv[ai] + winv[aj]));
+                const double xxij_x = static_cast<double>(xcoords[ai].x) - static_cast<double>(xcoords[aj].x);
+                const double xxij_y = static_cast<double>(xcoords[ai].y) - static_cast<double>(xcoords[aj].y);
+                const double xxij_z = static_cast<double>(xcoords[ai].z) - static_cast<double>(xcoords[aj].z);
+                const double scp = xij_x * xxij_x + xij_y * xxij_y + xij_z * xxij_z;
+                const double winv_ai = static_cast<double>(winv[ai]);
+                const double winv_aj = static_cast<double>(winv[aj]);
+                const double corr = diff / (2.0 * scp * (winv_ai + winv_aj));
 
-                coords[ai].x += xxij.x * corr * winv[ai];
-                coords[ai].y += xxij.y * corr * winv[ai];
-                coords[ai].z += xxij.z * corr * winv[ai];
+                coords[ai].x = static_cast<real_t>(static_cast<double>(coords[ai].x) + xxij_x * corr * winv_ai);
+                coords[ai].y = static_cast<real_t>(static_cast<double>(coords[ai].y) + xxij_y * corr * winv_ai);
+                coords[ai].z = static_cast<real_t>(static_cast<double>(coords[ai].z) + xxij_z * corr * winv_ai);
 
-                coords[aj].x -= xxij.x * corr * winv[aj];
-                coords[aj].y -= xxij.y * corr * winv[aj];
-                coords[aj].z -= xxij.z * corr * winv[aj];
+                coords[aj].x = static_cast<real_t>(static_cast<double>(coords[aj].x) - xxij_x * corr * winv_aj);
+                coords[aj].y = static_cast<real_t>(static_cast<double>(coords[aj].y) - xxij_y * corr * winv_aj);
+                coords[aj].z = static_cast<real_t>(static_cast<double>(coords[aj].z) - xxij_z * corr * winv_aj);
             }
 
             try_times++;
-
         } while (try_times < shake_max_iter && !converged);
 
         if (!converged) {
@@ -122,10 +128,12 @@ void CpuShake::apply_to(Context& ctx, coord_t* coords, coord_t* xcoords) {
                 const int ai = shake_bonds[shake + i].ai - 1;
                 const int aj = shake_bonds[shake + i].aj - 1;
 
-                coord_t xxij = {xcoords[ai].x - xcoords[aj].x, xcoords[ai].y - xcoords[aj].y, xcoords[ai].z - xcoords[aj].z};
-                real_t dist2 = xxij.x * xxij.x + xxij.y * xxij.y + xxij.z * xxij.z;
+                const double xxij_x = static_cast<double>(xcoords[ai].x) - static_cast<double>(xcoords[aj].x);
+                const double xxij_y = static_cast<double>(xcoords[ai].y) - static_cast<double>(xcoords[aj].y);
+                const double xxij_z = static_cast<double>(xcoords[ai].z) - static_cast<double>(xcoords[aj].z);
+                const double dist2 = xxij_x * xxij_x + xxij_y * xxij_y + xxij_z * xxij_z;
 
-                printf(">>> Shake failed, i = %d, j = %d, d^2 = %f, d0^2 = %f", ai, aj, dist2, shake_bonds[shake + i].dist2);
+                printf(">>> Shake failed, i = %d, j = %d, d = %f, d0 = %f", ai, aj, sqrt(dist2), sqrt(shake_bonds[shake + i].dist2));
             }
             std::exit(EXIT_FAILURE);
         }

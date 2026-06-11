@@ -2,17 +2,18 @@
 
 #include "cuda/include/cuda_restrwall_force.cuh"
 #include "common/include/context.h"
+#include "cuda_force_accumulation.cuh"
 
 namespace CudaRestrwallForce {
 bool is_initialized = false;
-real_t* d_energies;
+energy_accum_t* d_energies;
 }  // namespace CudaRestrwallForce
 
 __global__ void calc_restrwall_forces_kernel(
     restrwall_t* restrwalls,
     int n_restrwalls,
     coord_t* coords,
-    real_t* energies,
+    energy_accum_t* energies,
     dvel_t* dvelocities,
     bool* heavy, topo_t topo) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -41,11 +42,11 @@ __global__ void calc_restrwall_forces_kernel(
                 dv = -2 * restrwalls[ir].dMorse * restrwalls[ir].aMorse * (fexp - fexp * fexp) / b;
             }
 
-            atomicAdd(energies, ener);
+            atomic_add_energy(energies, ener);
 
-            atomicAdd(&dvelocities[i].x, dv * dr.x);
-            atomicAdd(&dvelocities[i].y, dv * dr.y);
-            atomicAdd(&dvelocities[i].z, dv * dr.z);
+            atomic_add_force(&dvelocities[i].x, dv * dr.x);
+            atomic_add_force(&dvelocities[i].y, dv * dr.y);
+            atomic_add_force(&dvelocities[i].z, dv * dr.z);
         }
     }
 }
@@ -58,7 +59,7 @@ void calc_restrwall_forces_host() {
     auto d_coords = host.coords->gpu_data_p;
     auto d_dvelocities = host.dvelocities->gpu_data_p;
     auto d_heavy = host.heavy->gpu_data_p;
-    cudaMemset(d_energies, 0, sizeof(real_t));
+    cudaMemset(d_energies, 0, sizeof(energy_accum_t));
 
     int blockSize = 256;
     int numBlocks = (host.n_restrwalls + blockSize - 1) / blockSize;
@@ -69,16 +70,17 @@ void calc_restrwall_forces_host() {
         d_energies,
         d_dvelocities, d_heavy, host.topo);
     cudaDeviceSynchronize();
-    real_t h_energy;
-    cudaMemcpy(&h_energy, d_energies, sizeof(real_t), cudaMemcpyDeviceToHost);
-    printf("Restrwall energy: %f\n", h_energy);
-    host.E_restraint.Upres += h_energy;
+    energy_accum_t h_energy;
+    cudaMemcpy(&h_energy, d_energies, sizeof(energy_accum_t), cudaMemcpyDeviceToHost);
+    const real_t energy = energy_from_accum(h_energy);
+    printf("Restrwall energy: %f\n", energy);
+    host.E_restraint.Upres += energy;
 }
 
 void init_restrwall_force_kernel_data() {
     using namespace CudaRestrwallForce;
     if (!is_initialized) {
-        check_cudaMalloc((void**)&d_energies, sizeof(real_t));
+        check_cudaMalloc((void**)&d_energies, sizeof(energy_accum_t));
         is_initialized = true;
     }
 }

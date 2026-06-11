@@ -3,6 +3,7 @@
 #include "cuda/include/cuda_restrpos_force.cuh"
 #include "cuda/include/cuda_utility.cuh"
 #include "common/include/context.h"
+#include "cuda_force_accumulation.cuh"
 
 namespace CudaRestrposForce {
 bool is_initialized = false;
@@ -45,9 +46,9 @@ __global__ void calc_restrpos_forces_kernel(
 
     ener = .5 * restrspos[ir].k.x * x2 + .5 * restrspos[ir].k.y * y2 + .5 * restrspos[ir].k.z * z2;
 
-    atomicAdd(&dvelocities[i].x, restrspos[ir].k.x * dr.x * lambda);
-    atomicAdd(&dvelocities[i].y, restrspos[ir].k.y * dr.y * lambda);
-    atomicAdd(&dvelocities[i].z, restrspos[ir].k.z * dr.z * lambda);
+    atomic_add_force(&dvelocities[i].x, restrspos[ir].k.x * dr.x * lambda);
+    atomic_add_force(&dvelocities[i].y, restrspos[ir].k.y * dr.y * lambda);
+    atomic_add_force(&dvelocities[i].z, restrspos[ir].k.z * dr.z * lambda);
 
     if (restrspos[ir].ipsi == 0) {
         for (int k = 0; k < n_lambdas; k++) {

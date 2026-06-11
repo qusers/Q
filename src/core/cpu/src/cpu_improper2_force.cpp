@@ -3,14 +3,15 @@
 #include <cmath>
 
 #include "context.h"
+#include "cpu_force_accumulation.h"
 #include "cpu_utils.h"
 
 real_t calc_improper2_forces(int start, int end) {
     auto& ctx = Context::instance();
-    auto &impropers = ctx.impropers->cpu_data_p;
-    auto &cimpropers = ctx.cimpropers->cpu_data_p;
-    auto &coords = ctx.coords->cpu_data_p;
-    auto &dvelocities = ctx.dvelocities->cpu_data_p;
+    auto& impropers = ctx.impropers->cpu_data_p;
+    auto& cimpropers = ctx.cimpropers->cpu_data_p;
+    auto& coords = ctx.coords->cpu_data_p;
+    auto& dvelocities = ctx.dvelocities->cpu_data_p;
     int aii, aji, aki, ali;
 
     coord_t ai, aj, ak, al;
@@ -21,7 +22,7 @@ real_t calc_improper2_forces(int start, int end) {
 
     improper_t imp;
     cimproper_t cimp;
-    real_t improper = 0;
+    energy_accum_t improper = 0;
 
     for (int i = start; i < end; i++) {
         imp = impropers[i];
@@ -112,24 +113,24 @@ real_t calc_improper2_forces(int start, int end) {
         dpl.z = rjk.x * dl.y - rjk.y * dl.x;
 
         // Update energy and forces
-        improper += ener;
+        add_energy(improper, ener);
 
-        dvelocities[aii].x += dv * dpi.x;
-        dvelocities[aii].y += dv * dpi.y;
-        dvelocities[aii].z += dv * dpi.z;
+        add_force(dvelocities[aii].x, dv * dpi.x);
+        add_force(dvelocities[aii].y, dv * dpi.y);
+        add_force(dvelocities[aii].z, dv * dpi.z);
 
-        dvelocities[aji].x += dv * dpj.x;
-        dvelocities[aji].y += dv * dpj.y;
-        dvelocities[aji].z += dv * dpj.z;
+        add_force(dvelocities[aji].x, dv * dpj.x);
+        add_force(dvelocities[aji].y, dv * dpj.y);
+        add_force(dvelocities[aji].z, dv * dpj.z);
 
-        dvelocities[aki].x += dv * dpk.x;
-        dvelocities[aki].y += dv * dpk.y;
-        dvelocities[aki].z += dv * dpk.z;
+        add_force(dvelocities[aki].x, dv * dpk.x);
+        add_force(dvelocities[aki].y, dv * dpk.y);
+        add_force(dvelocities[aki].z, dv * dpk.z);
 
-        dvelocities[ali].x += dv * dpl.x;
-        dvelocities[ali].y += dv * dpl.y;
-        dvelocities[ali].z += dv * dpl.z;
+        add_force(dvelocities[ali].x, dv * dpl.x);
+        add_force(dvelocities[ali].y, dv * dpl.y);
+        add_force(dvelocities[ali].z, dv * dpl.z);
     }
 
-    return improper;
+    return energy_from_accum(improper);
 }

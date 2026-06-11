@@ -1,8 +1,10 @@
 #include "cpu_restrpos_force.h"
 
 #include <math.h>
+#include <vector>
 
 #include "context.h"
+#include "cpu_force_accumulation.h"
 
 void calc_restrpos_forces() {
     auto& ctx = Context::instance();
@@ -15,6 +17,8 @@ void calc_restrpos_forces() {
     int state, i;
     coord_t dr;
     real_t lambda, ener, x2, y2, z2;
+    std::vector<energy_accum_t> urestr(ctx.n_lambdas, 0);
+    energy_accum_t upres = 0;
 
     for (int ir = 0; ir < ctx.n_restrspos; ir++) {
         state = restrspos[ir].ipsi - 1;
@@ -36,19 +40,24 @@ void calc_restrpos_forces() {
 
         ener = .5 * restrspos[ir].k.x * x2 + .5 * restrspos[ir].k.y * y2 + .5 * restrspos[ir].k.z * z2;
 
-        dvelocities[i].x += restrspos[ir].k.x * dr.x * lambda;
-        dvelocities[i].y += restrspos[ir].k.y * dr.y * lambda;
-        dvelocities[i].z += restrspos[ir].k.z * dr.z * lambda;
+        add_force(dvelocities[i].x, restrspos[ir].k.x * dr.x * lambda);
+        add_force(dvelocities[i].y, restrspos[ir].k.y * dr.y * lambda);
+        add_force(dvelocities[i].z, restrspos[ir].k.z * dr.z * lambda);
 
         if (restrspos[ir].ipsi == 0) {
             for (int k = 0; k < ctx.n_lambdas; k++) {
-                EQ_restraint[k].Urestr += ener;
+                add_energy(urestr[k], ener);
             }
             if (ctx.n_lambdas == 0) {
-                ctx.E_restraint.Upres += ener;
+                add_energy(upres, ener);
             }
         } else {
-            EQ_restraint[state].Urestr += ener;
+            add_energy(urestr[state], ener);
         }
     }
+
+    for (int state = 0; state < ctx.n_lambdas; state++) {
+        EQ_restraint[state].Urestr += energy_from_accum(urestr[state]);
+    }
+    ctx.E_restraint.Upres += energy_from_accum(upres);
 }

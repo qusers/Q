@@ -1,6 +1,8 @@
 #include "cpu_nonbonded_qw_force.h"
+#include "cpu_force_accumulation.h"
 
 #include <math.h>
+#include <vector>
 
 #include "constants.h"
 #include "context.h"
@@ -17,6 +19,8 @@ void calc_nonbonded_qw_forces() {
     real_t dvO, dvH1, dvH2;
     real_t V_a, V_b, VelO, VelH1, VelH2;
     real_t ai_aii, ai_bii;
+    std::vector<energy_accum_t> ucoul(ctx.n_lambdas, 0);
+    std::vector<energy_accum_t> uvdw(ctx.n_lambdas, 0);
 
     // Loop over O-atoms, q-atoms
     for (int j = ctx.n_atoms_solute; j < ctx.n_atoms; j += 3) {
@@ -76,28 +80,35 @@ void calc_nonbonded_qw_forces() {
                 dvH1 -= r2H1 * VelH1 * lambda;
                 dvH2 -= r2H2 * VelH2 * lambda;
 
-                ctx.EQ_nonbond_qw[state].Ucoul += static_cast<real_t>(VelO + VelH1 + VelH2);
-                ctx.EQ_nonbond_qw[state].Uvdw += static_cast<real_t>(V_a - V_b);
+                add_energy(ucoul[state], VelO + VelH1 + VelH2);
+                add_energy(uvdw[state], V_a - V_b);
             }
 
             // Note r6O is not the usual 1/rO^6, but rather rO^6. be careful!!!
 
             // Update forces on Q-atom
-            dvelocities[i].x -= (dvO * dO.x + dvH1 * dH1.x + dvH2 * dH2.x);
-            dvelocities[i].y -= (dvO * dO.y + dvH1 * dH1.y + dvH2 * dH2.y);
-            dvelocities[i].z -= (dvO * dO.z + dvH1 * dH1.z + dvH2 * dH2.z);
+            add_force(dvelocities[i].x, -(dvO * dO.x + dvH1 * dH1.x + dvH2 * dH2.x));
+            add_force(dvelocities[i].y, -(dvO * dO.y + dvH1 * dH1.y + dvH2 * dH2.y));
+            add_force(dvelocities[i].z, -(dvO * dO.z + dvH1 * dH1.z + dvH2 * dH2.z));
 
             // Update forces on water
-            dvelocities[j].x += dvO * dO.x;
-            dvelocities[j].y += dvO * dO.y;
-            dvelocities[j].z += dvO * dO.z;
-            dvelocities[j + 1].x += dvH1 * dH1.x;
-            dvelocities[j + 1].y += dvH1 * dH1.y;
-            dvelocities[j + 1].z += dvH1 * dH1.z;
-            dvelocities[j + 2].x += dvH2 * dH2.x;
-            dvelocities[j + 2].y += dvH2 * dH2.y;
-            dvelocities[j + 2].z += dvH2 * dH2.z;
+            add_force(dvelocities[j].x, dvO * dO.x);
+            add_force(dvelocities[j].y, dvO * dO.y);
+            add_force(dvelocities[j].z, dvO * dO.z);
+
+
+            add_force(dvelocities[j + 1].x, dvH1 * dH1.x);
+            add_force(dvelocities[j + 1].y, dvH1 * dH1.y);
+            add_force(dvelocities[j + 1].z, dvH1 * dH1.z);
+
+            add_force(dvelocities[j + 2].x, dvH2 * dH2.x);
+            add_force(dvelocities[j + 2].y, dvH2 * dH2.y);
+            add_force(dvelocities[j + 2].z, dvH2 * dH2.z);
         }
     }
 
+    for (int state = 0; state < ctx.n_lambdas; state++) {
+        ctx.EQ_nonbond_qw[state].Ucoul += energy_from_accum(ucoul[state]);
+        ctx.EQ_nonbond_qw[state].Uvdw += energy_from_accum(uvdw[state]);
+    }
 }

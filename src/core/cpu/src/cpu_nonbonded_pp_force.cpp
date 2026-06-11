@@ -5,6 +5,7 @@
 #include "constants.h"
 #include "context.h"
 #include "vdw_rules.h"
+#include "cpu_force_accumulation.h"
 
 void calc_nonbonded_pp_forces() {
     auto& ctx = Context::instance();
@@ -20,6 +21,8 @@ void calc_nonbonded_pp_forces() {
     float crg_i, crg_j;
     real_t ai_aii, aj_aii, ai_bii, aj_bii;
     int i, j;
+    energy_accum_t ucoul = 0;
+    energy_accum_t uvdw = 0;
 
     for (int pi = 0; pi < ctx.n_patoms; pi++) {
         for (int pj = pi + 1; pj < ctx.n_patoms; pj++) {
@@ -62,16 +65,19 @@ void calc_nonbonded_pp_forces() {
             }
             const real_t dva = r2a * (-Vela - 12.0 * V_a + 6.0 * V_b);
 
-            dvelocities[i].x -= dva * da.x;
-            dvelocities[i].y -= dva * da.y;
-            dvelocities[i].z -= dva * da.z;
+            add_force(dvelocities[i].x, -dva * da.x);
+            add_force(dvelocities[i].y, -dva * da.y);
+            add_force(dvelocities[i].z, -dva * da.z);
 
-            dvelocities[j].x += dva * da.x;
-            dvelocities[j].y += dva * da.y;
-            dvelocities[j].z += dva * da.z;
+            add_force(dvelocities[j].x, dva * da.x);
+            add_force(dvelocities[j].y, dva * da.y);
+            add_force(dvelocities[j].z, dva * da.z);
 
-            ctx.E_nonbond_pp.Ucoul += static_cast<real_t>(Vela);
-            ctx.E_nonbond_pp.Uvdw += static_cast<real_t>(V_a - V_b);
+            add_energy(ucoul, Vela);
+            add_energy(uvdw, V_a - V_b);
         }
     }
+
+    ctx.E_nonbond_pp.Ucoul += energy_from_accum(ucoul);
+    ctx.E_nonbond_pp.Uvdw += energy_from_accum(uvdw);
 }

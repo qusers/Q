@@ -3,6 +3,7 @@
 #include "common/include/context.h"
 #include "cuda/include/cuda_leapfrog.cuh"
 #include "cuda_utility.cuh"
+#include "cuda_force_accumulation.cuh"
 
 namespace CudaLeapfrog {
 
@@ -31,9 +32,14 @@ __global__ void calc_leapfrog_kernel(
 
     winv_i = 1 / mass_i;
     real_t scale = (i < n_atoms_solute) ? Tscale_solute : Tscale_solvent;
-    velocities[i].x = (velocities[i].x - dvelocities[i].x * dt * winv_i) * scale;
-    velocities[i].y = (velocities[i].y - dvelocities[i].y * dt * winv_i) * scale;
-    velocities[i].z = (velocities[i].z - dvelocities[i].z * dt * winv_i) * scale;
+
+    const real_t fx = force_from_accum(dvelocities[i].x);
+    const real_t fy = force_from_accum(dvelocities[i].y);
+    const real_t fz = force_from_accum(dvelocities[i].z);
+
+    velocities[i].x = (velocities[i].x - fx * dt * winv_i) * scale;
+    velocities[i].y = (velocities[i].y - fy * dt * winv_i) * scale;
+    velocities[i].z = (velocities[i].z - fz * dt * winv_i) * scale;
 
     xcoords[i].x = coords[i].x;
     xcoords[i].y = coords[i].y;

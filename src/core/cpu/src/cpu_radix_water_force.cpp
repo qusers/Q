@@ -4,6 +4,7 @@
 
 #include "constants.h"
 #include "context.h"
+#include "cpu_force_accumulation.h"
 
 void calc_radix_w_forces() {
     auto& ctx = Context::instance();
@@ -14,6 +15,7 @@ void calc_radix_w_forces() {
     real_t b, db, ener, dv, fexp;
     coord_t dr;
     real_t shift;
+    energy_accum_t uradx = 0;
 
     if (ctx.md.radial_force != 0) {
         shift = sqrt(Boltz * ctx.Tfree / ctx.md.radial_force);
@@ -42,9 +44,11 @@ void calc_radix_w_forces() {
             ener = 0;
         }
 
-        ctx.E_restraint.Uradx += ener;
-        dvelocities[i].x += dv * dr.x;
-        dvelocities[i].y += dv * dr.y;
-        dvelocities[i].z += dv * dr.z;
+        add_energy(uradx, ener);
+        add_force(dvelocities[i].x, dv * dr.x);
+        add_force(dvelocities[i].y, dv * dr.y);
+        add_force(dvelocities[i].z, dv * dr.z);
     }
+
+    ctx.E_restraint.Uradx += energy_from_accum(uradx);
 }
