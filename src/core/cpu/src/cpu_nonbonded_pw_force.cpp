@@ -25,10 +25,8 @@ void calc_nonbonded_pw_forces() {
                 continue;
             }
 
-            float qi = ctx.unified_ccharge(atom_i, 0).charge;
-            float qj = ctx.unified_ccharge(atom_j, 0).charge;
-            qi *= sqrt(ctx.topo.coulomb_constant);
-            qj *= sqrt(ctx.topo.coulomb_constant);
+            real_t qi = ctx.unified_ccharge(atom_i, 0).charge;
+            real_t qj = ctx.unified_ccharge(atom_j, 0).charge;
 
             const catype_t& atom_i_type = ctx.unified_catype(atom_i, 0);
             const catype_t& atom_j_type = ctx.unified_catype(atom_j, 0);
@@ -41,7 +39,7 @@ void calc_nonbonded_pw_forces() {
             const real_t r2inv = 1.0 / (dx * dx + dy * dy + dz * dz);
             const real_t rinv = (std::sqrt(r2inv));
             const real_t r6inv = r2inv * r2inv * r2inv;
-            const real_t ecoul = qi * qj * rinv;
+            const real_t ecoul = qi * qj * rinv * ctx.topo.coulomb_constant;
 
             if (ctx.topo.vdw_rule == VDW_GEOMETRIC) {
                 calc_vdw_geometric(atom_i_type.aii_normal,

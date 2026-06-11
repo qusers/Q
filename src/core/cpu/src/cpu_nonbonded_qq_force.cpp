@@ -57,7 +57,7 @@ void calc_nonbonded_qq_forces() {
                 da.x = coords[aj].x - coords[ai].x;
                 da.y = coords[aj].y - coords[ai].y;
                 da.z = coords[aj].z - coords[ai].z;
-                r2a = 1.0f / (da.x * da.x + da.y * da.y + da.z * da.z);
+                r2a = 1.0 / (da.x * da.x + da.y * da.y + da.z * da.z);
                 ra = sqrt(r2a);
                 r6a = r2a * r2a * r2a;
 
@@ -73,7 +73,7 @@ void calc_nonbonded_qq_forces() {
                 } else {
                     calc_vdw_arithmetic(ai_aii, aj_aii, ai_bii, aj_bii, r6a, &V_a, &V_b);
                 }
-                dva = r2a * (-Vela - 12.0f * V_a + 6.0f * V_b) * lambdas[state];
+                dva = r2a * (-Vela - 12.0 * V_a + 6.0 * V_b) * lambdas[state];
 
                 add_force(dvelocities[ai].x, -dva * da.x);
                 add_force(dvelocities[ai].y, -dva * da.y);

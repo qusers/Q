@@ -14,10 +14,6 @@ void calc_qangle_forces(int state) {
     auto *lambdas = ctx.lambdas->cpu_data_p;
     int ic;
     int ai, aj, ak;
-    coord_t rji, rjk;
-    real_t bji, bjk;
-    real_t cos_th, th, dth, ener, dv, f1;
-    coord_t di, dk;
     energy_accum_t angle = 0;
 
     for (int i = 0; i < ctx.n_qangles; i++) {
@@ -33,17 +29,19 @@ void calc_qangle_forces(int state) {
         aj = ctx.q_angles[i + ctx.n_qangles * state].aj - 1;
         ak = ctx.q_angles[i + ctx.n_qangles * state].ak - 1;
 
-        rji.x = coords[ai].x - coords[aj].x;
-        rji.y = coords[ai].y - coords[aj].y;
-        rji.z = coords[ai].z - coords[aj].z;
+        const double rji_x = static_cast<double>(coords[ai].x) - static_cast<double>(coords[aj].x);
+        const double rji_y = static_cast<double>(coords[ai].y) - static_cast<double>(coords[aj].y);
+        const double rji_z = static_cast<double>(coords[ai].z) - static_cast<double>(coords[aj].z);
 
-        rjk.x = coords[ak].x - coords[aj].x;
-        rjk.y = coords[ak].y - coords[aj].y;
-        rjk.z = coords[ak].z - coords[aj].z;
+        const double rjk_x = static_cast<double>(coords[ak].x) - static_cast<double>(coords[aj].x);
+        const double rjk_y = static_cast<double>(coords[ak].y) - static_cast<double>(coords[aj].y);
+        const double rjk_z = static_cast<double>(coords[ak].z) - static_cast<double>(coords[aj].z);
 
-        bji = sqrt(pow(rji.x, 2) + pow(rji.y, 2) + pow(rji.z, 2));
-        bjk = sqrt(pow(rjk.x, 2) + pow(rjk.y, 2) + pow(rjk.z, 2));
-        cos_th = rji.x * rjk.x + rji.y * rjk.y + rji.z * rjk.z;
+        const double bji2 = rji_x * rji_x + rji_y * rji_y + rji_z * rji_z;
+        const double bjk2 = rjk_x * rjk_x + rjk_y * rjk_y + rjk_z * rjk_z;
+        const double bji = sqrt(bji2);
+        const double bjk = sqrt(bjk2);
+        double cos_th = rji_x * rjk_x + rji_y * rjk_y + rji_z * rjk_z;
         cos_th /= (bji * bjk);
         if (cos_th > 1) {
             cos_th = 1;
@@ -51,38 +49,39 @@ void calc_qangle_forces(int state) {
         if (cos_th < -1) {
             cos_th = -1;
         }
-        th = acos(cos_th);
-        dth = th - to_radians(ctx.q_cangles[ic].th0);
-        ener = .5 * ctx.q_cangles[ic].kth * pow(dth, 2);
+        const double th = acos(cos_th);
+        const double dth = th - to_radians(ctx.q_cangles[ic].th0);
+        const double ener = 0.5 * ctx.q_cangles[ic].kth * dth * dth;
         add_energy(angle, ener);
 
-        dv = ctx.q_cangles[ic].kth * dth * lambdas[state];
-        f1 = sin(th);
-        if (fabs(f1) < k_singular_sin_epsilon) {
-            f1 = k_singular_sin_epsilon;
+        const double dv = ctx.q_cangles[ic].kth * dth * static_cast<double>(lambdas[state]);
+        double f1 = sin(th);
+        const double sin_epsilon = static_cast<double>(k_singular_sin_epsilon);
+        if (fabs(f1) < sin_epsilon) {
+            f1 = sin_epsilon;
         }
         f1 = -1.0 / f1;
 
-        di.x = f1 * (rjk.x / (bji * bjk) - cos_th * rji.x / pow(bji, 2));
-        di.y = f1 * (rjk.y / (bji * bjk) - cos_th * rji.y / pow(bji, 2));
-        di.z = f1 * (rjk.z / (bji * bjk) - cos_th * rji.z / pow(bji, 2));
-        dk.x = f1 * (rji.x / (bji * bjk) - cos_th * rjk.x / pow(bjk, 2));
-        dk.y = f1 * (rji.y / (bji * bjk) - cos_th * rjk.y / pow(bjk, 2));
-        dk.z = f1 * (rji.z / (bji * bjk) - cos_th * rjk.z / pow(bjk, 2));
+        const double di_x = f1 * (rjk_x / (bji * bjk) - cos_th * rji_x / bji2);
+        const double di_y = f1 * (rjk_y / (bji * bjk) - cos_th * rji_y / bji2);
+        const double di_z = f1 * (rjk_z / (bji * bjk) - cos_th * rji_z / bji2);
+        const double dk_x = f1 * (rji_x / (bji * bjk) - cos_th * rjk_x / bjk2);
+        const double dk_y = f1 * (rji_y / (bji * bjk) - cos_th * rjk_y / bjk2);
+        const double dk_z = f1 * (rji_z / (bji * bjk) - cos_th * rjk_z / bjk2);
 
-        add_force(dvelocities[ai].x, dv * di.x);
-        add_force(dvelocities[ai].y, dv * di.y);
-        add_force(dvelocities[ai].z, dv * di.z);
-
-
-        add_force(dvelocities[ak].x, dv * dk.x);
-        add_force(dvelocities[ak].y, dv * dk.y);
-        add_force(dvelocities[ak].z, dv * dk.z);
+        add_force(dvelocities[ai].x, dv * di_x);
+        add_force(dvelocities[ai].y, dv * di_y);
+        add_force(dvelocities[ai].z, dv * di_z);
 
 
-        add_force(dvelocities[aj].x, -dv * (di.x + dk.x));
-        add_force(dvelocities[aj].y, -dv * (di.y + dk.y));
-        add_force(dvelocities[aj].z, -dv * (di.z + dk.z));
+        add_force(dvelocities[ak].x, dv * dk_x);
+        add_force(dvelocities[ak].y, dv * dk_y);
+        add_force(dvelocities[ak].z, dv * dk_z);
+
+
+        add_force(dvelocities[aj].x, -dv * (di_x + dk_x));
+        add_force(dvelocities[aj].y, -dv * (di_y + dk_y));
+        add_force(dvelocities[aj].z, -dv * (di_z + dk_z));
     }
 
     ctx.EQ_bond[state].Uangle += energy_from_accum(angle);

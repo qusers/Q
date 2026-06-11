@@ -15,8 +15,6 @@ void calc_restrpos_forces() {
     auto *EQ_restraint = ctx.EQ_restraint->cpu_data_p;
 
     int state, i;
-    coord_t dr;
-    real_t lambda, ener, x2, y2, z2;
     std::vector<energy_accum_t> urestr(ctx.n_lambdas, 0);
     energy_accum_t upres = 0;
 
@@ -24,25 +22,26 @@ void calc_restrpos_forces() {
         state = restrspos[ir].ipsi - 1;
         i = restrspos[ir].a - 1;
 
-        dr.x = coords[i].x - restrspos[ir].x.x;
-        dr.y = coords[i].y - restrspos[ir].x.y;
-        dr.z = coords[i].z - restrspos[ir].x.z;
+        const double dx = static_cast<double>(coords[i].x) - static_cast<double>(restrspos[ir].x.x);
+        const double dy = static_cast<double>(coords[i].y) - static_cast<double>(restrspos[ir].x.y);
+        const double dz = static_cast<double>(coords[i].z) - static_cast<double>(restrspos[ir].x.z);
 
+        double lambda;
         if (restrspos[ir].ipsi != 0) {
-            lambda = lambdas[state];
+            lambda = static_cast<double>(lambdas[state]);
         } else {
-            lambda = 1;
+            lambda = 1.0;
         }
 
-        x2 = dr.x * dr.x;
-        y2 = dr.y * dr.y;
-        z2 = dr.z * dr.z;
+        const double kx = static_cast<double>(restrspos[ir].k.x);
+        const double ky = static_cast<double>(restrspos[ir].k.y);
+        const double kz = static_cast<double>(restrspos[ir].k.z);
 
-        ener = .5 * restrspos[ir].k.x * x2 + .5 * restrspos[ir].k.y * y2 + .5 * restrspos[ir].k.z * z2;
+        const double ener = 0.5 * kx * dx * dx + 0.5 * ky * dy * dy + 0.5 * kz * dz * dz;
 
-        add_force(dvelocities[i].x, restrspos[ir].k.x * dr.x * lambda);
-        add_force(dvelocities[i].y, restrspos[ir].k.y * dr.y * lambda);
-        add_force(dvelocities[i].z, restrspos[ir].k.z * dr.z * lambda);
+        add_force(dvelocities[i].x, kx * dx * lambda);
+        add_force(dvelocities[i].y, ky * dy * lambda);
+        add_force(dvelocities[i].z, kz * dz * lambda);
 
         if (restrspos[ir].ipsi == 0) {
             for (int k = 0; k < ctx.n_lambdas; k++) {

@@ -15,48 +15,49 @@ void calc_polx_w_forces(int iteration) {
     auto *wshells = ctx.wshells->cpu_data_p;
 
     int wi, imin, jw, ii, iis, jmin;
-    real_t tmin;
-    coord_t rmu, rcu, f1O, f1H1, f1H2, f2;
-    real_t rm, rc;
-    real_t cos_th;
-    real_t avtdum, arg, f0, dv;
-    real_t ener;
+    double tmin;
     energy_accum_t upolx = 0;
     for (int is = 0; is < ctx.n_shells; is++) {
         wshells[is].n_inshell = 0;
     }
 
     for (int i = 0; i < ctx.n_waters; i++) {
-        ctx.theta[i] = 0;
-        ctx.theta0[i] = 0;
+        ctx.theta[i] = 0.0;
+        ctx.theta0[i] = 0.0;
 
         wi = ctx.n_atoms_solute + 3 * i;
         if (exclude[wi]) continue;
 
-        rmu.x = coords[wi + 1].x + coords[wi + 2].x - 2 * coords[wi].x;
-        rmu.y = coords[wi + 1].y + coords[wi + 2].y - 2 * coords[wi].y;
-        rmu.z = coords[wi + 1].z + coords[wi + 2].z - 2 * coords[wi].z;
+        double rmu_x = static_cast<double>(coords[wi + 1].x) +
+                       static_cast<double>(coords[wi + 2].x) -
+                       2.0 * static_cast<double>(coords[wi].x);
+        double rmu_y = static_cast<double>(coords[wi + 1].y) +
+                       static_cast<double>(coords[wi + 2].y) -
+                       2.0 * static_cast<double>(coords[wi].y);
+        double rmu_z = static_cast<double>(coords[wi + 1].z) +
+                       static_cast<double>(coords[wi + 2].z) -
+                       2.0 * static_cast<double>(coords[wi].z);
 
-        rm = sqrt(rmu.x * rmu.x + rmu.y * rmu.y + rmu.z * rmu.z);
+        const double rm = sqrt(rmu_x * rmu_x + rmu_y * rmu_y + rmu_z * rmu_z);
 
-        rmu.x /= rm;
-        rmu.y /= rm;
-        rmu.z /= rm;
+        rmu_x /= rm;
+        rmu_y /= rm;
+        rmu_z /= rm;
 
-        rcu.x = coords[wi].x - ctx.topo.solvent_center.x;
-        rcu.y = coords[wi].y - ctx.topo.solvent_center.y;
-        rcu.z = coords[wi].z - ctx.topo.solvent_center.z;
-        rc = sqrt(rcu.x * rcu.x + rcu.y * rcu.y + rcu.z * rcu.z);
-        rcu.x /= rc;
-        rcu.y /= rc;
-        rcu.z /= rc;
+        double rcu_x = static_cast<double>(coords[wi].x) - static_cast<double>(ctx.topo.solvent_center.x);
+        double rcu_y = static_cast<double>(coords[wi].y) - static_cast<double>(ctx.topo.solvent_center.y);
+        double rcu_z = static_cast<double>(coords[wi].z) - static_cast<double>(ctx.topo.solvent_center.z);
+        const double rc = sqrt(rcu_x * rcu_x + rcu_y * rcu_y + rcu_z * rcu_z);
+        rcu_x /= rc;
+        rcu_y /= rc;
+        rcu_z /= rc;
 
-        cos_th = rmu.x * rcu.x + rmu.y * rcu.y + rmu.z * rcu.z;
-        if (cos_th > 1) {
-            cos_th = 1;
+        double cos_th = rmu_x * rcu_x + rmu_y * rcu_y + rmu_z * rcu_z;
+        if (cos_th > 1.0) {
+            cos_th = 1.0;
         }
-        if (cos_th < -1) {
-            cos_th = -1;
+        if (cos_th < -1.0) {
+            cos_th = -1.0;
         }
         ctx.theta[i] = acos(cos_th);
         ctx.tdum[i] = ctx.theta[i];
@@ -71,7 +72,7 @@ void calc_polx_w_forces(int iteration) {
             ctx.list_sh[wshells[iis].n_inshell - 1][iis] = i;
         }
     }
-    const real_t PI = 4.0 * atanf(1.0);
+    const double PI = 4.0 * atan(1.0);
     for (int is = 0; is < ctx.n_shells; is++) {
         imin = 0;
         for (int il = 0; il < wshells[is].n_inshell; il++) {
@@ -85,22 +86,22 @@ void calc_polx_w_forces(int iteration) {
             }
             ctx.nsort[imin][is] = jmin;
             imin++;
-            ctx.tdum[jmin] = 99999;
+            ctx.tdum[jmin] = 99999.0;
         }
     }
 
     if (iteration != 0 && iteration % itdis_update == 0) {
         for (int is = 0; is < ctx.n_shells; is++) {
             printf("SHELL %d\n", is);
-            wshells[is].avtheta /= (float)itdis_update;
-            wshells[is].avn_inshell /= (float)itdis_update;
+            wshells[is].avtheta /= static_cast<double>(itdis_update);
+            wshells[is].avn_inshell /= static_cast<double>(itdis_update);
             wshells[is].theta_corr =
                 wshells[is].theta_corr + wshells[is].avtheta - acos(wshells[is].cstb);
             printf("average theta = %f, average in shell = %f, theta_corr = %f\n",
                    wshells[is].avtheta * 180 / M_PI, wshells[is].avn_inshell,
                    wshells[is].theta_corr * 180 / M_PI);
-            wshells[is].avtheta = 0;
-            wshells[is].avn_inshell = 0;
+            wshells[is].avtheta = 0.0;
+            wshells[is].avn_inshell = 0.0;
         }
     }
 
@@ -109,14 +110,15 @@ void calc_polx_w_forces(int iteration) {
             continue;
         }
 
-        avtdum = 0;
+        double avtdum = 0.0;
         for (int il = 0; il < wshells[is].n_inshell; il++) {
             ii = ctx.nsort[il][is];
-            arg = 1.0f + ((1.0f - 2.0f * (float)(il + 1)) / (float)wshells[is].n_inshell);
+            const double arg = 1.0 + ((1.0 - 2.0 * static_cast<double>(il + 1)) /
+                                      static_cast<double>(wshells[is].n_inshell));
             ctx.theta0[il] = acos(arg);
-            ctx.theta0[il] = ctx.theta0[il] - 3 * sin(ctx.theta0[il]) * wshells[is].cstb / 2;
-            if (ctx.theta0[il] < 0) {
-                ctx.theta0[il] = 0;
+            ctx.theta0[il] = ctx.theta0[il] - 3.0 * sin(ctx.theta0[il]) * wshells[is].cstb / 2.0;
+            if (ctx.theta0[il] < 0.0) {
+                ctx.theta0[il] = 0.0;
             }
             if (ctx.theta0[il] > PI) {
                 ctx.theta0[il] = PI;
@@ -125,76 +127,83 @@ void calc_polx_w_forces(int iteration) {
 
 
             avtdum += ctx.theta[ii];
-            ener = .5 * ctx.md.polarisation_force *
-                   pow(ctx.theta[ii] - ctx.theta0[il] + wshells[is].theta_corr, 2);
+            const double dtheta = ctx.theta[ii] - ctx.theta0[il] + wshells[is].theta_corr;
+            const double ener = 0.5 * ctx.md.polarisation_force * dtheta * dtheta;
             add_energy(upolx, ener);
 
-            dv = ctx.md.polarisation_force * (ctx.theta[ii] - ctx.theta0[il] + wshells[is].theta_corr);
+            const double dv = ctx.md.polarisation_force * dtheta;
 
             wi = ctx.n_atoms_solute + 3 * ii;
 
-            rmu.x = coords[wi + 1].x + coords[wi + 2].x - 2 * coords[wi].x;
-            rmu.y = coords[wi + 1].y + coords[wi + 2].y - 2 * coords[wi].y;
-            rmu.z = coords[wi + 1].z + coords[wi + 2].z - 2 * coords[wi].z;
+            double rmu_x = static_cast<double>(coords[wi + 1].x) +
+                           static_cast<double>(coords[wi + 2].x) -
+                           2.0 * static_cast<double>(coords[wi].x);
+            double rmu_y = static_cast<double>(coords[wi + 1].y) +
+                           static_cast<double>(coords[wi + 2].y) -
+                           2.0 * static_cast<double>(coords[wi].y);
+            double rmu_z = static_cast<double>(coords[wi + 1].z) +
+                           static_cast<double>(coords[wi + 2].z) -
+                           2.0 * static_cast<double>(coords[wi].z);
 
-            rm = sqrt(rmu.x * rmu.x + rmu.y * rmu.y + rmu.z * rmu.z);
+            const double rm = sqrt(rmu_x * rmu_x + rmu_y * rmu_y + rmu_z * rmu_z);
 
-            rmu.x /= rm;
-            rmu.y /= rm;
-            rmu.z /= rm;
+            rmu_x /= rm;
+            rmu_y /= rm;
+            rmu_z /= rm;
 
-            rcu.x = coords[wi].x - ctx.topo.solvent_center.x;
-            rcu.y = coords[wi].y - ctx.topo.solvent_center.y;
-            rcu.z = coords[wi].z - ctx.topo.solvent_center.z;
-            rc = sqrt(rcu.x * rcu.x + rcu.y * rcu.y + rcu.z * rcu.z);
-            rcu.x /= rc;
-            rcu.y /= rc;
-            rcu.z /= rc;
+            double rcu_x = static_cast<double>(coords[wi].x) - static_cast<double>(ctx.topo.solvent_center.x);
+            double rcu_y = static_cast<double>(coords[wi].y) - static_cast<double>(ctx.topo.solvent_center.y);
+            double rcu_z = static_cast<double>(coords[wi].z) - static_cast<double>(ctx.topo.solvent_center.z);
+            const double rc = sqrt(rcu_x * rcu_x + rcu_y * rcu_y + rcu_z * rcu_z);
+            rcu_x /= rc;
+            rcu_y /= rc;
+            rcu_z /= rc;
 
-            cos_th = rmu.x * rcu.x + rmu.y * rcu.y + rmu.z * rcu.z;
-            if (cos_th > 1) {
-                cos_th = 1;
+            double cos_th = rmu_x * rcu_x + rmu_y * rcu_y + rmu_z * rcu_z;
+            if (cos_th > 1.0) {
+                cos_th = 1.0;
             }
-            if (cos_th < -1) {
-                cos_th = -1;
+            if (cos_th < -1.0) {
+                cos_th = -1.0;
             }
-            f0 = sin(acos(cos_th));
-            if (fabs(f0) < (float)k_singular_sin_epsilon) {
-                f0 = (float)k_singular_sin_epsilon;
+            double f0 = sin(acos(cos_th));
+            const double sin_epsilon = static_cast<double>(k_singular_sin_epsilon);
+            if (fabs(f0) < sin_epsilon) {
+                f0 = sin_epsilon;
             }
-            f0 = -1.0f / f0;
+            f0 = -1.0 / f0;
             f0 *= dv;
 
-            f1O.x = -2 * (rcu.x - rmu.x * cos_th) / rm;
-            f1O.y = -2 * (rcu.y - rmu.y * cos_th) / rm;
-            f1O.z = -2 * (rcu.z - rmu.z * cos_th) / rm;
-            f1H1.x = (rcu.x - rmu.x * cos_th) / rm;
-            f1H1.y = (rcu.y - rmu.y * cos_th) / rm;
-            f1H1.z = (rcu.z - rmu.z * cos_th) / rm;
-            f1H2.x = (rcu.x - rmu.x * cos_th) / rm;
-            f1H2.y = (rcu.y - rmu.y * cos_th) / rm;
-            f1H2.z = (rcu.z - rmu.z * cos_th) / rm;
+            const double f1O_x = -2.0 * (rcu_x - rmu_x * cos_th) / rm;
+            const double f1O_y = -2.0 * (rcu_y - rmu_y * cos_th) / rm;
+            const double f1O_z = -2.0 * (rcu_z - rmu_z * cos_th) / rm;
+            const double f1H1_x = (rcu_x - rmu_x * cos_th) / rm;
+            const double f1H1_y = (rcu_y - rmu_y * cos_th) / rm;
+            const double f1H1_z = (rcu_z - rmu_z * cos_th) / rm;
+            const double f1H2_x = (rcu_x - rmu_x * cos_th) / rm;
+            const double f1H2_y = (rcu_y - rmu_y * cos_th) / rm;
+            const double f1H2_z = (rcu_z - rmu_z * cos_th) / rm;
 
-            f2.x = (rmu.x - rcu.x * cos_th) / rc;
-            f2.y = (rmu.y - rcu.y * cos_th) / rc;
-            f2.z = (rmu.z - rcu.z * cos_th) / rc;
+            const double f2_x = (rmu_x - rcu_x * cos_th) / rc;
+            const double f2_y = (rmu_y - rcu_y * cos_th) / rc;
+            const double f2_z = (rmu_z - rcu_z * cos_th) / rc;
 
-            add_force(dvelocities[wi].x, f0 * (f1O.x + f2.x));
-            add_force(dvelocities[wi].y, f0 * (f1O.y + f2.y));
-            add_force(dvelocities[wi].z, f0 * (f1O.z + f2.z));
+            add_force(dvelocities[wi].x, f0 * (f1O_x + f2_x));
+            add_force(dvelocities[wi].y, f0 * (f1O_y + f2_y));
+            add_force(dvelocities[wi].z, f0 * (f1O_z + f2_z));
 
 
-            add_force(dvelocities[wi + 1].x, f0 * f1H1.x);
-            add_force(dvelocities[wi + 1].y, f0 * f1H1.y);
-            add_force(dvelocities[wi + 1].z, f0 * f1H1.z);
+            add_force(dvelocities[wi + 1].x, f0 * f1H1_x);
+            add_force(dvelocities[wi + 1].y, f0 * f1H1_y);
+            add_force(dvelocities[wi + 1].z, f0 * f1H1_z);
 
-            add_force(dvelocities[wi + 2].x, f0 * f1H2.x);
-            add_force(dvelocities[wi + 2].y, f0 * f1H2.y);
-            add_force(dvelocities[wi + 2].z, f0 * f1H2.z);
+            add_force(dvelocities[wi + 2].x, f0 * f1H2_x);
+            add_force(dvelocities[wi + 2].y, f0 * f1H2_y);
+            add_force(dvelocities[wi + 2].z, f0 * f1H2_z);
         }
 
-        wshells[is].avtheta += avtdum / (float)wshells[is].n_inshell;
-        wshells[is].avn_inshell += wshells[is].n_inshell;
+        wshells[is].avtheta += avtdum / static_cast<double>(wshells[is].n_inshell);
+        wshells[is].avn_inshell += static_cast<double>(wshells[is].n_inshell);
     }
 
     ctx.E_restraint.Upolx += energy_from_accum(upolx);

@@ -1,5 +1,5 @@
 // Boltzano's constant
-#define Boltz 0.001986f
+#define Boltz 0.001986
 
 // Fortran max allowed line width, used in neighbor list
 #define line_width 25

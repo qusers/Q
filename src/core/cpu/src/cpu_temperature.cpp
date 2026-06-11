@@ -60,20 +60,19 @@ void calc_temperature() {
 
     ctx.E_total.Ukin = ctx.Temp;
 
-    ctx.Temp = 2.0 * ctx.Temp / Boltz / (float)ctx.Ndegf;
+    ctx.Temp = 2.0 * ctx.Temp / Boltz / ctx.Ndegf;
     
-    ctx.Tfree = 2.0 * ctx.Tfree / Boltz / (float)ctx.Ndegfree;
+    ctx.Tfree = 2.0 * ctx.Tfree / Boltz / ctx.Ndegfree;
 
     if (ctx.separate_scaling) {
-        Tfree_solvent_value = 2.0 * Tfree_solvent_value / Boltz / (float)ctx.Ndegfree_solvent;
-        Tfree_solute_value = 2.0 * Tfree_solute_value / Boltz / (float)ctx.Ndegfree_solute;
+        Tfree_solvent_value = 2.0 * Tfree_solvent_value / Boltz / ctx.Ndegfree_solvent;
+        Tfree_solute_value = 2.0 * Tfree_solute_value / Boltz / ctx.Ndegfree_solute;
         if (Tfree_solvent_value != 0) ctx.Tscale_solvent = sqrt(1 + (ctx.dt / ctx.tau_T) * (ctx.md.temperature / Tfree_solvent_value - 1.0));
         if (Tfree_solute_value != 0) ctx.Tscale_solute = sqrt(1 + (ctx.dt / ctx.tau_T) * (ctx.md.temperature / Tfree_solute_value - 1.0));
     } else {
         if (ctx.Tfree != 0) ctx.Tscale_solvent = sqrt(1 + (ctx.dt / ctx.tau_T) * (ctx.md.temperature / ctx.Tfree - 1.0));
         ctx.Tscale_solute = ctx.Tscale_solvent;
     }
-
 
     printf("Tscale = %f, tau_T = %f, Temp = %f, Tfree = %f\n", ctx.Tscale_solvent, ctx.tau_T, ctx.Temp, ctx.Tfree);
 }

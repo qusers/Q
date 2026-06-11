@@ -14,18 +14,18 @@ __global__ void calc_bond_forces_kernel(int start, int end, bond_t* bonds, coord
     coord_t rj = coords[bond.aj - 1];
     cbond_t cbond = cbonds[bond.code - 1];
 
-    real_t dx = rj.x - ri.x;
-    real_t dy = rj.y - ri.y;
-    real_t dz = rj.z - ri.z;
-    real_t r = sqrt(dx * dx + dy * dy + dz * dz);
+    const double dx = static_cast<double>(rj.x) - static_cast<double>(ri.x);
+    const double dy = static_cast<double>(rj.y) - static_cast<double>(ri.y);
+    const double dz = static_cast<double>(rj.z) - static_cast<double>(ri.z);
+    const double r = sqrt(dx * dx + dy * dy + dz * dz);
 
-    real_t dr = r - cbond.b0;
-    real_t energy = static_cast<real_t>(0.5) * cbond.kb * dr * dr;
+    const double dr = r - cbond.b0;
+    const double energy = 0.5 * cbond.kb * dr * dr;
 
     atomic_add_energy(energy_sum, energy);
 
     // update forces
-    real_t f = cbond.kb * dr / r;
+    const double f = cbond.kb * dr / r;
     atomic_add_force(&dvelocities[bond.aj - 1].x, f * dx);
     atomic_add_force(&dvelocities[bond.aj - 1].y, f * dy);
     atomic_add_force(&dvelocities[bond.aj - 1].z, f * dz);

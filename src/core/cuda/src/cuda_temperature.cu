@@ -2,20 +2,21 @@
 #include "cuda/include/cuda_utility.cuh"
 #include "common/include/constants.h"
 #include "common/include/context.h"
+#include "cuda_force_accumulation.cuh"
 #include "iostream"
 
 namespace CudaTemperature {
 bool is_initialized = false;
-real_t* d_Temp_solute;
-real_t* d_Tfree_solute;
-real_t* d_Texcl_solute;
-real_t* d_Temp_solvent;
-real_t* d_Tfree_solvent;
-real_t* d_Texcl_solvent;
+energy_accum_t* d_Temp_solute;
+energy_accum_t* d_Tfree_solute;
+energy_accum_t* d_Texcl_solute;
+energy_accum_t* d_Temp_solvent;
+energy_accum_t* d_Tfree_solvent;
+energy_accum_t* d_Texcl_solvent;
 }  // namespace CudaTemperature
 
 __global__ void calc_temperature_kernel(int n_atoms, int n_atoms_solute, atype_t* atypes, catype_t* catypes, vel_t* velocities, bool* excluded, real_t boltz, real_t ekinmax,
-                                        real_t* Temp_solute, real_t* Tfree_solute, real_t* Texcl_solute, real_t* Temp_solvent, real_t* Tfree_solvent, real_t* Texcl_solvent) {
+                                        energy_accum_t* Temp_solute, energy_accum_t* Tfree_solute, energy_accum_t* Texcl_solute, energy_accum_t* Temp_solvent, energy_accum_t* Tfree_solvent, energy_accum_t* Texcl_solvent) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_atoms) return;
     real_t mass_i = catypes[atypes[idx].code - 1].m;
@@ -27,18 +28,18 @@ __global__ void calc_temperature_kernel(int n_atoms, int n_atoms_solute, atype_t
     bool is_excluded = excluded[idx];
 
     if (is_solute) {
-        atomicAdd(Temp_solute, ener);
+        atomic_add_energy(Temp_solute, ener);
         if (!is_excluded) {
-            atomicAdd(Tfree_solute, ener);
+            atomic_add_energy(Tfree_solute, ener);
         } else {
-            atomicAdd(Texcl_solute, ener);
+            atomic_add_energy(Texcl_solute, ener);
         }
     } else {
-        atomicAdd(Temp_solvent, ener);
+        atomic_add_energy(Temp_solvent, ener);
         if (!is_excluded) {
-            atomicAdd(Tfree_solvent, ener);
+            atomic_add_energy(Tfree_solvent, ener);
         } else {
-            atomicAdd(Texcl_solvent, ener);
+            atomic_add_energy(Texcl_solvent, ener);
         }
     }
     if (ener > ekinmax) {
@@ -49,14 +50,14 @@ __global__ void calc_temperature_kernel(int n_atoms, int n_atoms_solute, atype_t
 void calc_temperature_host() {
     auto& host = Context::instance();
     using namespace CudaTemperature;
-    real_t h_Temp_solute = 0.0, h_Tfree_solute = 0.0, h_Texcl_solute = 0.0, h_Temp_solvent = 0.0, h_Tfree_solvent = 0.0, h_Texcl_solvent = 0.0;
+    energy_accum_t h_Temp_solute = 0, h_Tfree_solute = 0, h_Texcl_solute = 0, h_Temp_solvent = 0, h_Tfree_solvent = 0, h_Texcl_solvent = 0;
 
-    cudaMemcpy(d_Temp_solute, &h_Temp_solute, sizeof(real_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_Tfree_solute, &h_Tfree_solute, sizeof(real_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_Texcl_solute, &h_Texcl_solute, sizeof(real_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_Temp_solvent, &h_Temp_solvent, sizeof(real_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_Tfree_solvent, &h_Tfree_solvent, sizeof(real_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_Texcl_solvent, &h_Texcl_solvent, sizeof(real_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_Temp_solute, &h_Temp_solute, sizeof(energy_accum_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_Tfree_solute, &h_Tfree_solute, sizeof(energy_accum_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_Texcl_solute, &h_Texcl_solute, sizeof(energy_accum_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_Temp_solvent, &h_Temp_solvent, sizeof(energy_accum_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_Tfree_solvent, &h_Tfree_solvent, sizeof(energy_accum_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_Texcl_solvent, &h_Texcl_solvent, sizeof(energy_accum_t), cudaMemcpyHostToDevice);
 
     atype_t* d_atypes = host.atypes->gpu_data_p;
     catype_t* d_catypes = host.catypes->gpu_data_p;
@@ -71,14 +72,16 @@ void calc_temperature_host() {
                                                       d_Temp_solute, d_Tfree_solute, d_Texcl_solute, d_Temp_solvent, d_Tfree_solvent, d_Texcl_solvent);
 
     cudaDeviceSynchronize();
-    cudaMemcpy(&h_Temp_solute, d_Temp_solute, sizeof(real_t), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&h_Tfree_solute, d_Tfree_solute, sizeof(real_t), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&h_Texcl_solute, d_Texcl_solute, sizeof(real_t), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&h_Temp_solvent, d_Temp_solvent, sizeof(real_t), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&h_Tfree_solvent, d_Tfree_solvent, sizeof(real_t), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&h_Texcl_solvent, d_Texcl_solvent, sizeof(real_t), cudaMemcpyDeviceToHost);
-    host.Tfree = h_Tfree_solute + h_Tfree_solvent;
-    host.Temp = h_Temp_solute + h_Temp_solvent;
+    cudaMemcpy(&h_Temp_solute, d_Temp_solute, sizeof(energy_accum_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&h_Tfree_solute, d_Tfree_solute, sizeof(energy_accum_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&h_Texcl_solute, d_Texcl_solute, sizeof(energy_accum_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&h_Temp_solvent, d_Temp_solvent, sizeof(energy_accum_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&h_Tfree_solvent, d_Tfree_solvent, sizeof(energy_accum_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&h_Texcl_solvent, d_Texcl_solvent, sizeof(energy_accum_t), cudaMemcpyDeviceToHost);
+    real_t Tfree_solute_value = energy_from_accum(h_Tfree_solute);
+    real_t Tfree_solvent_value = energy_from_accum(h_Tfree_solvent);
+    host.Tfree = Tfree_solute_value + Tfree_solvent_value;
+    host.Temp = energy_from_accum(h_Temp_solute) + energy_from_accum(h_Temp_solvent);
 
     host.E_total.Ukin = host.Temp;
 
@@ -86,10 +89,10 @@ void calc_temperature_host() {
     host.Tfree = 2.0 * host.Tfree / Boltz / host.Ndegfree;
 
     if (host.separate_scaling) {
-        h_Tfree_solvent = 2.0 * h_Tfree_solvent / Boltz / host.Ndegfree_solvent;
-        h_Tfree_solute = 2.0 * h_Tfree_solute / Boltz / host.Ndegfree_solute;
-        if (h_Tfree_solvent != 0) host.Tscale_solvent = sqrt(1 + (host.dt / host.tau_T) * (host.md.temperature / h_Tfree_solvent - 1.0));
-        if (h_Tfree_solute != 0) host.Tscale_solute = sqrt(1 + (host.dt / host.tau_T) * (host.md.temperature / h_Tfree_solute - 1.0));
+        Tfree_solvent_value = 2.0 * Tfree_solvent_value / Boltz / host.Ndegfree_solvent;
+        Tfree_solute_value = 2.0 * Tfree_solute_value / Boltz / host.Ndegfree_solute;
+        if (Tfree_solvent_value != 0) host.Tscale_solvent = sqrt(1 + (host.dt / host.tau_T) * (host.md.temperature / Tfree_solvent_value - 1.0));
+        if (Tfree_solute_value != 0) host.Tscale_solute = sqrt(1 + (host.dt / host.tau_T) * (host.md.temperature / Tfree_solute_value - 1.0));
     } else {
         if (host.Tfree != 0) host.Tscale_solvent = sqrt(1 + (host.dt / host.tau_T) * (host.md.temperature / host.Tfree - 1.0));
         host.Tscale_solute = host.Tscale_solvent;
@@ -100,12 +103,12 @@ void calc_temperature_host() {
 void init_temperature_kernel_data() {
     using namespace CudaTemperature;
     if (!is_initialized) {
-        check_cudaMalloc((void**)&d_Temp_solute, sizeof(real_t));
-        check_cudaMalloc((void**)&d_Tfree_solute, sizeof(real_t));
-        check_cudaMalloc((void**)&d_Texcl_solute, sizeof(real_t));
-        check_cudaMalloc((void**)&d_Temp_solvent, sizeof(real_t));
-        check_cudaMalloc((void**)&d_Tfree_solvent, sizeof(real_t));
-        check_cudaMalloc((void**)&d_Texcl_solvent, sizeof(real_t));
+        check_cudaMalloc((void**)&d_Temp_solute, sizeof(energy_accum_t));
+        check_cudaMalloc((void**)&d_Tfree_solute, sizeof(energy_accum_t));
+        check_cudaMalloc((void**)&d_Texcl_solute, sizeof(energy_accum_t));
+        check_cudaMalloc((void**)&d_Temp_solvent, sizeof(energy_accum_t));
+        check_cudaMalloc((void**)&d_Tfree_solvent, sizeof(energy_accum_t));
+        check_cudaMalloc((void**)&d_Texcl_solvent, sizeof(energy_accum_t));
         is_initialized = true;
     }
 }

@@ -19,34 +19,33 @@ __global__ void calc_restrwall_forces_kernel(
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_restrwalls) return;
 
-    real_t k, b, db, ener, dv, fexp;
-    coord_t dr;
-
     int ir = idx;
-    k = restrwalls[ir].k;
+    const double k = restrwalls[ir].k;
     for (int i = restrwalls[ir].ai - 1; i < restrwalls[ir].aj - 1; i++) {
         if (heavy[i] || restrwalls[ir].ih) {
-            dr.x = coords[i].x - topo.solvent_center.x;
-            dr.y = coords[i].y - topo.solvent_center.y;
-            dr.z = coords[i].z - topo.solvent_center.z;
+            const double dx = static_cast<double>(coords[i].x) - static_cast<double>(topo.solvent_center.x);
+            const double dy = static_cast<double>(coords[i].y) - static_cast<double>(topo.solvent_center.y);
+            const double dz = static_cast<double>(coords[i].z) - static_cast<double>(topo.solvent_center.z);
 
-            b = sqrt(dr.x * dr.x + dr.y * dr.y + dr.z * dr.z);
-            db = b - restrwalls[ir].d;
+            const double b = sqrt(dx * dx + dy * dy + dz * dz);
+            const double db = b - restrwalls[ir].d;
 
-            if (db > 0) {
-                ener = .5 * k * db * db - restrwalls[ir].dMorse;
+            double ener;
+            double dv;
+            if (db > 0.0) {
+                ener = 0.5 * k * db * db - restrwalls[ir].dMorse;
                 dv = k * db / b;
             } else {
-                fexp = exp(restrwalls[ir].aMorse * db);
-                ener = restrwalls[ir].dMorse * (fexp * fexp - 2 * fexp);
-                dv = -2 * restrwalls[ir].dMorse * restrwalls[ir].aMorse * (fexp - fexp * fexp) / b;
+                const double fexp = exp(restrwalls[ir].aMorse * db);
+                ener = restrwalls[ir].dMorse * (fexp * fexp - 2.0 * fexp);
+                dv = -2.0 * restrwalls[ir].dMorse * restrwalls[ir].aMorse * (fexp - fexp * fexp) / b;
             }
 
             atomic_add_energy(energies, ener);
 
-            atomic_add_force(&dvelocities[i].x, dv * dr.x);
-            atomic_add_force(&dvelocities[i].y, dv * dr.y);
-            atomic_add_force(&dvelocities[i].z, dv * dr.z);
+            atomic_add_force(&dvelocities[i].x, dv * dx);
+            atomic_add_force(&dvelocities[i].y, dv * dy);
+            atomic_add_force(&dvelocities[i].z, dv * dz);
         }
     }
 }

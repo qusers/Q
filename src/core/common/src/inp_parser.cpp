@@ -187,7 +187,7 @@ std::vector<std::vector<std::string>> unpack_restart_vector(const std::vector<ch
     return rows;
 }
 
-std::vector<real_t> unpack_restart_theta_corr(const std::vector<char>& payload) {
+std::vector<double> unpack_restart_theta_corr(const std::vector<char>& payload) {
     if (payload.size() < sizeof(int32_t)) return {};
 
     int32_t n_shells = 0;
@@ -197,10 +197,10 @@ std::vector<real_t> unpack_restart_theta_corr(const std::vector<char>& payload) 
     size_t expected = sizeof(int32_t) + static_cast<size_t>(n_shells) * sizeof(float);
     if (payload.size() != expected) return {};
 
-    std::vector<real_t> theta_corr(n_shells);
+    std::vector<double> theta_corr(n_shells);
     const float* values = reinterpret_cast<const float*>(payload.data() + sizeof(int32_t));
     for (int i = 0; i < n_shells; i++) {
-        theta_corr[i] = static_cast<real_t>(values[i]);
+        theta_corr[i] = static_cast<double>(values[i]);
     }
     return theta_corr;
 }
@@ -208,7 +208,7 @@ std::vector<real_t> unpack_restart_theta_corr(const std::vector<char>& payload) 
 void read_restart_vectors(const std::string& path,
                           std::vector<std::vector<std::string>>& coords,
                           std::vector<std::vector<std::string>>& velocities,
-                          std::vector<real_t>& theta_corr) {
+                          std::vector<double>& theta_corr) {
     std::ifstream in(path.c_str(), std::ios::binary);
     if (!in) throw parse_error("Could not open restart file " + path);
 

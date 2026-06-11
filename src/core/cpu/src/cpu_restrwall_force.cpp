@@ -12,34 +12,34 @@ void calc_restrwall_forces() {
     auto &restrwalls = ctx.restrwalls->cpu_data_p;
     auto *heavy = ctx.heavy->cpu_data_p;
 
-    real_t k, b, db, ener, dv, fexp;
-    coord_t dr;
     energy_accum_t upres = 0;
 
     for (int ir = 0; ir < ctx.n_restrwalls; ir++) {
-        k = restrwalls[ir].k;
+        const double k = restrwalls[ir].k;
         for (int i = restrwalls[ir].ai - 1; i < restrwalls[ir].aj - 1; i++) {
             if (heavy[i] || restrwalls[ir].ih) {
-                dr.x = coords[i].x - ctx.topo.solvent_center.x;
-                dr.y = coords[i].y - ctx.topo.solvent_center.y;
-                dr.z = coords[i].z - ctx.topo.solvent_center.z;
+                const double dx = static_cast<double>(coords[i].x) - static_cast<double>(ctx.topo.solvent_center.x);
+                const double dy = static_cast<double>(coords[i].y) - static_cast<double>(ctx.topo.solvent_center.y);
+                const double dz = static_cast<double>(coords[i].z) - static_cast<double>(ctx.topo.solvent_center.z);
 
-                b = sqrt(pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2));
-                db = b - restrwalls[ir].d;
+                const double b = sqrt(dx * dx + dy * dy + dz * dz);
+                const double db = b - restrwalls[ir].d;
 
-                if (db > 0) {
-                    ener = .5 * k * pow(db, 2) - restrwalls[ir].dMorse;
+                double ener;
+                double dv;
+                if (db > 0.0) {
+                    ener = 0.5 * k * db * db - restrwalls[ir].dMorse;
                     dv = k * db / b;
                 } else {
-                    fexp = exp(restrwalls[ir].aMorse * db);
-                    ener = restrwalls[ir].dMorse * (fexp * fexp - 2 * fexp);
-                    dv = -2 * restrwalls[ir].dMorse * restrwalls[ir].aMorse * (fexp - fexp * fexp) / b;
+                    const double fexp = exp(restrwalls[ir].aMorse * db);
+                    ener = restrwalls[ir].dMorse * (fexp * fexp - 2.0 * fexp);
+                    dv = -2.0 * restrwalls[ir].dMorse * restrwalls[ir].aMorse * (fexp - fexp * fexp) / b;
                 }
                 add_energy(upres, ener);
 
-                add_force(dvelocities[i].x, dv * dr.x);
-                add_force(dvelocities[i].y, dv * dr.y);
-                add_force(dvelocities[i].z, dv * dr.z);
+                add_force(dvelocities[i].x, dv * dx);
+                add_force(dvelocities[i].y, dv * dy);
+                add_force(dvelocities[i].z, dv * dz);
             }
         }
     }

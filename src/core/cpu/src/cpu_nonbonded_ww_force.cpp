@@ -24,8 +24,8 @@ void calc_oxygen_vdw_parameters(const Context& ctx, int oxygen_i, int oxygen_j, 
 void accumulate_pair_force(Context& ctx,
                            int atom_i,
                            int atom_j,
-                           float qi,
-                           float qj,
+                           real_t qi,
+                           real_t qj,
                            bool include_vdw,
                            real_t vdw_a,
                            real_t vdw_b,
@@ -39,9 +39,7 @@ void accumulate_pair_force(Context& ctx,
 
     const real_t r2inv = 1.0 / (dx * dx + dy * dy + dz * dz);
     const real_t rinv = sqrt(r2inv);
-    qi *= sqrt(ctx.topo.coulomb_constant);
-    qj *= sqrt(ctx.topo.coulomb_constant);
-    const real_t ecoul = qi * qj * rinv;
+    const real_t ecoul = qi * qj * rinv * ctx.topo.coulomb_constant;
 
     real_t evdw = 0.0;
     real_t dva = -ecoul;

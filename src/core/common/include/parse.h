@@ -33,7 +33,7 @@ class ParseResult {
     std::vector<coord_t> coords_init;
     std::vector<coord_t> coords;
     std::vector<vel_t> velocities;
-    std::vector<real_t> restart_theta_corr;
+    std::vector<double> restart_theta_corr;
 
     std::vector<bond_t> bonds;
     std::vector<cbond_t> cbonds;

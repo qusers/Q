@@ -15,10 +15,6 @@ __global__ void calc_improper2_forces_kernel(int start, int end, improper_t* imp
     int aii, aji, aki, ali;
 
     coord_t ai, aj, ak, al;
-    coord_t rji, rjk, rkl, rnj, rnk, rki, rlj;
-    real_t bj2inv, bk2inv, bjinv, bkinv;
-    real_t cos_phi, phi, arg, ener, dv, f1;
-    coord_t di, dl, dpi, dpj, dpk, dpl;
 
     improper_t imp;
     cimproper_t cimp;
@@ -36,28 +32,30 @@ __global__ void calc_improper2_forces_kernel(int start, int end, improper_t* imp
     ak = coords[aki];
     al = coords[ali];
 
-    rji.x = ai.x - aj.x;
-    rji.y = ai.y - aj.y;
-    rji.z = ai.z - aj.z;
-    rjk.x = ak.x - aj.x;
-    rjk.y = ak.y - aj.y;
-    rjk.z = ak.z - aj.z;
-    rkl.x = al.x - ak.x;
-    rkl.y = al.y - ak.y;
-    rkl.z = al.z - ak.z;
-    rnj.x = rji.y * rjk.z - rji.z * rjk.y;
-    rnj.y = rji.z * rjk.x - rji.x * rjk.z;
-    rnj.z = rji.x * rjk.y - rji.y * rjk.x;
-    rnk.x = -rjk.y * rkl.z + rjk.z * rkl.y;
-    rnk.y = -rjk.z * rkl.x + rjk.x * rkl.z;
-    rnk.z = -rjk.x * rkl.y + rjk.y * rkl.x;
+    const double rji_x = static_cast<double>(ai.x) - static_cast<double>(aj.x);
+    const double rji_y = static_cast<double>(ai.y) - static_cast<double>(aj.y);
+    const double rji_z = static_cast<double>(ai.z) - static_cast<double>(aj.z);
+    const double rjk_x = static_cast<double>(ak.x) - static_cast<double>(aj.x);
+    const double rjk_y = static_cast<double>(ak.y) - static_cast<double>(aj.y);
+    const double rjk_z = static_cast<double>(ak.z) - static_cast<double>(aj.z);
+    const double rkl_x = static_cast<double>(al.x) - static_cast<double>(ak.x);
+    const double rkl_y = static_cast<double>(al.y) - static_cast<double>(ak.y);
+    const double rkl_z = static_cast<double>(al.z) - static_cast<double>(ak.z);
 
-    bj2inv = 1 / (rnj.x * rnj.x + rnj.y * rnj.y + rnj.z * rnj.z);
-    bk2inv = 1 / (rnk.x * rnk.x + rnk.y * rnk.y + rnk.z * rnk.z);
-    bjinv = sqrt(bj2inv);
-    bkinv = sqrt(bk2inv);
+    const double rnj_x = rji_y * rjk_z - rji_z * rjk_y;
+    const double rnj_y = rji_z * rjk_x - rji_x * rjk_z;
+    const double rnj_z = rji_x * rjk_y - rji_y * rjk_x;
+    const double rnk_x = -rjk_y * rkl_z + rjk_z * rkl_y;
+    const double rnk_y = -rjk_z * rkl_x + rjk_x * rkl_z;
+    const double rnk_z = -rjk_x * rkl_y + rjk_y * rkl_x;
 
-    cos_phi = (rnj.x * rnk.x + rnj.y * rnk.y + rnj.z * rnk.z) * (bjinv * bkinv);
+    const double bj2inv = 1.0 / (rnj_x * rnj_x + rnj_y * rnj_y + rnj_z * rnj_z);
+    const double bk2inv = 1.0 / (rnk_x * rnk_x + rnk_y * rnk_y + rnk_z * rnk_z);
+    const double bjinv = sqrt(bj2inv);
+    const double bkinv = sqrt(bk2inv);
+    const double bjkinv = bjinv * bkinv;
+
+    double cos_phi = (rnj_x * rnk_x + rnj_y * rnk_y + rnj_z * rnk_z) * bjkinv;
     // printf("cos_phi = %f\n", cos_phi);
     if (cos_phi > 1) {
         cos_phi = 1;
@@ -65,64 +63,65 @@ __global__ void calc_improper2_forces_kernel(int start, int end, improper_t* imp
     if (cos_phi < -1) {
         cos_phi = -1;
     }
-    phi = acos(cos_phi);
-    if (rjk.x * (rnj.y * rnk.z - rnj.z * rnk.y) + rjk.y * (rnj.z * rnk.x - rnj.x * rnk.z) + rjk.z * (rnj.x * rnk.y - rnj.y * rnk.x) < 0) {
+    double phi = acos(cos_phi);
+    if (rjk_x * (rnj_y * rnk_z - rnj_z * rnk_y) + rjk_y * (rnj_z * rnk_x - rnj_x * rnk_z) + rjk_z * (rnj_x * rnk_y - rnj_y * rnk_x) < 0) {
         phi = -phi;
     }
 
     // Energy
-    arg = 2 * phi - to_radians_device(cimp.phi0);
-    ener = cimp.k * (1 + cos(arg));
-    dv = -2 * cimp.k * sin(arg);
+    const double arg = 2.0 * phi - to_radians_device(cimp.phi0);
+    const double ener = cimp.k * (1.0 + cos(arg));
+    const double dv = -2.0 * cimp.k * sin(arg);
 
     // Forces
-    f1 = sin(phi);
-    if (fabs(f1) < k_singular_sin_epsilon) f1 = copysign(k_singular_sin_epsilon, f1);
-    f1 = -1 / f1;
+    double f1 = sin(phi);
+    const double sin_epsilon = static_cast<double>(k_singular_sin_epsilon);
+    if (fabs(f1) < sin_epsilon) f1 = copysign(sin_epsilon, f1);
+    f1 = -1.0 / f1;
     // printf("f1 = %f phi = %f cos_phi = %f\n", f1, phi, cos_phi);
 
-    di.x = f1 * (rnk.x * (bjinv * bkinv) - cos_phi * rnj.x * bj2inv);
-    di.y = f1 * (rnk.y * (bjinv * bkinv) - cos_phi * rnj.y * bj2inv);
-    di.z = f1 * (rnk.z * (bjinv * bkinv) - cos_phi * rnj.z * bj2inv);
-    dl.x = f1 * (rnj.x * (bjinv * bkinv) - cos_phi * rnk.x * bk2inv);
-    dl.y = f1 * (rnj.y * (bjinv * bkinv) - cos_phi * rnk.y * bk2inv);
-    dl.z = f1 * (rnj.z * (bjinv * bkinv) - cos_phi * rnk.z * bk2inv);
+    const double di_x = f1 * (rnk_x * bjkinv - cos_phi * rnj_x * bj2inv);
+    const double di_y = f1 * (rnk_y * bjkinv - cos_phi * rnj_y * bj2inv);
+    const double di_z = f1 * (rnk_z * bjkinv - cos_phi * rnj_z * bj2inv);
+    const double dl_x = f1 * (rnj_x * bjkinv - cos_phi * rnk_x * bk2inv);
+    const double dl_y = f1 * (rnj_y * bjkinv - cos_phi * rnk_y * bk2inv);
+    const double dl_z = f1 * (rnj_z * bjkinv - cos_phi * rnk_z * bk2inv);
 
-    rki.x = rji.x - rjk.x;
-    rki.y = rji.y - rjk.y;
-    rki.z = rji.z - rjk.z;
-    rlj.x = -rjk.x - rkl.x;
-    rlj.y = -rjk.y - rkl.y;
-    rlj.z = -rjk.z - rkl.z;
+    const double rki_x = rji_x - rjk_x;
+    const double rki_y = rji_y - rjk_y;
+    const double rki_z = rji_z - rjk_z;
+    const double rlj_x = -rjk_x - rkl_x;
+    const double rlj_y = -rjk_y - rkl_y;
+    const double rlj_z = -rjk_z - rkl_z;
 
-    dpi.x = rjk.y * di.z - rjk.z * di.y;
-    dpi.y = rjk.z * di.x - rjk.x * di.z;
-    dpi.z = rjk.x * di.y - rjk.y * di.x;
-    dpj.x = rki.y * di.z - rki.z * di.y + rkl.y * dl.z - rkl.z * dl.y;
-    dpj.y = rki.z * di.x - rki.x * di.z + rkl.z * dl.x - rkl.x * dl.z;
-    dpj.z = rki.x * di.y - rki.y * di.x + rkl.x * dl.y - rkl.y * dl.x;
-    dpk.x = rlj.y * dl.z - rlj.z * dl.y - rji.y * di.z + rji.z * di.y;
-    dpk.y = rlj.z * dl.x - rlj.x * dl.z - rji.z * di.x + rji.x * di.z;
-    dpk.z = rlj.x * dl.y - rlj.y * dl.x - rji.x * di.y + rji.y * di.x;
-    dpl.x = rjk.y * dl.z - rjk.z * dl.y;
-    dpl.y = rjk.z * dl.x - rjk.x * dl.z;
-    dpl.z = rjk.x * dl.y - rjk.y * dl.x;
+    const double dpi_x = rjk_y * di_z - rjk_z * di_y;
+    const double dpi_y = rjk_z * di_x - rjk_x * di_z;
+    const double dpi_z = rjk_x * di_y - rjk_y * di_x;
+    const double dpj_x = rki_y * di_z - rki_z * di_y + rkl_y * dl_z - rkl_z * dl_y;
+    const double dpj_y = rki_z * di_x - rki_x * di_z + rkl_z * dl_x - rkl_x * dl_z;
+    const double dpj_z = rki_x * di_y - rki_y * di_x + rkl_x * dl_y - rkl_y * dl_x;
+    const double dpk_x = rlj_y * dl_z - rlj_z * dl_y - rji_y * di_z + rji_z * di_y;
+    const double dpk_y = rlj_z * dl_x - rlj_x * dl_z - rji_z * di_x + rji_x * di_z;
+    const double dpk_z = rlj_x * dl_y - rlj_y * dl_x - rji_x * di_y + rji_y * di_x;
+    const double dpl_x = rjk_y * dl_z - rjk_z * dl_y;
+    const double dpl_y = rjk_z * dl_x - rjk_x * dl_z;
+    const double dpl_z = rjk_x * dl_y - rjk_y * dl_x;
 
     // Update energy and forces
     atomic_add_energy(energy_sum, ener);
 
-    atomic_add_force(&dvelocities[aii].x, dv * dpi.x);
-    atomic_add_force(&dvelocities[aii].y, dv * dpi.y);
-    atomic_add_force(&dvelocities[aii].z, dv * dpi.z);
-    atomic_add_force(&dvelocities[aji].x, dv * dpj.x);
-    atomic_add_force(&dvelocities[aji].y, dv * dpj.y);
-    atomic_add_force(&dvelocities[aji].z, dv * dpj.z);
-    atomic_add_force(&dvelocities[aki].x, dv * dpk.x);
-    atomic_add_force(&dvelocities[aki].y, dv * dpk.y);
-    atomic_add_force(&dvelocities[aki].z, dv * dpk.z);
-    atomic_add_force(&dvelocities[ali].x, dv * dpl.x);
-    atomic_add_force(&dvelocities[ali].y, dv * dpl.y);
-    atomic_add_force(&dvelocities[ali].z, dv * dpl.z);
+    atomic_add_force(&dvelocities[aii].x, dv * dpi_x);
+    atomic_add_force(&dvelocities[aii].y, dv * dpi_y);
+    atomic_add_force(&dvelocities[aii].z, dv * dpi_z);
+    atomic_add_force(&dvelocities[aji].x, dv * dpj_x);
+    atomic_add_force(&dvelocities[aji].y, dv * dpj_y);
+    atomic_add_force(&dvelocities[aji].z, dv * dpj_z);
+    atomic_add_force(&dvelocities[aki].x, dv * dpk_x);
+    atomic_add_force(&dvelocities[aki].y, dv * dpk_y);
+    atomic_add_force(&dvelocities[aki].z, dv * dpk_z);
+    atomic_add_force(&dvelocities[ali].x, dv * dpl_x);
+    atomic_add_force(&dvelocities[ali].y, dv * dpl_y);
+    atomic_add_force(&dvelocities[ali].z, dv * dpl_z);
 }
 
 real_t calc_improper2_forces_host(int start, int end) {

@@ -25,12 +25,9 @@ void calc_nonbonded_qw_forces() {
     // Loop over O-atoms, q-atoms
     for (int j = ctx.n_atoms_solute; j < ctx.n_atoms; j += 3) {
         const catype_t& ow_type = ctx.unified_catype(j, 0);
-        float ow_charge = ctx.unified_ccharge(j, 0).charge;
-        float hw1_charge = ctx.unified_ccharge(j + 1, 0).charge;
-        float hw2_charge = ctx.unified_ccharge(j + 2, 0).charge;
-        ow_charge *= sqrt(ctx.topo.coulomb_constant);
-        hw1_charge *= sqrt(ctx.topo.coulomb_constant);
-        hw2_charge *= sqrt(ctx.topo.coulomb_constant);
+        real_t ow_charge = ctx.unified_ccharge(j, 0).charge;
+        real_t hw1_charge = ctx.unified_ccharge(j + 1, 0).charge;
+        real_t hw2_charge = ctx.unified_ccharge(j + 2, 0).charge;
         for (int qi = 0; qi < ctx.n_qatoms; qi++) {
             i = ctx.q_atoms[qi];
             if (excluded[i] || excluded[j]) continue;
@@ -69,10 +66,10 @@ void calc_nonbonded_qw_forces() {
                     calc_vdw_arithmetic(ai_aii, ow_type.aii_normal, ai_bii, ow_type.bii_normal, r6Oinv, &V_a, &V_b);
                 }
 
-                const float q_charge = ctx.unified_ccharge(i, state).charge * sqrt(ctx.topo.coulomb_constant);
-                VelO =  ow_charge * q_charge * rO;
-                VelH1 = hw1_charge * q_charge * rH1;
-                VelH2 = hw2_charge * q_charge * rH2;
+                const real_t q_charge = ctx.unified_ccharge(i, state).charge;
+                VelO =  ow_charge * q_charge * rO * ctx.topo.coulomb_constant;
+                VelH1 = hw1_charge * q_charge * rH1 * ctx.topo.coulomb_constant;
+                VelH2 = hw2_charge * q_charge * rH2 * ctx.topo.coulomb_constant;
 
 
                 const real_t lambda = static_cast<real_t>(lambdas[state]);

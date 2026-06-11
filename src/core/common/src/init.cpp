@@ -490,13 +490,13 @@ void init_water_sphere() {
         auto* lambdas = ctx.lambdas->cpu_data_p;
         for (int state = 0; state < ctx.n_lambdas; state++) {
             for (int qi = 0; qi < ctx.n_qatoms; qi++) {
-                ctx.crgQtot += ctx.q_charges[qi + ctx.n_qatoms * state].charge * lambdas[state];
+                ctx.crgQtot += static_cast<double>(ctx.q_charges[qi + ctx.n_qatoms * state].charge) * static_cast<double>(lambdas[state]);
             }
         }
     }
 
-    ctx.Dwmz = 0.26f * exp(-0.19f * (ctx.topo.solvent_radius - 15)) + 0.74f;
-    ctx.awmz = 0.2f / (1 + exp(0.4f * (ctx.topo.solvent_radius - 25))) + 0.3f;
+    ctx.Dwmz = 0.26 * exp(-0.19 * (ctx.topo.solvent_radius - 15)) + 0.74;
+    ctx.awmz = 0.2 / (1 + exp(0.4 * (ctx.topo.solvent_radius - 25))) + 0.3;
 
     printf("Dwmz = %f, awmz = %f\n", ctx.Dwmz, ctx.awmz);
 }
@@ -505,14 +505,14 @@ void init_water_sphere() {
 void init_wshells() {
     auto& ctx = Context::instance();
     int n_inshell;
-    real_t drs, router, ri, dr, Vshell, rshell;
+    double drs, router, ri, dr, Vshell, rshell;
     auto& cbonds = ctx.cbonds->cpu_data_p;
     auto& cangles = ctx.cangles->cpu_data_p;
     // Match Fortran wat_shells, which uses the last topology water bond/angle codes.
     cbond_t cbondw = cbonds[ctx.n_cbonds - 1];
     cangle_t canglew = cangles[ctx.n_cangles - 1];
-    const real_t crg_ow = ctx.unified_ccharge(ctx.n_atoms_solute, 0).charge;
-    const real_t mu_w = -crg_ow * cbondw.b0 * cos(to_radians(canglew.th0) / 2);
+    const double crg_ow = ctx.unified_ccharge(ctx.n_atoms_solute, 0).charge;
+    const double mu_w = -crg_ow * cbondw.b0 * cos(to_radians(canglew.th0) / 2);
 
     drs = wpolr_layer / drouter;
 
@@ -653,7 +653,7 @@ void init_pshells_from_charge_groups() {
     auto& ctx = Context::instance();
     auto& coords_init = ctx.coords_init->cpu_data_p;
     auto* excluded = ctx.excluded->cpu_data_p;
-    real_t r2, rin2;
+    double r2, rin2;
     auto& charge_groups = ctx.charge_group_config;
     const bool use_switch_atom = charge_groups.iuse_switch_atom == 1;
 

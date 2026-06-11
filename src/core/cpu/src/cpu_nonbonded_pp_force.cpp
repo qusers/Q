@@ -18,7 +18,7 @@ void calc_nonbonded_pp_forces() {
     coord_t da;
     real_t r2a, ra, r6a;
     real_t V_a, V_b;
-    float crg_i, crg_j;
+    real_t crg_i, crg_j;
     real_t ai_aii, aj_aii, ai_bii, aj_bii;
     int i, j;
     energy_accum_t ucoul = 0;
@@ -45,13 +45,11 @@ void calc_nonbonded_pp_forces() {
             da.x = coords[j].x - coords[i].x;
             da.y = coords[j].y - coords[i].y;
             da.z = coords[j].z - coords[i].z;
-            r2a = 1.0f / (da.x * da.x + da.y * da.y + da.z * da.z);
+            r2a = 1.0 / (da.x * da.x + da.y * da.y + da.z * da.z);
             ra = sqrt(r2a);
             r6a = r2a * r2a * r2a;
 
-            crg_i *= sqrt(ctx.topo.coulomb_constant);
-            crg_j *= sqrt(ctx.topo.coulomb_constant);
-            const real_t Vela = crg_i * crg_j * ra * scaling;
+            const real_t Vela = crg_i * crg_j * ra * scaling * ctx.topo.coulomb_constant;
 
             ai_aii = bond14 ? ai_type.aii_1_4 : ai_type.aii_normal;
             aj_aii = bond14 ? aj_type.aii_1_4 : aj_type.aii_normal;

@@ -12,9 +12,8 @@ real_t calc_bond_forces(int start, int end) {
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
     int aii, aji;
-    coord_t ai, aj, dx;
+    coord_t ai, aj;
     cbond_t cbond;
-    real_t dx2, dx1, ddx, ener, ampl;
     energy_accum_t bond = 0;
 
     for (int i = start; i < end; i++) {
@@ -25,29 +24,28 @@ real_t calc_bond_forces(int start, int end) {
 
         cbond = cbonds[bonds[i].code - 1];
 
-        // Calculate distance vector, norm of distance vector
-        dx.x = aj.x - ai.x;
-        dx.y = aj.y - ai.y;
-        dx.z = aj.z - ai.z;
-        dx2 = dx.x * dx.x + dx.y * dx.y + dx.z * dx.z;
-        dx1 = sqrt(dx2);
+        const double dx = static_cast<double>(aj.x) - static_cast<double>(ai.x);
+        const double dy = static_cast<double>(aj.y) - static_cast<double>(ai.y);
+        const double dz = static_cast<double>(aj.z) - static_cast<double>(ai.z);
+        const double r2 = dx * dx + dy * dy + dz * dz;
+        const double r = sqrt(r2);
 
         // Calculate energy
-        ddx = dx1 - cbond.b0;
-        ener = .5 * cbond.kb * ddx * ddx;
+        const double dr = r - cbond.b0;
+        const double ener = 0.5 * cbond.kb * dr * dr;
 
         add_energy(bond, ener);
 
         // Update forces
-        ampl = cbond.kb * ddx / dx1;
+        const double ampl = cbond.kb * dr / r;
 
-        add_force(dvelocities[aji].x, ampl * dx.x);
-        add_force(dvelocities[aji].y, ampl * dx.y);
-        add_force(dvelocities[aji].z, ampl * dx.z);
+        add_force(dvelocities[aji].x, ampl * dx);
+        add_force(dvelocities[aji].y, ampl * dy);
+        add_force(dvelocities[aji].z, ampl * dz);
 
-        add_force(dvelocities[aii].x, -ampl * dx.x);
-        add_force(dvelocities[aii].y, -ampl * dx.y);
-        add_force(dvelocities[aii].z, -ampl * dx.z);
+        add_force(dvelocities[aii].x, -ampl * dx);
+        add_force(dvelocities[aii].y, -ampl * dy);
+        add_force(dvelocities[aii].z, -ampl * dz);
     }
 
     return energy_from_accum(bond);

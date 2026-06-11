@@ -57,12 +57,10 @@ void calc_nonbonded_qp_forces() {
                 ai_bii = bond14 ? qi_type.bii_1_4 : qi_type.bii_normal;
                 aj_bii = bond14 ? aj_type.bii_1_4 : aj_type.bii_normal;
 
-                float crg_i = ctx.unified_ccharge(i, state).charge;
-                float crg_j = ctx.unified_ccharge(j, state).charge;
-                crg_i *= sqrt(ctx.topo.coulomb_constant);
-                crg_j *= sqrt(ctx.topo.coulomb_constant);
+                real_t crg_i = ctx.unified_ccharge(i, state).charge;
+                real_t crg_j = ctx.unified_ccharge(j, state).charge;
 
-                Vel = crg_i * crg_j * r * scaling;
+                Vel = crg_i * crg_j * r * scaling * ctx.topo.coulomb_constant;
                 if (ctx.topo.vdw_rule == VDW_GEOMETRIC) {
                     calc_vdw_geometric(ai_aii, aj_aii, ai_bii, aj_bii, r6inv, &V_a, &V_b);
                 } else {

@@ -26,13 +26,13 @@ struct md_t {
     real_t solute_solvent;
     real_t q_atom;
     // [sphere]
-    real_t shell_radius;  // Note: this is for the pshell
-    real_t shell_force;   // Note: this is for the pshell
+    double shell_radius;  // Note: this is for the pshell
+    double shell_force;   // Note: this is for the pshell
     // [solvent]
-    real_t radial_force;
+    double radial_force;
     bool polarisation;
     bool charge_correction;
-    real_t polarisation_force;
+    double polarisation_force;
     // [intervals]
     int non_bond;
     int output;
@@ -60,8 +60,8 @@ struct bond_t {
 
 struct cbond_t {
     int code;
-    real_t kb;
-    real_t b0;
+    double kb;
+    double b0;
 };
 
 struct angle_t {
@@ -73,8 +73,8 @@ struct angle_t {
 
 struct cangle_t {
     int code;
-    real_t kth;
-    real_t th0;
+    double kth;
+    double th0;
 };
 
 struct torsion_t {
@@ -87,10 +87,10 @@ struct torsion_t {
 
 struct ctorsion_t {
     int code;
-    float k;
-    float n;
-    float d;
-    float paths;
+    real_t k;
+    real_t n;
+    real_t d;
+    real_t paths;
 };
 
 struct improper_t {
@@ -103,8 +103,8 @@ struct improper_t {
 
 struct cimproper_t {
     int code;
-    float k;
-    float phi0;
+    double k;
+    double phi0;
 };
 
 struct charge_t {
@@ -114,7 +114,7 @@ struct charge_t {
 
 struct ccharge_t {
     int code;
-    float charge;
+    real_t charge;
 };
 
 struct atype_t {
@@ -141,7 +141,7 @@ struct vdw_pair_param_t {
 struct topo_t {
     int solvent_type;
     real_t exclusion_radius;
-    real_t solvent_radius;
+    double solvent_radius;
     coord_t solute_center;
     coord_t solvent_center;
     real_t el14_scale;
@@ -241,7 +241,7 @@ struct q_torcouple_t {
 struct restrseq_t {
     int ai;
     int aj;
-    real_t k;
+    double k;
     bool ih;
     int to_center;  // Flag for restraining to geom. or mass center
 };
@@ -256,32 +256,32 @@ struct restrpos_t {
 struct restrdis_t {
     int ai, aj;
     int ipsi;
-    real_t d1, d2;
-    real_t k;
+    double d1, d2;
+    double k;
     char itext[20], jtext[20];
 };
 
 struct restrang_t {
     int ai, aj, ak;
     int ipsi;
-    real_t ang;
-    real_t k;
+    double ang;
+    double k;
 };
 
 struct restrwall_t {
     int ai, aj;
-    real_t d, k, aMorse, dMorse;
+    double d, k, aMorse, dMorse;
     bool ih;
 };
 
 struct shell_t {
     int n_inshell;
-    real_t theta_corr;
-    real_t avtheta;
-    real_t avn_inshell;
-    real_t router;
-    real_t dr;
-    real_t cstb;
+    double theta_corr;
+    double avtheta;
+    double avn_inshell;
+    double router;
+    double dr;
+    double cstb;
 };
 
 /* =============================================
