@@ -77,6 +77,7 @@ def render_md_input(
     restart_file: str | None = None,
     energy_file: str | None = None,
     is_eq1: bool = False,
+    foreign_lambdas: str = "",
 ) -> str:
     """Render an MD input file from parameters.
 
@@ -92,6 +93,11 @@ def render_md_input(
         restart_file: Restart input filename (None for eq1)
         energy_file: Energy output filename (None for equilibration)
         is_eq1: True for eq1.inp which has random_seed and initial_temperature
+        foreign_lambdas: Whitespace-separated lambda_c values at which the engine
+            writes the true U(lambda') energies (the .en.fl file). Required for
+            single-Hamiltonian FEP, whose U is non-linear in lambda so the standard
+            qfep linear reconstruction is invalid. Empty string omits the section,
+            leaving dual-topology output unchanged.
 
     Returns:
         Complete .inp file content as string
@@ -123,6 +129,10 @@ def render_md_input(
 
     restart_file_name = f"restart                   {restart_file}\n" if restart_file else ""
     energy_file_name = f"energy                    {energy_file}\n" if energy_file else ""
+
+    foreign_lambda_section = (
+        f"[foreign_lambdas]\n{foreign_lambdas}\n\n" if foreign_lambdas else ""
+    )
 
     return f"""\
 [MD]
@@ -174,6 +184,7 @@ not excluded
 [lambdas]
 {lambda1} {lambda2}
 
+{foreign_lambda_section}\
 [sequence_restraints]
 {sequence_restraints}
 

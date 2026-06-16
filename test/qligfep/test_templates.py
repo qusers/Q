@@ -340,6 +340,39 @@ class TestRenderMdInput:
         assert "4682 4714 0.0 0.1 0.5 0" in content
         assert "4681 4751 10.0 0  0" in content
 
+    def test_foreign_lambdas_section_omitted_by_default(self):
+        """Dual-topology output is unchanged: no [foreign_lambdas] section."""
+        params = MDParameters(
+            steps=2500, stepsize=2.0, temperature=298, bath_coupling=10.0, shell_radius=25
+        )
+        content = render_md_input(
+            params=params,
+            lambda1="1.000",
+            lambda2="0.000",
+            trajectory_file="t.dcd",
+            final_file="t.re",
+        )
+        assert "[foreign_lambdas]" not in content
+
+    def test_foreign_lambdas_section_present_when_passed(self):
+        """Single-Hamiltonian chain window: the foreign-lambda schedule is written
+        between [lambdas] and [sequence_restraints]."""
+        params = MDParameters(
+            steps=2500, stepsize=2.0, temperature=298, bath_coupling=10.0, shell_radius=25
+        )
+        foreign = "0.0000 0.5000 1.0000"
+        content = render_md_input(
+            params=params,
+            lambda1="0.5000",
+            lambda2="0.5000",
+            trajectory_file="t.dcd",
+            final_file="t.re",
+            foreign_lambdas=foreign,
+        )
+        assert f"[foreign_lambdas]\n{foreign}" in content
+        assert content.index("[lambdas]") < content.index("[foreign_lambdas]")
+        assert content.index("[foreign_lambdas]") < content.index("[sequence_restraints]")
+
 
 class TestEquilibrationConfigs:
     """Tests for equilibration configuration generation."""
