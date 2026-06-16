@@ -415,10 +415,12 @@ class SingleTopologyFEP(FEP):
         [foreign_lambdas] schedule so the engine writes the true U(lambda') energies
         (the .en.fl file) the single-Hamiltonian BAR/MBAR analysis consumes.
 
-        Leg-specific protocol (validated): the protein leg equilibrates at lambda_c=0.5
-        and the chain runs lambda_c 0->1; the water leg equilibrates at lambda_c=1 (the
-        grown end, so dense water has no DUM cavity to clash into) and the chain runs
-        1->0, restarting from that equilibrated end.
+        Both legs equilibrate at the endpoint where the LARGER ligand is fully real, so
+        the atoms turned into DUM at the eq point are the smaller unique set and leave
+        the smallest cavity for dense water to collapse into (a large cavity blows up the
+        eq SHAKE). lambda_c=0 (state A real) if A has more unique atoms, else lambda_c=1
+        (state B real); the chain then runs away from that end. The estimator only reads
+        the converged production windows, so the eq-end choice does not bias ddG.
 
         Returns:
             list: [eq_files, chain_files, []] -- chain_files in execution order.
@@ -428,7 +430,9 @@ class SingleTopologyFEP(FEP):
         n_windows = len(lambdas)
         sched = [round(i / (n_windows - 1), 4) for i in range(n_windows)]
         foreign = " ".join(f"{lc:.4f}" for lc in sched)
-        eq_lc = 1.0 if self.system == "water" else 0.5
+        n_vanish = sum(1 for h in self.hyb if h["role"] == "vanish")
+        n_appear = sum(1 for h in self.hyb if h["role"] == "appear")
+        eq_lc = 0.0 if n_vanish > n_appear else 1.0
 
         eq_files = []
         eq_configs = get_equilibration_configs(self.timestep, int(self.sphereradius))
@@ -453,7 +457,8 @@ class SingleTopologyFEP(FEP):
         prod_config = get_production_config(self.timestep, int(self.sphereradius))
         prod_config.params.topology = "singletop.top"
         seq10 = format_sequence_restraint(first, last, 10.0)
-        chain_order = list(reversed(sched)) if self.system == "water" else list(sched)
+        # chain away from the equilibrated end (eq at lambda_c=1 -> walk 1->0, else 0->1)
+        chain_order = list(reversed(sched)) if eq_lc == 1.0 else list(sched)
 
         chain_files = []
         prev = "eq5.re"

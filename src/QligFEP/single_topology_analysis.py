@@ -136,21 +136,32 @@ def _bar(wf, wr, tol=1e-10):
     return 0.5 * (lo + hi)
 
 
-def edge_ddg(root, edge, *, discard=40, temperature=298, estimator="mbar"):
+def _n_windows(fl_dir):
+    """Number of window .en.fl files present in a replicate directory."""
+    return len(glob.glob(str(Path(fl_dir) / "*.en.fl")))
+
+
+def edge_ddg(root, edge, *, discard=40, temperature=298, estimator="mbar", n_windows=21):
     """Per-replicate ddG = dG_protein - dG_water for one edge, with mean and SEM.
 
     Expects setupFEP's layout: {root}/{2.protein,1.water}/FEP_{edge}/FEP1/{T}/{rep}/.
-    Replicates are paired by directory name across the two legs.
+    Replicates are paired by directory name across the two legs. Only replicates whose
+    leg has the full window schedule (n_windows .en.fl) are used -- MBAR over a
+    truncated schedule misses an endpoint and gives the wrong dG; incomplete
+    replicates are recorded, not silently averaged in.
     """
     leg_dg = leg_dg_mbar if estimator == "mbar" else leg_dg_bar
-    legs = {}
+    legs, incomplete = {}, {}
     for leg, sub in (("protein", "2.protein"), ("water", "1.water")):
         base = Path(root) / sub / f"FEP_{edge}" / "FEP1" / str(temperature)
-        legs[leg] = {
-            Path(d).name: leg_dg(d, discard=discard, temperature=temperature)
-            for d in sorted(glob.glob(str(base / "*")))
-            if Path(d).is_dir()
-        }
+        legs[leg], incomplete[leg] = {}, []
+        for d in sorted(glob.glob(str(base / "*"))):
+            if not Path(d).is_dir():
+                continue
+            if _n_windows(d) < n_windows:
+                incomplete[leg].append(Path(d).name)
+                continue
+            legs[leg][Path(d).name] = leg_dg(d, discard=discard, temperature=temperature)
     reps = sorted(set(legs["protein"]) & set(legs["water"]))
     ddgs = []
     for r in reps:
