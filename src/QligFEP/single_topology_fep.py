@@ -18,6 +18,7 @@ import os
 import re
 import shutil
 import stat
+import subprocess
 from pathlib import Path
 
 from rdkit import Chem
@@ -177,13 +178,17 @@ class SingleTopologyFEP(FEP):
                 f.write("  ".join(f"{n:<8s}" for n in improper) + "\n")
 
     def _fep_atom_offset(self, writedir):
-        """FEP-file topology offset. The water leg's only solute is the hybrid, so
-        topology index == FEP index (offset 0). In the protein leg the hybrid is the
-        last residue, so the offset is every preceding atom (protein + solvent)."""
+        """FEP-file topology offset (FEP atom k -> topology atom offset+k). The water
+        leg's only solute is the hybrid, so topology index == FEP index (offset 0). In
+        the protein leg qprep orders protein, then the LIG hybrid, then solvent, so the
+        offset is the count of atoms before the first LIG atom."""
         if self.system == "water":
             return 0
-        total = read_pdb_to_dataframe(Path(writedir) / "top_p.pdb").shape[0]
-        return total - len(self.hyb)
+        df = read_pdb_to_dataframe(Path(writedir) / "top_p.pdb")
+        lig = df[df["residue_name"] == "LIG"]
+        if lig.empty:
+            raise ValueError(f"LIG residue not found in {writedir}/top_p.pdb")
+        return int(lig["atom_serial_number"].astype(int).min()) - 1
 
     def write_FEP_file(
         self, change_charges, change_atoms, FEP_vdw, writedir, lig_size1, lig_size2,
@@ -286,26 +291,20 @@ class SingleTopologyFEP(FEP):
             merged_prm = f"{self.FF}_{self.lig1}_{self.lig2}_merged.prm"
             full_prm = "singletop_full.prm"
             shutil.copy(merged_prm, full_prm)
+            # Iterate raw qprep passes (missing-parameter errors are expected here and
+            # are resolved between passes), then a final error-checked pass validates.
             seen = set()
-            it = 0
-            for it in range(1, max_iterations + 1):
-                run_qprep(qprep_path, "qprep.inp", "qprep.out", self.FF)
+            for _ in range(max_iterations):
+                with open("qprep.out", "w") as out:
+                    subprocess.run([qprep_path, "qprep.inp"], stdout=out, stderr=subprocess.STDOUT, text=True)
                 missing = self._parse_missing_params("qprep.out")
                 new = [m for m in missing if m not in seen]
                 if not new:
                     break
                 seen.update(new)
                 self._add_boundary_params(full_prm, new)
-            remaining = self._parse_missing_params("qprep.out")
-            if remaining:
-                logger.warning(
-                    f"{len(remaining)} missing parameter(s) remain after {it} qprep pass(es) for "
-                    f"{self.lig1}->{self.lig2} ({self.system}); first: {remaining[0]}"
-                )
-            if not Path("singletop.top").exists():
-                logger.error(
-                    f"qprep did not produce singletop.top for {self.lig1}->{self.lig2} ({self.system})"
-                )
+            # Authoritative pass: raises on any unresolved or other qprep error.
+            run_qprep(qprep_path, "qprep.inp", "qprep.out", self.FF)
         finally:
             os.chdir(start_cwd)
 
