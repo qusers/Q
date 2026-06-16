@@ -107,11 +107,17 @@ class SingleTopologyFEP(FEP):
         shared_a = set(a_to_b)
         shared_b = set(a_to_b.values())
 
-        # ligand-B atom index -> hybrid name: shared keep their A-partner's name,
-        # appearing atoms are X-prefixed.
-        name_b = {j: "X" + atoms_b[j][0] for j in self.st_map.appear}
+        # ligand-B atom index -> hybrid name: shared atoms keep their A-partner's
+        # name; appearing atoms are X-prefixed, but the X-prefix can overflow the PDB
+        # 4-char atom-name field for a 2-letter element with a 2-digit index (Cl24 ->
+        # XCl24), so those fall back to a unique element-based name that fits.
+        name_b = {}
         for i_a, j_b in a_to_b.items():
             name_b[j_b] = atoms_a[i_a][0]
+        used_names = {a[0] for a in atoms_a}  # every lig1 name is kept (shared or vanishing)
+        for j in self.st_map.appear:
+            name_b[j] = self._fit_pdb_name("X" + atoms_b[j][0], _element(atoms_b[j][0]), used_names)
+            used_names.add(name_b[j])
 
         hyb = []
         for i, (name, ljtype, charge) in enumerate(atoms_a):
@@ -150,6 +156,20 @@ class SingleTopologyFEP(FEP):
         return ([type_replacements, type_replacements],
                 [change_charges, change_atoms],
                 [len(hyb), 0])
+
+    @staticmethod
+    def _fit_pdb_name(candidate, elem, used):
+        """Return a hybrid atom name that fits the PDB 4-char field and is unique.
+        Prefer `candidate` (the X-prefixed name); if it overflows 4 chars or clashes,
+        fall back to the element plus the smallest free index (e.g. XCl24 -> Cl1)."""
+        if len(candidate) <= 4 and candidate not in used:
+            return candidate
+        i = 1
+        while True:
+            name = f"{elem}{i}"
+            if len(name) <= 4 and name not in used:
+                return name
+            i += 1
 
     @staticmethod
     def _merge_terms(terms_a, terms_b, atoms_b, name_b, shared_b):
