@@ -1,6 +1,6 @@
 #pragma once
 #include "shake.h"
-class CpuShake final : public Shake {
+class CpuShake : public Shake {
    public:
     void apply(Context& ctx) override;
     void initial_shake(Context& ctx) override;

@@ -37,6 +37,7 @@
 #include "cuda/include/cuda_temperature.cuh"
 #include "cuda/include/cuda_torsion_force.cuh"
 #include "cuda_shake.cuh"
+#include "cuda_shake_v2.cuh"
 #include "init.h"
 
 void CudaHandler::initialize_backend() {
@@ -154,5 +155,6 @@ void CudaHandler::reset_energies() {
 }
 
 std::unique_ptr<Shake> CudaHandler::create_shake_backend() {
-    return std::make_unique<CudaShake>();
+    return std::make_unique<CudaShakeV2>();
+    // return std::make_unique<CudaShake>();
 }
