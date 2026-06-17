@@ -15,7 +15,7 @@ __global__ void calc_restrdis_forces_kernel(
     restrdis_t* restrdists,
     int n_restrdists,
     coord_t* coords,
-    real_t* lambdas,
+    double* lambdas,
     int n_lambdas,
     dvel_t* dvelocities,
     energy_accum_t* urestr,
@@ -31,13 +31,13 @@ __global__ void calc_restrdis_forces_kernel(
     i = restrdists[ir].ai - 1;
     j = restrdists[ir].aj - 1;
 
-    const double dx = static_cast<double>(coords[j].x) - static_cast<double>(coords[i].x);
-    const double dy = static_cast<double>(coords[j].y) - static_cast<double>(coords[i].y);
-    const double dz = static_cast<double>(coords[j].z) - static_cast<double>(coords[i].z);
+    const double dx = coords[j].x - coords[i].x;
+    const double dy = coords[j].y - coords[i].y;
+    const double dz = coords[j].z - coords[i].z;
 
     double lambda;
     if (restrdists[ir].ipsi != 0) {
-        lambda = static_cast<double>(lambdas[state]);
+        lambda = lambdas[state];
     } else {
         lambda = 1.0;
     }

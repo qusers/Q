@@ -22,13 +22,13 @@ __global__ void calc_angle_forces_kernel(int start, int end, angle_t* angles, co
 
     cangle_t cang = cangles[angles[idx].code - 1];
 
-    const double rji_x = static_cast<double>(ri.x) - static_cast<double>(rj.x);
-    const double rji_y = static_cast<double>(ri.y) - static_cast<double>(rj.y);
-    const double rji_z = static_cast<double>(ri.z) - static_cast<double>(rj.z);
+    const double rji_x = ri.x - rj.x;
+    const double rji_y = ri.y - rj.y;
+    const double rji_z = ri.z - rj.z;
 
-    const double rjk_x = static_cast<double>(rk.x) - static_cast<double>(rj.x);
-    const double rjk_y = static_cast<double>(rk.y) - static_cast<double>(rj.y);
-    const double rjk_z = static_cast<double>(rk.z) - static_cast<double>(rj.z);
+    const double rjk_x = rk.x - rj.x;
+    const double rjk_y = rk.y - rj.y;
+    const double rjk_z = rk.z - rj.z;
 
     const double rji2inv = 1.0 / (rji_x * rji_x + rji_y * rji_y + rji_z * rji_z);
     const double rjk2inv = 1.0 / (rjk_x * rjk_x + rjk_y * rjk_y + rjk_z * rjk_z);
@@ -48,7 +48,7 @@ __global__ void calc_angle_forces_kernel(int start, int end, angle_t* angles, co
     const double dv = cang.kth * dtheta;
 
     double f1 = sin(theta);
-    const double sin_epsilon = static_cast<double>(k_singular_sin_epsilon);
+    const double sin_epsilon = k_singular_sin_epsilon;
     if (fabs(f1) < sin_epsilon) {
         f1 = -1.0 / sin_epsilon;
     } else {
@@ -78,7 +78,7 @@ __global__ void calc_angle_forces_kernel(int start, int end, angle_t* angles, co
     atomic_add_force(&dvelocities[j].z, -dv * (di_z + dk_z));
 }
 
-real_t calc_angle_forces_host(int start, int end) {
+double calc_angle_forces_host(int start, int end) {
     int N = end - start;
     if (N <= 0) return 0.0;
     using namespace CudaAngleForce;

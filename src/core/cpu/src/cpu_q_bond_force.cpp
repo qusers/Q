@@ -24,16 +24,16 @@ void calc_qbond_forces(int state) {
         ai = ctx.q_bonds[i + ctx.n_qbonds * state].ai - 1;
         aj = ctx.q_bonds[i + ctx.n_qbonds * state].aj - 1;
 
-        const double dx = static_cast<double>(coords[aj].x) - static_cast<double>(coords[ai].x);
-        const double dy = static_cast<double>(coords[aj].y) - static_cast<double>(coords[ai].y);
-        const double dz = static_cast<double>(coords[aj].z) - static_cast<double>(coords[ai].z);
+        const double dx = coords[aj].x - coords[ai].x;
+        const double dy = coords[aj].y - coords[ai].y;
+        const double dz = coords[aj].z - coords[ai].z;
 
         const double b = sqrt(dx * dx + dy * dy + dz * dz);
         const double db = b - ctx.q_cbonds[ic].b0;
 
         const double ener = 0.5 * ctx.q_cbonds[ic].kb * db * db;
         add_energy(bond, ener);
-        const double dv = db * ctx.q_cbonds[ic].kb * static_cast<double>(lambdas[state]) / b;
+        const double dv = db * ctx.q_cbonds[ic].kb * lambdas[state] / b;
 
         add_force(dvelocities[ai].x, -dv * dx);
         add_force(dvelocities[ai].y, -dv * dy);

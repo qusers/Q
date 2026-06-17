@@ -1,4 +1,4 @@
-// todo: Don't use real_t, always use double to do shake
+// todo: Don't use double, always use double to do shake
 #include <map>
 #include <unordered_map>
 
@@ -66,9 +66,9 @@ void CudaShake::find_shake_fast_water(Context& ctx, std::vector<bool>& optimized
         // triangle height from oxygen to the H-H midpoint height = sqrt(rOH * rOH - 0.25 * rHH * rHH);
         if (shake_bond[oh1].dist2 <= 0.25 * shake_bond[hh].dist2) continue;
 
-        const double wo = 1.0 / static_cast<double>(winv[o]);
-        const double wh1 = 1.0 / static_cast<double>(winv[h1]);
-        const double wh2 = 1.0 / static_cast<double>(winv[h2]);
+        const double wo = 1.0 / winv[o];
+        const double wh1 = 1.0 / winv[h1];
+        const double wh2 = 1.0 / winv[h2];
         if (wh1 != wh2) continue;
         shake_fast_waters.push_back(make_fast_water(o, h1, h2, shake_bond[oh1].dist2, shake_bond[hh].dist2, wo, wh1));
         optimized[oh1] = true;
@@ -282,10 +282,10 @@ void CudaShake::initial_shake(Context& ctx) {
     auto* velocities = ctx.velocities->cpu_data_p;
     auto* xcoords = ctx.xcoords->cpu_data_p;
     for (int i = 0; i < ctx.n_atoms; i++) {
-        const double dt = static_cast<double>(ctx.dt);
-        xcoords[i].x = static_cast<real_t>(static_cast<double>(coords[i].x) - dt * static_cast<double>(velocities[i].x));
-        xcoords[i].y = static_cast<real_t>(static_cast<double>(coords[i].y) - dt * static_cast<double>(velocities[i].y));
-        xcoords[i].z = static_cast<real_t>(static_cast<double>(coords[i].z) - dt * static_cast<double>(velocities[i].z));
+        const double dt = ctx.dt;
+        xcoords[i].x = coords[i].x - dt * velocities[i].x;
+        xcoords[i].y = coords[i].y - dt * velocities[i].y;
+        xcoords[i].z = coords[i].z - dt * velocities[i].z;
     }
 
     ctx.xcoords->upload();
@@ -295,10 +295,10 @@ void CudaShake::initial_shake(Context& ctx) {
     ctx.xcoords->download();
 
     for (int i = 0; i < ctx.n_atoms; i++) {
-        const double dt = static_cast<double>(ctx.dt);
-        velocities[i].x = static_cast<real_t>((static_cast<double>(coords[i].x) - static_cast<double>(xcoords[i].x)) / dt);
-        velocities[i].y = static_cast<real_t>((static_cast<double>(coords[i].y) - static_cast<double>(xcoords[i].y)) / dt);
-        velocities[i].z = static_cast<real_t>((static_cast<double>(coords[i].z) - static_cast<double>(xcoords[i].z)) / dt);
+        const double dt = ctx.dt;
+        velocities[i].x = (coords[i].x - xcoords[i].x) / dt;
+        velocities[i].y = (coords[i].y - xcoords[i].y) / dt;
+        velocities[i].z = (coords[i].z - xcoords[i].z) / dt;
     }
     ctx.velocities->upload();
 }
@@ -333,25 +333,25 @@ __global__ void calc_fast_water_shake_kernel(
     const int h1 = water.h1;
     const int h2 = water.h2;
 
-    const double xo0 = static_cast<double>(xcoords[o].x);
-    const double yo0 = static_cast<double>(xcoords[o].y);
-    const double zo0 = static_cast<double>(xcoords[o].z);
-    const double xh10 = static_cast<double>(xcoords[h1].x);
-    const double yh10 = static_cast<double>(xcoords[h1].y);
-    const double zh10 = static_cast<double>(xcoords[h1].z);
-    const double xh20 = static_cast<double>(xcoords[h2].x);
-    const double yh20 = static_cast<double>(xcoords[h2].y);
-    const double zh20 = static_cast<double>(xcoords[h2].z);
+    const double xo0 = xcoords[o].x;
+    const double yo0 = xcoords[o].y;
+    const double zo0 = xcoords[o].z;
+    const double xh10 = xcoords[h1].x;
+    const double yh10 = xcoords[h1].y;
+    const double zh10 = xcoords[h1].z;
+    const double xh20 = xcoords[h2].x;
+    const double yh20 = xcoords[h2].y;
+    const double zh20 = xcoords[h2].z;
 
-    const double xo1 = static_cast<double>(coords[o].x);
-    const double yo1 = static_cast<double>(coords[o].y);
-    const double zo1 = static_cast<double>(coords[o].z);
-    const double xh11 = static_cast<double>(coords[h1].x);
-    const double yh11 = static_cast<double>(coords[h1].y);
-    const double zh11 = static_cast<double>(coords[h1].z);
-    const double xh21 = static_cast<double>(coords[h2].x);
-    const double yh21 = static_cast<double>(coords[h2].y);
-    const double zh21 = static_cast<double>(coords[h2].z);
+    const double xo1 = coords[o].x;
+    const double yo1 = coords[o].y;
+    const double zo1 = coords[o].z;
+    const double xh11 = coords[h1].x;
+    const double yh11 = coords[h1].y;
+    const double zh11 = coords[h1].z;
+    const double xh21 = coords[h2].x;
+    const double yh21 = coords[h2].y;
+    const double zh21 = coords[h2].z;
 
     const double xb0 = xh10 - xo0;
     const double yb0 = yh10 - yo0;
@@ -447,15 +447,15 @@ __global__ void calc_fast_water_shake_kernel(
     const double yc3d = -xb2d * sinthe + yc2d * costhe;
     const double zc3d = zc1d;
 
-    coords[o].x = static_cast<real_t>(xcom + trns11 * xa3d + trns12 * ya3d + trns13 * za3d);
-    coords[o].y = static_cast<real_t>(ycom + trns21 * xa3d + trns22 * ya3d + trns23 * za3d);
-    coords[o].z = static_cast<real_t>(zcom + trns31 * xa3d + trns32 * ya3d + trns33 * za3d);
-    coords[h1].x = static_cast<real_t>(xcom + trns11 * xb3d + trns12 * yb3d + trns13 * zb3d);
-    coords[h1].y = static_cast<real_t>(ycom + trns21 * xb3d + trns22 * yb3d + trns23 * zb3d);
-    coords[h1].z = static_cast<real_t>(zcom + trns31 * xb3d + trns32 * yb3d + trns33 * zb3d);
-    coords[h2].x = static_cast<real_t>(xcom + trns11 * xc3d + trns12 * yc3d + trns13 * zc3d);
-    coords[h2].y = static_cast<real_t>(ycom + trns21 * xc3d + trns22 * yc3d + trns23 * zc3d);
-    coords[h2].z = static_cast<real_t>(zcom + trns31 * xc3d + trns32 * yc3d + trns33 * zc3d);
+    coords[o].x = xcom + trns11 * xa3d + trns12 * ya3d + trns13 * za3d;
+    coords[o].y = ycom + trns21 * xa3d + trns22 * ya3d + trns23 * za3d;
+    coords[o].z = zcom + trns31 * xa3d + trns32 * ya3d + trns33 * za3d;
+    coords[h1].x = xcom + trns11 * xb3d + trns12 * yb3d + trns13 * zb3d;
+    coords[h1].y = ycom + trns21 * xb3d + trns22 * yb3d + trns23 * zb3d;
+    coords[h1].z = zcom + trns31 * xb3d + trns32 * yb3d + trns33 * zb3d;
+    coords[h2].x = xcom + trns11 * xc3d + trns12 * yc3d + trns13 * zc3d;
+    coords[h2].y = ycom + trns21 * xc3d + trns22 * yc3d + trns23 * zc3d;
+    coords[h2].z = zcom + trns31 * xc3d + trns32 * yc3d + trns33 * zc3d;
 
 }
 
@@ -468,9 +468,9 @@ __global__ void calc_h_star_shake_kernel(
     if (idx >= n_shake_networks) return;
 
     const auto network = networks[idx];
-    double center_x = static_cast<double>(coords[network.center].x);
-    double center_y = static_cast<double>(coords[network.center].y);
-    double center_z = static_cast<double>(coords[network.center].z);
+    double center_x = coords[network.center].x;
+    double center_y = coords[network.center].y;
+    double center_z = coords[network.center].z;
     double hydrogens_x[3];
     double hydrogens_y[3];
     double hydrogens_z[3];
@@ -480,12 +480,12 @@ __global__ void calc_h_star_shake_kernel(
 
     for (int i = 0; i < network.n_hydrogens; i++) {
         const int h = network.hydrogens[i];
-        hydrogens_x[i] = static_cast<double>(coords[h].x);
-        hydrogens_y[i] = static_cast<double>(coords[h].y);
-        hydrogens_z[i] = static_cast<double>(coords[h].z);
-        old_vectors_x[i] = static_cast<double>(xcoords[network.center].x) - static_cast<double>(xcoords[h].x);
-        old_vectors_y[i] = static_cast<double>(xcoords[network.center].y) - static_cast<double>(xcoords[h].y);
-        old_vectors_z[i] = static_cast<double>(xcoords[network.center].z) - static_cast<double>(xcoords[h].z);
+        hydrogens_x[i] = coords[h].x;
+        hydrogens_y[i] = coords[h].y;
+        hydrogens_z[i] = coords[h].z;
+        old_vectors_x[i] = xcoords[network.center].x - xcoords[h].x;
+        old_vectors_y[i] = xcoords[network.center].y - xcoords[h].y;
+        old_vectors_z[i] = xcoords[network.center].z - xcoords[h].z;
     }
 
     bool converged = false;
@@ -537,13 +537,13 @@ __global__ void calc_h_star_shake_kernel(
         return;
     }
 
-    coords[network.center].x = static_cast<real_t>(center_x);
-    coords[network.center].y = static_cast<real_t>(center_y);
-    coords[network.center].z = static_cast<real_t>(center_z);
+    coords[network.center].x = center_x;
+    coords[network.center].y = center_y;
+    coords[network.center].z = center_z;
     for (int i = 0; i < network.n_hydrogens; i++) {
-        coords[network.hydrogens[i]].x = static_cast<real_t>(hydrogens_x[i]);
-        coords[network.hydrogens[i]].y = static_cast<real_t>(hydrogens_y[i]);
-        coords[network.hydrogens[i]].z = static_cast<real_t>(hydrogens_z[i]);
+        coords[network.hydrogens[i]].x = hydrogens_x[i];
+        coords[network.hydrogens[i]].y = hydrogens_y[i];
+        coords[network.hydrogens[i]].z = hydrogens_z[i];
     }
 }
 
@@ -556,9 +556,9 @@ __global__ void print_fallback_shake_failures_kernel(
 
     const int ai = shake_bonds[idx].ai - 1;
     const int aj = shake_bonds[idx].aj - 1;
-    const double dx = static_cast<double>(coords[ai].x) - static_cast<double>(coords[aj].x);
-    const double dy = static_cast<double>(coords[ai].y) - static_cast<double>(coords[aj].y);
-    const double dz = static_cast<double>(coords[ai].z) - static_cast<double>(coords[aj].z);
+    const double dx = coords[ai].x - coords[aj].x;
+    const double dy = coords[ai].y - coords[aj].y;
+    const double dz = coords[ai].z - coords[aj].z;
     const double dist2 = dx * dx + dy * dy + dz * dz;
     if (fabs(shake_bonds[idx].dist2 - dist2) >= shake_tol * shake_bonds[idx].dist2) {
         printf(">>> Shake failed, i = %d,j = %d, d = %f, d0 = %f\n",
@@ -574,7 +574,7 @@ __global__ void calc_fallback_shake_color_kernel(
     ShakeBond* shake_bonds,
     coord_t* coords,
     coord_t* xcoords,
-    real_t* winv,
+    double* winv,
     int* unconverged) {
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_shakes) return;
@@ -582,30 +582,30 @@ __global__ void calc_fallback_shake_color_kernel(
     ShakeBond& shake_bond = shake_bonds[idx];
     const int ai = shake_bond.ai - 1;
     const int aj = shake_bond.aj - 1;
-    const double xij_x = static_cast<double>(coords[ai].x) - static_cast<double>(coords[aj].x);
-    const double xij_y = static_cast<double>(coords[ai].y) - static_cast<double>(coords[aj].y);
-    const double xij_z = static_cast<double>(coords[ai].z) - static_cast<double>(coords[aj].z);
+    const double xij_x = coords[ai].x - coords[aj].x;
+    const double xij_y = coords[ai].y - coords[aj].y;
+    const double xij_z = coords[ai].z - coords[aj].z;
     const double xij2 = xij_x * xij_x + xij_y * xij_y + xij_z * xij_z;
     const double diff = shake_bond.dist2 - xij2;
     if (fabs(diff) < shake_tol * shake_bond.dist2) return;
 
     atomicExch(unconverged, 1);
-    const double xxij_x = static_cast<double>(xcoords[ai].x) - static_cast<double>(xcoords[aj].x);
-    const double xxij_y = static_cast<double>(xcoords[ai].y) - static_cast<double>(xcoords[aj].y);
-    const double xxij_z = static_cast<double>(xcoords[ai].z) - static_cast<double>(xcoords[aj].z);
+    const double xxij_x = xcoords[ai].x - xcoords[aj].x;
+    const double xxij_y = xcoords[ai].y - xcoords[aj].y;
+    const double xxij_z = xcoords[ai].z - xcoords[aj].z;
     const double scp = xij_x * xxij_x + xij_y * xxij_y + xij_z * xxij_z;
-    const double inv_mass_sum = static_cast<double>(winv[ai]) + static_cast<double>(winv[aj]);
+    const double inv_mass_sum = winv[ai] + winv[aj];
     if (scp == 0.0 || inv_mass_sum == 0.0) return;
 
     const double corr = diff / (2.0 * scp * inv_mass_sum);
-    const double ai_scale = corr * static_cast<double>(winv[ai]);
-    const double aj_scale = corr * static_cast<double>(winv[aj]);
-    coords[ai].x = static_cast<real_t>(static_cast<double>(coords[ai].x) + xxij_x * ai_scale);
-    coords[ai].y = static_cast<real_t>(static_cast<double>(coords[ai].y) + xxij_y * ai_scale);
-    coords[ai].z = static_cast<real_t>(static_cast<double>(coords[ai].z) + xxij_z * ai_scale);
-    coords[aj].x = static_cast<real_t>(static_cast<double>(coords[aj].x) - xxij_x * aj_scale);
-    coords[aj].y = static_cast<real_t>(static_cast<double>(coords[aj].y) - xxij_y * aj_scale);
-    coords[aj].z = static_cast<real_t>(static_cast<double>(coords[aj].z) - xxij_z * aj_scale);
+    const double ai_scale = corr * winv[ai];
+    const double aj_scale = corr * winv[aj];
+    coords[ai].x = coords[ai].x + xxij_x * ai_scale;
+    coords[ai].y = coords[ai].y + xxij_y * ai_scale;
+    coords[ai].z = coords[ai].z + xxij_z * ai_scale;
+    coords[aj].x = coords[aj].x - xxij_x * aj_scale;
+    coords[aj].y = coords[aj].y - xxij_y * aj_scale;
+    coords[aj].z = coords[aj].z - xxij_z * aj_scale;
 }
 
 void CudaShake::apply_to(Context& ctx, coord_t* d_coords, coord_t* d_xcoords) {

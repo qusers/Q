@@ -17,11 +17,11 @@ void calc_nonbonded_qp_forces() {
     auto *excluded = ctx.excluded->cpu_data_p;
     int i, j;
     coord_t da;
-    real_t r2, r;
-    real_t ai_aii, aj_aii, ai_bii, aj_bii;
+    double r2, r;
+    double ai_aii, aj_aii, ai_bii, aj_bii;
     bool bond23, bond14;
-    real_t scaling;
-    real_t Vel, V_a, V_b, dv;
+    double scaling;
+    double Vel, V_a, V_b, dv;
     std::vector<energy_accum_t> ucoul(ctx.n_lambdas, 0);
     std::vector<energy_accum_t> uvdw(ctx.n_lambdas, 0);
 
@@ -44,9 +44,9 @@ void calc_nonbonded_qp_forces() {
             da.z = coords[j].z - coords[i].z;
 
             r2 = da.x * da.x + da.y * da.y + da.z * da.z;
-            r2 = static_cast<real_t>(1.0) / r2;
-            r = static_cast<real_t>(std::sqrt(r2));
-            const real_t r6inv = r2 * r2 * r2;  // 1/r^6 for vdW calculation
+            r2 = 1.0 / r2;
+            r = std::sqrt(r2);
+            const double r6inv = r2 * r2 * r2;  // 1/r^6 for vdW calculation
 
             for (int state = 0; state < ctx.n_lambdas; state++) {
                 const catype_t& qi_type = ctx.unified_catype(i, state);
@@ -57,8 +57,8 @@ void calc_nonbonded_qp_forces() {
                 ai_bii = bond14 ? qi_type.bii_1_4 : qi_type.bii_normal;
                 aj_bii = bond14 ? aj_type.bii_1_4 : aj_type.bii_normal;
 
-                real_t crg_i = ctx.unified_ccharge(i, state).charge;
-                real_t crg_j = ctx.unified_ccharge(j, state).charge;
+                double crg_i = ctx.unified_ccharge(i, state).charge;
+                double crg_j = ctx.unified_ccharge(j, state).charge;
 
                 Vel = crg_i * crg_j * r * scaling * ctx.topo.coulomb_constant;
                 if (ctx.topo.vdw_rule == VDW_GEOMETRIC) {

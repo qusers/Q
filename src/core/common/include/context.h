@@ -35,8 +35,8 @@ class Context {
     int n_qatoms;
     int n_waters = 0;
     int n_molecules;
-    real_t dt = 0.0;
-    real_t tau_T = 0.0;
+    double dt = 0.0;
+    double tau_T = 0.0;
     md_t md;
     topo_t topo;
     NativeOutputConfig native_output;
@@ -110,7 +110,7 @@ class Context {
 
     std::unique_ptr<HostDeviceBuffer<bool>> excluded;
 
-    std::unique_ptr<HostDeviceBuffer<real_t>> winv;
+    std::unique_ptr<HostDeviceBuffer<double>> winv;
 
     std::unique_ptr<HostDeviceBuffer<bool>> shell;
 
@@ -147,7 +147,7 @@ class Context {
     /*
     FEP
     */
-    std::unique_ptr<HostDeviceBuffer<real_t>> lambdas;  // Actually length is only 2..
+    std::unique_ptr<HostDeviceBuffer<double>> lambdas;  // Actually length is only 2..
 
     /*
     Energy
@@ -180,7 +180,7 @@ class Context {
     std::unique_ptr<HostDeviceBuffer<int>> p_atoms_list;
     std::unique_ptr<HostDeviceBuffer<int>> w_atoms_list;
     std::unique_ptr<HostDeviceBuffer<int>> q_atoms_list;
-    std::unique_ptr<HostDeviceBuffer<real_t>> charge_pair_products;
+    std::unique_ptr<HostDeviceBuffer<double>> charge_pair_products;
     std::unique_ptr<HostDeviceBuffer<int>> p_charge_types;
     std::unique_ptr<HostDeviceBuffer<int>> w_charge_types;
     std::unique_ptr<HostDeviceBuffer<int>> q_charge_types;
@@ -199,8 +199,8 @@ class Context {
     Temperature
     */
 
-    real_t Temp = 0.0;
-    real_t Tfree = 0.0;
+    double Temp = 0.0;
+    double Tfree = 0.0;
     int Ndegf = 0;
     int Ndegfree = 0;
     int Ndegf_solute = 0;
@@ -208,8 +208,8 @@ class Context {
     int Ndegf_solvent = 0;
     int Ndegfree_solvent = 0;
 
-    real_t Tscale_solute = 0.0;
-    real_t Tscale_solvent = 0.0;
+    double Tscale_solute = 0.0;
+    double Tscale_solvent = 0.0;
     /*
     Info for FEP
     */

@@ -13,8 +13,8 @@ inline force_accum_t force_to_accum(T value) {
     return static_cast<force_accum_t>(llrint(value * k_force_scale));
 }
 
-inline real_t force_from_accum(force_accum_t value) {
-    return static_cast<real_t>(static_cast<double>(value) * static_cast<double>(k_inv_force_scale));
+inline double force_from_accum(force_accum_t value) {
+    return static_cast<double>(static_cast<double>(value) * static_cast<double>(k_inv_force_scale));
 }
 
 template <typename T>
@@ -29,8 +29,8 @@ inline energy_accum_t energy_to_accum(T value) {
     return static_cast<energy_accum_t>(llrint(value * k_energy_scale));
 }
 
-inline real_t energy_from_accum(energy_accum_t value) {
-    return static_cast<real_t>(static_cast<double>(value) * static_cast<double>(k_inv_energy_scale));
+inline double energy_from_accum(energy_accum_t value) {
+    return static_cast<double>(static_cast<double>(value) * static_cast<double>(k_inv_energy_scale));
 }
 
 template <typename T>

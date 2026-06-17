@@ -25,9 +25,9 @@ __global__ void calc_pshell_force_kernel(
     if (shell[i] || excluded[i]) {
         // printf("i = %d excluded = %s shell = %s\n", i, excluded[i] ? "True" : "False", shell[i] ? "True" : "False");
         const double k = excluded[i] ? k_fix : k_pshell;
-        const double dx = static_cast<double>(coords[i].x) - static_cast<double>(coords_init[i].x);
-        const double dy = static_cast<double>(coords[i].y) - static_cast<double>(coords_init[i].y);
-        const double dz = static_cast<double>(coords[i].z) - static_cast<double>(coords_init[i].z);
+        const double dx = coords[i].x - coords_init[i].x;
+        const double dy = coords[i].y - coords_init[i].y;
+        const double dz = coords[i].z - coords_init[i].z;
         const double r2 = dx * dx + dy * dy + dz * dz;
         const double ener = 0.5 * k * r2;
         // printf("dr = %f %f %f\n", dr.x, dr.y, dr.z);

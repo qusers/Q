@@ -29,13 +29,13 @@ void calc_qangle_forces(int state) {
         aj = ctx.q_angles[i + ctx.n_qangles * state].aj - 1;
         ak = ctx.q_angles[i + ctx.n_qangles * state].ak - 1;
 
-        const double rji_x = static_cast<double>(coords[ai].x) - static_cast<double>(coords[aj].x);
-        const double rji_y = static_cast<double>(coords[ai].y) - static_cast<double>(coords[aj].y);
-        const double rji_z = static_cast<double>(coords[ai].z) - static_cast<double>(coords[aj].z);
+        const double rji_x = coords[ai].x - coords[aj].x;
+        const double rji_y = coords[ai].y - coords[aj].y;
+        const double rji_z = coords[ai].z - coords[aj].z;
 
-        const double rjk_x = static_cast<double>(coords[ak].x) - static_cast<double>(coords[aj].x);
-        const double rjk_y = static_cast<double>(coords[ak].y) - static_cast<double>(coords[aj].y);
-        const double rjk_z = static_cast<double>(coords[ak].z) - static_cast<double>(coords[aj].z);
+        const double rjk_x = coords[ak].x - coords[aj].x;
+        const double rjk_y = coords[ak].y - coords[aj].y;
+        const double rjk_z = coords[ak].z - coords[aj].z;
 
         const double bji2 = rji_x * rji_x + rji_y * rji_y + rji_z * rji_z;
         const double bjk2 = rjk_x * rjk_x + rjk_y * rjk_y + rjk_z * rjk_z;
@@ -54,9 +54,9 @@ void calc_qangle_forces(int state) {
         const double ener = 0.5 * ctx.q_cangles[ic].kth * dth * dth;
         add_energy(angle, ener);
 
-        const double dv = ctx.q_cangles[ic].kth * dth * static_cast<double>(lambdas[state]);
+        const double dv = ctx.q_cangles[ic].kth * dth * lambdas[state];
         double f1 = sin(th);
-        const double sin_epsilon = static_cast<double>(k_singular_sin_epsilon);
+        const double sin_epsilon = k_singular_sin_epsilon;
         if (fabs(f1) < sin_epsilon) {
             f1 = sin_epsilon;
         }

@@ -6,7 +6,7 @@
 
 void init_nonbonded_force_kernel_data();
 
-std::pair<real_t, real_t> calc_nonbonded_force_host(
+std::pair<double, double> calc_nonbonded_force_host(
     int nx, 
     int ny, 
     int* x_idx_list, 
@@ -18,7 +18,7 @@ std::pair<real_t, real_t> calc_nonbonded_force_host(
     const int* x_atypes_types, 
     const int* y_atypes_types,
     const bool disable_water_h_lj = false,
-    const real_t lambda = 1.0
+    const double lambda = 1.0
 );
 
 void cleanup_nonbonded_force();

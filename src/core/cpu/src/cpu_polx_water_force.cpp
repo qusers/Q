@@ -28,15 +28,15 @@ void calc_polx_w_forces(int iteration) {
         wi = ctx.n_atoms_solute + 3 * i;
         if (exclude[wi]) continue;
 
-        double rmu_x = static_cast<double>(coords[wi + 1].x) +
-                       static_cast<double>(coords[wi + 2].x) -
-                       2.0 * static_cast<double>(coords[wi].x);
-        double rmu_y = static_cast<double>(coords[wi + 1].y) +
-                       static_cast<double>(coords[wi + 2].y) -
-                       2.0 * static_cast<double>(coords[wi].y);
-        double rmu_z = static_cast<double>(coords[wi + 1].z) +
-                       static_cast<double>(coords[wi + 2].z) -
-                       2.0 * static_cast<double>(coords[wi].z);
+        double rmu_x = coords[wi + 1].x +
+                       coords[wi + 2].x -
+                       2.0 * coords[wi].x;
+        double rmu_y = coords[wi + 1].y +
+                       coords[wi + 2].y -
+                       2.0 * coords[wi].y;
+        double rmu_z = coords[wi + 1].z +
+                       coords[wi + 2].z -
+                       2.0 * coords[wi].z;
 
         const double rm = sqrt(rmu_x * rmu_x + rmu_y * rmu_y + rmu_z * rmu_z);
 
@@ -44,9 +44,9 @@ void calc_polx_w_forces(int iteration) {
         rmu_y /= rm;
         rmu_z /= rm;
 
-        double rcu_x = static_cast<double>(coords[wi].x) - static_cast<double>(ctx.topo.solvent_center.x);
-        double rcu_y = static_cast<double>(coords[wi].y) - static_cast<double>(ctx.topo.solvent_center.y);
-        double rcu_z = static_cast<double>(coords[wi].z) - static_cast<double>(ctx.topo.solvent_center.z);
+        double rcu_x = coords[wi].x - ctx.topo.solvent_center.x;
+        double rcu_y = coords[wi].y - ctx.topo.solvent_center.y;
+        double rcu_z = coords[wi].z - ctx.topo.solvent_center.z;
         const double rc = sqrt(rcu_x * rcu_x + rcu_y * rcu_y + rcu_z * rcu_z);
         rcu_x /= rc;
         rcu_y /= rc;
@@ -93,8 +93,8 @@ void calc_polx_w_forces(int iteration) {
     if (iteration != 0 && iteration % itdis_update == 0) {
         for (int is = 0; is < ctx.n_shells; is++) {
             printf("SHELL %d\n", is);
-            wshells[is].avtheta /= static_cast<double>(itdis_update);
-            wshells[is].avn_inshell /= static_cast<double>(itdis_update);
+            wshells[is].avtheta /= itdis_update;
+            wshells[is].avn_inshell /= itdis_update;
             wshells[is].theta_corr =
                 wshells[is].theta_corr + wshells[is].avtheta - acos(wshells[is].cstb);
             printf("average theta = %f, average in shell = %f, theta_corr = %f\n",
@@ -113,8 +113,7 @@ void calc_polx_w_forces(int iteration) {
         double avtdum = 0.0;
         for (int il = 0; il < wshells[is].n_inshell; il++) {
             ii = ctx.nsort[il][is];
-            const double arg = 1.0 + ((1.0 - 2.0 * static_cast<double>(il + 1)) /
-                                      static_cast<double>(wshells[is].n_inshell));
+            const double arg = 1.0 + ((1.0 - 2.0 * (il + 1)) / wshells[is].n_inshell);
             ctx.theta0[il] = acos(arg);
             ctx.theta0[il] = ctx.theta0[il] - 3.0 * sin(ctx.theta0[il]) * wshells[is].cstb / 2.0;
             if (ctx.theta0[il] < 0.0) {
@@ -135,15 +134,15 @@ void calc_polx_w_forces(int iteration) {
 
             wi = ctx.n_atoms_solute + 3 * ii;
 
-            double rmu_x = static_cast<double>(coords[wi + 1].x) +
-                           static_cast<double>(coords[wi + 2].x) -
-                           2.0 * static_cast<double>(coords[wi].x);
-            double rmu_y = static_cast<double>(coords[wi + 1].y) +
-                           static_cast<double>(coords[wi + 2].y) -
-                           2.0 * static_cast<double>(coords[wi].y);
-            double rmu_z = static_cast<double>(coords[wi + 1].z) +
-                           static_cast<double>(coords[wi + 2].z) -
-                           2.0 * static_cast<double>(coords[wi].z);
+            double rmu_x = coords[wi + 1].x +
+                           coords[wi + 2].x -
+                           2.0 * coords[wi].x;
+            double rmu_y = coords[wi + 1].y +
+                           coords[wi + 2].y -
+                           2.0 * coords[wi].y;
+            double rmu_z = coords[wi + 1].z +
+                           coords[wi + 2].z -
+                           2.0 * coords[wi].z;
 
             const double rm = sqrt(rmu_x * rmu_x + rmu_y * rmu_y + rmu_z * rmu_z);
 
@@ -151,9 +150,9 @@ void calc_polx_w_forces(int iteration) {
             rmu_y /= rm;
             rmu_z /= rm;
 
-            double rcu_x = static_cast<double>(coords[wi].x) - static_cast<double>(ctx.topo.solvent_center.x);
-            double rcu_y = static_cast<double>(coords[wi].y) - static_cast<double>(ctx.topo.solvent_center.y);
-            double rcu_z = static_cast<double>(coords[wi].z) - static_cast<double>(ctx.topo.solvent_center.z);
+            double rcu_x = coords[wi].x - ctx.topo.solvent_center.x;
+            double rcu_y = coords[wi].y - ctx.topo.solvent_center.y;
+            double rcu_z = coords[wi].z - ctx.topo.solvent_center.z;
             const double rc = sqrt(rcu_x * rcu_x + rcu_y * rcu_y + rcu_z * rcu_z);
             rcu_x /= rc;
             rcu_y /= rc;
@@ -167,7 +166,7 @@ void calc_polx_w_forces(int iteration) {
                 cos_th = -1.0;
             }
             double f0 = sin(acos(cos_th));
-            const double sin_epsilon = static_cast<double>(k_singular_sin_epsilon);
+            const double sin_epsilon = k_singular_sin_epsilon;
             if (fabs(f0) < sin_epsilon) {
                 f0 = sin_epsilon;
             }
@@ -202,8 +201,8 @@ void calc_polx_w_forces(int iteration) {
             add_force(dvelocities[wi + 2].z, f0 * f1H2_z);
         }
 
-        wshells[is].avtheta += avtdum / static_cast<double>(wshells[is].n_inshell);
-        wshells[is].avn_inshell += static_cast<double>(wshells[is].n_inshell);
+        wshells[is].avtheta += avtdum / wshells[is].n_inshell;
+        wshells[is].avn_inshell += wshells[is].n_inshell;
     }
 
     ctx.E_restraint.Upolx += energy_from_accum(upolx);

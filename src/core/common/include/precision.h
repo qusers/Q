@@ -24,8 +24,8 @@ constexpr double k_inv_force_scale = static_cast<double>(1.0) / k_force_scale;
 constexpr double k_inv_energy_scale = static_cast<double>(1.0) / k_energy_scale;
 #endif
 
-#ifdef QDYN_SPFP
-constexpr real_t k_singular_sin_epsilon = static_cast<real_t>(1.0e-6);
-#else
-constexpr real_t k_singular_sin_epsilon = static_cast<real_t>(1.0e-12);
-#endif
+// Phase 1 keeps the whole compute path in double, so use the tight (double)
+// singularity guard everywhere. Phase 2 note: when force kernels move back to
+// float, those paths need a looser guard (float sin is only ~1e-7 accurate near
+// zero, which is why SPFP historically used 1e-6).
+constexpr double k_singular_sin_epsilon = 1.0e-12;

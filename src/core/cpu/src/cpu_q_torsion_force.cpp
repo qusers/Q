@@ -16,10 +16,10 @@ void calc_qtorsion_forces(int state) {
     coord_t rji, rjk, rkl, rnj, rnk, rki, rlj;
     coord_t di, dl, dpi, dpj, dpk, dpl;
 
-    real_t bj2inv, bk2inv, bjinv, bkinv;
-    real_t bj, bk, cos_phi, phi;
-    real_t arg, dv, f1;
-    real_t ener;
+    double bj2inv, bk2inv, bjinv, bkinv;
+    double bj, bk, cos_phi, phi;
+    double arg, dv, f1;
+    double ener;
     energy_accum_t torsion = 0;
 
     for (int i = 0; i < ctx.n_qtorsions; i++) {

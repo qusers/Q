@@ -40,15 +40,15 @@ __global__ void calc_polx_theta_and_shells(
 
     wi = n_atoms_solute + 3 * i;
 
-    double rmu_x = static_cast<double>(coords[wi + 1].x) +
-                   static_cast<double>(coords[wi + 2].x) -
-                   2.0 * static_cast<double>(coords[wi].x);
-    double rmu_y = static_cast<double>(coords[wi + 1].y) +
-                   static_cast<double>(coords[wi + 2].y) -
-                   2.0 * static_cast<double>(coords[wi].y);
-    double rmu_z = static_cast<double>(coords[wi + 1].z) +
-                   static_cast<double>(coords[wi + 2].z) -
-                   2.0 * static_cast<double>(coords[wi].z);
+    double rmu_x = coords[wi + 1].x +
+                   coords[wi + 2].x -
+                   2.0 * coords[wi].x;
+    double rmu_y = coords[wi + 1].y +
+                   coords[wi + 2].y -
+                   2.0 * coords[wi].y;
+    double rmu_z = coords[wi + 1].z +
+                   coords[wi + 2].z -
+                   2.0 * coords[wi].z;
 
     const double rm = sqrt(rmu_x * rmu_x + rmu_y * rmu_y + rmu_z * rmu_z);
 
@@ -56,9 +56,9 @@ __global__ void calc_polx_theta_and_shells(
     rmu_y /= rm;
     rmu_z /= rm;
 
-    double rcu_x = static_cast<double>(coords[wi].x) - static_cast<double>(topo.solvent_center.x);
-    double rcu_y = static_cast<double>(coords[wi].y) - static_cast<double>(topo.solvent_center.y);
-    double rcu_z = static_cast<double>(coords[wi].z) - static_cast<double>(topo.solvent_center.z);
+    double rcu_x = coords[wi].x - topo.solvent_center.x;
+    double rcu_y = coords[wi].y - topo.solvent_center.y;
+    double rcu_z = coords[wi].z - topo.solvent_center.z;
     const double rc = sqrt(rcu_x * rcu_x + rcu_y * rcu_y + rcu_z * rcu_z);
     rcu_x /= rc;
     rcu_y /= rc;
@@ -114,15 +114,15 @@ __global__ void calc_polx_water_forces_kernel(
     const double dv = md.polarisation_force * dtheta;
     wi = n_atoms_solute + 3 * ii;
 
-    double rmu_x = static_cast<double>(coords[wi + 1].x) +
-                   static_cast<double>(coords[wi + 2].x) -
-                   2.0 * static_cast<double>(coords[wi].x);
-    double rmu_y = static_cast<double>(coords[wi + 1].y) +
-                   static_cast<double>(coords[wi + 2].y) -
-                   2.0 * static_cast<double>(coords[wi].y);
-    double rmu_z = static_cast<double>(coords[wi + 1].z) +
-                   static_cast<double>(coords[wi + 2].z) -
-                   2.0 * static_cast<double>(coords[wi].z);
+    double rmu_x = coords[wi + 1].x +
+                   coords[wi + 2].x -
+                   2.0 * coords[wi].x;
+    double rmu_y = coords[wi + 1].y +
+                   coords[wi + 2].y -
+                   2.0 * coords[wi].y;
+    double rmu_z = coords[wi + 1].z +
+                   coords[wi + 2].z -
+                   2.0 * coords[wi].z;
 
     const double rm = sqrt(rmu_x * rmu_x + rmu_y * rmu_y + rmu_z * rmu_z);
 
@@ -130,9 +130,9 @@ __global__ void calc_polx_water_forces_kernel(
     rmu_y /= rm;
     rmu_z /= rm;
 
-    double rcu_x = static_cast<double>(coords[wi].x) - static_cast<double>(topo.solvent_center.x);
-    double rcu_y = static_cast<double>(coords[wi].y) - static_cast<double>(topo.solvent_center.y);
-    double rcu_z = static_cast<double>(coords[wi].z) - static_cast<double>(topo.solvent_center.z);
+    double rcu_x = coords[wi].x - topo.solvent_center.x;
+    double rcu_y = coords[wi].y - topo.solvent_center.y;
+    double rcu_z = coords[wi].z - topo.solvent_center.z;
     const double rc = sqrt(rcu_x * rcu_x + rcu_y * rcu_y + rcu_z * rcu_z);
     rcu_x /= rc;
     rcu_y /= rc;
@@ -142,7 +142,7 @@ __global__ void calc_polx_water_forces_kernel(
     if (cos_th > 1.0) cos_th = 1.0;
     if (cos_th < -1.0) cos_th = -1.0;
     double f0 = sin(acos(cos_th));
-    const double sin_epsilon = static_cast<double>(k_singular_sin_epsilon);
+    const double sin_epsilon = k_singular_sin_epsilon;
     if (fabs(f0) < sin_epsilon) f0 = sin_epsilon;
     f0 = -1.0 / f0;
     f0 *= dv;

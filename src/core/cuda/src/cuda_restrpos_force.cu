@@ -16,7 +16,7 @@ __global__ void calc_restrpos_forces_kernel(
     restrpos_t* restrspos,
     int n_restrspos,
     coord_t* coords,
-    real_t* lambdas,
+    double* lambdas,
     int n_lambdas,
     energy_accum_t* urestr,
     energy_accum_t* upres,
@@ -30,20 +30,20 @@ __global__ void calc_restrpos_forces_kernel(
     state = restrspos[ir].ipsi - 1;
     i = restrspos[ir].a - 1;
 
-    const double dx = static_cast<double>(coords[i].x) - static_cast<double>(restrspos[ir].x.x);
-    const double dy = static_cast<double>(coords[i].y) - static_cast<double>(restrspos[ir].x.y);
-    const double dz = static_cast<double>(coords[i].z) - static_cast<double>(restrspos[ir].x.z);
+    const double dx = coords[i].x - restrspos[ir].x.x;
+    const double dy = coords[i].y - restrspos[ir].x.y;
+    const double dz = coords[i].z - restrspos[ir].x.z;
 
     double lambda;
     if (restrspos[ir].ipsi != 0) {
-        lambda = static_cast<double>(lambdas[state]);
+        lambda = lambdas[state];
     } else {
         lambda = 1.0;
     }
 
-    const double kx = static_cast<double>(restrspos[ir].k.x);
-    const double ky = static_cast<double>(restrspos[ir].k.y);
-    const double kz = static_cast<double>(restrspos[ir].k.z);
+    const double kx = restrspos[ir].k.x;
+    const double ky = restrspos[ir].k.y;
+    const double kz = restrspos[ir].k.z;
 
     const double ener = 0.5 * kx * dx * dx + 0.5 * ky * dy * dy + 0.5 * kz * dz * dz;
 

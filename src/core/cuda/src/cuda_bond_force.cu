@@ -14,9 +14,9 @@ __global__ void calc_bond_forces_kernel(int start, int end, bond_t* bonds, coord
     coord_t rj = coords[bond.aj - 1];
     cbond_t cbond = cbonds[bond.code - 1];
 
-    const double dx = static_cast<double>(rj.x) - static_cast<double>(ri.x);
-    const double dy = static_cast<double>(rj.y) - static_cast<double>(ri.y);
-    const double dz = static_cast<double>(rj.z) - static_cast<double>(ri.z);
+    const double dx = rj.x - ri.x;
+    const double dy = rj.y - ri.y;
+    const double dz = rj.z - ri.z;
     const double r = sqrt(dx * dx + dy * dy + dz * dz);
 
     const double dr = r - cbond.b0;
@@ -34,7 +34,7 @@ __global__ void calc_bond_forces_kernel(int start, int end, bond_t* bonds, coord
     atomic_add_force(&dvelocities[bond.ai - 1].z, -f * dz);
 }
 
-real_t calc_bond_forces_host(int start, int end) {
+double calc_bond_forces_host(int start, int end) {
     int N = end - start;
     if (N <= 0) return 0.0;
     using namespace CudaBondForce;

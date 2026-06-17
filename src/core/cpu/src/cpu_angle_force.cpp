@@ -6,7 +6,7 @@
 #include "context.h"
 #include "cpu_utils.h"
 
-real_t calc_angle_forces(int start, int end) {
+double calc_angle_forces(int start, int end) {
     auto& ctx = Context::instance();
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
@@ -30,13 +30,13 @@ real_t calc_angle_forces(int start, int end) {
 
         cangle = cangles[angles[i].code - 1];
 
-        const double rji_x = static_cast<double>(ai.x) - static_cast<double>(aj.x);
-        const double rji_y = static_cast<double>(ai.y) - static_cast<double>(aj.y);
-        const double rji_z = static_cast<double>(ai.z) - static_cast<double>(aj.z);
+        const double rji_x = ai.x - aj.x;
+        const double rji_y = ai.y - aj.y;
+        const double rji_z = ai.z - aj.z;
 
-        const double rjk_x = static_cast<double>(ak.x) - static_cast<double>(aj.x);
-        const double rjk_y = static_cast<double>(ak.y) - static_cast<double>(aj.y);
-        const double rjk_z = static_cast<double>(ak.z) - static_cast<double>(aj.z);
+        const double rjk_x = ak.x - aj.x;
+        const double rjk_y = ak.y - aj.y;
+        const double rjk_z = ak.z - aj.z;
 
         // Calculate inverse of norm of dist vector and their squares
         const double bji2inv = 1.0 / (rji_x * rji_x + rji_y * rji_y + rji_z * rji_z);
@@ -60,7 +60,7 @@ real_t calc_angle_forces(int start, int end) {
         const double dv = cangle.kth * dth;
 
         double f1 = sin(th);
-        const double sin_epsilon = static_cast<double>(k_singular_sin_epsilon);
+        const double sin_epsilon = k_singular_sin_epsilon;
         if (std::fabs(f1) < sin_epsilon) {
             // Avoid division by zero
             f1 = -1.0 / sin_epsilon;

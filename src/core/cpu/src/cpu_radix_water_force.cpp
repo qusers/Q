@@ -16,7 +16,7 @@ void calc_radix_w_forces() {
 
     double shift;
     if (ctx.md.radial_force != 0.0) {
-        shift = sqrt(Boltz * static_cast<double>(ctx.Tfree) / ctx.md.radial_force);
+        shift = sqrt(Boltz * ctx.Tfree / ctx.md.radial_force);
     } else {
         shift = 0.0;
     }
@@ -24,9 +24,9 @@ void calc_radix_w_forces() {
     for (int i = ctx.n_atoms_solute; i < ctx.n_atoms; i += 3) {
         if (excluded[i]) continue;
 
-        const double dx = static_cast<double>(coords[i].x) - static_cast<double>(ctx.topo.solvent_center.x);
-        const double dy = static_cast<double>(coords[i].y) - static_cast<double>(ctx.topo.solvent_center.y);
-        const double dz = static_cast<double>(coords[i].z) - static_cast<double>(ctx.topo.solvent_center.z);
+        const double dx = coords[i].x - ctx.topo.solvent_center.x;
+        const double dy = coords[i].y - ctx.topo.solvent_center.y;
+        const double dz = coords[i].z - ctx.topo.solvent_center.z;
         const double b = sqrt(dx * dx + dy * dy + dz * dz);
         const double db = b - (ctx.topo.solvent_radius - shift);
 

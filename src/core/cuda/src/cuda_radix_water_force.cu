@@ -25,9 +25,9 @@ __global__ void calc_radix_water_forces_kernel(
     i = n_atoms_solute + i * 3;  // Process only oxygen atoms of water molecules
     if (i >= n_atoms) return;
 
-    const double dx = static_cast<double>(coords[i].x) - static_cast<double>(topo.solvent_center.x);
-    const double dy = static_cast<double>(coords[i].y) - static_cast<double>(topo.solvent_center.y);
-    const double dz = static_cast<double>(coords[i].z) - static_cast<double>(topo.solvent_center.z);
+    const double dx = coords[i].x - topo.solvent_center.x;
+    const double dy = coords[i].y - topo.solvent_center.y;
+    const double dz = coords[i].z - topo.solvent_center.z;
     const double b = sqrt(dx * dx + dy * dy + dz * dz);
     const double db = b - (topo.solvent_radius - shift);
 
@@ -74,7 +74,7 @@ void calc_radix_water_forces_host() {
 
     double shift;
     if (host.md.radial_force != 0.0) {
-        shift = sqrt(Boltz * static_cast<double>(host.Tfree) / host.md.radial_force);
+        shift = sqrt(Boltz * host.Tfree / host.md.radial_force);
     } else {
         shift = 0.0;
     }

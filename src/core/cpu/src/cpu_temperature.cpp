@@ -20,9 +20,9 @@ void calc_temperature() {
     ctx.Tfree = 0;
     energy_accum_t Temp_solute = 0, Tfree_solute = 0, Texcl_solute = 0;
     energy_accum_t Tfree_solvent = 0, Temp_solvent = 0, Texcl_solvent = 0;
-    real_t Ekinmax = 1000.0 * ctx.Ndegf * Boltz * ctx.md.temperature / 2.0 / ctx.n_atoms;
-    real_t ener;
-    real_t mass_i;
+    double Ekinmax = 1000.0 * ctx.Ndegf * Boltz * ctx.md.temperature / 2.0 / ctx.n_atoms;
+    double ener;
+    double mass_i;
 
     ctx.Temp = 0;
     for (int i = 0; i < ctx.n_atoms_solute; i++) {
@@ -53,8 +53,8 @@ void calc_temperature() {
         }
     }
 
-    real_t Tfree_solute_value = energy_from_accum(Tfree_solute);
-    real_t Tfree_solvent_value = energy_from_accum(Tfree_solvent);
+    double Tfree_solute_value = energy_from_accum(Tfree_solute);
+    double Tfree_solvent_value = energy_from_accum(Tfree_solvent);
     ctx.Tfree = Tfree_solute_value + Tfree_solvent_value;
     ctx.Temp = energy_from_accum(Temp_solute) + energy_from_accum(Temp_solvent);
 

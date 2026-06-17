@@ -13,8 +13,8 @@ __device__ __forceinline__ force_accum_t force_to_accum(T value) {
     return static_cast<force_accum_t>(llrint(value * k_force_scale));
 }
 
-__host__ __device__ __forceinline__ real_t force_from_accum(force_accum_t value) {
-    return static_cast<real_t>(
+__host__ __device__ __forceinline__ double force_from_accum(force_accum_t value) {
+    return static_cast<double>(
         static_cast<double>(value) * static_cast<double>(k_inv_force_scale));
 }
 
@@ -33,8 +33,8 @@ __device__ __forceinline__ energy_accum_t energy_to_accum(T value) {
     return static_cast<energy_accum_t>(llrint(value * k_energy_scale));
 }
 
-__host__ __device__ __forceinline__ real_t energy_from_accum(energy_accum_t value) {
-    return static_cast<real_t>(
+__host__ __device__ __forceinline__ double energy_from_accum(energy_accum_t value) {
+    return static_cast<double>(
         static_cast<double>(value) * static_cast<double>(k_inv_energy_scale));
 }
 

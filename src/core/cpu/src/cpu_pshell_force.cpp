@@ -20,9 +20,9 @@ void calc_pshell_forces() {
         if (shell[i] || excluded[i]) {
             const double k = excluded[i] ? k_fix : k_pshell;
 
-            const double dx = static_cast<double>(coords[i].x) - static_cast<double>(ctx.coords_init->cpu_data_p[i].x);
-            const double dy = static_cast<double>(coords[i].y) - static_cast<double>(ctx.coords_init->cpu_data_p[i].y);
-            const double dz = static_cast<double>(coords[i].z) - static_cast<double>(ctx.coords_init->cpu_data_p[i].z);
+            const double dx = coords[i].x - ctx.coords_init->cpu_data_p[i].x;
+            const double dy = coords[i].y - ctx.coords_init->cpu_data_p[i].y;
+            const double dz = coords[i].z - ctx.coords_init->cpu_data_p[i].z;
             const double r2 = dx * dx + dy * dy + dz * dz;
             const double ener = 0.5 * k * r2;
 

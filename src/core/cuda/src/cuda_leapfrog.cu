@@ -18,24 +18,24 @@ __global__ void calc_leapfrog_kernel(
     coord_t* xcoords,
     int n_atoms,
     int n_atoms_solute,
-    real_t Tscale_solute,
-    real_t Tscale_solvent,
-    real_t dt) {
+    double Tscale_solute,
+    double Tscale_solvent,
+    double dt) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_atoms) return;
     int i = idx;
 
     // Kernel implementation goes here
-    real_t mass_i, winv_i;
+    double mass_i, winv_i;
 
     mass_i = catypes[atypes[i].code - 1].m;
 
     winv_i = 1 / mass_i;
-    real_t scale = (i < n_atoms_solute) ? Tscale_solute : Tscale_solvent;
+    double scale = (i < n_atoms_solute) ? Tscale_solute : Tscale_solvent;
 
-    const real_t fx = force_from_accum(dvelocities[i].x);
-    const real_t fy = force_from_accum(dvelocities[i].y);
-    const real_t fz = force_from_accum(dvelocities[i].z);
+    const double fx = force_from_accum(dvelocities[i].x);
+    const double fy = force_from_accum(dvelocities[i].y);
+    const double fz = force_from_accum(dvelocities[i].z);
 
     velocities[i].x = (velocities[i].x - fx * dt * winv_i) * scale;
     velocities[i].y = (velocities[i].y - fy * dt * winv_i) * scale;
@@ -55,7 +55,7 @@ __global__ void update_velocities_from_positions_kernel(
     const coord_t* coords,
     const coord_t* xcoords,
     int n_atoms,
-    real_t dt) {
+    double dt) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_atoms) return;
 

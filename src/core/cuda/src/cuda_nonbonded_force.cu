@@ -32,7 +32,8 @@ __device__ __forceinline__ T shfl_value(T v, int srcLane, unsigned mask = 0xffff
     return __shfl_sync(mask, v, srcLane);
 }
 
-#ifndef QDYN_SPFP
+// coord_t is double in both DPFP and SPFP, so the 64-bit shuffle path must be
+// available unconditionally.
 template <>
 __device__ __forceinline__ double shfl_value(double v, int srcLane, unsigned mask) {
     int2 a = *reinterpret_cast<int2*>(&v);
@@ -40,7 +41,6 @@ __device__ __forceinline__ double shfl_value(double v, int srcLane, unsigned mas
     a.y = __shfl_sync(mask, a.y, srcLane);
     return *reinterpret_cast<double*>(&a);
 }
-#endif
 
 __device__ __forceinline__ coord_t shfl_coord(coord_t v, int srcLane, unsigned mask = 0xffffffffu) {
     v.x = shfl_value(v.x, srcLane, mask);
@@ -54,7 +54,7 @@ __device__ void calculate_unforce_bound(
     const coord_t& x,
     const coord_t& y,
 
-    const real_t charge_product,
+    const double charge_product,
     const vdw_pair_param_t& pair_param,
 
     const WorkT coulomb_constant,
@@ -71,8 +71,8 @@ __device__ void calculate_unforce_bound(
     const WorkT r = rsqrt(dx * dx + dy * dy + dz * dz);
     const WorkT r2 = r * r;
     const WorkT r6 = r2 * r2 * r2;
-    // real_t v_a = r6 * r6;
-    // real_t v_b = r6;
+    // double v_a = r6 * r6;
+    // double v_b = r6;
     // ecoul = r;
     // evdw = v_a - v_b;
     // dv = r2 * (-ecoul - v_a + v_b);
@@ -92,7 +92,7 @@ __global__ void calc_nonbonded_force_kernel(
 
     const int* x_charges_types,
     const int* y_charges_types,
-    const real_t* charge_pair_products,
+    const double* charge_pair_products,
 
     const int* x_atypes_types,
     const int* y_atypes_types,
@@ -125,7 +125,7 @@ __global__ void calc_nonbonded_force_kernel(
     const int n_catype_types,
     const int zero_catype_type,
     const int n_qelscales,
-    const real_t lambda,
+    const double lambda,
     const q_elscale_t* d_qelscales  // todo: Now doesn't use it. Should optimize it later
 
 ) {
@@ -159,7 +159,7 @@ __global__ void calc_nonbonded_force_kernel(
     int x_atom_idx = (x_idx < nx) ? x_idx_list[x_idx] : -1;
     int y_atom_idx = (y_idx < ny) ? y_idx_list[y_idx] : -1;
 
-    coord_t invalid = {static_cast<real_t>(-1e9), static_cast<real_t>(-1e9), static_cast<real_t>(-1e9)};
+    coord_t invalid = {-1e9, -1e9, -1e9};
     coord_t x_coord = (x_atom_idx >= 0) ? d_coords[x_atom_idx] : invalid;
     coord_t y_coord = (y_atom_idx >= 0) ? d_coords[y_atom_idx] : invalid;
 
@@ -175,8 +175,8 @@ __global__ void calc_nonbonded_force_kernel(
     nonbond_vec_t<WorkT> x_force = {0.0, 0.0, 0.0};
     nonbond_vec_t<WorkT> y_force = {0.0, 0.0, 0.0};
 
-    real_t evdw_sum = 0.0;
-    real_t ecoul_sum = 0.0;
+    double evdw_sum = 0.0;
+    double ecoul_sum = 0.0;
 
     const unsigned mask = 0xffffffffu;
 
@@ -236,7 +236,7 @@ __global__ void calc_nonbonded_force_kernel(
     for (int i = 0; i < 32; i++) {
         if (is_valid()) {
             WorkT scaling = static_cast<WorkT>(1.0);
-            real_t charge_product = charge_pair_products[charge_pair_row + y_charge_type_idx];
+            double charge_product = charge_pair_products[charge_pair_row + y_charge_type_idx];
             vdw_pair_param_t pair_param = catype_pair_params[pair_row + y_catype_type_idx];
 
             // todo: Now the idx is wrong, should optimize it later
@@ -302,7 +302,7 @@ __global__ void calc_nonbonded_force_kernel(
 
 }  // namespace CudaNonbondedForce
 
-std::pair<real_t, real_t> calc_nonbonded_force_host(
+std::pair<double, double> calc_nonbonded_force_host(
     int nx,
     int ny,
     int* x_idx_list,
@@ -313,7 +313,7 @@ std::pair<real_t, real_t> calc_nonbonded_force_host(
     const int* y_charges_types,
     const int* x_atypes_types,
     const int* y_atypes_types,
-    const bool disable_water_h_lj, const real_t lambda) {
+    const bool disable_water_h_lj, const double lambda) {
     using namespace CudaNonbondedForce;
     Context& host = Context::instance();
     const int thread_num = 256;
@@ -364,7 +364,7 @@ std::pair<real_t, real_t> calc_nonbonded_force_host(
             host.q_elscales->gpu_data_p);
     };
 
-    launch_kernel(real_t{});
+    launch_kernel(double{});
 
     cudaDeviceSynchronize();
 

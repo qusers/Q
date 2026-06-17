@@ -16,13 +16,13 @@ void calc_nonbonded_qq_forces() {
     auto *excluded = ctx.excluded->cpu_data_p;
     auto *q_elscales = ctx.q_elscales->cpu_data_p;
     int ai, aj;
-    real_t elscale, scaling;
+    double elscale, scaling;
     bool bond23, bond14;
     coord_t da;
-    real_t r2a, ra, r6a;
-    real_t Vela, V_a, V_b;
-    real_t dva;
-    real_t ai_aii, aj_aii, ai_bii, aj_bii;
+    double r2a, ra, r6a;
+    double Vela, V_a, V_b;
+    double dva;
+    double ai_aii, aj_aii, ai_bii, aj_bii;
 
     for (int state = 0; state < ctx.n_lambdas; state++) {
         energy_accum_t ucoul = 0;
@@ -32,8 +32,8 @@ void calc_nonbonded_qq_forces() {
                 ai = ctx.q_atoms[qi];
                 aj = ctx.q_atoms[qj];
 
-                real_t crg_i = ctx.unified_ccharge(ai, state).charge;
-                real_t crg_j = ctx.unified_ccharge(aj, state).charge;
+                double crg_i = ctx.unified_ccharge(ai, state).charge;
+                double crg_j = ctx.unified_ccharge(aj, state).charge;
 
 
                 bond23 = LJ_matrix[ai * ctx.n_atoms_solute + aj] == 3;

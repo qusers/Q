@@ -23,9 +23,9 @@ __global__ void calc_restrwall_forces_kernel(
     const double k = restrwalls[ir].k;
     for (int i = restrwalls[ir].ai - 1; i < restrwalls[ir].aj - 1; i++) {
         if (heavy[i] || restrwalls[ir].ih) {
-            const double dx = static_cast<double>(coords[i].x) - static_cast<double>(topo.solvent_center.x);
-            const double dy = static_cast<double>(coords[i].y) - static_cast<double>(topo.solvent_center.y);
-            const double dz = static_cast<double>(coords[i].z) - static_cast<double>(topo.solvent_center.z);
+            const double dx = coords[i].x - topo.solvent_center.x;
+            const double dy = coords[i].y - topo.solvent_center.y;
+            const double dz = coords[i].z - topo.solvent_center.z;
 
             const double b = sqrt(dx * dx + dy * dy + dz * dz);
             const double db = b - restrwalls[ir].d;
@@ -71,7 +71,7 @@ void calc_restrwall_forces_host() {
     cudaDeviceSynchronize();
     energy_accum_t h_energy;
     cudaMemcpy(&h_energy, d_energies, sizeof(energy_accum_t), cudaMemcpyDeviceToHost);
-    const real_t energy = energy_from_accum(h_energy);
+    const double energy = energy_from_accum(h_energy);
     printf("Restrwall energy: %f\n", energy);
     host.E_restraint.Upres += energy;
 }

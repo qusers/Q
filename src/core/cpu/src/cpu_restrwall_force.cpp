@@ -18,9 +18,9 @@ void calc_restrwall_forces() {
         const double k = restrwalls[ir].k;
         for (int i = restrwalls[ir].ai - 1; i < restrwalls[ir].aj - 1; i++) {
             if (heavy[i] || restrwalls[ir].ih) {
-                const double dx = static_cast<double>(coords[i].x) - static_cast<double>(ctx.topo.solvent_center.x);
-                const double dy = static_cast<double>(coords[i].y) - static_cast<double>(ctx.topo.solvent_center.y);
-                const double dz = static_cast<double>(coords[i].z) - static_cast<double>(ctx.topo.solvent_center.z);
+                const double dx = coords[i].x - ctx.topo.solvent_center.x;
+                const double dy = coords[i].y - ctx.topo.solvent_center.y;
+                const double dz = coords[i].z - ctx.topo.solvent_center.z;
 
                 const double b = sqrt(dx * dx + dy * dy + dz * dz);
                 const double db = b - restrwalls[ir].d;

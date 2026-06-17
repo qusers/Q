@@ -30,30 +30,30 @@ __device__ __forceinline__ int unified_parameter_index(
 __device__ void calculate_nonbonded_14_pair(
     const coord_t& x,
     const coord_t& y,
-    real_t x_charge,
-    real_t y_charge,
-    real_t x_aii,
-    real_t y_aii,
-    real_t x_bii,
-    real_t y_bii,
-    real_t coulomb_constant,
-    real_t scaling,
+    double x_charge,
+    double y_charge,
+    double x_aii,
+    double y_aii,
+    double x_bii,
+    double y_bii,
+    double coulomb_constant,
+    double scaling,
     int vdw_rule,
-    real_t lambda,
-    real_t& evdw,
-    real_t& ecoul,
-    real_t& dv) {
-    const real_t dx = x.x - y.x;
-    const real_t dy = x.y - y.y;
-    const real_t dz = x.z - y.z;
-    const real_t r = rsqrt(dx * dx + dy * dy + dz * dz);
-    const real_t r2 = r * r;
-    const real_t r6 = r2 * r2 * r2;
+    double lambda,
+    double& evdw,
+    double& ecoul,
+    double& dv) {
+    const double dx = x.x - y.x;
+    const double dy = x.y - y.y;
+    const double dz = x.z - y.z;
+    const double r = rsqrt(dx * dx + dy * dy + dz * dz);
+    const double r2 = r * r;
+    const double r6 = r2 * r2 * r2;
 
     ecoul = scaling * coulomb_constant * x_charge * y_charge * r * lambda;
 
-    real_t v_a = 0.0;
-    real_t v_b = 0.0;
+    double v_a = 0.0;
+    double v_b = 0.0;
     if (vdw_rule == VDW_GEOMETRIC) {
         calc_vdw_geometric(
             x_aii, y_aii, x_bii, y_bii, r6, &v_a, &v_b);
@@ -63,7 +63,7 @@ __device__ void calculate_nonbonded_14_pair(
     v_a *= lambda;
     v_b *= lambda;
     evdw = v_a - v_b;
-    dv = r2 * (-ecoul - static_cast<real_t>(12.0) * v_a + static_cast<real_t>(6.0) * v_b);
+    dv = r2 * (-ecoul - 12.0 * v_a + 6.0 * v_b);
 }
 
 __global__ void calc_nonbonded_14_force_kernel(
@@ -82,7 +82,7 @@ __global__ void calc_nonbonded_14_force_kernel(
     int state,
     int n_atoms,
     int n_qatoms,
-    real_t lambda) {
+    double lambda) {
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_pairs) return;
 
@@ -110,10 +110,10 @@ __global__ void calc_nonbonded_14_force_kernel(
     const coord_t ri = d_coords[ai];
     const coord_t rj = d_coords[aj];
 
-    real_t evdw = 0.0;
-    real_t ecoul = 0.0;
-    real_t dv = 0.0;
-    const real_t pair_lambda = static_cast<real_t>((mode == NONBONDED_14_PP) ? 1.0 : lambda);
+    double evdw = 0.0;
+    double ecoul = 0.0;
+    double dv = 0.0;
+    const double pair_lambda = (mode == NONBONDED_14_PP) ? 1.0 : lambda;
 
     calculate_nonbonded_14_pair(
         ri,
@@ -132,9 +132,9 @@ __global__ void calc_nonbonded_14_force_kernel(
         ecoul,
         dv);
 
-    const real_t dx = rj.x - ri.x;
-    const real_t dy = rj.y - ri.y;
-    const real_t dz = rj.z - ri.z;
+    const double dx = rj.x - ri.x;
+    const double dy = rj.y - ri.y;
+    const double dz = rj.z - ri.z;
     atomic_add_force(&d_dvelocities[ai].x, -dv * dx);
     atomic_add_force(&d_dvelocities[ai].y, -dv * dy);
     atomic_add_force(&d_dvelocities[ai].z, -dv * dz);
@@ -150,14 +150,14 @@ __global__ void calc_nonbonded_14_force_kernel(
 
 namespace {
 struct Nonbonded14EnergyBuckets {
-    real_t evdw[CudaNonbonded14Force::kNonbonded14ModeCount] = {};
-    real_t ecoul[CudaNonbonded14Force::kNonbonded14ModeCount] = {};
+    double evdw[CudaNonbonded14Force::kNonbonded14ModeCount] = {};
+    double ecoul[CudaNonbonded14Force::kNonbonded14ModeCount] = {};
 };
 }  // namespace
 
 static Nonbonded14EnergyBuckets calc_nonbonded_14_force_state_host(
     int state,
-    real_t lambda,
+    double lambda,
     bool include_pp) {
     using namespace CudaNonbonded14Force;
 
@@ -217,7 +217,7 @@ void calc_nonbonded_14_forces_host() {
 
     auto* lambdas = host.lambdas->cpu_data_p;
     for (int state = 0; state < host.n_lambdas; state++) {
-        const real_t lambda = lambdas[state];
+        const double lambda = lambdas[state];
         Nonbonded14EnergyBuckets energies = calc_nonbonded_14_force_state_host(state, lambda, false);
 
         if (lambda != 0.0) {

@@ -6,7 +6,7 @@
 #include "cpu_force_accumulation.h"
 #include "cpu_utils.h"
 
-real_t calc_improper2_forces(int start, int end) {
+double calc_improper2_forces(int start, int end) {
     auto& ctx = Context::instance();
     auto& impropers = ctx.impropers->cpu_data_p;
     auto& cimpropers = ctx.cimpropers->cpu_data_p;
@@ -34,15 +34,15 @@ real_t calc_improper2_forces(int start, int end) {
         ak = coords[aki];
         al = coords[ali];
 
-        const double rji_x = static_cast<double>(ai.x) - static_cast<double>(aj.x);
-        const double rji_y = static_cast<double>(ai.y) - static_cast<double>(aj.y);
-        const double rji_z = static_cast<double>(ai.z) - static_cast<double>(aj.z);
-        const double rjk_x = static_cast<double>(ak.x) - static_cast<double>(aj.x);
-        const double rjk_y = static_cast<double>(ak.y) - static_cast<double>(aj.y);
-        const double rjk_z = static_cast<double>(ak.z) - static_cast<double>(aj.z);
-        const double rkl_x = static_cast<double>(al.x) - static_cast<double>(ak.x);
-        const double rkl_y = static_cast<double>(al.y) - static_cast<double>(ak.y);
-        const double rkl_z = static_cast<double>(al.z) - static_cast<double>(ak.z);
+        const double rji_x = ai.x - aj.x;
+        const double rji_y = ai.y - aj.y;
+        const double rji_z = ai.z - aj.z;
+        const double rjk_x = ak.x - aj.x;
+        const double rjk_y = ak.y - aj.y;
+        const double rjk_z = ak.z - aj.z;
+        const double rkl_x = al.x - ak.x;
+        const double rkl_y = al.y - ak.y;
+        const double rkl_z = al.z - ak.z;
 
         const double rnj_x = rji_y * rjk_z - rji_z * rjk_y;
         const double rnj_y = rji_z * rjk_x - rji_x * rjk_z;
@@ -78,7 +78,7 @@ real_t calc_improper2_forces(int start, int end) {
 
         // Forces
         double f1 = sin(phi);
-        const double sin_epsilon = static_cast<double>(k_singular_sin_epsilon);
+        const double sin_epsilon = k_singular_sin_epsilon;
         if (std::fabs(f1) < sin_epsilon) {
             f1 = std::copysign(sin_epsilon, f1);
         }

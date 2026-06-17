@@ -17,10 +17,10 @@ __global__ void calc_torsion_forces_kernel(int start, int end, torsion_t* torsio
     coord_t rji, rjk, rkl, rnj, rnk, rki, rlj;
     coord_t di, dl, dpi, dpj, dpk, dpl;
 
-    real_t bj2inv, bk2inv, bjinv, bkinv;
-    real_t cos_phi, phi;
-    real_t arg, dv, f1;
-    real_t ener;
+    double bj2inv, bk2inv, bjinv, bkinv;
+    double cos_phi, phi;
+    double arg, dv, f1;
+    double ener;
 
     torsion_t t;
     ctorsion_t ctors;
@@ -64,8 +64,8 @@ __global__ void calc_torsion_forces_kernel(int start, int end, torsion_t* torsio
     bkinv = sqrt(bk2inv);
 
     cos_phi = (rnj.x * rnk.x + rnj.y * rnk.y + rnj.z * rnk.z) * (bjinv * bkinv);
-    cos_phi = cos_phi > static_cast<real_t>(1.0) ? static_cast<real_t>(1.0) : cos_phi;
-    cos_phi = cos_phi < static_cast<real_t>(-1.0) ? static_cast<real_t>(-1.0) : cos_phi;
+    cos_phi = cos_phi > 1.0 ? 1.0 : cos_phi;
+    cos_phi = cos_phi < -1.0 ? -1.0 : cos_phi;
     phi = acos(cos_phi);
     if (rjk.x * (rnj.y * rnk.z - rnj.z * rnk.y) + rjk.y * (rnj.z * rnk.x - rnj.x * rnk.z) + rjk.z * (rnj.x * rnk.y - rnj.y * rnk.x) < 0) {
         phi = -phi;
@@ -125,7 +125,7 @@ __global__ void calc_torsion_forces_kernel(int start, int end, torsion_t* torsio
     atomic_add_force(&dvelocities[ali].z, dv * dpl.z);
 }
 
-real_t calc_torsion_forces_host(int start, int end) {
+double calc_torsion_forces_host(int start, int end) {
     using namespace CudaTorsionForce;
     int N = end - start;
     if (N <= 0) return 0.0;

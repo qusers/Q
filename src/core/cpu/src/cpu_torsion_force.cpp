@@ -6,7 +6,7 @@
 #include "cpu_force_accumulation.h"
 #include "cpu_utils.h"
 
-real_t calc_torsion_forces(int start, int end) {
+double calc_torsion_forces(int start, int end) {
     auto& ctx = Context::instance();
     auto &torsions = ctx.torsions->cpu_data_p;
     auto &ctorsions = ctx.ctorsions->cpu_data_p;
@@ -18,10 +18,10 @@ real_t calc_torsion_forces(int start, int end) {
     coord_t rji, rjk, rkl, rnj, rnk, rki, rlj;
     coord_t di, dl, dpi, dpj, dpk, dpl;
 
-    real_t bj2inv, bk2inv, bjinv, bkinv;
-    real_t cos_phi, phi;
-    real_t arg, dv, f1;
-    real_t ener;
+    double bj2inv, bk2inv, bjinv, bkinv;
+    double cos_phi, phi;
+    double arg, dv, f1;
+    double ener;
     energy_accum_t torsion = 0;
 
     torsion_t t;

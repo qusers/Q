@@ -29,9 +29,9 @@ void calc_restrseq_forces() {
             for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
                 if (heavy[i] || restrseqs[s].ih) {
                     n_ctr++;
-                    dx += static_cast<double>(coords[i].x) - static_cast<double>(ctx.coords_init->cpu_data_p[i].x);
-                    dy += static_cast<double>(coords[i].y) - static_cast<double>(ctx.coords_init->cpu_data_p[i].y);
-                    dz += static_cast<double>(coords[i].z) - static_cast<double>(ctx.coords_init->cpu_data_p[i].z);
+                    dx += coords[i].x - ctx.coords_init->cpu_data_p[i].x;
+                    dy += coords[i].y - ctx.coords_init->cpu_data_p[i].y;
+                    dz += coords[i].z - ctx.coords_init->cpu_data_p[i].z;
                 }
             }
 
@@ -46,7 +46,7 @@ void calc_restrseq_forces() {
 
                 for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
                     if (heavy[i] || restrseqs[s].ih) {
-                        const double mass = static_cast<double>(catypes[atypes[i].code - 1].m);
+                        const double mass = catypes[atypes[i].code - 1].m;
                         const double tmp = 12.010;
                         add_force(dvelocities[i].x, k * dx * mass / tmp);
                         add_force(dvelocities[i].y, k * dy * mass / tmp);
@@ -57,11 +57,11 @@ void calc_restrseq_forces() {
         } else if (restrseqs[s].to_center == 2) {
             for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
                 if (heavy[i] || restrseqs[s].ih) {
-                    const double mass = static_cast<double>(catypes[atypes[i].code - 1].m);
+                    const double mass = catypes[atypes[i].code - 1].m;
                     totmass += mass;
-                    dx += (static_cast<double>(coords[i].x) - static_cast<double>(ctx.coords_init->cpu_data_p[i].x)) * mass;
-                    dy += (static_cast<double>(coords[i].y) - static_cast<double>(ctx.coords_init->cpu_data_p[i].y)) * mass;
-                    dz += (static_cast<double>(coords[i].z) - static_cast<double>(ctx.coords_init->cpu_data_p[i].z)) * mass;
+                    dx += (coords[i].x - ctx.coords_init->cpu_data_p[i].x) * mass;
+                    dy += (coords[i].y - ctx.coords_init->cpu_data_p[i].y) * mass;
+                    dz += (coords[i].z - ctx.coords_init->cpu_data_p[i].z) * mass;
                 }
             }
 
@@ -84,9 +84,9 @@ void calc_restrseq_forces() {
         } else {
             for (int i = restrseqs[s].ai - 1; i < restrseqs[s].aj - 1; i++) {
                 if (heavy[i] || restrseqs[s].ih) {
-                    const double dx_atom = static_cast<double>(coords[i].x) - static_cast<double>(ctx.coords_init->cpu_data_p[i].x);
-                    const double dy_atom = static_cast<double>(coords[i].y) - static_cast<double>(ctx.coords_init->cpu_data_p[i].y);
-                    const double dz_atom = static_cast<double>(coords[i].z) - static_cast<double>(ctx.coords_init->cpu_data_p[i].z);
+                    const double dx_atom = coords[i].x - ctx.coords_init->cpu_data_p[i].x;
+                    const double dy_atom = coords[i].y - ctx.coords_init->cpu_data_p[i].y;
+                    const double dz_atom = coords[i].z - ctx.coords_init->cpu_data_p[i].z;
 
                     const double r2 = dx_atom * dx_atom + dy_atom * dy_atom + dz_atom * dz_atom;
                     const double ener = 0.5 * k * r2;

@@ -25,17 +25,17 @@ void calc_restrang_forces() {
         j = restrangs[ir].aj - 1;
         k = restrangs[ir].ak - 1;
 
-        const double dr_x = static_cast<double>(coords[i].x) - static_cast<double>(coords[j].x);
-        const double dr_y = static_cast<double>(coords[i].y) - static_cast<double>(coords[j].y);
-        const double dr_z = static_cast<double>(coords[i].z) - static_cast<double>(coords[j].z);
+        const double dr_x = coords[i].x - coords[j].x;
+        const double dr_y = coords[i].y - coords[j].y;
+        const double dr_z = coords[i].z - coords[j].z;
 
-        const double dr2_x = static_cast<double>(coords[k].x) - static_cast<double>(coords[j].x);
-        const double dr2_y = static_cast<double>(coords[k].y) - static_cast<double>(coords[j].y);
-        const double dr2_z = static_cast<double>(coords[k].z) - static_cast<double>(coords[j].z);
+        const double dr2_x = coords[k].x - coords[j].x;
+        const double dr2_y = coords[k].y - coords[j].y;
+        const double dr2_z = coords[k].z - coords[j].z;
 
         double lambda;
         if (restrangs[ir].ipsi != 0) {
-            lambda = static_cast<double>(lambdas[state]);
+            lambda = lambdas[state];
         } else {
             lambda = 1.0;
         }
@@ -63,7 +63,7 @@ void calc_restrang_forces() {
         const double dv = lambda * restrangs[ir].k * dth;
 
         double f1 = sin(th);
-        const double sin_epsilon = static_cast<double>(k_singular_sin_epsilon);
+        const double sin_epsilon = k_singular_sin_epsilon;
         if (fabs(f1) < sin_epsilon) {
             f1 = -1.0 / sin_epsilon;
         } else {

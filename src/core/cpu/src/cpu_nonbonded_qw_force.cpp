@@ -15,19 +15,19 @@ void calc_nonbonded_qw_forces() {
     auto *excluded = ctx.excluded->cpu_data_p;
     int i;
     coord_t dO, dH1, dH2;
-    real_t r2O, rH1, rH2, rO, r2H1, r2H2;
-    real_t dvO, dvH1, dvH2;
-    real_t V_a, V_b, VelO, VelH1, VelH2;
-    real_t ai_aii, ai_bii;
+    double r2O, rH1, rH2, rO, r2H1, r2H2;
+    double dvO, dvH1, dvH2;
+    double V_a, V_b, VelO, VelH1, VelH2;
+    double ai_aii, ai_bii;
     std::vector<energy_accum_t> ucoul(ctx.n_lambdas, 0);
     std::vector<energy_accum_t> uvdw(ctx.n_lambdas, 0);
 
     // Loop over O-atoms, q-atoms
     for (int j = ctx.n_atoms_solute; j < ctx.n_atoms; j += 3) {
         const catype_t& ow_type = ctx.unified_catype(j, 0);
-        real_t ow_charge = ctx.unified_ccharge(j, 0).charge;
-        real_t hw1_charge = ctx.unified_ccharge(j + 1, 0).charge;
-        real_t hw2_charge = ctx.unified_ccharge(j + 2, 0).charge;
+        double ow_charge = ctx.unified_ccharge(j, 0).charge;
+        double hw1_charge = ctx.unified_ccharge(j + 1, 0).charge;
+        double hw2_charge = ctx.unified_ccharge(j + 2, 0).charge;
         for (int qi = 0; qi < ctx.n_qatoms; qi++) {
             i = ctx.q_atoms[qi];
             if (excluded[i] || excluded[j]) continue;
@@ -41,11 +41,11 @@ void calc_nonbonded_qw_forces() {
             dH2.y = coords[j + 2].y - coords[i].y;
             dH2.z = coords[j + 2].z - coords[i].z;
             r2O = dO.x * dO.x + dO.y * dO.y + dO.z * dO.z;
-            rH1 = static_cast<real_t>(std::sqrt(static_cast<real_t>(1.0) / (dH1.x * dH1.x + dH1.y * dH1.y + dH1.z * dH1.z)));
-            rH2 = static_cast<real_t>(std::sqrt(static_cast<real_t>(1.0) / (dH2.x * dH2.x + dH2.y * dH2.y + dH2.z * dH2.z)));
-            r2O = static_cast<real_t>(1.0) / r2O;
-            rO = static_cast<real_t>(std::sqrt(r2O));
-            const real_t r6Oinv = r2O * r2O * r2O;  // 1/r^6 for vdW calculation
+            rH1 = std::sqrt(1.0 / (dH1.x * dH1.x + dH1.y * dH1.y + dH1.z * dH1.z));
+            rH2 = std::sqrt(1.0 / (dH2.x * dH2.x + dH2.y * dH2.y + dH2.z * dH2.z));
+            r2O = 1.0 / r2O;
+            rO = std::sqrt(r2O);
+            const double r6Oinv = r2O * r2O * r2O;  // 1/r^6 for vdW calculation
             r2H1 = rH1 * rH1;
             r2H2 = rH2 * rH2;
 
@@ -66,14 +66,14 @@ void calc_nonbonded_qw_forces() {
                     calc_vdw_arithmetic(ai_aii, ow_type.aii_normal, ai_bii, ow_type.bii_normal, r6Oinv, &V_a, &V_b);
                 }
 
-                const real_t q_charge = ctx.unified_ccharge(i, state).charge;
+                const double q_charge = ctx.unified_ccharge(i, state).charge;
                 VelO =  ow_charge * q_charge * rO * ctx.topo.coulomb_constant;
                 VelH1 = hw1_charge * q_charge * rH1 * ctx.topo.coulomb_constant;
                 VelH2 = hw2_charge * q_charge * rH2 * ctx.topo.coulomb_constant;
 
 
-                const real_t lambda = static_cast<real_t>(lambdas[state]);
-                dvO += r2O * (-VelO - (static_cast<real_t>(12.0) * V_a - static_cast<real_t>(6.0) * V_b)) * lambda;
+                const double lambda = lambdas[state];
+                dvO += r2O * (-VelO - (12.0 * V_a - 6.0 * V_b)) * lambda;
                 dvH1 -= r2H1 * VelH1 * lambda;
                 dvH2 -= r2H2 * VelH2 * lambda;
 
