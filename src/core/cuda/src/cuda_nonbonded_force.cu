@@ -54,7 +54,7 @@ __device__ void calculate_unforce_bound(
     const coord_t& x,
     const coord_t& y,
 
-    const double charge_product,
+    const WorkT charge_product,
     const vdw_pair_param_t& pair_param,
 
     const WorkT coulomb_constant,
@@ -175,8 +175,8 @@ __global__ void calc_nonbonded_force_kernel(
     nonbond_vec_t<WorkT> x_force = {0.0, 0.0, 0.0};
     nonbond_vec_t<WorkT> y_force = {0.0, 0.0, 0.0};
 
-    double evdw_sum = 0.0;
-    double ecoul_sum = 0.0;
+    WorkT evdw_sum = 0.0;
+    WorkT ecoul_sum = 0.0;
 
     const unsigned mask = 0xffffffffu;
 
@@ -236,7 +236,7 @@ __global__ void calc_nonbonded_force_kernel(
     for (int i = 0; i < 32; i++) {
         if (is_valid()) {
             WorkT scaling = static_cast<WorkT>(1.0);
-            double charge_product = charge_pair_products[charge_pair_row + y_charge_type_idx];
+            const WorkT charge_product = charge_pair_products[charge_pair_row + y_charge_type_idx];
             vdw_pair_param_t pair_param = catype_pair_params[pair_row + y_catype_type_idx];
 
             // todo: Now the idx is wrong, should optimize it later
@@ -364,7 +364,7 @@ std::pair<double, double> calc_nonbonded_force_host(
             host.q_elscales->gpu_data_p);
     };
 
-    launch_kernel(double{});
+    launch_kernel(real_t{});
 
     cudaDeviceSynchronize();
 
