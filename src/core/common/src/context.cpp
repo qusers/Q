@@ -293,6 +293,7 @@ void Context::preprocess_data(Shake &shake) {
     init_patoms();
     init_velocities();
 
+    nonbond_coords = std::make_unique<HostDeviceBuffer<nonbond_coord_t>>(n_atoms, true, command_info.requested_gpu);
     dvelocities = std::make_unique<HostDeviceBuffer<dvel_t>>(n_atoms, true, command_info.requested_gpu);
     xcoords = std::make_unique<HostDeviceBuffer<coord_t>>(n_atoms, true, command_info.requested_gpu);
 

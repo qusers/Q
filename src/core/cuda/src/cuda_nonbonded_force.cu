@@ -1,10 +1,10 @@
 #include <iostream>
 
-#include "context.h"
-#include "cuda_nonbonded_force.cuh"
 #include "constants.h"
-#include "cuda_utility.cuh"
+#include "context.h"
 #include "cuda_force_accumulation.cuh"
+#include "cuda_nonbonded_force.cuh"
+#include "cuda_utility.cuh"
 
 namespace CudaNonbondedForce {
 bool is_initialized = false;
@@ -32,8 +32,7 @@ __device__ __forceinline__ T shfl_value(T v, int srcLane, unsigned mask = 0xffff
     return __shfl_sync(mask, v, srcLane);
 }
 
-// coord_t is double in both DPFP and SPFP, so the 64-bit shuffle path must be
-// available unconditionally.
+// DPFP nonbond_coord_t uses double components, so keep a 64-bit shuffle path.
 template <>
 __device__ __forceinline__ double shfl_value(double v, int srcLane, unsigned mask) {
     int2 a = *reinterpret_cast<int2*>(&v);
@@ -42,7 +41,7 @@ __device__ __forceinline__ double shfl_value(double v, int srcLane, unsigned mas
     return *reinterpret_cast<double*>(&a);
 }
 
-__device__ __forceinline__ coord_t shfl_coord(coord_t v, int srcLane, unsigned mask = 0xffffffffu) {
+__device__ __forceinline__ nonbond_coord_t shfl_coord(nonbond_coord_t v, int srcLane, unsigned mask = 0xffffffffu) {
     v.x = shfl_value(v.x, srcLane, mask);
     v.y = shfl_value(v.y, srcLane, mask);
     v.z = shfl_value(v.z, srcLane, mask);
@@ -51,8 +50,8 @@ __device__ __forceinline__ coord_t shfl_coord(coord_t v, int srcLane, unsigned m
 
 template <typename WorkT>
 __device__ void calculate_unforce_bound(
-    const coord_t& x,
-    const coord_t& y,
+    const nonbond_coord_t& x,
+    const nonbond_coord_t& y,
 
     const WorkT charge_product,
     const vdw_pair_param_t& pair_param,
@@ -92,7 +91,7 @@ __global__ void calc_nonbonded_force_kernel(
 
     const int* x_charges_types,
     const int* y_charges_types,
-    const double* charge_pair_products,
+    const WorkT* charge_pair_products,
 
     const int* x_atypes_types,
     const int* y_atypes_types,
@@ -107,7 +106,7 @@ __global__ void calc_nonbonded_force_kernel(
     const int* x_idx_list,
     const int* y_idx_list,
 
-    const coord_t* d_coords,
+    const nonbond_coord_t* d_coords,
 
     dvel_t* d_dvelocities,
 
@@ -159,9 +158,12 @@ __global__ void calc_nonbonded_force_kernel(
     int x_atom_idx = (x_idx < nx) ? x_idx_list[x_idx] : -1;
     int y_atom_idx = (y_idx < ny) ? y_idx_list[y_idx] : -1;
 
-    coord_t invalid = {-1e9, -1e9, -1e9};
-    coord_t x_coord = (x_atom_idx >= 0) ? d_coords[x_atom_idx] : invalid;
-    coord_t y_coord = (y_atom_idx >= 0) ? d_coords[y_atom_idx] : invalid;
+    const nonbond_coord_t invalid = {
+        static_cast<real_t>(-1.0e9),
+        static_cast<real_t>(-1.0e9),
+        static_cast<real_t>(-1.0e9)};
+    nonbond_coord_t x_coord = (x_atom_idx >= 0) ? d_coords[x_atom_idx] : invalid;
+    nonbond_coord_t y_coord = (y_atom_idx >= 0) ? d_coords[y_atom_idx] : invalid;
 
     bool x_excluded = (x_atom_idx >= 0) ? d_excluded[x_atom_idx] : true;
     bool y_excluded = (y_atom_idx >= 0) ? d_excluded[y_atom_idx] : true;
@@ -300,6 +302,18 @@ __global__ void calc_nonbonded_force_kernel(
     }
 }
 
+__global__ void update_nonbonded_coords_kernel(
+    const coord_t* coords,
+    nonbond_coord_t* nonbond_coords,
+    int n_atoms) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n_atoms) return;
+
+    nonbond_coords[i].x = static_cast<real_t>(coords[i].x);
+    nonbond_coords[i].y = static_cast<real_t>(coords[i].y);
+    nonbond_coords[i].z = static_cast<real_t>(coords[i].z);
+}
+
 }  // namespace CudaNonbondedForce
 
 std::pair<double, double> calc_nonbonded_force_host(
@@ -348,7 +362,7 @@ std::pair<double, double> calc_nonbonded_force_host(
             host.LJ_matrix->gpu_data_p,
             x_idx_list,
             y_idx_list,
-            host.coords->gpu_data_p,
+            host.nonbond_coords->gpu_data_p,
             host.dvelocities->gpu_data_p,
             d_evdw_total,
             d_ecoul_total,
@@ -391,4 +405,15 @@ void cleanup_nonbonded_force() {
         cudaFree(d_ecoul_total);
         is_initialized = false;
     }
+}
+
+void update_nonbonded_coords_host() {
+    using namespace CudaNonbondedForce;
+    auto& host = Context::instance();
+    const int block = 256;
+    const int grid = (host.n_atoms + block - 1) / block;
+    update_nonbonded_coords_kernel<<<grid, block>>>(
+        host.coords->gpu_data_p,
+        host.nonbond_coords->gpu_data_p,
+        host.n_atoms);
 }

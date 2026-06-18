@@ -52,6 +52,8 @@ class Context {
     std::unique_ptr<HostDeviceBuffer<vel_t>> velocities;
     std::unique_ptr<HostDeviceBuffer<dvel_t>> dvelocities;
 
+    std::unique_ptr<HostDeviceBuffer<nonbond_coord_t>> nonbond_coords;
+
     /*
     Bond forces
     */
@@ -180,7 +182,7 @@ class Context {
     std::unique_ptr<HostDeviceBuffer<int>> p_atoms_list;
     std::unique_ptr<HostDeviceBuffer<int>> w_atoms_list;
     std::unique_ptr<HostDeviceBuffer<int>> q_atoms_list;
-    std::unique_ptr<HostDeviceBuffer<double>> charge_pair_products;
+    std::unique_ptr<HostDeviceBuffer<real_t>> charge_pair_products;
     std::unique_ptr<HostDeviceBuffer<int>> p_charge_types;
     std::unique_ptr<HostDeviceBuffer<int>> w_charge_types;
     std::unique_ptr<HostDeviceBuffer<int>> q_charge_types;

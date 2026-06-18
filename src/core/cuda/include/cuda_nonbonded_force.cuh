@@ -21,4 +21,7 @@ std::pair<double, double> calc_nonbonded_force_host(
     const double lambda = 1.0
 );
 
+
+void update_nonbonded_coords_host();
+
 void cleanup_nonbonded_force();
