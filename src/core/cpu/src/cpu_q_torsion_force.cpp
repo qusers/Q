@@ -3,6 +3,7 @@
 #include <math.h>
 
 #include "context.h"
+#include "cpu_force_accumulation.h"
 #include "cpu_utils.h"
 
 void calc_qtorsion_forces(int state) {
@@ -15,10 +16,11 @@ void calc_qtorsion_forces(int state) {
     coord_t rji, rjk, rkl, rnj, rnk, rki, rlj;
     coord_t di, dl, dpi, dpj, dpk, dpl;
 
-    real_t bj2inv, bk2inv, bjinv, bkinv;
-    real_t bj, bk, cos_phi, phi;
-    real_t arg, dv, f1;
-    real_t ener;
+    double bj2inv, bk2inv, bjinv, bkinv;
+    double bj, bk, cos_phi, phi;
+    double arg, dv, f1;
+    double ener;
+    energy_accum_t torsion = 0;
 
     for (int i = 0; i < ctx.n_qtorsions; i++) {
         ic = ctx.q_torsions[i + ctx.n_qtorsions * state].code;
@@ -109,22 +111,24 @@ void calc_qtorsion_forces(int state) {
         dpl.z = rjk.x * dl.y - rjk.y * dl.x;
 
         // Update energy and forces
-        ctx.EQ_bond[state].Utor += ener;
+        add_energy(torsion, ener);
 
-        dvelocities[ai].x += dv * dpi.x;
-        dvelocities[ai].y += dv * dpi.y;
-        dvelocities[ai].z += dv * dpi.z;
+        add_force(dvelocities[ai].x, dv * dpi.x);
+        add_force(dvelocities[ai].y, dv * dpi.y);
+        add_force(dvelocities[ai].z, dv * dpi.z);
 
-        dvelocities[aj].x += dv * dpj.x;
-        dvelocities[aj].y += dv * dpj.y;
-        dvelocities[aj].z += dv * dpj.z;
+        add_force(dvelocities[aj].x, dv * dpj.x);
+        add_force(dvelocities[aj].y, dv * dpj.y);
+        add_force(dvelocities[aj].z, dv * dpj.z);
 
-        dvelocities[ak].x += dv * dpk.x;
-        dvelocities[ak].y += dv * dpk.y;
-        dvelocities[ak].z += dv * dpk.z;
+        add_force(dvelocities[ak].x, dv * dpk.x);
+        add_force(dvelocities[ak].y, dv * dpk.y);
+        add_force(dvelocities[ak].z, dv * dpk.z);
 
-        dvelocities[al].x += dv * dpl.x;
-        dvelocities[al].y += dv * dpl.y;
-        dvelocities[al].z += dv * dpl.z;
+        add_force(dvelocities[al].x, dv * dpl.x);
+        add_force(dvelocities[al].y, dv * dpl.y);
+        add_force(dvelocities[al].z, dv * dpl.z);
     }
+
+    ctx.EQ_bond[state].Utor += energy_from_accum(torsion);
 }

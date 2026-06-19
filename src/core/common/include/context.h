@@ -35,8 +35,8 @@ class Context {
     int n_qatoms;
     int n_waters = 0;
     int n_molecules;
-    real_t dt = 0.0;
-    real_t tau_T = 0.0;
+    double dt = 0.0;
+    double tau_T = 0.0;
     md_t md;
     topo_t topo;
     NativeOutputConfig native_output;
@@ -51,6 +51,8 @@ class Context {
     std::unique_ptr<HostDeviceBuffer<coord_t>> coords;
     std::unique_ptr<HostDeviceBuffer<vel_t>> velocities;
     std::unique_ptr<HostDeviceBuffer<dvel_t>> dvelocities;
+
+    std::unique_ptr<HostDeviceBuffer<nonbond_coord_t>> nonbond_coords;
 
     /*
     Bond forces
@@ -110,7 +112,7 @@ class Context {
 
     std::unique_ptr<HostDeviceBuffer<bool>> excluded;
 
-    std::unique_ptr<HostDeviceBuffer<real_t>> winv;
+    std::unique_ptr<HostDeviceBuffer<double>> winv;
 
     std::unique_ptr<HostDeviceBuffer<bool>> shell;
 
@@ -132,13 +134,13 @@ class Context {
     Water
     */
     std::unique_ptr<HostDeviceBuffer<shell_t>> wshells;
-    real_t crgQtot = 0.0;
-    real_t Dwmz = 0.0;
-    real_t awmz = 0.0;
-    std::vector<real_t> theta;
-    std::vector<real_t> theta0;
-    std::vector<real_t> tdum;
-    std::vector<real_t> restart_theta_corr;
+    double crgQtot = 0.0;
+    double Dwmz = 0.0;
+    double awmz = 0.0;
+    std::vector<double> theta;
+    std::vector<double> theta0;
+    std::vector<double> tdum;
+    std::vector<double> restart_theta_corr;
     int n_max_inshell;
     int n_shells;
     std::vector<std::vector<int>> list_sh;
@@ -147,7 +149,7 @@ class Context {
     /*
     FEP
     */
-    std::unique_ptr<HostDeviceBuffer<real_t>> lambdas;  // Actually length is only 2..
+    std::unique_ptr<HostDeviceBuffer<double>> lambdas;  // Actually length is only 2..
 
     /*
     Energy
@@ -199,8 +201,8 @@ class Context {
     Temperature
     */
 
-    real_t Temp = 0.0;
-    real_t Tfree = 0.0;
+    double Temp = 0.0;
+    double Tfree = 0.0;
     int Ndegf = 0;
     int Ndegfree = 0;
     int Ndegf_solute = 0;
@@ -208,8 +210,8 @@ class Context {
     int Ndegf_solvent = 0;
     int Ndegfree_solvent = 0;
 
-    real_t Tscale_solute = 0.0;
-    real_t Tscale_solvent = 0.0;
+    double Tscale_solute = 0.0;
+    double Tscale_solvent = 0.0;
     /*
     Info for FEP
     */

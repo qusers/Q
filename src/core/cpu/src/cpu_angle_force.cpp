@@ -1,25 +1,21 @@
 #include "cpu_angle_force.h"
+#include "cpu_force_accumulation.h"
 
 #include <math.h>
 
 #include "context.h"
 #include "cpu_utils.h"
 
-real_t calc_angle_forces(int start, int end) {
+double calc_angle_forces(int start, int end) {
     auto& ctx = Context::instance();
     auto &coords = ctx.coords->cpu_data_p;
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
     int aii, aji, aki;
 
     coord_t ai, aj, ak;
-    coord_t rji, rjk;
-    coord_t di, dk;
 
-    real_t bji2inv, bjk2inv, bjiinv, bjkinv;
     cangle_t cangle;
-    real_t cos_th, th, dth, dv, f1;
-    real_t ener;
-    real_t angle = 0;
+    energy_accum_t angle = 0;
 
     auto &angles = ctx.angles->cpu_data_p;
     auto &cangles = ctx.cangles->cpu_data_p;
@@ -34,22 +30,22 @@ real_t calc_angle_forces(int start, int end) {
 
         cangle = cangles[angles[i].code - 1];
 
-        rji.x = ai.x - aj.x;
-        rji.y = ai.y - aj.y;
-        rji.z = ai.z - aj.z;
+        const double rji_x = ai.x - aj.x;
+        const double rji_y = ai.y - aj.y;
+        const double rji_z = ai.z - aj.z;
 
-        rjk.x = ak.x - aj.x;
-        rjk.y = ak.y - aj.y;
-        rjk.z = ak.z - aj.z;
+        const double rjk_x = ak.x - aj.x;
+        const double rjk_y = ak.y - aj.y;
+        const double rjk_z = ak.z - aj.z;
 
         // Calculate inverse of norm of dist vector and their squares
-        bji2inv = 1.0 / (rji.x * rji.x + rji.y * rji.y + rji.z * rji.z);
-        bjk2inv = 1.0 / (rjk.x * rjk.x + rjk.y * rjk.y + rjk.z * rjk.z);
-        bjiinv = sqrt(bji2inv);
-        bjkinv = sqrt(bjk2inv);
+        const double bji2inv = 1.0 / (rji_x * rji_x + rji_y * rji_y + rji_z * rji_z);
+        const double bjk2inv = 1.0 / (rjk_x * rjk_x + rjk_y * rjk_y + rjk_z * rjk_z);
+        const double bjiinv = sqrt(bji2inv);
+        const double bjkinv = sqrt(bjk2inv);
 
         // Calculate cosine of angle and angle (th)
-        cos_th = (rji.x * rjk.x + rji.y * rjk.y + rji.z * rjk.z) * bjiinv * bjkinv;
+        double cos_th = (rji_x * rjk_x + rji_y * rjk_y + rji_z * rjk_z) * bjiinv * bjkinv;
 
         if (cos_th > 1.0) {
             cos_th = 1.0;
@@ -57,45 +53,45 @@ real_t calc_angle_forces(int start, int end) {
             cos_th = -1.0;
         }
 
-        th = acos(cos_th);
+        const double th = acos(cos_th);
 
-        dth = th - to_radians(cangle.th0);
-        ener = .5 * cangle.kth * pow(dth, 2);
-        dv = cangle.kth * dth;
+        const double dth = th - to_radians(cangle.th0);
+        const double ener = 0.5 * cangle.kth * dth * dth;
+        const double dv = cangle.kth * dth;
 
-        f1 = sin(th);
-        if (std::fabs(f1) < k_singular_sin_epsilon) {
+        double f1 = sin(th);
+        const double sin_epsilon = k_singular_sin_epsilon;
+        if (std::fabs(f1) < sin_epsilon) {
             // Avoid division by zero
-            f1 = -1.0 / k_singular_sin_epsilon;
+            f1 = -1.0 / sin_epsilon;
         } else {
             f1 = -1.0 / f1;
         }
 
         // Update energies and forces
 
-        angle += ener;
+        add_energy(angle, ener);
 
-        di.x = f1 * (rjk.x * bjiinv * bjkinv - cos_th * rji.x * bji2inv);
-        di.y = f1 * (rjk.y * bjiinv * bjkinv - cos_th * rji.y * bji2inv);
-        di.z = f1 * (rjk.z * bjiinv * bjkinv - cos_th * rji.z * bji2inv);
+        const double di_x = f1 * (rjk_x * bjiinv * bjkinv - cos_th * rji_x * bji2inv);
+        const double di_y = f1 * (rjk_y * bjiinv * bjkinv - cos_th * rji_y * bji2inv);
+        const double di_z = f1 * (rjk_z * bjiinv * bjkinv - cos_th * rji_z * bji2inv);
 
-        dk.x = f1 * (rji.x * bjiinv * bjkinv - cos_th * rjk.x * bjk2inv);
-        dk.y = f1 * (rji.y * bjiinv * bjkinv - cos_th * rjk.y * bjk2inv);
-        dk.z = f1 * (rji.z * bjiinv * bjkinv - cos_th * rjk.z * bjk2inv);
+        const double dk_x = f1 * (rji_x * bjiinv * bjkinv - cos_th * rjk_x * bjk2inv);
+        const double dk_y = f1 * (rji_y * bjiinv * bjkinv - cos_th * rjk_y * bjk2inv);
+        const double dk_z = f1 * (rji_z * bjiinv * bjkinv - cos_th * rjk_z * bjk2inv);
 
-        dvelocities[aii].x += dv * di.x;
-        dvelocities[aii].y += dv * di.y;
-        dvelocities[aii].z += dv * di.z;
+        add_force(dvelocities[aii].x, dv * di_x);
+        add_force(dvelocities[aii].y, dv * di_y);
+        add_force(dvelocities[aii].z, dv * di_z);
 
-        dvelocities[aki].x += dv * dk.x;
-        dvelocities[aki].y += dv * dk.y;
-        dvelocities[aki].z += dv * dk.z;
+        add_force(dvelocities[aki].x, dv * dk_x);
+        add_force(dvelocities[aki].y, dv * dk_y);
+        add_force(dvelocities[aki].z, dv * dk_z);
 
-        dvelocities[aji].x -= dv * (di.x + dk.x);
-        dvelocities[aji].y -= dv * (di.y + dk.y);
-        dvelocities[aji].z -= dv * (di.z + dk.z);
-
+        add_force(dvelocities[aji].x, -dv * (di_x + dk_x));
+        add_force(dvelocities[aji].y, -dv * (di_y + dk_y));
+        add_force(dvelocities[aji].z, -dv * (di_z + dk_z));
     }
 
-    return angle;
+    return energy_from_accum(angle);
 }

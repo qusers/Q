@@ -1,4 +1,5 @@
 #include "cpu_q_bond_force.h"
+#include "cpu_force_accumulation.h"
 
 #include <math.h>
 
@@ -11,8 +12,7 @@ void calc_qbond_forces(int state) {
     auto *lambdas = ctx.lambdas->cpu_data_p;
     int ic;
     int ai, aj;
-    real_t b, db, ener, dv;
-    coord_t rij;
+    energy_accum_t bond = 0;
 
     for (int i = 0; i < ctx.n_qbonds; i++) {
         ic = ctx.q_bonds[i + ctx.n_qbonds * state].code;
@@ -24,22 +24,24 @@ void calc_qbond_forces(int state) {
         ai = ctx.q_bonds[i + ctx.n_qbonds * state].ai - 1;
         aj = ctx.q_bonds[i + ctx.n_qbonds * state].aj - 1;
 
-        rij.x = coords[aj].x - coords[ai].x;
-        rij.y = coords[aj].y - coords[ai].y;
-        rij.z = coords[aj].z - coords[ai].z;
+        const double dx = coords[aj].x - coords[ai].x;
+        const double dy = coords[aj].y - coords[ai].y;
+        const double dz = coords[aj].z - coords[ai].z;
 
-        b = sqrt(pow(rij.x, 2) + pow(rij.y, 2) + pow(rij.z, 2));
-        db = b - ctx.q_cbonds[ic].b0;
+        const double b = sqrt(dx * dx + dy * dy + dz * dz);
+        const double db = b - ctx.q_cbonds[ic].b0;
 
-        ener = 0.5 * ctx.q_cbonds[ic].kb * pow(db, 2);
-        ctx.EQ_bond[state].Ubond += ener;
-        dv = db * ctx.q_cbonds[ic].kb * lambdas[state] / b;
+        const double ener = 0.5 * ctx.q_cbonds[ic].kb * db * db;
+        add_energy(bond, ener);
+        const double dv = db * ctx.q_cbonds[ic].kb * lambdas[state] / b;
 
-        dvelocities[ai].x -= dv * rij.x;
-        dvelocities[ai].y -= dv * rij.y;
-        dvelocities[ai].z -= dv * rij.z;
-        dvelocities[aj].x += dv * rij.x;
-        dvelocities[aj].y += dv * rij.y;
-        dvelocities[aj].z += dv * rij.z;
+        add_force(dvelocities[ai].x, -dv * dx);
+        add_force(dvelocities[ai].y, -dv * dy);
+        add_force(dvelocities[ai].z, -dv * dz);
+        add_force(dvelocities[aj].x, dv * dx);
+        add_force(dvelocities[aj].y, dv * dy);
+        add_force(dvelocities[aj].z, dv * dz);
     }
+
+    ctx.EQ_bond[state].Ubond += energy_from_accum(bond);
 }

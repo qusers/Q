@@ -1,76 +1,79 @@
 #include <iostream>
+#include <vector>
 
 #include "cuda/include/cuda_restrpos_force.cuh"
 #include "cuda/include/cuda_utility.cuh"
 #include "common/include/context.h"
+#include "cuda_force_accumulation.cuh"
 
 namespace CudaRestrposForce {
 bool is_initialized = false;
-real_t* d_E_restraint;
+energy_accum_t* d_urestr;
+energy_accum_t* d_upres;
 }  // namespace CudaRestrposForce
 
 __global__ void calc_restrpos_forces_kernel(
     restrpos_t* restrspos,
     int n_restrspos,
     coord_t* coords,
-    real_t* lambdas,
+    double* lambdas,
     int n_lambdas,
-    E_restraint_t* EQ_restraint,
-    real_t* E_restraint,
+    energy_accum_t* urestr,
+    energy_accum_t* upres,
     dvel_t* dvelocities) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_restrspos) return;
     int ir = idx;
 
     int state, i;
-    coord_t dr;
-    real_t lambda, ener, x2, y2, z2;
 
     state = restrspos[ir].ipsi - 1;
     i = restrspos[ir].a - 1;
 
-    dr.x = coords[i].x - restrspos[ir].x.x;
-    dr.y = coords[i].y - restrspos[ir].x.y;
-    dr.z = coords[i].z - restrspos[ir].x.z;
+    const double dx = coords[i].x - restrspos[ir].x.x;
+    const double dy = coords[i].y - restrspos[ir].x.y;
+    const double dz = coords[i].z - restrspos[ir].x.z;
 
+    double lambda;
     if (restrspos[ir].ipsi != 0) {
         lambda = lambdas[state];
     } else {
-        lambda = 1;
+        lambda = 1.0;
     }
 
-    x2 = dr.x * dr.x;
-    y2 = dr.y * dr.y;
-    z2 = dr.z * dr.z;
+    const double kx = restrspos[ir].k.x;
+    const double ky = restrspos[ir].k.y;
+    const double kz = restrspos[ir].k.z;
 
-    ener = .5 * restrspos[ir].k.x * x2 + .5 * restrspos[ir].k.y * y2 + .5 * restrspos[ir].k.z * z2;
+    const double ener = 0.5 * kx * dx * dx + 0.5 * ky * dy * dy + 0.5 * kz * dz * dz;
 
-    atomicAdd(&dvelocities[i].x, restrspos[ir].k.x * dr.x * lambda);
-    atomicAdd(&dvelocities[i].y, restrspos[ir].k.y * dr.y * lambda);
-    atomicAdd(&dvelocities[i].z, restrspos[ir].k.z * dr.z * lambda);
+    atomic_add_force(&dvelocities[i].x, kx * dx * lambda);
+    atomic_add_force(&dvelocities[i].y, ky * dy * lambda);
+    atomic_add_force(&dvelocities[i].z, kz * dz * lambda);
 
     if (restrspos[ir].ipsi == 0) {
         for (int k = 0; k < n_lambdas; k++) {
-            atomicAdd(&EQ_restraint[k].Urestr, ener);
+            atomic_add_energy(&urestr[k], ener);
         }
         if (n_lambdas == 0) {
-            atomicAdd(E_restraint, ener);
+            atomic_add_energy(upres, ener);
         }
     } else {
-        atomicAdd(&EQ_restraint[state].Urestr, ener);
+        atomic_add_energy(&urestr[state], ener);
     }
 }
 void calc_restrpos_forces_host() {
     auto& host = Context::instance();
     if (host.n_restrspos == 0) return;
     using namespace CudaRestrposForce;
-    real_t val = 0.0;
-    cudaMemcpy(d_E_restraint, &val, sizeof(real_t), cudaMemcpyHostToDevice);
+    if (host.n_lambdas > 0) {
+        cudaMemset(d_urestr, 0, sizeof(energy_accum_t) * host.n_lambdas);
+    }
+    cudaMemset(d_upres, 0, sizeof(energy_accum_t));
 
     auto d_restrspos = host.restrspos->gpu_data_p;
     auto d_coords = host.coords->gpu_data_p;
     auto d_lambdas = host.lambdas->gpu_data_p;
-    auto d_EQ_restraint = host.EQ_restraint->gpu_data_p;
     auto d_dvelocities = host.dvelocities->gpu_data_p;
 
     int blockSize = 256;
@@ -81,19 +84,33 @@ void calc_restrpos_forces_host() {
         d_coords,
         d_lambdas,
         host.n_lambdas,
-        d_EQ_restraint,
-        d_E_restraint,
+        d_urestr,
+        d_upres,
         d_dvelocities);
     cudaDeviceSynchronize();
-    cudaMemcpy(&val, d_E_restraint, sizeof(real_t), cudaMemcpyDeviceToHost);
-    host.E_restraint.Upres += val;
-    host.EQ_restraint->download();
+    if (host.n_lambdas > 0) {
+        std::vector<energy_accum_t> urestr(host.n_lambdas, 0);
+        cudaMemcpy(urestr.data(), d_urestr, sizeof(energy_accum_t) * host.n_lambdas, cudaMemcpyDeviceToHost);
+        auto* EQ_restraint = host.EQ_restraint->cpu_data_p;
+        for (int state = 0; state < host.n_lambdas; state++) {
+            EQ_restraint[state].Urestr += energy_from_accum(urestr[state]);
+        }
+    }
+    energy_accum_t upres = 0;
+    cudaMemcpy(&upres, d_upres, sizeof(energy_accum_t), cudaMemcpyDeviceToHost);
+    host.E_restraint.Upres += energy_from_accum(upres);
 }
 
 void init_restrpos_force_kernel_data() {
     using namespace CudaRestrposForce;
     if (!is_initialized) {
-        check_cudaMalloc((void**)&d_E_restraint, sizeof(real_t));
+        auto& host = Context::instance();
+        if (host.n_lambdas > 0) {
+            check_cudaMalloc((void**)&d_urestr, sizeof(energy_accum_t) * host.n_lambdas);
+        } else {
+            d_urestr = nullptr;
+        }
+        check_cudaMalloc((void**)&d_upres, sizeof(energy_accum_t));
         is_initialized = true;
     }
 }
@@ -101,7 +118,10 @@ void init_restrpos_force_kernel_data() {
 void cleanup_restrpos_force() {
     using namespace CudaRestrposForce;
     if (is_initialized) {
-        cudaFree(d_E_restraint);
+        if (d_urestr != nullptr) cudaFree(d_urestr);
+        cudaFree(d_upres);
+        d_urestr = nullptr;
+        d_upres = nullptr;
         is_initialized = false;
     }
 }

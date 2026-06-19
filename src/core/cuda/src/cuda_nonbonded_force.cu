@@ -1,13 +1,14 @@
 #include <iostream>
 
-#include "context.h"
-#include "cuda_nonbonded_force.cuh"
 #include "constants.h"
+#include "context.h"
+#include "cuda_force_accumulation.cuh"
+#include "cuda_nonbonded_force.cuh"
 #include "cuda_utility.cuh"
 
 namespace CudaNonbondedForce {
 bool is_initialized = false;
-real_t *d_evdw_total, *d_ecoul_total;
+energy_accum_t *d_evdw_total, *d_ecoul_total;
 
 template <typename WorkT>
 struct nonbond_vec_t {
@@ -15,16 +16,6 @@ struct nonbond_vec_t {
     WorkT y;
     WorkT z;
 };
-
-__device__ __forceinline__ float nonbond_rsqrt(float value) {
-    return rsqrtf(value);
-}
-
-#ifndef QDYN_SPFP
-__device__ __forceinline__ double nonbond_rsqrt(double value) {
-    return rsqrt(value);
-}
-#endif
 
 __device__ __forceinline__ void idx2xy(int n, int t, int& x, int& y) {
     x = (int)floorf((2 * n + 1 - sqrtf((2 * n + 1) * (2 * n + 1) - 8 * t)) * 0.5f);
@@ -41,7 +32,7 @@ __device__ __forceinline__ T shfl_value(T v, int srcLane, unsigned mask = 0xffff
     return __shfl_sync(mask, v, srcLane);
 }
 
-#ifndef QDYN_SPFP
+// DPFP nonbond_coord_t uses double components, so keep a 64-bit shuffle path.
 template <>
 __device__ __forceinline__ double shfl_value(double v, int srcLane, unsigned mask) {
     int2 a = *reinterpret_cast<int2*>(&v);
@@ -49,9 +40,8 @@ __device__ __forceinline__ double shfl_value(double v, int srcLane, unsigned mas
     a.y = __shfl_sync(mask, a.y, srcLane);
     return *reinterpret_cast<double*>(&a);
 }
-#endif
 
-__device__ __forceinline__ coord_t shfl_coord(coord_t v, int srcLane, unsigned mask = 0xffffffffu) {
+__device__ __forceinline__ nonbond_coord_t shfl_coord(nonbond_coord_t v, int srcLane, unsigned mask = 0xffffffffu) {
     v.x = shfl_value(v.x, srcLane, mask);
     v.y = shfl_value(v.y, srcLane, mask);
     v.z = shfl_value(v.z, srcLane, mask);
@@ -60,10 +50,10 @@ __device__ __forceinline__ coord_t shfl_coord(coord_t v, int srcLane, unsigned m
 
 template <typename WorkT>
 __device__ void calculate_unforce_bound(
-    const coord_t& x,
-    const coord_t& y,
+    const nonbond_coord_t& x,
+    const nonbond_coord_t& y,
 
-    const real_t charge_product,
+    const WorkT charge_product,
     const vdw_pair_param_t& pair_param,
 
     const WorkT coulomb_constant,
@@ -77,11 +67,11 @@ __device__ void calculate_unforce_bound(
     const WorkT dx = static_cast<WorkT>(x.x - y.x);
     const WorkT dy = static_cast<WorkT>(x.y - y.y);
     const WorkT dz = static_cast<WorkT>(x.z - y.z);
-    const WorkT r = nonbond_rsqrt(dx * dx + dy * dy + dz * dz);
+    const WorkT r = rsqrt(dx * dx + dy * dy + dz * dz);
     const WorkT r2 = r * r;
     const WorkT r6 = r2 * r2 * r2;
-    // real_t v_a = r6 * r6;
-    // real_t v_b = r6;
+    // double v_a = r6 * r6;
+    // double v_b = r6;
     // ecoul = r;
     // evdw = v_a - v_b;
     // dv = r2 * (-ecoul - v_a + v_b);
@@ -101,7 +91,7 @@ __global__ void calc_nonbonded_force_kernel(
 
     const int* x_charges_types,
     const int* y_charges_types,
-    const real_t* charge_pair_products,
+    const WorkT* charge_pair_products,
 
     const int* x_atypes_types,
     const int* y_atypes_types,
@@ -116,12 +106,12 @@ __global__ void calc_nonbonded_force_kernel(
     const int* x_idx_list,
     const int* y_idx_list,
 
-    const coord_t* d_coords,
+    const nonbond_coord_t* d_coords,
 
     dvel_t* d_dvelocities,
 
-    real_t* evdw_tot,
-    real_t* ecoul_tot,
+    energy_accum_t* evdw_tot,
+    energy_accum_t* ecoul_tot,
 
     bool symmetric,
 
@@ -134,7 +124,7 @@ __global__ void calc_nonbonded_force_kernel(
     const int n_catype_types,
     const int zero_catype_type,
     const int n_qelscales,
-    const real_t lambda,
+    const double lambda,
     const q_elscale_t* d_qelscales  // todo: Now doesn't use it. Should optimize it later
 
 ) {
@@ -168,9 +158,12 @@ __global__ void calc_nonbonded_force_kernel(
     int x_atom_idx = (x_idx < nx) ? x_idx_list[x_idx] : -1;
     int y_atom_idx = (y_idx < ny) ? y_idx_list[y_idx] : -1;
 
-    coord_t invalid = {static_cast<real_t>(-1e9), static_cast<real_t>(-1e9), static_cast<real_t>(-1e9)};
-    coord_t x_coord = (x_atom_idx >= 0) ? d_coords[x_atom_idx] : invalid;
-    coord_t y_coord = (y_atom_idx >= 0) ? d_coords[y_atom_idx] : invalid;
+    const nonbond_coord_t invalid = {
+        static_cast<real_t>(-1.0e9),
+        static_cast<real_t>(-1.0e9),
+        static_cast<real_t>(-1.0e9)};
+    nonbond_coord_t x_coord = (x_atom_idx >= 0) ? d_coords[x_atom_idx] : invalid;
+    nonbond_coord_t y_coord = (y_atom_idx >= 0) ? d_coords[y_atom_idx] : invalid;
 
     bool x_excluded = (x_atom_idx >= 0) ? d_excluded[x_atom_idx] : true;
     bool y_excluded = (y_atom_idx >= 0) ? d_excluded[y_atom_idx] : true;
@@ -184,8 +177,8 @@ __global__ void calc_nonbonded_force_kernel(
     nonbond_vec_t<WorkT> x_force = {0.0, 0.0, 0.0};
     nonbond_vec_t<WorkT> y_force = {0.0, 0.0, 0.0};
 
-    real_t evdw_sum = 0.0;
-    real_t ecoul_sum = 0.0;
+    WorkT evdw_sum = 0.0;
+    WorkT ecoul_sum = 0.0;
 
     const unsigned mask = 0xffffffffu;
 
@@ -245,7 +238,7 @@ __global__ void calc_nonbonded_force_kernel(
     for (int i = 0; i < 32; i++) {
         if (is_valid()) {
             WorkT scaling = static_cast<WorkT>(1.0);
-            real_t charge_product = charge_pair_products[charge_pair_row + y_charge_type_idx];
+            const WorkT charge_product = charge_pair_products[charge_pair_row + y_charge_type_idx];
             vdw_pair_param_t pair_param = catype_pair_params[pair_row + y_catype_type_idx];
 
             // todo: Now the idx is wrong, should optimize it later
@@ -288,15 +281,15 @@ __global__ void calc_nonbonded_force_kernel(
     }
 
     if (x_atom_idx >= 0) {
-        atomicAdd(&d_dvelocities[x_atom_idx].x, x_force.x);
-        atomicAdd(&d_dvelocities[x_atom_idx].y, x_force.y);
-        atomicAdd(&d_dvelocities[x_atom_idx].z, x_force.z);
+        atomic_add_force(&d_dvelocities[x_atom_idx].x, x_force.x);
+        atomic_add_force(&d_dvelocities[x_atom_idx].y, x_force.y);
+        atomic_add_force(&d_dvelocities[x_atom_idx].z, x_force.z);
     }
 
     if (y_atom_idx >= 0) {
-        atomicAdd(&d_dvelocities[y_atom_idx].x, y_force.x);
-        atomicAdd(&d_dvelocities[y_atom_idx].y, y_force.y);
-        atomicAdd(&d_dvelocities[y_atom_idx].z, y_force.z);
+        atomic_add_force(&d_dvelocities[y_atom_idx].x, y_force.x);
+        atomic_add_force(&d_dvelocities[y_atom_idx].y, y_force.y);
+        atomic_add_force(&d_dvelocities[y_atom_idx].z, y_force.z);
     }
 
     for (int offset = 16; offset > 0; offset >>= 1) {
@@ -304,14 +297,26 @@ __global__ void calc_nonbonded_force_kernel(
         ecoul_sum += __shfl_down_sync(mask, ecoul_sum, offset);
     }
     if (lane == 0) {
-        atomicAdd(evdw_tot, evdw_sum);
-        atomicAdd(ecoul_tot, ecoul_sum);
+        atomic_add_energy(evdw_tot, evdw_sum);
+        atomic_add_energy(ecoul_tot, ecoul_sum);
     }
+}
+
+__global__ void update_nonbonded_coords_kernel(
+    const coord_t* coords,
+    nonbond_coord_t* nonbond_coords,
+    int n_atoms) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n_atoms) return;
+
+    nonbond_coords[i].x = static_cast<real_t>(coords[i].x);
+    nonbond_coords[i].y = static_cast<real_t>(coords[i].y);
+    nonbond_coords[i].z = static_cast<real_t>(coords[i].z);
 }
 
 }  // namespace CudaNonbondedForce
 
-std::pair<real_t, real_t> calc_nonbonded_force_host(
+std::pair<double, double> calc_nonbonded_force_host(
     int nx,
     int ny,
     int* x_idx_list,
@@ -322,7 +327,7 @@ std::pair<real_t, real_t> calc_nonbonded_force_host(
     const int* y_charges_types,
     const int* x_atypes_types,
     const int* y_atypes_types,
-    const bool disable_water_h_lj, const real_t lambda) {
+    const bool disable_water_h_lj, const double lambda) {
     using namespace CudaNonbondedForce;
     Context& host = Context::instance();
     const int thread_num = 256;
@@ -338,8 +343,8 @@ std::pair<real_t, real_t> calc_nonbonded_force_host(
 
     dim3 grid = dim3(grid_sz);
 
-    cudaMemset(d_ecoul_total, 0, sizeof(real_t));
-    cudaMemset(d_evdw_total, 0, sizeof(real_t));
+    cudaMemset(d_ecoul_total, 0, sizeof(energy_accum_t));
+    cudaMemset(d_evdw_total, 0, sizeof(energy_accum_t));
 
     auto launch_kernel = [&](auto work_tag) {
         using WorkT = decltype(work_tag);
@@ -357,7 +362,7 @@ std::pair<real_t, real_t> calc_nonbonded_force_host(
             host.LJ_matrix->gpu_data_p,
             x_idx_list,
             y_idx_list,
-            host.coords->gpu_data_p,
+            host.nonbond_coords->gpu_data_p,
             host.dvelocities->gpu_data_p,
             d_evdw_total,
             d_ecoul_total,
@@ -373,22 +378,22 @@ std::pair<real_t, real_t> calc_nonbonded_force_host(
             host.q_elscales->gpu_data_p);
     };
 
-    launch_kernel(nonbond_work_t{});
+    launch_kernel(real_t{});
 
     cudaDeviceSynchronize();
 
-    real_t evdw_tot = 0, ecoul_tot = 0;
-    cudaMemcpy(&evdw_tot, d_evdw_total, sizeof(real_t), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&ecoul_tot, d_ecoul_total, sizeof(real_t), cudaMemcpyDeviceToHost);
+    energy_accum_t evdw_tot = 0, ecoul_tot = 0;
+    cudaMemcpy(&evdw_tot, d_evdw_total, sizeof(energy_accum_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&ecoul_tot, d_ecoul_total, sizeof(energy_accum_t), cudaMemcpyDeviceToHost);
 
-    return {evdw_tot, ecoul_tot};
+    return {energy_from_accum(evdw_tot), energy_from_accum(ecoul_tot)};
 }
 
 void init_nonbonded_force_kernel_data() {
     using namespace CudaNonbondedForce;
     if (!is_initialized) {
-        check_cudaMalloc((void**)&d_evdw_total, sizeof(real_t));
-        check_cudaMalloc((void**)&d_ecoul_total, sizeof(real_t));
+        check_cudaMalloc((void**)&d_evdw_total, sizeof(energy_accum_t));
+        check_cudaMalloc((void**)&d_ecoul_total, sizeof(energy_accum_t));
         is_initialized = true;
     }
 }
@@ -400,4 +405,15 @@ void cleanup_nonbonded_force() {
         cudaFree(d_ecoul_total);
         is_initialized = false;
     }
+}
+
+void update_nonbonded_coords_host() {
+    using namespace CudaNonbondedForce;
+    auto& host = Context::instance();
+    const int block = 256;
+    const int grid = (host.n_atoms + block - 1) / block;
+    update_nonbonded_coords_kernel<<<grid, block>>>(
+        host.coords->gpu_data_p,
+        host.nonbond_coords->gpu_data_p,
+        host.n_atoms);
 }

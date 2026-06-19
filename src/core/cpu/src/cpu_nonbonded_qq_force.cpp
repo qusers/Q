@@ -5,6 +5,7 @@
 #include "constants.h"
 #include "context.h"
 #include "vdw_rules.h"
+#include "cpu_force_accumulation.h"
 
 void calc_nonbonded_qq_forces() {
     auto& ctx = Context::instance();
@@ -15,27 +16,24 @@ void calc_nonbonded_qq_forces() {
     auto *excluded = ctx.excluded->cpu_data_p;
     auto *q_elscales = ctx.q_elscales->cpu_data_p;
     int ai, aj;
-    real_t elscale, scaling;
+    double elscale, scaling;
     bool bond23, bond14;
     coord_t da;
-    real_t r2a, ra, r6a;
-    real_t Vela, V_a, V_b;
-    real_t dva;
-    real_t ai_aii, aj_aii, ai_bii, aj_bii;
+    double r2a, ra, r6a;
+    double Vela, V_a, V_b;
+    double dva;
+    double ai_aii, aj_aii, ai_bii, aj_bii;
 
     for (int state = 0; state < ctx.n_lambdas; state++) {
+        energy_accum_t ucoul = 0;
+        energy_accum_t uvdw = 0;
         for (int qi = 0; qi < ctx.n_qatoms; qi++) {
             for (int qj = qi + 1; qj < ctx.n_qatoms; qj++) {
                 ai = ctx.q_atoms[qi];
                 aj = ctx.q_atoms[qj];
 
-                float _crg_i = ctx.unified_ccharge(ai, state).charge;
-                float _crg_j = ctx.unified_ccharge(aj, state).charge;
-                _crg_i *= sqrt(ctx.topo.coulomb_constant);
-                _crg_j *= sqrt(ctx.topo.coulomb_constant);
-                double crg_i = _crg_i;
-                double crg_j = _crg_j;
-
+                double crg_i = ctx.unified_ccharge(ai, state).charge;
+                double crg_j = ctx.unified_ccharge(aj, state).charge;
 
 
                 bond23 = LJ_matrix[ai * ctx.n_atoms_solute + aj] == 3;
@@ -59,11 +57,11 @@ void calc_nonbonded_qq_forces() {
                 da.x = coords[aj].x - coords[ai].x;
                 da.y = coords[aj].y - coords[ai].y;
                 da.z = coords[aj].z - coords[ai].z;
-                r2a = 1.0f / (da.x * da.x + da.y * da.y + da.z * da.z);
+                r2a = 1.0 / (da.x * da.x + da.y * da.y + da.z * da.z);
                 ra = sqrt(r2a);
                 r6a = r2a * r2a * r2a;
 
-                Vela =  crg_i * crg_j * ra * elscale * scaling;
+                Vela =  crg_i * crg_j * ra * elscale * scaling * ctx.topo.coulomb_constant;
 
                 ai_aii = bond14 ? qi_type.aii_1_4 : qi_type.aii_normal;
                 aj_aii = bond14 ? qj_type.aii_1_4 : qj_type.aii_normal;
@@ -75,21 +73,23 @@ void calc_nonbonded_qq_forces() {
                 } else {
                     calc_vdw_arithmetic(ai_aii, aj_aii, ai_bii, aj_bii, r6a, &V_a, &V_b);
                 }
-                dva = r2a * (-Vela - 12.0f * V_a + 6.0f * V_b) * lambdas[state];
+                dva = r2a * (-Vela - 12.0 * V_a + 6.0 * V_b) * lambdas[state];
 
-                dvelocities[ai].x -= dva * da.x;
-                dvelocities[ai].y -= dva * da.y;
-                dvelocities[ai].z -= dva * da.z;
+                add_force(dvelocities[ai].x, -dva * da.x);
+                add_force(dvelocities[ai].y, -dva * da.y);
+                add_force(dvelocities[ai].z, -dva * da.z);
 
-                dvelocities[aj].x += dva * da.x;
-                dvelocities[aj].y += dva * da.y;
-                dvelocities[aj].z += dva * da.z;
+                add_force(dvelocities[aj].x, dva * da.x);
+                add_force(dvelocities[aj].y, dva * da.y);
+                add_force(dvelocities[aj].z, dva * da.z);
 
-                ctx.EQ_nonbond_qq[state].Ucoul += static_cast<real_t>(Vela);
+                add_energy(ucoul, Vela);
 
 
-                ctx.EQ_nonbond_qq[state].Uvdw += static_cast<real_t>(V_a - V_b);
+                add_energy(uvdw, V_a - V_b);
             }
         }
+        ctx.EQ_nonbond_qq[state].Ucoul += energy_from_accum(ucoul);
+        ctx.EQ_nonbond_qq[state].Uvdw += energy_from_accum(uvdw);
     }
 }

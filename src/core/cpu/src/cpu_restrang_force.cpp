@@ -1,8 +1,10 @@
 #include "cpu_restrang_force.h"
 
 #include <math.h>
+#include <vector>
 
 #include "context.h"
+#include "cpu_force_accumulation.h"
 #include "cpu_utils.h"
 
 void calc_restrang_forces() {
@@ -14,9 +16,8 @@ void calc_restrang_forces() {
     auto *EQ_restraint = ctx.EQ_restraint->cpu_data_p;
 
     int state, i, j, k;
-    coord_t dr, dr2, di, dk;
-    real_t lambda, r2ij, r2jk, rij, rjk, cos_th, th;
-    real_t dth, dv, ener, f1;
+    std::vector<energy_accum_t> urestr(ctx.n_lambdas, 0);
+    energy_accum_t upres = 0;
 
     for (int ir = 0; ir < ctx.n_restrangs; ir++) {
         state = restrangs[ir].ipsi - 1;
@@ -24,27 +25,28 @@ void calc_restrang_forces() {
         j = restrangs[ir].aj - 1;
         k = restrangs[ir].ak - 1;
 
-        dr.x = coords[i].x - coords[j].x;
-        dr.y = coords[i].y - coords[j].y;
-        dr.z = coords[i].z - coords[j].z;
+        const double dr_x = coords[i].x - coords[j].x;
+        const double dr_y = coords[i].y - coords[j].y;
+        const double dr_z = coords[i].z - coords[j].z;
 
-        dr2.x = coords[k].x - coords[j].x;
-        dr2.y = coords[k].y - coords[j].y;
-        dr2.z = coords[k].z - coords[j].z;
+        const double dr2_x = coords[k].x - coords[j].x;
+        const double dr2_y = coords[k].y - coords[j].y;
+        const double dr2_z = coords[k].z - coords[j].z;
 
+        double lambda;
         if (restrangs[ir].ipsi != 0) {
             lambda = lambdas[state];
         } else {
-            lambda = 1;
+            lambda = 1.0;
         }
 
-        r2ij = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
-        r2jk = pow(dr2.x, 2) + pow(dr2.y, 2) + pow(dr2.z, 2);
+        const double r2ij = dr_x * dr_x + dr_y * dr_y + dr_z * dr_z;
+        const double r2jk = dr2_x * dr2_x + dr2_y * dr2_y + dr2_z * dr2_z;
 
-        rij = sqrt(r2ij);
-        rjk = sqrt(r2jk);
+        const double rij = sqrt(r2ij);
+        const double rjk = sqrt(r2jk);
 
-        cos_th = dr.x * dr2.x + dr.y * dr2.y + dr.z * dr2.z;
+        double cos_th = dr_x * dr2_x + dr_y * dr2_y + dr_z * dr2_z;
         cos_th /= rij * rjk;
 
         if (cos_th > 1) {
@@ -54,45 +56,51 @@ void calc_restrang_forces() {
             cos_th = -1;
         }
 
-        th = acos(cos_th);
-        dth = th - to_radians(restrangs[ir].ang);
+        const double th = acos(cos_th);
+        const double dth = th - to_radians(restrangs[ir].ang);
 
-        ener = .5 * restrangs[ir].k * pow(dth, 2);
-        dv = lambda * restrangs[ir].k * dth;
+        const double ener = 0.5 * restrangs[ir].k * dth * dth;
+        const double dv = lambda * restrangs[ir].k * dth;
 
-        f1 = sin(th);
-        if (fabs(f1) < k_singular_sin_epsilon) {
-            f1 = -1.0 / k_singular_sin_epsilon;
+        double f1 = sin(th);
+        const double sin_epsilon = k_singular_sin_epsilon;
+        if (fabs(f1) < sin_epsilon) {
+            f1 = -1.0 / sin_epsilon;
         } else {
             f1 = -1 / f1;
         }
 
-        di.x = f1 * (dr2.x / (rij * rjk) - cos_th * dr.x / r2ij);
-        di.y = f1 * (dr2.y / (rij * rjk) - cos_th * dr.y / r2ij);
-        di.z = f1 * (dr2.z / (rij * rjk) - cos_th * dr.z / r2ij);
-        dk.x = f1 * (dr.x / (rij * rjk) - cos_th * dr2.x / r2jk);
-        dk.y = f1 * (dr.y / (rij * rjk) - cos_th * dr2.y / r2jk);
-        dk.z = f1 * (dr.z / (rij * rjk) - cos_th * dr2.z / r2jk);
+        const double di_x = f1 * (dr2_x / (rij * rjk) - cos_th * dr_x / r2ij);
+        const double di_y = f1 * (dr2_y / (rij * rjk) - cos_th * dr_y / r2ij);
+        const double di_z = f1 * (dr2_z / (rij * rjk) - cos_th * dr_z / r2ij);
+        const double dk_x = f1 * (dr_x / (rij * rjk) - cos_th * dr2_x / r2jk);
+        const double dk_y = f1 * (dr_y / (rij * rjk) - cos_th * dr2_y / r2jk);
+        const double dk_z = f1 * (dr_z / (rij * rjk) - cos_th * dr2_z / r2jk);
 
-        dvelocities[i].x += dv * di.x;
-        dvelocities[i].y += dv * di.y;
-        dvelocities[i].z += dv * di.z;
-        dvelocities[k].x += dv * dk.x;
-        dvelocities[k].y += dv * dk.y;
-        dvelocities[k].z += dv * dk.z;
-        dvelocities[j].x -= dv * (di.x + dk.x);
-        dvelocities[j].y -= dv * (di.y + dk.y);
-        dvelocities[j].z -= dv * (di.z + dk.z);
+        add_force(dvelocities[i].x, dv * di_x);
+        add_force(dvelocities[i].y, dv * di_y);
+        add_force(dvelocities[i].z, dv * di_z);
+        add_force(dvelocities[k].x, dv * dk_x);
+        add_force(dvelocities[k].y, dv * dk_y);
+        add_force(dvelocities[k].z, dv * dk_z);
+        add_force(dvelocities[j].x, -dv * (di_x + dk_x));
+        add_force(dvelocities[j].y, -dv * (di_y + dk_y));
+        add_force(dvelocities[j].z, -dv * (di_z + dk_z));
 
         if (restrangs[ir].ipsi == 0) {
             for (int lambda_idx = 0; lambda_idx < ctx.n_lambdas; lambda_idx++) {
-                EQ_restraint[lambda_idx].Urestr += ener;
+                add_energy(urestr[lambda_idx], ener);
             }
             if (ctx.n_lambdas == 0) {
-                ctx.E_restraint.Upres += ener;
+                add_energy(upres, ener);
             }
         } else {
-            EQ_restraint[state].Urestr += ener;
+            add_energy(urestr[state], ener);
         }
     }
+
+    for (int state = 0; state < ctx.n_lambdas; state++) {
+        EQ_restraint[state].Urestr += energy_from_accum(urestr[state]);
+    }
+    ctx.E_restraint.Upres += energy_from_accum(upres);
 }

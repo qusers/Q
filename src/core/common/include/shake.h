@@ -9,7 +9,7 @@
 struct ShakeBond {
     int ai;
     int aj;
-    real_t dist2;
+    double dist2;
 };
 
 struct ShakeData {
