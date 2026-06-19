@@ -40,10 +40,10 @@ void initialize_catype_tables() {
     auto* q_atoms_cpu = ctx.q_atoms_list->cpu_data_p;
 
     std::vector<catype_t> h_catype_table_all;
-    std::map<std::array<real_t, 4>, int> catype_to_type_host;
+    std::map<std::array<double, 4>, int> catype_to_type_host;
 
     auto add_catype = [&](catype_t catype) -> int {
-        const std::array<real_t, 4> key = {
+        const std::array<double, 4> key = {
             catype.aii_normal,
             catype.bii_normal,
             catype.aii_1_4,
@@ -79,11 +79,23 @@ void initialize_catype_tables() {
             const catype_t& cj = h_catype_table_all[j];
             vdw_pair_param_t pair_param = {};
             if (ctx.topo.vdw_rule == VDW_GEOMETRIC) {
-                calc_vdw_geometric(
-                    ci.aii_normal, cj.aii_normal, ci.bii_normal, cj.bii_normal, static_cast<real_t>(1.0), &pair_param.a, &pair_param.b);
+                calc_vdw_geometric<real_t>(
+                    static_cast<real_t>(ci.aii_normal),
+                    static_cast<real_t>(cj.aii_normal),
+                    static_cast<real_t>(ci.bii_normal),
+                    static_cast<real_t>(cj.bii_normal),
+                    static_cast<real_t>(1.0),
+                    &pair_param.a,
+                    &pair_param.b);
             } else {
-                calc_vdw_arithmetic(
-                    ci.aii_normal, cj.aii_normal, ci.bii_normal, cj.bii_normal, static_cast<real_t>(1.0), &pair_param.a, &pair_param.b);
+                calc_vdw_arithmetic<real_t>(
+                    static_cast<real_t>(ci.aii_normal),
+                    static_cast<real_t>(cj.aii_normal),
+                    static_cast<real_t>(ci.bii_normal),
+                    static_cast<real_t>(cj.bii_normal),
+                    static_cast<real_t>(1.0),
+                    &pair_param.a,
+                    &pair_param.b);
             }
             h_catype_pair_params[i * ctx.n_catype_types + j] = pair_param;
         }
@@ -93,7 +105,7 @@ void initialize_catype_tables() {
     for (int i = 0; i < static_cast<int>(ctx.p_atoms_list->length); i++) {
         const int id = p_atoms_cpu[i];
         const catype_t catype = catypes[atypes[id].code - 1];
-        const std::array<real_t, 4> key = {catype.aii_normal, catype.bii_normal, catype.aii_1_4, catype.bii_1_4};
+        const std::array<double, 4> key = {catype.aii_normal, catype.bii_normal, catype.aii_1_4, catype.bii_1_4};
         p_catype_types_cpu[i] = catype_to_type_host[key];
     }
 
@@ -111,7 +123,7 @@ void initialize_catype_tables() {
             const int id = q_atoms_cpu[i];
             const atype_t& qat = ctx.q_atypes[q_idx[id] + ctx.n_qatoms * state];
             const catype_t& qcatype = ctx.q_catypes[qat.code - 1];
-            const std::array<real_t, 4> key = {qcatype.aii_normal, qcatype.bii_normal, qcatype.aii_1_4, qcatype.bii_1_4};
+            const std::array<double, 4> key = {qcatype.aii_normal, qcatype.bii_normal, qcatype.aii_1_4, qcatype.bii_1_4};
             q_catype_types_cpu[state * ctx.q_atoms_list->length + i] = catype_to_type_host[key];
         }
     }
@@ -120,7 +132,7 @@ void initialize_catype_tables() {
     for (int i = 0; i < static_cast<int>(ctx.w_atoms_list->length); i++) {
         const int id = w_atoms_cpu[i];
         const catype_t catype = catypes[atypes[id].code - 1];
-        const std::array<real_t, 4> key = {catype.aii_normal, catype.bii_normal, catype.aii_1_4, catype.bii_1_4};
+        const std::array<double, 4> key = {catype.aii_normal, catype.bii_normal, catype.aii_1_4, catype.bii_1_4};
         w_catype_types_cpu[i] = catype_to_type_host[key];
     }
     printf("Total water atom number: %lu, w_catype_types size: %lu\n", ctx.w_atoms_list->length, w_catype_types_cpu.size());
@@ -142,10 +154,10 @@ void initialize_charge_tables() {
     auto* w_atoms_cpu = ctx.w_atoms_list->cpu_data_p;
     auto* q_atoms_cpu = ctx.q_atoms_list->cpu_data_p;
 
-    std::map<real_t, int> charge_to_type_host;
+    std::map<double, int> charge_to_type_host;
     std::vector<ccharge_t> h_charge_table_all;
 
-    auto add_charge = [&](real_t charge) -> int {
+    auto add_charge = [&](double charge) -> int {
         if (charge_to_type_host.count(charge) == 0) {
             int sz = static_cast<int>(h_charge_table_all.size());
             ccharge_t new_ccharge = {};
@@ -162,7 +174,7 @@ void initialize_charge_tables() {
     }
     for (int state = 0; state < ctx.n_lambdas; state++) {
         for (int i = 0; i < ctx.n_qatoms; i++) {
-            real_t charge = ctx.q_charges[i + ctx.n_qatoms * state].charge;
+            double charge = ctx.q_charges[i + ctx.n_qatoms * state].charge;
             add_charge(charge);
             add_charge(charge * lambda_values[state]);
         }
@@ -175,14 +187,14 @@ void initialize_charge_tables() {
     for (int i = 0; i < ctx.n_charge_types; i++) {
         for (int j = 0; j < ctx.n_charge_types; j++) {
             h_charge_pair_products[i * ctx.n_charge_types + j] =
-                static_cast<real_t>(h_charge_table_all[i].charge * h_charge_table_all[j].charge);
+                h_charge_table_all[i].charge * h_charge_table_all[j].charge;
         }
     }
 
     std::vector<int> p_charge_types_cpu(ctx.p_atoms_list->length);
     for (int i = 0; i < static_cast<int>(ctx.p_atoms_list->length); i++) {
         const int id = p_atoms_cpu[i];
-        const real_t charge = ccharges[charges[id].code - 1].charge;
+        const double charge = ccharges[charges[id].code - 1].charge;
         p_charge_types_cpu[i] = charge_to_type_host[charge];
     }
 
@@ -198,7 +210,7 @@ void initialize_charge_tables() {
     for (int state = 0; state < ctx.n_lambdas; state++) {
         for (int i = 0; i < static_cast<int>(ctx.q_atoms_list->length); i++) {
             const int id = q_atoms_cpu[i];
-            const real_t charge = ctx.q_charges[q_idx[id] + ctx.n_qatoms * state].charge;
+            const double charge = ctx.q_charges[q_idx[id] + ctx.n_qatoms * state].charge;
             q_charge_types_cpu[state * ctx.q_atoms_list->length + i] = charge_to_type_host[charge];
         }
     }
@@ -206,7 +218,7 @@ void initialize_charge_tables() {
     std::vector<int> w_charge_types_cpu(ctx.w_atoms_list->length);
     for (int i = 0; i < static_cast<int>(ctx.w_atoms_list->length); i++) {
         const int id = w_atoms_cpu[i];
-        const real_t charge = ccharges[charges[id].code - 1].charge;
+        const double charge = ccharges[charges[id].code - 1].charge;
         w_charge_types_cpu[i] = charge_to_type_host[charge];
     }
 
@@ -447,8 +459,8 @@ void init_velocities() {
     auto& velocities = ctx.velocities->cpu_data_p;
 
     // If not previous value set, use a Maxwell distribution to fill velocities
-    real_t kT = Boltz * ctx.md.initial_temperature;
-    real_t sd, mass;
+    double kT = Boltz * ctx.md.initial_temperature;
+    double sd, mass;
     for (int i = 0; i < ctx.n_atoms; i++) {
         mass = catypes[atypes[i].code - 1].m;
         sd = sqrt(kT / mass);
@@ -467,7 +479,7 @@ void init_inv_mass() {
     auto& ctx = Context::instance();
     auto& atypes = ctx.atypes->cpu_data_p;
     auto& catypes = ctx.catypes->cpu_data_p;
-    ctx.winv = std::make_unique<HostDeviceBuffer<real_t>>(ctx.n_atoms, true, ctx.command_info.requested_gpu);
+    ctx.winv = std::make_unique<HostDeviceBuffer<double>>(ctx.n_atoms, true, ctx.command_info.requested_gpu);
     auto* winv = ctx.winv->cpu_data_p;
     for (int ai = 0; ai < ctx.n_atoms; ai++) {
         winv[ai] = 1 / catypes[atypes[ai].code - 1].m;
@@ -495,8 +507,8 @@ void init_water_sphere() {
         }
     }
 
-    ctx.Dwmz = 0.26f * exp(-0.19f * (ctx.topo.solvent_radius - 15)) + 0.74f;
-    ctx.awmz = 0.2f / (1 + exp(0.4f * (ctx.topo.solvent_radius - 25))) + 0.3f;
+    ctx.Dwmz = 0.26 * exp(-0.19 * (ctx.topo.solvent_radius - 15)) + 0.74;
+    ctx.awmz = 0.2 / (1 + exp(0.4 * (ctx.topo.solvent_radius - 25))) + 0.3;
 
     printf("Dwmz = %f, awmz = %f\n", ctx.Dwmz, ctx.awmz);
 }
@@ -505,14 +517,14 @@ void init_water_sphere() {
 void init_wshells() {
     auto& ctx = Context::instance();
     int n_inshell;
-    real_t drs, router, ri, dr, Vshell, rshell;
+    double drs, router, ri, dr, Vshell, rshell;
     auto& cbonds = ctx.cbonds->cpu_data_p;
     auto& cangles = ctx.cangles->cpu_data_p;
     // Match Fortran wat_shells, which uses the last topology water bond/angle codes.
     cbond_t cbondw = cbonds[ctx.n_cbonds - 1];
     cangle_t canglew = cangles[ctx.n_cangles - 1];
-    const real_t crg_ow = ctx.unified_ccharge(ctx.n_atoms_solute, 0).charge;
-    const real_t mu_w = -crg_ow * cbondw.b0 * cos(to_radians(canglew.th0) / 2);
+    const double crg_ow = ctx.unified_ccharge(ctx.n_atoms_solute, 0).charge;
+    const double mu_w = -crg_ow * cbondw.b0 * cos(to_radians(canglew.th0) / 2);
 
     drs = wpolr_layer / drouter;
 
@@ -577,7 +589,7 @@ void init_pshells() {
     auto& catypes = ctx.catypes->cpu_data_p;
     auto& coords_init = ctx.coords_init->cpu_data_p;
     auto* excluded = ctx.excluded->cpu_data_p;
-    real_t mass, r2, rin2;
+    double mass, r2, rin2;
 
     ctx.heavy = std::make_unique<HostDeviceBuffer<bool>>(ctx.n_atoms, true, ctx.command_info.requested_gpu);
     auto* heavy = ctx.heavy->cpu_data_p;
@@ -627,7 +639,7 @@ static int mark_heavy_atoms(Context& ctx) {
     auto* heavy = ctx.heavy->cpu_data_p;
     int n_heavy = 0;
     for (int i = 0; i < ctx.n_atoms; i++) {
-        real_t mass = catypes[atypes[i].code - 1].m;
+        double mass = catypes[atypes[i].code - 1].m;
         if (mass < 4.0) {
             heavy[i] = false;
         } else {
@@ -653,7 +665,7 @@ void init_pshells_from_charge_groups() {
     auto& ctx = Context::instance();
     auto& coords_init = ctx.coords_init->cpu_data_p;
     auto* excluded = ctx.excluded->cpu_data_p;
-    real_t r2, rin2;
+    double r2, rin2;
     auto& charge_groups = ctx.charge_group_config;
     const bool use_switch_atom = charge_groups.iuse_switch_atom == 1;
 
@@ -669,9 +681,9 @@ void init_pshells_from_charge_groups() {
         const auto& charge_group = charge_groups.charge_groups[grp];
         int i = charge_group.iswitch - 1;
         if (heavy[i] && !excluded[i] && i < ctx.n_atoms_solute) {
-            real_t cx = coords_init[i].x;
-            real_t cy = coords_init[i].y;
-            real_t cz = coords_init[i].z;
+            double cx = coords_init[i].x;
+            double cy = coords_init[i].y;
+            double cz = coords_init[i].z;
             if (!use_switch_atom) {
                 cx = 0.0;
                 cy = 0.0;
@@ -682,7 +694,7 @@ void init_pshells_from_charge_groups() {
                     cy += coords_init[ai].y;
                     cz += coords_init[ai].z;
                 }
-                real_t inv_atoms = 1.0 / static_cast<real_t>(charge_group.atoms.size());
+                double inv_atoms = 1.0 / static_cast<double>(charge_group.atoms.size());
                 cx *= inv_atoms;
                 cy *= inv_atoms;
                 cz *= inv_atoms;
@@ -709,7 +721,7 @@ void init_pshells_from_charge_groups() {
 
 
 void init_for_temperature(Context& ctx, Shake& shake) {
-    real_t excl_shake = 0.0;
+    double excl_shake = 0.0;
     auto* excluded = ctx.excluded->cpu_data_p;
 
     auto* shake_bonds = shake.data().shake_bonds->cpu_data_p;
@@ -846,11 +858,11 @@ void stop_cm_translation(Context& ctx) {
     auto& atypes = ctx.atypes->cpu_data_p;
     auto& catypes = ctx.catypes->cpu_data_p;
     auto& velocities = ctx.velocities->cpu_data_p;
-    real_t total_mass = 0;
+    double total_mass = 0;
     coord_t vcm = {};
 
     for (int ai = 0; ai < ctx.n_atoms; ai++) {
-        const real_t rmass = catypes[atypes[ai].code - 1].m;
+        const double rmass = catypes[atypes[ai].code - 1].m;
         total_mass += rmass;
         vcm.x += velocities[ai].x * rmass;
         vcm.y += velocities[ai].y * rmass;

@@ -1,13 +1,14 @@
 #include "cuda/include/cuda_angle_force.cuh"
 #include "cuda/include/cuda_utility.cuh"
 #include "context.h"
+#include "cuda_force_accumulation.cuh"
 
 namespace CudaAngleForce {
 bool is_initialized = false;
-real_t* d_energy_sum;
+energy_accum_t* d_energy_sum;
 }  // namespace CudaAngleForce
 
-__global__ void calc_angle_forces_kernel(int start, int end, angle_t* angles, coord_t* coords, cangle_t* cangles, dvel_t* dvelocities, real_t* energy_sum) {
+__global__ void calc_angle_forces_kernel(int start, int end, angle_t* angles, coord_t* coords, cangle_t* cangles, dvel_t* dvelocities, energy_accum_t* energy_sum) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x + start;
     if (idx >= end) return;
 
@@ -21,57 +22,63 @@ __global__ void calc_angle_forces_kernel(int start, int end, angle_t* angles, co
 
     cangle_t cang = cangles[angles[idx].code - 1];
 
-    coord_t rji = {ri.x - rj.x, ri.y - rj.y, ri.z - rj.z};
-    coord_t rjk = {rk.x - rj.x, rk.y - rj.y, rk.z - rj.z};
+    const double rji_x = ri.x - rj.x;
+    const double rji_y = ri.y - rj.y;
+    const double rji_z = ri.z - rj.z;
 
-    real_t rji_length = sqrt(rji.x * rji.x + rji.y * rji.y + rji.z * rji.z);
-    real_t rjk_length = sqrt(rjk.x * rjk.x + rjk.y * rjk.y + rjk.z * rjk.z);
+    const double rjk_x = rk.x - rj.x;
+    const double rjk_y = rk.y - rj.y;
+    const double rjk_z = rk.z - rj.z;
 
-    real_t cos_theta = (rji.x * rjk.x + rji.y * rjk.y + rji.z * rjk.z) / (rji_length * rjk_length);
+    const double rji2inv = 1.0 / (rji_x * rji_x + rji_y * rji_y + rji_z * rji_z);
+    const double rjk2inv = 1.0 / (rjk_x * rjk_x + rjk_y * rjk_y + rjk_z * rjk_z);
+    const double rjiinv = sqrt(rji2inv);
+    const double rjkinv = sqrt(rjk2inv);
 
-    cos_theta = cos_theta > static_cast<real_t>(1.0) ? static_cast<real_t>(1.0) : cos_theta;
-    cos_theta = cos_theta < static_cast<real_t>(-1.0) ? static_cast<real_t>(-1.0) : cos_theta;
-    real_t theta = acos(cos_theta);
+    double cos_theta = (rji_x * rjk_x + rji_y * rjk_y + rji_z * rjk_z) * rjiinv * rjkinv;
 
-    real_t dtheta = theta - to_radians_device(cang.th0);
-    real_t energy = 0.5 * cang.kth * dtheta * dtheta;
+    cos_theta = cos_theta > 1.0 ? 1.0 : cos_theta;
+    cos_theta = cos_theta < -1.0 ? -1.0 : cos_theta;
+    const double theta = acos(cos_theta);
+
+    const double dtheta = theta - to_radians_device(cang.th0);
+    const double energy = 0.5 * cang.kth * dtheta * dtheta;
 
     // calculate force magnitude
-    real_t dv = cang.kth * dtheta;
+    const double dv = cang.kth * dtheta;
 
-    real_t f1 = sin(theta);
-    if (fabs(f1) < k_singular_sin_epsilon) {
-        f1 = -1.0 / k_singular_sin_epsilon;
+    double f1 = sin(theta);
+    const double sin_epsilon = k_singular_sin_epsilon;
+    if (fabs(f1) < sin_epsilon) {
+        f1 = -1.0 / sin_epsilon;
     } else {
         f1 = -1.0 / f1;
     }
 
-    atomicAdd(energy_sum, energy);
+    atomic_add_energy(energy_sum, energy);
 
-    coord_t di = {
-        static_cast<real_t>(f1 * (rjk.x / (rji_length * rjk_length) - cos_theta * rji.x / (rji_length * rji_length))),
-        static_cast<real_t>(f1 * (rjk.y / (rji_length * rjk_length) - cos_theta * rji.y / (rji_length * rji_length))),
-        static_cast<real_t>(f1 * (rjk.z / (rji_length * rjk_length) - cos_theta * rji.z / (rji_length * rji_length)))};
+    const double di_x = f1 * (rjk_x * rjiinv * rjkinv - cos_theta * rji_x * rji2inv);
+    const double di_y = f1 * (rjk_y * rjiinv * rjkinv - cos_theta * rji_y * rji2inv);
+    const double di_z = f1 * (rjk_z * rjiinv * rjkinv - cos_theta * rji_z * rji2inv);
 
-    coord_t dk = {
-        static_cast<real_t>(f1 * (rji.x / (rji_length * rjk_length) - cos_theta * rjk.x / (rjk_length * rjk_length))),
-        static_cast<real_t>(f1 * (rji.y / (rji_length * rjk_length) - cos_theta * rjk.y / (rjk_length * rjk_length))),
-        static_cast<real_t>(f1 * (rji.z / (rji_length * rjk_length) - cos_theta * rjk.z / (rjk_length * rjk_length)))};
+    const double dk_x = f1 * (rji_x * rjiinv * rjkinv - cos_theta * rjk_x * rjk2inv);
+    const double dk_y = f1 * (rji_y * rjiinv * rjkinv - cos_theta * rjk_y * rjk2inv);
+    const double dk_z = f1 * (rji_z * rjiinv * rjkinv - cos_theta * rjk_z * rjk2inv);
 
-    atomicAdd(&dvelocities[i].x, dv * di.x);
-    atomicAdd(&dvelocities[i].y, dv * di.y);
-    atomicAdd(&dvelocities[i].z, dv * di.z);
+    atomic_add_force(&dvelocities[i].x, dv * di_x);
+    atomic_add_force(&dvelocities[i].y, dv * di_y);
+    atomic_add_force(&dvelocities[i].z, dv * di_z);
 
-    atomicAdd(&dvelocities[k].x, dv * dk.x);
-    atomicAdd(&dvelocities[k].y, dv * dk.y);
-    atomicAdd(&dvelocities[k].z, dv * dk.z);
+    atomic_add_force(&dvelocities[k].x, dv * dk_x);
+    atomic_add_force(&dvelocities[k].y, dv * dk_y);
+    atomic_add_force(&dvelocities[k].z, dv * dk_z);
 
-    atomicAdd(&dvelocities[j].x, -dv * (di.x + dk.x));
-    atomicAdd(&dvelocities[j].y, -dv * (di.y + dk.y));
-    atomicAdd(&dvelocities[j].z, -dv * (di.z + dk.z));
+    atomic_add_force(&dvelocities[j].x, -dv * (di_x + dk_x));
+    atomic_add_force(&dvelocities[j].y, -dv * (di_y + dk_y));
+    atomic_add_force(&dvelocities[j].z, -dv * (di_z + dk_z));
 }
 
-real_t calc_angle_forces_host(int start, int end) {
+double calc_angle_forces_host(int start, int end) {
     int N = end - start;
     if (N <= 0) return 0.0;
     using namespace CudaAngleForce;
@@ -86,8 +93,8 @@ real_t calc_angle_forces_host(int start, int end) {
     // todo: now have to do that, after moving all to CudaContext, can remove it
     // ctx.sync_all_to_device();
 
-    real_t h_energy_sum = 0.0;
-    cudaMemcpy(d_energy_sum, &h_energy_sum, sizeof(real_t), cudaMemcpyHostToDevice);
+    energy_accum_t h_energy_sum = 0;
+    cudaMemcpy(d_energy_sum, &h_energy_sum, sizeof(energy_accum_t), cudaMemcpyHostToDevice);
 
     // launch kernel
     calc_angle_forces_kernel<<<numBlocks, blockSize>>>(start, end, d_angles, d_coords, d_cangles, d_dvelocities, d_energy_sum);
@@ -95,14 +102,14 @@ real_t calc_angle_forces_host(int start, int end) {
 
     // todo: Now have to do that, after moving all to CudaContext, can remove it
     // copy results back to host
-    cudaMemcpy(&h_energy_sum, d_energy_sum, sizeof(real_t), cudaMemcpyDeviceToHost);
-    return h_energy_sum;
+    cudaMemcpy(&h_energy_sum, d_energy_sum, sizeof(energy_accum_t), cudaMemcpyDeviceToHost);
+    return energy_from_accum(h_energy_sum);
 }
 
 void init_angle_force_kernel_data() {
     using namespace CudaAngleForce;
     if (!is_initialized) {
-        check_cudaMalloc((void**)&d_energy_sum, sizeof(real_t));
+        check_cudaMalloc((void**)&d_energy_sum, sizeof(energy_accum_t));
         is_initialized = true;
     }
 }

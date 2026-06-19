@@ -4,6 +4,7 @@
 
 #include "constants.h"
 #include "context.h"
+#include "cpu_force_accumulation.h"
 
 void calc_pshell_forces() {
     auto& ctx = Context::instance();
@@ -12,33 +13,33 @@ void calc_pshell_forces() {
     auto *excluded = ctx.excluded->cpu_data_p;
     auto *shell = ctx.shell->cpu_data_p;
 
-    coord_t dr;
-    real_t k, r2, ener;
+    energy_accum_t ufix = 0;
+    energy_accum_t ushell = 0;
 
     for (int i = 0; i < ctx.n_atoms_solute; i++) {
         if (shell[i] || excluded[i]) {
-            if (excluded[i]) {
-                k = k_fix;
-            } else {
-                k = k_pshell;
-            }
+            const double k = excluded[i] ? k_fix : k_pshell;
 
-            dr.x = coords[i].x - ctx.coords_init->cpu_data_p[i].x;
-            dr.y = coords[i].y - ctx.coords_init->cpu_data_p[i].y;
-            dr.z = coords[i].z - ctx.coords_init->cpu_data_p[i].z;
-            r2 = pow(dr.x, 2) + pow(dr.y, 2) + pow(dr.z, 2);
-            ener = 0.5 * k * r2;
+            const double dx = coords[i].x - ctx.coords_init->cpu_data_p[i].x;
+            const double dy = coords[i].y - ctx.coords_init->cpu_data_p[i].y;
+            const double dz = coords[i].z - ctx.coords_init->cpu_data_p[i].z;
+            const double r2 = dx * dx + dy * dy + dz * dz;
+            const double ener = 0.5 * k * r2;
 
             if (excluded[i]) {
-                ctx.E_restraint.Ufix += ener;
+                add_energy(ufix, ener);
             }
             if (shell[i]) {
-                ctx.E_restraint.Ushell += ener;
+                add_energy(ushell, ener);
             }
 
-            dvelocities[i].x += k * dr.x;
-            dvelocities[i].y += k * dr.y;
-            dvelocities[i].z += k * dr.z;
+            add_force(dvelocities[i].x, k * dx);
+            add_force(dvelocities[i].y, k * dy);
+            add_force(dvelocities[i].z, k * dz);
+
         }
     }
+
+    ctx.E_restraint.Ufix += energy_from_accum(ufix);
+    ctx.E_restraint.Ushell += energy_from_accum(ushell);
 }

@@ -3,9 +3,10 @@
 #include <cmath>
 
 #include "context.h"
+#include "cpu_force_accumulation.h"
 #include "cpu_utils.h"
 
-real_t calc_torsion_forces(int start, int end) {
+double calc_torsion_forces(int start, int end) {
     auto& ctx = Context::instance();
     auto &torsions = ctx.torsions->cpu_data_p;
     auto &ctorsions = ctx.ctorsions->cpu_data_p;
@@ -17,11 +18,11 @@ real_t calc_torsion_forces(int start, int end) {
     coord_t rji, rjk, rkl, rnj, rnk, rki, rlj;
     coord_t di, dl, dpi, dpj, dpk, dpl;
 
-    real_t bj2inv, bk2inv, bjinv, bkinv;
-    real_t cos_phi, phi;
-    real_t arg, dv, f1;
-    real_t ener;
-    real_t torsion = 0;
+    double bj2inv, bk2inv, bjinv, bkinv;
+    double cos_phi, phi;
+    double arg, dv, f1;
+    double ener;
+    energy_accum_t torsion = 0;
 
     torsion_t t;
     ctorsion_t ctors;
@@ -121,24 +122,24 @@ real_t calc_torsion_forces(int start, int end) {
         dpl.z = rjk.x * dl.y - rjk.y * dl.x;
 
         // Update energy and forces
-        torsion += ener;
+        add_energy(torsion, ener);
 
-        dvelocities[aii].x += dv * dpi.x;
-        dvelocities[aii].y += dv * dpi.y;
-        dvelocities[aii].z += dv * dpi.z;
+        add_force(dvelocities[aii].x, dv * dpi.x);
+        add_force(dvelocities[aii].y, dv * dpi.y);
+        add_force(dvelocities[aii].z, dv * dpi.z);
 
-        dvelocities[aji].x += dv * dpj.x;
-        dvelocities[aji].y += dv * dpj.y;
-        dvelocities[aji].z += dv * dpj.z;
+        add_force(dvelocities[aji].x, dv * dpj.x);
+        add_force(dvelocities[aji].y, dv * dpj.y);
+        add_force(dvelocities[aji].z, dv * dpj.z);
 
-        dvelocities[aki].x += dv * dpk.x;
-        dvelocities[aki].y += dv * dpk.y;
-        dvelocities[aki].z += dv * dpk.z;
+        add_force(dvelocities[aki].x, dv * dpk.x);
+        add_force(dvelocities[aki].y, dv * dpk.y);
+        add_force(dvelocities[aki].z, dv * dpk.z);
 
-        dvelocities[ali].x += dv * dpl.x;
-        dvelocities[ali].y += dv * dpl.y;
-        dvelocities[ali].z += dv * dpl.z;
+        add_force(dvelocities[ali].x, dv * dpl.x);
+        add_force(dvelocities[ali].y, dv * dpl.y);
+        add_force(dvelocities[ali].z, dv * dpl.z);
     }
 
-    return torsion;
+    return energy_from_accum(torsion);
 }

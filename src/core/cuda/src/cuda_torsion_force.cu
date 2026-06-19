@@ -1,13 +1,14 @@
 #include "cuda/include/cuda_torsion_force.cuh"
 #include "cuda/include/cuda_utility.cuh"
 #include "context.h"
+#include "cuda_force_accumulation.cuh"
 
 namespace CudaTorsionForce {
 bool is_initialized = false;
-real_t* d_energy_sum = nullptr;
+energy_accum_t* d_energy_sum = nullptr;
 }  // namespace CudaTorsionForce
 
-__global__ void calc_torsion_forces_kernel(int start, int end, torsion_t* torsions, ctorsion_t* ctorsions, coord_t* coords, dvel_t* dvelocities, real_t* energy_sum) {
+__global__ void calc_torsion_forces_kernel(int start, int end, torsion_t* torsions, ctorsion_t* ctorsions, coord_t* coords, dvel_t* dvelocities, energy_accum_t* energy_sum) {
     int i = blockIdx.x * blockDim.x + threadIdx.x + start;
     if (i >= end) return;
     int aii, aji, aki, ali;
@@ -16,10 +17,10 @@ __global__ void calc_torsion_forces_kernel(int start, int end, torsion_t* torsio
     coord_t rji, rjk, rkl, rnj, rnk, rki, rlj;
     coord_t di, dl, dpi, dpj, dpk, dpl;
 
-    real_t bj2inv, bk2inv, bjinv, bkinv;
-    real_t cos_phi, phi;
-    real_t arg, dv, f1;
-    real_t ener;
+    double bj2inv, bk2inv, bjinv, bkinv;
+    double cos_phi, phi;
+    double arg, dv, f1;
+    double ener;
 
     torsion_t t;
     ctorsion_t ctors;
@@ -63,8 +64,8 @@ __global__ void calc_torsion_forces_kernel(int start, int end, torsion_t* torsio
     bkinv = sqrt(bk2inv);
 
     cos_phi = (rnj.x * rnk.x + rnj.y * rnk.y + rnj.z * rnk.z) * (bjinv * bkinv);
-    cos_phi = cos_phi > static_cast<real_t>(1.0) ? static_cast<real_t>(1.0) : cos_phi;
-    cos_phi = cos_phi < static_cast<real_t>(-1.0) ? static_cast<real_t>(-1.0) : cos_phi;
+    cos_phi = cos_phi > 1.0 ? 1.0 : cos_phi;
+    cos_phi = cos_phi < -1.0 ? -1.0 : cos_phi;
     phi = acos(cos_phi);
     if (rjk.x * (rnj.y * rnk.z - rnj.z * rnk.y) + rjk.y * (rnj.z * rnk.x - rnj.x * rnk.z) + rjk.z * (rnj.x * rnk.y - rnj.y * rnk.x) < 0) {
         phi = -phi;
@@ -108,31 +109,31 @@ __global__ void calc_torsion_forces_kernel(int start, int end, torsion_t* torsio
     dpl.z = rjk.x * dl.y - rjk.y * dl.x;
 
     // Update energy and forces
-    atomicAdd(energy_sum, ener);
+    atomic_add_energy(energy_sum, ener);
 
-    atomicAdd(&dvelocities[aii].x, dv * dpi.x);
-    atomicAdd(&dvelocities[aii].y, dv * dpi.y);
-    atomicAdd(&dvelocities[aii].z, dv * dpi.z);
-    atomicAdd(&dvelocities[aji].x, dv * dpj.x);
-    atomicAdd(&dvelocities[aji].y, dv * dpj.y);
-    atomicAdd(&dvelocities[aji].z, dv * dpj.z);
-    atomicAdd(&dvelocities[aki].x, dv * dpk.x);
-    atomicAdd(&dvelocities[aki].y, dv * dpk.y);
-    atomicAdd(&dvelocities[aki].z, dv * dpk.z);
-    atomicAdd(&dvelocities[ali].x, dv * dpl.x);
-    atomicAdd(&dvelocities[ali].y, dv * dpl.y);
-    atomicAdd(&dvelocities[ali].z, dv * dpl.z);
+    atomic_add_force(&dvelocities[aii].x, dv * dpi.x);
+    atomic_add_force(&dvelocities[aii].y, dv * dpi.y);
+    atomic_add_force(&dvelocities[aii].z, dv * dpi.z);
+    atomic_add_force(&dvelocities[aji].x, dv * dpj.x);
+    atomic_add_force(&dvelocities[aji].y, dv * dpj.y);
+    atomic_add_force(&dvelocities[aji].z, dv * dpj.z);
+    atomic_add_force(&dvelocities[aki].x, dv * dpk.x);
+    atomic_add_force(&dvelocities[aki].y, dv * dpk.y);
+    atomic_add_force(&dvelocities[aki].z, dv * dpk.z);
+    atomic_add_force(&dvelocities[ali].x, dv * dpl.x);
+    atomic_add_force(&dvelocities[ali].y, dv * dpl.y);
+    atomic_add_force(&dvelocities[ali].z, dv * dpl.z);
 }
 
-real_t calc_torsion_forces_host(int start, int end) {
+double calc_torsion_forces_host(int start, int end) {
     using namespace CudaTorsionForce;
     int N = end - start;
     if (N <= 0) return 0.0;
     int blockSize = 256;
     int numBlocks = (N + blockSize - 1) / blockSize;
 
-    real_t zero = 0.0;
-    cudaMemcpy(d_energy_sum, &zero, sizeof(real_t), cudaMemcpyHostToDevice);
+    energy_accum_t zero = 0;
+    cudaMemcpy(d_energy_sum, &zero, sizeof(energy_accum_t), cudaMemcpyHostToDevice);
 
     auto& host_ctx = Context::instance();
     coord_t* d_coords = host_ctx.coords->gpu_data_p;
@@ -142,8 +143,8 @@ real_t calc_torsion_forces_host(int start, int end) {
 
     calc_torsion_forces_kernel<<<numBlocks, blockSize>>>(start, end, d_torsions, d_ctorsions, d_coords, d_dvelocities, d_energy_sum);
     cudaDeviceSynchronize();
-    cudaMemcpy(&zero, d_energy_sum, sizeof(real_t), cudaMemcpyDeviceToHost);
-    return zero;
+    cudaMemcpy(&zero, d_energy_sum, sizeof(energy_accum_t), cudaMemcpyDeviceToHost);
+    return energy_from_accum(zero);
 }
 
 
@@ -151,7 +152,7 @@ real_t calc_torsion_forces_host(int start, int end) {
 void init_torsion_force_kernel_data() {
     using namespace CudaTorsionForce;
     if (!is_initialized) {
-        check_cudaMalloc((void**)&d_energy_sum, sizeof(real_t));
+        check_cudaMalloc((void**)&d_energy_sum, sizeof(energy_accum_t));
         is_initialized = true;
     }
 }

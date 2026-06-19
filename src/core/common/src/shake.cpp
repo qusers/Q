@@ -36,8 +36,8 @@ void Shake::build_constraints(Context& ctx) {
             (ctx.md.shake_solute && ai + 1 <= ctx.n_atoms_solute) ||
             (ctx.md.shake_solvent && ai + 1 > ctx.n_atoms_solute)) {
             data_.n_constraints++;
-            real_t dist = cbonds[bonds[bi].code - 1].b0;
-            real_t dist2 = dist * dist;
+            double dist = cbonds[bonds[bi].code - 1].b0;
+            double dist2 = dist * dist;
             shake_bonds.emplace_back(ShakeBond{ai + 1, aj + 1, dist2});
             mol_n_shakes[current_mol]++;
         }
