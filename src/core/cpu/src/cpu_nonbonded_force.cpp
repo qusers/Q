@@ -1,6 +1,7 @@
 #include "cpu_nonbonded_force.h"
 
 #include "constants.h"
+#include "cpu_force_accumulation.h"
 
 namespace {
 enum class BondType : uint8_t { Bond23,
@@ -53,30 +54,10 @@ std::pair<real_t, real_t> calc_vdw(const std::pair<real_t, real_t> pair, real_t 
     return {vvdw, dvvdw};
 }
 
-void accumulate_energy(Context& ctx, real_t vel, real_t vvdw, uint8_t atom1_type, uint8_t atom2_type, int atom1_state, int atom2_state) {
-    constexpr uint8_t P = static_cast<uint8_t>(AtomCategory::P);
-    constexpr uint8_t Q = static_cast<uint8_t>(AtomCategory::Q);
-    constexpr uint8_t W = static_cast<uint8_t>(AtomCategory::W);
-
-    bool q1 = atom1_type == Q;
-    bool q2 = atom2_type == Q;
-
-    if (!q1 && !q2) {
-        // PP, PW, WW
-        E_nonbonded_t& e = (atom1_type == P && atom2_type == P)   ? ctx.E_nonbond_pp
-                           : (atom1_type == W && atom2_type == W) ? ctx.E_nonbond_ww
-                                                                  : ctx.E_nonbond_pw;
-        e.Ucoul += vel;
-        e.Uvdw += vvdw;
-    } else {
-        // Q involved — pick the Q atom's state
-        int state = q1 ? atom1_state : atom2_state;
-        E_nonbonded_t& e = (q1 && q2)                             ? ctx.EQ_nonbond_qq[state]
-                           : (atom1_type == W || atom2_type == W) ? ctx.EQ_nonbond_qw[state]
-                                                                  : ctx.EQ_nonbond_qp[state];
-        e.Ucoul += vel;
-        e.Uvdw += vvdw;
-    }
+void accumulate_energy(Context &ctx, std::vector<energy_accum_t> &e_coul, std::vector<energy_accum_t> &e_vdw, real_t vel, real_t vvdw, uint8_t atom1_type, uint8_t atom2_type, int atom1_state, int atom2_state) {
+    int slot = nb_energy_slot(atom1_type, atom2_type, atom1_state, atom2_state, ctx.n_lambdas); 
+    add_energy(e_coul[slot], vel);
+    add_energy(e_vdw[slot], vvdw);
 }
 
 }  // namespace
@@ -88,6 +69,9 @@ void CpuNonbondedForce::calc(Context& ctx) {
     int sz = data_.n_total;
     int n_charge_type = data_.n_charge_types;
     int n_catype_type = data_.n_catype_types;
+
+    int n_slots = nb_total_slots(ctx.n_lambdas);
+    std::vector<energy_accum_t> e_coul(n_slots), e_vdw(n_slots);
 
     for (int i = 0; i < sz; i++) {
         const int atom1 = atom_idxs[i];
@@ -127,16 +111,31 @@ void CpuNonbondedForce::calc(Context& ctx) {
 
             real_t dva = (dvel + dvvdw) * inv_dis * lambda;
 
-            dvelocities[atom1].x -= dva * dx;
-            dvelocities[atom1].y -= dva * dy;
-            dvelocities[atom1].z -= dva * dz;
+            add_force(dvelocities[atom1].x, -dva * dx);
+            add_force(dvelocities[atom1].y, -dva * dy);
+            add_force(dvelocities[atom1].z, -dva * dz);
 
-            dvelocities[atom2].x += dva * dx;
-            dvelocities[atom2].y += dva * dy;
-            dvelocities[atom2].z += dva * dz;
+            add_force(dvelocities[atom2].x, dva * dx);
+            add_force(dvelocities[atom2].y, dva * dy);
+            add_force(dvelocities[atom2].z, dva * dz);
 
             // Accumulate energy
-            accumulate_energy(ctx, vel, vvdw, atom1_type, atom2_type, atom1_state, atom2_state);
+            accumulate_energy(ctx, e_coul, e_vdw, vel, vvdw, atom1_type, atom2_type, atom1_state, atom2_state);
         }
+    }
+
+    auto store = [&](E_nonbonded_t& e, int slot) {
+        e.Ucoul = energy_from_accum(e_coul[slot]);
+        e.Uvdw = energy_from_accum(e_vdw[slot]);
+    };
+
+    store(ctx.E_nonbond_pp, NB_PP);
+    store(ctx.E_nonbond_pw, NB_PW);
+    store(ctx.E_nonbond_ww, NB_WW);
+
+    for (int s = 0; s < ctx.n_lambdas; s++) {
+        store(ctx.EQ_nonbond_qq[s], nb_qq_slot(s, ctx.n_lambdas));
+        store(ctx.EQ_nonbond_qp[s], nb_qp_slot(s, ctx.n_lambdas));
+        store(ctx.EQ_nonbond_qw[s], nb_qw_slot(s, ctx.n_lambdas));
     }
 }
