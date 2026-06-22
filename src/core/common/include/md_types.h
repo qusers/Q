@@ -141,8 +141,10 @@ struct catype_t {
 };
 
 struct vdw_pair_param_t {
-    real_t a;
-    real_t b;
+    real_t a_normal;
+    real_t b_normal;
+    real_t a_14;
+    real_t b_14;
 };
 
 struct topo_t {
