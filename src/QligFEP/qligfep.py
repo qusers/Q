@@ -54,6 +54,7 @@ class QligFEP:
         neq_reps: int = 5,
         neq_steps: int = 50000,
         neq_eq_steps: int = 1000,
+        neq_relax_steps: int = 5000,
         neq_L: float = 8.0,
         neq_schedule: Literal["sigmoidal", "linear"] = "sigmoidal",
     ):
@@ -81,6 +82,7 @@ class QligFEP:
         self.neq_reps = neq_reps
         self.neq_steps = neq_steps
         self.neq_eq_steps = neq_eq_steps
+        self.neq_relax_steps = neq_relax_steps
         self.neq_L = neq_L
         self.neq_schedule = neq_schedule
         # Temporary until flag is here
@@ -863,9 +865,10 @@ class QligFEP:
                 outfile.write("\n".join(lambda_scaling) + "\n")
 
     def write_MD_neq(self, writedir, lig_size1, lig_size2, overlapping_atoms):
-        """Write the non-equilibrium input files: eq1-5 (equilibration), eq6_{0,1}
-        (endpoint equilibration) and neq_{0,1} (lambda switching). State 0 starts at
-        lambda 0.0->1.0 and state 1 at 1.0->0.0; the run script chains the restarts and
+        """Write the non-equilibrium input files: eq1-5 (equilibration), relax_{0,1}
+        (one-time endpoint relaxation), eq6_{0,1} (endpoint equilibration spacing) and
+        neq_{0,1} (lambda switching). State 0 starts at lambda 0.0->1.0 and state 1 at
+        1.0->0.0; the run script relaxes each endpoint once, then chains the restarts and
         repeats the switches per replicate. Returns the list of written file names.
         """
         restlist = self._set_common_md_replacements(lig_size1, lig_size2, "0.500 0.500")
@@ -879,13 +882,15 @@ class QligFEP:
             f"L_sigmoid        {self.neq_L}",
         ]
         for state, eq_lambda in endpoint_lambdas.items():
+            relax_out = writedir + f"/relax_{state}.inp"
+            self._write_endpoint_file(relax_out, eq_lambda, self.neq_relax_steps, overlapping_atoms, restlist)
             eq6_out = writedir + f"/eq6_{state}.inp"
             self._write_endpoint_file(eq6_out, eq_lambda, self.neq_eq_steps, overlapping_atoms, restlist)
             neq_out = writedir + f"/neq_{state}.inp"
             self._write_endpoint_file(
                 neq_out, eq_lambda, self.neq_steps, overlapping_atoms, restlist, lambda_scaling
             )
-            file_list += [f"eq6_{state}.inp", f"neq_{state}.inp"]
+            file_list += [f"relax_{state}.inp", f"eq6_{state}.inp", f"neq_{state}.inp"]
         return file_list
 
     def write_neq_runfile(self, writedir, file_list):

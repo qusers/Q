@@ -46,7 +46,8 @@ def create_call(**kwargs):
     if kwargs.get("neq"):
         template += (
             " --neq --neq-reps {neq_reps} --neq-steps {neq_steps} "
-            "--neq-eq-steps {neq_eq_steps} -L {neq_L} --neq-schedule {neq_schedule}"
+            "--neq-eq-steps {neq_eq_steps} --neq-relax-steps {neq_relax_steps} "
+            "-L {neq_L} --neq-schedule {neq_schedule}"
         )
     return template.format(**kwargs)
 
@@ -129,6 +130,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 neq_reps=args.neq_reps,
                 neq_steps=args.neq_steps,
                 neq_eq_steps=args.neq_eq_steps,
+                neq_relax_steps=args.neq_relax_steps,
                 neq_L=args.neq_L,
                 neq_schedule=args.neq_schedule,
             )

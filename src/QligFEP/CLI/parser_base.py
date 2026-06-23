@@ -276,6 +276,19 @@ def parse_arguments(program: str) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "-neqrs",
+        "--neq-relax-steps",
+        dest="neq_relax_steps",
+        type=int,
+        default=5000,
+        help=(
+            "NEQ only: length (MD steps) of the one-time endpoint relaxation run at lambda=0 "
+            "and lambda=1 before the first switch, to settle the nearly-decoupled ligand at each "
+            "endpoint. Applied to the first switching iteration; later iterations use the shorter "
+            "--neq-eq-steps (tEQ) spacing. ~10 ps at 2 fs. Defaults to 5000."
+        ),
+    )
+    parser.add_argument(
         "-L",
         "--neq-steepness",
         dest="neq_L",

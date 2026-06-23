@@ -45,6 +45,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "neq_reps": args.neq_reps,
             "neq_steps": args.neq_steps,
             "neq_eq_steps": args.neq_eq_steps,
+            "neq_relax_steps": args.neq_relax_steps,
             "neq_L": args.neq_L,
             "neq_schedule": args.neq_schedule,
         }
@@ -76,7 +77,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 command_str += " --neq"
         elif k == "neq_L":
             command_str += f" --neq-steepness {v}"
-        elif k in ("neq_reps", "neq_steps", "neq_eq_steps", "neq_schedule"):
+        elif k in ("neq_reps", "neq_steps", "neq_eq_steps", "neq_relax_steps", "neq_schedule"):
             command_str += f" --{k.replace('_', '-')} {v}"
         else:
             command_str += f" --{k} {v}"

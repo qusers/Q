@@ -64,6 +64,7 @@ echo "Parameters T=$temperature, replicate=$run_num, seed=$seed, neq_reps=$neq_r
 echo
 
 cp $inputfiles/eq*.inp .
+cp $inputfiles/relax_*.inp .
 cp $inputfiles/neq_*.inp .
 cp $inputfiles/*.top .
 cp $inputfiles/$fepfile .
@@ -80,13 +81,16 @@ done
 
 # 2) Endpoint equilibration chain (MPI): one continuous trajectory per endpoint,
 # saving a checkpoint per replicate to decorrelate the switch starting points.
-# State 0 sits at lambda (0 1), state 1 at (1 0).
+# The first iteration is a longer one-time relaxation (relax_${s}.inp) that settles the
+# nearly-decoupled ligand at each endpoint before any switching; later iterations use the
+# shorter tEQ spacing (eq6_${s}.inp). State 0 sits at lambda (0 1), state 1 at (1 0).
 cp eq5.re eq6_0_prev.re
 cp eq5.re eq6_1_prev.re
 for rep in $(seq 0 $((neq_reps - 1))); do
     for s in 0 1; do
+        if [ "$rep" -eq 0 ]; then eqsrc=relax_${s}.inp; else eqsrc=eq6_${s}.inp; fi
         sed "s|RESTARTFILE|eq6_${s}_prev.re|; s|FINALFILE|eq6_${s}_${rep}.re|" \
-            eq6_${s}.inp > eq6_${s}_run${rep}.inp
+            "$eqsrc" > eq6_${s}_run${rep}.inp
         time mpirun -np $ncores --bind-to core $qdyn eq6_${s}_run${rep}.inp > eq6_${s}_${rep}.log
         cp eq6_${s}_${rep}.re eq6_${s}_prev.re
     done

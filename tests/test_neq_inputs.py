@@ -25,6 +25,7 @@ def make_run(**overrides):
     run.neq_reps = 3
     run.neq_steps = 20000
     run.neq_eq_steps = 500
+    run.neq_relax_steps = 2500
     run.neq_L = 8.0
     run.neq_schedule = "sigmoidal"
     run.cluster = "SNELLIUS"
@@ -62,6 +63,39 @@ def test_writes_equilibration_endpoint_and_switch_files(neq_inputs):
     ]:
         assert (tmp_path / name).exists(), f"missing {name}"
         assert name in files
+
+
+def test_writes_endpoint_relaxation_files(neq_inputs):
+    _, tmp_path, files = neq_inputs
+    for name in ["relax_0.inp", "relax_1.inp"]:
+        assert (tmp_path / name).exists(), f"missing {name}"
+        assert name in files
+
+
+def test_relaxation_files_use_relax_steps_endpoint_lambda_no_scaling(neq_inputs):
+    # The one-time endpoint relaxation is a plain (non-switching) equilibration at the
+    # endpoint lambda, run for the longer neq_relax_steps (here 2500) rather than the tEQ
+    # spacing of eq6 (here 500).
+    _, tmp_path, _ = neq_inputs
+    for state, lam in [("0", "0.000 1.000"), ("1", "1.000 0.000")]:
+        text = (tmp_path / f"relax_{state}.inp").read_text()
+        assert "steps                     2500" in text
+        assert f"[lambdas]\n{lam}" in text
+        assert "[lambda_scaling]" not in text
+        for placeholder in ["RESTARTFILE", "FINALFILE", "T_VAR"]:
+            assert placeholder in text
+
+
+def test_runfile_relaxes_first_iteration_then_uses_spacing(tmp_path):
+    run = make_run()
+    run.write_MD_neq(str(tmp_path), 10, 12, [(1, 2)])
+    run.write_neq_runfile(str(tmp_path), [])
+    script = (tmp_path / "runSNELLIUS.sh").read_text()
+    # the relaxation inputs must be staged into the per-replicate rundir
+    assert "cp $inputfiles/relax_*.inp" in script
+    # the first endpoint iteration runs the longer relaxation; later ones the tEQ spacing
+    assert "relax_${s}.inp" in script
+    assert "eq6_${s}.inp" in script
 
 
 def test_no_windowed_md_files_in_neq_mode(neq_inputs):

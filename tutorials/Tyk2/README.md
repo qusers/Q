@@ -289,7 +289,8 @@ From the `setupFEP` directory (the same place you ran the equilibrium `setupFEP`
 
 ```bash
 setupFEP -FF AMBER14sb -r 25 -ts 2fs -j lomap.json -rs 42 -c SNELLIUS \
-    --neq --neq-reps 5 --neq-steps 50000 --neq-eq-steps 1000 -L 8 --neq-schedule sigmoidal
+    --neq --neq-reps 5 --neq-steps 50000 --neq-eq-steps 1000 --neq-relax-steps 5000 \
+    -L 8 --neq-schedule sigmoidal
 ```
 
 The shared flags (`-FF`, `-r`, `-ts`, `-j`, `-rs`, `-c`) behave exactly as in the
@@ -302,6 +303,10 @@ equilibrium setup. The NEQ-specific flags are:
   (recommended > 16000);
 - `--neq-eq-steps 1000`: endpoint equilibration steps between successive switches
   (recommended > 250);
+- `--neq-relax-steps 5000`: length of the one-time endpoint relaxation run at lambda = 0
+  and lambda = 1 before the first switch, settling the nearly-decoupled ligand at each
+  endpoint (~10 ps at 2 fs). The first switching iteration uses this longer relaxation;
+  later iterations use the shorter `--neq-eq-steps` spacing;
 - `-L 8` (`--neq-steepness`): steepness of the sigmoidal lambda schedule
   l(t) = 1/[1+e^(L(t-0.5))]; higher values spend more time near lambda = 0 and lambda = 1,
   lower values approach a linear schedule (recommended 4–16);
@@ -309,8 +314,9 @@ equilibrium setup. The NEQ-specific flags are:
 
 As with the equilibrium setup this creates `1.water` and `2.protein` directories with one
 `FEP_<lig1>_<lig2>` folder per edge. Each `inputfiles/` directory now contains the standard
-equilibration files (`eq1`–`eq5`), the endpoint-equilibration templates (`eq6_0`, `eq6_1`),
-and the switching templates (`neq_0`, `neq_1`) — instead of the ~100 `md_xxxx_xxxx.inp`
+equilibration files (`eq1`–`eq5`), the one-time endpoint-relaxation templates (`relax_0`,
+`relax_1`), the endpoint-equilibration spacing templates (`eq6_0`, `eq6_1`), and the
+switching templates (`neq_0`, `neq_1`) — instead of the ~100 `md_xxxx_xxxx.inp`
 window files. You can confirm the switching schedule was written into the inputs with:
 
 ```bash
