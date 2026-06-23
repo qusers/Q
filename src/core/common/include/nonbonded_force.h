@@ -37,12 +37,12 @@ NB_HD inline int nb_energy_slot(uint8_t t1, uint8_t t2,
     if (!q1 && !q2) {
         if (t1 == P && t2 == P) return NB_PP;
         if (t1 == W && t2 == W) return NB_WW;
-        return NB_PW;  // 其余即 pw
+        return NB_PW;  // Remaining non-Q pairs are P-W.
     }
-    int state = q1 ? s1 : s2;  // 选 Q 原子的 state
+    int state = q1 ? s1 : s2;  // Use the Q atom's state.
     if (q1 && q2) return nb_qq_slot(state, n_states);
     if (t1 == W || t2 == W) return nb_qw_slot(state, n_states);
-    return nb_qp_slot(state, n_states);  // 否则 qp
+    return nb_qp_slot(state, n_states);  // Otherwise this is Q-P.
 }
 
 enum class BondType : uint8_t { Bond23,
