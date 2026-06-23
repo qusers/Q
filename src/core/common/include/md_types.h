@@ -133,11 +133,11 @@ struct catype_t {
     double bii_1_4;
 };
 
-struct vdw_pair_param_t {
-    real_t a_normal;
-    real_t b_normal;
-    real_t a_14;
-    real_t b_14;
+struct vdw_atom_param_t {
+    real_t aii_normal;
+    real_t bii_normal;
+    real_t aii_14;
+    real_t bii_14;
 };
 
 struct topo_t {

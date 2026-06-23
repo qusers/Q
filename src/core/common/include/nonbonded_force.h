@@ -5,6 +5,7 @@
 
 #include "context.h"
 #include "host_device_buffer.h"
+#include "constants.h"
 
 // CPU host code and CUDA both include this; keep the slot math in ONE place.
 #ifdef __CUDACC__
@@ -95,23 +96,24 @@ NB_HD inline real_t2 calc_vdw(const real_t2& pair, real_t inv_dis) {
     return {vvdw, dvvdw};
 }
 
+NB_HD inline real_t2 combine_vdw(int vdw_rule, real_t aii_i, real_t bii_i, real_t aii_j, real_t bii_j) {
+    real_t a, b;
+    if (vdw_rule == VDW_GEOMETRIC) {
+        calc_vdw_geometric(aii_i, aii_j, bii_i, bii_j, (real_t)1.0, &a, &b);
+    } else {
+        calc_vdw_arithmetic(aii_i, aii_j, bii_i, bii_j, (real_t)1.0, &a, &b);
+    }
+    return {a, b};
+}
+
 struct NonbondedData {
     int n_total = 0;
     std::unique_ptr<HostDeviceBuffer<int>> atom_idx;      // global atom index
-    std::unique_ptr<HostDeviceBuffer<int>> charge_types;  // parallel to atom_idx
-    std::unique_ptr<HostDeviceBuffer<int>> catype_types;
     std::unique_ptr<HostDeviceBuffer<uint8_t>> category;     // Atom Category
     std::unique_ptr<HostDeviceBuffer<int>> q_state;          // segment idx; -1 for P/W
     std::unique_ptr<HostDeviceBuffer<real_t>> atom_lambdas;  // lambdas[state]; 1.0 for P/W
-
-    // Precomputed pairwise tables (interned-type indexed) + their descriptors.
-    std::unique_ptr<HostDeviceBuffer<real_t>> charge_pair_products;          // [n_ct * n_ct]
-    std::unique_ptr<HostDeviceBuffer<vdw_pair_param_t>> catype_pair_params;  // [n_cat * n_cat]
-
-    int n_charge_types = 0;
-    int zero_charge_type = -1;
-    int n_catype_types = 0;
-    int zero_catype_type = -1;
+    std::unique_ptr<HostDeviceBuffer<real_t>> atom_charge;
+    std::unique_ptr<HostDeviceBuffer<vdw_atom_param_t>> atom_vdw;
 
     bool enabled() const { return n_total > 0; }
 };

@@ -12,5 +12,5 @@ class CudaNonbondedForce final : public NonbondedForce {
    private:
     std::unique_ptr<HostDeviceBuffer<energy_accum_t>> e_coul_;
     std::unique_ptr<HostDeviceBuffer<energy_accum_t>> e_vdw_;
-    std::unique_ptr<HostDeviceBuffer<real_t3>> coords;
+    std::unique_ptr<HostDeviceBuffer<real_t>> coord_x, coord_y, coord_z;
 };

@@ -17,8 +17,6 @@ void CpuNonbondedForce::calc(Context& ctx) {
     const auto& coords = ctx.coords->cpu_data_p;
     auto& dvelocities = ctx.dvelocities->cpu_data_p;
     int sz = data_.n_total;
-    int n_charge_type = data_.n_charge_types;
-    int n_catype_type = data_.n_catype_types;
 
     int n_slots = nb_total_slots(ctx.n_lambdas);
     std::vector<energy_accum_t> e_coul(n_slots), e_vdw(n_slots);
@@ -28,16 +26,16 @@ void CpuNonbondedForce::calc(Context& ctx) {
         if (atom1 == -1) continue;
         const auto& atom1_type = data_.category->cpu_data_p[i];
         const int atom1_state = data_.q_state->cpu_data_p[i];
-        const int atom1_charge_type = data_.charge_types->cpu_data_p[i];
-        const int atom1_catype = data_.catype_types->cpu_data_p[i];
+        const real_t atom1_charge = data_.atom_charge->cpu_data_p[i];
+        const vdw_atom_param_t& atom1_vdw = data_.atom_vdw->cpu_data_p[i];
         for (int j = i + 1; j < sz; j++) {
             const int atom2 = atom_idxs[j];
             if (atom2 == -1) continue;
             const auto& atom2_type = data_.category->cpu_data_p[j];
             const int atom2_state = data_.q_state->cpu_data_p[j];
             const auto& bond_type = get_bond_type(ctx.n_atoms_solute, ctx.LJ_matrix->cpu_data_p, atom1, atom1_type, atom2, atom2_type);
-            const int atom2_charge_type = data_.charge_types->cpu_data_p[j];
-            const int atom2_catype = data_.catype_types->cpu_data_p[j];
+            const real_t atom2_charge = data_.atom_charge->cpu_data_p[j];
+            const vdw_atom_param_t atom2_vdw = data_.atom_vdw->cpu_data_p[j];
 
             if (bond_type == BondType::Bond23) continue;
             if (atom1_type == static_cast<uint8_t>(AtomCategory::Q) && atom2_type == static_cast<uint8_t>(AtomCategory::Q) && atom1_state != atom2_state) {
@@ -51,10 +49,10 @@ void CpuNonbondedForce::calc(Context& ctx) {
             real_t inv_dis2 = static_cast<real_t>(1.0) / dis2;
             real_t inv_dis = sqrt(inv_dis2);
 
-            real_t qij = data_.charge_pair_products->cpu_data_p[n_charge_type * atom1_charge_type + atom2_charge_type];
-            vdw_pair_param_t vdw_pair = data_.catype_pair_params->cpu_data_p[n_catype_type * atom1_catype + atom2_catype];
-            real_t scaling = bond_type == BondType::Bond14 ? ctx.topo.el14_scale : 1;
-            real_t2 pair = (bond_type == BondType::Bond14) ? real_t2{vdw_pair.a_14, vdw_pair.b_14} : real_t2{vdw_pair.a_normal, vdw_pair.b_normal};
+            real_t qij = atom1_charge * atom2_charge;
+            bool is_14 = (bond_type == BondType::Bond14);
+            real_t scaling = is_14 ? ctx.topo.el14_scale : 1;
+            real_t2 pair = is_14 ? combine_vdw(ctx.topo.vdw_rule, atom1_vdw.aii_14, atom1_vdw.bii_14, atom2_vdw.aii_14, atom2_vdw.bii_14) : combine_vdw(ctx.topo.vdw_rule, atom1_vdw.aii_normal, atom1_vdw.bii_normal, atom2_vdw.aii_normal, atom2_vdw.bii_normal);
 
             auto [vel, dvel] = calc_electrostatic(qij * scaling, ctx.topo.coulomb_constant, inv_dis);
             auto [vvdw, dvvdw] = calc_vdw(pair, inv_dis);

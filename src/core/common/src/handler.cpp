@@ -47,7 +47,7 @@ void Handler::run(int num_iterations) {
         run_iteration(i);
     }
 
-    calc_final_potential(num_iterations);
+    // calc_final_potential(num_iterations);
 
     finish_outputs();
     shutdown_outputs();
