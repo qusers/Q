@@ -1,12 +1,6 @@
 #include <iostream>
 
 #include "common/include/context.h"
-#include "cpu/include/cpu_nonbonded_pp_force.h"
-#include "cpu/include/cpu_nonbonded_pw_force.h"
-#include "cpu/include/cpu_nonbonded_qp_force.h"
-#include "cpu/include/cpu_nonbonded_qq_force.h"
-#include "cpu/include/cpu_nonbonded_qw_force.h"
-#include "cpu/include/cpu_nonbonded_ww_force.h"
 #include "cpu/include/cpu_polx_water_force.h"
 #include "cpu/include/cpu_q_angle_force.h"
 #include "cpu/include/cpu_q_bond_force.h"
@@ -18,14 +12,6 @@
 #include "cuda/include/cuda_handler.cuh"
 #include "cuda/include/cuda_improper2_force.cuh"
 #include "cuda/include/cuda_leapfrog.cuh"
-#include "cuda/include/cuda_nonbonded_14_force.cuh"
-#include "cuda/include/cuda_nonbonded_force.cuh"
-#include "cuda/include/cuda_nonbonded_pp_force.cuh"
-#include "cuda/include/cuda_nonbonded_pw_force.cuh"
-#include "cuda/include/cuda_nonbonded_qp_force.cuh"
-#include "cuda/include/cuda_nonbonded_qq_force.cuh"
-#include "cuda/include/cuda_nonbonded_qw_force.cuh"
-#include "cuda/include/cuda_nonbonded_ww_force.cuh"
 #include "cuda/include/cuda_polx_water_force.cuh"
 #include "cuda/include/cuda_pshell_force.cuh"
 #include "cuda/include/cuda_radix_water_force.cuh"
@@ -39,24 +25,27 @@
 #include "cuda_shake.cuh"
 #include "cuda_shake_v2.cuh"
 #include "init.h"
+#include "cuda_nonbonded_force_v2.cuh"
 
 void CudaHandler::initialize_backend() {
     if (!initialized_) {
         shake_ = create_shake_backend();
+        nonbonded_force_ = create_nonbonded_force_backend();
         ctx.preprocess_data(*shake_);
+        nonbonded_force_->init(ctx);
 
         init_angle_force_kernel_data();
         init_bond_force_kernel_data();
         init_improper2_force_kernel_data();
         init_leapfrog_kernel_data();
-        init_nonbonded_force_kernel_data();
-        init_nonbonded_14_force_kernel_data();
-        init_nonbonded_pp_force_kernel_data();
-        init_nonbonded_pw_force_kernel_data();
-        init_nonbonded_qp_force_kernel_data();
-        init_nonbonded_qq_force_kernel_data();
-        init_nonbonded_qw_force_kernel_data();
-        init_nonbonded_ww_force_kernel_data();
+        // init_nonbonded_force_kernel_data();
+        // init_nonbonded_14_force_kernel_data();
+        // init_nonbonded_pp_force_kernel_data();
+        // init_nonbonded_pw_force_kernel_data();
+        // init_nonbonded_qp_force_kernel_data();
+        // init_nonbonded_qq_force_kernel_data();
+        // init_nonbonded_qw_force_kernel_data();
+        // init_nonbonded_ww_force_kernel_data();
         init_polx_water_force_kernel_data();
         init_pshell_force_kernel_data();
         init_radix_water_force_kernel_data();
@@ -78,14 +67,14 @@ void CudaHandler::shutdown() {
         cleanup_bond_force();
         cleanup_improper2_force();
         cleanup_leapfrog();
-        cleanup_nonbonded_pp_force();
-        cleanup_nonbonded_pw_force();
-        cleanup_nonbonded_qp_force();
-        cleanup_nonbonded_qq_force();
-        cleanup_nonbonded_qw_force();
-        cleanup_nonbonded_ww_force();
-        cleanup_nonbonded_14_force();
-        cleanup_nonbonded_force();
+        // cleanup_nonbonded_pp_force();
+        // cleanup_nonbonded_pw_force();
+        // cleanup_nonbonded_qp_force();
+        // cleanup_nonbonded_qq_force();
+        // cleanup_nonbonded_qw_force();
+        // cleanup_nonbonded_ww_force();
+        // cleanup_nonbonded_14_force();
+        // cleanup_nonbonded_force();
         cleanup_polx_water_force();
         cleanup_pshell_force();
         cleanup_radix_water_force();
@@ -131,15 +120,17 @@ void CudaHandler::calc_internal_forces(int iteration) {
 }
 
 void CudaHandler::calc_nonbonded_forces() {
-    auto& host = Context::instance();
-    update_nonbonded_coords_host();
-    calc_nonbonded_qp_forces_host_v2();
-    calc_nonbonded_pp_forces_host_v2();
-    calc_nonbonded_ww_forces_host_v2();
-    calc_nonbonded_pw_forces_host_v2();
-    calc_nonbonded_qw_forces_host_v2();
-    calc_nonbonded_qq_forces_host();
-    calc_nonbonded_14_forces_host();
+    // auto& host = Context::instance();
+    // update_nonbonded_coords_host();
+    // calc_nonbonded_qp_forces_host_v2();
+    // calc_nonbonded_pp_forces_host_v2();
+    // calc_nonbonded_ww_forces_host_v2();
+    // calc_nonbonded_pw_forces_host_v2();
+    // calc_nonbonded_qw_forces_host_v2();
+    // calc_nonbonded_qq_forces_host();
+    // calc_nonbonded_14_forces_host();
+    nonbonded_force_->calc(ctx);
+    
 }
 
 void CudaHandler::calc_temperature() {
@@ -158,4 +149,8 @@ void CudaHandler::reset_energies() {
 std::unique_ptr<Shake> CudaHandler::create_shake_backend() {
     return std::make_unique<CudaShakeV2>();
     // return std::make_unique<CudaShake>();
+}
+
+std::unique_ptr<NonbondedForce> CudaHandler::create_nonbonded_force_backend() {
+    return std::make_unique<CudaNonbondedForce>();
 }

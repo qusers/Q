@@ -1,6 +1,8 @@
+#include "cuda_force_accumulation.cuh"
 #include "cuda_nonbonded_force_v2.cuh"
 
 namespace {
+
 __device__ int2 get_tile_idx(int n, int t) {
     int x = (int)floorf((2 * n + 1 - sqrtf((2 * n + 1) * (2 * n + 1) - 8 * t)) * 0.5f);
     int y = t - (x * n - (x * (x - 1) >> 1));
@@ -12,12 +14,98 @@ __device__ int2 get_tile_idx(int n, int t) {
     return {x, y};
 }
 
+__device__ void compute_pair(
+    // atom1
+    int atom1, uint8_t atom1_type, int atom1_state,
+    int atom1_charge_type, int atom1_catype, real_t atom1_lambda, const real_t3& atom1_coord,
+    /// atom2
+    int atom2, uint8_t atom2_type, int atom2_state,
+    int atom2_charge_type, int atom2_catype, real_t atom2_lambda, const real_t3& atom2_coord,
+    // tables
+    int n_charge_types, const real_t* charge_pair_products,
+    int n_catype_types, const vdw_pair_param_t* catype_pair_params,
+    // exclusion
+    int n_atoms_solute, const int* LJ_matrix,
+    // scalars
+    real_t el14_scale, real_t coulomb_constant, int n_states,
+    // output
+    real_t3& atom1_force, real_t3& atom2_force,
+    real_t& e_coul, real_t& e_vdw) {
+    if (atom1 == -1 || atom2 == -1 || atom1 == atom2) return;
+    auto bond_type = get_bond_type(n_atoms_solute, LJ_matrix, atom1, atom1_type, atom2, atom2_type);
+    if (bond_type == BondType::Bond23) return;
+
+    constexpr uint8_t Q = static_cast<uint8_t>(AtomCategory::Q);
+    if (atom1_type == Q && atom2_type == Q && atom1_state != atom2_state) return;
+
+    real_t dx = atom2_coord.x - atom1_coord.x;
+    real_t dy = atom2_coord.y - atom1_coord.y;
+    real_t dz = atom2_coord.z - atom1_coord.z;
+    real_t dis2 = dx * dx + dy * dy + dz * dz;
+    real_t inv_dis2 = static_cast<real_t>(1.0) / dis2;
+    real_t inv_dis = sqrt(inv_dis2);
+
+    real_t qij = charge_pair_products[n_charge_types * atom1_charge_type + atom2_charge_type];
+    vdw_pair_param_t vdw_pair = catype_pair_params[n_catype_types * atom1_catype + atom2_catype];
+    real_t scaling = bond_type == BondType::Bond14 ? el14_scale : 1;
+    real_t2 pair = (bond_type == BondType::Bond14) ? real_t2{vdw_pair.a_14, vdw_pair.b_14} : real_t2{vdw_pair.a_normal, vdw_pair.b_normal};
+
+    auto [vel, dvel] = calc_electrostatic(qij * scaling, coulomb_constant, inv_dis);
+    auto [vvdw, dvvdw] = calc_vdw(pair, inv_dis);
+
+    real_t lambda = min(atom1_lambda, atom2_lambda);
+
+    real_t dva = (dvel + dvvdw) * inv_dis * lambda;
+
+    atom1_force.x -= dva * dx;
+    atom1_force.y -= dva * dy;
+    atom1_force.z -= dva * dz;
+
+    atom2_force.x += dva * dx;
+    atom2_force.y += dva * dy;
+    atom2_force.z += dva * dz;
+
+    e_coul += vel;
+    e_vdw += vvdw;
+}
+
+__device__ void shuffle(int& atom, uint8_t& atom_type, int& atom_state, int& atom_charge_type, int& atom_catype, real_t& atom_lambda, real_t3& atom_force, real_t3& atom_coord) {
+    constexpr unsigned FULL_MASK = 0xFFFFFFFF;
+    int src = ((threadIdx.x & 31) + 1) & 31;
+    atom = __shfl_sync(FULL_MASK, atom, src);
+    int tmp = atom_type;
+    atom_type = static_cast<uint8_t>(__shfl_sync(FULL_MASK, tmp, src));
+    atom_state = __shfl_sync(FULL_MASK, atom_state, src);
+    atom_charge_type = __shfl_sync(FULL_MASK, atom_charge_type, src);
+    atom_catype = __shfl_sync(FULL_MASK, atom_catype, src);
+    atom_lambda = __shfl_sync(FULL_MASK, atom_lambda, src);
+    atom_force.x = __shfl_sync(FULL_MASK, atom_force.x, src);
+    atom_force.y = __shfl_sync(FULL_MASK, atom_force.y, src);
+    atom_force.z = __shfl_sync(FULL_MASK, atom_force.z, src);
+    atom_coord.x = __shfl_sync(FULL_MASK, atom_coord.x, src);
+    atom_coord.y = __shfl_sync(FULL_MASK, atom_coord.y, src);
+    atom_coord.z = __shfl_sync(FULL_MASK, atom_coord.z, src);
+}
+
+__global__ void update_nonbonded_coords_kernel(
+    const coord_t* coords,
+    real_t3* nonbond_coords,
+    int n_atoms) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n_atoms) return;
+
+    nonbond_coords[i].x = static_cast<real_t>(coords[i].x);
+    nonbond_coords[i].y = static_cast<real_t>(coords[i].y);
+    nonbond_coords[i].z = static_cast<real_t>(coords[i].z);
+}
+
 }  // namespace
 
 void CudaNonbondedForce::init_backend(Context& ctx) {
     int n_slots = nb_total_slots(ctx.n_lambdas);
     e_coul_ = std::make_unique<HostDeviceBuffer<energy_accum_t>>(n_slots);
     e_vdw_ = std::make_unique<HostDeviceBuffer<energy_accum_t>>(n_slots);
+    coords = std::make_unique<HostDeviceBuffer<real_t3>>(ctx.n_atoms);
 }
 
 __global__ void nonbonded_kernel(
@@ -48,7 +136,7 @@ __global__ void nonbonded_kernel(
     real_t coulomb_constant,  // ctx.topo.coulomb_constant
 
     // ---- coordinates / outputs ----
-    const nonbond_coord_t* coords,  // ctx.nonbond_coord_t->gpu_data_p
+    const real_t3 * coords,  // ctx.nonbond_coord_t->gpu_data_p
     dvel_t* dvelocities,            // ctx.dvelocities->gpu_data_p (fixed-point, atomic_add_force)
 
     // ---- energy accumulators (length nb_total_slots(n_states)) ----
@@ -72,11 +160,82 @@ __global__ void nonbonded_kernel(
 
     int x_idx = base_x + lane;
     int y_idx = base_y + lane;
+
+    const int atom1 = x_idx < sz ? atom_idx[x_idx] : -1;
+
+    const auto& atom1_type = atom1 == -1 ? static_cast<uint8_t>(AtomCategory::INVALID) : category[x_idx];
+    const int atom1_state = atom1 == -1 ? -1 : q_state[x_idx];
+    const int atom1_charge_type = atom1 == -1 ? -1 : charge_types[x_idx];
+    const int atom1_catype = atom1 == -1 ? -1 : catype_types[x_idx];
+    const real_t atom1_lambda = atom1 == -1 ? 0 : atom_lambdas[x_idx];
+    real_t3 atom1_coord = atom1 == -1 ? real_t3{0, 0, 0} : real_t3{coords[atom1].x, coords[atom1].y, coords[atom1].z};
+    real_t3 atom1_force = {0, 0, 0};
+
+    int atom2 = y_idx < sz ? atom_idx[y_idx] : -1;
+    uint8_t atom2_type = atom2 == -1 ? static_cast<uint8_t>(AtomCategory::INVALID) : category[y_idx];
+    int atom2_state = atom2 == -1 ? -1 : q_state[y_idx];
+    int atom2_charge_type = atom2 == -1 ? -1 : charge_types[y_idx];
+    int atom2_catype = atom2 == -1 ? -1 : catype_types[y_idx];
+    real_t atom2_lambda = atom2 == -1 ? 0 : atom_lambdas[y_idx];
+    real_t3 atom2_coord = atom2 == -1 ? real_t3{0, 0, 0} : real_t3{coords[atom2].x, coords[atom2].y, coords[atom2].z};
+    real_t3 atom2_force = {0, 0, 0};
+
+    real_t local_e_coul = 0, local_e_vdw = 0;
+    bool is_diag = (tile_x == tile_y);
+    for (int i = 0; i < 32; i++) {
+        if (!is_diag || atom1 < atom2) {
+            compute_pair(atom1, atom1_type, atom1_state, atom1_charge_type, atom1_catype, atom1_lambda, atom1_coord,
+                         atom2, atom2_type, atom2_state, atom2_charge_type, atom2_catype, atom2_lambda, atom2_coord,
+                         n_charge_types, charge_pair_products, n_catype_types, catype_pair_params,
+                         n_atoms_solute, LJ_matrix,
+                         el14_scale, coulomb_constant, n_states,
+                         atom1_force, atom2_force,
+                         local_e_coul, local_e_vdw);
+        }
+        shuffle(atom2, atom2_type, atom2_state, atom2_charge_type, atom2_catype, atom2_lambda, atom2_force, atom2_coord);
+    }
+
+    if (atom1 >= 0) {
+        atomic_add_force(&dvelocities[atom1].x, atom1_force.x);
+        atomic_add_force(&dvelocities[atom1].y, atom1_force.y);
+        atomic_add_force(&dvelocities[atom1].z, atom1_force.z);
+    }
+
+    if (atom2 >= 0) {
+        atomic_add_force(&dvelocities[atom2].x, atom2_force.x);
+        atomic_add_force(&dvelocities[atom2].y, atom2_force.y);
+        atomic_add_force(&dvelocities[atom2].z, atom2_force.z);
+    }
+    const unsigned mask = 0xffffffffu;
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        local_e_coul += __shfl_down_sync(mask, local_e_coul, offset);
+        local_e_vdw += __shfl_down_sync(mask, local_e_vdw, offset);
+    }
+
+    if (lane == 0) {
+        uint8_t tile_cat_x = category[base_x];
+        uint8_t tile_cat_y = category[base_y];
+        int tile_state_x = q_state[base_x];
+        int tile_state_y = q_state[base_y];
+        int slot = nb_energy_slot(tile_cat_x, tile_cat_y, tile_state_x, tile_state_y, n_states);
+
+        atomic_add_energy(&e_coul[slot], local_e_coul);
+        atomic_add_energy(&e_vdw[slot], local_e_vdw);
+    }
 }
 
 void CudaNonbondedForce::calc(Context& ctx) {
-    const int thread_num = 256;
+    /*
+    Sync the coords to CudaNonbondedForce::coords first.
+    */
+    int sync_block = 256;
+    int sync_grid = (ctx.n_atoms + sync_block - 1) / sync_block;
+    update_nonbonded_coords_kernel<<<sync_grid, sync_block>>>(ctx.coords->gpu_data_p, coords->gpu_data_p, ctx.n_atoms);
 
+    /*
+    Do calculation
+    */
+    const int thread_num = 256;
     int tile_num_per_block = thread_num >> 5;
     int n_atom = data_.n_total;
     int block_num = (n_atom + 31) >> 5;
@@ -89,4 +248,28 @@ void CudaNonbondedForce::calc(Context& ctx) {
     dim3 grid = dim3(grid_sz);
     cudaMemset(d_e_coul, 0, sizeof(energy_accum_t) * e_coul_->length);
     cudaMemset(d_e_vdw, 0, sizeof(energy_accum_t) * e_vdw_->length);
+
+    nonbonded_kernel<<<grid, thread_num>>>(n_atom, ctx.n_lambdas, data_.n_charge_types, data_.n_catype_types, ctx.n_atoms_solute,
+                                           data_.atom_idx->gpu_data_p, data_.category->gpu_data_p, data_.q_state->gpu_data_p,
+                                           data_.atom_lambdas->gpu_data_p, data_.charge_types->gpu_data_p, data_.catype_types->gpu_data_p,
+                                           data_.charge_pair_products->gpu_data_p, data_.catype_pair_params->gpu_data_p,
+                                           ctx.LJ_matrix->gpu_data_p, ctx.topo.el14_scale, ctx.topo.coulomb_constant,
+                                           coords->gpu_data_p, ctx.dvelocities->gpu_data_p, d_e_coul, d_e_vdw);
+
+    e_coul_->download();
+    e_vdw_->download();
+
+    auto store = [&](E_nonbonded_t& e, int slot) {
+        e.Ucoul = energy_from_accum(e_coul_->cpu_data_p[slot]);
+        e.Uvdw = energy_from_accum(e_vdw_->cpu_data_p[slot]);
+    };
+
+    store(ctx.E_nonbond_pp, NB_PP);
+    store(ctx.E_nonbond_pw, NB_PW);
+    store(ctx.E_nonbond_ww, NB_WW);
+    for (int s = 0; s < ctx.n_lambdas; s++) {
+        store(ctx.EQ_nonbond_qq[s], nb_qq_slot(s, ctx.n_lambdas));
+        store(ctx.EQ_nonbond_qp[s], nb_qp_slot(s, ctx.n_lambdas));
+        store(ctx.EQ_nonbond_qw[s], nb_qw_slot(s, ctx.n_lambdas));
+    }
 }

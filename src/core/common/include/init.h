@@ -7,8 +7,6 @@ void init_unified_atom_parameters();
 void init_patoms();
 void finalize_ngbrs14();
 void init_atoms_list();
-void initialize_charge_tables();
-void initialize_catype_tables();
 void init_inv_mass();
 void init_pshells();
 void init_velocities();

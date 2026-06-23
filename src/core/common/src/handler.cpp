@@ -138,6 +138,10 @@ Shake& Handler::shake() {
     return *shake_;
 }
 
+NonbondedForce& Handler::nonbonded_force() {
+    return *nonbonded_force_;
+}
+
 void Handler::reset_energies() {
     auto& host = Context::instance();
     auto& dvelocities = host.dvelocities->cpu_data_p;

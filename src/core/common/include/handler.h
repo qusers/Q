@@ -5,11 +5,13 @@
 
 #include "base_output.h"
 #include "context.h"
+#include "nonbonded_force.h"
 #include "shake.h"
 
 class Handler {
    public:
     Shake& shake();
+    NonbondedForce& nonbonded_force();
     virtual ~Handler() = default;
     virtual void initialize();
 
@@ -45,5 +47,7 @@ class Handler {
     virtual void reset_energies();
 
     std::unique_ptr<Shake> shake_;
+    std::unique_ptr<NonbondedForce> nonbonded_force_;
     virtual std::unique_ptr<Shake> create_shake_backend() = 0;
+    virtual std::unique_ptr<NonbondedForce> create_nonbonded_force_backend() = 0;
 };

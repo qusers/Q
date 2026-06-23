@@ -52,13 +52,6 @@ struct coord_t {
     double z;
 };
 
-
-struct nonbond_coord_t {
-    real_t x;
-    real_t y;
-    real_t z;
-};
-
 struct bond_t {
     int ai;
     int aj;

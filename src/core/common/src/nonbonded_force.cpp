@@ -33,50 +33,58 @@ void NonbondedForce::init(Context& ctx) {
 }
 
 void NonbondedForce::build_combinded_list(Context& ctx) {
-    int n_atoms = ctx.n_atoms;
-    data_.n_total = n_atoms - ctx.n_excluded;
+    std::vector<int> atom_idx;
+    std::vector<uint8_t> category;
+    std::vector<int> q_state;
+    std::vector<real_t> atom_lambdas;
 
-    std::vector<int> atom_idx(data_.n_total);
-    std::vector<uint8_t> category(data_.n_total);
-    std::vector<int> q_state(data_.n_total);
-    std::vector<real_t> atom_lambdas(data_.n_total);
+    auto push_dummy = [&](int count) {
+        for (int i = 0; i < count; i++) {
+            atom_idx.push_back(-1);
+            category.push_back(static_cast<uint8_t>(AtomCategory::INVALID));
+            q_state.push_back(-1);
+            atom_lambdas.push_back(0);
+        }
+    };
 
-    int cur_idx = 0;
     for (int i = 0; i < ctx.n_patoms; i++) {
         int idx = ctx.p_atoms[i];
         if (ctx.excluded->cpu_data_p[idx]) continue;
-        atom_idx[cur_idx] = idx;
-        category[cur_idx] = static_cast<uint8_t>(AtomCategory::P);
-        q_state[cur_idx] = -1;
-        atom_lambdas[cur_idx] = 1.0;
-        cur_idx++;
+        atom_idx.push_back(idx);
+        category.push_back(static_cast<uint8_t>(AtomCategory::P));
+        q_state.push_back(-1);
+        atom_lambdas.push_back(1.0);
     }
 
-    for (int i = 0; i < ctx.n_qatoms; i++) {
-        int idx = ctx.q_atoms[i];
-        if (ctx.excluded->cpu_data_p[idx]) continue;
-        atom_idx[cur_idx] = idx;
-        category[cur_idx] = static_cast<uint8_t>(AtomCategory::Q);
+    int sz = atom_idx.size();
+    push_dummy((32 - (sz % 32)) % 32);
 
-        // A q-atom is dummy in a state iff its atype code is 0 (DUM is not in the
-        // atypemap, so it parses to 0). In dual-topology FEP each q-atom is real in
-        // exactly one state; pick that state.
-        int real_state = (ctx.q_atypes[i].code != 0) ? 0 : 1;
-        q_state[cur_idx] = real_state;
-        atom_lambdas[cur_idx] = ctx.lambdas->cpu_data_p[real_state];
-
-        cur_idx++;
+    for (int state = 0; state < ctx.n_lambdas; state++) {
+        for (int i = 0; i < ctx.n_qatoms; i++) {
+            int idx = ctx.q_atoms[i];
+            if (ctx.excluded->cpu_data_p[idx]) continue;
+            atom_idx.push_back(idx);
+            category.push_back(static_cast<uint8_t>(AtomCategory::Q));
+            q_state.push_back(state);
+            atom_lambdas.push_back(ctx.lambdas->cpu_data_p[state]);
+        }
+        sz = atom_idx.size();
+        push_dummy((32 - (sz % 32)) % 32);
     }
 
-    for (int i = ctx.n_atoms_solute; i < n_atoms; i++) {
+    for (int i = ctx.n_atoms_solute; i < ctx.n_atoms; i++) {
         if (ctx.excluded->cpu_data_p[i]) continue;
-        atom_idx[cur_idx] = i;
-        category[cur_idx] = static_cast<uint8_t>(AtomCategory::W);
-        q_state[cur_idx] = -1;
-        atom_lambdas[cur_idx] = 1.0;
-        cur_idx++;
+        atom_idx.push_back(i);
+        category.push_back(static_cast<uint8_t>(AtomCategory::W));
+        q_state.push_back(-1);
+        atom_lambdas.push_back(1.0);
     }
 
+    sz = atom_idx.size();
+    push_dummy((32 - (sz % 32)) % 32);
+
+    sz = atom_idx.size();
+    data_.n_total = sz;
     data_.atom_idx = HostDeviceBuffer<int>::from_vector(atom_idx, ctx.command_info.requested_gpu);
     data_.category = HostDeviceBuffer<uint8_t>::from_vector(category, ctx.command_info.requested_gpu);
     data_.q_state = HostDeviceBuffer<int>::from_vector(q_state, ctx.command_info.requested_gpu);
@@ -89,9 +97,10 @@ void NonbondedForce::build_charge_table(Context& ctx) {
     for (int i = 0; i < ctx.n_ccharges; i++) {
         charge_table.push_back(ctx.ccharges->cpu_data_p[i].charge);
     }
-    for (int i = 0; i < ctx.n_qatoms; i++) {
-        int real_state = (ctx.q_atypes[i].code != 0) ? 0 : 1;
-        charge_table.push_back(ctx.q_charges[i + ctx.n_qatoms * real_state].charge);
+    for (int state = 0; state < ctx.n_lambdas; state++) {
+        for (int i = 0; i < ctx.n_qatoms; i++) {
+            charge_table.push_back(ctx.q_charges[i + ctx.n_qatoms * state].charge);
+        }
     }
     std::sort(charge_table.begin(), charge_table.end());
     charge_table.resize(std::unique(charge_table.begin(), charge_table.end()) - charge_table.begin());
@@ -112,6 +121,11 @@ void NonbondedForce::build_charge_table(Context& ctx) {
     for (int i = 0; i < data_.n_total; i++) {
         int atom_idx = data_.atom_idx->cpu_data_p[i];
         auto atom_type = data_.category->cpu_data_p[i];
+
+        if (atom_type == static_cast<uint8_t>(AtomCategory::INVALID)) {
+            charge_types[i] = charge_to_idx[0];
+            continue;
+        }
 
         if (atom_type == static_cast<uint8_t>(AtomCategory::P) ||
             atom_type == static_cast<uint8_t>(AtomCategory::W)) {
@@ -134,6 +148,7 @@ void NonbondedForce::build_charge_table(Context& ctx) {
         }
     }
 
+    data_.n_charge_types = sz;
     data_.charge_types = HostDeviceBuffer<int>::from_vector(charge_types, ctx.command_info.requested_gpu);
     data_.charge_pair_products = HostDeviceBuffer<real_t>::from_vector(charge_pair_products, ctx.command_info.requested_gpu);
     data_.zero_charge_type = charge_to_idx[0];
@@ -150,11 +165,14 @@ void NonbondedForce::build_catype_table(Context& ctx) {
         add_catype(catype, catype_key_to_idx, all_catypes);
     }
 
-    for (int i = 0; i < ctx.n_qatoms; i++) {
-        int real_state = (ctx.q_atypes[i].code != 0) ? 0 : 1;
-        const auto& atype = ctx.q_atypes[i + ctx.n_qatoms * real_state];
-        const auto& catype = ctx.q_catypes[atype.code - 1];
-        add_catype(catype, catype_key_to_idx, all_catypes);
+    for (int state = 0; state < ctx.n_lambdas; state++) {
+        for (int i = 0; i < ctx.n_qatoms; i++) {
+            const auto& atype = ctx.q_atypes[i + ctx.n_qatoms * state];
+            if (atype.code > 0) {
+                const auto& catype = ctx.q_catypes[atype.code - 1];
+                add_catype(catype, catype_key_to_idx, all_catypes);
+            }
+        }
     }
     // Put zero_catype in it
     catype_t zero_catype = {};
@@ -171,6 +189,14 @@ void NonbondedForce::build_catype_table(Context& ctx) {
     for (int i = 0; i < data_.n_total; i++) {
         int atom_idx = data_.atom_idx->cpu_data_p[i];
         auto atom_type = data_.category->cpu_data_p[i];
+
+        if (atom_type == static_cast<uint8_t>(AtomCategory::INVALID)) {
+            catype_t zero = {};
+            catype_types[i] = catype_key_to_idx[build_catype_key(zero)];
+            continue;
+        }
+
+
         if (atom_type == static_cast<uint8_t>(AtomCategory::P) || atom_type == static_cast<uint8_t>(AtomCategory::W)) {
             const catype_t& catype = catypes[ctx.atypes->cpu_data_p[atom_idx].code - 1];
             catype_types[i] = catype_key_to_idx[build_catype_key(catype)];
@@ -178,8 +204,13 @@ void NonbondedForce::build_catype_table(Context& ctx) {
             int state = data_.q_state->cpu_data_p[i];
             int q_idx = atom_idx_to_q_idx[atom_idx];
             const atype_t& atype = ctx.q_atypes[q_idx + ctx.n_qatoms * state];
-            const catype_t& catype = ctx.q_catypes[atype.code - 1];
-            catype_types[i] = catype_key_to_idx[build_catype_key(catype)];
+            if (atype.code > 0) {
+                const catype_t& catype = ctx.q_catypes[atype.code - 1];
+                catype_types[i] = catype_key_to_idx[build_catype_key(catype)];
+            } else {
+                catype_t zero = {};
+                catype_types[i] = catype_key_to_idx[build_catype_key(zero)];
+            }
         }
     }
 
@@ -202,6 +233,7 @@ void NonbondedForce::build_catype_table(Context& ctx) {
         }
     }
 
+    data_.n_catype_types = sz;
     data_.catype_types = HostDeviceBuffer<int>::from_vector(catype_types, ctx.command_info.requested_gpu);
     data_.catype_pair_params = HostDeviceBuffer<vdw_pair_param_t>::from_vector(catype_pair_params, ctx.command_info.requested_gpu);
     data_.zero_catype_type = catype_key_to_idx[build_catype_key(zero_catype)];

@@ -45,6 +45,56 @@ NB_HD inline int nb_energy_slot(uint8_t t1, uint8_t t2,
     return nb_qp_slot(state, n_states);  // 否则 qp
 }
 
+enum class BondType : uint8_t { Bond23,
+                                Bond14,
+                                NonBond };
+
+NB_HD inline BondType get_bond_type(int n_atoms_solute, const int* LJ_matrix, int atom1, uint8_t atom1_type, int atom2, uint8_t atom2_type) {
+    bool w1 = atom1_type == static_cast<uint8_t>(AtomCategory::W);
+    bool w2 = atom2_type == static_cast<uint8_t>(AtomCategory::W);
+
+    if (w1 != w2) {
+        return BondType::NonBond;  // solute-water never bonded
+    }
+
+    if (w1) {
+        // both w
+        if ((atom1 - n_atoms_solute) / 3 == (atom2 - n_atoms_solute) / 3) {
+            return BondType::Bond23;
+        }
+        return BondType::NonBond;
+    }
+
+    int lj_matrix_value = LJ_matrix[atom1 * n_atoms_solute + atom2];
+    if (lj_matrix_value == 3) {
+        return BondType::Bond23;
+    } else if (lj_matrix_value == 1) {
+        return BondType::Bond14;
+    }
+    return BondType::NonBond;
+}
+
+NB_HD inline real_t2 calc_electrostatic(real_t qij, real_t coulomb_constant, real_t inv_dis) {
+    if (qij == 0) return {0, 0};
+    real_t vel = qij * coulomb_constant * inv_dis;  // k * qi * qj / r
+    real_t dvel = -vel * inv_dis;                   /// -k * qi * qj / r2
+    return {vel, dvel};
+}
+
+NB_HD inline real_t2 calc_vdw(const real_t2& pair, real_t inv_dis) {
+    if (pair.x == 0 && pair.y == 0) return {0, 0};
+    real_t inv_dis3 = inv_dis * inv_dis * inv_dis;
+    real_t inv_dis6 = inv_dis3 * inv_dis3;
+
+    real_t V_a = pair.x * inv_dis6 * inv_dis6;  // precomputed A / r^12
+    real_t V_b = pair.y * inv_dis6;             // precomputed B / r^6
+
+    real_t vvdw = V_a - V_b;
+    real_t dvvdw = (static_cast<real_t>(-12.0) * V_a + static_cast<real_t>(6.0) * V_b) * inv_dis;
+
+    return {vvdw, dvvdw};
+}
+
 struct NonbondedData {
     int n_total = 0;
     std::unique_ptr<HostDeviceBuffer<int>> atom_idx;      // global atom index
