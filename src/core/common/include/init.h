@@ -5,8 +5,6 @@ void exclude_qatom_definitions();
 void init_pshells_from_charge_groups();
 void init_unified_atom_parameters();
 void init_patoms();
-void finalize_ngbrs14();
-void init_atoms_list();
 void init_inv_mass();
 void init_pshells();
 void init_velocities();

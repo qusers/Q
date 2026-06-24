@@ -73,6 +73,7 @@ void set_lj_matrix(Context& ctx, const ParseResult& parsed) {
     set_lj_pairs(ctx, parsed.ngbrs14_long, 1);
     set_lj_pairs(ctx, parsed.ngbrs23, 3);
     set_lj_pairs(ctx, parsed.ngbrs23_long, 3);
+    ctx.LJ_matrix->upload();
 }
 
 void preprocess_vdw_rule_parameters(Context& ctx) {
@@ -320,9 +321,6 @@ void Context::preprocess_data(Shake &shake) {
         }
     }
 
-    finalize_ngbrs14();
-
-    init_atoms_list();
 }
 
 void Context::init() {

@@ -10,7 +10,6 @@
 
 #include "command_parser.h"
 #include "common/include/md_types.h"
-#include "common/include/nonbonded_14_mode.h"
 #include "common/include/parse.h"
 #include "common/include/vdw_rules.h"
 #include "host_device_buffer.h"
@@ -92,8 +91,6 @@ class Context {
     int n_restrwalls;
     std::unique_ptr<HostDeviceBuffer<restrwall_t>> restrwalls;
 
-    int n_ngbrs14;
-    std::unique_ptr<HostDeviceBuffer<int3>> ngbrs_14;
     /*
     Atom Info
     */
@@ -173,26 +170,6 @@ class Context {
     std::vector<E_nonbonded_t> EQ_nonbond_qx;
 
     E_restraint_t E_restraint;
-
-    /*
-    Pre compute Info for non bonded calculation
-    */
-
-    std::unique_ptr<HostDeviceBuffer<int>> p_atoms_list;
-    std::unique_ptr<HostDeviceBuffer<int>> w_atoms_list;
-    std::unique_ptr<HostDeviceBuffer<int>> q_atoms_list;
-    std::unique_ptr<HostDeviceBuffer<int>> p_charge_types;
-    std::unique_ptr<HostDeviceBuffer<int>> w_charge_types;
-    std::unique_ptr<HostDeviceBuffer<int>> q_charge_types;
-
-    std::unique_ptr<HostDeviceBuffer<int>> p_catype_types;
-    std::unique_ptr<HostDeviceBuffer<int>> w_catype_types;
-    std::unique_ptr<HostDeviceBuffer<int>> q_catype_types;
-
-    int n_charge_types;
-    int zero_charge_type = -1;
-    int n_catype_types;
-    int zero_catype_type = -1;
 
     /*
     Temperature

@@ -16,90 +16,6 @@
 #include "parse.h"
 #include "shake.h"
 
-template <typename T>
-std::unique_ptr<HostDeviceBuffer<T>> make_host_device_buffer_from_vector(
-    const std::vector<T>& src,
-    bool run_gpu) {
-    auto buffer = std::make_unique<HostDeviceBuffer<T>>(src.size(), true, run_gpu);
-    if (!src.empty()) {
-        std::copy(src.begin(), src.end(), buffer->cpu_data_p);
-    }
-    if (run_gpu) {
-        buffer->upload();
-    }
-    return buffer;
-}
-
-void init_atoms_list() {
-    auto& ctx = Context::instance();
-    auto* excluded = ctx.excluded->cpu_data_p;
-
-    std::vector<int> h_p_atoms_list;
-    h_p_atoms_list.reserve(ctx.n_patoms);
-    for (int i = 0; i < ctx.n_patoms; i++) {
-        int id = ctx.p_atoms[i];
-        if (!excluded[id]) {
-            h_p_atoms_list.push_back(id);
-        }
-    }
-
-    std::vector<int> h_w_atoms_list;
-    h_w_atoms_list.reserve(ctx.n_atoms - ctx.n_atoms_solute);
-    for (int i = ctx.n_atoms_solute; i < ctx.n_atoms; i++) {
-        if (!excluded[i]) {
-            h_w_atoms_list.push_back(i);
-        }
-    }
-    printf("Number of water atoms: %d, number of all water atoms: %d\n", (int)h_w_atoms_list.size(), ctx.n_atoms - ctx.n_atoms_solute);
-
-    std::vector<int> h_q_atoms_list;
-    h_q_atoms_list.reserve(ctx.n_qatoms);
-    for (int i = 0; i < ctx.n_qatoms; i++) {
-        int id = ctx.q_atoms[i];
-        if (!excluded[id]) {
-            h_q_atoms_list.push_back(id);
-        }
-    }
-
-    bool run_gpu = ctx.command_info.requested_gpu;
-    ctx.p_atoms_list = make_host_device_buffer_from_vector(h_p_atoms_list, run_gpu);
-    ctx.w_atoms_list = make_host_device_buffer_from_vector(h_w_atoms_list, run_gpu);
-    ctx.q_atoms_list = make_host_device_buffer_from_vector(h_q_atoms_list, run_gpu);
-}
-
-void finalize_ngbrs14() {
-    auto& ctx = Context::instance();
-    auto& LJ_matrix = ctx.LJ_matrix->cpu_data_p;
-    std::vector<int3> ngbrs_14;
-    ngbrs_14.reserve(ctx.n_atoms_solute);
-
-    for (int i = 0; i < ctx.n_atoms_solute; i++) {
-        for (int j = i + 1; j < ctx.n_atoms_solute; j++) {
-            if (LJ_matrix[i * ctx.n_atoms_solute + j] == 1) {
-                int pair_type = NONBONDED_14_PP;
-                const bool ai_is_q = ctx.atom_to_qi[i] != -1;
-                const bool aj_is_q = ctx.atom_to_qi[j] != -1;
-                if (ai_is_q && aj_is_q) {
-                    pair_type = NONBONDED_14_QQ;
-                } else if (ai_is_q || aj_is_q) {
-                    pair_type = NONBONDED_14_QP;
-                }
-                ngbrs_14.push_back({i, j, pair_type});
-            }
-        }
-    }
-    bool run_gpu = ctx.command_info.requested_gpu;
-    ctx.ngbrs_14 = std::make_unique<HostDeviceBuffer<int3>>(ngbrs_14.size(), true, run_gpu);
-    if (!ngbrs_14.empty()) {
-        std::copy(ngbrs_14.begin(), ngbrs_14.end(), ctx.ngbrs_14->cpu_data_p);
-    }
-    if (run_gpu) {
-        ctx.LJ_matrix->upload();
-        ctx.ngbrs_14->upload();
-    }
-    ctx.n_ngbrs14 = static_cast<int>(ctx.ngbrs_14->length);
-}
-
 // Remove bonds, angles, torsions and impropers which are excluded or changed in the FEP file
 void exclude_qatom_definitions() {
     auto& ctx = Context::instance();
@@ -243,7 +159,6 @@ void exclude_all_atoms_excluded_definitions() {
     printf("original: %d. # excluded torsions: %d\n", ctx.n_torsions, n_excl);
     ctx.n_torsions -= n_excl;
 }
-
 
 void init_velocities() {
     auto& ctx = Context::instance();
@@ -520,7 +435,6 @@ void init_pshells_from_charge_groups() {
     printf("(%s): n_heavy = %d, n_inshell = %d\n", use_switch_atom ? "switch atoms" : "centroids", n_heavy, n_inshell);
 }
 
-
 void init_for_temperature(Context& ctx, Shake& shake) {
     double excl_shake = 0.0;
     auto* excluded = ctx.excluded->cpu_data_p;
@@ -543,7 +457,6 @@ void init_for_temperature(Context& ctx, Shake& shake) {
         if (mol < ctx.n_molecules - ctx.n_waters) {
             n_solute_shake_constraints++;
         }
-
     }
 
     ctx.Ndegf = 3 * ctx.n_atoms - shake.data().n_constraints;
