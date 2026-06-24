@@ -52,13 +52,6 @@ struct coord_t {
     double z;
 };
 
-
-struct nonbond_coord_t {
-    real_t x;
-    real_t y;
-    real_t z;
-};
-
 struct bond_t {
     int ai;
     int aj;
@@ -140,9 +133,11 @@ struct catype_t {
     double bii_1_4;
 };
 
-struct vdw_pair_param_t {
-    real_t a;
-    real_t b;
+struct vdw_atom_param_t {
+    real_t aii_normal;
+    real_t bii_normal;
+    real_t aii_14;
+    real_t bii_14;
 };
 
 struct topo_t {

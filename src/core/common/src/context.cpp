@@ -73,6 +73,7 @@ void set_lj_matrix(Context& ctx, const ParseResult& parsed) {
     set_lj_pairs(ctx, parsed.ngbrs14_long, 1);
     set_lj_pairs(ctx, parsed.ngbrs23, 3);
     set_lj_pairs(ctx, parsed.ngbrs23_long, 3);
+    ctx.LJ_matrix->upload();
 }
 
 void preprocess_vdw_rule_parameters(Context& ctx) {
@@ -293,7 +294,6 @@ void Context::preprocess_data(Shake &shake) {
     init_patoms();
     init_velocities();
 
-    nonbond_coords = std::make_unique<HostDeviceBuffer<nonbond_coord_t>>(n_atoms, true, command_info.requested_gpu);
     dvelocities = std::make_unique<HostDeviceBuffer<dvel_t>>(n_atoms, true, command_info.requested_gpu);
     xcoords = std::make_unique<HostDeviceBuffer<coord_t>>(n_atoms, true, command_info.requested_gpu);
 
@@ -321,11 +321,6 @@ void Context::preprocess_data(Shake &shake) {
         }
     }
 
-    finalize_ngbrs14();
-
-    init_atoms_list();
-    initialize_charge_tables();
-    initialize_catype_tables();
 }
 
 void Context::init() {

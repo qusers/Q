@@ -2,8 +2,25 @@
 
 #ifdef QDYN_SPFP
 using real_t = float;
+
+struct real_t2 {
+    float x, y;
+};
+
+struct real_t3 {
+    float x, y, z;
+};
+
 #else
 using real_t = double;
+struct real_t2 {
+    double x, y;
+};
+
+struct real_t3 {
+    double x, y, z;
+};
+
 #endif
 
 using force_accum_t = long long;
