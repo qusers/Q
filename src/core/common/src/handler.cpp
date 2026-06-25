@@ -3,6 +3,7 @@
 #include "csv_out.h"
 #include "native_out.h"
 #include "std_output.h"
+#include <chrono>
 
 void Handler::run_iteration(int iteration) {
     reset_energies();
@@ -43,9 +44,14 @@ void Handler::calc_final_potential(int iteration) {
 void Handler::run(int num_iterations) {
     // 1. temperature calculation
     calc_temperature();
+    auto t0 = std::chrono::steady_clock::now();
     for (int i = 0; i < num_iterations; i++) {
         run_iteration(i);
     }
+    auto t1 = std::chrono::steady_clock::now();
+
+    double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    printf("MD loop: %.3f ms total, %.4f ms/step (%d steps)\n", ms, ms / num_iterations, num_iterations);
 
     calc_final_potential(num_iterations);
 
