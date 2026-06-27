@@ -831,8 +831,14 @@ class QligFEP:
         EQ_files = sorted(glob.glob(writedir + "/eq*.inp"))
         # Without SLURM there is no $SLURM_NTASKS; the no-slurm run script exposes the
         # number of MPI ranks through a plain `ntasks` variable defined at its top.
+        # Binding: under SLURM let mpirun bind to cores (slurm owns the allocation).
+        # Without SLURM the job may be confined to an offset cpuset (e.g. a Docker
+        # `--cpuset-cpus` block not starting at core 0), and `--bind-to core` aborts
+        # there because it binds by absolute core index; `--bind-to none` lets the
+        # cgroup cpuset provide the affinity instead.
         ntasks = "$ntasks" if self.no_slurm else "$SLURM_NTASKS"
-        mpi_launch = f"time mpirun -n {ntasks} --bind-to core $qdyn"
+        bind = "none" if self.no_slurm else "core"
+        mpi_launch = f"time mpirun -n {ntasks} --bind-to {bind} $qdyn"
 
         if self.start == "1":
             MD_files = reversed(sorted(glob.glob(writedir + "/md*.inp")))
