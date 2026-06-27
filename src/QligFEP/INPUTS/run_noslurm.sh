@@ -8,7 +8,20 @@
 temperatures=(TEMP_VAR)
 seeds=(RANDOM_SEEDS)
 runs=${#seeds[@]}
-ntasks=NTASKS  # number of MPI ranks (replaces $SLURM_NTASKS)
+# Number of MPI ranks per replicate (replaces $SLURM_NTASKS). Set via the
+# Q_NCORES environment variable; otherwise default to 8 (Q's sweet spot) or fewer
+# if the machine has fewer physical cores. Count physical cores (not hyperthreads):
+# mpirun --bind-to core needs ntasks <= physical cores or it aborts with
+# "not enough slots".
+if [ -n "$Q_NCORES" ]; then
+    ntasks=$Q_NCORES
+else
+    phys_cores=$(lscpu -p=Core 2>/dev/null | grep -v '^#' | sort -u | wc -l)
+    if ! [ "$phys_cores" -ge 1 ] 2>/dev/null; then
+        phys_cores=$(nproc 2>/dev/null || echo 1)
+    fi
+    ntasks=$(( phys_cores >= 8 ? 8 : phys_cores ))
+fi
 restartfile=md_0000_1000.re
 workdir="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
 inputfiles=$workdir/inputfiles
@@ -44,12 +57,24 @@ QDYN
 NUMTEMPS=${#temperatures[@]}
 TOTAL_JOBS=$((NUMTEMPS * runs))
 
+# Which job(s) to run. By default run every temperature/replicate combination
+# sequentially (the work a SLURM array would fan out via $SLURM_ARRAY_TASK_ID).
+# Set Q_TID=<index> to run a single combination, so a host-side orchestrator can
+# launch one container per replicate and run several in parallel.
+if [ -n "$Q_TID" ]; then
+    if [ "$Q_TID" -lt 0 ] || [ "$Q_TID" -ge "$TOTAL_JOBS" ]; then
+        echo "Error: Q_TID ($Q_TID) out of range 0..$((TOTAL_JOBS - 1))"
+        exit 1
+    fi
+    TID_LIST="$Q_TID"
+else
+    TID_LIST=$(seq 0 $((TOTAL_JOBS - 1)))
+fi
+
 starttime=$(date +%s)
 starttime_readable=$(date)
 
-# Loop over every temperature/replicate combination sequentially (the work a SLURM
-# array task would otherwise pick up via $SLURM_ARRAY_TASK_ID).
-for TID in $(seq 0 $((TOTAL_JOBS - 1))); do
+for TID in $TID_LIST; do
 
 # Calculate which temperature and replicate this iteration corresponds to
 temp_idx=$((TID / runs))
