@@ -236,4 +236,15 @@ def parse_arguments(program: str) -> argparse.Namespace:
         help="Set the log level for the logger. Defaults to `info`.",
         choices=["trace", "debug", "info", "warning", "error", "critical"],
     )
+    parser.add_argument(
+        "-ns",
+        "--no-slurm",
+        dest="no_slurm",
+        action="store_true",
+        help=(
+            "Generate run scripts that execute directly (no SLURM scheduler), while keeping "
+            "the multi-seed/replicate structure. Replicates and temperatures are looped over "
+            "sequentially instead of being dispatched as a SLURM job array."
+        ),
+    )
     return parser.parse_args()

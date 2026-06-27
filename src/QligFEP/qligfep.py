@@ -50,6 +50,7 @@ class QligFEP:
         dr_force: float = 0.5,
         random_state: Optional[int] = 42,
         wath_ligand_only: bool = False,
+        no_slurm: bool = False,
     ):
         self.replacements = {}  # TODO: make this explicit in the future
         self.timestep = timestep
@@ -71,6 +72,7 @@ class QligFEP:
         self.water_thresh = water_thresh
         self.dr_force = dr_force  # dr for distance restraint
         self.wath_ligand_only = wath_ligand_only
+        self.no_slurm = no_slurm
         # Temporary until flag is here
         self.ABS = False  # True
         self.ABS_waters = []
@@ -807,7 +809,8 @@ class QligFEP:
     def write_submitfile(self, writedir):
         replacements = {}
         replacements["RUNFILE"] = "run" + self.cluster + ".sh"
-        submit_in = CONFIGS["ROOT_DIR"] + "/INPUTS/FEP_submit.sh"
+        submit_script = "/FEP_submit_noslurm.sh" if self.no_slurm else "/FEP_submit.sh"
+        submit_in = CONFIGS["ROOT_DIR"] + "/INPUTS" + submit_script
         submit_out = writedir + ("/FEP_submit.sh")
         with open(submit_in) as infile, open(submit_out, "w") as outfile:
             for line in infile:
@@ -822,9 +825,14 @@ class QligFEP:
 
     def write_runfile(self, writedir, file_list):
 
-        src = CONFIGS["INPUT_DIR"] + "/run.sh"
+        run_script = "/run_noslurm.sh" if self.no_slurm else "/run.sh"
+        src = CONFIGS["INPUT_DIR"] + run_script
         tgt = writedir + "/run" + self.cluster + ".sh"
         EQ_files = sorted(glob.glob(writedir + "/eq*.inp"))
+        # Without SLURM there is no $SLURM_NTASKS; the no-slurm run script exposes the
+        # number of MPI ranks through a plain `ntasks` variable defined at its top.
+        ntasks = "$ntasks" if self.no_slurm else "$SLURM_NTASKS"
+        mpi_launch = f"time mpirun -n {ntasks} --bind-to core $qdyn"
 
         if self.start == "1":
             MD_files = reversed(sorted(glob.glob(writedir + "/md*.inp")))
@@ -873,25 +881,22 @@ class QligFEP:
                 if line.strip() == "#EQ_FILES":
                     for line in EQ_files:
                         file_base = Path(line).stem
-                        outline = f"time mpirun -n $SLURM_NTASKS --bind-to core $qdyn {file_base}.inp > {file_base}.log\n"
+                        outline = f"{mpi_launch} {file_base}.inp > {file_base}.log\n"
                         outfile.write(outline)
 
                 if line.strip() == "#RUN_FILES":
                     if self.start == "1":
                         for line in MD_files:
                             file_base = line.split("/")[-1][:-4]
-                            outline = (
-                                f"time mpirun -n $SLURM_NTASKS --bind-to core $qdyn {file_base}.inp"
-                                f" > {file_base}.log\n"
-                            )
+                            outline = f"{mpi_launch} {file_base}.inp > {file_base}.log\n"
                         outfile.write(outline)
 
                     elif self.start == "0.5":
-                        outline = "time mpirun -n $SLURM_NTASKS --bind-to core $qdyn md_0500_0500.inp > md_0500_0500.log\n\n"
+                        outline = f"{mpi_launch} md_0500_0500.inp > md_0500_0500.log\n\n"
                         outfile.write(outline)
                         for i, md in enumerate(md_1):
-                            outline1 = f"time mpirun -n $SLURM_NTASKS --bind-to core $qdyn {md_1[i][:-4]}.inp > {md_1[i][:-4]}.log\n"
-                            outline2 = f"time mpirun -n $SLURM_NTASKS --bind-to core $qdyn {md_2[i][:-4]}.inp > {md_2[i][:-4]}.log\n"
+                            outline1 = f"{mpi_launch} {md_1[i][:-4]}.inp > {md_1[i][:-4]}.log\n"
+                            outline2 = f"{mpi_launch} {md_2[i][:-4]}.inp > {md_2[i][:-4]}.log\n"
 
                             outfile.write(outline1)
                             outfile.write(outline2)

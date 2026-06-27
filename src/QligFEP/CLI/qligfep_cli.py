@@ -41,6 +41,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "dr_force": args.dr_force,
             "random_state": args.random_state,
             "wath_ligand_only": args.wath_ligand_only,
+            "no_slurm": args.no_slurm,
         }
     else:
         param_dict = {}
@@ -61,6 +62,9 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         elif k == "water_thresh":
             command_str += f" --{k.replace('_', '-')} {v}"
         elif k == "wath_ligand_only":
+            if v:
+                command_str += f" --{k}".replace("_", "-")
+        elif k == "no_slurm":
             if v:
                 command_str += f" --{k}".replace("_", "-")
         elif k == "dr_force":
