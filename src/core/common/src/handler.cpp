@@ -54,7 +54,7 @@ void Handler::run(int num_iterations) {
     double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
     printf("MD loop: %.3f ms total, %.4f ms/step (%d steps)\n", ms, ms / num_iterations, num_iterations);
 
-    // calc_final_potential(num_iterations);
+    calc_final_potential(num_iterations);
 
     finish_outputs();
     shutdown_outputs();

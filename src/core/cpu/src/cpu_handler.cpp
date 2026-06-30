@@ -3,7 +3,6 @@
 #include <time.h>
 
 #include "context.h"
-#include "cpu_bonded_force.h"
 #include "cpu_bonded_force_v2.h"
 #include "cpu_leapfrog.h"
 #include "cpu_nonbonded_force.h"
@@ -63,8 +62,6 @@ void CpuHandler::shutdown() {
 }
 
 void CpuHandler::calc_internal_forces(int iteration) {
-    // calc_bonded_forces();
-
     bonded_force_->calc(ctx);
 
     calc_restraint_forces(iteration, ctx);
@@ -74,12 +71,6 @@ void CpuHandler::calc_internal_forces(int iteration) {
 }
 
 void CpuHandler::calc_nonbonded_forces() {
-    // calc_nonbonded_pp_forces();
-    // calc_nonbonded_qp_forces();
-    // calc_nonbonded_pw_forces();
-    // calc_nonbonded_qw_forces();
-    // calc_nonbonded_ww_forces();
-    // calc_nonbonded_qq_forces();
     nonbonded_force_->calc(ctx);
 }
 

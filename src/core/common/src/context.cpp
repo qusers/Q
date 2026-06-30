@@ -97,15 +97,6 @@ void preprocess_vdw_rule_parameters(Context& ctx) {
     }
 }
 
-void upload_preprocessed_topology(Context& ctx) {
-    if (!ctx.command_info.requested_gpu) return;
-
-    ctx.bonds->upload();
-    ctx.angles->upload();
-    ctx.torsions->upload();
-    ctx.impropers->upload();
-}
-
 void apply_parse_result(Context& ctx, const ParseResult& parsed) {
     validate_parse_result(parsed);
 
@@ -132,24 +123,24 @@ void apply_parse_result(Context& ctx, const ParseResult& parsed) {
     ctx.lambdas = buffer_from_vector(parsed.lambdas, run_gpu);
 
     ctx.n_bonds = static_cast<int>(parsed.bonds.size());
-    ctx.bonds = buffer_from_vector(parsed.bonds, run_gpu);
+    ctx.bonds = parsed.bonds; 
     ctx.n_cbonds = static_cast<int>(parsed.cbonds.size());
-    ctx.cbonds = buffer_from_vector(parsed.cbonds, run_gpu);
+    ctx.cbonds = parsed.cbonds; 
 
     ctx.n_angles = static_cast<int>(parsed.angles.size());
-    ctx.angles = buffer_from_vector(parsed.angles, run_gpu);
+    ctx.angles = parsed.angles;
     ctx.n_cangles = static_cast<int>(parsed.cangles.size());
-    ctx.cangles = buffer_from_vector(parsed.cangles, run_gpu);
+    ctx.cangles = parsed.cangles; 
 
     ctx.n_torsions = static_cast<int>(parsed.torsions.size());
-    ctx.torsions = buffer_from_vector(parsed.torsions, run_gpu);
+    ctx.torsions = parsed.torsions;
     ctx.n_ctorsions = static_cast<int>(parsed.ctorsions.size());
-    ctx.ctorsions = buffer_from_vector(parsed.ctorsions, run_gpu);
+    ctx.ctorsions = parsed.ctorsions;
 
     ctx.n_impropers = static_cast<int>(parsed.impropers.size());
-    ctx.impropers = buffer_from_vector(parsed.impropers, run_gpu);
+    ctx.impropers = parsed.impropers;
     ctx.n_cimpropers = static_cast<int>(parsed.cimpropers.size());
-    ctx.cimpropers = buffer_from_vector(parsed.cimpropers, run_gpu);
+    ctx.cimpropers = parsed.cimpropers; 
 
     ctx.n_restrspos = static_cast<int>(parsed.restrspos.size());
     ctx.restrspos = buffer_from_vector(parsed.restrspos, run_gpu);
@@ -286,7 +277,6 @@ void Context::preprocess_data(Shake &shake) {
     shake.init(*this);
     init_for_temperature(*this, shake);
     preprocess_vdw_rule_parameters(*this);
-    upload_preprocessed_topology(*this);
 
     init_unified_atom_parameters();
 

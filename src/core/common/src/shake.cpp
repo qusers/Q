@@ -19,8 +19,8 @@ void Shake::build_constraints(Context& ctx) {
     int n_bonds = ctx.n_bonds;
     int current_mol = 0;
 
-    const auto& bonds = ctx.bonds->cpu_data_p;
-    const auto& cbonds = ctx.cbonds->cpu_data_p;
+    const auto& bonds = ctx.bonds;
+    const auto& cbonds = ctx.cbonds;
     const auto& heavy = ctx.heavy->cpu_data_p;
 
     for (int bi = 0; bi < n_bonds; bi++) {
@@ -64,7 +64,7 @@ void Shake::exclude_constrained_bonded_terms(Context& ctx) {
     int excluded = 0;
     int solute_excluded = 0;
     std::vector<bond_t> new_bonds;
-    const auto& bonds = ctx.bonds->cpu_data_p;
+    const auto& bonds = ctx.bonds;
 
     for (int i = 0; i < ctx.n_bonds; i++) {
         if (S.find({bonds[i].ai, bonds[i].aj}) != S.end() || S.find({bonds[i].aj, bonds[i].ai}) != S.end()) {
@@ -74,14 +74,14 @@ void Shake::exclude_constrained_bonded_terms(Context& ctx) {
             new_bonds.emplace_back(bonds[i]);
         }
     }
-    ctx.bonds = HostDeviceBuffer<bond_t>::from_vector(new_bonds, ctx.command_info.requested_gpu);
+    ctx.bonds = new_bonds;
     ctx.n_bonds -= excluded;
     ctx.n_bonds_solute -= solute_excluded;
 
     excluded = 0;
     solute_excluded = 0;
     std::vector<angle_t> new_angles;
-    const auto& angles = ctx.angles->cpu_data_p;
+    const auto& angles = ctx.angles;
     for (int i = 0; i < ctx.n_angles; i++) {
         if (S.find({angles[i].ai, angles[i].ak}) != S.end() || S.find({angles[i].ak, angles[i].ai}) != S.end()) {
             excluded++;
@@ -91,7 +91,7 @@ void Shake::exclude_constrained_bonded_terms(Context& ctx) {
         }
     }
 
-    ctx.angles = HostDeviceBuffer<angle_t>::from_vector(new_angles, ctx.command_info.requested_gpu);
+    ctx.angles = new_angles;
     ctx.n_angles -= excluded;
     ctx.n_angles_solute -= solute_excluded;
 }

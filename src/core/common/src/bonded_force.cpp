@@ -17,8 +17,8 @@ void BondedForce::init(Context& ctx) {
 
 void BondedForce::build_bonds(Context& ctx) {
     const bool run_gpu = ctx.command_info.requested_gpu;
-    auto* bonds = ctx.bonds->cpu_data_p;
-    auto* cbonds = ctx.cbonds->cpu_data_p;
+    const auto& bonds = ctx.bonds;
+    const auto& cbonds = ctx.cbonds;
 
     std::vector<bond_idx_t> ids;
     std::vector<dparam2_t> params;
@@ -42,8 +42,8 @@ void BondedForce::build_bonds(Context& ctx) {
 }
 void BondedForce::build_angles(Context& ctx) {
     const bool run_gpu = ctx.command_info.requested_gpu;
-    auto* angles = ctx.angles->cpu_data_p;
-    auto* cangles = ctx.cangles->cpu_data_p;
+    const auto& angles = ctx.angles;
+    const auto& cangles = ctx.cangles;
 
     std::vector<angle_idx_t> ids;
     std::vector<dparam2_t> params;
@@ -66,8 +66,8 @@ void BondedForce::build_angles(Context& ctx) {
 }
 void BondedForce::build_torsions(Context& ctx) {
     const bool run_gpu = ctx.command_info.requested_gpu;
-    auto* torsions = ctx.torsions->cpu_data_p;
-    auto* ctorsions = ctx.ctorsions->cpu_data_p;
+    const auto& torsions = ctx.torsions;
+    const auto& ctorsions = ctx.ctorsions;
 
     std::vector<dihe_idx_t> ids;
     std::vector<torsion_param_t> params;
@@ -94,8 +94,8 @@ void BondedForce::build_torsions(Context& ctx) {
 }
 void BondedForce::build_impropers(Context& ctx) {
     const bool run_gpu = ctx.command_info.requested_gpu;
-    auto* impropers = ctx.impropers->cpu_data_p;
-    auto* cimpropers = ctx.cimpropers->cpu_data_p;
+    const auto& impropers = ctx.impropers;
+    const auto& cimpropers = ctx.cimpropers;
 
     std::vector<dihe_idx_t> ids;
     std::vector<dparam2_t> params;
