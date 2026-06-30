@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "base_output.h"
+#include "bonded_force.h"
 #include "context.h"
 #include "nonbonded_force.h"
 #include "shake.h"
@@ -12,6 +13,8 @@ class Handler {
    public:
     Shake& shake();
     NonbondedForce& nonbonded_force();
+    BondedForce& bonded_force();
+
     virtual ~Handler() = default;
     virtual void initialize();
 
@@ -48,6 +51,8 @@ class Handler {
 
     std::unique_ptr<Shake> shake_;
     std::unique_ptr<NonbondedForce> nonbonded_force_;
+    std::unique_ptr<BondedForce> bonded_force_;
     virtual std::unique_ptr<Shake> create_shake_backend() = 0;
     virtual std::unique_ptr<NonbondedForce> create_nonbonded_force_backend() = 0;
+    virtual std::unique_ptr<BondedForce> create_bonded_force_backend() = 0;
 };

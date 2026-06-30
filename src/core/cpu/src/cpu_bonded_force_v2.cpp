@@ -82,23 +82,21 @@ void CpuBondedForce::calc_angles(Context& ctx) {
 
         // Now we should get a vector that is perpendicular to aji inside the plane formed by atoms i-j-k
         coord_t perpendicular_v = get_perpendicular_vector(aji, ajk);
-        perpendicular_v = perpendicular_v / std::max(norm(perpendicular_v), k_singular_sin_epsilon);  // unit, guarded
-
-        // get_perpendicular_vector points toward k, but increasing theta moves i away from k, so flip it
-        perpendicular_v = perpendicular_v * -1;
-        // Change energy per angle to energy per distance.
-        // Distance = R * theta (arc length = radius * angle)
-        double dv = dv_per_angle / r_ji;
-        coord_t force1 = perpendicular_v * dv;
+        double sin_th = sin(th);
+        double f1 = sin_th;
+        if (std::abs(f1) < k_singular_sin_epsilon) {
+            f1 = std::copysign(k_singular_sin_epsilon, f1);
+        }
+        f1 = -1.0 / f1;
+        perpendicular_v = perpendicular_v * f1 / r_ji;
+        coord_t force1 = perpendicular_v * dv_per_angle;
         add_force(dvelocities[ai].x, force1.x);
         add_force(dvelocities[ai].y, force1.y);
         add_force(dvelocities[ai].z, force1.z);
 
         coord_t perpendicular_v2 = get_perpendicular_vector(ajk, aji);
-        perpendicular_v2 = perpendicular_v2 / std::max(norm(perpendicular_v2), k_singular_sin_epsilon);  // unit, guarded
-        perpendicular_v2 = perpendicular_v2 * -1;
-        dv = dv_per_angle / r_jk;
-        coord_t force2 = perpendicular_v2 * dv;
+        perpendicular_v2 = perpendicular_v2 * f1 / r_jk;
+        coord_t force2 = perpendicular_v2 * dv_per_angle;
         add_force(dvelocities[ak].x, force2.x);
         add_force(dvelocities[ak].y, force2.y);
         add_force(dvelocities[ak].z, force2.z);
@@ -112,6 +110,9 @@ void CpuBondedForce::calc_angles(Context& ctx) {
 }
 
 void CpuBondedForce::calc_torsions(Context& ctx) {
+    /*
+    Use SPFP in here.
+    */
     auto* ids = data_.torsion.ids->cpu_data_p;
     auto* params = data_.torsion.params->cpu_data_p;
     auto* eslot = data_.torsion.eslot->cpu_data_p;
@@ -122,23 +123,141 @@ void CpuBondedForce::calc_torsions(Context& ctx) {
 
     for (int i = 0; i < data_.torsion.n; i++) {
         const int ai = ids[i].i, aj = ids[i].j, ak = ids[i].k, al = ids[i].l;
-        real_t3 aji = coords[ai] - coords[aj];
-        real_t3 ajk = coords[ak] - coords[aj];
-        real_t3 akl = coords[al] - coords[ak];
+        real_t3 aji = real3_cast<real_t>(coords[ai] - coords[aj]);
+        real_t3 ajk = real3_cast<real_t>(coords[ak] - coords[aj]);
+        real_t3 akl = real3_cast<real_t>(coords[al] - coords[ak]);
 
         real_t3 n_ijk = cross(aji, ajk);  // The order is important
         real_t3 n_jkl = cross(akl, ajk);
 
-        n_ijk = n_ijk / norm(n_ijk);
-        n_jkl = n_jkl / norm(n_jkl);
-        real_t cos_phi = dot(n_ijk, n_jkl);
+        real_t norm_ijk = norm(n_ijk);
+        real_t norm_jkl = norm(n_jkl);
+        real_t cos_phi = dot(n_ijk, n_jkl) / (norm_ijk * norm_jkl);
         cos_phi = std::min(cos_phi, static_cast<real_t>(1.0));
         cos_phi = std::max(cos_phi, static_cast<real_t>(-1.0));
         real_t phi = acos(cos_phi);
 
-        const real_t k = params[i].k, gamma = params[i].d, paths = params[i].paths;
-        const int n = params[i].n;
+        //
+        if (dot(ajk, cross(n_ijk, n_jkl)) < 0) {
+            phi = -phi;
+        }
+
+        const real_t k = params[i].k, gamma = params[i].d, paths = params[i].paths, n = params[i].n;
 
         auto [v, dv_per_angle] = calc_torsion(k, n, phi, gamma, paths);
+        add_energy(e[eslot[i]], v);
+
+        real_t3 di = get_perpendicular_vector(n_ijk, n_jkl);
+
+        real_t sin_phi = sin(phi);
+
+        real_t f1 = sin_phi;
+        if (std::abs(f1) < k_singular_sin_epsilon) {
+            f1 = std::copysign(k_singular_sin_epsilon, f1);
+        }
+        f1 = static_cast<real_t>(-1) / f1;
+
+        di = di * f1 / norm_ijk;
+
+        real_t3 dl = get_perpendicular_vector(n_jkl, n_ijk);
+        dl = dl * f1 / norm_jkl;
+
+        real_t3 dpi = cross(ajk, di);
+        real_t3 dpl = cross(ajk, dl);
+        real_t3 dpj = cross((aji - ajk), di) + cross(akl, dl);
+        real_t3 dpk = cross(static_cast<real_t>(-1) * (ajk + akl), dl) - cross(aji, di);
+
+        add_force(dvelocities[ai].x, dv_per_angle * dpi.x);
+        add_force(dvelocities[ai].y, dv_per_angle * dpi.y);
+        add_force(dvelocities[ai].z, dv_per_angle * dpi.z);
+
+        add_force(dvelocities[al].x, dv_per_angle * dpl.x);
+        add_force(dvelocities[al].y, dv_per_angle * dpl.y);
+        add_force(dvelocities[al].z, dv_per_angle * dpl.z);
+
+        add_force(dvelocities[aj].x, dv_per_angle * dpj.x);
+        add_force(dvelocities[aj].y, dv_per_angle * dpj.y);
+        add_force(dvelocities[aj].z, dv_per_angle * dpj.z);
+
+        add_force(dvelocities[ak].x, dv_per_angle * dpk.x);
+        add_force(dvelocities[ak].y, dv_per_angle * dpk.y);
+        add_force(dvelocities[ak].z, dv_per_angle * dpk.z);
     }
+    ctx.E_bond_p.Utor = energy_from_accum(e[bonded_p_slot()]);
+    ctx.E_bond_w.Utor = energy_from_accum(e[bonded_w_slot()]);
+}
+
+void CpuBondedForce::calc_impropers(Context& ctx) {
+    /*
+    The deviative part is same as torsion.
+
+    */
+    auto* ids = data_.improper.ids->cpu_data_p;
+    auto* params = data_.improper.params->cpu_data_p;
+    auto* eslot = data_.improper.eslot->cpu_data_p;
+    auto* dvelocities = ctx.dvelocities->cpu_data_p;
+    auto* coords = ctx.coords->cpu_data_p;
+
+    energy_accum_t e[2] = {0, 0};
+
+    for (int i = 0; i < data_.improper.n; i++) {
+        const int ai = ids[i].i, aj = ids[i].j, ak = ids[i].k, al = ids[i].l;
+        coord_t aji = coords[ai] - coords[aj];
+        coord_t ajk = coords[ak] - coords[aj];
+        coord_t akl = coords[al] - coords[ak];
+
+        coord_t n_ijk = cross(aji, ajk);
+        coord_t n_jkl = cross(akl, ajk);
+
+        double norm_ijk = norm(n_ijk);
+        double norm_jkl = norm(n_jkl);
+        double cos_phi = dot(n_ijk, n_jkl) / (norm_ijk * norm_jkl);
+        cos_phi = std::min(cos_phi, 1.0);
+        cos_phi = std::max(cos_phi, -1.0);
+        double phi = acos(cos_phi);
+
+        if (dot(ajk, cross(n_ijk, n_jkl)) < 0) {
+            phi = -phi;
+        }
+
+        const double k = params[i].x, phi0 = params[i].y;
+        auto [v, dv_per_angle] = calc_improper2(k, phi0, phi);
+        add_energy(e[eslot[i]], v);
+
+        coord_t di = get_perpendicular_vector(n_ijk, n_jkl);
+        double sin_phi = sin(phi);
+        double f1 = sin_phi;
+        if (std::abs(f1) < k_singular_sin_epsilon) {
+            f1 = std::copysign(k_singular_sin_epsilon, f1);
+        }
+        f1 = -1.0 / f1;
+        di = di * f1 / norm_ijk;
+
+        coord_t dl = get_perpendicular_vector(n_jkl, n_ijk);
+        dl = dl * f1 / norm_jkl;
+
+        coord_t dpi = cross(ajk, di);
+        coord_t dpl = cross(ajk, dl);
+        coord_t dpj = cross((aji - ajk), di) + cross(akl, dl);
+        coord_t dpk = cross(-1 * (ajk + akl), dl) - cross(aji, di);
+
+        add_force(dvelocities[ai].x, dv_per_angle * dpi.x);
+        add_force(dvelocities[ai].y, dv_per_angle * dpi.y);
+        add_force(dvelocities[ai].z, dv_per_angle * dpi.z);
+
+        add_force(dvelocities[al].x, dv_per_angle * dpl.x);
+        add_force(dvelocities[al].y, dv_per_angle * dpl.y);
+        add_force(dvelocities[al].z, dv_per_angle * dpl.z);
+
+        add_force(dvelocities[aj].x, dv_per_angle * dpj.x);
+        add_force(dvelocities[aj].y, dv_per_angle * dpj.y);
+        add_force(dvelocities[aj].z, dv_per_angle * dpj.z);
+
+        add_force(dvelocities[ak].x, dv_per_angle * dpk.x);
+        add_force(dvelocities[ak].y, dv_per_angle * dpk.y);
+        add_force(dvelocities[ak].z, dv_per_angle * dpk.z);
+    }
+
+    ctx.E_bond_p.Uimp = energy_from_accum(e[bonded_p_slot()]);
+    ctx.E_bond_w.Uimp = energy_from_accum(e[bonded_w_slot()]);
 }

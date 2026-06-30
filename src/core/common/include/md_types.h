@@ -46,6 +46,20 @@ struct md_t {
     // [wall_restraints]
 };
 
+template <class T>
+struct Real3 {
+    T x, y, z;
+};
+
+template <class T>
+struct Real2 {
+    T x, y;
+};
+
+using coord_t = Real3<double>;
+using real_t3 = Real3<real_t>;
+using real_t2 = Real2<real_t>;
+
 struct bond_t {
     int ai;
     int aj;
@@ -326,17 +340,3 @@ struct energy_t {
     double Upot;
     double Utot;
 };
-
-template <class T>
-struct Real3 {
-    T x, y, z;
-};
-
-template <class T>
-struct Real2 {
-    T x, y;
-};
-
-using coord_t = Real3<double>;
-using real_t3 = Real3<real_t>;
-using real_t2 = Real2<real_t>;

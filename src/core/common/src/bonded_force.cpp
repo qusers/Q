@@ -1,4 +1,3 @@
-#pragma once
 #include "bonded_force.h"
 
 namespace {

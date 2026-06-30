@@ -51,6 +51,14 @@ GEO_HD inline Real3<T> get_perpendicular_vector(const Real3<T> a, const Real3<T>
     // Get the vector that is perpendicular to `a` inside the plane formed by vector a, b
     Real3<T> a_unit = a / norm(a);
     Real3<T> b_unit = b / norm(b);
-    double cos_th = dot(a_unit, b_unit);
+    T cos_th = dot(a_unit, b_unit);
     return b_unit - a_unit * cos_th;
+}
+
+template <class To, class From>
+GEO_HD inline Real3<To> real3_cast(const Real3<From>& a) {
+    return {
+        static_cast<To>(a.x),
+        static_cast<To>(a.y),
+        static_cast<To>(a.z)};
 }

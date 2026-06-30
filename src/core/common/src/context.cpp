@@ -73,7 +73,9 @@ void set_lj_matrix(Context& ctx, const ParseResult& parsed) {
     set_lj_pairs(ctx, parsed.ngbrs14_long, 1);
     set_lj_pairs(ctx, parsed.ngbrs23, 3);
     set_lj_pairs(ctx, parsed.ngbrs23_long, 3);
-    ctx.LJ_matrix->upload();
+    if (ctx.command_info.requested_gpu) {
+        ctx.LJ_matrix->upload();
+    }
 }
 
 void preprocess_vdw_rule_parameters(Context& ctx) {

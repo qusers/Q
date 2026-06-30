@@ -112,3 +112,10 @@ BF_HD inline real_t2 calc_torsion(const real_t k, const int n, const real_t phi,
     const real_t dv = -k * n * sin(arg) * paths;
     return {v, dv};
 }
+
+BF_HD inline dparam2_t calc_improper2(const double k, const double phi0, const double phi) {
+    const double arg = 2.0 * phi - phi0;
+    const double v = k * (1.0 + cos(arg));
+    const double dv = k * -sin(arg) * 2.0;
+    return {v, dv};
+}

@@ -1,9 +1,10 @@
 #include "handler.h"
 
+#include <chrono>
+
 #include "csv_out.h"
 #include "native_out.h"
 #include "std_output.h"
-#include <chrono>
 
 void Handler::run_iteration(int iteration) {
     reset_energies();
@@ -146,6 +147,10 @@ Shake& Handler::shake() {
 
 NonbondedForce& Handler::nonbonded_force() {
     return *nonbonded_force_;
+}
+
+BondedForce& Handler::bonded_force() {
+    return *bonded_force_;
 }
 
 void Handler::reset_energies() {

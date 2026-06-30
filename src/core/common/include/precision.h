@@ -26,3 +26,4 @@ constexpr double k_inv_energy_scale = static_cast<double>(1.0) / k_energy_scale;
 #endif
 
 constexpr double k_singular_sin_epsilon = 1.0e-12;
+

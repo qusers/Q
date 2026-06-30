@@ -4,6 +4,7 @@
 
 #include "context.h"
 #include "cpu_bonded_force.h"
+#include "cpu_bonded_force_v2.h"
 #include "cpu_leapfrog.h"
 #include "cpu_nonbonded_force.h"
 #include "cpu_polx_water_force.h"
@@ -52,15 +53,20 @@ void calc_q_bonded_forces(Context& ctx) {
 void CpuHandler::initialize_backend() {
     shake_ = create_shake_backend();
     nonbonded_force_ = create_nonbonded_force_backend();
+    bonded_force_ = create_bonded_force_backend();
     ctx.preprocess_data(*shake_);
     nonbonded_force_->init(ctx);
+    bonded_force_->init(ctx);
 }
 
 void CpuHandler::shutdown() {
 }
 
 void CpuHandler::calc_internal_forces(int iteration) {
-    calc_bonded_forces();
+    // calc_bonded_forces();
+
+    bonded_force_->calc(ctx);
+
     calc_restraint_forces(iteration, ctx);
 
     // calc_nonbonded_qq_forces();
@@ -91,4 +97,8 @@ std::unique_ptr<Shake> CpuHandler::create_shake_backend() {
 
 std::unique_ptr<NonbondedForce> CpuHandler::create_nonbonded_force_backend() {
     return std::make_unique<CpuNonbondedForce>();
+}
+
+std::unique_ptr<BondedForce> CpuHandler::create_bonded_force_backend() {
+    return std::make_unique<CpuBondedForce>();
 }
