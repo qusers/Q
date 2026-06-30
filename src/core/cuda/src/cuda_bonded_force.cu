@@ -1,3 +1,4 @@
+#include "constants.h"
 #include "cuda_bonded_force.cuh"
 #include "cuda_force_accumulation.cuh"
 #include "geometry.h"
@@ -34,8 +35,8 @@ __device__ void compute_angle(int i, const angle_idx_t* ids, const dparam2_t* pa
     double r_jk = norm(ajk);
 
     double cos_th = dot(aji, ajk) / (r_ji * r_jk);
-    cos_th = min(cos_th, 1.0);
-    cos_th = max(cos_th, -1.0);
+    cos_th = min(cos_th, pt999);
+    cos_th = max(cos_th, -pt999);
 
     const double th = acos(cos_th);
     auto [v, dv_per_angle] = calc_angle(k, th, th_eq);
@@ -45,9 +46,6 @@ __device__ void compute_angle(int i, const angle_idx_t* ids, const dparam2_t* pa
     coord_t perpendicular_v = get_perpendicular_vector(aji, ajk);
     double sin_th = sin(th);
     double f1 = sin_th;
-    if (abs(f1) < k_singular_sin_epsilon) {
-        f1 = copysign(k_singular_sin_epsilon, f1);
-    }
     f1 = -1.0 / f1;
     perpendicular_v = perpendicular_v * f1 / r_ji;
     coord_t force1 = perpendicular_v * dv_per_angle;
@@ -88,7 +86,8 @@ __device__ void compute_torsion(int i, const dihe_idx_t* ids, const torsion_para
         phi = -phi;
     }
 
-    const real_t k = params[i].k, gamma = params[i].d, paths = params[i].paths, n = params[i].n;
+    const real_t k = params[i].k, gamma = params[i].d, paths = params[i].paths;
+    const int n = static_cast<int>(params[i].n);
 
     auto [v, dv_per_angle] = calc_torsion(k, n, phi, gamma, paths);
     atomic_add_energy(&e_torsion[eslot[i]], v);
@@ -97,37 +96,54 @@ __device__ void compute_torsion(int i, const dihe_idx_t* ids, const torsion_para
 
     real_t sin_phi = sin(phi);
 
-    real_t f1 = sin_phi;
-    if (abs(f1) < k_singular_sin_epsilon) {
-        f1 = copysign(k_singular_sin_epsilon, f1);
-    }
-    f1 = static_cast<real_t>(-1) / f1;
+    real_t force_per_cos;
+    if (abs(sin_phi) < tm06) {
+        /*
+        dv_per_angle = dU / dphi = -k * n * sin(n * phi - gamma) * paths
+        force_per_cos = -dv_per_angle / sin_phi =  k * n * paths * sin(n * phi - gamma) / sin(phi)
+        when phi = 0 or pi. sin(phi) = 0
+        l'Hopital:
+        f(phi) -> 0, g(phi) -> 0
+        lim f(phi) / g(phi) = lim f'(phi) / g'(phi)
 
-    di = di * f1 / norm_ijk;
+        lim sin(n * phi - gamma) / sin(phi)
+        f(phi) = sin(n * phi - gamma)
+        g(phi) = sin(phi)
+        f'(phi) = n * cos(n * phi - gamma)
+        g'(phi) = cos(phi)
+        */
+
+        real_t cos_phi_limit = cos_phi < 0 ? -1 : 1;
+        force_per_cos = k * n * n * paths * cos(n * phi - gamma) / cos_phi_limit;
+    } else {
+        force_per_cos = -dv_per_angle / sin_phi;
+    }
+
+    di = di / norm_ijk;
 
     real_t3 dl = get_perpendicular_vector(n_jkl, n_ijk);
-    dl = dl * f1 / norm_jkl;
+    dl = dl / norm_jkl;
 
     real_t3 dpi = cross(ajk, di);
     real_t3 dpl = cross(ajk, dl);
     real_t3 dpj = cross((aji - ajk), di) + cross(akl, dl);
     real_t3 dpk = cross(static_cast<real_t>(-1) * (ajk + akl), dl) - cross(aji, di);
 
-    atomic_add_force(&dvelocities[ai].x, dv_per_angle * dpi.x);
-    atomic_add_force(&dvelocities[ai].y, dv_per_angle * dpi.y);
-    atomic_add_force(&dvelocities[ai].z, dv_per_angle * dpi.z);
+    atomic_add_force(&dvelocities[ai].x, force_per_cos * dpi.x);
+    atomic_add_force(&dvelocities[ai].y, force_per_cos * dpi.y);
+    atomic_add_force(&dvelocities[ai].z, force_per_cos * dpi.z);
 
-    atomic_add_force(&dvelocities[al].x, dv_per_angle * dpl.x);
-    atomic_add_force(&dvelocities[al].y, dv_per_angle * dpl.y);
-    atomic_add_force(&dvelocities[al].z, dv_per_angle * dpl.z);
+    atomic_add_force(&dvelocities[al].x, force_per_cos * dpl.x);
+    atomic_add_force(&dvelocities[al].y, force_per_cos * dpl.y);
+    atomic_add_force(&dvelocities[al].z, force_per_cos * dpl.z);
 
-    atomic_add_force(&dvelocities[aj].x, dv_per_angle * dpj.x);
-    atomic_add_force(&dvelocities[aj].y, dv_per_angle * dpj.y);
-    atomic_add_force(&dvelocities[aj].z, dv_per_angle * dpj.z);
+    atomic_add_force(&dvelocities[aj].x, force_per_cos * dpj.x);
+    atomic_add_force(&dvelocities[aj].y, force_per_cos * dpj.y);
+    atomic_add_force(&dvelocities[aj].z, force_per_cos * dpj.z);
 
-    atomic_add_force(&dvelocities[ak].x, dv_per_angle * dpk.x);
-    atomic_add_force(&dvelocities[ak].y, dv_per_angle * dpk.y);
-    atomic_add_force(&dvelocities[ak].z, dv_per_angle * dpk.z);
+    atomic_add_force(&dvelocities[ak].x, force_per_cos * dpk.x);
+    atomic_add_force(&dvelocities[ak].y, force_per_cos * dpk.y);
+    atomic_add_force(&dvelocities[ak].z, force_per_cos * dpk.z);
 }
 
 __device__ void compute_improper(int i, const dihe_idx_t* ids, const dparam2_t* params, const int* eslot, const coord_t* coords, dvel_t* dvelocities, energy_accum_t* e_improper) {
@@ -156,36 +172,48 @@ __device__ void compute_improper(int i, const dihe_idx_t* ids, const dparam2_t* 
 
     coord_t di = get_perpendicular_vector(n_ijk, n_jkl);
     double sin_phi = sin(phi);
-    double f1 = sin_phi;
-    if (abs(f1) < k_singular_sin_epsilon) {
-        f1 = copysign(k_singular_sin_epsilon, f1);
+    double force_per_cos;
+    if (abs(sin_phi) < tm06) {
+        /*
+        dv_per_angle = k * -2.0 * sin(2.0 * phi - phi0)
+        force_per_cos = -dv_per_angle / sin_phi = 2.0 * k * sin(2.0 * phi - phi0) / sin(phi)
+
+        f(phi) = 2.0 * k * sin(2.0 * phi - phi0)
+        f' = 2.0 * k * cos(2.0 * phi - phi0) * 2.0
+
+        g(phi) = sin(phi)
+        g' = cos(phi)
+        */
+        double cos_phi_limit = cos_phi < 0 ? -1 : 1;
+        force_per_cos = 4.0 * k * cos(2.0 * phi - phi0) / cos_phi_limit;
+    } else {
+        force_per_cos = -dv_per_angle / sin_phi;
     }
-    f1 = -1.0 / f1;
-    di = di * f1 / norm_ijk;
+    di = di / norm_ijk;
 
     coord_t dl = get_perpendicular_vector(n_jkl, n_ijk);
-    dl = dl * f1 / norm_jkl;
+    dl = dl / norm_jkl;
 
     coord_t dpi = cross(ajk, di);
     coord_t dpl = cross(ajk, dl);
     coord_t dpj = cross((aji - ajk), di) + cross(akl, dl);
     coord_t dpk = cross(-1 * (ajk + akl), dl) - cross(aji, di);
 
-    atomic_add_force(&dvelocities[ai].x, dv_per_angle * dpi.x);
-    atomic_add_force(&dvelocities[ai].y, dv_per_angle * dpi.y);
-    atomic_add_force(&dvelocities[ai].z, dv_per_angle * dpi.z);
+    atomic_add_force(&dvelocities[ai].x, force_per_cos * dpi.x);
+    atomic_add_force(&dvelocities[ai].y, force_per_cos * dpi.y);
+    atomic_add_force(&dvelocities[ai].z, force_per_cos * dpi.z);
 
-    atomic_add_force(&dvelocities[al].x, dv_per_angle * dpl.x);
-    atomic_add_force(&dvelocities[al].y, dv_per_angle * dpl.y);
-    atomic_add_force(&dvelocities[al].z, dv_per_angle * dpl.z);
+    atomic_add_force(&dvelocities[al].x, force_per_cos * dpl.x);
+    atomic_add_force(&dvelocities[al].y, force_per_cos * dpl.y);
+    atomic_add_force(&dvelocities[al].z, force_per_cos * dpl.z);
 
-    atomic_add_force(&dvelocities[aj].x, dv_per_angle * dpj.x);
-    atomic_add_force(&dvelocities[aj].y, dv_per_angle * dpj.y);
-    atomic_add_force(&dvelocities[aj].z, dv_per_angle * dpj.z);
+    atomic_add_force(&dvelocities[aj].x, force_per_cos * dpj.x);
+    atomic_add_force(&dvelocities[aj].y, force_per_cos * dpj.y);
+    atomic_add_force(&dvelocities[aj].z, force_per_cos * dpj.z);
 
-    atomic_add_force(&dvelocities[ak].x, dv_per_angle * dpk.x);
-    atomic_add_force(&dvelocities[ak].y, dv_per_angle * dpk.y);
-    atomic_add_force(&dvelocities[ak].z, dv_per_angle * dpk.z);
+    atomic_add_force(&dvelocities[ak].x, force_per_cos * dpk.x);
+    atomic_add_force(&dvelocities[ak].y, force_per_cos * dpk.y);
+    atomic_add_force(&dvelocities[ak].z, force_per_cos * dpk.z);
 }
 
 __global__ void bonded_kernel(

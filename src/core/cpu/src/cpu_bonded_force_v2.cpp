@@ -1,5 +1,6 @@
 #include "cpu_bonded_force_v2.h"
 
+#include "constants.h"
 #include "cpu_force_accumulation.h"
 #include "geometry.h"
 
@@ -73,8 +74,8 @@ void CpuBondedForce::calc_angles(Context& ctx) {
         double r_jk = norm(ajk);
 
         double cos_th = dot(aji, ajk) / (r_ji * r_jk);
-        cos_th = std::min(cos_th, 1.0);
-        cos_th = std::max(cos_th, -1.0);
+        cos_th = std::min(cos_th, pt999);
+        cos_th = std::max(cos_th, -pt999);
         const double th = acos(cos_th);
         auto [v, dv_per_angle] = calc_angle(k, th, th_eq);
 
@@ -84,9 +85,6 @@ void CpuBondedForce::calc_angles(Context& ctx) {
         coord_t perpendicular_v = get_perpendicular_vector(aji, ajk);
         double sin_th = sin(th);
         double f1 = sin_th;
-        if (std::abs(f1) < k_singular_sin_epsilon) {
-            f1 = std::copysign(k_singular_sin_epsilon, f1);
-        }
         f1 = -1.0 / f1;
         perpendicular_v = perpendicular_v * f1 / r_ji;
         coord_t force1 = perpendicular_v * dv_per_angle;
@@ -142,7 +140,8 @@ void CpuBondedForce::calc_torsions(Context& ctx) {
             phi = -phi;
         }
 
-        const real_t k = params[i].k, gamma = params[i].d, paths = params[i].paths, n = params[i].n;
+        const real_t k = params[i].k, gamma = params[i].d, paths = params[i].paths;
+        const int n = static_cast<int>(params[i].n);
 
         auto [v, dv_per_angle] = calc_torsion(k, n, phi, gamma, paths);
         add_energy(e[eslot[i]], v);
@@ -150,38 +149,40 @@ void CpuBondedForce::calc_torsions(Context& ctx) {
         real_t3 di = get_perpendicular_vector(n_ijk, n_jkl);
 
         real_t sin_phi = sin(phi);
+        real_t force_per_cos;
 
-        real_t f1 = sin_phi;
-        if (std::abs(f1) < k_singular_sin_epsilon) {
-            f1 = std::copysign(k_singular_sin_epsilon, f1);
+        if (std::abs(sin_phi) < tm06) {
+            real_t cos_phi_limit = cos_phi < 0 ? -1 : 1;
+            force_per_cos = k * n * n * paths * cos(n * phi - gamma) / cos_phi_limit;
+        } else {
+            force_per_cos = -dv_per_angle / sin_phi;
         }
-        f1 = static_cast<real_t>(-1) / f1;
 
-        di = di * f1 / norm_ijk;
+        di = di / norm_ijk;
 
         real_t3 dl = get_perpendicular_vector(n_jkl, n_ijk);
-        dl = dl * f1 / norm_jkl;
+        dl = dl / norm_jkl;
 
         real_t3 dpi = cross(ajk, di);
         real_t3 dpl = cross(ajk, dl);
         real_t3 dpj = cross((aji - ajk), di) + cross(akl, dl);
         real_t3 dpk = cross(static_cast<real_t>(-1) * (ajk + akl), dl) - cross(aji, di);
 
-        add_force(dvelocities[ai].x, dv_per_angle * dpi.x);
-        add_force(dvelocities[ai].y, dv_per_angle * dpi.y);
-        add_force(dvelocities[ai].z, dv_per_angle * dpi.z);
+        add_force(dvelocities[ai].x, force_per_cos * dpi.x);
+        add_force(dvelocities[ai].y, force_per_cos * dpi.y);
+        add_force(dvelocities[ai].z, force_per_cos * dpi.z);
 
-        add_force(dvelocities[al].x, dv_per_angle * dpl.x);
-        add_force(dvelocities[al].y, dv_per_angle * dpl.y);
-        add_force(dvelocities[al].z, dv_per_angle * dpl.z);
+        add_force(dvelocities[al].x, force_per_cos * dpl.x);
+        add_force(dvelocities[al].y, force_per_cos * dpl.y);
+        add_force(dvelocities[al].z, force_per_cos * dpl.z);
 
-        add_force(dvelocities[aj].x, dv_per_angle * dpj.x);
-        add_force(dvelocities[aj].y, dv_per_angle * dpj.y);
-        add_force(dvelocities[aj].z, dv_per_angle * dpj.z);
+        add_force(dvelocities[aj].x, force_per_cos * dpj.x);
+        add_force(dvelocities[aj].y, force_per_cos * dpj.y);
+        add_force(dvelocities[aj].z, force_per_cos * dpj.z);
 
-        add_force(dvelocities[ak].x, dv_per_angle * dpk.x);
-        add_force(dvelocities[ak].y, dv_per_angle * dpk.y);
-        add_force(dvelocities[ak].z, dv_per_angle * dpk.z);
+        add_force(dvelocities[ak].x, force_per_cos * dpk.x);
+        add_force(dvelocities[ak].y, force_per_cos * dpk.y);
+        add_force(dvelocities[ak].z, force_per_cos * dpk.z);
     }
     ctx.E_bond_p.Utor = energy_from_accum(e[bonded_p_slot()]);
     ctx.E_bond_w.Utor = energy_from_accum(e[bonded_w_slot()]);
@@ -226,36 +227,38 @@ void CpuBondedForce::calc_impropers(Context& ctx) {
 
         coord_t di = get_perpendicular_vector(n_ijk, n_jkl);
         double sin_phi = sin(phi);
-        double f1 = sin_phi;
-        if (std::abs(f1) < k_singular_sin_epsilon) {
-            f1 = std::copysign(k_singular_sin_epsilon, f1);
+        double force_per_cos;
+        if (std::abs(sin_phi) < tm06) {
+            double cos_phi_limit = cos_phi < 0 ? -1 : 1;
+            force_per_cos = 4.0 * k * cos(2.0 * phi - phi0) / cos_phi_limit;
+        } else {
+            force_per_cos = -dv_per_angle / sin_phi;
         }
-        f1 = -1.0 / f1;
-        di = di * f1 / norm_ijk;
+        di = di / norm_ijk;
 
         coord_t dl = get_perpendicular_vector(n_jkl, n_ijk);
-        dl = dl * f1 / norm_jkl;
+        dl = dl / norm_jkl;
 
         coord_t dpi = cross(ajk, di);
         coord_t dpl = cross(ajk, dl);
         coord_t dpj = cross((aji - ajk), di) + cross(akl, dl);
         coord_t dpk = cross(-1 * (ajk + akl), dl) - cross(aji, di);
 
-        add_force(dvelocities[ai].x, dv_per_angle * dpi.x);
-        add_force(dvelocities[ai].y, dv_per_angle * dpi.y);
-        add_force(dvelocities[ai].z, dv_per_angle * dpi.z);
+        add_force(dvelocities[ai].x, force_per_cos * dpi.x);
+        add_force(dvelocities[ai].y, force_per_cos * dpi.y);
+        add_force(dvelocities[ai].z, force_per_cos * dpi.z);
 
-        add_force(dvelocities[al].x, dv_per_angle * dpl.x);
-        add_force(dvelocities[al].y, dv_per_angle * dpl.y);
-        add_force(dvelocities[al].z, dv_per_angle * dpl.z);
+        add_force(dvelocities[al].x, force_per_cos * dpl.x);
+        add_force(dvelocities[al].y, force_per_cos * dpl.y);
+        add_force(dvelocities[al].z, force_per_cos * dpl.z);
 
-        add_force(dvelocities[aj].x, dv_per_angle * dpj.x);
-        add_force(dvelocities[aj].y, dv_per_angle * dpj.y);
-        add_force(dvelocities[aj].z, dv_per_angle * dpj.z);
+        add_force(dvelocities[aj].x, force_per_cos * dpj.x);
+        add_force(dvelocities[aj].y, force_per_cos * dpj.y);
+        add_force(dvelocities[aj].z, force_per_cos * dpj.z);
 
-        add_force(dvelocities[ak].x, dv_per_angle * dpk.x);
-        add_force(dvelocities[ak].y, dv_per_angle * dpk.y);
-        add_force(dvelocities[ak].z, dv_per_angle * dpk.z);
+        add_force(dvelocities[ak].x, force_per_cos * dpk.x);
+        add_force(dvelocities[ak].y, force_per_cos * dpk.y);
+        add_force(dvelocities[ak].z, force_per_cos * dpk.z);
     }
 
     ctx.E_bond_p.Uimp = energy_from_accum(e[bonded_p_slot()]);
