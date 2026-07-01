@@ -130,5 +130,5 @@ void calc_qtorsion_forces(int state) {
         add_force(dvelocities[al].z, dv * dpl.z);
     }
 
-    ctx.EQ_bond[state].Utor += energy_from_accum(torsion);
+    ctx.energy.host()[ctx.energy.eq_index(ENERGY_FIXED_COUNT, state, EQ_BOND_TOR)] += torsion;
 }

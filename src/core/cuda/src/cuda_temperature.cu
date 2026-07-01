@@ -83,7 +83,7 @@ void calc_temperature_host() {
     host.Tfree = Tfree_solute_value + Tfree_solvent_value;
     host.Temp = energy_from_accum(h_Temp_solute) + energy_from_accum(h_Temp_solvent);
 
-    host.E_total.Ukin = host.Temp;
+    host.energy.data().Ukin = host.Temp;
 
     host.Temp = 2.0 * host.Temp / Boltz / host.Ndegf;
     host.Tfree = 2.0 * host.Tfree / Boltz / host.Ndegfree;

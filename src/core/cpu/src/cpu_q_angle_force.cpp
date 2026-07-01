@@ -84,5 +84,5 @@ void calc_qangle_forces(int state) {
         add_force(dvelocities[aj].z, -dv * (di_z + dk_z));
     }
 
-    ctx.EQ_bond[state].Uangle += energy_from_accum(angle);
+    ctx.energy.host()[ctx.energy.eq_index(ENERGY_FIXED_COUNT, state, EQ_BOND_ANGLE)] += angle;
 }

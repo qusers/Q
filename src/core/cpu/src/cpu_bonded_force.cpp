@@ -18,7 +18,7 @@ void CpuBondedForce::calc_bonds(Context& ctx) {
     auto* dvelocities = ctx.dvelocities->cpu_data_p;
     auto* coords = ctx.coords->cpu_data_p;
 
-    energy_accum_t e[2] = {0, 0};  // [bonded_p_slot(), bonded_w_slot()]
+    auto* e = ctx.energy.host();
 
     for (int i = 0; i < data_.bond.n; i++) {
         const int ai = ids[i].i, aj = ids[i].j;
@@ -48,9 +48,6 @@ void CpuBondedForce::calc_bonds(Context& ctx) {
 
         add_energy(e[eslot[i]], v);
     }
-
-    ctx.E_bond_p.Ubond = energy_from_accum(e[bonded_p_slot()]);
-    ctx.E_bond_w.Ubond = energy_from_accum(e[bonded_w_slot()]);
 }
 
 void CpuBondedForce::calc_angles(Context& ctx) {
@@ -60,7 +57,7 @@ void CpuBondedForce::calc_angles(Context& ctx) {
     auto* dvelocities = ctx.dvelocities->cpu_data_p;
     auto* coords = ctx.coords->cpu_data_p;
 
-    energy_accum_t e[2] = {0, 0};  // [bonded_p_slot(), bonded_w_slot()]
+    auto* e = ctx.energy.host();
 
     for (int i = 0; i < data_.angle.n; i++) {
         const int ai = ids[i].i, aj = ids[i].j, ak = ids[i].k;
@@ -103,8 +100,6 @@ void CpuBondedForce::calc_angles(Context& ctx) {
         add_force(dvelocities[aj].y, -(force1.y + force2.y));
         add_force(dvelocities[aj].z, -(force1.z + force2.z));
     }
-    ctx.E_bond_p.Uangle = energy_from_accum(e[bonded_p_slot()]);
-    ctx.E_bond_w.Uangle = energy_from_accum(e[bonded_w_slot()]);
 }
 
 void CpuBondedForce::calc_torsions(Context& ctx) {
@@ -117,7 +112,7 @@ void CpuBondedForce::calc_torsions(Context& ctx) {
     auto* dvelocities = ctx.dvelocities->cpu_data_p;
     auto* coords = ctx.coords->cpu_data_p;
 
-    energy_accum_t e[2] = {0, 0};
+    auto* e = ctx.energy.host();
 
     for (int i = 0; i < data_.torsion.n; i++) {
         const int ai = ids[i].i, aj = ids[i].j, ak = ids[i].k, al = ids[i].l;
@@ -184,8 +179,6 @@ void CpuBondedForce::calc_torsions(Context& ctx) {
         add_force(dvelocities[ak].y, force_per_cos * dpk.y);
         add_force(dvelocities[ak].z, force_per_cos * dpk.z);
     }
-    ctx.E_bond_p.Utor = energy_from_accum(e[bonded_p_slot()]);
-    ctx.E_bond_w.Utor = energy_from_accum(e[bonded_w_slot()]);
 }
 
 void CpuBondedForce::calc_impropers(Context& ctx) {
@@ -199,8 +192,7 @@ void CpuBondedForce::calc_impropers(Context& ctx) {
     auto* dvelocities = ctx.dvelocities->cpu_data_p;
     auto* coords = ctx.coords->cpu_data_p;
 
-    energy_accum_t e[2] = {0, 0};
-
+    auto* e = ctx.energy.host();
     for (int i = 0; i < data_.improper.n; i++) {
         const int ai = ids[i].i, aj = ids[i].j, ak = ids[i].k, al = ids[i].l;
         coord_t aji = coords[ai] - coords[aj];
@@ -260,7 +252,4 @@ void CpuBondedForce::calc_impropers(Context& ctx) {
         add_force(dvelocities[ak].y, force_per_cos * dpk.y);
         add_force(dvelocities[ak].z, force_per_cos * dpk.z);
     }
-
-    ctx.E_bond_p.Uimp = energy_from_accum(e[bonded_p_slot()]);
-    ctx.E_bond_w.Uimp = energy_from_accum(e[bonded_w_slot()]);
 }

@@ -8,10 +8,10 @@
 
 void calc_pshell_forces() {
     auto& ctx = Context::instance();
-    auto &coords = ctx.coords->cpu_data_p;
-    auto &dvelocities = ctx.dvelocities->cpu_data_p;
-    auto *excluded = ctx.excluded->cpu_data_p;
-    auto *shell = ctx.shell->cpu_data_p;
+    auto& coords = ctx.coords->cpu_data_p;
+    auto& dvelocities = ctx.dvelocities->cpu_data_p;
+    auto* excluded = ctx.excluded->cpu_data_p;
+    auto* shell = ctx.shell->cpu_data_p;
 
     energy_accum_t ufix = 0;
     energy_accum_t ushell = 0;
@@ -36,10 +36,9 @@ void calc_pshell_forces() {
             add_force(dvelocities[i].x, k * dx);
             add_force(dvelocities[i].y, k * dy);
             add_force(dvelocities[i].z, k * dz);
-
         }
     }
-
-    ctx.E_restraint.Ufix += energy_from_accum(ufix);
-    ctx.E_restraint.Ushell += energy_from_accum(ushell);
+    auto* energy = ctx.energy.host();
+    energy[E_RESTR_FIX] = ufix;
+    energy[E_RESTR_SHELL] = ushell;
 }

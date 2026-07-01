@@ -280,18 +280,18 @@ void NativeOutput::write_energy_frame(Context& ctx) {
     if (ctx.md.energy <= 0 || !energy_stream_) return;
 
     auto* lambdas = ctx.lambdas ? ctx.lambdas->cpu_data_p : nullptr;
-    auto* EQ_restraint = ctx.EQ_restraint->cpu_data_p;
+    auto& energy = ctx.energy.data();
     for (int state = 0; state < ctx.n_lambdas; state++) {
         std::vector<char> record;
         append_int32(record, state + 1);
         append_double(record, lambdas[state]);
-        append_double(record, ctx.EQ_total[state].Utot);
-        append_bonded(record, ctx.EQ_bond[state]);
-        append_nonbonded(record, ctx.EQ_nonbond_qx[state]);
-        append_nonbonded(record, ctx.EQ_nonbond_qq[state]);
-        append_nonbonded(record, ctx.EQ_nonbond_qp[state]);
-        append_nonbonded(record, ctx.EQ_nonbond_qw[state]);
-        append_double(record, EQ_restraint[state].Urestr);
+        append_double(record, energy.eq_total[state]);
+        append_bonded(record, energy.eq_bond[state]);
+        append_nonbonded(record, energy.eq_qx[state]);
+        append_nonbonded(record, energy.eq_qq[state]);
+        append_nonbonded(record, energy.eq_qp[state]);
+        append_nonbonded(record, energy.eq_qw[state]);
+        append_double(record, energy.eq_restr[state]);
         write_record(energy_stream_, record.data(), static_cast<int32_t>(record.size()));
     }
 

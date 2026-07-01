@@ -223,49 +223,35 @@ __global__ void bonded_kernel(
     const dihe_idx_t* tor_ids, const torsion_param_t* tor_p, const int* tor_es,
     const dihe_idx_t* imp_ids, const dparam2_t* imp_p, const int* imp_es,
     const coord_t* coords, dvel_t* dvel,
-    energy_accum_t* e_bond, energy_accum_t* e_angle,
-    energy_accum_t* e_torsion, energy_accum_t* e_improper) {
+    energy_accum_t* e) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid < n_bond) {
-        compute_bond(tid, bond_ids, bond_p, bond_es, coords, dvel, e_bond);
+        compute_bond(tid, bond_ids, bond_p, bond_es, coords, dvel, e);
         return;
     }
     tid -= n_bond;
     if (tid < n_angle) {
-        compute_angle(tid, angl_ids, angl_p, angl_es, coords, dvel, e_angle);
+        compute_angle(tid, angl_ids, angl_p, angl_es, coords, dvel, e);
         return;
     }
     tid -= n_angle;
     if (tid < n_torsion) {
-        compute_torsion(tid, tor_ids, tor_p, tor_es, coords, dvel, e_torsion);
+        compute_torsion(tid, tor_ids, tor_p, tor_es, coords, dvel, e);
         return;
     }
     tid -= n_torsion;
     if (tid < n_improper) {
-        compute_improper(tid, imp_ids, imp_p, imp_es, coords, dvel, e_improper);
+        compute_improper(tid, imp_ids, imp_p, imp_es, coords, dvel, e);
         return;
     }
 }
 }  // namespace
 
 void CudaBondedForce::init_backend(Context& ctx) {
-    const int slots = bonded_region_slots();
-    e_bond_ = std::make_unique<HostDeviceBuffer<energy_accum_t>>(slots);
-    e_angle_ = std::make_unique<HostDeviceBuffer<energy_accum_t>>(slots);
-    e_torsion_ = std::make_unique<HostDeviceBuffer<energy_accum_t>>(slots);
-    e_improper_ = std::make_unique<HostDeviceBuffer<energy_accum_t>>(slots);
 }
 
 void CudaBondedForce::calc(Context& ctx) {
     if (!enabled()) return;
-
-    auto zero = [](auto& buf) {
-        cudaMemset(buf->gpu_data_p, 0, sizeof(energy_accum_t) * buf->length);
-    };
-    zero(e_bond_);
-    zero(e_angle_);
-    zero(e_torsion_);
-    zero(e_improper_);
 
     const int n_bond = data_.bond.n;
     const int n_angle = data_.angle.n;
@@ -282,20 +268,5 @@ void CudaBondedForce::calc(Context& ctx) {
         data_.angle.ids->gpu_data_p, data_.angle.params->gpu_data_p, data_.angle.eslot->gpu_data_p,
         data_.torsion.ids->gpu_data_p, data_.torsion.params->gpu_data_p, data_.torsion.eslot->gpu_data_p,
         data_.improper.ids->gpu_data_p, data_.improper.params->gpu_data_p, data_.improper.eslot->gpu_data_p,
-        ctx.coords->gpu_data_p, ctx.dvelocities->gpu_data_p,
-        e_bond_->gpu_data_p, e_angle_->gpu_data_p, e_torsion_->gpu_data_p, e_improper_->gpu_data_p);
-
-    e_bond_->download();
-    e_angle_->download();
-    e_torsion_->download();
-    e_improper_->download();
-
-    ctx.E_bond_p.Ubond = energy_from_accum(e_bond_->cpu_data_p[bonded_p_slot()]);
-    ctx.E_bond_w.Ubond = energy_from_accum(e_bond_->cpu_data_p[bonded_w_slot()]);
-    ctx.E_bond_p.Uangle = energy_from_accum(e_angle_->cpu_data_p[bonded_p_slot()]);
-    ctx.E_bond_w.Uangle = energy_from_accum(e_angle_->cpu_data_p[bonded_w_slot()]);
-    ctx.E_bond_p.Utor = energy_from_accum(e_torsion_->cpu_data_p[bonded_p_slot()]);
-    ctx.E_bond_w.Utor = energy_from_accum(e_torsion_->cpu_data_p[bonded_w_slot()]);
-    ctx.E_bond_p.Uimp = energy_from_accum(e_improper_->cpu_data_p[bonded_p_slot()]);
-    ctx.E_bond_w.Uimp = energy_from_accum(e_improper_->cpu_data_p[bonded_w_slot()]);
+        ctx.coords->gpu_data_p, ctx.dvelocities->gpu_data_p, ctx.energy.device());
 }

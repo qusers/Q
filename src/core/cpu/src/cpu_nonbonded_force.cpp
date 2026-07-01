@@ -4,10 +4,12 @@
 #include "cpu_force_accumulation.h"
 
 namespace {
-void accumulate_energy(Context& ctx, std::vector<energy_accum_t>& e_coul, std::vector<energy_accum_t>& e_vdw, real_t vel, real_t vvdw, uint8_t atom1_type, uint8_t atom2_type, int atom1_state, int atom2_state) {
-    int slot = nb_energy_slot(atom1_type, atom2_type, atom1_state, atom2_state, ctx.n_lambdas);
-    add_energy(e_coul[slot], vel);
-    add_energy(e_vdw[slot], vvdw);
+void accumulate_energy(Context& ctx, real_t vel, real_t vvdw,
+                       uint8_t atom1_type, uint8_t atom2_type, int atom1_state, int atom2_state) {
+    energy_accum_t* e = ctx.energy.host();
+    int coul = nb_coul_slot(atom1_type, atom2_type, atom1_state, atom2_state, ctx.n_lambdas);
+    add_energy(e[coul], vel);
+    add_energy(e[coul + 1], vvdw);  // vdw slot is adjacent (same invariant as GPU)
 }
 
 }  // namespace
@@ -17,9 +19,6 @@ void CpuNonbondedForce::calc(Context& ctx) {
     const auto& coords = ctx.coords->cpu_data_p;
     auto& dvelocities = ctx.dvelocities->cpu_data_p;
     int sz = data_.n_total;
-
-    int n_slots = nb_total_slots(ctx.n_lambdas);
-    std::vector<energy_accum_t> e_coul(n_slots), e_vdw(n_slots);
 
     for (int i = 0; i < sz; i++) {
         const int atom1 = atom_idxs[i];
@@ -70,22 +69,7 @@ void CpuNonbondedForce::calc(Context& ctx) {
             add_force(dvelocities[atom2].z, dva * dz);
 
             // Accumulate energy
-            accumulate_energy(ctx, e_coul, e_vdw, vel, vvdw, atom1_type, atom2_type, atom1_state, atom2_state);
+            accumulate_energy(ctx, vel, vvdw, atom1_type, atom2_type, atom1_state, atom2_state);
         }
-    }
-
-    auto store = [&](E_nonbonded_t& e, int slot) {
-        e.Ucoul = energy_from_accum(e_coul[slot]);
-        e.Uvdw = energy_from_accum(e_vdw[slot]);
-    };
-
-    store(ctx.E_nonbond_pp, NB_PP);
-    store(ctx.E_nonbond_pw, NB_PW);
-    store(ctx.E_nonbond_ww, NB_WW);
-
-    for (int s = 0; s < ctx.n_lambdas; s++) {
-        store(ctx.EQ_nonbond_qq[s], nb_qq_slot(s, ctx.n_lambdas));
-        store(ctx.EQ_nonbond_qp[s], nb_qp_slot(s, ctx.n_lambdas));
-        store(ctx.EQ_nonbond_qw[s], nb_qw_slot(s, ctx.n_lambdas));
     }
 }

@@ -8,9 +8,9 @@
 
 void calc_radix_w_forces() {
     auto& ctx = Context::instance();
-    auto &coords = ctx.coords->cpu_data_p;
-    auto &dvelocities = ctx.dvelocities->cpu_data_p;
-    auto *excluded = ctx.excluded->cpu_data_p;
+    auto& coords = ctx.coords->cpu_data_p;
+    auto& dvelocities = ctx.dvelocities->cpu_data_p;
+    auto* excluded = ctx.excluded->cpu_data_p;
 
     energy_accum_t uradx = 0;
 
@@ -49,6 +49,6 @@ void calc_radix_w_forces() {
         add_force(dvelocities[i].y, dv * dy);
         add_force(dvelocities[i].z, dv * dz);
     }
-
-    ctx.E_restraint.Uradx += energy_from_accum(uradx);
+    auto* energy = ctx.energy.host();
+    energy[E_RESTR_RADX] += uradx;
 }

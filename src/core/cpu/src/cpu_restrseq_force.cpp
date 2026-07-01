@@ -7,12 +7,12 @@
 
 void calc_restrseq_forces() {
     auto& ctx = Context::instance();
-    auto &atypes = ctx.atypes->cpu_data_p;
-    auto &catypes = ctx.catypes->cpu_data_p;
-    auto &coords = ctx.coords->cpu_data_p;
-    auto &dvelocities = ctx.dvelocities->cpu_data_p;
-    auto &restrseqs = ctx.restrseqs->cpu_data_p;
-    auto *heavy = ctx.heavy->cpu_data_p;
+    auto& atypes = ctx.atypes->cpu_data_p;
+    auto& catypes = ctx.catypes->cpu_data_p;
+    auto& coords = ctx.coords->cpu_data_p;
+    auto& dvelocities = ctx.dvelocities->cpu_data_p;
+    auto& restrseqs = ctx.restrseqs->cpu_data_p;
+    auto* heavy = ctx.heavy->cpu_data_p;
 
     energy_accum_t upres = 0;
 
@@ -100,5 +100,6 @@ void calc_restrseq_forces() {
         }
     }
 
-    ctx.E_restraint.Upres += energy_from_accum(upres);
+    auto* energy = ctx.energy.host();
+    energy[E_RESTR_PRES] += upres;
 }

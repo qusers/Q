@@ -5,15 +5,13 @@
 #include "cuda_force_accumulation.cuh"
 
 namespace CudaRestrwallForce {
-bool is_initialized = false;
-energy_accum_t* d_energies;
 }  // namespace CudaRestrwallForce
 
 __global__ void calc_restrwall_forces_kernel(
     restrwall_t* restrwalls,
     int n_restrwalls,
     coord_t* coords,
-    energy_accum_t* energies,
+    energy_accum_t* energy,
     dvel_t* dvelocities,
     bool* heavy, topo_t topo) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -41,7 +39,7 @@ __global__ void calc_restrwall_forces_kernel(
                 dv = -2.0 * restrwalls[ir].dMorse * restrwalls[ir].aMorse * (fexp - fexp * fexp) / b;
             }
 
-            atomic_add_energy(energies, ener);
+            atomic_add_energy(&energy[E_RESTR_PRES], ener);
 
             atomic_add_force(&dvelocities[i].x, dv * dx);
             atomic_add_force(&dvelocities[i].y, dv * dy);
@@ -58,7 +56,6 @@ void calc_restrwall_forces_host() {
     auto d_coords = host.coords->gpu_data_p;
     auto d_dvelocities = host.dvelocities->gpu_data_p;
     auto d_heavy = host.heavy->gpu_data_p;
-    cudaMemset(d_energies, 0, sizeof(energy_accum_t));
 
     int blockSize = 256;
     int numBlocks = (host.n_restrwalls + blockSize - 1) / blockSize;
@@ -66,28 +63,12 @@ void calc_restrwall_forces_host() {
         d_restrwalls,
         host.n_restrwalls,
         d_coords,
-        d_energies,
+        host.energy.device(),
         d_dvelocities, d_heavy, host.topo);
-    cudaDeviceSynchronize();
-    energy_accum_t h_energy;
-    cudaMemcpy(&h_energy, d_energies, sizeof(energy_accum_t), cudaMemcpyDeviceToHost);
-    const double energy = energy_from_accum(h_energy);
-    printf("Restrwall energy: %f\n", energy);
-    host.E_restraint.Upres += energy;
 }
 
 void init_restrwall_force_kernel_data() {
-    using namespace CudaRestrwallForce;
-    if (!is_initialized) {
-        check_cudaMalloc((void**)&d_energies, sizeof(energy_accum_t));
-        is_initialized = true;
-    }
 }
 
 void cleanup_restrwall_force() {
-    using namespace CudaRestrwallForce;
-    if (is_initialized) {
-        cudaFree(d_energies);
-        is_initialized = false;
-    }
 }
