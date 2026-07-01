@@ -1,4 +1,4 @@
-#include "cpu_bonded_force_v2.h"
+#include "cpu_bonded_force.h"
 
 #include "constants.h"
 #include "cpu_force_accumulation.h"

@@ -19,7 +19,7 @@
 #include "cuda/include/cuda_restrwall_force.cuh"
 #include "cuda/include/cuda_temperature.cuh"
 #include "cuda_bonded_force.cuh"
-#include "cuda_nonbonded_force_v2.cuh"
+#include "cuda_nonbonded_force.cuh"
 #include "cuda_shake.cuh"
 #include "cuda_shake_v2.cuh"
 #include "init.h"

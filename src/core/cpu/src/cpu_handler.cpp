@@ -3,7 +3,7 @@
 #include <time.h>
 
 #include "context.h"
-#include "cpu_bonded_force_v2.h"
+#include "cpu_bonded_force.h"
 #include "cpu_leapfrog.h"
 #include "cpu_nonbonded_force.h"
 #include "cpu_polx_water_force.h"
