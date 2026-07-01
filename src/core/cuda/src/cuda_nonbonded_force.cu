@@ -1,5 +1,5 @@
 #include "cuda_force_accumulation.cuh"
-#include "cuda_nonbonded_force_v2.cuh"
+#include "cuda_nonbonded_force.cuh"
 
 namespace {
 

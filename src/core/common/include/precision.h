@@ -2,24 +2,8 @@
 
 #ifdef QDYN_SPFP
 using real_t = float;
-
-struct real_t2 {
-    float x, y;
-};
-
-struct real_t3 {
-    float x, y, z;
-};
-
 #else
 using real_t = double;
-struct real_t2 {
-    double x, y;
-};
-
-struct real_t3 {
-    double x, y, z;
-};
 
 #endif
 
@@ -42,3 +26,4 @@ constexpr double k_inv_energy_scale = static_cast<double>(1.0) / k_energy_scale;
 #endif
 
 constexpr double k_singular_sin_epsilon = 1.0e-12;
+

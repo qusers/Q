@@ -46,11 +46,19 @@ struct md_t {
     // [wall_restraints]
 };
 
-struct coord_t {
-    double x;
-    double y;
-    double z;
+template <class T>
+struct Real3 {
+    T x, y, z;
 };
+
+template <class T>
+struct Real2 {
+    T x, y;
+};
+
+using coord_t = Real3<double>;
+using real_t3 = Real3<real_t>;
+using real_t2 = Real2<real_t>;
 
 struct bond_t {
     int ai;
@@ -169,17 +177,15 @@ struct charge_group_config_t {
     std::vector<charge_group_t> charge_groups;
 };
 
-
-
-struct q_angcouple_t { 
+struct q_angcouple_t {
     int acode;
     int bcode;
-}; // no use
+};  // no use
 
 struct q_cimproper_t {
     double k;
     double phi0;
-}; // no use
+};  // no use
 
 struct q_elscale_t {
     int qi;
@@ -191,12 +197,12 @@ struct q_exclpair_t {
     int ai;
     int aj;
     int excl;
-}; // no use
+};  // no use
 
 struct q_imprcouple_t {
     int icode;
     int bcode;
-}; // no use
+};  // no use
 
 struct q_improper_t {
     int ai;
@@ -204,7 +210,7 @@ struct q_improper_t {
     int ak;
     int al;
     int code;
-}; // no use
+};  // no use
 
 struct q_offdiag_t {
     int i;
@@ -213,27 +219,27 @@ struct q_offdiag_t {
     int ql;
     double Aij;
     double muij;
-}; // no use
+};  // no use
 
 struct q_shake_t {
     int ai;
     int aj;
     double dist;
-}; // no use
+};  // no use
 
 struct q_softcore_t {
     double s;
-}; // no use
+};  // no use
 
 struct q_softpair_t {
     int qi;
     int qj;
-}; // no use
+};  // no use
 
 struct q_torcouple_t {
     int tcode;
     int bcode;
-}; // no use
+};  // no use
 
 /* =============================================
  * == RESTRAINTS
@@ -290,8 +296,6 @@ struct shell_t {
  * == SHAKE
  * =============================================
  */
-
-
 
 /* =============================================
  * == CALCUTED IN THE INTEGRATION

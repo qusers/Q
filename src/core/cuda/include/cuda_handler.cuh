@@ -25,4 +25,5 @@ class CudaHandler : public Handler {
     void reset_energies() override;
     std::unique_ptr<Shake> create_shake_backend() override;
     std::unique_ptr<NonbondedForce> create_nonbonded_force_backend() override;
+    std::unique_ptr<BondedForce> create_bonded_force_backend() override;
 };

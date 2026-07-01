@@ -58,24 +58,24 @@ class Context {
     int n_angles;
     int n_angles_solute;
     int n_cangles;
-    std::unique_ptr<HostDeviceBuffer<angle_t>> angles;
-    std::unique_ptr<HostDeviceBuffer<cangle_t>> cangles;
+    std::vector<angle_t> angles;
+    std::vector<cangle_t> cangles;
 
     int n_bonds;
     int n_bonds_solute;
     int n_cbonds;
-    std::unique_ptr<HostDeviceBuffer<bond_t>> bonds;
-    std::unique_ptr<HostDeviceBuffer<cbond_t>> cbonds;
+    std::vector<bond_t> bonds;
+    std::vector<cbond_t> cbonds;
     int n_torsions;
     int n_torsions_solute;
     int n_ctorsions;
-    std::unique_ptr<HostDeviceBuffer<torsion_t>> torsions;
-    std::unique_ptr<HostDeviceBuffer<ctorsion_t>> ctorsions;
+    std::vector<torsion_t> torsions;
+    std::vector<ctorsion_t> ctorsions;
     int n_impropers;
     int n_impropers_solute;
     int n_cimpropers;
-    std::unique_ptr<HostDeviceBuffer<improper_t>> impropers;
-    std::unique_ptr<HostDeviceBuffer<cimproper_t>> cimpropers;
+    std::vector<improper_t> impropers;
+    std::vector<cimproper_t> cimpropers;
 
     int n_restrspos;
     std::unique_ptr<HostDeviceBuffer<restrpos_t>> restrspos;

@@ -1,3 +1,4 @@
+#pragma once
 // Boltzano's constant
 #define Boltz 0.001986
 
@@ -41,3 +42,6 @@
 // Thread block size
 #define BLOCK_SIZE 8
 
+
+constexpr double tm06 = 1.0e-6;
+constexpr double pt999 = 0.999;

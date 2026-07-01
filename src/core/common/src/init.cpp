@@ -26,9 +26,9 @@ void exclude_qatom_definitions() {
     excluded = 0;
     int solute_excluded = 0;
 
-    auto& bonds = ctx.bonds->cpu_data_p;
-    auto& angles = ctx.angles->cpu_data_p;
-    auto& torsions = ctx.torsions->cpu_data_p;
+    auto& bonds = ctx.bonds;
+    auto& angles = ctx.angles;
+    auto& torsions = ctx.torsions;
 
     if (ctx.n_qangles > 0) {
         for (int i = 0; i < ctx.n_angles; i++) {
@@ -103,8 +103,8 @@ void exclude_all_atoms_excluded_definitions() {
     auto* excluded = ctx.excluded->cpu_data_p;
     int n_excl;
     int ai = 0, bi = 0, ii = 0, ti = 0;
-    auto& impropers = ctx.impropers->cpu_data_p;
-    auto& torsions = ctx.torsions->cpu_data_p;
+    auto& impropers = ctx.impropers;
+    auto& torsions = ctx.torsions;
 
     // n_excl = 0;
     // for (int i = 0; i < n_angles; i++) {
@@ -234,8 +234,8 @@ void init_wshells() {
     auto& ctx = Context::instance();
     int n_inshell;
     double drs, router, ri, dr, Vshell, rshell;
-    auto& cbonds = ctx.cbonds->cpu_data_p;
-    auto& cangles = ctx.cangles->cpu_data_p;
+    auto& cbonds = ctx.cbonds;
+    auto& cangles = ctx.cangles;
     // Match Fortran wat_shells, which uses the last topology water bond/angle codes.
     cbond_t cbondw = cbonds[ctx.n_cbonds - 1];
     cangle_t canglew = cangles[ctx.n_cangles - 1];

@@ -52,15 +52,18 @@ void calc_q_bonded_forces(Context& ctx) {
 void CpuHandler::initialize_backend() {
     shake_ = create_shake_backend();
     nonbonded_force_ = create_nonbonded_force_backend();
+    bonded_force_ = create_bonded_force_backend();
     ctx.preprocess_data(*shake_);
     nonbonded_force_->init(ctx);
+    bonded_force_->init(ctx);
 }
 
 void CpuHandler::shutdown() {
 }
 
 void CpuHandler::calc_internal_forces(int iteration) {
-    calc_bonded_forces();
+    bonded_force_->calc(ctx);
+
     calc_restraint_forces(iteration, ctx);
 
     // calc_nonbonded_qq_forces();
@@ -68,12 +71,6 @@ void CpuHandler::calc_internal_forces(int iteration) {
 }
 
 void CpuHandler::calc_nonbonded_forces() {
-    // calc_nonbonded_pp_forces();
-    // calc_nonbonded_qp_forces();
-    // calc_nonbonded_pw_forces();
-    // calc_nonbonded_qw_forces();
-    // calc_nonbonded_ww_forces();
-    // calc_nonbonded_qq_forces();
     nonbonded_force_->calc(ctx);
 }
 
@@ -91,4 +88,8 @@ std::unique_ptr<Shake> CpuHandler::create_shake_backend() {
 
 std::unique_ptr<NonbondedForce> CpuHandler::create_nonbonded_force_backend() {
     return std::make_unique<CpuNonbondedForce>();
+}
+
+std::unique_ptr<BondedForce> CpuHandler::create_bonded_force_backend() {
+    return std::make_unique<CpuBondedForce>();
 }
