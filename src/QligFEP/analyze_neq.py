@@ -10,10 +10,15 @@ legs into the relative binding free energy ``ddG = dF_protein - dF_water``.
 Logs are read from the directory layout produced by ``run_neq.sh``: forward switches are
 written to ``neq_1_*.log`` and reverse switches to ``neq_0_*.log`` (the labels follow the
 original implementation: state 1 sweeps lambda 1->0, state 0 sweeps lambda 0->1).
+
+When a mapping JSON and experimental key are supplied, the per-edge ddG is compared to
+experiment (correlation metrics and the shared ddG plot). Switch-completion counts and the
+per-replicate slurm run status are reported as run diagnostics.
 """
 
 import argparse
 import glob
+import json
 import os
 from pathlib import Path
 from typing import Optional
@@ -21,25 +26,20 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 from scipy.optimize import brentq
-from scipy.stats import gaussian_kde
+from scipy.stats import gaussian_kde, kendalltau, pearsonr, spearmanr
 
+from .analysis_plotting import create_ddG_plot
 from .logger import logger, setup_logger
 
 # Boltzmann constant in the two energy units Q can report work in.
 KB_KCAL = 0.0019872041  # kcal/(mol*K)
 KB_KJ = 0.0083144621  # kJ/(mol*K)
 
-# The switching work written by qdyn_neq is accumulated from Q energy components, which are
-# in kcal/mol. The original analysis script treated the work as if it were already in units
-# of k_B*T (i.e. it used beta = 1.0), which is the default kept here ("kT") so that results
-# reproduce the original implementation.
-#
-# NOTE: this is very likely a units inconsistency: BAR needs beta*W to be dimensionless, so
-# with work in kcal/mol the correct factor is beta = 1/(k_B*T) (~1.68 mol/kcal at 300 K),
-# not 1.0. Because the BAR root is not a simple rescaling of the work, this changes the
-# resulting dF (and ddG). This must be revisited with the original author before relying on
-# absolute numbers; use ``--work-units kcal`` for the physically consistent computation.
-DEFAULT_WORK_UNITS = "kT"
+# The switching work written by qdyn_neq is accumulated from Q energy components in kcal/mol.
+# BAR needs beta*W to be dimensionless, so with work in kcal/mol the beta factor is
+# 1/(k_B*T) (~1.68 mol/kcal at 300 K); the "kcal" units apply this and are the default. The
+# "kT" units instead use beta = 1, treating the work as already in units of k_B*T. The BAR
+DEFAULT_WORK_UNITS = "kcal"
 
 
 def beta_from_units(work_units: str, temperature: float) -> float:
@@ -87,21 +87,47 @@ def read_final_work(log_path: str) -> Optional[float]:
     return None
 
 
+def collect_works_with_counts(folder: str) -> tuple[list[float], list[float], dict]:
+    """Collect switch works and report how many switches were attempted vs completed.
+
+    A switch log exists once qdyn_neq starts; ``read_final_work`` returns None when the switch
+    did not finish (SHAKE failure, time limit, or a high-energy nearly-decoupled-ligand crash).
+    The attempted-minus-completed difference is the count of failed switches, the instability
+    the manuscript attributes BAR work-overlap problems to. Forward switches are neq_1_*.log,
+    reverse are neq_0_*.log, gathered recursively below ``folder``.
+    """
+    forward, reverse = [], []
+    counts = {
+        "forward_attempted": 0,
+        "forward_completed": 0,
+        "reverse_attempted": 0,
+        "reverse_completed": 0,
+    }
+    for log_path in glob.glob(os.path.join(folder, "**", "neq_1_*.log"), recursive=True):
+        counts["forward_attempted"] += 1
+        work = read_final_work(log_path)
+        if work is not None:
+            forward.append(work)
+            counts["forward_completed"] += 1
+    for log_path in glob.glob(os.path.join(folder, "**", "neq_0_*.log"), recursive=True):
+        counts["reverse_attempted"] += 1
+        work = read_final_work(log_path)
+        if work is not None:
+            reverse.append(work)
+            counts["reverse_completed"] += 1
+    counts["failed"] = (counts["forward_attempted"] - counts["forward_completed"]) + (
+        counts["reverse_attempted"] - counts["reverse_completed"]
+    )
+    return forward, reverse, counts
+
+
 def collect_works(folder: str) -> tuple[list[float], list[float]]:
     """Collect the final work of every completed switch under a leg directory.
 
     Returns (forward_works, reverse_works) gathered from neq_1_*.log and neq_0_*.log found
     recursively below ``folder``.
     """
-    forward, reverse = [], []
-    for log_path in glob.glob(os.path.join(folder, "**", "neq_1_*.log"), recursive=True):
-        work = read_final_work(log_path)
-        if work is not None:
-            forward.append(work)
-    for log_path in glob.glob(os.path.join(folder, "**", "neq_0_*.log"), recursive=True):
-        work = read_final_work(log_path)
-        if work is not None:
-            reverse.append(work)
+    forward, reverse, _ = collect_works_with_counts(folder)
     return forward, reverse
 
 
@@ -187,8 +213,8 @@ def bar_with_uncertainty(work_forward, work_reverse, beta=1.0, n_bootstrap=1000,
 
 def analyze_leg(folder: str, beta: float, n_bootstrap: int, rng) -> dict:
     """Collect works for a single leg (protein or water) and run BAR."""
-    forward, reverse = collect_works(folder)
-    result = {"n_forward": len(forward), "n_reverse": len(reverse)}
+    forward, reverse, counts = collect_works_with_counts(folder)
+    result = {"n_forward": len(forward), "n_reverse": len(reverse), "n_failed": counts["failed"]}
     if not forward or not reverse:
         logger.warning(f"No complete forward/reverse work values found in {folder}")
         result.update({"dF": float("nan"), "dF_err": float("nan"), "overlap": float("nan")})
@@ -216,9 +242,84 @@ def analyze_edge(name, protein_dir, water_dir, beta, work_units, temperature, n_
         "overlap_water": water["overlap"],
         "n_forward_protein": protein["n_forward"],
         "n_reverse_protein": protein["n_reverse"],
+        "n_failed_protein": protein["n_failed"],
         "n_forward_water": water["n_forward"],
         "n_reverse_water": water["n_reverse"],
+        "n_failed_water": water["n_failed"],
     }
+
+
+# SLURM failure markers (shared with the equilibrium analyzer's status detection).
+RUN_FAILURE_KEYWORDS = {
+    "DUE TO TIME LIMIT": "TIMEOUT",
+    "CANCELLED": "CANCELLED",
+    "Out Of Memory": "OOM",
+    "abnormally": "CRASHED",
+}
+
+
+def parse_run_diagnostics(edge_dir: str) -> list[dict]:
+    """Read per-replicate run metadata from the NEQ slurm*.out files in an edge directory.
+
+    run_neq.sh writes ``#    Runtime:``, ``#    Random seed:`` and ``#    Replicate Number:``
+    footers. Status is SUCCESS unless a known SLURM failure marker is present. Returns one dict
+    per slurm*.out found (empty list if none), so missing logs degrade gracefully.
+    """
+    diagnostics = []
+    for slurm_out in sorted(glob.glob(os.path.join(edge_dir, "slurm*.out"))):
+        with open(slurm_out) as handle:
+            text = handle.read()
+        runtime, seed, replicate, status = "", None, None, "SUCCESS"
+        for line in text.splitlines():
+            if line.startswith("#    Runtime:"):
+                runtime = line.split()[-1].strip()
+            elif line.startswith("#    Random seed:"):
+                seed = line.split()[-1].strip()
+            elif line.startswith("#    Replicate Number:"):
+                replicate = line.split()[-1].strip()
+        for keyword, label in RUN_FAILURE_KEYWORDS.items():
+            if keyword in text:
+                status = label
+                break
+        diagnostics.append({"replicate": replicate, "runtime": runtime, "seed": seed, "status": status})
+    return diagnostics
+
+
+def load_experimental_ddG(mapping_json: str, exp_key: str) -> dict:
+    """Map each edge's ``FEP_<from>_<to>`` name to its experimental ddG from the mapping JSON
+    (the same file used by setupFEP / qlomap). Edges lacking ``exp_key`` are skipped.
+    """
+    with open(mapping_json) as handle:
+        mapping = json.load(handle)
+    experimental = {}
+    for edge in mapping.get("edges", []):
+        if edge.get(exp_key) is not None:
+            experimental[f"FEP_{edge['from']}_{edge['to']}"] = edge[exp_key]
+    return experimental
+
+
+def correlation_metrics(predicted, experimental) -> dict:
+    """Agreement metrics between predicted and experimental ddG, over their finite pairs.
+
+    R2 is the squared Pearson correlation (as reported for the manuscript comparison).
+    """
+    pred = np.asarray(predicted, dtype=float)
+    exp = np.asarray(experimental, dtype=float)
+    mask = ~(np.isnan(pred) | np.isnan(exp))
+    pred, exp = pred[mask], exp[mask]
+    n = int(pred.size)
+    metrics = {key: float("nan") for key in ("r2", "pearson", "spearman", "kendall", "rmse", "mae")}
+    metrics["n"] = n
+    if n >= 1:
+        metrics["rmse"] = float(np.sqrt(np.mean((pred - exp) ** 2)))
+        metrics["mae"] = float(np.mean(np.abs(pred - exp)))
+    if n >= 2:
+        pearson = float(pearsonr(pred, exp)[0])
+        metrics["pearson"] = pearson
+        metrics["r2"] = pearson**2
+        metrics["spearman"] = float(spearmanr(pred, exp)[0])
+        metrics["kendall"] = float(kendalltau(pred, exp)[0])
+    return metrics
 
 
 def find_edges(protein_root: Path, water_root: Path):
@@ -282,9 +383,9 @@ def parse_arguments() -> argparse.Namespace:
         default=DEFAULT_WORK_UNITS,
         choices=["kT", "kcal", "kJ"],
         help=(
-            "Units the switching work is assumed to be in for BAR. Defaults to `kT` (beta=1, "
-            "reproduces the original implementation). Use `kcal` for the physically consistent "
-            "computation (beta=1/kT). See the units note in this module."
+            "Units the switching work is assumed to be in for BAR. Defaults to `kcal` "
+            "(beta=1/kT, the physically consistent factor). `kT` uses beta=1, treating the "
+            "work as already in units of k_B*T."
         ),
     )
     parser.add_argument(
@@ -309,6 +410,37 @@ def parse_arguments() -> argparse.Namespace:
         type=int,
         default=None,
         help="Random state for the reproducible bootstrap. Defaults to None.",
+    )
+    parser.add_argument(
+        "-j",
+        "--json-file",
+        dest="json_file",
+        default=None,
+        help=(
+            "Mapping JSON used to run setupFEP (qlomap output). When given with --experimental-key, "
+            "the per-edge ddG is compared to experiment (correlation metrics + plot)."
+        ),
+    )
+    parser.add_argument(
+        "-exp",
+        "--experimental-key",
+        dest="experimental_key",
+        default=None,
+        help="Key in the mapping JSON edges holding the experimental ddG (e.g. `ddg_value`).",
+    )
+    parser.add_argument(
+        "-t",
+        "--target",
+        dest="target",
+        default="neq",
+        help="Target name used in the plot title and output file names. Defaults to `neq`.",
+    )
+    parser.add_argument(
+        "-norun",
+        "--no-run-data",
+        dest="no_run_data",
+        action="store_true",
+        help="Skip parsing slurm*.out run diagnostics (use when those files are absent).",
     )
     parser.add_argument(
         "-log",
@@ -340,9 +472,66 @@ def main(args: argparse.Namespace) -> pd.DataFrame:
         for name, pdir, wdir in edges
     ]
     df = pd.DataFrame(rows)
+
+    if args.json_file and args.experimental_key:
+        df = compare_to_experiment(df, args.json_file, args.experimental_key, args.target)
+
     df.to_csv(args.output, index=False)
     logger.info(f"Wrote {len(df)} edge(s) to {args.output}\n{df.to_string(index=False)}")
+
+    if not args.no_run_data:
+        write_run_diagnostics(edges, args.output)
     return df
+
+
+def compare_to_experiment(df: pd.DataFrame, mapping_json: str, exp_key: str, target: str) -> pd.DataFrame:
+    """Attach experimental ddG to the results, log correlation metrics, and save the ddG plot.
+
+    Returns the results frame with a ``ddG_exp`` column added.
+    """
+    experimental = load_experimental_ddG(mapping_json, exp_key)
+    df = df.assign(ddG_exp=df["edge"].map(experimental))
+    matched = df.dropna(subset=["ddG_exp"])
+    if matched.empty:
+        logger.warning("No analyzed edges matched the experimental mapping; skipping comparison.")
+        return df
+
+    metrics = correlation_metrics(matched["ddG_kcal"], matched["ddG_exp"])
+    logger.info(
+        f"Experimental comparison (n={metrics['n']}): R2={metrics['r2']:.3f} "
+        f"Pearson={metrics['pearson']:.3f} Spearman={metrics['spearman']:.3f} "
+        f"Kendall={metrics['kendall']:.3f} RMSE={metrics['rmse']:.3f} MAE={metrics['mae']:.3f}"
+    )
+
+    plot_df = pd.DataFrame(
+        {
+            "fep_name": matched["edge"].to_numpy(),
+            "Q_ddG_avg": matched["ddG_kcal"].to_numpy(),
+            "Q_ddG_sem": matched["ddG_err_kcal"].to_numpy(),
+            "ddg_value": matched["ddG_exp"].to_numpy(),
+        }
+    )
+    fig, _ = create_ddG_plot(plot_df, target_name=target)
+    plot_path = f"{target}_neq_ddG_plot.png"
+    fig.savefig(plot_path, dpi=300, bbox_inches="tight")
+    logger.info(f"Saved ddG plot to {plot_path}")
+    return df
+
+
+def write_run_diagnostics(edges, output: str) -> None:
+    """Collect per-replicate slurm run diagnostics for every edge/leg and write them next to
+    the results CSV (``<output>_run_data.csv``). No-op if no slurm*.out files are found.
+    """
+    diag_rows = []
+    for name, protein_dir, water_dir in edges:
+        for system, leg_dir in (("protein", protein_dir), ("water", water_dir)):
+            for record in parse_run_diagnostics(str(leg_dir)):
+                diag_rows.append({"edge": name, "system": system, **record})
+    if not diag_rows:
+        return
+    diag_path = output[:-4] + "_run_data.csv" if output.endswith(".csv") else output + "_run_data.csv"
+    pd.DataFrame(diag_rows).to_csv(diag_path, index=False)
+    logger.info(f"Wrote run diagnostics for {len(diag_rows)} replicate(s) to {diag_path}")
 
 
 def main_exe():
