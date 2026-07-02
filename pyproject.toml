@@ -45,7 +45,7 @@ dependencies = [
 test = ["pytest"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["test"]
 filterwarnings = [
     # third-party (gufe/pydantic) deprecation surfaced when importing the package
     "ignore:.*pydantic.config.Extra.*:DeprecationWarning",
