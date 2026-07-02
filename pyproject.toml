@@ -37,7 +37,6 @@ dependencies = [
     "rdkit",
     "scikit-learn",
     "loguru",
-    "cinnabar",
     "MolClusterkit @ git+https://github.com/David-Araripe/MolClusterkit.git#master",
 ]
 
@@ -49,8 +48,6 @@ testpaths = ["test"]
 filterwarnings = [
     # third-party (gufe/pydantic) deprecation surfaced when importing the package
     "ignore:.*pydantic.config.Extra.*:DeprecationWarning",
-    # third-party (cinnabar) bootstrap statistics on NumPy >= 1.25
-    "ignore:Conversion of an array with ndim > 0 to a scalar is deprecated:DeprecationWarning",
 ]
 
 [tool.setuptools]

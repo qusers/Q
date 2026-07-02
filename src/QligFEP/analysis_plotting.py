@@ -11,9 +11,9 @@ import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from cinnabar import stats as cstats
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
+from scipy.stats import kendalltau
 
 from .logger import logger
 
@@ -35,6 +35,46 @@ def prepare_df(json_dict, experimental_data: bool = True):
         fep_name=lambda x: "FEP_" + x["from"] + "_" + x["to"],
     )
     return df
+
+
+def bootstrap_statistic(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    statistic: str,
+    ci: float = 0.95,
+    nbootstrap: int = 1000,
+    rng=None,
+) -> dict:
+    """Point estimate and bootstrap confidence interval for a comparison statistic.
+
+    Resamples the paired ``(y_true, y_pred)`` values with replacement ``nbootstrap``
+    times and reports the statistic computed on the full data (``mle``) together with
+    the ``ci`` confidence-interval bounds (``low``/``high``). Supported statistics are
+    "RMSE", "MUE" and "KTAU".
+    """
+    if rng is None:
+        rng = np.random.default_rng(12345)
+    compute = {
+        "RMSE": lambda a, b: float(np.sqrt(np.mean((a - b) ** 2))),
+        "MUE": lambda a, b: float(np.mean(np.abs(a - b))),
+        "KTAU": lambda a, b: float(kendalltau(a, b)[0]),
+    }[statistic]
+
+    n = len(y_true)
+    s_n = np.empty(nbootstrap)
+    for replicate in range(nbootstrap):
+        idx = rng.choice(n, size=n, replace=True)
+        s_n[replicate] = compute(y_true[idx], y_pred[idx])
+    s_n.sort()
+
+    low_frac = (1.0 - ci) / 2.0
+    low_idx = int(np.floor(nbootstrap * low_frac))
+    high_idx = min(int(np.ceil(nbootstrap * (1.0 - low_frac))), nbootstrap - 1)
+    return {
+        "mle": compute(y_true, y_pred),
+        "low": float(s_n[low_idx]),
+        "high": float(s_n[high_idx]),
+    }
 
 
 def create_ddG_plot(
@@ -83,7 +123,7 @@ def create_ddG_plot(
 
     ## CALCULATE STATISTICS
     def result_to_latex(res, latexify_each=False):  # TODO: move this out of this method?
-        """Round cinnabar's output to one decimal case and return a LaTeX string."""
+        """Round the statistic's output to one decimal case and return a LaTeX string."""
         mle = round(res["mle"], 2)
         low = round(res["low"], 2)
         high = round(res["high"], 2)
@@ -96,8 +136,8 @@ def create_ddG_plot(
     statistics = ["RMSE", "MUE", "KTAU"]
     stats_dict = {}
     for stat in statistics:
-        cinnabar_stats = cstats.bootstrap_statistic(avg_values, exp_values, statistic=stat)
-        stats_dict[stat] = result_to_latex(cinnabar_stats)
+        boot = bootstrap_statistic(avg_values, exp_values, statistic=stat)
+        stats_dict[stat] = result_to_latex(boot)
 
     if xylims is not None:
         assert len(xylims) == 2, "xylims must be a tuple with 2 elements."
@@ -105,7 +145,7 @@ def create_ddG_plot(
         min_val = xylims[0]
         max_val = xylims[1]
     else:
-        all_values = avg_values + exp_values
+        all_values = np.concatenate([avg_values, exp_values])
         min_val = min(all_values) - margin
         max_val = max(all_values) + margin
 
@@ -177,8 +217,8 @@ def create_ddG_plot(
         r"$\Delta\Delta \text{G}_{\text{BAR}}$ ($\mathrm{N}="
         f"{len(exp_values)}$)"
     )
-    plt.xlabel("$\Delta\Delta G_{exp} (kcal/mol)$")  # noqa: W605
-    plt.ylabel("$\Delta\Delta G_{calc} (kcal/mol)$")  # noqa: W605
+    plt.xlabel(r"$\Delta\Delta G_{exp} (kcal/mol)$")
+    plt.ylabel(r"$\Delta\Delta G_{calc} (kcal/mol)$")
     plt.xlim(min_val, max_val)
     plt.ylim(min_val, max_val)
     ax.set_aspect("equal", adjustable="box")
@@ -237,10 +277,10 @@ def create_ddG_plot(
         if isinstance(output_path, str):
             output_path = Path(output_path)
         assert isinstance(output_path, Path), "output_path must be a string or a Path object."
-        if output_path.isdir():
+        if output_path.is_dir():
             output_path = output_path / f"{target_name}_ddG_plot.png"
             logger.info(f"Using default name to save the plot at {output_path}")
-        elif output_path.exists():  # Fixed typo: exits() -> exists()
+        elif output_path.exists():
             logger.warning(f"File {output_path} already exists. Overwriting...")
         fig.savefig(output_path, dpi=300, bbox_inches="tight")
     return fig, ax

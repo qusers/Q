@@ -184,7 +184,7 @@ def work_overlap(work_forward, work_reverse) -> float:
     kde_r = gaussian_kde(wr_neg)
     grid = np.linspace(min(wf.min(), wr_neg.min()) - 1, max(wf.max(), wr_neg.max()) + 1, 2000)
     # np.trapz was renamed to np.trapezoid in NumPy 2.0; fall back on older NumPy.
-    trapezoid = getattr(np, "trapezoid", np.trapz)  # noqa: NPY201
+    trapezoid = np.trapezoid if hasattr(np, "trapezoid") else np.trapz  # noqa: NPY201
     return float(trapezoid(np.minimum(kde_f(grid), kde_r(grid)), grid))
 
 
