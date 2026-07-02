@@ -87,15 +87,6 @@ void CudaHandler::calc_internal_forces(int iteration) {
 }
 
 void CudaHandler::calc_nonbonded_forces() {
-    // auto& host = Context::instance();
-    // update_nonbonded_coords_host();
-    // calc_nonbonded_qp_forces_host_v2();
-    // calc_nonbonded_pp_forces_host_v2();
-    // calc_nonbonded_ww_forces_host_v2();
-    // calc_nonbonded_pw_forces_host_v2();
-    // calc_nonbonded_qw_forces_host_v2();
-    // calc_nonbonded_qq_forces_host();
-    // calc_nonbonded_14_forces_host();
     nonbonded_force_->calc(ctx);
 }
 

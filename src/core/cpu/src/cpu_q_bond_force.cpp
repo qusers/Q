@@ -43,5 +43,5 @@ void calc_qbond_forces(int state) {
         add_force(dvelocities[aj].z, dv * dz);
     }
 
-    ctx.EQ_bond[state].Ubond += energy_from_accum(bond);
+    ctx.energy.host()[ctx.energy.eq_index(ENERGY_FIXED_COUNT, state, EQ_BOND_BOND)] += bond;
 }

@@ -123,14 +123,14 @@ void apply_parse_result(Context& ctx, const ParseResult& parsed) {
     ctx.lambdas = buffer_from_vector(parsed.lambdas, run_gpu);
 
     ctx.n_bonds = static_cast<int>(parsed.bonds.size());
-    ctx.bonds = parsed.bonds; 
+    ctx.bonds = parsed.bonds;
     ctx.n_cbonds = static_cast<int>(parsed.cbonds.size());
-    ctx.cbonds = parsed.cbonds; 
+    ctx.cbonds = parsed.cbonds;
 
     ctx.n_angles = static_cast<int>(parsed.angles.size());
     ctx.angles = parsed.angles;
     ctx.n_cangles = static_cast<int>(parsed.cangles.size());
-    ctx.cangles = parsed.cangles; 
+    ctx.cangles = parsed.cangles;
 
     ctx.n_torsions = static_cast<int>(parsed.torsions.size());
     ctx.torsions = parsed.torsions;
@@ -140,7 +140,7 @@ void apply_parse_result(Context& ctx, const ParseResult& parsed) {
     ctx.n_impropers = static_cast<int>(parsed.impropers.size());
     ctx.impropers = parsed.impropers;
     ctx.n_cimpropers = static_cast<int>(parsed.cimpropers.size());
-    ctx.cimpropers = parsed.cimpropers; 
+    ctx.cimpropers = parsed.cimpropers;
 
     ctx.n_restrspos = static_cast<int>(parsed.restrspos.size());
     ctx.restrspos = buffer_from_vector(parsed.restrspos, run_gpu);
@@ -242,8 +242,7 @@ Context& Context::instance() {
 }
 
 void Context::cuda_reset_energies() {
-    cudaMemset(dvelocities->gpu_data_p, 0, sizeof(dvel_t) * n_atoms);
-    cudaMemset(EQ_restraint->gpu_data_p, 0, sizeof(E_restraint_t) * n_lambdas);
+    dvelocities->zero();
 }
 
 void Context::init_data_from_files() {
@@ -261,7 +260,7 @@ void Context::init_data_from_files() {
     }
 }
 
-void Context::preprocess_data(Shake &shake) {
+void Context::preprocess_data(Shake& shake) {
     dt = time_unit * md.stepsize;
     tau_T = time_unit * md.bath_coupling;
     n_waters = (n_atoms - n_atoms_solute) / 3;
@@ -295,13 +294,7 @@ void Context::preprocess_data(Shake &shake) {
     }
 
     // Init energy
-    EQ_total.assign(n_lambdas, {});
-    EQ_bond.assign(n_lambdas, {});
-    EQ_nonbond_qq.assign(n_lambdas, {});
-    EQ_nonbond_qp.assign(n_lambdas, {});
-    EQ_nonbond_qw.assign(n_lambdas, {});
-    EQ_nonbond_qx.assign(n_lambdas, {});
-    EQ_restraint = std::make_unique<HostDeviceBuffer<E_restraint_t>>(n_lambdas, true, command_info.requested_gpu);
+    energy.init(n_lambdas);
 
     if (fresh_start && md.random_seed > 0) {
         shake.initial_shake(*this);
@@ -312,7 +305,6 @@ void Context::preprocess_data(Shake &shake) {
             xcoords->upload();
         }
     }
-
 }
 
 void Context::init() {

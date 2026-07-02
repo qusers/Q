@@ -205,5 +205,6 @@ void calc_polx_w_forces(int iteration) {
         wshells[is].avn_inshell += wshells[is].n_inshell;
     }
 
-    ctx.E_restraint.Upolx += energy_from_accum(upolx);
+    auto* energy = ctx.energy.host();
+    energy[E_RESTR_POLX] = upolx;
 }

@@ -6,8 +6,6 @@
 #include "cuda/include/cuda_utility.cuh"
 #include "cuda_force_accumulation.cuh"
 namespace CudaRadixWaterForce {
-bool is_initialized = false;
-energy_accum_t* d_energy;
 }  // namespace CudaRadixWaterForce
 
 __global__ void calc_radix_water_forces_kernel(
@@ -48,7 +46,7 @@ __global__ void calc_radix_water_forces_kernel(
     }
 
     // Update energy and forces
-    atomic_add_energy(energy, ener);
+    atomic_add_energy(&energy[E_RESTR_RADX], ener);
     atomic_add_force(&dvelocities[i].x, dv * dx);
     atomic_add_force(&dvelocities[i].y, dv * dy);
     atomic_add_force(&dvelocities[i].z, dv * dz);
@@ -70,8 +68,6 @@ void calc_radix_water_forces_host() {
 
     auto d_coords = host.coords->gpu_data_p;
     auto d_dvelocities = host.dvelocities->gpu_data_p;
-    check_cuda(cudaMemset(d_energy, 0, sizeof(energy_accum_t)));
-
     double shift;
     if (host.md.radial_force != 0.0) {
         shift = sqrt(Boltz * host.Tfree / host.md.radial_force);
@@ -79,7 +75,6 @@ void calc_radix_water_forces_host() {
         shift = 0.0;
     }
 
-    energy_accum_t energy = 0;
     calc_radix_water_forces_kernel<<<numBlocks, blockSize>>>(d_coords,
                                                              shift,
                                                              host.n_atoms_solute,
@@ -89,24 +84,11 @@ void calc_radix_water_forces_host() {
                                                              host.Dwmz,
                                                              host.awmz,
                                                              d_dvelocities,
-                                                             d_energy);
-    check_cuda(cudaDeviceSynchronize());
-    check_cuda(cudaMemcpy(&energy, d_energy, sizeof(energy_accum_t), cudaMemcpyDeviceToHost));
-    host.E_restraint.Uradx += energy_from_accum(energy);
+                                                             host.energy.device());
 }
 
 void init_radix_water_force_kernel_data() {
-    using namespace CudaRadixWaterForce;
-    if (!is_initialized) {
-        check_cudaMalloc((void**)&d_energy, sizeof(energy_accum_t));
-        is_initialized = true;
-    }
 }
 
 void cleanup_radix_water_force() {
-    using namespace CudaRadixWaterForce;
-    if (is_initialized) {
-        cudaFree(d_energy);
-        is_initialized = false;
-    }
 }

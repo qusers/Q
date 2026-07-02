@@ -3,54 +3,42 @@
 #include <cstdint>
 #include <memory>
 
+#include "constants.h"
 #include "context.h"
 #include "host_device_buffer.h"
-#include "constants.h"
-
-// CPU host code and CUDA both include this; keep the slot math in ONE place.
-#ifdef __CUDACC__
-#define NB_HD __host__ __device__
-#else
-#define NB_HD
-#endif
 
 enum class AtomCategory : uint8_t { P,
                                     Q,
                                     W,
                                     INVALID };
 
-enum NbGroup { NB_PP = 0,
-               NB_PW = 1,
-               NB_WW = 2 };
-
-NB_HD inline int nb_total_slots(int n_states) { return 3 + 3 * n_states; }
-NB_HD inline int nb_qq_slot(int s, int n_states) { return 3 + 0 * n_states + s; }
-NB_HD inline int nb_qp_slot(int s, int n_states) { return 3 + 1 * n_states + s; }
-NB_HD inline int nb_qw_slot(int s, int n_states) { return 3 + 2 * n_states + s; }
-
-NB_HD inline int nb_energy_slot(uint8_t t1, uint8_t t2,
-                                int s1, int s2, int n_states) {
+// Maps a tile's category/state to the EnergyBuffer *coul* slot.
+HD inline int nb_coul_slot(uint8_t t1, uint8_t t2, int s1, int s2, int n_states) {
     const uint8_t P = (uint8_t)AtomCategory::P;
     const uint8_t Q = (uint8_t)AtomCategory::Q;
     const uint8_t W = (uint8_t)AtomCategory::W;
-
     bool q1 = (t1 == Q), q2 = (t2 == Q);
     if (!q1 && !q2) {
-        if (t1 == P && t2 == P) return NB_PP;
-        if (t1 == W && t2 == W) return NB_WW;
-        return NB_PW;  // Remaining non-Q pairs are P-W.
+        if (t1 == P && t2 == P) return E_NB_PP_COUL;
+        if (t1 == W && t2 == W) return E_NB_WW_COUL;
+        return E_NB_PW_COUL;  // remaining non-Q pair is P-W
     }
-    int state = q1 ? s1 : s2;  // Use the Q atom's state.
-    if (q1 && q2) return nb_qq_slot(state, n_states);
-    if (t1 == W || t2 == W) return nb_qw_slot(state, n_states);
-    return nb_qp_slot(state, n_states);  // Otherwise this is Q-P.
+    int state = q1 ? s1 : s2;  // the Q atom's state
+    if (q1 && q2) return EnergyBuffer::eq_index(ENERGY_FIXED_COUNT, state, EQ_NB_QQ_COUL);
+    if (t1 == W || t2 == W) return EnergyBuffer::eq_index(ENERGY_FIXED_COUNT, state, EQ_NB_QW_COUL);
+    return EnergyBuffer::eq_index(ENERGY_FIXED_COUNT, state, EQ_NB_QP_COUL);  // else Q-P
+}
+
+// The vdw slot is always coul+1 
+HD inline int nb_vdw_slot(uint8_t t1, uint8_t t2, int s1, int s2, int n_states) {
+    return nb_coul_slot(t1, t2, s1, s2, n_states) + 1;
 }
 
 enum class BondType : uint8_t { Bond23,
                                 Bond14,
                                 NonBond };
 
-NB_HD inline BondType get_bond_type(int n_atoms_solute, const int* LJ_matrix, int atom1, uint8_t atom1_type, int atom2, uint8_t atom2_type) {
+HD inline BondType get_bond_type(int n_atoms_solute, const int* LJ_matrix, int atom1, uint8_t atom1_type, int atom2, uint8_t atom2_type) {
     bool w1 = atom1_type == static_cast<uint8_t>(AtomCategory::W);
     bool w2 = atom2_type == static_cast<uint8_t>(AtomCategory::W);
 
@@ -75,14 +63,14 @@ NB_HD inline BondType get_bond_type(int n_atoms_solute, const int* LJ_matrix, in
     return BondType::NonBond;
 }
 
-NB_HD inline real_t2 calc_electrostatic(real_t qij, real_t coulomb_constant, real_t inv_dis) {
+HD inline real_t2 calc_electrostatic(real_t qij, real_t coulomb_constant, real_t inv_dis) {
     if (qij == 0) return {0, 0};
     real_t vel = qij * coulomb_constant * inv_dis;  // k * qi * qj / r
     real_t dvel = -vel * inv_dis;                   /// -k * qi * qj / r2
     return {vel, dvel};
 }
 
-NB_HD inline real_t2 calc_vdw(const real_t2& pair, real_t inv_dis) {
+HD inline real_t2 calc_vdw(const real_t2& pair, real_t inv_dis) {
     if (pair.x == 0 && pair.y == 0) return {0, 0};
     real_t inv_dis3 = inv_dis * inv_dis * inv_dis;
     real_t inv_dis6 = inv_dis3 * inv_dis3;
@@ -96,7 +84,7 @@ NB_HD inline real_t2 calc_vdw(const real_t2& pair, real_t inv_dis) {
     return {vvdw, dvvdw};
 }
 
-NB_HD inline real_t2 combine_vdw(int vdw_rule, real_t aii_i, real_t bii_i, real_t aii_j, real_t bii_j) {
+HD inline real_t2 combine_vdw(int vdw_rule, real_t aii_i, real_t bii_i, real_t aii_j, real_t bii_j) {
     real_t a, b;
     if (vdw_rule == VDW_GEOMETRIC) {
         calc_vdw_geometric(aii_i, aii_j, bii_i, bii_j, (real_t)1.0, &a, &b);
@@ -108,7 +96,7 @@ NB_HD inline real_t2 combine_vdw(int vdw_rule, real_t aii_i, real_t bii_i, real_
 
 struct NonbondedData {
     int n_total = 0;
-    std::unique_ptr<HostDeviceBuffer<int>> atom_idx;      // global atom index
+    std::unique_ptr<HostDeviceBuffer<int>> atom_idx;         // global atom index
     std::unique_ptr<HostDeviceBuffer<uint8_t>> category;     // Atom Category
     std::unique_ptr<HostDeviceBuffer<int>> q_state;          // segment idx; -1 for P/W
     std::unique_ptr<HostDeviceBuffer<real_t>> atom_lambdas;  // lambdas[state]; 1.0 for P/W

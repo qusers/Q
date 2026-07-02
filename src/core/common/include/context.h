@@ -13,6 +13,7 @@
 #include "common/include/parse.h"
 #include "common/include/vdw_rules.h"
 #include "host_device_buffer.h"
+#include "energy.h"
 
 class Shake;
 
@@ -150,26 +151,8 @@ class Context {
     /*
     Energy
     */
+    EnergyBuffer energy;
 
-    std::unique_ptr<HostDeviceBuffer<E_restraint_t>> EQ_restraint;
-    energy_t E_total;
-    std::vector<energy_t> EQ_total;
-
-    E_bonded_t E_bond_p;
-    E_bonded_t E_bond_w;
-    E_bonded_t E_bond_q;
-    std::vector<E_bonded_t> EQ_bond;
-
-    E_nonbonded_t E_nonbond_pp;
-    E_nonbonded_t E_nonbond_pw;
-    E_nonbonded_t E_nonbond_ww;
-    E_nonbonded_t E_nonbond_qx;
-    std::vector<E_nonbonded_t> EQ_nonbond_qq;
-    std::vector<E_nonbonded_t> EQ_nonbond_qp;
-    std::vector<E_nonbonded_t> EQ_nonbond_qw;
-    std::vector<E_nonbonded_t> EQ_nonbond_qx;
-
-    E_restraint_t E_restraint;
 
     /*
     Temperature

@@ -12,7 +12,6 @@ void calc_restrdis_forces() {
     auto &dvelocities = ctx.dvelocities->cpu_data_p;
     auto &restrdists = ctx.restrdists->cpu_data_p;
     auto *lambdas = ctx.lambdas->cpu_data_p;
-    auto *EQ_restraint = ctx.EQ_restraint->cpu_data_p;
 
     int state, i, j;
     std::vector<energy_accum_t> urestr(ctx.n_lambdas, 0);
@@ -66,8 +65,9 @@ void calc_restrdis_forces() {
         }
     }
 
+    auto *energy = ctx.energy.host();
     for (int state = 0; state < ctx.n_lambdas; state++) {
-        EQ_restraint[state].Urestr += energy_from_accum(urestr[state]);
+        energy[ctx.energy.eq_index(ENERGY_FIXED_COUNT, state, EQ_RESTR_URESTR)] += urestr[state];
     }
-    ctx.E_restraint.Upres += energy_from_accum(upres);
+    energy[E_RESTR_PRES] += upres;
 }

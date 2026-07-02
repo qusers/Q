@@ -1,9 +1,15 @@
 #pragma once
 
-#include <cuda_runtime.h>
-
 #include <cstdio>
 #include <cstdlib>
+#include <cuda_runtime.h>
+#ifdef __CUDACC__
+#define HD __host__ __device__
+
+#else
+
+#define HD
+#endif
 
 inline void check_cuda(cudaError_t status) {
     if (status != cudaSuccess) {

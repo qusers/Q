@@ -15,7 +15,6 @@ int* water_shell = nullptr;
 int* water_rank = nullptr;
 int* polx_list_sh = nullptr;  // use 1d array to simulate 2d array
 
-energy_accum_t* d_energy;
 int* d_list_sh = nullptr;
 double* d_theta = nullptr;
 double* d_theta0 = nullptr;
@@ -109,7 +108,7 @@ __global__ void calc_polx_water_forces_kernel(
     const double dtheta = theta[ii] - theta_val + wshells[is].theta_corr;
     const double ener = 0.5 * md.polarisation_force * dtheta * dtheta;
     // E_restraint.Upolx += ener;
-    atomic_add_energy(energy, ener);
+    atomic_add_energy(&energy[E_RESTR_POLX], ener);
 
     const double dv = md.polarisation_force * dtheta;
     wi = n_atoms_solute + 3 * ii;
@@ -262,13 +261,9 @@ void calc_polx_water_forces_host(int iteration) {
     }
 
     // Calculate energy and force
-    cudaMemset(d_energy, 0, sizeof(energy_accum_t));
     calc_polx_water_forces_kernel<<<numBlocks, blockSize>>>(
         ctx.n_waters, ctx.n_atoms_solute, d_wshells, d_coords, d_dvelocities, ctx.topo,
-        d_theta, ctx.md, d_energy, d_water_rank, d_water_shell);
-    energy_accum_t energy;
-    cudaMemcpy(&energy, d_energy, sizeof(energy_accum_t), cudaMemcpyDeviceToHost);
-    ctx.E_restraint.Upolx += energy_from_accum(energy);
+        d_theta, ctx.md, ctx.energy.device(), d_water_rank, d_water_shell);
     ctx.wshells->download();
     // Copy back forces for all atoms (solute + solvent); water forces were being dropped.
 }
@@ -281,7 +276,6 @@ void init_polx_water_force_kernel_data() {
         water_shell = new int[ctx.n_waters];
         polx_list_sh = new int[ctx.n_max_inshell * ctx.n_shells];
 
-        check_cudaMalloc((void**)&d_energy, sizeof(energy_accum_t));
         check_cudaMalloc((void**)&d_list_sh, ctx.n_max_inshell * ctx.n_shells * sizeof(int));
         check_cudaMalloc((void**)&d_theta, ctx.n_waters * sizeof(double));
         check_cudaMalloc((void**)&d_theta0, ctx.n_waters * sizeof(double));
@@ -300,7 +294,6 @@ void cleanup_polx_water_force() {
         delete[] water_shell;
         delete[] polx_list_sh;
 
-        cudaFree(d_energy);
         cudaFree(d_list_sh);
         cudaFree(d_theta);
         cudaFree(d_theta0);

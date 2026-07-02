@@ -4,13 +4,6 @@
 #include "host_device_buffer.h"
 #include "precision.h"
 
-// Shared by CPU host build and CUDA; keep slot math in one place (like NB_HD).
-#ifdef __CUDACC__
-#define BF_HD __host__ __device__
-#else
-#define BF_HD
-#endif
-
 struct bond_idx_t {
     int i, j;
 };
@@ -29,9 +22,6 @@ struct dparam2_t {
     double x, y;
 };
 
-BF_HD inline int bonded_region_slots() { return 2; }
-BF_HD inline int bonded_p_slot() { return 0; }
-BF_HD inline int bonded_w_slot() { return 1; }
 
 struct BondTerms {
     int n = 0;
@@ -89,7 +79,7 @@ class BondedForce {
     void build_impropers(Context& ctx);
 };
 
-BF_HD inline dparam2_t calc_bond(const double k, const double r, const double r_eq) {
+HD inline dparam2_t calc_bond(const double k, const double r, const double r_eq) {
     // dv = dU / dr -> energy per length
     const double dr = r - r_eq;
     double v = 0.5 * k * dr * dr;
@@ -97,7 +87,7 @@ BF_HD inline dparam2_t calc_bond(const double k, const double r, const double r_
     return {v, dv};
 }
 
-BF_HD inline dparam2_t calc_angle(const double k, const double th, const double th_eq) {
+HD inline dparam2_t calc_angle(const double k, const double th, const double th_eq) {
     // dv = dU / dth. -> energy per angle
     const double dth = th - th_eq;
     double v = 0.5 * k * dth * dth;
@@ -105,7 +95,7 @@ BF_HD inline dparam2_t calc_angle(const double k, const double th, const double 
     return {v, dv};
 }
 
-BF_HD inline real_t2 calc_torsion(const real_t k, const int n, const real_t phi, const real_t gamma, real_t paths) {
+HD inline real_t2 calc_torsion(const real_t k, const int n, const real_t phi, const real_t gamma, real_t paths) {
     // dv = dU / dphi -> energy per angle
     const real_t arg = n * phi - gamma;
     const real_t v = k * (1 + cos(arg)) * paths;
@@ -113,7 +103,7 @@ BF_HD inline real_t2 calc_torsion(const real_t k, const int n, const real_t phi,
     return {v, dv};
 }
 
-BF_HD inline dparam2_t calc_improper2(const double k, const double phi0, const double phi) {
+HD inline dparam2_t calc_improper2(const double k, const double phi0, const double phi) {
     const double arg = 2.0 * phi - phi0;
     const double v = k * (1.0 + cos(arg));
     const double dv = k * -sin(arg) * 2.0;

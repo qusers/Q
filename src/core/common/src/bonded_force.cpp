@@ -32,7 +32,7 @@ void BondedForce::build_bonds(Context& ctx) {
         const cbond_t& c = cbonds[bonds[i].code - 1];
         ids.push_back({bonds[i].ai - 1, bonds[i].aj - 1});
         params.push_back({c.kb, c.b0});  // {kb, b0}
-        eslot.push_back(i < ctx.n_bonds_solute ? bonded_p_slot() : bonded_w_slot());
+        eslot.push_back(i < ctx.n_bonds_solute ? E_BOND_P_BOND : E_BOND_W_BOND);
     }
 
     data_.bond.n = static_cast<int>(ids.size());
@@ -56,7 +56,7 @@ void BondedForce::build_angles(Context& ctx) {
         const cangle_t& c = cangles[angles[i].code - 1];
         ids.push_back({angles[i].ai - 1, angles[i].aj - 1, angles[i].ak - 1});
         params.push_back({c.kth, deg2rad(c.th0)});  // {kth, th0(rad)}
-        eslot.push_back(i < ctx.n_angles_solute ? bonded_p_slot() : bonded_w_slot());
+        eslot.push_back(i < ctx.n_angles_solute ? E_BOND_P_ANGLE : E_BOND_W_ANGLE);
     }
 
     data_.angle.n = static_cast<int>(ids.size());
@@ -84,7 +84,7 @@ void BondedForce::build_torsions(Context& ctx) {
                           static_cast<real_t>(c.n),
                           static_cast<real_t>(deg2rad(c.d)),
                           static_cast<real_t>(c.paths)});  // {k, n, d(rad), paths}
-        eslot.push_back(i < ctx.n_torsions_solute ? bonded_p_slot() : bonded_w_slot());
+        eslot.push_back(i < ctx.n_torsions_solute ? E_BOND_P_TOR : E_BOND_W_TOR);
     }
 
     data_.torsion.n = static_cast<int>(ids.size());
@@ -109,7 +109,7 @@ void BondedForce::build_impropers(Context& ctx) {
         ids.push_back({impropers[i].ai - 1, impropers[i].aj - 1,
                        impropers[i].ak - 1, impropers[i].al - 1});
         params.push_back({c.k, deg2rad(c.phi0)});  // {k, phi0(rad)}
-        eslot.push_back(i < ctx.n_impropers_solute ? bonded_p_slot() : bonded_w_slot());
+        eslot.push_back(i < ctx.n_impropers_solute ? E_BOND_P_IMP : E_BOND_W_IMP);
     }
 
     data_.improper.n = static_cast<int>(ids.size());

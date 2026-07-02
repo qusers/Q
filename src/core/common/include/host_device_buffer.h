@@ -34,7 +34,17 @@ class HostDeviceBuffer {
 
     // copy GPU -> CPU
     void download(T* buffer = nullptr);
+
+    void zero();
 };
+
+template <typename T>
+void HostDeviceBuffer<T>::zero() {
+    if (length == 0) return;
+    const size_t bytes = length * sizeof(T);
+    if (cpu_mem_flag && cpu_data_p) std::memset(cpu_data_p, 0, bytes);
+    if (gpu_mem_flag && gpu_data_p) check_cuda(cudaMemset(gpu_data_p, 0, bytes));
+}
 
 template <typename T>
 HostDeviceBuffer<T>::HostDeviceBuffer(int length, bool cpu_mem_flag, bool gpu_mem_flag)

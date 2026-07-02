@@ -58,7 +58,8 @@ void calc_temperature() {
     ctx.Tfree = Tfree_solute_value + Tfree_solvent_value;
     ctx.Temp = energy_from_accum(Temp_solute) + energy_from_accum(Temp_solvent);
 
-    ctx.E_total.Ukin = ctx.Temp;
+    ctx.energy.data().Ukin = ctx.Temp;
+
 
     ctx.Temp = 2.0 * ctx.Temp / Boltz / ctx.Ndegf;
     
