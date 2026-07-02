@@ -836,7 +836,9 @@ class QligFEP:
 
         return [file_list_1, file_list_2, file_list_3]
 
-    def _write_endpoint_file(self, file_out, eq_lambda, steps, overlapping_atoms, restlist, lambda_scaling=None):
+    def _write_endpoint_file(
+        self, file_out, eq_lambda, steps, overlapping_atoms, restlist, lambda_scaling=None
+    ):
         """Write a single endpoint MD input file from the neq_endpoint.inp template.
 
         Used for both the endpoint equilibration files (eq6_*) and the lambda-switching

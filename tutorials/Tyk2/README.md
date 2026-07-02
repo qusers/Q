@@ -346,13 +346,13 @@ reads the work from the switching logs, runs BAR with a bootstrap uncertainty, a
 per-edge results table:
 
 ```bash
-qligfep_neq_analyze -pr 2.protein -wr 1.water -T 298 -o neq_results.csv
+qligfep_neq_analyze -p 2.protein -w 1.water -T 298 -o neq_results.csv
 ```
 
 Where the options are:
 
-- `-pr 2.protein` / `-wr 1.water`: the protein- and water-leg directories holding the
-  `FEP_*` edges;
+- `-p 2.protein` / `-w 1.water`: the protein- and water-leg directories holding the
+  `FEP_*` edges (same flags as `qligfep_analyze`);
 - `-T 298`: temperature (K) used for the kcal/mol conversion;
 - `-o neq_results.csv`: output CSV with `ddG_kcal`, the per-leg `dF`, the work-distribution
   overlap, and the number of forward/reverse switches per edge.

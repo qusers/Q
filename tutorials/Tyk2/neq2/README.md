@@ -91,14 +91,14 @@ Each replicate (a SLURM array task) runs `eq1`-`eq5`, performs the one-time endp
 Once the switches finish, estimate the free energies with `qligfep_neq_analyze`. It reads the work from the switching logs, runs BAR with a bootstrap uncertainty, combines the legs into $\Delta\Delta G = \Delta F_{\text{protein}} - \Delta F_{\text{water}}$, and — when given the mapping JSON — compares to experiment and saves the correlation plot.
 
 ```bash
-qligfep_neq_analyze -pr 2.protein -wr 1.water -T 300 -u kcal \
+qligfep_neq_analyze -p 2.protein -w 1.water -T 300 -u kcal \
     -j lomap.json -exp ddg_value -t Tyk2 -o neq_results.csv
 ```
 
 Options:
 
-- `-pr 2.protein` / `-wr 1.water`: the protein- and water-leg directories holding the
-  `FEP_*` edges;
+- `-p 2.protein` / `-w 1.water`: the protein- and water-leg directories holding the
+  `FEP_*` edges (same flags as `qligfep_analyze`);
 - `-T 300`: temperature (K) used for the kcal/mol conversion (and for $\beta$ when not `kT`);
 - `-u kcal`: work units for BAR — the default ($\beta = 1/k_B T$, the physically consistent factor); `kT` uses $\beta = 1$;
 - `-j lomap.json` / `-exp ddg_value`: the mapping JSON and the edge key holding the
