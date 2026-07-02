@@ -167,7 +167,7 @@ To check and reproduce QligFEP performance results, please refer to our [benchma
 
 # 📚 Citations
 
-To cite the lastest version of QligFEP, cite:
+To cite the latest version of QligFEP, cite:
 ```bibtex
 @article{araripe2026qligfepv2,
   author  = {Alencar Araripe, David and Díaz-Holguín, Alejandro and Poso, Antti and van Westen, Gerard J. P. and Åqvist, Johan and Gutiérrez-de-Terán, Hugo and Jespers, Willem},
