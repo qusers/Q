@@ -104,8 +104,8 @@ void CudaHandler::reset_energies() {
 }
 
 std::unique_ptr<Shake> CudaHandler::create_shake_backend() {
-    return std::make_unique<CudaShakeV2>();
-    // return std::make_unique<CudaShake>();
+    // return std::make_unique<CudaShakeV2>();
+    return std::make_unique<CudaShake>();
 }
 
 std::unique_ptr<NonbondedForce> CudaHandler::create_nonbonded_force_backend() {
