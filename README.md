@@ -17,6 +17,8 @@ This repository is devoted to **QligFEP**, an automated workflow for small molec
   - [Compiling Q for local use (non-MPI)](#compiling-q-for-local-use-non-mpi)
   - [Setting up HPC configurations](#setting-up-hpc-configurations)
 - [⌨️ Command line interface (CLI)](#️-command-line-interface-cli)
+- [Tutorials](#tutorials)
+    - [Non-equilibrium FEP (NEQ²)](#non-equilibrium-fep-neq2)
 - [📊 Benchmarking](#-benchmarking)
 - [📚 Citations](#-citations)
 - [⏩ Q-GPU](#-q-gpu)
@@ -151,7 +153,9 @@ Now you're set with the qligfep package. This includes the command-linde-interfa
 
 We are working on the documentation and tutorials for QligFEP. In the meantime, please refer to the Tyk2 case study available in the [tutorials directory](/tutorials/Tyk2/README.md). A dedicated [non-equilibrium (NEQ²) tutorial](/tutorials/Tyk2/neq2/README.md) walks through the NEQ² workflow end to end. In addition to that, you can check the [benchmarking section](#-benchmarking) below, which contains the link to our benchmarking repository with scripts to reproduce the results.
 
-## Non-equilibrium FEP (NEQ²)
+<a id="non-equilibrium-fep-neq2"></a>
+
+### Non-equilibrium FEP (NEQ²)
 
 Alongside the standard windowed (equilibrium) protocol, QligFEP supports a **non-equilibrium** alchemical workflow, referred to as **NEQ²**. Rather than sampling many fixed-λ windows, NEQ² drives λ continuously from one end state to the other over many short, independent switching trajectories, and recovers ΔΔG from the Bennett Acceptance Ratio (BAR) over the resulting forward and reverse work distributions. Because the switching trajectories are independent, they parallelize trivially across a cluster.
 
