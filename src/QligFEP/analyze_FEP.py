@@ -530,7 +530,7 @@ def parse_arguments() -> argparse.Namespace:
 
     parser.add_argument(
         "-norun",
-        "--no_run_data",
+        "--no-run-data",
         dest="no_run_data",
         action="store_true",
         help=(
