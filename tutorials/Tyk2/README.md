@@ -35,8 +35,9 @@ qparams -i tyk2_ligands.sdf -p 4 -nagl
 ```
 Create your perturbation network using lomap:
 ```bash
-qlomap -i tyk2_ligands.sdf
+qlomap -i tyk2_ligands.sdf -exp r_exp_dg
 ```
+`-exp r_exp_dg` reads the experimental dG from the `r_exp_dg` SDF property and stores each edge's experimental ΔΔG as `ddg_value` (the perturbation `from → to`, i.e. `dG(to) - dG(from)`) in `lomap.json`. Omit the flag if your ligands have no experimental values.
 Now, let's create a directory for your perturbations and copy the files we generated to it:
 ```bash
 cd ../
@@ -383,7 +384,7 @@ For the sake of the tutorial, we have already generated the parameters for the l
 
 Finally, generate the perturbation mapping using lomap:
 ```bash
-qlomap -i Tyk2_ligands.sdf
+qlomap -i Tyk2_ligands.sdf -exp r_exp_dg
 ```
 
 Lomap natively requires a directory with separate `.sdf` files for each of the ligands to be used as input. Whenever `qlomap` is called to process a single `.sdf` file, our wrapper will create the directory *on the fly* for you and place the `lomap.json` inside the created directory. The directory will be named after the input `.sdf` file, without the `.sdf` extension.
