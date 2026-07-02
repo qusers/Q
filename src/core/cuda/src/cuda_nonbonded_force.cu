@@ -95,6 +95,10 @@ __global__ void update_nonbonded_coords_kernel(
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= sz) return;
     const int idx = atom_idx[i];
+    if (idx < 0) {  // padding slot (atom_idx == -1); main kernel treats these as empty
+        cx[i] = cy[i] = cz[i] = 0;
+        return;
+    }
     cx[i] = static_cast<real_t>(coords[idx].x);
     cy[i] = static_cast<real_t>(coords[idx].y);
     cz[i] = static_cast<real_t>(coords[idx].z);
@@ -103,9 +107,11 @@ __global__ void update_nonbonded_coords_kernel(
 }  // namespace
 
 void CudaNonbondedForce::init_backend(Context& ctx) {
-    coord_x = std::make_unique<HostDeviceBuffer<real_t>>(ctx.n_atoms);
-    coord_y = std::make_unique<HostDeviceBuffer<real_t>>(ctx.n_atoms);
-    coord_z = std::make_unique<HostDeviceBuffer<real_t>>(ctx.n_atoms);
+    // Buffers are indexed by combined-list position [0, n_total), which exceeds
+    // n_atoms because Q atoms are duplicated per FEP state and the list is padded.
+    coord_x = std::make_unique<HostDeviceBuffer<real_t>>(data_.n_total);
+    coord_y = std::make_unique<HostDeviceBuffer<real_t>>(data_.n_total);
+    coord_z = std::make_unique<HostDeviceBuffer<real_t>>(data_.n_total);
 }
 
 __global__ void nonbonded_kernel(
