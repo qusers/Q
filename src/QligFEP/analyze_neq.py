@@ -341,32 +341,38 @@ def parse_arguments() -> argparse.Namespace:
         description="BAR analysis of non-equilibrium (NEQ) FEP switching work.",
     )
     parser.add_argument(
-        "-pr",
-        "--protein-root",
-        dest="protein_root",
-        default="2.protein",
-        help="Directory holding the protein-leg FEP_* edges. Defaults to `2.protein`.",
-    )
-    parser.add_argument(
-        "-wr",
-        "--water-root",
-        dest="water_root",
-        default="1.water",
-        help="Directory holding the water-leg FEP_* edges. Defaults to `1.water`.",
-    )
-    parser.add_argument(
         "-p",
         "--protein-dir",
         dest="protein_dir",
-        default=None,
-        help="Analyze a single edge: the protein-leg directory (used with --water-dir).",
+        default="2.protein",
+        help=(
+            "Path to the directory containing the protein-leg FEP_* edges. "
+            "Defaults to `2.protein` in the current working directory."
+        ),
     )
     parser.add_argument(
         "-w",
         "--water-dir",
         dest="water_dir",
+        default="1.water",
+        help=(
+            "Path to the directory containing the water-leg FEP_* edges. "
+            "Defaults to `1.water` in the current working directory."
+        ),
+    )
+    parser.add_argument(
+        "-pe",
+        "--protein-edge",
+        dest="protein_edge",
         default=None,
-        help="Analyze a single edge: the water-leg directory (used with --protein-dir).",
+        help="Analyze a single edge: the protein-leg directory (used with --water-edge).",
+    )
+    parser.add_argument(
+        "-we",
+        "--water-edge",
+        dest="water_edge",
+        default=None,
+        help="Analyze a single edge: the water-leg directory (used with --protein-edge).",
     )
     parser.add_argument(
         "-T",
@@ -458,14 +464,12 @@ def main(args: argparse.Namespace) -> pd.DataFrame:
     beta = beta_from_units(args.work_units, args.temperature)
     rng = np.random.default_rng(args.random_state)
 
-    if args.protein_dir and args.water_dir:
-        edges = [(Path(args.water_dir).name, Path(args.protein_dir), Path(args.water_dir))]
+    if args.protein_edge and args.water_edge:
+        edges = [(Path(args.water_edge).name, Path(args.protein_edge), Path(args.water_edge))]
     else:
-        edges = find_edges(Path(args.protein_root), Path(args.water_root))
+        edges = find_edges(Path(args.protein_dir), Path(args.water_dir))
         if not edges:
-            raise FileNotFoundError(
-                f"No shared FEP_* edges found in {args.protein_root} and {args.water_root}"
-            )
+            raise FileNotFoundError(f"No shared FEP_* edges found in {args.protein_dir} and {args.water_dir}")
 
     rows = [
         analyze_edge(name, pdir, wdir, beta, args.work_units, args.temperature, args.n_bootstrap, rng)
