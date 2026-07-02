@@ -142,30 +142,46 @@ Now you're set with the qligfep package. This includes the command-linde-interfa
 5. `qlomap`: wraps `Lomap` to generate the `.json` perturbation mapping;
 6. `qmapfep`: in-house developed method to generate the `.json` perturbation mapping, interactively visualize and add or remove edges.
 7. `qligfep`: main CLI for running QligFEP simulations.
-8. `setupFEP`: sets up all the the QligFEP files for a simulation, including protein and water systems.
+8. `setupFEP`: sets up all the QligFEP files for a simulation, including protein and water systems. Pass `--neq` to set up the non-equilibrium (NEQ²) workflow instead of the windowed one.
 9. `qligfep_analyze`: CLI to analyze the results of a QligFEP simulation.
 10. `ligalign`: aligns a set of ligands to a reference ligand based on their maximum common substructure (MCS).
+11. `qligfep_neq_analyze`: CLI to analyze the results of a non-equilibrium (NEQ²) QligFEP simulation.
 
 ## Tutorials
 
-We are working on the documentation and tutorials for QligFEP. In the meantime, please refer to the Tyk2 case study available in the [tutorials directory](/tutorials/Tyk2/README.md). In addition to that, you can check the [benchmarking section](#-benchmarking) below, which contains the link to our benchmarking repository with scripts to reproduce the results.
+We are working on the documentation and tutorials for QligFEP. In the meantime, please refer to the Tyk2 case study available in the [tutorials directory](/tutorials/Tyk2/README.md). A dedicated [non-equilibrium (NEQ²) tutorial](/tutorials/Tyk2/neq2/README.md) walks through the NEQ² workflow end to end. In addition to that, you can check the [benchmarking section](#-benchmarking) below, which contains the link to our benchmarking repository with scripts to reproduce the results.
+
+## Non-equilibrium FEP (NEQ²)
+
+Alongside the standard windowed (equilibrium) protocol, QligFEP supports a **non-equilibrium** alchemical workflow, referred to as **NEQ²**. Rather than sampling many fixed-λ windows, NEQ² drives λ continuously from one end state to the other over many short, independent switching trajectories, and recovers ΔΔG from the Bennett Acceptance Ratio (BAR) over the resulting forward and reverse work distributions. Because the switching trajectories are independent, they parallelize trivially across a cluster.
+
+Set up a non-equilibrium calculation by passing `--neq` to `setupFEP`, and analyze the accumulated switching work with the `qligfep_neq_analyze` CLI. The non-equilibrium engine (`qdyn_neq`) is built together with the other Q binaries by `make all` in `src/q6`. See the [Tyk2 NEQ² tutorial](/tutorials/Tyk2/neq2/README.md) for an end-to-end walkthrough.
 
 # 📊 Benchmarking
 
 To check and reproduce QligFEP performance results, please refer to our [benchmarking repository](https://github.com/qusers/qligfepv2-BenchmarkExperiments).
 
-For the preprint describing the benchmarking results, see:
-
-> Alencar Araripe D, Díaz Holguín A, Poso A, van Westen GJP, Åqvist J, Gutiérrez-de-Terán H, et al. Doing More with Less: Accurate and Scalable Ligand Free Energy Calculations by Focusing on the Binding Site. ChemRxiv. 2025; [doi:10.26434/chemrxiv-2025-x3r3z](https://doi.org/10.26434/chemrxiv-2025-x3r3z-v3)
-
 # 📚 Citations
-Q6:       https://doi.org/10.1016/j.softx.2017.12.001
 
-Q         https://doi.org/10.1016/S1093-3263(98)80006-5
+To cite the lastest version of QligFEP, cite:
+```bibtex
+@article{araripe2026qligfepv2,
+  author  = {Alencar Araripe, David and Díaz-Holguín, Alejandro and Poso, Antti and van Westen, Gerard J. P. and Åqvist, Johan and Gutiérrez-de-Terán, Hugo and Jespers, Willem},
+  title   = {Doing More with Less: Accurate and Scalable Ligand Free Energy Calculations by Focusing on the Binding Site},
+  journal = {Journal of Chemical Information and Modeling},
+  year    = {2026},
+  volume  = {66},
+  number  = {6},
+  pages   = {3164--3172},
+  doi     = {10.1021/acs.jcim.5c02932},
+  url     = {https://doi.org/10.1021/acs.jcim.5c02932},
+}
+```
+**Other relevant references:**
 
-QligFEP:  https://doi.org/10.1186/s13321-019-0348-5
-
-QresFEP:  https://doi.org/10.1021/acs.jctc.9b00538
+- Q:        https://doi.org/10.1016/S1093-3263(98)80006-5
+- QligFEP:  https://doi.org/10.1186/s13321-019-0348-5
+- QresFEP:  https://doi.org/10.1021/acs.jctc.9b00538
 
 # ⏩ Q-GPU
 
