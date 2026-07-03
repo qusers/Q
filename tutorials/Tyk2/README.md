@@ -151,7 +151,7 @@ Setting this part of the string as either of these, will determine if or how the
 
 - Kartograf atom max distance (optional): `int` or `float` to be used by kartograf [Ries et al. 2024](https://pubs.acs.org/doi/10.1021/acs.jctc.3c01206) as the maximum distance between atoms to be considered for mapping. This is by default set to 0.95 Å, but can be changed by passing `_1.2`, for example, at the end of the `restraint_method` string. Having a higher number could fix some issues caused by having two molecules that aren't perfectly aligned (higher distance between equivalent atoms).
 
-By default, a restraint force of 1.5 $\text{kcal}/\text{mol}/\text{\AA}^2$ is applied to the equilibration (eq) 1-4 within the simulation protocol. A second distance restraint is applied to eq5 and all subsequent FEP molecular dynamics steps (labeled as `md_xxxx_xxxx`). The default threshold for the restraint is 0.5 $\text{\AA}$, but is customizable through the `--distance_restraint_force` argument, or `-drf` for short.
+By default, a restraint force of 1.5 kcal/mol/Å² is applied to the equilibration (eq) 1-4 within the simulation protocol. A second distance restraint is applied to eq5 and all subsequent FEP molecular dynamics steps (labeled as `md_xxxx_xxxx`). The default threshold for the restraint is 0.5 Å, but is customizable through the `--distance_restraint_force` argument, or `-drf` for short.
 
 Though set through the Python CLI, these configuration are set to the input files for **Q**. For example, after creating all the perturbation directories using `setupFEP`, we can investigate further:
 
@@ -179,7 +179,7 @@ These lines refer to:
 - The atom index of atom in Ligand 1 (named to `LIG` in QligFEP)
 - The atom index of atom in Ligand 2 (named to `LID` in QligFEP)
 - 0.0 & 0.1:  if distance among atoms is within this range, no force is applied
-- 0.5: The force to be applied (in $\text{kcal}/\text{mol}/\text{\AA}^2$)
+- 0.5: The force to be applied (in kcal/mol/Å²)
 - 0 (last column): TODO
 
 ❗**Note**❗ - The atom inices are based on the ones found in the `complexnotexcluded.pdb` file generated from `qprep`. This file contains the part of the protein that wasn't excluded from the spherical boundary condition cutoff, the ligand, and the water sphere.

@@ -25,12 +25,11 @@ NEQ uses the **exact same preparation** as the equilibrium workflow: ligand para
 | Perturbation network | `lomap.json` (generated) | [Visualize the perturbation network](../README.md#visualize-the-perturbation-network) |
 | Protein / water      | [`../setupFEP/amber/protein.pdb`](../setupFEP/amber/protein.pdb), [`../setupFEP/water.pdb`](../setupFEP/water.pdb) | [Water sphere](../README.md#water-sphere) |
 
-Work in a fresh directory and bring the prepared inputs in (the ligand `.lib`/`.prm` files, `lomap.json`, and the prepared protein), so you end up with the same starting point the equilibrium `setupFEP` expects:
+Work in a fresh directory so the NEQ run does not collide with the equilibrium `1.water`/`2.protein` folders. The equilibrium tutorial already gathered every input `setupFEP` needs into `../setupFEP`, so pull them in from there (ligand `.pdb`/`.prm`/`.lib`, the `.sdf` files, `lomap.json`, and the prepared `protein.pdb`/`water.pdb`):
 
 ```bash
 cd tutorials/Tyk2/neq2
-# copy / link the prepared ligand libraries, parameters, lomap.json and protein here,
-# exactly as for the equilibrium run (see ../README.md)
+cp ../setupFEP/*.pdb ../setupFEP/*.prm ../setupFEP/*.lib ../setupFEP/*.sdf ../setupFEP/lomap.json .
 ```
 
 Stop once you have `lomap.json` and the prepared structures in place, then continue here.
