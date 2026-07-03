@@ -35,8 +35,9 @@ qparams -i tyk2_ligands.sdf -p 4 -nagl
 ```
 Create your perturbation network using lomap:
 ```bash
-qlomap -i tyk2_ligands.sdf
+qlomap -i tyk2_ligands.sdf -exp r_exp_dg
 ```
+`-exp r_exp_dg` reads the experimental dG from the `r_exp_dg` SDF property and stores each edge's experimental ΔΔG as `ddg_value` (the perturbation `from → to`, i.e. `dG(to) - dG(from)`) in `lomap.json`. Omit the flag if your ligands have no experimental values.
 Now, let's create a directory for your perturbations and copy the files we generated to it:
 ```bash
 cd ../
@@ -150,7 +151,7 @@ Setting this part of the string as either of these, will determine if or how the
 
 - Kartograf atom max distance (optional): `int` or `float` to be used by kartograf [Ries et al. 2024](https://pubs.acs.org/doi/10.1021/acs.jctc.3c01206) as the maximum distance between atoms to be considered for mapping. This is by default set to 0.95 Å, but can be changed by passing `_1.2`, for example, at the end of the `restraint_method` string. Having a higher number could fix some issues caused by having two molecules that aren't perfectly aligned (higher distance between equivalent atoms).
 
-By default, a restraint force of 1.5 $\text{kcal}/\text{mol}/\text{\AA}^2$ is applied to the equilibration (eq) 1-4 within the simulation protocol. A second distance restraint is applied to eq5 and all subsequent FEP molecular dynamics steps (labeled as `md_xxxx_xxxx`). The default threshold for the restraint is 0.5 $\text{\AA}$, but is customizable through the `--distance_restraint_force` argument, or `-drf` for short.
+By default, a restraint force of 1.5 kcal/mol/Å² is applied to the equilibration (eq) 1-4 within the simulation protocol. A second distance restraint is applied to eq5 and all subsequent FEP molecular dynamics steps (labeled as `md_xxxx_xxxx`). The default threshold for the restraint is 0.5 Å, but is customizable through the `--distance_restraint_force` argument, or `-drf` for short.
 
 Though set through the Python CLI, these configuration are set to the input files for **Q**. For example, after creating all the perturbation directories using `setupFEP`, we can investigate further:
 
@@ -178,7 +179,7 @@ These lines refer to:
 - The atom index of atom in Ligand 1 (named to `LIG` in QligFEP)
 - The atom index of atom in Ligand 2 (named to `LID` in QligFEP)
 - 0.0 & 0.1:  if distance among atoms is within this range, no force is applied
-- 0.5: The force to be applied (in $\text{kcal}/\text{mol}/\text{\AA}^2$)
+- 0.5: The force to be applied (in kcal/mol/Å²)
 - 0 (last column): TODO
 
 ❗**Note**❗ - The atom inices are based on the ones found in the `complexnotexcluded.pdb` file generated from `qprep`. This file contains the part of the protein that wasn't excluded from the spherical boundary condition cutoff, the ligand, and the water sphere.
@@ -262,6 +263,108 @@ Further, the generated `lomap_ddG.json` file can be used together with the syste
 
 This is yet to be incorporated in this repo, work in progress 🚧.
 
+# Non-equilibrium (NEQ) FEP
+
+The steps above describe the *equilibrium* FEP protocol, where ~100 fixed-lambda windows
+are sampled and combined with `qfep`. QligFEP can also set up *non-equilibrium* (NEQ) FEP.
+Instead of fixed windows, NEQ drives lambda from one end state to the other over the course
+of a single short simulation (a "switch") with the `qdyn_neq` engine, accumulating the
+switching work. Running many forward (lambda 1→0) and reverse (lambda 0→1) switches yields
+two work distributions, and the free energy is obtained from the Bennett Acceptance Ratio
+(BAR) over them. The relative binding free energy is `ddG = dF_protein - dF_water`.
+
+NEQ reuses the **exact same preparation** as the equilibrium workflow above (ligand
+parameters, perturbation network, water sphere). Only the `setupFEP` and analysis steps
+change, so simply follow the tutorial up to and including the [Water sphere](#water-sphere)
+step, then continue here.
+
+## Prerequisites
+
+The non-equilibrium engine `qdyn_neq` is built together with the other binaries by
+`make all` (run in `src/q6`), so no extra build step is needed beyond the
+[Prerequisites](#prerequisites) above.
+
+## Setup NEQ FEP
+
+From the `setupFEP` directory (the same place you ran the equilibrium `setupFEP`), run:
+
+```bash
+setupFEP -FF AMBER14sb -r 25 -ts 2fs -j lomap.json -rs 42 -c SNELLIUS \
+    --neq --neq-reps 5 --neq-steps 50000 --neq-eq-steps 1000 --neq-relax-steps 5000 \
+    -L 8 --neq-schedule sigmoidal
+```
+
+The shared flags (`-FF`, `-r`, `-ts`, `-j`, `-rs`, `-c`) behave exactly as in the
+equilibrium setup. The NEQ-specific flags are:
+
+- `--neq`: switch QligFEP into non-equilibrium mode. In this mode the windowed parameters
+  `-w/--windows` and `-S/--sampling` are not used;
+- `--neq-reps 5`: number of forward/reverse switching pairs run per replicate;
+- `--neq-steps 50000`: length of each lambda-switching simulation in MD steps
+  (recommended > 16000);
+- `--neq-eq-steps 1000`: endpoint equilibration steps between successive switches
+  (recommended > 250);
+- `--neq-relax-steps 5000`: length of the one-time endpoint relaxation run at lambda = 0
+  and lambda = 1 before the first switch, settling the nearly-decoupled ligand at each
+  endpoint (~10 ps at 2 fs). The first switching iteration uses this longer relaxation;
+  later iterations use the shorter `--neq-eq-steps` spacing;
+- `-L 8` (`--neq-steepness`): steepness of the sigmoidal lambda schedule
+  l(t) = 1/[1+e^(L(t-0.5))]; higher values spend more time near lambda = 0 and lambda = 1,
+  lower values approach a linear schedule (recommended 4–16);
+- `--neq-schedule sigmoidal`: the switching schedule (`sigmoidal` or `linear`).
+
+As with the equilibrium setup this creates `1.water` and `2.protein` directories with one
+`FEP_<lig1>_<lig2>` folder per edge. Each `inputfiles/` directory now contains the standard
+equilibration files (`eq1`–`eq5`), the one-time endpoint-relaxation templates (`relax_0`,
+`relax_1`), the endpoint-equilibration spacing templates (`eq6_0`, `eq6_1`), and the
+switching templates (`neq_0`, `neq_1`) — instead of the ~100 `md_xxxx_xxxx.inp`
+window files. You can confirm the switching schedule was written into the inputs with:
+
+```bash
+tail -n 4 2.protein/FEP_ejm_31_ejm_42/inputfiles/neq_0.inp
+```
+
+which shows the appended section that activates the lambda switching:
+
+```text
+[lambda_scaling]
+scaling_parameter          sigmoidal
+L_sigmoid        8.0
+```
+
+## Job submission
+
+Submission is identical to the equilibrium workflow: each `FEP_<lig1>_<lig2>` directory has
+a `FEP_submit.sh` script. Use the same [`submitFEPjobs`](#job-submission) function to submit
+a whole leg. Each replicate (SLURM array task) runs `eq1`–`eq5`, then loops the requested
+number of forward/reverse switches, writing the switching work to `neq_1_*.log` (forward)
+and `neq_0_*.log` (reverse).
+
+## Analysis
+
+Once the calculations finish, estimate the free energies with `qligfep_neq_analyze`, which
+reads the work from the switching logs, runs BAR with a bootstrap uncertainty, and writes a
+per-edge results table:
+
+```bash
+qligfep_neq_analyze -p 2.protein -w 1.water -T 298 -o neq_results.csv
+```
+
+Where the options are:
+
+- `-p 2.protein` / `-w 1.water`: the protein- and water-leg directories holding the
+  `FEP_*` edges (same flags as `qligfep_analyze`);
+- `-T 298`: temperature (K) used for the kcal/mol conversion;
+- `-o neq_results.csv`: output CSV with `ddG_kcal`, the per-leg `dF`, the work-distribution
+  overlap, and the number of forward/reverse switches per edge.
+
+> **Note on work units.** The work written by `qdyn_neq` is in kcal/mol, so by default the
+> analyzer uses the physically consistent BAR factor `beta = 1/(k_B*T)` (`--work-units kcal`).
+> For compatibility with the original implementation, which treats the switching work as if it
+> were already in units of k_BT (`beta = 1`), pass `--work-units kT`. This affects the absolute
+> free energies and should be confirmed against the original implementation before reporting
+> numbers — see the note in `src/QligFEP/analyze_neq.py`.
+
 <!-- 
 # Ligand parameter generation
 
@@ -281,7 +384,7 @@ For the sake of the tutorial, we have already generated the parameters for the l
 
 Finally, generate the perturbation mapping using lomap:
 ```bash
-qlomap -i Tyk2_ligands.sdf
+qlomap -i Tyk2_ligands.sdf -exp r_exp_dg
 ```
 
 Lomap natively requires a directory with separate `.sdf` files for each of the ligands to be used as input. Whenever `qlomap` is called to process a single `.sdf` file, our wrapper will create the directory *on the fly* for you and place the `lomap.json` inside the created directory. The directory will be named after the input `.sdf` file, without the `.sdf` extension.

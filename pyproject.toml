@@ -32,12 +32,22 @@ dependencies = [
     "tqdm",
     "py3Dmol",
     "numpy",
+    "pandas",
     "matplotlib",
     "rdkit",
     "scikit-learn",
     "loguru",
-    "cinnabar",
     "MolClusterkit @ git+https://github.com/David-Araripe/MolClusterkit.git#master",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+filterwarnings = [
+    # third-party (gufe/pydantic) deprecation surfaced when importing the package
+    "ignore:.*pydantic.config.Extra.*:DeprecationWarning",
 ]
 
 [tool.setuptools]
@@ -106,4 +116,5 @@ qmapfep = "QligFEP.CLI.qmapfep_cli:main_exe"
 qligfep = "QligFEP.CLI.qligfep_cli:main_exe"
 setupFEP = "QligFEP.CLI.setupFEP:main_exe"
 qligfep_analyze = "QligFEP.analyze_FEP:main_exe"
+qligfep_neq_analyze = "QligFEP.analyze_neq:main_exe"
 ligalign = "QligFEP.CLI.lig_align_cli:main_exe"

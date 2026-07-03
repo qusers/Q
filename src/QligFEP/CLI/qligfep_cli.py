@@ -41,6 +41,13 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "dr_force": args.dr_force,
             "random_state": args.random_state,
             "wath_ligand_only": args.wath_ligand_only,
+            "neq": args.neq,
+            "neq_reps": args.neq_reps,
+            "neq_steps": args.neq_steps,
+            "neq_eq_steps": args.neq_eq_steps,
+            "neq_relax_steps": args.neq_relax_steps,
+            "neq_L": args.neq_L,
+            "neq_schedule": args.neq_schedule,
         }
     else:
         param_dict = {}
@@ -57,7 +64,8 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         if k == "FF":
             command_str += f" -{k} {v}"
         elif k == "to_clean":
-            command_str += f" --{k} {' '.join(v)}".replace("to_clean", "files-to-clean")
+            if v:
+                command_str += f" --files-to-clean {' '.join(v)}"
         elif k == "water_thresh":
             command_str += f" --{k.replace('_', '-')} {v}"
         elif k == "wath_ligand_only":
@@ -65,6 +73,13 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 command_str += f" --{k}".replace("_", "-")
         elif k == "dr_force":
             command_str += f" --{k} {v}".replace("dr_force", "distance_restraint_force")
+        elif k == "neq":
+            if v:
+                command_str += " --neq"
+        elif k == "neq_L":
+            command_str += f" --neq-steepness {v}"
+        elif k in ("neq_reps", "neq_steps", "neq_eq_steps", "neq_relax_steps", "neq_schedule"):
+            command_str += f" --{k.replace('_', '-')} {v}"
         else:
             command_str += f" --{k} {v}"
     command_str += f" --restraint_method {args.restraint_method}"
@@ -94,8 +109,9 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
 
     run.write_water_pdb(inputdir)
 
-    logger.debug("Getting the lambdas")
-    lambdas = run.get_lambdas(args.windows, args.sampling)
+    if not run.neq:
+        logger.debug("Getting the lambdas")
+        lambdas = run.get_lambdas(args.windows, args.sampling)
     logger.debug("Writing atom mapping for distance restraints")
 
     run.avoid_water_protein_clashes(
@@ -108,6 +124,15 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     logger.debug("Writing FEP files")
     run.write_FEP_file(change_charges, change_vdw, FEP_vdw, inputdir, lig_size1, lig_size2)
     overlapping_atoms = run.set_restraints(writedir, args.restraint_method, strict_check=True)
+
+    if run.neq:
+        logger.debug("Writing the non-equilibrium MD files")
+        file_list = run.write_MD_neq(inputdir, lig_size1, lig_size2, overlapping_atoms)
+        run.write_neq_runfile(inputdir, file_list)
+        logger.debug(f"Generated files: {file_list}")
+        logger.debug("Writing the submit files")
+        run.write_submitfile(writedir)
+        return
 
     # Handling the correct offset here
     logger.debug("Writing the MD files")

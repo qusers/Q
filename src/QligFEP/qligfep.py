@@ -50,6 +50,13 @@ class QligFEP:
         dr_force: float = 0.5,
         random_state: Optional[int] = 42,
         wath_ligand_only: bool = False,
+        neq: bool = False,
+        neq_reps: int = 5,
+        neq_steps: int = 50000,
+        neq_eq_steps: int = 1000,
+        neq_relax_steps: int = 5000,
+        neq_L: float = 8.0,
+        neq_schedule: Literal["sigmoidal", "linear"] = "sigmoidal",
     ):
         self.replacements = {}  # TODO: make this explicit in the future
         self.timestep = timestep
@@ -71,6 +78,13 @@ class QligFEP:
         self.water_thresh = water_thresh
         self.dr_force = dr_force  # dr for distance restraint
         self.wath_ligand_only = wath_ligand_only
+        self.neq = neq
+        self.neq_reps = neq_reps
+        self.neq_steps = neq_steps
+        self.neq_eq_steps = neq_eq_steps
+        self.neq_relax_steps = neq_relax_steps
+        self.neq_L = neq_L
+        self.neq_schedule = neq_schedule
         # Temporary until flag is here
         self.ABS = False  # True
         self.ABS_waters = []
@@ -579,38 +593,24 @@ class QligFEP:
             )
         return torestraint_list
 
-    def write_MD_05(self, lambdas, writedir, lig_size1, lig_size2, overlapping_atoms):
+    def _set_common_md_replacements(self, lig_size1, lig_size2, eq_lambda):
+        """Populate self.replacements with the atom ranges, sphere size, equilibration
+        lambdas and water restraint shared by every MD/equilibration input file.
+
+        Returns the extra [sequence_restraints] lines (only populated for the ABS water
+        case; an empty list otherwise).
+        """
         replacements = self.replacements
-        file_list1 = []
-        file_list2 = []
-        file_list3 = []
         lig_total = lig_size1 + lig_size2
-        lambda_1 = []
-        lambda_2 = []
-        block = 0
-        index = 0
         cnt = -1
         restlist = []
-
-        for line in lambdas:
-            if line == "0.500":
-                block = 1
-
-            if block == 0:
-                lambda_1.append(line)
-
-            if block == 1:
-                lambda_2.append(line)
-
-        lambda_1 = lambda_1[::-1]
-        lambda_2 = lambda_2[1:]
         replacements["ATOM_START_LIG1"] = f"{self.atomoffset + 1:<6}"
         replacements["ATOM_END_LIG1"] = f"{self.atomoffset + lig_size1:<7}"
         replacements["ATOM_START_LIG2"] = f"{self.atomoffset + lig_size1 + 1:<6}"
         replacements["ATOM_END_LIG2"] = f"{self.atomoffset + lig_size1 + lig_size2:<7}"
         replacements["SPHERE"] = self.sphereradius
         replacements["ATOM_END"] = f"{self.atomoffset + lig_total:<6}"
-        replacements["EQ_LAMBDA"] = "0.500 0.500"
+        replacements["EQ_LAMBDA"] = eq_lambda
 
         if self.system == "water" or self.system == "vacuum":
             if self.ABS is False:
@@ -637,26 +637,58 @@ class QligFEP:
 
         elif self.system == "protein":
             replacements["WATER_RESTRAINT"] = ""
+        return restlist
 
-        # WRITING THE EQUILIBRATION INPUT FILES (eq1-5.inp), NOT PART OF THE FEP YET
-        for eq_file_in in sorted(glob.glob(CONFIGS["ROOT_DIR"] + "/INPUTS/eq*.inp")):
-            eq_file = eq_file_in.split("/")[-1:][0]
+    def write_eq_files(self, writedir, overlapping_atoms, restlist):
+        """Write the equilibration input files eq1-5.inp from the templates, injecting
+        the distance and sequence restraints. Requires self.replacements to be populated
+        (see _set_common_md_replacements). Returns the list of written file names.
+        """
+        file_list = []
+        for eq_file_in in sorted(glob.glob(CONFIGS["ROOT_DIR"] + "/INPUTS/eq[1-5].inp")):
+            eq_file = os.path.basename(eq_file_in)
             rest_force = 1.5 if eq_file != "eq5.inp" else self.dr_force  # 1.5 for eq1-4
             logger.debug(f"Writing {eq_file}")
             eq_file_out = writedir + "/" + eq_file
 
             with open(eq_file_in) as infile, open(eq_file_out, "w") as outfile:
                 for line in infile:
-                    line = replace(line, replacements)
+                    line = replace(line, self.replacements)
                     outfile.write(line)
                     if line == "[distance_restraints]\n":
-                        for line in overlapping_atoms:
-                            outfile.write(f"{line[0]:d} {line[1]:d} 0.0 0.1 {rest_force:.1f} 0\n")
+                        for atompair in overlapping_atoms:
+                            outfile.write(f"{atompair[0]:d} {atompair[1]:d} 0.0 0.1 {rest_force:.1f} 0\n")
 
                     if line == "[sequence_restraints]\n":
-                        for line in restlist:
-                            outfile.write(line)
-            file_list1.append(eq_file)
+                        for restline in restlist:
+                            outfile.write(restline)
+            file_list.append(eq_file)
+        return file_list
+
+    def write_MD_05(self, lambdas, writedir, lig_size1, lig_size2, overlapping_atoms):
+        replacements = self.replacements
+        file_list2 = []
+        file_list3 = []
+        lambda_1 = []
+        lambda_2 = []
+        block = 0
+        index = 0
+
+        for line in lambdas:
+            if line == "0.500":
+                block = 1
+
+            if block == 0:
+                lambda_1.append(line)
+
+            if block == 1:
+                lambda_2.append(line)
+
+        lambda_1 = lambda_1[::-1]
+        lambda_2 = lambda_2[1:]
+
+        restlist = self._set_common_md_replacements(lig_size1, lig_size2, "0.500 0.500")
+        file_list1 = self.write_eq_files(writedir, overlapping_atoms, restlist)
 
         # WRITING THE FEP MOLECULAR DYNAMICS INPUT FILES (e.g.: md_0500_0500.inp)
         file_in = CONFIGS["INPUT_DIR"] + "/md_0500_0500.inp"
@@ -744,7 +776,7 @@ class QligFEP:
         elif self.system == "protein":
             replacements["WATER_RESTRAINT"] = ""
 
-        for eq_file_in in sorted(glob.glob(CONFIGS["ROOT_DIR"] + "/INPUTS/eq*.inp")):
+        for eq_file_in in sorted(glob.glob(CONFIGS["ROOT_DIR"] + "/INPUTS/eq[1-5].inp")):
             eq_file = eq_file_in.split("/")[-1:][0]
             eq_file_out = writedir + "/" + eq_file
             with open(eq_file_in) as infile:
@@ -803,6 +835,119 @@ class QligFEP:
                 file_list_2.append(filename + ".inp")
 
         return [file_list_1, file_list_2, file_list_3]
+
+    def _write_endpoint_file(
+        self, file_out, eq_lambda, steps, overlapping_atoms, restlist, lambda_scaling=None
+    ):
+        """Write a single endpoint MD input file from the neq_endpoint.inp template.
+
+        Used for both the endpoint equilibration files (eq6_*) and the lambda-switching
+        files (neq_*). The per-replicate restart/final file names and the temperature stay
+        as RESTART_VAR/FINAL_VAR/T_VAR placeholders that the run script fills in. When
+        lambda_scaling is given, its lines are appended as the [lambda_scaling] section
+        that drives lambda over the course of the simulation (turning the file into a
+        switching run); without it the file is a plain equilibrium MD at the endpoint.
+        """
+        replacements = dict(self.replacements)
+        replacements["EQ_LAMBDA"] = eq_lambda
+        replacements["STEPS_VAR"] = str(steps)
+        replacements["OUTPUT_VAR"] = "10"
+        template = CONFIGS["INPUT_DIR"] + "/neq_endpoint.inp"
+        with open(template) as infile, open(file_out, "w") as outfile:
+            for line in infile:
+                line = replace(line, replacements)
+                outfile.write(line)
+                if line == "[distance_restraints]\n":
+                    for atompair in overlapping_atoms:
+                        outfile.write(f"{atompair[0]:d} {atompair[1]:d} 0.0 0.1 {self.dr_force:.1f} 0\n")
+                if line == "[sequence_restraints]\n":
+                    for restline in restlist:
+                        outfile.write(restline)
+            if lambda_scaling is not None:
+                outfile.write("\n".join(lambda_scaling) + "\n")
+
+    def write_MD_neq(self, writedir, lig_size1, lig_size2, overlapping_atoms):
+        """Write the non-equilibrium input files: eq1-5 (equilibration), relax_{0,1}
+        (one-time endpoint relaxation), eq6_{0,1} (endpoint equilibration spacing) and
+        neq_{0,1} (lambda switching). State 0 starts at lambda 0.0->1.0 and state 1 at
+        1.0->0.0; the run script relaxes each endpoint once, then chains the restarts and
+        repeats the switches per replicate. Returns the list of written file names.
+        """
+        restlist = self._set_common_md_replacements(lig_size1, lig_size2, "0.500 0.500")
+        file_list = self.write_eq_files(writedir, overlapping_atoms, restlist)
+
+        endpoint_lambdas = {"0": "0.000 1.000", "1": "1.000 0.000"}
+        lambda_scaling = [
+            "",
+            "[lambda_scaling]",
+            f"scaling_parameter          {self.neq_schedule}",
+            f"L_sigmoid        {self.neq_L}",
+        ]
+        for state, eq_lambda in endpoint_lambdas.items():
+            relax_out = writedir + f"/relax_{state}.inp"
+            self._write_endpoint_file(relax_out, eq_lambda, self.neq_relax_steps, overlapping_atoms, restlist)
+            eq6_out = writedir + f"/eq6_{state}.inp"
+            self._write_endpoint_file(eq6_out, eq_lambda, self.neq_eq_steps, overlapping_atoms, restlist)
+            neq_out = writedir + f"/neq_{state}.inp"
+            self._write_endpoint_file(
+                neq_out, eq_lambda, self.neq_steps, overlapping_atoms, restlist, lambda_scaling
+            )
+            file_list += [f"relax_{state}.inp", f"eq6_{state}.inp", f"neq_{state}.inp"]
+        return file_list
+
+    def write_neq_runfile(self, writedir, file_list):
+        """Write the SLURM run script for a non-equilibrium FEP. Each array task runs
+        eq1-5, then loops `neq_reps` forward/reverse lambda switches with qdyn_neq.
+        """
+        src = CONFIGS["INPUT_DIR"] + "/run_neq.sh"
+        tgt = writedir + "/run" + self.cluster + ".sh"
+
+        replacements = CLUSTER_DICT[self.cluster]
+        replacements["FEPS"] = "FEP1.fep"
+        replacements["NEQ_REPS"] = str(self.neq_reps)
+        with open(src) as infile, open(tgt, "w") as outfile:
+            for line in infile:
+                if line.strip() == "#SBATCH --array=1-TOTAL_JOBS":
+                    replacements["TOTAL_JOBS"] = str(self.replicates)
+                if line.strip() == "temperatures=(TEMP_VAR)":
+                    replacements["TEMP_VAR"] = str(self.temperature)
+                if line.strip() == "seeds=(RANDOM_SEEDS)":
+                    replacements["RANDOM_SEEDS"] = " ".join([str(s) for s in self.seeds])
+                if line.strip() == "#SBATCH -A ACCOUNT":
+                    try:  # Try to take account info - not for all clusters!
+                        replacements["ACCOUNT"]
+                    except KeyError:
+                        line = ""
+                if line.strip() == "#SBATCH -J JOBNAME":
+                    if self.cluster == "DARDEL":  # TODO: refactor this...
+                        outfile.write("#SBATCH -p shared\n")
+                    elif self.cluster == "SNELLIUS":
+                        outfile.write("#SBATCH -p rome\n")
+                    try:
+                        if self.system == "water":
+                            jobname = "w_"
+                        elif self.system == "protein":
+                            jobname = "p_"
+                        elif self.system == "vacuum":
+                            jobname = "v_"
+                        jobname += self.lig1 + "_" + self.lig2
+                        replacements["JOBNAME"] = jobname
+                    except Exception as e:
+                        logger.error(f"Something went wrong while defining the jobname:\n{e}")
+                        line = ""
+                outline = replace(line, replacements)
+                if outline.strip().startswith("#SBATCH --mem-per-cpu=512") and self.cluster == "CSB":
+                    continue
+                outfile.write(outline)
+                if line.strip() == "#CLEANUP" and self.to_clean is not None:
+                    rm_line = "rm -r " + " ".join(["*" + x for x in self.to_clean]) + "\n"
+                    outfile.write(rm_line)
+
+        try:
+            st = os.stat(tgt)
+            os.chmod(tgt, st.st_mode | stat.S_IEXEC)
+        except OSError:
+            logger.warning(f"Could not change permission for {tgt}")
 
     def write_submitfile(self, writedir):
         replacements = {}
