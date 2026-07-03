@@ -64,7 +64,8 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         if k == "FF":
             command_str += f" -{k} {v}"
         elif k == "to_clean":
-            command_str += f" --{k} {' '.join(v)}".replace("to_clean", "files-to-clean")
+            if v:
+                command_str += f" --files-to-clean {' '.join(v)}"
         elif k == "water_thresh":
             command_str += f" --{k.replace('_', '-')} {v}"
         elif k == "wath_ligand_only":

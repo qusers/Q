@@ -150,7 +150,7 @@ def parse_arguments(program: str) -> argparse.Namespace:
         "--files-to-clean",
         dest="to_clean",
         nargs="+",
-        default="",
+        default=None,
         help=(
             "Files to clean after the simulation. The arguments are given as a list of strings "
             "and the cleaning is done by adding the command `rm -rf *{arg1} *{arg2}` to the job submission. "
