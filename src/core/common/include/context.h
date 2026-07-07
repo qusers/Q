@@ -79,18 +79,18 @@ class Context {
     std::vector<cimproper_t> cimpropers;
 
     int n_restrspos;
-    std::unique_ptr<HostDeviceBuffer<restrpos_t>> restrspos;
+    std::vector<restrpos_t> restrspos;
 
     int n_restrangs;
-    std::unique_ptr<HostDeviceBuffer<restrang_t>> restrangs;
+    std::vector<restrang_t> restrangs;
 
     int n_restrdists;
-    std::unique_ptr<HostDeviceBuffer<restrdis_t>> restrdists;
+    std::vector<restrdis_t> restrdists;
 
     int n_restrseqs;
-    std::unique_ptr<HostDeviceBuffer<restrseq_t>> restrseqs;
+    std::vector<restrseq_t> restrseqs;
     int n_restrwalls;
-    std::unique_ptr<HostDeviceBuffer<restrwall_t>> restrwalls;
+    std::vector<restrwall_t> restrwalls;
 
     /*
     Atom Info

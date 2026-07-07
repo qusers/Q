@@ -45,3 +45,5 @@
 
 constexpr double tm06 = 1.0e-6;
 constexpr double pt999 = 0.999;
+
+#define CARBON_MASS 12.010

@@ -117,6 +117,10 @@ BondedForce& Handler::bonded_force() {
     return *bonded_force_;
 }
 
+RestraintForce& Handler::restraint_force() {
+    return *restraint_force_;
+}
+
 void Handler::reset_energies() {
     auto& host = Context::instance();
     host.energy.reset();

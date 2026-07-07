@@ -143,15 +143,15 @@ void apply_parse_result(Context& ctx, const ParseResult& parsed) {
     ctx.cimpropers = parsed.cimpropers;
 
     ctx.n_restrspos = static_cast<int>(parsed.restrspos.size());
-    ctx.restrspos = buffer_from_vector(parsed.restrspos, run_gpu);
+    ctx.restrspos = parsed.restrspos;
     ctx.n_restrangs = static_cast<int>(parsed.restrangs.size());
-    ctx.restrangs = buffer_from_vector(parsed.restrangs, run_gpu);
+    ctx.restrangs = parsed.restrangs;
     ctx.n_restrdists = static_cast<int>(parsed.restrdists.size());
-    ctx.restrdists = buffer_from_vector(parsed.restrdists, run_gpu);
+    ctx.restrdists = parsed.restrdists;
     ctx.n_restrseqs = static_cast<int>(parsed.restrseqs.size());
-    ctx.restrseqs = buffer_from_vector(parsed.restrseqs, run_gpu);
+    ctx.restrseqs = parsed.restrseqs;
     ctx.n_restrwalls = static_cast<int>(parsed.restrwalls.size());
-    ctx.restrwalls = buffer_from_vector(parsed.restrwalls, run_gpu);
+    ctx.restrwalls = parsed.restrwalls;
 
     ctx.n_charges = static_cast<int>(parsed.charges.size());
     ctx.charges = buffer_from_vector(parsed.charges, run_gpu);
