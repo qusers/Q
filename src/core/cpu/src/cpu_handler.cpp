@@ -12,32 +12,12 @@
 #include "cpu_q_bond_force.h"
 #include "cpu_q_torsion_force.h"
 #include "cpu_radix_water_force.h"
-#include "cpu_restrang_force.h"
-#include "cpu_restrdis_force.h"
-#include "cpu_restrpos_force.h"
-#include "cpu_restrseq_force.h"
-#include "cpu_restrwall_force.h"
+#include "cpu_restraint_force.h"
 #include "cpu_shake.h"
 #include "cpu_temperature.h"
 #include "init.h"
 
 namespace {
-
-void calc_restraint_forces(int iteration, Context& ctx) {
-    calc_pshell_forces();
-    calc_restrseq_forces();
-    calc_restrpos_forces();
-    calc_restrdis_forces();
-    calc_restrang_forces();
-    calc_restrwall_forces();
-
-    if (ctx.n_waters > 0) {
-        calc_radix_w_forces();
-        if (ctx.md.polarisation) {
-            calc_polx_w_forces(iteration);
-        }
-    }
-}
 
 void calc_q_bonded_forces(Context& ctx) {
     for (int state = 0; state < ctx.n_lambdas; state++) {
@@ -50,12 +30,15 @@ void calc_q_bonded_forces(Context& ctx) {
 }  // namespace
 
 void CpuHandler::initialize_backend() {
+    auto parse_result = ctx.init_data_from_files();
     shake_ = create_shake_backend();
     nonbonded_force_ = create_nonbonded_force_backend();
     bonded_force_ = create_bonded_force_backend();
+    restraint_force_ = create_restraint_force_backend();
     ctx.preprocess_data(*shake_);
     nonbonded_force_->init(ctx);
     bonded_force_->init(ctx);
+    restraint_force_->init(ctx, parse_result.restrspos, parse_result.restrseqs, parse_result.restrdists, parse_result.restrangs, parse_result.restrwalls);
 }
 
 void CpuHandler::shutdown() {
@@ -63,8 +46,13 @@ void CpuHandler::shutdown() {
 
 void CpuHandler::calc_internal_forces(int iteration) {
     bonded_force_->calc(ctx);
-
-    calc_restraint_forces(iteration, ctx);
+    restraint_force_->calc(ctx);
+    if (ctx.n_waters > 0) {
+        calc_radix_w_forces();
+        if (ctx.md.polarisation) {
+            calc_polx_w_forces(iteration);
+        }
+    }
 
     // calc_nonbonded_qq_forces();
     // calc_q_bonded_forces(ctx);
@@ -92,4 +80,8 @@ std::unique_ptr<NonbondedForce> CpuHandler::create_nonbonded_force_backend() {
 
 std::unique_ptr<BondedForce> CpuHandler::create_bonded_force_backend() {
     return std::make_unique<CpuBondedForce>();
+}
+
+std::unique_ptr<RestraintForce> CpuHandler::create_restraint_force_backend() {
+    return std::make_unique<CpuRestraintForce>();
 }

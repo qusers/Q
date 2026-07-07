@@ -142,17 +142,6 @@ void apply_parse_result(Context& ctx, const ParseResult& parsed) {
     ctx.n_cimpropers = static_cast<int>(parsed.cimpropers.size());
     ctx.cimpropers = parsed.cimpropers;
 
-    ctx.n_restrspos = static_cast<int>(parsed.restrspos.size());
-    ctx.restrspos = buffer_from_vector(parsed.restrspos, run_gpu);
-    ctx.n_restrangs = static_cast<int>(parsed.restrangs.size());
-    ctx.restrangs = buffer_from_vector(parsed.restrangs, run_gpu);
-    ctx.n_restrdists = static_cast<int>(parsed.restrdists.size());
-    ctx.restrdists = buffer_from_vector(parsed.restrdists, run_gpu);
-    ctx.n_restrseqs = static_cast<int>(parsed.restrseqs.size());
-    ctx.restrseqs = buffer_from_vector(parsed.restrseqs, run_gpu);
-    ctx.n_restrwalls = static_cast<int>(parsed.restrwalls.size());
-    ctx.restrwalls = buffer_from_vector(parsed.restrwalls, run_gpu);
-
     ctx.n_charges = static_cast<int>(parsed.charges.size());
     ctx.charges = buffer_from_vector(parsed.charges, run_gpu);
     ctx.n_ccharges = static_cast<int>(parsed.ccharges.size());
@@ -245,7 +234,7 @@ void Context::cuda_reset_energies() {
     dvelocities->zero();
 }
 
-void Context::init_data_from_files() {
+ParseResult Context::init_data_from_files() {
     std::unique_ptr<BaseParser> parser;
     if (command_info.input_mode == CommandInputMode::Csv) {
         parser = std::make_unique<CsvParser>(command_info.csv_dir);
@@ -258,6 +247,7 @@ void Context::init_data_from_files() {
     if (n_lambdas > 2) {
         fatal("More than 2 states not supported on GPU architecture. Exiting...");
     }
+    return parser_result;
 }
 
 void Context::preprocess_data(Shake& shake) {
@@ -305,8 +295,4 @@ void Context::preprocess_data(Shake& shake) {
             xcoords->upload();
         }
     }
-}
-
-void Context::init() {
-    init_data_from_files();
 }

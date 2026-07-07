@@ -4,14 +4,9 @@
 
 class CudaHandler : public Handler {
    public:
-    static CudaHandler& instance() {
-        static CudaHandler handler;
-        return handler;
-    }
 
     // Release device resources.
     void shutdown() override;
-
 
    protected:
     bool initialized_ = false;
@@ -26,4 +21,5 @@ class CudaHandler : public Handler {
     std::unique_ptr<Shake> create_shake_backend() override;
     std::unique_ptr<NonbondedForce> create_nonbonded_force_backend() override;
     std::unique_ptr<BondedForce> create_bonded_force_backend() override;
+    std::unique_ptr<RestraintForce> create_restraint_force_backend() override;
 };
