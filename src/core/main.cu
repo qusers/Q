@@ -1,19 +1,22 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <memory>
+
 #include "command_parser.h"
 #include "context.h"
 #include "cpu_handler.h"
 #include "cuda_handler.cuh"
 
-static void calc_integration() {
+void calc_integration() {
     auto& ctx = Context::instance();
-    ctx.init();
-    // output_ctx_in_file(ctx);
-    Handler& handler = ctx.command_info.requested_gpu ? static_cast<Handler&>(CudaHandler::instance()) : static_cast<Handler&>(CpuHandler::instance());
-    handler.initialize();
-    handler.run(ctx.md.steps);
-    handler.shutdown();
+    std::unique_ptr<Handler> handler =
+        ctx.command_info.requested_gpu
+            ? std::unique_ptr<Handler>(std::make_unique<CudaHandler>())
+            : std::unique_ptr<Handler>(std::make_unique<CpuHandler>());
+    handler->initialize();
+    handler->run(ctx.md.steps);
+    handler->shutdown();
 }
 
 int main(int argc, char* argv[]) {

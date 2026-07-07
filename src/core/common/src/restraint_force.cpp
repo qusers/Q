@@ -2,13 +2,17 @@
 
 #include "constants.h"
 
-void RestraintForce::init(Context& ctx) {
+void RestraintForce::init(Context& ctx, const std::vector<restrpos_t>& restrspos,
+                          const std::vector<restrseq_t>& restrseqs,
+                          const std::vector<restrdis_t>& restrdists,
+                          const std::vector<restrang_t>& restrangs,
+                          const std::vector<restrwall_t>& restrwalls) {
     build_posrestr(ctx);
-    build_restrpos(ctx);
-    build_restrseq(ctx);
-    build_restrdis(ctx);
-    build_restrang(ctx);
-    build_restrwall(ctx);
+    build_restrpos(ctx, restrspos);
+    build_restrseq(ctx, restrseqs);
+    build_restrdis(ctx, restrdists);
+    build_restrang(ctx, restrangs);
+    build_restrwall(ctx, restrwalls);
     init_backend(ctx);
 }
 
@@ -35,37 +39,37 @@ void RestraintForce::build_posrestr(Context& ctx) {
     p.eslot_b = HostDeviceBuffer<int>::from_vector(eslot_b, run_gpu);
 }
 
-void RestraintForce::build_restrpos(Context& ctx) {
+void RestraintForce::build_restrpos(Context& ctx, const std::vector<restrpos_t>& restrspos) {
     const bool run_gpu = ctx.command_info.requested_gpu;
-    data_.restrpos.n = ctx.n_restrspos;
-    if (ctx.n_restrspos == 0) return;
-    data_.restrpos.recs = HostDeviceBuffer<restrpos_t>::from_vector(ctx.restrspos, run_gpu);
+    data_.restrpos.n = restrspos.size();
+    if (data_.restrpos.n == 0) return;
+    data_.restrpos.recs = HostDeviceBuffer<restrpos_t>::from_vector(restrspos, run_gpu);
 }
 
-void RestraintForce::build_restrseq(Context& ctx) {
+void RestraintForce::build_restrseq(Context& ctx, const std::vector<restrseq_t>& restrseqs) {
     const bool run_gpu = ctx.command_info.requested_gpu;
-    data_.restrseq.n = ctx.n_restrseqs;
-    if (ctx.n_restrseqs == 0) return;
-    data_.restrseq.recs = HostDeviceBuffer<restrseq_t>::from_vector(ctx.restrseqs, run_gpu);
+    data_.restrseq.n = restrseqs.size();
+    if (data_.restrseq.n == 0) return;
+    data_.restrseq.recs = HostDeviceBuffer<restrseq_t>::from_vector(restrseqs, run_gpu);
 }
 
-void RestraintForce::build_restrdis(Context& ctx) {
+void RestraintForce::build_restrdis(Context& ctx, const std::vector<restrdis_t>& restrdists) {
     const bool run_gpu = ctx.command_info.requested_gpu;
-    data_.restrdis.n = ctx.n_restrdists;
-    if (ctx.n_restrdists == 0) return;
-    data_.restrdis.recs = HostDeviceBuffer<restrdis_t>::from_vector(ctx.restrdists, run_gpu);
+    data_.restrdis.n = restrdists.size();
+    if (data_.restrdis.n == 0) return;
+    data_.restrdis.recs = HostDeviceBuffer<restrdis_t>::from_vector(restrdists, run_gpu);
 }
 
-void RestraintForce::build_restrang(Context& ctx) {
+void RestraintForce::build_restrang(Context& ctx, const std::vector<restrang_t>& restrangs) {
     const bool run_gpu = ctx.command_info.requested_gpu;
-    data_.restrang.n = ctx.n_restrangs;
-    if (ctx.n_restrangs == 0) return;
-    data_.restrang.recs = HostDeviceBuffer<restrang_t>::from_vector(ctx.restrangs, run_gpu);
+    data_.restrang.n = restrangs.size();
+    if (data_.restrang.n == 0) return;
+    data_.restrang.recs = HostDeviceBuffer<restrang_t>::from_vector(restrangs, run_gpu);
 }
 
-void RestraintForce::build_restrwall(Context& ctx) {
+void RestraintForce::build_restrwall(Context& ctx, const std::vector<restrwall_t>& restrwalls) {
     const bool run_gpu = ctx.command_info.requested_gpu;
-    data_.restrwall.n = ctx.n_restrwalls;
-    if (ctx.n_restrwalls == 0) return;
-    data_.restrwall.recs = HostDeviceBuffer<restrwall_t>::from_vector(ctx.restrwalls, run_gpu);
+    data_.restrwall.n = restrwalls.size();
+    if (data_.restrwall.n == 0) return;
+    data_.restrwall.recs = HostDeviceBuffer<restrwall_t>::from_vector(restrwalls, run_gpu);
 }

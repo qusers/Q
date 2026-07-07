@@ -4,10 +4,6 @@
 
 class CudaHandler : public Handler {
    public:
-    static CudaHandler& instance() {
-        static CudaHandler handler;
-        return handler;
-    }
 
     // Release device resources.
     void shutdown() override;

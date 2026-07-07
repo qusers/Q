@@ -78,20 +78,6 @@ class Context {
     std::vector<improper_t> impropers;
     std::vector<cimproper_t> cimpropers;
 
-    int n_restrspos;
-    std::vector<restrpos_t> restrspos;
-
-    int n_restrangs;
-    std::vector<restrang_t> restrangs;
-
-    int n_restrdists;
-    std::vector<restrdis_t> restrdists;
-
-    int n_restrseqs;
-    std::vector<restrseq_t> restrseqs;
-    int n_restrwalls;
-    std::vector<restrwall_t> restrwalls;
-
     /*
     Atom Info
     */
@@ -253,8 +239,8 @@ class Context {
 
     void cuda_reset_energies();
 
-    void init();
     void preprocess_data(Shake &shake);
+    ParseResult init_data_from_files();
 
    private:
     static Context* current_;
@@ -264,5 +250,4 @@ class Context {
     Context(Context&&) = delete;
     Context& operator=(Context&&) = delete;
 
-    void init_data_from_files();
 };

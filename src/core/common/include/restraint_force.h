@@ -56,7 +56,11 @@ struct RestraintData {
 class RestraintForce {
    public:
     virtual ~RestraintForce() = default;
-    void init(Context& ctx);                             // build_* then init_backend
+    void init(Context& ctx, const std::vector<restrpos_t>& restrspos,
+              const std::vector<restrseq_t>& restrseqs,
+              const std::vector<restrdis_t>& restrdists,
+              const std::vector<restrang_t>& restrangs,
+              const std::vector<restrwall_t>& restrwalls);
     virtual void calc(Context& ctx) = 0;
     virtual void cleanup() {}
     bool enabled() const { return data_.enabled(); }
@@ -67,10 +71,10 @@ class RestraintForce {
     virtual void init_backend(Context& ctx) {}
 
    private:
-    void build_posrestr(Context& ctx);   // pshell + fixed atoms (derived from shell[]/excluded[])
-    void build_restrpos(Context& ctx);
-    void build_restrseq(Context& ctx);
-    void build_restrdis(Context& ctx);
-    void build_restrang(Context& ctx);
-    void build_restrwall(Context& ctx);
+    void build_posrestr(Context& ctx);
+    void build_restrpos(Context& ctx, const std::vector<restrpos_t>& restrspos);
+    void build_restrseq(Context& ctx, const std::vector<restrseq_t>& restrseqs);
+    void build_restrdis(Context& ctx, const std::vector<restrdis_t>& restrdists);
+    void build_restrang(Context& ctx, const std::vector<restrang_t>& restrangs);
+    void build_restrwall(Context& ctx, const std::vector<restrwall_t>& restrwalls);
 };

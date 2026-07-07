@@ -30,6 +30,7 @@ void calc_q_bonded_forces(Context& ctx) {
 }  // namespace
 
 void CpuHandler::initialize_backend() {
+    auto parse_result = ctx.init_data_from_files();
     shake_ = create_shake_backend();
     nonbonded_force_ = create_nonbonded_force_backend();
     bonded_force_ = create_bonded_force_backend();
@@ -37,7 +38,7 @@ void CpuHandler::initialize_backend() {
     ctx.preprocess_data(*shake_);
     nonbonded_force_->init(ctx);
     bonded_force_->init(ctx);
-    restraint_force_->init(ctx);
+    restraint_force_->init(ctx, parse_result.restrspos, parse_result.restrseqs, parse_result.restrdists, parse_result.restrangs, parse_result.restrwalls);
 }
 
 void CpuHandler::shutdown() {
