@@ -43,8 +43,10 @@ class CudaShake final : public Shake {
     std::unique_ptr<HostDeviceBuffer<ShakeNetwork>> shake_networks;
 
     std::unique_ptr<HostDeviceBuffer<ShakeBond>> fallback_shake_bonds;
-    std::vector<int> fallback_color_offsets;
+    std::unique_ptr<HostDeviceBuffer<int>> fallback_color_offsets;
     std::unique_ptr<HostDeviceBuffer<int>> fallback_unconverged;
+    int fallback_n_colors = 0;
+    int fallback_coop_blocks = 0;
 
     void find_shake_fast_water(Context& ctx, std::vector<bool>& optimized);
     void find_shake_network(Context& ctx, std::vector<bool>& optimized);
