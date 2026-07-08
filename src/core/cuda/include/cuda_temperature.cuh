@@ -1,6 +1,14 @@
 #pragma once
+#include "temperature.h"
 
-void init_temperature_kernel_data();
-void calc_temperature_host();
+class CudaTemperature : public Temperature {
+   public:
+    void calc(Context& ctx) override;
+    void sync_for_output(Context& ctx) override;
 
-void cleanup_temperature();
+   protected:
+    void init_backend(Context& ctx) override;
+
+   private:
+    std::unique_ptr<HostDeviceBuffer<energy_accum_t>> accum_;  // 6 reduction slots
+};

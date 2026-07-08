@@ -6,6 +6,7 @@ void StdOutput::output_trajectory(Context& ctx, int iteration) {
 }
 
 void StdOutput::output_energy(Context& ctx, int iteration) {
+     if (iteration > 0 && (ctx.md.output <= 0 || iteration % ctx.md.output != 0)) return;
     auto* lambdas = ctx.lambdas ? ctx.lambdas->cpu_data_p : nullptr;
     auto& energy = ctx.energy.data();
 

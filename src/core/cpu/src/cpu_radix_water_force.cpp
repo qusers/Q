@@ -5,8 +5,9 @@
 #include "constants.h"
 #include "context.h"
 #include "cpu_force_accumulation.h"
+#include "temperature.h"
 
-void calc_radix_w_forces() {
+void calc_radix_w_forces(const double* temperature_results) {
     auto& ctx = Context::instance();
     auto& coords = ctx.coords->cpu_data_p;
     auto& dvelocities = ctx.dvelocities->cpu_data_p;
@@ -16,7 +17,7 @@ void calc_radix_w_forces() {
 
     double shift;
     if (ctx.md.radial_force != 0.0) {
-        shift = sqrt(Boltz * ctx.Tfree / ctx.md.radial_force);
+        shift = sqrt(Boltz * temperature_results[R_TFREE] / ctx.md.radial_force);
     } else {
         shift = 0.0;
     }

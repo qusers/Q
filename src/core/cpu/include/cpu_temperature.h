@@ -1,2 +1,8 @@
 #pragma once
-void calc_temperature();
+
+#include "temperature.h"
+
+class CpuTemperature : public Temperature {
+   public:
+    void calc(Context& ctx) override;
+};

@@ -252,7 +252,6 @@ ParseResult Context::init_data_from_files() {
 
 void Context::preprocess_data(Shake& shake) {
     dt = time_unit * md.stepsize;
-    tau_T = time_unit * md.bath_coupling;
     n_waters = (n_atoms - n_atoms_solute) / 3;
     init_inv_mass();
     // Shake constraints, need to be initialized before last part of shrink_topology
@@ -264,7 +263,6 @@ void Context::preprocess_data(Shake& shake) {
 
     exclude_qatom_definitions();
     shake.init(*this);
-    init_for_temperature(*this, shake);
     preprocess_vdw_rule_parameters(*this);
 
     init_unified_atom_parameters();

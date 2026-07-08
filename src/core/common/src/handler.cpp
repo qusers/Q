@@ -22,9 +22,11 @@ void Handler::run_iteration(int iteration) {
     // todo: Why calculate temperature again here?
     calc_temperature();
 
-    // 7. update totals energy
-    update_energy_totals();
-
+    const bool output_step = ctx.md.output > 0 && iteration % ctx.md.output == 0;
+    const bool energy_step = ctx.md.energy > 0 && iteration % ctx.md.energy == 0;
+    if (output_step || energy_step) {
+        update_energy_totals();  // host energy + temperature for stdout and/or energy file
+    }
     // 8. print output to files
     print_outputs(iteration);
 }
@@ -67,6 +69,7 @@ void Handler::update_energy_totals() {
         host.energy.download();
     }
     host.energy.unpack();
+    temperature_->sync_for_output(host);  // publish Ukin before combine sums Utot
     host.energy.combine(host.lambdas->cpu_data_p);
 }
 
@@ -119,6 +122,10 @@ BondedForce& Handler::bonded_force() {
 
 RestraintForce& Handler::restraint_force() {
     return *restraint_force_;
+}
+
+Temperature& Handler::temperature() {
+    return *temperature_;
 }
 
 void Handler::reset_energies() {

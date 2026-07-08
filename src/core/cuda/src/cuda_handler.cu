@@ -6,33 +6,33 @@
 #include "cuda/include/cuda_polx_water_force.cuh"
 #include "cuda/include/cuda_pshell_force.cuh"
 #include "cuda/include/cuda_radix_water_force.cuh"
-#include "cuda/include/cuda_temperature.cuh"
 #include "cuda_bonded_force.cuh"
 #include "cuda_nonbonded_force.cuh"
 #include "cuda_restraint_force.cuh"
 #include "cuda_shake.cuh"
 #include "cuda_shake_v2.cuh"
+#include "cuda_temperature.cuh"
 #include "init.h"
 
 void CudaHandler::initialize_backend() {
     if (!initialized_) {
-
         auto parse_result = ctx.init_data_from_files();
         shake_ = create_shake_backend();
         nonbonded_force_ = create_nonbonded_force_backend();
         bonded_force_ = create_bonded_force_backend();
         restraint_force_ = create_restraint_force_backend();
+        temperature_ = create_temperature_backend();
 
         ctx.preprocess_data(*shake_);
         nonbonded_force_->init(ctx);
         bonded_force_->init(ctx);
         restraint_force_->init(ctx, parse_result.restrspos, parse_result.restrseqs, parse_result.restrdists, parse_result.restrangs, parse_result.restrwalls);
+        temperature_->init(ctx, *shake_);
 
         init_leapfrog_kernel_data();
         init_polx_water_force_kernel_data();
         init_pshell_force_kernel_data();
         init_radix_water_force_kernel_data();
-        init_temperature_kernel_data();
 
         initialized_ = true;
     }
@@ -44,7 +44,6 @@ void CudaHandler::shutdown() {
         cleanup_polx_water_force();
         cleanup_pshell_force();
         cleanup_radix_water_force();
-        cleanup_temperature();
         initialized_ = false;
     }
 }
@@ -56,7 +55,7 @@ void CudaHandler::calc_internal_forces(int iteration) {
     restraint_force_->calc(ctx);
 
     if (host.n_waters > 0) {
-        calc_radix_water_forces_host();
+        calc_radix_water_forces_host(temperature_->data().results->gpu_data_p);
         if (host.md.polarisation) {
             calc_polx_water_forces_host(iteration);
         }
@@ -68,11 +67,11 @@ void CudaHandler::calc_nonbonded_forces() {
 }
 
 void CudaHandler::calc_temperature() {
-    ::calc_temperature_host();
+    temperature_->calc(ctx);
 }
 
 void CudaHandler::calc_leapfrog() {
-    calc_leapfrog_host(*shake_);
+    calc_leapfrog_host(*shake_, temperature_->data().results->gpu_data_p);
 }
 
 void CudaHandler::reset_energies() {
@@ -95,4 +94,8 @@ std::unique_ptr<BondedForce> CudaHandler::create_bonded_force_backend() {
 
 std::unique_ptr<RestraintForce> CudaHandler::create_restraint_force_backend() {
     return std::make_unique<CudaRestraintForce>();
+}
+
+std::unique_ptr<Temperature> CudaHandler::create_temperature_backend() {
+    return std::make_unique<CudaTemperature>();
 }

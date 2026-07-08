@@ -9,6 +9,7 @@
 #include "nonbonded_force.h"
 #include "restraint_force.h"
 #include "shake.h"
+#include "temperature.h"
 
 class Handler {
    public:
@@ -16,8 +17,7 @@ class Handler {
     NonbondedForce& nonbonded_force();
     BondedForce& bonded_force();
     RestraintForce& restraint_force();
-
-
+    Temperature& temperature();
 
     virtual ~Handler() = default;
     virtual void initialize();
@@ -57,8 +57,10 @@ class Handler {
     std::unique_ptr<NonbondedForce> nonbonded_force_;
     std::unique_ptr<BondedForce> bonded_force_;
     std::unique_ptr<RestraintForce> restraint_force_;
+    std::unique_ptr<Temperature> temperature_;
     virtual std::unique_ptr<Shake> create_shake_backend() = 0;
     virtual std::unique_ptr<NonbondedForce> create_nonbonded_force_backend() = 0;
     virtual std::unique_ptr<BondedForce> create_bonded_force_backend() = 0;
     virtual std::unique_ptr<RestraintForce> create_restraint_force_backend() = 0;
+    virtual std::unique_ptr<Temperature> create_temperature_backend() = 0;
 };

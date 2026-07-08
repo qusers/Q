@@ -35,10 +35,12 @@ void CpuHandler::initialize_backend() {
     nonbonded_force_ = create_nonbonded_force_backend();
     bonded_force_ = create_bonded_force_backend();
     restraint_force_ = create_restraint_force_backend();
+    temperature_ = create_temperature_backend();
     ctx.preprocess_data(*shake_);
     nonbonded_force_->init(ctx);
     bonded_force_->init(ctx);
     restraint_force_->init(ctx, parse_result.restrspos, parse_result.restrseqs, parse_result.restrdists, parse_result.restrangs, parse_result.restrwalls);
+    temperature_->init(ctx, *shake_);
 }
 
 void CpuHandler::shutdown() {
@@ -48,7 +50,7 @@ void CpuHandler::calc_internal_forces(int iteration) {
     bonded_force_->calc(ctx);
     restraint_force_->calc(ctx);
     if (ctx.n_waters > 0) {
-        calc_radix_w_forces();
+        calc_radix_w_forces(temperature_->data().results->cpu_data_p);
         if (ctx.md.polarisation) {
             calc_polx_w_forces(iteration);
         }
@@ -63,11 +65,11 @@ void CpuHandler::calc_nonbonded_forces() {
 }
 
 void CpuHandler::calc_temperature() {
-    ::calc_temperature();
+    temperature_->calc(ctx);
 }
 
 void CpuHandler::calc_leapfrog() {
-    ::calc_leapfrog(*shake_);
+    ::calc_leapfrog(*shake_, temperature_->data().results->cpu_data_p);
 }
 
 std::unique_ptr<Shake> CpuHandler::create_shake_backend() {
@@ -84,4 +86,8 @@ std::unique_ptr<BondedForce> CpuHandler::create_bonded_force_backend() {
 
 std::unique_ptr<RestraintForce> CpuHandler::create_restraint_force_backend() {
     return std::make_unique<CpuRestraintForce>();
+}
+
+std::unique_ptr<Temperature> CpuHandler::create_temperature_backend() {
+    return std::make_unique<CpuTemperature>();
 }

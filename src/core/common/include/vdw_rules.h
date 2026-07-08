@@ -4,8 +4,9 @@
 
 #include <math.h>
 #include <precision.h>
+#include "cuda_runtime_utility.h"
 
-__device__ __host__ inline void calc_vdw_geometric(
+HD inline void calc_vdw_geometric(
     real_t ai_aii, real_t aj_aii, real_t ai_bii, real_t aj_bii,
     real_t r6, real_t* V_a, real_t* V_b) {
     *V_a = r6 * r6 * ai_aii * aj_aii;
@@ -19,7 +20,7 @@ __device__ __host__ inline void calc_vdw_geometric(
 //             ai_aii, aj_aii store R*_i, R*_j (vdW radius)
 //             ai_bii, aj_bii store sqrt(eps_i), sqrt(eps_j) (after preprocessing)
 //             r6 is 1/r^6
-__device__ __host__ inline void calc_vdw_arithmetic(
+HD inline void calc_vdw_arithmetic(
     real_t Rstar_i, real_t Rstar_j, real_t sqrt_eps_i, real_t sqrt_eps_j,
     real_t r6, real_t* V_a, real_t* V_b) {
     real_t Rstar_ij = Rstar_i + Rstar_j;           // Arithmetic combination

@@ -22,4 +22,5 @@ class CudaHandler : public Handler {
     std::unique_ptr<NonbondedForce> create_nonbonded_force_backend() override;
     std::unique_ptr<BondedForce> create_bonded_force_backend() override;
     std::unique_ptr<RestraintForce> create_restraint_force_backend() override;
+    std::unique_ptr<Temperature> create_temperature_backend() override;
 };

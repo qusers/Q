@@ -1,10 +1,9 @@
 #pragma once
 #include <memory>
 
+#include "context.h"
 #include "host_device_buffer.h"
 #include "md_types.h"
-#include "context.h"
-
 
 struct ShakeBond {
     int ai;
@@ -48,6 +47,7 @@ class Shake {
 
     // Access the built constraint data for tests or backend integration.
     ShakeData& data() { return data_; }
+    const ShakeData& data() const { return data_; }
 
    protected:
     ShakeData data_;
