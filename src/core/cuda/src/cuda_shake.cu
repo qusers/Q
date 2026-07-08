@@ -1,12 +1,16 @@
 // todo: Don't use double, always use double to do shake
+#include <cooperative_groups.h>
+
 #include <map>
 #include <unordered_map>
 
 #include "constants.h"
 #include "cuda_runtime_utility.h"
 #include "cuda_shake.cuh"
+namespace cg = cooperative_groups;
 
 namespace {
+
 const int kShakeThreads = 64;
 
 using BondKey = std::pair<int, int>;
@@ -259,8 +263,15 @@ void CudaShake::find_fallback_shake_bond(Context& ctx, std::vector<bool>& optimi
     }
     fallback_color_offsets[fallback_bonds_by_color.size()] = fallback_shake_bonds.size();
 
-    this->fallback_color_offsets = fallback_color_offsets;
+    this->fallback_color_offsets = HostDeviceBuffer<int>::from_vector(fallback_color_offsets, true);
+    fallback_n_colors = static_cast<int>(fallback_color_offsets.size()) - 1;
     this->fallback_shake_bonds = HostDeviceBuffer<ShakeBond>::from_vector(fallback_shake_bonds, true);
+
+    fallback_coop_blocks = 0;
+    for (int c = 0; c < fallback_n_colors; c++) {
+        const int n = fallback_color_offsets[c + 1] - fallback_color_offsets[c];
+        fallback_coop_blocks = std::max(fallback_coop_blocks, (n + kShakeThreads - 1) / kShakeThreads);
+    }
 }
 
 void CudaShake::apply(Context& ctx) {
@@ -456,7 +467,6 @@ __global__ void calc_fast_water_shake_kernel(
     coords[h2].x = xcom + trns11 * xc3d + trns12 * yc3d + trns13 * zc3d;
     coords[h2].y = ycom + trns21 * xc3d + trns22 * yc3d + trns23 * zc3d;
     coords[h2].z = zcom + trns31 * xc3d + trns32 * yc3d + trns33 * zc3d;
-
 }
 
 __global__ void calc_h_star_shake_kernel(
@@ -569,43 +579,60 @@ __global__ void print_fallback_shake_failures_kernel(
     }
 }
 
-__global__ void calc_fallback_shake_color_kernel(
-    int n_shakes,
+__global__ void fallback_shake_fused_kernel(
+    int n_colors,
+    const int* color_offsets,
     ShakeBond* shake_bonds,
     coord_t* coords,
     coord_t* xcoords,
     double* winv,
     int* unconverged) {
-    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= n_shakes) return;
+    cg::grid_group grid = cg::this_grid();
+    const int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
-    ShakeBond& shake_bond = shake_bonds[idx];
-    const int ai = shake_bond.ai - 1;
-    const int aj = shake_bond.aj - 1;
-    const double xij_x = coords[ai].x - coords[aj].x;
-    const double xij_y = coords[ai].y - coords[aj].y;
-    const double xij_z = coords[ai].z - coords[aj].z;
-    const double xij2 = xij_x * xij_x + xij_y * xij_y + xij_z * xij_z;
-    const double diff = shake_bond.dist2 - xij2;
-    if (fabs(diff) < shake_tol * shake_bond.dist2) return;
+    for (int iter = 0; iter < shake_max_iter; iter++) {
+        if (grid.thread_rank() == 0) *unconverged = 0;
+        grid.sync();
 
-    atomicExch(unconverged, 1);
-    const double xxij_x = xcoords[ai].x - xcoords[aj].x;
-    const double xxij_y = xcoords[ai].y - xcoords[aj].y;
-    const double xxij_z = xcoords[ai].z - xcoords[aj].z;
-    const double scp = xij_x * xxij_x + xij_y * xxij_y + xij_z * xxij_z;
-    const double inv_mass_sum = winv[ai] + winv[aj];
-    if (scp == 0.0 || inv_mass_sum == 0.0) return;
+        for (int c = 0; c < n_colors; c++) {
+            const int off = color_offsets[c];
+            const int n = color_offsets[c + 1] - off;
 
-    const double corr = diff / (2.0 * scp * inv_mass_sum);
-    const double ai_scale = corr * winv[ai];
-    const double aj_scale = corr * winv[aj];
-    coords[ai].x = coords[ai].x + xxij_x * ai_scale;
-    coords[ai].y = coords[ai].y + xxij_y * ai_scale;
-    coords[ai].z = coords[ai].z + xxij_z * ai_scale;
-    coords[aj].x = coords[aj].x - xxij_x * aj_scale;
-    coords[aj].y = coords[aj].y - xxij_y * aj_scale;
-    coords[aj].z = coords[aj].z - xxij_z * aj_scale;
+            if (tid < n) {
+                ShakeBond& shake_bond = shake_bonds[off + tid];
+                const int ai = shake_bond.ai - 1;
+                const int aj = shake_bond.aj - 1;
+                const double xij_x = coords[ai].x - coords[aj].x;
+                const double xij_y = coords[ai].y - coords[aj].y;
+                const double xij_z = coords[ai].z - coords[aj].z;
+                const double xij2 = xij_x * xij_x + xij_y * xij_y + xij_z * xij_z;
+                const double diff = shake_bond.dist2 - xij2;
+
+                if (fabs(diff) >= shake_tol * shake_bond.dist2) {
+                    *unconverged = 1;  // plain store is fine (any thread -> 1)
+                    const double xxij_x = xcoords[ai].x - xcoords[aj].x;
+                    const double xxij_y = xcoords[ai].y - xcoords[aj].y;
+                    const double xxij_z = xcoords[ai].z - xcoords[aj].z;
+                    const double scp = xij_x * xxij_x + xij_y * xxij_y + xij_z * xxij_z;
+                    const double inv_mass_sum = winv[ai] + winv[aj];
+                    if (scp != 0.0 && inv_mass_sum != 0.0) {
+                        const double corr = diff / (2.0 * scp * inv_mass_sum);
+                        const double ai_scale = corr * winv[ai];
+                        const double aj_scale = corr * winv[aj];
+                        coords[ai].x += xxij_x * ai_scale;
+                        coords[ai].y += xxij_y * ai_scale;
+                        coords[ai].z += xxij_z * ai_scale;
+                        coords[aj].x -= xxij_x * aj_scale;
+                        coords[aj].y -= xxij_y * aj_scale;
+                        coords[aj].z -= xxij_z * aj_scale;
+                    }
+                }
+            }
+            grid.sync();
+        }
+        if (*unconverged == 0) break;
+        grid.sync();
+    }
 }
 
 void CudaShake::apply_to(Context& ctx, coord_t* d_coords, coord_t* d_xcoords) {
@@ -619,29 +646,19 @@ void CudaShake::apply_to(Context& ctx, coord_t* d_coords, coord_t* d_xcoords) {
         calc_h_star_shake_kernel<<<grid_blocks, kShakeThreads>>>(shake_networks->length, shake_networks->gpu_data_p, d_coords, d_xcoords);
     }
     if (fallback_shake_bonds->length > 0) {
-        int color_groups_num = fallback_color_offsets.size() - 1;
-
-        for (int n_iterations = 0; n_iterations < shake_max_iter; n_iterations++) {
-            fallback_unconverged->cpu_data_p[0] = false;
-            fallback_unconverged->upload();
-            for (int i = 0; i < color_groups_num; i++) {
-                const int offset = fallback_color_offsets[i];
-                const int bond_num = fallback_color_offsets[i + 1] - offset;
-                const int grid_blocks = (bond_num + kShakeThreads - 1) / kShakeThreads;
-                calc_fallback_shake_color_kernel<<<grid_blocks, kShakeThreads>>>(
-                    bond_num,
-                    fallback_shake_bonds->gpu_data_p + offset,
-                    d_coords,
-                    d_xcoords,
-                    ctx.winv->gpu_data_p,
-                    fallback_unconverged->gpu_data_p);
-            }
-            fallback_unconverged->download();
-            if (fallback_unconverged->cpu_data_p[0] == false) {
-                break;
-            }
-        }
-
+        fallback_unconverged->zero();
+        void* args[] = {
+            &fallback_n_colors,
+            &fallback_color_offsets->gpu_data_p,
+            &fallback_shake_bonds->gpu_data_p,
+            &d_coords,
+            &d_xcoords,
+            &ctx.winv->gpu_data_p,
+            &fallback_unconverged->gpu_data_p,
+        };
+        dim3 grid(fallback_coop_blocks), block(kShakeThreads);
+        check_cuda(cudaLaunchCooperativeKernel((void*)fallback_shake_fused_kernel, grid, block, args));
+        fallback_unconverged->download();
         if (fallback_unconverged->cpu_data_p[0]) {
             int n_fallback_constraints = fallback_shake_bonds->length;
             const int grid_blocks = (n_fallback_constraints + kShakeThreads - 1) / kShakeThreads;
