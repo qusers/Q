@@ -1,5 +1,6 @@
 #include <stdexcept>
 
+#include "temperature.h"
 #include "common/include/constants.h"
 #include "common/include/context.h"
 #include "cuda/include/cuda_radix_water_force.cuh"
@@ -10,7 +11,7 @@ namespace CudaRadixWaterForce {
 
 __global__ void calc_radix_water_forces_kernel(
     coord_t* coords,
-    double shift,
+    const double* temperature_results,
     int n_atoms_solute,
     int n_atoms,
     topo_t topo,
@@ -22,6 +23,10 @@ __global__ void calc_radix_water_forces_kernel(
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     i = n_atoms_solute + i * 3;  // Process only oxygen atoms of water molecules
     if (i >= n_atoms) return;
+
+    const double shift = (md.radial_force != 0.0)
+                             ? sqrt(Boltz * temperature_results[R_TFREE] / md.radial_force)
+                             : 0.0;
 
     const double dx = coords[i].x - topo.solvent_center.x;
     const double dy = coords[i].y - topo.solvent_center.y;
@@ -52,7 +57,7 @@ __global__ void calc_radix_water_forces_kernel(
     atomic_add_force(&dvelocities[i].z, dv * dz);
 }
 
-void calc_radix_water_forces_host() {
+void calc_radix_water_forces_host(const double* temperature_results) {
     auto& host = Context::instance();
     int water_atoms = host.n_atoms - host.n_atoms_solute;
     if (water_atoms == 0) {
@@ -68,15 +73,8 @@ void calc_radix_water_forces_host() {
 
     auto d_coords = host.coords->gpu_data_p;
     auto d_dvelocities = host.dvelocities->gpu_data_p;
-    double shift;
-    if (host.md.radial_force != 0.0) {
-        shift = sqrt(Boltz * host.Tfree / host.md.radial_force);
-    } else {
-        shift = 0.0;
-    }
 
-    calc_radix_water_forces_kernel<<<numBlocks, blockSize>>>(d_coords,
-                                                             shift,
+    calc_radix_water_forces_kernel<<<numBlocks, blockSize>>>(d_coords, temperature_results,
                                                              host.n_atoms_solute,
                                                              host.n_atoms,
                                                              host.topo,

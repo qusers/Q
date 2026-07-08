@@ -3,8 +3,9 @@
 #include "context.h"
 #include "shake.h"
 #include "cpu_force_accumulation.h"
+#include "temperature.h"
 
-void calc_leapfrog(Shake &shake) {
+void calc_leapfrog(Shake &shake, const double* temperature_results) {
     auto& ctx = Context::instance();
     auto &atypes = ctx.atypes->cpu_data_p;
     auto &catypes = ctx.catypes->cpu_data_p;
@@ -23,9 +24,10 @@ void calc_leapfrog(Shake &shake) {
         const double fy = force_from_accum(dvelocities[i].y);
         const double fz = force_from_accum(dvelocities[i].z);
 
-        velocities[i].x = (velocities[i].x - fx * ctx.dt * winv_i) * ctx.Tscale_solute;
-        velocities[i].y = (velocities[i].y - fy * ctx.dt * winv_i) * ctx.Tscale_solute;
-        velocities[i].z = (velocities[i].z - fz * ctx.dt * winv_i) * ctx.Tscale_solute;
+        velocities[i].x = (velocities[i].x - fx * ctx.dt * winv_i) * temperature_results[R_TSCALE_SOL];
+        velocities[i].y = (velocities[i].y - fy * ctx.dt * winv_i) * temperature_results[R_TSCALE_SOL];
+        velocities[i].z = (velocities[i].z - fz * ctx.dt * winv_i) * temperature_results[R_TSCALE_SOL];
+
 
         xcoords[i].x = coords[i].x;
         xcoords[i].y = coords[i].y;
@@ -44,9 +46,9 @@ void calc_leapfrog(Shake &shake) {
         const double fy = force_from_accum(dvelocities[i].y);
         const double fz = force_from_accum(dvelocities[i].z);
 
-        velocities[i].x = (velocities[i].x - fx * ctx.dt * winv_i) * ctx.Tscale_solvent;
-        velocities[i].y = (velocities[i].y - fy * ctx.dt * winv_i) * ctx.Tscale_solvent;
-        velocities[i].z = (velocities[i].z - fz * ctx.dt * winv_i) * ctx.Tscale_solvent;
+        velocities[i].x = (velocities[i].x - fx * ctx.dt * winv_i) * temperature_results[R_TSCALE_SLV];
+        velocities[i].y = (velocities[i].y - fy * ctx.dt * winv_i) * temperature_results[R_TSCALE_SLV];
+        velocities[i].z = (velocities[i].z - fz * ctx.dt * winv_i) * temperature_results[R_TSCALE_SLV];
 
         xcoords[i].x = coords[i].x;
         xcoords[i].y = coords[i].y;

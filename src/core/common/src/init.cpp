@@ -435,46 +435,6 @@ void init_pshells_from_charge_groups() {
     printf("(%s): n_heavy = %d, n_inshell = %d\n", use_switch_atom ? "switch atoms" : "centroids", n_heavy, n_inshell);
 }
 
-void init_for_temperature(Context& ctx, Shake& shake) {
-    double excl_shake = 0.0;
-    auto* excluded = ctx.excluded->cpu_data_p;
-
-    auto* shake_bonds = shake.data().shake_bonds->cpu_data_p;
-    int n_constraints = shake.data().n_constraints;
-    int mol = 0;
-    int n_solute_shake_constraints = 0;
-    for (int i = 0; i < n_constraints; i++) {
-        auto& shake_bond = shake_bonds[i];
-        const int ai = shake_bond.ai - 1;
-        const int aj = shake_bond.aj - 1;
-
-        if (excluded[ai]) excl_shake += 0.5;
-        if (excluded[aj]) excl_shake += 0.5;
-        while (mol + 1 < ctx.n_molecules && ai + 1 >= ctx.molecules[mol + 1]) {
-            // new molecule
-            mol += 1;
-        }
-        if (mol < ctx.n_molecules - ctx.n_waters) {
-            n_solute_shake_constraints++;
-        }
-    }
-
-    ctx.Ndegf = 3 * ctx.n_atoms - shake.data().n_constraints;
-    ctx.Ndegfree = ctx.Ndegf - 3 * ctx.n_excluded + excl_shake;
-
-    ctx.Ndegf_solvent = 3 * (ctx.n_atoms - ctx.n_atoms_solute) - (shake.data().n_constraints - n_solute_shake_constraints);
-    ctx.Ndegf_solute = ctx.Ndegf - ctx.Ndegf_solvent;
-    ctx.Ndegfree_solvent = 3 * (ctx.n_atoms - ctx.n_atoms_solute) - (shake.data().n_constraints - n_solute_shake_constraints);
-    ctx.Ndegfree_solute = ctx.Ndegfree - ctx.Ndegfree_solvent;
-
-    printf("n_shake_constrains = %d, n_solute_shake_constraints = %d, excl_shake = %f\n", shake.data().n_constraints, n_solute_shake_constraints, excl_shake);
-
-    if (ctx.Ndegfree_solvent * ctx.Ndegfree_solute == 0) {
-        ctx.separate_scaling = false;
-    } else {
-        ctx.separate_scaling = ctx.md.separate_scaling;
-    }
-}
 
 /* =============================================
  * == CALCUTED IN THE INTEGRATION

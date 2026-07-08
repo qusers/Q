@@ -12,4 +12,3 @@ void init_water_sphere();
 void init_wshells();
 
 void stop_cm_translation(Context& ctx);
-void init_for_temperature(Context& ctx, Shake &shake);

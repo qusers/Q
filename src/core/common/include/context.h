@@ -1,6 +1,5 @@
 #pragma once
 
-#include <vector_types.h>
 
 #include <array>
 #include <map>
@@ -36,13 +35,11 @@ class Context {
     int n_waters = 0;
     int n_molecules;
     double dt = 0.0;
-    double tau_T = 0.0;
     md_t md;
     topo_t topo;
     NativeOutputConfig native_output;
     int n_excluded;
     int n_lambdas;
-    bool separate_scaling = false;
     charge_group_config_t charge_group_config;
 
     /*
@@ -143,18 +140,9 @@ class Context {
     /*
     Temperature
     */
-
-    double Temp = 0.0;
-    double Tfree = 0.0;
-    int Ndegf = 0;
+    double Temp = 0;
     int Ndegfree = 0;
-    int Ndegf_solute = 0;
-    int Ndegfree_solute = 0;
-    int Ndegf_solvent = 0;
-    int Ndegfree_solvent = 0;
 
-    double Tscale_solute = 0.0;
-    double Tscale_solvent = 0.0;
     /*
     Info for FEP
     */

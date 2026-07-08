@@ -2,8 +2,9 @@
 
 #include "common/include/context.h"
 #include "cuda/include/cuda_leapfrog.cuh"
-#include "cuda_utility.cuh"
 #include "cuda_force_accumulation.cuh"
+#include "cuda_utility.cuh"
+#include "temperature.h"
 
 namespace CudaLeapfrog {
 
@@ -18,8 +19,7 @@ __global__ void calc_leapfrog_kernel(
     coord_t* xcoords,
     int n_atoms,
     int n_atoms_solute,
-    double Tscale_solute,
-    double Tscale_solvent,
+    const double* temperature_results,
     double dt) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_atoms) return;
@@ -31,7 +31,7 @@ __global__ void calc_leapfrog_kernel(
     mass_i = catypes[atypes[i].code - 1].m;
 
     winv_i = 1 / mass_i;
-    double scale = (i < n_atoms_solute) ? Tscale_solute : Tscale_solvent;
+    double scale = (i < n_atoms_solute) ? temperature_results[R_TSCALE_SOL] : temperature_results[R_TSCALE_SLV];
 
     const double fx = force_from_accum(dvelocities[i].x);
     const double fy = force_from_accum(dvelocities[i].y);
@@ -64,7 +64,8 @@ __global__ void update_velocities_from_positions_kernel(
     velocities[idx].z = (coords[idx].z - xcoords[idx].z) / dt;
 }
 
-void calc_leapfrog_host(Shake &shake) {
+// d_temperature_results contains Tscale_solute, Tscale_solvent
+void calc_leapfrog_host(Shake& shake, const double* d_temperature_results) {
     auto& host = Context::instance();
     auto d_atypes = host.atypes->gpu_data_p;
     auto d_catypes = host.catypes->gpu_data_p;
@@ -84,8 +85,7 @@ void calc_leapfrog_host(Shake &shake) {
         d_xcoords,
         host.n_atoms,
         host.n_atoms_solute,
-        host.Tscale_solute,
-        host.Tscale_solvent,
+        d_temperature_results,
         host.dt);
 
     // shake
