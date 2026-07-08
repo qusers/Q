@@ -6,6 +6,7 @@
 #include "base_output.h"
 #include "bonded_force.h"
 #include "context.h"
+#include "integrator.h"
 #include "nonbonded_force.h"
 #include "restraint_force.h"
 #include "shake.h"
@@ -18,6 +19,7 @@ class Handler {
     BondedForce& bonded_force();
     RestraintForce& restraint_force();
     Temperature& temperature();
+    Integrator& integrator();
 
     virtual ~Handler() = default;
     virtual void initialize();
@@ -58,9 +60,11 @@ class Handler {
     std::unique_ptr<BondedForce> bonded_force_;
     std::unique_ptr<RestraintForce> restraint_force_;
     std::unique_ptr<Temperature> temperature_;
+    std::unique_ptr<Integrator> integrator_;
     virtual std::unique_ptr<Shake> create_shake_backend() = 0;
     virtual std::unique_ptr<NonbondedForce> create_nonbonded_force_backend() = 0;
     virtual std::unique_ptr<BondedForce> create_bonded_force_backend() = 0;
     virtual std::unique_ptr<RestraintForce> create_restraint_force_backend() = 0;
     virtual std::unique_ptr<Temperature> create_temperature_backend() = 0;
+    virtual std::unique_ptr<Integrator> create_integrator_backend() = 0;
 };

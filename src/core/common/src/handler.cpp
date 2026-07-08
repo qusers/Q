@@ -128,6 +128,10 @@ Temperature& Handler::temperature() {
     return *temperature_;
 }
 
+Integrator& Handler::integrator() {
+    return *integrator_;
+}
+
 void Handler::reset_energies() {
     auto& host = Context::instance();
     host.energy.reset();

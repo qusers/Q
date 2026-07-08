@@ -4,10 +4,9 @@
 
 #include "context.h"
 #include "cpu_bonded_force.h"
-#include "cpu_leapfrog.h"
+#include "cpu_integrator.h"
 #include "cpu_nonbonded_force.h"
 #include "cpu_polx_water_force.h"
-#include "cpu_pshell_force.h"
 #include "cpu_q_angle_force.h"
 #include "cpu_q_bond_force.h"
 #include "cpu_q_torsion_force.h"
@@ -36,11 +35,13 @@ void CpuHandler::initialize_backend() {
     bonded_force_ = create_bonded_force_backend();
     restraint_force_ = create_restraint_force_backend();
     temperature_ = create_temperature_backend();
+    integrator_ = create_integrator_backend();
     ctx.preprocess_data(*shake_);
     nonbonded_force_->init(ctx);
     bonded_force_->init(ctx);
     restraint_force_->init(ctx, parse_result.restrspos, parse_result.restrseqs, parse_result.restrdists, parse_result.restrangs, parse_result.restrwalls);
     temperature_->init(ctx, *shake_);
+    integrator_->init(ctx, *shake_, *temperature_);
 }
 
 void CpuHandler::shutdown() {
@@ -55,9 +56,6 @@ void CpuHandler::calc_internal_forces(int iteration) {
             calc_polx_w_forces(iteration);
         }
     }
-
-    // calc_nonbonded_qq_forces();
-    // calc_q_bonded_forces(ctx);
 }
 
 void CpuHandler::calc_nonbonded_forces() {
@@ -69,7 +67,7 @@ void CpuHandler::calc_temperature() {
 }
 
 void CpuHandler::calc_leapfrog() {
-    ::calc_leapfrog(*shake_, temperature_->data().results->cpu_data_p);
+    integrator_->step(ctx);
 }
 
 std::unique_ptr<Shake> CpuHandler::create_shake_backend() {
@@ -90,4 +88,8 @@ std::unique_ptr<RestraintForce> CpuHandler::create_restraint_force_backend() {
 
 std::unique_ptr<Temperature> CpuHandler::create_temperature_backend() {
     return std::make_unique<CpuTemperature>();
+}
+
+std::unique_ptr<Integrator> CpuHandler::create_integrator_backend() {
+    return std::make_unique<CpuIntegrator>();
 }
