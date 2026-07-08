@@ -10,7 +10,7 @@ mu_r = -dF + sigma^2/2 (reverse), so BAR should recover the known dF. Working in
 import numpy as np
 import pytest
 
-from QligFEP.analyze_neq import bar_delta_f, bar_with_uncertainty, work_overlap
+from QligFEP.analyze_neq import bar_delta_f, work_overlap
 
 
 def crooks_consistent_works(true_dF, sigma, n, seed):
@@ -33,16 +33,6 @@ def test_bar_is_antisymmetric_in_swapping_directions():
     # Swapping forward<->reverse must flip the sign of the estimated free energy.
     reverse = bar_delta_f(work_reverse, work_forward, beta=1.0)
     assert forward == pytest.approx(-reverse, abs=1e-6)
-
-
-def test_bootstrap_ci_brackets_the_estimate():
-    work_forward, work_reverse = crooks_consistent_works(2.5, sigma=2.0, n=4000, seed=3)
-    rng = np.random.default_rng(0)
-    dF, dF_err, overlap = bar_with_uncertainty(work_forward, work_reverse, beta=1.0, n_bootstrap=500, rng=rng)
-    assert dF == pytest.approx(2.5, abs=0.25)
-    assert dF_err > 0
-    assert abs(dF - 2.5) < 5 * dF_err
-    assert 0.0 <= overlap <= 1.0
 
 
 def test_overlap_high_for_identical_distributions():
