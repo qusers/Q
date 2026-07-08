@@ -37,7 +37,7 @@ class TestMDParameters:
         assert params.lrf is True
         assert params.cutoff_q_atom == 99
         assert params.shell_force == 10.0
-        assert params.polarisation is True
+        assert params.polarization is True
         assert params.topology == "dualtop.top"
         assert params.fep_file == "FEP_VAR"
 
@@ -93,9 +93,7 @@ class TestRenderMdInput:
         """Assert that no non-blank line has leading whitespace."""
         for i, line in enumerate(content.splitlines(), 1):
             if line.strip():  # skip blank lines
-                assert line == line.lstrip(), (
-                    f"Line {i} has unexpected leading whitespace: {line!r}"
-                )
+                assert line == line.lstrip(), f"Line {i} has unexpected leading whitespace: {line!r}"
 
     def test_eq1_indentation(self):
         """Verify eq1 output has no leading whitespace (exercises equilibration_start + minimization_settings)."""
@@ -500,9 +498,7 @@ class TestWallRestraintsInMdInput:
 
     def test_wall_restraints_section_present(self):
         """Verify [wall_restraints] section appears in rendered output."""
-        params = MDParameters(
-            steps=5000, stepsize=2.0, temperature=298, bath_coupling=10.0, shell_radius=25
-        )
+        params = MDParameters(steps=5000, stepsize=2.0, temperature=298, bath_coupling=10.0, shell_radius=25)
         wall_str = "100 102 20.0 1.0 0 0 0"
         content = render_md_input(
             params=params,
@@ -517,9 +513,7 @@ class TestWallRestraintsInMdInput:
 
     def test_wall_restraints_empty_by_default(self):
         """Verify [wall_restraints] section is present but empty when not provided."""
-        params = MDParameters(
-            steps=5000, stepsize=2.0, temperature=298, bath_coupling=10.0, shell_radius=25
-        )
+        params = MDParameters(steps=5000, stepsize=2.0, temperature=298, bath_coupling=10.0, shell_radius=25)
         content = render_md_input(
             params=params,
             lambda1="0.500",
@@ -531,9 +525,7 @@ class TestWallRestraintsInMdInput:
 
     def test_wall_restraints_after_distance_restraints(self):
         """Verify [wall_restraints] appears after [distance_restraints]."""
-        params = MDParameters(
-            steps=5000, stepsize=2.0, temperature=298, bath_coupling=10.0, shell_radius=25
-        )
+        params = MDParameters(steps=5000, stepsize=2.0, temperature=298, bath_coupling=10.0, shell_radius=25)
         content = render_md_input(
             params=params,
             lambda1="0.500",
@@ -801,7 +793,10 @@ class TestQprepProteinTemplate:
 
     def test_render_basic(self):
         """Verify basic protein qprep.inp rendering."""
-        from QligFEP.templates.qprep import QprepProteinParameters, render_qprep_protein_input
+        from QligFEP.templates.qprep import (
+            QprepProteinParameters,
+            render_qprep_protein_input,
+        )
 
         params = QprepProteinParameters(
             ff_lib_path="/path/to/qamber14.lib",
@@ -826,7 +821,10 @@ class TestQprepProteinTemplate:
 
     def test_render_with_cysbonds(self):
         """Verify protein qprep.inp includes cysbond lines."""
-        from QligFEP.templates.qprep import QprepProteinParameters, render_qprep_protein_input
+        from QligFEP.templates.qprep import (
+            QprepProteinParameters,
+            render_qprep_protein_input,
+        )
 
         params = QprepProteinParameters(
             ff_lib_path="qamber14.lib",
