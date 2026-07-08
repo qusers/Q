@@ -5,18 +5,26 @@ from dataclasses import dataclass
 
 @dataclass
 class MDParameters:
-    """Parameters for MD input files.
+    """Parameters for a Q molecular-dynamics input (.inp) file.
 
-    This dataclass captures all the configurable parameters for Q MD simulations.
+    Each field maps to a key the Q engine (src/q6/md.f90) reads from a named
+    [section]. The sections are:
+
+      - [MD]       core dynamics: integration, thermostat, SHAKE, minimiser.
+      - [cut-offs] hard spherical non-bonded cutoffs (A); q_atom ~ infinite.
+      - [sphere]   solute boundary-shell restraint (SCAAS droplet).
+      - [solvent]  water boundary restraints + opt-in per-state Born correction.
+      - [intervals]/[files] output cadence and filenames.
+
     The temperature field accepts "T_VAR" for runtime substitution by the job
     submission script.
     """
 
     # Simulation core
     steps: int
-    stepsize: float
-    temperature: int | str  # Can be int or "T_VAR" placeholder
-    bath_coupling: float
+    stepsize: float  # fs; engine converts to internal units (dt = 0.020462 * stepsize)
+    temperature: int | str  # K target; or "T_VAR" placeholder
+    bath_coupling: float  # fs; Berendsen bath relaxation time (tau_T), must be >= stepsize
 
     # Shake settings
     shake_solvent: bool = True  # Should be always on - we use rigid water models
@@ -24,24 +32,24 @@ class MDParameters:
     shake_solute: bool = False
 
     # Other MD settings
-    lrf: bool = True
-    separate_scaling: bool = True
+    lrf: bool = True  # Local Reaction Field Taylor expansion beyond the cutoff
+    separate_scaling: bool = True  # couple solute and solvent to the heat bath separately
 
-    # Cut-offs (usually constant)
+    # Cut-offs in Angstrom (usually constant)
     cutoff_solute_solvent: int = 10
     cutoff_solute_solute: int = 10
     cutoff_solvent_solvent: int = 10
-    cutoff_q_atom: int = 99
-    cutoff_lrf: int = 99
+    cutoff_q_atom: int = 99  # ~infinite: Q-atoms see all environment (FEP consistency)
+    cutoff_lrf: int = 99  # outer LRF radius; engine requires >= the cutoffs above
 
     # Sphere
-    shell_force: float = 10.0
-    shell_radius: int = 25
+    shell_force: float = 10.0  # kcal/mol/A^2; harmonic restraint of boundary-shell solute atoms
+    shell_radius: int = 25  # A; inner radius of the restrained shell (rexcl_i)
 
     # Solvent
-    radial_force: float = 60.0
-    polarisation: bool = True
-    polarisation_force: float = 20.0
+    radial_force: float = 60.0  # kcal/mol/A^2; radial restraint keeping surface waters in
+    polarization: bool = True  # SCAAS surface-water dipole-orientation restraint
+    polarization_force: float = 20.0  # kcal/mol/rad^2; force constant for the orientation restraint
 
     # Intervals
     interval_output: int = 5
@@ -116,9 +124,7 @@ def render_md_input(
     )
 
     energy_interval = (
-        f"energy                    {params.interval_energy}\n"
-        if params.interval_energy is not None
-        else ""
+        f"energy                    {params.interval_energy}\n" if params.interval_energy is not None else ""
     )
 
     restart_file_name = f"restart                   {restart_file}\n" if restart_file else ""
@@ -151,8 +157,8 @@ shell_radius              {params.shell_radius}
 
 [solvent]
 radial_force              {params.radial_force}
-polarisation              {onoff(params.polarisation)}
-polarisation_force        {params.polarisation_force}
+polarization              {onoff(params.polarization)}
+polarization_force        {params.polarization_force}
 
 [intervals]
 output                    {params.interval_output}

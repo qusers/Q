@@ -28,8 +28,8 @@ shell_radius              25
 
 [solvent]
 radial_force              60.0
-polarisation              on
-polarisation_force        20.0
+polarization              on
+polarization_force        20.0
 
 [intervals]
 output                    5
