@@ -1,12 +1,11 @@
 #include <iostream>
 
-#include "common/include/context.h"
-#include "cuda/include/cuda_handler.cuh"
-#include "cuda/include/cuda_leapfrog.cuh"
+#include "context.h"
 #include "cuda/include/cuda_polx_water_force.cuh"
-#include "cuda/include/cuda_pshell_force.cuh"
 #include "cuda/include/cuda_radix_water_force.cuh"
 #include "cuda_bonded_force.cuh"
+#include "cuda_handler.cuh"
+#include "cuda_integrator.cuh"
 #include "cuda_nonbonded_force.cuh"
 #include "cuda_restraint_force.cuh"
 #include "cuda_shake.cuh"
@@ -22,16 +21,16 @@ void CudaHandler::initialize_backend() {
         bonded_force_ = create_bonded_force_backend();
         restraint_force_ = create_restraint_force_backend();
         temperature_ = create_temperature_backend();
+        integrator_ = create_integrator_backend();
 
         ctx.preprocess_data(*shake_);
         nonbonded_force_->init(ctx);
         bonded_force_->init(ctx);
         restraint_force_->init(ctx, parse_result.restrspos, parse_result.restrseqs, parse_result.restrdists, parse_result.restrangs, parse_result.restrwalls);
         temperature_->init(ctx, *shake_);
+        integrator_->init(ctx, *shake_, *temperature_);
 
-        init_leapfrog_kernel_data();
         init_polx_water_force_kernel_data();
-        init_pshell_force_kernel_data();
         init_radix_water_force_kernel_data();
 
         initialized_ = true;
@@ -40,9 +39,7 @@ void CudaHandler::initialize_backend() {
 
 void CudaHandler::shutdown() {
     if (initialized_) {
-        cleanup_leapfrog();
         cleanup_polx_water_force();
-        cleanup_pshell_force();
         cleanup_radix_water_force();
         initialized_ = false;
     }
@@ -71,7 +68,7 @@ void CudaHandler::calc_temperature() {
 }
 
 void CudaHandler::calc_leapfrog() {
-    calc_leapfrog_host(*shake_, temperature_->data().results->gpu_data_p);
+    integrator_->step(ctx);
 }
 
 void CudaHandler::reset_energies() {
@@ -98,4 +95,8 @@ std::unique_ptr<RestraintForce> CudaHandler::create_restraint_force_backend() {
 
 std::unique_ptr<Temperature> CudaHandler::create_temperature_backend() {
     return std::make_unique<CudaTemperature>();
+}
+
+std::unique_ptr<Integrator> CudaHandler::create_integrator_backend() {
+    return std::make_unique<CudaIntegrator>();
 }

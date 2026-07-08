@@ -4,7 +4,6 @@
 #include "common/include/context.h"
 #include "common/include/constants.h"
 #include "cuda/include/cuda_polx_water_force.cuh"
-#include "cuda_utility.cuh"
 #include "cuda_force_accumulation.cuh"
 
 namespace CudaPolxWaterForce {
