@@ -96,7 +96,7 @@ void write_restart_record(std::ofstream& out,
     write_record(out, payload.data(), static_cast<int32_t>(payload.size()));
 }
 
-void write_theta_corr_record(std::ofstream& out, const shell_t* wshells, int n_shells) {
+void write_theta_corr_record(std::ofstream& out, const std::vector<shell_t>& wshells, int n_shells) {
     std::vector<char> payload;
     append_int32(payload, n_shells);
     for (int i = 0; i < n_shells; i++) {
@@ -311,10 +311,7 @@ void NativeOutput::write_restart_file(Context& ctx) const {
 
     write_restart_record(out, ctx.coords->cpu_data_p, nullptr, ctx.n_atoms, false);
     write_restart_record(out, nullptr, ctx.velocities->cpu_data_p, ctx.n_atoms, true);
-    if (ctx.md.polarisation && ctx.wshells && ctx.n_shells > 0) {
-        if (ctx.command_info.requested_gpu) {
-            ctx.wshells->download();
-        }
-        write_theta_corr_record(out, ctx.wshells->cpu_data_p, ctx.n_shells);
+    if (ctx.md.polarisation && ctx.wshells.size() > 0) {
+        write_theta_corr_record(out, ctx.wshells, ctx.wshells.size());
     }
 }

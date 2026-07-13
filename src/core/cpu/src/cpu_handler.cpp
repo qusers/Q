@@ -6,14 +6,13 @@
 #include "cpu_bonded_force.h"
 #include "cpu_integrator.h"
 #include "cpu_nonbonded_force.h"
-#include "cpu_polx_water_force.h"
 #include "cpu_q_angle_force.h"
 #include "cpu_q_bond_force.h"
 #include "cpu_q_torsion_force.h"
-#include "cpu_radix_water_force.h"
 #include "cpu_restraint_force.h"
 #include "cpu_shake.h"
 #include "cpu_temperature.h"
+#include "cpu_water_boundary_force.h"
 #include "init.h"
 
 namespace {
@@ -36,11 +35,14 @@ void CpuHandler::initialize_backend() {
     restraint_force_ = create_restraint_force_backend();
     temperature_ = create_temperature_backend();
     integrator_ = create_integrator_backend();
+    water_boundary_force_ = create_water_boundary_force_backend();
     ctx.preprocess_data(*shake_);
     nonbonded_force_->init(ctx);
     bonded_force_->init(ctx);
     restraint_force_->init(ctx, parse_result.restrspos, parse_result.restrseqs, parse_result.restrdists, parse_result.restrangs, parse_result.restrwalls);
     temperature_->init(ctx, *shake_);
+    water_boundary_force_->init(ctx, *temperature_, parse_result.restart_theta_corr);
+
     integrator_->init(ctx, *shake_, *temperature_);
 }
 
@@ -50,12 +52,7 @@ void CpuHandler::shutdown() {
 void CpuHandler::calc_internal_forces(int iteration) {
     bonded_force_->calc(ctx);
     restraint_force_->calc(ctx);
-    if (ctx.n_waters > 0) {
-        calc_radix_w_forces(temperature_->data().results->cpu_data_p);
-        if (ctx.md.polarisation) {
-            calc_polx_w_forces(iteration);
-        }
-    }
+    water_boundary_force_->calc(ctx, iteration);
 }
 
 void CpuHandler::calc_nonbonded_forces() {
@@ -92,4 +89,7 @@ std::unique_ptr<Temperature> CpuHandler::create_temperature_backend() {
 
 std::unique_ptr<Integrator> CpuHandler::create_integrator_backend() {
     return std::make_unique<CpuIntegrator>();
+}
+std::unique_ptr<WaterBoundaryForce> CpuHandler::create_water_boundary_force_backend() {
+    return std::make_unique<CpuWaterBoundaryForce>();
 }

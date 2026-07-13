@@ -8,7 +8,5 @@ void init_patoms();
 void init_inv_mass();
 void init_pshells();
 void init_velocities();
-void init_water_sphere();
-void init_wshells();
 
 void stop_cm_translation(Context& ctx);

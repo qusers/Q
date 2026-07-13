@@ -35,6 +35,7 @@ class WaterBoundaryForce {
     virtual void cleanup() {}
 
     const WaterBoundaryData& data() const { return data_; }
+    virtual void sync_for_output(Context& ctx);
 
    protected:
     WaterBoundaryData data_;

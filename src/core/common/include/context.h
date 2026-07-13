@@ -113,18 +113,7 @@ class Context {
     /*
     Water
     */
-    int n_shells;
-    std::unique_ptr<HostDeviceBuffer<shell_t>> wshells;
-    double crgQtot = 0.0;
-    double Dwmz = 0.0;
-    double awmz = 0.0;
-    std::vector<double> theta;
-    std::vector<double> theta0;
-    std::vector<double> tdum;
-    std::vector<double> restart_theta_corr;
-    int n_max_inshell;
-    std::vector<std::vector<int>> list_sh;
-    std::vector<std::vector<int>> nsort;
+    std::vector<shell_t> wshells;
 
     /*
     FEP

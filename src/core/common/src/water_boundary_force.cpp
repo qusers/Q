@@ -81,11 +81,12 @@ void WaterBoundaryForce::build_wshells(Context& ctx, double crgQtot, const std::
         }
     }
 
-    for (int i = 0; i < ctx.n_shells; i++) {
+    for (int i = 0; i < data_.n_shells; i++) {
         printf("shell %d: (%f, %f)\n",  // verbatim (see note)
-               i, wshells[0].router, wshells[0].router - wshells[0].dr);
+               i, wshells[i].router, wshells[i].router - wshells[i].dr);
     }
-    data_.n_max_inshell *= 1.5;  // take largest and add some extra
+    // data_.n_max_inshell *= 1.5;  // take largest and add some extra
+    data_.n_max_inshell = ctx.n_waters;
     data_.theta = std::make_unique<HostDeviceBuffer<double>>(ctx.n_waters, true, run_gpu);
     data_.list_sh = std::make_unique<HostDeviceBuffer<int>>(data_.n_max_inshell * data_.n_shells, true, run_gpu);
 
@@ -93,4 +94,21 @@ void WaterBoundaryForce::build_wshells(Context& ctx, double crgQtot, const std::
     data_.list_sh->zero();
 
     if (run_gpu) data_.wshells->upload();
+}
+
+void WaterBoundaryForce::sync_for_output(
+    Context& ctx) {
+
+    if (!data_.wshells ||
+        data_.n_shells <= 0) {
+        ctx.wshells.clear();
+        return;
+    }
+
+    const shell_t* source =
+        data_.wshells->cpu_data_p;
+
+    ctx.wshells.assign(
+        source,
+        source + data_.n_shells);
 }
