@@ -113,6 +113,7 @@ class Context {
     /*
     Water
     */
+    int n_shells;
     std::unique_ptr<HostDeviceBuffer<shell_t>> wshells;
     double crgQtot = 0.0;
     double Dwmz = 0.0;
@@ -122,7 +123,6 @@ class Context {
     std::vector<double> tdum;
     std::vector<double> restart_theta_corr;
     int n_max_inshell;
-    int n_shells;
     std::vector<std::vector<int>> list_sh;
     std::vector<std::vector<int>> nsort;
 
