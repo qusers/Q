@@ -257,6 +257,33 @@ def pdb_parse_out(line):
     return line
 
 
+def _pdb_coord_key(x, y, z):
+    """Coordinate identity at written PDB precision (3 decimals, as pdb_parse_out)."""
+    return (f"{x:.3f}", f"{y:.3f}", f"{z:.3f}")
+
+
+def shift_from_ligand_collision(movable_xyz, occupied_xyz, step=0.001, max_shifts=10000):
+    """Smallest rigid shift that removes collisions.
+
+    Q crashes on two atoms at the same exact coordinate. Returns the smallest
+     offset ``d = k * step`` (k >= 1) to add to x, y and z of every atom in
+    ``movable_xyz`` so that no shifted atom shares a written PDB coordinate (3
+    decimals) with any atom in ``occupied_xyz``. The same offset on every atom
+    is a rigid-body translation, so the molecule's internal geometry is
+    preserved. Both arguments are iterables of (x, y, z) floats. Raises
+    ``RuntimeError`` if no coincidence-free shift is found within ``max_shifts``.
+    """
+    movable_xyz = list(movable_xyz)
+    occupied = {_pdb_coord_key(x, y, z) for (x, y, z) in occupied_xyz}
+    for k in range(1, max_shifts + 1):
+        d = k * step
+        if all(_pdb_coord_key(x + d, y + d, z + d) not in occupied for (x, y, z) in movable_xyz):
+            return d
+    raise RuntimeError(
+        f"no coincidence-free shift for {len(movable_xyz)} atoms within {max_shifts} steps of {step}"
+    )
+
+
 def nest_pdb(pdbarr: list[str]) -> list[list[str]]:
     """Organizes a flat list of PDB (Protein Data Bank) file lines into a nested structure
     grouped by residues. This function takes a list of strings, each representing a line
