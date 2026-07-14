@@ -11,6 +11,7 @@
 #include "restraint_force.h"
 #include "shake.h"
 #include "temperature.h"
+#include "water_boundary_force.h"
 
 class Handler {
    public:
@@ -20,6 +21,7 @@ class Handler {
     RestraintForce& restraint_force();
     Temperature& temperature();
     Integrator& integrator();
+    WaterBoundaryForce& water_boundary_force();
 
     virtual ~Handler() = default;
     virtual void initialize();
@@ -61,10 +63,12 @@ class Handler {
     std::unique_ptr<RestraintForce> restraint_force_;
     std::unique_ptr<Temperature> temperature_;
     std::unique_ptr<Integrator> integrator_;
+    std::unique_ptr<WaterBoundaryForce> water_boundary_force_;
     virtual std::unique_ptr<Shake> create_shake_backend() = 0;
     virtual std::unique_ptr<NonbondedForce> create_nonbonded_force_backend() = 0;
     virtual std::unique_ptr<BondedForce> create_bonded_force_backend() = 0;
     virtual std::unique_ptr<RestraintForce> create_restraint_force_backend() = 0;
     virtual std::unique_ptr<Temperature> create_temperature_backend() = 0;
     virtual std::unique_ptr<Integrator> create_integrator_backend() = 0;
+    virtual std::unique_ptr<WaterBoundaryForce> create_water_boundary_force_backend() = 0;
 };

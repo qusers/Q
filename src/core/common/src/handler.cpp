@@ -24,8 +24,12 @@ void Handler::run_iteration(int iteration) {
 
     const bool output_step = ctx.md.output > 0 && iteration % ctx.md.output == 0;
     const bool energy_step = ctx.md.energy > 0 && iteration % ctx.md.energy == 0;
+    const bool restart_step = iteration % 1000 == 0;
     if (output_step || energy_step) {
         update_energy_totals();  // host energy + temperature for stdout and/or energy file
+    }
+    if (restart_step) {
+        water_boundary_force_->sync_for_output(ctx);
     }
     // 8. print output to files
     print_outputs(iteration);
@@ -42,6 +46,7 @@ void Handler::calc_final_potential(int iteration) {
     calc_nonbonded_forces();
     calc_internal_forces(iteration);
     update_energy_totals();
+    water_boundary_force_->sync_for_output(ctx);
 }
 
 void Handler::run(int num_iterations) {
@@ -130,6 +135,9 @@ Temperature& Handler::temperature() {
 
 Integrator& Handler::integrator() {
     return *integrator_;
+}
+WaterBoundaryForce& Handler::water_boundary_force() {
+    return *water_boundary_force_;
 }
 
 void Handler::reset_energies() {
