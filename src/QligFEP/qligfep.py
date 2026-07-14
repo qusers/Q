@@ -23,6 +23,7 @@ from .pdb_utils import (
     read_pdb_to_dataframe,
     reindex_pdb_residues,
     rm_HOH_clash_NN,
+    shift_from_ligand_collision,
 )
 from .restraints.restraint_setter import RestraintSetter
 from .scoring import parse_restraint_method
@@ -62,6 +63,19 @@ CHLORIDE_NAME = {
 # Residue name for the co-alchemical counter-water. Must not be HOH, since
 # qprep treats HOH as solvent and the counter-water needs to be a solute.
 COUNTER_WATER_RESNAME = "CWT"
+
+
+def lrf_required_for_edge(same_charge: "bool | None") -> bool:
+    """Whether this edge must run with LRF on.
+
+    A charge-changing edge (``same_charge`` is False) changes the in-sphere net charge, whose
+    long-range (~1/r) Coulomb a bare cutoff truncates — adding a large, state-dependent artifact
+    that the post-hoc finite-sphere Born correction cannot remove (it is not the continuum
+    ``-C*Q**2`` monopole term; it is a cutoff-truncation error). LRF (reaction field) restores the
+    long-range interaction. Neutral edges (``same_charge`` True) cancel between states and are fine
+    with a plain cutoff, so the configured default is kept.
+    """
+    return same_charge is False
 
 
 class QligFEP:
@@ -466,34 +480,49 @@ class QligFEP:
         replacements = {}
         replacements["LIG"] = "LID"
         file_replaced = []
+        occupied = []
         atnr = self.atomoffset
         with open(self.lig2 + ".pdb") as infile:
             for line in infile:
                 if line.split()[0].strip() in self.include:
                     atom1 = pdb_parse_in(line)
                     atom1[4] = "LID"
-                    line = pdb_parse_out(atom1) + "\n"
-                    file_replaced.append(line)
+                    occupied.append((atom1[8], atom1[9], atom1[10]))
+                    file_replaced.append(pdb_parse_out(atom1) + "\n")
 
-        with open(f"{self.lig1}.pdb") as infile, open(f"{writedir}/{self.pdb_fname}", "w") as outfile:
-            if self.system == "protein":
-                with open("protein.pdb") as protfile:
-                    contents = protfile.read()
-                    outfile.write(contents)
-                    if contents and not contents.endswith("\n"):
-                        outfile.write("\n")
-            for line in infile:
-                if line.split()[0].strip() in self.include:
-                    resnr = int(line[22:26])
-                    atnr += 1  # The atoms are not allowed to overlap in Q
-                    atom1 = pdb_parse_in(line)
-                    atom1[1] = atom1[1] + self.atomoffset
-                    atom1[6] = atom1[6] + self.residueoffset
-                    atom1[8] = float(atom1[8]) + 0.001
-                    atom1[9] = float(atom1[9]) + 0.001
-                    atom1[10] = float(atom1[10]) + 0.001
-                    line = pdb_parse_out(atom1) + "\n"
-                    outfile.write(line)
+        protein_contents = ""
+        if self.system == "protein":
+            with open("protein.pdb") as protfile:
+                protein_contents = protfile.read()
+            occupied += [
+                (a[8], a[9], a[10])
+                for a in map(pdb_parse_in, protein_contents.splitlines())
+                if isinstance(a, list)
+            ]
+
+        with open(f"{self.lig1}.pdb") as ligfile:
+            lig1_atoms = [a for a in map(pdb_parse_in, ligfile) if isinstance(a, list)]
+
+        # Lig1 (LIG) is translated as a rigid body so no atom lands on a lig2 (LID) or
+        # on other alchemical atom. Q crashes on atoms occupying the exact same space.
+        # The previous solution was to apply a fixed 0.001 offset, but this can cause
+        # ligand clashes in a few rare cases. This solution is the same, but increments
+        # are checked in a while loop so that clashes are fully avoided.
+        shift = shift_from_ligand_collision([(a[8], a[9], a[10]) for a in lig1_atoms], occupied)
+
+        with open(f"{writedir}/{self.pdb_fname}", "w") as outfile:
+            if protein_contents:
+                outfile.write(protein_contents)
+                if not protein_contents.endswith("\n"):
+                    outfile.write("\n")
+            for atom1 in lig1_atoms:
+                atnr += 1  # The atoms are not allowed to overlap in Q
+                atom1[1] = atom1[1] + self.atomoffset
+                atom1[6] = atom1[6] + self.residueoffset
+                atom1[8] = atom1[8] + shift
+                atom1[9] = atom1[9] + shift
+                atom1[10] = atom1[10] + shift
+                outfile.write(pdb_parse_out(atom1) + "\n")
 
             self.residueoffset = self.residueoffset + 2
             resnr = f"{self.residueoffset:4}"
