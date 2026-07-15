@@ -478,8 +478,7 @@ void CsvParser::parse_charge_groups() {
         }
     }
 
-    result.charge_groups.clear();
-    result.charge_groups.push_back(config);
+    result.charge_groups = config;
 }
 
 void CsvParser::parse_q_atoms() {
