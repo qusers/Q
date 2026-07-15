@@ -8,14 +8,12 @@
 #include "cpu_handler.h"
 #include "cuda_handler.cuh"
 
-void calc_integration() {
-    auto& ctx = Context::instance();
-    std::unique_ptr<Handler> handler =
-        ctx.command_info.requested_gpu
-            ? std::unique_ptr<Handler>(std::make_unique<CudaHandler>())
-            : std::unique_ptr<Handler>(std::make_unique<CpuHandler>());
-    handler->initialize();
-    handler->run(ctx.md.steps);
+void calc_integration(const CommandParseResult& parsed) {
+    std::unique_ptr<Handler> handler = parsed.command.requested_gpu
+                                           ? std::unique_ptr<Handler>(std::make_unique<CudaHandler>())
+                                           : std::unique_ptr<Handler>(std::make_unique<CpuHandler>());
+    handler->initialize(parsed.command);
+    handler->run();
     handler->shutdown();
 }
 
@@ -26,9 +24,6 @@ int main(int argc, char* argv[]) {
         printf(">>> FATAL: %s Exiting...\n", parsed.error.c_str());
         return EXIT_FAILURE;
     }
-    Context ctx;
-    const CommandInfo& command = parsed.command;
-    ctx.command_info = command;
-    calc_integration();
+    calc_integration(parsed);
     return EXIT_SUCCESS;
 }

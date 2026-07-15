@@ -3,6 +3,7 @@
 #include "context.h"
 #include "host_device_buffer.h"
 #include "precision.h"
+#include "shake.h"
 
 struct bond_idx_t {
     int i, j;
@@ -62,7 +63,7 @@ struct BondedData {
 class BondedForce {
    public:
     virtual ~BondedForce() = default;
-    void init(Context& ctx);  // build_* then init_backend
+    void init(Context& ctx, const ParseResult& parsed, const ShakeData& shake_data);  // build_* then init_backend
     virtual void calc(Context& ctx) = 0;
     virtual void cleanup() {}
     bool enabled() const { return data_.enabled(); }
@@ -73,10 +74,10 @@ class BondedForce {
     virtual void init_backend(Context& ctx) {}
 
    private:
-    void build_bonds(Context& ctx);
-    void build_angles(Context& ctx);
-    void build_torsions(Context& ctx);
-    void build_impropers(Context& ctx);
+    void build_bonds(Context& ctx, const ParseResult& parsed, const ShakeData& shake_data);
+    void build_angles(Context& ctx, const ParseResult& parsed, const ShakeData& shake_data);
+    void build_torsions(Context& ctx, const ParseResult& parsed, const ShakeData& shake_data);
+    void build_impropers(Context& ctx, const ParseResult& parsed, const ShakeData& shake_data);
 };
 
 HD inline dparam2_t calc_bond(const double k, const double r, const double r_eq) {

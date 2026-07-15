@@ -8,7 +8,7 @@ void CpuIntegrator::step(Context& ctx) {
     auto& coords = ctx.coords->cpu_data_p;
     auto& velocities = ctx.velocities->cpu_data_p;
     auto& dvelocities = ctx.dvelocities->cpu_data_p;
-    auto* xcoords = ctx.xcoords->cpu_data_p;
+    auto* xcoords = data_.xcoords->cpu_data_p;
 
     const double* temperature_results = temperature_->data().results->cpu_data_p;
 

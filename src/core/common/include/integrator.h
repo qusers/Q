@@ -5,6 +5,7 @@
 #include "temperature.h"
 
 struct IntegratorData {
+    std::unique_ptr<HostDeviceBuffer<coord_t>> xcoords;
 };
 
 class Integrator {

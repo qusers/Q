@@ -24,7 +24,7 @@ class Handler {
     WaterBoundaryForce& water_boundary_force();
 
     virtual ~Handler() = default;
-    virtual void initialize();
+    virtual void initialize(const CommandInfo& command);
 
     virtual void shutdown() = 0;
 
@@ -38,7 +38,7 @@ class Handler {
     Handler& operator=(const Handler&) = delete;
 
     bool initialized_ = false;
-    Context& ctx = Context::instance();
+    Context ctx;
     std::vector<std::unique_ptr<BaseOutput>> outputs_;
 
     virtual void calc_internal_forces(int iteration) = 0;

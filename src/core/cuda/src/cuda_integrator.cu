@@ -61,7 +61,7 @@ void CudaIntegrator::step(Context& ctx) {
     auto d_velocities = ctx.velocities->gpu_data_p;
     auto d_dvelocities = ctx.dvelocities->gpu_data_p;
     auto d_coords = ctx.coords->gpu_data_p;
-    auto d_xcoords = ctx.xcoords->gpu_data_p;
+    auto d_xcoords = data_.xcoords->gpu_data_p;
 
     const double* d_temperature_results = temperature_->data().results->gpu_data_p;
 

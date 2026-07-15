@@ -5,9 +5,9 @@
 
 #include "constants.h"
 
-void CpuShake::apply(Context& ctx) {
+void CpuShake::apply(Context& ctx, HostDeviceBuffer<coord_t>& xcoords_buffer) {
     auto* coords = ctx.coords->cpu_data_p;
-    auto* xcoords = ctx.xcoords->cpu_data_p;
+    auto* xcoords = xcoords_buffer.cpu_data_p;
     apply_to(ctx, coords, xcoords);
 }
 
@@ -31,7 +31,8 @@ void CpuShake::initial_shake(Context& ctx) {
      */
     auto* coords = ctx.coords->cpu_data_p;
     auto* velocities = ctx.velocities->cpu_data_p;
-    auto* xcoords = ctx.xcoords->cpu_data_p;
+    std::vector<coord_t> xcoords(ctx.n_atoms);
+    
 
     for (int i = 0; i < ctx.n_atoms; i++) {
         xcoords[i] = coords[i];
@@ -75,7 +76,7 @@ void CpuShake::apply_to(Context& ctx, coord_t* coords, coord_t* xcoords) {
     // Kept outside the iteration loop to match the Fortran ready semantics.
     std::vector<bool> ready(data_.n_constraints, false);
     int shake = 0;
-    for (int mol = 0; mol < ctx.n_molecules; mol++) {
+    for (int mol = 0; mol < ctx.n_molecules(); mol++) {
         if (mol_n_shakes[mol] == 0) continue;
 
         bool converged;
