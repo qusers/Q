@@ -1,6 +1,7 @@
 // todo: Don't use double, always use double to do shake
 #include <cooperative_groups.h>
 
+#include <algorithm>
 #include <map>
 #include <unordered_map>
 
@@ -41,6 +42,36 @@ __device__ double clamp_nonnegative(double value) {
 }
 
 }  // namespace
+
+void CudaShake::find_serial_q_molecule_bonds(Context& ctx, std::vector<bool>& optimized) {
+    std::vector<bool> serial_molecules(ctx.n_molecules(), false);
+    for (const int atom : ctx.q_atoms) {
+        const int atom_number = atom + 1;
+        auto next = std::upper_bound(ctx.molecules.begin(), ctx.molecules.end(), atom_number);
+        if (next != ctx.molecules.begin()) {
+            serial_molecules[static_cast<int>(next - ctx.molecules.begin()) - 1] = true;
+        }
+    }
+
+    std::vector<int> molecule_constraint_counts(ctx.n_molecules(), 0);
+    std::vector<ShakeBond> serial_bonds;
+    const ShakeBond* shake_bonds = data_.shake_bonds->cpu_data_p;
+    int current_mol = 0;
+    for (int i = 0; i < data_.n_constraints; i++) {
+        const int atom_number = shake_bonds[i].ai;
+        while (current_mol + 1 < ctx.n_molecules() &&
+               atom_number >= ctx.molecules[current_mol + 1]) {
+            current_mol++;
+        }
+        if (!serial_molecules[current_mol]) continue;
+
+        optimized[i] = true;
+        molecule_constraint_counts[current_mol]++;
+        serial_bonds.push_back(shake_bonds[i]);
+    }
+
+    serial_q_solver_.init(molecule_constraint_counts, serial_bonds);
+}
 
 void CudaShake::find_shake_fast_water(Context& ctx, std::vector<bool>& optimized) {
     std::vector<ShakeFastWater> shake_fast_waters;
@@ -322,6 +353,7 @@ void CudaShake::init_backend(Context& ctx) {
 
     std::vector<bool> optimized(data_.n_constraints, false);
 
+    if (serial_q_molecules_) find_serial_q_molecule_bonds(ctx, optimized);
     find_shake_fast_water(ctx, optimized);
     find_shake_network(ctx, optimized);
     find_fallback_shake_bond(ctx, optimized);
@@ -637,6 +669,7 @@ __global__ void fallback_shake_fused_kernel(
 }
 
 void CudaShake::apply_to(Context& ctx, coord_t* d_coords, coord_t* d_xcoords) {
+    serial_q_solver_.apply(d_coords, d_xcoords, ctx.winv->gpu_data_p);
     if (shake_fast_waters->length > 0) {
         const int grid_blocks = (shake_fast_waters->length + kShakeThreads - 1) / kShakeThreads;
         calc_fast_water_shake_kernel<<<grid_blocks, kShakeThreads>>>(shake_fast_waters->length, shake_fast_waters->gpu_data_p, d_coords, d_xcoords);
