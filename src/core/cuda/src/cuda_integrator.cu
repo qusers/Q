@@ -61,7 +61,7 @@ void CudaIntegrator::step(Context& ctx) {
     auto d_velocities = ctx.velocities->gpu_data_p;
     auto d_dvelocities = ctx.dvelocities->gpu_data_p;
     auto d_coords = ctx.coords->gpu_data_p;
-    auto d_xcoords = ctx.xcoords->gpu_data_p;
+    auto d_xcoords = data_.xcoords->gpu_data_p;
 
     const double* d_temperature_results = temperature_->data().results->gpu_data_p;
 
@@ -73,7 +73,7 @@ void CudaIntegrator::step(Context& ctx) {
         d_temperature_results, ctx.dt);
 
     if (shake_->data().n_constraints > 0) {
-        shake_->apply(ctx);
+        shake_->apply(ctx, *data_.xcoords);
         update_velocities_from_positions_kernel<<<numBlocks, blockSize>>>(
             d_velocities, d_coords, d_xcoords, ctx.n_atoms, ctx.dt);
     }

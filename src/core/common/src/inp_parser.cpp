@@ -1045,8 +1045,7 @@ void InpParser::parse_charge_groups() {
         config.charge_groups[i].atoms.resize(top_->charge_group_atoms[i].size());
         for (size_t j = 0; j < top_->charge_group_atoms[i].size(); j++) config.charge_groups[i].atoms[j] = parse_int(top_->charge_group_atoms[i][j]);
     }
-    result.charge_groups.clear();
-    result.charge_groups.push_back(config);
+    result.charge_groups = config;
 }
 
 void InpParser::parse_q_atoms() {

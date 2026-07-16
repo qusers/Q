@@ -5,7 +5,7 @@
 #include "geometry.h"
 
 void CpuWaterBoundaryForce::calc(Context& ctx, int iteration) {
-    if (ctx.n_waters <= 0) return;
+    if (ctx.n_waters() <= 0) return;
     calc_radix(ctx);
     if (ctx.md.polarisation) calc_polx(ctx, iteration);
 }
@@ -80,7 +80,7 @@ void CpuWaterBoundaryForce::calc_polx(Context& ctx, int iteration) {
         wshells[is].n_inshell = 0;
     }
 
-    for (int i = 0; i < ctx.n_waters; i++) {
+    for (int i = 0; i < ctx.n_waters(); i++) {
         int wi = ctx.n_atoms_solute + 3 * i;
         if (exclude[wi]) continue;
 

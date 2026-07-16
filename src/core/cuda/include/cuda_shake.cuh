@@ -27,7 +27,7 @@ struct ShakeNetwork {
 
 class CudaShake final : public Shake {
    public:
-    void apply(Context& ctx) override;
+    void apply(Context& ctx, HostDeviceBuffer<coord_t>& xcoords) override;
     void initial_shake(Context& ctx) override;
     void cleanup() override;
 

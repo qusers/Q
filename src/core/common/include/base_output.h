@@ -1,6 +1,11 @@
 #pragma once
 #include "context.h"
 
+struct OutputRequirements {
+    bool energy = false;
+    bool restart = false;
+};
+
 class BaseOutput {
    public:
     BaseOutput() {}
@@ -13,6 +18,9 @@ class BaseOutput {
         output_energy(ctx, iteration);
         output_restart(ctx, iteration);
     }
+    virtual OutputRequirements requirements(
+        const Context& ctx,
+        int iteration) const = 0;
 
    protected:
     virtual void output_trajectory(Context& ctx, int iteration) = 0;

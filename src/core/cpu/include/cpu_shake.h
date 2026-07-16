@@ -2,7 +2,7 @@
 #include "shake.h"
 class CpuShake : public Shake {
    public:
-    void apply(Context& ctx) override;
+    void apply(Context& ctx, HostDeviceBuffer<coord_t>& xcoords) override;
     void initial_shake(Context& ctx) override;
 
    private:

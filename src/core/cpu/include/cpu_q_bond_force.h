@@ -1,3 +1,3 @@
-#pragma once
+// #pragma once
 
-void calc_qbond_forces(int state);
+// void calc_qbond_forces(int state);

@@ -59,7 +59,6 @@ class ParseResult {
     std::vector<atype_t> atypes;
     std::vector<catype_t> catypes;
 
-    std::vector<bool> heavy;
     std::vector<bool> excluded;
 
     std::vector<std::pair<int, int>> ngbrs14;
@@ -67,7 +66,7 @@ class ParseResult {
     std::vector<std::pair<int, int>> ngbrs23;
     std::vector<std::pair<int, int>> ngbrs23_long;
     std::vector<int> molecules;
-    std::vector<charge_group_config_t> charge_groups;
+    charge_group_config_t charge_groups;
 
     std::vector<int> q_atoms;
     std::vector<q_angcouple_t> q_angcouples;

@@ -280,7 +280,7 @@ __global__ void calc_polx_force_with_rank_kernel(int n_atoms_solute,
 }  // namespace
 
 void CudaWaterBoundaryForce::calc(Context& ctx, int iteration) {
-    if (ctx.n_waters <= 0) return;
+    if (ctx.n_waters() <= 0) return;
     calc_radix(ctx);
 
     if (ctx.md.polarisation) {
@@ -291,11 +291,11 @@ void CudaWaterBoundaryForce::calc(Context& ctx, int iteration) {
 void CudaWaterBoundaryForce::calc_radix(
     Context& ctx) {
     const int num_blocks =
-        (ctx.n_waters + kBlockSize - 1) /
+        (ctx.n_waters() + kBlockSize - 1) /
         kBlockSize;
 
     calc_radix_kernel<<<num_blocks, kBlockSize>>>(
-        ctx.n_waters,
+        ctx.n_waters(),
         ctx.n_atoms_solute,
         ctx.coords->gpu_data_p,
         ctx.excluded->gpu_data_p,
@@ -312,7 +312,7 @@ void CudaWaterBoundaryForce::calc_polx(Context& ctx, int iteration) {
     const int n_shells = data_.n_shells;
     const int n_max_inshell = data_.n_max_inshell;
 
-    if (n_shells <= 0 || n_max_inshell <= 0 || ctx.n_waters <= 0) return;
+    if (n_shells <= 0 || n_max_inshell <= 0 || ctx.n_waters() <= 0) return;
 
     shell_t* device_wshells = data_.wshells->gpu_data_p;
     double* device_theta = data_.theta->gpu_data_p;
@@ -323,8 +323,8 @@ void CudaWaterBoundaryForce::calc_polx(Context& ctx, int iteration) {
 
     prepare_wshells_kernel<<<shell_blocks, kBlockSize>>>(n_shells, update_theta_corr, device_wshells);
 
-    const int water_blocks = (ctx.n_waters + kBlockSize - 1) / kBlockSize;
-    calc_theta_and_shell_kernel<<<water_blocks, kBlockSize>>>(ctx.n_waters,
+    const int water_blocks = (ctx.n_waters() + kBlockSize - 1) / kBlockSize;
+    calc_theta_and_shell_kernel<<<water_blocks, kBlockSize>>>(ctx.n_waters(),
                                                               ctx.n_atoms_solute,
                                                               n_shells,
                                                               n_max_inshell,

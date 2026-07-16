@@ -56,7 +56,7 @@ void CudaShake::find_shake_fast_water(Context& ctx, std::vector<bool>& optimized
         shake_bonds_lookup_table[make_bond_key(ai, aj)] = i;
     }
 
-    for (int w = 0; w < ctx.n_waters; w++) {
+    for (int w = 0; w < ctx.n_waters(); w++) {
         const int o = ctx.n_atoms_solute + 3 * w;
         const int h1 = o + 1;
         const int h2 = o + 2;
@@ -274,15 +274,16 @@ void CudaShake::find_fallback_shake_bond(Context& ctx, std::vector<bool>& optimi
     }
 }
 
-void CudaShake::apply(Context& ctx) {
+void CudaShake::apply(Context& ctx, HostDeviceBuffer<coord_t>& xcoords_buffer) {
     auto* coords = ctx.coords->gpu_data_p;
-    auto* xcoords = ctx.xcoords->gpu_data_p;
+    auto* xcoords = xcoords_buffer.gpu_data_p;
     apply_to(ctx, coords, xcoords);
 }
 
 void CudaShake::initial_shake(Context& ctx) {
+    HostDeviceBuffer<coord_t> xcoords(ctx.n_atoms, true, true);
     auto* d_coords = ctx.coords->gpu_data_p;
-    auto* d_xcoords = ctx.xcoords->gpu_data_p;
+    auto* d_xcoords = xcoords.gpu_data_p;
 
     check_cuda(cudaMemcpy(d_xcoords, d_coords, ctx.n_atoms * sizeof(coord_t), cudaMemcpyDeviceToDevice));
     apply_to(ctx, d_coords, d_xcoords);
@@ -291,25 +292,25 @@ void CudaShake::initial_shake(Context& ctx) {
 
     auto* coords = ctx.coords->cpu_data_p;
     auto* velocities = ctx.velocities->cpu_data_p;
-    auto* xcoords = ctx.xcoords->cpu_data_p;
+    auto* host_xcoords = xcoords.cpu_data_p;
     for (int i = 0; i < ctx.n_atoms; i++) {
         const double dt = ctx.dt;
-        xcoords[i].x = coords[i].x - dt * velocities[i].x;
-        xcoords[i].y = coords[i].y - dt * velocities[i].y;
-        xcoords[i].z = coords[i].z - dt * velocities[i].z;
+        host_xcoords[i].x = coords[i].x - dt * velocities[i].x;
+        host_xcoords[i].y = coords[i].y - dt * velocities[i].y;
+        host_xcoords[i].z = coords[i].z - dt * velocities[i].z;
     }
 
-    ctx.xcoords->upload();
+    xcoords.upload();
 
     apply_to(ctx, d_xcoords, d_coords);
 
-    ctx.xcoords->download();
+    xcoords.download();
 
     for (int i = 0; i < ctx.n_atoms; i++) {
         const double dt = ctx.dt;
-        velocities[i].x = (coords[i].x - xcoords[i].x) / dt;
-        velocities[i].y = (coords[i].y - xcoords[i].y) / dt;
-        velocities[i].z = (coords[i].z - xcoords[i].z) / dt;
+        velocities[i].x = (coords[i].x - host_xcoords[i].x) / dt;
+        velocities[i].y = (coords[i].y - host_xcoords[i].y) / dt;
+        velocities[i].z = (coords[i].z - host_xcoords[i].z) / dt;
     }
     ctx.velocities->upload();
 }

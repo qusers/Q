@@ -7,32 +7,31 @@ inline double deg2rad(double d) {
 
 }  // namespace
 
-void BondedForce::init(Context& ctx) {
-    build_bonds(ctx);
-    build_angles(ctx);
-    build_torsions(ctx);
-    build_impropers(ctx);
+void BondedForce::init(Context& ctx, const ParseResult& parsed, const ShakeData& shake_data) {
+    build_bonds(ctx, parsed, shake_data);
+    build_angles(ctx, parsed, shake_data);
+    build_torsions(ctx, parsed, shake_data);
+    build_impropers(ctx, parsed, shake_data);
     init_backend(ctx);
 }
 
-void BondedForce::build_bonds(Context& ctx) {
+void BondedForce::build_bonds(Context& ctx, const ParseResult& parsed, const ShakeData& shake_data) {
     const bool run_gpu = ctx.command_info.requested_gpu;
-    const auto& bonds = ctx.bonds;
-    const auto& cbonds = ctx.cbonds;
 
     std::vector<bond_idx_t> ids;
     std::vector<dparam2_t> params;
     std::vector<int> eslot;
 
-    ids.reserve(ctx.n_bonds);
-    params.reserve(ctx.n_bonds);
-    eslot.reserve(ctx.n_bonds);
+    for (int i = 0; i < parsed.bonds.size(); i++) {
+        const bond_t& bond = parsed.bonds[i];
+        if (shake_data.contains(bond.ai, bond.aj)) {
+            continue;
+        }
 
-    for (int i = 0; i < ctx.n_bonds; i++) {
-        const cbond_t& c = cbonds[bonds[i].code - 1];
-        ids.push_back({bonds[i].ai - 1, bonds[i].aj - 1});
+        const cbond_t& c = parsed.cbonds[bond.code - 1];
+        ids.push_back({bond.ai - 1, bond.aj - 1});
         params.push_back({c.kb, c.b0});  // {kb, b0}
-        eslot.push_back(i < ctx.n_bonds_solute ? E_BOND_P_BOND : E_BOND_W_BOND);
+        eslot.push_back(i < parsed.n_bonds_solute ? E_BOND_P_BOND : E_BOND_W_BOND);
     }
 
     data_.bond.n = static_cast<int>(ids.size());
@@ -40,23 +39,23 @@ void BondedForce::build_bonds(Context& ctx) {
     data_.bond.params = HostDeviceBuffer<dparam2_t>::from_vector(params, run_gpu);
     data_.bond.eslot = HostDeviceBuffer<int>::from_vector(eslot, run_gpu);
 }
-void BondedForce::build_angles(Context& ctx) {
+void BondedForce::build_angles(Context& ctx, const ParseResult& parsed, const ShakeData& shake_data) {
     const bool run_gpu = ctx.command_info.requested_gpu;
-    const auto& angles = ctx.angles;
-    const auto& cangles = ctx.cangles;
 
     std::vector<angle_idx_t> ids;
     std::vector<dparam2_t> params;
     std::vector<int> eslot;
-    ids.reserve(ctx.n_angles);
-    params.reserve(ctx.n_angles);
-    eslot.reserve(ctx.n_angles);
 
-    for (int i = 0; i < ctx.n_angles; i++) {
-        const cangle_t& c = cangles[angles[i].code - 1];
-        ids.push_back({angles[i].ai - 1, angles[i].aj - 1, angles[i].ak - 1});
+    for (int i = 0; i < parsed.angles.size(); i++) {
+        const angle_t& angle = parsed.angles[i];
+        if (shake_data.contains(angle.ai, angle.ak)) {
+            continue;
+        }
+
+        const cangle_t& c = parsed.cangles[angle.code - 1];
+        ids.push_back({angle.ai - 1, angle.aj - 1, angle.ak - 1});
         params.push_back({c.kth, deg2rad(c.th0)});  // {kth, th0(rad)}
-        eslot.push_back(i < ctx.n_angles_solute ? E_BOND_P_ANGLE : E_BOND_W_ANGLE);
+        eslot.push_back(i < parsed.n_angles_solute ? E_BOND_P_ANGLE : E_BOND_W_ANGLE);
     }
 
     data_.angle.n = static_cast<int>(ids.size());
@@ -64,27 +63,25 @@ void BondedForce::build_angles(Context& ctx) {
     data_.angle.params = HostDeviceBuffer<dparam2_t>::from_vector(params, run_gpu);
     data_.angle.eslot = HostDeviceBuffer<int>::from_vector(eslot, run_gpu);
 }
-void BondedForce::build_torsions(Context& ctx) {
+void BondedForce::build_torsions(Context& ctx, const ParseResult& parsed, const ShakeData& shake_data) {
     const bool run_gpu = ctx.command_info.requested_gpu;
-    const auto& torsions = ctx.torsions;
-    const auto& ctorsions = ctx.ctorsions;
 
     std::vector<dihe_idx_t> ids;
     std::vector<torsion_param_t> params;
     std::vector<int> eslot;
-    ids.reserve(ctx.n_torsions);
-    params.reserve(ctx.n_torsions);
-    eslot.reserve(ctx.n_torsions);
 
-    for (int i = 0; i < ctx.n_torsions; i++) {
-        const ctorsion_t& c = ctorsions[torsions[i].code - 1];
-        ids.push_back({torsions[i].ai - 1, torsions[i].aj - 1,
-                       torsions[i].ak - 1, torsions[i].al - 1});
+    for (int i = 0; i < parsed.torsions.size(); i++) {
+        
+        const torsion_t& torsion = parsed.torsions[i];
+
+        const ctorsion_t& c = parsed.ctorsions[torsion.code - 1];
+        ids.push_back({torsion.ai - 1, torsion.aj - 1,
+                       torsion.ak - 1, torsion.al - 1});
         params.push_back({static_cast<real_t>(c.k),
                           static_cast<real_t>(c.n),
                           static_cast<real_t>(deg2rad(c.d)),
                           static_cast<real_t>(c.paths)});  // {k, n, d(rad), paths}
-        eslot.push_back(i < ctx.n_torsions_solute ? E_BOND_P_TOR : E_BOND_W_TOR);
+        eslot.push_back(i < parsed.n_torsions_solute ? E_BOND_P_TOR : E_BOND_W_TOR);
     }
 
     data_.torsion.n = static_cast<int>(ids.size());
@@ -92,24 +89,22 @@ void BondedForce::build_torsions(Context& ctx) {
     data_.torsion.params = HostDeviceBuffer<torsion_param_t>::from_vector(params, run_gpu);
     data_.torsion.eslot = HostDeviceBuffer<int>::from_vector(eslot, run_gpu);
 }
-void BondedForce::build_impropers(Context& ctx) {
+void BondedForce::build_impropers(Context& ctx, const ParseResult& parsed, const ShakeData& shake_data) {
     const bool run_gpu = ctx.command_info.requested_gpu;
-    const auto& impropers = ctx.impropers;
-    const auto& cimpropers = ctx.cimpropers;
 
     std::vector<dihe_idx_t> ids;
     std::vector<dparam2_t> params;
     std::vector<int> eslot;
-    ids.reserve(ctx.n_impropers);
-    params.reserve(ctx.n_impropers);
-    eslot.reserve(ctx.n_impropers);
 
-    for (int i = 0; i < ctx.n_impropers; i++) {
-        const cimproper_t& c = cimpropers[impropers[i].code - 1];
-        ids.push_back({impropers[i].ai - 1, impropers[i].aj - 1,
-                       impropers[i].ak - 1, impropers[i].al - 1});
+    for (int i = 0; i < parsed.impropers.size(); i++) {
+
+        const improper_t& improper = parsed.impropers[i];
+
+        const cimproper_t& c = parsed.cimpropers[improper.code - 1];
+        ids.push_back({improper.ai - 1, improper.aj - 1,
+                       improper.ak - 1, improper.al - 1});
         params.push_back({c.k, deg2rad(c.phi0)});  // {k, phi0(rad)}
-        eslot.push_back(i < ctx.n_impropers_solute ? E_BOND_P_IMP : E_BOND_W_IMP);
+        eslot.push_back(i < parsed.n_impropers_solute ? E_BOND_P_IMP : E_BOND_W_IMP);
     }
 
     data_.improper.n = static_cast<int>(ids.size());

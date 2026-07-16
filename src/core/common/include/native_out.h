@@ -15,6 +15,7 @@ class NativeOutput : public BaseOutput {
     void init(Context& ctx) override;
     void finish(Context& ctx) override;
     void shutdown() override;
+    OutputRequirements requirements(const Context& ctx, int iteration) const override;
 
    protected:
     void output_trajectory(Context& ctx, int iteration) override;

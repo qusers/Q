@@ -7,7 +7,7 @@ namespace {
 void accumulate_energy(Context& ctx, real_t vel, real_t vvdw,
                        uint8_t atom1_type, uint8_t atom2_type, int atom1_state, int atom2_state) {
     energy_accum_t* e = ctx.energy.host();
-    int coul = nb_coul_slot(atom1_type, atom2_type, atom1_state, atom2_state, ctx.n_lambdas);
+    int coul = nb_coul_slot(atom1_type, atom2_type, atom1_state, atom2_state, ctx.n_lambdas());
     add_energy(e[coul], vel);
     add_energy(e[coul + 1], vvdw);  // vdw slot is adjacent (same invariant as GPU)
 }

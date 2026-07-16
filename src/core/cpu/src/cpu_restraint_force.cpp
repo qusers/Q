@@ -139,7 +139,7 @@ void CpuRestraintForce::calc_restrpos(Context& ctx) {
     auto* dvelocities = ctx.dvelocities->cpu_data_p;
     auto* lambdas = ctx.lambdas->cpu_data_p;
 
-    std::vector<energy_accum_t> urestr(ctx.n_lambdas, 0);
+    std::vector<energy_accum_t> urestr(ctx.n_lambdas(), 0);
     energy_accum_t upres = 0;
 
     for (int ir = 0; ir < data_.restrpos.n; ir++) {
@@ -158,11 +158,11 @@ void CpuRestraintForce::calc_restrpos(Context& ctx) {
         add_force(dvelocities[i].z, k.z * d.z * lambda);
 
         if (recs[ir].ipsi == 0) {
-            for (int k = 0; k < ctx.n_lambdas; k++) {
+            for (int k = 0; k < ctx.n_lambdas(); k++) {
                 add_energy(urestr[k], ener);
             }
 
-            if (ctx.n_lambdas == 0) {
+            if (ctx.n_lambdas() == 0) {
                 add_energy(upres, ener);
             }
         } else {
@@ -170,7 +170,7 @@ void CpuRestraintForce::calc_restrpos(Context& ctx) {
         }
     }
     auto* energy = ctx.energy.host();
-    for (int state = 0; state < ctx.n_lambdas; state++) {
+    for (int state = 0; state < ctx.n_lambdas(); state++) {
         energy[ctx.energy.eq_index(ENERGY_FIXED_COUNT, state, EQ_RESTR_URESTR)] += urestr[state];
     }
     energy[E_RESTR_PRES] += upres;
@@ -183,7 +183,7 @@ void CpuRestraintForce::calc_restrdis(Context& ctx) {
     auto* dvelocities = ctx.dvelocities->cpu_data_p;
     auto* lambdas = ctx.lambdas->cpu_data_p;
 
-    std::vector<energy_accum_t> urestr(ctx.n_lambdas, 0);
+    std::vector<energy_accum_t> urestr(ctx.n_lambdas(), 0);
     energy_accum_t upres = 0;
 
     for (int ir = 0; ir < data_.restrdis.n; ir++) {
@@ -218,11 +218,11 @@ void CpuRestraintForce::calc_restrdis(Context& ctx) {
         add_force(dvelocities[i].z, -aij.z * dv);
 
         if (recs[ir].ipsi == 0) {
-            for (int k = 0; k < ctx.n_lambdas; k++) {
+            for (int k = 0; k < ctx.n_lambdas(); k++) {
                 add_energy(urestr[k], ener);
             }
 
-            if (ctx.n_lambdas == 0) {
+            if (ctx.n_lambdas() == 0) {
                 add_energy(upres, ener);
             }
 
@@ -231,7 +231,7 @@ void CpuRestraintForce::calc_restrdis(Context& ctx) {
         }
     }
     auto* energy = ctx.energy.host();
-    for (int state = 0; state < ctx.n_lambdas; state++) {
+    for (int state = 0; state < ctx.n_lambdas(); state++) {
         energy[ctx.energy.eq_index(ENERGY_FIXED_COUNT, state, EQ_RESTR_URESTR)] += urestr[state];
     }
     energy[E_RESTR_PRES] += upres;
@@ -244,7 +244,7 @@ void CpuRestraintForce::calc_restrang(Context& ctx) {
     auto* dvelocities = ctx.dvelocities->cpu_data_p;
     auto* lambdas = ctx.lambdas->cpu_data_p;
 
-    std::vector<energy_accum_t> urestr(ctx.n_lambdas, 0);
+    std::vector<energy_accum_t> urestr(ctx.n_lambdas(), 0);
     energy_accum_t upres = 0;
 
     for (int ir = 0; ir < data_.restrang.n; ir++) {
@@ -290,10 +290,10 @@ void CpuRestraintForce::calc_restrang(Context& ctx) {
         add_force(dvelocities[j].z, -(force1.z + force2.z));
 
         if (recs[ir].ipsi == 0) {
-            for (int lambda_idx = 0; lambda_idx < ctx.n_lambdas; lambda_idx++) {
+            for (int lambda_idx = 0; lambda_idx < ctx.n_lambdas(); lambda_idx++) {
                 add_energy(urestr[lambda_idx], v);
             }
-            if (ctx.n_lambdas == 0) {
+            if (ctx.n_lambdas() == 0) {
                 add_energy(upres, v);
             }
         } else {
@@ -301,7 +301,7 @@ void CpuRestraintForce::calc_restrang(Context& ctx) {
         }
     }
     auto* energy = ctx.energy.host();
-    for (int state = 0; state < ctx.n_lambdas; state++) {
+    for (int state = 0; state < ctx.n_lambdas(); state++) {
         energy[ctx.energy.eq_index(ENERGY_FIXED_COUNT, state, EQ_RESTR_URESTR)] += urestr[state];
     }
     energy[E_RESTR_PRES] += upres;

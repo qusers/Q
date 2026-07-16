@@ -1,7 +1,6 @@
 #include "cuda_shake_v2.cuh"
-void CudaShakeV2::apply(Context& ctx) {
+void CudaShakeV2::apply(Context& ctx, HostDeviceBuffer<coord_t>& xcoords) {
     ctx.coords->download();
-    ctx.xcoords->download();
-    CpuShake::apply(ctx);
+    CpuShake::apply(ctx, xcoords);
     ctx.coords->upload();
 }
