@@ -2,7 +2,6 @@
 
 #include <chrono>
 
-#include "csv_out.h"
 #include "native_out.h"
 #include "std_output.h"
 
@@ -22,21 +21,11 @@ void Handler::run_iteration(int iteration) {
     // todo: Why calculate temperature again here?
     calc_temperature();
 
-    const bool output_step = ctx.md.output > 0 && iteration % ctx.md.output == 0;
-    const bool energy_step = ctx.md.energy > 0 && iteration % ctx.md.energy == 0;
-    const bool restart_step = iteration % 1000 == 0;
-    if (output_step || energy_step) {
-        update_energy_totals();  // host energy + temperature for stdout and/or energy file
-    }
-    if (restart_step) {
-        water_boundary_force_->sync_for_output(ctx);
-    }
     // 8. print output to files
     print_outputs(iteration);
 }
 
 void Handler::initialize(const CommandInfo& command) {
-    if (initialized_) return;
     ctx.command_info = command;
     ParseResult parsed = ctx.get_parse_result();
     ctx.init(parsed);
@@ -52,18 +41,45 @@ void Handler::initialize(const CommandInfo& command) {
     nonbonded_force_->init(ctx);
     restraint_force_->init(ctx, parsed.restrspos, parsed.restrseqs, parsed.restrdists, parsed.restrangs, parsed.restrwalls);
     temperature_->init(ctx, *shake_);
-    water_boundary_force_->init(ctx, *temperature_, parsed.restart_theta_corr);
+    water_boundary_force_->init(ctx, *temperature_, parsed);
     integrator_->init(ctx, *shake_, *temperature_);
 
     if (ctx.fresh_start) {
         shake_->initial_shake(ctx);
+        stop_cm_translation();
     }
 
-
-
-    initialize_backend();
     create_outputs();
     init_outputs();
+}
+
+void Handler::stop_cm_translation() {
+    auto& atypes = ctx.atypes->cpu_data_p;
+    auto& catypes = ctx.catypes->cpu_data_p;
+    auto& velocities = ctx.velocities->cpu_data_p;
+    double total_mass = 0;
+    coord_t vcm = {};
+
+    for (int ai = 0; ai < ctx.n_atoms; ai++) {
+        const double rmass = catypes[atypes[ai].code - 1].m;
+        total_mass += rmass;
+        vcm.x += velocities[ai].x * rmass;
+        vcm.y += velocities[ai].y * rmass;
+        vcm.z += velocities[ai].z * rmass;
+    }
+
+    vcm.x /= total_mass;
+    vcm.y /= total_mass;
+    vcm.z /= total_mass;
+
+    for (int ai = 0; ai < ctx.n_atoms; ai++) {
+        velocities[ai].x -= vcm.x;
+        velocities[ai].y -= vcm.y;
+        velocities[ai].z -= vcm.z;
+    }
+    if (ctx.command_info.requested_gpu) {
+        ctx.velocities->upload();
+    }
 }
 
 void Handler::calc_final_potential(int iteration) {
@@ -74,10 +90,13 @@ void Handler::calc_final_potential(int iteration) {
     water_boundary_force_->sync_for_output(ctx);
 }
 
-void Handler::run(int num_iterations) {
+void Handler::run() {
     // 1. temperature calculation
     calc_temperature();
+
+    int num_iterations = ctx.md.steps;
     auto t0 = std::chrono::steady_clock::now();
+
     for (int i = 0; i < num_iterations; i++) {
         run_iteration(i);
     }
@@ -94,16 +113,33 @@ void Handler::run(int num_iterations) {
 }
 
 void Handler::update_energy_totals() {
-    auto& host = Context::instance();
-    if (host.command_info.requested_gpu) {
-        host.energy.download();
+    if (ctx.command_info.requested_gpu) {
+        ctx.energy.download();
     }
-    host.energy.unpack();
-    temperature_->sync_for_output(host);  // publish Ukin before combine sums Utot
-    host.energy.combine(host.lambdas->cpu_data_p);
+    ctx.energy.unpack();
+    temperature_->sync_for_output(ctx);  // publish Ukin before combine sums Utot
+    ctx.energy.combine(ctx.lambdas->cpu_data_p);
 }
 
 void Handler::print_outputs(int iteration) {
+    bool needs_energy = false;
+    bool needs_restart = false;
+
+    for (const auto& output : outputs_) {
+        const auto required = output->requirements(ctx, iteration);
+
+        needs_energy |= required.energy;
+        needs_restart |= required.restart;
+    }
+
+    if (needs_energy) {
+        update_energy_totals();
+    }
+
+    if (needs_restart) {
+        water_boundary_force_->sync_for_output(ctx);
+    }
+
     for (auto& output : outputs_) {
         output->output(ctx, iteration);
     }
@@ -112,12 +148,7 @@ void Handler::print_outputs(int iteration) {
 void Handler::create_outputs() {
     outputs_.clear();
     outputs_.push_back(std::make_unique<StdOutput>());
-
-    if (ctx.command_info.input_mode == CommandInputMode::Csv) {
-        outputs_.push_back(std::make_unique<CsvOutput>(ctx.command_info.csv_dir));
-    } else {
-        outputs_.push_back(std::make_unique<NativeOutput>(ctx.native_output));
-    }
+    outputs_.push_back(std::make_unique<NativeOutput>(ctx.native_output));
 }
 
 void Handler::init_outputs() {
@@ -138,40 +169,25 @@ void Handler::shutdown_outputs() {
     }
 }
 
-Shake& Handler::shake() {
-    return *shake_;
-}
-
-NonbondedForce& Handler::nonbonded_force() {
-    return *nonbonded_force_;
-}
-
-BondedForce& Handler::bonded_force() {
-    return *bonded_force_;
-}
-
-RestraintForce& Handler::restraint_force() {
-    return *restraint_force_;
-}
-
-Temperature& Handler::temperature() {
-    return *temperature_;
-}
-
-Integrator& Handler::integrator() {
-    return *integrator_;
-}
-WaterBoundaryForce& Handler::water_boundary_force() {
-    return *water_boundary_force_;
-}
-
 void Handler::reset_energies() {
-    host.energy.reset();
-    auto& dvelocities = host.dvelocities->cpu_data_p;
-    for (int i = 0; i < host.n_atoms; i++) {
-        auto& dvel = dvelocities[i];
-        dvel.x = 0;
-        dvel.y = 0;
-        dvel.z = 0;
-    }
+    ctx.energy.reset();
+    ctx.dvelocities->zero();
+}
+
+void Handler::calc_internal_forces(int iteration) {
+    bonded_force_->calc(ctx);
+    restraint_force_->calc(ctx);
+    water_boundary_force_->calc(ctx, iteration);
+}
+
+void Handler::calc_nonbonded_forces() {
+    nonbonded_force_->calc(ctx);
+}
+
+void Handler::calc_temperature() {
+    temperature_->calc(ctx);
+}
+
+void Handler::calc_leapfrog() {
+    integrator_->step(ctx);
 }

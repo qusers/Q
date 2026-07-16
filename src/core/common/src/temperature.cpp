@@ -14,8 +14,8 @@ void Temperature::init(Context& ctx, const Shake& shake) {
         const int aj = shake_bonds[i].aj - 1;
         if (excluded[ai]) excl_shake += 0.5;
         if (excluded[aj]) excl_shake += 0.5;
-        while (mol + 1 < ctx.n_molecules && ai + 1 >= ctx.molecules[mol + 1]) mol += 1;
-        if (mol < ctx.n_molecules - ctx.n_waters) n_solute_shake_constraints++;
+        while (mol + 1 < ctx.n_molecules() && ai + 1 >= ctx.molecules[mol + 1]) mol += 1;
+        if (mol < ctx.n_molecules() - ctx.n_waters()) n_solute_shake_constraints++;
     }
 
     data_.Ndegf = 3 * ctx.n_atoms - n_constraints;

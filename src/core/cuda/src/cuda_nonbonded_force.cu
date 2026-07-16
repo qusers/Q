@@ -242,7 +242,7 @@ void CudaNonbondedForce::calc(Context& ctx) {
     int grid_sz = (total_tiles + tile_num_per_block - 1) / tile_num_per_block;
 
     dim3 grid = dim3(grid_sz);
-    nonbonded_kernel<<<grid, thread_num>>>(n_atom, ctx.n_lambdas, ctx.n_atoms_solute,
+    nonbonded_kernel<<<grid, thread_num>>>(n_atom, ctx.n_lambdas(), ctx.n_atoms_solute,
                                            data_.atom_idx->gpu_data_p, data_.category->gpu_data_p, data_.q_state->gpu_data_p,
                                            data_.atom_lambdas->gpu_data_p, data_.atom_charge->gpu_data_p, data_.atom_vdw->gpu_data_p,
                                            ctx.LJ_matrix->gpu_data_p, ctx.topo.el14_scale, ctx.topo.coulomb_constant, ctx.topo.vdw_rule,

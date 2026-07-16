@@ -41,7 +41,7 @@ class Shake {
     // Enforce constraints for a fresh start before the first MD step.
     // Implementations should make coordinates and velocities consistent with
     // the constrained geometry.
-    virtual void initial_shake(Context& ctx, HostDeviceBuffer<coord_t>& xcoords_buffer) = 0;
+    virtual void initial_shake(Context& ctx) = 0;
 
     // Release backend-specific resources. CPU implementations usually have
     // nothing to free; CUDA implementations should free owned device state.

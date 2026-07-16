@@ -58,8 +58,9 @@ class Context {
     void init(const ParseResult& parsed);
     int n_lambdas() const { return lambdas->length; }
     int n_waters() const { return (n_atoms - n_atoms_solute) / 3; }
-    int n_qatoms() const { return static_cast<int>(q_atoms.size()); }
+    int n_qatoms() const { return q_atoms.size(); }
     int n_molecules() const { return molecules.size(); }
+    int n_patoms() const { return p_atoms.size(); }
 
    private:
     void set_lj_pairs(std::vector<int>& matrix, const std::vector<std::pair<int, int>>& pair, int value);

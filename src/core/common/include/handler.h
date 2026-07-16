@@ -15,55 +15,15 @@
 
 class Handler {
    public:
-    Shake& shake();
-    NonbondedForce& nonbonded_force();
-    BondedForce& bonded_force();
-    RestraintForce& restraint_force();
-    Temperature& temperature();
-    Integrator& integrator();
-    WaterBoundaryForce& water_boundary_force();
-
     virtual ~Handler() = default;
-    virtual void initialize(const CommandInfo& command);
-
-    virtual void shutdown() = 0;
-
-    void run_iteration(int iteration);
-
-    void run(int num_iterations);
+    void initialize(const CommandInfo& command);
+    void run();
 
    protected:
     Handler() = default;
     Handler(const Handler&) = delete;
     Handler& operator=(const Handler&) = delete;
 
-    bool initialized_ = false;
-    Context ctx;
-    std::vector<std::unique_ptr<BaseOutput>> outputs_;
-
-    virtual void calc_internal_forces(int iteration) = 0;
-    virtual void calc_nonbonded_forces() = 0;
-    virtual void calc_temperature() = 0;
-    virtual void calc_leapfrog() = 0;
-    virtual void initialize_backend() = 0;
-
-    void calc_final_potential(int iteration);
-
-    void update_energy_totals();
-    void print_outputs(int iteration);
-    void create_outputs();
-    void init_outputs();
-    void finish_outputs();
-    void shutdown_outputs();
-    virtual void reset_energies();
-
-    std::unique_ptr<Shake> shake_;
-    std::unique_ptr<NonbondedForce> nonbonded_force_;
-    std::unique_ptr<BondedForce> bonded_force_;
-    std::unique_ptr<RestraintForce> restraint_force_;
-    std::unique_ptr<Temperature> temperature_;
-    std::unique_ptr<Integrator> integrator_;
-    std::unique_ptr<WaterBoundaryForce> water_boundary_force_;
     virtual std::unique_ptr<Shake> create_shake_backend() = 0;
     virtual std::unique_ptr<NonbondedForce> create_nonbonded_force_backend() = 0;
     virtual std::unique_ptr<BondedForce> create_bonded_force_backend() = 0;
@@ -71,4 +31,30 @@ class Handler {
     virtual std::unique_ptr<Temperature> create_temperature_backend() = 0;
     virtual std::unique_ptr<Integrator> create_integrator_backend() = 0;
     virtual std::unique_ptr<WaterBoundaryForce> create_water_boundary_force_backend() = 0;
+
+   private:
+    void stop_cm_translation();
+    void calc_internal_forces(int iteration);
+    void calc_nonbonded_forces();
+    void calc_temperature();
+    void calc_leapfrog();
+
+    void calc_final_potential(int iteration);
+    void update_energy_totals();
+    void print_outputs(int iteration);
+    void create_outputs();
+    void init_outputs();
+    void finish_outputs();
+    void shutdown_outputs();
+    void reset_energies();
+    void run_iteration(int iteration);
+    std::unique_ptr<Shake> shake_;
+    std::unique_ptr<NonbondedForce> nonbonded_force_;
+    std::unique_ptr<BondedForce> bonded_force_;
+    std::unique_ptr<RestraintForce> restraint_force_;
+    std::unique_ptr<Temperature> temperature_;
+    std::unique_ptr<Integrator> integrator_;
+    std::unique_ptr<WaterBoundaryForce> water_boundary_force_;
+    std::vector<std::unique_ptr<BaseOutput>> outputs_;
+    Context ctx;
 };

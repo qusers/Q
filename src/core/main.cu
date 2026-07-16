@@ -14,7 +14,6 @@ void calc_integration(const CommandParseResult& parsed) {
                                            : std::unique_ptr<Handler>(std::make_unique<CpuHandler>());
     handler->initialize(parsed.command);
     handler->run();
-    handler->shutdown();
 }
 
 int main(int argc, char* argv[]) {

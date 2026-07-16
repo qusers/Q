@@ -40,12 +40,13 @@ void Shake::build_constraints(Context& ctx, const ParseResult& parsed) {
             shake_bonds.emplace_back(ShakeBond{ai + 1, aj + 1, dist2});
             mol_n_shakes[current_mol]++;
 
-            auto pair = std::minmax(ai, aj);
+            auto pair = std::minmax(bonds[bi].ai, bonds[bi].aj);
             constrained_pairs.insert(pair); 
         }
     }
     // upload
     data_.shake_bonds = HostDeviceBuffer<ShakeBond>::from_vector(shake_bonds, ctx.command_info.requested_gpu);
     data_.mol_n_shakes = HostDeviceBuffer<int>::from_vector(mol_n_shakes, ctx.command_info.requested_gpu);
+    data_.constrained_pairs = std::move(constrained_pairs);
 }
 

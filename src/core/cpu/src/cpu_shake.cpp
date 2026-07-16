@@ -38,7 +38,7 @@ void CpuShake::initial_shake(Context& ctx) {
         xcoords[i] = coords[i];
     }
 
-    apply_to(ctx, coords, xcoords);
+    apply_to(ctx, coords, xcoords.data());
 
     for (int i = 0; i < ctx.n_atoms; i++) {
         const double dt = ctx.dt;
@@ -47,7 +47,7 @@ void CpuShake::initial_shake(Context& ctx) {
         xcoords[i].z = coords[i].z - dt * velocities[i].z;
     }
 
-    apply_to(ctx, xcoords, coords);
+    apply_to(ctx, xcoords.data(), coords);
 
     for (int i = 0; i < ctx.n_atoms; i++) {
         const double dt = ctx.dt;

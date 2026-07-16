@@ -281,7 +281,7 @@ void NativeOutput::write_energy_frame(Context& ctx) {
 
     auto* lambdas = ctx.lambdas ? ctx.lambdas->cpu_data_p : nullptr;
     auto& energy = ctx.energy.data();
-    for (int state = 0; state < ctx.n_lambdas; state++) {
+    for (int state = 0; state < ctx.n_lambdas(); state++) {
         std::vector<char> record;
         append_int32(record, state + 1);
         append_double(record, lambdas[state]);
@@ -314,4 +314,12 @@ void NativeOutput::write_restart_file(Context& ctx) const {
     if (ctx.md.polarisation && ctx.wshells.size() > 0) {
         write_theta_corr_record(out, ctx.wshells, ctx.wshells.size());
     }
+}
+
+
+OutputRequirements NativeOutput::requirements(const Context& ctx, int iteration) const {
+    return {
+        .energy = iteration > 0 && ctx.md.energy > 0 && iteration % ctx.md.energy == 0,
+        .restart = iteration % 1000 == 0
+    };
 }

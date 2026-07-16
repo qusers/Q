@@ -6,7 +6,7 @@ void StdOutput::output_trajectory(Context& ctx, int iteration) {
 }
 
 void StdOutput::output_energy(Context& ctx, int iteration) {
-     if (iteration > 0 && (ctx.md.output <= 0 || iteration % ctx.md.output != 0)) return;
+    if (iteration > 0 && (ctx.md.output <= 0 || iteration % ctx.md.output != 0)) return;
     auto* lambdas = ctx.lambdas ? ctx.lambdas->cpu_data_p : nullptr;
     auto& energy = ctx.energy.data();
 
@@ -50,7 +50,7 @@ void StdOutput::output_energy(Context& ctx, int iteration) {
 
     std::printf("[q-energies]\n");
     std::printf("lambda\tSUM\tUbond\tUangle\tUtor\tUimp\tUcoul\tUvdw\tUrestr\n");
-    for (int state = 0; state < ctx.n_lambdas; state++) {
+    for (int state = 0; state < ctx.n_lambdas(); state++) {
         std::printf("%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\n",
                     lambdas[state],
                     energy.eq_total[state],
@@ -73,4 +73,10 @@ void StdOutput::output_energy(Context& ctx, int iteration) {
 
 void StdOutput::finish(Context& ctx) {
     output_energy(ctx, -1);
+}
+
+OutputRequirements StdOutput::requirements(const Context& ctx, int iteration) const {
+    return {
+        .energy = iteration == 0 || (iteration > 0 && ctx.md.output > 0 && iteration % ctx.md.output == 0),
+        .restart = false};
 }

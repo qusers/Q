@@ -5,10 +5,8 @@
 #include <cstdlib>
 
 #include "constants.h"
-#include "csv_parser.h"
 #include "geometry.h"
 #include "helpers.h"
-#include "init.h"
 #include "inp_parser.h"
 #include "parse.h"
 #include "q_math.h"

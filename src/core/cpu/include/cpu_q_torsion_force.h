@@ -1,3 +1,3 @@
-#pragma once
+// #pragma once
 
-void calc_qtorsion_forces(int state);
+// void calc_qtorsion_forces(int state);

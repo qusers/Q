@@ -290,7 +290,7 @@ void CudaRestraintForce::calc(Context& ctx) {
         n_restrang ? data_.restrang.recs->gpu_data_p : nullptr,
         n_restrwall ? data_.restrwall.recs->gpu_data_p : nullptr,
         ctx.atypes->gpu_data_p, ctx.catypes->gpu_data_p, ctx.heavy->gpu_data_p,
-        ctx.lambdas->gpu_data_p, ctx.n_lambdas, ctx.topo.solvent_center,
+        ctx.lambdas->gpu_data_p, ctx.n_lambdas(), ctx.topo.solvent_center,
         ctx.coords->gpu_data_p, ctx.coords_init->gpu_data_p,
         ctx.dvelocities->gpu_data_p, ctx.energy.device());
 }

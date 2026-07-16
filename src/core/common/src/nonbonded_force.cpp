@@ -29,7 +29,7 @@ void NonbondedForce::build_combinded_list(Context& ctx) {
         }
     };
 
-    for (int i = 0; i < ctx.n_patoms; i++) {
+    for (int i = 0; i < ctx.n_patoms(); i++) {
         int idx = ctx.p_atoms[i];
         if (ctx.excluded->cpu_data_p[idx]) continue;
         atom_idx.push_back(idx);
@@ -41,8 +41,8 @@ void NonbondedForce::build_combinded_list(Context& ctx) {
     int sz = atom_idx.size();
     push_dummy((32 - (sz % 32)) % 32);
 
-    for (int state = 0; state < ctx.n_lambdas; state++) {
-        for (int i = 0; i < ctx.n_qatoms; i++) {
+    for (int state = 0; state < ctx.n_lambdas(); state++) {
+        for (int i = 0; i < ctx.n_qatoms(); i++) {
             int idx = ctx.q_atoms[i];
             if (ctx.excluded->cpu_data_p[idx]) continue;
             atom_idx.push_back(idx);
@@ -75,7 +75,7 @@ void NonbondedForce::build_combinded_list(Context& ctx) {
 
 void NonbondedForce::build_charge_table(Context& ctx) {
     std::map<int, int> atom_idx_to_q_idx;
-    for (int i = 0; i < ctx.n_qatoms; i++) {
+    for (int i = 0; i < ctx.n_qatoms(); i++) {
         int atom_idx = ctx.q_atoms[i];
         atom_idx_to_q_idx[atom_idx] = i;
     }
@@ -97,7 +97,7 @@ void NonbondedForce::build_charge_table(Context& ctx) {
         } else {
             int state = data_.q_state->cpu_data_p[i];
             int q_idx = atom_idx_to_q_idx[atom_idx];
-            double charge = ctx.q_charges[q_idx + ctx.n_qatoms * state].charge;
+            double charge = ctx.q_charges[q_idx + ctx.n_qatoms() * state].charge;
             atom_charge[i] = charge;
         }
     }
@@ -109,7 +109,7 @@ void NonbondedForce::build_catype_table(Context& ctx) {
     auto& catypes = ctx.catypes->cpu_data_p;
 
     std::map<int, int> atom_idx_to_q_idx;
-    for (int i = 0; i < ctx.n_qatoms; i++) {
+    for (int i = 0; i < ctx.n_qatoms(); i++) {
         int atom_idx = ctx.q_atoms[i];
         atom_idx_to_q_idx[atom_idx] = i;
     }
@@ -129,7 +129,7 @@ void NonbondedForce::build_catype_table(Context& ctx) {
         } else {
             int state = data_.q_state->cpu_data_p[i];
             int q_idx = atom_idx_to_q_idx[atom_idx];
-            const atype_t& atype = ctx.q_atypes[q_idx + ctx.n_qatoms * state];
+            const atype_t& atype = ctx.q_atypes[q_idx + ctx.n_qatoms() * state];
             if (atype.code > 0) {
                 const catype_t& catype = ctx.q_catypes[atype.code - 1];
                 atom_vdw[i] = vdw_atom_param_t{catype.aii_normal, catype.bii_normal, catype.aii_1_4, catype.bii_1_4};
