@@ -6,7 +6,7 @@ bath_coupling             0.2
 random_seed               SEED_VAR
 initial_temperature       1
 shake_solvent             on
-shake_hydrogens           off
+shake_hydrogens           on
 shake_solute              off
 lrf                       on
 separate_scaling          on
