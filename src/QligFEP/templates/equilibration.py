@@ -47,13 +47,21 @@ class EquilibrationConfig:
 # ======================================================================
 
 # eq1 is identical for both timesteps (fixed small timestep for initial equilibration)
-# Minimization is enabled for eq1 to relax initial geometries before MD
+# Minimization is enabled for eq1 to relax initial geometries before MD.
+#
+# Hydrogens are constrained here, as they are in eq2-eq5. The minimiser has to
+# constrain bonds to hydrogen regardless (the zero-LJ polar hydrogens of AMBER
+# collapse into acceptors otherwise, see fire_constrain_hydrogens in md.f90), so
+# leaving them flexible for the MD that follows would minimise on one potential
+# and integrate on another. The residual force that mismatch leaves behind shows
+# up as hot atoms on exactly the protons involved. Constraining them costs
+# nothing at 1 K, where H vibrations are not sampled anyway.
 EQ1_PARAMS = dict(
     steps=5000,  # with minimization, I expect we can use fewer steps here
     stepsize=0.2,
     temperature=1,
     bath_coupling=0.2,
-    shake_hydrogens=False,
+    shake_hydrogens=True,
     interval_output=5,
     minimize=True,
 )
