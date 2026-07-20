@@ -99,8 +99,31 @@ module md
   logical                   :: do_minimize = .false.
   integer                   :: max_min_steps = 1000
   real(8)                   :: min_tol = 0.1      ! kcal/mol/Å convergence tolerance
-  real(8)                   :: min_step = 0.001   ! step size in Å
+  real(8)                   :: min_step = 0.001   ! step size in Å (steepest descent only)
   logical                   :: min_bonded_only = .false.  ! Flag to skip nonbonded during minimization
+
+  ! Minimizer selection: 1 = FIRE (default), 2 = steepest descent (legacy baseline)
+  integer, parameter        :: MIN_FIRE = 1, MIN_SD = 2
+  integer                   :: min_method = MIN_FIRE
+
+  ! --- FIRE (Bitzek et al., Phys. Rev. Lett. 97, 170201 (2006))
+  ! Defaults are the values recommended in the paper; only the time steps are
+  ! system-dependent. Time steps are given in fs and converted to Q's internal
+  ! time unit (dt = FS_TO_INTERNAL*fs) when read.
+  real(8), parameter        :: FS_TO_INTERNAL = 0.020462d0  ! fs -> Q internal time unit
+  real(8)                   :: fire_dt_start_fs = 0.1d0  ! initial time step (fs)
+  real(8)                   :: fire_dt_max_fs = 1.0d0    ! largest allowed time step (fs)
+  integer                   :: fire_nmin = 5             ! latency steps before accelerating
+  real(8)                   :: fire_maxmove = 0.1d0      ! cap on |dx| per atom per step (Å)
+  real(8)                   :: fire_list_skin = 0.1d0    ! max atom drift before the pair lists are rebuilt (Å)
+  ! Bitzek's fixed recommended constants (never system-tuned, so not exposed):
+  real(8), parameter        :: fire_finc = 1.1d0          ! time step growth factor
+  real(8), parameter        :: fire_fdec = 0.5d0          ! time step cut factor on uphill motion
+  real(8), parameter        :: fire_alpha_start = 0.1d0   ! initial velocity mixing
+  real(8), parameter        :: fire_falpha = 0.99d0       ! mixing decay factor
+
+  ! Hold Q-atoms (both dual-topology ligands) fixed during minimization.
+  logical                   :: min_freeze_qatoms = .false.
 
   ! --- Non-bonded strategy
   logical                   :: use_LRF
@@ -360,6 +383,13 @@ module md
 
   integer                           :: shake_constraints, shake_molecules
   type(shake_mol_type), allocatable :: shake_mol(:)
+
+  ! The MD constraint set, parked while FIRE additionally constrains bonds to
+  ! hydrogen (see fire_constrain_hydrogens).
+  type(shake_mol_type), allocatable :: md_shake_mol(:)
+  integer                           :: md_shake_molecules = 0
+  integer                           :: md_shake_constraints = 0
+  logical                           :: fire_h_constrained = .false.
 
   !-----------------------------------------------------------------------
   !       profiling vars
@@ -2622,6 +2652,11 @@ subroutine init_nodes
   if (ierr .ne. 0) call die('init_nodes/MPI_Bcast min_tol')
   call MPI_Bcast(min_step, 1, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
   if (ierr .ne. 0) call die('init_nodes/MPI_Bcast min_step')
+  ! Slaves must know the minimizer to stay in lockstep on the pot_energy collectives.
+  call MPI_Bcast(min_method, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+  if (ierr .ne. 0) call die('init_nodes/MPI_Bcast min_method')
+  call MPI_Bcast(min_freeze_qatoms, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+  if (ierr .ne. 0) call die('init_nodes/MPI_Bcast min_freeze_qatoms')
 
   if (nodeid .eq. 0) then
     call centered_heading('End of initiation', '-')
@@ -3106,12 +3141,55 @@ logical function initialize()
       if(.not. prm_get_real8_by_key('minimize_step_size', min_step)) then
         min_step = 0.001
       end if
+
+      ! Minimizer selection. FIRE is the default; steepest descent is retained
+      ! as a baseline for comparison.
+      if(prm_get_string_by_key('minimize_method', instring)) then
+        call upcase(instring)
+        select case (trim(instring))
+        case ('FIRE')
+          min_method = MIN_FIRE
+        case ('SD', 'STEEPEST_DESCENT')
+          min_method = MIN_SD
+        case default
+          write(*,*) '>>> ERROR: unknown minimize_method: ', trim(instring)
+          initialize = .false.
+        end select
+      else
+        min_method = MIN_FIRE
+      end if
+
+      yes = prm_get_logical_by_key('minimize_freeze_qatoms', min_freeze_qatoms, .false.)
+
       write(*,2001) max_min_steps
       write(*,2002) min_tol
-      write(*,2003) min_step
+      if(min_freeze_qatoms) write(*,'(a)') 'Q-atoms (ligands) held fixed during minimization.'
+
+      if(min_method .eq. MIN_FIRE) then
+        write(*,'(a)') 'Minimizer            = FIRE'
+        yes = prm_get_real8_by_key('fire_dt_start', fire_dt_start_fs, 0.1d0)
+        yes = prm_get_real8_by_key('fire_dt_max',   fire_dt_max_fs,   1.0d0)
+        yes = prm_get_integer_by_key('fire_nmin',   fire_nmin,        5)
+        yes = prm_get_real8_by_key('fire_maxmove',  fire_maxmove,     0.1d0)
+        yes = prm_get_real8_by_key('fire_list_skin', fire_list_skin,  0.1d0)
+        write(*,2004) fire_dt_start_fs
+        write(*,2005) fire_dt_max_fs
+        write(*,2006) fire_nmin
+        write(*,2007) fire_maxmove
+        write(*,2008) fire_list_skin
+      else
+        write(*,'(a)') 'Minimizer            = steepest descent'
+        write(*,2003) min_step
+      end if
+
 2001  format ('Max minimize steps  =',i10)
 2002  format ('Minimize tolerance  =',f10.4,' kcal/mol/A')
 2003  format ('Minimize step size  =',f10.6,' A')
+2004  format ('FIRE initial dt     =',f10.4,' fs')
+2005  format ('FIRE maximum dt     =',f10.4,' fs')
+2006  format ('FIRE N_min          =',i10)
+2007  format ('FIRE max move/step  =',f10.4,' A')
+2008  format ('FIRE pair list skin =',f10.4,' A')
     end if
 
     ! --- Rcpp, Rcww, Rcpw, Rcq, RcLRF
@@ -4286,6 +4364,399 @@ subroutine temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
 end subroutine temperature
 
 
+!-------------------------------------------------------------------------------
+subroutine fire_constrain_hydrogens
+!!-------------------------------------------------------------------------------
+!!  **subroutine fire_constrain_hydrogens**
+!!
+!!  Adds every remaining bond to hydrogen to the SHAKE constraint set, for the
+!!  duration of the minimization only.
+!!
+!!  This is not a performance tweak, it is required for correctness. The polar
+!!  hydrogens of AMBER-type force fields (HW on water, HO on hydroxyls) carry a
+!!  large positive charge and *no* Lennard-Jones core, so the only thing keeping
+!!  them out of a nearby acceptor is the LJ shell of the heavy atom they hang
+!!  off. Let their bond stretch and a hydrogen can reach past that shell and
+!!  fall into the bare Coulomb well of an acceptor, where the energy diverges to
+!!  -infinity and the force to +infinity. MD never gets there; a minimizer walks
+!!  straight in. Crystallographic waters are the usual victims, since they are
+!!  part of the solute and 'shake_solvent' therefore leaves them flexible.
+!!
+!!  Constraining the bonds to hydrogen removes that degree of freedom and costs
+!!  nothing: they sit at their equilibrium length anyway. The MD constraint set
+!!  is parked and handed back afterwards, so the dynamics that follow run with
+!!  exactly the constraints the user asked for.
+!!
+!!  All the new constraints go into one group. SHAKE only uses the grouping to
+!!  bound its iteration, and this is what Q does anyway when shake_hydrogens is
+!!  set: a protein is a single molecule, so all of its hydrogens land in one
+!!  group. We must not group by molecule here in any case, because
+!!  shrink_topology fills the holes it leaves by swapping in the last bond,
+!!  which destroys the ordering of bnd that init_shake relies on.
+!!
+!!  Master node only: shake_mol lives there.
+!!-------------------------------------------------------------------------------
+  integer :: b, ia, ja, k, n_new
+
+  fire_h_constrained = .false.
+  if (nodeid .ne. 0) return
+
+  n_new = 0
+  do b = 1, nbonds
+    if (bnd(b)%cod .le. 0) cycle
+    ia = bnd(b)%i
+    ja = bnd(b)%j
+    ! Leave the alchemical region alone: q-atom bond lengths are lambda-dependent
+    ! and owned by the FEP machinery, and ligand hydrogens have a real LJ core.
+    if (iqatom(ia) .ne. 0 .or. iqatom(ja) .ne. 0) cycle
+    if (heavy(ia) .and. heavy(ja)) cycle
+    n_new = n_new + 1
+  end do
+
+  if (n_new .eq. 0) return
+
+  ! Park the MD constraint set. Shallow copy: the bond arrays it points at are
+  ! left untouched and handed straight back in fire_release_hydrogens.
+  call move_alloc(shake_mol, md_shake_mol)
+  md_shake_molecules   = shake_molecules
+  md_shake_constraints = shake_constraints
+
+  allocate(shake_mol(md_shake_molecules + 1), stat=alloc_status)
+  call check_alloc('FIRE shake set')
+  shake_mol(1:md_shake_molecules) = md_shake_mol(1:md_shake_molecules)
+
+  k = md_shake_molecules + 1
+  allocate(shake_mol(k)%bond(n_new), stat=alloc_status)
+  call check_alloc('FIRE shake bond array')
+  shake_mol(k)%nconstraints = 0
+
+  do b = 1, nbonds
+    if (bnd(b)%cod .le. 0) cycle
+    ia = bnd(b)%i
+    ja = bnd(b)%j
+    if (iqatom(ia) .ne. 0 .or. iqatom(ja) .ne. 0) cycle
+    if (heavy(ia) .and. heavy(ja)) cycle
+    shake_mol(k)%nconstraints = shake_mol(k)%nconstraints + 1
+    shake_mol(k)%bond(shake_mol(k)%nconstraints)%i     = ia
+    shake_mol(k)%bond(shake_mol(k)%nconstraints)%j     = ja
+    shake_mol(k)%bond(shake_mol(k)%nconstraints)%dist2 = bondlib(bnd(b)%cod)%bnd0**2
+  end do
+
+  shake_molecules    = md_shake_molecules + 1
+  shake_constraints  = md_shake_constraints + n_new
+  fire_h_constrained = .true.
+
+  write(*,100) n_new, shake_constraints
+100 format('Constraining ',i8,' bonds to hydrogen for the minimization', &
+           ' (',i8,' constraints in total).')
+
+
+end subroutine fire_constrain_hydrogens
+
+
+!-------------------------------------------------------------------------------
+subroutine fire_release_hydrogens
+!!-------------------------------------------------------------------------------
+!!  **subroutine fire_release_hydrogens**
+!!  Hands the MD constraint set back after minimization.
+!!-------------------------------------------------------------------------------
+  integer :: k
+
+  if (.not. fire_h_constrained) return
+
+  do k = md_shake_molecules + 1, shake_molecules
+    deallocate(shake_mol(k)%bond)
+  end do
+
+  deallocate(shake_mol)
+  call move_alloc(md_shake_mol, shake_mol)
+
+  shake_molecules   = md_shake_molecules
+  shake_constraints = md_shake_constraints
+  fire_h_constrained = .false.
+
+end subroutine fire_release_hydrogens
+
+
+!-------------------------------------------------------------------------------
+subroutine fire_minimize
+!!-------------------------------------------------------------------------------
+!!  **subroutine fire_minimize**
+!!  Energy minimization with the Fast Inertial Relaxation Engine.
+!!
+!!  Bitzek, Koskinen, Gaehler, Moseler & Gumbsch, "Structural Relaxation Made
+!!  Simple", Phys. Rev. Lett. 97, 170201 (2006).
+!!
+!!  Run in two phases, for reasons that are structural rather than algorithmic:
+!!
+!!  Phase 1 relaxes the bonded terms alone. Prepared structures routinely arrive
+!!  with hydrogens that the topology bonds to one atom but the coordinates place
+!!  next to another - protonated Asp/Glu (ASH/GLH) are the usual offenders, and
+!!  their O-H bonds can start out stretched to 2.5 A. Repairing that with the
+!!  bonded terms only is safe, because with the non-bonded terms switched off
+!!  there is no Coulomb well for a hydrogen to fall into.
+!!
+!!  Phase 2 then minimizes the full force field with the bonds to hydrogen held
+!!  by SHAKE (see fire_constrain_hydrogens). By now those bonds sit at their
+!!  equilibrium length, so adding the constraints displaces nothing.
+!!
+!!  Every atom is propagated, including Q-atoms and solvent; atoms outside the
+!!  simulation sphere are held by the usual fk_fix restraints, exactly as in MD.
+!!-------------------------------------------------------------------------------
+  real(8), allocatable :: v_save(:)
+
+  if (nodeid .eq. 0) then
+    call centered_heading('Energy Minimization (FIRE)', '-')
+    write(*,'(a)') 'Fast inertial relaxation engine, Bitzek et al. PRL 97, 170201 (2006).'
+    write(*,'(a)') 'All atoms are mobile; convergence is on the RMS force.'
+    write(*,*)
+  end if
+
+  ! MD carries on with the velocities it was given (restart, or drawn from the
+  ! initial temperature). FIRE must not consume them, so park them.
+  allocate(v_save(nat3), stat=alloc_status)
+  call check_alloc('FIRE velocity buffer')
+  v_save(1:nat3) = v(1:nat3)
+
+  ! ---- Phase 1: bonded terms only, hydrogens free ----
+  if (nodeid .eq. 0) write(*,'(a)') '--- Phase 1: bonded terms only ---'
+  min_bonded_only = .true.
+  call fire_descend
+  min_bonded_only = .false.
+
+  ! ---- Phase 2: full force field, bonds to hydrogen constrained ----
+  if (nodeid .eq. 0) write(*,'(a)') '--- Phase 2: full force field ---'
+  call fire_constrain_hydrogens
+  call fire_descend
+  call fire_release_hydrogens
+
+  ! Hand the pre-minimization velocities back to MD.
+  v(1:nat3) = v_save(1:nat3)
+  deallocate(v_save)
+
+end subroutine fire_minimize
+
+
+!-------------------------------------------------------------------------------
+subroutine fire_descend
+!!-------------------------------------------------------------------------------
+!!  **subroutine fire_descend**
+!!  One FIRE descent, on whatever potential pot_energy currently evaluates.
+!!
+!!  Damped MD in which the velocity is steered towards the force direction
+!!  (F2: v -> (1-alpha)*v + alpha*|v|*Fhat) and the system is frozen the moment
+!!  the power P = F.v turns negative, i.e. as soon as it starts to climb. The
+!!  time step grows while the descent stays productive (F3) and is cut hard on
+!!  every uphill event (F4), so the step size adapts to the local curvature with
+!!  no line search at all.
+!!-------------------------------------------------------------------------------
+  integer              :: i, i3, iter, n_pos, niter, n_rebuild
+  real(8)              :: dt_fire, dt_max, dt_floor, alpha
+  real(8)              :: power, vnorm, fnorm, fsq, frms, fmax
+  real(8)              :: fi, vscale, dxnorm, dxi(3), dmax
+  logical              :: converged, need_rebuild
+  real(8), allocatable :: x_ref(:)
+
+  ! Q's internal time unit: dt = FS_TO_INTERNAL * (step size in fs)
+  dt_fire  = FS_TO_INTERNAL * fire_dt_start_fs
+  dt_max   = FS_TO_INTERNAL * fire_dt_max_fs
+  dt_floor = FS_TO_INTERNAL * 1.0d-4        ! keep dt off zero after repeated cuts
+  alpha    = fire_alpha_start
+  n_pos    = 0
+  n_rebuild = 1
+  converged = .false.
+  frms = 0.0d0
+  fmax = 0.0d0
+
+  allocate(x_ref(nat3), stat=alloc_status)
+  call check_alloc('FIRE reference coordinates')
+
+  ! FIRE starts from rest.
+  v(1:nat3) = 0.0d0
+
+  ! Project the starting structure onto the constraints in force.
+  if (nodeid .eq. 0 .and. shake_constraints .gt. 0) then
+    xx(1:nat3) = x(1:nat3)
+    niter = shake(xx, x)
+  end if
+
+#if defined(USE_MPI)
+  call MPI_Bcast(x, nat3, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+  if (ierr .ne. 0) call die('fire_descend/MPI_Bcast x init')
+#endif
+
+  call make_pair_lists
+  x_ref(1:nat3) = x(1:nat3)
+
+  if (nodeid .eq. 0) write(*,300)
+300 format('   step',t13,'E_pot',t32,'F_rms',t47,'F_max',t60,'dt/fs',t70,'alpha')
+
+  do iter = 1, max_min_steps
+
+    ! Refresh the pair lists (and with them the LRF expansion) once an atom has
+    ! drifted further than the list skin. A single FIRE step can move an atom as
+    ! far as MD moves it in hundreds of steps, so the fixed NBcycle interval the
+    ! MD loop uses is far too coarse here: stale lists let atoms interpenetrate
+    ! and stale LRF centres inject spurious long-range forces.
+    need_rebuild = .false.
+    if (nodeid .eq. 0 .and. iter .gt. 1) then
+      ! Compare squared drift against the squared skin to skip a per-atom sqrt.
+      dmax = 0.0d0
+      do i = 1, natom
+        i3 = 3*(i-1)
+        dxnorm = (x(i3+1)-x_ref(i3+1))**2 + (x(i3+2)-x_ref(i3+2))**2 &
+               + (x(i3+3)-x_ref(i3+3))**2
+        if (dxnorm .gt. dmax) dmax = dxnorm
+      end do
+      if (dmax .gt. fire_list_skin**2) need_rebuild = .true.
+    end if
+
+#if defined(USE_MPI)
+    call MPI_Bcast(need_rebuild, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+    if (ierr .ne. 0) call die('fire_descend/MPI_Bcast need_rebuild')
+#endif
+    if (need_rebuild) then
+      call make_pair_lists
+      x_ref(1:nat3) = x(1:nat3)
+      n_rebuild = n_rebuild + 1
+    end if
+
+    call pot_energy
+
+    if (nodeid .eq. 0) then
+      ! d holds the gradient dE/dx, so the force is F = -d.
+      fsq  = 0.0d0
+      fmax = 0.0d0
+      do i = 1, nat3
+        fi = d(i)
+        if (fi .ne. fi) then          ! NaN guard
+          d(i) = 0.0d0
+          fi   = 0.0d0
+        end if
+        fsq = fsq + fi*fi
+        if (abs(fi) .gt. fmax) fmax = abs(fi)
+      end do
+      frms = sqrt(fsq/real(nat3, 8))
+
+      if (mod(iter-1, 50) .eq. 0) then
+        write(*,301) iter, E%potential, frms, fmax, dt_fire/FS_TO_INTERNAL, alpha
+      end if
+301   format(i7,t10,es15.6,t30,f12.3,t45,f12.3,t58,f7.4,t68,f8.5)
+
+      if (frms .lt. min_tol) converged = .true.
+    end if
+
+#if defined(USE_MPI)
+    call MPI_Bcast(converged, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+    if (ierr .ne. 0) call die('fire_descend/MPI_Bcast converged')
+#endif
+    if (converged) exit
+
+    if (nodeid .eq. 0) then
+      ! --- F1: P = F.v
+      power = 0.0d0
+      do i = 1, nat3
+        power = power - d(i)*v(i)
+      end do
+      ! v = 0 on entry, so P = 0 on the first step: do not trip the freeze branch.
+      if (iter .eq. 1) power = 1.0d0
+
+      if (power .gt. 0.0d0) then
+        ! --- F3: descent is productive, accelerate and ease off the mixing
+        n_pos = n_pos + 1
+        if (n_pos .gt. fire_nmin) then
+          dt_fire = min(dt_fire*fire_finc, dt_max)
+          alpha   = alpha*fire_falpha
+        end if
+
+        ! --- F2: v -> (1-alpha)*v + alpha*|v|*Fhat
+        vnorm = sqrt(dot_product(v(1:nat3), v(1:nat3)))
+        fnorm = sqrt(fsq)
+        if (fnorm .gt. 1.0d-10) then
+          vscale = alpha*vnorm/fnorm
+          do i = 1, nat3
+            v(i) = (1.0d0 - alpha)*v(i) - vscale*d(i)
+          end do
+        end if
+      else
+        ! --- F4: heading uphill, freeze and cut the time step
+        n_pos     = 0
+        dt_fire   = max(dt_fire*fire_fdec, dt_floor)
+        alpha     = fire_alpha_start
+        v(1:nat3) = 0.0d0
+      end if
+
+      ! --- MD: semi-implicit Euler, displacement capped per atom.
+      ! The paper suggests equalising the masses so every degree of freedom
+      ! shares one velocity scale. We keep the true masses instead: SHAKE
+      ! distributes its corrections by inverse mass, so a unit-mass integrator
+      ! would be inconsistent with the constraint solver.
+      do i = 1, natom
+        i3 = 3*(i-1)
+
+        ! Optionally hold the Q-atoms fixed. The two dual-topology ligands do not
+        ! interact (each is a dummy in the other's state, so their pairwise force
+        ! is exactly zero), so relaxing them is physically sound and lets each
+        ! ligand settle local strain against its own pocket. But freezing them is
+        ! offered for callers who want the ligand poses left exactly as prepared
+        ! and only the environment relaxed -- the behaviour of the old minimiser.
+        if (min_freeze_qatoms .and. iqatom(i) .ne. 0) then
+          v(i3+1:i3+3) = 0.0d0
+          cycle
+        end if
+
+        v(i3+1:i3+3) = v(i3+1:i3+3) - d(i3+1:i3+3)*winv(i)*dt_fire
+        dxi(1:3)     = v(i3+1:i3+3)*dt_fire
+
+        dxnorm = sqrt(dxi(1)**2 + dxi(2)**2 + dxi(3)**2)
+        if (dxnorm .gt. fire_maxmove) then
+          vscale       = fire_maxmove/dxnorm
+          dxi(1:3)     = dxi(1:3)*vscale
+          ! keep the velocity consistent with the truncated move
+          v(i3+1:i3+3) = dxi(1:3)/dt_fire
+        end if
+
+        xx(i3+1:i3+3) = x(i3+1:i3+3)
+        x(i3+1:i3+3)  = x(i3+1:i3+3) + dxi(1:3)
+      end do
+
+      ! Constraints, as in the MD integrator.
+      if (shake_constraints .gt. 0) then
+        niter = shake(xx, x)
+        v(1:nat3) = (x(1:nat3) - xx(1:nat3))/dt_fire
+      end if
+    end if
+
+#if defined(USE_MPI)
+    call MPI_Bcast(x, nat3, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    if (ierr .ne. 0) call die('fire_descend/MPI_Bcast x')
+#endif
+  end do
+
+  if (nodeid .eq. 0) then
+    write(*,301) min(iter, max_min_steps), E%potential, frms, fmax, &
+                 dt_fire/FS_TO_INTERNAL, alpha
+    if (converged) then
+      write(*,302) min(iter, max_min_steps), frms
+    else
+      write(*,303) max_min_steps, frms, min_tol
+    end if
+    write(*,304) E%potential, fmax
+    write(*,305) n_rebuild
+302 format('FIRE converged after ',i6,' steps: RMS force = ',f10.4,' kcal/mol/A')
+303 format('>>> WARNING: FIRE did not converge in ',i6,' steps: RMS force = ', &
+           f10.4,' > tolerance ',f10.4,' kcal/mol/A')
+304 format('Energy after minimization = ',es15.6,' kcal/mol, max force = ', &
+           es12.4,' kcal/mol/A')
+305 format('Pair list rebuilds        = ',i6)
+    write(*,*)
+  end if
+
+  deallocate(x_ref)
+
+end subroutine fire_descend
+
+
 subroutine md_run
 !!-------------------------------------------------------------------------------
 !! subroutine **md_run**
@@ -4386,9 +4857,13 @@ subroutine md_run
   end if
 
   !***********************************************************************
-  !       ENERGY MINIMIZATION (steepest descent, before MD)
+  !       ENERGY MINIMIZATION (before MD)
   !***********************************************************************
-  if (do_minimize) then
+  if (do_minimize .and. min_method .eq. MIN_FIRE) then
+    call fire_minimize
+  end if
+
+  if (do_minimize .and. min_method .eq. MIN_SD) then
     if (nodeid .eq. 0) then
       call centered_heading('Energy Minimization', '-')
       write(*,'(a)') 'Two-phase steepest descent energy minimization:'
