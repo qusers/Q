@@ -357,7 +357,11 @@ class TestEquilibrationConfigs:
         assert eq1.params.stepsize == 0.2
         assert eq1.params.temperature == 1
         assert eq1.params.bath_coupling == 0.2
-        assert eq1.params.shake_hydrogens is False
+        # Hydrogens are constrained in eq1 (as in eq2-eq5): the FIRE minimiser
+        # must constrain bonds to hydrogen regardless, so leaving them flexible
+        # for the following MD would minimise and integrate on different
+        # potentials. See EQ1_PARAMS in equilibration.py.
+        assert eq1.params.shake_hydrogens is True
         assert eq1.params.minimize is True
         assert eq1.sequence_restraint_force == 10.0
         assert eq1.distance_restraint_force == 1.5
