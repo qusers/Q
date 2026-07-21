@@ -153,7 +153,7 @@ default: what
 ################################################################################
 # Targets
 ################################################################################
-all:    qfep qprep qdyn qdyn_neq qdum qcalc move1 move2
+all:    qfep qprep qdyn qdum qcalc move1 move2
 
 qprep-only: qprep move_qprep move1
 
@@ -161,7 +161,7 @@ test:   qfep qprep qdyn_test qdum qcalc move1 move4
 
 debug:
 	@make FFLAGS="${DEBUG}" \
-    qfep qprep qdyn qdyn_neq qdum qcalc move1 move2
+    qfep qprep qdyn qdum qcalc move1 move2
 
 mpi:
 	@make FFLAGS="${MPI}" \
@@ -178,21 +178,19 @@ nuke:
 	-rm -rf *.o  *.mod *.M *.kmo *.il *.oo obj/ bin/ \
 	qdum ../../bin/q6 ../../obj
 
-qcalc qdyn qdyn_neq qdyn_test qdum qdynp qprep qfep: misc.o mpiglob.o
+qcalc qdyn qdyn_test qdum qdynp qprep qfep: misc.o mpiglob.o
 
-qcalc qdyn qdyn_neq qdyn_test qdum qdynp qprep: mask.o prmfile.o sizes.o topo.o trj.o index.o
+qcalc qdyn qdyn_test qdum qdynp qprep: mask.o prmfile.o sizes.o topo.o trj.o index.o
 
-qcalc qdyn qdyn_neq qdyn_test qdum qdynp qfep: nrgy.o
+qcalc qdyn qdyn_test qdum qdynp qfep: nrgy.o
 
-qcalc qdyn qdyn_neq qdyn_test qdum qdynp: qatom.o
+qcalc qdyn qdyn_test qdum qdynp: qatom.o
 
 qcalc qprep qfep: parse.o
 
 qcalc qprep: maskmanip.o
 
 qdyn qdum: qdyn.o
-
-qdyn_neq : qdyn_neq.o
 
 qdyn_test: qdyn_test.o
 
@@ -210,9 +208,6 @@ qcalc: calc_base.o calc_chemscore.o calc_fit.o calc_geom.o calc_pmfscore.o \
 qdyn : md.o
 	${FC} ${FFLAGS} ${FLIBS} $+ -o $@
 	
-qdyn_neq : md_neq.o
-	${FC} ${FFLAGS} ${FLIBS} $+ -o $@
-
 qdyn_test : md_test.o #qdyn_test.o
 	${FC} ${FFLAGS} ${FLIBS} $+ -o $@
 
@@ -285,9 +280,6 @@ maskmanip.o: maskmanip.f90 mask.o misc.o parse.o
 md.o: md.f90 mpiglob.o qatom.o sizes.o trj.o topo.o
 	${FC} ${FFLAGS} ${FPP_FLG} -c md.f90
 
-md_neq.o: md_neq.f90 mpiglob.o qatom.o sizes.o trj.o topo.o
-	${FC} ${FFLAGS} ${FPP_FLG} -c md_neq.f90
-
 md_test.o: md_test.f90 mpiglob.o qatom.o sizes.o trj.o topo.o
 	${FC} ${FFLAGS} ${FPP_FLG} -c md_test.f90
 
@@ -332,9 +324,6 @@ qcalc.o: qcalc.f90 calc_chemscore.o calc_pmfscore.o calc_xscore.o trj.o \
 qdyn.o: qdyn.f90 md.o mpiglob.o
 	${FC} ${FFLAGS} ${FPP_FLG} -c qdyn.f90
 	
-qdyn_neq.o: qdyn.f90 md_neq.o mpiglob.o
-	${FC} ${FFLAGS} ${FPP_FLG} -c qdyn.f90 -o qdyn_neq.o
-
 qdyn_test.o: qdyn_test.f90 md_test.o mpiglob.o
 	${FC} ${FFLAGS} ${FPP_FLG} -c qdyn_test.f90	-o qdyn_test.o
 
@@ -361,7 +350,7 @@ move1:
 	mkdir -p obj ; mv *.o *.mod obj/
 
 move2:
-	mkdir -p bin/q6 ; mv qfep qprep qdyn qdyn_neq qdum qcalc bin/q6
+	mkdir -p bin/q6 ; mv qfep qprep qdyn qdum qcalc bin/q6
 
 move3:
 	mkdir -p bin/q6 ; mv qdynp bin/q6
