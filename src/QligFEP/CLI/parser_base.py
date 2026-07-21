@@ -234,7 +234,8 @@ def parse_arguments(program: str) -> argparse.Namespace:
         action="store_true",
         help=(
             "Set up a non-equilibrium (NEQ) FEP instead of the windowed equilibrium approach. "
-            "Instead of many fixed-lambda windows, NEQ runs the `qdyn_neq` engine to drive lambda "
+            "Instead of many fixed-lambda windows, NEQ runs the serial `qdyn` engine (fast-switching "
+            "mode) to drive lambda "
             "from one endpoint to the other over a single simulation, accumulating the switching "
             "work. Free energies are obtained from BAR over the forward/reverse work distributions "
             "(see `qligfep_neq_analyze`). When set, the windowed parameters `--windows` and "

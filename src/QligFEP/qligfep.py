@@ -141,7 +141,7 @@ class QligFEP:
         self.neq_schedule = neq_schedule
         if self.neq and self.cluster in ("LOCAL", "LOCALP"):
             # NEQ setups are generated from the SLURM run_neq.sh template, which needs the
-            # qdyn_neq path that only the cluster profiles carry; there is no local NEQ runner.
+            # qdynp/qdyn engine paths that only the cluster profiles carry; there is no local NEQ runner.
             raise ValueError(
                 f"--neq is not supported on cluster '{self.cluster}': the {self.cluster} profile "
                 "does not define QDYN_NEQ. Use a SLURM cluster profile for non-equilibrium setups."
@@ -1391,7 +1391,8 @@ class QligFEP:
 
     def write_neq_runfile(self, writedir, file_list):
         """Write the SLURM run script for a non-equilibrium FEP. Each array task runs
-        eq1-5, then loops `neq_reps` forward/reverse lambda switches with qdyn_neq.
+        eq1-5, then loops `neq_reps` forward/reverse lambda switches with the serial qdyn
+        engine (NEQ mode selected by the [lambda_scaling] section in neq_*.inp).
         """
         src = CONFIGS["INPUT_DIR"] + "/run_neq.sh"
         tgt = writedir + "/run" + self.cluster + ".sh"

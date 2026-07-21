@@ -165,9 +165,9 @@ def test_neq_runfile_parallelizes_switches(tmp_path):
     run.write_MD_neq(str(tmp_path), 10, 12, [(1, 2)])
     run.write_neq_runfile(str(tmp_path), [])
     script = (tmp_path / "runSNELLIUS.sh").read_text()
-    # equilibration uses the MPI engine across all cores; switches use the serial engine
-    assert "qdyn=" in script and "$qdyn " in script  # qdynp (MPI) for equilibration
-    assert "qdyn_neq=" in script and "$qdyn_neq " in script  # qdyn_neq (serial) for switches
+    # equilibration uses the parallel engine across all cores; switches use the serial engine
+    assert "qdynp=" in script and "$qdynp " in script  # qdynp (parallel) for equilibration
+    assert "qdyn=" in script and "$qdyn " in script  # qdyn (serial) for switches
     # switches are packed one-per-core via mpirun binding (Snellius bills the whole node)
     assert "mpirun" in script
     assert "--bind-to core" in script
@@ -178,7 +178,7 @@ def test_neq_runfile_parallelizes_switches(tmp_path):
 
 
 def test_read_final_work_parses_engine_log_format(tmp_path):
-    # Mirrors the qdyn_neq output: work value at split index 6; completion line at the end.
+    # Mirrors the qdyn NEQ-mode output: work value at split index 6; completion line at the end.
     log = tmp_path / "neq_1_0.log"
     log.write_text(
         "Initializing dynamics\n"

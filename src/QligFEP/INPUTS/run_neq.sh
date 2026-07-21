@@ -48,8 +48,8 @@ seed=${seeds[$run_num-1]}
 ## Load modules
 MODULES
 
-## define the MPI equilibration engine (qdynp) and serial switching engine (qdyn_neq)
-QDYN
+## define the parallel equilibration engine (qdynp) and serial switching engine (qdyn)
+QDYNP
 QDYN_NEQ
 
 starttime=$(date +%s)
@@ -76,7 +76,7 @@ sed -i "s/FEP_VAR/$fepfile/" *.inp
 
 # 1) Equilibration eq1 -> eq5 with the MPI engine across all cores (fixed lambda)
 for i in 1 2 3 4 5; do
-    time mpirun -np $ncores --bind-to core $qdyn eq$i.inp > eq$i.log
+    time mpirun -np $ncores --bind-to core $qdynp eq$i.inp > eq$i.log
 done
 
 # 2) Endpoint equilibration chain (MPI): one continuous trajectory per endpoint,
@@ -91,7 +91,7 @@ for rep in $(seq 0 $((neq_reps - 1))); do
         if [ "$rep" -eq 0 ]; then eqsrc=relax_${s}.inp; else eqsrc=eq6_${s}.inp; fi
         sed "s|RESTARTFILE|eq6_${s}_prev.re|; s|FINALFILE|eq6_${s}_${rep}.re|" \
             "$eqsrc" > eq6_${s}_run${rep}.inp
-        time mpirun -np $ncores --bind-to core $qdyn eq6_${s}_run${rep}.inp > eq6_${s}_${rep}.log
+        time mpirun -np $ncores --bind-to core $qdynp eq6_${s}_run${rep}.inp > eq6_${s}_${rep}.log
         cp eq6_${s}_${rep}.re eq6_${s}_prev.re
     done
 done
@@ -117,7 +117,7 @@ idx=\$(( OMPI_COMM_WORLD_RANK + 1 + \${BATCH_OFFSET:-0} ))
 line=\$(sed -n "\${idx}p" switch_list.txt)
 [ -z "\$line" ] && exit 0
 set -- \$line
-$qdyn_neq "\$1" > "\$2"
+$qdyn "\$1" > "\$2"
 EOF
 chmod +x neq_launch.sh
 
