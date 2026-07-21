@@ -85,6 +85,7 @@ def render_md_input(
     restart_file: str | None = None,
     energy_file: str | None = None,
     is_eq1: bool = False,
+    lambda_scaling: str | None = None,
 ) -> str:
     """Render an MD input file from parameters.
 
@@ -100,6 +101,8 @@ def render_md_input(
         restart_file: Restart input filename (None for eq1)
         energy_file: Energy output filename (None for equilibration)
         is_eq1: True for eq1.inp which has random_seed and initial_temperature
+        lambda_scaling: Pre-formatted [lambda_scaling] body for the non-equilibrium
+            switching runs (scaling_parameter/L_sigmoid). Omitted when None.
 
     Returns:
         Complete .inp file content as string
@@ -129,6 +132,8 @@ def render_md_input(
 
     restart_file_name = f"restart                   {restart_file}\n" if restart_file else ""
     energy_file_name = f"energy                    {energy_file}\n" if energy_file else ""
+
+    lambda_scaling_section = f"\n[lambda_scaling]\n{lambda_scaling}\n" if lambda_scaling else ""
 
     return f"""\
 [MD]
@@ -188,4 +193,4 @@ not excluded
 
 [wall_restraints]
 {wall_restraints}
-"""
+{lambda_scaling_section}"""

@@ -58,6 +58,11 @@ from QligFEP.templates.equilibration import (
     get_equilibration_configs,
 )
 from QligFEP.templates.md_template import MDParameters, render_md_input
+from QligFEP.templates.neq import (
+    NEQ_ENDPOINT_1FS_PARAMS,
+    NEQ_ENDPOINT_2FS_PARAMS,
+    get_neq_endpoint_config,
+)
 from QligFEP.templates.production import (
     PRODUCTION_1FS_PARAMS,
     PRODUCTION_2FS_PARAMS,
@@ -103,6 +108,10 @@ __all__ = [
     "get_production_config",
     "PRODUCTION_2FS_PARAMS",
     "PRODUCTION_1FS_PARAMS",
+    # Non-equilibrium endpoints
+    "get_neq_endpoint_config",
+    "NEQ_ENDPOINT_2FS_PARAMS",
+    "NEQ_ENDPOINT_1FS_PARAMS",
     # Sections
     "format_distance_restraints",
     "format_sequence_restraint",

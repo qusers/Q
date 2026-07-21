@@ -6,6 +6,7 @@ from conftest import GOLDEN_FEP_SETUP_DIR, parse_inp_file
 from QligFEP.templates import (
     MDParameters,
     get_equilibration_configs,
+    get_neq_endpoint_config,
     get_production_config,
     render_md_input,
 )
@@ -455,6 +456,40 @@ class TestProductionConfig:
         """Verify custom bath coupling."""
         config = get_production_config("2fs", shell_radius=25, bath_coupling=5.0)
         assert config.params.bath_coupling == 5.0
+
+
+class TestNeqEndpointConfig:
+    """Tests for the non-equilibrium endpoint (relax/eq6/neq) configuration."""
+
+    def test_neq_endpoint_config_2fs(self):
+        """2fs endpoint uses the 2fs stepsize and SHAKE, with sparse endpoint output."""
+        params = get_neq_endpoint_config("2fs", shell_radius=25, steps=20000)
+
+        assert params.steps == 20000
+        assert params.stepsize == 2.0
+        assert params.shake_hydrogens is True
+        assert params.shake_solute is True
+        assert params.temperature == "T_VAR"
+        assert params.shell_radius == 25
+        # endpoint-specific cadence: sparse output, trajectory writing suppressed,
+        # and no energy file (BAR consumes the accumulated work, not per-frame energies)
+        assert params.interval_output == 10
+        assert params.interval_trajectory == 100000000
+        assert params.interval_energy is None
+
+    def test_neq_endpoint_config_1fs(self):
+        """1fs endpoint drops to the 1fs stepsize with SHAKE off."""
+        params = get_neq_endpoint_config("1fs", shell_radius=25, steps=20000)
+
+        assert params.stepsize == 1.0
+        assert params.shake_hydrogens is False
+        assert params.shake_solute is False
+
+    def test_steps_and_radius_flow_through(self):
+        """Step count and sphere radius are per-call, not baked into the timestep dicts."""
+        params = get_neq_endpoint_config("2fs", shell_radius=30, steps=2500)
+        assert params.steps == 2500
+        assert params.shell_radius == 30
 
 
 class TestSectionFormatters:

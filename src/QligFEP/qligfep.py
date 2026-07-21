@@ -32,6 +32,7 @@ from .templates import (
     QprepFEPParameters,
     format_energy_files,
     get_equilibration_configs,
+    get_neq_endpoint_config,
     get_production_config,
     render_md_input,
     render_qfep_input,
@@ -138,6 +139,13 @@ class QligFEP:
         self.neq_relax_steps = neq_relax_steps
         self.neq_L = neq_L
         self.neq_schedule = neq_schedule
+        if self.neq and self.cluster in ("LOCAL", "LOCALP"):
+            # NEQ setups are generated from the SLURM run_neq.sh template, which needs the
+            # qdyn_neq path that only the cluster profiles carry; there is no local NEQ runner.
+            raise ValueError(
+                f"--neq is not supported on cluster '{self.cluster}': the {self.cluster} profile "
+                "does not define QDYN_NEQ. Use a SLURM cluster profile for non-equilibrium setups."
+            )
         # Temporary until flag is here
         self.ABS = False  # True
         self.ABS_waters = []
@@ -198,11 +206,6 @@ class QligFEP:
 
         self.write_dir = directory
         return directory
-
-    def replace(self, string, replacements):
-        pattern = re.compile(r"\b(" + "|".join(replacements.keys()) + r")\b")
-        replaced_string = pattern.sub(lambda x: replacements[x.group()], string)
-        return replaced_string
 
     def read_files(self):
         changes_1 = {}
@@ -1012,117 +1015,47 @@ class QligFEP:
             )
         return torestraint_list
 
-    def _set_common_md_replacements(self, lig_size1, lig_size2, eq_lambda):
-        """Populate self.replacements with the atom ranges, sphere size, equilibration
-        lambdas and water restraint shared by every MD/equilibration input file.
+    def _write_equilibration_files(
+        self,
+        writedir,
+        lig_size1,
+        lig_size2,
+        overlapping_atoms,
+        eq_lambda1,
+        eq_lambda2,
+        cw_restraint="",
+        wall_restraints="",
+    ):
+        """Write the eq1-eq5 equilibration input files from the templates module.
 
-        Returns the extra [sequence_restraints] lines (only populated for the ABS water
-        case; an empty list otherwise).
-        """
-        replacements = self.replacements
-        lig_total = lig_size1 + lig_size2
-        cnt = -1
-        restlist = []
-        replacements["ATOM_START_LIG1"] = f"{self.atomoffset + 1:<6}"
-        replacements["ATOM_END_LIG1"] = f"{self.atomoffset + lig_size1:<7}"
-        replacements["ATOM_START_LIG2"] = f"{self.atomoffset + lig_size1 + 1:<6}"
-        replacements["ATOM_END_LIG2"] = f"{self.atomoffset + lig_size1 + lig_size2:<7}"
-        replacements["SPHERE"] = self.sphereradius
-        replacements["ATOM_END"] = f"{self.atomoffset + lig_total:<6}"
-        replacements["EQ_LAMBDA"] = eq_lambda
-
-        if self.system == "water" or self.system == "vacuum":
-            if self.ABS is False:
-                replacements["WATER_RESTRAINT"] = "{:<7}{:<7} 1.0 0 1   \n".format(
-                    self.atomoffset + 1, self.atomoffset + lig_size1 + lig_size2
-                )
-
-            else:
-                replacements["WATER_RESTRAINT"] = "{:<7}{:<7} 1.0 0 1   \n".format(
-                    self.atomoffset + 1, self.atomoffset + lig_size1
-                )
-
-                for i in range(
-                    self.atomoffset + 1 + lig_size1,
-                    self.atomoffset + 2 + lig_size1 + lig_size2,
-                ):
-                    cnt += 1
-                    if cnt == 0:
-                        rest = f"{i:<7}{i:<7} 1.0 0 1   \n"
-                        restlist.append(rest)
-
-                    if cnt == 2:
-                        cnt = -1
-
-        elif self.system == "protein":
-            replacements["WATER_RESTRAINT"] = ""
-        return restlist
-
-    def write_eq_files(self, writedir, overlapping_atoms, restlist):
-        """Write the equilibration input files eq1-5.inp from the templates, injecting
-        the distance and sequence restraints. Requires self.replacements to be populated
-        (see _set_common_md_replacements). Returns the list of written file names.
+        Shared by the windowed and non-equilibrium setups. Returns the list of written
+        file names.
         """
         file_list = []
-        for eq_file_in in sorted(glob.glob(CONFIGS["ROOT_DIR"] + "/INPUTS/eq[1-5].inp")):
-            eq_file = os.path.basename(eq_file_in)
-            rest_force = 1.5 if eq_file != "eq5.inp" else self.dr_force  # 1.5 for eq1-4
-            logger.debug(f"Writing {eq_file}")
-            eq_file_out = writedir + "/" + eq_file
+        for i, eq_config in enumerate(get_equilibration_configs(self.timestep, int(self.sphereradius))):
+            dr_str, seq_str = self._format_restraints_for_eq(
+                overlapping_atoms, lig_size1, lig_size2, eq_config, self.dr_force
+            )
+            if cw_restraint:
+                seq_str = f"{seq_str}\n{cw_restraint}" if seq_str else cw_restraint
 
-            with open(eq_file_in) as infile, open(eq_file_out, "w") as outfile:
-                for line in infile:
-                    line = replace(line, self.replacements)
-                    outfile.write(line)
-                    if line == "[distance_restraints]\n":
-                        for atompair in overlapping_atoms:
-                            outfile.write(f"{atompair[0]:d} {atompair[1]:d} 0.0 0.1 {rest_force:.1f} 0\n")
-
-                    if line == "[sequence_restraints]\n":
-                        for restline in restlist:
-                            outfile.write(restline)
-            file_list.append(eq_file)
+            content = render_md_input(
+                params=eq_config.params,
+                lambda1=eq_lambda1,
+                lambda2=eq_lambda2,
+                trajectory_file=f"{eq_config.name}.dcd",
+                final_file=f"{eq_config.name}.re",
+                restart_file=f"eq{i}.re" if i > 0 else None,
+                distance_restraints=dr_str,
+                sequence_restraints=seq_str,
+                wall_restraints=wall_restraints,
+                is_eq1=(i == 0),
+            )
+            (Path(writedir) / f"{eq_config.name}.inp").write_text(content)
+            file_list.append(f"{eq_config.name}.inp")
+            logger.debug(f"Writing {eq_config.name}.inp")
         return file_list
 
-    def write_MD_05(self, lambdas, writedir, lig_size1, lig_size2, overlapping_atoms):
-        replacements = self.replacements
-        file_list2 = []
-        file_list3 = []
-        lambda_1 = []
-        lambda_2 = []
-        block = 0
-        index = 0
-
-        for line in lambdas:
-            if line == "0.500":
-                block = 1
-
-            if block == 0:
-                lambda_1.append(line)
-
-            if block == 1:
-                lambda_2.append(line)
-
-        lambda_1 = lambda_1[::-1]
-        lambda_2 = lambda_2[1:]
-
-        restlist = self._set_common_md_replacements(lig_size1, lig_size2, "0.500 0.500")
-        file_list1 = self.write_eq_files(writedir, overlapping_atoms, restlist)
-
-        # WRITING THE FEP MOLECULAR DYNAMICS INPUT FILES (e.g.: md_0500_0500.inp)
-        file_in = CONFIGS["INPUT_DIR"] + "/md_0500_0500.inp"
-        file_out = writedir + "/md_0500_0500.inp"
-        with open(file_in) as infile, open(file_out, "w") as outfile:
-            for line in infile:
-                line = replace(line, replacements)
-                outfile.write(line)
-                if line == "[distance_restraints]\n":
-                    for line in overlapping_atoms:
-                        outfile.write(f"{line[0]:d} {line[1]:d} 0.0 0.1 {self.dr_force:.1f} 0\n")
-
-                if line == "[sequence_restraints]\n":
-                    for line in restlist:
-                        outfile.write(line)
     def _format_restraints_for_eq(
         self,
         overlapping_atoms: list,
@@ -1195,7 +1128,6 @@ class QligFEP:
         Returns:
             List of three file lists: [eq_files + md_start, forward_lambda_files, reverse_lambda_files]
         """
-        file_list1 = []  # eq files + initial md file
         file_list2 = []  # forward lambda files
         file_list3 = []  # reverse lambda files
 
@@ -1209,42 +1141,12 @@ class QligFEP:
         else:  # start == "0.0" or "1"
             eq_lambda1, eq_lambda2 = "1.000", "0.000"
 
-        # if self.n_counter_ions > 0:
-        #     logger.info(
-        #         "Charged perturbation detected, doubling production steps to accommodate counter-water transformations."
-        #     )
-
-        # Get configurations
-        eq_configs = get_equilibration_configs(self.timestep, int(self.sphereradius))
         prod_config = get_production_config(self.timestep, int(self.sphereradius), self.dr_force)
 
-        # Write equilibration files (eq1-eq5)
-        for i, eq_config in enumerate(eq_configs):
-            dr_str, seq_str = self._format_restraints_for_eq(
-                overlapping_atoms, lig_size1, lig_size2, eq_config, self.dr_force
-            )
-            if cw_restraint:
-                seq_str = f"{seq_str}\n{cw_restraint}" if seq_str else cw_restraint
-
-            restart_file = f"eq{i}.re" if i > 0 else None
-
-            content = render_md_input(
-                params=eq_config.params,
-                lambda1=eq_lambda1,
-                lambda2=eq_lambda2,
-                trajectory_file=f"{eq_config.name}.dcd",
-                final_file=f"{eq_config.name}.re",
-                restart_file=restart_file,
-                distance_restraints=dr_str,
-                sequence_restraints=seq_str,
-                wall_restraints=wall_restraints,
-                is_eq1=(i == 0),
-            )
-
-            filepath = Path(writedir) / f"{eq_config.name}.inp"
-            filepath.write_text(content)
-            file_list1.append(f"{eq_config.name}.inp")
-            logger.debug(f"Writing {eq_config.name}.inp")
+        # eq files + initial md file
+        file_list1 = self._write_equilibration_files(
+            writedir, lig_size1, lig_size2, overlapping_atoms, eq_lambda1, eq_lambda2, cw_restraint, wall_restraints
+        )
 
         # Format restraints for production files
         prod_dr_str = format_distance_restraints([(a, b) for a, b in overlapping_atoms], force=self.dr_force)
@@ -1428,34 +1330,30 @@ class QligFEP:
         return file_list1, file_list2, file_list3
 
     def _write_endpoint_file(
-        self, file_out, eq_lambda, steps, overlapping_atoms, restlist, lambda_scaling=None
+        self, file_out, lambda1, lambda2, steps, distance_restraints, sequence_restraints, lambda_scaling=None
     ):
-        """Write a single endpoint MD input file from the neq_endpoint.inp template.
+        """Write a single non-equilibrium endpoint MD input file via render_md_input.
 
         Used for both the endpoint equilibration files (eq6_*) and the lambda-switching
         files (neq_*). The per-replicate restart/final file names and the temperature stay
-        as RESTART_VAR/FINAL_VAR/T_VAR placeholders that the run script fills in. When
-        lambda_scaling is given, its lines are appended as the [lambda_scaling] section
-        that drives lambda over the course of the simulation (turning the file into a
-        switching run); without it the file is a plain equilibrium MD at the endpoint.
+        as RESTARTFILE/FINALFILE/T_VAR placeholders that the run script fills in. When
+        lambda_scaling is given it becomes the [lambda_scaling] section that drives lambda
+        over the run (a switching run); without it the file is a plain equilibrium MD at
+        the endpoint.
         """
-        replacements = dict(self.replacements)
-        replacements["EQ_LAMBDA"] = eq_lambda
-        replacements["STEPS_VAR"] = str(steps)
-        replacements["OUTPUT_VAR"] = "10"
-        template = CONFIGS["INPUT_DIR"] + "/neq_endpoint.inp"
-        with open(template) as infile, open(file_out, "w") as outfile:
-            for line in infile:
-                line = replace(line, replacements)
-                outfile.write(line)
-                if line == "[distance_restraints]\n":
-                    for atompair in overlapping_atoms:
-                        outfile.write(f"{atompair[0]:d} {atompair[1]:d} 0.0 0.1 {self.dr_force:.1f} 0\n")
-                if line == "[sequence_restraints]\n":
-                    for restline in restlist:
-                        outfile.write(restline)
-            if lambda_scaling is not None:
-                outfile.write("\n".join(lambda_scaling) + "\n")
+        params = get_neq_endpoint_config(self.timestep, int(self.sphereradius), steps)
+        content = render_md_input(
+            params=params,
+            lambda1=lambda1,
+            lambda2=lambda2,
+            trajectory_file="neq.dcd",
+            final_file="FINALFILE",
+            restart_file="RESTARTFILE",
+            distance_restraints=distance_restraints,
+            sequence_restraints=sequence_restraints,
+            lambda_scaling=lambda_scaling,
+        )
+        Path(file_out).write_text(content)
 
     def write_MD_neq(self, writedir, lig_size1, lig_size2, overlapping_atoms):
         """Write the non-equilibrium input files: eq1-5 (equilibration), relax_{0,1}
@@ -1464,24 +1362,29 @@ class QligFEP:
         1.0->0.0; the run script relaxes each endpoint once, then chains the restarts and
         repeats the switches per replicate. Returns the list of written file names.
         """
-        restlist = self._set_common_md_replacements(lig_size1, lig_size2, "0.500 0.500")
-        file_list = self.write_eq_files(writedir, overlapping_atoms, restlist)
+        file_list = self._write_equilibration_files(
+            writedir, lig_size1, lig_size2, overlapping_atoms, "0.500", "0.500"
+        )
 
-        endpoint_lambdas = {"0": "0.000 1.000", "1": "1.000 0.000"}
-        lambda_scaling = [
-            "",
-            "[lambda_scaling]",
-            f"scaling_parameter          {self.neq_schedule}",
-            f"L_sigmoid        {self.neq_L}",
-        ]
-        for state, eq_lambda in endpoint_lambdas.items():
-            relax_out = writedir + f"/relax_{state}.inp"
-            self._write_endpoint_file(relax_out, eq_lambda, self.neq_relax_steps, overlapping_atoms, restlist)
-            eq6_out = writedir + f"/eq6_{state}.inp"
-            self._write_endpoint_file(eq6_out, eq_lambda, self.neq_eq_steps, overlapping_atoms, restlist)
-            neq_out = writedir + f"/neq_{state}.inp"
+        dr_str = format_distance_restraints([(a, b) for a, b in overlapping_atoms], force=self.dr_force)
+        if self.system in ("water", "vacuum"):
+            seq_str = format_water_restraint(
+                self.atomoffset + 1, self.atomoffset + lig_size1 + lig_size2, force=1.0
+            )
+        else:  # protein
+            seq_str = ""
+
+        lambda_scaling = f"scaling_parameter          {self.neq_schedule}\nL_sigmoid        {self.neq_L}"
+        endpoint_lambdas = {"0": ("0.000", "1.000"), "1": ("1.000", "0.000")}
+        for state, (lambda1, lambda2) in endpoint_lambdas.items():
             self._write_endpoint_file(
-                neq_out, eq_lambda, self.neq_steps, overlapping_atoms, restlist, lambda_scaling
+                writedir + f"/relax_{state}.inp", lambda1, lambda2, self.neq_relax_steps, dr_str, seq_str
+            )
+            self._write_endpoint_file(
+                writedir + f"/eq6_{state}.inp", lambda1, lambda2, self.neq_eq_steps, dr_str, seq_str
+            )
+            self._write_endpoint_file(
+                writedir + f"/neq_{state}.inp", lambda1, lambda2, self.neq_steps, dr_str, seq_str, lambda_scaling
             )
             file_list += [f"relax_{state}.inp", f"eq6_{state}.inp", f"neq_{state}.inp"]
         return file_list
