@@ -13,7 +13,9 @@ Logs are read from the directory layout produced by ``run_neq.sh``: forward swit
 written to ``neq_1_*.log`` and reverse switches to ``neq_0_*.log`` (the labels follow the
 original implementation: state 1 sweeps lambda 1->0, state 0 sweeps lambda 0->1).
 
-When a mapping JSON and experimental key are supplied, the per-edge ddG is compared to
+When a mapping JSON is supplied, the per-edge ddG is injected into a ``<name>_ddG.json`` copy
+of it (``Q_ddG_avg``/``Q_ddG_sem``/``Q_ddG_std`` per edge), matching the equilibrium analyzer
+(``analyze_FEP.py``). With an experimental key as well, the ddG is additionally compared to
 experiment (correlation metrics and the shared ddG plot). Switch-completion counts and the
 per-replicate slurm run status are reported as run diagnostics.
 """
@@ -497,8 +499,9 @@ def parse_arguments() -> argparse.Namespace:
         dest="json_file",
         default=None,
         help=(
-            "Mapping JSON used to run setupFEP (qlomap output). When given with --experimental-key, "
-            "the per-edge ddG is compared to experiment (correlation metrics + plot)."
+            "Mapping JSON used to run setupFEP. When given, the per-edge ddG is injected "
+            "into a `<name>_ddG.json` copy of it (Q_ddG_avg/sem/std per edge). With "
+            "--experimental-key, the ddG is also compared to experiment (correlation metrics + plot)."
         ),
     )
     parser.add_argument(
@@ -550,8 +553,11 @@ def main(args: argparse.Namespace) -> pd.DataFrame:
     ]
     df = pd.DataFrame(rows)
 
-    if args.json_file and args.experimental_key:
-        df = compare_to_experiment(df, args.json_file, args.experimental_key, args.target)
+    if args.json_file:
+        results_file = args.json_file.replace(".json", "_ddG.json")
+        populate_mapping_json(df, args.json_file, results_file)
+        if args.experimental_key:
+            df = compare_to_experiment(df, args.json_file, args.experimental_key, args.target)
 
     df.to_csv(args.output, index=False)
     logger.info(f"Wrote {len(df)} edge(s) to {args.output}\n{df.to_string(index=False)}")
@@ -559,6 +565,39 @@ def main(args: argparse.Namespace) -> pd.DataFrame:
     if not args.no_run_data:
         write_run_diagnostics(edges, args.output)
     return df
+
+
+def populate_mapping_json(df: pd.DataFrame, mapping_json: str, output_file: str) -> None:
+    """Inject the per-edge NEQ ddG into a copy of the mapping JSON, matching ``analyze_FEP``.
+
+    Each edge's ``FEP_<from>_<to>`` name is matched against the results frame; a matched edge
+    gains ``Q_ddG_avg``/``Q_ddG_sem``/``Q_ddG_std`` (NaN serialized as JSON null). The updated
+    mapping is written to ``output_file``; the original mapping JSON is left untouched.
+    """
+    with open(mapping_json) as handle:
+        mapping = json.load(handle)
+    results = {row["edge"]: row for _, row in df.iterrows()}
+    matched = 0
+    for edge in mapping.get("edges", []):
+        row = results.get(f"FEP_{edge['from']}_{edge['to']}")
+        if row is None:
+            continue
+        edge.update(
+            {
+                "Q_ddG_avg": _nan_to_none(row["ddG_kcal"]),
+                "Q_ddG_sem": _nan_to_none(row["ddG_sem_kcal"]),
+                "Q_ddG_std": _nan_to_none(row["ddG_std_kcal"]),
+            }
+        )
+        matched += 1
+    with open(output_file, "w") as handle:
+        json.dump(mapping, handle, indent=4)
+    logger.info(f"Injected NEQ ddG into {matched} edge(s); wrote {output_file}")
+
+
+def _nan_to_none(value) -> Optional[float]:
+    """Return ``None`` for a missing/NaN value (so it serializes to JSON null), else a float."""
+    return None if pd.isna(value) else float(value)
 
 
 def compare_to_experiment(df: pd.DataFrame, mapping_json: str, exp_key: str, target: str) -> pd.DataFrame:

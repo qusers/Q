@@ -236,6 +236,52 @@ def test_main_end_to_end_with_experiment_and_diagnostics(tmp_path, monkeypatch):
     assert (tmp_path / "tyk2_neq_ddG_plot.png").exists()
 
 
+def test_main_injects_ddG_into_mapping_json(tmp_path, monkeypatch):
+    # matching analyze_FEP: --json-file (no experimental key needed) writes a <name>_ddG.json
+    # copy with Q_ddG_avg/sem/std injected per edge, leaving the original mapping untouched.
+    monkeypatch.chdir(tmp_path)
+    # one fwd + one rev switch per replicate -> BAR dF = (fwd - rev)/2. protein dF = [1, 3],
+    # water dF = 0 -> ddG = [1, 3]: mean 2, std sqrt(2), sem 1.
+    protein = [([2.0], [0.0], 0), ([6.0], [0.0], 0)]
+    water = [([0.0], [0.0], 0), ([0.0], [0.0], 0)]
+    _make_leg(tmp_path / "2.protein" / "FEP_a_b", protein)
+    _make_leg(tmp_path / "1.water" / "FEP_a_b", water)
+
+    mapping = {"edges": [{"from": "a", "to": "b", "ddg_value": 1.8}]}
+    mapping_file = tmp_path / "mapping.json"
+    mapping_file.write_text(json.dumps(mapping))
+
+    main(_args(work_units="kcal", json_file=str(mapping_file), no_run_data=True))
+
+    ddG_file = tmp_path / "mapping_ddG.json"
+    assert ddG_file.exists()
+    edge = json.loads(ddG_file.read_text())["edges"][0]
+    assert edge["Q_ddG_avg"] == pytest.approx(2.0)
+    assert edge["Q_ddG_std"] == pytest.approx(np.sqrt(2))
+    assert edge["Q_ddG_sem"] == pytest.approx(1.0)
+    assert edge["ddg_value"] == 1.8  # existing edge fields are preserved
+
+    # the original mapping file is not mutated
+    assert "Q_ddG_avg" not in json.loads(mapping_file.read_text())["edges"][0]
+
+
+def test_populate_mapping_json_writes_null_for_nan(tmp_path):
+    # an edge whose ddG could not be estimated (NaN) is serialized as JSON null, not NaN.
+    from QligFEP.analyze_neq import populate_mapping_json
+
+    df = pd.DataFrame(
+        [{"edge": "FEP_a_b", "ddG_kcal": np.nan, "ddG_sem_kcal": np.nan, "ddG_std_kcal": np.nan}]
+    )
+    mapping_file = tmp_path / "mapping.json"
+    mapping_file.write_text(json.dumps({"edges": [{"from": "a", "to": "b"}]}))
+    out_file = tmp_path / "mapping_ddG.json"
+    populate_mapping_json(df, str(mapping_file), str(out_file))
+    edge = json.loads(out_file.read_text())["edges"][0]
+    assert edge["Q_ddG_avg"] is None
+    assert edge["Q_ddG_sem"] is None
+    assert edge["Q_ddG_std"] is None
+
+
 def test_main_without_experiment_skips_plot(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _make_leg(tmp_path / "2.protein" / "FEP_a_b", [([2.0, 2.2, 1.8], [-2.0, -2.2, -1.8], 0)])
