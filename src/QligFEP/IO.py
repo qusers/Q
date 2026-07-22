@@ -4,6 +4,7 @@ import shlex
 import stat
 import subprocess
 from pathlib import Path
+from typing import NamedTuple, Optional
 
 import numpy as np
 import pandas as pd
@@ -13,6 +14,52 @@ from .logger import logger
 from .settings.settings import CONFIGS, FF_DIR
 
 qfep_error_regex = re.compile(r"ERROR:")
+
+# SLURM failure markers -> the status label reported for a run. Shared by both FEP analyzers
+# (analyze_FEP and analyze_neq) so equilibrium and NEQ runs are classified identically.
+RUN_FAILURE_KEYWORDS = {
+    "DUE TO TIME LIMIT": "TIMEOUT",
+    "CANCELLED": "CANCELLED",
+    "Out Of Memory": "OOM",
+    "abnormally": "CRASHED",
+}
+
+
+class SlurmRunInfo(NamedTuple):
+    """Per-replicate run metadata parsed from one ``slurm*.out`` footer."""
+
+    runtime: str
+    seed: Optional[str]
+    replicate: Optional[str]
+    status: str
+
+
+def read_slurm_diagnostics(slurm_out) -> SlurmRunInfo:
+    """Parse one run.sh / run_neq.sh ``slurm*.out`` footer into a ``SlurmRunInfo``.
+
+    Runtime, seed and replicate come from the standardized ``#    Runtime:`` /
+    ``#    Random seed:`` / ``#    Replicate Number:`` footer the run scripts write. Reading the
+    footer -- rather than the ``Parameters`` line or the slurm filename -- means the true
+    ``run_num`` is used, so multi-temperature array jobs (where the filename's ``%a`` differs
+    from the replicate) are labeled correctly. ``status`` is ``"SUCCESS"`` unless a known SLURM
+    failure marker (``RUN_FAILURE_KEYWORDS``) appears anywhere in the log; the first marker in
+    dict order wins.
+    """
+    with open(slurm_out, errors="ignore") as handle:
+        text = handle.read()
+    runtime, seed, replicate, status = "", None, None, "SUCCESS"
+    for line in text.splitlines():
+        if line.startswith("#    Runtime:"):
+            runtime = line.split()[-1].strip()
+        elif line.startswith("#    Random seed:"):
+            seed = line.split()[-1].strip()
+        elif line.startswith("#    Replicate Number:"):
+            replicate = line.split()[-1].strip()
+    for keyword, label in RUN_FAILURE_KEYWORDS.items():
+        if keyword in text:
+            status = label
+            break
+    return SlurmRunInfo(runtime, seed, replicate, status)
 
 
 class QprepError(Exception):

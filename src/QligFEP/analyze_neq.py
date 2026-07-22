@@ -34,6 +34,7 @@ from scipy.optimize import brentq
 from scipy.stats import gaussian_kde, kendalltau, pearsonr, spearmanr
 
 from .analysis_plotting import create_ddG_plot
+from .IO import read_slurm_diagnostics
 from .logger import logger, setup_logger
 
 # Boltzmann constant in the two energy units Q can report work in.
@@ -341,39 +342,18 @@ def analyze_edge(name, protein_dir, water_dir, beta, work_units, temperature) ->
     }
 
 
-# SLURM failure markers (shared with the equilibrium analyzer's status detection).
-RUN_FAILURE_KEYWORDS = {
-    "DUE TO TIME LIMIT": "TIMEOUT",
-    "CANCELLED": "CANCELLED",
-    "Out Of Memory": "OOM",
-    "abnormally": "CRASHED",
-}
-
-
 def parse_run_diagnostics(edge_dir: str) -> list[dict]:
     """Read per-replicate run metadata from the NEQ slurm*.out files in an edge directory.
 
-    run_neq.sh writes ``#    Runtime:``, ``#    Random seed:`` and ``#    Replicate Number:``
-    footers. Status is SUCCESS unless a known SLURM failure marker is present. Returns one dict
-    per slurm*.out found (empty list if none), so missing logs degrade gracefully.
+    Each file is parsed by the shared ``IO.read_slurm_diagnostics`` footer reader. Returns one
+    dict per slurm*.out found (empty list if none), so missing logs degrade gracefully.
     """
     diagnostics = []
     for slurm_out in sorted(glob.glob(os.path.join(edge_dir, "slurm*.out"))):
-        with open(slurm_out, errors="ignore") as handle:
-            text = handle.read()
-        runtime, seed, replicate, status = "", None, None, "SUCCESS"
-        for line in text.splitlines():
-            if line.startswith("#    Runtime:"):
-                runtime = line.split()[-1].strip()
-            elif line.startswith("#    Random seed:"):
-                seed = line.split()[-1].strip()
-            elif line.startswith("#    Replicate Number:"):
-                replicate = line.split()[-1].strip()
-        for keyword, label in RUN_FAILURE_KEYWORDS.items():
-            if keyword in text:
-                status = label
-                break
-        diagnostics.append({"replicate": replicate, "runtime": runtime, "seed": seed, "status": status})
+        info = read_slurm_diagnostics(slurm_out)
+        diagnostics.append(
+            {"replicate": info.replicate, "runtime": info.runtime, "seed": info.seed, "status": info.status}
+        )
     return diagnostics
 
 
