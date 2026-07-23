@@ -277,7 +277,7 @@ void Context::init_dvelocities() {
 }
 
 void Context::init_energy() {
-    energy.init(n_lambdas());
+    energy.init(n_lambdas(), n_replicates());
 }
 
 void Context::init(const ParseResult& parsed) {
