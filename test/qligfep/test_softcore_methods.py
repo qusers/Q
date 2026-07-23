@@ -57,22 +57,21 @@ def fep_work_dir(tmp_path_factory) -> Path:
     return work_dir
 
 
+def build_qligfep_cmd(opts: dict[str, str]) -> list[str]:
+    """Flatten qligfep CLI flag/value pairs into a command list."""
+    return ["qligfep", *(token for pair in opts.items() for token in pair)]
+
+
 def run_qligfep(work_dir: Path, softcore_method: str | None = None) -> Path:
     """Run qligfep and return path to the FEP1.fep file."""
-    cmd = [
-        "qligfep",
-        "-l1", "ejm_31",
-        "-l2", "ejm_45",
-        "-FF", "AMBER14sb",
-        "-s", "water",
-        "-c", "LOCAL",
-        "-r", "25",
-        "-w", "3",
-        "-rs", "42",
-        "-log", "error",
-    ]
+    opts = {
+        "-l1": "ejm_31", "-l2": "ejm_45", "-FF": "AMBER14sb",
+        "-s": "water", "-c": "LOCAL", "-r": "25", "-w": "3",
+        "-rs": "42", "-log": "error",
+    }  # fmt: skip
     if softcore_method is not None:
-        cmd.extend(["-sc", softcore_method])
+        opts["-sc"] = softcore_method
+    cmd = build_qligfep_cmd(opts)
 
     result = subprocess.run(cmd, cwd=work_dir, capture_output=True, text=True)  # noqa: S603, S607
     if result.returncode != 0:
@@ -96,15 +95,10 @@ class TestSoftcoreMethodCLI:
 
     def test_invalid_softcore_method_rejected(self, fep_work_dir):
         """Invalid softcore methods should cause argparse to exit with error."""
-        cmd = [
-            "qligfep",
-            "-l1", "ejm_31",
-            "-l2", "ejm_45",
-            "-FF", "AMBER14sb",
-            "-s", "water",
-            "-c", "LOCAL",
-            "-sc", "invalid_method",
-        ]
+        cmd = build_qligfep_cmd({
+            "-l1": "ejm_31", "-l2": "ejm_45", "-FF": "AMBER14sb",
+            "-s": "water", "-c": "LOCAL", "-sc": "invalid_method",
+        })  # fmt: skip
         result = subprocess.run(cmd, cwd=fep_work_dir, capture_output=True, text=True)  # noqa: S603, S607
         assert result.returncode != 0, "Expected non-zero exit code for invalid softcore method"
         assert "invalid choice" in result.stderr.lower()
@@ -120,9 +114,9 @@ class TestSoftcoreFEPFileGeneration:
             fep_file = run_qligfep(fep_work_dir)
             fep_section = parse_fep_section(fep_file.read_text())
 
-            assert "softcore_method" not in fep_section, (
-                "FEP file should NOT contain softcore_method when using standard (default)"
-            )
+            assert (
+                "softcore_method" not in fep_section
+            ), "FEP file should NOT contain softcore_method when using standard (default)"
             assert fep_section.get("states") == "2"
             assert fep_section.get("softcore_use_max_potential") == "on"
         finally:
@@ -135,9 +129,9 @@ class TestSoftcoreFEPFileGeneration:
             fep_file = run_qligfep(fep_work_dir, softcore_method="beutler_coul")
             fep_section = parse_fep_section(fep_file.read_text())
 
-            assert fep_section.get("softcore_method") == "beutler_coul", (
-                f"Expected softcore_method=beutler_coul, got: {fep_section.get('softcore_method')}"
-            )
+            assert (
+                fep_section.get("softcore_method") == "beutler_coul"
+            ), f"Expected softcore_method=beutler_coul, got: {fep_section.get('softcore_method')}"
         finally:
             cleanup_fep_dir(fep_work_dir)
 
@@ -148,9 +142,9 @@ class TestSoftcoreFEPFileGeneration:
             fep_file = run_qligfep(fep_work_dir, softcore_method="gapsys")
             fep_section = parse_fep_section(fep_file.read_text())
 
-            assert fep_section.get("softcore_method") == "gapsys", (
-                f"Expected softcore_method=gapsys, got: {fep_section.get('softcore_method')}"
-            )
+            assert (
+                fep_section.get("softcore_method") == "gapsys"
+            ), f"Expected softcore_method=gapsys, got: {fep_section.get('softcore_method')}"
         finally:
             cleanup_fep_dir(fep_work_dir)
 
@@ -161,9 +155,9 @@ class TestSoftcoreFEPFileGeneration:
             fep_file = run_qligfep(fep_work_dir, softcore_method="standard")
             fep_section = parse_fep_section(fep_file.read_text())
 
-            assert "softcore_method" not in fep_section, (
-                "FEP file should NOT contain softcore_method when explicitly using standard"
-            )
+            assert (
+                "softcore_method" not in fep_section
+            ), "FEP file should NOT contain softcore_method when explicitly using standard"
         finally:
             cleanup_fep_dir(fep_work_dir)
 
@@ -177,9 +171,9 @@ class TestSoftcoreFEPFileGeneration:
             config_path = fep_work_dir / "FEP_ejm_31_ejm_45" / "inputfiles" / "fep_config.json"
             config = json.loads(config_path.read_text())
 
-            assert config.get("softcore_method") == "beutler_coul", (
-                f"Expected softcore_method=beutler_coul in config, got: {config.get('softcore_method')}"
-            )
+            assert (
+                config.get("softcore_method") == "beutler_coul"
+            ), f"Expected softcore_method=beutler_coul in config, got: {config.get('softcore_method')}"
         finally:
             cleanup_fep_dir(fep_work_dir)
 
@@ -198,9 +192,9 @@ class TestSoftcoreFEPFileFormat:
                 content = fep_file.read_text()
 
                 for section in required_sections:
-                    assert f"[{section}]" in content, (
-                        f"Missing [{section}] in FEP file with softcore_method={method}"
-                    )
+                    assert (
+                        f"[{section}]" in content
+                    ), f"Missing [{section}] in FEP file with softcore_method={method}"
             finally:
                 cleanup_fep_dir(fep_work_dir)
 
@@ -231,20 +225,25 @@ class TestSoftcoreFEPFileFormat:
                 parts = line.split()
                 assert len(parts) == 3, f"Expected 3 columns in softcore line, got: {line}"
                 alpha1, alpha2 = int(parts[1]), int(parts[2])
-                # Asymmetric (legacy) pattern: one column 0, the other 20.
-                assert {alpha1, alpha2} == {0, 20}, (
-                    f"Expected legacy asymmetric (0, 20) alphas, got: ({alpha1}, {alpha2})"
-                )
+                # Asymmetric pattern: one column 0, the other 20.
+                assert {alpha1, alpha2} == {
+                    0,
+                    20,
+                }, f"Expected legacy asymmetric (0, 20) alphas, got: ({alpha1}, {alpha2})"
         finally:
             cleanup_fep_dir(fep_work_dir)
 
     @pytest.mark.slow
-    def test_softcore_section_is_symmetric_beutler_coul(self, fep_work_dir):
-        """Under softcore_method=beutler_coul, every Q-atom must have
-        alpha1 == alpha2 in [softcore]. The (1-lambda_state)^2 scaling
-        in qatom.f90:softcore_scale_beutler turns softcore on/off per state
-        at runtime, so symmetric alpha in the file is required for correct
-        endpoint behavior."""
+    def test_softcore_section_is_asymmetric_beutler_coul(self, fep_work_dir):
+        """beutler_coul keeps the asymmetric (0, 20) [softcore] layout,
+        identical to standard and gapsys: softcore is active only in each
+        atom's ghost (DUM) state, where qavdw = qbvdw = 0 collapses the
+        beutler softcore lookup to zero. So at the dynamics level
+        beutler_coul is bit-equivalent to standard.
+
+        A symmetric (20, 20) layout (to engage
+        qatom.f90:softcore_scale_beutler's (1-lambda)^2 modulation at both
+        endpoints) was tried and rejected."""
         try:
             fep_file = run_qligfep(fep_work_dir, softcore_method="beutler_coul")
             content = fep_file.read_text()
@@ -266,9 +265,8 @@ class TestSoftcoreFEPFileFormat:
             for line in softcore_lines:
                 parts = line.split()
                 alpha1, alpha2 = int(parts[1]), int(parts[2])
-                assert (alpha1, alpha2) == (20, 20), (
-                    f"Expected symmetric (20, 20) alphas under beutler_coul, "
-                    f"got: ({alpha1}, {alpha2})"
+                assert {alpha1, alpha2} == {0, 20}, (
+                    f"Expected asymmetric (0, 20) alphas under beutler_coul, " f"got: ({alpha1}, {alpha2})"
                 )
         finally:
             cleanup_fep_dir(fep_work_dir)
@@ -300,8 +298,7 @@ class TestSoftcoreFEPFileFormat:
                 parts = line.split()
                 alpha1, alpha2 = int(parts[1]), int(parts[2])
                 assert {alpha1, alpha2} == {0, 20}, (
-                    f"Expected legacy asymmetric (0, 20) under gapsys, "
-                    f"got: ({alpha1}, {alpha2})"
+                    f"Expected legacy asymmetric (0, 20) under gapsys, " f"got: ({alpha1}, {alpha2})"
                 )
         finally:
             cleanup_fep_dir(fep_work_dir)
