@@ -476,8 +476,10 @@ subroutine die(cause)
   ! abort all processes with exit code 255
   call MPI_Abort(MPI_COMM_WORLD, 255, ierr)
 #else
-  ! stop with a message to stderr
-  stop 'qdyn terminated abnormally'
+  ! write to stderr (unit 0) and exit non-zero, mirroring the MPI_Abort above. The "abnormally"
+  ! text is what QligFEP.IO.read_slurm_diagnostics keys on to label the run CRASHED.
+  write(0,'(a)') 'qdyn terminated abnormally'
+  stop 255
 #endif
 
 end subroutine die
@@ -15317,7 +15319,8 @@ subroutine prep_coord
 #if defined(USE_MPI)
 112 call MPI_Abort(MPI_COMM_WORLD,1,ierr)
 #else
-112 stop 'Aborting due to errors reading restart file.'
+112 write(0,'(a)') 'Aborting due to errors reading restart file.'
+    stop 255
 #endif
 
 end subroutine prep_coord

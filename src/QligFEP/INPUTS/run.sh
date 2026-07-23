@@ -69,8 +69,30 @@ MODULES
 ## define qdynp location
 QDYN
 
+# Fail on the first error, so a failed mpirun can't exit 0 and be recorded COMPLETED. Set after
+# `module`, which returns non-zero on some stacks just for unload warnings.
+set -eo pipefail
+
 starttime=$(date +%s)
 starttime_readable=$(date)
+
+# Emitted from an EXIT trap so the footer is written even when set -e aborts the job midway.
+# Keep in sync with run_neq.sh; parsed by QligFEP.IO.read_slurm_diagnostics.
+write_footer() {
+    rc=$?
+    endtime=$(date +%s)
+    runtime=$((endtime - starttime))
+    echo "#    EXPRESS LOG for jobid: $SLURM_JOB_ID"
+    echo "#    Slurm tasks: $SLURM_NTASKS"
+    echo "#    Starttime: $starttime_readable"
+    echo "#    Endtime: $(date)"
+    echo "#    Runtime: $((runtime / 3600))h:$((runtime % 3600 / 60))m:$((runtime % 60))s"
+    echo "#    Random seed: ${seed:-unknown}"
+    echo "#    Replicate Number: ${run_num:-unknown}"
+    echo "#    Working Directory: ${workdir:-unknown}"
+    echo "#    Exit status: $rc"
+}
+trap write_footer EXIT
 
 length=${#fepfiles[@]}
 length=$((length-1))
@@ -97,11 +119,12 @@ echo "slurm cpus per node: $SLURM_JOB_CPUS_PER_NODE"
 echo
 
 echo -e "\n=== CPU Model Information ==="
-lscpu | grep -E "Model name|Architecture|CPU op|Thread|Core|Socket|NUMA|CPU(s)"
+lscpu | grep -E "Model name|Architecture|CPU op|Thread|Core|Socket|NUMA|CPU(s)" || true
 echo
 
+# Diagnostics only -- must never be fatal under set -e, hence the `|| true`.
 echo -e "\n=== Available CPU List ==="
-cpu_list=$(cat /proc/self/status | grep Cpus_allowed_list | awk '{print $2}')
+cpu_list=$(grep Cpus_allowed_list /proc/self/status | awk '{print $2}') || true
 echo "CPU list: $cpu_list"
 echo
 
@@ -124,24 +147,21 @@ if [ $index -lt 1 ]; then
 fi
 #RUN_FILES
 timeout 3m QFEP < qfep.inp > qfep.out || [ $? -eq 124 ]
+
+# qdyn's serial abort still exits 0, so a completed run is confirmed by "terminated normally" in
+# its log, not by the exit code. Failing here also stops FEP N+1 from starting on a bad eq5.re.
+incomplete=""
+logs_to_check=(md*.log)  # only the first FEP equilibrates; later ones inherit eq5.re
+if [ $index -lt 1 ]; then
+    logs_to_check+=(eq*.log)
+fi
+for log in "${logs_to_check[@]}"; do
+    grep -q "terminated normally" "$log" 2>/dev/null || incomplete="$incomplete $log"
+done
+if [ -n "$incomplete" ]; then
+    echo "ERROR: FEP$((index+1)) replicate $run_num (T=$temperature, seed=$seed) is incomplete."
+    echo "ERROR: logs without a normal qdyn termination:$incomplete"
+    exit 1
+fi
 done
 #CLEANUP
-
-endtime=$(date +%s)
-endtime_readable=$(date)
-# Calculate runtime
-runtime=$((endtime - starttime))
-
-# Convert runtime to hours:minutes:seconds
-hours=$(($runtime / 3600))
-minutes=$(($runtime % 3600 / 60))
-seconds=$(($runtime % 60))
-
-echo "#    EXPRESS LOG for jobid: $SLURM_JOB_ID"
-echo "#    Slurm tasks: $SLURM_NTASKS"
-echo "#    Starttime: $starttime_readable"
-echo "#    Endtime: $endtime_readable"
-echo "#    Runtime: ${hours}h:${minutes}m:${seconds}s"
-echo "#    Random seed: $seed"
-echo "#    Replicate Number: $run_num"
-echo "#    Working Directory: $workdir"
