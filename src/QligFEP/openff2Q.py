@@ -38,7 +38,14 @@ class OpenFF2Q(MoleculeIO):
     """
 
     def __init__(
-        self, lig, pattern: str = "*.sdf", reindex_hydrogens: bool = True, nagl: bool = False, n_jobs: int = 1
+        self,
+        lig,
+        pattern: str = "*.sdf",
+        reindex_hydrogens: bool = True,
+        nagl: bool = True,
+        n_jobs: int = 1,
+        forcefield: str = "openff-2.3.0.offxml",
+        nagl_model: str = "openff-gnn-am1bcc-1.0.0.pt",
     ):
         """Initializes a new instance of OpenFF2Q to process the `.sdf` input as lig.
 
@@ -49,36 +56,46 @@ class OpenFF2Q(MoleculeIO):
             reindex_hydrogens: If True, loading molecules will assert that hydrogen atoms are at the end
                 of the atom list and reindex them if they are not (needed by restraint setting algorithm).
                 If False, the molecules will be loaded as is. Defaults to True.
-            nagl: if True, the partial charges will be calculated with nagl, which does so with
-                deep learning in the backend, and is faster than the default AM1-BCC method.
+            nagl: if True (default), the partial charges will be calculated with NAGL. Assigned via
+                a graph neural network, this method is faster than AM1-BCC. Set to False to use
+                AM1-BCC as a fallback.
             n_jobs: number of jobs to calculate the partial charges in parallel.
+            forcefield: OpenFF forcefield file to use for ligand parameters. Defaults to "openff-2.3.0.offxml".
+                See https://github.com/openforcefield/openff-forcefields for available forcefields.
+            nagl_model: NAGL model to use for partial charge assignment. Defaults to "openff-gnn-am1bcc-1.0.0.pt".
+                See https://github.com/openforcefield/openff-nagl-models for available models.
         """
         super().__init__(lig, pattern=pattern, reindex_hydrogens=reindex_hydrogens)
         self.n_jobs = n_jobs
         self.out_dir = Path(self.lig).parent
         self.mapping = {lname: {} for lname in self.lig_names}
-        self.forcefield = self._set_forcefield(None)
+        self.forcefield = self._set_forcefield(forcefield)
         self.topologies, self.parameters = self.set_topologies_and_parameters()
         self.charges_list_magnitude = {}  # store charge magnitude for each ligand
         self.total_charges = {}  # store the total charges
-        self._set_nagl(nagl=nagl)
+        self._set_nagl(nagl=nagl, nagl_model=nagl_model)
 
     def _set_forcefield(self, ffstring: Optional[str]) -> ForceField:
         if ffstring is None:
             # why not the constrained: https://docs.openforcefield.org/projects/toolkit/en/stable/faq.html
-            ffstring = "openff-2.2.1.offxml"
+            ffstring = "openff-2.3.0.offxml"
             # for a list of the forcefields: https://github.com/openforcefield/openff-forcefields/tree/main/openforcefields/offxml
         logger.debug(f"Forcefield for the ligand parameters: {ffstring}")
         return ForceField(ffstring)
 
-    def _set_nagl(self, nagl: bool):
-        """Set the forcefield to be used to calculate the molecules' partial charges."""
+    def _set_nagl(self, nagl: bool, nagl_model: str = "openff-gnn-am1bcc-1.0.0.pt"):
+        """Set the NAGL model to be used for partial charge calculation.
+
+        Args:
+            nagl: if True, use NAGL for charge assignment. If False, use AM1-BCC.
+            nagl_model: NAGL model file to use. Defaults to "openff-gnn-am1bcc-1.0.0.pt".
+        """
         if nagl:
             self.nagl = NAGLToolkitWrapper()
             # Implementation following the OMSF demo @ Naturalis, Leiden:
             # https://github.com/openforcefield/symposium_2024_demo/tree/main
-            logger.debug("Warming up the NAGL toolkit")
-            self.nagl_partial_charg_str = "openff-gnn-am1bcc-0.1.0-rc.2.pt"
+            logger.debug(f"Warming up the NAGL toolkit with model: {nagl_model}")
+            self.nagl_partial_charg_str = nagl_model
             self.nagl.assign_partial_charges(Molecule.from_smiles("C"), self.nagl_partial_charg_str)
         else:
             self.nagl_partial_charg_str = None
@@ -145,9 +162,7 @@ class OpenFF2Q(MoleculeIO):
             self.write_lib_Q(name, prefix=prefix, residue_name=residue_name)
             self.write_prm_Q(name, prefix=prefix)
             self.write_PDB(name, residue_name=residue_name)
-            logger.warning(f"Formal charges of ligands in .sdf are not unique: {self.total_charges}")
-        else:
-            logger.info(f"Output files written for {len(self.lig_names)} ligands")
+        logger.info(f"Output files written for {len(self.lig_names)} ligands")
 
     def create_atom_prm_mapping(self, lname):
         """Get the mapping of the ligand atoms to the forcefield parameters.

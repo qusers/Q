@@ -310,6 +310,36 @@ def parse_arguments(program: str) -> argparse.Namespace:
         help="NEQ only: lambda switching schedule. Defaults to `sigmoidal`.",
     )
     parser.add_argument(
+        "-sc",
+        "--softcore-method",
+        dest="softcore_method",
+        type=str,
+        default="standard",
+        choices=["standard", "beutler_coul", "gapsys"],
+        help=(
+            "Soft-core method for nonbonded interactions during FEP. "
+            "'standard' applies soft-core only to LJ (current default). "
+            "'beutler_coul' extends soft-core to Coulomb via a modified effective distance. "
+            "'gapsys' uses force-based linearization below a critical radius for both LJ and Coulomb."
+        ),
+    )
+    parser.add_argument(
+        "-cm",
+        "--charge-method",
+        dest="charge_method",
+        type=str,
+        default="ion_match",
+        choices=["none", "ion_match", "coalchemical_water"],
+        help=(
+            "Strategy for handling FEP edges that change the ligand net charge. "
+            "'ion_match' (default) adds Cl-/Na+ counter-ions to the water leg so its total "
+            "charge matches the protein leg. "
+            "'coalchemical_water' turns a real water in the water leg into a co-alchemical Na+/Cl- "
+            "(O <-> ion, H <-> DUM). "
+            "'none' disables all neutralization (raw ddG retains the Born artifact)."
+        ),
+    )
+    parser.add_argument(
         "-log",
         "--log-level",
         dest="log",
@@ -318,4 +348,16 @@ def parse_arguments(program: str) -> argparse.Namespace:
         help="Set the log level for the logger. Defaults to `info`.",
         choices=["trace", "debug", "info", "warning", "error", "critical"],
     )
+    if program == "QligFEP":
+        parser.add_argument(
+            "-pq",
+            "--protein_charge",
+            dest="protein_charge",
+            type=int,
+            default=None,
+            help=(
+                "Total charge from the protein leg's qprep output. Used by setupFEP to pass "
+                "the protein system charge so the water leg can match it with counter-ions."
+            ),
+        )
     return parser.parse_args()

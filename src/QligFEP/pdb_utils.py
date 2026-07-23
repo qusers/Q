@@ -2,10 +2,12 @@
 
 import math
 import re
+import warnings
 from pathlib import Path
 from string import ascii_uppercase
 from typing import Optional, Union
 
+import MDAnalysis as mda
 import numpy as np
 import pandas as pd
 from rdkit import Chem
@@ -255,6 +257,33 @@ def pdb_parse_out(line):
     return line
 
 
+def _pdb_coord_key(x, y, z):
+    """Coordinate identity at written PDB precision (3 decimals, as pdb_parse_out)."""
+    return (f"{x:.3f}", f"{y:.3f}", f"{z:.3f}")
+
+
+def shift_from_ligand_collision(movable_xyz, occupied_xyz, step=0.001, max_shifts=10000):
+    """Smallest rigid shift that removes collisions.
+
+    Q crashes on two atoms at the same exact coordinate. Returns the smallest
+     offset ``d = k * step`` (k >= 1) to add to x, y and z of every atom in
+    ``movable_xyz`` so that no shifted atom shares a written PDB coordinate (3
+    decimals) with any atom in ``occupied_xyz``. The same offset on every atom
+    is a rigid-body translation, so the molecule's internal geometry is
+    preserved. Both arguments are iterables of (x, y, z) floats. Raises
+    ``RuntimeError`` if no coincidence-free shift is found within ``max_shifts``.
+    """
+    movable_xyz = list(movable_xyz)
+    occupied = {_pdb_coord_key(x, y, z) for (x, y, z) in occupied_xyz}
+    for k in range(1, max_shifts + 1):
+        d = k * step
+        if all(_pdb_coord_key(x + d, y + d, z + d) not in occupied for (x, y, z) in movable_xyz):
+            return d
+    raise RuntimeError(
+        f"no coincidence-free shift for {len(movable_xyz)} atoms within {max_shifts} steps of {step}"
+    )
+
+
 def nest_pdb(pdbarr: list[str]) -> list[list[str]]:
     """Organizes a flat list of PDB (Protein Data Bank) file lines into a nested structure
     grouped by residues. This function takes a list of strings, each representing a line
@@ -280,6 +309,8 @@ def nest_pdb(pdbarr: list[str]) -> list[list[str]]:
     residue = []
     usedatoms = []
     for line in pdbarr:
+        if not line.startswith(("ATOM", "HETATM")):
+            continue
         atom = line[12:17].strip()
         if not residue or line[17:27] != residue[-1][17:27] or atom in usedatoms:
             if residue:
@@ -298,38 +329,72 @@ def unnest_pdb(npdb):
     return [atm for res in npdb for atm in res]
 
 
-def disulfide_search(npdb, min_dist=1.8, max_dist=2.2):
+def disulfide_search(npdb, min_dist=1.8, max_dist_cyx=4.0, max_dist_cys=2.5):
+    """Detect disulfide bonds using distance-dependent criteria.
+
+    Uses two detection ranges:
+    - CYX/CYD residues (already labeled as disulfide): wide range (1.8-4.0Å) to catch
+      cases where the disulfide bond was poorly resolved in the structure, leading to
+      long SG-SG distances.
+    - CYS residues (free thiols): strict range (1.8-2.5Å) to avoid false positives
+      from nearby cysteines that happen to be geometrically close.
+
+    Reference for extended range (up to 3.2Å): https://pubs.acs.org/doi/10.1021/jz900214e
+    """
     residues_to_rename = set()
     cysbonds = []
+
+    # Collect all cysteine residues with their SG coordinates
+    cys_residues = []
     for i in range(len(npdb)):
-        if npdb[i][0][17:20] not in ["CYS", "CYD", "CYX"]:
+        resname = npdb[i][0][17:21].strip()
+        if resname not in ("CYS", "CYD", "CYX"):
             continue
-        iX, iY, iZ = get_coords("SG", npdb[i])
+        try:
+            x, y, z = get_coords("SG", npdb[i])
+        except ValueError:
+            continue
         sg_idx = np.where(np.char.find(npdb[i], "SG") != -1)[0][0]
-        i_residue_info = npdb[i][sg_idx][17:27].strip()  # Extract residue info for logging
-        i_atom_number = npdb[i][sg_idx][6:11].strip()  # Extract atom number for logging
+        res_info = npdb[i][sg_idx][17:27].strip()
+        atom_number = npdb[i][sg_idx][6:11].strip()
+        cys_residues.append(
+            {
+                "idx": i,
+                "resname": resname,
+                "coords": (x, y, z),
+                "res_info": res_info,
+                "atom_number": atom_number,
+            }
+        )
 
-        for j in range(i + 1, len(npdb)):
-            if npdb[j][0][17:20] not in ["CYS", "CYD", "CYX"]:
-                continue
-            jX, jY, jZ = get_coords("SG", npdb[j])
-            sg_idx = np.where(np.char.find(npdb[j], "SG") != -1)[0][0]
-            j_residue_info = npdb[j][sg_idx][17:27].strip()  # Extract residue info for logging
-            j_atom_number = npdb[j][sg_idx][6:11].strip()  # Extract atom number for logging
+    # Find disulfide pairs with appropriate distance cutoffs
+    for ii, res_i in enumerate(cys_residues):
+        for res_j in cys_residues[ii + 1 :]:
+            distance = math.sqrt(sum((a - b) ** 2 for a, b in zip(res_i["coords"], res_j["coords"])))
 
-            distance = math.sqrt((iX - jX) ** 2 + (iY - jY) ** 2 + (iZ - jZ) ** 2)
+            # Use wide range only when both residues are CYX/CYD (confirmed disulfide
+            # partners). Mixed CYX+CYS pairs use the strict cutoff to avoid false
+            # positives from free cysteines that happen to be near a disulfide.
+            either_is_cyx = res_i["resname"] in ("CYX", "CYD") or res_j["resname"] in ("CYX", "CYD")
+            both_are_cyx = res_i["resname"] in ("CYX", "CYD") and res_j["resname"] in ("CYX", "CYD")
+            max_dist = max_dist_cyx if both_are_cyx else max_dist_cys
+
             if min_dist <= distance <= max_dist:
-                residues_to_rename.update({i, j})
-                # Log the atoms involved in the disulfide bond, including their atom numbers
+                residues_to_rename.update({res_i["idx"], res_j["idx"]})
                 logger.debug(
-                    f"Disulfide bond detected within atoms: {i_atom_number}_{j_atom_number} with distance {distance:.2f} Å."
+                    f"Disulfide bond detected: {res_i['atom_number']}_{res_j['atom_number']} "
+                    f"({distance:.2f} Å, {'CYX-labeled' if either_is_cyx else 'distance-based'})"
                 )
-                logger.debug(f"Bond between residues `{i_residue_info}` and `{j_residue_info}`.")
-                cysbonds.append((f"{i_residue_info.split()[-1]}:SG", f"{j_residue_info.split()[-1]}:SG"))
+                logger.debug(f"Bond between residues `{res_i['res_info']}` and `{res_j['res_info']}`.")
+                cysbonds.append(
+                    (f"{res_i['res_info'].split()[-1]}:SG", f"{res_j['res_info'].split()[-1]}:SG")
+                )
 
     renamed = bool(residues_to_rename)
     for i in residues_to_rename:
         npdb[i] = [x.replace("CYS", "CYX") if "CYS" in x or "CYD" in x else x for x in npdb[i]]
+        # Remove HG atom — CYX (disulfide) has no thiol hydrogen
+        npdb[i] = [x for x in npdb[i] if " HG " not in x]
 
     return npdb, cysbonds, renamed
 
@@ -412,14 +477,44 @@ def read_pdb_to_dataframe(pdb_file):
     return df
 
 
-def write_dataframe_to_pdb(df, output_file, header: Optional[str] = None):
+def residue_atom_serial_range(pdb_df, residue_names: Union[str, list[str]]) -> Optional[tuple[int, int]]:
+    """Return the (first, last) atom serial numbers for the given residue name(s).
+
+    Returns None when no atoms match, so callers can skip building restraints
+    rather than operating on an empty selection.
+
+    Args:
+        pdb_df: DataFrame from read_pdb_to_dataframe.
+        residue_names: A residue name or list of residue names to select.
+    """
+    if isinstance(residue_names, str):
+        residue_names = [residue_names]
+    matched = pdb_df[pdb_df["residue_name"].isin(residue_names)]
+    if matched.empty:
+        return None
+    serials = matched["atom_serial_number"].astype(int)
+    return int(serials.min()), int(serials.max())
+
+
+def write_dataframe_to_pdb(
+    df, output_file, header: Optional[str] = None, ter_after_indices: Optional[set[int]] = None
+):
     """Save a DataFrame object created from read_pdb_to_dataframe function to a PDB file.
+
+    Automatically inserts TER records at chain_id transitions. Additional TER positions
+    (e.g., gaps from residue cropping) can be specified via ter_after_indices.
 
     Args:
         df: DataFrame object containing the parsed PDB file.
         output_file: name of the output file (include .pdb extension).
         header: if desired, a header to be added to the PDB file. Defaults to None.
+        ter_after_indices: extra DataFrame indices after which to write a TER record,
+            in addition to auto-detected chain breaks. Defaults to None.
     """
+    ter_positions = detect_chain_breaks(df)
+    if ter_after_indices is not None:
+        ter_positions |= ter_after_indices
+
     df = df.copy()
     with open(output_file, "w") as file:
         if header is not None:
@@ -428,7 +523,7 @@ def write_dataframe_to_pdb(df, output_file, header: Optional[str] = None):
             df["temp_factor"] = df["temp_factor"].apply(lambda x: f"{x:.2f}")
         if df["occupancy"].dtype == "float64":
             df["occupancy"] = df["occupancy"].apply(lambda x: f"{x:.2f}")
-        for _, row in df.iterrows():
+        for idx, row in df.iterrows():
             pdb_line = (
                 f"{row['record_type']:<6}{row['atom_serial_number']:>5} "
                 f"{row['atom_name']:<4}{row['alt_loc']:<1}{row['residue_name']:<4}"  # residue_name:>4 for N- & C- termini
@@ -436,10 +531,53 @@ def write_dataframe_to_pdb(df, output_file, header: Optional[str] = None):
                 f"{row['x']:>8.3f}{row['y']:>8.3f}{row['z']:>8.3f}{row['occupancy']:>6}"
                 f"{row['temp_factor']:>6}          {row['element_symbol']:>2}{row['charge']:>2}\n"
             )
-            # except ValueError as e:
-            #     logger.error(f"{row.values}")
-            #     raise ValueError from e
             file.write(pdb_line)
+            if idx in ter_positions:
+                file.write(
+                    f"TER   {int(row['atom_serial_number']) + 1:>5}      "
+                    f"{row['residue_name']:>3} {row['chain_id']:>1}{row['residue_seq_number']:>4}\n"
+                )
+
+
+def detect_chain_breaks(df: pd.DataFrame) -> set[int]:
+    """Find DataFrame indices where TER records should be inserted.
+
+    Detects chain boundaries by looking for chain_id changes between
+    consecutive ATOM/HETATM records.
+
+    Args:
+        df: DataFrame from read_pdb_to_dataframe.
+
+    Returns:
+        Set of DataFrame indices corresponding to the last atom before each chain break.
+    """
+    atom_df = df[df["record_type"].isin(("ATOM", "HETATM"))]
+    if atom_df.empty:
+        return set()
+
+    chain_ids = atom_df["chain_id"]
+    changed = chain_ids != chain_ids.shift(1)
+    # Indices where chain_id changes (skip first row — nothing before it)
+    change_positions = atom_df.index[changed][1:]
+
+    ter_indices = set()
+    for pos in change_positions:
+        loc = atom_df.index.get_loc(pos)
+        prev_idx = atom_df.index[loc - 1]
+        ter_indices.add(prev_idx)
+
+    return ter_indices
+
+
+def reindex_pdb_residues(pdb_path: Path, out_pdb_path: Path):
+    pdb_df = read_pdb_to_dataframe(pdb_path)
+    uniq_indexes = pdb_df.set_index(
+        ["residue_seq_number", "residue_name", "chain_id", "insertion_code"]
+    ).index
+    resn_mapping = {resn: idx for idx, resn in enumerate(uniq_indexes.unique(), 1)}
+    pdb_df["residue_seq_number"] = uniq_indexes.map(resn_mapping)
+    pdb_df["insertion_code"] = ""
+    write_dataframe_to_pdb(pdb_df, str(out_pdb_path.resolve().absolute()))
 
 
 def sdf_to_pdb(in_sdf_file, out_pdb_file):
@@ -459,3 +597,170 @@ def sdf_to_pdb(in_sdf_file, out_pdb_file):
                 print("overwriting")
                 f.write(Chem.MolToPDBBlock(mol_with_h))
             break
+
+
+def filter_pdb_by_sphere(
+    pdb_input: Path,
+    pdb_output: Path,
+    center: list[float],
+    radius: float,
+    exclude_residues: set[str] = None,
+) -> tuple[int, int]:
+    """Filter PDB keeping only fragments with atoms inside the sphere.
+
+    Uses MDAnalysis topology-based fragment detection (bond connectivity)
+    rather than relying on chain IDs. Entire molecular fragments are preserved
+    if any atom is within the sphere radius.
+
+    Args:
+        pdb_input: Input PDB file path
+        pdb_output: Output PDB file path
+        center: [x, y, z] coordinates of sphere center
+        radius: Sphere radius in Angstroms
+        exclude_residues: Residue names to exclude from filtering (handled separately).
+            Defaults to {"HOH", "LIG", "LID"}.
+
+    Returns:
+        Tuple of (original_atom_count, filtered_atom_count)
+    """
+    if exclude_residues is None:
+        exclude_residues = {"HOH", "LIG", "LID"}
+
+    # Custom vdW radii for ions that are common in PDB files but not in MDAnalysis defaults
+    # Includes both standard element names and (Q) force field-specific naming conventions
+    custom_vdwradii = {
+        # Standard element names
+        "Na": 2.27,  # Sodium
+        "K": 2.75,  # Potassium
+        "Cl": 1.75,  # Chloride
+        "Ca": 2.31,  # Calcium
+        "Mg": 1.73,  # Magnesium
+        "Zn": 1.39,  # Zinc
+        "Fe": 1.56,  # Iron
+        "Cu": 1.40,  # Copper
+        "Mn": 1.39,  # Manganese
+        # AMBER force field naming conventions
+        "SOD": 2.27,  # Sodium (AMBER)
+        "MAG": 1.73,  # Magnesium (AMBER)
+        "CHL": 1.75,  # Chloride (AMBER)
+        "ZIN": 1.39,  # Zinc (AMBER)
+        # OPLS force field naming conventions
+        "MG2": 1.73,  # Magnesium (OPLS)
+        "Na+": 2.27,  # Sodium (OPLS)
+        # Non-standard element records with formal charges
+        # These occur when formal charges are written in the element column (e.g., "O1-" parsed as "O1")
+        "O1": 1.52,  # Oxygen (parsed from O1- element record)
+        "N1": 1.55,  # Nitrogen (parsed from N1+ element record)
+        # Note - all values come from MDAnalysis itself:
+        # https://github.com/MDAnalysis/mdanalysis/blob/develop/package/MDAnalysis/guesser/tables.py
+    }
+
+    # Suppress expected MDAnalysis warnings (missing CRYST1, missing chain IDs, etc.)
+    # These are harmless for our topology-based fragment detection
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Unit cell dimensions not found")
+        warnings.filterwarnings("ignore", message="Found missing chainIDs")
+        warnings.filterwarnings("ignore", message="Found no information for attr")
+        warnings.filterwarnings("ignore", message="Element information is missing")
+
+        try:
+            # Load Universe without guessing bonds initially
+            u = mda.Universe(str(pdb_input))
+            # Then guess bonds with custom vdW radii (MDAnalysis 3.0 compatible)
+            u.guess_TopologyAttrs(to_guess=["bonds"], vdwradii=custom_vdwradii)
+        except Exception as e:
+            logger.warning(f"Could not load PDB with MDAnalysis: {e}")
+            return 0, 0
+
+        original_count = u.atoms.n_atoms
+
+        if original_count == 0:
+            # Empty PDB file
+            Path(pdb_output).write_text("END\n")
+            return 0, 0
+
+        # Build selection string for the sphere volume
+        cx, cy, cz = center
+        volume_selection = f"point {cx} {cy} {cz} {radius}"
+
+        # Build exclusion string for specified residues
+        exclude_str = " or ".join([f"resname {r}" for r in exclude_residues]) if exclude_residues else None
+
+        # Select: (fragments touching sphere) PLUS (excluded residues that touch sphere)
+        # This ensures LIG/LID/HOH in sphere are kept, but their fragments don't pull in distant atoms
+        # MDAnalysis's "same fragment as" expands selection to complete connected molecules
+        if exclude_str:
+            # For non-excluded residues: keep whole fragment if any atom in sphere
+            # For excluded residues: only keep them if they're in sphere (no fragment expansion)
+            non_excluded_in_sphere = f"(same fragment as (({volume_selection}) and not ({exclude_str})))"
+            excluded_in_sphere = f"(({exclude_str}) and ({volume_selection}))"
+            selection = f"{non_excluded_in_sphere} or {excluded_in_sphere}"
+        else:
+            selection = f"same fragment as ({volume_selection})"
+
+        try:
+            kept_atoms = u.select_atoms(selection)
+        except Exception as e:
+            logger.warning(f"MDAnalysis selection failed: {e}. Keeping all atoms.")
+            kept_atoms = u.atoms
+
+        filtered_count = kept_atoms.n_atoms
+
+        if filtered_count == 0:
+            # All atoms outside sphere
+            Path(pdb_output).write_text("END\n")
+            return original_count, 0
+
+        # Write filtered structure
+        kept_atoms.write(str(pdb_output))
+
+    return original_count, filtered_count
+
+
+def filter_out_of_sphere_fragments(
+    pdb_path: Path,
+    center: list[float],
+    radius: float,
+    exclude_residues: set[str] = None,
+) -> tuple[int, int]:
+    """Remove molecular fragments completely outside the sphere radius.
+
+    Uses MDAnalysis topology-based fragment detection for robust filtering
+    that doesn't depend on chain ID labels. Modifies the PDB file in place.
+
+    Args:
+        pdb_path: Path to PDB file (will be modified in place)
+        center: [x, y, z] sphere center coordinates
+        radius: Sphere radius in Angstroms
+        exclude_residues: Residue names to exclude from fragment expansion.
+            Defaults to {"HOH", "LIG", "LID"}.
+
+    Returns:
+        Tuple of (original_atom_count, filtered_atom_count)
+    """
+    if exclude_residues is None:
+        exclude_residues = {"HOH", "LIG", "LID"}
+
+    # Use a temporary output file, then replace the original
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".pdb", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+
+    try:
+        orig_count, filt_count = filter_pdb_by_sphere(pdb_path, tmp_path, center, radius, exclude_residues)
+
+        if filt_count < orig_count:
+            # Move filtered file to original location
+            import shutil
+
+            shutil.move(str(tmp_path), str(pdb_path))
+        else:
+            # No change needed, remove temp file
+            tmp_path.unlink(missing_ok=True)
+
+        return orig_count, filt_count
+    except Exception as e:
+        # Clean up on error
+        tmp_path.unlink(missing_ok=True)
+        raise e

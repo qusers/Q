@@ -37,17 +37,16 @@ dependencies = [
     "rdkit",
     "scikit-learn",
     "loguru",
+    "cinnabar",
+    "MDAnalysis>=2.0.0",
     "MolClusterkit @ git+https://github.com/David-Araripe/MolClusterkit.git#master",
 ]
 
 [project.optional-dependencies]
-test = ["pytest"]
-
-[tool.pytest.ini_options]
-testpaths = ["test"]
-filterwarnings = [
-    # third-party (gufe/pydantic) deprecation surfaced when importing the package
-    "ignore:.*pydantic.config.Extra.*:DeprecationWarning",
+test = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-timeout>=2.0",
 ]
 
 [tool.setuptools]
@@ -106,15 +105,30 @@ ignore = [
     "E501" # line too long
 ]
 
+[tool.pytest.ini_options]
+testpaths = ["test"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "tutorial: marks tests that run tutorial workflow steps",
+    "golden: marks golden file regression tests",
+    "fep_setup: marks FEP setup specific tests",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    # third-party (gufe/pydantic) deprecation surfaced when importing the package
+    "ignore:.*pydantic.config.Extra.*:DeprecationWarning",
+]
+
 [project.scripts]
 qcog = "QligFEP.CLI.cog_cli:main_exe"
 pdb2amber = "QligFEP.CLI.pdb_to_amber:main_exe"
 qprep_prot = "QligFEP.CLI.qprep_cli:main_exe"
 qparams = "QligFEP.CLI.qparams_cli:main_exe"
 qlomap = "QligFEP.CLI.lomap_wrap_cli:main_exe"
+qkonnektor = "QligFEP.CLI.konnektor_cli:main_exe"
 qmapfep = "QligFEP.CLI.qmapfep_cli:main_exe"
 qligfep = "QligFEP.CLI.qligfep_cli:main_exe"
 setupFEP = "QligFEP.CLI.setupFEP:main_exe"
 qligfep_analyze = "QligFEP.analyze_FEP:main_exe"
 qligfep_neq_analyze = "QligFEP.analyze_neq:main_exe"
-ligalign = "QligFEP.CLI.lig_align_cli:main_exe"

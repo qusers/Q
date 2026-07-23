@@ -13,9 +13,7 @@ from QligFEP.qligfep import QligFEP
 def make_run(**overrides):
     """Build a QligFEP instance with only the attributes the NEQ writers need."""
     run = QligFEP.__new__(QligFEP)
-    run.replacements = {}
     run.timestep = "2fs"
-    run.set_timestep()
     run.atomoffset = 0
     run.sphereradius = "25"
     run.system = "water"

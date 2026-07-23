@@ -1,20 +1,22 @@
 """Module containing the command line interface for the qprep fortran program."""
 
 import argparse
-import re
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
 
-from ..IO import get_force_field_paths, run_command
+from ..IO import get_force_field_paths, run_qprep
 from ..logger import logger, setup_logger
 from ..pdb_utils import (
     append_pdb_to_another,
+    filter_out_of_sphere_fragments,
     read_pdb_to_dataframe,
+    reindex_pdb_residues,
     write_dataframe_to_pdb,
 )
-from ..settings.settings import CONFIGS, FF_DIR
+from ..settings.settings import CONFIGS
+from ..templates import QprepProteinParameters, render_qprep_protein_input
 from ._popc_utils import (
     convert_pymemdyn_to_unified_dataframe,
     df_to_pdb_corrected_element,
@@ -22,37 +24,9 @@ from ._popc_utils import (
 )
 from .utils import handle_cysbonds
 
-# NOTE: cysbonds will have \n after each bond -> `maketop MKC_p` is in a different line
-qprep_inp_content = """rl {ff_lib_path}
-rprm {ff_prm_path}
-! TO DO Change if protein system is used
-rp {pdb_file_path}
-! set solute_density 0.05794
-! NOTE, this is now large for water system, change for protein system
-set solvent_pack {solvent_pack}
-boundary 1 {cog} {sphereradius}
-solvate {cog} {sphereradius} 1 HOH
-{cysbond}maketop MKC_p
-writetop dualtop.top
-wp top_p.pdb y
-rt dualtop.top
-mask none
-mask not excluded
-wp complexnotexcluded.pdb y
-q
-"""
 
-
-class QprepError(Exception):
-    pass
-
-
-class QprepAtomLibMissingError(Exception):
-    pass
-
-
-class ProteinNeutralizer:
-    """Protein neutralizer for out-of-sphere charged residues in qprep workflow"""
+class Neutralizer:
+    """Neutralizes out-of-sphere charged residues (protein and DNA) in the qprep workflow."""
 
     def __init__(self, center_coords, radius=25.0, boundary_offset=3.0):
         self.center = np.array(center_coords)
@@ -63,11 +37,17 @@ class ProteinNeutralizer:
         # Define charged residues and their neutral forms + key atoms for distance calculation
         # Format: 'charged': ['neutral', 'key_atom', charge]
         self.charged_residues = {
+            # Protein residues
             "GLU": ["GLH", "CD", -1],  # Glutamic acid -> neutral glutamic acid
             "ASP": ["ASH", "CG", -1],  # Aspartic acid -> neutral aspartic acid
             "ARG": ["ARN", "CZ", +1],  # Arginine -> neutral arginine
             "LYS": ["LYN", "NZ", +1],  # Lysine -> neutral lysine
             "HIP": ["HID", "CG", +1],  # Histidine (protonated) -> histidine (delta protonated)
+            # DNA nucleotides (phosphate backbone carries -1 charge each)
+            "DA": ["DAN", "C1'", -1],
+            "DC": ["DCN", "C1'", -1],
+            "DG": ["DGN", "C1'", -1],
+            "DT": ["DTN", "C1'", -1],
         }
 
         # Statistics tracking
@@ -84,8 +64,6 @@ class ProteinNeutralizer:
 
     def neutralize_outside_residues(self, pdb_file, salt_bridge_cutoff=4.0):
         """Find and neutralize charged residues outside the sphere boundary"""
-        logger.info(f"Neutralizing charged residues outside {self.rest_bound:.1f}Å boundary")
-
         df = read_pdb_to_dataframe(pdb_file)
         return self.neutralize_outside_residues_dataframe(df, salt_bridge_cutoff)
 
@@ -93,32 +71,48 @@ class ProteinNeutralizer:
         """Find and neutralize charged residues outside the sphere boundary for a DataFrame"""
         logger.info(f"Neutralizing charged residues outside {self.rest_bound:.1f}Å boundary")
 
-        charged_residues_info = self._find_charged_residues(df)
+        # Terminal neutralization runs unconditionally (independent of side chain charges)
+        modified_df = self._neutralize_nterminals(df)
+        modified_df = self._neutralize_cterminals(modified_df)
+
+        charged_residues_info = self._find_charged_residues(modified_df)
 
         if not charged_residues_info:
             logger.info("No charged residues found in the PDB data")
-            return df, self.stats
+            return modified_df, self.stats
+
+        # Separate protein and DNA charged residues for different handling
+        protein_charged = [r for r in charged_residues_info if r["residue_name"] not in self._DNA_RESIDUES]
+        dna_charged = [r for r in charged_residues_info if r["residue_name"] in self._DNA_RESIDUES]
 
         self.stats["total_charged_residues"] = len(charged_residues_info)
-        logger.info(f"Found {len(charged_residues_info)} charged residues")
+        logger.info(
+            f"Found {len(charged_residues_info)} charged residues ({len(protein_charged)} protein, {len(dna_charged)} DNA)"
+        )
 
-        # Classify residues by distance to center
-        outside_residues, inside_residues = self._classify_residues_by_distance(charged_residues_info)
+        # Classify PROTEIN residues by distance to center (uses rest_bound)
+        outside_residues, inside_residues = self._classify_residues_by_distance(protein_charged)
         self.stats["residues_outside_boundary"] = len(outside_residues)
 
         # Track original charge
         self.stats["original_total_charge"] = sum(res["charge"] for res in charged_residues_info)
 
-        # Find salt bridges between outside and inside residues
+        # Find salt bridges between outside and inside protein residues
         salt_bridge_pairs = self._find_salt_bridges(outside_residues, inside_residues, salt_bridge_cutoff)
         self.stats["salt_bridges_neutralized"] = len(salt_bridge_pairs)
 
-        # Neutralize residues outside boundary and their salt bridge partners
-        residues_to_modify = outside_residues + salt_bridge_pairs
-        self.stats["residues_neutralized"] = len(residues_to_modify)
+        protein_to_modify = outside_residues + salt_bridge_pairs
 
-        # Modify the dataframe
-        modified_df = self._modify_residues(df, residues_to_modify)
+        # Find DNA nucleotides outside the neutralization boundary (C1' > rest_bound)
+        dna_to_neutralize = self._find_outside_dna(df)
+
+        self.stats["residues_neutralized"] = len(protein_to_modify) + len(dna_to_neutralize)
+
+        # Modify the dataframe: protein side chains neutralized at rest_bound,
+        # DNA outside boundary removed with 5' terminal capping
+        modified_df = self._modify_residues(modified_df, protein_to_modify)
+        if dna_to_neutralize:
+            modified_df = self._remove_and_cap_outside_dna(modified_df, dna_to_neutralize)
 
         # Track final charge and remaining outside charged residues
         self.stats["final_total_charge"] = sum(
@@ -159,6 +153,7 @@ class ProteinNeutralizer:
                     "residue_name": res_name,
                     "chain_id": chain,
                     "residue_seq_number": res_num,
+                    "insertion_code": group["insertion_code"].iloc[0],
                     "key_atom": key_atom,
                     "key_atom_coords": key_atom_coords,
                     "distance": distance,
@@ -223,8 +218,14 @@ class ProteinNeutralizer:
             new_name = res_info["neutral_form"]
             distance = res_info["distance"]
 
-            # Change residue name and remove atoms based on residue type
-            mask = (modified_df["chain_id"] == chain) & (modified_df["residue_seq_number"] == res_num)
+            # Change residue name and remove atoms based on residue type. Match on
+            # insertion_code too: a cap (e.g. NME 167A) can share chain+seq_number
+            # with the residue being neutralized and must not be rewritten.
+            mask = (
+                (modified_df["chain_id"] == chain)
+                & (modified_df["residue_seq_number"] == res_num)
+                & (modified_df["insertion_code"] == res_info["insertion_code"])
+            )
             modified_df.loc[mask, "residue_name"] = new_name
             atoms_to_remove = self._get_atoms_to_remove(old_name, new_name)
 
@@ -247,6 +248,210 @@ class ProteinNeutralizer:
             if atoms_to_remove:
                 logger.debug(f"Removed atoms: {', '.join(atoms_to_remove)}")
 
+        return modified_df
+
+    _DNA_RESIDUES = {"DA", "DC", "DG", "DT"}
+
+    def _neutralize_nterminals(self, df):
+        """Convert N-terminal residues outside the neutralization boundary to internal forms.
+
+        In AMBER14sb, N-terminal residues are named "N" + internal name (e.g. NILE → ILE)
+        and carry +1 charge from the protonated NH3+ group. Converting to internal form
+        removes this charge by renaming H1→H and removing H2, H3.
+        """
+        modified_df = df.copy()
+        nterm_mask = modified_df["residue_name"].str.startswith("N") & (
+            modified_df["residue_name"].str.len() > 3
+        )
+        if not nterm_mask.any():
+            return modified_df
+
+        nterm_residues = modified_df[nterm_mask].groupby(["chain_id", "residue_seq_number", "residue_name"])
+        n_converted = 0
+
+        for (chain, res_num, nterm_name), group in nterm_residues:
+            n_atom = group[group["atom_name"] == "N"]
+            if len(n_atom) == 0:
+                continue
+            dist = np.linalg.norm(n_atom[["x", "y", "z"]].values[0] - self.center)
+            if dist <= self.rest_bound:
+                continue
+
+            internal_name = nterm_name[1:]  # NILE → ILE, NGLY → GLY, etc.
+            ins_code = group["insertion_code"].iloc[0]
+            mask = (
+                (modified_df["chain_id"] == chain)
+                & (modified_df["residue_seq_number"] == res_num)
+                & (modified_df["insertion_code"] == ins_code)
+            )
+            modified_df.loc[mask, "residue_name"] = internal_name
+            h1_mask = mask & (modified_df["atom_name"] == "H1")
+            if internal_name == "PRO":
+                # Proline's N is tertiary (bonded to CA, CD, prev-C) and has no backbone amide H.
+                modified_df = modified_df.drop(modified_df[h1_mask].index)
+            else:
+                modified_df.loc[h1_mask, "atom_name"] = "H"
+            for hatom in ["H2", "H3"]:
+                h_mask = mask & (modified_df["atom_name"] == hatom)
+                modified_df = modified_df.drop(modified_df[h_mask].index)
+            logger.debug(
+                f"Neutralized N-terminal {nterm_name} -> {internal_name} "
+                f"at {chain}:{res_num} (N: {dist:.2f}Å)"
+            )
+            n_converted += 1
+
+        if n_converted > 0:
+            logger.info(f"Neutralized {n_converted} N-terminal residues outside boundary")
+        return modified_df
+
+    def _neutralize_cterminals(self, df):
+        """Convert C-terminal residues outside the neutralization boundary to internal forms.
+
+        In AMBER14sb, C-terminal residues are named "C" + internal name (e.g. CALA → ALA)
+        and carry -1 charge from the deprotonated COO- group. Converting to internal form
+        removes this charge by stripping the "C" prefix and removing OXT.
+        """
+        modified_df = df.copy()
+        cterm_mask = modified_df["residue_name"].str.startswith("C") & (
+            modified_df["residue_name"].str.len() > 3
+        )
+        if not cterm_mask.any():
+            return modified_df
+
+        cterm_residues = modified_df[cterm_mask].groupby(["chain_id", "residue_seq_number", "residue_name"])
+        n_converted = 0
+
+        for (chain, res_num, cterm_name), group in cterm_residues:
+            n_atom = group[group["atom_name"] == "N"]
+            if len(n_atom) == 0:
+                continue
+            dist = np.linalg.norm(n_atom[["x", "y", "z"]].values[0] - self.center)
+            if dist <= self.rest_bound:
+                continue
+
+            internal_name = cterm_name[1:]  # CALA → ALA, CGLY → GLY, etc.
+            ins_code = group["insertion_code"].iloc[0]
+            mask = (
+                (modified_df["chain_id"] == chain)
+                & (modified_df["residue_seq_number"] == res_num)
+                & (modified_df["insertion_code"] == ins_code)
+            )
+            modified_df.loc[mask, "residue_name"] = internal_name
+            oxt_mask = mask & (modified_df["atom_name"] == "OXT")
+            modified_df = modified_df.drop(modified_df[oxt_mask].index)
+            logger.debug(
+                f"Neutralized C-terminal {cterm_name} -> {internal_name} "
+                f"at {chain}:{res_num} (N: {dist:.2f}Å)"
+            )
+            n_converted += 1
+
+        if n_converted > 0:
+            logger.info(f"Neutralized {n_converted} C-terminal residues outside boundary")
+        return modified_df
+
+    def _find_outside_dna(self, df):
+        """Find DNA nucleotides whose C1' atom is outside the sphere radius.
+
+        DNA in the restrained shell (between rest_bound and radius) is kept
+        with its native charges, consistent with how protein residues in the
+        shell are handled. Only DNA beyond the sphere radius is removed, as
+        Q would exclude these via charge-group-based exclusion, leaving their
+        phosphate charges as static artifacts.
+        """
+        outside = []
+        for res_name in self._DNA_RESIDUES:
+            residues = df[df["residue_name"] == res_name]
+            if len(residues) == 0:
+                continue
+            for (chain, res_num), group in residues.groupby(["chain_id", "residue_seq_number"]):
+                c1_row = group[group["atom_name"] == "C1'"]
+                if len(c1_row) == 0:
+                    logger.warning(f"C1' not found in {res_name} {chain}:{res_num}")
+                    continue
+                c1_coords = c1_row[["x", "y", "z"]].values[0]
+                c1_dist = np.linalg.norm(c1_coords - self.center)
+                if c1_dist > self.radius:
+                    outside.append(
+                        {
+                            "residue_name": res_name,
+                            "chain_id": chain,
+                            "residue_seq_number": res_num,
+                            "charge": self.charged_residues[res_name][2],
+                            "neutral_form": self.charged_residues[res_name][0],
+                            "distance": c1_dist,
+                        }
+                    )
+                    logger.debug(
+                        f"DNA {res_name} {chain}:{res_num} outside sphere "
+                        f"(C1': {c1_dist:.2f}Å > {self.radius:.1f}Å)"
+                    )
+        if outside:
+            logger.info(f"Found {len(outside)} DNA nucleotides outside sphere radius")
+        return outside
+
+    _DNA_5PRIME = {"DA": "DA5", "DC": "DC5", "DG": "DG5", "DT": "DT5"}
+
+    def _remove_and_cap_outside_dna(self, df, fully_outside_residues):
+        """Remove fully-outside DNA and cap the inside boundary residues.
+
+        All DNA nucleotides fully outside the sphere are removed. The last
+        inside-sphere residue on each chain boundary is converted to a
+        5' terminal form (removing the phosphodiester linkage to the now-absent
+        upstream residue) when the removed DNA was on its 5' side.
+        """
+        modified_df = df.copy()
+        if not fully_outside_residues:
+            return modified_df
+
+        # Group outside residues by chain
+        outside_by_chain = {}
+        for r in fully_outside_residues:
+            outside_by_chain.setdefault(r["chain_id"], []).append(r)
+
+        # Find all DNA residue numbers per chain (inside + outside)
+        all_dna_by_chain = {}
+        for res_name in self._DNA_RESIDUES:
+            for (chain, res_num), _ in df[df["residue_name"] == res_name].groupby(
+                ["chain_id", "residue_seq_number"]
+            ):
+                all_dna_by_chain.setdefault(chain, set()).add(res_num)
+
+        # Remove all fully-outside DNA
+        for r in fully_outside_residues:
+            mask = (modified_df["chain_id"] == r["chain_id"]) & (
+                modified_df["residue_seq_number"] == r["residue_seq_number"]
+            )
+            modified_df = modified_df.drop(modified_df[mask].index)
+            logger.debug(f"Removed out-of-sphere DNA {r['chain_id']}:{r['residue_seq_number']}")
+
+        # Cap inside boundary residues where removed DNA was upstream (5' side)
+        n_caps = 0
+        for chain, outside_list in outside_by_chain.items():
+            outside_resnums = {r["residue_seq_number"] for r in outside_list}
+            inside_resnums = sorted(all_dna_by_chain.get(chain, set()) - outside_resnums)
+            if not inside_resnums:
+                continue
+
+            first_inside = min(inside_resnums)
+            has_removed_upstream = any(rn < first_inside for rn in outside_resnums)
+            if not has_removed_upstream:
+                continue
+
+            mask = (modified_df["chain_id"] == chain) & (modified_df["residue_seq_number"] == first_inside)
+            old_name = modified_df.loc[mask, "residue_name"].iloc[0]
+            if old_name in self._DNA_5PRIME:
+                new_name = self._DNA_5PRIME[old_name]
+                modified_df.loc[mask, "residue_name"] = new_name
+                for atom in ["P", "OP1", "OP2", "HP"]:
+                    atom_mask = mask & (modified_df["atom_name"] == atom)
+                    modified_df = modified_df.drop(modified_df[atom_mask].index)
+                logger.debug(f"5' terminal cap: {old_name} -> {new_name} at {chain}:{first_inside}")
+                n_caps += 1
+
+        logger.info(
+            f"Removed {len(fully_outside_residues)} out-of-sphere DNA nucleotides, "
+            f"applied {n_caps} 5' terminal caps"
+        )
         return modified_df
 
     def _get_atoms_to_remove(self, old_name, new_name):
@@ -297,48 +502,6 @@ class ProteinNeutralizer:
                 )
                 if mod_info["atoms_removed"]:
                     logger.debug(f"    Atoms removed: {', '.join(mod_info['atoms_removed'])}")
-
-
-def qprep_error_check(qprep_out_path: Path, ff_name) -> None:
-    """Check for errors in the qprep.out file and raise an exception if any are found.
-
-    Args:
-        qprep_out_path: Path to the qprep.out file.
-        ff_name: name of the forcefield to point user to the .lib & .prm files.
-
-    Raises:
-        QprepError: ff any errors are found in the qprep.out file.
-    """
-    error_pat = re.compile(r"ERROR\:\s", re.IGNORECASE)
-    missing_lib_pat = re.compile(
-        r">>> Atom ...?.? in residue no\.\s+\d+ not found in library entry for [A-Z]+"
-        r"|>>> Heavy atom ...?.? missing in residue\s+ [0-9]+"
-    )
-    outfile_lines = qprep_out_path.read_text().split("\n")
-    error_lines = []
-    missing_atomlib_lines = []
-    for line in outfile_lines:
-        if error_pat.findall(line):
-            error_lines.append(line)
-            logger.error(
-                f"Errors found in qprep output file {qprep_out_path}. Please check if the amino "
-                "acids in your pdb file match the residue & atom conventions on the forcefield .lib & .prm files:\n"
-                f"{FF_DIR/ ff_name}.prm & {FF_DIR/ ff_name}.lib"
-            )
-        if missing_lib_pat.findall(line):
-            missing_atomlib_lines.append(line)
-            logger.error(
-                f"Errors found in qprep output file {qprep_out_path}. "
-                "Your protein file likely contains atoms that are not present in the forcefield's .lib & .prm files:, \n"
-                f"{FF_DIR/ ff_name}.prm & {FF_DIR/ ff_name}.lib"
-            )
-
-    if error_lines:
-        error_message = {"\n".join(error_lines)}
-        raise QprepError(error_message)
-    if missing_atomlib_lines:
-        error_message = {"\n".join(missing_atomlib_lines)}
-        raise QprepAtomLibMissingError(error_message)
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -474,6 +637,18 @@ def parse_arguments() -> argparse.Namespace:
             "residues. Salt bridge partners will also be neutralized. Defaults to 4.0Å."
         ),
     )
+    parser.add_argument(
+        "-skip-ff",
+        "--skip-fragment-filter",
+        dest="skip_fragment_filter",
+        action="store_true",
+        help=(
+            "Skip filtering molecular fragments outside the simulation sphere. "
+            "Fragment filtering removes entire chains, cofactors, or lipids that are "
+            "completely outside the sphere radius, reducing system size for faster "
+            "downstream FEP setup."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -510,26 +685,26 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     if not crystal_waters_df.empty:
         logger.info(f"Removing {len(crystal_waters_df)} crystal water molecules")
         pdb_data = pdb_data.query("residue_name != 'HOH'")
-        processing_steps.append("noHOH")
+        processing_steps.append("extracted waters to water.pdb")
 
     # Step 2: Add cofactors if provided
     if args.cofactors:
         logger.info(f"Adding {len(args.cofactors)} cofactor(s)")
         for cofactor in args.cofactors:
             pdb_data = append_pdb_to_another(pdb_data, cwd / cofactor, ignore_waters=True)
-        processing_steps.append("cofactors")
+        processing_steps.append("added cofactors")
 
     # Step 3: Neutralization
     neutralization_stats = None
     if not args.skip_neutralization:
         logger.info("Neutralizing charged residues outside spherical boundary")
         center_coords = [float(coord) for coord in args.cog]
-        neutralizer = ProteinNeutralizer(center_coords, args.sphereradius, args.neutralize_boundary_offset)
+        neutralizer = Neutralizer(center_coords, args.sphereradius, args.neutralize_boundary_offset)
         # Neutralize the protein and get statistics
         pdb_data, neutralization_stats = neutralizer.neutralize_outside_residues_dataframe(
             pdb_data, args.salt_bridge_cutoff
         )
-        processing_steps.append("neutralized")
+        processing_steps.append("neutralized out-of-sphere residues")
         logger.info("Charged residues neutralized")
 
     # Step 4: POPC lipid renaming (only for AMBER14sb with POP residues)
@@ -539,16 +714,29 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         has_pop, pop_count = has_pop_residues(pdb_data)
         if has_pop:
             logger.info(f"Detected {pop_count} POP lipid residue(s) with AMBER14sb forcefield")
-            logger.info("Converting pymemdyn POPC atom names to unified format compatible with AMBER14sb")
-            logger.info("Note: Qprep will add missing hydrogens automatically during topology generation")
-            pdb_data = convert_pymemdyn_to_unified_dataframe(pdb_data)
-            processing_steps.append("lipid_renamed")
-            lipid_conversion_performed = True
+            # Check if POP atoms are already in Q/Lipid21 convention (e.g., from memprep -oqc)
+            # Pymemdyn uses N4/P8; Q/Lipid21 uses N31/P31 — these never overlap
+            pop_atoms = set(pdb_data[pdb_data["residue_name"] == "POP"]["atom_name"])
+            pymemdyn_markers = {"N4", "P8", "C5", "C6", "O7"}
+            unified_markers = {"N31", "P31", "O31", "O32"}
+            if unified_markers & pop_atoms:
+                logger.info(
+                    "POP atoms already in Q/Lipid21 convention (e.g., from memprep -oqc) — skipping conversion"
+                )
+            elif pymemdyn_markers & pop_atoms:
+                logger.info("Converting pymemdyn POPC atom names to unified format compatible with AMBER14sb")
+                pdb_data = convert_pymemdyn_to_unified_dataframe(pdb_data)
+                processing_steps.append("renamed lipid atoms to match Amber14sb convention")
+                lipid_conversion_performed = True
+            else:
+                logger.warning(
+                    "POP atoms detected but naming convention is unclear — skipping conversion to be safe"
+                )
 
-    # Create final processed PDB file with descriptive name
+    # Write the processed protein to a predictable filename
     if processing_steps:
-        processed_stem = f"{original_stem}_{'_'.join(processing_steps)}"
-        processed_pdb_path = pdb_path.with_name(f"{processed_stem}.pdb")
+        processed_pdb_path = pdb_path.with_name("protein_processed.pdb")
+        logger.info(f"Processing steps applied: {', '.join(processing_steps)}")
     else:
         processed_pdb_path = pdb_path
 
@@ -561,33 +749,47 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     pdb_path = processed_pdb_path
     logger.info(f"Final processed protein saved as: {processed_pdb_path}")
 
+    # Step 5: Reindex residues so that every residue has a unique number.
+    # Q/qprep ignores chain IDs, so multi-chain systems (e.g. protein + DNA)
+    # that reuse residue numbers across chains will collide without this step.
+    reindex_pdb_residues(processed_pdb_path, processed_pdb_path)
+
+    # Step 6: Filter out-of-sphere molecular fragments (chains, cofactors, lipids)
+    if not args.skip_fragment_filter:
+        center_coords = [float(coord) for coord in args.cog]
+        orig_count, filt_count = filter_out_of_sphere_fragments(
+            processed_pdb_path, center_coords, float(args.sphereradius)
+        )
+        if filt_count < orig_count:
+            logger.info(
+                f"Fragment filtering: {orig_count} → {filt_count} atoms "
+                f"({orig_count - filt_count} removed)"
+            )
+        else:
+            logger.info("Fragment filtering: no fragments outside sphere to remove")
+
     qprep_inp_path = cwd / "qprep.inp"
     qprep_out_path = cwd / "qprep.out"
 
     cysbonds = handle_cysbonds(args.cysbond, pdb_file, comment_out=True)
 
-    if args is not None:
-        param_dict = {
-            "pdb_file_path": pdb_file,
-            "cog": cog,
-            "ff_lib_path": ff_lib_path,
-            "ff_prm_path": ff_prm_path,
-            "sphereradius": sphereradius,
-            "cysbond": cysbonds,
-            "solvent_pack": formatted_solvent_pack,
-        }
-    else:
-        param_dict = {**kwargs}
+    params = QprepProteinParameters(
+        ff_lib_path=ff_lib_path,
+        ff_prm_path=ff_prm_path,
+        pdb_file_path=pdb_file,
+        cog=cog,
+        sphere_radius=sphereradius,
+        solvent_pack=formatted_solvent_pack,
+        cysbonds=cysbonds,
+    )
 
     if qprep_inp_path.exists():
         logger.warning("qprep.inp already exists!! Overwriting...")
     with qprep_inp_path.open("w") as qprep_inp_f:
-        qprep_inp_f.write(qprep_inp_content.format(**param_dict))
+        qprep_inp_f.write(render_qprep_protein_input(params))
 
-    options = " < qprep.inp > qprep.out"
-    logger.debug(f"Running command {qprep_path} {options}")
-    run_command(qprep_path, options, string=True)
-    qprep_error_check(qprep_out_path, args.FF)
+    logger.debug(f"Running qprep from {qprep_path}")
+    run_qprep(qprep_path, "qprep.inp", "qprep.out", args.FF)
     logger.info("qprep run finished. Check the output `qprep.out` for more information.")
 
     # Log lipid conversion summary if performed
@@ -600,7 +802,11 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         )
 
     # Log neutralization summary if performed and charged residues were found
-    if neutralization_stats and not args.skip_neutralization and neutralization_stats['total_charged_residues'] > 0:
+    if (
+        neutralization_stats
+        and not args.skip_neutralization
+        and neutralization_stats["total_charged_residues"] > 0
+    ):
         logger.info(
             "NEUTRALIZATION SUMMARY\n"
             f"Total charged residues processed: {neutralization_stats['total_charged_residues']}\n"
@@ -644,7 +850,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     euclidean_distances = oxygen_subset[["x", "y", "z"]].sub(cog).pow(2).sum(1).apply(np.sqrt)
     outside = np.where(euclidean_distances > args.sphereradius * 1.05)[0]  # we add a tolerance of 5%
     if outside.shape[0] > 0:
-        outside_HOH_residues = oxygen_subset.iloc[outside].residue_seq_number.unique()
+        outside_HOH_residues = oxygen_subset.iloc[outside].residue_seq_number.unique()  # noqa: F841
         logger.warning(f"Found {outside.shape[0]} water molecules outside the sphere radius.")
         logger.warning("Removing these water molecules from the water.pdb file.")
         todrop_idxs = water_df.query("residue_seq_number in @outside_HOH_residues").index

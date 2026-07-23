@@ -3,9 +3,9 @@ steps                     NSTEPS2
 stepsize                  STEPSIZE
 temperature               T_VAR
 bath_coupling             10
-shake_hydrogens           STEPTOGGLE
-shake_solute              STEPTOGGLE
 shake_solvent             on
+shake_hydrogens           STEPTOGGLE
+shake_solute              off
 lrf                       on
 separate_scaling          on
 
@@ -26,7 +26,7 @@ polarisation              on
 polarisation_force        20.0
 
 [intervals]
-output                    5
+output                    25
 energy                    10
 trajectory                100
 non_bond                  25

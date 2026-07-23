@@ -1,4 +1,18 @@
-"""Module containing dictionaries and functions to help handling non-default amino acid naming"""
+"""Module containing dictionaries and functions to help handling non-default atom naming.
+
+Covers amino acids, DNA nucleotides (Maestro -> AMBER14sb), and ions.
+"""
+
+# Sugar hydrogen renaming shared across all DNA nucleotide types (Maestro -> AMBER14sb)
+_DNA_SUGAR_RENAME = {
+    "H5'1": "H5'",
+    "H5'2": "H5''",
+    "HC4'": "H4'",
+    "HC3'": "H3'",
+    "H2'1": "H2'",
+    "H2'2": "H2''",
+    "HC1'": "H1'",
+}
 
 rename_mapping = {
     "ACE": {
@@ -31,6 +45,9 @@ rename_mapping = {
         "3HH3": "H3",
         "2HH3": "H2",
         "1HH3": "H1",
+        "HH33": "H3",
+        "HH32": "H2",
+        "HH31": "H1",
         "2HH2": "H2",
         "2HH1": "H1",
         "C1": "C",
@@ -40,8 +57,6 @@ rename_mapping = {
         "HN1": "H",
     },
     "GLY": {
-        "H1": "H",
-        "H2": "H",
         "1HA": "HA3",
         "2HA": "HA2",
     },
@@ -49,26 +64,22 @@ rename_mapping = {
         "HE1": "HE2",
     },
     "ARG": {
-        "H2": "H",
         "2HG": "HG3",
         "1HG": "HG2",
     },
     "GLU": {
-        "H2": "H",
-        "H1": "H",
         "2HB": "HB3",
         "1HB": "HB2",
         "2HG": "HG3",
         "1HG": "HG2",
     },
-    "GLN": {"H2": "H", "2HG": "HG3", "1HG": "HG2"},
+    "GLN": {"2HG": "HG3", "1HG": "HG2"},
     "THR": {
-        "H2": "H",
         "1HG2": "HG21",
         "2HG2": "HG22",
         "3HG2": "HG23",
     },
-    "LEU": {"H1": "H"},
+    "LEU": {},
     "VAL": {
         "3HG1": "HG13",
         "2HG1": "HG12",
@@ -85,6 +96,8 @@ rename_mapping = {
         "1HB": "HB2",
         "1HD2": "HD21",
         "2HD2": "HD22",
+        "HD1": "HD21",
+        "HD2": "HD22",
     },
     "ASH": {
         "HD1": "HD2",
@@ -123,5 +136,35 @@ rename_mapping = {
     "ILE": {
         "2HG": "HG3",
         "1HG": "HG2",
+    },
+    # DNA nucleotides: Maestro hydrogen naming -> AMBER14sb (BSC1)
+    "DA": {
+        **_DNA_SUGAR_RENAME,
+        "HC8": "H8",
+        "H6_1": "H61",
+        "H6_2": "H62",
+        "HC2": "H2",
+    },
+    "DC": {
+        **_DNA_SUGAR_RENAME,
+        "H4_1": "H41",
+        "H4_2": "H42",
+        "HC5": "H5",
+        "HC6": "H6",
+    },
+    "DG": {
+        **_DNA_SUGAR_RENAME,
+        "HC8": "H8",
+        "HN1": "H1",
+        "H2_1": "H21",
+        "H2_2": "H22",
+    },
+    "DT": {
+        **_DNA_SUGAR_RENAME,
+        "HN3": "H3",
+        "H7_1": "H71",
+        "H7_2": "H72",
+        "H7_3": "H73",
+        "HC6": "H6",
     },
 }
