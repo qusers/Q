@@ -21,7 +21,7 @@ void StdOutput::output_energy(Context& ctx, int iteration) {
     std::printf("================================================\n");
 
     std::printf("[temperature]\n");
-    std::printf("Temp\t%f\n", ctx.Temp);
+    std::printf("Temp\t%f\n", ctx.temperature(0)); // todo : need to get replica index here
     std::printf("\n");
 
     std::printf("[bonded]\n");

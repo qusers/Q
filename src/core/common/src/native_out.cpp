@@ -311,7 +311,7 @@ void NativeOutput::write_restart_file(Context& ctx) const {
 
     write_restart_record(out, ctx.coords->cpu_data_p, nullptr, ctx.n_atoms, false);
     write_restart_record(out, nullptr, ctx.velocities->cpu_data_p, ctx.n_atoms, true);
-    
+
     const auto& wshells = ctx.replica_wshells.front(); // todo need to get the replicate index then get the correct wshells.
     if (ctx.md.polarisation && wshells.size() > 0) {
         write_theta_corr_record(out, wshells, wshells.size());

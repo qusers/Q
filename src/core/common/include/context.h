@@ -49,7 +49,6 @@ class Context {
     std::vector<std::vector<shell_t>> replica_wshells;
     std::unique_ptr<HostDeviceBuffer<double>> lambdas;  // Actually length is only 2..
     EnergyBuffer energy;
-    double Temp = 0;
     std::vector<double> replica_temperatures;
 
     int Ndegfree = 0;
@@ -65,7 +64,7 @@ class Context {
     int n_patoms() const { return p_atoms.size(); }
     int n_replicates() const { return command_info.n_replicates(); }
     double temperature(int replica = 0) const {
-        return replica_temperatures.empty() ? Temp : replica_temperatures[replica];
+        return replica_temperatures[replica];
     }
     size_t n_total_atoms() const { return static_cast<size_t>(n_atoms) * static_cast<size_t>(n_replicates()); }
 

@@ -32,14 +32,15 @@ void Temperature::init(Context& ctx, const Shake& shake) {
     }
     data_.tau_T = time_unit * ctx.md.bath_coupling;
     data_.results = std::make_unique<HostDeviceBuffer<double>>(
-        N_TRESULT, /*cpu*/ true, /*gpu*/ ctx.command_info.requested_gpu);
+        N_TRESULT * ctx.n_replicates(), /*cpu*/ true, /*gpu*/ ctx.command_info.requested_gpu);
 
     ctx.Ndegfree = data_.Ndegfree;
+    ctx.replica_temperatures.assign(ctx.n_replicates(), 0);
     init_backend(ctx);
 }
 
-void Temperature::sync_for_output(Context& ctx) {
-    const double* r = data_.results->cpu_data_p;
-    ctx.Temp = r[R_TEMP];
-    ctx.energy.data().Ukin = r[R_UKIN];
+void Temperature::sync_for_output(Context& ctx, int replica) {
+    const double* results = data_.results->cpu_data_p + replica * N_TRESULT;
+    ctx.replica_temperatures[replica] = results[R_TEMP];
+    ctx.energy.data(replica).Ukin = results[R_UKIN];
 }

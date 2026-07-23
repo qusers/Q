@@ -117,9 +117,11 @@ void Handler::update_energy_totals() {
     if (ctx.command_info.requested_gpu) {
         ctx.energy.download();
     }
-    ctx.energy.unpack();
-    temperature_->sync_for_output(ctx);  // publish Ukin before combine sums Utot
-    ctx.energy.combine(ctx.lambdas->cpu_data_p);
+    for (int replica = 0; replica < ctx.n_replicates(); replica++) {
+        ctx.energy.unpack(replica);
+        temperature_->sync_for_output(ctx, replica);
+        ctx.energy.combine(ctx.lambdas->cpu_data_p, replica);
+    }
 }
 
 void Handler::print_outputs(int iteration) {
@@ -149,7 +151,7 @@ void Handler::print_outputs(int iteration) {
 void Handler::create_outputs() {
     outputs_.clear();
     outputs_.push_back(std::make_unique<StdOutput>());
-    outputs_.push_back(std::make_unique<NativeOutput>(ctx.native_outputs.front())); // todo: 
+    outputs_.push_back(std::make_unique<NativeOutput>(ctx.native_outputs.front()));  // todo:
 }
 
 void Handler::init_outputs() {
