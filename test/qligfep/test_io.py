@@ -246,14 +246,20 @@ class TestParseQprepTotalCharge:
         assert charge == 0
 
 
-def _slurm(path, seed, replicate, runtime="1h:2m:3s", failure=None):
-    """Write a run.sh-style slurm*.out footer (the block read_slurm_diagnostics parses)."""
+def _slurm(path, seed, replicate, runtime="1h:2m:3s", failure=None, exit_status="0"):
+    """Write a run.sh-style slurm*.out footer (the block read_slurm_diagnostics parses).
+
+    ``exit_status=None`` omits the line, reproducing logs written before the run scripts
+    reported their own exit code.
+    """
     lines = [failure] if failure else []
     lines += [
         f"#    Runtime: {runtime}",
         f"#    Random seed: {seed}",
         f"#    Replicate Number: {replicate}",
     ]
+    if exit_status is not None:
+        lines.append(f"#    Exit status: {exit_status}")
     path.write_text("\n".join(lines) + "\n")
 
 
@@ -298,12 +304,34 @@ class TestReadSlurmDiagnostics:
             ("slurmstepd: error: job CANCELLED AT ...", "CANCELLED"),
             ("Out Of Memory", "OOM"),
             ("qdyn terminated abnormally", "CRASHED"),
+            ("There are not enough slots available in the system", "MPI_LAUNCH_FAILED"),
+            ("mpirun was unable to launch the specified application", "MPI_LAUNCH_FAILED"),
+            ("A request was made to bind to that would result in binding more", "MPI_LAUNCH_FAILED"),
         ],
     )
     def test_failure_markers_map_to_status(self, tmp_path, marker, expected):
         f = tmp_path / "slurm.run1.node.1.out"
         _slurm(f, seed=1, replicate=1, failure=marker)
         assert read_slurm_diagnostics(f).status == expected
+
+    def test_nonzero_exit_status_fails_a_run_with_no_known_marker(self, tmp_path):
+        # An mpirun launch failure leaves a short but well-formed log: the footer parses, and
+        # nothing in the body matches a marker. The reported exit code is what catches it.
+        f = tmp_path / "slurm.run1.node.1.out"
+        _slurm(f, seed=1, replicate=1, exit_status="1")
+        assert read_slurm_diagnostics(f).status == "FAILED"
+
+    def test_known_marker_outranks_the_exit_status(self, tmp_path):
+        # Both signals present: keep the specific cause rather than flattening it to FAILED.
+        f = tmp_path / "slurm.run1.node.1.out"
+        _slurm(f, seed=1, replicate=1, failure="DUE TO TIME LIMIT", exit_status="1")
+        assert read_slurm_diagnostics(f).status == "TIMEOUT"
+
+    def test_absent_exit_status_still_reads_as_success(self, tmp_path):
+        # Logs predating the Exit status footer line must not be reclassified as failures.
+        f = tmp_path / "slurm.run1.node.1.out"
+        _slurm(f, seed=1, replicate=1, exit_status=None)
+        assert read_slurm_diagnostics(f).status == "SUCCESS"
 
     def test_missing_footer_defaults_gracefully(self, tmp_path):
         # A log killed before writing its footer yields empty/None fields and SUCCESS, so callers
