@@ -28,9 +28,7 @@ class Context {
     int n_excluded = 0;
     md_t md;
     topo_t topo;
-    NativeOutputConfig native_output;
     std::vector<NativeOutputConfig> native_outputs;
-    std::vector<std::vector<double>> replica_restart_theta_corr;
     charge_group_config_t charge_group_config;
     std::unique_ptr<HostDeviceBuffer<coord_t>> coords;
     std::unique_ptr<HostDeviceBuffer<vel_t>> velocities;
@@ -48,7 +46,6 @@ class Context {
     std::vector<int> p_atoms;
     std::unique_ptr<HostDeviceBuffer<int>> LJ_matrix;
     std::vector<int> molecules;
-    std::vector<shell_t> wshells;
     std::vector<std::vector<shell_t>> replica_wshells;
     std::unique_ptr<HostDeviceBuffer<double>> lambdas;  // Actually length is only 2..
     EnergyBuffer energy;
@@ -59,14 +56,14 @@ class Context {
     std::vector<catype_t> q_catypes;
     std::vector<atype_t> q_atypes;
     std::vector<ccharge_t> q_charges;
-    ParseResult get_parse_result();
-    void init(const ParseResult& parsed);
+    std::vector<ParseResult> get_parse_results();
+    void init(const std::vector<ParseResult>& replica_results);
     int n_lambdas() const { return lambdas->length; }
     int n_waters() const { return (n_atoms - n_atoms_solute) / 3; }
     int n_qatoms() const { return q_atoms.size(); }
     int n_molecules() const { return molecules.size(); }
     int n_patoms() const { return p_atoms.size(); }
-    int n_replicates() const { return command_info.n_replicates; }
+    int n_replicates() const { return command_info.n_replicates(); }
     double temperature(int replica = 0) const {
         return replica_temperatures.empty() ? Temp : replica_temperatures[replica];
     }
@@ -78,10 +75,10 @@ class Context {
     void init_fresh_start(const ParseResult& parsed);
     void init_md(const ParseResult& parsed);
     void init_topo(const ParseResult& parsed);
-    void init_native_output(const ParseResult& parsed);
+    void init_native_outputs(const std::vector<ParseResult>& parsed);
     void init_const(const ParseResult& parsed);
     void init_coords_init(const ParseResult& parsed);
-    void init_coords(const ParseResult& parsed);
+    void init_coords(const std::vector<ParseResult>& replica_results);
     void init_lambdas(const ParseResult& parsed);
     void init_charges(const ParseResult& parsed);
     void init_ccharges(const ParseResult& parsed);
@@ -95,7 +92,7 @@ class Context {
     void init_q_atypes(const ParseResult& parsed);
     void init_q_charges(const ParseResult& parsed);
     void init_lj_matrix(const ParseResult& parsed);
-    void init_velocities(const ParseResult& parsed);
+    void init_velocities(const std::vector<ParseResult>& replica_results);
     void init_inv_mass();
     void init_heavy();
     void init_shell();

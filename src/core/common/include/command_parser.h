@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <str_helpers.h>
 
+#include <cstddef>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -13,10 +14,11 @@ enum class CommandInputMode {
 
 struct CommandInfo {
     bool requested_gpu = false;
-    std::string input_file;
     CommandInputMode input_mode = CommandInputMode::NativeInp;
-    int n_replicates = 1;
-    std::vector<std::string> replica_input_files;
+    std::vector<std::string> input_files;
+    int n_replicates() const {
+        return static_cast<int>(input_files.size());
+    }
 };
 
 struct CommandParseResult {
@@ -40,6 +42,9 @@ inline CommandParseResult parse_command(int argc, char* argv[]) {
     }
 
     CommandInfo command;
+    std::string primary_input;
+    std::vector<std::string> additional_inputs;
+    int requested_replicates = 1;
     bool replicate_count_was_set = false;
 
     for (int i = 1; i < argc; i++) {
@@ -59,8 +64,8 @@ inline CommandParseResult parse_command(int argc, char* argv[]) {
 
             try {
                 std::string value = argv[++i];
-                size_t parsed_characters = 0;
-                command.n_replicates = std::stoi(value, &parsed_characters);
+                std::size_t parsed_characters = 0;
+                requested_replicates = std::stoi(value, &parsed_characters);
                 if (parsed_characters != value.size()) {
                     throw std::invalid_argument("trailing characters");
                 }
@@ -69,11 +74,11 @@ inline CommandParseResult parse_command(int argc, char* argv[]) {
                 return result;
             }
 
-            if (command.n_replicates <= 0) {
+            if (requested_replicates <= 0) {
                 result.error = "--replicates requires a positive integer argument.";
                 return result;
             }
-            if (command.n_replicates > 65535) {
+            if (requested_replicates > 65535) {
                 result.error = "--replicates exceeds the CUDA grid y-dimension limit (65535).";
                 return result;
             }
@@ -83,41 +88,52 @@ inline CommandParseResult parse_command(int argc, char* argv[]) {
                 result.error = "--replica-input requires an .inp file argument.";
                 return result;
             }
-            command.replica_input_files.push_back(argv[++i]);
-        } else if (command.input_file.empty()) {
-            command.input_file = arg;
+            additional_inputs.push_back(argv[++i]);
+        } else if (primary_input.empty()) {
+            primary_input = arg;
         } else {
             result.error = "Unexpected argument '" + arg + "'.";
             return result;
         }
     }
 
-    if (command.input_file.empty() || !ends_with(command.input_file, ".inp")) {
+    if (primary_input.empty() || !ends_with(primary_input, ".inp")) {
         result.error = "Q input mode requires an .inp file.";
         return result;
     }
     command.input_mode = CommandInputMode::NativeInp;
 
-    if (!command.replica_input_files.empty()) {
-        if (replicate_count_was_set) {
-            result.error = "--replicates cannot be combined with --replica-input.";
-            return result;
-        }
-        for (const auto& input : command.replica_input_files) {
-            if (!ends_with(input, ".inp")) {
-                result.error = "Every --replica-input value must end with .inp.";
-                return result;
-            }
-        }
-        command.n_replicates =
-            1 + static_cast<int>(command.replica_input_files.size());
-        if (command.n_replicates > 65535) {
-            result.error = "The replica count exceeds the CUDA grid y-dimension limit (65535).";
+    if (replicate_count_was_set && !additional_inputs.empty()) {
+        result.error = "--replicates cannot be combined with --replica-input.";
+        return result;
+    }
+
+    for (const auto& input : additional_inputs) {
+        if (!ends_with(input, ".inp")) {
+            result.error = "Every --replica-input value must end with .inp.";
             return result;
         }
     }
 
-    if (command.n_replicates > 1 && !command.requested_gpu) {
+    if (additional_inputs.empty()) {
+        command.input_files.assign(
+            static_cast<std::size_t>(requested_replicates),
+            primary_input);
+    } else {
+        command.input_files.reserve(1 + additional_inputs.size());
+        command.input_files.push_back(primary_input);
+        command.input_files.insert(
+            command.input_files.end(),
+            additional_inputs.begin(),
+            additional_inputs.end());
+    }
+
+    if (command.input_files.size() > 65535) {
+        result.error = "The replica count exceeds the CUDA grid y-dimension limit (65535).";
+        return result;
+    }
+
+    if (command.n_replicates() > 1 && !command.requested_gpu) {
         result.error = "Batched replicates currently require --gpu.";
         return result;
     }

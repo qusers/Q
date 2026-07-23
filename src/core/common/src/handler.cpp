@@ -27,8 +27,9 @@ void Handler::run_iteration(int iteration) {
 
 void Handler::initialize(const CommandInfo& command) {
     ctx.command_info = command;
-    ParseResult parsed = ctx.get_parse_result();
-    ctx.init(parsed);
+    std::vector<ParseResult> replica_results = ctx.get_parse_results();
+    ctx.init(replica_results);
+    const ParseResult& parsed = replica_results.front();
     shake_ = create_shake_backend();
     nonbonded_force_ = create_nonbonded_force_backend();
     bonded_force_ = create_bonded_force_backend();
@@ -41,7 +42,7 @@ void Handler::initialize(const CommandInfo& command) {
     nonbonded_force_->init(ctx);
     restraint_force_->init(ctx, parsed.restrspos, parsed.restrseqs, parsed.restrdists, parsed.restrangs, parsed.restrwalls);
     temperature_->init(ctx, *shake_);
-    water_boundary_force_->init(ctx, *temperature_, parsed);
+    water_boundary_force_->init(ctx, *temperature_, replica_results);
     integrator_->init(ctx, *shake_, *temperature_);
 
     if (ctx.fresh_start) {
@@ -148,7 +149,7 @@ void Handler::print_outputs(int iteration) {
 void Handler::create_outputs() {
     outputs_.clear();
     outputs_.push_back(std::make_unique<StdOutput>());
-    outputs_.push_back(std::make_unique<NativeOutput>(ctx.native_output));
+    outputs_.push_back(std::make_unique<NativeOutput>(ctx.native_outputs.front())); // todo: 
 }
 
 void Handler::init_outputs() {
