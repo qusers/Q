@@ -1,4 +1,5 @@
 #pragma once
+#include "cuda_serial_shake.cuh"
 #include "host_device_buffer.h"
 #include "shake.h"
 
@@ -27,6 +28,9 @@ struct ShakeNetwork {
 
 class CudaShake final : public Shake {
    public:
+    explicit CudaShake(bool serial_q_molecules = false)
+        : serial_q_molecules_(serial_q_molecules) {}
+
     void apply(Context& ctx, HostDeviceBuffer<coord_t>& xcoords) override;
     void initial_shake(Context& ctx) override;
     void cleanup() override;
@@ -38,6 +42,8 @@ class CudaShake final : public Shake {
     void apply_to(Context& ctx, coord_t* d_coords, coord_t* d_xcoords);
 
     bool is_init_backend = false;
+    bool serial_q_molecules_ = false;
+    CudaSerialConstraintSolver serial_q_solver_;
 
     std::unique_ptr<HostDeviceBuffer<ShakeFastWater>> shake_fast_waters;
     std::unique_ptr<HostDeviceBuffer<ShakeNetwork>> shake_networks;
@@ -51,4 +57,5 @@ class CudaShake final : public Shake {
     void find_shake_fast_water(Context& ctx, std::vector<bool>& optimized);
     void find_shake_network(Context& ctx, std::vector<bool>& optimized);
     void find_fallback_shake_bond(Context& ctx, std::vector<bool>& optimized);
+    void find_serial_q_molecule_bonds(Context& ctx, std::vector<bool>& optimized);
 };
