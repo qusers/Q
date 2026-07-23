@@ -31,6 +31,59 @@ void validate_parse_result(const ParseResult& parsed) {
     }
 }
 
+template <typename T>
+void replicate_buffer(
+    std::unique_ptr<HostDeviceBuffer<T>>& buffer,
+    int n_replicates,
+    size_t elements_per_replica) {
+    /*
+    Transform [A0 A1 A2] to [A0 A1 A2 A0 A1 A2 A0 A1 A2]
+    */
+
+    if (!buffer || n_replicates <= 1) {
+        return;
+    }
+
+    const size_t total_elements =
+        elements_per_replica * static_cast<size_t>(n_replicates);
+
+    // This makes the helper safe if explicit replica inputs later
+    // construct an already-batched buffer.
+    if (buffer->length == total_elements) {
+        return;
+    }
+
+    if (buffer->length != elements_per_replica) {
+        fatal(
+            "Unexpected dynamic buffer size while building "
+            "replica batch.");
+    }
+
+    auto expanded = std::make_unique<HostDeviceBuffer<T>>(
+        total_elements,
+        true,
+        buffer->gpu_mem_flag);
+
+    for (int replica = 0;
+         replica < n_replicates;
+         replica++) {
+        T* destination =
+            expanded->cpu_data_p +
+            static_cast<size_t>(replica) * elements_per_replica;
+
+        std::copy(
+            buffer->cpu_data_p,
+            buffer->cpu_data_p + elements_per_replica,
+            destination);
+    }
+
+    if (expanded->gpu_mem_flag) {
+        expanded->upload();
+    }
+
+    buffer = std::move(expanded);
+}
+
 }  // namespace
 
 void Context::set_lj_pairs(std::vector<int>& matrix, const std::vector<std::pair<int, int>>& pairs, int value) {
@@ -90,6 +143,7 @@ void Context::init_coords_init(const ParseResult& parsed) {
 
 void Context::init_coords(const ParseResult& parsed) {
     coords = HostDeviceBuffer<coord_t>::from_vector(parsed.coords, command_info.requested_gpu);
+    replicate_buffer(coords, n_replicates(), static_cast<size_t>(n_atoms));
 }
 
 void Context::init_velocities(const ParseResult& parsed) {
@@ -112,6 +166,7 @@ void Context::init_velocities(const ParseResult& parsed) {
         }
         velocities = HostDeviceBuffer<vel_t>::from_vector(velocity_data, command_info.requested_gpu);
     }
+    replicate_buffer(velocities, n_replicates(), static_cast<size_t>(n_atoms));
 }
 
 void Context::init_lambdas(const ParseResult& parsed) {
@@ -273,7 +328,7 @@ void Context::init_shell() {
 }
 
 void Context::init_dvelocities() {
-    dvelocities = std::make_unique<HostDeviceBuffer<dvel_t>>(n_atoms, true, command_info.requested_gpu);
+    dvelocities = std::make_unique<HostDeviceBuffer<dvel_t>>(n_total_atoms(), true, command_info.requested_gpu);
 }
 
 void Context::init_energy() {

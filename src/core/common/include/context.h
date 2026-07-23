@@ -1,6 +1,6 @@
 #pragma once
-
 #include <array>
+#include <cstddef>
 #include <map>
 #include <memory>
 #include <string>
@@ -70,6 +70,7 @@ class Context {
     double temperature(int replica = 0) const {
         return replica_temperatures.empty() ? Temp : replica_temperatures[replica];
     }
+    size_t n_total_atoms() const { return static_cast<size_t>(n_atoms) * static_cast<size_t>(n_replicates()); }
 
    private:
     void set_lj_pairs(std::vector<int>& matrix, const std::vector<std::pair<int, int>>& pair, int value);
