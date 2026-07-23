@@ -59,25 +59,35 @@ void Handler::stop_cm_translation() {
     auto& catypes = ctx.catypes->cpu_data_p;
     auto& velocities = ctx.velocities->cpu_data_p;
     double total_mass = 0;
-    coord_t vcm = {};
 
     for (int ai = 0; ai < ctx.n_atoms; ai++) {
         const double rmass = catypes[atypes[ai].code - 1].m;
         total_mass += rmass;
-        vcm.x += velocities[ai].x * rmass;
-        vcm.y += velocities[ai].y * rmass;
-        vcm.z += velocities[ai].z * rmass;
     }
 
-    vcm.x /= total_mass;
-    vcm.y /= total_mass;
-    vcm.z /= total_mass;
+    for (int replica = 0; replica < ctx.n_replicates(); replica++) {
+        const int atom_offset = replica * ctx.n_atoms;
+        coord_t vcm = {};
+        for (int ai = 0; ai < ctx.n_atoms; ai++) {
+            const int atom = atom_offset + ai;
+            const double mass = catypes[atypes[ai].code - 1].m;
+            vcm.x += velocities[atom].x * mass;
+            vcm.y += velocities[atom].y * mass;
+            vcm.z += velocities[atom].z * mass;
+        }
+        vcm.x /= total_mass;
+        vcm.y /= total_mass;
+        vcm.z /= total_mass;
 
-    for (int ai = 0; ai < ctx.n_atoms; ai++) {
-        velocities[ai].x -= vcm.x;
-        velocities[ai].y -= vcm.y;
-        velocities[ai].z -= vcm.z;
+        for (int ai = 0; ai < ctx.n_atoms; ai++) {
+            const int atom = atom_offset + ai;
+
+            velocities[atom].x -= vcm.x;
+            velocities[atom].y -= vcm.y;
+            velocities[atom].z -= vcm.z;
+        }
     }
+
     if (ctx.command_info.requested_gpu) {
         ctx.velocities->upload();
     }
