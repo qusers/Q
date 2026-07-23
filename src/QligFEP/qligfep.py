@@ -1,3 +1,4 @@
+import contextlib
 import glob
 import os
 import re
@@ -693,11 +694,10 @@ class QligFEP:
             }
 
         vdw_lines = [self._read_vdw_from_ff(self.ion_type), self._read_vdw_from_ff(water_o)]
-        try:
-            vdw_lines.append(self._read_vdw_from_ff(water_h))
-        except ValueError:
+
+        with contextlib.suppress(ValueError):
             # Some FFs omit HW from [atom_types] because its VdW is zero.
-            pass
+            vdw_lines.append(self._read_vdw_from_ff(water_h))
 
         pdb_path = Path(writedir) / self.pdb_fname
         pdb_df = read_pdb_to_dataframe(pdb_path)
@@ -1145,7 +1145,14 @@ class QligFEP:
 
         # eq files + initial md file
         file_list1 = self._write_equilibration_files(
-            writedir, lig_size1, lig_size2, overlapping_atoms, eq_lambda1, eq_lambda2, cw_restraint, wall_restraints
+            writedir,
+            lig_size1,
+            lig_size2,
+            overlapping_atoms,
+            eq_lambda1,
+            eq_lambda2,
+            cw_restraint,
+            wall_restraints,
         )
 
         # Format restraints for production files
@@ -1384,7 +1391,13 @@ class QligFEP:
                 writedir + f"/eq6_{state}.inp", lambda1, lambda2, self.neq_eq_steps, dr_str, seq_str
             )
             self._write_endpoint_file(
-                writedir + f"/neq_{state}.inp", lambda1, lambda2, self.neq_steps, dr_str, seq_str, lambda_scaling
+                writedir + f"/neq_{state}.inp",
+                lambda1,
+                lambda2,
+                self.neq_steps,
+                dr_str,
+                seq_str,
+                lambda_scaling,
             )
             file_list += [f"relax_{state}.inp", f"eq6_{state}.inp", f"neq_{state}.inp"]
         return file_list
@@ -1397,7 +1410,7 @@ class QligFEP:
         src = CONFIGS["INPUT_DIR"] + "/run_neq.sh"
         tgt = writedir + "/run" + self.cluster + ".sh"
 
-        replacements = CLUSTER_DICT[self.cluster]
+        replacements = dict(CLUSTER_DICT[self.cluster])
         replacements["FEPS"] = "FEP1.fep"
         replacements["NEQ_REPS"] = str(self.neq_reps)
         with open(src) as infile, open(tgt, "w") as outfile:
@@ -1519,7 +1532,13 @@ class QligFEP:
             md_1 = file_list[1]
             md_2 = file_list[2]
 
-        replacements = CLUSTER_DICT[self.cluster]
+        # --map-by core pins one rank per core in the job's cpuset. Above two ranks, mpirun defaults to
+        # spreading ranks evenly across sockets, ignoring how many cores SLURM placed on each; on an
+        # uneven split (e.g. 6+2 of 8) that maps more ranks to the small socket than it has cores, and
+        # --bind-to core then refuses to launch ("binding more processes than cpus on a resource").
+        mpirun = "time mpirun -n $SLURM_NTASKS --map-by core --bind-to core $qdyn"
+
+        replacements = dict(CLUSTER_DICT[self.cluster])
         replacements["FEPS"] = "FEP1.fep"
         with open(src) as infile, open(tgt, "w") as outfile:
             for line in infile:
@@ -1559,28 +1578,19 @@ class QligFEP:
                 if line.strip() == "#EQ_FILES":
                     for line in EQ_files:
                         file_base = Path(line).stem
-                        outline = f"time mpirun -n $SLURM_NTASKS --bind-to core $qdyn {file_base}.inp > {file_base}.log\n"
-                        outfile.write(outline)
+                        outfile.write(f"{mpirun} {file_base}.inp > {file_base}.log\n")
 
                 if line.strip() == "#RUN_FILES":
                     if self.start == "1":
                         for line in MD_files:
                             file_base = line.split("/")[-1][:-4]
-                            outline = (
-                                f"time mpirun -n $SLURM_NTASKS --bind-to core $qdyn {file_base}.inp"
-                                f" > {file_base}.log\n"
-                            )
-                            outfile.write(outline)
+                            outfile.write(f"{mpirun} {file_base}.inp > {file_base}.log\n")
 
                     elif self.start == "0.5":
-                        outline = "time mpirun -n $SLURM_NTASKS --bind-to core $qdyn md_0500_0500.inp > md_0500_0500.log\n\n"
-                        outfile.write(outline)
-                        for i, md in enumerate(md_1):
-                            outline1 = f"time mpirun -n $SLURM_NTASKS --bind-to core $qdyn {md_1[i][:-4]}.inp > {md_1[i][:-4]}.log\n"
-                            outline2 = f"time mpirun -n $SLURM_NTASKS --bind-to core $qdyn {md_2[i][:-4]}.inp > {md_2[i][:-4]}.log\n"
-
-                            outfile.write(outline1)
-                            outfile.write(outline2)
+                        outfile.write(f"{mpirun} md_0500_0500.inp > md_0500_0500.log\n\n")
+                        for md1, md2 in zip(md_1, md_2):
+                            outfile.write(f"{mpirun} {md1[:-4]}.inp > {md1[:-4]}.log\n")
+                            outfile.write(f"{mpirun} {md2[:-4]}.inp > {md2[:-4]}.log\n")
                             outfile.write("\n")
                 if line.strip() == "#CLEANUP" and self.to_clean is not None:
                     replacements["CLEANUP"] = "#Cleaned {} files\n".format(" ".join(self.to_clean))
