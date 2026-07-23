@@ -23,6 +23,10 @@ int main(int argc, char* argv[]) {
         printf(">>> FATAL: %s Exiting...\n", parsed.error.c_str());
         return EXIT_FAILURE;
     }
+    if (parsed.command.n_replicates > 1) {
+        printf(">>> FATAL: Multi-replica runtime support is not implemented yet. Exiting...\n");
+        return EXIT_FAILURE;
+    }
     calc_integration(parsed);
     return EXIT_SUCCESS;
 }

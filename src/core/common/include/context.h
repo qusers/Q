@@ -29,6 +29,8 @@ class Context {
     md_t md;
     topo_t topo;
     NativeOutputConfig native_output;
+    std::vector<NativeOutputConfig> native_outputs;
+    std::vector<std::vector<double>> replica_restart_theta_corr;
     charge_group_config_t charge_group_config;
     std::unique_ptr<HostDeviceBuffer<coord_t>> coords;
     std::unique_ptr<HostDeviceBuffer<vel_t>> velocities;
@@ -47,9 +49,12 @@ class Context {
     std::unique_ptr<HostDeviceBuffer<int>> LJ_matrix;
     std::vector<int> molecules;
     std::vector<shell_t> wshells;
+    std::vector<std::vector<shell_t>> replica_wshells;
     std::unique_ptr<HostDeviceBuffer<double>> lambdas;  // Actually length is only 2..
     EnergyBuffer energy;
     double Temp = 0;
+    std::vector<double> replica_temperatures;
+
     int Ndegfree = 0;
     std::vector<catype_t> q_catypes;
     std::vector<atype_t> q_atypes;
@@ -61,6 +66,10 @@ class Context {
     int n_qatoms() const { return q_atoms.size(); }
     int n_molecules() const { return molecules.size(); }
     int n_patoms() const { return p_atoms.size(); }
+    int n_replicates() const { return command_info.n_replicates; }
+    double temperature(int replica = 0) const {
+        return replica_temperatures.empty() ? Temp : replica_temperatures[replica];
+    }
 
    private:
     void set_lj_pairs(std::vector<int>& matrix, const std::vector<std::pair<int, int>>& pair, int value);
