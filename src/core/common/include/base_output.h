@@ -3,6 +3,7 @@
 
 struct OutputRequirements {
     bool energy = false;
+    bool trajectory = false;
     bool restart = false;
 };
 
