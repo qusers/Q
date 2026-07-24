@@ -241,6 +241,14 @@ module md
   real(8)                   :: Tfree, Tfree_solvent, Tfree_solute
   real(8)                   :: Temp_solvent, Temp_solute, Texcl_solute, Texcl_solvent
 
+  ! Non-equilibrium (fast-switching) control + work integral. equilibrium_simulation
+  ! comes from the .inp [lambda_scaling] section (absent => plain MD)
+  logical                   :: equilibrium_simulation = .true.
+  character(len=200)        :: scaling_parameter   ! lambda schedule, e.g. 'sigmoidal'
+  real(8)                   :: L_sigmoid           ! sigmoid steepness
+  real(8)                   :: dlambda = 0.0_8     ! lambda step of the work integral
+  real(8)                   :: dU_dlambda = 0.0_8
+  real(8)                   :: work_accumulated = 0.0_8
 
   !-----------------------------------------------------------------------
   !       Nonbonded pair information
@@ -468,8 +476,10 @@ subroutine die(cause)
   ! abort all processes with exit code 255
   call MPI_Abort(MPI_COMM_WORLD, 255, ierr)
 #else
-  ! stop with a message to stderr
-  stop 'qdyn terminated abnormally'
+  ! write to stderr (unit 0) and exit non-zero, mirroring the MPI_Abort above. The "abnormally"
+  ! text is what QligFEP.IO.read_slurm_diagnostics keys on to label the run CRASHED.
+  write(0,'(a)') 'qdyn terminated abnormally'
+  stop 255
 #endif
 
 end subroutine die
@@ -2950,6 +2960,22 @@ logical function initialize()
 
     end if !section PBC
 
+    ! Optional [lambda_scaling] section selects fast-switching; absent => plain MD.
+    if (.not. prm_open_section('lambda_scaling', infilename)) then
+      equilibrium_simulation = .true.
+    else
+      equilibrium_simulation = .false.
+      write(*,'(a)') 'Using non-equilibrium lambda scaling'
+      if (.not. prm_get_string_by_key('scaling_parameter', scaling_parameter)) then
+        scaling_parameter = 'sigmoidal'
+        write(*,'(a)') 'No scaling_parameter provided, using default (sigmoidal)'
+      end if
+      if (.not. prm_get_real8_by_key('L_sigmoid', L_sigmoid)) then
+        L_sigmoid = 8.0_8
+        write(*,'(a)') 'No L_sigmoid provided, using default steepness (8.0)'
+      end if
+    end if !section lambda_scaling
+
 
     if(.not. prm_open_section('md')) then
       call prm_close
@@ -4338,6 +4364,19 @@ subroutine md_run
     startloop = rtime()
   end if
 
+  ! NEQ (lambda_scaling) validation, before the minimization pre-loop: pot_energy's
+  ! switching block indexes EQ(2) and follows the istep schedule, so it is valid only
+  ! with exactly two states and only inside the main dynamics loop (where istep is set).
+  ! It must also run serially: the dU/dlambda work integral reads EQ(2)-EQ(1) energies
+  ! that are only summed on the master rank, so under MPI the slaves would silently
+  ! accumulate garbage work. equilibrium_simulation is .true. on slaves (never broadcast),
+  ! so only the master reaches this die, which aborts all ranks via MPI_Abort.
+  if (.not. equilibrium_simulation) then
+    if (numnodes > 1) call die('lambda_scaling (NEQ) must run serially; use qdyn, not mpirun qdynp')
+    if (nstates /= 2) call die('lambda_scaling (NEQ) requires exactly 2 FEP states')
+    if (do_minimize) call die('lambda_scaling (NEQ) does not support energy minimization')
+  end if
+
   !***********************************************************************
   !       ENERGY MINIMIZATION (steepest descent, before MD)
   !***********************************************************************
@@ -4519,6 +4558,8 @@ subroutine md_run
     end if
   end if
 
+  work_accumulated = 0.0_8
+
   !***********************************************************************
   !       begin MAIN DYNAMICS LOOP (Verlet leap-frog algorithm)
   !***********************************************************************
@@ -4587,6 +4628,15 @@ subroutine md_run
     ! --- start of time step ---
     ! get potential energy and derivatives from FF
     call pot_energy
+
+    ! NEQ work integral. NOTE: the window (istep in [2, nsteps-2]) drops the first two
+    ! steps and the final step -- kept verbatim from the original NEQ engine; whether
+    ! this truncation is intentional (it shifts the BAR free energy) is unresolved.
+    if (.not. equilibrium_simulation) then
+      if (istep >= 2 .and. istep <= nsteps-2) then
+        work_accumulated = work_accumulated + dU_dlambda * dlambda
+      end if
+    end if
 
     if(nodeid .eq. 0) then
       if ( mod(istep,iout_cycle) == 0 .and. monitor_group_pairs > 0) then
@@ -14804,6 +14854,9 @@ subroutine pot_energy
    ! local variables
   integer                                 :: istate, i, nat3
   integer                                 :: is, j
+  ! Non-equilibrium switching locals (used only when equilibrium_simulation is .false.);
+  ! old_lambda is real(8) so the endpoint round-trips exactly.
+  real(8)                                 :: old_lambda(2), lam(2), lam_next(2), dU
 #if defined (PROFILING)
   real(8)                                 :: start_loop_time1
   real(8)                                 :: start_loop_time2
@@ -14841,6 +14894,18 @@ subroutine pot_energy
   E%restraint%protein = 0.0
   E%restraint%solvent_radial = 0.0
   E%restraint%water_pol = 0.0
+
+  ! NEQ: set EQ%lambda from the switching schedule for this step (restored after the
+  ! energy evaluation below); dlambda is the step's lambda increment for the work integral.
+  if (.not. equilibrium_simulation) then
+    old_lambda(:) = EQ(1:2)%lambda
+    call schedule_lambda(istep,   old_lambda(1), lam)
+    call schedule_lambda(istep+1, old_lambda(1), lam_next)
+    EQ(1)%lambda = lam(1)
+    EQ(2)%lambda = lam(2)
+    dlambda      = lam_next(1) - lam(1)
+  end if
+
   do istate = 1, nstates
     !EQ(istate)%lambda set by initialize
     !EQ(istate)%total assigned its final value later
@@ -15001,8 +15066,49 @@ subroutine pot_energy
       E%ww%vdw + E%q%bond + E%q%angle + E%q%torsion + &
       E%q%improper + E%qx%el + E%qx%vdw + E%restraint%total + E%LRF
   end if
+
+  ! NEQ: dU/dlambda for the work integral (sign-flipped so the accumulator adds
+  ! +dU/dlambda), then restore the endpoint lambdas saved above.
+  if (.not. equilibrium_simulation) then
+    dU = (EQ(2)%q%bond     - EQ(1)%q%bond)     + &
+         (EQ(2)%q%angle    - EQ(1)%q%angle)    + &
+         (EQ(2)%q%torsion  - EQ(1)%q%torsion)  + &
+         (EQ(2)%q%improper - EQ(1)%q%improper) + &
+         (EQ(2)%qx%el      - EQ(1)%qx%el)      + &
+         (EQ(2)%qx%vdw     - EQ(1)%qx%vdw)     + &
+         (EQ(2)%restraint  - EQ(1)%restraint)
+    dU_dlambda = -dU
+    EQ(1:2)%lambda = old_lambda(:)
+  end if
 end subroutine pot_energy
 
+!-----------------------------------------------------------------------
+! Sigmoidal rescaling for fast-switching, normalised so u=0 -> 0 and u=1 -> 1.
+real function sigmoid_rescale(u, L)
+  implicit none
+  real,    intent(in) :: u   ! switch progress in [0,1]
+  real(8), intent(in) :: L   ! steepness parameter
+  real :: s, s0, s1
+  s  = 1.0 / (1.0 + exp(-(2.0*u - 1.0)*L))   ! raw sigmoid
+  s0 = 1.0 / (1.0 + exp(+L))                 ! sigmoid at u=0
+  s1 = 1.0 / (1.0 + exp(-L))                 ! sigmoid at u=1
+  sigmoid_rescale = (s - s0) / (s1 - s0)
+end function sigmoid_rescale
+
+!-----------------------------------------------------------------------
+! Lambda for switching step `step`: state 1 follows the (optionally sigmoid-rescaled)
+! step/nsteps schedule from its endpoint, state 2 is the complement. Two states only,
+! shared by pot_energy (drives the forces) and write_out (reports the same lambda).
+subroutine schedule_lambda(step, endpoint1, lam)
+  integer, intent(in)  :: step
+  real(8), intent(in)  :: endpoint1
+  real(8), intent(out) :: lam(2)
+  real :: ratio
+  ratio = real(step) / real(nsteps)
+  if (scaling_parameter == 'sigmoidal') ratio = sigmoid_rescale(ratio, L_sigmoid)
+  lam(1) = endpoint1 * (1-ratio) + (1-endpoint1)*ratio
+  lam(2) = 1.0_8 - lam(1)
+end subroutine schedule_lambda
 
 !-----------------------------------------------------------------------
 subroutine pot_energy_bonds
@@ -15213,7 +15319,8 @@ subroutine prep_coord
 #if defined(USE_MPI)
 112 call MPI_Abort(MPI_COMM_WORLD,1,ierr)
 #else
-112 stop 'Aborting due to errors reading restart file.'
+112 write(0,'(a)') 'Aborting due to errors reading restart file.'
+    stop 255
 #endif
 
 end subroutine prep_coord
@@ -16829,6 +16936,14 @@ end subroutine watpol
 subroutine write_out
    ! local variables
   integer                                 ::      i,istate
+  ! NEQ: the lambda shown in the summary tracks the switch progress; equilibrium runs
+  ! display the fixed EQ%lambda. Held in a local so this reporter never mutates EQ.
+  real(8)                                 :: disp_lambda(nstates)
+
+  if(nstates > 0) then
+    disp_lambda(:) = EQ(:)%lambda
+    if (.not. equilibrium_simulation) call schedule_lambda(istep, EQ(1)%lambda, disp_lambda)
+  end if
 
   ! header line
   if(istep >= nsteps) then
@@ -16891,32 +17006,32 @@ subroutine write_out
     write(*,26) 'el', 'vdW' ,'bond', 'angle', 'torsion', 'improper'
 
     do istate =1, nstates
-      write (*,32) 'Q-Q', istate, EQ(istate)%lambda, EQ(istate)%qq%el, EQ(istate)%qq%vdw
+      write (*,32) 'Q-Q', istate, disp_lambda(istate), EQ(istate)%qq%el, EQ(istate)%qq%vdw
     end do
     write(*,*)
     if(nat_solute > nqat) then !only if there is something else than Q-atoms in topology
       do istate =1, nstates
-        write (*,32) 'Q-prot', istate,EQ(istate)%lambda, EQ(istate)%qp%el, EQ(istate)%qp%vdw
+        write (*,32) 'Q-prot', istate,disp_lambda(istate), EQ(istate)%qp%el, EQ(istate)%qp%vdw
       end do
       write(*,*)
     end if
 
     if(nwat > 0) then
       do istate =1, nstates
-        write (*,32) 'Q-wat', istate, EQ(istate)%lambda, EQ(istate)%qw%el, EQ(istate)%qw%vdw
+        write (*,32) 'Q-wat', istate, disp_lambda(istate), EQ(istate)%qw%el, EQ(istate)%qw%vdw
       end do
       write(*,*)
     end if
 
     do istate =1, nstates
-      write (*,32) 'Q-surr.',istate, EQ(istate)%lambda, &
+      write (*,32) 'Q-surr.',istate, disp_lambda(istate), &
         EQ(istate)%qp%el + EQ(istate)%qw%el, EQ(istate)%qp%vdw &
         + EQ(istate)%qw%vdw
     end do
     write(*,*)
 
     do istate = 1, nstates
-      write (*,36) 'Q-any', istate, EQ(istate)%lambda, EQ(istate)%qx%el,&
+      write (*,36) 'Q-any', istate, disp_lambda(istate), EQ(istate)%qx%el,&
         EQ(istate)%qx%vdw, EQ(istate)%q%bond, EQ(istate)%q%angle,&
         EQ(istate)%q%torsion, EQ(istate)%q%improper
     end do
@@ -16924,7 +17039,7 @@ subroutine write_out
 
     write(*,22) 'total', 'restraint'
     do istate = 1, nstates
-      write (*,32) 'Q-SUM', istate, EQ(istate)%lambda,&
+      write (*,32) 'Q-SUM', istate, disp_lambda(istate),&
         EQ(istate)%total, EQ(istate)%restraint
     end do
     do i=1,noffd
@@ -16972,6 +17087,12 @@ subroutine write_out
 46 format(16X, 3A10)
 47 format(A,T17, 2i10, f10.3)
 
+  ! NEQ: report the accumulated work (not present on equilibrium runs)
+  if (.not. equilibrium_simulation) then
+    write(*,'(A,I0,A,E24.16,A,E24.16,E24.16)') 'At step ', istep, &
+      ', work accumulated was ', work_accumulated, &
+      ' and dU and dlambda were ', dU_dlambda, dlambda
+  end if
 end subroutine write_out
 
 !-----------------------------------------------------------------------

@@ -4,7 +4,7 @@ This tutorial walks through relative binding free energy (RBFE) calculation on t
 
 ## What NEQ FEP is
 
-The equilibrium protocol samples ~100 fixed $\lambda$ windows per edge and combines them sequentially with `qfep`. NEQ instead drives $\lambda$ continuously from one end state to the other over a single short simulation (a *switch*) with the `qdyn_neq` binary, accumulating the work done on the system. Running many forward ($\lambda: 1 \to 0$) and reverse ($\lambda: 0 \to 1$) switches yields two work distributions, and the free energy is recovered from the Bennett Acceptance Ratio (BAR) over them. The relative binding free energy is $\Delta\Delta G = \Delta F_{\text{protein}} - \Delta F_{\text{water}}$, exactly as in the equilibrium case.
+The equilibrium protocol samples ~100 fixed $\lambda$ windows per edge and combines them sequentially with `qfep`. NEQ instead drives $\lambda$ continuously from one end state to the other over a single short simulation (a *switch*) with the serial `qdyn` engine in fast-switching mode (selected by the `[lambda_scaling]` input section), accumulating the work done on the system. Running many forward ($\lambda: 1 \to 0$) and reverse ($\lambda: 0 \to 1$) switches yields two work distributions, and the free energy is recovered from the Bennett Acceptance Ratio (BAR) over them. The relative binding free energy is $\Delta\Delta G = \Delta F_{\text{protein}} - \Delta F_{\text{water}}$, exactly as in the equilibrium case.
 
 Each leg is written $\Delta F$, a *Helmholtz* free energy, rather than $\Delta G$ because the work theorems BAR is built on ([Jarzynski](https://doi.org/10.1103/PhysRevLett.78.2690), [Crooks](https://doi.org/10.1103/PhysRevE.60.2721)) are derived at constant volume, where $F = U - TS$ (not the Gibbs $G = F + pV$) is the natural free energy. Q simulates inside a fixed-radius solvent sphere with no pressure coupling, so the volume is effectively constant and $F$ and $G$ differ only by a negligible $p\Delta V$ term; the combined binding estimate is therefore reported as the familiar $\Delta\Delta G$.
 
@@ -12,7 +12,7 @@ The switch advances $\lambda$ on a sigmoidal schedule of the progress fraction $
 
 ## Prerequisites
 
-- A working QligFEP install with the Q binaries built (`make all` in `src/q6` builds `qdyn_neq` alongside the others).
+- A working QligFEP install with the Q binaries built (`make all` in `src/q6`); fast-switching runs as a mode of the serial `qdyn`, so no separate NEQ binary is built.
 - The analysis CLI `qligfep_neq_analyze` (installed with the package).
 
 ## 1. Preparation (reuse the Tyk2 inputs)
@@ -55,6 +55,23 @@ The shared flags (`-FF`, `-r`, `-ts`, `-j`, `-rs`, `-c`) behave exactly as in th
 - `-L 8` (`--neq-steepness`): steepness of the sigmoidal schedule;
 - `--neq-schedule sigmoidal`: switching schedule (`sigmoidal` or `linear`).
 
+### Recommended defaults: the paper's production protocol
+
+The flag values above are also the CLI **defaults** — they are spelled out only for clarity. They reproduce the final $NEQ^{2}$ manuscript protocol, benchmarked across the full ~200-edge JACS FEP set, so `setupFEP --neq` with no overrides already gives the recommended protocol.
+
+| Flag | Default | Why this value |
+|------|---------|----------------|
+| `--neq-steps 50000` | 100 ps @ 2 fs | Switch length (tNEQ). Longer switches lower the irreversible work and increase forward/reverse overlap, which BAR needs. The grid search started at 32 ps, but 100 ps was required to recover equilibrium-level ranking (Kendall $\tau$ = 0.46 vs QligFEP 0.47). |
+| `-L 8` | 8 | Sigmoidal steepness. L=8 balances the work-accumulation gradient between the endpoints (too shallow) and the midpoint (too steep), giving the best forward/reverse overlap. |
+| `--neq-schedule sigmoidal` | sigmoidal | Spends more sampling near the end states, where forces change fastest. |
+| `--neq-eq-steps 1000` | 1000 steps | Decorrelation spacing (tEQ) between successive switches; shorter intervals gave irreproducible correlations. |
+| `--neq-reps 5` | 5 | Iterations (N), set to cost-match equilibrium (see below). |
+| `--replicates 10` | 10 | Independent seeds for the uncertainty (SEM), as in the QligFEP benchmark. |
+
+`--neq-relax-steps 5000` is the one exception — a one-time longer endpoint relaxation before the first switch, an implementation detail not part of the manuscript's parameter set.
+
+**Cost-matching N to equilibrium.** N is chosen so the switching work roughly equals the equilibrium production cost: 5 iterations × 2 switches × 50,000 steps = **500,000 steps**, against ~505,000 for the ~100 equilibrium windows. If you change `--neq-steps`, rescale `--neq-reps` to preserve the match (halving the switch length → roughly double the reps). Cutting compute below the cost-matched point is a deliberate accuracy/cost trade.
+
 This creates `1.water` and `2.protein`, each with one `FEP_<lig1>_<lig2>` folder per edge. Every `inputfiles/` directory now holds the equilibration files (`eq1`-`eq5`), the one-time endpoint-relaxation templates (`relax_0`, `relax_1`), the endpoint-spacing templates (`eq6_0`, `eq6_1`), and the switching templates (`neq_0`, `neq_1`) — instead of the ~100 `md_xxxx_xxxx.inp` window files of the equilibrium run.
 
 The dual-topology distance restraints are applied exactly as in the equilibrium protocol (see [Restraint setting](../README.md#restraint-setting)): 1.5 kcal/mol/Å² during eq1-eq4 and 0.5 kcal/mol/Å² for eq5 and every NEQ step. Confirm the switching schedule made it into the inputs:
@@ -82,6 +99,10 @@ submitFEPjobs
 ```
 
 Each replicate (a SLURM array task) runs `eq1`-`eq5`, performs the one-time endpoint relaxation, then loops the requested forward/reverse switches. The switching work is written to **`neq_1_*.log`** (forward, $\lambda: 1 \to 0$) and **`neq_0_*.log`** (reverse, $\lambda: 0 \to 1$) under each replicate's run directory.
+
+**How the switches map to cores.** Each iteration fires a forward *and* a reverse switch, so `--neq-reps 5` gives `2 × 5 = 10` independent switches per replicate. Because the switches are serial and independent, `setupFEP` sizes the allocation to run them all in **one concurrent wave**, setting `--ntasks-per-node` to `max(2 × neq_reps, cluster default)`. The cluster default (16 on SNELLIUS) is the *billed* core count from [`settings.py`](../../../src/QligFEP/settings/settings.py): flooring there means a cluster that bills a fixed minimum never runs fewer cores than you pay for, and the equilibration (`eq1`-`eq5`, on the parallel `qdynp` engine) uses all of them. The count grows to `2 × neq_reps` only when the protocol needs more cores than the default (e.g. 10 switches where the default is 8), keeping the switches in one wave rather than a slow tail. A single `mpirun` then streams the switches onto the cores with no cross-rank communication — the independence behind NEQ's ~20–40% compute saving.
+
+**Adjusting for your cluster.** If a node cannot grant `2 × neq_reps` cores, lower `--ntasks-per-node` in the generated `run*.sh`; the switches then run in successive waves — correct, just slower. Use a **divisor of `2 × neq_reps`** to keep the waves even; the script prints a warning before launching if your count leaves a partial tail wave with idle billed cores. For a new cluster, set its `NTASKS` (the billed floor) in [`settings.py`](../../../src/QligFEP/settings/settings.py) so `setupFEP` sizes the allocation automatically.
 
 ❗**Tip**❗ As with equilibrium FEP, protein legs are more failure-prone than water legs (residual clashes, a nearly-decoupled ligand at switch start). We recommend first submitting the protein leg.
 

@@ -165,20 +165,47 @@ def test_neq_runfile_parallelizes_switches(tmp_path):
     run.write_MD_neq(str(tmp_path), 10, 12, [(1, 2)])
     run.write_neq_runfile(str(tmp_path), [])
     script = (tmp_path / "runSNELLIUS.sh").read_text()
-    # equilibration uses the MPI engine across all cores; switches use the serial engine
-    assert "qdyn=" in script and "$qdyn " in script  # qdynp (MPI) for equilibration
-    assert "qdyn_neq=" in script and "$qdyn_neq " in script  # qdyn_neq (serial) for switches
-    # switches are packed one-per-core via mpirun binding (Snellius bills the whole node)
-    assert "mpirun" in script
-    assert "--bind-to core" in script
-    assert "#SBATCH --ntasks-per-node=16" in script  # use the billed cores
+    # equilibration uses the parallel engine across all cores; switches use the serial engine
+    assert "qdynp=" in script and "$qdynp " in script  # qdynp (parallel) for equilibration
+    assert "qdyn=" in script and "$qdyn " in script  # qdyn (serial) for switches
+    # switches are packed one-per-core via mpirun binding. We assrt on the rendered launch line
+    assert any(
+        line.lstrip().startswith("time mpirun") and "--map-by core --bind-to core" in line
+        for line in script.replace("$mpi_map", "--map-by core --bind-to core").splitlines()
+    )
+    # 2*neq_reps=6 switches fit inside SNELLIUS's billed 16 cores, so all run in one wave
+    assert "#SBATCH --ntasks-per-node=16" in script
     assert "neq_reps=3" in script
     assert "#SBATCH --array=1-4" in script
     assert "qfep" not in script  # NEQ uses BAR, not the windowed qfep step
 
 
+def test_neq_cores_floor_at_cluster_default_when_switches_fit(tmp_path):
+    """When the billed core count already holds every switch, NTASKS stays at the cluster default
+    (SNELLIUS bills 16) so the 2*neq_reps switches run in one concurrent wave and equilibration
+    uses every billed core."""
+    run = make_run(neq_reps=5)  # 10 switches; SNELLIUS default 16 >= 10
+    run.write_MD_neq(str(tmp_path), 10, 12, [(1, 2)])
+    run.write_neq_runfile(str(tmp_path), [])
+    script = (tmp_path / "runSNELLIUS.sh").read_text()
+    assert "#SBATCH --ntasks-per-node=16" in script  # billed floor, not lowered to neq_reps
+    assert "neq_reps=5" in script
+
+
+def test_neq_cores_grow_to_switch_count_on_small_clusters(tmp_path):
+    """When 2*neq_reps exceeds the cluster default, NTASKS grows to the switch count so the
+    switches still finish in one wave instead of a starved tail (CSB defaults to 8; 5 reps ->
+    10 switches -> 10 cores)."""
+    run = make_run(neq_reps=5, cluster="CSB")  # 10 switches; CSB default 8 < 10
+    run.write_MD_neq(str(tmp_path), 10, 12, [(1, 2)])
+    run.write_neq_runfile(str(tmp_path), [])
+    script = (tmp_path / "runCSB.sh").read_text()
+    assert "#SBATCH --ntasks-per-node=10" in script  # grown from 8 to the switch count
+    assert "neq_reps=5" in script
+
+
 def test_read_final_work_parses_engine_log_format(tmp_path):
-    # Mirrors the qdyn_neq output: work value at split index 6; completion line at the end.
+    # Mirrors the qdyn NEQ-mode output: work value at split index 6; completion line at the end.
     log = tmp_path / "neq_1_0.log"
     log.write_text(
         "Initializing dynamics\n"

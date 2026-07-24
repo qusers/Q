@@ -10,6 +10,27 @@
 #SBATCH --array=1-TOTAL_JOBS
 #SBATCH -o slurm.run%a.%N.%j.out
 
+starttime=$(date +%s)
+starttime_readable=$(date)
+
+# Emitted from an EXIT trap so the footer is written even when set -e aborts the job midway.
+# Keep in sync with run.sh; parsed by QligFEP.IO.read_slurm_diagnostics.
+write_footer() {
+    rc=$?
+    endtime=$(date +%s)
+    runtime=$((endtime - starttime))
+    echo "#    EXPRESS LOG for jobid: $SLURM_JOB_ID"
+    echo "#    Slurm tasks: $SLURM_NTASKS"
+    echo "#    Starttime: $starttime_readable"
+    echo "#    Endtime: $(date)"
+    echo "#    Runtime: $((runtime / 3600))h:$((runtime % 3600 / 60))m:$((runtime % 60))s"
+    echo "#    Random seed: ${seed:-unknown}"
+    echo "#    Replicate Number: ${run_num:-unknown}"
+    echo "#    Working Directory: ${workdir:-unknown}"
+    echo "#    Exit status: $rc"
+}
+trap write_footer EXIT
+
 # Number of forward/reverse switching pairs run per replicate.
 neq_reps=NEQ_REPS
 
@@ -48,12 +69,17 @@ seed=${seeds[$run_num-1]}
 ## Load modules
 MODULES
 
-## define the MPI equilibration engine (qdynp) and serial switching engine (qdyn_neq)
-QDYN
+## define the parallel equilibration engine (qdynp) and serial switching engine (qdyn)
+QDYNP
 QDYN_NEQ
 
-starttime=$(date +%s)
-starttime_readable=$(date)
+# Fail on the first error, so a failed mpirun can't exit 0 and be recorded COMPLETED. Set after
+# `module`, which returns non-zero on some stacks just for unload warnings.
+set -eo pipefail
+
+# Pin one rank per core: above two ranks mpirun maps by socket, which misplaces ranks when SLURM
+# splits the allocated cores unevenly across sockets.
+mpi_map="--map-by core --bind-to core"
 
 rundir=$workdir/$temperature/$run_num
 mkdir -p $rundir
@@ -76,7 +102,7 @@ sed -i "s/FEP_VAR/$fepfile/" *.inp
 
 # 1) Equilibration eq1 -> eq5 with the MPI engine across all cores (fixed lambda)
 for i in 1 2 3 4 5; do
-    time mpirun -np $ncores --bind-to core $qdyn eq$i.inp > eq$i.log
+    time mpirun -np $ncores $mpi_map $qdynp eq$i.inp > eq$i.log
 done
 
 # 2) Endpoint equilibration chain (MPI): one continuous trajectory per endpoint,
@@ -91,16 +117,16 @@ for rep in $(seq 0 $((neq_reps - 1))); do
         if [ "$rep" -eq 0 ]; then eqsrc=relax_${s}.inp; else eqsrc=eq6_${s}.inp; fi
         sed "s|RESTARTFILE|eq6_${s}_prev.re|; s|FINALFILE|eq6_${s}_${rep}.re|" \
             "$eqsrc" > eq6_${s}_run${rep}.inp
-        time mpirun -np $ncores --bind-to core $qdyn eq6_${s}_run${rep}.inp > eq6_${s}_${rep}.log
+        time mpirun -np $ncores $mpi_map $qdynp eq6_${s}_run${rep}.inp > eq6_${s}_${rep}.log
         cp eq6_${s}_${rep}.re eq6_${s}_prev.re
     done
 done
 
-# 3) Lambda switches with the serial engine, one per core. Each switch only needs
-# its own eq6 checkpoint, so they are independent and run concurrently: mpirun
-# launches one rank per switch, --bind-to core pins each to its own core, and the
-# launcher routes each rank to its (input, log) pair. State 1 (1->0) is the forward
-# work logged as neq_1; state 0 (0->1) is the reverse work logged as neq_0.
+# 3) Lambda switches with the serial engine, one per core. Each switch only needs its own eq6
+# checkpoint, so they are independent and run concurrently: mpirun launches one rank per switch,
+# pins each to its own core, and the launcher routes each rank to its (input, log) pair.
+# State 1 (1->0) is the forward work logged as neq_1; state 0 (0->1) is the reverse work
+# logged as neq_0.
 : > switch_list.txt
 for rep in $(seq 0 $((neq_reps - 1))); do
     for s in 0 1; do
@@ -117,31 +143,47 @@ idx=\$(( OMPI_COMM_WORLD_RANK + 1 + \${BATCH_OFFSET:-0} ))
 line=\$(sed -n "\${idx}p" switch_list.txt)
 [ -z "\$line" ] && exit 0
 set -- \$line
-$qdyn_neq "\$1" > "\$2"
+$qdyn "\$1" > "\$2"
 EOF
 chmod +x neq_launch.sh
 
 nsw=$(wc -l < switch_list.txt)
+# Setup sizes ncores to hold every switch in one wave (ncores >= nsw). If the node could not grant
+# that many and --ntasks-per-node was lowered, the switches run in successive waves; a count that
+# does not divide nsw leaves a partial last wave with billed cores idle. Prefer a divisor of nsw.
+if [ "$ncores" -gt 0 ] && [ "$ncores" -lt "$nsw" ] && [ $(( nsw % ncores )) -ne 0 ]; then
+    echo "WARNING: $nsw switches on $ncores cores run in uneven waves (partial last wave, cores idle)."
+    echo "         For a single wave request $nsw cores; otherwise set --ntasks-per-node to a divisor of $nsw."
+fi
 for (( off=0; off<nsw; off+=ncores )); do
     remaining=$(( nsw - off ))
     np=$(( remaining < ncores ? remaining : ncores ))
     export BATCH_OFFSET=$off
-    time mpirun -x BATCH_OFFSET --bind-to core -np $np ./neq_launch.sh
+    # A batch that loses ranks must not abort the others; the count below decides what to do.
+    time mpirun -x BATCH_OFFSET $mpi_map -np $np ./neq_launch.sh || true
 done
 
+# qdyn's serial abort still exits 0, so a completed run is confirmed by "terminated normally" in
+# its log, not by the exit code.
+
+# Equilibration must finish in full -- with no eq6 checkpoint there is nothing to switch from.
+eq_bad=""
+for log in eq*.log; do
+    grep -q "terminated normally" "$log" 2>/dev/null || eq_bad="$eq_bad $log"
+done
+if [ -n "$eq_bad" ]; then
+    echo "ERROR: replicate $run_num (T=$temperature, seed=$seed): equilibration incomplete:$eq_bad"
+    exit 1
+fi
+
+# A lost switch is tolerated -- analyze_neq discards it (analyze_neq._scan_leg). A partial loss is
+# just sampling noise; only a total loss (e.g. mpirun never launched) is fatal.
+nsw_ok=$(grep -l "terminated normally" neq_*.log 2>/dev/null | wc -l || true)
+if [ "$nsw_ok" -eq 0 ]; then
+    echo "ERROR: replicate $run_num (T=$temperature, seed=$seed): no switch produced work."
+    exit 1
+elif [ "$nsw_ok" -lt "$nsw" ]; then
+    echo "WARNING: replicate $run_num: $((nsw - nsw_ok))/$nsw switches lost (tolerated)."
+fi
+
 #CLEANUP
-
-endtime=$(date +%s)
-endtime_readable=$(date)
-runtime=$((endtime - starttime))
-hours=$(($runtime / 3600))
-minutes=$(($runtime % 3600 / 60))
-seconds=$(($runtime % 60))
-
-echo "#    EXPRESS LOG for jobid: $SLURM_JOB_ID"
-echo "#    Starttime: $starttime_readable"
-echo "#    Endtime: $endtime_readable"
-echo "#    Runtime: ${hours}h:${minutes}m:${seconds}s"
-echo "#    Random seed: $seed"
-echo "#    Replicate Number: $run_num"
-echo "#    Working Directory: $workdir"

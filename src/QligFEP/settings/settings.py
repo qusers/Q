@@ -40,8 +40,15 @@ SCHROD_DIR = r"/mnt/c/Program\sFiles/Schrodinger2022-2/"
 EXE = ".exe"
 
 Q_PATHS = {
+    # Windowed FEP run templates use $qdyn as the profile's primary engine (the MPI
+    # qdynp on clusters, the serial qdyn on LOCAL).
     "QDYN": "qdyn=" + str((BIN / "qdynp").absolute()),
-    "QDYN_NEQ": "qdyn_neq=" + str((BIN / "qdyn_neq").absolute()),
+    # Non-equilibrium runs drive both engines by name: $qdynp (parallel) for the
+    # fixed-lambda equilibration and $qdyn (serial) for the lambda switches, which select
+    # NEQ mode from the input's [lambda_scaling] section. The standalone qdyn_neq binary
+    # no longer exists -- the switch is the consolidated serial qdyn.
+    "QDYNP": "qdynp=" + str((BIN / "qdynp").absolute()),
+    "QDYN_NEQ": "qdyn=" + str((BIN / "qdyn").absolute()),
     "QPREP": str(BIN / "qprep"),
     "QFEP": str(BIN / "qfep"),
     "QCALC": str(BIN / "qcalc"),

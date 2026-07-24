@@ -9,6 +9,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from QligFEP.IO import read_slurm_diagnostics
+
 
 class TestRunQprep:
     """Tests for the run_qprep() function."""
@@ -242,5 +244,100 @@ class TestParseQprepTotalCharge:
         fake_out.write_text("total charge of not excluded:   0.00\n")
         charge = parse_qprep_total_charge(fake_out)
         assert charge == 0
+
+
+def _slurm(path, seed, replicate, runtime="1h:2m:3s", failure=None, exit_status="0"):
+    """Write a run.sh-style slurm*.out footer (the block read_slurm_diagnostics parses).
+
+    ``exit_status=None`` omits the line, reproducing logs written before the run scripts
+    reported their own exit code.
+    """
+    lines = [failure] if failure else []
+    lines += [
+        f"#    Runtime: {runtime}",
+        f"#    Random seed: {seed}",
+        f"#    Replicate Number: {replicate}",
+    ]
+    if exit_status is not None:
+        lines.append(f"#    Exit status: {exit_status}")
+    path.write_text("\n".join(lines) + "\n")
+
+
+class TestReadSlurmDiagnostics:
+    """Tests for the shared slurm*.out footer parser used by both FEP analyzers."""
+
+    def test_reads_runtime_seed_replicate_status(self, tmp_path):
+        f = tmp_path / "slurm.run1.node.12345.out"
+        _slurm(f, seed=42, replicate=1)
+        info = read_slurm_diagnostics(f)
+        assert (info.runtime, info.seed, info.replicate, info.status) == ("1h:2m:3s", "42", "1", "SUCCESS")
+
+    def test_replicate_comes_from_footer_not_filename(self, tmp_path):
+        # Multi-temperature array job: the slurm filename %a (5) differs from the true replicate
+        # (2). The footer's "Replicate Number" must win, so the run is not mislabeled -- the bug
+        # the old filename-regex approach had.
+        f = tmp_path / "slurm.run5.node.12345.out"
+        _slurm(f, seed=99, replicate=2)
+        info = read_slurm_diagnostics(f)
+        assert info.replicate == "2"
+        assert info.seed == "99"
+
+    def test_seed_from_footer_not_parameters_line(self, tmp_path):
+        # A Parameters line carrying a trailing field (as run_neq.sh writes) must not feed the
+        # seed; the "#    Random seed:" footer is the single source of truth.
+        f = tmp_path / "slurm.run1.node.1.out"
+        f.write_text(
+            "Parameters T=298, replicate=1, seed=42, neq_reps=5\n"
+            "#    Runtime: 0h:5m:0s\n"
+            "#    Random seed: 777\n"
+            "#    Replicate Number: 1\n"
+        )
+        info = read_slurm_diagnostics(f)
+        assert info.seed == "777"
+        assert info.runtime == "0h:5m:0s"
+        assert info.status == "SUCCESS"
+
+    @pytest.mark.parametrize(
+        "marker,expected",
+        [
+            ("DUE TO TIME LIMIT", "TIMEOUT"),
+            ("slurmstepd: error: job CANCELLED AT ...", "CANCELLED"),
+            ("Out Of Memory", "OOM"),
+            ("qdyn terminated abnormally", "CRASHED"),
+            ("There are not enough slots available in the system", "MPI_LAUNCH_FAILED"),
+            ("mpirun was unable to launch the specified application", "MPI_LAUNCH_FAILED"),
+            ("A request was made to bind to that would result in binding more", "MPI_LAUNCH_FAILED"),
+        ],
+    )
+    def test_failure_markers_map_to_status(self, tmp_path, marker, expected):
+        f = tmp_path / "slurm.run1.node.1.out"
+        _slurm(f, seed=1, replicate=1, failure=marker)
+        assert read_slurm_diagnostics(f).status == expected
+
+    def test_nonzero_exit_status_fails_a_run_with_no_known_marker(self, tmp_path):
+        # An mpirun launch failure leaves a short but well-formed log: the footer parses, and
+        # nothing in the body matches a marker. The reported exit code is what catches it.
+        f = tmp_path / "slurm.run1.node.1.out"
+        _slurm(f, seed=1, replicate=1, exit_status="1")
+        assert read_slurm_diagnostics(f).status == "FAILED"
+
+    def test_known_marker_outranks_the_exit_status(self, tmp_path):
+        # Both signals present: keep the specific cause rather than flattening it to FAILED.
+        f = tmp_path / "slurm.run1.node.1.out"
+        _slurm(f, seed=1, replicate=1, failure="DUE TO TIME LIMIT", exit_status="1")
+        assert read_slurm_diagnostics(f).status == "TIMEOUT"
+
+    def test_absent_exit_status_still_reads_as_success(self, tmp_path):
+        # Logs predating the Exit status footer line must not be reclassified as failures.
+        f = tmp_path / "slurm.run1.node.1.out"
+        _slurm(f, seed=1, replicate=1, exit_status=None)
+        assert read_slurm_diagnostics(f).status == "SUCCESS"
+
+    def test_missing_footer_defaults_gracefully(self, tmp_path):
+        # A log killed before writing its footer yields empty/None fields and SUCCESS, so callers
+        # degrade gracefully instead of crashing.
+        f = tmp_path / "slurm.run1.node.1.out"
+        f.write_text("Running job ...\nsome mid-run output\n")
+        assert read_slurm_diagnostics(f) == ("", None, None, "SUCCESS")
 
 
