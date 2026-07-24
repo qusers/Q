@@ -41,10 +41,9 @@ from .logger import logger, setup_logger
 KB_KCAL = 0.0019872041  # kcal/(mol*K)
 KB_KJ = 0.0083144621  # kJ/(mol*K)
 
-# The switching work written by qdyn (NEQ mode) is accumulated from Q energy components in kcal/mol.
-# BAR needs beta*W to be dimensionless, so with work in kcal/mol the beta factor is
-# 1/(k_B*T) (~1.68 mol/kcal at 300 K); the "kcal" units apply this and are the default. The
-# "kT" units instead use beta = 1, treating the work as already in units of k_B*T. The BAR
+# The switching work written by qdyn (NEQ mode) is accumulated from Q energy components in
+# kcal/mol. BAR needs beta*W to be dimensionless, so the physically correct factor is
+# beta = 1/(k_B*T) (~1.68 mol/kcal at 300 K) -- the "kcal" default.
 DEFAULT_WORK_UNITS = "kcal"
 
 
@@ -528,8 +527,7 @@ def main(args: argparse.Namespace) -> pd.DataFrame:
             raise FileNotFoundError(f"No shared FEP_* edges found in {args.protein_dir} and {args.water_dir}")
 
     rows = [
-        analyze_edge(name, pdir, wdir, beta, args.work_units, args.temperature)
-        for name, pdir, wdir in edges
+        analyze_edge(name, pdir, wdir, beta, args.work_units, args.temperature) for name, pdir, wdir in edges
     ]
     df = pd.DataFrame(rows)
 

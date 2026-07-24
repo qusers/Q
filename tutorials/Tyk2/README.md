@@ -416,12 +416,8 @@ Where the options are:
 - `-o neq_results.csv`: output CSV with `ddG_kcal`, the per-leg `dF`, the work-distribution
   overlap, and the number of forward/reverse switches per edge.
 
-> **Note on work units.** The work written by `qdyn` (fast-switching mode) is in kcal/mol, so by default the
-> analyzer uses the physically consistent BAR factor `beta = 1/(k_B*T)` (`--work-units kcal`).
-> For compatibility with the original implementation, which treats the switching work as if it
-> were already in units of k_BT (`beta = 1`), pass `--work-units kT`. This affects the absolute
-> free energies and should be confirmed against the original implementation before reporting
-> numbers — see the note in `src/QligFEP/analyze_neq.py`.
+> **Note on work units.** The switching work is in kcal/mol, so the analyzer applies the
+> physically consistent BAR factor `beta = 1/(k_B*T)` by default (`--work-units kcal`).
 
 <!-- 
 # Ligand parameter generation
