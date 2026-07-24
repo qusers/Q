@@ -1,6 +1,7 @@
 #include "handler.h"
 
 #include <chrono>
+#include <unordered_set>
 
 #include "native_out.h"
 #include "std_output.h"
@@ -161,7 +162,33 @@ void Handler::print_outputs(int iteration) {
 void Handler::create_outputs() {
     outputs_.clear();
     outputs_.push_back(std::make_unique<StdOutput>());
-    outputs_.push_back(std::make_unique<NativeOutput>(ctx.native_outputs.front()));  // todo:
+
+    std::unordered_set<std::string> output_files;
+    for (int replica = 0; replica < ctx.n_replicates(); replica++) {
+        NativeOutputConfig config = ctx.native_outputs.at(replica);
+
+        auto already_used = [&](const std::string& path) {
+            return !path.empty() && output_files.count(path) > 0;
+        };
+        const bool collision = already_used(config.final_file) || already_used(config.trajectory_file) || already_used(config.energy_file);
+
+        if (collision) {
+            std::fprintf(stderr, ">>> WARNING: native output for replica %d is skipped because an output filename is already used by an earlier replica.\n", replica);
+            continue;
+        }
+
+        auto remember = [&](const std::string& path) {
+            if (!path.empty()) {
+                output_files.insert(path);
+            }
+        };
+
+        remember(config.final_file);
+        remember(config.trajectory_file);
+        remember(config.energy_file);
+
+        outputs_.push_back(std::make_unique<NativeOutput>(std::move(config), replica));
+    }
 }
 
 void Handler::init_outputs() {

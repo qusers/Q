@@ -106,10 +106,6 @@ void write_theta_corr_record(std::ofstream& out, const std::vector<shell_t>& wsh
 }
 }  // namespace
 
-NativeOutput::NativeOutput(NativeOutputConfig config) : config_(std::move(config)) {
-    validate_config();
-}
-
 void NativeOutput::validate_config() const {
     if (config_.final_file.empty()) {
         throw std::runtime_error("Native output requires a final restart file.");
@@ -267,7 +263,7 @@ void NativeOutput::write_trajectory_frame(Context& ctx) {
         ctx.coords->download();
     }
 
-    auto* coords = ctx.coords->cpu_data_p;
+    auto* coords = ctx.coords->cpu_data_p + replica_ * ctx.n_atoms;
     for (size_t i = 0; i < trajectory_atoms_indices_.size(); i++) axis[i] = static_cast<float>(coords[trajectory_atoms_indices_[i]].x);
     write_record(trajectory_stream_, axis.data(), static_cast<int32_t>(axis.size() * sizeof(float)));
     for (size_t i = 0; i < trajectory_atoms_indices_.size(); i++) axis[i] = static_cast<float>(coords[trajectory_atoms_indices_[i]].y);
@@ -280,7 +276,7 @@ void NativeOutput::write_energy_frame(Context& ctx) {
     if (ctx.md.energy <= 0 || !energy_stream_) return;
 
     auto* lambdas = ctx.lambdas ? ctx.lambdas->cpu_data_p : nullptr;
-    auto& energy = ctx.energy.data();
+    auto& energy = ctx.energy.data(replica_);
     for (int state = 0; state < ctx.n_lambdas(); state++) {
         std::vector<char> record;
         append_int32(record, state + 1);
@@ -308,20 +304,21 @@ void NativeOutput::write_restart_file(Context& ctx) const {
         ctx.coords->download();
         ctx.velocities->download();
     }
+    const int atom_offset = replica_ * ctx.n_atoms;
 
-    write_restart_record(out, ctx.coords->cpu_data_p, nullptr, ctx.n_atoms, false);
-    write_restart_record(out, nullptr, ctx.velocities->cpu_data_p, ctx.n_atoms, true);
+    write_restart_record(out, ctx.coords->cpu_data_p + atom_offset, nullptr, ctx.n_atoms, false);
+    write_restart_record(out, nullptr, ctx.velocities->cpu_data_p + atom_offset, ctx.n_atoms, true);
 
-    const auto& wshells = ctx.replica_wshells.front(); // todo need to get the replicate index then get the correct wshells.
-    if (ctx.md.polarisation && wshells.size() > 0) {
-        write_theta_corr_record(out, wshells, wshells.size());
+    if (ctx.md.polarisation && replica_ < ctx.replica_wshells.size()) {
+        const auto& wshells = ctx.replica_wshells[replica_];
+        if (wshells.size() > 0) {
+            write_theta_corr_record(out, wshells, wshells.size());
+        }
     }
 }
-
 
 OutputRequirements NativeOutput::requirements(const Context& ctx, int iteration) const {
     return {
         .energy = iteration > 0 && ctx.md.energy > 0 && iteration % ctx.md.energy == 0,
-        .restart = iteration % 1000 == 0
-    };
+        .restart = iteration % 1000 == 0};
 }
