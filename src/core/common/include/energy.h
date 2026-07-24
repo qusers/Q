@@ -61,22 +61,30 @@ struct EnergyData {
 };
 
 class EnergyBuffer {
-    std::unique_ptr<HostDeviceBuffer<energy_accum_t>> accum_;  // length = ENERGY_FIXED_COUNT + EQ_STRIDE * n_lambdas
-    EnergyData data_;
-
-    int n_lambdas_;
+    // Flat storage:
+    // [replica 0 slots][replica 1 slots]...[replica N-1 slots]
+    std::unique_ptr<HostDeviceBuffer<energy_accum_t>> accum_;
+    std::vector<EnergyData> data_;
+    int n_replicates_ = 1;
+    int n_lambdas_ = 0;
 
    public:
-    void init(int n_lambdas);
+    void init(int n_lambdas, int n_replicates = 1);
     HD static int eq_index(int n_fixed, int state, EQSlot s)  // slot for (state, field)
     { return n_fixed + state * EQ_STRIDE + s; }
     energy_accum_t* device() { return accum_->gpu_data_p; }  // hand to kernels
-    energy_accum_t* host() { return accum_->cpu_data_p; }
-    int size() const { return ENERGY_FIXED_COUNT + EQ_STRIDE * n_lambdas_; }
+    energy_accum_t* host(int replica = 0) { return accum_->cpu_data_p + replica * replica_stride(); }
+
+    // Number of energy slots belonging to one replica.
+    int replica_stride() const {
+        return ENERGY_FIXED_COUNT + EQ_STRIDE * n_lambdas_;
+    }
+
+    int size() const { return replica_stride() * n_replicates_; }
 
     void reset();
     void download();
-    EnergyData& data() { return data_; }
-    void unpack();
-    void combine(const double* lambdas);
+    EnergyData& data(int replica = 0) { return data_[replica]; }
+    void unpack(int replica = 0);
+    void combine(const double* lambdas, int replica = 0);
 };

@@ -8,7 +8,7 @@ void StdOutput::output_trajectory(Context& ctx, int iteration) {
 void StdOutput::output_energy(Context& ctx, int iteration) {
     if (iteration > 0 && (ctx.md.output <= 0 || iteration % ctx.md.output != 0)) return;
     auto* lambdas = ctx.lambdas ? ctx.lambdas->cpu_data_p : nullptr;
-    auto& energy = ctx.energy.data();
+    auto& energy = ctx.energy.data(replica_);
 
     std::printf("================================================\n");
     if (iteration > 0) {
@@ -21,7 +21,7 @@ void StdOutput::output_energy(Context& ctx, int iteration) {
     std::printf("================================================\n");
 
     std::printf("[temperature]\n");
-    std::printf("Temp\t%f\n", ctx.Temp);
+    std::printf("Temp\t%f\n", ctx.temperature(replica_));
     std::printf("\n");
 
     std::printf("[bonded]\n");

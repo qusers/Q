@@ -222,7 +222,7 @@ __device__ void compute_restrwall(int ir, const restrwall_t* recs, const bool* h
 }
 
 __global__ void restraint_kernel(
-    int n_posrestr, int n_restrseq, int n_restrpos, int n_restrdis, int n_restrang, int n_restrwall,
+    int n_posrestr, int n_restrseq, int n_restrpos, int n_restrdis, int n_restrang, int n_restrwall, int n_atoms, int energy_stride,
     const int* pr_ids, const double* pr_k, const int* pr_esa, const int* pr_esb,
     const restrseq_t* seq_recs, const restrpos_t* pos_recs, const restrdis_t* dis_recs,
     const restrang_t* ang_recs, const restrwall_t* wall_recs,
@@ -230,6 +230,12 @@ __global__ void restraint_kernel(
     const double* lambdas, int n_lambdas, coord_t solvent_center,
     const coord_t* coords, const coord_t* coords_init,
     dvel_t* dvel, energy_accum_t* e) {
+    const int replica = blockIdx.y;
+    const int atom_offset = replica * n_atoms;
+    coords += atom_offset;
+    dvel += atom_offset;
+    e += replica * energy_stride;
+
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid < n_posrestr) {
         compute_posrestr(tid, pr_ids, pr_k, pr_esa, pr_esb, coords, coords_init, dvel, e);
@@ -280,8 +286,8 @@ void CudaRestraintForce::calc(Context& ctx) {
     const int block = 256;
     const int grid = (total + block - 1) / block;
 
-    restraint_kernel<<<grid, block>>>(
-        n_posrestr, n_restrseq, n_restrpos, n_restrdis, n_restrang, n_restrwall,
+    restraint_kernel<<<dim3(grid, ctx.n_replicates()), block>>>(
+        n_posrestr, n_restrseq, n_restrpos, n_restrdis, n_restrang, n_restrwall, ctx.n_atoms, ctx.energy.replica_stride(),
         data_.posrestr.ids->gpu_data_p, data_.posrestr.k->gpu_data_p,
         data_.posrestr.eslot_a->gpu_data_p, data_.posrestr.eslot_b->gpu_data_p,
         n_restrseq ? data_.restrseq.recs->gpu_data_p : nullptr,

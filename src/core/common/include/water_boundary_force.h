@@ -26,7 +26,7 @@ class WaterBoundaryForce {
 
     // Captures the temperature collaborator (radix reads R_TFREE for `shift`)
     // and runs backend setup (polx buffer allocation).
-    void init(Context& ctx, const Temperature& temperature, const ParseResult& parsed);
+    void init(Context& ctx, const Temperature& temperature, const std::vector<ParseResult>& replica_results);
 
     // One evaluation: radix always, polx when md.polarisation is on.
     // `iteration` drives polx's periodic theta_corr update (itdis_update).
@@ -45,5 +45,5 @@ class WaterBoundaryForce {
 
    private:
     double build_water_sphere(Context& ctx);
-    void build_wshells(Context& ctx, double crgQtot, const ParseResult& parsed);
+    void build_wshells(Context& ctx, double crgQtot, const std::vector<ParseResult>& replica_results);
 };

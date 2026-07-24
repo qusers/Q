@@ -1,5 +1,3 @@
-#include "cuda_serial_shake.cuh"
-
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -8,6 +6,7 @@
 
 #include "constants.h"
 #include "cuda_runtime_utility.h"
+#include "cuda_serial_shake.cuh"
 
 namespace {
 
@@ -15,6 +14,8 @@ constexpr int kSerialShakeThreads = 128;
 
 __global__ void serial_shake_by_molecule_kernel(
     int n_molecules,
+    int n_atoms,
+    int n_constraints,
     const int* molecule_constraint_offsets,
     const ShakeBond* shake_bonds,
     coord_t* coords,
@@ -24,6 +25,13 @@ __global__ void serial_shake_by_molecule_kernel(
     int* failed) {
     const int mol = blockIdx.x * blockDim.x + threadIdx.x;
     if (mol >= n_molecules) return;
+    const int replica = blockIdx.y;
+    const int atom_offset = replica * n_atoms;
+    const int ready_offset = replica * n_constraints;
+    coords += atom_offset;
+    xcoords += atom_offset;
+    ready += ready_offset;
+    failed += replica;
 
     const int first = molecule_constraint_offsets[mol];
     const int end = molecule_constraint_offsets[mol + 1];
@@ -81,7 +89,8 @@ __global__ void serial_shake_by_molecule_kernel(
             const double dx = xcoords[ai].x - xcoords[aj].x;
             const double dy = xcoords[ai].y - xcoords[aj].y;
             const double dz = xcoords[ai].z - xcoords[aj].z;
-            printf(">>> Shake failed, i = %d, j = %d, d = %f, d0 = %f\n",
+            printf(">>> Shake failed, replica = %d, i = %d, j = %d, d = %f, d0 = %f\n",
+                   replica,
                    ai,
                    aj,
                    sqrt(dx * dx + dy * dy + dz * dz),
@@ -94,9 +103,11 @@ __global__ void serial_shake_by_molecule_kernel(
 
 void CudaSerialConstraintSolver::init(
     const std::vector<int>& molecule_constraint_counts,
-    const std::vector<ShakeBond>& shake_bonds) {
+    const std::vector<ShakeBond>& shake_bonds, int n_atoms, int max_replicates) {
     n_molecules_ = static_cast<int>(molecule_constraint_counts.size());
     n_constraints_ = static_cast<int>(shake_bonds.size());
+    n_atoms_ = n_atoms;
+    max_replicates_ = max_replicates;
 
     std::vector<int> offsets(n_molecules_ + 1, 0);
     for (int mol = 0; mol < n_molecules_; mol++) {
@@ -108,22 +119,22 @@ void CudaSerialConstraintSolver::init(
 
     molecule_constraint_offsets_ = HostDeviceBuffer<int>::from_vector(offsets, true);
     shake_bonds_ = HostDeviceBuffer<ShakeBond>::from_vector(shake_bonds, true);
-    ready_ = std::make_unique<HostDeviceBuffer<std::uint8_t>>(n_constraints_, false, true);
-    failed_ = std::make_unique<HostDeviceBuffer<int>>(1, true, true);
+    ready_ = std::make_unique<HostDeviceBuffer<std::uint8_t>>(n_constraints_ * max_replicates_, false, true);
+    failed_ = std::make_unique<HostDeviceBuffer<int>>(max_replicates_, true, true);
 }
 
 void CudaSerialConstraintSolver::apply(
     coord_t* d_coords,
     const coord_t* d_xcoords,
-    const double* d_winv) {
+    const double* d_winv, int n_replicates) {
     if (!enabled()) return;
 
     ready_->zero();
     failed_->zero();
 
     const int blocks = (n_molecules_ + kSerialShakeThreads - 1) / kSerialShakeThreads;
-    serial_shake_by_molecule_kernel<<<blocks, kSerialShakeThreads>>>(
-        n_molecules_,
+    serial_shake_by_molecule_kernel<<<dim3(blocks, n_replicates), kSerialShakeThreads>>>(
+        n_molecules_, n_atoms_, n_constraints_,
         molecule_constraint_offsets_->gpu_data_p,
         shake_bonds_->gpu_data_p,
         d_coords,
@@ -136,55 +147,9 @@ void CudaSerialConstraintSolver::apply(
     // This synchronizes the SHAKE kernel, but transfers only one integer.  It
     // retains CpuShake's fail-fast behavior without moving coordinate arrays.
     failed_->download();
-    if (failed_->cpu_data_p[0]) std::exit(EXIT_FAILURE);
-}
-
-void CudaSerialShake::init_backend(Context& ctx) {
-    const int* counts = data_.mol_n_shakes->cpu_data_p;
-    std::vector<int> molecule_constraint_counts(counts, counts + ctx.n_molecules());
-    const ShakeBond* bonds = data_.shake_bonds->cpu_data_p;
-    std::vector<ShakeBond> shake_bonds(bonds, bonds + data_.n_constraints);
-    solver_.init(molecule_constraint_counts, shake_bonds);
-}
-
-void CudaSerialShake::apply(Context& ctx, HostDeviceBuffer<coord_t>& xcoords) {
-    apply_to(ctx, ctx.coords->gpu_data_p, xcoords.gpu_data_p);
-}
-
-void CudaSerialShake::apply_to(Context& ctx, coord_t* d_coords, coord_t* d_xcoords) {
-    solver_.apply(d_coords, d_xcoords, ctx.winv->gpu_data_p);
-}
-
-void CudaSerialShake::initial_shake(Context& ctx) {
-    HostDeviceBuffer<coord_t> xcoords(ctx.n_atoms, true, true);
-    coord_t* d_coords = ctx.coords->gpu_data_p;
-    coord_t* d_xcoords = xcoords.gpu_data_p;
-
-    check_cuda(cudaMemcpy(
-        d_xcoords,
-        d_coords,
-        ctx.n_atoms * sizeof(coord_t),
-        cudaMemcpyDeviceToDevice));
-    apply_to(ctx, d_coords, d_xcoords);
-
-    ctx.coords->download();
-    coord_t* coords = ctx.coords->cpu_data_p;
-    vel_t* velocities = ctx.velocities->cpu_data_p;
-    coord_t* host_xcoords = xcoords.cpu_data_p;
-    for (int i = 0; i < ctx.n_atoms; i++) {
-        host_xcoords[i].x = coords[i].x - ctx.dt * velocities[i].x;
-        host_xcoords[i].y = coords[i].y - ctx.dt * velocities[i].y;
-        host_xcoords[i].z = coords[i].z - ctx.dt * velocities[i].z;
+    for (int replica = 0; replica < n_replicates; replica++) {
+        if (failed_->cpu_data_p[replica]) {
+            std::exit(EXIT_FAILURE);
+        }
     }
-
-    xcoords.upload();
-    apply_to(ctx, d_xcoords, d_coords);
-    xcoords.download();
-
-    for (int i = 0; i < ctx.n_atoms; i++) {
-        velocities[i].x = (coords[i].x - host_xcoords[i].x) / ctx.dt;
-        velocities[i].y = (coords[i].y - host_xcoords[i].y) / ctx.dt;
-        velocities[i].z = (coords[i].z - host_xcoords[i].z) / ctx.dt;
-    }
-    ctx.velocities->upload();
 }

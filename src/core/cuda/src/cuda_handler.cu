@@ -5,7 +5,6 @@
 #include "cuda_integrator.cuh"
 #include "cuda_nonbonded_force.cuh"
 #include "cuda_restraint_force.cuh"
-#include "cuda_serial_shake.cuh"
 #include "cuda_shake.cuh"
 #include "cuda_shake_v2.cuh"
 #include "cuda_temperature.cuh"
@@ -14,7 +13,6 @@
 std::unique_ptr<Shake> CudaHandler::create_shake_backend() {
     // return std::make_unique<CudaShakeV2>();
     return std::make_unique<CudaShake>(true);
-    // return std::make_unique<CudaSerialShake>();
 }
 
 std::unique_ptr<NonbondedForce> CudaHandler::create_nonbonded_force_backend() {
