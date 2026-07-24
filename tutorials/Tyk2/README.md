@@ -326,8 +326,8 @@ This is yet to be incorporated in this repo, work in progress 🚧.
 The steps above describe the *equilibrium* FEP protocol, where ~100 fixed-lambda windows
 are sampled and combined with `qfep`. QligFEP can also set up *non-equilibrium* (NEQ) FEP.
 Instead of fixed windows, NEQ drives lambda from one end state to the other over the course
-of a single short simulation (a "switch") with the `qdyn_neq` engine, accumulating the
-switching work. Running many forward (lambda 1→0) and reverse (lambda 0→1) switches yields
+of a single short simulation (a "switch") with the serial `qdyn` engine in fast-switching
+mode (selected by the `[lambda_scaling]` input section), accumulating the switching work. Running many forward (lambda 1→0) and reverse (lambda 0→1) switches yields
 two work distributions, and the free energy is obtained from the Bennett Acceptance Ratio
 (BAR) over them. The relative binding free energy is `ddG = dF_protein - dF_water`.
 
@@ -338,8 +338,8 @@ step, then continue here.
 
 ## Prerequisites
 
-The non-equilibrium engine `qdyn_neq` is built together with the other binaries by
-`make all` (run in `src/q6`), so no extra build step is needed beyond the
+Fast-switching runs as a mode of the serial `qdyn` engine, which is built together with the
+other binaries by `make all` (run in `src/q6`), so no extra build step is needed beyond the
 [Prerequisites](#prerequisites) above.
 
 ## Setup NEQ FEP
@@ -416,7 +416,7 @@ Where the options are:
 - `-o neq_results.csv`: output CSV with `ddG_kcal`, the per-leg `dF`, the work-distribution
   overlap, and the number of forward/reverse switches per edge.
 
-> **Note on work units.** The work written by `qdyn_neq` is in kcal/mol, so by default the
+> **Note on work units.** The work written by `qdyn` (fast-switching mode) is in kcal/mol, so by default the
 > analyzer uses the physically consistent BAR factor `beta = 1/(k_B*T)` (`--work-units kcal`).
 > For compatibility with the original implementation, which treats the switching work as if it
 > were already in units of k_BT (`beta = 1`), pass `--work-units kT`. This affects the absolute

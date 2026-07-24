@@ -158,7 +158,7 @@ We are working on the documentation and tutorials for QligFEP. In the meantime, 
 
 Alongside the standard windowed (equilibrium) protocol, QligFEP supports a **non-equilibrium** alchemical workflow, referred to as **NEQ²**. Rather than sampling many fixed-λ windows, NEQ² drives λ continuously from one end state to the other over many short, independent switching trajectories, and recovers ΔΔG from the Bennett Acceptance Ratio (BAR) over the resulting forward and reverse work distributions. Because the switching trajectories are independent, they parallelize trivially across a cluster.
 
-Set up a non-equilibrium calculation by passing `--neq` to `setupFEP`, and analyze the accumulated switching work with the `qligfep_neq_analyze` CLI. The non-equilibrium engine (`qdyn_neq`) is built together with the other Q binaries by `make all` in `src/q6`. See the [Tyk2 NEQ² tutorial](/tutorials/Tyk2/neq2/README.md) for an end-to-end walkthrough.
+Set up a non-equilibrium calculation by passing `--neq` to `setupFEP`, and analyze the accumulated switching work with the `qligfep_neq_analyze` CLI. Non-equilibrium switching runs as a mode of the serial `qdyn` engine (selected by a `[lambda_scaling]` section in the input), which is built together with the other Q binaries by `make all` in `src/q6`. See the [Tyk2 NEQ² tutorial](/tutorials/Tyk2/neq2/README.md) for an end-to-end walkthrough.
 
 # 📊 Benchmarking
 

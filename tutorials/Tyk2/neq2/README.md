@@ -4,7 +4,7 @@ This tutorial walks through relative binding free energy (RBFE) calculation on t
 
 ## What NEQ FEP is
 
-The equilibrium protocol samples ~100 fixed $\lambda$ windows per edge and combines them sequentially with `qfep`. NEQ instead drives $\lambda$ continuously from one end state to the other over a single short simulation (a *switch*) with the `qdyn_neq` binary, accumulating the work done on the system. Running many forward ($\lambda: 1 \to 0$) and reverse ($\lambda: 0 \to 1$) switches yields two work distributions, and the free energy is recovered from the Bennett Acceptance Ratio (BAR) over them. The relative binding free energy is $\Delta\Delta G = \Delta F_{\text{protein}} - \Delta F_{\text{water}}$, exactly as in the equilibrium case.
+The equilibrium protocol samples ~100 fixed $\lambda$ windows per edge and combines them sequentially with `qfep`. NEQ instead drives $\lambda$ continuously from one end state to the other over a single short simulation (a *switch*) with the serial `qdyn` engine in fast-switching mode (selected by the `[lambda_scaling]` input section), accumulating the work done on the system. Running many forward ($\lambda: 1 \to 0$) and reverse ($\lambda: 0 \to 1$) switches yields two work distributions, and the free energy is recovered from the Bennett Acceptance Ratio (BAR) over them. The relative binding free energy is $\Delta\Delta G = \Delta F_{\text{protein}} - \Delta F_{\text{water}}$, exactly as in the equilibrium case.
 
 Each leg is written $\Delta F$, a *Helmholtz* free energy, rather than $\Delta G$ because the work theorems BAR is built on ([Jarzynski](https://doi.org/10.1103/PhysRevLett.78.2690), [Crooks](https://doi.org/10.1103/PhysRevE.60.2721)) are derived at constant volume, where $F = U - TS$ (not the Gibbs $G = F + pV$) is the natural free energy. Q simulates inside a fixed-radius solvent sphere with no pressure coupling, so the volume is effectively constant and $F$ and $G$ differ only by a negligible $p\Delta V$ term; the combined binding estimate is therefore reported as the familiar $\Delta\Delta G$.
 
@@ -12,7 +12,7 @@ The switch advances $\lambda$ on a sigmoidal schedule of the progress fraction $
 
 ## Prerequisites
 
-- A working QligFEP install with the Q binaries built (`make all` in `src/q6` builds `qdyn_neq` alongside the others).
+- A working QligFEP install with the Q binaries built (`make all` in `src/q6`); fast-switching runs as a mode of the serial `qdyn`, so no separate NEQ binary is built.
 - The analysis CLI `qligfep_neq_analyze` (installed with the package).
 
 ## 1. Preparation (reuse the Tyk2 inputs)
