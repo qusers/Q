@@ -1404,15 +1404,30 @@ class QligFEP:
 
     def write_neq_runfile(self, writedir, file_list):
         """Write the SLURM run script for a non-equilibrium FEP. Each array task runs
-        eq1-5, then loops `neq_reps` forward/reverse lambda switches with the serial qdyn
-        engine (NEQ mode selected by the [lambda_scaling] section in neq_*.inp).
+        eq1-5, then loops `neq_reps` iterations of a forward/reverse lambda switch pair with the
+        serial qdyn engine (NEQ mode selected by the [lambda_scaling] section in neq_*.inp).
+
+        Each iteration produces a forward and a reverse switch, so `neq_reps` iterations give
+        ``2*neq_reps`` independent switches. They run concurrently, so the allocation is sized to
+        hold them all in a single wave: ``max(2*neq_reps, cluster_default)``. Flooring at the
+        cluster default keeps at least the billed core count (some clusters bill a fixed minimum,
+        and the equilibration runs the parallel qdynp engine across all of them); growing to the
+        switch count when the protocol needs more avoids a starved tail wave that would double the
+        switch-phase wall time.
         """
+        if self.neq_reps < 1:
+            raise ValueError(f"neq_reps must be >= 1 to size the switch allocation, got {self.neq_reps}")
+
         src = CONFIGS["INPUT_DIR"] + "/run_neq.sh"
         tgt = writedir + "/run" + self.cluster + ".sh"
 
         replacements = dict(CLUSTER_DICT[self.cluster])
         replacements["FEPS"] = "FEP1.fep"
         replacements["NEQ_REPS"] = str(self.neq_reps)
+        n_switches = 2 * self.neq_reps
+        ncores = max(n_switches, int(replacements["NTASKS"]))
+        replacements["NTASKS"] = str(ncores)
+        logger.info(f"NEQ run: {n_switches} switches per replicate on {ncores} cores (one concurrent wave).")
         with open(src) as infile, open(tgt, "w") as outfile:
             for line in infile:
                 if line.strip() == "#SBATCH --array=1-TOTAL_JOBS":

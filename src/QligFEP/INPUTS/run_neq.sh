@@ -148,6 +148,13 @@ EOF
 chmod +x neq_launch.sh
 
 nsw=$(wc -l < switch_list.txt)
+# Setup sizes ncores to hold every switch in one wave (ncores >= nsw). If the node could not grant
+# that many and --ntasks-per-node was lowered, the switches run in successive waves; a count that
+# does not divide nsw leaves a partial last wave with billed cores idle. Prefer a divisor of nsw.
+if [ "$ncores" -gt 0 ] && [ "$ncores" -lt "$nsw" ] && [ $(( nsw % ncores )) -ne 0 ]; then
+    echo "WARNING: $nsw switches on $ncores cores run in uneven waves (partial last wave, cores idle)."
+    echo "         For a single wave request $nsw cores; otherwise set --ntasks-per-node to a divisor of $nsw."
+fi
 for (( off=0; off<nsw; off+=ncores )); do
     remaining=$(( nsw - off ))
     np=$(( remaining < ncores ? remaining : ncores ))
