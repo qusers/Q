@@ -16,11 +16,24 @@ needed before a mutation has a result.
 
 The workflow is:
 
-1. Prepare the protein
-2. Build the mutant side chains
+1. Build the mutant side chains
+2. Prepare the protein
 3. Generate the FEP input files
 4. Submit
 5. Analyse
+
+`setup_resFEP` does steps 1–3 for a whole list of mutations:
+
+```bash
+setup_resFEP -i 2LZM_prep.pdb -M mutations_neutral.txt -mc A -FF OPLSAAM -r 25 -c SNELLIUS \
+             -w 25 -s exponential -l 1 -ts 2fs -T 298 -R 10 -clean dcd
+```
+
+Each mutation gets a directory of its own, holding a water sphere centred on the
+residue being mutated. That is not a convenience: a sphere describes one place,
+and its centre decides both whether the mutated residue is simulated at all and
+which *other* charges are neutralised as out-of-sphere. Sections 1–3 below
+describe what the command does, one mutation at a time.
 
 ## Prerequisites
 
@@ -49,12 +62,17 @@ terminal atoms. It is the file this tutorial starts from.
 the published benchmark — charge-maintaining and charge-changing respectively.
 
 QresFEP needs each mutant residue as its own PDB, positioned on the wild-type
-backbone. PyMOL's mutagenesis wizard does that:
+backbone. PyMOL's mutagenesis wizard does that, and `setup_resFEP` drives it —
+writing the residue PDBs to `mutants/`. To build them yourself instead:
 
 ```bash
 python make_mutants.py 2LZM_prep.pdb mutations_neutral.txt
 pymol -c mutagenesis.pml
 ```
+
+Pass the directory holding the result to `setup_resFEP -mp`, which is also how to
+supply residues PyMOL cannot build — its wizard knows the standard twenty, not
+Q's protonation variants (`ASH`, `GLH`, `HIP`, `LYN`).
 
 This writes one file per mutation — `ALA39.pdb`, `GLY25.pdb`, and so on:
 
@@ -93,8 +111,14 @@ two relate.
 > charged residues that lie outside the boundary — an out-of-sphere `GLU` is
 > prepared as `GLH`. If the residue you name has been neutralised, `qresfep` stops
 > with an error rather than silently building a hybrid residue from the wrong
-> library entry. The coordinates above are the CB of residue 39; `run_mutations.sh`
+> library entry. The coordinates above are the CB of residue 39; `setup_resFEP`
 > recomputes them for each mutation.
+>
+> To keep one centre for a whole series — mutating residues around a bound ligand
+> that has to stay in the same sphere — pass `setup_resFEP -cog x y z`. Every
+> mutation is then checked against that sphere before anything is written, and the
+> series is refused if a residue reaches beyond the radius or into the restrained
+> shell where charges are neutralised.
 
 ## 3. Generate the FEP input files
 
@@ -147,12 +171,30 @@ mv FEP_LEU39ALA tripeptide/
 
 ### All mutations at once
 
-`run_mutations.sh` does the above for a whole list, rebuilding the sphere around
-each mutated residue and sorting the legs into `protein/` and `tripeptide/`:
+`setup_resFEP` does all of the above for a whole list — builds the mutant
+residues, rebuilds the sphere around each mutated residue, runs both legs, and
+sorts them into `protein/` and `tripeptide/`:
 
 ```bash
-bash run_mutations.sh mutations_neutral.txt SNELLIUS
+setup_resFEP -i 2LZM_prep.pdb -M mutations_neutral.txt -mc A -FF OPLSAAM -r 25 -c SNELLIUS \
+             -w 25 -s exponential -l 1 -ts 2fs -T 298 -R 10 -clean dcd
 ```
+
+leaving:
+
+```
+mutants/                    the mutant residue PDBs PyMOL built
+work/<MUTATION>/            the prepared sphere for each mutation
+protein/FEP_<MUTATION>/
+tripeptide/FEP_<MUTATION>/
+```
+
+The whole series is checked before any of it is set up — residue names against
+the force field library, then every mutation against the structure — and all
+problems are reported together. `-n` runs that check and stops.
+
+`run_mutations.sh` is the same thing as a shell loop, kept as a worked example of
+what the command does.
 
 ## 4. Submit
 
