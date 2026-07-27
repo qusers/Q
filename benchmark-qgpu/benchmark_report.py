@@ -26,10 +26,24 @@ def make_html_report(logs_root: str, out_html: str):
     print(f"CPU baseline time: {cpu_baseline:.2f} seconds" if cpu_baseline else "No CPU baseline found")
     
     
-    # collect rows from each *_procs/summary.csv
+    process_folders = sorted(glob.glob(os.path.join(logs_root, "*_procs")))
+    replica_folders = sorted(glob.glob(os.path.join(logs_root, "*_replicates")))
+    if process_folders and replica_folders:
+        raise RuntimeError(
+            f"Mixed process and replica benchmark results found under {logs_root}"
+        )
+    if replica_folders:
+        result_folders = replica_folders
+        folder_pattern = r"(\d+)_replicates$"
+        scale_label = "Replicas"
+    else:
+        result_folders = process_folders
+        folder_pattern = r"(\d+)_procs$"
+        scale_label = "Processes"
+
     runs = []
-    for folder in sorted(glob.glob(os.path.join(logs_root, "*_procs"))):
-        m = re.search(r"(\d+)_procs$", os.path.basename(folder))
+    for folder in result_folders:
+        m = re.search(folder_pattern, os.path.basename(folder))
         if not m: continue
         procs = int(m.group(1))
         csv_path = os.path.join(folder, "summary.csv")
@@ -139,7 +153,10 @@ def make_html_report(logs_root: str, out_html: str):
         title="Benchmark Report",
         logs_root=os.path.abspath(logs_root),
         generated_at=datetime.now().isoformat(timespec="seconds"),
+        scale_label=scale_label,
+        scale_label_lower=scale_label.lower(),
         payload={
+            "scale_label": scale_label,
             "procs": procs_list,
             "wall_mean": wall_mean,
             "wall_p95": wall_p95,
