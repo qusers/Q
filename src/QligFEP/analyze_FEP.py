@@ -10,7 +10,13 @@ import numpy as np
 import pandas as pd
 
 from .analysis_plotting import create_ddG_plot, prepare_df
-from .IO import read_qfep, read_qfep_verbose, read_slurm_diagnostics, run_command
+from .IO import (
+    ddG_json_path,
+    read_qfep,
+    read_qfep_verbose,
+    read_slurm_diagnostics,
+    run_command,
+)
 from .logger import logger, setup_logger
 from .settings.settings import Q_PATHS
 
@@ -627,7 +633,7 @@ def main(args: argparse.Namespace):
     fep_reader.calculate_ddG()
     fep_reader.save_json_data()
 
-    results_file = args.json_file.replace(".json", "_ddG.json")
+    results_file = ddG_json_path(args.json_file)
     fep_reader.populate_mapping_dictionary(method=args.method, output_file=results_file)
     if args.experimental_key is not None:
         fep_reader.load_experimental_data(exp_key=args.experimental_key)

@@ -34,7 +34,7 @@ from scipy.optimize import brentq
 from scipy.stats import gaussian_kde, kendalltau, pearsonr, spearmanr
 
 from .analysis_plotting import create_ddG_plot
-from .IO import read_slurm_diagnostics
+from .IO import ddG_json_path, read_slurm_diagnostics
 from .logger import logger, setup_logger
 
 # Boltzmann constant in the two energy units Q can report work in.
@@ -532,7 +532,7 @@ def main(args: argparse.Namespace) -> pd.DataFrame:
     df = pd.DataFrame(rows)
 
     if args.json_file:
-        results_file = args.json_file.replace(".json", "_ddG.json")
+        results_file = ddG_json_path(args.json_file)
         populate_mapping_json(df, args.json_file, results_file)
         if args.experimental_key:
             df = compare_to_experiment(df, args.json_file, args.experimental_key, args.target)

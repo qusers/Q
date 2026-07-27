@@ -87,6 +87,17 @@ class QprepAtomLibMissingError(Exception):
     pass
 
 
+def ddG_json_path(mapping_json: str) -> str:
+    """Return the ``<stem>_ddG.json`` sibling of a mapping JSON path.
+
+    Derived from the path components rather than by string substitution, so a mapping file
+    that is not named ``*.json`` still gets a distinct output instead of being overwritten,
+    and a ``.json`` earlier in the path is left alone.
+    """
+    path = Path(mapping_json)
+    return str(path.with_name(f"{path.stem}_ddG.json"))
+
+
 def parse_qprep_total_charge(qprep_out_path: Path) -> int:
     """Parse the total system charge from a qprep.out file.
 
