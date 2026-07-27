@@ -372,6 +372,11 @@ class TestFragmentFilteringInQprep:
 
         def mock_run_qprep(*a, **kw):
             (tmp_path / "complexnotexcluded.pdb").write_text(self.MINIMAL_COMPLEX_PDB)
+            # main() reads the sphere charge back out of qprep.out for prep.json.
+            (tmp_path / "qprep.out").write_text(
+                "Total charge of system                       =  0.00\n"
+                "total charge of not excluded:  0.00\n"
+            )
             return MagicMock(returncode=0)
 
         with patch("QligFEP.CLI.qprep_cli.run_qprep", side_effect=mock_run_qprep):

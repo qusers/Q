@@ -54,8 +54,13 @@ from QligFEP.templates.equilibration import (
     EQ4_2FS_PARAMS,
     EQ5_1FS_PARAMS,
     EQ5_2FS_PARAMS,
+    RESFEP_EQ1_PARAMS,
+    RESFEP_EQ2_PARAMS,
+    RESFEP_EQ3_PARAMS,
+    RESFEP_EQ4_PARAMS,
     EquilibrationConfig,
     get_equilibration_configs,
+    get_resfep_equilibration_configs,
 )
 from QligFEP.templates.md_template import MDParameters, render_md_input
 from QligFEP.templates.neq import (
@@ -77,8 +82,10 @@ from QligFEP.templates.qfep import (
 from QligFEP.templates.qprep import (
     QprepFEPParameters,
     QprepProteinParameters,
+    QprepResFEPParameters,
     render_qprep_fep_input,
     render_qprep_protein_input,
+    render_qprep_resfep_input,
 )
 from QligFEP.templates.run_local import LocalRunConfig, render_local_run
 from QligFEP.templates.sections import (
@@ -103,6 +110,12 @@ __all__ = [
     "EQ3_1FS_PARAMS",
     "EQ4_1FS_PARAMS",
     "EQ5_1FS_PARAMS",
+    # Equilibration (QresFEP protocol)
+    "get_resfep_equilibration_configs",
+    "RESFEP_EQ1_PARAMS",
+    "RESFEP_EQ2_PARAMS",
+    "RESFEP_EQ3_PARAMS",
+    "RESFEP_EQ4_PARAMS",
     # Production
     "ProductionConfig",
     "get_production_config",
@@ -123,8 +136,10 @@ __all__ = [
     # Qprep
     "QprepFEPParameters",
     "QprepProteinParameters",
+    "QprepResFEPParameters",
     "render_qprep_fep_input",
     "render_qprep_protein_input",
+    "render_qprep_resfep_input",
     # Local run script
     "LocalRunConfig",
     "render_local_run",

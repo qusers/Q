@@ -686,15 +686,17 @@ class TestQfepTemplate:
         # Line 2: kT  windows
         assert "0.592" in lines[2]  # kT at 298K
         assert "5" in lines[2]
-        # Lines 3,4,5: windows repeated
+        # Lines 3,4: gap bins, minimum points per bin
         assert lines[3] == "5"
         assert lines[4] == "5"
-        assert lines[5] == "5"
-        # Lines 6,7: 0, 0
+        # Line 5: alpha for state 2. Must be 0 -- qfep adds it to state 2's energy,
+        # whose weight runs 0 -> 1 across the ladder, so a non-zero alpha shifts the
+        # reported dG by exactly that amount. This line previously repeated the window
+        # count, which silently offset every per-leg dG by `windows` kcal/mol.
+        assert lines[5] == "0"
+        # Lines 6,7: off-diagonal elements, linear combination of states
         assert lines[6] == "0"
-        assert lines[7] == "0"
-        # Line 8: 1 0
-        assert lines[8] == "1 0"
+        assert lines[7] == "1 0"
         # Energy files follow
         assert "md_1000_0000.en" in content
         assert "md_0750_0250.en" in content

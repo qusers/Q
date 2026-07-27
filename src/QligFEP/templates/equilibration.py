@@ -153,6 +153,99 @@ _CONFIGS_1FS = [
 ]
 
 
+# ======================================================================================
+# QresFEP equilibration
+#
+# Amino-acid mutations keep their own protocol, as published in Jespers et al. (2019)
+# and Koenekoop et al. (2025). It differs from the ligand protocol above in three ways
+# that matter: eq1-eq4 run at a fixed 1 fs regardless of the production timestep, eq5 is
+# two orders of magnitude longer (the hybrid side chain needs to settle in the pocket
+# before sampling), and the heat bath is coupled to the whole system rather than to
+# solute and solvent separately.
+# ======================================================================================
+
+_RESFEP_SHARED = dict(
+    lrf=True,
+    # Q's own default. The published protocol never turned it on, and the long eq5
+    # makes separate coupling unnecessary.
+    separate_scaling=False,
+)
+
+RESFEP_EQ1_PARAMS = dict(
+    steps=10000, stepsize=0.1, temperature=1, bath_coupling=0.2,
+    shake_hydrogens=False, interval_output=5, **_RESFEP_SHARED,
+)
+
+RESFEP_EQ2_PARAMS = dict(
+    steps=10000, stepsize=1.0, temperature=50, bath_coupling=1.0,
+    shake_hydrogens=False, interval_output=5, **_RESFEP_SHARED,
+)
+
+RESFEP_EQ3_PARAMS = dict(
+    steps=10000, stepsize=1.0, temperature=150, bath_coupling=1.0,
+    shake_hydrogens=False, interval_output=5, **_RESFEP_SHARED,
+)
+
+RESFEP_EQ4_PARAMS = dict(
+    steps=10000, stepsize=1.0, temperature=275, bath_coupling=1.0,
+    shake_hydrogens=False, interval_output=5, **_RESFEP_SHARED,
+)
+
+#: eq5 is the only stage that follows the production timestep: (steps, stepsize,
+#: shake_hydrogens) per timestep, holding the total simulated time at 1.25 ns.
+_RESFEP_EQ5_BY_TIMESTEP = {
+    "1fs": (500000, 1.0, False),
+    "2fs": (1250000, 2.0, True),
+}
+
+
+def get_resfep_equilibration_configs(
+    timestep: Literal["1fs", "2fs"],
+    shell_radius: int,
+) -> list[EquilibrationConfig]:
+    """Return the QresFEP equilibration configurations.
+
+    Args:
+        timestep: Production timestep ("1fs" or "2fs"); only eq5 follows it.
+        shell_radius: Inner radius of the restrained boundary shell.
+
+    Returns:
+        List of EquilibrationConfig for eq1 through eq5.
+    """
+    steps, stepsize, shake_hydrogens = _RESFEP_EQ5_BY_TIMESTEP[timestep]
+    eq5_params = dict(
+        steps=steps,
+        stepsize=stepsize,
+        temperature="T_VAR",
+        bath_coupling=10.0,
+        shake_hydrogens=shake_hydrogens,
+        interval_output=5,
+        **_RESFEP_SHARED,
+    )
+
+    # (name, params, sequence restraint force). The hybrid residue is held by distance
+    # restraints throughout, so the whole-solute sequence restraint is released at eq5,
+    # where only the reference tripeptide keeps an anchor.
+    raw_configs = [
+        ("eq1", RESFEP_EQ1_PARAMS, 10.0),
+        ("eq2", RESFEP_EQ2_PARAMS, 10.0),
+        ("eq3", RESFEP_EQ3_PARAMS, 5.0),
+        ("eq4", RESFEP_EQ4_PARAMS, 5.0),
+        ("eq5", eq5_params, 0.0),
+    ]
+
+    return [
+        EquilibrationConfig(
+            name=name,
+            params=MDParameters(**params, shell_radius=shell_radius),
+            sequence_restraint_force=seq_force,
+            distance_restraint_force=None,
+            use_water_restraint=(name == "eq5"),
+        )
+        for name, params, seq_force in raw_configs
+    ]
+
+
 def get_equilibration_configs(
     timestep: Literal["1fs", "2fs"],
     shell_radius: int,
