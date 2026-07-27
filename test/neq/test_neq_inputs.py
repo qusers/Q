@@ -168,7 +168,7 @@ def test_neq_runfile_parallelizes_switches(tmp_path):
     # equilibration uses the parallel engine across all cores; switches use the serial engine
     assert "qdynp=" in script and "$qdynp " in script  # qdynp (parallel) for equilibration
     assert "qdyn=" in script and "$qdyn " in script  # qdyn (serial) for switches
-    # switches are packed one-per-core via mpirun binding. We assrt on the rendered launch line
+    # switches are packed one-per-core via mpirun binding. We assert on the rendered launch line
     assert any(
         line.lstrip().startswith("time mpirun") and "--map-by core --bind-to core" in line
         for line in script.replace("$mpi_map", "--map-by core --bind-to core").splitlines()
