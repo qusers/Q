@@ -891,6 +891,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         cysbond_lines=cysbonds,
         topology_pdb=cwd / "top_p.pdb",
         original_numbering=original_numbering,
+        neutralization_offset=args.neutralize_boundary_offset,
     )
     prep_path = prep.write(cwd)
     logger.info(

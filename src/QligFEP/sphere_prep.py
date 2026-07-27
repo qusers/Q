@@ -63,6 +63,10 @@ class SpherePrep:
         center: Sphere centre as ``[x, y, z]``.
         radius: Sphere radius in Angstrom.
         total_charge: Net charge enclosed by the sphere, from ``qprep.out``.
+        neutralization_offset: How far inside the radius the neutralisation
+            boundary sat. Charged residues beyond ``radius - offset`` were
+            prepared in a neutral form, so anything in that shell is a boundary
+            region rather than a properly simulated one.
         disulfides: Bridged cysteine pairs, as Q residue numbers.
         residues: Per-residue mapping between PDB and Q numbering.
     """
@@ -73,8 +77,15 @@ class SpherePrep:
     center: list[float]
     radius: float
     total_charge: int
+    # Defaulted so records written before this field existed still load.
+    neutralization_offset: float = 3.0
     disulfides: list[tuple[int, int]] = field(default_factory=list)
     residues: list[ResidueMapping] = field(default_factory=list)
+
+    @property
+    def boundary_radius(self) -> float:
+        """Radius inside which the sphere is a properly simulated region."""
+        return self.radius - self.neutralization_offset
 
     def q_number(self, pdb_number: int, chain: str | None = None) -> int:
         """Return the Q residue number for a residue of the input PDB.
@@ -189,6 +200,44 @@ def build_residue_map(
     return mapping
 
 
+def residue_distance_from_center(prepared_pdb: Path, q_number: int, center: list[float]) -> float:
+    """Return how far a residue's nearest atom sits from the sphere centre.
+
+    Used to tell apart the two ways a residue can end up unusable: neutralised
+    because it lies in the restrained boundary shell, or absent from the
+    simulation because it lies beyond the sphere altogether. The two need
+    different fixes, so they should not be reported the same way.
+
+    Args:
+        prepared_pdb: The PDB handed to ``qprep``.
+        q_number: The residue's number in Q's numbering.
+        center: Sphere centre as ``[x, y, z]``.
+
+    Returns:
+        Distance in Angstrom, or NaN if the residue has no readable coordinates.
+    """
+    import math
+
+    order = _solute_residues_in_order(Path(prepared_pdb))
+    if not 1 <= q_number <= len(order):
+        return math.nan
+    prepared_number = order[q_number - 1][0]
+
+    closest = math.inf
+    for line in Path(prepared_pdb).read_text().splitlines():
+        if not line.startswith(("ATOM", "HETATM")):
+            continue
+        try:
+            if int(line[22:26]) != prepared_number:
+                continue
+            position = (float(line[30:38]), float(line[38:46]), float(line[46:54]))
+        except ValueError:
+            continue
+        closest = min(closest, math.dist(position, center))
+
+    return closest if closest is not math.inf else math.nan
+
+
 def verify_residue_map(residues: list[ResidueMapping], topology_pdb: Path) -> bool:
     """Check a residue map against the topology PDB ``qprep`` wrote.
 
@@ -288,6 +337,7 @@ def collect(
     radius: float,
     total_charge: int,
     cysbond_lines: str,
+    neutralization_offset: float = 3.0,
     topology_pdb: Path | None = None,
     original_numbering: dict[int, tuple[int, str, str]] | None = None,
 ) -> SpherePrep:
@@ -301,6 +351,8 @@ def collect(
         radius: Sphere radius in Angstrom.
         total_charge: Net charge in the sphere, parsed from ``qprep.out``.
         cysbond_lines: The ``addbond`` block produced during preparation.
+        neutralization_offset: How far inside the radius charged residues were
+            neutralised.
         topology_pdb: ``top_p.pdb``, used to verify the residue map when present.
         original_numbering: Residue renumbering recorded during preparation, so
             the map can report the numbers the user's PDB carried.
@@ -323,6 +375,7 @@ def collect(
         center=[float(c) for c in center],
         radius=float(radius),
         total_charge=int(total_charge),
+        neutralization_offset=float(neutralization_offset),
         disulfides=parse_disulfide_pairs(cysbond_lines, prepared_to_q),
         residues=residues,
     )

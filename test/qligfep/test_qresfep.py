@@ -782,28 +782,144 @@ class TestReferencePeptideSetup:
 
 
 @qprep_required
-class TestSetupGuards:
-    def test_a_neutralised_wild_type_is_rejected(self, prepared_t4l):
-        """qprep_prot prepares out-of-sphere GLU as GLH; mutating "GLU" would then
-        build the hybrid from the wrong library entry."""
+class TestResidueMustBeInTheSphere:
+    """A residue beyond the sphere is not simulated, whatever its name.
+
+    This is why a set of mutations needs one prepared sphere per mutation: the
+    sphere has to enclose the residue being mutated, and each centre also decides
+    which other charges get neutralised.
+    """
+
+    def test_a_distant_neutral_residue_is_refused(self, prepared_t4l):
+        """The case a name-based check cannot see: nothing renames a far-away PHE,
+        so only geometry catches it."""
+        from QligFEP.sphere_prep import residue_distance_from_center
+
         prep = SpherePrep.read(prepared_t4l)
-        neutralised = next(
-            (r for r in prep.residues if r.name in ("GLH", "ASH", "LYN", "ARN")), None
-        )
-        if neutralised is None:
-            pytest.skip("no residue was neutralised in this sphere")
-        charged = {"GLH": "GLU", "ASH": "ASP", "LYN": "LYS", "ARN": "ARG"}[neutralised.name]
+        distant = [
+            r for r in prep.residues
+            if residue_distance_from_center(
+                prepared_t4l / prep.prepared_pdb, r.q_number, prep.center
+            ) > prep.radius
+            and r.name not in ("GLH", "ASH", "LYN", "ARN")
+        ]
+        if not distant:
+            pytest.skip("no neutral residue lies outside this sphere")
+        residue = distant[0]
 
         run = QresFEP(
-            mutation=f"{charged}{neutralised.pdb_number}ALA",
-            chain=neutralised.chain,
+            mutation=f"{residue.name}{residue.pdb_number}ALA",
+            chain=residue.chain,
             system="protein",
             force_field="OPLSAAM",
             cluster="SNELLIUS",
             workdir=prepared_t4l,
         )
-        with pytest.raises(MutationError, match="neutralised"):
+        with pytest.raises(MutationError, match="not part of the simulated system"):
             run.read_prep()
+
+    def test_the_residue_at_the_centre_is_accepted(self, prepared_t4l):
+        run = QresFEP(
+            mutation="LEU39ALA",
+            chain="A",
+            system="protein",
+            force_field="OPLSAAM",
+            cluster="SNELLIUS",
+            workdir=prepared_t4l,
+        )
+        run.read_prep()  # must not raise
+        assert run.q_position == 39
+
+    def test_a_residue_in_the_boundary_shell_warns_but_proceeds(self, prepared_t4l):
+        """It is simulated, so it is allowed -- but its environment is the boundary."""
+        from QligFEP.logger import logger
+        from QligFEP.sphere_prep import residue_distance_from_center
+
+        prep = SpherePrep.read(prepared_t4l)
+        in_shell = [
+            r for r in prep.residues
+            if prep.boundary_radius
+            < residue_distance_from_center(
+                prepared_t4l / prep.prepared_pdb, r.q_number, prep.center
+            )
+            <= prep.radius
+            and r.name in amino_acids.SIDE_CHAINS
+        ]
+        if not in_shell:
+            pytest.skip("no residue lies in the boundary shell of this sphere")
+        residue = in_shell[0]
+
+        run = QresFEP(
+            mutation=f"{residue.name}{residue.pdb_number}ALA",
+            chain=residue.chain,
+            system="protein",
+            force_field="OPLSAAM",
+            cluster="SNELLIUS",
+            workdir=prepared_t4l,
+        )
+        # loguru does not feed pytest's caplog, so capture it with a sink.
+        messages: list[str] = []
+        sink = logger.add(messages.append, level="WARNING")
+        try:
+            run.read_prep()
+        except FileNotFoundError:
+            pass  # the mutant PDB is not needed to reach the warning
+        finally:
+            logger.remove(sink)
+
+        assert any("restrained boundary shell" in m for m in messages), messages
+
+    def test_the_boundary_radius_comes_from_the_preparation(self, prepared_t4l):
+        prep = SpherePrep.read(prepared_t4l)
+        assert prep.boundary_radius == prep.radius - prep.neutralization_offset
+        assert prep.neutralization_offset == 3.0  # qprep_prot's default
+
+
+@qprep_required
+class TestSetupGuards:
+    def test_every_neutralised_residue_is_rejected_with_the_right_reason(self, prepared_t4l):
+        """Naming the charged form of a neutralised residue must never proceed.
+
+        Which message it gets depends on why: beyond the sphere it is not
+        simulated at all, inside it the charge was merely stripped. Both refuse,
+        but only the second has a same-sphere alternative.
+        """
+        from QligFEP.sphere_prep import residue_distance_from_center
+
+        prep = SpherePrep.read(prepared_t4l)
+        charged_form = {"GLH": "GLU", "ASH": "ASP", "LYN": "LYS", "ARN": "ARG"}
+        neutralised = [r for r in prep.residues if r.name in charged_form]
+        if not neutralised:
+            pytest.skip("no residue was neutralised in this sphere")
+
+        seen_outside = seen_inside = False
+        for residue in neutralised:
+            run = QresFEP(
+                mutation=f"{charged_form[residue.name]}{residue.pdb_number}ALA",
+                chain=residue.chain,
+                system="protein",
+                force_field="OPLSAAM",
+                cluster="SNELLIUS",
+                workdir=prepared_t4l,
+            )
+            with pytest.raises(MutationError) as raised:
+                run.read_prep()
+
+            distance = residue_distance_from_center(
+                prepared_t4l / prep.prepared_pdb, residue.q_number, prep.center
+            )
+            message = str(raised.value)
+            if distance > prep.radius:
+                assert "not part of the simulated system" in message
+                seen_outside = True
+            else:
+                assert f"is {residue.name}" in message
+                assert "different perturbation" in message
+                seen_inside = True
+
+        # T4L with a 25 A sphere on residue 39 exercises both branches.
+        assert seen_outside, "expected at least one neutralised residue beyond the sphere"
+        assert seen_inside, "expected at least one neutralised residue inside the sphere"
 
     def test_a_missing_mutant_pdb_is_reported(self, prepared_t4l):
         run = QresFEP(

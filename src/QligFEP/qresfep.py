@@ -24,6 +24,7 @@ from __future__ import annotations
 import glob
 import itertools
 import json
+import math
 import os
 import re
 import shutil
@@ -37,7 +38,7 @@ from .IO import AA, get_force_field_paths, read_prm, replace, run_qprep
 from .logger import logger
 from .pdb_utils import pdb_parse_in, pdb_parse_out
 from .settings.settings import CLUSTER_DICT, CONFIGS
-from .sphere_prep import SpherePrep
+from .sphere_prep import SpherePrep, residue_distance_from_center
 from .templates import (
     QprepResFEPParameters,
     format_sequence_restraint,
@@ -238,22 +239,20 @@ class QresFEP:
         """
         self.prep = SpherePrep.read(self.workdir)
         self.protein_pdb = self.workdir / self.prep.prepared_pdb
+        self.radius = self.prep.radius
+        self.center = self.prep.center
+        self.shell_radius = self.radius - self.shell_restraint
 
         # Check the mutation describes the prepared structure before checking for
         # files: naming the wrong wild type is the more fundamental mistake, and
         # reporting a missing PDB first would send the user off to build one that
         # was never going to work.
         self.q_position = self.prep.q_number(self.position, self.chain)
+        self._check_residue_is_in_the_sphere()
+
         prepared_name = self.prep.residue_name(self.position, self.chain)
         if prepared_name != self.wild_type:
-            raise MutationError(
-                f"Residue {self.position} of chain {self.chain} is {prepared_name}, not "
-                f"{self.wild_type}. {self.prep.prepared_pdb} carries a neutralised form of "
-                "charged residues that sit outside the sphere boundary (GLU prepared as GLH, "
-                "LYS as LYN, and so on). Either centre the sphere on this residue so it keeps "
-                f"its charge, or ask for the mutation as {prepared_name}{self.position}"
-                f"{self.mutant}."
-            )
+            raise MutationError(self._wrong_wild_type_message(prepared_name))
 
         required = [self.protein_pdb, self.workdir / "water.pdb", self.mutant_pdb_path]
         for cofactor in self.cofactors:
@@ -262,12 +261,80 @@ class QresFEP:
         if missing:
             raise FileNotFoundError(f"Missing required input file(s): {', '.join(missing)}")
 
-        self.radius = self.prep.radius
-        self.center = self.prep.center
-        self.shell_radius = self.radius - self.shell_restraint
         logger.info(
             f"{self.name} (chain {self.chain}) is Q residue {self.q_position}; "
             f"hybrid residue {self.hybrid_name}"
+        )
+
+    def _check_residue_is_in_the_sphere(self) -> None:
+        """Refuse to mutate a residue the prepared sphere does not properly simulate.
+
+        The sphere is built around one centre, and everything beyond its radius is
+        outside the simulated system. Mutating a residue out there produces files
+        that look ordinary and describe nothing: the perturbed side chain is not in
+        the region being sampled.
+
+        This has to be checked by geometry rather than by inference from the
+        residue name. A charged residue outside the boundary is at least visible,
+        because preparation renames it to a neutral form -- but a neutral residue
+        is renamed by nothing, and would otherwise pass unnoticed.
+
+        Mutating a set of residues therefore means preparing a sphere per residue,
+        which also re-derives which *other* charges get neutralised: a charge left
+        standing outside the sphere would poison the region that is simulated.
+
+        Raises:
+            MutationError: If the residue lies beyond the sphere radius.
+        """
+        distance = residue_distance_from_center(self.protein_pdb, self.q_position, self.center)
+        if math.isnan(distance):
+            logger.debug(f"Could not locate Q residue {self.q_position} to check its distance")
+            return
+
+        if distance > self.radius:
+            raise MutationError(
+                f"Residue {self.position} of chain {self.chain} sits {distance:.1f} A from the "
+                f"sphere centre {self.center}, beyond the {self.radius:.0f} A radius, so it is "
+                "not part of the simulated system. Prepare a sphere centred on this residue "
+                "before mutating it.\n"
+                "Mutating several residues means one `qprep_prot` run per residue: the sphere "
+                "has to enclose the residue being mutated, and each centre also decides which "
+                "other charges are neutralised."
+            )
+
+        if distance > self.prep.boundary_radius:
+            logger.warning(
+                f"Residue {self.position} of chain {self.chain} sits {distance:.1f} A from the "
+                f"sphere centre, inside the {self.radius:.0f} A radius but within the "
+                f"{self.prep.neutralization_offset:.0f} A restrained boundary shell. Its "
+                "environment is dominated by the boundary rather than by the protein, and "
+                "nearby charges there were neutralised during preparation. Re-centre the "
+                "sphere on this residue unless you specifically want this."
+            )
+
+    def _wrong_wild_type_message(self, prepared_name: str) -> str:
+        """Explain that the prepared residue is not the one the mutation names.
+
+        Reached only for residues inside the sphere -- anything beyond it is
+        rejected earlier, by :meth:`_check_residue_is_in_the_sphere`. So the cause
+        here is always neutralisation: the residue lies in the restrained boundary
+        shell, where preparation strips formal charges.
+        """
+        distance = residue_distance_from_center(self.protein_pdb, self.q_position, self.center)
+        distance_note = (
+            f" It sits {distance:.1f} A from the sphere centre, within the "
+            f"{self.prep.neutralization_offset:.0f} A restrained boundary shell, where "
+            "`qprep_prot` neutralises charged residues."
+            if not math.isnan(distance)
+            else ""
+        )
+        return (
+            f"Residue {self.position} of chain {self.chain} is {prepared_name} in "
+            f"{self.prep.prepared_pdb}, not {self.wild_type}.{distance_note} Re-centre the "
+            f"sphere on this residue so it keeps its charge. Asking for {prepared_name}"
+            f"{self.position}{self.mutant} instead would run, but it is a different "
+            f"perturbation from {self.wild_type}{self.position}{self.mutant} -- only do that "
+            "if the neutral form is what you mean to mutate."
         )
 
     def create_environment(self) -> None:
