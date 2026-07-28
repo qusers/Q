@@ -70,7 +70,7 @@ void CudaShake::find_serial_q_molecule_bonds(Context& ctx, std::vector<bool>& op
         serial_bonds.push_back(shake_bonds[i]);
     }
 
-    serial_q_solver_.init(molecule_constraint_counts, serial_bonds, ctx.n_atoms, ctx.n_replicates());
+    serial_q_solver_.init(molecule_constraint_counts, serial_bonds);
 }
 
 void CudaShake::find_shake_fast_water(Context& ctx, std::vector<bool>& optimized) {
@@ -210,72 +210,6 @@ void CudaShake::find_shake_network(Context& ctx, std::vector<bool>& optimized) {
     this->shake_networks = HostDeviceBuffer<ShakeNetwork>::from_vector(shake_networks, true);
 }
 
-__global__ void fallback_shake_fused_kernel(
-    int n_colors, int n_atoms, int n_replicates,
-    const int* color_offsets,
-    const ShakeBond* shake_bonds,
-    coord_t* coords,
-    const coord_t* xcoords,
-    const double* winv,
-    int* unconverged) {
-    cg::grid_group grid = cg::this_grid();
-    const int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    const int grid_stride = gridDim.x * blockDim.x;  // the total number of the threads
-
-    for (int iter = 0; iter < shake_max_iter; iter++) {
-        if (grid.thread_rank() == 0) *unconverged = 0;
-        grid.sync();
-
-        for (int c = 0; c < n_colors; c++) {
-            const int off = color_offsets[c];
-            const int n_color_constraints = color_offsets[c + 1] - off;
-
-            const int n_tasks = n_replicates * n_color_constraints;
-
-            for (int task = tid; task < n_tasks; task += grid_stride) {
-                const int replica = task / n_color_constraints;
-                const int constraint = task % n_color_constraints;
-                const ShakeBond& shake_bond = shake_bonds[off + constraint];
-                const int atom_offset = replica * n_atoms;
-
-                coord_t* replica_coords = coords + atom_offset;
-                const coord_t* replica_xcoords = xcoords + atom_offset;
-
-                const int ai = shake_bond.ai - 1;
-                const int aj = shake_bond.aj - 1;
-                const double xij_x = replica_coords[ai].x - replica_coords[aj].x;
-                const double xij_y = replica_coords[ai].y - replica_coords[aj].y;
-                const double xij_z = replica_coords[ai].z - replica_coords[aj].z;
-                const double xij2 = xij_x * xij_x + xij_y * xij_y + xij_z * xij_z;
-                const double diff = shake_bond.dist2 - xij2;
-
-                if (fabs(diff) >= shake_tol * shake_bond.dist2) {
-                    atomicExch(unconverged, 1);
-                    const double xxij_x = replica_xcoords[ai].x - replica_xcoords[aj].x;
-                    const double xxij_y = replica_xcoords[ai].y - replica_xcoords[aj].y;
-                    const double xxij_z = replica_xcoords[ai].z - replica_xcoords[aj].z;
-                    const double scp = xij_x * xxij_x + xij_y * xxij_y + xij_z * xxij_z;
-                    const double inv_mass_sum = winv[ai] + winv[aj];
-                    if (scp != 0 && inv_mass_sum != 0) {
-                        const double corr = diff / (2.0 * scp * inv_mass_sum);
-                        const double ai_scale = corr * winv[ai];
-                        const double aj_scale = corr * winv[aj];
-                        replica_coords[ai].x += xxij_x * ai_scale;
-                        replica_coords[ai].y += xxij_y * ai_scale;
-                        replica_coords[ai].z += xxij_z * ai_scale;
-                        replica_coords[aj].x -= xxij_x * aj_scale;
-                        replica_coords[aj].y -= xxij_y * aj_scale;
-                        replica_coords[aj].z -= xxij_z * aj_scale;
-                    }
-                }
-            }
-            grid.sync();
-        }
-        if (*unconverged == 0) break;
-        grid.sync();
-    }
-}
-
 void CudaShake::find_fallback_shake_bond(Context& ctx, std::vector<bool>& optimized) {
     std::vector<std::vector<int>> atom_to_bonds(ctx.n_atoms);
     auto* shake_bonds = data_.shake_bonds->cpu_data_p;
@@ -367,35 +301,7 @@ void CudaShake::find_fallback_shake_bond(Context& ctx, std::vector<bool>& optimi
     fallback_coop_blocks = 0;
     for (int c = 0; c < fallback_n_colors; c++) {
         const int n = fallback_color_offsets[c + 1] - fallback_color_offsets[c];
-        const int n_tasks = n * ctx.n_replicates();
-        const int required_blocks = (n_tasks + kShakeThreads - 1) / kShakeThreads;
-        fallback_coop_blocks = std::max(fallback_coop_blocks, required_blocks);
-    }
-
-    if (fallback_coop_blocks > 0) {
-        int device = 0;
-        int sm_count = 0;
-        int active_blocks_per_sm = 0;
-
-        check_cuda(cudaGetDevice(&device));
-
-        check_cuda(cudaDeviceGetAttribute(
-            &sm_count,
-            cudaDevAttrMultiProcessorCount,
-            device));
-
-        check_cuda(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-            &active_blocks_per_sm,
-            fallback_shake_fused_kernel,
-            kShakeThreads,
-            0));
-
-        const int max_cooperative_blocks =
-            sm_count * active_blocks_per_sm;
-
-        fallback_coop_blocks = std::min(
-            fallback_coop_blocks,
-            max_cooperative_blocks);
+        fallback_coop_blocks = std::max(fallback_coop_blocks, (n + kShakeThreads - 1) / kShakeThreads);
     }
 }
 
@@ -406,12 +312,11 @@ void CudaShake::apply(Context& ctx, HostDeviceBuffer<coord_t>& xcoords_buffer) {
 }
 
 void CudaShake::initial_shake(Context& ctx) {
-    const int n_total_atoms = ctx.n_total_atoms();
-    HostDeviceBuffer<coord_t> xcoords(n_total_atoms, true, true);
+    HostDeviceBuffer<coord_t> xcoords(ctx.n_atoms, true, true);
     auto* d_coords = ctx.coords->gpu_data_p;
     auto* d_xcoords = xcoords.gpu_data_p;
 
-    check_cuda(cudaMemcpy(d_xcoords, d_coords, n_total_atoms * sizeof(coord_t), cudaMemcpyDeviceToDevice));
+    check_cuda(cudaMemcpy(d_xcoords, d_coords, ctx.n_atoms * sizeof(coord_t), cudaMemcpyDeviceToDevice));
     apply_to(ctx, d_coords, d_xcoords);
 
     ctx.coords->download();
@@ -419,7 +324,7 @@ void CudaShake::initial_shake(Context& ctx) {
     auto* coords = ctx.coords->cpu_data_p;
     auto* velocities = ctx.velocities->cpu_data_p;
     auto* host_xcoords = xcoords.cpu_data_p;
-    for (int i = 0; i < n_total_atoms; i++) {
+    for (int i = 0; i < ctx.n_atoms; i++) {
         const double dt = ctx.dt;
         host_xcoords[i].x = coords[i].x - dt * velocities[i].x;
         host_xcoords[i].y = coords[i].y - dt * velocities[i].y;
@@ -432,7 +337,7 @@ void CudaShake::initial_shake(Context& ctx) {
 
     xcoords.download();
 
-    for (int i = 0; i < n_total_atoms; i++) {
+    for (int i = 0; i < ctx.n_atoms; i++) {
         const double dt = ctx.dt;
         velocities[i].x = (coords[i].x - host_xcoords[i].x) / dt;
         velocities[i].y = (coords[i].y - host_xcoords[i].y) / dt;
@@ -457,19 +362,15 @@ void CudaShake::init_backend(Context& ctx) {
 }
 
 __global__ void calc_fast_water_shake_kernel(
-    int n_fast_waters, int n_atoms,
+    int n_fast_waters,
     ShakeFastWater* fast_waters,
     coord_t* coords,
-    const coord_t* xcoords) {
+    coord_t* xcoords) {
     /*
     todo: Need to think...
     */
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_fast_waters) return;
-    const int replica = blockIdx.y;
-    const int atom_offset = replica * n_atoms;
-    coords += atom_offset;
-    xcoords += atom_offset;
 
     auto water = fast_waters[idx];
     const int o = water.o;
@@ -602,17 +503,12 @@ __global__ void calc_fast_water_shake_kernel(
 }
 
 __global__ void calc_h_star_shake_kernel(
-    int n_shake_networks, int n_atoms,
+    int n_shake_networks,
     ShakeNetwork* networks,
     coord_t* coords,
-    const coord_t* xcoords) {
+    coord_t* xcoords) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_shake_networks) return;
-    const int replica = blockIdx.y;
-    const int atom_offset = replica * n_atoms;
-
-    coords += atom_offset;
-    xcoords += atom_offset;
 
     const auto network = networks[idx];
     double center_x = coords[network.center].x;
@@ -695,76 +591,113 @@ __global__ void calc_h_star_shake_kernel(
 }
 
 __global__ void print_fallback_shake_failures_kernel(
-    int n_shakes, int n_atoms, int n_replicates,
-    const ShakeBond* shake_bonds,
+    int n_shakes,
+    ShakeBond* shake_bonds,
     coord_t* coords) {
-    const int task = blockIdx.x * blockDim.x + threadIdx.x;
-    const int n_tasks = n_shakes * n_replicates;
-    if (task >= n_tasks) return;
+    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= n_shakes) return;
 
-    const int replica = task / n_shakes;
-    const int shake = task % n_shakes;
-
-    coords += replica * n_atoms;
-
-    const int ai = shake_bonds[shake].ai - 1;
-    const int aj = shake_bonds[shake].aj - 1;
+    const int ai = shake_bonds[idx].ai - 1;
+    const int aj = shake_bonds[idx].aj - 1;
     const double dx = coords[ai].x - coords[aj].x;
     const double dy = coords[ai].y - coords[aj].y;
     const double dz = coords[ai].z - coords[aj].z;
     const double dist2 = dx * dx + dy * dy + dz * dz;
-    if (fabs(shake_bonds[shake].dist2 - dist2) >= shake_tol * shake_bonds[shake].dist2) {
-        printf(">>> Shake failed, replica = %d, i = %d,j = %d, d = %f, d0 = %f\n",
-               replica,
+    if (fabs(shake_bonds[idx].dist2 - dist2) >= shake_tol * shake_bonds[idx].dist2) {
+        printf(">>> Shake failed, i = %d,j = %d, d = %f, d0 = %f\n",
                ai,
                aj,
                sqrt(dist2),
-               sqrt(shake_bonds[shake].dist2));
+               sqrt(shake_bonds[idx].dist2));
+    }
+}
+
+__global__ void fallback_shake_fused_kernel(
+    int n_colors,
+    const int* color_offsets,
+    ShakeBond* shake_bonds,
+    coord_t* coords,
+    coord_t* xcoords,
+    double* winv,
+    int* unconverged) {
+    cg::grid_group grid = cg::this_grid();
+    const int tid = blockIdx.x * blockDim.x + threadIdx.x;
+
+    for (int iter = 0; iter < shake_max_iter; iter++) {
+        if (grid.thread_rank() == 0) *unconverged = 0;
+        grid.sync();
+
+        for (int c = 0; c < n_colors; c++) {
+            const int off = color_offsets[c];
+            const int n = color_offsets[c + 1] - off;
+
+            if (tid < n) {
+                ShakeBond& shake_bond = shake_bonds[off + tid];
+                const int ai = shake_bond.ai - 1;
+                const int aj = shake_bond.aj - 1;
+                const double xij_x = coords[ai].x - coords[aj].x;
+                const double xij_y = coords[ai].y - coords[aj].y;
+                const double xij_z = coords[ai].z - coords[aj].z;
+                const double xij2 = xij_x * xij_x + xij_y * xij_y + xij_z * xij_z;
+                const double diff = shake_bond.dist2 - xij2;
+
+                if (fabs(diff) >= shake_tol * shake_bond.dist2) {
+                    *unconverged = 1;  // plain store is fine (any thread -> 1)
+                    const double xxij_x = xcoords[ai].x - xcoords[aj].x;
+                    const double xxij_y = xcoords[ai].y - xcoords[aj].y;
+                    const double xxij_z = xcoords[ai].z - xcoords[aj].z;
+                    const double scp = xij_x * xxij_x + xij_y * xxij_y + xij_z * xxij_z;
+                    const double inv_mass_sum = winv[ai] + winv[aj];
+                    if (scp != 0.0 && inv_mass_sum != 0.0) {
+                        const double corr = diff / (2.0 * scp * inv_mass_sum);
+                        const double ai_scale = corr * winv[ai];
+                        const double aj_scale = corr * winv[aj];
+                        coords[ai].x += xxij_x * ai_scale;
+                        coords[ai].y += xxij_y * ai_scale;
+                        coords[ai].z += xxij_z * ai_scale;
+                        coords[aj].x -= xxij_x * aj_scale;
+                        coords[aj].y -= xxij_y * aj_scale;
+                        coords[aj].z -= xxij_z * aj_scale;
+                    }
+                }
+            }
+            grid.sync();
+        }
+        if (*unconverged == 0) break;
+        grid.sync();
     }
 }
 
 void CudaShake::apply_to(Context& ctx, coord_t* d_coords, coord_t* d_xcoords) {
-    int n_replicates = ctx.n_replicates();
-    serial_q_solver_.apply(d_coords, d_xcoords, ctx.winv->gpu_data_p, n_replicates);
+    serial_q_solver_.apply(d_coords, d_xcoords, ctx.winv->gpu_data_p);
     if (shake_fast_waters->length > 0) {
         const int grid_blocks = (shake_fast_waters->length + kShakeThreads - 1) / kShakeThreads;
-        calc_fast_water_shake_kernel<<<dim3(grid_blocks, n_replicates), kShakeThreads>>>(shake_fast_waters->length, ctx.n_atoms, shake_fast_waters->gpu_data_p, d_coords, d_xcoords);
+        calc_fast_water_shake_kernel<<<grid_blocks, kShakeThreads>>>(shake_fast_waters->length, shake_fast_waters->gpu_data_p, d_coords, d_xcoords);
     }
     if (shake_networks->length > 0) {
         const int grid_blocks = (shake_networks->length + kShakeThreads - 1) / kShakeThreads;
         // todo: Now h start doesn't exit when having shake fails...
-        calc_h_star_shake_kernel<<<dim3(grid_blocks, n_replicates), kShakeThreads>>>(shake_networks->length, ctx.n_atoms, shake_networks->gpu_data_p, d_coords, d_xcoords);
+        calc_h_star_shake_kernel<<<grid_blocks, kShakeThreads>>>(shake_networks->length, shake_networks->gpu_data_p, d_coords, d_xcoords);
     }
     if (fallback_shake_bonds->length > 0) {
         fallback_unconverged->zero();
-        int n_atoms = ctx.n_atoms;
-        int n_colors = fallback_n_colors;
-        const int* d_color_offsets = fallback_color_offsets->gpu_data_p;
-        const ShakeBond* d_shake_bonds = fallback_shake_bonds->gpu_data_p;
-        const double* d_winv = ctx.winv->gpu_data_p;
-        int* d_unconverged = fallback_unconverged->gpu_data_p;
         void* args[] = {
-            &n_colors,
-            &n_atoms,
-            &n_replicates,
-            &d_color_offsets,
-            &d_shake_bonds,
+            &fallback_n_colors,
+            &fallback_color_offsets->gpu_data_p,
+            &fallback_shake_bonds->gpu_data_p,
             &d_coords,
             &d_xcoords,
-            &d_winv,
-            &d_unconverged,
+            &ctx.winv->gpu_data_p,
+            &fallback_unconverged->gpu_data_p,
         };
         dim3 grid(fallback_coop_blocks), block(kShakeThreads);
         check_cuda(cudaLaunchCooperativeKernel((void*)fallback_shake_fused_kernel, grid, block, args));
         fallback_unconverged->download();
         if (fallback_unconverged->cpu_data_p[0]) {
             int n_fallback_constraints = fallback_shake_bonds->length;
-
-            const int n_tasks = n_fallback_constraints * n_replicates;
-
-            const int grid_blocks = (n_tasks + kShakeThreads - 1) / kShakeThreads;
+            const int grid_blocks = (n_fallback_constraints + kShakeThreads - 1) / kShakeThreads;
             print_fallback_shake_failures_kernel<<<grid_blocks, kShakeThreads>>>(
-                n_fallback_constraints, n_atoms, n_replicates,
+                n_fallback_constraints,
                 fallback_shake_bonds->gpu_data_p,
                 d_coords);
             std::exit(EXIT_FAILURE);

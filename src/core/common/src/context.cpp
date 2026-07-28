@@ -9,6 +9,7 @@
 #include "helpers.h"
 #include "inp_parser.h"
 #include "parse.h"
+#include "q_math.h"
 #include "shake.h"
 
 namespace {
@@ -27,230 +28,6 @@ void validate_parse_result(const ParseResult& parsed) {
     }
     if (parsed.topo.vdw_rule != VDW_GEOMETRIC && parsed.topo.vdw_rule != VDW_ARITHMETIC) {
         fatal("Invalid vdw_rule in parsed topology.");
-    }
-}
-
-template <typename T>
-bool same_size(
-    const std::vector<T>& a,
-    const std::vector<T>& b) {
-    return a.size() == b.size();
-}
-
-bool same_coords(
-    const std::vector<coord_t>& a,
-    const std::vector<coord_t>& b) {
-    if (a.size() != b.size()) {
-        return false;
-    }
-
-    for (size_t i = 0; i < a.size(); i++) {
-        if (a[i].x != b[i].x ||
-            a[i].y != b[i].y ||
-            a[i].z != b[i].z) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-bool same_topology_scalars(
-    const topo_t& a,
-    const topo_t& b) {
-    return a.solvent_type == b.solvent_type &&
-           a.exclusion_radius == b.exclusion_radius &&
-           a.solvent_radius == b.solvent_radius &&
-
-           a.solute_center.x == b.solute_center.x &&
-           a.solute_center.y == b.solute_center.y &&
-           a.solute_center.z == b.solute_center.z &&
-
-           a.solvent_center.x == b.solvent_center.x &&
-           a.solvent_center.y == b.solvent_center.y &&
-           a.solvent_center.z == b.solvent_center.z &&
-
-           a.el14_scale == b.el14_scale &&
-           a.coulomb_constant == b.coulomb_constant &&
-           a.vdw_rule == b.vdw_rule;
-}
-
-bool same_md_batch_config(
-    const md_t& a,
-    const md_t& b) {
-    return
-        // Integration and thermostat
-        a.steps == b.steps &&
-        a.stepsize == b.stepsize &&
-        a.temperature == b.temperature &&
-        a.thermostat == b.thermostat &&
-        a.bath_coupling == b.bath_coupling &&
-        a.initial_temperature == b.initial_temperature &&
-
-        // SHAKE
-        a.shake_solvent == b.shake_solvent &&
-        a.shake_solute == b.shake_solute &&
-        a.shake_hydrogens == b.shake_hydrogens &&
-
-        // Nonbonded configuration
-        a.lrf == b.lrf &&
-        a.separate_scaling == b.separate_scaling &&
-        a.charge_groups == b.charge_groups &&
-        a.solute_solute == b.solute_solute &&
-        a.solvent_solvent == b.solvent_solvent &&
-        a.solute_solvent == b.solute_solvent &&
-        a.q_atom == b.q_atom &&
-
-        // Spherical boundary
-        a.shell_radius == b.shell_radius &&
-        a.shell_force == b.shell_force &&
-        a.radial_force == b.radial_force &&
-        a.polarisation == b.polarisation &&
-        a.charge_correction == b.charge_correction &&
-        a.polarisation_force == b.polarisation_force &&
-
-        // Runtime/output intervals
-        a.non_bond == b.non_bond &&
-        a.output == b.output &&
-        a.energy == b.energy &&
-        a.trajectory == b.trajectory;
-}
-
-void validate_batch_compatible(
-    const ParseResult& reference,
-    const ParseResult& candidate,
-    int replica) {
-    const bool same_run_configuration =
-        reference.fresh_start == candidate.fresh_start &&
-        same_md_batch_config(reference.md, candidate.md) &&
-        same_topology_scalars(reference.topo, candidate.topo);
-
-    const bool same_system_shape =
-        reference.n_atoms_solute ==
-            candidate.n_atoms_solute &&
-        reference.n_bonds_solute ==
-            candidate.n_bonds_solute &&
-        reference.n_angles_solute ==
-            candidate.n_angles_solute &&
-        reference.n_torsions_solute ==
-            candidate.n_torsions_solute &&
-        reference.n_impropers_solute ==
-            candidate.n_impropers_solute &&
-        reference.lambdas == candidate.lambdas &&
-        same_coords(
-            reference.coords_init,
-            candidate.coords_init);
-
-    const bool same_classical_topology =
-        same_size(reference.bonds, candidate.bonds) &&
-        same_size(reference.cbonds, candidate.cbonds) &&
-        same_size(reference.angles, candidate.angles) &&
-        same_size(reference.cangles, candidate.cangles) &&
-        same_size(reference.torsions, candidate.torsions) &&
-        same_size(reference.ctorsions, candidate.ctorsions) &&
-        same_size(reference.impropers, candidate.impropers) &&
-        same_size(
-            reference.cimpropers,
-            candidate.cimpropers) &&
-        same_size(reference.charges, candidate.charges) &&
-        same_size(reference.ccharges, candidate.ccharges) &&
-        same_size(reference.atypes, candidate.atypes) &&
-        same_size(reference.catypes, candidate.catypes) &&
-        reference.excluded == candidate.excluded &&
-        reference.molecules == candidate.molecules &&
-        reference.ngbrs14 == candidate.ngbrs14 &&
-        reference.ngbrs14_long == candidate.ngbrs14_long &&
-        reference.ngbrs23 == candidate.ngbrs23 &&
-        reference.ngbrs23_long == candidate.ngbrs23_long;
-
-    const bool same_restraints =
-        same_size(
-            reference.restrspos,
-            candidate.restrspos) &&
-        same_size(
-            reference.restrangs,
-            candidate.restrangs) &&
-        same_size(
-            reference.restrdists,
-            candidate.restrdists) &&
-        same_size(
-            reference.restrseqs,
-            candidate.restrseqs) &&
-        same_size(
-            reference.restrwalls,
-            candidate.restrwalls);
-
-    const bool same_fep_topology =
-        reference.q_atoms == candidate.q_atoms &&
-        same_size(
-            reference.q_angcouples,
-            candidate.q_angcouples) &&
-        same_size(reference.q_atypes, candidate.q_atypes) &&
-        same_size(reference.q_catypes, candidate.q_catypes) &&
-        same_size(reference.q_charges, candidate.q_charges) &&
-        same_size(reference.q_angles, candidate.q_angles) &&
-        same_size(reference.q_cangles, candidate.q_cangles) &&
-        same_size(reference.q_bonds, candidate.q_bonds) &&
-        same_size(reference.q_cbonds, candidate.q_cbonds) &&
-        same_size(
-            reference.q_impropers,
-            candidate.q_impropers) &&
-        same_size(
-            reference.q_cimpropers,
-            candidate.q_cimpropers) &&
-        same_size(
-            reference.q_torsions,
-            candidate.q_torsions) &&
-        same_size(
-            reference.q_ctorsions,
-            candidate.q_ctorsions) &&
-        same_size(
-            reference.q_offdiags,
-            candidate.q_offdiags) &&
-        same_size(
-            reference.q_imprcouples,
-            candidate.q_imprcouples) &&
-        same_size(
-            reference.q_softpairs,
-            candidate.q_softpairs) &&
-        same_size(
-            reference.q_torcouples,
-            candidate.q_torcouples) &&
-        same_size(
-            reference.q_elscales,
-            candidate.q_elscales) &&
-        same_size(
-            reference.q_exclpairs,
-            candidate.q_exclpairs) &&
-        same_size(
-            reference.q_shakes,
-            candidate.q_shakes) &&
-        same_size(
-            reference.q_softcores,
-            candidate.q_softcores) &&
-        reference.softcore_use_max_potential ==
-            candidate.softcore_use_max_potential;
-
-    // Coordinate and velocity values may differ, but every replica
-    // must contain the same number of atoms.
-    const bool same_dynamic_state_shape =
-        reference.coords.size() ==
-            candidate.coords.size() &&
-        reference.velocities.size() ==
-            candidate.velocities.size();
-
-    const bool compatible =
-        same_run_configuration &&
-        same_system_shape &&
-        same_classical_topology &&
-        same_restraints &&
-        same_fep_topology &&
-        same_dynamic_state_shape;
-
-    if (!compatible) {
-        fatal(
-            "Replica " + std::to_string(replica) +
-            " is not topology/FEP compatible with replica 0.");
     }
 }
 
@@ -277,26 +54,10 @@ void Context::init_lj_matrix(const ParseResult& parsed) {
     LJ_matrix = HostDeviceBuffer<int>::from_vector(matrix, command_info.requested_gpu);
 }
 
-std::vector<ParseResult> Context::get_parse_results() {
-    const auto& input_files = command_info.input_files;
-    if (input_files.empty()) {
-        fatal("At least one replica input file is required.");
-    }
-
-    std::vector<ParseResult> results;
-    results.reserve(input_files.size());
-
-    for (const std::string& input_file : command_info.input_files) {
-        InpParser replica_parser(input_file);
-        ParseResult candidate = replica_parser.parse();
-        validate_parse_result(candidate);
-        const int replica = results.size();
-        if (!results.empty()) {
-            validate_batch_compatible(results.front(), candidate, replica);
-        }
-        results.push_back(std::move(candidate));
-    }
-    return results;
+ParseResult Context::get_parse_result() {
+    std::unique_ptr<BaseParser> parser = std::make_unique<InpParser>(command_info.input_file);
+    ParseResult parser_result = parser->parse();
+    return parser_result;
 }
 
 void Context::init_fresh_start(const ParseResult& parsed) {
@@ -311,13 +72,8 @@ void Context::init_topo(const ParseResult& parsed) {
     topo = parsed.topo;
 }
 
-void Context::init_native_outputs(const std::vector<ParseResult>& replica_results) {
-    native_outputs.clear();
-    native_outputs.reserve(replica_results.size());
-
-    for (const ParseResult& result : replica_results) {
-        native_outputs.push_back(result.native_output);
-    }
+void Context::init_native_output(const ParseResult& parsed) {
+    native_output = parsed.native_output;
 }
 
 void Context::init_const(const ParseResult& parsed) {
@@ -332,31 +88,30 @@ void Context::init_coords_init(const ParseResult& parsed) {
     coords_init = HostDeviceBuffer<coord_t>::from_vector(parsed.coords_init, command_info.requested_gpu);
 }
 
-void Context::init_coords(
-    const std::vector<ParseResult>& replica_results) {
-    std::vector<coord_t> batch_coords;
-
-    const size_t parsed_atoms = static_cast<size_t>(n_atoms) * replica_results.size();
-
-    batch_coords.reserve(parsed_atoms);
-
-    for (const ParseResult& result : replica_results) {
-        batch_coords.insert(batch_coords.end(), result.coords.begin(), result.coords.end());
-    }
-
-    coords = HostDeviceBuffer<coord_t>::from_vector(batch_coords, command_info.requested_gpu);
+void Context::init_coords(const ParseResult& parsed) {
+    coords = HostDeviceBuffer<coord_t>::from_vector(parsed.coords, command_info.requested_gpu);
 }
 
-void Context::init_velocities(const std::vector<ParseResult>& replica_results) {
-    std::vector<vel_t> batch_velocities;
+void Context::init_velocities(const ParseResult& parsed) {
+    if (!fresh_start) {
+        velocities = HostDeviceBuffer<vel_t>::from_vector(parsed.velocities, command_info.requested_gpu);
+    } else {
+        srand(md.random_seed);
+        const auto* atom_types = atypes->cpu_data_p;
+        const auto* type_parameters = catypes->cpu_data_p;
 
-    batch_velocities.reserve(static_cast<size_t>(n_atoms) * replica_results.size());
+        std::vector<vel_t> velocity_data(n_atoms);
 
-    for (const ParseResult& result : replica_results) {
-        batch_velocities.insert(batch_velocities.end(), result.velocities.begin(), result.velocities.end());
+        const double kT = Boltz * md.initial_temperature;
+        for (int atom = 0; atom < n_atoms; atom++) {
+            double mass = type_parameters[atom_types[atom].code - 1].m;
+            const double sd = sqrt(kT / mass);
+            velocity_data[atom].x = gauss(0, sd);
+            velocity_data[atom].y = gauss(0, sd);
+            velocity_data[atom].z = gauss(0, sd);
+        }
+        velocities = HostDeviceBuffer<vel_t>::from_vector(velocity_data, command_info.requested_gpu);
     }
-
-    velocities = HostDeviceBuffer<vel_t>::from_vector(batch_velocities, command_info.requested_gpu);
 }
 
 void Context::init_lambdas(const ParseResult& parsed) {
@@ -518,29 +273,26 @@ void Context::init_shell() {
 }
 
 void Context::init_dvelocities() {
-    dvelocities = std::make_unique<HostDeviceBuffer<dvel_t>>(n_total_atoms(), true, command_info.requested_gpu);
+    dvelocities = std::make_unique<HostDeviceBuffer<dvel_t>>(n_atoms, true, command_info.requested_gpu);
 }
 
 void Context::init_energy() {
-    energy.init(n_lambdas(), n_replicates());
+    energy.init(n_lambdas());
 }
 
-void Context::init(const std::vector<ParseResult>& replica_results) {
-    if (replica_results.empty()) {
-        fatal("At least one parsed replica is required.");
-    }
-    const ParseResult& parsed = replica_results.front();
+void Context::init(const ParseResult& parsed) {
+    validate_parse_result(parsed);
 
     // 1. Basic configuration
     init_fresh_start(parsed);
     init_md(parsed);
     init_topo(parsed);
-    init_native_outputs(replica_results);
+    init_native_output(parsed);
     init_const(parsed);
 
     // 2. Basic atom data
     init_coords_init(parsed);
-    init_coords(replica_results);
+    init_coords(parsed);
     init_charges(parsed);
     init_ccharges(parsed);
     init_atypes(parsed);
@@ -564,7 +316,7 @@ void Context::init(const std::vector<ParseResult>& replica_results) {
     init_lj_matrix(parsed);
 
     // 5. Dynamic state
-    init_velocities(replica_results);
+    init_velocities(parsed);
 
     // 6. Runtime buffers
     init_dvelocities();

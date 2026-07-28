@@ -2,21 +2,16 @@
 
 #include "cpu_force_accumulation.h"
 
-void EnergyBuffer::init(int n_lambdas, int n_replicates) {
+void EnergyBuffer::init(int n_lambdas) {
     n_lambdas_ = n_lambdas;
-    n_replicates_ = n_replicates;
     accum_ = std::make_unique<HostDeviceBuffer<energy_accum_t>>(size());
-    data_.resize(n_replicates_);
-
-    for (auto& data : data_) {
-        data.eq_bond.resize(n_lambdas_);
-        data.eq_qq.resize(n_lambdas_);
-        data.eq_qp.resize(n_lambdas_);
-        data.eq_qw.resize(n_lambdas_);
-        data.eq_qx.resize(n_lambdas_);
-        data.eq_restr.resize(n_lambdas_);
-        data.eq_total.resize(n_lambdas_);
-    }
+    data_.eq_bond.resize(n_lambdas_);
+    data_.eq_qq.resize(n_lambdas_);
+    data_.eq_qp.resize(n_lambdas_);
+    data_.eq_qw.resize(n_lambdas_);
+    data_.eq_qx.resize(n_lambdas_);
+    data_.eq_restr.resize(n_lambdas_);
+    data_.eq_total.resize(n_lambdas_);
 }
 
 void EnergyBuffer::reset() {
@@ -31,11 +26,11 @@ void EnergyBuffer::download() {
 // per-state derived values (eq_qx = qq+qp+qw, eq_total = per-state sum).
 // The lambda-weighted globals (bond_q, nb_qx, restraint.Urestr, Upot/Utot)
 // and the lambda==0 zeroing are finalized separately, where lambda is known.
-void EnergyBuffer::unpack(int replica) {
-    const energy_accum_t* a = host(replica);
+void EnergyBuffer::unpack() {
+    const energy_accum_t* a = host();
     auto E = [&](int slot) { return energy_from_accum(a[slot]); };
     auto EQ = [&](int state, EQSlot s) { return E(eq_index(ENERGY_FIXED_COUNT, state, s)); };
-    auto& d = data_[replica];
+    auto& d = data_;
 
     // fixed bonded
     d.bond_p = {E(E_BOND_P_BOND), E(E_BOND_P_ANGLE), E(E_BOND_P_TOR), E(E_BOND_P_IMP)};
@@ -69,8 +64,8 @@ void EnergyBuffer::unpack(int replica) {
     }
 }
 
-void EnergyBuffer::combine(const double* lambdas, int replica) {
-    auto& d = data_[replica];
+void EnergyBuffer::combine(const double* lambdas) {
+    auto& d = data_;
     d.bond_q = {};
     d.nb_qx = {};
     for (int s = 0; s < n_lambdas_; s++) {

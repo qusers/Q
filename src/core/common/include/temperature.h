@@ -26,7 +26,7 @@ class Temperature {
     virtual ~Temperature() = default;
     void init(Context& ctx, const Shake& shake);
     virtual void calc(Context& ctx) = 0;
-    virtual void sync_for_output(Context& ctx, int replica = 0);
+    virtual void sync_for_output(Context& ctx);
     virtual void cleanup() {}
     const TemperatureData& data() const { return data_; }
 

@@ -40,6 +40,7 @@ class CudaShake final : public Shake {
 
    private:
     void apply_to(Context& ctx, coord_t* d_coords, coord_t* d_xcoords);
+
     bool is_init_backend = false;
     bool serial_q_molecules_ = false;
     CudaSerialConstraintSolver serial_q_solver_;

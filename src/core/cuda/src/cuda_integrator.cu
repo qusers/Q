@@ -17,14 +17,6 @@ __global__ void calc_leapfrog_kernel(
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_atoms) return;
 
-    const int replica = blockIdx.y;
-    const int atom_offset = replica * n_atoms;
-    velocities += atom_offset;
-    dvelocities += atom_offset;
-    coords += atom_offset;
-    xcoords += atom_offset;
-    temperature_results += replica * N_TRESULT;
-
     const double mass_i = catypes[atypes[i].code - 1].m;
     const double winv_i = 1 / mass_i;
     const double scale = (i < n_atoms_solute) ? temperature_results[R_TSCALE_SOL]
@@ -55,12 +47,6 @@ __global__ void update_velocities_from_positions_kernel(
     double dt) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_atoms) return;
-    const int replica = blockIdx.y;
-    const int atom_offset = replica * n_atoms;
-
-    velocities += atom_offset;
-    coords += atom_offset;
-    xcoords += atom_offset;
 
     velocities[i].x = (coords[i].x - xcoords[i].x) / dt;
     velocities[i].y = (coords[i].y - xcoords[i].y) / dt;
@@ -81,14 +67,14 @@ void CudaIntegrator::step(Context& ctx) {
 
     int blockSize = 256;
     int numBlocks = (ctx.n_atoms + blockSize - 1) / blockSize;
-    calc_leapfrog_kernel<<<dim3(numBlocks, ctx.n_replicates()), blockSize>>>(
+    calc_leapfrog_kernel<<<numBlocks, blockSize>>>(
         d_atypes, d_catypes, d_velocities, d_dvelocities,
         d_coords, d_xcoords, ctx.n_atoms, ctx.n_atoms_solute,
         d_temperature_results, ctx.dt);
 
     if (shake_->data().n_constraints > 0) {
         shake_->apply(ctx, *data_.xcoords);
-        update_velocities_from_positions_kernel<<<dim3(numBlocks, ctx.n_replicates()), blockSize>>>(
+        update_velocities_from_positions_kernel<<<numBlocks, blockSize>>>(
             d_velocities, d_coords, d_xcoords, ctx.n_atoms, ctx.dt);
     }
 }

@@ -1,7 +1,6 @@
 #include "handler.h"
 
 #include <chrono>
-#include <unordered_set>
 
 #include "native_out.h"
 #include "std_output.h"
@@ -28,9 +27,8 @@ void Handler::run_iteration(int iteration) {
 
 void Handler::initialize(const CommandInfo& command) {
     ctx.command_info = command;
-    std::vector<ParseResult> replica_results = ctx.get_parse_results();
-    ctx.init(replica_results);
-    const ParseResult& parsed = replica_results.front();
+    ParseResult parsed = ctx.get_parse_result();
+    ctx.init(parsed);
     shake_ = create_shake_backend();
     nonbonded_force_ = create_nonbonded_force_backend();
     bonded_force_ = create_bonded_force_backend();
@@ -43,7 +41,7 @@ void Handler::initialize(const CommandInfo& command) {
     nonbonded_force_->init(ctx);
     restraint_force_->init(ctx, parsed.restrspos, parsed.restrseqs, parsed.restrdists, parsed.restrangs, parsed.restrwalls);
     temperature_->init(ctx, *shake_);
-    water_boundary_force_->init(ctx, *temperature_, replica_results);
+    water_boundary_force_->init(ctx, *temperature_, parsed);
     integrator_->init(ctx, *shake_, *temperature_);
 
     if (ctx.fresh_start) {
@@ -60,35 +58,25 @@ void Handler::stop_cm_translation() {
     auto& catypes = ctx.catypes->cpu_data_p;
     auto& velocities = ctx.velocities->cpu_data_p;
     double total_mass = 0;
+    coord_t vcm = {};
 
     for (int ai = 0; ai < ctx.n_atoms; ai++) {
         const double rmass = catypes[atypes[ai].code - 1].m;
         total_mass += rmass;
+        vcm.x += velocities[ai].x * rmass;
+        vcm.y += velocities[ai].y * rmass;
+        vcm.z += velocities[ai].z * rmass;
     }
 
-    for (int replica = 0; replica < ctx.n_replicates(); replica++) {
-        const int atom_offset = replica * ctx.n_atoms;
-        coord_t vcm = {};
-        for (int ai = 0; ai < ctx.n_atoms; ai++) {
-            const int atom = atom_offset + ai;
-            const double mass = catypes[atypes[ai].code - 1].m;
-            vcm.x += velocities[atom].x * mass;
-            vcm.y += velocities[atom].y * mass;
-            vcm.z += velocities[atom].z * mass;
-        }
-        vcm.x /= total_mass;
-        vcm.y /= total_mass;
-        vcm.z /= total_mass;
+    vcm.x /= total_mass;
+    vcm.y /= total_mass;
+    vcm.z /= total_mass;
 
-        for (int ai = 0; ai < ctx.n_atoms; ai++) {
-            const int atom = atom_offset + ai;
-
-            velocities[atom].x -= vcm.x;
-            velocities[atom].y -= vcm.y;
-            velocities[atom].z -= vcm.z;
-        }
+    for (int ai = 0; ai < ctx.n_atoms; ai++) {
+        velocities[ai].x -= vcm.x;
+        velocities[ai].y -= vcm.y;
+        velocities[ai].z -= vcm.z;
     }
-
     if (ctx.command_info.requested_gpu) {
         ctx.velocities->upload();
     }
@@ -126,11 +114,9 @@ void Handler::update_energy_totals() {
     if (ctx.command_info.requested_gpu) {
         ctx.energy.download();
     }
-    for (int replica = 0; replica < ctx.n_replicates(); replica++) {
-        ctx.energy.unpack(replica);
-        temperature_->sync_for_output(ctx, replica);
-        ctx.energy.combine(ctx.lambdas->cpu_data_p, replica);
-    }
+    ctx.energy.unpack();
+    temperature_->sync_for_output(ctx);  // publish Ukin before combine sums Utot
+    ctx.energy.combine(ctx.lambdas->cpu_data_p);
 }
 
 void Handler::print_outputs(int iteration) {
@@ -171,33 +157,7 @@ void Handler::print_outputs(int iteration) {
 void Handler::create_outputs() {
     outputs_.clear();
     outputs_.push_back(std::make_unique<StdOutput>());
-
-    std::unordered_set<std::string> output_files;
-    for (int replica = 0; replica < ctx.n_replicates(); replica++) {
-        NativeOutputConfig config = ctx.native_outputs.at(replica);
-
-        auto already_used = [&](const std::string& path) {
-            return !path.empty() && output_files.count(path) > 0;
-        };
-        const bool collision = already_used(config.final_file) || already_used(config.trajectory_file) || already_used(config.energy_file);
-
-        if (collision) {
-            std::fprintf(stderr, ">>> WARNING: native output for replica %d is skipped because an output filename is already used by an earlier replica.\n", replica);
-            continue;
-        }
-
-        auto remember = [&](const std::string& path) {
-            if (!path.empty()) {
-                output_files.insert(path);
-            }
-        };
-
-        remember(config.final_file);
-        remember(config.trajectory_file);
-        remember(config.energy_file);
-
-        outputs_.push_back(std::make_unique<NativeOutput>(std::move(config), replica));
-    }
+    outputs_.push_back(std::make_unique<NativeOutput>(ctx.native_output));
 }
 
 void Handler::init_outputs() {

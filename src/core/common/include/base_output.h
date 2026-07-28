@@ -9,7 +9,7 @@ struct OutputRequirements {
 
 class BaseOutput {
    public:
-    explicit BaseOutput(int replica = 0) : replica_(replica) {}
+    BaseOutput() {}
     virtual ~BaseOutput() = default;
     virtual void init(Context& ctx) {}
     virtual void finish(Context& ctx) {}
@@ -27,5 +27,4 @@ class BaseOutput {
     virtual void output_trajectory(Context& ctx, int iteration) = 0;
     virtual void output_energy(Context& ctx, int iteration) = 0;
     virtual void output_restart(Context& ctx, int iteration) {}
-    int replica_ = 0;
 };

@@ -9,7 +9,7 @@
 
 class NativeOutput : public BaseOutput {
    public:
-    explicit NativeOutput(NativeOutputConfig config, int replica) : BaseOutput(replica), config_(std::move(config)) { validate_config(); }
+    explicit NativeOutput(NativeOutputConfig config);
     ~NativeOutput() override = default;
 
     void init(Context& ctx) override;

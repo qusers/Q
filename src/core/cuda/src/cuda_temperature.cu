@@ -16,18 +16,7 @@ __global__ void calc_temperature_kernel(int n_atoms, int n_atoms_solute, atype_t
                                         energy_accum_t* Temp_solute, energy_accum_t* Tfree_solute, energy_accum_t* Texcl_solute,
                                         energy_accum_t* Temp_solvent, energy_accum_t* Tfree_solvent, energy_accum_t* Texcl_solvent) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    const int replica = blockIdx.y;
     if (idx >= n_atoms) return;
-
-    velocities += replica * n_atoms;
-
-    const int accum_offset = replica * N_TACCUM;
-    Temp_solute += accum_offset;
-    Tfree_solute += accum_offset;
-    Texcl_solute += accum_offset;
-    Temp_solvent += accum_offset;
-    Tfree_solvent += accum_offset;
-    Texcl_solvent += accum_offset;
 
     double mass_i = catypes[atypes[idx].code - 1].m;
     const double vx = velocities[idx].x;
@@ -60,10 +49,7 @@ __global__ void finalize_temperature_kernel(
     int Ndegf, int Ndegfree, int Ndegfree_solute, int Ndegfree_solvent,
     bool separate_scaling, double tau_T, double dt, double target_T,
     double* results) {
-    if (threadIdx.x != 0) return;
-    const int replica = blockIdx.x;
-    results += replica * N_TRESULT;
-    acc += replica * N_TACCUM;
+    if (threadIdx.x || blockIdx.x) return;
 
     double Tf_sol = energy_from_accum(acc[TFREE_SOL]);
     double Tf_slv = energy_from_accum(acc[TFREE_SLV]);
@@ -93,7 +79,7 @@ __global__ void finalize_temperature_kernel(
 }  // namespace
 
 void CudaTemperature::init_backend(Context& ctx) {
-    accum_ = std::make_unique<HostDeviceBuffer<energy_accum_t>>(N_TACCUM * ctx.n_replicates());
+    accum_ = std::make_unique<HostDeviceBuffer<energy_accum_t>>(N_TACCUM);
 }
 
 void CudaTemperature::calc(Context& ctx) {
@@ -104,22 +90,20 @@ void CudaTemperature::calc(Context& ctx) {
     int blockSize = 256;
     int numBlocks = (ctx.n_atoms + blockSize - 1) / blockSize;
 
-    calc_temperature_kernel<<<dim3(numBlocks, ctx.n_replicates()), blockSize>>>(
+    calc_temperature_kernel<<<numBlocks, blockSize>>>(
         ctx.n_atoms, ctx.n_atoms_solute,
         ctx.atypes->gpu_data_p, ctx.catypes->gpu_data_p,
         ctx.velocities->gpu_data_p, ctx.excluded->gpu_data_p, Boltz, Ekinmax,
         d + TEMP_SOL, d + TFREE_SOL, d + TEXCL_SOL,
         d + TEMP_SLV, d + TFREE_SLV, d + TEXCL_SLV);
 
-    finalize_temperature_kernel<<<ctx.n_replicates(), 1>>>(
+    finalize_temperature_kernel<<<1, 1>>>(
         d, data_.Ndegf, data_.Ndegfree, data_.Ndegfree_solute, data_.Ndegfree_solvent,
         data_.separate_scaling, data_.tau_T, ctx.dt, ctx.md.temperature,
         data_.results->gpu_data_p);
 }
 
-void CudaTemperature::sync_for_output(Context& ctx, int replica) {
-    if (replica == 0) {
-        data_.results->download();  // one small memcpy on log steps
-    }
-    Temperature::sync_for_output(ctx, replica);
+void CudaTemperature::sync_for_output(Context& ctx) {
+    data_.results->download();  // one small memcpy on log steps
+    Temperature::sync_for_output(ctx);
 }
