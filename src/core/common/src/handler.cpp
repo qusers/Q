@@ -98,6 +98,8 @@ void Handler::calc_final_potential(int iteration) {
     reset_energies();
     calc_nonbonded_forces();
     calc_internal_forces(iteration);
+    update_energy_totals();
+    water_boundary_force_->sync_for_output(ctx);
 }
 
 void Handler::run() {
@@ -136,14 +138,12 @@ void Handler::update_energy_totals() {
 void Handler::print_outputs(int iteration) {
     bool needs_energy = false;
     bool needs_restart = false;
-    bool needs_trajectory = false;
 
     for (const auto& output : outputs_) {
         const auto required = output->requirements(ctx, iteration);
 
         needs_energy |= required.energy;
         needs_restart |= required.restart;
-        needs_trajectory |= required.trajectory;
     }
 
     if (needs_energy) {
@@ -152,15 +152,6 @@ void Handler::print_outputs(int iteration) {
 
     if (needs_restart) {
         water_boundary_force_->sync_for_output(ctx);
-    }
-
-    if (ctx.command_info.requested_gpu) {
-        if (needs_trajectory || needs_restart) {
-            ctx.coords->download();
-        }
-        if (needs_restart) {
-            ctx.velocities->download();
-        }
     }
 
     for (auto& output : outputs_) {
@@ -207,12 +198,6 @@ void Handler::init_outputs() {
 }
 
 void Handler::finish_outputs() {
-    update_energy_totals();
-    water_boundary_force_->sync_for_output(ctx);
-    if (ctx.command_info.requested_gpu) {
-        ctx.coords->download();
-        ctx.velocities->download();
-    }
     for (auto& output : outputs_) {
         output->finish(ctx);
     }

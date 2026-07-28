@@ -77,11 +77,6 @@ void StdOutput::finish(Context& ctx) {
 
 OutputRequirements StdOutput::requirements(const Context& ctx, int iteration) const {
     return {
-        .energy = iteration == 0 ||
-                  (iteration > 0 &&
-                   ctx.md.output > 0 &&
-                   iteration % ctx.md.output == 0),
-
-        .trajectory = false,
+        .energy = iteration == 0 || (iteration > 0 && ctx.md.output > 0 && iteration % ctx.md.output == 0),
         .restart = false};
 }

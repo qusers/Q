@@ -259,6 +259,10 @@ void NativeOutput::write_trajectory_frame(Context& ctx) {
 
     std::vector<float> axis(trajectory_atoms_indices_.size());
 
+    if (ctx.command_info.requested_gpu) {
+        ctx.coords->download();
+    }
+
     auto* coords = ctx.coords->cpu_data_p + replica_ * ctx.n_atoms;
     for (size_t i = 0; i < trajectory_atoms_indices_.size(); i++) axis[i] = static_cast<float>(coords[trajectory_atoms_indices_[i]].x);
     write_record(trajectory_stream_, axis.data(), static_cast<int32_t>(axis.size() * sizeof(float)));
@@ -296,6 +300,10 @@ void NativeOutput::write_restart_file(Context& ctx) const {
     if (!out) {
         throw std::runtime_error("Could not write native final restart file " + config_.final_file);
     }
+    if (ctx.command_info.requested_gpu) {
+        ctx.coords->download();
+        ctx.velocities->download();
+    }
     const int atom_offset = replica_ * ctx.n_atoms;
 
     write_restart_record(out, ctx.coords->cpu_data_p + atom_offset, nullptr, ctx.n_atoms, false);
@@ -312,6 +320,5 @@ void NativeOutput::write_restart_file(Context& ctx) const {
 OutputRequirements NativeOutput::requirements(const Context& ctx, int iteration) const {
     return {
         .energy = iteration > 0 && ctx.md.energy > 0 && iteration % ctx.md.energy == 0,
-        .trajectory = iteration > 0 && ctx.md.trajectory > 0 && iteration % ctx.md.trajectory == 0,
         .restart = iteration % 1000 == 0};
 }
