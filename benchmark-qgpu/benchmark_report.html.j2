@@ -25,36 +25,36 @@
   <div class="chart">
   <h2>Simulation throughput (total ns/day)</h2>
   <div id="nsday-chart"></div>
-  <div class="note">Total simulated nanoseconds per wall-clock day across all {{ scale_label_lower }}.</div>
+  <div class="note">Total simulated nanoseconds per wall-clock day across all concurrent processes.</div>
   </div>
 
   <div class="chart">
-    <h2>Wall time vs {{ scale_label_lower }}</h2>
+    <h2>Wall time vs processes</h2>
     <div id="wall-chart"></div>
-    <div class="note">Mean and p95 wall time (seconds) per {{ scale_label_lower }} count.</div>
+    <div class="note">Mean and p95 wall time (seconds) per process count.</div>
   </div>
 
 <div class="chart">
-  <h2>Speedup vs {{ scale_label_lower }}</h2>
+  <h2>Speedup vs processes</h2>
   <div id="speedup-chart"></div>
   <div class="note">Speedup(n) = T_cpu / (T_n / n)</div>
 </div>
 
 
   <div class="chart">
-    <h2>Memory vs {{ scale_label_lower }}</h2>
+    <h2>Memory vs processes</h2>
     <div id="mem-chart"></div>
     <div class="note">Mean peak RSS (CPU MB) and mean peak GPU memory (MB).</div>
   </div>
 
   <div class="chart">
-  <h2>GPU Memory Utilization vs {{ scale_label_lower }}</h2>
+  <h2>GPU Memory Utilization vs processes</h2>
   <div id="memutil-chart"></div>
   <div class="note">Mean and peak VRAM utilization across GPUs during each run.</div>
   </div>
 
   <div class="chart">
-    <h2>GPU Utilization vs {{ scale_label_lower }}</h2>
+    <h2>GPU Utilization vs processes</h2>
     <div id="util-chart"></div>
     <div class="note">Average GPU utilization across all GPUs while the job runs.</div>
   </div>
@@ -173,21 +173,21 @@ function lineChart(containerId, cfg) {
 (function(){
   const xs = payload.procs; // e.g., [1,2,3,...]
   lineChart("wall-chart", {
-    xLabel: payload.scale_label, yLabel: "Seconds", xs,
+    xLabel: "Processes", yLabel: "Seconds", xs,
     series: [
       { label: "Wall mean (s)", ys: payload.wall_mean },
       { label: "Wall p95 (s)",  ys: payload.wall_p95  },
     ]
   });
   lineChart("mem-chart", {
-    xLabel: payload.scale_label, yLabel: "MB", xs,
+    xLabel: "Processes", yLabel: "MB", xs,
     series: [
       { label: "RSS mean (MB)", ys: payload.rss_mean },
       { label: "GPU mean (MB)", ys: payload.gpu_mean },
     ]
   });
   lineChart("memutil-chart", {
-    xLabel: payload.scale_label, yLabel: "% VRAM Utilization", xs: payload.procs,
+    xLabel: "Processes", yLabel: "% VRAM Utilization", xs: payload.procs,
     series: [
       { label: "VRAM util mean (%)", ys: payload.gpu_mem_util_mean },
       { label: "VRAM util peak (%)", ys: payload.gpu_mem_util_peak }
@@ -195,21 +195,21 @@ function lineChart(containerId, cfg) {
   });
 // GPU utilization chart
   lineChart("util-chart", {
-    xLabel: payload.scale_label, yLabel: "% GPU Utilization", xs: payload.procs,
+    xLabel: "Processes", yLabel: "% GPU Utilization", xs: payload.procs,
     series: [
       { label: "GPU util mean (%)", ys: payload.gpu_util_mean },
       { label: "GPU util peak (%)", ys: payload.gpu_util_peak }
     ]
   });
     lineChart("speedup-chart", {
-    xLabel: payload.scale_label, yLabel: "Speedup (×)", xs: payload.procs,
+    xLabel: "Processes", yLabel: "Speedup (×)", xs: payload.procs,
     series: [
       { label: "Speedup", ys: payload.speedup }
     ]
   });
 
   lineChart("nsday-chart", {
-    xLabel: payload.scale_label, yLabel: "total ns/day", xs: payload.procs,
+    xLabel: "Processes", yLabel: "total ns/day", xs: payload.procs,
     series: [{ label: "Total throughput (ns/day)", ys: payload.ns_per_day }]
   });
 
@@ -219,8 +219,6 @@ function lineChart(containerId, cfg) {
 // ----- Render summary table -----
 (function(){
   const rows = payload.table_rows; // list of dicts
-  const fixed = (value, digits) =>
-    Number.isFinite(value) ? value.toFixed(digits) : "—";
   if (!rows.length) { 
     document.getElementById("summary-table").innerHTML = "<p style='color:#888'>No data.</p>";
     return;
@@ -229,7 +227,7 @@ function lineChart(containerId, cfg) {
   const thead = document.createElement("thead");
   thead.innerHTML = `
     <tr>
-      <th>${payload.scale_label}</th><th>Runs</th><th>Non-zero RC</th>
+      <th>Procs</th><th>Runs</th><th>Non-zero RC</th>
       <th>Wall mean (s)</th><th>p95 (s)</th><th>min (s)</th><th>max (s)</th>
       <th>RSS mean (MB)</th><th>GPU mean (MB)</th>
       <th>GPU util mean (%)</th><th>GPU util peak (%)</th>
@@ -244,12 +242,12 @@ function lineChart(containerId, cfg) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${r.procs}</td><td>${r.runs}</td><td>${r.rc_bad}</td>
-      <td>${fixed(r.wall_mean, 3)}</td><td>${fixed(r.wall_p95, 3)}</td>
-      <td>${fixed(r.wall_min, 3)}</td><td>${fixed(r.wall_max, 3)}</td>
-      <td>${fixed(r.rss_mean, 1)}</td><td>${fixed(r.gpu_mean, 1)}</td>
-      <td>${fixed(r.gpu_util_mean, 1)}</td><td>${fixed(r.gpu_util_peak, 1)}</td>
-      <td>${fixed(r.vram_util_mean, 1)}</td><td>${fixed(r.vram_util_peak, 1)}</td>
-      <td>${fixed(r.speedup, 2)}</td><td>${fixed(r.ns_per_day, 1)}</td>
+      <td>${r.wall_mean.toFixed(3)}</td><td>${r.wall_p95.toFixed(3)}</td>
+      <td>${r.wall_min.toFixed(3)}</td><td>${r.wall_max.toFixed(3)}</td>
+      <td>${r.rss_mean.toFixed(1)}</td><td>${r.gpu_mean.toFixed(1)}</td>
+      <td>${r.gpu_util_mean.toFixed(1)}</td><td>${r.gpu_util_peak.toFixed(1)}</td>
+      <td>${r.vram_util_mean.toFixed(1)}</td><td>${r.vram_util_peak.toFixed(1)}</td>
+      <td>${r.speedup.toFixed(2)}</td><td>${r.ns_per_day.toFixed(1)}</td>
     `;
     tbody.appendChild(tr);
   });
