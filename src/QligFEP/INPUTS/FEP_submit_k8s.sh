@@ -1,15 +1,13 @@
 #! /bin/bash
 
 workdir="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
-echo $wrkdir
+echo $workdir
 inputfiles=$workdir/inputfiles
 submitfile=$inputfiles/RUNFILE
 
-if [ $# -eq 0 ]; then # if no arguments provided, submit the whole job array
-    echo "No arguments provided - submitting full job array (all replicates)"
-    bash $submitfile
-else
-    array_indices=$(echo "$@" | tr ' ' ',') # convert space-separated arguments to comma-separated
-    echo "Submitting job array indexes: $array_indices"
-    bash --array=$array_indices $submitfile
-fi
+# No SLURM scheduler available: run the run script directly. The run script runs
+# exactly one replicate per invocation - the orchestrator starts a container per
+# replicate to get several - so there is no job array to dispatch and any
+# command-line arguments are ignored.
+echo "No scheduler - running a single replicate"
+bash $submitfile
