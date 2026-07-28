@@ -23,7 +23,15 @@ from .pdb_utils import (
     rm_HOH_clash_NN,
 )
 from .restraints.restraint_setter import RestraintSetter
-from .settings.settings import CLUSTER_DICT, CONFIGS
+from .settings.settings import (
+    ARCHITECTURE_K8S,
+    ARCHITECTURE_LOCAL,
+    ARCHITECTURE_QMAPFEP_SLURM,
+    ARCHITECTURE_SCRIPTS,
+    CLUSTER_DICT,
+    CONFIGS,
+    resolve_architecture,
+)
 
 
 class QligFEP:
@@ -51,6 +59,7 @@ class QligFEP:
         random_state: Optional[int] = 42,
         wath_ligand_only: bool = False,
         no_slurm: bool = False,
+        architecture: Optional[str] = None,
     ):
         self.replacements = {}  # TODO: make this explicit in the future
         self.timestep = timestep
@@ -73,6 +82,10 @@ class QligFEP:
         self.dr_force = dr_force  # dr for distance restraint
         self.wath_ligand_only = wath_ligand_only
         self.no_slurm = no_slurm
+        # -c names the cluster; the architecture says how it is driven. Resolved
+        # here too, so calling QligFEP as a library (rather than through the CLI)
+        # still honours a bare no_slurm=True.
+        self.architecture = resolve_architecture(architecture, no_slurm)
         # Temporary until flag is here
         self.ABS = False  # True
         self.ABS_waters = []
@@ -809,8 +822,8 @@ class QligFEP:
     def write_submitfile(self, writedir):
         replacements = {}
         replacements["RUNFILE"] = "run" + self.cluster + ".sh"
-        submit_script = "/FEP_submit_noslurm.sh" if self.no_slurm else "/FEP_submit.sh"
-        submit_in = CONFIGS["ROOT_DIR"] + "/INPUTS" + submit_script
+        submit_script, _ = ARCHITECTURE_SCRIPTS[self.architecture]
+        submit_in = CONFIGS["ROOT_DIR"] + "/INPUTS/" + submit_script
         submit_out = writedir + ("/FEP_submit.sh")
         with open(submit_in) as infile, open(submit_out, "w") as outfile:
             for line in infile:
@@ -823,22 +836,46 @@ class QligFEP:
         except:
             print("WARNING: Could not change permission for " + submit_out)
 
+    def md_step(self, file_base):
+        """Render the line(s) that run one eq/MD window.
+
+        How qdyn is launched is the main thing the architectures disagree on:
+
+        - Under SLURM the allocation is owned by the scheduler, so mpirun binds to
+          cores by absolute index.
+        - Without SLURM the job may be confined to an offset cpuset (a Docker
+          `--cpuset-cpus` block not starting at core 0), where `--bind-to core`
+          aborts; `--bind-to none` lets the cgroup provide the affinity instead.
+          There is also no $SLURM_NTASKS, so the run script defines a plain
+          `ntasks` at its top.
+        - Kubernetes runs qdyn serially: one replicate per container, with the
+          orchestrator running several containers at once rather than several
+          ranks within one.
+        - QmapFEP+SLURM also runs qdyn serially: the target is a Raspberry Pi
+          cluster where MPI is not cost-effective, and concurrency comes from
+          SLURM running several array tasks at once. Each step is additionally
+          followed by a NaN check, because qdyn exits 0 on a trajectory whose
+          energies stopped being finite - without it the run continues through
+          every remaining window and is reported as a success.
+        """
+        if self.architecture == ARCHITECTURE_QMAPFEP_SLURM:
+            return f"time $qdyn {file_base}.inp > {file_base}.log\ncheck_nan {file_base}.log\n"
+
+        if self.architecture == ARCHITECTURE_K8S:
+            return f"time $qdyn {file_base}.inp > {file_base}.log\n"
+
+        if self.architecture == ARCHITECTURE_LOCAL:
+            ntasks, bind = "$ntasks", "none"
+        else:
+            ntasks, bind = "$SLURM_NTASKS", "core"
+        return f"time mpirun -n {ntasks} --bind-to {bind} $qdyn {file_base}.inp > {file_base}.log\n"
+
     def write_runfile(self, writedir, file_list):
 
-        run_script = "/run_noslurm.sh" if self.no_slurm else "/run.sh"
-        src = CONFIGS["INPUT_DIR"] + run_script
+        _, run_script = ARCHITECTURE_SCRIPTS[self.architecture]
+        src = CONFIGS["INPUT_DIR"] + "/" + run_script
         tgt = writedir + "/run" + self.cluster + ".sh"
         EQ_files = sorted(glob.glob(writedir + "/eq*.inp"))
-        # Without SLURM there is no $SLURM_NTASKS; the no-slurm run script exposes the
-        # number of MPI ranks through a plain `ntasks` variable defined at its top.
-        # Binding: under SLURM let mpirun bind to cores (slurm owns the allocation).
-        # Without SLURM the job may be confined to an offset cpuset (e.g. a Docker
-        # `--cpuset-cpus` block not starting at core 0), and `--bind-to core` aborts
-        # there because it binds by absolute core index; `--bind-to none` lets the
-        # cgroup cpuset provide the affinity instead.
-        ntasks = "$ntasks" if self.no_slurm else "$SLURM_NTASKS"
-        bind = "none" if self.no_slurm else "core"
-        mpi_launch = f"time mpirun -n {ntasks} --bind-to {bind} $qdyn"
 
         if self.start == "1":
             MD_files = reversed(sorted(glob.glob(writedir + "/md*.inp")))
@@ -887,22 +924,22 @@ class QligFEP:
                 if line.strip() == "#EQ_FILES":
                     for line in EQ_files:
                         file_base = Path(line).stem
-                        outline = f"{mpi_launch} {file_base}.inp > {file_base}.log\n"
+                        outline = self.md_step(file_base)
                         outfile.write(outline)
 
                 if line.strip() == "#RUN_FILES":
                     if self.start == "1":
                         for line in MD_files:
                             file_base = line.split("/")[-1][:-4]
-                            outline = f"{mpi_launch} {file_base}.inp > {file_base}.log\n"
+                            outline = self.md_step(file_base)
                         outfile.write(outline)
 
                     elif self.start == "0.5":
-                        outline = f"{mpi_launch} md_0500_0500.inp > md_0500_0500.log\n\n"
+                        outline = self.md_step("md_0500_0500") + "\n"
                         outfile.write(outline)
                         for i, md in enumerate(md_1):
-                            outline1 = f"{mpi_launch} {md_1[i][:-4]}.inp > {md_1[i][:-4]}.log\n"
-                            outline2 = f"{mpi_launch} {md_2[i][:-4]}.inp > {md_2[i][:-4]}.log\n"
+                            outline1 = self.md_step(md_1[i][:-4])
+                            outline2 = self.md_step(md_2[i][:-4])
 
                             outfile.write(outline1)
                             outfile.write(outline2)

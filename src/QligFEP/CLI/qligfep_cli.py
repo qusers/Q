@@ -10,6 +10,7 @@ from QligFEP import __version__
 
 from ..logger import logger, setup_logger
 from ..qligfep import QligFEP
+from ..settings.settings import ARCHITECTURE_SLURM
 from .parser_base import parse_arguments
 
 
@@ -41,7 +42,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "dr_force": args.dr_force,
             "random_state": args.random_state,
             "wath_ligand_only": args.wath_ligand_only,
-            "no_slurm": args.no_slurm,
+            "architecture": args.architecture,
         }
     else:
         param_dict = {}
@@ -64,9 +65,6 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         elif k == "wath_ligand_only":
             if v:
                 command_str += f" --{k}".replace("_", "-")
-        elif k == "no_slurm":
-            if v:
-                command_str += f" --{k}".replace("_", "-")
         elif k == "dr_force":
             command_str += f" --{k} {v}".replace("dr_force", "distance_restraint_force")
         else:
@@ -74,9 +72,21 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     command_str += f" --restraint_method {args.restraint_method}"
     time_now = datetime.datetime.now()
     date_str = time_now.strftime("%Y-%m-%d %H:%M:%S")
+    # no_slurm is still written alongside the architecture, derived rather than
+    # passed: anything reading older run folders looks for it, and dropping it
+    # would break those readers for no gain. The architecture is the value to
+    # prefer - it is the only one that distinguishes all four targets.
     (Path(inputdir) / "fep_config.json").write_text(
         json.dumps(
-            {**param_dict, **{"time": date_str, "command_str": command_str, "QligFEP_version": __version__}},
+            {
+                **param_dict,
+                **{
+                    "no_slurm": run.architecture != ARCHITECTURE_SLURM,
+                    "time": date_str,
+                    "command_str": command_str,
+                    "QligFEP_version": __version__,
+                },
+            },
             indent=4,
         )
     )

@@ -2,7 +2,7 @@
 
 import argparse
 
-from ..settings.settings import CLUSTER_DICT
+from ..settings.settings import ARCHITECTURES, CLUSTER_DICT, resolve_architecture
 
 
 def parse_arguments(program: str) -> argparse.Namespace:
@@ -237,14 +237,29 @@ def parse_arguments(program: str) -> argparse.Namespace:
         choices=["trace", "debug", "info", "warning", "error", "critical"],
     )
     parser.add_argument(
+        "--architecture",
+        dest="architecture",
+        required=False,
+        default=None,
+        choices=ARCHITECTURES,
+        help=(
+            "How the cluster named by -c is driven, which decides the shape of the generated "
+            "run scripts. `slurm` (default) dispatches a SLURM job array over every "
+            "temperature/replicate combination and runs qdyn under MPI. `local` loops over "
+            "them sequentially on one machine with no scheduler. `k8s` runs a single "
+            "replicate per invocation, with the orchestrator supplying replicate identity. "
+            "`qmapfep-slurm` gives one array task per replicate, runs qdyn serially and "
+            "writes .finished/.failed sentinels. This replaces --no-slurm, which could only "
+            "express two of the four."
+        ),
+    )
+    parser.add_argument(
         "-ns",
         "--no-slurm",
         dest="no_slurm",
         action="store_true",
-        help=(
-            "Generate run scripts that execute directly (no SLURM scheduler), while keeping "
-            "the multi-seed/replicate structure. Replicates and temperatures are looped over "
-            "sequentially instead of being dispatched as a SLURM job array."
-        ),
+        help="Deprecated alias for `--architecture local`.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.architecture = resolve_architecture(args.architecture, args.no_slurm)
+    return args

@@ -165,3 +165,56 @@ CLUSTER_DICT = {
     "DARDEL": DARDEL,
     "LOCAL": LOCAL,
 }
+
+# ARCHITECTURES. How a cluster is driven, as opposed to which cluster it is.
+#
+# -c / --cluster names the cluster (LOCAL, SNELLIUS, ...) and supplies its module
+# loads, binaries and resource defaults. It says nothing about who dispatches the
+# work, and the same cluster can be driven in more than one way. That is what the
+# architecture is for.
+#
+# It replaces the --no-slurm boolean, which could only ever express two of these
+# four: the boolean predates both the Kubernetes target and the QmapFEP+SLURM one,
+# and by the time both existed a single flag could no longer identify the variant.
+ARCHITECTURE_SLURM = "slurm"
+ARCHITECTURE_LOCAL = "local"
+ARCHITECTURE_K8S = "k8s"
+ARCHITECTURE_QMAPFEP_SLURM = "qmapfep-slurm"
+
+ARCHITECTURES = (
+    ARCHITECTURE_SLURM,
+    ARCHITECTURE_LOCAL,
+    ARCHITECTURE_K8S,
+    ARCHITECTURE_QMAPFEP_SLURM,
+)
+
+DEFAULT_ARCHITECTURE = ARCHITECTURE_SLURM
+
+# Which templates each architecture is built from, as (submit script, run script).
+ARCHITECTURE_SCRIPTS = {
+    ARCHITECTURE_SLURM: ("FEP_submit.sh", "run.sh"),
+    ARCHITECTURE_LOCAL: ("FEP_submit_noslurm.sh", "run_noslurm.sh"),
+    ARCHITECTURE_K8S: ("FEP_submit_k8s.sh", "run_k8s.sh"),
+    ARCHITECTURE_QMAPFEP_SLURM: ("FEP_submit.sh", "run_qmapfep_slurm.sh"),
+}
+
+
+def resolve_architecture(architecture=None, no_slurm=False):
+    """Settle on one architecture from the new flag and the deprecated boolean.
+
+    --no-slurm is kept working as an alias for `local`, so existing scripts and
+    the fep_config.json files they produced keep meaning what they meant. Passing
+    both is a mistake worth failing on rather than silently resolving.
+    """
+    if architecture is not None:
+        if no_slurm and architecture != ARCHITECTURE_LOCAL:
+            raise ValueError(
+                f"--no-slurm is an alias for --architecture {ARCHITECTURE_LOCAL} "
+                f"and cannot be combined with --architecture {architecture}"
+            )
+        if architecture not in ARCHITECTURES:
+            raise ValueError(
+                f"unknown architecture {architecture!r}; expected one of {', '.join(ARCHITECTURES)}"
+            )
+        return architecture
+    return ARCHITECTURE_LOCAL if no_slurm else DEFAULT_ARCHITECTURE
