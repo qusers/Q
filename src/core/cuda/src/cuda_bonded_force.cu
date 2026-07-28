@@ -217,19 +217,13 @@ __device__ void compute_improper(int i, const dihe_idx_t* ids, const dparam2_t* 
 }
 
 __global__ void bonded_kernel(
-    int n_bond, int n_angle, int n_torsion, int n_improper, int n_atoms, int energy_stride,
+    int n_bond, int n_angle, int n_torsion, int n_improper,
     const bond_idx_t* bond_ids, const dparam2_t* bond_p, const int* bond_es,
     const angle_idx_t* angl_ids, const dparam2_t* angl_p, const int* angl_es,
     const dihe_idx_t* tor_ids, const torsion_param_t* tor_p, const int* tor_es,
     const dihe_idx_t* imp_ids, const dparam2_t* imp_p, const int* imp_es,
     const coord_t* coords, dvel_t* dvel,
     energy_accum_t* e) {
-    const int replica = blockIdx.y;
-    const int atom_offset = replica * n_atoms;
-    coords += atom_offset;
-    dvel += atom_offset;
-    e += replica * energy_stride;
-
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid < n_bond) {
         compute_bond(tid, bond_ids, bond_p, bond_es, coords, dvel, e);
@@ -268,8 +262,8 @@ void CudaBondedForce::calc(Context& ctx) {
     const int block = 256;
     const int grid = (total + block - 1) / block;
 
-    bonded_kernel<<<dim3(grid, ctx.n_replicates()), block>>>(
-        n_bond, n_angle, n_torsion, n_improper, ctx.n_atoms, ctx.energy.replica_stride(),
+    bonded_kernel<<<grid, block>>>(
+        n_bond, n_angle, n_torsion, n_improper,
         data_.bond.ids->gpu_data_p, data_.bond.params->gpu_data_p, data_.bond.eslot->gpu_data_p,
         data_.angle.ids->gpu_data_p, data_.angle.params->gpu_data_p, data_.angle.eslot->gpu_data_p,
         data_.torsion.ids->gpu_data_p, data_.torsion.params->gpu_data_p, data_.torsion.eslot->gpu_data_p,

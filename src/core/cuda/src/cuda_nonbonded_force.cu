@@ -91,16 +91,9 @@ __device__ void shuffle(int& atom, uint8_t& atom_type, int& atom_state, real_t& 
 
 __global__ void update_nonbonded_coords_kernel(
     const coord_t* coords, const int* atom_idx,
-    real_t* cx, real_t* cy, real_t* cz, int sz, int n_atoms) {
+    real_t* cx, real_t* cy, real_t* cz, int sz) {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= sz) return;
-
-    const int replica = blockIdx.y;
-    coords += replica * n_atoms;
-    cx += replica * sz;
-    cy += replica * sz;
-    cz += replica * sz;
-
     const int idx = atom_idx[i];
     if (idx < 0) {  // padding slot (atom_idx == -1); main kernel treats these as empty
         cx[i] = cy[i] = cz[i] = 0;
@@ -116,10 +109,9 @@ __global__ void update_nonbonded_coords_kernel(
 void CudaNonbondedForce::init_backend(Context& ctx) {
     // Buffers are indexed by combined-list position [0, n_total), which exceeds
     // n_atoms because Q atoms are duplicated per FEP state and the list is padded.
-    const int coordinate_count = data_.n_total * ctx.n_replicates();
-    coord_x = std::make_unique<HostDeviceBuffer<real_t>>(coordinate_count);
-    coord_y = std::make_unique<HostDeviceBuffer<real_t>>(coordinate_count);
-    coord_z = std::make_unique<HostDeviceBuffer<real_t>>(coordinate_count);
+    coord_x = std::make_unique<HostDeviceBuffer<real_t>>(data_.n_total);
+    coord_y = std::make_unique<HostDeviceBuffer<real_t>>(data_.n_total);
+    coord_z = std::make_unique<HostDeviceBuffer<real_t>>(data_.n_total);
 }
 
 __global__ void nonbonded_kernel(
@@ -127,8 +119,6 @@ __global__ void nonbonded_kernel(
     int sz,              // data_.n_total, number of participating atoms
     int n_states,        // ctx.n_lambdas, used by nb_coul_slot
     int n_atoms_solute,  // ctx.n_atoms_solute, water grouping + LJ_matrix row stride
-    int n_atoms,
-    int energy_stride,
 
     // ---- per-atom arrays (length sz, parallel to atom_idx) ----
     const int* atom_idx,               // data_.atom_idx, local i -> global atom index
@@ -161,15 +151,6 @@ __global__ void nonbonded_kernel(
 
     const int tile = blockIdx.x * warps_per_block + warp_in_block;
     if (tile >= total_tiles) return;
-
-    const int replica = blockIdx.y;
-    const int combined_offset = replica * sz;
-    const int atom_offset = replica * n_atoms;
-    cx += combined_offset;
-    cy += combined_offset;
-    cz += combined_offset;
-    dvelocities += atom_offset;
-    e += replica * energy_stride;
 
     auto [tile_x, tile_y] = get_tile_idx(block_num, tile);
 
@@ -248,7 +229,7 @@ void CudaNonbondedForce::calc(Context& ctx) {
     int sz = data_.n_total;
     int sync_block = 256;
     int sync_grid = (sz + sync_block - 1) / sync_block;
-    update_nonbonded_coords_kernel<<<dim3(sync_grid, ctx.n_replicates()), sync_block>>>(ctx.coords->gpu_data_p, data_.atom_idx->gpu_data_p, coord_x->gpu_data_p, coord_y->gpu_data_p, coord_z->gpu_data_p, sz, ctx.n_atoms);
+    update_nonbonded_coords_kernel<<<sync_grid, sync_block>>>(ctx.coords->gpu_data_p, data_.atom_idx->gpu_data_p, coord_x->gpu_data_p, coord_y->gpu_data_p, coord_z->gpu_data_p, sz);
 
     /*
     Do calculation
@@ -260,8 +241,8 @@ void CudaNonbondedForce::calc(Context& ctx) {
     int total_tiles = block_num * (block_num + 1) >> 1;
     int grid_sz = (total_tiles + tile_num_per_block - 1) / tile_num_per_block;
 
-    dim3 grid = dim3(grid_sz, ctx.n_replicates());
-    nonbonded_kernel<<<grid, thread_num>>>(n_atom, ctx.n_lambdas(), ctx.n_atoms_solute, ctx.n_atoms, ctx.energy.replica_stride(),
+    dim3 grid = dim3(grid_sz);
+    nonbonded_kernel<<<grid, thread_num>>>(n_atom, ctx.n_lambdas(), ctx.n_atoms_solute,
                                            data_.atom_idx->gpu_data_p, data_.category->gpu_data_p, data_.q_state->gpu_data_p,
                                            data_.atom_lambdas->gpu_data_p, data_.atom_charge->gpu_data_p, data_.atom_vdw->gpu_data_p,
                                            ctx.LJ_matrix->gpu_data_p, ctx.topo.el14_scale, ctx.topo.coulomb_constant, ctx.topo.vdw_rule,

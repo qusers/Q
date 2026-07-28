@@ -14,7 +14,6 @@ const int kBlockSize = 256;
 __global__ void calc_radix_kernel(
     int n_waters,
     int n_atoms_solute,
-    int n_atoms, int energy_stride,
     const coord_t* coords,
     const bool* excluded,
     const double* temperature_results,
@@ -31,13 +30,6 @@ __global__ void calc_radix_kernel(
     const int oxygen_idx = n_atoms_solute + 3 * water_idx;
 
     if (excluded[oxygen_idx]) return;
-
-    const int replica = blockIdx.y;
-    const int atom_offset = replica * n_atoms;
-    coords += atom_offset;
-    temperature_results += replica * N_TRESULT;
-    dvelocities += atom_offset;
-    energy += replica * energy_stride;
 
     const double shift = md.radial_force != 0.0 ? sqrt(Boltz * temperature_results[R_TFREE] / md.radial_force) : 0.0;
 
@@ -79,9 +71,6 @@ __global__ void prepare_wshells_kernel(int n_shells, bool update_theta_corr, she
     const int shell_idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (shell_idx >= n_shells) return;
 
-    const int replica = blockIdx.y;
-    wshells += replica * n_shells;
-
     shell_t& shell = wshells[shell_idx];
 
     if (update_theta_corr) {
@@ -113,13 +102,6 @@ __global__ void calc_theta_and_shell_kernel(int n_waters,
     const int wi = n_atoms_solute + 3 * water_idx;
 
     if (excluded[wi]) return;
-
-    const int replica = blockIdx.y;
-    const int atom_offset = replica * (n_atoms_solute + 3 * n_waters);  // = replica * n_atoms
-    coords += atom_offset;
-    wshells += replica * n_shells;
-    theta += replica * n_waters;
-    list_sh += replica * n_shells * n_max_inshell;
 
     coord_t rmu = coords[wi + 1] + coords[wi + 2] - coords[wi] * 2.0;
 
@@ -162,9 +144,6 @@ __global__ void calc_theta_and_shell_kernel(int n_waters,
 __global__ void calc_polx_force_with_rank_kernel(int n_atoms_solute,
                                                  int n_shells,
                                                  int n_max_inshell,
-                                                 int n_atoms,
-                                                 int n_waters,
-                                                 int energy_stride,
                                                  const coord_t* coords,
                                                  const int* list_sh,
                                                  const double* theta,
@@ -173,15 +152,6 @@ __global__ void calc_polx_force_with_rank_kernel(int n_atoms_solute,
                                                  md_t md,
                                                  dvel_t* dvelocities,
                                                  energy_accum_t* energy) {
-    const int replica = blockIdx.y;
-    const int atom_offset = replica * n_atoms;
-    coords += atom_offset;
-    list_sh += replica * n_shells * n_max_inshell;
-    theta += replica * n_waters;
-    wshells += replica * n_shells;
-    dvelocities += atom_offset;
-    energy += replica * energy_stride;
-
     const int flat_idx = blockIdx.x * blockDim.x + threadIdx.x;
     const int total_slots = n_shells * n_max_inshell;
     if (flat_idx >= total_slots) return;
@@ -324,9 +294,9 @@ void CudaWaterBoundaryForce::calc_radix(
         (ctx.n_waters() + kBlockSize - 1) /
         kBlockSize;
 
-    calc_radix_kernel<<<dim3(num_blocks, ctx.n_replicates()), kBlockSize>>>(
+    calc_radix_kernel<<<num_blocks, kBlockSize>>>(
         ctx.n_waters(),
-        ctx.n_atoms_solute, ctx.n_atoms, ctx.energy.replica_stride(),
+        ctx.n_atoms_solute,
         ctx.coords->gpu_data_p,
         ctx.excluded->gpu_data_p,
         temperature_->data().results->gpu_data_p,
@@ -351,30 +321,27 @@ void CudaWaterBoundaryForce::calc_polx(Context& ctx, int iteration) {
     const bool update_theta_corr = iteration != 0 && iteration % itdis_update == 0;
     const int shell_blocks = (n_shells + kBlockSize - 1) / kBlockSize;
 
-    prepare_wshells_kernel<<<dim3(shell_blocks, ctx.n_replicates()), kBlockSize>>>(n_shells, update_theta_corr, device_wshells);
+    prepare_wshells_kernel<<<shell_blocks, kBlockSize>>>(n_shells, update_theta_corr, device_wshells);
 
     const int water_blocks = (ctx.n_waters() + kBlockSize - 1) / kBlockSize;
-    calc_theta_and_shell_kernel<<<dim3(water_blocks, ctx.n_replicates()), kBlockSize>>>(ctx.n_waters(),
-                                                                                        ctx.n_atoms_solute,
-                                                                                        n_shells,
-                                                                                        n_max_inshell,
-                                                                                        ctx.coords->gpu_data_p,
-                                                                                        ctx.excluded->gpu_data_p,
-                                                                                        ctx.topo,
-                                                                                        device_wshells,
-                                                                                        device_theta,
-                                                                                        device_list_sh);
+    calc_theta_and_shell_kernel<<<water_blocks, kBlockSize>>>(ctx.n_waters(),
+                                                              ctx.n_atoms_solute,
+                                                              n_shells,
+                                                              n_max_inshell,
+                                                              ctx.coords->gpu_data_p,
+                                                              ctx.excluded->gpu_data_p,
+                                                              ctx.topo,
+                                                              device_wshells,
+                                                              device_theta,
+                                                              device_list_sh);
     check_cuda(cudaGetLastError());
 
     const int total_slots = n_shells * n_max_inshell;
     const int force_blocks = (total_slots + kBlockSize - 1) / kBlockSize;
-    calc_polx_force_with_rank_kernel<<<dim3(force_blocks, ctx.n_replicates()), kBlockSize>>>(
+    calc_polx_force_with_rank_kernel<<<force_blocks, kBlockSize>>>(
         ctx.n_atoms_solute,
         n_shells,
         n_max_inshell,
-        ctx.n_atoms,
-        ctx.n_waters(),
-        ctx.energy.replica_stride(),
         ctx.coords->gpu_data_p,
         device_list_sh,
         device_theta,

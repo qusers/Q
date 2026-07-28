@@ -5,11 +5,11 @@
 #include "constants.h"
 #include "q_math.h"
 
-void WaterBoundaryForce::init(Context& ctx, const Temperature& temperature, const std::vector<ParseResult>& replica_results) {
+void WaterBoundaryForce::init(Context& ctx, const Temperature& temperature, const ParseResult& parsed) {
     temperature_ = &temperature;
     if (ctx.n_waters() > 0) {
         const double crgQtot = build_water_sphere(ctx);
-        build_wshells(ctx, crgQtot, replica_results);
+        build_wshells(ctx, crgQtot, parsed);
     }
     init_backend(ctx);
 }
@@ -36,9 +36,10 @@ double WaterBoundaryForce::build_water_sphere(Context& ctx) {
     return crgQtot;
 }
 
-void WaterBoundaryForce::build_wshells(Context& ctx, double crgQtot, const std::vector<ParseResult>& replica_results) {
+void WaterBoundaryForce::build_wshells(Context& ctx, double crgQtot, const ParseResult& parsed) {
     bool run_gpu = ctx.command_info.requested_gpu;
-    const ParseResult& parsed = replica_results.front();
+
+    const auto& restart_theta_corr = parsed.restart_theta_corr;
     const auto& water_bond = parsed.bonds[parsed.n_bonds_solute];
     const auto& water_angle = parsed.angles[parsed.n_angles_solute];
     const auto& water_bond_parameter = parsed.cbonds[water_bond.code - 1];
@@ -51,52 +52,37 @@ void WaterBoundaryForce::build_wshells(Context& ctx, double crgQtot, const std::
 
     const double drs = wpolr_layer / drouter;
     data_.n_shells = (int)floor(-0.5 + sqrt(2 * drs + 0.25));
-    data_.wshells = std::make_unique<HostDeviceBuffer<shell_t>>(data_.n_shells * ctx.n_replicates(), true, run_gpu);
+    data_.wshells = std::make_unique<HostDeviceBuffer<shell_t>>(data_.n_shells, true, run_gpu);
 
     auto* wshells = data_.wshells->cpu_data_p;
     printf("n_shells = %d\n", data_.n_shells);
 
+    double router = ctx.topo.solvent_radius;
     data_.n_max_inshell = 0;
+    for (int i = 0; i < data_.n_shells; i++) {
+        wshells[i].n_inshell = 0;
+        wshells[i].theta_corr = 0;
+        wshells[i].avtheta = 0;
+        wshells[i].avn_inshell = 0;
+        wshells[i].router = router;
+        const double dr = drouter * (i + 1);
+        const double ri = router - dr;
 
-    for (int replica = 0; replica < ctx.n_replicates(); replica++) {
-        const auto& restart_theta_corr = replica_results[replica].restart_theta_corr;
-        if (!restart_theta_corr.empty() && restart_theta_corr.size() != data_.n_shells) {
-            fatal("Restart theta-correction count does not match the number of water shells.");
+        wshells[i].dr = dr;
+        const double vshell = pow(router, 3) - pow(ri, 3);
+        const int n_inshell = static_cast<int>(floor(4 * M_PI / 3 * vshell * rho_water));
+        if (n_inshell > data_.n_max_inshell) {
+            data_.n_max_inshell = n_inshell;
         }
-        double router = ctx.topo.solvent_radius;
 
-        for (int shell = 0; shell < data_.n_shells; shell++) {
-            const int index = replica * data_.n_shells + shell;
-            shell_t& wshell = wshells[index];
+        const double rshell = pow(0.5 * (pow(router, 3) + pow(ri, 3)), 1.0 / 3.0);
+        wshells[i].cstb = crgQtot * 0.98750 / (rho_water * mu_w * 4 * M_PI * pow(rshell, 2));  // 0.98750 = (1-1/epsilon) for water
+        router -= dr;
+    }
 
-            wshell.n_inshell = 0;
-            wshell.theta_corr = 0;
-            wshell.avtheta = 0;
-            wshell.avn_inshell = 0;
-            wshell.router = router;
-
-            const double dr = drouter * (shell + 1);
-            const double ri = router - dr;
-
-            wshell.dr = dr;
-
-            const double vshell = pow(router, 3) - pow(ri, 3);
-
-            const int n_inshell = static_cast<int>(floor(4 * M_PI / 3 * vshell * rho_water));
-
-            if (n_inshell > data_.n_max_inshell) {
-                data_.n_max_inshell = n_inshell;
-            }
-
-            const double rshell = pow(0.5 * (pow(router, 3) + pow(ri, 3)), 1.0 / 3.0);
-
-            wshell.cstb = crgQtot * 0.98750 / (rho_water * mu_w * 4 * M_PI * pow(rshell, 2));  // 0.98750 = (1-1/epsilon) for water
-
-            if (!restart_theta_corr.empty()) {
-                wshell.theta_corr = restart_theta_corr[shell];
-            }
-
-            router -= dr;
+    if (restart_theta_corr.size() == static_cast<size_t>(data_.n_shells)) {
+        for (int i = 0; i < data_.n_shells; i++) {
+            wshells[i].theta_corr = restart_theta_corr[i];
         }
     }
 
@@ -106,8 +92,8 @@ void WaterBoundaryForce::build_wshells(Context& ctx, double crgQtot, const std::
     }
     // data_.n_max_inshell *= 1.5;  // take largest and add some extra
     data_.n_max_inshell = ctx.n_waters();
-    data_.theta = std::make_unique<HostDeviceBuffer<double>>(ctx.n_waters() * ctx.n_replicates(), true, run_gpu);
-    data_.list_sh = std::make_unique<HostDeviceBuffer<int>>(data_.n_max_inshell * data_.n_shells * ctx.n_replicates(), true, run_gpu);
+    data_.theta = std::make_unique<HostDeviceBuffer<double>>(ctx.n_waters(), true, run_gpu);
+    data_.list_sh = std::make_unique<HostDeviceBuffer<int>>(data_.n_max_inshell * data_.n_shells, true, run_gpu);
 
     data_.theta->zero();
     data_.list_sh->zero();
@@ -117,17 +103,16 @@ void WaterBoundaryForce::build_wshells(Context& ctx, double crgQtot, const std::
 
 void WaterBoundaryForce::sync_for_output(
     Context& ctx) {
-    if (!data_.wshells || data_.n_shells <= 0) {
-        ctx.replica_wshells.clear();
+    if (!data_.wshells ||
+        data_.n_shells <= 0) {
+        ctx.wshells.clear();
         return;
     }
 
-    const shell_t* source = data_.wshells->cpu_data_p;
+    const shell_t* source =
+        data_.wshells->cpu_data_p;
 
-    ctx.replica_wshells.resize(ctx.n_replicates());
-
-    for (int replica = 0; replica < ctx.n_replicates(); replica++) {
-        const shell_t* replica_source = source + replica * data_.n_shells;
-        ctx.replica_wshells[replica].assign(replica_source, replica_source + data_.n_shells);
-    }
+    ctx.wshells.assign(
+        source,
+        source + data_.n_shells);
 }
