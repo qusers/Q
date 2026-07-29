@@ -39,6 +39,8 @@ class TestMDParameters:
         assert params.cutoff_q_atom == 99
         assert params.shell_force == 10.0
         assert params.polarization is True
+        assert params.perstate_polarization is False
+        assert params.perstate_born is False
         assert params.topology == "dualtop.top"
         assert params.fep_file == "FEP_VAR"
 
@@ -143,6 +145,76 @@ class TestRenderMdInput:
             final_file="test.re",
         )
         self._assert_no_leading_whitespace(content)
+
+    def test_endpoint_resolved_boundary_settings(self):
+        params = MDParameters(
+            steps=5000,
+            stepsize=2.0,
+            temperature=298,
+            bath_coupling=10.0,
+            shell_radius=25,
+            perstate_polarization=True,
+            polarization_adaptation=False,
+            perstate_born=True,
+        )
+        content = render_md_input(
+            params=params,
+            lambda1="0.500",
+            lambda2="0.500",
+            trajectory_file="test.dcd",
+            final_file="test.re",
+        )
+        solvent = content.split("[solvent]", 1)[1].split("[intervals]", 1)[0]
+        assert "charge_correction         on" in solvent
+        assert "perstate_polarization     on" in solvent
+        assert "polarization_adaptation  off" in solvent
+        assert "perstate_born_correction  on" in solvent
+        assert "born_dielectric           80.0" in solvent
+        assert "born_coefficient" not in solvent
+        self._assert_no_leading_whitespace(content)
+
+    def test_born_coefficient_override(self):
+        params = MDParameters(
+            steps=5000,
+            stepsize=2.0,
+            temperature=298,
+            bath_coupling=10.0,
+            perstate_born=True,
+            born_coefficient=7.1,
+        )
+        content = render_md_input(
+            params=params,
+            lambda1="0.500",
+            lambda2="0.500",
+            trajectory_file="test.dcd",
+            final_file="test.re",
+        )
+        assert "born_coefficient          7.1" in content
+
+    def test_boundary_keys_absent_by_default(self):
+        params = MDParameters(steps=5000, stepsize=2.0, temperature=298, bath_coupling=10.0)
+        content = render_md_input(
+            params=params,
+            lambda1="0.500",
+            lambda2="0.500",
+            trajectory_file="test.dcd",
+            final_file="test.re",
+        )
+        assert "perstate_polarization" not in content
+        assert "polarization_adaptation" not in content
+        assert "perstate_born_correction" not in content
+
+    def test_equilibration_adapts_and_production_freezes(self):
+        eq = get_equilibration_configs(
+            "2fs", shell_radius=25, perstate_polarization=True, polarization_adaptation=True
+        )
+        production = get_production_config(
+            "2fs", shell_radius=25, perstate_polarization=True, polarization_adaptation=False
+        )
+        assert all(config.params.perstate_polarization for config in eq)
+        assert all(config.params.polarization_adaptation for config in eq)
+        assert production.params.perstate_polarization is True
+        assert production.params.polarization_adaptation is False
 
     def test_indentation_with_multiline_restraints(self):
         """Multi-line restraint sections must not leave stray indentation on any line.

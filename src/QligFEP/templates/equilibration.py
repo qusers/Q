@@ -156,6 +156,7 @@ _CONFIGS_1FS = [
 def get_equilibration_configs(
     timestep: Literal["1fs", "2fs"],
     shell_radius: int,
+    **overrides,
 ) -> list[EquilibrationConfig]:
     """Return equilibration configurations for the given timestep.
 
@@ -178,7 +179,7 @@ def get_equilibration_configs(
     return [
         EquilibrationConfig(
             name=name,
-            params=MDParameters(**params, shell_radius=shell_radius),
+            params=MDParameters(**{**params, **overrides, "shell_radius": shell_radius}),
             sequence_restraint_force=seq_force,
             distance_restraint_force=dr_force,
             use_water_restraint=use_water,

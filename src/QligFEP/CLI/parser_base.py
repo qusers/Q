@@ -341,6 +341,44 @@ def parse_arguments(program: str) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--perstate-polarization",
+        dest="perstate_polarization",
+        action="store_true",
+        default=False,
+        help=(
+            "Evaluate the SCAAS charge-dependent polarization restraint for each pure "
+            "alchemical state, mix its forces with lambda, and include its endpoint energies "
+            "in qfep. The learned offset is frozen in production. Off by default."
+        ),
+    )
+    parser.add_argument(
+        "--perstate-born-correction",
+        dest="perstate_born",
+        action="store_true",
+        default=False,
+        help=(
+            "Add the independently switchable per-state missing-exterior Born self-energy. "
+            "Off by default; use with --charge-method none when testing the analytic correction."
+        ),
+    )
+    parser.add_argument(
+        "--born-dielectric",
+        dest="born_dielectric",
+        type=float,
+        default=80.0,
+        help="Dielectric used by the per-state Born term. Defaults to 80.",
+    )
+    parser.add_argument(
+        "--born-coefficient",
+        dest="born_coefficient",
+        type=float,
+        default=None,
+        help=(
+            "Diagnostic override for the Born coefficient C in kcal/mol/e^2. By default qdyn "
+            "computes C from the topology's effective solvent radius and --born-dielectric."
+        ),
+    )
+    parser.add_argument(
         "-log",
         "--log-level",
         dest="log",

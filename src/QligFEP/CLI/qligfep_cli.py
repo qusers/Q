@@ -52,6 +52,10 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "neq_schedule": args.neq_schedule,
             "softcore_method": args.softcore_method,
             "charge_method": args.charge_method,
+            "perstate_polarization": args.perstate_polarization,
+            "perstate_born": args.perstate_born,
+            "born_dielectric": args.born_dielectric,
+            "born_coefficient": args.born_coefficient,
         }
         if args.protein_charge is not None:
             param_dict["protein_charge"] = args.protein_charge
@@ -96,6 +100,16 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         elif k == "charge_method":
             if v != "ion_match":
                 command_str += f" --charge-method {v}"
+        elif k in ("perstate_polarization", "perstate_born"):
+            if v:
+                flag = "perstate-polarization" if k == "perstate_polarization" else "perstate-born-correction"
+                command_str += f" --{flag}"
+        elif k == "born_dielectric":
+            if v != 80.0:
+                command_str += f" --born-dielectric {v}"
+        elif k == "born_coefficient":
+            if v is not None:
+                command_str += f" --born-coefficient {v}"
         else:
             command_str += f" --{k} {v}"
     command_str += f" --restraint_method {args.restraint_method}"

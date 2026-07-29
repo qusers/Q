@@ -113,6 +113,10 @@ class QligFEP:
         neq_schedule: Literal["sigmoidal", "linear"] = "sigmoidal",
         protein_charge: Optional[int] = None,
         charge_method: str = "ion_match",
+        perstate_polarization: bool = False,
+        perstate_born: bool = False,
+        born_dielectric: float = 80.0,
+        born_coefficient: Optional[float] = None,
     ):
         self.timestep = timestep
         self.lig1 = lig1
@@ -140,6 +144,14 @@ class QligFEP:
         self.neq_relax_steps = neq_relax_steps
         self.neq_L = neq_L
         self.neq_schedule = neq_schedule
+        self.perstate_polarization = perstate_polarization
+        self.perstate_born = perstate_born
+        self.born_dielectric = born_dielectric
+        self.born_coefficient = born_coefficient
+        if self.born_dielectric <= 1.0:
+            raise ValueError("born_dielectric must be greater than 1")
+        if self.born_coefficient is not None and self.born_coefficient <= 0.0:
+            raise ValueError("born_coefficient must be positive when supplied")
         if self.neq and self.cluster in ("LOCAL", "LOCALP"):
             # NEQ setups are generated from the SLURM run_neq.sh template, which needs the
             # qdynp/qdyn engine paths that only the cluster profiles carry; there is no local NEQ runner.
@@ -1032,7 +1044,14 @@ class QligFEP:
         file names.
         """
         file_list = []
-        for i, eq_config in enumerate(get_equilibration_configs(self.timestep, int(self.sphereradius))):
+        for i, eq_config in enumerate(
+            get_equilibration_configs(
+                self.timestep,
+                int(self.sphereradius),
+                perstate_polarization=self.perstate_polarization,
+                polarization_adaptation=True,
+            )
+        ):
             dr_str, seq_str = self._format_restraints_for_eq(
                 overlapping_atoms, lig_size1, lig_size2, eq_config, self.dr_force
             )
@@ -1141,7 +1160,16 @@ class QligFEP:
         else:  # start == "0.0" or "1"
             eq_lambda1, eq_lambda2 = "1.000", "0.000"
 
-        prod_config = get_production_config(self.timestep, int(self.sphereradius), self.dr_force)
+        prod_config = get_production_config(
+            self.timestep,
+            int(self.sphereradius),
+            self.dr_force,
+            perstate_polarization=self.perstate_polarization,
+            polarization_adaptation=False,
+            perstate_born=self.perstate_born,
+            born_dielectric=self.born_dielectric,
+            born_coefficient=self.born_coefficient,
+        )
 
         # eq files + initial md file
         file_list1 = self._write_equilibration_files(
@@ -1348,7 +1376,16 @@ class QligFEP:
         over the run (a switching run); without it the file is a plain equilibrium MD at
         the endpoint.
         """
-        params = get_neq_endpoint_config(self.timestep, int(self.sphereradius), steps)
+        params = get_neq_endpoint_config(
+            self.timestep,
+            int(self.sphereradius),
+            steps,
+            perstate_polarization=self.perstate_polarization,
+            polarization_adaptation=False,
+            perstate_born=self.perstate_born,
+            born_dielectric=self.born_dielectric,
+            born_coefficient=self.born_coefficient,
+        )
         content = render_md_input(
             params=params,
             lambda1=lambda1,

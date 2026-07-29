@@ -50,6 +50,11 @@ class MDParameters:
     radial_force: float = 60.0  # kcal/mol/A^2; radial restraint keeping surface waters in
     polarization: bool = True  # SCAAS surface-water dipole-orientation restraint
     polarization_force: float = 20.0  # kcal/mol/rad^2; force constant for the orientation restraint
+    perstate_polarization: bool = False  # expose pure-state restraint energies to qfep
+    polarization_adaptation: bool = True  # learn theta_corr; freeze in production
+    perstate_born: bool = False  # missing-exterior monopole self-energy
+    born_dielectric: float = 80.0
+    born_coefficient: float | None = None  # diagnostic override; None uses R and dielectric
 
     # Intervals
     interval_output: int = 5
@@ -135,6 +140,21 @@ def render_md_input(
 
     lambda_scaling_section = f"\n[lambda_scaling]\n{lambda_scaling}\n" if lambda_scaling else ""
 
+    boundary_settings = ""
+    if params.perstate_polarization:
+        boundary_settings += (
+            "charge_correction         on\n"
+            "perstate_polarization     on\n"
+            f"polarization_adaptation  {onoff(params.polarization_adaptation)}\n"
+        )
+    if params.perstate_born:
+        boundary_settings += (
+            "perstate_born_correction  on\n"
+            f"born_dielectric           {params.born_dielectric}\n"
+        )
+        if params.born_coefficient is not None:
+            boundary_settings += f"born_coefficient          {params.born_coefficient}\n"
+
     return f"""\
 [MD]
 steps                     {params.steps}
@@ -164,6 +184,7 @@ shell_radius              {params.shell_radius}
 radial_force              {params.radial_force}
 polarization              {onoff(params.polarization)}
 polarization_force        {params.polarization_force}
+{boundary_settings}\
 
 [intervals]
 output                    {params.interval_output}

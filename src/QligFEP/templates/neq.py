@@ -34,6 +34,7 @@ def get_neq_endpoint_config(
     timestep: Literal["1fs", "2fs"],
     shell_radius: int,
     steps: int,
+    **overrides,
 ) -> MDParameters:
     """Return the MD parameters for a non-equilibrium endpoint input file.
 
@@ -50,4 +51,4 @@ def get_neq_endpoint_config(
         MDParameters for a relax/eq6/neq .inp file
     """
     base_params = NEQ_ENDPOINT_2FS_PARAMS if timestep == "2fs" else NEQ_ENDPOINT_1FS_PARAMS
-    return MDParameters(**base_params, steps=steps, shell_radius=shell_radius)
+    return MDParameters(**{**base_params, **overrides, "steps": steps, "shell_radius": shell_radius})

@@ -56,6 +56,14 @@ def create_call(**kwargs):
         template += " -sc {softcore_method}"
     if "charge_method" in kwargs and kwargs["charge_method"] != "ion_match":
         template += " -cm {charge_method}"
+    if kwargs.get("perstate_polarization"):
+        template += " --perstate-polarization"
+    if kwargs.get("perstate_born"):
+        template += " --perstate-born-correction"
+    if kwargs.get("born_dielectric", 80.0) != 80.0:
+        template += " --born-dielectric {born_dielectric}"
+    if kwargs.get("born_coefficient") is not None:
+        template += " --born-coefficient {born_coefficient}"
     return template.format(**kwargs)
 
 
@@ -166,6 +174,10 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 protein_charge=protein_charge,
                 softcore_method=args.softcore_method,
                 charge_method=args.charge_method,
+                perstate_polarization=args.perstate_polarization,
+                perstate_born=args.perstate_born,
+                born_dielectric=args.born_dielectric,
+                born_coefficient=args.born_coefficient,
             )
             command = create_call(**call_kwargs)
             logger.info(f"Submitting the command:\n{command}")
