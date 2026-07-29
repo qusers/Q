@@ -1,0 +1,258 @@
+% Charge-perturbation slides: formula rendering sheet
+% -------------------------------------------------------------------
+% Each important formula is its own colour-coded, titled card so you can
+% crop it straight onto a slide.
+%   blue   = SCAAS polarization restraints (Warshel & King 1985)
+%   red    = the Born artifact & Q's boundary (Marelius 1999)
+%   green  = the bridge: charge-perturbation corrections (this work)
+%
+% Compile:  pdflatex formulas.tex   (needs a full TeX dist -> tcolorbox)
+% Crop:     open the PDF and screenshot each box, OR render pages to PNG:
+%           pdftoppm -png -r 300 formulas.pdf card   (one image per page)
+% -------------------------------------------------------------------
+\documentclass[11pt]{article}
+\usepackage[margin=2cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{lmodern}
+\usepackage[most]{tcolorbox}
+
+% ---- card environments -------------------------------------------------
+\newtcolorbox{scaas}[1]{colback=blue!4,colframe=blue!55!black,
+  fonttitle=\bfseries,title={#1},enhanced,breakable,boxrule=0.8pt,arc=3pt}
+\newtcolorbox{born}[1]{colback=red!4,colframe=red!60!black,
+  fonttitle=\bfseries,title={#1},enhanced,breakable,boxrule=0.8pt,arc=3pt}
+\newtcolorbox{bridge}[1]{colback=green!5,colframe=green!45!black,
+  fonttitle=\bfseries,title={#1},enhanced,breakable,boxrule=0.8pt,arc=3pt}
+
+% larger display math inside cards, generous spacing between cards
+\setlength{\parindent}{0pt}
+\newcommand{\gap}{\vspace{10pt}}
+\newcommand{\eq}[1]{{\large\[#1\]}}
+
+\begin{document}
+
+\begin{center}
+{\LARGE\bfseries Charge perturbations in Q: the formulas}\\[2pt]
+{\normalsize SCAAS polarization restraints \;$\cdot$\; the Born artifact \;$\cdot$\; a thermodynamically consistent correction}
+\end{center}
+\vspace{6pt}
+
+% ======================================================================
+\section*{Part A \;--\; SCAAS polarization restraints \textnormal{(Warshel \& King, 1985)}}
+% ======================================================================
+
+\begin{scaas}{A1 \;\textbullet\; Three-region partition of the potential \;--\; Eq.\,(1)}
+\eq{V_{\text{tot}} = V^{\mathrm{aa}} + V^{\mathrm{as}} + V^{\mathrm{ss}}
+                    + V^{\mathrm{sb}} + V^{\mathrm{ab}} + V^{\mathrm{bb}}}
+\small Regions: (a) solute + inner shells, (s) surface shell, (b) bulk (implicit).
+Only (a$+$s) is simulated explicitly; $V^{\mathrm{ab}},V^{\mathrm{bb}},V^{\mathrm{sb}}$ become
+effective terms. $V^{\mathrm{sb}}$ carries the \emph{surface constraints}; $V^{\mathrm{ab}}$ is
+the continuum (Born-type) term.
+\end{scaas}
+\gap
+
+\begin{scaas}{A2 \;\textbullet\; The surface-constraint force \;--\; Eq.\,(4)}
+\eq{f_{j,n}^{\mathrm{sb}} = -\bigl(K_0+\Delta K_n\bigr)\bigl[Y_j-(\langle Y_j^0\rangle+\Delta Y_j^n)\bigr]h_j
+   \;-\;\mu(\gamma_0+\Delta\gamma_n)\dot{Y}_j \;+\; A_n(t)}
+\small $Y_j$ is a surface variable (radial distance $R$ \emph{or} polarization angle $\theta$),
+sorted by magnitude each step. A harmonic restraint toward the bulk reference $\langle Y_j^0\rangle$,
+plus Langevin friction and random force. A soft restraint, not a hard constraint.
+\end{scaas}
+\gap
+
+\begin{scaas}{A3 \;\textbullet\; Radial reference from the bulk RDF \;--\; Eq.\,(11)}
+\eq{\int_{0}^{\langle R_j^0\rangle} g(R)\,4\pi\rho R^2\,\mathrm{d}R \;=\; (n_0-1)+j}
+\small Sets target shell radii so the integrated \emph{bulk} radial distribution $g(R)$ places the
+right number of molecules inside each shell $\Rightarrow$ uniform, bulk-like density all the way to
+the boundary (the "density" restraint).
+\end{scaas}
+\gap
+
+\begin{scaas}{A4 \;\textbullet\; Angular reference $\Rightarrow$ the ideal $\sin\theta$ law \;--\; Eqs.\,(12)--(13)}
+\eq{\tfrac{n_s}{2}\bigl(1-\cos\langle\theta_j^0\rangle\bigr)=j
+   \qquad\Longrightarrow\qquad
+   \langle\theta_j^0\rangle=\arccos\!\Bigl(1-\tfrac{2j}{n_s}\Bigr)}
+\small For a \emph{field-free} (neutral) system the dipole-vs-radial angle obeys
+$P(\theta)\propto\sin\theta$ (isotropic orientations). This is the bulk-like surface; without it,
+surface waters over-orient tangentially (the "polarization" restraint).
+\end{scaas}
+\gap
+
+\begin{scaas}{A5 \;\textbullet\; Charged-solute polarization target \;--\; King Eq.\,(22)}
+\eq{\theta_i^0=\theta_i^{0,*}-\frac{3}{2}\,L(X)\sin\theta_i^{0,*}}
+\small $\theta_i^{0,*}$ is the field-free target and $L(X)$ is the Langevin response to the
+enclosed field. Q implements the same form as
+$\theta_i^0=\theta_i^{0,*}-\tfrac32 c\sin\theta_i^{0,*}$, with
+$c\propto Q/r_{\rm shell}^2$. Thus a charge perturbation changes the restraint Hamiltonian itself.
+\end{scaas}
+
+\clearpage
+% ======================================================================
+\section*{Part B \;--\; The Born artifact \& Q's boundary \textnormal{(Marelius et al., 1999)}}
+% ======================================================================
+
+\begin{born}{B1 \;\textbullet\; The multistate mapping potential \;--\; Eqs.\,(2)--(3)}
+\eq{V_m=\sum_{i=1}^{N}\lambda_i^{m}\,V_i,\qquad \sum_{i=1}^{N}\lambda_i^{m}=1}
+\eq{\Delta G_{\text{initial}\to\text{final}}=\sum_{m=1}^{n-1}\Delta G_{m\to m+1}}
+\small Q does not jump $V_1\!\to\!V_2$; it samples a chain of \emph{effective} Hamiltonians, each a
+weighted blend of \emph{all} $N$ state potentials (weights sum to 1), and sums $\Delta G$ over the
+small windows. The superscript $m$ is a window \emph{label}, not a power. A 2-state FEP is just the
+mapping vector $(1-\lambda,\lambda)$, i.e. $V(\lambda)=(1-\lambda)V_1+\lambda V_2$. States are
+evaluated \emph{separately}; the mapping vector only sets how they combine for the forces -- which is
+why a per-state term (C3) is well defined.
+\end{born}
+\gap
+
+\begin{born}{B2 \;\textbullet\; The FEP master equation \;--\; Eq.\,(1)}
+\eq{\Delta G_{i\rightarrow j}=-RT\,\ln\bigl\langle\exp[-(V_j-V_i)/RT]\bigr\rangle_i}
+\small The quantity we compute, evaluated between adjacent windows. Everything downstream is about
+making $V_i$ and $V_j$ -- including their boundary contributions -- comparable, so that only the
+physical change survives.
+\end{born}
+\gap
+
+\begin{born}{B3 \;\textbullet\; Q's radial water restraint \;--\; Eq.\,(8)}
+\eq{V_{\text{water}}(r)=
+\begin{cases}
+\tfrac12 k_{\mathrm{rad}}(r-r_0)^2-D_{\mathrm e}, & r>r_0\\[4pt]
+D_{\mathrm e}\bigl(1-e^{a(r-r_0)}\bigr)^2-D_{\mathrm e}, & r\le r_0
+\end{cases}}
+\small Q's implementation of the SCAAS \emph{density} restraint: a Morse attraction pulls waters
+toward the surface, a half-harmonic wall keeps them in $\Rightarrow$ uniform density to the boundary.
+\end{born}
+\gap
+
+\begin{born}{B4 \;\textbullet\; The ideal boundary polarization Q restrains to}
+\eq{p(\theta)=\tfrac12\sin\theta}
+\small Q's implementation of the SCAAS \emph{angular} restraint (three subshells, $0.5/1.0/1.5$~\AA):
+each boundary water is rotated toward its target angle in this ideal distribution. Same physics as
+A4; fixes surface over-polarization.
+\end{born}
+\gap
+
+\begin{born}{B5 \;\textbullet\; The Born term \;--\; \textbf{the finite-sphere artifact}}
+\eq{\Delta G_{\text{Born}}=-\frac{1}{4\pi\varepsilon_0}\,\frac{Q^2}{2r}\,\Bigl(1-\frac{1}{\varepsilon}\Bigr)}
+\small The continuum free energy of polarizing the medium \emph{outside} the sphere by the enclosed
+net charge $Q$ -- the leading part of $V^{\mathrm{ab}}$ the explicit droplet does not contain.
+Scales as $Q^2$: it cancels only when the two systems have equal radius $r$ \emph{and} equal net
+charge $Q$.
+\end{born}
+\gap
+
+\begin{born}{B6 \;\textbullet\; Continuum polarization around a charge \;--\; Fig.\,1c}
+\eq{P(r)=\frac{Q}{4\pi r^2}\Bigl(1-\frac{1}{\varepsilon}\Bigr)}
+\small The radial polarization profile the surface restraints aim to reproduce. It connects the
+\emph{angular} restraint (A4/B4) to the same monopole response that gives the Born term (B5), but
+the restrained explicit shell does \emph{not} by itself supply the missing continuum energy outside
+the sphere.
+\end{born}
+\gap
+
+\begin{born}{B7 \;\textbullet\; Coulomb correction for neutralized ionic sites \;--\; Eq.\,(9)}
+\eq{\Delta G_{\text{corr.}}^{\mathrm{el}}
+   =\frac{1}{4\pi\varepsilon_0}\sum_{\substack{p\,\in\,\text{neglected sites}\\ l\,\in\,\text{ligand}}}
+   \frac{q_p\,q_l}{\varepsilon\,r_{p-l}}}
+\small Charged residues near the boundary are modelled as neutral dipoles (they would be screened by
+high $\varepsilon$ in reality). This adds back the ligand--(neutralized site) Coulomb energy with a
+high $\varepsilon\approx80$. The size/charge-matching bookkeeping that makes the two legs comparable.
+\end{born}
+
+\clearpage
+% ======================================================================
+\section*{Part C \;--\; The bridge: charge-perturbation corrections \textnormal{(this work)}}
+% ======================================================================
+
+\begin{bridge}{C1 \;\textbullet\; The finite-sphere Born self-energy, made concrete}
+\eq{E_{\text{Born}}(Q)=-\,C\,Q^2,
+   \qquad
+   C=\frac{k_e\,(1-1/\varepsilon)}{2R}}
+\small The same Born term as B5, in Q's units:
+$k_e=332.0637\ \tfrac{\text{kcal}\cdot\text{\AA}}{\text{mol}\cdot e^2}$, $R$ = sphere radius.
+Continuum value at $\varepsilon=80,\ R=25$~\AA: $C\approx6.56$.
+\end{bridge}
+\gap
+
+\begin{bridge}{C2 \;\textbullet\; The net charge enclosed in \emph{pure} state $s$}
+\eq{Q_s=Q_{\text{env}}+\sum_{iq}q_{iq}^{(s)},
+   \qquad
+   Q_{\text{env}}=\!\!\sum_{\substack{i\,\in\,\text{solute}\\ i\notin\text{excl},\,i\notin Q}}\!\! q_i}
+\small $Q_{\text{env}}$ (protein $+$ ions, fixed) plus the Q-region charge \emph{in that end state}
+(no $\lambda$-mixing). The quantity whose Born self-energy we correct.
+\end{bridge}
+\gap
+
+\begin{bridge}{C3 \;\textbullet\; The per-state Born addition \;--\; monopole baseline}
+\eq{E_Q(s)\;\mathrel{+}=\;E_{\text{Born}}(Q_s)=-\,C\,Q_s^2}
+\small This constant must enter the \textbf{per-state} energy that BAR differences. It removes the
+leading missing-exterior monopole term, but the data show that it is a baseline rather than a complete
+artifact model. Q's existing \texttt{charge\_correction} is different: it changes the water-restraint
+target and therefore the sampled ensemble, while its state dependence is absent from $E_Q(s)$.
+\end{bridge}
+\gap
+
+\begin{bridge}{C4 \;\textbullet\; What the correction does to $\Delta\Delta G$}
+\eq{\Delta\Delta G_{\text{Born}}=-C\,(Q_2^2-Q_1^2)
+   =\underbrace{-2C\,Q_{\text{env}}\,\Delta q}_{\text{dominant}}\;-\;C\,(q_2^2-q_1^2)}
+\small \textbf{Neutral edges} ($Q_1=Q_2$) $\to 0$: untouched, safe to leave on.
+\textbf{Charge edges} $\to$ dominant term linear in the environment charge and the ligand charge
+change $\Delta q$. Parameter-free.
+\end{bridge}
+\gap
+
+\begin{bridge}{C5 \;\textbullet\; The defensible analytic baseline: two legs, two radii}
+\eq{\Delta\Delta G_{\text{corr}}
+   =\underbrace{\Delta G_{\text{Born}}^{\text{protein}}(R_p)}_{\text{complex leg}}
+   -\underbrace{\Delta G_{\text{Born}}^{\text{water}}(R_w)}_{\text{free-ligand leg}},
+   \qquad R_w\approx24.7 > R_p\approx23.0\ \text{\AA}}
+\small Apply the per-state Born to \emph{both} FEP legs and subtract. Use each topology's
+\textbf{qprep-computed effective solvent radius}, the radius Q actually restrains; it is not a fitted
+``effective radius''. This is the parameter-free leading correction, not a claim that all residuals
+are Born-like.
+\end{bridge}
+\gap
+
+\begin{bridge}{C6 \;\textbullet\; Validation: the leading artifact is removed, residuals remain}
+\eq{\text{raw artifact}\ 40\text{--}120\ \tfrac{\text{kcal}}{\text{mol}}
+   \;\xrightarrow{\ \text{two-leg per-leg Born}\ }\;
+   \text{RMSE}\ \sim 1.5\text{--}17}
+\small Post-hoc results (kcal/mol): eg5 1.5, cmet\_r35 2.7, tyk2 3.3, cmet 3.9,
+jnk1 4.0, jak1 8.2, ptp1b 17.0. The $Q_{\rm env}$ dependence validates the leading
+$Q^2/R$ form; the target-dependent remainder shows why it cannot yet be called the final solution.
+\end{bridge}
+\gap
+
+\begin{bridge}{C7 \;\textbullet\; The \texttt{phi\_cog} diagnostic: local, not exterior}
+\eq{\phi_{\mathrm{cog}}=\sum_{j\,\in\,\text{env}}\frac{k_e\,q_j}{\lVert\mathbf{r}_{\mathrm{cog}}-\mathbf{r}_j\rVert^{2}}
+   \qquad
+   \Delta G_{\text{monopole}}\approx\Delta q\,\bigl\langle\phi_{\mathrm{cog}}\bigr\rangle_\lambda}
+\small This is the direct \emph{in-sphere} environment potential at the ligand centroid under Q's
+distance-dependent dielectric ($\varepsilon(r)=r\Rightarrow1/r^2$). It is a useful force-free local
+diagnostic, but it is not a measurement of the missing exterior Born polarization. It does not yield
+a transferable residual correction.
+\end{bridge}
+\gap
+
+\begin{bridge}{C8 \;\textbullet\; The residual is scatter, not a law (honest limits)}
+\eq{\text{residual}\ \sim\ \text{per-edge scatter}\ +\ \text{per-target offset}
+   \quad(\text{no predictable }\Delta q\text{ or }\phi\text{ term})}
+\small Two-leg per-leg Born is the parameter-free \textbf{baseline}. The leftover has \textbf{no} robust
+$\Delta q$-linear or $\Delta q\!\cdot\!\phi$ structure -- tyk2 shows $\sim$8 kcal of scatter at a
+\emph{single} $\Delta q$, and $\phi_{\text{pocket}}$ is refuted (eg5 sign mismatch; cmet vs cmet\_r35
+move oppositely). The present data do not establish a universal residual sign or radius law.
+Possible contributions include higher boundary multipoles, water-model surface potential, and
+restraint-Hamiltonian inconsistency; separate them with controlled radius/off-centre tests rather
+than fitting an ``effective radius'' to experiment.
+\end{bridge}
+\gap
+
+\begin{bridge}{C9 \;\textbullet\; Make the charge-dependent restraint thermodynamically visible}
+\eq{H_m(\mathbf{x})=\sum_s\lambda_s^m
+   \left[V_s(\mathbf{x})+W_{\mathrm{pol}}^{(s)}(\mathbf{x})-C Q_s^2\right]}
+\small Current Q samples a $\lambda$-dependent water-polarization restraint but does not expose its
+pure-state energies to BAR. The consistent implementation evaluates one $W_{\rm pol}^{(s)}$ per
+alchemical state, mixes their forces with $\lambda_s^m$, and stores each energy in $E_Q(s)$. Keep
+the Born term independently switchable, and freeze the learned restraint offset during production
+so every window samples a stationary Hamiltonian.
+\end{bridge}
+
+\end{document}
