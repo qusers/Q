@@ -820,14 +820,23 @@ class QligFEP:
         return [file_list_1, file_list_2, file_list_3]
 
     def write_submitfile(self, writedir):
-        replacements = {}
-        replacements["RUNFILE"] = "run" + self.cluster + ".sh"
+        # NODES comes from the cluster entry because the SLURM submit script is
+        # also a batch script: an orchestrator hands this file to sbatch directly
+        # rather than the run script, so the placeholder has to be resolved here
+        # too. The schedulerless templates carry no header and are unaffected.
+        replacements = {
+            "RUNFILE": "run" + self.cluster + ".sh",
+            "NODES": CLUSTER_DICT[self.cluster]["NODES"],
+        }
         submit_script, _ = ARCHITECTURE_SCRIPTS[self.architecture]
         submit_in = CONFIGS["ROOT_DIR"] + "/INPUTS/" + submit_script
         submit_out = writedir + ("/FEP_submit.sh")
         with open(submit_in) as infile, open(submit_out, "w") as outfile:
             for line in infile:
                 line = replace(line, replacements)
+                # Same exception the run script makes: CSB rejects the directive.
+                if line.strip().startswith("#SBATCH --mem-per-cpu=512") and self.cluster == "CSB":
+                    continue
                 outfile.write(line)
 
         try:
