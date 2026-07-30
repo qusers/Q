@@ -107,6 +107,26 @@ check_nan() {
     return 0
 }
 
+# Marking this replicate failed, wherever the failure came from.
+#
+# $rundir is only set once the loop reaches its replicate directory. The guard is
+# what makes this safe to register before that point: a signal arriving during
+# setup must not touch /.failed.
+mark_failed() {
+    if [ -n "${rundir:-}" ]; then
+        touch "$rundir/.failed"
+    fi
+}
+
+# SLURM sends SIGTERM KillWait seconds before SIGKILL when a job exceeds its time
+# limit or is scancelled, and that is the only chance to record the outcome: the
+# ERR trap does not fire for a signal. It matters because the sentinels are the
+# whole status contract - on a cluster without accounting storage, squeue forgets
+# the job within MinJobAge, and after that nothing distinguishes a killed
+# replicate from one that was never submitted. SIGKILL cannot be caught, so a
+# node failure or the OOM killer still leaves no sentinel behind.
+trap 'echo "Terminated by signal - marking replicate failed"; mark_failed; exit 143' TERM INT
+
 starttime=$(date +%s)
 starttime_readable=$(date)
 
@@ -127,7 +147,7 @@ cd $rundir || exit
 
 # Registered once the replicate directory exists, so the sentinel lands beside
 # the run it describes. The path is absolute so a later cd cannot misplace it.
-trap 'touch "$rundir/.failed"' ERR
+trap 'mark_failed' ERR
 
 echo "Running job in $rundir"
 echo "Parameters T=$temperature, replicate=$run_num, seed=$seed"
