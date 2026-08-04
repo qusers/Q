@@ -1,5 +1,3 @@
-#include "cuda_serial_shake.cuh"
-
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -8,6 +6,7 @@
 
 #include "constants.h"
 #include "cuda_runtime_utility.h"
+#include "cuda_serial_shake.cuh"
 
 namespace {
 
@@ -78,14 +77,14 @@ __global__ void serial_shake_by_molecule_kernel(
         for (int shake = first; shake < end; shake++) {
             const int ai = shake_bonds[shake].ai - 1;
             const int aj = shake_bonds[shake].aj - 1;
-            const double dx = xcoords[ai].x - xcoords[aj].x;
-            const double dy = xcoords[ai].y - xcoords[aj].y;
-            const double dz = xcoords[ai].z - xcoords[aj].z;
-            printf(">>> Shake failed, i = %d, j = %d, d = %f, d0 = %f\n",
-                   ai,
-                   aj,
-                   sqrt(dx * dx + dy * dy + dz * dz),
-                   sqrt(shake_bonds[shake].dist2));
+            const double dx = coords[ai].x - coords[aj].x;
+            const double dy = coords[ai].y - coords[aj].y;
+            const double dz = coords[ai].z - coords[aj].z;
+            const double dist2 = dx * dx + dy * dy + dz * dz;
+
+            if (!isfinite(dist2) || fabs(shake_bonds[shake].dist2 - dist2) >= shake_tol * shake_bonds[shake].dist2) {
+                printf(">>> Shake failed, i = %d, j = %d, d = %f, d0 = %f\n", ai, aj, sqrt(dist2), sqrt(shake_bonds[shake].dist2));
+            }
         }
     }
 }
