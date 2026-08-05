@@ -39,6 +39,8 @@ module md
   character*(*), parameter  :: md_date = '2015-02-22'
   real, parameter           :: rho_wat = 0.0335  ! molecules / A**3
   real, parameter           :: boltz = 0.001986
+  real(8), parameter        :: angle_cosine_limit = 0.999_8
+  real(8), parameter        :: dihedral_sin_threshold = 1.0e-6_8
   real(8)                   :: pi, deg2rad !set in sub startup
 
   ! Read status
@@ -855,7 +857,7 @@ real(8) function angle(istart, iend)
   ! *** local variables
   integer                                         :: i,j,k,ia,ic,i3,j3,k3
   real(8)                                         :: bjiinv, bjkinv, bji2inv, bjk2inv
-  real(8)                                         :: scp,angv,da,dv,f1
+  real(8)                                         :: scp,scp_force,angv,da,dv,f1
   real(8)                                         :: rji(3),rjk(3),di(3),dk(3)
 
   ! global variables used:
@@ -894,10 +896,11 @@ real(8) function angle(istart, iend)
     ! calculate scp and angv
     scp = ( rji(1)*rjk(1) + rji(2)*rjk(2) + rji(3)*rjk(3) )
     scp = scp * bjiinv*bjkinv
-    if ( scp .gt.  1.0 ) then
-      scp =  1.0
-    else if ( scp .lt. -1.0 ) then
-      scp = -1.0
+    scp_force = scp
+    if ( scp .gt. angle_cosine_limit ) then
+      scp = angle_cosine_limit
+    else if ( scp .lt. -angle_cosine_limit ) then
+      scp = -angle_cosine_limit
     end if
     angv = acos(scp)
 
@@ -906,22 +909,17 @@ real(8) function angle(istart, iend)
     angle = angle + 0.5*anglib(ic)%fk*da**2
     dv = anglib(ic)%fk*da
 
-    ! calculate f1
-    f1 = sin ( angv )
-    if ( abs(f1) .lt. 1.e-12 ) then
-      ! avoid division by zero
-      f1 = -1.e12
-    else
-      f1 =  -1.0 / f1
-    end if
+    ! angle_cosine_limit keeps sin(angv) safely away from zero.  Use the
+    ! unclamped cosine for the perpendicular-vector geometry, as QGPU does.
+    f1 = -1.0 / sin(angv)
 
     ! calculate di and dk
-    di(1) = f1 * ( rjk(1)*bjiinv*bjkinv - scp*rji(1)*bji2inv )
-    di(2) = f1 * ( rjk(2)*bjiinv*bjkinv - scp*rji(2)*bji2inv )
-    di(3) = f1 * ( rjk(3)*bjiinv*bjkinv - scp*rji(3)*bji2inv )
-    dk(1) = f1 * ( rji(1)*bjiinv*bjkinv - scp*rjk(1)*bjk2inv )
-    dk(2) = f1 * ( rji(2)*bjiinv*bjkinv - scp*rjk(2)*bjk2inv )
-    dk(3) = f1 * ( rji(3)*bjiinv*bjkinv - scp*rjk(3)*bjk2inv )
+    di(1) = f1 * ( rjk(1)*bjiinv*bjkinv - scp_force*rji(1)*bji2inv )
+    di(2) = f1 * ( rjk(2)*bjiinv*bjkinv - scp_force*rji(2)*bji2inv )
+    di(3) = f1 * ( rjk(3)*bjiinv*bjkinv - scp_force*rji(3)*bji2inv )
+    dk(1) = f1 * ( rji(1)*bjiinv*bjkinv - scp_force*rjk(1)*bjk2inv )
+    dk(2) = f1 * ( rji(2)*bjiinv*bjkinv - scp_force*rjk(2)*bjk2inv )
+    dk(3) = f1 * ( rji(3)*bjiinv*bjkinv - scp_force*rjk(3)*bjk2inv )
 
     ! update d
     d(i3+1) = d(i3+1) + dv*di(1)
@@ -2053,7 +2051,7 @@ real(8) function improper2(istart, iend)
     integer                                         ::      istart, iend
     ! local variables
     integer                                         ::      ip
-    real(8)                                         ::      scp,phi,dv,arg,f1
+    real(8)                                         ::      scp,phi,dv,arg,sin_phi,force_per_cos,cos_phi_limit
     real(8)                                         ::      bjinv, bkinv, bj2inv, bk2inv
     real(8)                                         ::      rji(3),rjk(3),rkl(3),rnj(3),rnk(3)
     real(8)                                         ::      rki(3),rlj(3),dp(12),di(3),dl(3)
@@ -2110,15 +2108,25 @@ real(8) function improper2(istart, iend)
       dv  = -2*lib%fk * sin(arg)
 
       ! ---       forces
-      f1 = sin ( phi )
-      if ( abs(f1) .lt. 1.e-12 ) f1 = 1.e-12
-      f1 =  -1.0 / f1
-      di(1) = f1 * ( rnk(1)*bjinv*bkinv - scp*rnj(1)*bj2inv )
-      di(2) = f1 * ( rnk(2)*bjinv*bkinv - scp*rnj(2)*bj2inv )
-      di(3) = f1 * ( rnk(3)*bjinv*bkinv - scp*rnj(3)*bj2inv )
-      dl(1) = f1 * ( rnj(1)*bjinv*bkinv - scp*rnk(1)*bk2inv )
-      dl(2) = f1 * ( rnj(2)*bjinv*bkinv - scp*rnk(2)*bk2inv )
-      dl(3) = f1 * ( rnj(3)*bjinv*bkinv - scp*rnk(3)*bk2inv )
+      ! Evaluate -dU/dphi/sin(phi) analytically at 0 and pi instead of
+      ! replacing sin(phi) by an arbitrary small number.
+      sin_phi = sin(phi)
+      if ( abs(sin_phi) .lt. dihedral_sin_threshold ) then
+        if ( scp .lt. 0.0_8 ) then
+          cos_phi_limit = -1.0_8
+        else
+          cos_phi_limit = 1.0_8
+        end if
+        force_per_cos = 4.0_8*lib%fk*cos(arg)/cos_phi_limit
+      else
+        force_per_cos = -dv/sin_phi
+      end if
+      di(1) = rnk(1)*bjinv*bkinv - scp*rnj(1)*bj2inv
+      di(2) = rnk(2)*bjinv*bkinv - scp*rnj(2)*bj2inv
+      di(3) = rnk(3)*bjinv*bkinv - scp*rnj(3)*bj2inv
+      dl(1) = rnj(1)*bjinv*bkinv - scp*rnk(1)*bk2inv
+      dl(2) = rnj(2)*bjinv*bkinv - scp*rnk(2)*bk2inv
+      dl(3) = rnj(3)*bjinv*bkinv - scp*rnk(3)*bk2inv
 
       rki(1) =  rji(1) - rjk(1)
       rki(2) =  rji(2) - rjk(2)
@@ -2140,20 +2148,20 @@ real(8) function improper2(istart, iend)
       dp(11) = rjk(3)*dl(1) - rjk(1)*dl(3)
       dp(12) = rjk(1)*dl(2) - rjk(2)*dl(1)
 
-      d(t%i*3-2) = d(t%i*3-2) + dv*dp(1)
-      d(t%i*3-1) = d(t%i*3-1) + dv*dp(2)
-      d(t%i*3-0) = d(t%i*3-0) + dv*dp(3)
-      d(t%j*3-2) = d(t%j*3-2) + dv*dp(4)
-      d(t%j*3-1) = d(t%j*3-1) + dv*dp(5)
-      d(t%j*3-0) = d(t%j*3-0) + dv*dp(6)
-      d(t%k*3-2) = d(t%k*3-2) + dv*dp(7)
-      d(t%k*3-1) = d(t%k*3-1) + dv*dp(8)
-      d(t%k*3-0) = d(t%k*3-0) + dv*dp(9)
-      d(t%l*3-2) = d(t%l*3-2) + dv*dp(10)
-      d(t%l*3-1) = d(t%l*3-1) + dv*dp(11)
+      d(t%i*3-2) = d(t%i*3-2) + force_per_cos*dp(1)
+      d(t%i*3-1) = d(t%i*3-1) + force_per_cos*dp(2)
+      d(t%i*3-0) = d(t%i*3-0) + force_per_cos*dp(3)
+      d(t%j*3-2) = d(t%j*3-2) + force_per_cos*dp(4)
+      d(t%j*3-1) = d(t%j*3-1) + force_per_cos*dp(5)
+      d(t%j*3-0) = d(t%j*3-0) + force_per_cos*dp(6)
+      d(t%k*3-2) = d(t%k*3-2) + force_per_cos*dp(7)
+      d(t%k*3-1) = d(t%k*3-1) + force_per_cos*dp(8)
+      d(t%k*3-0) = d(t%k*3-0) + force_per_cos*dp(9)
+      d(t%l*3-2) = d(t%l*3-2) + force_per_cos*dp(10)
+      d(t%l*3-1) = d(t%l*3-1) + force_per_cos*dp(11)
 
 
-      d(t%l*3-0) = d(t%l*3-0) + dv*dp(12)
+      d(t%l*3-0) = d(t%l*3-0) + force_per_cos*dp(12)
     end do
 end function improper2
 
@@ -14515,7 +14523,7 @@ end subroutine offdiag
 subroutine p_restrain
    ! *** Local variables
   integer :: ir,i,j,k,i3,j3,k3,istate,n_ctr
-  real(8) :: fk,r2,erst,Edum,x2,y2,z2,wgt,b,db,dv,totmass,theta,rij,r2ij,rjk,r2jk,scp,f1
+  real(8) :: fk,r2,erst,Edum,x2,y2,z2,wgt,b,db,dv,totmass,theta,rij,r2ij,rjk,r2jk,scp,scp_force,f1
   real(8) :: dr(3), dr2(3), ctr(3), di(3), dk(3)
   real(8) :: fexp
 
@@ -14760,10 +14768,11 @@ subroutine p_restrain
     ! calculate the scalar product (scp) and the angle theta from it
     scp = ( dr(1)*dr2(1) + dr(2)*dr2(2) + dr(3)*dr2(3) )
     scp = scp / ( rij*rjk )
+    scp_force = scp
 
-    ! criteria inserted on the real angle force calculations to ensure no weird scp.
-    if ( scp .gt.  1.0 ) scp =  1.0
-    if ( scp .lt. -1.0 ) scp = -1.0
+    ! Match QGPU's finite-angle guard near collinear geometries.
+    if ( scp .gt. angle_cosine_limit ) scp = angle_cosine_limit
+    if ( scp .lt. -angle_cosine_limit ) scp = -angle_cosine_limit
 
     theta = acos(scp)
     db    = theta - (rstang(ir)%ang)*deg2rad
@@ -14772,22 +14781,16 @@ subroutine p_restrain
     Edum   = 0.5*rstang(ir)%fk*db**2
     dv     = wgt*rstang(ir)%fk*db
 
-    ! calculate sin(theta) to use in forces
-    f1 = sin ( theta )
-    if ( abs(f1) .lt. 1.e-12 ) then
-      ! avoid division by zero
-      f1 = -1.e12
-    else
-      f1 =  -1.0 / f1
-    end if
+    ! angle_cosine_limit keeps this denominator finite.
+    f1 = -1.0 / sin(theta)
 
             ! calculate di and dk
-    di(1) = f1 * ( dr2(1) / ( rij * rjk ) - scp * dr(1) / r2ij )
-    di(2) = f1 * ( dr2(2) / ( rij * rjk ) - scp * dr(2) / r2ij )
-    di(3) = f1 * ( dr2(3) / ( rij * rjk ) - scp * dr(3) / r2ij )
-    dk(1) = f1 * ( dr(1) / ( rij * rjk ) - scp * dr2(1) / r2jk )
-    dk(2) = f1 * ( dr(2) / ( rij * rjk ) - scp * dr2(2) / r2jk )
-    dk(3) = f1 * ( dr(3) / ( rij * rjk ) - scp * dr2(3) / r2jk )
+    di(1) = f1 * ( dr2(1) / ( rij * rjk ) - scp_force * dr(1) / r2ij )
+    di(2) = f1 * ( dr2(2) / ( rij * rjk ) - scp_force * dr(2) / r2ij )
+    di(3) = f1 * ( dr2(3) / ( rij * rjk ) - scp_force * dr(3) / r2ij )
+    dk(1) = f1 * ( dr(1) / ( rij * rjk ) - scp_force * dr2(1) / r2jk )
+    dk(2) = f1 * ( dr(2) / ( rij * rjk ) - scp_force * dr2(2) / r2jk )
+    dk(3) = f1 * ( dr(3) / ( rij * rjk ) - scp_force * dr2(3) / r2jk )
 
             ! update d
     d(i3+1) = d(i3+1) + dv*di(1)
@@ -15543,7 +15546,7 @@ subroutine qangle (istate)
 
   ! local variables
   integer                                         :: ia,i,j,k,ic,i3,j3,k3,im,icoupl,ib
-  real(8)                                         :: bji,bjk,scp,ang,da,ae,dv,gamma
+  real(8)                                         :: bji,bjk,scp,scp_force,ang,da,ae,dv,gamma
   real(8)                                         :: rji(3),rjk(3),f1,di(3),dk(3)
 
 
@@ -15585,23 +15588,22 @@ subroutine qangle (istate)
       bjk = sqrt ( rjk(1)**2 + rjk(2)**2 + rjk(3)**2 )
       scp = ( rji(1)*rjk(1) + rji(2)*rjk(2) + rji(3)*rjk(3) )
       scp = scp / (bji*bjk)
-      if ( scp .gt.  1.0 ) scp =  1.0
-      if ( scp .lt. -1.0 ) scp = -1.0
+      scp_force = scp
+      if ( scp .gt. angle_cosine_limit ) scp = angle_cosine_limit
+      if ( scp .lt. -angle_cosine_limit ) scp = -angle_cosine_limit
       ang = acos(scp)
       da = ang - qanglib(ic)%ang0
       ae = 0.5*qanglib(ic)%fk*da**2
       EQ(istate)%q%angle = EQ(istate)%q%angle + ae*gamma
 
       dv = gamma*qanglib(ic)%fk*da*EQ(istate)%lambda
-      f1 = sin ( ang )
-      if ( abs(f1) .lt. 1.e-12 ) f1 = 1.e-12
-      f1 =  -1.0 / f1
-      di(1) = f1 * ( rjk(1)/(bji*bjk) - scp*rji(1)/bji**2 )
-      di(2) = f1 * ( rjk(2)/(bji*bjk) - scp*rji(2)/bji**2 )
-      di(3) = f1 * ( rjk(3)/(bji*bjk) - scp*rji(3)/bji**2 )
-      dk(1) = f1 * ( rji(1)/(bji*bjk) - scp*rjk(1)/bjk**2 )
-      dk(2) = f1 * ( rji(2)/(bji*bjk) - scp*rjk(2)/bjk**2 )
-      dk(3) = f1 * ( rji(3)/(bji*bjk) - scp*rjk(3)/bjk**2 )
+      f1 = -1.0 / sin(ang)
+      di(1) = f1 * ( rjk(1)/(bji*bjk) - scp_force*rji(1)/bji**2 )
+      di(2) = f1 * ( rjk(2)/(bji*bjk) - scp_force*rji(2)/bji**2 )
+      di(3) = f1 * ( rjk(3)/(bji*bjk) - scp_force*rji(3)/bji**2 )
+      dk(1) = f1 * ( rji(1)/(bji*bjk) - scp_force*rjk(1)/bjk**2 )
+      dk(2) = f1 * ( rji(2)/(bji*bjk) - scp_force*rjk(2)/bjk**2 )
+      dk(3) = f1 * ( rji(3)/(bji*bjk) - scp_force*rjk(3)/bjk**2 )
       d(i3+1) = d(i3+1) + dv*di(1)
       d(i3+2) = d(i3+2) + dv*di(2)
       d(i3+3) = d(i3+3) + dv*di(3)
@@ -15910,7 +15912,7 @@ subroutine qtorsion (istate)
   ! local variables
   integer                                         ::      i,j,k,l,ip,ic,i3,j3,k3,l3
   integer                                         ::      icoupl,im,ib
-  real(8)                                         ::      bj,bk,scp,phi,sgn,pe,dv,arg,f1,gamma
+  real(8)                                         ::      bj,bk,scp,phi,sgn,pe,dv,arg,sin_phi,cos_phi_limit,gamma
   real(8)                                         ::      rji(3),rjk(3),rkl(3),rnj(3),rnk(3)
   real(8)                                         ::      rki(3),rlj(3),dp(12),di(3),dl(3)
 
@@ -15980,15 +15982,24 @@ subroutine qtorsion (istate)
       dv = -qrmult(ic)*qfktor(ic)*sin(arg)*gamma*EQ(istate)%lambda
 
       ! ---       forces
-      f1 = sin ( phi )
-      if ( abs(f1) .lt. 1.e-12 ) f1 = 1.e-12
-      f1 =  -1.0 / f1
-      di(1) = f1 * ( rnk(1)/(bj*bk) - scp*rnj(1)/bj**2 )
-      di(2) = f1 * ( rnk(2)/(bj*bk) - scp*rnj(2)/bj**2 )
-      di(3) = f1 * ( rnk(3)/(bj*bk) - scp*rnj(3)/bj**2 )
-      dl(1) = f1 * ( rnj(1)/(bj*bk) - scp*rnk(1)/bk**2 )
-      dl(2) = f1 * ( rnj(2)/(bj*bk) - scp*rnk(2)/bk**2 )
-      dl(3) = f1 * ( rnj(3)/(bj*bk) - scp*rnk(3)/bk**2 )
+      ! Replace -dU/dphi/sin(phi) by its analytic limit near 0 and pi.
+      sin_phi = sin(phi)
+      if ( abs(sin_phi) .lt. dihedral_sin_threshold ) then
+        if ( scp .lt. 0.0_8 ) then
+          cos_phi_limit = -1.0_8
+        else
+          cos_phi_limit = 1.0_8
+        end if
+        dv = qfktor(ic)*qrmult(ic)**2*gamma*EQ(istate)%lambda*cos(arg)/cos_phi_limit
+      else
+        dv = -dv/sin_phi
+      end if
+      di(1) = rnk(1)/(bj*bk) - scp*rnj(1)/bj**2
+      di(2) = rnk(2)/(bj*bk) - scp*rnj(2)/bj**2
+      di(3) = rnk(3)/(bj*bk) - scp*rnj(3)/bj**2
+      dl(1) = rnj(1)/(bj*bk) - scp*rnk(1)/bk**2
+      dl(2) = rnj(2)/(bj*bk) - scp*rnk(2)/bk**2
+      dl(3) = rnj(3)/(bj*bk) - scp*rnk(3)/bk**2
 
       rki(1) =  rji(1) - rjk(1)
       rki(2) =  rji(2) - rjk(2)
@@ -16440,7 +16451,7 @@ real(8) function torsion(istart, iend)
 
   ! local variables
   integer                                         ::      ip
-  real(8)                                         ::      scp,phi,dv,arg,f1
+  real(8)                                         ::      scp,phi,dv,arg,sin_phi,force_per_cos,cos_phi_limit
   real(8)                                         ::      bjinv, bkinv, bj2inv, bk2inv
   real(8), save                                   ::      rji(3),rjk(3),rkl(3),rnj(3),rnk(3)
   real(8), save                                   ::      rki(3),rlj(3),dp(12),di(3),dl(3)
@@ -16499,20 +16510,28 @@ real(8) function torsion(istart, iend)
 
     ! ---       energy
     arg = lib%rmult*phi-lib%deltor
-    torsion = torsion + lib%fk*(1.0+cos(arg))*lib%paths   !lib%paths is previously inverted 
+    torsion = torsion + lib%fk*(1.0+cos(arg))*lib%paths   !lib%paths is previously inverted
     dv = -lib%rmult*lib%fk*sin(arg)*lib%paths
 
     ! ---       forces
-
-    f1 = sin ( phi ) 
-    if ( abs(f1) .lt. 1.e-12 ) f1 = 1.e-12
-    f1 =  -1.0 / f1
-    di(1) = f1 * ( rnk(1)*(bjinv*bkinv) - scp*rnj(1)*bj2inv )
-    di(2) = f1 * ( rnk(2)*(bjinv*bkinv) - scp*rnj(2)*bj2inv )
-    di(3) = f1 * ( rnk(3)*(bjinv*bkinv) - scp*rnj(3)*bj2inv )
-    dl(1) = f1 * ( rnj(1)*(bjinv*bkinv) - scp*rnk(1)*bk2inv )
-    dl(2) = f1 * ( rnj(2)*(bjinv*bkinv) - scp*rnk(2)*bk2inv )
-    dl(3) = f1 * ( rnj(3)*(bjinv*bkinv) - scp*rnk(3)*bk2inv )
+    ! Use the analytic limit of -dU/dphi/sin(phi) at 0 and pi.
+    sin_phi = sin(phi)
+    if ( abs(sin_phi) .lt. dihedral_sin_threshold ) then
+      if ( scp .lt. 0.0_8 ) then
+        cos_phi_limit = -1.0_8
+      else
+        cos_phi_limit = 1.0_8
+      end if
+      force_per_cos = lib%fk*lib%rmult**2*lib%paths*cos(arg)/cos_phi_limit
+    else
+      force_per_cos = -dv/sin_phi
+    end if
+    di(1) = rnk(1)*(bjinv*bkinv) - scp*rnj(1)*bj2inv
+    di(2) = rnk(2)*(bjinv*bkinv) - scp*rnj(2)*bj2inv
+    di(3) = rnk(3)*(bjinv*bkinv) - scp*rnj(3)*bj2inv
+    dl(1) = rnj(1)*(bjinv*bkinv) - scp*rnk(1)*bk2inv
+    dl(2) = rnj(2)*(bjinv*bkinv) - scp*rnk(2)*bk2inv
+    dl(3) = rnj(3)*(bjinv*bkinv) - scp*rnk(3)*bk2inv
 
     rki(1) =  rji(1) - rjk(1)
     rki(2) =  rji(2) - rjk(2)
@@ -16534,18 +16553,18 @@ real(8) function torsion(istart, iend)
     dp(11) = rjk(3)*dl(1) - rjk(1)*dl(3)
     dp(12) = rjk(1)*dl(2) - rjk(2)*dl(1)
 
-    d(t%i*3-2) = d(t%i*3-2) + dv*dp(1)
-    d(t%i*3-1) = d(t%i*3-1) + dv*dp(2)
-    d(t%i*3-0) = d(t%i*3-0) + dv*dp(3)
-    d(t%j*3-2) = d(t%j*3-2) + dv*dp(4)
-    d(t%j*3-1) = d(t%j*3-1) + dv*dp(5)
-    d(t%j*3-0) = d(t%j*3-0) + dv*dp(6)
-    d(t%k*3-2) = d(t%k*3-2) + dv*dp(7)
-    d(t%k*3-1) = d(t%k*3-1) + dv*dp(8)
-    d(t%k*3-0) = d(t%k*3-0) + dv*dp(9)
-    d(t%l*3-2) = d(t%l*3-2) + dv*dp(10)
-    d(t%l*3-1) = d(t%l*3-1) + dv*dp(11)
-    d(t%l*3-0) = d(t%l*3-0) + dv*dp(12)
+    d(t%i*3-2) = d(t%i*3-2) + force_per_cos*dp(1)
+    d(t%i*3-1) = d(t%i*3-1) + force_per_cos*dp(2)
+    d(t%i*3-0) = d(t%i*3-0) + force_per_cos*dp(3)
+    d(t%j*3-2) = d(t%j*3-2) + force_per_cos*dp(4)
+    d(t%j*3-1) = d(t%j*3-1) + force_per_cos*dp(5)
+    d(t%j*3-0) = d(t%j*3-0) + force_per_cos*dp(6)
+    d(t%k*3-2) = d(t%k*3-2) + force_per_cos*dp(7)
+    d(t%k*3-1) = d(t%k*3-1) + force_per_cos*dp(8)
+    d(t%k*3-0) = d(t%k*3-0) + force_per_cos*dp(9)
+    d(t%l*3-2) = d(t%l*3-2) + force_per_cos*dp(10)
+    d(t%l*3-1) = d(t%l*3-1) + force_per_cos*dp(11)
+    d(t%l*3-0) = d(t%l*3-0) + force_per_cos*dp(12)
   end do
 
 end function torsion
