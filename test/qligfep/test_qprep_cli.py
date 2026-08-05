@@ -57,6 +57,39 @@ def _build_protein_residue(resname, chain, resnum, x, y, z, key_atom="CA"):
     return atoms
 
 
+class TestQChargeGroupNeutralization:
+    def test_uses_q_default_whole_residue_charge_group_center(self):
+        glu = _build_protein_residue("GLU", "A", 1, 30.0, 0.0, 0.0)
+        # Q uses the centroid of the complete default charge group, not CD alone.
+        for atom in glu:
+            if atom["atom_name"] == "CD":
+                atom["x"] = 5.0
+        df = pd.DataFrame(glu)
+
+        result, _ = Neutralizer(
+            (0, 0, 0), radius=25.0, boundary_offset=0.0
+        ).neutralize_outside_residues_dataframe(df)
+
+        assert (result["residue_name"] == "GLH").all()
+
+    def test_salt_bridge_uses_charged_heavy_atom_distance(self):
+        rows = []
+        glu = _build_protein_residue("GLU", "A", 1, 30.0, 0.0, 0.0)
+        glu.append(_make_atom("ATOM", 111, "OE1", "GLU", "A", 1, 28.0, 0.0, 0.0, "O"))
+        lys = _build_protein_residue("LYS", "A", 2, 24.0, 0.0, 0.0)
+        rows.extend(glu)
+        rows.extend(lys)
+        df = pd.DataFrame(rows)
+
+        result, stats = Neutralizer(
+            (0, 0, 0), radius=25.0, boundary_offset=0.0
+        ).neutralize_outside_residues_dataframe(df, salt_bridge_cutoff=4.0)
+
+        assert (result[result["residue_seq_number"] == 1]["residue_name"] == "GLH").all()
+        assert (result[result["residue_seq_number"] == 2]["residue_name"] == "LYN").all()
+        assert stats["salt_bridges_neutralized"] == 1
+
+
 class TestNeutralizerDNA:
     """Tests for DNA nucleotide handling in the Neutralizer.
 
@@ -72,7 +105,7 @@ class TestNeutralizerDNA:
     def test_outside_dna_removed(self):
         """DA nucleotide fully outside sphere should be removed."""
         rows = []
-        rows.extend(_build_dna_residue("DA", "E", 1, 5.0, 0.0, 0.0))   # inside
+        rows.extend(_build_dna_residue("DA", "E", 1, 5.0, 0.0, 0.0))  # inside
         rows.extend(_build_dna_residue("DA", "E", 2, 30.0, 0.0, 0.0))  # outside
         df = pd.DataFrame(rows)
 
@@ -85,8 +118,8 @@ class TestNeutralizerDNA:
         """First inside residue with removed upstream DNA gets 5' terminal form."""
         rows = []
         rows.extend(_build_dna_residue("DA", "E", 1, 30.0, 0.0, 0.0))  # outside, removed
-        rows.extend(_build_dna_residue("DG", "E", 2, 5.0, 0.0, 0.0))   # inside, gets 5' cap
-        rows.extend(_build_dna_residue("DC", "E", 3, 5.0, 0.0, 0.0))   # inside, unchanged
+        rows.extend(_build_dna_residue("DG", "E", 2, 5.0, 0.0, 0.0))  # inside, gets 5' cap
+        rows.extend(_build_dna_residue("DC", "E", 3, 5.0, 0.0, 0.0))  # inside, unchanged
         df = pd.DataFrame(rows)
 
         neutralizer = self._make_neutralizer()
@@ -118,8 +151,8 @@ class TestNeutralizerDNA:
         rows.extend(_build_dna_residue("DA", "E", 1, 40.0, 0.0, 0.0))  # outside
         rows.extend(_build_dna_residue("DG", "E", 2, 35.0, 0.0, 0.0))  # outside
         rows.extend(_build_dna_residue("DC", "E", 3, 30.0, 0.0, 0.0))  # outside
-        rows.extend(_build_dna_residue("DT", "E", 4, 5.0, 0.0, 0.0))   # inside, gets cap
-        rows.extend(_build_dna_residue("DA", "E", 5, 5.0, 0.0, 0.0))   # inside
+        rows.extend(_build_dna_residue("DT", "E", 4, 5.0, 0.0, 0.0))  # inside, gets cap
+        rows.extend(_build_dna_residue("DA", "E", 5, 5.0, 0.0, 0.0))  # inside
         df = pd.DataFrame(rows)
 
         neutralizer = self._make_neutralizer()
@@ -169,8 +202,8 @@ class TestNeutralizerDNA:
     def test_downstream_removal_no_5prime_cap(self):
         """When removed DNA is only downstream (3' side), no 5' cap is needed."""
         rows = []
-        rows.extend(_build_dna_residue("DA", "E", 1, 5.0, 0.0, 0.0))   # inside
-        rows.extend(_build_dna_residue("DG", "E", 2, 5.0, 0.0, 0.0))   # inside
+        rows.extend(_build_dna_residue("DA", "E", 1, 5.0, 0.0, 0.0))  # inside
+        rows.extend(_build_dna_residue("DG", "E", 2, 5.0, 0.0, 0.0))  # inside
         rows.extend(_build_dna_residue("DC", "E", 3, 30.0, 0.0, 0.0))  # outside
         df = pd.DataFrame(rows)
 
@@ -256,9 +289,17 @@ class TestNeutralizerNTerminals:
         atoms = []
         serial_base = 100
         for i, (aname, elem) in enumerate(
-            [("N", "N"), ("CA", "C"), ("C", "C"), ("O", "O"),
-             ("CB", "C"), ("CG", "C"), ("CD", "C"),
-             ("H1", "H"), ("H2", "H")]
+            [
+                ("N", "N"),
+                ("CA", "C"),
+                ("C", "C"),
+                ("O", "O"),
+                ("CB", "C"),
+                ("CG", "C"),
+                ("CD", "C"),
+                ("H1", "H"),
+                ("H2", "H"),
+            ]
         ):
             atoms.append(_make_atom("ATOM", serial_base + i, aname, "NPRO", "F", 1, 30.0, 0.0, 0.0, elem))
         df = pd.DataFrame(atoms)
@@ -269,9 +310,9 @@ class TestNeutralizerNTerminals:
         res = result_df[result_df["residue_seq_number"] == 1]
         assert (res["residue_name"] == "PRO").all()
         for forbidden in ("H", "H1", "H2", "H3"):
-            assert forbidden not in res["atom_name"].values, (
-                f"PRO library has no backbone amide H but found {forbidden!r}"
-            )
+            assert (
+                forbidden not in res["atom_name"].values
+            ), f"PRO library has no backbone amide H but found {forbidden!r}"
 
 
 def _build_cterm_residue(resname, chain, resnum, x, y, z):
