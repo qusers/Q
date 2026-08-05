@@ -26,13 +26,13 @@ from .utils import handle_cysbonds
 
 
 class Neutralizer:
-    """Neutralizes out-of-sphere charged residues (protein and DNA) in the qprep workflow."""
+    """Neutralize charged residues outside Q's spherical charge-group boundary."""
 
-    def __init__(self, center_coords, radius=25.0, boundary_offset=3.0):
-        self.center = np.array(center_coords)
+    def __init__(self, center_coords, radius=25.0, boundary_offset=0.0):
+        self.center = np.asarray(center_coords, dtype=float)
         self.radius = float(radius)
         self.boundary_offset = boundary_offset
-        self.rest_bound = self.radius - self.boundary_offset  # Neutralize residues OUTSIDE this boundary
+        self.rest_bound = self.radius - self.boundary_offset
 
         # Define charged residues and their neutral forms + key atoms for distance calculation
         # Format: 'charged': ['neutral', 'key_atom', charge]
@@ -55,7 +55,9 @@ class Neutralizer:
             "total_charged_residues": 0,
             "residues_outside_boundary": 0,
             "residues_neutralized": 0,
+            "terminals_neutralized": 0,
             "salt_bridges_neutralized": 0,
+            "boundary_salt_bridges": [],
             "original_total_charge": 0,
             "final_total_charge": 0,
             "modifications": {},
@@ -68,8 +70,10 @@ class Neutralizer:
         return self.neutralize_outside_residues_dataframe(df, salt_bridge_cutoff)
 
     def neutralize_outside_residues_dataframe(self, df, salt_bridge_cutoff=4.0):
-        """Find and neutralize charged residues outside the sphere boundary for a DataFrame"""
-        logger.info(f"Neutralizing charged residues outside {self.rest_bound:.1f}Å boundary")
+        """Neutralize excluded charge groups and direct included salt-bridge partners."""
+        logger.info(
+            f"Neutralizing charged residues whose Q charge-group center is " f"outside {self.rest_bound:.1f}Å"
+        )
 
         # Terminal neutralization runs unconditionally (independent of side chain charges)
         modified_df = self._neutralize_nterminals(df)
@@ -78,6 +82,7 @@ class Neutralizer:
         charged_residues_info = self._find_charged_residues(modified_df)
 
         if not charged_residues_info:
+            self.stats["residues_neutralized"] = self.stats["terminals_neutralized"]
             logger.info("No charged residues found in the PDB data")
             return modified_df, self.stats
 
@@ -106,7 +111,9 @@ class Neutralizer:
         # Find DNA nucleotides outside the neutralization boundary (C1' > rest_bound)
         dna_to_neutralize = self._find_outside_dna(df)
 
-        self.stats["residues_neutralized"] = len(protein_to_modify) + len(dna_to_neutralize)
+        self.stats["residues_neutralized"] = (
+            len(protein_to_modify) + len(dna_to_neutralize) + self.stats["terminals_neutralized"]
+        )
 
         # Modify the dataframe: protein side chains neutralized at rest_bound,
         # DNA outside boundary removed with 5' terminal capping
@@ -147,7 +154,23 @@ class Neutralizer:
                     continue
 
                 key_atom_coords = key_atom_row[["x", "y", "z"]].values[0]
-                distance = np.linalg.norm(key_atom_coords - self.center)
+                # AMBER14sb protein templates do not define [charge_groups],
+                # so qprep creates one group containing every residue atom.
+                # This is the centroid used by set_cgp() in prep.f90.
+                charge_group_center = group[["x", "y", "z"]].values.mean(axis=0)
+                distance = np.linalg.norm(charge_group_center - self.center)
+
+                charged_atom_names = {
+                    "GLU": {"OE1", "OE2"},
+                    "ASP": {"OD1", "OD2"},
+                    "ARG": {"NH1", "NH2"},
+                    "LYS": {"NZ"},
+                    "HIP": {"ND1", "NE2"},
+                }.get(res_name, {key_atom})
+                charged_atoms = group[group["atom_name"].isin(charged_atom_names)]
+                charged_atom_coords = charged_atoms[["x", "y", "z"]].values
+                if len(charged_atom_coords) == 0:
+                    charged_atom_coords = np.array([key_atom_coords])
 
                 residues_info = {
                     "residue_name": res_name,
@@ -156,6 +179,8 @@ class Neutralizer:
                     "insertion_code": group["insertion_code"].iloc[0],
                     "key_atom": key_atom,
                     "key_atom_coords": key_atom_coords,
+                    "charge_group_center": charge_group_center,
+                    "charged_atom_coords": charged_atom_coords,
                     "distance": distance,
                     "charge": charge,
                     "neutral_form": self.charged_residues[res_name][0],
@@ -170,7 +195,7 @@ class Neutralizer:
         inside_residues = []
 
         for res_info in charged_residues_info:
-            if res_info["distance"] > self.rest_bound:
+            if res_info["distance"] >= self.rest_bound:
                 outside_residues.append(res_info)
                 logger.debug(
                     f"Residue {res_info['chain_id']}:{res_info['residue_seq_number']} ({res_info['residue_name']}) "
@@ -186,26 +211,52 @@ class Neutralizer:
         return outside_residues, inside_residues
 
     def _find_salt_bridges(self, outside_residues, inside_residues, cutoff):
-        """Find salt bridges between outside and inside residues"""
-        salt_bridge_partners = []
+        """Find direct salt bridges crossing the included/excluded boundary."""
+        salt_bridge_partners = {}
 
         for outside_res in outside_residues:
             for inside_res in inside_residues:
-                # Only consider oppositely charged residues
                 if outside_res["charge"] * inside_res["charge"] >= 0:
                     continue
 
-                distance = np.linalg.norm(outside_res["key_atom_coords"] - inside_res["key_atom_coords"])
+                deltas = (
+                    outside_res["charged_atom_coords"][:, None, :]
+                    - inside_res["charged_atom_coords"][None, :, :]
+                )
+                distance = float(np.linalg.norm(deltas, axis=2).min())
 
                 if distance <= cutoff:
-                    salt_bridge_partners.append(inside_res)
+                    identity = (
+                        inside_res["chain_id"],
+                        inside_res["residue_seq_number"],
+                        inside_res["insertion_code"],
+                    )
+                    salt_bridge_partners[identity] = inside_res
+                    bridge = {
+                        "excluded": {
+                            "chain_id": outside_res["chain_id"],
+                            "residue_seq_number": int(outside_res["residue_seq_number"]),
+                            "residue_name": outside_res["residue_name"],
+                        },
+                        "included": {
+                            "chain_id": inside_res["chain_id"],
+                            "residue_seq_number": int(inside_res["residue_seq_number"]),
+                            "residue_name": inside_res["residue_name"],
+                        },
+                        "distance": distance,
+                    }
+                    if bridge not in self.stats["boundary_salt_bridges"]:
+                        self.stats["boundary_salt_bridges"].append(bridge)
                     logger.info(
-                        f"Salt bridge detected: {outside_res['chain_id']}:{outside_res['residue_seq_number']} "
-                        f"({outside_res['residue_name']}) <-> {inside_res['chain_id']}:{inside_res['residue_seq_number']} "
-                        f"({inside_res['residue_name']}) at {distance:.2f}Å - neutralizing both"
+                        f"Boundary-crossing salt bridge: "
+                        f"{outside_res['chain_id']}:{outside_res['residue_seq_number']} "
+                        f"({outside_res['residue_name']}) <-> "
+                        f"{inside_res['chain_id']}:{inside_res['residue_seq_number']} "
+                        f"({inside_res['residue_name']}) at {distance:.2f}Å; "
+                        "neutralizing the included partner"
                     )
 
-        return salt_bridge_partners
+        return list(salt_bridge_partners.values())
 
     def _modify_residues(self, df, residues_to_modify):
         """Modify residues to their neutral forms and remove appropriate atoms"""
@@ -231,7 +282,7 @@ class Neutralizer:
 
             for atom_name in atoms_to_remove:
                 atom_mask = mask & (modified_df["atom_name"] == atom_name)
-                indices_to_remove = modified_df[atom_mask].index
+                indices_to_remove = atom_mask[atom_mask].index.intersection(modified_df.index)
                 modified_df = modified_df.drop(indices_to_remove)
 
             mod_key = f"{chain}:{res_num}"
@@ -273,8 +324,9 @@ class Neutralizer:
             n_atom = group[group["atom_name"] == "N"]
             if len(n_atom) == 0:
                 continue
-            dist = np.linalg.norm(n_atom[["x", "y", "z"]].values[0] - self.center)
-            if dist <= self.rest_bound:
+            charge_group_center = group[["x", "y", "z"]].values.mean(axis=0)
+            dist = np.linalg.norm(charge_group_center - self.center)
+            if dist < self.rest_bound:
                 continue
 
             internal_name = nterm_name[1:]  # NILE → ILE, NGLY → GLY, etc.
@@ -293,14 +345,15 @@ class Neutralizer:
                 modified_df.loc[h1_mask, "atom_name"] = "H"
             for hatom in ["H2", "H3"]:
                 h_mask = mask & (modified_df["atom_name"] == hatom)
-                modified_df = modified_df.drop(modified_df[h_mask].index)
+                modified_df = modified_df.drop(h_mask[h_mask].index.intersection(modified_df.index))
             logger.debug(
                 f"Neutralized N-terminal {nterm_name} -> {internal_name} "
-                f"at {chain}:{res_num} (N: {dist:.2f}Å)"
+                f"at {chain}:{res_num} (Q charge-group center: {dist:.2f}Å)"
             )
             n_converted += 1
 
         if n_converted > 0:
+            self.stats["terminals_neutralized"] += n_converted
             logger.info(f"Neutralized {n_converted} N-terminal residues outside boundary")
         return modified_df
 
@@ -322,11 +375,9 @@ class Neutralizer:
         n_converted = 0
 
         for (chain, res_num, cterm_name), group in cterm_residues:
-            n_atom = group[group["atom_name"] == "N"]
-            if len(n_atom) == 0:
-                continue
-            dist = np.linalg.norm(n_atom[["x", "y", "z"]].values[0] - self.center)
-            if dist <= self.rest_bound:
+            charge_group_center = group[["x", "y", "z"]].values.mean(axis=0)
+            dist = np.linalg.norm(charge_group_center - self.center)
+            if dist < self.rest_bound:
                 continue
 
             internal_name = cterm_name[1:]  # CALA → ALA, CGLY → GLY, etc.
@@ -338,14 +389,15 @@ class Neutralizer:
             )
             modified_df.loc[mask, "residue_name"] = internal_name
             oxt_mask = mask & (modified_df["atom_name"] == "OXT")
-            modified_df = modified_df.drop(modified_df[oxt_mask].index)
+            modified_df = modified_df.drop(oxt_mask[oxt_mask].index.intersection(modified_df.index))
             logger.debug(
                 f"Neutralized C-terminal {cterm_name} -> {internal_name} "
-                f"at {chain}:{res_num} (N: {dist:.2f}Å)"
+                f"at {chain}:{res_num} (Q charge-group center: {dist:.2f}Å)"
             )
             n_converted += 1
 
         if n_converted > 0:
+            self.stats["terminals_neutralized"] += n_converted
             logger.info(f"Neutralized {n_converted} C-terminal residues outside boundary")
         return modified_df
 
@@ -444,7 +496,7 @@ class Neutralizer:
                 modified_df.loc[mask, "residue_name"] = new_name
                 for atom in ["P", "OP1", "OP2", "HP"]:
                     atom_mask = mask & (modified_df["atom_name"] == atom)
-                    modified_df = modified_df.drop(modified_df[atom_mask].index)
+                    modified_df = modified_df.drop(atom_mask[atom_mask].index.intersection(modified_df.index))
                 logger.debug(f"5' terminal cap: {old_name} -> {new_name} at {chain}:{first_inside}")
                 n_caps += 1
 
@@ -479,7 +531,7 @@ class Neutralizer:
     def _check_remaining_outside_charged(self, inside_residues, salt_bridge_partners):
         """Check for remaining charged residues outside the boundary"""
         for res in inside_residues:
-            if res not in salt_bridge_partners and res["distance"] > self.rest_bound:
+            if res not in salt_bridge_partners and res["distance"] >= self.rest_bound:
                 self.stats["remaining_outside_charged"].append(res)
 
     def _log_neutralization_stats(self):
@@ -620,10 +672,11 @@ def parse_arguments() -> argparse.Namespace:
         "--neutralize_boundary_offset",
         dest="neutralize_boundary_offset",
         type=float,
-        default=3.0,
+        default=0.0,
         help=(
             "Distance offset from sphere radius to define neutralization boundary. "
-            "Residues outside (radius - offset) will be neutralized. Defaults to 3.0Å."
+            "Protein charge-group centers at or beyond (radius - offset) are neutralized. "
+            "The default of 0 matches qprep's nominal exclusion boundary."
         ),
     )
     parser.add_argument(
@@ -652,7 +705,7 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
+def main(args: Optional[argparse.Namespace] = None, **kwargs) -> Optional[dict]:
     """Either runs the qprep program with the given arguments via **kwargs or parses
     the arguments and runs the program.
 
@@ -863,6 +916,8 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     else:
         logger.info("All water molecules are inside the sphere radius.")
         logger.debug(f"Final highest distance to COG is {euclidean_distances.max():.2f} A")
+
+    return neutralization_stats
 
 
 def main_exe():

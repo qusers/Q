@@ -358,7 +358,10 @@ class TestIonRenaming:
     def test_ion_renamed(self, tmp_path, in_res, in_atom, out_name):
         lines = [
             _line(1, "N", "ALA", "A", 1, elem="N"),
-            "HETATM  100 " + in_atom.ljust(4) + " " + in_res.ljust(4)
+            "HETATM  100 "
+            + in_atom.ljust(4)
+            + " "
+            + in_res.ljust(4)
             + "B 901     222.053 200.827 188.112  1.00 27.46          XX\n",
         ]
         pdb_file = _write_pdb(tmp_path, lines)
@@ -472,6 +475,27 @@ class TestCTerminalOxygens:
         assert "O1" not in atoms and "O2" not in atoms
         assert (df["residue_name"] == "CASP").all(), "should be detected as C-terminal"
 
+    def test_existing_o_plus_protonated_o1_becomes_charged_cterminus(self, tmp_path):
+        lines = [
+            _line(1, "N", "VAL", "A", 633, y=4.0, elem="N"),
+            _line(2, "CA", "VAL", "A", 633, y=3.0, elem="C"),
+            _line(3, "C", "VAL", "A", 633, elem="C"),
+            _line(4, "O", "VAL", "A", 633, x=1.2, elem="O"),
+            _line(5, "O1", "VAL", "A", 633, x=-1.2, elem="O"),
+            _line(6, "H", "VAL", "A", 633, y=5.0, elem="H"),
+            _line(7, "H1", "VAL", "A", 633, x=-2.15, elem="H"),
+        ]
+        pdb_file = _write_pdb(tmp_path, lines)
+        out_file = tmp_path / "out.pdb"
+
+        fix_pdb(pdb_file, out_name=out_file)
+
+        df = read_pdb_to_dataframe(out_file)
+        atoms = set(df["atom_name"])
+        assert {"O", "OXT", "H"}.issubset(atoms)
+        assert "O1" not in atoms and "H1" not in atoms
+        assert (df["residue_name"] == "CVAL").all()
+
     def test_o1_with_existing_oxt_renamed_to_o(self, tmp_path):
         # C-terminal ILE that already has OXT plus a carbonyl oxygen named O1
         lines = [
@@ -537,25 +561,171 @@ class TestASNSidechainAndBackbone:
         assert "H" in atoms and "H11" not in atoms
 
 
-class TestGLUProtonationHE2:
-    """A glutamate protonated at HE2 must be recognised as GLH."""
+def _atom_x(pdb_path, atom_name):
+    df = read_pdb_to_dataframe(pdb_path)
+    return float(df.loc[df["atom_name"] == atom_name, "x"].iloc[0])
 
-    def test_glu_with_he2_becomes_glh(self, tmp_path):
+
+class TestProtonatedCarboxylateNormalization:
+    """Acidic proton geometry and AMBER14sb oxygen identities must agree."""
+
+    @staticmethod
+    def _acid_lines(resname, atom_names, hydrogen_name, hydrogen_x):
+        carbon, oxygen1, oxygen2 = atom_names
+        return [
+            _line(1, carbon, resname, "A", 167, x=-1.2, elem="C"),
+            _line(2, oxygen1, resname, "A", 167, x=0.0, elem="O"),
+            _line(3, oxygen2, resname, "A", 167, x=2.4, elem="O"),
+            _line(4, hydrogen_name, resname, "A", 167, x=hydrogen_x, elem="H"),
+        ]
+
+    def test_glu_proton_on_oe1_swaps_oxygens_and_becomes_glh(self, tmp_path):
+        lines = self._acid_lines("GLU", ("CD", "OE1", "OE2"), "HE1", 0.96)
+        pdb_file = _write_pdb(tmp_path, lines)
+        out_file = tmp_path / "out.pdb"
+
+        fix_pdb(pdb_file, out_name=out_file)
+
+        df = read_pdb_to_dataframe(out_file)
+        assert (df["residue_name"] == "GLH").all()
+        assert "HE2" in set(df["atom_name"])
+        assert "HE1" not in set(df["atom_name"])
+        assert _atom_x(out_file, "OE2") == pytest.approx(0.0)
+        assert _atom_x(out_file, "OE1") == pytest.approx(2.4)
+
+    def test_correct_glh_oe2_geometry_is_unchanged(self, tmp_path):
+        lines = self._acid_lines("GLH", ("CD", "OE1", "OE2"), "HE2", 3.36)
+        pdb_file = _write_pdb(tmp_path, lines)
+        out_file = tmp_path / "out.pdb"
+
+        fix_pdb(pdb_file, out_name=out_file)
+
+        assert _atom_x(out_file, "OE1") == pytest.approx(0.0)
+        assert _atom_x(out_file, "OE2") == pytest.approx(2.4)
+
+    def test_asp_hd2_on_od1_swaps_oxygens_and_becomes_ash(self, tmp_path):
+        lines = self._acid_lines("ASP", ("CG", "OD1", "OD2"), "HD2", 0.96)
+        pdb_file = _write_pdb(tmp_path, lines)
+        out_file = tmp_path / "out.pdb"
+
+        fix_pdb(pdb_file, out_name=out_file)
+
+        df = read_pdb_to_dataframe(out_file)
+        assert (df["residue_name"] == "ASH").all()
+        assert _atom_x(out_file, "OD2") == pytest.approx(0.0)
+        assert _atom_x(out_file, "OD1") == pytest.approx(2.4)
+
+    def test_acidic_hydrogen_far_from_both_oxygens_is_rejected(self, tmp_path):
+        lines = self._acid_lines("GLH", ("CD", "OE1", "OE2"), "HE2", 10.0)
+        pdb_file = _write_pdb(tmp_path, lines)
+
+        with pytest.raises(ValueError, match="not bonded to either side-chain oxygen"):
+            fix_pdb(pdb_file, out_name=tmp_path / "out.pdb")
+
+
+class TestNumberedMethylHydrogenNormalization:
+    @pytest.mark.parametrize(
+        ("resname", "heavy_atom", "source_names", "expected_names"),
+        [
+            ("ALA", "CB", ("1HB", "2HB", "3HB"), ("HB1", "HB2", "HB3")),
+            ("VAL", "CG1", ("1HG1", "2HG1", "3HG1"), ("HG11", "HG12", "HG13")),
+            ("VAL", "CG2", ("1HG2", "2HG2", "3HG2"), ("HG21", "HG22", "HG23")),
+            ("MET", "CE", ("1HE", "2HE", "3HE"), ("HE1", "HE2", "HE3")),
+        ],
+    )
+    def test_three_methyl_hydrogens_keep_unique_names(
+        self, tmp_path, resname, heavy_atom, source_names, expected_names
+    ):
+        lines = [_line(1, heavy_atom, resname, "A", 1, elem="C")]
+        lines.extend(
+            _line(index, name, resname, "A", 1, x=float(index), elem="H")
+            for index, name in enumerate(source_names, 2)
+        )
+        pdb_file = _write_pdb(tmp_path, lines)
+        out_file = tmp_path / "out.pdb"
+
+        fix_pdb(pdb_file, out_name=out_file)
+
+        atoms = _get_atom_names(out_file, residue_name=resname)
+        assert set(expected_names).issubset(atoms)
+        assert len(atoms) == len(set(atoms))
+
+
+class TestDuplicateAtomValidation:
+    def test_unhandled_duplicate_atom_name_is_rejected(self, tmp_path):
         lines = [
-            _line(1, "N", "GLU", "A", 167, elem="N"),
-            _line(2, "CA", "GLU", "A", 167, elem="C"),
-            _line(3, "C", "GLU", "A", 167, elem="C"),
-            _line(4, "O", "GLU", "A", 167, elem="O"),
-            _line(5, "CB", "GLU", "A", 167, elem="C"),
-            _line(6, "CG", "GLU", "A", 167, elem="C"),
-            _line(7, "CD", "GLU", "A", 167, elem="C"),
-            _line(8, "OE1", "GLU", "A", 167, elem="O"),
-            _line(9, "OE2", "GLU", "A", 167, elem="O"),
-            _line(10, "H", "GLU", "A", 167, elem="H"),
-            _line(11, "HE2", "GLU", "A", 167, elem="H"),
+            _line(1, "CA", "ALA", "A", 1, elem="C"),
+            _line(2, "HA", "ALA", "A", 1, x=1.0, elem="H"),
+            _line(3, "HA", "ALA", "A", 1, x=-1.0, elem="H"),
+        ]
+        pdb_file = _write_pdb(tmp_path, lines)
+
+        with pytest.raises(ValueError, match="Duplicate atom name HA"):
+            fix_pdb(pdb_file, out_name=tmp_path / "out.pdb")
+
+
+class TestBackboneAmideGeometryValidation:
+    def test_stretched_backbone_hydrogen_is_rejected(self, tmp_path):
+        lines = [
+            _line(1, "N", "MET", "A", 111, elem="N"),
+            _line(2, "H", "MET", "A", 111, x=1.57, elem="H"),
+        ]
+        pdb_file = _write_pdb(tmp_path, lines)
+
+        with pytest.raises(ValueError, match="backbone H-N distance"):
+            fix_pdb(pdb_file, out_name=tmp_path / "out.pdb")
+
+
+class TestNeutralLysineHydrogenNormalization:
+    def test_hz1_hz2_source_convention_becomes_hz2_hz3(self, tmp_path):
+        lines = [
+            _line(1, "NZ", "LYN", "A", 11, elem="N"),
+            _line(2, "HZ1", "LYN", "A", 11, x=0.9, elem="H"),
+            _line(3, "HZ2", "LYN", "A", 11, x=-0.9, elem="H"),
         ]
         pdb_file = _write_pdb(tmp_path, lines)
         out_file = tmp_path / "out.pdb"
+
         fix_pdb(pdb_file, out_name=out_file)
-        df = read_pdb_to_dataframe(out_file)
-        assert (df["residue_name"] == "GLH").all()
+
+        atoms = _get_atom_names(out_file, residue_name="LYN")
+        assert {"HZ2", "HZ3"}.issubset(atoms)
+        assert "HZ1" not in atoms
+        assert len(atoms) == len(set(atoms))
+
+
+class TestNeutralArginineGeometryNormalization:
+    def test_opposite_nitrogen_numbering_is_exchanged(self, tmp_path):
+        lines = [
+            _line(1, "NH1", "ARN", "A", 42, x=0.0, elem="N"),
+            _line(2, "NH2", "ARN", "A", 42, x=3.0, elem="N"),
+            _line(3, "HH11", "ARN", "A", 42, x=3.9, y=0.4, elem="H"),
+            _line(4, "HH12", "ARN", "A", 42, x=3.9, y=-0.4, elem="H"),
+            _line(5, "HH21", "ARN", "A", 42, x=0.9, elem="H"),
+        ]
+        pdb_file = _write_pdb(tmp_path, lines)
+        out_file = tmp_path / "out.pdb"
+
+        fix_pdb(pdb_file, out_name=out_file)
+
+        assert _atom_x(out_file, "NH1") == pytest.approx(3.0)
+        assert _atom_x(out_file, "NH2") == pytest.approx(0.0)
+
+    def test_duplicate_source_hydrogen_names_are_normalized_before_nesting(self, tmp_path):
+        lines = [
+            _line(1, "NH1", "ARN", "A", 20, x=0.0, elem="N"),
+            _line(2, "NH2", "ARN", "A", 20, x=3.0, elem="N"),
+            _line(3, "HH11", "ARN", "A", 20, x=0.9, elem="H"),
+            _line(4, "HH21", "ARN", "A", 20, x=3.9, y=0.4, elem="H"),
+            _line(5, "HH21", "ARN", "A", 20, x=3.9, y=-0.4, elem="H"),
+        ]
+        pdb_file = _write_pdb(tmp_path, lines)
+        out_file = tmp_path / "out.pdb"
+
+        fix_pdb(pdb_file, out_name=out_file)
+
+        atoms = _get_atom_names(out_file, residue_name="ARN")
+        assert {"HH11", "HH12", "HH21"}.issubset(atoms)
+        assert len(atoms) == len(set(atoms))
+        assert _atom_x(out_file, "NH1") == pytest.approx(3.0)
+        assert _atom_x(out_file, "NH2") == pytest.approx(0.0)

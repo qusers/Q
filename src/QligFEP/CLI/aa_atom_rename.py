@@ -60,9 +60,6 @@ rename_mapping = {
         "1HA": "HA3",
         "2HA": "HA2",
     },
-    "GLH": {
-        "HE1": "HE2",
-    },
     "ARG": {
         "2HG": "HG3",
         "1HG": "HG2",
@@ -84,9 +81,9 @@ rename_mapping = {
         "3HG1": "HG13",
         "2HG1": "HG12",
         "1HG1": "HG11",
-        "3HG2": "HG13",
-        "2HG2": "HG12",
-        "1HG2": "HG11",
+        "3HG2": "HG23",
+        "2HG2": "HG22",
+        "1HG2": "HG21",
     },
     "ASN": {
         "3H": "H3",
@@ -98,9 +95,6 @@ rename_mapping = {
         "2HD2": "HD22",
         "HD1": "HD21",
         "HD2": "HD22",
-    },
-    "ASH": {
-        "HD1": "HD2",
     },
     "PRO": {
         "2H": "H3",
@@ -129,9 +123,10 @@ rename_mapping = {
         "2HG": "HG3",
         "1HG": "HG2",
     },
-    "LYN": {
-        "HZ2": "HZ3",
-        "HZ1": "HZ2",
+    "MET": {
+        "1HE": "HE1",
+        "2HE": "HE2",
+        "3HE": "HE3",
     },
     "ILE": {
         "2HG": "HG3",
