@@ -18,6 +18,8 @@ module lincs
     integer :: atom_count = 0
     integer :: expansion_order = 4
     integer :: rotation_iterations = 1
+    integer :: maximum_rotation_iterations = 1
+    real(8) :: accuracy_tolerance = 1.0d-4
     integer, allocatable :: atom_i(:)
     integer, allocatable :: atom_j(:)
     real(8), allocatable :: target_length(:)
@@ -40,7 +42,8 @@ module lincs
 contains
 
 subroutine setup_lincs(atom_i, atom_j, target_length, inverse_mass, &
-                       expansion_order, rotation_iterations)
+                       expansion_order, rotation_iterations, accuracy_tolerance, &
+                       maximum_rotation_iterations)
 !!-------------------------------------------------------------------------------
 !!  Cache the constraint topology and build its sparse coupling graph in O(K+C)
 !!  storage, where K is the number of constraints and C the number of directly
@@ -49,6 +52,8 @@ subroutine setup_lincs(atom_i, atom_j, target_length, inverse_mass, &
   integer, intent(in) :: atom_i(:), atom_j(:)
   real(8), intent(in) :: target_length(:), inverse_mass(:)
   integer, intent(in), optional :: expansion_order, rotation_iterations
+  integer, intent(in), optional :: maximum_rotation_iterations
+  real(8), intent(in), optional :: accuracy_tolerance
 
   integer :: constraints, atoms, k, m, atom, other_atom, total_couplings
   integer :: position
@@ -70,6 +75,19 @@ subroutine setup_lincs(atom_i, atom_j, target_length, inverse_mass, &
   if (present(rotation_iterations)) then
     if (rotation_iterations < 0) error stop 'LINCS rotation iterations must be nonnegative'
     data%rotation_iterations = rotation_iterations
+    data%maximum_rotation_iterations = rotation_iterations
+  end if
+  if (present(accuracy_tolerance)) then
+    if (.not. ieee_is_finite(accuracy_tolerance) .or. accuracy_tolerance <= 0.0d0) then
+      error stop 'LINCS accuracy tolerance must be finite and positive'
+    end if
+    data%accuracy_tolerance = accuracy_tolerance
+  end if
+  if (present(maximum_rotation_iterations)) then
+    if (maximum_rotation_iterations < data%rotation_iterations) then
+      error stop 'LINCS maximum rotations must be at least the requested rotations'
+    end if
+    data%maximum_rotation_iterations = maximum_rotation_iterations
   end if
 
   data%constraint_count = constraints
@@ -93,9 +111,16 @@ subroutine setup_lincs(atom_i, atom_j, target_length, inverse_mass, &
         atom_j(k) < 1 .or. atom_j(k) > atoms .or. atom_i(k) == atom_j(k)) then
       error stop 'LINCS constraint contains invalid atom indices'
     end if
-    if (target_length(k) <= 0.0d0) error stop 'LINCS target lengths must be positive'
+    if (.not. ieee_is_finite(target_length(k)) .or. target_length(k) <= 0.0d0) then
+      error stop 'LINCS target lengths must be finite and positive'
+    end if
+    if (.not. ieee_is_finite(inverse_mass(atom_i(k))) .or. &
+        .not. ieee_is_finite(inverse_mass(atom_j(k))) .or. &
+        inverse_mass(atom_i(k)) < 0.0d0 .or. inverse_mass(atom_j(k)) < 0.0d0) then
+      error stop 'LINCS inverse masses must be finite and nonnegative'
+    end if
     inverse_mass_sum = inverse_mass(atom_i(k)) + inverse_mass(atom_j(k))
-    if (inverse_mass_sum <= 0.0d0) then
+    if (.not. ieee_is_finite(inverse_mass_sum) .or. inverse_mass_sum <= 0.0d0) then
       error stop 'LINCS constraint must contain at least one mobile atom'
     end if
     data%scale(k) = 1.0d0/sqrt(inverse_mass_sum)
@@ -201,8 +226,10 @@ logical function initialize_lincs_positions(coordinates, failed_constraint, &
   integer, parameter :: maximum_iterations = 1000
   real(8), parameter :: convergence_tolerance = 1.0d-12
   integer :: iteration, k, atom_i, atom_j, coordinate_i, coordinate_j
-  real(8) :: reference(3), current(3), reference_dot_current
-  real(8) :: difference, correction, relative_error, maximum_error
+  integer :: worst_constraint
+  real(8) :: reference(3), current(3), reference_dot_current, length2
+  real(8) :: difference, correction, maximum_error, inverse_mass_sum
+  logical :: finite_geometry
 
   success = .true.
   if (present(failed_constraint)) failed_constraint = 0
@@ -217,7 +244,8 @@ logical function initialize_lincs_positions(coordinates, failed_constraint, &
     coordinate_j = 3*atom_j-3
     reference = coordinates(coordinate_i+1:coordinate_i+3) - &
                 coordinates(coordinate_j+1:coordinate_j+3)
-    if (dot_product(reference,reference) <= tiny(1.0d0)) then
+    length2 = dot_product(reference,reference)
+    if (.not. ieee_is_finite(length2) .or. length2 <= tiny(1.0d0)) then
       call report_failure(k,failed_constraint)
       success = .false.
       return
@@ -235,14 +263,23 @@ logical function initialize_lincs_positions(coordinates, failed_constraint, &
                 coordinates(coordinate_j+1:coordinate_j+3)
       reference = data%direction(:,k)
       reference_dot_current = dot_product(reference,current)
-      if (abs(reference_dot_current) <= tiny(1.0d0)) then
+      inverse_mass_sum = data%inverse_mass(atom_i)+data%inverse_mass(atom_j)
+      if (.not. ieee_is_finite(reference_dot_current) .or. &
+          reference_dot_current <= tiny(1.0d0) .or. &
+          .not. ieee_is_finite(inverse_mass_sum) .or. inverse_mass_sum <= 0.0d0) then
         call report_failure(k,failed_constraint)
         success = .false.
         return
       end if
-      difference = data%target_length(k)**2-dot_product(current,current)
-      correction = difference/(2.0d0*reference_dot_current* &
-                   (data%inverse_mass(atom_i)+data%inverse_mass(atom_j)))
+      length2 = dot_product(current,current)
+      difference = data%target_length(k)**2-length2
+      correction = difference/(2.0d0*reference_dot_current*inverse_mass_sum)
+      if (.not. ieee_is_finite(length2) .or. .not. ieee_is_finite(difference) .or. &
+          .not. ieee_is_finite(correction)) then
+        call report_failure(k,failed_constraint)
+        success = .false.
+        return
+      end if
       coordinates(coordinate_i+1:coordinate_i+3) = &
         coordinates(coordinate_i+1:coordinate_i+3) + &
         data%inverse_mass(atom_i)*reference*correction
@@ -251,18 +288,14 @@ logical function initialize_lincs_positions(coordinates, failed_constraint, &
         data%inverse_mass(atom_j)*reference*correction
     end do
 
-    maximum_error = 0.0d0
-    do k = 1, data%constraint_count
-      atom_i = data%atom_i(k)
-      atom_j = data%atom_j(k)
-      coordinate_i = 3*atom_i-3
-      coordinate_j = 3*atom_j-3
-      current = coordinates(coordinate_i+1:coordinate_i+3) - &
-                coordinates(coordinate_j+1:coordinate_j+3)
-      relative_error = abs(sqrt(dot_product(current,current))/ &
-                           data%target_length(k)-1.0d0)
-      maximum_error = max(maximum_error,relative_error)
-    end do
+    call measure_constraint_error(coordinates, maximum_error, worst_constraint, &
+                                  finite_geometry)
+    if (.not. finite_geometry) then
+      call report_failure(worst_constraint,failed_constraint)
+      success = .false.
+      if (present(max_relative_error)) max_relative_error = maximum_error
+      return
+    end if
     if (maximum_error <= convergence_tolerance) then
       if (present(max_relative_error)) max_relative_error = maximum_error
       return
@@ -270,6 +303,7 @@ logical function initialize_lincs_positions(coordinates, failed_constraint, &
   end do
 
   success = .false.
+  call report_failure(worst_constraint,failed_constraint)
   if (present(max_relative_error)) max_relative_error = maximum_error
 end function initialize_lincs_positions
 
@@ -277,8 +311,9 @@ end function initialize_lincs_positions
 logical function lincs_positions(x_old, x_new, failed_constraint, &
                                  max_relative_error) result(success)
 !!-------------------------------------------------------------------------------
-!!  Constrain one unconstrained position update.  Returns .false. if an old bond
-!!  is degenerate or rotational lengthening exceeds LINCS' solution domain.
+!!  Constrain one unconstrained position update.  The requested number of
+!!  nonlinear corrections is a minimum; difficult steps receive bounded
+!!  iterative refinement until the configured accuracy is reached.
 !!-------------------------------------------------------------------------------
   real(8), intent(in) :: x_old(:)
   real(8), intent(inout) :: x_new(:)
@@ -286,14 +321,16 @@ logical function lincs_positions(x_old, x_new, failed_constraint, &
   real(8), intent(out), optional :: max_relative_error
 
   integer :: k, iteration, atom_i, atom_j, coordinate_i, coordinate_j
-  real(8) :: bond(3), length2, projected_length, radicand
-  real(8) :: relative_error, maximum_error
+  integer :: worst_constraint
+  real(8) :: bond(3), length2, projected_length, radicand, maximum_error
   real(8), parameter :: domain_tolerance = 1.0d-12
+  logical :: finite_geometry
 
   success = .true.
   if (present(failed_constraint)) failed_constraint = 0
   if (present(max_relative_error)) max_relative_error = 0.0d0
   if (.not. lincs_is_active()) return
+  if (present(max_relative_error)) max_relative_error = -1.0d0
 
   do k = 1, data%constraint_count
     atom_i = data%atom_i(k)
@@ -303,7 +340,7 @@ logical function lincs_positions(x_old, x_new, failed_constraint, &
     bond = x_old(coordinate_i+1:coordinate_i+3) - &
            x_old(coordinate_j+1:coordinate_j+3)
     length2 = dot_product(bond, bond)
-    if (length2 <= tiny(1.0d0)) then
+    if (.not. ieee_is_finite(length2) .or. length2 <= tiny(1.0d0)) then
       call report_failure(k, failed_constraint)
       success = .false.
       return
@@ -311,6 +348,11 @@ logical function lincs_positions(x_old, x_new, failed_constraint, &
     data%direction(:,k) = bond/sqrt(length2)
   end do
   call update_coupling_matrix
+  if (.not. all(ieee_is_finite(data%coupling))) then
+    call report_failure(1, failed_constraint)
+    success = .false.
+    return
+  end if
 
   ! Linear projection, equations 19-22.
   do k = 1, data%constraint_count
@@ -322,12 +364,24 @@ logical function lincs_positions(x_old, x_new, failed_constraint, &
            x_new(coordinate_j+1:coordinate_j+3)
     projected_length = dot_product(data%direction(:,k), bond)
     data%rhs_a(k) = data%scale(k)*(projected_length-data%target_length(k))
+    if (.not. ieee_is_finite(data%rhs_a(k))) then
+      call report_failure(k, failed_constraint)
+      success = .false.
+      return
+    end if
   end do
   call solve_expansion
+  if (.not. all(ieee_is_finite(data%solution))) then
+    call report_failure(1, failed_constraint)
+    success = .false.
+    return
+  end if
   call apply_solution(x_new)
 
   ! Nonlinear correction for rotational lengthening, equations 17-18.
-  do iteration = 1, data%rotation_iterations
+  maximum_error = huge(1.0d0)
+  worst_constraint = 1
+  do iteration = 1, data%maximum_rotation_iterations
     do k = 1, data%constraint_count
       atom_i = data%atom_i(k)
       atom_j = data%atom_j(k)
@@ -337,8 +391,8 @@ logical function lincs_positions(x_old, x_new, failed_constraint, &
              x_new(coordinate_j+1:coordinate_j+3)
       length2 = dot_product(bond, bond)
       radicand = 2.0d0*data%target_length(k)**2-length2
-      if (radicand < -domain_tolerance*data%target_length(k)**2 .or. &
-          .not. ieee_is_finite(radicand)) then
+      if (.not. ieee_is_finite(length2) .or. .not. ieee_is_finite(radicand) .or. &
+          radicand < -domain_tolerance*data%target_length(k)**2) then
         call report_failure(k, failed_constraint)
         success = .false.
         return
@@ -347,22 +401,72 @@ logical function lincs_positions(x_old, x_new, failed_constraint, &
       data%rhs_a(k) = data%scale(k)*(data%target_length(k)-projected_length)
     end do
     call solve_expansion
+    if (.not. all(ieee_is_finite(data%solution))) then
+      call report_failure(1, failed_constraint)
+      success = .false.
+      return
+    end if
     call apply_solution(x_new)
+
+    if (iteration >= data%rotation_iterations) then
+      call measure_constraint_error(x_new, maximum_error, worst_constraint, &
+                                    finite_geometry)
+      if (.not. finite_geometry) then
+        call report_failure(worst_constraint, failed_constraint)
+        success = .false.
+        return
+      end if
+      if (maximum_error <= data%accuracy_tolerance) exit
+    end if
   end do
 
+  ! Also handle the explicitly supported zero-rotation configuration.
+  if (data%maximum_rotation_iterations == 0) then
+    call measure_constraint_error(x_new, maximum_error, worst_constraint, &
+                                  finite_geometry)
+  end if
+  if (.not. finite_geometry .or. maximum_error > data%accuracy_tolerance) then
+    call report_failure(worst_constraint, failed_constraint)
+    success = .false.
+  end if
+  if (present(max_relative_error)) max_relative_error = maximum_error
+end function lincs_positions
+
+
+subroutine measure_constraint_error(coordinates, maximum_error, worst_constraint, &
+                                    finite_geometry)
+  real(8), intent(in) :: coordinates(:)
+  real(8), intent(out) :: maximum_error
+  integer, intent(out) :: worst_constraint
+  logical, intent(out) :: finite_geometry
+
+  integer :: k, atom_i, atom_j, coordinate_i, coordinate_j
+  real(8) :: bond(3), length2, relative_error
+
   maximum_error = 0.0d0
+  worst_constraint = 1
+  finite_geometry = .true.
   do k = 1, data%constraint_count
     atom_i = data%atom_i(k)
     atom_j = data%atom_j(k)
     coordinate_i = 3*atom_i-3
     coordinate_j = 3*atom_j-3
-    bond = x_new(coordinate_i+1:coordinate_i+3) - &
-           x_new(coordinate_j+1:coordinate_j+3)
-    relative_error = abs(sqrt(dot_product(bond,bond))/data%target_length(k)-1.0d0)
-    maximum_error = max(maximum_error, relative_error)
+    bond = coordinates(coordinate_i+1:coordinate_i+3) - &
+           coordinates(coordinate_j+1:coordinate_j+3)
+    length2 = dot_product(bond,bond)
+    if (.not. ieee_is_finite(length2) .or. length2 < 0.0d0) then
+      finite_geometry = .false.
+      worst_constraint = k
+      maximum_error = huge(1.0d0)
+      return
+    end if
+    relative_error = abs(sqrt(length2)/data%target_length(k)-1.0d0)
+    if (relative_error > maximum_error) then
+      maximum_error = relative_error
+      worst_constraint = k
+    end if
   end do
-  if (present(max_relative_error)) max_relative_error = maximum_error
-end function lincs_positions
+end subroutine measure_constraint_error
 
 
 subroutine update_coupling_matrix
@@ -444,6 +548,8 @@ subroutine reset_lincs
   data%atom_count = 0
   data%expansion_order = 4
   data%rotation_iterations = 1
+  data%maximum_rotation_iterations = 1
+  data%accuracy_tolerance = 1.0d-4
 end subroutine reset_lincs
 
 end module lincs
