@@ -22,6 +22,7 @@ module md
   use trj
   use mpiglob
   use qatom
+  use lincs
   use settle
 
   implicit none
@@ -98,6 +99,7 @@ module md
 
   integer, parameter        :: CONSTRAINT_SHAKE = 1
   integer, parameter        :: CONSTRAINT_SETTLE = 2
+  integer, parameter        :: CONSTRAINT_LINCS = 3
   integer                   :: solute_constraint_algorithm = CONSTRAINT_SHAKE
   integer                   :: solvent_constraint_algorithm = CONSTRAINT_SETTLE
 
@@ -389,6 +391,9 @@ module md
 
   integer                           :: shake_constraints, shake_molecules
   integer                           :: settle_constraints = 0
+  integer                           :: lincs_constraints = 0
+  integer                           :: lincs_solute_constraints = 0
+  integer                           :: lincs_solvent_constraints = 0
   integer                           :: constraint_count = 0
   type(shake_mol_type), allocatable :: shake_mol(:)
 
@@ -2725,15 +2730,17 @@ subroutine init_shake
     end if
 
   end do
-  !count extra shake constraints from fep file in appropriate molecule
-  do b = 1, nqshake
-    ia=iqshake(b)
-    mol = 1
-    do while(ia >= istart_mol(mol+1))
-      mol = mol + 1
+  ! Count explicit FEP constraints when SHAKE owns the solute constraint set.
+  if (solute_constraint_algorithm == CONSTRAINT_SHAKE) then
+    do b = 1, nqshake
+      ia=iqshake(b)
+      mol = 1
+      do while(ia >= istart_mol(mol+1))
+        mol = mol + 1
+      end do
+      shake_mol(mol)%nconstraints = shake_mol(mol)%nconstraints + 1
     end do
-    shake_mol(mol)%nconstraints = shake_mol(mol)%nconstraints + 1
-  end do
+  end if
 
   !allocate bond lists for each molecule
   do mol = 1, nmol
@@ -2770,33 +2777,35 @@ subroutine init_shake
     end if
   end do
 
-  !add extra shake constraints from fep file to appropriate molecule
-  do b = 1, nqshake
-    ia=iqshake(b)
-    ja=jqshake(b)
-    mol = 1
-    do while(ia >= istart_mol(mol+1))
-      mol = mol + 1
+  ! Add explicit FEP constraints when SHAKE owns the solute constraint set.
+  if (solute_constraint_algorithm == CONSTRAINT_SHAKE) then
+    do b = 1, nqshake
+      ia=iqshake(b)
+      ja=jqshake(b)
+      mol = 1
+      do while(ia >= istart_mol(mol+1))
+        mol = mol + 1
+      end do
+      !see if already shaken
+      do constr = 1, shake_mol(mol)%nconstraints
+        if((ia == shake_mol(mol)%bond(constr)%i .and. &
+          ja == shake_mol(mol)%bond(constr)%j) .or. &
+          (ja == shake_mol(mol)%bond(constr)%i .and. &
+          ia == shake_mol(mol)%bond(constr)%j)) then
+          !found it: will overwrite
+          !also decrement number of constraints
+          shake_mol(mol)%nconstraints = shake_mol(mol)%nconstraints - 1
+          exit
+        end if
+      end do
+      !constr now contains the right index
+      shake_mol(mol)%bond(constr)%i = ia
+      shake_mol(mol)%bond(constr)%j = ja
+      shake_mol(mol)%bond(constr)%dist2 = &
+        dot_product(EQ(1:nstates)%lambda,qshake_dist(b,1:nstates))**2
+      shake_mol(mol)%nconstraints = shake_mol(mol)%nconstraints + 1
     end do
-    !see if already shaken
-    do constr = 1, shake_mol(mol)%nconstraints
-      if((ia == shake_mol(mol)%bond(constr)%i .and. &
-        ja == shake_mol(mol)%bond(constr)%j) .or. &
-        (ja == shake_mol(mol)%bond(constr)%i .and. &
-        ia == shake_mol(mol)%bond(constr)%j)) then
-        !found it: will overwrite
-        !also decrement number of constraints
-        shake_mol(mol)%nconstraints = shake_mol(mol)%nconstraints - 1
-        exit
-      end if
-    end do
-    !constr now contains the right index
-    shake_mol(mol)%bond(constr)%i = ia
-    shake_mol(mol)%bond(constr)%j = ja
-    shake_mol(mol)%bond(constr)%dist2 = &
-      dot_product(EQ(1:nstates)%lambda,qshake_dist(b,1:nstates))**2
-    shake_mol(mol)%nconstraints = shake_mol(mol)%nconstraints + 1
-  end do
+  end if
 
   !get total number of shake constraints in solute (used for separate scaling of temperatures)
   solute_shake_constraints = sum(shake_mol(1:nmol-nwat)%nconstraints)
@@ -2866,10 +2875,25 @@ subroutine init_constraints
 !!  Build the solver-specific constraint sets.  SETTLE claims rigid HOH bonds
 !!  first; legacy SHAKE then receives every requested bond that remains.
 !!-------------------------------------------------------------------------------
-  real(8) :: settle_excluded_constraints
+  real(8) :: settle_excluded_constraints, lincs_excluded_constraints
+  real(8) :: initial_lincs_error
+  integer :: failed_lincs_constraint
+  logical :: initialized_lincs
+  character(len=120) :: message
 
   settle_constraints = 0
+  lincs_constraints = 0
+  lincs_solute_constraints = 0
+  lincs_solvent_constraints = 0
   settle_excluded_constraints = 0.0d0
+  lincs_excluded_constraints = 0.0d0
+
+  if ((solute_constraint_algorithm == CONSTRAINT_LINCS .and. &
+       (constrain_solute .or. constrain_hydrogens .or. nqshake > 0)) .or. &
+      (solvent_constraint_algorithm == CONSTRAINT_LINCS .and. &
+       (constrain_solvent .or. constrain_hydrogens) .and. nwat > 0)) then
+    call init_lincs(lincs_excluded_constraints)
+  end if
 
   if (solvent_constraint_algorithm == CONSTRAINT_SETTLE .and. &
       (constrain_solvent .or. constrain_hydrogens) .and. nwat > 0) then
@@ -2878,21 +2902,144 @@ subroutine init_constraints
 
   call init_shake
 
+  ! Finite-step LINCS assumes its reference coordinates satisfy all constraints.
+  ! Establish that invariant once, including when a restart enables a new set.
+  if (lincs_is_active()) then
+    initialized_lincs = initialize_lincs_positions(x, failed_lincs_constraint, &
+                                                   initial_lincs_error)
+    if (.not. initialized_lincs) then
+      write(message,'(a,i0,a,es12.4)') 'Initial LINCS projection failed at constraint ', &
+        failed_lincs_constraint, '; maximum relative error = ', initial_lincs_error
+      call die(trim(message))
+    end if
+  end if
+
   ! init_shake computes the temperature degrees of freedom for its own set.
-  ! Account here for the constraints claimed by SETTLE.
-  Ndegf = Ndegf - settle_constraints
-  Ndegfree = Ndegfree - settle_constraints + nint(settle_excluded_constraints)
-  Ndegf_solvent = Ndegf_solvent - settle_constraints
+  ! Account here for constraints claimed first by LINCS and SETTLE.
+  Ndegf = Ndegf - lincs_constraints - settle_constraints
+  Ndegfree = Ndegfree - lincs_constraints - settle_constraints + &
+             nint(lincs_excluded_constraints+settle_excluded_constraints)
+  Ndegf_solvent = Ndegf_solvent - lincs_solvent_constraints - settle_constraints
   ! Preserve SHAKE's existing solvent/solute temperature partitioning: excluded
   ! constraint compensation is applied to the total, not the solvent subtotal.
-  Ndegfree_solvent = Ndegfree_solvent - settle_constraints
+  Ndegfree_solvent = Ndegfree_solvent - lincs_solvent_constraints - settle_constraints
   Ndegf_solute = Ndegf - Ndegf_solvent
   Ndegfree_solute = Ndegfree - Ndegfree_solvent
-  constraint_count = shake_constraints + settle_constraints
+  constraint_count = shake_constraints + lincs_constraints + settle_constraints
 
-  write(*,100) settle_constraints, shake_constraints, constraint_count
-100 format('Constraints by solver: SETTLE = ',i8,', SHAKE = ',i8,', total = ',i8)
+  write(*,100) lincs_constraints, settle_constraints, shake_constraints, constraint_count
+100 format('Constraints by solver: LINCS = ',i8,', SETTLE = ',i8, &
+           ', SHAKE = ',i8,', total = ',i8)
 end subroutine init_constraints
+
+
+subroutine init_lincs(excluded_constraints)
+!!-------------------------------------------------------------------------------
+!!  Collect every requested bond owned by LINCS, including lambda-weighted FEP
+!!  constraints, then remove those bonds from bonded-force and SHAKE processing.
+!!-------------------------------------------------------------------------------
+  real(8), intent(out) :: excluded_constraints
+
+  integer :: b, k, ia, ja, angle, count, maximum_constraints
+  integer, allocatable :: atom_i(:), atom_j(:)
+  real(8), allocatable :: target_length(:), inverse_mass(:)
+  logical :: selected, found
+
+  maximum_constraints = nbonds+nqshake
+  allocate(atom_i(maximum_constraints), atom_j(maximum_constraints), &
+           target_length(maximum_constraints), inverse_mass(natom), stat=alloc_status)
+  call check_alloc('LINCS constraint arrays')
+  inverse_mass = dble(winv)
+
+  count = 0
+  excluded_constraints = 0.0d0
+  do b = 1, nbonds
+    if (bnd(b)%cod <= 0) cycle
+    ia = bnd(b)%i
+    ja = bnd(b)%j
+    selected = .false.
+    if (ia <= nat_solute .and. ja <= nat_solute .and. &
+        solute_constraint_algorithm == CONSTRAINT_LINCS) then
+      selected = constrain_solute .or. &
+                 (constrain_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja)))
+    else if (ia > nat_solute .and. ja > nat_solute .and. &
+             solvent_constraint_algorithm == CONSTRAINT_LINCS) then
+      selected = constrain_solvent .or. &
+                 (constrain_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja)))
+    end if
+    if (.not. selected) cycle
+
+    count = count+1
+    atom_i(count) = ia
+    atom_j(count) = ja
+    target_length(count) = bondlib(bnd(b)%cod)%bnd0
+    if (ia <= nat_solute) then
+      lincs_solute_constraints = lincs_solute_constraints+1
+    else
+      lincs_solvent_constraints = lincs_solvent_constraints+1
+    end if
+    if (.not. use_PBC) then
+      if (excl(ia)) excluded_constraints = excluded_constraints+0.5d0
+      if (excl(ja)) excluded_constraints = excluded_constraints+0.5d0
+    end if
+    bnd(b)%cod = -1
+  end do
+
+  ! Explicit FEP constraints belong to the solute solver.  Override the target
+  ! when the pair was selected above, otherwise append a new constraint.
+  if (solute_constraint_algorithm == CONSTRAINT_LINCS) then
+    do b = 1, nqshake
+      ia = iqshake(b)
+      ja = jqshake(b)
+      found = .false.
+      do k = 1, count
+        if ((atom_i(k) == ia .and. atom_j(k) == ja) .or. &
+            (atom_i(k) == ja .and. atom_j(k) == ia)) then
+          target_length(k) = dot_product(EQ(1:nstates)%lambda, &
+                                         qshake_dist(b,1:nstates))
+          found = .true.
+          exit
+        end if
+      end do
+      if (.not. found) then
+        count = count+1
+        atom_i(count) = ia
+        atom_j(count) = ja
+        target_length(count) = dot_product(EQ(1:nstates)%lambda, &
+                                           qshake_dist(b,1:nstates))
+        lincs_solute_constraints = lincs_solute_constraints+1
+        if (.not. use_PBC) then
+          if (excl(ia)) excluded_constraints = excluded_constraints+0.5d0
+          if (excl(ja)) excluded_constraints = excluded_constraints+0.5d0
+        end if
+      end if
+    end do
+  end if
+
+  if (count > 0) then
+    do k = 1, count
+      ia = atom_i(k)
+      ja = atom_j(k)
+      do angle = 1, nangles
+        if ((ang(angle)%i == ia .and. ang(angle)%k == ja) .or. &
+            (ang(angle)%i == ja .and. ang(angle)%k == ia)) then
+          ang(angle)%cod = 0
+          exit
+        end if
+      end do
+    end do
+    ! Two nonlinear corrections and order eight provide tighter constraints
+    ! than Q's legacy SHAKE tolerance while retaining bounded, sparse work.
+    call setup_lincs(atom_i(1:count), atom_j(1:count), target_length(1:count), &
+                     inverse_mass, 8, 2)
+  end if
+  lincs_constraints = count
+
+  write(*,100) lincs_solute_constraints, lincs_solvent_constraints
+100 format(/,'LINCS constraints: solute = ',i8,', solvent = ',i8, &
+           ', expansion order = 8, rotation iterations = 2')
+  deallocate(atom_i, atom_j, target_length, inverse_mass)
+end subroutine init_lincs
 
 
 subroutine init_settle(excluded_constraints)
@@ -3004,11 +3151,25 @@ subroutine apply_constraints(x_reference, x_candidate, shake_iterations)
   real(8), intent(inout) :: x_candidate(:)
   integer, intent(out), optional :: shake_iterations
 
-  integer :: iterations, failed_oxygen
-  logical :: settled
+  integer :: iterations, failed_oxygen, failed_lincs_constraint
+  logical :: settled, lincs_applied
+  real(8) :: lincs_error
   character(len=100) :: message
 
   iterations = 0
+  if (lincs_is_active()) then
+    lincs_applied = lincs_positions(x_reference, x_candidate, &
+                                    failed_lincs_constraint, lincs_error)
+    if (.not. lincs_applied) then
+      write(message,'(a,i0)') 'LINCS failed for constraint ', failed_lincs_constraint
+      call die(trim(message))
+    end if
+    if (lincs_error > 1.0d-4) then
+      write(message,'(a,es12.4)') 'LINCS maximum relative constraint error = ', &
+                                  lincs_error
+      call die(trim(message))
+    end if
+  end if
   if (settle_is_active()) then
     settled = settle_positions(x_reference, x_candidate, failed_oxygen)
     if (.not. settled) then
@@ -3350,14 +3511,15 @@ logical function initialize()
       solvent_algorithm_name = 'SHAKE'
       write(*,'(a)') '>>> WARNING: shake_* input keys are deprecated; use constrain_*.'
     else
-      ! LINCS will replace the temporary solute SHAKE default in its own feature.
-      solute_algorithm_name = 'SHAKE'
+      solute_algorithm_name = 'LINCS'
       solvent_algorithm_name = 'SETTLE'
     end if
 
     select case (trim(solute_algorithm_name))
     case ('SHAKE')
       solute_constraint_algorithm = CONSTRAINT_SHAKE
+    case ('LINCS')
+      solute_constraint_algorithm = CONSTRAINT_LINCS
     case default
       write(*,'(a,a)') '>>> Error: unsupported solute constraint algorithm: ', &
                        trim(solute_algorithm_name)
@@ -3368,6 +3530,8 @@ logical function initialize()
       solvent_constraint_algorithm = CONSTRAINT_SHAKE
     case ('SETTLE')
       solvent_constraint_algorithm = CONSTRAINT_SETTLE
+    case ('LINCS')
+      solvent_constraint_algorithm = CONSTRAINT_LINCS
     case default
       write(*,'(a,a)') '>>> Error: unsupported solvent constraint algorithm: ', &
                        trim(solvent_algorithm_name)
@@ -4845,7 +5009,8 @@ subroutine fire_descend
   v(1:nat3) = 0.0d0
 
   ! Project the starting structure onto the constraints in force.
-  if (nodeid .eq. 0 .and. shake_constraints+settle_constraints .gt. 0) then
+  if (nodeid .eq. 0 .and. &
+      shake_constraints+lincs_constraints+settle_constraints .gt. 0) then
     xx(1:nat3) = x(1:nat3)
     call apply_constraints(xx, x, niter)
   end if
@@ -4991,7 +5156,7 @@ subroutine fire_descend
       end do
 
       ! Constraints, as in the MD integrator.
-      if (shake_constraints+settle_constraints .gt. 0) then
+      if (shake_constraints+lincs_constraints+settle_constraints .gt. 0) then
         call apply_constraints(xx, x, niter)
         v(1:nat3) = (x(1:nat3) - xx(1:nat3))/dt_fire
       end if
