@@ -94,7 +94,7 @@ program qdyn
     call prep_sim ! prepare for simulation (calc. inv. mass, total charge,...)
     call close_input_files ! close input files
 
-    call init_shake
+    call init_constraints
     call make_nbqqlist
     call shrink_topology
     call nbmonitorlist
