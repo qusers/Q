@@ -24,9 +24,43 @@
 #SBATCH --mem-per-cpu=512  # more than enough for 25A sphere size FEP
 #SBATCH -o slurm.run%a.%N.%j.out
 
-workdir="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+# Locating the edge takes a different answer in each role, because the two roles
+# run this file from two different places.
+#
+# From a shell it sits in the edge directory, so its own path finds the tree.
+#
+# As the batch job it does not. SLURM does not execute the submitted file in
+# place: it copies the script and runs that copy out of the node's spool
+# directory, so BASH_SOURCE points at something like
+# /var/spool/slurmd/job00123/slurm_script and $workdir/inputfiles is nowhere
+# near the tree. The working directory is the thing that does survive, because
+# --chdir sets it, and the run script derives its own working directory from it
+# too — so taking it from anywhere else lets the two disagree about which edge
+# they are running.
+#
+# Not SLURM_SUBMIT_DIR: it is documented as following --chdir but does not do so
+# on every SLURM build, and where it does not it reports the directory sbatch
+# was invoked from, which for a remote submitter is the login user's home.
+if [ -n "$SLURM_JOB_ID" ]; then
+    workdir="$PWD"
+else
+    workdir="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+fi
 inputfiles=$workdir/inputfiles
 submitfile=$inputfiles/RUNFILE
+
+# Checked rather than left to `exec` so the failure names the tree it looked in.
+# The run script owns the .failed sentinel, so nothing reaching this line has
+# written one — an orchestrator sees only a job that vanished, and on a cluster
+# without accounting storage that is indistinguishable from one still queued.
+if [ ! -f "$submitfile" ]; then
+    echo "FEP_submit.sh: no run script at $submitfile" >&2
+    echo "FEP_submit.sh: expected an edge directory containing inputfiles/RUNFILE" >&2
+    if [ -n "$SLURM_JOB_ID" ]; then
+        echo "FEP_submit.sh: working directory is $PWD - was sbatch given --chdir=<edge>?" >&2
+    fi
+    exit 1
+fi
 
 if [ -n "$SLURM_JOB_ID" ]; then
     # Already running as the batch job. $SLURM_ARRAY_TASK_ID is inherited, and
