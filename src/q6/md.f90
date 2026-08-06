@@ -410,7 +410,7 @@ module md
   !       profiling vars
   !-----------------------------------------------------------------------
 #if defined (PROFILING)
-  integer, parameter        :: num_profiling_times = 11
+  integer, parameter        :: num_profiling_times = 12
 
   type profiling_var_type
     character(len=100)      :: name
@@ -5237,6 +5237,7 @@ subroutine md_run
   profile(9)%name = 'Restraints'
   profile(10)%name = 'Nonbonded Terms'
   profile(11)%name = 'Update vel. & coords.'
+  profile(12)%name = 'Temperature & scaling'
 #endif
 
 #if defined(PROFILING)
@@ -5757,7 +5758,7 @@ end if
 do i=1,num_profiling_times
   write (*,207) profile(i)%name,profile(i)%time
 end do
-207 format('Total time of ',A25,T40,': ',f15.1,' (s).')
+207 format('Total time of ',A25,T40,': ',f15.6,' (s).')
 #endif
 #endif
 
