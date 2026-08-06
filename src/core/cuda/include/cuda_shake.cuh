@@ -51,6 +51,7 @@ class CudaShake final : public Shake {
     std::unique_ptr<HostDeviceBuffer<ShakeBond>> fallback_shake_bonds;
     std::unique_ptr<HostDeviceBuffer<int>> fallback_color_offsets;
     std::unique_ptr<HostDeviceBuffer<int>> fallback_unconverged;
+    std::unique_ptr<HostDeviceBuffer<int>> shake_network_failed;
     int fallback_n_colors = 0;
     int fallback_coop_blocks = 0;
 

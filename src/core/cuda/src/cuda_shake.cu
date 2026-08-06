@@ -2,6 +2,8 @@
 #include <cooperative_groups.h>
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <map>
 #include <unordered_map>
 
@@ -12,6 +14,8 @@ namespace cg = cooperative_groups;
 
 namespace {
 
+constexpr double kMinShakeProjectionFactor = 1.0e-6;
+constexpr double kMaxShakeCorrectionScale = 1;
 const int kShakeThreads = 64;
 
 using BondKey = std::pair<int, int>;
@@ -358,6 +362,7 @@ void CudaShake::init_backend(Context& ctx) {
     find_shake_network(ctx, optimized);
     find_fallback_shake_bond(ctx, optimized);
     fallback_unconverged = std::make_unique<HostDeviceBuffer<int>>(1, true, true);
+    shake_network_failed = std::make_unique<HostDeviceBuffer<int>>(1, true, true);
     is_init_backend = true;
 }
 
@@ -506,7 +511,7 @@ __global__ void calc_h_star_shake_kernel(
     int n_shake_networks,
     ShakeNetwork* networks,
     coord_t* coords,
-    coord_t* xcoords) {
+    coord_t* xcoords, int* failed) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_shake_networks) return;
 
@@ -542,7 +547,14 @@ __global__ void calc_h_star_shake_kernel(
             const double current_dist2 = current_vector_x * current_vector_x +
                                          current_vector_y * current_vector_y +
                                          current_vector_z * current_vector_z;
-            const double diff = network.dist2[i] - current_dist2;
+            const double target_dist2 = network.dist2[i];
+            const double diff = target_dist2 - current_dist2;
+
+            if (!isfinite(current_dist2) || !isfinite(diff)) {
+                converged = false;
+                continue;
+            }
+
             if (fabs(diff) < shake_tol * network.dist2[i]) continue;
 
             converged = false;
@@ -550,11 +562,16 @@ __global__ void calc_h_star_shake_kernel(
                                current_vector_y * old_vectors_y[i] +
                                current_vector_z * old_vectors_z[i];
             const double inv_mass_sum = network.center_winv + network.hydrogen_winv[i];
-            if (scp <= network.dist2[i] * 1.0e-6 || inv_mass_sum == 0.0) continue;
+            if (!isfinite(scp) || !isfinite(inv_mass_sum) || scp <= kMinShakeProjectionFactor * target_dist2 || inv_mass_sum == 0.0) continue;
 
             const double corr = diff / (2.0 * scp * inv_mass_sum);
             const double center_scale = corr * network.center_winv;
             const double hydrogen_scale = corr * network.hydrogen_winv[i];
+
+            if (!isfinite(corr) || !isfinite(center_scale) || !isfinite(hydrogen_scale) || fabs(center_scale) > kMaxShakeCorrectionScale || fabs(hydrogen_scale) > kMaxShakeCorrectionScale) {
+                continue;
+            }
+
             center_x += old_vectors_x[i] * center_scale;
             center_y += old_vectors_y[i] * center_scale;
             center_z += old_vectors_z[i] * center_scale;
@@ -566,16 +583,21 @@ __global__ void calc_h_star_shake_kernel(
     } while (n_iterations < shake_max_iter && !converged);
 
     if (!converged) {
+        atomicExch(failed, 1);
         for (int i = 0; i < network.n_hydrogens; i++) {
             const double dx = center_x - hydrogens_x[i];
             const double dy = center_y - hydrogens_y[i];
             const double dz = center_z - hydrogens_z[i];
             const double dist2 = dx * dx + dy * dy + dz * dz;
-            printf(">>> Shake failed, i = %d,j = %d, d = %f, d0 = %f\n",
-                   network.center,
-                   network.hydrogens[i],
-                   sqrt(dist2),
-                   sqrt(network.dist2[i]));
+            const double target_dist2 = network.dist2[i];
+
+            if (!isfinite(dist2) || fabs(target_dist2 - dist2) >= shake_tol * target_dist2) {
+                printf(">>> Shake failed, i = %d,j = %d, d = %f, d0 = %f\n",
+                       network.center,
+                       network.hydrogens[i],
+                       sqrt(dist2),
+                       sqrt(network.dist2[i]));
+            }
         }
         return;
     }
@@ -603,7 +625,7 @@ __global__ void print_fallback_shake_failures_kernel(
     const double dy = coords[ai].y - coords[aj].y;
     const double dz = coords[ai].z - coords[aj].z;
     const double dist2 = dx * dx + dy * dy + dz * dz;
-    if (fabs(shake_bonds[idx].dist2 - dist2) >= shake_tol * shake_bonds[idx].dist2) {
+    if (!isfinite(dist2) || fabs(shake_bonds[idx].dist2 - dist2) >= shake_tol * shake_bonds[idx].dist2) {
         printf(">>> Shake failed, i = %d,j = %d, d = %f, d0 = %f\n",
                ai,
                aj,
@@ -640,24 +662,44 @@ __global__ void fallback_shake_fused_kernel(
                 const double xij_z = coords[ai].z - coords[aj].z;
                 const double xij2 = xij_x * xij_x + xij_y * xij_y + xij_z * xij_z;
                 const double diff = shake_bond.dist2 - xij2;
+                const double target_dist2 = shake_bond.dist2;
+                const double tolerance = shake_tol * target_dist2;
+                if (!isfinite(xij2) || !isfinite(diff)) {
+                    *unconverged = 1;
+                }
 
-                if (fabs(diff) >= shake_tol * shake_bond.dist2) {
+                if (fabs(diff) >= tolerance) {
                     *unconverged = 1;  // plain store is fine (any thread -> 1)
                     const double xxij_x = xcoords[ai].x - xcoords[aj].x;
                     const double xxij_y = xcoords[ai].y - xcoords[aj].y;
                     const double xxij_z = xcoords[ai].z - xcoords[aj].z;
                     const double scp = xij_x * xxij_x + xij_y * xxij_y + xij_z * xxij_z;
                     const double inv_mass_sum = winv[ai] + winv[aj];
-                    if (scp != 0.0 && inv_mass_sum != 0.0) {
+                    const double min_scp = kMinShakeProjectionFactor * target_dist2;
+                    const bool valid_projection =
+                        isfinite(scp) &&
+                        isfinite(inv_mass_sum) &&
+                        scp > min_scp &&
+                        inv_mass_sum > 0.0;
+                    if (valid_projection) {
                         const double corr = diff / (2.0 * scp * inv_mass_sum);
                         const double ai_scale = corr * winv[ai];
                         const double aj_scale = corr * winv[aj];
-                        coords[ai].x += xxij_x * ai_scale;
-                        coords[ai].y += xxij_y * ai_scale;
-                        coords[ai].z += xxij_z * ai_scale;
-                        coords[aj].x -= xxij_x * aj_scale;
-                        coords[aj].y -= xxij_y * aj_scale;
-                        coords[aj].z -= xxij_z * aj_scale;
+
+                        const bool valid_correction = isfinite(corr) &&
+                                                     isfinite(ai_scale) &&
+                                                     isfinite(aj_scale) &&
+                                                     fabs(ai_scale) <= kMaxShakeCorrectionScale &&
+                                                     fabs(aj_scale) <= kMaxShakeCorrectionScale;
+
+                        if (valid_correction) {
+                            coords[ai].x += xxij_x * ai_scale;
+                            coords[ai].y += xxij_y * ai_scale;
+                            coords[ai].z += xxij_z * ai_scale;
+                            coords[aj].x -= xxij_x * aj_scale;
+                            coords[aj].y -= xxij_y * aj_scale;
+                            coords[aj].z -= xxij_z * aj_scale;
+                        }
                     }
                 }
             }
@@ -676,8 +718,15 @@ void CudaShake::apply_to(Context& ctx, coord_t* d_coords, coord_t* d_xcoords) {
     }
     if (shake_networks->length > 0) {
         const int grid_blocks = (shake_networks->length + kShakeThreads - 1) / kShakeThreads;
-        // todo: Now h start doesn't exit when having shake fails...
-        calc_h_star_shake_kernel<<<grid_blocks, kShakeThreads>>>(shake_networks->length, shake_networks->gpu_data_p, d_coords, d_xcoords);
+        shake_network_failed->zero();
+        calc_h_star_shake_kernel<<<grid_blocks, kShakeThreads>>>(shake_networks->length, shake_networks->gpu_data_p, d_coords, d_xcoords, shake_network_failed->gpu_data_p);
+        check_cuda(cudaGetLastError());
+        shake_network_failed->download();
+
+        if (shake_network_failed->cpu_data_p[0]) {
+            std::fflush(stdout);
+            std::exit(EXIT_FAILURE);
+        }
     }
     if (fallback_shake_bonds->length > 0) {
         fallback_unconverged->zero();
@@ -700,6 +749,9 @@ void CudaShake::apply_to(Context& ctx, coord_t* d_coords, coord_t* d_xcoords) {
                 n_fallback_constraints,
                 fallback_shake_bonds->gpu_data_p,
                 d_coords);
+            check_cuda(cudaGetLastError());
+            check_cuda(cudaDeviceSynchronize());
+            std::fflush(stdout);
             std::exit(EXIT_FAILURE);
         }
     }
