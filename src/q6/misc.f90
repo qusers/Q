@@ -178,9 +178,9 @@ real(8) function rtime()
 !!  **function rtime**
 !!
 !!-------------------------------------------------------------------------------
-  integer :: timevals(8)
-  call date_and_time(values=timevals)
-  rtime = timevals(3)*24*3600+timevals(5)*3600+timevals(6)*60+timevals(7)+0.001*timevals(8)
+  integer(8) :: clock_count, clock_rate
+  call system_clock(clock_count, clock_rate)
+  rtime = dble(clock_count)/dble(clock_rate)
 end function rtime
 
 
