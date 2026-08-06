@@ -5250,11 +5250,10 @@ subroutine md_run
   if (nodeid .eq. 0) then
     allocate(all_node_times(num_profiling_times*numnodes), stat=alloc_status) !vector for storing all node's node_times, used by mpi_gather at end of md_run
     call check_alloc('MPI profiling')
+    all_node_times(:) = 0.0
   end if
   allocate(node_times(num_profiling_times), stat=alloc_status) !each node's profiling times, used at end of md_run by mpi_gather
   call check_alloc('MPI profiling')
-
-  all_node_times(:) = 0.0
   node_times(:) = 0.0
 
 #endif
@@ -5753,7 +5752,7 @@ if (nodeid .eq. 0) then
   end do
 
 207 format('Total time of ',A25,T40,': ')
-208 format(f10.1,' ')
+208 format(f12.6,' ')
 209 format(I11)
 210 format(T30,'node:     ')
   write (*,*)
