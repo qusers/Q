@@ -61,7 +61,7 @@ EQ1_PARAMS = dict(
     stepsize=0.2,
     temperature=1,
     bath_coupling=0.2,
-    shake_hydrogens=True,
+    constrain_hydrogens=True,
     interval_output=5,
     minimize=True,
 )
@@ -72,7 +72,7 @@ EQ2_2FS_PARAMS = dict(
     stepsize=2.0,
     temperature=50,
     bath_coupling=2.0,
-    shake_hydrogens=True,
+    constrain_hydrogens=True,
     interval_output=5,
 )
 
@@ -81,7 +81,7 @@ EQ3_2FS_PARAMS = dict(
     stepsize=2.0,
     temperature=150,
     bath_coupling=2.0,
-    shake_hydrogens=True,
+    constrain_hydrogens=True,
     interval_output=5,
 )
 
@@ -90,7 +90,7 @@ EQ4_2FS_PARAMS = dict(
     stepsize=2.0,
     temperature=275,
     bath_coupling=2.0,
-    shake_hydrogens=True,
+    constrain_hydrogens=True,
     interval_output=5,
 )
 
@@ -99,7 +99,7 @@ EQ5_2FS_PARAMS = dict(
     stepsize=2.0,
     temperature="T_VAR",
     bath_coupling=10.0,
-    shake_hydrogens=True,
+    constrain_hydrogens=True,
     interval_output=25,
 )
 
@@ -109,7 +109,7 @@ EQ2_1FS_PARAMS = dict(
     stepsize=1.0,
     temperature=50,
     bath_coupling=1.0,
-    shake_hydrogens=False,
+    constrain_hydrogens=False,
     interval_output=5,
 )
 
@@ -118,7 +118,7 @@ EQ3_1FS_PARAMS = dict(
     stepsize=1.0,
     temperature=150,
     bath_coupling=1.0,
-    shake_hydrogens=False,
+    constrain_hydrogens=False,
     interval_output=5,
 )
 
@@ -127,7 +127,7 @@ EQ4_1FS_PARAMS = dict(
     stepsize=1.0,
     temperature=275,
     bath_coupling=1.0,
-    shake_hydrogens=False,
+    constrain_hydrogens=False,
     interval_output=5,
 )
 
@@ -136,7 +136,7 @@ EQ5_1FS_PARAMS = dict(
     stepsize=1.0,
     temperature="T_VAR",
     bath_coupling=10.0,
-    shake_hydrogens=False,
+    constrain_hydrogens=False,
     interval_output=25,
 )
 
