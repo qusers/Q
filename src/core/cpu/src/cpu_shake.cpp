@@ -32,7 +32,6 @@ void CpuShake::initial_shake(Context& ctx) {
     auto* coords = ctx.coords->cpu_data_p;
     auto* velocities = ctx.velocities->cpu_data_p;
     std::vector<coord_t> xcoords(ctx.n_atoms);
-    
 
     for (int i = 0; i < ctx.n_atoms; i++) {
         xcoords[i] = coords[i];
@@ -129,12 +128,15 @@ void CpuShake::apply_to(Context& ctx, coord_t* coords, coord_t* xcoords) {
                 const int ai = shake_bonds[shake + i].ai - 1;
                 const int aj = shake_bonds[shake + i].aj - 1;
 
-                const double xxij_x = xcoords[ai].x - xcoords[aj].x;
-                const double xxij_y = xcoords[ai].y - xcoords[aj].y;
-                const double xxij_z = xcoords[ai].z - xcoords[aj].z;
-                const double dist2 = xxij_x * xxij_x + xxij_y * xxij_y + xxij_z * xxij_z;
+                const double dx = coords[ai].x - coords[aj].x;
+                const double dy = coords[ai].y - coords[aj].y;
+                const double dz = coords[ai].z - coords[aj].z;
+                const double dist2 = dx * dx + dy * dy + dz * dz;
 
-                printf(">>> Shake failed, i = %d, j = %d, d = %f, d0 = %f", ai, aj, sqrt(dist2), sqrt(shake_bonds[shake + i].dist2));
+                if (!isfinite(dist2) ||
+                    fabs(shake_bonds[shake + i].dist2 - dist2) >= shake_tol * shake_bonds[shake + i].dist2) {
+                    printf(">>> Shake failed, i = %d, j = %d, d = %f, d0 = %f\n", ai, aj, sqrt(dist2), sqrt(shake_bonds[shake + i].dist2));
+                }
             }
             std::exit(EXIT_FAILURE);
         }
