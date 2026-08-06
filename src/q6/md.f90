@@ -3030,16 +3030,16 @@ subroutine init_lincs(excluded_constraints)
         end if
       end do
     end do
-    ! Two nonlinear corrections and order eight provide tighter constraints
-    ! than Q's legacy SHAKE tolerance while retaining bounded, sparse work.
+    ! Two corrections are normally sufficient. Difficult but valid steps can
+    ! refine to 1e-6 relative error with at most eight bounded corrections.
     call setup_lincs(atom_i(1:count), atom_j(1:count), target_length(1:count), &
-                     inverse_mass, 8, 2)
+                     inverse_mass, 8, 2, 1.0d-6, 8)
   end if
   lincs_constraints = count
 
   write(*,100) lincs_solute_constraints, lincs_solvent_constraints
 100 format(/,'LINCS constraints: solute = ',i8,', solvent = ',i8, &
-           ', expansion order = 8, rotation iterations = 2')
+           ', expansion order = 8, rotations = 2..8, tolerance = 1e-6')
   deallocate(atom_i, atom_j, target_length, inverse_mass)
 end subroutine init_lincs
 
@@ -3167,7 +3167,12 @@ subroutine apply_constraints(x_reference, x_candidate, shake_iterations)
     lincs_applied = lincs_positions(x_reference, x_candidate, &
                                     failed_lincs_constraint, lincs_error)
     if (.not. lincs_applied) then
-      write(message,'(a,i0)') 'LINCS failed for constraint ', failed_lincs_constraint
+      if (lincs_error >= 0.0d0) then
+        write(message,'(a,i0,a,es12.4)') 'LINCS failed for constraint ', &
+          failed_lincs_constraint, '; maximum relative error = ', lincs_error
+      else
+        write(message,'(a,i0)') 'LINCS failed for constraint ', failed_lincs_constraint
+      end if
       call die(trim(message))
     end if
     if (lincs_error > 1.0d-4) then

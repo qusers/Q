@@ -1,5 +1,6 @@
 program test_lincs
   use lincs
+  use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
   implicit none
 
   integer :: failures = 0
@@ -14,6 +15,8 @@ program test_lincs
   call test_large_sparse_setup
   call test_initial_projection
   call test_rotation_domain_failure
+  call test_adaptive_rotation_refinement
+  call test_nonfinite_candidate_failure
 
   write(*,'(a,i0,a,i0,a)') 'LINCS tests: ', assertions-failures, '/', assertions, ' passed'
   if (failures > 0) error stop 'LINCS tests failed'
@@ -88,10 +91,10 @@ subroutine test_expansion_convergence
   end do
   high_order=low_order
 
-  call setup_lincs(atom_i,atom_j,target,inverse_mass,0,1)
+  call setup_lincs(atom_i,atom_j,target,inverse_mass,0,1,huge(1.0d0),1)
   success=lincs_positions(old,low_order,max_relative_error=low_error)
   call assert_true('zeroth-order chain succeeds',success)
-  call setup_lincs(atom_i,atom_j,target,inverse_mass,8,1)
+  call setup_lincs(atom_i,atom_j,target,inverse_mass,8,1,huge(1.0d0),1)
   success=lincs_positions(old,high_order,max_relative_error=high_error)
 
   call assert_true('high-order chain succeeds',success)
@@ -227,6 +230,50 @@ subroutine test_rotation_domain_failure
   call assert_true('impossible rotation reports failure',.not.success)
   call assert_true('failed LINCS constraint is identified',failed==1)
 end subroutine test_rotation_domain_failure
+
+
+subroutine test_adaptive_rotation_refinement
+  integer :: atom_i(3)=(/1,1,1/),atom_j(3)=(/2,3,4/),failed
+  real(8) :: target(3)=(/1.0d0,1.0d0,1.0d0/)
+  real(8) :: inverse_mass(4)=(/1.0d0/12.0d0,1.0d0,1.0d0,1.0d0/)
+  real(8) :: old(12),fixed(12),adaptive(12),fixed_error,adaptive_error
+  logical :: success
+
+  old=(/0.0d0,0.0d0,0.0d0, 1.0d0,0.0d0,0.0d0, &
+       -0.5d0,sqrt(0.75d0),0.0d0, -0.5d0,-sqrt(0.75d0),0.0d0/)
+  fixed=(/-1.8836441176543875d-1, 1.9731317000383438d-2, 1.8327986864404769d-1, &
+          9.3303947901961759d-1,-1.6602487971708749d-1, 1.0974330431556945d-1, &
+         -3.6225476137665025d-1, 7.2078666824476545d-1,-1.0031881575786837d-1, &
+         -3.2891021029101153d-1,-8.0979454289487307d-1,-1.8557986337921914d-1/)
+  adaptive=fixed
+
+  call setup_lincs(atom_i,atom_j,target,inverse_mass,8,2,huge(1.0d0),2)
+  success=lincs_positions(old,fixed,failed,fixed_error)
+  call assert_true('fixed two-rotation reference succeeds',success)
+  call assert_true('fixed two-rotation reference misses production tolerance', &
+                   fixed_error>1.0d-4)
+
+  call setup_lincs(atom_i,atom_j,target,inverse_mass,8,2,1.0d-6,8)
+  success=lincs_positions(old,adaptive,failed,adaptive_error)
+  call assert_true('adaptive rotation refinement succeeds',success)
+  call assert_true('adaptive rotation refinement reaches tolerance', &
+                   adaptive_error<=1.0d-6)
+end subroutine test_adaptive_rotation_refinement
+
+
+subroutine test_nonfinite_candidate_failure
+  integer :: atom_i(1)=(/1/),atom_j(1)=(/2/),failed
+  real(8) :: target(1)=(/1.0d0/),inverse_mass(2)=(/1.0d0,1.0d0/)
+  real(8) :: old(6)=(/0.0d0,0.0d0,0.0d0,1.0d0,0.0d0,0.0d0/),candidate(6)
+  logical :: success
+
+  candidate=old
+  candidate(1)=ieee_value(candidate(1),ieee_quiet_nan)
+  call setup_lincs(atom_i,atom_j,target,inverse_mass,4,1,1.0d-6,4)
+  success=lincs_positions(old,candidate,failed)
+  call assert_true('non-finite candidate reports failure',.not.success)
+  call assert_true('non-finite candidate identifies constraint',failed==1)
+end subroutine test_nonfinite_candidate_failure
 
 
 subroutine make_zigzag_chain(atom_count,coordinates)
