@@ -24,6 +24,7 @@ module md
   use qatom
   use lincs
   use settle
+  use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 
   implicit none
 
@@ -375,13 +376,14 @@ module md
 
   !shake types & variables
   !convergence criterion (fraction of distance)
-  real(8), parameter               :: shake_tol = 0.0001
+  real(8), parameter               :: shake_tol = 0.0001d0
   integer, parameter               :: shake_max_iter = 1000
+  real(8), parameter               :: shake_min_projection = 1.0d-6
+  real(8), parameter               :: shake_max_correction_scale = 1.0d0
 
   type shake_bond_type
     integer(ai)                   :: i,j
     real(8)                       :: dist2
-    logical                       :: ready
   end type shake_bond_type
 
   type shake_mol_type
@@ -3155,6 +3157,10 @@ subroutine apply_constraints(x_reference, x_candidate, shake_iterations)
   logical :: settled, lincs_applied
   real(8) :: lincs_error
   character(len=100) :: message
+#if defined(PROFILING)
+  real(8) :: constraint_start_time
+  constraint_start_time = rtime()
+#endif
 
   iterations = 0
   if (lincs_is_active()) then
@@ -3179,6 +3185,9 @@ subroutine apply_constraints(x_reference, x_candidate, shake_iterations)
   end if
   if (shake_constraints > 0) iterations = shake(x_reference, x_candidate)
   if (present(shake_iterations)) shake_iterations = iterations
+#if defined(PROFILING)
+  profile(7)%time = profile(7)%time + rtime() - constraint_start_time
+#endif
 end subroutine apply_constraints
 
 
@@ -17010,10 +17019,7 @@ end function randm
 integer function shake(xx, x)
 !!-------------------------------------------------------------------------------
 !! function: **shake**
-!! This is the main SHAKE algorithm. Uncertain where it came from.
-!! Citation needed here.
-!! Could it be that it's QSHAKE, that is, holonomic constraints SHAKE,
-!! so-called QSHAKE? Improbable.
+!! Molecular SHAKE position constraints with full-sweep convergence checks.
 !!
 !! The original reference for SHAKE is:
 !! Ryckaert, J-P; Ciccotti G; Berendsen HJC (1977). "Numerical Integration
@@ -17021,114 +17027,167 @@ integer function shake(xx, x)
 !! Dynamics of n-Alkanes". Journal of Computational Physics. 23 (3): 327–341.
 !! Bibcode:1977JCoPh..23..327R. doi:10.1016/0021-9991(77)90098-5
 !!
-!! When looking at the code and comparing it to the MOLARIS subroutine
-!! shake_bond one can see that they're practically the same.
-!!
-!! shake tolerance is hard-fixed on compilation number. should be changed to
-!! an option with a default value.
-!!
-!! SHAKE_TOL = 0.0001
+!! Constraints are corrected along their reference bond directions. A complete
+!! post-correction sweep verifies that all coupled bonds satisfy SHAKE_TOL =
+!! 0.0001 simultaneously before the molecule is accepted.
 !!
 !! SHAKE is not parallelized in Q, to do so check-out the next reference.
 !! SHAKE parallelization.
 !! Eur Phys J Spec Top. 2011 Nov 1;200(1):211-223.
 !! Elber R, Ruymgaart AP, Hess B.
 !!-------------------------------------------------------------------------------
-  !arguments
-  real(8)                          :: xx(:), x(:)
-  !returns no. of iterations
+  real(8), intent(in)             :: xx(:)
+  real(8), intent(inout)          :: x(:)
 
-  ! *** local variables
-  integer                          :: i,j,i3,j3,mol,ic,nits
-  real(8)                          :: xij2,diff,corr,scp,xxij2 ! scp = scalar product
-  real(8)                          :: xij(3),xxij(3)
-#if defined (PROFILING)
-  real(8)                          :: start_loop_time
-  start_loop_time = rtime()
-#endif
+  integer                         :: i, j, i3, j3, mol, ic, nits
+  real(8)                         :: xij2, diff, corr, scp, target2, inverse_mass_sum
+  real(8)                         :: xij(3), xxij(3)
+  logical                         :: corrected, converged
 
-  ! reset niter
   shake = 0
 
-  do mol=1,shake_molecules
-    ! for every molecule:
-    ! reset nits (iterations per molecule)
+  do mol = 1, shake_molecules
+    if (shake_mol(mol)%nconstraints == 0) cycle
     nits = 0
-    ! reset iready for every constraint
-    shake_mol(mol)%bond(:)%ready = .false.
-    do !iteration loop
-      do ic=1,shake_mol(mol)%nconstraints
-        ! for every constraint:
 
-        if (.not. shake_mol(mol)%bond(ic)%ready) then
-          ! repeat until done:
-
-          i = shake_mol(mol)%bond(ic)%i
-          j = shake_mol(mol)%bond(ic)%j
-          i3 = i*3-3
-          j3 = j*3-3
-          xij(1)  = x(i3+1) - x(j3+1)
-          xij(2)  = x(i3+2) - x(j3+2)
-          xij(3)  = x(i3+3) - x(j3+3)
-          xij2    = xij(1)**2+xij(2)**2+xij(3)**2
-          diff    = shake_mol(mol)%bond(ic)%dist2 - xij2
-          if(abs(diff) < shake_tol*shake_mol(mol)%bond(ic)%dist2) then
-            shake_mol(mol)%bond(ic)%ready = .true. ! in range
-          end if
-          xxij(1) = xx(i3+1) - xx(j3+1)
-          xxij(2) = xx(i3+2) - xx(j3+2)
-          xxij(3) = xx(i3+3) - xx(j3+3)
-          scp = xij(1)*xxij(1)+xij(2)*xxij(2)+xij(3)*xxij(3)
-          corr = diff/(2.*scp*(winv(i)+winv(j)))
-
-          x(i3+1) = x(i3+1)+xxij(1)*corr*winv(i)
-          x(i3+2) = x(i3+2)+xxij(2)*corr*winv(i)
-          x(i3+3) = x(i3+3)+xxij(3)*corr*winv(i)
-          x(j3+1) = x(j3+1)-xxij(1)*corr*winv(j)
-          x(j3+2) = x(j3+2)-xxij(2)*corr*winv(j)
-          x(j3+3) = x(j3+3)-xxij(3)*corr*winv(j)
+    do
+      corrected = .false.
+      do ic = 1, shake_mol(mol)%nconstraints
+        i = shake_mol(mol)%bond(ic)%i
+        j = shake_mol(mol)%bond(ic)%j
+        i3 = 3*i-3
+        j3 = 3*j-3
+        target2 = shake_mol(mol)%bond(ic)%dist2
+        inverse_mass_sum = dble(winv(i))+dble(winv(j))
+        if (.not. ieee_is_finite(target2) .or. target2 <= 0.0d0 .or. &
+            .not. ieee_is_finite(inverse_mass_sum) .or. inverse_mass_sum <= 0.0d0) then
+          call report_shake_failure('invalid target or inverse mass', mol, ic, nits, xx, x)
         end if
-      end do
+        xij = x(i3+1:i3+3)-x(j3+1:j3+3)
+        xij2 = dot_product(xij,xij)
+        diff = target2-xij2
 
+        if (.not. ieee_is_finite(xij2) .or. .not. ieee_is_finite(diff)) then
+          call report_shake_failure('non-finite candidate bond', mol, ic, nits, xx, x)
+        end if
+        if (abs(diff) < shake_tol*target2) cycle
+
+        xxij = xx(i3+1:i3+3)-xx(j3+1:j3+3)
+        scp = dot_product(xij,xxij)
+        if (.not. ieee_is_finite(scp) .or. &
+            scp <= shake_min_projection*target2) then
+          call report_shake_failure('invalid reference projection', mol, ic, nits, xx, x)
+        end if
+
+        corr = diff/(2.0d0*scp*inverse_mass_sum)
+        if (.not. ieee_is_finite(corr) .or. &
+            abs(corr*dble(winv(i))) > shake_max_correction_scale .or. &
+            abs(corr*dble(winv(j))) > shake_max_correction_scale) then
+          call report_shake_failure('invalid or excessive correction', mol, ic, nits, xx, x)
+        end if
+
+        x(i3+1:i3+3) = x(i3+1:i3+3)+xxij*corr*dble(winv(i))
+        x(j3+1:j3+3) = x(j3+1:j3+3)-xxij*corr*dble(winv(j))
+        corrected = .true.
+      end do
       nits = nits+1
 
-      ! see if every constraint is met
-      if(all(shake_mol(mol)%bond(1:shake_mol(mol)%nconstraints)%ready)) then
-        exit !from iteration loop
-      elseif(nits >= shake_max_iter) then
-        ! fail on too many iterations
-        do ic=1,shake_mol(mol)%nconstraints
-          if (.not. shake_mol(mol)%bond(ic)%ready) then
-            ! repeat until done:
+      ! If the sweep made no corrections, every constraint was already valid.
+      if (.not. corrected) exit
 
-            i = shake_mol(mol)%bond(ic)%i
-            j = shake_mol(mol)%bond(ic)%j
-            i3 = i*3-3
-            j3 = j*3-3
-            xxij(1) = xx(i3+1) - xx(j3+1)
-            xxij(2) = xx(i3+2) - xx(j3+2)
-            xxij(3) = xx(i3+3) - xx(j3+3)
-            xxij2   = xxij(1)**2+xxij(2)**2+xxij(3)**2
-            write (*,100) i,j,sqrt(xxij2),&
-              sqrt(shake_mol(mol)%bond(ic)%dist2)
+      ! Corrections to coupled bonds can invalidate an earlier constraint.
+      converged = .true.
+      do ic = 1, shake_mol(mol)%nconstraints
+        i = shake_mol(mol)%bond(ic)%i
+        j = shake_mol(mol)%bond(ic)%j
+        i3 = 3*i-3
+        j3 = 3*j-3
+        target2 = shake_mol(mol)%bond(ic)%dist2
+        xij = x(i3+1:i3+3)-x(j3+1:j3+3)
+        xij2 = dot_product(xij,xij)
+        if (.not. ieee_is_finite(xij2) .or. &
+            abs(target2-xij2) >= shake_tol*target2) then
+          converged = .false.
+          exit
+        end if
+      end do
+      if (converged) exit
+
+      if (nits >= shake_max_iter) then
+        do ic = 1, shake_mol(mol)%nconstraints
+          i = shake_mol(mol)%bond(ic)%i
+          j = shake_mol(mol)%bond(ic)%j
+          i3 = 3*i-3
+          j3 = 3*j-3
+          target2 = shake_mol(mol)%bond(ic)%dist2
+          xij = x(i3+1:i3+3)-x(j3+1:j3+3)
+          xij2 = dot_product(xij,xij)
+          if (.not. ieee_is_finite(xij2) .or. &
+              abs(target2-xij2) >= shake_tol*target2) then
+            call print_shake_constraint(mol, ic, nits, xx, x)
           end if
         end do
-        call die('shake failure')
+        call die('shake failure after maximum iterations')
       end if
-100   format ('>>> Shake failed, i,j,d,d0 = ',2i6,2f10.5)
     end do
 
-    ! update niter
     shake = shake+nits
   end do
 
-  ! set niter to the average number of iterations per molecule
-  shake=shake/nmol
-#if defined (PROFILING)
-  profile(7)%time = profile(7)%time + rtime() - start_loop_time
-#endif
-
+  if (shake_molecules > 0) shake = shake/shake_molecules
 end function shake
+
+
+subroutine report_shake_failure(reason, molecule, constraint, iteration, xx, x)
+  character(*), intent(in) :: reason
+  integer, intent(in) :: molecule, constraint, iteration
+  real(8), intent(in) :: xx(:), x(:)
+
+  write(*,'(a,a)') '>>> Shake failed: ', trim(reason)
+  call print_shake_constraint(molecule, constraint, iteration, xx, x)
+  call die('shake failure')
+end subroutine report_shake_failure
+
+
+subroutine print_shake_constraint(molecule, constraint, iteration, xx, x)
+  integer, intent(in) :: molecule, constraint, iteration
+  real(8), intent(in) :: xx(:), x(:)
+
+  integer :: i, j, i3, j3
+  real(8) :: current_vector(3), reference_vector(3)
+  real(8) :: current2, reference2, target2, projection
+  real(8) :: current_length, reference_length, relative_error
+
+  i = shake_mol(molecule)%bond(constraint)%i
+  j = shake_mol(molecule)%bond(constraint)%j
+  i3 = 3*i-3
+  j3 = 3*j-3
+  current_vector = x(i3+1:i3+3)-x(j3+1:j3+3)
+  reference_vector = xx(i3+1:i3+3)-xx(j3+1:j3+3)
+  current2 = dot_product(current_vector,current_vector)
+  reference2 = dot_product(reference_vector,reference_vector)
+  target2 = shake_mol(molecule)%bond(constraint)%dist2
+  projection = dot_product(current_vector,reference_vector)
+  if (ieee_is_finite(current2)) then
+    current_length = sqrt(max(0.0d0,current2))
+    relative_error = abs(current2-target2)/target2
+  else
+    current_length = current2
+    relative_error = current2
+  end if
+  if (ieee_is_finite(reference2)) then
+    reference_length = sqrt(max(0.0d0,reference2))
+  else
+    reference_length = reference2
+  end if
+
+  write(*,100) istep, molecule, iteration, i, j, current_length, &
+               reference_length, sqrt(target2), relative_error, projection
+100 format('>>> Shake failed: step=',i8,', molecule=',i8,', iteration=',i5, &
+           ', atoms=',i8,1x,i8,', current=',es12.4,', reference=',es12.4, &
+           ', target=',es12.4,', squared-relative-error=',es12.4, &
+           ', projection=',es12.4)
+end subroutine print_shake_constraint
 
 
 subroutine shrink_topology
