@@ -22,6 +22,7 @@ module md
   use trj
   use mpiglob
   use qatom
+  use settle
 
   implicit none
 
@@ -91,9 +92,14 @@ module md
   integer                   :: iseed
   logical                   :: restart
   real(8)                   :: dt, Temp0, Tmaxw, tau_T
-  logical                   :: shake_solvent, shake_solute
-  logical                   :: shake_hydrogens
+  logical                   :: constrain_solvent, constrain_solute
+  logical                   :: constrain_hydrogens
   logical                   :: separate_scaling
+
+  integer, parameter        :: CONSTRAINT_SHAKE = 1
+  integer, parameter        :: CONSTRAINT_SETTLE = 2
+  integer                   :: solute_constraint_algorithm = CONSTRAINT_SHAKE
+  integer                   :: solvent_constraint_algorithm = CONSTRAINT_SETTLE
 
   ! --- Energy minimization parameters
   logical                   :: do_minimize = .false.
@@ -382,6 +388,8 @@ module md
   end type shake_mol_type
 
   integer                           :: shake_constraints, shake_molecules
+  integer                           :: settle_constraints = 0
+  integer                           :: constraint_count = 0
   type(shake_mol_type), allocatable :: shake_mol(:)
 
   ! The MD constraint set, parked while FIRE additionally constrains bonds to
@@ -2420,7 +2428,7 @@ subroutine init_nodes
 
 
   ! --- shake data ---
-  !if (shake_solute .or. shake_solvent .or. shake_hydrogens) then
+  !if (constrain_solute .or. constrain_solvent .or. constrain_hydrogens) then
   ! shake stuff
 
   !if (nodeid .eq. 0) write (*,'(80a)') 'shake data'
@@ -2701,11 +2709,12 @@ subroutine init_shake
       !new molecule
       mol = mol +1
     end do
-    !skip redefined bonds
-    if(bnd(b)%cod == 0) cycle
-    if((shake_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja))) .or. &
-      (shake_solute .and. ia <= nat_solute) .or. &
-      (shake_solvent .and. ia > nat_solute)) then
+    ! Skip redefined bonds and bonds claimed by another constraint solver.
+    if(bnd(b)%cod <= 0) cycle
+    if((ia <= nat_solute .and. solute_constraint_algorithm == CONSTRAINT_SHAKE .and. &
+        ((constrain_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja))) .or. constrain_solute)) .or. &
+       (ia > nat_solute .and. solvent_constraint_algorithm == CONSTRAINT_SHAKE .and. &
+        ((constrain_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja))) .or. constrain_solvent))) then
       shake_mol(mol)%nconstraints = shake_mol(mol)%nconstraints + 1
 
       if( .not. use_PBC ) then
@@ -2744,11 +2753,12 @@ subroutine init_shake
       mol = mol +1
       shake_mol(mol)%nconstraints = 0
     end do
-    !skip redefined bonds
-    if(bnd(b)%cod == 0) cycle
-    if((shake_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja))) .or.&
-      (shake_solute .and. ia <= nat_solute) .or. &
-      (shake_solvent .and. ia > nat_solute)) then
+    ! Skip redefined bonds and bonds claimed by another constraint solver.
+    if(bnd(b)%cod <= 0) cycle
+    if((ia <= nat_solute .and. solute_constraint_algorithm == CONSTRAINT_SHAKE .and. &
+        ((constrain_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja))) .or. constrain_solute)) .or. &
+       (ia > nat_solute .and. solvent_constraint_algorithm == CONSTRAINT_SHAKE .and. &
+        ((constrain_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja))) .or. constrain_solvent))) then
       shake_mol(mol)%nconstraints = shake_mol(mol)%nconstraints + 1
       shake_mol(mol)%bond(shake_mol(mol)%nconstraints)%i = ia
       shake_mol(mol)%bond(shake_mol(mol)%nconstraints)%j = ja
@@ -2851,25 +2861,183 @@ subroutine init_shake
 end subroutine init_shake
 
 
+subroutine init_constraints
+!!-------------------------------------------------------------------------------
+!!  Build the solver-specific constraint sets.  SETTLE claims rigid HOH bonds
+!!  first; legacy SHAKE then receives every requested bond that remains.
+!!-------------------------------------------------------------------------------
+  real(8) :: settle_excluded_constraints
+
+  settle_constraints = 0
+  settle_excluded_constraints = 0.0d0
+
+  if (solvent_constraint_algorithm == CONSTRAINT_SETTLE .and. &
+      (constrain_solvent .or. constrain_hydrogens) .and. nwat > 0) then
+    call init_settle(settle_excluded_constraints)
+  end if
+
+  call init_shake
+
+  ! init_shake computes the temperature degrees of freedom for its own set.
+  ! Account here for the constraints claimed by SETTLE.
+  Ndegf = Ndegf - settle_constraints
+  Ndegfree = Ndegfree - settle_constraints + nint(settle_excluded_constraints)
+  Ndegf_solvent = Ndegf_solvent - settle_constraints
+  ! Preserve SHAKE's existing solvent/solute temperature partitioning: excluded
+  ! constraint compensation is applied to the total, not the solvent subtotal.
+  Ndegfree_solvent = Ndegfree_solvent - settle_constraints
+  Ndegf_solute = Ndegf - Ndegf_solvent
+  Ndegfree_solute = Ndegfree - Ndegfree_solvent
+  constraint_count = shake_constraints + settle_constraints
+
+  write(*,100) settle_constraints, shake_constraints, constraint_count
+100 format('Constraints by solver: SETTLE = ',i8,', SHAKE = ',i8,', total = ',i8)
+end subroutine init_constraints
+
+
+subroutine init_settle(excluded_constraints)
+!!-------------------------------------------------------------------------------
+!!  Validate Q's solvent topology as homogeneous three-site HOH, obtain its
+!!  geometry from the three constrained bond records, and assign every HOH to
+!!  SETTLE.  SETTLE is deliberately not applied to solute water-like residues.
+!!-------------------------------------------------------------------------------
+  real(8), intent(out) :: excluded_constraints
+
+  integer :: water, residue, oxygen, h1, h2, b, angle, claimed
+  integer, allocatable :: oxygen_atoms(:)
+  real(8) :: d_oh1, d_oh2, d_hh, m_o, m_h1, m_h2
+  real(8), parameter :: parameter_tolerance = 1.0d-6
+
+  if (nres-nres_solute /= nwat) then
+    call die('SETTLE requires one solvent residue per three-site HOH molecule')
+  end if
+
+  allocate(oxygen_atoms(nwat), stat=alloc_status)
+  call check_alloc('SETTLE oxygen atom list')
+  do water = 1, nwat
+    residue = nres_solute + water
+    oxygen = nat_solute + 3*(water-1) + 1
+    if (trim(adjustl(res(residue)%name)) /= 'HOH') then
+      call die('SETTLE supports only solvent residues named HOH')
+    end if
+    if (res(residue)%start /= oxygen) then
+      call die('SETTLE requires sequential O-H1-H2 solvent triplets')
+    end if
+    oxygen_atoms(water) = oxygen
+  end do
+
+  oxygen = oxygen_atoms(1)
+  h1 = oxygen + 1
+  h2 = oxygen + 2
+  d_oh1 = 0.0d0
+  d_oh2 = 0.0d0
+  d_hh = 0.0d0
+  do b = 1, nbonds
+    if (bnd(b)%cod <= 0) cycle
+    if ((bnd(b)%i == oxygen .and. bnd(b)%j == h1) .or. &
+        (bnd(b)%i == h1 .and. bnd(b)%j == oxygen)) then
+      d_oh1 = bondlib(bnd(b)%cod)%bnd0
+    else if ((bnd(b)%i == oxygen .and. bnd(b)%j == h2) .or. &
+             (bnd(b)%i == h2 .and. bnd(b)%j == oxygen)) then
+      d_oh2 = bondlib(bnd(b)%cod)%bnd0
+    else if ((bnd(b)%i == h1 .and. bnd(b)%j == h2) .or. &
+             (bnd(b)%i == h2 .and. bnd(b)%j == h1)) then
+      d_hh = bondlib(bnd(b)%cod)%bnd0
+    end if
+  end do
+  if (min(d_oh1, d_oh2, d_hh) <= 0.0d0) then
+    call die('SETTLE requires O-H1, O-H2, and H1-H2 bonds for HOH')
+  end if
+  if (abs(d_oh1-d_oh2) > parameter_tolerance*max(d_oh1,d_oh2)) then
+    call die('SETTLE requires identical O-H1 and O-H2 distances')
+  end if
+
+  m_o = 1.0d0/dble(winv(oxygen))
+  m_h1 = 1.0d0/dble(winv(h1))
+  m_h2 = 1.0d0/dble(winv(h2))
+  if (abs(m_h1-m_h2) > parameter_tolerance*max(m_h1,m_h2)) then
+    call die('SETTLE requires identical hydrogen masses')
+  end if
+
+  ! All solvent has just been verified as HOH.  Claim its three bonds per water
+  ! so SHAKE and the bonded-force routines do not process them again.
+  claimed = 0
+  excluded_constraints = 0.0d0
+  do b = 1, nbonds
+    if (bnd(b)%cod <= 0) cycle
+    if (bnd(b)%i > nat_solute .and. bnd(b)%j > nat_solute) then
+      claimed = claimed + 1
+      if (.not. use_PBC) then
+        if (excl(bnd(b)%i)) excluded_constraints = excluded_constraints + 0.5d0
+        if (excl(bnd(b)%j)) excluded_constraints = excluded_constraints + 0.5d0
+      end if
+      bnd(b)%cod = -1
+    end if
+  end do
+  if (claimed /= 3*nwat) then
+    call die('SETTLE requires exactly three bonds per HOH molecule')
+  end if
+
+  ! A separate H-O-H term would duplicate the geometry fixed by all three
+  ! distances.  This mirrors init_shake's removal of constrained end angles.
+  do angle = 1, nangles
+    if (ang(angle)%i > nat_solute .and. ang(angle)%j > nat_solute .and. &
+        ang(angle)%k > nat_solute) ang(angle)%cod = 0
+  end do
+
+  call setup_settle(0.5d0*(d_oh1+d_oh2), d_hh, m_o, 0.5d0*(m_h1+m_h2), &
+                    oxygen_atoms)
+  settle_constraints = claimed
+
+  write(*,100) nwat, 0.5d0*(d_oh1+d_oh2), d_hh
+100 format(/,'SETTLE rigid HOH molecules = ',i8,', O-H = ',f8.5, &
+           ' A, H-H = ',f8.5,' A')
+  deallocate(oxygen_atoms)
+end subroutine init_settle
+
+
+subroutine apply_constraints(x_reference, x_candidate, shake_iterations)
+!!-------------------------------------------------------------------------------
+!!  Apply each active position-constraint solver to one integration update.
+!!-------------------------------------------------------------------------------
+  real(8), intent(in) :: x_reference(:)
+  real(8), intent(inout) :: x_candidate(:)
+  integer, intent(out), optional :: shake_iterations
+
+  integer :: iterations, failed_oxygen
+  logical :: settled
+  character(len=100) :: message
+
+  iterations = 0
+  if (settle_is_active()) then
+    settled = settle_positions(x_reference, x_candidate, failed_oxygen)
+    if (.not. settled) then
+      write(message,'(a,i0)') 'SETTLE failed for HOH oxygen atom ', failed_oxygen
+      call die(trim(message))
+    end if
+  end if
+  if (shake_constraints > 0) iterations = shake(x_reference, x_candidate)
+  if (present(shake_iterations)) shake_iterations = iterations
+end subroutine apply_constraints
+
+
 subroutine initial_shaking
-!!!--------------------------------------------------------------------------------
-!!  subroutine  **initial_shaking**
-!!
-!!!--------------------------------------------------------------------------------
-  integer                        :: niter
+!!-------------------------------------------------------------------------------
+!!  Project generated positions and velocities onto all active constraints.
+!!-------------------------------------------------------------------------------
+  integer :: niter
 
-  xx(:)=x(:)
-  niter=shake(xx, x)
+  xx(:) = x(:)
+  call apply_constraints(xx, x, niter)
   write(*,100) 'x', niter
-100 format('Initial ',a,'-shaking required',i4,&
-    ' interations per molecule on average.')
+100 format('Initial ',a,' constraints required ',i4, &
+           ' SHAKE iterations per molecule on average.')
 
-  xx(:)=x(:)-dt*v(:)
-  niter=shake(x, xx)
+  xx(:) = x(:)-dt*v(:)
+  call apply_constraints(x, xx, niter)
   write(*,100) 'v', niter
 
-  v(:)=(x(:)-xx(:))/dt
-
+  v(:) = (x(:)-xx(:))/dt
 end subroutine initial_shaking
 
 
@@ -2890,13 +3058,18 @@ logical function initialize()
     logical                                         :: need_restart
     character(len=80)                               :: instring
     logical                                         :: inlog
+    logical                                         :: has_new_constraint_key
+    logical                                         :: has_legacy_constraint_key
+    logical                                         :: legacy_constraint_input
     integer                                         :: mask_rows
+    character(len=16)                               :: solute_algorithm_name
+    character(len=16)                               :: solvent_algorithm_name
 
     !This function initializes the following variables:
     !  nsteps, stepsize, dt
     !  Temp0, tau_T, iseed, Tmaxw
     !  use_LRF, NBcycle, Rcpp, Rcww, Rcpw, Rcq
-    !  shake_solute, shake_solvent, shake_hydrogens
+    !  constrain_solute, constrain_solvent, constrain_hydrogens
     !  fk_pshell
     !  fk_wsphere=-1, wpol_restr, wpol_born
     !  fkwpol=-1, Dwmz=-1 (values  ized to -1 will be set in water_sphere, once target radius is known)
@@ -3092,26 +3265,121 @@ logical function initialize()
 15  format ('Maxwell temperature =',f10.2)
 16  format ('Random number seed  =',i10)
 
-    ! --- shake, LRF
-    if(.not. prm_get_logical_by_key('shake_solvent', shake_solvent, .true.)) then
-      write(*,'(a)') '>>> Error: shake_solvent must be on or off.'
+    ! --- constraints, LRF
+    ! New solver-neutral switches take precedence.  The shake_* spellings are
+    ! accepted as compatibility aliases and retain SHAKE/SHAKE when no explicit
+    ! constraint_algorithm is supplied, so existing input files do not silently
+    ! change trajectories before they are deliberately migrated.
+    legacy_constraint_input = .false.
+
+    has_new_constraint_key = prm_get_line_by_key('constrain_solvent', instring)
+    has_legacy_constraint_key = prm_get_line_by_key('shake_solvent', instring)
+    if (has_new_constraint_key .and. has_legacy_constraint_key) then
+      write(*,'(a)') '>>> Error: specify only constrain_solvent, not also shake_solvent.'
       initialize = .false.
     end if
-    write(*,17) 'all solvent bonds', onoff(shake_solvent)
-17  format('SHAKE ',a,t32,'= ',a3)
+    if (has_new_constraint_key) then
+      if (.not. prm_get_logical_by_key('constrain_solvent', constrain_solvent)) then
+        write(*,'(a)') '>>> Error: constrain_solvent must be on or off.'
+        initialize = .false.
+      end if
+    else if (has_legacy_constraint_key) then
+      legacy_constraint_input = .true.
+      if (.not. prm_get_logical_by_key('shake_solvent', constrain_solvent)) then
+        write(*,'(a)') '>>> Error: shake_solvent must be on or off.'
+        initialize = .false.
+      end if
+    else
+      constrain_solvent = .true.
+    end if
 
-    if(.not. prm_get_logical_by_key('shake_solute', shake_solute, .false.)) then
-      write(*,'(a)') '>>> Error: shake_solute must be on or off.'
+    has_new_constraint_key = prm_get_line_by_key('constrain_solute', instring)
+    has_legacy_constraint_key = prm_get_line_by_key('shake_solute', instring)
+    if (has_new_constraint_key .and. has_legacy_constraint_key) then
+      write(*,'(a)') '>>> Error: specify only constrain_solute, not also shake_solute.'
       initialize = .false.
     end if
-    write(*,17) 'all solute bonds', onoff(shake_solute)
+    if (has_new_constraint_key) then
+      if (.not. prm_get_logical_by_key('constrain_solute', constrain_solute)) then
+        write(*,'(a)') '>>> Error: constrain_solute must be on or off.'
+        initialize = .false.
+      end if
+    else if (has_legacy_constraint_key) then
+      legacy_constraint_input = .true.
+      if (.not. prm_get_logical_by_key('shake_solute', constrain_solute)) then
+        write(*,'(a)') '>>> Error: shake_solute must be on or off.'
+        initialize = .false.
+      end if
+    else
+      constrain_solute = .false.
+    end if
 
-    if(.not. prm_get_logical_by_key('shake_hydrogens', shake_hydrogens, .false.)) then
-      write(*,'(a)') '>>> Error: shake_hydrogens must be on or off.'
+    has_new_constraint_key = prm_get_line_by_key('constrain_hydrogens', instring)
+    has_legacy_constraint_key = prm_get_line_by_key('shake_hydrogens', instring)
+    if (has_new_constraint_key .and. has_legacy_constraint_key) then
+      write(*,'(a)') '>>> Error: specify only constrain_hydrogens, not also shake_hydrogens.'
       initialize = .false.
     end if
-    write(*,17) 'all bonds to hydrogen', onoff(shake_hydrogens)
+    if (has_new_constraint_key) then
+      if (.not. prm_get_logical_by_key('constrain_hydrogens', constrain_hydrogens)) then
+        write(*,'(a)') '>>> Error: constrain_hydrogens must be on or off.'
+        initialize = .false.
+      end if
+    else if (has_legacy_constraint_key) then
+      legacy_constraint_input = .true.
+      if (.not. prm_get_logical_by_key('shake_hydrogens', constrain_hydrogens)) then
+        write(*,'(a)') '>>> Error: shake_hydrogens must be on or off.'
+        initialize = .false.
+      end if
+    else
+      constrain_hydrogens = .false.
+    end if
 
+    if (prm_get_line_by_key('constraint_algorithm', instring)) then
+      solute_algorithm_name = ''
+      solvent_algorithm_name = ''
+      read(instring, *, iostat=fstat) solute_algorithm_name, solvent_algorithm_name
+      if (fstat /= 0) then
+        write(*,'(a)') '>>> Error: constraint_algorithm requires solute and solvent methods.'
+        initialize = .false.
+      end if
+      call upcase(solute_algorithm_name)
+      call upcase(solvent_algorithm_name)
+    else if (legacy_constraint_input) then
+      solute_algorithm_name = 'SHAKE'
+      solvent_algorithm_name = 'SHAKE'
+      write(*,'(a)') '>>> WARNING: shake_* input keys are deprecated; use constrain_*.'
+    else
+      ! LINCS will replace the temporary solute SHAKE default in its own feature.
+      solute_algorithm_name = 'SHAKE'
+      solvent_algorithm_name = 'SETTLE'
+    end if
+
+    select case (trim(solute_algorithm_name))
+    case ('SHAKE')
+      solute_constraint_algorithm = CONSTRAINT_SHAKE
+    case default
+      write(*,'(a,a)') '>>> Error: unsupported solute constraint algorithm: ', &
+                       trim(solute_algorithm_name)
+      initialize = .false.
+    end select
+    select case (trim(solvent_algorithm_name))
+    case ('SHAKE')
+      solvent_constraint_algorithm = CONSTRAINT_SHAKE
+    case ('SETTLE')
+      solvent_constraint_algorithm = CONSTRAINT_SETTLE
+    case default
+      write(*,'(a,a)') '>>> Error: unsupported solvent constraint algorithm: ', &
+                       trim(solvent_algorithm_name)
+      initialize = .false.
+    end select
+
+    write(*,17) 'solvent', onoff(constrain_solvent)
+    write(*,17) 'solute', onoff(constrain_solute)
+    write(*,17) 'bonds to hydrogen', onoff(constrain_hydrogens)
+    write(*,'(a,a,1x,a)') 'Constraint algorithms = ', trim(solute_algorithm_name), &
+                          trim(solvent_algorithm_name)
+17  format('Constrain ',a,t32,'= ',a3)
 
     yes = prm_get_logical_by_key('lrf', use_LRF, .false.)
     if(use_LRF) then
@@ -3712,7 +3980,7 @@ logical function old_initialize(fu)
     !  nsteps, stepsize, dt
     !  Temp0, tau_T, iseed, Tmaxw
     !  usr_LRF, NBcycle, Rcpp, Rcww, Rcpw, Rcq
-    !  shake_solvent, shake_solute, shake_hydrogens
+    !  constrain_solvent, constrain_solute, constrain_hydrogens
     !  fk_pshell
 
     !  fk_wsphere=-1, wpol_restr, wpol_born fkwpol=-1, Dwmz=-1, awmz=-1
@@ -3743,7 +4011,7 @@ logical function old_initialize(fu)
     RcLRF = 999.
     exclude_bonded = .false.
     force_rms = .false.
-    shake_hydrogens = .false.
+    constrain_hydrogens = .false.
     itemp_cycle = iout_cycle_default
     awmz = -1
 
@@ -3796,13 +4064,15 @@ logical function old_initialize(fu)
 
     ! --- shake_flag
     read (fu,*) shake_flag
-    shake_solvent = .false.
-    shake_solute = .false.
+    constrain_solvent = .false.
+    constrain_solute = .false.
+    solute_constraint_algorithm = CONSTRAINT_SHAKE
+    solvent_constraint_algorithm = CONSTRAINT_SHAKE
     if(shake_flag >= 1) then
-      shake_solvent = .true.
+      constrain_solvent = .true.
     end if
     if(shake_flag == 2) then
-      shake_solute = .true.
+      constrain_solute = .true.
     end if
 
     write (*,30) shake_flag
@@ -4380,7 +4650,7 @@ subroutine fire_constrain_hydrogens
 !!  fall into the bare Coulomb well of an acceptor, where the energy diverges to
 !!  -infinity and the force to +infinity. MD never gets there; a minimizer walks
 !!  straight in. Crystallographic waters are the usual victims, since they are
-!!  part of the solute and 'shake_solvent' therefore leaves them flexible.
+!!  part of the solute and 'constrain_solvent' therefore leaves them flexible.
 !!
 !!  Constraining the bonds to hydrogen removes that degree of freedom and costs
 !!  nothing: they sit at their equilibrium length anyway. The MD constraint set
@@ -4388,7 +4658,7 @@ subroutine fire_constrain_hydrogens
 !!  exactly the constraints the user asked for.
 !!
 !!  All the new constraints go into one group. SHAKE only uses the grouping to
-!!  bound its iteration, and this is what Q does anyway when shake_hydrogens is
+!!  bound its iteration, and this is what Q does anyway when constrain_hydrogens is
 !!  set: a protein is a single molecule, so all of its hydrogens land in one
 !!  group. We must not group by molecule here in any case, because
 !!  shrink_topology fills the holes it leaves by swapping in the last bond,
@@ -4575,9 +4845,9 @@ subroutine fire_descend
   v(1:nat3) = 0.0d0
 
   ! Project the starting structure onto the constraints in force.
-  if (nodeid .eq. 0 .and. shake_constraints .gt. 0) then
+  if (nodeid .eq. 0 .and. shake_constraints+settle_constraints .gt. 0) then
     xx(1:nat3) = x(1:nat3)
-    niter = shake(xx, x)
+    call apply_constraints(xx, x, niter)
   end if
 
 #if defined(USE_MPI)
@@ -4721,8 +4991,8 @@ subroutine fire_descend
       end do
 
       ! Constraints, as in the MD integrator.
-      if (shake_constraints .gt. 0) then
-        niter = shake(xx, x)
+      if (shake_constraints+settle_constraints .gt. 0) then
+        call apply_constraints(xx, x, niter)
         v(1:nat3) = (x(1:nat3) - xx(1:nat3))/dt_fire
       end if
     end if
@@ -4788,7 +5058,7 @@ subroutine md_run
   profile(4)%name = '   nbpwlist_time'
   profile(5)%name = '   nbqplist_time'
   profile(6)%name = '   nbqwlist_time'
-  profile(7)%name = 'SHAKE'
+  profile(7)%name = 'Constraints'
   profile(8)%name = 'Bonded Terms'
   profile(9)%name = 'Restraints'
   profile(10)%name = 'Nonbonded Terms'
@@ -5171,9 +5441,9 @@ subroutine md_run
       profile(11)%time = profile(11)%time + rtime() - start_loop_time1
 #endif
 
-      ! shake if necessary
-      if(shake_constraints > 0) then
-        niter=shake(xx, x)
+      ! Apply the selected solute and solvent constraint algorithms.
+      if (constraint_count > 0) then
+        call apply_constraints(xx, x, niter)
         v(:) = (x(:) - xx(:)) / dt
       end if
 

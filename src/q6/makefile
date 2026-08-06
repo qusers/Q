@@ -159,6 +159,10 @@ qprep-only: qprep move_qprep move1
 
 test:   qfep qprep qdyn_test qdum qcalc move1 move4
 
+test-settle: settle.o test_settle.o
+	${FC} ${FFLAGS} $+ -o test_settle
+	./test_settle
+
 debug:
 	@make FFLAGS="${DEBUG}" \
     qfep qprep qdyn qdum qcalc move1 move2
@@ -185,6 +189,8 @@ qcalc qdyn qdyn_test qdum qdynp qprep: mask.o prmfile.o sizes.o topo.o trj.o ind
 qcalc qdyn qdyn_test qdum qdynp qfep: nrgy.o
 
 qcalc qdyn qdyn_test qdum qdynp: qatom.o
+
+qdyn qdum qdynp: settle.o
 
 qcalc qprep qfep: parse.o
 
@@ -277,16 +283,22 @@ mask.o: mask.f90 topo.o
 maskmanip.o: maskmanip.f90 mask.o misc.o parse.o
 	${FC} ${FFLAGS} -c $<
 
-md.o: md.f90 mpiglob.o qatom.o sizes.o trj.o topo.o
+settle.o: settle.f90
+	${FC} ${FFLAGS} -c $<
+
+test_settle.o: test_settle.f90 settle.o
+	${FC} ${FFLAGS} -c $<
+
+md.o: md.f90 mpiglob.o qatom.o sizes.o trj.o topo.o settle.o
 	${FC} ${FFLAGS} ${FPP_FLG} -c md.f90
 
 md_test.o: md_test.f90 mpiglob.o qatom.o sizes.o trj.o topo.o
 	${FC} ${FFLAGS} ${FPP_FLG} -c md_test.f90
 
-md_dum.o:md.f90 mpiglob.o qatom.o sizes.o trj.o topo.o
+md_dum.o:md.f90 mpiglob.o qatom.o sizes.o trj.o topo.o settle.o
 	${FC} ${FFLAGS} ${FPP_FLG} -DDUM -c md.f90 -o md_dum.o
 
-md_mpi.o: md.f90 mpiglob.o qatom.o sizes.o topo.o trj.o
+md_mpi.o: md.f90 mpiglob.o qatom.o sizes.o topo.o trj.o settle.o
 	${MPIFC} ${MPIFLAGS} ${FFLAGS} ${FPP_FLG} -DUSE_MPI \
 	-c md.f90 -o md_mpi.o
 
