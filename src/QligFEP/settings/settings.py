@@ -103,6 +103,19 @@ SNELLIUS = {
     **Q_PATHS,
 }
 
+HABROK = {
+    "NODES": "1",
+    "NTASKS": "8",
+    "TIME": "0-08:00:00",  # d-hh:mm:ss
+    "MODULES": nljoin(
+        [
+            "module purge",
+            "module load OpenMPI/4.1.4-GCC-11.3.0",
+        ]
+    ),
+    **Q_PATHS,
+}
+
 ALICE = {
     "MAINDIR": Q_DIR,
     "NODES": "1",
@@ -189,6 +202,7 @@ LOCALP = {
 CLUSTER_DICT = {
     "CSB": CSB,
     "SNELLIUS": SNELLIUS,
+    "HABROK": HABROK,
     "ALICE": ALICE,
     "HEBBE": HEBBE,
     "KEBNE": KEBNE,

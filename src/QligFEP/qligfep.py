@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import stat
+import sys
 from pathlib import Path
 from typing import Literal, Optional, Union
 
@@ -1563,6 +1564,7 @@ class QligFEP:
             seeds=tuple(self.seeds),
             fep_file="FEP1.fep",
             job_name=job_name,
+            runner_command=(sys.executable, "-m", "QligFEP.production_runner"),
             use_mpi=self.cluster != "LOCAL",
             slurm=not is_local,
             nodes=int(cluster_config["NODES"]),

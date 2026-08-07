@@ -15,6 +15,7 @@ class ProductionRunScriptConfig:
     seeds: tuple[int, ...]
     fep_file: str
     job_name: str
+    runner_command: tuple[str, ...] = ("qligfep-run",)
     use_mpi: bool = True
     slurm: bool = True
     nodes: int = 1
@@ -26,7 +27,7 @@ class ProductionRunScriptConfig:
 
 def _runner_invocation(config: ProductionRunScriptConfig, launcher: str) -> str:
     arguments = [
-        '"$runner"',
+        '"${runner_command[@]}"',
         '--input-dir "$inputfiles"',
         '--work-dir "$rundir"',
         '--temperature "$temperature"',
@@ -51,9 +52,16 @@ def render_production_run_script(config: ProductionRunScriptConfig) -> str:
     if not config.seeds:
         raise ValueError("at least one seed is required")
 
+    if not config.runner_command:
+        raise ValueError("runner command cannot be empty")
+
     temperatures = " ".join(shlex.quote(value) for value in config.temperatures)
     seeds = " ".join(str(value) for value in config.seeds)
-    common = f'''runner=${{QLIGFEP_RUNNER:-qligfep-run}}
+    runner_command = " ".join(shlex.quote(value) for value in config.runner_command)
+    common = f'''runner_command=({runner_command})
+if [[ -n ${{QLIGFEP_RUNNER:-}} ]]; then
+    runner_command=("$QLIGFEP_RUNNER")
+fi
 qdyn={shlex.quote(config.qdyn)}
 qfep={shlex.quote(config.qfep)}
 temperatures=({temperatures})
