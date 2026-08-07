@@ -146,6 +146,11 @@ def parse_arguments(program: str) -> argparse.Namespace:
         help="Simulation timestep, default 2fs",
     )
     parser.add_argument(
+        "--minimize",
+        action="store_true",
+        help="Run FIRE energy minimization before the first equilibration stage. Disabled by default.",
+    )
+    parser.add_argument(
         "-clean",
         "--files-to-clean",
         dest="to_clean",
