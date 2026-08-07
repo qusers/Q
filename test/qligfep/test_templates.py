@@ -241,7 +241,7 @@ class TestRenderMdInput:
 
     def test_render_eq1_with_minimize(self):
         """Verify eq1 renders minimize parameters when enabled."""
-        configs = get_equilibration_configs("2fs", shell_radius=25)
+        configs = get_equilibration_configs("2fs", shell_radius=25, minimize=True)
         eq1 = configs[0]
 
         content = render_md_input(
@@ -259,8 +259,8 @@ class TestRenderMdInput:
         assert "minimize_step_size        0.001" in content
 
     def test_render_eq2_without_minimize(self):
-        """Verify eq2-eq5 do not render minimize parameters."""
-        configs = get_equilibration_configs("2fs", shell_radius=25)
+        """Verify opt-in minimization applies only to eq1."""
+        configs = get_equilibration_configs("2fs", shell_radius=25, minimize=True)
 
         for config in configs[1:]:
             content = render_md_input(
@@ -390,14 +390,17 @@ class TestEquilibrationConfigs:
         assert eq1.params.stepsize == 0.2
         assert eq1.params.temperature == 1
         assert eq1.params.bath_coupling == 0.2
-        # Hydrogens are constrained in eq1 (as in eq2-eq5): the FIRE minimiser
-        # must constrain bonds to hydrogen regardless, so leaving them flexible
-        # for the following MD would minimise and integrate on different
-        # potentials. See EQ1_PARAMS in equilibration.py.
-        assert eq1.params.constrain_hydrogens is True
-        assert eq1.params.minimize is True
+        assert eq1.params.constrain_hydrogens is False
+        assert eq1.params.minimize is False
         assert eq1.sequence_restraint_force == 10.0
         assert eq1.distance_restraint_force == 1.5
+
+    def test_eq1_minimization_is_opt_in(self):
+        """FIRE and its matching hydrogen constraints are enabled explicitly."""
+        eq1 = get_equilibration_configs("2fs", shell_radius=25, minimize=True)[0]
+
+        assert eq1.params.minimize is True
+        assert eq1.params.constrain_hydrogens is True
 
     def test_eq5_uses_water_restraint(self):
         """Verify eq5 is configured for WATER_RESTRAINT."""

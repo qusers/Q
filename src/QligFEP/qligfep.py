@@ -110,8 +110,10 @@ class QligFEP:
         neq_schedule: Literal["sigmoidal", "linear"] = "sigmoidal",
         protein_charge: Optional[int] = None,
         charge_method: str = "ion_match",
+        minimize: bool = False,
     ):
         self.timestep = timestep
+        self.minimize = minimize
         self.lig1 = lig1
         self.lig2 = lig2
         self.FF = FF
@@ -1034,7 +1036,13 @@ class QligFEP:
         file names.
         """
         file_list = []
-        for i, eq_config in enumerate(get_equilibration_configs(self.timestep, int(self.sphereradius))):
+        for i, eq_config in enumerate(
+            get_equilibration_configs(
+                self.timestep,
+                int(self.sphereradius),
+                minimize=self.minimize,
+            )
+        ):
             dr_str, seq_str = self._format_restraints_for_eq(
                 overlapping_atoms, lig_size1, lig_size2, eq_config, self.dr_force
             )

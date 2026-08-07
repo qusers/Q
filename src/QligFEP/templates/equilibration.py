@@ -46,24 +46,19 @@ class EquilibrationConfig:
 # Equilibration parameter sets used to override defaults in MDParameters
 # ======================================================================
 
-# eq1 is identical for both timesteps (fixed small timestep for initial equilibration)
-# Minimization is enabled for eq1 to relax initial geometries before MD.
-#
-# Hydrogens are constrained here, as they are in eq2-eq5. The minimiser has to
-# constrain bonds to hydrogen regardless (the zero-LJ polar hydrogens of AMBER
-# collapse into acceptors otherwise, see fire_constrain_hydrogens in md.f90), so
-# leaving them flexible for the MD that follows would minimise on one potential
-# and integrate on another. The residual force that mismatch leaves behind shows
-# up as hot atoms on exactly the protons involved. Constraining them costs
-# nothing at 1 K, where H vibrations are not sampled anyway.
+# eq1 is identical for both timesteps (fixed small timestep for initial equilibration).
+# FIRE minimization is opt-in. When enabled, hydrogens are constrained here as
+# they are in eq2-eq5: the minimizer must constrain bonds to hydrogen regardless
+# (the zero-LJ polar hydrogens of AMBER collapse into acceptors otherwise; see
+# fire_constrain_hydrogens in md.f90). Without minimization, eq1 retains the
+# historical unconstrained-hydrogen protocol.
 EQ1_PARAMS = dict(
-    steps=5000,  # with minimization, I expect we can use fewer steps here
+    steps=5000,
     stepsize=0.2,
     temperature=1,
     bath_coupling=0.2,
-    constrain_hydrogens=True,
+    constrain_hydrogens=False,
     interval_output=5,
-    minimize=True,
 )
 
 # 2fs timestep variants
@@ -164,6 +159,7 @@ _CONFIGS_1FS = [
 def get_equilibration_configs(
     timestep: Literal["1fs", "2fs"],
     shell_radius: int,
+    minimize: bool = False,
 ) -> list[EquilibrationConfig]:
     """Return equilibration configurations for the given timestep.
 
@@ -177,19 +173,27 @@ def get_equilibration_configs(
     Args:
         timestep: Simulation timestep ("1fs" or "2fs")
         shell_radius: Spherical boundary radius
+        minimize: Run FIRE minimization before eq1. Disabled by default.
 
     Returns:
         List of EquilibrationConfig for eq1 through eq5
     """
     raw_configs = _CONFIGS_2FS if timestep == "2fs" else _CONFIGS_1FS
-
-    return [
-        EquilibrationConfig(
-            name=name,
-            params=MDParameters(**params, shell_radius=shell_radius),
-            sequence_restraint_force=seq_force,
-            distance_restraint_force=dr_force,
-            use_water_restraint=use_water,
+    configs = []
+    for name, params, seq_force, dr_force, use_water in raw_configs:
+        stage_params = dict(params)
+        if name == "eq1":
+            stage_params["minimize"] = minimize
+            # FIRE always constrains hydrogen bonds internally. Match the
+            # following eq1 MD potential only when minimization is requested.
+            stage_params["constrain_hydrogens"] = minimize
+        configs.append(
+            EquilibrationConfig(
+                name=name,
+                params=MDParameters(**stage_params, shell_radius=shell_radius),
+                sequence_restraint_force=seq_force,
+                distance_restraint_force=dr_force,
+                use_water_restraint=use_water,
+            )
         )
-        for name, params, seq_force, dr_force, use_water in raw_configs
-    ]
+    return configs
