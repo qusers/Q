@@ -1,5 +1,6 @@
 """Tests for thin platform adapters generated for the Python runner."""
 
+from QligFEP.qligfep import QligFEP
 from QligFEP.templates.production_run import (
     ProductionRunScriptConfig,
     render_production_run_script,
@@ -52,6 +53,25 @@ def test_serial_local_script_loops_without_scheduler_or_mpi():
     assert "--launcher" not in script
     assert '--qdyn "$qdyn"' in script
     assert "TMPDIR" not in script
+
+
+def test_qligfep_dispatches_production_runfile_generation(tmp_path):
+    run = object.__new__(QligFEP)
+    run.production = True
+    run.cluster = "LOCAL"
+    run.system = "water"
+    run.lig1 = "lig1"
+    run.lig2 = "lig2"
+    run.temperature = "298"
+    run.seeds = [1234, 5678]
+
+    run.write_runfile(str(tmp_path), file_list=[])
+
+    script = (tmp_path / "runLOCAL.sh").read_text()
+    assert "qligfep-run" in script
+    assert "temperatures=(298)" in script
+    assert "seeds=(1234 5678)" in script
+    assert "cp " not in script
 
 
 def test_parallel_local_script_uses_configured_process_count():
