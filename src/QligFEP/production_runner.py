@@ -288,6 +288,7 @@ def render_runtime_input(
     fep_file: str,
     restart_file: str | None,
     trajectory: bool = False,
+    final_file: str | None = None,
 ) -> str:
     """Render one transient Q input with runtime paths and checkpoint names."""
     input_root = Path(input_dir).resolve()
@@ -337,7 +338,7 @@ def render_runtime_input(
                 if restart_file is not None and not saw_restart:
                     output.append(f"restart                   {restart_file}")
                     saw_restart = True
-                output.append(f"final                     {planned.next_checkpoint}")
+                output.append(f"final                     {final_file or planned.next_checkpoint}")
                 continue
         output.append(line)
 
@@ -502,24 +503,30 @@ class ProductionRunner:
         completed_finals = {final_by_name[name] for name in completed_names}
         return any(child not in completed_finals for child in self.plan.children.get(parent, ()))
 
-    def _promote_checkpoint(self, planned: PlannedStage, state: dict) -> None:
-        next_path = self.work_dir / planned.next_checkpoint
-        checkpoint_path = self.work_dir / planned.checkpoint
-        if not next_path.is_file():
-            raise StageExecutionError(
-                f"{planned.stage.name} terminated normally but did not write {planned.next_checkpoint}"
-            )
-        os.replace(next_path, checkpoint_path)
-        state["checkpoints"][planned.stage.final] = planned.checkpoint
+    def _next_checkpoint(self, planned: PlannedStage, parent_checkpoint: str | None) -> str:
+        """Choose the lane slot not holding the parent checkpoint."""
+        if parent_checkpoint == planned.checkpoint:
+            return planned.next_checkpoint
+        return planned.checkpoint
 
+    def _record_checkpoint(self, planned: PlannedStage, checkpoint: str, state: dict) -> None:
+        checkpoint_path = self.work_dir / checkpoint
+        if not checkpoint_path.is_file():
+            raise StageExecutionError(
+                f"{planned.stage.name} terminated normally but did not write {checkpoint}"
+            )
+        state["checkpoints"][planned.stage.final] = checkpoint
+
+    def _retire_consumed_parent(self, planned: PlannedStage, state: dict) -> bool:
         parent = planned.stage.restart
         if parent is None or self._parent_has_pending_children(parent, state):
-            return
+            return False
         old_checkpoint = state["checkpoints"].pop(parent, None)
-        if old_checkpoint and old_checkpoint != planned.checkpoint:
+        if old_checkpoint and old_checkpoint not in state["checkpoints"].values():
             old_path = self.work_dir / old_checkpoint
-            if old_checkpoint not in state["checkpoints"].values() and old_path.exists():
+            if old_path.exists():
                 old_path.unlink()
+        return old_checkpoint is not None
 
     def _publish_terminal_restarts(self, state: dict) -> None:
         for logical_restart in self.plan.terminal_restarts:
@@ -531,7 +538,12 @@ class ProductionRunner:
             source = self.work_dir / checkpoint
             destination = self.work_dir / logical_restart
             if source != destination:
-                os.replace(source, destination)
+                if source.exists():
+                    os.replace(source, destination)
+                elif not destination.exists():
+                    raise RunnerConfigurationError(
+                        f"terminal checkpoint {checkpoint} and {logical_restart} are both missing"
+                    )
             state["checkpoints"][logical_restart] = logical_restart
 
     def run_dynamics(self) -> dict:
@@ -539,6 +551,11 @@ class ProductionRunner:
         self.work_dir.mkdir(parents=True, exist_ok=True)
         state = self._load_state()
         if len(state["completed_stages"]) == len(self.plan.stages):
+            self._publish_terminal_restarts(state)
+            if not state.get("qfep_complete", False):
+                state["status"] = "dynamics_complete"
+                state["error"] = None
+            self._write_state(state)
             return state
 
         state["status"] = "running"
@@ -550,9 +567,14 @@ class ProductionRunner:
             for planned in self.plan.stages[completed_count:]:
                 try:
                     parent_checkpoint = self._parent_checkpoint(planned.stage, state)
-                    next_path = self.work_dir / planned.next_checkpoint
-                    if next_path.exists():
-                        next_path.unlink()
+                    output_checkpoint = self._next_checkpoint(planned, parent_checkpoint)
+                    output_path = self.work_dir / output_checkpoint
+                    if output_path.exists():
+                        output_path.unlink()
+                    if planned.stage.energy is not None:
+                        stale_energy = self.work_dir / planned.stage.energy
+                        if stale_energy.exists():
+                            stale_energy.unlink()
                     rendered = render_runtime_input(
                         planned,
                         self.input_dir,
@@ -561,12 +583,15 @@ class ProductionRunner:
                         self.fep_file,
                         parent_checkpoint,
                         trajectory=self.trajectories,
+                        final_file=output_checkpoint,
                     )
                     self.current_input_path.write_text(rendered, encoding="utf-8")
                     self._run_qdyn(planned, log_stream)
+                    self._record_checkpoint(planned, output_checkpoint, state)
                     state["completed_stages"].append(planned.stage.name)
-                    self._promote_checkpoint(planned, state)
                     self._write_state(state)
+                    if self._retire_consumed_parent(planned, state):
+                        self._write_state(state)
                 except Exception as exc:
                     state["status"] = "failed"
                     state["error"] = str(exc)
