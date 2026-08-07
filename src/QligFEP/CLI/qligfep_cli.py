@@ -43,6 +43,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "dr_force": args.dr_force,
             "random_state": args.random_state,
             "wath_ligand_only": args.wath_ligand_only,
+            "production": args.production,
             "neq": args.neq,
             "neq_reps": args.neq_reps,
             "neq_steps": args.neq_steps,
@@ -80,6 +81,9 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 command_str += f" --{k}".replace("_", "-")
         elif k == "dr_force":
             command_str += f" --{k} {v}".replace("dr_force", "distance_restraint_force")
+        elif k == "production":
+            if v:
+                command_str += " --production"
         elif k == "neq":
             if v:
                 command_str += " --neq"

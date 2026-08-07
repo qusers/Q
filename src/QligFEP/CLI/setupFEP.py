@@ -44,6 +44,8 @@ def create_call(**kwargs):
         template += " -wath {water_thresh}"
     if "wath_ligand_only" in kwargs and kwargs["wath_ligand_only"]:
         template += " -wath-ligo"
+    if kwargs.get("production"):
+        template += " --production"
     if kwargs.get("neq"):
         template += (
             " --neq --neq-reps {neq_reps} --neq-steps {neq_steps} "
@@ -156,6 +158,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 water_thresh=args.water_thresh,
                 log=args.log,
                 wath_ligand_only=args.wath_ligand_only,
+                production=args.production,
                 neq=args.neq,
                 neq_reps=args.neq_reps,
                 neq_steps=args.neq_steps,

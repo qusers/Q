@@ -146,6 +146,15 @@ def parse_arguments(program: str) -> argparse.Namespace:
         help="Simulation timestep, default 2fs",
     )
     parser.add_argument(
+        "--production",
+        action="store_true",
+        help=(
+            "Use the platform-independent Python production runner: no trajectories by default, "
+            "rolling restart checkpoints, consolidated logging, resumable execution, and one "
+            "human-readable energies.csv per replicate."
+        ),
+    )
+    parser.add_argument(
         "-clean",
         "--files-to-clean",
         dest="to_clean",

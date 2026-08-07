@@ -39,6 +39,7 @@ from .templates import (
     render_qfep_input,
     render_qprep_fep_input,
 )
+from .templates.production_run import ProductionRunScriptConfig, render_production_run_script
 from .templates.run_local import LocalRunConfig, render_local_run
 from .templates.sections import (
     format_distance_restraints,
@@ -104,6 +105,7 @@ class QligFEP:
         dr_force: float = 0.5,
         random_state: Optional[int] = 42,
         wath_ligand_only: bool = False,
+        production: bool = False,
         neq: bool = False,
         neq_reps: int = 5,
         neq_steps: int = 50000,
@@ -133,6 +135,7 @@ class QligFEP:
         self.water_thresh = water_thresh
         self.dr_force = dr_force  # dr for distance restraint
         self.wath_ligand_only = wath_ligand_only
+        self.production = production
         self.neq = neq
         self.neq_reps = neq_reps
         self.neq_steps = neq_steps
@@ -140,6 +143,8 @@ class QligFEP:
         self.neq_relax_steps = neq_relax_steps
         self.neq_L = neq_L
         self.neq_schedule = neq_schedule
+        if self.production and self.neq:
+            raise ValueError("--production is currently available only for windowed FEP runs")
         if self.neq and self.cluster in ("LOCAL", "LOCALP"):
             # NEQ setups are generated from the SLURM run_neq.sh template, which needs the
             # qdynp/qdyn engine paths that only the cluster profiles carry; there is no local NEQ runner.
@@ -1531,7 +1536,49 @@ class QligFEP:
         except Exception:
             logger.warning(f"Could not change permission for {tgt}")
 
+    def _write_production_runner_runfile(self, writedir):
+        """Write the thin platform adapter for the Python production runner."""
+        cluster_config = CLUSTER_DICT[self.cluster]
+        qdyn = cluster_config["QDYN"]
+        if qdyn.startswith("qdyn="):
+            qdyn = qdyn.split("=", 1)[1]
+        if self.system == "water":
+            job_name = f"w_{self.lig1}_{self.lig2}"
+        elif self.system == "protein":
+            job_name = f"p_{self.lig1}_{self.lig2}"
+        else:
+            job_name = f"v_{self.lig1}_{self.lig2}"
+
+        partition = None
+        if self.cluster == "DARDEL":
+            partition = "shared"
+        elif self.cluster == "SNELLIUS":
+            partition = "rome"
+        is_local = self.cluster in ("LOCAL", "LOCALP")
+        config = ProductionRunScriptConfig(
+            qdyn=qdyn,
+            qfep=cluster_config["QFEP"],
+            ntasks=int(cluster_config["NTASKS"]),
+            temperatures=tuple(self.temperature.split(",")),
+            seeds=tuple(self.seeds),
+            fep_file="FEP1.fep",
+            job_name=job_name,
+            use_mpi=self.cluster != "LOCAL",
+            slurm=not is_local,
+            nodes=int(cluster_config["NODES"]),
+            time=cluster_config["TIME"],
+            modules=cluster_config["MODULES"],
+            account=cluster_config.get("ACCOUNT"),
+            partition=partition,
+        )
+        target = Path(writedir) / f"run{self.cluster}.sh"
+        target.write_text(render_production_run_script(config))
+        target.chmod(target.stat().st_mode | stat.S_IEXEC)
+
     def write_runfile(self, writedir, file_list):
+        if self.production:
+            self._write_production_runner_runfile(writedir)
+            return
         if self.cluster in ("LOCAL", "LOCALP"):
             self._write_local_runfile(writedir, file_list)
             return
