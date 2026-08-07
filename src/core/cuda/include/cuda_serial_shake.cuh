@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -22,15 +21,15 @@ class CudaSerialConstraintSolver {
     int n_constraints_ = 0;
     std::unique_ptr<HostDeviceBuffer<int>> molecule_constraint_offsets_;
     std::unique_ptr<HostDeviceBuffer<ShakeBond>> shake_bonds_;
-    std::unique_ptr<HostDeviceBuffer<std::uint8_t>> ready_;
     std::unique_ptr<HostDeviceBuffer<int>> failed_;
 };
 
-// GPU implementation of the original Q/CPU SHAKE update schedule.
+// GPU implementation of serial SHAKE by molecule.
 //
 // Molecules are independent, so they are processed in parallel.  Within one
-// molecule a single CUDA thread visits constraints serially in topology order
-// and retains the original persistent-ready behavior.
+// molecule a single CUDA thread visits constraints serially in topology order.
+// Every constraint is rechecked on every sweep so corrections to coupled bonds
+// cannot invalidate a constraint that was permanently marked ready.
 class CudaSerialShake final : public Shake {
    public:
     void apply(Context& ctx, HostDeviceBuffer<coord_t>& xcoords) override;

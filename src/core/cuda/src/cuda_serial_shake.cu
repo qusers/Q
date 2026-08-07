@@ -19,7 +19,6 @@ __global__ void serial_shake_by_molecule_kernel(
     coord_t* coords,
     const coord_t* xcoords,
     const double* winv,
-    std::uint8_t* ready,
     int* failed) {
     const int mol = blockIdx.x * blockDim.x + threadIdx.x;
     if (mol >= n_molecules) return;
@@ -33,8 +32,6 @@ __global__ void serial_shake_by_molecule_kernel(
     do {
         converged = true;
         for (int shake = first; shake < end; shake++) {
-            if (ready[shake]) continue;
-
             const ShakeBond shake_bond = shake_bonds[shake];
             const int ai = shake_bond.ai - 1;
             const int aj = shake_bond.aj - 1;
@@ -45,14 +42,11 @@ __global__ void serial_shake_by_molecule_kernel(
             const double current_dist2 = xij_x * xij_x + xij_y * xij_y + xij_z * xij_z;
             const double diff = shake_bond.dist2 - current_dist2;
 
-            if (fabs(diff) < shake_tol * shake_bond.dist2) {
-                ready[shake] = 1;
-            } else {
-                converged = false;
-            }
+            if (isfinite(current_dist2) && isfinite(diff) &&
+                fabs(diff) < shake_tol * shake_bond.dist2) continue;
 
-            // Match CpuShake/Q exactly: even a constraint that becomes ready
-            // on this visit receives its final correction.
+            converged = false;
+
             const double xxij_x = xcoords[ai].x - xcoords[aj].x;
             const double xxij_y = xcoords[ai].y - xcoords[aj].y;
             const double xxij_z = xcoords[ai].z - xcoords[aj].z;
@@ -71,6 +65,24 @@ __global__ void serial_shake_by_molecule_kernel(
         }
         try_times++;
     } while (try_times < shake_max_iter && !converged);
+
+    // Audit the final coordinates simultaneously. This is redundant after a
+    // correction-free sweep, but is required after the last allowed correction
+    // sweep and protects the solver contract if the loop changes later.
+    converged = true;
+    for (int shake = first; shake < end; shake++) {
+        const int ai = shake_bonds[shake].ai - 1;
+        const int aj = shake_bonds[shake].aj - 1;
+        const double dx = coords[ai].x - coords[aj].x;
+        const double dy = coords[ai].y - coords[aj].y;
+        const double dz = coords[ai].z - coords[aj].z;
+        const double dist2 = dx * dx + dy * dy + dz * dz;
+        if (!isfinite(dist2) ||
+            fabs(shake_bonds[shake].dist2 - dist2) >= shake_tol * shake_bonds[shake].dist2) {
+            converged = false;
+            break;
+        }
+    }
 
     if (!converged) {
         atomicExch(failed, 1);
@@ -107,7 +119,6 @@ void CudaSerialConstraintSolver::init(
 
     molecule_constraint_offsets_ = HostDeviceBuffer<int>::from_vector(offsets, true);
     shake_bonds_ = HostDeviceBuffer<ShakeBond>::from_vector(shake_bonds, true);
-    ready_ = std::make_unique<HostDeviceBuffer<std::uint8_t>>(n_constraints_, false, true);
     failed_ = std::make_unique<HostDeviceBuffer<int>>(1, true, true);
 }
 
@@ -117,7 +128,6 @@ void CudaSerialConstraintSolver::apply(
     const double* d_winv) {
     if (!enabled()) return;
 
-    ready_->zero();
     failed_->zero();
 
     const int blocks = (n_molecules_ + kSerialShakeThreads - 1) / kSerialShakeThreads;
@@ -128,7 +138,6 @@ void CudaSerialConstraintSolver::apply(
         d_coords,
         d_xcoords,
         d_winv,
-        ready_->gpu_data_p,
         failed_->gpu_data_p);
     check_cuda(cudaGetLastError());
 
