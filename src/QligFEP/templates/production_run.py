@@ -58,11 +58,12 @@ qdyn={shlex.quote(config.qdyn)}
 qfep={shlex.quote(config.qfep)}
 temperatures=({temperatures})
 seeds=({seeds})
-inputfiles="$(cd -P "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
-workdir="$(dirname "$inputfiles")"
 '''
 
     if config.slurm:
+        common += '''workdir=${SLURM_SUBMIT_DIR:?SLURM_SUBMIT_DIR is required}
+inputfiles="$workdir/inputfiles"
+'''
         total_jobs = len(config.temperatures) * len(config.seeds)
         header = [
             "#!/bin/bash",
@@ -118,6 +119,9 @@ trap write_footer EXIT
             + "\n"
         )
 
+    common += '''inputfiles="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+workdir="$(dirname "$inputfiles")"
+'''
     launcher = f"mpirun -n {config.ntasks}" if config.use_mpi else ""
     invocation = _runner_invocation(config, launcher)
     return (

@@ -36,6 +36,9 @@ def test_slurm_script_only_adapts_array_parameters_to_runner():
     assert '--input-dir "$inputfiles"' in script
     assert '--work-dir "$rundir"' in script
     assert '--launcher "mpirun -n $SLURM_NTASKS --map-by core --bind-to core"' in script
+    assert 'workdir=${SLURM_SUBMIT_DIR:?SLURM_SUBMIT_DIR is required}' in script
+    assert 'inputfiles="$workdir/inputfiles"' in script
+    assert "BASH_SOURCE" not in script
     assert 'rundir="$workdir/FEP1/$temperature/$run_num"' in script
     assert "TMPDIR" not in script
     assert "cp " not in script
@@ -52,6 +55,8 @@ def test_serial_local_script_loops_without_scheduler_or_mpi():
     assert 'for run_index in "${!seeds[@]}"' in script
     assert "--launcher" not in script
     assert '--qdyn "$qdyn"' in script
+    assert "BASH_SOURCE[0]" in script
+    assert "SLURM_SUBMIT_DIR" not in script
     assert "TMPDIR" not in script
 
 
