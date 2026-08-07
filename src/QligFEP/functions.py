@@ -1,5 +1,4 @@
 import numpy as np
-from openff.units import unit
 
 from .pdb_utils import pdb_parse_in
 
