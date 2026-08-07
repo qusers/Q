@@ -60,12 +60,32 @@ def _write_inputs(root: Path) -> None:
     )
     (root / "dualtop.top").write_text("topology")
     (root / "FEP1.fep").write_text("fep")
+    (root / "qfep.inp").write_text(
+        "\n".join(
+            [
+                "3",
+                "2 0",
+                "0.592 0",
+                "10",
+                "10",
+                "10",
+                "0",
+                "0",
+                "1 0",
+                "md_1000_0000.en",
+                "md_0500_0500.en",
+                "md_0000_1000.en",
+            ]
+        )
+        + "\n"
+    )
 
 
 def _write_fake_qdyn(path: Path) -> None:
     path.write_text(
         """#!/usr/bin/env python3
 import os
+import struct
 import sys
 from pathlib import Path
 
@@ -73,6 +93,8 @@ input_path = Path(sys.argv[1])
 text = input_path.read_text()
 stage = text.splitlines()[0].split(':', 1)[1].strip()
 final = None
+energy = None
+lambdas = []
 section = ''
 for raw in text.splitlines():
     line = raw.strip()
@@ -80,8 +102,13 @@ for raw in text.splitlines():
         section = line[1:-1].lower()
         continue
     fields = line.split(maxsplit=1)
-    if section == 'files' and fields and fields[0].lower() == 'final':
-        final = fields[1]
+    if section == 'files' and fields:
+        if fields[0].lower() == 'final':
+            final = fields[1]
+        elif fields[0].lower() == 'energy':
+            energy = fields[1]
+    elif section == 'lambdas' and fields:
+        lambdas = [float(value) for value in line.split()]
 
 failure_stage = os.environ.get('FAKE_FAIL_STAGE')
 failure_marker = Path('.fake-failure-used')
@@ -94,7 +121,31 @@ if final is None:
     print('missing final file', file=sys.stderr)
     sys.exit(2)
 Path(final).write_text('checkpoint for ' + stage)
+if energy:
+    with Path(energy).open('wb') as stream:
+        for state, lambda_value in enumerate(lambdas, 1):
+            payload = struct.pack('<i15d', state, lambda_value, *[float(state + i) for i in range(14)])
+            marker = struct.pack('<i', len(payload))
+            stream.write(marker + payload + marker)
+        empty = struct.pack('<i', 0)
+        stream.write(empty + empty)
 print('qdyn terminated normally.')
+"""
+    )
+    path.chmod(0o755)
+
+
+def _write_fake_qfep(path: Path) -> None:
+    path.write_text(
+        """#!/usr/bin/env python3
+import os
+import sys
+
+if os.environ.get('FAKE_QFEP_FAIL'):
+    print('qfep terminated abnormally')
+    sys.exit(2)
+print('# Part 1: Free energy perturbation summary:')
+print('fake free-energy result')
 """
     )
     path.chmod(0o755)
@@ -186,7 +237,76 @@ def test_rejects_resume_with_different_scientific_parameters(tmp_path):
         changed.run_dynamics()
 
 
-def test_fake_qdyn_is_executable(tmp_path):
+def test_full_run_converts_then_removes_native_energies(tmp_path):
+    input_dir = tmp_path / "inputs"
+    work_dir = tmp_path / "replicate"
+    input_dir.mkdir()
+    _write_inputs(input_dir)
     qdyn = tmp_path / "fake_qdyn.py"
+    qfep = tmp_path / "fake_qfep.py"
     _write_fake_qdyn(qdyn)
+    _write_fake_qfep(qfep)
+
+    state = _runner(input_dir, work_dir, qdyn).run(str(qfep))
+
+    assert state["status"] == "complete"
+    assert state["qfep_complete"] is True
+    assert state["binary_energies_removed"] is True
+    assert state["energy_conversion"]["frames"] == 3
+    assert state["energy_conversion"]["rows"] == 6
+    assert (work_dir / "qfep.out").read_text().startswith("# Part 1:")
+    energies_csv = (work_dir / "energies.csv").read_text()
+    assert "source_file,frame,record_type" in energies_csv
+    assert "md_1000_0000.en" in energies_csv
+    assert "md_0000_1000.en" in energies_csv
+    assert not list(work_dir.glob("*.en"))
+    assert not (work_dir / "current.inp").exists()
+
+
+def test_qfep_failure_preserves_native_energies(tmp_path, monkeypatch):
+    input_dir = tmp_path / "inputs"
+    work_dir = tmp_path / "replicate"
+    input_dir.mkdir()
+    _write_inputs(input_dir)
+    qdyn = tmp_path / "fake_qdyn.py"
+    qfep = tmp_path / "fake_qfep.py"
+    _write_fake_qdyn(qdyn)
+    _write_fake_qfep(qfep)
+    monkeypatch.setenv("FAKE_QFEP_FAIL", "1")
+
+    with pytest.raises(StageExecutionError, match="qfep failed"):
+        _runner(input_dir, work_dir, qdyn).run(str(qfep))
+
+    assert len(list(work_dir.glob("*.en"))) == 3
+    assert not (work_dir / "energies.csv").exists()
+    state = json.loads((work_dir / "run-state.json").read_text())
+    assert state["status"] == "failed"
+    assert state["qfep_complete"] is False
+    assert state["binary_energies_removed"] is False
+
+
+def test_keep_en_retains_native_energies_after_conversion(tmp_path):
+    input_dir = tmp_path / "inputs"
+    work_dir = tmp_path / "replicate"
+    input_dir.mkdir()
+    _write_inputs(input_dir)
+    qdyn = tmp_path / "fake_qdyn.py"
+    qfep = tmp_path / "fake_qfep.py"
+    _write_fake_qdyn(qdyn)
+    _write_fake_qfep(qfep)
+
+    state = _runner(input_dir, work_dir, qdyn).run(str(qfep), keep_binary_energies=True)
+
+    assert state["status"] == "complete"
+    assert state["binary_energies_removed"] is False
+    assert len(list(work_dir.glob("*.en"))) == 3
+    assert (work_dir / "energies.csv").is_file()
+
+
+def test_fake_executables_are_runnable(tmp_path):
+    qdyn = tmp_path / "fake_qdyn.py"
+    qfep = tmp_path / "fake_qfep.py"
+    _write_fake_qdyn(qdyn)
+    _write_fake_qfep(qfep)
     assert os.access(qdyn, os.X_OK)
+    assert os.access(qfep, os.X_OK)

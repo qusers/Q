@@ -19,6 +19,8 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from QligFEP.energy_converter import convert_energy_files
+
 _SECTION_RE = re.compile(r"^\s*\[([^]]+)]\s*$")
 _EQ_NUMBER_RE = re.compile(r"^eq(\d+)$")
 
@@ -409,6 +411,9 @@ class ProductionRunner:
             "completed_stages": [],
             "checkpoints": {},
             "terminal_restarts": list(self.plan.terminal_restarts),
+            "qfep_complete": False,
+            "energy_conversion": None,
+            "binary_energies_removed": False,
             "error": None,
         }
 
@@ -533,7 +538,7 @@ class ProductionRunner:
         """Run or resume all qdyn stages, returning the persisted run state."""
         self.work_dir.mkdir(parents=True, exist_ok=True)
         state = self._load_state()
-        if state["status"] in {"dynamics_complete", "complete"}:
+        if len(state["completed_stages"]) == len(self.plan.stages):
             return state
 
         state["status"] = "running"
@@ -574,9 +579,124 @@ class ProductionRunner:
         self._write_state(state)
         return state
 
+    def _qfep_energy_files(self) -> tuple[str, ...]:
+        qfep_input = self.input_dir / "qfep.inp"
+        if not qfep_input.is_file():
+            raise RunnerConfigurationError(f"qfep input is missing: {qfep_input}")
+        lines = [
+            line.split("!", 1)[0].strip()
+            for line in qfep_input.read_text(encoding="utf-8").splitlines()
+            if line.split("!", 1)[0].strip()
+        ]
+        try:
+            count = int(lines[0])
+        except (IndexError, ValueError) as exc:
+            raise RunnerConfigurationError(f"{qfep_input}: invalid energy file count") from exc
+        if count < 1 or len(lines) < count:
+            raise RunnerConfigurationError(f"{qfep_input}: incomplete energy file list")
+        energy_files = tuple(lines[-count:])
+        planned = set(self.plan.energy_files)
+        if len(energy_files) != len(set(energy_files)) or set(energy_files) != planned:
+            raise RunnerConfigurationError(
+                f"{qfep_input}: energy file list does not match the production stages"
+            )
+        return energy_files
+
+    def _run_qfep(self, qfep: str) -> None:
+        input_path = self.input_dir / "qfep.inp"
+        output_path = self.work_dir / "qfep.out"
+        with input_path.open("r", encoding="utf-8") as input_stream, output_path.open(
+            "w", encoding="utf-8"
+        ) as output_stream:
+            try:
+                result = subprocess.run(  # noqa: S603 - explicit configured executable
+                    [qfep],
+                    cwd=self.work_dir,
+                    stdin=input_stream,
+                    stdout=output_stream,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    check=False,
+                )
+            except OSError as exc:
+                raise StageExecutionError(f"could not start qfep: {exc}") from exc
+        output = output_path.read_text(encoding="utf-8")
+        if result.returncode != 0 or "# Part 1:" not in output:
+            raise StageExecutionError(
+                f"qfep failed: return code {result.returncode}, "
+                f"free-energy summary present={'# Part 1:' in output}"
+            )
+
+    def run_analysis(
+        self,
+        qfep: str,
+        energy_csv: str = "energies.csv",
+        keep_binary_energies: bool = False,
+    ) -> dict:
+        """Run qfep, consolidate energies, and safely retire native binaries."""
+        state = self._load_state()
+        if len(state["completed_stages"]) != len(self.plan.stages):
+            raise RunnerConfigurationError("cannot analyze an incomplete dynamics run")
+        if state["status"] == "complete":
+            return state
+
+        energy_files = self._qfep_energy_files()
+        energy_paths = tuple(self.work_dir / name for name in energy_files)
+        try:
+            missing = [str(path) for path in energy_paths if not path.is_file()]
+            conversion_exists = state.get("energy_conversion") is not None and (
+                self.work_dir / energy_csv
+            ).is_file()
+            if missing and not conversion_exists:
+                raise RunnerConfigurationError(
+                    "native energy files are missing before conversion: " + ", ".join(missing)
+                )
+
+            if not state.get("qfep_complete", False):
+                self._run_qfep(qfep)
+                state["qfep_complete"] = True
+                state["status"] = "qfep_complete"
+                self._write_state(state)
+
+            if not conversion_exists:
+                summary = convert_energy_files(energy_paths, self.work_dir / energy_csv)
+                state["energy_conversion"] = summary.to_dict()
+                state["status"] = "energy_converted"
+                self._write_state(state)
+
+            if not keep_binary_energies:
+                for path in energy_paths:
+                    if path.exists():
+                        path.unlink()
+                state["binary_energies_removed"] = True
+            else:
+                state["binary_energies_removed"] = False
+
+            if self.current_input_path.exists():
+                self.current_input_path.unlink()
+            state["status"] = "complete"
+            state["error"] = None
+            self._write_state(state)
+            return state
+        except Exception as exc:
+            state["status"] = "failed"
+            state["error"] = str(exc)
+            self._write_state(state)
+            raise
+
+    def run(
+        self,
+        qfep: str,
+        energy_csv: str = "energies.csv",
+        keep_binary_energies: bool = False,
+    ) -> dict:
+        """Run/resume dynamics and complete post-processing."""
+        self.run_dynamics()
+        return self.run_analysis(qfep, energy_csv, keep_binary_energies)
+
 
 def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    """Parse runner CLI arguments. Execution is added by the runner integration layer."""
+    """Parse platform-independent runner CLI arguments."""
     parser = argparse.ArgumentParser(prog="qligfep-run")
     parser.add_argument("--input-dir", required=True)
     parser.add_argument("--work-dir", default=".")
@@ -591,9 +711,44 @@ def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Optional platform launcher prefix, for example 'mpirun -n 8'",
     )
     parser.add_argument("--trajectories", action="store_true")
+    parser.add_argument("--energy-csv", default="energies.csv")
+    parser.add_argument(
+        "--keep-en",
+        action="store_true",
+        help="Retain native per-window energy files after validated CSV conversion",
+    )
     return parser.parse_args(argv)
 
 
 def launcher_command(launcher: str, executable: str, *arguments: str) -> list[str]:
     """Build a subprocess argument list without shell interpolation."""
     return [*shlex.split(launcher), executable, *arguments]
+
+
+def main(argv: Sequence[str] | None = None) -> dict:
+    args = parse_arguments(argv)
+    runner = ProductionRunner(
+        input_dir=args.input_dir,
+        work_dir=args.work_dir,
+        temperature=args.temperature,
+        seed=args.seed,
+        fep_file=args.fep_file,
+        qdyn=args.qdyn,
+        launcher=args.launcher,
+        trajectories=args.trajectories,
+    )
+    state = runner.run(
+        qfep=args.qfep,
+        energy_csv=args.energy_csv,
+        keep_binary_energies=args.keep_en,
+    )
+    print(json.dumps(state, indent=2))
+    return state
+
+
+def main_exe() -> None:
+    main()
+
+
+if __name__ == "__main__":
+    main_exe()
