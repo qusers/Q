@@ -34,7 +34,7 @@ def test_submit_script_records_job_and_prevents_duplicate_submission(tmp_path):
         "FAKE_SBATCH_CALLS": str(calls),
     }
     first = subprocess.run(
-        ["sh", str(submit_script), "2", "5"],
+        ["sh", str(submit_script)],
         cwd=tmp_path,
         env=env,
         check=True,
@@ -49,10 +49,25 @@ def test_submit_script_records_job_and_prevents_duplicate_submission(tmp_path):
         capture_output=True,
         text=True,
     )
+    selected_retry = subprocess.run(
+        ["sh", str(submit_script), "2", "5"],
+        cwd=tmp_path,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
     assert "Submitted Slurm job 123456;cluster" in first.stdout
     assert "Already submitted as job 123456;cluster" in second.stdout
+    assert "Submitted Slurm job 123456;cluster" in selected_retry.stdout
     assert (edge_dir / "submission-jobid.txt").read_text() == "123456;cluster\n"
     assert calls.read_text().splitlines() == [
-        f"--parsable --array=2,5 {input_dir / 'runHABROK.sh'}"
+        f"--parsable {input_dir / 'runHABROK.sh'}",
+        f"--parsable --array=2,5 {input_dir / 'runHABROK.sh'}",
+    ]
+    history = (edge_dir / "submission-history.tsv").read_text().splitlines()
+    assert [line.split("\t")[1:] for line in history] == [
+        ["all", "123456;cluster"],
+        ["2,5", "123456;cluster"],
     ]
