@@ -1,5 +1,6 @@
 """Module containing utility functions used by the command line interfaces of QligFEP."""
 
+import re
 from itertools import product
 from pathlib import Path
 
@@ -14,6 +15,38 @@ def get_avail_restraint_methods():
         "overlap",
         "kartograf",
     ]
+
+
+def parse_restraint_method(restraint_method: str) -> dict:
+    """Parse a restraint method into ``RestraintSetter`` keyword arguments."""
+    if restraint_method == "kartograf":
+        return {"kartograf_native": True, "kartograf_max_atom_distance": 0.95}
+
+    distance_pattern = r"_(\d+\.?\d*)$"
+    match = re.search(distance_pattern, restraint_method)
+    if match:
+        kartograf_max_atom_distance = float(match.group(1))
+        restraint_method = re.sub(distance_pattern, "", restraint_method)
+    else:
+        kartograf_max_atom_distance = 0.95
+
+    avail_methods = get_avail_restraint_methods()
+    if restraint_method not in avail_methods:
+        raise ValueError(f"Method {restraint_method} not recognized. Please use one of {avail_methods}")
+
+    atom_compare_method, permissiveness_lvl = restraint_method.split("_")
+    if permissiveness_lvl == "p":
+        params = {"strict_surround": False, "ignore_surround_atom_type": False}
+    elif permissiveness_lvl == "ls":
+        params = {"strict_surround": True, "ignore_surround_atom_type": True}
+    else:
+        params = {"strict_surround": True, "ignore_surround_atom_type": False}
+
+    return {
+        "atom_compare_method": atom_compare_method,
+        "kartograf_max_atom_distance": kartograf_max_atom_distance,
+        **params,
+    }
 
 
 def cysbonds_for_qprep(pdb_file: Path, comment_out: bool = True):

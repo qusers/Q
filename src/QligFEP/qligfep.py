@@ -11,9 +11,9 @@ import numpy as np
 import pandas as pd
 from sklearn.neighbors import NearestNeighbors
 
-from .CLI.utils import handle_cysbonds
+from .CLI.utils import handle_cysbonds, parse_restraint_method
 from .counter_ions import minimize_coulomb_on_sphere
-from .functions import COG, kT, overlapping_pairs, sigmoid
+from .functions import COG, overlapping_pairs, sigmoid
 from .IO import get_force_field_paths, qprep_error_check, replace, run_qprep
 from .logger import logger
 from .pdb_utils import (
@@ -26,8 +26,6 @@ from .pdb_utils import (
     rm_HOH_clash_NN,
     shift_from_ligand_collision,
 )
-from .restraints.restraint_setter import RestraintSetter
-from .scoring import parse_restraint_method
 from .settings.settings import CLUSTER_DICT, CONFIGS
 from .templates import (
     QprepFEPParameters,
@@ -43,7 +41,6 @@ from .templates.run_local import LocalRunConfig, render_local_run
 from .templates.sections import (
     format_distance_restraints,
     format_sequence_restraint,
-    format_wall_restraints,
     format_water_restraint,
 )
 
@@ -962,6 +959,11 @@ class QligFEP:
             reslist = ["LIG", "LID"]
             torestraint_list = overlapping_pairs(pdbfile, reslist)
         else:
+            # These preparation dependencies are distributed through conda-forge rather
+            # than PyPI. Import them only for restraint methods that need them so the
+            # analysis and input-rendering modules remain usable in a pip/uv environment.
+            from .restraints.restraint_setter import RestraintSetter
+
             parsed = parse_restraint_method(restraint_method)
             atom_max_distance = parsed.pop("kartograf_max_atom_distance", 0.95)
             parent_write_dir = Path(writedir).parent
@@ -1487,7 +1489,7 @@ class QligFEP:
         try:
             st = os.stat(submit_out)
             os.chmod(submit_out, st.st_mode | stat.S_IEXEC)
-        except:
+        except OSError:
             print("WARNING: Could not change permission for " + submit_out)
 
     def _write_local_runfile(self, writedir, file_list):

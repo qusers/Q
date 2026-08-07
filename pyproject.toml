@@ -37,9 +37,7 @@ dependencies = [
     "rdkit",
     "scikit-learn",
     "loguru",
-    "cinnabar",
     "MDAnalysis>=2.0.0",
-    "MolClusterkit @ git+https://github.com/David-Araripe/MolClusterkit.git#master",
 ]
 
 [project.optional-dependencies]

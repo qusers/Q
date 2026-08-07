@@ -15,7 +15,7 @@ from QligFEP.analysis_plotting import bootstrap_statistic, create_ddG_plot, prep
 
 
 def _edges():
-    # a handful of edges so cinnabar's bootstrap statistics have something to chew on
+    # A handful of edges so the bootstrap statistics have enough data.
     return {
         "edges": [
             {"from": "a", "to": "b", "ddg_value": 1.0, "Q_ddG_avg": 0.6, "Q_ddG_sem": 0.1},

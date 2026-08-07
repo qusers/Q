@@ -15,40 +15,6 @@ from tqdm import tqdm
 from .chemIO import MoleculeIO
 from .logger import logger
 
-# def find_best_reference(molecules: list[Molecule], lig_names: list[str]) -> str:
-#     """Find the molecule with the highest aggregate MCS similarity to all others.
-
-#     Computes a pairwise MCS similarity matrix and returns the name of the molecule
-#     whose total similarity to all others is highest, making it a good alignment reference.
-
-#     Args:
-#         molecules: List of Molecule objects to compare.
-#         lig_names: List of molecule names corresponding to `molecules`.
-
-#     Returns:
-#         Name of the best reference molecule.
-#     """
-#     from MolClusterkit.mcs import MCSClustering
-
-#     smiles_list = [mol.to_smiles() for mol in molecules]
-#     mcs_kwargs = {
-#         "bondCompare": "CompareOrderExact",
-#         "ringCompare": "StrictRingFusion",
-#         "ringMatchesRingOnly": True,
-#         "completeRingsOnly": True,
-#         "timeout": 20,
-#     }
-#     mcs_cluster = MCSClustering(smiles_list, **mcs_kwargs)
-#     logger.info(
-#         "Scoring ligands based on Maximum Common Substructure to find the best reference."
-#     )
-#     _, simi_matrix = mcs_cluster.compute_similarity_matrix()
-
-#     highest_score_idx = simi_matrix.sum(axis=1).argmax()
-#     best_ref = lig_names[highest_score_idx]
-#     logger.info(f"Best reference molecule: {best_ref}")
-#     return best_ref
-
 
 class fkcombuLigandAligner(MoleculeIO):
     """Align ligands based on three-dimensional coordinates using the fkcombu program.
@@ -139,12 +105,12 @@ class fkcombuLigandAligner(MoleculeIO):
             FileNotFoundError: If the kcombu executable is not found.
         """
         if scaffold_lock:
-            fkcombu_params.setdefault("rgrnd", False)    # don't randomize rigid-body pose
-            fkcombu_params.setdefault("xtr", 0.0)        # freeze translation
-            fkcombu_params.setdefault("xro", 0.0)        # freeze rotation
-            fkcombu_params.setdefault("xroini", 30.0)    # limit initial torsion to ±30°
-            fkcombu_params.setdefault("wepc", 0.3)       # soften protein clash
-            fkcombu_params.setdefault("cfstp", False)     # don't stamp torsions from reference
+            fkcombu_params.setdefault("rgrnd", False)  # don't randomize rigid-body pose
+            fkcombu_params.setdefault("xtr", 0.0)  # freeze translation
+            fkcombu_params.setdefault("xro", 0.0)  # freeze rotation
+            fkcombu_params.setdefault("xroini", 30.0)  # limit initial torsion to ±30°
+            fkcombu_params.setdefault("wepc", 0.3)  # soften protein clash
+            fkcombu_params.setdefault("cfstp", False)  # don't stamp torsions from reference
         super().__init__(lig, pattern=pattern, reindex_hydrogens=reindex_hydrogens)
         self.kcombu_exe = self._set_fkcombu_exe()
         self.n_threads = n_threads
@@ -153,8 +119,15 @@ class fkcombuLigandAligner(MoleculeIO):
         self.alignment_scores: dict[str, dict[str, float]] = {}
         self.temp_dir: Optional[tempfile.TemporaryDirectory] = None
         self.fkparams = self._process_fkparams(
-            {"P": protein, "E": energy.upper(), "S": search.upper(), "SD": steep_descend,
-             "at": atom_type.upper(), "bo": bond_type.upper(), **fkcombu_params},
+            {
+                "P": protein,
+                "E": energy.upper(),
+                "S": search.upper(),
+                "SD": steep_descend,
+                "at": atom_type.upper(),
+                "bo": bond_type.upper(),
+                **fkcombu_params,
+            },
             connectivity.upper(),
             top_constraint_tol,
         )
