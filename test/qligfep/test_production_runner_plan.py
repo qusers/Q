@@ -179,6 +179,37 @@ def test_runtime_input_uses_shared_inputs_and_disables_trajectory(tmp_path):
     assert "energy                    md_1000_0000.en" in rendered
 
 
+def test_runtime_input_uses_short_relative_paths_from_replicate(tmp_path):
+    input_dir = tmp_path / ("long-input-directory-" * 5) / "inputfiles"
+    work_dir = input_dir.parent / "FEP1" / "298" / "1"
+    input_dir.mkdir(parents=True)
+    work_dir.mkdir(parents=True)
+    _write_equilibration(input_dir)
+    _write_input(
+        input_dir,
+        "md_1000_0000",
+        "md_1000_0000.re",
+        "eq5.re",
+        "md_1000_0000.en",
+        (1, 0),
+    )
+    stage = build_run_plan(input_dir).stages[-1]
+
+    rendered = render_runtime_input(
+        stage,
+        input_dir,
+        temperature=298,
+        seed=1,
+        fep_file="FEP1.fep",
+        restart_file="checkpoint.equilibration.re",
+        work_dir=work_dir,
+    )
+
+    assert "topology                  ../../../inputfiles/dualtop.top" in rendered
+    assert "fep                       ../../../inputfiles/FEP1.fep" in rendered
+    assert str(input_dir) not in rendered
+
+
 def test_runtime_input_can_retain_trajectories(tmp_path):
     _write_equilibration(tmp_path)
     _write_input(tmp_path, "md_1000_0000", "md_1000_0000.re", "eq5.re", "md_1000_0000.en", (1, 0))

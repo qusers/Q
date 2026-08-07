@@ -275,9 +275,12 @@ def build_run_plan(input_dir: str | Path) -> RunPlan:
     return RunPlan(planned, normalized_children, terminal_restarts)
 
 
-def _runtime_path(value: str, input_dir: Path) -> str:
+def _runtime_path(value: str, input_dir: Path, work_dir: Path | None = None) -> str:
     path = Path(value)
-    return str(path if path.is_absolute() else (input_dir / path).resolve())
+    source = path if path.is_absolute() else (input_dir / path).resolve()
+    if work_dir is None:
+        return str(source)
+    return os.path.relpath(source, start=work_dir)
 
 
 def render_runtime_input(
@@ -289,9 +292,11 @@ def render_runtime_input(
     restart_file: str | None,
     trajectory: bool = False,
     final_file: str | None = None,
+    work_dir: str | Path | None = None,
 ) -> str:
     """Render one transient Q input with runtime paths and checkpoint names."""
     input_root = Path(input_dir).resolve()
+    runtime_root = Path(work_dir).resolve() if work_dir is not None else None
     replacements = {
         "T_VAR": str(temperature),
         "SEED_VAR": str(seed),
@@ -322,10 +327,14 @@ def render_runtime_input(
             continue
         if section == "files":
             if key == "topology":
-                output.append(f"topology                  {_runtime_path(value, input_root)}")
+                output.append(
+                    f"topology                  {_runtime_path(value, input_root, runtime_root)}"
+                )
                 continue
             if key == "fep":
-                output.append(f"fep                       {_runtime_path(fep_file, input_root)}")
+                output.append(
+                    f"fep                       {_runtime_path(fep_file, input_root, runtime_root)}"
+                )
                 continue
             if key == "trajectory" and not trajectory:
                 continue
@@ -584,6 +593,7 @@ class ProductionRunner:
                         parent_checkpoint,
                         trajectory=self.trajectories,
                         final_file=output_checkpoint,
+                        work_dir=self.work_dir,
                     )
                     self.current_input_path.write_text(rendered, encoding="utf-8")
                     self._run_qdyn(planned, log_stream)
