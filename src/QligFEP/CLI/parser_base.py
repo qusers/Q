@@ -151,15 +151,26 @@ def parse_arguments(program: str) -> argparse.Namespace:
         help="Run FIRE energy minimization before the first equilibration stage. Disabled by default.",
     )
     parser.add_argument(
+        "--production",
+        action="store_true",
+        help=(
+            "Minimize equilibrium FEP output: disable trajectory files and, unless --clean is "
+            "specified, remove .en, .re, and dualtop.top files after qfep has produced "
+            "energies.csv and qfep.out."
+        ),
+    )
+    parser.add_argument(
         "-clean",
+        "--clean",
         "--files-to-clean",
         dest="to_clean",
         nargs="+",
         default=None,
         help=(
-            "Files to clean after the simulation. The arguments are given as a list of strings "
-            "and the cleaning is done by adding the command `rm -rf *{arg1} *{arg2}` to the job submission. "
-            "Usage example: `-clean dcd` will remove all dcd files after the simulation. If left as None, won't clean any files."
+            "File suffixes to remove after a successful simulation and qfep run. "
+            "Usage example: `--clean en dualtop.top` removes *en and *dualtop.top. "
+            "When explicitly supplied with --production, this list replaces the production "
+            "defaults, allowing other files (for example .re files) to be retained."
         ),
     )
     parser.add_argument(

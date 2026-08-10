@@ -141,11 +141,7 @@ def render_md_input(
             f"max_minimize_steps        {params.max_minimize_steps}\n"
             f"minimize_tolerance        {params.minimize_tolerance}\n"
             f"minimize_step_size        {params.minimize_step_size}\n"
-            + (
-                "minimize_freeze_qatoms    on\n"
-                if params.minimize_freeze_qatoms
-                else ""
-            )
+            + ("minimize_freeze_qatoms    on\n" if params.minimize_freeze_qatoms else "")
         )
         if params.minimize
         else ""

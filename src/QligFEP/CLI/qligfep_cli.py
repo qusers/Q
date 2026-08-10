@@ -39,6 +39,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "sampling": args.sampling,
             "timestep": args.timestep,
             "minimize": args.minimize,
+            "production": args.production,
             "to_clean": args.to_clean,
             "water_thresh": args.water_thresh,
             "dr_force": args.dr_force,
@@ -81,7 +82,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 command_str += f" --{k}".replace("_", "-")
         elif k == "dr_force":
             command_str += f" --{k} {v}".replace("dr_force", "distance_restraint_force")
-        elif k in ("neq", "minimize"):
+        elif k in ("neq", "minimize", "production"):
             if v:
                 command_str += f" --{k}"
         elif k == "neq_L":
