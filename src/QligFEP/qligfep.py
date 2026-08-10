@@ -37,7 +37,7 @@ from .templates import (
     render_qfep_input,
     render_qprep_fep_input,
 )
-from .templates.run_local import LocalRunConfig, render_local_run
+from .templates.run_local import LocalRunConfig, format_cleanup_globs, render_local_run
 from .templates.sections import (
     format_distance_restraints,
     format_sequence_restraint,
@@ -62,6 +62,9 @@ CHLORIDE_NAME = {
 # Residue name for the co-alchemical counter-water. Must not be HOH, since
 # qprep treats HOH as solvent and the counter-water needs to be a solute.
 COUNTER_WATER_RESNAME = "CWT"
+
+# Applied only when --production is used without an explicit --clean list.
+PRODUCTION_CLEANUP = ("en", "re", "dualtop.top")
 
 
 def lrf_required_for_edge(same_charge: "bool | None") -> bool:
@@ -111,9 +114,11 @@ class QligFEP:
         protein_charge: Optional[int] = None,
         charge_method: str = "ion_match",
         minimize: bool = False,
+        production: bool = False,
     ):
         self.timestep = timestep
         self.minimize = minimize
+        self.production = production
         self.lig1 = lig1
         self.lig2 = lig2
         self.FF = FF
@@ -128,7 +133,12 @@ class QligFEP:
         self.temperature = temperature
         self.replicates = replicates
         self.sampling = sampling
-        self.to_clean = to_clean
+        if to_clean is not None:
+            self.to_clean = list(to_clean)
+        elif self.production:
+            self.to_clean = list(PRODUCTION_CLEANUP)
+        else:
+            self.to_clean = None
         self.water_thresh = water_thresh
         self.dr_force = dr_force  # dr for distance restraint
         self.wath_ligand_only = wath_ligand_only
@@ -187,6 +197,13 @@ class QligFEP:
         else:
             self.atomoffset = 0
             self.residueoffset = 0
+
+    def _trajectory_output(self, params, filename: str) -> Optional[str]:
+        """Configure and return a trajectory filename for an MD input."""
+        if self.production:
+            params.interval_trajectory = 0
+            return None
+        return filename
 
     def set_seeds(self, random_state):
         """Set the seeds for reproduciblity"""
@@ -1053,7 +1070,7 @@ class QligFEP:
                 params=eq_config.params,
                 lambda1=eq_lambda1,
                 lambda2=eq_lambda2,
-                trajectory_file=f"{eq_config.name}.dcd",
+                trajectory_file=self._trajectory_output(eq_config.params, f"{eq_config.name}.dcd"),
                 final_file=f"{eq_config.name}.re",
                 restart_file=f"eq{i}.re" if i > 0 else None,
                 distance_restraints=dr_str,
@@ -1227,7 +1244,7 @@ class QligFEP:
             params=prod_config.params,
             lambda1="0.500",
             lambda2="0.500",
-            trajectory_file="md_0500_0500.dcd",
+            trajectory_file=self._trajectory_output(prod_config.params, "md_0500_0500.dcd"),
             final_file="md_0500_0500.re",
             restart_file="eq5.re",
             energy_file="md_0500_0500.en",
@@ -1257,7 +1274,7 @@ class QligFEP:
                     params=prod_config.params,
                     lambda1=l1,
                     lambda2=l2,
-                    trajectory_file=f"{filename}.dcd",
+                    trajectory_file=self._trajectory_output(prod_config.params, f"{filename}.dcd"),
                     final_file=f"{filename}.re",
                     restart_file=f"{filename_N}.re",
                     energy_file=f"{filename}.en",
@@ -1300,7 +1317,7 @@ class QligFEP:
             params=prod_config.params,
             lambda1="1.000",
             lambda2="0.000",
-            trajectory_file="md_1000_0000.dcd",
+            trajectory_file=self._trajectory_output(prod_config.params, "md_1000_0000.dcd"),
             final_file="md_1000_0000.re",
             restart_file="eq5.re",
             energy_file="md_1000_0000.en",
@@ -1329,7 +1346,7 @@ class QligFEP:
                 params=prod_config.params,
                 lambda1=l1,
                 lambda2=l2,
-                trajectory_file=f"{filename}.dcd",
+                trajectory_file=self._trajectory_output(prod_config.params, f"{filename}.dcd"),
                 final_file=f"{filename}.re",
                 restart_file=f"{filename_N}.re",
                 energy_file=f"{filename}.en",
@@ -1363,7 +1380,7 @@ class QligFEP:
             params=params,
             lambda1=lambda1,
             lambda2=lambda2,
-            trajectory_file="neq.dcd",
+            trajectory_file=self._trajectory_output(params, "neq.dcd"),
             final_file="FINALFILE",
             restart_file="RESTARTFILE",
             distance_restraints=distance_restraints,
@@ -1473,7 +1490,7 @@ class QligFEP:
                     continue
                 outfile.write(outline)
                 if line.strip() == "#CLEANUP" and self.to_clean is not None:
-                    rm_line = "rm -r " + " ".join(["*" + x for x in self.to_clean]) + "\n"
+                    rm_line = "rm -f " + " ".join(format_cleanup_globs(self.to_clean)) + "\n"
                     outfile.write(rm_line)
 
         try:
@@ -1620,7 +1637,7 @@ class QligFEP:
                 if line.strip() == "#CLEANUP" and self.to_clean is not None:
                     replacements["CLEANUP"] = "#Cleaned {} files\n".format(" ".join(self.to_clean))
                     outline = replace(line, replacements)
-                    rm_line = "rm -r " + " ".join(["*" + x for x in self.to_clean]) + "\n"
+                    rm_line = "rm -f " + " ".join(format_cleanup_globs(self.to_clean)) + "\n"
                     outfile.write(rm_line)
                     outfile.write(outline[1:])
 

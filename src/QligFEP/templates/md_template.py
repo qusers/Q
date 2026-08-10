@@ -95,7 +95,7 @@ def render_md_input(
     params: MDParameters,
     lambda1: str,
     lambda2: str,
-    trajectory_file: str,
+    trajectory_file: str | None,
     final_file: str,
     distance_restraints: str = "",
     sequence_restraints: str = "",
@@ -111,7 +111,7 @@ def render_md_input(
         params: MD simulation parameters
         lambda1: First lambda value (e.g., "0.500" or "FLOAT_LAMBDA1")
         lambda2: Second lambda value (e.g., "0.500" or "FLOAT_LAMBDA2")
-        trajectory_file: Trajectory output filename (e.g., "eq1.dcd")
+        trajectory_file: Trajectory output filename (e.g., "eq1.dcd"), or None to omit it
         final_file: Final restart filename (e.g., "eq1.re")
         distance_restraints: Pre-formatted distance restraints section
         sequence_restraints: Pre-formatted sequence restraints section
@@ -139,11 +139,7 @@ def render_md_input(
             f"max_minimize_steps        {params.max_minimize_steps}\n"
             f"minimize_tolerance        {params.minimize_tolerance}\n"
             f"minimize_step_size        {params.minimize_step_size}\n"
-            + (
-                "minimize_freeze_qatoms    on\n"
-                if params.minimize_freeze_qatoms
-                else ""
-            )
+            + ("minimize_freeze_qatoms    on\n" if params.minimize_freeze_qatoms else "")
         )
         if params.minimize
         else ""
@@ -153,6 +149,7 @@ def render_md_input(
         f"energy                    {params.interval_energy}\n" if params.interval_energy is not None else ""
     )
 
+    trajectory_file_name = f"trajectory                {trajectory_file}\n" if trajectory_file else ""
     restart_file_name = f"restart                   {restart_file}\n" if restart_file else ""
     energy_file_name = f"energy                    {energy_file}\n" if energy_file else ""
 
@@ -197,7 +194,7 @@ non_bond                  {params.interval_non_bond}
 
 [files]
 topology                  {params.topology}
-trajectory                {trajectory_file}
+{trajectory_file_name}\
 {restart_file_name}\
 {energy_file_name}\
 final                     {final_file}
