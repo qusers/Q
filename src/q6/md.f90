@@ -5220,7 +5220,10 @@ subroutine md_run
   real(8)                         :: Ekinmax
   real(8)                         :: Tscale_solute,Tscale_solvent
   real(8)                         :: time0, time1, time_per_step, startloop
-  integer(4)                      :: time_completion
+  real(8)                         :: progress_percent
+  integer                         :: eta_total_seconds
+  integer                         :: eta_hours, eta_minutes, eta_seconds
+  real(8), parameter              :: timing_interval = 30.0d0
   ! minimization local variables
   integer                         :: min_iter, min_phase
   real(8)                         :: min_grms, min_E_last, min_alpha
@@ -5285,11 +5288,6 @@ subroutine md_run
 120 format(a7,' temperatures are : Ttot =',f10.2,' Tfree =',f10.2)
     write (*,*)
 
-    ! init timer
-    time0 = rtime()
-
-    ! Init timer of total loop time
-    startloop = rtime()
   end if
 
   ! NEQ (lambda_scaling) validation, before the minimization pre-loop: pot_energy's
@@ -5492,6 +5490,13 @@ subroutine md_run
 
   work_accumulated = 0.0_8
 
+  ! Start timing after any minimization so that progress estimates describe
+  ! the dynamics loop only.  time0 controls how often progress is reported.
+  if (nodeid .eq. 0) then
+    startloop = rtime()
+    time0 = startloop
+  end if
+
   !***********************************************************************
   !       begin MAIN DYNAMICS LOOP (Verlet leap-frog algorithm)
   !***********************************************************************
@@ -5511,15 +5516,22 @@ subroutine md_run
       end if
 
       if ((nodeid .eq. 0) .and. (istep > 0)) then
-        ! print timing info
-        call centered_heading('Timing', '-')
+        ! Pair lists may be rebuilt many times per second, so report progress
+        ! on a wall-clock cadence instead of at every rebuild.
         time1 = rtime()
-        time_per_step = (time1-time0)/NBcycle
-        time_completion = int(time_per_step*(nsteps-istep)/60)
-        time0 = time1
-        write(*,222) time_per_step, time_completion
-222     format('Seconds per step (wall-clock): ', f5.2, &
-          ' Estimated completion in',i6,' minutes')
+        if (time1-time0 .ge. timing_interval) then
+          time_per_step = (time1-startloop)/dble(istep)
+          progress_percent = 100.0d0*dble(istep)/dble(nsteps)
+          eta_total_seconds = ceiling(time_per_step*dble(nsteps-istep))
+          eta_hours = eta_total_seconds/3600
+          eta_minutes = mod(eta_total_seconds, 3600)/60
+          eta_seconds = mod(eta_total_seconds, 60)
+          time0 = time1
+          write(*,222) istep, nsteps, progress_percent, time_per_step, &
+                       eta_hours, eta_minutes, eta_seconds
+222       format('Progress ',i0,'/',i0,' (',f5.1,'%): ',f9.4, &
+            ' s/step, ETA ',i0,':',i2.2,':',i2.2)
+        end if
       end if
 
       ! update lists of nonbonded interaction pairs
