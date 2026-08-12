@@ -1,19 +1,19 @@
-#include "shake.h"
+#include "constraint_force.h"
 
 #include <set>
 #include <vector>
 
-void Shake::init(Context& ctx, const ParseResult& parsed) {
+void ConstraintForce::init(Context& ctx, const ParseResult& parsed) {
     build_constraints(ctx, parsed);
     init_backend(ctx);
 }
 
-void Shake::build_constraints(Context& ctx, const ParseResult& parsed) {
+void ConstraintForce::build_constraints(Context& ctx, const ParseResult& parsed) {
     /*
      */
     data_.n_constraints = 0;
-    std::vector<ShakeBond> shake_bonds;
-    std::vector<int> mol_n_shakes(ctx.n_molecules());
+    std::vector<ConstraintBond> constraint_bonds;
+    std::vector<int> mol_n_constraints(ctx.n_molecules());
 
     int current_mol = 0;
 
@@ -37,16 +37,15 @@ void Shake::build_constraints(Context& ctx, const ParseResult& parsed) {
             data_.n_constraints++;
             double dist = cbonds[bonds[bi].code - 1].b0;
             double dist2 = dist * dist;
-            shake_bonds.emplace_back(ShakeBond{ai + 1, aj + 1, dist2});
-            mol_n_shakes[current_mol]++;
+            constraint_bonds.emplace_back(ConstraintBond{ai + 1, aj + 1, dist2});
+            mol_n_constraints[current_mol]++;
 
             auto pair = std::minmax(bonds[bi].ai, bonds[bi].aj);
-            constrained_pairs.insert(pair); 
+            constrained_pairs.insert(pair);
         }
     }
     // upload
-    data_.shake_bonds = HostDeviceBuffer<ShakeBond>::from_vector(shake_bonds, ctx.command_info.requested_gpu);
-    data_.mol_n_shakes = HostDeviceBuffer<int>::from_vector(mol_n_shakes, ctx.command_info.requested_gpu);
+    data_.constraint_bonds = HostDeviceBuffer<ConstraintBond>::from_vector(constraint_bonds, ctx.command_info.requested_gpu);
+    data_.mol_n_constraints = HostDeviceBuffer<int>::from_vector(mol_n_constraints, ctx.command_info.requested_gpu);
     data_.constrained_pairs = std::move(constrained_pairs);
 }
-

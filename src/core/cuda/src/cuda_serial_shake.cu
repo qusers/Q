@@ -15,7 +15,7 @@ constexpr int kSerialShakeThreads = 128;
 __global__ void serial_shake_by_molecule_kernel(
     int n_molecules,
     const int* molecule_constraint_offsets,
-    const ShakeBond* shake_bonds,
+    const ConstraintBond* shake_bonds,
     coord_t* coords,
     const coord_t* xcoords,
     const double* winv,
@@ -35,7 +35,7 @@ __global__ void serial_shake_by_molecule_kernel(
         for (int shake = first; shake < end; shake++) {
             if (ready[shake]) continue;
 
-            const ShakeBond shake_bond = shake_bonds[shake];
+            const ConstraintBond shake_bond = shake_bonds[shake];
             const int ai = shake_bond.ai - 1;
             const int aj = shake_bond.aj - 1;
 
@@ -93,7 +93,7 @@ __global__ void serial_shake_by_molecule_kernel(
 
 void CudaSerialConstraintSolver::init(
     const std::vector<int>& molecule_constraint_counts,
-    const std::vector<ShakeBond>& shake_bonds) {
+    const std::vector<ConstraintBond>& shake_bonds) {
     n_molecules_ = static_cast<int>(molecule_constraint_counts.size());
     n_constraints_ = static_cast<int>(shake_bonds.size());
 
@@ -106,7 +106,7 @@ void CudaSerialConstraintSolver::init(
     }
 
     molecule_constraint_offsets_ = HostDeviceBuffer<int>::from_vector(offsets, true);
-    shake_bonds_ = HostDeviceBuffer<ShakeBond>::from_vector(shake_bonds, true);
+    shake_bonds_ = HostDeviceBuffer<ConstraintBond>::from_vector(shake_bonds, true);
     ready_ = std::make_unique<HostDeviceBuffer<std::uint8_t>>(n_constraints_, false, true);
     failed_ = std::make_unique<HostDeviceBuffer<int>>(1, true, true);
 }
@@ -139,10 +139,10 @@ void CudaSerialConstraintSolver::apply(
 }
 
 void CudaSerialShake::init_backend(Context& ctx) {
-    const int* counts = data_.mol_n_shakes->cpu_data_p;
+    const int* counts = data_.mol_n_constraints->cpu_data_p;
     std::vector<int> molecule_constraint_counts(counts, counts + ctx.n_molecules());
-    const ShakeBond* bonds = data_.shake_bonds->cpu_data_p;
-    std::vector<ShakeBond> shake_bonds(bonds, bonds + data_.n_constraints);
+    const ConstraintBond* bonds = data_.constraint_bonds->cpu_data_p;
+    std::vector<ConstraintBond> shake_bonds(bonds, bonds + data_.n_constraints);
     solver_.init(molecule_constraint_counts, shake_bonds);
 }
 
@@ -154,7 +154,7 @@ void CudaSerialShake::apply_to(Context& ctx, coord_t* d_coords, coord_t* d_xcoor
     solver_.apply(d_coords, d_xcoords, ctx.winv->gpu_data_p);
 }
 
-void CudaSerialShake::initial_shake(Context& ctx) {
+void CudaSerialShake::initial_constraint(Context& ctx) {
     HostDeviceBuffer<coord_t> xcoords(ctx.n_atoms, true, true);
     coord_t* d_coords = ctx.coords->gpu_data_p;
     coord_t* d_xcoords = xcoords.gpu_data_p;

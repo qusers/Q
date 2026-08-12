@@ -1,9 +1,9 @@
 #pragma once
-#include "shake.h"
-class CpuShake : public Shake {
+#include "constraint_force.h"
+class CpuShake : public ConstraintForce {
    public:
     void apply(Context& ctx, HostDeviceBuffer<coord_t>& xcoords) override;
-    void initial_shake(Context& ctx) override;
+    void initial_constraint(Context& ctx) override;
 
    private:
     void apply_to(Context& ctx, coord_t* coords, coord_t* xcoords);

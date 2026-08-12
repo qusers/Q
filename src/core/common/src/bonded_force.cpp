@@ -7,7 +7,7 @@ inline double deg2rad(double d) {
 
 }  // namespace
 
-void BondedForce::init(Context& ctx, const ParseResult& parsed, const ShakeData& shake_data) {
+void BondedForce::init(Context& ctx, const ParseResult& parsed, const ConstraintData& shake_data) {
     build_bonds(ctx, parsed, shake_data);
     build_angles(ctx, parsed, shake_data);
     build_torsions(ctx, parsed, shake_data);
@@ -15,7 +15,7 @@ void BondedForce::init(Context& ctx, const ParseResult& parsed, const ShakeData&
     init_backend(ctx);
 }
 
-void BondedForce::build_bonds(Context& ctx, const ParseResult& parsed, const ShakeData& shake_data) {
+void BondedForce::build_bonds(Context& ctx, const ParseResult& parsed, const ConstraintData& shake_data) {
     const bool run_gpu = ctx.command_info.requested_gpu;
 
     std::vector<bond_idx_t> ids;
@@ -39,7 +39,7 @@ void BondedForce::build_bonds(Context& ctx, const ParseResult& parsed, const Sha
     data_.bond.params = HostDeviceBuffer<dparam2_t>::from_vector(params, run_gpu);
     data_.bond.eslot = HostDeviceBuffer<int>::from_vector(eslot, run_gpu);
 }
-void BondedForce::build_angles(Context& ctx, const ParseResult& parsed, const ShakeData& shake_data) {
+void BondedForce::build_angles(Context& ctx, const ParseResult& parsed, const ConstraintData& shake_data) {
     const bool run_gpu = ctx.command_info.requested_gpu;
 
     std::vector<angle_idx_t> ids;
@@ -63,7 +63,7 @@ void BondedForce::build_angles(Context& ctx, const ParseResult& parsed, const Sh
     data_.angle.params = HostDeviceBuffer<dparam2_t>::from_vector(params, run_gpu);
     data_.angle.eslot = HostDeviceBuffer<int>::from_vector(eslot, run_gpu);
 }
-void BondedForce::build_torsions(Context& ctx, const ParseResult& parsed, const ShakeData& shake_data) {
+void BondedForce::build_torsions(Context& ctx, const ParseResult& parsed, const ConstraintData& shake_data) {
     const bool run_gpu = ctx.command_info.requested_gpu;
 
     std::vector<dihe_idx_t> ids;
@@ -89,7 +89,7 @@ void BondedForce::build_torsions(Context& ctx, const ParseResult& parsed, const 
     data_.torsion.params = HostDeviceBuffer<torsion_param_t>::from_vector(params, run_gpu);
     data_.torsion.eslot = HostDeviceBuffer<int>::from_vector(eslot, run_gpu);
 }
-void BondedForce::build_impropers(Context& ctx, const ParseResult& parsed, const ShakeData& shake_data) {
+void BondedForce::build_impropers(Context& ctx, const ParseResult& parsed, const ConstraintData& shake_data) {
     const bool run_gpu = ctx.command_info.requested_gpu;
 
     std::vector<dihe_idx_t> ids;

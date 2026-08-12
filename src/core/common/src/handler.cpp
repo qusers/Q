@@ -29,23 +29,23 @@ void Handler::initialize(const CommandInfo& command) {
     ctx.command_info = command;
     ParseResult parsed = ctx.get_parse_result();
     ctx.init(parsed);
-    shake_ = create_shake_backend();
+    constraint_force_ = create_constraint_force_backend();
     nonbonded_force_ = create_nonbonded_force_backend();
     bonded_force_ = create_bonded_force_backend();
     restraint_force_ = create_restraint_force_backend();
     temperature_ = create_temperature_backend();
     integrator_ = create_integrator_backend();
     water_boundary_force_ = create_water_boundary_force_backend();
-    shake_->init(ctx, parsed);
-    bonded_force_->init(ctx, parsed, shake_->data());
+    constraint_force_->init(ctx, parsed);
+    bonded_force_->init(ctx, parsed, constraint_force_->data());
     nonbonded_force_->init(ctx);
     restraint_force_->init(ctx, parsed.restrspos, parsed.restrseqs, parsed.restrdists, parsed.restrangs, parsed.restrwalls);
-    temperature_->init(ctx, *shake_);
+    temperature_->init(ctx, *constraint_force_);
     water_boundary_force_->init(ctx, *temperature_, parsed);
-    integrator_->init(ctx, *shake_, *temperature_);
+    integrator_->init(ctx, *constraint_force_, *temperature_);
 
     if (ctx.fresh_start) {
-        shake_->initial_shake(ctx);
+        constraint_force_->initial_constraint(ctx);
         stop_cm_translation();
     }
 
