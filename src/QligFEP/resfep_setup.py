@@ -1,26 +1,10 @@
 """Set up a series of amino-acid mutations, one prepared sphere per mutation.
 
-A ligand series shares a binding site, so the ligand pipeline prepares one sphere
-and reuses it for every edge. Mutations do not share anything: they sit wherever
-the residues sit, and a sphere built around one of them describes the others
-badly or not at all. Two things depend on the centre, not just one -- whether the
-mutated residue is inside the simulated region, and which *other* charges get
-neutralised as out-of-sphere. Both have to be re-derived per mutation.
-
-So the unit of work here is a directory per mutation, each holding its own
-``qprep_prot`` run, and the series is validated as a whole before any of them is
-created. The centre comes from one of two places:
-
-``centre on the mutated residue`` (default)
-    The sphere is built around the residue's CB (HA3 for glycine), which is what
-    the published protocol does. The mutation is at the centre by construction,
-    so it can never be out of sphere or in the restrained shell.
-
-``centre fixed by the caller`` (``center=``)
-    One centre for the whole series, for scanning residues around a bound ligand
-    that must stay in the same sphere. Nothing then guarantees a residue is
-    properly simulated, so every mutation is checked against the sphere up front
-    and the series is refused if any of them reaches beyond the boundary.
+Unlike a ligand series, mutations may occupy unrelated parts of a protein. The
+default therefore runs ``qprep_prot`` around each mutated residue so both sphere
+inclusion and boundary-charge neutralisation are recalculated. A fixed centre is
+also supported for mutations around a shared binding site; those mutations are
+validated against the sphere boundary before setup.
 """
 
 from __future__ import annotations
@@ -44,20 +28,10 @@ from .qresfep import parse_mutation
 #: has no CB, so the published protocol falls back to HA3.
 CENTRE_ATOMS = ("CB", "HA3")
 
-#: Closest a water may be placed to a solute heavy atom, in Angstrom. The ligand
-#: pipeline packs at 3.0 to keep spheres out of trouble during equilibration, but
-#: that is past hydrogen-bonding distance: it leaves the mutated side chain with no
-#: first hydration shell at all, and a charged one is then solvated by whatever
-#: diffuses back in during eq5, which differs from replicate to replicate. The
-#: mutation protocol has always packed at 2.5.
+#: Mutation-protocol solvent packing distance; 2.5 A retains the first hydration shell.
 SOLVENT_PACK = "2.5"
 
-#: Do not neutralise an otherwise included charged residue merely because it
-#: forms a salt bridge with a charge group outside the spherical boundary.
-#: Removing the included partner discards electrostatic interactions from the
-#: simulated region, an increasingly severe approximation for small spheres.
-#: The general-purpose ``qprep_prot`` default remains unchanged; this is a
-#: deliberate QresFEP protocol choice.
+#: Keep in-sphere salt-bridge partners charged when the other partner is outside.
 SALT_BRIDGE_CUTOFF = "0"
 
 #: Residues that carry no force field parameters of their own and are therefore

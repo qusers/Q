@@ -700,10 +700,8 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
 
     ff_lib_path, ff_prm_path = get_force_field_paths(args.FF)
 
-    # Step 1: Keep crystallographic waters by default. qprep recognises input HOH
-    # residues as solvent and its normal solvation pass rejects added waters that
-    # overlap them. This preserves experimentally resolved hydrogen-bond networks
-    # instead of replacing them with nearby grid waters.
+    # Keep crystallographic waters by default; qprep rejects added solvent that
+    # overlaps them.
     pdb_data = read_pdb_to_dataframe(pdb_file)
     crystal_waters_df = pdb_data.query("residue_name == 'HOH'")
     if not crystal_waters_df.empty:

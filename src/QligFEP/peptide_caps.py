@@ -1,23 +1,13 @@
 """Build the capped reference peptide of a mutation FEP, without PyMOL.
 
-The reference leg reproduces a mutation with no protein around it: the mutated
-residue is cut out, given flanking residues, and capped with ACE and NMA. What
-that capping produces is an *idealised* peptide -- the flanks and caps are built
-in a fixed extended conformation, and the anchoring residue's own carbonyl oxygen
-and amide hydrogen are moved to match it. Only the residue itself carries
-coordinates that mean anything, and only its side chain is being perturbed.
+The reference leg uses an idealised ACE/flank/residue/flank/NMA peptide. Its
+fixed cap and flank fragments are stored under ``INPUTS/tripeptide_templates``
+and fitted to the extracted residue backbone, replacing the historical runtime
+PyMOL step.
 
-Because the built part is rigid and always the same, it does not need a molecular
-editor to construct: it is one fragment, placed by superimposing it on the
-backbone of the residue it attaches to. The templates in
-``INPUTS/tripeptide_templates`` hold that fragment for each choice of flanks,
-recorded from the PyMOL mutagenesis wizard that used to do this at run time. The
-placement reproduces it to about 0.2 A, well inside what the 2.5 ns of
-equilibration that follows will move it.
-
-Flanks are ``A`` (alanine), ``G`` (glycine), ``X`` (none) or ``Z`` (the residue's
-native neighbours). ``Z`` brings its own flanks from the protein, so it caps them
-with the same fragment ``X`` uses.
+Flanks are ``A`` (alanine), ``G`` (glycine), ``X`` (none), or ``Z`` (native
+neighbours). ``Z`` obtains its flanks from the protein and uses the ``X`` cap
+fragment.
 """
 
 from __future__ import annotations

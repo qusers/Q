@@ -702,11 +702,8 @@ def filter_pdb_by_sphere(
         # Build exclusion string for specified residues
         exclude_str = " or ".join([f"resname {r}" for r in exclude_residues]) if exclude_residues else None
 
-        # Select: (fragments touching sphere) PLUS (complete excluded residues that
-        # touch sphere). Waters need one stricter rule: decide inclusion from the
-        # oxygen position, then retain the whole molecule. Selecting HOH atom by atom
-        # can leave hydrogen-only residues when an oxygen lies just beyond the sphere.
-        # MDAnalysis's "same fragment as" expands selection to complete connected molecules
+        # Keep complete fragments/residues that touch the sphere. For water, test
+        # the oxygen and then retain the molecule to avoid hydrogen-only residues.
         if exclude_str:
             # For non-excluded residues: keep whole fragment if any atom in sphere
             # For excluded residues: keep a complete residue without fragment expansion.

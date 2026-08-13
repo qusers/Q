@@ -281,10 +281,8 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> Path:
     run = QresFEP(**parameters)
     directory = run.run()
 
-    # Record how the directory was produced, mirroring qligfep's fep_config.json.
-    # Read off the object rather than the arguments, so the defaults that were
-    # actually used are recorded too -- `qresfep_analyze` reads `start` from here to
-    # know which direction the stages ran in.
+    # Record resolved values, including defaults; analysis uses `start` to infer
+    # the direction of each stage.
     (directory / "inputfiles" / "resfep_config.json").write_text(
         json.dumps(
             {

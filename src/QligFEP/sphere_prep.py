@@ -1,20 +1,9 @@
-"""Record of what ``qprep_prot`` did to a protein, serialised as ``prep.json``.
+"""Record what ``qprep_prot`` did to a protein in ``prep.json``.
 
-Setups that run downstream of the sphere preparation need facts that the output
-PDB files do not carry on their own: where the sphere sits, what net charge it
-encloses, which cysteines are bridged, and how the residue numbers of the input
-PDB relate to the sequential numbering Q assigns in the topology.
-
-``QresFEP`` depends on all four. A mutation is requested against the *input* PDB
-numbering (``LEU39ALA`` on chain A), but every atom index it later writes into a
-FEP file is in Q numbering, and the reference (tripeptide) leg has to be charge
-matched against the protein sphere.
-
-Q numbers residues positionally: ``qprep`` discards the residue numbers in the
-PDB it reads and counts residues from 1 in file order. :func:`build_residue_map`
-therefore derives the mapping from the order of the prepared PDB rather than
-from its residue-number column, which may carry gaps after out-of-sphere
-fragments are dropped.
+Downstream setup needs the sphere geometry, charge, disulfides, and mapping from
+input-PDB identifiers to Q residue numbers. Q numbers residues by file order, so
+the mapping is derived positionally rather than from PDB residue-number columns,
+which may contain gaps after preparation.
 """
 
 from __future__ import annotations

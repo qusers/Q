@@ -155,26 +155,12 @@ _CONFIGS_1FS = [
 ]
 
 
-# ======================================================================================
-# QresFEP equilibration
-#
-# Amino-acid mutations keep their own protocol, as published in Jespers et al. (2019)
-# and Koenekoop et al. (2025). It differs from the ligand protocol above in three ways
-# that matter: eq1-eq4 run at a fixed 1 fs regardless of the production timestep, eq5 is
-# two orders of magnitude longer (the hybrid side chain needs to settle in the pocket
-# before sampling), and the heat bath is coupled to the whole system rather than to
-# solute and solvent separately.
-# ======================================================================================
+# QresFEP keeps its published equilibration protocol: eq1-eq4 use a fixed 1 fs
+# timestep and eq5 is longer to let the hybrid side chain settle before sampling.
 
 _RESFEP_SHARED = dict(
     lrf=True,
-    # Coupled to one bath, Q derives a single Berendsen scaling factor from the whole
-    # system's temperature and applies it to both, so it enforces only the total. The
-    # spherical boundary does continuous work on the outer water shell, and removing
-    # that excess globally over-cools the solute: measured on barnase, the solute sat
-    # near 250 K against a solvent near 318 K, with the total on 298 K as asked. No
-    # length of equilibration closes the gap, because the thermostat cannot see it.
-    # The published protocol left this off and its 5 ns eq5 is plausibly compensating.
+    # Separate baths prevent boundary-heated solvent from over-cooling the solute.
     separate_scaling=True,
 )
 
