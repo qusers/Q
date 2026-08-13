@@ -1,12 +1,6 @@
 #pragma once
 #include "constraint_force.h"
-
-struct LincsSettings {
-    int expansion_order = 8;
-    int minimum_rotation_iterations = 2;
-    int maximum_rotation_iterations = 8;
-    double accuracy_tolerance = 1e-6;
-};
+#include "lincs.h"
 
 struct LincsData {
     std::vector<double> bond_inv_sqrt_inv_mass_sum;
