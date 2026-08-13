@@ -161,6 +161,30 @@ END
         chain_ids = filtered_df["chain_id"].unique()
         assert "B" not in chain_ids, "Distant chain B should be removed"
 
+    def test_filter_keeps_or_drops_complete_water_from_oxygen_position(self, temp_pdb_dir):
+        """A boundary water must never be reduced to a hydrogen-only residue."""
+        from QligFEP.pdb_utils import filter_pdb_by_sphere, read_pdb_to_dataframe
+
+        input_pdb = temp_pdb_dir / "boundary_waters.pdb"
+        output_pdb = temp_pdb_dir / "boundary_waters_filtered.pdb"
+        input_pdb.write_text(
+            "ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00  0.00           C\n"
+            "HETATM    2  O   HOH W   2       9.900   0.000   0.000  1.00  0.00           O\n"
+            "HETATM    3  H1  HOH W   2      10.700   0.000   0.000  1.00  0.00           H\n"
+            "HETATM    4  H2  HOH W   2       9.600   0.750   0.000  1.00  0.00           H\n"
+            "HETATM    5  O   HOH W   3      10.100   0.000   0.000  1.00  0.00           O\n"
+            "HETATM    6  H1  HOH W   3       9.300   0.000   0.000  1.00  0.00           H\n"
+            "HETATM    7  H2  HOH W   3      10.400   0.750   0.000  1.00  0.00           H\n"
+            "END\n"
+        )
+
+        filter_pdb_by_sphere(input_pdb, output_pdb, [0.0, 0.0, 0.0], 10.0)
+
+        filtered = read_pdb_to_dataframe(output_pdb)
+        waters = filtered[filtered["residue_name"] == "HOH"]
+        assert set(waters["residue_seq_number"]) == {2}
+        assert set(waters["atom_name"]) == {"O", "H1", "H2"}
+
     def test_filter_handles_empty_chain_id(self, temp_pdb_dir):
         """PDB with no chain IDs should still be processed correctly."""
         from QligFEP.pdb_utils import filter_pdb_by_sphere, read_pdb_to_dataframe

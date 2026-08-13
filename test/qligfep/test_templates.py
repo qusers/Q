@@ -8,6 +8,7 @@ from QligFEP.templates import (
     get_equilibration_configs,
     get_neq_endpoint_config,
     get_production_config,
+    get_resfep_equilibration_configs,
     render_md_input,
 )
 from QligFEP.templates.sections import (
@@ -143,6 +144,26 @@ class TestRenderMdInput:
             final_file="test.re",
         )
         self._assert_no_leading_whitespace(content)
+
+    def test_trajectory_can_be_disabled_without_an_output_file(self):
+        params = MDParameters(
+            steps=100,
+            stepsize=2.0,
+            temperature=298,
+            bath_coupling=10.0,
+        )
+        content = render_md_input(
+            params=params,
+            lambda1="1.000",
+            lambda2="0.000",
+            trajectory_file=None,
+            final_file="test.re",
+        )
+
+        intervals = content.split("[intervals]", 1)[1].split("[files]", 1)[0]
+        files = content.split("[files]", 1)[1].split("[trajectory_atoms]", 1)[0]
+        assert "trajectory                0" in intervals
+        assert "trajectory" not in files
 
     def test_indentation_with_multiline_restraints(self):
         """Multi-line restraint sections must not leave stray indentation on any line.
@@ -338,6 +359,41 @@ class TestRenderMdInput:
         assert "4681 4713 0.0 0.1 0.5 0" in content
         assert "4682 4714 0.0 0.1 0.5 0" in content
         assert "4681 4751 10.0 0  0" in content
+
+
+class TestResfepThermostat:
+    """The mutation protocol drives solute and solvent to the bath separately.
+
+    Coupled to one bath, Q derives a single Berendsen scaling factor from the whole
+    system's temperature, so it only ever enforces the total. The spherical boundary
+    does continuous work on the outer water shell, and the resulting flux left the
+    solute near 250 K while the solvent sat near 318 K -- a split no length of
+    equilibration closes, because the thermostat cannot see it.
+    """
+
+    def test_every_equilibration_stage_scales_the_two_separately(self):
+        configs = get_resfep_equilibration_configs("2fs", shell_radius=25)
+        assert [c.name for c in configs] == ["eq1", "eq2", "eq3", "eq4", "eq5"]
+        for config in configs:
+            assert config.params.separate_scaling is True, f"{config.name} shares one bath"
+
+    def test_production_scales_the_two_separately(self):
+        config = get_production_config("2fs", shell_radius=25, separate_scaling=True)
+        assert config.params.separate_scaling is True
+
+    def test_legacy_equilibration_can_share_one_heat_bath(self):
+        configs = get_resfep_equilibration_configs(
+            "2fs", shell_radius=25, separate_scaling=False
+        )
+        assert all(config.params.separate_scaling is False for config in configs)
+
+    def test_default_eq5_is_half_the_published_step_count(self):
+        configs = get_resfep_equilibration_configs("2fs", shell_radius=25)
+        eq5 = next(config for config in configs if config.name == "eq5")
+
+        assert eq5.params.steps == 1_250_000
+        assert eq5.params.stepsize == 2.0
+        assert eq5.params.steps * eq5.params.stepsize == 2_500_000  # fs = 2.5 ns
 
 
 class TestEquilibrationConfigs:
@@ -686,15 +742,17 @@ class TestQfepTemplate:
         # Line 2: kT  windows
         assert "0.592" in lines[2]  # kT at 298K
         assert "5" in lines[2]
-        # Lines 3,4,5: windows repeated
+        # Lines 3,4: gap bins, minimum points per bin
         assert lines[3] == "5"
         assert lines[4] == "5"
-        assert lines[5] == "5"
-        # Lines 6,7: 0, 0
+        # Line 5: alpha for state 2. Must be 0 -- qfep adds it to state 2's energy,
+        # whose weight runs 0 -> 1 across the ladder, so a non-zero alpha shifts the
+        # reported dG by exactly that amount. This line previously repeated the window
+        # count, which silently offset every per-leg dG by `windows` kcal/mol.
+        assert lines[5] == "0"
+        # Lines 6,7: off-diagonal elements, linear combination of states
         assert lines[6] == "0"
-        assert lines[7] == "0"
-        # Line 8: 1 0
-        assert lines[8] == "1 0"
+        assert lines[7] == "1 0"
         # Energy files follow
         assert "md_1000_0000.en" in content
         assert "md_0750_0250.en" in content

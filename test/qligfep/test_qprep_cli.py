@@ -350,6 +350,7 @@ class TestFragmentFilteringInQprep:
             neutralize_boundary_offset=3.0,
             salt_bridge_cutoff=4.0,
             skip_fragment_filter=skip_fragment_filter,
+            strip_crystal_waters=False,
         )
 
     TWO_CHAIN_PDB = (
@@ -366,12 +367,26 @@ class TestFragmentFilteringInQprep:
         "ATOM      2  O   HOH W 100       5.000   5.000   5.000  1.00  0.00           O\n"
     )
 
+    PROTEIN_WITH_CRYSTAL_WATER = (
+        "ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00  0.00           N\n"
+        "ATOM      2  CA  ALA A   1       1.458   0.000   0.000  1.00  0.00           C\n"
+        "ATOM      3  C   ALA A   1       2.009   1.420   0.000  1.00  0.00           C\n"
+        "HETATM    4  O   HOH W 100       3.000   3.000   3.000  1.00 20.00           O\n"
+        "HETATM    5  H1  HOH W 100       3.800   3.000   3.000  1.00 20.00           H\n"
+        "HETATM    6  H2  HOH W 100       2.700   3.750   3.000  1.00 20.00           H\n"
+    )
+
     def _run_qprep_main(self, tmp_path, monkeypatch, args):
         """Run qprep_cli.main() with mocked external dependencies."""
         monkeypatch.chdir(tmp_path)
 
         def mock_run_qprep(*a, **kw):
             (tmp_path / "complexnotexcluded.pdb").write_text(self.MINIMAL_COMPLEX_PDB)
+            # main() reads the sphere charge back out of qprep.out for prep.json.
+            (tmp_path / "qprep.out").write_text(
+                "Total charge of system                       =  0.00\n"
+                "total charge of not excluded:  0.00\n"
+            )
             return MagicMock(returncode=0)
 
         with patch("QligFEP.CLI.qprep_cli.run_qprep", side_effect=mock_run_qprep):
@@ -413,6 +428,47 @@ class TestFragmentFilteringInQprep:
         # Chain B should still be present when filtering is skipped
         df = read_pdb_to_dataframe(pdb_file)
         assert "B" in df["chain_id"].values, "Chain B should be preserved when filtering is skipped"
+
+    def test_crystallographic_waters_are_preserved_by_default(self, tmp_path, monkeypatch):
+        """Input HOH residues remain available for qprep's overlap handling."""
+        from QligFEP.pdb_utils import read_pdb_to_dataframe
+
+        pdb_file = tmp_path / "protein.pdb"
+        pdb_file.write_text(self.PROTEIN_WITH_CRYSTAL_WATER)
+        args = self.create_mock_args(skip_fragment_filter=True)
+
+        self._run_qprep_main(tmp_path, monkeypatch, args)
+
+        prepared = read_pdb_to_dataframe(pdb_file)
+        assert (prepared["residue_name"] == "HOH").sum() == 3
+
+    def test_crystallographic_waters_can_be_stripped_explicitly(self, tmp_path, monkeypatch):
+        """The compatibility flag retains the previous grid-only preparation."""
+        from QligFEP.pdb_utils import read_pdb_to_dataframe
+
+        pdb_file = tmp_path / "protein.pdb"
+        pdb_file.write_text(self.PROTEIN_WITH_CRYSTAL_WATER)
+        args = self.create_mock_args(skip_fragment_filter=True)
+        args.strip_crystal_waters = True
+
+        self._run_qprep_main(tmp_path, monkeypatch, args)
+
+        prepared = read_pdb_to_dataframe(tmp_path / "protein_processed.pdb")
+        assert "HOH" not in prepared["residue_name"].values
+
+
+class TestNeutralizerForceFieldAtoms:
+    """Neutral forms do not drop the same named proton in every force field."""
+
+    def test_oplsaam_uses_the_atoms_absent_from_its_neutral_residue_templates(self):
+        neutralizer = Neutralizer((0, 0, 0), force_field="OPLSAAM")
+        assert neutralizer._get_atoms_to_remove("LYS", "LYN") == ["HZ3"]
+        assert neutralizer._get_atoms_to_remove("ARG", "ARN") == ["HH12"]
+
+    def test_amber14sb_uses_its_own_neutral_residue_templates(self):
+        neutralizer = Neutralizer((0, 0, 0), force_field="AMBER14sb")
+        assert neutralizer._get_atoms_to_remove("LYS", "LYN") == ["HZ1"]
+        assert neutralizer._get_atoms_to_remove("ARG", "ARN") == ["HH22"]
 
 
 class TestNeutralizerInsertionCode:

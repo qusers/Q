@@ -6,7 +6,8 @@ from typing import Optional
 
 import numpy as np
 
-from ..IO import get_force_field_paths, run_qprep
+from .. import sphere_prep
+from ..IO import get_force_field_paths, parse_lib, parse_qprep_total_charge, run_qprep
 from ..logger import logger, setup_logger
 from ..pdb_utils import (
     append_pdb_to_another,
@@ -28,11 +29,13 @@ from .utils import handle_cysbonds
 class Neutralizer:
     """Neutralizes out-of-sphere charged residues (protein and DNA) in the qprep workflow."""
 
-    def __init__(self, center_coords, radius=25.0, boundary_offset=3.0):
+    def __init__(self, center_coords, radius=25.0, boundary_offset=3.0, force_field="AMBER14sb"):
         self.center = np.array(center_coords)
         self.radius = float(radius)
         self.boundary_offset = boundary_offset
         self.rest_bound = self.radius - self.boundary_offset  # Neutralize residues OUTSIDE this boundary
+        self.force_field = force_field
+        self._library = None
 
         # Define charged residues and their neutral forms + key atoms for distance calculation
         # Format: 'charged': ['neutral', 'key_atom', charge]
@@ -454,27 +457,36 @@ class Neutralizer:
         )
         return modified_df
 
+    # Which proton a neutral form drops is force-field specific: AMBER14sb's LYN keeps
+    # HZ2/HZ3 while OPLS and CHARMM keep HZ1/HZ2, and ARN differs the same way. These are
+    # the last-resort answers for residues absent from the library (the DNA forms, mainly).
+    _FALLBACK_ATOMS_TO_REMOVE = {
+        ("LYS", "LYN"): ["HZ1"],
+        ("ARG", "ARN"): ["HH22"],
+        ("HIP", "HID"): ["HE2"],
+    }
+
     def _get_atoms_to_remove(self, old_name, new_name):
-        """Get atoms to remove when converting charged to neutral form"""
-        atoms_to_remove = []
+        """Return the atoms the neutral form does not have.
 
-        if old_name == "ASP" and new_name == "ASH":
-            # ASP -> ASH: No atoms removed, HD2 is added (handled by forcefield)
-            pass
-        elif old_name == "GLU" and new_name == "GLH":
-            # GLU -> GLH: No atoms removed, HE2 is added (handled by forcefield)
-            pass
-        elif old_name == "LYS" and new_name == "LYN":
-            # LYS -> LYN: Remove HZ1 hydrogen from NZ
-            atoms_to_remove = ["HZ1"]
-        elif old_name == "ARG" and new_name == "ARN":
-            # ARG -> ARN: Remove HH22 hydrogen from NH2
-            atoms_to_remove = ["HH22"]
-        elif old_name == "HIP" and new_name == "HID":
-            # HIP -> HID: Remove HE2 hydrogen from NE2
-            atoms_to_remove = ["HE2"]
+        Read off the force field library rather than hardcoded, so the right proton is
+        dropped whichever naming the library uses. Deprotonation only ever removes atoms;
+        forms that gain one (ASP -> ASH, GLU -> GLH) let qprep add it.
+        """
+        if self._library is None:
+            try:
+                self._library = parse_lib(self.force_field)
+            except Exception as exc:  # unknown/custom force field: fall back to the table
+                logger.debug(f"Could not read the {self.force_field} library ({exc})")
+                self._library = {}
 
-        return atoms_to_remove
+        charged = self._library.get(old_name)
+        neutral = self._library.get(new_name)
+        if charged and neutral:
+            neutral_atoms = {atom["name"] for atom in neutral["atoms"]}
+            return [atom["name"] for atom in charged["atoms"] if atom["name"] not in neutral_atoms]
+
+        return list(self._FALLBACK_ATOMS_TO_REMOVE.get((old_name, new_name), []))
 
     def _check_remaining_outside_charged(self, inside_residues, salt_bridge_partners):
         """Check for remaining charged residues outside the boundary"""
@@ -528,7 +540,7 @@ def parse_arguments() -> argparse.Namespace:
         help=(
             "Protein forcefield to be used. Valid inputs: existing path to a forcefield file without the extensions"
             "(either .lib, .prm, or Path without the extensions will work) or one of the following: "
-            "OPLS2005, OPLS2015, AMBER14sb, CHARMM36. Defaults to AMBER14sb."
+            "OPLS2005, OPLS2015, OPLSAAM, AMBER14sb, CHARMM36. Defaults to AMBER14sb."
         ),
     )
     parser.add_argument(
@@ -649,6 +661,15 @@ def parse_arguments() -> argparse.Namespace:
             "downstream FEP setup."
         ),
     )
+    parser.add_argument(
+        "--strip-crystal-waters",
+        dest="strip_crystal_waters",
+        action="store_true",
+        help=(
+            "Remove crystallographic HOH residues before solvating. By default they are "
+            "preserved and qprep removes added solvent that overlaps them."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -679,13 +700,24 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
 
     ff_lib_path, ff_prm_path = get_force_field_paths(args.FF)
 
-    # Step 1: Remove crystal waters first (they will be replaced by sphere waters)
+    # Step 1: Keep crystallographic waters by default. qprep recognises input HOH
+    # residues as solvent and its normal solvation pass rejects added waters that
+    # overlap them. This preserves experimentally resolved hydrogen-bond networks
+    # instead of replacing them with nearby grid waters.
     pdb_data = read_pdb_to_dataframe(pdb_file)
     crystal_waters_df = pdb_data.query("residue_name == 'HOH'")
     if not crystal_waters_df.empty:
-        logger.info(f"Removing {len(crystal_waters_df)} crystal water molecules")
-        pdb_data = pdb_data.query("residue_name != 'HOH'")
-        processing_steps.append("extracted waters to water.pdb")
+        water_keys = ["chain_id", "residue_seq_number", "insertion_code"]
+        crystal_water_count = len(crystal_waters_df[water_keys].drop_duplicates())
+        if getattr(args, "strip_crystal_waters", False):
+            logger.info(f"Removing {crystal_water_count} crystallographic water molecules")
+            pdb_data = pdb_data.query("residue_name != 'HOH'")
+            processing_steps.append("removed crystallographic waters")
+        else:
+            logger.info(
+                f"Preserving {crystal_water_count} crystallographic water molecules; "
+                "qprep will resolve overlaps with added solvent"
+            )
 
     # Step 2: Add cofactors if provided
     if args.cofactors:
@@ -699,7 +731,9 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     if not args.skip_neutralization:
         logger.info("Neutralizing charged residues outside spherical boundary")
         center_coords = [float(coord) for coord in args.cog]
-        neutralizer = Neutralizer(center_coords, args.sphereradius, args.neutralize_boundary_offset)
+        neutralizer = Neutralizer(
+            center_coords, args.sphereradius, args.neutralize_boundary_offset, force_field=args.FF
+        )
         # Neutralize the protein and get statistics
         pdb_data, neutralization_stats = neutralizer.neutralize_outside_residues_dataframe(
             pdb_data, args.salt_bridge_cutoff
@@ -752,7 +786,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     # Step 5: Reindex residues so that every residue has a unique number.
     # Q/qprep ignores chain IDs, so multi-chain systems (e.g. protein + DNA)
     # that reuse residue numbers across chains will collide without this step.
-    reindex_pdb_residues(processed_pdb_path, processed_pdb_path)
+    original_numbering = reindex_pdb_residues(processed_pdb_path, processed_pdb_path)
 
     # Step 6: Filter out-of-sphere molecular fragments (chains, cofactors, lipids)
     if not args.skip_fragment_filter:
@@ -863,6 +897,27 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     else:
         logger.info("All water molecules are inside the sphere radius.")
         logger.debug(f"Final highest distance to COG is {euclidean_distances.max():.2f} A")
+
+    # Record what this run established about the sphere. Setups that follow (QresFEP in
+    # particular) need the centre, the enclosed charge, the disulfides and the PDB -> Q
+    # residue numbering, none of which survive in the PDB files alone.
+    prep = sphere_prep.collect(
+        input_pdb=cwd / args.input_pdb_file,
+        prepared_pdb=processed_pdb_path,
+        force_field=args.FF,
+        center=cog,
+        radius=args.sphereradius,
+        total_charge=parse_qprep_total_charge(qprep_out_path),
+        cysbond_lines=cysbonds,
+        topology_pdb=cwd / "top_p.pdb",
+        original_numbering=original_numbering,
+        neutralization_offset=args.neutralize_boundary_offset,
+    )
+    prep_path = prep.write(cwd)
+    logger.info(
+        f"{prep_path.name} written: sphere charge {prep.total_charge:+d}, "
+        f"{len(prep.residues)} solute residues, {len(prep.disulfides)} disulfide(s)."
+    )
 
 
 def main_exe():
