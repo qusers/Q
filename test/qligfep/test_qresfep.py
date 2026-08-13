@@ -152,8 +152,40 @@ class TestSideChains:
             for atom in amino_acids.chi1_atoms(residue):
                 assert atom in amino_acids.SIDE_CHAINS[residue], f"{residue}: {atom}"
 
+    @pytest.mark.parametrize(
+        "variant,charged_form",
+        [("ASH", "ASP"), ("GLH", "GLU"), ("HIP", "HID"), ("ARN", "ARG"), ("LYN", "LYS")],
+    )
+    def test_protonation_variants_keep_the_parent_chi1(self, variant, charged_form):
+        assert amino_acids.chi1_atoms(variant) == amino_acids.chi1_atoms(charged_form)
+
     def test_glycine_has_no_chi1(self):
         assert amino_acids.chi1_atoms("GLY") == []
+
+
+class TestZeroTorsions:
+    @pytest.mark.parametrize("variant", ["ASH", "GLH", "HIP", "ARN", "LYN", "PHE"])
+    @pytest.mark.parametrize("as_mutant", [False, True])
+    def test_variants_and_phe_zero_cross_topology_chi1_torsions(self, variant, as_mutant):
+        mutation = f"ALA1{variant}" if as_mutant else f"{variant}1ALA"
+        run = QresFEP(
+            mutation=mutation,
+            chain="A",
+            system="protein",
+            force_field="OPLSAAM",
+            cluster="SNELLIUS",
+            replicates=1,
+        )
+        atom_names = (
+            "HB1", "HB2", "HB3", "CG", "CB", "CA",
+            "cb", "cg", "hb1", "hb2", "hb3",
+        )
+        run.atom_ids = {name: str(index) for index, name in enumerate(atom_names, 1)}
+
+        torsions = run._zero_torsions()
+
+        assert len(torsions) == 6  # three for each side-chain topology
+        assert all(line.split()[-2:] == ["0", "0"] for line in torsions)
 
 
 class TestHeavyAtomMatching:

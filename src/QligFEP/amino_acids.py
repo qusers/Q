@@ -92,8 +92,8 @@ SIDE_CHAINS: dict[str, list[str]] = {
 #: by which chi1 atoms they carry.
 _CHI1_ATOMS: dict[str, list[str]] = {
     **{res: ["HB2", "HB3", "CG"] for res in
-       ("ASP", "GLU", "HID", "HIE", "HIP", "ARG", "LYS", "PHE", "LEU", "MET",
-        "TRP", "TYR", "ASN", "GLN")},
+       ("ASP", "ASH", "GLU", "GLH", "HID", "HIE", "HIP", "ARG", "ARN",
+        "LYS", "LYN", "PHE", "LEU", "MET", "TRP", "TYR", "ASN", "GLN")},
     "ILE": ["HB", "CG2", "CG1"],
     "VAL": ["HB", "CG2", "CG1"],
     "THR": ["HB", "CG2", "OG1"],
