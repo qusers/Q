@@ -251,18 +251,15 @@ def get_resfep_equilibration_configs(
         ("eq5", eq5_params, 0.0),
     ]
 
-    # The module-level dictionaries are shared constants. Copy each one before
-    # overriding the thermostat so a legacy-compatible call cannot affect later
-    # corrected-protocol setups in the same process.
-    raw_configs = [
-        (name, {**params, "separate_scaling": separate_scaling}, seq_force)
-        for name, params, seq_force in raw_configs
-    ]
-
+    # Override on a copy: the module-level dictionaries are shared constants and
+    # a legacy-compatible call must not affect later corrected-protocol setups.
     return [
         EquilibrationConfig(
             name=name,
-            params=MDParameters(**params, shell_radius=shell_radius),
+            params=MDParameters(
+                **{**params, "separate_scaling": separate_scaling},
+                shell_radius=shell_radius,
+            ),
             sequence_restraint_force=seq_force,
             distance_restraint_force=None,
             use_water_restraint=(name == "eq5"),

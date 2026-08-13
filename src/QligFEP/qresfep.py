@@ -83,6 +83,12 @@ _HA_TYPE = "H140"
 #: Residues qprep adds as solvent, after the solute it was given.
 _SOLVENT_RESIDUES = frozenset({"HOH", "SOL", "WAT"})
 
+#: Parameter-file sections copied into both the temporary and final merged files.
+_PARAMETER_SECTIONS = ("[options]", "[atom_types]", "[bonds]", "[angles]", "[torsions]", "[impropers]")
+
+#: Local profiles cannot run the two chained FEP stages.
+_LOCAL_CLUSTERS = frozenset({"LOCAL", "LOCALP"})
+
 
 class MutationError(Exception):
     """Raised when a requested mutation cannot be set up."""
@@ -541,7 +547,6 @@ class QresFEP:
         zero force constant.
         """
         parameters = read_prm([str(path) for path in self._parameter_files()])
-        headers = ["[options]", "[atom_types]", "[bonds]", "[angles]", "[torsions]", "[impropers]"]
 
         with open(self.inputfiles / "tmp.pdb", "w") as out:
             for atoms in self.pdb.values():
@@ -549,9 +554,9 @@ class QresFEP:
                     out.write(f"{pdb_parse_out(atom)}\n")
 
         with open(self.inputfiles / "tmp.prm", "w") as out:
-            for header in headers:
-                out.write(f"{header}\n")
-                out.writelines(parameters[header])
+            for section in _PARAMETER_SECTIONS:
+                out.write(f"{section}\n")
+                out.writelines(parameters[section])
 
         (self.inputfiles / "tmp.inp").write_text(
             "\n".join(
@@ -605,17 +610,16 @@ class QresFEP:
 
     def write_merged_prm(self) -> None:
         """Write the parameter file, including the hybrid residue's zero-force terms."""
-        headers = ["[options]", "[atom_types]", "[bonds]", "[angles]", "[torsions]", "[impropers]"]
         parameters = read_prm([str(path) for path in self._parameter_files()])
 
         self.prm_name = f"{Path(self.force_field).name}_merged.prm"
         with open(self.inputfiles / self.prm_name, "w") as out:
-            for header in headers:
-                out.write(f"{header}\n")
-                out.writelines(parameters[header])
-                if self.zero_force.get(header):
-                    out.write(f"! Zero order {header.strip('[]')} dual topology\n")
-                    out.writelines(self.zero_force[header])
+            for section in _PARAMETER_SECTIONS:
+                out.write(f"{section}\n")
+                out.writelines(parameters[section])
+                if self.zero_force.get(section):
+                    out.write(f"! Zero order {section.strip('[]')} dual topology\n")
+                    out.writelines(self.zero_force[section])
                     out.write("\n")
 
     # ------------------------------------------------------------------
@@ -980,7 +984,7 @@ class QresFEP:
             previous = "eq5.re"  # stage 2 inherits stage 1's endpoint under this name
             for window in range(self.windows):
                 if self.start == "0.5" and stage == 1:
-                    value = 1.000 - float(list(reversed(lambdas))[window])
+                    value = 1.000 - float(lambdas[-window - 1])
                 else:
                     value = float(lambdas[window])
 
@@ -1212,7 +1216,7 @@ class QresFEP:
                 which only the SLURM script does; emitting it for LOCAL would
                 produce a script that cannot run.
         """
-        if self.cluster in ("LOCAL", "LOCALP"):
+        if self.cluster in _LOCAL_CLUSTERS:
             raise MutationError(
                 "QresFEP has no local run script: the two FEP stages must be chained, "
                 "which only the cluster script does. Pick a cluster profile from "
@@ -1260,7 +1264,7 @@ class QresFEP:
 
     def write_submitfile(self) -> None:
         """Write the FEP_submit.sh wrapper that queues the run script."""
-        if self.cluster in ("LOCAL", "LOCALP"):
+        if self.cluster in _LOCAL_CLUSTERS:
             return
         template = Path(CONFIGS["ROOT_DIR"]) / "INPUTS" / "FEP_submit.sh"
         target = self.directory / "FEP_submit.sh"

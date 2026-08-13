@@ -74,6 +74,16 @@ micromamba create -n qligfep_new python=3.11 gfortran=11.3.0 openff-toolkit=0.17
 ```
 </details>
 
+### PyMOL for QresFEP mutant preparation
+
+QresFEP uses the PyMOL mutagenesis wizard to place mutant side chains unless ready-made mutant residue PDBs are supplied. PyMOL can live in the same micromamba environment as QligFEP:
+
+```bash
+micromamba install -n qligfep_new -c conda-forge pymol-open-source
+```
+
+This provides the `pymol` executable used by `setup_resFEP`; no separate Python environment or PyMOL Python import is required. Users who always provide mutant PDBs with `setup_resFEP --mutant-pdbs` can omit it.
+
 ### Compiling Q for HPC (MPI support)
 
 > [!IMPORTANT]

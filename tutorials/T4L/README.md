@@ -39,10 +39,13 @@ describe what the command does, one mutation at a time.
 
 - Q6 compiled (`cd src/q6 && make all && make mpi`)
 - QligFEP installed (`pip install -e .`)
-- **PyMOL** on your `PATH`, to build the mutant side chains. Only that: the
-  reference peptide is capped from a stored fragment, so the tripeptide leg needs
-  nothing extra. Supply ready-made residue PDBs with `setup_resFEP -mp` and PyMOL
-  is not needed at all -- which is how this runs on a cluster.
+- **PyMOL** on your `PATH`, to build the mutant side chains. It can be installed
+  in the QligFEP environment with
+  `micromamba install -n qligfep_new -c conda-forge pymol-open-source`. Only the
+  executable is used: the reference peptide is capped from a stored fragment, so
+  the tripeptide leg needs nothing extra. Supply ready-made residue PDBs with
+  `setup_resFEP -mp` and PyMOL is not needed at all -- which is how this runs on
+  a cluster.
 
 ## The system
 

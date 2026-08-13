@@ -533,10 +533,7 @@ class MutationSeries:
         for leg in self.legs:
             (self.workdir / leg).mkdir(parents=True, exist_ok=True)
 
-        outcomes = []
-        for mutation in self.mutations:
-            outcomes.append(self._setup_one(mutation, residues))
-        return outcomes
+        return [self._setup_one(mutation, residues) for mutation in self.mutations]
 
     def _setup_one(self, mutation: Mutation, residues: Path) -> MutationOutcome:
         """Prepare a sphere for one mutation and set up its legs in it."""

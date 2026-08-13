@@ -38,6 +38,15 @@ ESTIMATORS = ("dG", "dG_forward", "dG_reverse", "dG_bar")
 #: Directory name pattern written by `qresfep`.
 _FEP_DIR = re.compile(r"^FEP_([A-Z]{3})(\d+)([A-Z]{3})$")
 
+#: Section labels in qfep output, keyed by the fourth token of each heading.
+_QFEP_BLOCKS = {
+    "Free": "zwanzig",
+    "Termodynamic": "ti",
+    "Overlap": "overlap",
+    "BAR": "bar",
+    "Reaction": None,
+}
+
 
 @dataclass
 class LegResult:
@@ -128,13 +137,7 @@ def read_qfep_stage(qfep_out: Path, reverse_direction: bool) -> dict[str, float]
             raise OSError(f"qfep reported an error in {qfep_out}: {raw.strip()}")
         tokens = raw.split()
         if len(tokens) > 3:
-            block = {
-                "Free": "zwanzig",
-                "Termodynamic": "ti",
-                "Overlap": "overlap",
-                "BAR": "bar",
-                "Reaction": None,
-            }.get(tokens[3], block)
+            block = _QFEP_BLOCKS.get(tokens[3], block)
         if len(tokens) < 2:
             continue
 

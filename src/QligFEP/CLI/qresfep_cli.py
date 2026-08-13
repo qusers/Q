@@ -249,11 +249,11 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> Path:
     parameters = {}
     if args is not None:
         setup_logger(level=args.log.upper())
-        random.seed(args.random_state)
+        rng = random.Random(args.random_state)
         seeds = (
             list(args.seeds)
             if args.seeds is not None
-            else [random.randint(1, 9999) for _ in range(args.replicates)]
+            else [rng.randint(1, 9999) for _ in range(args.replicates)]
         )
         parameters = {
             "mutation": args.mutation,

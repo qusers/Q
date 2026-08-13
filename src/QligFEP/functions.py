@@ -109,8 +109,7 @@ def resfep_lambda_ladder(windows: int, sampling: str) -> list[str]:
     if windows < 2:
         raise ValueError(f"A FEP stage needs at least 2 windows, got {windows}")
 
-    steps = np.arange(windows)
-    fraction = steps / (windows - 1)
+    fraction = np.linspace(0.0, 1.0, windows)
 
     if sampling == "linear":
         values = fraction
@@ -151,7 +150,8 @@ def sphere_solute_density(pdb_file, center, radius) -> float:
     center = np.array([float(c) for c in center], dtype=float)
     radius = float(radius)
 
-    enclosed = []
+    n_solute = 0
+    n_lipid = 0
     with open(pdb_file) as infile:
         for line in infile:
             if not line.startswith(("ATOM", "HETATM")):
@@ -165,14 +165,15 @@ def sphere_solute_density(pdb_file, center, radius) -> float:
             except ValueError:
                 continue
             if np.linalg.norm(position - center) <= radius:
-                enclosed.append((residue_name, atom_name))
+                n_solute += 1
+                if residue_name == "POP" and atom_name[0] == "C":
+                    n_lipid += 1
 
-    if not enclosed:
+    if not n_solute:
         return PROTEIN_VOLUME
 
-    n_lipid = sum(1 for residue_name, atom_name in enclosed if residue_name == "POP" and atom_name[0] == "C")
-    n_protein = len(enclosed) - n_lipid
-    return (n_protein * PROTEIN_VOLUME + n_lipid * LIPID_VOLUME) / len(enclosed)
+    n_protein = n_solute - n_lipid
+    return (n_protein * PROTEIN_VOLUME + n_lipid * LIPID_VOLUME) / n_solute
 
 
 def kT(T):
