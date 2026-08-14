@@ -1,19 +1,29 @@
-# QresFEP — amino-acid mutation free energies
+# QresFEP: amino-acid mutation free energies
 
-This tutorial sets up, runs and analyses point-mutation free energy calculations for T4 lysozyme. It follows the QresFEP-2 hybrid-topology method described by [Koenekoop et al. (2025)](https://www.nature.com/articles/s42004-025-01771-0).
+This tutorial shows you how to set up, run, and analyze point-mutation free
+energy calculations for T4 lysozyme. The workflow follows the QresFEP-2
+hybrid-topology method described by
+[Koenekoop et al. (2025)](https://www.nature.com/articles/s42004-025-01771-0).
 
 ## What QresFEP calculates
 
-For protein stability, QresFEP models the mutation in two environments: the folded protein and a capped reference peptide representing the unfolded state. The mutation-induced change in folding free energy is obtained from the thermodynamic cycle:
-
+For protein stability, QresFEP models the mutation in two environments: the
+folded protein and a capped reference peptide that represents the unfolded
+state. Calculate the change in folding free energy with this thermodynamic
+cycle:
 
 $$ \Delta \Delta G_{\text{fold}} = \Delta G_{\text{calc(protein)}} - \Delta G_{\text{calc(tripeptide)}} $$
 
-The same wild-type-to-mutant transformation, hybrid topology and associated
-restraints must be used in both legs so that their free energies can be
-subtracted consistently. Both legs are therefore required for a result.
+Use the same wild-type-to-mutant transformation, hybrid topology, and
+restraints in both legs so that you can subtract their free energies
+consistently. You need both legs to calculate a result.
 
-QresFEP-2 is a **hybrid-topology** method: the wild-type and mutant residues share one set of backbone coordinates, while their side chains have separate coordinates and parameters. Equivalent, initially overlapping side-chain heavy atoms are restrained to prevent erroneous overlap with neighbouring atoms ("flapping"), while non-bonded interactions and bonded terms that would directly couple the two side chains are disabled.
+QresFEP-2 is a **hybrid-topology** method. The wild-type and mutant residues
+share one set of backbone coordinates, but their side chains have separate
+coordinates and parameters. QresFEP restrains equivalent side-chain heavy atoms
+that overlap initially. These restraints prevent the side chains from moving
+into neighboring atoms ("flapping"). QresFEP also disables non-bonded
+interactions and bonded terms that would directly couple the two side chains.
 
 The workflow is:
 
@@ -21,32 +31,31 @@ The workflow is:
 2. Prepare the protein
 3. Generate the FEP input files
 4. Submit
-5. Analyse
+5. Analyze
 
-`setup_resFEP` does steps 1–3 for a whole list of mutations:
+`setup_resFEP` performs steps 1 through 3 for a list of mutations:
 
 ```bash
 setup_resFEP -i 2LZM_prep.pdb -M mutations_neutral.txt -mc A -FF OPLSAAM -r 25 -c SNELLIUS \
-             -w 25 -s exponential -l 1 -ts 2fs -T 298 -R 10 -clean dcd
+    -w 25 -s exponential -l 1 -ts 2fs -T 298 -R 10 -clean dcd
 ```
 
-Each mutation gets a directory of its own, holding a water sphere centred on the
-residue being mutated. That is not a convenience: a sphere describes one place,
-and its centre decides both whether the mutated residue is simulated at all and
-which *other* charges are neutralised as out-of-sphere. Sections 1–3 below
-describe what the command does, one mutation at a time.
+Each mutation gets its own directory and a water sphere centered on the mutated
+residue. The sphere center determines whether the target residue is inside the
+simulated region and which ionizable residues in the outer boundary layer are
+neutralized. Sections 1 through 3 describe this process for one mutation.
 
 ## Prerequisites
 
 - Q6 compiled (`cd src/q6 && make all && make mpi`)
 - QligFEP installed (`pip install -e .`)
-- **PyMOL** on your `PATH`, to build the mutant side chains. It can be installed
-  in the QligFEP environment with
-  `micromamba install -n qligfep_new -c conda-forge pymol-open-source`. Only the
-  executable is used: the reference peptide is capped from a stored fragment, so
-  the tripeptide leg needs nothing extra. Supply ready-made residue PDBs with
-  `setup_resFEP -mp` and PyMOL is not needed at all -- which is how this runs on
-  a cluster.
+- **PyMOL** on your `PATH` to build the mutant side chains. Install it in the
+  QligFEP environment with
+  `micromamba install -n qligfep_new -c conda-forge pymol-open-source`.
+  QresFEP calls the executable directly. It builds the reference peptide from a
+  packaged fragment, so the tripeptide leg does not require PyMOL. If you provide
+  ready-made residue PDBs with `setup_resFEP -mp`, you can omit PyMOL. This option
+  is useful on clusters.
 
 ## The system
 
@@ -74,20 +83,22 @@ published T4L benchmark. `mutations_charged.txt` contains ten charge-changing
 examples for the extended protocol developed for a separate manuscript that is
 currently in preparation.
 
-QresFEP needs each mutant residue as its own PDB, positioned on the wild-type
-backbone. PyMOL's mutagenesis wizard does that, and `setup_resFEP` drives it —
-writing the residue PDBs to `mutants/`. To build them yourself instead:
+QresFEP needs a separate PDB for each mutant residue, positioned on the
+wild-type backbone. `setup_resFEP` runs PyMOL's mutagenesis wizard to place each
+mutant side chain and writes the resulting residue PDBs to `mutants/`. To
+generate these files manually, run:
 
 ```bash
 python make_mutants.py 2LZM_prep.pdb mutations_neutral.txt
 pymol -c mutagenesis.pml
 ```
 
-Pass the directory holding the result to `setup_resFEP -mp`, which is also how to
-supply residues PyMOL cannot build — its wizard knows the standard twenty, not
-Q's protonation variants (`ASH`, `GLH`, `HIP`, `LYN`).
+If you already have mutant residue PDBs, pass their directory to
+`setup_resFEP -mp`. Use this option for residues that PyMOL cannot build. Its
+wizard recognizes the 20 standard amino acids, but not Q's protonation variants
+(`ASH`, `GLH`, `HIP`, and `LYN`).
 
-This writes one file per mutation — `ALA39.pdb`, `GLY25.pdb`, and so on:
+PyMOL writes one file per mutation, such as `ALA39.pdb` or `GLY25.pdb`:
 
 ```
 ATOM      1  N   ALA A  39      38.865  31.620  20.999  1.00  0.00           N
@@ -106,35 +117,35 @@ file, so no manual `sed` step is needed.
 qprep_prot -i 2LZM_prep.pdb -FF OPLSAAM -r 25 -cog 41.088 31.308 21.828
 ```
 
-This prepares the 25 Å-radius water sphere used by Q. The published method uses
-SCAAS spherical boundary conditions with the local reaction field, centring the
-sphere on Cβ (or a side-chain hydrogen for glycine), and neutralises ionizable
-residues in the outer 3 Å boundary layer. It writes:
+`qprep_prot` prepares the 25 Å-radius water sphere used by Q. The published
+method uses SCAAS spherical boundary conditions with the local reaction field,
+centers the sphere on Cβ (or a side-chain hydrogen for glycine), and neutralizes
+ionizable residues in the outer 3 Å boundary layer. The command writes:
 
 | File | Contents |
 | --- | --- |
 | `protein_processed.pdb` | the protein as handed to `qprep` |
 | `water.pdb` | the water sphere |
-| `prep.json` | sphere centre and radius, enclosed charge, disulfides, and the PDB→Q residue numbering |
+| `prep.json` | sphere center and radius, enclosed charge, disulfides, and the PDB→Q residue numbering |
 | `top_p.pdb`, `dualtop.top`, `complexnotexcluded.pdb` | `qprep` output |
 
-`prep.json` is what `qresfep` reads. It exists because a mutation is requested in
-the numbering of *your* PDB (`LEU39ALA` on chain A) while every atom index in a
-FEP file is in Q's own numbering, and nothing in the PDB files records how the
-two relate.
+`qresfep` reads `prep.json` to translate residue numbers from your input PDB to
+Q's topology. For example, you specify `LEU39ALA` using the input PDB's
+numbering, but the FEP files use Q's atom and residue numbers. The prepared PDB
+files do not preserve this mapping.
 
-> **Centre the sphere on the residue you are mutating.** `qprep_prot` neutralises
-> charged residues that lie outside the boundary: an out-of-sphere `GLU` is
-> prepared as `GLH`. If the residue you name has been neutralised, `qresfep` stops
-> with an error rather than silently building a hybrid residue from the wrong
-> library entry. The coordinates above are the CB of residue 39; `setup_resFEP`
-> recomputes them for each mutation.
+> **Center the sphere on the residue you are mutating.** `qprep_prot` neutralizes
+> charged residues outside the boundary. For example, it prepares an
+> out-of-sphere `GLU` as `GLH`. If the requested residue has been neutralized,
+> `qresfep` reports an error instead of building a hybrid residue from the wrong
+> library entry. The coordinates above are the Cβ coordinates of residue 39.
+> `setup_resFEP` calculates the appropriate center for each mutation.
 >
-> To keep one centre for a whole series (mutating residues around a bound ligand
-> that has to stay in the same sphere) pass `setup_resFEP -cog x y z`. Every
-> mutation is then checked against that sphere before anything is written, and the
-> series is refused if a residue reaches beyond the radius or into the restrained
-> shell where charges are neutralised.
+> If you need one center for a whole series, such as when mutating residues around
+> a bound ligand that must remain in the same sphere, pass
+> `setup_resFEP -cog x y z`. Before writing any files, `setup_resFEP` checks every
+> mutation against that sphere. It rejects the series if a residue extends beyond
+> the radius or enters the outer boundary layer where charges are neutralized.
 
 ## 3. Generate the FEP input files
 
@@ -150,7 +161,7 @@ The main options:
 - `-S` which leg: `protein` or `tripeptide`.
 - `-t` controls the reference peptide: `A` uses Ala flanks (AXA, the current
   default), `G` uses Gly flanks (GXG), `X` uses only the capped mutable residue,
-  and `Z` preserves its native neighbours (ZXZ). The 2025 paper used ZXZ as its
+  and `Z` preserves its native neighbors (ZXZ). The 2025 paper used ZXZ as its
   pragmatic reference and found no statistically significant effect when these
   four models were compared. This tutorial and the in-preparation
   charge-changing protocol use AXA.
@@ -175,29 +186,29 @@ coordinates of stage 1.
 ### Charge-changing mutations
 
 Mutating to or from a charged residue changes the net charge represented by the
-alchemical side chain. For such transformations, QresFEP adds SOD or CLA ions
+alchemical side chain. For these transformations, QresFEP adds SOD or CLA ions
 to the reference-peptide sphere so that its total charge matches the prepared
-protein sphere. The ions are placed inside the solvent boundary and restrained
-away from its outer shell. This charge-matched reference leg is the extension
-used by the in-preparation manuscript.
+protein sphere. QresFEP places the ions inside the solvent boundary and
+restrains them away from its outer layer. The in-preparation manuscript uses
+this charge-matched reference leg.
 
-This creates `FEP_LEU39ALA/`:
+`qresfep` creates `FEP_LEU39ALA/`:
 
 | File | Contents |
 | --- | --- |
 | `inputfiles/L2A.lib` | the hybrid residue: wild-type and mutant side chains in one library entry, the mutant's atoms lower-cased |
-| `inputfiles/FEP1.fep` | stage 1 — remove the wild-type charges and introduce soft-core interactions |
-| `inputfiles/FEP2.fep` | stage 2 — introduce the mutant charges and remove its soft-core interactions |
+| `inputfiles/FEP1.fep` | stage 1: remove the wild-type charges and introduce soft-core interactions |
+| `inputfiles/FEP2.fep` | stage 2: introduce the mutant charges and remove its soft-core interactions |
 | `inputfiles/OPLSAAM_merged.prm` | force field plus zero-force terms for the bonded terms that span the two topologies |
 | `inputfiles/eq*.inp` | equilibration |
 | `inputfiles/md_{1,2}_*.inp` | production, per stage and lambda window |
 | `inputfiles/qfep.inp` | free energy analysis input |
-| `inputfiles/runSNELLIUS.sh` | the SLURM script driving both stages |
+| `inputfiles/runSNELLIUS.sh` | the SLURM script that runs both stages |
 | `inputfiles/resfep_config.json` | how this directory was generated |
 | `FEP_submit.sh` | submits the replicate array |
 
-Now the reference leg. **Move the first leg out of the way** — both write to
-`FEP_LEU39ALA`:
+Next, set up the reference leg. Both commands write to `FEP_LEU39ALA`, so move
+the protein leg before you run the second command:
 
 ```bash
 mkdir -p protein tripeptide
@@ -208,9 +219,9 @@ mv FEP_LEU39ALA tripeptide/
 
 ### All mutations at once
 
-`setup_resFEP` does all of the above for a whole list — builds the mutant
-residues, rebuilds the sphere around each mutated residue, runs both legs, and
-sorts them into `protein/` and `tripeptide/`:
+`setup_resFEP` performs the same steps for a mutation list. It builds the mutant
+residues, prepares a sphere around each mutated residue, generates both legs,
+and sorts them into `protein/` and `tripeptide/`:
 
 ```bash
 setup_resFEP -i 2LZM_prep.pdb -M mutations_neutral.txt -mc A -FF OPLSAAM -r 25 -c SNELLIUS \
@@ -238,7 +249,7 @@ setup_resFEP -i 2LZM_prep.pdb -M mutations_charged.txt -mc A -c SNELLIUS \
     --manuscript-settings -clean dcd
 ```
 
-leaving:
+`setup_resFEP` creates this directory layout:
 
 ```
 mutants/                    the mutant residue PDBs PyMOL built
@@ -247,12 +258,11 @@ protein/FEP_<MUTATION>/
 tripeptide/FEP_<MUTATION>/
 ```
 
-The whole series is checked before any of it is set up — residue names against
-the force field library, then every mutation against the structure — and all
-problems are reported together. `-n` runs that check and stops.
+Before setup begins, `setup_resFEP` validates the residue names against the
+force field library and each mutation against the structure. It reports all
+problems together. Use `-n` to run these checks without generating any files.
 
-`run_mutations.sh` is the same thing as a shell loop, kept as a worked example of
-what the command does.
+`run_mutations.sh` provides a shell-loop example of the same batch workflow.
 
 ## 4. Submit
 
@@ -260,23 +270,24 @@ what the command does.
 for d in protein/FEP_* tripeptide/FEP_*; do (cd "$d" && bash FEP_submit.sh); done
 ```
 
-That is 10 mutations × 2 legs × 10 replicates = 200 jobs. Each job runs both FEP
-stages in sequence: stage 2 restarts from stage 1's final coordinates, so they
-cannot be split apart or reordered.
+This example submits 10 mutations × 2 legs × 10 replicates, for a total of 200
+jobs. Each job runs both FEP stages in sequence. Stage 2 restarts from stage 1's
+final coordinates, so you cannot split or reorder the stages.
 
-## 5. Analyse
+## 5. Analyze
 
 ```bash
 qresfep_analyze -p protein -t tripeptide -T 298
 ```
 
-Mutations are discovered from the `FEP_<WT><POS><MUT>` directory names — the name
-fully describes the perturbation, so unlike the ligand workflow there is no
-mapping file to keep in step.
+`qresfep_analyze` discovers mutations from the `FEP_<WT><POS><MUT>` directory
+names. Each directory name fully describes its perturbation, so this workflow
+does not require the mapping file used by the ligand workflow.
 
-The output, `resfep_results.csv`, carries one row per mutation: each leg's dG with
-its standard error over replicates, the number of replicates that produced a
-result, `ddG_fold` with propagated error, and a count of failed replicates.
+The output file, `resfep_results.csv`, contains one row per mutation. Each row
+reports the dG and standard error for both legs, the number of completed
+replicates, `ddG_fold` with propagated error, and the number of failed
+replicates.
 
 Options:
 
@@ -285,8 +296,8 @@ Options:
   A large gap between the forward and reverse sums is the clearest sign that a
   stage is underconverged.
 - `-exp results.csv` scores against experiment; the file needs a `mutation`
-  column and a `ddG_exp` column. RMSE, MUE and R are logged.
+  column and a `ddG_exp` column. The command logs RMSE, MUE, and R.
 - `-o` where to write the table.
 
-Mutations missing a leg are reported with a `NaN` ddG and listed in a warning, so
-an unfinished set is visible rather than quietly dropped.
+If a mutation is missing a leg, `qresfep_analyze` reports a `NaN` ddG and lists
+the mutation in a warning. This behavior keeps unfinished calculations visible.
