@@ -54,6 +54,22 @@ QDYN
 # `module`, which returns non-zero on some stacks just for unload warnings.
 set -eo pipefail
 
+validate_qdyn_logs() {
+    local description=$1
+    shift
+    local incomplete=""
+    local log
+    for log in "$@"; do
+        grep -q "terminated normally" "$log" 2>/dev/null \
+            || incomplete="$incomplete $log"
+    done
+    if [ -n "$incomplete" ]; then
+        echo "ERROR: $description is incomplete."
+        echo "ERROR: logs without a normal qdyn termination:$incomplete"
+        exit 1
+    fi
+}
+
 starttime=$(date +%s)
 starttime_readable=$(date)
 
@@ -119,47 +135,64 @@ sed -i "s/T_VAR/$temperature/" *.inp
 sed -i "s/FEP_VAR/$fepfile/" *.inp
 if [ $index -lt 1 ]; then
 #EQ_FILES
-# Validate equilibration immediately. Its logs may then be archived or removed
-# for quota without making a completed FEP1 appear to have failed hours later.
-eq_incomplete=""
-for log in eq*.log; do
-    grep -q "terminated normally" "$log" 2>/dev/null \
-        || eq_incomplete="$eq_incomplete $log"
-done
-if [ -n "$eq_incomplete" ]; then
-    echo "ERROR: equilibration for replicate $run_num (T=$temperature, seed=$seed) is incomplete."
-    echo "ERROR: logs without a normal qdyn termination:$eq_incomplete"
-    exit 1
-fi
+# Validate equilibration immediately. Its logs may then be removed for quota
+# without making a completed FEP1 appear to have failed hours later.
+eq_logs=(eq*.log)
+validate_qdyn_logs \
+    "equilibration for replicate $run_num (T=$temperature, seed=$seed)" \
+    "${eq_logs[@]}"
+printf 'status=ok\ntemperature=%s\nreplicate=%s\nseed=%s\nlogs_checked=%s\n' \
+    "$temperature" "$run_num" "$seed" "${#eq_logs[@]}" > equilibration.status
+rm -f -- "${eq_logs[@]}"
 #RUN_1_FILES
 else
 #RUN_2_FILES
 fi
 
+# qdyn's serial abort still exits 0, so check every production window before qfep
+# consumes its energy files and before any stage-local cleanup can run.
+production_logs=(md_${stage}_*.log)
+validate_qdyn_logs \
+    "FEP$stage replicate $run_num (T=$temperature, seed=$seed)" \
+    "${production_logs[@]}"
+
 # qfep reads the energy files from lambda 1 down to 0; the list is built here because
 # it differs per stage. Reverse lexicographic order is that order, since the file names
 # carry lambda1 zero-padded (`sort -r` rather than `tac`, which BSD systems lack).
 ls -1 md_${stage}_*.en | sort -r >> qfep.inp
-timeout 3m QFEP < qfep.inp > qfep.out || [ $? -eq 124 ]
+timeout 3m QFEP < qfep.inp > qfep.out || {
+    qfep_rc=$?
+    echo "ERROR: qfep failed for FEP$stage replicate $run_num with exit status $qfep_rc."
+    exit 1
+}
 
-# qdyn's serial abort still exits 0, so a completed run is confirmed by "terminated normally"
-# in its log, not by the exit code. Failing here also stops stage 2 from starting on a bad eq5.re.
-incomplete=""
-logs_to_check=(md_${stage}_*.log)
-for log in "${logs_to_check[@]}"; do
-    grep -q "terminated normally" "$log" 2>/dev/null || incomplete="$incomplete $log"
-done
-if [ -n "$incomplete" ]; then
-    echo "ERROR: FEP$stage replicate $run_num (T=$temperature, seed=$seed) is incomplete."
-    echo "ERROR: logs without a normal qdyn termination:$incomplete"
+if [ ! -s qfep.out ]; then
+    echo "ERROR: qfep produced an empty output for FEP$stage replicate $run_num."
     exit 1
 fi
+if grep -q "ERROR:" qfep.out; then
+    echo "ERROR: qfep reported an error for FEP$stage replicate $run_num."
+    exit 1
+fi
+# A Part 3 heading alone is not enough: require its numerical bin-summary row.
+if ! awk '
+    /^# Part 3: Bin-averaged summary:/ {in_part3=1; next}
+    /^# Part [4-9]:/ {in_part3=0}
+    in_part3 && $1 !~ /^#/ && NF >= 8 {complete=1}
+    END {exit complete ? 0 : 1}
+' qfep.out; then
+    echo "ERROR: qfep Part 3 is incomplete for FEP$stage replicate $run_num."
+    exit 1
+fi
+printf 'status=ok\nstage=%s\ntemperature=%s\nreplicate=%s\nseed=%s\nproduction_logs=%s\nqfep_part3=complete\n' \
+    "$stage" "$temperature" "$run_num" "$seed" "${#production_logs[@]}" \
+    > stage_validation.status
 # Preserve the sole restart needed by FEP2 before stage-local cleanup removes
 # FEP1's restart chain. The bridge name is unique per temperature and replicate.
 if [ $index -lt 1 ]; then
     cp -- "$restartfile" "$bridge_restart"
 fi
-# Cleanup must stay inside the stage loop. The working directory changes to the
-# current FEP stage above, so cleaning after `done` would only clean FEP2.
+# Cleanup must stay inside the stage loop and follow all qdyn/qfep validation. On failure,
+# the current stage's energy, restart, input, topology and log files remain for diagnosis.
 #CLEANUP
 done

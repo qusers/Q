@@ -12,6 +12,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from QligFEP import amino_acids
@@ -23,10 +24,9 @@ from QligFEP.analyze_resfep import (
     to_frame,
 )
 from QligFEP.functions import resfep_lambda_ladder
-import numpy as np
-
 from QligFEP.peptide_caps import PeptideBuildError, build_reference_peptide
 from QligFEP.qresfep import MutationError, QresFEP, parse_mutation
+from QligFEP.settings.settings import BIN
 from QligFEP.sphere_prep import (
     ResidueMapping,
     SpherePrep,
@@ -35,7 +35,6 @@ from QligFEP.sphere_prep import (
 )
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-Q6_BIN = PROJECT_ROOT / "src" / "q6" / "bin" / "q6"
 T4L_RESOURCES = Path(__file__).parent / "resources" / "t4l"
 T4L_TUTORIAL = PROJECT_ROOT / "tutorials" / "T4L"
 
@@ -43,7 +42,7 @@ T4L_TUTORIAL = PROJECT_ROOT / "tutorials" / "T4L"
 LEU39_CB = ("41.088", "31.308", "21.828")
 
 qprep_required = pytest.mark.skipif(
-    not (Q6_BIN / "qprep").exists(),
+    not (BIN / "qprep").exists(),
     reason="qprep binary not compiled (cd src/q6 && make all)",
 )
 
@@ -177,8 +176,17 @@ class TestZeroTorsions:
             replicates=1,
         )
         atom_names = (
-            "HB1", "HB2", "HB3", "CG", "CB", "CA",
-            "cb", "cg", "hb1", "hb2", "hb3",
+            "HB1",
+            "HB2",
+            "HB3",
+            "CG",
+            "CB",
+            "CA",
+            "cb",
+            "cg",
+            "hb1",
+            "hb2",
+            "hb3",
         )
         run.atom_ids = {name: str(index) for index, name in enumerate(atom_names, 1)}
 
@@ -289,24 +297,18 @@ class TestReplicateSeeds:
 
 
 class TestLambdaLadder:
-    @pytest.mark.parametrize(
-        "sampling", ["linear", "sigmoidal", "exponential", "reverse_exponential"]
-    )
+    @pytest.mark.parametrize("sampling", ["linear", "sigmoidal", "exponential", "reverse_exponential"])
     def test_runs_from_one_to_zero(self, sampling):
         ladder = resfep_lambda_ladder(25, sampling)
         assert ladder[0] == "1.000"
         assert ladder[-1] == "0.000"
 
-    @pytest.mark.parametrize(
-        "sampling", ["linear", "sigmoidal", "exponential", "reverse_exponential"]
-    )
+    @pytest.mark.parametrize("sampling", ["linear", "sigmoidal", "exponential", "reverse_exponential"])
     def test_length_is_exactly_the_window_count(self, sampling):
         """One value per window -- unlike the ligand ladder, which returns windows + 1."""
         assert len(resfep_lambda_ladder(25, sampling)) == 25
 
-    @pytest.mark.parametrize(
-        "sampling", ["linear", "sigmoidal", "exponential", "reverse_exponential"]
-    )
+    @pytest.mark.parametrize("sampling", ["linear", "sigmoidal", "exponential", "reverse_exponential"])
     def test_decreases_monotonically(self, sampling):
         values = [float(v) for v in resfep_lambda_ladder(25, sampling)]
         assert all(a >= b for a, b in zip(values, values[1:]))
@@ -330,7 +332,7 @@ class TestLambdaLadder:
             "0.910", "0.891", "0.870", "0.845", "0.818", "0.786", "0.751", "0.711",
             "0.665", "0.614", "0.555", "0.489", "0.414", "0.329", "0.233", "0.124",
             "0.000",
-        ]
+        ] # fmt: skip
         assert resfep_lambda_ladder(25, "exponential") == expected
 
     def test_unknown_scheme_raises(self):
@@ -457,9 +459,7 @@ class TestDisulfideTranslation:
 # Reading results
 # ----------------------------------------------------------------------
 
-REFERENCE_EXAMPLE = (
-    Path("/Users/davidararipe/projects/qligfep/tutorials/2.QresFEP_T4L/FEP_example")
-)
+REFERENCE_EXAMPLE = Path("/Users/davidararipe/projects/qligfep/tutorials/2.QresFEP_T4L/FEP_example")
 
 
 class TestQfepReading:
@@ -477,9 +477,7 @@ class TestQfepReading:
         return qfep_out
 
     def test_bar_matches_the_published_value(self, stage_one):
-        assert read_qfep_stage(stage_one, reverse_direction=False)["dG_bar"] == pytest.approx(
-            65.81, abs=0.01
-        )
+        assert read_qfep_stage(stage_one, reverse_direction=False)["dG_bar"] == pytest.approx(65.81, abs=0.01)
 
     def test_all_estimators_are_read(self, stage_one):
         values = read_qfep_stage(stage_one, reverse_direction=False)
@@ -547,9 +545,7 @@ class TestFoldingFreeEnergy:
         expected = math.sqrt(record.legs["protein"].sem() ** 2 + record.legs["tripeptide"].sem() ** 2)
         assert record.ddG_sem() == pytest.approx(expected)
 
-    @pytest.mark.parametrize(
-        "protein,tripeptide", [(None, [4.0, 6.0]), ([10.0, 12.0], None), (None, None)]
-    )
+    @pytest.mark.parametrize("protein,tripeptide", [(None, [4.0, 6.0]), ([10.0, 12.0], None), (None, None)])
     def test_a_missing_leg_gives_no_answer(self, protein, tripeptide):
         """One leg is not a folding free energy, so it must not be reported as one."""
         record = self._result(protein, tripeptide)
@@ -638,6 +634,59 @@ def _qfep_output(dG: float) -> str:
 
 
 # ----------------------------------------------------------------------
+# Run-script safety (does not require compiled Q binaries)
+# ----------------------------------------------------------------------
+
+
+class TestRunScriptSafety:
+    @pytest.fixture(scope="class")
+    def script(self, tmp_path_factory):
+        run = QresFEP(
+            mutation="LEU39ALA",
+            chain="A",
+            system="protein",
+            force_field="OPLSAAM",
+            cluster="HABROK",
+            windows=2,
+            temperature="298",
+            replicates=1,
+            seeds=[971],
+            to_clean=["en", "re", "inp", "top", "dcd", "log"],
+            write_trajectories=False,
+            separate_scaling=False,
+            workdir=tmp_path_factory.mktemp("run-script"),
+        )
+        run.inputfiles.mkdir(parents=True)
+        run.write_runfile(
+            [
+                ["md_1_1000_0000", "md_1_0000_1000"],
+                ["md_2_1000_0000", "md_2_0000_1000"],
+            ]
+        )
+        return run.inputfiles / "runHABROK.sh"
+
+    def test_generated_script_is_valid_bash(self, script):
+        subprocess.run(["bash", "-n", script], check=True)
+
+    def test_eq_logs_are_recorded_and_removed_before_production(self, script):
+        content = script.read_text()
+        status = content.index("> equilibration.status")
+        cleanup = content.index('rm -f -- "${eq_logs[@]}"', status)
+        production = content.index("echo md_1_", cleanup)
+        assert status < cleanup < production
+
+    def test_qfep_is_validated_before_stage_cleanup(self, script):
+        content = script.read_text()
+        production_validation = content.index('"FEP$stage replicate $run_num')
+        qfep = content.index("timeout 3m", production_validation)
+        part_three = content.index("qfep Part 3 is incomplete", qfep)
+        status = content.index("> stage_validation.status", part_three)
+        cleanup = content.index("rm -f -- *en *re *inp *top *dcd *log", status)
+        loop_end = content.index("\ndone", cleanup)
+        assert production_validation < qfep < part_three < status < cleanup < loop_end
+
+
+# ----------------------------------------------------------------------
 # End-to-end setup
 # ----------------------------------------------------------------------
 
@@ -645,7 +694,7 @@ def _qfep_output(dG: float) -> str:
 @pytest.fixture(scope="module")
 def prepared_t4l(tmp_path_factory):
     """Prepare a T4L sphere centred on LEU39, using the real qprep binary."""
-    if not (Q6_BIN / "qprep").exists():
+    if not (BIN / "qprep").exists():
         pytest.skip("qprep binary not compiled")
     structure = T4L_TUTORIAL / "2LZM_prep.pdb"
     if not structure.exists():
@@ -715,9 +764,18 @@ class TestProteinLegSetup:
 
     def test_the_expected_files_are_written(self, fep_dir):
         for name in (
-            "L2A.lib", "FEP1.fep", "FEP2.fep", "complex.pdb", "dualtop.top",
-            "top_p.pdb", "qfep.inp", "qprep.inp", "runSNELLIUS.sh",
-            "OPLSAAM_merged.prm", "eq1.inp", "eq5.inp",
+            "L2A.lib",
+            "FEP1.fep",
+            "FEP2.fep",
+            "complex.pdb",
+            "dualtop.top",
+            "top_p.pdb",
+            "qfep.inp",
+            "qprep.inp",
+            "runSNELLIUS.sh",
+            "OPLSAAM_merged.prm",
+            "eq1.inp",
+            "eq5.inp",
         ):
             assert (fep_dir / name).exists(), f"{name} was not written"
 
@@ -777,10 +835,7 @@ class TestProteinLegSetup:
         types = _fep_section(fep_dir / "FEP2.fep", "change_atoms")
         names = _library_atom_names(fep_dir / "L2A.lib")
         backbone = amino_acids.backbone_atoms(False, False)
-        wild_type = [
-            line for line, name in zip(types, names)
-            if not name.islower() and name not in backbone
-        ]
+        wild_type = [line for line, name in zip(types, names) if not name.islower() and name not in backbone]
         assert wild_type and all(line.split()[2] == "DUM" for line in wild_type)
 
     def test_the_backbone_is_never_softcored(self, fep_dir):
@@ -813,14 +868,13 @@ class TestProteinLegSetup:
         # Stage 2 restarts from stage 1's last window.
         assert "restartfile=md_1_0000_1000.re" in script
 
-    def test_each_stage_cleans_its_own_trajectories(self, fep_dir):
+    def test_each_stage_cleans_its_own_files(self, fep_dir):
         script = (fep_dir / "runSNELLIUS.sh").read_text()
-        completion_check = script.index('if [ -n "$incomplete" ]')
         cleanup_line = "rm -f -- *inp *re *top *dcd"
-        cleanup = script.index(cleanup_line, completion_check)
+        cleanup = script.index(cleanup_line)
         stage_loop_end = script.index("\ndone", cleanup)
 
-        assert completion_check < cleanup < stage_loop_end
+        assert cleanup < stage_loop_end
         assert script.count(cleanup_line) == 1
 
     def test_stage_one_restart_survives_until_stage_two(self, fep_dir):
@@ -890,7 +944,9 @@ class TestReferencePeptideSetup:
         for line in (fep_dir / "complex.pdb").read_text().splitlines():
             if line.startswith("ATOM"):
                 atoms[(int(line[22:26]), line[12:16].strip())] = (
-                    float(line[30:38]), float(line[38:46]), float(line[46:54])
+                    float(line[30:38]),
+                    float(line[38:46]),
+                    float(line[46:54]),
                 )
         carbonyl = atoms[(3, "C")]
         cap_nitrogen = atoms[(4, "N")]
@@ -919,9 +975,7 @@ class TestReferencePeptideSetup:
 
         assert _fep_atom_names(fep_dir / "FEP1.fep") == _fep_atom_names(protein_fep)
         for section in ("change_charges", "change_atoms", "softcore"):
-            assert _fep_section(fep_dir / "FEP1.fep", section) == _fep_section(
-                protein_fep, section
-            ), section
+            assert _fep_section(fep_dir / "FEP1.fep", section) == _fep_section(protein_fep, section), section
 
 
 @qprep_required
@@ -940,10 +994,10 @@ class TestResidueMustBeInTheSphere:
 
         prep = SpherePrep.read(prepared_t4l)
         distant = [
-            r for r in prep.residues
-            if residue_distance_from_center(
-                prepared_t4l / prep.prepared_pdb, r.q_number, prep.center
-            ) > prep.radius
+            r
+            for r in prep.residues
+            if residue_distance_from_center(prepared_t4l / prep.prepared_pdb, r.q_number, prep.center)
+            > prep.radius
             and r.name not in ("GLH", "ASH", "LYN", "ARN")
         ]
         if not distant:
@@ -980,11 +1034,10 @@ class TestResidueMustBeInTheSphere:
 
         prep = SpherePrep.read(prepared_t4l)
         in_shell = [
-            r for r in prep.residues
+            r
+            for r in prep.residues
             if prep.boundary_radius
-            < residue_distance_from_center(
-                prepared_t4l / prep.prepared_pdb, r.q_number, prep.center
-            )
+            < residue_distance_from_center(prepared_t4l / prep.prepared_pdb, r.q_number, prep.center)
             <= prep.radius
             and r.name in amino_acids.SIDE_CHAINS
         ]
@@ -1151,9 +1204,12 @@ class TestReferencePeptideGeometry:
 
     #: An alanine lifted out of T4 lysozyme, as (name, x, y, z).
     ALANINE = [
-        ("N", 38.865, 31.620, 20.999), ("CA", 39.713, 30.684, 21.730),
-        ("C", 39.089, 30.259, 23.055), ("O", 39.611, 29.376, 23.738),
-        ("CB", 41.089, 31.295, 21.987), ("H", 38.021, 31.170, 20.669),
+        ("N", 38.865, 31.620, 20.999),
+        ("CA", 39.713, 30.684, 21.730),
+        ("C", 39.089, 30.259, 23.055),
+        ("O", 39.611, 29.376, 23.738),
+        ("CB", 41.089, 31.295, 21.987),
+        ("H", 38.021, 31.170, 20.669),
         ("HA", 39.999, 29.799, 21.160),
     ]
 
@@ -1278,9 +1334,7 @@ class TestSoluteSizeComesFromTheTopology:
 
 def _atom_records(pdb_file: Path) -> int:
     """Return how many atoms a PDB holds."""
-    return sum(
-        1 for line in pdb_file.read_text().splitlines() if line.startswith(("ATOM", "HETATM"))
-    )
+    return sum(1 for line in pdb_file.read_text().splitlines() if line.startswith(("ATOM", "HETATM")))
 
 
 def _sequence_restraint(md_input: Path) -> tuple[int, int]:
