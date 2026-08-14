@@ -10,19 +10,24 @@ struct CudaLincsBond {
     double mass_scale;  // 1 / sqrt(winv[ai] + winv[aj])
 };
 
-struct CudaLincsSmallData {  // For small groups
+struct CudaLincsData {
     int n_blocks = 0;
-    int n_packed_threads = 0;
-    int n_real_constraints = 0;
+    int n_constraints = 0;
     int max_neighbors = 0;
+    int max_work_unit_size = 0;
 
+    std::unique_ptr<HostDeviceBuffer<int>> work_unit_offsets;
     std::unique_ptr<HostDeviceBuffer<CudaLincsBond>> bonds;
     std::unique_ptr<HostDeviceBuffer<int>> neighbor_counts;
-
-    std::unique_ptr<HostDeviceBuffer<int>> neighbor_local_indices;
+    std::unique_ptr<HostDeviceBuffer<int>> neighbor_indices;
     std::unique_ptr<HostDeviceBuffer<double>> mass_factors;
 
+    std::unique_ptr<HostDeviceBuffer<coord_t>> directions;
     std::unique_ptr<HostDeviceBuffer<double>> matrix_a;
+    std::unique_ptr<HostDeviceBuffer<double>> q0;
+    std::unique_ptr<HostDeviceBuffer<double>> q1;
+    std::unique_ptr<HostDeviceBuffer<double>> solution;
+
     std::unique_ptr<HostDeviceBuffer<int>> failed_constraint;
 };
 
@@ -39,5 +44,5 @@ class CudaLincs : public ConstraintForce {
    private:
     void apply_to(Context& ctx, coord_t* coords, const coord_t* xcoords);
     LincsSettings lincs_settings_;
-    CudaLincsSmallData lincs_small_data_;
+    CudaLincsData lincs_data_;
 };
