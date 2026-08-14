@@ -155,8 +155,8 @@ _CONFIGS_1FS = [
 ]
 
 
-# QresFEP keeps its published equilibration protocol: eq1-eq4 use a fixed 1 fs
-# timestep and eq5 is longer to let the hybrid side chain settle before sampling.
+# QresFEP uses a fixed 1 fs timestep for eq1-eq4; eq5 follows the
+# production timestep.
 
 _RESFEP_SHARED = dict(
     lrf=True,
@@ -186,7 +186,7 @@ RESFEP_EQ4_PARAMS = dict(
 
 #: eq5 is the only stage that follows the production timestep: (steps, stepsize,
 #: shake_hydrogens) per timestep. The default 2 fs protocol runs 1,250,000 steps,
-#: or 2.5 ns: half the 2,500,000-step equilibration used by the published runs.
+#: or 2.5 ns.
 _RESFEP_EQ5_BY_TIMESTEP = {
     "1fs": (500000, 1.0, False),
     "2fs": (1250000, 2.0, True),
@@ -204,11 +204,8 @@ def get_resfep_equilibration_configs(
     Args:
         timestep: Production timestep ("1fs" or "2fs"); only eq5 follows it.
         shell_radius: Inner radius of the restrained boundary shell.
-        eq5_steps: Length of the final equilibration, overriding the 2 fs protocol's
-            own 2.5 ns. Charge-changing mutations have been run with longer
-            ones, and reproducing such a set means matching it.
-        separate_scaling: Drive solute and solvent to the heat bath separately.
-            Set false only to reproduce the published legacy protocol.
+        eq5_steps: Length of the final equilibration in steps.
+        separate_scaling: Scale solute and solvent independently.
 
     Returns:
         List of EquilibrationConfig for eq1 through eq5.
@@ -237,8 +234,7 @@ def get_resfep_equilibration_configs(
         ("eq5", eq5_params, 0.0),
     ]
 
-    # Override on a copy: the module-level dictionaries are shared constants and
-    # a legacy-compatible call must not affect later corrected-protocol setups.
+    # Override on a copy because the module-level dictionaries are shared constants.
     return [
         EquilibrationConfig(
             name=name,

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..logger import logger, setup_logger
+from ..resfep_protocols import DEFAULT_PRODUCTION_STEPS, apply_manuscript_settings
 from ..resfep_setup import Mutation, MutationSeries, SetupError, read_mutations
 from ..settings.settings import CLUSTER_DICT
 
@@ -173,14 +174,6 @@ def parse_arguments() -> argparse.Namespace:
         help="Independent repeats per mutation. Defaults to 10.",
     )
     optional.add_argument(
-        "-sh",
-        "--shell_rest",
-        dest="shell_restraint",
-        type=float,
-        default=0.0,
-        help="Width of the restrained outer shell. Defaults to 0.0.",
-    )
-    optional.add_argument(
         "-eqs",
         "--eq5-steps",
         dest="eq5_steps",
@@ -191,6 +184,14 @@ def parse_arguments() -> argparse.Namespace:
             "own 2.5 ns at the default 2 fs timestep. Use it to match a set that was "
             "equilibrated for longer."
         ),
+    )
+    optional.add_argument(
+        "-ps",
+        "--production-steps",
+        dest="production_steps",
+        type=int,
+        default=DEFAULT_PRODUCTION_STEPS,
+        help=f"Production length per lambda window in steps. Defaults to {DEFAULT_PRODUCTION_STEPS}.",
     )
     optional.add_argument(
         "-cof",
@@ -218,11 +219,16 @@ def parse_arguments() -> argparse.Namespace:
         help="Disable DCD output in all generated Q inputs.",
     )
     optional.add_argument(
-        "--coupled-thermostat",
+        "--separate-scaling",
         dest="separate_scaling",
-        action="store_false",
-        default=True,
-        help="Use the coupled solute/solvent thermostat of the published legacy protocol.",
+        choices=["on", "off"],
+        default="on",
+        help="Set Q's separate_scaling option. Defaults to on.",
+    )
+    optional.add_argument(
+        "--manuscript-settings",
+        action="store_true",
+        help="Force the residue-FEP manuscript protocol settings.",
     )
     seed_options = optional.add_mutually_exclusive_group()
     seed_options.add_argument(
@@ -284,34 +290,40 @@ def parse_arguments() -> argparse.Namespace:
         choices=["trace", "debug", "info", "warning", "error", "critical"],
         help="Log level. Defaults to info.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.manuscript_settings:
+        apply_manuscript_settings(args, include_preparation=True)
+    return args
 
 
 def _qresfep_options(args: argparse.Namespace) -> list[str]:
     """The arguments passed straight through to `qresfep`."""
-    options = [
-        "-t", args.tripeptide_flanks,
-        "-w", str(args.windows),
-        "-s", args.sampling,
-        "-l", args.start,
-        "-ts", args.timestep,
-        "-T", str(args.temperature),
-        "-r", str(args.replicates),
-        "-sh", str(args.shell_restraint),
-        "-log", args.log,
-    ]
-    if args.eq5_steps is not None:
-        options += ["-eqs", str(args.eq5_steps)]
+    options = ["-log", args.log]
+    if getattr(args, "manuscript_settings", False):
+        options += ["--manuscript-settings"]
+    else:
+        options += [
+            "-t", args.tripeptide_flanks,
+            "-w", str(args.windows),
+            "-s", args.sampling,
+            "-l", args.start,
+            "-ts", args.timestep,
+            "-T", str(args.temperature),
+            "-r", str(args.replicates),
+            "-ps", str(args.production_steps),
+            "--separate-scaling", args.separate_scaling,
+        ]
+        if args.eq5_steps is not None:
+            options += ["-eqs", str(args.eq5_steps)]
+        if args.random_state is not None:
+            options += ["-rs", str(args.random_state)]
+        if args.seeds is not None:
+            options += ["--seeds", *(str(seed) for seed in args.seeds)]
+
     if args.to_clean:
         options += ["-clean", *args.to_clean]
     if not args.write_trajectories:
         options += ["--no-trajectories"]
-    if not args.separate_scaling:
-        options += ["--coupled-thermostat"]
-    if args.random_state is not None:
-        options += ["-rs", str(args.random_state)]
-    if args.seeds is not None:
-        options += ["--seeds", *(str(seed) for seed in args.seeds)]
     return options
 
 

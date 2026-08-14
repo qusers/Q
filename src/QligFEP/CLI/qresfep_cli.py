@@ -11,6 +11,7 @@ from QligFEP import __version__
 
 from ..logger import logger, setup_logger
 from ..qresfep import QresFEP
+from ..resfep_protocols import DEFAULT_PRODUCTION_STEPS, apply_manuscript_settings
 from ..settings.settings import CLUSTER_DICT
 
 
@@ -148,17 +149,6 @@ def parse_arguments() -> argparse.Namespace:
         help="Independent repeats. Defaults to 10.",
     )
     optional.add_argument(
-        "-sh",
-        "--shell_rest",
-        dest="shell_restraint",
-        type=float,
-        default=0.0,
-        help=(
-            "Width of the restrained outer shell, subtracted from the sphere radius. "
-            "Recommended for membrane proteins. Defaults to 0.0."
-        ),
-    )
-    optional.add_argument(
         "-eqs",
         "--eq5-steps",
         dest="eq5_steps",
@@ -169,6 +159,14 @@ def parse_arguments() -> argparse.Namespace:
             "own 2.5 ns at the default 2 fs timestep. Use it to match a set that was "
             "equilibrated for longer."
         ),
+    )
+    optional.add_argument(
+        "-ps",
+        "--production-steps",
+        dest="production_steps",
+        type=int,
+        default=DEFAULT_PRODUCTION_STEPS,
+        help=f"Production length per lambda window in steps. Defaults to {DEFAULT_PRODUCTION_STEPS}.",
     )
     optional.add_argument(
         "-cof",
@@ -196,14 +194,16 @@ def parse_arguments() -> argparse.Namespace:
         help="Disable DCD output in every equilibration and production input.",
     )
     optional.add_argument(
-        "--coupled-thermostat",
+        "--separate-scaling",
         dest="separate_scaling",
-        action="store_false",
-        default=True,
-        help=(
-            "Use the legacy shared solute/solvent heat-bath scaling. This reproduces "
-            "the published protocol; corrected runs scale them separately."
-        ),
+        choices=["on", "off"],
+        default="on",
+        help="Set Q's separate_scaling option. Defaults to on.",
+    )
+    optional.add_argument(
+        "--manuscript-settings",
+        action="store_true",
+        help="Force the residue-FEP manuscript protocol settings.",
     )
     seed_options = optional.add_mutually_exclusive_group()
     seed_options.add_argument(
@@ -233,7 +233,10 @@ def parse_arguments() -> argparse.Namespace:
         choices=["trace", "debug", "info", "warning", "error", "critical"],
         help="Log level. Defaults to info.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.manuscript_settings:
+        apply_manuscript_settings(args)
+    return args
 
 
 def main(args: Optional[argparse.Namespace] = None, **kwargs) -> Path:
@@ -268,12 +271,12 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> Path:
             "temperature": args.temperature,
             "replicates": args.replicates,
             "tripeptide_flanks": args.tripeptide_flanks,
-            "shell_restraint": args.shell_restraint,
             "eq5_steps": args.eq5_steps,
+            "production_steps": args.production_steps,
             "cofactors": args.cofactors,
             "to_clean": args.to_clean,
             "write_trajectories": args.write_trajectories,
-            "separate_scaling": args.separate_scaling,
+            "separate_scaling": args.separate_scaling == "on",
             "seeds": seeds,
         }
     parameters.update(kwargs)
@@ -301,13 +304,14 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> Path:
                 "temperature": run.temperature,
                 "replicates": run.replicates,
                 "tripeptide_flanks": run.tripeptide_flanks,
-                "shell_restraint": run.shell_restraint,
                 "eq5_steps": run.eq5_steps,
+                "production_steps": run.production_steps,
                 "cofactors": run.cofactors,
                 "to_clean": run.to_clean,
                 "write_trajectories": run.write_trajectories,
                 "separate_scaling": run.separate_scaling,
                 "seeds": run.seeds,
+                "manuscript_settings": bool(args is not None and getattr(args, "manuscript_settings", False)),
                 "q_position": run.q_position,
                 "hybrid_residue": run.hybrid_name,
                 "sphere_radius": run.radius,

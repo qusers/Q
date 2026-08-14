@@ -362,14 +362,7 @@ class TestRenderMdInput:
 
 
 class TestResfepThermostat:
-    """The mutation protocol drives solute and solvent to the bath separately.
-
-    Coupled to one bath, Q derives a single Berendsen scaling factor from the whole
-    system's temperature, so it only ever enforces the total. The spherical boundary
-    does continuous work on the outer water shell, and the resulting flux left the
-    solute near 250 K while the solvent sat near 318 K -- a split no length of
-    equilibration closes, because the thermostat cannot see it.
-    """
+    """Residue FEP supports separate and combined temperature scaling."""
 
     def test_every_equilibration_stage_scales_the_two_separately(self):
         configs = get_resfep_equilibration_configs("2fs", shell_radius=25)
@@ -381,13 +374,13 @@ class TestResfepThermostat:
         config = get_production_config("2fs", shell_radius=25, separate_scaling=True)
         assert config.params.separate_scaling is True
 
-    def test_legacy_equilibration_can_share_one_heat_bath(self):
+    def test_equilibration_can_use_combined_scaling(self):
         configs = get_resfep_equilibration_configs(
             "2fs", shell_radius=25, separate_scaling=False
         )
         assert all(config.params.separate_scaling is False for config in configs)
 
-    def test_default_eq5_is_half_the_published_step_count(self):
+    def test_default_eq5_is_2_5_ns(self):
         configs = get_resfep_equilibration_configs("2fs", shell_radius=25)
         eq5 = next(config for config in configs if config.name == "eq5")
 

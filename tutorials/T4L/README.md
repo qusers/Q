@@ -1,18 +1,19 @@
 # QresFEP — amino-acid mutation free energies
 
-This tutorial sets up, runs and analyses free energy calculations for point
-mutations in T4 lysozyme, following the dual-topology protocol of
-[Koenekoop et al. (2025)](https://www.nature.com/articles/s42004-025-01771-0).
+This tutorial sets up, runs and analyses point-mutation free energy calculations for T4 lysozyme. It follows the QresFEP-2 hybrid-topology method described by [Koenekoop et al. (2025)](https://www.nature.com/articles/s42004-025-01771-0).
 
-What a mutation FEP measures is the shift in folding free energy:
+## What QresFEP calculates
 
-```
-ddG_fold = dG_protein − dG_tripeptide
-```
+For protein stability, QresFEP models the mutation in two environments: the folded protein and a capped reference peptide representing the unfolded state. The mutation-induced change in folding free energy is obtained from the thermodynamic cycle:
 
-Each mutation is therefore run twice — once in the folded protein, once in a
-small capped reference peptide — and the two are subtracted. Both legs are
-needed before a mutation has a result.
+
+$$ \Delta \Delta G_{\text{fold}} = \Delta G_{\text{calc(protein)}} - \Delta G_{\text{calc(tripeptide)}} $$
+
+The same wild-type-to-mutant transformation, hybrid topology and associated
+restraints must be used in both legs so that their free energies can be
+subtracted consistently. Both legs are therefore required for a result.
+
+QresFEP-2 is a **hybrid-topology** method: the wild-type and mutant residues share one set of backbone coordinates, while their side chains have separate coordinates and parameters. Equivalent, initially overlapping side-chain heavy atoms are restrained to prevent erroneous overlap with neighbouring atoms ("flapping"), while non-bonded interactions and bonded terms that would directly couple the two side chains are disabled.
 
 The workflow is:
 
@@ -53,18 +54,25 @@ describe what the command does, one mutation at a time.
 lysozyme, one of the systems the QresFEP protocol was benchmarked on.
 
 `2LZM.pdb` is the raw RCSB download. Raw PDB files are not directly usable: they
-carry parts that should not be simulated, are often missing side chains or whole
-loops, and have no hydrogens. `2LZM_-_hbond-opt.pdb` is the output of
-Schrödinger's [Protein Preparation Wizard](https://www.schrodinger.com/life-science/learn/white-papers/protein-preparation-workflow/),
-which adds hydrogens and picks protonation states from a predicted hydrogen-bond
-network. `2LZM_prep.pdb` is that file after renaming histidines to the
-protonation-specific names OPLS-AA/M uses (`HID`/`HIE`/`HIP`) and trimming
-terminal atoms. It is the file this tutorial starts from.
+may contain components that should not be simulated, lack atoms, and do not
+contain the hydrogens required for MD. The published benchmark structures were
+prepared with Schrödinger's [Protein Preparation Wizard](https://www.schrodinger.com/life-science/learn/white-papers/protein-preparation-workflow/):
+asparagine/glutamine flips and histidine protonation at pH 7 were considered,
+titratable states were assigned using PropKa, non-protein heterogroups were
+removed, and only crystal waters directly hydrogen-bonded to the protein were
+retained.
+
+`2LZM_-_hbond-opt.pdb` is the prepared, hydrogen-bond-optimized structure.
+`2LZM_prep.pdb` additionally uses the protonation-specific histidine names
+expected by OPLS-AA/M (`HID`/`HIE`/`HIP`) and removes incompatible terminal
+atoms. It is the input structure used in this tutorial.
 
 ## 1. Build the mutant side chains
 
-`mutations_neutral.txt` and `mutations_charged.txt` each list ten mutations from
-the published benchmark — charge-maintaining and charge-changing respectively.
+`mutations_neutral.txt` lists ten charge-maintaining examples selected from the
+published T4L benchmark. `mutations_charged.txt` contains ten charge-changing
+examples for the extended protocol developed for a separate manuscript that is
+currently in preparation.
 
 QresFEP needs each mutant residue as its own PDB, positioned on the wild-type
 backbone. PyMOL's mutagenesis wizard does that, and `setup_resFEP` drives it —
@@ -98,7 +106,10 @@ file, so no manual `sed` step is needed.
 qprep_prot -i 2LZM_prep.pdb -FF OPLSAAM -r 25 -cog 41.088 31.308 21.828
 ```
 
-This solvates the system under spherical boundary conditions and writes:
+This prepares the 25 Å-radius water sphere used by Q. The published method uses
+SCAAS spherical boundary conditions with the local reaction field, centring the
+sphere on Cβ (or a side-chain hydrogen for glycine), and neutralises ionizable
+residues in the outer 3 Å boundary layer. It writes:
 
 | File | Contents |
 | --- | --- |
@@ -113,14 +124,14 @@ FEP file is in Q's own numbering, and nothing in the PDB files records how the
 two relate.
 
 > **Centre the sphere on the residue you are mutating.** `qprep_prot` neutralises
-> charged residues that lie outside the boundary — an out-of-sphere `GLU` is
+> charged residues that lie outside the boundary: an out-of-sphere `GLU` is
 > prepared as `GLH`. If the residue you name has been neutralised, `qresfep` stops
 > with an error rather than silently building a hybrid residue from the wrong
 > library entry. The coordinates above are the CB of residue 39; `setup_resFEP`
 > recomputes them for each mutation.
 >
-> To keep one centre for a whole series — mutating residues around a bound ligand
-> that has to stay in the same sphere — pass `setup_resFEP -cog x y z`. Every
+> To keep one centre for a whole series (mutating residues around a bound ligand
+> that has to stay in the same sphere) pass `setup_resFEP -cog x y z`. Every
 > mutation is then checked against that sphere before anything is written, and the
 > series is refused if a residue reaches beyond the radius or into the restrained
 > shell where charges are neutralised.
@@ -128,7 +139,7 @@ two relate.
 ## 3. Generate the FEP input files
 
 ```bash
-qresfep -m LEU39ALA -mc A -S protein    -FF OPLSAAM -c SNELLIUS -w 25 -s exponential -l 1 -ts 2fs -T 298 -r 10
+qresfep -m LEU39ALA -mc A -S protein -FF OPLSAAM -c SNELLIUS -w 25 -s exponential -l 1 -ts 2fs -T 298 -r 10
 ```
 
 The main options:
@@ -137,25 +148,46 @@ The main options:
   numbering. `L39A` works too.
 - `-mc` the chain of that residue.
 - `-S` which leg: `protein` or `tripeptide`.
-- `-t` what flanks the mutated residue in the reference peptide: `A` (Ala, the
-  default), `G` (Gly), `X` (none), or `Z` (the native neighbours). `Z` is less
-  stable for charge-changing mutations.
-- `-w` lambda windows **per stage**. A dual-topology mutation runs two stages, so
-  `-w 25` is 50 windows in total.
-- `-s` lambda spacing. `exponential` gives stage 1 exponential and stage 2
-  reverse-exponential spacing, concentrating windows at the end of each stage,
-  where that stage's own topology is switching and the free energy moves fastest.
+- `-t` controls the reference peptide: `A` uses Ala flanks (AXA, the current
+  default), `G` uses Gly flanks (GXG), `X` uses only the capped mutable residue,
+  and `Z` preserves its native neighbours (ZXZ). The 2025 paper used ZXZ as its
+  pragmatic reference and found no statistically significant effect when these
+  four models were compared. This tutorial and the in-preparation
+  charge-changing protocol use AXA.
+- `-w` gives the number of lambda windows **per stage**. The hybrid-topology
+  transformation has two stages, so `-w 25` produces 50 windows in total.
+- `-s` controls lambda spacing. With `exponential`, stage 1 uses an exponential
+  ladder and stage 2 its reverse. Together they concentrate sampling toward the
+  relevant ends of the two-stage pathway. The 2025 paper describes the overall
+  endpoint-enriched strategy as sigmoidal; the names refer to different views of
+  the complete versus per-stage schedule.
 - `-l` the lambda endpoint to start from.
 - `-ts`, `-T`, `-r` timestep, temperature and number of replicates.
 - `-c` the cluster profile, from `settings.py`.
+
+The transformation is split into two consecutive stages. Stage 1 removes the
+wild-type side-chain charges while introducing soft-core treatment of the
+side-chain van der Waals interactions. Stage 2 introduces the mutant charges
+and removes the soft-core treatment, leaving the mutant side chain interacting
+normally and the wild-type side chain as a ghost. Stage 2 starts from the final
+coordinates of stage 1.
+
+### Charge-changing mutations
+
+Mutating to or from a charged residue changes the net charge represented by the
+alchemical side chain. For such transformations, QresFEP adds SOD or CLA ions
+to the reference-peptide sphere so that its total charge matches the prepared
+protein sphere. The ions are placed inside the solvent boundary and restrained
+away from its outer shell. This charge-matched reference leg is the extension
+used by the in-preparation manuscript.
 
 This creates `FEP_LEU39ALA/`:
 
 | File | Contents |
 | --- | --- |
 | `inputfiles/L2A.lib` | the hybrid residue: wild-type and mutant side chains in one library entry, the mutant's atoms lower-cased |
-| `inputfiles/FEP1.fep` | stage 1 — discharge the wild-type side chain, mutant present as a soft-core ghost |
-| `inputfiles/FEP2.fep` | stage 2 — charge and grow in the mutant, turn the wild type into a ghost |
+| `inputfiles/FEP1.fep` | stage 1 — remove the wild-type charges and introduce soft-core interactions |
+| `inputfiles/FEP2.fep` | stage 2 — introduce the mutant charges and remove its soft-core interactions |
 | `inputfiles/OPLSAAM_merged.prm` | force field plus zero-force terms for the bonded terms that span the two topologies |
 | `inputfiles/eq*.inp` | equilibration |
 | `inputfiles/md_{1,2}_*.inp` | production, per stage and lambda window |
@@ -182,7 +214,28 @@ sorts them into `protein/` and `tripeptide/`:
 
 ```bash
 setup_resFEP -i 2LZM_prep.pdb -M mutations_neutral.txt -mc A -FF OPLSAAM -r 25 -c SNELLIUS \
-             -w 25 -s exponential -l 1 -ts 2fs -T 298 -R 10 -clean dcd
+    -w 25 -s exponential -l 1 -ts 2fs -T 298 -R 10 -clean dcd
+```
+
+The command above retains the 25-window setup from the legacy tutorial. The
+published protocol H used 50 unevenly spaced windows in each stage, 20 ps per
+window and 10 independent replicas. At a 2 fs timestep, 20 ps corresponds to
+10,000 production steps. Use `--production-steps` to change that length, and
+`--separate-scaling on|off` to map directly to Q's `separate_scaling` setting.
+
+`--manuscript-settings` refers to the separate manuscript currently in
+preparation, not to protocol H in the 2025 paper. It selects the settings for
+that campaign in one option: a 25 Å sphere, AXA reference peptide, 50 windows
+per stage, exponential/reverse-exponential spacing, 2 fs timestep,
+2,500,000-step eq5, 10,000 steps per production window, `separate_scaling off`,
+and its ten fixed random seeds. Charge matching is automatic for every
+charge-changing perturbation and does not depend on selecting the preset.
+Operational options such as `-clean` and `--no-trajectories` remain independent.
+For example:
+
+```bash
+setup_resFEP -i 2LZM_prep.pdb -M mutations_charged.txt -mc A -c SNELLIUS \
+    --manuscript-settings -clean dcd
 ```
 
 leaving:

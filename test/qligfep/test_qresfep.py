@@ -262,6 +262,59 @@ class TestProteinComplexCoordinates:
         assert set(run.pdb) == {1}
 
 
+class TestProductionSteps:
+    def test_custom_step_count_is_stored(self, tmp_path):
+        run = QresFEP(
+            mutation="LEU1ALA",
+            chain="A",
+            system="protein",
+            force_field="OPLSAAM",
+            cluster="SNELLIUS",
+            production_steps=25_000,
+            workdir=tmp_path,
+        )
+
+        assert run.production_steps == 25_000
+
+    def test_custom_step_count_is_written_to_each_window(self, tmp_path):
+        run = QresFEP(
+            mutation="LEU1ALA",
+            chain="A",
+            system="protein",
+            force_field="OPLSAAM",
+            cluster="SNELLIUS",
+            windows=1,
+            production_steps=25_000,
+            workdir=tmp_path,
+        )
+        run.inputfiles.mkdir(parents=True)
+        run.shell_radius = 25
+        run.system_size = 0
+        run.counter_ions = 0
+        run.anchor_atom = None
+        run._distance_restraints = lambda: ""
+        run.lambda_schedule = lambda: [["1.000"], ["1.000"]]
+
+        stage_files = run.write_production()
+
+        for names in stage_files:
+            for name in names:
+                assert "steps                     25000" in (run.inputfiles / f"{name}.inp").read_text()
+
+    @pytest.mark.parametrize("steps", [0, -1])
+    def test_step_count_must_be_positive(self, tmp_path, steps):
+        with pytest.raises(MutationError, match="Production steps must be a positive integer"):
+            QresFEP(
+                mutation="LEU1ALA",
+                chain="A",
+                system="protein",
+                force_field="OPLSAAM",
+                cluster="SNELLIUS",
+                production_steps=steps,
+                workdir=tmp_path,
+            )
+
+
 class TestReplicateSeeds:
     def test_seed_count_must_match_replicates(self, tmp_path):
         with pytest.raises(MutationError, match="Expected 3 random seeds, received 2"):

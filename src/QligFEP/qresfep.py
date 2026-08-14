@@ -38,6 +38,7 @@ from .IO import AA, get_force_field_paths, read_prm, replace, run_qprep
 from .logger import logger
 from .pdb_utils import pdb_parse_in, pdb_parse_out
 from .peptide_caps import PeptideBuildError, build_reference_peptide
+from .resfep_protocols import DEFAULT_PRODUCTION_STEPS
 from .settings.settings import CLUSTER_DICT, CONFIGS
 from .sphere_prep import SpherePrep, residue_distance_from_center
 from .templates import (
@@ -68,9 +69,6 @@ SOFTCORE_MAX_POTENTIAL = "20"
 RESTRAINT_LOW = 0.0
 RESTRAINT_HIGH = 0.5
 RESTRAINT_FORCE = 10.0
-
-#: Production MD length per lambda window, in steps.
-PRODUCTION_STEPS = 10000
 
 #: Alpha-carbon charges the OPLS libraries give glycine and every other residue.
 #: A mutation to or from glycine moves CA between the two, in whichever stage
@@ -149,8 +147,8 @@ class QresFEP:
         temperature: str = "298",
         replicates: int = 10,
         tripeptide_flanks: str = "A",
-        shell_restraint: float = 0.0,
         eq5_steps: int | None = None,
+        production_steps: int = DEFAULT_PRODUCTION_STEPS,
         cofactors: list[str] | None = None,
         seeds: list[int] | None = None,
         to_clean: list[str] | None = None,
@@ -176,17 +174,14 @@ class QresFEP:
             tripeptide_flanks: Residues flanking the mutated one in the reference
                 peptide: ``A`` (Ala), ``G`` (Gly), ``X`` (none) or ``Z`` (the
                 native neighbours).
-            shell_restraint: Width of the restrained outer shell, subtracted from
-                the sphere radius. Recommended for membrane proteins.
-            eq5_steps: Length of the final equilibration, overriding the
-                protocol's own 2.5 ns at the default 2 fs timestep.
+            eq5_steps: Length of the final equilibration in steps.
+            production_steps: Production length per lambda window in steps.
             cofactors: Cofactor basenames; each needs a ``.pdb``, ``.lib`` and ``.prm``.
             seeds: Random seeds, one per replicate.
             to_clean: File suffixes to delete after each run.
             write_trajectories: Write DCD trajectories. Disable for quota-safe
                 production when trajectories are not needed for analysis.
-            separate_scaling: Couple solute and solvent to the heat bath
-                separately. Disable only for legacy-protocol reproduction.
+            separate_scaling: Scale solute and solvent independently.
             workdir: Directory holding the preparation output. Defaults to cwd.
         """
         self.workdir = Path(workdir or Path.cwd())
@@ -202,8 +197,10 @@ class QresFEP:
         self.temperature = str(temperature)
         self.replicates = int(replicates)
         self.tripeptide_flanks = tripeptide_flanks
-        self.shell_restraint = float(shell_restraint)
         self.eq5_steps = int(eq5_steps) if eq5_steps else None
+        self.production_steps = int(production_steps)
+        if self.production_steps <= 0:
+            raise MutationError("Production steps must be a positive integer")
         self.cofactors = list(cofactors or [])
         self.to_clean = to_clean
         self.write_trajectories = bool(write_trajectories)
@@ -255,7 +252,7 @@ class QresFEP:
         self.protein_pdb = self.workdir / self.prep.prepared_pdb
         self.radius = self.prep.radius
         self.center = self.prep.center
-        self.shell_radius = self.radius - self.shell_restraint
+        self.shell_radius = self.radius
 
         # Check the mutation describes the prepared structure before checking for
         # files: naming the wrong wild type is the more fundamental mistake, and
@@ -970,11 +967,8 @@ class QresFEP:
         config = get_production_config(
             self.timestep,
             self.shell_radius,
-            steps=PRODUCTION_STEPS,
+            steps=self.production_steps,
             interval_output=5,
-            # Matches the equilibration: solute and solvent are driven to the bath
-            # separately, or the boundary's work on the water shell is taken out of
-            # the solute as well and leaves it tens of kelvin cold.
             separate_scaling=self.separate_scaling,
         )
 
