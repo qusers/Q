@@ -10,10 +10,12 @@
 #include "cuda_shake_v2.cuh"
 #include "cuda_temperature.cuh"
 #include "cuda_water_boundary_force.cuh"
+#include "cuda_lincs.cuh"
 
 std::unique_ptr<ConstraintForce> CudaHandler::create_constraint_force_backend() {
     // return std::make_unique<CudaShakeV2>();
-    return std::make_unique<CudaShake>(true);
+    // return std::make_unique<CudaShake>(true);
+    return std::make_unique<CudaLincs>();
     // return std::make_unique<CudaSerialShake>();
 }
 

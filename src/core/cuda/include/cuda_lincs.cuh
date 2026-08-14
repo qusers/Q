@@ -22,7 +22,8 @@ struct CudaLincsSmallData {  // For small groups
     std::unique_ptr<HostDeviceBuffer<int>> neighbor_local_indices;
     std::unique_ptr<HostDeviceBuffer<double>> mass_factors;
 
-    std::unique_ptr<HostDeviceBuffer<double>> mass_a;
+    std::unique_ptr<HostDeviceBuffer<double>> matrix_a;
+    std::unique_ptr<HostDeviceBuffer<int>> failed_constraint;
 };
 
 class CudaLincs : public ConstraintForce {

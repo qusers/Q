@@ -60,7 +60,8 @@ void CpuLincs::init_backend(Context& ctx) {
             int idx = bond_graph[i][j];
             auto& bond_j = bonds[idx];
             int atom_idx = get_same_atom_in_two_bond(bond_i, bond_j);
-            normalized_c[i][j] = -get_sign(atom_idx, bond_i) * get_sign(atom_idx, bond_j) * winv[atom_idx - 1] * bond_inv_sqrt_inv_mass_sum[i] * bond_inv_sqrt_inv_mass_sum[idx];
+            normalized_c[i][j] = -get_sign(atom_idx, bond_i) * get_sign(atom_idx, bond_j) * winv[atom_idx - 1] * bond_inv_sqrt_inv_mass_sum[i] *
+                                 bond_inv_sqrt_inv_mass_sum[idx];
         }
     }
     lincs_data_.normalized_c = normalized_c;
