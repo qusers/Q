@@ -1,10 +1,12 @@
 """Module containing the command line interface for the qprep fortran program."""
 
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Optional
+from typing import Any
 
 import numpy as np
+import pandas as pd
 
 from ..IO import get_force_field_paths, parse_lib, parse_prm_options, run_qprep
 from ..logger import logger, setup_logger
@@ -24,6 +26,12 @@ from ._popc_utils import (
 )
 from .utils import handle_cysbonds
 
+Coordinates = Sequence[float]
+ChargedResidueSpec = tuple[str, str, int]
+ResidueInfo = dict[str, Any]
+NeutralizationStats = dict[str, Any]
+ForceFieldEntry = dict[str, Any]
+
 
 class Neutralizer:
     """Neutralize ionizable groups in Q's outer SCAAS boundary layer.
@@ -33,7 +41,13 @@ class Neutralizer:
     geometric charge-group center when it is off (AMBER14sb).
     """
 
-    def __init__(self, center_coords, radius=25.0, boundary_offset=3.0, force_field="AMBER14sb"):
+    def __init__(
+        self,
+        center_coords: Coordinates,
+        radius: float = 25.0,
+        boundary_offset: float = 3.0,
+        force_field: str = "AMBER14sb",
+    ) -> None:
         self.center = np.asarray(center_coords, dtype=float)
         self.radius = float(radius)
         self.boundary_offset = float(boundary_offset)
@@ -46,7 +60,7 @@ class Neutralizer:
                 "Force-field-sensitive boundary neutralization is not implemented for CHARMM; "
                 "use AMBER14sb or OPLS, or explicitly skip neutralization."
             )
-        self.residue_library = parse_lib(force_field)
+        self.residue_library: dict[str, ForceFieldEntry] = parse_lib(force_field)
         switch_atoms = parse_prm_options(force_field).get("switch_atoms")
         if switch_atoms not in {"on", "off"}:
             raise ValueError(f"Force field {force_field!r} does not define 'switch_atoms on|off'")
@@ -54,21 +68,21 @@ class Neutralizer:
 
         # Charged/neutral residue names are chemical states. Their atom sets,
         # charges, charge groups, and switching atoms come from the force field.
-        self.charged_residues = {
+        self.charged_residues: dict[str, ChargedResidueSpec] = {
             # Protein residues
-            "GLU": ["GLH", "CD", -1],  # Glutamic acid -> neutral glutamic acid
-            "ASP": ["ASH", "CG", -1],  # Aspartic acid -> neutral aspartic acid
-            "ARG": ["ARN", "CZ", +1],  # Arginine -> neutral arginine
-            "LYS": ["LYN", "NZ", +1],  # Lysine -> neutral lysine
-            "HIP": ["HID", "CG", +1],  # Histidine (protonated) -> histidine (delta protonated)
+            "GLU": ("GLH", "CD", -1),  # Glutamic acid -> neutral glutamic acid
+            "ASP": ("ASH", "CG", -1),  # Aspartic acid -> neutral aspartic acid
+            "ARG": ("ARN", "CZ", +1),  # Arginine -> neutral arginine
+            "LYS": ("LYN", "NZ", +1),  # Lysine -> neutral lysine
+            "HIP": ("HID", "CG", +1),  # Histidine (protonated) -> histidine (delta protonated)
             # DNA nucleotides (phosphate backbone carries -1 charge each)
-            "DA": ["DAN", "C1'", -1],
-            "DC": ["DCN", "C1'", -1],
-            "DG": ["DGN", "C1'", -1],
-            "DT": ["DTN", "C1'", -1],
+            "DA": ("DAN", "C1'", -1),
+            "DC": ("DCN", "C1'", -1),
+            "DG": ("DGN", "C1'", -1),
+            "DT": ("DTN", "C1'", -1),
         }
 
-        self._charged_heavy_atoms = {
+        self._charged_heavy_atoms: dict[str, set[str]] = {
             "GLU": {"OE1", "OE2"},
             "ASP": {"OD1", "OD2"},
             "ARG": {"NH1", "NH2"},
@@ -77,7 +91,7 @@ class Neutralizer:
         }
 
         # Statistics tracking
-        self.stats = {
+        self.stats: NeutralizationStats = {
             "forcefield": str(force_field),
             "switch_atoms": self.switch_atoms,
             "boundary_offset": self.boundary_offset,
@@ -94,36 +108,41 @@ class Neutralizer:
             "remaining_outside_charged": [],
         }
 
-    def _library_atom_names(self, residue_name):
+    def _library_entry(self, residue_name: str) -> ForceFieldEntry:
         entry = self.residue_library.get(residue_name)
         if entry is None:
             raise ValueError(f"Residue {residue_name!r} is missing from the {self.force_field} library")
-        return [atom["name"] for atom in entry["atoms"]]
+        return entry
 
-    def _charge_groups(self, residue_name):
-        entry = self.residue_library.get(residue_name)
-        if entry is None:
-            raise ValueError(f"Residue {residue_name!r} is missing from the {self.force_field} library")
-        return entry["charge_groups"] or [self._library_atom_names(residue_name)]
+    def _library_atom_names(self, residue_name: str) -> list[str]:
+        return [atom["name"] for atom in self._library_entry(residue_name)["atoms"]]
 
-    def _formal_charge_group(self, residue_name, formal_charge):
-        entry = self.residue_library[residue_name]
+    def _charge_groups(self, residue_name: str) -> list[list[str]]:
+        entry = self._library_entry(residue_name)
+        return entry["charge_groups"] or [[atom["name"] for atom in entry["atoms"]]]
+
+    def _formal_charge_group(self, residue_name: str, formal_charge: int) -> list[str]:
+        entry = self._library_entry(residue_name)
         charges = {atom["name"]: atom["charge"] for atom in entry["atoms"]}
-        groups = self._charge_groups(residue_name)
-        matching = [
-            atom_names
-            for atom_names in groups
-            if formal_charge * sum(charges.get(name, 0.0) for name in atom_names) > 0.5
-        ]
+        matching = []
+        for atom_names in self._charge_groups(residue_name):
+            group_charge = sum(charges.get(name, 0.0) for name in atom_names)
+            if formal_charge * group_charge > 0.5:
+                matching.append((atom_names, group_charge))
         if not matching:
             raise ValueError(
                 f"Could not identify the formal-charge group for {residue_name} in {self.force_field}"
             )
-        return max(matching, key=lambda names: abs(sum(charges.get(name, 0.0) for name in names)))
+        return max(matching, key=lambda match: abs(match[1]))[0]
 
-    def _boundary_reference(self, pdb_group, charge_group_atoms, residue_label):
-        available = pdb_group.set_index("atom_name", drop=False)
+    def _boundary_reference(
+        self,
+        pdb_group: pd.DataFrame,
+        charge_group_atoms: Sequence[str],
+        residue_label: str,
+    ) -> tuple[np.ndarray, str]:
         if self.switch_atoms:
+            available = pdb_group.set_index("atom_name", drop=False)
             switch_atom = charge_group_atoms[0]
             if switch_atom not in available.index:
                 raise ValueError(
@@ -146,25 +165,31 @@ class Neutralizer:
             )
         return present[["x", "y", "z"]].to_numpy(dtype=float).mean(axis=0), "charge-group center"
 
-    def _template_charge(self, residue_name):
+    def _template_charge(self, residue_name: str) -> float:
         entry = self.residue_library.get(residue_name)
         if entry is None:
             return 0.0
         return sum(atom["charge"] for atom in entry["atoms"])
 
-    def _total_library_charge(self, df):
-        total = 0.0
+    def _total_library_charge(self, df: pd.DataFrame) -> int:
         keys = ["chain_id", "residue_seq_number", "insertion_code"]
-        for _, group in df.groupby(keys, dropna=False):
-            total += self._template_charge(group["residue_name"].iloc[0])
-        return int(round(total))
+        residue_names = df.drop_duplicates(keys)["residue_name"]
+        return int(round(sum(self._template_charge(name) for name in residue_names)))
 
-    def neutralize_outside_residues(self, pdb_file, salt_bridge_cutoff=4.0):
+    def neutralize_outside_residues(
+        self,
+        pdb_file: str | Path,
+        salt_bridge_cutoff: float = 4.0,
+    ) -> tuple[pd.DataFrame, NeutralizationStats]:
         """Find and neutralize charged residues outside the sphere boundary"""
         df = read_pdb_to_dataframe(pdb_file)
         return self.neutralize_outside_residues_dataframe(df, salt_bridge_cutoff)
 
-    def neutralize_outside_residues_dataframe(self, df, salt_bridge_cutoff=4.0):
+    def neutralize_outside_residues_dataframe(
+        self,
+        df: pd.DataFrame,
+        salt_bridge_cutoff: float = 4.0,
+    ) -> tuple[pd.DataFrame, NeutralizationStats]:
         """Neutralize excluded charge groups and direct included salt-bridge partners."""
         reference = "switch atom" if self.switch_atoms else "charge-group center"
         logger.info(
@@ -187,11 +212,12 @@ class Neutralizer:
 
         # Separate protein and DNA charged residues for different handling
         protein_charged = [r for r in charged_residues_info if r["residue_name"] not in self._DNA_RESIDUES]
-        dna_charged = [r for r in charged_residues_info if r["residue_name"] in self._DNA_RESIDUES]
+        dna_count = len(charged_residues_info) - len(protein_charged)
 
         self.stats["total_charged_residues"] = len(charged_residues_info)
         logger.info(
-            f"Found {len(charged_residues_info)} charged residues ({len(protein_charged)} protein, {len(dna_charged)} DNA)"
+            f"Found {len(charged_residues_info)} charged residues "
+            f"({len(protein_charged)} protein, {dna_count} DNA)"
         )
 
         # Classify PROTEIN residues by distance to center (uses rest_bound)
@@ -220,15 +246,12 @@ class Neutralizer:
         # Track the full force-field template charge after all transformations.
         self.stats["final_total_charge"] = self._total_library_charge(modified_df)
 
-        # Check for remaining charged residues outside boundary
-        self._check_remaining_outside_charged(inside_residues, salt_bridge_pairs)
-
         # Log statistics
         self._log_neutralization_stats()
 
         return modified_df, self.stats
 
-    def _find_charged_residues(self, df):
+    def _find_charged_residues(self, df: pd.DataFrame) -> list[ResidueInfo]:
         """Find charged residues and calculate their force-field boundary references."""
         charged_residues_info = []
         group_keys = ["chain_id", "residue_seq_number", "insertion_code"]
@@ -259,7 +282,6 @@ class Neutralizer:
                         "residue_seq_number": res_num,
                         "insertion_code": insertion_code,
                         "boundary_reference": reference_kind,
-                        "boundary_reference_coords": reference_coords,
                         "charged_atom_coords": charged_atom_coords,
                         "distance": distance,
                         "charge": charge,
@@ -269,7 +291,10 @@ class Neutralizer:
 
         return charged_residues_info
 
-    def _classify_residues_by_distance(self, charged_residues_info):
+    def _classify_residues_by_distance(
+        self,
+        charged_residues_info: Sequence[ResidueInfo],
+    ) -> tuple[list[ResidueInfo], list[ResidueInfo]]:
         """Classify residues as inside or outside the boundary"""
         outside_residues = []
         inside_residues = []
@@ -290,7 +315,12 @@ class Neutralizer:
 
         return outside_residues, inside_residues
 
-    def _find_salt_bridges(self, outside_residues, inside_residues, cutoff):
+    def _find_salt_bridges(
+        self,
+        outside_residues: Sequence[ResidueInfo],
+        inside_residues: Sequence[ResidueInfo],
+        cutoff: float,
+    ) -> list[ResidueInfo]:
         """Find direct salt bridges crossing the included/excluded boundary."""
         salt_bridge_partners = {}
 
@@ -338,44 +368,77 @@ class Neutralizer:
 
         return list(salt_bridge_partners.values())
 
-    def _modify_residues(self, df, residues_to_modify):
-        """Modify residues to their neutral forms and remove appropriate atoms"""
+    @staticmethod
+    def _residue_mask(
+        df: pd.DataFrame,
+        chain: str,
+        residue_number: int,
+        insertion_code: str,
+    ) -> pd.Series:
+        return (
+            (df["chain_id"] == chain)
+            & (df["residue_seq_number"] == residue_number)
+            & (df["insertion_code"] == insertion_code)
+        )
+
+    def _record_modification(
+        self,
+        chain: str,
+        residue_number: int,
+        insertion_code: str,
+        old_name: str,
+        new_name: str,
+        distance: float,
+        boundary_reference: str,
+        atoms_removed: list[str],
+    ) -> None:
+        self.stats["modifications"][f"{chain}:{residue_number}{insertion_code}"] = {
+            "original": old_name,
+            "modified": new_name,
+            "distance": distance,
+            "boundary_reference": boundary_reference,
+            "atoms_removed": atoms_removed,
+        }
+
+    def _modify_residues(
+        self,
+        df: pd.DataFrame,
+        residues_to_modify: Sequence[ResidueInfo],
+    ) -> pd.DataFrame:
+        """Modify residues to their neutral forms and remove appropriate atoms."""
         modified_df = df.copy()
 
         for res_info in residues_to_modify:
             chain = res_info["chain_id"]
-            res_num = res_info["residue_seq_number"]
+            residue_number = res_info["residue_seq_number"]
+            insertion_code = res_info["insertion_code"]
             old_name = res_info["residue_name"]
             new_name = res_info["neutral_form"]
             distance = res_info["distance"]
 
-            # Change residue name and remove atoms based on residue type. Match on
-            # insertion_code too: a cap (e.g. NME 167A) can share chain+seq_number
-            # with the residue being neutralized and must not be rewritten.
-            mask = (
-                (modified_df["chain_id"] == chain)
-                & (modified_df["residue_seq_number"] == res_num)
-                & (modified_df["insertion_code"] == res_info["insertion_code"])
-            )
+            # Include the insertion code because a cap such as NME 167A can
+            # share its chain and sequence number with residue 167.
+            mask = self._residue_mask(modified_df, chain, residue_number, insertion_code)
             modified_df.loc[mask, "residue_name"] = new_name
             atoms_to_remove = self._get_atoms_to_remove(old_name, new_name)
+            if atoms_to_remove:
+                remove_mask = mask & modified_df["atom_name"].isin(atoms_to_remove)
+                modified_df = modified_df.drop(modified_df.index[remove_mask])
 
-            for atom_name in atoms_to_remove:
-                atom_mask = mask & (modified_df["atom_name"] == atom_name)
-                indices_to_remove = atom_mask[atom_mask].index.intersection(modified_df.index)
-                modified_df = modified_df.drop(indices_to_remove)
-
-            mod_key = f"{chain}:{res_num}{res_info['insertion_code']}"
-            self.stats["modifications"][mod_key] = {
-                "original": old_name,
-                "modified": new_name,
-                "distance": distance,
-                "boundary_reference": res_info["boundary_reference"],
-                "atoms_removed": atoms_to_remove,
-            }
+            self._record_modification(
+                chain,
+                residue_number,
+                insertion_code,
+                old_name,
+                new_name,
+                distance,
+                res_info["boundary_reference"],
+                atoms_to_remove,
+            )
 
             logger.debug(
-                f"Neutralized {old_name} -> {new_name} at {chain}:{res_num} (distance: {distance:.2f}Å)"
+                f"Neutralized {old_name} -> {new_name} at {chain}:{residue_number} "
+                f"(distance: {distance:.2f}Å)"
             )
             if atoms_to_remove:
                 logger.debug(f"Removed atoms: {', '.join(atoms_to_remove)}")
@@ -390,7 +453,7 @@ class Neutralizer:
         "SER", "THR", "TRP", "TYR", "VAL",
     } #fmt: skip
 
-    def _terminal_neutral_form(self, terminal_name, terminal_charge):
+    def _terminal_neutral_form(self, terminal_name: str, terminal_charge: float) -> str:
         """Find the internal template after removing an N- or C-terminal charge.
 
         Selection uses template charge and atom-set similarity, which also covers
@@ -413,7 +476,7 @@ class Neutralizer:
             )
         return max(candidates)[2]
 
-    def _terminal_charge_group(self, residue_name, marker_atom):
+    def _terminal_charge_group(self, residue_name: str, marker_atom: str) -> list[str]:
         matching = [group for group in self._charge_groups(residue_name) if marker_atom in group]
         if len(matching) != 1:
             raise ValueError(
@@ -421,11 +484,17 @@ class Neutralizer:
             )
         return matching[0]
 
-    def _convert_residue_template(self, df, mask, old_name, new_name, preserve_one_hydrogen=False):
+    def _convert_residue_template(
+        self,
+        df: pd.DataFrame,
+        mask: pd.Series,
+        new_name: str,
+        preserve_one_hydrogen: bool = False,
+    ) -> tuple[pd.DataFrame, list[str]]:
         """Rename a residue and remove atoms absent from its new force-field template."""
-        new_atoms = self._library_atom_names(new_name)
+        new_atoms = set(self._library_atom_names(new_name))
         present_atoms = list(df.loc[mask, "atom_name"])
-        atoms_to_remove = [name for name in present_atoms if name not in set(new_atoms)]
+        atoms_to_remove = [name for name in present_atoms if name not in new_atoms]
 
         # N-terminal force fields use H1/H2/H3 or HT1/HT2/HT3 whereas the
         # internal residue uses H. Preserve one equivalent N-H coordinate.
@@ -437,112 +506,93 @@ class Neutralizer:
                 atoms_to_remove.remove(source)
 
         df.loc[mask, "residue_name"] = new_name
-        for atom_name in atoms_to_remove:
-            current_mask = mask.reindex(df.index, fill_value=False)
-            df = df.drop(df[current_mask & (df["atom_name"] == atom_name)].index)
+        if atoms_to_remove:
+            remove_mask = mask & df["atom_name"].isin(atoms_to_remove)
+            df = df.drop(df.index[remove_mask])
         return df, atoms_to_remove
 
-    def _neutralize_nterminals(self, df):
+    def _neutralize_terminals(
+        self,
+        df: pd.DataFrame,
+        *,
+        prefix: str,
+        marker_atom: str,
+        terminal_charge: float,
+        preserve_one_hydrogen: bool = False,
+    ) -> pd.DataFrame:
+        """Convert one kind of charged terminal template to its internal form."""
+        modified_df = df.copy()
+        candidate_names = {
+            name
+            for name in modified_df["residue_name"].unique()
+            if name.startswith(prefix) and len(name) > 3 and name in self.residue_library
+        }
+        terminal_mask = modified_df["residue_name"].isin(candidate_names)
+        group_keys = ["chain_id", "residue_seq_number", "insertion_code", "residue_name"]
+        converted = 0
+
+        for (chain, residue_number, insertion_code, terminal_name), group in modified_df[
+            terminal_mask
+        ].groupby(group_keys, dropna=False):
+            reference_atoms = self._terminal_charge_group(terminal_name, marker_atom)
+            reference_coords, reference_kind = self._boundary_reference(
+                group,
+                reference_atoms,
+                f"{terminal_name} {chain}:{residue_number}{insertion_code}",
+            )
+            distance = float(np.linalg.norm(reference_coords - self.center))
+            if distance < self.rest_bound:
+                continue
+
+            internal_name = self._terminal_neutral_form(terminal_name, terminal_charge)
+            mask = self._residue_mask(modified_df, chain, residue_number, insertion_code)
+            modified_df, atoms_removed = self._convert_residue_template(
+                modified_df,
+                mask,
+                internal_name,
+                preserve_one_hydrogen=preserve_one_hydrogen,
+            )
+            self._record_modification(
+                chain,
+                residue_number,
+                insertion_code,
+                terminal_name,
+                internal_name,
+                distance,
+                reference_kind,
+                atoms_removed,
+            )
+            logger.debug(
+                f"Neutralized {prefix}-terminal {terminal_name} -> {internal_name} "
+                f"at {chain}:{residue_number} ({reference_kind}: {distance:.2f}Å)"
+            )
+            converted += 1
+
+        self.stats["terminals_neutralized"] += converted
+        if converted:
+            logger.info(f"Neutralized {converted} {prefix}-terminal residues outside boundary")
+        return modified_df
+
+    def _neutralize_nterminals(self, df: pd.DataFrame) -> pd.DataFrame:
         """Convert charged N-terminal templates outside the boundary to internal forms."""
-        modified_df = df.copy()
-        candidate_names = {
-            name
-            for name in modified_df["residue_name"].unique()
-            if name.startswith("N") and len(name) > 3 and name in self.residue_library
-        }
-        nterm_mask = modified_df["residue_name"].isin(candidate_names)
-        group_keys = ["chain_id", "residue_seq_number", "insertion_code", "residue_name"]
-        n_converted = 0
+        return self._neutralize_terminals(
+            df,
+            prefix="N",
+            marker_atom="N",
+            terminal_charge=+1.0,
+            preserve_one_hydrogen=True,
+        )
 
-        for (chain, res_num, insertion_code, nterm_name), group in modified_df[nterm_mask].groupby(
-            group_keys, dropna=False
-        ):
-            reference_atoms = self._terminal_charge_group(nterm_name, "N")
-            reference_coords, reference_kind = self._boundary_reference(
-                group, reference_atoms, f"{nterm_name} {chain}:{res_num}{insertion_code}"
-            )
-            dist = float(np.linalg.norm(reference_coords - self.center))
-            if dist < self.rest_bound:
-                continue
-
-            internal_name = self._terminal_neutral_form(nterm_name, terminal_charge=+1.0)
-            mask = (
-                (modified_df["chain_id"] == chain)
-                & (modified_df["residue_seq_number"] == res_num)
-                & (modified_df["insertion_code"] == insertion_code)
-            )
-            modified_df, atoms_removed = self._convert_residue_template(
-                modified_df, mask, nterm_name, internal_name, preserve_one_hydrogen=True
-            )
-            self.stats["modifications"][f"{chain}:{res_num}{insertion_code}"] = {
-                "original": nterm_name,
-                "modified": internal_name,
-                "distance": dist,
-                "boundary_reference": reference_kind,
-                "atoms_removed": atoms_removed,
-            }
-            logger.debug(
-                f"Neutralized N-terminal {nterm_name} -> {internal_name} at {chain}:{res_num} "
-                f"({reference_kind}: {dist:.2f}Å)"
-            )
-            n_converted += 1
-
-        self.stats["terminals_neutralized"] += n_converted
-        if n_converted:
-            logger.info(f"Neutralized {n_converted} N-terminal residues outside boundary")
-        return modified_df
-
-    def _neutralize_cterminals(self, df):
+    def _neutralize_cterminals(self, df: pd.DataFrame) -> pd.DataFrame:
         """Convert charged C-terminal templates outside the boundary to internal forms."""
-        modified_df = df.copy()
-        candidate_names = {
-            name
-            for name in modified_df["residue_name"].unique()
-            if name.startswith("C") and len(name) > 3 and name in self.residue_library
-        }
-        cterm_mask = modified_df["residue_name"].isin(candidate_names)
-        group_keys = ["chain_id", "residue_seq_number", "insertion_code", "residue_name"]
-        n_converted = 0
+        return self._neutralize_terminals(
+            df,
+            prefix="C",
+            marker_atom="OXT",
+            terminal_charge=-1.0,
+        )
 
-        for (chain, res_num, insertion_code, cterm_name), group in modified_df[cterm_mask].groupby(
-            group_keys, dropna=False
-        ):
-            reference_atoms = self._terminal_charge_group(cterm_name, "OXT")
-            reference_coords, reference_kind = self._boundary_reference(
-                group, reference_atoms, f"{cterm_name} {chain}:{res_num}{insertion_code}"
-            )
-            dist = float(np.linalg.norm(reference_coords - self.center))
-            if dist < self.rest_bound:
-                continue
-
-            internal_name = self._terminal_neutral_form(cterm_name, terminal_charge=-1.0)
-            mask = (
-                (modified_df["chain_id"] == chain)
-                & (modified_df["residue_seq_number"] == res_num)
-                & (modified_df["insertion_code"] == insertion_code)
-            )
-            modified_df, atoms_removed = self._convert_residue_template(
-                modified_df, mask, cterm_name, internal_name
-            )
-            self.stats["modifications"][f"{chain}:{res_num}{insertion_code}"] = {
-                "original": cterm_name,
-                "modified": internal_name,
-                "distance": dist,
-                "boundary_reference": reference_kind,
-                "atoms_removed": atoms_removed,
-            }
-            logger.debug(
-                f"Neutralized C-terminal {cterm_name} -> {internal_name} at {chain}:{res_num} "
-                f"({reference_kind}: {dist:.2f}Å)"
-            )
-            n_converted += 1
-
-        self.stats["terminals_neutralized"] += n_converted
-        if n_converted:
-            logger.info(f"Neutralized {n_converted} C-terminal residues outside boundary")
-        return modified_df
-
-    def _find_outside_dna(self, df):
+    def _find_outside_dna(self, df: pd.DataFrame) -> list[ResidueInfo]:
         """Find DNA nucleotides whose C1' atom is outside the sphere radius.
 
         DNA in the outer SCAAS layer is kept because changing a nucleotide to
@@ -582,7 +632,11 @@ class Neutralizer:
 
     _DNA_5PRIME = {"DA": "DA5", "DC": "DC5", "DG": "DG5", "DT": "DT5"}
 
-    def _remove_and_cap_outside_dna(self, df, fully_outside_residues):
+    def _remove_and_cap_outside_dna(
+        self,
+        df: pd.DataFrame,
+        fully_outside_residues: Sequence[ResidueInfo],
+    ) -> pd.DataFrame:
         """Remove fully-outside DNA and cap the inside boundary residues.
 
         All DNA nucleotides fully outside the sphere are removed. The last
@@ -601,11 +655,9 @@ class Neutralizer:
 
         # Find all DNA residue numbers per chain (inside + outside)
         all_dna_by_chain = {}
-        for res_name in self._DNA_RESIDUES:
-            for (chain, res_num), _ in df[df["residue_name"] == res_name].groupby(
-                ["chain_id", "residue_seq_number"]
-            ):
-                all_dna_by_chain.setdefault(chain, set()).add(res_num)
+        dna = df[df["residue_name"].isin(self._DNA_RESIDUES)]
+        for (chain, residue_number), _ in dna.groupby(["chain_id", "residue_seq_number"]):
+            all_dna_by_chain.setdefault(chain, set()).add(residue_number)
 
         # Remove all fully-outside DNA
         for r in fully_outside_residues:
@@ -619,7 +671,7 @@ class Neutralizer:
         n_caps = 0
         for chain, outside_list in outside_by_chain.items():
             outside_resnums = {r["residue_seq_number"] for r in outside_list}
-            inside_resnums = sorted(all_dna_by_chain.get(chain, set()) - outside_resnums)
+            inside_resnums = all_dna_by_chain.get(chain, set()) - outside_resnums
             if not inside_resnums:
                 continue
 
@@ -633,9 +685,8 @@ class Neutralizer:
             if old_name in self._DNA_5PRIME:
                 new_name = self._DNA_5PRIME[old_name]
                 modified_df.loc[mask, "residue_name"] = new_name
-                for atom in ["P", "OP1", "OP2", "HP"]:
-                    atom_mask = mask & (modified_df["atom_name"] == atom)
-                    modified_df = modified_df.drop(atom_mask[atom_mask].index.intersection(modified_df.index))
+                remove_mask = mask & modified_df["atom_name"].isin({"P", "OP1", "OP2", "HP"})
+                modified_df = modified_df.drop(modified_df.index[remove_mask])
                 logger.debug(f"5' terminal cap: {old_name} -> {new_name} at {chain}:{first_inside}")
                 n_caps += 1
 
@@ -645,7 +696,7 @@ class Neutralizer:
         )
         return modified_df
 
-    def _get_atoms_to_remove(self, old_name, new_name):
+    def _get_atoms_to_remove(self, old_name: str, new_name: str) -> list[str]:
         """Return atoms present only in the charged force-field template."""
         old_atoms = self._library_atom_names(old_name)
         new_atoms = set(self._library_atom_names(new_name))
@@ -658,13 +709,7 @@ class Neutralizer:
             )
         return atoms_to_remove
 
-    def _check_remaining_outside_charged(self, inside_residues, salt_bridge_partners):
-        """Check for remaining charged residues outside the boundary"""
-        for res in inside_residues:
-            if res not in salt_bridge_partners and res["distance"] >= self.rest_bound:
-                self.stats["remaining_outside_charged"].append(res)
-
-    def _log_neutralization_stats(self):
+    def _log_neutralization_stats(self) -> None:
         """Log neutralization statistics"""
         stats = self.stats
 
@@ -836,7 +881,10 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main(args: Optional[argparse.Namespace] = None, **kwargs) -> Optional[dict]:
+def main(
+    args: argparse.Namespace | None = None,
+    **kwargs: Any,
+) -> NeutralizationStats | None:
     """Either runs the qprep program with the given arguments via **kwargs or parses
     the arguments and runs the program.
 
@@ -1056,7 +1104,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> Optional[dict]:
     return neutralization_stats
 
 
-def main_exe():
+def main_exe() -> None:
     args = parse_arguments()
     main(args)
 
