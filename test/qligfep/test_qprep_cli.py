@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from QligFEP.CLI.qprep_cli import Neutralizer
+from QligFEP.CLI.qprep_cli import Neutralizer, parse_arguments
 
 
 def _make_atom(record_type, serial, atom_name, residue_name, chain, resnum, x, y, z, element="C"):
@@ -57,6 +57,18 @@ def _build_protein_residue(resname, chain, resnum, x, y, z, key_atom="CA"):
     return atoms
 
 
+class TestNeutralizationDefaults:
+    def test_default_is_outer_three_angstrom_scaas_layer(self):
+        result, _ = Neutralizer((0, 0, 0), radius=25.0).neutralize_outside_residues_dataframe(
+            pd.DataFrame(_build_protein_residue("GLU", "A", 1, 23.0, 0.0, 0.0))
+        )
+        assert (result["residue_name"] == "GLH").all()
+
+    def test_cli_default_boundary_offset_is_three(self, monkeypatch):
+        monkeypatch.setattr("sys.argv", ["qprep_prot", "-i", "protein.pdb"])
+        assert parse_arguments().neutralize_boundary_offset == 3.0
+
+
 class TestQChargeGroupNeutralization:
     def test_uses_q_default_whole_residue_charge_group_center(self):
         glu = _build_protein_residue("GLU", "A", 1, 30.0, 0.0, 0.0)
@@ -90,13 +102,62 @@ class TestQChargeGroupNeutralization:
         assert stats["salt_bridges_neutralized"] == 1
 
 
+class TestOPLSChargeGroupNeutralization:
+    @pytest.mark.parametrize(
+        ("force_field", "switch_atom"),
+        [("OPLS2005", "CZ"), ("OPLS2015", "CG")],
+    )
+    def test_uses_force_field_formal_charge_group_switch_atom(self, force_field, switch_atom):
+        arg = _build_protein_residue("ARG", "A", 1, 0.0, 0.0, 0.0)
+        if switch_atom != "CZ":
+            arg.append(_make_atom("ATOM", 111, switch_atom, "ARG", "A", 1, 23.0, 0.0, 0.0))
+        else:
+            for atom in arg:
+                if atom["atom_name"] == switch_atom:
+                    atom["x"] = 23.0
+
+        result, stats = Neutralizer(
+            (0, 0, 0), radius=25.0, force_field=force_field
+        ).neutralize_outside_residues_dataframe(pd.DataFrame(arg))
+
+        assert (result["residue_name"] == "ARN").all()
+        assert stats["modifications"]["A:1"]["boundary_reference"] == f"switch atom {switch_atom}"
+
+    def test_does_not_use_whole_residue_centroid_with_switch_atoms(self):
+        arg = _build_protein_residue("ARG", "A", 1, 30.0, 0.0, 0.0)
+        for atom in arg:
+            if atom["atom_name"] == "CZ":
+                atom["x"] = 21.0
+
+        result, _ = Neutralizer(
+            (0, 0, 0), radius=25.0, force_field="OPLS2005"
+        ).neutralize_outside_residues_dataframe(pd.DataFrame(arg))
+
+        assert (result["residue_name"] == "ARG").all()
+
+    def test_atom_removal_comes_from_selected_force_field(self):
+        opls = Neutralizer((0, 0, 0), force_field="OPLS2005")
+        amber = Neutralizer((0, 0, 0), force_field="AMBER14sb")
+        assert opls._get_atoms_to_remove("LYS", "LYN") == ["HZ3"]
+        assert opls._get_atoms_to_remove("ARG", "ARN") == ["HH12"]
+        assert amber._get_atoms_to_remove("LYS", "LYN") == ["HZ1"]
+        assert amber._get_atoms_to_remove("ARG", "ARN") == ["HH22"]
+
+    def test_opls2005_nonstandard_terminal_names_preserve_sidechain_state(self):
+        neutralizer = Neutralizer((0, 0, 0), force_field="OPLS2005")
+        assert neutralizer._terminal_neutral_form("NAR+", terminal_charge=+1.0) == "ARG"
+        assert neutralizer._terminal_neutral_form("NARG", terminal_charge=+1.0) == "ARN"
+        assert neutralizer._terminal_neutral_form("CAR+", terminal_charge=-1.0) == "ARG"
+        assert neutralizer._terminal_neutral_form("CARG", terminal_charge=-1.0) == "ARN"
+
+
 class TestNeutralizerDNA:
     """Tests for DNA nucleotide handling in the Neutralizer.
 
     DNA nucleotides whose C1' atom is outside the sphere radius are removed.
-    DNA in the restrained shell (between rest_bound and radius) is kept with
-    native charges, consistent with protein handling. The last inside residue
-    adjacent to the removed region gets a 5' terminal form.
+    DNA in the outer SCAAS layer is retained because no protein-style neutral
+    nucleotide template is substituted. The first retained residue next to a
+    removed upstream segment gets a 5' terminal form.
     """
 
     def _make_neutralizer(self, center=(0, 0, 0), radius=25.0, offset=3.0):

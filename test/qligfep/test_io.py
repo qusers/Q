@@ -190,6 +190,21 @@ class TestQprepErrorCheck:
             qprep_error_check(output_file, "AMBER14sb")
 
 
+class TestForceFieldParsing:
+    def test_parse_lib_retains_charge_groups_and_punctuation_in_residue_names(self):
+        from QligFEP.IO import parse_lib
+
+        residues = parse_lib("OPLS2005")
+        assert "NAR+" in residues
+        assert residues["ARG"]["charge_groups"][2][0] == "CZ"
+
+    def test_parse_prm_options_reads_switch_atom_policy(self):
+        from QligFEP.IO import parse_prm_options
+
+        assert parse_prm_options("AMBER14sb")["switch_atoms"] == "off"
+        assert parse_prm_options("OPLS2005")["switch_atoms"] == "on"
+
+
 class TestExceptionClasses:
     """Tests for exception classes."""
 
