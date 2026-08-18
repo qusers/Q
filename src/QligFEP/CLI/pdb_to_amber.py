@@ -59,6 +59,18 @@ def reindex_pdb_residues(pdb_path: Path, out_pdb_path: str):
     write_dataframe_to_pdb(pdb_df, out_pdb_path)
 
 
+def correct_paired_numbered_atom_names(npdb_i):
+    """Normalize source conventions containing matching 2X/3X atom names."""
+    present = {line[12:16].strip() for line in npdb_i}
+    renames = {}
+    for atom_name in present:
+        match = re.fullmatch(r"2([A-Z]+\d*)", atom_name)
+        if match and f"3{match.group(1)}" in present:
+            stem = match.group(1)
+            renames.update({atom_name: f"{stem}2", f"3{stem}": f"{stem}3"})
+    return _rename_atoms(npdb_i, renames)
+
+
 def correct_numbered_atom_names(npdb_i):
     """Corrects atom names that start with numbers by moving the numbers to the end.
     Uses regex to match and extract leading numbers.
@@ -400,11 +412,13 @@ def normalize_neutral_lysine_hydrogens(npdb_i, resname):
         return npdb_i
     present = {line[12:16].strip() for line in npdb_i}
     hydrogen_names = present & {"HZ1", "HZ2", "HZ3"}
-    if hydrogen_names == {"HZ2", "HZ3"} or len(hydrogen_names) < 2:
+    if hydrogen_names <= {"HZ2", "HZ3"}:
         return npdb_i
+    if len(hydrogen_names) == 3:
+        raise ValueError(f"LYN NZ has three hydrogens: {sorted(hydrogen_names)}")
     if hydrogen_names == {"HZ1", "HZ2"}:
         return _rename_atoms(npdb_i, {"HZ1": "HZ2", "HZ2": "HZ3"})
-    raise ValueError(f"LYN NZ hydrogen names are inconsistent: {sorted(hydrogen_names)}")
+    return _rename_atoms(npdb_i, {"HZ1": "HZ2"})
 
 
 _CTERMINAL_OXYGEN_ALIASES = {
@@ -506,9 +520,10 @@ def fix_pdb(pdb_path: Path, rename_mapping=rename_mapping, out_name=None):
                     # Atom name (cols 12-15) and residue name (cols 17-20)
                     npdb[i][j] = line[:12] + f"{new_name:<4}" + line[16:17] + f"{new_name:<4}" + line[21:]
             resname = new_name
-        # Apply residue-specific mappings before the generic numbered-atom rule.
-        # Reversing this order turns 1HB/2HB/3HB into HB2/HB3/HB3 and creates
-        # duplicate atom names for methyl groups.
+        # Resolve 2HB/3HB-style pairs before residue-specific aliases consume
+        # one member and make the source numbering convention ambiguous.
+        npdb[i] = correct_paired_numbered_atom_names(npdb[i])
+        # Apply residue-specific mappings before the remaining generic numbered-atom rule.
         npdb[i] = correct_amino_acid_atom_names(npdb[i], resname, rename_mapping)
         npdb[i] = correct_numbered_atom_names(npdb[i])
         npdb[i] = normalize_protonated_carboxylate(npdb[i], resname)

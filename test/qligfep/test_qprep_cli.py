@@ -68,6 +68,12 @@ class TestNeutralizationDefaults:
         monkeypatch.setattr("sys.argv", ["qprep_prot", "-i", "protein.pdb"])
         assert parse_arguments().neutralize_boundary_offset == 3.0
 
+    def test_legacy_parameter_file_defaults_to_switch_atoms(self, monkeypatch):
+        monkeypatch.setattr("QligFEP.CLI.qprep_cli.parse_lib", lambda _: {})
+        monkeypatch.setattr("QligFEP.CLI.qprep_cli.parse_prm_options", lambda _: {})
+
+        assert Neutralizer((0, 0, 0), force_field="legacy").switch_atoms is True
+
 
 class TestQChargeGroupNeutralization:
     def test_uses_q_default_whole_residue_charge_group_center(self):

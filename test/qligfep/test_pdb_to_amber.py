@@ -624,6 +624,21 @@ class TestProtonatedCarboxylateNormalization:
 
 
 class TestNumberedMethylHydrogenNormalization:
+    def test_two_three_methylene_convention_keeps_unique_names(self, tmp_path):
+        lines = [
+            _line(1, "CB", "GLU", "A", 1, elem="C"),
+            _line(2, "2HB", "GLU", "A", 1, x=1.0, elem="H"),
+            _line(3, "3HB", "GLU", "A", 1, x=-1.0, elem="H"),
+        ]
+        pdb_file = _write_pdb(tmp_path, lines)
+        out_file = tmp_path / "out.pdb"
+
+        fix_pdb(pdb_file, out_name=out_file)
+
+        atoms = _get_atom_names(out_file, residue_name="GLU")
+        assert {"HB2", "HB3"}.issubset(atoms)
+        assert len(atoms) == len(set(atoms))
+
     @pytest.mark.parametrize(
         ("resname", "heavy_atom", "source_names", "expected_names"),
         [
@@ -688,21 +703,40 @@ class TestBackboneAmideGeometryValidation:
 
 
 class TestNeutralLysineHydrogenNormalization:
-    def test_hz1_hz2_source_convention_becomes_hz2_hz3(self, tmp_path):
-        lines = [
-            _line(1, "NZ", "LYN", "A", 11, elem="N"),
-            _line(2, "HZ1", "LYN", "A", 11, x=0.9, elem="H"),
-            _line(3, "HZ2", "LYN", "A", 11, x=-0.9, elem="H"),
-        ]
+    @pytest.mark.parametrize(
+        ("source_names", "expected_names"),
+        [
+            (("HZ1", "HZ2"), {"HZ2", "HZ3"}),
+            (("HZ1", "HZ3"), {"HZ2", "HZ3"}),
+            (("HZ1",), {"HZ2"}),
+        ],
+    )
+    def test_source_conventions_become_library_valid_names(self, tmp_path, source_names, expected_names):
+        lines = [_line(1, "NZ", "LYN", "A", 11, elem="N")]
+        lines.extend(
+            _line(index, name, "LYN", "A", 11, x=float(index), elem="H")
+            for index, name in enumerate(source_names, 2)
+        )
         pdb_file = _write_pdb(tmp_path, lines)
         out_file = tmp_path / "out.pdb"
 
         fix_pdb(pdb_file, out_name=out_file)
 
         atoms = _get_atom_names(out_file, residue_name="LYN")
-        assert {"HZ2", "HZ3"}.issubset(atoms)
+        assert expected_names.issubset(atoms)
         assert "HZ1" not in atoms
         assert len(atoms) == len(set(atoms))
+
+    def test_three_nz_hydrogens_are_rejected(self, tmp_path):
+        lines = [_line(1, "NZ", "LYN", "A", 11, elem="N")]
+        lines.extend(
+            _line(index, name, "LYN", "A", 11, x=float(index), elem="H")
+            for index, name in enumerate(("HZ1", "HZ2", "HZ3"), 2)
+        )
+        pdb_file = _write_pdb(tmp_path, lines)
+
+        with pytest.raises(ValueError, match="LYN NZ has three hydrogens"):
+            fix_pdb(pdb_file, out_name=tmp_path / "out.pdb")
 
 
 class TestNeutralArginineGeometryNormalization:

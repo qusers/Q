@@ -61,9 +61,12 @@ class Neutralizer:
                 "use AMBER14sb or OPLS, or explicitly skip neutralization."
             )
         self.residue_library: dict[str, ForceFieldEntry] = parse_lib(force_field)
-        switch_atoms = parse_prm_options(force_field).get("switch_atoms")
+        # Q defaults to switching atoms when this option is not specified.
+        # For explicit charge groups, the first listed atom determines whether
+        # the entire group is included or excluded at the spherical boundary.
+        switch_atoms = parse_prm_options(force_field).get("switch_atoms", "on")
         if switch_atoms not in {"on", "off"}:
-            raise ValueError(f"Force field {force_field!r} does not define 'switch_atoms on|off'")
+            raise ValueError(f"Force field {force_field!r} must define 'switch_atoms' as on or off")
         self.switch_atoms = switch_atoms == "on"
 
         # Charged/neutral residue names are chemical states. Their atom sets,
