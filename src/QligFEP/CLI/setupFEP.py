@@ -40,6 +40,8 @@ def create_call(**kwargs):
         template += " -clean {to_clean}"
     if "random_state" in kwargs and kwargs["random_state"] is not None:
         template += " -rs {random_state}"
+    if kwargs.get("hmr"):
+        template += " --hmr"
     if kwargs.get("minimize"):
         template += " --minimize"
     if kwargs.get("production"):
@@ -152,6 +154,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 replicates=args.replicates,
                 sampling=args.sampling,
                 timestep=args.timestep,
+                hmr=args.hmr,
                 minimize=args.minimize,
                 production=args.production,
                 windows=args.windows,

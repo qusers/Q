@@ -22,6 +22,7 @@ class QprepFEPParameters:
     solvent: str  # Solvent specification (e.g., "1 HOH" or "4 water.pdb")
     cysbonds: str = ""  # Cysbond lines (empty string if none)
     solvate: bool = True  # Whether to solvate (False for vacuum)
+    hydrogen_mass: float | None = None  # Solute-only HMR target mass (amu)
 
 
 @dataclass
@@ -69,9 +70,12 @@ def render_qprep_fep_input(params: QprepFEPParameters) -> str:
     if params.cysbonds:
         lines.append(params.cysbonds.rstrip())
 
+    lines.append("maketop MKC_p")
+    if params.hydrogen_mass is not None:
+        lines.append(f"hmr {params.hydrogen_mass}")
+
     lines.extend(
         [
-            "maketop MKC_p",
             "writetop dualtop.top",
             "wp top_p.pdb y",
             "rt dualtop.top",

@@ -2222,6 +2222,8 @@ subroutine init_nodes
   ! Bcast iac, crg and cgpatom
   call MPI_Bcast(iac, natom, MPI_INTEGER2, 0, MPI_COMM_WORLD, ierr)
   if (ierr .ne. 0) call die('init_nodes/MPI_Bcast iac')
+  call MPI_Bcast(atom_mass, natom, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+  if (ierr .ne. 0) call die('init_nodes/MPI_Bcast atom_mass')
   call MPI_Bcast(crg, natom, MPI_REAL, 0, MPI_COMM_WORLD, ierr)
   if (ierr .ne. 0) call die('init_nodes/MPI_Bcast crg')
   call MPI_Bcast(cgpatom, natom, MPI_INTEGER4, 0, MPI_COMM_WORLD, ierr) !(AI)
@@ -3841,7 +3843,7 @@ subroutine maxwell
     kT = boltz*Tmaxw
 
     do i=1,natom
-      sd = sqrt (kT/iaclib(iac(i))%mass)
+      sd = sqrt (kT/atom_mass(i))
       do j=1,3
         call gauss (zero,sd,vg,iseed)
         k=(i-1)*3+j
@@ -3879,7 +3881,7 @@ subroutine temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
     !get kinetic energies for solute atoms
     do i=1,nat_solute
       i3=i*3-3
-      Ekin = 0.5*iaclib(iac(i))%mass*(v(i3+1)**2+v(i3+2)**2+v(i3+3)**2)
+      Ekin = 0.5*atom_mass(i)*(v(i3+1)**2+v(i3+2)**2+v(i3+3)**2)
       Temp_solute = Temp_solute + Ekin
 
       write(*,*), "At_ID", i, "Vel", v(i3+1)
@@ -3910,7 +3912,7 @@ subroutine temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
     !get kinetic energies for solvent atoms
     do i=nat_solute+1,natom
       i3=i*3-3
-      Ekin = 0.5*iaclib(iac(i))%mass*(v(i3+1)**2+v(i3+2)**2+v(i3+3)**2)
+      Ekin = 0.5*atom_mass(i)*(v(i3+1)**2+v(i3+2)**2+v(i3+3)**2)
       Temp_solvent = Temp_solvent + Ekin
 
       write(*,*), "At_ID", i, "Vel", v(i3+1)
@@ -14110,7 +14112,7 @@ subroutine p_restrain
         ! apply same force to all atoms
         do i = rstseq(ir)%i, rstseq(ir)%j
           if ( heavy(i) .or. rstseq(ir)%ih .eq. 1 ) then
-            d(i*3-2:i*3) = d(i*3-2:i*3) + fk*dr(:)*iaclib(iac(i))%mass/12.010
+            d(i*3-2:i*3) = d(i*3-2:i*3) + fk*dr(:)*atom_mass(i)/12.010
           end if
         end do
       end if
@@ -14124,8 +14126,8 @@ subroutine p_restrain
       ! calculate deviation from mass center
       do i = rstseq(ir)%i, rstseq(ir)%j
         if ( heavy(i) .or. rstseq(ir)%ih .eq. 1 ) then
-          totmass = totmass + iaclib(iac(i))%mass                              ! Add masses
-          dr(:) = dr(:) + (x(i*3-2:i*3) - xtop(i*3-2:i*3))*iaclib(iac(i))%mass ! Massweight distances
+          totmass = totmass + atom_mass(i)                              ! Add masses
+          dr(:) = dr(:) + (x(i*3-2:i*3) - xtop(i*3-2:i*3))*atom_mass(i) ! Massweight distances
         end if
       end do
 
@@ -14970,7 +14972,7 @@ subroutine prep_sim
   end if
 
   !       Prepare an array of inverse masses
-  winv(:) = 1./iaclib(iac(:))%mass
+  winv(:) = 1./atom_mass(:)
 
 
   if(use_PBC .and. control_box) then
@@ -14988,19 +14990,19 @@ subroutine prep_sim
 
     do i = 1,nmol-1 !all molecules but the last
       do j = istart_mol(i), istart_mol(i+1)-1 !all atoms of molecule
-        mol_mass(i) = mol_mass(i) + iaclib(iac(j))%mass
+        mol_mass(i) = mol_mass(i) + atom_mass(j)
       end do
     end do
 
     do j = istart_mol(nmol), natom !last molecule
-      mol_mass(nmol) = mol_mass(nmol) + iaclib(iac(j))%mass
+      mol_mass(nmol) = mol_mass(nmol) + atom_mass(j)
     end do
 
     mol_mass(:) = 1./mol_mass(:)
 
     !prepare array of masses
     allocate( mass(1:natom) )
-    mass(:) = 1.0/winv(:)
+    mass(:) = atom_mass(:)
 
   end if
 
@@ -15811,7 +15813,7 @@ subroutine stop_cm_translation
     vcm(i) = 0.0
   end do
   do i=1,natom
-    rmass = iaclib(iac(i))%mass
+    rmass = atom_mass(i)
     totmass=totmass+rmass
     do j=1,3
       k=(i-1)*3+j

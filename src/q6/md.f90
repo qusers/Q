@@ -2520,6 +2520,8 @@ subroutine init_nodes
   ! Bcast iac, crg and cgpatom
   call MPI_Bcast(iac, natom, MPI_INTEGER2, 0, MPI_COMM_WORLD, ierr)
   if (ierr .ne. 0) call die('init_nodes/MPI_Bcast iac')
+  call MPI_Bcast(atom_mass, natom, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+  if (ierr .ne. 0) call die('init_nodes/MPI_Bcast atom_mass')
   call MPI_Bcast(crg, natom, MPI_REAL, 0, MPI_COMM_WORLD, ierr)
   if (ierr .ne. 0) call die('init_nodes/MPI_Bcast crg')
   call MPI_Bcast(cgpatom, natom, MPI_INTEGER4, 0, MPI_COMM_WORLD, ierr) !(AI)
@@ -4677,7 +4679,7 @@ subroutine maxwell
     kT = boltz*Tmaxw
 
     do i=1,natom
-      sd = sqrt (kT/iaclib(iac(i))%mass)
+      sd = sqrt (kT/atom_mass(i))
       do j=1,3
         call gauss (zero,sd,vg,iseed)
         k=(i-1)*3+j
@@ -4715,7 +4717,7 @@ subroutine temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
     !get kinetic energies for solute atoms
     do i=1,nat_solute
       i3=i*3-3
-      Ekin = 0.5*iaclib(iac(i))%mass*(v(i3+1)**2+v(i3+2)**2+v(i3+3)**2)
+      Ekin = 0.5*atom_mass(i)*(v(i3+1)**2+v(i3+2)**2+v(i3+3)**2)
       Temp_solute = Temp_solute + Ekin
 
       !******PWadded if
@@ -4750,7 +4752,7 @@ subroutine temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
     !get kinetic energies for solvent atoms
     do i=nat_solute+1,natom
       i3=i*3-3
-      Ekin = 0.5*iaclib(iac(i))%mass*(v(i3+1)**2+v(i3+2)**2+v(i3+3)**2)
+      Ekin = 0.5*atom_mass(i)*(v(i3+1)**2+v(i3+2)**2+v(i3+3)**2)
       Temp_solvent = Temp_solvent + Ekin
 
       !******PWadded if
@@ -15498,7 +15500,7 @@ subroutine p_restrain
         ! apply same force to all atoms
         do i = rstseq(ir)%i, rstseq(ir)%j
           if ( heavy(i) .or. rstseq(ir)%ih .eq. 1 ) then
-            d(i*3-2:i*3) = d(i*3-2:i*3) + fk*dr(:)*iaclib(iac(i))%mass/12.010
+            d(i*3-2:i*3) = d(i*3-2:i*3) + fk*dr(:)*atom_mass(i)/12.010
           end if
         end do
       end if
@@ -15512,8 +15514,8 @@ subroutine p_restrain
       ! calculate deviation from mass center
       do i = rstseq(ir)%i, rstseq(ir)%j
         if ( heavy(i) .or. rstseq(ir)%ih .eq. 1 ) then
-          totmass = totmass + iaclib(iac(i))%mass                              ! Add masses
-          dr(:) = dr(:) + (x(i*3-2:i*3) - xtop(i*3-2:i*3))*iaclib(iac(i))%mass ! Massweight distances
+          totmass = totmass + atom_mass(i)                              ! Add masses
+          dr(:) = dr(:) + (x(i*3-2:i*3) - xtop(i*3-2:i*3))*atom_mass(i) ! Massweight distances
         end if
       end do
 
@@ -16429,7 +16431,7 @@ subroutine prep_sim
   call build_exclusion_csr
 
   !       Prepare an array of inverse masses
-  winv(:) = 1./iaclib(iac(:))%mass
+  winv(:) = 1./atom_mass(:)
 
 
   if(use_PBC .and. control_box) then
@@ -16447,19 +16449,19 @@ subroutine prep_sim
 
     do i = 1,nmol-1 !all molecules but the last
       do j = istart_mol(i), istart_mol(i+1)-1 !all atoms of molecule
-        mol_mass(i) = mol_mass(i) + iaclib(iac(j))%mass
+        mol_mass(i) = mol_mass(i) + atom_mass(j)
       end do
     end do
 
     do j = istart_mol(nmol), natom !last molecule
-      mol_mass(nmol) = mol_mass(nmol) + iaclib(iac(j))%mass
+      mol_mass(nmol) = mol_mass(nmol) + atom_mass(j)
     end do
 
     mol_mass(:) = 1./mol_mass(:)
 
     !prepare array of masses
     allocate( mass(1:natom) )
-    mass(:) = 1.0/winv(:)
+    mass(:) = atom_mass(:)
 
   end if
 
@@ -17320,7 +17322,7 @@ subroutine stop_cm_translation
     vcm(i) = 0.0
   end do
   do i=1,natom
-    rmass = iaclib(iac(i))%mass
+    rmass = atom_mass(i)
     totmass=totmass+rmass
     do j=1,3
       k=(i-1)*3+j
@@ -17348,6 +17350,7 @@ subroutine topology
   integer                                 ::      nat3
   integer                                 ::      i
   real(8)                                 ::      box_min, vtemp, vtemp1
+  logical                                 ::      hmr_topology
 
   !
   ! read topology
@@ -17371,6 +17374,19 @@ subroutine topology
 
   ! abort if no atoms
   if (natom .eq. 0) call die('zero particles to simulate')
+
+  ! A 4 fs HMR integration is stable only when LINCS owns every solute bond.
+  ! Validate this again in the engine so hand-written input files cannot bypass
+  ! the protocol enforced by QligFEP's templates.
+  hmr_topology = .false.
+  if (nat_solute > 0) hmr_topology = any(abs(atom_mass(1:nat_solute) - &
+    iaclib(iac(1:nat_solute))%mass) > 1.0d-10)
+  if (hmr_topology .and. dt >= 3.999d0*FS_TO_INTERNAL) then
+    if (.not. constrain_solute) &
+      call die('A 4 fs HMR simulation requires constraints on all solute bonds')
+    if (solute_constraint_algorithm /= CONSTRAINT_LINCS) &
+      call die('A 4 fs HMR simulation requires LINCS for solute constraints')
+  end if
 
   ! convert libraries from degrees to radians
   anglib(1:nangcod)%ang0 = deg2rad*anglib(1:nangcod)%ang0

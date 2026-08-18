@@ -287,7 +287,7 @@ subroutine com_ke_put_mass(i)
   k=1
   do j = 1, nat_pro
     if (masks(i)%mask(j)) then
-      mass = iaclib(iac(j))%mass
+      mass = atom_mass(j)
       coords_mass(i)%mass(k) = mass
       tot_mass(i) = tot_mass(i) + mass
       k = k+1

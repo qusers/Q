@@ -19,6 +19,8 @@ def make_run(**overrides):
     run.system = "water"
     run.ABS = False
     run.dr_force = 0.5
+    run.minimize = False
+    run.production = False
     run.neq = True
     run.neq_reps = 3
     run.neq_steps = 20000

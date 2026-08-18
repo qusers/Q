@@ -70,6 +70,24 @@ class TestMDParameters:
                 constraint_algorithm=algorithms,
             )
 
+    @pytest.mark.parametrize(
+        ("constrain_solute", "constraint_algorithm"),
+        [(False, "lincs settle"), (True, "shake settle")],
+    )
+    def test_4fs_requires_all_solute_bonds_under_lincs(
+        self, constrain_solute, constraint_algorithm
+    ):
+        """Reject unsafe custom 4 fs configurations before rendering."""
+        with pytest.raises(ValueError, match="4 fs timestep requires"):
+            MDParameters(
+                steps=2500,
+                stepsize=4.0,
+                temperature=298,
+                bath_coupling=10.0,
+                constrain_solute=constrain_solute,
+                constraint_algorithm=constraint_algorithm,
+            )
+
     def test_temperature_placeholder(self):
         """Verify temperature can hold T_VAR placeholder string."""
         params = MDParameters(
@@ -429,6 +447,18 @@ class TestEquilibrationConfigs:
         assert eq2_2fs.params.constrain_hydrogens is True
         assert eq2_1fs.params.constrain_hydrogens is False
 
+    def test_timestep_4fs_preserves_equilibration_duration(self):
+        """HMR 4fs stages halve step counts while keeping constraints enabled."""
+        configs_4fs = get_equilibration_configs("4fs", shell_radius=25)
+
+        assert configs_4fs[1].params.steps == 2500
+        assert configs_4fs[1].params.stepsize == 4.0
+        assert configs_4fs[1].params.bath_coupling == 10.0
+        assert configs_4fs[1].params.constrain_hydrogens is True
+        assert configs_4fs[1].params.constrain_solute is True
+        assert configs_4fs[4].params.steps == 25000
+        assert configs_4fs[4].params.constraint_algorithm == "lincs settle"
+
     def test_temperature_progression(self):
         """Verify temperatures increase through equilibration."""
         configs = get_equilibration_configs("2fs", shell_radius=25)
@@ -467,6 +497,19 @@ class TestProductionConfig:
 
         assert config.params.steps == 10000
         assert config.params.stepsize == 1.0
+
+    def test_production_config_4fs(self):
+        """HMR 4fs production preserves duration and physical output cadence."""
+        config = get_production_config("4fs", shell_radius=25)
+
+        assert config.params.steps == 2500
+        assert config.params.stepsize == 4.0
+        assert config.params.constrain_hydrogens is True
+        assert config.params.constrain_solute is True
+        assert config.params.constraint_algorithm == "lincs settle"
+        assert config.params.interval_energy == 5
+        assert config.params.interval_trajectory == 50
+        assert config.params.interval_non_bond == 12
 
     def test_custom_dr_force(self):
         """Verify custom distance restraint force."""
@@ -524,6 +567,16 @@ class TestNeqEndpointConfig:
         assert params.stepsize == 1.0
         assert params.constrain_hydrogens is False
         assert params.constrain_solute is False
+
+    def test_neq_endpoint_config_4fs(self):
+        """4fs endpoints retain full solute constraints and normal-mass SETTLE water."""
+        params = get_neq_endpoint_config("4fs", shell_radius=25, steps=10000)
+
+        assert params.stepsize == 4.0
+        assert params.constrain_hydrogens is True
+        assert params.constrain_solute is True
+        assert params.constraint_algorithm == "lincs settle"
+        assert params.interval_non_bond == 12
 
     def test_steps_and_radius_flow_through(self):
         """Step count and sphere radius are per-call, not baked into the timestep dicts."""
@@ -797,6 +850,28 @@ class TestQprepFEPTemplate:
         assert "set solute_density 0.05794" in content
         assert "maketop MKC_p" in content
         assert "writetop dualtop.top" in content
+
+    def test_render_hmr_after_topology_generation(self):
+        """HMR transforms the constructed topology before it is written."""
+        from QligFEP.templates.qprep import QprepFEPParameters, render_qprep_fep_input
+
+        params = QprepFEPParameters(
+            ff_lib="qamber14.lib",
+            lig1_lib="lig1.lib",
+            lig2_lib="lig2_renumber.lib",
+            ligand_prm="merged.prm",
+            ligand_pdb="combined.pdb",
+            center="0.0 0.0 0.0",
+            sphere_radius="25",
+            solute_density="0.05794",
+            solvent="1 HOH",
+            hydrogen_mass=3.024,
+        )
+
+        content = render_qprep_fep_input(params)
+        assert "hmr 3.024" in content
+        assert content.index("maketop MKC_p") < content.index("hmr 3.024")
+        assert content.index("hmr 3.024") < content.index("writetop dualtop.top")
 
     def test_render_protein_system(self):
         """Verify qprep.inp for protein system."""

@@ -94,8 +94,8 @@ subroutine fit_calc(i)
         totmass = 0.0
         do at = 1, nat_pro
                 if(masks(i)%mask(at)) then
-              xcm(:) = xcm(:) + xin(3*at-2:3*at)*iaclib(iac(at))%mass 
-                  totmass = totmass + iaclib(iac(at))%mass 
+              xcm(:) = xcm(:) + xin(3*at-2:3*at)*atom_mass(at)
+                  totmass = totmass + atom_mass(at)
                 end if
         end do
         
@@ -104,9 +104,9 @@ subroutine fit_calc(i)
     
     ! shift xin to origin and massweight
         do at = 1,nat_pro
-          xin(3*at-2) = (xin(3*at-2) - xcm(1))*sqrt(iaclib(iac(at))%mass)  !sqrt(iaclib(iac(at))%mass)
-          xin(3*at-1) = (xin(3*at-1) - xcm(2))*sqrt(iaclib(iac(at))%mass)  !sqrt(iaclib(iac(at))%mass)
-          xin(3*at  ) = (xin(3*at  ) - xcm(3))*sqrt(iaclib(iac(at))%mass)  !sqrt(iaclib(iac(at))%mass)
+          xin(3*at-2) = (xin(3*at-2) - xcm(1))*sqrt(atom_mass(at))
+          xin(3*at-1) = (xin(3*at-1) - xcm(2))*sqrt(atom_mass(at))
+          xin(3*at  ) = (xin(3*at  ) - xcm(3))*sqrt(atom_mass(at))
         end do
         
     !rotate xin to fit with coords(i)%xr
@@ -119,9 +119,9 @@ subroutine fit_calc(i)
         endif
 
         do at = 1,nat_pro
-          xin(3*at-2) = xin(3*at-2)/sqrt(iaclib(iac(at))%mass) + coords(i)%xrcm(1) 
-          xin(3*at-1) = xin(3*at-1)/sqrt(iaclib(iac(at))%mass) + coords(i)%xrcm(2) 
-          xin(3*at  ) = xin(3*at  )/sqrt(iaclib(iac(at))%mass) + coords(i)%xrcm(3)  
+          xin(3*at-2) = xin(3*at-2)/sqrt(atom_mass(at)) + coords(i)%xrcm(1)
+          xin(3*at-1) = xin(3*at-1)/sqrt(atom_mass(at)) + coords(i)%xrcm(2)
+          xin(3*at  ) = xin(3*at  )/sqrt(atom_mass(at)) + coords(i)%xrcm(3)
         enddo
 
  
@@ -141,8 +141,8 @@ subroutine fit_make_ref(i)
         totmass = 0.0
         do at = 1, nat_pro
                 if(masks(i)%mask(at)) then
-                   coords(i)%xrcm(:) = coords(i)%xrcm(:) + xtop(3*at-2:3*at)*iaclib(iac(at))%mass 
-                   totmass = totmass + iaclib(iac(at))%mass 
+                   coords(i)%xrcm(:) = coords(i)%xrcm(:) + xtop(3*at-2:3*at)*atom_mass(at)
+                   totmass = totmass + atom_mass(at)
                 end if
         end do
         
@@ -150,9 +150,9 @@ subroutine fit_make_ref(i)
 
         ! shift to origin and massweight coordinates
         do at = 1,nat_pro
-                coords(i)%xr(3*at-2) = (xtop(3*at-2) - coords(i)%xrcm(1))*sqrt(iaclib(iac(at))%mass)
-                coords(i)%xr(3*at-1) = (xtop(3*at-1) - coords(i)%xrcm(2))*sqrt(iaclib(iac(at))%mass)
-                coords(i)%xr(3*at  ) = (xtop(3*at  ) - coords(i)%xrcm(3))*sqrt(iaclib(iac(at))%mass)
+                coords(i)%xr(3*at-2) = (xtop(3*at-2) - coords(i)%xrcm(1))*sqrt(atom_mass(at))
+                coords(i)%xr(3*at-1) = (xtop(3*at-1) - coords(i)%xrcm(2))*sqrt(atom_mass(at))
+                coords(i)%xr(3*at  ) = (xtop(3*at  ) - coords(i)%xrcm(3))*sqrt(atom_mass(at))
         end do
 
 end subroutine fit_make_ref

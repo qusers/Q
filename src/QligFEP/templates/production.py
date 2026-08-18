@@ -35,6 +35,19 @@ PRODUCTION_2FS_PARAMS = dict(
     interval_non_bond=25,
 )
 
+PRODUCTION_4FS_PARAMS = dict(
+    steps=2500,
+    stepsize=4.0,
+    temperature="T_VAR",
+    bath_coupling=10.0,
+    constrain_hydrogens=True,
+    constrain_solute=True,
+    interval_output=13,
+    interval_energy=5,
+    interval_trajectory=50,
+    interval_non_bond=12,
+)
+
 PRODUCTION_1FS_PARAMS = dict(
     steps=10000,
     stepsize=1.0,
@@ -49,7 +62,7 @@ PRODUCTION_1FS_PARAMS = dict(
 
 
 def get_production_config(
-    timestep: Literal["1fs", "2fs"],
+    timestep: Literal["1fs", "2fs", "4fs"],
     shell_radius: int,
     distance_restraint_force: float = 0.5,
     **overrides,
@@ -60,7 +73,7 @@ def get_production_config(
     for sequence restraints (empty for protein systems).
 
     Args:
-        timestep: Simulation timestep ("1fs" or "2fs")
+        timestep: Simulation timestep ("1fs", "2fs", or HMR-only "4fs")
         shell_radius: Spherical boundary radius
         distance_restraint_force: Force constant for distance restraints
         **overrides: Override any base parameter by name (e.g., steps=10000,
@@ -79,7 +92,15 @@ def get_production_config(
         # Fine-grained energy output for analysis
         config = get_production_config("2fs", shell_radius=25, interval_energy=5)
     """
-    base_params = PRODUCTION_2FS_PARAMS if timestep == "2fs" else PRODUCTION_1FS_PARAMS
+    params_by_timestep = {
+        "1fs": PRODUCTION_1FS_PARAMS,
+        "2fs": PRODUCTION_2FS_PARAMS,
+        "4fs": PRODUCTION_4FS_PARAMS,
+    }
+    try:
+        base_params = params_by_timestep[timestep]
+    except KeyError as exc:
+        raise ValueError(f"unsupported timestep: {timestep}") from exc
     merged_params = {**base_params, **overrides, "shell_radius": shell_radius}
 
     return ProductionConfig(

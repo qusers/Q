@@ -23,7 +23,7 @@ module topo
   implicit none
 
   ! constants
-  real, private, parameter         :: module_version = 6.01
+  real, private, parameter         :: module_version = 6.02
   character(*), private, parameter :: module_date = '2015-02-22'
 
   integer, parameter               :: nljtyp = 3      !TINY
@@ -103,6 +103,7 @@ module topo
   integer                          :: nat_pro, nat_solute, max_atom
   real(8), allocatable             :: xtop(:)                 ! topology/coordinates
   integer(tiny), allocatable       :: iac(:)                  ! integer atom codes
+  real(8), allocatable             :: atom_mass(:)            ! per-atom dynamical masses
   logical, allocatable             :: heavy(:)                ! boolean flag, true if atom >= he
   real, allocatable                :: crg(:)                  ! charges
   integer(ai), allocatable         :: cgpatom(:)              ! charge groups
@@ -288,6 +289,7 @@ subroutine topo_allocate_atom(stat_out)
 
   allocate(glb_cofactor(max_atom), &
     iac(max_atom), &
+    atom_mass(max_atom), &
     crg(max_atom), &
     xtop(3*max_atom), &
     heavy(max_atom), &
@@ -341,6 +343,7 @@ subroutine topo_deallocate (keep_ff)
   if(allocated(imp)) deallocate(imp)
   if(allocated(implib)) deallocate(implib)
   if(allocated(iac)) deallocate(iac)
+  if(allocated(atom_mass)) deallocate(atom_mass)
   if(allocated(crg)) deallocate(crg)
   if(allocated(xtop)) deallocate(xtop)
   if(allocated(heavy)) deallocate(heavy)
@@ -393,6 +396,7 @@ subroutine topo_reallocate(oldatoms, atoms, waters)
   integer                          :: oldangles, angles
   real, allocatable                :: r4temp(:)
   integer(1), allocatable          :: i1temp(:)
+  real(8), allocatable             :: r8temp(:)
   type(BOND_TYPE), allocatable     :: bndtemp(:)
   type(ANG_TYPE), allocatable      :: angtemp(:)
 
@@ -445,6 +449,16 @@ subroutine topo_reallocate(oldatoms, atoms, waters)
 
   !done with i1's
   deallocate(i1temp)
+
+  !realloc. per-atom masses
+  allocate(r8temp(oldatoms), stat=alloc_status)
+  call topo_check_alloc('reallocating atom mass array')
+  r8temp(1:oldatoms) = atom_mass(1:oldatoms)
+  deallocate(atom_mass)
+  allocate(atom_mass(atoms), stat=alloc_status)
+  call topo_check_alloc('reallocating atom mass array')
+  atom_mass(1:oldatoms) = r8temp(1:oldatoms)
+  deallocate(r8temp)
 
 end subroutine topo_reallocate
 
@@ -651,6 +665,16 @@ logical function topo_read(u, require_version, extrabonds)
     if(nat_pro > 0) read (unit=u, fmt=*, err=1000) (iac(rd),rd=1,nat_pro)
     write (*,50) nat_pro
 50  format ('No. of atom type codes  = ',i10)
+
+    ! Topology 6.02 adds explicit per-atom dynamical masses. Placing this block
+    ! before the bond list makes old engines reject HMR topologies instead of
+    ! silently falling back to atom-type masses.
+    if(version >= 6.02) then
+       read (unit=u, fmt=*, err=1000) ! skip "Per-atom masses" heading
+       if(nat_pro > 0) read (unit=u, fmt=*, err=1000) atom_mass(1:nat_pro)
+       write (*,51) nat_pro
+51     format ('No. of per-atom masses = ',i10)
+    end if
 
 
     ! --> 5. bond list and params    ---->     bnd, bondlib
@@ -859,6 +883,10 @@ logical function topo_read(u, require_version, extrabonds)
 
     write (*,160) natyps
 160 format ('No. of atom types       = ',i10)
+
+    ! Old topology files have no per-atom mass block. Preserve compatibility by
+    ! expanding their atom-type masses when they are read.
+    if(version < 6.02 .and. nat_pro > 0) atom_mass(1:nat_pro) = iaclib(iac(1:nat_pro))%mass
 
     read (unit=u, fmt=*, err=1000) nlj2
     max_lj2 = nlj2
@@ -1090,11 +1118,17 @@ subroutine topo_save(name)
   !locals
   integer                          :: i, j, u, ig, si
   integer(1), allocatable          :: temp_list(:,:)
-  real                             :: crgtot
+  real                             :: crgtot, output_version
 
 10 format(a, t29,': ')
 20 format(i6)
 30 format(f6.2)
+  output_version = 6.01
+  if(nat_pro > 0) then
+    if(any(abs(atom_mass(1:nat_pro)-iaclib(iac(1:nat_pro))%mass) > 1.0d-10)) &
+      output_version = module_version
+  end if
+
   u = freefile() !get an unused unit number
   open(unit=u, file=name, status='unknown', form='formatted', &
     action='write', err = 100)
@@ -1107,7 +1141,7 @@ subroutine topo_save(name)
   write(u, '(a)') 'Q topology file'
   if(title > '') write(u, 2) 'TITLE', trim(title)
   write(u, 2) 'DATE', trim(creation_date)
-  write(u, '(a,t12,f5.2)') 'VERSION', module_version
+  write(u, '(a,t12,f5.2)') 'VERSION', output_version
   if(pdb_file > '') write(u, 2) 'PDB_FILE', trim(pdb_file)
 !  write(u, 2) 'PDB_FILE', trim(pdb_file)  
 !  if(lib_files > '') write(u, 2) 'LIB_FILES', trim(lib_files)
@@ -1135,6 +1169,14 @@ subroutine topo_save(name)
   write(u, '(i8,a)') nat_pro, ' = No. of integer atom codes. iac''s: '
   if(nat_pro > 0) write(u, '(16(i4,1x))') iac(1:nat_pro)
   write(*, 20) nat_pro
+
+  ! --- PER-ATOM DYNAMICAL MASSES (only needed when they differ by atom)
+  if(output_version >= 6.02) then
+    write(*, 10, advance='no') 'per-atom masses'
+    write(u, '(a)') 'Per-atom masses:'
+    if(nat_pro > 0) write(u, '(8(f10.5,1x))') atom_mass(1:nat_pro)
+    write(*, 20) nat_pro
+  end if
 
   ! --- BONDS
   write(*, 10, advance='no') 'solute bonds'

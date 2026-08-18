@@ -98,6 +98,49 @@ EQ5_2FS_PARAMS = dict(
     interval_output=25,
 )
 
+# 4fs HMR timestep variants. Step counts preserve the physical duration of
+# the 2fs protocol; SETTLE water remains at its physical masses.
+EQ2_4FS_PARAMS = dict(
+    steps=2500,
+    stepsize=4.0,
+    temperature=50,
+    bath_coupling=10.0,
+    constrain_hydrogens=True,
+    constrain_solute=True,
+    interval_output=5,
+)
+
+EQ3_4FS_PARAMS = dict(
+    steps=2500,
+    stepsize=4.0,
+    temperature=150,
+    bath_coupling=10.0,
+    constrain_hydrogens=True,
+    constrain_solute=True,
+    interval_output=5,
+)
+
+EQ4_4FS_PARAMS = dict(
+    steps=2500,
+    stepsize=4.0,
+    temperature=275,
+    bath_coupling=10.0,
+    constrain_hydrogens=True,
+    constrain_solute=True,
+    interval_output=5,
+)
+
+EQ5_4FS_PARAMS = dict(
+    steps=25000,
+    stepsize=4.0,
+    temperature="T_VAR",
+    bath_coupling=10.0,
+    constrain_hydrogens=True,
+    constrain_solute=True,
+    interval_output=13,
+    interval_non_bond=12,
+)
+
 # 1fs timestep variants
 EQ2_1FS_PARAMS = dict(
     steps=10000,
@@ -147,6 +190,14 @@ _CONFIGS_2FS = [
     ("eq5", EQ5_2FS_PARAMS, 0.0, None, True),  # dr_force=None means use production dr_force
 ]
 
+_CONFIGS_4FS = [
+    ("eq1", EQ1_PARAMS, 10.0, 1.5, False),
+    ("eq2", EQ2_4FS_PARAMS, 10.0, 1.5, False),
+    ("eq3", EQ3_4FS_PARAMS, 5.0, 1.5, False),
+    ("eq4", EQ4_4FS_PARAMS, 2.5, 1.5, False),
+    ("eq5", EQ5_4FS_PARAMS, 0.0, None, True),
+]
+
 _CONFIGS_1FS = [
     ("eq1", EQ1_PARAMS, 10.0, 1.5, False),
     ("eq2", EQ2_1FS_PARAMS, 10.0, 1.5, False),
@@ -157,7 +208,7 @@ _CONFIGS_1FS = [
 
 
 def get_equilibration_configs(
-    timestep: Literal["1fs", "2fs"],
+    timestep: Literal["1fs", "2fs", "4fs"],
     shell_radius: int,
     minimize: bool = False,
 ) -> list[EquilibrationConfig]:
@@ -171,14 +222,18 @@ def get_equilibration_configs(
     - eq5: Final equilibration at target temperature (T_VAR)
 
     Args:
-        timestep: Simulation timestep ("1fs" or "2fs")
+        timestep: Simulation timestep ("1fs", "2fs", or HMR-only "4fs")
         shell_radius: Spherical boundary radius
         minimize: Run FIRE minimization before eq1. Disabled by default.
 
     Returns:
         List of EquilibrationConfig for eq1 through eq5
     """
-    raw_configs = _CONFIGS_2FS if timestep == "2fs" else _CONFIGS_1FS
+    configs_by_timestep = {"1fs": _CONFIGS_1FS, "2fs": _CONFIGS_2FS, "4fs": _CONFIGS_4FS}
+    try:
+        raw_configs = configs_by_timestep[timestep]
+    except KeyError as exc:
+        raise ValueError(f"unsupported timestep: {timestep}") from exc
     configs = []
     for name, params, seq_force, dr_force, use_water in raw_configs:
         stage_params = dict(params)

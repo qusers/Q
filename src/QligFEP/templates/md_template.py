@@ -83,6 +83,11 @@ class MDParameters:
             raise ValueError(f"unsupported solute constraint algorithm: {solute}")
         if solvent not in {"shake", "lincs", "settle"}:
             raise ValueError(f"unsupported solvent constraint algorithm: {solvent}")
+        if self.stepsize >= 4.0:
+            if not self.constrain_solute:
+                raise ValueError("A 4 fs timestep requires constraints on all solute bonds")
+            if solute != "lincs":
+                raise ValueError("A 4 fs timestep requires LINCS for solute constraints")
         self.constraint_algorithm = f"{solute} {solvent}"
 
 

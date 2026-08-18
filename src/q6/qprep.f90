@@ -129,6 +129,8 @@ subroutine parse_command(command)
           call clearbond
     case('maketop', 'mt')
           call maketop
+    case('hmr')
+          call apply_hmr
     case('cleartop')
           call cleartop
     case('listseq', 'ls')
@@ -207,6 +209,7 @@ subroutine help
   'clearlib                         unloads all libaries',&
   'cleartop                         clears topology & parameters',&
   'help                             shows command list',&
+  'hmr         [target H mass]      repartitions solute H mass (AMBER14sb)',&
   'listseq                          lists the residue sequence',&
   'listres     [residue_number]     lists atoms in residue',&
   'makeshell                        fix the mask of the atoms in the restrained shell',&

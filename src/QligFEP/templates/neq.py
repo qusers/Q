@@ -9,6 +9,17 @@ from typing import Literal
 
 from .md_template import MDParameters
 
+NEQ_ENDPOINT_4FS_PARAMS = dict(
+    stepsize=4.0,
+    temperature="T_VAR",
+    bath_coupling=10.0,
+    constrain_hydrogens=True,
+    constrain_solute=True,
+    interval_output=5,
+    interval_trajectory=100000000,
+    interval_non_bond=12,
+)
+
 NEQ_ENDPOINT_2FS_PARAMS = dict(
     stepsize=2.0,
     temperature="T_VAR",
@@ -18,6 +29,7 @@ NEQ_ENDPOINT_2FS_PARAMS = dict(
     interval_output=10,
     interval_trajectory=100000000,
 )
+
 
 NEQ_ENDPOINT_1FS_PARAMS = dict(
     stepsize=1.0,
@@ -31,7 +43,7 @@ NEQ_ENDPOINT_1FS_PARAMS = dict(
 
 
 def get_neq_endpoint_config(
-    timestep: Literal["1fs", "2fs"],
+    timestep: Literal["1fs", "2fs", "4fs"],
     shell_radius: int,
     steps: int,
 ) -> MDParameters:
@@ -42,12 +54,20 @@ def get_neq_endpoint_config(
     caller). Temperature stays as the "T_VAR" placeholder the run script fills.
 
     Args:
-        timestep: Simulation timestep ("1fs" or "2fs")
+        timestep: Simulation timestep ("1fs", "2fs", or HMR-only "4fs")
         shell_radius: Spherical boundary radius
         steps: Number of MD steps for this endpoint file
 
     Returns:
         MDParameters for a relax/eq6/neq .inp file
     """
-    base_params = NEQ_ENDPOINT_2FS_PARAMS if timestep == "2fs" else NEQ_ENDPOINT_1FS_PARAMS
+    params_by_timestep = {
+        "1fs": NEQ_ENDPOINT_1FS_PARAMS,
+        "2fs": NEQ_ENDPOINT_2FS_PARAMS,
+        "4fs": NEQ_ENDPOINT_4FS_PARAMS,
+    }
+    try:
+        base_params = params_by_timestep[timestep]
+    except KeyError as exc:
+        raise ValueError(f"unsupported timestep: {timestep}") from exc
     return MDParameters(**base_params, steps=steps, shell_radius=shell_radius)

@@ -5908,7 +5908,7 @@ subroutine xligand_translate(ligand,nAtoms,nBonds,aQ,aB)
     ligand%mol%atom(i)%coor(2)       = xtop(3*(iqseq(i+1)-1) +3)
     ligand%mol%atom(i)%origin                = 1    ! This is a ligand atom
     ligand%mol%atom(i)%ttype                 = tac(iac(iqseq(i+1)))
-    ligand%mol%atom(i)%weight                = iaclib(iac(iqseq(i+1)))%mass
+    ligand%mol%atom(i)%weight                = atom_mass(iqseq(i+1))
     ligand%mol%atom(i)%solv                  = 0
     ligand%mol%atom(i)%bfactor       = 0
     ligand%mol%atom(i)%logp                  = 0

@@ -141,9 +141,17 @@ def parse_arguments(program: str) -> argparse.Namespace:
         "-ts",
         "--timestep",
         dest="timestep",
-        choices=["1fs", "2fs"],
+        choices=["1fs", "2fs", "4fs"],
         default="2fs",
-        help="Simulation timestep, default 2fs",
+        help="Simulation timestep. 4fs requires --hmr; default 2fs.",
+    )
+    parser.add_argument(
+        "--hmr",
+        action="store_true",
+        help=(
+            "Enable solute-only hydrogen mass repartitioning to 3.024 amu during Qprep. "
+            "Currently supported only for AMBER14sb; rigid solvent water is unchanged."
+        ),
     )
     parser.add_argument(
         "--minimize",

@@ -1106,7 +1106,7 @@ subroutine pmfprotein_translate(protein,nAtoms,coordinates,bond,num_bond,transfe
     protein%atom(j)%qtype                           = tac(iac(i))
     protein%atom(j)%ttype                           = ' .'
     protein%atom(j)%hb                                      = ''
-    protein%atom(j)%weight            = iaclib(iac(i))%mass
+    protein%atom(j)%weight            = atom_mass(i)
     protein%atom(j)%origin                  = 2             ! This is a protein atom
     protein%atom(j)%part                            = 1             ! regular atom
     protein%atom(j)%valid                           = 1
@@ -1210,7 +1210,7 @@ subroutine pmfLigand_Translate(ligand,nAtoms,nBonds,aQ,aB,offset)
     ligand%atom(i)%origin            = 1    ! This is a ligand atom
     ligand%atom(i)%ttype             = ' .'
     ligand%atom(i)%qtype             = tac(iac(iqseq(i+1)))
-    ligand%atom(i)%weight            = iaclib(iac(iqseq(i+1)))%mass
+    ligand%atom(i)%weight            = atom_mass(iqseq(i+1))
     ligand%atom(i)%valid             = 1
     ligand%atom(i)%mask                      = 0
     if(masks(1)%mask(i+1)) ligand%atom(i)%mask = 1 !masks(1)%mask(i+1)

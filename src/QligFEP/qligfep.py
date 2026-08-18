@@ -98,7 +98,8 @@ class QligFEP:
         temperature: str = "298",
         replicates: str = "10",
         sampling: Literal["sigmoidal", "linear", "exponential", "reverse_exponential"] = "sigmoidal",
-        timestep: Literal["1fs", "2fs"] = "2fs",
+        timestep: Literal["1fs", "2fs", "4fs"] = "2fs",
+        hmr: bool = False,
         to_clean: Optional[list[str]] = None,
         water_thresh: Union[float, int] = 1.4,
         dr_force: float = 0.5,
@@ -116,7 +117,12 @@ class QligFEP:
         minimize: bool = False,
         production: bool = False,
     ):
+        if timestep == "4fs" and not hmr:
+            raise ValueError("The 4fs timestep requires --hmr.")
+        if hmr and FF != "AMBER14sb":
+            raise ValueError("Hydrogen mass repartitioning is currently supported only for AMBER14sb.")
         self.timestep = timestep
+        self.hmr = hmr
         self.minimize = minimize
         self.production = production
         self.lig1 = lig1
@@ -1830,6 +1836,7 @@ class QligFEP:
             solvent=solvent,
             cysbonds=cysbond_str,
             solvate=solvate,
+            hydrogen_mass=3.024 if self.hmr else None,
         )
 
         content = render_qprep_fep_input(params)

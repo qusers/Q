@@ -23,6 +23,7 @@ module prep
   use indexer
   use prefs
   use maskmanip
+  use hmr
 
   implicit none
 
@@ -198,6 +199,7 @@ module prep
 ! --- flag to keep track of missing parameters without bailing out
   logical                         :: topo_ok = .false.
   logical                         :: ff_ok = .false.
+  logical                         :: hmr_applied = .false.
 
 ! --- error collection for PDB validation (report all errors at once)
   integer, parameter              :: max_pdb_errors = 500
@@ -2205,6 +2207,9 @@ subroutine maketop
 !!  subroutine **maketop**
 !!
 !!-------------------------------------------------------------------------------
+  ! A newly generated topology always starts from force-field masses.
+  hmr_applied = .false.
+
   !check if library is loaded
   if(.not. check_residues()) return
 
@@ -2240,6 +2245,7 @@ subroutine maketop
 
   !deallocate old topology if any
   if(allocated(iac)) deallocate(iac)
+  if(allocated(atom_mass)) deallocate(atom_mass)
   if(allocated(crg)) deallocate(crg)
   if(allocated(cgpatom)) deallocate(cgpatom)
   if(allocated(list14)) deallocate(list14)
@@ -2266,6 +2272,7 @@ subroutine maketop
   !allocate topology arrays (set max_atom etc
   call topo_set_max(nat_pro, max_lib, max_long) !make space for new topology
   allocate(iac(max_atom), &
+    atom_mass(max_atom), &
     crg(max_atom), &
     cgpatom(max_atom), &
     list14(max_nbr_range, max_atom), &
@@ -2347,6 +2354,102 @@ subroutine maketop
 100 format('parameter file: ', a)
 end subroutine maketop
 
+
+subroutine apply_hmr
+!!-------------------------------------------------------------------------------
+!!  Apply solute-only hydrogen mass repartitioning to the current topology.
+!!  The force field's atom-type parameters remain unchanged; only atom_mass is
+!!  transformed. Solvent atoms are deliberately not passed to the HMR routine.
+!!-------------------------------------------------------------------------------
+  real(8) :: target_mass, minimum_parent_mass, total_before, total_after
+  real :: target_input
+  integer :: i, ires, first_atom, last_atom, waterlike_atoms_skipped
+  integer :: status, failed_atom, hydrogen_count, parent_count
+  integer, allocatable :: bond_i(:), bond_j(:)
+  logical, allocatable :: is_hydrogen(:)
+  character(len=256) :: ff_name
+
+  if(.not. topo_ok .or. .not. allocated(atom_mass)) then
+    write(*,'(a)') '>>>>> ERROR: Generate a valid topology with maketop before applying HMR.'
+    return
+  end if
+  if(hmr_applied) then
+    write(*,'(a)') '>>>>> ERROR: HMR has already been applied; run maketop before applying it again.'
+    topo_ok = .false.
+    return
+  end if
+
+  ff_name = forcefield
+  call upcase(ff_name)
+  if(ff_type /= FF_AMBER .or. index(ff_name, 'AMBER14SB') == 0) then
+    write(*,'(a,a)') '>>>>> ERROR: HMR is currently supported only for AMBER14sb; topology force field is ', &
+                     trim(forcefield)
+    topo_ok = .false.
+    return
+  end if
+
+  target_input = get_real_arg('-----> Target hydrogen mass [amu]: ')
+  target_mass = real(target_input, 8)
+  allocate(bond_i(nbonds_solute), bond_j(nbonds_solute), is_hydrogen(nat_solute), stat=alloc_status)
+  call check_alloc('HMR work arrays')
+  do i = 1, nbonds_solute
+    bond_i(i) = bnd(i)%i
+    bond_j(i) = bnd(i)%j
+  end do
+  is_hydrogen = .not. heavy(1:nat_solute)
+
+  ! Exclude rigid three-site water-like solute residues as well as the true
+  ! solvent slice. This covers co-alchemical water residues without coupling
+  ! HMR to a workflow-specific residue name.
+  waterlike_atoms_skipped = 0
+  do ires = 1, nres_solute
+    first_atom = res(ires)%start
+    last_atom = first_atom + lib(res(ires)%irc)%nat - 1
+    if(lib(res(ires)%irc)%nat == 3 .and. lib(res(ires)%irc)%nbnd == 3 .and. &
+       count(.not. heavy(first_atom:last_atom)) == 2) then
+      is_hydrogen(first_atom:last_atom) = .false.
+      waterlike_atoms_skipped = waterlike_atoms_skipped + 3
+    end if
+  end do
+
+  total_before = sum(atom_mass(1:nat_pro))
+  call repartition_hydrogen_masses(atom_mass(1:nat_solute), is_hydrogen, bond_i, bond_j, &
+                                   target_mass, status, failed_atom, hydrogen_count, parent_count, &
+                                   minimum_parent_mass)
+  deallocate(bond_i, bond_j, is_hydrogen)
+
+  if(status /= HMR_OK) then
+    select case(status)
+      case(HMR_INVALID_TARGET)
+        write(*,'(a,f10.4)') '>>>>> ERROR: Invalid HMR target mass: ', target_mass
+      case(HMR_INVALID_HYDROGEN_MASS)
+        write(*,'(a,i8,a,f10.4)') '>>>>> ERROR: Solute hydrogen atom ', failed_atom, &
+          ' has an invalid mass for HMR: ', atom_mass(failed_atom)
+      case(HMR_PARENT_NOT_UNIQUE)
+        write(*,'(a,i8,a)') '>>>>> ERROR: Solute hydrogen atom ', failed_atom, &
+          ' does not have exactly one bonded heavy parent.'
+      case(HMR_PARENT_TOO_LIGHT)
+        write(*,'(a,i8,a)') '>>>>> ERROR: HMR would leave heavy parent atom ', failed_atom, &
+          ' no heavier than the target hydrogen.'
+      case default
+        write(*,'(a)') '>>>>> ERROR: HMR failed its total-mass conservation check.'
+    end select
+    topo_ok = .false.
+    return
+  end if
+
+  total_after = sum(atom_mass(1:nat_pro))
+  hmr_applied = .true.
+  write(*,'(/,a)') 'Hydrogen mass repartitioning'
+  write(*,'(a,f12.4)') 'Target hydrogen mass:       ', target_mass
+  write(*,'(a,i12)')   'Hydrogens repartitioned:    ', hydrogen_count
+  write(*,'(a,i12)')   'Heavy atoms modified:       ', parent_count
+  write(*,'(a,i12)')   'Solvent atoms skipped:      ', nat_pro-nat_solute
+  write(*,'(a,i12)')   'Water-like solute skipped:  ', waterlike_atoms_skipped
+  write(*,'(a,f12.4)') 'Total mass before:          ', total_before
+  write(*,'(a,f12.4)') 'Total mass after:           ', total_after
+  write(*,'(a,f12.4)') 'Minimum heavy-parent mass:  ', minimum_parent_mass
+end subroutine apply_hmr
 
 
 subroutine set_default_mask
@@ -3784,6 +3887,7 @@ subroutine clearpdb
   nat_pro = 0
   nat_solute = 0
   topo_ok = .false.
+  hmr_applied = .false.
   if(allocated(makeH)) deallocate(makeH)
   if(allocated(heavy)) deallocate(heavy)
   if(allocated(xtop)) deallocate(xtop)
@@ -3802,6 +3906,7 @@ subroutine cleartop
   have_solute_sphere = .false.
   have_title = .false.
   topo_ok = .false.
+  hmr_applied = .false.
 end subroutine cleartop
 
 
@@ -4603,6 +4708,7 @@ subroutine set_iac
       else
         used(iaci) = .true.
         iac(ntot) = iaci
+        atom_mass(ntot) = iaclib(iaci)%mass
       end if
     end do
   end do
@@ -6601,9 +6707,12 @@ logical function get_center_by_mass(center)
   center = 0
   totmass = 0
   call mask_initialize(mask)
-  ats = maskmanip_make_pretop(mask)  
-  if (.not. allocated(iac))allocate(iac(nat_pro))
-    call set_iac        !Set info about masses
+  ats = maskmanip_make_pretop(mask)
+  if (.not. allocated(iac)) then
+    allocate(iac(nat_pro))
+    if (.not. allocated(atom_mass)) allocate(atom_mass(nat_pro))
+    call set_iac
+  end if
   do iat = 1,nat_pro
     if (mask%mask(iat)) then
       if(heavy(iat)) then !skip hydrogens
