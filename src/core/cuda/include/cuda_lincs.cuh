@@ -49,6 +49,8 @@ struct CudaLincsBigData {
 
     std::unique_ptr<HostDeviceBuffer<int>> failed_constraint;
     std::unique_ptr<HostDeviceBuffer<int>> not_converged;
+    bool can_launch_cooperative_solve = false;
+    bool can_launch_persistent = false;
 };
 
 class CudaLincs : public ConstraintForce {

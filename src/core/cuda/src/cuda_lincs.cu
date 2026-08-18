@@ -1,3 +1,5 @@
+#include <cooperative_groups.h>
+
 #include <queue>
 #include <stdexcept>
 #include <vector>
@@ -5,6 +7,8 @@
 #include "cuda_lincs.cuh"
 #include "geometry.h"
 #include "union_find.h"
+
+namespace cg = cooperative_groups;
 
 namespace {
 const int BLOCK_THREAD = 256;
@@ -238,68 +242,369 @@ __global__ void small_lincs_kernel(
         }
     }
 }
-
-__global__ void big_lincs_prepare_kernel(
-    const int n_packed_threads,
+// __restrict__: This pointer does not alias/overlap with the memory accessed through the other restricted pointers.
+__global__ void big_lincs_prepare_direction_rhs_kernel(
     const int n_real_constraints,
-    const int expansion_order,
-    const int minimum_rotation_iterations,
-    const int maximum_rotation_iterations,
-    const double accuracy_tolerance,
-    const CudaLincsBond* bonds,
-    const int* neighbor_counts,
-    const int* neighbor_indices,
-    const double* mass_factors,
-
-    coord_t* directions,
-    double* matrix_a,
-    double* rhs_ping,
-    double* solution,
-
-    const double* winv,
-    coord_t* coords,
-    const coord_t* reference,
+    const CudaLincsBond* __restrict__ bonds,  //
+    coord_t* __restrict__ directions,
+    double* __restrict__ rhs_ping,
+    double* __restrict__ solution,
+    const coord_t* __restrict__ coords,
+    const coord_t* __restrict__ reference,
     int* failed) {
     const int packed = blockIdx.x * blockDim.x + threadIdx.x;
+
     if (packed >= n_real_constraints) return;
 
-    const auto& bond = bonds[packed];
-    coord_t direction = {0, 0, 0};
+    const CudaLincsBond& bond = bonds[packed];
 
     const coord_t old_bond = reference[bond.ai] - reference[bond.aj];
-    const double old_d2 = norm2(old_bond);
-    if (isfinite(old_d2) && old_d2 > 0) {
-        const double inverse_length = rsqrt(old_d2);
-        direction = old_bond * inverse_length;
+
+    const double old_length2 = norm2(old_bond);
+
+    coord_t direction = {0, 0, 0};
+    bool direction_valid = isfinite(old_length2) && old_length2 > 0;
+
+    if (direction_valid) {
+        direction = old_bond * rsqrt(old_length2);
     } else {
         atomicCAS(failed, -1, packed);
     }
 
     directions[packed] = direction;
 
-    // Construct matrix-A
-    const int count = neighbor_counts[packed];
-    for (int i = 0; i < count; i++) {
-        int storage_idx = i * n_packed_threads + packed;
-        const int neighbor_idx = neighbor_indices[storage_idx];
-        const auto& neighbor_bond = bonds[neighbor_idx];
-
-        coord_t neighbor_old_bond = reference[neighbor_bond.ai] - reference[neighbor_bond.aj];
-        auto neighbor_direction = neighbor_old_bond / norm(neighbor_old_bond);
-
-        matrix_a[storage_idx] = mass_factors[storage_idx] * dot(direction, neighbor_direction);
-    }
-
     double rhs = 0;
-    const coord_t current_bond = coords[bond.ai] - coords[bond.aj];
-    rhs = bond.mass_scale * (dot(direction, current_bond) - bond.target);
 
-    if (!isfinite(rhs)) {
-        atomicCAS(failed, -1, packed);
-        rhs = 0;
+    if (direction_valid) {
+        const coord_t current_bond = coords[bond.ai] - coords[bond.aj];
+
+        rhs = bond.mass_scale * (dot(direction, current_bond) - bond.target);
+
+        if (!isfinite(rhs)) {
+            rhs = 0;
+            atomicCAS(failed, -1, packed);
+        }
     }
+
     rhs_ping[packed] = rhs;
     solution[packed] = rhs;
+}
+
+__global__ void big_lincs_prepare_matrix_kernel(
+    const int n_packed_threads,
+    const int n_real_constraints,
+    const int* __restrict__ neighbor_counts,
+    const int* __restrict__ neighbor_indices,
+    const double* __restrict__ mass_factors,
+    const coord_t* __restrict__ directions,
+    double* __restrict__ matrix_a,
+    int* failed) {
+    const int packed = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (packed >= n_real_constraints) return;
+
+    const coord_t direction = directions[packed];
+    const int neighbor_count = neighbor_counts[packed];
+
+    for (int slot = 0; slot < neighbor_count; slot++) {
+        const int storage_idx = slot * n_packed_threads + packed;
+
+        const int neighbor_idx = neighbor_indices[storage_idx];
+
+        const double value = mass_factors[storage_idx] * dot(direction, directions[neighbor_idx]);
+
+        if (isfinite(value)) {
+            matrix_a[storage_idx] = value;
+        } else {
+            matrix_a[storage_idx] = 0;
+            atomicCAS(failed, -1, packed);
+        }
+    }
+}
+
+__device__ void big_lincs_solve_grid(
+    cg::grid_group grid,
+    const bool active,
+    const int packed,
+    const int n_packed_threads,
+    const int expansion_order,
+
+    const CudaLincsBond* __restrict__ bonds,
+    const int* __restrict__ neighbor_counts,
+    const int* __restrict__ neighbor_indices,
+    const double* __restrict__ matrix_a,
+    const coord_t* __restrict__ directions,
+
+    double* rhs_ping,
+    double* rhs_pong,
+    double* solution,
+
+    const double* __restrict__ winv,
+    coord_t* coords,
+
+    int* failed) {
+    double* rhs_in = rhs_ping;
+    double* rhs_out = rhs_pong;
+
+    for (int order = 0; order < expansion_order; order++) {
+        if (active) {
+            const int neighbor_count = neighbor_counts[packed];
+
+            double next_value = 0;
+
+            for (int slot = 0; slot < neighbor_count; slot++) {
+                const int storage_idx = slot * n_packed_threads + packed;
+
+                const int neighbor_idx = neighbor_indices[storage_idx];
+
+                next_value += matrix_a[storage_idx] * rhs_in[neighbor_idx];
+            }
+
+            if (isfinite(next_value)) {
+                rhs_out[packed] = next_value;
+                solution[packed] += next_value;
+            } else {
+                rhs_out[packed] = 0;
+                atomicCAS(failed, -1, packed);
+            }
+        }
+
+        grid.sync();
+
+        double* temporary = rhs_in;
+        rhs_in = rhs_out;
+        rhs_out = temporary;
+    }
+
+    if (active) {
+        const auto& bond = bonds[packed];
+        const coord_t direction = directions[packed];
+        const double lambda = bond.mass_scale * solution[packed];
+
+        if (isfinite(lambda)) {
+            atomicAdd(&coords[bond.ai].x, -winv[bond.ai] * lambda * direction.x);
+            atomicAdd(&coords[bond.ai].y, -winv[bond.ai] * lambda * direction.y);
+            atomicAdd(&coords[bond.ai].z, -winv[bond.ai] * lambda * direction.z);
+
+            atomicAdd(&coords[bond.aj].x, winv[bond.aj] * lambda * direction.x);
+            atomicAdd(&coords[bond.aj].y, winv[bond.aj] * lambda * direction.y);
+            atomicAdd(&coords[bond.aj].z, winv[bond.aj] * lambda * direction.z);
+        } else {
+            atomicCAS(failed, -1, packed);
+        }
+    }
+    grid.sync();
+}
+
+__global__ void big_lincs_persistent_kernel(
+    const int n_packed_threads,
+    const int n_real_constraints,
+    const int expansion_order,
+    const int minimum_rotation_iterations,
+    const int maximum_rotation_iterations,
+    const double accuracy_tolerance,
+
+    const CudaLincsBond* __restrict__ bonds,
+    const int* __restrict__ neighbor_counts,
+    const int* __restrict__ neighbor_indices,
+    const double* __restrict__ matrix_a,
+    const coord_t* __restrict__ directions,
+
+    double* rhs_ping,
+    double* rhs_pong,
+    double* solution,
+
+    const double* __restrict__ winv,
+    coord_t* coords,
+
+    int* failed,
+    int* not_converged) {
+    cg::grid_group grid = cg::this_grid();
+
+    const int packed =
+        blockIdx.x * blockDim.x + threadIdx.x;
+
+    const bool active =
+        packed < n_real_constraints;
+
+    /*
+     * Initial RHS and solution were produced by
+     * big_lincs_prepare_direction_rhs_kernel.
+     */
+    big_lincs_solve_grid(
+        grid,
+        active,
+        packed,
+        n_packed_threads,
+        expansion_order,
+        bonds,
+        neighbor_counts,
+        neighbor_indices,
+        matrix_a,
+        directions,
+        rhs_ping,
+        rhs_pong,
+        solution,
+        winv,
+        coords,
+        failed);
+
+    bool converged = false;
+
+    for (int iteration = 0; iteration < maximum_rotation_iterations; iteration++) {
+        /*
+         * Construct rotational RHS and reset solution.
+         */
+        if (active) {
+            const CudaLincsBond& bond = bonds[packed];
+
+            const coord_t current_bond = coords[bond.ai] - coords[bond.aj];
+
+            const double current_length2 = norm2(current_bond);
+
+            const double target_length2 = bond.target * bond.target;
+
+            const double radicand = 2.0 * target_length2 - current_length2;
+
+            double rotation_rhs = 0;
+
+            if (isfinite(radicand) && radicand > 0) {
+                rotation_rhs = bond.mass_scale * (bond.target - sqrt(radicand));
+
+                if (!isfinite(rotation_rhs)) {
+                    rotation_rhs = 0;
+                    atomicCAS(failed, -1, packed);
+                }
+            } else {
+                atomicCAS(failed, -1, packed);
+            }
+
+            rhs_ping[packed] = rotation_rhs;
+            solution[packed] = rotation_rhs;
+        }
+
+        /*
+         * Every RHS entry must be initialized before expansion.
+         */
+        grid.sync();
+
+        big_lincs_solve_grid(
+            grid,
+            active,
+            packed,
+            n_packed_threads,
+            expansion_order,
+            bonds,
+            neighbor_counts,
+            neighbor_indices,
+            matrix_a,
+            directions,
+            rhs_ping,
+            rhs_pong,
+            solution,
+            winv,
+            coords,
+            failed);
+
+        if (iteration + 1 >= minimum_rotation_iterations) {
+            /*
+             * Reset the grid-wide reduction flag.
+             */
+            if (grid.thread_rank() == 0) {
+                not_converged[0] = 0;
+            }
+
+            grid.sync();
+
+            if (active) {
+                const CudaLincsBond& bond = bonds[packed];
+
+                const coord_t corrected_bond = coords[bond.ai] - coords[bond.aj];
+
+                const double corrected_length = norm(corrected_bond);
+
+                const double relative_error = fabs(corrected_length / bond.target - 1.0);
+
+                if (!isfinite(corrected_length) || !isfinite(relative_error) || relative_error > accuracy_tolerance) {
+                    atomicExch(not_converged, 1);
+                }
+            }
+
+            grid.sync();
+
+            /*
+             * All threads observe the same flag and therefore
+             * leave the loop uniformly.
+             */
+            if (not_converged[0] == 0) {
+                converged = true;
+                break;
+            }
+        }
+    }
+
+    /*
+     * Report constraints that remain invalid after the maximum.
+     */
+    if (!converged && active) {
+        const CudaLincsBond& bond = bonds[packed];
+
+        const coord_t corrected_bond = coords[bond.ai] - coords[bond.aj];
+
+        const double corrected_length = norm(corrected_bond);
+
+        const double relative_error = fabs(corrected_length / bond.target - 1.0);
+
+        if (!isfinite(corrected_length) || !isfinite(relative_error) || relative_error > accuracy_tolerance) {
+            printf(">>> Lincs failed, i = %d, j = %d, d = %f, d0 = %f\n", bond.ai, bond.aj, corrected_length, bond.target);
+            atomicCAS(failed, -1, packed);
+        }
+    }
+}
+
+__global__ void big_lincs_cooperative_solve_kernel(
+    const int n_packed_threads,
+    const int n_real_constraints,
+    const int expansion_order,
+    const int* neighbor_counts,
+    const int* neighbor_indices,
+
+    const double* matrix_a,
+    double* rhs_in,
+    double* rhs_out,
+    double* solution,
+
+    int* failed) {
+    cg::grid_group grid = cg::this_grid();
+
+    const int packed = blockIdx.x * blockDim.x + threadIdx.x;
+    const bool active = packed < n_real_constraints;
+
+    for (int i = 0; i < expansion_order; i++) {
+        if (active) {
+            const int neighbor_count = neighbor_counts[packed];
+            double next_value = 0;
+
+            for (int j = 0; j < neighbor_count; j++) {
+                const int storage_idx = j * n_packed_threads + packed;
+                const int neighbor_idx = neighbor_indices[storage_idx];
+                next_value += matrix_a[storage_idx] * rhs_in[neighbor_idx];
+            }
+
+            if (isfinite(next_value)) {
+                rhs_out[packed] = next_value;
+                solution[packed] += next_value;
+            } else {
+                rhs_out[packed] = 0;
+                atomicCAS(failed, -1, packed);
+            }
+        }
+
+        grid.sync();
+        double* temporary = rhs_in;
+        rhs_in = rhs_out;
+        rhs_out = temporary;
+    }
 }
 
 __global__ void big_lincs_solve_kernel(
@@ -535,6 +840,34 @@ void CudaLincs::init_backend_for_big_group(
         }
     }
 
+    int device = 0;
+    check_cuda(cudaGetDevice(&device));
+
+    int multiprocessor_count = 0;
+    check_cuda(cudaDeviceGetAttribute(&multiprocessor_count, cudaDevAttrMultiProcessorCount, device));
+
+    int active_blocks_per_multiprocessor = 0;
+    check_cuda(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&active_blocks_per_multiprocessor, big_lincs_cooperative_solve_kernel, BLOCK_THREAD, 0));
+
+    const int cooperative_block_capacity = active_blocks_per_multiprocessor * multiprocessor_count;
+
+    int cooperative_launch_supported = 0;
+    check_cuda(cudaDeviceGetAttribute(&cooperative_launch_supported, cudaDevAttrCooperativeLaunch, device));
+    const bool can_launch_cooperative_solve = n_blocks <= cooperative_block_capacity && cooperative_launch_supported != 0;
+
+    int persistent_blocks_per_multiprocessor = 0;
+
+    check_cuda(
+        cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+            &persistent_blocks_per_multiprocessor,
+            big_lincs_persistent_kernel,
+            BLOCK_THREAD,
+            0));
+
+    const int persistent_block_capacity =
+        persistent_blocks_per_multiprocessor *
+        multiprocessor_count;
+
     CudaLincsBigData& data = lincs_big_data_;
     data.n_blocks = n_blocks;
     data.n_packed_threads = n_packed_threads;
@@ -551,6 +884,8 @@ void CudaLincs::init_backend_for_big_group(
     data.solution = std::make_unique<HostDeviceBuffer<double>>(n_packed_threads, false, true);
     data.failed_constraint = std::make_unique<HostDeviceBuffer<int>>(1, true, true);
     data.not_converged = std::make_unique<HostDeviceBuffer<int>>(1, true, true);
+    data.can_launch_cooperative_solve = can_launch_cooperative_solve;
+    data.can_launch_persistent = cooperative_launch_supported != 0 && n_blocks <= persistent_block_capacity;
 }
 
 void CudaLincs::init_backend(Context& ctx) {
@@ -748,115 +1083,262 @@ void CudaLincs::apply_to(Context& ctx, coord_t* coords, const coord_t* xcoords) 
     }
 
     auto& big_lincs_data = lincs_big_data_;
+
     if (big_lincs_data.n_blocks > 0) {
         big_lincs_data.failed_constraint->cpu_data_p[0] = -1;
         big_lincs_data.failed_constraint->upload();
 
-        big_lincs_prepare_kernel<<<big_lincs_data.n_blocks, BLOCK_THREAD>>>(
+        big_lincs_prepare_direction_rhs_kernel<<<big_lincs_data.n_blocks, BLOCK_THREAD>>>(
+            big_lincs_data.n_real_constraints,
+            big_lincs_data.bonds->gpu_data_p,
+            big_lincs_data.directions->gpu_data_p,
+            big_lincs_data.rhs_ping->gpu_data_p,
+            big_lincs_data.solution->gpu_data_p,
+            coords,
+            xcoords,
+            big_lincs_data.failed_constraint->gpu_data_p);
+
+        check_cuda(cudaGetLastError());
+
+        big_lincs_prepare_matrix_kernel<<<big_lincs_data.n_blocks, BLOCK_THREAD>>>(
             big_lincs_data.n_packed_threads,
             big_lincs_data.n_real_constraints,
-            lincs_settings_.expansion_order,
-            lincs_settings_.minimum_rotation_iterations,
-            lincs_settings_.maximum_rotation_iterations,
-            lincs_settings_.accuracy_tolerance,
-            big_lincs_data.bonds->gpu_data_p,
             big_lincs_data.neighbor_counts->gpu_data_p,
             big_lincs_data.neighbor_indices->gpu_data_p,
             big_lincs_data.mass_factors->gpu_data_p,
             big_lincs_data.directions->gpu_data_p,
             big_lincs_data.matrix_a->gpu_data_p,
-            big_lincs_data.rhs_ping->gpu_data_p,
-            big_lincs_data.solution->gpu_data_p,
-            ctx.winv->gpu_data_p,
-            coords,
-            xcoords,
             big_lincs_data.failed_constraint->gpu_data_p);
+
         check_cuda(cudaGetLastError());
 
-        auto solve_expansion = [&]() {
-            double* rhs_in = big_lincs_data.rhs_ping->gpu_data_p;
-            double* rhs_out = big_lincs_data.rhs_pong->gpu_data_p;
+        if (big_lincs_data.can_launch_persistent) {
+            int n_packed_threads =
+                big_lincs_data.n_packed_threads;
 
-            for (int order = 0; order < lincs_settings_.expansion_order; order++) {
-                big_lincs_solve_kernel<<<big_lincs_data.n_blocks, BLOCK_THREAD>>>(
-                    big_lincs_data.n_packed_threads,
+            int n_real_constraints =
+                big_lincs_data.n_real_constraints;
+
+            int expansion_order =
+                lincs_settings_.expansion_order;
+
+            int minimum_rotation_iterations =
+                lincs_settings_.minimum_rotation_iterations;
+
+            int maximum_rotation_iterations =
+                lincs_settings_.maximum_rotation_iterations;
+
+            double accuracy_tolerance =
+                lincs_settings_.accuracy_tolerance;
+
+            const CudaLincsBond* bonds =
+                big_lincs_data.bonds->gpu_data_p;
+
+            const int* neighbor_counts =
+                big_lincs_data.neighbor_counts->gpu_data_p;
+
+            const int* neighbor_indices =
+                big_lincs_data.neighbor_indices->gpu_data_p;
+
+            const double* matrix_a =
+                big_lincs_data.matrix_a->gpu_data_p;
+
+            const coord_t* directions =
+                big_lincs_data.directions->gpu_data_p;
+
+            double* rhs_ping =
+                big_lincs_data.rhs_ping->gpu_data_p;
+
+            double* rhs_pong =
+                big_lincs_data.rhs_pong->gpu_data_p;
+
+            double* solution =
+                big_lincs_data.solution->gpu_data_p;
+
+            const double* winv =
+                ctx.winv->gpu_data_p;
+
+            int* failed =
+                big_lincs_data.failed_constraint->gpu_data_p;
+
+            int* not_converged =
+                big_lincs_data.not_converged->gpu_data_p;
+
+            void* kernel_arguments[] = {
+                &n_packed_threads,
+                &n_real_constraints,
+                &expansion_order,
+                &minimum_rotation_iterations,
+                &maximum_rotation_iterations,
+                &accuracy_tolerance,
+                &bonds,
+                &neighbor_counts,
+                &neighbor_indices,
+                &matrix_a,
+                &directions,
+                &rhs_ping,
+                &rhs_pong,
+                &solution,
+                &winv,
+                &coords,
+                &failed,
+                &not_converged,
+            };
+
+            check_cuda(cudaLaunchCooperativeKernel(
+                reinterpret_cast<void*>(
+                    big_lincs_persistent_kernel),
+                dim3(big_lincs_data.n_blocks),
+                dim3(BLOCK_THREAD),
+                kernel_arguments,
+                0,
+                nullptr));
+
+            check_cuda(cudaGetLastError());
+
+            big_lincs_data.failed_constraint->download();
+
+            const int failed_index =
+                big_lincs_data
+                    .failed_constraint
+                    ->cpu_data_p[0];
+
+            if (failed_index != -1) {
+                std::fflush(stdout);
+                std::exit(EXIT_FAILURE);
+            }
+        } else {
+            auto solve_expansion = [&]() {
+                if (big_lincs_data.can_launch_cooperative_solve) {
+                    int n_packed_threads = big_lincs_data.n_packed_threads;
+
+                    int n_real_constraints = big_lincs_data.n_real_constraints;
+
+                    int expansion_order = lincs_settings_.expansion_order;
+
+                    const int* neighbor_counts = big_lincs_data.neighbor_counts->gpu_data_p;
+
+                    const int* neighbor_indices = big_lincs_data.neighbor_indices->gpu_data_p;
+
+                    const double* matrix_a = big_lincs_data.matrix_a->gpu_data_p;
+
+                    double* rhs_ping = big_lincs_data.rhs_ping->gpu_data_p;
+
+                    double* rhs_pong = big_lincs_data.rhs_pong->gpu_data_p;
+
+                    double* solution = big_lincs_data.solution->gpu_data_p;
+
+                    int* failed = big_lincs_data.failed_constraint->gpu_data_p;
+
+                    void* kernel_arguments[] = {
+                        &n_packed_threads,
+                        &n_real_constraints,
+                        &expansion_order,
+                        &neighbor_counts,
+                        &neighbor_indices,
+                        &matrix_a,
+                        &rhs_ping,
+                        &rhs_pong,
+                        &solution,
+                        &failed,
+                    };
+
+                    check_cuda(cudaLaunchCooperativeKernel(
+                        reinterpret_cast<void*>(big_lincs_cooperative_solve_kernel),
+                        dim3(big_lincs_data.n_blocks),
+                        dim3(BLOCK_THREAD),
+                        kernel_arguments,
+                        0,
+                        nullptr));
+
+                    check_cuda(cudaGetLastError());
+
+                } else {
+                    double* rhs_in = big_lincs_data.rhs_ping->gpu_data_p;
+                    double* rhs_out = big_lincs_data.rhs_pong->gpu_data_p;
+
+                    for (int order = 0; order < lincs_settings_.expansion_order; order++) {
+                        big_lincs_solve_kernel<<<big_lincs_data.n_blocks, BLOCK_THREAD>>>(
+                            big_lincs_data.n_packed_threads,
+                            big_lincs_data.n_real_constraints,
+                            big_lincs_data.neighbor_counts->gpu_data_p,
+                            big_lincs_data.neighbor_indices->gpu_data_p,
+                            big_lincs_data.matrix_a->gpu_data_p,
+                            rhs_in,
+                            rhs_out,
+                            big_lincs_data.solution->gpu_data_p,
+                            big_lincs_data.failed_constraint->gpu_data_p);
+                        check_cuda(cudaGetLastError());
+                        std::swap(rhs_in, rhs_out);
+                    }
+                }
+            };
+
+            auto apply_correction = [&]() {
+                big_lincs_apply_correction_kernel<<<big_lincs_data.n_blocks, BLOCK_THREAD>>>(
                     big_lincs_data.n_real_constraints,
-                    big_lincs_data.neighbor_counts->gpu_data_p,
-                    big_lincs_data.neighbor_indices->gpu_data_p,
-                    big_lincs_data.matrix_a->gpu_data_p,
-                    rhs_in,
-                    rhs_out,
+                    big_lincs_data.bonds->gpu_data_p,
+                    big_lincs_data.directions->gpu_data_p,
                     big_lincs_data.solution->gpu_data_p,
+                    ctx.winv->gpu_data_p,
+                    coords,
                     big_lincs_data.failed_constraint->gpu_data_p);
                 check_cuda(cudaGetLastError());
-                std::swap(rhs_in, rhs_out);
-            }
-        };
-
-        auto apply_correction = [&]() {
-            big_lincs_apply_correction_kernel<<<big_lincs_data.n_blocks, BLOCK_THREAD>>>(
-                big_lincs_data.n_real_constraints,
-                big_lincs_data.bonds->gpu_data_p,
-                big_lincs_data.directions->gpu_data_p,
-                big_lincs_data.solution->gpu_data_p,
-                ctx.winv->gpu_data_p,
-                coords,
-                big_lincs_data.failed_constraint->gpu_data_p);
-            check_cuda(cudaGetLastError());
-        };
-
-        solve_expansion();
-        apply_correction();
-
-        bool converged = false;
-        for (int iteration = 0; iteration < lincs_settings_.maximum_rotation_iterations; iteration++) {
-            big_lincs_rotation_rhs_kernel<<<big_lincs_data.n_blocks, BLOCK_THREAD>>>(
-                big_lincs_data.n_real_constraints,
-                big_lincs_data.bonds->gpu_data_p,
-                big_lincs_data.rhs_ping->gpu_data_p,
-                big_lincs_data.solution->gpu_data_p,
-                coords,
-                big_lincs_data.failed_constraint->gpu_data_p);
-            check_cuda(cudaGetLastError());
+            };
 
             solve_expansion();
             apply_correction();
 
-            if (iteration + 1 >= lincs_settings_.minimum_rotation_iterations) {
-                big_lincs_data.not_converged->cpu_data_p[0] = 0;
-                big_lincs_data.not_converged->upload();
+            bool converged = false;
+            for (int iteration = 0; iteration < lincs_settings_.maximum_rotation_iterations; iteration++) {
+                big_lincs_rotation_rhs_kernel<<<big_lincs_data.n_blocks, BLOCK_THREAD>>>(
+                    big_lincs_data.n_real_constraints,
+                    big_lincs_data.bonds->gpu_data_p,
+                    big_lincs_data.rhs_ping->gpu_data_p,
+                    big_lincs_data.solution->gpu_data_p,
+                    coords,
+                    big_lincs_data.failed_constraint->gpu_data_p);
+                check_cuda(cudaGetLastError());
 
-                big_lincs_check_convergence_kernel<<<big_lincs_data.n_blocks, BLOCK_THREAD>>>(
+                solve_expansion();
+                apply_correction();
+
+                if (iteration + 1 >= lincs_settings_.minimum_rotation_iterations) {
+                    big_lincs_data.not_converged->cpu_data_p[0] = 0;
+                    big_lincs_data.not_converged->upload();
+
+                    big_lincs_check_convergence_kernel<<<big_lincs_data.n_blocks, BLOCK_THREAD>>>(
+                        big_lincs_data.n_real_constraints,
+                        lincs_settings_.accuracy_tolerance,
+                        big_lincs_data.bonds->gpu_data_p,
+                        coords,
+                        big_lincs_data.not_converged->gpu_data_p);
+                    check_cuda(cudaGetLastError());
+
+                    big_lincs_data.not_converged->download();
+                    if (big_lincs_data.not_converged->cpu_data_p[0] == 0) {
+                        converged = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!converged) {
+                big_lincs_validate_kernel<<<big_lincs_data.n_blocks, BLOCK_THREAD>>>(
                     big_lincs_data.n_real_constraints,
                     lincs_settings_.accuracy_tolerance,
                     big_lincs_data.bonds->gpu_data_p,
                     coords,
-                    big_lincs_data.not_converged->gpu_data_p);
+                    big_lincs_data.failed_constraint->gpu_data_p);
                 check_cuda(cudaGetLastError());
-
-                big_lincs_data.not_converged->download();
-                if (big_lincs_data.not_converged->cpu_data_p[0] == 0) {
-                    converged = true;
-                    break;
-                }
             }
-        }
 
-        if (!converged) {
-            big_lincs_validate_kernel<<<big_lincs_data.n_blocks, BLOCK_THREAD>>>(
-                big_lincs_data.n_real_constraints,
-                lincs_settings_.accuracy_tolerance,
-                big_lincs_data.bonds->gpu_data_p,
-                coords,
-                big_lincs_data.failed_constraint->gpu_data_p);
-            check_cuda(cudaGetLastError());
-        }
-
-        big_lincs_data.failed_constraint->download();
-        const int failed = big_lincs_data.failed_constraint->cpu_data_p[0];
-        if (failed != -1) {
-            std::fflush(stdout);
-            std::exit(EXIT_FAILURE);
+            big_lincs_data.failed_constraint->download();
+            const int failed = big_lincs_data.failed_constraint->cpu_data_p[0];
+            if (failed != -1) {
+                std::fflush(stdout);
+                std::exit(EXIT_FAILURE);
+            }
         }
     }
 }
