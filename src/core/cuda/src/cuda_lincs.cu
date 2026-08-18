@@ -1,7 +1,10 @@
+#include <queue>
+#include <stdexcept>
+#include <vector>
+
 #include "cuda_lincs.cuh"
 #include "geometry.h"
 #include "union_find.h"
-#include "vector"
 
 namespace {
 const int BLOCK_THREAD = 256;
@@ -62,6 +65,10 @@ __device__ void solve(
         }
 
         shared_rhs[output_buffer * BLOCK_THREAD + local] = next_value;
+        /*
+        If it's for big group, we should wait until all block finishs.
+
+        */
         solution += next_value;
     }
 
@@ -122,7 +129,7 @@ __global__ void small_lincs_kernel(
      */
     __shared__ coord_t shared_directions[BLOCK_THREAD];
     __shared__ double shared_rhs[2 * BLOCK_THREAD];
-    __shared__ int block_ready; 
+    __shared__ int block_ready;
 
     const CudaLincsBond& bond = bonds[packed];
     const bool is_dummy = bond.ai < 0;
@@ -232,12 +239,318 @@ __global__ void small_lincs_kernel(
     }
 }
 
+__global__ void big_lincs_prepare_kernel(
+    const int n_packed_threads,
+    const int n_real_constraints,
+    const int expansion_order,
+    const int minimum_rotation_iterations,
+    const int maximum_rotation_iterations,
+    const double accuracy_tolerance,
+    const CudaLincsBond* bonds,
+    const int* neighbor_counts,
+    const int* neighbor_indices,
+    const double* mass_factors,
+
+    coord_t* directions,
+    double* matrix_a,
+    double* rhs_ping,
+    double* solution,
+
+    const double* winv,
+    coord_t* coords,
+    const coord_t* reference,
+    int* failed) {
+    const int packed = blockIdx.x * blockDim.x + threadIdx.x;
+    if (packed >= n_real_constraints) return;
+
+    const auto& bond = bonds[packed];
+    coord_t direction = {0, 0, 0};
+
+    const coord_t old_bond = reference[bond.ai] - reference[bond.aj];
+    const double old_d2 = norm2(old_bond);
+    if (isfinite(old_d2) && old_d2 > 0) {
+        const double inverse_length = rsqrt(old_d2);
+        direction = old_bond * inverse_length;
+    } else {
+        atomicCAS(failed, -1, packed);
+    }
+
+    directions[packed] = direction;
+
+    // Construct matrix-A
+    const int count = neighbor_counts[packed];
+    for (int i = 0; i < count; i++) {
+        int storage_idx = i * n_packed_threads + packed;
+        const int neighbor_idx = neighbor_indices[storage_idx];
+        const auto& neighbor_bond = bonds[neighbor_idx];
+
+        coord_t neighbor_old_bond = reference[neighbor_bond.ai] - reference[neighbor_bond.aj];
+        auto neighbor_direction = neighbor_old_bond / norm(neighbor_old_bond);
+
+        matrix_a[storage_idx] = mass_factors[storage_idx] * dot(direction, neighbor_direction);
+    }
+
+    double rhs = 0;
+    const coord_t current_bond = coords[bond.ai] - coords[bond.aj];
+    rhs = bond.mass_scale * (dot(direction, current_bond) - bond.target);
+
+    if (!isfinite(rhs)) {
+        atomicCAS(failed, -1, packed);
+        rhs = 0;
+    }
+    rhs_ping[packed] = rhs;
+    solution[packed] = rhs;
+}
+
+__global__ void big_lincs_solve_kernel(
+    const int n_packed_threads,
+    const int n_real_constraints,
+    const int* neighbor_counts,
+    const int* neighbor_indices,
+
+    double* matrix_a,
+    double* rhs_in,
+    double* rhs_out,
+    double* solution,
+
+    int* failed) {
+    const int packed = blockIdx.x * blockDim.x + threadIdx.x;
+    if (packed >= n_real_constraints) return;
+
+    int neighbor_count = neighbor_counts[packed];
+    double next_value = 0;
+    for (int i = 0; i < neighbor_count; i++) {
+        const int storage_idx = i * n_packed_threads + packed;
+        const int neighbor_idx = neighbor_indices[storage_idx];
+
+        next_value += matrix_a[storage_idx] * rhs_in[neighbor_idx];
+    }
+    rhs_out[packed] = next_value;
+    solution[packed] += next_value;
+}
+
+__global__ void big_lincs_apply_correction_kernel(
+    const int n_real_constraints,
+    const CudaLincsBond* bonds,
+
+    const coord_t* directions,
+    const double* solution,
+
+    const double* winv,
+    coord_t* coords,
+    int* failed) {
+    const int packed = blockIdx.x * blockDim.x + threadIdx.x;
+    if (packed >= n_real_constraints) return;
+
+    const auto& bond = bonds[packed];
+    const auto& direction = directions[packed];
+    const double lambda = bond.mass_scale * solution[packed];
+    if (isfinite(lambda)) {
+        atomicAdd(&coords[bond.ai].x, -winv[bond.ai] * lambda * direction.x);
+        atomicAdd(&coords[bond.ai].y, -winv[bond.ai] * lambda * direction.y);
+        atomicAdd(&coords[bond.ai].z, -winv[bond.ai] * lambda * direction.z);
+        atomicAdd(&coords[bond.aj].x, winv[bond.aj] * lambda * direction.x);
+        atomicAdd(&coords[bond.aj].y, winv[bond.aj] * lambda * direction.y);
+        atomicAdd(&coords[bond.aj].z, winv[bond.aj] * lambda * direction.z);
+    } else {
+        atomicCAS(failed, -1, packed);
+    }
+}
+
+__global__ void big_lincs_rotation_rhs_kernel(
+    const int n_real_constraints,
+    const CudaLincsBond* bonds,
+
+    double* rhs_ping,
+    double* solution,
+
+    coord_t* coords,
+    int* failed) {
+    const int packed = blockIdx.x * blockDim.x + threadIdx.x;
+    if (packed >= n_real_constraints) return;
+
+    const auto& bond = bonds[packed];
+    const coord_t current_bond = coords[bond.ai] - coords[bond.aj];
+    const double current_length2 = norm2(current_bond);
+    const double target_length2 = bond.target * bond.target;
+    const double radicand = 2.0 * target_length2 - current_length2;
+
+    double rotation_rhs = 0;
+    if (isfinite(radicand) && radicand > 0) {
+        rotation_rhs = bond.mass_scale * (bond.target - sqrt(radicand));
+        if (!isfinite(rotation_rhs)) {
+            rotation_rhs = 0;
+            atomicCAS(failed, -1, packed);
+        }
+    } else {
+        rotation_rhs = 0;
+        atomicCAS(failed, -1, packed);
+    }
+    rhs_ping[packed] = rotation_rhs;
+    solution[packed] = rotation_rhs;
+}
+
+__global__ void big_lincs_validate_kernel(
+    const int n_real_constraints,
+    const double accuracy_tolerance,
+    const CudaLincsBond* bonds,
+    const coord_t* coords,
+    int* failed) {
+    const int packed = blockIdx.x * blockDim.x + threadIdx.x;
+    if (packed >= n_real_constraints) return;
+
+    const auto& bond = bonds[packed];
+    const coord_t corrected_bond = coords[bond.ai] - coords[bond.aj];
+    const double corrected_length = norm(corrected_bond);
+    const double relative_error = fabs(corrected_length / bond.target - 1.0);
+
+    if (!isfinite(corrected_length) || !isfinite(relative_error) || relative_error > accuracy_tolerance) {
+        printf(">>> Lincs failed, i = %d, j = %d, d = %f, d0 = %f\n", bond.ai, bond.aj, corrected_length, bond.target);
+        atomicCAS(failed, -1, packed);
+    }
+}
+
+__global__ void big_lincs_check_convergence_kernel(
+    const int n_real_constraints,
+    const double accuracy_tolerance,
+    const CudaLincsBond* bonds,
+    const coord_t* coords,
+    int* not_converged) {
+    const int packed = blockIdx.x * blockDim.x + threadIdx.x;
+    if (packed >= n_real_constraints) return;
+
+    const auto& bond = bonds[packed];
+    const coord_t corrected_bond = coords[bond.ai] - coords[bond.aj];
+    const double corrected_length = norm(corrected_bond);
+    const double relative_error = fabs(corrected_length / bond.target - 1.0);
+
+    if (!isfinite(corrected_length) || !isfinite(relative_error) || relative_error > accuracy_tolerance) {
+        atomicExch(not_converged, 1);
+    }
+}
+
 }  // namespace
 
 void CudaLincs::apply(Context& ctx, HostDeviceBuffer<coord_t>& xcoords) {
     coord_t* candidate = ctx.coords->gpu_data_p;
     const coord_t* reference = xcoords.gpu_data_p;
     apply_to(ctx, candidate, reference);
+}
+
+void CudaLincs::init_backend_for_big_group(
+    Context& ctx,
+    const std::vector<std::vector<int>>& bond_graph,
+    const std::vector<int>& big_group_idx,
+    const std::vector<std::vector<int>>& groups) {
+    if (big_group_idx.empty()) return;
+
+    const int bond_num = bond_graph.size();
+    const auto* constraint_bonds = data_.constraint_bonds->cpu_data_p;
+    const auto* winv = ctx.winv->cpu_data_p;
+
+    /*
+     * These are bond/constraint indices, not atom indices. Consecutive groups
+     * of 256 constraints are owned by one CUDA block. A row's neighbors may
+     * belong to any block and will be read from the global RHS buffers.
+     */
+    std::vector<int> bfs_order;
+    std::vector<unsigned char> visited(bond_num, 0);
+
+    for (int group_idx : big_group_idx) {
+        const auto& group = groups[group_idx];
+        if (group.empty()) continue;
+
+        std::queue<int> pending;
+        pending.push(group.front());
+        visited[group.front()] = 1;
+
+        while (!pending.empty()) {
+            const int bond_idx = pending.front();
+            pending.pop();
+            bfs_order.push_back(bond_idx);
+
+            for (int neighbor_idx : bond_graph[bond_idx]) {
+                if (!visited[neighbor_idx]) {
+                    visited[neighbor_idx] = 1;
+                    pending.push(neighbor_idx);
+                }
+            }
+        }
+    }
+
+    const int n_real_constraints = bfs_order.size();
+    const int n_blocks = (n_real_constraints + BLOCK_THREAD - 1) / BLOCK_THREAD;
+    const int n_packed_threads = n_blocks * BLOCK_THREAD;
+
+    const CudaLincsBond dummy_bond = {-1, -1, 0, 0};
+    std::vector<CudaLincsBond> bonds(n_packed_threads, dummy_bond);
+    std::vector<int> neighbor_counts(n_packed_threads, 0);
+    std::vector<int> original_to_packed(bond_num, -1);
+
+    for (int packed = 0; packed < n_real_constraints; packed++) {
+        const int original = bfs_order[packed];
+        const ConstraintBond& bond = constraint_bonds[original];
+        const int ai = bond.ai - 1;
+        const int aj = bond.aj - 1;
+
+        original_to_packed[original] = packed;
+        bonds[packed] = {
+            ai,
+            aj,
+            std::sqrt(bond.dist2),
+            1.0 / std::sqrt(winv[ai] + winv[aj])};
+        neighbor_counts[packed] = bond_graph[original].size();
+    }
+
+    int max_neighbors = 0;
+    for (int packed = 0; packed < n_real_constraints; packed++) {
+        max_neighbors = std::max(max_neighbors, neighbor_counts[packed]);
+    }
+
+    // Transposed ELLPACK keeps each neighbor slot coalesced across a warp.
+    std::vector<int> neighbor_indices(max_neighbors * n_packed_threads, -1);
+    std::vector<double> mass_factors(max_neighbors * n_packed_threads, 0);
+
+    for (int packed = 0; packed < n_real_constraints; packed++) {
+        const int original = bfs_order[packed];
+        const ConstraintBond& bond = constraint_bonds[original];
+
+        for (int slot = 0; slot < neighbor_counts[packed]; slot++) {
+            const int neighbor_original = bond_graph[original][slot];
+            const int neighbor_packed = original_to_packed[neighbor_original];
+            const int storage_idx = slot * n_packed_threads + packed;
+
+            if (neighbor_packed < 0) {
+                throw std::runtime_error("CUDA LINCS large-group neighbor was not packed");
+            }
+
+            neighbor_indices[storage_idx] = neighbor_packed;
+            const int shared_atom = get_same_atom_in_two_bond(bond, constraint_bonds[neighbor_original]);
+            mass_factors[storage_idx] =
+                -get_sign(shared_atom, bond) *
+                get_sign(shared_atom, constraint_bonds[neighbor_original]) *
+                winv[shared_atom - 1] *
+                bonds[packed].mass_scale *
+                bonds[neighbor_packed].mass_scale;
+        }
+    }
+
+    CudaLincsBigData& data = lincs_big_data_;
+    data.n_blocks = n_blocks;
+    data.n_packed_threads = n_packed_threads;
+    data.n_real_constraints = n_real_constraints;
+    data.max_neighbors = max_neighbors;
+    data.bonds = HostDeviceBuffer<CudaLincsBond>::from_vector(bonds, true);
+    data.neighbor_counts = HostDeviceBuffer<int>::from_vector(neighbor_counts, true);
+    data.neighbor_indices = HostDeviceBuffer<int>::from_vector(neighbor_indices, true);
+    data.mass_factors = HostDeviceBuffer<double>::from_vector(mass_factors, true);
+    data.directions = std::make_unique<HostDeviceBuffer<coord_t>>(n_packed_threads, false, true);
+    data.matrix_a = std::make_unique<HostDeviceBuffer<double>>(mass_factors.size(), false, true);
+    data.rhs_ping = std::make_unique<HostDeviceBuffer<double>>(n_packed_threads, false, true);
+    data.rhs_pong = std::make_unique<HostDeviceBuffer<double>>(n_packed_threads, false, true);
+    data.solution = std::make_unique<HostDeviceBuffer<double>>(n_packed_threads, false, true);
+    data.failed_constraint = std::make_unique<HostDeviceBuffer<int>>(1, true, true);
+    data.not_converged = std::make_unique<HostDeviceBuffer<int>>(1, true, true);
 }
 
 void CudaLincs::init_backend(Context& ctx) {
@@ -312,6 +625,8 @@ void CudaLincs::init_backend(Context& ctx) {
         }
         cur_bond_num += group_size;
     }
+
+    init_backend_for_big_group(ctx, bond_graph, big_group_idx, groups);
 
     // Pad the final block
     if (!bonds.empty() && cur_bond_num != 0) {
@@ -405,31 +720,144 @@ void CudaLincs::initial_constraint(Context& ctx) {
 void CudaLincs::apply_to(Context& ctx, coord_t* coords, const coord_t* xcoords) {
     CudaLincsSmallData& data = lincs_small_data_;
 
-    if (data.n_blocks == 0) return;
+    if (data.n_blocks > 0) {
+        data.failed_constraint->cpu_data_p[0] = -1;
+        data.failed_constraint->upload();
+        small_lincs_kernel<<<data.n_blocks, BLOCK_THREAD>>>(
+            data.n_packed_threads,
+            lincs_settings_.expansion_order,
+            lincs_settings_.minimum_rotation_iterations,
+            lincs_settings_.maximum_rotation_iterations,
+            lincs_settings_.accuracy_tolerance,
+            data.bonds->gpu_data_p,
+            data.neighbor_counts->gpu_data_p,
+            data.neighbor_local_indices->gpu_data_p,
+            data.mass_factors->gpu_data_p,
+            data.matrix_a->gpu_data_p,
+            ctx.winv->gpu_data_p,
+            coords,
+            xcoords,
+            data.failed_constraint->gpu_data_p);
+        check_cuda(cudaGetLastError());
+        data.failed_constraint->download();
+        const int failed = data.failed_constraint->cpu_data_p[0];
+        if (failed != -1) {
+            std::fflush(stdout);
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
-    data.failed_constraint->cpu_data_p[0] = -1;
-    data.failed_constraint->upload();
-    small_lincs_kernel<<<data.n_blocks, BLOCK_THREAD>>>(
-        data.n_packed_threads,
-        lincs_settings_.expansion_order,
-        lincs_settings_.minimum_rotation_iterations,
-        lincs_settings_.maximum_rotation_iterations,
-        lincs_settings_.accuracy_tolerance,
-        data.bonds->gpu_data_p,
-        data.neighbor_counts->gpu_data_p,
-        data.neighbor_local_indices->gpu_data_p,
-        data.mass_factors->gpu_data_p,
-        data.matrix_a->gpu_data_p,
-        ctx.winv->gpu_data_p,
-        coords,
-        xcoords,
-        data.failed_constraint->gpu_data_p);
-    check_cuda(cudaGetLastError());
-    data.failed_constraint->download();
-    const int failed = data.failed_constraint->cpu_data_p[0];
-    if (failed != -1) {
-        std::fflush(stdout);
-        std::exit(EXIT_FAILURE);
+    auto& big_lincs_data = lincs_big_data_;
+    if (big_lincs_data.n_blocks > 0) {
+        big_lincs_data.failed_constraint->cpu_data_p[0] = -1;
+        big_lincs_data.failed_constraint->upload();
+
+        big_lincs_prepare_kernel<<<big_lincs_data.n_blocks, BLOCK_THREAD>>>(
+            big_lincs_data.n_packed_threads,
+            big_lincs_data.n_real_constraints,
+            lincs_settings_.expansion_order,
+            lincs_settings_.minimum_rotation_iterations,
+            lincs_settings_.maximum_rotation_iterations,
+            lincs_settings_.accuracy_tolerance,
+            big_lincs_data.bonds->gpu_data_p,
+            big_lincs_data.neighbor_counts->gpu_data_p,
+            big_lincs_data.neighbor_indices->gpu_data_p,
+            big_lincs_data.mass_factors->gpu_data_p,
+            big_lincs_data.directions->gpu_data_p,
+            big_lincs_data.matrix_a->gpu_data_p,
+            big_lincs_data.rhs_ping->gpu_data_p,
+            big_lincs_data.solution->gpu_data_p,
+            ctx.winv->gpu_data_p,
+            coords,
+            xcoords,
+            big_lincs_data.failed_constraint->gpu_data_p);
+        check_cuda(cudaGetLastError());
+
+        auto solve_expansion = [&]() {
+            double* rhs_in = big_lincs_data.rhs_ping->gpu_data_p;
+            double* rhs_out = big_lincs_data.rhs_pong->gpu_data_p;
+
+            for (int order = 0; order < lincs_settings_.expansion_order; order++) {
+                big_lincs_solve_kernel<<<big_lincs_data.n_blocks, BLOCK_THREAD>>>(
+                    big_lincs_data.n_packed_threads,
+                    big_lincs_data.n_real_constraints,
+                    big_lincs_data.neighbor_counts->gpu_data_p,
+                    big_lincs_data.neighbor_indices->gpu_data_p,
+                    big_lincs_data.matrix_a->gpu_data_p,
+                    rhs_in,
+                    rhs_out,
+                    big_lincs_data.solution->gpu_data_p,
+                    big_lincs_data.failed_constraint->gpu_data_p);
+                check_cuda(cudaGetLastError());
+                std::swap(rhs_in, rhs_out);
+            }
+        };
+
+        auto apply_correction = [&]() {
+            big_lincs_apply_correction_kernel<<<big_lincs_data.n_blocks, BLOCK_THREAD>>>(
+                big_lincs_data.n_real_constraints,
+                big_lincs_data.bonds->gpu_data_p,
+                big_lincs_data.directions->gpu_data_p,
+                big_lincs_data.solution->gpu_data_p,
+                ctx.winv->gpu_data_p,
+                coords,
+                big_lincs_data.failed_constraint->gpu_data_p);
+            check_cuda(cudaGetLastError());
+        };
+
+        solve_expansion();
+        apply_correction();
+
+        bool converged = false;
+        for (int iteration = 0; iteration < lincs_settings_.maximum_rotation_iterations; iteration++) {
+            big_lincs_rotation_rhs_kernel<<<big_lincs_data.n_blocks, BLOCK_THREAD>>>(
+                big_lincs_data.n_real_constraints,
+                big_lincs_data.bonds->gpu_data_p,
+                big_lincs_data.rhs_ping->gpu_data_p,
+                big_lincs_data.solution->gpu_data_p,
+                coords,
+                big_lincs_data.failed_constraint->gpu_data_p);
+            check_cuda(cudaGetLastError());
+
+            solve_expansion();
+            apply_correction();
+
+            if (iteration + 1 >= lincs_settings_.minimum_rotation_iterations) {
+                big_lincs_data.not_converged->cpu_data_p[0] = 0;
+                big_lincs_data.not_converged->upload();
+
+                big_lincs_check_convergence_kernel<<<big_lincs_data.n_blocks, BLOCK_THREAD>>>(
+                    big_lincs_data.n_real_constraints,
+                    lincs_settings_.accuracy_tolerance,
+                    big_lincs_data.bonds->gpu_data_p,
+                    coords,
+                    big_lincs_data.not_converged->gpu_data_p);
+                check_cuda(cudaGetLastError());
+
+                big_lincs_data.not_converged->download();
+                if (big_lincs_data.not_converged->cpu_data_p[0] == 0) {
+                    converged = true;
+                    break;
+                }
+            }
+        }
+
+        if (!converged) {
+            big_lincs_validate_kernel<<<big_lincs_data.n_blocks, BLOCK_THREAD>>>(
+                big_lincs_data.n_real_constraints,
+                lincs_settings_.accuracy_tolerance,
+                big_lincs_data.bonds->gpu_data_p,
+                coords,
+                big_lincs_data.failed_constraint->gpu_data_p);
+            check_cuda(cudaGetLastError());
+        }
+
+        big_lincs_data.failed_constraint->download();
+        const int failed = big_lincs_data.failed_constraint->cpu_data_p[0];
+        if (failed != -1) {
+            std::fflush(stdout);
+            std::exit(EXIT_FAILURE);
+        }
     }
 }
 
