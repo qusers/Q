@@ -10,7 +10,6 @@
 #include "inp_parser.h"
 #include "parse.h"
 #include "q_math.h"
-#include "shake.h"
 
 namespace {
 

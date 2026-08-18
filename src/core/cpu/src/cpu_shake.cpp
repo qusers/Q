@@ -11,7 +11,7 @@ void CpuShake::apply(Context& ctx, HostDeviceBuffer<coord_t>& xcoords_buffer) {
     apply_to(ctx, coords, xcoords);
 }
 
-void CpuShake::initial_shake(Context& ctx) {
+void CpuShake::initial_constraint(Context& ctx) {
     /*
      * Fresh-start setup has no previous coordinate frame yet.
      *
@@ -69,8 +69,8 @@ void CpuShake::apply_to(Context& ctx, coord_t* coords, coord_t* xcoords) {
      * or at least clear ready after coupled corrections.
      */
     const auto* winv = ctx.winv->cpu_data_p;
-    const auto* shake_bonds = data_.shake_bonds->cpu_data_p;
-    const auto* mol_n_shakes = data_.mol_n_shakes->cpu_data_p;
+    const auto* shake_bonds = data_.constraint_bonds->cpu_data_p;
+    const auto* mol_n_shakes = data_.mol_n_constraints->cpu_data_p;
 
     // Kept outside the iteration loop to match the Fortran ready semantics.
     std::vector<bool> ready(data_.n_constraints, false);

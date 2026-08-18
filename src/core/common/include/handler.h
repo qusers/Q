@@ -5,11 +5,11 @@
 
 #include "base_output.h"
 #include "bonded_force.h"
+#include "constraint_force.h"
 #include "context.h"
 #include "integrator.h"
 #include "nonbonded_force.h"
 #include "restraint_force.h"
-#include "shake.h"
 #include "temperature.h"
 #include "water_boundary_force.h"
 
@@ -24,7 +24,7 @@ class Handler {
     Handler(const Handler&) = delete;
     Handler& operator=(const Handler&) = delete;
 
-    virtual std::unique_ptr<Shake> create_shake_backend() = 0;
+    virtual std::unique_ptr<ConstraintForce> create_constraint_force_backend() = 0;
     virtual std::unique_ptr<NonbondedForce> create_nonbonded_force_backend() = 0;
     virtual std::unique_ptr<BondedForce> create_bonded_force_backend() = 0;
     virtual std::unique_ptr<RestraintForce> create_restraint_force_backend() = 0;
@@ -48,7 +48,7 @@ class Handler {
     void shutdown_outputs();
     void reset_energies();
     void run_iteration(int iteration);
-    std::unique_ptr<Shake> shake_;
+    std::unique_ptr<ConstraintForce> constraint_force_;
     std::unique_ptr<NonbondedForce> nonbonded_force_;
     std::unique_ptr<BondedForce> bonded_force_;
     std::unique_ptr<RestraintForce> restraint_force_;

@@ -72,8 +72,8 @@ void CudaIntegrator::step(Context& ctx) {
         d_coords, d_xcoords, ctx.n_atoms, ctx.n_atoms_solute,
         d_temperature_results, ctx.dt);
 
-    if (shake_->data().n_constraints > 0) {
-        shake_->apply(ctx, *data_.xcoords);
+    if (constraint_force_->data().n_constraints > 0) {
+        constraint_force_->apply(ctx, *data_.xcoords);
         update_velocities_from_positions_kernel<<<numBlocks, blockSize>>>(
             d_velocities, d_coords, d_xcoords, ctx.n_atoms, ctx.dt);
     }

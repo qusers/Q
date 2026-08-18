@@ -7,9 +7,11 @@
 #include "cpu_shake.h"
 #include "cpu_temperature.h"
 #include "cpu_water_boundary_force.h"
+#include "cpu_lincs.h"
 
-std::unique_ptr<Shake> CpuHandler::create_shake_backend() {
-    return std::make_unique<CpuShake>();
+std::unique_ptr<ConstraintForce> CpuHandler::create_constraint_force_backend() {
+    // return std::make_unique<CpuShake>();
+    return std::make_unique<CpuLincs>();
 }
 
 std::unique_ptr<NonbondedForce> CpuHandler::create_nonbonded_force_backend() {

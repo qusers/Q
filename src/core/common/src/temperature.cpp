@@ -2,16 +2,16 @@
 
 #include "constants.h"
 
-void Temperature::init(Context& ctx, const Shake& shake) {
+void Temperature::init(Context& ctx, const ConstraintForce& constraint_force) {
     double excl_shake = 0;
     auto* excluded = ctx.excluded->cpu_data_p;
-    auto* shake_bonds = shake.data().shake_bonds->cpu_data_p;
-    int n_constraints = shake.data().n_constraints;
+    auto* constraint_bonds = constraint_force.data().constraint_bonds->cpu_data_p;
+    int n_constraints = constraint_force.data().n_constraints;
 
     int mol = 0, n_solute_shake_constraints = 0;
     for (int i = 0; i < n_constraints; i++) {
-        const int ai = shake_bonds[i].ai - 1;
-        const int aj = shake_bonds[i].aj - 1;
+        const int ai = constraint_bonds[i].ai - 1;
+        const int aj = constraint_bonds[i].aj - 1;
         if (excluded[ai]) excl_shake += 0.5;
         if (excluded[aj]) excl_shake += 0.5;
         while (mol + 1 < ctx.n_molecules() && ai + 1 >= ctx.molecules[mol + 1]) mol += 1;
