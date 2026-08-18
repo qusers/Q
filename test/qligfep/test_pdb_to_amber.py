@@ -663,6 +663,17 @@ class TestDuplicateAtomValidation:
         with pytest.raises(ValueError, match="Duplicate atom name HA"):
             fix_pdb(pdb_file, out_name=tmp_path / "out.pdb")
 
+    def test_alias_normalization_cannot_create_duplicate_atom_names(self, tmp_path):
+        lines = [
+            _line(1, "CB", "ALA", "A", 1, elem="C"),
+            _line(2, "1HB", "ALA", "A", 1, x=1.0, elem="H"),
+            _line(3, "HB1", "ALA", "A", 1, x=-1.0, elem="H"),
+        ]
+        pdb_file = _write_pdb(tmp_path, lines)
+
+        with pytest.raises(ValueError, match="Duplicate atom name HB1"):
+            fix_pdb(pdb_file, out_name=tmp_path / "out.pdb")
+
 
 class TestBackboneAmideGeometryValidation:
     def test_stretched_backbone_hydrogen_is_rejected(self, tmp_path):
@@ -695,6 +706,20 @@ class TestNeutralLysineHydrogenNormalization:
 
 
 class TestNeutralArginineGeometryNormalization:
+    def test_incomplete_hydrogen_set_is_left_for_qprep_to_complete(self, tmp_path):
+        lines = [
+            _line(1, "NH1", "ARN", "A", 42, x=0.0, elem="N"),
+            _line(2, "NH2", "ARN", "A", 42, x=3.0, elem="N"),
+            _line(3, "HH11", "ARN", "A", 42, x=0.9, elem="H"),
+        ]
+        pdb_file = _write_pdb(tmp_path, lines)
+        out_file = tmp_path / "out.pdb"
+
+        fix_pdb(pdb_file, out_name=out_file)
+
+        atoms = _get_atom_names(out_file, residue_name="ARN")
+        assert {"NH1", "NH2", "HH11"}.issubset(atoms)
+
     def test_opposite_nitrogen_numbering_is_exchanged(self, tmp_path):
         lines = [
             _line(1, "NH1", "ARN", "A", 42, x=0.0, elem="N"),

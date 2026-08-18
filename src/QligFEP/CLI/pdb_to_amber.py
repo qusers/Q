@@ -271,12 +271,10 @@ def _normalize_arn_before_nesting(pdb_lines):
         hydrogen_indices = [
             index for index in indices if pdb_lines[index][12:16].strip() in {"HH11", "HH12", "HH21", "HH22"}
         ]
-        if not hydrogen_indices:
-            continue
+        # qprep can build atoms omitted from an incomplete PDB. Only normalize geometry when the whole guanidinium
+        # group is available; otherwise preserve the supplied names and let qprep fill in the missing atoms.
         if len(nitrogen_indices) != 2 or len(hydrogen_indices) != 3:
-            raise ValueError(
-                f"ARN {residue_id.strip()} must contain two terminal nitrogens and three terminal hydrogens"
-            )
+            continue
 
         attached = {index: [] for index in nitrogen_indices}
         for hydrogen_index in hydrogen_indices:
@@ -313,7 +311,7 @@ def _normalize_arn_before_nesting(pdb_lines):
 
 
 def _validate_unique_atom_names(pdb_lines):
-    """Reject duplicate atom identities before nest_pdb can silently split a residue."""
+    """Reject duplicate atom identities before they reach qprep."""
     seen = set()
     for line in pdb_lines:
         if not line.startswith(("ATOM", "HETATM")):
@@ -523,6 +521,11 @@ def fix_pdb(pdb_path: Path, rename_mapping=rename_mapping, out_name=None):
     npdb = correct_neutral_arginine(npdb)
     npdb = [normalize_neutral_arginine_geometry(residue) for residue in npdb]
     pdb_lines = unnest_pdb(npdb)
+
+    # Renaming can map different source atom names to the same AMBER name.
+    # E.g., Input: 1HB, HB1 -> output HB1, HB1
+    # Check again to ensure normalization did not create duplicates.
+    pdb_lines = _validate_unique_atom_names(pdb_lines)
 
     with open(renamed_pdb_path, "w") as f:
         for line in pdb_lines:
