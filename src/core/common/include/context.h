@@ -13,7 +13,7 @@
 #include "energy.h"
 #include "host_device_buffer.h"
 
-class Shake;
+class ConstraintForce;
 
 class Context {
    public:

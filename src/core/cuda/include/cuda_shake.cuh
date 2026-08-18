@@ -1,7 +1,7 @@
 #pragma once
+#include "constraint_force.h"
 #include "cuda_serial_shake.cuh"
 #include "host_device_buffer.h"
-#include "shake.h"
 
 struct ShakeFastWater {
     int o;
@@ -26,13 +26,13 @@ struct ShakeNetwork {
     double hydrogen_winv[3];
 };
 
-class CudaShake final : public Shake {
+class CudaShake final : public ConstraintForce {
    public:
     explicit CudaShake(bool serial_q_molecules = false)
         : serial_q_molecules_(serial_q_molecules) {}
 
     void apply(Context& ctx, HostDeviceBuffer<coord_t>& xcoords) override;
-    void initial_shake(Context& ctx) override;
+    void initial_constraint(Context& ctx) override;
     void cleanup() override;
 
    protected:
@@ -48,7 +48,7 @@ class CudaShake final : public Shake {
     std::unique_ptr<HostDeviceBuffer<ShakeFastWater>> shake_fast_waters;
     std::unique_ptr<HostDeviceBuffer<ShakeNetwork>> shake_networks;
 
-    std::unique_ptr<HostDeviceBuffer<ShakeBond>> fallback_shake_bonds;
+    std::unique_ptr<HostDeviceBuffer<ConstraintBond>> fallback_shake_bonds;
     std::unique_ptr<HostDeviceBuffer<int>> fallback_color_offsets;
     std::unique_ptr<HostDeviceBuffer<int>> fallback_unconverged;
     std::unique_ptr<HostDeviceBuffer<int>> shake_network_failed;

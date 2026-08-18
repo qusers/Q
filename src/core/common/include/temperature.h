@@ -1,7 +1,7 @@
 #pragma once
 
+#include "constraint_force.h"
 #include "context.h"
-#include "shake.h"
 
 enum TResult { R_TEMP,
                R_TFREE,
@@ -9,7 +9,7 @@ enum TResult { R_TEMP,
                R_TSCALE_SLV,
                R_UKIN,
                N_TRESULT };
-               
+
 struct TemperatureData {
     // init
     int Ndegf, Ndegfree, Ndegf_solute, Ndegf_solvent, Ndegfree_solute, Ndegfree_solvent;
@@ -24,7 +24,7 @@ struct TemperatureData {
 class Temperature {
    public:
     virtual ~Temperature() = default;
-    void init(Context& ctx, const Shake& shake);
+    void init(Context& ctx, const ConstraintForce& constraint_force);
     virtual void calc(Context& ctx) = 0;
     virtual void sync_for_output(Context& ctx);
     virtual void cleanup() {}

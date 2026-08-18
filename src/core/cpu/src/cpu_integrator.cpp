@@ -35,8 +35,8 @@ void CpuIntegrator::step(Context& ctx) {
         coords[i].z += velocities[i].z * ctx.dt;
     }
 
-    if (shake_->data().n_constraints > 0) {
-        shake_->apply(ctx, *data_.xcoords);
+    if (constraint_force_->data().n_constraints > 0) {
+        constraint_force_->apply(ctx, *data_.xcoords);
         for (int i = 0; i < ctx.n_atoms; i++) {
             velocities[i].x = (coords[i].x - xcoords[i].x) / ctx.dt;
             velocities[i].y = (coords[i].y - xcoords[i].y) / ctx.dt;

@@ -1,4 +1,3 @@
-// todo: Don't use double, always use double to do shake
 #include <cooperative_groups.h>
 
 #include <algorithm>
@@ -58,8 +57,8 @@ void CudaShake::find_serial_q_molecule_bonds(Context& ctx, std::vector<bool>& op
     }
 
     std::vector<int> molecule_constraint_counts(ctx.n_molecules(), 0);
-    std::vector<ShakeBond> serial_bonds;
-    const ShakeBond* shake_bonds = data_.shake_bonds->cpu_data_p;
+    std::vector<ConstraintBond> serial_bonds;
+    const ConstraintBond* shake_bonds = data_.constraint_bonds->cpu_data_p;
     int current_mol = 0;
     for (int i = 0; i < data_.n_constraints; i++) {
         const int atom_number = shake_bonds[i].ai;
@@ -83,7 +82,7 @@ void CudaShake::find_shake_fast_water(Context& ctx, std::vector<bool>& optimized
 
     std::map<BondKey, int> shake_bonds_lookup_table;
 
-    const auto& shake_bond = data_.shake_bonds->cpu_data_p;
+    const auto& shake_bond = data_.constraint_bonds->cpu_data_p;
     for (int i = 0; i < data_.n_constraints; i++) {
         int ai = shake_bond[i].ai - 1;
         int aj = shake_bond[i].aj - 1;
@@ -120,7 +119,7 @@ void CudaShake::find_shake_fast_water(Context& ctx, std::vector<bool>& optimized
 void CudaShake::find_shake_network(Context& ctx, std::vector<bool>& optimized) {
     std::vector<std::vector<int>> atom_to_bonds(ctx.n_atoms);
 
-    auto* shake_bonds = data_.shake_bonds->cpu_data_p;
+    auto* shake_bonds = data_.constraint_bonds->cpu_data_p;
     auto* heavy = ctx.heavy->cpu_data_p;
     auto* winv = ctx.winv->cpu_data_p;
 
@@ -216,14 +215,14 @@ void CudaShake::find_shake_network(Context& ctx, std::vector<bool>& optimized) {
 
 void CudaShake::find_fallback_shake_bond(Context& ctx, std::vector<bool>& optimized) {
     std::vector<std::vector<int>> atom_to_bonds(ctx.n_atoms);
-    auto* shake_bonds = data_.shake_bonds->cpu_data_p;
+    auto* shake_bonds = data_.constraint_bonds->cpu_data_p;
     for (int i = 0; i < data_.n_constraints; i++) {
         if (optimized[i]) continue;
         atom_to_bonds[shake_bonds[i].ai - 1].push_back(i);
         atom_to_bonds[shake_bonds[i].aj - 1].push_back(i);
     }
 
-    std::vector<std::vector<ShakeBond>> fallback_bonds_by_color;
+    std::vector<std::vector<ConstraintBond>> fallback_bonds_by_color;
     std::vector<bool> visited(data_.n_constraints, false);
 
     for (int i = 0; i < data_.n_constraints; i++) {
@@ -288,7 +287,7 @@ void CudaShake::find_fallback_shake_bond(Context& ctx, std::vector<bool>& optimi
     }
 
     std::vector<int> fallback_color_offsets(fallback_bonds_by_color.size() + 1, 0);
-    std::vector<ShakeBond> fallback_shake_bonds;
+    std::vector<ConstraintBond> fallback_shake_bonds;
     for (int color = 0; color < fallback_bonds_by_color.size(); color++) {
         fallback_color_offsets[color] = fallback_shake_bonds.size();
         fallback_shake_bonds.insert(
@@ -300,7 +299,7 @@ void CudaShake::find_fallback_shake_bond(Context& ctx, std::vector<bool>& optimi
 
     this->fallback_color_offsets = HostDeviceBuffer<int>::from_vector(fallback_color_offsets, true);
     fallback_n_colors = static_cast<int>(fallback_color_offsets.size()) - 1;
-    this->fallback_shake_bonds = HostDeviceBuffer<ShakeBond>::from_vector(fallback_shake_bonds, true);
+    this->fallback_shake_bonds = HostDeviceBuffer<ConstraintBond>::from_vector(fallback_shake_bonds, true);
 
     fallback_coop_blocks = 0;
     for (int c = 0; c < fallback_n_colors; c++) {
@@ -315,7 +314,7 @@ void CudaShake::apply(Context& ctx, HostDeviceBuffer<coord_t>& xcoords_buffer) {
     apply_to(ctx, coords, xcoords);
 }
 
-void CudaShake::initial_shake(Context& ctx) {
+void CudaShake::initial_constraint(Context& ctx) {
     HostDeviceBuffer<coord_t> xcoords(ctx.n_atoms, true, true);
     auto* d_coords = ctx.coords->gpu_data_p;
     auto* d_xcoords = xcoords.gpu_data_p;
@@ -614,7 +613,7 @@ __global__ void calc_h_star_shake_kernel(
 
 __global__ void print_fallback_shake_failures_kernel(
     int n_shakes,
-    ShakeBond* shake_bonds,
+    ConstraintBond* shake_bonds,
     coord_t* coords) {
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_shakes) return;
@@ -637,7 +636,7 @@ __global__ void print_fallback_shake_failures_kernel(
 __global__ void fallback_shake_fused_kernel(
     int n_colors,
     const int* color_offsets,
-    ShakeBond* shake_bonds,
+    ConstraintBond* shake_bonds,
     coord_t* coords,
     coord_t* xcoords,
     double* winv,
@@ -654,7 +653,7 @@ __global__ void fallback_shake_fused_kernel(
             const int n = color_offsets[c + 1] - off;
 
             if (tid < n) {
-                ShakeBond& shake_bond = shake_bonds[off + tid];
+                ConstraintBond& shake_bond = shake_bonds[off + tid];
                 const int ai = shake_bond.ai - 1;
                 const int aj = shake_bond.aj - 1;
                 const double xij_x = coords[ai].x - coords[aj].x;
@@ -687,10 +686,10 @@ __global__ void fallback_shake_fused_kernel(
                         const double aj_scale = corr * winv[aj];
 
                         const bool valid_correction = isfinite(corr) &&
-                                                     isfinite(ai_scale) &&
-                                                     isfinite(aj_scale) &&
-                                                     fabs(ai_scale) <= kMaxShakeCorrectionScale &&
-                                                     fabs(aj_scale) <= kMaxShakeCorrectionScale;
+                                                      isfinite(ai_scale) &&
+                                                      isfinite(aj_scale) &&
+                                                      fabs(ai_scale) <= kMaxShakeCorrectionScale &&
+                                                      fabs(aj_scale) <= kMaxShakeCorrectionScale;
 
                         if (valid_correction) {
                             coords[ai].x += xxij_x * ai_scale;
