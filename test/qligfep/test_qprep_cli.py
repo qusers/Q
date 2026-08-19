@@ -154,6 +154,28 @@ class TestOPLSChargeGroupNeutralization:
         assert neutralizer._terminal_neutral_form("CAR+", terminal_charge=-1.0) == "ARG"
         assert neutralizer._terminal_neutral_form("CARG", terminal_charge=-1.0) == "ARN"
 
+    @pytest.mark.parametrize(
+        ("terminal_name", "neutral_name"),
+        [
+            ("NGLU", "GLH"), ("CGLU", "GLH"),
+            ("NASP", "ASH"), ("CASP", "ASH"),
+            ("NARG", "ARN"), ("CARG", "ARN"),
+            ("NLYS", "LYN"), ("CLYS", "LYN"),
+        ],
+    )
+    def test_opls2005_terminal_templates_without_sidechain_charge_are_not_classified(
+        self, terminal_name, neutral_name
+    ):
+        neutralizer = Neutralizer((0, 0, 0), force_field="OPLS2005")
+        rows = [
+            _make_atom("ATOM", index, atom["name"], terminal_name, "A", 1, 30.0, 0.0, 0.0)
+            for index, atom in enumerate(neutralizer.residue_library[terminal_name]["atoms"], 1)
+        ]
+
+        result, _ = neutralizer.neutralize_outside_residues_dataframe(pd.DataFrame(rows))
+
+        assert (result["residue_name"] == neutral_name).all()
+
 
 class TestNeutralizerDNA:
     """Tests for DNA nucleotide handling in the Neutralizer.
@@ -165,6 +187,13 @@ class TestNeutralizerDNA:
 
     def _make_neutralizer(self, center=(0, 0, 0), radius=25.0, offset=3.0):
         return Neutralizer(center, radius, offset)
+
+    def test_unsupported_force_field_reports_dna_limitation(self):
+        neutralizer = Neutralizer((0, 0, 0), force_field="CHARMM36")
+        df = pd.DataFrame(_build_dna_residue("DA", "E", 1, 5.0, 0.0, 0.0))
+
+        with pytest.raises(ValueError, match="CHARMM36 does not provide DNA residue templates"):
+            neutralizer.neutralize_outside_residues_dataframe(df)
 
     def test_outside_dna_removed(self):
         """DA nucleotide fully outside sphere should be removed."""

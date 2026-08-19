@@ -214,6 +214,24 @@ class Neutralizer:
             return prefixed_neutral
         return neutral_form
 
+    def _has_terminal_sidechain_charge(
+        self,
+        residue_name: str,
+        base_name: str,
+        charge: int,
+    ) -> bool:
+        """Whether a terminal template retains the base residue's charged site."""
+        entry = self._library_entry(residue_name)
+        if not entry["charge_groups"]:
+            return True
+
+        charges = {atom["name"]: atom["charge"] for atom in entry["atoms"]}
+        markers = self._charged_heavy_atoms.get(base_name, set())
+        return any(
+            abs(sum(charges.get(atom, 0.0) for atom in group) - charge) <= 1e-6 and bool(markers & set(group))
+            for group in self._charge_groups(residue_name)
+        )
+
     def _charged_reference_atoms(
         self,
         residue_name: str,
@@ -260,6 +278,14 @@ class Neutralizer:
             f"Neutralizing charged residues whose Q {reference} is at or beyond "
             f"{self.rest_bound:.1f}Å (outer {self.boundary_offset:.1f}Å SCAAS layer)"
         )
+        dna_residues = sorted(set(df["residue_name"]) & self._DNA_RESIDUES)
+        unsupported_dna = [name for name in dna_residues if name not in self.residue_library]
+        if unsupported_dna:
+            raise ValueError(
+                f"{self.force_field} does not provide DNA residue templates for "
+                f"{', '.join(unsupported_dna)}; DNA preparation is only supported with AMBER14sb."
+            )
+
         self.stats["original_total_charge"] = self._total_library_charge(df)
 
         # Classify sidechain charges before terminal charges. A terminal template
@@ -311,7 +337,9 @@ class Neutralizer:
                 continue
             for prefix in ("N", "C", "n", "c"):
                 terminal_name = f"{prefix}{charged_name}"
-                if terminal_name in self.residue_library:
+                if terminal_name in self.residue_library and self._has_terminal_sidechain_charge(
+                    terminal_name, charged_name, charge
+                ):
                     terminal_neutral = self._terminal_sidechain_neutral_form(
                         terminal_name, neutral_form, charge
                     )
