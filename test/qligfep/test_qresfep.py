@@ -666,6 +666,28 @@ class TestResultDiscovery:
         assert record.legs["protein"].n_replicates == 1
         assert len(record.legs["protein"].crashed) == 1
 
+    def test_a_missing_stage_directory_is_recorded_as_a_crash(self, tmp_path):
+        protein, tripeptide = tmp_path / "protein", tmp_path / "tripeptide"
+        qfep = protein / "FEP_LEU39ALA" / "FEP1" / "298" / "1" / "qfep.out"
+        qfep.parent.mkdir(parents=True)
+        qfep.write_text(_qfep_output(5.0))
+        tripeptide.mkdir()
+
+        record = collect(protein, tripeptide, "298")[0]
+        assert record.legs["protein"].n_replicates == 0
+        assert record.legs["protein"].crashed == ["replicate 1: FEP2 has no qfep.out"]
+
+    def test_unexpected_stage_directories_are_not_summed(self, tmp_path):
+        protein, tripeptide = tmp_path / "protein", tmp_path / "tripeptide"
+        self._make_leg(protein, "LEU39ALA", 5.0, replicates=1)
+        extra = protein / "FEP_LEU39ALA" / "FEP3" / "298" / "1" / "qfep.out"
+        extra.parent.mkdir(parents=True)
+        extra.write_text(_qfep_output(100.0))
+        tripeptide.mkdir()
+
+        record = collect(protein, tripeptide, "298")[0]
+        assert record.legs["protein"].mean() == pytest.approx(10.0)
+
 
 def _qfep_output(dG: float) -> str:
     """A qfep.out carrying `dG`, with the section headers qfep really writes.

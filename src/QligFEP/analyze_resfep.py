@@ -187,13 +187,19 @@ def read_mutation_leg(fep_dir: Path, leg: str, temperature: str) -> LegResult:
     if config.exists():
         start = str(json.loads(config.read_text()).get("start", "1"))
 
-    stage_dirs = sorted(fep_dir.glob("FEP[0-9]"))
-    if not stage_dirs:
+    stage_dirs = [fep_dir / "FEP1", fep_dir / "FEP2"]
+    existing_stages = [stage for stage in stage_dirs if stage.is_dir()]
+    if not existing_stages:
         logger.debug(f"{fep_dir.name} ({leg}): no FEP stage directories yet")
         return result
 
     replicates = sorted(
-        {path.name for stage in stage_dirs for path in (stage / temperature).glob("*") if path.is_dir()},
+        {
+            path.name
+            for stage in existing_stages
+            for path in (stage / temperature).glob("*")
+            if path.is_dir()
+        },
         key=lambda name: int(name) if name.isdigit() else 0,
     )
 
