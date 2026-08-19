@@ -69,6 +69,7 @@ class CudaLincs : public ConstraintForce {
 
     void init_backend_for_big_group(
         Context& ctx,
+        const std::vector<ConstraintBond>& constraint_bonds,
         const std::vector<std::vector<int>>& bond_graph,
         const std::vector<int>& big_group_idx,
         const std::vector<std::vector<int>>& groups);
