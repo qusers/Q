@@ -1,10 +1,8 @@
 """Tests for the QligFEP.CLI.qprep_cli module."""
 
 import argparse
-from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -438,6 +436,171 @@ class TestNeutralizerCTerminals:
         res = result_df[result_df["residue_seq_number"] == 1]
         assert (res["residue_name"] == "GLY").all()
         assert "OXT" not in res["atom_name"].values
+
+
+class TestCHARMMNeutralization:
+    @staticmethod
+    def _template_residue(
+        neutralizer: Neutralizer,
+        residue_name: str,
+        group_positions: dict[int, float],
+    ) -> pd.DataFrame:
+        entry = neutralizer.residue_library[residue_name]
+        group_by_atom = {
+            atom_name: group_number
+            for group_number, group in enumerate(entry["charge_groups"], 1)
+            for atom_name in group
+        }
+        rows = []
+        for serial, atom in enumerate(entry["atoms"], 1):
+            x = group_positions[group_by_atom[atom["name"]]]
+            rows.append(
+                _make_atom(
+                    "ATOM",
+                    serial,
+                    atom["name"],
+                    residue_name,
+                    "A",
+                    1,
+                    x,
+                    0.0,
+                    0.0,
+                    atom["name"][0],
+                )
+            )
+        return pd.DataFrame(rows)
+
+    def test_standard_terminal_names_preserve_residue_identity(self):
+        neutralizer = Neutralizer((0, 0, 0), force_field="CHARMM36")
+
+        assert neutralizer._terminal_neutral_form("NSER", terminal_charge=+1.0) == "SER"
+        assert neutralizer._terminal_neutral_form("CSER", terminal_charge=-1.0) == "SER"
+
+    def test_charged_sidechain_uses_charmm_charge_groups_and_atom_names(self):
+        rows = _build_protein_residue("LYS", "A", 1, 23.0, 0.0, 0.0)
+        rows.extend(
+            _make_atom("ATOM", 110 + index, name, "LYS", "A", 1, 23.0, 0.0, 0.0, "H")
+            for index, name in enumerate(("HZ1", "HZ2", "HZ3"), 1)
+        )
+
+        result, stats = Neutralizer(
+            (0, 0, 0), radius=25.0, force_field="CHARMM36"
+        ).neutralize_outside_residues_dataframe(pd.DataFrame(rows))
+
+        assert (result["residue_name"] == "LYN").all()
+        assert "HZ3" not in result["atom_name"].values
+        assert stats["modifications"]["A:1"]["boundary_reference"] == "charge-group center"
+
+    def test_hip_uses_merged_integer_charge_group(self):
+        first_group = ("CB", "HB1", "HB2", "CD2", "HD2", "CG")
+        second_group = ("NE2", "HE2", "ND1", "HD1", "CE1", "HE1")
+        rows = [
+            _make_atom("ATOM", index, name, "HIP", "A", 1, 21.0, 0.0, 0.0, name[0])
+            for index, name in enumerate(first_group, 1)
+        ]
+        rows.extend(
+            _make_atom("ATOM", index, name, "HIP", "A", 1, 23.0, 0.0, 0.0, name[0])
+            for index, name in enumerate(second_group, len(rows) + 1)
+        )
+
+        result, stats = Neutralizer(
+            (0, 0, 0), radius=25.0, force_field="CHARMM36"
+        ).neutralize_outside_residues_dataframe(pd.DataFrame(rows))
+
+        assert (result["residue_name"] == "HID").all()
+        assert stats["modifications"]["A:1"]["boundary_reference"] == "charge-group center"
+
+    def test_terminal_sidechain_is_classified_before_terminal_charge(self):
+        neutralizer = Neutralizer((0, 0, 0), radius=25.0, force_field="CHARMM36")
+        rows = self._template_residue(
+            neutralizer,
+            "NGLU",
+            {1: 10.0, 2: 10.0, 3: 23.0, 4: 10.0},
+        )
+
+        result, stats = neutralizer.neutralize_outside_residues_dataframe(rows)
+
+        assert (result["residue_name"] == "NGLH").all()
+        assert stats["terminals_neutralized"] == 0
+        assert stats["modifications"]["A:1"]["original"] == "NGLU"
+        assert stats["modifications"]["A:1"]["modified"] == "NGLH"
+
+    def test_sidechain_and_terminal_conversions_count_residue_once(self):
+        neutralizer = Neutralizer((0, 0, 0), radius=25.0, force_field="CHARMM36")
+        rows = self._template_residue(
+            neutralizer,
+            "NGLU",
+            {1: 23.0, 2: 23.0, 3: 23.0, 4: 23.0},
+        )
+
+        result, stats = neutralizer.neutralize_outside_residues_dataframe(rows)
+
+        assert (result["residue_name"] == "GLH").all()
+        assert stats["terminals_neutralized"] == 1
+        assert stats["residues_neutralized"] == 1
+        assert stats["modifications"]["A:1"]["original"] == "NGLU"
+        assert stats["modifications"]["A:1"]["modified"] == "GLH"
+
+    def test_terminal_sidechain_group_is_disambiguated_from_same_sign_terminal_group(self):
+        neutralizer = Neutralizer((0, 0, 0), radius=25.0, force_field="CHARMM36")
+        rows = self._template_residue(
+            neutralizer,
+            "NARG",
+            {1: 10.0, 2: 10.0, 3: 10.0, 4: 23.0, 5: 10.0},
+        )
+
+        result, stats = neutralizer.neutralize_outside_residues_dataframe(rows)
+
+        # CHARMM has no NARN template, so conservatively neutralize both sites.
+        assert (result["residue_name"] == "ARN").all()
+        assert stats["residues_neutralized"] == 1
+
+    def test_fractional_prefixed_neutral_template_uses_conservative_fallback(self):
+        neutralizer = Neutralizer((0, 0, 0), radius=25.0, force_field="OPLS2015")
+        entry = neutralizer.residue_library["CARG"]
+        charges = {atom["name"]: atom["charge"] for atom in entry["atoms"]}
+        positions = {
+            group_number: (23.0 if "CZ" in group else 10.0)
+            for group_number, group in enumerate(entry["charge_groups"], 1)
+        }
+        assert any(
+            abs(sum(charges[atom] for atom in group) - 1.0) <= 1e-6
+            for group in entry["charge_groups"]
+            if "CZ" in group
+        )
+        rows = self._template_residue(neutralizer, "CARG", positions)
+
+        result, _ = neutralizer.neutralize_outside_residues_dataframe(rows)
+
+        assert (result["residue_name"] == "ARN").all()
+
+    def test_nterminal_ht1_coordinate_is_preserved_as_internal_h(self):
+        rows = [
+            _make_atom("ATOM", 1, name, "NALA", "A", 1, 30.0, 0.0, 0.0, element)
+            for name, element in (("N", "N"), ("HT1", "H"), ("HT2", "H"), ("HT3", "H"), ("CA", "C"))
+        ]
+
+        result, _ = Neutralizer(
+            (0, 0, 0), radius=25.0, force_field="CHARMM36"
+        ).neutralize_outside_residues_dataframe(pd.DataFrame(rows))
+
+        assert (result["residue_name"] == "ALA").all()
+        assert "H" in result["atom_name"].values
+        assert not {"HT1", "HT2", "HT3"} & set(result["atom_name"])
+
+    def test_cterminal_ot1_coordinate_is_preserved_as_internal_o(self):
+        rows = [
+            _make_atom("ATOM", 1, name, "CALA", "A", 1, 30.0, 0.0, 0.0, element)
+            for name, element in (("N", "N"), ("CA", "C"), ("C", "C"), ("OT1", "O"), ("OT2", "O"))
+        ]
+
+        result, _ = Neutralizer(
+            (0, 0, 0), radius=25.0, force_field="CHARMM36"
+        ).neutralize_outside_residues_dataframe(pd.DataFrame(rows))
+
+        assert (result["residue_name"] == "ALA").all()
+        assert "O" in result["atom_name"].values
+        assert not {"OT1", "OT2"} & set(result["atom_name"])
 
 
 class TestFragmentFilteringInQprep:
