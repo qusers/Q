@@ -190,6 +190,92 @@ class TestQprepErrorCheck:
             qprep_error_check(output_file, "AMBER14sb")
 
 
+class TestForceFieldParsing:
+    def test_parse_lib_retains_charge_groups_and_punctuation_in_residue_names(self):
+        from QligFEP.IO import parse_lib
+
+        residues = parse_lib("OPLS2005")
+        assert "NAR+" in residues
+        assert residues["ARG"]["charge_groups"][2][0] == "CZ"
+
+    def test_parse_prm_options_reads_switch_atom_policy(self):
+        from QligFEP.IO import parse_prm_options
+
+        assert parse_prm_options("AMBER14sb")["switch_atoms"] == "off"
+        assert parse_prm_options("OPLS2005")["switch_atoms"] == "on"
+
+    @pytest.mark.parametrize("force_field", ["OPLS2005", "OPLS2015"])
+    def test_opls_charge_groups_partition_each_residue(self, force_field):
+        """Every OPLS atom must occur in exactly one explicit charge group."""
+        from collections import Counter
+
+        from QligFEP.IO import parse_lib
+
+        failures = []
+        for residue_name, residue in parse_lib(force_field).items():
+            atom_names = [atom["name"] for atom in residue["atoms"]]
+            groups = residue.get("charge_groups") or [atom_names]
+            grouped_atoms = []
+            for group in groups:
+                grouped_atoms.extend(
+                    atom_names[int(atom) - 1]
+                    if atom.isdigit() and 1 <= int(atom) <= len(atom_names)
+                    else atom
+                    for atom in group
+                )
+
+            counts = Counter(grouped_atoms)
+            missing = sorted(set(atom_names) - set(counts))
+            duplicated = sorted(atom for atom, count in counts.items() if count > 1)
+            unknown = sorted(set(counts) - set(atom_names))
+            if missing or duplicated or unknown:
+                failures.append(
+                    f"{residue_name}: missing={missing}, "
+                    f"duplicated={duplicated}, unknown={unknown}"
+                )
+
+        assert not failures, "Invalid charge-group partitions:\n" + "\n".join(failures)
+
+    def test_fractional_charge_groups_are_known(self):
+        """Track source-force-field exceptions without altering published atom charges."""
+        from QligFEP.IO import parse_lib
+
+        expected = {
+            "AMBER14sb": {
+                (residue, 1, charge)
+                for residue, charge in (
+                    ("DA3", -0.6921),
+                    ("DA5", -0.3079),
+                    ("DC3", -0.6921),
+                    ("DC5", -0.3079),
+                    ("DG3", -0.6921),
+                    ("DG5", -0.3079),
+                    ("DT3", -0.6921),
+                    ("DT5", -0.3079),
+                )
+            },
+            "OPLS2005": {("SEB", 2, -0.418)},
+            "OPLS2015": {
+                ("CARN", 1, -0.9),
+                ("CPRO", 1, -0.87),
+                ("NPRO", 1, 1.07),
+            },
+            "CHARMM36": {("nGLY", 1, 0.03), ("nPRO", 1, 0.18)},
+        }
+
+        for force_field, expected_groups in expected.items():
+            observed = set()
+            for residue_name, residue in parse_lib(force_field).items():
+                charges = {atom["name"]: atom["charge"] for atom in residue["atoms"]}
+                groups = residue.get("charge_groups") or [list(charges)]
+                for group_number, atoms in enumerate(groups, 1):
+                    group_charge = sum(charges.get(atom, 0.0) for atom in atoms)
+                    if abs(group_charge - round(group_charge)) > 1e-6:
+                        observed.add((residue_name, group_number, round(group_charge, 6)))
+
+            assert observed == expected_groups
+
+
 class TestExceptionClasses:
     """Tests for exception classes."""
 

@@ -22,6 +22,35 @@ from .pdb_utils import (
 from .settings.settings import FF_DIR
 
 
+def round_charges_preserving_sum(charges: np.ndarray, decimals: int = 3) -> np.ndarray:
+    """Round atomic charges while retaining the molecule's integer net charge.
+
+    Rounding every atom independently can accumulate a millielectron-scale net-charge
+    error.  Use largest-remainder rounding so every returned charge is representable at
+    the requested precision and their sum is the nearest integer to the unrounded sum.
+    """
+    charges = np.asarray(charges, dtype=float)
+    if charges.ndim != 1 or charges.size == 0 or not np.all(np.isfinite(charges)):
+        raise ValueError("charges must be a non-empty, finite one-dimensional array")
+
+    target_charge = round(float(charges.sum()))
+    if not np.isclose(charges.sum(), target_charge, atol=1e-6):
+        raise ValueError(f"Partial charges sum to {charges.sum():.10f}, not an integer net charge")
+
+    scale = 10**decimals
+    scaled = charges * scale
+    rounded_units = np.floor(scaled).astype(np.int64)
+    units_to_add = target_charge * scale - int(rounded_units.sum())
+    if not 0 <= units_to_add <= charges.size:
+        raise ValueError("Could not preserve the net charge at the requested precision")
+
+    # Stable sorting makes ties deterministic. Each atom is rounded to one of its two
+    # nearest representable values, with the largest fractional remainders rounded up.
+    order = np.argsort(-(scaled - rounded_units), kind="stable")
+    rounded_units[order[:units_to_add]] += 1
+    return rounded_units.astype(float) / scale
+
+
 class OpenFF2Q(MoleculeIO):
     """Class to process ligands and generate OpenFF parameter files for QligFEP. Dictionary
     variables use ligand names as keys, as setup in the MoleculeIO class.
@@ -135,8 +164,9 @@ class OpenFF2Q(MoleculeIO):
         logger.info("Done! Writing .lib, .prm and .pdb files for each ligand")
         logger.debug(f"Output path: {self.out_dir}")
         for lname, charges in zip(self.lig_names, charges_magnitudes):
+            charges = round_charges_preserving_sum(charges)
             self.charges_list_magnitude.update({lname: charges})
-            formatted_sum = f"{round(charges.sum(), 10):.3f}"
+            formatted_sum = f"{charges.sum():.3f}"
             if formatted_sum == "-0.000":
                 formatted_sum = "0.000"
             self.total_charges.update({lname: formatted_sum})
@@ -193,12 +223,12 @@ class OpenFF2Q(MoleculeIO):
 
             atom_index = cnt + 1
             try:
-                charge = round(self.charges_list_magnitude[lname][cnt], 3)  # round for Q
+                charge = self.charges_list_magnitude[lname][cnt]
                 self.mapping[lname][cnt] = [
                     str(atom_index),  # atom index
                     atom_data[3] + str(atom_index),  # atom name
                     atom_data[3],  # atom type
-                    str(charge),  # charge
+                    f"{charge:.3f}",  # charge
                     atom_data[0],  # X coordinate
                     atom_data[1],  # Y coordinate
                     atom_data[2],  # Z coordinate
