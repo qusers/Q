@@ -71,6 +71,13 @@ void EnergyBuffer::combine(const double* lambdas) {
     for (int s = 0; s < n_lambdas_; s++) {
         double L = lambdas[s];
         if (L == 0.0) {  // zero-weight state contributes nothing
+            d.eq_bond[s] = {};
+            d.eq_qq[s] = {};
+            d.eq_qp[s] = {};
+            d.eq_qw[s] = {};
+            d.eq_qx[s] = {};
+            d.eq_restr[s] = 0;
+            d.eq_total[s] = 0;
             continue;
         }
         d.bond_q.Ubond += d.eq_bond[s].Ubond * L;
