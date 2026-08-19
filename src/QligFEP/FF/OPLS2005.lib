@@ -2877,7 +2877,7 @@ O    C    CA    +N
     [charge_groups]
         N    H1   H2    H3    CA    HA
         CB   HB   OG1   HG1
-        CG2  HG21 HG22  HG22
+        CG2  HG21 HG22  HG23
         C    O
 *----------------------------------------------------------------------
 {NTRP}                 !Tryptophane in N-term

@@ -1041,8 +1041,7 @@
          C      CA     OT2    OT1   
     [charge_groups]
         N     H    CA    HA    
-        CB    HB1   HB2   CD2   HD2   CG    
-        NE2   HE2   ND1   HD1   CE1   HE1   
+        CB    HB1   HB2   CD2   HD2   CG    NE2   HE2   ND1   HD1   CE1   HE1
         C     OT1   OT2   
 *------------------------------------------------------------------
 {CILE}            !charge: -1.0 || ILE C-terminal (standard)
@@ -2106,8 +2105,7 @@
          C      CA     +N     O     
     [charge_groups]
         N     H    CA    HA    
-        CB    HB1   HB2   CD2   HD2   CG    
-        NE2   HE2   ND1   HD1   CE1   HE1   
+        CB    HB1   HB2   CD2   HD2   CG    NE2   HE2   ND1   HD1   CE1   HE1
         C     O     
 *------------------------------------------------------------------
 {ILE}            !charge: 0.00 ||  
@@ -3056,8 +3054,7 @@
          C      CA     +N     O     
     [charge_groups]
         N     HT1   HT2   HT3   CA    HA    
-        CB    HB1   HB2   CD2   HD2   CG    
-        NE2   HE2   ND1   HD1   CE1   HE1   
+        CB    HB1   HB2   CD2   HD2   CG    NE2   HE2   ND1   HD1   CE1   HE1
         C     O     
 *------------------------------------------------------------------
 {NILE}            !charge: 1.0 || ILE N-terminal (standard)
@@ -3453,7 +3450,7 @@
     [impropers]
          C      CA     +N     O     
     [charge_groups]
-        N     H1   HN2  CD  HD1  HD2  CA  HA    
+        N     H1   H2   CD  HD1  HD2  CA  HA
         CB    HB1   HB2   
         CG    HG1   HG2   
         C     O     
@@ -4722,8 +4719,7 @@
          C      CA     +N     O     
     [charge_groups]
         N     HT1   HT2   CA    HA    
-        CB    HB1   HB2   CD2   HD2   CG    
-        NE2   HE2   ND1   HD1   CE1   HE1   
+        CB    HB1   HB2   CD2   HD2   CG    NE2   HE2   ND1   HD1   CE1   HE1
         C     O     
 *------------------------------------------------------------------
 {nILE}            !charge:  0.0 || ILE N-terminal (neutral)

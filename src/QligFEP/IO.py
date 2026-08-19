@@ -237,6 +237,7 @@ def parse_lib(force_field: str = "AMBER14sb") -> dict:
     Returns:
         Dict mapping residue names to their entries. Each entry has:
         - 'atoms': list of dicts with 'name', 'type', 'charge'
+        - 'charge_groups': lists of atom names in Q charge-group order
         - 'comment': the text after the residue name on the header line
     """
     lib_path, _ = get_force_field_paths(force_field)
@@ -248,30 +249,55 @@ def parse_lib(force_field: str = "AMBER14sb") -> dict:
         for line in f:
             line = line.rstrip("\n")
             # Residue header: {RESNAME}  ! comment
-            m = re.match(r"^\{(\w+)\}\s*(.*)", line)
+            m = re.match(r"^\{([^}]+)\}\s*(.*)", line)
             if m:
                 current_res = m.group(1)
                 comment = m.group(2).lstrip("! ").strip()
-                residues[current_res] = {"atoms": [], "comment": comment}
+                residues[current_res] = {"atoms": [], "charge_groups": [], "comment": comment}
                 section = None
                 continue
             if current_res is None:
                 continue
             stripped = line.strip()
-            if stripped.startswith("[") and stripped.endswith("]"):
-                section = stripped[1:-1]
+            section_match = re.match(r"^\[([^]]+)\]", stripped)
+            if section_match:
+                section = section_match.group(1).lower()
                 continue
-            if section == "atoms" and stripped and not stripped.startswith("*"):
-                parts = stripped.split()
-                if len(parts) >= 4:
-                    try:
-                        charge = float(parts[3])
-                    except ValueError:
-                        continue
-                    residues[current_res]["atoms"].append(
-                        {"name": parts[1], "type": parts[2], "charge": charge}
-                    )
+            if not stripped or stripped.startswith("*"):
+                continue
+            content = stripped.split("!", 1)[0].strip()
+            if not content:
+                continue
+            parts = content.split()
+            if section == "atoms" and len(parts) >= 4:
+                try:
+                    charge = float(parts[3])
+                except ValueError:
+                    continue
+                residues[current_res]["atoms"].append({"name": parts[1], "type": parts[2], "charge": charge})
+            elif section == "charge_groups":
+                residues[current_res]["charge_groups"].append(parts)
     return residues
+
+
+def parse_prm_options(force_field: str = "AMBER14sb") -> dict[str, str]:
+    """Parse the ``[options]`` section of a Q force-field parameter file."""
+    _, prm_path = get_force_field_paths(force_field)
+    options = {}
+    section = None
+    with open(prm_path) as f:
+        for line in f:
+            stripped = line.strip()
+            section_match = re.match(r"^\[([^]]+)\]", stripped)
+            if section_match:
+                section = section_match.group(1).lower()
+                continue
+            if section != "options" or not stripped or stripped.startswith(("!", "*", "#")):
+                continue
+            parts = stripped.split("!", 1)[0].split()
+            if len(parts) >= 2:
+                options[parts[0].lower()] = parts[1].lower()
+    return options
 
 
 def lookup_residue(query: str, force_field: str = "AMBER14sb"):

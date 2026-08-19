@@ -123,8 +123,10 @@ def resfep_lambda_ladder(windows: int, sampling: str) -> list[str]:
         raise ValueError(f"Unknown lambda sampling scheme: {sampling!r}")
 
     # Rounding error at the endpoints would otherwise render as "-0.000", which
-    # ends up in file names and in Q's [lambdas] section.
-    return [f"{value:.3f}" for value in np.clip(values[::-1], 0.0, 1.0)]
+    # ends up in file names and in Q's [lambdas] section. np.clip preserves the
+    # sign bit of negative zero, so normalize values that round to zero explicitly.
+    clipped = np.clip(values[::-1], 0.0, 1.0)
+    return ["0.000" if abs(value) < 0.0005 else f"{value:.3f}" for value in clipped]
 
 
 #: Reciprocal molecular volumes used to set qprep's `solute_density`, in A^-3.

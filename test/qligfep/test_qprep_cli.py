@@ -1,14 +1,12 @@
 """Tests for the QligFEP.CLI.qprep_cli module."""
 
 import argparse
-from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
-import numpy as np
 import pandas as pd
 import pytest
 
-from QligFEP.CLI.qprep_cli import Neutralizer
+from QligFEP.CLI.qprep_cli import Neutralizer, parse_arguments
 
 
 def _make_atom(record_type, serial, atom_name, residue_name, chain, resnum, x, y, z, element="C"):
@@ -57,22 +55,150 @@ def _build_protein_residue(resname, chain, resnum, x, y, z, key_atom="CA"):
     return atoms
 
 
+class TestNeutralizationDefaults:
+    def test_default_is_outer_three_angstrom_scaas_layer(self):
+        result, _ = Neutralizer((0, 0, 0), radius=25.0).neutralize_outside_residues_dataframe(
+            pd.DataFrame(_build_protein_residue("GLU", "A", 1, 23.0, 0.0, 0.0))
+        )
+        assert (result["residue_name"] == "GLH").all()
+
+    def test_cli_default_boundary_offset_is_three(self, monkeypatch):
+        monkeypatch.setattr("sys.argv", ["qprep_prot", "-i", "protein.pdb"])
+        assert parse_arguments().neutralize_boundary_offset == 3.0
+
+    def test_legacy_parameter_file_defaults_to_switch_atoms(self, monkeypatch):
+        monkeypatch.setattr("QligFEP.CLI.qprep_cli.parse_lib", lambda _: {})
+        monkeypatch.setattr("QligFEP.CLI.qprep_cli.parse_prm_options", lambda _: {})
+
+        assert Neutralizer((0, 0, 0), force_field="legacy").switch_atoms is True
+
+
+class TestQChargeGroupNeutralization:
+    def test_uses_q_default_whole_residue_charge_group_center(self):
+        glu = _build_protein_residue("GLU", "A", 1, 30.0, 0.0, 0.0)
+        # Q uses the centroid of the complete default charge group, not CD alone.
+        for atom in glu:
+            if atom["atom_name"] == "CD":
+                atom["x"] = 5.0
+        df = pd.DataFrame(glu)
+
+        result, _ = Neutralizer(
+            (0, 0, 0), radius=25.0, boundary_offset=0.0
+        ).neutralize_outside_residues_dataframe(df)
+
+        assert (result["residue_name"] == "GLH").all()
+
+    def test_salt_bridge_uses_charged_heavy_atom_distance(self):
+        rows = []
+        glu = _build_protein_residue("GLU", "A", 1, 30.0, 0.0, 0.0)
+        glu.append(_make_atom("ATOM", 111, "OE1", "GLU", "A", 1, 28.0, 0.0, 0.0, "O"))
+        lys = _build_protein_residue("LYS", "A", 2, 24.0, 0.0, 0.0)
+        rows.extend(glu)
+        rows.extend(lys)
+        df = pd.DataFrame(rows)
+
+        result, stats = Neutralizer(
+            (0, 0, 0), radius=25.0, boundary_offset=0.0
+        ).neutralize_outside_residues_dataframe(df, salt_bridge_cutoff=4.0)
+
+        assert (result[result["residue_seq_number"] == 1]["residue_name"] == "GLH").all()
+        assert (result[result["residue_seq_number"] == 2]["residue_name"] == "LYN").all()
+        assert stats["salt_bridges_neutralized"] == 1
+
+
+class TestOPLSChargeGroupNeutralization:
+    @pytest.mark.parametrize(
+        ("force_field", "switch_atom"),
+        [("OPLS2005", "CZ"), ("OPLS2015", "CG")],
+    )
+    def test_uses_force_field_formal_charge_group_switch_atom(self, force_field, switch_atom):
+        arg = _build_protein_residue("ARG", "A", 1, 0.0, 0.0, 0.0)
+        if switch_atom != "CZ":
+            arg.append(_make_atom("ATOM", 111, switch_atom, "ARG", "A", 1, 23.0, 0.0, 0.0))
+        else:
+            for atom in arg:
+                if atom["atom_name"] == switch_atom:
+                    atom["x"] = 23.0
+
+        result, stats = Neutralizer(
+            (0, 0, 0), radius=25.0, force_field=force_field
+        ).neutralize_outside_residues_dataframe(pd.DataFrame(arg))
+
+        assert (result["residue_name"] == "ARN").all()
+        assert stats["modifications"]["A:1"]["boundary_reference"] == f"switch atom {switch_atom}"
+
+    def test_does_not_use_whole_residue_centroid_with_switch_atoms(self):
+        arg = _build_protein_residue("ARG", "A", 1, 30.0, 0.0, 0.0)
+        for atom in arg:
+            if atom["atom_name"] == "CZ":
+                atom["x"] = 21.0
+
+        result, _ = Neutralizer(
+            (0, 0, 0), radius=25.0, force_field="OPLS2005"
+        ).neutralize_outside_residues_dataframe(pd.DataFrame(arg))
+
+        assert (result["residue_name"] == "ARG").all()
+
+    def test_atom_removal_comes_from_selected_force_field(self):
+        opls = Neutralizer((0, 0, 0), force_field="OPLS2005")
+        amber = Neutralizer((0, 0, 0), force_field="AMBER14sb")
+        assert opls._get_atoms_to_remove("LYS", "LYN") == ["HZ3"]
+        assert opls._get_atoms_to_remove("ARG", "ARN") == ["HH12"]
+        assert amber._get_atoms_to_remove("LYS", "LYN") == ["HZ1"]
+        assert amber._get_atoms_to_remove("ARG", "ARN") == ["HH22"]
+
+    def test_opls2005_nonstandard_terminal_names_preserve_sidechain_state(self):
+        neutralizer = Neutralizer((0, 0, 0), force_field="OPLS2005")
+        assert neutralizer._terminal_neutral_form("NAR+", terminal_charge=+1.0) == "ARG"
+        assert neutralizer._terminal_neutral_form("NARG", terminal_charge=+1.0) == "ARN"
+        assert neutralizer._terminal_neutral_form("CAR+", terminal_charge=-1.0) == "ARG"
+        assert neutralizer._terminal_neutral_form("CARG", terminal_charge=-1.0) == "ARN"
+
+    @pytest.mark.parametrize(
+        ("terminal_name", "neutral_name"),
+        [
+            ("NGLU", "GLH"), ("CGLU", "GLH"),
+            ("NASP", "ASH"), ("CASP", "ASH"),
+            ("NARG", "ARN"), ("CARG", "ARN"),
+            ("NLYS", "LYN"), ("CLYS", "LYN"),
+        ],
+    )
+    def test_opls2005_terminal_templates_without_sidechain_charge_are_not_classified(
+        self, terminal_name, neutral_name
+    ):
+        neutralizer = Neutralizer((0, 0, 0), force_field="OPLS2005")
+        rows = [
+            _make_atom("ATOM", index, atom["name"], terminal_name, "A", 1, 30.0, 0.0, 0.0)
+            for index, atom in enumerate(neutralizer.residue_library[terminal_name]["atoms"], 1)
+        ]
+
+        result, _ = neutralizer.neutralize_outside_residues_dataframe(pd.DataFrame(rows))
+
+        assert (result["residue_name"] == neutral_name).all()
+
+
 class TestNeutralizerDNA:
     """Tests for DNA nucleotide handling in the Neutralizer.
 
     DNA nucleotides whose C1' atom is outside the sphere radius are removed.
-    DNA in the restrained shell (between rest_bound and radius) is kept with
-    native charges, consistent with protein handling. The last inside residue
-    adjacent to the removed region gets a 5' terminal form.
+    DNA in the outer SCAAS layer is retained. Each retained fragment is capped
+    with complementary 5' and 3' terminal templates at cut boundaries.
     """
 
     def _make_neutralizer(self, center=(0, 0, 0), radius=25.0, offset=3.0):
         return Neutralizer(center, radius, offset)
 
+    def test_unsupported_force_field_reports_dna_limitation(self):
+        neutralizer = Neutralizer((0, 0, 0), force_field="CHARMM36")
+        df = pd.DataFrame(_build_dna_residue("DA", "E", 1, 5.0, 0.0, 0.0))
+
+        with pytest.raises(ValueError, match="CHARMM36 does not provide DNA residue templates"):
+            neutralizer.neutralize_outside_residues_dataframe(df)
+
     def test_outside_dna_removed(self):
         """DA nucleotide fully outside sphere should be removed."""
         rows = []
-        rows.extend(_build_dna_residue("DA", "E", 1, 5.0, 0.0, 0.0))   # inside
+        rows.extend(_build_dna_residue("DA", "E", 1, 5.0, 0.0, 0.0))  # inside
         rows.extend(_build_dna_residue("DA", "E", 2, 30.0, 0.0, 0.0))  # outside
         df = pd.DataFrame(rows)
 
@@ -85,8 +211,8 @@ class TestNeutralizerDNA:
         """First inside residue with removed upstream DNA gets 5' terminal form."""
         rows = []
         rows.extend(_build_dna_residue("DA", "E", 1, 30.0, 0.0, 0.0))  # outside, removed
-        rows.extend(_build_dna_residue("DG", "E", 2, 5.0, 0.0, 0.0))   # inside, gets 5' cap
-        rows.extend(_build_dna_residue("DC", "E", 3, 5.0, 0.0, 0.0))   # inside, unchanged
+        rows.extend(_build_dna_residue("DG", "E", 2, 5.0, 0.0, 0.0))  # inside, gets 5' cap
+        rows.extend(_build_dna_residue("DC", "E", 3, 5.0, 0.0, 0.0))  # inside, unchanged
         df = pd.DataFrame(rows)
 
         neutralizer = self._make_neutralizer()
@@ -118,8 +244,8 @@ class TestNeutralizerDNA:
         rows.extend(_build_dna_residue("DA", "E", 1, 40.0, 0.0, 0.0))  # outside
         rows.extend(_build_dna_residue("DG", "E", 2, 35.0, 0.0, 0.0))  # outside
         rows.extend(_build_dna_residue("DC", "E", 3, 30.0, 0.0, 0.0))  # outside
-        rows.extend(_build_dna_residue("DT", "E", 4, 5.0, 0.0, 0.0))   # inside, gets cap
-        rows.extend(_build_dna_residue("DA", "E", 5, 5.0, 0.0, 0.0))   # inside
+        rows.extend(_build_dna_residue("DT", "E", 4, 5.0, 0.0, 0.0))  # inside, gets cap
+        rows.extend(_build_dna_residue("DA", "E", 5, 5.0, 0.0, 0.0))  # inside
         df = pd.DataFrame(rows)
 
         neutralizer = self._make_neutralizer()
@@ -152,7 +278,7 @@ class TestNeutralizerDNA:
         assert (result_df["residue_name"] == "DA").all()
 
     def test_mixed_protein_and_dna(self):
-        """Protein residues neutralized by rest_bound; DNA removed by same boundary."""
+        """Protein uses rest_bound while DNA is cut and capped at the sphere."""
         rows = []
         rows.extend(_build_protein_residue("GLU", "A", 1, 23.0, 0.0, 0.0))
         rows.extend(_build_dna_residue("DA", "E", 10, 5.0, 0.0, 0.0))
@@ -163,14 +289,14 @@ class TestNeutralizerDNA:
         result_df, stats = neutralizer.neutralize_outside_residues_dataframe(df)
 
         assert (result_df[result_df["residue_seq_number"] == 1]["residue_name"] == "GLH").all()
-        assert (result_df[result_df["residue_seq_number"] == 10]["residue_name"] == "DA").all()
+        assert (result_df[result_df["residue_seq_number"] == 10]["residue_name"] == "DA3").all()
         assert len(result_df[result_df["residue_seq_number"] == 11]) == 0
 
-    def test_downstream_removal_no_5prime_cap(self):
-        """When removed DNA is only downstream (3' side), no 5' cap is needed."""
+    def test_downstream_removal_adds_3prime_cap(self):
+        """DNA next to a removed downstream segment gets a 3' cap."""
         rows = []
-        rows.extend(_build_dna_residue("DA", "E", 1, 5.0, 0.0, 0.0))   # inside
-        rows.extend(_build_dna_residue("DG", "E", 2, 5.0, 0.0, 0.0))   # inside
+        rows.extend(_build_dna_residue("DA", "E", 1, 5.0, 0.0, 0.0))  # inside
+        rows.extend(_build_dna_residue("DG", "E", 2, 5.0, 0.0, 0.0))  # inside
         rows.extend(_build_dna_residue("DC", "E", 3, 30.0, 0.0, 0.0))  # outside
         df = pd.DataFrame(rows)
 
@@ -179,9 +305,36 @@ class TestNeutralizerDNA:
 
         # Res 3: removed
         assert len(result_df[result_df["residue_seq_number"] == 3]) == 0
-        # Res 1-2: inside, unchanged (no terminal conversion)
         assert (result_df[result_df["residue_seq_number"] == 1]["residue_name"] == "DA").all()
-        assert (result_df[result_df["residue_seq_number"] == 2]["residue_name"] == "DG").all()
+        assert (result_df[result_df["residue_seq_number"] == 2]["residue_name"] == "DG3").all()
+
+    def test_cut_fragment_has_integral_template_charge(self):
+        rows = []
+        rows.extend(_build_dna_residue("DA", "E", 1, 30.0, 0.0, 0.0))
+        rows.extend(_build_dna_residue("DG", "E", 2, 5.0, 0.0, 0.0))
+        rows.extend(_build_dna_residue("DC", "E", 3, 5.0, 0.0, 0.0))
+        rows.extend(_build_dna_residue("DT", "E", 4, 30.0, 0.0, 0.0))
+
+        neutralizer = self._make_neutralizer()
+        result_df, _ = neutralizer.neutralize_outside_residues_dataframe(pd.DataFrame(rows))
+
+        names = result_df.drop_duplicates("residue_seq_number")["residue_name"]
+        charge = sum(neutralizer._template_charge(name) for name in names)
+        assert set(names) == {"DG5", "DC3"}
+        assert charge == pytest.approx(-1.0)
+
+    def test_single_retained_nucleotide_uses_neutral_template(self):
+        rows = []
+        rows.extend(_build_dna_residue("DA", "E", 1, 30.0, 0.0, 0.0))
+        rows.extend(_build_dna_residue("DG", "E", 2, 5.0, 0.0, 0.0))
+        rows.extend(_build_dna_residue("DC", "E", 3, 30.0, 0.0, 0.0))
+
+        neutralizer = self._make_neutralizer()
+        result_df, _ = neutralizer.neutralize_outside_residues_dataframe(pd.DataFrame(rows))
+
+        assert (result_df["residue_name"] == "DGN").all()
+        assert "P" not in result_df["atom_name"].values
+        assert neutralizer._template_charge("DGN") == pytest.approx(0.0)
 
 
 def _build_nterm_residue(resname, chain, resnum, x, y, z):
@@ -256,9 +409,17 @@ class TestNeutralizerNTerminals:
         atoms = []
         serial_base = 100
         for i, (aname, elem) in enumerate(
-            [("N", "N"), ("CA", "C"), ("C", "C"), ("O", "O"),
-             ("CB", "C"), ("CG", "C"), ("CD", "C"),
-             ("H1", "H"), ("H2", "H")]
+            [
+                ("N", "N"),
+                ("CA", "C"),
+                ("C", "C"),
+                ("O", "O"),
+                ("CB", "C"),
+                ("CG", "C"),
+                ("CD", "C"),
+                ("H1", "H"),
+                ("H2", "H"),
+            ]
         ):
             atoms.append(_make_atom("ATOM", serial_base + i, aname, "NPRO", "F", 1, 30.0, 0.0, 0.0, elem))
         df = pd.DataFrame(atoms)
@@ -269,9 +430,9 @@ class TestNeutralizerNTerminals:
         res = result_df[result_df["residue_seq_number"] == 1]
         assert (res["residue_name"] == "PRO").all()
         for forbidden in ("H", "H1", "H2", "H3"):
-            assert forbidden not in res["atom_name"].values, (
-                f"PRO library has no backbone amide H but found {forbidden!r}"
-            )
+            assert (
+                forbidden not in res["atom_name"].values
+            ), f"PRO library has no backbone amide H but found {forbidden!r}"
 
 
 def _build_cterm_residue(resname, chain, resnum, x, y, z):
@@ -330,6 +491,171 @@ class TestNeutralizerCTerminals:
         res = result_df[result_df["residue_seq_number"] == 1]
         assert (res["residue_name"] == "GLY").all()
         assert "OXT" not in res["atom_name"].values
+
+
+class TestCHARMMNeutralization:
+    @staticmethod
+    def _template_residue(
+        neutralizer: Neutralizer,
+        residue_name: str,
+        group_positions: dict[int, float],
+    ) -> pd.DataFrame:
+        entry = neutralizer.residue_library[residue_name]
+        group_by_atom = {
+            atom_name: group_number
+            for group_number, group in enumerate(entry["charge_groups"], 1)
+            for atom_name in group
+        }
+        rows = []
+        for serial, atom in enumerate(entry["atoms"], 1):
+            x = group_positions[group_by_atom[atom["name"]]]
+            rows.append(
+                _make_atom(
+                    "ATOM",
+                    serial,
+                    atom["name"],
+                    residue_name,
+                    "A",
+                    1,
+                    x,
+                    0.0,
+                    0.0,
+                    atom["name"][0],
+                )
+            )
+        return pd.DataFrame(rows)
+
+    def test_standard_terminal_names_preserve_residue_identity(self):
+        neutralizer = Neutralizer((0, 0, 0), force_field="CHARMM36")
+
+        assert neutralizer._terminal_neutral_form("NSER", terminal_charge=+1.0) == "SER"
+        assert neutralizer._terminal_neutral_form("CSER", terminal_charge=-1.0) == "SER"
+
+    def test_charged_sidechain_uses_charmm_charge_groups_and_atom_names(self):
+        rows = _build_protein_residue("LYS", "A", 1, 23.0, 0.0, 0.0)
+        rows.extend(
+            _make_atom("ATOM", 110 + index, name, "LYS", "A", 1, 23.0, 0.0, 0.0, "H")
+            for index, name in enumerate(("HZ1", "HZ2", "HZ3"), 1)
+        )
+
+        result, stats = Neutralizer(
+            (0, 0, 0), radius=25.0, force_field="CHARMM36"
+        ).neutralize_outside_residues_dataframe(pd.DataFrame(rows))
+
+        assert (result["residue_name"] == "LYN").all()
+        assert "HZ3" not in result["atom_name"].values
+        assert stats["modifications"]["A:1"]["boundary_reference"] == "charge-group center"
+
+    def test_hip_uses_merged_integer_charge_group(self):
+        first_group = ("CB", "HB1", "HB2", "CD2", "HD2", "CG")
+        second_group = ("NE2", "HE2", "ND1", "HD1", "CE1", "HE1")
+        rows = [
+            _make_atom("ATOM", index, name, "HIP", "A", 1, 21.0, 0.0, 0.0, name[0])
+            for index, name in enumerate(first_group, 1)
+        ]
+        rows.extend(
+            _make_atom("ATOM", index, name, "HIP", "A", 1, 23.0, 0.0, 0.0, name[0])
+            for index, name in enumerate(second_group, len(rows) + 1)
+        )
+
+        result, stats = Neutralizer(
+            (0, 0, 0), radius=25.0, force_field="CHARMM36"
+        ).neutralize_outside_residues_dataframe(pd.DataFrame(rows))
+
+        assert (result["residue_name"] == "HID").all()
+        assert stats["modifications"]["A:1"]["boundary_reference"] == "charge-group center"
+
+    def test_terminal_sidechain_is_classified_before_terminal_charge(self):
+        neutralizer = Neutralizer((0, 0, 0), radius=25.0, force_field="CHARMM36")
+        rows = self._template_residue(
+            neutralizer,
+            "NGLU",
+            {1: 10.0, 2: 10.0, 3: 23.0, 4: 10.0},
+        )
+
+        result, stats = neutralizer.neutralize_outside_residues_dataframe(rows)
+
+        assert (result["residue_name"] == "NGLH").all()
+        assert stats["terminals_neutralized"] == 0
+        assert stats["modifications"]["A:1"]["original"] == "NGLU"
+        assert stats["modifications"]["A:1"]["modified"] == "NGLH"
+
+    def test_sidechain_and_terminal_conversions_count_residue_once(self):
+        neutralizer = Neutralizer((0, 0, 0), radius=25.0, force_field="CHARMM36")
+        rows = self._template_residue(
+            neutralizer,
+            "NGLU",
+            {1: 23.0, 2: 23.0, 3: 23.0, 4: 23.0},
+        )
+
+        result, stats = neutralizer.neutralize_outside_residues_dataframe(rows)
+
+        assert (result["residue_name"] == "GLH").all()
+        assert stats["terminals_neutralized"] == 1
+        assert stats["residues_neutralized"] == 1
+        assert stats["modifications"]["A:1"]["original"] == "NGLU"
+        assert stats["modifications"]["A:1"]["modified"] == "GLH"
+
+    def test_terminal_sidechain_group_is_disambiguated_from_same_sign_terminal_group(self):
+        neutralizer = Neutralizer((0, 0, 0), radius=25.0, force_field="CHARMM36")
+        rows = self._template_residue(
+            neutralizer,
+            "NARG",
+            {1: 10.0, 2: 10.0, 3: 10.0, 4: 23.0, 5: 10.0},
+        )
+
+        result, stats = neutralizer.neutralize_outside_residues_dataframe(rows)
+
+        # CHARMM has no NARN template, so conservatively neutralize both sites.
+        assert (result["residue_name"] == "ARN").all()
+        assert stats["residues_neutralized"] == 1
+
+    def test_fractional_prefixed_neutral_template_uses_conservative_fallback(self):
+        neutralizer = Neutralizer((0, 0, 0), radius=25.0, force_field="OPLS2015")
+        entry = neutralizer.residue_library["CARG"]
+        charges = {atom["name"]: atom["charge"] for atom in entry["atoms"]}
+        positions = {
+            group_number: (23.0 if "CZ" in group else 10.0)
+            for group_number, group in enumerate(entry["charge_groups"], 1)
+        }
+        assert any(
+            abs(sum(charges[atom] for atom in group) - 1.0) <= 1e-6
+            for group in entry["charge_groups"]
+            if "CZ" in group
+        )
+        rows = self._template_residue(neutralizer, "CARG", positions)
+
+        result, _ = neutralizer.neutralize_outside_residues_dataframe(rows)
+
+        assert (result["residue_name"] == "ARN").all()
+
+    def test_nterminal_ht1_coordinate_is_preserved_as_internal_h(self):
+        rows = [
+            _make_atom("ATOM", 1, name, "NALA", "A", 1, 30.0, 0.0, 0.0, element)
+            for name, element in (("N", "N"), ("HT1", "H"), ("HT2", "H"), ("HT3", "H"), ("CA", "C"))
+        ]
+
+        result, _ = Neutralizer(
+            (0, 0, 0), radius=25.0, force_field="CHARMM36"
+        ).neutralize_outside_residues_dataframe(pd.DataFrame(rows))
+
+        assert (result["residue_name"] == "ALA").all()
+        assert "H" in result["atom_name"].values
+        assert not {"HT1", "HT2", "HT3"} & set(result["atom_name"])
+
+    def test_cterminal_ot1_coordinate_is_preserved_as_internal_o(self):
+        rows = [
+            _make_atom("ATOM", 1, name, "CALA", "A", 1, 30.0, 0.0, 0.0, element)
+            for name, element in (("N", "N"), ("CA", "C"), ("C", "C"), ("OT1", "O"), ("OT2", "O"))
+        ]
+
+        result, _ = Neutralizer(
+            (0, 0, 0), radius=25.0, force_field="CHARMM36"
+        ).neutralize_outside_residues_dataframe(pd.DataFrame(rows))
+
+        assert (result["residue_name"] == "ALA").all()
+        assert "O" in result["atom_name"].values
+        assert not {"OT1", "OT2"} & set(result["atom_name"])
 
 
 class TestFragmentFilteringInQprep:
