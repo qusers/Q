@@ -144,3 +144,6 @@ void CpuShake::apply_to(Context& ctx, coord_t* coords, coord_t* xcoords) {
         shake += current_shake_num;
     }
 }
+
+void CpuShake::init_from_bonds(Context& ctx, const std::vector<ConstraintBond>& bonds) {
+}

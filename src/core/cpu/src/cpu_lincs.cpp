@@ -10,10 +10,15 @@ void CpuLincs::apply(Context& ctx, HostDeviceBuffer<coord_t>& xcoords) {
 }
 
 void CpuLincs::init_backend(Context& ctx) {
-    // 1. get all the bond sqrt(inv_wa + inv_wb)
     int bond_num = data_.n_constraints;
+    std::vector<ConstraintBond> constraint_bonds(data_.constraint_bonds->cpu_data_p, data_.constraint_bonds->cpu_data_p + bond_num);
+    init_from_bonds(ctx, constraint_bonds);
+}
+
+void CpuLincs::init_from_bonds(Context& ctx, const std::vector<ConstraintBond>& bonds) {
+    // 1. get all the bond sqrt(inv_wa + inv_wb)
+    int bond_num = bonds.size();
     std::vector<double> bond_inv_sqrt_inv_mass_sum(bond_num);
-    auto* bonds = data_.constraint_bonds->cpu_data_p;
     auto* winv = ctx.winv->cpu_data_p;
 
     for (int i = 0; i < bond_num; i++) {

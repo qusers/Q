@@ -43,6 +43,12 @@ class ConstraintForce {
     // the constrained geometry.
     virtual void initial_constraint(Context& ctx) = 0;
 
+    /*
+    Now we support mixed constriants force(LINCS, SHAKE, SETTLE) for different cases.
+    So the main ConstraintForce will seperate the bonds to different constraint forces.
+    */
+    virtual void init_from_bonds(Context& ctx, const std::vector<ConstraintBond>& bonds) = 0;
+
     // Release backend-specific resources. CPU implementations usually have
     // nothing to free; CUDA implementations should free owned device state.
     virtual void cleanup() {}
