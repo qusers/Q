@@ -52,6 +52,11 @@ from .templates import (
     render_qprep_resfep_input,
 )
 
+#: The only force field whose residue parameters the current hybrid construction supports.
+#: TODO: Derive glycine CA/HA charges, types, and atom names from the selected libraries
+#: before widening QresFEP support to other force fields.
+QRESFEP_FORCE_FIELD = "OPLSAAM"
+
 #: The two stages of a dual-topology mutation, in the order they must run.
 FEP_STAGES = ("FEP1.fep", "FEP2.fep")
 
@@ -189,6 +194,11 @@ class QresFEP:
         self.chain = chain
         self.system = system
         self.force_field = force_field
+        if self.force_field != QRESFEP_FORCE_FIELD:
+            raise MutationError(
+                f"QresFEP currently supports only {QRESFEP_FORCE_FIELD}, got "
+                f"{self.force_field!r}"
+            )
         self.cluster = cluster
         self.windows = int(windows)
         self.sampling = sampling
@@ -249,6 +259,12 @@ class QresFEP:
                 stated wild type.
         """
         self.prep = SpherePrep.read(self.workdir)
+        if self.prep.force_field != self.force_field:
+            raise MutationError(
+                f"The sphere was prepared with {self.prep.force_field}, but QresFEP was "
+                f"requested with {self.force_field}. Prepare and set up the sphere with the "
+                "same force field."
+            )
         self.protein_pdb = self.workdir / self.prep.prepared_pdb
         self.radius = self.prep.radius
         self.center = self.prep.center

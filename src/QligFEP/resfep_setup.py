@@ -22,7 +22,7 @@ from . import amino_acids
 from .IO import get_force_field_paths, parse_lib
 from .logger import logger
 from .pdb_utils import read_pdb_to_dataframe
-from .qresfep import parse_mutation
+from .qresfep import QRESFEP_FORCE_FIELD, parse_mutation
 
 #: Atom the sphere is centred on when centring on the mutated residue. Glycine
 #: has no CB, so the published protocol falls back to HA3.
@@ -442,6 +442,11 @@ class MutationSeries:
         self.structure = Path(structure).resolve()
         self.mutations = list(mutations)
         self.force_field = force_field
+        if self.force_field != QRESFEP_FORCE_FIELD:
+            raise SetupError(
+                f"QresFEP currently supports only {QRESFEP_FORCE_FIELD}, got "
+                f"{self.force_field!r}"
+            )
         self.cluster = cluster
         self.radius = float(radius)
         self.center = [float(c) for c in center] if center else None

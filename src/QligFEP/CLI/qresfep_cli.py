@@ -10,7 +10,7 @@ from typing import Optional
 from QligFEP import __version__
 
 from ..logger import logger, setup_logger
-from ..qresfep import QresFEP
+from ..qresfep import QRESFEP_FORCE_FIELD, QresFEP
 from ..resfep_protocols import DEFAULT_PRODUCTION_STEPS, apply_manuscript_settings
 from ..settings.settings import CLUSTER_DICT
 
@@ -75,11 +75,11 @@ def parse_arguments() -> argparse.Namespace:
         "-FF",
         "--forcefield",
         dest="force_field",
-        default="OPLSAAM",
+        default=QRESFEP_FORCE_FIELD,
+        choices=[QRESFEP_FORCE_FIELD],
         help=(
-            "Force field, which must match the one used for `qprep_prot`. Either a name "
-            "(OPLSAAM, OPLS2015, OPLS2005, AMBER14sb, CHARMM36) or a path to .lib/.prm files "
-            "without the extension. Defaults to OPLSAAM."
+            "Force field, which must match the one used for `qprep_prot`. QresFEP currently "
+            f"supports only {QRESFEP_FORCE_FIELD}."
         ),
     )
     optional.add_argument(

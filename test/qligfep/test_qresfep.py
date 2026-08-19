@@ -262,6 +262,40 @@ class TestProteinComplexCoordinates:
         assert set(run.pdb) == {1}
 
 
+class TestForceFieldSupport:
+    def test_non_oplsaam_force_fields_are_rejected(self, tmp_path):
+        with pytest.raises(MutationError, match="currently supports only OPLSAAM"):
+            QresFEP(
+                mutation="LEU1ALA",
+                chain="A",
+                system="protein",
+                force_field="AMBER14sb",
+                cluster="SNELLIUS",
+                workdir=tmp_path,
+            )
+
+    def test_preparation_force_field_must_match_setup(self, tmp_path):
+        SpherePrep(
+            input_pdb="protein.pdb",
+            prepared_pdb="protein_processed.pdb",
+            force_field="OPLS2015",
+            center=[0.0, 0.0, 0.0],
+            radius=25.0,
+            total_charge=0,
+        ).write(tmp_path)
+        run = QresFEP(
+            mutation="LEU1ALA",
+            chain="A",
+            system="protein",
+            force_field="OPLSAAM",
+            cluster="SNELLIUS",
+            workdir=tmp_path,
+        )
+
+        with pytest.raises(MutationError, match="sphere was prepared with OPLS2015"):
+            run.read_prep()
+
+
 class TestProductionSteps:
     def test_custom_step_count_is_stored(self, tmp_path):
         run = QresFEP(

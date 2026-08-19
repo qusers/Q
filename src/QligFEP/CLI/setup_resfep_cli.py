@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..logger import logger, setup_logger
+from ..qresfep import QRESFEP_FORCE_FIELD
 from ..resfep_protocols import DEFAULT_PRODUCTION_STEPS, apply_manuscript_settings
 from ..resfep_setup import Mutation, MutationSeries, SetupError, read_mutations
 from ..settings.settings import CLUSTER_DICT
@@ -111,11 +112,11 @@ def parse_arguments() -> argparse.Namespace:
         "-FF",
         "--forcefield",
         dest="force_field",
-        default="OPLSAAM",
+        default=QRESFEP_FORCE_FIELD,
+        choices=[QRESFEP_FORCE_FIELD],
         help=(
-            "Force field for both preparation and setup. Either a name (OPLSAAM, OPLS2015, "
-            "OPLS2005, AMBER14sb, CHARMM36) or a path without the extension. Defaults to "
-            "OPLSAAM."
+            "Force field for both preparation and setup. QresFEP currently supports only "
+            f"{QRESFEP_FORCE_FIELD}."
         ),
     )
     optional.add_argument(
