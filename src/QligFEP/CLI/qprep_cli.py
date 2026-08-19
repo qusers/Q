@@ -715,18 +715,18 @@ class Neutralizer:
         return outside
 
     _DNA_5PRIME = {"DA": "DA5", "DC": "DC5", "DG": "DG5", "DT": "DT5"}
+    _DNA_3PRIME = {"DA": "DA3", "DC": "DC3", "DG": "DG3", "DT": "DT3"}
 
     def _remove_and_cap_outside_dna(
         self,
         df: pd.DataFrame,
         fully_outside_residues: Sequence[ResidueInfo],
     ) -> pd.DataFrame:
-        """Remove fully-outside DNA and cap the inside boundary residues.
+        """Remove fully-outside DNA and cap each retained strand fragment.
 
-        All DNA nucleotides fully outside the sphere are removed. The last
-        inside-sphere residue on each chain boundary is converted to a
-        5' terminal form (removing the phosphodiester linkage to the now-absent
-        upstream residue) when the removed DNA was on its 5' side.
+        A retained residue next to removed upstream DNA gets a 5' terminal
+        template, while one next to removed downstream DNA gets a 3' template.
+        The complementary terminal charges keep each cut fragment integral.
         """
         modified_df = df.copy()
         if not fully_outside_residues:
@@ -737,7 +737,7 @@ class Neutralizer:
         for r in fully_outside_residues:
             outside_by_chain.setdefault(r["chain_id"], []).append(r)
 
-        # Find all DNA residue numbers per chain (inside + outside)
+        # Find all DNA residue numbers per chain (inside + outside).
         all_dna_by_chain = {}
         dna = df[df["residue_name"].isin(self._DNA_RESIDUES)]
         for (chain, residue_number), _ in dna.groupby(["chain_id", "residue_seq_number"]):
@@ -751,32 +751,45 @@ class Neutralizer:
             modified_df = modified_df.drop(modified_df[mask].index)
             logger.debug(f"Removed out-of-sphere DNA {r['chain_id']}:{r['residue_seq_number']}")
 
-        # Cap inside boundary residues where removed DNA was upstream (5' side)
-        n_caps = 0
+        n_5prime_caps = 0
+        n_3prime_caps = 0
         for chain, outside_list in outside_by_chain.items():
             outside_resnums = {r["residue_seq_number"] for r in outside_list}
-            inside_resnums = all_dna_by_chain.get(chain, set()) - outside_resnums
-            if not inside_resnums:
-                continue
+            ordered_resnums = sorted(all_dna_by_chain.get(chain, set()))
 
-            first_inside = min(inside_resnums)
-            has_removed_upstream = any(rn < first_inside for rn in outside_resnums)
-            if not has_removed_upstream:
-                continue
+            for index, residue_number in enumerate(ordered_resnums):
+                if residue_number in outside_resnums:
+                    continue
+                removed_upstream = index > 0 and ordered_resnums[index - 1] in outside_resnums
+                removed_downstream = (
+                    index < len(ordered_resnums) - 1 and ordered_resnums[index + 1] in outside_resnums
+                )
+                if not removed_upstream and not removed_downstream:
+                    continue
 
-            mask = (modified_df["chain_id"] == chain) & (modified_df["residue_seq_number"] == first_inside)
-            old_name = modified_df.loc[mask, "residue_name"].iloc[0]
-            if old_name in self._DNA_5PRIME:
-                new_name = self._DNA_5PRIME[old_name]
+                mask = (modified_df["chain_id"] == chain) & (
+                    modified_df["residue_seq_number"] == residue_number
+                )
+                old_name = modified_df.loc[mask, "residue_name"].iloc[0]
+                if removed_upstream and removed_downstream:
+                    new_name = self.charged_residues[old_name][0]
+                elif removed_upstream:
+                    new_name = self._DNA_5PRIME[old_name]
+                else:
+                    new_name = self._DNA_3PRIME[old_name]
+
                 modified_df.loc[mask, "residue_name"] = new_name
-                remove_mask = mask & modified_df["atom_name"].isin({"P", "OP1", "OP2", "HP"})
-                modified_df = modified_df.drop(modified_df.index[remove_mask])
-                logger.debug(f"5' terminal cap: {old_name} -> {new_name} at {chain}:{first_inside}")
-                n_caps += 1
+                if removed_upstream:
+                    remove_mask = mask & modified_df["atom_name"].isin({"P", "OP1", "OP2", "HP"})
+                    modified_df = modified_df.drop(modified_df.index[remove_mask])
+                    n_5prime_caps += 1
+                if removed_downstream:
+                    n_3prime_caps += 1
+                logger.debug(f"DNA boundary cap: {old_name} -> {new_name} at {chain}:{residue_number}")
 
         logger.info(
-            f"Removed {len(fully_outside_residues)} out-of-sphere DNA nucleotides, "
-            f"applied {n_caps} 5' terminal caps"
+            f"Removed {len(fully_outside_residues)} out-of-sphere DNA nucleotides; "
+            f"applied {n_5prime_caps} 5' and {n_3prime_caps} 3' terminal caps"
         )
         return modified_df
 

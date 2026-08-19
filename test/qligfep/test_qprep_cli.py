@@ -159,9 +159,8 @@ class TestNeutralizerDNA:
     """Tests for DNA nucleotide handling in the Neutralizer.
 
     DNA nucleotides whose C1' atom is outside the sphere radius are removed.
-    DNA in the outer SCAAS layer is retained because no protein-style neutral
-    nucleotide template is substituted. The first retained residue next to a
-    removed upstream segment gets a 5' terminal form.
+    DNA in the outer SCAAS layer is retained. Each retained fragment is capped
+    with complementary 5' and 3' terminal templates at cut boundaries.
     """
 
     def _make_neutralizer(self, center=(0, 0, 0), radius=25.0, offset=3.0):
@@ -250,7 +249,7 @@ class TestNeutralizerDNA:
         assert (result_df["residue_name"] == "DA").all()
 
     def test_mixed_protein_and_dna(self):
-        """Protein residues neutralized by rest_bound; DNA removed by same boundary."""
+        """Protein uses rest_bound while DNA is cut and capped at the sphere."""
         rows = []
         rows.extend(_build_protein_residue("GLU", "A", 1, 23.0, 0.0, 0.0))
         rows.extend(_build_dna_residue("DA", "E", 10, 5.0, 0.0, 0.0))
@@ -261,11 +260,11 @@ class TestNeutralizerDNA:
         result_df, stats = neutralizer.neutralize_outside_residues_dataframe(df)
 
         assert (result_df[result_df["residue_seq_number"] == 1]["residue_name"] == "GLH").all()
-        assert (result_df[result_df["residue_seq_number"] == 10]["residue_name"] == "DA").all()
+        assert (result_df[result_df["residue_seq_number"] == 10]["residue_name"] == "DA3").all()
         assert len(result_df[result_df["residue_seq_number"] == 11]) == 0
 
-    def test_downstream_removal_no_5prime_cap(self):
-        """When removed DNA is only downstream (3' side), no 5' cap is needed."""
+    def test_downstream_removal_adds_3prime_cap(self):
+        """DNA next to a removed downstream segment gets a 3' cap."""
         rows = []
         rows.extend(_build_dna_residue("DA", "E", 1, 5.0, 0.0, 0.0))  # inside
         rows.extend(_build_dna_residue("DG", "E", 2, 5.0, 0.0, 0.0))  # inside
@@ -277,9 +276,36 @@ class TestNeutralizerDNA:
 
         # Res 3: removed
         assert len(result_df[result_df["residue_seq_number"] == 3]) == 0
-        # Res 1-2: inside, unchanged (no terminal conversion)
         assert (result_df[result_df["residue_seq_number"] == 1]["residue_name"] == "DA").all()
-        assert (result_df[result_df["residue_seq_number"] == 2]["residue_name"] == "DG").all()
+        assert (result_df[result_df["residue_seq_number"] == 2]["residue_name"] == "DG3").all()
+
+    def test_cut_fragment_has_integral_template_charge(self):
+        rows = []
+        rows.extend(_build_dna_residue("DA", "E", 1, 30.0, 0.0, 0.0))
+        rows.extend(_build_dna_residue("DG", "E", 2, 5.0, 0.0, 0.0))
+        rows.extend(_build_dna_residue("DC", "E", 3, 5.0, 0.0, 0.0))
+        rows.extend(_build_dna_residue("DT", "E", 4, 30.0, 0.0, 0.0))
+
+        neutralizer = self._make_neutralizer()
+        result_df, _ = neutralizer.neutralize_outside_residues_dataframe(pd.DataFrame(rows))
+
+        names = result_df.drop_duplicates("residue_seq_number")["residue_name"]
+        charge = sum(neutralizer._template_charge(name) for name in names)
+        assert set(names) == {"DG5", "DC3"}
+        assert charge == pytest.approx(-1.0)
+
+    def test_single_retained_nucleotide_uses_neutral_template(self):
+        rows = []
+        rows.extend(_build_dna_residue("DA", "E", 1, 30.0, 0.0, 0.0))
+        rows.extend(_build_dna_residue("DG", "E", 2, 5.0, 0.0, 0.0))
+        rows.extend(_build_dna_residue("DC", "E", 3, 30.0, 0.0, 0.0))
+
+        neutralizer = self._make_neutralizer()
+        result_df, _ = neutralizer.neutralize_outside_residues_dataframe(pd.DataFrame(rows))
+
+        assert (result_df["residue_name"] == "DGN").all()
+        assert "P" not in result_df["atom_name"].values
+        assert neutralizer._template_charge("DGN") == pytest.approx(0.0)
 
 
 def _build_nterm_residue(resname, chain, resnum, x, y, z):
