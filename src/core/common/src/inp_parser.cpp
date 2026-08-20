@@ -64,6 +64,35 @@ bool is_on_token(const std::string& token) {
     return value == "on";
 }
 
+bool parse_constraint_logical(const std::string& value, const std::string& key) {
+    const std::string normalized = lower_normalized(value);
+    if (normalized == "on" || normalized == "1") return true;
+    if (normalized == "off" || normalized == "0") return false;
+    throw parse_error("Q input [MD] " + key + " must be on, off, 1, or 0.");
+}
+
+bool parse_constraint_switch(
+    const std::map<std::string, std::string>& values,
+    const std::string& canonical_key,
+    const std::string& legacy_key,
+    bool default_value) {
+    const auto canonical = values.find(canonical_key);
+    const auto legacy = values.find(legacy_key);
+
+    if (canonical != values.end() && legacy != values.end()) {
+        throw parse_error(
+            "Q input [MD] must not specify both " + canonical_key +
+            " and deprecated alias " + legacy_key + ".");
+    }
+    if (canonical != values.end()) {
+        return parse_constraint_logical(canonical->second, canonical_key);
+    }
+    if (legacy != values.end()) {
+        return parse_constraint_logical(legacy->second, legacy_key);
+    }
+    return default_value;
+}
+
 std::vector<std::vector<std::string>> checked_split_groups(const std::vector<std::string>& flat, size_t width) {
     if (width == 0) throw parse_error("Invalid grouped input width.");
     if (flat.size() % width != 0) {
@@ -792,9 +821,54 @@ void InpParser::parse_md() {
     md.bath_coupling = parse_double(value_or(mdv, "bath-coupling", value_or(mdv, "bath_coupling", "1")));
     md.random_seed = parse_int(value_or(mdv, "random-seed", value_or(mdv, "random_seed", "1")));
     md.initial_temperature = parse_double(value_or(mdv, "initial-temperature", value_or(mdv, "initial_temperature", value_or(mdv, "temperature", "0"))));
-    md.shake_solvent = is_on_value(mdv, "shake-solvent", bool_value(mdv, "shake_solvent", "off"));
-    md.shake_solute = is_on_value(mdv, "shake-solute", bool_value(mdv, "shake_solute", "off"));
-    md.shake_hydrogens = is_on_value(mdv, "shake-hydrogens", bool_value(mdv, "shake_hydrogens", "off"));
+
+    const bool has_legacy_constraint_key =
+        mdv.count("shake-solvent") != 0 ||
+        mdv.count("shake-solute") != 0 ||
+        mdv.count("shake-hydrogens") != 0;
+
+    md.constraint_solvent = parse_constraint_switch(
+        mdv, "constrain-solvent", "shake-solvent", true);
+    md.constraint_solute = parse_constraint_switch(
+        mdv, "constrain-solute", "shake-solute", false);
+    md.constraint_hydrogens = parse_constraint_switch(
+        mdv, "constrain-hydrogens", "shake-hydrogens", false);
+
+    const auto constraint_algorithm = mdv.find("constraint-algorithm");
+    if (constraint_algorithm == mdv.end()) {
+        md.solute_constraint_algorithm = has_legacy_constraint_key ? "shake" : "lincs";
+        md.solvent_constraint_algorithm = has_legacy_constraint_key ? "shake" : "settle";
+    } else {
+        const std::vector<std::string> algorithms = split_ws(constraint_algorithm->second);
+        if (algorithms.size() != 2) {
+            throw parse_error(
+                "Q input [MD] constraint_algorithm requires exactly two values: "
+                "<solute-method> <solvent-method>.");
+        }
+
+        md.solute_constraint_algorithm = lower_normalized(algorithms[0]);
+        md.solvent_constraint_algorithm = lower_normalized(algorithms[1]);
+
+        if (md.solute_constraint_algorithm != "shake" &&
+            md.solute_constraint_algorithm != "lincs") {
+            throw parse_error(
+                "Q input [MD] constraint_algorithm has invalid solute method '" +
+                algorithms[0] + "'; expected shake or lincs.");
+        }
+        if (md.solvent_constraint_algorithm != "shake" &&
+            md.solvent_constraint_algorithm != "lincs" &&
+            md.solvent_constraint_algorithm != "settle") {
+            throw parse_error(
+                "Q input [MD] constraint_algorithm has invalid solvent method '" +
+                algorithms[1] + "'; expected shake, lincs, or settle.");
+        }
+    }
+
+    // Keep the legacy fields synchronized until their remaining users are removed.
+    md.shake_solvent = md.constraint_solvent;
+    md.shake_solute = md.constraint_solute;
+    md.shake_hydrogens = md.constraint_hydrogens;
+
     md.lrf = is_on_value(mdv, "lrf", "off");
     md.separate_scaling = is_on_value(mdv, "separate-scaling", bool_value(mdv, "separate_scaling", "off"));
     md.charge_groups = true;

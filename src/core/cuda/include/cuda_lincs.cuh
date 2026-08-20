@@ -59,6 +59,7 @@ class CudaLincs : public ConstraintForce {
     void apply(Context&, HostDeviceBuffer<coord_t>& xcoords) override;
     void initial_constraint(Context&) override;
     void cleanup() override;
+    void init_from_bonds(Context& ctx, const std::vector<ConstraintBond>& bonds) override;
 
    protected:
     void init_backend(Context&) override;
@@ -68,6 +69,7 @@ class CudaLincs : public ConstraintForce {
 
     void init_backend_for_big_group(
         Context& ctx,
+        const std::vector<ConstraintBond>& constraint_bonds,
         const std::vector<std::vector<int>>& bond_graph,
         const std::vector<int>& big_group_idx,
         const std::vector<std::vector<int>>& groups);

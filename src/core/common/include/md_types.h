@@ -14,9 +14,17 @@ struct md_t {
     double bath_coupling;
     int random_seed;
     double initial_temperature;
+    // todo: will remove later
     bool shake_solvent;
     bool shake_solute;
     bool shake_hydrogens;
+
+    bool constraint_solvent;
+    bool constraint_solute;
+    bool constraint_hydrogens;
+    std::string solute_constraint_algorithm;
+    std::string solvent_constraint_algorithm;
+
     bool lrf;
     bool separate_scaling = false;
     bool charge_groups;

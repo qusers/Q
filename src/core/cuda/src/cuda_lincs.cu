@@ -744,13 +744,13 @@ void CudaLincs::apply(Context& ctx, HostDeviceBuffer<coord_t>& xcoords) {
 
 void CudaLincs::init_backend_for_big_group(
     Context& ctx,
+    const std::vector<ConstraintBond>& constraint_bonds,
     const std::vector<std::vector<int>>& bond_graph,
     const std::vector<int>& big_group_idx,
     const std::vector<std::vector<int>>& groups) {
     if (big_group_idx.empty()) return;
 
     const int bond_num = bond_graph.size();
-    const auto* constraint_bonds = data_.constraint_bonds->cpu_data_p;
     const auto* winv = ctx.winv->cpu_data_p;
 
     /*
@@ -890,13 +890,16 @@ void CudaLincs::init_backend_for_big_group(
 
 void CudaLincs::init_backend(Context& ctx) {
     int bond_num = data_.n_constraints;
+    std::vector<ConstraintBond> constraint_bonds(data_.constraint_bonds->cpu_data_p, data_.constraint_bonds->cpu_data_p + bond_num);
+    init_from_bonds(ctx, constraint_bonds);
+}
+
+void CudaLincs::init_from_bonds(Context& ctx, const std::vector<ConstraintBond>& constraint_bonds) {
+    int bond_num = constraint_bonds.size();
     auto* winv = ctx.winv->cpu_data_p;
 
     // 1. Get the correct bond group
     UnionFind uf(bond_num);
-
-    auto* constraint_bonds = data_.constraint_bonds->cpu_data_p;
-
     std::vector<std::vector<int>> bond_graph(bond_num);
 
     for (int i = 0; i < bond_num; i++) {
@@ -961,7 +964,7 @@ void CudaLincs::init_backend(Context& ctx) {
         cur_bond_num += group_size;
     }
 
-    init_backend_for_big_group(ctx, bond_graph, big_group_idx, groups);
+    init_backend_for_big_group(ctx, constraint_bonds, bond_graph, big_group_idx, groups);
 
     // Pad the final block
     if (!bonds.empty() && cur_bond_num != 0) {
