@@ -146,6 +146,44 @@ void CudaSerialShake::init_backend(Context& ctx) {
     solver_.init(molecule_constraint_counts, shake_bonds);
 }
 
+void CudaSerialShake::init_from_bonds(Context& ctx, const std::vector<ConstraintBond>& bonds) {
+    std::vector<std::vector<ConstraintBond>> bonds_by_molecule(ctx.n_molecules());
+
+    auto molecule_index = [&](int atom) -> int {
+        const auto next = std::upper_bound(ctx.molecules.begin(), ctx.molecules.end(), atom);
+
+        if (next == ctx.molecules.begin()) {
+            fatal("[CUDA serial SHAKE] Cannot determine molecule for atom " + std::to_string(atom) + ".");
+        }
+
+        return static_cast<int>(next - ctx.molecules.begin()) - 1;
+    };
+
+    for (const ConstraintBond& bond : bonds) {
+        const int ai_mol = molecule_index(bond.ai);
+        const int aj_mol = molecule_index(bond.aj);
+
+        if (ai_mol != aj_mol) {
+            fatal("[CUDA serial SHAKE] Constraint between atoms " + std::to_string(bond.ai) + " and " + std::to_string(bond.aj) + " crosses a molecule boundary.");
+        }
+
+        bonds_by_molecule[ai_mol].push_back(bond);
+    }
+
+    std::vector<int> molecule_constraint_counts(ctx.n_molecules(), 0);
+
+    std::vector<ConstraintBond> ordered_bonds;
+    ordered_bonds.reserve(bonds.size());
+
+    for (int mol = 0; mol < ctx.n_molecules(); ++mol) {
+        molecule_constraint_counts[mol] = static_cast<int>(bonds_by_molecule[mol].size());
+
+        ordered_bonds.insert(ordered_bonds.end(), bonds_by_molecule[mol].begin(), bonds_by_molecule[mol].end());
+    }
+
+    solver_.init(molecule_constraint_counts, ordered_bonds);
+}
+
 void CudaSerialShake::apply(Context& ctx, HostDeviceBuffer<coord_t>& xcoords) {
     apply_to(ctx, ctx.coords->gpu_data_p, xcoords.gpu_data_p);
 }

@@ -208,22 +208,33 @@ void CudaSettle::init_from_bonds(Context& ctx, const std::vector<ConstraintBond>
         const int oh2 = find_bond_index(o, h2);
         const int hh = find_bond_index(h1, h2);
 
-        if (oh1 < 0 || oh2 < 0 || hh < 0) continue;
+        if (oh1 < 0 || oh2 < 0 || hh < 0) {
+            fatal(
+                "[SETTLE] Cannot constrain water " + std::to_string(w + 1) +
+                " (atoms O=" + std::to_string(o + 1) +
+                ", H1=" + std::to_string(h1 + 1) +
+                ", H2=" + std::to_string(h2 + 1) +
+                "): required O-H1, O-H2, and H1-H2 constraints are not all present. "
+                "Fix the topology or use SHAKE/LINCS.");
+        }
         if (bonds[oh1].dist2 != bonds[oh2].dist2) {
-            printf("[Settle] two o-h bonds dists are not equal. Wrong config!");
-            std::exit(EXIT_FAILURE);
+            fatal("[Settle] two o-h bonds dists are not equal. Wrong config!");
         }
         if (bonds[oh1].dist2 <= 0.25 * bonds[hh].dist2) {
             // triangle height from oxygen to the H-H midpoint height = sqrt(rOH * rOH - 0.25 * rHH * rHH);
-            printf("[Settle] Triangle height from oxygen to the H-H midpoint height is smaller than 0. Wrong config");
-            std::exit(EXIT_FAILURE);
+            fatal("[Settle] Triangle height from oxygen to the H-H midpoint height is smaller than 0. Wrong config");
         }
 
         const double wo = 1.0 / winv[o];
         const double wh1 = 1.0 / winv[h1];
         const double wh2 = 1.0 / winv[h2];
         if (wh1 != wh2) {
-            continue;
+            fatal(
+                "[SETTLE] Cannot constrain water " + std::to_string(w + 1) +
+                " (atoms O=" + std::to_string(o + 1) +
+                ", H1=" + std::to_string(h1 + 1) +
+                ", H2=" + std::to_string(h2 + 1) +
+                "): hydrogen masses must be equal. Fix the topology or use SHAKE/LINCS.");
         }
         settle_fast_waters.push_back(make_fast_water(o, h1, h2, bonds[oh1].dist2, bonds[hh].dist2, wo, wh1));
     }

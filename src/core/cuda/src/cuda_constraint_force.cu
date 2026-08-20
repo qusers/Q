@@ -88,40 +88,12 @@ void CudaConstraintForce::apply(Context& ctx, HostDeviceBuffer<coord_t>& xcoords
 }
 
 void CudaConstraintForce::initial_constraint(Context& ctx) {
-    // Same idea as the CudaShake
-    HostDeviceBuffer<coord_t> xcoords(ctx.n_atoms, true, true);
-    auto* d_coords = ctx.coords->gpu_data_p;
-    auto* d_xcoords = xcoords.gpu_data_p;
-
-    check_cuda(cudaMemcpy(d_xcoords, d_coords, ctx.n_atoms * sizeof(coord_t), cudaMemcpyDeviceToDevice));
-
-    apply(ctx, xcoords);
-
-    ctx.coords->download();
-
-    auto* coords = ctx.coords->cpu_data_p;
-    auto* velocities = ctx.velocities->cpu_data_p;
-    auto* host_xcoords = xcoords.cpu_data_p;
-    for (int i = 0; i < ctx.n_atoms; i++) {
-        const double dt = ctx.dt;
-        host_xcoords[i].x = coords[i].x - dt * velocities[i].x;
-        host_xcoords[i].y = coords[i].y - dt * velocities[i].y;
-        host_xcoords[i].z = coords[i].z - dt * velocities[i].z;
+    if (common_constraint_force_) {
+        common_constraint_force_->initial_constraint(ctx);
+    } else {
+        solute_constraint_force_->initial_constraint(ctx);
+        solvent_constraint_force_->initial_constraint(ctx);
     }
-
-    xcoords.upload();
-
-    apply(ctx, xcoords);
-
-    xcoords.download();
-
-    for (int i = 0; i < ctx.n_atoms; i++) {
-        const double dt = ctx.dt;
-        velocities[i].x = (coords[i].x - host_xcoords[i].x) / dt;
-        velocities[i].y = (coords[i].y - host_xcoords[i].y) / dt;
-        velocities[i].z = (coords[i].z - host_xcoords[i].z) / dt;
-    }
-    ctx.velocities->upload();
 }
 
 void CudaConstraintForce::cleanup() {}

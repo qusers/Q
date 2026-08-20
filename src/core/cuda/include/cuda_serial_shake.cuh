@@ -35,6 +35,7 @@ class CudaSerialShake final : public ConstraintForce {
    public:
     void apply(Context& ctx, HostDeviceBuffer<coord_t>& xcoords) override;
     void initial_constraint(Context& ctx) override;
+    void init_from_bonds(Context& ctx, const std::vector<ConstraintBond>& bonds) override;
 
    protected:
     void init_backend(Context& ctx) override;
