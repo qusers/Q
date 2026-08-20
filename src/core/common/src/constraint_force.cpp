@@ -31,9 +31,9 @@ void ConstraintForce::build_constraints(Context& ctx, const ParseResult& parsed)
             current_mol += 1;
         }
 
-        if ((ctx.md.shake_hydrogens && (!heavy[ai] || !heavy[aj])) ||
-            (ctx.md.shake_solute && ai + 1 <= ctx.n_atoms_solute) ||
-            (ctx.md.shake_solvent && ai + 1 > ctx.n_atoms_solute)) {
+        if ((ctx.md.constraint_hydrogens && (!heavy[ai] || !heavy[aj])) ||
+            (ctx.md.constraint_solute && ai + 1 <= ctx.n_atoms_solute) ||
+            (ctx.md.constraint_solvent && ai + 1 > ctx.n_atoms_solute)) {
             data_.n_constraints++;
             double dist = cbonds[bonds[bi].code - 1].b0;
             double dist2 = dist * dist;
