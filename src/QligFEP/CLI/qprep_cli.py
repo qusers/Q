@@ -36,9 +36,12 @@ ForceFieldEntry = dict[str, Any]
 class Neutralizer:
     """Neutralize ionizable groups in Q's outer SCAAS boundary layer.
 
-    Boundary references follow the selected force field: Q uses the first atom
-    of each explicit charge group when ``switch_atoms`` is on (OPLS), and the
-    geometric charge-group center when it is off (AMBER14sb).
+    Classification has two stages. Q's force-field switch atom or charge-group
+    center determines whether a group is included at the actual sphere edge.
+    Groups included by Q are then compared with the protocol's inner boundary
+    using the historical ionizable-site anchor (for example ARG CZ). Thus Q's
+    topology rule controls exclusion, without redefining the protocol's 3 Å
+    neutralized layer.
     """
 
     def __init__(
@@ -111,6 +114,12 @@ class Neutralizer:
         "N": {"H": ("H1", "HT1", "H2", "HT2")},
         "C": {"O": ("OT1",)},
     } # fmt: skip
+    # OPLS2005 uses punctuated names when the terminal ARG/LYS side chain
+    # remains charged; the unpunctuated forms retain only the terminal charge.
+    _TERMINAL_SIDECHAIN_NEUTRAL_FORMS = {
+        "ARG": {"NAR+": "NARG", "CAR+": "CARG"},
+        "LYS": {"NLY+": "NLYS", "CLY+": "CLYS"},
+    }
 
     _INTERNAL_PROTEIN_RESIDUES = {
         "ALA", "ARG", "ARN", "ASN", "ASP", "ASH", "CYS", "CYX", "GLN", "GLU", "GLH",
@@ -237,12 +246,12 @@ class Neutralizer:
         residue_name: str,
         key_atom: str,
         charge: int,
+        base_name: str,
     ) -> tuple[list[str], bool]:
         """Return the sidechain boundary atoms and whether they bypass charge groups."""
         if residue_name in self._DNA_RESIDUES:
             return [key_atom], False
 
-        base_name = residue_name[1:] if len(residue_name) > 3 else residue_name
         entry = self._library_entry(residue_name)
         if entry["charge_groups"] or base_name == residue_name:
             markers = self._charged_heavy_atoms.get(base_name) if base_name != residue_name else None
@@ -273,9 +282,10 @@ class Neutralizer:
         salt_bridge_cutoff: float = 4.0,
     ) -> tuple[pd.DataFrame, NeutralizationStats]:
         """Neutralize excluded charge groups and direct included salt-bridge partners."""
-        reference = "switch atom" if self.switch_atoms else "charge-group center"
+        q_reference = "switch atom" if self.switch_atoms else "charge-group center"
         logger.info(
-            f"Neutralizing charged residues whose Q {reference} is at or beyond "
+            f"Classifying Q inclusion by {q_reference} at {self.radius:.1f}Å, then "
+            f"neutralizing included groups by historical ionizable-site anchor at "
             f"{self.rest_bound:.1f}Å (outer {self.boundary_offset:.1f}Å SCAAS layer)"
         )
         dna_residues = sorted(set(df["residue_name"]) & self._DNA_RESIDUES)
@@ -331,39 +341,76 @@ class Neutralizer:
         charged_residues_info = []
         group_keys = ["chain_id", "residue_seq_number", "insertion_code"]
 
-        residue_specs = list(self.charged_residues.items())
+        residue_specs: dict[str, tuple[str, str, int, str]] = {
+            name: (neutral_form, key_atom, charge, name)
+            for name, (neutral_form, key_atom, charge) in self.charged_residues.items()
+        }
         for charged_name, (neutral_form, key_atom, charge) in self.charged_residues.items():
             if charged_name in self._DNA_RESIDUES:
                 continue
-            for prefix in ("N", "C", "n", "c"):
-                terminal_name = f"{prefix}{charged_name}"
-                if terminal_name in self.residue_library and self._has_terminal_sidechain_charge(
+
+            terminal_candidates: list[tuple[str, str | None]] = [
+                (f"{prefix}{charged_name}", None) for prefix in ("N", "C", "n", "c")
+            ]
+            terminal_candidates.extend(
+                self._TERMINAL_SIDECHAIN_NEUTRAL_FORMS.get(charged_name, {}).items()
+            )
+            for terminal_name, terminal_neutral in terminal_candidates:
+                if terminal_name not in self.residue_library or not self._has_terminal_sidechain_charge(
                     terminal_name, charged_name, charge
                 ):
+                    continue
+                if terminal_neutral is None:
                     terminal_neutral = self._terminal_sidechain_neutral_form(
                         terminal_name, neutral_form, charge
                     )
-                    residue_specs.append((terminal_name, (terminal_neutral, key_atom, charge)))
+                residue_specs[terminal_name] = (
+                    terminal_neutral,
+                    key_atom,
+                    charge,
+                    charged_name,
+                )
 
-        for res_name, (neutral_form, key_atom, charge) in residue_specs:
+        for res_name, (neutral_form, key_atom, charge, base_name) in residue_specs.items():
             residues = df[df["residue_name"] == res_name]
             for (chain, res_num, insertion_code), group in residues.groupby(group_keys, dropna=False):
-                reference_atoms, uses_charged_site = self._charged_reference_atoms(res_name, key_atom, charge)
-                reference_coords, reference_kind = self._boundary_reference(
+                residue_label = f"{res_name} {chain}:{res_num}{insertion_code}"
+                reference_atoms, uses_charged_site = self._charged_reference_atoms(
+                    res_name, key_atom, charge, base_name
+                )
+                q_coords, q_reference = self._boundary_reference(
                     group,
                     reference_atoms,
-                    f"{res_name} {chain}:{res_num}{insertion_code}",
+                    residue_label,
                 )
                 if uses_charged_site:
-                    reference_kind = "charged-site center"
-                distance = float(np.linalg.norm(reference_coords - self.center))
+                    q_reference = "charged-site center"
+                q_distance = float(np.linalg.norm(q_coords - self.center))
 
-                base_name = res_name[1:] if len(res_name) > 3 else res_name
+                anchor = group[group["atom_name"] == key_atom]
+                if anchor.empty:
+                    raise ValueError(
+                        f"Historical neutralization anchor {key_atom} is missing from {residue_label}"
+                    )
+                anchor_coords = anchor[["x", "y", "z"]].iloc[0].to_numpy(dtype=float)
+                anchor_distance = float(np.linalg.norm(anchor_coords - self.center))
+
+                q_excluded = q_distance >= self.radius
+                in_protocol_layer = not q_excluded and anchor_distance >= self.rest_bound
+                if q_excluded:
+                    distance = q_distance
+                    reference_kind = f"Q {q_reference}"
+                    classification = "Q-excluded"
+                else:
+                    distance = anchor_distance
+                    reference_kind = f"historical anchor {key_atom}"
+                    classification = "protocol-layer" if in_protocol_layer else "inner-region"
+
                 charged_atom_names = self._charged_heavy_atoms.get(base_name, {key_atom})
                 charged_atoms = group[group["atom_name"].isin(charged_atom_names)]
                 charged_atom_coords = charged_atoms[["x", "y", "z"]].to_numpy(dtype=float)
                 if len(charged_atom_coords) == 0:
-                    charged_atom_coords = np.array([reference_coords])
+                    charged_atom_coords = np.array([anchor_coords])
 
                 charged_residues_info.append(
                     {
@@ -372,6 +419,10 @@ class Neutralizer:
                         "residue_seq_number": res_num,
                         "insertion_code": insertion_code,
                         "boundary_reference": reference_kind,
+                        "classification": classification,
+                        "q_distance": q_distance,
+                        "protocol_anchor_distance": anchor_distance,
+                        "neutralize": q_excluded or in_protocol_layer,
                         "charged_atom_coords": charged_atom_coords,
                         "distance": distance,
                         "charge": charge,
@@ -390,18 +441,16 @@ class Neutralizer:
         inside_residues = []
 
         for res_info in charged_residues_info:
-            if res_info["distance"] >= self.rest_bound:
+            if res_info["neutralize"]:
                 outside_residues.append(res_info)
-                logger.debug(
-                    f"Residue {res_info['chain_id']}:{res_info['residue_seq_number']} ({res_info['residue_name']}) "
-                    f"outside boundary: {res_info['distance']:.2f}Å > {self.rest_bound:.1f}Å"
-                )
             else:
                 inside_residues.append(res_info)
-                logger.debug(
-                    f"Residue {res_info['chain_id']}:{res_info['residue_seq_number']} ({res_info['residue_name']}) "
-                    f"inside boundary: {res_info['distance']:.2f}Å <= {self.rest_bound:.1f}Å"
-                )
+            logger.debug(
+                f"Residue {res_info['chain_id']}:{res_info['residue_seq_number']} "
+                f"({res_info['residue_name']}): {res_info['classification']}; "
+                f"Q distance {res_info['q_distance']:.2f}Å, protocol-anchor distance "
+                f"{res_info['protocol_anchor_distance']:.2f}Å"
+            )
 
         return outside_residues, inside_residues
 
@@ -645,14 +694,30 @@ class Neutralizer:
         for (chain, residue_number, insertion_code, terminal_name), group in modified_df[
             terminal_mask
         ].groupby(group_keys, dropna=False):
+            residue_label = f"{terminal_name} {chain}:{residue_number}{insertion_code}"
             reference_atoms = self._terminal_charge_group(terminal_name, marker_atoms)
-            reference_coords, reference_kind = self._boundary_reference(
-                group,
-                reference_atoms,
-                f"{terminal_name} {chain}:{residue_number}{insertion_code}",
-            )
-            distance = float(np.linalg.norm(reference_coords - self.center))
-            if distance < self.rest_bound:
+            q_coords, q_reference = self._boundary_reference(group, reference_atoms, residue_label)
+            q_distance = float(np.linalg.norm(q_coords - self.center))
+
+            # Preserve the historical protocol: both terminal types were
+            # classified from the backbone N coordinate. Q's force-field rule
+            # above remains authoritative for actual exclusion.
+            anchor_name = "N"
+            anchor = group[group["atom_name"] == anchor_name]
+            if anchor.empty:
+                raise ValueError(
+                    f"Historical neutralization anchor {anchor_name} is missing from {residue_label}"
+                )
+            anchor_coords = anchor[["x", "y", "z"]].iloc[0].to_numpy(dtype=float)
+            anchor_distance = float(np.linalg.norm(anchor_coords - self.center))
+
+            if q_distance >= self.radius:
+                distance = q_distance
+                reference_kind = f"Q {q_reference}"
+            elif anchor_distance >= self.rest_bound:
+                distance = anchor_distance
+                reference_kind = f"historical anchor {anchor_name}"
+            else:
                 continue
 
             internal_name = self._terminal_neutral_form(terminal_name, terminal_charge)
@@ -975,9 +1040,10 @@ def parse_arguments() -> argparse.Namespace:
         default=3.0,
         help=(
             "Width of the outer SCAAS layer in which ionizable protein groups are neutralized. "
-            "Q's force-field switching atom or charge-group center is compared with "
-            "(radius - offset). Defaults to 3.0 Å, matching Q's water-polarization layer "
-            "and the QresFEP preparation protocol. Use 0 for qprep's nominal exclusion boundary."
+            "Q's force-field switch atom or charge-group center determines exclusion at the "
+            "sphere radius; Q-included groups are compared with (radius - offset) using the "
+            "protocol's historical ionizable-site anchor. Defaults to 3.0 Å. Use 0 to place "
+            "the protocol boundary at qprep's nominal exclusion boundary."
         ),
     )
     parser.add_argument(

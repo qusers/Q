@@ -62,9 +62,50 @@ class TestNeutralizationDefaults:
         )
         assert (result["residue_name"] == "GLH").all()
 
-    def test_cli_default_boundary_offset_is_three(self, monkeypatch):
+    def test_cli_default_protocol_layer_is_three_angstrom(self, monkeypatch):
         monkeypatch.setattr("sys.argv", ["qprep_prot", "-i", "protein.pdb"])
         assert parse_arguments().neutralize_boundary_offset == 3.0
+
+    def test_q_classifies_exclusion_then_historical_anchor_classifies_included_group(self):
+        neutralizer = Neutralizer(
+            (0, 0, 0), radius=25.0, boundary_offset=3.0, force_field="AMBER14sb"
+        )
+        q_group = neutralizer._formal_charge_group("ARG", +1)
+
+        def arg_at(*, q_x, anchor_x, residue_number):
+            other_q_x = (q_x * len(q_group) - anchor_x) / (len(q_group) - 1)
+            return [
+                _make_atom(
+                    "ATOM",
+                    residue_number * 100 + index,
+                    atom["name"],
+                    "ARG",
+                    "A",
+                    residue_number,
+                    anchor_x
+                    if atom["name"] == "CZ"
+                    else other_q_x
+                    if atom["name"] in q_group
+                    else 0.0,
+                    0.0,
+                    0.0,
+                    atom["name"][0],
+                )
+                for index, atom in enumerate(neutralizer.residue_library["ARG"]["atoms"], 1)
+            ]
+
+        # Q includes residues 1 and 2. Their CZ anchors, not charge-group centers,
+        # determine which one occupies the 22--25 A protocol layer. Q excludes
+        # residue 3 even though its CZ anchor lies inside the protocol boundary.
+        rows = arg_at(q_x=21.0, anchor_x=23.0, residue_number=1)
+        rows += arg_at(q_x=23.0, anchor_x=21.0, residue_number=2)
+        rows += arg_at(q_x=26.0, anchor_x=21.0, residue_number=3)
+        result, stats = neutralizer.neutralize_outside_residues_dataframe(pd.DataFrame(rows), 0.0)
+
+        names = result.groupby("residue_seq_number")["residue_name"].first().to_dict()
+        assert names == {1: "ARN", 2: "ARG", 3: "ARN"}
+        assert stats["modifications"]["A:1"]["boundary_reference"] == "historical anchor CZ"
+        assert stats["modifications"]["A:3"]["boundary_reference"] == "Q charge-group center"
 
     def test_legacy_parameter_file_defaults_to_switch_atoms(self, monkeypatch):
         monkeypatch.setattr("QligFEP.CLI.qprep_cli.parse_lib", lambda _: {})
@@ -114,18 +155,17 @@ class TestOPLSChargeGroupNeutralization:
     def test_uses_force_field_formal_charge_group_switch_atom(self, force_field, switch_atom):
         arg = _build_protein_residue("ARG", "A", 1, 0.0, 0.0, 0.0)
         if switch_atom != "CZ":
-            arg.append(_make_atom("ATOM", 111, switch_atom, "ARG", "A", 1, 23.0, 0.0, 0.0))
+            arg.append(_make_atom("ATOM", 111, switch_atom, "ARG", "A", 1, 26.0, 0.0, 0.0))
         else:
             for atom in arg:
                 if atom["atom_name"] == switch_atom:
-                    atom["x"] = 23.0
-
+                    atom["x"] = 26.0
         result, stats = Neutralizer(
             (0, 0, 0), radius=25.0, force_field=force_field
         ).neutralize_outside_residues_dataframe(pd.DataFrame(arg))
 
         assert (result["residue_name"] == "ARN").all()
-        assert stats["modifications"]["A:1"]["boundary_reference"] == f"switch atom {switch_atom}"
+        assert stats["modifications"]["A:1"]["boundary_reference"] == f"Q switch atom {switch_atom}"
 
     def test_does_not_use_whole_residue_centroid_with_switch_atoms(self):
         arg = _build_protein_residue("ARG", "A", 1, 30.0, 0.0, 0.0)
@@ -155,12 +195,55 @@ class TestOPLSChargeGroupNeutralization:
         assert neutralizer._terminal_neutral_form("CARG", terminal_charge=-1.0) == "ARN"
 
     @pytest.mark.parametrize(
+        ("charged_name", "neutral_name", "base_name", "charge"),
+        [
+            ("NAR+", "NARG", "ARG", +1),
+            ("CAR+", "CARG", "ARG", +1),
+            ("NLY+", "NLYS", "LYS", +1),
+            ("CLY+", "CLYS", "LYS", +1),
+        ],
+    )
+    def test_opls2005_charged_terminal_sidechain_uses_its_library_alias(
+        self, charged_name, neutral_name, base_name, charge
+    ):
+        neutralizer = Neutralizer((0, 0, 0), radius=25.0, force_field="OPLS2005")
+        markers = neutralizer._charged_heavy_atoms[base_name]
+        switch_atom = neutralizer._formal_charge_group(charged_name, charge, markers)[0]
+        rows = [
+            _make_atom(
+                "ATOM",
+                index,
+                atom["name"],
+                charged_name,
+                "A",
+                1,
+                26.0 if atom["name"] == switch_atom else 10.0,
+                0.0,
+                0.0,
+                atom["name"][0],
+            )
+            for index, atom in enumerate(neutralizer.residue_library[charged_name]["atoms"], 1)
+        ]
+
+        result, stats = neutralizer.neutralize_outside_residues_dataframe(pd.DataFrame(rows), 0.0)
+
+        assert (result["residue_name"] == neutral_name).all()
+        assert stats["final_total_charge"] == round(neutralizer._template_charge(neutral_name))
+        assert stats["modifications"]["A:1"]["boundary_reference"] == (
+            f"Q switch atom {switch_atom}"
+        )
+
+    @pytest.mark.parametrize(
         ("terminal_name", "neutral_name"),
         [
-            ("NGLU", "GLH"), ("CGLU", "GLH"),
-            ("NASP", "ASH"), ("CASP", "ASH"),
-            ("NARG", "ARN"), ("CARG", "ARN"),
-            ("NLYS", "LYN"), ("CLYS", "LYN"),
+            ("NGLU", "GLH"),
+            ("CGLU", "GLH"),
+            ("NASP", "ASH"),
+            ("CASP", "ASH"),
+            ("NARG", "ARN"),
+            ("CARG", "ARN"),
+            ("NLYS", "LYN"),
+            ("CLYS", "LYN"),
         ],
     )
     def test_opls2005_terminal_templates_without_sidechain_charge_are_not_classified(
@@ -480,6 +563,29 @@ class TestNeutralizerCTerminals:
         assert (result_df["residue_name"] == "CALA").all()
         assert "OXT" in result_df["atom_name"].values
 
+    def test_cterm_protocol_layer_preserves_historical_n_anchor(self):
+        rows = _build_cterm_residue("CALA", "A", 1, 23.0, 0.0, 0.0)
+        for atom in rows:
+            if atom["atom_name"] == "N":
+                atom["x"] = 21.0
+
+        result, _ = self._make_neutralizer().neutralize_outside_residues_dataframe(pd.DataFrame(rows))
+
+        assert (result["residue_name"] == "CALA").all()
+
+    def test_q_excluded_cterm_is_neutralized_even_when_historical_anchor_is_inside(self):
+        rows = _build_cterm_residue("CALA", "A", 1, 21.0, 0.0, 0.0)
+        for atom in rows:
+            if atom["atom_name"] != "N":
+                atom["x"] = 27.0
+
+        result, stats = Neutralizer(
+            (0, 0, 0), radius=25.0, force_field="AMBER14sb"
+        ).neutralize_outside_residues_dataframe(pd.DataFrame(rows))
+
+        assert (result["residue_name"] == "ALA").all()
+        assert stats["modifications"]["A:1"]["boundary_reference"] == "Q charge-group center"
+
     def test_cgly_outside_boundary_neutralized(self):
         """CGLY outside rest_bound should become GLY."""
         rows = _build_cterm_residue("CGLY", "B", 1, 30.0, 0.0, 0.0)
@@ -544,7 +650,7 @@ class TestCHARMMNeutralization:
 
         assert (result["residue_name"] == "LYN").all()
         assert "HZ3" not in result["atom_name"].values
-        assert stats["modifications"]["A:1"]["boundary_reference"] == "charge-group center"
+        assert stats["modifications"]["A:1"]["boundary_reference"] == "historical anchor NZ"
 
     def test_hip_uses_merged_integer_charge_group(self):
         first_group = ("CB", "HB1", "HB2", "CD2", "HD2", "CG")
@@ -554,7 +660,7 @@ class TestCHARMMNeutralization:
             for index, name in enumerate(first_group, 1)
         ]
         rows.extend(
-            _make_atom("ATOM", index, name, "HIP", "A", 1, 23.0, 0.0, 0.0, name[0])
+            _make_atom("ATOM", index, name, "HIP", "A", 1, 31.0, 0.0, 0.0, name[0])
             for index, name in enumerate(second_group, len(rows) + 1)
         )
 
@@ -563,7 +669,7 @@ class TestCHARMMNeutralization:
         ).neutralize_outside_residues_dataframe(pd.DataFrame(rows))
 
         assert (result["residue_name"] == "HID").all()
-        assert stats["modifications"]["A:1"]["boundary_reference"] == "charge-group center"
+        assert stats["modifications"]["A:1"]["boundary_reference"] == "Q charge-group center"
 
     def test_terminal_sidechain_is_classified_before_terminal_charge(self):
         neutralizer = Neutralizer((0, 0, 0), radius=25.0, force_field="CHARMM36")
