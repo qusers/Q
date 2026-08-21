@@ -67,15 +67,15 @@ __global__ void calc_radix_kernel(
     atomic_add_force(&dvelocities[oxygen_idx].z, dv * dz);
 }
 
-__global__ void prepare_wshells_kernel(int n_shells, bool update_theta_corr, shell_t* wshells) {
+__global__ void prepare_wshells_kernel(int n_shells, int itdis_update_steps, bool update_theta_corr, shell_t* wshells) {
     const int shell_idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (shell_idx >= n_shells) return;
 
     shell_t& shell = wshells[shell_idx];
 
     if (update_theta_corr) {
-        shell.avtheta /= static_cast<double>(itdis_update);
-        shell.avn_inshell /= static_cast<double>(itdis_update);
+        shell.avtheta /= static_cast<double>(itdis_update_steps);
+        shell.avn_inshell /= static_cast<double>(itdis_update_steps);
         shell.theta_corr += shell.avtheta - acos(shell.cstb);
 
         shell.avtheta = 0;
@@ -318,10 +318,11 @@ void CudaWaterBoundaryForce::calc_polx(Context& ctx, int iteration) {
     double* device_theta = data_.theta->gpu_data_p;
     int* device_list_sh = data_.list_sh->gpu_data_p;
 
-    const bool update_theta_corr = iteration != 0 && iteration % itdis_update == 0;
+    const int itdis_update_steps = ctx.md.hmr ? itdis_update / 2.0 : itdis_update;
+    const bool update_theta_corr = iteration != 0 && iteration % itdis_update_steps == 0;
     const int shell_blocks = (n_shells + kBlockSize - 1) / kBlockSize;
 
-    prepare_wshells_kernel<<<shell_blocks, kBlockSize>>>(n_shells, update_theta_corr, device_wshells);
+    prepare_wshells_kernel<<<shell_blocks, kBlockSize>>>(n_shells, itdis_update_steps, update_theta_corr, device_wshells);
 
     const int water_blocks = (ctx.n_waters() + kBlockSize - 1) / kBlockSize;
     calc_theta_and_shell_kernel<<<water_blocks, kBlockSize>>>(ctx.n_waters(),

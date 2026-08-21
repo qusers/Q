@@ -4,8 +4,7 @@
 
 namespace {
 __global__ void calc_leapfrog_kernel(
-    atype_t* atypes,
-    catype_t* catypes,
+    const double* winv,
     vel_t* velocities,
     dvel_t* dvelocities,
     coord_t* coords,
@@ -17,8 +16,7 @@ __global__ void calc_leapfrog_kernel(
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_atoms) return;
 
-    const double mass_i = catypes[atypes[i].code - 1].m;
-    const double winv_i = 1 / mass_i;
+    const double winv_i = winv[i];
     const double scale = (i < n_atoms_solute) ? temperature_results[R_TSCALE_SOL]
                                               : temperature_results[R_TSCALE_SLV];
 
@@ -56,8 +54,7 @@ __global__ void update_velocities_from_positions_kernel(
 }  // namespace
 
 void CudaIntegrator::step(Context& ctx) {
-    auto d_atypes = ctx.atypes->gpu_data_p;
-    auto d_catypes = ctx.catypes->gpu_data_p;
+    const auto* winv = ctx.winv->gpu_data_p;
     auto d_velocities = ctx.velocities->gpu_data_p;
     auto d_dvelocities = ctx.dvelocities->gpu_data_p;
     auto d_coords = ctx.coords->gpu_data_p;
@@ -68,7 +65,7 @@ void CudaIntegrator::step(Context& ctx) {
     int blockSize = 256;
     int numBlocks = (ctx.n_atoms + blockSize - 1) / blockSize;
     calc_leapfrog_kernel<<<numBlocks, blockSize>>>(
-        d_atypes, d_catypes, d_velocities, d_dvelocities,
+        winv, d_velocities, d_dvelocities,
         d_coords, d_xcoords, ctx.n_atoms, ctx.n_atoms_solute,
         d_temperature_results, ctx.dt);
 
