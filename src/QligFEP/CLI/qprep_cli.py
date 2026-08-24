@@ -8,7 +8,14 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from ..IO import get_force_field_paths, parse_lib, parse_prm_options, run_qprep
+from .. import sphere_prep
+from ..IO import (
+    get_force_field_paths,
+    parse_lib,
+    parse_prm_options,
+    parse_qprep_total_charge,
+    run_qprep,
+)
 from ..logger import logger, setup_logger
 from ..pdb_utils import (
     append_pdb_to_another,
@@ -1069,6 +1076,15 @@ def parse_arguments() -> argparse.Namespace:
             "downstream FEP setup."
         ),
     )
+    parser.add_argument(
+        "--strip-crystal-waters",
+        dest="strip_crystal_waters",
+        action="store_true",
+        help=(
+            "Remove crystallographic HOH residues before solvating. By default they are "
+            "preserved and qprep removes added solvent that overlaps them."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -1102,13 +1118,22 @@ def main(
 
     ff_lib_path, ff_prm_path = get_force_field_paths(args.FF)
 
-    # Step 1: Remove crystal waters first (they will be replaced by sphere waters)
+    # Keep crystallographic waters by default; qprep rejects added solvent that
+    # overlaps them.
     pdb_data = read_pdb_to_dataframe(pdb_file)
     crystal_waters_df = pdb_data.query("residue_name == 'HOH'")
     if not crystal_waters_df.empty:
-        logger.info(f"Removing {len(crystal_waters_df)} crystal water molecules")
-        pdb_data = pdb_data.query("residue_name != 'HOH'")
-        processing_steps.append("extracted waters to water.pdb")
+        water_keys = ["chain_id", "residue_seq_number", "insertion_code"]
+        crystal_water_count = len(crystal_waters_df[water_keys].drop_duplicates())
+        if getattr(args, "strip_crystal_waters", False):
+            logger.info(f"Removing {crystal_water_count} crystallographic water molecules")
+            pdb_data = pdb_data.query("residue_name != 'HOH'")
+            processing_steps.append("removed crystallographic waters")
+        else:
+            logger.info(
+                f"Preserving {crystal_water_count} crystallographic water molecules; "
+                "qprep will resolve overlaps with added solvent"
+            )
 
     # Step 2: Add cofactors if provided
     if args.cofactors:
@@ -1180,7 +1205,7 @@ def main(
     # Step 5: Reindex residues so that every residue has a unique number.
     # Q/qprep ignores chain IDs, so multi-chain systems (e.g. protein + DNA)
     # that reuse residue numbers across chains will collide without this step.
-    reindex_pdb_residues(processed_pdb_path, processed_pdb_path)
+    original_numbering = reindex_pdb_residues(processed_pdb_path, processed_pdb_path)
 
     # Step 6: Filter out-of-sphere molecular fragments (chains, cofactors, lipids)
     if not args.skip_fragment_filter:
@@ -1291,6 +1316,25 @@ def main(
     else:
         logger.info("All water molecules are inside the sphere radius.")
         logger.debug(f"Final highest distance to COG is {euclidean_distances.max():.2f} A")
+
+    # Persist the preparation metadata required by downstream QresFEP setup.
+    prep = sphere_prep.collect(
+        input_pdb=cwd / args.input_pdb_file,
+        prepared_pdb=processed_pdb_path,
+        force_field=args.FF,
+        center=cog,
+        radius=args.sphereradius,
+        total_charge=parse_qprep_total_charge(qprep_out_path),
+        cysbond_lines=cysbonds,
+        topology_pdb=cwd / "top_p.pdb",
+        original_numbering=original_numbering,
+        neutralization_offset=args.neutralize_boundary_offset,
+    )
+    prep_path = prep.write(cwd)
+    logger.info(
+        f"{prep_path.name} written: sphere charge {prep.total_charge:+d}, "
+        f"{len(prep.residues)} solute residues, {len(prep.disulfides)} disulfide(s)."
+    )
 
     return neutralization_stats
 

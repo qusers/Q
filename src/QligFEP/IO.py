@@ -198,7 +198,7 @@ charged_res = {"HIS": {"HD1": "HID", "HE2": "HIE"}, "GLU": {"HE2": "GLH"}, "ASP"
 def get_force_field_paths(force_field: str):
     """Return the paths to the .lib and .prm files for the given force field. Inputs can
     either be Path-like objects or strings, as for QligFEP-implemented forcefields (AMBER14sb,
-    CHARMM36, OPLS2005, OPLS2015).
+    CHARMM36, OPLS2005, OPLS2015, OPLSAAM).
 
     Args:
         force_field: Either a string with the name of the force field or a Path-like object
@@ -210,7 +210,7 @@ def get_force_field_paths(force_field: str):
     Returns:
         tuple: A tuple containing the paths to the .lib and .prm files.
     """
-    _available = ["AMBER14sb", "CHARMM36", "OPLS2005", "OPLS2015"]
+    _available = ["AMBER14sb", "CHARMM36", "OPLS2005", "OPLS2015", "OPLSAAM"]
     if force_field in _available:
         lib_file = CONFIGS["FF_DIR"] + "/" + force_field + ".lib"
         prm_file = CONFIGS["FF_DIR"] + "/" + force_field + ".prm"

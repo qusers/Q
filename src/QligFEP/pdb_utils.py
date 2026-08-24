@@ -569,7 +569,18 @@ def detect_chain_breaks(df: pd.DataFrame) -> set[int]:
     return ter_indices
 
 
-def reindex_pdb_residues(pdb_path: Path, out_pdb_path: Path):
+def reindex_pdb_residues(pdb_path: Path, out_pdb_path: Path) -> dict[int, tuple[int, str, str]]:
+    """Renumber every residue uniquely, in file order, and report what moved where.
+
+    Q/qprep ignores chain IDs, so multi-chain systems that reuse residue numbers across
+    chains collide without this step.
+
+    Returns:
+        ``{new_number: (original_number, chain, insertion_code)}``. Callers that need to
+        translate a user-supplied residue number (which is in the *original* numbering)
+        need this; it is the only record of the original numbers, which the rewritten
+        file no longer carries.
+    """
     pdb_df = read_pdb_to_dataframe(pdb_path)
     uniq_indexes = pdb_df.set_index(
         ["residue_seq_number", "residue_name", "chain_id", "insertion_code"]
@@ -578,6 +589,11 @@ def reindex_pdb_residues(pdb_path: Path, out_pdb_path: Path):
     pdb_df["residue_seq_number"] = uniq_indexes.map(resn_mapping)
     pdb_df["insertion_code"] = ""
     write_dataframe_to_pdb(pdb_df, str(out_pdb_path.resolve().absolute()))
+
+    return {
+        new: (int(original), str(chain).strip(), str(icode).strip())
+        for (original, _name, chain, icode), new in resn_mapping.items()
+    }
 
 
 def sdf_to_pdb(in_sdf_file, out_pdb_file):
@@ -686,15 +702,26 @@ def filter_pdb_by_sphere(
         # Build exclusion string for specified residues
         exclude_str = " or ".join([f"resname {r}" for r in exclude_residues]) if exclude_residues else None
 
-        # Select: (fragments touching sphere) PLUS (excluded residues that touch sphere)
-        # This ensures LIG/LID/HOH in sphere are kept, but their fragments don't pull in distant atoms
-        # MDAnalysis's "same fragment as" expands selection to complete connected molecules
+        # Keep complete fragments/residues that touch the sphere. For water, test
+        # the oxygen and then retain the molecule to avoid hydrogen-only residues.
         if exclude_str:
             # For non-excluded residues: keep whole fragment if any atom in sphere
-            # For excluded residues: only keep them if they're in sphere (no fragment expansion)
+            # For excluded residues: keep a complete residue without fragment expansion.
             non_excluded_in_sphere = f"(same fragment as (({volume_selection}) and not ({exclude_str})))"
-            excluded_in_sphere = f"(({exclude_str}) and ({volume_selection}))"
-            selection = f"{non_excluded_in_sphere} or {excluded_in_sphere}"
+            water_names = sorted(set(exclude_residues) & {"HOH", "SOL", "WAT", "TIP3", "T3P"})
+            other_names = sorted(set(exclude_residues) - set(water_names))
+            excluded_selections = []
+            if water_names:
+                water_str = " or ".join(f"resname {name}" for name in water_names)
+                excluded_selections.append(
+                    f"(same residue as (({water_str}) and name O and ({volume_selection})))"
+                )
+            if other_names:
+                other_str = " or ".join(f"resname {name}" for name in other_names)
+                excluded_selections.append(
+                    f"(same residue as (({other_str}) and ({volume_selection})))"
+                )
+            selection = " or ".join([non_excluded_in_sphere, *excluded_selections])
         else:
             selection = f"same fragment as ({volume_selection})"
 
