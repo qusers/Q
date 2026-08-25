@@ -79,6 +79,25 @@ class FepReader:
             )
             raise ValueError()
 
+    @staticmethod
+    def _read_fep_config(fep_dir: Path) -> dict:
+        """Read `inputfiles/fep_config.json`, the record of what the edge was asked for.
+
+        setupFEP writes it per edge beside the structures, so it survives a collection
+        that keeps only the results — unlike the `md*.inp` files the replicate count and
+        lambda windows used to be inferred from. Missing or unreadable is not an error:
+        the caller falls back on the directory tree.
+        """
+        config_path = fep_dir / "inputfiles" / "fep_config.json"
+        if not config_path.is_file():
+            return {}
+        try:
+            with config_path.open() as f:
+                return json.load(f)
+        except (OSError, ValueError) as e:
+            logger.warning(f"Could not read {config_path}: {e}")
+            return {}
+
     def _lig_names_from_FEPdir(self, fep_name: str):
         ligands = fep_name.removeprefix("FEP_")
         if len(ligands.split("_")) == 2:
@@ -145,17 +164,30 @@ class FepReader:
                 logger.warning(f"Multiple FEP files found in {fep}: {fep_files}!! Using the first...")
             fep_stage = fep_stages[0]
 
-            temperature = [d for d in (_dir / fep_stage).glob("*") if d.is_dir()][0].name
-            replicates = len([d for d in (_dir / fep_stage / temperature).iterdir() if d.is_dir()])
+            # Temperature and replicate count come from fep_config.json where it is
+            # present, because it records what the run was asked for rather than what
+            # is left on disk. Counting directories instead means a replicate that was
+            # never collected silently shrinks the denominator, and a crashed replicate
+            # stops being distinguishable from one that was never requested.
+            config = self._read_fep_config(_dir)
+            temperature = config.get("temperature")
+            replicates = int(config["replicates"]) if config.get("replicates") else None
+            if temperature is None:
+                temperature = [d for d in (_dir / fep_stage).glob("*") if d.is_dir()][0].name
+            if replicates is None:
+                replicates = len([d for d in (_dir / fep_stage / temperature).iterdir() if d.is_dir()])
 
             if self.n_lambdas is None:
                 inputs = sorted(list(_dir.glob("inputfiles/md*.inp")))
                 if len(inputs) == 0:
-                    logger.error(
-                        f"No input files found in {fep}. If this is a backed up system without input files "
-                        ", consider passing the argument --n_lambdas (-lamb) to qligfepA"
+                    # A collected run keeps no .inp files; lambda_sum stays unknown and
+                    # calculate_ddG skips the check that is the only thing reading it.
+                    logger.debug(
+                        f"No input files found in {fep}; lambda_sum unknown. Pass --n_lambdas (-lamb) "
+                        "to qligfepA if it is needed."
                     )
-                self.n_lambdas = len(fep_files) * (len(inputs) - 1)
+                else:
+                    self.n_lambdas = len(fep_files) * (len(inputs) - 1)
 
             # register the ligand names in the dictionary for further results analysis
             _from, _to = self._lig_names_from_FEPdir(fep)
@@ -168,6 +200,7 @@ class FepReader:
                         "replicates": replicates,
                         "from": _from,
                         "to": _to,
+                        "config": config,
                     }
                 )
             except UnboundLocalError as e:
@@ -196,9 +229,18 @@ class FepReader:
         """
         failed_replicate = []
         qEnergies, q_dgBAR = None, None
-        if qfep_repli_path.stat().st_size == 0:  # if the file is empty, try runnign qfep again
-            logger.warning(f"Empty qfep.out file: {qfep_repli_path}. Trying to run qfep again...")
-            self.run_qfep(qfep_repli_path)
+        if qfep_repli_path.stat().st_size == 0:
+            # Re-running qfep is only possible where the sampling is still on disk. A
+            # collected run keeps qfep.out and drops the .en files, so there is nothing
+            # for qfep to read and an empty qfep.out means the replicate crashed.
+            if any(qfep_repli_path.parent.glob("*.en")):
+                logger.warning(f"Empty qfep.out file: {qfep_repli_path}. Trying to run qfep again...")
+                self.run_qfep(qfep_repli_path)
+            else:
+                logger.warning(
+                    f"Empty qfep.out file and no energy files beside it: {qfep_repli_path}. "
+                    "Counting the replicate as crashed."
+                )
         logger.debug(f"    Reading qfep.out file: {qfep_repli_path}")
         repID = int(qfep_repli_path.parent.name)
         try:
@@ -273,19 +315,11 @@ class FepReader:
                 list(replicate_root.glob("*/qfep.out")), key=lambda x: int(x.parent.name)
             )
 
-            # deal with missing qfep.out files
             if len(replicate_qfep_files) < n_replicates:
                 logger.warning(
-                    "Not all replicates have qfep.out files in the directory. Creating empty files..."
+                    f"{fep} ({self.system}): {len(replicate_qfep_files)} of {n_replicates} replicates "
+                    "have a qfep.out; the rest count as crashed."
                 )
-                for i in range(1, n_replicates + 1):
-                    if not (replicate_root / str(i) / "qfep.out").exists():
-                        (replicate_root / str(i) / "qfep.out").touch()
-                replicate_qfep_files = sorted(
-                    list(replicate_root.glob("*/qfep.out")), key=lambda x: int(x.parent.name)
-                )
-                logger.info(f"Created {n_replicates} empty qfep.out files in {replicate_root}")
-                logger.debug("Files created:\n" + "\n".join([str(f) for f in replicate_qfep_files]))
 
             # handle slurm.out run: data collection
             if add_run_data:
@@ -333,9 +367,16 @@ class FepReader:
             failed_replicates = []
             all_replicates = [i for i in range(1, int(fep_dict["replicates"]) + 1)]
 
-            # Process each replicate's energy data
-            for rep in replicate_qfep_files:
-                repID = int(rep.parent.name)
+            # Iterate over the replicates that were asked for rather than over the files
+            # that happen to be there, so a replicate with no qfep.out at all lands in
+            # CrashedReplicates instead of disappearing from the average.
+            for repID in all_replicates:
+                rep = replicate_root / str(repID) / "qfep.out"
+                if not rep.is_file():
+                    logger.warning(f"No qfep.out for replicate {repID} of {fep} ({self.system})")
+                    failed_replicates.append(repID)
+                    energies[repID] = np.array([np.nan] * len(self.methods_list))
+                    continue
                 replicate_energies, failed, qEnergies, q_dgBAR = self.read_single_replicate(rep)
                 if qEnergies is not None:
                     self.verbose_qEnergies.append(
@@ -354,11 +395,24 @@ class FepReader:
                 method_idx = self.methods_list.index(mname)
                 method_energies = np.array([energies[repID][method_idx] for repID in all_replicates])
                 all_energies_arr.append(", ".join([f"{n:.3f}" for n in method_energies]))
+                # Divide by the replicates that produced a value, not by the ones that
+                # were asked for. nanstd already ignores the crashed entries; leaving
+                # them in the divisor shrank the standard error of precisely the edges
+                # that deserved a larger one.
+                usable = int(np.count_nonzero(~np.isnan(method_energies)))
+                if usable == 0:
+                    avg = std = sem = float("nan")
+                else:
+                    avg = float(np.nanmean(method_energies))
+                    std = float(np.nanstd(method_energies))
+                    sem = float(std / np.sqrt(usable))
                 method_results[mname] = {
                     "energies": method_energies.tolist(),
-                    "avg": np.nanmean(method_energies),
-                    "sem": float(np.nanstd(method_energies) / np.sqrt(method_energies.shape)),
-                    "std": np.nanstd(method_energies),
+                    "avg": avg,
+                    "sem": sem,
+                    "std": std,
+                    "usable": usable,
+                    "total": len(all_replicates),
                 }
             logger.debug("energies:\n" + "\n".join(all_energies_arr))
 
@@ -385,7 +439,6 @@ class FepReader:
             protein_sys: name of the protein system that was read. Defaults to '2.protein'.
         """
         self.create_result_key()
-        systems = [water_sys, protein_sys]
         # assert both systems have the same FEPs
         prot_feps = sorted([k for k in self.data[protein_sys]])
         water_feps = sorted([k for k in self.data[water_sys]])
@@ -396,17 +449,37 @@ class FepReader:
             w_result = w_fep["FEP_result"]
             p_result = p_fep["FEP_result"]
 
-            for _sys in systems:
-                # check for inconsistencies
-                if w_fep["fep_stage"] != p_fep["fep_stage"]:
-                    logger.error(f"FEP stages do not match between water/{fep} and protein/{fep}.")
-                    continue
-                if w_fep["temperature"] != p_fep["temperature"]:
-                    logger.error(f"Temperatures do not match between water/{fep} and protein/{fep}.")
-                    continue
-                if w_fep["lambda_sum"] != p_fep["lambda_sum"]:
-                    logger.error(f"Lambda sums do not match between water/{fep} and protein/{fep}.")
-                    continue
+            # Check the two legs describe the same calculation before subtracting one
+            # from the other. These used to run inside a loop over the systems, where
+            # `continue` moved to the next system rather than the next edge, so a
+            # mismatch was logged and then used anyway.
+            mismatch = None
+            if w_fep["fep_stage"] != p_fep["fep_stage"]:
+                mismatch = "FEP stages"
+            elif w_fep["temperature"] != p_fep["temperature"]:
+                mismatch = "temperatures"
+            elif (
+                w_fep["lambda_sum"] is not None
+                and p_fep["lambda_sum"] is not None
+                and w_fep["lambda_sum"] != p_fep["lambda_sum"]
+            ):
+                mismatch = "lambda sums"
+            else:
+                # lambda_sum is unknown for a collected run, which keeps no .inp files.
+                # fep_config.json is the better witness anyway: it records what each leg
+                # was asked for, which is what has to agree.
+                differing = [
+                    key
+                    for key in ("replicates", "sampling", "start", "FF", "sphereradius", "timestep")
+                    if key in w_fep.get("config", {})
+                    and key in p_fep.get("config", {})
+                    and w_fep["config"][key] != p_fep["config"][key]
+                ]
+                if differing:
+                    mismatch = f"run parameters ({', '.join(differing)})"
+            if mismatch is not None:
+                logger.error(f"{mismatch} do not match between water/{fep} and protein/{fep}. Skipping.")
+                continue
 
             for method in w_result:
                 delta_method = f"d{method}"
