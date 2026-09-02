@@ -215,7 +215,6 @@ void CpuNonbondedForce::init_exact_atom_pairs(Context& ctx) {
     const auto& groups = ctx.charge_group_config.charge_groups;
     const int n_groups = groups.size();
 
-    const auto* atom_to_group = data_.atom_to_group->cpu_data_p;
 
     exact_atom_pairs_.clear();
 
@@ -313,7 +312,6 @@ void CpuNonbondedForce::calc_exact_pairs(Context& ctx) {
 }
 
 void CpuNonbondedForce::init_backend(Context& ctx) {
-    slots_by_atom_.assign(ctx.n_atoms, std::vector<int>{});
 
     const int* atom_indices = data_.atom_idx->cpu_data_p;
     const uint8_t* categories = data_.category->cpu_data_p;
@@ -321,6 +319,7 @@ void CpuNonbondedForce::init_backend(Context& ctx) {
     constexpr uint8_t P = static_cast<uint8_t>(AtomCategory::P);
     constexpr uint8_t W = static_cast<uint8_t>(AtomCategory::W);
 
+    slots_by_atom_.assign(ctx.n_atoms, std::vector<int>{});
     for (int slot = 0; slot < data_.n_total; ++slot) {
         const int atom = atom_indices[slot];
         if (atom < 0) continue;
