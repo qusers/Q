@@ -140,6 +140,25 @@ void CpuNonbondedForce::init_calculation_groups(Context& ctx) {
         return switch_atom >= 0 && switch_atom < ctx.n_atoms && !excluded[switch_atom];
     };
 
+    const double rcq2 = ctx.md.q_atom * ctx.md.q_atom;
+    const coord_t& solute_center = ctx.topo.solute_center;
+    auto inside_rcq = [&](int group) {
+        const bool solvent_group = group >= n_solute_groups;
+
+        if (solvent_group || config.iuse_switch_atom == 1) {
+            const int switch_atom = groups[group].iswitch - 1;
+            return norm2(coords[switch_atom] - solute_center) <= rcq2;
+        } else {
+            for (int atom_1based : groups[group].atoms) {
+                const int atom = atom_1based - 1;
+                if (norm2(coords[atom] - solute_center) <= rcq2) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    };
+
     const double lrf_cutoff2 = ctx.md.lrf_cutoff * ctx.md.lrf_cutoff;
 
     exact_calculation_groups_.clear();
@@ -147,22 +166,41 @@ void CpuNonbondedForce::init_calculation_groups(Context& ctx) {
 
     for (int i = 0; i < n_groups; i++) {
         if (!group_is_active(i)) continue;
+        const int atom1_iswitch = groups[i].iswitch - 1;
+        const int atom1_iswitch_type = data_.category->cpu_data_p[slots_by_atom_[atom1_iswitch][0]];
+        const bool atom1_iswitch_is_q = atom1_iswitch_type == static_cast<uint8_t>(AtomCategory::Q);
+
         for (int j = i; j < n_groups; j++) {
             if (!group_is_active(j)) continue;
+            const int atom2_iswitch = groups[j].iswitch - 1;
+            const int atom2_iswitch_type = data_.category->cpu_data_p[slots_by_atom_[atom2_iswitch][0]];
+            const bool atom2_iswitch_is_q = atom2_iswitch_type == static_cast<uint8_t>(AtomCategory::Q);
 
-            const double distance2 = group_distance2(i, j);
-            const double cutoff = normal_cutoff(i, j);
-            const double cutoff2 = cutoff * cutoff;
-
-            if (distance2 <= cutoff2) {
-                // need to calculate each pair
+            if (atom1_iswitch_is_q && atom2_iswitch_is_q) {
                 exact_calculation_groups_.push_back({i, j});
-            } else if (distance2 <= lrf_cutoff2) {
-                // need to use lrf
-                lrf_calculation_groups_.push_back({i, j});
-            } else {
-                // ignore
                 continue;
+            }
+            if (atom1_iswitch_is_q || atom2_iswitch_is_q) {
+                const int environment_group = atom1_iswitch_is_q ? j : i;
+                bool inside = inside_rcq(environment_group);
+                if (inside) {
+                    exact_calculation_groups_.push_back({i, j});
+                }
+            } else {
+                const double distance2 = group_distance2(i, j);
+                const double cutoff = normal_cutoff(i, j);
+                const double cutoff2 = cutoff * cutoff;
+
+                if (distance2 <= cutoff2) {
+                    // need to calculate each pair
+                    exact_calculation_groups_.push_back({i, j});
+                } else if (distance2 <= lrf_cutoff2) {
+                    // need to use lrf
+                    lrf_calculation_groups_.push_back({i, j});
+                } else {
+                    // ignore
+                    continue;
+                }
             }
         }
     }
@@ -179,15 +217,6 @@ void CpuNonbondedForce::init_exact_atom_pairs(Context& ctx) {
 
     const auto* atom_to_group = data_.atom_to_group->cpu_data_p;
 
-    // Dense lookup table for exact charge-group pairs.
-    std::vector<uint8_t> is_exact_group_pair(static_cast<size_t>(n_groups) * n_groups, 0);
-
-    for (const auto& pair : exact_calculation_groups_) {
-        is_exact_group_pair[static_cast<size_t>(pair.first) * n_groups + pair.second] = 1;
-
-        is_exact_group_pair[static_cast<size_t>(pair.second) * n_groups + pair.first] = 1;
-    }
-
     exact_atom_pairs_.clear();
 
     const int* atom_indices = data_.atom_idx->cpu_data_p;
@@ -196,72 +225,25 @@ void CpuNonbondedForce::init_exact_atom_pairs(Context& ctx) {
 
     constexpr uint8_t Q = static_cast<uint8_t>(AtomCategory::Q);
 
-    const double rcq2 = ctx.md.q_atom * ctx.md.q_atom;
-    const coord_t& solute_center = ctx.topo.solute_center;
     const auto& config = ctx.charge_group_config;
     const coord_t* coords = ctx.coords->cpu_data_p;
 
-    auto inside_rcq = [&](int atom, uint8_t category) {
-        if (category == static_cast<uint8_t>(AtomCategory::W)) {
-            const int water_offset = atom - ctx.n_atoms_solute;
-            const int water_oxygen = ctx.n_atoms_solute + (water_offset / 3) * 3;
-            return norm2(coords[water_oxygen] - solute_center) <= rcq2;
-        } else if (category == static_cast<uint8_t>(AtomCategory::P)) {
-            const int group = atom_to_group[atom];
-            if (group < 0) return false;
-            if (config.iuse_switch_atom == 1) {
-                const int switch_atom = groups[group].iswitch - 1;
-                return norm2(coords[switch_atom] - solute_center) <= rcq2;
-            }
-            for (int atom_1based : groups[group].atoms) {
-                const int group_atom = atom_1based - 1;
-                if (norm2(coords[group_atom] - solute_center) <= rcq2) {
-                    return true;
+    for (const auto& pair : exact_calculation_groups_) {
+        auto [group1, group2] = pair;
+
+        for (int atom1_1based : groups[group1].atoms) {
+            int atom1 = atom1_1based - 1;
+
+            for (int atom2_1based : groups[group2].atoms) {
+                int atom2 = atom2_1based - 1;
+                if (group1 == group2 && atom1 >= atom2) continue;
+
+                for (auto slot1 : slots_by_atom_[atom1]) {
+                    for (auto slot2 : slots_by_atom_[atom2]) {
+                        exact_atom_pairs_.push_back({slot1, slot2});
+                    }
                 }
             }
-            return false;
-        }
-        return true;
-    };
-
-    for (int slot1 = 0; slot1 < data_.n_total; slot1++) {
-        const int atom1 = atom_indices[slot1];
-        if (atom1 < 0) continue;
-
-        const bool atom1_is_q = categories[slot1] == Q;
-        for (int slot2 = slot1 + 1; slot2 < data_.n_total; slot2++) {
-            const int atom2 = atom_indices[slot2];
-            if (atom2 < 0 || atom1 == atom2) continue;
-
-            const bool atom2_is_q = categories[slot2] == Q;
-
-            bool calculate_directly = false;
-
-            if (atom1_is_q && atom2_is_q) {
-                calculate_directly = true;
-            } else if (atom1_is_q || atom2_is_q) {
-                /*
-                 * LRF excludes Q atoms. Preserve the current QGPU behavior by
-                 * calculating every Q-containing interaction directly.
-                 */
-                const int environment_atom = atom1_is_q ? atom2 : atom1;
-                const uint8_t environment_category = atom1_is_q ? categories[slot2] : categories[slot1];
-                calculate_directly = inside_rcq(environment_atom, environment_category);
-
-            } else {
-                const int group1 = atom_to_group[atom1];
-                const int group2 = atom_to_group[atom2];
-
-                if (group1 < 0 || group2 < 0) {
-                    continue;
-                }
-
-                calculate_directly = is_exact_group_pair[static_cast<size_t>(group1) * n_groups + group2] != 0;
-            }
-
-            if (!calculate_directly) continue;
-
-            exact_atom_pairs_.push_back({slot1, slot2});
         }
     }
 }
@@ -331,7 +313,7 @@ void CpuNonbondedForce::calc_exact_pairs(Context& ctx) {
 }
 
 void CpuNonbondedForce::init_backend(Context& ctx) {
-    non_q_slot_by_atom_.assign(ctx.n_atoms, -1);
+    slots_by_atom_.assign(ctx.n_atoms, std::vector<int>{});
 
     const int* atom_indices = data_.atom_idx->cpu_data_p;
     const uint8_t* categories = data_.category->cpu_data_p;
@@ -342,10 +324,7 @@ void CpuNonbondedForce::init_backend(Context& ctx) {
     for (int slot = 0; slot < data_.n_total; ++slot) {
         const int atom = atom_indices[slot];
         if (atom < 0) continue;
-
-        if (categories[slot] == P || categories[slot] == W) {
-            non_q_slot_by_atom_[atom] = slot;
-        }
+        slots_by_atom_[atom].push_back(slot);
     }
 }
 
@@ -379,8 +358,7 @@ void CpuNonbondedForce::init_lrf_coefficients(Context& ctx) {
 
         for (int atom_1based : groups[source_group].atoms) {
             const int atom = atom_1based - 1;
-            const int slot = non_q_slot_by_atom_[atom];
-            if (slot < 0) continue;
+            const int slot = slots_by_atom_[atom][0];  // Only P or W atoms will be in lrf.
             accumulate_lrf_source(target, coords[atom], charges[slot]);
         }
     };

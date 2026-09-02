@@ -22,5 +22,5 @@ class CpuNonbondedForce final : public NonbondedForce {
     std::vector<std::pair<int, int>> exact_calculation_groups_, lrf_calculation_groups_;
     std::vector<std::pair<int, int>> exact_atom_pairs_;
     std::vector<LrfCoefficients> lrf_coefficients_;
-    std::vector<int> non_q_slot_by_atom_;
+    std::vector<std::vector<int>> slots_by_atom_;
 };
