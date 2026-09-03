@@ -11,7 +11,25 @@ void NonbondedForce::init(Context& ctx) {
     build_combinded_list(ctx);
     build_charge_table(ctx);
     build_catype_table(ctx);
+    build_atom_to_group(ctx);
     init_backend(ctx);
+}
+
+void NonbondedForce::build_atom_to_group(Context& ctx) {
+    const auto& groups = ctx.charge_group_config.charge_groups;
+    const int n_groups = groups.size();
+
+    std::vector<int> atom_to_group(ctx.n_atoms, -1);
+    for (int group = 0; group < n_groups; group++) {
+        for (int atom_1based : groups[group].atoms) {
+            const int atom = atom_1based - 1;
+
+            if (atom >= 0 && atom < ctx.n_atoms) {
+                atom_to_group[atom] = group;
+            }
+        }
+    }
+    data_.atom_to_group = HostDeviceBuffer<int>::from_vector(atom_to_group, ctx.command_info.requested_gpu);
 }
 
 void NonbondedForce::build_combinded_list(Context& ctx) {
