@@ -4,6 +4,18 @@
 
 namespace {
 
+__device__ int get_pair_index(
+    int n,
+    int group1,
+    int group2) {
+    const int x = min(group1, group2);
+    const int y = max(group1, group2);
+
+    // Row x starts after:
+    // n + (n-1) + ... + (n-x+1)
+    return x * n - (x * (x + 1)) / 2 + y;
+}
+
 __device__ int2 get_tile_idx(int n, int t) {
     int x = (int)floorf((2 * n + 1 - sqrtf((2 * n + 1) * (2 * n + 1) - 8 * t)) * 0.5f);
     int y = t - (x * n - (x * (x - 1) >> 1));
@@ -330,13 +342,14 @@ __device__ void accumulate_lrf_direction(
 }
 
 __global__ void build_lrf_coefficients_kernel(
-    int n_lrf_pairs,
+    int n_group_ranges,
 
-    const LrfPairEntry* lrf_pairs,
-
+    const uint8_t* group_pair_modes,
+    const int* group_indices,
     const int* group_start_idx,
     const int* group_sizes,
 
+    const uint8_t* category,
     const real_t* atom_charge,
 
     const real_t* cx,
@@ -344,53 +357,171 @@ __global__ void build_lrf_coefficients_kernel(
     const real_t* cz,
 
     LrfCoefficients* coefficients) {
+    constexpr unsigned FULL_MASK = 0xffffffffu;
+
+    const int lane = threadIdx.x & 31;
     const int warp_in_block = threadIdx.x >> 5;
-
     const int warps_per_block = blockDim.x >> 5;
+    const int target_range = blockIdx.x * warps_per_block + warp_in_block;
 
-    const int warp_index = blockIdx.x * warps_per_block + warp_in_block;
-
-    if (warp_index >= n_lrf_pairs) {
+    if (target_range >= n_group_ranges) {
         return;
     }
+    const int target_start = group_start_idx[target_range];
+    const uint8_t target_category = category[target_start];
 
-    const LrfPairEntry pair = lrf_pairs[warp_index];
+    constexpr uint8_t P = static_cast<uint8_t>(AtomCategory::P);
+    constexpr uint8_t W = static_cast<uint8_t>(AtomCategory::W);
+    if (target_category != P && target_category != W) {
+        return;
+    }
+    const int target_group = group_indices[target_range];
+    const coord_t target_center = coefficients[target_group].center;
 
-    /*
-     * source group1 contributes to the expansion around
-     * target group2's center.
-     */
-    accumulate_lrf_direction(
-        pair.range1,
-        pair.group2,
+    double local_phi0 = 0.0;
+    double local_phi1[3] = {};
+    double local_phi2[9] = {};
+    double local_phi3[27] = {};
 
-        group_start_idx,
-        group_sizes,
+    for (int source_range = 0; source_range < n_group_ranges; ++source_range) {
+        const int pair_index = get_pair_index(n_group_ranges, target_range, source_range);
+        if (group_pair_modes[pair_index] != GROUP_PAIR_LRF) {
+            continue;
+        }
 
-        atom_charge,
-        cx,
-        cy,
-        cz,
+        const int source_start = group_start_idx[source_range];
+        const int source_size = group_sizes[source_range];
 
-        coefficients);
+        for (int local_atom = lane; local_atom < source_size; local_atom += 32) {
+            const int slot = source_start + local_atom;
 
-    /*
-     * source group2 contributes to the expansion around
-     * target group1's center.
-     */
-    accumulate_lrf_direction(
-        pair.range2,
-        pair.group1,
+            const double charge = static_cast<double>(atom_charge[slot]);
 
-        group_start_idx,
-        group_sizes,
+            const double rx = static_cast<double>(cx[slot]) - target_center.x;
+            const double ry = static_cast<double>(cy[slot]) - target_center.y;
+            const double rz = static_cast<double>(cz[slot]) - target_center.z;
 
-        atom_charge,
-        cx,
-        cy,
-        cz,
+            const double r[3] = {rx, ry, rz};
 
-        coefficients);
+            const double r2 = rx * rx + ry * ry + rz * rz;
+
+            /*
+             * A valid LRF pair should never contain the target group
+             * itself, but guard against singular input anyway.
+             */
+            if (r2 == 0.0) {
+                continue;
+            }
+
+            const double inv_r = rsqrt(r2);
+            const double inv_r2 = 1.0 / r2;
+            const double inv_r3 = inv_r * inv_r2;
+            const double inv_r5 = inv_r3 * inv_r2;
+            const double inv_r7 = inv_r5 * inv_r2;
+
+            /*
+             * phi0 = sum(q/r)
+             */
+            local_phi0 += charge * inv_r;
+
+            /*
+             * phi1[a] = sum(-q*r[a]/r^3)
+             */
+#pragma unroll
+            for (int a = 0; a < 3; ++a) {
+                local_phi1[a] -= charge * r[a] * inv_r3;
+            }
+
+            /*
+             * phi2[a,b] =
+             * q * (3*r[a]*r[b]/r^5 - delta[a,b]/r^3)
+             */
+#pragma unroll
+            for (int a = 0; a < 3; ++a) {
+#pragma unroll
+                for (int b = 0; b < 3; ++b) {
+                    const int index = a * 3 + b;
+                    const double delta_ab = a == b ? 1.0 : 0.0;
+
+                    local_phi2[index] += charge * (3.0 * r[a] * r[b] * inv_r5 - delta_ab * inv_r3);
+                }
+            }
+
+            /*
+             * phi3[a,b,c] =
+             * q * (
+             *   3*(delta_ab*r[c] +
+             *      delta_ac*r[b] +
+             *      delta_bc*r[a])/r^5
+             *   - 15*r[a]*r[b]*r[c]/r^7
+             * )
+             */
+#pragma unroll
+            for (int a = 0; a < 3; ++a) {
+#pragma unroll
+                for (int b = 0; b < 3; ++b) {
+#pragma unroll
+                    for (int c = 0; c < 3; ++c) {
+                        const int index = (a * 3 + b) * 3 + c;
+
+                        const double delta_ab = a == b ? 1.0 : 0.0;
+                        const double delta_ac = a == c ? 1.0 : 0.0;
+                        const double delta_bc = b == c ? 1.0 : 0.0;
+
+                        const double v1 = 3.0 * (delta_ab * r[c] + delta_ac * r[b] + delta_bc * r[a]) * inv_r5;
+
+                        const double v2 = -15.0 * r[a] * r[b] * r[c] * inv_r7;
+
+                        local_phi3[index] += charge * (v1 + v2);
+                    }
+                }
+            }
+        }
+    }
+
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        local_phi0 += __shfl_down_sync(FULL_MASK, local_phi0, offset);
+
+#pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            local_phi1[i] += __shfl_down_sync(FULL_MASK, local_phi1[i], offset);
+        }
+
+#pragma unroll
+        for (int i = 0; i < 9; ++i) {
+            local_phi2[i] += __shfl_down_sync(FULL_MASK, local_phi2[i], offset);
+        }
+
+#pragma unroll
+        for (int i = 0; i < 27; ++i) {
+            local_phi3[i] += __shfl_down_sync(FULL_MASK, local_phi3[i], offset);
+        }
+    }
+
+    if (lane == 0) {
+        LrfCoefficients& output = coefficients[target_group];
+
+        /*
+         * Do not overwrite output.center, which was initialized by
+         * compute_lrf_centers_kernel().
+         */
+        output.phi0 = local_phi0;
+
+#pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            output.phi1[i] = local_phi1[i];
+        }
+
+#pragma unroll
+        for (int i = 0; i < 9; ++i) {
+            output.phi2[i] = local_phi2[i];
+        }
+
+#pragma unroll
+        for (int i = 0; i < 27; ++i) {
+            output.phi3[i] = local_phi3[i];
+        }
+    }
 }
 
 __global__ void calc_lrf_kernel(
@@ -1065,23 +1196,26 @@ void CudaNonbondedForce::init_lrf_coefficients(Context& ctx) {
         check_cuda(cudaGetLastError());
     }
     if (n_lrf_pairs_ > 0) {
-        const int coefficient_grid = (n_lrf_pairs_ + warps_per_block - 1) / warps_per_block;
+        const int coefficient_grid = (n_group_ranges + warps_per_block - 1) / warps_per_block;
 
         build_lrf_coefficients_kernel<<<coefficient_grid, thread_num>>>(
-            n_lrf_pairs_,
+            n_group_ranges,
 
-            lrf_group_pairs_->gpu_data_p,
-
+            group_pair_modes_->gpu_data_p,
+            data_.group_indices->gpu_data_p,
             data_.group_start_idx->gpu_data_p,
             data_.group_sizes->gpu_data_p,
 
+            data_.category->gpu_data_p,
             data_.atom_charge->gpu_data_p,
 
             coord_x_->gpu_data_p,
             coord_y_->gpu_data_p,
             coord_z_->gpu_data_p,
 
-            lrf_coefficients_->gpu_data_p);
+            lrf_coefficients_->gpu_data_p
+
+        );
 
         check_cuda(cudaGetLastError());
     }
