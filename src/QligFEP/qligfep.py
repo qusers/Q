@@ -53,6 +53,34 @@ WATER_ATOM_TYPES = {
 TIP3P_CHARGE_O = -0.834
 TIP3P_CHARGE_H = 0.417
 
+
+def nonlinear_softcore_activation(change_vdw) -> dict[int, tuple[int, int]]:
+    """Map endpoint atom types to real-state nonlinear softcore activation flags.
+
+    A state is enabled only when its atom is real and the other endpoint is
+    DUM. Real-to-real mutations and DUM-to-DUM placeholders remain hard/off.
+    """
+    activation = {}
+    for q_idx, type_s1, type_s2 in change_vdw:
+        real_s1 = type_s1 != "DUM"
+        real_s2 = type_s2 != "DUM"
+        activation[int(q_idx)] = (
+            int(real_s1 and not real_s2),
+            int(real_s2 and not real_s1),
+        )
+    return activation
+
+
+def adjacent_state2_lambdas(lambda1: str, lambda2: str, lambdas: list[str]) -> list[str]:
+    """Return previous/current/next state-2 weights for a two-state schedule."""
+    pairs = list(zip(lambdas, reversed(lambdas)))
+    try:
+        index = pairs.index((lambda1, lambda2))
+    except ValueError as exc:
+        raise ValueError(f"lambda pair {(lambda1, lambda2)} is absent from the FEP schedule") from exc
+    return [pairs[i][1] for i in range(max(0, index - 1), min(len(pairs), index + 2))]
+
+
 CHLORIDE_NAME = {
     "AMBER14sb": "CHL",
     "OPLS2015": "CLA",
@@ -125,10 +153,16 @@ class QligFEP:
         charge_method: str = "ion_match",
         minimize: bool = False,
         production: bool = False,
+        softcore_method: str = "standard",
     ):
         self.timestep = timestep
         self.minimize = minimize
         self.production = production
+        if softcore_method not in {"standard", "beutler", "gapsys"}:
+            raise ValueError(f"Unsupported softcore method: {softcore_method}")
+        if softcore_method in {"gapsys", "beutler"} and neq:
+            raise ValueError(f"{softcore_method} currently supports equilibrium FEP only")
+        self.softcore_method = softcore_method
         self.lig1 = lig1
         self.lig2 = lig2
         self.FF = FF
@@ -138,7 +172,7 @@ class QligFEP:
         self.cluster = cluster
         self.sphereradius = sphereradius
         self.cysbond = cysbond
-        self.start = start
+        self.start = "1" if start == "0.0" else start
         self.include = ["ATOM", "HETATM"]
         self.temperature = temperature
         self.replicates = replicates
@@ -433,8 +467,15 @@ class QligFEP:
         return FEP_vdw
 
     def write_FEP_file(
-        self, change_charges, change_vdw, FEP_vdw, writedir, lig_size1, lig_size2, softcore_method="standard"
+        self, change_charges, change_vdw, FEP_vdw, writedir, lig_size1, lig_size2, softcore_method=None
     ):
+        if softcore_method is None:
+            softcore_method = self.softcore_method
+        if softcore_method not in {"standard", "beutler", "gapsys"}:
+            raise ValueError(f"Unsupported softcore method: {softcore_method}")
+        if softcore_method in {"gapsys", "beutler"} and self.neq:
+            raise ValueError(f"{softcore_method} currently supports equilibrium FEP only")
+        self.softcore_method = softcore_method
         lig_size1 = int(lig_size1)
         lig_size2 = int(lig_size2)
         lig_tot = lig_size1 + lig_size2
@@ -448,6 +489,9 @@ class QligFEP:
             .shape[0]
         )
 
+        if softcore_method in {"gapsys", "beutler"} and (self.counter_water_atoms or self.counter_ion_vdw):
+            raise ValueError(f"{softcore_method} has not yet been validated for charge-changing counter transformations")
+
         # Counter-water Q-atom topology indices (3 per counter-water). Empty
         # unless place_counter_water() populated them (Method 3 only).
         cw_topo_indices = []
@@ -460,7 +504,11 @@ class QligFEP:
             outfile.write("!info: " + self.lig1 + " --> " + self.lig2 + "\n")
             outfile.write("[FEP]\n")
             outfile.write("states 2\n")
-            outfile.write("softcore_use_max_potential on\n")
+            # Legacy methods interpret [softcore] values as desired maximum LJ
+            # energies. Nonlinear softcore uses explicit 0/1 activation flags instead.
+            outfile.write(
+                f"softcore_use_max_potential {'off' if softcore_method in {'gapsys', 'beutler'} else 'on'}\n"
+            )
             if softcore_method != "standard":
                 outfile.write(f"softcore_method {softcore_method}\n")
             outfile.write("\n")
@@ -499,12 +547,23 @@ class QligFEP:
             outfile.write("\n\n")
 
             outfile.write("[softcore]\n")
-            # ADD softcore
-            for i in range(1, lig_size1 + 1):
-                outfile.write("{:<5}{:>10}{:>10}\n".format(str(i), "0", "20"))
+            if softcore_method in {"gapsys", "beutler"}:
+                # Activate the fixed-parameter REAL state while its Hamiltonian
+                # weight vanishes. The DUM state has zero LJ/charge and needs no
+                # regularization. Derive semantics from [change_atoms], not from
+                # ligand-size assumptions, so mixed and future topologies remain
+                # correct.
+                activation = nonlinear_softcore_activation(change_vdw)
+                for i in range(1, lig_tot + 1):
+                    flag_s1, flag_s2 = activation.get(i, (0, 0))
+                    outfile.write(f"{i:<5}{flag_s1:>10}{flag_s2:>10}\n")
+            else:
+                # Preserve historical, dormant ghost-state orientation exactly.
+                for i in range(1, lig_size1 + 1):
+                    outfile.write("{:<5}{:>10}{:>10}\n".format(str(i), "0", "20"))
 
-            for i in range(1 + lig_size1, lig_tot + 1):
-                outfile.write("{:<5}{:>10}{:>10}\n".format(str(i), "20", "0"))
+                for i in range(1 + lig_size1, lig_tot + 1):
+                    outfile.write("{:<5}{:>10}{:>10}\n".format(str(i), "20", "0"))
             if self.counter_water_atoms:
                 q_idx = total_atoms
                 for cw in self.counter_water_atoms:
@@ -1166,6 +1225,11 @@ class QligFEP:
 
         return distance_restraints, sequence_restraints
 
+    def _foreign_targets(self, lambda1: str, lambda2: str, lambdas: list[str]) -> list[str] | None:
+        if getattr(self, "softcore_method", "standard") not in {"gapsys", "beutler"}:
+            return None
+        return adjacent_state2_lambdas(lambda1, lambda2, lambdas)
+
     def write_md_files(
         self,
         lambdas: list[str],
@@ -1284,6 +1348,7 @@ class QligFEP:
             distance_restraints=dr_str,
             sequence_restraints=seq_str,
             wall_restraints=wall_str,
+            foreign_lambdas=self._foreign_targets("0.500", "0.500", lambdas),
         )
         filepath = Path(writedir) / "md_0500_0500.inp"
         filepath.write_text(content)
@@ -1314,6 +1379,7 @@ class QligFEP:
                     distance_restraints=dr_str,
                     sequence_restraints=seq_str,
                     wall_restraints=wall_str,
+                    foreign_lambdas=self._foreign_targets(l1, l2, lambdas),
                 )
                 filepath = Path(writedir) / f"{filename}.inp"
                 filepath.write_text(content)
@@ -1357,6 +1423,7 @@ class QligFEP:
             distance_restraints=dr_str,
             sequence_restraints=seq_str,
             wall_restraints=wall_str,
+            foreign_lambdas=self._foreign_targets("1.000", "0.000", lambdas),
         )
         filepath = Path(writedir) / "md_1000_0000.inp"
         filepath.write_text(content)
@@ -1386,6 +1453,7 @@ class QligFEP:
                 distance_restraints=dr_str,
                 sequence_restraints=seq_str,
                 wall_restraints=wall_str,
+                foreign_lambdas=self._foreign_targets(l1, l2, lambdas),
             )
             filepath = Path(writedir) / f"{filename}.inp"
             filepath.write_text(content)
@@ -1578,6 +1646,7 @@ class QligFEP:
             fep_files=["FEP1.fep"],
             final_md_restart="md_0000_1000.re",
             cleanup_patterns=self.to_clean if self.to_clean else None,
+            direct_hamiltonian_analysis=getattr(self, "softcore_method", "standard") in {"gapsys", "beutler"},
         )
 
         script_content = render_local_run(config)
@@ -1645,6 +1714,11 @@ class QligFEP:
                     except Exception as e:
                         logger.error(f"Something went wrong while defining the jobname:\n{e}")
                         line = ""
+                if (
+                    getattr(self, "softcore_method", "standard") in {"gapsys", "beutler"}
+                    and "< qfep.inp" in line
+                ):
+                    line = 'qligfep_fhe_analyze . -T "$temperature" -o foreign_bar > foreign_bar.out\n'
                 outline = replace(line, replacements)
                 # This configuration is not available for CSB
                 if outline.strip().startswith("#SBATCH --mem-per-cpu=512") and self.cluster == "CSB":

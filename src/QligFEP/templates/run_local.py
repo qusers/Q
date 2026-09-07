@@ -37,6 +37,7 @@ class LocalRunConfig:
     fep_files: list[str]
     final_md_restart: str
     cleanup_patterns: list[str] | None
+    direct_hamiltonian_analysis: bool = False
 
 
 def format_cleanup_globs(patterns: list[str]) -> list[str]:
@@ -83,6 +84,12 @@ def render_local_run(config: LocalRunConfig) -> str:
     eq_block = _build_step_block(config.eq_files, qdyn_cmd)
     md_block = _build_step_block(config.md_files, qdyn_cmd)
 
+    analysis_block = (
+        'qligfep_fhe_analyze . -T "$temperature" -o foreign_bar > foreign_bar.out'
+        if config.direct_hamiltonian_analysis
+        else '$qfep < qfep.inp > qfep.out'
+    )
+
     cleanup_block = ""
     if config.cleanup_patterns:
         patterns = " ".join(format_cleanup_globs(config.cleanup_patterns))
@@ -107,6 +114,7 @@ def render_local_run(config: LocalRunConfig) -> str:
     inputfiles=$workdir/inputfiles
 
     global_starttime=$(date +%s)
+    any_failed=0
 
     length=${{#fepfiles[@]}}
     length=$((length-1))
@@ -161,10 +169,12 @@ def render_local_run(config: LocalRunConfig) -> str:
     __MD_BLOCK__
 
     if [ $failed -eq 0 ]; then
-        $qfep < qfep.inp > qfep.out
+        __ANALYSIS_BLOCK__
+        if [ $? -ne 0 ]; then echo "FAILED at analysis" > FAILED.log; failed=1; fi
     fi
 
     __CLEANUP_BLOCK__\
+    if [ $failed -ne 0 ]; then any_failed=1; fi
     done
 
     endtime=$(date +%s)
@@ -192,10 +202,12 @@ def render_local_run(config: LocalRunConfig) -> str:
     global_minutes=$((global_runtime % 3600 / 60))
     global_seconds=$((global_runtime % 60))
     echo "#    Total Runtime: ${{global_hours}}h:${{global_minutes}}m:${{global_seconds}}s"
+    exit "$any_failed"
     """)
 
     return (
         template.replace("__EQ_BLOCK__", eq_block)
         .replace("__MD_BLOCK__", md_block)
+        .replace("__ANALYSIS_BLOCK__", analysis_block)
         .replace("__CLEANUP_BLOCK__", cleanup_block)
     )

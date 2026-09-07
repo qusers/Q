@@ -18,7 +18,7 @@ def _write_fhe(
     lines = [
         "# Q_FOREIGN_WORKS_V2" if work_format else "# Q_FOREIGN_HAMILTONIANS_V1",
         "# units kcal/mol",
-        "# method gapsys_v2",
+        "# method gapsys",
         "# target_state2_weights 0.0000000 1.0000000",
         "# columns frame source_lambda1 source_lambda2 H(target_1) H(target_2)",
     ]
@@ -159,6 +159,21 @@ def test_rejects_duplicate_paths_and_nonfinite_temperature(tmp_path):
         analyze_fhe([path], temperature=float("nan"))
 
 
+@pytest.mark.parametrize("change", ["method", "parameters", "missing"])
+def test_rejects_incompatible_softcore_hamiltonians(tmp_path, change):
+    a,b = tmp_path / "a.fhe", tmp_path / "b.fhe"
+    _write_fhe(a, 1, 0, [(0, 2)], work_format=True)
+    _write_fhe(b, 0, 1, [(-2, 0)], work_format=True)
+    if change == "method":
+        b.write_text(b.read_text().replace("# method gapsys", "# method beutler"))
+    else:
+        a.write_text(a.read_text() + "# softcore_parameters 0.5 100\n")
+        if change == "parameters":
+            b.write_text(b.read_text() + "# softcore_parameters 0.5 42\n")
+    with pytest.raises(ValueError, match="different softcore methods/parameters"):
+        analyze_fhe([a,b])
+
+
 def test_equilibrium_reader_uses_foreign_bar_without_qfep(tmp_path, monkeypatch):
     from QligFEP.analyze_FEP import FepReader
 
@@ -181,6 +196,16 @@ def test_equilibrium_reader_uses_foreign_bar_without_qfep(tmp_path, monkeypatch)
     values, failed, _, _ = reader.read_single_replicate(directory / "qfep.out")
     assert failed == [1]
     assert np.isnan(values).all()
+
+
+@pytest.mark.parametrize("method", ["gapsys", "beutler", "gapsys_v2", "beutler_coul"])
+def test_nonlinear_method_cannot_fall_back_to_linear_qfep(tmp_path, method):
+    from QligFEP.analyze_FEP import FepReader
+
+    (tmp_path / "FEP1.fep").write_text(f"[FEP]\nsoftcore_method {method}\n")
+    reader = FepReader.__new__(FepReader)
+    with pytest.raises(ValueError, match="requires foreign-work BAR"):
+        reader.run_qfep(tmp_path / "qfep.inp")
 
 
 def test_result_collection_discovers_foreign_only_replicates(tmp_path, monkeypatch):

@@ -183,7 +183,7 @@ class FepReader:
     def run_qfep(self, qfep_file: Path):
         """Run qfep for the given FEP directory."""
         if self._uses_foreign_work(qfep_file.parent):
-            raise ValueError("gapsys_v2 requires foreign-work BAR; legacy QFEP reconstruction is invalid")
+            raise ValueError("nonlinear softcore requires foreign-work BAR; legacy QFEP reconstruction is invalid")
         qfep = Q_PATHS["QFEP"]
         os.chdir(str(qfep_file.parent.absolute()))
         options = " < qfep.inp > qfep.out"
@@ -198,7 +198,9 @@ class FepReader:
         # nonlinear runs even when no sidecar has been written yet.
         for inputs in (directory, directory.parent.parent.parent / "inputfiles"):
             for fep in inputs.glob("*.fep"):
-                if any(line.split()[:2] == ["softcore_method", "gapsys_v2"] for line in fep.read_text().splitlines()):
+                if any(line.split()[:2] in (["softcore_method", method] for method in
+                                           ("gapsys", "beutler", "gapsys_v2", "beutler_coul"))
+                       for line in fep.read_text().splitlines()):
                     return True
         return False
 

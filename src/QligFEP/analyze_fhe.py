@@ -25,6 +25,8 @@ class ForeignHamiltonianSamples:
     source_lambda2: float
     targets: np.ndarray
     values: np.ndarray
+    method: str | None = None
+    softcore_parameters: tuple[float, ...] | None = None
 
     def _target_column(self, target_lambda2: float, atol: float = LAMBDA_ATOL) -> np.ndarray:
         matches = np.flatnonzero(np.isclose(self.targets, target_lambda2, atol=atol, rtol=0.0))
@@ -58,6 +60,8 @@ def read_fhe(path: str | Path) -> ForeignHamiltonianSamples:
     rows = []
     format_name = None
     units = None
+    method = None
+    softcore_parameters = None
     with path.open() as handle:
         for line in handle:
             stripped = line.strip()
@@ -71,6 +75,12 @@ def read_fhe(path: str | Path) -> ForeignHamiltonianSamples:
                 targets = np.asarray([float(value) for value in stripped.split()[2:]], dtype=float)
             elif stripped.startswith("# units "):
                 units = stripped.removeprefix("# units ")
+            elif stripped.startswith("# method "):
+                method = stripped.removeprefix("# method ").strip()
+            elif stripped.startswith("# softcore_parameters "):
+                softcore_parameters = tuple(float(value) for value in stripped.split()[2:])
+                if not softcore_parameters or not np.isfinite(softcore_parameters).all():
+                    raise ValueError(f"{path}: invalid softcore parameter metadata")
             elif not stripped.startswith("#"):
                 rows.append([float(value) for value in stripped.split()])
 
@@ -115,6 +125,8 @@ def read_fhe(path: str | Path) -> ForeignHamiltonianSamples:
         source_lambda2=float(data[0, 2]),
         targets=targets,
         values=data[:, 3:],
+        method=method,
+        softcore_parameters=softcore_parameters,
     )
 
 
@@ -182,6 +194,7 @@ def analyze_fhe(
 
     grouped: dict[float, list[ForeignHamiltonianSamples]] = {}
     formats = set()
+    hamiltonian_metadata = set()
     seen = set()
     for path in paths:
         resolved = Path(path).resolve()
@@ -189,6 +202,9 @@ def analyze_fhe(
             raise ValueError(f"duplicate sidecar: {path}")
         seen.add(resolved)
         sample = read_fhe(path)
+        hamiltonian_metadata.add((sample.method, sample.softcore_parameters))
+        if len(hamiltonian_metadata) > 1:
+            raise ValueError("cannot combine different softcore methods/parameters or incomplete Hamiltonian metadata")
         sample.values = sample.values[skip::stride]
         if sample.values.shape[0] == 0:
             raise ValueError(f"{sample.path}: no frames remain after skip={skip}, stride={stride}")
@@ -245,6 +261,8 @@ def analyze_fhe(
 
     return {
         "format": next(iter(formats)) if len(formats) == 1 else "mixed",
+        "softcore_method": next(iter(hamiltonian_metadata))[0],
+        "softcore_parameters": next(iter(hamiltonian_metadata))[1],
         "temperature_K": temperature,
         "beta_per_kcal": beta,
         "frame_selection": {"skip": skip, "stride": stride},
