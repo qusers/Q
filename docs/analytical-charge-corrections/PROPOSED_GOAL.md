@@ -1,10 +1,8 @@
-# Approved goal — persistent tracker activation pending
+# Approved goal — active
 
-The user approved this goal and its scope limits. The previous goal remains
-paused in the thread's tracker, which refuses to register a replacement while
-an unfinished goal exists. Do not mark the previous goal achieved to bypass
-this restriction. Register this approved objective once the previous tracker
-entry is cleared; approval is not a claim that implementation is complete.
+The user approved this goal and its scope limits, cleared the previous tracker
+entry, and authorized pursuit. The replacement persistent goal is registered
+and active. Activation is not a claim that implementation is complete.
 
 Implement and validate analytical corrections for charged perturbations in Q's
 existing molecular dynamics (MD) workflow with finite spherical boundaries,
