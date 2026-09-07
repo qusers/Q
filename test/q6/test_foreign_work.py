@@ -41,12 +41,12 @@ def arithmetic_topology(source):
 
 @pytest.fixture
 def engine_case(tmp_path):
-    def setup(solvent=True, source=0.5, mode="validate", constraints="lincs settle"):
+    def setup(solvent=True, source=0.5, mode="validate", constraints="lincs settle", method="gapsys"):
         top = ROOT / "test/data/topology" / ("benzene-water.top" if solvent else "benzene-vacuum.top")
         (tmp_path / "test.top").write_text(arithmetic_topology(top))
-        (tmp_path / "test.fep").write_text("""[FEP]
+        (tmp_path / "test.fep").write_text(f"""[FEP]
 states 2
-softcore_method gapsys_v2
+softcore_method {method}
 softcore_use_max_potential off
 [atoms]
 1 1
@@ -133,29 +133,71 @@ def run_engine(directory, mpi=False):
 
 
 @pytest.mark.parametrize("solvent,source", [(False, 0.5), (True, 0), (True, 0.0001), (True, 0.5), (True, 0.9999), (True, 1)])
-def test_correction_matches_complete_hamiltonian(engine_case, solvent, source):
-    samples = run_engine(engine_case(solvent=solvent, source=source))
+@pytest.mark.parametrize("method", ["gapsys", "beutler"])
+def test_correction_matches_complete_hamiltonian(engine_case, solvent, source, method):
+    samples = run_engine(engine_case(solvent=solvent, source=source, method=method))
     assert samples.values.shape == (2, 5)
     assert np.isfinite(samples.values).all()
     np.testing.assert_allclose(samples.work_to(source), 0, atol=1e-7)
 
 
-def test_validation_does_not_change_dynamics(engine_case):
-    directory = engine_case(mode="correction")
+@pytest.mark.parametrize("method", ["gapsys", "beutler"])
+def test_validation_does_not_change_dynamics(engine_case, method):
+    directory = engine_case(mode="correction", method=method)
     correction = run_engine(directory)
     restart = (directory / "test.re").read_bytes()
-    engine_case(mode="validate")
+    engine_case(mode="validate", method=method)
     validated = run_engine(directory)
     assert restart == (directory / "test.re").read_bytes()
     np.testing.assert_array_equal(correction.values, validated.values)
 
 
 @pytest.mark.skipif(os.environ.get("Q_TEST_MPI") != "1", reason="set Q_TEST_MPI=1 to run MPI regression")
-def test_mpi_matches_serial(engine_case):
-    directory = engine_case()
+@pytest.mark.parametrize("method", ["gapsys", "beutler"])
+def test_mpi_matches_serial(engine_case, method):
+    directory = engine_case(method=method)
+    if method == "beutler":
+        fep = directory / "test.fep"
+        fep.write_text(fep.read_text().replace("[atoms]", "beutler_alpha_lj 0.4\nbeutler_alpha_c 42\n[atoms]"))
     serial = run_engine(directory)
     mpi = run_engine(directory, mpi=True)
     np.testing.assert_allclose(mpi.values, serial.values, atol=1e-7, rtol=1e-7)
+
+
+@pytest.mark.parametrize("method", ["gapsys_v2", "beutler_coul"])
+def test_removed_engine_method_names_rejected(engine_case, method):
+    directory = engine_case(method=method)
+    binary = ROOT / "src/q6/qdyn"
+    if not binary.exists():
+        pytest.skip("build qdyn first")
+    result = subprocess.run([str(binary), "test.inp"], cwd=directory, capture_output=True, text=True, timeout=30)
+    assert result.returncode != 0
+    assert "Unknown softcore_method" in result.stdout
+
+
+@pytest.mark.parametrize("method", ["gapsys", "beutler"])
+def test_unported_test_engine_rejects_nonlinear_methods(engine_case, method):
+    directory = engine_case(method=method)
+    binary = ROOT / "src/q6/qdyn_test"
+    if not binary.exists():
+        pytest.skip("build qdyn_test first")
+    result = subprocess.run([str(binary), "test.inp"], cwd=directory, capture_output=True, text=True, timeout=30)
+    assert result.returncode != 0
+    assert "not qdyn_test" in result.stdout
+
+
+@pytest.mark.parametrize("parameter,value", [("beutler_alpha_lj", "0"), ("beutler_alpha_c", "-1"),
+                                            ("beutler_alpha_lj", "nan"), ("beutler_alpha_c", "inf")])
+def test_invalid_beutler_parameters_rejected(engine_case, parameter, value):
+    directory = engine_case(method="beutler")
+    fep = directory / "test.fep"
+    fep.write_text(fep.read_text().replace("[atoms]", f"{parameter} {value}\n[atoms]"))
+    binary = ROOT / "src/q6/qdyn"
+    if not binary.exists():
+        pytest.skip("build qdyn first")
+    result = subprocess.run([str(binary), "test.inp"], cwd=directory, capture_output=True, text=True, timeout=30)
+    assert result.returncode != 0
+    assert "beutler requires positive finite" in result.stdout
 
 
 @pytest.mark.parametrize("entry", ["nan", "1.1", "0.5"])
@@ -171,8 +213,9 @@ def test_invalid_foreign_targets_fail(engine_case, entry):
     assert "[foreign_lambdas] entry" in result.stdout
 
 
-def test_qfep_rejects_linear_reconstruction_of_foreign_work(engine_case):
-    directory = engine_case(solvent=False)
+@pytest.mark.parametrize("method", ["gapsys", "beutler"])
+def test_qfep_rejects_linear_reconstruction_of_foreign_work(engine_case, method):
+    directory = engine_case(solvent=False, method=method)
     run_engine(directory)
     binary = ROOT / "src/q6/qfep"
     if not binary.exists():

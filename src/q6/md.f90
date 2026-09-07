@@ -27,9 +27,6 @@ module md
   use lincs_mpi
 #endif
   use settle
-  use qsoftcore, only: gapsys_lj_radius, gapsys_coulomb_radius, &
-                       eval_gapsys_lj, eval_gapsys_coulomb, &
-                       gapsys_lj_energy_difference, gapsys_coulomb_energy_difference
   use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 
   implicit none
@@ -1812,15 +1809,15 @@ subroutine get_fep
     if(.not. qatom_load_atoms(fep_file)) then
       call die('failure to load Q-atoms from FEP file.')
     end if
-    if(softcore_method == SC_GAPSYS_V2) then
-      if(nstates /= 2 .or. size(EQ) /= 2) call die('gapsys_v2 requires two FEP states and two lambda weights')
-      if(.not. all(ieee_is_finite(EQ%lambda))) call die('gapsys_v2 requires finite lambda weights')
+    if(lambda_dependent_softcore()) then
+      if(nstates /= 2 .or. size(EQ) /= 2) call die('nonlinear softcore requires two FEP states and two lambda weights')
+      if(.not. all(ieee_is_finite(EQ%lambda))) call die('nonlinear softcore requires finite lambda weights')
       if(any(EQ%lambda < 0.0_8) .or. any(EQ%lambda > 1.0_8) .or. &
          abs(sum(EQ%lambda)-1.0_8) > 1.0e-12_8) then
-        call die('gapsys_v2 lambda weights must be in [0,1] and sum to one')
+        call die('nonlinear softcore lambda weights must be in [0,1] and sum to one')
       end if
     else if(n_foreign_lambda > 0) then
-      call die('[foreign_lambdas] currently requires gapsys_v2')
+      call die('[foreign_lambdas] currently requires nonlinear softcore')
     end if
 
     ! set flags
@@ -1864,58 +1861,51 @@ subroutine get_fep
       qbvdw(:,3) = sqrt( qbvdw(:,3) )
     end if
 
-    !Scale Beutler softcore alpha by (1 - lambda_state)^2 (textbook Beutler 1994 Eq. 7).
-    !softcore_scale_beutler and softcore_init_gapsys each self-guard on softcore_method,
-    !so their order is irrelevant; only one ever does work.
-    if (softcore_method == SC_BEUTLER_COUL) call softcore_scale_beutler(nstates)
 
-    ! Compute Gapsys linearization radii if either implementation is selected.
-    if (softcore_method == SC_GAPSYS .or. softcore_method == SC_GAPSYS_V2) then
-      call softcore_init_gapsys(nstates)
-    end if
-
-    ! GAPSYS_V2 is deliberately fail-closed while kernel coverage is limited to
+    ! Nonlinear softcore is deliberately fail-closed while kernel coverage is limited to
     ! the arithmetic, spherical-boundary path validated for PTP1B.
-    if (softcore_method == SC_GAPSYS_V2) then
-      if(ivdw_rule /= VDW_ARITHMETIC) call die('gapsys_v2 currently requires arithmetic VdW rules')
-      if(.not. qvdw_flag) call die('gapsys_v2 requires [atom_types] and [change_atoms]')
-      if(use_PBC) call die('gapsys_v2 does not yet support periodic boundaries')
-      if(.not. equilibrium_simulation) call die('gapsys_v2 does not yet support NEQ lambda scaling')
-      if(nstates /= 2) call die('gapsys_v2 currently requires exactly two FEP states')
-      if(noffd > 0) call die('gapsys_v2 does not yet support EVB off-diagonal elements')
+    if (lambda_dependent_softcore()) then
+      if(ivdw_rule /= VDW_ARITHMETIC) call die('nonlinear softcore currently requires arithmetic VdW rules')
+      if(.not. qvdw_flag) call die('nonlinear softcore requires [atom_types] and [change_atoms]')
+      if(use_PBC) call die('nonlinear softcore does not yet support periodic boundaries')
+      if(.not. equilibrium_simulation) call die('nonlinear softcore does not yet support NEQ lambda scaling')
+      if(nstates /= 2) call die('nonlinear softcore currently requires exactly two FEP states')
+      if(noffd > 0) call die('nonlinear softcore does not yet support EVB off-diagonal elements')
+      if(monitor_group_pairs > 0) call die('nonlinear softcore does not yet support nonbonded monitor groups')
       if(abs(sum(qcrg(:,1))-sum(qcrg(:,2))) > 1.0e-2_8) then
-        call die('gapsys_v2 direct-H output requires charge-conserving endpoint states')
+        call die('nonlinear softcore direct-H output requires charge-conserving endpoint states')
       end if
       if(iene_cycle > 0 .and. n_foreign_lambda == 0) then
-        call die('gapsys_v2 production energy output requires [foreign_lambdas] direct-H targets')
+        call die('nonlinear softcore production energy output requires [foreign_lambdas] direct-H targets')
       end if
       if(n_foreign_lambda > 0) then
         if(.not. any(abs(foreign_lambda-EQ(2)%lambda) < 1.0e-12_8)) then
-          call die('gapsys_v2 [foreign_lambdas] must include the source state-2 weight')
+          call die('nonlinear softcore [foreign_lambdas] must include the source state-2 weight')
         end if
       end if
-      if(qq_use_library_charges) call die('gapsys_v2 does not yet support qq_use_library_charges')
-      if(count(softcore_enabled) == 0) call die('gapsys_v2 requested but no [softcore] activation flags are set')
+      if(qq_use_library_charges) call die('nonlinear softcore does not yet support qq_use_library_charges')
+      if(count(softcore_enabled) == 0) call die('nonlinear softcore requested but no [softcore] activation flags are set')
       do i = 1, nqat
         dum_state1 = abs(qavdw(qiac(i,1),1)) < 1.0e-12_8 .and. &
                      abs(qbvdw(qiac(i,1),1)) < 1.0e-12_8 .and. abs(qcrg(i,1)) < 1.0e-12_8
         dum_state2 = abs(qavdw(qiac(i,2),1)) < 1.0e-12_8 .and. &
                      abs(qbvdw(qiac(i,2),1)) < 1.0e-12_8 .and. abs(qcrg(i,2)) < 1.0e-12_8
         if(dum_state1 .and. softcore_enabled(i,1)) then
-          call die('gapsys_v2 [softcore] incorrectly enables a state-1 DUM atom')
+          call die('nonlinear softcore [softcore] incorrectly enables a state-1 DUM atom')
         end if
         if(dum_state2 .and. softcore_enabled(i,2)) then
-          call die('gapsys_v2 [softcore] incorrectly enables a state-2 DUM atom')
+          call die('nonlinear softcore [softcore] incorrectly enables a state-2 DUM atom')
         end if
         if((.not. dum_state1) .and. dum_state2 .and. .not. softcore_enabled(i,1)) then
-          call die('gapsys_v2 missing real-state activation for a real->DUM atom')
+          call die('nonlinear softcore missing real-state activation for a real->DUM atom')
         end if
         if(dum_state1 .and. (.not. dum_state2) .and. .not. softcore_enabled(i,2)) then
-          call die('gapsys_v2 missing real-state activation for a DUM->real atom')
+          call die('nonlinear softcore missing real-state activation for a DUM->real atom')
         end if
       end do
-      write(*,'(a)') 'Gapsys v2 lambda-dependent arithmetic/SBC dynamics enabled.'
-      write(*,'(a)') 'WARNING: legacy QFEP lambda reconstruction is invalid for gapsys_v2.'
+      call softcore_init_nonlinear(nstates)
+      write(*,'(a)') 'Nonlinear softcore lambda-dependent arithmetic/SBC dynamics enabled.'
+      write(*,'(a)') 'WARNING: legacy QFEP lambda reconstruction is invalid for nonlinear softcore.'
     end if
 
     !remove redefined bonded interactions from topology
@@ -2467,7 +2457,7 @@ subroutine init_nodes
   if (ierr .ne. 0) call die('init_nodes/MPI_Bcast iuse_switch_atom')
   call MPI_Bcast(el14_scale, 1, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
   if (ierr .ne. 0) call die('init_nodes/MPI_Bcast el14_scale')
-  ! gapsys_v2 converts Q's scaled energy charges back to physical charges when
+  ! nonlinear softcore converts Q's scaled energy charges back to physical charges when
   ! choosing Coulomb switching radii, so every rank needs the topology constant.
   call MPI_Bcast(coulomb_constant, 1, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
   if (ierr .ne. 0) call die('init_nodes/MPI_Bcast coulomb_constant')
@@ -2729,8 +2719,12 @@ subroutine init_nodes
   call MPI_Bcast(softcore_enabled, size(softcore_enabled), MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
   if (ierr .ne. 0) call die('init_nodes/MPI_Bcast softcore_enabled')
 
-  !Broadcast Gapsys scalar parameters and linearization lookups
-  if (softcore_method == SC_GAPSYS .or. softcore_method == SC_GAPSYS_V2) then
+  !Broadcast nonlinear softcore scalar parameters and soft lengths
+  if (lambda_dependent_softcore()) then
+    call MPI_Bcast(beutler_alpha_lj, 1, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    if(ierr /= 0) call die('init_nodes/MPI_Bcast beutler_alpha_lj')
+    call MPI_Bcast(beutler_alpha_c, 1, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    if(ierr /= 0) call die('init_nodes/MPI_Bcast beutler_alpha_c')
     call MPI_Bcast(gapsys_alpha_lj, 1, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
     if (ierr .ne. 0) call die('init_nodes/MPI_Bcast gapsys_alpha_lj')
     call MPI_Bcast(gapsys_alpha_q,  1, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
@@ -2741,14 +2735,14 @@ subroutine init_nodes
     if (ierr .ne. 0) call die('init_nodes/MPI_Bcast gapsys_sigma_q')
 
     if (nodeid .ne. 0) then
-      allocate(gapsys_lj_rsc(nqat, natyps+nqat, nstates))
-      allocate(gapsys_q_lambda_factor(nqat, nstates))
+      allocate(softcore_lj_rsc(nqat, natyps+nqat, nstates))
+      allocate(softcore_q_lambda_factor(nqat, nstates))
     end if
-    call MPI_Bcast(gapsys_lj_rsc, size(gapsys_lj_rsc), MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-    if (ierr .ne. 0) call die('init_nodes/MPI_Bcast gapsys_lj_rsc')
-    call MPI_Bcast(gapsys_q_lambda_factor, size(gapsys_q_lambda_factor), MPI_REAL8, 0, &
+    call MPI_Bcast(softcore_lj_rsc, size(softcore_lj_rsc), MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    if (ierr .ne. 0) call die('init_nodes/MPI_Bcast softcore_lj_rsc')
+    call MPI_Bcast(softcore_q_lambda_factor, size(softcore_q_lambda_factor), MPI_REAL8, 0, &
                    MPI_COMM_WORLD, ierr)
-    if (ierr .ne. 0) call die('init_nodes/MPI_Bcast gapsys_q_lambda_factor')
+    if (ierr .ne. 0) call die('init_nodes/MPI_Bcast softcore_q_lambda_factor')
   end if
 
   ! integer(AI) ::  iqseq(nqat)
@@ -5548,7 +5542,7 @@ subroutine foreign_shape_qq(source_lj_scale,source_q_scale,target_lj_scale,targe
       i3 = 3*i-3
       j3 = 3*j-3
       iLJ = nbqq(ip,istate)%LJcod
-      if(iLJ == 2) call die('gapsys_v2 does not support exponential Q-Q nonbonded pairs')
+      if(iLJ == 2) call die('nonlinear softcore does not support exponential Q-Q nonbonded pairs')
       qi = qcrg(iq,istate)
       el_scale = nbqq(ip,istate)%el_scale
       iaci = qiac(iq,istate)
@@ -5577,12 +5571,12 @@ subroutine foreign_shape_qq(source_lj_scale,source_q_scale,target_lj_scale,targe
       if(iLJ == 3) qq = qq*el14_scale
       qi_e = qi/sqrt(coulomb_constant)
       qj_e = qj/sqrt(coulomb_constant)
-      qfactor = 1.0_8+gapsys_sigma_q*abs(qi_e*qj_e)
+      qfactor = nonlinear_charge_factor(qi_e,qj_e)
       rsc_lj_source = source_lj_scale(istate)*aLJ
       rsc_q_source = source_q_scale(istate)*qfactor
       core_radius = max(max(source_lj_scale(istate),maxval(target_lj_scale(:,istate)))*aLJ, &
                         max(source_q_scale(istate),maxval(target_q_scale(:,istate)))*qfactor)
-      if(r2 >= core_radius*core_radius) cycle
+      if(softcore_method == SC_GAPSYS .and. r2 >= core_radius*core_radius) cycle
       a6 = aLJ**6
       c12 = bLJ*a6*a6
       c6 = 2.0_8*bLJ*a6
@@ -5595,13 +5589,13 @@ subroutine foreign_shape_qq(source_lj_scale,source_q_scale,target_lj_scale,targe
         end if
         if(r2 <= 0.0_8 .and. target_weight > 1.0e-12_8 .and. &
            (c12 /= 0.0_8 .or. c6 /= 0.0_8 .or. qq /= 0.0_8)) then
-          call die('gapsys_v2 foreign work encountered exact Q-Q/Q-solute overlap')
+          call die('nonlinear softcore foreign work encountered exact Q-Q/Q-solute overlap')
         end if
         if(target_weight == 0.0_8) cycle
         rsc_lj_target = target_lj_scale(k,istate)*aLJ
         rsc_q_target = target_q_scale(k,istate)*qfactor
-        delta = gapsys_lj_energy_difference(c12,c6,rsc_lj_source,rsc_lj_target,r2) + &
-                gapsys_coulomb_energy_difference(qq,rsc_q_source,rsc_q_target,r2)
+        delta = softcore_lj_energy_difference(c12,c6,rsc_lj_source,rsc_lj_target,r2) + &
+                softcore_coulomb_energy_difference(qq,rsc_q_source,rsc_q_target,r2)
         correction(k) = correction(k)+target_weight*delta
       end do
     end do
@@ -5629,7 +5623,7 @@ subroutine foreign_shape_qp(source_lj_scale,source_q_scale,target_lj_scale,targe
     j3 = 3*j-3
     iacj = iac(j)
     iLJ = nbqp(ip)%LJcod
-    if(iLJ == 2) call die('gapsys_v2 does not support exponential Q-protein pairs')
+    if(iLJ == 2) call die('nonlinear softcore does not support exponential Q-protein pairs')
     dx1 = x(j3+1)-x(i3+1)
     dx2 = x(j3+2)-x(i3+2)
     dx3 = x(j3+3)-x(i3+3)
@@ -5644,12 +5638,12 @@ subroutine foreign_shape_qp(source_lj_scale,source_q_scale,target_lj_scale,targe
       qq = qcrg(iq,istate)*crg(j)
       if(iLJ == 3) qq = qq*el14_scale
       qi_e = real(qcrg(iq,istate),8)/sqrt(coulomb_constant)
-      qfactor = 1.0_8+gapsys_sigma_q*abs(qi_e*qj_e)
+      qfactor = nonlinear_charge_factor(qi_e,qj_e)
       rsc_lj_source = source_lj_scale(istate)*aLJ
       rsc_q_source = source_q_scale(istate)*qfactor
       core_radius = max(max(source_lj_scale(istate),maxval(target_lj_scale(:,istate)))*aLJ, &
                         max(source_q_scale(istate),maxval(target_q_scale(:,istate)))*qfactor)
-      if(r2 >= core_radius*core_radius) cycle
+      if(softcore_method == SC_GAPSYS .and. r2 >= core_radius*core_radius) cycle
       a6 = aLJ**6
       c12 = bLJ*a6*a6
       c6 = 2.0_8*bLJ*a6
@@ -5662,13 +5656,13 @@ subroutine foreign_shape_qp(source_lj_scale,source_q_scale,target_lj_scale,targe
         end if
         if(r2 <= 0.0_8 .and. target_weight > 1.0e-12_8 .and. &
            (c12 /= 0.0_8 .or. c6 /= 0.0_8 .or. qq /= 0.0_8)) then
-          call die('gapsys_v2 foreign work encountered exact Q-protein overlap')
+          call die('nonlinear softcore foreign work encountered exact Q-protein overlap')
         end if
         if(target_weight == 0.0_8) cycle
         rsc_lj_target = target_lj_scale(k,istate)*aLJ
         rsc_q_target = target_q_scale(k,istate)*qfactor
-        delta = gapsys_lj_energy_difference(c12,c6,rsc_lj_source,rsc_lj_target,r2) + &
-                gapsys_coulomb_energy_difference(qq,rsc_q_source,rsc_q_target,r2)
+        delta = softcore_lj_energy_difference(c12,c6,rsc_lj_source,rsc_lj_target,r2) + &
+                softcore_coulomb_energy_difference(qq,rsc_q_source,rsc_q_target,r2)
         correction(k) = correction(k)+target_weight*delta
       end do
     end do
@@ -5725,12 +5719,12 @@ subroutine foreign_shape_qw(source_lj_scale,source_q_scale,target_lj_scale,targe
           bPair = qbvdw(qiac(iq,istate),1)*bO
           qq = qcrg(iq,istate)*crg_ow
           qj_e = real(crg_ow,8)/sqrt(coulomb_constant)
-          qfactor = 1.0_8+gapsys_sigma_q*abs(qi_e*qj_e)
+          qfactor = nonlinear_charge_factor(qi_e,qj_e)
           rsc_lj_source = source_lj_scale(istate)*aPair
           rsc_q_source = source_q_scale(istate)*qfactor
           core_radius = max(max(source_lj_scale(istate),maxval(target_lj_scale(:,istate)))*aPair, &
                             max(source_q_scale(istate),maxval(target_q_scale(:,istate)))*qfactor)
-          if(r2O < core_radius*core_radius) then
+          if(softcore_method == SC_BEUTLER .or. r2O < core_radius*core_radius) then
             a6 = aPair**6
             c12 = bPair*a6*a6
             c6 = 2.0_8*bPair*a6
@@ -5742,13 +5736,13 @@ subroutine foreign_shape_qw(source_lj_scale,source_q_scale,target_lj_scale,targe
               end if
               if(r2O <= 0.0_8 .and. target_weight > 1.0e-12_8 .and. &
                  (c12 /= 0.0_8 .or. c6 /= 0.0_8 .or. qq /= 0.0_8)) then
-                call die('gapsys_v2 foreign work encountered exact Q-water oxygen overlap')
+                call die('nonlinear softcore foreign work encountered exact Q-water oxygen overlap')
               end if
               if(target_weight == 0.0_8) cycle
               rsc_lj_target = target_lj_scale(k,istate)*aPair
               rsc_q_target = target_q_scale(k,istate)*qfactor
-              delta = gapsys_lj_energy_difference(c12,c6,rsc_lj_source,rsc_lj_target,r2O) + &
-                      gapsys_coulomb_energy_difference(qq,rsc_q_source,rsc_q_target,r2O)
+              delta = softcore_lj_energy_difference(c12,c6,rsc_lj_source,rsc_lj_target,r2O) + &
+                      softcore_coulomb_energy_difference(qq,rsc_q_source,rsc_q_target,r2O)
               correction(k) = correction(k)+target_weight*delta
             end do
           end if
@@ -5759,12 +5753,13 @@ subroutine foreign_shape_qw(source_lj_scale,source_q_scale,target_lj_scale,targe
           bPair = qbvdw(qiac(iq,istate),1)*bH
           qq = qcrg(iq,istate)*crg_hw
           qj_e = real(crg_hw,8)/sqrt(coulomb_constant)
-          qfactor = 1.0_8+gapsys_sigma_q*abs(qi_e*qj_e)
+          qfactor = nonlinear_charge_factor(qi_e,qj_e)
           rsc_lj_source = source_lj_scale(istate)*aPair
           rsc_q_source = source_q_scale(istate)*qfactor
           core_radius = max(max(source_lj_scale(istate),maxval(target_lj_scale(:,istate)))*aPair, &
                             max(source_q_scale(istate),maxval(target_q_scale(:,istate)))*qfactor)
-          if(r2H1 < core_radius*core_radius .or. r2H2 < core_radius*core_radius) then
+          if(softcore_method == SC_BEUTLER .or. &
+             r2H1 < core_radius*core_radius .or. r2H2 < core_radius*core_radius) then
             a6 = aPair**6
             c12 = bPair*a6*a6
             c6 = 2.0_8*bPair*a6
@@ -5776,15 +5771,15 @@ subroutine foreign_shape_qw(source_lj_scale,source_q_scale,target_lj_scale,targe
               end if
               if((r2H1 <= 0.0_8 .or. r2H2 <= 0.0_8) .and. target_weight > 1.0e-12_8 .and. &
                  (c12 /= 0.0_8 .or. c6 /= 0.0_8 .or. qq /= 0.0_8)) then
-                call die('gapsys_v2 foreign work encountered exact Q-water hydrogen overlap')
+                call die('nonlinear softcore foreign work encountered exact Q-water hydrogen overlap')
               end if
               if(target_weight == 0.0_8) cycle
               rsc_lj_target = target_lj_scale(k,istate)*aPair
               rsc_q_target = target_q_scale(k,istate)*qfactor
-              delta = gapsys_lj_energy_difference(c12,c6,rsc_lj_source,rsc_lj_target,r2H1) + &
-                      gapsys_coulomb_energy_difference(qq,rsc_q_source,rsc_q_target,r2H1) + &
-                      gapsys_lj_energy_difference(c12,c6,rsc_lj_source,rsc_lj_target,r2H2) + &
-                      gapsys_coulomb_energy_difference(qq,rsc_q_source,rsc_q_target,r2H2)
+              delta = softcore_lj_energy_difference(c12,c6,rsc_lj_source,rsc_lj_target,r2H1) + &
+                      softcore_coulomb_energy_difference(qq,rsc_q_source,rsc_q_target,r2H1) + &
+                      softcore_lj_energy_difference(c12,c6,rsc_lj_source,rsc_lj_target,r2H2) + &
+                      softcore_coulomb_energy_difference(qq,rsc_q_source,rsc_q_target,r2H2)
               correction(k) = correction(k)+target_weight*delta
             end do
           end if
@@ -5811,8 +5806,8 @@ subroutine evaluate_foreign_correction_work(source_lambda,work)
   do istate = 1, nstates
     state_lambda = source_lambda(istate)
     decoupling = max(0.0_8,1.0_8-state_lambda)
-    source_lj_scale(istate) = gapsys_alpha_lj*((26.0_8/7.0_8)*decoupling)**(1.0_8/6.0_8)/two_sixth
-    source_q_scale(istate) = gapsys_alpha_q*decoupling**(1.0_8/6.0_8)
+    source_lj_scale(istate) = nonlinear_lj_radius(1.0_8/two_sixth,decoupling)
+    source_q_scale(istate) = nonlinear_coulomb_radius(0.0_8,0.0_8,decoupling)
     do k = 1, n_foreign_lambda
       if(istate == 1) then
         state_lambda = 1.0_8-foreign_lambda(k)
@@ -5820,8 +5815,8 @@ subroutine evaluate_foreign_correction_work(source_lambda,work)
         state_lambda = foreign_lambda(k)
       end if
       decoupling = max(0.0_8,1.0_8-state_lambda)
-      target_lj_scale(k,istate) = gapsys_alpha_lj*((26.0_8/7.0_8)*decoupling)**(1.0_8/6.0_8)/two_sixth
-      target_q_scale(k,istate) = gapsys_alpha_q*decoupling**(1.0_8/6.0_8)
+      target_lj_scale(k,istate) = nonlinear_lj_radius(1.0_8/two_sixth,decoupling)
+      target_q_scale(k,istate) = nonlinear_coulomb_radius(0.0_8,0.0_8,decoupling)
     end do
   end do
 
@@ -5886,7 +5881,7 @@ subroutine write_foreign_hamiltonians
   integer :: k
   logical, save :: header_written = .false.
 
-  if(softcore_method /= SC_GAPSYS_V2 .or. n_foreign_lambda == 0) return
+  if(.not. lambda_dependent_softcore() .or. n_foreign_lambda == 0) return
   source_lambda = EQ(1:2)%lambda
   source_h = E%potential
 
@@ -5910,7 +5905,7 @@ subroutine write_foreign_hamiltonians
         if(abs(correction_work(k)-direct_work(k)) > tolerance) then
           write(*,'(a,i0,3(1x,es24.16))') 'foreign work validation failed for target ', &
                k,correction_work(k),direct_work(k),correction_work(k)-direct_work(k)
-          call die('gapsys_v2 correction/direct foreign work mismatch')
+          call die('nonlinear softcore correction/direct foreign work mismatch')
         end if
       end do
     end if
@@ -5922,7 +5917,14 @@ subroutine write_foreign_hamiltonians
   if(nodeid == 0 .and. .not. header_written) then
     write(17,'(a)') '# Q_FOREIGN_WORKS_V2'
     write(17,'(a)') '# units kcal/mol'
-    write(17,'(a)') '# method gapsys_v2'
+    if(softcore_method == SC_BEUTLER) then
+      write(17,'(a)') '# method beutler'
+      write(17,'(a,2(1x,es24.16))') '# softcore_parameters',beutler_alpha_lj,beutler_alpha_c
+    else
+      write(17,'(a)') '# method gapsys'
+      write(17,'(a,4(1x,es24.16))') '# softcore_parameters', &
+                                   gapsys_alpha_lj,gapsys_alpha_q,gapsys_sigma_lj,gapsys_sigma_q
+    end if
     write(17,'(a,*(1x,es24.16))') '# target_state2_weights',foreign_lambda
     write(17,'(a)') '# columns frame source_lambda1 source_lambda2 W(source_to_target_1) ...'
     header_written = .true.
@@ -8418,7 +8420,7 @@ subroutine nbpwlis2_box
    ! local variables
   integer                                               :: i,ig,jg,ia,ja,i3,j3,ig_atom, inside
   real(8)                                               :: rcut2,r2
-  real(8)                                               :: dx, dy,dz
+  real(8)                                               :: dx, dy, dz
 
   ! for periodic boundary conditions
   !     This routine makes a list of non-bonded solute-solvent atom pairs
@@ -8503,7 +8505,7 @@ subroutine nbpwlis2_box_lrf
    ! local variables
   integer                                               :: i,ig,jg,ia,ja,i3,j3,ig_atom, inside
   real(8)                                               :: rcut2,r2
-  real(8)                                               :: dx, dy,dz
+  real(8)                                               :: dx, dy, dz
   !LRF
   real(8)                                               :: RcLRF2, field0, field1, field2
   real(8)                                               :: dr(3)
@@ -11105,10 +11107,6 @@ subroutine nonbond_monitor
   real(8)  :: r6_hc         !  softcore variables
   integer  :: sc_1,sc_2     !  softcore variables, sc_1 is the first index in sc_lookup (the qatom)
   logical  :: do_sc         !  softcore variables,   do_sc is a boolean to determine if softcore should be done
-  real(8)  :: dist,r_sc_lj,r_sc_q
-  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization (energy only).
-  real(8)  :: gap_qq,gap_qj_fact,gap_Flj_unused,gap_Fq_unused
-  real(8)  :: gap_aplusa6
   ! do_sc is true when atom i or j is a qatom  (and qvdw is true)
 
 
@@ -11198,61 +11196,10 @@ subroutine nonbond_monitor
             endif
 
             if (do_sc) then  ! calculate softcore r6
-              if (softcore_method == SC_GAPSYS) then
-                r6 = 1._8/r6_hc
-              else
                 r6 = r6_hc + sc_lookup (sc_1,sc_2,istate)
                 r6 = 1._8/r6
-              end if
             end if
           endif
-          if (softcore_method == SC_GAPSYS .and. do_sc .and. &
-              sc_lookup(sc_1,sc_2,istate) > 0) then
-            ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization (monitor, energy only).
-            dist        = 1._8/r
-            gap_qq      = qi*qj
-            gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(gap_qq)
-
-            ! Coulomb -- partner-charge factor at runtime.
-            r_sc_q = gapsys_q_lambda_factor(sc_1, istate) * gap_qj_fact
-            if (dist < r_sc_q .and. r_sc_q > 0._8) then
-              call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel, gap_Fq_unused)
-            else
-              Vel = gap_qq*r
-            end if
-
-            ! LJ -- conventions in monitor:
-            !   ivdw_rule=1 (geometric, sqrt-stored): C12 = aLJi*aLJj, C6 = bLJi*bLJj
-            !   ivdw_rule=2 (arithmetic):             C12 = bLJi*bLJj*(aLJi+aLJj)^12,
-            !                                         C6  = 2*bLJi*bLJj*(aLJi+aLJj)^6
-            r_sc_lj = gapsys_lj_rsc(sc_1, sc_2, istate)
-            if(ivdw_rule==1) then !geometric comb. rule
-              if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
-                call gapsys_eval_lj(aLJi*aLJj, bLJi*bLJj, r_sc_lj, dist, Vvdw, gap_Flj_unused)
-              else
-                Vvdw = aLJi*aLJj*r6*r6 - bLJi*bLJj*r6
-              end if
-            else !arithmetic
-              gap_aplusa6 = (aLJi+aLJj)**6
-              if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
-                call gapsys_eval_lj(bLJi*bLJj*gap_aplusa6*gap_aplusa6, &
-                                    2.0_8*bLJi*bLJj*gap_aplusa6, &
-                                    r_sc_lj, dist, Vvdw, gap_Flj_unused)
-              else
-                Vvdw = bLJi * bLJj * gap_aplusa6 * r6 * &
-                  (gap_aplusa6 * r6 - 2.0_8)
-              end if
-            endif
-          else if (softcore_method == SC_BEUTLER_COUL .and. do_sc .and. &
-              sc_lookup(sc_1,sc_2,istate) > 0) then
-            Vel = qi*qj / (r6_hc+sc_lookup(sc_1,sc_2,istate))**(1.0_8/6.0_8)
-            if(ivdw_rule==1) then !geometric comb. rule
-              Vvdw = aLJi*aLJj*r6*r6 - bLJi*bLJj*r6
-            else !arithmetic
-              Vvdw = bLJi * bLJj * (aLJi+aLJj)**6 * r6 * &
-                ((aLJi+aLJj)**6 * r6 - 2.0)
-            endif
-          else
             Vel = qi*qj*r
             if(ivdw_rule==1) then !geometric comb. rule
               Vvdw = aLJi*aLJj*r6*r6 - bLJi*bLJj*r6
@@ -11260,7 +11207,6 @@ subroutine nonbond_monitor
               Vvdw = bLJi * bLJj * (aLJi+aLJj)**6 * r6 * &
                 ((aLJi+aLJj)**6 * r6 - 2.0)
             endif
-          end if
           !add up for this pair of atom groups
           monitor_group_pair(par)%Vel(istate)= monitor_group_pair(par)%Vel(istate)+Vel
           monitor_group_pair(par)%Vlj(istate)= monitor_group_pair(par)%Vlj(istate)+Vvdw
@@ -11696,12 +11642,11 @@ subroutine nonbon2_qq
   integer                                         :: ip,iq,jq,i,j,k,i3,j3,iaci,iacj,iLJ,sc_index
   real(8)                                         :: qi,qj,aLJ,bLJ,dx1,dx2,dx3,r2,r,r6,r12,r6_hc
   real(8)                                         :: Vel,V_a,V_b,dv,el_scale
-  real(8)                                         :: dist,r_sc_lj,r_sc_q
+  real(8)                                         :: r_sc_lj,r_sc_q
   real(8)                                         :: dv_lj,dv_el
   real(8)                                         :: a6,c12,c6,qi_e,qj_e,decoupling
-  logical                                         :: overlap_lj,overlap_q,do_sc_v2
-  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
-  real(8)                                         :: gap_qq,gap_qj_fact,gap_Flj,gap_Fq
+  logical                                         :: overlap_lj,overlap_q,do_sc_nonlinear
+  real(8)                                         :: gap_qq
 
   do istate = 1, nstates
     ! for every state:
@@ -11762,30 +11707,30 @@ subroutine nonbon2_qq
 
       r2 = dx1*dx1 + dx2*dx2 + dx3*dx3
 
-      if(softcore_method == SC_GAPSYS_V2) then
-        if(iLJ == 2) call die('gapsys_v2 does not support exponential Q-Q nonbonded pairs')
+      if(lambda_dependent_softcore()) then
+        if(iLJ == 2) call die('nonlinear softcore does not support exponential Q-Q nonbonded pairs')
         if(jq /= 0) then
           sc_index = natyps+jq
         else
           sc_index = iacj
         end if
-        do_sc_v2 = softcore_pair_enabled(iq,sc_index,istate)
-        if(do_sc_v2) then
+        do_sc_nonlinear = softcore_pair_enabled(iq,sc_index,istate)
+        if(do_sc_nonlinear) then
           qi_e = qi/sqrt(coulomb_constant)
           qj_e = qj/sqrt(coulomb_constant)
           if(foreign_hamiltonian_evaluation .or. iLJ /= 1) then
             ! The direct validation oracle changes EQ%lambda without rebuilding
             ! source-window lookups, so it deliberately follows the general path.
             decoupling = max(0.0_8,1.0_8-EQ(istate)%lambda)
-            r_sc_lj = gapsys_lj_radius(gapsys_alpha_lj, &
+            r_sc_lj = nonlinear_lj_radius( &
                          aLJ/2.0_8**(1.0_8/6.0_8),decoupling)
-            r_sc_q = gapsys_coulomb_radius(gapsys_alpha_q,gapsys_sigma_q, &
+            r_sc_q = nonlinear_coulomb_radius( &
                                             qi_e,qj_e,decoupling)
           else
             ! Lambda-only roots and LJ radii are initialized once in get_fep.
-            r_sc_lj = gapsys_lj_rsc(iq,sc_index,istate)
-            r_sc_q = gapsys_q_lambda_factor(iq,istate)* &
-                     (1.0_8+gapsys_sigma_q*abs(qi_e*qj_e))
+            r_sc_lj = softcore_lj_rsc(iq,sc_index,istate)
+            r_sc_q = softcore_q_lambda_factor(iq,istate)* &
+                     nonlinear_charge_factor(qi_e,qj_e)
           end if
         else
           r_sc_lj = 0.0_8
@@ -11797,22 +11742,18 @@ subroutine nonbon2_qq
         c6 = 2.0_8*bLJ*a6
         gap_qq = qi*qj*el_scale
         if(iLJ == 3) gap_qq = gap_qq*el14_scale
-        call eval_gapsys_lj(c12,c6,r_sc_lj,r2,V_a,dv_lj,overlap_lj)
-        call eval_gapsys_coulomb(gap_qq,r_sc_q,r2,Vel,dv_el,overlap_q)
+        call eval_softcore_lj(c12,c6,r_sc_lj,r2,V_a,dv_lj,overlap_lj)
+        call eval_softcore_coulomb(gap_qq,r_sc_q,r2,Vel,dv_el,overlap_q)
         if((overlap_lj .or. overlap_q) .and. EQ(istate)%lambda > 1.0e-12_8 .and. &
            (c12 /= 0.0_8 .or. c6 /= 0.0_8 .or. gap_qq /= 0.0_8)) then
-          call die('gapsys_v2 encountered exact overlap in an active Q-Q/Q-solute pair')
+          call die('nonlinear softcore encountered exact overlap in an active Q-Q/Q-solute pair')
         end if
         V_b = 0.0_8
         dv = (dv_lj+dv_el)*EQ(istate)%lambda
       else
         r6_hc = r2*r2*r2  !for softcore
-        if (softcore_method == SC_GAPSYS) then
-          r6 = 1._8/r6_hc
-        else
           r6 = r6_hc + sc_lookup(iq,jq+natyps,istate)  !legacy lookup convention
           r6 = 1._8/r6
-        end if
         r2 = 1.0_8/r2
         r = sqrt(r2)
         r12 = r6*r6
@@ -11829,40 +11770,9 @@ subroutine nonbon2_qq
           aLJ  = aLJ*aLJ*aLJ
           V_a  = bLJ*aLJ*aLJ*r12
           V_b  = 2.0*bLJ*aLJ*r6
-          if (softcore_method == SC_GAPSYS .and. &
-              sc_lookup(iq,jq+natyps,istate) > 0) then
-            dist = 1._8/r
-            r_sc_lj = gapsys_lj_rsc(iq, natyps+jq, istate)
-            if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
-              call gapsys_eval_lj(bLJ*aLJ*aLJ, 2.0_8*bLJ*aLJ, r_sc_lj, dist, V_a, gap_Flj)
-              V_b = 0._8
-              dv_lj = -gap_Flj/dist
-            else
-              dv_lj = r2*(-(12.*V_a-6.*V_b))
-            end if
-            gap_qq = qi*qj*el_scale
-            if(iLJ == 3) gap_qq = gap_qq*el14_scale
-            gap_qj_fact = 1.0_8+gapsys_sigma_q*abs(qi*qj)
-            r_sc_q = gapsys_q_lambda_factor(iq,istate)*gap_qj_fact
-            if(dist < r_sc_q .and. r_sc_q > 0._8) then
-              call gapsys_eval_q(gap_qq,r_sc_q,dist,Vel,gap_Fq)
-              dv_el = -gap_Fq/dist
-            else
-              Vel = qi*qj*r*el_scale
-              if(iLJ == 3) Vel = Vel*el14_scale
-              dv_el = r2*(-Vel)
-            end if
-            dv = (dv_lj+dv_el)*EQ(istate)%lambda
-          else if (softcore_method == SC_BEUTLER_COUL .and. &
-              sc_lookup(iq,jq+natyps,istate) > 0) then
-            Vel = qi*qj*el_scale/(r6_hc+sc_lookup(iq,jq+natyps,istate))**(1.0_8/6.0_8)
-            if(iLJ == 3) Vel = Vel*el14_scale
-            dv = r2*(-Vel-(12.*V_a-6.*V_b))*(r6*r6_hc)*EQ(istate)%lambda
-          else
             Vel = qi*qj*r*el_scale
             if(iLJ == 3) Vel = Vel*el14_scale
             dv = r2*(-Vel-(12.*V_a-6.*V_b)*r6*r6_hc)*EQ(istate)%lambda
-          end if
         end if
       end if
 
@@ -11894,10 +11804,6 @@ subroutine nonbon2_qq_lib_charges
   integer                                         :: ip,iq,jq,i,j,k,i3,j3,iaci,iacj,iLJ
   real(8)                                         :: qi,qj,aLJ,bLJ,dx1,dx2,dx3,r2,r,r6,r12,r6_hc
   real(8)                                         :: Vel,V_a,V_b,dv,el_scale
-  real(8)                                         :: dist,r_sc_lj,r_sc_q
-  real(8)                                         :: dv_lj,dv_el
-  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
-  real(8)                                         :: gap_qq,gap_qj_fact,gap_Flj,gap_Fq
 
   do istate = 1, nstates
     ! for every state:
@@ -11952,12 +11858,8 @@ subroutine nonbon2_qq_lib_charges
 
       r2   = dx1*dx1 + dx2*dx2 + dx3*dx3
       r6_hc = r2*r2*r2   !needed for softcore
-      if (softcore_method == SC_GAPSYS) then
-        r6 = 1._8/r6_hc
-      else
         r6   = r6_hc + sc_lookup(iq,jq+natyps,istate)  !softcore
         r6   = 1._8/r6
-      end if
       r12  = r6*r6
       r2   = 1./r2
       r    = sqrt ( r2 )
@@ -11979,48 +11881,9 @@ subroutine nonbon2_qq_lib_charges
         aLJ  = aLJ*aLJ*aLJ
         V_a  = bLJ*aLJ*aLJ*r12
         V_b  = 2.0*bLJ*aLJ*r6
-        if (softcore_method == SC_GAPSYS .and. &
-            sc_lookup(iq,jq+natyps,istate) > 0) then
-          ! Gapsys 2012 SI Eqs. 1.1-1.4 (paper-faithful linearization).
-          ! Q convention here: V_a = (bLJ*aLJ*aLJ)/r^12, V_b = (2*bLJ*aLJ)/r^6,
-          ! so SI's C12 = bLJ*aLJ*aLJ and SI's C6 = 2*bLJ*aLJ.
-          dist = 1._8/r
-
-          ! LJ
-          r_sc_lj = gapsys_lj_rsc(iq, natyps+jq, istate)
-          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
-            call gapsys_eval_lj(bLJ*aLJ*aLJ, 2.0_8*bLJ*aLJ, r_sc_lj, dist, V_a, gap_Flj)
-            V_b   = 0._8
-            dv_lj = -gap_Flj / dist
-          else
-            dv_lj = r2*(-(12.*V_a - 6.*V_b))
-          end if
-
-          ! Coulomb -- paper Eq. 5 with partner-charge factor at runtime.
-          gap_qq      = qi*qj*el_scale
-          if ( iLJ .eq. 3 ) gap_qq = gap_qq*el14_scale
-          gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(qi*qj)
-          r_sc_q      = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
-          if (dist < r_sc_q .and. r_sc_q > 0._8) then
-            call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel, gap_Fq)
-            dv_el = -gap_Fq / dist
-          else
-            Vel = qi*qj*r*el_scale
-            if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
-            dv_el = r2*(-Vel)
-          end if
-
-          dv = (dv_lj + dv_el)*EQ(istate)%lambda
-        else if (softcore_method == SC_BEUTLER_COUL .and. &
-            sc_lookup(iq,jq+natyps,istate) > 0) then
-          Vel = qi*qj*el_scale / (r6_hc+sc_lookup(iq,jq+natyps,istate))**(1.0_8/6.0_8)
-          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
-          dv  = r2*( -Vel -(12.*V_a -6.*V_b) )*(r6*r6_hc)*EQ(istate)%lambda
-        else
           Vel  = qi*qj*r*el_scale
           if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
           dv  = r2*( -Vel -(12.*V_a -6.*V_b)*r6*r6_hc )*EQ(istate)%lambda
-        end if
       endif
 
       ! update forces
@@ -12052,12 +11915,11 @@ subroutine nonbon2_qp
   integer                                         :: istate
   real(8)                                         :: aLJ,bLJ,dx1,dx2,dx3,r2,r,r6,r6_hc
   real(8)                                         :: Vel,V_a,V_b,dv
-  real(8)                                         :: dist,r_sc_lj,r_sc_q
+  real(8)                                         :: r_sc_lj,r_sc_q
   real(8)                                         :: dv_lj,dv_el
   real(8)                                         :: a6,c12,c6,qi_e,qj_e,decoupling
-  logical                                         :: overlap_lj,overlap_q,do_sc_v2
-  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
-  real(8)                                         :: gap_qq,gap_qj_fact,gap_Flj,gap_Fq,gap_qiqj
+  logical                                         :: overlap_lj,overlap_q,do_sc_nonlinear
+  real(8)                                         :: gap_qq
 
   ! global variables used:
   !  iqseq, iac, crg, x, nstates, qvdw_flag, iaclib, qiac, qavdw, qbvdw, qcrg, el14_scale, EQ, d, nat_solute
@@ -12078,7 +11940,7 @@ subroutine nonbon2_qp
     dx2 = x(j3+2)-x(i3+2)
     dx3 = x(j3+3)-x(i3+3)
     r2 = dx1*dx1+dx2*dx2+dx3*dx3
-    if(softcore_method /= SC_GAPSYS_V2) then
+    if(.not. lambda_dependent_softcore()) then
       r6 = r2*r2*r2
       r6_hc = r6
       r2 = 1.0_8/r2
@@ -12104,10 +11966,8 @@ subroutine nonbon2_qp
           bLJ  = qbvdw(iaci,iLJ)
         end if
 
-        if (softcore_method == SC_GAPSYS_V2) then
+        if (lambda_dependent_softcore()) then
           ! The v2 evaluator consumes the un-inverted squared distance below.
-        else if (softcore_method == SC_GAPSYS) then
-          r6 = 1._8/r6_hc
         else
           r6 = r6_hc + sc_lookup(iq,iacj,istate) !this is softcore
           r6 = 1._8/r6
@@ -12116,22 +11976,22 @@ subroutine nonbon2_qp
       aLJ = aLJ+iaclib(iacj)%avdw(iLJ)
       bLJ = bLJ*iaclib(iacj)%bvdw(iLJ)
 
-      if(softcore_method == SC_GAPSYS_V2) then
-        if(iLJ == 2) call die('gapsys_v2 does not support exponential Q-protein pairs')
-        do_sc_v2 = softcore_pair_enabled(iq,iacj,istate)
-        if(do_sc_v2) then
+      if(lambda_dependent_softcore()) then
+        if(iLJ == 2) call die('nonlinear softcore does not support exponential Q-protein pairs')
+        do_sc_nonlinear = softcore_pair_enabled(iq,iacj,istate)
+        if(do_sc_nonlinear) then
           qi_e = real(qcrg(iq,istate),8)/sqrt(coulomb_constant)
           qj_e = crg(j)/sqrt(coulomb_constant)
           if(foreign_hamiltonian_evaluation .or. iLJ /= 1) then
             decoupling = max(0.0_8,1.0_8-EQ(istate)%lambda)
-            r_sc_lj = gapsys_lj_radius(gapsys_alpha_lj, &
+            r_sc_lj = nonlinear_lj_radius( &
                          aLJ/2.0_8**(1.0_8/6.0_8),decoupling)
-            r_sc_q = gapsys_coulomb_radius(gapsys_alpha_q,gapsys_sigma_q, &
+            r_sc_q = nonlinear_coulomb_radius( &
                                             qi_e,qj_e,decoupling)
           else
-            r_sc_lj = gapsys_lj_rsc(iq,iacj,istate)
-            r_sc_q = gapsys_q_lambda_factor(iq,istate)* &
-                     (1.0_8+gapsys_sigma_q*abs(qi_e*qj_e))
+            r_sc_lj = softcore_lj_rsc(iq,iacj,istate)
+            r_sc_q = softcore_q_lambda_factor(iq,istate)* &
+                     nonlinear_charge_factor(qi_e,qj_e)
           end if
         else
           r_sc_lj = 0.0_8
@@ -12142,11 +12002,11 @@ subroutine nonbon2_qp
         c6 = 2.0_8*bLJ*a6
         gap_qq = qcrg(iq,istate)*crg(j)
         if(iLJ == 3) gap_qq = gap_qq*el14_scale
-        call eval_gapsys_lj(c12,c6,r_sc_lj,r2,V_a,dv_lj,overlap_lj)
-        call eval_gapsys_coulomb(gap_qq,r_sc_q,r2,Vel,dv_el,overlap_q)
+        call eval_softcore_lj(c12,c6,r_sc_lj,r2,V_a,dv_lj,overlap_lj)
+        call eval_softcore_coulomb(gap_qq,r_sc_q,r2,Vel,dv_el,overlap_q)
         if((overlap_lj .or. overlap_q) .and. EQ(istate)%lambda > 1.0e-12_8 .and. &
            (c12 /= 0.0_8 .or. c6 /= 0.0_8 .or. gap_qq /= 0.0_8)) then
-          call die('gapsys_v2 encountered exact overlap in an active Q-protein pair')
+          call die('nonlinear softcore encountered exact overlap in an active Q-protein pair')
         end if
         dv = (dv_lj+dv_el)*EQ(istate)%lambda
         d(i3+1) = d(i3+1)-dv*dx1
@@ -12166,48 +12026,9 @@ subroutine nonbon2_qp
       ! calculate qi, Vel, V_a, V_b and dv
       V_a  = bLJ*aLJ*aLJ*r6*r6
       V_b  = 2.0*bLJ*aLJ*r6
-      if (softcore_method == SC_GAPSYS .and. &
-          sc_lookup(iq,iacj,istate) > 0) then
-        ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization.
-        ! Q convention: V_a = (bLJ*aLJ*aLJ)/r^12, V_b = (2*bLJ*aLJ)/r^6.
-        dist     = 1._8/r
-        gap_qiqj = qcrg(iq,istate)*crg(j)
-
-        ! LJ
-        r_sc_lj = gapsys_lj_rsc(iq, iacj, istate)
-        if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
-          call gapsys_eval_lj(bLJ*aLJ*aLJ, 2.0_8*bLJ*aLJ, r_sc_lj, dist, V_a, gap_Flj)
-          V_b   = 0._8
-          dv_lj = -gap_Flj / dist
-        else
-          dv_lj = r2*(-(12.*V_a - 6.*V_b))
-        end if
-
-        ! Coulomb -- paper Eq. 5 with partner-charge factor at runtime.
-        gap_qq      = gap_qiqj
-        if ( iLJ .eq. 3 ) gap_qq = gap_qq*el14_scale
-        gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(gap_qiqj)
-        r_sc_q      = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
-        if (dist < r_sc_q .and. r_sc_q > 0._8) then
-          call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel, gap_Fq)
-          dv_el = -gap_Fq / dist
-        else
-          Vel = gap_qiqj*r
-          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
-          dv_el = r2*(-Vel)
-        end if
-
-        dv = (dv_lj + dv_el)*EQ(istate)%lambda
-      else if (softcore_method == SC_BEUTLER_COUL .and. &
-          sc_lookup(iq,iacj,istate) > 0) then
-        Vel = qcrg(iq,istate)*crg(j) / (r6_hc+sc_lookup(iq,iacj,istate))**(1.0_8/6.0_8)
-        if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
-        dv  = r2*( -Vel -(12.*V_a -6.*V_b) )*(r6*r6_hc)*EQ(istate)%lambda
-      else
         Vel  = qcrg(iq,istate)*crg(j)*r
         if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
         dv   = r2*( -Vel -(12.*V_a -6.*V_b)*r6*r6_hc )*EQ(istate)%lambda
-      end if
 
       ! update forces
       d(i3+1) = d(i3+1) - dv*dx1
@@ -12233,10 +12054,6 @@ subroutine nonbon2_qp_box
   integer                                               :: istate
   real(8)                                               :: aLJ,bLJ,dx1,dx2,dx3,r2,r,r6,r6_hc
   real(8)                                               :: Vel,V_a,V_b,dv
-  real(8)                                               :: dist,r_sc_lj,r_sc_q
-  real(8)                                               :: dv_lj,dv_el
-  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
-  real(8)                                               :: gap_qq,gap_qj_fact,gap_Flj,gap_Fq,gap_qiqj
   integer                                               :: group, gr, ia
 
   ! global variables used:
@@ -12303,12 +12120,8 @@ subroutine nonbon2_qp_box
           aLJ  = qavdw(iaci,iLJ)
           bLJ  = qbvdw(iaci,iLJ)
         end if
-        if (softcore_method == SC_GAPSYS) then
-          r6 = 1._8/r6_hc
-        else
           r6 = r6_hc + sc_lookup(iq,iacj,istate)
           r6 = 1._8/r6
-        end if
       end if
       aLJ = aLJ+iaclib(iacj)%avdw(iLJ)
       bLJ = bLJ*iaclib(iacj)%bvdw(iLJ)
@@ -12318,48 +12131,9 @@ subroutine nonbon2_qp_box
       ! calculate qi, Vel, V_a, V_b and dv
       V_a  = bLJ*aLJ*aLJ*r6*r6
       V_b  = 2.0*bLJ*aLJ*r6
-      if (softcore_method == SC_GAPSYS .and. &
-          sc_lookup(iq,iacj,istate) > 0) then
-        ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization.
-        ! Q convention: V_a = (bLJ*aLJ*aLJ)/r^12, V_b = (2*bLJ*aLJ)/r^6.
-        dist     = 1._8/r
-        gap_qiqj = qcrg(iq,istate)*crg(j)
-
-        ! LJ
-        r_sc_lj = gapsys_lj_rsc(iq, iacj, istate)
-        if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
-          call gapsys_eval_lj(bLJ*aLJ*aLJ, 2.0_8*bLJ*aLJ, r_sc_lj, dist, V_a, gap_Flj)
-          V_b   = 0._8
-          dv_lj = -gap_Flj / dist
-        else
-          dv_lj = r2*(-(12.*V_a - 6.*V_b))
-        end if
-
-        ! Coulomb -- paper Eq. 5 with partner-charge factor at runtime.
-        gap_qq      = gap_qiqj
-        if ( iLJ .eq. 3 ) gap_qq = gap_qq*el14_scale
-        gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(gap_qiqj)
-        r_sc_q      = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
-        if (dist < r_sc_q .and. r_sc_q > 0._8) then
-          call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel, gap_Fq)
-          dv_el = -gap_Fq / dist
-        else
-          Vel = gap_qiqj*r
-          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
-          dv_el = r2*(-Vel)
-        end if
-
-        dv = (dv_lj + dv_el)*EQ(istate)%lambda
-      else if (softcore_method == SC_BEUTLER_COUL .and. &
-          sc_lookup(iq,iacj,istate) > 0) then
-        Vel = qcrg(iq,istate)*crg(j) / (r6_hc+sc_lookup(iq,iacj,istate))**(1.0_8/6.0_8)
-        if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
-        dv  = r2*( -Vel -(12.*V_a -6.*V_b) )*(r6*r6_hc)*EQ(istate)%lambda
-      else
         Vel  = qcrg(iq,istate)*crg(j)*r
         if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
         dv   = r2*( -Vel -(12.*V_a -6.*V_b)*r6*r6_hc )*EQ(istate)%lambda
-      end if
 
       ! update forces
       d(i3+1) = d(i3+1) - dv*dx1
@@ -12389,11 +12163,6 @@ subroutine nonbon2_qw
   real(8)                                         ::      rO, r2O, r6O, rH1, r2H1, r6H1, rH2, r2H2, r6H2,r6O_hc,r6H1_hc,r6H2_hc
   real(8)                                         ::      VelO, VelH1, VelH2, dvO, dvH1, dvH2
   real(8)                                         :: V_ao, V_bo, V_ah1, V_bh1, V_ah2, V_bh2
-  real(8)                                         :: dist,r_sc_lj,r_sc_q
-  real(8)                                         :: dv_lj,dv_el
-  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
-  real(8)                                         :: gap_qq_o,gap_qq_h,gap_Flj,gap_Fq
-  real(8)                                         :: gap_qj_fact_o,gap_qj_fact_h
   real(8), save                           ::      aO(2), bO(2), aH(2), bH(2)
   integer, save                           ::      iac_ow, iac_hw
   ! global variables used:
@@ -12466,11 +12235,6 @@ subroutine nonbon2_qw
         ! set new LJ params if Q-atom types are used
         if (qvdw_flag) then
 
-          if (softcore_method == SC_GAPSYS) then
-            r6O = r6O_hc
-            r6H1 = r6H1_hc
-            r6H2 = r6H2_hc
-          else
             r6O = 1._8/r6O_hc
             r6O = r6O + sc_lookup(iq,iac_ow,istate)   !softcore
             r6O = 1._8/r6O
@@ -12480,7 +12244,6 @@ subroutine nonbon2_qw
             r6H2 = 1._8/r6H2_hc
             r6H2 = r6H2 + sc_lookup(iq,iac_hw,istate)   !softcore
             r6H2 = 1._8/r6H2
-          end if
           aLJO  = qavdw(qiac(iq,istate),1)+aO(iLJO)
           bLJO  = qbvdw(qiac(iq,istate),1)*bO(iLJO)
           aLJH  = qavdw(qiac(iq,istate),1)+aH(iLJH)
@@ -12500,99 +12263,13 @@ subroutine nonbon2_qw
 
         ! calculate qi, Vel, V_a, V_b and dv
         ! Oxygen
-        if (softcore_method == SC_GAPSYS .and. &
-            sc_lookup(iq,iac_ow,istate) > 0) then
-          ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization (Q-water O).
-          dist     = 1._8/rO
-          gap_qq_o = crg_ow*qcrg(iq,istate)
-
-          ! LJ -- C12 = bLJO*aLJO*aLJO, C6 = 2*bLJO*aLJO
-          r_sc_lj = gapsys_lj_rsc(iq, iac_ow, istate)
-          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
-            call gapsys_eval_lj(bLJO*aLJO*aLJO, 2.0_8*bLJO*aLJO, r_sc_lj, dist, V_aO, gap_Flj)
-            V_bO  = 0._8
-            dv_lj = -gap_Flj / dist
-          else
-            dv_lj = r2O*(-(12.*V_aO - 6.*V_bO))
-          end if
-
-          ! Coulomb -- partner-charge factor at runtime.
-          gap_qj_fact_o = 1.0_8 + gapsys_sigma_q*abs(gap_qq_o)
-          r_sc_q        = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact_o
-          if (dist < r_sc_q .and. r_sc_q > 0._8) then
-            call gapsys_eval_q(gap_qq_o, r_sc_q, dist, VelO, gap_Fq)
-            dv_el = -gap_Fq / dist
-          else
-            VelO = gap_qq_o*rO
-            dv_el = r2O*(-VelO)
-          end if
-
-          dvO = dvO + (dv_lj + dv_el)*EQ(istate)%lambda
-        else if (softcore_method == SC_BEUTLER_COUL .and. &
-            sc_lookup(iq,iac_ow,istate) > 0) then
-          VelO = crg_ow*qcrg(iq,istate) * r6O**(1.0_8/6.0_8)
-          dvO  = dvO  + r2O *( -VelO  -(12.*V_aO  -6.*V_bO ))*(r6O/r6O_hc)*EQ(istate)%lambda
-        else
           VelO = crg_ow*qcrg(iq,istate)*rO
           dvO  = dvO  + r2O *( -VelO  -(12.*V_aO  -6.*V_bO )*r6O/r6O_hc)*EQ(istate)%lambda
-        end if
         ! Hydrogens
-        if (softcore_method == SC_GAPSYS .and. &
-            sc_lookup(iq,iac_hw,istate) > 0) then
-          ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization (Q-water H1/H2).
-          ! Both Hs share iac_hw, partner-charge factor, r_sc_lj, r_sc_q at this state.
-          gap_qq_h      = crg_hw*qcrg(iq,istate)
-          gap_qj_fact_h = 1.0_8 + gapsys_sigma_q*abs(gap_qq_h)
-          r_sc_lj       = gapsys_lj_rsc(iq, iac_hw, istate)
-          r_sc_q        = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact_h
-
-          ! H1
-          dist = 1._8/rH1
-          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
-            call gapsys_eval_lj(bLJH*aLJH*aLJH, 2.0_8*bLJH*aLJH, r_sc_lj, dist, V_aH1, gap_Flj)
-            V_bH1 = 0._8
-            dv_lj = -gap_Flj / dist
-          else
-            dv_lj = r2H1*(-(12.*V_aH1 - 6.*V_bH1))
-          end if
-          if (dist < r_sc_q .and. r_sc_q > 0._8) then
-            call gapsys_eval_q(gap_qq_h, r_sc_q, dist, VelH1, gap_Fq)
-            dv_el = -gap_Fq / dist
-          else
-            VelH1 = gap_qq_h*rH1
-            dv_el = r2H1*(-VelH1)
-          end if
-          dvH1 = dvH1 + (dv_lj + dv_el)*EQ(istate)%lambda
-
-          ! H2
-          dist = 1._8/rH2
-          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
-            call gapsys_eval_lj(bLJH*aLJH*aLJH, 2.0_8*bLJH*aLJH, r_sc_lj, dist, V_aH2, gap_Flj)
-            V_bH2 = 0._8
-            dv_lj = -gap_Flj / dist
-          else
-            dv_lj = r2H2*(-(12.*V_aH2 - 6.*V_bH2))
-          end if
-          if (dist < r_sc_q .and. r_sc_q > 0._8) then
-            call gapsys_eval_q(gap_qq_h, r_sc_q, dist, VelH2, gap_Fq)
-            dv_el = -gap_Fq / dist
-          else
-            VelH2 = gap_qq_h*rH2
-            dv_el = r2H2*(-VelH2)
-          end if
-          dvH2 = dvH2 + (dv_lj + dv_el)*EQ(istate)%lambda
-        else if (softcore_method == SC_BEUTLER_COUL .and. &
-            sc_lookup(iq,iac_hw,istate) > 0) then
-          VelH1 = crg_hw*qcrg(iq,istate) * r6H1**(1.0_8/6.0_8)
-          VelH2 = crg_hw*qcrg(iq,istate) * r6H2**(1.0_8/6.0_8)
-          dvH1 = dvH1 + r2H1*( -VelH1 -(12.*V_aH1 -6.*V_bH1))*(r6H1/r6H1_hc)*EQ(istate)%lambda
-          dvH2 = dvH2 + r2H2*( -VelH2 -(12.*V_aH2 -6.*V_bH2))*(r6H2/r6H2_hc)*EQ(istate)%lambda
-        else
           VelH1 = crg_hw*qcrg(iq,istate)*rH1
           VelH2 = crg_hw*qcrg(iq,istate)*rH2
           dvH1 = dvH1 + r2H1*( -VelH1 -(12.*V_aH1 -6.*V_bH1)*r6H1/r6H1_hc)*EQ(istate)%lambda
           dvH2 = dvH2 + r2H2*( -VelH2 -(12.*V_aH2 -6.*V_bH2)*r6H2/r6H2_hc)*EQ(istate)%lambda
-        end if
         ! update q-water energies
         EQ(istate)%qw%el  = EQ(istate)%qw%el + VelO + VelH1 + VelH2
         EQ(istate)%qw%vdw = EQ(istate)%qw%vdw + V_aO + V_aH1 + V_aH2 - V_bO - V_bH1 - V_bH2
@@ -12619,7 +12296,7 @@ subroutine nonbon2_qw
 end subroutine nonbon2_qw
 
 !-----------------------------------------------------------------------
-subroutine nonbon2_qw_gapsys_v2
+subroutine nonbon2_qw_softcore
   ! Corrected arithmetic/SBC Q-water evaluator. LJ and Coulomb activation are
   ! independent, so zero-LJ water hydrogens still receive Coulomb soft-core.
   integer :: jw,iq,i,j,istate,iLJO,iLJH,iaci,iac_ow,iac_hw
@@ -12675,25 +12352,25 @@ subroutine nonbon2_qw_gapsys_v2
         if(enabled) then
           if(foreign_hamiltonian_evaluation .or. iLJO /= 1) then
             decoupling = max(0.0_8,1.0_8-EQ(istate)%lambda)
-            rsc_lj = gapsys_lj_radius(gapsys_alpha_lj, &
+            rsc_lj = nonlinear_lj_radius( &
                        aPair/2.0_8**(1.0_8/6.0_8),decoupling)
-            rsc_q = gapsys_coulomb_radius(gapsys_alpha_q,gapsys_sigma_q, &
+            rsc_q = nonlinear_coulomb_radius( &
                                            qi_e,qO_e,decoupling)
           else
-            rsc_lj = gapsys_lj_rsc(iq,iac_ow,istate)
-            rsc_q = gapsys_q_lambda_factor(iq,istate)* &
-                     (1.0_8+gapsys_sigma_q*abs(qi_e*qO_e))
+            rsc_lj = softcore_lj_rsc(iq,iac_ow,istate)
+            rsc_q = softcore_q_lambda_factor(iq,istate)* &
+                     nonlinear_charge_factor(qi_e,qO_e)
           end if
         else
           rsc_lj = 0.0_8
           rsc_q = 0.0_8
         end if
         qqO = qcrg(iq,istate)*crg_ow
-        call eval_gapsys_lj(c12,c6,rsc_lj,r2O,VljO,dv_lj,overlap_lj)
-        call eval_gapsys_coulomb(qqO,rsc_q,r2O,VelO,dv_el,overlap_q)
+        call eval_softcore_lj(c12,c6,rsc_lj,r2O,VljO,dv_lj,overlap_lj)
+        call eval_softcore_coulomb(qqO,rsc_q,r2O,VelO,dv_el,overlap_q)
         if((overlap_lj .or. overlap_q) .and. EQ(istate)%lambda > 1.0e-12_8 .and. &
            (c12 /= 0.0_8 .or. c6 /= 0.0_8 .or. qqO /= 0.0_8)) then
-          call die('gapsys_v2 encountered exact overlap in an active Q-water oxygen pair')
+          call die('nonlinear softcore encountered exact overlap in an active Q-water oxygen pair')
         end if
         dvO = dvO+(dv_lj+dv_el)*EQ(istate)%lambda
 
@@ -12707,33 +12384,33 @@ subroutine nonbon2_qw_gapsys_v2
         if(enabled) then
           if(foreign_hamiltonian_evaluation .or. iLJH /= 1) then
             decoupling = max(0.0_8,1.0_8-EQ(istate)%lambda)
-            rsc_lj = gapsys_lj_radius(gapsys_alpha_lj, &
+            rsc_lj = nonlinear_lj_radius( &
                        aPair/2.0_8**(1.0_8/6.0_8),decoupling)
-            rsc_q = gapsys_coulomb_radius(gapsys_alpha_q,gapsys_sigma_q, &
+            rsc_q = nonlinear_coulomb_radius( &
                                            qi_e,qH_e,decoupling)
           else
-            rsc_lj = gapsys_lj_rsc(iq,iac_hw,istate)
-            rsc_q = gapsys_q_lambda_factor(iq,istate)* &
-                     (1.0_8+gapsys_sigma_q*abs(qi_e*qH_e))
+            rsc_lj = softcore_lj_rsc(iq,iac_hw,istate)
+            rsc_q = softcore_q_lambda_factor(iq,istate)* &
+                     nonlinear_charge_factor(qi_e,qH_e)
           end if
         else
           rsc_lj = 0.0_8
           rsc_q = 0.0_8
         end if
         qqH = qcrg(iq,istate)*crg_hw
-        call eval_gapsys_lj(c12,c6,rsc_lj,r2H1,VljH1,dv_lj,overlap_lj)
-        call eval_gapsys_coulomb(qqH,rsc_q,r2H1,VelH1,dv_el,overlap_q)
+        call eval_softcore_lj(c12,c6,rsc_lj,r2H1,VljH1,dv_lj,overlap_lj)
+        call eval_softcore_coulomb(qqH,rsc_q,r2H1,VelH1,dv_el,overlap_q)
         if((overlap_lj .or. overlap_q) .and. EQ(istate)%lambda > 1.0e-12_8 .and. &
            (c12 /= 0.0_8 .or. c6 /= 0.0_8 .or. qqH /= 0.0_8)) then
-          call die('gapsys_v2 encountered exact overlap in an active Q-water hydrogen pair')
+          call die('nonlinear softcore encountered exact overlap in an active Q-water hydrogen pair')
         end if
         dvH1 = dvH1+(dv_lj+dv_el)*EQ(istate)%lambda
 
-        call eval_gapsys_lj(c12,c6,rsc_lj,r2H2,VljH2,dv_lj,overlap_lj)
-        call eval_gapsys_coulomb(qqH,rsc_q,r2H2,VelH2,dv_el,overlap_q)
+        call eval_softcore_lj(c12,c6,rsc_lj,r2H2,VljH2,dv_lj,overlap_lj)
+        call eval_softcore_coulomb(qqH,rsc_q,r2H2,VelH2,dv_el,overlap_q)
         if((overlap_lj .or. overlap_q) .and. EQ(istate)%lambda > 1.0e-12_8 .and. &
            (c12 /= 0.0_8 .or. c6 /= 0.0_8 .or. qqH /= 0.0_8)) then
-          call die('gapsys_v2 encountered exact overlap in an active Q-water hydrogen pair')
+          call die('nonlinear softcore encountered exact overlap in an active Q-water hydrogen pair')
         end if
         dvH2 = dvH2+(dv_lj+dv_el)*EQ(istate)%lambda
 
@@ -12755,7 +12432,7 @@ subroutine nonbon2_qw_gapsys_v2
       d(3*j+6) = d(3*j+6)+dvH2*dzH2
     end do
   end do
-end subroutine nonbon2_qw_gapsys_v2
+end subroutine nonbon2_qw_softcore
 
 !-----------------------------------------------------------------------
 !******PWadded 2001-10-23
@@ -12768,11 +12445,6 @@ subroutine nonbon2_qw_box
   real(8)                                         ::      rO, r2O, r6O, rH1, r2H1, r6H1, rH2, r2H2, r6H2,r6O_hc,r6H1_hc,r6H2_hc
   real(8)                                         ::      VelO, VelH1, VelH2, dvO, dvH1, dvH2
   real(8)                                         :: V_ao, V_bo, V_ah1, V_bh1, V_ah2, V_bh2
-  real(8)                                         :: dist,r_sc_lj,r_sc_q
-  real(8)                                         :: dv_lj,dv_el
-  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
-  real(8)                                         :: gap_qq_o,gap_qq_h,gap_Flj,gap_Fq
-  real(8)                                         :: gap_qj_fact_o,gap_qj_fact_h
   real(8)                                         :: boxshiftx, boxshifty, boxshiftz, dx, dy, dz
   real(8), save                           ::      aO(2), bO(2), aH(2), bH(2)
   integer, save                           ::      iac_ow, iac_hw
@@ -12862,11 +12534,6 @@ subroutine nonbon2_qw_box
 
         ! set new LJ params if Q-atom types are used
         if (qvdw_flag) then
-          if (softcore_method == SC_GAPSYS) then
-            r6O = r6O_hc
-            r6H1 = r6H1_hc
-            r6H2 = r6H2_hc
-          else
             r6O = 1._8/r6O_hc
             r6O = r6O + sc_lookup(iq,iac_ow,istate)   !softcore
             r6O = 1._8/r6O
@@ -12876,7 +12543,6 @@ subroutine nonbon2_qw_box
             r6H2 = 1._8/r6H2_hc
             r6H2 = r6H2 + sc_lookup(iq,iac_hw,istate)   !softcore
             r6H2 = 1._8/r6H2
-          end if
           aLJO  = qavdw(qiac(iq,istate),1)+aO(iLJO)
           bLJO  = qbvdw(qiac(iq,istate),1)*bO(iLJO)
           aLJH  = qavdw(qiac(iq,istate),1)+aH(iLJH)
@@ -12896,99 +12562,13 @@ subroutine nonbon2_qw_box
 
         ! calculate qi, Vel, V_a, V_b and dv
         ! Oxygen
-        if (softcore_method == SC_GAPSYS .and. &
-            sc_lookup(iq,iac_ow,istate) > 0) then
-          ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization (Q-water O).
-          dist     = 1._8/rO
-          gap_qq_o = crg_ow*qcrg(iq,istate)
-
-          ! LJ -- C12 = bLJO*aLJO*aLJO, C6 = 2*bLJO*aLJO
-          r_sc_lj = gapsys_lj_rsc(iq, iac_ow, istate)
-          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
-            call gapsys_eval_lj(bLJO*aLJO*aLJO, 2.0_8*bLJO*aLJO, r_sc_lj, dist, V_aO, gap_Flj)
-            V_bO  = 0._8
-            dv_lj = -gap_Flj / dist
-          else
-            dv_lj = r2O*(-(12.*V_aO - 6.*V_bO))
-          end if
-
-          ! Coulomb -- partner-charge factor at runtime.
-          gap_qj_fact_o = 1.0_8 + gapsys_sigma_q*abs(gap_qq_o)
-          r_sc_q        = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact_o
-          if (dist < r_sc_q .and. r_sc_q > 0._8) then
-            call gapsys_eval_q(gap_qq_o, r_sc_q, dist, VelO, gap_Fq)
-            dv_el = -gap_Fq / dist
-          else
-            VelO = gap_qq_o*rO
-            dv_el = r2O*(-VelO)
-          end if
-
-          dvO = dvO + (dv_lj + dv_el)*EQ(istate)%lambda
-        else if (softcore_method == SC_BEUTLER_COUL .and. &
-            sc_lookup(iq,iac_ow,istate) > 0) then
-          VelO = crg_ow*qcrg(iq,istate) * r6O**(1.0_8/6.0_8)
-          dvO  = dvO  + r2O *( -VelO  -(12.*V_aO  -6.*V_bO ))*(r6O/r6O_hc)*EQ(istate)%lambda
-        else
           VelO = crg_ow*qcrg(iq,istate)*rO
           dvO  = dvO  + r2O *( -VelO  -(12.*V_aO  -6.*V_bO )*r6O/r6O_hc)*EQ(istate)%lambda
-        end if
         ! Hydrogens
-        if (softcore_method == SC_GAPSYS .and. &
-            sc_lookup(iq,iac_hw,istate) > 0) then
-          ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization (Q-water H1/H2).
-          ! Both Hs share iac_hw, partner-charge factor, r_sc_lj, r_sc_q at this state.
-          gap_qq_h      = crg_hw*qcrg(iq,istate)
-          gap_qj_fact_h = 1.0_8 + gapsys_sigma_q*abs(gap_qq_h)
-          r_sc_lj       = gapsys_lj_rsc(iq, iac_hw, istate)
-          r_sc_q        = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact_h
-
-          ! H1
-          dist = 1._8/rH1
-          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
-            call gapsys_eval_lj(bLJH*aLJH*aLJH, 2.0_8*bLJH*aLJH, r_sc_lj, dist, V_aH1, gap_Flj)
-            V_bH1 = 0._8
-            dv_lj = -gap_Flj / dist
-          else
-            dv_lj = r2H1*(-(12.*V_aH1 - 6.*V_bH1))
-          end if
-          if (dist < r_sc_q .and. r_sc_q > 0._8) then
-            call gapsys_eval_q(gap_qq_h, r_sc_q, dist, VelH1, gap_Fq)
-            dv_el = -gap_Fq / dist
-          else
-            VelH1 = gap_qq_h*rH1
-            dv_el = r2H1*(-VelH1)
-          end if
-          dvH1 = dvH1 + (dv_lj + dv_el)*EQ(istate)%lambda
-
-          ! H2
-          dist = 1._8/rH2
-          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
-            call gapsys_eval_lj(bLJH*aLJH*aLJH, 2.0_8*bLJH*aLJH, r_sc_lj, dist, V_aH2, gap_Flj)
-            V_bH2 = 0._8
-            dv_lj = -gap_Flj / dist
-          else
-            dv_lj = r2H2*(-(12.*V_aH2 - 6.*V_bH2))
-          end if
-          if (dist < r_sc_q .and. r_sc_q > 0._8) then
-            call gapsys_eval_q(gap_qq_h, r_sc_q, dist, VelH2, gap_Fq)
-            dv_el = -gap_Fq / dist
-          else
-            VelH2 = gap_qq_h*rH2
-            dv_el = r2H2*(-VelH2)
-          end if
-          dvH2 = dvH2 + (dv_lj + dv_el)*EQ(istate)%lambda
-        else if (softcore_method == SC_BEUTLER_COUL .and. &
-            sc_lookup(iq,iac_hw,istate) > 0) then
-          VelH1 = crg_hw*qcrg(iq,istate) * r6H1**(1.0_8/6.0_8)
-          VelH2 = crg_hw*qcrg(iq,istate) * r6H2**(1.0_8/6.0_8)
-          dvH1 = dvH1 + r2H1*( -VelH1 -(12.*V_aH1 -6.*V_bH1))*(r6H1/r6H1_hc)*EQ(istate)%lambda
-          dvH2 = dvH2 + r2H2*( -VelH2 -(12.*V_aH2 -6.*V_bH2))*(r6H2/r6H2_hc)*EQ(istate)%lambda
-        else
           VelH1 = crg_hw*qcrg(iq,istate)*rH1
           VelH2 = crg_hw*qcrg(iq,istate)*rH2
           dvH1 = dvH1 + r2H1*( -VelH1 -(12.*V_aH1 -6.*V_bH1)*r6H1/r6H1_hc)*EQ(istate)%lambda
           dvH2 = dvH2 + r2H2*( -VelH2 -(12.*V_aH2 -6.*V_bH2)*r6H2/r6H2_hc)*EQ(istate)%lambda
-        end if
         ! update q-water energies
         EQ(istate)%qw%el  = EQ(istate)%qw%el + VelO + VelH1 + VelH2
         EQ(istate)%qw%vdw = EQ(istate)%qw%vdw + V_aO + V_aH1 + V_aH2 - V_bO - V_bH1 - V_bH2
@@ -13686,10 +13266,6 @@ subroutine nonbond_qq
   integer                                 :: ip,iq,jq,i,j,k,i3,j3,iaci,iacj,iLJ
   real(8)                                 :: qi,qj,aLJ,bLJ,dx1,dx2,dx3,r2,r,r6,r12,r6_hc
   real(8)                                 :: Vel,V_a,V_b,dv,el_scale
-  real(8)                                 :: dist,r_sc_lj,r_sc_q
-  real(8)                                 :: dv_lj,dv_el
-  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
-  real(8)                                 :: gap_qq,gap_qj_fact,gap_Flj,gap_Fq
 
   do istate = 1, nstates
     ! for every state:
@@ -13751,12 +13327,8 @@ subroutine nonbond_qq
       r2   = dx1*dx1 + dx2*dx2 + dx3*dx3
 
       r6_hc   = r2*r2*r2   !hardcore
-      if (softcore_method == SC_GAPSYS) then
-        r6 = 1._8/r6_hc
-      else
         r6 = r6_hc+sc_lookup(iq,natyps+jq,istate)   !softcore
         r6 = 1._8/r6
-      end if
       r12  = r6*r6
 
       r2   = 1._8/r2
@@ -13768,52 +13340,12 @@ subroutine nonbond_qq
         V_a = aLJ*exp(-bLJ/r)
         V_b = 0.0
         dv  = r2*( -Vel -bLJ*V_a/r )*EQ(istate)%lambda
-      else if (softcore_method == SC_GAPSYS .and. &
-               sc_lookup(iq,natyps+jq,istate) > 0) then
-        ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization.
-        ! Q convention here (nonbond_qq): aLJ = C12, bLJ = C6 (no factor of 2).
-        V_a  = aLJ*r12
-        V_b  = bLJ*r6
-        dist = 1._8/r
-
-        ! LJ
-        r_sc_lj = gapsys_lj_rsc(iq, natyps+jq, istate)
-        if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
-          call gapsys_eval_lj(aLJ, bLJ, r_sc_lj, dist, V_a, gap_Flj)
-          V_b   = 0._8
-          dv_lj = -gap_Flj / dist
-        else
-          dv_lj = r2*(-(12.*V_a - 6.*V_b))
-        end if
-
-        ! Coulomb -- paper Eq. 5 with partner-charge factor at runtime.
-        gap_qq      = qi*qj*el_scale
-        if ( iLJ .eq. 3 ) gap_qq = gap_qq*el14_scale
-        gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(qi*qj)
-        r_sc_q      = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
-        if (dist < r_sc_q .and. r_sc_q > 0._8) then
-          call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel, gap_Fq)
-          dv_el = -gap_Fq / dist
-        else
-          Vel = qi*qj*r*el_scale
-          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
-          dv_el = r2*(-Vel)
-        end if
-
-        dv = (dv_lj + dv_el)*EQ(istate)%lambda
       else
         V_a = aLJ*r12
         V_b = bLJ*r6
-        if (softcore_method == SC_BEUTLER_COUL .and. &
-            sc_lookup(iq,natyps+jq,istate) > 0) then
-          Vel = qi*qj*el_scale / (r6_hc+sc_lookup(iq,natyps+jq,istate))**(1.0_8/6.0_8)
-          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
-          dv  = r2*( -Vel -(12.*V_a -6.*V_b) )*(r6_hc*r6)*EQ(istate)%lambda
-        else
           Vel = qi*qj*r*el_scale
           if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
           dv  = r2*( -Vel -(12.*V_a -6.*V_b)*r6_hc*r6 )*EQ(istate)%lambda
-        end if
       endif
 
       ! update forces
@@ -13847,10 +13379,6 @@ subroutine nonbond_qq_lib_charges
   integer                                 :: ip,iq,jq,i,j,k,i3,j3,iaci,iacj,iLJ
   real(8)                                 :: qi,qj,aLJ,bLJ,dx1,dx2,dx3,r2,r,r6,r12,r6_hc
   real(8)                                 :: Vel,V_a,V_b,dv,el_scale
-  real(8)                                 :: dist,r_sc_lj,r_sc_q
-  real(8)                                 :: dv_lj,dv_el
-  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
-  real(8)                                 :: gap_qq,gap_qj_fact,gap_Flj,gap_Fq
 
   do istate = 1, nstates
     ! for every state:
@@ -13907,12 +13435,8 @@ subroutine nonbond_qq_lib_charges
       r2   = dx1*dx1 + dx2*dx2 + dx3*dx3
 
       r6_hc = r2*r2*r2   !hardcore
-      if (softcore_method == SC_GAPSYS) then
-        r6 = 1._8/r6_hc
-      else
         r6   = r2*r2*r2+sc_lookup(iq,natyps+jq,istate)   !sc_lookup is softcore fix MPA
         r6   = 1./r6
-      end if
       r12  = r6*r6
 
       r2   = 1./r2
@@ -13924,52 +13448,12 @@ subroutine nonbond_qq_lib_charges
         V_a = aLJ*exp(-bLJ/r)
         V_b = 0.0
         dv  = r2*( -Vel -bLJ*V_a/r )*EQ(istate)%lambda
-      else if (softcore_method == SC_GAPSYS .and. &
-               sc_lookup(iq,natyps+jq,istate) > 0) then
-        ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization.
-        ! Q convention here (nonbond_qq): aLJ = C12, bLJ = C6 (no factor of 2).
-        V_a  = aLJ*r12
-        V_b  = bLJ*r6
-        dist = 1._8/r
-
-        ! LJ
-        r_sc_lj = gapsys_lj_rsc(iq, natyps+jq, istate)
-        if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
-          call gapsys_eval_lj(aLJ, bLJ, r_sc_lj, dist, V_a, gap_Flj)
-          V_b   = 0._8
-          dv_lj = -gap_Flj / dist
-        else
-          dv_lj = r2*(-(12.*V_a - 6.*V_b))
-        end if
-
-        ! Coulomb -- paper Eq. 5 with partner-charge factor at runtime.
-        gap_qq      = qi*qj*el_scale
-        if ( iLJ .eq. 3 ) gap_qq = gap_qq*el14_scale
-        gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(qi*qj)
-        r_sc_q      = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
-        if (dist < r_sc_q .and. r_sc_q > 0._8) then
-          call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel, gap_Fq)
-          dv_el = -gap_Fq / dist
-        else
-          Vel = qi*qj*r*el_scale
-          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
-          dv_el = r2*(-Vel)
-        end if
-
-        dv = (dv_lj + dv_el)*EQ(istate)%lambda
       else
         V_a = aLJ*r12
         V_b = bLJ*r6
-        if (softcore_method == SC_BEUTLER_COUL .and. &
-            sc_lookup(iq,natyps+jq,istate) > 0) then
-          Vel = qi*qj*el_scale / (r6_hc+sc_lookup(iq,natyps+jq,istate))**(1.0_8/6.0_8)
-          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
-          dv  = r2*( -Vel -(12.*V_a -6.*V_b) )*(r6_hc*r6)*EQ(istate)%lambda
-        else
           Vel = qi*qj*r*el_scale
           if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
           dv  = r2*( -Vel -(12.*V_a -6.*V_b)*r6_hc*r6 )*EQ(istate)%lambda
-        end if
       endif
 
       ! update forces
@@ -14162,10 +13646,6 @@ subroutine nonbond_qp_qvdw
   integer                                         :: istate
   real(8)                                         :: aLJ,bLJ,dx1,dx2,dx3,r2,r,r6
   real(8)                                         :: Vel,V_a,V_b,dv,r6_sc
-  real(8)                                         :: dist,r_sc_lj,r_sc_q
-  real(8)                                         :: dv_lj,dv_el
-  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
-  real(8)                                         :: gap_qq,gap_qj_fact,gap_Flj,gap_Fq,gap_qiqj
 
   ! global variables used:
   !  iqseq, iac, crg, x, nstates, qvdw_flag, iaclib, qiac, qavdw, qbvdw, qcrg, el14_scale, EQ, d, nat_solute
@@ -14201,56 +13681,12 @@ subroutine nonbond_qp_qvdw
       bLJ  = qbvdw(iaci,qLJ)*iaclib(iacj)%bvdw(iLJ)
 
       ! calculate qi, Vel, V_a, V_b and dv
-      if (softcore_method == SC_GAPSYS) then
-        r6_sc = r6
-      else
         r6_sc = r6 + sc_lookup(iq,iacj,istate) !sc_lookup is softcore fix MPA
-      end if
       V_a  = aLJ/(r6_sc*r6_sc)
       V_b  = bLJ/(r6_sc)
-      if (softcore_method == SC_GAPSYS .and. &
-          sc_lookup(iq,iacj,istate) > 0) then
-        ! Gapsys force linearization
-        ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization.
-        ! Q convention (nonbond_qp_qvdw): aLJ = C12, bLJ = C6 (no factor of 2).
-        dist     = 1._8/r
-        gap_qiqj = qcrg(iq,istate)*crg(j)
-
-        ! LJ
-        r_sc_lj = gapsys_lj_rsc(iq, iacj, istate)
-        if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
-          call gapsys_eval_lj(aLJ, bLJ, r_sc_lj, dist, V_a, gap_Flj)
-          V_b   = 0._8
-          dv_lj = -gap_Flj / dist
-        else
-          dv_lj = r2*(-(12.*V_a - 6.*V_b))
-        end if
-
-        ! Coulomb -- partner-charge factor at runtime.
-        gap_qq      = gap_qiqj
-        if ( iLJ .eq. 3 ) gap_qq = gap_qq*el14_scale
-        gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(gap_qiqj)
-        r_sc_q      = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
-        if (dist < r_sc_q .and. r_sc_q > 0._8) then
-          call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel, gap_Fq)
-          dv_el = -gap_Fq / dist
-        else
-          Vel = gap_qiqj*r
-          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
-          dv_el = r2*(-Vel)
-        end if
-
-        dv = (dv_lj + dv_el)*EQ(istate)%lambda
-      else if (softcore_method == SC_BEUTLER_COUL .and. &
-          sc_lookup(iq,iacj,istate) > 0) then
-        Vel = qcrg(iq,istate)*crg(j) / r6_sc**(1.0_8/6.0_8)
-        if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
-        dv  = r2*( -Vel -(12.*V_a -6.*V_b) )*(r6/r6_sc)*EQ(istate)%lambda
-      else
         Vel = qcrg(iq,istate)*crg(j)*r
         if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
         dv  = r2*( -Vel -(12.*V_a -6.*V_b)*(r6/r6_sc) )*EQ(istate)%lambda
-      end if
 
       ! update forces
       d(i3+1) = d(i3+1) - dv*dx1
@@ -14278,10 +13714,6 @@ subroutine nonbond_qp_qvdw_box
   integer                                               :: istate
   real(8)                                               :: aLJ,bLJ,dx1,dx2,dx3,r2,r,r6
   real(8)                                               :: Vel,V_a,V_b,dv,r6_sc
-  real(8)                                               :: dist,r_sc_lj,r_sc_q
-  real(8)                                               :: dv_lj,dv_el
-  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
-  real(8)                                               :: gap_qq,gap_qj_fact,gap_Flj,gap_Fq,gap_qiqj
   integer                                               :: group, gr, ia
 
 
@@ -14341,55 +13773,12 @@ subroutine nonbond_qp_qvdw_box
       bLJ  = qbvdw(iaci,qLJ)*iaclib(iacj)%bvdw(iLJ)
 
       ! calculate qi, Vel, V_a, V_b and dv
-      if (softcore_method == SC_GAPSYS) then
-        r6_sc = r6
-      else
         r6_sc = r6 + sc_lookup(iq,iacj,istate)        !sc_lookup is softcore fix MPA
-      end if
       V_a  = aLJ/(r6_sc*r6_sc)
       V_b  = bLJ/r6_sc
-      if (softcore_method == SC_GAPSYS .and. &
-          sc_lookup(iq,iacj,istate) > 0) then
-        ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization.
-        ! Q convention (nonbond_qp_qvdw_box): aLJ = C12, bLJ = C6 (no factor of 2).
-        dist     = 1._8/r
-        gap_qiqj = qcrg(iq,istate)*crg(j)
-
-        ! LJ
-        r_sc_lj = gapsys_lj_rsc(iq, iacj, istate)
-        if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
-          call gapsys_eval_lj(aLJ, bLJ, r_sc_lj, dist, V_a, gap_Flj)
-          V_b   = 0._8
-          dv_lj = -gap_Flj / dist
-        else
-          dv_lj = r2*(-(12.*V_a - 6.*V_b))
-        end if
-
-        ! Coulomb -- partner-charge factor at runtime.
-        gap_qq      = gap_qiqj
-        if ( iLJ .eq. 3 ) gap_qq = gap_qq*el14_scale
-        gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(gap_qiqj)
-        r_sc_q      = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
-        if (dist < r_sc_q .and. r_sc_q > 0._8) then
-          call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel, gap_Fq)
-          dv_el = -gap_Fq / dist
-        else
-          Vel = gap_qiqj*r
-          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
-          dv_el = r2*(-Vel)
-        end if
-
-        dv = (dv_lj + dv_el)*EQ(istate)%lambda
-      else if (softcore_method == SC_BEUTLER_COUL .and. &
-          sc_lookup(iq,iacj,istate) > 0) then
-        Vel = qcrg(iq,istate)*crg(j) / r6_sc**(1.0_8/6.0_8)
-        if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
-        dv  = r2*( -Vel -(12.*V_a -6.*V_b) )*(r6/r6_sc)*EQ(istate)%lambda
-      else
         Vel = qcrg(iq,istate)*crg(j)*r
         if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
         dv  = r2*( -Vel -( (12.*V_a -6.*V_b)*(r6/r6_sc) ) )*EQ(istate)%lambda
-      end if
 
       ! update forces
       d(i3+1) = d(i3+1) - dv*dx1
@@ -14421,11 +13810,8 @@ subroutine nonbond_qw_spc
   real(8)                                         ::      rO, r2O, r6O, rH1, r2H1, r6H1, rH2, r2H2, r6H2
   real(8)                                         ::      VelO, VelH1, VelH2, dvO, dvH1, dvH2
   real(8)                                         ::  V_a, V_b, r6O_sc, r6O_hc
-  real(8)                                         :: distO,distH1,distH2,r_sc_lj,r_sc_q
-  real(8)                                         :: dv_lj,dv_el
-  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
-  real(8)                                         :: gap_qq_o,gap_qq_h,gap_Flj,gap_Fq
-  real(8)                                         :: gap_qj_fact_o,gap_qj_fact_h,r_sc_q_h
+  real(8)                                         :: distO,distH1,distH2
+  real(8)                                         :: r_sc_q_h
   real(8), save                           ::      aO(2), bO(2)
   integer, save                           ::      iac_ow = 0, iac_hw = 0
 
@@ -14486,89 +13872,18 @@ subroutine nonbond_qw_spc
         if (qvdw_flag) then
           aLJ  = qavdw(qiac(iq,istate),1)
           bLJ  = qbvdw(qiac(iq,istate),1)
-          if (softcore_method == SC_GAPSYS) then
-            r6O_sc = r6O_hc
-          else
             r6O_sc = r6O_hc + sc_lookup(iq,iac_ow,istate)   !softcore  MPA
-          end if
 
           V_a  = aLJ*aO(iLJ)/(r6O_sc*r6O_sc)
           V_b  = bLJ*bO(iLJ)/(r6O_sc)
         end if
         ! calculate qi, Vel, V_a, V_b and dv
-        if (softcore_method == SC_GAPSYS .and. &
-            sc_lookup(iq,iac_ow,istate) > 0) then
-          ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization.
-          ! Routine handles any 3-site water with zero VdW on H (SPC, SPC/E,
-          ! TIP3P -- not TIP4P/TIP5P/OPC, which need a multi-atom routine).
-          ! Q convention: aLJ = sqrt(C12_qatom), aO = sqrt(C12_OW); same for b.
-          ! Pair C12 = aLJ*aO(iLJ), pair C6 = bLJ*bO(iLJ) (no factor of 2).
-          distO         = 1._8/rO
-          gap_qq_o      = crg_ow*qcrg(iq,istate)
-          gap_qj_fact_o = 1.0_8 + gapsys_sigma_q*abs(gap_qq_o)
-          gap_qq_h      = crg_hw*qcrg(iq,istate)
-          gap_qj_fact_h = 1.0_8 + gapsys_sigma_q*abs(gap_qq_h)
-          r_sc_q_h      = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact_h
-
-          ! LJ for O
-          r_sc_lj = gapsys_lj_rsc(iq, iac_ow, istate)
-          if (distO < r_sc_lj .and. r_sc_lj > 0._8) then
-            call gapsys_eval_lj(aLJ*aO(iLJ), bLJ*bO(iLJ), r_sc_lj, distO, V_a, gap_Flj)
-            V_b   = 0._8
-            dv_lj = -gap_Flj / distO
-          else
-            dv_lj = r2O*(-(12.*V_a - 6.*V_b))
-          end if
-
-          ! Coulomb for O
-          r_sc_q = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact_o
-          if (distO < r_sc_q .and. r_sc_q > 0._8) then
-            call gapsys_eval_q(gap_qq_o, r_sc_q, distO, VelO, gap_Fq)
-            dv_el = -gap_Fq / distO
-          else
-            VelO = gap_qq_o*rO
-            dv_el = r2O*(-VelO)
-          end if
-
-          dvO = dvO + (dv_lj + dv_el)*EQ(istate)%lambda
-
-          ! Coulomb for H1 (SPC: zero VdW on H, only Coulomb)
-          distH1 = 1._8/rH1
-          if (distH1 < r_sc_q_h .and. r_sc_q_h > 0._8) then
-            call gapsys_eval_q(gap_qq_h, r_sc_q_h, distH1, VelH1, gap_Fq)
-            dv_el = -gap_Fq / distH1
-          else
-            VelH1 = gap_qq_h*rH1
-            dv_el = r2H1*(-VelH1)
-          end if
-          dvH1 = dvH1 + dv_el*EQ(istate)%lambda
-
-          ! Coulomb for H2
-          distH2 = 1._8/rH2
-          if (distH2 < r_sc_q_h .and. r_sc_q_h > 0._8) then
-            call gapsys_eval_q(gap_qq_h, r_sc_q_h, distH2, VelH2, gap_Fq)
-            dv_el = -gap_Fq / distH2
-          else
-            VelH2 = gap_qq_h*rH2
-            dv_el = r2H2*(-VelH2)
-          end if
-          dvH2 = dvH2 + dv_el*EQ(istate)%lambda
-        else if (softcore_method == SC_BEUTLER_COUL .and. &
-            sc_lookup(iq,iac_ow,istate) > 0) then
-          VelO = crg_ow*qcrg(iq,istate) / r6O_sc**(1.0_8/6.0_8)
-          dvO  = dvO + r2O*( -VelO -(12.*V_a -6.*V_b) )*(r6O_hc/r6O_sc)*EQ(istate)%lambda
-          VelH1 = crg_hw*qcrg(iq,istate)*rH1
-          VelH2 = crg_hw*qcrg(iq,istate)*rH2
-          dvH1 = dvH1 - r2H1*VelH1*EQ(istate)%lambda
-          dvH2 = dvH2 - r2H2*VelH2*EQ(istate)%lambda
-        else
           VelO = crg_ow*qcrg(iq,istate)*rO
           dvO  = dvO + r2O*( -VelO -( (12.*V_a -6.*V_b)*(r6O_hc/r6O_sc) ))*EQ(istate)%lambda
           VelH1 = crg_hw*qcrg(iq,istate)*rH1
           VelH2 = crg_hw*qcrg(iq,istate)*rH2
           dvH1 = dvH1 - r2H1*VelH1*EQ(istate)%lambda
           dvH2 = dvH2 - r2H2*VelH2*EQ(istate)%lambda
-        end if
         ! update q-water energies
         EQ(istate)%qw%el  = EQ(istate)%qw%el + VelO + VelH1 + VelH2
         EQ(istate)%qw%vdw = EQ(istate)%qw%vdw + V_a - V_b
@@ -14607,11 +13922,8 @@ subroutine nonbond_qw_spc_box
   real(8)                                         ::      rO, r2O, r6O, rH1, r2H1, r6H1, rH2, r2H2, r6H2
   real(8)                                         ::      VelO, VelH1, VelH2, dvO, dvH1, dvH2
   real(8)                                         :: V_a, V_b, r6O_sc, r6O_hc
-  real(8)                                         :: distO,distH1,distH2,r_sc_lj,r_sc_q
-  real(8)                                         :: dv_lj,dv_el
-  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
-  real(8)                                         :: gap_qq_o,gap_qq_h,gap_Flj,gap_Fq
-  real(8)                                         :: gap_qj_fact_o,gap_qj_fact_h,r_sc_q_h
+  real(8)                                         :: distO,distH1,distH2
+  real(8)                                         :: r_sc_q_h
   real(8)                                         :: dx, dy, dz, boxshiftx, boxshifty, boxshiftz
   real(8), save                           ::      aO(2), bO(2)
   integer, save                           ::      iac_ow = 0, iac_hw = 0
@@ -14693,89 +14005,18 @@ subroutine nonbond_qw_spc_box
         if (qvdw_flag) then
           aLJ  = qavdw(qiac(iq,istate),1)
           bLJ  = qbvdw(qiac(iq,istate),1)
-          if (softcore_method == SC_GAPSYS) then
-            r6O_sc = r6O_hc
-          else
             r6O_sc = r6O_hc + sc_lookup(iq,iac_ow,istate)   !softcore  MPA
-          end if
 
           V_a  = aLJ*aO(iLJ)/(r6O_sc*r6O_sc)
           V_b  = bLJ*bO(iLJ)/r6O_sc
         end if
         ! calculate qi, Vel, V_a, V_b and dv
-        if (softcore_method == SC_GAPSYS .and. &
-            sc_lookup(iq,iac_ow,istate) > 0) then
-          ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization.
-          ! Routine handles any 3-site water with zero VdW on H (SPC, SPC/E,
-          ! TIP3P -- not TIP4P/TIP5P/OPC, which need a multi-atom routine).
-          ! Q convention: aLJ = sqrt(C12_qatom), aO = sqrt(C12_OW); same for b.
-          ! Pair C12 = aLJ*aO(iLJ), pair C6 = bLJ*bO(iLJ) (no factor of 2).
-          distO         = 1._8/rO
-          gap_qq_o      = crg_ow*qcrg(iq,istate)
-          gap_qj_fact_o = 1.0_8 + gapsys_sigma_q*abs(gap_qq_o)
-          gap_qq_h      = crg_hw*qcrg(iq,istate)
-          gap_qj_fact_h = 1.0_8 + gapsys_sigma_q*abs(gap_qq_h)
-          r_sc_q_h      = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact_h
-
-          ! LJ for O
-          r_sc_lj = gapsys_lj_rsc(iq, iac_ow, istate)
-          if (distO < r_sc_lj .and. r_sc_lj > 0._8) then
-            call gapsys_eval_lj(aLJ*aO(iLJ), bLJ*bO(iLJ), r_sc_lj, distO, V_a, gap_Flj)
-            V_b   = 0._8
-            dv_lj = -gap_Flj / distO
-          else
-            dv_lj = r2O*(-(12.*V_a - 6.*V_b))
-          end if
-
-          ! Coulomb for O
-          r_sc_q = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact_o
-          if (distO < r_sc_q .and. r_sc_q > 0._8) then
-            call gapsys_eval_q(gap_qq_o, r_sc_q, distO, VelO, gap_Fq)
-            dv_el = -gap_Fq / distO
-          else
-            VelO = gap_qq_o*rO
-            dv_el = r2O*(-VelO)
-          end if
-
-          dvO = dvO + (dv_lj + dv_el)*EQ(istate)%lambda
-
-          ! Coulomb for H1 (SPC: zero VdW on H, only Coulomb)
-          distH1 = 1._8/rH1
-          if (distH1 < r_sc_q_h .and. r_sc_q_h > 0._8) then
-            call gapsys_eval_q(gap_qq_h, r_sc_q_h, distH1, VelH1, gap_Fq)
-            dv_el = -gap_Fq / distH1
-          else
-            VelH1 = gap_qq_h*rH1
-            dv_el = r2H1*(-VelH1)
-          end if
-          dvH1 = dvH1 + dv_el*EQ(istate)%lambda
-
-          ! Coulomb for H2
-          distH2 = 1._8/rH2
-          if (distH2 < r_sc_q_h .and. r_sc_q_h > 0._8) then
-            call gapsys_eval_q(gap_qq_h, r_sc_q_h, distH2, VelH2, gap_Fq)
-            dv_el = -gap_Fq / distH2
-          else
-            VelH2 = gap_qq_h*rH2
-            dv_el = r2H2*(-VelH2)
-          end if
-          dvH2 = dvH2 + dv_el*EQ(istate)%lambda
-        else if (softcore_method == SC_BEUTLER_COUL .and. &
-            sc_lookup(iq,iac_ow,istate) > 0) then
-          VelO = crg_ow*qcrg(iq,istate) / r6O_sc**(1.0_8/6.0_8)
-          dvO  = dvO + r2O*( -VelO -(12.*V_a -6.*V_b) )*(r6O_hc/r6O_sc)*EQ(istate)%lambda
-          VelH1 = crg_hw*qcrg(iq,istate)*rH1
-          VelH2 = crg_hw*qcrg(iq,istate)*rH2
-          dvH1 = dvH1 - r2H1*VelH1*EQ(istate)%lambda
-          dvH2 = dvH2 - r2H2*VelH2*EQ(istate)%lambda
-        else
           VelO = crg_ow*qcrg(iq,istate)*rO
           dvO  = dvO + r2O*( -VelO -( (12.*V_a -6.*V_b)*(r6O_hc/r6O_sc) ))*EQ(istate)%lambda
           VelH1 = crg_hw*qcrg(iq,istate)*rH1
           VelH2 = crg_hw*qcrg(iq,istate)*rH2
           dvH1 = dvH1 - r2H1*VelH1*EQ(istate)%lambda
           dvH2 = dvH2 - r2H2*VelH2*EQ(istate)%lambda
-        end if
         ! update q-water energies
         EQ(istate)%qw%el  = EQ(istate)%qw%el + VelO + VelH1 + VelH2
         EQ(istate)%qw%vdw = EQ(istate)%qw%vdw + V_a - V_b
@@ -14812,10 +14053,6 @@ subroutine nonbond_qw_3atom
   real(8)                           :: r_1, r2_1, r6_1, r_2, r2_2, r6_2, r_3, r2_3, r6_3
   real(8)                           :: Vel1, Vel2, Vel3, dv1, dv2, dv3
   real(8)                           :: V_a1,V_b1, V_a2, V_b2, V_a3, V_b3,r6_1_sc,r6_2_sc,r6_3_sc,r6_1_hc,r6_2_hc,r6_3_hc
-  real(8)                           :: dist,r_sc_lj,r_sc_q
-  real(8)                           :: dv_lj,dv_el
-  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
-  real(8)                           :: gap_qq,gap_qj_fact,gap_Flj,gap_Fq
   real(8), save                     :: a1(2), b1(2), a2(2), b2(2), a3(2), b3(2)
   integer, save                     :: iac1, iac2, iac3
   real, save                        :: crg1, crg2, crg3
@@ -14891,15 +14128,9 @@ subroutine nonbond_qw_3atom
 
         ! calculate V_a:s and V_b:s for each state
         if (qvdw_flag) then
-          if (softcore_method == SC_GAPSYS) then
-            r6_1_sc = r6_1_hc
-            r6_2_sc = r6_2_hc
-            r6_3_sc = r6_3_hc
-          else
             r6_1_sc = r6_1_hc + sc_lookup(iq,iac1,istate)
             r6_2_sc = r6_2_hc + sc_lookup(iq,iac2,istate)
             r6_3_sc = r6_3_hc + sc_lookup(iq,iac3,istate)
-          end if
           V_a1 = qavdw(qiac(iq,istate),1)*a1(iLJ1)/(r6_1_sc*r6_1_sc)
           V_b1 = qbvdw(qiac(iq,istate),1)*b1(iLJ1)/(r6_1_sc)
           V_a2 = qavdw(qiac(iq,istate),1)*a2(iLJ2)/(r6_2_sc*r6_2_sc)
@@ -14909,123 +14140,14 @@ subroutine nonbond_qw_3atom
         end if
         ! calculate  Vel, V_a, V_b and dv
         ! Atom 1
-        if (softcore_method == SC_GAPSYS .and. &
-            sc_lookup(iq,iac1,istate) > 0) then
-          ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization (3-atom water, atom 1).
-          ! Pair C12 = qavdw*a1(iLJ1), C6 = qbvdw*b1(iLJ1) (geometric mix, no factor of 2).
-          dist        = 1._8/r_1
-          gap_qq      = crg1*qcrg(iq,istate)
-          gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(gap_qq)
-
-          ! LJ
-          r_sc_lj = gapsys_lj_rsc(iq, iac1, istate)
-          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
-            call gapsys_eval_lj(qavdw(qiac(iq,istate),1)*a1(iLJ1), &
-                                qbvdw(qiac(iq,istate),1)*b1(iLJ1), &
-                                r_sc_lj, dist, V_a1, gap_Flj)
-            V_b1  = 0._8
-            dv_lj = -gap_Flj / dist
-          else
-            dv_lj = r2_1*(-(12.*V_a1 - 6.*V_b1))
-          end if
-
-          ! Coulomb
-          r_sc_q = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
-          if (dist < r_sc_q .and. r_sc_q > 0._8) then
-            call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel1, gap_Fq)
-            dv_el = -gap_Fq / dist
-          else
-            Vel1 = gap_qq*r_1
-            dv_el = r2_1*(-Vel1)
-          end if
-
-          dv1 = dv1 + (dv_lj + dv_el)*EQ(istate)%lambda
-        else if (softcore_method == SC_BEUTLER_COUL .and. &
-            sc_lookup(iq,iac1,istate) > 0) then
-          Vel1 = crg1*qcrg(iq,istate) / r6_1_sc**(1.0_8/6.0_8)
-          dv1 = dv1 + r2_1*(-Vel1 -(12.*V_a1-6.*V_b1))*(r6_1_hc/r6_1_sc)*EQ(istate)%lambda
-        else
           Vel1 = crg1*qcrg(iq,istate)*r_1
           dv1 = dv1 + r2_1*(-Vel1- ((12.*V_a1-6.*V_b1)*(r6_1_hc/r6_1_sc)) )*EQ(istate)%lambda
-        end if
         ! Atom 2
-        if (softcore_method == SC_GAPSYS .and. &
-            sc_lookup(iq,iac2,istate) > 0) then
-          ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization (3-atom water, atom 2).
-          dist        = 1._8/r_2
-          gap_qq      = crg2*qcrg(iq,istate)
-          gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(gap_qq)
-
-          ! LJ
-          r_sc_lj = gapsys_lj_rsc(iq, iac2, istate)
-          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
-            call gapsys_eval_lj(qavdw(qiac(iq,istate),1)*a2(iLJ2), &
-                                qbvdw(qiac(iq,istate),1)*b2(iLJ2), &
-                                r_sc_lj, dist, V_a2, gap_Flj)
-            V_b2  = 0._8
-            dv_lj = -gap_Flj / dist
-          else
-            dv_lj = r2_2*(-(12.*V_a2 - 6.*V_b2))
-          end if
-
-          ! Coulomb
-          r_sc_q = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
-          if (dist < r_sc_q .and. r_sc_q > 0._8) then
-            call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel2, gap_Fq)
-            dv_el = -gap_Fq / dist
-          else
-            Vel2 = gap_qq*r_2
-            dv_el = r2_2*(-Vel2)
-          end if
-
-          dv2 = dv2 + (dv_lj + dv_el)*EQ(istate)%lambda
-        else if (softcore_method == SC_BEUTLER_COUL .and. &
-            sc_lookup(iq,iac2,istate) > 0) then
-          Vel2 = crg2*qcrg(iq,istate) / r6_2_sc**(1.0_8/6.0_8)
-          dv2 = dv2 + r2_2*(-Vel2 -(12.*V_a2-6.*V_b2))*(r6_2_hc/r6_2_sc)*EQ(istate)%lambda
-        else
           Vel2 = crg2*qcrg(iq,istate)*r_2
           dv2 = dv2 + r2_2*(-Vel2- ((12.*V_a2-6.*V_b2)*(r6_2_hc/r6_2_sc)) )*EQ(istate)%lambda
-        end if
         ! Atom 3
-        if (softcore_method == SC_GAPSYS .and. &
-            sc_lookup(iq,iac3,istate) > 0) then
-          ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization (3-atom water, atom 3).
-          dist        = 1._8/r_3
-          gap_qq      = crg3*qcrg(iq,istate)
-          gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(gap_qq)
-
-          ! LJ
-          r_sc_lj = gapsys_lj_rsc(iq, iac3, istate)
-          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
-            call gapsys_eval_lj(qavdw(qiac(iq,istate),1)*a3(iLJ3), &
-                                qbvdw(qiac(iq,istate),1)*b3(iLJ3), &
-                                r_sc_lj, dist, V_a3, gap_Flj)
-            V_b3  = 0._8
-            dv_lj = -gap_Flj / dist
-          else
-            dv_lj = r2_3*(-(12.*V_a3 - 6.*V_b3))
-          end if
-
-          ! Coulomb
-          r_sc_q = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
-          if (dist < r_sc_q .and. r_sc_q > 0._8) then
-            call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel3, gap_Fq)
-            dv_el = -gap_Fq / dist
-          else
-            Vel3 = gap_qq*r_3
-            dv_el = r2_3*(-Vel3)
-          end if
-
-          dv3 = dv3 + (dv_lj + dv_el)*EQ(istate)%lambda
-        else if (softcore_method == SC_BEUTLER_COUL .and. &
-            sc_lookup(iq,iac3,istate) > 0) then
-          Vel3 = crg3*qcrg(iq,istate) / r6_3_sc**(1.0_8/6.0_8)
-          dv3 = dv3 + r2_3*(-Vel3 -(12.*V_a3-6.*V_b3))*(r6_3_hc/r6_3_sc)*EQ(istate)%lambda
-        else
           Vel3 = crg3*qcrg(iq,istate)*r_3
           dv3 = dv3 + r2_3*(-Vel3- ((12.*V_a3-6.*V_b3)*(r6_3_hc/r6_3_sc)) )*EQ(istate)%lambda
-        end if
         ! update q-water energies
         EQ(istate)%qw%el  = EQ(istate)%qw%el + Vel1 + Vel2 + Vel3
         EQ(istate)%qw%vdw = EQ(istate)%qw%vdw + V_a1 - V_b1 &
@@ -15062,10 +14184,6 @@ subroutine nonbond_qw_3atom_box
   real(8)                           :: r_1, r2_1, r6_1, r_2, r2_2, r6_2, r_3, r2_3, r6_3
   real(8)                           :: Vel1, Vel2, Vel3, dv1, dv2, dv3
   real(8)                           :: V_a1,V_b1, V_a2, V_b2, V_a3, V_b3,r6_1_sc,r6_2_sc,r6_3_sc,r6_1_hc,r6_2_hc,r6_3_hc
-  real(8)                           :: dist,r_sc_lj,r_sc_q
-  real(8)                           :: dv_lj,dv_el
-  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
-  real(8)                           :: gap_qq,gap_qj_fact,gap_Flj,gap_Fq
   real(8)                           :: boxshiftx, boxshifty, boxshiftz, dx, dy, dz
   real(8), save                     :: a1(2), b1(2), a2(2), b2(2), a3(2), b3(2)
   integer, save                     :: iac1, iac2, iac3
@@ -15161,15 +14279,9 @@ subroutine nonbond_qw_3atom_box
 
         ! calculate V_a:s and V_b:s for each state
         if (qvdw_flag) then
-          if (softcore_method == SC_GAPSYS) then
-            r6_1_sc = r6_1_hc
-            r6_2_sc = r6_2_hc
-            r6_3_sc = r6_3_hc
-          else
             r6_1_sc = r6_1_hc + sc_lookup(iq,iac1,istate)
             r6_2_sc = r6_2_hc + sc_lookup(iq,iac2,istate)
             r6_3_sc = r6_3_hc + sc_lookup(iq,iac3,istate)
-          end if
           V_a1 = qavdw(qiac(iq,istate),1)*a1(iLJ1)/(r6_1_sc*r6_1_sc)
           V_b1 = qbvdw(qiac(iq,istate),1)*b1(iLJ1)/(r6_1_sc)
           V_a2 = qavdw(qiac(iq,istate),1)*a2(iLJ2)/(r6_2_sc*r6_2_sc)
@@ -15180,123 +14292,14 @@ subroutine nonbond_qw_3atom_box
         end if
         ! calculate  Vel, V_a, V_b and dv
         ! Atom 1
-        if (softcore_method == SC_GAPSYS .and. &
-            sc_lookup(iq,iac1,istate) > 0) then
-          ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization (3-atom water, atom 1).
-          ! Pair C12 = qavdw*a1(iLJ1), C6 = qbvdw*b1(iLJ1) (geometric mix, no factor of 2).
-          dist        = 1._8/r_1
-          gap_qq      = crg1*qcrg(iq,istate)
-          gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(gap_qq)
-
-          ! LJ
-          r_sc_lj = gapsys_lj_rsc(iq, iac1, istate)
-          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
-            call gapsys_eval_lj(qavdw(qiac(iq,istate),1)*a1(iLJ1), &
-                                qbvdw(qiac(iq,istate),1)*b1(iLJ1), &
-                                r_sc_lj, dist, V_a1, gap_Flj)
-            V_b1  = 0._8
-            dv_lj = -gap_Flj / dist
-          else
-            dv_lj = r2_1*(-(12.*V_a1 - 6.*V_b1))
-          end if
-
-          ! Coulomb
-          r_sc_q = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
-          if (dist < r_sc_q .and. r_sc_q > 0._8) then
-            call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel1, gap_Fq)
-            dv_el = -gap_Fq / dist
-          else
-            Vel1 = gap_qq*r_1
-            dv_el = r2_1*(-Vel1)
-          end if
-
-          dv1 = dv1 + (dv_lj + dv_el)*EQ(istate)%lambda
-        else if (softcore_method == SC_BEUTLER_COUL .and. &
-            sc_lookup(iq,iac1,istate) > 0) then
-          Vel1 = crg1*qcrg(iq,istate) / r6_1_sc**(1.0_8/6.0_8)
-          dv1 = dv1 + r2_1*(-Vel1 -(12.*V_a1-6.*V_b1))*(r6_1_hc/r6_1_sc)*EQ(istate)%lambda
-        else
           Vel1 = crg1*qcrg(iq,istate)*r_1
           dv1 = dv1 + r2_1*(-Vel1- ((12.*V_a1-6.*V_b1)*(r6_1_hc/r6_1_sc)) )*EQ(istate)%lambda
-        end if
         ! Atom 2
-        if (softcore_method == SC_GAPSYS .and. &
-            sc_lookup(iq,iac2,istate) > 0) then
-          ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization (3-atom water, atom 2).
-          dist        = 1._8/r_2
-          gap_qq      = crg2*qcrg(iq,istate)
-          gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(gap_qq)
-
-          ! LJ
-          r_sc_lj = gapsys_lj_rsc(iq, iac2, istate)
-          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
-            call gapsys_eval_lj(qavdw(qiac(iq,istate),1)*a2(iLJ2), &
-                                qbvdw(qiac(iq,istate),1)*b2(iLJ2), &
-                                r_sc_lj, dist, V_a2, gap_Flj)
-            V_b2  = 0._8
-            dv_lj = -gap_Flj / dist
-          else
-            dv_lj = r2_2*(-(12.*V_a2 - 6.*V_b2))
-          end if
-
-          ! Coulomb
-          r_sc_q = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
-          if (dist < r_sc_q .and. r_sc_q > 0._8) then
-            call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel2, gap_Fq)
-            dv_el = -gap_Fq / dist
-          else
-            Vel2 = gap_qq*r_2
-            dv_el = r2_2*(-Vel2)
-          end if
-
-          dv2 = dv2 + (dv_lj + dv_el)*EQ(istate)%lambda
-        else if (softcore_method == SC_BEUTLER_COUL .and. &
-            sc_lookup(iq,iac2,istate) > 0) then
-          Vel2 = crg2*qcrg(iq,istate) / r6_2_sc**(1.0_8/6.0_8)
-          dv2 = dv2 + r2_2*(-Vel2 -(12.*V_a2-6.*V_b2))*(r6_2_hc/r6_2_sc)*EQ(istate)%lambda
-        else
           Vel2 = crg2*qcrg(iq,istate)*r_2
           dv2 = dv2 + r2_2*(-Vel2- ((12.*V_a2-6.*V_b2)*(r6_2_hc/r6_2_sc)) )*EQ(istate)%lambda
-        end if
         ! Atom 3
-        if (softcore_method == SC_GAPSYS .and. &
-            sc_lookup(iq,iac3,istate) > 0) then
-          ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization (3-atom water, atom 3).
-          dist        = 1._8/r_3
-          gap_qq      = crg3*qcrg(iq,istate)
-          gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(gap_qq)
-
-          ! LJ
-          r_sc_lj = gapsys_lj_rsc(iq, iac3, istate)
-          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
-            call gapsys_eval_lj(qavdw(qiac(iq,istate),1)*a3(iLJ3), &
-                                qbvdw(qiac(iq,istate),1)*b3(iLJ3), &
-                                r_sc_lj, dist, V_a3, gap_Flj)
-            V_b3  = 0._8
-            dv_lj = -gap_Flj / dist
-          else
-            dv_lj = r2_3*(-(12.*V_a3 - 6.*V_b3))
-          end if
-
-          ! Coulomb
-          r_sc_q = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
-          if (dist < r_sc_q .and. r_sc_q > 0._8) then
-            call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel3, gap_Fq)
-            dv_el = -gap_Fq / dist
-          else
-            Vel3 = gap_qq*r_3
-            dv_el = r2_3*(-Vel3)
-          end if
-
-          dv3 = dv3 + (dv_lj + dv_el)*EQ(istate)%lambda
-        else if (softcore_method == SC_BEUTLER_COUL .and. &
-            sc_lookup(iq,iac3,istate) > 0) then
-          Vel3 = crg3*qcrg(iq,istate) / r6_3_sc**(1.0_8/6.0_8)
-          dv3 = dv3 + r2_3*(-Vel3 -(12.*V_a3-6.*V_b3))*(r6_3_hc/r6_3_sc)*EQ(istate)%lambda
-        else
           Vel3 = crg3*qcrg(iq,istate)*r_3
           dv3 = dv3 + r2_3*(-Vel3- ((12.*V_a3-6.*V_b3)*(r6_3_hc/r6_3_sc)) )*EQ(istate)%lambda
-        end if
         ! update q-water energies
         EQ(istate)%qw%el  = EQ(istate)%qw%el + Vel1 + Vel2 + Vel3
         EQ(istate)%qw%vdw = EQ(istate)%qw%vdw + V_a1 - V_b1 &
@@ -17140,8 +16143,8 @@ subroutine pot_energy_nonbonds
         call nonbon2_qp
         if(natom > nat_solute) then !if any solvent
           call nonbon2_pw
-          if(softcore_method == SC_GAPSYS_V2) then
-            call nonbon2_qw_gapsys_v2
+          if(lambda_dependent_softcore()) then
+            call nonbon2_qw_softcore
           else
             call nonbon2_qw !no SPC-specific optimized routines here
           end if
