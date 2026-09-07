@@ -136,7 +136,9 @@ is treated as a set of hypotheses; it has not been edited.
    remains unmeasured; do not fit it away.
 3. **Input/provenance controls:** distinguish effective versus requested radius,
    actual included versus excluded/neutralized charge, and integrated versus
-   post-hoc corrections. Require matching definitions in the eventual protocol.
+   post-hoc corrections. The [staged-input preflight](../../experiments/analytical-charge-validation/README.md)
+   now enforces declared input and offset consistency and pins asset hashes.
+   Native effective-parameter and full campaign/analysis checks remain required.
 4. **Validation design:** use charge-only, matched-Hamiltonian tests with both
    signs and uncertainty/overlap checks. Do not interpret this fixture or the
    historical trimmed result as a full charged-protein validation.
