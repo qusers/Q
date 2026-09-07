@@ -1,5 +1,6 @@
 #include "cuda_force_accumulation.cuh"
 #include "cuda_nonbonded_force.cuh"
+#include "geometry.h"
 
 namespace {
 
@@ -102,16 +103,6 @@ __global__ void update_nonbonded_coords_kernel(
     cx[i] = static_cast<real_t>(coords[idx].x);
     cy[i] = static_cast<real_t>(coords[idx].y);
     cz[i] = static_cast<real_t>(coords[idx].z);
-}
-
-}  // namespace
-
-void CudaNonbondedForce::init_backend(Context& ctx) {
-    // Buffers are indexed by combined-list position [0, n_total), which exceeds
-    // n_atoms because Q atoms are duplicated per FEP state and the list is padded.
-    coord_x = std::make_unique<HostDeviceBuffer<real_t>>(data_.n_total);
-    coord_y = std::make_unique<HostDeviceBuffer<real_t>>(data_.n_total);
-    coord_z = std::make_unique<HostDeviceBuffer<real_t>>(data_.n_total);
 }
 
 __global__ void nonbonded_kernel(
@@ -222,18 +213,104 @@ __global__ void nonbonded_kernel(
     }
 }
 
-void CudaNonbondedForce::calc(Context& ctx) {
-    /*
-    Sync the coords to CudaNonbondedForce::coords first.
-    */
-    int sz = data_.n_total;
-    int sync_block = 256;
-    int sync_grid = (sz + sync_block - 1) / sync_block;
-    update_nonbonded_coords_kernel<<<sync_grid, sync_block>>>(ctx.coords->gpu_data_p, data_.atom_idx->gpu_data_p, coord_x->gpu_data_p, coord_y->gpu_data_p, coord_z->gpu_data_p, sz);
+__global__ void classify_group_pairs_by_switch_kernel(
+    int n_groups_ranges,
 
-    /*
-    Do calculation
-    */
+    double solute_solute_cutoff2,
+    double solute_solvent_cutoff2,
+    double solvent_solvent_cutoff2,
+    double rcq2,
+    double lrf_cutoff2,
+
+    const coord_t solute_center,
+    const int* group_start_idx,
+    const int* atom_idx,
+    const uint8_t* category,
+    const int* q_state,
+    const coord_t* coords,
+
+    uint8_t* group_pair_modes) {
+    const int pair_index = blockIdx.x * blockDim.x + threadIdx.x;
+    const int total_pairs = n_groups_ranges * (n_groups_ranges + 1) / 2;
+
+    if (pair_index >= total_pairs) {
+        return;
+    }
+
+    const int2 pair = get_tile_idx(n_groups_ranges, pair_index);
+    const int group1 = pair.x;
+    const int group2 = pair.y;
+
+    group_pair_modes[pair_index] = GROUP_PAIR_IGNORE;
+    const int switch_atom1 = group_start_idx[group1];
+    const int switch_atom2 = group_start_idx[group2];
+
+    const uint8_t category1 = category[switch_atom1];
+    const uint8_t category2 = category[switch_atom2];
+
+    constexpr uint8_t P = static_cast<uint8_t>(AtomCategory::P);
+    constexpr uint8_t Q = static_cast<uint8_t>(AtomCategory::Q);
+    constexpr uint8_t W = static_cast<uint8_t>(AtomCategory::W);
+
+    const bool group1_is_q = category1 == Q;
+    const bool group2_is_q = category2 == Q;
+
+    if (group1_is_q && group2_is_q) {
+        const int state1 = q_state[switch_atom1];
+        const int state2 = q_state[switch_atom2];
+        if (state1 == state2) {
+            group_pair_modes[pair_index] = GROUP_PAIR_EXACT;
+        }
+        return;
+    }
+
+    if (group1_is_q || group2_is_q) {
+        // Q-P or Q-W
+        const int environment_switch_atom = group1_is_q ? switch_atom2 : switch_atom1;
+        const double environment_distance2 = norm2(coords[atom_idx[environment_switch_atom]] - solute_center);
+
+        if (environment_distance2 <= rcq2) {
+            group_pair_modes[pair_index] = GROUP_PAIR_EXACT;
+        }
+        return;
+    }
+
+    // P-P, P-W, or W-W
+    const double group_distance2 = norm2(coords[atom_idx[switch_atom1]] - coords[atom_idx[switch_atom2]]);
+    double normal_cutoff2;
+    if (category1 == P && category2 == P) {
+        normal_cutoff2 = solute_solute_cutoff2;
+    } else if (category1 == W && category2 == W) {
+        normal_cutoff2 = solvent_solvent_cutoff2;
+    } else {
+        normal_cutoff2 = solute_solvent_cutoff2;
+    }
+
+    if (group_distance2 <= normal_cutoff2) {
+        group_pair_modes[pair_index] = GROUP_PAIR_EXACT;
+    } else if (group_distance2 <= lrf_cutoff2) {
+        group_pair_modes[pair_index] = GROUP_PAIR_LRF;
+    }
+}
+
+
+
+
+
+__global__ void init_calculation_groups_by_all() {
+}
+
+}  // namespace
+
+void CudaNonbondedForce::init_backend(Context& ctx) {
+    // Buffers are indexed by combined-list position [0, n_total), which exceeds
+    // n_atoms because Q atoms are duplicated per FEP state and the list is padded.
+    coord_x = std::make_unique<HostDeviceBuffer<real_t>>(data_.n_total);
+    coord_y = std::make_unique<HostDeviceBuffer<real_t>>(data_.n_total);
+    coord_z = std::make_unique<HostDeviceBuffer<real_t>>(data_.n_total);
+}
+
+void CudaNonbondedForce::calc_all_direct_pairs(Context& ctx) {
     const int thread_num = 256;
     int tile_num_per_block = thread_num >> 5;
     int n_atom = data_.n_total;
@@ -247,4 +324,37 @@ void CudaNonbondedForce::calc(Context& ctx) {
                                            data_.atom_lambdas->gpu_data_p, data_.atom_charge->gpu_data_p, data_.atom_vdw->gpu_data_p,
                                            ctx.LJ_matrix->gpu_data_p, ctx.topo.el14_scale, ctx.topo.coulomb_constant, ctx.topo.vdw_rule,
                                            coord_x->gpu_data_p, coord_y->gpu_data_p, coord_z->gpu_data_p, ctx.dvelocities->gpu_data_p, ctx.energy.device());
+}
+
+void CudaNonbondedForce::init_calculation_groups(Context& ctx) {
+    const auto& config = ctx.charge_group_config;
+    if (config.iuse_switch_atom == 1) {
+        // Use groups.iswitch to check the distance
+
+    } else {
+        // Should use every atoms to check the distance
+    }
+}
+
+void CudaNonbondedForce::calc(Context& ctx) {
+    /*
+    Sync the coords to CudaNonbondedForce::coords first.
+    */
+    int sz = data_.n_total;
+    int sync_block = 256;
+    int sync_grid = (sz + sync_block - 1) / sync_block;
+    update_nonbonded_coords_kernel<<<sync_grid, sync_block>>>(ctx.coords->gpu_data_p, data_.atom_idx->gpu_data_p, coord_x->gpu_data_p, coord_y->gpu_data_p, coord_z->gpu_data_p, sz);
+
+    /*
+    Do calculation
+    */
+
+    if (!ctx.md.lrf || ctx.md.non_bond == 0) {
+        calc_all_direct_pairs(ctx);
+        return;
+    }
+
+    if (ctx.step == ctx.md.steps || ctx.step % ctx.md.non_bond == 0) {
+        init_calculation_groups(ctx);
+    }
 }
