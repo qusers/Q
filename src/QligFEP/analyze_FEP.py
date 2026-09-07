@@ -182,11 +182,53 @@ class FepReader:
 
     def run_qfep(self, qfep_file: Path):
         """Run qfep for the given FEP directory."""
+        if self._uses_foreign_work(qfep_file.parent):
+            raise ValueError("gapsys_v2 requires foreign-work BAR; legacy QFEP reconstruction is invalid")
         qfep = Q_PATHS["QFEP"]
         os.chdir(str(qfep_file.parent.absolute()))
         options = " < qfep.inp > qfep.out"
         run_command(qfep, options, string=True)
         os.chdir(str(self.cwd.absolute()))
+
+    @staticmethod
+    def _uses_foreign_work(directory: Path) -> bool:
+        if (directory / "foreign_bar.json").exists() or any(directory.glob("*.fhe")):
+            return True
+        # The shared inputs survive --production cleanup and identify failed
+        # nonlinear runs even when no sidecar has been written yet.
+        for inputs in (directory, directory.parent.parent.parent / "inputfiles"):
+            for fep in inputs.glob("*.fep"):
+                if any(line.split()[:2] == ["softcore_method", "gapsys_v2"] for line in fep.read_text().splitlines()):
+                    return True
+        return False
+
+    def _read_foreign_replicate(self, directory: Path):
+        from .analyze_fhe import SUPPORTED_FORMATS, analyze_fhe
+
+        energies = np.full(len(self.methods_list), np.nan)
+        try:
+            if (directory / "FAILED.log").exists():
+                raise ValueError("run has FAILED.log")
+            result_file = directory / "foreign_bar.json"
+            if result_file.exists():
+                result = json.loads(result_file.read_text())
+            else:
+                result = analyze_fhe(sorted(directory.glob("*.fhe")), temperature=float(directory.parent.name))
+            if result["format"] not in SUPPORTED_FORMATS | {"mixed"}:
+                raise ValueError("unsupported foreign BAR format")
+            if not np.isclose(result["temperature_K"], float(directory.parent.name)):
+                raise ValueError("foreign BAR temperature does not match the replicate")
+            value = float(result["total_delta_g_kcal"])
+            if not np.isfinite(value):
+                raise ValueError("non-finite foreign BAR result")
+            # Foreign work is oriented H(state 2)-H(state 1), matching QFEP.
+            energies[self.methods_list.index("dGbar")] = value
+            if result["poor_windows"]:
+                logger.warning(f"{directory}: {result['poor_windows']} poor-overlap BAR windows")
+            return energies, [], None, None
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            logger.error(f"Failed to read foreign BAR in {directory}: {exc}")
+            return energies, [int(directory.name)], None, None
 
     def read_single_replicate(self, qfep_repli_path: Path):
         """Reads a single replicate qfep.out file and returns the energies and a list.
@@ -200,6 +242,8 @@ class FepReader:
             failed_replicate: a list with the replicates that failed to be read.
         """
         failed_replicate = []
+        if self._uses_foreign_work(qfep_repli_path.parent):
+            return self._read_foreign_replicate(qfep_repli_path.parent)
         qEnergies, q_dgBAR = None, None
         if qfep_repli_path.stat().st_size == 0:  # if the file is empty, try runnign qfep again
             logger.warning(f"Empty qfep.out file: {qfep_repli_path}. Trying to run qfep again...")
@@ -248,12 +292,15 @@ class FepReader:
                     raise FileNotFoundError(f"Directory {_dir} not found. Exiting...")
 
             replicate_root = _dir / fep_dict["fep_stage"] / fep_dict["temperature"]
-            replicate_qfep_files = sorted(  # here we use the int to sort the replicates
-                list(replicate_root.glob("*/qfep.out")), key=lambda x: int(x.parent.name)
+            replicate_qfep_files = sorted(
+                [rep / "qfep.out" for rep in replicate_root.iterdir() if rep.is_dir() and rep.name.isdigit()],
+                key=lambda x: int(x.parent.name),
             )
 
             # deal with missing qfep.out files
-            if len(replicate_qfep_files) < n_replicates:
+            if not any(self._uses_foreign_work(rep.parent) for rep in replicate_qfep_files) and any(
+                not rep.exists() for rep in replicate_qfep_files
+            ):
                 logger.warning(
                     "Not all replicates have qfep.out files in the directory. Creating empty files..."
                 )
@@ -331,11 +378,12 @@ class FepReader:
                 method_idx = self.methods_list.index(mname)
                 method_energies = np.array([energies[repID][method_idx] for repID in all_replicates])
                 all_energies_arr.append(", ".join([f"{n:.3f}" for n in method_energies]))
+                available = np.isfinite(method_energies).any()
                 method_results[mname] = {
                     "energies": method_energies.tolist(),
-                    "avg": np.nanmean(method_energies),
-                    "sem": float(np.nanstd(method_energies) / np.sqrt(method_energies.shape)),
-                    "std": np.nanstd(method_energies),
+                    "avg": np.nanmean(method_energies) if available else np.nan,
+                    "sem": float(np.nanstd(method_energies) / np.sqrt(method_energies.size)) if available else np.nan,
+                    "std": np.nanstd(method_energies) if available else np.nan,
                 }
             logger.debug("energies:\n" + "\n".join(all_energies_arr))
 
