@@ -11,10 +11,10 @@ from . import charge_protocol as cp
 
 
 def parse(text):
-    begin, end = 'Q_BOUNDARY_AUDIT_V1 BEGIN', 'Q_BOUNDARY_AUDIT_V1 END'
+    begin, end = 'Q_BOUNDARY_AUDIT_V2 BEGIN', 'Q_BOUNDARY_AUDIT_V2 END'
     lines = text.splitlines()
     if lines.count(begin) != 1 or lines.count(end) != 1 or lines.index(begin) >= lines.index(end):
-        raise ValueError('Require one complete native boundary audit block')
+        raise ValueError('Require one complete native boundary audit V2 block')
     records = {}
     for line in lines[lines.index(begin)+1:lines.index(end)]:
         fields = line.split()
@@ -25,8 +25,8 @@ def parse(text):
             raise ValueError('Nonfinite native boundary audit value')
         records.setdefault(fields[0][4:].lower(), []).append(values)
     singles = {'convention': 1, 'meta': 8, 'flags': 6, 'parameters': 12, 'center': 3,
-               'solute_boundary': 3, 'cutoffs': 5, 'water': 2}
-    if set(records) != set(singles) | {'state', 'qatom', 'shell'}:
+               'solute_boundary': 3, 'cutoffs': 5, 'water': 2, 'water_compatibility': 2}
+    if set(records) != set(singles) | {'state', 'qatom', 'shell', 'water_atom'}:
         raise ValueError('Missing or unsupported native audit records')
     result = {}
     for key, size in singles.items():
@@ -38,7 +38,8 @@ def parse(text):
     natom, nsolute, nwater, nqat, nstates, nshell, _, _ = result['meta']
     if min(natom, nsolute, nwater, nqat, nshell) <= 0 or nstates != 2 or nsolute+3*nwater != natom:
         raise ValueError('Unsupported native system dimensions')
-    for key, count, size in [('state', nstates, 6), ('qatom', nqat, 11+nstates), ('shell', nshell, 4+nstates)]:
+    for key, count, size in [('state', nstates, 6), ('qatom', nqat, 11+nstates),
+                             ('shell', nshell, 4+nstates), ('water_atom', 3, 10)]:
         rows = records[key]
         if len(rows) != count or any(len(row) != size for row in rows):
             raise ValueError(f'Invalid native {key} dimensions')
@@ -76,6 +77,19 @@ def validate_window(window, born_mode, log_path):
         raise ValueError('Native atom dimensions disagree with staged assets')
     if audit['flags'] != [1, int(born_mode == 'integrated'), 0, 0, 0, 0]:
         raise ValueError('Native flags disagree with frozen direct charge-only protocol')
+    uniform, zero_h_lj = audit['water_compatibility']
+    if uniform != 1 or zero_h_lj not in (0, 1) or solvent_type not in (0, 1):
+        raise ValueError('Unsupported or nonuniform native water model')
+    if solvent_type == 0 and not zero_h_lj:
+        raise ValueError('Optimized SPC-like water code requires zero hydrogen LJ coefficients')
+    for site in audit['water_atom']:
+        if site[1] <= 0 or site[1] != int(site[1]) or site[2] <= 0 or min(site[4:]) < 0:
+            raise ValueError('Invalid native water type, mass or LJ coefficients')
+    actual_zero_h = all(v == 0 for site in audit['water_atom'][1:] for v in site[4:])
+    if actual_zero_h != bool(zero_h_lj):
+        raise ValueError('Native hydrogen LJ compatibility flag disagrees with coefficients')
+    for site in audit['water_atom'][1:]:
+        _close(site[3], _single(-0.5*audit['water_atom'][0][3]), 'symmetric neutral water charges')
     radius, requested_radius, ke, eps, override, env, excluded_env, kpol, krad, depth, width, max_radius = audit['parameters']
     config = window['signature']
     _close(radius, float(config['solvent']['radius']), 'effective radius')

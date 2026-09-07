@@ -37,9 +37,15 @@ def audit(request, executable, tmp_path_factory):
     return run_audit(request.param, executable, run)
 
 
-def run_audit(sign, executable, run, *, fixed_charge_as_q=False):
+def run_audit(sign, executable, run, *, fixed_charge_as_q=False, general_water=False):
     run.mkdir(exist_ok=True)
     shutil.copyfile(DATA/'topology/Na-benzene-water.top', run/'system.top')
+    if general_water:
+        path = run/'system.top'
+        marker = '       0 = solvent type (0=SPC,1=3-atom,2=general)'
+        text = path.read_text()
+        assert text.count(marker) == 1
+        path.write_text(text.replace(marker, marker.replace('       0', '       1', 1)))
     # Atom 1 is a real solute atom. No type/mass/LJ changes; a nonzero non-Q
     # environment tests the Born cross term rather than only an even q^2 case.
     extra_atom = '2 13\n' if fixed_charge_as_q else ''

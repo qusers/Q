@@ -14,9 +14,9 @@ def _record(payload):
     return marker+payload+marker
 
 
-def _run(directory, *, restart=None, adapt=False):
+def _run(directory, *, restart=None, adapt=False, topology=None):
     directory.mkdir(exist_ok=True)
-    shutil.copyfile(DATA/'topology/Na-benzene-water.top', directory/'system.top')
+    shutil.copyfile(topology or DATA/'topology/Na-benzene-water.top', directory/'system.top')
     (directory/'charge.fep').write_text('[FEP]\nstates 2\n[atoms]\n1 1\n'
                                        '[change_charges]\n1 0.0 1.0\n')
     inp = _md_input(Path('system.top'), Path('charge.fep'), Path('final.re'), .5)

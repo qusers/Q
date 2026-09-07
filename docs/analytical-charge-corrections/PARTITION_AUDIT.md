@@ -32,7 +32,7 @@ The largest isolated angular coordinate-gradient change is 0.445772
 kilocalories per mole per angstrom. These are instantaneous values for one
 configuration, not free-energy errors or estimates of the historical residual.
 
-## Non-angular control did not pass invariance
+## Non-angular control originally failed invariance: causes now identified
 
 The first version of the check required the entire non-angular potential to
 agree to 1e-8 kilocalories per mole. It failed. At state 1, the relabeling changes
@@ -41,18 +41,50 @@ kilocalories per mole. The other audited energy components are unchanged at the
 tested precision. The non-angular gradient changes too (maximum about 0.004176
 kilocalories per mole per angstrom across these evaluations).
 
-This is a separate numerical/control issue, not evidence that all the energy
-difference is a boundary effect. The cause of the non-angular mismatch remains
-unresolved. **Correction to the earlier explanation:** the topology's `iac_type`
-declares both `avdw` and `bvdw` as `real(8)`. The earlier suggestion that
-`nonbond_pw` multiplies single-precision stored LJ coefficients was incorrect
-and is withdrawn. Different Q/non-Q kernels are not by themselves a demonstrated
-explanation of the measured mismatch. Neither kernel was changed for this audit.
+The LJ discrepancy is now traced to an inconsistent water-type declaration in
+the archival fixture. It selects the optimized simple point charge (SPC)-like water kernel, which
+omits hydrogen LJ interactions, but its hydrogen type has `avdw(1)=0` and
+`bvdw(1)=0.03`. Non-Q solute–water interactions retain that attraction; optimized
+Q-water interactions omit it. Summing the unchanged sodium's hydrogen LJ
+interactions directly gives **-0.0039727932629014 kilocalories per mole**. Removing
+that term exactly accounts for the observed positive LJ difference, to 1e-11.
+
+The remaining Coulomb difference comes from **charge-product** rounding: some
+routes multiply single-precision stored charges, whereas the Q/library-pair
+route first promotes them to double precision. Explicitly summing the product
+rounding differences over the rerouted sodium pairs reproduces the observed
+Coulomb changes at all tested weights and both signs, to 1e-11 kilocalories per
+mole. This is a direct arithmetic calculation, not a fitted tolerance or offset.
+
+**Correction to the earlier explanation remains important:** the topology's
+`iac_type` declares both LJ coefficient arrays as `real(8)`. The earlier suggestion
+of single-precision *LJ coefficient* multiplication was incorrect and is withdrawn.
+It must not be confused with the now-verified single-precision *charge-product*
+effect. These fixture findings do not establish the cause of the historical
+charged-protein free-energy residual.
 
 The strict non-angular energy-invariance assertion remains an explicit expected
 failure (`xfail`, with unexpected passes treated as failures) for each charge
 sign. Component-accounting checks pass separately. No tolerance was enlarged to
-declare the invariance gate passed.
+declare the invariance gate passed. The expected failures now explicitly describe
+the archived water-type inconsistency and known charge-product rounding.
+
+In a generated copy, changing only the water-type flag to the existing general
+three-site kernel retains all charges and LJ coefficients. Its LJ partition
+difference is zero to 1e-11. Its full non-angular energy difference equals the
+identified charge-product rounding to the original 1e-8 tolerance. The angular
+partition dependence remains. The archived topology is not edited.
+
+This generated control exposed an additional spherical-kernel bug: with no
+alchemical LJ type changes, the three softcore force denominators were uninitialized,
+causing nonfinite gradients and an aborted short run. Initializing them to the
+ordinary unsoftened distance powers repairs the existing charge-only path.
+Finite-difference checks (small coordinate displacements used to differentiate
+the energy numerically) now match the sodium's three Cartesian gradients to
+1e-7 kilocalories per mole per angstrom for both labelings and signs. State-energy,
+lambda-mixing and binary serialization checks also pass on the general-water copy.
+This is not a new softcore method or an altered angular/radial restraint. The
+periodic-box counterpart is outside this spherical check and remains unaudited.
 
 To isolate the angular effect, subtract the Born-only control within each
 labeling before comparing labelings:
@@ -77,8 +109,8 @@ boundary forces and sampled ensemble, not merely repair a saved energy record.
 It also would not prove the central-charge approximation appropriate for an
 extended protein. This audit does not authorize or validate that replacement.
 
-No engine implementation, sampler, thermostat, integrator or radial-wall change
-was made. The targeted checks report **6 passed and 2 expected failures**; a
+At the initial partition checkpoint no engine implementation, sampler, thermostat,
+integrator or radial-wall change was made. Its checks reported **6 passed and 2 expected failures**; a
 passing reproduction of the angular dependence is not a physical validation
 pass. The next checks are matched frozen offsets in historical comparisons and
 an explicit charge/background convention for the production protocol.
@@ -90,3 +122,12 @@ test modules. The skips remain the optional native QFEP free-energy analysis
 and raw-data reproduction checks whose runtime assets are absent from this
 clean worktree. All new native partition checks executed. `git diff --check`
 also passed. No high-performance computing (HPC) experiment was submitted.
+
+Follow-up checkpoint: **137 passed, 2 skipped, 2 expected failures in 29.08
+seconds** across the expanded focused suite. The new causal checks, general-water
+control, Cartesian derivatives, state bookkeeping, and stronger native water
+compatibility gate all ran. Only the spherical three-site no-type-change force
+denominators were repaired; no angular target, radial wall, sampler or archived
+topology was changed. The omitted LJ and charge-rounding explanations above are
+now verified, rather than speculative. Physical correction validation is still
+outstanding.

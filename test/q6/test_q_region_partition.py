@@ -5,6 +5,12 @@ import numpy as np
 import pytest
 
 from test_state_energy_audit import executable, run_audit
+from test_state_energy_audit import (
+    test_pure_states_do_not_change_with_lambda as assert_pure_states,
+    test_full_energy_and_force_follow_same_lambda_mixture as assert_mixture,
+    test_boundary_terms_appear_once_in_pure_and_total_energies as assert_boundary_terms,
+    test_saved_energy_records_match_audited_pure_states as assert_saved_states,
+)
 
 
 @pytest.fixture(scope='module', params=[-1, 1])
@@ -12,6 +18,15 @@ def comparison(request, executable, tmp_path_factory):
     directory = tmp_path_factory.mktemp('partition-audit')
     first = run_audit(request.param, executable, directory/'original')
     second = run_audit(request.param, executable, directory/'promoted', fixed_charge_as_q=True)
+    return first, second
+
+
+@pytest.fixture(scope='module', params=[-1, 1])
+def general_comparison(request, executable, tmp_path_factory):
+    directory = tmp_path_factory.mktemp('general-water-partition')
+    first = run_audit(request.param, executable, directory/'original', general_water=True)
+    second = run_audit(request.param, executable, directory/'promoted',
+                       fixed_charge_as_q=True, general_water=True)
     return first, second
 
 
@@ -46,11 +61,63 @@ def test_nonangular_difference_is_accounted_for(comparison):
     print('NONANGULAR_COMPONENT_DIFFERENCE', delta[0].tolist())
 
 
-@pytest.mark.xfail(strict=True, reason='Known Q/non-Q nonbonded energy mismatch; see PARTITION_AUDIT.md')
+def test_nonangular_difference_matches_omitted_h_lj_and_coulomb_rounding(comparison):
+    first, second = comparison
+    c0, c1 = map(_components, comparison)
+    logs = [(run[4]/'audit.log').read_text().splitlines() for run in comparison]
+    omitted = [float(line.split()[1]) for line in logs[1] if line.startswith('PARTITION_H_LJ ')]
+    assert len(omitted) == 1 and omitted[0] < 0
+    rounding = [np.array([float(line.split()[2]) for line in log
+                         if line.startswith('PARTITION_COULOMB_ROUNDING ')]) for log in logs]
+    assert all(row.shape == (2,) for row in rounding)
+    for mode in (2, 3):
+        delta = c1[mode]-c0[mode]
+        np.testing.assert_allclose(delta[:, 2], -omitted[0], atol=1e-11, rtol=0)
+        for index, row in enumerate(first[2][mode]):
+            weight = row[2]
+            predicted = np.array([weight, 1-weight])@(rounding[1]-rounding[0])
+            assert delta[index, 1] == pytest.approx(predicted, abs=1e-11, rel=0)
+
+
+@pytest.mark.xfail(strict=True, reason='Archived water type omits H LJ in Q-water; also known charge-product rounding')
 def test_full_nonangular_potential_invariant(comparison):
     first, second = comparison
     for mode in (2, 3):  # Born-only and neither; shared physical configurations/interactions.
         np.testing.assert_allclose(first[2][mode, :, 3], second[2][mode, :, 3], atol=1e-8, rtol=0)
+
+
+def test_general_water_partition_has_only_identified_charge_rounding(general_comparison):
+    first, second = general_comparison
+    c0, c1 = map(_components, general_comparison)
+    rounding = [np.array([float(line.split()[2]) for line in (run[4]/'audit.log').read_text().splitlines()
+                         if line.startswith('PARTITION_COULOMB_ROUNDING ')]) for run in general_comparison]
+    for mode in (2, 3):
+        delta = c1[mode]-c0[mode]
+        np.testing.assert_allclose(delta[:, 2], 0., atol=1e-11, rtol=0)
+        for index, row in enumerate(first[2][mode]):
+            predicted = np.array([row[2], 1-row[2]])@(rounding[1]-rounding[0])
+            assert delta[index, 1] == pytest.approx(predicted, abs=1e-11, rel=0)
+            assert second[2][mode, index, 3]-row[3] == pytest.approx(predicted, abs=1e-8, rel=0)
+    # Removing the non-angular model inconsistency does not fix the distinct
+    # angular Q-label dependence. Keep it visible, without changing the target.
+    angular = second[2][0, 0, 8:10]-first[2][0, 0, 8:10]
+    assert abs(angular[1]-angular[0]) > 1e-4
+
+
+def test_general_water_native_gradient_matches_energy_derivative(general_comparison):
+    for run in general_comparison:
+        rows = np.array([[float(v) for v in line.split()[1:]] for line in (run[4]/'audit.log').read_text().splitlines()
+                         if line.startswith('PARTITION_FORCE_FD ')])
+        assert rows.shape == (3, 3) and np.isfinite(rows).all()
+        np.testing.assert_allclose(rows[:, 1], rows[:, 2], atol=1e-7, rtol=0)
+
+
+def test_general_water_retains_state_energy_bookkeeping(general_comparison):
+    for run in general_comparison:
+        assert_pure_states(run)
+        assert_mixture(run)
+        assert_saved_states(run)
+    assert_boundary_terms(general_comparison[0])
 
 
 def test_reproduces_current_angular_partition_dependence(comparison):

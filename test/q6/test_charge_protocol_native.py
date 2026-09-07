@@ -10,7 +10,7 @@ import pytest
 
 from QligFEP import charge_protocol as cp
 from QligFEP import boundary_native as bn
-from test_born_serialization import QDYN, PROJECT_ROOT, _energy_state_records, _read_fortran_records
+from test_born_serialization import DATA, QDYN, PROJECT_ROOT, _energy_state_records, _read_fortran_records
 from test_frozen_offset_restart import _run
 
 
@@ -20,8 +20,16 @@ def completed_windows(tmp_path_factory):
     assert QDYN.is_file(), 'Build serial Qdyn first'
     assert QDYN.stat().st_mtime >= max(p.stat().st_mtime for p in (PROJECT_ROOT/'src/q6').glob('*.f90')), 'Rebuild stale Qdyn'
     seed = tmp_path/'seed'
-    result = _run(seed)
-    assert result.returncode == 0, result.stdout+result.stderr
+    # The archived topology incorrectly labels nonzero hydrogen LJ as SPC-like.
+    # Use the existing general three-site kernel in this generated smoke copy;
+    # retain every coefficient/charge and never alter the archived input.
+    topology = tmp_path/'general-water.top'
+    text = (DATA/'topology/Na-benzene-water.top').read_text()
+    marker = '       0 = solvent type (0=SPC,1=3-atom,2=general)'
+    assert text.count(marker) == 1
+    topology.write_text(text.replace(marker, marker.replace('       0', '       1', 1)))
+    result = _run(seed, topology=topology)
+    assert result.returncode == 0, (result.stdout+result.stderr)[-6000:]
     offset_record = _read_fortran_records(seed/'final.re')[2]
     series = []
     for sign in (-1, 1):
@@ -118,6 +126,20 @@ def test_native_nonintegrated_born_accounting(completed_windows, tmp_path, mode)
     assert report['born_mode'] == mode
 
 
+def test_archived_incompatible_water_type_is_rejected(completed_windows, tmp_path):
+    original, mode, _ = completed_windows[0]
+    for name in ('charge.fep', 'start.re', 'run.inp'):
+        shutil.copyfile(Path(original['input']).parent/name, tmp_path/name)
+    shutil.copyfile(DATA/'topology/Na-benzene-water.top', tmp_path/'system.top')
+    window = cp.inspect_window(tmp_path/'run.inp', mode)
+    result = subprocess.run([str(QDYN), 'run.inp'], cwd=tmp_path, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout+result.stderr
+    log = tmp_path/'run.log'
+    log.write_text(result.stdout)
+    with pytest.raises(ValueError, match='requires zero hydrogen LJ'):
+        bn.validate_window(window, mode, log)
+
+
 @pytest.mark.parametrize('mutation,message', [
     ('missing_end', 'complete native'), ('duplicate_block', 'complete native'),
     ('duplicate_meta', 'meta record'), ('nan_parameter', 'Nonfinite'),
@@ -125,12 +147,17 @@ def test_native_nonintegrated_born_accounting(completed_windows, tmp_path, mode)
     ('excluded_q', 'excluded/non-solute'), ('zero_lj', 'nonzero Q-atom LJ'),
     ('wrong_charge', 'Q-atom charge'), ('wrong_born', 'applied Born constant'),
     ('wrong_offset', 'frozen offset'), ('wrong_lambda', 'lambda mismatch'),
+    ('old_version', 'complete native'), ('water_nonuniform', 'nonuniform'),
+    ('water_optimized', 'zero hydrogen LJ'), ('water_charge', 'neutral water charges'),
+    ('water_lj_flag', 'compatibility flag'),
 ])
 def test_native_report_rejects_mismatches(completed_windows, tmp_path, mutation, message):
     window, mode, source = completed_windows[0]
     lines = source.read_text().splitlines()
     if mutation == 'missing_end':
-        lines.remove('Q_BOUNDARY_AUDIT_V1 END')
+        lines.remove('Q_BOUNDARY_AUDIT_V2 END')
+    elif mutation == 'old_version':
+        lines = [line.replace('Q_BOUNDARY_AUDIT_V2', 'Q_BOUNDARY_AUDIT_V1') for line in lines]
     elif mutation == 'duplicate_block':
         lines *= 2
     elif mutation == 'duplicate_meta':
@@ -147,6 +174,10 @@ def test_native_report_rejects_mismatches(completed_windows, tmp_path, mutation,
             'wrong_born': ('STATE', 6, '0'),
             'wrong_offset': ('SHELL', 4, '0.5'),
             'wrong_lambda': ('STATE', 2, '0.2'),
+            'water_nonuniform': ('WATER_COMPATIBILITY', 1, '0'),
+            'water_optimized': ('META', 8, '0'),
+            'water_charge': ('WATER_ATOM', 4, '-0.75'),
+            'water_lj_flag': ('WATER_COMPATIBILITY', 2, '1'),
         }[mutation]
         index = next(i for i, line in enumerate(lines) if line.startswith('QBA_'+record+' '))
         fields = lines[index].split()

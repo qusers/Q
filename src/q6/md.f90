@@ -12980,6 +12980,11 @@ subroutine nonbond_qw_3atom
         r6_1 = 1._8/r6_1_hc     !softcore hack
         r6_2 = 1._8/r6_2_hc     !softcore hack
         r6_3 = 1._8/r6_3_hc     !softcore hack
+        ! The force expressions below also use these denominators when no atom
+        ! types change. In the ordinary charge-only path their ratios must be 1.
+        r6_1_sc = r6_1_hc
+        r6_2_sc = r6_2_hc
+        r6_3_sc = r6_3_hc
 
         V_a1  = iaclib(iaci)%avdw(iLJ1)*a1(iLJ1)*r6_1*r6_1
         V_b1  = iaclib(iaci)%bvdw(iLJ1)*b1(iLJ1)*r6_1
@@ -16778,7 +16783,7 @@ end subroutine init_perstate_born
 
 subroutine write_boundary_audit
   ! Read-only initialization record, before charge scaling. No target changes.
-  integer :: i, iq, s, shell_index
+  integer :: i, iq, s, shell_index, site, uniform_water, zero_h_lj
   real(8) :: env_in, env_out, q_in, q_out, applied_born, max_radius, audit_lrf_cutoff
   env_in=0; env_out=0; max_radius=0
   do i=1,natom
@@ -16790,7 +16795,7 @@ subroutine write_boundary_audit
       env_in=env_in+crg(i)
     end if
   end do
-  write(*,'(a)') 'Q_BOUNDARY_AUDIT_V1 BEGIN'
+  write(*,'(a)') 'Q_BOUNDARY_AUDIT_V2 BEGIN'
   write(*,'(a)') 'QBA_CONVENTION 1' !1 = existing Q-region-only angular target
   write(*,'(a,8i10)') 'QBA_META ',natom,nat_solute,nwat,nqat,nstates,nwpolr_shell,ivdw_rule,solvent_type
   write(*,'(a,6i4)') 'QBA_FLAGS ',merge(1,0,perstate_wpol),merge(1,0,perstate_born), &
@@ -16805,6 +16810,19 @@ subroutine write_boundary_audit
   if (use_LRF) audit_lrf_cutoff=RcLRF
   write(*,'(a,5es26.17e3)') 'QBA_CUTOFFS ',Rcpp,Rcpw,Rcww,Rcq,audit_lrf_cutoff
   write(*,'(a,2es26.17e3)') 'QBA_WATER ',real(rho_wat,8),real(mu_w,8)
+  uniform_water=1; zero_h_lj=1
+  do i=nat_solute+1,natom
+    site=nat_solute+1+mod(i-nat_solute-1,3)
+    if (iac(i) /= iac(site) .or. crg(i) /= crg(site)) uniform_water=0
+    if (mod(i-nat_solute,3) == 1) cycle
+    if (any(iaclib(iac(i))%avdw /= 0) .or. any(iaclib(iac(i))%bvdw /= 0)) zero_h_lj=0
+  end do
+  write(*,'(a,2i4)') 'QBA_WATER_COMPATIBILITY ',uniform_water,zero_h_lj
+  do site=1,3
+    i=nat_solute+site
+    write(*,'(a,2i10,8es26.17e3)') 'QBA_WATER_ATOM ',site,iac(i),iaclib(iac(i))%mass, &
+      real(crg(i),8),iaclib(iac(i))%avdw,iaclib(iac(i))%bvdw
+  end do
   do s=1,nstates
     q_in=0; q_out=0; applied_born=0
     do iq=1,nqat
@@ -16826,7 +16844,7 @@ subroutine write_boundary_audit
     write(*,'(a,i10,*(es26.17e3))') 'QBA_SHELL ',shell_index,wshell(shell_index)%rout, &
       wshell(shell_index)%dr,real(wshell(shell_index)%theta_corr,8),wpol_cstb_state(shell_index,:)
   end do
-  write(*,'(a)') 'Q_BOUNDARY_AUDIT_V1 END'
+  write(*,'(a)') 'Q_BOUNDARY_AUDIT_V2 END'
 end subroutine write_boundary_audit
 
 !-----------------------------------------------------------------------

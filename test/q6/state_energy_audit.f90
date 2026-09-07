@@ -58,6 +58,52 @@ program state_energy_audit
       call put_ene(11,EQ,OFFD)
     end do
   end do
+  call partition_trace
   close(unit)
   call close_output_files
+contains
+  subroutine partition_trace
+    ! Fixture-only analytical trace of the unchanged sodium (topology atom 13).
+    ! No dynamics or production interaction changes. Charges are already scaled.
+    integer :: j, s, ip, iq, i, jq, axis
+    real(8) :: r2, inv6, omitted_h_lj, qi, qj, rounding, saved_x, plus, minus, native_gradient(3)
+    real(8), parameter :: step=1.e-5_8
+    if (natom /= 3418 .or. nat_solute /= 13 .or. ivdw_rule /= VDW_GEOMETRIC) &
+      call die('Partition trace requires the Na/benzene/water fixture')
+    omitted_h_lj=0
+    do j=nat_solute+1,natom
+      if (mod(j-nat_solute,3) == 1 .or. excl(j)) cycle
+      r2=sum((x(37:39)-x(3*j-2:3*j))**2)
+      inv6=1/r2**3
+      omitted_h_lj=omitted_h_lj+iaclib(iac(13))%avdw(1)*iaclib(iac(j))%avdw(1)*inv6**2 &
+        -iaclib(iac(13))%bvdw(1)*iaclib(iac(j))%bvdw(1)*inv6
+    end do
+    write(*,'(a,es26.17e3)') 'PARTITION_H_LJ ',omitted_h_lj
+    do s=1,nstates
+      rounding=0
+      do ip=1,nbqq_pair(s)
+        iq=nbqq(ip,s)%iq; i=iqseq(iq); j=nbqq(ip,s)%j; jq=nbqq(ip,s)%jq
+        if (i /= 13 .and. j /= 13) cycle
+        qi=qcrg(iq,s); qj=crg(j)
+        if (jq /= 0) qj=qcrg(jq,s)
+        r2=sum((x(3*i-2:3*i)-x(3*j-2:3*j))**2)
+        rounding=rounding+(qi*qj-real(real(qi,4)*real(qj,4),8))/sqrt(r2)
+      end do
+      write(*,'(a,i6,es26.17e3)') 'PARTITION_COULOMB_ROUNDING ',s,rounding
+    end do
+    ! Last audit setting has both boundary terms disabled. Probe the sodium's
+    ! actual Cartesian gradient without changing pair membership (99 A cutoffs).
+    native_gradient=d(37:39)
+    do axis=1,3
+      i=36+axis; saved_x=x(i)
+      x(i)=saved_x+step
+      call pot_energy
+      plus=E%potential
+      x(i)=saved_x-step
+      call pot_energy
+      minus=E%potential
+      x(i)=saved_x
+      write(*,'(a,i6,2es26.17e3)') 'PARTITION_FORCE_FD ',axis,native_gradient(axis),(plus-minus)/(2*step)
+    end do
+  end subroutine partition_trace
 end program state_energy_audit

@@ -106,7 +106,7 @@ hash checks to make a prospective job pass.
 
 ### Native initialization audit
 
-Q now emits a read-only `Q_BOUNDARY_AUDIT_V1` block during initialization when
+Q now emits a read-only `Q_BOUNDARY_AUDIT_V2` block during initialization when
 per-state polarization is enabled (on the main process only). It records loaded
 values before the internal Coulomb charge rescaling; it does not change any
 force law, coordinate, velocity, or target. The
@@ -139,11 +139,15 @@ record payloads are:
 | `SOLUTE_BOUNDARY` | Effective inner restrained radius, exclusion radius, solute shell force constant |
 | `CUTOFFS` | Solute–solute, solute–water, water–water, Q-atom, local-reaction-field cutoffs |
 | `WATER` | Number density and molecular dipole magnitude used in the target |
+| `WATER_COMPATIBILITY` | Uniform water site types/charges; zero hydrogen LJ coefficients (Boolean flags) |
+| `WATER_ATOM` | Site index, type, mass, charge, three A and three B topology LJ coefficients for the first water |
 | `STATE` | State index, lambda, total/included/excluded Q-region charge, Born energy actually added |
 | `QATOM` | Q index, topology index, exclusion flag, type; mass; three A and three B topology LJ coefficients; pure-state charges |
 | `SHELL` | Shell index, outer radius, width, offset, pure-state angular strengths |
 
 `CONVENTION` precedes these records; `BEGIN`/`END` delimit exactly one block.
+Version 2 requires the water-site records and compatibility checks absent from
+version 1; old native logs must not be passed off as this stronger gate.
 Units are Q's existing angstrom, elementary-charge and kilocalorie-per-mole
 conventions; the A/B coefficients retain the topology combining-rule convention,
 not a universal sigma/epsilon interpretation. The checker compares atomic
@@ -159,7 +163,11 @@ geometric bound is not a proof of pair-list correctness or whole-trajectory
 interaction coverage; the initial coordinates also precede initial bond-constraint
 projection. The original/native logs and later trajectory coverage remain needed.
 
-The checker rejects excluded/non-solute Q atoms, nonpositive standard Q-atom LJ
+The checker rejects nonuniform water site types/charges, inconsistent neutral
+water charges, and optimized SPC-like water flags with nonzero hydrogen LJ
+coefficients. SPC means simple point charge; the optimized kernel label describes
+its interaction assumptions, not proof of a particular named water model.
+It also rejects excluded/non-solute Q atoms, nonpositive standard Q-atom LJ
 coefficients, wrong loaded state charges/lambdas, mismatched frozen offsets and
 inconsistent applied Born constants. It returns the independently recomputed
 Born state constants even in post-hoc/control mode, distinguishing those values
@@ -175,6 +183,18 @@ workflow, checks finite saved state energies and exact saved lambda mappings,
 and verifies frozen restart offsets. Shared starting coordinates are intentional
 for this software test: it is **not** a set of independent equilibrated replicas,
 a timestep assessment, or a physical endpoint/free-energy validation.
+
+The current smoke test uses a generated copy selecting the general three-site
+kernel, preserving every topology charge and LJ coefficient. The archive has an
+incompatible optimized-water flag despite a small nonzero hydrogen LJ attraction;
+the stronger native gate now rejects that original combination. The
+[partition diagnosis](../../docs/analytical-charge-corrections/PARTITION_AUDIT.md)
+documents the exact omitted term and the minimal no-softcore force-denominator
+initialization fix needed by the spherical three-site charge-only kernel. This
+copy is a software control, not an endorsed production water parameterization.
+Earlier native passes did not check this water-kernel assumption and must not
+be interpreted as passing the new gate. No archived topology or historical
+result was changed, and no angular target was changed.
 
 Still required before production:
 
@@ -211,3 +231,12 @@ seconds**, after rebuilding serial Qdyn with GNU Fortran 11. This includes the
 altered native-record checks, and successful/failing native command-line cases.
 All new native checks executed. The target-change proposal is still awaiting
 approval. Distributed-execution and other compiler builds remain unverified.
+
+Water-kernel checkpoint: **137 passed, 2 skipped, 2 expected failures in 29.08
+seconds**, after rebuilding serial Qdyn. The archive's strict partition failures
+remain explicit; their LJ and Coulomb causes are now reproduced quantitatively.
+The general-water test copy passes the rounding-accounted partition, Cartesian
+force/energy, state-bookkeeping and native MD checks. Version-2 compatibility
+checks reject the original incompatible water flag and deliberately altered water
+records. The angular target is unchanged and its proposed opt-in replacement
+still awaits approval. No HPC jobs were submitted.
