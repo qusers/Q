@@ -9,7 +9,14 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MODULE_SOURCE = PROJECT_ROOT / "src" / "q6" / "boundary_corrections.f90"
+MD_SOURCE = PROJECT_ROOT / "src" / "q6" / "md.f90"
 DRIVER_SOURCE = Path(__file__).with_suffix(".f90")
+
+
+def test_born_uses_topology_coulomb_constant():
+    source = MD_SOURCE.read_text()
+    assert "born_coefficient(coulomb_constant, born_eps, rwat)" in source
+    assert "born_ke" not in source
 
 
 def test_boundary_correction_helpers(tmp_path):

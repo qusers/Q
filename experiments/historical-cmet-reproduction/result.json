@@ -1,0 +1,182 @@
+{
+  "schema_version": 1,
+  "gate": "archived_interior_BAR_reproduction_passed",
+  "full_endpoint_free_energy": false,
+  "independent_replicates": 1,
+  "lambda1_start": "0.999",
+  "lambda1_end": "0.001",
+  "download_verification": {
+    "sha256": "e4aaaa67808158cc7101bf87277d5b834fdd8f7189c2d4282c27357c6dd13e91",
+    "file_count": 872,
+    "bytes": 63998149,
+    "archived_binary_md5_matches_validation": true
+  },
+  "selection_sha256": "36a7697b364b554f48882f6af3ebf76e4482c69b0185b8a31b33140c376a3acd",
+  "reproducer_sha256": "3d9fb2baad37f776f63d9eacb44758e7b69332b8cee3e1bbc8dd28c7ff0d00e4",
+  "endpoint_utility_sha256": "88e62857fd356647b1237654e572b7272a36e9ef328dd4d775e05bd0e2cbe740",
+  "local_archived_solver_binary_sha256": "9485a968552713dafcd9a989eddd7064aa1cfdca360b2992e6879175b9092013",
+  "archived_solver_source_sha256": {
+    "misc.f90": "63ae6c698b82743695c1c69d500b5d00453af8e6d120038fdad48e8bd352f813",
+    "mpiglob.f90": "860784c0aeb5d118f7b01f453adacba735ef76df7f7443309f4984fb508005c3",
+    "nrgy.f90": "f5ff03524abf965822623156bb65a3663bef03132a29cb6a82ca19ae79381216",
+    "parse.f90": "37e4d4daee4301d869ad1ddbee270c1fde4cb7cd2505990adfbad7748bbf683c",
+    "qfep.f90": "9b872f6c0f6b4552c16bef885e6c1a0649e0b1fe786e62af950a38a7f8a2bea7",
+    "sizes.f90": "bc97a1dd1e8d84c996b0a8d05bf68f163da2c89bc5422f9882d0a6d5d202ec80"
+  },
+  "reductions": [
+    {
+      "label": "fwd-water",
+      "direction": "fwd",
+      "leg": "1.water",
+      "bar_kcal_mol": 70.944,
+      "archived_cumulative_difference_kcal_mol": 70.944,
+      "maximum_cumulative_row_error_kcal_mol": 0.0010000000000047748,
+      "compared_rows": 99,
+      "retained_pairs": 98,
+      "kT_kcal_mol": 0.592,
+      "discarded_frames_per_window": 100,
+      "qfep_alpha2_kcal_mol": 100.0,
+      "qfep_alpha_interval_contribution_kcal_mol": 99.8,
+      "historical_born_parameters": {
+        "radius": 24.73,
+        "q_from": 1.0,
+        "q_to": -0.004,
+        "q_env": 0.0
+      },
+      "born_full_state_gap_kcal_mol": 6.629754491377679,
+      "born_interval_shift_kcal_mol": 6.616494982394924,
+      "corrected_interval_kcal_mol": 77.56049498239493,
+      "eq5_shell_offsets_radians": [
+        0.004204615484923124,
+        0.0362846776843071,
+        0.0221804678440094
+      ],
+      "configured_softcore_method": "gapsys",
+      "endpoint_manifest_sha256": "106c6a81fc23bd8eab43b7dab551bbbbcf7c5f060619c964fb5dd62262c41cc3",
+      "archived_qfep_output_sha256": "4c73b3844be00d6a96ed3ed3170f81a06404fc091b00565bcdeeda6ec2216513",
+      "reproduced_qfep_output_sha256": "95bd06b5f8e7b3185f9f700035650f6b9cc5d96971ed396e1e1037adc42da006",
+      "frames_per_retained_window_min": 499,
+      "frames_per_retained_window_max": 499,
+      "all_stored_lambda_pairs_match_md_inputs": true
+    },
+    {
+      "label": "fwd-protein",
+      "direction": "fwd",
+      "leg": "2.protein",
+      "bar_kcal_mol": 34.592,
+      "archived_cumulative_difference_kcal_mol": 34.592,
+      "maximum_cumulative_row_error_kcal_mol": 0.0010000000000012221,
+      "compared_rows": 99,
+      "retained_pairs": 98,
+      "kT_kcal_mol": 0.592,
+      "discarded_frames_per_window": 100,
+      "qfep_alpha2_kcal_mol": 100.0,
+      "qfep_alpha_interval_contribution_kcal_mol": 99.8,
+      "historical_born_parameters": {
+        "radius": 23.3,
+        "q_from": 1.0,
+        "q_to": -0.004,
+        "q_env": 3.0
+      },
+      "born_full_state_gap_kcal_mol": 49.426072732479405,
+      "born_interval_shift_kcal_mol": 49.327220587014445,
+      "corrected_interval_kcal_mol": 83.91922058701445,
+      "eq5_shell_offsets_radians": [
+        -0.02594851516187191,
+        0.012630756013095379,
+        0.007835888303816319
+      ],
+      "configured_softcore_method": "gapsys",
+      "endpoint_manifest_sha256": "3209ee5284c82f5edaf9008be612a7ba7d0a3fec9d7116c05e592f8747d6cbf2",
+      "archived_qfep_output_sha256": "28d529f8b1c0ce1613858dc6d36158872073efa3af36a7cedec8ed83a4425ecd",
+      "reproduced_qfep_output_sha256": "e753698f7cb2e89db149b7a1ddf26f15b9aed1f11e765a2c43f2e2838ce56245",
+      "frames_per_retained_window_min": 499,
+      "frames_per_retained_window_max": 499,
+      "all_stored_lambda_pairs_match_md_inputs": true
+    },
+    {
+      "label": "rev-water",
+      "direction": "rev",
+      "leg": "1.water",
+      "bar_kcal_mol": 128.287,
+      "archived_cumulative_difference_kcal_mol": 128.288,
+      "maximum_cumulative_row_error_kcal_mol": 0.0010000000000047748,
+      "compared_rows": 99,
+      "retained_pairs": 98,
+      "kT_kcal_mol": 0.592,
+      "discarded_frames_per_window": 100,
+      "qfep_alpha2_kcal_mol": 100.0,
+      "qfep_alpha_interval_contribution_kcal_mol": 99.8,
+      "historical_born_parameters": {
+        "radius": 24.73,
+        "q_from": -0.004,
+        "q_to": 1.0,
+        "q_env": 0.0
+      },
+      "born_full_state_gap_kcal_mol": -6.629754491377679,
+      "born_interval_shift_kcal_mol": -6.616494982394924,
+      "corrected_interval_kcal_mol": 121.67050501760508,
+      "eq5_shell_offsets_radians": [
+        0.0173480361700058,
+        0.023518433794379234,
+        0.02122858166694641
+      ],
+      "configured_softcore_method": "gapsys",
+      "endpoint_manifest_sha256": "bc317b7fbc44f99fe350a32a158383a55951e55ee95ff83c98aa100ace49dd84",
+      "archived_qfep_output_sha256": "e7cb99cdc54087ef8b569d11c51ce341d8f0d84bc1b7cd49fbc35c3b0af736b7",
+      "reproduced_qfep_output_sha256": "ec6256ce65a26292f378d430070ed847c59a50060390329d8713f39eaa50e3ab",
+      "frames_per_retained_window_min": 499,
+      "frames_per_retained_window_max": 499,
+      "all_stored_lambda_pairs_match_md_inputs": true
+    },
+    {
+      "label": "rev-protein",
+      "direction": "rev",
+      "leg": "2.protein",
+      "bar_kcal_mol": 162.63,
+      "archived_cumulative_difference_kcal_mol": 162.63,
+      "maximum_cumulative_row_error_kcal_mol": 0.0010000000000047748,
+      "compared_rows": 99,
+      "retained_pairs": 98,
+      "kT_kcal_mol": 0.592,
+      "discarded_frames_per_window": 100,
+      "qfep_alpha2_kcal_mol": 100.0,
+      "qfep_alpha_interval_contribution_kcal_mol": 99.8,
+      "historical_born_parameters": {
+        "radius": 23.3,
+        "q_from": -0.004,
+        "q_to": 1.0,
+        "q_env": 3.0
+      },
+      "born_full_state_gap_kcal_mol": -49.426072732479405,
+      "born_interval_shift_kcal_mol": -49.327220587014445,
+      "corrected_interval_kcal_mol": 113.30277941298556,
+      "eq5_shell_offsets_radians": [
+        -0.014338365755975246,
+        0.015976127237081528,
+        0.004128121305257082
+      ],
+      "configured_softcore_method": "gapsys",
+      "endpoint_manifest_sha256": "4591488de845a3084303e021be80026e4338643c698abf30d88f90adfdc3318e",
+      "archived_qfep_output_sha256": "d14e38a8c650ddee4972f528399f92a966173e0b5e0449d0791fc26ba98c79f2",
+      "reproduced_qfep_output_sha256": "5cfdfb4a78b2207f86bafa951cf8e9aac27a3c2b7acc73813ff98d01f0316a61",
+      "frames_per_retained_window_min": 499,
+      "frames_per_retained_window_max": 499,
+      "all_stored_lambda_pairs_match_md_inputs": true
+    }
+  ],
+  "directional_results": {
+    "fwd": {
+      "protein_minus_water_bar_kcal_mol": -36.352000000000004,
+      "protein_minus_water_born_kcal_mol": 42.71072560461952,
+      "corrected_protein_minus_water_kcal_mol": 6.358725604619522
+    },
+    "rev": {
+      "protein_minus_water_bar_kcal_mol": 34.34299999999999,
+      "protein_minus_water_born_kcal_mol": -42.71072560461952,
+      "corrected_protein_minus_water_kcal_mol": -8.367725604619523
+    }
+  },
+  "forward_reverse_offsets_identical": false,
+  "interpretation": "Numerical reproduction only. No equilibrium/overlap qualification or full-endpoint estimate. Different forward/reverse offsets prevent interpreting their sum as same-Hamiltonian closure."
+}

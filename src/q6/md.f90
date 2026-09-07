@@ -42,7 +42,6 @@ module md
   character*(*), parameter  :: md_date = '2015-02-22'
   real, parameter           :: rho_wat = 0.0335  ! molecules / A**3
   real, parameter           :: boltz = 0.001986
-  real(8), parameter        :: born_ke = 332.0637_8 ! kcal*A/(mol*e**2)
   real(8)                   :: pi, deg2rad !set in sub startup
 
   ! Read status
@@ -16756,7 +16755,7 @@ subroutine init_perstate_born
   if (born_C_override > 0.0_8) then
     born_C = born_C_override
   else
-    born_C = born_coefficient(born_ke, born_eps, rwat)
+    born_C = born_coefficient(coulomb_constant, born_eps, rwat)
   end if
 
   if (allocated(born_self_state)) deallocate(born_self_state)
