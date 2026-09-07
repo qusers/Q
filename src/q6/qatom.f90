@@ -18,12 +18,16 @@ module qatom
 !!  Q-atom force field data and FEP file reading
 !!-------------------------------------------------------------------------------
   use sizes
+  use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
   use nrgy
   use misc
   use prmfile
   use indexer
   !use MPIGLOB
   use topo
+  use qsoftcore, only: GAPSYS_ALPHA_LJ_DEFAULT, GAPSYS_ALPHA_Q_ANGSTROM_DEFAULT, &
+                       GAPSYS_SIGMA_LJ_ANGSTROM_DEFAULT, GAPSYS_SIGMA_Q_DEFAULT, &
+                       gapsys_lj_radius
 
   implicit none
 
@@ -39,6 +43,7 @@ module qatom
   integer, parameter                      :: SC_STANDARD    = 0
   integer, parameter                      :: SC_BEUTLER_COUL = 1
   integer, parameter                      :: SC_GAPSYS      = 2
+  integer, parameter                      :: SC_GAPSYS_V2   = 3
 
   !-----------------------------------------------------------------------
   !       fep/evb information
@@ -160,17 +165,19 @@ module qatom
 
   integer                                 :: tmpindex,numsoftlines,i2
   real(8), allocatable                    :: sc_lookup(:,:,:), alpha_max(:,:)
+  logical, allocatable                    :: softcore_enabled(:,:)
   real(8)                                 :: sc_aq,sc_bq,sc_aj,sc_bj,alpha_max_tmp
   logical                                 :: softcore_use_max_potential
 
   ! Soft-core method configuration
   integer                                 :: softcore_method = SC_STANDARD
   ! Gapsys 2012 soft-core parameters (J. Chem. Theory Comput. 8, 2373; SI Eqs. 1.1-1.4).
-  ! Defaults follow the paper (alpha_LJ=0.85, alpha_Q=0.3, sigma_Q=1.0).
+  ! Legacy defaults are retained here; gapsys_v2 parses paper-equivalent
+  ! angstrom defaults (alpha_Q=3.0 A) from qsoftcore.
   real(8)                                 :: gapsys_alpha_lj = 0.85_8
   real(8)                                 :: gapsys_alpha_q  = 0.3_8
-  real(8)                                 :: gapsys_sigma_lj = 0.3_8   ! LJ sigma fallback for dummy atoms (C6=C12=0)
-  real(8)                                 :: gapsys_sigma_q  = 1.0_8   ! Paper Eq. 5 charge weighting (sigma_Q)
+  real(8)                                 :: gapsys_sigma_lj = 0.3_8   ! Legacy path: historical values in Q distance units
+  real(8)                                 :: gapsys_sigma_q  = 1.0_8
   ! Gapsys LJ linearization radii: shape (nqat, natyps+nqat, nstates).
   real(8), allocatable                    :: gapsys_lj_rsc(:,:,:)
   ! Gapsys Coulomb lambda-dependent factor: alpha_Q * (1 - lambda_state)^(1/6).
@@ -236,6 +243,7 @@ subroutine qatom_shutdown
   if (allocated(qq_el_scale)) deallocate(qq_el_scale)
   if (allocated(gapsys_lj_rsc)) deallocate(gapsys_lj_rsc)
   if (allocated(gapsys_q_lambda_factor)) deallocate(gapsys_q_lambda_factor)
+  if (allocated(softcore_enabled)) deallocate(softcore_enabled)
 end subroutine qatom_shutdown
 
 
@@ -330,6 +338,8 @@ logical function qatom_load_atoms(fep_file)
              softcore_method = SC_BEUTLER_COUL
           case('GAPSYS')
              softcore_method = SC_GAPSYS
+          case('GAPSYS_V2')
+             softcore_method = SC_GAPSYS_V2
           case default
              write(*,'(a,a)') '>>>>> ERROR: Unknown softcore_method: ', trim(word)
              qatom_load_atoms = .false.
@@ -337,12 +347,36 @@ logical function qatom_load_atoms(fep_file)
           end select
        end if
 
-       ! Parse Gapsys-specific parameters (only relevant when method=gapsys)
+       ! Parse Gapsys-specific parameters. The legacy method preserves its
+       ! historical numerical defaults. GAPSYS_V2 uses Q-native angstrom values
+       ! equivalent to the paper's alpha_Q=sigma_LJ=0.3 nm.
        if(softcore_method == SC_GAPSYS) then
           yes = prm_get_real8_by_key('gapsys_scale_linpoint_lj', gapsys_alpha_lj, 0.85_8)
           yes = prm_get_real8_by_key('gapsys_scale_linpoint_q', gapsys_alpha_q, 0.3_8)
           yes = prm_get_real8_by_key('gapsys_sigma_lj', gapsys_sigma_lj, 0.3_8)
           yes = prm_get_real8_by_key('gapsys_sigma_q',  gapsys_sigma_q,  1.0_8)
+       else if(softcore_method == SC_GAPSYS_V2) then
+          yes = prm_get_real8_by_key('gapsys_scale_linpoint_lj', gapsys_alpha_lj, &
+                                     GAPSYS_ALPHA_LJ_DEFAULT)
+          yes = prm_get_real8_by_key('gapsys_scale_linpoint_q', gapsys_alpha_q, &
+                                     GAPSYS_ALPHA_Q_ANGSTROM_DEFAULT)
+          yes = prm_get_real8_by_key('gapsys_sigma_lj', gapsys_sigma_lj, &
+                                     GAPSYS_SIGMA_LJ_ANGSTROM_DEFAULT)
+          yes = prm_get_real8_by_key('gapsys_sigma_q', gapsys_sigma_q, &
+                                     GAPSYS_SIGMA_Q_DEFAULT)
+          if(.not. all(ieee_is_finite([gapsys_alpha_lj,gapsys_alpha_q,gapsys_sigma_lj,gapsys_sigma_q])) .or. &
+             gapsys_alpha_lj <= 0.0_8 .or. gapsys_alpha_lj > 1.0_8 .or. &
+             gapsys_alpha_q <= 0.0_8 .or. gapsys_sigma_lj <= 0.0_8 .or. &
+             gapsys_sigma_q < 0.0_8) then
+             write(*,'(a)') '>>>>> ERROR: invalid gapsys_v2 parameters (require 0<alpha_lj<=1, alpha_q>0, sigma_lj>0, sigma_q>=0)'
+             qatom_load_atoms = .false.
+             return
+          end if
+          if(softcore_use_max_potential) then
+             write(*,'(a)') '>>>>> ERROR: gapsys_v2 requires softcore_use_max_potential off (activation flags)'
+             qatom_load_atoms = .false.
+             return
+          end if
        end if
 
        ! Print selected soft-core method
@@ -353,7 +387,13 @@ logical function qatom_load_atoms(fep_file)
           write(*,'(a)') 'Soft-core method: beutler_coul (LJ + Coulomb)'
        case(SC_GAPSYS)
           write(*,'(a,f6.3,a,f6.3,a,f6.3,a,f6.3,a)') &
-               'Soft-core method: gapsys (alpha_lj=', gapsys_alpha_lj, &
+               'Soft-core method: gapsys legacy (alpha_lj=', gapsys_alpha_lj, &
+               ' alpha_q=', gapsys_alpha_q, &
+               ' sigma_lj=', gapsys_sigma_lj, &
+               ' sigma_q=', gapsys_sigma_q, ')'
+       case(SC_GAPSYS_V2)
+          write(*,'(a,f6.3,a,f6.3,a,f6.3,a,f6.3,a)') &
+               'Soft-core method: gapsys_v2, distances in A (alpha_lj=', gapsys_alpha_lj, &
                ' alpha_q=', gapsys_alpha_q, &
                ' sigma_lj=', gapsys_sigma_lj, &
                ' sigma_q=', gapsys_sigma_q, ')'
@@ -942,6 +982,7 @@ logical function qatom_load_fep(fep_file)
     integer                               :: nqcrg,nqcod
     character(len=40)                     :: section
     logical, allocatable, dimension(:)    :: type_read
+    logical                               :: softcore_seen(nqat)
     integer                               :: type_count, filestat
     real(8)                   ::  el_scale(max_states) ! local variable for scaling of different states "masoud Oct_2013"
     integer                   ::  stat
@@ -1619,11 +1660,17 @@ logical function qatom_load_fep(fep_file)
 622 format('>>>>> ERROR: Invalid combination of states: ',2i5)
 
     !************Softcore section************  MPA  Martin Per Ander??
-    if (allocated(sc_lookup))    deallocate (sc_lookup)
-    allocate (alpha_max(nqat,nstates),sc_lookup(nqat,natyps+nqat,nstates))
+    if (allocated(sc_lookup)) deallocate(sc_lookup)
+    if (allocated(alpha_max)) deallocate(alpha_max)
+    if (allocated(softcore_enabled)) deallocate(softcore_enabled)
+    allocate(alpha_max(nqat,nstates), sc_lookup(nqat,natyps+nqat,nstates), &
+             softcore_enabled(nqat,nstates))
 
-    !default is no softcore, i.e. alpha=zero (sc_lookup = 0)
-    sc_lookup(:,:,:)=0.0
+    ! Default is no soft-core. Initialize alpha explicitly as malformed or
+    ! duplicate indices in [softcore] must never leave activation undefined.
+    alpha_max(:,:) = 0.0_8
+    sc_lookup(:,:,:) = 0.0_8
+    softcore_enabled(:,:) = .false.
 
     section = 'softcore'
     if(.not. prm_open_section(section)) then
@@ -1655,10 +1702,16 @@ logical function qatom_load_fep(fep_file)
              write (*,1626) ('state',i,i=1,nstates)
           end if
 
+          softcore_seen = .false.
           do i=1,nqat   !read all the softcore max_alphas
              !reading should not fail at this stage - get_line was called by prm_count!
              if(.not. prm_get_line(line)) goto 1000
-             read (line,*, err=1000) tmpindex, alpha_max(tmpindex,1:nstates)
+             read (line,*, err=1000, end=1000) tmpindex
+             if(tmpindex < 1 .or. tmpindex > nqat) goto 1000
+             if(softcore_seen(tmpindex)) goto 1000
+             softcore_seen(tmpindex) = .true.
+             read (line,*, err=1000, end=1000) tmpindex, alpha_max(tmpindex,1:nstates)
+             if(.not. all(ieee_is_finite(alpha_max(tmpindex,1:nstates)))) goto 1000
 
              write (*,'(i6,t25,6(f8.2,1x))') tmpindex, alpha_max(tmpindex,1:nstates)
 
@@ -1668,6 +1721,7 @@ logical function qatom_load_fep(fep_file)
        end if
     end if  !prm_open_section(section)   softcore
 
+    call initialize_softcore_activation()
 
 1630 format('No softcore section found. Using normal LJ potentials.')
 1631 format('>>>>> Erroneous softcore section.')
@@ -1742,6 +1796,54 @@ logical function bond_harmonic_in_any_state(k)
     end do
 547 format('>>>>> ERROR: Bond',i3,' is harmonic in state',i2)   
 end function bond_harmonic_in_any_state
+
+!-------------------------------------------------------------------------
+
+subroutine initialize_softcore_activation()
+  integer :: iq, istate, nreal, ndum
+  logical :: is_real
+  real(8), parameter :: TINY_LJ = 1.0e-12_8
+
+  softcore_enabled(:,:) = abs(alpha_max(:,:)) > 1.0e-6_8
+  if(softcore_method /= SC_GAPSYS_V2) return
+
+  write(*,'(a)') 'Gapsys v2 [softcore] values are activation flags; magnitude is ignored.'
+  do istate = 1, nstates
+    nreal = 0
+    ndum = 0
+    do iq = 1, nqat
+      if(.not. softcore_enabled(iq,istate)) cycle
+      is_real = abs(qavdw(qiac(iq,istate),1)) > TINY_LJ .or. &
+                abs(qbvdw(qiac(iq,istate),1)) > TINY_LJ .or. abs(qcrg(iq,istate)) > TINY_LJ
+      if(is_real) then
+        nreal = nreal+1
+      else
+        ndum = ndum+1
+      end if
+    end do
+    write(*,'(a,i0,a,i0,a,i0)') 'Gapsys v2 state ',istate, &
+         ': enabled real q-atoms=',nreal,', enabled DUM q-atoms=',ndum
+  end do
+end subroutine initialize_softcore_activation
+
+!-------------------------------------------------------------------------
+
+pure logical function softcore_pair_enabled(iq, partner_index, istate)
+  integer, intent(in) :: iq, partner_index, istate
+  integer :: jq
+
+  softcore_pair_enabled = .false.
+  if(.not. allocated(softcore_enabled)) return
+  if(iq < 1 .or. iq > nqat .or. istate < 1 .or. istate > nstates) return
+
+  if(partner_index <= natyps) then
+    softcore_pair_enabled = softcore_enabled(iq,istate)
+  else
+    jq = partner_index-natyps
+    if(jq < 1 .or. jq > nqat) return
+    softcore_pair_enabled = softcore_enabled(iq,istate) .or. softcore_enabled(jq,istate)
+  end if
+end function softcore_pair_enabled
 
 !-------------------------------------------------------------------------
 
@@ -1883,113 +1985,100 @@ end subroutine softcore_scale_beutler
 subroutine softcore_init_gapsys(nstates_in)
 !!-------------------------------------------------------------------------------
 !! Compute Gapsys (Gapsys, Seeliger, de Groot 2012, JCTC 8, 2373) soft-core
-!! linearization radii. Must be called after lambdas (EQ%lambda) are set.
+!! linearization radii after state weights are known. The paper uses
+!! H=(1-lambda)H_A+lambda H_B; in Q's per-state-weight notation every state uses
+!! a decoupling factor (1-EQ(state)%lambda).
 !!
-!! Lambda convention (Q vs paper):
-!!   The paper uses a global lambda with H = (1-lambda)*H_A + lambda*H_B.
-!!   In the paper's formulas r_sc_A ~ lambda^(1/6), r_sc_B ~ (1-lambda)^(1/6),
-!!   so the decoupled state (lambda=1 for A, lambda=0 for B) always carries
-!!   full soft-core. Q uses per-state lambdas where EQ(istate)%lambda = 1 means
-!!   the state is fully coupled (real, hard-core expected) and = 0 means fully
-!!   decoupled (ghost, full soft-core expected). Translating to Q's convention
-!!   gives r_sc ~ (1 - EQ(istate)%lambda)^(1/6).
-!!
-!! LJ radius (paper Eq. before Eq. 5, SI Eq. before 1.1, in Q convention):
-!!   r_LJ = alpha_LJ * [(26/7) * sigma^6 * (1 - lambda_state)]^(1/6)
-!! Coulomb radius (paper Eq. 5, SI S9, in Q convention):
-!!   r_Q  = alpha_Q  * (1 + sigma_Q*|q_i*q_j|) * (1 - lambda_state)^(1/6)
-!!
-!! We pre-compute the LJ radius per (q-atom, partner-type-or-q-atom, state).
-!! For Coulomb, only the partner-charge-independent factor
-!!     alpha_Q * (1 - lambda_state)^(1/6)
-!! is pre-computed per (q-atom, state); the (1 + sigma_Q*|q_i*q_j|) factor is
-!! applied at runtime in each nonbonded routine, where the partner charge q_j
-!! is in scope. This makes Q-protein, Q-water, and Q-Q Coulomb soft-core all
-!! faithfully match paper Eq. 5 (the per-type lookup approach in any prior
-!! formulation could only use |q_i| for Q-protein because the partner charge
-!! is per-atom, not per-type, which dropped the q_j dependence).
+!! GAPSYS preserves the historical activation/radius behavior. GAPSYS_V2 uses
+!! an explicit activation mask, symmetric Q-Q activation, and Q-native angstrom
+!! defaults. Coulomb's partner-charge factor remains a runtime quantity.
 !!-------------------------------------------------------------------------------
   integer, intent(in) :: nstates_in
   integer :: iq, jt, istate, iaci, iacj
-  real(8) :: lambda_st, one_minus_lambda, sigma, C6, C12
-  real(8) :: r_sc_lj
+  real(8) :: one_minus_lambda, sigma, C6, C12
+  logical :: pair_enabled
 
-  if(softcore_method /= SC_GAPSYS) return
+  if(softcore_method /= SC_GAPSYS .and. softcore_method /= SC_GAPSYS_V2) return
 
-  ! Allocate linearization lookups
-  if(allocated(gapsys_lj_rsc))          deallocate(gapsys_lj_rsc)
+  if(allocated(gapsys_lj_rsc)) deallocate(gapsys_lj_rsc)
   if(allocated(gapsys_q_lambda_factor)) deallocate(gapsys_q_lambda_factor)
   allocate(gapsys_lj_rsc(nqat, natyps+nqat, nstates_in))
   allocate(gapsys_q_lambda_factor(nqat, nstates_in))
-
-  gapsys_lj_rsc(:,:,:)        = 0.0_8
+  gapsys_lj_rsc(:,:,:) = 0.0_8
   gapsys_q_lambda_factor(:,:) = 0.0_8
 
   do istate = 1, nstates_in
-    lambda_st        = EQ(istate)%lambda
-    one_minus_lambda = 1.0_8 - lambda_st
-    ! Coupled endpoint (lambda_state = 1): r_sc = 0 and the runtime
-    ! "r < r_sc" branch is never taken. Leave both arrays at zero for
-    ! this state -- standard LJ/Coulomb applies, as required.
-    if(one_minus_lambda < 1.0e-10_8) cycle
+    one_minus_lambda = max(0.0_8, 1.0_8-EQ(istate)%lambda)
+    if(softcore_method == SC_GAPSYS_V2) then
+      if(one_minus_lambda <= 0.0_8) cycle
+    else
+      if(one_minus_lambda < 1.0e-10_8) cycle
+    end if
 
     do iq = 1, nqat
-      if(alpha_max(iq, istate) < 1.0e-6_8) cycle  ! soft-core disabled for this q-atom/state
+      if(softcore_method == SC_GAPSYS_V2) then
+        ! Q-Q activation may come from either pair member, so every row needs
+        ! the state-dependent Coulomb factor. Pair masks are checked at runtime.
+        gapsys_q_lambda_factor(iq,istate) = gapsys_alpha_q * &
+                                             one_minus_lambda**(1.0_8/6.0_8)
+      else
+        if(.not. softcore_enabled(iq,istate)) cycle
+        gapsys_q_lambda_factor(iq,istate) = gapsys_alpha_q * &
+                                             one_minus_lambda**(1.0_8/6.0_8)
+      end if
 
-      iaci = qiac(iq, istate)
+      iaci = qiac(iq,istate)
 
-      ! Coulomb: lambda-dependent factor only (partner-charge factor at runtime).
-      gapsys_q_lambda_factor(iq, istate) = &
-           gapsys_alpha_q * one_minus_lambda**(1.0_8/6.0_8)
-
-      ! Q-atom vs surroundings (atom types 1..natyps)
-      do jt = 1, natyps
-        if(ivdw_rule == VDW_GEOMETRIC) then
-          C12 = qavdw(iaci,1) * iaclib(jt)%avdw(1)
-          C6  = qbvdw(iaci,1) * iaclib(jt)%bvdw(1)
-          if(C6 > 0.0_8 .and. C12 > 0.0_8) then
-            sigma = (C12/C6)**(1.0_8/6.0_8)
+      ! Q-atom versus ordinary atom type: only the q-atom owns activation.
+      if(softcore_enabled(iq,istate)) then
+        do jt = 1, natyps
+          if(ivdw_rule == VDW_GEOMETRIC) then
+            C12 = qavdw(iaci,1)*iaclib(jt)%avdw(1)
+            C6  = qbvdw(iaci,1)*iaclib(jt)%bvdw(1)
+            if(C6 > 0.0_8 .and. C12 > 0.0_8) then
+              sigma = (C12/C6)**(1.0_8/6.0_8)
+            else
+              sigma = gapsys_sigma_lj
+            end if
           else
-            sigma = gapsys_sigma_lj  ! Fallback for DUM atoms
+            sigma = (qavdw(iaci,1)+iaclib(jt)%avdw(1))/2.0_8**(1.0_8/6.0_8)
+            if(sigma < 1.0e-10_8) sigma = gapsys_sigma_lj
           end if
-        else  ! arithmetic (Lorentz-Berthelot) rule:
-          ! Q's arithmetic libraries (AMBER14sb.prm, CHARMM36.prm) store
-          ! R* = R_min/2 per atom (Q's standard LJ formula consumes R_min^12
-          ! and 2*R_min^6 directly). The sum qavdw + avdw therefore yields
-          ! R_min_pair, NOT sigma_pair. Gapsys's r_sc formula expects sigma
-          ! (zero-crossing radius), so divide by 2^(1/6) to convert
-          ! R_min_pair to sigma_pair.
-          sigma = (qavdw(iaci,1) + iaclib(jt)%avdw(1)) / 2.0_8**(1.0_8/6.0_8)
-          if(sigma < 1.0e-10_8) sigma = gapsys_sigma_lj
-        end if
-        r_sc_lj = gapsys_alpha_lj * &
-                  ((26.0_8/7.0_8) * sigma**6 * one_minus_lambda)**(1.0_8/6.0_8)
-        gapsys_lj_rsc(iq, jt, istate) = r_sc_lj
-      end do
+          gapsys_lj_rsc(iq,jt,istate) = &
+               gapsys_lj_radius(gapsys_alpha_lj, sigma, one_minus_lambda)
+        end do
+      end if
 
-      ! Q-atom vs Q-atoms (indices natyps+1..natyps+nqat)
+      ! Q-Q activation is symmetric in v2. Preserve legacy row ownership for
+      ! the old method so historical custom input remains reproducible.
       do jt = 1, nqat
-        iacj = qiac(jt, istate)
+        if(softcore_method == SC_GAPSYS_V2) then
+          pair_enabled = softcore_enabled(iq,istate) .or. softcore_enabled(jt,istate)
+        else
+          pair_enabled = softcore_enabled(iq,istate)
+        end if
+        if(.not. pair_enabled) cycle
+
+        iacj = qiac(jt,istate)
         if(ivdw_rule == VDW_GEOMETRIC) then
-          C12 = qavdw(iaci,1) * qavdw(iacj,1)
-          C6  = qbvdw(iaci,1) * qbvdw(iacj,1)
+          C12 = qavdw(iaci,1)*qavdw(iacj,1)
+          C6  = qbvdw(iaci,1)*qbvdw(iacj,1)
           if(C6 > 0.0_8 .and. C12 > 0.0_8) then
             sigma = (C12/C6)**(1.0_8/6.0_8)
           else
             sigma = gapsys_sigma_lj
           end if
-        else  ! arithmetic rule: same R*-to-sigma conversion as Q-protein above.
-          sigma = (qavdw(iaci,1) + qavdw(iacj,1)) / 2.0_8**(1.0_8/6.0_8)
+        else
+          sigma = (qavdw(iaci,1)+qavdw(iacj,1))/2.0_8**(1.0_8/6.0_8)
           if(sigma < 1.0e-10_8) sigma = gapsys_sigma_lj
         end if
-        r_sc_lj = gapsys_alpha_lj * &
-                  ((26.0_8/7.0_8) * sigma**6 * one_minus_lambda)**(1.0_8/6.0_8)
-        gapsys_lj_rsc(iq, jt+natyps, istate) = r_sc_lj
+        gapsys_lj_rsc(iq,jt+natyps,istate) = &
+             gapsys_lj_radius(gapsys_alpha_lj, sigma, one_minus_lambda)
       end do
     end do
   end do
 
-  write(*,'(a)') 'Gapsys linearization radii initialized (1-lambda_state convention, SI Eqs. 1.1-1.4).'
+  write(*,'(a)') 'Gapsys linearization radii initialized (per-state weight convention).'
 end subroutine softcore_init_gapsys
 
 !-------------------------------------------------------------------------

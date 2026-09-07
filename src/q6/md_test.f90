@@ -1525,7 +1525,11 @@ subroutine get_fep
     !so their order is irrelevant; only one ever does work.
     if (softcore_method == SC_BEUTLER_COUL) call softcore_scale_beutler(nstates)
 
-    !Compute Gapsys linearization radii if method is gapsys
+    ! qdyn_test has not been ported to the corrected pair evaluator. Fail
+    ! explicitly instead of silently dispatching gapsys_v2 through legacy code.
+    if (softcore_method == SC_GAPSYS_V2) then
+      call die('gapsys_v2 is supported by qdyn only, not qdyn_test')
+    end if
     if (softcore_method == SC_GAPSYS) call softcore_init_gapsys(nstates)
 
     !remove redefined bonded interactions from topology
