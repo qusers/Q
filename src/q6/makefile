@@ -167,10 +167,6 @@ test-lincs: lincs.o test_lincs.o
 	${FC} ${FFLAGS} $+ -o test_lincs
 	./test_lincs
 
-test-hmr: hmr.o test_hmr.o
-	${FC} ${FFLAGS} $+ -o test_hmr
-	./test_hmr
-
 debug:
 	@make FFLAGS="${DEBUG}" \
     qfep qprep qdyn qdum qcalc move1 move2
@@ -208,7 +204,7 @@ qdyn qdum: qdyn.o
 
 qdyn_test: qdyn_test.o
 
-qprep: qprep.o prefs.o prep.o avetr.o nrgy.o hmr.o
+qprep: qprep.o prefs.o prep.o avetr.o nrgy.o
 	${FC} ${FFLAGS} ${FLIBS} $+ -o $@
 
 qfep: qfep.o
@@ -291,12 +287,6 @@ mask.o: mask.f90 topo.o
 maskmanip.o: maskmanip.f90 mask.o misc.o parse.o
 	${FC} ${FFLAGS} -c $<
 
-hmr.o: hmr.f90
-	${FC} ${FFLAGS} -c $<
-
-test_hmr.o: test_hmr.f90 hmr.o
-	${FC} ${FFLAGS} -c $<
-
 lincs.o: lincs.f90
 	${FC} ${FFLAGS} -c $<
 
@@ -337,7 +327,7 @@ parse.o: parse.f90 misc.o
 prefs.o: prefs.f90
 	${FC} ${FFLAGS} -c $<
 
-prep.o: prep.f90 maskmanip.o sizes.o parse.o prmfile.o trj.o index.o prefs.o hmr.o
+prep.o: prep.f90 maskmanip.o sizes.o parse.o prmfile.o trj.o index.o prefs.o
 	${FC} ${FFLAGS} -c $<
 
 prmfile.o: prmfile.f90 misc.o mpiglob.o
