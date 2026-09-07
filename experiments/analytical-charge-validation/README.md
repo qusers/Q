@@ -116,7 +116,9 @@ Still required before production:
 
 1. Resolve and document the angular background-charge convention exposed by the
    [partition audit](../../docs/analytical-charge-corrections/PARTITION_AUDIT.md).
-   Do not replace the physical target as an incidental preflight change.
+   The [bounded opt-in proposal](CHARGE_CONVENTION_DECISION.md) is now documented
+   and awaits approval; no target change has been implemented. Do not replace
+   the physical target as an incidental preflight change.
 2. Native initialization evidence for effective radius, included/excluded charge,
    topology Coulomb constant, shell geometry, real LJ parameters and interaction
    coverage, tied to the exact source build and input hashes.

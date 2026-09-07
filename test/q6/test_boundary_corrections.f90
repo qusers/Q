@@ -11,6 +11,7 @@ program test_boundary_corrections
   real(8), parameter :: offset = 0.03_8
   real(8) :: c, t1, t2, e1, e2, mixed_gradient, finite_difference
   real(8) :: shift, shifted1, shifted2, angle_sample, target1, target2
+  real(8) :: unit_strength, base_angle, required_shift(101), analytic_shift(101)
   real(8), parameter :: lambda1 = 0.35_8, lambda2 = 0.65_8, delta = 1.0e-6_8
   integer :: failures, sample, field
 
@@ -66,6 +67,30 @@ program test_boundary_corrections
         polarization_gradient(angle_sample,target1,offset+shift,force_constant)- &
         polarization_gradient(angle_sample,target1,offset,force_constant), force_constant*shift, 1.e-12_8)
     end do
+  end do
+
+  ! A scalar shell offset cannot generally absorb a missing background charge:
+  ! matching effective target t-a requires a rank-dependent offset change.
+  ! This is an algebraic counterfactual, not a parameter fit or production target.
+  unit_strength = polarization_strength(1._8, .98750_8, .0335_8, .489_8, 23.3_8)
+  do field = -3, 3, 3
+    do sample = 1, size(required_shift)
+      base_angle = acos(1._8+(1._8-2._8*sample)/size(required_shift))
+      target1 = polarization_target(base_angle, unit_strength)
+      target2 = polarization_target(base_angle, (1+field)*unit_strength)
+      required_shift(sample) = target1-target2
+      analytic_shift(sample) = 1.5_8*field*unit_strength*sin(base_angle)
+      call expect_close('background target shift is rank dependent', &
+        required_shift(sample), analytic_shift(sample), 1.e-12_8)
+    end do
+    if (field == 0) then
+      call expect_close('neutral background conventions agree', maxval(abs(required_shift)), 0._8, 0._8)
+    else
+      if (maxval(required_shift)-minval(required_shift) <= 1.e-3_8) then
+        print '(a)', 'FAIL: nonzero background unexpectedly reducible to one scalar offset'
+        failures = failures+1
+      end if
+    end if
   end do
 
   if (failures /= 0) stop 1
