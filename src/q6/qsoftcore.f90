@@ -18,8 +18,84 @@ module qsoftcore
   public :: eval_gapsys_coulomb
   public :: gapsys_lj_energy_difference
   public :: gapsys_coulomb_energy_difference
+  public :: beutler_lj_radius, beutler_coulomb_radius
+  public :: eval_beutler_lj, eval_beutler_coulomb
+  public :: beutler_lj_energy_difference, beutler_coulomb_energy_difference
 
 contains
+
+pure real(8) function beutler_lj_radius(alpha_lj, sigma, decoupling) result(radius)
+  ! Beutler et al. (1994), Eq. 7, n=1: R^6 = alpha_LJ sigma^6 (1-w)^2.
+  real(8), intent(in) :: alpha_lj, sigma, decoupling
+  radius = max(0.0_8,sigma)*(max(0.0_8,alpha_lj)*max(0.0_8,decoupling)**2)**(1.0_8/6.0_8)
+end function
+
+pure real(8) function beutler_coulomb_radius(alpha_c, decoupling) result(radius)
+  ! Eq. 8 (p=2): alpha_C has units of angstrom squared, independently of LJ.
+  real(8), intent(in) :: alpha_c, decoupling
+  radius = sqrt(max(0.0_8,alpha_c))*max(0.0_8,decoupling)
+end function
+
+pure subroutine eval_beutler_lj(c12,c6,r_sc,r2,energy,dVdr_over_r,exact_overlap)
+  ! Unweighted state potential; the caller supplies the outer state weight w.
+  real(8), intent(in) :: c12,c6,r_sc,r2
+  real(8), intent(out) :: energy,dVdr_over_r
+  logical, intent(out) :: exact_overlap
+  real(8) :: denominator,va,vb
+  denominator = r2**3+r_sc**6
+  exact_overlap = denominator <= 0.0_8
+  energy = 0.0_8
+  dVdr_over_r = 0.0_8
+  if(c12 == 0.0_8 .and. c6 == 0.0_8) return
+  if(exact_overlap) then
+    energy = huge(energy)
+    return
+  end if
+  va = c12/denominator**2
+  vb = c6/denominator
+  energy = va-vb
+  dVdr_over_r = (-12.0_8*va+6.0_8*vb)*r2**2/denominator
+end subroutine
+
+pure subroutine eval_beutler_coulomb(qq,r_sc,r2,energy,dVdr_over_r,exact_overlap)
+  real(8), intent(in) :: qq,r_sc,r2
+  real(8), intent(out) :: energy,dVdr_over_r
+  logical, intent(out) :: exact_overlap
+  real(8) :: denominator
+  denominator = r2+r_sc*r_sc
+  exact_overlap = denominator <= 0.0_8
+  energy = 0.0_8
+  dVdr_over_r = 0.0_8
+  if(qq == 0.0_8) return
+  if(exact_overlap) then
+    energy = sign(huge(energy),qq)
+    return
+  end if
+  energy = qq/sqrt(denominator)
+  dVdr_over_r = -energy/denominator
+end subroutine
+
+pure real(8) function beutler_lj_energy_difference(c12,c6,source_r,target_r,r2) result(delta)
+  real(8), intent(in) :: c12,c6,source_r,target_r,r2
+  real(8) :: source,target,dummy
+  logical :: overlap
+  delta = 0.0_8
+  if(source_r == target_r) return
+  call eval_beutler_lj(c12,c6,source_r,r2,source,dummy,overlap)
+  call eval_beutler_lj(c12,c6,target_r,r2,target,dummy,overlap)
+  delta = target-source
+end function
+
+pure real(8) function beutler_coulomb_energy_difference(qq,source_r,target_r,r2) result(delta)
+  real(8), intent(in) :: qq,source_r,target_r,r2
+  real(8) :: source,target,dummy
+  logical :: overlap
+  delta = 0.0_8
+  if(source_r == target_r) return
+  call eval_beutler_coulomb(qq,source_r,r2,source,dummy,overlap)
+  call eval_beutler_coulomb(qq,target_r,r2,target,dummy,overlap)
+  delta = target-source
+end function
 
 pure real(8) function gapsys_lj_radius(alpha_lj, sigma_lj, decoupling)
   real(8), intent(in) :: alpha_lj, sigma_lj, decoupling
