@@ -47,6 +47,12 @@ program state_energy_audit
       if (perstate_born) born_terms=born_self_state
       write(*,'(a,2i6,11es26.17e3)') 'STATE_AUDIT ',mode,setting,weights(setting),E%potential, &
         EQ(1:2)%total,EQ(1:2)%restraint,angular,born_terms,E%restraint%water_pol
+      write(*,'(a,2i6,8es26.17e3)') 'AUDIT_COMPONENT ',mode,setting, &
+        E%p%bond+E%w%bond+E%q%bond+E%p%angle+E%w%angle+E%q%angle+ &
+        E%p%torsion+E%q%torsion+E%p%improper+E%q%improper, &
+        E%pp%el+E%pw%el+E%ww%el+E%qx%el,E%pp%vdw+E%pw%vdw+E%ww%vdw+E%qx%vdw, &
+        E%restraint%fix+E%restraint%shell+E%restraint%protein,E%restraint%solvent_radial, &
+        E%restraint%water_pol,dot_product(EQ(1:2)%lambda,born_terms),E%LRF
       write(unit) mode,setting,d
       ! Actual Q serialization, in the same mode/setting order as the log.
       call put_ene(11,EQ,OFFD)

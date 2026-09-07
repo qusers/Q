@@ -34,10 +34,18 @@ def executable(tmp_path_factory):
 @pytest.fixture(scope='module', params=[-1, 1])
 def audit(request, executable, tmp_path_factory):
     run = tmp_path_factory.mktemp('state-audit')
+    return run_audit(request.param, executable, run)
+
+
+def run_audit(sign, executable, run, *, fixed_charge_as_q=False):
+    run.mkdir(exist_ok=True)
     shutil.copyfile(DATA/'topology/Na-benzene-water.top', run/'system.top')
     # Atom 1 is a real solute atom. No type/mass/LJ changes; a nonzero non-Q
     # environment tests the Born cross term rather than only an even q^2 case.
-    (run/'audit.fep').write_text(f'[FEP]\nstates 2\n[atoms]\n1 1\n[change_charges]\n1 0.0 {request.param}.0\n')
+    extra_atom = '2 13\n' if fixed_charge_as_q else ''
+    extra_charge = '2 1.0 1.0\n' if fixed_charge_as_q else ''
+    (run/'audit.fep').write_text(f'[FEP]\nstates 2\n[atoms]\n1 1\n{extra_atom}'
+                               f'[change_charges]\n1 0.0 {sign}.0\n{extra_charge}')
     text = _md_input(Path('system.top'), Path('audit.fep'), Path('audit.re'), .5)
     text = text.replace('charge_correction off', 'charge_correction on\nperstate_polarization on\n'
                         'polarization_adaptation off\nperstate_born_correction on\nborn_dielectric 80')
@@ -45,6 +53,7 @@ def audit(request, executable, tmp_path_factory):
     (run/'audit.inp').write_text(text)
     result = subprocess.run([str(executable), 'audit.inp'], cwd=run,
                             capture_output=True, text=True, check=True, timeout=45)
+    (run/'audit.log').write_text(result.stdout)
     metadata = [line for line in result.stdout.splitlines() if line.startswith('AUDIT_META ')]
     assert len(metadata) == 1
     meta = np.array([float(v) for v in metadata[0].split()[1:]])
@@ -61,7 +70,7 @@ def audit(request, executable, tmp_path_factory):
         gradient = np.frombuffer(raw[8:], dtype='=f8')
         assert len(gradient) == 3*natom and np.isfinite(gradient).all()
         gradients.append(gradient)
-    return request.param, meta, rows.reshape(4, 7, 13), np.array(gradients).reshape(4, 7, -1), run
+    return sign, meta, rows.reshape(4, 7, 13), np.array(gradients).reshape(4, 7, -1), run
 
 
 def test_pure_states_do_not_change_with_lambda(audit):

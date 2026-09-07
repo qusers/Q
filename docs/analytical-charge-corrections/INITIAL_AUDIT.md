@@ -123,8 +123,10 @@ is treated as a set of hypotheses; it has not been edited.
    but the angular target uses Q-region charge alone. Also, `born_dielectric` is
    configurable while the angular dielectric factor remains fixed at 0.98750
    (epsilon 80). These are verified code facts, not yet a diagnosis or permission
-   to change the physical target. Check invariance under relabeling a fixed-charge
-   atom as a Q atom and inspect the intended background-charge convention.
+   to change the physical target. The subsequent [partition audit](PARTITION_AUDIT.md)
+   preserves Born constants but reproduces angular energy/gradient dependence
+   under fixed-charge relabeling, with a separate small non-angular control
+   mismatch explicitly retained. Inspect the intended background-charge convention.
 2. **Matched offsets:** the preserved historical reproduction reports different
    frozen angular offsets between forward and reverse directions. Its directional
    difference is therefore not same-Hamiltonian closure. Quantify this mismatch
