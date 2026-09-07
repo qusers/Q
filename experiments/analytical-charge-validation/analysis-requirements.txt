@@ -1,0 +1,3 @@
+# Versions observed in the tested local analysis environment; validate on HPC before launch.
+numpy==2.5.2
+scipy==1.18.0

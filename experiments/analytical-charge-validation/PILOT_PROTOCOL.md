@@ -219,8 +219,10 @@ Keep serial aggregate compute and elapsed time with multiple concurrent jobs
 separate. Avoid scaling the water count from the old neutral calibration: the new
 Qprep systems and existing MD workload are different.
 
-The next implementation work is campaign generation and endpoint preparation,
-trajectory/runtime checks and tested BAR/uncertainty
-analysis. A full launch manifest and scheduler script must not claim readiness
+The [single-chain BAR analysis](ANALYSIS.md) now includes explicit Born views,
+overlap and conditional block uncertainty. The next implementation work is
+campaign generation and endpoint preparation, trajectory/runtime checks and
+between-replica/direction/radius statistical comparisons. A full launch manifest
+and scheduler script must not claim readiness
 until those exist. After that, present the capped Stage B allocation for approval.
 Neither this plan nor a passing native smoke test authorizes an HPC submission.

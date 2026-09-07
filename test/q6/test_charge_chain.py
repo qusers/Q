@@ -3,11 +3,13 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 
 import pytest
 
 from QligFEP import charge_chain as chain, charge_protocol as cp, charge_probe as probe
 from QligFEP import charge_build
+from QligFEP import charge_analysis
 from test_charge_probe import PROJECT_ROOT
 
 
@@ -27,8 +29,8 @@ def plan_factory(isolated_build, tmp_path):
     qprep = isolated_build.parent/build['binaries']['qprep']['path']
     prepared = tmp_path/'prepared'
     probe.prepare(prepared, qprep, 10., 758971)
-    def make(sign=1, direction='forward'):
-        root = tmp_path/f'{sign}-{direction}'
+    def make(sign=1, direction='forward', mode='integrated'):
+        root = tmp_path/f'{sign}-{direction}-{mode}'
         root.mkdir()
         probe.timing(prepared, root/'seed', qdyn, sign=sign,
                      weight=0. if direction == 'forward' else 1., steps=20)
@@ -40,8 +42,11 @@ def plan_factory(isolated_build, tmp_path):
             shutil.copyfile(prepared/'system.top', run/'system.top')
             shutil.copyfile(prepared/('positive.fep' if sign == 1 else 'negative.fep'), run/'charge.fep')
             restart = '../seed/final.re' if index == 0 else f'../w{index-1}/final.re'
-            (run/'run.inp').write_text(probe.md_input(radius, 100, 1., 112+index, weight).replace(
-                '[files]\n', f'[files]\nrestart {restart}\n'))
+            text = probe.md_input(radius, 100, 1., 112+index, weight).replace(
+                '[files]\n', f'[files]\nrestart {restart}\n')
+            if mode != 'integrated':
+                text = text.replace('perstate_born_correction on', 'perstate_born_correction off')
+            (run/'run.inp').write_text(text)
             windows.append({'input': f'w{index}/run.inp', 'sha256': cp.fingerprint(run/'run.inp'),
                             'assets_sha256': {key: cp.fingerprint(run/name) for key, name in
                                               [('topology', 'system.top'), ('fep', 'charge.fep')]}})
@@ -50,8 +55,8 @@ def plan_factory(isolated_build, tmp_path):
                 'build_report': str(isolated_build), 'build_report_sha256': cp.fingerprint(isolated_build),
                 'initial_restart': 'seed/final.re', 'initial_restart_sha256': cp.fingerprint(root/'seed/final.re'),
                 'series': {'id': f'{sign}-{direction}', 'system': 'fresh-probe', 'sign': sign,
-                           'direction': direction, 'replica': 1, 'born_mode': 'integrated',
-                           'apply_born_posthoc': False, 'windows': windows}}
+                           'direction': direction, 'replica': 1, 'born_mode': mode,
+                           'apply_born_posthoc': mode == 'posthoc', 'windows': windows}}
         path = root/'plan.json'
         path.write_text(json.dumps(spec))
         return path
@@ -83,6 +88,21 @@ def test_native_chain_realizes_and_pins_each_restart(plan_factory, sign, directi
     final_receipt = cp.fingerprint(path.parent/'w2/charge-completed.json')
     assert chain.run_next(path)['gate'] == 'chain_outputs_consistent'
     assert cp.fingerprint(path.parent/'w2/charge-completed.json') == final_receipt
+    analysis = charge_analysis.analyze_chain(path, discard_frames=0, bootstrap=50)
+    assert analysis['production_ready'] is False
+    assert analysis['analysis']['gap_statistical_gates_passed'] is False
+    assert analysis['raw_conditional_interval_95_kcal_mol'] is None
+    assert analysis['with_born_delta_g_kcal_mol'] == pytest.approx(
+        analysis['raw_delta_g_kcal_mol']+analysis['born_delta_0_to_sign_kcal_mol'], abs=1e-12)
+    with pytest.raises(ValueError, match='Discard removes all'):
+        charge_analysis.analyze_chain(path, discard_frames=9, bootstrap=50)
+    if sign == 1 and direction == 'forward':
+        command = subprocess.run(
+            [sys.executable, '-m', 'QligFEP.charge_analysis', str(path),
+             '--discard-frames', '0', '--bootstrap', '50'],
+            capture_output=True, text=True, check=True, timeout=30)
+        assert json.loads(command.stdout) == analysis
+        assert cp.fingerprint(path.parent/'w2/charge-completed.json') == final_receipt
 
 
 def test_changed_predecessor_blocks_successor(plan_factory):
@@ -93,6 +113,13 @@ def test_changed_predecessor_blocks_successor(plan_factory):
     with pytest.raises(ValueError, match='Damaged restart'):
         chain.run_next(path)
     assert not (path.parent/'w1/charge-started.json').exists()
+
+
+def test_analysis_rejects_incomplete_chain(plan_factory):
+    path = plan_factory()
+    with pytest.raises(ValueError, match='completely verified chain'):
+        charge_analysis.analyze_chain(path, discard_frames=0, bootstrap=50)
+    assert not (path.parent/'w0/charge-started.json').exists()
 
 
 @pytest.mark.parametrize('artifact', ['states.en', 'final.re', 'charge-started.json', 'charge-native.log'])
@@ -209,3 +236,19 @@ def test_partial_future_output_blocks_launch_of_earlier_window(plan_factory):
     with pytest.raises(ValueError, match='beyond an incomplete predecessor'):
         chain.run_next(path)
     assert not (path.parent/'w0/charge-started.json').exists()
+
+
+def test_native_chain_analysis_applies_born_once_in_all_modes(plan_factory):
+    results = {}
+    for mode in ('integrated', 'posthoc', 'control'):
+        path = plan_factory(mode=mode)
+        for _ in range(3):
+            chain.run_next(path)
+        results[mode] = charge_analysis.analyze_chain(path, discard_frames=0, bootstrap=50)
+    for result in results.values():
+        assert result['raw_delta_g_kcal_mol'] == pytest.approx(results['control']['raw_delta_g_kcal_mol'], abs=1e-10)
+        assert result['with_born_delta_g_kcal_mol'] == pytest.approx(results['integrated']['declared_result_kcal_mol'], abs=1e-10)
+        assert result['native_boltzmann_kcal_mol_kelvin'] == pytest.approx(.001986, abs=1e-10)
+    assert results['posthoc']['declared_result_kcal_mol'] == pytest.approx(results['integrated']['declared_result_kcal_mol'], abs=1e-10)
+    assert results['control']['declared_result_kcal_mol'] == results['control']['raw_delta_g_kcal_mol']
+    assert results['control']['control_corrected_view_is_comparison_only'] is True

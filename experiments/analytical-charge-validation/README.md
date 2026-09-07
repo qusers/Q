@@ -15,8 +15,10 @@ checks; it is not an HPC allocation or convergence result. Shared position-restr
 support and a [completed-window check](RESTRAINT_AND_COMPLETION.md) now exist.
 An [isolated build and one-window chain runner](BUILD_AND_CHAIN.md) now records
 source/build/launch evidence and validates realized restart dependencies.
-Campaign generation, trajectory/runtime checks and the statistical analysis
-still need implementation before production launch. No angular target was changed.
+An [audited chain analysis](ANALYSIS.md) now reports raw/with-Born estimates,
+overlap and conditional within-window block uncertainty. Campaign generation,
+trajectory/runtime checks and between-replica/direction/radius analysis still need
+implementation before production launch. No angular target was changed.
 
 ## Staged-input preflight
 
