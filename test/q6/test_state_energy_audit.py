@@ -37,7 +37,7 @@ def audit(request, executable, tmp_path_factory):
     return run_audit(request.param, executable, run)
 
 
-def run_audit(sign, executable, run, *, fixed_charge_as_q=False, general_water=False):
+def run_audit(sign, executable, run, *, fixed_charge_as_q=False, general_water=False, position=False):
     run.mkdir(exist_ok=True)
     shutil.copyfile(DATA/'topology/Na-benzene-water.top', run/'system.top')
     if general_water:
@@ -56,6 +56,8 @@ def run_audit(sign, executable, run, *, fixed_charge_as_q=False, general_water=F
     text = text.replace('charge_correction off', 'charge_correction on\nperstate_polarization on\n'
                         'polarization_adaptation off\nperstate_born_correction on\nborn_dielectric 80')
     text = text.replace('\ntemperature 1\n', '\ntemperature 298\n')
+    if position:
+        text += '\n[atom_restraints]\n1 0.13 -0.27 0.41 10 20 30 0\n'
     (run/'audit.inp').write_text(text)
     result = subprocess.run([str(executable), 'audit.inp'], cwd=run,
                             capture_output=True, text=True, check=True, timeout=45)
@@ -77,6 +79,33 @@ def run_audit(sign, executable, run, *, fixed_charge_as_q=False, general_water=F
         assert len(gradient) == 3*natom and np.isfinite(gradient).all()
         gradients.append(gradient)
     return sign, meta, rows.reshape(4, 7, 13), np.array(gradients).reshape(4, 7, -1), run
+
+
+def test_shared_position_energy_force_and_serialization(audit, executable, tmp_path):
+    sign, _, baseline, gradients, base_run = audit
+    _, _, restrained, restrained_gradients, run = run_audit(sign, executable, tmp_path, position=True)
+    lines = (run/'system.top').read_text().splitlines()
+    start = next(i for i, line in enumerate(lines) if '= Total no. of atoms, no. of solute atoms.' in line)
+    xyz = np.array(list(map(float, lines[start+1].split()[:3])))
+    displacement = xyz-np.array([.13, -.27, .41])
+    expected_gradient = np.array([10, 20, 30])*displacement
+    expected_energy = .5*np.dot(displacement, expected_gradient)
+    # Every control and lambda: whole-system U and both pure-state U/restraint
+    # buckets gain exactly one identical term, not a lambda-scaled duplicate.
+    for column in (3, 4, 5, 6, 7):
+        np.testing.assert_allclose(restrained[:, :, column]-baseline[:, :, column], expected_energy, atol=1e-9, rtol=0)
+    np.testing.assert_allclose(restrained[:, :, 8:]-baseline[:, :, 8:], 0, atol=1e-10, rtol=0)
+    difference = restrained_gradients-gradients
+    np.testing.assert_allclose(difference[:, :, :3], np.broadcast_to(expected_gradient, (4, 7, 3)), atol=1e-9, rtol=0)
+    np.testing.assert_allclose(difference[:, :, 3:], 0, atol=1e-10, rtol=0)
+    base_frames = _energy_state_records(base_run/'audit.en')
+    frames = _energy_state_records(run/'audit.en')
+    assert len(base_frames) == len(frames) == 28
+    for before, after in zip(base_frames, frames):
+        for state in (1, 2):
+            # q_energies order: lambda, total, ... restraint (last).
+            assert after[state][1]-before[state][1] == pytest.approx(expected_energy, abs=1e-9)
+            assert after[state][-1]-before[state][-1] == pytest.approx(expected_energy, abs=1e-9)
 
 
 def test_pure_states_do_not_change_with_lambda(audit):

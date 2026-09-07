@@ -11,12 +11,12 @@ import math
 from pathlib import Path
 import platform
 import shutil
-import struct
 import subprocess
 import time
 
 from . import boundary_native as bn
 from .charge_protocol import fingerprint, restart_offsets
+from .charge_completion import frames
 
 ROOT = Path(__file__).resolve().parents[2]
 PROBE_LIBRARY = """{PRB} !Synthetic steric probe, not a parameterized physical ion
@@ -157,29 +157,8 @@ energy states.en
 
 def _check_energies(path, weights, expected_frames):
     """Read only the supported native two-state sequential-record dialect."""
-    records = []
-    with path.open('rb') as stream:
-        while marker := stream.read(4):
-            if len(marker) != 4:
-                raise ValueError('Truncated energy record marker')
-            size = struct.unpack('<i', marker)[0]
-            if size not in (0, 124):
-                raise ValueError('Unsupported energy record size')
-            payload = stream.read(size)
-            if len(payload) != size or stream.read(4) != marker:
-                raise ValueError('Damaged energy record')
-            records.append(payload)
-    if len(records) != 3*expected_frames:
+    if sum(1 for _ in frames(path, weights)) != expected_frames:
         raise ValueError('Unexpected number of saved state-energy frames')
-    for start in range(0, len(records), 3):
-        for state, payload in enumerate(records[start:start+2], 1):
-            if len(payload) != 124 or struct.unpack('<i', payload[:4])[0] != state:
-                raise ValueError('Incorrect saved state mapping')
-            values = struct.unpack('<15d', payload[4:])
-            if not all(map(math.isfinite, values)) or not math.isclose(values[0], weights[state-1], abs_tol=1e-12):
-                raise ValueError('Nonfinite energy or incorrect saved lambda')
-        if records[start+2] != b'':
-            raise ValueError('Unexpected energy frame delimiter')
 
 
 def timing(prepared, directory, qdyn, *, sign, weight, steps=1000, timestep=1., seed=112):
@@ -235,7 +214,7 @@ def timing(prepared, directory, qdyn, *, sign, weight, steps=1000, timestep=1., 
               'limitations': ['unequilibrated grid start; not a production restart',
                               'single short serial run; not HPC performance or convergence',
                               'no proof of binary-to-source provenance',
-                              'position restraint not yet supported by staged/native campaign gate',
+                              'timing check is not the staged/native campaign restraint gate',
                               'no full-trajectory cutoff/stability audit']}
     _json(directory/'timing.json', report)
     return report

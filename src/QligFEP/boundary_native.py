@@ -11,10 +11,10 @@ from . import charge_protocol as cp
 
 
 def parse(text):
-    begin, end = 'Q_BOUNDARY_AUDIT_V2 BEGIN', 'Q_BOUNDARY_AUDIT_V2 END'
+    begin, end = 'Q_BOUNDARY_AUDIT_V3 BEGIN', 'Q_BOUNDARY_AUDIT_V3 END'
     lines = text.splitlines()
     if lines.count(begin) != 1 or lines.count(end) != 1 or lines.index(begin) >= lines.index(end):
-        raise ValueError('Require one complete native boundary audit V2 block')
+        raise ValueError('Require one complete native boundary audit V3 block')
     records = {}
     for line in lines[lines.index(begin)+1:lines.index(end)]:
         fields = line.split()
@@ -25,8 +25,9 @@ def parse(text):
             raise ValueError('Nonfinite native boundary audit value')
         records.setdefault(fields[0][4:].lower(), []).append(values)
     singles = {'convention': 1, 'meta': 8, 'flags': 6, 'parameters': 12, 'center': 3,
-               'solute_boundary': 3, 'cutoffs': 5, 'water': 2, 'water_compatibility': 2}
-    if set(records) != set(singles) | {'state', 'qatom', 'shell', 'water_atom'}:
+               'solute_boundary': 3, 'cutoffs': 5, 'water': 2, 'water_compatibility': 2,
+               'restraint_counts': 6}
+    if set(records)-{'position'} != set(singles) | {'state', 'qatom', 'shell', 'water_atom'}:
         raise ValueError('Missing or unsupported native audit records')
     result = {}
     for key, size in singles.items():
@@ -38,6 +39,18 @@ def parse(text):
     natom, nsolute, nwater, nqat, nstates, nshell, _, _ = result['meta']
     if min(natom, nsolute, nwater, nqat, nshell) <= 0 or nstates != 2 or nsolute+3*nwater != natom:
         raise ValueError('Unsupported native system dimensions')
+    counts = result['restraint_counts']
+    if any(v < 0 or v != int(v) for v in counts) or counts[-1] not in (0, 1):
+        raise ValueError('Invalid native restraint counts')
+    positions = records.get('position', [])
+    if len(positions) != counts[1] or any(len(row) != 9 for row in positions):
+        raise ValueError('Invalid native position dimensions')
+    if [row[0] for row in positions] != list(range(1, int(counts[1])+1)):
+        raise ValueError('Duplicate/unordered native position indices')
+    if any(row[1] != int(row[1]) or not 1 <= row[1] <= natom or
+           row[8] != int(row[8]) or not 0 <= row[8] <= nstates for row in positions):
+        raise ValueError('Invalid native position atom/state indices')
+    result['position'] = positions
     for key, count, size in [('state', nstates, 6), ('qatom', nqat, 11+nstates),
                              ('shell', nshell, 4+nstates), ('water_atom', 3, 10)]:
         rows = records[key]
@@ -92,6 +105,12 @@ def validate_window(window, born_mode, log_path):
         _close(site[3], _single(-0.5*audit['water_atom'][0][3]), 'symmetric neutral water charges')
     radius, requested_radius, ke, eps, override, env, excluded_env, kpol, krad, depth, width, max_radius = audit['parameters']
     config = window['signature']
+    expected_positions = config['atom_restraints']
+    if audit['restraint_counts'] != [0, len(expected_positions), 0, 0, 0, 0]:
+        raise ValueError('Native extra restraint counts disagree with supported shared positions')
+    for row, expected in zip(audit['position'], expected_positions):
+        for got, value in zip(row[1:], expected):
+            _close(got, float(value), 'shared position restraint')
     _close(radius, float(config['solvent']['radius']), 'effective radius')
     _close(requested_radius, radius, 'requested/effective radius')
     _close(eps, 80, 'dielectric')
@@ -168,6 +187,37 @@ def validate_window(window, born_mode, log_path):
                             'job completion, saved energies, final offsets, sampling and physical validity remain separate']}
 
 
+def load_window(preflight, series_id, index):
+    """Select an immutable staged window; file fingerprints are not build proof."""
+    report = json.loads(preflight.read_text())
+    if report['gate'] != 'staged_input_consistency_passed':
+        raise ValueError('Expected a staged-input preflight report')
+    if cp.fingerprint(Path(report['manifest_path'])) != report['manifest_sha256']:
+        raise ValueError('Manifest changed after preflight')
+    if cp.fingerprint(Path(report['engine']['binary'])) != report['engine']['sha256']:
+        raise ValueError('Engine changed after preflight')
+    manifest_path = Path(report['manifest_path'])
+    manifest = json.loads(manifest_path.read_text())
+    expected_engine = {**manifest['engine'],
+                       'binary': str((manifest_path.parent/manifest['engine']['binary']).resolve())}
+    if report['engine'] != expected_engine:
+        raise ValueError('Preflight engine declaration differs from retained manifest')
+    selected = [s for s in report['series'] if s['id'] == series_id]
+    declared = [s for s in manifest['series'] if s['id'] == series_id]
+    if len(selected) != 1 or len(declared) != 1 or not 0 <= index < len(selected[0]['windows']):
+        raise ValueError('No unique declared series/window')
+    series, spec = selected[0], declared[0]
+    if ({k: v for k, v in series.items() if k != 'windows'} !=
+            {k: v for k, v in spec.items() if k != 'windows'} or
+            len(series['windows']) != len(spec['windows'])):
+        raise ValueError('Preflight series declaration differs from retained manifest')
+    window, item = series['windows'][index], spec['windows'][index]
+    if (window['input'] != str((manifest_path.parent/item['input']).resolve()) or
+            window['input_sha256'] != item['sha256'] or window['assets_sha256'] != item['assets_sha256']):
+        raise ValueError('Preflight window declaration differs from retained manifest')
+    return window, series['born_mode']
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('preflight', type=Path, help='Saved staged-input preflight JSON report')
@@ -176,17 +226,8 @@ def main():
     parser.add_argument('--log', required=True, type=Path)
     args = parser.parse_args()
     try:
-        report = json.loads(args.preflight.read_text())
-        if report['gate'] != 'staged_input_consistency_passed':
-            raise ValueError('Expected a staged-input preflight report')
-        if cp.fingerprint(Path(report['manifest_path'])) != report['manifest_sha256']:
-            raise ValueError('Manifest changed after preflight')
-        if cp.fingerprint(Path(report['engine']['binary'])) != report['engine']['sha256']:
-            raise ValueError('Engine changed after preflight')
-        selected = [s for s in report['series'] if s['id'] == args.series]
-        if len(selected) != 1 or not 0 <= args.window < len(selected[0]['windows']):
-            raise ValueError('No unique declared series/window')
-        result = validate_window(selected[0]['windows'][args.window], selected[0]['born_mode'], args.log)
+        window, mode = load_window(args.preflight, args.series, args.window)
+        result = validate_window(window, mode, args.log)
         result['preflight_sha256'] = cp.fingerprint(args.preflight)
     except (OSError, ValueError, KeyError, TypeError, OverflowError) as error:
         parser.exit(2, f'Native boundary audit failed: {error}\n')

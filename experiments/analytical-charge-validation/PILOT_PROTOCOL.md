@@ -88,11 +88,12 @@ replicas. A 0.1–1 picosecond (ps) smoke run is not an equilibration or timeste
 assessment. Q's existing minimizer freezes solvent and Q atoms, so it must not
 be represented as relaxing these generated waters.
 
-Before Stage B, extend the staged/native gates to verify the shared position
-restraint, realized restart dependencies and the actual launch/build provenance.
-The current strict campaign preflight deliberately rejects `[atom_restraints]`;
-do not bypass it or pass the timing report off as a production gate. Complete
-trajectory coverage, solvent geometry and runtime/temperature diagnostics too.
+The staged/native gates now verify the shared position restraint, and a
+[completed-window check](RESTRAINT_AND_COMPLETION.md) verifies the saved state
+accounting and final offset record. Before Stage B, implement realized restart
+dependencies and actual launch/build provenance; do not pass a timing report off
+as a production gate. Complete trajectory coverage, solvent geometry and
+runtime/temperature diagnostics too.
 
 ## Stage B: capped feasibility pilot (not submitted)
 
@@ -129,9 +130,11 @@ it changes forces and generally needs its own sampled trajectories.
 
 ## Analysis and predeclared decisions
 
-Let `w` be state-2 weight and `U1(x), U2(x)` the complete saved pure-state energies.
-The sampled potential has their linear mixture (plus any common terms already
-accounted for by Q). For two adjacent weights `a,b`, the dimensionless forward
+Let `w` be state-2 weight and `E1(x), E2(x)` the saved Q-state energy totals.
+They are not the complete solvent-plus-solute potential: write the full pure-state
+potential as `U_s(x) = U_common(x) + E_s(x)`, where the unsaved common part cancels
+in `U2-U1 = E2-E1` for this restricted charge-only Hamiltonian. The sampled
+potential is `U_common + (1-w) E1 + w E2`. For two adjacent weights `a,b`, the dimensionless forward
 energy difference on a sample from `a` is
 `beta (b-a) [U2(x)-U1(x)]`, with `beta = 1/(k_B T)`; the reverse sample uses its
 negative evaluated in ensemble `b`. Use the topology/native unit convention and
@@ -216,8 +219,8 @@ Keep serial aggregate compute and elapsed time with multiple concurrent jobs
 separate. Avoid scaling the water count from the old neutral calibration: the new
 Qprep systems and existing MD workload are different.
 
-The next implementation work is the common-restraint gate, a dependency-aware
-launch/continue wrapper, trajectory/runtime checks and tested BAR/uncertainty
+The next implementation work is a dependency-aware launch/continue wrapper,
+trajectory/runtime checks and tested BAR/uncertainty
 analysis. A full launch manifest and scheduler script must not claim readiness
 until those exist. After that, present the capped Stage B allocation for approval.
 Neither this plan nor a passing native smoke test authorizes an HPC submission.

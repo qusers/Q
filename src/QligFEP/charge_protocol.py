@@ -122,12 +122,30 @@ def _positive(values, keys):
             raise ValueError(f'Require positive explicit {key}')
 
 
+def shared_positions(rows, q_atoms):
+    """Restricted existing Q position restraints: mapped Q atoms, all states."""
+    result, seen = [], set()
+    for row in rows:
+        if len(row) != 8:
+            raise ValueError('Position restraint needs atom, xyz, three force constants and state')
+        atom, *values, state = map(_number, row)
+        if not all(math.isfinite(float(v)) for v in values):
+            raise ValueError('Position restraint values must be representable as finite doubles')
+        if atom != int(atom) or int(atom) not in q_atoms or int(atom) in seen:
+            raise ValueError('Position restraint atom must be a unique mapped Q atom')
+        if state != 0 or any(k <= 0 for k in values[3:]):
+            raise ValueError('Position restraint requires positive Cartesian constants and shared state 0')
+        seen.add(int(atom))
+        result.append([int(atom), *map(str, values), 0])
+    return result
+
+
 def inspect_window(path, born_mode):
     raw = sections(path)
     required = {'md', 'cut-offs', 'sphere', 'solvent', 'intervals', 'files', 'lambdas'}
-    if set(raw) != required:
+    if not required <= set(raw) or set(raw)-required-{'atom_restraints'}:
         raise ValueError(f'Unsupported/missing MD sections: {set(raw)^required}')
-    config = {k: keyed(v) for k, v in raw.items() if k != 'lambdas'}
+    config = {k: keyed(v) for k, v in raw.items() if k not in {'lambdas', 'atom_restraints'}}
     md, solvent, files = config['md'], config['solvent'], config['files']
     allowed = {
         'md': {'steps', 'stepsize', 'temperature', 'bath_coupling', 'random_seed', 'initial_temperature',
@@ -173,10 +191,12 @@ def inspect_window(path, born_mode):
     assets = {key: fingerprint(paths[key]) for key in ('topology', 'fep', 'restart')}
     restart = restart_offsets(paths['restart'])
     states, totals = charge_states(paths['fep'], restart['atoms'])
+    positions = shared_positions(raw.get('atom_restraints', []), {row[0] for row in states})
     # Paths, mixing weights and random seeds are not potential parameters.
     signature = {k: dict(v) for k, v in config.items() if k != 'files'}
     signature['md'].pop('random_seed')
     signature['solvent'].pop('perstate_born_correction')
+    signature['atom_restraints'] = positions
     return {'input': str(path), 'input_sha256': fingerprint(path), 'assets_sha256': assets,
             'paths': {k: str(v) for k, v in paths.items()}, 'restart': restart,
             'lambdas': list(map(str, weights)), 'q_region_charges': list(map(str, totals)),

@@ -12,8 +12,9 @@ uncertainty/failure criteria. A fresh Qprep probe generator and bounded existing
 timing tool are implemented. The [local timing evidence](LOCAL_TIMING.md) estimates
 about 5.4 aggregate serial hours for that pilot before contingency or timestep
 checks; it is not an HPC allocation or convergence result. Shared position-restraint
-support, restart dependencies, runtime checks and the statistical analysis still
-need implementation before launch. No angular target was changed.
+support and a [completed-window check](RESTRAINT_AND_COMPLETION.md) now exist.
+Restart dependency handling, trajectory/runtime checks and the statistical analysis
+still need implementation before launch. No angular target was changed.
 
 ## Staged-input preflight
 
@@ -84,8 +85,13 @@ declaring `posthoc` does not prove that a later analysis applies it correctly.
 
 All simulation controls must be explicit. Unsupported sections or keys, repeated
 sections/keys, coefficient overrides and ambiguous state mappings are rejected.
-The supported sections are `[MD]`, `[cut-offs]`, `[sphere]`, `[solvent]`,
+The required sections are `[MD]`, `[cut-offs]`, `[sphere]`, `[solvent]`,
 `[intervals]`, `[files]`, and `[lambdas]`; the exact key allowlist is in the checker.
+An optional `[atom_restraints]` section accepts only shared state-0 Cartesian
+restraints on unique mapped Q atoms, with finite reference coordinates and strictly
+positive force constants. Their complete ordered definitions enter the system
+identity and are checked against the native record. Other extra restraints remain
+unsupported; this does not make arbitrary restrained Q inputs acceptable.
 This is intentionally not a general validator for arbitrary Q jobs.
 
 - Use existing spherical MD, direct electrostatic interactions (`lrf off`, which
@@ -115,7 +121,7 @@ hash checks to make a prospective job pass.
 
 ### Native initialization audit
 
-Q now emits a read-only `Q_BOUNDARY_AUDIT_V2` block during initialization when
+Q now emits a read-only `Q_BOUNDARY_AUDIT_V3` block during initialization when
 per-state polarization is enabled (on the main process only). It records loaded
 values before the internal Coulomb charge rescaling; it does not change any
 force law, coordinate, velocity, or target. The
@@ -146,6 +152,8 @@ record payloads are:
 | `PARAMETERS` | Effective and requested water radii; topology Coulomb constant; dielectric; coefficient override; included/excluded non-Q solute charge; angular/radial force constants; Morse depth/width; maximum loaded atom distance from solvent center |
 | `CENTER` | Solvent-center coordinates |
 | `SOLUTE_BOUNDARY` | Effective inner restrained radius, exclusion radius, solute shell force constant |
+| `RESTRAINT_COUNTS` | Sequence, position, distance, angle and wall restraint counts; external restraint-file flag |
+| `POSITION` | Record index, topology atom, reference x/y/z, Cartesian force constants, state selector |
 | `CUTOFFS` | Solute–solute, solute–water, water–water, Q-atom, local-reaction-field cutoffs |
 | `WATER` | Number density and molecular dipole magnitude used in the target |
 | `WATER_COMPATIBILITY` | Uniform water site types/charges; zero hydrogen LJ coefficients (Boolean flags) |
@@ -155,8 +163,10 @@ record payloads are:
 | `SHELL` | Shell index, outer radius, width, offset, pure-state angular strengths |
 
 `CONVENTION` precedes these records; `BEGIN`/`END` delimit exactly one block.
-Version 2 requires the water-site records and compatibility checks absent from
-version 1; old native logs must not be passed off as this stronger gate.
+Version 3 adds loaded position restraints and extra-restraint counts to version 2's
+water-site records and compatibility checks. Versions 1 and 2 are rejected by the
+current native gate; archived timing logs remain valid records of their older
+checks, not passes of this stronger gate. No archived log is rewritten or upgraded.
 Units are Q's existing angstrom, elementary-charge and kilocalorie-per-mole
 conventions; the A/B coefficients retain the topology combining-rule convention,
 not a universal sigma/epsilon interpretation. The checker compares atomic
@@ -204,6 +214,14 @@ copy is a software control, not an endorsed production water parameterization.
 Earlier native passes did not check this water-kernel assumption and must not
 be interpreted as passing the new gate. No archived topology or historical
 result was changed, and no angular target was changed.
+
+A separate fresh-probe integration test now exercises 12 actual windows with the
+common position restraint: both signs, both directions and weights 0/0.5/1 at
+298 K. Each is 100 existing-MD steps from a shared 20-step seed restart. The
+staged/native and completed-window checks pass, including every saved pure-state
+total and applied Born constant. These remain software tests with shared starts,
+not independent equilibrated replicas. The next launch wrapper must validate
+realized restart dependencies before reusing any final file.
 
 Still required before production:
 

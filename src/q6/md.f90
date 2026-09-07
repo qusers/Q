@@ -16783,7 +16783,7 @@ end subroutine init_perstate_born
 
 subroutine write_boundary_audit
   ! Read-only initialization record, before charge scaling. No target changes.
-  integer :: i, iq, s, shell_index, site, uniform_water, zero_h_lj
+  integer :: i, iq, s, shell_index, site, uniform_water, zero_h_lj, audit_wall_count
   real(8) :: env_in, env_out, q_in, q_out, applied_born, max_radius, audit_lrf_cutoff
   env_in=0; env_out=0; max_radius=0
   do i=1,natom
@@ -16795,7 +16795,7 @@ subroutine write_boundary_audit
       env_in=env_in+crg(i)
     end if
   end do
-  write(*,'(a)') 'Q_BOUNDARY_AUDIT_V2 BEGIN'
+  write(*,'(a)') 'Q_BOUNDARY_AUDIT_V3 BEGIN'
   write(*,'(a)') 'QBA_CONVENTION 1' !1 = existing Q-region-only angular target
   write(*,'(a,8i10)') 'QBA_META ',natom,nat_solute,nwat,nqat,nstates,nwpolr_shell,ivdw_rule,solvent_type
   write(*,'(a,6i4)') 'QBA_FLAGS ',merge(1,0,perstate_wpol),merge(1,0,perstate_born), &
@@ -16804,6 +16804,15 @@ subroutine write_boundary_audit
     env_in,env_out,fkwpol,fk_wsphere,Dwmz,awmz,max_radius
   write(*,'(a,3es26.17e3)') 'QBA_CENTER ',xwcent
   write(*,'(a,3es26.17e3)') 'QBA_SOLUTE_BOUNDARY ',rexcl_i,rexcl_o,fk_pshell
+  ! Report loaded optional restraints as well as boundary restraints. In modes
+  ! without wall restraints their legacy count need not have been initialized.
+  audit_wall_count=0
+  if (allocated(rstwal)) audit_wall_count=size(rstwal)
+  write(*,'(a,6i10)') 'QBA_RESTRAINT_COUNTS ',nrstr_seq,nrstr_pos,nrstr_dist,nrstr_angl, &
+    audit_wall_count,implicit_rstr_from_file
+  do i=1,nrstr_pos
+    write(*,'(a,2i10,6es26.17e3,i10)') 'QBA_POSITION ',i,rstpos(i)%i,rstpos(i)%x,rstpos(i)%fk,rstpos(i)%ipsi
+  end do
   ! The inactive LRF variable need not have been initialized by input parsing.
   ! Zero in this record denotes disabled, not a zero-distance active cutoff.
   audit_lrf_cutoff=0
@@ -16844,7 +16853,7 @@ subroutine write_boundary_audit
     write(*,'(a,i10,*(es26.17e3))') 'QBA_SHELL ',shell_index,wshell(shell_index)%rout, &
       wshell(shell_index)%dr,real(wshell(shell_index)%theta_corr,8),wpol_cstb_state(shell_index,:)
   end do
-  write(*,'(a)') 'Q_BOUNDARY_AUDIT_V2 END'
+  write(*,'(a)') 'Q_BOUNDARY_AUDIT_V3 END'
 end subroutine write_boundary_audit
 
 !-----------------------------------------------------------------------

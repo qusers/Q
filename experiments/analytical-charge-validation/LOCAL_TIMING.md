@@ -92,7 +92,8 @@ mapping, frozen offsets, input tampering, overwrite refusal and runtime limits.
 The suite took 30.55 seconds at this checkpoint. Passing these software tests is
 not evidence of equilibrium convergence or physical charge-correction accuracy.
 
-The existing campaign preflight still rejects the new shared position restraint;
-its bounded support/native verification must be implemented before this probe
-can enter a production launch manifest. All generated reports continue to say
-`production_ready: false`.
+At the timing checkpoint the campaign preflight rejected the shared position
+restraint. The subsequent [restraint/completion implementation](RESTRAINT_AND_COMPLETION.md)
+adds bounded support and native verification. It does not retroactively upgrade
+these archived version-2 logs or qualify their timing inputs as a production
+campaign. All generated reports continue to say `production_ready: false`.

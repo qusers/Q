@@ -155,9 +155,9 @@ def test_native_report_rejects_mismatches(completed_windows, tmp_path, mutation,
     window, mode, source = completed_windows[0]
     lines = source.read_text().splitlines()
     if mutation == 'missing_end':
-        lines.remove('Q_BOUNDARY_AUDIT_V2 END')
+        lines.remove('Q_BOUNDARY_AUDIT_V3 END')
     elif mutation == 'old_version':
-        lines = [line.replace('Q_BOUNDARY_AUDIT_V2', 'Q_BOUNDARY_AUDIT_V1') for line in lines]
+        lines = [line.replace('Q_BOUNDARY_AUDIT_V3', 'Q_BOUNDARY_AUDIT_V2') for line in lines]
     elif mutation == 'duplicate_block':
         lines *= 2
     elif mutation == 'duplicate_meta':

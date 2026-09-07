@@ -113,6 +113,41 @@ def test_staged_consistency_is_not_production_qualification(staged):
     assert 'native nonzero unchanged LJ parameters and interaction coverage' in report['unverified']
 
 
+def test_shared_position_is_part_of_system_identity(staged):
+    path, spec = staged
+    for s in range(4):
+        for w in range(3):
+            change_input(spec, '[lambdas]', '[atom_restraints]\n1 0.1 -0.2 0.3 10 20 30 0\n[lambdas]', series=s, window=w)
+    rewrite(path, spec)
+    report = cp.validate(path)
+    assert report['series'][0]['windows'][0]['signature']['atom_restraints'] == [[1, '0.1', '-0.2', '0.3', '10', '20', '30', 0]]
+    change_input(spec, '0.1 -0.2 0.3', '0.1 -0.2 0.4')
+    rewrite(path, spec)
+    with pytest.raises(ValueError, match='settings differ'):
+        cp.validate(path)
+
+
+@pytest.mark.parametrize('row,message', [
+    ('1 0 0 0 10 10 10 1', 'shared state 0'),
+    ('1 0 0 0 10 10 10 -1', 'shared state 0'),
+    ('1 0 0 0 10 10 10 256', 'shared state 0'),
+    ('1 0 0 0 10 0 10 0', 'positive Cartesian'),
+    ('1 0 0 0 10 -1 10 0', 'positive Cartesian'),
+    ('2 0 0 0 10 10 10 0', 'unique mapped Q'),
+    ('1.5 0 0 0 10 10 10 0', 'unique mapped Q'),
+    ('1 NaN 0 0 10 10 10 0', 'Nonfinite'),
+    ('1 1e999 0 0 10 10 10 0', 'finite doubles'),
+    ('1 0 0 0 10 10 10', 'needs atom'),
+    ('1 0 0 0 10 10 10 0\n1 0 0 0 10 10 10 0', 'unique mapped Q'),
+])
+def test_invalid_or_state_dependent_positions_are_rejected(staged, row, message):
+    path, spec = staged
+    change_input(spec, '[lambdas]', '[atom_restraints]\n'+row+'\n[lambdas]')
+    rewrite(path, spec)
+    with pytest.raises(ValueError, match=message):
+        cp.validate(path)
+
+
 @pytest.mark.parametrize('valid', [True, False])
 def test_documented_command_line_entrypoint(staged, valid):
     path, spec = staged
