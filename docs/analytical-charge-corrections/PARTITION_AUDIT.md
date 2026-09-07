@@ -42,12 +42,12 @@ tested precision. The non-angular gradient changes too (maximum about 0.004176
 kilocalories per mole per angstrom across these evaluations).
 
 This is a separate numerical/control issue, not evidence that all the energy
-difference is a boundary effect. The source has different arithmetic paths for
-Q-water and non-Q-water interactions; for example, `nonbond_pw` multiplies stored
-single-precision LJ coefficients before assigning the product to double
-precision, whereas `nonbond_qw_spc` promotes coefficients before multiplication.
-This is a candidate explanation, **not a demonstrated attribution of the full
-control difference**. Neither kernel was changed for this audit.
+difference is a boundary effect. The cause of the non-angular mismatch remains
+unresolved. **Correction to the earlier explanation:** the topology's `iac_type`
+declares both `avdw` and `bvdw` as `real(8)`. The earlier suggestion that
+`nonbond_pw` multiplies single-precision stored LJ coefficients was incorrect
+and is withdrawn. Different Q/non-Q kernels are not by themselves a demonstrated
+explanation of the measured mismatch. Neither kernel was changed for this audit.
 
 The strict non-angular energy-invariance assertion remains an explicit expected
 failure (`xfail`, with unexpected passes treated as failures) for each charge

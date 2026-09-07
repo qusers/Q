@@ -15492,6 +15492,7 @@ subroutine prep_sim
       call wat_sphere
       if (wpol_restr) call wat_shells
       call init_perstate_born
+      if (perstate_wpol .and. nodeid == 0) call write_boundary_audit
 
     else !compute charges of the system for box case 
       !(done in subroutine wat_sphere for sphere case)
@@ -16772,6 +16773,61 @@ subroutine init_perstate_born
       '  E_Born = ', born_self_state(istate)
   end do
 end subroutine init_perstate_born
+
+!-----------------------------------------------------------------------
+
+subroutine write_boundary_audit
+  ! Read-only initialization record, before charge scaling. No target changes.
+  integer :: i, iq, s, shell_index
+  real(8) :: env_in, env_out, q_in, q_out, applied_born, max_radius, audit_lrf_cutoff
+  env_in=0; env_out=0; max_radius=0
+  do i=1,natom
+    max_radius=max(max_radius,sqrt(sum((x(3*i-2:3*i)-xwcent)**2)))
+    if (i > nat_solute .or. iqatom(i) /= 0) cycle
+    if (excl(i)) then
+      env_out=env_out+crg(i)
+    else
+      env_in=env_in+crg(i)
+    end if
+  end do
+  write(*,'(a)') 'Q_BOUNDARY_AUDIT_V1 BEGIN'
+  write(*,'(a)') 'QBA_CONVENTION 1' !1 = existing Q-region-only angular target
+  write(*,'(a,8i10)') 'QBA_META ',natom,nat_solute,nwat,nqat,nstates,nwpolr_shell,ivdw_rule,solvent_type
+  write(*,'(a,6i4)') 'QBA_FLAGS ',merge(1,0,perstate_wpol),merge(1,0,perstate_born), &
+    merge(1,0,wpol_adapt),merge(1,0,qvdw_flag),merge(1,0,use_LRF),merge(1,0,use_PBC)
+  write(*,'(a,12es26.17e3)') 'QBA_PARAMETERS ',rwat,rwat_in,coulomb_constant,born_eps,born_C_override, &
+    env_in,env_out,fkwpol,fk_wsphere,Dwmz,awmz,max_radius
+  write(*,'(a,3es26.17e3)') 'QBA_CENTER ',xwcent
+  write(*,'(a,3es26.17e3)') 'QBA_SOLUTE_BOUNDARY ',rexcl_i,rexcl_o,fk_pshell
+  ! The inactive LRF variable need not have been initialized by input parsing.
+  ! Zero in this record denotes disabled, not a zero-distance active cutoff.
+  audit_lrf_cutoff=0
+  if (use_LRF) audit_lrf_cutoff=RcLRF
+  write(*,'(a,5es26.17e3)') 'QBA_CUTOFFS ',Rcpp,Rcpw,Rcww,Rcq,audit_lrf_cutoff
+  write(*,'(a,2es26.17e3)') 'QBA_WATER ',real(rho_wat,8),real(mu_w,8)
+  do s=1,nstates
+    q_in=0; q_out=0; applied_born=0
+    do iq=1,nqat
+      if (excl(iqseq(iq))) then
+        q_out=q_out+qcrg(iq,s)
+      else
+        q_in=q_in+qcrg(iq,s)
+      end if
+    end do
+    if (perstate_born) applied_born=born_self_state(s)
+    write(*,'(a,i10,5es26.17e3)') 'QBA_STATE ',s,EQ(s)%lambda,q_region_state(s),q_in,q_out,applied_born
+  end do
+  do iq=1,nqat
+    i=iqseq(iq)
+    write(*,'(a,4i10,*(es26.17e3))') 'QBA_QATOM ',iq,i,merge(1,0,excl(i)),iac(i), &
+      iaclib(iac(i))%mass,iaclib(iac(i))%avdw,iaclib(iac(i))%bvdw,real(qcrg(iq,:),8)
+  end do
+  do shell_index=1,nwpolr_shell
+    write(*,'(a,i10,*(es26.17e3))') 'QBA_SHELL ',shell_index,wshell(shell_index)%rout, &
+      wshell(shell_index)%dr,real(wshell(shell_index)%theta_corr,8),wpol_cstb_state(shell_index,:)
+  end do
+  write(*,'(a)') 'Q_BOUNDARY_AUDIT_V1 END'
+end subroutine write_boundary_audit
 
 !-----------------------------------------------------------------------
 

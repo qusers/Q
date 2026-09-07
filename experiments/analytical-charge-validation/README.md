@@ -104,6 +104,70 @@ hash checks to make a prospective job pass.
 
 ## Evidence and remaining work
 
+### Native initialization audit
+
+Q now emits a read-only `Q_BOUNDARY_AUDIT_V1` block during initialization when
+per-state polarization is enabled (on the main process only). It records loaded
+values before the internal Coulomb charge rescaling; it does not change any
+force law, coordinate, velocity, or target. The
+[native checker](../../src/QligFEP/boundary_native.py) compares that block against
+one window from a **saved preflight report**, after the corresponding run:
+
+```sh
+PYTHONPATH="$PWD/src" python -m QligFEP.boundary_native preflight.json \
+  --series positive-forward --window 0 --log /path/to/run.log
+```
+
+Use the actual series ID; window indices start at zero in the manifest's order.
+Save the staged preflight report before launch: re-running the staged gate after
+outputs exist intentionally fails its no-overwrite check. The native command
+checks the retained manifest and engine hashes, rechecks the current input and
+asset hashes, reconstructs the staged window, and rejects disagreement. It
+prints JSON without rewriting any files. Success means
+`native_initialization_consistency_passed`, still **not production readiness**.
+
+The native block identifies the current angular convention explicitly as code
+1, Q-region-only. No proposed total-charge option has been implemented. The
+record payloads are:
+
+| Record | Values in order |
+| --- | --- |
+| `META` | Atom, solute, water, Q-atom, state and shell counts; LJ combining-rule and solvent-type codes |
+| `FLAGS` | Per-state polarization, integrated Born, adaptation, alchemical LJ changes, local reaction field, periodic boundary flags |
+| `PARAMETERS` | Effective and requested water radii; topology Coulomb constant; dielectric; coefficient override; included/excluded non-Q solute charge; angular/radial force constants; Morse depth/width; maximum loaded atom distance from solvent center |
+| `CENTER` | Solvent-center coordinates |
+| `SOLUTE_BOUNDARY` | Effective inner restrained radius, exclusion radius, solute shell force constant |
+| `CUTOFFS` | Solute–solute, solute–water, water–water, Q-atom, local-reaction-field cutoffs |
+| `WATER` | Number density and molecular dipole magnitude used in the target |
+| `STATE` | State index, lambda, total/included/excluded Q-region charge, Born energy actually added |
+| `QATOM` | Q index, topology index, exclusion flag, type; mass; three A and three B topology LJ coefficients; pure-state charges |
+| `SHELL` | Shell index, outer radius, width, offset, pure-state angular strengths |
+
+`CONVENTION` precedes these records; `BEGIN`/`END` delimit exactly one block.
+Units are Q's existing angstrom, elementary-charge and kilocalorie-per-mole
+conventions; the A/B coefficients retain the topology combining-rule convention,
+not a universal sigma/epsilon interpretation. The checker compares atomic
+charges and stored shell radii at their actual single-precision representation.
+The global effective radius and LJ coefficients are double precision. It does
+not enlarge a tolerance to conceal these representation differences.
+
+The inactive local-reaction-field cutoff is reported as zero by convention;
+Q does not read that cutoff key when the method is off, and its inactive variable
+need not be initialized. Zero here is not an active zero-range interaction rule.
+The initial cutoff bound uses twice the maximum loaded atom radius. A passing
+geometric bound is not a proof of pair-list correctness or whole-trajectory
+interaction coverage; the initial coordinates also precede initial bond-constraint
+projection. The original/native logs and later trajectory coverage remain needed.
+
+The checker rejects excluded/non-solute Q atoms, nonpositive standard Q-atom LJ
+coefficients, wrong loaded state charges/lambdas, mismatched frozen offsets and
+inconsistent applied Born constants. It returns the independently recomputed
+Born state constants even in post-hoc/control mode, distinguishing those values
+from the zero Born energy actually added by the engine. It does not apply them
+to a free-energy result. Source-build provenance, log-to-executable attribution,
+full solvent-model identification, job completion, final output validation and
+physical qualification are not proved by an initialization block.
+
 The automated native smoke test constructs both signs and both ladder directions
 on the existing Na/benzene/water fixture: 12 windows at state-2 weights 0, 0.5 and
 1, four MD steps per window. It runs the preflight, launches the unchanged Q
@@ -119,9 +183,10 @@ Still required before production:
    The [bounded opt-in proposal](CHARGE_CONVENTION_DECISION.md) is now documented
    and awaits approval; no target change has been implemented. Do not replace
    the physical target as an incidental preflight change.
-2. Native initialization evidence for effective radius, included/excluded charge,
-   topology Coulomb constant, shell geometry, real LJ parameters and interaction
-   coverage, tied to the exact source build and input hashes.
+2. Collect the now-implemented native initialization evidence for the actual
+   campaign and tie it to an exact source build. Complete whole-trajectory
+   interaction coverage, solvent-model identification and launch provenance;
+   the local fixture's native pass cannot substitute for those checks.
 3. A complete both-sign/control/radius/environment campaign, independent replicas
    and initializations, runtime/final-restart audits, and immutable provenance.
 4. An analysis package with matched state/leg definitions, Born accounting,
@@ -139,3 +204,10 @@ seconds** across the focused native and analysis suite. This includes 34 new
 input-contract/command-line tests and the native 12-window smoke test. The two
 optional analysis-runtime skips and the two known non-angular partition failures
 are unchanged. `git diff --check` passed. No HPC job was submitted.
+
+Native-audit checkpoint: **123 passed, 2 skipped, 2 expected failures in 12.44
+seconds**, after rebuilding serial Qdyn with GNU Fortran 11. This includes the
+12-window native matrix, two additional nonintegrated-Born runs, 12 deliberately
+altered native-record checks, and successful/failing native command-line cases.
+All new native checks executed. The target-change proposal is still awaiting
+approval. Distributed-execution and other compiler builds remain unverified.

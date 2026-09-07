@@ -257,7 +257,8 @@ def validate(manifest_path):
     if outputs & protected:
         raise ValueError('Output would overwrite an input asset')
     return {'schema_version': 1, 'gate': 'staged_input_consistency_passed', 'production_ready': False,
-            'manifest_sha256': fingerprint(manifest_path), 'engine': engine, 'series': results,
+            'manifest_path': str(manifest_path.resolve()), 'manifest_sha256': fingerprint(manifest_path),
+            'engine': {**engine, 'binary': str(binary)}, 'series': results,
             'unverified': ['binary-to-source build provenance', 'native effective radius and included/excluded charge',
                            'native nonzero unchanged LJ parameters and interaction coverage',
                            'both-sign/control/replica campaign completeness and independence',
