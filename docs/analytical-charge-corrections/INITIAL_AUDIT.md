@@ -129,8 +129,11 @@ is treated as a set of hypotheses; it has not been edited.
    mismatch explicitly retained. Inspect the intended background-charge convention.
 2. **Matched offsets:** the preserved historical reproduction reports different
    frozen angular offsets between forward and reverse directions. Its directional
-   difference is therefore not same-Hamiltonian closure. Quantify this mismatch
-   before attributing residuals to a correction formula; do not fit it away.
+   difference is therefore not same-Hamiltonian closure. The subsequent
+   [offset audit](FROZEN_OFFSETS.md) verifies and quantifies the mismatch, derives
+   its instantaneous energy effect, and adds a minimal native guard against
+   silent offset reset on a frozen restart. Its historical free-energy contribution
+   remains unmeasured; do not fit it away.
 3. **Input/provenance controls:** distinguish effective versus requested radius,
    actual included versus excluded/neutralized charge, and integrated versus
    post-hoc corrections. Require matching definitions in the eventual protocol.

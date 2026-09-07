@@ -16777,6 +16777,7 @@ end subroutine init_perstate_born
 
 subroutine wat_shells
    ! set up the shells for polarization restraining
+  use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 
    ! local variables
   real(8)                                         ::      rout, dr, ri, Vshell, rshell, drs
@@ -16820,13 +16821,22 @@ subroutine wat_shells
 100 format(/,'Setting up ', i1, ' water shells for polarization restraints.')
 
   if(restart) then !try to load theta_corr from restart file
+    nwpolr_shell_restart = 0
     read(2, iostat=filestat) nwpolr_shell_restart
     if(filestat /= 0 .or. nwpolr_shell_restart /= nwpolr_shell) then
+      ! Frozen offsets are part of the production Hamiltonian, not optional
+      ! restart metadata. Never silently replace them with a different target.
+      if (perstate_wpol .and. .not. wpol_adapt) &
+        call die('Frozen per-state polarization requires restart offsets with matching shell count')
       write(*,102)
       wshell(:)%theta_corr = 0.
     else
-      backspace(2)
-      read(2) nwpolr_shell_restart, wshell(:)%theta_corr
+      backspace(2, iostat=filestat)
+      if (filestat /= 0) call die('Cannot reread polarization restart offsets')
+      read(2, iostat=filestat) nwpolr_shell_restart, wshell(:)%theta_corr
+      if (filestat /= 0) call die('Incomplete polarization restart offsets')
+      if (.not. all(ieee_is_finite(wshell(:)%theta_corr))) &
+        call die('Nonfinite polarization restart offsets')
       write(*,103)
     end if
   else

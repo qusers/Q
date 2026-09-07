@@ -10,8 +10,9 @@ program test_boundary_corrections
   real(8), parameter :: theta = 1.2_8
   real(8), parameter :: offset = 0.03_8
   real(8) :: c, t1, t2, e1, e2, mixed_gradient, finite_difference
+  real(8) :: shift, shifted1, shifted2, angle_sample, target1, target2
   real(8), parameter :: lambda1 = 0.35_8, lambda2 = 0.65_8, delta = 1.0e-6_8
-  integer :: failures
+  integer :: failures, sample, field
 
   failures = 0
   c = born_coefficient(ke, eps, radius)
@@ -43,6 +44,29 @@ program test_boundary_corrections
   call expect_close('endpoint energy remains distinct', e2 - e1, &
     polarization_energy(theta, t2, offset, force_constant) - &
     polarization_energy(theta, t1, offset, force_constant), 0.0_8)
+
+  ! A common offset shift changes both states' energies and forces. The gap
+  ! shift is independent of observed angle, but depends on the rank targets.
+  ! Include target clamps and the sign of a historical protein-shell mismatch.
+  shift = -0.0037077669985592365_8
+  do field = -2, 2
+    target1 = polarization_target(pi/2, real(field,8))
+    target2 = polarization_target(pi/3, -real(field,8))
+    do sample = 1, 9
+      angle_sample = pi*sample/10
+      e1 = polarization_energy(angle_sample, target1, offset, force_constant)
+      e2 = polarization_energy(angle_sample, target2, offset, force_constant)
+      shifted1 = polarization_energy(angle_sample, target1, offset+shift, force_constant)
+      shifted2 = polarization_energy(angle_sample, target2, offset+shift, force_constant)
+      call expect_close('offset changes single-state energy', shifted1-e1, &
+        force_constant*shift*(angle_sample-target1+offset)+0.5_8*force_constant*shift**2, 1.e-12_8)
+      call expect_close('offset changes pure-state gap', (shifted2-shifted1)-(e2-e1), &
+        force_constant*shift*(target1-target2), 1.e-12_8)
+      call expect_close('offset changes angular gradient', &
+        polarization_gradient(angle_sample,target1,offset+shift,force_constant)- &
+        polarization_gradient(angle_sample,target1,offset,force_constant), force_constant*shift, 1.e-12_8)
+    end do
+  end do
 
   if (failures /= 0) stop 1
   print '(a)', 'PASS: spherical-boundary correction helpers'
