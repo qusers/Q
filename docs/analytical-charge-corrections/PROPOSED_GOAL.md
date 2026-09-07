@@ -1,4 +1,10 @@
-# Proposed goal — awaiting user approval
+# Approved goal — persistent tracker activation pending
+
+The user approved this goal and its scope limits. The previous goal remains
+paused in the thread's tracker, which refuses to register a replacement while
+an unfinished goal exists. Do not mark the previous goal achieved to bypass
+this restriction. Register this approved objective once the previous tracker
+entry is cleared; approval is not a claim that implementation is complete.
 
 Implement and validate analytical corrections for charged perturbations in Q's
 existing molecular dynamics (MD) workflow with finite spherical boundaries,
@@ -42,7 +48,7 @@ software tests alone does not validate the physical correction.
 
 Request approval before substantial HPC computation or submission. Introduce
 new technical terms and expand acronyms on first use in each documentation file.
-This goal is a proposal only; do not pursue it until the user approves it.
+The scope above is approved. Any expansion still requires separate approval.
 
 ## Clean branch and carried work
 
