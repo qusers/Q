@@ -90,9 +90,9 @@ be represented as relaxing these generated waters.
 
 The staged/native gates now verify the shared position restraint, and a
 [completed-window check](RESTRAINT_AND_COMPLETION.md) verifies the saved state
-accounting and final offset record. Before Stage B, implement realized restart
-dependencies and actual launch/build provenance; do not pass a timing report off
-as a production gate. Complete trajectory coverage, solvent geometry and
+accounting and final offset record. An [isolated-build chain runner](BUILD_AND_CHAIN.md)
+now checks realized dependencies and records build/launch evidence. Before Stage B,
+complete campaign generation, endpoint preparation, trajectory coverage, solvent geometry and
 runtime/temperature diagnostics too.
 
 ## Stage B: capped feasibility pilot (not submitted)
@@ -219,7 +219,7 @@ Keep serial aggregate compute and elapsed time with multiple concurrent jobs
 separate. Avoid scaling the water count from the old neutral calibration: the new
 Qprep systems and existing MD workload are different.
 
-The next implementation work is a dependency-aware launch/continue wrapper,
+The next implementation work is campaign generation and endpoint preparation,
 trajectory/runtime checks and tested BAR/uncertainty
 analysis. A full launch manifest and scheduler script must not claim readiness
 until those exist. After that, present the capped Stage B allocation for approval.

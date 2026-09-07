@@ -13,8 +13,10 @@ timing tool are implemented. The [local timing evidence](LOCAL_TIMING.md) estima
 about 5.4 aggregate serial hours for that pilot before contingency or timestep
 checks; it is not an HPC allocation or convergence result. Shared position-restraint
 support and a [completed-window check](RESTRAINT_AND_COMPLETION.md) now exist.
-Restart dependency handling, trajectory/runtime checks and the statistical analysis
-still need implementation before launch. No angular target was changed.
+An [isolated build and one-window chain runner](BUILD_AND_CHAIN.md) now records
+source/build/launch evidence and validates realized restart dependencies.
+Campaign generation, trajectory/runtime checks and the statistical analysis
+still need implementation before production launch. No angular target was changed.
 
 ## Staged-input preflight
 
@@ -112,10 +114,10 @@ This is intentionally not a general validator for arbitrary Q jobs.
 - Require identical offset-record hashes within and across series of one system.
   Reject reused output paths, existing outputs, or paths that overwrite inputs.
 
-An as-yet-unwritten chained restart cannot pass this staged gate. A future launch
-wrapper must run it when the required assets exist, or explicitly validate the
-planned dependency graph and recheck the realized files. Do not remove restart
-hash checks to make a prospective job pass.
+An as-yet-unwritten chained restart cannot pass this staged gate. The
+[chain runner](BUILD_AND_CHAIN.md) instead validates planned dependencies and
+rechecks realized files before each launch. Its planned-chain result is distinct
+from this staged gate; no restart hash check is removed to make future files pass.
 
 ## Evidence and remaining work
 
@@ -220,8 +222,8 @@ common position restraint: both signs, both directions and weights 0/0.5/1 at
 298 K. Each is 100 existing-MD steps from a shared 20-step seed restart. The
 staged/native and completed-window checks pass, including every saved pure-state
 total and applied Born constant. These remain software tests with shared starts,
-not independent equilibrated replicas. The next launch wrapper must validate
-realized restart dependencies before reusing any final file.
+not independent equilibrated replicas. The chain wrapper revalidates completed
+predecessors and their final-file fingerprints before reusing a restart.
 
 Still required before production:
 

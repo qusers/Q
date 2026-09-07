@@ -123,9 +123,10 @@ independent equilibrated replicas. Additional runs check nonintegrated Born mode
 adversarial tests alter saved totals, Born contributions, counts, offsets, record
 contents, native restraint fields and retained-report declarations.
 
-This is a prerequisite for dependency-aware restart reuse, not an implemented
-scheduler, restart-chain launcher, statistical analysis or production readiness
-certificate. Those remain required by the [pilot protocol](PILOT_PROTOCOL.md).
+This completed-window check is now used by the separate
+[isolated-build chain runner](BUILD_AND_CHAIN.md). It is not itself a scheduler,
+statistical analysis or production readiness certificate. The remaining work is
+specified in the [pilot protocol](PILOT_PROTOCOL.md).
 
 Verification checkpoint: the focused suite passes **204 tests**, with two optional
 integration skips and the same two documented archival partition expected failures,

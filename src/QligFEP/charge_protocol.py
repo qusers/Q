@@ -140,7 +140,8 @@ def shared_positions(rows, q_atoms):
     return result
 
 
-def inspect_window(path, born_mode):
+def inspect_definition(path, born_mode, atom_count):
+    """Check existing input/topology/FEP, without pretending a future restart exists."""
     raw = sections(path)
     required = {'md', 'cut-offs', 'sphere', 'solvent', 'intervals', 'files', 'lambdas'}
     if not required <= set(raw) or set(raw)-required-{'atom_restraints'}:
@@ -188,9 +189,8 @@ def inspect_window(path, born_mode):
     if any(len(v.encode()) > 80 for v in files.values()):
         raise ValueError('Q filename exceeds its 80-byte field')
     paths = {key: (path.parent/value).resolve() for key, value in files.items()}
-    assets = {key: fingerprint(paths[key]) for key in ('topology', 'fep', 'restart')}
-    restart = restart_offsets(paths['restart'])
-    states, totals = charge_states(paths['fep'], restart['atoms'])
+    assets = {key: fingerprint(paths[key]) for key in ('topology', 'fep')}
+    states, totals = charge_states(paths['fep'], atom_count)
     positions = shared_positions(raw.get('atom_restraints', []), {row[0] for row in states})
     # Paths, mixing weights and random seeds are not potential parameters.
     signature = {k: dict(v) for k, v in config.items() if k != 'files'}
@@ -198,10 +198,22 @@ def inspect_window(path, born_mode):
     signature['solvent'].pop('perstate_born_correction')
     signature['atom_restraints'] = positions
     return {'input': str(path), 'input_sha256': fingerprint(path), 'assets_sha256': assets,
-            'paths': {k: str(v) for k, v in paths.items()}, 'restart': restart,
+            'paths': {k: str(v) for k, v in paths.items()},
             'lambdas': list(map(str, weights)), 'q_region_charges': list(map(str, totals)),
             'states': [[atom, str(q0), str(q1)] for atom, q0, q1 in states],
             'signature': signature, 'random_seed': int(md['random_seed'])}
+
+
+def inspect_window(path, born_mode):
+    files = keyed(sections(path).get('files', []))
+    if 'restart' not in files:
+        raise ValueError('Declare restart explicitly')
+    restart_path = (path.parent/files['restart']).resolve()
+    restart = restart_offsets(restart_path)
+    window = inspect_definition(path, born_mode, restart['atoms'])
+    window['restart'] = restart
+    window['assets_sha256']['restart'] = fingerprint(restart_path)
+    return window
 
 
 def validate(manifest_path):
