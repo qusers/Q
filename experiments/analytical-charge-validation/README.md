@@ -6,6 +6,15 @@ molecular dynamics (MD) with finite spherical Surface Constraint All-Atom Solven
 **it is not yet qualified for high-performance computing (HPC) production**.
 No new sampler, integrator, thermostat, radial wall or solvent model is included.
 
+The [staged physical protocol](PILOT_PROTOCOL.md) now specifies the minimum
+charge-only questions, a capped 10/14-angstrom feasibility pilot and proposed
+uncertainty/failure criteria. A fresh Qprep probe generator and bounded existing-MD
+timing tool are implemented. The [local timing evidence](LOCAL_TIMING.md) estimates
+about 5.4 aggregate serial hours for that pilot before contingency or timestep
+checks; it is not an HPC allocation or convergence result. Shared position-restraint
+support, restart dependencies, runtime checks and the statistical analysis still
+need implementation before launch. No angular target was changed.
+
 ## Staged-input preflight
 
 The read-only [checker](../../src/QligFEP/charge_protocol.py) inspects actual
@@ -213,7 +222,9 @@ Still required before production:
    block/replica uncertainty, equilibration/stationarity and overlap checks, and
    predeclared physical acceptance/failure criteria. No fitting charged results.
 5. A measured throughput benchmark and justified compute budget, followed by user
-   approval before substantial HPC computation or submission.
+   approval before substantial HPC computation or submission. A short local
+   baseline now exists; intended-hardware performance and the final allocation
+   remain unverified.
 
 The [approved goal](../../docs/analytical-charge-corrections/PROPOSED_GOAL.md) is
 unchanged. The input gate and smoke test are components of that goal, not a
