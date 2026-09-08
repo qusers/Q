@@ -162,6 +162,7 @@ analysis, tests and documentation changed in this checkpoint; no native force,
 energy expression or dynamics method changed.
 
 Still required: between-replica/direction/radius comparisons, additional observable
-diagnostics and sensitivity analyses, endpoint preparation and the complete pilot
+diagnostics and sensitivity analyses, transfer from the
+[endpoint preparation workflow](ENDPOINT_PREPARATION.md) and the complete pilot
 campaign generator. The [physical protocol](PILOT_PROTOCOL.md) and its no-fitting
 rules remain in force. No HPC experiment was submitted for this analysis work.

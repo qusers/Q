@@ -33,6 +33,8 @@ def analyze_chain(path, *, discard_frames, block_length=None, bootstrap=1000, se
     analysis_sources = {name: cp.fingerprint(Path(__file__).with_name(name))
                         for name in ('charge_analysis.py', 'charge_bar.py')}
     plan = charge_chain.inspect_plan(path)
+    if plan['purpose'] != 'charge_ladder':
+        raise ValueError('Endpoint preparation is not a free-energy ladder')
     completed, _ = charge_chain.progress(plan)
     if completed != len(plan['series']['windows']):
         raise ValueError('Analyze only a completely verified chain')

@@ -92,7 +92,7 @@ The staged/native gates now verify the shared position restraint, and a
 [completed-window check](RESTRAINT_AND_COMPLETION.md) verifies the saved state
 accounting and final offset record. An [isolated-build chain runner](BUILD_AND_CHAIN.md)
 now checks realized dependencies and records build/launch evidence. Before Stage B,
-complete campaign generation, endpoint preparation, trajectory coverage, solvent geometry and
+complete campaign generation, endpoint qualification, trajectory coverage, solvent geometry and
 runtime/temperature diagnostics too.
 
 ## Stage B: capped feasibility pilot (not submitted)
@@ -103,10 +103,12 @@ Start with the nominal 10/14-angstrom preparations only. The prospective cap is:
   per direction: eight ladders per radius, sixteen in total.
 - Eleven state-2 weights: 0, 0.1, ..., 1. Forward traverses increasing weight;
   reverse decreases it without exchanging state labels.
-- Up to 100 ps preparation per ladder to establish its starting endpoint; the
-  exact heating/charging and equilibration schedule must be specified and audited
-  before launch. No replica may be called independent merely by copying the same
-  final restart. Failure to settle within the cap stops that ladder.
+- Up to 100 ps preparation per ladder at its fixed starting endpoint and 298 kelvin,
+  with no heating or charging ramp. The [endpoint schedule](ENDPOINT_PREPARATION.md)
+  includes a 20-step grid-start seed in the cap and continues with retained restart
+  velocities. This is a candidate preparation, not established equilibration.
+  No replica may be called independent merely by copying the same final restart.
+  Failure to settle within the cap stops that ladder.
 - Each window: 10 ps discarded settling plus 20 ps diagnostic sampling. These
   durations are a **cost cap**, not asserted sufficient equilibration or production.
   The sampling portion remains pilot data and is not used to select model parameters.
@@ -221,7 +223,7 @@ Qprep systems and existing MD workload are different.
 
 The [single-chain BAR analysis](ANALYSIS.md) now includes explicit Born views,
 overlap and conditional block uncertainty. The next implementation work is
-campaign generation and endpoint preparation, trajectory/runtime checks and
+campaign generation and endpoint-to-ladder transfer, trajectory/runtime checks and
 between-replica/direction/radius statistical comparisons. A full launch manifest
 and scheduler script must not claim readiness
 until those exist. After that, present the capped Stage B allocation for approval.

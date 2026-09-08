@@ -33,8 +33,12 @@ def _write(path, value):
 def inspect_plan(path):
     path = path.resolve()
     spec = json.loads(path.read_text())
-    if set(spec) != {'schema_version', 'engine', 'series', 'initial_restart', 'initial_restart_sha256',
-                     'build_report', 'build_report_sha256'} or spec['schema_version'] != 1:
+    keys = {'schema_version', 'engine', 'series', 'initial_restart', 'initial_restart_sha256',
+            'build_report', 'build_report_sha256'}
+    endpoint = spec.get('schema_version') == 2 and spec.get('purpose') == 'endpoint_preparation'
+    if endpoint:
+        keys |= {'purpose', 'preparation'}
+    if set(spec) != keys or (not endpoint and spec['schema_version'] != 1):
         raise ValueError('Unsupported chain plan schema')
     build_path = (path.parent/spec['build_report']).resolve()
     if cp.fingerprint(build_path) != spec['build_report_sha256']:
@@ -65,7 +69,7 @@ def inspect_plan(path):
         raise ValueError('Invalid or double-counted Born accounting mode')
     if type(series['sign']) is not int or series['sign'] not in (-1, 1):
         raise ValueError('Require charge sign +/-1')
-    if series['direction'] not in ('forward', 'reverse') or len(series['windows']) < 2:
+    if series['direction'] not in ('forward', 'reverse') or len(series['windows']) < (1 if endpoint else 2):
         raise ValueError('Require a forward/reverse chain including both endpoints')
     protected = {path, binary, initial_path, build_path}
     protected.update((build_path.parent/'native-source.tar', build_path.parent/'build.log'))
@@ -101,7 +105,10 @@ def inspect_plan(path):
         raise ValueError('Chain output would overwrite a protected input or receipt name')
     first = windows[0]
     for window in windows:
-        if (window['signature'] != first['signature'] or window['states'] != first['states'] or
+        signature = json.loads(json.dumps(window['signature']))
+        if endpoint:
+            signature['md']['steps'] = first['signature']['md']['steps']
+        if (signature != first['signature'] or window['states'] != first['states'] or
                 window['assets_sha256'] != first['assets_sha256']):
             raise ValueError('Within-chain Hamiltonian, topology/FEP or simulation settings differ')
         if list(map(Decimal, window['q_region_charges'])) != [0, series['sign']]:
@@ -109,15 +116,23 @@ def inspect_plan(path):
     weights = [Decimal(w['lambdas'][1]) for w in windows]
     ends = (0, 1) if series['direction'] == 'forward' else (1, 0)
     orientation = 1 if series['direction'] == 'forward' else -1
-    if (weights[0], weights[-1]) != ends or any(orientation*(b-a) <= 0 for a, b in zip(weights, weights[1:])):
+    if endpoint:
+        if any(w != ends[0] for w in weights) or first['signature']['velocity_initialization'] != 'restart':
+            raise ValueError('Endpoint preparation must retain restart velocities at its fixed starting endpoint')
+        from .charge_endpoint import validate_origin
+        origin = validate_origin(path, spec, build_path, build, windows)
+    elif (weights[0], weights[-1]) != ends or any(orientation*(b-a) <= 0 for a, b in zip(weights, weights[1:])):
         raise ValueError('Require complete monotonic charge-only chain')
-    return {'schema_version': 1, 'gate': 'planned_chain_consistency_passed', 'production_ready': False,
+    return {'schema_version': spec['schema_version'], 'gate': 'planned_chain_consistency_passed', 'production_ready': False,
+            'purpose': 'endpoint_preparation' if endpoint else 'charge_ladder',
+            'preparation_origin': origin if endpoint else None,
             'plan_path': str(path), 'plan_sha256': cp.fingerprint(path),
             'engine': {**engine, 'binary': str(binary)}, 'series': {**series, 'windows': windows},
             'build_report': str(build_path), 'build_report_sha256': spec['build_report_sha256'],
             'driver_files_sha256': {name: cp.fingerprint(Path(__file__).with_name(name)) for name in
                                    ('charge_chain.py', 'charge_build.py', 'charge_protocol.py',
-                                    'charge_completion.py', 'boundary_native.py', 'endpoint_trim.py')},
+                                    'charge_completion.py', 'boundary_native.py', 'endpoint_trim.py',
+                                    'charge_endpoint.py', 'charge_probe.py')},
             'initial_restart': str(initial_path), 'initial_restart_sha256': spec['initial_restart_sha256'],
             'initial_offsets': initial, 'total_steps': sum(int(w['signature']['md']['steps']) for w in windows),
             'limitations': ['future restart contents are not validated until realized',

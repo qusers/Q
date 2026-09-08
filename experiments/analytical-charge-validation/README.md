@@ -16,7 +16,9 @@ support and a [completed-window check](RESTRAINT_AND_COMPLETION.md) now exist.
 An [isolated build and one-window chain runner](BUILD_AND_CHAIN.md) now records
 source/build/launch evidence and validates realized restart dependencies.
 An [audited chain analysis](ANALYSIS.md) now reports raw/with-Born estimates,
-overlap and conditional within-window block uncertainty. Campaign generation,
+overlap and conditional within-window block uncertainty. A bounded
+[fixed-endpoint preparation schedule](ENDPOINT_PREPARATION.md) now retains restart
+velocities and includes its grid-start seed in the compute cap. Campaign generation,
 trajectory/runtime checks and between-replica/direction/radius analysis still need
 implementation before production launch. No angular target was changed.
 
@@ -107,6 +109,8 @@ This is intentionally not a general validator for arbitrary Q jobs.
   angular dielectric factor, not a separately chosen exterior dielectric.
 - Declare solvent radius and positive wall/force parameters, temperature,
   timestep, coupling, initial temperature, random seed, steps and output intervals.
+  Seed zero explicitly retains restart velocities; a positive seed regenerates
+  Maxwell velocities. Record one consistent strategy within each chain.
   Inputs in the same physical system must match except seed, paths, lambda and
   the declared exterior-Born on/off control.
 - Every starting restart must already exist, contain finite coordinates and

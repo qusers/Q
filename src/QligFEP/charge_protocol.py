@@ -162,7 +162,9 @@ def inspect_definition(path, born_mode, atom_count):
         if set(entries)-allowed[section]:
             raise ValueError(f'Unsupported {section} keys: {set(entries)-allowed[section]}')
     _required(md, {'lrf': 'off', 'shake_solvent': 'on', 'shake_hydrogens': 'on', 'shake_solute': 'off'})
-    _positive(md, ['steps', 'stepsize', 'temperature', 'bath_coupling', 'random_seed', 'initial_temperature'])
+    _positive(md, ['steps', 'stepsize', 'temperature', 'bath_coupling', 'initial_temperature'])
+    if 'random_seed' not in md or not 0 <= _number(md['random_seed']) < 100_000_000:
+        raise ValueError('Require explicit random_seed in [0, 100000000); zero retains restart velocities')
     _positive(config['sphere'], ['shell_force', 'shell_radius'])
     _positive(solvent, ['radius', 'radial_force', 'polarization_force'])
     _required(solvent, {'polarization': 'on', 'charge_correction': 'on', 'perstate_polarization': 'on',
@@ -195,6 +197,7 @@ def inspect_definition(path, born_mode, atom_count):
     # Paths, mixing weights and random seeds are not potential parameters.
     signature = {k: dict(v) for k, v in config.items() if k != 'files'}
     signature['md'].pop('random_seed')
+    signature['velocity_initialization'] = 'restart' if int(md['random_seed']) == 0 else 'maxwell'
     signature['solvent'].pop('perstate_born_correction')
     signature['atom_restraints'] = positions
     return {'input': str(path), 'input_sha256': fingerprint(path), 'assets_sha256': assets,

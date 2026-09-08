@@ -113,6 +113,29 @@ def test_staged_consistency_is_not_production_qualification(staged):
     assert 'native nonzero unchanged LJ parameters and interaction coverage' in report['unverified']
 
 
+def test_restart_velocity_mode_is_explicit_and_consistent(staged):
+    path, spec = staged
+    for s in range(4):
+        for w in range(3):
+            change_input(spec, 'random_seed 112', 'random_seed 0', series=s, window=w)
+    rewrite(path, spec)
+    report = cp.validate(path)
+    assert report['series'][0]['windows'][0]['signature']['velocity_initialization'] == 'restart'
+    change_input(spec, 'random_seed 0', 'random_seed 112')
+    rewrite(path, spec)
+    with pytest.raises(ValueError, match='settings differ'):
+        cp.validate(path)
+
+
+@pytest.mark.parametrize('value', ['-1', '100000000', '0.5'])
+def test_unsupported_restart_seed_rejected(staged, value):
+    path, spec = staged
+    change_input(spec, 'random_seed 112', 'random_seed '+value)
+    rewrite(path, spec)
+    with pytest.raises(ValueError, match='random_seed'):
+        cp.validate(path)
+
+
 def test_shared_position_is_part_of_system_identity(staged):
     path, spec = staged
     for s in range(4):

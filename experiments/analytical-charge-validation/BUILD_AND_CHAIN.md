@@ -98,6 +98,16 @@ not replace the future campaign-level checks across signs, radii and replicas.
 The source and binary hashes in an isolated build report are rechecked, not merely
 copied as an unverified commit label beside an unrelated executable.
 
+An explicit schema-version-2 `endpoint_preparation` purpose supports the
+[fixed-endpoint preparation schedule](ENDPOINT_PREPARATION.md). It additionally
+pins the grid-start origin and total preparation budget, keeps a fixed endpoint
+weight and retains restart velocities. Only its segment lengths may differ.
+It does not relax the complete monotonic ladder requirement for version 1 and
+cannot be passed to free-energy analysis. Both purposes remain unqualified for
+production. Driver fingerprints now also include the endpoint and probe modules;
+freeze the full implementation before starting a chain and do not mix old and
+new driver versions within an existing run.
+
 ## Inspect or execute exactly one next window
 
 ```sh
