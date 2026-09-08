@@ -65,3 +65,49 @@ remains explicitly SHAKE/SHAKE; SETTLE has not been adopted as its default.
 These are software checks, not equilibrium or physical validation. No
 high-performance computing (HPC) job has been submitted. The analytical
 correction's statistical and physical validation requirements remain in force.
+
+## Final regression checkpoint
+
+On 2026-09-08, source commit `e90d1c429fe4417846257b289eebe83c640ea0e4`
+passed **413 tests, with 2 skips and 2 expected failures**, in 147.67 seconds.
+The remaining expected failures are the archival charge-partition checks,
+not constraint or campaign checks. The four additional minimization/template
+tests check that boundary overrides survive the merge.
+
+The isolated 64-case SHAKE test's worst squared-distance relative residual is
+`9.94479206325028748e-5`, below the unchanged nominal `1e-4` tolerance.
+The original failing matrix cell (c11, negative reverse start, orientation seed
+758982, velocity seed 123) now has water-distance extrema drift
+`1.460484783222249e-6` angstrom, below the unchanged 0.005-angstrom alarm.
+This is a replay on the integrated engine, not an attribution of every numerical
+difference exclusively to SHAKE.
+
+The successful full campaign and its isolated build are copied unchanged under
+`runtime/integration-20260908/{campaign,build}`, excluded from version control.
+The copied build passes archive/source/binary fingerprint validation. Original
+temporary paths inside reports are retained: these are archival evidence copies,
+not relocated runnable campaign manifests.
+
+SHA-256 (a cryptographic hash algorithm) fingerprints:
+
+- Build report: `99658ef6e0ef70de58fa8a3c84acd679170fbb0f43d069edddb8cd524d9fd6f8`.
+- c11 seed log: `60f7ff2a151612528f448aacbab0201034b265e4314c0146ec7b83f98b683908`.
+
+To repeat from this worktree with the test dependencies available in the active
+Python environment:
+
+```sh
+make -C src/q6 qdyn qprep test-lincs test-settle FC=gfortran-11
+mkdir -p src/q6/bin/q6
+cp src/q6/qprep src/q6/qdyn src/q6/bin/q6/
+PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 python -m pytest -q \
+  test/q6 test/qligfep/test_charge_bar.py test/qligfep/test_charge_protocol.py \
+  test/qligfep/test_endpoint_trim.py test/qligfep/test_historical_cmet_reproduction.py \
+  test/qligfep/test_boundary_correction_cli.py test/qligfep/test_templates.py \
+  test/qligfep/test_minimization_option.py
+```
+
+The test-only solver comparisons do not authorize a production solver switch.
+Next work remains multi-observable discard/block sensitivity, between-replica
+and direction/radius comparisons, bounded target-hardware timing and a reviewed
+scheduler package. No production sampling result is implied by this checkpoint.

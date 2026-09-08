@@ -4,12 +4,16 @@ Purpose: validate analytical charged-perturbation corrections in Q's existing
 molecular dynamics (MD) with finite spherical Surface Constraint All-Atom Solvent
 (SCAAS) boundaries. This directory is the production-package entry point, but
 **it is not yet qualified for high-performance computing (HPC) production**.
-No new sampler, integrator, thermostat, radial wall or solvent model is included.
+No new sampler, integrator, thermostat, radial wall or solvent model is developed
+here. The approved integration reuses the existing modernization branch's
+constraint solvers and its SHAKE repair.
 
-Current blocker: the full fresh seed matrix exposes an
-[existing water-constraint convergence defect](CONSTRAINT_BLOCKER.md). The
-[campaign framework](CAMPAIGN.md) preserves that failure; its positive end-to-end
-tests remain expected failures pending approval of a narrow solver repair.
+The [historical water-constraint blocker](CONSTRAINT_BLOCKER.md) is resolved in
+the [modernization integration](MODERNIZATION_INTEGRATION.md): the unchanged
+sixteen-cell [software campaign](CAMPAIGN.md) passes with repaired SHAKE.
+Fresh campaign inputs explicitly select SHAKE/SHAKE and validate the native solver
+report. Other solvers are checked separately, not silently adopted as defaults.
+This resolves a software blocker, not the remaining statistical or physical questions.
 
 The [staged physical protocol](PILOT_PROTOCOL.md) now specifies the minimum
 charge-only questions, a capped 10/14-angstrom feasibility pilot and proposed
@@ -24,9 +28,11 @@ source/build/launch evidence and validates realized restart dependencies.
 An [audited chain analysis](ANALYSIS.md) now reports raw/with-Born estimates,
 overlap and conditional within-window block uncertainty. A bounded
 [fixed-endpoint preparation schedule](ENDPOINT_PREPARATION.md) now retains restart
-velocities and includes its grid-start seed in the compute cap. Campaign generation,
-endpoint-to-ladder transfer and between-replica/direction/radius analysis still need
-implementation before production launch. No angular target was changed.
+velocities and includes its grid-start seed in the compute cap. Campaign generation
+and endpoint-to-ladder transfer are now tested at software-only durations.
+Between-replica/direction/radius analysis, sampling qualification, current-build
+hardware timing and the scheduler package still need work before production launch.
+No angular target was changed.
 Native [trajectory diagnostics](TRAJECTORY_DIAGNOSTICS.md) now cover every MD
 force geometry for cutoff bounds and report temperature, water geometry, radial
 density and shell orientation. Statistical qualification of these observables
