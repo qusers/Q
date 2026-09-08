@@ -12,7 +12,9 @@ from QligFEP import charge_build, charge_probe as probe, charge_target_smoke as 
 from QligFEP import charge_protocol as cp, charge_diagnostics as diag
 
 
-def main(release):
+def main(release, mode='historical-smoke'):
+    if mode not in {'historical-smoke', 'no-softcore'}:
+        raise ValueError('Unknown validation mode')
     release = release.resolve(strict=True)
     project = Path('/projects/prjs2157/astra-charge-change-perturbation').resolve(strict=True)
     if not release.is_relative_to(project) or release == project:
@@ -38,6 +40,7 @@ def main(release):
                 raise ValueError('Unpacked source differs from package')
             sources[str(name)] = expected
     probe._json(release/'started.json', {'job': os.environ['SLURM_JOB_ID'],
+                                       'mode': mode,
                                        'host': platform.node(), 'python': sys.version,
                                        'manifest_sha256': cp.fingerprint(release/'release.json'),
                                        'source_files': sources})
@@ -60,7 +63,8 @@ def main(release):
             observed = diag.assess({'signature': {'md': {'steps': '20'}, 'intervals': {'output': '10'}}},
                                    report['native'], run/'native.log')
             probe._json(run/'geometry.json', observed)
-    targets.stage(Path('/projects/prjs2157/charge-change/runs'), release/'targets')
+    options = {'no_softcore': True, 'weights': (.0001, .5, .9999), 'steps': 2000} if mode == 'no-softcore' else {}
+    targets.stage(Path('/projects/prjs2157/charge-change/runs'), release/'targets', **options)
     matrix = json.loads((release/'targets/matrix.json').read_text())
     results = {}
     with ThreadPoolExecutor(max_workers=4) as pool:
@@ -83,14 +87,17 @@ def main(release):
         raise ValueError('Source package changed during job')
     charge_build.validate(release/'build/build.json')
     report = {'job': os.environ['SLURM_JOB_ID'], 'commit': manifest['commit'], 'cases': results,
+              'mode': mode, 'softcore': matrix['softcore'], 'weights': matrix['weights'],
               'all_target_checks_passed': all(r['passed'] for r in results.values()),
               'production_ready': False, 'free_energy_estimated': False,
-              'maximum_native_steps': 400, 'maximum_aggregate_ps': .4,
-              'requested_cpus': 4, 'requested_walltime_minutes': 20}
+              'maximum_native_steps': matrix['total_steps']+80,
+              'maximum_aggregate_ps': matrix['aggregate_ps']+.08,
+              'requested_cpus': 4,
+              'requested_walltime_minutes': 210 if mode == 'no-softcore' else 20}
     probe._json(release/'summary.json', report)
     print(json.dumps(report, indent=2), flush=True)
     return 0 if report['all_target_checks_passed'] else 1
 
 
 if __name__ == '__main__':
-    raise SystemExit(main(Path(sys.argv[1])))
+    raise SystemExit(main(Path(sys.argv[1]), sys.argv[2] if len(sys.argv) > 2 else 'historical-smoke'))

@@ -20,6 +20,11 @@ both protein-charge signs, water legs and setup directions retain correct
 integrated/post-hoc Born accounting. This is a midpoint compatibility result,
 not a converged binding free-energy comparison.
 
+The user has now selected **no softcore**. The separate
+[no-softcore validation batch](NO_SOFTCORE_VALIDATION.md) tests interior weights
+0.0001, 0.5 and 0.9999 on both targets before longer sampling. Exact endpoints
+are excluded; this short batch does not estimate free energies.
+
 The [staged physical protocol](PILOT_PROTOCOL.md) now specifies the minimum
 charge-only questions, a capped 10/14-angstrom feasibility pilot and proposed
 uncertainty/failure criteria. A fresh Qprep probe generator and bounded existing-MD

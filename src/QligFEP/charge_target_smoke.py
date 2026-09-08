@@ -41,7 +41,11 @@ def zero_offsets(source, destination):
     return info
 
 
-def render(source, radius, integrated):
+def render(source, radius, integrated, *, steps=STEPS, weight=.5):
+    if type(steps) is not int or not 20 <= steps <= 2000 or steps % 10:
+        raise ValueError('Target checks require 20..2000 steps in multiples of ten')
+    if not math.isfinite(weight) or not 0 < weight < 1:
+        raise ValueError('Target checks exclude exact endpoints')
     raw = cp.sections(source)
     required = {'md', 'cut-offs', 'sphere', 'solvent', 'intervals', 'files', 'lambdas'}
     extra = {'trajectory_atoms', 'correction', 'sequence_restraints', 'distance_restraints', 'wall_restraints'}
@@ -54,7 +58,7 @@ def render(source, radius, integrated):
         raise ValueError('Target smoke expects existing rigid water/hydrogen constraints')
     if original.get('shake_solute') != 'off':
         raise ValueError('Unexpected solute constraint selection')
-    md = {'steps': str(STEPS), 'stepsize': '1.0', 'temperature': '298',
+    md = {'steps': str(steps), 'stepsize': '1.0', 'temperature': '298',
           'bath_coupling': original['bath_coupling'], 'random_seed': '0',
           'initial_temperature': '298', 'shake_solvent': 'on', 'shake_hydrogens': 'on',
           'shake_solute': 'off', 'constraint_algorithm': 'shake shake', 'lrf': 'off'}
@@ -81,14 +85,28 @@ def render(source, radius, integrated):
                   'final': 'final.re', 'energy': 'states.en'},
     }
     result = ''.join('['+section+']\n'+''.join(k+' '+v+'\n' for k, v in values.items()) for section, values in config.items())
-    result += '[lambdas]\n0.5 0.5\n'
+    result += f'[lambdas]\n{1-weight:.12g} {weight:.12g}\n'
     for section in ('sequence_restraints', 'distance_restraints', 'wall_restraints'):
         if raw.get(section):
             result += '['+section+']\n'+''.join(' '.join(row)+'\n' for row in raw[section])
     return result
 
 
-def stage_case(input_directory, restart, destination, identity):
+def without_softcore(source):
+    """Remove only the archived softcore settings, preserving all physical tables."""
+    raw = cp.sections(source)
+    if set(raw) != {'fep', 'atoms', 'change_charges', 'atom_types', 'softcore', 'change_atoms'}:
+        raise ValueError('Unsupported target FEP dialect')
+    if cp.keyed(raw['fep']) != {'states': '2', 'softcore_use_max_potential': 'on', 'softcore_method': 'gapsys'}:
+        raise ValueError('Expected historical Gapsys source for explicit no-softcore conversion')
+    result = '[FEP]\nstates 2\nsoftcore_use_max_potential off\nsoftcore_method standard\n'
+    for section, rows in raw.items():
+        if section not in {'fep', 'softcore'}:
+            result += '['+section+']\n'+''.join(' '.join(row)+'\n' for row in rows)
+    return result
+
+
+def stage_case(input_directory, restart, destination, identity, *, no_softcore=False, steps=STEPS, weight=.5):
     destination.mkdir(parents=True, exist_ok=False)
     reference = destination/'reference'
     reference.mkdir()
@@ -116,18 +134,22 @@ def stage_case(input_directory, restart, destination, identity):
         run.mkdir()
         for name in ('dualtop.top', 'FEP1.fep'):
             shutil.copyfile(reference/name, run/name)
+        if no_softcore:
+            (run/'FEP1.fep').write_text(without_softcore(reference/'FEP1.fep'))
         old_offsets = zero_offsets(reference/'eq5.re', run/'start.re')
-        (run/'run.inp').write_text(render(reference/'md_0500_0500.inp', radius, mode == 'integrated'))
+        (run/'run.inp').write_text(render(reference/'md_0500_0500.inp', radius, mode == 'integrated',
+                                        steps=steps, weight=weight))
     plan = {'schema_version': 1, 'identity': identity, 'originals': provenance,
-            'source_restart': old_offsets, 'radius': radius, 'steps_per_run': STEPS,
-            'timestep_fs': 1., 'lambda': [.5, .5], 'production_ready': False,
+            'source_restart': old_offsets, 'radius': radius, 'steps_per_run': steps,
+            'timestep_fs': 1., 'lambda': [1-weight, weight], 'production_ready': False,
+            'softcore': 'none' if no_softcore else 'historical_gapsys',
             'files': {str(f.relative_to(destination)): cp.fingerprint(f)
                       for f in sorted(destination.rglob('*')) if f.is_file()}}
     _json(destination/'plan.json', plan)
     return plan
 
 
-def stage(root, destination):
+def stage(root, destination, *, no_softcore=False, weights=(.5,), steps=STEPS):
     destination.mkdir(parents=True, exist_ok=False)
     cases = []
     for target, (left, right) in EDGES.items():
@@ -136,11 +158,16 @@ def stage(root, destination):
             for leg in ('1.water', '2.protein'):
                 origin = root/f'{target}_pilot__none__r20__{direction}__rep1'/leg/edge
                 identity = {'target': target, 'direction': direction, 'leg': leg, 'edge': edge, 'replica': 1}
-                name = f'{target}-{direction}-{leg}'
-                stage_case(origin/'inputfiles', origin/'FEP1/298/1/eq5.re', destination/name, identity)
-                cases.append(name)
-    _json(destination/'matrix.json', {'cases': cases, 'total_steps': len(cases)*2*STEPS,
-                                    'aggregate_ps': len(cases)*2*STEPS/1000,
+                for weight in weights:
+                    name = f'{target}-{direction}-{leg}'
+                    if tuple(weights) != (.5,):
+                        name += f'-w{weight:.4f}'
+                    stage_case(origin/'inputfiles', origin/'FEP1/298/1/eq5.re', destination/name, identity,
+                               no_softcore=no_softcore, steps=steps, weight=weight)
+                    cases.append(name)
+    _json(destination/'matrix.json', {'cases': cases, 'total_steps': len(cases)*2*steps,
+                                    'aggregate_ps': len(cases)*2*steps/1000,
+                                    'weights': list(weights), 'softcore': 'none' if no_softcore else 'historical_gapsys',
                                     'production_ready': False})
 
 
@@ -151,6 +178,13 @@ def check_run(directory, plan, integrated):
     _json(directory/'initialization.json', audit)
     if text.count('terminated normally.') != 1 or 'terminated abnormally' in text:
         raise ValueError('Target did not complete normally')
+    if plan.get('softcore') == 'none':
+        active = cp.sections(directory/'FEP1.fep')
+        if 'softcore' in active or cp.keyed(active['fep']) != {
+                'states': '2', 'softcore_use_max_potential': 'off', 'softcore_method': 'standard'}:
+            raise ValueError('No-softcore input contract violated')
+        if 'No softcore section found. Using normal LJ potentials.' not in text:
+            raise ValueError('Native executable did not confirm normal LJ potentials')
     if audit['flags'] != [1, int(integrated), 0, 1, 0, 0] or audit.get('constraint_algorithms') != ['shake', 'shake']:
         raise ValueError('Target flags/solver mismatch')
     if audit['water_compatibility'] != [1, 1]:
@@ -161,17 +195,19 @@ def check_run(directory, plan, integrated):
     bn._close(radius, plan['radius'], 'effective radius')
     bn._close(eps, 80., 'dielectric')
     constants = [-ke*(1-1/eps)*(env+row[2])**2/(2*radius) for row in audit['state']]
-    for row, constant in zip(audit['state'], constants):
-        bn._close(row[1], .5, 'midpoint weight')
+    weights = plan['lambda']
+    steps = plan['steps_per_run']
+    for row, constant, weight in zip(audit['state'], constants, weights):
+        bn._close(row[1], weight, 'state weight')
         bn._close(row[-1], constant if integrated else 0., 'Born self energy')
-    observations = diag.assess({'signature': {'md': {'steps': str(STEPS)}, 'intervals': {'output': '10'}}},
+    observations = diag.assess({'signature': {'md': {'steps': str(steps)}, 'intervals': {'output': '10'}}},
                                audit, directory/'native.log')
     final = cp.restart_offsets(directory/'final.re')
     initial = cp.restart_offsets(directory/'start.re')
     if final['atoms'] != initial['atoms'] or final['offset_record_sha256'] != initial['offset_record_sha256']:
         raise ValueError('Target dimensions/frozen offsets changed')
-    saved = list(frames(directory/'states.en', [.5, .5]))
-    if len(saved) != STEPS-1:
+    saved = list(frames(directory/'states.en', weights))
+    if len(saved) != steps-1:
         raise ValueError('Wrong target energy-frame count')
     for frame in saved:
         for values, row in zip(frame, audit['state']):
@@ -180,7 +216,11 @@ def check_run(directory, plan, integrated):
                                 (values[1], sum(values[2:8])+values[14]+row[-1])):
                 if not math.isclose(got, wanted, abs_tol=1e-8, rel_tol=1e-12):
                     raise ValueError('Target pure-state bookkeeping mismatch')
+    gaps = [frame[1][1]-frame[0][1] for frame in saved]
     return {'native': audit, 'born_constants': constants, 'diagnostics': observations,
+            'energy_gap_range_kcal_mol': [min(gaps), max(gaps)],
+            'pure_state_total_ranges_kcal_mol': [[min(f[s][1] for f in saved), max(f[s][1] for f in saved)]
+                                                for s in range(2)],
             'saved_frames': len(saved), 'production_ready': False}, saved
 
 
@@ -207,7 +247,8 @@ def run_case(directory, binary, build_report):
             started = time.perf_counter()
             with (run/'native.log').open('x') as log:
                 result = subprocess.run([str(binary), 'run.inp'], cwd=run, stdout=log,
-                                        stderr=subprocess.STDOUT, timeout=120)
+                                        stderr=subprocess.STDOUT,
+                                        timeout=900 if plan['steps_per_run'] > STEPS else 120)
             if result.returncode:
                 raise ValueError(f'Native {mode} failed with exit {result.returncode}')
             outcomes[mode], saved[mode] = check_run(run, plan, mode == 'integrated')
@@ -234,12 +275,13 @@ def run_case(directory, binary, build_report):
         for name, expected in plan['files'].items():
             if cp.fingerprint(directory/name) != expected:
                 raise ValueError('Staged input changed during run')
-        report = {'gate': 'real_target_midpoint_compatibility_passed', 'identity': plan['identity'],
+        report = {'gate': 'real_target_compatibility_passed', 'identity': plan['identity'],
+                  'lambda': plan['lambda'], 'softcore': plan.get('softcore', 'historical_gapsys'),
                   'runs': outcomes, 'maximum_born_difference_residual': largest,
                   'outputs': {str(f.relative_to(directory)): cp.fingerprint(f) for f in sorted(directory.rglob('*')) if f.is_file()},
                   'production_ready': False,
-                  'limitations': ['midpoint only; no free-energy or endpoint qualification',
-                                  'archived dual-topology Gapsys softcore, not the no-softcore ghost case',
+                  'limitations': ['short fixed-lambda check; no free-energy or endpoint qualification',
+                                  'no-softcore dual topology' if plan.get('softcore') == 'none' else 'archived dual-topology Gapsys softcore',
                                   'new zero-offset/direct-electrostatics Hamiltonian is not equilibrated by old restart',
                                   'legacy Q-region-only angular target; charged-background adequacy untested']}
         _json(directory/'completed.json', report)
