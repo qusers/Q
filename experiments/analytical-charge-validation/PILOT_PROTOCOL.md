@@ -5,6 +5,10 @@ This is a bounded plan for Q's existing molecular dynamics (MD), not a new sampl
 Surface Constraint All-Atom Solvent (SCAAS) forces, thermostat and radial wall remain
 unchanged. High-performance computing (HPC) submission requires user approval.
 
+The [campaign assembly](CAMPAIGN.md) now exposes an existing
+[constraint-convergence blocker](CONSTRAINT_BLOCKER.md) in the full seed matrix.
+The pilot must not launch by loosening that geometry check or replacing its seed.
+
 ## What would answer the original question?
 
 Bookkeeping correctness and physical adequacy are different tests. The native

@@ -36,9 +36,12 @@ def inspect_plan(path):
     keys = {'schema_version', 'engine', 'series', 'initial_restart', 'initial_restart_sha256',
             'build_report', 'build_report_sha256'}
     endpoint = spec.get('schema_version') == 2 and spec.get('purpose') == 'endpoint_preparation'
+    transfer = spec.get('schema_version') == 3 and spec.get('purpose') == 'charge_ladder'
     if endpoint:
         keys |= {'purpose', 'preparation'}
-    if set(spec) != keys or (not endpoint and spec['schema_version'] != 1):
+    if transfer:
+        keys |= {'purpose', 'endpoint_origin'}
+    if set(spec) != keys or (not endpoint and not transfer and spec['schema_version'] != 1):
         raise ValueError('Unsupported chain plan schema')
     build_path = (path.parent/spec['build_report']).resolve()
     if cp.fingerprint(build_path) != spec['build_report_sha256']:
@@ -123,9 +126,14 @@ def inspect_plan(path):
         origin = validate_origin(path, spec, build_path, build, windows)
     elif (weights[0], weights[-1]) != ends or any(orientation*(b-a) <= 0 for a, b in zip(weights, weights[1:])):
         raise ValueError('Require complete monotonic charge-only chain')
+    endpoint_origin = None
+    if transfer:
+        from .charge_campaign import validate_transfer
+        endpoint_origin = validate_transfer(path, spec, windows)
     return {'schema_version': spec['schema_version'], 'gate': 'planned_chain_consistency_passed', 'production_ready': False,
             'purpose': 'endpoint_preparation' if endpoint else 'charge_ladder',
             'preparation_origin': origin if endpoint else None,
+            'endpoint_origin': endpoint_origin,
             'native_trace_required': 'subroutine write_charge_trace' in (build_path.parent/'src/q6/md.f90').read_text(),
             'plan_path': str(path), 'plan_sha256': cp.fingerprint(path),
             'engine': {**engine, 'binary': str(binary)}, 'series': {**series, 'windows': windows},
@@ -133,7 +141,7 @@ def inspect_plan(path):
             'driver_files_sha256': {name: cp.fingerprint(Path(__file__).with_name(name)) for name in
                                    ('charge_chain.py', 'charge_build.py', 'charge_protocol.py',
                                     'charge_completion.py', 'boundary_native.py', 'endpoint_trim.py',
-                                    'charge_endpoint.py', 'charge_probe.py', 'charge_diagnostics.py')},
+                                    'charge_endpoint.py', 'charge_probe.py', 'charge_diagnostics.py', 'charge_campaign.py')},
             'initial_restart': str(initial_path), 'initial_restart_sha256': spec['initial_restart_sha256'],
             'initial_offsets': initial, 'total_steps': sum(int(w['signature']['md']['steps']) for w in windows),
             'limitations': ['future restart contents are not validated until realized',

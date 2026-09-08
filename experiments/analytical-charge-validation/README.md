@@ -6,6 +6,11 @@ molecular dynamics (MD) with finite spherical Surface Constraint All-Atom Solven
 **it is not yet qualified for high-performance computing (HPC) production**.
 No new sampler, integrator, thermostat, radial wall or solvent model is included.
 
+Current blocker: the full fresh seed matrix exposes an
+[existing water-constraint convergence defect](CONSTRAINT_BLOCKER.md). The
+[campaign framework](CAMPAIGN.md) preserves that failure; its positive end-to-end
+tests remain expected failures pending approval of a narrow solver repair.
+
 The [staged physical protocol](PILOT_PROTOCOL.md) now specifies the minimum
 charge-only questions, a capped 10/14-angstrom feasibility pilot and proposed
 uncertainty/failure criteria. A fresh Qprep probe generator and bounded existing-MD
