@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "host": "mysnellius",
+  "campaign": "/projects/prjs2157/charge-change/experiments/cmet-full-pspol-v1",
+  "engine_commit": "55aa555cca226e34cb6ec69aabd03fd571bc1e65",
+  "reference_engine_subdir": "engines/qfep-safebar__55aa555c",
+  "remote_inventory_sha256": "e4aaaa67808158cc7101bf87277d5b834fdd8f7189c2d4282c27357c6dd13e91",
+  "inventory_encoding": "LC_ALL=C sort -k2 of '<file SHA256>  <absolute remote path>\\n', then SHA256 of that UTF-8 text",
+  "selection": [
+    {
+      "label": "fwd-water",
+      "direction": "fwd",
+      "leg": "1.water",
+      "edge": "FEP_CHEMBL3402741_400_CHEMBL3402744_300",
+      "replica": 1,
+      "remote_input": "/projects/prjs2157/charge-change/experiments/cmet-full-pspol-v1/runs/cmet__pspol__r25__fwd__rep1/1.water/FEP_CHEMBL3402741_400_CHEMBL3402744_300/inputfiles",
+      "remote_energy": "/projects/prjs2157/charge-change/experiments/cmet-full-pspol-v1/runs/cmet__pspol__r25__fwd__rep1/1.water/FEP_CHEMBL3402741_400_CHEMBL3402744_300/FEP1/298/1"
+    },
+    {
+      "label": "fwd-protein",
+      "direction": "fwd",
+      "leg": "2.protein",
+      "edge": "FEP_CHEMBL3402741_400_CHEMBL3402744_300",
+      "replica": 1,
+      "remote_input": "/projects/prjs2157/charge-change/experiments/cmet-full-pspol-v1/runs/cmet__pspol__r25__fwd__rep1/2.protein/FEP_CHEMBL3402741_400_CHEMBL3402744_300/inputfiles",
+      "remote_energy": "/projects/prjs2157/charge-change/experiments/cmet-full-pspol-v1/runs/cmet__pspol__r25__fwd__rep1/2.protein/FEP_CHEMBL3402741_400_CHEMBL3402744_300/FEP1/298/1"
+    },
+    {
+      "label": "rev-water",
+      "direction": "rev",
+      "leg": "1.water",
+      "edge": "FEP_CHEMBL3402744_300_CHEMBL3402741_400",
+      "replica": 1,
+      "remote_input": "/projects/prjs2157/charge-change/experiments/cmet-full-pspol-v1/runs/cmet__pspol__r25__rev__rep1/1.water/FEP_CHEMBL3402744_300_CHEMBL3402741_400/inputfiles",
+      "remote_energy": "/projects/prjs2157/charge-change/experiments/cmet-full-pspol-v1/runs/cmet__pspol__r25__rev__rep1/1.water/FEP_CHEMBL3402744_300_CHEMBL3402741_400/FEP1/298/1"
+    },
+    {
+      "label": "rev-protein",
+      "direction": "rev",
+      "leg": "2.protein",
+      "edge": "FEP_CHEMBL3402744_300_CHEMBL3402741_400",
+      "replica": 1,
+      "remote_input": "/projects/prjs2157/charge-change/experiments/cmet-full-pspol-v1/runs/cmet__pspol__r25__rev__rep1/2.protein/FEP_CHEMBL3402744_300_CHEMBL3402741_400/inputfiles",
+      "remote_energy": "/projects/prjs2157/charge-change/experiments/cmet-full-pspol-v1/runs/cmet__pspol__r25__rev__rep1/2.protein/FEP_CHEMBL3402744_300_CHEMBL3402741_400/FEP1/298/1"
+    }
+  ],
+  "lambda1_start": "0.999",
+  "lambda1_end": "0.001",
+  "reference_tolerance_kcal_mol": 0.002,
+  "historical_posthoc_born": {
+    "ke": 332.0637,
+    "epsilon": 80,
+    "inputs": "rounded radius and charges from md_0000_1000.log; matches archived analyze_cmet_results.py",
+    "included_in_saved_energies": false
+  }
+}

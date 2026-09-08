@@ -1,0 +1,211 @@
+{
+  "build_provenance_qualified": false,
+  "compiler": "GNU Fortran (Homebrew GCC 11.5.0) 11.5.0",
+  "date_local": "2026-09-08",
+  "failed_attempts": [
+    {
+      "directory": "r22-neutral-1",
+      "native_log_sha256": "1ae10259283bd259541dbe0a65d819e1a633d6e548c9acd847d8b14a34d85a47",
+      "requested_steps": 1000,
+      "status": "timeout at 60 seconds; no passing report"
+    },
+    {
+      "directory": "r10-negative",
+      "native_log_sha256": "f98973b6141f79bed99eca980a61d742fe2a3d250af79d877540fe9567cc3e43",
+      "requested_steps": 1000,
+      "status": "native run completed, initial checker rejected empty energy record; no passing report"
+    }
+  ],
+  "limitations": [
+    "short unequilibrated serial runs; not free-energy data",
+    "startup and output costs included",
+    "not an HPC throughput measurement",
+    "no confidence interval for throughput or physical convergence"
+  ],
+  "machine": "arm64",
+  "native_source_commit": "df3735d29943df5c0b2895c2effaf5270249705d",
+  "offsets": "frozen zeros",
+  "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "production_ready": false,
+  "qdyn": {
+    "binary": "/Users/davidararipe/projects/Q-rebase/.worktrees/analytical-charge-corrections/src/q6/qdyn",
+    "sha256": "4ff4ed9aa59d07a51cc11323bab725d4f11deee45d26336bf4789004741041e3"
+  },
+  "qprep": {
+    "binary": "/Users/davidararipe/projects/Q-rebase/.worktrees/analytical-charge-corrections/src/q6/qprep",
+    "sha256": "8ba29ff1d766859c7763e7dd278dfcd36d488a3321f2caa46d28616ebf1bc1cd"
+  },
+  "runtime_directory": "experiments/analytical-charge-validation/runtime/local-timing-20260908",
+  "samples": [
+    {
+      "atoms": 439,
+      "effective_radius_angstrom": 10.15,
+      "grid_radius_angstrom": 10,
+      "median_ns_per_day": 82.9592744751654,
+      "prepared_report_sha256": "94398622a5f9460f82cb98d237d6b7a5fd0003e9815b7e3315af2345c6f9a52e",
+      "runs": [
+        {
+          "assets_sha256": {
+            "charge.fep": "b2dff6432271b42ce76c9ff7f59660c4da264ef57d6d66f5c2698ed0770b4592",
+            "final.re": "56f6536ded57ffe0e5d92ce840fc0be2e66c4ee38b54e15f4877520948ed24da",
+            "native.log": "0c0835b2ba6c95928727472243404912cf2a93409be2711f9645978956c86862",
+            "run.inp": "0d56a3a6436a1241d5ee755dea68cccde1ef0b026217450c41cdba355a7ed9c3",
+            "states.en": "e0fd9376628a37f57f976eec12da1a18698b23b721ab4d5170df4256bf344737",
+            "system.top": "129ce7fc0c84ee576864d6c0534a76492867cf07296e47f55cb6a4c2ae974a6d"
+          },
+          "directory": "r10-neutral-1",
+          "ns_per_day_including_startup": 93.06368984233349,
+          "steps": 1000,
+          "timing_report_sha256": "54a7da807bdfc7b7bb3622c84c6072af7fdfc2413e5d1aed5284077b9a2e7059",
+          "wall_seconds_including_startup": 0.9283964578062296
+        },
+        {
+          "assets_sha256": {
+            "charge.fep": "b2dff6432271b42ce76c9ff7f59660c4da264ef57d6d66f5c2698ed0770b4592",
+            "final.re": "6dd88c03589ca873010f0dad10494ae3fdd0ed5ba36b6fc049fab00b82636e6f",
+            "native.log": "9e17a86f90c838962a3bb1ce2550e9230bb8f09d8bf8f7514b88453814040b95",
+            "run.inp": "9203b230615af6e289f12a8148959773d6647aaee3d2c2487048b1840423ca4d",
+            "states.en": "4b499fa86f43c3a5a2be3bcbd48cd3651a7281eef66215e303b97c2dad0086d4",
+            "system.top": "129ce7fc0c84ee576864d6c0534a76492867cf07296e47f55cb6a4c2ae974a6d"
+          },
+          "directory": "r10-neutral-2",
+          "ns_per_day_including_startup": 78.698394793974,
+          "steps": 1000,
+          "timing_report_sha256": "f02d085c9b545c6733beb5ce5de7e13147ad2571c3e55827472c0bfa878a78b9",
+          "wall_seconds_including_startup": 1.0978622909169644
+        },
+        {
+          "assets_sha256": {
+            "charge.fep": "b2dff6432271b42ce76c9ff7f59660c4da264ef57d6d66f5c2698ed0770b4592",
+            "final.re": "3427f8a876525faa87a69408cd2e3f9ce952ea9f59428f38426b02da44105f0e",
+            "native.log": "79c0154638c854f066ce3328c9355c4342a52b6fe0127d1868047247521e6b3e",
+            "run.inp": "d6588362dc30262c32dc437cd8d41a2fc2fec591c68c9a50a7a41fc872508f9d",
+            "states.en": "ebb22429d3ea5bbcff29b941f157359719f25c4171afc70b4ff0e00be2b3d951",
+            "system.top": "129ce7fc0c84ee576864d6c0534a76492867cf07296e47f55cb6a4c2ae974a6d"
+          },
+          "directory": "r10-neutral-3",
+          "ns_per_day_including_startup": 82.9592744751654,
+          "steps": 1000,
+          "timing_report_sha256": "9829a3e2a2078856451537b5c67746cc779dd20bc9b84ed21f303c8d4c947334",
+          "wall_seconds_including_startup": 1.0414748748298734
+        }
+      ],
+      "waters": 146
+    },
+    {
+      "atoms": 1165,
+      "effective_radius_angstrom": 14.04,
+      "grid_radius_angstrom": 14,
+      "median_ns_per_day": 18.593206239719073,
+      "prepared_report_sha256": "928e2d9bf534ff96f3b718b7b5b0e6476de99f086db88f075ed985ec186c5511",
+      "runs": [
+        {
+          "assets_sha256": {
+            "charge.fep": "b2dff6432271b42ce76c9ff7f59660c4da264ef57d6d66f5c2698ed0770b4592",
+            "final.re": "8ef0ada28d707fd16b925166d7332974e55600317a2a0b8ab4cda72735fbbb49",
+            "native.log": "778c9a473e03e96ec99ff4d960be3cef44445afb8c8b3646e605131736623c54",
+            "run.inp": "9116725e33c927af92dfa52a3497579e2253ffb2b0d1e43207b5786bcb83c16d",
+            "states.en": "d88707e49bf9ade025dac660ff7e940c60e58f42a075a27d1a132a1d2aab1792",
+            "system.top": "81d325de6d1d247c9253ca144a283d7e75a3117efa30e0f40f3cb996ea09a3f3"
+          },
+          "directory": "r14-neutral-1",
+          "ns_per_day_including_startup": 19.46175995383313,
+          "steps": 1000,
+          "timing_report_sha256": "e271757cf7069ea36ae84ef14d5a82be4f62fe300196d5760c0702dfc95e27d6",
+          "wall_seconds_including_startup": 4.4394751659128815
+        },
+        {
+          "assets_sha256": {
+            "charge.fep": "b2dff6432271b42ce76c9ff7f59660c4da264ef57d6d66f5c2698ed0770b4592",
+            "final.re": "af04a4fbd5f339e24e223f6ff2af6d1fc6b304351ca47697ba90b57bc7aff509",
+            "native.log": "365b8e8e02569740a06db773c436a78b8c54742fb133b2b8e06fc48a5dd200bb",
+            "run.inp": "abf45e1b830e57564026c28b87fc6f7fb702fb4861fd837a3cf2c981f5522637",
+            "states.en": "57c9466d4d6aa2564e56fd58a94794e3df06f1260c7cd820cce65601c89c68ce",
+            "system.top": "81d325de6d1d247c9253ca144a283d7e75a3117efa30e0f40f3cb996ea09a3f3"
+          },
+          "directory": "r14-neutral-2",
+          "ns_per_day_including_startup": 18.261433505193732,
+          "steps": 1000,
+          "timing_report_sha256": "0f9df8d48c1dc6803483a334ee7e4b0e2e0f4d06f20dfee023c7f58d37cce29e",
+          "wall_seconds_including_startup": 4.731282457942143
+        },
+        {
+          "assets_sha256": {
+            "charge.fep": "b2dff6432271b42ce76c9ff7f59660c4da264ef57d6d66f5c2698ed0770b4592",
+            "final.re": "de17327983beda2e1dcffa7330b1987d58d32e2b34006e3ba8d5448d5ba1a043",
+            "native.log": "6fe3c01447ac2fc2737805cc588454abc46596f9a64e182541a9c8e8f037c425",
+            "run.inp": "57742410e0855f54ce01effba2c9fb2e8c575abfe8a50c367de2abbdad4957e4",
+            "states.en": "3d7cc4af03995e39b246d7b7f51fad587fc5010add3680bd39791a180b1642fd",
+            "system.top": "81d325de6d1d247c9253ca144a283d7e75a3117efa30e0f40f3cb996ea09a3f3"
+          },
+          "directory": "r14-neutral-3",
+          "ns_per_day_including_startup": 18.593206239719073,
+          "steps": 1000,
+          "timing_report_sha256": "cc7eefd314acf95172b2e9bc6199a906b8a1cb49a1e84c1c77d331043aca03f5",
+          "wall_seconds_including_startup": 4.646858582971618
+        }
+      ],
+      "waters": 388
+    },
+    {
+      "atoms": 4507,
+      "effective_radius_angstrom": 22.04,
+      "grid_radius_angstrom": 22,
+      "median_ns_per_day": 1.254775382196143,
+      "prepared_report_sha256": "1ba282d9e7be08c46c2f772845f276b7228304e1937d027794bd93d8ef6928f9",
+      "runs": [
+        {
+          "assets_sha256": {
+            "charge.fep": "b2dff6432271b42ce76c9ff7f59660c4da264ef57d6d66f5c2698ed0770b4592",
+            "final.re": "e690048a3464d0fbb231957a050ea0d57f874e6c2ab64465a3edf4dc8b61a96f",
+            "native.log": "4a2f5bd630c9a1c20eea3e2751210f825485a668ae4bdd6aeb1ea3f7e0aa4b56",
+            "run.inp": "bcd4904f6ce94f578872154f0447e00630bddf8849c53a4d1ab2b158f726a0f8",
+            "states.en": "787320671cf6454e2cb368c1a7d6a3b71e9089ebdd8f479cd1e263d643c53b42",
+            "system.top": "a4807d541d0bd45805f0f278ef0bd20fe1a801ad85844814e42be30117e85223"
+          },
+          "directory": "r22-short-1",
+          "ns_per_day_including_startup": 1.280281740990486,
+          "steps": 200,
+          "timing_report_sha256": "28e6d677af02a61f4bf3046e6baf371de89248950da13aafcc20449397c6c05d",
+          "wall_seconds_including_startup": 13.497029166901484
+        },
+        {
+          "assets_sha256": {
+            "charge.fep": "b2dff6432271b42ce76c9ff7f59660c4da264ef57d6d66f5c2698ed0770b4592",
+            "final.re": "64b0e10ed97d5f64b9d5319ec0c7a66d7ad53e628578f97ec8aec262ee845059",
+            "native.log": "cbf888258df88c4ad579f010de59e280f3c6bcee44ca03735f5e98b0e465d069",
+            "run.inp": "05c9e32a2c7d527b58856ea724074dd71d9ac7d0fb7a55baf8a2e2d57c49d4be",
+            "states.en": "78f69ed025050f1c73c8f38e3ac92d4da1e3a8b5d06f130d4b09e392f7dbd2d9",
+            "system.top": "a4807d541d0bd45805f0f278ef0bd20fe1a801ad85844814e42be30117e85223"
+          },
+          "directory": "r22-short-2",
+          "ns_per_day_including_startup": 1.254775382196143,
+          "steps": 200,
+          "timing_report_sha256": "0b7aeb1e2726122ecc22087420375e2dc3060f6ee45610a399a1cd073592fbea",
+          "wall_seconds_including_startup": 13.771389083005488
+        },
+        {
+          "assets_sha256": {
+            "charge.fep": "b2dff6432271b42ce76c9ff7f59660c4da264ef57d6d66f5c2698ed0770b4592",
+            "final.re": "3416c41ba0553f30c5637de6477610ae792c9c74b0d5dbc05b83fb6915d3524a",
+            "native.log": "042872a1fd293e4a8739d010d507d1323f331225a64c93151cd397e6b4cc0fa2",
+            "run.inp": "20f9e2278fe1a683f311a05a7e9289e5a32f01663df6fac31e3a9e5d9bd6bedd",
+            "states.en": "3d94c138132e12e9ebc4886be68c795aa06810d8efd3cd725fcd4c79e718f282",
+            "system.top": "a4807d541d0bd45805f0f278ef0bd20fe1a801ad85844814e42be30117e85223"
+          },
+          "directory": "r22-short-3",
+          "ns_per_day_including_startup": 1.196058902848273,
+          "steps": 200,
+          "timing_report_sha256": "3907af17df2f438228df9d070a48643d84dcb21a2b2573678a9be5a0cc566d04",
+          "wall_seconds_including_startup": 14.447449000086635
+        }
+      ],
+      "waters": 1502
+    }
+  ],
+  "schema_version": 1,
+  "sign": 1,
+  "state2_weight": 0,
+  "temperature_kelvin": 298,
+  "timestep_fs": 1
+}

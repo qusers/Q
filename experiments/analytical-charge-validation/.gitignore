@@ -1,0 +1,3 @@
+# Generated native inputs, logs, binary energies and restarts are kept locally.
+runtime/
+!LOCAL_TIMING.json

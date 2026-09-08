@@ -25,6 +25,9 @@ module md
   use lincs
   use settle
   use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+  use boundary_corrections, only: born_coefficient, born_self_energy, &
+    polarization_strength, polarization_target, polarization_energy, &
+    polarization_gradient, safe_acos
 
   implicit none
 
@@ -159,6 +162,16 @@ module md
   real(8)                   :: fkwpol
   logical                   :: wpol_restr, wpol_Born
   real(8)                   :: fk_wsphere, crgtot, crgQtot
+  ! Endpoint-resolved spherical-boundary terms. Both are opt-in so legacy
+  ! simulations retain their existing Hamiltonian and energy-file contents.
+  logical                   :: perstate_born = .false.
+  logical                   :: perstate_wpol = .false.
+  logical                   :: wpol_adapt = .true.
+  real(8)                   :: born_eps = 80.0_8
+  real(8)                   :: born_C_override = -1.0_8
+  real(8)                   :: born_C = 0.0_8, born_crg_env = 0.0_8
+  real(8), allocatable      :: born_self_state(:), q_region_state(:)
+  real(8), allocatable      :: wpol_cstb_state(:,:), wpol_state_energy(:)
   integer(ai), allocatable  :: list_sh(:,:), nsort(:,:)
   real(8),  allocatable     :: theta(:), theta0(:), tdum(:)
   integer                   :: nwpolr_shell, n_max_insh
@@ -663,6 +676,10 @@ subroutine md_deallocate
   deallocate(theta, stat=alloc_status)
   deallocate(theta0, stat=alloc_status)
   deallocate(tdum, stat=alloc_status)
+  deallocate(born_self_state, stat=alloc_status)
+  deallocate(q_region_state, stat=alloc_status)
+  deallocate(wpol_cstb_state, stat=alloc_status)
+  deallocate(wpol_state_energy, stat=alloc_status)
 
   ! LRF arrays
   deallocate(iwhich_cgp, lrf, stat=alloc_status)
@@ -3757,6 +3774,19 @@ logical function initialize()
           write(*,'(a)') '>>> ERROR: charge_correction on requires polarization on (section solvent)'
           initialize = .false.
         end if
+        yes=prm_get_logical_by_key('perstate_polarization', perstate_wpol, .false.)
+        yes=prm_get_logical_by_key('polarization_adaptation', wpol_adapt, .true.)
+        if(perstate_wpol .and. (.not. wpol_restr .or. .not. wpol_born)) then
+          write(*,'(a)') '>>> ERROR: perstate_polarization on requires polarization and charge_correction on'
+          initialize = .false.
+        end if
+        yes=prm_get_logical_by_key('perstate_born_correction', perstate_born, .false.)
+        yes=prm_get_real8_by_key('born_dielectric', born_eps, 80.0_8)
+        yes=prm_get_real8_by_key('born_coefficient', born_C_override, -1.0_8)
+        if(perstate_born .and. born_eps <= 1.0_8 .and. born_C_override <= 0.0_8) then
+          write(*,'(a)') '>>> ERROR: born_dielectric must be > 1 for perstate_born_correction'
+          initialize = .false.
+        end if
         if(.not. prm_get_real8_by_key('polarization_force', fkwpol)) then
           write(*,'(a)') 'Solvent polarization force constant set to default'
           fkwpol = -1 ! this will be set in water_sphere, once target radius is known
@@ -5572,6 +5602,9 @@ subroutine md_run
     ! --- start of time step ---
     ! get potential energy and derivatives from FF
     call pot_energy
+#ifndef Q_TEST_DISABLE_CHARGE_TRACE
+    if (perstate_wpol .and. nodeid == 0 .and. .not. use_PBC) call write_charge_trace(Temp)
+#endif
 
     ! NEQ work integral. NOTE: the window (istep in [2, nsteps-2]) drops the first two
     ! steps and the final step -- kept verbatim from the original NEQ engine; whether
@@ -5726,6 +5759,9 @@ end if
 call make_pair_lists
 call pot_energy
 if (nodeid .eq. 0) then
+#ifndef Q_TEST_DISABLE_CHARGE_TRACE
+  if (perstate_wpol .and. .not. use_PBC) call write_charge_trace(Temp)
+#endif
   write(*,*)
   call write_out
   call write_xfin
@@ -13894,6 +13930,11 @@ subroutine nonbond_qw_3atom
         r6_1 = 1._8/r6_1_hc     !softcore hack
         r6_2 = 1._8/r6_2_hc     !softcore hack
         r6_3 = 1._8/r6_3_hc     !softcore hack
+        ! The force expressions below also use these denominators when no atom
+        ! types change. In the ordinary charge-only path their ratios must be 1.
+        r6_1_sc = r6_1_hc
+        r6_2_sc = r6_2_hc
+        r6_3_sc = r6_3_hc
 
         V_a1  = iaclib(iaci)%avdw(iLJ1)*a1(iLJ1)*r6_1*r6_1
         V_b1  = iaclib(iaci)%bvdw(iLJ1)*b1(iLJ1)*r6_1
@@ -15983,6 +16024,7 @@ subroutine pot_energy
       EQ(istate)%total =  EQ(istate)%q%bond + EQ(istate)%q%angle   &
         + EQ(istate)%q%torsion  + EQ(istate)%q%improper + EQ(istate)%qx%el &
         + EQ(istate)%qx%vdw  + EQ(istate)%restraint
+      if (perstate_born) EQ(istate)%total = EQ(istate)%total + born_self_state(istate)
 
       ! update E with an average of all states
       E%q%bond  = E%q%bond  + EQ(istate)%q%bond *EQ(istate)%lambda
@@ -15992,8 +16034,16 @@ subroutine pot_energy
       E%qx%el    = E%qx%el    + EQ(istate)%qx%el   *EQ(istate)%lambda
       E%qx%vdw   = E%qx%vdw   + EQ(istate)%qx%vdw  *EQ(istate)%lambda
 
-      ! update E%restraint%protein with an average of all states
-      E%restraint%protein = E%restraint%protein + EQ(istate)%restraint*EQ(istate)%lambda
+      ! Keep endpoint-resolved water-polarization energies in EQ%restraint for
+      ! qfep, but report their lambda mixture in the water_pol output bucket.
+      if (perstate_wpol) then
+        E%restraint%protein = E%restraint%protein + &
+          (EQ(istate)%restraint-wpol_state_energy(istate))*EQ(istate)%lambda
+        E%restraint%water_pol = E%restraint%water_pol + &
+          wpol_state_energy(istate)*EQ(istate)%lambda
+      else
+        E%restraint%protein = E%restraint%protein + EQ(istate)%restraint*EQ(istate)%lambda
+      end if
     end do
 
     ! total energy summary
@@ -16004,6 +16054,8 @@ subroutine pot_energy
       E%p%improper + E%pp%el + E%pp%vdw + E%pw%el + E%pw%vdw + E%ww%el + &
       E%ww%vdw + E%q%bond + E%q%angle + E%q%torsion + &
       E%q%improper + E%qx%el + E%qx%vdw + E%restraint%total + E%LRF
+    if (perstate_born) E%potential = E%potential + &
+      dot_product(EQ(1:nstates)%lambda, born_self_state(1:nstates))
   end if
 
   ! NEQ: dU/dlambda for the work integral (sign-flipped so the accumulator adds
@@ -16016,6 +16068,7 @@ subroutine pot_energy
          (EQ(2)%qx%el      - EQ(1)%qx%el)      + &
          (EQ(2)%qx%vdw     - EQ(1)%qx%vdw)     + &
          (EQ(2)%restraint  - EQ(1)%restraint)
+    if (perstate_born) dU = dU + born_self_state(2) - born_self_state(1)
     dU_dlambda = -dU
     EQ(1:2)%lambda = old_lambda(:)
   end if
@@ -16370,6 +16423,10 @@ subroutine prep_sim
     call centered_heading('Initializing dynamics', '-')
   end if
 
+  if ((perstate_born .or. perstate_wpol) .and. nwat <= 0) then
+    call die('per-state spherical-boundary corrections require explicit solvent')
+  end if
+
   ! Set parameters (bonds, angles, charges,...) & restraints for water
   if(nwat > 0) then
     select case (solvent_type)
@@ -16384,6 +16441,8 @@ subroutine prep_sim
     if( .not. use_PBC ) then
       call wat_sphere
       if (wpol_restr) call wat_shells
+      call init_perstate_born
+      if (perstate_wpol .and. nodeid == 0) call write_boundary_audit
 
     else !compute charges of the system for box case 
       !(done in subroutine wat_sphere for sphere case)
@@ -17634,14 +17693,20 @@ subroutine wat_sphere
   write (*,60) 'excluded atoms', crgexcl
 60 format ('Total charge of ',a,t41,'= ',f10.2)
 
-  !calc effective charge of simulation sphere at this lambda
-  crgQtot = 0.0
-  do i = 1, nqat
-    do istate = 1, nstates
-      crgtot = crgtot + qcrg(i,istate)*EQ(istate)%lambda
-      crgQtot = crgQtot + qcrg(i,istate)*EQ(istate)%lambda
+  ! Calculate both pure-state Q-region charges and their lambda mixture. The
+  ! legacy restraint uses only the mixture; endpoint-resolved polarization uses
+  ! the pure-state values below.
+  if (allocated(q_region_state)) deallocate(q_region_state)
+  allocate(q_region_state(nstates), stat=alloc_status)
+  call check_alloc('pure-state Q-region charges')
+  q_region_state(:) = 0.0_8
+  do istate = 1, nstates
+    do i = 1, nqat
+      q_region_state(istate) = q_region_state(istate) + qcrg(i,istate)
     end do
   end do
+  crgQtot = dot_product(q_region_state(1:nstates), EQ(1:nstates)%lambda)
+  crgtot = crgtot + crgQtot
   write (*,70) crgtot
 70 format ('Total charge of system                  = ',f10.2)
 
@@ -17678,10 +17743,10 @@ subroutine wat_sphere
   if(.not. wpol_restr) then
     write(*,92) 'OFF'
   else if(wpol_born) then
-    write(*,92) 'ON, Born correction enabled'
+    write(*,92) 'ON, charge-dependent target enabled'
     write(*, 100) fkwpol
   else
-    write(*,92) 'ON, Born correction disabled'
+    write(*,92) 'ON, charge-dependent target disabled'
     write(*, 100) fkwpol
   end if
 100 format('Radial polarization force constant      = ',f10.2)
@@ -17690,12 +17755,211 @@ end subroutine wat_sphere
 
 !-----------------------------------------------------------------------
 
+subroutine init_perstate_born
+  ! Precompute the missing-exterior Born self-energy for every pure Q state.
+  integer :: i, istate
+  real(8) :: q_sphere
+
+  if (.not. perstate_born) return
+  if (nstates <= 0) call die('perstate_born_correction requires alchemical states')
+  if (rwat <= 0.0_8) call die('perstate_born_correction requires a positive solvent radius')
+
+  born_crg_env = 0.0_8
+  do i = 1, nat_solute
+    if (.not. excl(i) .and. iqatom(i) == 0) born_crg_env = born_crg_env + crg(i)
+  end do
+
+  if (born_C_override > 0.0_8) then
+    born_C = born_C_override
+  else
+    born_C = born_coefficient(coulomb_constant, born_eps, rwat)
+  end if
+
+  if (allocated(born_self_state)) deallocate(born_self_state)
+  allocate(born_self_state(nstates), stat=alloc_status)
+  call check_alloc('per-state Born self-energies')
+
+  write(*,'(a)') 'Per-state Born correction              : ON'
+  write(*,'(a,f10.2)') 'In-sphere non-Q charge                 = ', born_crg_env
+  write(*,'(a,f10.4)') 'Born coefficient                       = ', born_C
+  do istate = 1, nstates
+    q_sphere = born_crg_env + q_region_state(istate)
+    born_self_state(istate) = born_self_energy(q_sphere, born_C)
+    write(*,'(a,i2,a,f8.2,a,f12.4)') 'State ', istate, '  Q_s = ', q_sphere, &
+      '  E_Born = ', born_self_state(istate)
+  end do
+end subroutine init_perstate_born
+
+!-----------------------------------------------------------------------
+
+subroutine write_boundary_audit
+  ! Read-only initialization record, before charge scaling. No target changes.
+  integer :: i, iq, s, shell_index, site, uniform_water, zero_h_lj, audit_wall_count
+  real(8) :: env_in, env_out, q_in, q_out, applied_born, max_radius, audit_lrf_cutoff
+  env_in=0; env_out=0; max_radius=0
+  do i=1,natom
+    max_radius=max(max_radius,sqrt(sum((x(3*i-2:3*i)-xwcent)**2)))
+    if (i > nat_solute .or. iqatom(i) /= 0) cycle
+    if (excl(i)) then
+      env_out=env_out+crg(i)
+    else
+      env_in=env_in+crg(i)
+    end if
+  end do
+  write(*,'(a)') 'Q_BOUNDARY_AUDIT_V3 BEGIN'
+  write(*,'(a)') 'QBA_CONVENTION 1' !1 = existing Q-region-only angular target
+  write(*,'(a,8i10)') 'QBA_META ',natom,nat_solute,nwat,nqat,nstates,nwpolr_shell,ivdw_rule,solvent_type
+  write(*,'(a,6i4)') 'QBA_FLAGS ',merge(1,0,perstate_wpol),merge(1,0,perstate_born), &
+    merge(1,0,wpol_adapt),merge(1,0,qvdw_flag),merge(1,0,use_LRF),merge(1,0,use_PBC)
+  write(*,'(a,12es26.17e3)') 'QBA_PARAMETERS ',rwat,rwat_in,coulomb_constant,born_eps,born_C_override, &
+    env_in,env_out,fkwpol,fk_wsphere,Dwmz,awmz,max_radius
+  write(*,'(a,3es26.17e3)') 'QBA_CENTER ',xwcent
+  write(*,'(a,3es26.17e3)') 'QBA_SOLUTE_BOUNDARY ',rexcl_i,rexcl_o,fk_pshell
+  ! Report loaded optional restraints as well as boundary restraints. In modes
+  ! without wall restraints their legacy count need not have been initialized.
+  audit_wall_count=0
+  if (allocated(rstwal)) audit_wall_count=size(rstwal)
+  write(*,'(a,6i10)') 'QBA_RESTRAINT_COUNTS ',nrstr_seq,nrstr_pos,nrstr_dist,nrstr_angl, &
+    audit_wall_count,implicit_rstr_from_file
+  do i=1,nrstr_pos
+    write(*,'(a,2i10,6es26.17e3,i10)') 'QBA_POSITION ',i,rstpos(i)%i,rstpos(i)%x,rstpos(i)%fk,rstpos(i)%ipsi
+  end do
+  ! The inactive LRF variable need not have been initialized by input parsing.
+  ! Zero in this record denotes disabled, not a zero-distance active cutoff.
+  audit_lrf_cutoff=0
+  if (use_LRF) audit_lrf_cutoff=RcLRF
+  write(*,'(a,5es26.17e3)') 'QBA_CUTOFFS ',Rcpp,Rcpw,Rcww,Rcq,audit_lrf_cutoff
+  write(*,'(a,2es26.17e3)') 'QBA_WATER ',real(rho_wat,8),real(mu_w,8)
+  uniform_water=1; zero_h_lj=1
+  do i=nat_solute+1,natom
+    site=nat_solute+1+mod(i-nat_solute-1,3)
+    if (iac(i) /= iac(site) .or. crg(i) /= crg(site)) uniform_water=0
+    if (mod(i-nat_solute,3) == 1) cycle
+    if (any(iaclib(iac(i))%avdw /= 0) .or. any(iaclib(iac(i))%bvdw /= 0)) zero_h_lj=0
+  end do
+  write(*,'(a,2i4)') 'QBA_WATER_COMPATIBILITY ',uniform_water,zero_h_lj
+  do site=1,3
+    i=nat_solute+site
+    write(*,'(a,2i10,8es26.17e3)') 'QBA_WATER_ATOM ',site,iac(i),iaclib(iac(i))%mass, &
+      real(crg(i),8),iaclib(iac(i))%avdw,iaclib(iac(i))%bvdw
+  end do
+  do s=1,nstates
+    q_in=0; q_out=0; applied_born=0
+    do iq=1,nqat
+      if (excl(iqseq(iq))) then
+        q_out=q_out+qcrg(iq,s)
+      else
+        q_in=q_in+qcrg(iq,s)
+      end if
+    end do
+    if (perstate_born) applied_born=born_self_state(s)
+    write(*,'(a,i10,5es26.17e3)') 'QBA_STATE ',s,EQ(s)%lambda,q_region_state(s),q_in,q_out,applied_born
+  end do
+  do iq=1,nqat
+    i=iqseq(iq)
+    write(*,'(a,4i10,*(es26.17e3))') 'QBA_QATOM ',iq,i,merge(1,0,excl(i)),iac(i), &
+      iaclib(iac(i))%mass,iaclib(iac(i))%avdw,iaclib(iac(i))%bvdw,real(qcrg(iq,:),8)
+  end do
+  do shell_index=1,nwpolr_shell
+    write(*,'(a,i10,*(es26.17e3))') 'QBA_SHELL ',shell_index,wshell(shell_index)%rout, &
+      wshell(shell_index)%dr,real(wshell(shell_index)%theta_corr,8),wpol_cstb_state(shell_index,:)
+  end do
+  write(*,'(a)') 'Q_BOUNDARY_AUDIT_V3 END'
+end subroutine write_boundary_audit
+
+subroutine write_charge_trace(current_temperature)
+  ! Observations only, at every MD force geometry (steps 0..nsteps).
+  ! Never call temperature(), SHAKE, random generators, or any force routine.
+  use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+  real(8), intent(in) :: current_temperature
+  integer, save :: evaluations=0, invalid=0
+  real(8), save :: max_radius=0, max_qradius=0, oh_min, oh_max, hh_min, hh_max
+  real(8), save :: temp_min, temp_max, free_min, free_max
+  integer :: i, j, k, iw, is, bin, density(21), populations(nwpolr_shell)
+  real(8) :: radius, qradius, oh1, oh2, hh, radial(3), h1(3), h2(3), dipole(3), length, cosine
+  real(8) :: moments(nwpolr_shell), squares(nwpolr_shell)
+  logical :: snapshot
+  if (istep == 0) then
+    evaluations=0; invalid=0; max_radius=0; max_qradius=0
+    oh_min=huge(1.0_8); oh_max=0; hh_min=huge(1.0_8); hh_max=0
+    temp_min=huge(1.0_8); temp_max=0; free_min=huge(1.0_8); free_max=0
+  end if
+  evaluations=evaluations+1
+  snapshot=(mod(istep,iout_cycle) == 0 .or. istep == nsteps)
+  qradius=0; density=0; populations=0; moments=0; squares=0
+  if (.not. all(ieee_is_finite(x)) .or. .not. all(ieee_is_finite(v))) then
+    invalid=invalid+1
+  else
+    do i=1,natom
+      radius=sqrt(sum((x(3*i-2:3*i)-xwcent)**2))
+      if (.not. ieee_is_finite(radius)) then
+        invalid=invalid+1
+        cycle
+      end if
+      max_radius=max(max_radius,radius)
+      if (iqatom(i) /= 0) qradius=max(qradius,radius)
+    end do
+    max_qradius=max(max_qradius,qradius)
+    do iw=1,nwat
+      i=3*(nat_solute+3*(iw-1))
+      radial=x(i+1:i+3)-xwcent
+      h1=x(i+4:i+6)-x(i+1:i+3)
+      h2=x(i+7:i+9)-x(i+1:i+3)
+      oh1=sqrt(sum(h1*h1)); oh2=sqrt(sum(h2*h2)); hh=sqrt(sum((h1-h2)**2))
+      radius=sqrt(sum(radial*radial)); dipole=h1+h2; length=sqrt(sum(dipole*dipole))
+      if (.not. all(ieee_is_finite([oh1,oh2,hh,radius,length])) .or. &
+          min(oh1,oh2,hh,length) <= 0) then
+        invalid=invalid+1
+        cycle
+      end if
+      oh_min=min(oh_min,oh1,oh2); oh_max=max(oh_max,oh1,oh2)
+      hh_min=min(hh_min,hh); hh_max=max(hh_max,hh)
+      if (.not. snapshot) cycle
+      bin=21
+      if (radius < rwat) bin=1+int(20*radius/rwat)
+      density(bin)=density(bin)+1
+      ! Reproduce the existing hard-shell membership; do not change it.
+      if (radius > real(wshell(nwpolr_shell)%rout-wshell(nwpolr_shell)%dr,8)) then
+        is=1
+        do j=nwpolr_shell,2,-1
+          if (radius <= real(wshell(j)%rout,8)) then
+            is=j
+            exit
+          end if
+        end do
+        cosine=max(-1.0_8,min(1.0_8,sum(dipole*radial)/(length*radius)))
+        populations(is)=populations(is)+1
+        moments(is)=moments(is)+cosine
+        squares(is)=squares(is)+cosine*cosine
+      end if
+    end do
+  end if
+  if (.not. ieee_is_finite(current_temperature) .or. .not. ieee_is_finite(Tfree)) then
+    invalid=invalid+1
+  else
+    temp_min=min(temp_min,current_temperature); temp_max=max(temp_max,current_temperature)
+    free_min=min(free_min,Tfree); free_max=max(free_max,Tfree)
+    if (min(current_temperature,Tfree) <= 0) invalid=invalid+1
+  end if
+  if (.not. snapshot) return
+  write(*,'(a,3i12,13es26.17e3)') 'Q_CHARGE_TRACE_V1 ',istep,evaluations,invalid, &
+    max_radius,qradius,max_qradius,oh_min,oh_max,hh_min,hh_max,current_temperature,Tfree, &
+    temp_min,temp_max,free_min,free_max
+  write(*,'(a,i12,21i10)') 'QCT_DENSITY ',istep,density
+  do k=1,nwpolr_shell
+    write(*,'(a,3i12,2es26.17e3)') 'QCT_SHELL ',istep,k,populations(k),moments(k),squares(k)
+  end do
+end subroutine write_charge_trace
+
+!-----------------------------------------------------------------------
+
 subroutine wat_shells
    ! set up the shells for polarization restraining
+  use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 
    ! local variables
   real(8)                                         ::      rout, dr, ri, Vshell, rshell, drs
-  integer                                         ::      is, n_insh
+  integer                                         ::      is, n_insh, istate
 
 
   integer                                         ::      nwpolr_shell_restart, filestat
@@ -17717,17 +17981,40 @@ subroutine wat_shells
   allocate(wshell(nwpolr_shell), stat=alloc_status)
   call check_alloc('water polarization shell array')
 
+  if (perstate_wpol) then
+    if (nstates <= 0) call die('perstate_polarization requires alchemical states')
+    allocate(wpol_cstb_state(nwpolr_shell,nstates), &
+      wpol_state_energy(nstates), stat=alloc_status)
+    call check_alloc('per-state water polarization arrays')
+    wpol_state_energy(:) = 0.0_8
+    write(*,'(a)') 'Endpoint-resolved polarization         : ON'
+    if (wpol_adapt) then
+      write(*,'(a)') 'Polarization offset adaptation         : ON'
+    else
+      write(*,'(a)') 'Polarization offset adaptation         : OFF (frozen)'
+    end if
+  end if
+
   write(*, 100) nwpolr_shell
 100 format(/,'Setting up ', i1, ' water shells for polarization restraints.')
 
   if(restart) then !try to load theta_corr from restart file
+    nwpolr_shell_restart = 0
     read(2, iostat=filestat) nwpolr_shell_restart
     if(filestat /= 0 .or. nwpolr_shell_restart /= nwpolr_shell) then
+      ! Frozen offsets are part of the production Hamiltonian, not optional
+      ! restart metadata. Never silently replace them with a different target.
+      if (perstate_wpol .and. .not. wpol_adapt) &
+        call die('Frozen per-state polarization requires restart offsets with matching shell count')
       write(*,102)
       wshell(:)%theta_corr = 0.
     else
-      backspace(2)
-      read(2) nwpolr_shell_restart, wshell(:)%theta_corr
+      backspace(2, iostat=filestat)
+      if (filestat /= 0) call die('Cannot reread polarization restart offsets')
+      read(2, iostat=filestat) nwpolr_shell_restart, wshell(:)%theta_corr
+      if (filestat /= 0) call die('Incomplete polarization restart offsets')
+      if (.not. all(ieee_is_finite(wshell(:)%theta_corr))) &
+        call die('Nonfinite polarization restart offsets')
       write(*,103)
     end if
   else
@@ -17757,6 +18044,12 @@ subroutine wat_shells
 
     ! --- Note below: 0.98750 = (1-1/epsilon) for water
     wshell(is)%cstb = crgQtot*0.98750/(rho_wat*mu_w*4.*pi*rshell**2)
+    if (perstate_wpol) then
+      do istate = 1, nstates
+        wpol_cstb_state(is,istate) = polarization_strength(q_region_state(istate), &
+          0.98750_8, real(rho_wat,8), real(mu_w,8), rshell)
+      end do
+    end if
     write(*, 110) is, rout, ri
     rout = rout - dr
   end do
@@ -17770,9 +18063,10 @@ end subroutine wat_shells
 
 subroutine watpol
    ! local variables
-  integer                                         :: iw,is,i,i3,il,jl,jw,imin,jmin
+  integer                                         :: iw,is,i,i3,il,jl,jw,imin,jmin,istate
   real(8)                                         :: dr,rw,rshell,rm,rc,scp
   real(8)                                         :: tmin,arg,avtdum,dv,f0
+  real(8)                                         :: theta_base, theta_target, target_average, state_energy
   real(8), save                                   :: f1(9),f2(3)
   real(8), save                                   :: rmu(3),rcu(3)
 
@@ -17782,6 +18076,7 @@ subroutine watpol
 
   ! reset wshell%n_insh
   wshell(:)%n_insh = 0
+  if (perstate_wpol) wpol_state_energy(:) = 0.0_8
 
   ! calculate theta(:), tdum(:), wshell%n_insh
   do iw = 1, nwat
@@ -17850,9 +18145,19 @@ subroutine watpol
     do is = 1, nwpolr_shell
       wshell(is)%avtheta = wshell(is)%avtheta / real (itdis_update)
       wshell(is)%avn_insh = wshell(is)%avn_insh / real (itdis_update)
-      wshell(is)%theta_corr = wshell(is)%theta_corr + wshell(is)%avtheta-acos(wshell(is)%cstb)
+      if (perstate_wpol) then
+        target_average = 0.0_8
+        do istate = 1, nstates
+          target_average = target_average + EQ(istate)%lambda * &
+            safe_acos(wpol_cstb_state(is,istate))
+        end do
+      else
+        target_average = safe_acos(real(wshell(is)%cstb,8))
+      end if
+      if (wpol_adapt) wshell(is)%theta_corr = wshell(is)%theta_corr + &
+        wshell(is)%avtheta-target_average
       write (*,10) is,wshell(is)%avn_insh,wshell(is)%avtheta/deg2rad, &
-        acos(wshell(is)%cstb)/deg2rad,wshell(is)%theta_corr/deg2rad
+        target_average/deg2rad,wshell(is)%theta_corr/deg2rad
 10    format(i5,1x,f6.1,3x,f8.3,3x,f8.3,3x,f8.3)
       wshell(is)%avtheta = 0.0
       wshell(is)%avn_insh = 0.0
@@ -17865,17 +18170,32 @@ subroutine watpol
     do il = 1, wshell(is)%n_insh
       iw = nsort(il,is)
       arg = 1. + (1. - 2.*real(il))/real(wshell(is)%n_insh)
-      theta0(il) = acos ( arg )
-      theta0(il) = theta0(il)-3.*sin(theta0(il))*wshell(is)%cstb/2.
-      if ( theta0(il) .lt. 0.0 ) theta0(il) = 0.0
-      if ( theta0(il) .gt. pi)   theta0(il) = pi
+      theta_base = acos(arg)
 
       avtdum = avtdum + theta(iw)
 
-      E%restraint%water_pol = E%restraint%water_pol + 0.5*fkwpol* &
-        (theta(iw)-theta0(il)+wshell(is)%theta_corr)**2
+      if (perstate_wpol) then
+        theta0(il) = 0.0_8
+        dv = 0.0_8
+        do istate = 1, nstates
+          theta_target = polarization_target(theta_base, wpol_cstb_state(is,istate))
+          theta0(il) = theta0(il) + EQ(istate)%lambda*theta_target
+          state_energy = polarization_energy(theta(iw), theta_target, &
+            real(wshell(is)%theta_corr,8), fkwpol)
+          wpol_state_energy(istate) = wpol_state_energy(istate) + state_energy
+          EQ(istate)%restraint = EQ(istate)%restraint + state_energy
+          dv = dv + EQ(istate)%lambda * polarization_gradient(theta(iw), &
+            theta_target, real(wshell(is)%theta_corr,8), fkwpol)
+        end do
+      else
+        theta0(il) = theta_base-3.*sin(theta_base)*wshell(is)%cstb/2.
+        if ( theta0(il) .lt. 0.0 ) theta0(il) = 0.0
+        if ( theta0(il) .gt. pi)   theta0(il) = pi
 
-      dv = fkwpol*(theta(iw)-theta0(il)+wshell(is)%theta_corr)
+        E%restraint%water_pol = E%restraint%water_pol + 0.5*fkwpol* &
+          (theta(iw)-theta0(il)+wshell(is)%theta_corr)**2
+        dv = fkwpol*(theta(iw)-theta0(il)+wshell(is)%theta_corr)
+      end if
 
       i  = nat_solute + iw*3-2
       i3 = i*3-3

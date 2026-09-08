@@ -1,0 +1,6 @@
+raw/
+engine-build/
+analysis/
+download-files.json
+!selection.json
+!result.json

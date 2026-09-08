@@ -157,6 +157,7 @@ dmypy.json
 
 # Compiled Object files
 qdyn
+/src/q6/qprep
 *.slo
 *.lo
 *.o
@@ -220,4 +221,5 @@ benchmark/FEP_ligand_binding/2.Q7/2.water/
 
 !test/q6/**
 test/*.png
-
+src/q6/test_lincs
+src/q6/test_settle
