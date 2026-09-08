@@ -8,7 +8,7 @@ import pytest
 from scipy.special import ndtri
 
 from QligFEP import charge_bar as cb
-from QligFEP.charge_analysis import native_boltzmann
+from QligFEP.charge_analysis import native_boltzmann, aligned_observables
 
 
 def test_cli_requires_explicit_discard_choice(tmp_path):
@@ -124,6 +124,62 @@ def test_short_native_like_trace_does_not_get_confidence_interval():
     result = cb.ladder(gaps, weights, beta=1., bootstrap=50)
     assert result['conditional_interval_95'] is None
     assert not result['gap_statistical_gates_passed']
+
+
+def test_slow_nonenergy_observable_controls_blocks_without_changing_bar():
+    gaps, weights, _ = harmonic_ladder(1000)
+    rng = np.random.default_rng(922)
+    slow = np.zeros(1000)
+    for index in range(1, len(slow)):
+        slow[index] = .98*slow[index-1]+rng.normal()
+    panel = [{'polarization': slow, 'empty_density_bin': np.zeros(1000)} for _ in gaps]
+    gap_only = cb.ladder(gaps, weights, beta=1., bootstrap=50)
+    result = cb.ladder(gaps, weights, beta=1., bootstrap=50, observables=panel)
+    assert gap_only['statistical_gates_passed']
+    assert result['delta_g_0_to_sign'] == gap_only['delta_g_0_to_sign']
+    assert not result['statistical_gates_passed']
+    assert result['conditional_interval_95'] is None
+    for metric in result['windows']:
+        assert metric['slowest_observable'] == 'polarization'
+        assert metric['g'] > metric['gap_g']
+        assert metric['block_length'] >= 5*metric['g']
+        assert metric['observable_correlations']['empty_density_bin']['constant_trace']
+
+
+def test_explicit_blocks_must_cover_slow_observable_too():
+    gaps, weights, _ = harmonic_ladder(1000)
+    signal = np.sin(np.arange(1000)/30.)
+    result = cb.ladder(gaps, weights, beta=1., block_length=10, bootstrap=50,
+                       observables=[{'slow': signal} for _ in gaps])
+    assert result['conditional_interval_95'] is None
+    assert any('block shorter' in failure for failure in result['failures'])
+
+
+@pytest.mark.parametrize('panels', [[{}]*3, [{'energy_gap': [0]*100}]*3,
+                                  [{'temp': [0]*99}]*3, [{'temp': [0]*100}]*2])
+def test_missing_misaligned_or_reserved_observables_rejected(panels):
+    gaps, weights, _ = harmonic_ladder(100)
+    with pytest.raises(ValueError, match='observable|Observable'):
+        cb.ladder(gaps, weights, beta=1., bootstrap=50, observables=panels)
+
+
+def test_native_observables_match_energy_steps_not_trace_array_indices(monkeypatch, tmp_path):
+    from QligFEP import charge_diagnostics
+    records = [{'step': step, 'values': [float(step)]*13, 'density': [step]*21,
+                'shells': [[step, .1*step, .2*step]]} for step in range(0, 41, 10)]
+    monkeypatch.setattr(charge_diagnostics, 'trace', lambda *a, **k: records)
+    definition = {'signature': {'md': {'steps': '40'}, 'intervals': {'output': '10', 'energy': '10'}}}
+    native = {'meta': [0, 0, 100, 0, 0, 1], 'parameters': [10.]}
+    panel, matching = aligned_observables(tmp_path/'native.log', definition, native, 1, 2)
+    assert panel['temperature_total_kelvin'] == [20., 30.]
+    assert panel['q_radius_angstrom'] == [20., 30.]
+    assert panel['shell_1_radial_sum'] == [2., 3.]
+    assert matching['first_retained_energy_step'] == 20
+    assert matching['last_retained_energy_step'] == 30
+    assert matching['matched_frames'] == 2
+    records.pop(2)  # An absent middle sample must not be interpolated or skipped.
+    with pytest.raises(ValueError, match='every retained energy step'):
+        aligned_observables(tmp_path/'native.log', definition, native, 1, 2)
 
 
 @pytest.mark.parametrize('weights', [[.001, .5, .999], [0, 1, .5], [0, 0, 1]])

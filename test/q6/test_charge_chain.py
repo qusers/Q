@@ -91,6 +91,10 @@ def test_native_chain_realizes_and_pins_each_restart(plan_factory, sign, directi
     analysis = charge_analysis.analyze_chain(path, discard_frames=0, bootstrap=50)
     assert analysis['production_ready'] is False
     assert analysis['analysis']['gap_statistical_gates_passed'] is False
+    assert analysis['analysis']['correlation_basis'] == 'gap_and_aligned_observables'
+    assert all(item['matched_frames'] == 9 and item['first_retained_energy_step'] == 10 and
+               item['last_retained_energy_step'] == 90 for item in analysis['observable_coverage'])
+    assert all('temperature_free_kelvin' in item['observable_names'] for item in analysis['observable_coverage'])
     assert analysis['raw_conditional_interval_95_kcal_mol'] is None
     assert analysis['with_born_delta_g_kcal_mol'] == pytest.approx(
         analysis['raw_delta_g_kcal_mol']+analysis['born_delta_0_to_sign_kcal_mol'], abs=1e-12)

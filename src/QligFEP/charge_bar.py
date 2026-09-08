@@ -87,7 +87,7 @@ def block_indices(length, block_length, rng):
     return ((starts[:, None]+np.arange(block_length)) % length).ravel()[:length]
 
 
-def ladder(gaps, weights, *, beta, block_length=None, bootstrap=1000, seed=112):
+def ladder(gaps, weights, *, beta, block_length=None, bootstrap=1000, seed=112, observables=None):
     """Analyze full endpoint ladders; canonical result is always 0 to signed charge.
 
 Resample each window once per bootstrap draw, reusing it for both neighboring
@@ -95,6 +95,14 @@ BAR terms. This preserves their shared-frame covariance. Residual dependence
 across chained windows and between replicas is NOT modeled by this interval.
 """
     data = [_array(gap) for gap in gaps]
+    if observables is not None:
+        if len(observables) != len(data):
+            raise ValueError('Require one aligned observable mapping per window')
+        for values, panel in zip(data, observables):
+            if not isinstance(panel, dict) or not panel or any(not isinstance(name, str) or not name or name == 'energy_gap' for name in panel):
+                raise ValueError('Require nonempty named observables; energy_gap is reserved')
+            if any(len(_array(series)) != len(values) for series in panel.values()):
+                raise ValueError('Observable and energy-gap frames must be aligned and equal in length')
     weights = _array(weights)
     if len(data) != len(weights) or len(data) < 2 or not math.isfinite(beta) or beta <= 0:
         raise ValueError('Require matching windows/weights and positive beta')
@@ -113,6 +121,14 @@ across chained windows and between replicas is NOT modeled by this interval.
     metrics, failures, lengths = [], [], []
     for index, values in enumerate(data):
         metric = correlation(values)
+        panel = {'energy_gap': metric}
+        if observables is not None:
+            panel.update({name: correlation(series) for name, series in observables[index].items()})
+        slowest = max(panel, key=lambda name: panel[name]['g'])
+        conservative_g = panel[slowest]['g']
+        metric = {**metric, 'gap_g': metric['g'], 'g': conservative_g,
+                  'effective_samples': len(values)/conservative_g, 'slowest_observable': slowest,
+                  'observable_correlations': panel}
         length = block_length if block_length is not None else max(1, math.ceil(5*metric['g']))
         lengths.append(length)
         metrics.append({**metric, 'frames': len(values), 'block_length': length,
@@ -155,8 +171,10 @@ across chained windows and between replicas is NOT modeled by this interval.
             'bootstrap_draws_used_for_interval': 0 if draws is None else len(draws),
             'bootstrap_draws_requested': bootstrap, 'bootstrap_seed': seed,
             'gap_statistical_gates_passed': not failures, 'failures': failures,
+            'statistical_gates_passed': not failures,
+            'correlation_basis': 'gap_only' if observables is None else 'gap_and_aligned_observables',
             'production_ready': False,
-            'limitations': ['gap-based diagnostics only, not equilibration or stationarity proof',
+            'limitations': ['measured-observable diagnostics only, not equilibration or stationarity proof',
                             'conditional within-window block uncertainty, not between-replica uncertainty',
                             'residual dependence across chained windows is not included',
                             'existing MD/thermostat equilibrium assumptions remain unverified']}

@@ -29,6 +29,14 @@ use SHA-256, a cryptographic hash algorithm. The output always has
 `production_ready: false`; `estimate_status` distinguishes insufficient sampling
 from conditional gap-statistics evidence.
 
+With a native observation trace, energy gaps are matched to temperature, probe
+radius, oxygen density and shell-orientation records by **native step number**.
+Step zero and the final trace snapshot are not energy frames and are excluded
+from this matching. The same declared energy-frame discard then selects the
+aligned observables. Missing coverage fails: the analysis does not interpolate
+observables or silently drop energy samples. The report retains the matching
+steps, intervals, observable names and native-log fingerprint.
+
 The numerical dependencies are already part of this project's Python stack.
 The [analysis requirements](analysis-requirements.txt) pin the versions observed
 in this checkpoint's local environment: NumPy 2.5.2 and SciPy 1.18.0. Verify that
@@ -104,7 +112,7 @@ integrated/post-hoc corrected estimates, without retuning or new force terms.
 
 ## Conditional uncertainty: what is and is not estimated
 
-For each window the code estimates a gap autocorrelation factor `g`, the loss of
+For each window the code estimates an autocorrelation factor `g`, the loss of
 independent information due to temporal correlation. It uses the finite-series
 autocorrelation, truncates nonpositive successive lag-pair sums and enforces
 nonincreasing positive sums. `g` is clamped to at least one. This particular
@@ -113,9 +121,25 @@ Correlation analysis and choosing a discarded transient are distinct operations;
 the [time-series documentation](https://pymbar.readthedocs.io/en/stable/timeseries.html)
 provides background on that distinction.
 
+For native-trace builds, the block-selection factor is the **largest** measured
+factor across the energy gap, total/free temperature, maximum Q-atom radius,
+twenty radial oxygen-density bins, exterior water count, and each existing shell's
+population and first/second radial-orientation sums. Here the Q region denotes
+the atoms assigned state-dependent charge treatment; in this pilot it is the
+single probe. The report includes every factor, the gap-only factor, the controlling
+observable and constant traces. A constant empty density bin is not itself a
+mixing failure or evidence of good mixing. A constant energy gap retains the
+existing conservative failure rule.
+
+Cumulative extrema from the geometry audit are not treated as stationary time
+series for correlation estimation. Their separate safety checks remain in force.
+Older builds without observations remain explicitly `gap_only` and do not gain
+multi-observable qualification retrospectively.
+
 Without `--block-length`, each window uses blocks at least `ceil(5*g)` frames
 long. An explicit length is accepted but flagged if shorter than that diagnostic
-minimum. Every window needs at least 100 estimated effective observations and
+minimum, using the largest observed factor when multiple observables are available.
+Every window needs at least 100 estimated effective observations and
 20 full blocks, and each adjacent overlap must be at least 0.03. Constant traces
 cannot diagnose mixing. Failing any of these operational gates yields no
 confidence interval, not an artificially small error bar.
@@ -139,9 +163,18 @@ Residual correlation **between chained windows** and **between replicas** is not
 included. Independent-ladder replication, longer-discard/block sensitivity,
 early/late and forward/reverse comparisons, other slow observables, and radius
 contrasts still need analysis before a physical claim. The current
-`gap_statistical_gates_passed` field is deliberately not a production or general
-equilibration gate. Existing MD/thermostat and hard shell-boundary limitations
+`statistical_gates_passed` field is deliberately not a production or general
+equilibration gate. The older `gap_statistical_gates_passed` key remains an alias
+for compatibility; `correlation_basis` identifies whether aligned observables
+were included. A passing conditional analysis is labeled
+`conditional_multi_observable_statistics` or `conditional_gap_statistics_only`,
+not equilibrium sampling. Existing MD/thermostat and hard shell-boundary limitations
 remain separate from energy accounting.
+
+In particular, the [known SHAKE constraint defect](CONSTRAINT_BLOCKER.md) still
+blocks production qualification, even if a short individual chain passes its
+geometry alarm or a statistical minimum. This analysis update does not repair
+that solver, change the alarm, authorize a new sampler, or validate the correction.
 
 ## Verification and next work
 
@@ -166,3 +199,13 @@ diagnostics and sensitivity analyses, transfer from the
 [endpoint preparation workflow](ENDPOINT_PREPARATION.md) and the complete pilot
 campaign generator. The [physical protocol](PILOT_PROTOCOL.md) and its no-fitting
 rules remain in force. No HPC experiment was submitted for this analysis work.
+
+Multi-observable checkpoint (2026-09-08): **56 focused estimator and native-chain
+tests passed in 28.07 seconds**. The new tests demonstrate that a slow nonenergy
+observable can withhold an interval without changing the BAR point estimate,
+reject blocks that are too short for that observable, and reject missing or
+misaligned observations. Native chains cover both signs/directions and Born
+accounting modes with actual step matching. This is a focused analysis check,
+not a rerun or replacement of the previously recorded full suite. No constraint,
+dynamics or native diagnostic code changed; the pending SHAKE repair remains
+unapproved and the campaign's existing failures remain unresolved.

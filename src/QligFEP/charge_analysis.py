@@ -11,7 +11,36 @@ import struct
 import numpy as np
 import scipy
 
-from . import charge_bar, charge_chain, charge_completion, charge_protocol as cp
+from . import charge_bar, charge_chain, charge_completion, charge_diagnostics, charge_protocol as cp
+
+
+def aligned_observables(log_path, definition, native, discard_frames, retained_frames):
+    """Match force-geometry snapshots to actual saved energy steps, never indices."""
+    settings = definition['signature']
+    steps = int(settings['md']['steps'])
+    output_interval = int(settings['intervals']['output'])
+    energy_interval = int(settings['intervals']['energy'])
+    records = charge_diagnostics.trace(log_path, steps=steps, interval=output_interval,
+                                      waters=int(native['meta'][2]), shells=int(native['meta'][5]))
+    energy_steps = list(range(energy_interval, steps, energy_interval))[discard_frames:]
+    by_step = {row['step']: row for row in records}
+    if len(energy_steps) != retained_frames or any(step not in by_step for step in energy_steps):
+        raise ValueError('Native observable snapshots do not cover every retained energy step; do not interpolate or drop gaps')
+    rows = [by_step[step] for step in energy_steps]
+    panel = {'temperature_total_kelvin': [r['values'][7] for r in rows],
+             'temperature_free_kelvin': [r['values'][8] for r in rows],
+             'q_radius_angstrom': [r['values'][1] for r in rows],
+             'oxygen_overflow_count': [r['density'][20] for r in rows]}
+    edges = np.linspace(0, native['parameters'][0], 21)
+    volumes = 4*math.pi/3*np.diff(edges**3)
+    for index, volume in enumerate(volumes):
+        panel[f'oxygen_density_bin_{index:02d}'] = [r['density'][index]/volume for r in rows]
+    for index in range(int(native['meta'][5])):
+        for column, name in enumerate(('population', 'radial_sum', 'radial_square_sum')):
+            panel[f'shell_{index+1}_{name}'] = [r['shells'][index][column] for r in rows]
+    return panel, {'first_retained_energy_step': energy_steps[0], 'last_retained_energy_step': energy_steps[-1],
+                   'energy_interval_steps': energy_interval, 'observable_interval_steps': output_interval,
+                   'matched_frames': len(rows), 'observable_names': list(panel)}
 
 
 def native_boltzmann(build_report):
@@ -39,6 +68,7 @@ def analyze_chain(path, *, discard_frames, block_length=None, bootstrap=1000, se
     if completed != len(plan['series']['windows']):
         raise ValueError('Analyze only a completely verified chain')
     series, gaps, weights, provenance, constants = plan['series'], [], [], [], None
+    observables, coverage = [], []
     for index, definition in enumerate(series['windows']):
         directory = Path(definition['input']).parent
         receipt_path = directory/'charge-completed.json'
@@ -63,14 +93,25 @@ def analyze_chain(path, *, discard_frames, block_length=None, bootstrap=1000, se
             values = values-born_gap
         gaps.append(values)
         weights.append(window_weights[1])
+        log_path = directory/'charge-native.log'
+        if receipt['result']['trajectory_diagnostics'] is not None:
+            panel, matching = aligned_observables(log_path, definition, native['native'], discard_frames, len(values))
+            observables.append(panel)
+            coverage.append(matching)
+        else:
+            coverage.append(None)
         provenance.append({'input': definition['input'], 'input_sha256': definition['input_sha256'],
                            'energy_sha256': cp.fingerprint(energy_path),
+                           'native_log_sha256': cp.fingerprint(log_path),
                            'completion_sha256': cp.fingerprint(receipt_path),
                            'retained_frames': len(values), 'discarded_frames': discard_frames})
     temperature = float(series['windows'][0]['signature']['md']['temperature'])
     boltzmann = native_boltzmann(Path(plan['build_report']))
     beta = 1/(temperature*boltzmann)
-    result = charge_bar.ladder(gaps, weights, beta=beta, block_length=block_length, bootstrap=bootstrap, seed=seed)
+    if observables and len(observables) != len(gaps):
+        raise ValueError('Do not combine windows with and without native observable coverage')
+    result = charge_bar.ladder(gaps, weights, beta=beta, block_length=block_length, bootstrap=bootstrap,
+                              seed=seed, observables=observables or None)
     raw = result['delta_g_0_to_sign']
     born_gap = constants[1]-constants[0]
     corrected = None if raw is None else raw+born_gap
@@ -83,6 +124,7 @@ def analyze_chain(path, *, discard_frames, block_length=None, bootstrap=1000, se
     for item, definition in zip(provenance, series['windows']):
         directory = Path(definition['input']).parent
         if (cp.fingerprint(Path(definition['paths']['energy'])) != item['energy_sha256'] or
+                cp.fingerprint(directory/'charge-native.log') != item['native_log_sha256'] or
                 cp.fingerprint(directory/'charge-completed.json') != item['completion_sha256']):
             raise ValueError('Saved chain data changed during analysis')
     if any(cp.fingerprint(Path(__file__).with_name(name)) != checksum for name, checksum in analysis_sources.items()):
@@ -92,13 +134,15 @@ def analyze_chain(path, *, discard_frames, block_length=None, bootstrap=1000, se
             'plan_sha256': plan['plan_sha256'], 'build_report_sha256': plan['build_report_sha256'],
             'temperature_kelvin': temperature, 'native_boltzmann_kcal_mol_kelvin': boltzmann, 'beta_mol_per_kcal': beta,
             'windows': provenance, 'raw_delta_g_kcal_mol': raw, 'with_born_delta_g_kcal_mol': corrected,
+            'observable_coverage': coverage,
             'born_delta_0_to_sign_kcal_mol': born_gap,
             'declared_result_kcal_mol': corrected if declared_corrected else raw,
             'control_corrected_view_is_comparison_only': not declared_corrected,
             'raw_conditional_interval_95_kcal_mol': raw_interval,
             'with_born_conditional_interval_95_kcal_mol': corrected_interval,
             'analysis': result, 'runtime_versions': {'numpy': np.__version__, 'scipy': scipy.__version__},
-            'estimate_status': 'conditional_gap_statistics_only' if result['gap_statistical_gates_passed'] else 'insufficient_sampling',
+            'estimate_status': ('conditional_multi_observable_statistics' if observables else 'conditional_gap_statistics_only')
+                               if result['statistical_gates_passed'] else 'insufficient_sampling',
             'analysis_sources_sha256': analysis_sources,
             'limitations': ['one ladder only; no between-replica, direction or radius conclusion',
                             'explicit discard is a choice, not an equilibration proof',
