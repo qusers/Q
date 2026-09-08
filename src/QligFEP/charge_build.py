@@ -32,6 +32,27 @@ def _local(root, name):
 
 
 def build(repository, directory, compiler, commit='HEAD'):
+    resolved = subprocess.run(['git', 'rev-parse', '--verify', '--end-of-options', commit+'^{commit}'],
+                              cwd=repository, capture_output=True, text=True, check=True, timeout=10).stdout.strip()
+    archive = subprocess.run(['git', 'archive', '--format=tar', resolved, 'src/q6'], cwd=repository,
+                             capture_output=True, check=True, timeout=10).stdout
+    return _build_archive(archive, directory, compiler, resolved)
+
+
+def build_archive(path, directory, compiler, *, expected_commit, expected_sha256):
+    """Build a transferred Git archive without requiring a remote Git checkout."""
+    archive = path.read_bytes()
+    if hashlib.sha256(archive).hexdigest() != expected_sha256:
+        raise ValueError('Transferred native archive hash mismatch')
+    return _build_archive(archive, directory, compiler, expected_commit)
+
+
+def _build_archive(archive, directory, compiler, resolved):
+    if not re.fullmatch('[0-9a-f]{40}', resolved):
+        raise ValueError('Require a full source commit')
+    with tarfile.open(fileobj=io.BytesIO(archive), mode='r:') as source:
+        if source.pax_headers.get('comment') != resolved:
+            raise ValueError('Source commit differs from Git archive metadata')
     compiler_path = shutil.which(str(compiler))
     make_path = shutil.which('make')
     if compiler_path is None or make_path is None:
@@ -39,10 +60,6 @@ def build(repository, directory, compiler, commit='HEAD'):
     compiler_path = str(Path(compiler_path).resolve())
     if not re.fullmatch(r'[A-Za-z0-9_./+@\-]+', compiler_path):
         raise ValueError('Compiler path contains unsupported make/shell characters')
-    resolved = subprocess.run(['git', 'rev-parse', '--verify', '--end-of-options', commit+'^{commit}'],
-                              cwd=repository, capture_output=True, text=True, check=True, timeout=10).stdout.strip()
-    archive = subprocess.run(['git', 'archive', '--format=tar', resolved, 'src/q6'], cwd=repository,
-                             capture_output=True, check=True, timeout=10).stdout
     directory = directory.resolve()
     directory.mkdir(parents=True, exist_ok=False)
     (directory/'native-source.tar').write_bytes(archive)
