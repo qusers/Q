@@ -5,153 +5,7 @@
 #include "geometry.h"
 
 namespace {
-
-/*
- * Unique component layout:
- *
- *  0  phi0
- *
- *  1  phi1.x
- *  2  phi1.y
- *  3  phi1.z
- *
- *  4  phi2.xxx -> xx
- *  5  phi2.yy
- *  6  phi2.zz
- *  7  phi2.xy
- *  8  phi2.xz
- *  9  phi2.yz
- *
- * 10  phi3.xxx
- * 11  phi3.yyy
- * 12  phi3.zzz
- * 13  phi3.xxy
- * 14  phi3.xxz
- * 15  phi3.xyy
- * 16  phi3.yyz
- * 17  phi3.xzz
- * 18  phi3.yzz
- * 19  phi3.xyz
- */
-__device__ __forceinline__ double
-calculate_unique_lrf_component(
-    int phi,
-    double charge,
-    double x,
-    double y,
-    double z) {
-    const double r2 =
-        x * x + y * y + z * z;
-
-    if (r2 == 0.0) {
-        return 0.0;
-    }
-
-    const double inv_r = rsqrt(r2);
-    const double inv_r2 = 1.0 / r2;
-    const double inv_r3 = inv_r * inv_r2;
-    const double inv_r5 = inv_r3 * inv_r2;
-    const double inv_r7 = inv_r5 * inv_r2;
-
-    switch (phi) {
-        case 0:
-            return charge * inv_r;
-
-        case 1:
-            return -charge * x * inv_r3;
-
-        case 2:
-            return -charge * y * inv_r3;
-
-        case 3:
-            return -charge * z * inv_r3;
-
-        case 4:
-            return charge *
-                   (3.0 * x * x * inv_r5 -
-                    inv_r3);
-
-        case 5:
-            return charge *
-                   (3.0 * y * y * inv_r5 -
-                    inv_r3);
-
-        case 6:
-            return charge *
-                   (3.0 * z * z * inv_r5 -
-                    inv_r3);
-
-        case 7:
-            return charge *
-                   (3.0 * x * y * inv_r5);
-
-        case 8:
-            return charge *
-                   (3.0 * x * z * inv_r5);
-
-        case 9:
-            return charge *
-                   (3.0 * y * z * inv_r5);
-
-        case 10:
-            return charge *
-                   (9.0 * x * inv_r5 -
-                    15.0 * x * x * x * inv_r7);
-
-        case 11:
-            return charge *
-                   (9.0 * y * inv_r5 -
-                    15.0 * y * y * y * inv_r7);
-
-        case 12:
-            return charge *
-                   (9.0 * z * inv_r5 -
-                    15.0 * z * z * z * inv_r7);
-
-        case 13:
-            return charge *
-                   (3.0 * y * inv_r5 -
-                    15.0 * x * x * y * inv_r7);
-
-        case 14:
-            return charge *
-                   (3.0 * z * inv_r5 -
-                    15.0 * x * x * z * inv_r7);
-
-        case 15:
-            return charge *
-                   (3.0 * x * inv_r5 -
-                    15.0 * x * y * y * inv_r7);
-
-        case 16:
-            return charge *
-                   (3.0 * z * inv_r5 -
-                    15.0 * y * y * z * inv_r7);
-
-        case 17:
-            return charge *
-                   (3.0 * x * inv_r5 -
-                    15.0 * x * z * z * inv_r7);
-
-        case 18:
-            return charge *
-                   (3.0 * y * inv_r5 -
-                    15.0 * y * z * z * inv_r7);
-
-        case 19:
-            return charge *
-                   (-15.0 * x * y * z * inv_r7);
-
-        default:
-            return 0.0;
-    }
-}
-
-__device__ __forceinline__ void
-write_unique_lrf_component(
-    LrfCoefficients& output,
-    int phi,
-    double value) {
+__device__ __forceinline__ void write_unique_lrf_component(LrfCoefficients& output, int phi, double value) {
     switch (phi) {
         case 0:
             output.phi0 = value;
@@ -279,6 +133,171 @@ write_unique_lrf_component(
             output.phi3[19] = value;
             output.phi3[21] = value;
             break;
+    }
+}
+
+template <int ORDER, int COMPONENT_COUNT>
+__global__ void build_lrf_coefficients_order_csr_kernel(
+    int n_group_ranges,
+
+    const int* __restrict__ group_indices,
+    const int* __restrict__ group_start_idx,
+    const uint8_t* __restrict__ category,
+    const int* __restrict__ atom_offsets,
+
+    const double* __restrict__ dx,
+    const double* __restrict__ dy,
+    const double* __restrict__ dz,
+
+    const double* __restrict__ q_r1,
+    const double* __restrict__ q_r3,
+    const double* __restrict__ q_r5,
+    const double* __restrict__ q_r7,
+
+    LrfCoefficients* __restrict__ coefficients) {
+    constexpr int WARPS_PER_BLOCK = 4;
+    constexpr unsigned FULL_MASK = 0xffffffffu;
+
+    const int target_range = blockIdx.x;
+    const int thread = threadIdx.x;
+    const int lane = thread & 31;
+    const int warp = thread >> 5;
+
+    if (target_range >= n_group_ranges) {
+        return;
+    }
+
+    const int target_start = group_start_idx[target_range];
+    const uint8_t target_category = category[target_start];
+
+    constexpr uint8_t P = static_cast<uint8_t>(AtomCategory::P);
+    constexpr uint8_t W = static_cast<uint8_t>(AtomCategory::W);
+
+    if (target_category != P && target_category != W) {
+        return;
+    }
+
+    const int begin = atom_offsets[target_range];
+    const int end = atom_offsets[target_range + 1];
+
+    double sums[COMPONENT_COUNT];
+
+#pragma unroll
+    for (int component = 0; component < COMPONENT_COUNT; ++component) {
+        sums[component] = 0.0;
+    }
+
+    for (int entry = begin + thread; entry < end; entry += blockDim.x) {
+        if constexpr (ORDER == 0) {
+            sums[0] += q_r1[entry];
+        }
+
+        if constexpr (ORDER == 1) {
+            const double x = dx[entry];
+            const double y = dy[entry];
+            const double z = dz[entry];
+            const double qr3 = q_r3[entry];
+
+            sums[0] -= x * qr3;
+            sums[1] -= y * qr3;
+            sums[2] -= z * qr3;
+        }
+
+        if constexpr (ORDER == 2) {
+            const double x = dx[entry];
+            const double y = dy[entry];
+            const double z = dz[entry];
+
+            const double qr3 = q_r3[entry];
+            const double qr5 = q_r5[entry];
+            const double three_qr5 = 3.0 * qr5;
+
+            sums[0] += x * x * three_qr5 - qr3;
+            sums[1] += y * y * three_qr5 - qr3;
+            sums[2] += z * z * three_qr5 - qr3;
+
+            sums[3] += x * y * three_qr5;
+            sums[4] += x * z * three_qr5;
+            sums[5] += y * z * three_qr5;
+        }
+
+        if constexpr (ORDER == 3) {
+            const double x = dx[entry];
+            const double y = dy[entry];
+            const double z = dz[entry];
+
+            const double qr5 = q_r5[entry];
+            const double qr7 = q_r7[entry];
+
+            const double three_qr5 = 3.0 * qr5;
+            const double nine_qr5 = 9.0 * qr5;
+            const double fifteen_qr7 = 15.0 * qr7;
+
+            const double xx = x * x;
+            const double yy = y * y;
+            const double zz = z * z;
+
+            sums[0] += x * nine_qr5 - x * xx * fifteen_qr7;
+
+            sums[1] += y * nine_qr5 - y * yy * fifteen_qr7;
+
+            sums[2] += z * nine_qr5 - z * zz * fifteen_qr7;
+
+            sums[3] += y * three_qr5 - xx * y * fifteen_qr7;
+
+            sums[4] += z * three_qr5 - xx * z * fifteen_qr7;
+
+            sums[5] += x * three_qr5 - x * yy * fifteen_qr7;
+
+            sums[6] += z * three_qr5 - yy * z * fifteen_qr7;
+
+            sums[7] += x * three_qr5 - x * zz * fifteen_qr7;
+
+            sums[8] += y * three_qr5 - y * zz * fifteen_qr7;
+
+            sums[9] -= x * y * z * fifteen_qr7;
+        }
+    }
+
+#pragma unroll
+    for (int component = 0; component < COMPONENT_COUNT; ++component) {
+#pragma unroll
+        for (int offset = 16; offset > 0; offset >>= 1) {
+            sums[component] += __shfl_down_sync(FULL_MASK, sums[component], offset);
+        }
+    }
+
+    __shared__ double warp_sums[COMPONENT_COUNT][WARPS_PER_BLOCK];
+
+    if (lane == 0) {
+#pragma unroll
+        for (int component = 0; component < COMPONENT_COUNT; ++component) {
+            warp_sums[component][warp] = sums[component];
+        }
+    }
+
+    __syncthreads();
+
+    if (warp != 0) {
+        return;
+    }
+
+#pragma unroll
+    for (int component = 0; component < COMPONENT_COUNT; ++component) {
+        double block_sum = lane < WARPS_PER_BLOCK ? warp_sums[component][lane] : 0.0;
+
+#pragma unroll
+        for (int offset = 16; offset > 0; offset >>= 1) {
+            block_sum += __shfl_down_sync(FULL_MASK, block_sum, offset);
+        }
+
+        if (lane == 0) {
+            constexpr int first_component = ORDER == 0 ? 0 : ORDER == 1 ? 1
+                                                         : ORDER == 2   ? 4
+                                                                        : 10;
+
+            write_unique_lrf_component(coefficients[group_indices[target_range]], first_component + component, block_sum);
+        }
     }
 }
 
@@ -658,11 +677,10 @@ __global__ void fill_lrf_atom_csr_kernel(int n_group_ranges, const uint8_t* grou
     }
 }
 
-__global__ void build_lrf_coefficients_csr_kernel(
+__global__ void build_lrf_geometry_csr_kernel(
     int n_group_ranges,
+
     const int* group_indices,
-    const int* group_start_idx,
-    const uint8_t* category,
 
     const int* atom_offsets,
     const int* source_atom_slots,
@@ -672,28 +690,21 @@ __global__ void build_lrf_coefficients_csr_kernel(
     const real_t* cx,
     const real_t* cy,
     const real_t* cz,
-    LrfCoefficients* coefficients) {
+    const LrfCoefficients* coefficients,
+
+    double* output_dx,
+    double* output_dy,
+    double* output_dz,
+
+    double* output_q_r1,
+    double* output_q_r3,
+    double* output_q_r5,
+    double* output_q_r7
+
+) {
     const int target_range = blockIdx.x;
-    const int phi = blockIdx.y;
-    const int thread = threadIdx.x;
 
-    if (target_range >= n_group_ranges || phi >= 20) {
-        return;
-    }
-
-    const int target_start = group_start_idx[target_range];
-
-    const uint8_t target_category = category[target_start];
-
-    constexpr uint8_t P = static_cast<uint8_t>(AtomCategory::P);
-
-    constexpr uint8_t W = static_cast<uint8_t>(AtomCategory::W);
-
-    /*
-     * LRF coefficients are only required for non-Q groups.
-     * This condition is block-uniform.
-     */
-    if (target_category != P && target_category != W) {
+    if (target_range >= n_group_ranges) {
         return;
     }
 
@@ -705,9 +716,7 @@ __global__ void build_lrf_coefficients_csr_kernel(
 
     const int end = atom_offsets[target_range + 1];
 
-    double local_sum = 0.0;
-
-    for (int entry = begin + thread; entry < end; entry += blockDim.x) {
+    for (int entry = begin + threadIdx.x; entry < end; entry += blockDim.x) {
         const int slot = source_atom_slots[entry];
 
         const double charge = static_cast<double>(atom_charge[slot]);
@@ -718,221 +727,41 @@ __global__ void build_lrf_coefficients_csr_kernel(
 
         const double z = static_cast<double>(cz[slot]) - target_center.z;
 
-        local_sum += calculate_unique_lrf_component(phi, charge, x, y, z);
-    }
+        const double r2 = x * x + y * y + z * z;
 
-    constexpr unsigned FULL_MASK = 0xffffffffu;
+        output_dx[entry] = x;
+        output_dy[entry] = y;
+        output_dz[entry] = z;
 
-    for (int offset = 16; offset > 0; offset >>= 1) {
-        local_sum += __shfl_down_sync(FULL_MASK, local_sum, offset);
-    }
+        if (r2 == 0.0) {
+            output_q_r1[entry] = 0.0;
+            output_q_r3[entry] = 0.0;
+            output_q_r5[entry] = 0.0;
+            output_q_r7[entry] = 0.0;
 
-    __shared__ double warp_sums[4];
-
-    const int lane = thread & 31;
-    const int warp = thread >> 5;
-
-    if (lane == 0) {
-        warp_sums[warp] = local_sum;
-    }
-
-    __syncthreads();
-
-    if (warp == 0) {
-        double block_sum = lane < 4 ? warp_sums[lane] : 0.0;
-
-        for (int offset = 16; offset > 0; offset >>= 1) {
-            block_sum += __shfl_down_sync(FULL_MASK, block_sum, offset);
-        }
-
-        if (lane == 0) {
-            write_unique_lrf_component(coefficients[target_group], phi, block_sum);
-        }
-    }
-}
-
-__global__ void build_lrf_coefficients_kernel(
-    int n_group_ranges,
-
-    const uint8_t* group_pair_modes,
-    const int* group_indices,
-    const int* group_start_idx,
-    const int* group_sizes,
-
-    const uint8_t* category,
-    const real_t* atom_charge,
-
-    const real_t* cx,
-    const real_t* cy,
-    const real_t* cz,
-
-    LrfCoefficients* coefficients) {
-    constexpr unsigned FULL_MASK = 0xffffffffu;
-
-    const int lane = threadIdx.x & 31;
-    const int warp_in_block = threadIdx.x >> 5;
-    const int warps_per_block = blockDim.x >> 5;
-    const int target_range = blockIdx.x * warps_per_block + warp_in_block;
-
-    if (target_range >= n_group_ranges) {
-        return;
-    }
-    const int target_start = group_start_idx[target_range];
-    const uint8_t target_category = category[target_start];
-
-    constexpr uint8_t P = static_cast<uint8_t>(AtomCategory::P);
-    constexpr uint8_t W = static_cast<uint8_t>(AtomCategory::W);
-    if (target_category != P && target_category != W) {
-        return;
-    }
-    const int target_group = group_indices[target_range];
-    const coord_t target_center = coefficients[target_group].center;
-
-    double local_phi0 = 0.0;
-    double local_phi1[3] = {};
-    double local_phi2[9] = {};
-    double local_phi3[27] = {};
-
-    for (int source_range = 0; source_range < n_group_ranges; ++source_range) {
-        const int pair_index = get_pair_index(n_group_ranges, target_range, source_range);
-        if (group_pair_modes[pair_index] != GROUP_PAIR_LRF) {
             continue;
         }
 
-        const int source_start = group_start_idx[source_range];
-        const int source_size = group_sizes[source_range];
+        const double inv_r = rsqrt(r2);
 
-        for (int local_atom = lane; local_atom < source_size; local_atom += 32) {
-            const int slot = source_start + local_atom;
+        const double inv_r2 = 1.0 / r2;
 
-            const double charge = static_cast<double>(atom_charge[slot]);
+        const double inv_r3 = inv_r * inv_r2;
 
-            const double rx = static_cast<double>(cx[slot]) - target_center.x;
-            const double ry = static_cast<double>(cy[slot]) - target_center.y;
-            const double rz = static_cast<double>(cz[slot]) - target_center.z;
+        const double inv_r5 = inv_r3 * inv_r2;
 
-            const double r[3] = {rx, ry, rz};
+        const double inv_r7 = inv_r5 * inv_r2;
 
-            const double r2 = rx * rx + ry * ry + rz * rz;
+        output_q_r1[entry] = charge * inv_r;
 
-            /*
-             * A valid LRF pair should never contain the target group
-             * itself, but guard against singular input anyway.
-             */
-            if (r2 == 0.0) {
-                continue;
-            }
+        output_q_r3[entry] = charge * inv_r3;
 
-            const double inv_r = rsqrt(r2);
-            const double inv_r2 = 1.0 / r2;
-            const double inv_r3 = inv_r * inv_r2;
-            const double inv_r5 = inv_r3 * inv_r2;
-            const double inv_r7 = inv_r5 * inv_r2;
+        output_q_r5[entry] = charge * inv_r5;
 
-            /*
-             * phi0 = sum(q/r)
-             */
-            local_phi0 += charge * inv_r;
-
-            /*
-             * phi1[a] = sum(-q*r[a]/r^3)
-             */
-#pragma unroll
-            for (int a = 0; a < 3; ++a) {
-                local_phi1[a] -= charge * r[a] * inv_r3;
-            }
-
-            /*
-             * phi2[a,b] =
-             * q * (3*r[a]*r[b]/r^5 - delta[a,b]/r^3)
-             */
-#pragma unroll
-            for (int a = 0; a < 3; ++a) {
-#pragma unroll
-                for (int b = 0; b < 3; ++b) {
-                    const int index = a * 3 + b;
-                    const double delta_ab = a == b ? 1.0 : 0.0;
-
-                    local_phi2[index] += charge * (3.0 * r[a] * r[b] * inv_r5 - delta_ab * inv_r3);
-                }
-            }
-
-            /*
-             * phi3[a,b,c] =
-             * q * (
-             *   3*(delta_ab*r[c] +
-             *      delta_ac*r[b] +
-             *      delta_bc*r[a])/r^5
-             *   - 15*r[a]*r[b]*r[c]/r^7
-             * )
-             */
-#pragma unroll
-            for (int a = 0; a < 3; ++a) {
-#pragma unroll
-                for (int b = 0; b < 3; ++b) {
-#pragma unroll
-                    for (int c = 0; c < 3; ++c) {
-                        const int index = (a * 3 + b) * 3 + c;
-
-                        const double delta_ab = a == b ? 1.0 : 0.0;
-                        const double delta_ac = a == c ? 1.0 : 0.0;
-                        const double delta_bc = b == c ? 1.0 : 0.0;
-
-                        const double v1 = 3.0 * (delta_ab * r[c] + delta_ac * r[b] + delta_bc * r[a]) * inv_r5;
-
-                        const double v2 = -15.0 * r[a] * r[b] * r[c] * inv_r7;
-
-                        local_phi3[index] += charge * (v1 + v2);
-                    }
-                }
-            }
-        }
-    }
-
-    for (int offset = 16; offset > 0; offset >>= 1) {
-        local_phi0 += __shfl_down_sync(FULL_MASK, local_phi0, offset);
-
-#pragma unroll
-        for (int i = 0; i < 3; ++i) {
-            local_phi1[i] += __shfl_down_sync(FULL_MASK, local_phi1[i], offset);
-        }
-
-#pragma unroll
-        for (int i = 0; i < 9; ++i) {
-            local_phi2[i] += __shfl_down_sync(FULL_MASK, local_phi2[i], offset);
-        }
-
-#pragma unroll
-        for (int i = 0; i < 27; ++i) {
-            local_phi3[i] += __shfl_down_sync(FULL_MASK, local_phi3[i], offset);
-        }
-    }
-
-    if (lane == 0) {
-        LrfCoefficients& output = coefficients[target_group];
-
-        /*
-         * Do not overwrite output.center, which was initialized by
-         * compute_lrf_centers_kernel().
-         */
-        output.phi0 = local_phi0;
-
-#pragma unroll
-        for (int i = 0; i < 3; ++i) {
-            output.phi1[i] = local_phi1[i];
-        }
-
-#pragma unroll
-        for (int i = 0; i < 9; ++i) {
-            output.phi2[i] = local_phi2[i];
-        }
-
-#pragma unroll
-        for (int i = 0; i < 27; ++i) {
-            output.phi3[i] = local_phi3[i];
-        }
+        output_q_r7[entry] = charge * inv_r7;
     }
 }
+
 
 __global__ void calc_lrf_kernel(
     int n_slots,
@@ -1621,17 +1450,12 @@ void CudaNonbondedForce::init_lrf_coefficients(Context& ctx) {
         check_cuda(cudaGetLastError());
     }
     if (n_lrf_source_atom_entries_ > 0) {
-        constexpr int coefficient_threads = 128;
-        constexpr int unique_phi_count = 20;
+        constexpr int geometry_threads = 256;
 
-        dim3 coefficient_grid = (n_group_ranges, unique_phi_count, 1);
-
-        build_lrf_coefficients_csr_kernel<<<coefficient_grid, coefficient_threads>>>(
+        build_lrf_geometry_csr_kernel<<<n_group_ranges, geometry_threads>>>(
             n_group_ranges,
 
             data_.group_indices->gpu_data_p,
-            data_.group_start_idx->gpu_data_p,
-            data_.category->gpu_data_p,
 
             lrf_atom_offsets_->gpu_data_p,
             lrf_source_atom_slots_->gpu_data_p,
@@ -1642,9 +1466,60 @@ void CudaNonbondedForce::init_lrf_coefficients(Context& ctx) {
             coord_y_->gpu_data_p,
             coord_z_->gpu_data_p,
 
-            lrf_coefficients_->gpu_data_p);
+            lrf_coefficients_->gpu_data_p,
+
+            lrf_dx_->gpu_data_p,
+            lrf_dy_->gpu_data_p,
+            lrf_dz_->gpu_data_p,
+
+            lrf_q_r1_->gpu_data_p,
+            lrf_q_r3_->gpu_data_p,
+            lrf_q_r5_->gpu_data_p,
+            lrf_q_r7_->gpu_data_p);
 
         check_cuda(cudaGetLastError());
+
+        constexpr int coefficient_threads = 128;
+
+#define LRF_COEFFICIENT_ARGUMENTS          \
+    n_group_ranges,                        \
+        data_.group_indices->gpu_data_p,   \
+        data_.group_start_idx->gpu_data_p, \
+        data_.category->gpu_data_p,        \
+        lrf_atom_offsets_->gpu_data_p,     \
+        lrf_dx_->gpu_data_p,               \
+        lrf_dy_->gpu_data_p,               \
+        lrf_dz_->gpu_data_p,               \
+        lrf_q_r1_->gpu_data_p,             \
+        lrf_q_r3_->gpu_data_p,             \
+        lrf_q_r5_->gpu_data_p,             \
+        lrf_q_r7_->gpu_data_p,             \
+        lrf_coefficients_->gpu_data_p
+
+        build_lrf_coefficients_order_csr_kernel<0, 1>
+            <<<n_group_ranges, coefficient_threads>>>(
+                LRF_COEFFICIENT_ARGUMENTS);
+
+        check_cuda(cudaGetLastError());
+
+        build_lrf_coefficients_order_csr_kernel<1, 3>
+            <<<n_group_ranges, coefficient_threads>>>(
+                LRF_COEFFICIENT_ARGUMENTS);
+
+        check_cuda(cudaGetLastError());
+
+        build_lrf_coefficients_order_csr_kernel<2, 6>
+            <<<n_group_ranges, coefficient_threads>>>(
+                LRF_COEFFICIENT_ARGUMENTS);
+
+        check_cuda(cudaGetLastError());
+
+        build_lrf_coefficients_order_csr_kernel<3, 10>
+            <<<n_group_ranges, coefficient_threads>>>(
+                LRF_COEFFICIENT_ARGUMENTS);
+
+        check_cuda(cudaGetLastError());
+#undef LRF_COEFFICIENT_ARGUMENTS
     }
 }
 
@@ -1709,6 +1584,15 @@ void CudaNonbondedForce::build_lrf_atom_csr(Context& ctx) {
 
     lrf_atom_offsets_->download();
     n_lrf_source_atom_entries_ = lrf_atom_offsets_->cpu_data_p[n_group_ranges];
+
+    if (n_lrf_source_atom_entries_ < 0) {
+        throw std::runtime_error("Negative CUDA LRF CSR entry count");
+    }
+
+    if (n_lrf_source_atom_entries_ == 0) {
+        return;
+    }
+
     const size_t required_capacity = static_cast<size_t>(n_lrf_source_atom_entries_);
 
     if (!lrf_source_atom_slots_ || required_capacity > lrf_source_atom_capacity_) {
@@ -1723,6 +1607,21 @@ void CudaNonbondedForce::build_lrf_atom_csr(Context& ctx) {
         }
 
         lrf_source_atom_slots_ = std::make_unique<HostDeviceBuffer<int>>(new_capacity, false, true);
+
+        lrf_dx_ = std::make_unique<HostDeviceBuffer<double>>(new_capacity, false, true);
+
+        lrf_dy_ = std::make_unique<HostDeviceBuffer<double>>(new_capacity, false, true);
+
+        lrf_dz_ = std::make_unique<HostDeviceBuffer<double>>(new_capacity, false, true);
+
+        lrf_q_r1_ = std::make_unique<HostDeviceBuffer<double>>(new_capacity, false, true);
+
+        lrf_q_r3_ = std::make_unique<HostDeviceBuffer<double>>(new_capacity, false, true);
+
+        lrf_q_r5_ = std::make_unique<HostDeviceBuffer<double>>(new_capacity, false, true);
+
+        lrf_q_r7_ = std::make_unique<HostDeviceBuffer<double>>(new_capacity, false, true);
+
         lrf_source_atom_capacity_ = new_capacity;
     }
     fill_lrf_atom_csr_kernel<<<grid_size, thread_num>>>(

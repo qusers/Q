@@ -39,7 +39,7 @@ class CudaNonbondedForce final : public NonbondedForce {
     void init_lrf_coefficients(Context& ctx);
     void calc_exact_tiles(Context& ctx);
     void calc_lrf(Context& ctx);
-    void build_lrf_atom_csr(Context &ctx);
+    void build_lrf_atom_csr(Context& ctx);
 
     std::unique_ptr<HostDeviceBuffer<real_t>> coord_x_, coord_y_, coord_z_;
 
@@ -71,4 +71,16 @@ class CudaNonbondedForce final : public NonbondedForce {
     size_t lrf_source_atom_capacity_ = 0;
     size_t lrf_scan_temp_bytes_ = 0;
     int n_lrf_source_atom_entries_ = 0;
+
+    /*
+     * Geometry associated with every CSR source-atom entry.
+     */
+    std::unique_ptr<HostDeviceBuffer<double>> lrf_dx_;
+    std::unique_ptr<HostDeviceBuffer<double>> lrf_dy_;
+    std::unique_ptr<HostDeviceBuffer<double>> lrf_dz_;
+
+    std::unique_ptr<HostDeviceBuffer<double>> lrf_q_r1_;
+    std::unique_ptr<HostDeviceBuffer<double>> lrf_q_r3_;
+    std::unique_ptr<HostDeviceBuffer<double>> lrf_q_r5_;
+    std::unique_ptr<HostDeviceBuffer<double>> lrf_q_r7_;
 };
