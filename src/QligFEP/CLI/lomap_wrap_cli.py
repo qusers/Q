@@ -5,7 +5,6 @@ import json
 import re
 from multiprocessing import cpu_count
 from pathlib import Path
-from typing import Optional
 
 import lomap
 import numpy as np
@@ -22,10 +21,10 @@ class LomapWrap:
     def __init__(
         self,
         inp: str,
-        out: Optional[str] = None,
+        out: str | None = None,
         time=30,
         verbose="info",
-        exp_key: Optional[str] = None,
+        exp_key: str | None = None,
         **kwargs,
     ):
         self.nodes = {}

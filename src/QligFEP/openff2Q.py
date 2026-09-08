@@ -2,7 +2,7 @@
 
 from io import StringIO
 from pathlib import Path
-from typing import Optional, TextIO
+from typing import TextIO
 
 import numpy as np
 from joblib import Parallel, delayed, parallel_config
@@ -104,7 +104,7 @@ class OpenFF2Q(MoleculeIO):
         self.total_charges = {}  # store the total charges
         self._set_nagl(nagl=nagl, nagl_model=nagl_model)
 
-    def _set_forcefield(self, ffstring: Optional[str]) -> ForceField:
+    def _set_forcefield(self, ffstring: str | None) -> ForceField:
         if ffstring is None:
             # why not the constrained: https://docs.openforcefield.org/projects/toolkit/en/stable/faq.html
             ffstring = "openff-2.3.0.offxml"
@@ -148,7 +148,7 @@ class OpenFF2Q(MoleculeIO):
     def set_topologies_and_parameters(self):
         topologies = {}
         parameters = {}
-        for lname, mol in zip(self.lig_names, self.molecules):
+        for lname, mol in zip(self.lig_names, self.molecules, strict=False):
             topology = Topology.from_molecules(mol)
             topologies.update({lname: topology})
             parameters.update({lname: self.forcefield.label_molecules(topology)[0]})
@@ -163,7 +163,7 @@ class OpenFF2Q(MoleculeIO):
             charges_magnitudes = Parallel()(delayed(self._assign_charge)(molecule) for molecule in molecules)
         logger.info("Done! Writing .lib, .prm and .pdb files for each ligand")
         logger.debug(f"Output path: {self.out_dir}")
-        for lname, charges in zip(self.lig_names, charges_magnitudes):
+        for lname, charges in zip(self.lig_names, charges_magnitudes, strict=False):
             charges = round_charges_preserving_sum(charges)
             self.charges_list_magnitude.update({lname: charges})
             formatted_sum = f"{charges.sum():.3f}"
@@ -243,8 +243,8 @@ class OpenFF2Q(MoleculeIO):
     def write_lib_Q(
         self,
         lname: str,
-        outfile: Optional[TextIO] = None,
-        prefix: Optional[str] = None,
+        outfile: TextIO | None = None,
+        prefix: str | None = None,
         residue_name: str = "LIG",
     ):
         """Writes Q's .lib file for a given ligand.
@@ -302,7 +302,7 @@ class OpenFF2Q(MoleculeIO):
             if should_close:
                 outfile.close()
 
-    def write_prm_Q(self, lname: str, outfile: Optional[TextIO] = None, prefix: Optional[str] = None):
+    def write_prm_Q(self, lname: str, outfile: TextIO | None = None, prefix: str | None = None):
         """Writes Q's .prm file for a given ligand.
 
         Args:
@@ -316,7 +316,7 @@ class OpenFF2Q(MoleculeIO):
                 Defaults to "LIG".
         """
 
-        def insert_prefix(at_name, prefix: Optional[str]):
+        def insert_prefix(at_name, prefix: str | None):
             if prefix is not None:
                 return prefix + at_name
             return at_name
@@ -442,7 +442,7 @@ class OpenFF2Q(MoleculeIO):
             if should_close:
                 outfile.close()
 
-    def write_PDB(self, lname: str, outfile: Optional[TextIO] = None, residue_name: str = "LIG"):
+    def write_PDB(self, lname: str, outfile: TextIO | None = None, residue_name: str = "LIG"):
         """Writes pdb file for a given ligand.
 
         Args:
@@ -514,7 +514,7 @@ class OpenFF2Q(MoleculeIO):
             )
 
         lig_prm_contents = {}
-        for name, prefix, res in zip(self.lig_names, prefixes, residues):
+        for name, prefix, res in zip(self.lig_names, prefixes, residues, strict=False):
             lib_out = StringIO()
             self.write_lib_Q(name, outfile=lib_out, prefix=prefix, residue_name=res)
             lib_lines = lib_out.getvalue().split("\n")

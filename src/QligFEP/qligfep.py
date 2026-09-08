@@ -5,7 +5,7 @@ import re
 import shutil
 import stat
 from pathlib import Path
-from typing import Literal, Optional, Union
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -64,7 +64,7 @@ CHLORIDE_NAME = {
 COUNTER_WATER_RESNAME = "CWT"
 
 
-def lrf_required_for_edge(same_charge: "bool | None") -> bool:
+def lrf_required_for_edge(same_charge: bool | None) -> bool:
     """Whether this edge must run with LRF on.
 
     A charge-changing edge (``same_charge`` is False) changes the in-sphere net charge, whose
@@ -96,10 +96,10 @@ class QligFEP:
         replicates: str = "10",
         sampling: Literal["sigmoidal", "linear", "exponential", "reverse_exponential"] = "sigmoidal",
         timestep: Literal["1fs", "2fs"] = "2fs",
-        to_clean: Optional[list[str]] = None,
-        water_thresh: Union[float, int] = 1.4,
+        to_clean: list[str] | None = None,
+        water_thresh: float | int = 1.4,
         dr_force: float = 0.5,
-        random_state: Optional[int] = 42,
+        random_state: int | None = 42,
         wath_ligand_only: bool = False,
         neq: bool = False,
         neq_reps: int = 5,
@@ -108,7 +108,7 @@ class QligFEP:
         neq_relax_steps: int = 5000,
         neq_L: float = 8.0,
         neq_schedule: Literal["sigmoidal", "linear"] = "sigmoidal",
-        protein_charge: Optional[int] = None,
+        protein_charge: int | None = None,
         charge_method: str = "ion_match",
     ):
         self.timestep = timestep
@@ -159,7 +159,7 @@ class QligFEP:
             raise ValueError(f"charge_method={charge_method!r} not in {valid_charge_methods}")
         self.charge_method = charge_method
         # Populated by read_files() once formal charges are known.
-        self.same_charge: Optional[bool] = None
+        self.same_charge: bool | None = None
         # Co-alchemical water state, populated by place_counter_water() when
         # charge_method == "coalchemical_water". Each entry is a dict with
         # keys "topology_indices" (3 ints) and "qatoms" (3 Q-atom descriptors).
@@ -175,7 +175,7 @@ class QligFEP:
                     try:
                         resnr = int(line[22:26])
                         atnr = int(line[6:11])
-                    except (IndexError, ValueError):
+                    except IndexError, ValueError:
                         continue
                     break
             self.residueoffset = resnr
@@ -594,7 +594,7 @@ class QligFEP:
                 try:
                     last_atnr = max(last_atnr, int(line[6:11]))
                     last_resnr = max(last_resnr, int(line[22:26]))
-                except (ValueError, IndexError):
+                except ValueError, IndexError:
                     continue
 
         # Append ion ATOM lines to the combined PDB
@@ -1605,7 +1605,7 @@ class QligFEP:
 
                     elif self.start == "0.5":
                         outfile.write(f"{mpirun} md_0500_0500.inp > md_0500_0500.log\n\n")
-                        for md1, md2 in zip(md_1, md_2):
+                        for md1, md2 in zip(md_1, md_2, strict=False):
                             outfile.write(f"{mpirun} {md1[:-4]}.inp > {md1[:-4]}.log\n")
                             outfile.write(f"{mpirun} {md2[:-4]}.inp > {md2[:-4]}.log\n")
                             outfile.write("\n")
@@ -1629,7 +1629,7 @@ class QligFEP:
         with open(qfep_out, "w") as outfile:
             outfile.write(content)
 
-    def avoid_water_protein_clashes(self, writedir, header: Optional[str] = None, save_removed: bool = False):
+    def avoid_water_protein_clashes(self, writedir, header: str | None = None, save_removed: bool = False):
         """Function to remove water molecules too close to protein & ligands | ligands (water leg).
         Thresholds are the distances in Ångström from the protein & ligands | ligands atoms
         to the nearest heavy atom in the water molecule (HOH).
