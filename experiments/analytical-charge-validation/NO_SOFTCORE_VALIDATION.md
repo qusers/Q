@@ -81,3 +81,41 @@ produce **no free-energy estimate**. A future interior result must be labeled
 truncated: omitting exact endpoints does not prove that the missing endpoint
 contributions vanish or cancel between protein and water. Apply a post-hoc
 Born contribution only once and only over the actual sampled interval.
+
+## Submission and local evidence
+
+Submitted Slurm job **26482080** from committed source
+`787e76ebf40c37b3a68dd63d1132df4ce78bba9f`. This is the actual submission ID,
+not the scheduler's separate `--test-only` estimate. Release:
+
+`/projects/prjs2157/astra-charge-change-perturbation/releases/no-softcore-787e76eb-20260908`
+
+Scheduler log:
+
+`/projects/prjs2157/astra-charge-change-perturbation/logs/no-softcore-26482080.out`
+
+The source archive SHA-256 is
+`bbaa376b274b9e97c8ab07eca39bb93a132230520d7774e6272713813345cdba`;
+the native archive SHA-256 is
+`3e1dcd376a906e893bb15dffb44b3072771e43fed86ad5e3245cabbbdac58c52`.
+Both were verified after transfer and before submission. Cluster outcomes are
+not yet established by this submission record.
+The scheduler confirmed `RUNNING` on `tcn181`, with requeue disabled and no
+restarts. The final focused local adapter/chain regression suite passed
+45 tests in 50.79 seconds; the batch shell script also passed syntax checking.
+
+Before submission, actual c-Met protein forward inputs passed paired 20-step
+local checks at all three weights. A separate 2,000-step paired check at
+state-2 weight 0.0001 also passed: final restart bytes matched, 1,999 energy
+frames per run were validated, and the largest Born difference residual was
+`3.694822225952521e-13` kilocalories per mole. Its local native build was the
+retained integration build, not a claim to have already executed the new
+cluster build. The retained inputs and logs are under
+`runtime/local-no-softcore-2000-20260908`.
+
+That local check's uncorrected pure-state energy gap ranged from approximately
+-73.16 to 7,871.88 kilocalories per mole. Large unscaled gaps can therefore
+persist away from exact endpoints despite stable dynamics and correct Born
+bookkeeping. This observation neither establishes useful statistical overlap
+nor estimates a correction error. Preserve and inspect these gaps in the
+cluster results before designing the longer sampling ladder.
