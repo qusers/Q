@@ -1,6 +1,16 @@
-# Production blocker: existing water-constraint convergence
+# Historical blocker: water-constraint convergence
 
-Status: diagnosed; **solver repair requires user approval**. Neither the solver,
+Integration update (2026-09-08): the user approved reuse of the modernized
+constraint solvers in a separate branch. Its existing SHAKE repair passes the
+64-case final-residual test and the unchanged sixteen-cell software campaign,
+including preparation, restart transfer, charge windows and analysis. See
+[integration evidence and limitations](MODERNIZATION_INTEGRATION.md).
+The geometry blocker is resolved for these tests; physical validation remains open.
+
+The remainder of this document records the **pre-integration diagnosis**, not the
+current implementation or approval status.
+
+Historical status: diagnosed; solver repair required user approval. Neither the solver,
 integration scheme, thermostat nor the geometry alarm was changed in this audit.
 This is a problem in Q's existing dynamics, not evidence that the analytical
 charged-perturbation correction has failed or that a new sampler is needed.
@@ -57,7 +67,8 @@ It does not implement or substitute another constraint solver.
 ## Retained evidence and reproducibility
 
 The failing cell, source snapshot, build log and executables are copied unchanged
-under `runtime/constraint-failure-20260908/` in this worktree, excluded from version
+under `runtime/constraint-failure-20260908/` in the original
+`analytical-charge-corrections` worktree, not this new integration worktree, excluded from version
 control. The original build is source commit `bf1a8e06`; the runtime report retains
 its original paths, not invented replacement provenance. Fingerprints use SHA-256,
 a cryptographic hash algorithm:

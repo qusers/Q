@@ -6,6 +6,23 @@ import pytest
 
 from QligFEP.CLI.parser_base import parse_arguments
 from QligFEP.CLI.setupFEP import create_call
+from QligFEP.templates.equilibration import get_equilibration_configs
+
+
+@pytest.mark.parametrize('timestep', ['1fs', '2fs'])
+@pytest.mark.parametrize('minimize', [False, True])
+def test_minimization_and_boundary_overrides_survive_integration(timestep, minimize):
+    configs = get_equilibration_configs(
+        timestep, 14, minimize=minimize, perstate_polarization=True,
+        polarization_adaptation=False, perstate_born=True)
+    assert len(configs) == 5
+    assert configs[0].params.minimize is minimize
+    assert configs[0].params.constrain_hydrogens is minimize
+    for config in configs:
+        assert config.params.perstate_polarization is True
+        assert config.params.polarization_adaptation is False
+        assert config.params.perstate_born is True
+        assert config.params.shell_radius == 14
 
 
 @pytest.mark.parametrize(("extra_args", "expected"), [([], False), (["--minimize"], True)])

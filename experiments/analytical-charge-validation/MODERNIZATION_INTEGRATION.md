@@ -43,7 +43,24 @@ by this integration.
 Initial integration checks: native LINCS 29/29 and SETTLE 512/512 assertions;
 100 template, minimization-option, isolated-constraint, state-energy and
 diagnostic tests; 42 probe and native protocol tests passed. Full campaign
-validation is still pending at this checkpoint.
+validation was pending at that checkpoint.
+
+The subsequent restart-chain, endpoint and completion suite passed 79 tests.
+All eleven campaign tests then passed with expected-failure handling disabled:
+the original sixteen cells completed preparation, restart transfer, three charge
+windows and analysis at the fixed aggregate 6.4 picosecond software-test budget.
+No seeds or geometry alarms changed. The four obsolete campaign expected-failure
+markers were removed only after this result.
+
+The separate solver comparison uses a common neutral, repaired-SHAKE restart
+at requested radius 14 angstrom (388 waters), orientation seed 758982 and
+velocity seed 123. It runs 100 one-femtosecond steps for each charge sign and
+each of SHAKE/SHAKE, SHAKE/SETTLE and LINCS/LINCS, retaining restart velocities.
+All 25 tests passed, including independently reconstructed final water distances,
+Born-inclusive saved-energy accounting, and rejection of missing, duplicated or
+relabelled solver evidence. This does not assert identical trajectories between
+different solvers or validate their equilibrium distributions. The campaign
+remains explicitly SHAKE/SHAKE; SETTLE has not been adopted as its default.
 
 These are software checks, not equilibrium or physical validation. No
 high-performance computing (HPC) job has been submitted. The analytical

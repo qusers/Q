@@ -107,10 +107,16 @@ implementation before a run, rather than modifying a running chain's readers.
 The native tests check both charge signs, all-evaluation counts, corrupted traces,
 cutoff coverage failures and the geometry-drift alarm. Density, probe position
 and shell moments are independently reconstructed from final restart coordinates.
-Short controls compare with the pre-observation engine at commit `4ad905d1` and
+Historical controls compared with the pre-observation engine at commit `4ad905d1` and
 require byte-identical saved state energies and final restarts. These tests are
 evidence for observational behavior on those controls, not physical correction
 validation or universal performance neutrality.
+
+After [constraint-solver integration](MODERNIZATION_INTEGRATION.md), the
+observer-only test instead builds identical current source with trace calls
+enabled and disabled. The old engine cannot isolate observation effects because
+it also has different constraint dynamics. The current comparison retains the
+byte-identical energy and restart requirement for both charge signs.
 
 The extra per-step observation work changes runtime cost, so the earlier local
 timings are historical estimates rather than timings of this build. Refresh the

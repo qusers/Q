@@ -34,17 +34,10 @@ def assembled(isolated_build, tmp_path_factory):
         def no_launch(*args, **kwargs):
             raise AssertionError('Campaign assembly must not launch any process')
         patch.setattr(subprocess, 'run', no_launch)
-        try:
-            result = campaign.assemble(plans, root/'campaign', profile='software_smoke')
-        except ValueError as error:
-            # Retain the exact failed matrix. Do not replace seeds or loosen the
-            # geometry alarm to enable the positive integration tests below.
-            assert 'Water distance extrema drift' in str(error)
-            result = None
+        result = campaign.assemble(plans, root/'campaign', profile='software_smoke')
     return root/'campaign/campaign.json', result
 
 
-@pytest.mark.xfail(strict=True, raises=ValueError, reason='Existing native SHAKE violates coupled water constraints; campaign geometry gate rejects the declared seed matrix')
 def test_assembly_records_complete_matrix_without_launch(assembled):
     path, _ = assembled
     result = campaign.inspect(path)
@@ -82,7 +75,6 @@ def completed_campaign(assembled):
     return path, campaign.inspect(path)
 
 
-@pytest.mark.xfail(strict=True, raises=ValueError, reason='Endpoint matrix is blocked by the existing native SHAKE geometry defect')
 def test_all_matrix_cells_transfer_run_and_analyze(completed_campaign):
     _, result = completed_campaign
     assert all(cell['completed_ladder_windows'] == 3 for cell in result['cells'])
@@ -93,7 +85,6 @@ def test_all_matrix_cells_transfer_run_and_analyze(completed_campaign):
         assert analysis['production_ready'] is False
 
 
-@pytest.mark.xfail(strict=True, raises=ValueError, reason='Endpoint matrix is blocked by the existing native SHAKE geometry defect')
 def test_campaign_inspection_cli_and_staging_overwrite_refusal(completed_campaign):
     path, result = completed_campaign
     command = subprocess.run([sys.executable, '-m', 'QligFEP.charge_campaign', 'inspect', str(path)],
@@ -125,7 +116,6 @@ def test_campaign_matrix_cannot_be_relabelled(assembled, tmp_path, mutation, mes
         campaign.inspect(changed)
 
 
-@pytest.mark.xfail(strict=True, raises=ValueError, reason='Endpoint matrix is blocked by the existing native SHAKE geometry defect')
 def test_transfer_rechecks_endpoint_identity_not_just_restart_hash(completed_campaign, tmp_path):
     _, report = completed_campaign
     original = Path(report['cells'][0]['ladder_path'])

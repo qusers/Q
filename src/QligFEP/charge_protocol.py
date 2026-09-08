@@ -44,9 +44,11 @@ def keyed(rows):
     result = {}
     for row in rows:
         key = row[0].lower()
-        if key in result or len(row) != 2:
+        # Q's solver selector is the sole supported two-value setting.
+        expected = 3 if key == 'constraint_algorithm' else 2
+        if key in result or len(row) != expected:
             raise ValueError(f'Duplicate or non-scalar key: {key}')
-        result[key] = row[1]
+        result[key] = ' '.join(row[1:])
     return result
 
 

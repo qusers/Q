@@ -1,11 +1,12 @@
-# Two-radius campaign assembly — blocked by a native constraint defect
+# Two-radius campaign assembly — software validation
 
 The campaign framework writes plans for Q's existing molecular dynamics (MD).
 It launches no simulation and submits no high-performance computing (HPC) job.
-The full seed matrix currently fails a native water-geometry check; see the
-[constraint diagnosis and approval request](CONSTRAINT_BLOCKER.md). Positive
-end-to-end campaign tests are therefore **expected failures, not completed
-validation**. Do not use this framework as a production-readiness certificate.
+The unchanged seed matrix and short end-to-end campaign now pass with the existing
+SHAKE repair from the modernization branch; see the
+[integration evidence](MODERNIZATION_INTEGRATION.md) and
+[historical constraint diagnosis](CONSTRAINT_BLOCKER.md).
+Do not use software checks as a production-readiness certificate.
 
 ## Fixed matrix and profiles
 
@@ -52,8 +53,8 @@ Across the matrix, repeated orientation seeds, velocity seeds, prepared coordina
 fingerprints, preparation-report paths or initial restart fingerprints are rejected.
 Distinct values are necessary controls against copying a replica, **not proof of
 equilibrium independence**. The seed's all-evaluation native diagnostic must pass;
-normal termination alone is insufficient. This last condition currently blocks
-the declared sixteen-cell matrix rather than selecting a more favorable seed.
+normal termination alone is insufficient. This condition previously blocked
+the matrix and is unchanged after the solver repair; no favorable seed was substituted.
 
 ## Commands and endpoint transfer
 
@@ -92,16 +93,16 @@ directory must never be mistaken for evidence of endpoint equilibration.
 
 ## Current evidence and remaining work
 
-The software matrix generated sixteen fresh preparations and twenty-step seeds.
-It was rejected before longer endpoint continuation or any charge ladder ran.
-The matrix/budget rejection tests and the isolated constraint diagnosis run now;
-the full transfer/run/analyze tests remain strict expected failures at the genuine
-geometry gate. Replaying those tests with unchanged seeds is required after any
-separately approved constraint repair; expected failures must not be counted as
-successful transfers.
+The software matrix generates sixteen fresh preparations and twenty-step seeds.
+After integration of repaired SHAKE, all sixteen cells completed their 0.1 ps
+preparation and three 0.1 ps charge windows, with restart provenance and
+saved-energy accounting checked. All eleven campaign tests passed with
+expected-failure handling disabled before the obsolete markers were removed.
+The aggregate 6.4 ps is a software smoke test, not an equilibration experiment.
+Short-window analysis correctly reports insufficient sampling, not a usable
+confidence interval.
 
-The remaining production work includes resolving this native blocker, completing
-the full end-to-end campaign tests, multi-observable equilibration/discard/block
+The remaining production work includes multi-observable equilibration/discard/block
 sensitivity, between-replica/direction/radius analysis, refreshed same-build hardware
 timing and an approved scheduler allocation. No physical correction claim follows
 from software matrix consistency alone.
