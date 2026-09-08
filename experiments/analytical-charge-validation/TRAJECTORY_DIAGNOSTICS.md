@@ -15,6 +15,10 @@ is force geometry `istep`, not a post-update coordinate frame. The temperature i
 the existing temperature value associated with that incoming state; the observer
 does not call the temperature routine or perform another velocity rescaling.
 
+Match observations to saved energy frames by native step number: energy records
+exclude step zero and the final step, whereas this trace includes both. Applying
+the same array-index discard to these different sequences would misalign them.
+
 At **every** MD force geometry, including the final energy evaluation, the code
 updates cumulative observations. A normal `N`-step run must therefore account for
 `N+1` geometries, even though most are not printed individually:
@@ -114,3 +118,11 @@ bounded timing on the intended hardware before requesting the HPC allocation.
 Campaign generation, endpoint-to-ladder transfer and multi-observable/replica
 statistical qualification remain required. No long trajectory or HPC job is
 authorized by this diagnostic checkpoint.
+
+Verification checkpoint (2026-09-08): **302 passed, 2 optional integration skips,
+2 documented archival partition expected failures**, in 93.64 seconds. Fresh
+isolated builds used native source commit `53f2d015`, including the new observer.
+The tests exercise its actual chain/endpoint/completion/analysis integration,
+the diagnostics command, refusal of an entirely removed required trace, and
+hot-atom warning rejection. The full focused boundary/accounting/endpoint suite
+passed. No HPC calculation or long preparation was run.

@@ -11,7 +11,8 @@ charge-only questions, a capped 10/14-angstrom feasibility pilot and proposed
 uncertainty/failure criteria. A fresh Qprep probe generator and bounded existing-MD
 timing tool are implemented. The [local timing evidence](LOCAL_TIMING.md) estimates
 about 5.4 aggregate serial hours for that pilot before contingency or timestep
-checks; it is not an HPC allocation or convergence result. Shared position-restraint
+checks; it predates the native trajectory observer and is not a current-build HPC
+allocation or convergence result. Shared position-restraint
 support and a [completed-window check](RESTRAINT_AND_COMPLETION.md) now exist.
 An [isolated build and one-window chain runner](BUILD_AND_CHAIN.md) now records
 source/build/launch evidence and validates realized restart dependencies.

@@ -1,5 +1,10 @@
 # Local native timing: cost evidence, not production validation
 
+These are historical **pre-observer** measurements. The later
+[all-evaluation diagnostics](TRAJECTORY_DIAGNOSTICS.md) add per-step work and
+output; this table is not a performance measurement of that build. Refresh bounded
+same-build timing on the intended hardware before requesting an allocation.
+
 Measured 2026-09-08 on macOS 26.5.2, arm64, using serial Qdyn compiled with GNU
 Fortran 11.5.0. Molecular dynamics (MD) used 298 kelvin, 1-femtosecond (fs)
 steps, zero frozen offsets, state-2 weight zero, and the settings in the
