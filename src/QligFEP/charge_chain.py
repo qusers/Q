@@ -126,13 +126,14 @@ def inspect_plan(path):
     return {'schema_version': spec['schema_version'], 'gate': 'planned_chain_consistency_passed', 'production_ready': False,
             'purpose': 'endpoint_preparation' if endpoint else 'charge_ladder',
             'preparation_origin': origin if endpoint else None,
+            'native_trace_required': 'subroutine write_charge_trace' in (build_path.parent/'src/q6/md.f90').read_text(),
             'plan_path': str(path), 'plan_sha256': cp.fingerprint(path),
             'engine': {**engine, 'binary': str(binary)}, 'series': {**series, 'windows': windows},
             'build_report': str(build_path), 'build_report_sha256': spec['build_report_sha256'],
             'driver_files_sha256': {name: cp.fingerprint(Path(__file__).with_name(name)) for name in
                                    ('charge_chain.py', 'charge_build.py', 'charge_protocol.py',
                                     'charge_completion.py', 'boundary_native.py', 'endpoint_trim.py',
-                                    'charge_endpoint.py', 'charge_probe.py')},
+                                    'charge_endpoint.py', 'charge_probe.py', 'charge_diagnostics.py')},
             'initial_restart': str(initial_path), 'initial_restart_sha256': spec['initial_restart_sha256'],
             'initial_offsets': initial, 'total_steps': sum(int(w['signature']['md']['steps']) for w in windows),
             'limitations': ['future restart contents are not validated until realized',
@@ -188,6 +189,8 @@ def progress(plan):
                 started['command'] != [plan['engine']['binary'], Path(window['input']).name]):
             raise ValueError('Launch declaration differs from planned invocation')
         result = completion.validate_window(window, plan['series']['born_mode'], directory/'charge-native.log')
+        if plan['native_trace_required'] and result['trajectory_diagnostics'] is None:
+            raise ValueError('Retained native source requires trajectory diagnostics; trace is missing')
         if result != receipt['result']:
             raise ValueError('Completed native outputs changed since their receipt')
         if (directory/'charge-failed.json').exists():
@@ -232,6 +235,8 @@ def run_next(path, *, max_steps=2000, timeout=60.):
         if inspect_plan(path) != plan:
             raise ValueError('Plan, input or engine changed during execution')
         output = completion.validate_window(window, plan['series']['born_mode'], directory/'charge-native.log')
+        if plan['native_trace_required'] and output['trajectory_diagnostics'] is None:
+            raise ValueError('Retained native source requires trajectory diagnostics; trace is missing')
         receipt = {'plan_sha256': plan['plan_sha256'], 'window_index': index,
                    'started_sha256': cp.fingerprint(directory/'charge-started.json'),
                    'preflight_sha256': cp.fingerprint(directory/'charge-preflight.json'),

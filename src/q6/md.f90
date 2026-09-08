@@ -4658,6 +4658,7 @@ subroutine md_run
     ! --- start of time step ---
     ! get potential energy and derivatives from FF
     call pot_energy
+    if (perstate_wpol .and. nodeid == 0 .and. .not. use_PBC) call write_charge_trace(Temp)
 
     ! NEQ work integral. NOTE: the window (istep in [2, nsteps-2]) drops the first two
     ! steps and the final step -- kept verbatim from the original NEQ engine; whether
@@ -4812,6 +4813,7 @@ end if
 call make_pair_lists
 call pot_energy
 if (nodeid .eq. 0) then
+  if (perstate_wpol .and. .not. use_PBC) call write_charge_trace(Temp)
   write(*,*)
   call write_out
   call write_xfin
@@ -16855,6 +16857,90 @@ subroutine write_boundary_audit
   end do
   write(*,'(a)') 'Q_BOUNDARY_AUDIT_V3 END'
 end subroutine write_boundary_audit
+
+subroutine write_charge_trace(current_temperature)
+  ! Observations only, at every MD force geometry (steps 0..nsteps).
+  ! Never call temperature(), SHAKE, random generators, or any force routine.
+  use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+  real(8), intent(in) :: current_temperature
+  integer, save :: evaluations=0, invalid=0
+  real(8), save :: max_radius=0, max_qradius=0, oh_min, oh_max, hh_min, hh_max
+  real(8), save :: temp_min, temp_max, free_min, free_max
+  integer :: i, j, k, iw, is, bin, density(21), populations(nwpolr_shell)
+  real(8) :: radius, qradius, oh1, oh2, hh, radial(3), h1(3), h2(3), dipole(3), length, cosine
+  real(8) :: moments(nwpolr_shell), squares(nwpolr_shell)
+  logical :: snapshot
+  if (istep == 0) then
+    evaluations=0; invalid=0; max_radius=0; max_qradius=0
+    oh_min=huge(1.0_8); oh_max=0; hh_min=huge(1.0_8); hh_max=0
+    temp_min=huge(1.0_8); temp_max=0; free_min=huge(1.0_8); free_max=0
+  end if
+  evaluations=evaluations+1
+  snapshot=(mod(istep,iout_cycle) == 0 .or. istep == nsteps)
+  qradius=0; density=0; populations=0; moments=0; squares=0
+  if (.not. all(ieee_is_finite(x)) .or. .not. all(ieee_is_finite(v))) then
+    invalid=invalid+1
+  else
+    do i=1,natom
+      radius=sqrt(sum((x(3*i-2:3*i)-xwcent)**2))
+      if (.not. ieee_is_finite(radius)) then
+        invalid=invalid+1
+        cycle
+      end if
+      max_radius=max(max_radius,radius)
+      if (iqatom(i) /= 0) qradius=max(qradius,radius)
+    end do
+    max_qradius=max(max_qradius,qradius)
+    do iw=1,nwat
+      i=3*(nat_solute+3*(iw-1))
+      radial=x(i+1:i+3)-xwcent
+      h1=x(i+4:i+6)-x(i+1:i+3)
+      h2=x(i+7:i+9)-x(i+1:i+3)
+      oh1=sqrt(sum(h1*h1)); oh2=sqrt(sum(h2*h2)); hh=sqrt(sum((h1-h2)**2))
+      radius=sqrt(sum(radial*radial)); dipole=h1+h2; length=sqrt(sum(dipole*dipole))
+      if (.not. all(ieee_is_finite([oh1,oh2,hh,radius,length])) .or. &
+          min(oh1,oh2,hh,length) <= 0) then
+        invalid=invalid+1
+        cycle
+      end if
+      oh_min=min(oh_min,oh1,oh2); oh_max=max(oh_max,oh1,oh2)
+      hh_min=min(hh_min,hh); hh_max=max(hh_max,hh)
+      if (.not. snapshot) cycle
+      bin=21
+      if (radius < rwat) bin=1+int(20*radius/rwat)
+      density(bin)=density(bin)+1
+      ! Reproduce the existing hard-shell membership; do not change it.
+      if (radius > real(wshell(nwpolr_shell)%rout-wshell(nwpolr_shell)%dr,8)) then
+        is=1
+        do j=nwpolr_shell,2,-1
+          if (radius <= real(wshell(j)%rout,8)) then
+            is=j
+            exit
+          end if
+        end do
+        cosine=max(-1.0_8,min(1.0_8,sum(dipole*radial)/(length*radius)))
+        populations(is)=populations(is)+1
+        moments(is)=moments(is)+cosine
+        squares(is)=squares(is)+cosine*cosine
+      end if
+    end do
+  end if
+  if (.not. ieee_is_finite(current_temperature) .or. .not. ieee_is_finite(Tfree)) then
+    invalid=invalid+1
+  else
+    temp_min=min(temp_min,current_temperature); temp_max=max(temp_max,current_temperature)
+    free_min=min(free_min,Tfree); free_max=max(free_max,Tfree)
+    if (min(current_temperature,Tfree) <= 0) invalid=invalid+1
+  end if
+  if (.not. snapshot) return
+  write(*,'(a,3i12,13es26.17e3)') 'Q_CHARGE_TRACE_V1 ',istep,evaluations,invalid, &
+    max_radius,qradius,max_qradius,oh_min,oh_max,hh_min,hh_max,current_temperature,Tfree, &
+    temp_min,temp_max,free_min,free_max
+  write(*,'(a,i12,21i10)') 'QCT_DENSITY ',istep,density
+  do k=1,nwpolr_shell
+    write(*,'(a,3i12,2es26.17e3)') 'QCT_SHELL ',istep,k,populations(k),moments(k),squares(k)
+  end do
+end subroutine write_charge_trace
 
 !-----------------------------------------------------------------------
 

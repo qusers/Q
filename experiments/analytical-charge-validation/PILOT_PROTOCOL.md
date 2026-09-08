@@ -223,7 +223,8 @@ Qprep systems and existing MD workload are different.
 
 The [single-chain BAR analysis](ANALYSIS.md) now includes explicit Born views,
 overlap and conditional block uncertainty. The next implementation work is
-campaign generation and endpoint-to-ladder transfer, trajectory/runtime checks and
+campaign generation and endpoint-to-ladder transfer, statistical qualification of
+the [native trajectory diagnostics](TRAJECTORY_DIAGNOSTICS.md), and
 between-replica/direction/radius statistical comparisons. A full launch manifest
 and scheduler script must not claim readiness
 until those exist. After that, present the capped Stage B allocation for approval.

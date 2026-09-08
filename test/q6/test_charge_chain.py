@@ -103,6 +103,12 @@ def test_native_chain_realizes_and_pins_each_restart(plan_factory, sign, directi
             capture_output=True, text=True, check=True, timeout=30)
         assert json.loads(command.stdout) == analysis
         assert cp.fingerprint(path.parent/'w2/charge-completed.json') == final_receipt
+        diagnostic_command = subprocess.run(
+            [sys.executable, '-m', 'QligFEP.charge_diagnostics', str(path), '--window', '0'],
+            capture_output=True, text=True, check=True, timeout=30)
+        diagnostic = json.loads(diagnostic_command.stdout)
+        assert diagnostic['force_geometries_observed'] == 101
+        assert diagnostic['production_ready'] is False
 
 
 def test_changed_predecessor_blocks_successor(plan_factory):
@@ -120,6 +126,18 @@ def test_analysis_rejects_incomplete_chain(plan_factory):
     with pytest.raises(ValueError, match='completely verified chain'):
         charge_analysis.analyze_chain(path, discard_frames=0, bootstrap=50)
     assert not (path.parent/'w0/charge-started.json').exists()
+
+
+def test_source_required_trace_cannot_be_dropped_from_a_completed_window(plan_factory):
+    path = plan_factory()
+    assert chain.inspect_plan(path)['native_trace_required'] is True
+    chain.run_next(path)
+    log = path.parent/'w0/charge-native.log'
+    log.write_text('\n'.join(line for line in log.read_text().splitlines()
+                             if not line.startswith(('Q_CHARGE_TRACE', 'QCT_')))+'\n')
+    with pytest.raises(ValueError, match='trace is missing'):
+        chain.run_next(path)
+    assert not (path.parent/'w1/charge-started.json').exists()
 
 
 @pytest.mark.parametrize('artifact', ['states.en', 'final.re', 'charge-started.json', 'charge-native.log'])

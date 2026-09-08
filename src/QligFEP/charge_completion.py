@@ -12,6 +12,7 @@ from pathlib import Path
 import struct
 
 from . import boundary_native as bn, charge_protocol as cp
+from . import charge_diagnostics
 
 
 def _record(stream):
@@ -91,14 +92,19 @@ def validate_window(window, born_mode, log_path):
     initial = window['restart']
     if final['atoms'] != initial['atoms'] or final['offset_record_sha256'] != initial['offset_record_sha256']:
         raise ValueError('Final restart dimensions or frozen offsets differ from input')
+    diagnostics = None
+    if 'Q_CHARGE_TRACE' in log or 'QCT_' in log:
+        diagnostics = charge_diagnostics.assess(window, native['native'], log_path)
     return {'schema_version': 1, 'gate': 'completed_window_consistency_passed', 'production_ready': False,
+            'trajectory_diagnostics': diagnostics,
             'native_initialization': native, 'saved_frames': count,
             'energy_sha256': cp.fingerprint(energy_path), 'final_sha256': cp.fingerprint(final_path),
             'final_restart': final, 'maximum_accounting_residual_kcal_mol': max_residual,
             'energy_gap_range_kcal_mol': [minimum, maximum],
             'limitations': ['output consistency, not source-build or launch attribution',
                             'normal exit and finite outputs do not establish trajectory stability or equilibration',
-                            'no whole-trajectory cutoff, solvent-geometry or temperature audit',
+                            'absent native trace means no all-evaluation geometry/temperature audit',
+                            'trace summaries do not establish stationarity or independent sampling',
                             'uncertainty, overlap, convergence and physical correction remain unqualified']}
 
 

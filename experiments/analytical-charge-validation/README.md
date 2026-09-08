@@ -19,8 +19,12 @@ An [audited chain analysis](ANALYSIS.md) now reports raw/with-Born estimates,
 overlap and conditional within-window block uncertainty. A bounded
 [fixed-endpoint preparation schedule](ENDPOINT_PREPARATION.md) now retains restart
 velocities and includes its grid-start seed in the compute cap. Campaign generation,
-trajectory/runtime checks and between-replica/direction/radius analysis still need
+endpoint-to-ladder transfer and between-replica/direction/radius analysis still need
 implementation before production launch. No angular target was changed.
+Native [trajectory diagnostics](TRAJECTORY_DIAGNOSTICS.md) now cover every MD
+force geometry for cutoff bounds and report temperature, water geometry, radial
+density and shell orientation. Statistical qualification of these observables
+remains incomplete.
 
 ## Staged-input preflight
 
