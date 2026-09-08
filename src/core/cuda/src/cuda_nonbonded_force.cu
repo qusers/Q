@@ -1,8 +1,286 @@
+#include <cub/device/device_scan.cuh>
+
 #include "cuda_force_accumulation.cuh"
 #include "cuda_nonbonded_force.cuh"
 #include "geometry.h"
 
 namespace {
+
+/*
+ * Unique component layout:
+ *
+ *  0  phi0
+ *
+ *  1  phi1.x
+ *  2  phi1.y
+ *  3  phi1.z
+ *
+ *  4  phi2.xxx -> xx
+ *  5  phi2.yy
+ *  6  phi2.zz
+ *  7  phi2.xy
+ *  8  phi2.xz
+ *  9  phi2.yz
+ *
+ * 10  phi3.xxx
+ * 11  phi3.yyy
+ * 12  phi3.zzz
+ * 13  phi3.xxy
+ * 14  phi3.xxz
+ * 15  phi3.xyy
+ * 16  phi3.yyz
+ * 17  phi3.xzz
+ * 18  phi3.yzz
+ * 19  phi3.xyz
+ */
+__device__ __forceinline__ double
+calculate_unique_lrf_component(
+    int phi,
+    double charge,
+    double x,
+    double y,
+    double z) {
+    const double r2 =
+        x * x + y * y + z * z;
+
+    if (r2 == 0.0) {
+        return 0.0;
+    }
+
+    const double inv_r = rsqrt(r2);
+    const double inv_r2 = 1.0 / r2;
+    const double inv_r3 = inv_r * inv_r2;
+    const double inv_r5 = inv_r3 * inv_r2;
+    const double inv_r7 = inv_r5 * inv_r2;
+
+    switch (phi) {
+        case 0:
+            return charge * inv_r;
+
+        case 1:
+            return -charge * x * inv_r3;
+
+        case 2:
+            return -charge * y * inv_r3;
+
+        case 3:
+            return -charge * z * inv_r3;
+
+        case 4:
+            return charge *
+                   (3.0 * x * x * inv_r5 -
+                    inv_r3);
+
+        case 5:
+            return charge *
+                   (3.0 * y * y * inv_r5 -
+                    inv_r3);
+
+        case 6:
+            return charge *
+                   (3.0 * z * z * inv_r5 -
+                    inv_r3);
+
+        case 7:
+            return charge *
+                   (3.0 * x * y * inv_r5);
+
+        case 8:
+            return charge *
+                   (3.0 * x * z * inv_r5);
+
+        case 9:
+            return charge *
+                   (3.0 * y * z * inv_r5);
+
+        case 10:
+            return charge *
+                   (9.0 * x * inv_r5 -
+                    15.0 * x * x * x * inv_r7);
+
+        case 11:
+            return charge *
+                   (9.0 * y * inv_r5 -
+                    15.0 * y * y * y * inv_r7);
+
+        case 12:
+            return charge *
+                   (9.0 * z * inv_r5 -
+                    15.0 * z * z * z * inv_r7);
+
+        case 13:
+            return charge *
+                   (3.0 * y * inv_r5 -
+                    15.0 * x * x * y * inv_r7);
+
+        case 14:
+            return charge *
+                   (3.0 * z * inv_r5 -
+                    15.0 * x * x * z * inv_r7);
+
+        case 15:
+            return charge *
+                   (3.0 * x * inv_r5 -
+                    15.0 * x * y * y * inv_r7);
+
+        case 16:
+            return charge *
+                   (3.0 * z * inv_r5 -
+                    15.0 * y * y * z * inv_r7);
+
+        case 17:
+            return charge *
+                   (3.0 * x * inv_r5 -
+                    15.0 * x * z * z * inv_r7);
+
+        case 18:
+            return charge *
+                   (3.0 * y * inv_r5 -
+                    15.0 * y * z * z * inv_r7);
+
+        case 19:
+            return charge *
+                   (-15.0 * x * y * z * inv_r7);
+
+        default:
+            return 0.0;
+    }
+}
+
+__device__ __forceinline__ void
+write_unique_lrf_component(
+    LrfCoefficients& output,
+    int phi,
+    double value) {
+    switch (phi) {
+        case 0:
+            output.phi0 = value;
+            break;
+
+        case 1:
+            output.phi1[0] = value;
+            break;
+
+        case 2:
+            output.phi1[1] = value;
+            break;
+
+        case 3:
+            output.phi1[2] = value;
+            break;
+
+        case 4:
+            output.phi2[0] = value;
+            break;
+
+        case 5:
+            output.phi2[4] = value;
+            break;
+
+        case 6:
+            output.phi2[8] = value;
+            break;
+
+        case 7:
+            output.phi2[1] = value;
+            output.phi2[3] = value;
+            break;
+
+        case 8:
+            output.phi2[2] = value;
+            output.phi2[6] = value;
+            break;
+
+        case 9:
+            output.phi2[5] = value;
+            output.phi2[7] = value;
+            break;
+
+        case 10:
+            output.phi3[0] = value;
+            break;
+
+        case 11:
+            output.phi3[13] = value;
+            break;
+
+        case 12:
+            output.phi3[26] = value;
+            break;
+
+        /*
+         * xxy:
+         * (x,x,y), (x,y,x), (y,x,x)
+         */
+        case 13:
+            output.phi3[1] = value;
+            output.phi3[3] = value;
+            output.phi3[9] = value;
+            break;
+
+        /*
+         * xxz:
+         * (x,x,z), (x,z,x), (z,x,x)
+         */
+        case 14:
+            output.phi3[2] = value;
+            output.phi3[6] = value;
+            output.phi3[18] = value;
+            break;
+
+        /*
+         * xyy:
+         * (x,y,y), (y,x,y), (y,y,x)
+         */
+        case 15:
+            output.phi3[4] = value;
+            output.phi3[10] = value;
+            output.phi3[12] = value;
+            break;
+
+        /*
+         * yyz:
+         * (y,y,z), (y,z,y), (z,y,y)
+         */
+        case 16:
+            output.phi3[14] = value;
+            output.phi3[16] = value;
+            output.phi3[22] = value;
+            break;
+
+        /*
+         * xzz:
+         * (x,z,z), (z,x,z), (z,z,x)
+         */
+        case 17:
+            output.phi3[8] = value;
+            output.phi3[20] = value;
+            output.phi3[24] = value;
+            break;
+
+        /*
+         * yzz:
+         * (y,z,z), (z,y,z), (z,z,y)
+         */
+        case 18:
+            output.phi3[17] = value;
+            output.phi3[23] = value;
+            output.phi3[25] = value;
+            break;
+
+        /*
+         * xyz: all six permutations.
+         */
+        case 19:
+            output.phi3[5] = value;
+            output.phi3[7] = value;
+            output.phi3[11] = value;
+            output.phi3[15] = value;
+            output.phi3[19] = value;
+            output.phi3[21] = value;
+            break;
+    }
+}
 
 __device__ int get_pair_index(
     int n,
@@ -337,6 +615,138 @@ __device__ void accumulate_lrf_direction(
 
         for (int i = 0; i < 27; ++i) {
             atomicAdd(&coefficients[target_group].phi3[i], local_phi3[i]);
+        }
+    }
+}
+
+__global__ void count_lrf_atom_degree_kernel(int n_group_ranges, const uint8_t* group_pair_modes, const int* group_sizes, int* degrees) {
+    const int target_range = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (target_range >= n_group_ranges) {
+        return;
+    }
+
+    int atom_count = 0;
+    for (int source_range = 0; source_range < n_group_ranges; source_range++) {
+        const int pair_index = get_pair_index(n_group_ranges, target_range, source_range);
+        if (group_pair_modes[pair_index] == GROUP_PAIR_LRF) {
+            atom_count += group_sizes[source_range];
+        }
+    }
+    degrees[target_range] = atom_count;
+}
+
+__global__ void fill_lrf_atom_csr_kernel(int n_group_ranges, const uint8_t* group_pair_modes, const int* group_start_idx, const int* group_sizes, const int* offsets, int* source_atom_slots) {
+    const int target_range = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (target_range >= n_group_ranges) {
+        return;
+    }
+
+    int output = offsets[target_range];
+
+    for (int source_range = 0; source_range < n_group_ranges; source_range++) {
+        const int pair_index = get_pair_index(n_group_ranges, target_range, source_range);
+        if (group_pair_modes[pair_index] != GROUP_PAIR_LRF) {
+            continue;
+        }
+        const int source_start = group_start_idx[source_range];
+        const int source_size = group_sizes[source_range];
+        for (int local_atom = 0; local_atom < source_size; local_atom++) {
+            source_atom_slots[output++] = source_start + local_atom;
+        }
+    }
+}
+
+__global__ void build_lrf_coefficients_csr_kernel(
+    int n_group_ranges,
+    const int* group_indices,
+    const int* group_start_idx,
+    const uint8_t* category,
+
+    const int* atom_offsets,
+    const int* source_atom_slots,
+
+    const real_t* atom_charge,
+
+    const real_t* cx,
+    const real_t* cy,
+    const real_t* cz,
+    LrfCoefficients* coefficients) {
+    const int target_range = blockIdx.x;
+    const int phi = blockIdx.y;
+    const int thread = threadIdx.x;
+
+    if (target_range >= n_group_ranges || phi >= 20) {
+        return;
+    }
+
+    const int target_start = group_start_idx[target_range];
+
+    const uint8_t target_category = category[target_start];
+
+    constexpr uint8_t P = static_cast<uint8_t>(AtomCategory::P);
+
+    constexpr uint8_t W = static_cast<uint8_t>(AtomCategory::W);
+
+    /*
+     * LRF coefficients are only required for non-Q groups.
+     * This condition is block-uniform.
+     */
+    if (target_category != P && target_category != W) {
+        return;
+    }
+
+    const int target_group = group_indices[target_range];
+
+    const coord_t target_center = coefficients[target_group].center;
+
+    const int begin = atom_offsets[target_range];
+
+    const int end = atom_offsets[target_range + 1];
+
+    double local_sum = 0.0;
+
+    for (int entry = begin + thread; entry < end; entry += blockDim.x) {
+        const int slot = source_atom_slots[entry];
+
+        const double charge = static_cast<double>(atom_charge[slot]);
+
+        const double x = static_cast<double>(cx[slot]) - target_center.x;
+
+        const double y = static_cast<double>(cy[slot]) - target_center.y;
+
+        const double z = static_cast<double>(cz[slot]) - target_center.z;
+
+        local_sum += calculate_unique_lrf_component(phi, charge, x, y, z);
+    }
+
+    constexpr unsigned FULL_MASK = 0xffffffffu;
+
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        local_sum += __shfl_down_sync(FULL_MASK, local_sum, offset);
+    }
+
+    __shared__ double warp_sums[4];
+
+    const int lane = thread & 31;
+    const int warp = thread >> 5;
+
+    if (lane == 0) {
+        warp_sums[warp] = local_sum;
+    }
+
+    __syncthreads();
+
+    if (warp == 0) {
+        double block_sum = lane < 4 ? warp_sums[lane] : 0.0;
+
+        for (int offset = 16; offset > 0; offset >>= 1) {
+            block_sum += __shfl_down_sync(FULL_MASK, block_sum, offset);
+        }
+
+        if (lane == 0) {
+            write_unique_lrf_component(coefficients[target_group], phi, block_sum);
         }
     }
 }
@@ -1029,6 +1439,19 @@ void CudaNonbondedForce::init_backend(Context& ctx) {
     list_overflow_ = std::make_unique<HostDeviceBuffer<int>>(1, true, true);
 
     lrf_coefficients_ = std::make_unique<HostDeviceBuffer<LrfCoefficients>>(ctx.charge_group_config.charge_groups.size(), false, true);
+
+    lrf_atom_degrees_ = std::make_unique<HostDeviceBuffer<int>>(n_group_ranges + 1, false, true);
+
+    lrf_atom_offsets_ = std::make_unique<HostDeviceBuffer<int>>(n_group_ranges + 1, true, true);
+
+    check_cuda(cub::DeviceScan::ExclusiveSum(
+        nullptr,
+        lrf_scan_temp_bytes_,
+        lrf_atom_degrees_->gpu_data_p,
+        lrf_atom_offsets_->gpu_data_p,
+        n_group_ranges + 1));
+
+    lrf_scan_temp_ = std::make_unique<HostDeviceBuffer<unsigned char>>(lrf_scan_temp_bytes_, false, true);
 }
 
 void CudaNonbondedForce::calc_all_direct_pairs(Context& ctx) {
@@ -1121,12 +1544,14 @@ void CudaNonbondedForce::init_calculation_groups(Context& ctx) {
     if (config.iuse_switch_atom == 1) {
         // Use groups.iswitch to check the distance
         init_calculation_groups_by_switch(ctx);
+
     } else {
         // Should use every atoms to check the distance
         // init_calculation_groups_by_all_atoms(ctx);
         // todo: now alwasys use switch to test
         init_calculation_groups_by_switch(ctx);
     }
+    build_lrf_atom_csr(ctx);
 }
 
 void CudaNonbondedForce::calc_exact_tiles(Context& ctx) {
@@ -1195,27 +1620,29 @@ void CudaNonbondedForce::init_lrf_coefficients(Context& ctx) {
 
         check_cuda(cudaGetLastError());
     }
-    if (n_lrf_pairs_ > 0) {
-        const int coefficient_grid = (n_group_ranges + warps_per_block - 1) / warps_per_block;
+    if (n_lrf_source_atom_entries_ > 0) {
+        constexpr int coefficient_threads = 128;
+        constexpr int unique_phi_count = 20;
 
-        build_lrf_coefficients_kernel<<<coefficient_grid, thread_num>>>(
+        dim3 coefficient_grid = (n_group_ranges, unique_phi_count, 1);
+
+        build_lrf_coefficients_csr_kernel<<<coefficient_grid, coefficient_threads>>>(
             n_group_ranges,
 
-            group_pair_modes_->gpu_data_p,
             data_.group_indices->gpu_data_p,
             data_.group_start_idx->gpu_data_p,
-            data_.group_sizes->gpu_data_p,
-
             data_.category->gpu_data_p,
+
+            lrf_atom_offsets_->gpu_data_p,
+            lrf_source_atom_slots_->gpu_data_p,
+
             data_.atom_charge->gpu_data_p,
 
             coord_x_->gpu_data_p,
             coord_y_->gpu_data_p,
             coord_z_->gpu_data_p,
 
-            lrf_coefficients_->gpu_data_p
-
-        );
+            lrf_coefficients_->gpu_data_p);
 
         check_cuda(cudaGetLastError());
     }
@@ -1250,6 +1677,61 @@ void CudaNonbondedForce::calc_lrf(Context& ctx) {
 
         ctx.dvelocities->gpu_data_p,
         ctx.energy.device());
+
+    check_cuda(cudaGetLastError());
+}
+
+void CudaNonbondedForce::build_lrf_atom_csr(Context& ctx) {
+    const int n_group_ranges = data_.group_indices->length;
+
+    n_lrf_source_atom_entries_ = 0;
+
+    lrf_atom_degrees_->zero();
+    const int thread_num = 256;
+    const int grid_size = (n_group_ranges + thread_num - 1) / thread_num;
+
+    count_lrf_atom_degree_kernel<<<grid_size, thread_num>>>(n_group_ranges, group_pair_modes_->gpu_data_p, data_.group_sizes->gpu_data_p, lrf_atom_degrees_->gpu_data_p);
+
+    check_cuda(cudaGetLastError());
+
+    /*
+     * offsets[0] = 0
+     * offsets[t+1] = offsets[t] + degrees[t]
+     * offsets[n] = total CSR entries
+     */
+
+    check_cuda(cub::DeviceScan::ExclusiveSum(
+        lrf_scan_temp_->gpu_data_p,
+        lrf_scan_temp_bytes_,
+        lrf_atom_degrees_->gpu_data_p,
+        lrf_atom_offsets_->gpu_data_p,
+        n_group_ranges + 1));
+
+    lrf_atom_offsets_->download();
+    n_lrf_source_atom_entries_ = lrf_atom_offsets_->cpu_data_p[n_group_ranges];
+    const size_t required_capacity = static_cast<size_t>(n_lrf_source_atom_entries_);
+
+    if (!lrf_source_atom_slots_ || required_capacity > lrf_source_atom_capacity_) {
+        size_t new_capacity = required_capacity;
+
+        if (lrf_source_atom_capacity_ != 0) {
+            const size_t grown_capacity = lrf_source_atom_capacity_ + lrf_source_atom_capacity_ / 2;
+
+            if (grown_capacity > new_capacity) {
+                new_capacity = grown_capacity;
+            }
+        }
+
+        lrf_source_atom_slots_ = std::make_unique<HostDeviceBuffer<int>>(new_capacity, false, true);
+        lrf_source_atom_capacity_ = new_capacity;
+    }
+    fill_lrf_atom_csr_kernel<<<grid_size, thread_num>>>(
+        n_group_ranges,
+        group_pair_modes_->gpu_data_p,
+        data_.group_start_idx->gpu_data_p,
+        data_.group_sizes->gpu_data_p,
+        lrf_atom_offsets_->gpu_data_p,
+        lrf_source_atom_slots_->gpu_data_p);
 
     check_cuda(cudaGetLastError());
 }
