@@ -33,6 +33,10 @@ struct md_t {
     double solvent_solvent;
     double solute_solvent;
     double q_atom;
+    double lrf_cutoff;
+
+
+
     // [sphere]
     double shell_radius;  // Note: this is for the pshell
     double shell_force;   // Note: this is for the pshell
