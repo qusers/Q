@@ -15,6 +15,11 @@ Fresh campaign inputs explicitly select SHAKE/SHAKE and validate the native solv
 report. Other solvers are checked separately, not silently adopted as defaults.
 This resolves a software blocker, not the remaining statistical or physical questions.
 
+The first [Snellius Eg5/c-Met smoke job](SNELLIUS_TARGET_SMOKE.md) also passed:
+both protein-charge signs, water legs and setup directions retain correct
+integrated/post-hoc Born accounting. This is a midpoint compatibility result,
+not a converged binding free-energy comparison.
+
 The [staged physical protocol](PILOT_PROTOCOL.md) now specifies the minimum
 charge-only questions, a capped 10/14-angstrom feasibility pilot and proposed
 uncertainty/failure criteria. A fresh Qprep probe generator and bounded existing-MD

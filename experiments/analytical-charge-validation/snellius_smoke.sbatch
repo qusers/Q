@@ -7,6 +7,7 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=4G
 #SBATCH --time=00:20:00
+#SBATCH --no-requeue
 #SBATCH --chdir=/projects/prjs2157/astra-charge-change-perturbation
 #SBATCH --output=/projects/prjs2157/astra-charge-change-perturbation/logs/smoke-%j.out
 

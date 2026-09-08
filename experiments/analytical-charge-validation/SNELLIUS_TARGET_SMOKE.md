@@ -62,6 +62,9 @@ between separate equilibrium distributions.
 The single Slurm scheduler job requests one node, four CPU cores, 4 gigabytes
 of memory, and twenty minutes on `rome`, using the verified user association
 `ugsei19097`. This is a resource request, not a measured runtime forecast.
+Slurm's submission preflight applies a sixteen-CPU minimum allocation/billing
+unit to this shared-node request; four requested cores do not mean four billed
+cores on this partition.
 The job does not install or modify software environments.
 
 It first builds serial Qdyn/Qprep from a transferred Git archive using the
@@ -95,3 +98,57 @@ define interior-endpoint handling for the actual selected FEP dialect,
 matched replica/direction controls, adequate equilibration and uncertainty,
 and charge-background/radius comparisons. Do not tune boundary parameters to
 make one target agree. A result that works for only one target is not a pass.
+
+## First cluster result: job 26480681
+
+Source release `db9808c3b960696e78941f3cab876a379e922da7` was transferred and
+its source/native archive hashes verified before submission. Slurm reports
+`COMPLETED`, exit `0:0`, elapsed **50 seconds**, allocated CPUs **16**, total
+CPU time **65.107 seconds**. The native solver tests passed 29/29 LINCS and
+512/512 SETTLE assertions. All four fresh probe checks and all eight real-target
+paired checks completed successfully.
+
+The measured included non-Q charges differ in sign as required:
+
+| Target / leg | Effective radius (angstrom) | Included non-Q charge (e, approximate) | Excluded non-Q charge (e, approximate) |
+| --- | --- | --- | --- |
+| c-Met / protein | 18.54 | +4.000001 | -1.003200 |
+| Eg5 / protein | 18.60 | -6.000000 | +0.998001 |
+| Both water legs | 20.17 | 0 | 0 |
+
+These are included/excluded topology charges, not rounded whole-protein charge
+labels. Actual forward Q-state charges are approximately `1.000 -> -0.004`
+for c-Met and `0.999 -> 0.002` for Eg5. Their small deviations from integers
+are retained; no charge rounding or force-field retuning was performed.
+
+For every target, leg and direction, integrated/post-hoc controls have identical
+final restart bytes. The largest saved-energy difference residual after removing
+the expected Born constant is `5.684341886080802e-14` kilocalories per mole.
+Geometry and interaction-coverage gates passed. No free-energy result was
+estimated, and every report retains `production_ready: false`.
+
+Remote release and complete raw results:
+
+`/projects/prjs2157/astra-charge-change-perturbation/releases/smoke-db9808c3-20260908`
+
+Scheduler output:
+
+`/projects/prjs2157/astra-charge-change-perturbation/logs/smoke-26480681.out`
+
+The summary SHA-256 is
+`c6d8306a9deaf0077d73debf725237e50082f1b8c00fbaa6d4f6e1d8d14a3577`.
+A partial, read-only local retrieval of logs/reports is retained in
+`runtime/snellius-results-26480681`; it is not a complete relocated build or
+runnable campaign. The complete source, binaries, reference files, energies and
+restarts remain in the authorized remote project directory.
+
+This first job used the scheduler's default requeue setting. An attempt to disable
+it after submission found the job already completed; no requeue occurred.
+The tracked template now explicitly disables requeue for future submissions.
+
+Before a longer real-target free-energy pilot, resolve the input discrepancy:
+the located references use Gapsys softcore, whereas the user's endpoint issue
+described no softcore. Preserve the selected dialect explicitly and validate its
+energy evaluation/analysis; do not treat the charge-only linear-rescaling BAR
+(Bennett acceptance ratio) machinery as automatically valid for arbitrary
+softcore-dependent Hamiltonians.
