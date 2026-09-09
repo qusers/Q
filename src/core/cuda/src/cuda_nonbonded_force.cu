@@ -5,6 +5,53 @@
 #include "geometry.h"
 
 namespace {
+
+__device__ __forceinline__ void emit_exact_packed_segment(
+    int segment_begin,
+    int segment_atoms,
+    int segment_type_slot,
+
+    int target_start,
+    int target_size,
+
+    int& entry_cursor,
+    ExactEntry* __restrict__ exact_entries) {
+    if (segment_atoms == 0) {
+        return;
+    }
+
+    /*
+     * X is the fixed, contiguous target group.
+     * Y is the packed indirect atom list that rotates.
+     */
+    for (int x_offset = 0; x_offset < target_size; x_offset += 32) {
+        const int x_len = min(32, target_size - x_offset);
+
+        for (int y_offset = 0; y_offset < segment_atoms; y_offset += 32) {
+            const int y_len = min(32, segment_atoms - y_offset);
+
+            ExactEntry entry{};
+
+            entry.x_start = target_start + x_offset;
+            entry.x_len = x_len;
+
+            entry.y_start = segment_begin + y_offset;
+            entry.y_len = y_len;
+
+            entry.y_type_slot = segment_type_slot;
+
+            entry.diagonal = 0;
+            entry.y_indirect = 1;
+
+            exact_entries[entry_cursor++] = entry;
+        }
+    }
+}
+
+__device__ bool same_exact_energy_class(int slot1, int slot2, const uint8_t* category, const int* q_state) {
+    return category[slot1] == category[slot2] && q_state[slot1] == q_state[slot2];
+}
+
 __device__ __forceinline__ void write_unique_lrf_component(LrfCoefficients& output, int phi, double value) {
     switch (phi) {
         case 0:
@@ -638,6 +685,95 @@ __device__ void accumulate_lrf_direction(
     }
 }
 
+__global__ void count_exact_atom_tiles_kernel(
+    int n_group_ranges,
+
+    const uint8_t* group_pair_modes,
+    const int* group_start_idx,
+    const int* group_sizes,
+    const uint8_t* category,
+    const int* q_state,
+
+    int* atom_degrees,
+    int* entry_degrees) {
+    const int target_range = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (target_range >= n_group_ranges) {
+        return;
+    }
+
+    const int target_size = group_sizes[target_range];
+
+    /*
+     * The target group is the fixed, contiguous X axis.
+     */
+    const int target_x_tiles = (target_size + 31) / 32;
+
+    int atom_count = 0;
+    int entry_count = 0;
+
+    int segment_atoms = 0;
+    int segment_type_slot = -1;
+
+    /*
+     * source_range < target_range:
+     * only cross-group atoms are packed into the indirect Y list.
+     */
+    for (int source_range = 0; source_range < target_range; ++source_range) {
+        const int pair_index = get_pair_index(n_group_ranges, source_range, target_range);
+
+        if (group_pair_modes[pair_index] != GROUP_PAIR_EXACT) {
+            continue;
+        }
+
+        const int source_start = group_start_idx[source_range];
+
+        const int source_size = group_sizes[source_range];
+
+        /*
+         * Finish the current packed Y segment when its
+         * category or Q state changes.
+         */
+        if (segment_atoms != 0 && !same_exact_energy_class(segment_type_slot, source_start, category, q_state)) {
+            const int segment_y_tiles = (segment_atoms + 31) / 32;
+
+            entry_count += target_x_tiles * segment_y_tiles;
+
+            segment_atoms = 0;
+            segment_type_slot = -1;
+        }
+
+        if (segment_atoms == 0) {
+            segment_type_slot = source_start;
+        }
+
+        segment_atoms += source_size;
+        atom_count += source_size;
+    }
+
+    /*
+     * Count the final packed Y segment.
+     */
+    if (segment_atoms != 0) {
+        const int segment_y_tiles = (segment_atoms + 31) / 32;
+
+        entry_count += target_x_tiles * segment_y_tiles;
+    }
+
+    /*
+     * Count the target group's separate diagonal entries.
+     * These entries do not use the packed Y list.
+     */
+    const int diagonal_pair = get_pair_index(n_group_ranges, target_range, target_range);
+
+    if (group_pair_modes[diagonal_pair] == GROUP_PAIR_EXACT) {
+        entry_count += target_x_tiles * (target_x_tiles + 1) / 2;
+    }
+
+    atom_degrees[target_range] = atom_count;
+    entry_degrees[target_range] = entry_count;
+}
+
 __global__ void count_lrf_atom_degree_kernel(int n_group_ranges, const uint8_t* group_pair_modes, const int* group_sizes, int* degrees) {
     const int target_range = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -761,7 +897,6 @@ __global__ void build_lrf_geometry_csr_kernel(
         output_q_r7[entry] = charge * inv_r7;
     }
 }
-
 
 __global__ void calc_lrf_kernel(
     int n_slots,
@@ -930,12 +1065,6 @@ __global__ void build_pair_lists_kernel(
 
     const uint8_t* group_pair_modes,
     const int* group_indices,
-    const int* group_start_idx,
-    const int* group_sizes,
-
-    const int exact_tile_capacity,
-    int* exact_tile_count,
-    ExactEntry* exact_tiles,
 
     const int lrf_pair_capacity,
     int* lrf_pair_count,
@@ -958,70 +1087,23 @@ __global__ void build_pair_lists_kernel(
     }
 
     const uint8_t mode = group_pair_modes[pair_index];
-    if (mode == GROUP_PAIR_IGNORE) {
+    if (mode != GROUP_PAIR_LRF) {
         return;
     }
 
-    if (mode == GROUP_PAIR_LRF) {
-        const int dst = atomicAdd(lrf_pair_count, 1);
+    const int dst = atomicAdd(lrf_pair_count, 1);
 
-        if (dst >= lrf_pair_capacity) {
-            atomicExch(overflow, 1);
-            return;
-        }
-
-        lrf_pairs[dst] = {
-            group1,
-            group2,
-            group_indices[group1],
-            group_indices[group2],
-        };
-        return;
-    }
-
-    const int start1 = group_start_idx[group1];
-    const int start2 = group_start_idx[group2];
-    const int size1 = group_sizes[group1];
-    const int size2 = group_sizes[group2];
-
-    const int nx = (size1 + 31) / 32;
-    const int ny = (size2 + 31) / 32;
-
-    int tile_count = 0;
-    if (group1 == group2) {
-        tile_count = nx * (nx + 1) / 2;
-    } else {
-        tile_count = nx * ny;
-    }
-
-    const int base = atomicAdd(exact_tile_count, tile_count);
-    if (base + tile_count > exact_tile_capacity) {
+    if (dst >= lrf_pair_capacity) {
         atomicExch(overflow, 1);
         return;
     }
 
-    int dst = base;
-    for (int ix = 0; ix < nx; ix++) {
-        const int x_offset = ix * 32;
-        const int x_len = min(32, size1 - x_offset);
-
-        for (int iy = 0; iy < ny; iy++) {
-            if (group1 == group2 && iy < ix) {
-                continue;
-            }
-
-            const int y_offset = iy * 32;
-            const int y_len = min(32, size2 - y_offset);
-
-            ExactEntry tile;
-            tile.x_start = start1 + x_offset;
-            tile.y_start = start2 + y_offset;
-            tile.x_len = x_len;
-            tile.y_len = y_len;
-            tile.diagonal = (group1 == group2 && ix == iy);
-            exact_tiles[dst++] = tile;
-        }
-    }
+    lrf_pairs[dst] = {
+        group1,
+        group2,
+        group_indices[group1],
+        group_indices[group2],
+    };
 }
 
 __global__ void classify_group_pairs_by_switch_kernel(
@@ -1107,6 +1189,7 @@ __global__ void classify_group_pairs_by_switch_kernel(
 __global__ void exact_tiles_nonbonded_force_kernel(
     int n_exact_tiles,
     const ExactEntry* exact_entries,
+    const int* exact_source_atom_slots,
 
     int n_states,        // ctx.n_lambdas, used by nb_coul_slot
     int n_atoms_solute,  // ctx.n_atoms_solute, water grouping + LJ_matrix row stride
@@ -1150,9 +1233,9 @@ __global__ void exact_tiles_nonbonded_force_kernel(
      * Invalid lanes use atom == -1 and still participate in all shuffles.
      */
     const int x_idx = lane < tile.x_len ? tile.x_start + lane : -1;
-    const int y_idx = lane < tile.y_len ? tile.y_start + lane : -1;
+    const int y_idx = lane < tile.y_len ? tile.y_indirect == 1 ? exact_source_atom_slots[tile.y_start + lane] : tile.y_start + lane : -1;
 
-    nonbonded_force_calculation(x_idx, y_idx, tile.diagonal, tile.x_start, tile.y_start, n_states, n_atoms_solute, atom_idx,
+    nonbonded_force_calculation(x_idx, y_idx, tile.diagonal == 1, tile.x_start, tile.y_type_slot, n_states, n_atoms_solute, atom_idx,
                                 category, q_state, atom_lambdas, atom_charge, atom_vdw, LJ_matrix, el14_scale, coulomb_constant, vdw_rule, cx, cy, cz, dvelocities, e);
 }
 
@@ -1224,6 +1307,98 @@ __global__ void compute_lrf_centers_kernel(
     }
 }
 
+__global__ void fill_exact_atom_tiles_kernel(
+    int n_group_ranges,
+
+    const uint8_t* group_pair_modes,
+    const int* group_start_idx,
+    const int* group_sizes,
+    const uint8_t* category,
+    const int* q_state,
+
+    const int* atom_offsets,
+    const int* entry_offsets,
+
+    int* source_atom_slots,
+    ExactEntry* exact_entries) {
+    const int target_range = blockIdx.x * blockDim.x + threadIdx.x;
+    if (target_range >= n_group_ranges) {
+        return;
+    }
+
+    const int target_start = group_start_idx[target_range];
+    const int target_size = group_sizes[target_range];
+
+    int atom_cursor = atom_offsets[target_range];
+    int entry_cursor = entry_offsets[target_range];
+
+    int segment_begin = atom_cursor;
+    int segment_atoms = 0;
+    int segment_type_slot = -1;
+
+    for (int source_range = 0; source_range < target_range; source_range++) {
+        const int pair_index = get_pair_index(n_group_ranges, source_range, target_range);
+
+        if (group_pair_modes[pair_index] != GROUP_PAIR_EXACT) {
+            continue;
+        }
+
+        const int source_start = group_start_idx[source_range];
+
+        const int source_size = group_sizes[source_range];
+
+        if (segment_atoms != 0 && !same_exact_energy_class(segment_type_slot, source_start, category, q_state)) {
+            emit_exact_packed_segment(segment_begin, segment_atoms, segment_type_slot, target_start, target_size, entry_cursor, exact_entries);
+            segment_begin = atom_cursor;
+            segment_atoms = 0;
+            segment_type_slot = -1;
+        }
+
+        if (segment_atoms == 0) {
+            segment_begin = atom_cursor;
+            segment_type_slot = source_start;
+        }
+
+        for (int local_atom = 0; local_atom < source_size; local_atom++) {
+            source_atom_slots[atom_cursor++] = source_start + local_atom;
+            segment_atoms++;
+        }
+    }
+
+    emit_exact_packed_segment(segment_begin, segment_atoms, segment_type_slot, target_start, target_size, entry_cursor, exact_entries);
+
+    const int diagonal_pair = get_pair_index(n_group_ranges, target_range, target_range);
+
+    if (group_pair_modes[diagonal_pair] == GROUP_PAIR_EXACT) {
+        const int n = (target_size + 31) / 32;
+
+        for (int ix = 0; ix < n; ix++) {
+            const int x_offset = ix * 32;
+            const int x_len = min(32, target_size - x_offset);
+
+            for (int iy = ix; iy < n; ++iy) {
+                const int y_offset = iy * 32;
+                const int y_len = min(32, target_size - y_offset);
+
+                ExactEntry entry{};
+
+                entry.x_start = target_start + x_offset;
+
+                entry.x_len = x_len;
+                entry.y_start = target_start + y_offset;
+                entry.y_type_slot = entry.y_start;
+
+                entry.y_len = y_len;
+
+                entry.diagonal = (ix == iy);
+                entry.y_indirect = 0;
+
+                exact_entries[entry_cursor++] = entry;
+            }
+        }
+    }
+}
+
 }  // namespace
 
 void CudaNonbondedForce::init_backend(Context& ctx) {
@@ -1281,6 +1456,14 @@ void CudaNonbondedForce::init_backend(Context& ctx) {
         n_group_ranges + 1));
 
     lrf_scan_temp_ = std::make_unique<HostDeviceBuffer<unsigned char>>(lrf_scan_temp_bytes_, false, true);
+
+    exact_atom_degrees_ = std::make_unique<HostDeviceBuffer<int>>(n_group_ranges + 1, false, true);
+
+    exact_atom_offsets_ = std::make_unique<HostDeviceBuffer<int>>(n_group_ranges + 1, true, true);
+
+    exact_entry_degrees_ = std::make_unique<HostDeviceBuffer<int>>(n_group_ranges + 1, false, true);
+
+    exact_entry_offsets_ = std::make_unique<HostDeviceBuffer<int>>(n_group_ranges + 1, true, true);
 }
 
 void CudaNonbondedForce::calc_all_direct_pairs(Context& ctx) {
@@ -1333,11 +1516,6 @@ void CudaNonbondedForce::init_calculation_groups_by_switch(Context& ctx) {
     build_pair_lists_kernel<<<grid, thread_num>>>(n_group_ranges,
                                                   group_pair_modes_->gpu_data_p,
                                                   data_.group_indices->gpu_data_p,
-                                                  data_.group_start_idx->gpu_data_p,
-                                                  data_.group_sizes->gpu_data_p,
-                                                  exact_tile_capacity_,
-                                                  exact_tile_count_->gpu_data_p,
-                                                  exact_tiles_->gpu_data_p,
                                                   lrf_pair_capacity_,
                                                   lrf_pair_count_->gpu_data_p,
                                                   lrf_group_pairs_->gpu_data_p,
@@ -1352,7 +1530,6 @@ void CudaNonbondedForce::init_calculation_groups_by_switch(Context& ctx) {
         throw std::runtime_error("CUDA nonbonded pair-list capacity exceeded");
     }
 
-    n_exact_tiles_ = exact_tile_count_->cpu_data_p[0];
     n_lrf_pairs_ = lrf_pair_count_->cpu_data_p[0];
 
     if (n_exact_tiles_ < 0 || static_cast<size_t>(n_exact_tiles_) > exact_tile_capacity_) {
@@ -1362,6 +1539,8 @@ void CudaNonbondedForce::init_calculation_groups_by_switch(Context& ctx) {
     if (n_lrf_pairs_ < 0 || static_cast<size_t>(n_lrf_pairs_) > lrf_pair_capacity_) {
         throw std::runtime_error("Invalid CUDA LRF pair count");
     }
+
+    build_exact_atom_tiles(ctx);
 }
 
 void CudaNonbondedForce::init_calculation_groups_by_all_atoms(Context& ctx) {
@@ -1396,6 +1575,8 @@ void CudaNonbondedForce::calc_exact_tiles(Context& ctx) {
     exact_tiles_nonbonded_force_kernel<<<grid_sz, thread_num>>>(
         n_exact_tiles_,
         exact_tiles_->gpu_data_p,
+
+        exact_source_atom_slots_->gpu_data_p,
 
         ctx.n_lambdas(),
         ctx.n_atoms_solute,
@@ -1631,6 +1812,104 @@ void CudaNonbondedForce::build_lrf_atom_csr(Context& ctx) {
         data_.group_sizes->gpu_data_p,
         lrf_atom_offsets_->gpu_data_p,
         lrf_source_atom_slots_->gpu_data_p);
+
+    check_cuda(cudaGetLastError());
+}
+
+void CudaNonbondedForce::build_exact_atom_tiles(Context& ctx) {
+    const int n_group_ranges = data_.group_indices->length;
+
+    n_exact_tiles_ = 0;
+    n_exact_source_atoms_ = 0;
+    if (n_group_ranges == 0) return;
+
+    exact_atom_degrees_->zero();
+    exact_atom_offsets_->zero();
+
+    exact_entry_degrees_->zero();
+    exact_entry_offsets_->zero();
+
+    const int threads = 256;
+
+    const int blocks = (n_group_ranges + threads - 1) / threads;
+
+    count_exact_atom_tiles_kernel<<<blocks, threads>>>(n_group_ranges,
+                                                       group_pair_modes_->gpu_data_p,
+                                                       data_.group_start_idx->gpu_data_p,
+                                                       data_.group_sizes->gpu_data_p,
+                                                       data_.category->gpu_data_p,
+                                                       data_.q_state->gpu_data_p,
+                                                       exact_atom_degrees_->gpu_data_p,
+                                                       exact_entry_degrees_->gpu_data_p);
+    check_cuda(cudaGetLastError());
+
+    check_cuda(cub::DeviceScan::ExclusiveSum(
+        lrf_scan_temp_->gpu_data_p,
+        lrf_scan_temp_bytes_,
+
+        exact_atom_degrees_->gpu_data_p,
+        exact_atom_offsets_->gpu_data_p,
+
+        n_group_ranges + 1));
+
+    check_cuda(cub::DeviceScan::ExclusiveSum(
+        lrf_scan_temp_->gpu_data_p,
+        lrf_scan_temp_bytes_,
+
+        exact_entry_degrees_->gpu_data_p,
+        exact_entry_offsets_->gpu_data_p,
+
+        n_group_ranges + 1));
+
+    exact_atom_offsets_->download();
+    exact_entry_offsets_->download();
+
+    n_exact_source_atoms_ = exact_atom_offsets_->cpu_data_p[n_group_ranges];
+
+    n_exact_tiles_ = exact_entry_offsets_->cpu_data_p[n_group_ranges];
+
+    if (n_exact_source_atoms_ < 0 || n_exact_tiles_ < 0) {
+        throw std::runtime_error("Negative CUDA exact-list size");
+    }
+
+    if (static_cast<size_t>(n_exact_tiles_) > exact_tile_capacity_) {
+        throw std::runtime_error("CUDA packed exact-tile capacity exceeded");
+    }
+
+    const size_t required_atom_capacity = static_cast<size_t>(n_exact_source_atoms_);
+
+    if (required_atom_capacity > exact_source_atom_capacity_) {
+        size_t new_capacity = required_atom_capacity;
+
+        if (exact_source_atom_capacity_ != 0) {
+            const size_t grown_capacity = exact_source_atom_capacity_ + exact_source_atom_capacity_ / 2;
+
+            new_capacity = std::max(new_capacity, grown_capacity);
+        }
+
+        exact_source_atom_slots_ = std::make_unique<HostDeviceBuffer<int>>(new_capacity, false, true);
+
+        exact_source_atom_capacity_ = new_capacity;
+    }
+
+    if (n_exact_tiles_ == 0) {
+        return;
+    }
+
+    fill_exact_atom_tiles_kernel<<<blocks, threads>>>(
+        n_group_ranges,
+
+        group_pair_modes_->gpu_data_p,
+        data_.group_start_idx->gpu_data_p,
+        data_.group_sizes->gpu_data_p,
+        data_.category->gpu_data_p,
+        data_.q_state->gpu_data_p,
+
+        exact_atom_offsets_->gpu_data_p,
+        exact_entry_offsets_->gpu_data_p,
+
+        exact_source_atom_slots_->gpu_data_p,
+        exact_tiles_->gpu_data_p);
 
     check_cuda(cudaGetLastError());
 }

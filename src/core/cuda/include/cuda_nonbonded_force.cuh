@@ -13,7 +13,10 @@ struct ExactEntry {
     int x_len;  // <= 32
     int y_start;
     int y_len;  // <= 32
+
     uint8_t diagonal;
+    uint8_t y_indirect;
+    int y_type_slot;
 };
 
 struct LrfPairEntry {
@@ -40,6 +43,7 @@ class CudaNonbondedForce final : public NonbondedForce {
     void calc_exact_tiles(Context& ctx);
     void calc_lrf(Context& ctx);
     void build_lrf_atom_csr(Context& ctx);
+    void build_exact_atom_tiles(Context& ctx);
 
     std::unique_ptr<HostDeviceBuffer<real_t>> coord_x_, coord_y_, coord_z_;
 
@@ -83,4 +87,13 @@ class CudaNonbondedForce final : public NonbondedForce {
     std::unique_ptr<HostDeviceBuffer<double>> lrf_q_r3_;
     std::unique_ptr<HostDeviceBuffer<double>> lrf_q_r5_;
     std::unique_ptr<HostDeviceBuffer<double>> lrf_q_r7_;
+
+    std::unique_ptr<HostDeviceBuffer<int>> exact_atom_degrees_;
+    std::unique_ptr<HostDeviceBuffer<int>> exact_atom_offsets_;
+    std::unique_ptr<HostDeviceBuffer<int>> exact_entry_degrees_;
+    std::unique_ptr<HostDeviceBuffer<int>> exact_entry_offsets_;
+
+    std::unique_ptr<HostDeviceBuffer<int>> exact_source_atom_slots_;
+    size_t exact_source_atom_capacity_ = 0;
+    int n_exact_source_atoms_ = 0;
 };
