@@ -5,7 +5,7 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 from openff.toolkit import Molecule
 from rdkit import Chem
@@ -45,12 +45,12 @@ class fkcombuLigandAligner(MoleculeIO):
         pattern: str = f"*{SDF_EXTENSION}",
         reindex_hydrogens: bool = True,
         n_threads: int = 1,
-        protein: Optional[str] = None,
+        protein: str | None = None,
         energy: str = "a",
         search: str = "f",
         steep_descend: bool = True,
         connectivity: str = "t",
-        top_constraint_tol: Optional[int] = None,
+        top_constraint_tol: int | None = None,
         atom_type: str = "X",
         bond_type: str = "X",
         scaffold_lock: bool = False,
@@ -114,10 +114,10 @@ class fkcombuLigandAligner(MoleculeIO):
         super().__init__(lig, pattern=pattern, reindex_hydrogens=reindex_hydrogens)
         self.kcombu_exe = self._set_fkcombu_exe()
         self.n_threads = n_threads
-        self.reference_mol: Optional[Molecule] = None
+        self.reference_mol: Molecule | None = None
         self.aligned_molecules: dict[str, Molecule] = {}
         self.alignment_scores: dict[str, dict[str, float]] = {}
-        self.temp_dir: Optional[tempfile.TemporaryDirectory] = None
+        self.temp_dir: tempfile.TemporaryDirectory | None = None
         self.fkparams = self._process_fkparams(
             {
                 "P": protein,
@@ -373,10 +373,10 @@ class fkcombuLigandAligner(MoleculeIO):
         matchB = molB.GetSubstructMatch(mcs_mol)
 
         logger.trace("Mapping of atoms:")
-        for a, b in zip(matchA, matchB):  # trace the mapping; used for debugging
+        for a, b in zip(matchA, matchB, strict=False):  # trace the mapping; used for debugging
             logger.trace(f"MolA atom {a} maps to MolB atom {b}")
 
-        for a, b in zip(matchA, matchB):  # iterate atoms and transfer charges
+        for a, b in zip(matchA, matchB, strict=False):  # iterate atoms and transfer charges
             atomA = molA.GetAtomWithIdx(a)
             atomB = molB.GetAtomWithIdx(b)
             formal_charge = atomA.GetFormalCharge()
@@ -403,7 +403,7 @@ class fkcombuLigandAligner(MoleculeIO):
         aligned_supplier = Chem.SDMolSupplier(str(aligned_file), removeHs=True, sanitize=False)
 
         aligned_mols = []
-        for original_mol, aligned_mol in zip(original_supplier, aligned_supplier):
+        for original_mol, aligned_mol in zip(original_supplier, aligned_supplier, strict=False):
             if original_mol is not None and aligned_mol is not None:
                 Chem.SanitizeMol(aligned_mol, sanitizeOps=Chem.SanitizeFlags.SANITIZE_SETAROMATICITY)
 
@@ -423,7 +423,7 @@ class fkcombuLigandAligner(MoleculeIO):
         aligned_writer.close()
 
     def align_single_molecule(
-        self, molecule: Union[str, Molecule], reference: Union[str, Molecule]
+        self, molecule: str | Molecule, reference: str | Molecule
     ) -> tuple[Molecule, dict[str, float]]:
         """
         Align a single molecule to a reference molecule.
@@ -464,7 +464,7 @@ class fkcombuLigandAligner(MoleculeIO):
         return aligned_molecule, scores
 
     def kcombu_align(
-        self, reference: Union[str, Molecule], molecules_to_align: Optional[list[Union[str, Molecule]]] = None
+        self, reference: str | Molecule, molecules_to_align: list[str | Molecule] | None = None
     ) -> list[Molecule]:
         """
         Aligns the specified molecules to a reference molecule using kcombu. The aligned molecules returned
@@ -531,9 +531,7 @@ class fkcombuLigandAligner(MoleculeIO):
         self.cleanup()
         return aligned_ligands
 
-    def output_aligned_ligands(
-        self, output_name: str, ref_names: Optional[Union[str, list[str]]] = None
-    ) -> None:
+    def output_aligned_ligands(self, output_name: str, ref_names: str | list[str] | None = None) -> None:
         """
         Write the aligned molecules to a single .sdf file, optionally including the original reference ligand(s).
 
@@ -575,7 +573,7 @@ class fkcombuLigandAligner(MoleculeIO):
             self.temp_dir.cleanup()
             logger.info("Temporary directory cleaned up")
 
-    def get_molecule(self, name: str, aligned: bool = True) -> Optional[Molecule]:
+    def get_molecule(self, name: str, aligned: bool = True) -> Molecule | None:
         """
         Retrieve a molecule by name, either aligned or original.
 
@@ -642,11 +640,11 @@ class rdkitLigandAligner(MoleculeIO):
         self.opt_param = opt_param
         self.max_preiters = max_preiters
         self.max_postiters = max_postiters
-        self.reference_mol: Optional[Molecule] = None
+        self.reference_mol: Molecule | None = None
         self.aligned_molecules: dict[str, Molecule] = {}
         self.alignment_scores: dict[str, tuple[float, float]] = {}
 
-    def _resolve_molecule(self, mol_or_name: Union[str, Molecule]) -> Molecule:
+    def _resolve_molecule(self, mol_or_name: str | Molecule) -> Molecule:
         """Resolve a molecule from a name string or return the Molecule directly.
 
         Args:
@@ -687,7 +685,7 @@ class rdkitLigandAligner(MoleculeIO):
         return shape_tani, color_tani
 
     def align_single_molecule(
-        self, molecule: Union[str, Molecule], reference: Union[str, Molecule]
+        self, molecule: str | Molecule, reference: str | Molecule
     ) -> tuple[Molecule, float, float]:
         """Align a single molecule to a reference molecule.
 
@@ -712,7 +710,7 @@ class rdkitLigandAligner(MoleculeIO):
         return aligned_mol, shape_tani, color_tani
 
     def align(
-        self, reference: Union[str, Molecule], molecules_to_align: Optional[list[Union[str, Molecule]]] = None
+        self, reference: str | Molecule, molecules_to_align: list[str | Molecule] | None = None
     ) -> dict[str, Molecule]:
         """Align molecules to a reference using shape+color overlap.
 
@@ -766,9 +764,7 @@ class rdkitLigandAligner(MoleculeIO):
 
         return self.aligned_molecules
 
-    def output_aligned_ligands(
-        self, output_name: str, ref_names: Optional[Union[str, list[str]]] = None
-    ) -> None:
+    def output_aligned_ligands(self, output_name: str, ref_names: str | list[str] | None = None) -> None:
         """Write aligned molecules to a single SDF file, including alignment scores as SD properties.
 
         Args:
@@ -803,7 +799,7 @@ class rdkitLigandAligner(MoleculeIO):
         writer.close()
         logger.info(f"Aligned molecules written to {output_name}")
 
-    def get_molecule(self, name: str, aligned: bool = True) -> Optional[Molecule]:
+    def get_molecule(self, name: str, aligned: bool = True) -> Molecule | None:
         """Retrieve a molecule by name, either aligned or original.
 
         Args:

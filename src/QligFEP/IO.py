@@ -4,7 +4,7 @@ import shlex
 import stat
 import subprocess
 from pathlib import Path
-from typing import NamedTuple, Optional
+from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -34,8 +34,8 @@ class SlurmRunInfo(NamedTuple):
     """Per-replicate run metadata parsed from one ``slurm*.out`` footer."""
 
     runtime: str
-    seed: Optional[str]
-    replicate: Optional[str]
+    seed: str | None
+    replicate: str | None
     status: str
 
 

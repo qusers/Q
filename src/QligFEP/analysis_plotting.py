@@ -238,7 +238,7 @@ def create_ddG_plot(
         (1.04, hori_height - spacing),
         (1.04, hori_height - spacing * 2),
     )
-    for txt_position, body in zip(txt_positions, text_body):
+    for txt_position, body in zip(txt_positions, text_body, strict=False):
         plt.text(
             *txt_position,
             body,

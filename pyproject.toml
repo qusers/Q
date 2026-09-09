@@ -7,7 +7,7 @@ name = "QligFEP"
 dynamic = ["version"]
 description = "Python CLI designed to facilitate a robust and fast setup of free energy perturbation (FEP)."
 readme = { file = "README.md", content-type = "text/markdown" }
-requires-python = ">=3.10"
+requires-python = ">=3.14"
 license = { file = "LICENSE" }
 # keywords = [""]
 authors = [{ name = "Willem Jespers", email = "w.jespers@rug.nl" },
@@ -24,7 +24,7 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Chemistry",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10" # todo: might have other versions
+    "Programming Language :: Python :: 3.14" # todo: might have other versions
 ]
 dependencies = [
     "joblib",
@@ -69,15 +69,16 @@ repository = "https://github.com/qusers/qligfep"
 
 [tool.black]
 line-length =  110
-target-version = ['py310']
+target-version = ['py314']
 
 [tool.isort]
 profile = "black"
+line_length = 110
 
 [tool.ruff]
 line-length = 110
 indent-width = 4
-target-version = 'py39'
+target-version = 'py314'
 
 [tool.ruff.lint]
 select = [
