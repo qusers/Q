@@ -127,3 +127,32 @@ Local staged inputs (not live remote results):
 
 `protocol.json` in each edge records duration, execution order and input hashes;
 `analysis-scope.json` records the exact endpoint exclusions and Born convention.
+
+## Submitted arrays — 2026-09-09
+
+Driver/protocol commit: `8d100bf6cb31df3650e12754945519875313850d`.
+Each array below has replica indices 1, 2 and 3. The protein arrays were
+submitted first, followed by water arrays; submission used `bash FEP_submit.sh`
+with the corresponding edge directory as the working directory.
+
+| Target/setup | Protein array | Water array |
+| --- | --- | --- |
+| c-Met forward | 26487820 | 26487942 |
+| c-Met reverse | 26487823 | 26487943 |
+| Eg5 forward | 26487825 | 26487944 |
+| Eg5 reverse | 26487827 | 26487945 |
+
+The remote root contains `submission-summary.json`; each edge contains
+`submission-started.json` and `submission.json` with the actual command,
+working directory, scheduler response and array ID. These are actual
+submissions, not `sbatch --test-only` estimates. The native MPI qualification
+job is separate and already completed.
+
+Pre-submission checks passed: eight standard-protocol tests, including actual
+fresh-start/minimization checks for both private protein inputs on the retained
+local native build (73.21 seconds total); 24 combined staging/adapter unit tests
+before adding the two fresh-start cases; shell syntax checks; scheduler
+preflights for all eight edges; all 101-window restart graphs, consistent
+production restraints, unchanged topology/FEP physical tables, duration and
+input hashes. Submission is not a statement that production sampling or
+physical correction validation is complete.
