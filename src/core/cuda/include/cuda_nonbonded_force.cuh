@@ -96,4 +96,6 @@ class CudaNonbondedForce final : public NonbondedForce {
     std::unique_ptr<HostDeviceBuffer<int>> exact_source_atom_slots_;
     size_t exact_source_atom_capacity_ = 0;
     int n_exact_source_atoms_ = 0;
+
+    std::unique_ptr<HostDeviceBuffer<int>> lrf_slot_to_group_range_;
 };
