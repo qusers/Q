@@ -163,9 +163,25 @@ test-settle: settle.o test_settle.o
 	${FC} ${FFLAGS} $+ -o test_settle
 	./test_settle
 
-test-lincs: lincs.o test_lincs.o
-	${FC} ${FFLAGS} $+ -o test_lincs
+# Override MPIEXEC/MPIEXEC_FLAGS for the local MPI launcher when needed.
+MPIEXEC ?= mpirun
+MPIEXEC_FLAGS ?=
+.PHONY: test-lincs test-lincs-mpi
+
+test_lincs: lincs.o test_lincs.o
+	${FC} ${FFLAGS} $+ -o $@
+
+test-lincs: test_lincs
 	./test_lincs
+
+test_lincs_mpi: lincs.o lincs_mpi.o test_lincs_mpi.f90
+	${MPIFC} ${MPIFLAGS} ${FFLAGS} $+ -o $@
+
+# Check the serial kernel and MPI wrapper against the single-rank baseline.
+test-lincs-mpi: test_lincs test_lincs_mpi
+	./test_lincs
+	${MPIEXEC} ${MPIEXEC_FLAGS} -np 1 ./test_lincs_mpi
+	${MPIEXEC} ${MPIEXEC_FLAGS} -np 4 ./test_lincs_mpi
 
 debug:
 	@make FFLAGS="${DEBUG}" \
@@ -224,7 +240,7 @@ qdyn_test : md_test.o #qdyn_test.o
 qdum : md_dum.o
 	${FC} ${FFLAGS} ${FLIBS} $+ -o $@
 
-qdynp : md_mpi.o qdyn_mpi.o
+qdynp : md_mpi.o qdyn_mpi.o lincs_mpi.o
 	${MPIFC} ${MPIFLAGS} ${FFLAGS} ${FLIBS} $+ -o $@
 
 
@@ -290,6 +306,9 @@ maskmanip.o: maskmanip.f90 mask.o misc.o parse.o
 lincs.o: lincs.f90
 	${FC} ${FFLAGS} -c $<
 
+lincs_mpi.o: lincs_mpi.f90 lincs.o
+	${MPIFC} ${MPIFLAGS} ${FFLAGS} -c $<
+
 test_lincs.o: test_lincs.f90 lincs.o
 	${FC} ${FFLAGS} -c $<
 
@@ -308,7 +327,7 @@ md_test.o: md_test.f90 mpiglob.o qatom.o sizes.o trj.o topo.o
 md_dum.o:md.f90 mpiglob.o qatom.o sizes.o trj.o topo.o lincs.o settle.o
 	${FC} ${FFLAGS} ${FPP_FLG} -DDUM -c md.f90 -o md_dum.o
 
-md_mpi.o: md.f90 mpiglob.o qatom.o sizes.o topo.o trj.o lincs.o settle.o
+md_mpi.o: md.f90 mpiglob.o qatom.o sizes.o topo.o trj.o lincs.o settle.o lincs_mpi.o
 	${MPIFC} ${MPIFLAGS} ${FFLAGS} ${FPP_FLG} -DUSE_MPI \
 	-c md.f90 -o md_mpi.o
 

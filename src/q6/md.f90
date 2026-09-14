@@ -23,6 +23,9 @@ module md
   use mpiglob
   use qatom
   use lincs
+#if defined(USE_MPI)
+  use lincs_mpi
+#endif
   use settle
   use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 
@@ -2236,6 +2239,7 @@ subroutine init_nodes
 !!-------------------------------------------------------------------------------
 
 
+  type(lincs_data_type) :: lincs_topology
   integer, parameter              :: vars = 40 !increment this var when adding data to broadcast in batch 1
   integer                         :: blockcnt(vars), ftype(vars)
   integer(kind=MPI_ADDRESS_KIND)  :: fdisp(vars)
@@ -2261,6 +2265,18 @@ subroutine init_nodes
 
   !external MPI_Type_Create_F90_Integer
   !external MPI_SizeOf
+
+  if (nodeid == 0) call copy_lincs_data(lincs_topology)
+  ! Below 1024 constraints per rank, communication dominates the CPU solver.
+  ! Keep these small jobs on rank zero; standalone MPI tests can force partitioning.
+  call setup_lincs_mpi(MPI_COMM_WORLD, lincs_topology, 1024*numnodes)
+  if (nodeid == 0 .and. lincs_topology%constraint_count > 0) then
+    if (lincs_mpi_active()) then
+      write(*,'(a,i0,a)') 'LINCS execution: distributed across ', numnodes, ' MPI ranks'
+    else
+      write(*,'(a)') 'LINCS execution: rank zero (small constraint set)'
+    end if
+  end if
 
   !Define data types
   ! This is wrong, the 1:st param is "Precision, in decimal digits", not bits
@@ -3145,16 +3161,17 @@ subroutine init_settle(excluded_constraints)
 end subroutine init_settle
 
 
-subroutine apply_constraints(x_reference, x_candidate, shake_iterations)
+subroutine apply_constraints(x_reference, x_candidate, shake_iterations, skip_lincs)
 !!-------------------------------------------------------------------------------
 !!  Apply each active position-constraint solver to one integration update.
 !!-------------------------------------------------------------------------------
   real(8), intent(in) :: x_reference(:)
   real(8), intent(inout) :: x_candidate(:)
   integer, intent(out), optional :: shake_iterations
+  logical, intent(in), optional :: skip_lincs
 
   integer :: iterations, failed_oxygen, failed_lincs_constraint
-  logical :: settled, lincs_applied
+  logical :: settled, lincs_applied, do_lincs
   real(8) :: lincs_error
   character(len=100) :: message
 #if defined(PROFILING)
@@ -3163,7 +3180,9 @@ subroutine apply_constraints(x_reference, x_candidate, shake_iterations)
 #endif
 
   iterations = 0
-  if (lincs_is_active()) then
+  do_lincs = lincs_is_active()
+  if (present(skip_lincs)) do_lincs = do_lincs .and. .not. skip_lincs
+  if (do_lincs) then
     lincs_applied = lincs_positions(x_reference, x_candidate, &
                                     failed_lincs_constraint, lincs_error)
     if (.not. lincs_applied) then
@@ -3194,6 +3213,44 @@ subroutine apply_constraints(x_reference, x_candidate, shake_iterations)
   profile(7)%time = profile(7)%time + rtime() - constraint_start_time
 #endif
 end subroutine apply_constraints
+
+
+subroutine apply_dynamics_constraints(iterations)
+  integer, intent(out) :: iterations
+  logical :: already_applied
+#if defined(USE_MPI)
+  logical :: success
+  integer :: failed
+  real(8) :: error
+  character(len=120) :: message
+#if defined(PROFILING)
+  real(8) :: start_time
+#endif
+#endif
+  iterations = 0
+  already_applied = .false.
+#if defined(USE_MPI)
+  if (lincs_mpi_active()) then
+#if defined(PROFILING)
+    start_time = rtime()
+#endif
+    success = lincs_positions_mpi(xx, x, failed, error)
+#if defined(PROFILING)
+    profile(7)%time = profile(7)%time + rtime() - start_time
+#endif
+    if (.not. success) then
+      write(message,'(a,i0,a,es12.4)') 'MPI LINCS failed at constraint ', failed, &
+                                    '; maximum relative error = ', error
+      call die(trim(message))
+    end if
+    already_applied = .true.
+  end if
+#endif
+  if (nodeid == 0 .and. constraint_count > 0) then
+    call apply_constraints(xx, x, iterations, already_applied)
+    v(:) = (x(:)-xx(:))/dt
+  end if
+end subroutine apply_dynamics_constraints
 
 
 subroutine initial_shaking
@@ -5632,11 +5689,15 @@ subroutine md_run
       profile(11)%time = profile(11)%time + rtime() - start_loop_time1
 #endif
 
-      ! Apply the selected solute and solvent constraint algorithms.
-      if (constraint_count > 0) then
-        call apply_constraints(xx, x, niter)
-        v(:) = (x(:) - xx(:)) / dt
-      end if
+#endif
+    end if
+
+#ifndef DUM
+    call apply_dynamics_constraints(niter)
+#endif
+
+    if (nodeid == 0) then
+#ifndef DUM
 
       ! --- end of time step ---
 #if defined (PROFILING)

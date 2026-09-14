@@ -7,6 +7,8 @@ program test_lincs
   integer :: assertions = 0
 
   call test_single_constraint
+  call test_pair_polynomial
+  call test_triple_polynomial
   call test_coupled_chain
   call test_expansion_convergence
   call test_orientation_invariance
@@ -40,6 +42,73 @@ subroutine test_single_constraint
   call assert_close('single constraint length', bond_length(candidate,1,2), target(1), 2.0d-14)
   call assert_close('single constraint reported error', error, 0.0d0, 2.0d-14)
 end subroutine test_single_constraint
+
+
+subroutine test_pair_polynomial
+  type(lincs_data_type) :: fast, generic
+  integer :: ai(2)=[1,1], aj(2)=[2,3], order
+  real(8) :: mass(3)=[1.0d0/12.0d0,1.0d0,1.0d0], target(2)=[1.0d0,1.0d0]
+  real(8) :: old(9), a(9), b(9)
+  logical :: success
+  old=[0.0d0,0.0d0,0.0d0, 1.0d0,0.0d0,0.0d0, -0.5d0,sqrt(0.75d0),0.0d0]
+  do order=0,9
+    call setup_lincs(ai,aj,target,mass,order,0,huge(1.0d0),0,fast)
+    generic=fast
+    ! Compare the algebraic shortcut with the general sparse finite series.
+    deallocate(generic%pair_i,generic%pair_j,generic%pair_even,generic%pair_odd,generic%complex_rows)
+    allocate(generic%pair_i(0),generic%pair_j(0),generic%pair_even(0),generic%pair_odd(0))
+    generic%complex_rows=[1,2]
+    a=old+[0.01d0,0.02d0,0.0d0, -0.03d0,0.02d0,0.01d0, 0.04d0,-0.01d0,-0.02d0]
+    b=a
+    success=lincs_positions(old,a,context=fast)
+    call assert_true('two-bond polynomial succeeds',success)
+    success=lincs_positions(old,b,context=generic)
+    call assert_true('generic two-bond expansion succeeds',success)
+    call assert_vector_close('two-bond finite polynomial matches sparse expansion',a,b,2.0d-15)
+  end do
+end subroutine test_pair_polynomial
+
+
+subroutine test_triple_polynomial
+  type(lincs_data_type) :: fast, generic
+  integer :: ai(3), aj(3), order, shape, k
+  real(8) :: mass(4), target(3), old(12), a(12), b(12)
+  logical :: success
+  do shape=1,3
+    mass=[1.0d0/12.0d0,1.0d0,0.5d0,0.25d0]
+    old=[0.0d0,0.0d0,0.0d0, 1.0d0,0.0d0,0.0d0, &
+         -0.5d0,sqrt(0.75d0),0.0d0, -0.5d0,-sqrt(0.75d0),0.0d0]
+    ai=[1,1,1]; aj=[2,3,4]
+    if (shape == 2) then
+      ai=[1,2,3]; aj=[2,3,4]
+      call make_zigzag_chain(4,old)
+    else if (shape == 3) then
+      ai=[1,2,3]; aj=[2,3,1]
+      mass(1)=0.0d0
+    end if
+    do k=1,3
+      target(k)=bond_length(old,ai(k),aj(k))
+    end do
+    do order=0,12
+      call setup_lincs(ai,aj,target,mass,order,2,huge(1.0d0),2,fast)
+      call assert_true('one isolated three-bond component identified',size(fast%triple_rows,2) == 1)
+      generic=fast
+      deallocate(generic%triple_rows,generic%triple_polynomial)
+      allocate(generic%triple_rows(3,0),generic%triple_polynomial(3,3,0))
+      generic%triple_count=0
+      generic%complex_rows=[1,2,3]
+      do k=1,12
+        a(k)=old(k)+0.01d0*sin(1.7d0*k)
+      end do
+      b=a
+      success=lincs_positions(old,a,context=fast)
+      call assert_true('three-bond polynomial succeeds',success)
+      success=lincs_positions(old,b,context=generic)
+      call assert_true('generic three-bond expansion succeeds',success)
+      call assert_vector_close('three-bond finite polynomial matches sparse expansion',a,b,4.0d-15)
+    end do
+  end do
+end subroutine test_triple_polynomial
 
 
 subroutine test_coupled_chain
