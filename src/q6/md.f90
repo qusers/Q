@@ -5009,6 +5009,7 @@ subroutine fire_minimize
 !!  simulation sphere are held by the usual fk_fix restraints, exactly as in MD.
 !!-------------------------------------------------------------------------------
   real(8), allocatable :: v_save(:)
+  real, allocatable :: wpol_state_save(:,:)
 
   if (nodeid .eq. 0) then
     call centered_heading('Energy Minimization (FIRE)', '-')
@@ -5022,6 +5023,19 @@ subroutine fire_minimize
   allocate(v_save(nat3), stat=alloc_status)
   call check_alloc('FIRE velocity buffer')
   v_save(1:nat3) = v(1:nat3)
+
+  ! watpol accumulates MD running averages on every force evaluation. FIRE's
+  ! evaluations are not MD samples: retaining them makes the first MD update
+  ! depend on the minimization step count. Preserve the pre-MD state exactly,
+  ! including the correction loaded from a restart. Shell geometry is rebuilt
+  ! from the new coordinates by the next ordinary force evaluation.
+  if (nodeid .eq. 0 .and. wpol_restr .and. allocated(wshell)) then
+    allocate(wpol_state_save(3, nwpolr_shell), stat=alloc_status)
+    call check_alloc('FIRE water polarization buffer')
+    wpol_state_save(1,:) = wshell(:)%avtheta
+    wpol_state_save(2,:) = wshell(:)%avn_insh
+    wpol_state_save(3,:) = wshell(:)%theta_corr
+  end if
 
   ! ---- Phase 1: bonded terms only, hydrogens free ----
   if (nodeid .eq. 0) write(*,'(a)') '--- Phase 1: bonded terms only ---'
@@ -5038,6 +5052,13 @@ subroutine fire_minimize
   ! Hand the pre-minimization velocities back to MD.
   v(1:nat3) = v_save(1:nat3)
   deallocate(v_save)
+
+  if (allocated(wpol_state_save)) then
+    wshell(:)%avtheta = wpol_state_save(1,:)
+    wshell(:)%avn_insh = wpol_state_save(2,:)
+    wshell(:)%theta_corr = wpol_state_save(3,:)
+    deallocate(wpol_state_save)
+  end if
 
 end subroutine fire_minimize
 
