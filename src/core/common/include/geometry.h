@@ -1,9 +1,8 @@
 #pragma once
 #include <math.h>
 
-#include "md_types.h"
 #include "cuda_runtime_utility.h"
-
+#include "md_types.h"
 
 template <class T>
 HD inline Real3<T> operator-(const Real3<T>& a, const Real3<T>& b) {
@@ -57,4 +56,40 @@ HD inline Real3<To> real3_cast(const Real3<From>& a) {
         static_cast<To>(a.x),
         static_cast<To>(a.y),
         static_cast<To>(a.z)};
+}
+
+inline uint32_t expand_morton_bits(uint32_t value) {
+    value &= 0x000003ffu;
+    value = (value | (value << 16)) & 0x030000ffu;
+
+    value = (value | (value << 8)) & 0x0300f00fu;
+
+    value = (value | (value << 4)) & 0x030c30c3u;
+
+    value = (value | (value << 2)) & 0x09249249u;
+
+    return value;
+}
+
+inline uint32_t morton_code(uint32_t x, uint32_t y, uint32_t z) {
+    return expand_morton_bits(x) | (expand_morton_bits(y) << 1) | (expand_morton_bits(z) << 2);
+}
+inline uint32_t quantize_morton_coordinate(double value, double minimum, double maximum) {
+    const double extent = maximum - minimum;
+
+    if (!(extent > 0.0)) {
+        return 0;
+    }
+
+    double normalized = (value - minimum) / extent;
+    normalized = std::max(0.0, std::min(1.0, normalized));
+
+    return static_cast<uint32_t>(normalized * 1023.0 + 0.5);
+}
+
+inline uint32_t get_morton_code(const coord_t& p, double x_min, double x_max, double y_min, double y_max, double z_min, double z_max) {
+    auto x = quantize_morton_coordinate(p.x, x_min, x_max);
+    auto y = quantize_morton_coordinate(p.y, y_min, y_max);
+    auto z = quantize_morton_coordinate(p.z, z_min, z_max);
+    return morton_code(x, y, z);
 }
