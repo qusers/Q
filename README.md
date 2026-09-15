@@ -1,26 +1,26 @@
 # Q
 
-Q is a monorepo for the Q molecular dynamics engine and accompanying free energy workflows. It currently contains Q, QligFEP, and QresFEP.
+qusers/Q is the repository for the Q molecular dynamics engine and accompanying free energy workflows. It currently contains Q, QligFEP, and QresFEP.
 
-In this README, **Q repository** refers to the complete monorepo, while **Q engine** refers to the CPU molecular dynamics and free energy engine in `src/q6`.
+In this README, **Q repository** refers to the complete repository, while **Q engine** refers to the CPU molecular dynamics and free energy engine in `src/q6`.
 
 ## Components
 
-| Component | Purpose | Status |
-| --- | --- | --- |
-| **Q engine** | CPU molecular dynamics and free energy engine for FEP, EVB, and LIE calculations | Available |
-| **QligFEP** | Automated ligand relative binding free energy workflows | Available |
-| **QresFEP** | Residue-level free energy workflows | Protein thermostability protocol available |
-| **Q-GPU** | GPU implementation of the Q engine | Integration pending |
+| Component | Purpose | Status | Implementation Path |
+| --- | --- | --- | --- |
+| **Q engine** | CPU molecular dynamics and free energy engine for FEP, EVB, and LIE calculations | Available | [`src/q6`](src/q6) |
+| **QligFEP** | Automated ligand relative binding free energy workflows | Available | [`src/QligFEP/qligfep.py`](src/QligFEP/qligfep.py) |
+| **QresFEP** | Residue-level free energy workflows | Protein thermostability protocol available | [`src/QligFEP/qresfep.py`](src/QligFEP/qresfep.py) |
+| **Q-GPU** | GPU implementation of the Q engine | Integration pending | [`src/core`](src/core) and [`src/Qgpu`](src/Qgpu) |
 
 The Python workflows are currently distributed together in the `QligFEP`
 package. Installing that package provides both the QligFEP and QresFEP commands.
 
 ## Choose a workflow
 
-- Use the **Q engine** to run molecular dynamics, FEP, EVB, or LIE calculations directly.
-- Use **QligFEP** to calculate ligand relative binding free energies.
-- Use **QresFEP** to calculate mutation-induced changes in free energy. This repository currently includes only the protein thermostability protocol.
+- Use the **Q engine** to run FEP, EVB, or LIE calculations directly.
+- Use **QligFEP** to prepare submission files for ligand relative binding free energies using the Q engine.
+- Use **QresFEP** to prepare submission files to calculate mutation-induced changes in free energy. For now, this repository currently includes only the protein thermostability protocol.
 
 ## Table of contents
 
@@ -31,7 +31,8 @@ package. Installing that package provides both the QligFEP and QresFEP commands.
   - [Compiling Q for HPC (MPI support)](#compiling-q-for-hpc-mpi-support)
   - [Compiling Q for local use (non-MPI)](#compiling-q-for-local-use-non-mpi)
   - [Setting up HPC configurations](#setting-up-hpc-configurations)
-- [⌨️ Command line interface (CLI)](#️-command-line-interface-cli)
+- [Q engine executables](#q-engine-executables)
+- [⌨️ Python command-line tools](#️-python-command-line-tools)
 - [Tutorials](#tutorials)
   - [Protein thermostability with QresFEP](#protein-thermostability-with-qresfep)
   - [Non-equilibrium FEP (NEQ²)](#non-equilibrium-fep-neq2)
@@ -171,11 +172,9 @@ CLUSTER_DICT = {
 Pass the profile name, such as `MY_HPC`, to a QligFEP or QresFEP setup command
 with `--cluster`.
 
-## ⌨️ Command line interface (CLI)
+## Q engine executables
 
-### Q engine
-
-Building Q provides these Fortran executables:
+Building the Q engine places these Fortran executables in `src/q6/bin/q6`:
 
 - `qprep` prepares and solvates molecular topologies.
 - `qdyn` runs serial molecular dynamics calculations.
@@ -183,9 +182,19 @@ Building Q provides these Fortran executables:
 - `qfep` analyzes FEP energy files.
 - `qcalc` analyzes Q trajectories and molecular properties.
 
+While the executables can be used directly, QligFEP and QresFEP users do not need to do
+this. The workflows obtain the Q engine paths from
+[`src/QligFEP/settings/settings.py`](src/QligFEP/settings/settings.py), use them
+during preparation, and include them in generated run and submission scripts.
+
+## ⌨️ Python command-line tools
+
+Installing the QligFEP Python package adds the commands below to the active
+Python environment.
+
 ### Structure and parameter preparation
 
-Installing the Python package provides these shared preparation tools:
+The package provides these shared preparation tools:
 
 - `qcog` calculates the center of geometry of each structure in a PDB or SDF
   file.
