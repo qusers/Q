@@ -25,6 +25,27 @@ class QprepFEPParameters:
 
 
 @dataclass
+class QprepResFEPParameters:
+    """Parameters for a residue-mutation (QresFEP) qprep.inp.
+
+    Differs from the ligand case in taking an open-ended list of libraries: the
+    hybrid residue's own library has to be read before the force field's, and any
+    cofactors add more.
+    """
+
+    libraries: list[str]  # Library files, read in order (hybrid residue first)
+    prm: str  # Merged parameter file
+    pdb: str  # Complex PDB (protein + hybrid residue, or the reference tripeptide)
+    center: str  # Sphere center "x y z"
+    sphere_radius: str  # Sphere radius
+    solute_density: str  # Solute density value
+    solvent: str  # Solvent specification ("4 water.pdb" or "1 HOH")
+    solvent_pack: str = "2.5"
+    cysbonds: str = ""  # addbond lines (empty string if none)
+    solvate: bool = True  # False for vacuum
+
+
+@dataclass
 class QprepProteinParameters:
     """Parameters for protein prep qprep.inp."""
 
@@ -83,6 +104,46 @@ def render_qprep_fep_input(params: QprepFEPParameters) -> str:
     )
 
     return "\n".join(lines)
+
+
+def render_qprep_resfep_input(params: QprepResFEPParameters) -> str:
+    """Render qprep.inp for a QresFEP hybrid-residue topology.
+
+    Args:
+        params: ResFEP qprep parameters
+
+    Returns:
+        Complete qprep.inp file content as string
+    """
+    lines = [f"rl {library}" for library in params.libraries]
+    lines += [
+        f"rprm {params.prm}",
+        f"rp {params.pdb}",
+        f"set solvent_pack {params.solvent_pack}",
+        f"set solute_density {params.solute_density}",
+        f"boundary 1 {params.center} {params.sphere_radius}",
+    ]
+
+    solvate_line = f"solvate {params.center} {params.sphere_radius} {params.solvent}"
+    lines.append(solvate_line if params.solvate else f"!{solvate_line}")
+
+    if params.cysbonds:
+        lines.append(params.cysbonds.rstrip())
+
+    lines.extend(
+        [
+            "maketop MKC_p",
+            "writetop dualtop.top",
+            "wp top_p.pdb y",
+            "rt dualtop.top",
+            "mask none",
+            "mask not excluded",
+            "wp complexnotexcluded.pdb y",
+            "q",
+        ]
+    )
+
+    return "\n".join(lines) + "\n"
 
 
 def render_qprep_protein_input(params: QprepProteinParameters) -> str:

@@ -1,5 +1,7 @@
 """Equilibration stage configurations for FEP simulations."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Literal
 
@@ -151,6 +153,101 @@ _CONFIGS_1FS = [
     ("eq4", EQ4_1FS_PARAMS, 2.5, 1.5, False),
     ("eq5", EQ5_1FS_PARAMS, 0.0, None, True),  # dr_force=None means use production dr_force
 ]
+
+
+# QresFEP uses a fixed 1 fs timestep for eq1-eq4; eq5 follows the
+# production timestep.
+
+_RESFEP_SHARED = dict(
+    lrf=True,
+    # Separate baths prevent boundary-heated solvent from over-cooling the solute.
+    separate_scaling=True,
+)
+
+RESFEP_EQ1_PARAMS = dict(
+    steps=10000, stepsize=0.1, temperature=1, bath_coupling=0.2,
+    shake_hydrogens=False, interval_output=5, **_RESFEP_SHARED,
+)
+
+RESFEP_EQ2_PARAMS = dict(
+    steps=10000, stepsize=1.0, temperature=50, bath_coupling=1.0,
+    shake_hydrogens=False, interval_output=5, **_RESFEP_SHARED,
+)
+
+RESFEP_EQ3_PARAMS = dict(
+    steps=10000, stepsize=1.0, temperature=150, bath_coupling=1.0,
+    shake_hydrogens=False, interval_output=5, **_RESFEP_SHARED,
+)
+
+RESFEP_EQ4_PARAMS = dict(
+    steps=10000, stepsize=1.0, temperature=275, bath_coupling=1.0,
+    shake_hydrogens=False, interval_output=5, **_RESFEP_SHARED,
+)
+
+#: eq5 is the only stage that follows the production timestep: (steps, stepsize,
+#: shake_hydrogens) per timestep. The default 2 fs protocol runs 1,250,000 steps,
+#: or 2.5 ns.
+_RESFEP_EQ5_BY_TIMESTEP = {
+    "1fs": (500000, 1.0, False),
+    "2fs": (1250000, 2.0, True),
+}
+
+
+def get_resfep_equilibration_configs(
+    timestep: Literal["1fs", "2fs"],
+    shell_radius: int,
+    eq5_steps: int | None = None,
+    separate_scaling: bool = True,
+) -> list[EquilibrationConfig]:
+    """Return the QresFEP equilibration configurations.
+
+    Args:
+        timestep: Production timestep ("1fs" or "2fs"); only eq5 follows it.
+        shell_radius: Inner radius of the restrained boundary shell.
+        eq5_steps: Length of the final equilibration in steps.
+        separate_scaling: Scale solute and solvent independently.
+
+    Returns:
+        List of EquilibrationConfig for eq1 through eq5.
+    """
+    steps, stepsize, shake_hydrogens = _RESFEP_EQ5_BY_TIMESTEP[timestep]
+    if eq5_steps is not None:
+        steps = int(eq5_steps)
+    eq5_params = dict(
+        steps=steps,
+        stepsize=stepsize,
+        temperature="T_VAR",
+        bath_coupling=10.0,
+        shake_hydrogens=shake_hydrogens,
+        interval_output=5,
+        **_RESFEP_SHARED,
+    )
+
+    # (name, params, sequence restraint force). The hybrid residue is held by distance
+    # restraints throughout, so the whole-solute sequence restraint is released at eq5,
+    # where only the reference tripeptide keeps an anchor.
+    raw_configs = [
+        ("eq1", RESFEP_EQ1_PARAMS, 10.0),
+        ("eq2", RESFEP_EQ2_PARAMS, 10.0),
+        ("eq3", RESFEP_EQ3_PARAMS, 5.0),
+        ("eq4", RESFEP_EQ4_PARAMS, 5.0),
+        ("eq5", eq5_params, 0.0),
+    ]
+
+    # Override on a copy because the module-level dictionaries are shared constants.
+    return [
+        EquilibrationConfig(
+            name=name,
+            params=MDParameters(
+                **{**params, "separate_scaling": separate_scaling},
+                shell_radius=shell_radius,
+            ),
+            sequence_restraint_force=seq_force,
+            distance_restraint_force=None,
+            use_water_restraint=(name == "eq5"),
+        )
+        for name, params, seq_force in raw_configs
+    ]
 
 
 def get_equilibration_configs(

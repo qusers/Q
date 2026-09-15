@@ -49,6 +49,16 @@ def render_qfep_input(
 ) -> str:
     """Render qfep.inp content.
 
+    qfep reads these values positionally, in the order it prompts for them:
+    number of energy files, states and off-diagonal elements, kT and points to
+    skip, gap bins, minimum points per bin, then one alpha per state above the
+    first, off-diagonal count, and the linear combination defining the reaction
+    coordinate.
+
+    Alpha is an energy offset added to state 2. It has to be zero: a non-zero
+    value shifts the reported dG by exactly that amount, since state 2's weight
+    goes from 0 to 1 across the lambda ladder.
+
     Args:
         total_lambdas: Total number of lambda values
         temperature: Temperature in Kelvin for kT calculation
@@ -64,12 +74,11 @@ def render_qfep_input(
         str(total_lambdas),
         "2  0",
         f"{kT_value}  {windows}",
-        str(windows),
-        str(windows),
-        str(windows),
-        "0",
-        "0",
-        "1 0",
+        str(windows),  # gap bins
+        str(windows),  # minimum points per bin
+        "0",  # alpha for state 2
+        "0",  # off-diagonal elements
+        "1 0",  # linear combination of states
     ]
 
     # Append energy files

@@ -77,7 +77,7 @@ def render_md_input(
     params: MDParameters,
     lambda1: str,
     lambda2: str,
-    trajectory_file: str,
+    trajectory_file: str | None,
     final_file: str,
     distance_restraints: str = "",
     sequence_restraints: str = "",
@@ -93,7 +93,9 @@ def render_md_input(
         params: MD simulation parameters
         lambda1: First lambda value (e.g., "0.500" or "FLOAT_LAMBDA1")
         lambda2: Second lambda value (e.g., "0.500" or "FLOAT_LAMBDA2")
-        trajectory_file: Trajectory output filename (e.g., "eq1.dcd")
+        trajectory_file: Trajectory output filename (e.g., "eq1.dcd"). When
+            ``None``, write interval 0 and omit the trajectory entry from
+            ``[files]`` so Q does not create a DCD.
         final_file: Final restart filename (e.g., "eq1.re")
         distance_restraints: Pre-formatted distance restraints section
         sequence_restraints: Pre-formatted sequence restraints section
@@ -132,6 +134,10 @@ def render_md_input(
 
     restart_file_name = f"restart                   {restart_file}\n" if restart_file else ""
     energy_file_name = f"energy                    {energy_file}\n" if energy_file else ""
+    trajectory_interval = params.interval_trajectory if trajectory_file else 0
+    trajectory_file_name = (
+        f"trajectory                {trajectory_file}\n" if trajectory_file else ""
+    )
 
     lambda_scaling_section = f"\n[lambda_scaling]\n{lambda_scaling}\n" if lambda_scaling else ""
 
@@ -168,12 +174,12 @@ polarization_force        {params.polarization_force}
 [intervals]
 output                    {params.interval_output}
 {energy_interval}\
-trajectory                {params.interval_trajectory}
+trajectory                {trajectory_interval}
 non_bond                  {params.interval_non_bond}
 
 [files]
 topology                  {params.topology}
-trajectory                {trajectory_file}
+{trajectory_file_name}\
 {restart_file_name}\
 {energy_file_name}\
 final                     {final_file}

@@ -84,6 +84,100 @@ def overlapping_pairs(pdbfile, reslist, include=("ATOM", "HETATM")):
     return atomlist
 
 
+def resfep_lambda_ladder(windows: int, sampling: str) -> list[str]:
+    """Return the lambda values of one QresFEP stage, from 1.000 down to 0.000.
+
+    Distinct from :func:`QligFEP.IO.get_lambdas`, which the ligand protocol uses:
+    that one is built on a rational sigmoid and returns ``windows + 1`` values,
+    whereas a mutation stage needs exactly ``windows``, spaced as published.
+
+    The ``exponential`` and ``reverse_exponential`` ladders are mirror images.
+    Pairing them across the two stages puts the closely-spaced windows at the end
+    of each stage, which is where that stage's own topology is being switched and
+    the free energy changes fastest.
+
+    Args:
+        windows: Number of lambda values to produce.
+        sampling: ``linear``, ``sigmoidal``, ``exponential`` or ``reverse_exponential``.
+
+    Returns:
+        Lambda values as strings with three decimals, descending from 1.000.
+
+    Raises:
+        ValueError: If `sampling` is not a known scheme, or `windows` is below 2.
+    """
+    if windows < 2:
+        raise ValueError(f"A FEP stage needs at least 2 windows, got {windows}")
+
+    fraction = np.linspace(0.0, 1.0, windows)
+
+    if sampling == "linear":
+        values = fraction
+    elif sampling == "sigmoidal":
+        curve = 1 / (1 + np.exp(np.linspace(-6, 6, windows)))
+        values = 1 - (curve - curve.min()) / (curve.max() - curve.min())
+    elif sampling in ("exponential", "reverse_exponential"):
+        k = -3.0 if sampling == "exponential" else 3.0
+        values = (np.exp(k * fraction) - 1) / (np.exp(k) - 1)
+    else:
+        raise ValueError(f"Unknown lambda sampling scheme: {sampling!r}")
+
+    # Rounding error at the endpoints would otherwise render as "-0.000", which
+    # ends up in file names and in Q's [lambdas] section. np.clip preserves the
+    # sign bit of negative zero, so normalize values that round to zero explicitly.
+    clipped = np.clip(values[::-1], 0.0, 1.0)
+    return ["0.000" if abs(value) < 0.0005 else f"{value:.3f}" for value in clipped]
+
+
+#: Reciprocal molecular volumes used to set qprep's `solute_density`, in A^-3.
+PROTEIN_VOLUME = 0.05794
+LIPID_VOLUME = 0.03431  # from octane
+
+
+def sphere_solute_density(pdb_file, center, radius) -> float:
+    """Return the solute density qprep should pack solvent against.
+
+    Lipids are looser than protein, so a membrane system inside the sphere needs a
+    density between the two, weighted by how many heavy atoms of each are enclosed.
+    Waters and hydrogens are ignored -- qprep's figure counts heavy solute atoms.
+
+    Args:
+        pdb_file: Path to the PDB holding the solute.
+        center: Sphere center as ``[x, y, z]``.
+        radius: Sphere radius in Angstrom.
+
+    Returns:
+        Density in A^-3; ``PROTEIN_VOLUME`` when the sphere holds no lipid.
+    """
+    center = np.array([float(c) for c in center], dtype=float)
+    radius = float(radius)
+
+    n_solute = 0
+    n_lipid = 0
+    with open(pdb_file) as infile:
+        for line in infile:
+            if not line.startswith(("ATOM", "HETATM")):
+                continue
+            residue_name = line[17:20].strip()
+            atom_name = line[12:16].strip()
+            if residue_name == "HOH" or not atom_name or atom_name[0] == "H":
+                continue
+            try:
+                position = np.array([float(line[30:38]), float(line[38:46]), float(line[46:54])])
+            except ValueError:
+                continue
+            if np.linalg.norm(position - center) <= radius:
+                n_solute += 1
+                if residue_name == "POP" and atom_name[0] == "C":
+                    n_lipid += 1
+
+    if not n_solute:
+        return PROTEIN_VOLUME
+
+    n_protein = n_solute - n_lipid
+    return (n_protein * PROTEIN_VOLUME + n_lipid * LIPID_VOLUME) / n_solute
+
+
 def kT(T):
     k = 0.0019872041  # kcal/(mol.K)
     kT = k * T
