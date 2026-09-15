@@ -46,4 +46,5 @@ class CudaNonbondedForce final : public NonbondedForce {
     std::unique_ptr<HostDeviceBuffer<int>> lrf_slot_to_group_range_;
 
     std::unique_ptr<HostDeviceBuffer<uint32_t>> exact_pair_masks_;
+    std::unique_ptr<HostDeviceBuffer<uint32_t>> exact_pair_14_masks_;
 };

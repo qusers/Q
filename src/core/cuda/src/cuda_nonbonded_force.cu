@@ -6,30 +6,30 @@
 
 namespace {
 
-__device__ __forceinline__ double combined_slot_distance2(
+__device__ __forceinline__ real_t combined_slot_distance2(
     int slot1,
     int slot2,
 
     const real_t* __restrict__ cx,
     const real_t* __restrict__ cy,
     const real_t* __restrict__ cz) {
-    const double dx = static_cast<double>(cx[slot1]) - static_cast<double>(cx[slot2]);
-    const double dy = static_cast<double>(cy[slot1]) - static_cast<double>(cy[slot2]);
-    const double dz = static_cast<double>(cz[slot1]) - static_cast<double>(cz[slot2]);
+    const real_t dx = cx[slot1] - cx[slot2];
+    const real_t dy = cy[slot1] - cy[slot2];
+    const real_t dz = cz[slot1] - cz[slot2];
 
     return dx * dx + dy * dy + dz * dz;
 }
 
-__device__ __forceinline__ double combined_slot_center_distance2(
+__device__ __forceinline__ real_t combined_slot_center_distance2(
     int slot,
     const coord_t center,
 
     const real_t* __restrict__ cx,
     const real_t* __restrict__ cy,
     const real_t* __restrict__ cz) {
-    const double dx = static_cast<double>(cx[slot]) - center.x;
-    const double dy = static_cast<double>(cy[slot]) - center.y;
-    const double dz = static_cast<double>(cz[slot]) - center.z;
+    const real_t dx = cx[slot] - center.x;
+    const real_t dy = cy[slot] - center.y;
+    const real_t dz = cz[slot] - center.z;
 
     return dx * dx + dy * dy + dz * dz;
 }
@@ -188,6 +188,7 @@ __device__ int2 get_tile_idx(int n, int t) {
     return {x, y};
 }
 
+template <bool BONDS_PRECLASSIFIED = false>
 __device__ void compute_pair(
     // atom1
     int atom1, uint8_t atom1_type, int atom1_state,
@@ -201,14 +202,16 @@ __device__ void compute_pair(
     real_t el14_scale, real_t coulomb_constant, int vdw_rule,
     // output
     real_t3& atom1_force, real_t3& atom2_force,
-    real_t& e_coul, real_t& e_vdw) {
-    if (atom1 == -1 || atom2 == -1 || atom1 == atom2) return;
-    auto bond_type = get_bond_type(n_atoms_solute, LJ_matrix, atom1, atom1_type, atom2, atom2_type);
-    if (bond_type == BondType::Bond23) return;
+    real_t& e_coul, real_t& e_vdw, bool is_14 = false) {
+    if constexpr (!BONDS_PRECLASSIFIED) {
+        if (atom1 == -1 || atom2 == -1 || atom1 == atom2) return;
+        auto bond_type = get_bond_type(n_atoms_solute, LJ_matrix, atom1, atom1_type, atom2, atom2_type);
+        if (bond_type == BondType::Bond23) return;
 
-    constexpr uint8_t Q = static_cast<uint8_t>(AtomCategory::Q);
-    if (atom1_type == Q && atom2_type == Q && atom1_state != atom2_state) return;
-
+        constexpr uint8_t Q = static_cast<uint8_t>(AtomCategory::Q);
+        if (atom1_type == Q && atom2_type == Q && atom1_state != atom2_state) return;
+        is_14 = bond_type == BondType::Bond14;
+    }
     real_t dx = atom2_coord.x - atom1_coord.x;
     real_t dy = atom2_coord.y - atom1_coord.y;
     real_t dz = atom2_coord.z - atom1_coord.z;
@@ -216,7 +219,6 @@ __device__ void compute_pair(
     real_t inv_dis2 = static_cast<real_t>(1.0) / dis2;
     real_t inv_dis = sqrt(inv_dis2);
 
-    bool is_14 = (bond_type == BondType::Bond14);
     real_t qij = atom1_charge * atom2_charge;
     real_t scaling = is_14 ? el14_scale : 1;
     real_t2 pair = (is_14) ? combine_vdw(vdw_rule, atom1_vdw.aii_14, atom1_vdw.bii_14, atom2_vdw.aii_14, atom2_vdw.bii_14) : combine_vdw(vdw_rule, atom1_vdw.aii_normal, atom1_vdw.bii_normal, atom2_vdw.aii_normal, atom2_vdw.bii_normal);
@@ -263,11 +265,13 @@ __device__ void shuffle(int& atom, uint8_t& atom_type, int& atom_state, real_t& 
     atom_coord.z = __shfl_sync(FULL_MASK, atom_coord.z, src);
 }
 
+template <bool BONDS_PRECLASSIFIED = false>
 __device__ void nonbonded_force_calculation(
     int x_idx,
     int y_idx,
     bool is_diag,
     uint32_t pair_mask,
+    uint32_t pair_14_mask,
     int base_x,
     int base_y,
 
@@ -321,14 +325,16 @@ __device__ void nonbonded_force_calculation(
     real_t local_e_coul = 0, local_e_vdw = 0;
     int y_lane = lane;
     for (int i = 0; i < 32; i++) {
-        const bool mask_enabled = (pair_mask & (uint32_t{1} << y_lane)) != 0;
+        const uint32_t bit = uint32_t{1} << y_lane;
+        const bool mask_enabled = (pair_mask & bit) != 0;
         if (mask_enabled && (!is_diag || atom1 < atom2)) {
-            compute_pair(atom1, atom1_type, atom1_state, atom1_charge, atom1_vdw, atom1_lambda, atom1_coord,
-                         atom2, atom2_type, atom2_state, atom2_charge, atom2_vdw, atom2_lambda, atom2_coord,
-                         n_atoms_solute, LJ_matrix,
-                         el14_scale, coulomb_constant, vdw_rule,
-                         atom1_force, atom2_force,
-                         local_e_coul, local_e_vdw);
+            const bool is_14 = (pair_14_mask & bit) != 0;
+            compute_pair<BONDS_PRECLASSIFIED>(atom1, atom1_type, atom1_state, atom1_charge, atom1_vdw, atom1_lambda, atom1_coord,
+                                              atom2, atom2_type, atom2_state, atom2_charge, atom2_vdw, atom2_lambda, atom2_coord,
+                                              n_atoms_solute, LJ_matrix,
+                                              el14_scale, coulomb_constant, vdw_rule,
+                                              atom1_force, atom2_force,
+                                              local_e_coul, local_e_vdw, is_14);
         }
         shuffle(atom2, atom2_type, atom2_state, atom2_charge, atom2_vdw, atom2_lambda, atom2_force, atom2_coord);
         y_lane = (y_lane + 1) & 31;
@@ -371,57 +377,103 @@ __global__ void build_exact_cluster_tiles_kernel(
     const uint8_t* group_pair_modes,
     const int* slot_to_group_range,
 
+    int n_atoms_solute,
+    const int* atom_idx,
+    const uint8_t* category,
+    const int* q_state,
+    const int* LJ_matrix,
+
     int* exact_tile_count,
     int* list_overflow,
 
     ExactEntry* exact_entries,
-    uint32_t* exact_pair_masks) {
+    uint32_t* exact_pair_masks,
+    uint32_t* exact_pair_14_masks) {
     constexpr unsigned FULL_MASK = 0xffffffffu;
+    constexpr uint8_t Q = static_cast<uint8_t>(AtomCategory::Q);
+
     const int lane = threadIdx.x & 31;
     const int warp_in_block = threadIdx.x >> 5;
     const int warps_per_block = blockDim.x >> 5;
 
     const int candidate_index = blockIdx.x * warps_per_block + warp_in_block;
+
     const int candidate_count = n_clusters * (n_clusters + 1) / 2;
 
+    // Uniform return for the entire warp.
     if (candidate_index >= candidate_count) {
         return;
     }
 
     const int2 cluster_pair = get_tile_idx(n_clusters, candidate_index);
+
     const int x_cluster = cluster_pair.x;
     const int y_cluster = cluster_pair.y;
 
     const int x_start = x_cluster * 32;
     const int y_start = y_cluster * 32;
 
-    const int x_range = slot_to_group_range[x_start + lane];
+    const int x_slot = x_start + lane;
+    const int x_range = slot_to_group_range[x_slot];
+    const int x_atom = atom_idx[x_slot];
 
     uint32_t pair_mask = 0;
+    uint32_t pair_14_mask = 0;
 
-    if (x_range >= 0) {
+    if (x_range >= 0 && x_atom >= 0) {
+        const uint8_t x_category = category[x_slot];
+        const int x_state = q_state[x_slot];
+
 #pragma unroll
-        for (int y_lane = 0; y_lane < 32; y_lane++) {
+        for (int y_lane = 0; y_lane < 32; ++y_lane) {
+            // Unique ownership within a diagonal tile.
             if (x_cluster == y_cluster && y_lane <= lane) {
                 continue;
             }
 
-            const int y_range = slot_to_group_range[y_start + y_lane];
+            const int y_slot = y_start + y_lane;
+            const int y_range = slot_to_group_range[y_slot];
+
             if (y_range < 0) {
                 continue;
             }
 
             const int group_pair_index = get_pair_index(n_group_ranges, x_range, y_range);
 
-            if (group_pair_modes[group_pair_index] == GROUP_PAIR_EXACT) {
-                pair_mask |= uint32_t{1} << y_lane;
+            if (group_pair_modes[group_pair_index] != GROUP_PAIR_EXACT) {
+                continue;
+            }
+
+            const int y_atom = atom_idx[y_slot];
+
+            if (y_atom < 0 || x_atom == y_atom) {
+                continue;
+            }
+
+            const uint8_t y_category = category[y_slot];
+
+            if (x_category == Q && y_category == Q && x_state != q_state[y_slot]) {
+                continue;
+            }
+
+            const BondType bond_type = get_bond_type(n_atoms_solute, LJ_matrix, x_atom, x_category, y_atom, y_category);
+
+            if (bond_type == BondType::Bond23) {
+                continue;
+            }
+
+            const uint32_t bit = uint32_t{1} << y_lane;
+
+            pair_mask |= bit;
+
+            if (bond_type == BondType::Bond14) {
+                pair_14_mask |= bit;
             }
         }
     }
 
-    const bool tile_is_active = __any_sync(FULL_MASK, pair_mask != 0);
-
-    if (!tile_is_active) {
+    // Test activity after removing exclusions.
+    if (!__any_sync(FULL_MASK, pair_mask != 0)) {
         return;
     }
 
@@ -433,14 +485,18 @@ __global__ void build_exact_cluster_tiles_kernel(
         if (output_index >= max_exact_tiles) {
             atomicExch(list_overflow, 1);
         } else {
-            exact_entries[output_index] = {x_start, y_start};
+            exact_entries[output_index] = {
+                x_start, y_start};
         }
     }
 
     output_index = __shfl_sync(FULL_MASK, output_index, 0);
 
     if (output_index < max_exact_tiles) {
-        exact_pair_masks[static_cast<size_t>(output_index) * 32 + lane] = pair_mask;
+        const size_t mask_index = static_cast<size_t>(output_index) * 32 + lane;
+
+        exact_pair_masks[mask_index] = pair_mask;
+        exact_pair_14_masks[mask_index] = pair_14_mask;
     }
 }
 
@@ -602,19 +658,19 @@ __global__ void nonbonded_kernel(
     x_idx = x_idx < sz ? x_idx : -1;
     y_idx = y_idx < sz ? y_idx : -1;
 
-    nonbonded_force_calculation(x_idx, y_idx, tile_x == tile_y, 0xffffffffu, base_x, base_y, n_states, n_atoms_solute,
-                                atom_idx, category, q_state, atom_lambdas, atom_charge, atom_vdw, LJ_matrix, el14_scale, coulomb_constant, vdw_rule, cx, cy, cz, dvelocities, e);
+    nonbonded_force_calculation<false>(x_idx, y_idx, tile_x == tile_y, 0xffffffffu, 0, base_x, base_y, n_states, n_atoms_solute,
+                                       atom_idx, category, q_state, atom_lambdas, atom_charge, atom_vdw, LJ_matrix, el14_scale, coulomb_constant, vdw_rule, cx, cy, cz, dvelocities, e);
 }
 
 __global__ void classify_group_pairs_kernel(
     int n_group_ranges,
     int use_switch_atom,
 
-    double solute_solute_cutoff2,
-    double solute_solvent_cutoff2,
-    double solvent_solvent_cutoff2,
-    double rcq2,
-    double lrf_cutoff2,
+    real_t solute_solute_cutoff2,
+    real_t solute_solvent_cutoff2,
+    real_t solvent_solvent_cutoff2,
+    real_t rcq2,
+    real_t lrf_cutoff2,
 
     const coord_t solute_center,
 
@@ -732,7 +788,7 @@ __global__ void classify_group_pairs_kernel(
     /*
      * At this point the pair is P-P, P-W, or W-W.
      */
-    double normal_cutoff2;
+    real_t normal_cutoff2;
 
     if (category1 == P && category2 == P) {
         normal_cutoff2 = solute_solute_cutoff2;
@@ -747,7 +803,7 @@ __global__ void classify_group_pairs_kernel(
      * list always places the switch atom first in each group.
      */
     if (use_switch_atom != 0) {
-        const double distance2 = combined_slot_distance2(start1, start2, cx, cy, cz);
+        const real_t distance2 = combined_slot_distance2(start1, start2, cx, cy, cz);
 
         if (distance2 <= normal_cutoff2) {
             group_pair_modes[pair_index] = GROUP_PAIR_EXACT;
@@ -762,7 +818,7 @@ __global__ void classify_group_pairs_kernel(
      * Without switch atoms, W-W still uses switch atoms.
      */
     if (category1 == W && category2 == W) {
-        const double distance2 = combined_slot_distance2(start1, start2, cx, cy, cz);
+        const real_t distance2 = combined_slot_distance2(start1, start2, cx, cy, cz);
 
         if (distance2 <= normal_cutoff2) {
             group_pair_modes[pair_index] = GROUP_PAIR_EXACT;
@@ -784,10 +840,10 @@ __global__ void classify_group_pairs_kernel(
 
         const int water_switch = category1 == W ? start1 : start2;
 
-        double minimum_distance2 = lrf_cutoff2 + 1.0;
+        real_t minimum_distance2 = lrf_cutoff2 + 1.0;
 
         for (int local_atom = 0; local_atom < solute_size; ++local_atom) {
-            const double distance2 = combined_slot_distance2(solute_start + local_atom, water_switch, cx, cy, cz);
+            const real_t distance2 = combined_slot_distance2(solute_start + local_atom, water_switch, cx, cy, cz);
 
             /*
              * Exact is the highest-priority classification, so
@@ -814,7 +870,7 @@ __global__ void classify_group_pairs_kernel(
      * P-P without switch atoms:
      * minimum distance over every atom pair.
      */
-    double minimum_distance2 = lrf_cutoff2 + 1.0;
+    real_t minimum_distance2 = lrf_cutoff2 + 1.0;
 
     for (int local1 = 0; local1 < size1; ++local1) {
         const int slot1 = start1 + local1;
@@ -822,7 +878,7 @@ __global__ void classify_group_pairs_kernel(
         for (int local2 = 0; local2 < size2; ++local2) {
             const int slot2 = start2 + local2;
 
-            const double distance2 = combined_slot_distance2(slot1, slot2, cx, cy, cz);
+            const real_t distance2 = combined_slot_distance2(slot1, slot2, cx, cy, cz);
 
             if (distance2 <= normal_cutoff2) {
                 group_pair_modes[pair_index] = GROUP_PAIR_EXACT;
@@ -844,6 +900,7 @@ __global__ void exact_tiles_nonbonded_force_kernel(
     int n_exact_tiles,
     const ExactEntry* exact_entries,
     const uint32_t* exact_pair_masks,
+    const uint32_t* exact_pair_14_masks,
 
     int n_states,        // ctx.n_lambdas, used by nb_coul_slot
     int n_atoms_solute,  // ctx.n_atoms_solute, water grouping + LJ_matrix row stride
@@ -882,6 +939,7 @@ __global__ void exact_tiles_nonbonded_force_kernel(
 
     const ExactEntry tile = exact_entries[tile_index];
     const uint32_t pair_mask = exact_pair_masks[static_cast<size_t>(tile_index) * 32 + lane];
+    const uint32_t pair_14_mask = exact_pair_14_masks[static_cast<size_t>(tile_index) * 32 + lane];
 
     /*
      * Each lane loads one X atom and one Y atom.
@@ -890,8 +948,8 @@ __global__ void exact_tiles_nonbonded_force_kernel(
     const int x_idx = tile.x_start + lane;
     const int y_idx = tile.y_start + lane;
 
-    nonbonded_force_calculation(x_idx, y_idx, false, pair_mask, tile.x_start, tile.y_start, n_states, n_atoms_solute, atom_idx,
-                                category, q_state, atom_lambdas, atom_charge, atom_vdw, LJ_matrix, el14_scale, coulomb_constant, vdw_rule, cx, cy, cz, dvelocities, e);
+    nonbonded_force_calculation<true>(x_idx, y_idx, false, pair_mask, pair_14_mask, tile.x_start, tile.y_start, n_states, n_atoms_solute, atom_idx,
+                                      category, q_state, atom_lambdas, atom_charge, atom_vdw, LJ_matrix, el14_scale, coulomb_constant, vdw_rule, cx, cy, cz, dvelocities, e);
 }
 
 __global__ void compute_lrf_centers_kernel(
@@ -1045,7 +1103,7 @@ __global__ void build_lrf_coefficients_dense_kernel(
      * 18: yzz
      * 19: xyz
      */
-    double sums[LRF_UNIQUE_COMPONENTS];
+    real_t sums[LRF_UNIQUE_COMPONENTS];
 
 #pragma unroll
     for (int component = 0; component < LRF_UNIQUE_COMPONENTS; ++component) {
@@ -1076,15 +1134,15 @@ __global__ void build_lrf_coefficients_dense_kernel(
             continue;
         }
 
-        const double charge = static_cast<double>(atom_charge[source_slot]);
+        const real_t charge = atom_charge[source_slot];
 
-        const double x = static_cast<double>(cx[source_slot]) - center.x;
+        const real_t x = cx[source_slot] - center.x;
 
-        const double y = static_cast<double>(cy[source_slot]) - center.y;
+        const real_t y = cy[source_slot] - center.y;
 
-        const double z = static_cast<double>(cz[source_slot]) - center.z;
+        const real_t z = cz[source_slot] - center.z;
 
-        const double r2 = x * x + y * y + z * z;
+        const real_t r2 = x * x + y * y + z * z;
 
         /*
          * A self relationship should not be LRF, but guard against
@@ -1094,32 +1152,32 @@ __global__ void build_lrf_coefficients_dense_kernel(
             continue;
         }
 
-        const double inv_r = rsqrt(r2);
-        const double inv_r2 = 1.0 / r2;
+        const real_t inv_r = rsqrt(r2);
+        const real_t inv_r2 = 1.0 / r2;
 
-        const double inv_r3 = inv_r * inv_r2;
+        const real_t inv_r3 = inv_r * inv_r2;
 
-        const double inv_r5 = inv_r3 * inv_r2;
+        const real_t inv_r5 = inv_r3 * inv_r2;
 
-        const double inv_r7 = inv_r5 * inv_r2;
+        const real_t inv_r7 = inv_r5 * inv_r2;
 
-        const double q_r1 = charge * inv_r;
+        const real_t q_r1 = charge * inv_r;
 
-        const double q_r3 = charge * inv_r3;
+        const real_t q_r3 = charge * inv_r3;
 
-        const double q_r5 = charge * inv_r5;
+        const real_t q_r5 = charge * inv_r5;
 
-        const double q_r7 = charge * inv_r7;
+        const real_t q_r7 = charge * inv_r7;
 
-        const double three_q_r5 = 3.0 * q_r5;
+        const real_t three_q_r5 = 3.0 * q_r5;
 
-        const double nine_q_r5 = 9.0 * q_r5;
+        const real_t nine_q_r5 = 9.0 * q_r5;
 
-        const double fifteen_q_r7 = 15.0 * q_r7;
+        const real_t fifteen_q_r7 = 15.0 * q_r7;
 
-        const double xx = x * x;
-        const double yy = y * y;
-        const double zz = z * z;
+        const real_t xx = x * x;
+        const real_t yy = y * y;
+        const real_t zz = z * z;
 
         /*
          * phi0
@@ -1246,6 +1304,8 @@ void CudaNonbondedForce::init_backend(Context& ctx) {
 
     exact_pair_masks_ = std::make_unique<HostDeviceBuffer<uint32_t>>(exact_tile_capacity_ * 32, false, true);
 
+    exact_pair_14_masks_ = std::make_unique<HostDeviceBuffer<uint32_t>>(exact_tile_capacity_ * 32, false, true);
+
     exact_tile_count_ = std::make_unique<HostDeviceBuffer<int>>(1, true, true);
 
     list_overflow_ = std::make_unique<HostDeviceBuffer<int>>(1, true, true);
@@ -1265,7 +1325,6 @@ void CudaNonbondedForce::init_backend(Context& ctx) {
     }
 
     lrf_slot_to_group_range_ = HostDeviceBuffer<int>::from_vector(slot_to_group_range, ctx.command_info.requested_gpu);
-
 }
 
 void CudaNonbondedForce::calc_all_direct_pairs(Context& ctx) {
@@ -1309,7 +1368,6 @@ void CudaNonbondedForce::init_calculation_groups(Context& ctx) {
     const int blocks = (total_pairs + threads - 1) / threads;
 
     int use_switch_atom = ctx.charge_group_config.iuse_switch_atom == 1 ? 1 : 0;
-    use_switch_atom = 1;
 
     classify_group_pairs_kernel<<<blocks, threads>>>(
         n_group_ranges,
@@ -1354,6 +1412,7 @@ void CudaNonbondedForce::calc_exact_tiles(Context& ctx) {
         n_exact_tiles_,
         exact_tiles_->gpu_data_p,
         exact_pair_masks_->gpu_data_p,
+        exact_pair_14_masks_->gpu_data_p,
 
         ctx.n_lambdas(),
         ctx.n_atoms_solute,
@@ -1505,11 +1564,18 @@ void CudaNonbondedForce::build_exact_atom_tiles(Context& ctx) {
         group_pair_modes_->gpu_data_p,
         lrf_slot_to_group_range_->gpu_data_p,
 
+        ctx.n_atoms_solute,
+        data_.atom_idx->gpu_data_p,
+        data_.category->gpu_data_p,
+        data_.q_state->gpu_data_p,
+        ctx.LJ_matrix->gpu_data_p,
+
         exact_tile_count_->gpu_data_p,
         list_overflow_->gpu_data_p,
 
         exact_tiles_->gpu_data_p,
-        exact_pair_masks_->gpu_data_p);
+        exact_pair_masks_->gpu_data_p,
+        exact_pair_14_masks_->gpu_data_p);
 
     check_cuda(cudaGetLastError());
 
