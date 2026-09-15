@@ -320,6 +320,8 @@ struct InpParser::TopData {
     std::string vdw_rule = "1";
     std::vector<std::string> solucenter;
     std::vector<std::string> solvcenter;
+
+    std::string use_switch_atom = "1";
 };
 
 struct InpParser::FepData {
@@ -422,42 +424,61 @@ void InpParser::ensure_topology() {
             block = 1;
             continue;
         }
-        if (line.find("No. of integer atom codes") != std::string::npos) { block = 2; continue; }
+        if (line.find("No. of integer atom codes") != std::string::npos) {
+            block = 2;
+            continue;
+        }
         if (line.find("No. of bonds") != std::string::npos) {
             std::vector<std::string> f = split_ws(line);
             if (f.size() > 1) top_->nbonds_solute = f[1];
             block = 3;
             continue;
         }
-        if (line.find("No. of bond codes") != std::string::npos) { block = 4; continue; }
+        if (line.find("No. of bond codes") != std::string::npos) {
+            block = 4;
+            continue;
+        }
         if (line.find("No. of angles") != std::string::npos) {
             std::vector<std::string> f = split_ws(line);
             if (f.size() > 1) top_->nangles_solute = f[1];
             block = 5;
             continue;
         }
-        if (line.find("No. of angle codes") != std::string::npos) { block = 6; continue; }
+        if (line.find("No. of angle codes") != std::string::npos) {
+            block = 6;
+            continue;
+        }
         if (line.find("No. of torsions") != std::string::npos) {
             std::vector<std::string> f = split_ws(line);
             if (f.size() > 1) top_->ntorsions_solute = f[1];
             block = 7;
             continue;
         }
-        if (line.find("No. of torsion codes") != std::string::npos) { block = 8; continue; }
+        if (line.find("No. of torsion codes") != std::string::npos) {
+            block = 8;
+            continue;
+        }
         if (line.find("No. of impropers") != std::string::npos) {
             std::vector<std::string> f = split_ws(line);
             if (f.size() > 1) top_->nimpropers_solute = f[1];
             block = 9;
             continue;
         }
-        if (line.find("No. of improper codes") != std::string::npos) { block = 10; continue; }
-        if (line.find("No. of atomic charges") != std::string::npos) { block = 11; continue; }
+        if (line.find("No. of improper codes") != std::string::npos) {
+            block = 10;
+            continue;
+        }
+        if (line.find("No. of atomic charges") != std::string::npos) {
+            block = 11;
+            continue;
+        }
         if (line.find("No. of charge groups") != std::string::npos) {
             std::vector<std::string> f = split_ws(line);
             int total = f.empty() ? 0 : parse_int(f[0]);
             int solute = f.size() > 1 ? parse_int(f[1]) : 0;
             top_->solute_cgps = std::to_string(solute);
             top_->solvent_cgps = std::to_string(total - solute);
+            top_->use_switch_atom = f.size() > 2 ? f[2] : "1";
             block = 12;
             charge_group_switch = 1;
             continue;
@@ -468,24 +489,77 @@ void InpParser::ensure_topology() {
             block = 13;
             continue;
         }
-        if (line.find("Electrostatic 1-4 scaling factor") != std::string::npos) { block = 14; }
-        if (line.find("Masses") != std::string::npos) { block = 15; continue; }
-        if (line.find("sqrt (Aii) normal") != std::string::npos || line.find("R* normal:") != std::string::npos) { block = 16; continue; }
-        if (line.find("sqrt (Bii) normal") != std::string::npos || line.find("epsilon normal:") != std::string::npos) { block = 17; continue; }
-        if (line.find("sqrt (Aii) polar") != std::string::npos || line.find("R* polar:") != std::string::npos) { block = 18; continue; }
-        if (line.find("sqrt (Bii) polar") != std::string::npos || line.find("epsilon polar:") != std::string::npos) { block = 19; continue; }
-        if (line.find("sqrt (Aii) 1-4") != std::string::npos || line.find("R* 1-4:") != std::string::npos) { block = 20; continue; }
-        if (line.find("sqrt (Bii) 1-4") != std::string::npos || line.find("epsilon 1-4:") != std::string::npos) { block = 21; continue; }
-        if (line.find("No. of type-2 vdW interactions") != std::string::npos) { block = 22; continue; }
-        if (line.find("No. of 1-4 neighbours") != std::string::npos) { block = 23; continue; }
-        if (line.find("No. of long 1-4 nbrs") != std::string::npos) { block = 24; continue; }
-        if (line.find("No. of exclusions") != std::string::npos) { block = 25; continue; }
-        if (line.find("No. of long exclusions") != std::string::npos) { block = 26; continue; }
-        if (line.find("No. of residues") != std::string::npos) { block = 27; continue; }
-        if (line.find("Sequence") != std::string::npos) { block = 28; continue; }
-        if (line.find("No. of separate molecules") != std::string::npos) { block = 29; continue; }
-        if (line.find("No. of atom types") != std::string::npos) { block = 30; continue; }
-        if (line.find("No. of SYBYL atom types") != std::string::npos) { block = 31; continue; }
+        if (line.find("Electrostatic 1-4 scaling factor") != std::string::npos) {
+            block = 14;
+        }
+        if (line.find("Masses") != std::string::npos) {
+            block = 15;
+            continue;
+        }
+        if (line.find("sqrt (Aii) normal") != std::string::npos || line.find("R* normal:") != std::string::npos) {
+            block = 16;
+            continue;
+        }
+        if (line.find("sqrt (Bii) normal") != std::string::npos || line.find("epsilon normal:") != std::string::npos) {
+            block = 17;
+            continue;
+        }
+        if (line.find("sqrt (Aii) polar") != std::string::npos || line.find("R* polar:") != std::string::npos) {
+            block = 18;
+            continue;
+        }
+        if (line.find("sqrt (Bii) polar") != std::string::npos || line.find("epsilon polar:") != std::string::npos) {
+            block = 19;
+            continue;
+        }
+        if (line.find("sqrt (Aii) 1-4") != std::string::npos || line.find("R* 1-4:") != std::string::npos) {
+            block = 20;
+            continue;
+        }
+        if (line.find("sqrt (Bii) 1-4") != std::string::npos || line.find("epsilon 1-4:") != std::string::npos) {
+            block = 21;
+            continue;
+        }
+        if (line.find("No. of type-2 vdW interactions") != std::string::npos) {
+            block = 22;
+            continue;
+        }
+        if (line.find("No. of 1-4 neighbours") != std::string::npos) {
+            block = 23;
+            continue;
+        }
+        if (line.find("No. of long 1-4 nbrs") != std::string::npos) {
+            block = 24;
+            continue;
+        }
+        if (line.find("No. of exclusions") != std::string::npos) {
+            block = 25;
+            continue;
+        }
+        if (line.find("No. of long exclusions") != std::string::npos) {
+            block = 26;
+            continue;
+        }
+        if (line.find("No. of residues") != std::string::npos) {
+            block = 27;
+            continue;
+        }
+        if (line.find("Sequence") != std::string::npos) {
+            block = 28;
+            continue;
+        }
+        if (line.find("No. of separate molecules") != std::string::npos) {
+            block = 29;
+            continue;
+        }
+        if (line.find("No. of atom types") != std::string::npos) {
+            block = 30;
+            continue;
+        }
+        if (line.find("No. of SYBYL atom types") != std::string::npos) {
+            block = 31;
+            continue;
+        }
         if (line.find("solvent type (0=SPC,1=3-atom,2=general)") != std::string::npos) {
             std::vector<std::string> f = split_ws(line);
             if (!f.empty()) top_->solvtype = f[0];
@@ -493,31 +567,46 @@ void InpParser::ensure_topology() {
             block = 32;
             continue;
         }
-        if (line.find("No. of excluded atoms") != std::string::npos) { block = 33; continue; }
+        if (line.find("No. of excluded atoms") != std::string::npos) {
+            block = 33;
+            continue;
+        }
 
         std::vector<std::string> f = split_ws(line);
         switch (block) {
-            case 1: coord_flat.insert(coord_flat.end(), f.begin(), f.end()); break;
+            case 1:
+                coord_flat.insert(coord_flat.end(), f.begin(), f.end());
+                break;
             case 2:
                 for (const std::string& value : f) top_->atypes.push_back({++atype_count, parse_int(value)});
                 break;
-            case 3: bond_flat.insert(bond_flat.end(), f.begin(), f.end()); break;
+            case 3:
+                bond_flat.insert(bond_flat.end(), f.begin(), f.end());
+                break;
             case 4:
                 if (f.size() >= 3) top_->cbonds[parse_int(f[0])] = std::vector<std::string>(f.begin() + 1, f.begin() + 3);
                 break;
-            case 5: angle_flat.insert(angle_flat.end(), f.begin(), f.end()); break;
+            case 5:
+                angle_flat.insert(angle_flat.end(), f.begin(), f.end());
+                break;
             case 6:
                 if (f.size() >= 3) top_->cangles[parse_int(f[0])] = std::vector<std::string>(f.begin() + 1, f.begin() + 3);
                 break;
-            case 7: torsion_flat.insert(torsion_flat.end(), f.begin(), f.end()); break;
+            case 7:
+                torsion_flat.insert(torsion_flat.end(), f.begin(), f.end());
+                break;
             case 8:
                 if (f.size() >= 5) top_->ctorsions[parse_int(f[0])] = std::vector<std::string>(f.begin() + 1, f.begin() + 5);
                 break;
-            case 9: improper_flat.insert(improper_flat.end(), f.begin(), f.end()); break;
+            case 9:
+                improper_flat.insert(improper_flat.end(), f.begin(), f.end());
+                break;
             case 10:
                 if (f.size() >= 3) top_->cimpropers[parse_int(f[0])] = std::vector<std::string>(f.begin() + 1, f.begin() + 3);
                 break;
-            case 11: charges_tmp.insert(charges_tmp.end(), f.begin(), f.end()); break;
+            case 11:
+                charges_tmp.insert(charges_tmp.end(), f.begin(), f.end());
+                break;
             case 12:
                 if (charge_group_switch == 1 && f.size() >= 2) {
                     current_group_header = f;
@@ -539,26 +628,46 @@ void InpParser::ensure_topology() {
                     top_->coulomb = f[1];
                 }
                 break;
-            case 15: masses.insert(masses.end(), f.begin(), f.end()); break;
-            case 16: aii_normal.insert(aii_normal.end(), f.begin(), f.end()); break;
-            case 17: bii_normal.insert(bii_normal.end(), f.begin(), f.end()); break;
-            case 18: aii_polar.insert(aii_polar.end(), f.begin(), f.end()); break;
-            case 19: bii_polar.insert(bii_polar.end(), f.begin(), f.end()); break;
-            case 20: aii14.insert(aii14.end(), f.begin(), f.end()); break;
-            case 21: bii14.insert(bii14.end(), f.begin(), f.end()); break;
-            case 23: ngbr14_flat += trim(line); break;
+            case 15:
+                masses.insert(masses.end(), f.begin(), f.end());
+                break;
+            case 16:
+                aii_normal.insert(aii_normal.end(), f.begin(), f.end());
+                break;
+            case 17:
+                bii_normal.insert(bii_normal.end(), f.begin(), f.end());
+                break;
+            case 18:
+                aii_polar.insert(aii_polar.end(), f.begin(), f.end());
+                break;
+            case 19:
+                bii_polar.insert(bii_polar.end(), f.begin(), f.end());
+                break;
+            case 20:
+                aii14.insert(aii14.end(), f.begin(), f.end());
+                break;
+            case 21:
+                bii14.insert(bii14.end(), f.begin(), f.end());
+                break;
+            case 23:
+                ngbr14_flat += trim(line);
+                break;
             case 24: {
                 auto groups = checked_split_groups(f, 2);
                 top_->ngbr14long.insert(top_->ngbr14long.end(), groups.begin(), groups.end());
                 break;
             }
-            case 25: ngbr23_flat += trim(line); break;
+            case 25:
+                ngbr23_flat += trim(line);
+                break;
             case 26: {
                 auto groups = checked_split_groups(f, 2);
                 top_->ngbr23long.insert(top_->ngbr23long.end(), groups.begin(), groups.end());
                 break;
             }
-            case 29: top_->molecules.insert(top_->molecules.end(), f.begin(), f.end()); break;
+            case 29:
+                top_->molecules.insert(top_->molecules.end(), f.begin(), f.end());
+                break;
             case 32:
                 if (line.find("Exclusion") != std::string::npos && f.size() >= 2) {
                     if (parse_double(f[0]) > 30.0) throw parse_error("Sphere sizes exceeding 30A are currently not supported");
@@ -577,7 +686,8 @@ void InpParser::ensure_topology() {
                     if (!std::isspace(static_cast<unsigned char>(ch))) top_->excluded.push_back(ch == 'F' ? "0" : "1");
                 }
                 break;
-            default: break;
+            default:
+                break;
         }
     }
 
@@ -648,28 +758,99 @@ void InpParser::ensure_fep() {
     while (std::getline(in, raw)) {
         std::string line = strip_comment(raw);
         if (line.empty()) continue;
-        if (line.find("[atoms]") != std::string::npos) { block = 1; continue; }
-        if (line.find("[FEP]") != std::string::npos) { block = 2; continue; }
-        if (line.find("[change_charges]") != std::string::npos) { block = 3; continue; }
-        if (line.find("[atom_types]") != std::string::npos) { block = 4; atype_index = 0; continue; }
-        if (line.find("[change_atoms]") != std::string::npos) { block = 5; continue; }
-        if (line.find("[soft_pairs]") != std::string::npos) { block = 6; continue; }
-        if (line.find("[excluded_pairs]") != std::string::npos) { block = 7; continue; }
-        if (line.find("[el_scale]") != std::string::npos) { block = 8; continue; }
-        if (line.find("[softcore]") != std::string::npos) { block = 9; continue; }
-        if (line.find("[bond_types]") != std::string::npos) { block = 12; fep_->q_cbonds.push_back({"0", "0.0", "0.0"}); continue; }
-        if (line.find("[change_bonds]") != std::string::npos) { block = 13; continue; }
-        if (line.find("[angle_types]") != std::string::npos) { block = 14; fep_->q_cangles.push_back({"0", "0.0", "0.0"}); continue; }
-        if (line.find("[change_types]") != std::string::npos) { block = 15; continue; }
-        if (line.find("[torsion_types]") != std::string::npos) { block = 16; fep_->q_ctorsions.push_back({"0", "0.0", "0.0", "0.0"}); continue; }
-        if (line.find("[change_torsions]") != std::string::npos) { block = 17; continue; }
-        if (line.find("[improper_types]") != std::string::npos) { block = 18; fep_->q_cimpropers.push_back({"0", "0.0", "0.0"}); continue; }
-        if (line.find("[change_impropers]") != std::string::npos) { block = 19; continue; }
-        if (line.find("[angle_couplings]") != std::string::npos) { block = 20; continue; }
-        if (line.find("[torsion_couplings]") != std::string::npos) { block = 21; continue; }
-        if (line.find("[improper_couplings]") != std::string::npos) { block = 22; continue; }
-        if (line.find("[shake_constraints]") != std::string::npos) { block = 23; continue; }
-        if (line.find("[off-diagonals]") != std::string::npos) { block = 24; continue; }
+        if (line.find("[atoms]") != std::string::npos) {
+            block = 1;
+            continue;
+        }
+        if (line.find("[FEP]") != std::string::npos) {
+            block = 2;
+            continue;
+        }
+        if (line.find("[change_charges]") != std::string::npos) {
+            block = 3;
+            continue;
+        }
+        if (line.find("[atom_types]") != std::string::npos) {
+            block = 4;
+            atype_index = 0;
+            continue;
+        }
+        if (line.find("[change_atoms]") != std::string::npos) {
+            block = 5;
+            continue;
+        }
+        if (line.find("[soft_pairs]") != std::string::npos) {
+            block = 6;
+            continue;
+        }
+        if (line.find("[excluded_pairs]") != std::string::npos) {
+            block = 7;
+            continue;
+        }
+        if (line.find("[el_scale]") != std::string::npos) {
+            block = 8;
+            continue;
+        }
+        if (line.find("[softcore]") != std::string::npos) {
+            block = 9;
+            continue;
+        }
+        if (line.find("[bond_types]") != std::string::npos) {
+            block = 12;
+            fep_->q_cbonds.push_back({"0", "0.0", "0.0"});
+            continue;
+        }
+        if (line.find("[change_bonds]") != std::string::npos) {
+            block = 13;
+            continue;
+        }
+        if (line.find("[angle_types]") != std::string::npos) {
+            block = 14;
+            fep_->q_cangles.push_back({"0", "0.0", "0.0"});
+            continue;
+        }
+        if (line.find("[change_types]") != std::string::npos) {
+            block = 15;
+            continue;
+        }
+        if (line.find("[torsion_types]") != std::string::npos) {
+            block = 16;
+            fep_->q_ctorsions.push_back({"0", "0.0", "0.0", "0.0"});
+            continue;
+        }
+        if (line.find("[change_torsions]") != std::string::npos) {
+            block = 17;
+            continue;
+        }
+        if (line.find("[improper_types]") != std::string::npos) {
+            block = 18;
+            fep_->q_cimpropers.push_back({"0", "0.0", "0.0"});
+            continue;
+        }
+        if (line.find("[change_impropers]") != std::string::npos) {
+            block = 19;
+            continue;
+        }
+        if (line.find("[angle_couplings]") != std::string::npos) {
+            block = 20;
+            continue;
+        }
+        if (line.find("[torsion_couplings]") != std::string::npos) {
+            block = 21;
+            continue;
+        }
+        if (line.find("[improper_couplings]") != std::string::npos) {
+            block = 22;
+            continue;
+        }
+        if (line.find("[shake_constraints]") != std::string::npos) {
+            block = 23;
+            continue;
+        }
+        if (line.find("[off-diagonals]") != std::string::npos) {
+            block = 24;
+            continue;
+        }
 
         std::vector<std::string> f = split_ws(line);
         if (f.empty()) continue;
@@ -697,34 +878,53 @@ void InpParser::ensure_fep() {
             case 7:
                 for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_exclpairs[s].push_back(f[s + 1]);
                 break;
-            case 8: fep_->q_elscales.push_back(f); break;
+            case 8:
+                fep_->q_elscales.push_back(f);
+                break;
             case 9:
                 for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_softcores[s].push_back(f[s + 1]);
                 break;
-            case 12: fep_->q_cbonds.push_back(f.size() > 1 ? std::vector<std::string>(f.begin() + 1, f.end()) : f); break;
+            case 12:
+                fep_->q_cbonds.push_back(f.size() > 1 ? std::vector<std::string>(f.begin() + 1, f.end()) : f);
+                break;
             case 13:
                 for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_bonds[s].push_back(f[s + 1]);
                 break;
-            case 14: fep_->q_cangles.push_back(f.size() > 1 ? std::vector<std::string>(f.begin() + 1, f.end()) : f); break;
+            case 14:
+                fep_->q_cangles.push_back(f.size() > 1 ? std::vector<std::string>(f.begin() + 1, f.end()) : f);
+                break;
             case 15:
                 for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_angles[s].push_back(f[s + 1]);
                 break;
-            case 16: fep_->q_ctorsions.push_back(f.size() > 1 ? std::vector<std::string>(f.begin() + 1, f.end()) : f); break;
+            case 16:
+                fep_->q_ctorsions.push_back(f.size() > 1 ? std::vector<std::string>(f.begin() + 1, f.end()) : f);
+                break;
             case 17:
                 for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_torsions[s].push_back(f[s + 1]);
                 break;
-            case 18: fep_->q_cimpropers.push_back(f.size() > 1 ? std::vector<std::string>(f.begin() + 1, f.end()) : f); break;
+            case 18:
+                fep_->q_cimpropers.push_back(f.size() > 1 ? std::vector<std::string>(f.begin() + 1, f.end()) : f);
+                break;
             case 19:
                 for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_impropers[s].push_back(f[s + 1]);
                 break;
-            case 20: fep_->q_angcouples.push_back(f); break;
-            case 21: fep_->q_torcouples.push_back(f); break;
-            case 22: fep_->q_imprcouples.push_back(f); break;
+            case 20:
+                fep_->q_angcouples.push_back(f);
+                break;
+            case 21:
+                fep_->q_torcouples.push_back(f);
+                break;
+            case 22:
+                fep_->q_imprcouples.push_back(f);
+                break;
             case 23:
                 for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_shakes[s].push_back(f[s + 1]);
                 break;
-            case 24: fep_->q_offdiags.push_back(f); break;
-            default: break;
+            case 24:
+                fep_->q_offdiags.push_back(f);
+                break;
+            default:
+                break;
         }
     }
 
@@ -875,6 +1075,8 @@ void InpParser::parse_md() {
     md.solute_solute = parse_double(value_or(cut, "solute-solute", value_or(cut, "solute_solute", "10")));
     md.solvent_solvent = parse_double(value_or(cut, "solvent-solvent", value_or(cut, "solvent_solvent", "10")));
     md.solute_solvent = parse_double(value_or(cut, "solute-solvent", value_or(cut, "solute_solvent", "10")));
+    md.lrf_cutoff = parse_double(value_or(cut, "lrf", "99"));
+
     md.q_atom = parse_double(value_or(cut, "q-atom", value_or(cut, "q_atom", "99")));
     md.shell_radius = parse_double(value_or(sphere, "shell-radius", value_or(sphere, "shell_radius", "0")));
     md.shell_force = parse_double(value_or(sphere, "shell-force", value_or(sphere, "shell_force", "10.0")));
@@ -1112,7 +1314,7 @@ void InpParser::parse_charge_groups() {
     charge_group_config_t config;
     config.n_cgrps_solute = parse_int(top_->solute_cgps);
     config.n_cgrps_solvent = parse_int(top_->solvent_cgps);
-    config.iuse_switch_atom = 0;
+    config.iuse_switch_atom = parse_int(top_->use_switch_atom);
     config.charge_groups.resize(top_->charge_group_headers.size());
     for (size_t i = 0; i < top_->charge_group_headers.size(); i++) {
         config.charge_groups[i].iswitch = row_int(top_->charge_group_headers[i], 1);

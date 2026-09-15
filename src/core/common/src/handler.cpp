@@ -83,6 +83,7 @@ void Handler::stop_cm_translation() {
 }
 
 void Handler::calc_final_potential(int iteration) {
+    ctx.step = iteration;
     reset_energies();
     calc_nonbonded_forces();
     calc_internal_forces(iteration);
@@ -96,6 +97,7 @@ void Handler::run() {
     auto t0 = std::chrono::steady_clock::now();
 
     for (int i = 0; i < num_iterations; i++) {
+        ctx.step = i;
         run_iteration(i);
     }
     auto t1 = std::chrono::steady_clock::now();
