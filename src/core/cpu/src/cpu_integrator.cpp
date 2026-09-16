@@ -3,8 +3,7 @@
 #include "cpu_force_accumulation.h"
 
 void CpuIntegrator::step(Context& ctx) {
-    auto& atypes = ctx.atypes->cpu_data_p;
-    auto& catypes = ctx.catypes->cpu_data_p;
+    const auto* winv = ctx.winv->cpu_data_p;
     auto& coords = ctx.coords->cpu_data_p;
     auto& velocities = ctx.velocities->cpu_data_p;
     auto& dvelocities = ctx.dvelocities->cpu_data_p;
@@ -13,8 +12,7 @@ void CpuIntegrator::step(Context& ctx) {
     const double* temperature_results = temperature_->data().results->cpu_data_p;
 
     for (int i = 0; i < ctx.n_atoms; i++) {
-        const double mass_i = catypes[atypes[i].code - 1].m;
-        const double winv_i = 1.0 / mass_i;
+        const double winv_i = winv[i];
 
         const double scale = (i < ctx.n_atoms_solute) ? temperature_results[R_TSCALE_SOL] : temperature_results[R_TSCALE_SLV];
 

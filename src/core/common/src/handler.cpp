@@ -54,14 +54,13 @@ void Handler::initialize(const CommandInfo& command) {
 }
 
 void Handler::stop_cm_translation() {
-    auto& atypes = ctx.atypes->cpu_data_p;
-    auto& catypes = ctx.catypes->cpu_data_p;
     auto& velocities = ctx.velocities->cpu_data_p;
+    auto& masses = ctx.masses->cpu_data_p;
     double total_mass = 0;
     coord_t vcm = {};
 
     for (int ai = 0; ai < ctx.n_atoms; ai++) {
-        const double rmass = catypes[atypes[ai].code - 1].m;
+        const double rmass = masses[ai];
         total_mass += rmass;
         vcm.x += velocities[ai].x * rmass;
         vcm.y += velocities[ai].y * rmass;
