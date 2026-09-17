@@ -99,13 +99,13 @@ MG_PDB = [
 ]
 
 
-def _line(serial, name, resname, chain, resnum, occ=1.00, alt=" ", x=0.0, y=0.0, z=0.0, elem=""):
+def _line(serial, name, resname, chain, resnum, occ=1.00, alt=" ", x=0.0, y=0.0, z=0.0, elem="", charge=""):
     """Build a single PDB ATOM line with exact column placement."""
     name4 = name.ljust(4) if len(name) >= 4 else (" " + name).ljust(4)
     res4 = resname.ljust(4)
     return (
         f"ATOM  {serial:>5} {name4}{alt}{res4}{chain}{resnum:>4}    "
-        f"{x:8.3f}{y:8.3f}{z:8.3f}{occ:6.2f}  0.00          {elem:>2}\n"
+        f"{x:8.3f}{y:8.3f}{z:8.3f}{occ:6.2f}  0.00          {elem:>2}{charge:>2}\n"
     )
 
 
@@ -346,6 +346,60 @@ class TestCappedBackboneH:
         atoms = list(ser["atom_name"])
         assert "H" in atoms, "lone backbone H1 should be renamed to H"
         assert "H1" not in atoms
+
+
+class TestExplicitCysteineThiolates:
+    """Explicitly charged CYS-S- must select the AMBER14sb CYM template."""
+
+    @staticmethod
+    def _cysteine(charge="", include_hg=False):
+        atoms = [
+            ("N", "N"),
+            ("CA", "C"),
+            ("C", "C"),
+            ("O", "O"),
+            ("CB", "C"),
+            ("SG", "S"),
+            ("H", "H"),
+            ("HA", "H"),
+            ("HB2", "H"),
+            ("HB3", "H"),
+        ]
+        if include_hg:
+            atoms.append(("HG", "H"))
+        return [
+            _line(
+                serial,
+                atom,
+                "CYS",
+                "A",
+                143,
+                elem=element,
+                charge=charge if atom == "SG" else "",
+            )
+            for serial, (atom, element) in enumerate(atoms, start=1)
+        ]
+
+    def test_sg_minus_without_hg_is_renamed_to_cym(self, tmp_path):
+        pdb_file = _write_pdb(tmp_path, self._cysteine(charge="1-"))
+        out_file = tmp_path / "out.pdb"
+        fix_pdb(pdb_file, out_name=out_file)
+        df = read_pdb_to_dataframe(out_file)
+        assert (df["residue_name"] == "CYM").all()
+        assert "HG" not in set(df["atom_name"])
+        assert len(df) == 10
+
+    def test_uncharged_sg_without_hg_stays_cys(self, tmp_path):
+        pdb_file = _write_pdb(tmp_path, self._cysteine())
+        out_file = tmp_path / "out.pdb"
+        fix_pdb(pdb_file, out_name=out_file)
+        df = read_pdb_to_dataframe(out_file)
+        assert (df["residue_name"] == "CYS").all()
+
+    def test_sg_minus_with_hg_is_rejected(self, tmp_path):
+        pdb_file = _write_pdb(tmp_path, self._cysteine(charge="1-", include_hg=True))
+        with pytest.raises(ValueError, match=r"has both HG and formal charge -1"):
+            fix_pdb(pdb_file, out_name=tmp_path / "out.pdb")
 
 
 class TestIonRenaming:

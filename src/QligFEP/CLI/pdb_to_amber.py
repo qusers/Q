@@ -470,6 +470,55 @@ def normalize_cterminal_oxygens(npdb_i, resname):
     return npdb_i
 
 
+def _pdb_formal_charge(line):
+    """Return the integer charge from the standard PDB charge field."""
+    token = line[78:80].strip()
+    if not token:
+        return 0
+    if len(token) == 2 and token[0].isdigit() and token[1] in "+-":
+        return int(token[0]) * (1 if token[1] == "+" else -1)
+    raise ValueError(f"Invalid PDB formal charge {token!r}: {line.rstrip()}")
+
+
+def infer_explicit_cysteine_thiolates(pdb_lines):
+    """Rename explicit CYS-S- residues to the AMBER14sb CYM state.
+
+    Prepared structures may retain the generic CYS residue name while recording
+    a deprotonated sulfur as HG-absent SG with formal charge ``1-``. Leaving that
+    residue as CYS makes qprep add HG from the neutral-thiol template. Only the
+    complete explicit signature is accepted; an SG carrying -1 while HG is
+    present is contradictory and rejected.
+    """
+    residues = {}
+    for index, line in enumerate(pdb_lines):
+        if not line.startswith(("ATOM", "HETATM")) or line[17:21].strip() != "CYS":
+            continue
+        key = (line[21], line[22:26], line[26])
+        residues.setdefault(key, []).append((index, line))
+
+    thiolates = []
+    for key, indexed_lines in residues.items():
+        atom_lines = {}
+        for _, line in indexed_lines:
+            atom_lines.setdefault(line[12:16].strip(), []).append(line)
+        sulfur_lines = atom_lines.get("SG", [])
+        if len(sulfur_lines) != 1 or _pdb_formal_charge(sulfur_lines[0]) != -1:
+            continue
+        if "HG" in atom_lines:
+            chain, number, insertion = key
+            residue_id = f"{chain or '-'}:{number.strip()}{insertion.strip()}"
+            raise ValueError(f"CYS {residue_id} has both HG and formal charge -1 on SG")
+        thiolates.append(key)
+
+    for key in thiolates:
+        for index, line in residues[key]:
+            pdb_lines[index] = line[:17] + "CYM " + line[21:]
+        chain, number, insertion = key
+        residue_id = f"{chain or '-'}:{number.strip()}{insertion.strip()}"
+        logger.info(f"CYS {residue_id}: inferred AMBER14sb CYM from explicit SG(-1)/HG-absent state")
+    return pdb_lines
+
+
 def _fix_duplicate_backbone_h(pdb_lines):
     """Rename duplicate backbone H atoms to H1, H2 before nest_pdb.
 
@@ -500,6 +549,7 @@ def fix_pdb(pdb_path: Path, rename_mapping=rename_mapping, out_name=None):
         pdb_lines = f.readlines()
 
     pdb_lines = _filter_altloc(pdb_lines)
+    pdb_lines = infer_explicit_cysteine_thiolates(pdb_lines)
     pdb_lines = _fix_duplicate_backbone_h(pdb_lines)
     pdb_lines = _normalize_arn_before_nesting(pdb_lines)
     pdb_lines = _validate_unique_atom_names(pdb_lines)
