@@ -1647,6 +1647,10 @@ class QligFEP:
                 if line.strip() == "#CLEANUP" and self.to_clean is not None:
                     replacements["CLEANUP"] = "#Cleaned {} files\n".format(" ".join(self.to_clean))
                     outline = replace(line, replacements)
+                    if self.production and self.minimize and "log" in self.to_clean:
+                        outfile.write(
+                            "if [ -f eq1.log ]; then cp eq1.log eq1.minimization; fi\n"
+                        )
                     rm_line = cleanup_command(self.to_clean)
                     outfile.write(rm_line)
                     outfile.write(outline[1:])

@@ -5,6 +5,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
+import networkx as nx
 import pytest
 from rdkit import Chem
 
@@ -122,6 +123,32 @@ class TestNetworkTopologies:
         with pytest.raises(ValueError, match="not found"):
             kw.run()
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_mst_3_adds_three_independent_cycle_closures(self, tyk2_sdf, tmp_path):
+        """mst_3 should add exactly three non-tree edges and three graph cycles."""
+        kw = KonnektorWrap(inp=str(tyk2_sdf), out=str(tmp_path), network="mst_3")
+        result = kw.run()
+
+        graph = nx.Graph((edge["from"], edge["to"]) for edge in result["edges"])
+        n_nodes = len(result["nodes"])
+        assert len(result["edges"]) == n_nodes - 1 + 3
+        assert len(nx.cycle_basis(graph)) == 3
+
+    def test_mst_cycle_closures_warn_and_continue_when_unavailable(self, tyk2_sdf, tmp_path):
+        """A network with two nodes cannot add a redundant edge, but remains usable."""
+        molecules = [molecule for molecule in Chem.SDMolSupplier(str(tyk2_sdf)) if molecule is not None][:2]
+        two_ligands = tmp_path / "two_ligands.sdf"
+        writer = Chem.SDWriter(str(two_ligands))
+        for molecule in molecules:
+            writer.write(molecule)
+        writer.close()
+
+        output = tmp_path / "network"
+        with pytest.warns(UserWarning, match=r"Requested 3.*only 0 can be added"):
+            result = KonnektorWrap(inp=str(two_ligands), out=str(output), network="mst_3").run()
+
+        assert len(result["nodes"]) == 2
+        assert len(result["edges"]) == 1
 
     def test_redundant_mst_has_more_edges_than_mst(self, tyk2_sdf):
         """Redundant MST should have more edges than a plain MST."""
