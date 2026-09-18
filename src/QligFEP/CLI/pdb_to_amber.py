@@ -747,6 +747,11 @@ def nc_termini_search(npdb):
                     if duplicate_H:
                         # Re-rename H→H1,H2 (the aa rename mapping may have undone our earlier fix)
                         npdb[i] = _rename_duplicate_h_to_h1_h2(npdb[i])
+                    # Some Amber/OpenMM exports use H,H2,H3 for a free NH3+
+                    # terminus.  The Q N-terminal templates require H1,H2,H3.
+                    present = {line[12:16].strip() for line in npdb[i]}
+                    if "H" in present and "H1" not in present:
+                        npdb[i] = [extract_and_replace(line, "H", "H1") for line in npdb[i]]
                     npdb[i] = [x.replace(f"{resname} ", f"N{resname}") for x in npdb[i]]
             if HXT_present:
                 # Remove HXT (Maestro C-terminal H). Don't relabel as C-terminal since
