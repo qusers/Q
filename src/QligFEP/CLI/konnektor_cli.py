@@ -132,7 +132,7 @@ class KonnektorWrap:
         n_redundancy: int = 2,
         connectivity: int = 3,
         separate_charges: bool = False,
-        charge_changes_score: float = 0.0,
+        charge_change_multiplier: float = 0.0,
         exp_key: Optional[str] = None,
         self_solve: bool = False,
     ):
@@ -149,10 +149,11 @@ class KonnektorWrap:
         self.n_redundancy = n_redundancy
         self.connectivity = connectivity
         self.separate_charges = separate_charges
-        self.charge_changes_score = charge_changes_score
+        self.charge_change_multiplier = charge_change_multiplier
         self.exp_key = exp_key
         self.self_solve = self_solve
         self.nodes = {}
+        self._scorer = None
 
         self.out = self._parse_output(out)
         self._sdf_dir = self._prepare_input()
@@ -190,7 +191,7 @@ class KonnektorWrap:
         elif self.scorer_type == "combined":
             return RestraintLomapScorer(
                 restraint_method=self.restraint_method,
-                charge_changes_score=self.charge_changes_score,
+                charge_change_multiplier=self.charge_change_multiplier,
             )
         else:
             return RestraintScorer(restraint_method=self.restraint_method)
@@ -304,6 +305,9 @@ class KonnektorWrap:
                 "to": to_name,
                 "same_charge": same_charge,
             }
+            if not same_charge and isinstance(self._scorer, RestraintLomapScorer):
+                edge["base_score"] = self._scorer.base_score(mapping)
+                edge["charge_change_multiplier"] = self._scorer.charge_change_multiplier
 
             if self.exp_key:
                 edge["ddg_value"] = self.nodes[to_name]["dg_value"] - self.nodes[from_name]["dg_value"]
@@ -349,6 +353,7 @@ class KonnektorWrap:
         """
         mapper = KartografAtomMapper(atom_map_hydrogens=False, map_exact_ring_matches_only=True)
         scorer = self._build_scorer()
+        self._scorer = scorer
         generator = self._build_generator(mapper, scorer)
 
         components = self._load_components()
@@ -858,11 +863,12 @@ def parse_arguments() -> argparse.Namespace:
         help="Generate separate networks per charge group, avoiding cross-charge perturbations.",
     )
     parser.add_argument(
-        "--charge_changes_score",
+        "--charge-change-multiplier",
         type=float,
         default=0.0,
-        help="LOMAP penalty for charge-changing edges (only with scorer=combined). "
-        "0.0 blocks them, 0.5 halves their score, 1.0 no penalty. Default: 0.0.",
+        help="Multiplier applied to the final combined score of charge-changing edges "
+        "(only with scorer=combined). 0.5 halves their final score, 1.0 applies no "
+        "penalty, and 0.0 assigns a score of zero without excluding them. Default: 0.0.",
     )
     parser.add_argument(
         "--exp-key",
@@ -895,7 +901,7 @@ def main(args):
         n_redundancy=args.n_redundancy,
         connectivity=args.connectivity,
         separate_charges=args.separate_charges,
-        charge_changes_score=args.charge_changes_score,
+        charge_change_multiplier=args.charge_change_multiplier,
         exp_key=args.exp_key,
         self_solve=args.self_solve,
     )

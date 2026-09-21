@@ -213,6 +213,28 @@ class TestChargeHandling:
         same_charges = [e["same_charge"] for e in result["edges"]]
         assert not all(same_charges), "Expected some edges with same_charge=False in cmet dataset"
 
+    def test_charge_multiplier_details_only_on_charge_changing_edges(self, cmet_sdf, tmp_path):
+        """Only penalized cross-charge edges should record multiplier details."""
+        kw = KonnektorWrap(
+            inp=str(cmet_sdf),
+            out=str(tmp_path),
+            network="mst",
+            charge_change_multiplier=0.5,
+        )
+        result = kw.run()
+
+        charge_changing_edges = [edge for edge in result["edges"] if not edge["same_charge"]]
+        same_charge_edges = [edge for edge in result["edges"] if edge["same_charge"]]
+        assert charge_changing_edges
+        assert same_charge_edges
+
+        for edge in charge_changing_edges:
+            assert edge["charge_change_multiplier"] == 0.5
+            assert edge["weight"] == pytest.approx(0.5 * edge["base_score"])
+        for edge in same_charge_edges:
+            assert "charge_change_multiplier" not in edge
+            assert "base_score" not in edge
+
     def test_separate_charges_no_cross_charge_edges(self, cmet_sdf):
         """With separate_charges=True, no edges should cross charge boundaries."""
         tmpdir = Path(tempfile.mkdtemp())
