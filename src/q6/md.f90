@@ -5039,12 +5039,12 @@ subroutine fire_minimize
 !!
 !!  Run in two phases, for reasons that are structural rather than algorithmic:
 !!
-!!  Phase 1 relaxes the bonded terms alone. Prepared structures routinely arrive
-!!  with hydrogens that the topology bonds to one atom but the coordinates place
-!!  next to another - protonated Asp/Glu (ASH/GLH) are the usual offenders, and
-!!  their O-H bonds can start out stretched to 2.5 A. Repairing that with the
-!!  bonded terms only is safe, because with the non-bonded terms switched off
-!!  there is no Coulomb well for a hydrogen to fall into.
+!!  Phase 1 relaxes the bonded terms while retaining the SCAAS boundary
+!!  restraints. Prepared structures routinely arrive with hydrogens that the
+!!  topology bonds to one atom but the coordinates place next to another -
+!!  protonated Asp/Glu (ASH/GLH) are the usual offenders, and their O-H bonds can
+!!  start out stretched to 2.5 A. Repairing that without non-bonded terms is safe,
+!!  because there is no Coulomb well for a hydrogen to fall into.
 !!
 !!  Phase 2 then minimizes the full force field with the bonds to hydrogen held
 !!  by SHAKE (see fire_constrain_hydrogens). By now those bonds sit at their
@@ -5052,6 +5052,10 @@ subroutine fire_minimize
 !!
 !!  Every atom is propagated, including Q-atoms and solvent; atoms outside the
 !!  simulation sphere are held by the usual fk_fix restraints, exactly as in MD.
+!!  Gradients are projected onto the active constraint manifold before they are
+!!  used for convergence or FIRE propagation. Raw gradients generally do not
+!!  vanish at a constrained minimum because constraint reactions balance their
+!!  normal components.
 !!-------------------------------------------------------------------------------
   real(8), allocatable :: v_save(:)
   real, allocatable :: wpol_state_save(:,:)
@@ -5106,6 +5110,46 @@ subroutine fire_minimize
   end if
 
 end subroutine fire_minimize
+
+
+!-------------------------------------------------------------------------------
+subroutine fire_project_gradient(niter)
+!!-------------------------------------------------------------------------------
+!!  Project dE/dx onto the tangent space of the active position constraints.
+!!
+!!  apply_constraints already implements the mass-weighted projection needed by
+!!  the integrator. Apply it to a small virtual steepest-descent displacement and
+!!  recover the corresponding tangent gradient. The displacement is capped so
+!!  this remains a linear projection even when the initial force is very large.
+!!-------------------------------------------------------------------------------
+  integer, intent(out) :: niter
+  integer              :: i
+  real(8)               :: max_acceleration, projection_scale
+
+  niter = 0
+  if (shake_constraints+lincs_constraints+settle_constraints .eq. 0) return
+
+  max_acceleration = 0.0d0
+  do i = 1, natom
+    max_acceleration = max(max_acceleration, &
+      maxval(abs(d(3*i-2:3*i)))*winv(i))
+  end do
+  if (max_acceleration .le. 0.0d0) return
+
+  ! Normally use a 1e-6 virtual time factor, but cap the largest unconstrained
+  ! trial displacement at 1e-4 A for highly strained starting structures.
+  projection_scale = min(1.0d-6, 1.0d-4/max_acceleration)
+  xx(1:nat3) = x(1:nat3)
+  do i = 1, natom
+    xx(3*i-2:3*i) = x(3*i-2:3*i) &
+                    - projection_scale*winv(i)*d(3*i-2:3*i)
+  end do
+  call apply_constraints(x, xx, niter)
+  do i = 1, natom
+    d(3*i-2:3*i) = -(xx(3*i-2:3*i)-x(3*i-2:3*i)) &
+                    /(projection_scale*winv(i))
+  end do
+end subroutine fire_project_gradient
 
 
 !-------------------------------------------------------------------------------
@@ -5196,7 +5240,9 @@ subroutine fire_descend
     call pot_energy
 
     if (nodeid .eq. 0) then
-      ! d holds the gradient dE/dx, so the force is F = -d.
+      call fire_project_gradient(niter)
+
+      ! d holds the constraint-projected gradient dE/dx, so the force is F = -d.
       fsq  = 0.0d0
       fmax = 0.0d0
       do i = 1, nat3
@@ -5315,10 +5361,10 @@ subroutine fire_descend
     end if
     write(*,304) E%potential, fmax
     write(*,305) n_rebuild
-302 format('FIRE converged after ',i6,' steps: RMS force = ',f10.4,' kcal/mol/A')
-303 format('>>> WARNING: FIRE did not converge in ',i6,' steps: RMS force = ', &
+302 format('FIRE converged after ',i6,' steps: projected RMS force = ',f10.4,' kcal/mol/A')
+303 format('>>> WARNING: FIRE did not converge in ',i6,' steps: projected RMS force = ', &
            f10.4,' > tolerance ',f10.4,' kcal/mol/A')
-304 format('Energy after minimization = ',es15.6,' kcal/mol, max force = ', &
+304 format('Energy after minimization = ',es15.6,' kcal/mol, projected max force = ', &
            es12.4,' kcal/mol/A')
 305 format('Pair list rebuilds        = ',i6)
     write(*,*)
@@ -16050,12 +16096,15 @@ subroutine pot_energy
     profile(8)%time = profile(8)%time + rtime() - start_loop_time1
 #endif
 
-    ! various restraints (skip during bonded-only minimization)
-    if (.not. min_bonded_only) then
-      if( .not. use_PBC ) then
-        call fix_shell     !Restrain all excluded atoms plus heavy solute atoms in the inner shell.
-      end if
+    ! The SCAAS boundary is part of the physical model and remains active in
+    ! both minimization phases. In particular, excluded atoms must not first
+    ! relax freely and then encounter fk_fix only when the full force field starts.
+    if (.not. use_PBC) then
+      call fix_shell       !Restrain excluded atoms and heavy atoms in the inner shell.
+    end if
 
+    ! Other restraints are skipped during bonded-only minimization.
+    if (.not. min_bonded_only) then
       call p_restrain       !Seq. restraints, dist. restaints, etc
 
       if( .not. use_PBC ) then
