@@ -571,68 +571,82 @@ def merge_two_dicts(x, y):
     return z
 
 
-def read_qfep(qfep):
-    """
-    Reads a given qfep.out file.
+class QfepResult(NamedTuple):
+    """Printed free energies and their actual analyzed interval and energy convention."""
 
-    returns [Zwanzig, dGfr, dGr, TI, OS, BAR]
+    energies: list[float]
+    scope: dict
+
+
+def read_qfep_result(qfep):
+    """Read complete summary tables, including deliberately endpoint-trimmed runs.
+
+    Energies are [Zwanzig mean, forward, reverse, overlap sampling, Bennett
+    acceptance ratio (BAR)], in qfep's printed convention. No endpoint
+    extrapolation, alpha subtraction, or analytical correction is performed.
+    The reverse Zwanzig sign is retained for compatibility with older readers.
     """
-    with open(qfep) as infile:
-        block = 0
-        for line in infile:
+    lines = Path(qfep).read_text().splitlines()
+    tables = {1: [], 5: [], 6: []}
+    block, expected_count, alpha = None, None, None
+    for index, line in enumerate(lines):
+        if qfep_error_regex.search(line):
+            raise OSError("QFEP ERROR !! " + "\n".join(lines[index:index + 3]))
+        count = re.search(r"# Number of files\s*=\s*(\d+)", line)
+        if count:
+            expected_count = int(count[1])
+        offset = re.search(r"# Alpha for state\s+2\s*=\s*(\S+)", line)
+        if offset:
             try:
-                if qfep_error_regex.findall(line):
-                    error_main = qfep_error_regex.findall(line)[0]
-                    error_body = "".join([next(infile) for _ in range(2)])
-                    raise OSError(f"QFEP ERROR !! {error_main}\n{error_body}")
-            except StopIteration as e:
-                logger.info("Reached the end of the file before capturing the full error body.")
-                raise OSError(f"QFEP ERROR !! {error_main}") from e
+                alpha = float(offset[1])
+            except ValueError as exc:
+                raise OSError(f"Unreadable qfep state-2 alpha: {offset[1]}") from exc
+            if not np.isfinite(alpha):
+                raise OSError("Nonfinite qfep state-2 alpha")
+        part = re.match(r"\s*# Part (\d+):", line)
+        if part:
+            block = int(part[1])
+            continue
+        fields = line.split()
+        if block not in tables or not fields or fields[0].startswith("#"):
+            continue
+        try:
+            float(fields[0])
+        except ValueError:
+            continue
+        if len(fields) != (6 if block == 1 else 3):
+            raise OSError(f"Malformed qfep Part {block} row: {line}")
+        try:
+            row = [float(value) for value in fields]
+        except ValueError as exc:
+            raise OSError(f"Unreadable qfep Part {block} row: {line}") from exc
+        tables[block].append(row)
+    grid = [row[0] for row in tables[1]]
+    if (len(grid) < 2 or not np.isfinite(grid).all()
+            or not all(0 <= value <= 1 for value in grid)
+            or not all(a > b for a, b in zip(grid, grid[1:]))):
+        raise OSError("Missing or invalid decreasing qfep lambda(1) grid")
+    if expected_count is not None and len(grid) != expected_count:
+        raise OSError("Incomplete qfep summary: row count differs from declared file count")
+    for part in (5, 6):
+        if [row[0] for row in tables[part]] != grid:
+            raise OSError(f"Incomplete or inconsistent qfep Part {part} lambda grid")
+    values = [tables[1][-1][5], tables[1][-1][2], tables[1][0][4],
+              tables[5][-1][2], tables[6][-1][2]]
+    scope = {"lambda1_start": grid[0], "lambda1_end": grid[-1],
+             "lambda1_grid": grid, "windows": len(grid),
+             "endpoint_trimmed": grid[0] != 1 or grid[-1] != 0,
+             "alpha_state2_kcal_mol": alpha}
+    return QfepResult([value if np.isfinite(value) else np.nan for value in values], scope)
 
-            line = line.split()
-            if len(line) > 3:
 
-                if line[3] == "Free":
-                    block = 1
-
-                if line[3] == "Termodynamic":
-                    # continue
-                    block = 2
-
-                if line[3] == "Overlap":
-                    block = 3
-
-                if line[3] == "BAR":
-                    block = 4
-
-                if line[3] == "Reaction":
-                    block = 0
-
-            if len(line) > 1:
-                if block == 1:
-                    if line[0] == "1.000000":
-                        Zwanzig_r = float(line[4])
-
-                    elif line[0] == "0.000000":
-                        Zwanzig_f = float(line[2])
-
-                        Zwanzig = np.nan if line[5] == "-Infinity" else float(line[5])
-
-                if block == 2 and line[0] == "0.000000":
-                    try:
-                        thermo_integration = line[2]
-                        if line[2] == "-Infinity":
-                            thermo_integration = np.nan
-                    except IndexError:
-                        thermo_integration = np.nan  # TODO: this line is never reached... # noqa: F841
-
-                if block == 3 and line[0] == "0.000000":
-                    overlap_sampling = np.nan if line[2] == "-Infinity" else float(line[2])
-
-                if block == 4 and line[0] == "0.000000":
-                    bar = np.nan if line[2] == "-Infinity" else float(line[2])
-
-    return [Zwanzig, Zwanzig_f, Zwanzig_r, overlap_sampling, bar]
+def read_qfep(qfep):
+    """Return five printed free energies; see :func:`read_qfep_result` for scope."""
+    result = read_qfep_result(qfep)
+    if result.scope["endpoint_trimmed"]:
+        logger.warning(f"Endpoint-trimmed qfep result: lambda(1) {result.scope['lambda1_start']:g} "
+                       f"-> {result.scope['lambda1_end']:g}; no endpoint caps added.")
+    return result.energies
 
 
 def read_qfep_verbose(file_path):

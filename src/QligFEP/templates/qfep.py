@@ -4,6 +4,8 @@ Generates qfep input files that specify parameters for free energy
 perturbation analysis calculations.
 """
 
+import math
+
 
 def calculate_kT(temperature: float) -> str:
     """Calculate kT value at given temperature.
@@ -46,6 +48,8 @@ def render_qfep_input(
     temperature: float,
     windows: int,
     energy_files: list[str],
+    *,
+    alpha_state2: float = 0.0,
 ) -> str:
     """Render qfep.inp content.
 
@@ -54,10 +58,15 @@ def render_qfep_input(
         temperature: Temperature in Kelvin for kT calculation
         windows: Number of windows for FEP analysis
         energy_files: List of energy file names to include
+        alpha_state2: Constant added to state 2, in kcal/mol. Defaults to zero;
+            this is not a Born correction. Older inputs accidentally used the
+            window count here. Nonzero offsets shift individual leg estimates.
 
     Returns:
         Complete qfep.inp file content as string
     """
+    if not math.isfinite(alpha_state2):
+        raise ValueError("State-2 alpha must be finite")
     kT_value = calculate_kT(temperature)
 
     lines = [
@@ -66,7 +75,7 @@ def render_qfep_input(
         f"{kT_value}  {windows}",
         str(windows),
         str(windows),
-        str(windows),
+        f"{alpha_state2:g}",
         "0",
         "0",
         "1 0",

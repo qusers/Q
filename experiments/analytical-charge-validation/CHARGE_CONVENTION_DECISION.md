@@ -1,8 +1,21 @@
 # Decision needed: angular background-charge convention
 
 Status: evidence-backed proposal, **not implemented or physically validated**.
+
+Post-smooth-pilot update: the [source/response audit](SOURCE_RESPONSE_CONVENTION.md)
+quantifies why a single total charge cannot generally replace both the angular
+field source and the charging potential in the extended proteins. The compact
+enclosed candidate below is not a production recommendation for these geometries.
 This is a choice within the charged-boundary investigation, not a proposal for a
 new sampler or solvent model. No production target is changed by this document.
+
+Update, 2026-09-09: the [radius/background audit](RADIUS_BACKGROUND_CONVENTION.md)
+confirms that the fixed included protein charge is not geometrically enclosed
+by the water radius in the completed c-Met/Eg5 campaign. The total-charge
+candidate below remains relevant to compact, enclosed systems; it must not be
+implemented for these extended proteins merely by substituting the masked
+charge sum. The next deliverable is the exterior-response derivation and its
+supported geometry, before selecting a replacement production target.
 
 ## What the sources and code establish
 

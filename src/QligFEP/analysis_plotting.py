@@ -85,6 +85,8 @@ def create_ddG_plot(
     target_name: str | None = None,
     savefig: bool = False,
     font: str | None = None,
+    *,
+    show_statistics: bool = True,
 ):
     """Creates the ddG plot for the FEP that has already been analyzed. The plot will
     show the experimental (X axis) vs mean predicted values (Y axis), with error bars
@@ -98,6 +100,8 @@ def create_ddG_plot(
         output_path: path to save the plot. If None, the plot will not be saved. Defaults to None.
         target_name: name of the target protein to be added in the plot. Defaults to None.
         savefig: if True, will save the plot to the output_path. Defaults to False.
+        show_statistics: Compute and display bootstrap benchmark statistics.
+            Set False for small or dependent edge sets where these are not meaningful.
 
     Returns:
         the matplotlib figure and axis objects (fig, ax).
@@ -133,7 +137,7 @@ def create_ddG_plot(
         else:
             return f"{mle:.2f}_{{{low}}}^{{{high}}}"
 
-    statistics = ["RMSE", "MUE", "KTAU"]
+    statistics = ["RMSE", "MUE", "KTAU"] if show_statistics else []
     stats_dict = {}
     for stat in statistics:
         boot = bootstrap_statistic(avg_values, exp_values, statistic=stat)
@@ -229,8 +233,9 @@ def create_ddG_plot(
         f"$\\tau = {stats_dict['KTAU']}$",
         f"RMSE = ${stats_dict['RMSE']}  {unit}$",
         f"MUE = ${stats_dict['MUE']}  {unit}$",
-    )
-    logger.info(f"Stats: {' '.join(text_body)}")
+    ) if show_statistics else ()
+    if show_statistics:
+        logger.info(f"Stats: {' '.join(text_body)}")
     hori_height = 0.35
     spacing = 0.085
     txt_positions = (

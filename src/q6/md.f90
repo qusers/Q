@@ -27,7 +27,7 @@ module md
   use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
   use boundary_corrections, only: born_coefficient, born_self_energy, &
     polarization_strength, polarization_target, polarization_energy, &
-    polarization_gradient, safe_acos
+    polarization_gradient, safe_acos, polarization_switch, smooth_rank_energy
 
   implicit none
 
@@ -167,6 +167,15 @@ module md
   logical                   :: perstate_born = .false.
   logical                   :: perstate_wpol = .false.
   logical                   :: wpol_adapt = .true.
+  logical                   :: smooth_wpol = .false.
+  ! Optional diagnostic bridge: (1-eta)*sampled angular energy + eta*P_ref.
+  ! P_ref uses zero angular source charge and zero offsets, not zero atom charges.
+  logical                   :: wpol_bridge = .false.
+  character(32), parameter   :: wpol_bridge_tag='Q_POL_BRIDGE_V1'
+  real(8)                   :: wpol_bridge_eta=0, wpol_bridge_from=0
+  real(8)                   :: wpol_bridge_old=0, wpol_bridge_ref=0
+  character(32), parameter   :: smooth_wpol_tag='Q_SMOOTH_WPOL_V1'
+  real(8)                   :: wpol_switch_width=.1_8, wpol_rank_width=.05_8, wpol_angle_floor=.001_8
   real(8)                   :: born_eps = 80.0_8
   real(8)                   :: born_C_override = -1.0_8
   real(8)                   :: born_C = 0.0_8, born_crg_env = 0.0_8
@@ -3776,6 +3785,37 @@ logical function initialize()
         end if
         yes=prm_get_logical_by_key('perstate_polarization', perstate_wpol, .false.)
         yes=prm_get_logical_by_key('polarization_adaptation', wpol_adapt, .true.)
+        yes=prm_get_logical_by_key('smooth_polarization', smooth_wpol, .false.)
+        yes=prm_get_logical_by_key('polarization_bridge', wpol_bridge, .false.)
+        yes=prm_get_real8_by_key('polarization_bridge_eta', wpol_bridge_eta, 0._8)
+        yes=prm_get_real8_by_key('polarization_bridge_from', wpol_bridge_from, wpol_bridge_eta)
+        if (wpol_bridge) then
+          if (.not. smooth_wpol .or. .not. perstate_wpol .or. wpol_adapt .or. &
+              .not. all(ieee_is_finite([wpol_bridge_eta,wpol_bridge_from])) .or. &
+              min(wpol_bridge_eta,wpol_bridge_from)<0 .or. max(wpol_bridge_eta,wpol_bridge_from)>1) then
+            write(*,'(a)') '>>> ERROR: polarization bridge requires smooth frozen restart and eta/from in [0,1]'
+            initialize=.false.
+          end if
+        else if (wpol_bridge_eta/=0 .or. wpol_bridge_from/=0) then
+          write(*,'(a)') '>>> ERROR: bridge eta/from supplied without polarization_bridge on'
+          initialize=.false.
+        end if
+        yes=prm_get_real8_by_key('polarization_switch_width', wpol_switch_width, .1_8)
+        yes=prm_get_real8_by_key('polarization_rank_width', wpol_rank_width, .05_8)
+        yes=prm_get_real8_by_key('polarization_angle_floor', wpol_angle_floor, .001_8)
+        if (smooth_wpol) then
+          if (.not. perstate_wpol .or. wpol_adapt) then
+            write(*,'(a)') '>>> ERROR: smooth_polarization requires perstate_polarization on and polarization_adaptation off'
+            initialize=.false.
+          end if
+          if (.not. all(ieee_is_finite([wpol_switch_width,wpol_rank_width,wpol_angle_floor])) .or. &
+              wpol_switch_width <= 0 .or. wpol_switch_width >= .25_8 .or. &
+              wpol_rank_width < .001_8 .or. wpol_rank_width > 1.0_8 .or. &
+              wpol_angle_floor < .0001_8 .or. wpol_angle_floor > .1_8) then
+            write(*,'(a)') '>>> ERROR: invalid smooth polarization widths (switch: 0..0.25 A; rank: .001..1 rad; floor: .0001...1 rad)'
+            initialize=.false.
+          end if
+        end if
         if(perstate_wpol .and. (.not. wpol_restr .or. .not. wpol_born)) then
           write(*,'(a)') '>>> ERROR: perstate_polarization on requires polarization and charge_correction on'
           initialize = .false.
@@ -4982,6 +5022,7 @@ subroutine fire_minimize
 !!  simulation sphere are held by the usual fk_fix restraints, exactly as in MD.
 !!-------------------------------------------------------------------------------
   real(8), allocatable :: v_save(:)
+  real, allocatable :: wpol_state_save(:,:)
 
   if (nodeid .eq. 0) then
     call centered_heading('Energy Minimization (FIRE)', '-')
@@ -4995,6 +5036,17 @@ subroutine fire_minimize
   allocate(v_save(nat3), stat=alloc_status)
   call check_alloc('FIRE velocity buffer')
   v_save(1:nat3) = v(1:nat3)
+
+  ! Minimizer force evaluations are not MD samples. Preserve both legacy
+  ! running averages and the frozen/restart offsets; shell geometry is rebuilt
+  ! from the minimized coordinates by the next ordinary force evaluation.
+  if (nodeid .eq. 0 .and. wpol_restr .and. allocated(wshell)) then
+    allocate(wpol_state_save(3, nwpolr_shell), stat=alloc_status)
+    call check_alloc('FIRE water polarization buffer')
+    wpol_state_save(1,:) = wshell(:)%avtheta
+    wpol_state_save(2,:) = wshell(:)%avn_insh
+    wpol_state_save(3,:) = wshell(:)%theta_corr
+  end if
 
   ! ---- Phase 1: bonded terms only, hydrogens free ----
   if (nodeid .eq. 0) write(*,'(a)') '--- Phase 1: bonded terms only ---'
@@ -5011,6 +5063,13 @@ subroutine fire_minimize
   ! Hand the pre-minimization velocities back to MD.
   v(1:nat3) = v_save(1:nat3)
   deallocate(v_save)
+
+  if (allocated(wpol_state_save)) then
+    wshell(:)%avtheta = wpol_state_save(1,:)
+    wshell(:)%avn_insh = wpol_state_save(2,:)
+    wshell(:)%theta_corr = wpol_state_save(3,:)
+    deallocate(wpol_state_save)
+  end if
 
 end subroutine fire_minimize
 
@@ -5708,6 +5767,8 @@ subroutine md_run
       if ( mod(istep, iene_cycle) == 0 .and. istep > 0) then
         ! nrgy_put_ene(unit, e2, OFFD): print 'e2'=EQ and OFFD to unit 'unit'=11
         call put_ene(11, EQ, OFFD)
+        if (wpol_bridge) write(*,'(a,i12,6es26.17e3)') 'Q_POL_BRIDGE_V1 ',istep, &
+          wpol_bridge_eta,EQ(1:2)%lambda,wpol_bridge_old,wpol_bridge_ref,wpol_bridge_ref-wpol_bridge_old
       end if
       ! end-of-line, then call write_out, which will print a report on E and EQ
       if ( mod(istep,iout_cycle) == 0 ) then
@@ -16418,6 +16479,11 @@ subroutine prep_sim
    ! local variables
   integer                                         :: i, j, ig, istate
 
+  if (wpol_bridge) then
+    if (use_PBC .or. .not. restart .or. .not. equilibrium_simulation) &
+      call die('Polarization bridge requires a spherical equilibrium restart')
+  end if
+
   if (nodeid .eq. 0) then
     write(*,*)
     call centered_heading('Initializing dynamics', '-')
@@ -17808,6 +17874,8 @@ subroutine write_boundary_audit
   end do
   write(*,'(a)') 'Q_BOUNDARY_AUDIT_V3 BEGIN'
   write(*,'(a)') 'QBA_CONVENTION 1' !1 = existing Q-region-only angular target
+  if (smooth_wpol) write(*,'(a,i4,3es26.17e3)') 'QBA_SMOOTH ',1,wpol_switch_width,wpol_rank_width,wpol_angle_floor
+  if (wpol_bridge) write(*,'(a,i4,4es26.17e3)') 'QBA_BRIDGE ',1,wpol_bridge_eta,wpol_bridge_from,0._8,0._8
   write(*,'(a,8i10)') 'QBA_META ',natom,nat_solute,nwat,nqat,nstates,nwpolr_shell,ivdw_rule,solvent_type
   write(*,'(a,6i4)') 'QBA_FLAGS ',merge(1,0,perstate_wpol),merge(1,0,perstate_born), &
     merge(1,0,wpol_adapt),merge(1,0,qvdw_flag),merge(1,0,use_LRF),merge(1,0,use_PBC)
@@ -17964,6 +18032,9 @@ subroutine wat_shells
 
   integer                                         ::      nwpolr_shell_restart, filestat
   integer                                         ::      bndcodw, angcodw
+  character(32) :: smooth_tag
+  real(8) :: saved_smooth(5)
+  real(8) :: saved_bridge(3)
 
   !calc mu_w
   !look up bond code for water
@@ -18057,6 +18128,53 @@ subroutine wat_shells
   n_max_insh = n_max_insh * 1.5 !take largest and add some extra
   call allocate_watpol_arrays
 
+  if (smooth_wpol) then
+    if (.not. all(ieee_is_finite(wpol_cstb_state)) .or. any(abs(1.5_8*wpol_cstb_state) >= 1)) &
+      call die('Smooth polarization requires |1.5 * shell strength| < 1: no clipped angular targets')
+    if (.not. ieee_is_finite(fkwpol) .or. fkwpol < 0) call die('Invalid smooth polarization force constant')
+    if (real(wshell(nwpolr_shell)%rout-wshell(nwpolr_shell)%dr,8) <= wpol_switch_width) &
+      call die('Smooth polarization support must stay away from the sphere center')
+    write(*,'(a,3es20.10)') 'Smooth polarization V1 (switch A, rank rad, angle floor rad): ', &
+      wpol_switch_width,wpol_rank_width,wpol_angle_floor
+  end if
+  if (restart) then
+    ! A smooth restart is deliberately incompatible with legacy offsets alone.
+    smooth_tag=''
+    read(2,iostat=filestat) smooth_tag
+    if (smooth_wpol) then
+      if (filestat /= 0 .or. smooth_tag /= 'Q_SMOOTH_WPOL_V1') call die('Missing smooth polarization restart metadata')
+      backspace(2,iostat=filestat)
+      if (filestat /= 0) call die('Cannot reread smooth polarization restart metadata')
+      read(2,iostat=filestat) smooth_tag,saved_smooth
+      if (filestat /= 0) call die('Incomplete smooth polarization restart metadata')
+      if (.not. all(ieee_is_finite(saved_smooth))) call die('Nonfinite smooth polarization restart metadata')
+      if (any(saved_smooth /= [wpol_switch_width,wpol_rank_width,wpol_angle_floor,rwat,fkwpol])) &
+        call die('Changed smooth polarization restart settings')
+    else if (filestat == 0 .and. smooth_tag == 'Q_SMOOTH_WPOL_V1') then
+      call die('Smooth polarization restart cannot continue with the legacy boundary')
+    end if
+    if (smooth_wpol) then
+      smooth_tag=''
+      read(2,iostat=filestat) smooth_tag
+      if (wpol_bridge) then
+        if (nstates/=2 .or. .not. equilibrium_simulation .or. noffd/=0) &
+          call die('Polarization bridge requires two uncoupled equilibrium states')
+        if (minval(EQ(:)%lambda)<=0 .or. maxval(EQ(:)%lambda)>=1) &
+          call die('Polarization bridge requires strictly interior physical lambda')
+        if (abs(sum(EQ(:)%lambda)-1._8)>1.e-12_8) call die('Polarization bridge requires normalized physical lambda')
+        if (filestat/=0 .or. smooth_tag/=wpol_bridge_tag) call die('Missing polarization bridge restart metadata')
+        backspace(2,iostat=filestat)
+        if (filestat/=0) call die('Cannot reread bridge metadata')
+        read(2,iostat=filestat) smooth_tag,saved_bridge
+        if (filestat/=0) call die('Incomplete bridge restart metadata')
+        if (.not. all(ieee_is_finite(saved_bridge))) call die('Nonfinite bridge metadata')
+        if (any(saved_bridge/=[wpol_bridge_from,EQ(1:2)%lambda])) call die('Changed bridge predecessor eta or physical lambda')
+      else if (filestat==0 .and. smooth_tag==wpol_bridge_tag) then
+        call die('Bridge restart cannot silently continue without polarization_bridge')
+      end if
+    end if
+  end if
+
 end subroutine wat_shells
 
 !-----------------------------------------------------------------------
@@ -18069,6 +18187,11 @@ subroutine watpol
   real(8)                                         :: theta_base, theta_target, target_average, state_energy
   real(8), save                                   :: f1(9),f2(3)
   real(8), save                                   :: rmu(3),rcu(3)
+
+  if (smooth_wpol) then
+    call watpol_smooth
+    return
+  end if
 
   ! global variables used:
   !  E, wshell, bndw0, deg2rad, angw0, nwat, theta, theta0, nat_pro, x, xwcent,
@@ -18255,6 +18378,88 @@ subroutine watpol
     wshell(is)%avn_insh = wshell(is)%avn_insh + wshell(is)%n_insh
   end do
 end subroutine watpol
+
+subroutine watpol_smooth
+  ! State-resolved smooth angular energy and its complete Cartesian gradient.
+  integer :: iw,i,i3,is,s,k,n,indices(nwat)
+  real(8) :: radius(nwat), angles(nwat), cosines(nwat), lengths(nwat), ru(3,nwat), mu(3,nwat)
+  real(8) :: weights(nwat), wr(nwat), low, high, a,ap, floor_cos, factor, gtheta, gr
+  real(8) :: energies(nstates), gw(nwat,nstates), ga(nwat,nstates), angular_part(3), radial_part(3)
+  real(8) :: offset
+  real(8) :: ref_energy(1),ref_gw(nwat,1),ref_ga(nwat,1)
+  floor_cos=cos(wpol_angle_floor)
+  wpol_state_energy=0; wshell(:)%n_insh=0
+  wpol_bridge_old=0; wpol_bridge_ref=0
+  low=real(wshell(nwpolr_shell)%rout-wshell(nwpolr_shell)%dr,8)
+  radius=0; angles=0; cosines=0; lengths=1; ru=0; mu=0
+  do iw=1,nwat
+    i=nat_solute+3*iw-2; i3=3*i-3
+    if (excl(i)) cycle
+    radius(iw)=sqrt(sum((x(i3+1:i3+3)-xwcent)**2))
+    if (radius(iw) <= low-wpol_switch_width) cycle
+    ru(:,iw)=(x(i3+1:i3+3)-xwcent)/radius(iw)
+    mu(:,iw)=x(i3+4:i3+6)+x(i3+7:i3+9)-2*x(i3+1:i3+3)
+    lengths(iw)=sqrt(sum(mu(:,iw)**2))
+    if (lengths(iw) <= 0) call die('Undefined water dipole in smooth polarization')
+    mu(:,iw)=mu(:,iw)/lengths(iw)
+    cosines(iw)=dot_product(mu(:,iw),ru(:,iw))
+    angles(iw)=acos(floor_cos*cosines(iw))
+  end do
+  do is=1,nwpolr_shell
+    if (is == nwpolr_shell) then
+      low=real(wshell(is)%rout-wshell(is)%dr,8)
+    else
+      low=real(wshell(is+1)%rout,8)
+    end if
+    high=real(wshell(is)%rout,8)
+    n=0
+    do iw=1,nwat
+      i=nat_solute+3*iw-2
+      if (excl(i)) cycle
+      ! Transitions do not overlap. Evaluate the descending tail directly,
+      ! rather than subtracting two near-unit numbers for an almost empty shell.
+      if (is /= 1 .and. radius(iw) > .5_8*(low+high)) then
+        call polarization_switch(-radius(iw),-high,wpol_switch_width,a,ap)
+        ap=-ap
+      else
+        call polarization_switch(radius(iw),low,wpol_switch_width,a,ap)
+      end if
+      if (a <= 0) cycle
+      n=n+1; indices(n)=iw; weights(n)=a; wr(n)=ap
+    end do
+    wshell(is)%n_insh=n !support count for diagnostics ONLY, never used in energy
+    if (n == 0) cycle
+    offset=real(wshell(is)%theta_corr,8)
+    call smooth_rank_energy(weights(:n),angles(indices(:n)),wpol_cstb_state(is,:),offset,fkwpol, &
+      wpol_rank_width,energies,gw(:n,:),ga(:n,:))
+    if (wpol_bridge) then
+      call smooth_rank_energy(weights(:n),angles(indices(:n)),[0._8],0._8,fkwpol, &
+        wpol_rank_width,ref_energy,ref_gw(:n,:),ref_ga(:n,:))
+      wpol_bridge_old=wpol_bridge_old+dot_product(EQ(:)%lambda,energies)
+      wpol_bridge_ref=wpol_bridge_ref+ref_energy(1)
+      do s=1,nstates
+        energies(s)=(1-wpol_bridge_eta)*energies(s)+wpol_bridge_eta*ref_energy(1)
+        gw(:n,s)=(1-wpol_bridge_eta)*gw(:n,s)+wpol_bridge_eta*ref_gw(:n,1)
+        ga(:n,s)=(1-wpol_bridge_eta)*ga(:n,s)+wpol_bridge_eta*ref_ga(:n,1)
+      end do
+    end if
+    wpol_state_energy=wpol_state_energy+energies
+    do s=1,nstates
+      EQ(s)%restraint=EQ(s)%restraint+energies(s)
+    end do
+    do k=1,n
+      iw=indices(k); i=nat_solute+3*iw-2; i3=3*i-3
+      gtheta=dot_product(EQ(:)%lambda,ga(k,:))
+      gr=dot_product(EQ(:)%lambda,gw(k,:))*wr(k)
+      factor=-gtheta*floor_cos/sqrt(1-(floor_cos*cosines(iw))**2)
+      angular_part=(ru(:,iw)-mu(:,iw)*cosines(iw))/lengths(iw)
+      radial_part=(mu(:,iw)-ru(:,iw)*cosines(iw))/radius(iw)
+      d(i3+1:i3+3)=d(i3+1:i3+3)+factor*(-2*angular_part+radial_part)+gr*ru(:,iw)
+      d(i3+4:i3+6)=d(i3+4:i3+6)+factor*angular_part
+      d(i3+7:i3+9)=d(i3+7:i3+9)+factor*angular_part
+    end do
+  end do
+end subroutine watpol_smooth
 
 
 !----------------------------------------------------------------------------
@@ -18444,6 +18649,9 @@ subroutine write_xfin
   !save dynamic polarization restraint data
   if(wpol_restr .and. allocated(wshell)) then
     write (3) nwpolr_shell, wshell(:)%theta_corr
+    if (smooth_wpol) write(3) smooth_wpol_tag, &
+      wpol_switch_width,wpol_rank_width,wpol_angle_floor,rwat,fkwpol
+    if (wpol_bridge) write(3) wpol_bridge_tag,wpol_bridge_eta,EQ(1:2)%lambda
   end if
 
   if( use_PBC )then

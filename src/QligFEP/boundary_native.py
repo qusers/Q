@@ -10,7 +10,7 @@ import struct
 from . import charge_protocol as cp
 
 
-def parse(text):
+def parse(text, *, allow_smooth=False):
     begin, end = 'Q_BOUNDARY_AUDIT_V3 BEGIN', 'Q_BOUNDARY_AUDIT_V3 END'
     lines = text.splitlines()
     if lines.count(begin) != 1 or lines.count(end) != 1 or lines.index(begin) >= lines.index(end):
@@ -27,6 +27,8 @@ def parse(text):
     singles = {'convention': 1, 'meta': 8, 'flags': 6, 'parameters': 12, 'center': 3,
                'solute_boundary': 3, 'cutoffs': 5, 'water': 2, 'water_compatibility': 2,
                'restraint_counts': 6}
+    if allow_smooth and 'smooth' in records:
+        singles['smooth'] = 4
     if set(records)-{'position'} != set(singles) | {'state', 'qatom', 'shell', 'water_atom'}:
         raise ValueError('Missing or unsupported native audit records')
     result = {}
@@ -34,6 +36,10 @@ def parse(text):
         if len(records[key]) != 1 or len(records[key][0]) != size:
             raise ValueError(f'Invalid native {key} record')
         result[key] = records[key][0]
+    if 'smooth' in result:
+        version, width, rank, floor = result['smooth']
+        if version != 1 or not (0 < width < .25 and .001 <= rank <= 1 and .0001 <= floor <= .1):
+            raise ValueError('Invalid native smooth polarization parameters')
     if any(v != int(v) for v in result['meta']) or any(v not in (0, 1) for v in result['flags']):
         raise ValueError('Invalid native integer/flag values')
     natom, nsolute, nwater, nqat, nstates, nshell, _, _ = result['meta']

@@ -1,5 +1,6 @@
 """Full-Q fixed-coordinate state bookkeeping; no dynamics or new sampler."""
 from pathlib import Path
+import os
 import shutil
 import struct
 import subprocess
@@ -20,12 +21,14 @@ def executable(tmp_path_factory):
     if not compiler:
         pytest.skip('Native state audit requires a Fortran compiler')
     build = tmp_path_factory.mktemp('state-audit-build')
-    objects = [ROOT/'src/q6'/f'{name}.o' for name in OBJECTS]
+    native = Path(os.environ.get('Q_NATIVE_BUILD', ROOT/'src/q6')).resolve()
+    objects = [native/f'{name}.o' for name in OBJECTS]
     for name, path in zip(OBJECTS, objects):
         assert path.exists(), 'Build serial Qdyn before the native state audit'
         assert path.stat().st_mtime >= (ROOT/'src/q6'/f'{name}.f90').stat().st_mtime, 'Stale native object: '+name
+        assert (native/f'{name}.f90').read_bytes() == (ROOT/'src/q6'/f'{name}.f90').read_bytes(), 'Different native source: '+name
     exe = build/'state-audit'
-    subprocess.run([compiler, '-O2', '-fcheck=all', '-ffree-line-length-none', '-I', str(ROOT/'src/q6'),
+    subprocess.run([compiler, '-O2', '-fcheck=all', '-ffree-line-length-none', '-I', str(native),
                     str(Path(__file__).with_name('state_energy_audit.f90')), *map(str, objects), '-o', str(exe)],
                    cwd=build, capture_output=True, text=True, check=True, timeout=60)
     return exe
@@ -37,7 +40,7 @@ def audit(request, executable, tmp_path_factory):
     return run_audit(request.param, executable, run)
 
 
-def run_audit(sign, executable, run, *, fixed_charge_as_q=False, general_water=False, position=False):
+def run_audit(sign, executable, run, *, fixed_charge_as_q=False, general_water=False, position=False, smooth=False):
     run.mkdir(exist_ok=True)
     shutil.copyfile(DATA/'topology/Na-benzene-water.top', run/'system.top')
     if general_water:
@@ -56,6 +59,8 @@ def run_audit(sign, executable, run, *, fixed_charge_as_q=False, general_water=F
     text = text.replace('charge_correction off', 'charge_correction on\nperstate_polarization on\n'
                         'polarization_adaptation off\nperstate_born_correction on\nborn_dielectric 80')
     text = text.replace('\ntemperature 1\n', '\ntemperature 298\n')
+    if smooth:
+        text = text.replace('[solvent]', '[solvent]\nsmooth_polarization on')
     if position:
         text += '\n[atom_restraints]\n1 0.13 -0.27 0.41 10 20 30 0\n'
     (run/'audit.inp').write_text(text)

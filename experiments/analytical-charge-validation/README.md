@@ -8,6 +8,156 @@ No new sampler, integrator, thermostat, radial wall or solvent model is develope
 here. The approved integration reuses the existing modernization branch's
 constraint solvers and its SHAKE repair.
 
+Implementation follow-up: [opt-in smooth angular boundary](SMOOTH_BOUNDARY_IMPLEMENTATION.md)
+replaces hard membership/rank handling with a differentiable weighted angular
+distribution and complete Cartesian derivatives. Legacy mode remains the
+default. Scoped continuity/force, state-accounting and restart checks pass;
+this is a mathematical repair, not a changed Born
+convention or a qualified physical charged-perturbation correction.
+
+The [paired smooth-boundary HPC pilot](SMOOTH_BOUNDARY_HPC_PILOT.md) tests both
+targets and both legs against fresh legacy controls, gated by serial/16-rank
+agreement and explicit model/restart checks. It uses one midpoint window per
+case, not a full binding free-energy calculation.
+
+The [completed pilot results and plots](SMOOTH_BOUNDARY_HPC_RESULTS.md) report
+eight successful runs and 48 revalidated stages. Short-run numerical stability
+passed on both targets; the physical charge-source/exterior-response question
+remains open.
+
+The [source/response follow-up](SOURCE_RESPONSE_CONVENTION.md) separates radial
+field and potential, validates the distinction on 16 historical snapshots, and
+adds a test-only reference-invariant exterior-response interface. No source
+convention is silently changed in the native engine.
+
+The [compact charging-derivative audit](CHARGING_DERIVATIVE_RESULTS.md) passes
+81 native first/second derivative comparisons, including complete angular/Born
+terms, explicit charge-roundoff accounting and charge-family versus endpoint
+mixing checks. No dynamics or physical source change is implied by this result.
+
+The [compact charging-response investigation](COMPACT_RESPONSE_GOAL.md) covers
+autonomous protocol preparation, prerequisite local checks and a bounded HPC
+pilot on matched finite droplets with both probe/background charge signs. Its
+completion requires analyzed evidence, not merely job submission; it does not
+authorize another binding campaign or a new sampler.
+
+The [compact-response protocol](COMPACT_RESPONSE_PROTOCOL.md) defines a matched
+two-particle/droplet comparison and the existing Born-completion hypothesis.
+The [approved pilot](COMPACT_RESPONSE_HPC_PILOT.md) completed all 90 trajectories
+and 540 stages. The [results, plots and next decision](COMPACT_RESPONSE_HPC_RESULTS.md)
+show passing numerical checks and closely overlapping radius-response curves
+for both background signs, but insufficient precision and failed qualification
+gates. Retain the smooth repair; do not fit a correction or proceed to binding
+production. A narrower charge-spacing/precision diagnostic is recommended.
+The real production data were fully recovered and revalidated; 143 regression
+tests pass. Total pilot plus prior gate allocation was 310.71 core-hours under
+the approved 420 cap. No further jobs were submitted during analysis.
+
+The approved [near-neutral autonomous follow-up](NEAR_NEUTRAL_RESPONSE_GOAL.md)
+now has a [frozen, pilot-informed protocol](NEAR_NEUTRAL_PROTOCOL.md): zero
+retained background, charges 0/±0.05/±0.10 e, both radii, three independent starts,
+200 ps equilibration and 1 ns production. The smooth repair and correction are
+unchanged. [Jobs 26533721/26533722 and recovery instructions](NEAR_NEUTRAL_HPC.md)
+record the bounded 496 additional core-hour plan and passing 188-test suite.
+The [completed results and inspected plots](NEAR_NEUTRAL_RESULTS.md) recover
+all thirty trajectories: the 18 Å small-spacing response approaches the neutral
+fluctuation estimate, but 12 Å density/centroid changes and replica disagreement
+prevent physical qualification. Actual follow-up allocation was 387.79 core-hours.
+No thresholds were relaxed. The [completion audit](NEAR_NEUTRAL_COMPLETION_AUDIT.md)
+closes this focused investigation with an inconclusive physical outcome; next
+diagnose the small-droplet redistribution using saved configurations, without
+retuning the correction or launching another binding campaign.
+
+The approved [autonomous redistribution diagnosis](REDISTRIBUTION_GOAL.md)
+is [complete with an integrated diagnosis](REDISTRIBUTION_RESULTS.md): sustained
+small-droplet repacking is dominated energetically by water–water interactions
+and starts before the large centroid shift. All ninety scoped native force
+checks pass, but preparation/history, finite-size bias and native dynamics are
+not yet distinguished. The model and historical gates remain unchanged.
+[Completion evidence](REDISTRIBUTION_COMPLETION_AUDIT.md) includes 77 passing
+tests and inspected plots. A [neutral restart-history control](REDISTRIBUTION_NEXT_TEST.md)
+was proposed but not submitted. It is now superseded by the approved
+[matched solvent-baseline goal](SOLVENT_BASELINE_GOAL.md): audit preparation,
+develop finite-droplet structural diagnostics and compare legacy versus smooth
+boundary behavior with matched topology and dynamics. No new production
+sampling is scheduled; a concrete bounded protocol precedes any allocation
+request.
+
+Design follow-up: [boundary design options and failure reproduction](BOUNDARY_DESIGN_OPTIONS.md)
+documents the user-preferred continuous angular-boundary approach and the
+complementary thermodynamic accounting approach. Unequal protein/water charges
+and radii do not invalidate a corrected thermodynamic cycle; they prevent
+assuming cancellation without justified corrections. The design note separates
+those issues from demonstrated angular discontinuity and charge-label dependence,
+and records how to reproduce each diagnostic. No replacement Hamiltonian is
+implemented by this documentation update; the archived no-go evidence is unchanged.
+
+Earlier: the six [matched-preparation compatibility jobs](MATCHED_COMPATIBILITY_RESULTS.md)
+completed and passed independent verification of all 36 stages, using 36.68
+allocated CPU-core-hours. A new fixed-coordinate native audit also exposes
+finite angular-energy jumps at shell-membership changes. Together with the
+reproduced charge-label dependence, this prevents physical qualification merely
+from the passing bookkeeping/runtime checks. The full correction is not ready
+for another production campaign; see [the decision](PHYSICAL_DECISION.md) and
+[final requirement/evidence audit](INVESTIGATION_COMPLETION_AUDIT.md). The
+investigation ends with an explicit rejection of current production use, not
+with a qualified replacement model. The final diagnostic suite passes 205 tests.
+
+Previously, all 24 standard-array runs in the [101-window campaign](STANDARD_101_RESULTS.md)
+completed. The [follow-up audit](STANDARD_101_FOLLOWUP.md) fixes endpoint-trimmed
+reading and passes native energy/force checks on actual protein configurations.
+Replica sampling and the physical radius/charge convention remain unqualified;
+completed simulations do not yet establish a validated analytical correction.
+
+The [radius/background convention audit](RADIUS_BACKGROUND_CONVENTION.md) now
+distinguishes the water radius, charge-group exclusion mask, and assumed
+continuum interface. Sixteen read-only native snapshot exports confirm that
+the included protein background is not geometrically enclosed by the water
+radius. The existing convention is identified, but neither a simple radius
+swap nor an angular-target replacement is physically qualified. The next step
+is an explicit exterior-electrostatics derivation, not another protein campaign.
+
+That [derivation and preparation-radius audit](EXTERIOR_RESPONSE_DERIVATION.md)
+now confirms that Born already uses Qprep's **effective** radius in all eight
+prepared setups. It separates exterior response to retained charges from
+restoration of neutralized ionic groups, with tested spherical limiting cases.
+The archived structures retain charged side chains in the effective outer
+3 angstrom; the original neutralization mapping is the next required provenance
+check before estimating a target-specific restoration. No correction was changed.
+
+The [neutralization provenance and restoration audit](NEUTRALIZATION_RESTORATION_AUDIT.md)
+has now recovered 25 c-Met and 53 Eg5 ionic-to-neutral changes from coordinate-
+matched source structures. Their pattern matches a 25-angstrom, zero-offset
+neutralization reused for the 20-angstrom campaign. Fixed-coordinate dielectric-80
+restoration estimates, including separately excluded ionic groups, are about
+-0.12 and -0.76 kcal/mol respectively; these are not revised binding free energies.
+The next proposed control is explicit, matched-boundary preparation, not a Born
+radius adjustment or an unqualified production campaign.
+
+The user has authorized the [autonomous matched-boundary goal](MATCHED_BOUNDARY_GOAL.md),
+including bounded compute. Its first preparation milestone reproduces all four
+archived protein topology bodies and generates direction-consistent effective-
+outer-shell controls with unchanged heavy-atom coordinates. Identity-based
+FEP/restraint remapping and eight fresh-coordinate native accounting checks now
+pass. The control backgrounds are both negative, and c-Met Arg54 changes its
+fixed exclusion status when a proton is removed; these are recorded preparation
+confounds, not concealed by adjusting charges or masks. Six fresh compatibility/
+equilibration arrays completed on the cluster (26498482–26498487), using 36.68
+of their capped 96 allocated CPU-core-hours. This is not a qualified production
+campaign. The separate prepared-coordinate term ledger also confirms large
+changes in the integrated Born gaps and much smaller screened ionic estimates;
+neither is silently added to a free-energy result. See the goal document for
+authoritative reports, paths, recorded observations, and the compute cap.
+
+For visual inspection before further development, see the local
+[seven-figure results gallery](runtime/standard-101-visual-review/README.md).
+It includes replica estimates, separate protein/water legs, cumulative lambda
+curves, adjacent-window overlap, split-time estimates, the Born constant shift,
+and selected structural differences. The reproducible
+[plotting script](plot_standard_results.py) reads the existing reports without
+changing them. Graphics are available as PNG and scalable vector graphics (SVG);
+exact endpoint windows remain excluded from free-energy analysis.
+
 The [historical water-constraint blocker](CONSTRAINT_BLOCKER.md) is resolved in
 the [modernization integration](MODERNIZATION_INTEGRATION.md): the unchanged
 sixteen-cell [software campaign](CAMPAIGN.md) passes with repaired SHAKE.

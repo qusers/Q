@@ -799,10 +799,10 @@ class TestQfepTemplate:
         # Line 2: kT  windows
         assert "0.592" in lines[2]  # kT at 298K
         assert "5" in lines[2]
-        # Lines 3,4,5: windows repeated
+        # Lines 3,4: bins and minimum count; line 5 is an energy offset, not windows.
         assert lines[3] == "5"
         assert lines[4] == "5"
-        assert lines[5] == "5"
+        assert lines[5] == "0"
         # Lines 6,7: 0, 0
         assert lines[6] == "0"
         assert lines[7] == "0"

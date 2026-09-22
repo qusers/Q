@@ -12,7 +12,7 @@ import pandas as pd
 from .analysis_plotting import create_ddG_plot, prepare_df
 from .IO import (
     ddG_json_path,
-    read_qfep,
+    read_qfep_result,
     read_qfep_verbose,
     read_slurm_diagnostics,
     run_command,
@@ -202,7 +202,15 @@ class FepReader:
         logger.debug(f"    Reading qfep.out file: {qfep_repli_path}")
         repID = int(qfep_repli_path.parent.name)
         try:
-            energies = read_qfep(qfep_repli_path)
+            result = read_qfep_result(qfep_repli_path)
+            energies = result.energies
+            if not hasattr(self, "qfep_scopes"):
+                self.qfep_scopes = {}
+            self.qfep_scopes[str(qfep_repli_path)] = result.scope
+            if result.scope["endpoint_trimmed"]:
+                logger.warning(f"Endpoint-trimmed result for {qfep_repli_path}: lambda(1) "
+                               f"{result.scope['lambda1_start']:g} -> {result.scope['lambda1_end']:g}; "
+                               "no caps added.")
             qEnergies, q_dgBAR = read_qfep_verbose(qfep_repli_path)
         except OSError as e:  # if the file is empty
             logger.error(f"Failed to read energies from {qfep_repli_path}. Error: \n{e}")
@@ -304,6 +312,7 @@ class FepReader:
             method_results = {method: {} for method in self.methods_list}
             failed_replicates = []
             all_replicates = [i for i in range(1, int(fep_dict["replicates"]) + 1)]
+            scopes = []
 
             # Process each replicate's energy data
             for rep in replicate_qfep_files:
@@ -319,6 +328,12 @@ class FepReader:
                     self.verbose_dgBar.append(q_dgBAR.assign(fep=fep, system=self.system, replicate=repID))
                 energies[repID] = replicate_energies
                 failed_replicates.extend(failed)
+                if not failed:
+                    scopes.append(self.qfep_scopes[str(rep)])
+
+            if scopes and any(scope != scopes[0] for scope in scopes[1:]):
+                raise ValueError(f"Cannot average different qfep intervals or alpha offsets: {fep}")
+            fep_dict["qfep_scope"] = scopes[0] if scopes else None
 
             # Calculate statistics for each energy method
             all_energies_arr = []
@@ -329,7 +344,7 @@ class FepReader:
                 method_results[mname] = {
                     "energies": method_energies.tolist(),
                     "avg": np.nanmean(method_energies),
-                    "sem": float(np.nanstd(method_energies) / np.sqrt(method_energies.shape)),
+                    "sem": float(np.nanstd(method_energies) / np.sqrt(method_energies.size)),
                     "std": np.nanstd(method_energies),
                 }
             logger.debug("energies:\n" + "\n".join(all_energies_arr))
@@ -357,7 +372,6 @@ class FepReader:
             protein_sys: name of the protein system that was read. Defaults to '2.protein'.
         """
         self.create_result_key()
-        systems = [water_sys, protein_sys]
         # assert both systems have the same FEPs
         prot_feps = sorted([k for k in self.data[protein_sys]])
         water_feps = sorted([k for k in self.data[water_sys]])
@@ -368,17 +382,14 @@ class FepReader:
             w_result = w_fep["FEP_result"]
             p_result = p_fep["FEP_result"]
 
-            for _sys in systems:
-                # check for inconsistencies
-                if w_fep["fep_stage"] != p_fep["fep_stage"]:
-                    logger.error(f"FEP stages do not match between water/{fep} and protein/{fep}.")
-                    continue
-                if w_fep["temperature"] != p_fep["temperature"]:
-                    logger.error(f"Temperatures do not match between water/{fep} and protein/{fep}.")
-                    continue
-                if w_fep["lambda_sum"] != p_fep["lambda_sum"]:
-                    logger.error(f"Lambda sums do not match between water/{fep} and protein/{fep}.")
-                    continue
+            # Equal production window counts do not imply equal analyzed intervals.
+            # Alpha cancels only for matching intervals and energy conventions.
+            if w_fep.get("qfep_scope") != p_fep.get("qfep_scope"):
+                raise ValueError(f"qfep intervals or alpha offsets differ between protein and water: {fep}")
+
+            for field in ("fep_stage", "temperature", "lambda_sum"):
+                if w_fep[field] != p_fep[field]:
+                    raise ValueError(f"{field} differs between protein and water: {fep}")
 
             for method in w_result:
                 delta_method = f"d{method}"
@@ -393,6 +404,7 @@ class FepReader:
                             f"{delta_method}_std": (ddG_std if not np.isnan(ddG_std) else None),
                             "from": w_fep["from"],  # the same for protein & water; can use either
                             "to": w_fep["to"],
+                            "qfep_scope": w_fep.get("qfep_scope"),
                         }
                     }
                 )

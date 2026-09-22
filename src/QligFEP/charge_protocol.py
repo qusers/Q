@@ -52,7 +52,7 @@ def keyed(rows):
     return result
 
 
-def restart_offsets(path):
+def restart_offsets(path, *, allow_smooth=False):
     """Supported dialect: little-endian, 4-byte markers/integers, 8-byte x/v."""
     blocks = []
     with path.open('rb') as stream:
@@ -66,6 +66,15 @@ def restart_offsets(path):
             if len(block) != size or stream.read(4) != marker:
                 raise ValueError('Damaged restart record')
             blocks.append(block)
+    smooth = None
+    if allow_smooth and len(blocks) == 4:
+        extra = blocks.pop()
+        if len(extra) != 72 or extra[:32] != b'Q_SMOOTH_WPOL_V1'.ljust(32):
+            raise ValueError('Invalid smooth polarization restart metadata')
+        smooth = list(struct.unpack('<5d', extra[32:]))
+        w, h, a, radius, force = smooth
+        if not all(map(math.isfinite, smooth)) or not (0 < w < .25 and .001 <= h <= 1 and .0001 <= a <= .1 and radius > 0 and force >= 0):
+            raise ValueError('Invalid smooth polarization restart parameters')
     if len(blocks) != 3 or any(len(b) < 4 for b in blocks):
         raise ValueError('Expected spherical coordinate, velocity and offset records')
     nat3 = struct.unpack('<i', blocks[0][:4])[0]
@@ -80,8 +89,11 @@ def restart_offsets(path):
     offsets = list(struct.unpack(f'<{count}f', blocks[2][4:]))
     if not all(map(math.isfinite, offsets)):
         raise ValueError('Nonfinite restart offsets')
-    return {'atoms': nat3//3, 'offsets_radians': offsets,
-            'offset_record_sha256': hashlib.sha256(blocks[2]).hexdigest()}
+    result = {'atoms': nat3//3, 'offsets_radians': offsets,
+              'offset_record_sha256': hashlib.sha256(blocks[2]).hexdigest()}
+    if smooth is not None:
+        result['smooth'] = smooth
+    return result
 
 
 def charge_states(path, atom_count):

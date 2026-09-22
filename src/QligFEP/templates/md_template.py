@@ -1,6 +1,7 @@
 """Base MD template and render function for Q input files."""
 
 from dataclasses import dataclass
+import math
 
 
 @dataclass
@@ -53,6 +54,10 @@ class MDParameters:
     polarization_force: float = 20.0  # kcal/mol/rad^2; force constant for the orientation restraint
     perstate_polarization: bool = False  # expose pure-state restraint energies to qfep
     polarization_adaptation: bool = True  # learn theta_corr; freeze in production
+    smooth_polarization: bool = False  # experimental continuous angular distribution restraint
+    polarization_switch_width: float = 0.1  # radial transition halfwidth, angstrom
+    polarization_rank_width: float = 0.05  # smooth angular-rank bandwidth, radians
+    polarization_angle_floor: float = 0.001  # regularized angle at parallel alignment, radians
     perstate_born: bool = False  # missing-exterior monopole self-energy
     born_dielectric: float = 80.0
     born_coefficient: float | None = None  # diagnostic override; None uses R and dielectric
@@ -89,6 +94,17 @@ class MDParameters:
         if solvent not in {"shake", "lincs", "settle"}:
             raise ValueError(f"unsupported solvent constraint algorithm: {solvent}")
         self.constraint_algorithm = f"{solute} {solvent}"
+        self.validate_smooth_polarization()
+
+    def validate_smooth_polarization(self) -> None:
+        """Keep the opt-in model's fixed-Hamiltonian requirements explicit."""
+        if not self.smooth_polarization:
+            return
+        if not self.polarization or not self.perstate_polarization or self.polarization_adaptation:
+            raise ValueError('smooth_polarization requires polarization/perstate_polarization on and frozen adaptation')
+        w, h, a = self.polarization_switch_width, self.polarization_rank_width, self.polarization_angle_floor
+        if not all(map(math.isfinite, (w, h, a))) or not (0 < w < .25 and .001 <= h <= 1 and .0001 <= a <= .1):
+            raise ValueError('invalid smooth polarization widths')
 
 
 def onoff(val: bool) -> str:
@@ -161,6 +177,7 @@ def render_md_input(
     lambda_scaling_section = f"\n[lambda_scaling]\n{lambda_scaling}\n" if lambda_scaling else ""
 
     boundary_settings = ""
+    params.validate_smooth_polarization()  # fields may have been changed since construction
     if params.perstate_polarization:
         boundary_settings += (
             "charge_correction         on\n"
@@ -174,6 +191,13 @@ def render_md_input(
         )
         if params.born_coefficient is not None:
             boundary_settings += f"born_coefficient          {params.born_coefficient}\n"
+    if params.smooth_polarization:
+        boundary_settings += (
+            "smooth_polarization       on\n"
+            f"polarization_switch_width {params.polarization_switch_width}\n"
+            f"polarization_rank_width   {params.polarization_rank_width}\n"
+            f"polarization_angle_floor  {params.polarization_angle_floor}\n"
+        )
 
     return f"""\
 [MD]
