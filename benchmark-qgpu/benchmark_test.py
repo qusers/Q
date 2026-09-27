@@ -23,13 +23,12 @@ from matplotlib import pyplot as plt
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TIME_STEP_NS = 2e-6
 
 sys.path.insert(0, str(ROOT / "test"))
-sys.path.insert(0, str(ROOT / "src" / "qligfep-newbin-unfinished"))
 
 import runTEST  # noqa: E402
-import qdyn as qdyn_prepare  # noqa: E402
+from benchmark_input import ns_per_day as calculate_ns_per_day
+from benchmark_input import read_inp_settings, stage_inp_input
 
 
 @contextmanager
@@ -76,11 +75,15 @@ def resolve_qgpu_bin(path):
             raise FileNotFoundError(f"QGPU binary not found: {candidate}")
         return candidate
 
-    for candidate in (ROOT / "bin" / "qdyn", ROOT / "src" / "core" / "qdyn"):
-        if candidate.exists():
+    for candidate in (
+        ROOT / "bin" / "qdyn",
+        ROOT / "src" / "core" / "build" / "qdyn",
+        ROOT / "src" / "core" / "qdyn",
+    ):
+        if candidate.is_file() and os.access(candidate, os.X_OK):
             return candidate
     raise FileNotFoundError(
-        "QGPU binary not found. Expected bin/qdyn or src/core/qdyn, "
+        "QGPU binary not found. Expected bin/qdyn, src/core/build/qdyn, or src/core/qdyn, "
         "or pass --qgpu-bin."
     )
 
@@ -152,10 +155,12 @@ def run_timed(args, cwd, stdout_path, stderr_path):
     return completed.returncode, wall_seconds
 
 
-def ns_per_day(steps, wall_seconds):
-    if wall_seconds <= 0:
-        return None
-    return steps * TIME_STEP_NS * 86400 / wall_seconds
+def parse_qgpu_energy_log(log_path):
+    return runTEST.parse_qgpu_log(str(log_path))
+
+
+def ns_per_day(steps, wall_seconds, stepsize_fs=2.0):
+    return calculate_ns_per_day(steps, stepsize_fs, wall_seconds)
 
 
 def write_md_input(data, fortran_dir):
@@ -176,6 +181,7 @@ def run_fortran_repeats(
 ):
     records = []
     saw_success = False
+    stepsize_fs = read_inp_settings(fortran_dir / "eq1.inp")["stepsize_fs"]
 
     for index in range(1, repeat + 1):
         stdout_name = "fortran.log" if repeat == 1 else f"fortran_{index}.log"
@@ -201,7 +207,7 @@ def run_fortran_repeats(
                 "return_code": return_code,
                 "wall_seconds": wall_seconds,
                 "steps": steps,
-                "ns_per_day": ns_per_day(steps, wall_seconds),
+                "ns_per_day": ns_per_day(steps, wall_seconds, stepsize_fs),
                 "stdout": str(stdout_path),
                 "stderr": str(stderr_path),
             }
@@ -253,48 +259,22 @@ def prepare_restart_with_qdyn_test(
             input_path.write_text(original_input, encoding="utf-8")
 
 
-def prepare_qgpu_input(data, fortran_dir, prep_dir):
-    prep_dir.mkdir(parents=True, exist_ok=True)
-    restart_dir = prep_dir / "restart"
-    restart_dir.mkdir(exist_ok=True)
-    shutil.copyfile(fortran_dir / "coords.csv", restart_dir / "coords.csv")
-    shutil.copyfile(fortran_dir / "velocities.csv", restart_dir / "velocities.csv")
-
-    top_stem = Path(data["topfile"]).stem
-    wd_rel = f"TEST/{top_stem}"
-    with pushd(prep_dir):
-        qdyn_prepare.Create_Environment(top=data["topology_path"], wd=wd_rel)
-        qdyn_prepare.Prepare_Topology(top=data["topology_path"], wd=wd_rel)
-        qdyn_prepare.Prepare_MD(top=data["topology_path"], md=str(fortran_dir / "eq1.inp"), wd=wd_rel)
-        qdyn_prepare.Prepare_FEP(
-            fepfile=data["fep_path"],
-            wd=wd_rel,
-            top=data["topology_path"],
-        )
-        qdyn_prepare.Read_Restart(restart=str(restart_dir), wd=wd_rel, top=data["topology_path"])
-
-    prepared_data_dir = prep_dir / wd_rel
-    if not (prepared_data_dir / "md.csv").exists():
-        raise RuntimeError(f"Prepared QGPU data is missing md.csv: {prepared_data_dir}")
-    return prepared_data_dir
-
-
-def run_qgpu_repeats(data, qgpu_bin, prepared_data_dir, qgpu_runs_dir, repeat, steps):
+def run_qgpu_repeats(data, qgpu_bin, input_file, qgpu_runs_dir, repeat, steps, stepsize_fs):
     qgpu_runs_dir.mkdir(parents=True, exist_ok=True)
     records = []
+    input_file = read_inp_settings(input_file)["path"]
 
     for index in range(1, repeat + 1):
         run_dir = qgpu_runs_dir / f"repeat_{index:03d}"
-        data_dir = run_dir / prepared_data_dir.name
         if run_dir.exists():
             shutil.rmtree(run_dir)
         run_dir.mkdir(parents=True)
-        shutil.copytree(prepared_data_dir, data_dir)
+        staged_input = stage_inp_input(input_file, run_dir)
 
         stdout_path = run_dir / "qgpu.log"
         stderr_path = run_dir / "qgpu.err"
-        args = [str(qgpu_bin), "--gpu", str(data_dir)]
-        return_code, wall_seconds = run_timed(args, ROOT, stdout_path, stderr_path)
+        args = [str(qgpu_bin), "--gpu", str(staged_input)]
+        return_code, wall_seconds = run_timed(args, input_file.parent, stdout_path, stderr_path)
         records.append(
             {
                 "test": data["test"],
@@ -304,7 +284,7 @@ def run_qgpu_repeats(data, qgpu_bin, prepared_data_dir, qgpu_runs_dir, repeat, s
                 "return_code": return_code,
                 "wall_seconds": wall_seconds,
                 "steps": steps,
-                "ns_per_day": ns_per_day(steps, wall_seconds),
+                "ns_per_day": ns_per_day(steps, wall_seconds, stepsize_fs),
                 "stdout": str(stdout_path),
                 "stderr": str(stderr_path),
             }
@@ -351,7 +331,7 @@ def read_summary_csv(csv_path):
     return records
 
 
-def summarize(records, args, qgpu_bin, fortran_bin, prep_fortran_bin):
+def summarize(records, args, qgpu_bin, fortran_bin):
     by_test = {}
     for record in records:
         by_test.setdefault(record["test"], {}).setdefault(record["runner"], []).append(record)
@@ -387,14 +367,12 @@ def summarize(records, args, qgpu_bin, fortran_bin, prep_fortran_bin):
             "lambda": args.lambda_name,
             "shake": args.shake,
             "repeat": args.repeat,
-            "restart_prep_steps": getattr(args, "restart_prep_steps", None),
             "fortran_mpi_procs": getattr(args, "fortran_mpi_procs", None),
             "mpirun_bin": getattr(args, "mpirun_bin", None),
             "mpirun_args": getattr(args, "mpirun_args", None),
         },
         "binaries": {
             "fortran": str(fortran_bin),
-            "restart_prep_fortran": str(prep_fortran_bin),
             "qgpu": str(qgpu_bin),
         },
         "tests": tests,
@@ -409,7 +387,7 @@ def summarize_for_plot(records):
         shake=None,
         repeat=None,
     )
-    return summarize(records, args, qgpu_bin="<from summary.csv>", fortran_bin="<from summary.csv>", prep_fortran_bin="")
+    return summarize(records, args, qgpu_bin="<from summary.csv>", fortran_bin="<from summary.csv>")
 
 
 def write_summary_json(summary, out_dir):
@@ -536,12 +514,6 @@ def parse_args():
     parser.add_argument("--repeat", type=int, default=1, help="Number of repeats for each runner.")
     parser.add_argument("--out", default=None, help="Output directory.")
     parser.add_argument(
-        "--restart-prep-steps",
-        type=int,
-        default=1,
-        help="MD steps used only for qdyn_test restart preparation. Defaults to 1.",
-    )
-    parser.add_argument(
         "--fortran-bin",
         default=None,
         help="Path to production Fortran binary used for timed Fortran runs. Defaults to qdynp with MPI, otherwise qdyn.",
@@ -562,11 +534,6 @@ def parse_args():
         default=None,
         help='Extra MPI launcher arguments, quoted as one string, e.g. "--bind-to core".',
     )
-    parser.add_argument(
-        "--prep-fortran-bin",
-        default=str(ROOT / "src" / "q6" / "bin" / "q6" / "qdyn_test"),
-        help="Path to qdyn_test binary used only to prepare QGPU restart CSVs.",
-    )
     parser.add_argument("--qgpu-bin", default=None, help="Path to QGPU qdyn binary.")
     return parser.parse_args()
 
@@ -584,8 +551,6 @@ def validate_args(args):
         raise SystemExit("--steps must be >= 1.")
     if args.repeat < 1:
         raise SystemExit("--repeat must be >= 1.")
-    if args.restart_prep_steps < 1:
-        raise SystemExit("--restart-prep-steps must be >= 1.")
     if args.fortran_mpi_procs is not None and args.fortran_mpi_procs < 1:
         raise SystemExit("--fortran-mpi-procs must be >= 1.")
 
@@ -610,7 +575,6 @@ def main():
         else ROOT / "src" / "q6" / "bin" / "q6" / "qdyn"
     )
     fortran_bin = resolve_fortran_bin(args.fortran_bin or default_fortran_bin)
-    prep_fortran_bin = resolve_fortran_bin(args.prep_fortran_bin)
     out_dir = Path(args.out).expanduser().resolve() if args.out else default_out_dir(args.test)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -619,7 +583,6 @@ def main():
         for test_name in args.test:
             test_dir = out_dir / test_name
             fortran_dir = test_dir / "fortran"
-            prep_dir = test_dir / "qgpu_prepare"
             qgpu_runs_dir = test_dir / "qgpu_runs"
             fortran_dir.mkdir(parents=True, exist_ok=True)
 
@@ -648,20 +611,19 @@ def main():
             if not fortran_ok:
                 continue
 
-            print(f"Preparing QGPU restart with qdyn_test for {test_name} ({args.restart_prep_steps} step(s))")
-            prepare_restart_with_qdyn_test(
-                data,
-                prep_fortran_bin,
-                fortran_dir,
-                prep_steps=args.restart_prep_steps,
-            )
-
-            print(f"Preparing QGPU CSV input for {test_name}")
-            prepared_data_dir = prepare_qgpu_input(data, fortran_dir, prep_dir)
-
-            print(f"Running QGPU for {test_name} ({args.repeat} repeat(s))")
+            input_file = fortran_dir / "eq1.inp"
+            inp_settings = read_inp_settings(input_file)
+            print(f"Running QGPU from {input_file} ({args.repeat} repeat(s))")
             all_records.extend(
-                run_qgpu_repeats(data, qgpu_bin, prepared_data_dir, qgpu_runs_dir, args.repeat, args.steps)
+                run_qgpu_repeats(
+                    data,
+                    qgpu_bin,
+                    input_file,
+                    qgpu_runs_dir,
+                    args.repeat,
+                    args.steps,
+                    inp_settings["stepsize_fs"],
+                )
             )
     finally:
         write_summary_csv(all_records, out_dir)
@@ -674,7 +636,7 @@ def main():
             f"Logs: stdout={first['stdout']} stderr={first['stderr']}"
         )
 
-    summary = summarize(all_records, args, qgpu_bin, fortran_bin, prep_fortran_bin)
+    summary = summarize(all_records, args, qgpu_bin, fortran_bin)
     csv_path = write_summary_csv(all_records, out_dir)
     json_path = write_summary_json(summary, out_dir)
     png_path = plot_speedup(summary, out_dir)

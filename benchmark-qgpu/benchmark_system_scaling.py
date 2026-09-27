@@ -21,8 +21,6 @@ from matplotlib import pyplot as plt
 from benchmark_test import (
     ROOT,
     ns_per_day,
-    prepare_qgpu_input,
-    prepare_restart_with_qdyn_test,
     resolve_fortran_bin,
     resolve_qgpu_bin,
     resolve_test_data,
@@ -30,23 +28,13 @@ from benchmark_test import (
     run_qgpu_repeats,
     write_md_input,
 )
+from benchmark_input import count_atoms_from_inp, read_inp_settings
 from benchmark_nsday import run_concurrency_batch
-
-
-RESTART_INIT_STEPS = 1
 
 
 def default_collect_out():
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return ROOT / "benchmark-qgpu" / "results" / f"{stamp}_system_scaling"
-
-
-def count_atoms(prepared_data_dir):
-    coords_path = Path(prepared_data_dir) / "coords.csv"
-    if not coords_path.exists():
-        raise FileNotFoundError(f"coords.csv not found: {coords_path}")
-    with open(coords_path, encoding="utf-8") as coords_f:
-        return int(coords_f.readline().strip())
 
 
 def successful_times(records):
@@ -136,7 +124,7 @@ def cleanup_test_artifacts(out_dir, test_name):
         print(f"Removed intermediate run data: {test_dir}")
 
 
-def run_qgpu_concurrency_sweep(args, test_name, qgpu_bin, prepared_data_dir, qgpu_runs_dir):
+def run_qgpu_concurrency_sweep(args, test_name, qgpu_bin, input_file, qgpu_runs_dir, stepsize_fs):
     batch_rows = []
     process_rows = []
     for concurrency in args.concurrency:
@@ -145,10 +133,11 @@ def run_qgpu_concurrency_sweep(args, test_name, qgpu_bin, prepared_data_dir, qgp
             print(f"Running QGPU for {test_name}: concurrency={concurrency}, repeat={repeat}")
             batch_row, rows = run_concurrency_batch(
                 qgpu_bin=qgpu_bin,
-                prepared_data_dir=prepared_data_dir,
+                input_file=input_file,
                 run_dir=run_dir,
                 concurrency=concurrency,
                 steps=args.steps,
+                stepsize_fs=stepsize_fs,
                 label=test_name,
                 repeat=repeat,
             )
@@ -165,10 +154,9 @@ def run_qgpu_concurrency_sweep(args, test_name, qgpu_bin, prepared_data_dir, qgp
     return batch_rows, process_rows
 
 
-def collect_one_test(args, test_name, out_dir, fortran_bin, prep_fortran_bin, qgpu_bin):
+def collect_one_test(args, test_name, out_dir, fortran_bin, qgpu_bin):
     test_dir = out_dir / test_name
     fortran_dir = test_dir / "fortran"
-    prep_dir = test_dir / "qgpu_prepare"
     qgpu_runs_dir = test_dir / "qgpu_runs"
     fortran_dir.mkdir(parents=True, exist_ok=True)
 
@@ -177,12 +165,7 @@ def collect_one_test(args, test_name, out_dir, fortran_bin, prep_fortran_bin, qg
     fortran_times = []
 
     if args.gpu_only:
-        init_data = resolve_test_data(test_name, RESTART_INIT_STEPS, args.lambda_name, args.shake)
-        print(f"Preparing QGPU restart for {test_name} with {RESTART_INIT_STEPS} MD step(s)")
-        write_md_input(init_data, fortran_dir)
-        prepare_restart_with_qdyn_test(init_data, prep_fortran_bin, fortran_dir)
-
-        print(f"Writing QGPU benchmark input for {test_name} with {args.steps} MD step(s)")
+        print(f"Writing native QGPU input for {test_name} with {args.steps} MD step(s)")
         write_md_input(data, fortran_dir)
     else:
         print(f"Preparing {test_name}")
@@ -194,21 +177,22 @@ def collect_one_test(args, test_name, out_dir, fortran_bin, prep_fortran_bin, qg
             return None, fortran_records, []
         fortran_times = successful_times(fortran_records)
 
-        print(f"Preparing QGPU input for {test_name}")
-        prepare_restart_with_qdyn_test(data, prep_fortran_bin, fortran_dir)
-
-    prepared_data_dir = prepare_qgpu_input(data, fortran_dir, prep_dir)
-    atoms = count_atoms(prepared_data_dir)
+    input_file = fortran_dir / "eq1.inp"
+    settings = read_inp_settings(input_file)
+    stepsize_fs = settings["stepsize_fs"]
+    atoms = count_atoms_from_inp(input_file)
 
     qgpu_concurrency_rows = []
     if args.concurrency:
         qgpu_records = []
         qgpu_concurrency_rows, _ = run_qgpu_concurrency_sweep(
-            args, test_name, qgpu_bin, prepared_data_dir, qgpu_runs_dir
+            args, test_name, qgpu_bin, input_file, qgpu_runs_dir, stepsize_fs
         )
     else:
         print(f"Running QGPU for {test_name} ({args.repeat} repeat(s))")
-        qgpu_records = run_qgpu_repeats(data, qgpu_bin, prepared_data_dir, qgpu_runs_dir, args.repeat, args.steps)
+        qgpu_records = run_qgpu_repeats(
+            data, qgpu_bin, input_file, qgpu_runs_dir, args.repeat, args.steps, stepsize_fs
+        )
 
     qgpu_times = successful_times(qgpu_records)
     if args.concurrency:
@@ -224,7 +208,7 @@ def collect_one_test(args, test_name, out_dir, fortran_bin, prep_fortran_bin, qg
         if not qgpu_times:
             return None, [*fortran_records, *qgpu_records], qgpu_concurrency_rows
         qgpu_wall = median(qgpu_times)
-        qgpu_ns_day = ns_per_day(args.steps, qgpu_wall)
+        qgpu_ns_day = ns_per_day(args.steps, qgpu_wall, stepsize_fs)
         qgpu_best_concurrency = 1
         qgpu_repeat_count = len(qgpu_records)
 
@@ -232,7 +216,7 @@ def collect_one_test(args, test_name, out_dir, fortran_bin, prep_fortran_bin, qg
         return None, [*fortran_records, *qgpu_records], qgpu_concurrency_rows
 
     fortran_wall = median(fortran_times) if fortran_times else None
-    fortran_ns_day = ns_per_day(args.steps, fortran_wall) if fortran_wall is not None else None
+    fortran_ns_day = ns_per_day(args.steps, fortran_wall, stepsize_fs) if fortran_wall is not None else None
     row = {
         "test": test_name,
         "atoms": atoms,
@@ -253,7 +237,6 @@ def collect(args):
     out_dir = Path(args.out).expanduser().resolve() if args.out else default_collect_out()
     out_dir.mkdir(parents=True, exist_ok=True)
     fortran_bin = None if args.gpu_only else resolve_fortran_bin(args.fortran_bin)
-    prep_fortran_bin = resolve_fortran_bin(args.prep_fortran_bin)
     qgpu_bin = resolve_qgpu_bin(args.qgpu_bin)
 
     rows = []
@@ -262,7 +245,7 @@ def collect(args):
     try:
         for test_name in args.test:
             row, records, concurrency_records = collect_one_test(
-                args, test_name, out_dir, fortran_bin, prep_fortran_bin, qgpu_bin
+                args, test_name, out_dir, fortran_bin, qgpu_bin
             )
             raw_records.extend(records)
             qgpu_concurrency_records.extend(concurrency_records)
@@ -283,7 +266,6 @@ def collect(args):
                         "concurrency": args.concurrency,
                         "keep_run_data": args.keep_run_data,
                         "fortran_bin": str(fortran_bin) if fortran_bin is not None else None,
-                        "prep_fortran_bin": str(prep_fortran_bin),
                         "qgpu_bin": str(qgpu_bin),
                     },
                 )
@@ -315,7 +297,6 @@ def collect(args):
             "concurrency": args.concurrency,
             "keep_run_data": args.keep_run_data,
             "fortran_bin": str(fortran_bin) if fortran_bin is not None else None,
-            "prep_fortran_bin": str(prep_fortran_bin),
             "qgpu_bin": str(qgpu_bin),
         },
     )
@@ -528,11 +509,6 @@ def parse_args():
         "--fortran-bin",
         default=str(ROOT / "src" / "q6" / "bin" / "q6" / "qdyn"),
         help="Path to production Fortran qdyn binary.",
-    )
-    collect_parser.add_argument(
-        "--prep-fortran-bin",
-        default=str(ROOT / "src" / "q6" / "bin" / "q6" / "qdyn_test"),
-        help="Path to qdyn_test used only to prepare QGPU restart CSVs.",
     )
     collect_parser.add_argument("--qgpu-bin", help="Path to QGPU qdyn binary.")
 

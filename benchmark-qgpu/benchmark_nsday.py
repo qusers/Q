@@ -21,29 +21,12 @@ from matplotlib import pyplot as plt
 
 from benchmark_test import (
     ROOT,
-    TIME_STEP_NS,
     command_text,
-    prepare_qgpu_input,
-    prepare_restart_with_qdyn_test,
-    resolve_fortran_bin,
     resolve_qgpu_bin,
     resolve_test_data,
     write_md_input,
 )
-
-
-RESTART_INIT_STEPS = 1
-
-
-def read_steps_from_md_csv(data_dir):
-    md_path = Path(data_dir) / "md.csv"
-    if not md_path.exists():
-        raise FileNotFoundError(f"md.csv not found: {md_path}")
-    with open(md_path, encoding="utf-8") as md_f:
-        for line in md_f:
-            if line.startswith("steps;"):
-                return int(line.strip().split(";", 1)[1])
-    raise RuntimeError(f"Could not find steps in {md_path}")
+from benchmark_input import ns_per_day, read_inp_settings, stage_inp_input
 
 
 def default_collect_out(label):
@@ -53,41 +36,29 @@ def default_collect_out(label):
 
 
 def prepare_from_test(args, out_dir):
-    init_data = resolve_test_data(args.test, RESTART_INIT_STEPS, args.lambda_name, args.shake)
     benchmark_data = resolve_test_data(args.test, args.steps, args.lambda_name, args.shake)
-    fortran_dir = out_dir / "prepare" / args.test / "fortran"
-    prep_dir = out_dir / "prepare" / args.test / "qgpu_prepare"
-    fortran_dir.mkdir(parents=True, exist_ok=True)
+    input_dir = out_dir / "prepare" / args.test
+    input_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Preparing QGPU restart for {args.test} with {RESTART_INIT_STEPS} MD step(s) in {out_dir}")
-    write_md_input(init_data, fortran_dir)
-    prepare_restart_with_qdyn_test(init_data, resolve_fortran_bin(args.prep_fortran_bin), fortran_dir)
-
-    print(f"Writing QGPU benchmark input for {args.test} with {args.steps} MD step(s)")
-    write_md_input(benchmark_data, fortran_dir)
-    prepared_data_dir = prepare_qgpu_input(benchmark_data, fortran_dir, prep_dir)
-    prepared_steps = read_steps_from_md_csv(prepared_data_dir)
-    if prepared_steps != args.steps:
-        raise RuntimeError(
-            f"Prepared QGPU input has {prepared_steps} steps, expected {args.steps}: {prepared_data_dir}"
-        )
-    return prepared_data_dir
+    print(f"Writing native QGPU input for {args.test} with {args.steps} MD step(s)")
+    write_md_input(benchmark_data, input_dir)
+    return input_dir / "eq1.inp"
 
 
-def resolve_collect_data_dir(args, out_dir):
-    if args.data_dir:
-        data_dir = Path(args.data_dir).expanduser().resolve()
-        if not data_dir.is_dir():
-            raise FileNotFoundError(f"data dir not found: {data_dir}")
-        steps = args.steps if args.steps is not None else read_steps_from_md_csv(data_dir)
-        return data_dir, steps
+def resolve_collect_input(args, out_dir):
+    if args.input:
+        settings = read_inp_settings(args.input)
+        if args.steps is not None and args.steps != settings["steps"]:
+            raise ValueError(
+                f"--steps {args.steps} does not match {settings['steps']} in {settings['path']}"
+            )
+        return settings
 
     if not args.test:
-        raise SystemExit("collect requires --test or --data-dir.")
+        raise SystemExit("collect requires --test or --input.")
     if args.steps is None:
         raise SystemExit("collect with --test requires --steps.")
-    data_dir = prepare_from_test(args, out_dir)
-    return data_dir, args.steps
+    return read_inp_settings(prepare_from_test(args, out_dir))
 
 
 def cleanup_successful_task_data(processes):
@@ -95,19 +66,20 @@ def cleanup_successful_task_data(processes):
     for item in processes:
         if item["return_code"] != 0:
             continue
-        data_dir = item["data_dir"]
-        if data_dir.exists():
-            shutil.rmtree(data_dir)
+        input_dir = item["input_dir"]
+        if input_dir.exists():
+            shutil.rmtree(input_dir)
             removed += 1
     return removed
 
 
 def run_concurrency_batch(
     qgpu_bin,
-    prepared_data_dir,
+    input_file,
     run_dir,
     concurrency,
     steps,
+    stepsize_fs,
     label,
     repeat,
     cleanup_run_data=False,
@@ -118,23 +90,23 @@ def run_concurrency_batch(
 
     command_template = None
     launch_specs = []
+    input_file = read_inp_settings(input_file)["path"]
     for index in range(1, concurrency + 1):
         proc_dir = run_dir / f"proc_{index:03d}"
-        data_dir = proc_dir / prepared_data_dir.name
         proc_dir.mkdir(parents=True)
-        shutil.copytree(prepared_data_dir, data_dir)
+        staged_input = stage_inp_input(input_file, proc_dir)
 
         stdout_path = proc_dir / "qgpu.log"
         stderr_path = proc_dir / "qgpu.err"
-        args = [str(qgpu_bin), "--gpu", str(data_dir)]
-        command_template = command_text([str(qgpu_bin), "--gpu", "<data_dir>"])
+        args = [str(qgpu_bin), "--gpu", str(staged_input)]
+        command_template = command_text([str(qgpu_bin), "--gpu", "<input.inp>"])
         launch_specs.append(
             {
                 "index": index,
                 "args": args,
                 "stdout": stdout_path,
                 "stderr": stderr_path,
-                "data_dir": data_dir,
+                "input_dir": staged_input.parent,
                 "command": command_text(args),
             }
         )
@@ -146,7 +118,7 @@ def run_concurrency_batch(
         stdout_f = open(spec["stdout"], "w", encoding="utf-8")
         stderr_f = open(spec["stderr"], "w", encoding="utf-8")
         proc_start = time.perf_counter()
-        process = subprocess.Popen(spec["args"], cwd=ROOT, stdout=stdout_f, stderr=stderr_f)
+        process = subprocess.Popen(spec["args"], cwd=input_file.parent, stdout=stdout_f, stderr=stderr_f)
         processes.append(
             {
                 "index": spec["index"],
@@ -155,7 +127,7 @@ def run_concurrency_batch(
                 "stderr_file": stderr_f,
                 "stdout": spec["stdout"],
                 "stderr": spec["stderr"],
-                "data_dir": spec["data_dir"],
+                "input_dir": spec["input_dir"],
                 "start": proc_start,
                 "command": spec["command"],
             }
@@ -186,7 +158,7 @@ def run_concurrency_batch(
                 "process_index": item["index"],
                 "return_code": item["return_code"],
                 "process_wall_seconds": wall_seconds,
-                "process_ns_per_day": steps * TIME_STEP_NS * 86400 / wall_seconds if wall_seconds > 0 else "",
+                "process_ns_per_day": ns_per_day(steps, stepsize_fs, wall_seconds) or "",
                 "stdout": str(item["stdout"]),
                 "stderr": str(item["stderr"]),
                 "command": item["command"],
@@ -201,7 +173,7 @@ def run_concurrency_batch(
         if removed_task_data:
             print(f"Removed copied QGPU data for {removed_task_data} successful task(s) under {run_dir}")
 
-    total_ns_per_day = concurrency * steps * TIME_STEP_NS * 86400 / batch_wall_seconds
+    total_ns_per_day = concurrency * ns_per_day(steps, stepsize_fs, batch_wall_seconds)
     mean_process_ns_per_day = (
         sum(float(row["process_ns_per_day"]) for row in process_rows if row["process_ns_per_day"] != "")
         / len(process_rows)
@@ -264,11 +236,14 @@ def write_collect_outputs(batch_rows, process_rows, out_dir, meta):
 
 
 def collect(args):
-    label = args.label or args.test or Path(args.data_dir).name
+    label = args.label or args.test or Path(args.input).stem
     out_dir = Path(args.out).expanduser().resolve() if args.out else default_collect_out(label)
     out_dir.mkdir(parents=True, exist_ok=True)
     qgpu_bin = resolve_qgpu_bin(args.qgpu_bin)
-    prepared_data_dir, steps = resolve_collect_data_dir(args, out_dir)
+    settings = resolve_collect_input(args, out_dir)
+    input_file = settings["path"]
+    steps = settings["steps"]
+    stepsize_fs = settings["stepsize_fs"]
 
     batch_rows = []
     process_rows = []
@@ -278,10 +253,11 @@ def collect(args):
             print(f"Running {label}: concurrency={concurrency}, repeat={repeat}")
             batch_row, rows = run_concurrency_batch(
                 qgpu_bin=qgpu_bin,
-                prepared_data_dir=prepared_data_dir,
+                input_file=input_file,
                 run_dir=run_dir,
                 concurrency=concurrency,
                 steps=steps,
+                stepsize_fs=stepsize_fs,
                 label=label,
                 repeat=repeat,
                 cleanup_run_data=not args.keep_run_data,
@@ -297,8 +273,9 @@ def collect(args):
                         "created_at": datetime.now().isoformat(timespec="seconds"),
                         "label": label,
                         "qgpu_bin": str(qgpu_bin),
-                        "prepared_data_dir": str(prepared_data_dir),
+                        "input": str(input_file),
                         "steps": steps,
+                        "stepsize_fs": stepsize_fs,
                         "keep_run_data": args.keep_run_data,
                     },
                 )
@@ -317,9 +294,10 @@ def collect(args):
             "created_at": datetime.now().isoformat(timespec="seconds"),
             "label": label,
             "test": args.test,
-            "data_dir": str(prepared_data_dir),
+            "input": str(input_file),
             "qgpu_bin": str(qgpu_bin),
             "steps": steps,
+            "stepsize_fs": stepsize_fs,
             "concurrency": args.concurrency,
             "repeat": args.repeat,
             "keep_run_data": args.keep_run_data,
@@ -467,9 +445,10 @@ def parse_args():
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     collect_parser = subparsers.add_parser("collect", help="Run QGPU concurrency benchmark and write CSV data.")
-    collect_parser.add_argument("--test", help="runTEST.py test name to prepare and benchmark.")
-    collect_parser.add_argument("--data-dir", help="Existing prepared QGPU input directory containing md.csv.")
-    collect_parser.add_argument("--steps", type=positive_int, help="MD steps. Required with --test; optional with --data-dir.")
+    input_group = collect_parser.add_mutually_exclusive_group(required=True)
+    input_group.add_argument("--test", help="runTEST.py test name to prepare and benchmark.")
+    input_group.add_argument("--input", help="Existing native Q .inp file.")
+    collect_parser.add_argument("--steps", type=positive_int, help="MD steps. Required with --test; validated with --input.")
     collect_parser.add_argument("--lambda", dest="lambda_name", default=None, help="Perturbation lambda suffix, e.g. eq5.")
     collect_parser.add_argument("--shake", action="store_true", help="Enable shake when preparing from --test.")
     collect_parser.add_argument(
@@ -483,11 +462,6 @@ def parse_args():
     collect_parser.add_argument("--label", help="Series label written into the CSV, e.g. 'A100 (thrombin)'.")
     collect_parser.add_argument("--out", help="Output directory.")
     collect_parser.add_argument("--qgpu-bin", help="Path to QGPU qdyn binary.")
-    collect_parser.add_argument(
-        "--prep-fortran-bin",
-        default=str(ROOT / "src" / "q6" / "bin" / "q6" / "qdyn_test"),
-        help="Path to qdyn_test used only when preparing from --test.",
-    )
     collect_parser.add_argument("--pause-seconds", type=float, default=0.0, help="Pause between batches.")
     collect_parser.add_argument(
         "--keep-run-data",

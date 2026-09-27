@@ -23,7 +23,7 @@ from matplotlib import pyplot as plt
 from benchmark_test import (
     ROOT,
     command_text,
-    prepare_qgpu_input,
+    parse_qgpu_energy_log,
     prepare_restart_with_qdyn_test,
     resolve_fortran_bin,
     resolve_qgpu_bin,
@@ -31,14 +31,11 @@ from benchmark_test import (
     run_timed,
     write_md_input,
 )
+from benchmark_input import read_inp_settings, stage_inp_input
 
 sys.path.insert(0, str(ROOT / "src" / "Qgpu"))
 
 import compare  # noqa: E402
-import energy as ENERGY  # noqa: E402
-
-
-RESTART_INIT_STEPS = 1
 
 
 def default_collect_out(test_name):
@@ -46,23 +43,23 @@ def default_collect_out(test_name):
     return ROOT / "benchmark-qgpu" / "results" / f"{stamp}_{test_name}_correctness"
 
 
-def run_qgpu_once(qgpu_bin, prepared_data_dir, run_dir):
+def run_qgpu_once(qgpu_bin, input_file, run_dir):
     if run_dir.exists():
         shutil.rmtree(run_dir)
     run_dir.mkdir(parents=True)
-    data_dir = run_dir / prepared_data_dir.name
-    shutil.copytree(prepared_data_dir, data_dir)
+    input_file = read_inp_settings(input_file)["path"]
+    staged_input = stage_inp_input(input_file, run_dir)
 
     stdout_path = run_dir / "qgpu.log"
     stderr_path = run_dir / "qgpu.err"
-    args = [str(qgpu_bin), "--gpu", str(data_dir)]
-    return_code, wall_seconds = run_timed(args, ROOT, stdout_path, stderr_path)
+    args = [str(qgpu_bin), "--gpu", str(staged_input)]
+    return_code, wall_seconds = run_timed(args, input_file.parent, stdout_path, stderr_path)
     if return_code != 0:
         raise RuntimeError(
             "QGPU correctness run failed. "
             f"Command: {command_text(args)} Logs: stdout={stdout_path} stderr={stderr_path}"
         )
-    return data_dir, {
+    return stdout_path, {
         "command": command_text(args),
         "return_code": return_code,
         "wall_seconds": wall_seconds,
@@ -71,11 +68,12 @@ def run_qgpu_once(qgpu_bin, prepared_data_dir, run_dir):
     }
 
 
-def load_qgpu_energy(qgpu_data_dir):
-    energy_path = Path(qgpu_data_dir) / "output" / "energies.csv"
-    if not energy_path.exists():
-        raise FileNotFoundError(f"QGPU energy file not found: {energy_path}")
-    return ENERGY.Read_Energy(str(energy_path), 0).QDYN(), energy_path
+def load_qgpu_energy(log_path):
+    log_path = Path(log_path)
+    frames = parse_qgpu_energy_log(log_path)
+    if not frames:
+        raise RuntimeError(f"No QGPU energy frames found in log: {log_path}")
+    return frames, log_path
 
 
 def load_fortran_energy(fortran_dir):
@@ -86,61 +84,21 @@ def load_fortran_energy(fortran_dir):
         return json.load(json_f), q_data_path
 
 
-def find_prepared_qgpu_dir(reference_dir):
-    prepare_root = Path(reference_dir) / "qgpu_prepare" / "TEST"
-    if not prepare_root.is_dir():
-        raise FileNotFoundError(f"Prepared QGPU TEST directory not found: {prepare_root}")
-    candidates = sorted(path for path in prepare_root.iterdir() if path.is_dir() and (path / "md.csv").exists())
-    if len(candidates) != 1:
-        shown = ", ".join(str(path) for path in candidates)
-        raise RuntimeError(f"Expected exactly one prepared QGPU directory under {prepare_root}; found: {shown}")
-    return candidates[0]
-
-
 def copy_reference_inputs(reference_dir, out_dir):
     reference_dir = Path(reference_dir).expanduser().resolve()
     source_fortran_dir = reference_dir / "fortran_reference"
     if not (source_fortran_dir / "Q_data.json").exists():
         raise FileNotFoundError(f"Fortran reference Q_data.json not found: {source_fortran_dir / 'Q_data.json'}")
 
-    source_prepared_dir = find_prepared_qgpu_dir(reference_dir)
+    source_input = source_fortran_dir / "eq1.inp"
+    read_inp_settings(source_input)
     fortran_dir = out_dir / "fortran_reference"
-    prep_dir = out_dir / "qgpu_prepare"
-    prepared_data_dir = prep_dir / "TEST" / source_prepared_dir.name
 
     if fortran_dir.exists():
         shutil.rmtree(fortran_dir)
-    if prep_dir.exists():
-        shutil.rmtree(prep_dir)
 
     shutil.copytree(source_fortran_dir, fortran_dir)
-    shutil.copytree(source_prepared_dir, prepared_data_dir)
-    return fortran_dir, prep_dir, prepared_data_dir, reference_dir
-
-
-def velocity_atom_count(path):
-    with open(path, encoding="utf-8") as velocity_f:
-        first_line = velocity_f.readline().strip()
-    return int(first_line) if first_line else 0
-
-
-def ensure_restart_velocities(data, fortran_dir, restart_fortran_bin):
-    velocity_path = fortran_dir / "velocities.csv"
-    if velocity_path.exists() and velocity_atom_count(velocity_path) > 0:
-        return None
-
-    restart_dir = fortran_dir.parent / "fortran_restart_reference"
-    if restart_dir.exists():
-        shutil.rmtree(restart_dir)
-    restart_dir.mkdir(parents=True)
-
-    print(f"Preparing QGPU restart velocities with {restart_fortran_bin}")
-    write_md_input(dict(data), restart_dir)
-    prepare_restart_with_qdyn_test(data, restart_fortran_bin, restart_dir, prep_steps=RESTART_INIT_STEPS)
-
-    shutil.copyfile(restart_dir / "coords.csv", fortran_dir / "coords.csv")
-    shutil.copyfile(restart_dir / "velocities.csv", velocity_path)
-    return restart_dir
+    return fortran_dir, fortran_dir / "eq1.inp", reference_dir
 
 
 def build_correctness_rows(fortran_data, qgpu_data, tolerance):
@@ -245,8 +203,8 @@ def collect(args):
     qgpu_run_dir = out_dir / "qgpu_run"
 
     if args.reference_dir:
-        print(f"Reusing Fortran/QGPU prepared reference from {args.reference_dir}")
-        fortran_dir, prep_dir, prepared_data_dir, reference_dir = copy_reference_inputs(args.reference_dir, out_dir)
+        print(f"Reusing native .inp reference from {args.reference_dir}")
+        fortran_dir, input_file, reference_dir = copy_reference_inputs(args.reference_dir, out_dir)
         prep_fortran_bin = None
     else:
         default_prep_fortran_bin = (
@@ -258,7 +216,6 @@ def collect(args):
         data = resolve_test_data(args.test, args.steps, args.lambda_name, args.shake)
 
         fortran_dir = out_dir / "fortran_reference"
-        prep_dir = out_dir / "qgpu_prepare"
         fortran_dir.mkdir(parents=True, exist_ok=True)
 
         if args.prep_fortran_mpi_procs is None:
@@ -277,18 +234,14 @@ def collect(args):
             mpirun_bin=args.mpirun_bin,
             mpirun_args=args.mpirun_args,
         )
-        restart_fortran_bin = resolve_fortran_bin(args.restart_fortran_bin)
-        restart_dir = ensure_restart_velocities(data, fortran_dir, restart_fortran_bin)
-
-        print("Preparing QGPU input")
-        prepared_data_dir = prepare_qgpu_input(data, fortran_dir, prep_dir)
+        input_file = fortran_dir / "eq1.inp"
         reference_dir = None
 
     print("Running QGPU correctness simulation")
-    qgpu_data_dir, qgpu_run = run_qgpu_once(qgpu_bin, prepared_data_dir, qgpu_run_dir)
+    qgpu_log_path, qgpu_run = run_qgpu_once(qgpu_bin, input_file, qgpu_run_dir)
 
     fortran_data, fortran_energy_path = load_fortran_energy(fortran_dir)
-    qgpu_data, qgpu_energy_path = load_qgpu_energy(qgpu_data_dir)
+    qgpu_data, qgpu_energy_path = load_qgpu_energy(qgpu_log_path)
     rows = build_correctness_rows(fortran_data, qgpu_data, args.tolerance)
     summary = summarize_rows(rows, args.tolerance)
 
@@ -306,10 +259,8 @@ def collect(args):
             "prep_fortran_mpi_procs": args.prep_fortran_mpi_procs,
             "mpirun_bin": args.mpirun_bin,
             "mpirun_args": args.mpirun_args,
-            "restart_fortran_bin": str(restart_fortran_bin) if prep_fortran_bin is not None else None,
-            "restart_reference_dir": str(restart_dir) if prep_fortran_bin is not None and restart_dir is not None else None,
             "reference_dir": str(reference_dir) if reference_dir is not None else None,
-            "prepared_qgpu_input": str(prepared_data_dir),
+            "qgpu_input": str(input_file),
             "fortran_energy": str(fortran_energy_path),
             "qgpu_energy": str(qgpu_energy_path),
             "qgpu_run": qgpu_run,
@@ -460,7 +411,7 @@ def parse_args():
     collect_parser.add_argument("--qgpu-bin", help="Path to QGPU qdyn binary.")
     collect_parser.add_argument(
         "--reference-dir",
-        help="Existing correctness result directory containing fortran_reference/ and qgpu_prepare/ to reuse.",
+        help="Existing correctness result directory containing fortran_reference/eq1.inp and Q_data.json.",
     )
     collect_parser.add_argument(
         "--prep-fortran-bin",
@@ -482,11 +433,6 @@ def parse_args():
         "--mpirun-args",
         default=None,
         help='Extra MPI launcher arguments, quoted as one string, e.g. "--bind-to core".',
-    )
-    collect_parser.add_argument(
-        "--restart-fortran-bin",
-        default=str(ROOT / "src" / "q6" / "bin" / "q6" / "qdyn_test"),
-        help="Fortran binary used to regenerate QGPU restart velocities if the reference binary does not print them.",
     )
     collect_parser.add_argument(
         "--tolerance",
