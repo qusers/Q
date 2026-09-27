@@ -15,7 +15,7 @@ This workflow uses QGPU's `bin/qdyn` for both the CPU baseline and GPU runs. It 
 
 ## Getting the code and test data
 
-If you already followed the [CDK2 energy comparison guide](../test/CDK2_TESTING.md), reuse those repositories. Otherwise, clone them under the same parent directory:
+If you already followed the [CDK2 energy comparison guide](../test/QGPU_TESTING.md), reuse those repositories. Otherwise, clone them under the same parent directory:
 
 ```bash
 git clone https://github.com/qusers/Q.git

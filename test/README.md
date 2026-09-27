@@ -1,3 +1,7 @@
+## CDK2 energy comparison tests
+
+To compare QGPU and QFortran using the external CDK2 inputs, see the [CDK2 testing guide](QGPU_TESTING.md). It covers prerequisites, compilation, test inputs, running the comparison, and interpreting the results.
+
 ===
 We have implemented several tests:
 name : p-p
