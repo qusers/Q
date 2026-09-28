@@ -3,7 +3,6 @@
 import argparse
 import json
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 from kartograf import KartografAtomMapper, SmallMoleculeComponent
@@ -34,18 +33,18 @@ class KonnektorWrap:
     def __init__(
         self,
         inp: str,
-        out: Optional[str] = None,
+        out: str | None = None,
         network: str = "mst",
         scorer: str = "combined",
         restraint_method: str = "heavyatom_p",
         processes: int = 1,
         log_level: str = "info",
-        central_ligand: Optional[str] = None,
+        central_ligand: str | None = None,
         n_redundancy: int = 2,
         connectivity: int = 3,
         separate_charges: bool = False,
         charge_changes_score: float = 0.0,
-        exp_key: Optional[str] = None,
+        exp_key: str | None = None,
         self_solve: bool = False,
     ):
         self.inp = inp
@@ -66,7 +65,7 @@ class KonnektorWrap:
         self.out = self._parse_output(out)
         self._sdf_dir = self._prepare_input()
 
-    def _parse_output(self, output: Optional[str]) -> str:
+    def _parse_output(self, output: str | None) -> str:
         inpath = Path(self.inp)
         if output is None:
             if inpath.is_dir():
@@ -310,7 +309,7 @@ class KonnektorWrap:
 
         return result
 
-    def _resolve_sdf_path(self) -> Optional[Path]:
+    def _resolve_sdf_path(self) -> Path | None:
         """Find the SDF file used as input."""
         inp = Path(self.inp)
         if inp.is_file() and inp.suffix == ".sdf":
@@ -354,7 +353,7 @@ def _mcs_rmsd(mol_a, mol_b, timeout=5):
     conf_a = ha.GetConformer()
     conf_b = hb.GetConformer()
     sq_dists = []
-    for ia, ib in zip(match_a, match_b):
+    for ia, ib in zip(match_a, match_b, strict=False):
         pa = conf_a.GetAtomPosition(ia)
         pb = conf_b.GetAtomPosition(ib)
         sq_dists.append((pa.x - pb.x) ** 2 + (pa.y - pb.y) ** 2 + (pa.z - pb.z) ** 2)
@@ -423,7 +422,7 @@ def _realign_to_neighbors(outlier_mol, neighbor_mols):
             continue
         conf_n = hn.GetConformer()
         o_to_core = {oa: i for i, oa in enumerate(match_o)}
-        for oa, na in zip(match_o_nb, match_n_nb):
+        for oa, na in zip(match_o_nb, match_n_nb, strict=False):
             if oa in o_to_core:
                 p = conf_n.GetAtomPosition(na)
                 core_positions.setdefault(o_to_core[oa], []).append(

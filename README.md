@@ -50,9 +50,9 @@ then create the project environment:
 
 ### Linux
 ```bash
-micromamba create -n qligfep_new python=3.11
+micromamba create -n qligfep_new python=3.14
 micromamba activate qligfep_new
-micromamba install gfortran=11.3.0 openff-toolkit=0.17.1 "openff-utilities>=0.1.12" openff-forcefields=2026.01.0 openmm=8.1.1 openff-nagl=0.5.4 openff-nagl-models=2025.9.0 lomap2 kartograf=1.0.1 michellab::fkcombu konnektor -c conda-forge --yes
+micromamba install gfortran=11.3.0 openff-toolkit=0.18.1 "openff-utilities>=0.1.12" openff-forcefields=2026.01.0 openmm=8.4.0 openff-nagl=0.5.5 openff-nagl-models=2025.9.0 lomap2 kartograf=1.0.1 michellab::fkcombu konnektor -c conda-forge --yes
 ```
 
 After activating the environment, [clone the repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository), enter the `Q` directory with `cd Q/`, and install the `QligFEP` Python package. This package contains both the QligFEP and QresFEP workflows:
@@ -66,7 +66,7 @@ The `qprep` Fortran binary will be automatically compiled during installation.
 <summary>To install everything in one line...</summary>
 
 ```bash
-micromamba create -n qligfep_new python=3.11 gfortran=11.3.0 openff-toolkit=0.17.1 "openff-utilities>=0.1.12" openff-forcefields=2026.01.0 openmm=8.1.1 openff-nagl=0.5.4 openff-nagl-models=2025.9.0 lomap2 kartograf=1.0.1 michellab::fkcombu konnektor -c conda-forge --yes && micromamba activate qligfep_new && python -m pip install -e .
+micromamba create -n qligfep_new python=3.14 gfortran=11.3.0 openff-toolkit=0.18.1 "openff-utilities>=0.1.12" openff-forcefields=2026.01.0 openmm=8.4.0 openff-nagl=0.5.5 openff-nagl-models=2025.9.0 lomap2 kartograf=1.0.1 michellab::fkcombu konnektor -c conda-forge --yes && micromamba activate qligfep_new && python -m pip install -e .
 ```
 </details>
 
@@ -75,7 +75,7 @@ micromamba create -n qligfep_new python=3.11 gfortran=11.3.0 openff-toolkit=0.17
 As on Linux, [clone the repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository), enter the `Q` directory with `cd Q/`, create the environment, and install QligFEP:
 
 ``` bash
-micromamba create -n qligfep_new python=3.11 gfortran=11.3.0 openff-toolkit=0.17.1 "openff-utilities>=0.1.12" openff-forcefields=2026.01.0 openmm=8.1.1 openff-nagl=0.5.4 openff-nagl-models=2025.9.0 lomap2 kartograf=1.0.1 davidararipe::kcombu_bss konnektor -c conda-forge --yes
+micromamba create -n qligfep_new python=3.14 gfortran=11.3.0 openff-toolkit=0.18.1 "openff-utilities>=0.1.12" openff-forcefields=2026.01.0 openmm=8.4.0 openff-nagl=0.5.5 openff-nagl-models=2025.9.0 lomap2 kartograf=1.0.1 davidararipe::kcombu_bss konnektor -c conda-forge --yes
 micromamba activate qligfep_new
 python -m pip install joblib scipy tqdm
 python -m pip install -e .
@@ -87,7 +87,7 @@ The `qprep` Fortran binary will be automatically compiled during installation.
 <summary>To install everything in one line...</summary>
 
 ```bash
-micromamba create -n qligfep_new python=3.11 gfortran=11.3.0 openff-toolkit=0.17.1 "openff-utilities>=0.1.12" openff-forcefields=2026.01.0 openmm=8.1.1 openff-nagl=0.5.4 openff-nagl-models=2025.9.0 lomap2 kartograf=1.0.1 davidararipe::kcombu_bss konnektor -c conda-forge --yes && micromamba activate qligfep_new && python -m pip install joblib scipy tqdm && python -m pip install -e .
+micromamba create -n qligfep_new python=3.14 gfortran=11.3.0 openff-toolkit=0.18.1 "openff-utilities>=0.1.12" openff-forcefields=2026.01.0 openmm=8.4.0 openff-nagl=0.5.5 openff-nagl-models=2025.9.0 lomap2 kartograf=1.0.1 davidararipe::kcombu_bss konnektor -c conda-forge --yes && micromamba activate qligfep_new && python -m pip install joblib scipy tqdm && python -m pip install -e .
 ```
 </details>
 

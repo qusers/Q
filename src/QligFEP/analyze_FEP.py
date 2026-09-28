@@ -4,7 +4,6 @@ import argparse
 import json
 import os
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -31,7 +30,7 @@ class FepReader:
         system: str,
         target_name: str,
         mapping_json: str,
-        n_lambdas: Optional[int] = None,
+        n_lambdas: int | None = None,
         allow_missing_edges: bool = False,
     ) -> None:
         """Initialize the FEP reader class. This class will store the FEP information inside

@@ -155,7 +155,9 @@ class TestFEPInputFileGolden:
         ), f"Distance restraints count mismatch: expected {len(golden_restraints)}, got {len(actual_restraints)}"
 
         # Compare each restraint line
-        for i, (golden_line, actual_line) in enumerate(zip(golden_restraints, actual_restraints)):
+        for i, (golden_line, actual_line) in enumerate(
+            zip(golden_restraints, actual_restraints, strict=False)
+        ):
             assert (
                 actual_line == golden_line
             ), f"Distance restraint {i} mismatch:\n  expected: {golden_line}\n  actual: {actual_line}"

@@ -300,7 +300,7 @@ def tyk2_tutorial_path(tutorials_path: Path) -> Path:
 
 
 @pytest.fixture
-def temp_work_dir() -> Generator[Path, None, None]:
+def temp_work_dir() -> Generator[Path]:
     """Create a temporary working directory that is cleaned up after the test."""
     temp_dir = Path(tempfile.mkdtemp())
     try:
@@ -611,7 +611,7 @@ class InputFileGoldenManager:
                         f"[{section}] length mismatch: expected {len(expected_section)}, got {len(actual_section)}"
                     )
                 else:
-                    for i, (exp_line, act_line) in enumerate(zip(expected_section, actual_section)):
+                    for i, (exp_line, act_line) in enumerate(zip(expected_section, actual_section, strict=False)):
                         if exp_line != act_line:
                             differences.append(f"[{section}][{i}]: expected '{exp_line}', got '{act_line}'")
 

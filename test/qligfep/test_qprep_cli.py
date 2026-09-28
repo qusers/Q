@@ -350,6 +350,7 @@ class TestNeutralizerDNA:
         for (aname, elem), (px, py, pz) in zip(
             [("P", "P"), ("OP1", "O"), ("OP2", "O"), ("O5'", "O"), ("C1'", "C")],
             positions,
+            strict=False,
         ):
             rows.append(_make_atom("ATOM", serial, aname, "DA", "E", 1, px, py, pz, elem))
             serial += 1
