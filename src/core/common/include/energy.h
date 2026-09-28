@@ -7,21 +7,27 @@ enum EnergySlot : int {  // fixed, non-FEP slots
     E_BOND_P_ANGLE,
     E_BOND_P_TOR,
     E_BOND_P_IMP,
+
     E_BOND_W_BOND,
     E_BOND_W_ANGLE,
     E_BOND_W_TOR,
     E_BOND_W_IMP,
+
     E_NB_PP_COUL,
     E_NB_PP_VDW,
     E_NB_PW_COUL,
     E_NB_PW_VDW,
     E_NB_WW_COUL,
     E_NB_WW_VDW,
+
+    E_LRF,
+
     E_RESTR_RADX,
     E_RESTR_POLX,
     E_RESTR_FIX,
     E_RESTR_SHELL,
     E_RESTR_PRES,
+
     ENERGY_FIXED_COUNT
 };
 
@@ -46,6 +52,7 @@ struct EnergyData {
     E_bonded_t bond_p, bond_w;
     E_nonbonded_t nb_pp, nb_pw, nb_ww;
     E_restraint_t restraint;  // Uradx, Upolx, Ufix, Ushell, Upres, Urestr
+    double lrf = 0;
 
     // per-state (FEP)
     std::vector<E_bonded_t> eq_bond;

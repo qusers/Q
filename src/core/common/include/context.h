@@ -22,6 +22,7 @@ class Context {
 
     CommandInfo command_info;
     bool fresh_start = false;
+    int step = 0;            // the current step
     int n_atoms = 0;         // the total number of atoms
     int n_atoms_solute = 0;  // the total number of solute number, in our system [0, n_atoms_solute) are solute, [n_atoms_solute, n_atoms) are water atoms
     double dt = 0.0;
@@ -29,7 +30,7 @@ class Context {
     md_t md;
     topo_t topo;
     NativeOutputConfig native_output;
-    charge_group_config_t charge_group_config;
+    charge_group_config_t charge_group_config;  // todo: when applying LRF, we should change it to HostDeviceBuffer
     std::unique_ptr<HostDeviceBuffer<coord_t>> coords;
     std::unique_ptr<HostDeviceBuffer<vel_t>> velocities;
     std::unique_ptr<HostDeviceBuffer<dvel_t>> dvelocities;

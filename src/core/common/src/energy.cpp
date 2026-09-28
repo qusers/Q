@@ -40,6 +40,7 @@ void EnergyBuffer::unpack() {
     d.nb_pp = {E(E_NB_PP_COUL), E(E_NB_PP_VDW)};
     d.nb_pw = {E(E_NB_PW_COUL), E(E_NB_PW_VDW)};
     d.nb_ww = {E(E_NB_WW_COUL), E(E_NB_WW_VDW)};
+    d.lrf = E(E_LRF);
 
     // fixed restraint components (raw). Upres here is only the direct kernel
     // contribution; the lambda-weighted per-state term is added in combine.
@@ -95,6 +96,6 @@ void EnergyBuffer::combine(const double* lambdas) {
              d.nb_pp.Ucoul + d.nb_pp.Uvdw + d.nb_pw.Ucoul + d.nb_pw.Uvdw +
              d.nb_ww.Ucoul + d.nb_ww.Uvdw +
              d.bond_q.Ubond + d.bond_q.Uangle + d.bond_q.Utor + d.bond_q.Uimp +
-             d.nb_qx.Ucoul + d.nb_qx.Uvdw + d.restraint.Urestr;
+             d.nb_qx.Ucoul + d.nb_qx.Uvdw + d.restraint.Urestr + d.lrf;
     d.Utot = d.Upot + d.Ukin;
 }
