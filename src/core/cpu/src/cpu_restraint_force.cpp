@@ -46,9 +46,8 @@ void CpuRestraintForce::calc_posrestr(Context& ctx) {
 
 void CpuRestraintForce::calc_restrseq(Context& ctx) {
     if (data_.restrseq.n == 0) return;
+    auto* masses = ctx.masses->cpu_data_p;
     auto* recs = data_.restrseq.recs->cpu_data_p;
-    auto* atypes = ctx.atypes->cpu_data_p;
-    auto* catypes = ctx.catypes->cpu_data_p;
     auto* coords = ctx.coords->cpu_data_p;
     auto* coords_init = ctx.coords_init->cpu_data_p;
     auto* dvelocities = ctx.dvelocities->cpu_data_p;
@@ -80,7 +79,7 @@ void CpuRestraintForce::calc_restrseq(Context& ctx) {
 
                 for (int i = recs[s].ai - 1; i < recs[s].aj - 1; i++) {
                     if (heavy[i] || recs[s].ih) {
-                        const double mass = catypes[atypes[i].code - 1].m;
+                        const double mass = masses[i];
                         const double tmp = mass / CARBON_MASS;  // how many carbon-masses is this atom. todo: why is it?
 
                         add_force(dvelocities[i].x, k * d.x * tmp);
@@ -93,7 +92,7 @@ void CpuRestraintForce::calc_restrseq(Context& ctx) {
         } else if (recs[s].to_center == 2) {
             for (int i = recs[s].ai - 1; i < recs[s].aj - 1; i++) {
                 if (heavy[i] || recs[s].ih) {
-                    const double mass = catypes[atypes[i].code - 1].m;
+                    const double mass = masses[i];
                     totmass += mass;
                     d = d + (coords[i] - coords_init[i]) * mass;
                 }

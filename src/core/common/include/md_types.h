@@ -28,6 +28,10 @@ struct md_t {
     bool lrf;
     bool separate_scaling = false;
     bool charge_groups;
+
+    bool hmr = false;
+    double hmr_target_mass = 3.024;
+
     // [cut-offs]
     double solute_solute;
     double solvent_solvent;

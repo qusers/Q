@@ -12,13 +12,13 @@ enum TAccum { TEMP_SOL,
               TEXCL_SLV,
               N_TACCUM };
 
-__global__ void calc_temperature_kernel(int n_atoms, int n_atoms_solute, atype_t* atypes, catype_t* catypes, vel_t* velocities, bool* excluded, double boltz, double ekinmax,
+__global__ void calc_temperature_kernel(int n_atoms, int n_atoms_solute, const double* masses, vel_t* velocities, bool* excluded, double boltz, double ekinmax,
                                         energy_accum_t* Temp_solute, energy_accum_t* Tfree_solute, energy_accum_t* Texcl_solute,
                                         energy_accum_t* Temp_solvent, energy_accum_t* Tfree_solvent, energy_accum_t* Texcl_solvent) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n_atoms) return;
 
-    double mass_i = catypes[atypes[idx].code - 1].m;
+    double mass_i = masses[idx];
     const double vx = velocities[idx].x;
     const double vy = velocities[idx].y;
     const double vz = velocities[idx].z;
@@ -92,7 +92,7 @@ void CudaTemperature::calc(Context& ctx) {
 
     calc_temperature_kernel<<<numBlocks, blockSize>>>(
         ctx.n_atoms, ctx.n_atoms_solute,
-        ctx.atypes->gpu_data_p, ctx.catypes->gpu_data_p,
+        ctx.masses->gpu_data_p,
         ctx.velocities->gpu_data_p, ctx.excluded->gpu_data_p, Boltz, Ekinmax,
         d + TEMP_SOL, d + TFREE_SOL, d + TEXCL_SOL,
         d + TEMP_SLV, d + TFREE_SLV, d + TEXCL_SLV);
