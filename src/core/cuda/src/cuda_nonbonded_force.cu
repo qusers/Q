@@ -2,6 +2,25 @@
 #include "cuda_nonbonded_force.cuh"
 
 namespace {
+template <typename T>
+__device__ __forceinline__
+T shfl32(T value, int src_lane) {
+#if defined(QGPU_BACKEND_HIP)
+    return __shfl(value, src_lane, 32);
+#else
+    return __shfl_sync(0xffffffffu, value, src_lane, 32);
+#endif
+}
+
+template <typename T>
+__device__ __forceinline__
+T shfl_down32(T value, unsigned delta) {
+#if defined(QGPU_BACKEND_HIP)
+    return __shfl_down(value, delta, 32);
+#else
+    return __shfl_down_sync(0xffffffffu, value, delta, 32);
+#endif
+}
 
 __device__ int2 get_tile_idx(int n, int t) {
     int x = (int)floorf((2 * n + 1 - sqrtf((2 * n + 1) * (2 * n + 1) - 8 * t)) * 0.5f);
@@ -67,26 +86,25 @@ __device__ void compute_pair(
 }
 
 __device__ void shuffle(int& atom, uint8_t& atom_type, int& atom_state, real_t& atom_charge, vdw_atom_param_t& atom_vdw, real_t& atom_lambda, real_t3& atom_force, real_t3& atom_coord) {
-    constexpr unsigned FULL_MASK = 0xFFFFFFFF;
     int src = ((threadIdx.x & 31) + 1) & 31;
-    atom = __shfl_sync(FULL_MASK, atom, src);
+    atom = shfl32(atom, src);
     int tmp = atom_type;
-    atom_type = static_cast<uint8_t>(__shfl_sync(FULL_MASK, tmp, src));
-    atom_state = __shfl_sync(FULL_MASK, atom_state, src);
-    atom_charge = __shfl_sync(FULL_MASK, atom_charge, src);
+    atom_type = static_cast<uint8_t>(shfl32(tmp, src));
+    atom_state = shfl32(atom_state, src);
+    atom_charge = shfl32(atom_charge, src);
 
-    atom_vdw.aii_normal = __shfl_sync(FULL_MASK, atom_vdw.aii_normal, src);
-    atom_vdw.bii_normal = __shfl_sync(FULL_MASK, atom_vdw.bii_normal, src);
-    atom_vdw.aii_14 = __shfl_sync(FULL_MASK, atom_vdw.aii_14, src);
-    atom_vdw.bii_14 = __shfl_sync(FULL_MASK, atom_vdw.bii_14, src);
+    atom_vdw.aii_normal = shfl32(atom_vdw.aii_normal, src);
+    atom_vdw.bii_normal = shfl32(atom_vdw.bii_normal, src);
+    atom_vdw.aii_14 = shfl32(atom_vdw.aii_14, src);
+    atom_vdw.bii_14 = shfl32(atom_vdw.bii_14, src);
 
-    atom_lambda = __shfl_sync(FULL_MASK, atom_lambda, src);
-    atom_force.x = __shfl_sync(FULL_MASK, atom_force.x, src);
-    atom_force.y = __shfl_sync(FULL_MASK, atom_force.y, src);
-    atom_force.z = __shfl_sync(FULL_MASK, atom_force.z, src);
-    atom_coord.x = __shfl_sync(FULL_MASK, atom_coord.x, src);
-    atom_coord.y = __shfl_sync(FULL_MASK, atom_coord.y, src);
-    atom_coord.z = __shfl_sync(FULL_MASK, atom_coord.z, src);
+    atom_lambda = shfl32(atom_lambda, src);
+    atom_force.x = shfl32(atom_force.x, src);
+    atom_force.y = shfl32(atom_force.y, src);
+    atom_force.z = shfl32(atom_force.z, src);
+    atom_coord.x = shfl32(atom_coord.x, src);
+    atom_coord.y = shfl32(atom_coord.y, src);
+    atom_coord.z = shfl32(atom_coord.z, src);
 }
 
 __global__ void update_nonbonded_coords_kernel(
@@ -152,7 +170,9 @@ __global__ void nonbonded_kernel(
     const int tile = blockIdx.x * warps_per_block + warp_in_block;
     if (tile >= total_tiles) return;
 
-    auto [tile_x, tile_y] = get_tile_idx(block_num, tile);
+    const auto tile_idx = get_tile_idx(block_num, tile);
+    const int tile_x = tile_idx.x;
+    const int tile_y = tile_idx.y;
 
     const int base_x = tile_x << 5;
     const int base_y = tile_y << 5;
@@ -204,10 +224,9 @@ __global__ void nonbonded_kernel(
         atomic_add_force(&dvelocities[atom2].y, atom2_force.y);
         atomic_add_force(&dvelocities[atom2].z, atom2_force.z);
     }
-    const unsigned mask = 0xffffffffu;
     for (int offset = 16; offset > 0; offset >>= 1) {
-        local_e_coul += __shfl_down_sync(mask, local_e_coul, offset);
-        local_e_vdw += __shfl_down_sync(mask, local_e_vdw, offset);
+        local_e_coul += shfl_down32(local_e_coul, offset);
+        local_e_vdw += shfl_down32(local_e_vdw, offset);
     }
 
     if (lane == 0) {

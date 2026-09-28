@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cuda_runtime.h>
+#include "gpu_runtime_compat.h"
 #include <type_traits>
 
 #include "precision.h"

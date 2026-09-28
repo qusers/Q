@@ -1,4 +1,8 @@
+#if defined(QGPU_BACKEND_HIP)
+#include <hip/hip_cooperative_groups.h>
+#else
 #include <cooperative_groups.h>
+#endif
 
 #include <algorithm>
 #include <cstdio>
@@ -7,7 +11,7 @@
 #include <unordered_map>
 
 #include "constants.h"
-#include "cuda_runtime_utility.h"
+#include "gpu_runtime_compat.h"
 #include "cuda_settle.cuh"
 #include "cuda_shake.cuh"
 namespace cg = cooperative_groups;
@@ -538,7 +542,7 @@ void CudaShake::apply_to(Context& ctx, coord_t* d_coords, coord_t* d_xcoords) {
             &fallback_unconverged->gpu_data_p,
         };
         dim3 grid(fallback_coop_blocks), block(kShakeThreads);
-        check_cuda(cudaLaunchCooperativeKernel((void*)fallback_shake_fused_kernel, grid, block, args));
+        check_cuda(cudaLaunchCooperativeKernel((void*)fallback_shake_fused_kernel, grid, block, args, 0, nullptr));
         fallback_unconverged->download();
         if (fallback_unconverged->cpu_data_p[0]) {
             int n_fallback_constraints = fallback_shake_bonds->length;

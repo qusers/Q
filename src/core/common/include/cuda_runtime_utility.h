@@ -2,12 +2,11 @@
 
 #include <cstdio>
 #include <cstdlib>
-#include <cuda_runtime.h>
-#ifdef __CUDACC__
+#include "gpu_runtime_compat.h"
+
+#if defined(__CUDACC__) || defined(__HIPCC__)
 #define HD __host__ __device__
-
 #else
-
 #define HD
 #endif
 
