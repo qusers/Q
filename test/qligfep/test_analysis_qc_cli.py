@@ -173,3 +173,63 @@ def test_qc_csv_output(monkeypatch, tmp_path):
     assert len(cycle_df) == 1
     assert "abs_closure_error" in cycle_df.columns
     assert cycle_df.iloc[0]["n_edges"] == 3
+
+
+def test_no_qc_csv_output_without_flag(monkeypatch, tmp_path):
+    """QC CSV files should not be created when --qc is not requested."""
+
+    class FakeFepReader:
+        def __init__(self, *args, **kwargs):
+            self.data = {
+                "1.water": {},
+                "2.protein": {},
+                "result": {"ddGbar": {}},
+            }
+            self.ignored_edges = []
+            self.verbose_qEnergies = []
+            self.verbose_dgBar = []
+            self.run_data = []
+
+        def read_perturbations(self, *args, **kwargs):
+            pass
+
+        def load_new_system(self, *args, **kwargs):
+            pass
+
+        def calculate_ddG(self):
+            pass
+
+        def save_json_data(self):
+            pass
+
+        def populate_mapping_dictionary(self, *args, **kwargs):
+            output_file = kwargs["output_file"]
+            Path(output_file).write_text(json.dumps({"edges": [{"ddg": 0.0}]}))
+
+    monkeypatch.setattr(analyze_FEP, "FepReader", FakeFepReader)
+    monkeypatch.setattr(
+        analyze_FEP,
+        "prepare_df",
+        lambda *args, **kwargs: pd.DataFrame(),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    args = Namespace(
+        log="info",
+        water_dir="1.water",
+        protein_dir="2.protein",
+        target="no_qc_test",
+        json_file="mapping.json",
+        n_lambdas=None,
+        allow_missing=False,
+        no_run_data=True,
+        method="ddGbar",
+        qc=False,
+        experimental_key=None,
+        save_verbose=False,
+    )
+
+    analyze_FEP.main(args)
+
+    assert not (tmp_path / "no_qc_test_fep_qc.csv").exists()
+    assert not (tmp_path / "no_qc_test_cycle_qc.csv").exists()
