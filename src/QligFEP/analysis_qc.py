@@ -107,3 +107,125 @@ def analyze_fep_system(
         )
 
     return results
+
+
+def check_fep_pair_consistency(
+    data: dict,
+    fep: str,
+    water_sys: str = "1.water",
+    protein_sys: str = "2.protein",
+) -> dict:
+    """Check whether matching water and protein FEPs use consistent settings."""
+    water = data[water_sys][fep]
+    protein = data[protein_sys][fep]
+
+    checks = {
+        "fep_stage_match": water["fep_stage"] == protein["fep_stage"],
+        "temperature_match": water["temperature"] == protein["temperature"],
+        "lambda_sum_match": water["lambda_sum"] == protein["lambda_sum"],
+    }
+
+    return {
+        "fep": fep,
+        **checks,
+        "consistent": all(checks.values()),
+    }
+
+
+def analyze_ddg_edge(
+    data: dict,
+    fep: str,
+    method: str = "ddGbar",
+) -> dict:
+    """Extract QC-relevant statistics for a calculated ddG edge."""
+    result = data["result"][method][fep]
+
+    return {
+        "fep": fep,
+        "method": method,
+        "from": result["from"],
+        "to": result["to"],
+        "avg": result[f"{method}_avg"],
+        "sem": result[f"{method}_sem"],
+        "std": result[f"{method}_std"],
+    }
+
+
+def summarize_fep_edge_qc(
+    data: dict,
+    fep: str,
+    method: str = "dGbar",
+    water_sys: str = "1.water",
+    protein_sys: str = "2.protein",
+) -> dict:
+    """Summarize QC information for one complete FEP edge."""
+    protein_qc = analyze_fep_edge(
+        data,
+        system=protein_sys,
+        fep=fep,
+        method=method,
+    )
+
+    water_qc = analyze_fep_edge(
+        data,
+        system=water_sys,
+        fep=fep,
+        method=method,
+    )
+
+    consistency = check_fep_pair_consistency(
+        data,
+        fep=fep,
+        water_sys=water_sys,
+        protein_sys=protein_sys,
+    )
+
+    ddg_method = f"d{method}"
+    ddg_qc = analyze_ddg_edge(
+        data,
+        fep=fep,
+        method=ddg_method,
+    )
+
+    return {
+        "fep": fep,
+        "from": ddg_qc["from"],
+        "to": ddg_qc["to"],
+        "ddg": ddg_qc["avg"],
+        "ddg_sem": ddg_qc["sem"],
+        "ddg_std": ddg_qc["std"],
+        "protein_n_valid": protein_qc["n_valid"],
+        "protein_n_failed": protein_qc["n_failed"],
+        "protein_std": protein_qc["std"],
+        "protein_range": protein_qc["range"],
+        "water_n_valid": water_qc["n_valid"],
+        "water_n_failed": water_qc["n_failed"],
+        "water_std": water_qc["std"],
+        "water_range": water_qc["range"],
+        "consistent": consistency["consistent"],
+    }
+
+
+def summarize_fep_system_qc(
+    data: dict,
+    method: str = "dGbar",
+    water_sys: str = "1.water",
+    protein_sys: str = "2.protein",
+) -> list[dict]:
+    """Summarize QC information for all FEP edges in a calculation."""
+    protein_feps = sorted(data[protein_sys])
+    water_feps = sorted(data[water_sys])
+
+    if protein_feps != water_feps:
+        raise ValueError("FEPs do not match between protein and water systems.")
+
+    return [
+        summarize_fep_edge_qc(
+            data=data,
+            fep=fep,
+            method=method,
+            water_sys=water_sys,
+            protein_sys=protein_sys,
+        )
+        for fep in protein_feps
+    ]
