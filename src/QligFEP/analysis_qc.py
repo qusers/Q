@@ -376,3 +376,78 @@ def summarize_cycle_closure_qc(
         )
 
     return results
+
+
+def find_cycle_basis(
+    data: dict,
+    method: str = "ddGbar",
+) -> list[list[str]]:
+    """Find an independent cycle basis for the FEP network."""
+    edges = data["result"][method]
+
+    adjacency: dict[str, set[str]] = {}
+
+    for edge in edges.values():
+        source = edge["from"]
+        target = edge["to"]
+
+        adjacency.setdefault(source, set()).add(target)
+        adjacency.setdefault(target, set()).add(source)
+
+    visited = set()
+    parent = {}
+    depth = {}
+    tree_edges = set()
+    back_edges = []
+
+    def edge_key(a: str, b: str) -> tuple[str, str]:
+        return tuple(sorted((a, b)))
+
+    def dfs(node: str, node_parent: str | None, node_depth: int) -> None:
+        visited.add(node)
+        parent[node] = node_parent
+        depth[node] = node_depth
+
+        for neighbor in sorted(adjacency[node]):
+            if neighbor == node_parent:
+                continue
+
+            key = edge_key(node, neighbor)
+
+            if neighbor not in visited:
+                tree_edges.add(key)
+                dfs(neighbor, node, node_depth + 1)
+            elif key not in tree_edges and depth[neighbor] < depth[node]:
+                back_edges.append((node, neighbor))
+
+    for start in sorted(adjacency):
+        if start not in visited:
+            dfs(start, None, 0)
+
+    cycles = []
+
+    for source, target in back_edges:
+        path_source = []
+        node = source
+
+        while node is not None:
+            path_source.append(node)
+            node = parent[node]
+
+        path_target = []
+        node = target
+
+        while node is not None:
+            path_target.append(node)
+            node = parent[node]
+
+        source_ancestors = set(path_source)
+        common = next(node for node in path_target if node in source_ancestors)
+
+        left = path_source[: path_source.index(common) + 1]
+        right = path_target[: path_target.index(common)]
+
+        cycle = left + list(reversed(right)) + [source]
+        cycles.append(cycle)
+
+    return cycles

@@ -13,6 +13,7 @@ from QligFEP.analysis_qc import (
     cycle_closure_error,
     find_fep_cycles,
     summarize_cycle_closure_qc,
+    find_cycle_basis,
 )
 
 
@@ -503,3 +504,23 @@ def test_summarize_cycle_closure_qc():
     assert results[0]["n_edges"] == 3
     assert results[0]["closure_error"] == pytest.approx(0.5)
     assert results[0]["abs_closure_error"] == pytest.approx(0.5)
+
+
+def test_find_cycle_basis():
+    """Cycle basis should contain only independent cycles."""
+    data = {
+        "result": {
+            "ddGbar": {
+                "ab": {"ddGbar_avg": 1.0, "from": "A", "to": "B"},
+                "bc": {"ddGbar_avg": 1.0, "from": "B", "to": "C"},
+                "ca": {"ddGbar_avg": -2.0, "from": "C", "to": "A"},
+                "cd": {"ddGbar_avg": 1.0, "from": "C", "to": "D"},
+                "da": {"ddGbar_avg": -1.0, "from": "D", "to": "A"},
+            }
+        }
+    }
+
+    cycles = find_cycle_basis(data)
+
+    assert len(cycles) == 2
+    assert all(cycle[0] == cycle[-1] for cycle in cycles)
