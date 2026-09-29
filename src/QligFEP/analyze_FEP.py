@@ -10,6 +10,8 @@ import numpy as np
 import pandas as pd
 
 from .analysis_plotting import create_ddG_plot, prepare_df
+from QligFEP.analysis_qc import summarize_cycle_closure_qc, summarize_fep_system_qc
+
 from .IO import (
     ddG_json_path,
     read_qfep,
@@ -604,6 +606,11 @@ def parse_arguments() -> argparse.Namespace:
             "Passing this argument will allow the script to continue without raising an error."
         ),
     )
+    parser.add_argument(
+        "--qc",
+        action="store_true",
+        help="Generate FEP replicate and cycle-closure quality-control CSV files.",
+    )
 
     parser.add_argument(
         "-log",
@@ -631,7 +638,71 @@ def main(args: argparse.Namespace):
     fep_reader.load_new_system(system=args.protein_dir)
     fep_reader.read_perturbations(add_run_data=not args.no_run_data)
     fep_reader.calculate_ddG()
-    fep_reader.save_json_data()
+    if args.qc:
+        qc_method = args.method[1:]
+
+    edge_qc = summarize_fep_system_qc(
+        fep_reader.data,
+        method=qc_method,
+        water_sys=args.water_dir,
+        protein_sys=args.protein_dir,
+    )
+
+    edge_qc_df = pd.DataFrame(edge_qc)
+
+    edge_qc_df["max_leg_std"] = edge_qc_df[["protein_std", "water_std"]].max(axis=1)
+
+    edge_qc_df["max_leg_range"] = edge_qc_df[["protein_range", "water_range"]].max(axis=1)
+
+    edge_qc_df = edge_qc_df.sort_values(
+        by=[
+            "protein_n_failed",
+            "water_n_failed",
+            "consistent",
+            "max_leg_std",
+        ],
+        ascending=[False, False, True, False],
+    )
+
+    edge_qc_df.to_csv(
+        f"{args.target}_fep_qc.csv",
+        index=False,
+    )
+
+    cycle_qc = summarize_cycle_closure_qc(
+        fep_reader.data,
+        method=args.method,
+    )
+
+    cycle_rows = [
+        {
+            "cycle": " -> ".join(result["cycle"]),
+            "n_edges": result["n_edges"],
+            "closure_error": result["closure_error"],
+            "abs_closure_error": result["abs_closure_error"],
+        }
+        for result in cycle_qc
+    ]
+
+    cycle_qc_df = pd.DataFrame(
+        cycle_rows,
+        columns=[
+            "cycle",
+            "n_edges",
+            "closure_error",
+            "abs_closure_error",
+        ],
+    )
+
+    cycle_qc_df = cycle_qc_df.sort_values(
+        by="abs_closure_error",
+        ascending=False,
+    )
+
+    cycle_qc_df.to_csv(
+        f"{args.target}_cycle_qc.csv",
+        index=False,
+    )
 
     results_file = ddG_json_path(args.json_file)
     fep_reader.populate_mapping_dictionary(method=args.method, output_file=results_file)
