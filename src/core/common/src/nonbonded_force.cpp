@@ -125,14 +125,20 @@ void NonbondedForce::build_catype_table(Context& ctx) {
 
         if (atom_type == static_cast<uint8_t>(AtomCategory::P) || atom_type == static_cast<uint8_t>(AtomCategory::W)) {
             const catype_t& catype = catypes[ctx.atypes->cpu_data_p[atom_idx].code - 1];
-            atom_vdw[i] = vdw_atom_param_t{catype.aii_normal, catype.bii_normal, catype.aii_1_4, catype.bii_1_4};
+            atom_vdw[i] = vdw_atom_param_t{static_cast<real_t>(catype.aii_normal), 
+                                            static_cast<real_t>(catype.bii_normal), 
+                                            static_cast<real_t>(catype.aii_1_4), 
+                                            static_cast<real_t>(catype.bii_1_4)};
         } else {
             int state = data_.q_state->cpu_data_p[i];
             int q_idx = atom_idx_to_q_idx[atom_idx];
             const atype_t& atype = ctx.q_atypes[q_idx + ctx.n_qatoms() * state];
             if (atype.code > 0) {
                 const catype_t& catype = ctx.q_catypes[atype.code - 1];
-                atom_vdw[i] = vdw_atom_param_t{catype.aii_normal, catype.bii_normal, catype.aii_1_4, catype.bii_1_4};
+                atom_vdw[i] = vdw_atom_param_t{static_cast<real_t>(catype.aii_normal), 
+                                                static_cast<real_t>(catype.bii_normal), 
+                                                static_cast<real_t>(catype.aii_1_4), 
+                                                static_cast<real_t>(catype.bii_1_4)};
             } else {
                 catype_t zero = {};
                 atom_vdw[i] = vdw_atom_param_t{0, 0, 0, 0};
