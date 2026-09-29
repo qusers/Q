@@ -217,6 +217,18 @@ The package provides these shared preparation tools:
   water systems. Pass `--neq` to select the non-equilibrium NEQ² workflow.
 - `qligfep_analyze` analyzes windowed ligand FEP results.
 - `qligfep_neq_analyze` analyzes NEQ² switching-work results.
+`#### Quality-control reporting`
+
+`qligfep_analyze` can optionally generate quality-control reports for FEP
+replicates and the perturbation network:
+
+```bash
+qligfep_analyze \
+    -w 1.water \
+    -p 2.protein \
+    -j mapping.json \
+    -t my_target \
+    --qc```
 
 ### QresFEP
 
