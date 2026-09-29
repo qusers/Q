@@ -561,7 +561,7 @@ void InpParser::ensure_topology() {
             case 29: top_->molecules.insert(top_->molecules.end(), f.begin(), f.end()); break;
             case 32:
                 if (line.find("Exclusion") != std::string::npos && f.size() >= 2) {
-                    if (parse_double(f[0]) > 30.0) throw parse_error("Sphere sizes exceeding 30A are currently not supported");
+                    // if (parse_double(f[0]) > 30.0) throw parse_error("Sphere sizes exceeding 30A are currently not supported");
                     top_->exclusion = f[0];
                     top_->radii = f[1];
                 }
