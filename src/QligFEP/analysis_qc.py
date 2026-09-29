@@ -355,8 +355,7 @@ def summarize_cycle_closure_qc(
     method: str = "ddGbar",
 ) -> list[dict]:
     """Calculate cycle closure errors for all detected cycles in the FEP network."""
-    cycles = find_fep_cycles(data, method=method)
-
+    cycles = find_cycle_basis(data, method=method)
     results = []
 
     for cycle in cycles:
@@ -376,6 +375,22 @@ def summarize_cycle_closure_qc(
         )
 
     return results
+
+
+def _canonicalize_cycle(cycle: list[str]) -> list[str]:
+    """Return a deterministic representation of a closed cycle."""
+    nodes = cycle[:-1]
+
+    rotations = []
+
+    for sequence in (nodes, list(reversed(nodes))):
+        for index in range(len(sequence)):
+            rotated = sequence[index:] + sequence[:index]
+            rotations.append(tuple(rotated))
+
+    canonical = min(rotations)
+
+    return list(canonical) + [canonical[0]]
 
 
 def find_cycle_basis(
@@ -448,6 +463,6 @@ def find_cycle_basis(
         right = path_target[: path_target.index(common)]
 
         cycle = left + list(reversed(right)) + [source]
-        cycles.append(cycle)
+        cycles.append(_canonicalize_cycle(cycle))
 
     return cycles
