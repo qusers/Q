@@ -274,3 +274,105 @@ def cycle_closure_error(
             raise ValueError(f"Missing FEP edge: {source} -> {target}") from exc
 
     return float(closure_error)
+
+
+def find_fep_cycles(
+    data: dict,
+    method: str = "ddGbar",
+) -> list[list[str]]:
+    """Find simple cycles in the FEP network.
+
+    Args:
+        data: FepReader data dictionary containing calculated ddG results.
+        method: Calculated ddG method. Defaults to ``ddGbar``.
+
+    Returns:
+        List of closed ligand cycles. Each cycle repeats the starting ligand
+        at the end, e.g. ``["lig1", "lig2", "lig3", "lig1"]``.
+    """
+    edges = data["result"][method]
+
+    adjacency: dict[str, set[str]] = {}
+
+    for edge in edges.values():
+        source = edge["from"]
+        target = edge["to"]
+
+        adjacency.setdefault(source, set()).add(target)
+        adjacency.setdefault(target, set()).add(source)
+
+    cycles = set()
+
+    def canonicalize_cycle(cycle: list[str]) -> tuple[str, ...]:
+        """Return a canonical representation to remove duplicate cycles."""
+        nodes = cycle[:-1]
+
+        rotations = []
+
+        for sequence in (nodes, list(reversed(nodes))):
+            for index in range(len(sequence)):
+                rotated = sequence[index:] + sequence[:index]
+                rotations.append(tuple(rotated))
+
+        canonical = min(rotations)
+
+        return canonical
+
+    def search(
+        start: str,
+        current: str,
+        path: list[str],
+        visited: set[str],
+    ) -> None:
+        for neighbor in adjacency[current]:
+            if neighbor == start and len(path) >= 3:
+                cycles.add(canonicalize_cycle(path + [start]))
+                continue
+
+            if neighbor in visited:
+                continue
+
+            search(
+                start=start,
+                current=neighbor,
+                path=path + [neighbor],
+                visited=visited | {neighbor},
+            )
+
+    for start in sorted(adjacency):
+        search(
+            start=start,
+            current=start,
+            path=[start],
+            visited={start},
+        )
+
+    return [list(cycle) + [cycle[0]] for cycle in sorted(cycles)]
+
+
+def summarize_cycle_closure_qc(
+    data: dict,
+    method: str = "ddGbar",
+) -> list[dict]:
+    """Calculate cycle closure errors for all cycles in the FEP network.
+
+    Args:
+        data: FepReader data dictionary containing calculated ddG results.
+        method: Calculated ddG method. Defaults to ``ddGbar``.
+
+    Returns:
+        List containing each detected cycle and its closure error.
+    """
+    cycles = find_fep_cycles(data, method=method)
+
+    return [
+        {
+            "cycle": cycle,
+            "closure_error": cycle_closure_error(
+                data,
+                cycle=cycle,
+                method=method,
+            ),
+        }
+        for cycle in cycles
+    ]
