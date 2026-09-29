@@ -500,4 +500,6 @@ def test_summarize_cycle_closure_qc():
 
     assert len(results) == 1
     assert results[0]["cycle"] == ["lig1", "lig2", "lig3", "lig1"]
+    assert results[0]["n_edges"] == 3
     assert results[0]["closure_error"] == pytest.approx(0.5)
+    assert results[0]["abs_closure_error"] == pytest.approx(0.5)

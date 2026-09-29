@@ -354,25 +354,25 @@ def summarize_cycle_closure_qc(
     data: dict,
     method: str = "ddGbar",
 ) -> list[dict]:
-    """Calculate cycle closure errors for all cycles in the FEP network.
-
-    Args:
-        data: FepReader data dictionary containing calculated ddG results.
-        method: Calculated ddG method. Defaults to ``ddGbar``.
-
-    Returns:
-        List containing each detected cycle and its closure error.
-    """
+    """Calculate cycle closure errors for all detected cycles in the FEP network."""
     cycles = find_fep_cycles(data, method=method)
 
-    return [
-        {
-            "cycle": cycle,
-            "closure_error": cycle_closure_error(
-                data,
-                cycle=cycle,
-                method=method,
-            ),
-        }
-        for cycle in cycles
-    ]
+    results = []
+
+    for cycle in cycles:
+        closure_error = cycle_closure_error(
+            data,
+            cycle=cycle,
+            method=method,
+        )
+
+        results.append(
+            {
+                "cycle": cycle,
+                "n_edges": len(cycle) - 1,
+                "closure_error": closure_error,
+                "abs_closure_error": abs(closure_error),
+            }
+        )
+
+    return results
