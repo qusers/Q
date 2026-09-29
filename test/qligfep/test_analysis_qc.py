@@ -3,17 +3,16 @@
 import pytest
 
 from QligFEP.analysis_qc import (
+    analyze_ddg_edge,
     analyze_fep_edge,
     analyze_fep_system,
-    replicate_statistics,
     check_fep_pair_consistency,
-    analyze_ddg_edge,
+    cycle_closure_error,
+    find_cycle_basis,
+    replicate_statistics,
+    summarize_cycle_closure_qc,
     summarize_fep_edge_qc,
     summarize_fep_system_qc,
-    cycle_closure_error,
-    find_fep_cycles,
-    summarize_cycle_closure_qc,
-    find_cycle_basis,
 )
 
 
@@ -418,59 +417,6 @@ def test_cycle_closure_error_handles_reverse_edge():
     )
 
     assert result == pytest.approx(0.5)
-
-
-def test_find_fep_cycles():
-    """Triangle FEP network should contain one unique cycle."""
-    data = {
-        "result": {
-            "ddGbar": {
-                "FEP_lig1_lig2": {
-                    "ddGbar_avg": 1.2,
-                    "from": "lig1",
-                    "to": "lig2",
-                },
-                "FEP_lig2_lig3": {
-                    "ddGbar_avg": -0.4,
-                    "from": "lig2",
-                    "to": "lig3",
-                },
-                "FEP_lig3_lig1": {
-                    "ddGbar_avg": -0.3,
-                    "from": "lig3",
-                    "to": "lig1",
-                },
-            }
-        }
-    }
-
-    cycles = find_fep_cycles(data)
-
-    assert cycles == [["lig1", "lig2", "lig3", "lig1"]]
-
-
-def test_find_fep_cycles_returns_empty_for_linear_network():
-    """Linear FEP networks should not contain cycles."""
-    data = {
-        "result": {
-            "ddGbar": {
-                "FEP_lig1_lig2": {
-                    "ddGbar_avg": 1.2,
-                    "from": "lig1",
-                    "to": "lig2",
-                },
-                "FEP_lig2_lig3": {
-                    "ddGbar_avg": -0.4,
-                    "from": "lig2",
-                    "to": "lig3",
-                },
-            }
-        }
-    }
-
-    cycles = find_fep_cycles(data)
-
-    assert cycles == []
 
 
 def test_summarize_cycle_closure_qc():
