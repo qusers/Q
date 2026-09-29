@@ -10,6 +10,7 @@ from QligFEP.analysis_qc import (
     analyze_ddg_edge,
     summarize_fep_edge_qc,
     summarize_fep_system_qc,
+    cycle_closure_error,
 )
 
 
@@ -350,3 +351,67 @@ def test_summarize_fep_system_qc():
     assert results[1]["fep"] == "FEP_lig2_lig3"
     assert results[0]["ddg"] == pytest.approx(-1.3)
     assert results[1]["ddg"] == pytest.approx(-1.0)
+
+
+def test_cycle_closure_error():
+    """Cycle closure should sum directed ddG values around a closed cycle."""
+    data = {
+        "result": {
+            "ddGbar": {
+                "FEP_lig1_lig2": {
+                    "ddGbar_avg": 1.2,
+                    "from": "lig1",
+                    "to": "lig2",
+                },
+                "FEP_lig2_lig3": {
+                    "ddGbar_avg": -0.4,
+                    "from": "lig2",
+                    "to": "lig3",
+                },
+                "FEP_lig3_lig1": {
+                    "ddGbar_avg": -0.3,
+                    "from": "lig3",
+                    "to": "lig1",
+                },
+            }
+        }
+    }
+
+    result = cycle_closure_error(
+        data,
+        cycle=["lig1", "lig2", "lig3", "lig1"],
+    )
+
+    assert result == pytest.approx(0.5)
+
+
+def test_cycle_closure_error_handles_reverse_edge():
+    """Cycle closure should invert ddG when traversing an edge backwards."""
+    data = {
+        "result": {
+            "ddGbar": {
+                "FEP_lig1_lig2": {
+                    "ddGbar_avg": 1.2,
+                    "from": "lig1",
+                    "to": "lig2",
+                },
+                "FEP_lig2_lig3": {
+                    "ddGbar_avg": -0.4,
+                    "from": "lig2",
+                    "to": "lig3",
+                },
+                "FEP_lig1_lig3": {
+                    "ddGbar_avg": 0.3,
+                    "from": "lig1",
+                    "to": "lig3",
+                },
+            }
+        }
+    }
+
+    result = cycle_closure_error(
+        data,
+        cycle=["lig1", "lig2", "lig3", "lig1"],
+    )
+
+    assert result == pytest.approx(0.5)

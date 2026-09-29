@@ -229,3 +229,48 @@ def summarize_fep_system_qc(
         )
         for fep in protein_feps
     ]
+
+
+def cycle_closure_error(
+    data: dict,
+    cycle: list[str],
+    method: str = "ddGbar",
+) -> float:
+    """Calculate the thermodynamic closure error for a ligand cycle.
+
+    Args:
+        data: FepReader data dictionary containing calculated ddG results.
+        cycle: Ordered ligand names forming a closed cycle, e.g.
+            ["lig1", "lig2", "lig3", "lig1"].
+        method: Calculated ddG method. Defaults to ``ddGbar``.
+
+    Returns:
+        Sum of the directed ddG values around the cycle.
+
+    Raises:
+        ValueError: If the cycle is not closed or an edge cannot be found.
+    """
+    if len(cycle) < 4 or cycle[0] != cycle[-1]:
+        raise ValueError("Cycle must contain at least three ligands and be closed.")
+
+    edges = data["result"][method]
+
+    edge_lookup = {}
+
+    for edge in edges.values():
+        source = edge["from"]
+        target = edge["to"]
+        value = edge[f"{method}_avg"]
+
+        edge_lookup[(source, target)] = value
+        edge_lookup[(target, source)] = -value
+
+    closure_error = 0.0
+
+    for source, target in zip(cycle[:-1], cycle[1:]):
+        try:
+            closure_error += edge_lookup[(source, target)]
+        except KeyError as exc:
+            raise ValueError(f"Missing FEP edge: {source} -> {target}") from exc
+
+    return float(closure_error)
