@@ -524,3 +524,34 @@ def test_find_cycle_basis():
 
     assert len(cycles) == 2
     assert all(cycle[0] == cycle[-1] for cycle in cycles)
+
+
+def test_cycle_closure_error_rejects_invalid_ddg():
+    """Cycle closure should fail clearly when a required ddG is unavailable."""
+    data = {
+        "result": {
+            "ddGbar": {
+                "FEP_lig1_lig2": {
+                    "ddGbar_avg": 1.2,
+                    "from": "lig1",
+                    "to": "lig2",
+                },
+                "FEP_lig2_lig3": {
+                    "ddGbar_avg": None,
+                    "from": "lig2",
+                    "to": "lig3",
+                },
+                "FEP_lig3_lig1": {
+                    "ddGbar_avg": -0.3,
+                    "from": "lig3",
+                    "to": "lig1",
+                },
+            }
+        }
+    }
+
+    with pytest.raises(ValueError, match="Missing FEP edge: lig2 -> lig3"):
+        cycle_closure_error(
+            data,
+            cycle=["lig1", "lig2", "lig3", "lig1"],
+        )

@@ -261,7 +261,8 @@ def cycle_closure_error(
         source = edge["from"]
         target = edge["to"]
         value = edge[f"{method}_avg"]
-
+        if value is None or not np.isfinite(value):
+            continue
         edge_lookup[(source, target)] = value
         edge_lookup[(target, source)] = -value
 
