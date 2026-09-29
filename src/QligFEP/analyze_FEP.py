@@ -650,10 +650,25 @@ def main(args: argparse.Namespace):
 
     edge_qc_df = pd.DataFrame(edge_qc)
 
+    edge_qc_df["total_failed"] = edge_qc_df["protein_n_failed"] + edge_qc_df["water_n_failed"]
+
     edge_qc_df["max_leg_std"] = edge_qc_df[["protein_std", "water_std"]].max(axis=1)
 
     edge_qc_df["max_leg_range"] = edge_qc_df[["protein_range", "water_range"]].max(axis=1)
 
+    numeric_columns = [
+        "ddg",
+        "ddg_sem",
+        "ddg_std",
+        "protein_std",
+        "protein_range",
+        "water_std",
+        "water_range",
+        "max_leg_std",
+        "max_leg_range",
+    ]
+
+    edge_qc_df[numeric_columns] = edge_qc_df[numeric_columns].round(3)
     edge_qc_df = edge_qc_df.sort_values(
         by=[
             "protein_n_failed",
