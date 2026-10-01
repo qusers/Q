@@ -2,6 +2,95 @@
 #include "cuda_nonbonded_force.cuh"
 
 namespace {
+// In the continuous 16-lane, left rotate one
+// In the current lane, read (lane + 1) % 16
+// All lane group should be active
+#if defined(QGPU_BACKEND_HIP)
+template <typename T>
+__device__ __forceinline__ T rotate_left16_dpp(T value) {
+    static_assert(sizeof(T) == 4 || sizeof(T) == 8, "Only 32-bit and 64-bit values are supported");
+
+    if constexpr (sizeof(T) == 4) {
+        int bits = __builtin_bit_cast(int, value);
+
+        bits = __builtin_amdgcn_mov_dpp( bits, 0x12f, 0xf, 0xf, false);
+
+        return __builtin_bit_cast(T, bits);
+    } else {
+        struct Words {
+            int word0;
+            int word1;
+        };
+        static_assert(sizeof(Words) == sizeof(T));
+
+        Words bits = __builtin_bit_cast(Words, value);
+
+        bits.word0 = __builtin_amdgcn_mov_dpp(bits.word0, 0x12f, 0xf, 0xf, false);
+        bits.word1 = __builtin_amdgcn_mov_dpp(bits.word1, 0x12f, 0xf, 0xf, false);
+
+        return __builtin_bit_cast(T, bits);
+    }
+}
+
+// In the 32-lane group, switch the left half group and the right half group 
+// 0 <-> 16, 1 <-> 17, ..., 15 <-> 31。
+template <typename T>
+__device__ __forceinline__
+T swap_halves32_value(T value) {
+    return __shfl_xor(value, 16, 32);
+}
+
+
+__device__ __forceinline__ void shuffle_left_16_dpp(
+    int& atom,
+    real_t& atom_charge,
+    vdw_atom_param_t& atom_vdw,
+    real_t3& atom_force,
+    real_t3& atom_coord)
+{
+    atom = rotate_left16_dpp(atom);
+    atom_charge = rotate_left16_dpp(atom_charge);
+
+    atom_vdw.aii_normal = rotate_left16_dpp(atom_vdw.aii_normal);
+    atom_vdw.bii_normal = rotate_left16_dpp(atom_vdw.bii_normal);
+    atom_vdw.aii_14 = rotate_left16_dpp(atom_vdw.aii_14);
+    atom_vdw.bii_14 = rotate_left16_dpp(atom_vdw.bii_14);
+
+    atom_force.x = rotate_left16_dpp(atom_force.x);
+    atom_force.y = rotate_left16_dpp(atom_force.y);
+    atom_force.z = rotate_left16_dpp(atom_force.z);
+
+    atom_coord.x = rotate_left16_dpp(atom_coord.x);
+    atom_coord.y = rotate_left16_dpp(atom_coord.y);
+    atom_coord.z = rotate_left16_dpp(atom_coord.z);
+}
+
+__device__ __forceinline__
+void swap_halves_32(
+    int& atom,
+    real_t& atom_charge,
+    vdw_atom_param_t& atom_vdw,
+    real_t3& atom_force,
+    real_t3& atom_coord)
+{
+    atom = swap_halves32_value(atom);
+    atom_charge = swap_halves32_value(atom_charge);
+
+    atom_vdw.aii_normal = swap_halves32_value(atom_vdw.aii_normal);
+    atom_vdw.bii_normal = swap_halves32_value(atom_vdw.bii_normal);
+    atom_vdw.aii_14 = swap_halves32_value(atom_vdw.aii_14);
+    atom_vdw.bii_14 = swap_halves32_value(atom_vdw.bii_14);
+
+    atom_force.x = swap_halves32_value(atom_force.x);
+    atom_force.y = swap_halves32_value(atom_force.y);
+    atom_force.z = swap_halves32_value(atom_force.z);
+
+    atom_coord.x = swap_halves32_value(atom_coord.x);
+    atom_coord.y = swap_halves32_value(atom_coord.y);
+    atom_coord.z = swap_halves32_value(atom_coord.z);
+}
+#endif
+
 template <typename T>
 __device__ __forceinline__
 T shfl32(T value, int src_lane) {
@@ -206,7 +295,19 @@ __global__ void nonbonded_kernel(
                          atom1_force, atom2_force,
                          local_e_coul, local_e_vdw);
         }
-        shuffle(atom2, atom2_charge, atom2_vdw, atom2_force, atom2_coord);
+        #if defined(QGPU_BACKEND_HIP)
+        shuffle_left_16_dpp( atom2, atom2_charge, atom2_vdw, atom2_force, atom2_coord);
+
+        // 第 16、32 次计算后交换半组。
+        // 第一次进入另一半组；第二次恢复原始分布。
+        if ((i & 15) == 15) {
+            swap_halves_32( atom2, atom2_charge, atom2_vdw, atom2_force, atom2_coord);
+        }
+        #else
+            shuffle( atom2, atom2_charge, atom2_vdw, atom2_force, atom2_coord);
+        #endif        
+
+
     }
 
     if (atom1 >= 0) {
