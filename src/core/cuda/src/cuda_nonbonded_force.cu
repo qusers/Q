@@ -58,8 +58,7 @@ __device__ void compute_pair(
     real_t dy = atom2_coord.y - atom1_coord.y;
     real_t dz = atom2_coord.z - atom1_coord.z;
     real_t dis2 = dx * dx + dy * dy + dz * dz;
-    real_t inv_dis2 = static_cast<real_t>(1.0) / dis2;
-    real_t inv_dis = sqrt(inv_dis2);
+    real_t inv_dis = rsqrt(dis2);
 
     bool is_14 = (bond_type == BondType::Bond14);
     real_t qij = atom1_charge * atom2_charge;
