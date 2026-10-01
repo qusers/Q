@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <cstdint>
 
 #include "command_parser.h"
 #include "common/include/md_types.h"
@@ -44,7 +45,7 @@ class Context {
     std::unique_ptr<HostDeviceBuffer<bool>> shell;
     std::vector<int> q_atoms;
     std::vector<int> p_atoms;
-    std::unique_ptr<HostDeviceBuffer<int>> LJ_matrix;
+    std::unique_ptr<HostDeviceBuffer<uint8_t>> LJ_matrix;
     std::vector<int> molecules;
     std::vector<shell_t> wshells;
     std::unique_ptr<HostDeviceBuffer<double>> lambdas;  // Actually length is only 2..
@@ -63,7 +64,7 @@ class Context {
     int n_patoms() const { return p_atoms.size(); }
 
    private:
-    void set_lj_pairs(std::vector<int>& matrix, const std::vector<std::pair<int, int>>& pair, int value);
+    void set_lj_pairs(std::vector<uint8_t>& matrix, const std::vector<std::pair<int, int>>& pair, uint8_t value);
 
     void init_fresh_start(const ParseResult& parsed);
     void init_md(const ParseResult& parsed);

@@ -38,7 +38,7 @@ enum class BondType : uint8_t { Bond23,
                                 Bond14,
                                 NonBond };
 
-HD inline BondType get_bond_type(int n_atoms_solute, const int* LJ_matrix, int atom1, uint8_t atom1_type, int atom2, uint8_t atom2_type) {
+HD inline BondType get_bond_type(int n_atoms_solute, const uint8_t* LJ_matrix, int atom1, uint8_t atom1_type, int atom2, uint8_t atom2_type) {
     bool w1 = atom1_type == static_cast<uint8_t>(AtomCategory::W);
     bool w2 = atom2_type == static_cast<uint8_t>(AtomCategory::W);
 

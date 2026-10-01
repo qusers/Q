@@ -12,8 +12,8 @@
 #SBATCH --error=qgpu-%j.err
 
 set -euo pipefail
-
-module load YOUR_ROCM_MODULE
+module use /appl/local/containers/test-modules/
+ml rocm/7.2.4
 
 QDYN="$HOME/code/Q/src/core/.build/qgpu/hip/gfx90a/double/qdyn"
 
@@ -22,12 +22,12 @@ cd "$SLURM_SUBMIT_DIR"
 INPUT="eq5.inp"
 
 test -x "$QDYN" || {
-    echo "找不到可执行文件：$QDYN" >&2
+    echo "Can't not find the executable file: $QDYN" >&2
     exit 1
 }
 
 test -f "$INPUT" || {
-    echo "找不到输入文件：$INPUT" >&2
+    echo "Can't not find the input: $INPUT" >&2
     exit 1
 }
 

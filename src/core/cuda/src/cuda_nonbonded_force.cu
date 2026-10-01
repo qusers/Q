@@ -130,7 +130,7 @@ __device__ void compute_pair(
     int atom2, uint8_t atom2_type, int atom2_state,
     real_t atom2_charge, const vdw_atom_param_t& atom2_vdw, real_t atom2_lambda, const real_t3& atom2_coord,
     // exclusion
-    int n_atoms_solute, const int* LJ_matrix,
+    int n_atoms_solute, const uint8_t* LJ_matrix,
     // scalars
     real_t el14_scale, real_t coulomb_constant, int vdw_rule,
     // output
@@ -231,7 +231,7 @@ __global__ void nonbonded_kernel(
     const vdw_atom_param_t* atom_vdw,  // data_.atom_vdw
 
     // ---- exclusion data ----
-    const int* LJ_matrix,  // ctx.LJ_matrix->gpu_data_p
+    const uint8_t* LJ_matrix,  // ctx.LJ_matrix->gpu_data_p
 
     // ---- topology scalars (passed by value) ----
     real_t el14_scale,        // ctx.topo.el14_scale

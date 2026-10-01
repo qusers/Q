@@ -32,7 +32,7 @@ void validate_parse_result(const ParseResult& parsed) {
 
 }  // namespace
 
-void Context::set_lj_pairs(std::vector<int>& matrix, const std::vector<std::pair<int, int>>& pairs, int value) {
+void Context::set_lj_pairs(std::vector<uint8_t>& matrix, const std::vector<std::pair<int, int>>& pairs, uint8_t value) {
     for (const auto& pair : pairs) {
         int ai = pair.first;
         int aj = pair.second;
@@ -44,13 +44,13 @@ void Context::set_lj_pairs(std::vector<int>& matrix, const std::vector<std::pair
 }
 
 void Context::init_lj_matrix(const ParseResult& parsed) {
-    std::vector<int> matrix(n_atoms_solute * n_atoms_solute, 0);
+    std::vector<uint8_t> matrix(n_atoms_solute * n_atoms_solute, 0);
     set_lj_pairs(matrix, parsed.ngbrs14, 1);
     set_lj_pairs(matrix, parsed.ngbrs14_long, 1);
     set_lj_pairs(matrix, parsed.ngbrs23, 3);
     set_lj_pairs(matrix, parsed.ngbrs23_long, 3);
 
-    LJ_matrix = HostDeviceBuffer<int>::from_vector(matrix, command_info.requested_gpu);
+    LJ_matrix = HostDeviceBuffer<uint8_t>::from_vector(matrix, command_info.requested_gpu);
 }
 
 ParseResult Context::get_parse_result() {
