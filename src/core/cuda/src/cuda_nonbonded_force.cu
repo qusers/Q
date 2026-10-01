@@ -85,12 +85,9 @@ __device__ void compute_pair(
     e_vdw += vvdw;
 }
 
-__device__ void shuffle(int& atom, uint8_t& atom_type, int& atom_state, real_t& atom_charge, vdw_atom_param_t& atom_vdw, real_t& atom_lambda, real_t3& atom_force, real_t3& atom_coord) {
+__device__ void shuffle(int& atom, real_t& atom_charge, vdw_atom_param_t& atom_vdw, real_t3& atom_force, real_t3& atom_coord) {
     int src = ((threadIdx.x & 31) + 1) & 31;
     atom = shfl32(atom, src);
-    int tmp = atom_type;
-    atom_type = static_cast<uint8_t>(shfl32(tmp, src));
-    atom_state = shfl32(atom_state, src);
     atom_charge = shfl32(atom_charge, src);
 
     atom_vdw.aii_normal = shfl32(atom_vdw.aii_normal, src);
@@ -98,7 +95,6 @@ __device__ void shuffle(int& atom, uint8_t& atom_type, int& atom_state, real_t& 
     atom_vdw.aii_14 = shfl32(atom_vdw.aii_14, src);
     atom_vdw.bii_14 = shfl32(atom_vdw.bii_14, src);
 
-    atom_lambda = shfl32(atom_lambda, src);
     atom_force.x = shfl32(atom_force.x, src);
     atom_force.y = shfl32(atom_force.y, src);
     atom_force.z = shfl32(atom_force.z, src);
@@ -191,11 +187,12 @@ __global__ void nonbonded_kernel(
     real_t3 atom1_force = {0, 0, 0};
 
     int atom2 = y_idx < sz ? atom_idx[y_idx] : -1;
-    uint8_t atom2_type = atom2 == -1 ? static_cast<uint8_t>(AtomCategory::INVALID) : category[y_idx];
-    int atom2_state = atom2 == -1 ? -1 : q_state[y_idx];
+    const uint8_t tile_y_type = category[base_y];
+    const int tile_y_state = q_state[base_y];
+    const real_t tile_y_lambda = atom_lambdas[base_y];
+
     real_t atom2_charge = atom2 == -1 ? 0 : atom_charge[y_idx];
     vdw_atom_param_t atom2_vdw = atom2 == -1 ? vdw_atom_param_t{0, 0, 0, 0} : atom_vdw[y_idx];
-    real_t atom2_lambda = atom2 == -1 ? 0 : atom_lambdas[y_idx];
     real_t3 atom2_coord = atom2 == -1 ? real_t3{0, 0, 0} : real_t3{cx[y_idx], cy[y_idx], cz[y_idx]};
     real_t3 atom2_force = {0, 0, 0};
 
@@ -204,13 +201,13 @@ __global__ void nonbonded_kernel(
     for (int i = 0; i < 32; i++) {
         if (!is_diag || atom1 < atom2) {
             compute_pair(atom1, atom1_type, atom1_state, atom1_charge, atom1_vdw, atom1_lambda, atom1_coord,
-                         atom2, atom2_type, atom2_state, atom2_charge, atom2_vdw, atom2_lambda, atom2_coord,
+                         atom2, tile_y_type, tile_y_state, atom2_charge, atom2_vdw, tile_y_lambda, atom2_coord,
                          n_atoms_solute, LJ_matrix,
                          el14_scale, coulomb_constant, vdw_rule,
                          atom1_force, atom2_force,
                          local_e_coul, local_e_vdw);
         }
-        shuffle(atom2, atom2_type, atom2_state, atom2_charge, atom2_vdw, atom2_lambda, atom2_force, atom2_coord);
+        shuffle(atom2, atom2_charge, atom2_vdw, atom2_force, atom2_coord);
     }
 
     if (atom1 >= 0) {
