@@ -298,8 +298,8 @@ __global__ void nonbonded_kernel(
         #if defined(QGPU_BACKEND_HIP)
         shuffle_left_16_dpp( atom2, atom2_charge, atom2_vdw, atom2_force, atom2_coord);
 
-        // 第 16、32 次计算后交换半组。
-        // 第一次进入另一半组；第二次恢复原始分布。
+        // The 16th and 32th swap the half group
+        // The fist time enter into the other half group. The second time will recover.
         if ((i & 15) == 15) {
             swap_halves_32( atom2, atom2_charge, atom2_vdw, atom2_force, atom2_coord);
         }
