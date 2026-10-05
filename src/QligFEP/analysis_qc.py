@@ -8,7 +8,7 @@ import numpy as np
 def replicate_statistics(energies: Sequence[float]) -> dict:
     """Calculate descriptive statistics for replicate FEP energies.
 
-    NaN values are treated as failed or unavailable replicate results and are
+    Non-finite values are treated as failed or unavailable replicate results and are
     excluded from the descriptive statistics.
 
     Args:
@@ -18,7 +18,7 @@ def replicate_statistics(energies: Sequence[float]) -> dict:
         Dictionary containing replicate counts and descriptive statistics.
     """
     values = np.asarray(energies, dtype=float)
-    valid_values = values[~np.isnan(values)]
+    valid_values = values[np.isfinite(values)]
 
     n_replicates = len(values)
     n_valid = len(valid_values)
@@ -115,20 +115,42 @@ def check_fep_pair_consistency(
     water_sys: str = "1.water",
     protein_sys: str = "2.protein",
 ) -> dict:
-    """Check whether matching water and protein FEPs use consistent settings."""
+    """Compare stage, temperature, and independently observed window counts.
+
+    Missing input files leave the window-count check unverified. The legacy
+    ``lambda_sum`` field may reflect a user override or a cached count in older
+    result files, so it is not evidence of matching inputs.
+    """
     water = data[water_sys][fep]
     protein = data[protein_sys][fep]
 
+    water_count = water.get("input_n_lambdas")
+    protein_count = protein.get("input_n_lambdas")
     checks = {
         "fep_stage_match": water["fep_stage"] == protein["fep_stage"],
         "temperature_match": water["temperature"] == protein["temperature"],
-        "lambda_sum_match": water["lambda_sum"] == protein["lambda_sum"],
+        "lambda_sum_match": (
+            water_count == protein_count if water_count is not None and protein_count is not None else None
+        ),
     }
+
+    if False in checks.values():
+        consistent = False
+        status = "mismatch"
+    elif None in checks.values():
+        consistent = None
+        status = "unverified"
+    else:
+        consistent = True
+        status = "consistent"
 
     return {
         "fep": fep,
         **checks,
-        "consistent": all(checks.values()),
+        "protein_input_n_lambdas": protein_count,
+        "water_input_n_lambdas": water_count,
+        "consistent": consistent,
+        "consistency_status": status,
     }
 
 
@@ -140,14 +162,17 @@ def analyze_ddg_edge(
     """Extract QC-relevant statistics for a calculated ddG edge."""
     result = data["result"][method][fep]
 
+    statistics = {}
+    for name in ("avg", "sem", "std"):
+        value = result[f"{method}_{name}"]
+        statistics[name] = value if value is not None and np.isfinite(value) else None
+
     return {
         "fep": fep,
         "method": method,
         "from": result["from"],
         "to": result["to"],
-        "avg": result[f"{method}_avg"],
-        "sem": result[f"{method}_sem"],
-        "std": result[f"{method}_std"],
+        **statistics,
     }
 
 
@@ -202,7 +227,7 @@ def summarize_fep_edge_qc(
         "water_n_failed": water_qc["n_failed"],
         "water_std": water_qc["std"],
         "water_range": water_qc["range"],
-        "consistent": consistency["consistent"],
+        **{key: value for key, value in consistency.items() if key != "fep"},
     }
 
 
@@ -281,23 +306,29 @@ def summarize_cycle_closure_qc(
     data: dict,
     method: str = "ddGbar",
 ) -> list[dict]:
-    """Calculate cycle closure errors for all detected cycles in the FEP network."""
+    """Report basis cycles, marking unavailable closures without aborting QC."""
     cycles = find_cycle_basis(data, method=method)
     results = []
 
     for cycle in cycles:
-        closure_error = cycle_closure_error(
-            data,
-            cycle=cycle,
-            method=method,
-        )
+        try:
+            closure_error = cycle_closure_error(data, cycle=cycle, method=method)
+        except ValueError as exc:
+            closure_error = None
+            status = "unavailable"
+            reason = str(exc)
+        else:
+            status = "ok"
+            reason = ""
 
         results.append(
             {
                 "cycle": cycle,
                 "n_edges": len(cycle) - 1,
                 "closure_error": closure_error,
-                "abs_closure_error": abs(closure_error),
+                "abs_closure_error": abs(closure_error) if closure_error is not None else None,
+                "status": status,
+                "reason": reason,
             }
         )
 

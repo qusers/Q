@@ -58,6 +58,26 @@ def test_replicate_statistics_all_failed():
     assert result["range"] is None
 
 
+def test_replicate_statistics_excludes_all_nonfinite_values():
+    result = replicate_statistics([1.0, float("nan"), float("inf"), -float("inf"), 3.0])
+
+    assert result["n_replicates"] == 5
+    assert result["n_valid"] == 2
+    assert result["n_failed"] == 3
+    assert result["mean"] == pytest.approx(2.0)
+    assert result["std"] == pytest.approx(1.0)
+    assert result["sem"] == pytest.approx(1.0 / 2**0.5)
+    assert result["range"] == pytest.approx(2.0)
+
+
+def test_replicate_statistics_all_nonfinite():
+    result = replicate_statistics([float("inf"), -float("inf")])
+
+    assert result["n_valid"] == 0
+    assert result["n_failed"] == 2
+    assert all(result[key] is None for key in ("mean", "std", "sem", "range"))
+
+
 def test_analyze_fep_edge():
     """QC should extract replicate energies from FepReader data."""
     data = {
@@ -137,14 +157,16 @@ def test_check_fep_pair_consistency():
             "FEP_lig1_lig2": {
                 "fep_stage": "production",
                 "temperature": 298,
-                "lambda_sum": 1.0,
+                "lambda_sum": 100,
+                "input_n_lambdas": 100,
             }
         },
         "2.protein": {
             "FEP_lig1_lig2": {
                 "fep_stage": "production",
                 "temperature": 298,
-                "lambda_sum": 1.0,
+                "lambda_sum": 100,
+                "input_n_lambdas": 100,
             }
         },
     }
@@ -158,6 +180,7 @@ def test_check_fep_pair_consistency():
     assert result["temperature_match"] is True
     assert result["lambda_sum_match"] is True
     assert result["consistent"] is True
+    assert result["consistency_status"] == "consistent"
 
 
 def test_check_fep_pair_consistency_detects_mismatch():
@@ -167,14 +190,16 @@ def test_check_fep_pair_consistency_detects_mismatch():
             "FEP_lig1_lig2": {
                 "fep_stage": "production",
                 "temperature": 298,
-                "lambda_sum": 1.0,
+                "lambda_sum": 100,
+                "input_n_lambdas": 100,
             }
         },
         "2.protein": {
             "FEP_lig1_lig2": {
                 "fep_stage": "production",
                 "temperature": 310,
-                "lambda_sum": 1.0,
+                "lambda_sum": 100,
+                "input_n_lambdas": 100,
             }
         },
     }
@@ -186,6 +211,20 @@ def test_check_fep_pair_consistency_detects_mismatch():
 
     assert result["temperature_match"] is False
     assert result["consistent"] is False
+    assert result["consistency_status"] == "mismatch"
+
+
+@pytest.mark.parametrize("mismatch", [False, True])
+def test_missing_window_metadata_is_unverified_unless_another_check_fails(mismatch):
+    water = {"fep_stage": "FEP1", "temperature": "298", "lambda_sum": 100}
+    protein = {**water, "temperature": "310" if mismatch else "298", "input_n_lambdas": 100}
+    data = {"1.water": {"FEP_A_B": water}, "2.protein": {"FEP_A_B": protein}}
+
+    result = check_fep_pair_consistency(data, "FEP_A_B")
+
+    assert result["lambda_sum_match"] is None
+    assert result["consistent"] is (False if mismatch else None)
+    assert result["consistency_status"] == ("mismatch" if mismatch else "unverified")
 
 
 def test_analyze_ddg_edge():
@@ -218,6 +257,27 @@ def test_analyze_ddg_edge():
     assert result["std"] == pytest.approx(0.36)
 
 
+@pytest.mark.parametrize("value", [None, float("nan"), float("inf"), -float("inf")])
+def test_analyze_ddg_edge_normalizes_unavailable_statistics(value):
+    data = {
+        "result": {
+            "ddGbar": {
+                "FEP_A_B": {
+                    "from": "A",
+                    "to": "B",
+                    "ddGbar_avg": value,
+                    "ddGbar_sem": value,
+                    "ddGbar_std": value,
+                }
+            }
+        }
+    }
+
+    result = analyze_ddg_edge(data, "FEP_A_B")
+
+    assert all(result[key] is None for key in ("avg", "sem", "std"))
+
+
 def test_summarize_fep_edge_qc():
     """QC summary should combine ddG, replicate, and consistency information."""
     data = {
@@ -225,7 +285,8 @@ def test_summarize_fep_edge_qc():
             "FEP_lig1_lig2": {
                 "fep_stage": "production",
                 "temperature": 298,
-                "lambda_sum": 1.0,
+                "lambda_sum": 100,
+                "input_n_lambdas": 100,
                 "FEP_result": {
                     "dGbar": {
                         "energies": [-2.0, -2.1, -1.9],
@@ -237,7 +298,8 @@ def test_summarize_fep_edge_qc():
             "FEP_lig1_lig2": {
                 "fep_stage": "production",
                 "temperature": 298,
-                "lambda_sum": 1.0,
+                "lambda_sum": 100,
+                "input_n_lambdas": 100,
                 "FEP_result": {
                     "dGbar": {
                         "energies": [-3.2, -3.4, -3.3],
@@ -286,7 +348,8 @@ def test_summarize_fep_system_qc():
             "FEP_lig1_lig2": {
                 "fep_stage": "production",
                 "temperature": 298,
-                "lambda_sum": 1.0,
+                "lambda_sum": 100,
+                "input_n_lambdas": 100,
                 "FEP_result": {
                     "dGbar": {
                         "energies": [-2.0, -2.1, -1.9],
@@ -296,7 +359,8 @@ def test_summarize_fep_system_qc():
             "FEP_lig2_lig3": {
                 "fep_stage": "production",
                 "temperature": 298,
-                "lambda_sum": 1.0,
+                "lambda_sum": 100,
+                "input_n_lambdas": 100,
                 "FEP_result": {
                     "dGbar": {
                         "energies": [-1.0, -1.2, -1.1],
@@ -308,7 +372,8 @@ def test_summarize_fep_system_qc():
             "FEP_lig1_lig2": {
                 "fep_stage": "production",
                 "temperature": 298,
-                "lambda_sum": 1.0,
+                "lambda_sum": 100,
+                "input_n_lambdas": 100,
                 "FEP_result": {
                     "dGbar": {
                         "energies": [-3.2, -3.4, -3.3],
@@ -318,7 +383,8 @@ def test_summarize_fep_system_qc():
             "FEP_lig2_lig3": {
                 "fep_stage": "production",
                 "temperature": 298,
-                "lambda_sum": 1.0,
+                "lambda_sum": 100,
+                "input_n_lambdas": 100,
                 "FEP_result": {
                     "dGbar": {
                         "energies": [-2.0, -2.2, -2.1],
@@ -450,6 +516,38 @@ def test_summarize_cycle_closure_qc():
     assert results[0]["n_edges"] == 3
     assert results[0]["closure_error"] == pytest.approx(0.5)
     assert results[0]["abs_closure_error"] == pytest.approx(0.5)
+    assert results[0]["status"] == "ok"
+    assert results[0]["reason"] == ""
+
+
+@pytest.mark.parametrize("value", [None, float("nan"), float("inf"), -float("inf")])
+def test_cycle_qc_retains_unavailable_cycles_and_reports_usable_cycles(value):
+    edges = {
+        "ab": {"from": "A", "to": "B", "ddGbar_avg": 1.0},
+        "bc": {"from": "B", "to": "C", "ddGbar_avg": value},
+        "ca": {"from": "C", "to": "A", "ddGbar_avg": -2.0},
+        "de": {"from": "D", "to": "E", "ddGbar_avg": 1.0},
+        "ef": {"from": "E", "to": "F", "ddGbar_avg": 2.0},
+        "fd": {"from": "F", "to": "D", "ddGbar_avg": -2.5},
+    }
+
+    results = summarize_cycle_closure_qc({"result": {"ddGbar": edges}})
+
+    assert len(results) == 2
+    unavailable, usable = results
+    assert unavailable["cycle"] == ["A", "B", "C", "A"]
+    assert unavailable["status"] == "unavailable"
+    assert unavailable["closure_error"] is None
+    assert unavailable["abs_closure_error"] is None
+    assert unavailable["reason"] == "Missing FEP edge: B -> C"
+    assert usable["status"] == "ok"
+    assert usable["closure_error"] == pytest.approx(0.5)
+
+
+def test_cycle_qc_for_network_without_cycles():
+    data = {"result": {"ddGbar": {"ab": {"from": "A", "to": "B", "ddGbar_avg": 1.0}}}}
+
+    assert summarize_cycle_closure_qc(data) == []
 
 
 def test_find_cycle_basis():

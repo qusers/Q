@@ -150,21 +150,24 @@ class FepReader:
             temperature = [d for d in (_dir / fep_stage).glob("*") if d.is_dir()][0].name
             replicates = len([d for d in (_dir / fep_stage / temperature).iterdir() if d.is_dir()])
 
-            if self.n_lambdas is None:
-                inputs = sorted(list(_dir.glob("inputfiles/md*.inp")))
-                if len(inputs) == 0:
+            inputs = sorted(_dir.glob("inputfiles/md*.inp"))
+            input_n_lambdas = len(fep_files) * (len(inputs) - 1) if inputs else None
+            n_lambdas = self.n_lambdas
+            if n_lambdas is None:
+                if input_n_lambdas is None:
                     logger.error(
                         f"No input files found in {fep}. If this is a backed up system without input files "
                         ", consider passing the argument --n_lambdas (-lamb) to qligfepA"
                     )
-                self.n_lambdas = len(fep_files) * (len(inputs) - 1)
+                n_lambdas = input_n_lambdas
 
             # register the ligand names in the dictionary for further results analysis
             _from, _to = self._lig_names_from_FEPdir(fep)
             try:
                 self.data[self.system][fep].update(
                     {  # populate the dictionary with the FEP information
-                        "lambda_sum": self.n_lambdas,
+                        "lambda_sum": n_lambdas,
+                        "input_n_lambdas": input_n_lambdas,
                         "fep_stage": fep_stage,
                         "temperature": str(temperature),
                         "replicates": replicates,
@@ -638,6 +641,10 @@ def main(args: argparse.Namespace):
     fep_reader.load_new_system(system=args.protein_dir)
     fep_reader.read_perturbations(add_run_data=not args.no_run_data)
     fep_reader.calculate_ddG()
+    # Save the primary results before generating optional diagnostic reports.
+    fep_reader.save_json_data()
+    results_file = ddG_json_path(args.json_file)
+    fep_reader.populate_mapping_dictionary(method=args.method, output_file=results_file)
     if args.qc:
         qc_method = args.method[1:]
 
@@ -696,6 +703,8 @@ def main(args: argparse.Namespace):
                 "n_edges": result["n_edges"],
                 "closure_error": result["closure_error"],
                 "abs_closure_error": result["abs_closure_error"],
+                "status": result["status"],
+                "reason": result["reason"],
             }
             for result in cycle_qc
         ]
@@ -707,6 +716,8 @@ def main(args: argparse.Namespace):
                 "n_edges",
                 "closure_error",
                 "abs_closure_error",
+                "status",
+                "reason",
             ],
         )
         cycle_qc_df[["closure_error", "abs_closure_error"]] = cycle_qc_df[
@@ -723,9 +734,6 @@ def main(args: argparse.Namespace):
             index=False,
         )
 
-    fep_reader.save_json_data()
-    results_file = ddG_json_path(args.json_file)
-    fep_reader.populate_mapping_dictionary(method=args.method, output_file=results_file)
     if args.experimental_key is not None:
         fep_reader.load_experimental_data(exp_key=args.experimental_key)
         results_json = json.loads((Path.cwd() / results_file).read_text())
