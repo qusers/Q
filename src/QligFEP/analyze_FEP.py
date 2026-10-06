@@ -9,6 +9,8 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+from QligFEP.analysis_qc import summarize_cycle_closure_qc, summarize_fep_system_qc
+
 from .analysis_plotting import create_ddG_plot, prepare_df
 from .IO import (
     ddG_json_path,
@@ -148,21 +150,24 @@ class FepReader:
             temperature = [d for d in (_dir / fep_stage).glob("*") if d.is_dir()][0].name
             replicates = len([d for d in (_dir / fep_stage / temperature).iterdir() if d.is_dir()])
 
-            if self.n_lambdas is None:
-                inputs = sorted(list(_dir.glob("inputfiles/md*.inp")))
-                if len(inputs) == 0:
+            inputs = sorted(_dir.glob("inputfiles/md*.inp"))
+            input_n_lambdas = len(fep_files) * (len(inputs) - 1) if inputs else None
+            n_lambdas = self.n_lambdas
+            if n_lambdas is None:
+                if input_n_lambdas is None:
                     logger.error(
                         f"No input files found in {fep}. If this is a backed up system without input files "
                         ", consider passing the argument --n_lambdas (-lamb) to qligfepA"
                     )
-                self.n_lambdas = len(fep_files) * (len(inputs) - 1)
+                n_lambdas = input_n_lambdas
 
             # register the ligand names in the dictionary for further results analysis
             _from, _to = self._lig_names_from_FEPdir(fep)
             try:
                 self.data[self.system][fep].update(
                     {  # populate the dictionary with the FEP information
-                        "lambda_sum": self.n_lambdas,
+                        "lambda_sum": n_lambdas,
+                        "input_n_lambdas": input_n_lambdas,
                         "fep_stage": fep_stage,
                         "temperature": str(temperature),
                         "replicates": replicates,
@@ -604,6 +609,11 @@ def parse_arguments() -> argparse.Namespace:
             "Passing this argument will allow the script to continue without raising an error."
         ),
     )
+    parser.add_argument(
+        "--qc",
+        action="store_true",
+        help="Generate FEP replicate and cycle-closure quality-control CSV files.",
+    )
 
     parser.add_argument(
         "-log",
@@ -631,10 +641,99 @@ def main(args: argparse.Namespace):
     fep_reader.load_new_system(system=args.protein_dir)
     fep_reader.read_perturbations(add_run_data=not args.no_run_data)
     fep_reader.calculate_ddG()
+    # Save the primary results before generating optional diagnostic reports.
     fep_reader.save_json_data()
-
     results_file = ddG_json_path(args.json_file)
     fep_reader.populate_mapping_dictionary(method=args.method, output_file=results_file)
+    if args.qc:
+        qc_method = args.method[1:]
+
+        edge_qc = summarize_fep_system_qc(
+            fep_reader.data,
+            method=qc_method,
+            water_sys=args.water_dir,
+            protein_sys=args.protein_dir,
+        )
+
+        edge_qc_df = pd.DataFrame(edge_qc)
+
+        edge_qc_df["total_failed"] = edge_qc_df["protein_n_failed"] + edge_qc_df["water_n_failed"]
+
+        edge_qc_df["max_leg_std"] = edge_qc_df[["protein_std", "water_std"]].max(axis=1)
+
+        edge_qc_df["max_leg_range"] = edge_qc_df[["protein_range", "water_range"]].max(axis=1)
+
+        numeric_columns = [
+            "ddg",
+            "ddg_sem",
+            "ddg_std",
+            "protein_std",
+            "protein_range",
+            "water_std",
+            "water_range",
+            "max_leg_std",
+            "max_leg_range",
+        ]
+
+        edge_qc_df[numeric_columns] = edge_qc_df[numeric_columns].round(3)
+
+        edge_qc_df = edge_qc_df.sort_values(
+            by=[
+                "protein_n_failed",
+                "water_n_failed",
+                "consistent",
+                "max_leg_std",
+            ],
+            ascending=[False, False, True, False],
+        )
+
+        edge_qc_df.to_csv(
+            f"{args.target}_fep_qc.csv",
+            index=False,
+        )
+
+        cycle_qc = summarize_cycle_closure_qc(
+            fep_reader.data,
+            method=args.method,
+        )
+
+        cycle_rows = [
+            {
+                "cycle": " -> ".join(result["cycle"]),
+                "n_edges": result["n_edges"],
+                "closure_error": result["closure_error"],
+                "abs_closure_error": result["abs_closure_error"],
+                "status": result["status"],
+                "reason": result["reason"],
+            }
+            for result in cycle_qc
+        ]
+
+        cycle_qc_df = pd.DataFrame(
+            cycle_rows,
+            columns=[
+                "cycle",
+                "n_edges",
+                "closure_error",
+                "abs_closure_error",
+                "status",
+                "reason",
+            ],
+        )
+        cycle_qc_df[["closure_error", "abs_closure_error"]] = cycle_qc_df[
+            ["closure_error", "abs_closure_error"]
+        ].round(3)
+
+        cycle_qc_df = cycle_qc_df.sort_values(
+            by="abs_closure_error",
+            ascending=False,
+        )
+
+        cycle_qc_df.to_csv(
+            f"{args.target}_cycle_qc.csv",
+            index=False,
+        )
+
     if args.experimental_key is not None:
         fep_reader.load_experimental_data(exp_key=args.experimental_key)
         results_json = json.loads((Path.cwd() / results_file).read_text())

@@ -215,7 +215,8 @@ The package provides these shared preparation tools:
 - `qligfep` generates the input files for one ligand perturbation.
 - `setupFEP` prepares a complete ligand FEP series, including its protein and
   water systems. Pass `--neq` to select the non-equilibrium NEQ² workflow.
-- `qligfep_analyze` analyzes windowed ligand FEP results.
+- `qligfep_analyze` analyzes windowed ligand FEP results. Optionally, pass `--qc` to write
+  replicate and cycle-closure diagnostic CSVs.
 - `qligfep_neq_analyze` analyzes NEQ² switching-work results.
 
 ### QresFEP
