@@ -26,7 +26,6 @@ import json
 import os
 from collections import defaultdict
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -75,7 +74,7 @@ def dF_to_kcal(dF: float, work_units: str, temperature: float) -> float:
 WORK_TAIL_BYTES = 256 * 1024
 
 
-def read_final_work(log_path: str) -> Optional[float]:
+def read_final_work(log_path: str) -> float | None:
     """Read the final accumulated switching work from a qdyn NEQ-mode log.
 
     Each switch prints ``At step N, work accumulated was <W> ...`` every output interval;
@@ -101,7 +100,7 @@ def read_final_work(log_path: str) -> Optional[float]:
         if "work accumulated" in line:
             try:
                 return float(line.split()[6])
-            except (IndexError, ValueError):
+            except IndexError, ValueError:
                 logger.warning(f"Could not parse the work value in {log_path}")
                 return None
     return None
@@ -264,7 +263,7 @@ def _dF_by_rep_from_works(by_rep: dict, beta: float, work_units: str, temperatur
             continue
         try:
             result[rep] = dF_to_kcal(bar_delta_f(forward, reverse, beta), work_units, temperature)
-        except (ValueError, RuntimeError):
+        except ValueError, RuntimeError:
             result[rep] = None
     return result
 
@@ -573,7 +572,7 @@ def populate_mapping_json(df: pd.DataFrame, mapping_json: str, output_file: str)
     logger.info(f"Injected NEQ ddG into {matched} edge(s); wrote {output_file}")
 
 
-def _nan_to_none(value) -> Optional[float]:
+def _nan_to_none(value) -> float | None:
     """Return ``None`` for a missing/NaN value (so it serializes to JSON null), else a float."""
     return None if pd.isna(value) else float(value)
 

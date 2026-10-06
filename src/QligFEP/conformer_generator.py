@@ -8,7 +8,6 @@ conformational consistency.
 """
 
 from pathlib import Path
-from typing import Union
 
 from rdkit import Chem
 from rdkit.Chem import AllChem, rdFMCS
@@ -38,7 +37,7 @@ class BiasedConformerGenerator(MoleculeIO):
 
     def __init__(
         self,
-        references: Union[str, Path, MoleculeIO],
+        references: str | Path | MoleculeIO,
         reindex_hydrogens: bool = True,
         mcs_atom_compare: str = "any",
         mcs_bond_compare: str = "any",

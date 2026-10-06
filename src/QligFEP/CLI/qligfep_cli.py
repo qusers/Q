@@ -4,7 +4,6 @@ import argparse
 import datetime
 import json
 from pathlib import Path
-from typing import Optional
 
 from QligFEP import __version__
 
@@ -15,7 +14,7 @@ from ..templates.sections import format_wall_restraints
 from .parser_base import parse_arguments
 
 
-def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
+def main(args: argparse.Namespace | None = None, **kwargs) -> None:
     """Main function for qligfep_cli.py. Takes arguments from argparse and passes them
     to QligFEP class. If no arguments are given, the function will use the keyword arguments
     that are passed to it.
