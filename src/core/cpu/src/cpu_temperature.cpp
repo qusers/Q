@@ -6,8 +6,7 @@
 #include "math.h"
 
 void CpuTemperature::calc(Context& ctx) {
-    auto& atypes = ctx.atypes->cpu_data_p;
-    auto& catypes = ctx.catypes->cpu_data_p;
+    const auto* masses = ctx.masses->cpu_data_p;
     auto& velocities = ctx.velocities->cpu_data_p;
     auto* excluded = ctx.excluded->cpu_data_p;
 
@@ -15,7 +14,7 @@ void CpuTemperature::calc(Context& ctx) {
     energy_accum_t Temp_solvent = 0, Tfree_solvent = 0, Texcl_solvent = 0;
     double Ekinmax = 1000.0 * data_.Ndegf * Boltz * ctx.md.temperature / 2.0 / ctx.n_atoms;  // Ekin_avg = Ndegf · kB · T / (2 · n_atoms), 1000 is tolerance factor
     for (int i = 0; i < ctx.n_atoms; i++) {
-        double mass_i = catypes[atypes[i].code - 1].m;
+        double mass_i = masses[i];
 
         double v2 = velocities[i].x * velocities[i].x + velocities[i].y * velocities[i].y + velocities[i].z * velocities[i].z;
 

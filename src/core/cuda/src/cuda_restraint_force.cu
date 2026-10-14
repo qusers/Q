@@ -30,7 +30,7 @@ __device__ void compute_posrestr(int i, const int* ids, const double* kk,
 
 // sequence restraints: one thread owns the whole [ai,aj) group
 __device__ void compute_restrseq(int s, const restrseq_t* recs,
-                                 const atype_t* atypes, const catype_t* catypes,
+                                 const double* masses,
                                  const bool* heavy, const coord_t* coords,
                                  const coord_t* coords_init, dvel_t* dvel, energy_accum_t* e) {
     const double k = recs[s].k;
@@ -48,7 +48,7 @@ __device__ void compute_restrseq(int s, const restrseq_t* recs,
             atomic_add_energy(&e[E_RESTR_PRES], 0.5 * k * norm2(d));
             for (int i = recs[s].ai - 1; i < recs[s].aj - 1; i++)
                 if (heavy[i] || recs[s].ih) {
-                    const double tmp = catypes[atypes[i].code - 1].m / CARBON_MASS;
+                    const double tmp = masses[i] / CARBON_MASS;
                     atomic_add_force(&dvel[i].x, k * d.x * tmp);
                     atomic_add_force(&dvel[i].y, k * d.y * tmp);
                     atomic_add_force(&dvel[i].z, k * d.z * tmp);
@@ -58,7 +58,7 @@ __device__ void compute_restrseq(int s, const restrseq_t* recs,
         double totmass = 0;
         for (int i = recs[s].ai - 1; i < recs[s].aj - 1; i++)
             if (heavy[i] || recs[s].ih) {
-                const double mass = catypes[atypes[i].code - 1].m;
+                const double mass = masses[i];
                 totmass += mass;
                 d = d + (coords[i] - coords_init[i]) * mass;
             }
@@ -226,7 +226,7 @@ __global__ void restraint_kernel(
     const int* pr_ids, const double* pr_k, const int* pr_esa, const int* pr_esb,
     const restrseq_t* seq_recs, const restrpos_t* pos_recs, const restrdis_t* dis_recs,
     const restrang_t* ang_recs, const restrwall_t* wall_recs,
-    const atype_t* atypes, const catype_t* catypes, const bool* heavy,
+    const double* masses, const bool* heavy,
     const double* lambdas, int n_lambdas, coord_t solvent_center,
     const coord_t* coords, const coord_t* coords_init,
     dvel_t* dvel, energy_accum_t* e) {
@@ -237,7 +237,7 @@ __global__ void restraint_kernel(
     }
     tid -= n_posrestr;
     if (tid < n_restrseq) {
-        compute_restrseq(tid, seq_recs, atypes, catypes, heavy, coords, coords_init, dvel, e);
+        compute_restrseq(tid, seq_recs, masses, heavy, coords, coords_init, dvel, e);
         return;
     }
     tid -= n_restrseq;
@@ -289,7 +289,7 @@ void CudaRestraintForce::calc(Context& ctx) {
         n_restrdis ? data_.restrdis.recs->gpu_data_p : nullptr,
         n_restrang ? data_.restrang.recs->gpu_data_p : nullptr,
         n_restrwall ? data_.restrwall.recs->gpu_data_p : nullptr,
-        ctx.atypes->gpu_data_p, ctx.catypes->gpu_data_p, ctx.heavy->gpu_data_p,
+        ctx.masses->gpu_data_p, ctx.heavy->gpu_data_p,
         ctx.lambdas->gpu_data_p, ctx.n_lambdas(), ctx.topo.solvent_center,
         ctx.coords->gpu_data_p, ctx.coords_init->gpu_data_p,
         ctx.dvelocities->gpu_data_p, ctx.energy.device());

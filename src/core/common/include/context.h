@@ -41,6 +41,7 @@ class Context {
     std::unique_ptr<HostDeviceBuffer<coord_t>> coords_init;
     std::unique_ptr<HostDeviceBuffer<bool>> excluded;
     std::unique_ptr<HostDeviceBuffer<double>> winv;
+    std::unique_ptr<HostDeviceBuffer<double>> masses;
     std::unique_ptr<HostDeviceBuffer<bool>> shell;
     std::vector<int> q_atoms;
     std::vector<int> p_atoms;
@@ -86,6 +87,7 @@ class Context {
     void init_q_charges(const ParseResult& parsed);
     void init_lj_matrix(const ParseResult& parsed);
     void init_velocities(const ParseResult& parsed);
+    void init_masses(const ParseResult& parsed);
     void init_inv_mass();
     void init_heavy();
     void init_shell();

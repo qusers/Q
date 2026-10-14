@@ -821,6 +821,8 @@ void InpParser::parse_md() {
     md.bath_coupling = parse_double(value_or(mdv, "bath-coupling", value_or(mdv, "bath_coupling", "1")));
     md.random_seed = parse_int(value_or(mdv, "random-seed", value_or(mdv, "random_seed", "1")));
     md.initial_temperature = parse_double(value_or(mdv, "initial-temperature", value_or(mdv, "initial_temperature", value_or(mdv, "temperature", "0"))));
+    md.hmr = is_on_value(mdv, "hmr", "off");
+    md.hmr_target_mass = parse_double(value_or(mdv, "hmr-target-mass", "3.024"));
 
     const bool has_legacy_constraint_key =
         mdv.count("shake-solvent") != 0 ||
