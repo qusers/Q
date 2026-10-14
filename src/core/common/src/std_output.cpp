@@ -37,6 +37,7 @@ void StdOutput::output_energy(Context& ctx, int iteration) {
     std::printf("pw\t%f\t%f\n", energy.nb_pw.Ucoul, energy.nb_pw.Uvdw);
     std::printf("ww\t%f\t%f\n", energy.nb_ww.Ucoul, energy.nb_ww.Uvdw);
     std::printf("qx\t%f\t%f\n", energy.nb_qx.Ucoul, energy.nb_qx.Uvdw);
+    std::printf("LRF\t%f\n", energy.lrf);
     std::printf("\n");
 
     std::printf("[restraint]\n");
