@@ -665,9 +665,9 @@ void InpParser::ensure_fep() {
         if (line.find("[change_bonds]") != std::string::npos) { block = 13; continue; }
         if (line.find("[angle_types]") != std::string::npos) { block = 14; continue; }
         if (line.find("[change_angles]") != std::string::npos) { block = 15; continue; }
-        if (line.find("[torsion_types]") != std::string::npos) { block = 16; fep_->q_ctorsions.push_back({"0", "0.0", "0.0", "0.0"}); continue; }
+        if (line.find("[torsion_types]") != std::string::npos) { block = 16; continue; }
         if (line.find("[change_torsions]") != std::string::npos) { block = 17; continue; }
-        if (line.find("[improper_types]") != std::string::npos) { block = 18; fep_->q_cimpropers.push_back({"0", "0.0", "0.0"}); continue; }
+        if (line.find("[improper_types]") != std::string::npos) { block = 18; continue; }
         if (line.find("[change_impropers]") != std::string::npos) { block = 19; continue; }
         if (line.find("[angle_couplings]") != std::string::npos) { block = 20; continue; }
         if (line.find("[torsion_couplings]") != std::string::npos) { block = 21; continue; }
@@ -741,13 +741,33 @@ void InpParser::ensure_fep() {
                     fep_->q_angles[s].push_back(f[0] + " " + f[1] + " " + f[2] + " " + f[3 + s]);
                 }
                 break;
-            case 16: fep_->q_ctorsions.push_back(f.size() > 1 ? std::vector<std::string>(f.begin() + 1, f.end()) : f); break;
-            case 17:
-                for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_torsions[s].push_back(f[s + 1]);
+            case 16:
+                if (f.size() != 4) {
+                    throw parse_error("[torsion_types]: expected type_id k multiplicity phase.");
+                }
+                fep_->q_ctorsions.push_back(f);
                 break;
-            case 18: fep_->q_cimpropers.push_back(f.size() > 1 ? std::vector<std::string>(f.begin() + 1, f.end()) : f); break;
+            case 17:
+                if (f.size() != static_cast<size_t>(4 + fep_->states)) {
+                    throw parse_error("[change_torsions]: expected four atom indices followed by one type code per state.");
+                }
+                for (int s = 0; s < fep_->states; s++) {
+                    fep_->q_torsions[s].push_back(f[0] + " " + f[1] + " " + f[2] + " " + f[3] + " " + f[4 + s]);
+                }
+                break;
+            case 18:
+                if (f.size() != 3) {
+                    throw parse_error("[improper_types]: expected type_id k phi0.");
+                }
+                fep_->q_cimpropers.push_back(f);
+                break;
             case 19:
-                for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_impropers[s].push_back(f[s + 1]);
+                if (f.size() != static_cast<size_t>(4 + fep_->states)) {
+                    throw parse_error("[change_impropers]: expected four atom indices followed by one type code per state.");
+                }
+                for (int s = 0; s < fep_->states; s++) {
+                    fep_->q_impropers[s].push_back(f[0] + " " + f[1] + " " + f[2] + " " + f[3] + " " + f[4 + s]);
+                }
                 break;
             case 20: fep_->q_angcouples.push_back(f); break;
             case 21: fep_->q_torcouples.push_back(f); break;
@@ -1283,6 +1303,9 @@ void InpParser::parse_q_cbonds() {
 void InpParser::parse_q_impropers() {
     ensure_fep();
     int n_lambdas = static_cast<int>(result.lambdas.size());
+    if (!fep_file_.empty() && n_lambdas != fep_->states) {
+        throw parse_error("[FEP]: number of lambdas must match states.");
+    }
     size_t total = 0;
     for (const auto& state : fep_->q_impropers) total += state.size();
     int n_qimpropers = n_lambdas > 0 ? static_cast<int>(total) / n_lambdas : 0;
@@ -1297,13 +1320,36 @@ void InpParser::parse_q_impropers() {
 
 void InpParser::parse_q_cimpropers() {
     ensure_fep();
-    result.q_cimpropers.resize(fep_->q_cimpropers.size());
-    for (size_t i = 0; i < fep_->q_cimpropers.size(); i++) result.q_cimpropers[i] = {row_double(fep_->q_cimpropers[i], 0), row_double(fep_->q_cimpropers[i], 1)};
+    result.q_cimpropers.assign(1, q_cimproper_t{});
+    std::vector<bool> type_read(1, false);
+    for (const auto& row : fep_->q_cimpropers) {
+        const int id = row_int(row, 0);
+        if (id <= 0) {
+            throw parse_error("[improper_types]: parameter type IDs must be positive.");
+        }
+        if (result.q_cimpropers.size() <= static_cast<size_t>(id)) {
+            result.q_cimpropers.resize(static_cast<size_t>(id) + 1);
+            type_read.resize(static_cast<size_t>(id) + 1, false);
+        }
+        // Keep angles in degrees, as in the other QGPU parsed parameter tables.
+        result.q_cimpropers[id] = {row_double(row, 1), row_double(row, 2)};
+        type_read[id] = true;
+    }
+    for (const auto& improper : result.q_impropers) {
+        const int code = improper.code;
+        if (code == 0) continue;
+        if (code < 0 || static_cast<size_t>(code) >= type_read.size() || !type_read[code]) {
+            throw parse_error("[change_impropers]: undefined improper type " + std::to_string(code));
+        }
+    }
 }
 
 void InpParser::parse_q_torsions() {
     ensure_fep();
     int n_lambdas = static_cast<int>(result.lambdas.size());
+    if (!fep_file_.empty() && n_lambdas != fep_->states) {
+        throw parse_error("[FEP]: number of lambdas must match states.");
+    }
     size_t total = 0;
     for (const auto& state : fep_->q_torsions) total += state.size();
     int n_qtorsions = n_lambdas > 0 ? static_cast<int>(total) / n_lambdas : 0;
@@ -1318,8 +1364,26 @@ void InpParser::parse_q_torsions() {
 
 void InpParser::parse_q_ctorsions() {
     ensure_fep();
-    result.q_ctorsions.resize(fep_->q_ctorsions.size());
-    for (size_t i = 0; i < fep_->q_ctorsions.size(); i++) result.q_ctorsions[i] = {0, row_double(fep_->q_ctorsions[i], 0), row_double(fep_->q_ctorsions[i], 1), row_double(fep_->q_ctorsions[i], 2), 0.0};
+    result.q_ctorsions.assign(1, ctorsion_t{});
+    for (const auto& row : fep_->q_ctorsions) {
+        const int id = row_int(row, 0);
+        if (id <= 0) {
+            throw parse_error("[torsion_types]: parameter type IDs must be positive.");
+        }
+        if (result.q_ctorsions.size() <= static_cast<size_t>(id)) {
+            result.q_ctorsions.resize(static_cast<size_t>(id) + 1);
+        }
+        // Fortran Q-torsions have no path divisor; preserve k with unit scaling.
+        // Phase stays in degrees until force parameters are constructed.
+        result.q_ctorsions[id] = {id, row_double(row, 1), row_double(row, 2), row_double(row, 3), 1.0};
+    }
+    for (const auto& torsion : result.q_torsions) {
+        const int code = torsion.code;
+        if (code == 0) continue;
+        if (code < 0 || static_cast<size_t>(code) >= result.q_ctorsions.size() || result.q_ctorsions[code].code != code) {
+            throw parse_error("[change_torsions]: undefined torsion type " + std::to_string(code));
+        }
+    }
 }
 
 void InpParser::parse_q_offdiags() {
