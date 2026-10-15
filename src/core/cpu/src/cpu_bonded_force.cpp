@@ -17,11 +17,15 @@ void CpuBondedForce::calc_bonds(Context& ctx) {
     auto* eslot = data_.bond.eslot->cpu_data_p;
     auto* dvelocities = ctx.dvelocities->cpu_data_p;
     auto* coords = ctx.coords->cpu_data_p;
+    auto* states = data_.bond.state->cpu_data_p;
+    const auto* lambdas = ctx.lambdas->cpu_data_p;
 
     auto* e = ctx.energy.host();
 
     for (int i = 0; i < data_.bond.n; i++) {
         const int ai = ids[i].i, aj = ids[i].j;
+        const int s = states[i];
+        const double weight = s < 0 ? 1.0 : lambdas[s];
         const double k = params[i].x, r_eq = params[i].y;
 
         const double dx = coords[aj].x - coords[ai].x;  // i -> j
@@ -33,7 +37,9 @@ void CpuBondedForce::calc_bonds(Context& ctx) {
         // force = dv * unit_vector, where unit_vector = (dx,dy,dz)/r.
         // Fold the 1/r into ampl so we can multiply by the raw (dx,dy,dz).
 
-        const double ampl = dv / r;  //
+        double ampl = dv / r;
+        ampl *= weight;
+
         const double fx = ampl * dx;
         const double fy = ampl * dy;
         const double fz = ampl * dz;
@@ -54,13 +60,17 @@ void CpuBondedForce::calc_angles(Context& ctx) {
     auto* ids = data_.angle.ids->cpu_data_p;
     auto* params = data_.angle.params->cpu_data_p;
     auto* eslot = data_.angle.eslot->cpu_data_p;
+    const auto* state = data_.angle.state->cpu_data_p;
     auto* dvelocities = ctx.dvelocities->cpu_data_p;
     auto* coords = ctx.coords->cpu_data_p;
+    const auto* lambdas = ctx.lambdas->cpu_data_p;
 
     auto* e = ctx.energy.host();
 
     for (int i = 0; i < data_.angle.n; i++) {
         const int ai = ids[i].i, aj = ids[i].j, ak = ids[i].k;
+        const int s = state[i];
+        const double weight = s < 0 ? 1.0 : lambdas[s];
         const double k = params[i].x;
         const double th_eq = params[i].y;
 
@@ -84,14 +94,14 @@ void CpuBondedForce::calc_angles(Context& ctx) {
         double f1 = sin_th;
         f1 = -1.0 / f1;
         perpendicular_v = perpendicular_v * f1 / r_ji;
-        coord_t force1 = perpendicular_v * dv_per_angle;
+        coord_t force1 = perpendicular_v * dv_per_angle * weight;
         add_force(dvelocities[ai].x, force1.x);
         add_force(dvelocities[ai].y, force1.y);
         add_force(dvelocities[ai].z, force1.z);
 
         coord_t perpendicular_v2 = get_perpendicular_vector(ajk, aji);
         perpendicular_v2 = perpendicular_v2 * f1 / r_jk;
-        coord_t force2 = perpendicular_v2 * dv_per_angle;
+        coord_t force2 = perpendicular_v2 * dv_per_angle * weight;
         add_force(dvelocities[ak].x, force2.x);
         add_force(dvelocities[ak].y, force2.y);
         add_force(dvelocities[ak].z, force2.z);
@@ -109,6 +119,8 @@ void CpuBondedForce::calc_torsions(Context& ctx) {
     auto* ids = data_.torsion.ids->cpu_data_p;
     auto* params = data_.torsion.params->cpu_data_p;
     auto* eslot = data_.torsion.eslot->cpu_data_p;
+    const auto* state = data_.torsion.state->cpu_data_p;
+    const auto* lambdas = ctx.lambdas->cpu_data_p;
     auto* dvelocities = ctx.dvelocities->cpu_data_p;
     auto* coords = ctx.coords->cpu_data_p;
 
@@ -116,6 +128,8 @@ void CpuBondedForce::calc_torsions(Context& ctx) {
 
     for (int i = 0; i < data_.torsion.n; i++) {
         const int ai = ids[i].i, aj = ids[i].j, ak = ids[i].k, al = ids[i].l;
+        const int s = state[i];
+        const double weight = s < 0 ? 1.0 : lambdas[s];
         real_t3 aji = real3_cast<real_t>(coords[ai] - coords[aj]);
         real_t3 ajk = real3_cast<real_t>(coords[ak] - coords[aj]);
         real_t3 akl = real3_cast<real_t>(coords[al] - coords[ak]);
@@ -136,7 +150,7 @@ void CpuBondedForce::calc_torsions(Context& ctx) {
         }
 
         const real_t k = params[i].k, gamma = params[i].d, paths = params[i].paths;
-        const int n = static_cast<int>(params[i].n);
+        const real_t n = params[i].n;
 
         auto [v, dv_per_angle] = calc_torsion(k, n, phi, gamma, paths);
         add_energy(e[eslot[i]], v);
@@ -152,6 +166,7 @@ void CpuBondedForce::calc_torsions(Context& ctx) {
         } else {
             force_per_cos = -dv_per_angle / sin_phi;
         }
+        force_per_cos *= weight;
 
         di = di / norm_ijk;
 
@@ -189,12 +204,17 @@ void CpuBondedForce::calc_impropers(Context& ctx) {
     auto* ids = data_.improper.ids->cpu_data_p;
     auto* params = data_.improper.params->cpu_data_p;
     auto* eslot = data_.improper.eslot->cpu_data_p;
+    const auto* state = data_.improper.state->cpu_data_p;
     auto* dvelocities = ctx.dvelocities->cpu_data_p;
     auto* coords = ctx.coords->cpu_data_p;
+    const auto* lambdas = ctx.lambdas->cpu_data_p;
 
     auto* e = ctx.energy.host();
     for (int i = 0; i < data_.improper.n; i++) {
         const int ai = ids[i].i, aj = ids[i].j, ak = ids[i].k, al = ids[i].l;
+        const int s = state[i];
+        const double weight = s < 0 ? 1.0 : lambdas[s];
+        bool is_q = s >= 0;
         coord_t aji = coords[ai] - coords[aj];
         coord_t ajk = coords[ak] - coords[aj];
         coord_t akl = coords[al] - coords[ak];
@@ -205,8 +225,13 @@ void CpuBondedForce::calc_impropers(Context& ctx) {
         double norm_ijk = norm(n_ijk);
         double norm_jkl = norm(n_jkl);
         double cos_phi = dot(n_ijk, n_jkl) / (norm_ijk * norm_jkl);
-        cos_phi = std::min(cos_phi, 1.0);
-        cos_phi = std::max(cos_phi, -1.0);
+        if (is_q) {
+            cos_phi = std::min(cos_phi, pt999);
+            cos_phi = std::max(cos_phi, -pt999);
+        } else {
+            cos_phi = std::min(cos_phi, 1.0);
+            cos_phi = std::max(cos_phi, -1.0);
+        }
         double phi = acos(cos_phi);
 
         if (dot(ajk, cross(n_ijk, n_jkl)) < 0) {
@@ -214,7 +239,18 @@ void CpuBondedForce::calc_impropers(Context& ctx) {
         }
 
         const double k = params[i].x, phi0 = params[i].y;
-        auto [v, dv_per_angle] = calc_improper2(k, phi0, phi);
+        double v, dv_per_angle;
+
+        if (is_q) {
+            auto potential = calc_q_improper(k, phi0, phi);
+            v = potential.x;
+            dv_per_angle = potential.y;
+        } else {
+            auto potential = calc_improper2(k, phi0, phi);
+            v = potential.x;
+            dv_per_angle = potential.y;
+        }
+
         add_energy(e[eslot[i]], v);
 
         coord_t di = get_perpendicular_vector(n_ijk, n_jkl);
@@ -224,8 +260,10 @@ void CpuBondedForce::calc_impropers(Context& ctx) {
             double cos_phi_limit = cos_phi < 0 ? -1 : 1;
             force_per_cos = 4.0 * k * cos(2.0 * phi - phi0) / cos_phi_limit;
         } else {
+            // is_q always go to here. Because the cosine clamp keeps this denominator away from zero.
             force_per_cos = -dv_per_angle / sin_phi;
         }
+        force_per_cos *= weight;
         di = di / norm_ijk;
 
         coord_t dl = get_perpendicular_vector(n_jkl, n_ijk);

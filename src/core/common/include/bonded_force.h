@@ -1,9 +1,9 @@
 #pragma once
 
+#include "constraint_force.h"
 #include "context.h"
 #include "host_device_buffer.h"
 #include "precision.h"
-#include "constraint_force.h"
 
 struct bond_idx_t {
     int i, j;
@@ -23,30 +23,33 @@ struct dparam2_t {
     double x, y;
 };
 
-
 struct BondTerms {
     int n = 0;
     std::unique_ptr<HostDeviceBuffer<bond_idx_t>> ids;
     std::unique_ptr<HostDeviceBuffer<dparam2_t>> params;
     std::unique_ptr<HostDeviceBuffer<int>> eslot;
+    std::unique_ptr<HostDeviceBuffer<int>> state;  // -1 = ordinary topology term; >= 0 = Q-state index
 };
 struct AngleTerms {
     int n = 0;
     std::unique_ptr<HostDeviceBuffer<angle_idx_t>> ids;
     std::unique_ptr<HostDeviceBuffer<dparam2_t>> params;  // {kth, th0} (double)
     std::unique_ptr<HostDeviceBuffer<int>> eslot;
+    std::unique_ptr<HostDeviceBuffer<int>> state;  // -1 = ordinary topology term; >= 0 = Q-state index
 };
 struct TorsionTerms {
     int n = 0;
     std::unique_ptr<HostDeviceBuffer<dihe_idx_t>> ids;
     std::unique_ptr<HostDeviceBuffer<torsion_param_t>> params;  // {k,n,d,paths} (real_t)
     std::unique_ptr<HostDeviceBuffer<int>> eslot;
+    std::unique_ptr<HostDeviceBuffer<int>> state;  // -1 = ordinary topology term; >= 0 = Q-state index
 };
 struct ImproperTerms {  // improper2: harmonic, double
     int n = 0;
     std::unique_ptr<HostDeviceBuffer<dihe_idx_t>> ids;
     std::unique_ptr<HostDeviceBuffer<dparam2_t>> params;  // {k, phi0}   (double)
     std::unique_ptr<HostDeviceBuffer<int>> eslot;
+    std::unique_ptr<HostDeviceBuffer<int>> state;  // -1 = ordinary topology term; >= 0 = Q-state index
 };
 
 struct BondedData {
@@ -96,7 +99,7 @@ HD inline dparam2_t calc_angle(const double k, const double th, const double th_
     return {v, dv};
 }
 
-HD inline real_t2 calc_torsion(const real_t k, const int n, const real_t phi, const real_t gamma, real_t paths) {
+HD inline real_t2 calc_torsion(const real_t k, const real_t n, const real_t phi, const real_t gamma, real_t paths) {
     // dv = dU / dphi -> energy per angle
     const real_t arg = n * phi - gamma;
     const real_t v = k * (1 + cos(arg)) * paths;
@@ -108,5 +111,15 @@ HD inline dparam2_t calc_improper2(const double k, const double phi0, const doub
     const double arg = 2.0 * phi - phi0;
     const double v = k * (1.0 + cos(arg));
     const double dv = k * -sin(arg) * 2.0;
+    return {v, dv};
+}
+
+HD inline dparam2_t calc_q_improper(const double k, const double phi0, const double phi) {
+    double delta = phi - phi0;
+    const double two_pi = 2.0 * M_PI;
+    delta -= two_pi * std::round(delta / two_pi);  // warps the angular difference into -pi to pi
+
+    double v = 0.5 * k * delta * delta;
+    double dv = k * delta;
     return {v, dv};
 }
