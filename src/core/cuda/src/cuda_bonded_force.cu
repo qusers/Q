@@ -5,14 +5,16 @@
 
 namespace {
 
-__device__ void compute_bond(int i, const bond_idx_t* ids, const dparam2_t* params, const int* eslot, const coord_t* coords, dvel_t* dvel, energy_accum_t* e_bond) {
+__device__ void compute_bond(int i, const bond_idx_t* ids, const dparam2_t* params, const int* eslot, const int* states, const double* lambdas, const coord_t* coords, dvel_t* dvel, energy_accum_t* e_bond) {
     const int ai = ids[i].i, aj = ids[i].j;
     const double k = params[i].x, r_eq = params[i].y;
+    const int s = states[i];
+    const double weight = s < 0 ? 1.0 : lambdas[s];
 
     coord_t d = coords[aj] - coords[ai];
     const double r = norm(d);
     auto [v, dv] = calc_bond(k, r, r_eq);
-    const double ampl = dv / r;
+    const double ampl = dv / r * weight;
 
     atomic_add_energy(&e_bond[eslot[i]], v);
     atomic_add_force(&dvel[ai].x, -ampl * d.x);
@@ -23,10 +25,12 @@ __device__ void compute_bond(int i, const bond_idx_t* ids, const dparam2_t* para
     atomic_add_force(&dvel[aj].z, ampl * d.z);
 }
 
-__device__ void compute_angle(int i, const angle_idx_t* ids, const dparam2_t* params, const int* eslot, const coord_t* coords, dvel_t* dvel, energy_accum_t* e_angle) {
+__device__ void compute_angle(int i, const angle_idx_t* ids, const dparam2_t* params, const int* eslot, const int* states, const double* lambdas, const coord_t* coords, dvel_t* dvel, energy_accum_t* e_angle) {
     const int ai = ids[i].i, aj = ids[i].j, ak = ids[i].k;
     const double k = params[i].x;
     const double th_eq = params[i].y;
+    const int s = states[i];
+    const double weight = s < 0 ? 1.0 : lambdas[s];
 
     coord_t aji = coords[ai] - coords[aj];
     coord_t ajk = coords[ak] - coords[aj];
@@ -48,14 +52,14 @@ __device__ void compute_angle(int i, const angle_idx_t* ids, const dparam2_t* pa
     double f1 = sin_th;
     f1 = -1.0 / f1;
     perpendicular_v = perpendicular_v * f1 / r_ji;
-    coord_t force1 = perpendicular_v * dv_per_angle;
+    coord_t force1 = perpendicular_v * dv_per_angle * weight;
     atomic_add_force(&dvel[ai].x, force1.x);
     atomic_add_force(&dvel[ai].y, force1.y);
     atomic_add_force(&dvel[ai].z, force1.z);
 
     coord_t perpendicular_v2 = get_perpendicular_vector(ajk, aji);
     perpendicular_v2 = perpendicular_v2 * f1 / r_jk;
-    coord_t force2 = perpendicular_v2 * dv_per_angle;
+    coord_t force2 = perpendicular_v2 * dv_per_angle * weight;
     atomic_add_force(&dvel[ak].x, force2.x);
     atomic_add_force(&dvel[ak].y, force2.y);
     atomic_add_force(&dvel[ak].z, force2.z);
@@ -65,8 +69,11 @@ __device__ void compute_angle(int i, const angle_idx_t* ids, const dparam2_t* pa
     atomic_add_force(&dvel[aj].z, -(force1.z + force2.z));
 }
 
-__device__ void compute_torsion(int i, const dihe_idx_t* ids, const torsion_param_t* params, const int* eslot, const coord_t* coords, dvel_t* dvelocities, energy_accum_t* e_torsion) {
+__device__ void compute_torsion(int i, const dihe_idx_t* ids, const torsion_param_t* params, const int* eslot, const int* states, const double* lambdas, const coord_t* coords, dvel_t* dvelocities, energy_accum_t* e_torsion) {
     const int ai = ids[i].i, aj = ids[i].j, ak = ids[i].k, al = ids[i].l;
+    const int s = states[i];
+    const double weight = s < 0 ? 1.0 : lambdas[s];
+
     real_t3 aji = real3_cast<real_t>(coords[ai] - coords[aj]);
     real_t3 ajk = real3_cast<real_t>(coords[ak] - coords[aj]);
     real_t3 akl = real3_cast<real_t>(coords[al] - coords[ak]);
@@ -87,7 +94,7 @@ __device__ void compute_torsion(int i, const dihe_idx_t* ids, const torsion_para
     }
 
     const real_t k = params[i].k, gamma = params[i].d, paths = params[i].paths;
-    const int n = static_cast<int>(params[i].n);
+    const real_t n = params[i].n;
 
     auto [v, dv_per_angle] = calc_torsion(k, n, phi, gamma, paths);
     atomic_add_energy(&e_torsion[eslot[i]], v);
@@ -118,6 +125,7 @@ __device__ void compute_torsion(int i, const dihe_idx_t* ids, const torsion_para
     } else {
         force_per_cos = -dv_per_angle / sin_phi;
     }
+    force_per_cos *= static_cast<real_t>(weight);
 
     di = di / norm_ijk;
 
@@ -146,8 +154,12 @@ __device__ void compute_torsion(int i, const dihe_idx_t* ids, const torsion_para
     atomic_add_force(&dvelocities[ak].z, force_per_cos * dpk.z);
 }
 
-__device__ void compute_improper(int i, const dihe_idx_t* ids, const dparam2_t* params, const int* eslot, const coord_t* coords, dvel_t* dvelocities, energy_accum_t* e_improper) {
+__device__ void compute_improper(int i, const dihe_idx_t* ids, const dparam2_t* params, const int* eslot, const int* states, const double* lambdas, const coord_t* coords, dvel_t* dvelocities, energy_accum_t* e_improper) {
     const int ai = ids[i].i, aj = ids[i].j, ak = ids[i].k, al = ids[i].l;
+    const int s = states[i];
+    const bool is_q = s >= 0;
+    const double weight = is_q ? lambdas[s] : 1.0;
+
     coord_t aji = coords[ai] - coords[aj];
     coord_t ajk = coords[ak] - coords[aj];
     coord_t akl = coords[al] - coords[ak];
@@ -158,8 +170,13 @@ __device__ void compute_improper(int i, const dihe_idx_t* ids, const dparam2_t* 
     double norm_ijk = norm(n_ijk);
     double norm_jkl = norm(n_jkl);
     double cos_phi = dot(n_ijk, n_jkl) / (norm_ijk * norm_jkl);
-    cos_phi = min(cos_phi, 1.0);
-    cos_phi = max(cos_phi, -1.0);
+    if (is_q) {
+        cos_phi = min(cos_phi, pt999);
+        cos_phi = max(cos_phi, -pt999);
+    } else {
+        cos_phi = min(cos_phi, 1.0);
+        cos_phi = max(cos_phi, -1.0);
+    }
     double phi = acos(cos_phi);
 
     if (dot(ajk, cross(n_ijk, n_jkl)) < 0) {
@@ -167,7 +184,18 @@ __device__ void compute_improper(int i, const dihe_idx_t* ids, const dparam2_t* 
     }
 
     const double k = params[i].x, phi0 = params[i].y;
-    auto [v, dv_per_angle] = calc_improper2(k, phi0, phi);
+
+    double v, dv_per_angle;
+
+    if (is_q) {
+        const auto potential = calc_q_improper(k, phi0, phi);
+        v = potential.x;
+        dv_per_angle = potential.y;
+    } else {
+        const auto potential = calc_improper2(k, phi0, phi);
+        v = potential.x;
+        dv_per_angle = potential.y;
+    }
     atomic_add_energy(&e_improper[eslot[i]], v);
 
     coord_t di = get_perpendicular_vector(n_ijk, n_jkl);
@@ -189,6 +217,7 @@ __device__ void compute_improper(int i, const dihe_idx_t* ids, const dparam2_t* 
     } else {
         force_per_cos = -dv_per_angle / sin_phi;
     }
+    force_per_cos *= weight;
     di = di / norm_ijk;
 
     coord_t dl = get_perpendicular_vector(n_jkl, n_ijk);
@@ -218,30 +247,30 @@ __device__ void compute_improper(int i, const dihe_idx_t* ids, const dparam2_t* 
 
 __global__ void bonded_kernel(
     int n_bond, int n_angle, int n_torsion, int n_improper,
-    const bond_idx_t* bond_ids, const dparam2_t* bond_p, const int* bond_es,
-    const angle_idx_t* angl_ids, const dparam2_t* angl_p, const int* angl_es,
-    const dihe_idx_t* tor_ids, const torsion_param_t* tor_p, const int* tor_es,
-    const dihe_idx_t* imp_ids, const dparam2_t* imp_p, const int* imp_es,
-    const coord_t* coords, dvel_t* dvel,
+    const bond_idx_t* bond_ids, const dparam2_t* bond_p, const int* bond_es, const int* bond_state,
+    const angle_idx_t* angl_ids, const dparam2_t* angl_p, const int* angl_es, const int* angl_state,
+    const dihe_idx_t* tor_ids, const torsion_param_t* tor_p, const int* tor_es, const int* tor_state,
+    const dihe_idx_t* imp_ids, const dparam2_t* imp_p, const int* imp_es, const int* imp_state,
+    const double* lambdas, const coord_t* coords, dvel_t* dvel,
     energy_accum_t* e) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid < n_bond) {
-        compute_bond(tid, bond_ids, bond_p, bond_es, coords, dvel, e);
+        compute_bond(tid, bond_ids, bond_p, bond_es, bond_state, lambdas, coords, dvel, e);
         return;
     }
     tid -= n_bond;
     if (tid < n_angle) {
-        compute_angle(tid, angl_ids, angl_p, angl_es, coords, dvel, e);
+        compute_angle(tid, angl_ids, angl_p, angl_es, angl_state, lambdas, coords, dvel, e);
         return;
     }
     tid -= n_angle;
     if (tid < n_torsion) {
-        compute_torsion(tid, tor_ids, tor_p, tor_es, coords, dvel, e);
+        compute_torsion(tid, tor_ids, tor_p, tor_es, tor_state, lambdas, coords, dvel, e);
         return;
     }
     tid -= n_torsion;
     if (tid < n_improper) {
-        compute_improper(tid, imp_ids, imp_p, imp_es, coords, dvel, e);
+        compute_improper(tid, imp_ids, imp_p, imp_es, imp_state, lambdas, coords, dvel, e);
         return;
     }
 }
@@ -264,9 +293,9 @@ void CudaBondedForce::calc(Context& ctx) {
 
     bonded_kernel<<<grid, block>>>(
         n_bond, n_angle, n_torsion, n_improper,
-        data_.bond.ids->gpu_data_p, data_.bond.params->gpu_data_p, data_.bond.eslot->gpu_data_p,
-        data_.angle.ids->gpu_data_p, data_.angle.params->gpu_data_p, data_.angle.eslot->gpu_data_p,
-        data_.torsion.ids->gpu_data_p, data_.torsion.params->gpu_data_p, data_.torsion.eslot->gpu_data_p,
-        data_.improper.ids->gpu_data_p, data_.improper.params->gpu_data_p, data_.improper.eslot->gpu_data_p,
-        ctx.coords->gpu_data_p, ctx.dvelocities->gpu_data_p, ctx.energy.device());
+        data_.bond.ids->gpu_data_p, data_.bond.params->gpu_data_p, data_.bond.eslot->gpu_data_p, data_.bond.state->gpu_data_p,
+        data_.angle.ids->gpu_data_p, data_.angle.params->gpu_data_p, data_.angle.eslot->gpu_data_p, data_.angle.state->gpu_data_p,
+        data_.torsion.ids->gpu_data_p, data_.torsion.params->gpu_data_p, data_.torsion.eslot->gpu_data_p, data_.torsion.state->gpu_data_p,
+        data_.improper.ids->gpu_data_p, data_.improper.params->gpu_data_p, data_.improper.eslot->gpu_data_p, data_.improper.state->gpu_data_p,
+        ctx.lambdas->gpu_data_p, ctx.coords->gpu_data_p, ctx.dvelocities->gpu_data_p, ctx.energy.device());
 }
