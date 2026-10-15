@@ -631,6 +631,10 @@ void InpParser::ensure_fep() {
         if (f.size() >= 2 && f[0] == "softcore_use_max_potential") fep_->softcore_use_max_potential = is_on_token(f[1]);
     }
 
+    if (fep_->states <= 0) {
+        throw parse_error("[FEP]: states must be positive.");
+    }
+
     fep_->q_atypes.assign(fep_->states, {});
     fep_->q_charges.assign(fep_->states, {});
     fep_->q_softpairs.assign(fep_->states, {});
@@ -657,10 +661,10 @@ void InpParser::ensure_fep() {
         if (line.find("[excluded_pairs]") != std::string::npos) { block = 7; continue; }
         if (line.find("[el_scale]") != std::string::npos) { block = 8; continue; }
         if (line.find("[softcore]") != std::string::npos) { block = 9; continue; }
-        if (line.find("[bond_types]") != std::string::npos) { block = 12; fep_->q_cbonds.push_back({"0", "0.0", "0.0"}); continue; }
+        if (line.find("[bond_types]") != std::string::npos) { block = 12; continue; }
         if (line.find("[change_bonds]") != std::string::npos) { block = 13; continue; }
-        if (line.find("[angle_types]") != std::string::npos) { block = 14; fep_->q_cangles.push_back({"0", "0.0", "0.0"}); continue; }
-        if (line.find("[change_types]") != std::string::npos) { block = 15; continue; }
+        if (line.find("[angle_types]") != std::string::npos) { block = 14; continue; }
+        if (line.find("[change_angles]") != std::string::npos) { block = 15; continue; }
         if (line.find("[torsion_types]") != std::string::npos) { block = 16; fep_->q_ctorsions.push_back({"0", "0.0", "0.0", "0.0"}); continue; }
         if (line.find("[change_torsions]") != std::string::npos) { block = 17; continue; }
         if (line.find("[improper_types]") != std::string::npos) { block = 18; fep_->q_cimpropers.push_back({"0", "0.0", "0.0"}); continue; }
@@ -669,7 +673,10 @@ void InpParser::ensure_fep() {
         if (line.find("[torsion_couplings]") != std::string::npos) { block = 21; continue; }
         if (line.find("[improper_couplings]") != std::string::npos) { block = 22; continue; }
         if (line.find("[shake_constraints]") != std::string::npos) { block = 23; continue; }
-        if (line.find("[off-diagonals]") != std::string::npos) { block = 24; continue; }
+        if (line.find("[off_diagonals]") != std::string::npos) { block = 24; continue; }
+        if (line.front() == '[') {
+            throw parse_error("Unsupported FEP section: " + line);
+        }
 
         std::vector<std::string> f = split_ws(line);
         if (f.empty()) continue;
@@ -701,13 +708,38 @@ void InpParser::ensure_fep() {
             case 9:
                 for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_softcores[s].push_back(f[s + 1]);
                 break;
-            case 12: fep_->q_cbonds.push_back(f.size() > 1 ? std::vector<std::string>(f.begin() + 1, f.end()) : f); break;
-            case 13:
-                for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_bonds[s].push_back(f[s + 1]);
+            case 12:
+                if (f.size() != 3) {
+                    throw parse_error( "[bond_types]: currently only harmonic " "'type_id k r0' is supported.");
+                }
+                fep_->q_cbonds.push_back(f);
                 break;
-            case 14: fep_->q_cangles.push_back(f.size() > 1 ? std::vector<std::string>(f.begin() + 1, f.end()) : f); break;
+
+            case 13:
+                // atom_i atom_j type_state1 type_state2 ... type_stateN
+                if (f.size() != static_cast<size_t>(2 + fep_->states)) {
+                    throw parse_error( "[change_bonds]: expected two atom indices " "followed by one type code per state.");
+                }
+
+                for (int s = 0; s < fep_->states; s++) {
+                    fep_->q_bonds[s].push_back(f[0] + " " + f[1] + " " + f[2 + s]);
+                }
+                break;
+            case 14:
+                if (f.size() != 3) {
+                    throw parse_error( "[angle_types]: currently only harmonic " "'type_id k theta0' is supported.");
+                }
+                fep_->q_cangles.push_back(f);
+                break;
             case 15:
-                for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_angles[s].push_back(f[s + 1]);
+                // atom_i atom_j atom_k type_state1 type_state2 ... type_stateN
+                if (f.size() != static_cast<size_t>(3 + fep_ -> states)) {
+                    throw parse_error( "[change_angles]: expected three atom indices " "followed by one type code per state.");
+                }
+
+                for (int s = 0; s < fep_->states; s++) {
+                    fep_->q_angles[s].push_back(f[0] + " " + f[1] + " " + f[2] + " " + f[3 + s]);
+                }
                 break;
             case 16: fep_->q_ctorsions.push_back(f.size() > 1 ? std::vector<std::string>(f.begin() + 1, f.end()) : f); break;
             case 17:
@@ -1170,6 +1202,9 @@ void InpParser::parse_q_charges() {
 void InpParser::parse_q_angles() {
     ensure_fep();
     int n_lambdas = static_cast<int>(result.lambdas.size());
+    if (!fep_file_.empty() && n_lambdas != fep_->states) {
+        throw parse_error("[FEP]: number of lambdas must match states.");
+    }
     size_t total = 0;
     for (const auto& state : fep_->q_angles) total += state.size();
     int n_qangles = n_lambdas > 0 ? static_cast<int>(total) / n_lambdas : 0;
@@ -1184,13 +1219,33 @@ void InpParser::parse_q_angles() {
 
 void InpParser::parse_q_cangles() {
     ensure_fep();
-    result.q_cangles.resize(fep_->q_cangles.size());
-    for (size_t i = 0; i < fep_->q_cangles.size(); i++) result.q_cangles[i] = {0, row_double(fep_->q_cangles[i], 0), row_double(fep_->q_cangles[i], 1)};
+    result.q_cangles.assign(1, cangle_t{});
+    for (size_t i = 0; i < fep_->q_cangles.size(); i++) {
+        int id = row_int(fep_->q_cangles[i], 0);
+        if (id <= 0) {
+            throw parse_error("Parameter type IDs must be positive.");
+        }
+        if (result.q_cangles.size() <= static_cast<size_t>(id)) {
+            result.q_cangles.resize(static_cast<size_t>(id) + 1);
+        }
+        result.q_cangles[id] = {id, row_double(fep_->q_cangles[i], 1), row_double(fep_->q_cangles[i], 2)};
+    }
+
+    for (const auto& angle: result.q_angles) {
+        const int code = angle.code;
+        if (code == 0) continue;
+        if (code < 0 || static_cast<size_t>(code) >= result.q_cangles.size() || result.q_cangles[code].code != code) {
+            throw parse_error( "[change_angles]: undefined angle type " + std::to_string(code));
+        }
+    }
 }
 
 void InpParser::parse_q_bonds() {
     ensure_fep();
     int n_lambdas = static_cast<int>(result.lambdas.size());
+    if (!fep_file_.empty() && n_lambdas != fep_->states) {
+        throw parse_error("[FEP]: number of lambdas must match states.");
+    }
     size_t total = 0;
     for (const auto& state : fep_->q_bonds) total += state.size();
     int n_qbonds = n_lambdas > 0 ? static_cast<int>(total) / n_lambdas : 0;
@@ -1205,8 +1260,24 @@ void InpParser::parse_q_bonds() {
 
 void InpParser::parse_q_cbonds() {
     ensure_fep();
-    result.q_cbonds.resize(fep_->q_cbonds.size());
-    for (size_t i = 0; i < fep_->q_cbonds.size(); i++) result.q_cbonds[i] = {0, row_double(fep_->q_cbonds[i], 0), row_double(fep_->q_cbonds[i], 1)};
+    result.q_cbonds.assign(1, cbond_t{});
+    for (size_t i = 0; i < fep_->q_cbonds.size(); i++) {
+        int id = row_int(fep_->q_cbonds[i], 0);
+        if (id <= 0) {
+            throw parse_error("Parameter type IDs must be positive.");
+        }
+        if (result.q_cbonds.size() <= static_cast<size_t>(id)) {
+            result.q_cbonds.resize(static_cast<size_t>(id) + 1);
+        }
+        result.q_cbonds[id] = {id, row_double(fep_->q_cbonds[i], 1), row_double(fep_->q_cbonds[i], 2)};
+    }
+    for (const auto& bond : result.q_bonds) {
+        const int code = bond.code;
+        if (code == 0) continue;
+        if (code < 0 || static_cast<size_t>(code) >= result.q_cbonds.size() || result.q_cbonds[code].code != code) {
+            throw parse_error( "[change_bonds]: undefined bond type " + std::to_string(code));
+        }
+    }
 }
 
 void InpParser::parse_q_impropers() {
