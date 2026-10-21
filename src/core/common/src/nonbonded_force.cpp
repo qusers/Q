@@ -2,16 +2,254 @@
 
 #include <algorithm>
 #include <map>
+#include <queue>
+#include <set>
 #include <vector>
 
 #include "constants.h"
 #include "vdw_rules.h"
 
-void NonbondedForce::init(Context& ctx) {
+namespace {
+
+typedef std::array<int, 3> Status;
+
+std::pair<std::set<Status>, std::set<Status>> get_solute_excluded_and_34_pairs(Context& ctx, const ParseResult& parsed) {
+    const int nsolute = ctx.n_atoms_solute;
+    const int n_lambda = ctx.n_lambdas();
+
+    std::vector<int> atom_to_q(nsolute, -1);
+    const int nqatoms = ctx.n_qatoms();
+    for (int q = 0; q < nqatoms; q++) {
+        atom_to_q[ctx.q_atoms[q]] = q;
+    }
+
+    const size_t q_bonds_per_state = parsed.q_bonds.size() / n_lambda;
+    std::set<Status> result_excluded, result_34;
+
+    for (int s = 0; s < n_lambda; s++) {
+        std::vector<std::vector<int>> g(nsolute);
+        std::set<std::pair<int, int>> q_bonds;
+
+        int start = q_bonds_per_state * s;
+        for (int i = start; i < start + q_bonds_per_state; i++) {
+            const auto& bond = parsed.q_bonds[i];
+            int ai = bond.ai - 1;
+            int aj = bond.aj - 1;
+            if (ai > aj) {
+                std::swap(ai, aj);
+            }
+
+            if (bond.code > 0) {
+                g[ai].push_back(aj);
+                g[aj].push_back(ai);
+            }
+            q_bonds.insert({ai, aj});
+        }
+
+        for (int i = 0; i < parsed.n_bonds_solute; i++) {
+            const auto& bond = parsed.bonds[i];
+            if (bond.code == 0) continue;
+            int ai = bond.ai - 1, aj = bond.aj - 1;
+            if (ai > aj) {
+                std::swap(ai, aj);
+            }
+            if (q_bonds.count({ai, aj})) continue;
+
+            g[ai].push_back(aj);
+            g[aj].push_back(ai);
+        }
+
+        std::queue<int> Q;
+        std::vector<int> distance(nsolute, -1);
+
+        for (const int origin : ctx.q_atoms) {
+            std::fill(distance.begin(), distance.end(), -1);
+            distance[origin] = 0;
+            Q.push(origin);
+
+            while (!Q.empty()) {
+                int u = Q.front();
+                Q.pop();
+                if (distance[u] == 3) continue;
+
+                for (int v : g[u]) {
+                    if (distance[v] >= 0) continue;
+
+                    const int dis = distance[u] + 1;
+                    distance[v] = dis;
+                    Q.push(v);
+
+                    const int ai = std::min(origin, v);
+                    const int aj = std::max(origin, v);
+                    if (dis <= 2) {
+                        result_excluded.insert({ai, aj, s});
+                    } else {
+                        result_34.insert({ai, aj, s});
+                    }
+                }
+            }
+        }
+    }
+
+    // add q_exclpairs
+
+    const size_t exclusion_per_state = parsed.q_exclpairs.size() / n_lambda;
+    for (int i = 0; i < parsed.q_exclpairs.size(); i++) {
+        int state = i / exclusion_per_state;
+        int ai = parsed.q_exclpairs[i].ai - 1, aj = parsed.q_exclpairs[i].aj - 1, excl = parsed.q_exclpairs[i].excl;
+        if (ai > aj) std::swap(ai, aj);
+
+        if (excl) {
+            result_excluded.insert({ai, aj, state});
+        }
+    }
+
+    // For p-p, it should be same as cur_g
+    // Do one check in here
+
+    // Physical solute atom index -> Q-atom index.
+
+    auto p_type = static_cast<uint8_t>(AtomCategory::P);
+    for (int i = 0; i < nsolute; i++) {
+        if (atom_to_q[i] >= 0) continue;
+        for (int j = i + 1; j < nsolute; j++) {
+            if (atom_to_q[j] >= 0) continue;
+            auto bond_type = get_bond_type(nsolute, ctx.LJ_matrix->cpu_data_p, i, p_type, j, p_type);
+
+            if (bond_type == BondType::Bond23) {
+                result_excluded.insert({i, j, 0});
+            } else if (bond_type == BondType::Bond14) {
+                result_34.insert({i, j, 0});
+            }
+        }
+    }
+
+    return {result_excluded, result_34};
+}
+
+}  // namespace
+
+void NonbondedForce::init(Context& ctx, const ParseResult& parsed) {
     build_combinded_list(ctx);
     build_charge_table(ctx);
     build_catype_table(ctx);
+    build_pair_masks(ctx, parsed);
     init_backend(ctx);
+}
+
+void NonbondedForce::build_pair_masks(Context& ctx, const ParseResult& parsed) {
+    auto* atom_idx = data_.atom_idx->cpu_data_p;
+    auto* category = data_.category->cpu_data_p;
+    auto* q_state = data_.q_state->cpu_data_p;
+
+    const bool run_gpu = ctx.command_info.requested_gpu;
+    int nsolute = parsed.n_atoms_solute;
+
+    auto [result_excluded, result_34] = get_solute_excluded_and_34_pairs(ctx, parsed);
+    data_.n_cluster = data_.n_total / 32;
+    const int n = data_.n_cluster;
+    data_.n_pair_tiles = n * (n + 1) / 2;
+
+    std::vector<uint32_t> pair_masks(data_.n_pair_tiles * 32, 0);
+    std::vector<uint32_t> pair_14_masks(data_.n_pair_tiles * 32, 0);
+    auto Q = static_cast<uint8_t>(AtomCategory::Q);
+    auto W = static_cast<uint8_t>(AtomCategory::W);
+    auto P = static_cast<uint8_t>(AtomCategory::P);
+
+    auto classify_pair = [&](int x_slot, int y_slot) -> CalculationType {
+        int ai = atom_idx[x_slot];
+        int aj = atom_idx[y_slot];
+
+        if (ai < 0 || aj < 0 || ai == aj) {
+            return CalculationType::Exclude;
+        }
+
+        if (ai > aj) {
+            std::swap(ai, aj);
+            std::swap(x_slot, y_slot);
+        }
+
+        const uint8_t ci = category[x_slot];
+        const bool qi = ci == Q;
+        const bool wi = ci == W;
+        const bool pi = ci == P;
+
+        const uint8_t cj = category[y_slot];
+        const bool qj = cj == Q;
+        const bool wj = cj == W;
+        const bool pj = cj == P;
+
+        if (qi && qj && q_state[x_slot] != q_state[y_slot]) {
+            return CalculationType::Exclude;
+        }
+
+        if (wi || wj) {
+            if (wi && wj && (ai - nsolute) / 3 == (aj - nsolute) / 3) {
+                return CalculationType::Exclude;
+            }
+            return CalculationType::Calculate;
+        }
+
+        int state;
+        if (qi && qj) {
+            // q q
+            state = q_state[x_slot];
+        } else if (pi && pj) {
+            // p p
+            state = 0;
+        } else {
+            // p q
+            if (qi) {
+                state = q_state[x_slot];
+            } else {
+                state = q_state[y_slot];
+            }
+        }
+
+        if (result_excluded.count({ai, aj, state})) {
+            return CalculationType::Exclude;
+        } else if (result_34.count({ai, aj, state})) {
+            return CalculationType::Calculate_14;
+        } else {
+            return CalculationType::Calculate;
+        }
+    };
+
+    for (int tx = 0; tx < data_.n_cluster; tx++) {
+        for (int ty = tx; ty < data_.n_cluster; ty++) {
+            const int tile = pair_tile_index(tx, ty, data_.n_cluster);
+
+            for (int x_lane = 0; x_lane < 32; x_lane++) {
+                const int x_slot = tx * 32 + x_lane;
+
+                uint32_t active = 0;
+                uint32_t is14 = 0;
+
+                for (int y_lane = 0; y_lane < 32; y_lane++) {
+                    if (tx == ty && y_lane <= x_lane) continue;
+
+                    const int y_slot = ty * 32 + y_lane;
+                    auto calculation_type = classify_pair(x_slot, y_slot);
+
+                    if (calculation_type == CalculationType::Exclude) continue;
+
+                    const uint32_t bit = uint32_t{1} << y_lane;
+
+                    active |= bit;
+
+                    if (calculation_type == CalculationType::Calculate_14) {
+                        is14 |= bit;
+                    }
+                }
+                const size_t row = tile * 32 + x_lane;
+                pair_masks[row] = active;
+                pair_14_masks[row] = is14;
+            }
+        }
+    }
+
+    data_.pair_masks = HostDeviceBuffer<uint32_t>::from_vector(pair_masks, run_gpu);
+    data_.pair_14_masks = HostDeviceBuffer<uint32_t>::from_vector(pair_14_masks, run_gpu);
 }
 
 void NonbondedForce::build_combinded_list(Context& ctx) {

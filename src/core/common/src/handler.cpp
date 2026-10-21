@@ -38,7 +38,7 @@ void Handler::initialize(const CommandInfo& command) {
     water_boundary_force_ = create_water_boundary_force_backend();
     constraint_force_->init(ctx, parsed);
     bonded_force_->init(ctx, parsed, constraint_force_->data());
-    nonbonded_force_->init(ctx);
+    nonbonded_force_->init(ctx, parsed);
     restraint_force_->init(ctx, parsed.restrspos, parsed.restrseqs, parsed.restrdists, parsed.restrangs, parsed.restrwalls);
     temperature_->init(ctx, *constraint_force_);
     water_boundary_force_->init(ctx, *temperature_, parsed);
