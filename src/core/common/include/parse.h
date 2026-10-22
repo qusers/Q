@@ -156,7 +156,6 @@ class BaseParser {
         parse_charge_groups();
 
         parse_q_atoms();
-        parse_q_angcouples();
 
         parse_q_atypes();
         parse_q_catypes();
@@ -168,6 +167,9 @@ class BaseParser {
 
         parse_q_bonds();
         parse_q_cbonds();
+
+
+        parse_q_angcouples(); // need q_angle and q_bond
 
         parse_q_impropers();
         parse_q_cimpropers();

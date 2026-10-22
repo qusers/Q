@@ -13,6 +13,15 @@ struct bond_idx_t {
 struct angle_idx_t {
     int i, j, k;
 };
+
+struct morse_coupling_t {
+    int i = -1;
+    int j = -1;
+    double a = 0.0;
+    double r0 = 0.0;
+    bool inverted = false;
+};
+
 struct dihe_idx_t {
     int i, j, k, l;
 };  // torsion + improper2
@@ -49,6 +58,8 @@ struct AngleTerms {
     std::unique_ptr<HostDeviceBuffer<dparam2_t>> params;  // {kth, th0} (double)
     std::unique_ptr<HostDeviceBuffer<int>> eslot;
     std::unique_ptr<HostDeviceBuffer<int>> state;  // -1 = ordinary topology term; >= 0 = Q-state index
+
+    std::unique_ptr<HostDeviceBuffer<morse_coupling_t>> couplings;
 };
 struct TorsionTerms {
     int n = 0;
@@ -56,6 +67,8 @@ struct TorsionTerms {
     std::unique_ptr<HostDeviceBuffer<torsion_param_t>> params;  // {k,n,d,paths} (real_t)
     std::unique_ptr<HostDeviceBuffer<int>> eslot;
     std::unique_ptr<HostDeviceBuffer<int>> state;  // -1 = ordinary topology term; >= 0 = Q-state index
+
+    std::unique_ptr<HostDeviceBuffer<morse_coupling_t>> couplings;
 };
 struct ImproperTerms {  // improper2: harmonic, double
     int n = 0;
@@ -63,6 +76,8 @@ struct ImproperTerms {  // improper2: harmonic, double
     std::unique_ptr<HostDeviceBuffer<dparam2_t>> params;  // {k, phi0}   (double)
     std::unique_ptr<HostDeviceBuffer<int>> eslot;
     std::unique_ptr<HostDeviceBuffer<int>> state;  // -1 = ordinary topology term; >= 0 = Q-state index
+
+    std::unique_ptr<HostDeviceBuffer<morse_coupling_t>> couplings;
 };
 
 struct BondedData {
@@ -122,6 +137,19 @@ HD inline dparam2_t calc_bond(const cbond_t& param, const double r) {
     } else {
         return calc_morse_bond(param.D, param.a, r, param.b0);
     }
+}
+
+// Returns {gamma, dgamma/dr}
+HD inline dparam2_t calc_morse_coupling(const double a, const double r, const double r0) {
+    if (r <= r0) {
+        return {1.0, 0.0};
+    }
+
+    const double f = exp(-a * (r - r0));
+    const double gamma = 2.0 * f - f * f;
+    const double dgamma_dr = -2.0 * a * (f - f * f);
+
+    return {gamma, dgamma_dr};
 }
 
 HD inline dparam2_t calc_angle(const double k, const double th, const double th_eq) {

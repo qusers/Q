@@ -44,10 +44,6 @@ int q_energy_slot(int state, EQSlot slot) {
 }  // namespace
 
 void BondedForce::init(Context& ctx, const ParseResult& parsed, const ConstraintData& shake_data, const std::vector<special_pair_term_t>& special_pairs) {
-    if (!parsed.q_angcouples.empty() || !parsed.q_torcouples.empty() || !parsed.q_imprcouples.empty()) {
-        throw std::runtime_error("Morse-dependent Q-bonded couplings are not implemented.");
-    }
-
     if (!parsed.q_shakes.empty()) {
         throw std::runtime_error("State-dependent Q constraints are not implemented.");
     }
@@ -131,6 +127,19 @@ void BondedForce::build_angles(Context& ctx, const ParseResult& parsed, const Co
     std::vector<dparam2_t> params;
     std::vector<int> eslot;
     std::vector<int> state;
+    std::vector<morse_coupling_t> couplings;
+    const int nstates = ctx.n_lambdas();
+    const size_t nq = terms_per_state(parsed.q_angles.size(), nstates);
+    const size_t nbonds = terms_per_state(parsed.q_bonds.size(), nstates);
+
+    // Original Q-angle row -> original Q-bond row.
+    // Both indices are 0-based here; -1 means uncoupled.
+    std::vector<int> bond_for_angle(nq, -1);
+
+    for (const auto& couple : parsed.q_angcouples) {
+        bond_for_angle.at(couple.angle_index - 1) =
+            couple.bond_index - 1;
+    }
 
     std::set<AngleKey> replaced;
     for (const auto& angle : parsed.q_angles) {
@@ -150,10 +159,9 @@ void BondedForce::build_angles(Context& ctx, const ParseResult& parsed, const Co
         params.push_back({c.kth, deg2rad(c.th0)});  // {kth, th0(rad)}
         eslot.push_back(i < parsed.n_angles_solute ? E_BOND_P_ANGLE : E_BOND_W_ANGLE);
         state.push_back(-1);
+        couplings.emplace_back();  // i = j = -1: uncoupled
     }
 
-    int nstates = ctx.n_lambdas();
-    int nq = terms_per_state(parsed.q_angles.size(), nstates);
     for (int i = 0; i < parsed.q_angles.size(); i++) {
         const auto& angle = parsed.q_angles[i];
         if (angle.code == 0) {
@@ -161,13 +169,35 @@ void BondedForce::build_angles(Context& ctx, const ParseResult& parsed, const Co
         }
 
         int s = i / nq;
+        const size_t angle_index = i % nq;
 
         const auto& c = parsed.q_cangles.at(angle.code);
+
+        morse_coupling_t coupling{};
+        const int bond_index = bond_for_angle.at(angle_index);
+        if (bond_index >= 0) {
+            const auto& bond = parsed.q_bonds.at(static_cast<size_t>(s) * nbonds + bond_index);
+
+            if (bond.code <= 0) {
+                throw std::runtime_error("A coupled Q-angle references an absent bond.");
+            }
+
+            const auto& bond_param = parsed.q_cbonds.at(bond.code);
+            if (!bond_param.is_morse) {
+                throw std::runtime_error("A coupled Q-angle must reference a Morse bond.");
+            }
+
+            coupling.i = bond.ai - 1;
+            coupling.j = bond.aj - 1;
+            coupling.a = bond_param.a;
+            coupling.r0 = bond_param.b0;
+        }
 
         ids.push_back({angle.ai - 1, angle.aj - 1, angle.ak - 1});
         params.push_back({c.kth, deg2rad(c.th0)});
         state.push_back(s);
         eslot.push_back(q_energy_slot(s, EQ_BOND_ANGLE));
+        couplings.push_back(coupling);
     }
 
     data_.angle.n = static_cast<int>(ids.size());
@@ -175,6 +205,7 @@ void BondedForce::build_angles(Context& ctx, const ParseResult& parsed, const Co
     data_.angle.params = HostDeviceBuffer<dparam2_t>::from_vector(params, run_gpu);
     data_.angle.eslot = HostDeviceBuffer<int>::from_vector(eslot, run_gpu);
     data_.angle.state = HostDeviceBuffer<int>::from_vector(state, run_gpu);
+    data_.angle.couplings = HostDeviceBuffer<morse_coupling_t>::from_vector(couplings, run_gpu);
 }
 void BondedForce::build_torsions(Context& ctx, const ParseResult& parsed, const ConstraintData& shake_data) {
     const bool run_gpu = ctx.command_info.requested_gpu;
@@ -183,6 +214,19 @@ void BondedForce::build_torsions(Context& ctx, const ParseResult& parsed, const 
     std::vector<torsion_param_t> params;
     std::vector<int> eslot;
     std::vector<int> state;
+    std::vector<morse_coupling_t> couplings;
+
+    const int nstates = ctx.n_lambdas();
+    const size_t nq = terms_per_state(parsed.q_torsions.size(), nstates);
+    const size_t nbonds = terms_per_state(parsed.q_bonds.size(), nstates);
+
+    // Original Q-torsion row -> original Q-bond row.
+    // Both indices are 0-based here; -1 means uncoupled.
+    std::vector<int> bond_for_torsion(nq, -1);
+
+    for (const auto& couple : parsed.q_torcouples) {
+        bond_for_torsion.at(couple.torsion_index - 1) = couple.bond_index - 1;
+    }
 
     std::set<DihedralKey> replaced;
     for (const auto& torsion : parsed.q_torsions) {
@@ -205,11 +249,10 @@ void BondedForce::build_torsions(Context& ctx, const ParseResult& parsed, const 
                           static_cast<real_t>(c.paths)});  // {k, n, d(rad), paths}
         eslot.push_back(i < parsed.n_torsions_solute ? E_BOND_P_TOR : E_BOND_W_TOR);
         state.push_back(-1);
+        couplings.emplace_back();
     }
 
     // Q torsion
-    int nstates = ctx.n_lambdas();
-    int nq = terms_per_state(parsed.q_torsions.size(), nstates);
     for (int i = 0; i < parsed.q_torsions.size(); i++) {
         const auto& torsion = parsed.q_torsions[i];
         if (torsion.code == 0) {
@@ -217,12 +260,36 @@ void BondedForce::build_torsions(Context& ctx, const ParseResult& parsed, const 
         }
 
         int s = i / nq;
+        const size_t torsion_index = i % nq;
+
         const auto& c = parsed.q_ctorsions.at(torsion.code);
+
+        morse_coupling_t coupling{};
+        const int bond_index = bond_for_torsion.at(torsion_index);
+
+        if (bond_index >= 0) {
+            const auto& bond = parsed.q_bonds.at(static_cast<size_t>(s) * nbonds + bond_index);
+
+            if (bond.code <= 0) {
+                throw std::runtime_error("A coupled Q-torsion references an absent bond.");
+            }
+
+            const auto& bond_param = parsed.q_cbonds.at(bond.code);
+            if (!bond_param.is_morse) {
+                throw std::runtime_error("A coupled Q-torsion must reference a Morse bond.");
+            }
+
+            coupling.i = bond.ai - 1;
+            coupling.j = bond.aj - 1;
+            coupling.a = bond_param.a;
+            coupling.r0 = bond_param.b0;
+        }
 
         ids.push_back({torsion.ai - 1, torsion.aj - 1, torsion.ak - 1, torsion.al - 1});
         params.push_back({static_cast<real_t>(c.k), static_cast<real_t>(c.n), static_cast<real_t>(deg2rad(c.d)), static_cast<real_t>(1.0)});
         state.push_back(s);
         eslot.push_back(q_energy_slot(s, EQ_BOND_TOR));
+        couplings.push_back(coupling);
     }
 
     data_.torsion.n = static_cast<int>(ids.size());
@@ -230,6 +297,7 @@ void BondedForce::build_torsions(Context& ctx, const ParseResult& parsed, const 
     data_.torsion.params = HostDeviceBuffer<torsion_param_t>::from_vector(params, run_gpu);
     data_.torsion.eslot = HostDeviceBuffer<int>::from_vector(eslot, run_gpu);
     data_.torsion.state = HostDeviceBuffer<int>::from_vector(state, run_gpu);
+    data_.torsion.couplings = HostDeviceBuffer<morse_coupling_t>::from_vector(couplings, run_gpu);
 }
 void BondedForce::build_impropers(Context& ctx, const ParseResult& parsed, const ConstraintData& shake_data) {
     const bool run_gpu = ctx.command_info.requested_gpu;
@@ -238,6 +306,21 @@ void BondedForce::build_impropers(Context& ctx, const ParseResult& parsed, const
     std::vector<dparam2_t> params;
     std::vector<int> eslot;
     std::vector<int> state;
+    std::vector<morse_coupling_t> couplings;
+
+    const int nstates = ctx.n_lambdas();
+    const size_t nq = terms_per_state(parsed.q_impropers.size(), nstates);
+    const size_t nbonds = terms_per_state(parsed.q_bonds.size(), nstates);
+
+    // Original Q-improper row -> original Q-bond row.
+    // Both indices are 0-based here.
+    std::vector<int> bond_for_improper(nq, -1);
+    std::vector<bool> inverted_for_improper(nq, false);
+
+    for (const auto& couple : parsed.q_imprcouples) {
+        bond_for_improper.at(couple.improper_index - 1) = couple.bond_index - 1;
+        inverted_for_improper.at(couple.improper_index - 1) = couple.inverted;
+    }
 
     /*
     todo: The replacement rule is different from the force field.
@@ -262,10 +345,9 @@ void BondedForce::build_impropers(Context& ctx, const ParseResult& parsed, const
         params.push_back({c.k, deg2rad(c.phi0)});  // {k, phi0(rad)}
         eslot.push_back(i < parsed.n_impropers_solute ? E_BOND_P_IMP : E_BOND_W_IMP);
         state.push_back(-1);
+        couplings.emplace_back();
     }
 
-    int nstates = ctx.n_lambdas();
-    int nq = terms_per_state(parsed.q_impropers.size(), nstates);
     for (int i = 0; i < parsed.q_impropers.size(); i++) {
         const auto& improper = parsed.q_impropers[i];
 
@@ -274,12 +356,37 @@ void BondedForce::build_impropers(Context& ctx, const ParseResult& parsed, const
         }
 
         int s = i / nq;
+        const size_t improper_index = i % nq;
 
         const auto& c = parsed.q_cimpropers.at(improper.code);
+
+        morse_coupling_t coupling{};
+        const int bond_index = bond_for_improper.at(improper_index);
+
+        if (bond_index >= 0) {
+            const auto& bond = parsed.q_bonds.at(static_cast<size_t>(s) * nbonds + bond_index);
+
+            if (bond.code <= 0) {
+                throw std::runtime_error("A coupled Q-improper references an absent bond.");
+            }
+
+            const auto& bond_param = parsed.q_cbonds.at(bond.code);
+            if (!bond_param.is_morse) {
+                throw std::runtime_error("A coupled Q-improper must reference a Morse bond.");
+            }
+
+            coupling.i = bond.ai - 1;
+            coupling.j = bond.aj - 1;
+            coupling.a = bond_param.a;
+            coupling.r0 = bond_param.b0;
+            coupling.inverted = inverted_for_improper.at(improper_index);
+        }
+
         ids.push_back({improper.ai - 1, improper.aj - 1, improper.ak - 1, improper.al - 1});
         params.push_back({c.k, deg2rad(c.phi0)});
         state.push_back(s);
         eslot.push_back(q_energy_slot(s, EQ_BOND_IMP));
+        couplings.push_back(coupling);
     }
 
     data_.improper.n = static_cast<int>(ids.size());
@@ -287,6 +394,7 @@ void BondedForce::build_impropers(Context& ctx, const ParseResult& parsed, const
     data_.improper.params = HostDeviceBuffer<dparam2_t>::from_vector(params, run_gpu);
     data_.improper.eslot = HostDeviceBuffer<int>::from_vector(eslot, run_gpu);
     data_.improper.state = HostDeviceBuffer<int>::from_vector(state, run_gpu);
+    data_.improper.couplings = HostDeviceBuffer<morse_coupling_t>::from_vector(couplings, run_gpu);
 }
 
 void BondedForce::build_special_pairs(Context& ctx, const std::vector<special_pair_term_t>& special_pairs) {

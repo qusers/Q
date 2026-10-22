@@ -197,8 +197,8 @@ struct charge_group_config_t {
 };
 
 struct q_angcouple_t {
-    int acode;
-    int bcode;
+    int angle_index = 0;  // 1-based row index in [change_angles]
+    int bond_index = 0;   // 1-based row index in [change_bonds]
 };  // no use
 
 struct q_cimproper_t {
@@ -216,12 +216,13 @@ struct q_exclpair_t {
     int ai;
     int aj;
     int excl;
-};  // no use
+};
 
 struct q_imprcouple_t {
-    int icode;
-    int bcode;
-};  // no use
+    int improper_index = 0;  // 1-based row in [change_impropers]
+    int bond_index = 0;      // 1-based row in [change_bonds]
+    bool inverted = false;   // true: use 1 - gamma
+};
 
 struct q_improper_t {
     int ai;
@@ -256,9 +257,9 @@ struct q_softpair_t {
 };
 
 struct q_torcouple_t {
-    int tcode;
-    int bcode;
-};  // no use
+    int torsion_index = 0;  // 1-based row index in [change_torsions]
+    int bond_index = 0;     // 1-based row index in [change_bonds]
+};
 
 /* =============================================
  * == RESTRAINTS

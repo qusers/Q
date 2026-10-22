@@ -966,14 +966,24 @@ void InpParser::ensure_fep() {
                 }
                 break;
             case 20:
+                if (f.size() != 2) {
+                    throw parse_error("[angle_couplings]: expected angle_index bond_index.");
+                }
                 fep_->q_angcouples.push_back(f);
                 break;
             case 21:
+                if (f.size() != 2) {
+                    throw parse_error("[torsion_couplings]: expected torsion_index bond_index.");
+                }
                 fep_->q_torcouples.push_back(f);
                 break;
             case 22:
+                if (f.size() != 2 && f.size() != 3) {
+                    throw parse_error("[improper_couplings]: expected improper_index bond_index [mode].");
+                }
                 fep_->q_imprcouples.push_back(f);
                 break;
+
             case 23:
                 for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_shakes[s].push_back(f[s + 1]);
                 break;
@@ -1389,8 +1399,62 @@ void InpParser::parse_q_atoms() {
 
 void InpParser::parse_q_angcouples() {
     ensure_fep();
-    result.q_angcouples.resize(fep_->q_angcouples.size());
-    for (size_t i = 0; i < fep_->q_angcouples.size(); i++) result.q_angcouples[i] = {row_int(fep_->q_angcouples[i], 0), row_int(fep_->q_angcouples[i], 1)};
+
+    result.q_angcouples.clear();
+
+    if (fep_->q_angcouples.empty()) return;
+
+    const int nstates = static_cast<int>(result.lambdas.size());
+
+    if (nstates <= 0 || result.q_angles.size() % nstates != 0 || result.q_bonds.size() % nstates != 0) {
+        throw parse_error("[angle_couplings]: invalid state-dependent bonded layout.");
+    }
+
+    const size_t nangles = result.q_angles.size() / nstates;
+    const size_t nbonds = result.q_bonds.size() / nstates;
+
+    // One coupled bond per angle.
+    std::map<int, int> coupled_bonds;
+
+    for (const auto& row : fep_->q_angcouples) {
+        const int angle_index = row_int(row, 0);
+        const int bond_index = row_int(row, 1);
+
+        if (angle_index <= 0 || static_cast<size_t>(angle_index) > nangles) {
+            throw parse_error("[angle_couplings]: angle index out of range.");
+        }
+
+        if (bond_index <= 0 || static_cast<size_t>(bond_index) > nbonds) {
+            throw parse_error("[angle_couplings]: bond index out of range.");
+        }
+
+        const auto inserted = coupled_bonds.emplace(angle_index, bond_index);
+
+        if (!inserted.second) {
+            if (inserted.first->second != bond_index) {
+                throw parse_error("[angle_couplings]: an angle cannot couple to multiple bonds.");
+            }
+            continue;  // Identical duplicate
+        }
+
+        for (int s = 0; s < nstates; ++s) {
+            const auto& angle = result.q_angles[s * nangles + angle_index - 1];
+            const auto& bond = result.q_bonds[s * nbonds + bond_index - 1];
+
+            if (bond.code == 0) {
+                if (angle.code != 0) {
+                    throw parse_error("[angle_couplings]: coupled bond is absent in a state where the angle is present.");
+                }
+                continue;
+            }
+
+            const auto& param = result.q_cbonds.at(bond.code);
+            if (!param.is_morse) {
+                throw parse_error("[angle_couplings]: coupled bond must be Morse in every state where the bond is present.");
+            }
+        }
+        result.q_angcouples.push_back({angle_index, bond_index});
+    }
 }
 
 void InpParser::parse_q_atypes() {
@@ -1632,8 +1696,68 @@ void InpParser::parse_q_offdiags() {
 
 void InpParser::parse_q_imprcouples() {
     ensure_fep();
-    result.q_imprcouples.resize(fep_->q_imprcouples.size());
-    for (size_t i = 0; i < fep_->q_imprcouples.size(); i++) result.q_imprcouples[i] = {row_int(fep_->q_imprcouples[i], 0), row_int(fep_->q_imprcouples[i], 1)};
+    result.q_imprcouples.clear();
+
+    if (fep_->q_imprcouples.empty()) return;
+
+    const int nstates = static_cast<int>(result.lambdas.size());
+
+    if (nstates <= 0 || result.q_impropers.size() % nstates != 0 || result.q_bonds.size() % nstates != 0) {
+        throw parse_error("[improper_couplings]: invalid state-dependent bonded layout.");
+    }
+
+    const size_t nimpropers = result.q_impropers.size() / nstates;
+    const size_t nbonds = result.q_bonds.size() / nstates;
+
+    // Improper row -> {bond row, inverted mode}
+    std::map<int, std::pair<int, bool>> coupled_bonds;
+
+    for (const auto& row : fep_->q_imprcouples) {
+        const int improper_index = row_int(row, 0);
+        const int bond_index = row_int(row, 1);
+        const int mode = row_int(row, 2, 0);
+
+        if (improper_index <= 0 || static_cast<size_t>(improper_index) > nimpropers) {
+            throw parse_error("[improper_couplings]: improper index out of range.");
+        }
+
+        if (bond_index <= 0 || static_cast<size_t>(bond_index) > nbonds) {
+            throw parse_error("[improper_couplings]: bond index out of range.");
+        }
+
+        if (mode != 0 && mode != 1) {
+            throw parse_error("[improper_couplings]: mode must be 0 or 1.");
+        }
+
+        const bool inverted = mode == 1;
+        const std::pair<int, bool> target{bond_index, inverted};
+        const auto inserted = coupled_bonds.emplace(improper_index, target);
+
+        if (!inserted.second) {
+            if (inserted.first->second != target) {
+                throw parse_error("[improper_couplings]: conflicting couplings for the same improper.");
+            }
+            continue;  // Identical duplicate
+        }
+
+        for (int s = 0; s < nstates; ++s) {
+            const auto& improper = result.q_impropers[s * nimpropers + improper_index - 1];
+            const auto& bond = result.q_bonds[s * nbonds + bond_index - 1];
+
+            if (bond.code == 0) {
+                if (improper.code != 0) {
+                    throw parse_error("[improper_couplings]: coupled bond is absent in a state where the improper is present.");
+                }
+                continue;
+            }
+
+            const auto& param = result.q_cbonds.at(bond.code);
+            if (!param.is_morse) {
+                throw parse_error("[improper_couplings]: coupled bond must be Morse in every state where the bond is present.");
+            }
+        }
+        result.q_imprcouples.push_back({improper_index, bond_index, inverted});
+    }
 }
 
 void InpParser::parse_q_softpairs() {
@@ -1668,8 +1792,61 @@ void InpParser::parse_q_softpairs() {
 
 void InpParser::parse_q_torcouples() {
     ensure_fep();
-    result.q_torcouples.resize(fep_->q_torcouples.size());
-    for (size_t i = 0; i < fep_->q_torcouples.size(); i++) result.q_torcouples[i] = {row_int(fep_->q_torcouples[i], 0), row_int(fep_->q_torcouples[i], 1)};
+    result.q_torcouples.clear();
+
+    if (fep_->q_torcouples.empty()) return;
+
+    const int nstates = static_cast<int>(result.lambdas.size());
+
+    if (nstates <= 0 || result.q_torsions.size() % nstates != 0 || result.q_bonds.size() % nstates != 0) {
+        throw parse_error("[torsion_couplings]: invalid state-dependent bonded layout.");
+    }
+    const size_t ntorsions = result.q_torsions.size() / nstates;
+    const size_t nbonds = result.q_bonds.size() / nstates;
+
+    std::map<int, int> coupled_bonds;
+
+    for (const auto& row : fep_->q_torcouples) {
+        const int torsion_index = row_int(row, 0);
+        const int bond_index = row_int(row, 1);
+
+        if (torsion_index <= 0 || static_cast<size_t>(torsion_index) > ntorsions) {
+            throw parse_error("[torsion_couplings]: torsion index out of range.");
+        }
+
+        if (bond_index <= 0 || static_cast<size_t>(bond_index) > nbonds) {
+            throw parse_error("[torsion_couplings]: bond index out of range.");
+        }
+
+        const auto inserted = coupled_bonds.emplace(torsion_index, bond_index);
+
+        if (!inserted.second) {
+            if (inserted.first->second != bond_index) {
+                throw parse_error(
+                    "[torsion_couplings]: a torsion cannot couple "
+                    "to multiple bonds.");
+            }
+            continue;  // Identical duplicate
+        }
+
+        for (int s = 0; s < nstates; ++s) {
+            const auto& torsion = result.q_torsions[s * ntorsions + torsion_index - 1];
+            const auto& bond = result.q_bonds[s * nbonds + bond_index - 1];
+
+            if (bond.code == 0) {
+                if (torsion.code != 0) {
+                    throw parse_error("[torsion_couplings]: coupled bond is absent in a state where the torsion is present.");
+                }
+                continue;
+            }
+
+            const auto& param = result.q_cbonds.at(bond.code);
+            if (!param.is_morse) {
+                throw parse_error("[torsion_couplings]: coupled bond must be Morse in every state where the bond is present.");
+            }
+        }
+        result.q_torcouples.push_back({torsion_index, bond_index});
+    }
 }
 
 void InpParser::parse_q_elscales() {
