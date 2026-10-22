@@ -5,15 +5,14 @@
 
 namespace {
 
-__device__ void compute_bond(int i, const bond_idx_t* ids, const dparam2_t* params, const int* eslot, const int* states, const double* lambdas, const coord_t* coords, dvel_t* dvel, energy_accum_t* e_bond) {
+__device__ void compute_bond(int i, const bond_idx_t* ids, const cbond_t* params, const int* eslot, const int* states, const double* lambdas, const coord_t* coords, dvel_t* dvel, energy_accum_t* e_bond) {
     const int ai = ids[i].i, aj = ids[i].j;
-    const double k = params[i].x, r_eq = params[i].y;
     const int s = states[i];
     const double weight = s < 0 ? 1.0 : lambdas[s];
 
     coord_t d = coords[aj] - coords[ai];
     const double r = norm(d);
-    auto [v, dv] = calc_bond(k, r, r_eq);
+    auto [v, dv] = calc_bond(params[i], r);
     const double ampl = dv / r * weight;
 
     atomic_add_energy(&e_bond[eslot[i]], v);
@@ -247,7 +246,7 @@ __device__ void compute_improper(int i, const dihe_idx_t* ids, const dparam2_t* 
 
 __global__ void bonded_kernel(
     int n_bond, int n_angle, int n_torsion, int n_improper,
-    const bond_idx_t* bond_ids, const dparam2_t* bond_p, const int* bond_es, const int* bond_state,
+    const bond_idx_t* bond_ids, const cbond_t* bond_p, const int* bond_es, const int* bond_state,
     const angle_idx_t* angl_ids, const dparam2_t* angl_p, const int* angl_es, const int* angl_state,
     const dihe_idx_t* tor_ids, const torsion_param_t* tor_p, const int* tor_es, const int* tor_state,
     const dihe_idx_t* imp_ids, const dparam2_t* imp_p, const int* imp_es, const int* imp_state,

@@ -897,10 +897,8 @@ void InpParser::ensure_fep() {
                 for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_softcores[s].push_back(f[s + 1]);
                 break;
             case 12:
-                if (f.size() != 3) {
-                    throw parse_error(
-                        "[bond_types]: currently only harmonic "
-                        "'type_id k r0' is supported.");
+                if (f.size() != 3 && f.size() != 4) {
+                    throw parse_error("[bond_types]: expected harmonic 'type_id k r0' or Morse 'type_id D a r0'.");
                 }
                 fep_->q_cbonds.push_back(f);
                 break;
@@ -1487,14 +1485,30 @@ void InpParser::parse_q_cbonds() {
     ensure_fep();
     result.q_cbonds.assign(1, cbond_t{});
     for (size_t i = 0; i < fep_->q_cbonds.size(); i++) {
-        int id = row_int(fep_->q_cbonds[i], 0);
+        const auto& row = fep_->q_cbonds[i];
+        int id = row_int(row, 0);
         if (id <= 0) {
             throw parse_error("Parameter type IDs must be positive.");
         }
+
+        cbond_t param{};
+        param.code = id;
+        if (row.size() == 3) {
+            // Harmonic: type_id k r0
+            param.kb = row_double(row, 1);
+            param.b0 = row_double(row, 2);
+        } else {
+            // Morse: type_id D a r0
+            param.is_morse = true;
+            param.D = row_double(row, 1);
+            param.a = row_double(row, 2);
+            param.b0 = row_double(row, 3);
+        }
+
         if (result.q_cbonds.size() <= static_cast<size_t>(id)) {
             result.q_cbonds.resize(static_cast<size_t>(id) + 1);
         }
-        result.q_cbonds[id] = {id, row_double(fep_->q_cbonds[i], 1), row_double(fep_->q_cbonds[i], 2)};
+        result.q_cbonds[id] = param;
     }
     for (const auto& bond : result.q_bonds) {
         const int code = bond.code;

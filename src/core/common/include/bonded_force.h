@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+
 #include "constraint_force.h"
 #include "context.h"
 #include "host_device_buffer.h"
@@ -26,7 +28,7 @@ struct dparam2_t {
 struct BondTerms {
     int n = 0;
     std::unique_ptr<HostDeviceBuffer<bond_idx_t>> ids;
-    std::unique_ptr<HostDeviceBuffer<dparam2_t>> params;
+    std::unique_ptr<HostDeviceBuffer<cbond_t>> params;
     std::unique_ptr<HostDeviceBuffer<int>> eslot;
     std::unique_ptr<HostDeviceBuffer<int>> state;  // -1 = ordinary topology term; >= 0 = Q-state index
 };
@@ -83,12 +85,30 @@ class BondedForce {
     void build_impropers(Context& ctx, const ParseResult& parsed, const ConstraintData& shake_data);
 };
 
-HD inline dparam2_t calc_bond(const double k, const double r, const double r_eq) {
+HD inline dparam2_t calc_morse_bond(const double D, const double a, const double r, const double r_eq) {
+    const double dr = r - r_eq;
+    const double f = exp(-a * dr);
+
+    const double v = D * (f * f - 2.0 * f);
+
+    const double dv = 2.0 * D * a * (f - f * f);
+    return {v, dv};
+}
+
+HD inline dparam2_t calc_harmonic_bond(const double k, const double r, const double r_eq) {
     // dv = dU / dr -> energy per length
     const double dr = r - r_eq;
     double v = 0.5 * k * dr * dr;
     double dv = k * dr;
     return {v, dv};
+}
+
+HD inline dparam2_t calc_bond(const cbond_t& param, const double r) {
+    if (!param.is_morse) {
+        return calc_harmonic_bond(param.kb, r, param.b0);
+    } else {
+        return calc_morse_bond(param.D, param.a, r, param.b0);
+    }
 }
 
 HD inline dparam2_t calc_angle(const double k, const double th, const double th_eq) {

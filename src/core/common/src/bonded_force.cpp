@@ -75,7 +75,7 @@ void BondedForce::build_bonds(Context& ctx, const ParseResult& parsed, const Con
     const bool run_gpu = ctx.command_info.requested_gpu;
 
     std::vector<bond_idx_t> ids;
-    std::vector<dparam2_t> params;
+    std::vector<cbond_t> params;
     std::vector<int> eslot;
     std::vector<int> state;
 
@@ -94,7 +94,7 @@ void BondedForce::build_bonds(Context& ctx, const ParseResult& parsed, const Con
 
         const cbond_t& c = parsed.cbonds[bond.code - 1];
         ids.push_back({bond.ai - 1, bond.aj - 1});
-        params.push_back({c.kb, c.b0});  // {kb, b0}
+        params.push_back(c);
         eslot.push_back(i < parsed.n_bonds_solute ? E_BOND_P_BOND : E_BOND_W_BOND);
         state.push_back(-1);
     }
@@ -112,14 +112,14 @@ void BondedForce::build_bonds(Context& ctx, const ParseResult& parsed, const Con
 
         const auto& c = parsed.q_cbonds.at(bond.code);
         ids.push_back({bond.ai - 1, bond.aj - 1});
-        params.push_back({c.kb, c.b0});
+        params.push_back(c);
         state.push_back(s);
         eslot.push_back(q_energy_slot(s, EQ_BOND_BOND));
     }
 
     data_.bond.n = static_cast<int>(ids.size());
     data_.bond.ids = HostDeviceBuffer<bond_idx_t>::from_vector(ids, run_gpu);
-    data_.bond.params = HostDeviceBuffer<dparam2_t>::from_vector(params, run_gpu);
+    data_.bond.params = HostDeviceBuffer<cbond_t>::from_vector(params, run_gpu);
     data_.bond.eslot = HostDeviceBuffer<int>::from_vector(eslot, run_gpu);
     data_.bond.state = HostDeviceBuffer<int>::from_vector(state, run_gpu);
 }

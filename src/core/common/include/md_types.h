@@ -79,9 +79,13 @@ struct bond_t {
 };
 
 struct cbond_t {
-    int code;
-    double kb;
-    double b0;
+    int code = 0;
+    double kb = 0.0;
+    double b0 = 0.0;
+
+    double D = 0.0;
+    double a = 0.0;
+    bool is_morse = false;
 };
 
 struct angle_t {

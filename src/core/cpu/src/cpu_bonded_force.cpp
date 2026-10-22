@@ -26,14 +26,13 @@ void CpuBondedForce::calc_bonds(Context& ctx) {
         const int ai = ids[i].i, aj = ids[i].j;
         const int s = states[i];
         const double weight = s < 0 ? 1.0 : lambdas[s];
-        const double k = params[i].x, r_eq = params[i].y;
 
         const double dx = coords[aj].x - coords[ai].x;  // i -> j
         const double dy = coords[aj].y - coords[ai].y;
         const double dz = coords[aj].z - coords[ai].z;
         const double r = sqrt(dx * dx + dy * dy + dz * dz);
 
-        auto [v, dv] = calc_bond(k, r, r_eq);
+        auto [v, dv] = calc_bond(params[i], r);
         // force = dv * unit_vector, where unit_vector = (dx,dy,dz)/r.
         // Fold the 1/r into ampl so we can multiply by the raw (dx,dy,dz).
 
