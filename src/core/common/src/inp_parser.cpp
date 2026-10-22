@@ -988,6 +988,9 @@ void InpParser::ensure_fep() {
                 for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_shakes[s].push_back(f[s + 1]);
                 break;
             case 24:
+                if (f.size() != 6) {
+                    throw parse_error("[off_diagonals]: expected state_i state_j Q_atom_k Q_atom_l A mu.");
+                }
                 fep_->q_offdiags.push_back(f);
                 break;
             default:
@@ -1146,6 +1149,7 @@ void InpParser::parse_md() {
     md.solute_solvent = parse_double(value_or(cut, "solute-solvent", value_or(cut, "solute_solvent", "10")));
     md.q_atom = parse_double(value_or(cut, "q-atom", value_or(cut, "q_atom", "99")));
     md.shell_radius = parse_double(value_or(sphere, "shell-radius", value_or(sphere, "shell_radius", "0")));
+    md.exclude_bonded = is_on_value(sphere, "exclude-bonded", "off");
     md.shell_force = parse_double(value_or(sphere, "shell-force", value_or(sphere, "shell_force", "10.0")));
     md.radial_force = parse_double(value_or(solvent, "radial-force", value_or(solvent, "radial_force", "60.0")));
     const std::string polarisation_value = bool_value(solvent, "polarisation", bool_value(solvent, "polarization", "on"));
@@ -1688,9 +1692,33 @@ void InpParser::parse_q_ctorsions() {
 
 void InpParser::parse_q_offdiags() {
     ensure_fep();
-    result.q_offdiags.resize(fep_->q_offdiags.size());
-    for (size_t i = 0; i < fep_->q_offdiags.size(); i++) {
-        result.q_offdiags[i] = {row_int(fep_->q_offdiags[i], 0), row_int(fep_->q_offdiags[i], 1), row_int(fep_->q_offdiags[i], 2), row_int(fep_->q_offdiags[i], 3), row_double(fep_->q_offdiags[i], 4), row_double(fep_->q_offdiags[i], 5)};
+    result.q_offdiags.clear();
+
+    const int nstates = static_cast<int>(result.lambdas.size());
+    const int nqat = static_cast<int>(result.q_atoms.size());
+
+    for (const auto& row : fep_->q_offdiags) {
+        q_offdiag_t param{};
+        param.i = row_int(row, 0);
+        param.j = row_int(row, 1);
+        param.qk = row_int(row, 2);
+        param.ql = row_int(row, 3);
+        param.Aij = row_double(row, 4);
+        param.muij = row_double(row, 5);
+
+        if (param.i < 1 || param.i > nstates || param.j < 1 || param.j > nstates || param.i == param.j) {
+            throw parse_error("[off_diagonals]: state indices must be different and within range.");
+        }
+
+        if (param.qk < 1 || param.qk > nqat || param.ql < 1 || param.ql > nqat) {
+            throw parse_error("[off_diagonals]: Q-atom index out of range.");
+        }
+
+        if (!std::isfinite(param.Aij) || !std::isfinite(param.muij)) {
+            throw parse_error("[off_diagonals]: A and mu must be finite.");
+        }
+
+        result.q_offdiags.push_back(param);
     }
 }
 

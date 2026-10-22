@@ -38,6 +38,7 @@ struct md_t {
     double solute_solvent;
     double q_atom;
     // [sphere]
+    bool exclude_bonded = false;
     double shell_radius;  // Note: this is for the pshell
     double shell_force;   // Note: this is for the pshell
     // [solvent]
@@ -233,13 +234,29 @@ struct q_improper_t {
 };  // no use
 
 struct q_offdiag_t {
-    int i;
-    int j;
-    int qk;
-    int ql;
-    double Aij;
-    double muij;
-};  // no use
+    int i = 0;   // 1-based state index
+    int j = 0;   // 1-based state index
+    int qk = 0;  // 1-based Q-atom index in [atoms]
+    int ql = 0;  // 1-based Q-atom index in [atoms]
+    double Aij = 0.0;
+    double muij = 0.0;
+};
+
+struct offdiag_term_t {
+    int state_i = 0;  // 1-based, retained for .en output
+    int state_j = 0;
+    int ak = -1;  // 0-based physical atom index
+    int al = -1;
+    double A = 0.0;
+    double mu = 0.0;
+};
+
+struct offdiag_record_t {
+    int state_i = 0;  // 1-based
+    int state_j = 0;
+    double Hij = 0.0;
+    double rkl = 0.0;
+};
 
 struct q_shake_t {
     int ai;

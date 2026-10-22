@@ -2,8 +2,43 @@
 
 #include <math.h>
 
+#include <cmath>
+#include <stdexcept>
+
 #include "constants.h"
 #include "q_math.h"
+
+namespace {
+int get_oh_bond_code(int o, int h1, const std::vector<bond_t>& bonds) {
+    // Locate O-H1 explicitly, accepting either endpoint order.
+    int bond_code = 0;
+    for (const auto& bond : bonds) {
+        if (bond.code <= 0) continue;
+
+        if ((bond.ai == o && bond.aj == h1) || (bond.ai == h1 && bond.aj == o)) {
+            bond_code = bond.code;
+            break;
+        }
+    }
+    return bond_code;
+}
+
+int get_hoh_angle_code(int o, int h1, int h2, const std::vector<angle_t>& angles) {
+    // Locate H1-O-H2 explicitly; oxygen must be the central atom.
+    int angle_code = 0;
+    for (const auto& angle : angles) {
+        if (angle.code <= 0 || angle.aj != o) continue;
+
+        if ((angle.ai == h1 && angle.ak == h2) ||
+            (angle.ai == h2 && angle.ak == h1)) {
+            angle_code = angle.code;
+            break;
+        }
+    }
+    return angle_code;
+}
+
+}  // namespace
 
 void WaterBoundaryForce::init(Context& ctx, const Temperature& temperature, const ParseResult& parsed) {
     temperature_ = &temperature;
@@ -40,12 +75,24 @@ void WaterBoundaryForce::build_wshells(Context& ctx, double crgQtot, const Parse
     bool run_gpu = ctx.command_info.requested_gpu;
 
     const auto& restart_theta_corr = parsed.restart_theta_corr;
-    const auto& water_bond = parsed.bonds[parsed.n_bonds_solute];
-    const auto& water_angle = parsed.angles[parsed.n_angles_solute];
-    const auto& water_bond_parameter = parsed.cbonds[water_bond.code - 1];
-    const auto& water_angle_parameter = parsed.cangles[water_angle.code - 1];
-    const int oxygen = ctx.n_atoms_solute;
-    const charge_t& oxygen_charge = parsed.charges[oxygen];
+
+    // Topology interaction atom indices are 1-based.
+    const int oxygen = ctx.n_atoms_solute + 1;
+    const int hydrogen1 = oxygen + 1;
+    const int hydrogen2 = oxygen + 2;
+
+    int bond_code = get_oh_bond_code(oxygen, hydrogen1, parsed.bonds);
+    int angle_code = get_hoh_angle_code(oxygen, hydrogen1, hydrogen2, parsed.angles);
+
+    if (bond_code == 0 || angle_code == 0) {
+        throw std::runtime_error( "Water polarization requires an O-H bond and H-O-H angle for the first solvent molecule.");
+    }
+
+    const auto& water_bond_parameter = parsed.cbonds[bond_code - 1];
+    const auto& water_angle_parameter = parsed.cangles[angle_code - 1];
+
+
+    const charge_t& oxygen_charge = parsed.charges[oxygen - 1];
     const ccharge_t& oxygen_charge_parameter = parsed.ccharges[oxygen_charge.code - 1];
     double crg_ow = oxygen_charge_parameter.charge;
     const double mu_w = -crg_ow * water_bond_parameter.b0 * cos(deg2rad(water_angle_parameter.th0) / 2);

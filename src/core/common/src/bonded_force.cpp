@@ -1,6 +1,13 @@
 #include "bonded_force.h"
 
 namespace {
+bool skip_excluded_dihedral(const Context& ctx, int ai, int aj, int ak, int al) {
+    // 1-based atom index
+    if (!ctx.md.exclude_bonded) return false;
+
+    const auto* excluded = ctx.excluded->cpu_data_p;
+    return excluded[ai - 1] && excluded[aj - 1] && excluded[ak - 1] && excluded[al - 1];
+}
 inline double deg2rad(double d) {
     return d * (M_PI / 180.0);
 }
@@ -236,7 +243,7 @@ void BondedForce::build_torsions(Context& ctx, const ParseResult& parsed, const 
     for (int i = 0; i < parsed.torsions.size(); i++) {
         const torsion_t& torsion = parsed.torsions[i];
 
-        if (torsion.code == 0 || replaced.count(torsion_key(torsion.ai, torsion.aj, torsion.ak, torsion.al))) {
+        if (torsion.code == 0 || replaced.count(torsion_key(torsion.ai, torsion.aj, torsion.ak, torsion.al)) || skip_excluded_dihedral(ctx, torsion.ai, torsion.aj, torsion.ak, torsion.al)) {
             continue;
         }
 
@@ -335,7 +342,7 @@ void BondedForce::build_impropers(Context& ctx, const ParseResult& parsed, const
     for (int i = 0; i < parsed.impropers.size(); i++) {
         const improper_t& improper = parsed.impropers[i];
 
-        if (improper.code == 0 || replaced.count(improper_key(improper.aj, improper.ak))) {
+        if (improper.code == 0 || replaced.count(improper_key(improper.aj, improper.ak)) || skip_excluded_dihedral(ctx, improper.ai, improper.aj, improper.ak, improper.al)) {
             continue;
         }
 
