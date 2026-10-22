@@ -2,6 +2,7 @@
 #pragma once
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include "constants.h"
 #include "context.h"
@@ -11,6 +12,7 @@ enum class CalculationType : uint8_t {
     Exclude,
     Calculate,
     Calculate_14,
+    Calculate_Special,  // Now for the softpair
 };
 
 enum class AtomCategory : uint8_t { P,
@@ -117,6 +119,8 @@ struct NonbondedData {
     std::unique_ptr<HostDeviceBuffer<real_t>> atom_charge;
     std::unique_ptr<HostDeviceBuffer<vdw_atom_param_t>> atom_vdw;
 
+    std::vector<special_pair_term_t> special_pairs;
+
     int n_cluster = 0;
     size_t n_pair_tiles = 0;
 
@@ -134,6 +138,10 @@ class NonbondedForce {
     // Builds the combined atom list + pairwise tables, then calls init_backend(ctx).
     // Call once before the first MD step
     void init(Context& ctx, const ParseResult& parsed);
+
+    const std::vector<special_pair_term_t>& special_pairs() const {
+        return data_.special_pairs;
+    }
 
     // Per-step : compute all groups, write energies to ctx.E_nonbond_*, ctx.EQ_nonbond_*
     virtual void calc(Context& ctx) = 0;

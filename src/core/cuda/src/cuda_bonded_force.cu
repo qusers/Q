@@ -5,6 +5,28 @@
 
 namespace {
 
+__device__ void compute_special_pair(int i, const special_pair_term_t* terms, const double* lambdas, const coord_t* coords, dvel_t* gradients, energy_accum_t* energy) {
+    const auto& term = terms[i];
+    const coord_t d = coords[term.aj] - coords[term.ai];
+    const double r = norm(d);
+
+    const auto result = calc_special_pair(term, r);
+    const double weight =
+        term.state < 0 ? 1.0 : lambdas[term.state];
+    const double ampl = result.dv / r * weight;
+
+    atomic_add_force(&gradients[term.ai].x, -ampl * d.x);
+    atomic_add_force(&gradients[term.ai].y, -ampl * d.y);
+    atomic_add_force(&gradients[term.ai].z, -ampl * d.z);
+
+    atomic_add_force(&gradients[term.aj].x, ampl * d.x);
+    atomic_add_force(&gradients[term.aj].y, ampl * d.y);
+    atomic_add_force(&gradients[term.aj].z, ampl * d.z);
+
+    atomic_add_energy(&energy[term.coul_slot], result.coul);
+    atomic_add_energy(&energy[term.vdw_slot], result.vdw);
+}
+
 __device__ void compute_bond(int i, const bond_idx_t* ids, const cbond_t* params, const int* eslot, const int* states, const double* lambdas, const coord_t* coords, dvel_t* dvel, energy_accum_t* e_bond) {
     const int ai = ids[i].i, aj = ids[i].j;
     const int s = states[i];
@@ -245,11 +267,12 @@ __device__ void compute_improper(int i, const dihe_idx_t* ids, const dparam2_t* 
 }
 
 __global__ void bonded_kernel(
-    int n_bond, int n_angle, int n_torsion, int n_improper,
+    int n_bond, int n_angle, int n_torsion, int n_improper, int n_special,
     const bond_idx_t* bond_ids, const cbond_t* bond_p, const int* bond_es, const int* bond_state,
     const angle_idx_t* angl_ids, const dparam2_t* angl_p, const int* angl_es, const int* angl_state,
     const dihe_idx_t* tor_ids, const torsion_param_t* tor_p, const int* tor_es, const int* tor_state,
     const dihe_idx_t* imp_ids, const dparam2_t* imp_p, const int* imp_es, const int* imp_state,
+    const special_pair_term_t* special_pairs,
     const double* lambdas, const coord_t* coords, dvel_t* dvel,
     energy_accum_t* e) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -272,6 +295,11 @@ __global__ void bonded_kernel(
         compute_improper(tid, imp_ids, imp_p, imp_es, imp_state, lambdas, coords, dvel, e);
         return;
     }
+    tid -= n_improper;
+    if (tid < n_special) {
+        compute_special_pair(tid, special_pairs, lambdas, coords, dvel, e);
+        return;
+    }
 }
 }  // namespace
 
@@ -285,16 +313,18 @@ void CudaBondedForce::calc(Context& ctx) {
     const int n_angle = data_.angle.n;
     const int n_torsion = data_.torsion.n;
     const int n_improper = data_.improper.n;
-    const int total = n_bond + n_angle + n_torsion + n_improper;
+    const int n_special = data_.special_pairs.n;
+    const int total = n_bond + n_angle + n_torsion + n_improper + n_special;
 
     const int block = 256;
     const int grid = (total + block - 1) / block;
 
     bonded_kernel<<<grid, block>>>(
-        n_bond, n_angle, n_torsion, n_improper,
+        n_bond, n_angle, n_torsion, n_improper, n_special,
         data_.bond.ids->gpu_data_p, data_.bond.params->gpu_data_p, data_.bond.eslot->gpu_data_p, data_.bond.state->gpu_data_p,
         data_.angle.ids->gpu_data_p, data_.angle.params->gpu_data_p, data_.angle.eslot->gpu_data_p, data_.angle.state->gpu_data_p,
         data_.torsion.ids->gpu_data_p, data_.torsion.params->gpu_data_p, data_.torsion.eslot->gpu_data_p, data_.torsion.state->gpu_data_p,
         data_.improper.ids->gpu_data_p, data_.improper.params->gpu_data_p, data_.improper.eslot->gpu_data_p, data_.improper.state->gpu_data_p,
+        data_.special_pairs.terms->gpu_data_p,
         ctx.lambdas->gpu_data_p, ctx.coords->gpu_data_p, ctx.dvelocities->gpu_data_p, ctx.energy.device());
 }

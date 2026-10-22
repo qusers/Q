@@ -4,6 +4,7 @@
 #include <map>
 #include <queue>
 #include <set>
+#include <utility>
 #include <vector>
 
 #include "constants.h"
@@ -13,7 +14,15 @@ namespace {
 
 typedef std::array<int, 3> Status;
 
-std::pair<std::set<Status>, std::set<Status>> get_solute_excluded_and_34_pairs(Context& ctx, const ParseResult& parsed) {
+struct SolutePairClassification {
+    // Pairs skipped by the ordinary NB kernel
+    // physical exclusions + migrated special pairs;
+    std::set<Status> excluded;
+    std::set<Status> pairs_14;
+    std::set<Status> special;
+};
+
+SolutePairClassification classify_solute_pairs(Context& ctx, const ParseResult& parsed) {
     const int nsolute = ctx.n_atoms_solute;
     const int n_lambda = ctx.n_lambdas();
 
@@ -24,7 +33,7 @@ std::pair<std::set<Status>, std::set<Status>> get_solute_excluded_and_34_pairs(C
     }
 
     const size_t q_bonds_per_state = parsed.q_bonds.size() / n_lambda;
-    std::set<Status> result_excluded, result_34;
+    std::set<Status> result_excluded, result_14, result_special;
 
     for (int s = 0; s < n_lambda; s++) {
         std::vector<std::vector<int>> g(nsolute);
@@ -84,7 +93,7 @@ std::pair<std::set<Status>, std::set<Status>> get_solute_excluded_and_34_pairs(C
                     if (dis <= 2) {
                         result_excluded.insert({ai, aj, s});
                     } else {
-                        result_34.insert({ai, aj, s});
+                        result_14.insert({ai, aj, s});
                     }
                 }
             }
@@ -119,12 +128,95 @@ std::pair<std::set<Status>, std::set<Status>> get_solute_excluded_and_34_pairs(C
             if (bond_type == BondType::Bond23) {
                 result_excluded.insert({i, j, 0});
             } else if (bond_type == BondType::Bond14) {
-                result_34.insert({i, j, 0});
+                result_14.insert({i, j, 0});
             }
         }
     }
 
-    return {result_excluded, result_34};
+    // Find special pairs, currently for softpair
+    for (const auto& pair : parsed.q_softpairs) {
+        int ai = ctx.q_atoms.at(pair.qi - 1);
+        int aj = ctx.q_atoms.at(pair.qj - 1);
+
+        if (ai > aj) std::swap(ai, aj);
+
+        // Match the atoms omitted from the combined NB list.
+        if (ctx.excluded->cpu_data_p[ai] || ctx.excluded->cpu_data_p[aj]) {
+            continue;
+        }
+
+        for (int state = 0; state < n_lambda; ++state) {
+            const Status key{ai, aj, state};
+
+            // Preserve physical exclusions and 1–4 priority.
+            if (result_excluded.count(key) || result_14.count(key)) {
+                continue;
+            }
+
+            result_special.insert(key);
+            result_excluded.insert(key);
+        }
+    }
+
+    return {std::move(result_excluded), std::move(result_14), std::move(result_special)};
+}
+
+std::vector<special_pair_term_t> build_special_pairs(Context& ctx, const ParseResult& parsed, const std::set<Status>& s) {
+    std::vector<special_pair_term_t> res;
+    res.reserve(s.size());
+    int nsolute = parsed.n_atoms_solute;
+    std::vector<int> atom_to_q(nsolute, -1);
+    const int nqat = ctx.n_qatoms();
+
+    for (int q = 0; q < nqat; q++) {
+        atom_to_q.at(ctx.q_atoms[q]) = q;
+    }
+
+    for (const auto& key : s) {
+        const int ai = key[0];
+        const int aj = key[1];
+        const int state = key[2];
+
+        const int iq = atom_to_q.at(ai);
+        const int jq = atom_to_q.at(aj);
+
+        if (iq < 0 || jq < 0) {
+            throw std::runtime_error("Soft pairs must contain two Q-atoms.");
+        }
+
+        const size_t index_i = static_cast<size_t>(state) * nqat + iq;
+        const size_t index_j = static_cast<size_t>(state) * nqat + jq;
+
+        const int type_i = ctx.q_atypes.at(index_i).code;
+        const int type_j = ctx.q_atypes.at(index_j).code;
+
+        if (type_i <= 0 || type_j <= 0) {
+            throw std::runtime_error("Soft pairs require defined Q-atom types.");
+        }
+
+        const auto& param_i = ctx.q_catypes.at(type_i - 1);
+        const auto& param_j = ctx.q_catypes.at(type_j - 1);
+
+        const double charge_i = ctx.q_charges.at(index_i).charge;
+        const double charge_j = ctx.q_charges.at(index_j).charge;
+
+        special_pair_term_t term{};
+        term.ai = ai;
+        term.aj = aj;
+        term.state = state;
+        term.kind = SpecialPairKind::SoftRepulsion;
+
+        term.coul_slot = EnergyBuffer::eq_index(ENERGY_FIXED_COUNT, state, EQ_NB_QQ_COUL);
+        term.vdw_slot = EnergyBuffer::eq_index(ENERGY_FIXED_COUNT, state, EQ_NB_QQ_VDW);
+
+        term.coulomb_coeff = ctx.topo.coulomb_constant * charge_i * charge_j;
+
+        term.p1 = param_i.soft_C * param_j.soft_C;
+        term.p2 = param_i.soft_a * param_j.soft_a;
+
+        res.emplace_back(term);
+    }
+    return std::move(res);
 }
 
 }  // namespace
@@ -145,7 +237,10 @@ void NonbondedForce::build_pair_masks(Context& ctx, const ParseResult& parsed) {
     const bool run_gpu = ctx.command_info.requested_gpu;
     int nsolute = parsed.n_atoms_solute;
 
-    auto [result_excluded, result_34] = get_solute_excluded_and_34_pairs(ctx, parsed);
+    auto [result_excluded, result_14, result_special] = classify_solute_pairs(ctx, parsed);
+
+    data_.special_pairs = build_special_pairs(ctx, parsed, result_special);
+
     data_.n_cluster = data_.n_total / 32;
     const int n = data_.n_cluster;
     data_.n_pair_tiles = n * (n + 1) / 2;
@@ -208,7 +303,7 @@ void NonbondedForce::build_pair_masks(Context& ctx, const ParseResult& parsed) {
 
         if (result_excluded.count({ai, aj, state})) {
             return CalculationType::Exclude;
-        } else if (result_34.count({ai, aj, state})) {
+        } else if (result_14.count({ai, aj, state})) {
             return CalculationType::Calculate_14;
         } else {
             return CalculationType::Calculate;

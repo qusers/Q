@@ -745,7 +745,6 @@ void InpParser::ensure_fep() {
 
     fep_->q_atypes.assign(fep_->states, {});
     fep_->q_charges.assign(fep_->states, {});
-    fep_->q_softpairs.assign(fep_->states, {});
     fep_->q_exclpairs.assign(fep_->states, {});
     fep_->q_softcores.assign(fep_->states, {});
     fep_->q_bonds.assign(fep_->states, {});
@@ -874,7 +873,10 @@ void InpParser::ensure_fep() {
                 }
                 break;
             case 6:
-                for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_softpairs[s].push_back(f[s + 1]);
+                if (f.size() != 2) {
+                    throw parse_error("[soft_pairs]: expected two Q-atom indices.");
+                }
+                fep_->q_softpairs.push_back(f);
                 break;
             case 7:
                 if (f.size() != static_cast<size_t>(2 + fep_->states)) {
@@ -1407,7 +1409,22 @@ void InpParser::parse_q_catypes() {
     result.q_catypes.resize(fep_->q_catypes.size());
     for (size_t i = 0; i < fep_->q_catypes.size(); i++) {
         const auto& row = fep_->q_catypes[i];
-        result.q_catypes[i] = {static_cast<int>(i) + 1, row_double(row, 7), row_double(row, 1), row_double(row, 2), row_double(row, 5), row_double(row, 6)};
+        // name A B C a A14 B14 mass
+        if (row.size() != 8) {
+            throw parse_error("[atom_types]: expected name A B C a A14 B14 mass.");
+        }
+
+        catype_t param{};
+        param.code = static_cast<int>(i) + 1;
+        param.m = row_double(row, 7);
+        param.aii_normal = row_double(row, 1);
+        param.bii_normal = row_double(row, 2);
+        param.aii_1_4 = row_double(row, 5);
+        param.bii_1_4 = row_double(row, 6);
+        param.soft_C = row_double(row, 3);
+        param.soft_a = row_double(row, 4);
+
+        result.q_catypes[i] = param;
     }
 }
 
@@ -1622,10 +1639,29 @@ void InpParser::parse_q_imprcouples() {
 void InpParser::parse_q_softpairs() {
     ensure_fep();
     result.q_softpairs.clear();
-    for (const auto& state : fep_->q_softpairs) {
-        for (const std::string& value : state) {
-            auto row = split_state_row(value);
-            result.q_softpairs.push_back({row_int(row, 0), row_int(row, 1)});
+
+    const int nqat = static_cast<int>(result.q_atoms.size());
+    std::set<std::pair<int, int>> seen;
+
+    for (const auto& row : fep_->q_softpairs) {
+        int qi = row_int(row, 0);
+        int qj = row_int(row, 1);
+
+        if (qi < 1 || qi > nqat || qj < 1 || qj > nqat) {
+            throw parse_error("[soft_pairs]: Q-atom index is out of range.");
+        }
+
+        if (qi == qj) {
+            throw parse_error("[soft_pairs]: the two Q-atoms must be different.");
+        }
+
+        if (qi > qj) {
+            std::swap(qi, qj);
+        }
+
+        // Treat reversed or repeated entries as the same pair.
+        if (seen.emplace(qi, qj).second) {
+            result.q_softpairs.push_back({qi, qj});
         }
     }
 }

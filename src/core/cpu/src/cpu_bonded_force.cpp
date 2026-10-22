@@ -9,6 +9,7 @@ void CpuBondedForce::calc(Context& ctx) {
     calc_angles(ctx);
     calc_torsions(ctx);
     calc_impropers(ctx);
+    calc_special_pairs(ctx);
 }
 
 void CpuBondedForce::calc_bonds(Context& ctx) {
@@ -288,5 +289,36 @@ void CpuBondedForce::calc_impropers(Context& ctx) {
         add_force(dvelocities[ak].x, force_per_cos * dpk.x);
         add_force(dvelocities[ak].y, force_per_cos * dpk.y);
         add_force(dvelocities[ak].z, force_per_cos * dpk.z);
+    }
+}
+
+void CpuBondedForce::calc_special_pairs(Context& ctx) {
+    if (data_.special_pairs.n == 0) return;
+    const auto* terms = data_.special_pairs.terms->cpu_data_p;
+    const auto* coords = ctx.coords->cpu_data_p;
+    const auto* lambdas = ctx.lambdas->cpu_data_p;
+    auto* gradients = ctx.dvelocities->cpu_data_p;
+    auto* energy = ctx.energy.host();
+
+    for (int i = 0; i < data_.special_pairs.n; i++) {
+        const auto& term = terms[i];
+
+        const auto d = coords[term.aj] - coords[term.ai];
+        const double r = norm(d);
+
+        const auto result = calc_special_pair(term, r);
+        const double weight = term.state < 0 ? 1.0 : lambdas[term.state];
+        const double ampl = result.dv / r * weight;
+
+        add_force(gradients[term.ai].x, -ampl * d.x);
+        add_force(gradients[term.ai].y, -ampl * d.y);
+        add_force(gradients[term.ai].z, -ampl * d.z);
+
+        add_force(gradients[term.aj].x, ampl * d.x);
+        add_force(gradients[term.aj].y, ampl * d.y);
+        add_force(gradients[term.aj].z, ampl * d.z);
+
+        add_energy(energy[term.coul_slot], result.coul);
+        add_energy(energy[term.vdw_slot], result.vdw);
     }
 }

@@ -43,7 +43,7 @@ int q_energy_slot(int state, EQSlot slot) {
 
 }  // namespace
 
-void BondedForce::init(Context& ctx, const ParseResult& parsed, const ConstraintData& shake_data) {
+void BondedForce::init(Context& ctx, const ParseResult& parsed, const ConstraintData& shake_data, const std::vector<special_pair_term_t>& special_pairs) {
     if (!parsed.q_angcouples.empty() || !parsed.q_torcouples.empty() || !parsed.q_imprcouples.empty()) {
         throw std::runtime_error("Morse-dependent Q-bonded couplings are not implemented.");
     }
@@ -68,6 +68,7 @@ void BondedForce::init(Context& ctx, const ParseResult& parsed, const Constraint
     build_angles(ctx, parsed, shake_data);
     build_torsions(ctx, parsed, shake_data);
     build_impropers(ctx, parsed, shake_data);
+    build_special_pairs(ctx, special_pairs);
     init_backend(ctx);
 }
 
@@ -286,4 +287,10 @@ void BondedForce::build_impropers(Context& ctx, const ParseResult& parsed, const
     data_.improper.params = HostDeviceBuffer<dparam2_t>::from_vector(params, run_gpu);
     data_.improper.eslot = HostDeviceBuffer<int>::from_vector(eslot, run_gpu);
     data_.improper.state = HostDeviceBuffer<int>::from_vector(state, run_gpu);
+}
+
+void BondedForce::build_special_pairs(Context& ctx, const std::vector<special_pair_term_t>& special_pairs) {
+    data_.special_pairs.n = static_cast<int>(special_pairs.size());
+
+    data_.special_pairs.terms = HostDeviceBuffer<special_pair_term_t>::from_vector(special_pairs, ctx.command_info.requested_gpu);
 }

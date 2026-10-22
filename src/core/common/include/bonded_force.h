@@ -25,6 +25,17 @@ struct dparam2_t {
     double x, y;
 };
 
+struct special_pair_result_t {
+    double coul;
+    double vdw;
+    double dv;
+};
+
+struct SpecialPairTerms {
+    int n = 0;
+    std::unique_ptr<HostDeviceBuffer<special_pair_term_t>> terms;
+};
+
 struct BondTerms {
     int n = 0;
     std::unique_ptr<HostDeviceBuffer<bond_idx_t>> ids;
@@ -59,16 +70,17 @@ struct BondedData {
     AngleTerms angle;
     TorsionTerms torsion;
     ImproperTerms improper;
+    SpecialPairTerms special_pairs;
 
     bool enabled() const {
-        return bond.n || angle.n || torsion.n || improper.n;
+        return bond.n || angle.n || torsion.n || improper.n || special_pairs.n;
     }
 };
 
 class BondedForce {
    public:
     virtual ~BondedForce() = default;
-    void init(Context& ctx, const ParseResult& parsed, const ConstraintData& constraint_data);  // build_* then init_backend
+    void init(Context& ctx, const ParseResult& parsed, const ConstraintData& constraint_data, const std::vector<special_pair_term_t>& special_pairs = {});  // build_* then init_backend
     virtual void calc(Context& ctx) = 0;
     virtual void cleanup() {}
     bool enabled() const { return data_.enabled(); }
@@ -83,6 +95,7 @@ class BondedForce {
     void build_angles(Context& ctx, const ParseResult& parsed, const ConstraintData& shake_data);
     void build_torsions(Context& ctx, const ParseResult& parsed, const ConstraintData& shake_data);
     void build_impropers(Context& ctx, const ParseResult& parsed, const ConstraintData& shake_data);
+    void build_special_pairs(Context& ctx, const std::vector<special_pair_term_t>& special_pairs);
 };
 
 HD inline dparam2_t calc_morse_bond(const double D, const double a, const double r, const double r_eq) {
@@ -142,4 +155,16 @@ HD inline dparam2_t calc_q_improper(const double k, const double phi0, const dou
     double v = 0.5 * k * delta * delta;
     double dv = k * delta;
     return {v, dv};
+}
+
+// Currently only SoftRepulsion reaches this function.
+HD inline special_pair_result_t calc_special_pair(const special_pair_term_t& param, const double r) {
+    const double inv_r = 1.0 / r;
+
+    const double coul = param.coulomb_coeff * inv_r;
+    const double vdw = param.p1 * exp(-param.p2 * r);
+
+    const double dv = -coul * inv_r - param.p2 * vdw;
+
+    return {coul, vdw, dv};
 }

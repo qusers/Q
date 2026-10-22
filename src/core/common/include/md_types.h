@@ -155,6 +155,9 @@ struct catype_t {
     // double bii_polar;
     double aii_1_4;
     double bii_1_4;
+
+    double soft_C = 0.0;
+    double soft_a = 0.0;
 };
 
 struct vdw_atom_param_t {
@@ -248,9 +251,9 @@ struct q_softcore_t {
 };  // no use
 
 struct q_softpair_t {
-    int qi;
-    int qj;
-};  // no use
+    int qi;  // 1-based Q-atom index
+    int qj;  // 1-based Q-atom index
+};
 
 struct q_torcouple_t {
     int tcode;
@@ -355,4 +358,27 @@ struct energy_t {
     double Ukin;
     double Upot;
     double Utot;
+};
+
+enum class SpecialPairKind : int {
+    SoftRepulsion,
+    LJ14,  // Reserved; not enabled yet
+};
+
+struct special_pair_term_t {
+    int ai = -1;  // 0-bas
+    int aj = -1;
+    int state = -1;  // -1: weight 1; otherwise lambdas[state]
+
+    SpecialPairKind kind = SpecialPairKind::SoftRepulsion;
+
+    int coul_slot = -1;
+    int vdw_slot = -1;
+
+    double coulomb_coeff = 0.0;
+
+    // SoftRepulsion: p1 = Ci * Cj, p2 = ai * aj
+    // LJ14: p1 = combined A14, p2 = combined B14
+    double p1 = 0.0;
+    double p2 = 0.0;
 };
