@@ -21,9 +21,8 @@ static std::string trim(const std::string& value) {
 }
 
 static std::string strip_comment(const std::string& line) {
-    size_t bang = line.find('!');
-    if (bang == std::string::npos) return trim(line);
-    return trim(line.substr(0, bang));
+    const size_t comment = line.find_first_of("!#");
+    return trim(line.substr(0, comment));
 }
 
 static std::string lower_normalized(std::string value) {

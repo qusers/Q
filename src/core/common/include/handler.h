@@ -48,6 +48,7 @@ class Handler {
     void shutdown_outputs();
     void reset_energies();
     void run_iteration(int iteration);
+    void prepare_offdiags(int iteration);
     std::unique_ptr<ConstraintForce> constraint_force_;
     std::unique_ptr<NonbondedForce> nonbonded_force_;
     std::unique_ptr<BondedForce> bonded_force_;

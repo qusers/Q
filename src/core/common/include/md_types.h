@@ -38,6 +38,7 @@ struct md_t {
     double solute_solvent;
     double q_atom;
     // [sphere]
+    bool exclude_bonded = false;
     double shell_radius;  // Note: this is for the pshell
     double shell_force;   // Note: this is for the pshell
     // [solvent]
@@ -79,9 +80,13 @@ struct bond_t {
 };
 
 struct cbond_t {
-    int code;
-    double kb;
-    double b0;
+    int code = 0;
+    double kb = 0.0;
+    double b0 = 0.0;
+
+    double D = 0.0;
+    double a = 0.0;
+    bool is_morse = false;
 };
 
 struct angle_t {
@@ -151,13 +156,14 @@ struct catype_t {
     // double bii_polar;
     double aii_1_4;
     double bii_1_4;
+
+    double soft_C = 0.0;
+    double soft_a = 0.0;
 };
 
 struct vdw_atom_param_t {
     real_t aii_normal;
     real_t bii_normal;
-    real_t aii_14;
-    real_t bii_14;
 };
 
 struct topo_t {
@@ -190,8 +196,8 @@ struct charge_group_config_t {
 };
 
 struct q_angcouple_t {
-    int acode;
-    int bcode;
+    int angle_index = 0;  // 1-based row index in [change_angles]
+    int bond_index = 0;   // 1-based row index in [change_bonds]
 };  // no use
 
 struct q_cimproper_t {
@@ -209,12 +215,13 @@ struct q_exclpair_t {
     int ai;
     int aj;
     int excl;
-};  // no use
+};
 
 struct q_imprcouple_t {
-    int icode;
-    int bcode;
-};  // no use
+    int improper_index = 0;  // 1-based row in [change_impropers]
+    int bond_index = 0;      // 1-based row in [change_bonds]
+    bool inverted = false;   // true: use 1 - gamma
+};
 
 struct q_improper_t {
     int ai;
@@ -225,13 +232,29 @@ struct q_improper_t {
 };  // no use
 
 struct q_offdiag_t {
-    int i;
-    int j;
-    int qk;
-    int ql;
-    double Aij;
-    double muij;
-};  // no use
+    int i = 0;   // 1-based state index
+    int j = 0;   // 1-based state index
+    int qk = 0;  // 1-based Q-atom index in [atoms]
+    int ql = 0;  // 1-based Q-atom index in [atoms]
+    double Aij = 0.0;
+    double muij = 0.0;
+};
+
+struct offdiag_term_t {
+    int state_i = 0;  // 1-based, retained for .en output
+    int state_j = 0;
+    int ak = -1;  // 0-based physical atom index
+    int al = -1;
+    double A = 0.0;
+    double mu = 0.0;
+};
+
+struct offdiag_record_t {
+    int state_i = 0;  // 1-based
+    int state_j = 0;
+    double Hij = 0.0;
+    double rkl = 0.0;
+};
 
 struct q_shake_t {
     int ai;
@@ -244,14 +267,14 @@ struct q_softcore_t {
 };  // no use
 
 struct q_softpair_t {
-    int qi;
-    int qj;
-};  // no use
+    int qi;  // 1-based Q-atom index
+    int qj;  // 1-based Q-atom index
+};
 
 struct q_torcouple_t {
-    int tcode;
-    int bcode;
-};  // no use
+    int torsion_index = 0;  // 1-based row index in [change_torsions]
+    int bond_index = 0;     // 1-based row index in [change_bonds]
+};
 
 /* =============================================
  * == RESTRAINTS
@@ -351,4 +374,27 @@ struct energy_t {
     double Ukin;
     double Upot;
     double Utot;
+};
+
+enum class SpecialPairKind : int {
+    SoftRepulsion,
+    LJ14,
+};
+
+struct special_pair_term_t {
+    int ai = -1;  // 0-bas
+    int aj = -1;
+    int state = -1;  // -1: weight 1; otherwise lambdas[state]
+
+    SpecialPairKind kind = SpecialPairKind::SoftRepulsion;
+
+    int coul_slot = -1;
+    int vdw_slot = -1;
+
+    double coulomb_coeff = 0.0;
+
+    // SoftRepulsion: p1 = Ci * Cj, p2 = ai * aj
+    // LJ14: p1 = combined A14, p2 = combined B14
+    double p1 = 0.0;
+    double p2 = 0.0;
 };

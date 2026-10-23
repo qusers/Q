@@ -2,10 +2,18 @@
 #pragma once
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include "constants.h"
 #include "context.h"
 #include "host_device_buffer.h"
+
+enum class CalculationType : uint8_t {
+    Exclude,
+    Calculate,
+    // Calculate_14,
+    Calculate_Special,  // Now for the softpair
+};
 
 enum class AtomCategory : uint8_t { P,
                                     Q,
@@ -29,7 +37,7 @@ HD inline int nb_coul_slot(uint8_t t1, uint8_t t2, int s1, int s2, int n_states)
     return EnergyBuffer::eq_index(ENERGY_FIXED_COUNT, state, EQ_NB_QP_COUL);  // else Q-P
 }
 
-// The vdw slot is always coul+1 
+// The vdw slot is always coul+1
 HD inline int nb_vdw_slot(uint8_t t1, uint8_t t2, int s1, int s2, int n_states) {
     return nb_coul_slot(t1, t2, s1, s2, n_states) + 1;
 }
@@ -37,6 +45,14 @@ HD inline int nb_vdw_slot(uint8_t t1, uint8_t t2, int s1, int s2, int n_states) 
 enum class BondType : uint8_t { Bond23,
                                 Bond14,
                                 NonBond };
+
+HD inline size_t pair_tile_index(int tile_x, int tile_y, int n_clusters) {
+    const size_t x = static_cast<size_t>(tile_x);
+    const size_t y = static_cast<size_t>(tile_y);
+    const size_t n = static_cast<size_t>(n_clusters);
+
+    return x * (2 * n - x + 1) / 2 + (y - x);
+}
 
 HD inline BondType get_bond_type(int n_atoms_solute, const int* LJ_matrix, int atom1, uint8_t atom1_type, int atom2, uint8_t atom2_type) {
     bool w1 = atom1_type == static_cast<uint8_t>(AtomCategory::W);
@@ -103,6 +119,16 @@ struct NonbondedData {
     std::unique_ptr<HostDeviceBuffer<real_t>> atom_charge;
     std::unique_ptr<HostDeviceBuffer<vdw_atom_param_t>> atom_vdw;
 
+    std::vector<special_pair_term_t> special_pairs;
+
+    int n_cluster = 0;
+    size_t n_pair_tiles = 0;
+
+    // Layout: [tile_index * 32 + x_lane].
+    // Bit y_lane describes the pair (x_lane, y_lane).
+    std::unique_ptr<HostDeviceBuffer<uint32_t>> pair_masks;
+    // std::unique_ptr<HostDeviceBuffer<uint32_t>> pair_14_masks;
+
     bool enabled() const { return n_total > 0; }
 };
 
@@ -111,7 +137,11 @@ class NonbondedForce {
     virtual ~NonbondedForce() = default;
     // Builds the combined atom list + pairwise tables, then calls init_backend(ctx).
     // Call once before the first MD step
-    void init(Context& ctx);
+    void init(Context& ctx, const ParseResult& parsed);
+
+    const std::vector<special_pair_term_t>& special_pairs() const {
+        return data_.special_pairs;
+    }
 
     // Per-step : compute all groups, write energies to ctx.E_nonbond_*, ctx.EQ_nonbond_*
     virtual void calc(Context& ctx) = 0;
@@ -127,4 +157,5 @@ class NonbondedForce {
     void build_combinded_list(Context& ctx);  // atom_idx, category, q_state, atom_lambdas
     void build_charge_table(Context& ctx);    // charge_pair_products + charge_types + counts
     void build_catype_table(Context& ctx);    // catype_pair_params + catype_types + counts
+    void build_pair_masks(Context& ctx, const ParseResult& parsed);
 };

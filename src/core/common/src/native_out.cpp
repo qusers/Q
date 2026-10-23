@@ -291,7 +291,22 @@ void NativeOutput::write_energy_frame(Context& ctx) {
         write_record(energy_stream_, record.data(), static_cast<int32_t>(record.size()));
     }
 
-    write_record(energy_stream_, nullptr, 0);
+    std::vector<char> offdiag_record;
+
+    const int n = ctx.n_offdiags();
+    if (n > 0) {
+        const auto* records = ctx.offdiag_records->cpu_data_p;
+        offdiag_record.reserve(static_cast<size_t>(n) * 24);
+
+        for (int i = 0; i < n; ++i) {
+            append_int32(offdiag_record, records[i].state_i);
+            append_int32(offdiag_record, records[i].state_j);
+            append_double(offdiag_record, records[i].Hij);
+            append_double(offdiag_record, records[i].rkl);
+        }
+    }
+
+    write_record(energy_stream_, offdiag_record.data(), static_cast<int32_t>(offdiag_record.size()));
 }
 
 void NativeOutput::write_restart_file(Context& ctx) const {
@@ -306,7 +321,6 @@ void NativeOutput::write_restart_file(Context& ctx) const {
         write_theta_corr_record(out, ctx.wshells, ctx.wshells.size());
     }
 }
-
 
 OutputRequirements NativeOutput::requirements(const Context& ctx, int iteration) const {
     return {

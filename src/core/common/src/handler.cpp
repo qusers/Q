@@ -3,6 +3,7 @@
 #include <chrono>
 
 #include "native_out.h"
+#include "offdiag.h"
 #include "std_output.h"
 
 void Handler::run_iteration(int iteration) {
@@ -13,6 +14,8 @@ void Handler::run_iteration(int iteration) {
 
     // 2. bonded forces and some constraints calculations
     calc_internal_forces(iteration);
+
+    prepare_offdiags(iteration);
 
     // 5. leapfrog integration
     calc_leapfrog();
@@ -37,8 +40,8 @@ void Handler::initialize(const CommandInfo& command) {
     integrator_ = create_integrator_backend();
     water_boundary_force_ = create_water_boundary_force_backend();
     constraint_force_->init(ctx, parsed);
-    bonded_force_->init(ctx, parsed, constraint_force_->data());
-    nonbonded_force_->init(ctx);
+    nonbonded_force_->init(ctx, parsed);
+    bonded_force_->init(ctx, parsed, constraint_force_->data(), nonbonded_force_->special_pairs());
     restraint_force_->init(ctx, parsed.restrspos, parsed.restrseqs, parsed.restrdists, parsed.restrangs, parsed.restrwalls);
     temperature_->init(ctx, *constraint_force_);
     water_boundary_force_->init(ctx, *temperature_, parsed);
@@ -85,6 +88,7 @@ void Handler::calc_final_potential(int iteration) {
     reset_energies();
     calc_nonbonded_forces();
     calc_internal_forces(iteration);
+    prepare_offdiags(iteration);
 }
 
 void Handler::run() {
@@ -112,6 +116,7 @@ void Handler::run() {
 void Handler::update_energy_totals() {
     if (ctx.command_info.requested_gpu) {
         ctx.energy.download();
+        ctx.offdiag_records->download();
     }
     ctx.energy.unpack();
     temperature_->sync_for_output(ctx);  // publish Ukin before combine sums Utot
@@ -204,4 +209,17 @@ void Handler::calc_temperature() {
 
 void Handler::calc_leapfrog() {
     integrator_->step(ctx);
+}
+
+void Handler::prepare_offdiags(int iteration) {
+    // offdiags is too easy, so doesn't declare a class to handle it.
+    if (ctx.n_offdiags() == 0 || ctx.md.energy <= 0 || iteration <= 0 || iteration % ctx.md.energy != 0) {
+        return;
+    }
+
+    if (ctx.command_info.requested_gpu) {
+        calc_offdiags_cuda(ctx);
+    } else {
+        calc_offdiags_cpu(ctx);
+    }
 }
