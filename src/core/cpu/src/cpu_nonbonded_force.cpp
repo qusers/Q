@@ -18,7 +18,6 @@ void CpuNonbondedForce::calc(Context& ctx) {
     const auto& atom_idxs = data_.atom_idx->cpu_data_p;
     const auto& coords = ctx.coords->cpu_data_p;
     const auto& pair_masks = data_.pair_masks->cpu_data_p;
-    const auto& pair_14_masks = data_.pair_14_masks->cpu_data_p;
     auto& dvelocities = ctx.dvelocities->cpu_data_p;
     int sz = data_.n_total;
 
@@ -52,11 +51,9 @@ void CpuNonbondedForce::calc(Context& ctx) {
             real_t inv_dis = sqrt(inv_dis2);
 
             real_t qij = atom1_charge * atom2_charge;
-            bool is_14 = (pair_14_masks[row] & bit) != 0;
-            real_t scaling = is_14 ? ctx.topo.el14_scale : 1;
-            real_t2 pair = is_14 ? combine_vdw(ctx.topo.vdw_rule, atom1_vdw.aii_14, atom1_vdw.bii_14, atom2_vdw.aii_14, atom2_vdw.bii_14) : combine_vdw(ctx.topo.vdw_rule, atom1_vdw.aii_normal, atom1_vdw.bii_normal, atom2_vdw.aii_normal, atom2_vdw.bii_normal);
+            real_t2 pair = combine_vdw(ctx.topo.vdw_rule, atom1_vdw.aii_normal, atom1_vdw.bii_normal, atom2_vdw.aii_normal, atom2_vdw.bii_normal);
 
-            auto [vel, dvel] = calc_electrostatic(qij * scaling, ctx.topo.coulomb_constant, inv_dis);
+            auto [vel, dvel] = calc_electrostatic(qij, ctx.topo.coulomb_constant, inv_dis);
             auto [vvdw, dvvdw] = calc_vdw(pair, inv_dis);
 
             real_t lambda = std::min(data_.atom_lambdas->cpu_data_p[i], data_.atom_lambdas->cpu_data_p[j]);

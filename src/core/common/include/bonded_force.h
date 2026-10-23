@@ -185,14 +185,27 @@ HD inline dparam2_t calc_q_improper(const double k, const double phi0, const dou
     return {v, dv};
 }
 
-// Currently only SoftRepulsion reaches this function.
 HD inline special_pair_result_t calc_special_pair(const special_pair_term_t& param, const double r) {
     const double inv_r = 1.0 / r;
 
     const double coul = param.coulomb_coeff * inv_r;
-    const double vdw = param.p1 * exp(-param.p2 * r);
 
-    const double dv = -coul * inv_r - param.p2 * vdw;
+    double vdw, dv_vdw;
+
+    if (param.kind == SpecialPairKind::LJ14) {
+        const double inv_r2 = inv_r * inv_r;
+        const double inv_r6 = inv_r2 * inv_r2 * inv_r2;
+
+        const double Va = param.p1 * inv_r6 * inv_r6;
+        const double Vb = param.p2 * inv_r6;
+
+        vdw = Va - Vb;
+        dv_vdw = (-12.0 * Va + 6.0 * Vb) * inv_r;
+    } else {
+        vdw = param.p1 * exp(-param.p2 * r);
+        dv_vdw = -param.p2 * vdw;
+    }
+    const double dv = -coul * inv_r + dv_vdw;
 
     return {coul, vdw, dv};
 }

@@ -164,8 +164,6 @@ struct catype_t {
 struct vdw_atom_param_t {
     real_t aii_normal;
     real_t bii_normal;
-    real_t aii_14;
-    real_t bii_14;
 };
 
 struct topo_t {
@@ -380,7 +378,7 @@ struct energy_t {
 
 enum class SpecialPairKind : int {
     SoftRepulsion,
-    LJ14,  // Reserved; not enabled yet
+    LJ14,
 };
 
 struct special_pair_term_t {

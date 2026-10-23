@@ -11,7 +11,7 @@
 enum class CalculationType : uint8_t {
     Exclude,
     Calculate,
-    Calculate_14,
+    // Calculate_14,
     Calculate_Special,  // Now for the softpair
 };
 
@@ -127,7 +127,7 @@ struct NonbondedData {
     // Layout: [tile_index * 32 + x_lane].
     // Bit y_lane describes the pair (x_lane, y_lane).
     std::unique_ptr<HostDeviceBuffer<uint32_t>> pair_masks;
-    std::unique_ptr<HostDeviceBuffer<uint32_t>> pair_14_masks;
+    // std::unique_ptr<HostDeviceBuffer<uint32_t>> pair_14_masks;
 
     bool enabled() const { return n_total > 0; }
 };

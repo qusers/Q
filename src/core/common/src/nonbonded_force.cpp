@@ -161,6 +161,79 @@ SolutePairClassification classify_solute_pairs(Context& ctx, const ParseResult& 
     return {std::move(result_excluded), std::move(result_14), std::move(result_special)};
 }
 
+std::vector<special_pair_term_t> build_lj14_pairs(Context& ctx, const std::set<Status>& pairs_14, const std::set<Status>& excluded) {
+    const int nqat = ctx.n_qatoms();
+    std::vector<int> atom_to_q(ctx.n_atoms_solute, -1);
+
+    for (int q = 0; q < nqat; ++q) {
+        atom_to_q.at(ctx.q_atoms[q]) = q;
+    }
+    auto atom_params = [&](int atom, int state) -> std::pair<double, const catype_t*> {
+        const int q = atom_to_q.at(atom);
+
+        if (q >= 0) {
+            const size_t index = static_cast<size_t>(state) * nqat + q;
+            const int type = ctx.q_atypes.at(index).code;
+
+            return {
+                ctx.q_charges.at(index).charge,
+                &ctx.q_catypes.at(type - 1)};
+        }
+
+        const int charge_code = ctx.charges->cpu_data_p[atom].code;
+        const int type_code = ctx.atypes->cpu_data_p[atom].code;
+
+        return {
+            ctx.ccharges->cpu_data_p[charge_code - 1].charge,
+            &ctx.catypes->cpu_data_p[type_code - 1]};
+    };
+
+    std::vector<special_pair_term_t> terms;
+    terms.reserve(pairs_14.size());
+
+    for (const auto& key : pairs_14) {
+        // An explicit exclusion overrides 1–4 classification.
+        if (excluded.count(key)) continue;
+
+        const int ai = key[0];
+        const int aj = key[1];
+        const int s = key[2];
+
+        if (ctx.excluded->cpu_data_p[ai] || ctx.excluded->cpu_data_p[aj]) {
+            continue;
+        }
+
+        const bool qi = atom_to_q.at(ai) >= 0;
+        const bool qj = atom_to_q.at(aj) >= 0;
+
+        const auto [charge_i, param_i] = atom_params(ai, s);
+        const auto [charge_j, param_j] = atom_params(aj, s);
+
+        const auto pair = combine_vdw(ctx.topo.vdw_rule, param_i->aii_1_4, param_i->bii_1_4, param_j->aii_1_4, param_j->bii_1_4);
+
+        special_pair_term_t term{};
+        term.ai = ai;
+        term.aj = aj;
+        term.state = (qi || qj) ? s : -1;
+        term.kind = SpecialPairKind::LJ14;
+
+        const auto category_i = static_cast<uint8_t>(qi ? AtomCategory::Q : AtomCategory::P);
+        const auto category_j = static_cast<uint8_t>(qj ? AtomCategory::Q : AtomCategory::P);
+
+        term.coul_slot = nb_coul_slot(category_i, category_j, qi ? s : -1, qj ? s : -1, ctx.n_lambdas());
+        term.vdw_slot = term.coul_slot + 1;
+
+        term.coulomb_coeff = ctx.topo.coulomb_constant * ctx.topo.el14_scale * charge_i * charge_j;
+
+        term.p1 = pair.x;
+        term.p2 = pair.y;
+
+        terms.push_back(term);
+    }
+
+    return terms;
+}
+
 std::vector<special_pair_term_t> build_special_pairs(Context& ctx, const ParseResult& parsed, const std::set<Status>& s) {
     std::vector<special_pair_term_t> res;
     res.reserve(s.size());
@@ -240,13 +313,14 @@ void NonbondedForce::build_pair_masks(Context& ctx, const ParseResult& parsed) {
     auto [result_excluded, result_14, result_special] = classify_solute_pairs(ctx, parsed);
 
     data_.special_pairs = build_special_pairs(ctx, parsed, result_special);
+    const auto pairs14 = build_lj14_pairs(ctx, result_14, result_excluded);
+    data_.special_pairs.insert(data_.special_pairs.end(), pairs14.begin(), pairs14.end());
 
     data_.n_cluster = data_.n_total / 32;
     const int n = data_.n_cluster;
     data_.n_pair_tiles = n * (n + 1) / 2;
 
     std::vector<uint32_t> pair_masks(data_.n_pair_tiles * 32, 0);
-    std::vector<uint32_t> pair_14_masks(data_.n_pair_tiles * 32, 0);
     auto Q = static_cast<uint8_t>(AtomCategory::Q);
     auto W = static_cast<uint8_t>(AtomCategory::W);
     auto P = static_cast<uint8_t>(AtomCategory::P);
@@ -304,7 +378,7 @@ void NonbondedForce::build_pair_masks(Context& ctx, const ParseResult& parsed) {
         if (result_excluded.count({ai, aj, state})) {
             return CalculationType::Exclude;
         } else if (result_14.count({ai, aj, state})) {
-            return CalculationType::Calculate_14;
+            return CalculationType::Exclude;
         } else {
             return CalculationType::Calculate;
         }
@@ -318,7 +392,6 @@ void NonbondedForce::build_pair_masks(Context& ctx, const ParseResult& parsed) {
                 const int x_slot = tx * 32 + x_lane;
 
                 uint32_t active = 0;
-                uint32_t is14 = 0;
 
                 for (int y_lane = 0; y_lane < 32; y_lane++) {
                     if (tx == ty && y_lane <= x_lane) continue;
@@ -331,20 +404,14 @@ void NonbondedForce::build_pair_masks(Context& ctx, const ParseResult& parsed) {
                     const uint32_t bit = uint32_t{1} << y_lane;
 
                     active |= bit;
-
-                    if (calculation_type == CalculationType::Calculate_14) {
-                        is14 |= bit;
-                    }
                 }
                 const size_t row = tile * 32 + x_lane;
                 pair_masks[row] = active;
-                pair_14_masks[row] = is14;
             }
         }
     }
 
     data_.pair_masks = HostDeviceBuffer<uint32_t>::from_vector(pair_masks, run_gpu);
-    data_.pair_14_masks = HostDeviceBuffer<uint32_t>::from_vector(pair_14_masks, run_gpu);
 }
 
 void NonbondedForce::build_combinded_list(Context& ctx) {
@@ -452,23 +519,23 @@ void NonbondedForce::build_catype_table(Context& ctx) {
         auto atom_type = data_.category->cpu_data_p[i];
 
         if (atom_type == static_cast<uint8_t>(AtomCategory::INVALID)) {
-            atom_vdw[i] = vdw_atom_param_t{0, 0, 0, 0};
+            atom_vdw[i] = vdw_atom_param_t{0, 0};
             continue;
         }
 
         if (atom_type == static_cast<uint8_t>(AtomCategory::P) || atom_type == static_cast<uint8_t>(AtomCategory::W)) {
             const catype_t& catype = catypes[ctx.atypes->cpu_data_p[atom_idx].code - 1];
-            atom_vdw[i] = vdw_atom_param_t{catype.aii_normal, catype.bii_normal, catype.aii_1_4, catype.bii_1_4};
+            atom_vdw[i] = vdw_atom_param_t{catype.aii_normal, catype.bii_normal};
         } else {
             int state = data_.q_state->cpu_data_p[i];
             int q_idx = atom_idx_to_q_idx[atom_idx];
             const atype_t& atype = ctx.q_atypes[q_idx + ctx.n_qatoms() * state];
             if (atype.code > 0) {
                 const catype_t& catype = ctx.q_catypes[atype.code - 1];
-                atom_vdw[i] = vdw_atom_param_t{catype.aii_normal, catype.bii_normal, catype.aii_1_4, catype.bii_1_4};
+                atom_vdw[i] = vdw_atom_param_t{catype.aii_normal, catype.bii_normal};
             } else {
                 catype_t zero = {};
-                atom_vdw[i] = vdw_atom_param_t{0, 0, 0, 0};
+                atom_vdw[i] = vdw_atom_param_t{0, 0};
             }
         }
     }
