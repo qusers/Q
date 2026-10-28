@@ -4,11 +4,45 @@
 #include "cpu_force_accumulation.h"
 #include "geometry.h"
 
+namespace {
+double morse_coupling(const morse_coupling_t& coupling, coord_t* coords, dvel_t* dvelocities, const double v, const double weight) {
+    if (coupling.i < 0) {
+        return 1.0;
+    }
+
+    const int bi = coupling.i;
+    const int bj = coupling.j;
+    const coord_t d = coords[bj] - coords[bi];
+    const double r = norm(d);
+    auto scale = calc_morse_coupling(coupling.a, r, coupling.r0);
+    if (coupling.inverted) {
+        scale.x = 1.0 - scale.x;
+        scale.y = -scale.y;
+    }
+    double gamma = scale.x;
+
+    // U0 * grad(gamma), accumulated on the coupled bond endpoints.
+    if (scale.y != 0.0) {
+        const double ampl = v * scale.y / r * weight;
+
+        add_force(dvelocities[bi].x, -ampl * d.x);
+        add_force(dvelocities[bi].y, -ampl * d.y);
+        add_force(dvelocities[bi].z, -ampl * d.z);
+
+        add_force(dvelocities[bj].x, ampl * d.x);
+        add_force(dvelocities[bj].y, ampl * d.y);
+        add_force(dvelocities[bj].z, ampl * d.z);
+    }
+    return gamma;
+}
+}  // namespace
+
 void CpuBondedForce::calc(Context& ctx) {
     calc_bonds(ctx);
     calc_angles(ctx);
     calc_torsions(ctx);
     calc_impropers(ctx);
+    calc_special_pairs(ctx);
 }
 
 void CpuBondedForce::calc_bonds(Context& ctx) {
@@ -17,23 +51,28 @@ void CpuBondedForce::calc_bonds(Context& ctx) {
     auto* eslot = data_.bond.eslot->cpu_data_p;
     auto* dvelocities = ctx.dvelocities->cpu_data_p;
     auto* coords = ctx.coords->cpu_data_p;
+    auto* states = data_.bond.state->cpu_data_p;
+    const auto* lambdas = ctx.lambdas->cpu_data_p;
 
     auto* e = ctx.energy.host();
 
     for (int i = 0; i < data_.bond.n; i++) {
         const int ai = ids[i].i, aj = ids[i].j;
-        const double k = params[i].x, r_eq = params[i].y;
+        const int s = states[i];
+        const double weight = s < 0 ? 1.0 : lambdas[s];
 
         const double dx = coords[aj].x - coords[ai].x;  // i -> j
         const double dy = coords[aj].y - coords[ai].y;
         const double dz = coords[aj].z - coords[ai].z;
         const double r = sqrt(dx * dx + dy * dy + dz * dz);
 
-        auto [v, dv] = calc_bond(k, r, r_eq);
+        auto [v, dv] = calc_bond(params[i], r);
         // force = dv * unit_vector, where unit_vector = (dx,dy,dz)/r.
         // Fold the 1/r into ampl so we can multiply by the raw (dx,dy,dz).
 
-        const double ampl = dv / r;  //
+        double ampl = dv / r;
+        ampl *= weight;
+
         const double fx = ampl * dx;
         const double fy = ampl * dy;
         const double fz = ampl * dz;
@@ -54,13 +93,18 @@ void CpuBondedForce::calc_angles(Context& ctx) {
     auto* ids = data_.angle.ids->cpu_data_p;
     auto* params = data_.angle.params->cpu_data_p;
     auto* eslot = data_.angle.eslot->cpu_data_p;
+    const auto* state = data_.angle.state->cpu_data_p;
+    const auto* couplings = data_.angle.couplings->cpu_data_p;
     auto* dvelocities = ctx.dvelocities->cpu_data_p;
     auto* coords = ctx.coords->cpu_data_p;
+    const auto* lambdas = ctx.lambdas->cpu_data_p;
 
     auto* e = ctx.energy.host();
 
     for (int i = 0; i < data_.angle.n; i++) {
         const int ai = ids[i].i, aj = ids[i].j, ak = ids[i].k;
+        const int s = state[i];
+        const double weight = s < 0 ? 1.0 : lambdas[s];
         const double k = params[i].x;
         const double th_eq = params[i].y;
 
@@ -76,7 +120,13 @@ void CpuBondedForce::calc_angles(Context& ctx) {
         const double th = acos(cos_th);
         auto [v, dv_per_angle] = calc_angle(k, th, th_eq);
 
-        add_energy(e[eslot[i]], v);
+        /*
+         Weaken the angle forces as the coupled Morse bond stretches.
+        */
+        double gamma = morse_coupling(couplings[i], coords, dvelocities, v, weight);
+        dv_per_angle *= gamma;
+
+        add_energy(e[eslot[i]], v * gamma);
 
         // Now we should get a vector that is perpendicular to aji inside the plane formed by atoms i-j-k
         coord_t perpendicular_v = get_perpendicular_vector(aji, ajk);
@@ -84,14 +134,14 @@ void CpuBondedForce::calc_angles(Context& ctx) {
         double f1 = sin_th;
         f1 = -1.0 / f1;
         perpendicular_v = perpendicular_v * f1 / r_ji;
-        coord_t force1 = perpendicular_v * dv_per_angle;
+        coord_t force1 = perpendicular_v * dv_per_angle * weight;
         add_force(dvelocities[ai].x, force1.x);
         add_force(dvelocities[ai].y, force1.y);
         add_force(dvelocities[ai].z, force1.z);
 
         coord_t perpendicular_v2 = get_perpendicular_vector(ajk, aji);
         perpendicular_v2 = perpendicular_v2 * f1 / r_jk;
-        coord_t force2 = perpendicular_v2 * dv_per_angle;
+        coord_t force2 = perpendicular_v2 * dv_per_angle * weight;
         add_force(dvelocities[ak].x, force2.x);
         add_force(dvelocities[ak].y, force2.y);
         add_force(dvelocities[ak].z, force2.z);
@@ -109,6 +159,9 @@ void CpuBondedForce::calc_torsions(Context& ctx) {
     auto* ids = data_.torsion.ids->cpu_data_p;
     auto* params = data_.torsion.params->cpu_data_p;
     auto* eslot = data_.torsion.eslot->cpu_data_p;
+    const auto* state = data_.torsion.state->cpu_data_p;
+    const auto* couplings = data_.torsion.couplings->cpu_data_p;
+    const auto* lambdas = ctx.lambdas->cpu_data_p;
     auto* dvelocities = ctx.dvelocities->cpu_data_p;
     auto* coords = ctx.coords->cpu_data_p;
 
@@ -116,6 +169,8 @@ void CpuBondedForce::calc_torsions(Context& ctx) {
 
     for (int i = 0; i < data_.torsion.n; i++) {
         const int ai = ids[i].i, aj = ids[i].j, ak = ids[i].k, al = ids[i].l;
+        const int s = state[i];
+        const double weight = s < 0 ? 1.0 : lambdas[s];
         real_t3 aji = real3_cast<real_t>(coords[ai] - coords[aj]);
         real_t3 ajk = real3_cast<real_t>(coords[ak] - coords[aj]);
         real_t3 akl = real3_cast<real_t>(coords[al] - coords[ak]);
@@ -136,10 +191,13 @@ void CpuBondedForce::calc_torsions(Context& ctx) {
         }
 
         const real_t k = params[i].k, gamma = params[i].d, paths = params[i].paths;
-        const int n = static_cast<int>(params[i].n);
+        const real_t n = params[i].n;
 
         auto [v, dv_per_angle] = calc_torsion(k, n, phi, gamma, paths);
-        add_energy(e[eslot[i]], v);
+
+        double morse_scale = morse_coupling(couplings[i], coords, dvelocities, v, weight);
+
+        add_energy(e[eslot[i]], static_cast<double>(v) * morse_scale);
 
         real_t3 di = get_perpendicular_vector(n_ijk, n_jkl);
 
@@ -152,6 +210,7 @@ void CpuBondedForce::calc_torsions(Context& ctx) {
         } else {
             force_per_cos = -dv_per_angle / sin_phi;
         }
+        force_per_cos *= weight * morse_scale;
 
         di = di / norm_ijk;
 
@@ -189,12 +248,18 @@ void CpuBondedForce::calc_impropers(Context& ctx) {
     auto* ids = data_.improper.ids->cpu_data_p;
     auto* params = data_.improper.params->cpu_data_p;
     auto* eslot = data_.improper.eslot->cpu_data_p;
+    const auto* state = data_.improper.state->cpu_data_p;
+    const auto* couplings = data_.improper.couplings->cpu_data_p;
     auto* dvelocities = ctx.dvelocities->cpu_data_p;
     auto* coords = ctx.coords->cpu_data_p;
+    const auto* lambdas = ctx.lambdas->cpu_data_p;
 
     auto* e = ctx.energy.host();
     for (int i = 0; i < data_.improper.n; i++) {
         const int ai = ids[i].i, aj = ids[i].j, ak = ids[i].k, al = ids[i].l;
+        const int s = state[i];
+        const double weight = s < 0 ? 1.0 : lambdas[s];
+        bool is_q = s >= 0;
         coord_t aji = coords[ai] - coords[aj];
         coord_t ajk = coords[ak] - coords[aj];
         coord_t akl = coords[al] - coords[ak];
@@ -205,8 +270,13 @@ void CpuBondedForce::calc_impropers(Context& ctx) {
         double norm_ijk = norm(n_ijk);
         double norm_jkl = norm(n_jkl);
         double cos_phi = dot(n_ijk, n_jkl) / (norm_ijk * norm_jkl);
-        cos_phi = std::min(cos_phi, 1.0);
-        cos_phi = std::max(cos_phi, -1.0);
+        if (is_q) {
+            cos_phi = std::min(cos_phi, pt999);
+            cos_phi = std::max(cos_phi, -pt999);
+        } else {
+            cos_phi = std::min(cos_phi, 1.0);
+            cos_phi = std::max(cos_phi, -1.0);
+        }
         double phi = acos(cos_phi);
 
         if (dot(ajk, cross(n_ijk, n_jkl)) < 0) {
@@ -214,8 +284,21 @@ void CpuBondedForce::calc_impropers(Context& ctx) {
         }
 
         const double k = params[i].x, phi0 = params[i].y;
-        auto [v, dv_per_angle] = calc_improper2(k, phi0, phi);
-        add_energy(e[eslot[i]], v);
+        double v, dv_per_angle;
+
+        if (is_q) {
+            auto potential = calc_q_improper(k, phi0, phi);
+            v = potential.x;
+            dv_per_angle = potential.y;
+        } else {
+            auto potential = calc_improper2(k, phi0, phi);
+            v = potential.x;
+            dv_per_angle = potential.y;
+        }
+
+        const double morse_scale = morse_coupling(couplings[i], coords, dvelocities, v, weight);
+
+        add_energy(e[eslot[i]], v * morse_scale);
 
         coord_t di = get_perpendicular_vector(n_ijk, n_jkl);
         double sin_phi = sin(phi);
@@ -224,8 +307,10 @@ void CpuBondedForce::calc_impropers(Context& ctx) {
             double cos_phi_limit = cos_phi < 0 ? -1 : 1;
             force_per_cos = 4.0 * k * cos(2.0 * phi - phi0) / cos_phi_limit;
         } else {
+            // is_q always go to here. Because the cosine clamp keeps this denominator away from zero.
             force_per_cos = -dv_per_angle / sin_phi;
         }
+        force_per_cos *= weight * morse_scale;
         di = di / norm_ijk;
 
         coord_t dl = get_perpendicular_vector(n_jkl, n_ijk);
@@ -251,5 +336,36 @@ void CpuBondedForce::calc_impropers(Context& ctx) {
         add_force(dvelocities[ak].x, force_per_cos * dpk.x);
         add_force(dvelocities[ak].y, force_per_cos * dpk.y);
         add_force(dvelocities[ak].z, force_per_cos * dpk.z);
+    }
+}
+
+void CpuBondedForce::calc_special_pairs(Context& ctx) {
+    if (data_.special_pairs.n == 0) return;
+    const auto* terms = data_.special_pairs.terms->cpu_data_p;
+    const auto* coords = ctx.coords->cpu_data_p;
+    const auto* lambdas = ctx.lambdas->cpu_data_p;
+    auto* gradients = ctx.dvelocities->cpu_data_p;
+    auto* energy = ctx.energy.host();
+
+    for (int i = 0; i < data_.special_pairs.n; i++) {
+        const auto& term = terms[i];
+
+        const auto d = coords[term.aj] - coords[term.ai];
+        const double r = norm(d);
+
+        const auto result = calc_special_pair(term, r);
+        const double weight = term.state < 0 ? 1.0 : lambdas[term.state];
+        const double ampl = result.dv / r * weight;
+
+        add_force(gradients[term.ai].x, -ampl * d.x);
+        add_force(gradients[term.ai].y, -ampl * d.y);
+        add_force(gradients[term.ai].z, -ampl * d.z);
+
+        add_force(gradients[term.aj].x, ampl * d.x);
+        add_force(gradients[term.aj].y, ampl * d.y);
+        add_force(gradients[term.aj].z, ampl * d.z);
+
+        add_energy(energy[term.coul_slot], result.coul);
+        add_energy(energy[term.vdw_slot], result.vdw);
     }
 }

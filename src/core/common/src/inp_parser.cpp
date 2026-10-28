@@ -10,6 +10,7 @@
 #include <fstream>
 #include <iomanip>
 #include <map>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -322,6 +323,8 @@ struct InpParser::TopData {
     std::vector<std::string> solvcenter;
 
     std::string use_switch_atom = "1";
+
+    int ff_type = FF_GROMOS;
 };
 
 struct InpParser::FepData {
@@ -417,6 +420,26 @@ void InpParser::ensure_topology() {
     while (std::getline(in, raw)) {
         std::string line = trim(raw);
         if (line.empty()) continue;
+
+        if (block == 0) {
+            const auto fields = split_ws(line);
+
+            if (!fields.empty() && fields[0] == "FF_TYPE") {
+                if (fields.size() < 2) {
+                    throw parse_error("FF_TYPE requires a numeric value.");
+                }
+
+                top_->ff_type = parse_int(fields[1]);
+
+                if (top_->ff_type != FF_GROMOS &&
+                    top_->ff_type != FF_AMBER &&
+                    top_->ff_type != FF_CHARMM) {
+                    throw parse_error("Unsupported FF_TYPE: " + fields[1]);
+                }
+
+                continue;
+            }
+        }
 
         if (line.find("Total no. of atoms") != std::string::npos) {
             std::vector<std::string> f = split_ws(line);
@@ -741,9 +764,12 @@ void InpParser::ensure_fep() {
         if (f.size() >= 2 && f[0] == "softcore_use_max_potential") fep_->softcore_use_max_potential = is_on_token(f[1]);
     }
 
+    if (fep_->states <= 0) {
+        throw parse_error("[FEP]: states must be positive.");
+    }
+
     fep_->q_atypes.assign(fep_->states, {});
     fep_->q_charges.assign(fep_->states, {});
-    fep_->q_softpairs.assign(fep_->states, {});
     fep_->q_exclpairs.assign(fep_->states, {});
     fep_->q_softcores.assign(fep_->states, {});
     fep_->q_bonds.assign(fep_->states, {});
@@ -797,7 +823,6 @@ void InpParser::ensure_fep() {
         }
         if (line.find("[bond_types]") != std::string::npos) {
             block = 12;
-            fep_->q_cbonds.push_back({"0", "0.0", "0.0"});
             continue;
         }
         if (line.find("[change_bonds]") != std::string::npos) {
@@ -806,16 +831,14 @@ void InpParser::ensure_fep() {
         }
         if (line.find("[angle_types]") != std::string::npos) {
             block = 14;
-            fep_->q_cangles.push_back({"0", "0.0", "0.0"});
             continue;
         }
-        if (line.find("[change_types]") != std::string::npos) {
+        if (line.find("[change_angles]") != std::string::npos) {
             block = 15;
             continue;
         }
         if (line.find("[torsion_types]") != std::string::npos) {
             block = 16;
-            fep_->q_ctorsions.push_back({"0", "0.0", "0.0", "0.0"});
             continue;
         }
         if (line.find("[change_torsions]") != std::string::npos) {
@@ -824,7 +847,6 @@ void InpParser::ensure_fep() {
         }
         if (line.find("[improper_types]") != std::string::npos) {
             block = 18;
-            fep_->q_cimpropers.push_back({"0", "0.0", "0.0"});
             continue;
         }
         if (line.find("[change_impropers]") != std::string::npos) {
@@ -847,9 +869,12 @@ void InpParser::ensure_fep() {
             block = 23;
             continue;
         }
-        if (line.find("[off-diagonals]") != std::string::npos) {
+        if (line.find("[off_diagonals]") != std::string::npos) {
             block = 24;
             continue;
+        }
+        if (line.front() == '[') {
+            throw parse_error("Unsupported FEP section: " + line);
         }
 
         std::vector<std::string> f = split_ws(line);
@@ -873,10 +898,24 @@ void InpParser::ensure_fep() {
                 }
                 break;
             case 6:
-                for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_softpairs[s].push_back(f[s + 1]);
+                if (f.size() != 2) {
+                    throw parse_error("[soft_pairs]: expected two Q-atom indices.");
+                }
+                fep_->q_softpairs.push_back(f);
                 break;
             case 7:
-                for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_exclpairs[s].push_back(f[s + 1]);
+                if (f.size() != static_cast<size_t>(2 + fep_->states)) {
+                    throw parse_error(
+                        "[excluded_pairs]: expected two atom numbers followed by one flag per state.");
+                }
+                for (int s = 0; s < fep_->states; ++s) {
+                    const auto& flag = f[2 + s];
+
+                    if (flag != "0" && flag != "1") {
+                        throw parse_error("[excluded_pairs]: flags must be 0 or 1.");
+                    }
+                    fep_->q_exclpairs[s].push_back(f[0] + " " + f[1] + " " + flag);
+                }
                 break;
             case 8:
                 fep_->q_elscales.push_back(f);
@@ -885,42 +924,98 @@ void InpParser::ensure_fep() {
                 for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_softcores[s].push_back(f[s + 1]);
                 break;
             case 12:
-                fep_->q_cbonds.push_back(f.size() > 1 ? std::vector<std::string>(f.begin() + 1, f.end()) : f);
+                if (f.size() != 3 && f.size() != 4) {
+                    throw parse_error("[bond_types]: expected harmonic 'type_id k r0' or Morse 'type_id D a r0'.");
+                }
+                fep_->q_cbonds.push_back(f);
                 break;
+
             case 13:
-                for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_bonds[s].push_back(f[s + 1]);
+                // atom_i atom_j type_state1 type_state2 ... type_stateN
+                if (f.size() != static_cast<size_t>(2 + fep_->states)) {
+                    throw parse_error(
+                        "[change_bonds]: expected two atom indices "
+                        "followed by one type code per state.");
+                }
+
+                for (int s = 0; s < fep_->states; s++) {
+                    fep_->q_bonds[s].push_back(f[0] + " " + f[1] + " " + f[2 + s]);
+                }
                 break;
             case 14:
-                fep_->q_cangles.push_back(f.size() > 1 ? std::vector<std::string>(f.begin() + 1, f.end()) : f);
+                if (f.size() != 3) {
+                    throw parse_error(
+                        "[angle_types]: currently only harmonic "
+                        "'type_id k theta0' is supported.");
+                }
+                fep_->q_cangles.push_back(f);
                 break;
             case 15:
-                for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_angles[s].push_back(f[s + 1]);
+                // atom_i atom_j atom_k type_state1 type_state2 ... type_stateN
+                if (f.size() != static_cast<size_t>(3 + fep_->states)) {
+                    throw parse_error(
+                        "[change_angles]: expected three atom indices "
+                        "followed by one type code per state.");
+                }
+
+                for (int s = 0; s < fep_->states; s++) {
+                    fep_->q_angles[s].push_back(f[0] + " " + f[1] + " " + f[2] + " " + f[3 + s]);
+                }
                 break;
             case 16:
-                fep_->q_ctorsions.push_back(f.size() > 1 ? std::vector<std::string>(f.begin() + 1, f.end()) : f);
+                if (f.size() != 4) {
+                    throw parse_error("[torsion_types]: expected type_id k multiplicity phase.");
+                }
+                fep_->q_ctorsions.push_back(f);
                 break;
             case 17:
-                for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_torsions[s].push_back(f[s + 1]);
+                if (f.size() != static_cast<size_t>(4 + fep_->states)) {
+                    throw parse_error("[change_torsions]: expected four atom indices followed by one type code per state.");
+                }
+                for (int s = 0; s < fep_->states; s++) {
+                    fep_->q_torsions[s].push_back(f[0] + " " + f[1] + " " + f[2] + " " + f[3] + " " + f[4 + s]);
+                }
                 break;
             case 18:
-                fep_->q_cimpropers.push_back(f.size() > 1 ? std::vector<std::string>(f.begin() + 1, f.end()) : f);
+                if (f.size() != 3) {
+                    throw parse_error("[improper_types]: expected type_id k phi0.");
+                }
+                fep_->q_cimpropers.push_back(f);
                 break;
             case 19:
-                for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_impropers[s].push_back(f[s + 1]);
+                if (f.size() != static_cast<size_t>(4 + fep_->states)) {
+                    throw parse_error("[change_impropers]: expected four atom indices followed by one type code per state.");
+                }
+                for (int s = 0; s < fep_->states; s++) {
+                    fep_->q_impropers[s].push_back(f[0] + " " + f[1] + " " + f[2] + " " + f[3] + " " + f[4 + s]);
+                }
                 break;
             case 20:
+                if (f.size() != 2) {
+                    throw parse_error("[angle_couplings]: expected angle_index bond_index.");
+                }
                 fep_->q_angcouples.push_back(f);
                 break;
             case 21:
+                if (f.size() != 2) {
+                    throw parse_error("[torsion_couplings]: expected torsion_index bond_index.");
+                }
                 fep_->q_torcouples.push_back(f);
                 break;
             case 22:
+                if (f.size() != 2 && f.size() != 3) {
+                    throw parse_error("[improper_couplings]: expected improper_index bond_index [mode].");
+                }
                 fep_->q_imprcouples.push_back(f);
                 break;
+
             case 23:
                 for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_shakes[s].push_back(f[s + 1]);
                 break;
             case 24:
+                if (f.size() != 6) {
+                    throw parse_error("[off_diagonals]: expected state_i state_j Q_atom_k Q_atom_l A mu.");
+                }
                 fep_->q_offdiags.push_back(f);
                 break;
             default:
@@ -1021,6 +1116,8 @@ void InpParser::parse_md() {
     md.bath_coupling = parse_double(value_or(mdv, "bath-coupling", value_or(mdv, "bath_coupling", "1")));
     md.random_seed = parse_int(value_or(mdv, "random-seed", value_or(mdv, "random_seed", "1")));
     md.initial_temperature = parse_double(value_or(mdv, "initial-temperature", value_or(mdv, "initial_temperature", value_or(mdv, "temperature", "0"))));
+    md.hmr = is_on_value(mdv, "hmr", "off");
+    md.hmr_target_mass = parse_double(value_or(mdv, "hmr-target-mass", "3.024"));
 
     const bool has_legacy_constraint_key =
         mdv.count("shake-solvent") != 0 ||
@@ -1079,6 +1176,7 @@ void InpParser::parse_md() {
 
     md.q_atom = parse_double(value_or(cut, "q-atom", value_or(cut, "q_atom", "99")));
     md.shell_radius = parse_double(value_or(sphere, "shell-radius", value_or(sphere, "shell_radius", "0")));
+    md.exclude_bonded = is_on_value(sphere, "exclude-bonded", "off");
     md.shell_force = parse_double(value_or(sphere, "shell-force", value_or(sphere, "shell_force", "10.0")));
     md.radial_force = parse_double(value_or(solvent, "radial-force", value_or(solvent, "radial_force", "60.0")));
     const std::string polarisation_value = bool_value(solvent, "polarisation", bool_value(solvent, "polarization", "on"));
@@ -1155,6 +1253,7 @@ void InpParser::parse_lambdas() {
 
 void InpParser::parse_topo() {
     ensure_topology();
+    result.topo.ff_type = top_->ff_type;
     result.topo.solvent_type = parse_int(top_->solvtype);
     result.topo.exclusion_radius = parse_double(top_->exclusion);
     result.topo.solvent_radius = parse_double(top_->radii);
@@ -1332,8 +1431,62 @@ void InpParser::parse_q_atoms() {
 
 void InpParser::parse_q_angcouples() {
     ensure_fep();
-    result.q_angcouples.resize(fep_->q_angcouples.size());
-    for (size_t i = 0; i < fep_->q_angcouples.size(); i++) result.q_angcouples[i] = {row_int(fep_->q_angcouples[i], 0), row_int(fep_->q_angcouples[i], 1)};
+
+    result.q_angcouples.clear();
+
+    if (fep_->q_angcouples.empty()) return;
+
+    const int nstates = static_cast<int>(result.lambdas.size());
+
+    if (nstates <= 0 || result.q_angles.size() % nstates != 0 || result.q_bonds.size() % nstates != 0) {
+        throw parse_error("[angle_couplings]: invalid state-dependent bonded layout.");
+    }
+
+    const size_t nangles = result.q_angles.size() / nstates;
+    const size_t nbonds = result.q_bonds.size() / nstates;
+
+    // One coupled bond per angle.
+    std::map<int, int> coupled_bonds;
+
+    for (const auto& row : fep_->q_angcouples) {
+        const int angle_index = row_int(row, 0);
+        const int bond_index = row_int(row, 1);
+
+        if (angle_index <= 0 || static_cast<size_t>(angle_index) > nangles) {
+            throw parse_error("[angle_couplings]: angle index out of range.");
+        }
+
+        if (bond_index <= 0 || static_cast<size_t>(bond_index) > nbonds) {
+            throw parse_error("[angle_couplings]: bond index out of range.");
+        }
+
+        const auto inserted = coupled_bonds.emplace(angle_index, bond_index);
+
+        if (!inserted.second) {
+            if (inserted.first->second != bond_index) {
+                throw parse_error("[angle_couplings]: an angle cannot couple to multiple bonds.");
+            }
+            continue;  // Identical duplicate
+        }
+
+        for (int s = 0; s < nstates; ++s) {
+            const auto& angle = result.q_angles[s * nangles + angle_index - 1];
+            const auto& bond = result.q_bonds[s * nbonds + bond_index - 1];
+
+            if (bond.code == 0) {
+                if (angle.code != 0) {
+                    throw parse_error("[angle_couplings]: coupled bond is absent in a state where the angle is present.");
+                }
+                continue;
+            }
+
+            const auto& param = result.q_cbonds.at(bond.code);
+            if (!param.is_morse) {
+                throw parse_error("[angle_couplings]: coupled bond must be Morse in every state where the bond is present.");
+            }
+        }
+        result.q_angcouples.push_back({angle_index, bond_index});
+    }
 }
 
 void InpParser::parse_q_atypes() {
@@ -1352,7 +1505,22 @@ void InpParser::parse_q_catypes() {
     result.q_catypes.resize(fep_->q_catypes.size());
     for (size_t i = 0; i < fep_->q_catypes.size(); i++) {
         const auto& row = fep_->q_catypes[i];
-        result.q_catypes[i] = {static_cast<int>(i) + 1, row_double(row, 7), row_double(row, 1), row_double(row, 2), row_double(row, 5), row_double(row, 6)};
+        // name A B C a A14 B14 mass
+        if (row.size() != 8) {
+            throw parse_error("[atom_types]: expected name A B C a A14 B14 mass.");
+        }
+
+        catype_t param{};
+        param.code = static_cast<int>(i) + 1;
+        param.m = row_double(row, 7);
+        param.aii_normal = row_double(row, 1);
+        param.bii_normal = row_double(row, 2);
+        param.aii_1_4 = row_double(row, 5);
+        param.bii_1_4 = row_double(row, 6);
+        param.soft_C = row_double(row, 3);
+        param.soft_a = row_double(row, 4);
+
+        result.q_catypes[i] = param;
     }
 }
 
@@ -1370,6 +1538,9 @@ void InpParser::parse_q_charges() {
 void InpParser::parse_q_angles() {
     ensure_fep();
     int n_lambdas = static_cast<int>(result.lambdas.size());
+    if (!fep_file_.empty() && n_lambdas != fep_->states) {
+        throw parse_error("[FEP]: number of lambdas must match states.");
+    }
     size_t total = 0;
     for (const auto& state : fep_->q_angles) total += state.size();
     int n_qangles = n_lambdas > 0 ? static_cast<int>(total) / n_lambdas : 0;
@@ -1384,13 +1555,33 @@ void InpParser::parse_q_angles() {
 
 void InpParser::parse_q_cangles() {
     ensure_fep();
-    result.q_cangles.resize(fep_->q_cangles.size());
-    for (size_t i = 0; i < fep_->q_cangles.size(); i++) result.q_cangles[i] = {0, row_double(fep_->q_cangles[i], 0), row_double(fep_->q_cangles[i], 1)};
+    result.q_cangles.assign(1, cangle_t{});
+    for (size_t i = 0; i < fep_->q_cangles.size(); i++) {
+        int id = row_int(fep_->q_cangles[i], 0);
+        if (id <= 0) {
+            throw parse_error("Parameter type IDs must be positive.");
+        }
+        if (result.q_cangles.size() <= static_cast<size_t>(id)) {
+            result.q_cangles.resize(static_cast<size_t>(id) + 1);
+        }
+        result.q_cangles[id] = {id, row_double(fep_->q_cangles[i], 1), row_double(fep_->q_cangles[i], 2)};
+    }
+
+    for (const auto& angle : result.q_angles) {
+        const int code = angle.code;
+        if (code == 0) continue;
+        if (code < 0 || static_cast<size_t>(code) >= result.q_cangles.size() || result.q_cangles[code].code != code) {
+            throw parse_error("[change_angles]: undefined angle type " + std::to_string(code));
+        }
+    }
 }
 
 void InpParser::parse_q_bonds() {
     ensure_fep();
     int n_lambdas = static_cast<int>(result.lambdas.size());
+    if (!fep_file_.empty() && n_lambdas != fep_->states) {
+        throw parse_error("[FEP]: number of lambdas must match states.");
+    }
     size_t total = 0;
     for (const auto& state : fep_->q_bonds) total += state.size();
     int n_qbonds = n_lambdas > 0 ? static_cast<int>(total) / n_lambdas : 0;
@@ -1405,13 +1596,48 @@ void InpParser::parse_q_bonds() {
 
 void InpParser::parse_q_cbonds() {
     ensure_fep();
-    result.q_cbonds.resize(fep_->q_cbonds.size());
-    for (size_t i = 0; i < fep_->q_cbonds.size(); i++) result.q_cbonds[i] = {0, row_double(fep_->q_cbonds[i], 0), row_double(fep_->q_cbonds[i], 1)};
+    result.q_cbonds.assign(1, cbond_t{});
+    for (size_t i = 0; i < fep_->q_cbonds.size(); i++) {
+        const auto& row = fep_->q_cbonds[i];
+        int id = row_int(row, 0);
+        if (id <= 0) {
+            throw parse_error("Parameter type IDs must be positive.");
+        }
+
+        cbond_t param{};
+        param.code = id;
+        if (row.size() == 3) {
+            // Harmonic: type_id k r0
+            param.kb = row_double(row, 1);
+            param.b0 = row_double(row, 2);
+        } else {
+            // Morse: type_id D a r0
+            param.is_morse = true;
+            param.D = row_double(row, 1);
+            param.a = row_double(row, 2);
+            param.b0 = row_double(row, 3);
+        }
+
+        if (result.q_cbonds.size() <= static_cast<size_t>(id)) {
+            result.q_cbonds.resize(static_cast<size_t>(id) + 1);
+        }
+        result.q_cbonds[id] = param;
+    }
+    for (const auto& bond : result.q_bonds) {
+        const int code = bond.code;
+        if (code == 0) continue;
+        if (code < 0 || static_cast<size_t>(code) >= result.q_cbonds.size() || result.q_cbonds[code].code != code) {
+            throw parse_error("[change_bonds]: undefined bond type " + std::to_string(code));
+        }
+    }
 }
 
 void InpParser::parse_q_impropers() {
     ensure_fep();
     int n_lambdas = static_cast<int>(result.lambdas.size());
+    if (!fep_file_.empty() && n_lambdas != fep_->states) {
+        throw parse_error("[FEP]: number of lambdas must match states.");
+    }
     size_t total = 0;
     for (const auto& state : fep_->q_impropers) total += state.size();
     int n_qimpropers = n_lambdas > 0 ? static_cast<int>(total) / n_lambdas : 0;
@@ -1426,13 +1652,36 @@ void InpParser::parse_q_impropers() {
 
 void InpParser::parse_q_cimpropers() {
     ensure_fep();
-    result.q_cimpropers.resize(fep_->q_cimpropers.size());
-    for (size_t i = 0; i < fep_->q_cimpropers.size(); i++) result.q_cimpropers[i] = {row_double(fep_->q_cimpropers[i], 0), row_double(fep_->q_cimpropers[i], 1)};
+    result.q_cimpropers.assign(1, q_cimproper_t{});
+    std::vector<bool> type_read(1, false);
+    for (const auto& row : fep_->q_cimpropers) {
+        const int id = row_int(row, 0);
+        if (id <= 0) {
+            throw parse_error("[improper_types]: parameter type IDs must be positive.");
+        }
+        if (result.q_cimpropers.size() <= static_cast<size_t>(id)) {
+            result.q_cimpropers.resize(static_cast<size_t>(id) + 1);
+            type_read.resize(static_cast<size_t>(id) + 1, false);
+        }
+        // Keep angles in degrees, as in the other QGPU parsed parameter tables.
+        result.q_cimpropers[id] = {row_double(row, 1), row_double(row, 2)};
+        type_read[id] = true;
+    }
+    for (const auto& improper : result.q_impropers) {
+        const int code = improper.code;
+        if (code == 0) continue;
+        if (code < 0 || static_cast<size_t>(code) >= type_read.size() || !type_read[code]) {
+            throw parse_error("[change_impropers]: undefined improper type " + std::to_string(code));
+        }
+    }
 }
 
 void InpParser::parse_q_torsions() {
     ensure_fep();
     int n_lambdas = static_cast<int>(result.lambdas.size());
+    if (!fep_file_.empty() && n_lambdas != fep_->states) {
+        throw parse_error("[FEP]: number of lambdas must match states.");
+    }
     size_t total = 0;
     for (const auto& state : fep_->q_torsions) total += state.size();
     int n_qtorsions = n_lambdas > 0 ? static_cast<int>(total) / n_lambdas : 0;
@@ -1447,39 +1696,213 @@ void InpParser::parse_q_torsions() {
 
 void InpParser::parse_q_ctorsions() {
     ensure_fep();
-    result.q_ctorsions.resize(fep_->q_ctorsions.size());
-    for (size_t i = 0; i < fep_->q_ctorsions.size(); i++) result.q_ctorsions[i] = {0, row_double(fep_->q_ctorsions[i], 0), row_double(fep_->q_ctorsions[i], 1), row_double(fep_->q_ctorsions[i], 2), 0.0};
+    result.q_ctorsions.assign(1, ctorsion_t{});
+    for (const auto& row : fep_->q_ctorsions) {
+        const int id = row_int(row, 0);
+        if (id <= 0) {
+            throw parse_error("[torsion_types]: parameter type IDs must be positive.");
+        }
+        if (result.q_ctorsions.size() <= static_cast<size_t>(id)) {
+            result.q_ctorsions.resize(static_cast<size_t>(id) + 1);
+        }
+        // Fortran Q-torsions have no path divisor; preserve k with unit scaling.
+        // Phase stays in degrees until force parameters are constructed.
+        result.q_ctorsions[id] = {id, row_double(row, 1), row_double(row, 2), row_double(row, 3), 1.0};
+    }
+    for (const auto& torsion : result.q_torsions) {
+        const int code = torsion.code;
+        if (code == 0) continue;
+        if (code < 0 || static_cast<size_t>(code) >= result.q_ctorsions.size() || result.q_ctorsions[code].code != code) {
+            throw parse_error("[change_torsions]: undefined torsion type " + std::to_string(code));
+        }
+    }
 }
 
 void InpParser::parse_q_offdiags() {
     ensure_fep();
-    result.q_offdiags.resize(fep_->q_offdiags.size());
-    for (size_t i = 0; i < fep_->q_offdiags.size(); i++) {
-        result.q_offdiags[i] = {row_int(fep_->q_offdiags[i], 0), row_int(fep_->q_offdiags[i], 1), row_int(fep_->q_offdiags[i], 2), row_int(fep_->q_offdiags[i], 3), row_double(fep_->q_offdiags[i], 4), row_double(fep_->q_offdiags[i], 5)};
+    result.q_offdiags.clear();
+
+    const int nstates = static_cast<int>(result.lambdas.size());
+    const int nqat = static_cast<int>(result.q_atoms.size());
+
+    for (const auto& row : fep_->q_offdiags) {
+        q_offdiag_t param{};
+        param.i = row_int(row, 0);
+        param.j = row_int(row, 1);
+        param.qk = row_int(row, 2);
+        param.ql = row_int(row, 3);
+        param.Aij = row_double(row, 4);
+        param.muij = row_double(row, 5);
+
+        if (param.i < 1 || param.i > nstates || param.j < 1 || param.j > nstates || param.i == param.j) {
+            throw parse_error("[off_diagonals]: state indices must be different and within range.");
+        }
+
+        if (param.qk < 1 || param.qk > nqat || param.ql < 1 || param.ql > nqat) {
+            throw parse_error("[off_diagonals]: Q-atom index out of range.");
+        }
+
+        if (!std::isfinite(param.Aij) || !std::isfinite(param.muij)) {
+            throw parse_error("[off_diagonals]: A and mu must be finite.");
+        }
+
+        result.q_offdiags.push_back(param);
     }
 }
 
 void InpParser::parse_q_imprcouples() {
     ensure_fep();
-    result.q_imprcouples.resize(fep_->q_imprcouples.size());
-    for (size_t i = 0; i < fep_->q_imprcouples.size(); i++) result.q_imprcouples[i] = {row_int(fep_->q_imprcouples[i], 0), row_int(fep_->q_imprcouples[i], 1)};
+    result.q_imprcouples.clear();
+
+    if (fep_->q_imprcouples.empty()) return;
+
+    const int nstates = static_cast<int>(result.lambdas.size());
+
+    if (nstates <= 0 || result.q_impropers.size() % nstates != 0 || result.q_bonds.size() % nstates != 0) {
+        throw parse_error("[improper_couplings]: invalid state-dependent bonded layout.");
+    }
+
+    const size_t nimpropers = result.q_impropers.size() / nstates;
+    const size_t nbonds = result.q_bonds.size() / nstates;
+
+    // Improper row -> {bond row, inverted mode}
+    std::map<int, std::pair<int, bool>> coupled_bonds;
+
+    for (const auto& row : fep_->q_imprcouples) {
+        const int improper_index = row_int(row, 0);
+        const int bond_index = row_int(row, 1);
+        const int mode = row_int(row, 2, 0);
+
+        if (improper_index <= 0 || static_cast<size_t>(improper_index) > nimpropers) {
+            throw parse_error("[improper_couplings]: improper index out of range.");
+        }
+
+        if (bond_index <= 0 || static_cast<size_t>(bond_index) > nbonds) {
+            throw parse_error("[improper_couplings]: bond index out of range.");
+        }
+
+        if (mode != 0 && mode != 1) {
+            throw parse_error("[improper_couplings]: mode must be 0 or 1.");
+        }
+
+        const bool inverted = mode == 1;
+        const std::pair<int, bool> target{bond_index, inverted};
+        const auto inserted = coupled_bonds.emplace(improper_index, target);
+
+        if (!inserted.second) {
+            if (inserted.first->second != target) {
+                throw parse_error("[improper_couplings]: conflicting couplings for the same improper.");
+            }
+            continue;  // Identical duplicate
+        }
+
+        for (int s = 0; s < nstates; ++s) {
+            const auto& improper = result.q_impropers[s * nimpropers + improper_index - 1];
+            const auto& bond = result.q_bonds[s * nbonds + bond_index - 1];
+
+            if (bond.code == 0) {
+                if (improper.code != 0) {
+                    throw parse_error("[improper_couplings]: coupled bond is absent in a state where the improper is present.");
+                }
+                continue;
+            }
+
+            const auto& param = result.q_cbonds.at(bond.code);
+            if (!param.is_morse) {
+                throw parse_error("[improper_couplings]: coupled bond must be Morse in every state where the bond is present.");
+            }
+        }
+        result.q_imprcouples.push_back({improper_index, bond_index, inverted});
+    }
 }
 
 void InpParser::parse_q_softpairs() {
     ensure_fep();
     result.q_softpairs.clear();
-    for (const auto& state : fep_->q_softpairs) {
-        for (const std::string& value : state) {
-            auto row = split_state_row(value);
-            result.q_softpairs.push_back({row_int(row, 0), row_int(row, 1)});
+
+    const int nqat = static_cast<int>(result.q_atoms.size());
+    std::set<std::pair<int, int>> seen;
+
+    for (const auto& row : fep_->q_softpairs) {
+        int qi = row_int(row, 0);
+        int qj = row_int(row, 1);
+
+        if (qi < 1 || qi > nqat || qj < 1 || qj > nqat) {
+            throw parse_error("[soft_pairs]: Q-atom index is out of range.");
+        }
+
+        if (qi == qj) {
+            throw parse_error("[soft_pairs]: the two Q-atoms must be different.");
+        }
+
+        if (qi > qj) {
+            std::swap(qi, qj);
+        }
+
+        // Treat reversed or repeated entries as the same pair.
+        if (seen.emplace(qi, qj).second) {
+            result.q_softpairs.push_back({qi, qj});
         }
     }
 }
 
 void InpParser::parse_q_torcouples() {
     ensure_fep();
-    result.q_torcouples.resize(fep_->q_torcouples.size());
-    for (size_t i = 0; i < fep_->q_torcouples.size(); i++) result.q_torcouples[i] = {row_int(fep_->q_torcouples[i], 0), row_int(fep_->q_torcouples[i], 1)};
+    result.q_torcouples.clear();
+
+    if (fep_->q_torcouples.empty()) return;
+
+    const int nstates = static_cast<int>(result.lambdas.size());
+
+    if (nstates <= 0 || result.q_torsions.size() % nstates != 0 || result.q_bonds.size() % nstates != 0) {
+        throw parse_error("[torsion_couplings]: invalid state-dependent bonded layout.");
+    }
+    const size_t ntorsions = result.q_torsions.size() / nstates;
+    const size_t nbonds = result.q_bonds.size() / nstates;
+
+    std::map<int, int> coupled_bonds;
+
+    for (const auto& row : fep_->q_torcouples) {
+        const int torsion_index = row_int(row, 0);
+        const int bond_index = row_int(row, 1);
+
+        if (torsion_index <= 0 || static_cast<size_t>(torsion_index) > ntorsions) {
+            throw parse_error("[torsion_couplings]: torsion index out of range.");
+        }
+
+        if (bond_index <= 0 || static_cast<size_t>(bond_index) > nbonds) {
+            throw parse_error("[torsion_couplings]: bond index out of range.");
+        }
+
+        const auto inserted = coupled_bonds.emplace(torsion_index, bond_index);
+
+        if (!inserted.second) {
+            if (inserted.first->second != bond_index) {
+                throw parse_error(
+                    "[torsion_couplings]: a torsion cannot couple "
+                    "to multiple bonds.");
+            }
+            continue;  // Identical duplicate
+        }
+
+        for (int s = 0; s < nstates; ++s) {
+            const auto& torsion = result.q_torsions[s * ntorsions + torsion_index - 1];
+            const auto& bond = result.q_bonds[s * nbonds + bond_index - 1];
+
+            if (bond.code == 0) {
+                if (torsion.code != 0) {
+                    throw parse_error("[torsion_couplings]: coupled bond is absent in a state where the torsion is present.");
+                }
+                continue;
+            }
+
+            const auto& param = result.q_cbonds.at(bond.code);
+            if (!param.is_morse) {
+                throw parse_error("[torsion_couplings]: coupled bond must be Morse in every state where the bond is present.");
+            }
+        }
+        result.q_torcouples.push_back({torsion_index, bond_index});
+    }
 }
 
 void InpParser::parse_q_elscales() {
@@ -1490,15 +1913,47 @@ void InpParser::parse_q_elscales() {
 
 void InpParser::parse_q_exclpairs() {
     ensure_fep();
-    int n_lambdas = static_cast<int>(result.lambdas.size());
-    size_t total = 0;
-    for (const auto& state : fep_->q_exclpairs) total += state.size();
-    int n_qexclpairs = n_lambdas > 0 ? static_cast<int>(total) / n_lambdas : 0;
-    result.q_exclpairs.resize(n_qexclpairs * n_lambdas);
-    for (int state = 0; state < n_lambdas && state < static_cast<int>(fep_->q_exclpairs.size()); state++) {
-        for (int i = 0; i < n_qexclpairs && static_cast<size_t>(i) < fep_->q_exclpairs[state].size(); i++) {
-            auto row = split_state_row(fep_->q_exclpairs[state][i]);
-            result.q_exclpairs[i + state * n_qexclpairs] = {row_int(row, 0), row_int(row, 1), row_int(row, 2)};
+    result.q_exclpairs.clear();
+    if (fep_->q_exclpairs.empty()) return;
+
+    const size_t nstates = result.lambdas.size();
+
+    const size_t npairs = fep_->q_exclpairs.front().size();
+    result.q_exclpairs.resize(nstates * npairs);
+
+    for (size_t s = 0; s < nstates; s++) {
+        for (size_t i = 0; i < npairs; i++) {
+            const auto row = split_state_row(fep_->q_exclpairs[s][i]);
+            const int ai = row_int(row, 0);
+            const int aj = row_int(row, 1);
+
+            if (ai < 1 || ai > result.n_atoms_solute || aj < 1 || aj > result.n_atoms_solute) {
+                throw parse_error("[excluded_pairs]: atom number is outside the solute.");
+            }
+            const int flag = row_int(row, 2);
+
+            result.q_exclpairs[s * npairs + i] = {ai, aj, flag};
+        }
+    }
+
+    std::set<int> q_atoms;
+    for (int i = 0; i < result.q_atoms.size(); i++) {
+        q_atoms.insert(result.q_atoms[i]);
+    }
+
+    for (int i = 0; i < npairs; i++) {
+        const auto& first = result.q_exclpairs[i];
+
+        const bool qi = q_atoms.count(first.ai - 1);
+        const bool qj = q_atoms.count(first.aj - 1);
+        if (qi && qj) continue;
+
+        for (int s = 1; s < nstates; s++) {
+            if (result.q_exclpairs[s * npairs + i].excl != first.excl) {
+                throw parse_error(
+                    "[excluded_pairs]: a pair involving a non-Q "
+                    "atom must be excluded in all or no states.");
+            }
         }
     }
 }

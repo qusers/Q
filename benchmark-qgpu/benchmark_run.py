@@ -9,10 +9,10 @@ import sys
 from datetime import datetime
 import glob
 import csv
+import shlex
 import psutil
 from benchmark_report import make_html_report
-
-TIME_STEP = 2 * 1e-6  # 2fs per step = 0.000002 ns per step
+from benchmark_input import ns_per_day, read_inp_settings, stage_inp_input
 
  
 def _collect_gpu_mem_mb_for_pids(pids):
@@ -157,11 +157,10 @@ def _monitor_peaks(root_pid, stop_event, sample_interval=0.2):
     return peaks
 
 
-def run_program(program_index, program_command, output_file, steps):
+def run_program(program_index, program_command, output_file, steps, stepsize_fs, run_cwd):
     """
     Run a program and write its output to a specified file, recording execution time and memory peaks.
     """
-    program_command = os.path.expanduser(program_command)
     output_file = os.path.expanduser(output_file)
     err_file = os.path.splitext(output_file)[0] + ".err"
     metrics_file = os.path.splitext(output_file)[0] + ".metrics.json"
@@ -179,7 +178,7 @@ def run_program(program_index, program_command, output_file, steps):
             program_command,
             stdout=out_f,
             stderr=err_f,
-            shell=True,
+            cwd=run_cwd,
             preexec_fn=os.setsid if hasattr(os, "setsid") else None,
         )
 
@@ -222,11 +221,12 @@ def run_program(program_index, program_command, output_file, steps):
         metrics = {
             "timestamp": datetime.now().isoformat(timespec="seconds"),
             "program_index": program_index + 1,
-            "command": program_command,
+            "command": shlex.join(program_command),
             "output": os.path.abspath(output_file),
             "stderr": os.path.abspath(err_file),
             "return_code": retcode,
             "steps": steps,
+            "stepsize_fs": stepsize_fs,
             "time": {
                 "wall_seconds": execution_time
             },
@@ -264,13 +264,21 @@ def run_program(program_index, program_command, output_file, steps):
         except Exception:
             pass
         print(f"Process {program_index + 1} failed with error: {e}", file=sys.stderr)
+        raise
 
 
-def work(max_procs, logs_dir, command, steps):
+def work(max_procs, logs_dir, bin_path, input_file, steps, stepsize_fs, use_gpu):
     tasks = []
     for i in range(max_procs):
-        output_file = os.path.join(logs_dir, f"{i+1:03d}.log")
-        tasks.append((i, command, output_file, steps))
+        run_dir = os.path.join(logs_dir, f"{i+1:03d}")
+        os.makedirs(run_dir, exist_ok=True)
+        staged_input = stage_inp_input(input_file, run_dir)
+        output_file = os.path.join(run_dir, "qdyn.log")
+        command = [bin_path]
+        if use_gpu:
+            command.append("--gpu")
+        command.append(str(staged_input))
+        tasks.append((i, command, output_file, steps, stepsize_fs, os.path.dirname(input_file)))
 
     # Execute with a process pool
     with multiprocessing.Pool(processes=max_procs) as pool:
@@ -279,15 +287,13 @@ def work(max_procs, logs_dir, command, steps):
             r.get()
 
     # Collate metrics -> JSONL and CSV
-    metrics_paths = sorted(glob.glob(os.path.join(logs_dir, "*.metrics.json")))
+    metrics_paths = sorted(glob.glob(os.path.join(logs_dir, "*", "*.metrics.json")))
     summaries = []
     for p in metrics_paths:
         try:
             with open(p, "r") as f:
                 m = json.load(f)
-            # use filename index as run id
-            base = os.path.basename(p)
-            run_id = os.path.splitext(base)[0]  # e.g., "001"
+            run_id = os.path.basename(os.path.dirname(p))
             m["run_id"] = run_id
             summaries.append(m)
         except Exception as e:
@@ -313,7 +319,7 @@ def work(max_procs, logs_dir, command, steps):
         "time.wall_seconds", "memory.peak_rss_mb", "memory.peak_gpu_mem_mb", 
         "gpu.util_mean_pct", "gpu.util_peak_pct",
         "gpu.mem_util_mean_pct", "gpu.mem_util_peak_pct",
-        "output", "stderr", "command", "timestamp", "steps", "ns_per_day"
+        "output", "stderr", "command", "timestamp", "steps", "stepsize_fs", "ns_per_day"
     ]
 
     
@@ -338,18 +344,27 @@ def work(max_procs, logs_dir, command, steps):
                 "command": m.get("command"),
                 "timestamp": m.get("timestamp"),
                 "steps": m.get("steps"),
-                "ns_per_day": (m.get("steps") * TIME_STEP * 86400) / _get(m, "time.wall_seconds") if _get(m, "time.wall_seconds") else None, 
+                "stepsize_fs": m.get("stepsize_fs"),
+                "ns_per_day": ns_per_day(
+                    m.get("steps"), m.get("stepsize_fs"), _get(m, "time.wall_seconds")
+                ) if _get(m, "time.wall_seconds") else None,
             })
 
     print("All processes finished.")
     print(f"Logs dir: {logs_dir}")
     print(f"Summary files: {summary_csv} , {summary_jsonl}")
+    failures = [m for m in summaries if m.get("return_code") != 0]
+    if failures:
+        raise RuntimeError(
+            f"{len(failures)} Qdyn process(es) failed under {logs_dir}; "
+            f"see {summary_csv} for details"
+        )
 
 
 
 def run(args):
-    data_dir = os.path.expanduser(args.data_dir)   # e.g., TEST/water
-    bin_path = os.path.expanduser(args.bin)        # e.g., /path/to/qdyn
+    input_file = os.path.abspath(os.path.expanduser(args.input))
+    bin_path = os.path.abspath(os.path.expanduser(args.bin))
     if getattr(args, "concurrency", None):
         concurrency = sorted(dict.fromkeys(int(value) for value in args.concurrency))
     elif args.max_processes is not None:
@@ -357,10 +372,11 @@ def run(args):
     else:
         raise ValueError("Pass --concurrency or --max_processes.")
 
-    if not os.path.isdir(data_dir):
-        raise FileNotFoundError(f"data_dir not found: {data_dir}")
-    if not os.path.exists(bin_path):
+    settings = read_inp_settings(input_file)
+    if not os.path.isfile(bin_path):
         raise FileNotFoundError(f"bin not found: {bin_path}")
+    if not os.access(bin_path, os.X_OK):
+        raise PermissionError(f"bin is not executable: {bin_path}")
 
     # clear previous logs
     logs_root = os.path.join(os.getcwd(), "benchmark_logs")
@@ -368,38 +384,25 @@ def run(args):
         print(f"Removing previous logs at: {logs_root}")
         shutil.rmtree(logs_root)
     
-    # data_dir/md.csv should exist
-    steps = None
-    if not os.path.exists(os.path.join(data_dir, "md.csv")):
-        raise FileNotFoundError(f"data_dir/md.csv not found: {data_dir}/md.csv")
-    with open(os.path.join(data_dir, "md.csv"), "r") as f:
-        # get steps from md.csv
-        for line in f:
-            if line.startswith("steps;"):
-                parts = line.strip().split(";")
-                if len(parts) >= 2:
-                    steps = int(parts[1])
-                    print(f"MD steps found in md.csv: {steps}")
-                    break
-    if steps is None:
-        raise RuntimeError(f"Could not find 'steps' in {data_dir}/md.csv")
+    steps = settings["steps"]
+    stepsize_fs = settings["stepsize_fs"]
+    print(f"MD settings found in {input_file}: {steps} steps at {stepsize_fs:g} fs")
     
     current_dir = os.getcwd()
     # Run cpu base line
     print("Running CPU baseline benchmark (1 process)...")
     logs_dir = os.path.join(current_dir, f"benchmark_logs/cpu_baseline")
     os.makedirs(logs_dir, exist_ok=True)
-    work(1, logs_dir, f'"{bin_path}" "{data_dir}"', steps)
+    work(1, logs_dir, bin_path, input_file, steps, stepsize_fs, use_gpu=False)
     
     for process_num in concurrency:
         print(f"Will run {process_num} processes in parallel:")
         logs_dir = os.path.join(current_dir, f"benchmark_logs/{process_num:02d}_procs")
         os.makedirs(logs_dir, exist_ok=True)
         # One command, repeated N times in parallel
-        command = f'"{bin_path}" --gpu "{data_dir}"'
-        print(f"Command: {command}")
+        print(f"Command: {bin_path} --gpu {input_file}")
         print(f"Running {process_num} parallel processes...")
-        work(process_num, logs_dir, command, steps)
+        work(process_num, logs_dir, bin_path, input_file, steps, stepsize_fs, use_gpu=True)
         
         print(f"Completed benchmark for {process_num} processes.\n")
         time.sleep(30)  # brief pause between runs

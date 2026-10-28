@@ -66,10 +66,12 @@ void CpuWaterBoundaryForce::calc_polx(Context& ctx, int iteration) {
     const int n_shells = data_.n_shells;
     const int n_max_inshell = data_.n_max_inshell;
 
-    if (iteration != 0 && iteration % itdis_update == 0) {
+    const int itdis_update_steps = ctx.md.hmr ? itdis_update / 2.0 : itdis_update;
+
+    if (iteration != 0 && iteration % itdis_update_steps == 0) {
         for (int is = 0; is < n_shells; is++) {
-            wshells[is].avtheta /= itdis_update;
-            wshells[is].avn_inshell /= itdis_update;
+            wshells[is].avtheta /= itdis_update_steps;
+            wshells[is].avn_inshell /= itdis_update_steps;
             wshells[is].theta_corr = wshells[is].theta_corr + wshells[is].avtheta - acos(wshells[is].cstb);
             wshells[is].avtheta = 0.0;
             wshells[is].avn_inshell = 0.0;

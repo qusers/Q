@@ -13,4 +13,5 @@ class CpuBondedForce : public BondedForce {
     void calc_angles(Context& ctx);
     void calc_torsions(Context& ctx);
     void calc_impropers(Context& ctx);
+    void calc_special_pairs(Context& ctx);
 };

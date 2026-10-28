@@ -96,14 +96,13 @@ void Context::init_velocities(const ParseResult& parsed) {
         velocities = HostDeviceBuffer<vel_t>::from_vector(parsed.velocities, command_info.requested_gpu);
     } else {
         srand(md.random_seed);
-        const auto* atom_types = atypes->cpu_data_p;
-        const auto* type_parameters = catypes->cpu_data_p;
+        const auto* atom_mass = masses->cpu_data_p;
 
         std::vector<vel_t> velocity_data(n_atoms);
 
         const double kT = Boltz * md.initial_temperature;
         for (int atom = 0; atom < n_atoms; atom++) {
-            double mass = type_parameters[atom_types[atom].code - 1].m;
+            double mass = atom_mass[atom];
             const double sd = sqrt(kT / mass);
             velocity_data[atom].x = gauss(0, sd);
             velocity_data[atom].y = gauss(0, sd);
@@ -186,12 +185,96 @@ void Context::init_q_charges(const ParseResult& parsed) {
     q_charges = parsed.q_charges;
 }
 
-void Context::init_inv_mass() {
+void Context::init_offdiags(const ParseResult& parsed) {
+    const bool run_gpu = command_info.requested_gpu;
+
+    std::vector<offdiag_term_t> terms;
+    std::vector<offdiag_record_t> records;
+
+    terms.reserve(parsed.q_offdiags.size());
+    records.reserve(parsed.q_offdiags.size());
+
+    for (const auto& param : parsed.q_offdiags) {
+        // q_atoms already contains 0-based physical atom indices.
+        const int ak = q_atoms.at(param.qk - 1);
+        const int al = q_atoms.at(param.ql - 1);
+
+        offdiag_term_t term{};
+        term.state_i = param.i;
+        term.state_j = param.j;
+        term.ak = ak;
+        term.al = al;
+        term.A = param.Aij;
+        term.mu = param.muij;
+        terms.push_back(term);
+
+        offdiag_record_t record{};
+        record.state_i = param.i;
+        record.state_j = param.j;
+        records.push_back(record);
+    }
+
+    offdiag_terms = HostDeviceBuffer<offdiag_term_t>::from_vector(terms, run_gpu);
+
+    offdiag_records = HostDeviceBuffer<offdiag_record_t>::from_vector(records, run_gpu);
+}
+
+void Context::init_masses(const ParseResult& parsed) {
     const auto* atom_types = atypes->cpu_data_p;
     const auto* type_parameters = catypes->cpu_data_p;
+    const auto* atom_heavy = heavy->cpu_data_p;
+
+    std::vector<double> atom_masses(n_atoms);
+    for (int i = 0; i < n_atoms; i++) {
+        const int type = atom_types[i].code - 1;
+        const double mass = type_parameters[type].m;
+
+        atom_masses[i] = mass;
+    }
+
+    if (md.hmr) {
+        std::vector<int> hydrogen_parent(n_atoms, -1);
+        const double target = md.hmr_target_mass;
+        int repartitioned_hydrogens = 0;
+
+        for (const bond_t& bond : parsed.bonds) {
+            const int i = bond.ai - 1;
+            const int j = bond.aj - 1;
+
+            // Solute only HMR: ignore solvent bond
+            if (i >= n_atoms_solute || j >= n_atoms_solute) {
+                continue;
+            }
+            const bool ih = atom_heavy[i];
+            const bool jh = atom_heavy[j];
+            if (ih == jh) {
+                continue;
+            }
+
+            const int hydrogen = ih ? j : i;
+            const int parent = ih ? i : j;
+
+            if (hydrogen_parent[hydrogen] != -1 && hydrogen_parent[hydrogen] != parent) {
+                fatal("HMR hydrogen " + std::to_string(hydrogen + 1) + " is bonded to multiple heavy atoms");
+            }
+            hydrogen_parent[hydrogen] = parent;
+            const double old_mass = atom_masses[hydrogen];
+            const double delta = old_mass - target;
+
+            atom_masses[hydrogen] = target;
+            atom_masses[parent] += delta;
+            repartitioned_hydrogens++;
+        }
+        printf("HMR enabled! Target hydrogen mass: 3.024 amu. Repartitioned solute hydrogens: %d\n", repartitioned_hydrogens);
+    }
+    masses = HostDeviceBuffer<double>::from_vector(atom_masses, command_info.requested_gpu);
+}
+
+void Context::init_inv_mass() {
+    const double* atom_masses = masses->cpu_data_p;
     std::vector<double> inv_w(n_atoms);
     for (int atom = 0; atom < n_atoms; atom++) {
-        inv_w[atom] = 1.0 / type_parameters[atom_types[atom].code - 1].m;
+        inv_w[atom] = 1.0 / atom_masses[atom];
     }
     winv = HostDeviceBuffer<double>::from_vector(inv_w, command_info.requested_gpu);
 }
@@ -208,16 +291,18 @@ void Context::init_heavy() {
 }
 
 void Context::init_patoms() {
-    int n_patoms = n_atoms_solute - n_qatoms();
-    p_atoms.resize(n_patoms);
+    // q_atoms stores 0-based physical atom indices.
+    std::vector<bool> is_q(n_atoms_solute, false);
+    for (const int atom : q_atoms) {
+        is_q.at(atom) = true;
+    }
 
-    int pi = 0, qi = 0;
-    for (int i = 0; i < n_atoms_solute; i++) {
-        if (qi < n_qatoms() && i == q_atoms[qi]) {
-            qi++;
-        } else {
-            p_atoms[pi] = i;
-            pi++;
+    p_atoms.clear();
+    p_atoms.reserve(n_atoms_solute - n_qatoms());
+
+    for (int atom = 0; atom < n_atoms_solute; ++atom) {
+        if (!is_q[atom]) {
+            p_atoms.push_back(atom);
         }
     }
 }
@@ -306,10 +391,12 @@ void Context::init(const ParseResult& parsed) {
     init_q_atypes(parsed);
     init_q_catypes(parsed);
     init_q_charges(parsed);
+    init_offdiags(parsed);
 
     // 4. Derived context data
-    init_inv_mass();
     init_heavy();
+    init_masses(parsed);
+    init_inv_mass();
     init_shell();
     init_patoms();
     init_lj_matrix(parsed);

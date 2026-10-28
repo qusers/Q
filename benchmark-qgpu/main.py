@@ -9,12 +9,19 @@ def positive_int(value):
     
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Benchmark Qdyn runs (run/report).')
+    parser = argparse.ArgumentParser(description="Benchmark native .inp Qdyn runs.")
 
-    parser.add_argument('--data_dir', type=str, help='Directory containing a single test case.')
-    parser.add_argument('--bin', type=str, help='Path to the Qdyn GPU executable.')
-    parser.add_argument('--max_processes', type=positive_int, help='Max number of parallel processes to run.')
-    parser.add_argument(
+    parser.add_argument("--input", required=True, help="Path to the Qdyn .inp file to benchmark.")
+    parser.add_argument("--bin", required=True, help="Path to the Qdyn executable.")
+    execution_mode = parser.add_mutually_exclusive_group(required=True)
+    execution_mode.add_argument(
+        "--max-processes",
+        "--max_processes",
+        dest="max_processes",
+        type=positive_int,
+        help="Sweep from 1 through this many independent Qdyn processes.",
+    )
+    execution_mode.add_argument(
         '--concurrency',
         type=positive_int,
         nargs='+',

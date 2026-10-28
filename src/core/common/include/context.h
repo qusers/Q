@@ -42,6 +42,7 @@ class Context {
     std::unique_ptr<HostDeviceBuffer<coord_t>> coords_init;
     std::unique_ptr<HostDeviceBuffer<bool>> excluded;
     std::unique_ptr<HostDeviceBuffer<double>> winv;
+    std::unique_ptr<HostDeviceBuffer<double>> masses;
     std::unique_ptr<HostDeviceBuffer<bool>> shell;
     std::vector<int> q_atoms;
     std::vector<int> p_atoms;
@@ -55,8 +56,15 @@ class Context {
     std::vector<catype_t> q_catypes;
     std::vector<atype_t> q_atypes;
     std::vector<ccharge_t> q_charges;
+
+    std::unique_ptr<HostDeviceBuffer<offdiag_term_t>> offdiag_terms;
+    std::unique_ptr<HostDeviceBuffer<offdiag_record_t>> offdiag_records;
+
     ParseResult get_parse_result();
     void init(const ParseResult& parsed);
+    int n_offdiags() const {
+        return offdiag_terms ? static_cast<int>(offdiag_terms->length) : 0;
+    }
     int n_lambdas() const { return lambdas->length; }
     int n_waters() const { return (n_atoms - n_atoms_solute) / 3; }
     int n_qatoms() const { return q_atoms.size(); }
@@ -85,8 +93,10 @@ class Context {
     void init_q_catypes(const ParseResult& parsed);
     void init_q_atypes(const ParseResult& parsed);
     void init_q_charges(const ParseResult& parsed);
+    void init_offdiags(const ParseResult& parsed);
     void init_lj_matrix(const ParseResult& parsed);
     void init_velocities(const ParseResult& parsed);
+    void init_masses(const ParseResult& parsed);
     void init_inv_mass();
     void init_heavy();
     void init_shell();
