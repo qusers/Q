@@ -1,6 +1,6 @@
 #pragma once
+#include "cuda_lrf_force.cuh"
 #include "nonbonded_force.h"
-#include "precision.h"
 
 class CudaNonbondedForce final : public NonbondedForce {
    public:
@@ -10,5 +10,8 @@ class CudaNonbondedForce final : public NonbondedForce {
     void init_backend(Context& ctx) override;
 
    private:
-    std::unique_ptr<HostDeviceBuffer<real_t>> coord_x, coord_y, coord_z;
+    void calc_all_direct_pairs(Context& ctx);
+
+    std::unique_ptr<HostDeviceBuffer<real_t>> coord_x_, coord_y_, coord_z_;
+    std::unique_ptr<CudaLrfForce> lrf_;
 };

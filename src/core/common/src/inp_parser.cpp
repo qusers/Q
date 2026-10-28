@@ -321,6 +321,10 @@ struct InpParser::TopData {
     std::string vdw_rule = "1";
     std::vector<std::string> solucenter;
     std::vector<std::string> solvcenter;
+
+    std::string use_switch_atom = "1";
+
+    int ff_type = FF_GROMOS;
 };
 
 struct InpParser::FepData {
@@ -417,6 +421,26 @@ void InpParser::ensure_topology() {
         std::string line = trim(raw);
         if (line.empty()) continue;
 
+        if (block == 0) {
+            const auto fields = split_ws(line);
+
+            if (!fields.empty() && fields[0] == "FF_TYPE") {
+                if (fields.size() < 2) {
+                    throw parse_error("FF_TYPE requires a numeric value.");
+                }
+
+                top_->ff_type = parse_int(fields[1]);
+
+                if (top_->ff_type != FF_GROMOS &&
+                    top_->ff_type != FF_AMBER &&
+                    top_->ff_type != FF_CHARMM) {
+                    throw parse_error("Unsupported FF_TYPE: " + fields[1]);
+                }
+
+                continue;
+            }
+        }
+
         if (line.find("Total no. of atoms") != std::string::npos) {
             std::vector<std::string> f = split_ws(line);
             if (f.size() > 1) top_->natoms_solute = f[1];
@@ -477,6 +501,7 @@ void InpParser::ensure_topology() {
             int solute = f.size() > 1 ? parse_int(f[1]) : 0;
             top_->solute_cgps = std::to_string(solute);
             top_->solvent_cgps = std::to_string(total - solute);
+            top_->use_switch_atom = f.size() > 2 ? f[2] : "1";
             block = 12;
             charge_group_switch = 1;
             continue;
@@ -1147,6 +1172,8 @@ void InpParser::parse_md() {
     md.solute_solute = parse_double(value_or(cut, "solute-solute", value_or(cut, "solute_solute", "10")));
     md.solvent_solvent = parse_double(value_or(cut, "solvent-solvent", value_or(cut, "solvent_solvent", "10")));
     md.solute_solvent = parse_double(value_or(cut, "solute-solvent", value_or(cut, "solute_solvent", "10")));
+    md.lrf_cutoff = parse_double(value_or(cut, "lrf", "99"));
+
     md.q_atom = parse_double(value_or(cut, "q-atom", value_or(cut, "q_atom", "99")));
     md.shell_radius = parse_double(value_or(sphere, "shell-radius", value_or(sphere, "shell_radius", "0")));
     md.exclude_bonded = is_on_value(sphere, "exclude-bonded", "off");
@@ -1226,6 +1253,7 @@ void InpParser::parse_lambdas() {
 
 void InpParser::parse_topo() {
     ensure_topology();
+    result.topo.ff_type = top_->ff_type;
     result.topo.solvent_type = parse_int(top_->solvtype);
     result.topo.exclusion_radius = parse_double(top_->exclusion);
     result.topo.solvent_radius = parse_double(top_->radii);
@@ -1385,7 +1413,7 @@ void InpParser::parse_charge_groups() {
     charge_group_config_t config;
     config.n_cgrps_solute = parse_int(top_->solute_cgps);
     config.n_cgrps_solvent = parse_int(top_->solvent_cgps);
-    config.iuse_switch_atom = 0;
+    config.iuse_switch_atom = parse_int(top_->use_switch_atom);
     config.charge_groups.resize(top_->charge_group_headers.size());
     for (size_t i = 0; i < top_->charge_group_headers.size(); i++) {
         config.charge_groups[i].iswitch = row_int(top_->charge_group_headers[i], 1);

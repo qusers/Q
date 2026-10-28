@@ -30,8 +30,34 @@ DihedralKey torsion_key(int i, int j, int k, int l) {
     return std::min(forward, reverse);
 }
 
-BondKey improper_key(int j, int k) {
-    return bond_key(j, k);
+bool matches_redefined_improper(
+    const improper_t& t,
+    const q_improper_t& q,
+    int ff_type) {
+    // All atom indices are still 1-based here.
+
+    if (ff_type == FF_CHARMM) {
+        // todo: Seems the rule is not correct?
+        // Like q = (1, 2, 3, 4) t = (1, 2, 3, 99) => true
+        // Literal translation of Q6's CHARMM replacement conditions.
+        const bool first_match = t.ai == q.ai || t.ai == q.al || t.al == q.ai;
+
+        const bool second_match = t.aj == q.al || t.aj == q.ai || t.aj == q.aj || t.aj == q.ak;
+
+        const bool third_match = t.ak == q.ai || t.ak == q.aj || t.ak == q.ak || t.ak == q.al;
+
+        return first_match && second_match && third_match;
+    }
+
+    // Q6's default branch for GROMOS and AMBER categories.
+    // Keep its exact permutation list.
+    if (t.aj != q.aj) return false;
+
+    return (t.ai == q.ai && t.ak == q.ak && t.al == q.al) ||
+           (t.ai == q.ak && t.ak == q.ai && t.al == q.al) ||
+           (t.ai == q.ak && t.ak == q.al && t.al == q.ai) ||
+           (t.ai == q.al && t.ak == q.ai && t.al == q.ak) ||
+           (t.ai == q.al && t.ak == q.ak && t.al == q.ai);
 }
 
 size_t terms_per_state(size_t total, int nstates) {
@@ -329,20 +355,19 @@ void BondedForce::build_impropers(Context& ctx, const ParseResult& parsed, const
         inverted_for_improper.at(couple.improper_index - 1) = couple.inverted;
     }
 
-    /*
-    todo: The replacement rule is different from the force field.
-        Now support the default replacement rule.
-        If want to support all, should read FF_TYPE in top file, to get the force field version.
-    */
-    std::set<BondKey> replaced;
-    for (const auto& improper : parsed.q_impropers) {
-        replaced.insert(improper_key(improper.aj, improper.ak));
-    }
+    auto is_replaced = [&](const improper_t& topology_improper) {
+        for (const auto& q_improper : parsed.q_impropers) {
+            if (matches_redefined_improper(topology_improper, q_improper, ctx.topo.ff_type)) {
+                return true;
+            }
+        }
+        return false;
+    };
 
     for (int i = 0; i < parsed.impropers.size(); i++) {
         const improper_t& improper = parsed.impropers[i];
 
-        if (improper.code == 0 || replaced.count(improper_key(improper.aj, improper.ak)) || skip_excluded_dihedral(ctx, improper.ai, improper.aj, improper.ak, improper.al)) {
+        if (improper.code == 0 || is_replaced(improper) || skip_excluded_dihedral(ctx, improper.ai, improper.aj, improper.ak, improper.al)) {
             continue;
         }
 

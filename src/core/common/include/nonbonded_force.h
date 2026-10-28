@@ -112,10 +112,16 @@ HD inline real_t2 combine_vdw(int vdw_rule, real_t aii_i, real_t bii_i, real_t a
 
 struct NonbondedData {
     int n_total = 0;
-    std::unique_ptr<HostDeviceBuffer<int>> atom_idx;         // global atom index
+    std::unique_ptr<HostDeviceBuffer<int>> atom_idx;       // global atom index
+    std::unique_ptr<HostDeviceBuffer<int>> atom_to_group;  // global atom index
+
     std::unique_ptr<HostDeviceBuffer<uint8_t>> category;     // Atom Category
     std::unique_ptr<HostDeviceBuffer<int>> q_state;          // segment idx; -1 for P/W
     std::unique_ptr<HostDeviceBuffer<real_t>> atom_lambdas;  // lambdas[state]; 1.0 for P/W
+    std::unique_ptr<HostDeviceBuffer<int>> group_indices;    // group idx;
+    std::unique_ptr<HostDeviceBuffer<int>> group_start_idx;  // In the atom_idx, the first index of the atom that belongs to the group
+    std::unique_ptr<HostDeviceBuffer<int>> group_sizes;       // The group size
+
     std::unique_ptr<HostDeviceBuffer<real_t>> atom_charge;
     std::unique_ptr<HostDeviceBuffer<vdw_atom_param_t>> atom_vdw;
 
@@ -130,6 +136,15 @@ struct NonbondedData {
     // std::unique_ptr<HostDeviceBuffer<uint32_t>> pair_14_masks;
 
     bool enabled() const { return n_total > 0; }
+};
+
+struct LrfCoefficients {
+    coord_t center{};
+
+    double phi0 = 0;
+    double phi1[3]{};
+    double phi2[9]{};
+    double phi3[27]{};
 };
 
 class NonbondedForce {
@@ -157,5 +172,6 @@ class NonbondedForce {
     void build_combinded_list(Context& ctx);  // atom_idx, category, q_state, atom_lambdas
     void build_charge_table(Context& ctx);    // charge_pair_products + charge_types + counts
     void build_catype_table(Context& ctx);    // catype_pair_params + catype_types + counts
+    void build_atom_to_group(Context& ctx);   // atom_to_group
     void build_pair_masks(Context& ctx, const ParseResult& parsed);
 };

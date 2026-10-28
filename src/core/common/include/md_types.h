@@ -37,6 +37,8 @@ struct md_t {
     double solvent_solvent;
     double solute_solvent;
     double q_atom;
+    double lrf_cutoff;
+
     // [sphere]
     bool exclude_bonded = false;
     double shell_radius;  // Note: this is for the pshell
@@ -166,6 +168,12 @@ struct vdw_atom_param_t {
     real_t bii_normal;
 };
 
+enum ForceFieldType : int {
+    FF_GROMOS = 1,
+    FF_AMBER = 2,
+    FF_CHARMM = 3
+};
+
 struct topo_t {
     int solvent_type;
     double exclusion_radius;
@@ -175,6 +183,7 @@ struct topo_t {
     double el14_scale;
     double coulomb_constant;
     int vdw_rule;  // 1=geometric, 2=arithmetic
+    int ff_type = FF_GROMOS;
 };
 
 struct cgrp_t {

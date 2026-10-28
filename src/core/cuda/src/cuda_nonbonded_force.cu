@@ -1,75 +1,7 @@
-#include "cuda_force_accumulation.cuh"
 #include "cuda_nonbonded_force.cuh"
+#include "cuda_nonbonded_pair.cuh"
 
 namespace {
-
-__device__ int2 get_tile_idx(int n, int t) {
-    int x = (int)floorf((2 * n + 1 - sqrtf((2 * n + 1) * (2 * n + 1) - 8 * t)) * 0.5f);
-    int y = t - (x * n - (x * (x - 1) >> 1));
-    if (y < 0) {
-        x--;
-        y += (n - x);
-    }
-    y += x;
-    return {x, y};
-}
-
-__device__ void compute_pair(
-    // atom1
-    real_t atom1_charge, const vdw_atom_param_t& atom1_vdw, real_t atom1_lambda, const real_t3& atom1_coord,
-    /// atom2
-    real_t atom2_charge, const vdw_atom_param_t& atom2_vdw, real_t atom2_lambda, const real_t3& atom2_coord,
-    // scalars
-    real_t coulomb_constant, int vdw_rule,
-    // output
-    real_t3& atom1_force, real_t3& atom2_force,
-    real_t& e_coul, real_t& e_vdw) {
-    real_t dx = atom2_coord.x - atom1_coord.x;
-    real_t dy = atom2_coord.y - atom1_coord.y;
-    real_t dz = atom2_coord.z - atom1_coord.z;
-    real_t dis2 = dx * dx + dy * dy + dz * dz;
-    real_t inv_dis2 = static_cast<real_t>(1.0) / dis2;
-    real_t inv_dis = sqrt(inv_dis2);
-
-    real_t qij = atom1_charge * atom2_charge;
-    real_t2 pair = combine_vdw(vdw_rule, atom1_vdw.aii_normal, atom1_vdw.bii_normal, atom2_vdw.aii_normal, atom2_vdw.bii_normal);
-
-    auto [vel, dvel] = calc_electrostatic(qij, coulomb_constant, inv_dis);
-    auto [vvdw, dvvdw] = calc_vdw(pair, inv_dis);
-
-    real_t lambda = min(atom1_lambda, atom2_lambda);
-
-    real_t dva = (dvel + dvvdw) * inv_dis * lambda;
-
-    atom1_force.x -= dva * dx;
-    atom1_force.y -= dva * dy;
-    atom1_force.z -= dva * dz;
-
-    atom2_force.x += dva * dx;
-    atom2_force.y += dva * dy;
-    atom2_force.z += dva * dz;
-
-    e_coul += vel;
-    e_vdw += vvdw;
-}
-
-__device__ void shuffle(int& atom, real_t& atom_charge, vdw_atom_param_t& atom_vdw, real_t& atom_lambda, real_t3& atom_force, real_t3& atom_coord) {
-    constexpr unsigned FULL_MASK = 0xFFFFFFFF;
-    int src = ((threadIdx.x & 31) + 1) & 31;
-    atom = __shfl_sync(FULL_MASK, atom, src);
-    atom_charge = __shfl_sync(FULL_MASK, atom_charge, src);
-
-    atom_vdw.aii_normal = __shfl_sync(FULL_MASK, atom_vdw.aii_normal, src);
-    atom_vdw.bii_normal = __shfl_sync(FULL_MASK, atom_vdw.bii_normal, src);
-
-    atom_lambda = __shfl_sync(FULL_MASK, atom_lambda, src);
-    atom_force.x = __shfl_sync(FULL_MASK, atom_force.x, src);
-    atom_force.y = __shfl_sync(FULL_MASK, atom_force.y, src);
-    atom_force.z = __shfl_sync(FULL_MASK, atom_force.z, src);
-    atom_coord.x = __shfl_sync(FULL_MASK, atom_coord.x, src);
-    atom_coord.y = __shfl_sync(FULL_MASK, atom_coord.y, src);
-    atom_coord.z = __shfl_sync(FULL_MASK, atom_coord.z, src);
-}
 
 __global__ void update_nonbonded_coords_kernel(
     const coord_t* coords, const int* atom_idx,
@@ -84,16 +16,6 @@ __global__ void update_nonbonded_coords_kernel(
     cx[i] = static_cast<real_t>(coords[idx].x);
     cy[i] = static_cast<real_t>(coords[idx].y);
     cz[i] = static_cast<real_t>(coords[idx].z);
-}
-
-}  // namespace
-
-void CudaNonbondedForce::init_backend(Context& ctx) {
-    // Buffers are indexed by combined-list position [0, n_total), which exceeds
-    // n_atoms because Q atoms are duplicated per FEP state and the list is padded.
-    coord_x = std::make_unique<HostDeviceBuffer<real_t>>(data_.n_total);
-    coord_y = std::make_unique<HostDeviceBuffer<real_t>>(data_.n_total);
-    coord_z = std::make_unique<HostDeviceBuffer<real_t>>(data_.n_total);
 }
 
 __global__ void nonbonded_kernel(
@@ -141,78 +63,30 @@ __global__ void nonbonded_kernel(
 
     int x_idx = base_x + lane;
     int y_idx = base_y + lane;
+    x_idx = x_idx < sz ? x_idx : -1;
+    y_idx = y_idx < sz ? y_idx : -1;
 
-    const int atom1 = x_idx < sz ? atom_idx[x_idx] : -1;
+    nonbonded_force_calculation(x_idx, y_idx, active_mask, base_x, base_y, n_states,
+                                atom_idx, category, q_state, atom_lambdas, atom_charge, atom_vdw, coulomb_constant, vdw_rule, cx, cy, cz, dvelocities, e);
+}
 
-    const real_t atom1_charge = atom1 == -1 ? 0 : atom_charge[x_idx];
-    const vdw_atom_param_t atom1_vdw = atom1 == -1 ? vdw_atom_param_t{0, 0} : atom_vdw[x_idx];
-    const real_t atom1_lambda = atom1 == -1 ? 0 : atom_lambdas[x_idx];
-    real_t3 atom1_coord = atom1 == -1 ? real_t3{0, 0, 0} : real_t3{cx[x_idx], cy[x_idx], cz[x_idx]};
-    real_t3 atom1_force = {0, 0, 0};
+}  // namespace
 
-    int atom2 = y_idx < sz ? atom_idx[y_idx] : -1;
-    real_t atom2_charge = atom2 == -1 ? 0 : atom_charge[y_idx];
-    vdw_atom_param_t atom2_vdw = atom2 == -1 ? vdw_atom_param_t{0, 0} : atom_vdw[y_idx];
-    real_t atom2_lambda = atom2 == -1 ? 0 : atom_lambdas[y_idx];
-    real_t3 atom2_coord = atom2 == -1 ? real_t3{0, 0, 0} : real_t3{cx[y_idx], cy[y_idx], cz[y_idx]};
-    real_t3 atom2_force = {0, 0, 0};
+void CudaNonbondedForce::init_backend(Context& ctx) {
+    // Buffers are indexed by combined-list position [0, n_total), which exceeds
+    // n_atoms because Q atoms are duplicated per FEP state and the list is padded.
+    coord_x_ = std::make_unique<HostDeviceBuffer<real_t>>(data_.n_total);
+    coord_y_ = std::make_unique<HostDeviceBuffer<real_t>>(data_.n_total);
+    coord_z_ = std::make_unique<HostDeviceBuffer<real_t>>(data_.n_total);
 
-    real_t local_e_coul = 0, local_e_vdw = 0;
-    int y_lane = lane;
-    for (int i = 0; i < 32; i++) {
-        const uint32_t bit = uint32_t{1} << y_lane;
-        if ((active_mask & bit) != 0) {
-            compute_pair(atom1_charge, atom1_vdw, atom1_lambda, atom1_coord,
-                         atom2_charge, atom2_vdw, atom2_lambda, atom2_coord,
-                         coulomb_constant, vdw_rule,
-                         atom1_force, atom2_force,
-                         local_e_coul, local_e_vdw);
-        }
-        shuffle(atom2, atom2_charge, atom2_vdw, atom2_lambda, atom2_force, atom2_coord);
-        y_lane = (y_lane + 1) & 31;
-    }
-
-    if (atom1 >= 0) {
-        atomic_add_force(&dvelocities[atom1].x, atom1_force.x);
-        atomic_add_force(&dvelocities[atom1].y, atom1_force.y);
-        atomic_add_force(&dvelocities[atom1].z, atom1_force.z);
-    }
-
-    if (atom2 >= 0) {
-        atomic_add_force(&dvelocities[atom2].x, atom2_force.x);
-        atomic_add_force(&dvelocities[atom2].y, atom2_force.y);
-        atomic_add_force(&dvelocities[atom2].z, atom2_force.z);
-    }
-    const unsigned mask = 0xffffffffu;
-    for (int offset = 16; offset > 0; offset >>= 1) {
-        local_e_coul += __shfl_down_sync(mask, local_e_coul, offset);
-        local_e_vdw += __shfl_down_sync(mask, local_e_vdw, offset);
-    }
-
-    if (lane == 0) {
-        uint8_t tile_cat_x = category[base_x];
-        uint8_t tile_cat_y = category[base_y];
-        int tile_state_x = q_state[base_x];
-        int tile_state_y = q_state[base_y];
-        int coul_slot = nb_coul_slot(tile_cat_x, tile_cat_y, tile_state_x, tile_state_y, n_states);
-
-        atomic_add_energy(&e[coul_slot], local_e_coul);
-        atomic_add_energy(&e[coul_slot + 1], local_e_vdw);
+    lrf_.reset();
+    if (ctx.md.lrf && ctx.md.non_bond != 0) {
+        lrf_ = std::make_unique<CudaLrfForce>();
+        lrf_->init(ctx, data_);
     }
 }
 
-void CudaNonbondedForce::calc(Context& ctx) {
-    /*
-    Sync the coords to CudaNonbondedForce::coords first.
-    */
-    int sz = data_.n_total;
-    int sync_block = 256;
-    int sync_grid = (sz + sync_block - 1) / sync_block;
-    update_nonbonded_coords_kernel<<<sync_grid, sync_block>>>(ctx.coords->gpu_data_p, data_.atom_idx->gpu_data_p, coord_x->gpu_data_p, coord_y->gpu_data_p, coord_z->gpu_data_p, sz);
-
-    /*
-    Do calculation
-    */
+void CudaNonbondedForce::calc_all_direct_pairs(Context& ctx) {
     const int thread_num = 256;
     int tile_num_per_block = thread_num >> 5;
     int n_atom = data_.n_total;
@@ -225,5 +99,28 @@ void CudaNonbondedForce::calc(Context& ctx) {
                                            data_.atom_idx->gpu_data_p, data_.category->gpu_data_p, data_.q_state->gpu_data_p,
                                            data_.atom_lambdas->gpu_data_p, data_.atom_charge->gpu_data_p, data_.atom_vdw->gpu_data_p,
                                            data_.pair_masks->gpu_data_p, ctx.topo.coulomb_constant, ctx.topo.vdw_rule,
-                                           coord_x->gpu_data_p, coord_y->gpu_data_p, coord_z->gpu_data_p, ctx.dvelocities->gpu_data_p, ctx.energy.device());
+                                           coord_x_->gpu_data_p, coord_y_->gpu_data_p, coord_z_->gpu_data_p, ctx.dvelocities->gpu_data_p, ctx.energy.device());
+}
+
+void CudaNonbondedForce::calc(Context& ctx) {
+    const int size = data_.n_total;
+    if (size == 0) return;
+
+    constexpr int threads = 256;
+
+    update_nonbonded_coords_kernel<<<(size + threads - 1) / threads, threads>>>(
+        ctx.coords->gpu_data_p,
+        data_.atom_idx->gpu_data_p,
+        coord_x_->gpu_data_p,
+        coord_y_->gpu_data_p,
+        coord_z_->gpu_data_p,
+        size);
+
+    check_cuda(cudaGetLastError());
+
+    if (lrf_) {
+        lrf_->calc(ctx, {coord_x_->gpu_data_p, coord_y_->gpu_data_p, coord_z_->gpu_data_p});
+    } else {
+        calc_all_direct_pairs(ctx);
+    }
 }
