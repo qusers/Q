@@ -98,6 +98,8 @@ module md
   !   'separate' (default): own Berendsen bath, coupled to their own
   !                         temperature with the same Temp0 and tau_T
   !   'none':     excluded atoms are not velocity-scaled at all
+  !   'frozen':   excluded atoms are held fixed (zero velocity, zero inverse
+  !               mass), the textbook spherical-boundary model
   !   'legacy':   pre-fix behaviour, scaled by the factor computed from the
   !               free (active) atoms only. Retained to reproduce older runs;
   !               can pump energy into the excluded region (issue #131).
@@ -3054,11 +3056,13 @@ logical function initialize()
       write(*,'(a)') 'Excluded atoms coupled to their own heat bath.'
     case ('none')
       write(*,'(a)') 'Excluded atoms are not coupled to a heat bath.'
+    case ('frozen')
+      write(*,'(a)') 'Excluded atoms are frozen at their current positions.'
     case ('legacy')
       write(*,'(a)') '>>> WARNING: excluded_thermostat legacy scales excluded atoms with the'
       write(*,'(a)') '             free-atom bath factor; this can overheat excluded atoms.'
     case default
-      write(*,'(a)') '>>> ERROR: excluded_thermostat must be separate, none or legacy.'
+      write(*,'(a)') '>>> ERROR: excluded_thermostat must be separate, none, frozen or legacy.'
       initialize = .false.
     end select
 12  format ('Target temperature  =',f10.2)
@@ -4381,6 +4385,11 @@ subroutine md_run
   ! calculate maximum temperature
   !**Martin Nervall-> Only master calc. temp for now.
   if (nodeid .eq. 0) then
+    if (.not. use_PBC .and. trim(excluded_thermostat) == 'frozen') then
+      do i = 1, natom
+        if (excl(i)) v(3*i-2:3*i) = 0.0
+      end do
+    end if
     Ekinmax = 1000.0*Ndegf*boltz*Temp0/2.0/real(natom)
 
     call temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
@@ -15550,6 +15559,11 @@ subroutine prep_sim
 
   !       Prepare an array of inverse masses
   winv(:) = 1./iaclib(iac(:))%mass
+  ! Frozen excluded atoms: zero inverse mass, so forces, SHAKE corrections and
+  ! minimization steps never move them (velocities are zeroed in md_run).
+  if (.not. use_PBC .and. trim(excluded_thermostat) == 'frozen') then
+    where (excl(1:natom)) winv(1:natom) = 0.
+  end if
 
 
   if(use_PBC .and. control_box) then
@@ -16203,6 +16217,11 @@ integer function shake(xx, x)
 
           i = shake_mol(mol)%bond(ic)%i
           j = shake_mol(mol)%bond(ic)%j
+          ! both atoms frozen (excluded_thermostat frozen): nothing can move
+          if (winv(i) + winv(j) == 0.) then
+            shake_mol(mol)%bond(ic)%ready = .true.
+            cycle
+          end if
           i3 = i*3-3
           j3 = j*3-3
           xij(1)  = x(i3+1) - x(j3+1)
