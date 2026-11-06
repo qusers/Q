@@ -185,11 +185,11 @@ RESFEP_EQ4_PARAMS = dict(
 )
 
 #: eq5 is the only stage that follows the production timestep: (steps, stepsize,
-#: shake_hydrogens) per timestep. The default 2 fs protocol runs 1,250,000 steps,
-#: or 2.5 ns.
+#: shake_hydrogens) per timestep. Its length matches ligand FEP's eq5 (0.1 ns at
+#: either timestep); the manuscript protocol overrides it with 5 ns.
 _RESFEP_EQ5_BY_TIMESTEP = {
-    "1fs": (500000, 1.0, False),
-    "2fs": (1250000, 2.0, True),
+    "1fs": (EQ5_1FS_PARAMS["steps"], 1.0, False),
+    "2fs": (EQ5_2FS_PARAMS["steps"], 2.0, True),
 }
 
 

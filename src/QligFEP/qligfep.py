@@ -77,6 +77,16 @@ def lrf_required_for_edge(same_charge: "bool | None") -> bool:
     return same_charge is False
 
 
+
+def cleanup_command(suffixes) -> str:
+    """Shell line deleting ``*<suffix>`` files, skipping patterns with no match.
+
+    The run scripts use ``set -e``; a bare ``rm -r *dcd`` fails when trajectories
+    are disabled, which marked completed replicates as FAILED.
+    """
+    patterns = " ".join("*" + x for x in suffixes)
+    return f'for f in {patterns}; do [ -e "$f" ] && rm -r -- "$f"; done; true\n'
+
 class QligFEP:
     """
     Create dual topology FEP files based on two ligands
@@ -1465,7 +1475,7 @@ class QligFEP:
                     continue
                 outfile.write(outline)
                 if line.strip() == "#CLEANUP" and self.to_clean is not None:
-                    rm_line = "rm -r " + " ".join(["*" + x for x in self.to_clean]) + "\n"
+                    rm_line = cleanup_command(self.to_clean)
                     outfile.write(rm_line)
 
         try:
@@ -1612,7 +1622,7 @@ class QligFEP:
                 if line.strip() == "#CLEANUP" and self.to_clean is not None:
                     replacements["CLEANUP"] = "#Cleaned {} files\n".format(" ".join(self.to_clean))
                     outline = replace(line, replacements)
-                    rm_line = "rm -r " + " ".join(["*" + x for x in self.to_clean]) + "\n"
+                    rm_line = cleanup_command(self.to_clean)
                     outfile.write(rm_line)
                     outfile.write(outline[1:])
 
