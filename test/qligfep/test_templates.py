@@ -11,6 +11,7 @@ from QligFEP.templates import (
     get_resfep_equilibration_configs,
     render_md_input,
 )
+from QligFEP.templates.equilibration import EQ5_1FS_PARAMS, EQ5_2FS_PARAMS
 from QligFEP.templates.sections import (
     format_distance_restraints,
     format_sequence_restraint,
@@ -380,13 +381,14 @@ class TestResfepThermostat:
         )
         assert all(config.params.separate_scaling is False for config in configs)
 
-    def test_default_eq5_is_2_5_ns(self):
-        configs = get_resfep_equilibration_configs("2fs", shell_radius=25)
+    @pytest.mark.parametrize("timestep", ["1fs", "2fs"])
+    def test_default_eq5_matches_ligand_fep(self, timestep):
+        configs = get_resfep_equilibration_configs(timestep, shell_radius=25)
         eq5 = next(config for config in configs if config.name == "eq5")
 
-        assert eq5.params.steps == 1_250_000
-        assert eq5.params.stepsize == 2.0
-        assert eq5.params.steps * eq5.params.stepsize == 2_500_000  # fs = 2.5 ns
+        assert eq5.params.steps * eq5.params.stepsize == 100_000  # fs = 0.1 ns
+        ligand_eq5 = EQ5_2FS_PARAMS if timestep == "2fs" else EQ5_1FS_PARAMS
+        assert eq5.params.steps == ligand_eq5["steps"]
 
 
 class TestEquilibrationConfigs:
