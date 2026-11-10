@@ -2,7 +2,6 @@ import contextlib
 import glob
 import os
 import re
-import shutil
 import stat
 from pathlib import Path
 from typing import Literal, Optional, Union
@@ -26,6 +25,7 @@ from .pdb_utils import (
     rm_HOH_clash_NN,
     shift_from_ligand_collision,
 )
+from .provenance import copy_with_provenance, is_comment, provenance_header
 from .settings.settings import CLUSTER_DICT, CONFIGS
 from .templates import (
     QprepFEPParameters,
@@ -284,14 +284,29 @@ class QligFEP:
         with open(self.lig2 + ".lib") as infile:
             file_replaced = []
             for line in infile:
-                line2 = pattern.sub(lambda x: replacements[x.group()], line)
+                # Leave comments (e.g. the source's provenance header) untouched.
+                line2 = line if is_comment(line) else pattern.sub(lambda x: replacements[x.group()], line)
                 file_replaced.append(line2)
 
         with open(writedir + "/" + self.lig2 + "_renumber.lib", "w") as outfile:
+            outfile.write(
+                provenance_header(
+                    "QligFEP.qligfep.QligFEP.change_lib",
+                    details={
+                        "Purpose": f"ligand 2 of {self.lig1} -> {self.lig2}, renumbered (LIG -> LID)",
+                        "Force field": self.FF,
+                    },
+                )
+            )
             for line in file_replaced:
                 outfile.write(line)
 
-        shutil.copy(self.lig1 + ".lib", writedir + "/" + self.lig1 + ".lib")
+        copy_with_provenance(
+            self.lig1 + ".lib",
+            writedir + "/" + self.lig1 + ".lib",
+            "QligFEP.qligfep.QligFEP.change_lib",
+            details={"Purpose": f"ligand 1 of {self.lig1} -> {self.lig2} (copied unchanged)"},
+        )
 
     def change_prm(self, replacements, writedir):
         pattern = re.compile(r"\b(" + "|".join(replacements.keys()) + r")\b")
@@ -338,6 +353,14 @@ class QligFEP:
 
         prm_fname = f"{writedir}/{self.FF}_{self.lig1}_{self.lig2}_merged.prm"
         with open(prm_file) as infile, open(prm_fname, "w") as outfile:
+            outfile.write(
+                provenance_header(
+                    "QligFEP.qligfep.QligFEP.change_prm",
+                    details={
+                        "Purpose": f"{self.FF} merged with ligand parameters of {self.lig1} and {self.lig2}",
+                    },
+                )
+            )
             for line in infile:
                 block = 0
                 outfile.write(line)

@@ -19,6 +19,7 @@ from .pdb_utils import (
     read_pdb_to_dataframe,
     write_dataframe_to_pdb,
 )
+from .provenance import provenance_header
 from .settings.settings import FF_DIR
 
 
@@ -98,6 +99,7 @@ class OpenFF2Q(MoleculeIO):
         self.n_jobs = n_jobs
         self.out_dir = Path(self.lig).parent
         self.mapping = {lname: {} for lname in self.lig_names}
+        self.forcefield_name = forcefield if forcefield is not None else "openff-2.3.0.offxml"
         self.forcefield = self._set_forcefield(forcefield)
         self.topologies, self.parameters = self.set_topologies_and_parameters()
         self.charges_list_magnitude = {}  # store charge magnitude for each ligand
@@ -144,6 +146,15 @@ class OpenFF2Q(MoleculeIO):
             print(f"Failed to assign charges for a molecule: {e}")
         charges_magnitudes = np.array([c._magnitude for c in molecule.partial_charges])
         return charges_magnitudes
+
+    def _provenance(self, generator: str, **details) -> str:
+        """Provenance header for the ligand .lib/.prm files written by this class."""
+        charges = (
+            f"NAGL ({self.nagl_partial_charg_str})" if self.nagl is not None else "AM1-BCC (OpenFF toolkit)"
+        )
+        info = {"Force field": f"OpenFF {self.forcefield_name}", "Charges": charges}
+        info.update(details)
+        return provenance_header(f"QligFEP.openff2Q.OpenFF2Q.{generator}", details=info)
 
     def set_topologies_and_parameters(self):
         topologies = {}
@@ -267,6 +278,7 @@ class OpenFF2Q(MoleculeIO):
             libfile_out = self.out_dir / f"{lname}.lib"
             outfile = open(libfile_out, "w")  # noqa: SIM115
             should_close = True
+            outfile.write(self._provenance("write_lib_Q", Ligand=lname))
         else:
             should_close = False
 
@@ -329,6 +341,7 @@ class OpenFF2Q(MoleculeIO):
             prmfile_out = f"{self.out_dir / lname}.prm"
             outfile = open(prmfile_out, "w")  # noqa: SIM115
             should_close = True
+            outfile.write(self._provenance("write_prm_Q", Ligand=lname))
         else:
             should_close = False
 
@@ -570,8 +583,19 @@ class OpenFF2Q(MoleculeIO):
         lib_out = self.out_dir / f"{ff}_plus_cofactor.lib"
         prm_out = self.out_dir / f"{ff}_plus_cofactor.prm"
 
+        cofactors = ", ".join(f"{n} -> {r}" for n, r in zip(self.lig_names, residues))
         with open(lib_out, "w") as f:
+            f.write(
+                self._provenance(
+                    "write_cofactor_plus_ff_files", **{"Protein FF": Path(ff).name, "Cofactors": cofactors}
+                )
+            )
             f.write("\n".join(protein_lib_lines))
         with open(prm_out, "w") as f:
+            f.write(
+                self._provenance(
+                    "write_cofactor_plus_ff_files", **{"Protein FF": Path(ff).name, "Cofactors": cofactors}
+                )
+            )
             f.write("\n".join(final_prm_contents))
         write_dataframe_to_pdb(cofactor, self.out_dir / "all_cofactors.pdb")
