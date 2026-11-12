@@ -12,7 +12,9 @@ restrained to their initial coordinates with a harmonic potential, to avoid
 distorting bonds across the boundary. The inner radius of this shell and the
 force constant are set in the `qdyn` input (`[sphere]`, keywords
 `shell_radius` and `shell_force`). The force constant defaults to
-10 kcal·mol⁻¹·Å⁻². The shell radius defaults to 85 % of the exclusion radius.
+10 kcal·mol⁻¹·Å⁻². The shell radius defaults to 85 % of the exclusion radius; a value of 1 or
+less is read as a fraction of the exclusion radius. Atoms are assigned to the
+excluded region and to the shell by charge group.
 
 Atoms are assigned to the shell and to the excluded region before the
 simulation starts, from the coordinates of the topology, and the assignment
@@ -23,7 +25,8 @@ separate restraint coordinate file (`[files]`, keyword `restraint`).
 
 Solvent molecules near the boundary must be restrained to prevent
 evaporation and to keep the density correct and uniform throughout the
-sphere.
+sphere. [The spherical boundary](../../concepts/spherical-boundary.md)
+explains the reasoning; this page gives the equations.
 
 ### Radial restraint
 
@@ -52,7 +55,8 @@ D_e \left[ \left( e^{\alpha (r - r_0)} \right)^2 - 2\, e^{\alpha (r - r_0)} \rig
 \end{cases}
 $$ (solvent-radial)
 
-where $r$ is the distance from the water centre, $K$ is the force constant
+where $r$ is the distance of the switching atom of the solvent molecule (the
+oxygen of water) from the water centre, $K$ is the force constant
 of the half-harmonic potential, $D_e$ is the depth of the Morse potential and
 $\alpha$ is its exponent. $r_0$ is the effective solvent radius minus the
 average deviation from the minimum of the half-harmonic potential at the
@@ -89,7 +93,9 @@ found in bulk solvent.
 When the Q-atoms carry a net charge, it polarises the solvent and the
 distribution of dipole angles changes. This shift of the average
 polarisation, given by Born's formula, is taken into account unless
-`charge_correction` is set to `off`.
+`charge_correction` is set to `off`. The charge used is the net charge of the
+Q-atoms, weighted by the state weights; see
+[A charged sphere](../../concepts/spherical-boundary.md#a-charged-sphere).
 
 The restraints are applied in three thin shells, to minimise the radial
 dependence of the polarisation that would occur in one thicker shell. The
@@ -106,7 +112,9 @@ V_{\mathrm{polarisation}}(\Theta_i) = \tfrac{1}{2} K_{\mathrm{pol}} \left( \Thet
 $$ (solvent-pol)
 
 $K_{\mathrm{pol}}$ is set with `polarization_force` in `[solvent]`; the
-default is 20 kcal·mol⁻¹·rad⁻².
+default is 20 kcal·mol⁻¹·rad⁻². Every 100 steps the targets of each shell
+are offset by the difference between the achieved and the target average
+angle; the offsets are stored in the restart file.
 
 ## Periodic boundary conditions
 

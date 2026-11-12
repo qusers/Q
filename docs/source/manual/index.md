@@ -36,6 +36,9 @@ bibliography
 
 ## How to read this manual
 
+- [Concepts](../concepts/index.md) explains the spherical boundary, the
+  electrostatics and the state-based FEP that the manual takes for granted.
+
 - The **user guide** walks through the normal order of work: build a topology,
   run dynamics, define a perturbation, analyse.
 - The **reference** pages hold the file formats, command lists and the

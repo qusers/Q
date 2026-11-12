@@ -59,6 +59,37 @@ $$
 so the energy of a stored configuration under a neighbouring window can be
 reconstructed afterwards without re-running anything. `qfep` relies on this.
 
+## Dynamics and bookkeeping
+
+It helps to keep two things apart.
+
+- The **dynamics**: which potential moves the atoms. In Q this is the
+  mapping potential, a weighted sum of state energies.
+- The **bookkeeping**: which numbers are stored, and how the analysis turns
+  them into the energy of a configuration under another window. In Q the
+  state energies are stored and the other window is reconstructed by
+  changing the weights.
+
+The bookkeeping is the stricter of the two. The dynamics only needs each
+state to have an energy and a force. The bookkeeping needs each state energy
+to be the same function of the coordinates in every window, so that a value
+stored in one window can be reused for another. Anything that makes a state
+energy depend on the weights is fine for the dynamics and wrong for the
+bookkeeping.
+
+<!-- FIGURE TODO: dynamics-vs-bookkeeping
+What: a two-row flow diagram for one stored configuration x of window m.
+  Row 1 (dynamics, inside qdyn): x -> eps_1(x), eps_2(x) -> V_m = l1*eps_1 +
+  l2*eps_2 -> forces -> next x.
+  Row 2 (bookkeeping): eps_1(x), eps_2(x) written to the .en file -> qfep
+  re-weights with the lambdas of window m+1 -> V_(m+1)(x) -> exp average / BAR.
+  Mark with a warning symbol the arrow "re-weights", annotated "valid only if
+  eps_s does not depend on lambda".
+Why: this distinction is the key to understanding both the energy files and
+  why a lambda-dependent soft-core cannot simply be switched on.
+How: a mermaid flowchart in the page, or a drawn schematic.
+-->
+
 ## What qfep computes
 
 For neighbouring windows $m$ and $m+1$, `qfep` forms the energy difference above
