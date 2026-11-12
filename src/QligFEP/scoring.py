@@ -74,30 +74,48 @@ class RestraintScorer:
 
 
 class RestraintLomapScorer:
-    """Score atom mappings as sqrt(lomap_score * restraint_score).
+    """Combine LOMAP and restraint scores, then penalize charge changes.
 
-    LOMAP's heuristic rules detect alchemically difficult transformations (ring breaking,
-    charge changes, heteroatom swaps, etc.) while the RestraintScorer captures spatial
-    overlap quality. The product ensures only edges that are both alchemically tractable
-    and spatially well-matched get high scores.
+    The unpenalized score is ``sqrt(lomap_score * restraint_score)``. LOMAP's
+    charge-change rule is disabled while calculating that geometric mean so that
+    ``charge_change_multiplier`` can be applied directly to the final score.
 
     Args:
         restraint_method: restraint method string for RestraintScorer.
-        charge_changes_score: LOMAP's penalty for charge-changing edges (0.0 blocks them,
-            0.5 halves their score, 1.0 no penalty). Default: 0.0.
+        charge_change_multiplier: Multiplier applied to the final combined score
+            when the ligands differ in net formal charge. ``0.5`` halves the final
+            score, ``1.0`` applies no penalty, and ``0.0`` assigns a score of zero
+            without excluding the edge. Default: 0.0.
     """
 
-    def __init__(self, restraint_method: str = "heavyatom_p", charge_changes_score: float = 0.0):
+    def __init__(self, restraint_method: str = "heavyatom_p", charge_change_multiplier: float = 0.0):
+        if not 0.0 <= charge_change_multiplier <= 1.0:
+            raise ValueError("charge_change_multiplier must be between 0.0 and 1.0")
+        self.charge_change_multiplier = charge_change_multiplier
         self._restraint_scorer = RestraintScorer(restraint_method=restraint_method)
-        self._lomap_score = partial(default_lomap_score, charge_changes_score=charge_changes_score)
+        self._lomap_score = partial(default_lomap_score, charge_changes_score=1.0)
 
-    def __call__(self, mapping: AtomMapping) -> float:
+    @staticmethod
+    def is_charge_change(mapping: AtomMapping) -> bool:
+        """Return whether the mapped ligands have different net formal charges."""
+        charge_a = Chem.GetFormalCharge(mapping.componentA.to_rdkit())
+        charge_b = Chem.GetFormalCharge(mapping.componentB.to_rdkit())
+        return charge_a != charge_b
+
+    def base_score(self, mapping: AtomMapping) -> float:
+        """Return the combined score before applying the charge-change multiplier."""
         lomap = self._lomap_score(mapping)
         if lomap == 0.0:
             return 0.0
         restraint = self._restraint_scorer(mapping)
-        score = np.sqrt(lomap * restraint)
+        return float(np.sqrt(lomap * restraint))
+
+    def __call__(self, mapping: AtomMapping) -> float:
+        base_score = self.base_score(mapping)
+        multiplier = self.charge_change_multiplier if self.is_charge_change(mapping) else 1.0
+        score = base_score * multiplier
         logger.debug(
-            f"RestraintLomapScorer: lomap={lomap:.4f}, restraint={restraint:.4f}, combined={score:.4f}"
+            f"RestraintLomapScorer: base={base_score:.4f}, multiplier={multiplier:.4f}, "
+            f"combined={score:.4f}"
         )
         return score

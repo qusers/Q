@@ -40,6 +40,10 @@ def create_call(**kwargs):
         template += " -clean {to_clean}"
     if "random_state" in kwargs and kwargs["random_state"] is not None:
         template += " -rs {random_state}"
+    if kwargs.get("minimize"):
+        template += " --minimize"
+    if kwargs.get("production"):
+        template += " --production"
     if "water_thresh" in kwargs and kwargs["water_thresh"] != 1.4:
         template += " -wath {water_thresh}"
     if "wath_ligand_only" in kwargs and kwargs["wath_ligand_only"]:
@@ -148,6 +152,8 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 replicates=args.replicates,
                 sampling=args.sampling,
                 timestep=args.timestep,
+                minimize=args.minimize,
+                production=args.production,
                 windows=args.windows,
                 to_clean=to_clean,
                 random_state=args.random_state,

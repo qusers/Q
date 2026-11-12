@@ -5,9 +5,10 @@ temperature               1
 bath_coupling             0.2
 random_seed               SEED_VAR
 initial_temperature       1
-shake_solvent             on
-shake_hydrogens           on
-shake_solute              off
+constrain_solvent         on
+constrain_hydrogens       on
+constrain_solute          off
+constraint_algorithm      lincs settle
 lrf                       on
 separate_scaling          on
 

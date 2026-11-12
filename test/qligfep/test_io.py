@@ -189,6 +189,16 @@ class TestQprepErrorCheck:
         with pytest.raises(QprepAtomLibMissingError):
             qprep_error_check(output_file, "AMBER14sb")
 
+    def test_fractional_included_charge_raises_qprep_error(self, tmp_path):
+        """A successful topology with a split charge group must still be rejected."""
+        from QligFEP.IO import QprepError, qprep_error_check
+
+        output_file = tmp_path / "qprep.out"
+        output_file.write_text("total charge of not excluded:   0.95\n")
+
+        with pytest.raises(QprepError, match="Non-integral included-system charge"):
+            qprep_error_check(output_file, "AMBER14sb")
+
 
 class TestForceFieldParsing:
     def test_parse_lib_retains_charge_groups_and_punctuation_in_residue_names(self):
@@ -275,6 +285,17 @@ class TestForceFieldParsing:
 
             assert observed == expected_groups
 
+    def test_amber_pop_uses_three_integral_charge_groups(self):
+        """POPC must be cut only into neutral head, sn-1, and sn-2 groups."""
+        from QligFEP.IO import parse_lib
+
+        pop = parse_lib("AMBER14sb")["POP"]
+        charges = {atom["name"]: atom["charge"] for atom in pop["atoms"]}
+
+        assert len(pop["charge_groups"]) == 3
+        group_charges = [sum(charges[atom] for atom in group) for group in pop["charge_groups"]]
+        assert group_charges == pytest.approx([0.0, 0.0, 0.0], abs=1e-6)
+
 
 class TestExceptionClasses:
     """Tests for exception classes."""
@@ -330,6 +351,15 @@ class TestParseQprepTotalCharge:
         fake_out.write_text("total charge of not excluded:   0.00\n")
         charge = parse_qprep_total_charge(fake_out)
         assert charge == 0
+
+    def test_parse_fractional_charge_raises(self, tmp_path):
+        """Do not silently round a charge-group boundary defect."""
+        from QligFEP.IO import parse_qprep_total_charge
+
+        fake_out = tmp_path / "qprep.out"
+        fake_out.write_text("total charge of not excluded:   0.95\n")
+        with pytest.raises(ValueError, match="Non-integral included-system charge 0.95"):
+            parse_qprep_total_charge(fake_out)
 
 
 def _slurm(path, seed, replicate, runtime="1h:2m:3s", failure=None, exit_status="0"):

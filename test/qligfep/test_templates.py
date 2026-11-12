@@ -34,15 +34,43 @@ class TestMDParameters:
             bath_coupling=10.0,
         )
 
-        assert params.shake_solvent is True
-        assert params.shake_hydrogens is True
-        assert params.shake_solute is False
+        assert params.constrain_solvent is True
+        assert params.constrain_hydrogens is True
+        assert params.constrain_solute is False
+        assert params.constraint_algorithm == "lincs settle"
         assert params.lrf is True
         assert params.cutoff_q_atom == 99
         assert params.shell_force == 10.0
         assert params.polarization is True
         assert params.topology == "dualtop.top"
         assert params.fep_file == "FEP_VAR"
+
+    @pytest.mark.parametrize(
+        ("algorithms", "expected"),
+        [("SHAKE SETTLE", "shake settle"), ("lincs lincs", "lincs lincs")],
+    )
+    def test_constraint_algorithm_normalization(self, algorithms, expected):
+        """Algorithm names are normalized before rendering."""
+        params = MDParameters(
+            steps=5000,
+            stepsize=2.0,
+            temperature=298,
+            bath_coupling=10.0,
+            constraint_algorithm=algorithms,
+        )
+        assert params.constraint_algorithm == expected
+
+    @pytest.mark.parametrize("algorithms", ["lincs", "settle lincs", "lincs settle extra"])
+    def test_invalid_constraint_algorithm(self, algorithms):
+        """Reject malformed or domain-incompatible algorithm pairs."""
+        with pytest.raises(ValueError):
+            MDParameters(
+                steps=5000,
+                stepsize=2.0,
+                temperature=298,
+                bath_coupling=10.0,
+                constraint_algorithm=algorithms,
+            )
 
     def test_temperature_placeholder(self):
         """Verify temperature can hold T_VAR placeholder string."""
@@ -220,6 +248,10 @@ class TestRenderMdInput:
         assert "steps                     5000" in content
         assert "stepsize                  2.0" in content
         assert "temperature               298" in content
+        assert "constrain_solvent         on" in content
+        assert "constrain_hydrogens       on" in content
+        assert "constrain_solute          off" in content
+        assert "constraint_algorithm      lincs settle" in content
         assert "[cut-offs]" in content
         assert "[sphere]" in content
         assert "shell_radius              25" in content
@@ -231,7 +263,7 @@ class TestRenderMdInput:
 
     def test_render_eq1_with_minimize(self):
         """Verify eq1 renders minimize parameters when enabled."""
-        configs = get_equilibration_configs("2fs", shell_radius=25)
+        configs = get_equilibration_configs("2fs", shell_radius=25, minimize=True)
         eq1 = configs[0]
 
         content = render_md_input(
@@ -249,8 +281,8 @@ class TestRenderMdInput:
         assert "minimize_step_size        0.001" in content
 
     def test_render_eq2_without_minimize(self):
-        """Verify eq2-eq5 do not render minimize parameters."""
-        configs = get_equilibration_configs("2fs", shell_radius=25)
+        """Verify opt-in minimization applies only to eq1."""
+        configs = get_equilibration_configs("2fs", shell_radius=25, minimize=True)
 
         for config in configs[1:]:
             content = render_md_input(
@@ -409,10 +441,17 @@ class TestEquilibrationConfigs:
         assert eq1.params.stepsize == 0.2
         assert eq1.params.temperature == 1
         assert eq1.params.bath_coupling == 0.2
-        assert eq1.params.shake_hydrogens is False
-        assert eq1.params.minimize is True
+        assert eq1.params.constrain_hydrogens is False
+        assert eq1.params.minimize is False
         assert eq1.sequence_restraint_force == 10.0
         assert eq1.distance_restraint_force == 1.5
+
+    def test_eq1_minimization_is_opt_in(self):
+        """FIRE and its matching hydrogen constraints are enabled explicitly."""
+        eq1 = get_equilibration_configs("2fs", shell_radius=25, minimize=True)[0]
+
+        assert eq1.params.minimize is True
+        assert eq1.params.constrain_hydrogens is True
 
     def test_eq5_uses_water_restraint(self):
         """Verify eq5 is configured for WATER_RESTRAINT."""
@@ -437,9 +476,9 @@ class TestEquilibrationConfigs:
         assert eq2_2fs.params.stepsize == 2.0
         assert eq2_1fs.params.stepsize == 1.0
 
-        # shake_hydrogens on for 2fs (needed for larger timestep), off for 1fs
-        assert eq2_2fs.params.shake_hydrogens is True
-        assert eq2_1fs.params.shake_hydrogens is False
+        # Hydrogen constraints are on for 2fs (needed for the larger timestep), off for 1fs.
+        assert eq2_2fs.params.constrain_hydrogens is True
+        assert eq2_1fs.params.constrain_hydrogens is False
 
     def test_temperature_progression(self):
         """Verify temperatures increase through equilibration."""
@@ -513,13 +552,14 @@ class TestNeqEndpointConfig:
     """Tests for the non-equilibrium endpoint (relax/eq6/neq) configuration."""
 
     def test_neq_endpoint_config_2fs(self):
-        """2fs endpoint uses the 2fs stepsize and SHAKE, with sparse endpoint output."""
+        """2fs endpoint uses LINCS constraints with sparse endpoint output."""
         params = get_neq_endpoint_config("2fs", shell_radius=25, steps=20000)
 
         assert params.steps == 20000
         assert params.stepsize == 2.0
-        assert params.shake_hydrogens is True
-        assert params.shake_solute is True
+        assert params.constrain_hydrogens is True
+        assert params.constrain_solute is True
+        assert params.constraint_algorithm == "lincs settle"
         assert params.temperature == "T_VAR"
         assert params.shell_radius == 25
         # endpoint-specific cadence: sparse output, trajectory writing suppressed,
@@ -529,12 +569,12 @@ class TestNeqEndpointConfig:
         assert params.interval_energy is None
 
     def test_neq_endpoint_config_1fs(self):
-        """1fs endpoint drops to the 1fs stepsize with SHAKE off."""
+        """1fs endpoint drops to the 1fs stepsize with solute constraints off."""
         params = get_neq_endpoint_config("1fs", shell_radius=25, steps=20000)
 
         assert params.stepsize == 1.0
-        assert params.shake_hydrogens is False
-        assert params.shake_solute is False
+        assert params.constrain_hydrogens is False
+        assert params.constrain_solute is False
 
     def test_steps_and_radius_flow_through(self):
         """Step count and sphere radius are per-call, not baked into the timestep dicts."""
@@ -690,7 +730,8 @@ class TestGoldenFileComparison:
         assert rendered_md["steps"] == golden_md["steps"]
         assert rendered_md["stepsize"] == golden_md["stepsize"]
         assert rendered_md["temperature"] == golden_md["temperature"]
-        assert rendered_md["shake_hydrogens"] == golden_md["shake_hydrogens"]
+        assert rendered_md["constrain_hydrogens"] == golden_md["constrain_hydrogens"]
+        assert rendered_md["constraint_algorithm"] == golden_md["constraint_algorithm"]
 
 
 class TestQfepTemplate:

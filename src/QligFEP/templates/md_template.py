@@ -10,7 +10,7 @@ class MDParameters:
     Each field maps to a key the Q engine (src/q6/md.f90) reads from a named
     [section]. The sections are:
 
-      - [MD]       core dynamics: integration, thermostat, SHAKE, minimiser.
+      - [MD]       core dynamics: integration, thermostat, constraints, minimiser.
       - [cut-offs] hard spherical non-bonded cutoffs (A); q_atom ~ infinite.
       - [sphere]   solute boundary-shell restraint (SCAAS droplet).
       - [solvent]  water boundary restraints + opt-in per-state Born correction.
@@ -26,10 +26,11 @@ class MDParameters:
     temperature: int | str  # K target; or "T_VAR" placeholder
     bath_coupling: float  # fs; Berendsen bath relaxation time (tau_T), must be >= stepsize
 
-    # Shake settings
-    shake_solvent: bool = True  # Should be always on - we use rigid water models
-    shake_hydrogens: bool = True
-    shake_solute: bool = False
+    # Constraint settings. Algorithms are listed in "solute solvent" order.
+    constrain_solvent: bool = True  # Always on: QligFEP uses rigid HOH water
+    constrain_hydrogens: bool = True
+    constrain_solute: bool = False
+    constraint_algorithm: str = "lincs settle"
 
     # Other MD settings
     lrf: bool = True  # Local Reaction Field Taylor expansion beyond the cutoff
@@ -61,11 +62,28 @@ class MDParameters:
     topology: str = "dualtop.top"
     fep_file: str = "FEP_VAR"
 
-    # Energy minimization (steepest descent before MD)
+    # Energy minimization (FIRE, before MD)
     minimize: bool = False
     max_minimize_steps: int = 1000
     minimize_tolerance: float = 0.1  # kcal/mol/Å
-    minimize_step_size: float = 0.001  # Å
+    minimize_step_size: float = 0.001  # Å (steepest-descent baseline only)
+    # Hold the Q-atoms (both dual-topology ligands) fixed during minimization.
+    # Off by default: the two ligands do not interact (each is a dummy in the
+    # other's state), so relaxing them is sound and lets each settle against its
+    # own pocket. Turn on to relax only the environment around fixed ligand poses.
+    minimize_freeze_qatoms: bool = False
+
+    def __post_init__(self) -> None:
+        """Normalize and validate the engine's two-part algorithm selector."""
+        methods = self.constraint_algorithm.lower().split()
+        if len(methods) != 2:
+            raise ValueError("constraint_algorithm requires solute and solvent methods")
+        solute, solvent = methods
+        if solute not in {"shake", "lincs"}:
+            raise ValueError(f"unsupported solute constraint algorithm: {solute}")
+        if solvent not in {"shake", "lincs", "settle"}:
+            raise ValueError(f"unsupported solvent constraint algorithm: {solvent}")
+        self.constraint_algorithm = f"{solute} {solvent}"
 
 
 def onoff(val: bool) -> str:
@@ -123,6 +141,7 @@ def render_md_input(
             f"max_minimize_steps        {params.max_minimize_steps}\n"
             f"minimize_tolerance        {params.minimize_tolerance}\n"
             f"minimize_step_size        {params.minimize_step_size}\n"
+            + ("minimize_freeze_qatoms    on\n" if params.minimize_freeze_qatoms else "")
         )
         if params.minimize
         else ""
@@ -148,9 +167,10 @@ stepsize                  {params.stepsize}
 temperature               {params.temperature}
 bath_coupling             {params.bath_coupling}
 {equilibration_start}\
-shake_solvent             {onoff(params.shake_solvent)}
-shake_hydrogens           {onoff(params.shake_hydrogens)}
-shake_solute              {onoff(params.shake_solute)}
+constrain_solvent         {onoff(params.constrain_solvent)}
+constrain_hydrogens       {onoff(params.constrain_hydrogens)}
+constrain_solute          {onoff(params.constrain_solute)}
+constraint_algorithm      {params.constraint_algorithm}
 lrf                       {onoff(params.lrf)}
 separate_scaling          {onoff(params.separate_scaling)}
 {minimization_settings}\

@@ -13,8 +13,8 @@ NEQ_ENDPOINT_2FS_PARAMS = dict(
     stepsize=2.0,
     temperature="T_VAR",
     bath_coupling=10.0,
-    shake_hydrogens=True,
-    shake_solute=True,
+    constrain_hydrogens=True,
+    constrain_solute=True,
     interval_output=10,
     interval_trajectory=100000000,
 )
@@ -23,8 +23,8 @@ NEQ_ENDPOINT_1FS_PARAMS = dict(
     stepsize=1.0,
     temperature="T_VAR",
     bath_coupling=10.0,
-    shake_hydrogens=False,
-    shake_solute=False,
+    constrain_hydrogens=False,
+    constrain_solute=False,
     interval_output=10,
     interval_trajectory=100000000,
 )

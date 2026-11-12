@@ -57,9 +57,9 @@ program qdyn
   integer(4), parameter :: SIGABRT = 6 ! kill/CTRL-BREAK signal
 #endif
 
-  external sigint_handler
-  external sigkill_handler
-  external sigabrt_handler
+  integer(4), external :: sigint_handler
+  integer(4), external :: sigkill_handler
+  integer(4), external :: sigabrt_handler
 
 #if defined (USE_MPI)
   ! initialize MPI
@@ -94,7 +94,7 @@ program qdyn
     call prep_sim ! prepare for simulation (calc. inv. mass, total charge,...)
     call close_input_files ! close input files
 
-    call init_shake
+    call init_constraints
     call make_nbqqlist
     call shrink_topology
     call nbmonitorlist
@@ -242,7 +242,7 @@ contains
   integer(4) function signal( signum, proc, flag )
     implicit none
     integer(4) :: signum, flag
-    external proc
+    integer(4), external :: proc
     signal = 1
   end function signal
 #endif

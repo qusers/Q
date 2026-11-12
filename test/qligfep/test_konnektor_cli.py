@@ -5,6 +5,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
+import networkx as nx
 import pytest
 from rdkit import Chem
 
@@ -123,6 +124,32 @@ class TestNetworkTopologies:
             kw.run()
         shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_mst_3_adds_three_independent_cycle_closures(self, tyk2_sdf, tmp_path):
+        """mst_3 should add exactly three non-tree edges and three graph cycles."""
+        kw = KonnektorWrap(inp=str(tyk2_sdf), out=str(tmp_path), network="mst_3")
+        result = kw.run()
+
+        graph = nx.Graph((edge["from"], edge["to"]) for edge in result["edges"])
+        n_nodes = len(result["nodes"])
+        assert len(result["edges"]) == n_nodes - 1 + 3
+        assert len(nx.cycle_basis(graph)) == 3
+
+    def test_mst_cycle_closures_warn_and_continue_when_unavailable(self, tyk2_sdf, tmp_path):
+        """A network with two nodes cannot add a redundant edge, but remains usable."""
+        molecules = [molecule for molecule in Chem.SDMolSupplier(str(tyk2_sdf)) if molecule is not None][:2]
+        two_ligands = tmp_path / "two_ligands.sdf"
+        writer = Chem.SDWriter(str(two_ligands))
+        for molecule in molecules:
+            writer.write(molecule)
+        writer.close()
+
+        output = tmp_path / "network"
+        with pytest.warns(UserWarning, match=r"Requested 3.*only 0 can be added"):
+            result = KonnektorWrap(inp=str(two_ligands), out=str(output), network="mst_3").run()
+
+        assert len(result["nodes"]) == 2
+        assert len(result["edges"]) == 1
+
     def test_redundant_mst_has_more_edges_than_mst(self, tyk2_sdf):
         """Redundant MST should have more edges than a plain MST."""
         tmpdir = Path(tempfile.mkdtemp())
@@ -185,6 +212,28 @@ class TestChargeHandling:
         # cmet has both neutral and charged ligands, so some edges should have same_charge=False
         same_charges = [e["same_charge"] for e in result["edges"]]
         assert not all(same_charges), "Expected some edges with same_charge=False in cmet dataset"
+
+    def test_charge_multiplier_details_only_on_charge_changing_edges(self, cmet_sdf, tmp_path):
+        """Only penalized cross-charge edges should record multiplier details."""
+        kw = KonnektorWrap(
+            inp=str(cmet_sdf),
+            out=str(tmp_path),
+            network="mst",
+            charge_change_multiplier=0.5,
+        )
+        result = kw.run()
+
+        charge_changing_edges = [edge for edge in result["edges"] if not edge["same_charge"]]
+        same_charge_edges = [edge for edge in result["edges"] if edge["same_charge"]]
+        assert charge_changing_edges
+        assert same_charge_edges
+
+        for edge in charge_changing_edges:
+            assert edge["charge_change_multiplier"] == 0.5
+            assert edge["weight"] == pytest.approx(0.5 * edge["base_score"])
+        for edge in same_charge_edges:
+            assert "charge_change_multiplier" not in edge
+            assert "base_score" not in edge
 
     def test_separate_charges_no_cross_charge_edges(self, cmet_sdf):
         """With separate_charges=True, no edges should cross charge boundaries."""

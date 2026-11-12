@@ -214,6 +214,26 @@ class TestNTerminalDetection:
         assert "H1" in atom_names
         assert "H2" in atom_names
 
+    def test_n_terminal_h_h2_h3_normalized_for_q_library(self, tmp_path):
+        """A free terminus exported as H/H2/H3 must become H1/H2/H3."""
+        lines = [
+            "ATOM      1  N   SER A   1       0.000   0.000   0.000  1.00  0.00           N\n",
+            "ATOM      2  H   SER A   1      -0.500   0.800   0.000  1.00  0.00           H\n",
+            "ATOM      3  H2  SER A   1      -0.500  -0.800   0.000  1.00  0.00           H\n",
+            "ATOM      4  H3  SER A   1       0.000   0.000   1.000  1.00  0.00           H\n",
+            "ATOM      5  CA  SER A   1       1.458   0.000   0.000  1.00  0.00           C\n",
+            "ATOM      6  C   SER A   1       2.009   1.420   0.000  1.00  0.00           C\n",
+            "ATOM      7  O   SER A   1       1.246   2.390   0.000  1.00  0.00           O\n",
+        ]
+        pdb_file = _write_pdb(tmp_path, lines)
+        out_file = tmp_path / "output.pdb"
+        fix_pdb(pdb_file, out_name=out_file)
+        df = read_pdb_to_dataframe(out_file)
+        assert (df["residue_name"] == "NSER").all()
+        atom_names = list(df["atom_name"])
+        assert "H" not in atom_names
+        assert {"H1", "H2", "H3"}.issubset(atom_names)
+
 
 class TestCTerminalDetection:
     """Tests for C-terminal detection with Maestro-style atom naming."""

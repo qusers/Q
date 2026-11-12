@@ -2,10 +2,14 @@
 
 import argparse
 import json
+import re
+import warnings
 from pathlib import Path
 from typing import Optional
 
+import networkx as nx
 import numpy as np
+from gufe import LigandNetwork
 from kartograf import KartografAtomMapper, SmallMoleculeComponent
 from rdkit import Chem
 from rdkit.Chem import AllChem, rdFMCS
@@ -22,6 +26,90 @@ NETWORK_GENERATORS = {
     "nedges": "NNodeEdgesNetworkGenerator",
     "cyclic": "CyclicNetworkGenerator",
 }
+MST_WITH_CYCLES_PATTERN = re.compile(r"mst_(\d+)")
+
+
+def _parse_network_type(value: str) -> str:
+    """Validate a network type, including ``mst_N`` cycle-closure shorthand."""
+    if value in NETWORK_GENERATORS or MST_WITH_CYCLES_PATTERN.fullmatch(value):
+        return value
+    choices = ", ".join([*NETWORK_GENERATORS, "mst_N"])
+    raise argparse.ArgumentTypeError(f"unknown network type {value!r}; choose from: {choices}")
+
+
+class MinimalSpanningTreeWithCyclesNetworkGenerator:
+    """Build a maximum-score spanning tree plus a fixed number of closure edges.
+
+    Every added non-tree edge increases the connected graph's cycle rank by one.
+    Candidate mappings are generated once, and the highest-scoring available
+    non-tree edges are selected deterministically.
+    """
+
+    def __init__(self, mapper, scorer, n_cycle_closures: int, n_processes: int = 1):
+        if n_cycle_closures < 0:
+            raise ValueError("n_cycle_closures must be non-negative")
+        self.mapper = mapper
+        self.scorer = scorer
+        self.n_cycle_closures = n_cycle_closures
+        self.n_processes = n_processes
+        self.actual_cycle_closures = 0
+
+    @staticmethod
+    def _pair(component_a, component_b, component_indices):
+        return tuple(sorted((component_indices[component_a], component_indices[component_b])))
+
+    def generate_ligand_network(self, components):
+        from konnektor.network_planners import MaximalNetworkGenerator
+
+        components = list(components)
+        maximal = MaximalNetworkGenerator(
+            mappers=[self.mapper],
+            scorer=self.scorer,
+            n_processes=self.n_processes,
+        ).generate_ligand_network(components)
+
+        component_indices = {component: index for index, component in enumerate(components)}
+        mapping_by_pair = {}
+        for mapping in maximal.edges:
+            pair = self._pair(mapping.componentA, mapping.componentB, component_indices)
+            current = mapping_by_pair.get(pair)
+            if current is None or mapping.annotations["score"] > current.annotations["score"]:
+                mapping_by_pair[pair] = mapping
+
+        graph = nx.Graph()
+        graph.add_nodes_from(range(len(components)))
+        for pair, mapping in mapping_by_pair.items():
+            graph.add_edge(*pair, score=float(mapping.annotations["score"]))
+
+        if not nx.is_connected(graph):
+            missing = [components[index].name for index, degree in graph.degree if degree == 0]
+            raise RuntimeError(f"Unable to create a connected MST; isolated nodes: {missing}")
+
+        tree = nx.maximum_spanning_tree(graph, weight="score", algorithm="kruskal")
+        tree_pairs = {tuple(sorted(pair)) for pair in tree.edges}
+        candidates = sorted(
+            (pair for pair in mapping_by_pair if pair not in tree_pairs),
+            key=lambda pair: (-float(mapping_by_pair[pair].annotations["score"]), pair),
+        )
+
+        self.actual_cycle_closures = min(self.n_cycle_closures, len(candidates))
+        if self.actual_cycle_closures < self.n_cycle_closures:
+            message = (
+                f"Requested {self.n_cycle_closures} MST cycle-closure edges, but only "
+                f"{self.actual_cycle_closures} can be added; continuing with the available edges."
+            )
+            logger.warning(message)
+            warnings.warn(message, UserWarning, stacklevel=2)
+
+        selected_pairs = [*sorted(tree_pairs), *candidates[: self.actual_cycle_closures]]
+        logger.info(
+            f"MST network has {len(tree_pairs)} tree edges and "
+            f"{self.actual_cycle_closures} cycle-closure edge(s)."
+        )
+        return LigandNetwork(
+            edges=[mapping_by_pair[pair] for pair in selected_pairs],
+            nodes=components,
+        )
 
 
 class KonnektorWrap:
@@ -44,12 +132,15 @@ class KonnektorWrap:
         n_redundancy: int = 2,
         connectivity: int = 3,
         separate_charges: bool = False,
-        charge_changes_score: float = 0.0,
+        charge_change_multiplier: float = 0.0,
         exp_key: Optional[str] = None,
         self_solve: bool = False,
     ):
         self.inp = inp
-        self.network_type = network
+        self.network_spec = _parse_network_type(network)
+        cycle_match = MST_WITH_CYCLES_PATTERN.fullmatch(self.network_spec)
+        self.network_type = "mst" if cycle_match else self.network_spec
+        self.n_cycle_closures = int(cycle_match.group(1)) if cycle_match else 0
         self.scorer_type = scorer
         self.restraint_method = restraint_method
         self.processes = processes
@@ -58,10 +149,11 @@ class KonnektorWrap:
         self.n_redundancy = n_redundancy
         self.connectivity = connectivity
         self.separate_charges = separate_charges
-        self.charge_changes_score = charge_changes_score
+        self.charge_change_multiplier = charge_change_multiplier
         self.exp_key = exp_key
         self.self_solve = self_solve
         self.nodes = {}
+        self._scorer = None
 
         self.out = self._parse_output(out)
         self._sdf_dir = self._prepare_input()
@@ -99,13 +191,21 @@ class KonnektorWrap:
         elif self.scorer_type == "combined":
             return RestraintLomapScorer(
                 restraint_method=self.restraint_method,
-                charge_changes_score=self.charge_changes_score,
+                charge_change_multiplier=self.charge_change_multiplier,
             )
         else:
             return RestraintScorer(restraint_method=self.restraint_method)
 
     def _build_generator(self, mapper, scorer):
         """Create the network generator based on network type."""
+        if self.network_type == "mst" and self.n_cycle_closures:
+            return MinimalSpanningTreeWithCyclesNetworkGenerator(
+                mapper=mapper,
+                scorer=scorer,
+                n_cycle_closures=self.n_cycle_closures,
+                n_processes=self.processes,
+            )
+
         from konnektor.network_planners import (
             CyclicNetworkGenerator,
             MinimalSpanningTreeNetworkGenerator,
@@ -205,6 +305,9 @@ class KonnektorWrap:
                 "to": to_name,
                 "same_charge": same_charge,
             }
+            if not same_charge and isinstance(self._scorer, RestraintLomapScorer):
+                edge["base_score"] = self._scorer.base_score(mapping)
+                edge["charge_change_multiplier"] = self._scorer.charge_change_multiplier
 
             if self.exp_key:
                 edge["ddg_value"] = self.nodes[to_name]["dg_value"] - self.nodes[from_name]["dg_value"]
@@ -250,6 +353,7 @@ class KonnektorWrap:
         """
         mapper = KartografAtomMapper(atom_map_hydrogens=False, map_exact_ring_matches_only=True)
         scorer = self._build_scorer()
+        self._scorer = scorer
         generator = self._build_generator(mapper, scorer)
 
         components = self._load_components()
@@ -695,10 +799,13 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "-n",
         "--network",
-        type=str,
+        type=_parse_network_type,
         default="mst",
-        choices=list(NETWORK_GENERATORS.keys()),
-        help="Network topology: mst, rmst, star, nedges, or cyclic. Default: mst.",
+        help=(
+            "Network topology: mst, rmst, star, nedges, cyclic, or mst_N. "
+            "mst_N adds up to N highest-scoring non-tree edges, giving N independent "
+            "thermodynamic cycle closures when enough candidate edges exist. Default: mst."
+        ),
     )
     parser.add_argument(
         "-s",
@@ -756,11 +863,12 @@ def parse_arguments() -> argparse.Namespace:
         help="Generate separate networks per charge group, avoiding cross-charge perturbations.",
     )
     parser.add_argument(
-        "--charge_changes_score",
+        "--charge-change-multiplier",
         type=float,
         default=0.0,
-        help="LOMAP penalty for charge-changing edges (only with scorer=combined). "
-        "0.0 blocks them, 0.5 halves their score, 1.0 no penalty. Default: 0.0.",
+        help="Multiplier applied to the final combined score of charge-changing edges "
+        "(only with scorer=combined). 0.5 halves their final score, 1.0 applies no "
+        "penalty, and 0.0 assigns a score of zero without excluding them. Default: 0.0.",
     )
     parser.add_argument(
         "--exp-key",
@@ -793,7 +901,7 @@ def main(args):
         n_redundancy=args.n_redundancy,
         connectivity=args.connectivity,
         separate_charges=args.separate_charges,
-        charge_changes_score=args.charge_changes_score,
+        charge_change_multiplier=args.charge_change_multiplier,
         exp_key=args.exp_key,
         self_solve=args.self_solve,
     )

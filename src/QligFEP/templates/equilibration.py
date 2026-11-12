@@ -48,16 +48,19 @@ class EquilibrationConfig:
 # Equilibration parameter sets used to override defaults in MDParameters
 # ======================================================================
 
-# eq1 is identical for both timesteps (fixed small timestep for initial equilibration)
-# Minimization is enabled for eq1 to relax initial geometries before MD
+# eq1 is identical for both timesteps (fixed small timestep for initial equilibration).
+# FIRE minimization is opt-in. When enabled, hydrogens are constrained here as
+# they are in eq2-eq5: the minimizer must constrain bonds to hydrogen regardless
+# (the zero-LJ polar hydrogens of AMBER collapse into acceptors otherwise; see
+# fire_constrain_hydrogens in md.f90). Without minimization, eq1 retains the
+# historical unconstrained-hydrogen protocol.
 EQ1_PARAMS = dict(
-    steps=5000,  # with minimization, I expect we can use fewer steps here
+    steps=5000,
     stepsize=0.2,
     temperature=1,
     bath_coupling=0.2,
-    shake_hydrogens=False,
+    constrain_hydrogens=False,
     interval_output=5,
-    minimize=True,
 )
 
 # 2fs timestep variants
@@ -66,7 +69,7 @@ EQ2_2FS_PARAMS = dict(
     stepsize=2.0,
     temperature=50,
     bath_coupling=2.0,
-    shake_hydrogens=True,
+    constrain_hydrogens=True,
     interval_output=5,
 )
 
@@ -75,7 +78,7 @@ EQ3_2FS_PARAMS = dict(
     stepsize=2.0,
     temperature=150,
     bath_coupling=2.0,
-    shake_hydrogens=True,
+    constrain_hydrogens=True,
     interval_output=5,
 )
 
@@ -84,7 +87,7 @@ EQ4_2FS_PARAMS = dict(
     stepsize=2.0,
     temperature=275,
     bath_coupling=2.0,
-    shake_hydrogens=True,
+    constrain_hydrogens=True,
     interval_output=5,
 )
 
@@ -93,7 +96,7 @@ EQ5_2FS_PARAMS = dict(
     stepsize=2.0,
     temperature="T_VAR",
     bath_coupling=10.0,
-    shake_hydrogens=True,
+    constrain_hydrogens=True,
     interval_output=25,
 )
 
@@ -103,7 +106,7 @@ EQ2_1FS_PARAMS = dict(
     stepsize=1.0,
     temperature=50,
     bath_coupling=1.0,
-    shake_hydrogens=False,
+    constrain_hydrogens=False,
     interval_output=5,
 )
 
@@ -112,7 +115,7 @@ EQ3_1FS_PARAMS = dict(
     stepsize=1.0,
     temperature=150,
     bath_coupling=1.0,
-    shake_hydrogens=False,
+    constrain_hydrogens=False,
     interval_output=5,
 )
 
@@ -121,7 +124,7 @@ EQ4_1FS_PARAMS = dict(
     stepsize=1.0,
     temperature=275,
     bath_coupling=1.0,
-    shake_hydrogens=False,
+    constrain_hydrogens=False,
     interval_output=5,
 )
 
@@ -130,7 +133,7 @@ EQ5_1FS_PARAMS = dict(
     stepsize=1.0,
     temperature="T_VAR",
     bath_coupling=10.0,
-    shake_hydrogens=False,
+    constrain_hydrogens=False,
     interval_output=25,
 )
 
@@ -166,26 +169,26 @@ _RESFEP_SHARED = dict(
 
 RESFEP_EQ1_PARAMS = dict(
     steps=10000, stepsize=0.1, temperature=1, bath_coupling=0.2,
-    shake_hydrogens=False, interval_output=5, **_RESFEP_SHARED,
+    constrain_hydrogens=False, interval_output=5, **_RESFEP_SHARED,
 )
 
 RESFEP_EQ2_PARAMS = dict(
     steps=10000, stepsize=1.0, temperature=50, bath_coupling=1.0,
-    shake_hydrogens=False, interval_output=5, **_RESFEP_SHARED,
+    constrain_hydrogens=False, interval_output=5, **_RESFEP_SHARED,
 )
 
 RESFEP_EQ3_PARAMS = dict(
     steps=10000, stepsize=1.0, temperature=150, bath_coupling=1.0,
-    shake_hydrogens=False, interval_output=5, **_RESFEP_SHARED,
+    constrain_hydrogens=False, interval_output=5, **_RESFEP_SHARED,
 )
 
 RESFEP_EQ4_PARAMS = dict(
     steps=10000, stepsize=1.0, temperature=275, bath_coupling=1.0,
-    shake_hydrogens=False, interval_output=5, **_RESFEP_SHARED,
+    constrain_hydrogens=False, interval_output=5, **_RESFEP_SHARED,
 )
 
 #: eq5 is the only stage that follows the production timestep: (steps, stepsize,
-#: shake_hydrogens) per timestep. Its length matches ligand FEP's eq5 (0.1 ns at
+#: constrain_hydrogens) per timestep. Its length matches ligand FEP's eq5 (0.1 ns at
 #: either timestep); the manuscript protocol overrides it with 5 ns.
 _RESFEP_EQ5_BY_TIMESTEP = {
     "1fs": (EQ5_1FS_PARAMS["steps"], 1.0, False),
@@ -210,7 +213,7 @@ def get_resfep_equilibration_configs(
     Returns:
         List of EquilibrationConfig for eq1 through eq5.
     """
-    steps, stepsize, shake_hydrogens = _RESFEP_EQ5_BY_TIMESTEP[timestep]
+    steps, stepsize, constrain_hydrogens = _RESFEP_EQ5_BY_TIMESTEP[timestep]
     if eq5_steps is not None:
         steps = int(eq5_steps)
     eq5_params = dict(
@@ -218,7 +221,7 @@ def get_resfep_equilibration_configs(
         stepsize=stepsize,
         temperature="T_VAR",
         bath_coupling=10.0,
-        shake_hydrogens=shake_hydrogens,
+        constrain_hydrogens=constrain_hydrogens,
         interval_output=5,
         **_RESFEP_SHARED,
     )
@@ -253,6 +256,7 @@ def get_resfep_equilibration_configs(
 def get_equilibration_configs(
     timestep: Literal["1fs", "2fs"],
     shell_radius: int,
+    minimize: bool = False,
 ) -> list[EquilibrationConfig]:
     """Return equilibration configurations for the given timestep.
 
@@ -266,19 +270,27 @@ def get_equilibration_configs(
     Args:
         timestep: Simulation timestep ("1fs" or "2fs")
         shell_radius: Spherical boundary radius
+        minimize: Run FIRE minimization before eq1. Disabled by default.
 
     Returns:
         List of EquilibrationConfig for eq1 through eq5
     """
     raw_configs = _CONFIGS_2FS if timestep == "2fs" else _CONFIGS_1FS
-
-    return [
-        EquilibrationConfig(
-            name=name,
-            params=MDParameters(**params, shell_radius=shell_radius),
-            sequence_restraint_force=seq_force,
-            distance_restraint_force=dr_force,
-            use_water_restraint=use_water,
+    configs = []
+    for name, params, seq_force, dr_force, use_water in raw_configs:
+        stage_params = dict(params)
+        if name == "eq1":
+            stage_params["minimize"] = minimize
+            # FIRE always constrains hydrogen bonds internally. Match the
+            # following eq1 MD potential only when minimization is requested.
+            stage_params["constrain_hydrogens"] = minimize
+        configs.append(
+            EquilibrationConfig(
+                name=name,
+                params=MDParameters(**stage_params, shell_radius=shell_radius),
+                sequence_restraint_force=seq_force,
+                distance_restraint_force=dr_force,
+                use_water_restraint=use_water,
+            )
         )
-        for name, params, seq_force, dr_force, use_water in raw_configs
-    ]
+    return configs

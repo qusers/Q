@@ -22,6 +22,12 @@ module md
   use trj
   use mpiglob
   use qatom
+  use lincs
+#if defined(USE_MPI)
+  use lincs_mpi
+#endif
+  use settle
+  use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 
   implicit none
 
@@ -39,6 +45,8 @@ module md
   character*(*), parameter  :: md_date = '2015-02-22'
   real, parameter           :: rho_wat = 0.0335  ! molecules / A**3
   real, parameter           :: boltz = 0.001986
+  real(8), parameter        :: angle_cosine_limit = 0.999_8
+  real(8), parameter        :: dihedral_sin_threshold = 1.0e-6_8
   real(8)                   :: pi, deg2rad !set in sub startup
 
   ! Read status
@@ -89,8 +97,8 @@ module md
   integer                   :: iseed
   logical                   :: restart
   real(8)                   :: dt, Temp0, Tmaxw, tau_T
-  logical                   :: shake_solvent, shake_solute
-  logical                   :: shake_hydrogens
+  logical                   :: constrain_solvent, constrain_solute
+  logical                   :: constrain_hydrogens
   logical                   :: separate_scaling
   ! Thermostat treatment of restrained atoms outside the simulation sphere
   ! (excl(i), spherical boundary only). Excluded atoms are integrated under
@@ -98,20 +106,47 @@ module md
   !   'separate' (default): own Berendsen bath, coupled to their own
   !                         temperature with the same Temp0 and tau_T
   !   'none':     excluded atoms are not velocity-scaled at all
-  !   'frozen':   excluded atoms are held fixed (zero velocity, zero inverse
-  !               mass), the textbook spherical-boundary model
   !   'legacy':   pre-fix behaviour, scaled by the factor computed from the
   !               free (active) atoms only. Retained to reproduce older runs;
   !               can pump energy into the excluded region (issue #131).
   character(len=16)         :: excluded_thermostat = 'separate'
   real(8)                   :: Tscale_excl = 1.0_8
 
+  integer, parameter        :: CONSTRAINT_SHAKE = 1
+  integer, parameter        :: CONSTRAINT_SETTLE = 2
+  integer, parameter        :: CONSTRAINT_LINCS = 3
+  integer                   :: solute_constraint_algorithm = CONSTRAINT_SHAKE
+  integer                   :: solvent_constraint_algorithm = CONSTRAINT_SETTLE
+
   ! --- Energy minimization parameters
   logical                   :: do_minimize = .false.
   integer                   :: max_min_steps = 1000
   real(8)                   :: min_tol = 0.1      ! kcal/mol/Å convergence tolerance
-  real(8)                   :: min_step = 0.001   ! step size in Å
+  real(8)                   :: min_step = 0.001   ! step size in Å (steepest descent only)
   logical                   :: min_bonded_only = .false.  ! Flag to skip nonbonded during minimization
+
+  ! Minimizer selection: 1 = FIRE (default), 2 = steepest descent (legacy baseline)
+  integer, parameter        :: MIN_FIRE = 1, MIN_SD = 2
+  integer                   :: min_method = MIN_FIRE
+
+  ! --- FIRE (Bitzek et al., Phys. Rev. Lett. 97, 170201 (2006))
+  ! Defaults are the values recommended in the paper; only the time steps are
+  ! system-dependent. Time steps are given in fs and converted to Q's internal
+  ! time unit (dt = FS_TO_INTERNAL*fs) when read.
+  real(8), parameter        :: FS_TO_INTERNAL = 0.020462d0  ! fs -> Q internal time unit
+  real(8)                   :: fire_dt_start_fs = 0.1d0  ! initial time step (fs)
+  real(8)                   :: fire_dt_max_fs = 1.0d0    ! largest allowed time step (fs)
+  integer                   :: fire_nmin = 5             ! latency steps before accelerating
+  real(8)                   :: fire_maxmove = 0.1d0      ! cap on |dx| per atom per step (Å)
+  real(8)                   :: fire_list_skin = 0.1d0    ! max atom drift before the pair lists are rebuilt (Å)
+  ! Bitzek's fixed recommended constants (never system-tuned, so not exposed):
+  real(8), parameter        :: fire_finc = 1.1d0          ! time step growth factor
+  real(8), parameter        :: fire_fdec = 0.5d0          ! time step cut factor on uphill motion
+  real(8), parameter        :: fire_alpha_start = 0.1d0   ! initial velocity mixing
+  real(8), parameter        :: fire_falpha = 0.99d0       ! mixing decay factor
+
+  ! Hold Q-atoms (both dual-topology ligands) fixed during minimization.
+  logical                   :: min_freeze_qatoms = .false.
 
   ! --- Non-bonded strategy
   logical                   :: use_LRF
@@ -356,13 +391,14 @@ module md
 
   !shake types & variables
   !convergence criterion (fraction of distance)
-  real(8), parameter               :: shake_tol = 0.0001
+  real(8), parameter               :: shake_tol = 0.0001d0
   integer, parameter               :: shake_max_iter = 1000
+  real(8), parameter               :: shake_min_projection = 1.0d-6
+  real(8), parameter               :: shake_max_correction_scale = 1.0d0
 
   type shake_bond_type
     integer(ai)                   :: i,j
     real(8)                       :: dist2
-    logical                       :: ready
   end type shake_bond_type
 
   type shake_mol_type
@@ -371,13 +407,25 @@ module md
   end type shake_mol_type
 
   integer                           :: shake_constraints, shake_molecules
+  integer                           :: settle_constraints = 0
+  integer                           :: lincs_constraints = 0
+  integer                           :: lincs_solute_constraints = 0
+  integer                           :: lincs_solvent_constraints = 0
+  integer                           :: constraint_count = 0
   type(shake_mol_type), allocatable :: shake_mol(:)
+
+  ! The MD constraint set, parked while FIRE additionally constrains bonds to
+  ! hydrogen (see fire_constrain_hydrogens).
+  type(shake_mol_type), allocatable :: md_shake_mol(:)
+  integer                           :: md_shake_molecules = 0
+  integer                           :: md_shake_constraints = 0
+  logical                           :: fire_h_constrained = .false.
 
   !-----------------------------------------------------------------------
   !       profiling vars
   !-----------------------------------------------------------------------
 #if defined (PROFILING)
-  integer, parameter        :: num_profiling_times = 11
+  integer, parameter        :: num_profiling_times = 12
 
   type profiling_var_type
     character(len=100)      :: name
@@ -869,7 +917,7 @@ real(8) function angle(istart, iend)
   ! *** local variables
   integer                                         :: i,j,k,ia,ic,i3,j3,k3
   real(8)                                         :: bjiinv, bjkinv, bji2inv, bjk2inv
-  real(8)                                         :: scp,angv,da,dv,f1
+  real(8)                                         :: scp,scp_force,angv,da,dv,f1
   real(8)                                         :: rji(3),rjk(3),di(3),dk(3)
 
   ! global variables used:
@@ -908,10 +956,11 @@ real(8) function angle(istart, iend)
     ! calculate scp and angv
     scp = ( rji(1)*rjk(1) + rji(2)*rjk(2) + rji(3)*rjk(3) )
     scp = scp * bjiinv*bjkinv
-    if ( scp .gt.  1.0 ) then
-      scp =  1.0
-    else if ( scp .lt. -1.0 ) then
-      scp = -1.0
+    scp_force = scp
+    if ( scp .gt. angle_cosine_limit ) then
+      scp = angle_cosine_limit
+    else if ( scp .lt. -angle_cosine_limit ) then
+      scp = -angle_cosine_limit
     end if
     angv = acos(scp)
 
@@ -920,22 +969,17 @@ real(8) function angle(istart, iend)
     angle = angle + 0.5*anglib(ic)%fk*da**2
     dv = anglib(ic)%fk*da
 
-    ! calculate f1
-    f1 = sin ( angv )
-    if ( abs(f1) .lt. 1.e-12 ) then
-      ! avoid division by zero
-      f1 = -1.e12
-    else
-      f1 =  -1.0 / f1
-    end if
+    ! angle_cosine_limit keeps sin(angv) safely away from zero.  Use the
+    ! unclamped cosine for the perpendicular-vector geometry, as QGPU does.
+    f1 = -1.0 / sin(angv)
 
     ! calculate di and dk
-    di(1) = f1 * ( rjk(1)*bjiinv*bjkinv - scp*rji(1)*bji2inv )
-    di(2) = f1 * ( rjk(2)*bjiinv*bjkinv - scp*rji(2)*bji2inv )
-    di(3) = f1 * ( rjk(3)*bjiinv*bjkinv - scp*rji(3)*bji2inv )
-    dk(1) = f1 * ( rji(1)*bjiinv*bjkinv - scp*rjk(1)*bjk2inv )
-    dk(2) = f1 * ( rji(2)*bjiinv*bjkinv - scp*rjk(2)*bjk2inv )
-    dk(3) = f1 * ( rji(3)*bjiinv*bjkinv - scp*rjk(3)*bjk2inv )
+    di(1) = f1 * ( rjk(1)*bjiinv*bjkinv - scp_force*rji(1)*bji2inv )
+    di(2) = f1 * ( rjk(2)*bjiinv*bjkinv - scp_force*rji(2)*bji2inv )
+    di(3) = f1 * ( rjk(3)*bjiinv*bjkinv - scp_force*rji(3)*bji2inv )
+    dk(1) = f1 * ( rji(1)*bjiinv*bjkinv - scp_force*rjk(1)*bjk2inv )
+    dk(2) = f1 * ( rji(2)*bjiinv*bjkinv - scp_force*rjk(2)*bjk2inv )
+    dk(3) = f1 * ( rji(3)*bjiinv*bjkinv - scp_force*rjk(3)*bjk2inv )
 
     ! update d
     d(i3+1) = d(i3+1) + dv*di(1)
@@ -2067,7 +2111,7 @@ real(8) function improper2(istart, iend)
     integer                                         ::      istart, iend
     ! local variables
     integer                                         ::      ip
-    real(8)                                         ::      scp,phi,dv,arg,f1
+    real(8)                                         ::      scp,phi,dv,arg,sin_phi,force_per_cos,cos_phi_limit
     real(8)                                         ::      bjinv, bkinv, bj2inv, bk2inv
     real(8)                                         ::      rji(3),rjk(3),rkl(3),rnj(3),rnk(3)
     real(8)                                         ::      rki(3),rlj(3),dp(12),di(3),dl(3)
@@ -2124,15 +2168,25 @@ real(8) function improper2(istart, iend)
       dv  = -2*lib%fk * sin(arg)
 
       ! ---       forces
-      f1 = sin ( phi )
-      if ( abs(f1) .lt. 1.e-12 ) f1 = 1.e-12
-      f1 =  -1.0 / f1
-      di(1) = f1 * ( rnk(1)*bjinv*bkinv - scp*rnj(1)*bj2inv )
-      di(2) = f1 * ( rnk(2)*bjinv*bkinv - scp*rnj(2)*bj2inv )
-      di(3) = f1 * ( rnk(3)*bjinv*bkinv - scp*rnj(3)*bj2inv )
-      dl(1) = f1 * ( rnj(1)*bjinv*bkinv - scp*rnk(1)*bk2inv )
-      dl(2) = f1 * ( rnj(2)*bjinv*bkinv - scp*rnk(2)*bk2inv )
-      dl(3) = f1 * ( rnj(3)*bjinv*bkinv - scp*rnk(3)*bk2inv )
+      ! Evaluate -dU/dphi/sin(phi) analytically at 0 and pi instead of
+      ! replacing sin(phi) by an arbitrary small number.
+      sin_phi = sin(phi)
+      if ( abs(sin_phi) .lt. dihedral_sin_threshold ) then
+        if ( scp .lt. 0.0_8 ) then
+          cos_phi_limit = -1.0_8
+        else
+          cos_phi_limit = 1.0_8
+        end if
+        force_per_cos = 4.0_8*lib%fk*cos(arg)/cos_phi_limit
+      else
+        force_per_cos = -dv/sin_phi
+      end if
+      di(1) = rnk(1)*bjinv*bkinv - scp*rnj(1)*bj2inv
+      di(2) = rnk(2)*bjinv*bkinv - scp*rnj(2)*bj2inv
+      di(3) = rnk(3)*bjinv*bkinv - scp*rnj(3)*bj2inv
+      dl(1) = rnj(1)*bjinv*bkinv - scp*rnk(1)*bk2inv
+      dl(2) = rnj(2)*bjinv*bkinv - scp*rnk(2)*bk2inv
+      dl(3) = rnj(3)*bjinv*bkinv - scp*rnk(3)*bk2inv
 
       rki(1) =  rji(1) - rjk(1)
       rki(2) =  rji(2) - rjk(2)
@@ -2154,20 +2208,20 @@ real(8) function improper2(istart, iend)
       dp(11) = rjk(3)*dl(1) - rjk(1)*dl(3)
       dp(12) = rjk(1)*dl(2) - rjk(2)*dl(1)
 
-      d(t%i*3-2) = d(t%i*3-2) + dv*dp(1)
-      d(t%i*3-1) = d(t%i*3-1) + dv*dp(2)
-      d(t%i*3-0) = d(t%i*3-0) + dv*dp(3)
-      d(t%j*3-2) = d(t%j*3-2) + dv*dp(4)
-      d(t%j*3-1) = d(t%j*3-1) + dv*dp(5)
-      d(t%j*3-0) = d(t%j*3-0) + dv*dp(6)
-      d(t%k*3-2) = d(t%k*3-2) + dv*dp(7)
-      d(t%k*3-1) = d(t%k*3-1) + dv*dp(8)
-      d(t%k*3-0) = d(t%k*3-0) + dv*dp(9)
-      d(t%l*3-2) = d(t%l*3-2) + dv*dp(10)
-      d(t%l*3-1) = d(t%l*3-1) + dv*dp(11)
+      d(t%i*3-2) = d(t%i*3-2) + force_per_cos*dp(1)
+      d(t%i*3-1) = d(t%i*3-1) + force_per_cos*dp(2)
+      d(t%i*3-0) = d(t%i*3-0) + force_per_cos*dp(3)
+      d(t%j*3-2) = d(t%j*3-2) + force_per_cos*dp(4)
+      d(t%j*3-1) = d(t%j*3-1) + force_per_cos*dp(5)
+      d(t%j*3-0) = d(t%j*3-0) + force_per_cos*dp(6)
+      d(t%k*3-2) = d(t%k*3-2) + force_per_cos*dp(7)
+      d(t%k*3-1) = d(t%k*3-1) + force_per_cos*dp(8)
+      d(t%k*3-0) = d(t%k*3-0) + force_per_cos*dp(9)
+      d(t%l*3-2) = d(t%l*3-2) + force_per_cos*dp(10)
+      d(t%l*3-1) = d(t%l*3-1) + force_per_cos*dp(11)
 
 
-      d(t%l*3-0) = d(t%l*3-0) + dv*dp(12)
+      d(t%l*3-0) = d(t%l*3-0) + force_per_cos*dp(12)
     end do
 end function improper2
 
@@ -2197,6 +2251,7 @@ subroutine init_nodes
 !!-------------------------------------------------------------------------------
 
 
+  type(lincs_data_type) :: lincs_topology
   integer, parameter              :: vars = 40 !increment this var when adding data to broadcast in batch 1
   integer                         :: blockcnt(vars), ftype(vars)
   integer(kind=MPI_ADDRESS_KIND)  :: fdisp(vars)
@@ -2222,6 +2277,18 @@ subroutine init_nodes
 
   !external MPI_Type_Create_F90_Integer
   !external MPI_SizeOf
+
+  if (nodeid == 0) call copy_lincs_data(lincs_topology)
+  ! Below 1024 constraints per rank, communication dominates the CPU solver.
+  ! Keep these small jobs on rank zero; standalone MPI tests can force partitioning.
+  call setup_lincs_mpi(MPI_COMM_WORLD, lincs_topology, 1024*numnodes)
+  if (nodeid == 0 .and. lincs_topology%constraint_count > 0) then
+    if (lincs_mpi_active()) then
+      write(*,'(a,i0,a)') 'LINCS execution: distributed across ', numnodes, ' MPI ranks'
+    else
+      write(*,'(a)') 'LINCS execution: rank zero (small constraint set)'
+    end if
+  end if
 
   !Define data types
   ! This is wrong, the 1:st param is "Precision, in decimal digits", not bits
@@ -2396,7 +2463,7 @@ subroutine init_nodes
 
 
   ! --- shake data ---
-  !if (shake_solute .or. shake_solvent .or. shake_hydrogens) then
+  !if (constrain_solute .or. constrain_solvent .or. constrain_hydrogens) then
   ! shake stuff
 
   !if (nodeid .eq. 0) write (*,'(80a)') 'shake data'
@@ -2628,6 +2695,11 @@ subroutine init_nodes
   if (ierr .ne. 0) call die('init_nodes/MPI_Bcast min_tol')
   call MPI_Bcast(min_step, 1, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
   if (ierr .ne. 0) call die('init_nodes/MPI_Bcast min_step')
+  ! Slaves must know the minimizer to stay in lockstep on the pot_energy collectives.
+  call MPI_Bcast(min_method, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+  if (ierr .ne. 0) call die('init_nodes/MPI_Bcast min_method')
+  call MPI_Bcast(min_freeze_qatoms, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+  if (ierr .ne. 0) call die('init_nodes/MPI_Bcast min_freeze_qatoms')
 
   if (nodeid .eq. 0) then
     call centered_heading('End of initiation', '-')
@@ -2672,11 +2744,12 @@ subroutine init_shake
       !new molecule
       mol = mol +1
     end do
-    !skip redefined bonds
-    if(bnd(b)%cod == 0) cycle
-    if((shake_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja))) .or. &
-      (shake_solute .and. ia <= nat_solute) .or. &
-      (shake_solvent .and. ia > nat_solute)) then
+    ! Skip redefined bonds and bonds claimed by another constraint solver.
+    if(bnd(b)%cod <= 0) cycle
+    if((ia <= nat_solute .and. solute_constraint_algorithm == CONSTRAINT_SHAKE .and. &
+        ((constrain_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja))) .or. constrain_solute)) .or. &
+       (ia > nat_solute .and. solvent_constraint_algorithm == CONSTRAINT_SHAKE .and. &
+        ((constrain_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja))) .or. constrain_solvent))) then
       shake_mol(mol)%nconstraints = shake_mol(mol)%nconstraints + 1
 
       if( .not. use_PBC ) then
@@ -2687,15 +2760,17 @@ subroutine init_shake
     end if
 
   end do
-  !count extra shake constraints from fep file in appropriate molecule
-  do b = 1, nqshake
-    ia=iqshake(b)
-    mol = 1
-    do while(ia >= istart_mol(mol+1))
-      mol = mol + 1
+  ! Count explicit FEP constraints when SHAKE owns the solute constraint set.
+  if (solute_constraint_algorithm == CONSTRAINT_SHAKE) then
+    do b = 1, nqshake
+      ia=iqshake(b)
+      mol = 1
+      do while(ia >= istart_mol(mol+1))
+        mol = mol + 1
+      end do
+      shake_mol(mol)%nconstraints = shake_mol(mol)%nconstraints + 1
     end do
-    shake_mol(mol)%nconstraints = shake_mol(mol)%nconstraints + 1
-  end do
+  end if
 
   !allocate bond lists for each molecule
   do mol = 1, nmol
@@ -2715,11 +2790,12 @@ subroutine init_shake
       mol = mol +1
       shake_mol(mol)%nconstraints = 0
     end do
-    !skip redefined bonds
-    if(bnd(b)%cod == 0) cycle
-    if((shake_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja))) .or.&
-      (shake_solute .and. ia <= nat_solute) .or. &
-      (shake_solvent .and. ia > nat_solute)) then
+    ! Skip redefined bonds and bonds claimed by another constraint solver.
+    if(bnd(b)%cod <= 0) cycle
+    if((ia <= nat_solute .and. solute_constraint_algorithm == CONSTRAINT_SHAKE .and. &
+        ((constrain_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja))) .or. constrain_solute)) .or. &
+       (ia > nat_solute .and. solvent_constraint_algorithm == CONSTRAINT_SHAKE .and. &
+        ((constrain_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja))) .or. constrain_solvent))) then
       shake_mol(mol)%nconstraints = shake_mol(mol)%nconstraints + 1
       shake_mol(mol)%bond(shake_mol(mol)%nconstraints)%i = ia
       shake_mol(mol)%bond(shake_mol(mol)%nconstraints)%j = ja
@@ -2731,33 +2807,35 @@ subroutine init_shake
     end if
   end do
 
-  !add extra shake constraints from fep file to appropriate molecule
-  do b = 1, nqshake
-    ia=iqshake(b)
-    ja=jqshake(b)
-    mol = 1
-    do while(ia >= istart_mol(mol+1))
-      mol = mol + 1
+  ! Add explicit FEP constraints when SHAKE owns the solute constraint set.
+  if (solute_constraint_algorithm == CONSTRAINT_SHAKE) then
+    do b = 1, nqshake
+      ia=iqshake(b)
+      ja=jqshake(b)
+      mol = 1
+      do while(ia >= istart_mol(mol+1))
+        mol = mol + 1
+      end do
+      !see if already shaken
+      do constr = 1, shake_mol(mol)%nconstraints
+        if((ia == shake_mol(mol)%bond(constr)%i .and. &
+          ja == shake_mol(mol)%bond(constr)%j) .or. &
+          (ja == shake_mol(mol)%bond(constr)%i .and. &
+          ia == shake_mol(mol)%bond(constr)%j)) then
+          !found it: will overwrite
+          !also decrement number of constraints
+          shake_mol(mol)%nconstraints = shake_mol(mol)%nconstraints - 1
+          exit
+        end if
+      end do
+      !constr now contains the right index
+      shake_mol(mol)%bond(constr)%i = ia
+      shake_mol(mol)%bond(constr)%j = ja
+      shake_mol(mol)%bond(constr)%dist2 = &
+        dot_product(EQ(1:nstates)%lambda,qshake_dist(b,1:nstates))**2
+      shake_mol(mol)%nconstraints = shake_mol(mol)%nconstraints + 1
     end do
-    !see if already shaken
-    do constr = 1, shake_mol(mol)%nconstraints
-      if((ia == shake_mol(mol)%bond(constr)%i .and. &
-        ja == shake_mol(mol)%bond(constr)%j) .or. &
-        (ja == shake_mol(mol)%bond(constr)%i .and. &
-        ia == shake_mol(mol)%bond(constr)%j)) then
-        !found it: will overwrite
-        !also decrement number of constraints
-        shake_mol(mol)%nconstraints = shake_mol(mol)%nconstraints - 1
-        exit
-      end if
-    end do
-    !constr now contains the right index
-    shake_mol(mol)%bond(constr)%i = ia
-    shake_mol(mol)%bond(constr)%j = ja
-    shake_mol(mol)%bond(constr)%dist2 = &
-      dot_product(EQ(1:nstates)%lambda,qshake_dist(b,1:nstates))**2
-    shake_mol(mol)%nconstraints = shake_mol(mol)%nconstraints + 1
-  end do
+  end if
 
   !get total number of shake constraints in solute (used for separate scaling of temperatures)
   solute_shake_constraints = sum(shake_mol(1:nmol-nwat)%nconstraints)
@@ -2822,25 +2900,388 @@ subroutine init_shake
 end subroutine init_shake
 
 
+subroutine init_constraints
+!!-------------------------------------------------------------------------------
+!!  Build the solver-specific constraint sets.  SETTLE claims rigid HOH bonds
+!!  first; legacy SHAKE then receives every requested bond that remains.
+!!-------------------------------------------------------------------------------
+  real(8) :: settle_excluded_constraints, lincs_excluded_constraints
+  real(8) :: initial_lincs_error
+  integer :: failed_lincs_constraint
+  logical :: initialized_lincs
+  character(len=120) :: message
+
+  settle_constraints = 0
+  lincs_constraints = 0
+  lincs_solute_constraints = 0
+  lincs_solvent_constraints = 0
+  settle_excluded_constraints = 0.0d0
+  lincs_excluded_constraints = 0.0d0
+
+  if ((solute_constraint_algorithm == CONSTRAINT_LINCS .and. &
+       (constrain_solute .or. constrain_hydrogens .or. nqshake > 0)) .or. &
+      (solvent_constraint_algorithm == CONSTRAINT_LINCS .and. &
+       (constrain_solvent .or. constrain_hydrogens) .and. nwat > 0)) then
+    call init_lincs(lincs_excluded_constraints)
+  end if
+
+  if (solvent_constraint_algorithm == CONSTRAINT_SETTLE .and. &
+      (constrain_solvent .or. constrain_hydrogens) .and. nwat > 0) then
+    call init_settle(settle_excluded_constraints)
+  end if
+
+  call init_shake
+
+  ! Finite-step LINCS assumes its reference coordinates satisfy all constraints.
+  ! Establish that invariant once, including when a restart enables a new set.
+  if (lincs_is_active()) then
+    initialized_lincs = initialize_lincs_positions(x, failed_lincs_constraint, &
+                                                   initial_lincs_error)
+    if (.not. initialized_lincs) then
+      write(message,'(a,i0,a,es12.4)') 'Initial LINCS projection failed at constraint ', &
+        failed_lincs_constraint, '; maximum relative error = ', initial_lincs_error
+      call die(trim(message))
+    end if
+  end if
+
+  ! init_shake computes the temperature degrees of freedom for its own set.
+  ! Account here for constraints claimed first by LINCS and SETTLE.
+  Ndegf = Ndegf - lincs_constraints - settle_constraints
+  Ndegfree = Ndegfree - lincs_constraints - settle_constraints + &
+             nint(lincs_excluded_constraints+settle_excluded_constraints)
+  Ndegf_solvent = Ndegf_solvent - lincs_solvent_constraints - settle_constraints
+  ! Preserve SHAKE's existing solvent/solute temperature partitioning: excluded
+  ! constraint compensation is applied to the total, not the solvent subtotal.
+  Ndegfree_solvent = Ndegfree_solvent - lincs_solvent_constraints - settle_constraints
+  Ndegf_solute = Ndegf - Ndegf_solvent
+  Ndegfree_solute = Ndegfree - Ndegfree_solvent
+  constraint_count = shake_constraints + lincs_constraints + settle_constraints
+
+  write(*,100) lincs_constraints, settle_constraints, shake_constraints, constraint_count
+100 format('Constraints by solver: LINCS = ',i8,', SETTLE = ',i8, &
+           ', SHAKE = ',i8,', total = ',i8)
+end subroutine init_constraints
+
+
+subroutine init_lincs(excluded_constraints)
+!!-------------------------------------------------------------------------------
+!!  Collect every requested bond owned by LINCS, including lambda-weighted FEP
+!!  constraints, then remove those bonds from bonded-force and SHAKE processing.
+!!-------------------------------------------------------------------------------
+  real(8), intent(out) :: excluded_constraints
+
+  integer :: b, k, ia, ja, angle, count, maximum_constraints
+  integer, allocatable :: atom_i(:), atom_j(:)
+  real(8), allocatable :: target_length(:), inverse_mass(:)
+  logical :: selected, found
+
+  maximum_constraints = nbonds+nqshake
+  allocate(atom_i(maximum_constraints), atom_j(maximum_constraints), &
+           target_length(maximum_constraints), inverse_mass(natom), stat=alloc_status)
+  call check_alloc('LINCS constraint arrays')
+  inverse_mass = dble(winv)
+
+  count = 0
+  excluded_constraints = 0.0d0
+  do b = 1, nbonds
+    if (bnd(b)%cod <= 0) cycle
+    ia = bnd(b)%i
+    ja = bnd(b)%j
+    selected = .false.
+    if (ia <= nat_solute .and. ja <= nat_solute .and. &
+        solute_constraint_algorithm == CONSTRAINT_LINCS) then
+      selected = constrain_solute .or. &
+                 (constrain_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja)))
+    else if (ia > nat_solute .and. ja > nat_solute .and. &
+             solvent_constraint_algorithm == CONSTRAINT_LINCS) then
+      selected = constrain_solvent .or. &
+                 (constrain_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja)))
+    end if
+    if (.not. selected) cycle
+
+    count = count+1
+    atom_i(count) = ia
+    atom_j(count) = ja
+    target_length(count) = bondlib(bnd(b)%cod)%bnd0
+    if (ia <= nat_solute) then
+      lincs_solute_constraints = lincs_solute_constraints+1
+    else
+      lincs_solvent_constraints = lincs_solvent_constraints+1
+    end if
+    if (.not. use_PBC) then
+      if (excl(ia)) excluded_constraints = excluded_constraints+0.5d0
+      if (excl(ja)) excluded_constraints = excluded_constraints+0.5d0
+    end if
+    bnd(b)%cod = -1
+  end do
+
+  ! Explicit FEP constraints belong to the solute solver.  Override the target
+  ! when the pair was selected above, otherwise append a new constraint.
+  if (solute_constraint_algorithm == CONSTRAINT_LINCS) then
+    do b = 1, nqshake
+      ia = iqshake(b)
+      ja = jqshake(b)
+      found = .false.
+      do k = 1, count
+        if ((atom_i(k) == ia .and. atom_j(k) == ja) .or. &
+            (atom_i(k) == ja .and. atom_j(k) == ia)) then
+          target_length(k) = dot_product(EQ(1:nstates)%lambda, &
+                                         qshake_dist(b,1:nstates))
+          found = .true.
+          exit
+        end if
+      end do
+      if (.not. found) then
+        count = count+1
+        atom_i(count) = ia
+        atom_j(count) = ja
+        target_length(count) = dot_product(EQ(1:nstates)%lambda, &
+                                           qshake_dist(b,1:nstates))
+        lincs_solute_constraints = lincs_solute_constraints+1
+        if (.not. use_PBC) then
+          if (excl(ia)) excluded_constraints = excluded_constraints+0.5d0
+          if (excl(ja)) excluded_constraints = excluded_constraints+0.5d0
+        end if
+      end if
+    end do
+  end if
+
+  if (count > 0) then
+    do k = 1, count
+      ia = atom_i(k)
+      ja = atom_j(k)
+      do angle = 1, nangles
+        if ((ang(angle)%i == ia .and. ang(angle)%k == ja) .or. &
+            (ang(angle)%i == ja .and. ang(angle)%k == ia)) then
+          ang(angle)%cod = 0
+          exit
+        end if
+      end do
+    end do
+    ! Two corrections are normally sufficient. Difficult but valid steps can
+    ! refine to 1e-6 relative error with at most eight bounded corrections.
+    call setup_lincs(atom_i(1:count), atom_j(1:count), target_length(1:count), &
+                     inverse_mass, 8, 2, 1.0d-6, 8)
+  end if
+  lincs_constraints = count
+
+  write(*,100) lincs_solute_constraints, lincs_solvent_constraints
+100 format(/,'LINCS constraints: solute = ',i8,', solvent = ',i8, &
+           ', expansion order = 8, rotations = 2..8, tolerance = 1e-6')
+  deallocate(atom_i, atom_j, target_length, inverse_mass)
+end subroutine init_lincs
+
+
+subroutine init_settle(excluded_constraints)
+!!-------------------------------------------------------------------------------
+!!  Validate Q's solvent topology as homogeneous three-site HOH, obtain its
+!!  geometry from the three constrained bond records, and assign every HOH to
+!!  SETTLE.  SETTLE is deliberately not applied to solute water-like residues.
+!!-------------------------------------------------------------------------------
+  real(8), intent(out) :: excluded_constraints
+
+  integer :: water, residue, oxygen, h1, h2, b, angle, claimed
+  integer, allocatable :: oxygen_atoms(:)
+  real(8) :: d_oh1, d_oh2, d_hh, m_o, m_h1, m_h2
+  real(8), parameter :: parameter_tolerance = 1.0d-6
+
+  if (nres-nres_solute /= nwat) then
+    call die('SETTLE requires one solvent residue per three-site HOH molecule')
+  end if
+
+  allocate(oxygen_atoms(nwat), stat=alloc_status)
+  call check_alloc('SETTLE oxygen atom list')
+  do water = 1, nwat
+    residue = nres_solute + water
+    oxygen = nat_solute + 3*(water-1) + 1
+    if (trim(adjustl(res(residue)%name)) /= 'HOH') then
+      call die('SETTLE supports only solvent residues named HOH')
+    end if
+    if (res(residue)%start /= oxygen) then
+      call die('SETTLE requires sequential O-H1-H2 solvent triplets')
+    end if
+    oxygen_atoms(water) = oxygen
+  end do
+
+  oxygen = oxygen_atoms(1)
+  h1 = oxygen + 1
+  h2 = oxygen + 2
+  d_oh1 = 0.0d0
+  d_oh2 = 0.0d0
+  d_hh = 0.0d0
+  do b = 1, nbonds
+    if (bnd(b)%cod <= 0) cycle
+    if ((bnd(b)%i == oxygen .and. bnd(b)%j == h1) .or. &
+        (bnd(b)%i == h1 .and. bnd(b)%j == oxygen)) then
+      d_oh1 = bondlib(bnd(b)%cod)%bnd0
+    else if ((bnd(b)%i == oxygen .and. bnd(b)%j == h2) .or. &
+             (bnd(b)%i == h2 .and. bnd(b)%j == oxygen)) then
+      d_oh2 = bondlib(bnd(b)%cod)%bnd0
+    else if ((bnd(b)%i == h1 .and. bnd(b)%j == h2) .or. &
+             (bnd(b)%i == h2 .and. bnd(b)%j == h1)) then
+      d_hh = bondlib(bnd(b)%cod)%bnd0
+    end if
+  end do
+  if (min(d_oh1, d_oh2, d_hh) <= 0.0d0) then
+    call die('SETTLE requires O-H1, O-H2, and H1-H2 bonds for HOH')
+  end if
+  if (abs(d_oh1-d_oh2) > parameter_tolerance*max(d_oh1,d_oh2)) then
+    call die('SETTLE requires identical O-H1 and O-H2 distances')
+  end if
+
+  m_o = 1.0d0/dble(winv(oxygen))
+  m_h1 = 1.0d0/dble(winv(h1))
+  m_h2 = 1.0d0/dble(winv(h2))
+  if (abs(m_h1-m_h2) > parameter_tolerance*max(m_h1,m_h2)) then
+    call die('SETTLE requires identical hydrogen masses')
+  end if
+
+  ! All solvent has just been verified as HOH.  Claim its three bonds per water
+  ! so SHAKE and the bonded-force routines do not process them again.
+  claimed = 0
+  excluded_constraints = 0.0d0
+  do b = 1, nbonds
+    if (bnd(b)%cod <= 0) cycle
+    if (bnd(b)%i > nat_solute .and. bnd(b)%j > nat_solute) then
+      claimed = claimed + 1
+      if (.not. use_PBC) then
+        if (excl(bnd(b)%i)) excluded_constraints = excluded_constraints + 0.5d0
+        if (excl(bnd(b)%j)) excluded_constraints = excluded_constraints + 0.5d0
+      end if
+      bnd(b)%cod = -1
+    end if
+  end do
+  if (claimed /= 3*nwat) then
+    call die('SETTLE requires exactly three bonds per HOH molecule')
+  end if
+
+  ! A separate H-O-H term would duplicate the geometry fixed by all three
+  ! distances.  This mirrors init_shake's removal of constrained end angles.
+  do angle = 1, nangles
+    if (ang(angle)%i > nat_solute .and. ang(angle)%j > nat_solute .and. &
+        ang(angle)%k > nat_solute) ang(angle)%cod = 0
+  end do
+
+  call setup_settle(0.5d0*(d_oh1+d_oh2), d_hh, m_o, 0.5d0*(m_h1+m_h2), &
+                    oxygen_atoms)
+  settle_constraints = claimed
+
+  write(*,100) nwat, 0.5d0*(d_oh1+d_oh2), d_hh
+100 format(/,'SETTLE rigid HOH molecules = ',i8,', O-H = ',f8.5, &
+           ' A, H-H = ',f8.5,' A')
+  deallocate(oxygen_atoms)
+end subroutine init_settle
+
+
+subroutine apply_constraints(x_reference, x_candidate, shake_iterations, skip_lincs)
+!!-------------------------------------------------------------------------------
+!!  Apply each active position-constraint solver to one integration update.
+!!-------------------------------------------------------------------------------
+  real(8), intent(in) :: x_reference(:)
+  real(8), intent(inout) :: x_candidate(:)
+  integer, intent(out), optional :: shake_iterations
+  logical, intent(in), optional :: skip_lincs
+
+  integer :: iterations, failed_oxygen, failed_lincs_constraint
+  logical :: settled, lincs_applied, do_lincs
+  real(8) :: lincs_error
+  character(len=100) :: message
+#if defined(PROFILING)
+  real(8) :: constraint_start_time
+  constraint_start_time = rtime()
+#endif
+
+  iterations = 0
+  do_lincs = lincs_is_active()
+  if (present(skip_lincs)) do_lincs = do_lincs .and. .not. skip_lincs
+  if (do_lincs) then
+    lincs_applied = lincs_positions(x_reference, x_candidate, &
+                                    failed_lincs_constraint, lincs_error)
+    if (.not. lincs_applied) then
+      if (lincs_error >= 0.0d0) then
+        write(message,'(a,i0,a,es12.4)') 'LINCS failed for constraint ', &
+          failed_lincs_constraint, '; maximum relative error = ', lincs_error
+      else
+        write(message,'(a,i0)') 'LINCS failed for constraint ', failed_lincs_constraint
+      end if
+      call die(trim(message))
+    end if
+    if (lincs_error > 1.0d-4) then
+      write(message,'(a,es12.4)') 'LINCS maximum relative constraint error = ', &
+                                  lincs_error
+      call die(trim(message))
+    end if
+  end if
+  if (settle_is_active()) then
+    settled = settle_positions(x_reference, x_candidate, failed_oxygen)
+    if (.not. settled) then
+      write(message,'(a,i0)') 'SETTLE failed for HOH oxygen atom ', failed_oxygen
+      call die(trim(message))
+    end if
+  end if
+  if (shake_constraints > 0) iterations = shake(x_reference, x_candidate)
+  if (present(shake_iterations)) shake_iterations = iterations
+#if defined(PROFILING)
+  profile(7)%time = profile(7)%time + rtime() - constraint_start_time
+#endif
+end subroutine apply_constraints
+
+
+subroutine apply_dynamics_constraints(iterations)
+  integer, intent(out) :: iterations
+  logical :: already_applied
+#if defined(USE_MPI)
+  logical :: success
+  integer :: failed
+  real(8) :: error
+  character(len=120) :: message
+#if defined(PROFILING)
+  real(8) :: start_time
+#endif
+#endif
+  iterations = 0
+  already_applied = .false.
+#if defined(USE_MPI)
+  if (lincs_mpi_active()) then
+#if defined(PROFILING)
+    start_time = rtime()
+#endif
+    success = lincs_positions_mpi(xx, x, failed, error)
+#if defined(PROFILING)
+    profile(7)%time = profile(7)%time + rtime() - start_time
+#endif
+    if (.not. success) then
+      write(message,'(a,i0,a,es12.4)') 'MPI LINCS failed at constraint ', failed, &
+                                    '; maximum relative error = ', error
+      call die(trim(message))
+    end if
+    already_applied = .true.
+  end if
+#endif
+  if (nodeid == 0 .and. constraint_count > 0) then
+    call apply_constraints(xx, x, iterations, already_applied)
+    v(:) = (x(:)-xx(:))/dt
+  end if
+end subroutine apply_dynamics_constraints
+
+
 subroutine initial_shaking
-!!!--------------------------------------------------------------------------------
-!!  subroutine  **initial_shaking**
-!!
-!!!--------------------------------------------------------------------------------
-  integer                        :: niter
+!!-------------------------------------------------------------------------------
+!!  Project generated positions and velocities onto all active constraints.
+!!-------------------------------------------------------------------------------
+  integer :: niter
 
-  xx(:)=x(:)
-  niter=shake(xx, x)
+  xx(:) = x(:)
+  call apply_constraints(xx, x, niter)
   write(*,100) 'x', niter
-100 format('Initial ',a,'-shaking required',i4,&
-    ' interations per molecule on average.')
+100 format('Initial ',a,' constraints required ',i4, &
+           ' SHAKE iterations per molecule on average.')
 
-  xx(:)=x(:)-dt*v(:)
-  niter=shake(x, xx)
+  xx(:) = x(:)-dt*v(:)
+  call apply_constraints(x, xx, niter)
   write(*,100) 'v', niter
 
-  v(:)=(x(:)-xx(:))/dt
-
+  v(:) = (x(:)-xx(:))/dt
 end subroutine initial_shaking
 
 
@@ -2861,13 +3302,18 @@ logical function initialize()
     logical                                         :: need_restart
     character(len=80)                               :: instring
     logical                                         :: inlog
+    logical                                         :: has_new_constraint_key
+    logical                                         :: has_legacy_constraint_key
+    logical                                         :: legacy_constraint_input
     integer                                         :: mask_rows
+    character(len=16)                               :: solute_algorithm_name
+    character(len=16)                               :: solvent_algorithm_name
 
     !This function initializes the following variables:
     !  nsteps, stepsize, dt
     !  Temp0, tau_T, iseed, Tmaxw
     !  use_LRF, NBcycle, Rcpp, Rcww, Rcpw, Rcq
-    !  shake_solute, shake_solvent, shake_hydrogens
+    !  constrain_solute, constrain_solvent, constrain_hydrogens
     !  fk_pshell
     !  fk_wsphere=-1, wpol_restr, wpol_born
     !  fkwpol=-1, Dwmz=-1 (values  ized to -1 will be set in water_sphere, once target radius is known)
@@ -3056,13 +3502,11 @@ logical function initialize()
       write(*,'(a)') 'Excluded atoms coupled to their own heat bath.'
     case ('none')
       write(*,'(a)') 'Excluded atoms are not coupled to a heat bath.'
-    case ('frozen')
-      write(*,'(a)') 'Excluded atoms are frozen at their current positions.'
     case ('legacy')
       write(*,'(a)') '>>> WARNING: excluded_thermostat legacy scales excluded atoms with the'
       write(*,'(a)') '             free-atom bath factor; this can overheat excluded atoms.'
     case default
-      write(*,'(a)') '>>> ERROR: excluded_thermostat must be separate, none, frozen or legacy.'
+      write(*,'(a)') '>>> ERROR: excluded_thermostat must be separate, none or legacy.'
       initialize = .false.
     end select
 12  format ('Target temperature  =',f10.2)
@@ -3080,26 +3524,124 @@ logical function initialize()
 15  format ('Maxwell temperature =',f10.2)
 16  format ('Random number seed  =',i10)
 
-    ! --- shake, LRF
-    if(.not. prm_get_logical_by_key('shake_solvent', shake_solvent, .true.)) then
-      write(*,'(a)') '>>> Error: shake_solvent must be on or off.'
+    ! --- constraints, LRF
+    ! New solver-neutral switches take precedence.  The shake_* spellings are
+    ! accepted as compatibility aliases and retain SHAKE/SHAKE when no explicit
+    ! constraint_algorithm is supplied, so existing input files do not silently
+    ! change trajectories before they are deliberately migrated.
+    legacy_constraint_input = .false.
+
+    has_new_constraint_key = prm_get_line_by_key('constrain_solvent', instring)
+    has_legacy_constraint_key = prm_get_line_by_key('shake_solvent', instring)
+    if (has_new_constraint_key .and. has_legacy_constraint_key) then
+      write(*,'(a)') '>>> Error: specify only constrain_solvent, not also shake_solvent.'
       initialize = .false.
     end if
-    write(*,17) 'all solvent bonds', onoff(shake_solvent)
-17  format('SHAKE ',a,t32,'= ',a3)
+    if (has_new_constraint_key) then
+      if (.not. prm_get_logical_by_key('constrain_solvent', constrain_solvent)) then
+        write(*,'(a)') '>>> Error: constrain_solvent must be on or off.'
+        initialize = .false.
+      end if
+    else if (has_legacy_constraint_key) then
+      legacy_constraint_input = .true.
+      if (.not. prm_get_logical_by_key('shake_solvent', constrain_solvent)) then
+        write(*,'(a)') '>>> Error: shake_solvent must be on or off.'
+        initialize = .false.
+      end if
+    else
+      constrain_solvent = .true.
+    end if
 
-    if(.not. prm_get_logical_by_key('shake_solute', shake_solute, .false.)) then
-      write(*,'(a)') '>>> Error: shake_solute must be on or off.'
+    has_new_constraint_key = prm_get_line_by_key('constrain_solute', instring)
+    has_legacy_constraint_key = prm_get_line_by_key('shake_solute', instring)
+    if (has_new_constraint_key .and. has_legacy_constraint_key) then
+      write(*,'(a)') '>>> Error: specify only constrain_solute, not also shake_solute.'
       initialize = .false.
     end if
-    write(*,17) 'all solute bonds', onoff(shake_solute)
+    if (has_new_constraint_key) then
+      if (.not. prm_get_logical_by_key('constrain_solute', constrain_solute)) then
+        write(*,'(a)') '>>> Error: constrain_solute must be on or off.'
+        initialize = .false.
+      end if
+    else if (has_legacy_constraint_key) then
+      legacy_constraint_input = .true.
+      if (.not. prm_get_logical_by_key('shake_solute', constrain_solute)) then
+        write(*,'(a)') '>>> Error: shake_solute must be on or off.'
+        initialize = .false.
+      end if
+    else
+      constrain_solute = .false.
+    end if
 
-    if(.not. prm_get_logical_by_key('shake_hydrogens', shake_hydrogens, .false.)) then
-      write(*,'(a)') '>>> Error: shake_hydrogens must be on or off.'
+    has_new_constraint_key = prm_get_line_by_key('constrain_hydrogens', instring)
+    has_legacy_constraint_key = prm_get_line_by_key('shake_hydrogens', instring)
+    if (has_new_constraint_key .and. has_legacy_constraint_key) then
+      write(*,'(a)') '>>> Error: specify only constrain_hydrogens, not also shake_hydrogens.'
       initialize = .false.
     end if
-    write(*,17) 'all bonds to hydrogen', onoff(shake_hydrogens)
+    if (has_new_constraint_key) then
+      if (.not. prm_get_logical_by_key('constrain_hydrogens', constrain_hydrogens)) then
+        write(*,'(a)') '>>> Error: constrain_hydrogens must be on or off.'
+        initialize = .false.
+      end if
+    else if (has_legacy_constraint_key) then
+      legacy_constraint_input = .true.
+      if (.not. prm_get_logical_by_key('shake_hydrogens', constrain_hydrogens)) then
+        write(*,'(a)') '>>> Error: shake_hydrogens must be on or off.'
+        initialize = .false.
+      end if
+    else
+      constrain_hydrogens = .false.
+    end if
 
+    if (prm_get_line_by_key('constraint_algorithm', instring)) then
+      solute_algorithm_name = ''
+      solvent_algorithm_name = ''
+      read(instring, *, iostat=fstat) solute_algorithm_name, solvent_algorithm_name
+      if (fstat /= 0) then
+        write(*,'(a)') '>>> Error: constraint_algorithm requires solute and solvent methods.'
+        initialize = .false.
+      end if
+      call upcase(solute_algorithm_name)
+      call upcase(solvent_algorithm_name)
+    else if (legacy_constraint_input) then
+      solute_algorithm_name = 'SHAKE'
+      solvent_algorithm_name = 'SHAKE'
+      write(*,'(a)') '>>> WARNING: shake_* input keys are deprecated; use constrain_*.'
+    else
+      solute_algorithm_name = 'LINCS'
+      solvent_algorithm_name = 'SETTLE'
+    end if
+
+    select case (trim(solute_algorithm_name))
+    case ('SHAKE')
+      solute_constraint_algorithm = CONSTRAINT_SHAKE
+    case ('LINCS')
+      solute_constraint_algorithm = CONSTRAINT_LINCS
+    case default
+      write(*,'(a,a)') '>>> Error: unsupported solute constraint algorithm: ', &
+                       trim(solute_algorithm_name)
+      initialize = .false.
+    end select
+    select case (trim(solvent_algorithm_name))
+    case ('SHAKE')
+      solvent_constraint_algorithm = CONSTRAINT_SHAKE
+    case ('SETTLE')
+      solvent_constraint_algorithm = CONSTRAINT_SETTLE
+    case ('LINCS')
+      solvent_constraint_algorithm = CONSTRAINT_LINCS
+    case default
+      write(*,'(a,a)') '>>> Error: unsupported solvent constraint algorithm: ', &
+                       trim(solvent_algorithm_name)
+      initialize = .false.
+    end select
+
+    write(*,17) 'solvent', onoff(constrain_solvent)
+    write(*,17) 'solute', onoff(constrain_solute)
+    write(*,17) 'bonds to hydrogen', onoff(constrain_hydrogens)
+    write(*,'(a,a,1x,a)') 'Constraint algorithms = ', trim(solute_algorithm_name), &
+                          trim(solvent_algorithm_name)
+17  format('Constrain ',a,t32,'= ',a3)
 
     yes = prm_get_logical_by_key('lrf', use_LRF, .false.)
     if(use_LRF) then
@@ -3129,12 +3671,55 @@ logical function initialize()
       if(.not. prm_get_real8_by_key('minimize_step_size', min_step)) then
         min_step = 0.001
       end if
+
+      ! Minimizer selection. FIRE is the default; steepest descent is retained
+      ! as a baseline for comparison.
+      if(prm_get_string_by_key('minimize_method', instring)) then
+        call upcase(instring)
+        select case (trim(instring))
+        case ('FIRE')
+          min_method = MIN_FIRE
+        case ('SD', 'STEEPEST_DESCENT')
+          min_method = MIN_SD
+        case default
+          write(*,*) '>>> ERROR: unknown minimize_method: ', trim(instring)
+          initialize = .false.
+        end select
+      else
+        min_method = MIN_FIRE
+      end if
+
+      yes = prm_get_logical_by_key('minimize_freeze_qatoms', min_freeze_qatoms, .false.)
+
       write(*,2001) max_min_steps
       write(*,2002) min_tol
-      write(*,2003) min_step
+      if(min_freeze_qatoms) write(*,'(a)') 'Q-atoms (ligands) held fixed during minimization.'
+
+      if(min_method .eq. MIN_FIRE) then
+        write(*,'(a)') 'Minimizer            = FIRE'
+        yes = prm_get_real8_by_key('fire_dt_start', fire_dt_start_fs, 0.1d0)
+        yes = prm_get_real8_by_key('fire_dt_max',   fire_dt_max_fs,   1.0d0)
+        yes = prm_get_integer_by_key('fire_nmin',   fire_nmin,        5)
+        yes = prm_get_real8_by_key('fire_maxmove',  fire_maxmove,     0.1d0)
+        yes = prm_get_real8_by_key('fire_list_skin', fire_list_skin,  0.1d0)
+        write(*,2004) fire_dt_start_fs
+        write(*,2005) fire_dt_max_fs
+        write(*,2006) fire_nmin
+        write(*,2007) fire_maxmove
+        write(*,2008) fire_list_skin
+      else
+        write(*,'(a)') 'Minimizer            = steepest descent'
+        write(*,2003) min_step
+      end if
+
 2001  format ('Max minimize steps  =',i10)
 2002  format ('Minimize tolerance  =',f10.4,' kcal/mol/A')
 2003  format ('Minimize step size  =',f10.6,' A')
+2004  format ('FIRE initial dt     =',f10.4,' fs')
+2005  format ('FIRE maximum dt     =',f10.4,' fs')
+2006  format ('FIRE N_min          =',i10)
+2007  format ('FIRE max move/step  =',f10.4,' A')
+2008  format ('FIRE pair list skin =',f10.4,' A')
     end if
 
     ! --- Rcpp, Rcww, Rcpw, Rcq, RcLRF
@@ -3657,7 +4242,7 @@ logical function old_initialize(fu)
     !  nsteps, stepsize, dt
     !  Temp0, tau_T, iseed, Tmaxw
     !  usr_LRF, NBcycle, Rcpp, Rcww, Rcpw, Rcq
-    !  shake_solvent, shake_solute, shake_hydrogens
+    !  constrain_solvent, constrain_solute, constrain_hydrogens
     !  fk_pshell
 
     !  fk_wsphere=-1, wpol_restr, wpol_born fkwpol=-1, Dwmz=-1, awmz=-1
@@ -3688,7 +4273,7 @@ logical function old_initialize(fu)
     RcLRF = 999.
     exclude_bonded = .false.
     force_rms = .false.
-    shake_hydrogens = .false.
+    constrain_hydrogens = .false.
     itemp_cycle = iout_cycle_default
     awmz = -1
 
@@ -3741,13 +4326,15 @@ logical function old_initialize(fu)
 
     ! --- shake_flag
     read (fu,*) shake_flag
-    shake_solvent = .false.
-    shake_solute = .false.
+    constrain_solvent = .false.
+    constrain_solute = .false.
+    solute_constraint_algorithm = CONSTRAINT_SHAKE
+    solvent_constraint_algorithm = CONSTRAINT_SHAKE
     if(shake_flag >= 1) then
-      shake_solvent = .true.
+      constrain_solvent = .true.
     end if
     if(shake_flag == 2) then
-      shake_solute = .true.
+      constrain_solute = .true.
     end if
 
     write (*,30) shake_flag
@@ -4323,6 +4910,467 @@ subroutine temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
 end subroutine temperature
 
 
+!-------------------------------------------------------------------------------
+subroutine fire_constrain_hydrogens
+!!-------------------------------------------------------------------------------
+!!  **subroutine fire_constrain_hydrogens**
+!!
+!!  Adds every remaining bond to hydrogen to the SHAKE constraint set, for the
+!!  duration of the minimization only.
+!!
+!!  This is not a performance tweak, it is required for correctness. The polar
+!!  hydrogens of AMBER-type force fields (HW on water, HO on hydroxyls) carry a
+!!  large positive charge and *no* Lennard-Jones core, so the only thing keeping
+!!  them out of a nearby acceptor is the LJ shell of the heavy atom they hang
+!!  off. Let their bond stretch and a hydrogen can reach past that shell and
+!!  fall into the bare Coulomb well of an acceptor, where the energy diverges to
+!!  -infinity and the force to +infinity. MD never gets there; a minimizer walks
+!!  straight in. Crystallographic waters are the usual victims, since they are
+!!  part of the solute and 'constrain_solvent' therefore leaves them flexible.
+!!
+!!  Constraining the bonds to hydrogen removes that degree of freedom and costs
+!!  nothing: they sit at their equilibrium length anyway. The MD constraint set
+!!  is parked and handed back afterwards, so the dynamics that follow run with
+!!  exactly the constraints the user asked for.
+!!
+!!  All the new constraints go into one group. SHAKE only uses the grouping to
+!!  bound its iteration, and this is what Q does anyway when constrain_hydrogens is
+!!  set: a protein is a single molecule, so all of its hydrogens land in one
+!!  group. We must not group by molecule here in any case, because
+!!  shrink_topology fills the holes it leaves by swapping in the last bond,
+!!  which destroys the ordering of bnd that init_shake relies on.
+!!
+!!  Master node only: shake_mol lives there.
+!!-------------------------------------------------------------------------------
+  integer :: b, ia, ja, k, n_new
+
+  fire_h_constrained = .false.
+  if (nodeid .ne. 0) return
+
+  n_new = 0
+  do b = 1, nbonds
+    if (bnd(b)%cod .le. 0) cycle
+    ia = bnd(b)%i
+    ja = bnd(b)%j
+    ! Leave the alchemical region alone: q-atom bond lengths are lambda-dependent
+    ! and owned by the FEP machinery, and ligand hydrogens have a real LJ core.
+    if (iqatom(ia) .ne. 0 .or. iqatom(ja) .ne. 0) cycle
+    if (heavy(ia) .and. heavy(ja)) cycle
+    n_new = n_new + 1
+  end do
+
+  if (n_new .eq. 0) return
+
+  ! Park the MD constraint set. Shallow copy: the bond arrays it points at are
+  ! left untouched and handed straight back in fire_release_hydrogens.
+  call move_alloc(shake_mol, md_shake_mol)
+  md_shake_molecules   = shake_molecules
+  md_shake_constraints = shake_constraints
+
+  allocate(shake_mol(md_shake_molecules + 1), stat=alloc_status)
+  call check_alloc('FIRE shake set')
+  shake_mol(1:md_shake_molecules) = md_shake_mol(1:md_shake_molecules)
+
+  k = md_shake_molecules + 1
+  allocate(shake_mol(k)%bond(n_new), stat=alloc_status)
+  call check_alloc('FIRE shake bond array')
+  shake_mol(k)%nconstraints = 0
+
+  do b = 1, nbonds
+    if (bnd(b)%cod .le. 0) cycle
+    ia = bnd(b)%i
+    ja = bnd(b)%j
+    if (iqatom(ia) .ne. 0 .or. iqatom(ja) .ne. 0) cycle
+    if (heavy(ia) .and. heavy(ja)) cycle
+    shake_mol(k)%nconstraints = shake_mol(k)%nconstraints + 1
+    shake_mol(k)%bond(shake_mol(k)%nconstraints)%i     = ia
+    shake_mol(k)%bond(shake_mol(k)%nconstraints)%j     = ja
+    shake_mol(k)%bond(shake_mol(k)%nconstraints)%dist2 = bondlib(bnd(b)%cod)%bnd0**2
+  end do
+
+  shake_molecules    = md_shake_molecules + 1
+  shake_constraints  = md_shake_constraints + n_new
+  fire_h_constrained = .true.
+
+  write(*,100) n_new, shake_constraints
+100 format('Constraining ',i8,' bonds to hydrogen for the minimization', &
+           ' (',i8,' constraints in total).')
+
+
+end subroutine fire_constrain_hydrogens
+
+
+!-------------------------------------------------------------------------------
+subroutine fire_release_hydrogens
+!!-------------------------------------------------------------------------------
+!!  **subroutine fire_release_hydrogens**
+!!  Hands the MD constraint set back after minimization.
+!!-------------------------------------------------------------------------------
+  integer :: k
+
+  if (.not. fire_h_constrained) return
+
+  do k = md_shake_molecules + 1, shake_molecules
+    deallocate(shake_mol(k)%bond)
+  end do
+
+  deallocate(shake_mol)
+  call move_alloc(md_shake_mol, shake_mol)
+
+  shake_molecules   = md_shake_molecules
+  shake_constraints = md_shake_constraints
+  fire_h_constrained = .false.
+
+end subroutine fire_release_hydrogens
+
+
+!-------------------------------------------------------------------------------
+subroutine fire_minimize
+!!-------------------------------------------------------------------------------
+!!  **subroutine fire_minimize**
+!!  Energy minimization with the Fast Inertial Relaxation Engine.
+!!
+!!  Bitzek, Koskinen, Gaehler, Moseler & Gumbsch, "Structural Relaxation Made
+!!  Simple", Phys. Rev. Lett. 97, 170201 (2006).
+!!
+!!  Run in two phases, for reasons that are structural rather than algorithmic:
+!!
+!!  Phase 1 relaxes the bonded terms while retaining the SCAAS boundary
+!!  restraints. Prepared structures routinely arrive with hydrogens that the
+!!  topology bonds to one atom but the coordinates place next to another -
+!!  protonated Asp/Glu (ASH/GLH) are the usual offenders, and their O-H bonds can
+!!  start out stretched to 2.5 A. Repairing that without non-bonded terms is safe,
+!!  because there is no Coulomb well for a hydrogen to fall into.
+!!
+!!  Phase 2 then minimizes the full force field with the bonds to hydrogen held
+!!  by SHAKE (see fire_constrain_hydrogens). By now those bonds sit at their
+!!  equilibrium length, so adding the constraints displaces nothing.
+!!
+!!  Every atom is propagated, including Q-atoms and solvent; atoms outside the
+!!  simulation sphere are held by the usual fk_fix restraints, exactly as in MD.
+!!  Gradients are projected onto the active constraint manifold before they are
+!!  used for convergence or FIRE propagation. Raw gradients generally do not
+!!  vanish at a constrained minimum because constraint reactions balance their
+!!  normal components.
+!!-------------------------------------------------------------------------------
+  real(8), allocatable :: v_save(:)
+  real, allocatable :: wpol_state_save(:,:)
+
+  if (nodeid .eq. 0) then
+    call centered_heading('Energy Minimization (FIRE)', '-')
+    write(*,'(a)') 'Fast inertial relaxation engine, Bitzek et al. PRL 97, 170201 (2006).'
+    write(*,'(a)') 'All atoms are mobile; convergence is on the RMS force.'
+    write(*,*)
+  end if
+
+  ! MD carries on with the velocities it was given (restart, or drawn from the
+  ! initial temperature). FIRE must not consume them, so park them.
+  allocate(v_save(nat3), stat=alloc_status)
+  call check_alloc('FIRE velocity buffer')
+  v_save(1:nat3) = v(1:nat3)
+
+  ! watpol accumulates MD running averages on every force evaluation. FIRE's
+  ! evaluations are not MD samples: retaining them makes the first MD update
+  ! depend on the minimization step count. Preserve the pre-MD state exactly,
+  ! including the correction loaded from a restart. Shell geometry is rebuilt
+  ! from the new coordinates by the next ordinary force evaluation.
+  if (nodeid .eq. 0 .and. wpol_restr .and. allocated(wshell)) then
+    allocate(wpol_state_save(3, nwpolr_shell), stat=alloc_status)
+    call check_alloc('FIRE water polarization buffer')
+    wpol_state_save(1,:) = wshell(:)%avtheta
+    wpol_state_save(2,:) = wshell(:)%avn_insh
+    wpol_state_save(3,:) = wshell(:)%theta_corr
+  end if
+
+  ! ---- Phase 1: bonded terms only, hydrogens free ----
+  if (nodeid .eq. 0) write(*,'(a)') '--- Phase 1: bonded terms only ---'
+  min_bonded_only = .true.
+  call fire_descend
+  min_bonded_only = .false.
+
+  ! ---- Phase 2: full force field, bonds to hydrogen constrained ----
+  if (nodeid .eq. 0) write(*,'(a)') '--- Phase 2: full force field ---'
+  call fire_constrain_hydrogens
+  call fire_descend
+  call fire_release_hydrogens
+
+  ! Hand the pre-minimization velocities back to MD.
+  v(1:nat3) = v_save(1:nat3)
+  deallocate(v_save)
+
+  if (allocated(wpol_state_save)) then
+    wshell(:)%avtheta = wpol_state_save(1,:)
+    wshell(:)%avn_insh = wpol_state_save(2,:)
+    wshell(:)%theta_corr = wpol_state_save(3,:)
+    deallocate(wpol_state_save)
+  end if
+
+end subroutine fire_minimize
+
+
+!-------------------------------------------------------------------------------
+subroutine fire_project_gradient(niter)
+!!-------------------------------------------------------------------------------
+!!  Project dE/dx onto the tangent space of the active position constraints.
+!!
+!!  apply_constraints already implements the mass-weighted projection needed by
+!!  the integrator. Apply it to a small virtual steepest-descent displacement and
+!!  recover the corresponding tangent gradient. The displacement is capped so
+!!  this remains a linear projection even when the initial force is very large.
+!!-------------------------------------------------------------------------------
+  integer, intent(out) :: niter
+  integer              :: i
+  real(8)               :: max_acceleration, projection_scale
+
+  niter = 0
+  if (shake_constraints+lincs_constraints+settle_constraints .eq. 0) return
+
+  max_acceleration = 0.0d0
+  do i = 1, natom
+    max_acceleration = max(max_acceleration, &
+      maxval(abs(d(3*i-2:3*i)))*winv(i))
+  end do
+  if (max_acceleration .le. 0.0d0) return
+
+  ! Normally use a 1e-6 virtual time factor, but cap the largest unconstrained
+  ! trial displacement at 1e-4 A for highly strained starting structures.
+  projection_scale = min(1.0d-6, 1.0d-4/max_acceleration)
+  xx(1:nat3) = x(1:nat3)
+  do i = 1, natom
+    xx(3*i-2:3*i) = x(3*i-2:3*i) &
+                    - projection_scale*winv(i)*d(3*i-2:3*i)
+  end do
+  call apply_constraints(x, xx, niter)
+  do i = 1, natom
+    d(3*i-2:3*i) = -(xx(3*i-2:3*i)-x(3*i-2:3*i)) &
+                    /(projection_scale*winv(i))
+  end do
+end subroutine fire_project_gradient
+
+
+!-------------------------------------------------------------------------------
+subroutine fire_descend
+!!-------------------------------------------------------------------------------
+!!  **subroutine fire_descend**
+!!  One FIRE descent, on whatever potential pot_energy currently evaluates.
+!!
+!!  Damped MD in which the velocity is steered towards the force direction
+!!  (F2: v -> (1-alpha)*v + alpha*|v|*Fhat) and the system is frozen the moment
+!!  the power P = F.v turns negative, i.e. as soon as it starts to climb. The
+!!  time step grows while the descent stays productive (F3) and is cut hard on
+!!  every uphill event (F4), so the step size adapts to the local curvature with
+!!  no line search at all.
+!!-------------------------------------------------------------------------------
+  integer              :: i, i3, iter, n_pos, niter, n_rebuild
+  real(8)              :: dt_fire, dt_max, dt_floor, alpha
+  real(8)              :: power, vnorm, fnorm, fsq, frms, fmax
+  real(8)              :: fi, vscale, dxnorm, dxi(3), dmax
+  logical              :: converged, need_rebuild
+  real(8), allocatable :: x_ref(:)
+
+  ! Q's internal time unit: dt = FS_TO_INTERNAL * (step size in fs)
+  dt_fire  = FS_TO_INTERNAL * fire_dt_start_fs
+  dt_max   = FS_TO_INTERNAL * fire_dt_max_fs
+  dt_floor = FS_TO_INTERNAL * 1.0d-4        ! keep dt off zero after repeated cuts
+  alpha    = fire_alpha_start
+  n_pos    = 0
+  n_rebuild = 1
+  converged = .false.
+  frms = 0.0d0
+  fmax = 0.0d0
+
+  allocate(x_ref(nat3), stat=alloc_status)
+  call check_alloc('FIRE reference coordinates')
+
+  ! FIRE starts from rest.
+  v(1:nat3) = 0.0d0
+
+  ! Project the starting structure onto the constraints in force.
+  if (nodeid .eq. 0 .and. &
+      shake_constraints+lincs_constraints+settle_constraints .gt. 0) then
+    xx(1:nat3) = x(1:nat3)
+    call apply_constraints(xx, x, niter)
+  end if
+
+#if defined(USE_MPI)
+  call MPI_Bcast(x, nat3, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+  if (ierr .ne. 0) call die('fire_descend/MPI_Bcast x init')
+#endif
+
+  call make_pair_lists
+  x_ref(1:nat3) = x(1:nat3)
+
+  if (nodeid .eq. 0) write(*,300)
+300 format('   step',t13,'E_pot',t32,'F_rms',t47,'F_max',t60,'dt/fs',t70,'alpha')
+
+  do iter = 1, max_min_steps
+
+    ! Refresh the pair lists (and with them the LRF expansion) once an atom has
+    ! drifted further than the list skin. A single FIRE step can move an atom as
+    ! far as MD moves it in hundreds of steps, so the fixed NBcycle interval the
+    ! MD loop uses is far too coarse here: stale lists let atoms interpenetrate
+    ! and stale LRF centres inject spurious long-range forces.
+    need_rebuild = .false.
+    if (nodeid .eq. 0 .and. iter .gt. 1) then
+      ! Compare squared drift against the squared skin to skip a per-atom sqrt.
+      dmax = 0.0d0
+      do i = 1, natom
+        i3 = 3*(i-1)
+        dxnorm = (x(i3+1)-x_ref(i3+1))**2 + (x(i3+2)-x_ref(i3+2))**2 &
+               + (x(i3+3)-x_ref(i3+3))**2
+        if (dxnorm .gt. dmax) dmax = dxnorm
+      end do
+      if (dmax .gt. fire_list_skin**2) need_rebuild = .true.
+    end if
+
+#if defined(USE_MPI)
+    call MPI_Bcast(need_rebuild, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+    if (ierr .ne. 0) call die('fire_descend/MPI_Bcast need_rebuild')
+#endif
+    if (need_rebuild) then
+      call make_pair_lists
+      x_ref(1:nat3) = x(1:nat3)
+      n_rebuild = n_rebuild + 1
+    end if
+
+    call pot_energy
+
+    if (nodeid .eq. 0) then
+      call fire_project_gradient(niter)
+
+      ! d holds the constraint-projected gradient dE/dx, so the force is F = -d.
+      fsq  = 0.0d0
+      fmax = 0.0d0
+      do i = 1, nat3
+        fi = d(i)
+        if (fi .ne. fi) then          ! NaN guard
+          d(i) = 0.0d0
+          fi   = 0.0d0
+        end if
+        fsq = fsq + fi*fi
+        if (abs(fi) .gt. fmax) fmax = abs(fi)
+      end do
+      frms = sqrt(fsq/real(nat3, 8))
+
+      if (mod(iter-1, 50) .eq. 0) then
+        write(*,301) iter, E%potential, frms, fmax, dt_fire/FS_TO_INTERNAL, alpha
+      end if
+301   format(i7,t10,es15.6,t30,f12.3,t45,f12.3,t58,f7.4,t68,f8.5)
+
+      if (frms .lt. min_tol) converged = .true.
+    end if
+
+#if defined(USE_MPI)
+    call MPI_Bcast(converged, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+    if (ierr .ne. 0) call die('fire_descend/MPI_Bcast converged')
+#endif
+    if (converged) exit
+
+    if (nodeid .eq. 0) then
+      ! --- F1: P = F.v
+      power = 0.0d0
+      do i = 1, nat3
+        power = power - d(i)*v(i)
+      end do
+      ! v = 0 on entry, so P = 0 on the first step: do not trip the freeze branch.
+      if (iter .eq. 1) power = 1.0d0
+
+      if (power .gt. 0.0d0) then
+        ! --- F3: descent is productive, accelerate and ease off the mixing
+        n_pos = n_pos + 1
+        if (n_pos .gt. fire_nmin) then
+          dt_fire = min(dt_fire*fire_finc, dt_max)
+          alpha   = alpha*fire_falpha
+        end if
+
+        ! --- F2: v -> (1-alpha)*v + alpha*|v|*Fhat
+        vnorm = sqrt(dot_product(v(1:nat3), v(1:nat3)))
+        fnorm = sqrt(fsq)
+        if (fnorm .gt. 1.0d-10) then
+          vscale = alpha*vnorm/fnorm
+          do i = 1, nat3
+            v(i) = (1.0d0 - alpha)*v(i) - vscale*d(i)
+          end do
+        end if
+      else
+        ! --- F4: heading uphill, freeze and cut the time step
+        n_pos     = 0
+        dt_fire   = max(dt_fire*fire_fdec, dt_floor)
+        alpha     = fire_alpha_start
+        v(1:nat3) = 0.0d0
+      end if
+
+      ! --- MD: semi-implicit Euler, displacement capped per atom.
+      ! The paper suggests equalising the masses so every degree of freedom
+      ! shares one velocity scale. We keep the true masses instead: SHAKE
+      ! distributes its corrections by inverse mass, so a unit-mass integrator
+      ! would be inconsistent with the constraint solver.
+      do i = 1, natom
+        i3 = 3*(i-1)
+
+        ! Optionally hold the Q-atoms fixed. The two dual-topology ligands do not
+        ! interact (each is a dummy in the other's state, so their pairwise force
+        ! is exactly zero), so relaxing them is physically sound and lets each
+        ! ligand settle local strain against its own pocket. But freezing them is
+        ! offered for callers who want the ligand poses left exactly as prepared
+        ! and only the environment relaxed -- the behaviour of the old minimiser.
+        if (min_freeze_qatoms .and. iqatom(i) .ne. 0) then
+          v(i3+1:i3+3) = 0.0d0
+          cycle
+        end if
+
+        v(i3+1:i3+3) = v(i3+1:i3+3) - d(i3+1:i3+3)*winv(i)*dt_fire
+        dxi(1:3)     = v(i3+1:i3+3)*dt_fire
+
+        dxnorm = sqrt(dxi(1)**2 + dxi(2)**2 + dxi(3)**2)
+        if (dxnorm .gt. fire_maxmove) then
+          vscale       = fire_maxmove/dxnorm
+          dxi(1:3)     = dxi(1:3)*vscale
+          ! keep the velocity consistent with the truncated move
+          v(i3+1:i3+3) = dxi(1:3)/dt_fire
+        end if
+
+        xx(i3+1:i3+3) = x(i3+1:i3+3)
+        x(i3+1:i3+3)  = x(i3+1:i3+3) + dxi(1:3)
+      end do
+
+      ! Constraints, as in the MD integrator.
+      if (shake_constraints+lincs_constraints+settle_constraints .gt. 0) then
+        call apply_constraints(xx, x, niter)
+        v(1:nat3) = (x(1:nat3) - xx(1:nat3))/dt_fire
+      end if
+    end if
+
+#if defined(USE_MPI)
+    call MPI_Bcast(x, nat3, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    if (ierr .ne. 0) call die('fire_descend/MPI_Bcast x')
+#endif
+  end do
+
+  if (nodeid .eq. 0) then
+    write(*,301) min(iter, max_min_steps), E%potential, frms, fmax, &
+                 dt_fire/FS_TO_INTERNAL, alpha
+    if (converged) then
+      write(*,302) min(iter, max_min_steps), frms
+    else
+      write(*,303) max_min_steps, frms, min_tol
+    end if
+    write(*,304) E%potential, fmax
+    write(*,305) n_rebuild
+302 format('FIRE converged after ',i6,' steps: projected RMS force = ',f10.4,' kcal/mol/A')
+303 format('>>> WARNING: FIRE did not converge in ',i6,' steps: projected RMS force = ', &
+           f10.4,' > tolerance ',f10.4,' kcal/mol/A')
+304 format('Energy after minimization = ',es15.6,' kcal/mol, projected max force = ', &
+           es12.4,' kcal/mol/A')
+305 format('Pair list rebuilds        = ',i6)
+    write(*,*)
+  end if
+
+  deallocate(x_ref)
+
+end subroutine fire_descend
+
+
 subroutine md_run
 !!-------------------------------------------------------------------------------
 !! subroutine **md_run**
@@ -4339,7 +5387,10 @@ subroutine md_run
   real(8)                         :: scale_i
   logical                         :: split_excl
   real(8)                         :: time0, time1, time_per_step, startloop
-  integer(4)                      :: time_completion
+  real(8)                         :: progress_percent
+  integer                         :: eta_total_seconds
+  integer                         :: eta_hours, eta_minutes, eta_seconds
+  real(8), parameter              :: timing_interval = 30.0d0
   ! minimization local variables
   integer                         :: min_iter, min_phase
   real(8)                         :: min_grms, min_E_last, min_alpha
@@ -4356,11 +5407,12 @@ subroutine md_run
   profile(4)%name = '   nbpwlist_time'
   profile(5)%name = '   nbqplist_time'
   profile(6)%name = '   nbqwlist_time'
-  profile(7)%name = 'SHAKE'
+  profile(7)%name = 'Constraints'
   profile(8)%name = 'Bonded Terms'
   profile(9)%name = 'Restraints'
   profile(10)%name = 'Nonbonded Terms'
   profile(11)%name = 'Update vel. & coords.'
+  profile(12)%name = 'Temperature & scaling'
 #endif
 
 #if defined(PROFILING)
@@ -4368,11 +5420,10 @@ subroutine md_run
   if (nodeid .eq. 0) then
     allocate(all_node_times(num_profiling_times*numnodes), stat=alloc_status) !vector for storing all node's node_times, used by mpi_gather at end of md_run
     call check_alloc('MPI profiling')
+    all_node_times(:) = 0.0
   end if
   allocate(node_times(num_profiling_times), stat=alloc_status) !each node's profiling times, used at end of md_run by mpi_gather
   call check_alloc('MPI profiling')
-
-  all_node_times(:) = 0.0
   node_times(:) = 0.0
 
 #endif
@@ -4385,11 +5436,6 @@ subroutine md_run
   ! calculate maximum temperature
   !**Martin Nervall-> Only master calc. temp for now.
   if (nodeid .eq. 0) then
-    if (.not. use_PBC .and. trim(excluded_thermostat) == 'frozen') then
-      do i = 1, natom
-        if (excl(i)) v(3*i-2:3*i) = 0.0
-      end do
-    end if
     Ekinmax = 1000.0*Ndegf*boltz*Temp0/2.0/real(natom)
 
     call temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
@@ -4411,11 +5457,6 @@ subroutine md_run
 120 format(a7,' temperatures are : Ttot =',f10.2,' Tfree =',f10.2)
     write (*,*)
 
-    ! init timer
-    time0 = rtime()
-
-    ! Init timer of total loop time
-    startloop = rtime()
   end if
 
   ! NEQ (lambda_scaling) validation, before the minimization pre-loop: pot_energy's
@@ -4432,9 +5473,13 @@ subroutine md_run
   end if
 
   !***********************************************************************
-  !       ENERGY MINIMIZATION (steepest descent, before MD)
+  !       ENERGY MINIMIZATION (before MD)
   !***********************************************************************
-  if (do_minimize) then
+  if (do_minimize .and. min_method .eq. MIN_FIRE) then
+    call fire_minimize
+  end if
+
+  if (do_minimize .and. min_method .eq. MIN_SD) then
     if (nodeid .eq. 0) then
       call centered_heading('Energy Minimization', '-')
       write(*,'(a)') 'Two-phase steepest descent energy minimization:'
@@ -4614,6 +5659,13 @@ subroutine md_run
 
   work_accumulated = 0.0_8
 
+  ! Start timing after any minimization so that progress estimates describe
+  ! the dynamics loop only.  time0 controls how often progress is reported.
+  if (nodeid .eq. 0) then
+    startloop = rtime()
+    time0 = startloop
+  end if
+
   !***********************************************************************
   !       begin MAIN DYNAMICS LOOP (Verlet leap-frog algorithm)
   !***********************************************************************
@@ -4633,15 +5685,22 @@ subroutine md_run
       end if
 
       if ((nodeid .eq. 0) .and. (istep > 0)) then
-        ! print timing info
-        call centered_heading('Timing', '-')
+        ! Pair lists may be rebuilt many times per second, so report progress
+        ! on a wall-clock cadence instead of at every rebuild.
         time1 = rtime()
-        time_per_step = (time1-time0)/NBcycle
-        time_completion = int(time_per_step*(nsteps-istep)/60)
-        time0 = time1
-        write(*,222) time_per_step, time_completion
-222     format('Seconds per step (wall-clock): ', f5.2, &
-          ' Estimated completion in',i6,' minutes')
+        if (time1-time0 .ge. timing_interval) then
+          time_per_step = (time1-startloop)/dble(istep)
+          progress_percent = 100.0d0*dble(istep)/dble(nsteps)
+          eta_total_seconds = ceiling(time_per_step*dble(nsteps-istep))
+          eta_hours = eta_total_seconds/3600
+          eta_minutes = mod(eta_total_seconds, 3600)/60
+          eta_seconds = mod(eta_total_seconds, 60)
+          time0 = time1
+          write(*,222) istep, nsteps, progress_percent, time_per_step, &
+                       eta_hours, eta_minutes, eta_seconds
+222       format('Progress ',i0,'/',i0,' (',f5.1,'%): ',f9.4, &
+            ' s/step, ETA ',i0,':',i2.2,':',i2.2)
+        end if
       end if
 
       ! update lists of nonbonded interaction pairs
@@ -4754,11 +5813,15 @@ subroutine md_run
       profile(11)%time = profile(11)%time + rtime() - start_loop_time1
 #endif
 
-      ! shake if necessary
-      if(shake_constraints > 0) then
-        niter=shake(xx, x)
-        v(:) = (x(:) - xx(:)) / dt
-      end if
+#endif
+    end if
+
+#ifndef DUM
+    call apply_dynamics_constraints(niter)
+#endif
+
+    if (nodeid == 0) then
+#ifndef DUM
 
       ! --- end of time step ---
 #if defined (PROFILING)
@@ -4888,7 +5951,7 @@ if (nodeid .eq. 0) then
   end do
 
 207 format('Total time of ',A25,T40,': ')
-208 format(f10.1,' ')
+208 format(f12.6,' ')
 209 format(I11)
 210 format(T30,'node:     ')
   write (*,*)
@@ -4898,7 +5961,7 @@ end if
 do i=1,num_profiling_times
   write (*,207) profile(i)%name,profile(i)%time
 end do
-207 format('Total time of ',A25,T40,': ',f15.1,' (s).')
+207 format('Total time of ',A25,T40,': ',f15.6,' (s).')
 #endif
 #endif
 
@@ -14583,7 +15646,7 @@ end subroutine offdiag
 subroutine p_restrain
    ! *** Local variables
   integer :: ir,i,j,k,i3,j3,k3,istate,n_ctr
-  real(8) :: fk,r2,erst,Edum,x2,y2,z2,wgt,b,db,dv,totmass,theta,rij,r2ij,rjk,r2jk,scp,f1
+  real(8) :: fk,r2,erst,Edum,x2,y2,z2,wgt,b,db,dv,totmass,theta,rij,r2ij,rjk,r2jk,scp,scp_force,f1
   real(8) :: dr(3), dr2(3), ctr(3), di(3), dk(3)
   real(8) :: fexp
 
@@ -14828,10 +15891,11 @@ subroutine p_restrain
     ! calculate the scalar product (scp) and the angle theta from it
     scp = ( dr(1)*dr2(1) + dr(2)*dr2(2) + dr(3)*dr2(3) )
     scp = scp / ( rij*rjk )
+    scp_force = scp
 
-    ! criteria inserted on the real angle force calculations to ensure no weird scp.
-    if ( scp .gt.  1.0 ) scp =  1.0
-    if ( scp .lt. -1.0 ) scp = -1.0
+    ! Match QGPU's finite-angle guard near collinear geometries.
+    if ( scp .gt. angle_cosine_limit ) scp = angle_cosine_limit
+    if ( scp .lt. -angle_cosine_limit ) scp = -angle_cosine_limit
 
     theta = acos(scp)
     db    = theta - (rstang(ir)%ang)*deg2rad
@@ -14840,22 +15904,16 @@ subroutine p_restrain
     Edum   = 0.5*rstang(ir)%fk*db**2
     dv     = wgt*rstang(ir)%fk*db
 
-    ! calculate sin(theta) to use in forces
-    f1 = sin ( theta )
-    if ( abs(f1) .lt. 1.e-12 ) then
-      ! avoid division by zero
-      f1 = -1.e12
-    else
-      f1 =  -1.0 / f1
-    end if
+    ! angle_cosine_limit keeps this denominator finite.
+    f1 = -1.0 / sin(theta)
 
             ! calculate di and dk
-    di(1) = f1 * ( dr2(1) / ( rij * rjk ) - scp * dr(1) / r2ij )
-    di(2) = f1 * ( dr2(2) / ( rij * rjk ) - scp * dr(2) / r2ij )
-    di(3) = f1 * ( dr2(3) / ( rij * rjk ) - scp * dr(3) / r2ij )
-    dk(1) = f1 * ( dr(1) / ( rij * rjk ) - scp * dr2(1) / r2jk )
-    dk(2) = f1 * ( dr(2) / ( rij * rjk ) - scp * dr2(2) / r2jk )
-    dk(3) = f1 * ( dr(3) / ( rij * rjk ) - scp * dr2(3) / r2jk )
+    di(1) = f1 * ( dr2(1) / ( rij * rjk ) - scp_force * dr(1) / r2ij )
+    di(2) = f1 * ( dr2(2) / ( rij * rjk ) - scp_force * dr(2) / r2ij )
+    di(3) = f1 * ( dr2(3) / ( rij * rjk ) - scp_force * dr(3) / r2ij )
+    dk(1) = f1 * ( dr(1) / ( rij * rjk ) - scp_force * dr2(1) / r2jk )
+    dk(2) = f1 * ( dr(2) / ( rij * rjk ) - scp_force * dr2(2) / r2jk )
+    dk(3) = f1 * ( dr(3) / ( rij * rjk ) - scp_force * dr2(3) / r2jk )
 
             ! update d
     d(i3+1) = d(i3+1) + dv*di(1)
@@ -15029,12 +16087,15 @@ subroutine pot_energy
     profile(8)%time = profile(8)%time + rtime() - start_loop_time1
 #endif
 
-    ! various restraints (skip during bonded-only minimization)
-    if (.not. min_bonded_only) then
-      if( .not. use_PBC ) then
-        call fix_shell     !Restrain all excluded atoms plus heavy solute atoms in the inner shell.
-      end if
+    ! The SCAAS boundary is part of the physical model and remains active in
+    ! both minimization phases. In particular, excluded atoms must not first
+    ! relax freely and then encounter fk_fix only when the full force field starts.
+    if (.not. use_PBC) then
+      call fix_shell       !Restrain excluded atoms and heavy atoms in the inner shell.
+    end if
 
+    ! Other restraints are skipped during bonded-only minimization.
+    if (.not. min_bonded_only) then
       call p_restrain       !Seq. restraints, dist. restaints, etc
 
       if( .not. use_PBC ) then
@@ -15559,11 +16620,6 @@ subroutine prep_sim
 
   !       Prepare an array of inverse masses
   winv(:) = 1./iaclib(iac(:))%mass
-  ! Frozen excluded atoms: zero inverse mass, so forces, SHAKE corrections and
-  ! minimization steps never move them (velocities are zeroed in md_run).
-  if (.not. use_PBC .and. trim(excluded_thermostat) == 'frozen') then
-    where (excl(1:natom)) winv(1:natom) = 0.
-  end if
 
 
   if(use_PBC .and. control_box) then
@@ -15616,7 +16672,7 @@ subroutine qangle (istate)
 
   ! local variables
   integer                                         :: ia,i,j,k,ic,i3,j3,k3,im,icoupl,ib
-  real(8)                                         :: bji,bjk,scp,ang,da,ae,dv,gamma
+  real(8)                                         :: bji,bjk,scp,scp_force,ang,da,ae,dv,gamma
   real(8)                                         :: rji(3),rjk(3),f1,di(3),dk(3)
 
 
@@ -15658,23 +16714,22 @@ subroutine qangle (istate)
       bjk = sqrt ( rjk(1)**2 + rjk(2)**2 + rjk(3)**2 )
       scp = ( rji(1)*rjk(1) + rji(2)*rjk(2) + rji(3)*rjk(3) )
       scp = scp / (bji*bjk)
-      if ( scp .gt.  1.0 ) scp =  1.0
-      if ( scp .lt. -1.0 ) scp = -1.0
+      scp_force = scp
+      if ( scp .gt. angle_cosine_limit ) scp = angle_cosine_limit
+      if ( scp .lt. -angle_cosine_limit ) scp = -angle_cosine_limit
       ang = acos(scp)
       da = ang - qanglib(ic)%ang0
       ae = 0.5*qanglib(ic)%fk*da**2
       EQ(istate)%q%angle = EQ(istate)%q%angle + ae*gamma
 
       dv = gamma*qanglib(ic)%fk*da*EQ(istate)%lambda
-      f1 = sin ( ang )
-      if ( abs(f1) .lt. 1.e-12 ) f1 = 1.e-12
-      f1 =  -1.0 / f1
-      di(1) = f1 * ( rjk(1)/(bji*bjk) - scp*rji(1)/bji**2 )
-      di(2) = f1 * ( rjk(2)/(bji*bjk) - scp*rji(2)/bji**2 )
-      di(3) = f1 * ( rjk(3)/(bji*bjk) - scp*rji(3)/bji**2 )
-      dk(1) = f1 * ( rji(1)/(bji*bjk) - scp*rjk(1)/bjk**2 )
-      dk(2) = f1 * ( rji(2)/(bji*bjk) - scp*rjk(2)/bjk**2 )
-      dk(3) = f1 * ( rji(3)/(bji*bjk) - scp*rjk(3)/bjk**2 )
+      f1 = -1.0 / sin(ang)
+      di(1) = f1 * ( rjk(1)/(bji*bjk) - scp_force*rji(1)/bji**2 )
+      di(2) = f1 * ( rjk(2)/(bji*bjk) - scp_force*rji(2)/bji**2 )
+      di(3) = f1 * ( rjk(3)/(bji*bjk) - scp_force*rji(3)/bji**2 )
+      dk(1) = f1 * ( rji(1)/(bji*bjk) - scp_force*rjk(1)/bjk**2 )
+      dk(2) = f1 * ( rji(2)/(bji*bjk) - scp_force*rjk(2)/bjk**2 )
+      dk(3) = f1 * ( rji(3)/(bji*bjk) - scp_force*rjk(3)/bjk**2 )
       d(i3+1) = d(i3+1) + dv*di(1)
       d(i3+2) = d(i3+2) + dv*di(2)
       d(i3+3) = d(i3+3) + dv*di(3)
@@ -15983,7 +17038,7 @@ subroutine qtorsion (istate)
   ! local variables
   integer                                         ::      i,j,k,l,ip,ic,i3,j3,k3,l3
   integer                                         ::      icoupl,im,ib
-  real(8)                                         ::      bj,bk,scp,phi,sgn,pe,dv,arg,f1,gamma
+  real(8)                                         ::      bj,bk,scp,phi,sgn,pe,dv,arg,sin_phi,cos_phi_limit,gamma
   real(8)                                         ::      rji(3),rjk(3),rkl(3),rnj(3),rnk(3)
   real(8)                                         ::      rki(3),rlj(3),dp(12),di(3),dl(3)
 
@@ -16053,15 +17108,24 @@ subroutine qtorsion (istate)
       dv = -qrmult(ic)*qfktor(ic)*sin(arg)*gamma*EQ(istate)%lambda
 
       ! ---       forces
-      f1 = sin ( phi )
-      if ( abs(f1) .lt. 1.e-12 ) f1 = 1.e-12
-      f1 =  -1.0 / f1
-      di(1) = f1 * ( rnk(1)/(bj*bk) - scp*rnj(1)/bj**2 )
-      di(2) = f1 * ( rnk(2)/(bj*bk) - scp*rnj(2)/bj**2 )
-      di(3) = f1 * ( rnk(3)/(bj*bk) - scp*rnj(3)/bj**2 )
-      dl(1) = f1 * ( rnj(1)/(bj*bk) - scp*rnk(1)/bk**2 )
-      dl(2) = f1 * ( rnj(2)/(bj*bk) - scp*rnk(2)/bk**2 )
-      dl(3) = f1 * ( rnj(3)/(bj*bk) - scp*rnk(3)/bk**2 )
+      ! Replace -dU/dphi/sin(phi) by its analytic limit near 0 and pi.
+      sin_phi = sin(phi)
+      if ( abs(sin_phi) .lt. dihedral_sin_threshold ) then
+        if ( scp .lt. 0.0_8 ) then
+          cos_phi_limit = -1.0_8
+        else
+          cos_phi_limit = 1.0_8
+        end if
+        dv = qfktor(ic)*qrmult(ic)**2*gamma*EQ(istate)%lambda*cos(arg)/cos_phi_limit
+      else
+        dv = -dv/sin_phi
+      end if
+      di(1) = rnk(1)/(bj*bk) - scp*rnj(1)/bj**2
+      di(2) = rnk(2)/(bj*bk) - scp*rnj(2)/bj**2
+      di(3) = rnk(3)/(bj*bk) - scp*rnj(3)/bj**2
+      dl(1) = rnj(1)/(bj*bk) - scp*rnk(1)/bk**2
+      dl(2) = rnj(2)/(bj*bk) - scp*rnk(2)/bk**2
+      dl(3) = rnj(3)/(bj*bk) - scp*rnk(3)/bk**2
 
       rki(1) =  rji(1) - rjk(1)
       rki(2) =  rji(2) - rjk(2)
@@ -16162,10 +17226,7 @@ end function randm
 integer function shake(xx, x)
 !!-------------------------------------------------------------------------------
 !! function: **shake**
-!! This is the main SHAKE algorithm. Uncertain where it came from.
-!! Citation needed here.
-!! Could it be that it's QSHAKE, that is, holonomic constraints SHAKE,
-!! so-called QSHAKE? Improbable.
+!! Molecular SHAKE position constraints with full-sweep convergence checks.
 !!
 !! The original reference for SHAKE is:
 !! Ryckaert, J-P; Ciccotti G; Berendsen HJC (1977). "Numerical Integration
@@ -16173,119 +17234,167 @@ integer function shake(xx, x)
 !! Dynamics of n-Alkanes". Journal of Computational Physics. 23 (3): 327–341.
 !! Bibcode:1977JCoPh..23..327R. doi:10.1016/0021-9991(77)90098-5
 !!
-!! When looking at the code and comparing it to the MOLARIS subroutine
-!! shake_bond one can see that they're practically the same.
-!!
-!! shake tolerance is hard-fixed on compilation number. should be changed to
-!! an option with a default value.
-!!
-!! SHAKE_TOL = 0.0001
+!! Constraints are corrected along their reference bond directions. A complete
+!! post-correction sweep verifies that all coupled bonds satisfy SHAKE_TOL =
+!! 0.0001 simultaneously before the molecule is accepted.
 !!
 !! SHAKE is not parallelized in Q, to do so check-out the next reference.
 !! SHAKE parallelization.
 !! Eur Phys J Spec Top. 2011 Nov 1;200(1):211-223.
 !! Elber R, Ruymgaart AP, Hess B.
 !!-------------------------------------------------------------------------------
-  !arguments
-  real(8)                          :: xx(:), x(:)
-  !returns no. of iterations
+  real(8), intent(in)             :: xx(:)
+  real(8), intent(inout)          :: x(:)
 
-  ! *** local variables
-  integer                          :: i,j,i3,j3,mol,ic,nits
-  real(8)                          :: xij2,diff,corr,scp,xxij2 ! scp = scalar product
-  real(8)                          :: xij(3),xxij(3)
-#if defined (PROFILING)
-  real(8)                          :: start_loop_time
-  start_loop_time = rtime()
-#endif
+  integer                         :: i, j, i3, j3, mol, ic, nits
+  real(8)                         :: xij2, diff, corr, scp, target2, inverse_mass_sum
+  real(8)                         :: xij(3), xxij(3)
+  logical                         :: corrected, converged
 
-  ! reset niter
   shake = 0
 
-  do mol=1,shake_molecules
-    ! for every molecule:
-    ! reset nits (iterations per molecule)
+  do mol = 1, shake_molecules
+    if (shake_mol(mol)%nconstraints == 0) cycle
     nits = 0
-    ! reset iready for every constraint
-    shake_mol(mol)%bond(:)%ready = .false.
-    do !iteration loop
-      do ic=1,shake_mol(mol)%nconstraints
-        ! for every constraint:
 
-        if (.not. shake_mol(mol)%bond(ic)%ready) then
-          ! repeat until done:
-
-          i = shake_mol(mol)%bond(ic)%i
-          j = shake_mol(mol)%bond(ic)%j
-          ! both atoms frozen (excluded_thermostat frozen): nothing can move
-          if (winv(i) + winv(j) == 0.) then
-            shake_mol(mol)%bond(ic)%ready = .true.
-            cycle
-          end if
-          i3 = i*3-3
-          j3 = j*3-3
-          xij(1)  = x(i3+1) - x(j3+1)
-          xij(2)  = x(i3+2) - x(j3+2)
-          xij(3)  = x(i3+3) - x(j3+3)
-          xij2    = xij(1)**2+xij(2)**2+xij(3)**2
-          diff    = shake_mol(mol)%bond(ic)%dist2 - xij2
-          if(abs(diff) < shake_tol*shake_mol(mol)%bond(ic)%dist2) then
-            shake_mol(mol)%bond(ic)%ready = .true. ! in range
-          end if
-          xxij(1) = xx(i3+1) - xx(j3+1)
-          xxij(2) = xx(i3+2) - xx(j3+2)
-          xxij(3) = xx(i3+3) - xx(j3+3)
-          scp = xij(1)*xxij(1)+xij(2)*xxij(2)+xij(3)*xxij(3)
-          corr = diff/(2.*scp*(winv(i)+winv(j)))
-
-          x(i3+1) = x(i3+1)+xxij(1)*corr*winv(i)
-          x(i3+2) = x(i3+2)+xxij(2)*corr*winv(i)
-          x(i3+3) = x(i3+3)+xxij(3)*corr*winv(i)
-          x(j3+1) = x(j3+1)-xxij(1)*corr*winv(j)
-          x(j3+2) = x(j3+2)-xxij(2)*corr*winv(j)
-          x(j3+3) = x(j3+3)-xxij(3)*corr*winv(j)
+    do
+      corrected = .false.
+      do ic = 1, shake_mol(mol)%nconstraints
+        i = shake_mol(mol)%bond(ic)%i
+        j = shake_mol(mol)%bond(ic)%j
+        i3 = 3*i-3
+        j3 = 3*j-3
+        target2 = shake_mol(mol)%bond(ic)%dist2
+        inverse_mass_sum = dble(winv(i))+dble(winv(j))
+        if (.not. ieee_is_finite(target2) .or. target2 <= 0.0d0 .or. &
+            .not. ieee_is_finite(inverse_mass_sum) .or. inverse_mass_sum <= 0.0d0) then
+          call report_shake_failure('invalid target or inverse mass', mol, ic, nits, xx, x)
         end if
-      end do
+        xij = x(i3+1:i3+3)-x(j3+1:j3+3)
+        xij2 = dot_product(xij,xij)
+        diff = target2-xij2
 
+        if (.not. ieee_is_finite(xij2) .or. .not. ieee_is_finite(diff)) then
+          call report_shake_failure('non-finite candidate bond', mol, ic, nits, xx, x)
+        end if
+        if (abs(diff) < shake_tol*target2) cycle
+
+        xxij = xx(i3+1:i3+3)-xx(j3+1:j3+3)
+        scp = dot_product(xij,xxij)
+        if (.not. ieee_is_finite(scp) .or. &
+            scp <= shake_min_projection*target2) then
+          call report_shake_failure('invalid reference projection', mol, ic, nits, xx, x)
+        end if
+
+        corr = diff/(2.0d0*scp*inverse_mass_sum)
+        if (.not. ieee_is_finite(corr) .or. &
+            abs(corr*dble(winv(i))) > shake_max_correction_scale .or. &
+            abs(corr*dble(winv(j))) > shake_max_correction_scale) then
+          call report_shake_failure('invalid or excessive correction', mol, ic, nits, xx, x)
+        end if
+
+        x(i3+1:i3+3) = x(i3+1:i3+3)+xxij*corr*dble(winv(i))
+        x(j3+1:j3+3) = x(j3+1:j3+3)-xxij*corr*dble(winv(j))
+        corrected = .true.
+      end do
       nits = nits+1
 
-      ! see if every constraint is met
-      if(all(shake_mol(mol)%bond(1:shake_mol(mol)%nconstraints)%ready)) then
-        exit !from iteration loop
-      elseif(nits >= shake_max_iter) then
-        ! fail on too many iterations
-        do ic=1,shake_mol(mol)%nconstraints
-          if (.not. shake_mol(mol)%bond(ic)%ready) then
-            ! repeat until done:
+      ! If the sweep made no corrections, every constraint was already valid.
+      if (.not. corrected) exit
 
-            i = shake_mol(mol)%bond(ic)%i
-            j = shake_mol(mol)%bond(ic)%j
-            i3 = i*3-3
-            j3 = j*3-3
-            xxij(1) = xx(i3+1) - xx(j3+1)
-            xxij(2) = xx(i3+2) - xx(j3+2)
-            xxij(3) = xx(i3+3) - xx(j3+3)
-            xxij2   = xxij(1)**2+xxij(2)**2+xxij(3)**2
-            write (*,100) i,j,sqrt(xxij2),&
-              sqrt(shake_mol(mol)%bond(ic)%dist2)
+      ! Corrections to coupled bonds can invalidate an earlier constraint.
+      converged = .true.
+      do ic = 1, shake_mol(mol)%nconstraints
+        i = shake_mol(mol)%bond(ic)%i
+        j = shake_mol(mol)%bond(ic)%j
+        i3 = 3*i-3
+        j3 = 3*j-3
+        target2 = shake_mol(mol)%bond(ic)%dist2
+        xij = x(i3+1:i3+3)-x(j3+1:j3+3)
+        xij2 = dot_product(xij,xij)
+        if (.not. ieee_is_finite(xij2) .or. &
+            abs(target2-xij2) >= shake_tol*target2) then
+          converged = .false.
+          exit
+        end if
+      end do
+      if (converged) exit
+
+      if (nits >= shake_max_iter) then
+        do ic = 1, shake_mol(mol)%nconstraints
+          i = shake_mol(mol)%bond(ic)%i
+          j = shake_mol(mol)%bond(ic)%j
+          i3 = 3*i-3
+          j3 = 3*j-3
+          target2 = shake_mol(mol)%bond(ic)%dist2
+          xij = x(i3+1:i3+3)-x(j3+1:j3+3)
+          xij2 = dot_product(xij,xij)
+          if (.not. ieee_is_finite(xij2) .or. &
+              abs(target2-xij2) >= shake_tol*target2) then
+            call print_shake_constraint(mol, ic, nits, xx, x)
           end if
         end do
-        call die('shake failure')
+        call die('shake failure after maximum iterations')
       end if
-100   format ('>>> Shake failed, i,j,d,d0 = ',2i6,2f10.5)
     end do
 
-    ! update niter
     shake = shake+nits
   end do
 
-  ! set niter to the average number of iterations per molecule
-  shake=shake/nmol
-#if defined (PROFILING)
-  profile(7)%time = profile(7)%time + rtime() - start_loop_time
-#endif
-
+  if (shake_molecules > 0) shake = shake/shake_molecules
 end function shake
+
+
+subroutine report_shake_failure(reason, molecule, constraint, iteration, xx, x)
+  character(*), intent(in) :: reason
+  integer, intent(in) :: molecule, constraint, iteration
+  real(8), intent(in) :: xx(:), x(:)
+
+  write(*,'(a,a)') '>>> Shake failed: ', trim(reason)
+  call print_shake_constraint(molecule, constraint, iteration, xx, x)
+  call die('shake failure')
+end subroutine report_shake_failure
+
+
+subroutine print_shake_constraint(molecule, constraint, iteration, xx, x)
+  integer, intent(in) :: molecule, constraint, iteration
+  real(8), intent(in) :: xx(:), x(:)
+
+  integer :: i, j, i3, j3
+  real(8) :: current_vector(3), reference_vector(3)
+  real(8) :: current2, reference2, target2, projection
+  real(8) :: current_length, reference_length, relative_error
+
+  i = shake_mol(molecule)%bond(constraint)%i
+  j = shake_mol(molecule)%bond(constraint)%j
+  i3 = 3*i-3
+  j3 = 3*j-3
+  current_vector = x(i3+1:i3+3)-x(j3+1:j3+3)
+  reference_vector = xx(i3+1:i3+3)-xx(j3+1:j3+3)
+  current2 = dot_product(current_vector,current_vector)
+  reference2 = dot_product(reference_vector,reference_vector)
+  target2 = shake_mol(molecule)%bond(constraint)%dist2
+  projection = dot_product(current_vector,reference_vector)
+  if (ieee_is_finite(current2)) then
+    current_length = sqrt(max(0.0d0,current2))
+    relative_error = abs(current2-target2)/target2
+  else
+    current_length = current2
+    relative_error = current2
+  end if
+  if (ieee_is_finite(reference2)) then
+    reference_length = sqrt(max(0.0d0,reference2))
+  else
+    reference_length = reference2
+  end if
+
+  write(*,100) istep, molecule, iteration, i, j, current_length, &
+               reference_length, sqrt(target2), relative_error, projection
+100 format('>>> Shake failed: step=',i8,', molecule=',i8,', iteration=',i5, &
+           ', atoms=',i8,1x,i8,', current=',es12.4,', reference=',es12.4, &
+           ', target=',es12.4,', squared-relative-error=',es12.4, &
+           ', projection=',es12.4)
+end subroutine print_shake_constraint
 
 
 subroutine shrink_topology
@@ -16518,7 +17627,7 @@ real(8) function torsion(istart, iend)
 
   ! local variables
   integer                                         ::      ip
-  real(8)                                         ::      scp,phi,dv,arg,f1
+  real(8)                                         ::      scp,phi,dv,arg,sin_phi,force_per_cos,cos_phi_limit
   real(8)                                         ::      bjinv, bkinv, bj2inv, bk2inv
   real(8), save                                   ::      rji(3),rjk(3),rkl(3),rnj(3),rnk(3)
   real(8), save                                   ::      rki(3),rlj(3),dp(12),di(3),dl(3)
@@ -16577,20 +17686,28 @@ real(8) function torsion(istart, iend)
 
     ! ---       energy
     arg = lib%rmult*phi-lib%deltor
-    torsion = torsion + lib%fk*(1.0+cos(arg))*lib%paths   !lib%paths is previously inverted 
+    torsion = torsion + lib%fk*(1.0+cos(arg))*lib%paths   !lib%paths is previously inverted
     dv = -lib%rmult*lib%fk*sin(arg)*lib%paths
 
     ! ---       forces
-
-    f1 = sin ( phi ) 
-    if ( abs(f1) .lt. 1.e-12 ) f1 = 1.e-12
-    f1 =  -1.0 / f1
-    di(1) = f1 * ( rnk(1)*(bjinv*bkinv) - scp*rnj(1)*bj2inv )
-    di(2) = f1 * ( rnk(2)*(bjinv*bkinv) - scp*rnj(2)*bj2inv )
-    di(3) = f1 * ( rnk(3)*(bjinv*bkinv) - scp*rnj(3)*bj2inv )
-    dl(1) = f1 * ( rnj(1)*(bjinv*bkinv) - scp*rnk(1)*bk2inv )
-    dl(2) = f1 * ( rnj(2)*(bjinv*bkinv) - scp*rnk(2)*bk2inv )
-    dl(3) = f1 * ( rnj(3)*(bjinv*bkinv) - scp*rnk(3)*bk2inv )
+    ! Use the analytic limit of -dU/dphi/sin(phi) at 0 and pi.
+    sin_phi = sin(phi)
+    if ( abs(sin_phi) .lt. dihedral_sin_threshold ) then
+      if ( scp .lt. 0.0_8 ) then
+        cos_phi_limit = -1.0_8
+      else
+        cos_phi_limit = 1.0_8
+      end if
+      force_per_cos = lib%fk*lib%rmult**2*lib%paths*cos(arg)/cos_phi_limit
+    else
+      force_per_cos = -dv/sin_phi
+    end if
+    di(1) = rnk(1)*(bjinv*bkinv) - scp*rnj(1)*bj2inv
+    di(2) = rnk(2)*(bjinv*bkinv) - scp*rnj(2)*bj2inv
+    di(3) = rnk(3)*(bjinv*bkinv) - scp*rnj(3)*bj2inv
+    dl(1) = rnj(1)*(bjinv*bkinv) - scp*rnk(1)*bk2inv
+    dl(2) = rnj(2)*(bjinv*bkinv) - scp*rnk(2)*bk2inv
+    dl(3) = rnj(3)*(bjinv*bkinv) - scp*rnk(3)*bk2inv
 
     rki(1) =  rji(1) - rjk(1)
     rki(2) =  rji(2) - rjk(2)
@@ -16612,18 +17729,18 @@ real(8) function torsion(istart, iend)
     dp(11) = rjk(3)*dl(1) - rjk(1)*dl(3)
     dp(12) = rjk(1)*dl(2) - rjk(2)*dl(1)
 
-    d(t%i*3-2) = d(t%i*3-2) + dv*dp(1)
-    d(t%i*3-1) = d(t%i*3-1) + dv*dp(2)
-    d(t%i*3-0) = d(t%i*3-0) + dv*dp(3)
-    d(t%j*3-2) = d(t%j*3-2) + dv*dp(4)
-    d(t%j*3-1) = d(t%j*3-1) + dv*dp(5)
-    d(t%j*3-0) = d(t%j*3-0) + dv*dp(6)
-    d(t%k*3-2) = d(t%k*3-2) + dv*dp(7)
-    d(t%k*3-1) = d(t%k*3-1) + dv*dp(8)
-    d(t%k*3-0) = d(t%k*3-0) + dv*dp(9)
-    d(t%l*3-2) = d(t%l*3-2) + dv*dp(10)
-    d(t%l*3-1) = d(t%l*3-1) + dv*dp(11)
-    d(t%l*3-0) = d(t%l*3-0) + dv*dp(12)
+    d(t%i*3-2) = d(t%i*3-2) + force_per_cos*dp(1)
+    d(t%i*3-1) = d(t%i*3-1) + force_per_cos*dp(2)
+    d(t%i*3-0) = d(t%i*3-0) + force_per_cos*dp(3)
+    d(t%j*3-2) = d(t%j*3-2) + force_per_cos*dp(4)
+    d(t%j*3-1) = d(t%j*3-1) + force_per_cos*dp(5)
+    d(t%j*3-0) = d(t%j*3-0) + force_per_cos*dp(6)
+    d(t%k*3-2) = d(t%k*3-2) + force_per_cos*dp(7)
+    d(t%k*3-1) = d(t%k*3-1) + force_per_cos*dp(8)
+    d(t%k*3-0) = d(t%k*3-0) + force_per_cos*dp(9)
+    d(t%l*3-2) = d(t%l*3-2) + force_per_cos*dp(10)
+    d(t%l*3-1) = d(t%l*3-1) + force_per_cos*dp(11)
+    d(t%l*3-0) = d(t%l*3-0) + force_per_cos*dp(12)
   end do
 
 end function torsion

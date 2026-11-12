@@ -39,6 +39,21 @@ class LocalRunConfig:
     cleanup_patterns: list[str] | None
 
 
+def format_cleanup_globs(patterns: list[str]) -> list[str]:
+    """Convert extension names and filenames into shell cleanup globs."""
+    globs = []
+    for pattern in patterns:
+        if any(character in pattern for character in "*?["):
+            globs.append(pattern)
+        elif pattern.startswith("."):
+            globs.append(f"*{pattern}")
+        elif "." in pattern:
+            globs.append(pattern)
+        else:
+            globs.append(f"*.{pattern}")
+    return globs
+
+
 def _build_step_block(stages: list[str], qdyn_cmd: str) -> str:
     """Build bash if/then blocks for each MD stage with error checking."""
     blocks = []
@@ -63,24 +78,15 @@ def render_local_run(config: LocalRunConfig) -> str:
     - Only runs cleanup on success
     - Always logs runtime information
     """
-    qdyn_cmd = (
-        f"mpirun -n {config.ntasks} {config.qdyn_path}"
-        if config.use_mpi
-        else config.qdyn_path
-    )
+    qdyn_cmd = f"mpirun -n {config.ntasks} {config.qdyn_path}" if config.use_mpi else config.qdyn_path
 
     eq_block = _build_step_block(config.eq_files, qdyn_cmd)
     md_block = _build_step_block(config.md_files, qdyn_cmd)
 
     cleanup_block = ""
     if config.cleanup_patterns:
-        patterns = " ".join(f"*{ext}" for ext in config.cleanup_patterns)
-        cleanup_block = (
-            f"if [ $failed -eq 0 ]; then\n"
-            f"    rm -r {patterns}\n"
-            f"fi\n"
-            f"\n"
-        )
+        patterns = " ".join(format_cleanup_globs(config.cleanup_patterns))
+        cleanup_block = f"if [ $failed -eq 0 ]; then\n" f"    rm -f {patterns}\n" f"fi\n" f"\n"
 
     # dedent strips the Python-level indentation from the template, then
     # .replace() injects multi-line blocks without breaking the indentation.
@@ -189,8 +195,7 @@ def render_local_run(config: LocalRunConfig) -> str:
     """)
 
     return (
-        template
-        .replace("__EQ_BLOCK__", eq_block)
+        template.replace("__EQ_BLOCK__", eq_block)
         .replace("__MD_BLOCK__", md_block)
         .replace("__CLEANUP_BLOCK__", cleanup_block)
     )

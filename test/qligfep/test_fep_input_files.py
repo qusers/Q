@@ -206,8 +206,11 @@ class TestFEPInputFileGolden:
             md_section.get("stepsize") == "2.0"
         ), f"Expected stepsize=2.0 for 2fs, got {md_section.get('stepsize')}"
 
-        # Shake should be on for hydrogens
-        assert md_section.get("shake_hydrogens") == "on", "Expected shake_hydrogens=on for 2fs timestep"
+        # LINCS should constrain solute hydrogens; SETTLE should constrain HOH.
+        assert md_section.get("constrain_hydrogens") == "on", (
+            "Expected constrain_hydrogens=on for 2fs timestep"
+        )
+        assert md_section.get("constraint_algorithm") == "lincs settle"
 
     @pytest.mark.slow
     def test_sphere_settings(self, generated_fep_dir: Path):

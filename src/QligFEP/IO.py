@@ -99,24 +99,23 @@ def ddG_json_path(mapping_json: str) -> str:
 
 
 def parse_qprep_total_charge(qprep_out_path: Path) -> int:
-    """Parse the total system charge from a qprep.out file.
-
-    Reads the "total charge of not excluded: X.00" line and returns the integer charge.
-
-    Args:
-        qprep_out_path: Path to the qprep.out file.
-
-    Returns:
-        Integer total charge of the system within the simulation sphere.
+    """Parse and validate the included system charge from a qprep output file.
 
     Raises:
-        ValueError: If the charge line is not found in the file.
+        ValueError: If the charge line is absent or its value is non-integral.
     """
-    charge_pat = re.compile(r"total charge of not excluded:\s*([-]?\d+\.\d+)")
+    charge_pat = re.compile(r"total charge of not excluded:\s*([-+]?\d+\.\d+)")
     for line in qprep_out_path.read_text().splitlines():
         match = charge_pat.search(line)
         if match:
-            return round(float(match.group(1)))
+            charge = float(match.group(1))
+            integer_charge = round(charge)
+            if abs(charge - integer_charge) > 1e-6:
+                raise ValueError(
+                    f"Non-integral included-system charge {charge:.2f} in {qprep_out_path}; "
+                    "check the force-field charge groups at the spherical boundary"
+                )
+            return integer_charge
     raise ValueError(f"Could not find 'total charge of not excluded' in {qprep_out_path}")
 
 
@@ -144,6 +143,13 @@ def qprep_error_check(qprep_out_path: Path, ff_name: str) -> None:
             error_lines.append(line)
         if missing_lib_pat.findall(line):
             missing_atomlib_lines.append(line)
+
+    charge_lines = [line for line in outfile_lines if "total charge of not excluded:" in line]
+    if charge_lines:
+        try:
+            parse_qprep_total_charge(qprep_out_path)
+        except ValueError as error:
+            error_lines.append(str(error))
 
     if error_lines:
         error_message = "\n".join(error_lines)

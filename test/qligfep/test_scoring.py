@@ -271,8 +271,8 @@ class TestRestraintLomapScorer:
 
         assert score > 0.0
 
-    def test_charge_change_blocked_by_default(self, cmet_charged_pair):
-        """Charge-changing pairs should score 0.0 with default charge_changes_score."""
+    def test_charge_change_gets_zero_score_by_default(self, cmet_charged_pair):
+        """The default multiplier assigns charge-changing pairs a score of zero."""
         from kartograf import KartografAtomMapper, SmallMoleculeComponent
 
         molA = SmallMoleculeComponent.from_sdf_file(str(cmet_charged_pair["neutral"]))
@@ -281,12 +281,12 @@ class TestRestraintLomapScorer:
         mapping = next(mapper.suggest_mappings(molA, molB))
 
         scorer = RestraintLomapScorer(restraint_method="heavyatom_p")
-        score = scorer(mapping)
 
-        assert score == 0.0
+        assert scorer.base_score(mapping) > 0.0
+        assert scorer(mapping) == 0.0
 
-    def test_charge_change_allowed_with_nonzero_param(self, cmet_charged_pair):
-        """With charge_changes_score > 0, charge-changing pairs get a nonzero score."""
+    def test_charge_change_multiplier_scales_final_score(self, cmet_charged_pair):
+        """A 0.5 multiplier should halve the final score for the same mapping."""
         from kartograf import KartografAtomMapper, SmallMoleculeComponent
 
         molA = SmallMoleculeComponent.from_sdf_file(str(cmet_charged_pair["neutral"]))
@@ -294,34 +294,30 @@ class TestRestraintLomapScorer:
         mapper = KartografAtomMapper(atom_map_hydrogens=False)
         mapping = next(mapper.suggest_mappings(molA, molB))
 
-        scorer = RestraintLomapScorer(restraint_method="heavyatom_p", charge_changes_score=0.5)
-        score = scorer(mapping)
+        unpenalized = RestraintLomapScorer(
+            restraint_method="heavyatom_p", charge_change_multiplier=1.0
+        )(mapping)
+        penalized = RestraintLomapScorer(
+            restraint_method="heavyatom_p", charge_change_multiplier=0.5
+        )(mapping)
 
-        assert score > 0.0
+        assert penalized == pytest.approx(0.5 * unpenalized)
 
-    def test_charge_change_score_penalizes_vs_same_charge(self, tyk2_sdf_pair, cmet_charged_pair):
-        """Even with charge_changes_score=0.5, a charge-change edge scores lower than same-charge."""
+    def test_same_charge_score_is_not_scaled(self, tyk2_sdf_pair):
+        """The multiplier should not affect mappings with the same formal charge."""
         from kartograf import KartografAtomMapper, SmallMoleculeComponent
 
-        # Same-charge pair
         molA = SmallMoleculeComponent.from_sdf_file(str(tyk2_sdf_pair["ejm_31"]))
         molB = SmallMoleculeComponent.from_sdf_file(str(tyk2_sdf_pair["ejm_42"]))
         mapper = KartografAtomMapper(atom_map_hydrogens=False)
-        same_mapping = next(mapper.suggest_mappings(molA, molB))
+        mapping = next(mapper.suggest_mappings(molA, molB))
 
-        # Charge-change pair
-        molC = SmallMoleculeComponent.from_sdf_file(str(cmet_charged_pair["neutral"]))
-        molD = SmallMoleculeComponent.from_sdf_file(str(cmet_charged_pair["charged"]))
-        charge_mapping = next(mapper.suggest_mappings(molC, molD))
+        score_zero = RestraintLomapScorer(charge_change_multiplier=0.0)(mapping)
+        score_half = RestraintLomapScorer(charge_change_multiplier=0.5)(mapping)
 
-        scorer = RestraintLomapScorer(restraint_method="heavyatom_p", charge_changes_score=0.5)
-        same_score = scorer(same_mapping)
-        charge_score = scorer(charge_mapping)
+        assert score_half == pytest.approx(score_zero)
 
-        # The charge-change penalty (0.5) should make its lomap component lower
-        # We can't compare directly since they're different molecule pairs,
-        # but the charge_score should be bounded by sqrt(charge_changes_score * restraint_score)
-        import numpy as np
-
-        restraint_only = RestraintScorer(restraint_method="heavyatom_p")(charge_mapping)
-        assert charge_score <= np.sqrt(0.5 * restraint_only) + 1e-10
+    @pytest.mark.parametrize("multiplier", [-0.1, 1.1])
+    def test_rejects_invalid_charge_change_multiplier(self, multiplier):
+        with pytest.raises(ValueError, match="between 0.0 and 1.0"):
+            RestraintLomapScorer(charge_change_multiplier=multiplier)
