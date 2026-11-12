@@ -242,20 +242,26 @@ protein:
 Check the log of `qprep_prot`: it lists the residues that were changed and
 the total charge before and after.
 
-<!-- FIGURE TODO: boundary-neutralisation
-What: the protein inside a 25 A sphere with ionisable side chains drawn as
-  sticks and coloured by treatment: charged and kept (inside 22 A), neutralised
-  (in the outer 3 A layer or excluded), neutralised salt-bridge partner.
-  Dashed circles at 22 A and 25 A. Ligand at the centre in a contrasting
-  colour.
-Why: users often do not realise that the prepared protein has different
-  protonation states from their input; the picture shows which residues change
-  and why.
-How: PyMOL, from the protein PDB before and after `qprep_prot`. Select the
-  residues whose name changed between the two files (for example ASP -> ASH)
-  with a short Python script, colour the three classes, show the sphere
-  outlines as in the sphere-regions figure.
--->
+```{figure} ../_static/figures/boundary-neutralisation.png
+:alt: Backbone trace of a protein with a dashed circle of 25 angstrom radius around the ligand. Ionisable side chains inside the circle are red (acidic) or blue (basic) sticks. Ionisable side chains outside the circle are pale sticks.
+:width: 70%
+
+Ionisable residues of Tyk2 after `qprep_prot`, in the structure of the
+QligFEP benchmark set and in the same view as the
+[sphere-regions figure](spherical-boundary.md#regions-of-the-sphere). Red:
+ASP and GLU that keep their charge. Blue: LYS, ARG and doubly protonated HIS
+that keep their charge. Pale: residues that were neutralised. Orange: a
+ligand. Grey: backbone trace. Dashed circle: the sphere radius of 25 Å. Only
+residues with their C$_\alpha$ within 8 Å of the plane through the centre
+are drawn, so a residue just outside the sphere can appear just inside the
+circle. In the whole structure 32 residues were neutralised (14 GLU, 8 ARG,
+8 LYS, 2 ASP; 17 drawn) and 43 keep their charge (23 acidic, 20 basic; 28
+drawn); the net charge of the protein is −3 before and after. This structure
+was prepared with `--neutralize_boundary_offset 0`, so only residues outside
+the sphere were neutralised; with the default of 3 Å the charged residues in
+the outer 3 Å of the sphere are neutralised as well. Rendered by
+`docs/scripts/render_boundary_neutralisation.py`.
+```
 
 ### Perturbations that change the net charge
 
