@@ -102,13 +102,6 @@ def test_legacy_scaling_still_overheats_excluded_atoms(tmp_path):
     assert legacy > separate + 150.0
 
 
-def test_frozen_excluded_atoms_have_no_kinetic_energy(tmp_path):
-    log = _run(tmp_path, "frozen", steps=2000)
-    assert "Excluded atoms are frozen at their current positions." in log
-    values = [float(v) for v in re.findall(r"T_excl=\s*([-\d.]+)", log)]
-    assert values and max(values) == 0.0
-
-
 def test_invalid_excluded_thermostat_is_rejected(tmp_path):
     workdir = tmp_path / "bogus"
     workdir.mkdir()
@@ -122,4 +115,4 @@ def test_invalid_excluded_thermostat_is_rejected(tmp_path):
         [str(QDYN), "md.inp"], cwd=workdir, text=True, capture_output=True, timeout=60
     )
     assert "terminated normally" not in result.stdout
-    assert "excluded_thermostat must be separate, none, frozen or legacy" in result.stdout
+    assert "excluded_thermostat must be separate, none or legacy" in result.stdout
