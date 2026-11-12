@@ -169,26 +169,26 @@ _RESFEP_SHARED = dict(
 
 RESFEP_EQ1_PARAMS = dict(
     steps=10000, stepsize=0.1, temperature=1, bath_coupling=0.2,
-    shake_hydrogens=False, interval_output=5, **_RESFEP_SHARED,
+    constrain_hydrogens=False, interval_output=5, **_RESFEP_SHARED,
 )
 
 RESFEP_EQ2_PARAMS = dict(
     steps=10000, stepsize=1.0, temperature=50, bath_coupling=1.0,
-    shake_hydrogens=False, interval_output=5, **_RESFEP_SHARED,
+    constrain_hydrogens=False, interval_output=5, **_RESFEP_SHARED,
 )
 
 RESFEP_EQ3_PARAMS = dict(
     steps=10000, stepsize=1.0, temperature=150, bath_coupling=1.0,
-    shake_hydrogens=False, interval_output=5, **_RESFEP_SHARED,
+    constrain_hydrogens=False, interval_output=5, **_RESFEP_SHARED,
 )
 
 RESFEP_EQ4_PARAMS = dict(
     steps=10000, stepsize=1.0, temperature=275, bath_coupling=1.0,
-    shake_hydrogens=False, interval_output=5, **_RESFEP_SHARED,
+    constrain_hydrogens=False, interval_output=5, **_RESFEP_SHARED,
 )
 
 #: eq5 is the only stage that follows the production timestep: (steps, stepsize,
-#: shake_hydrogens) per timestep. Its length matches ligand FEP's eq5 (0.1 ns at
+#: constrain_hydrogens) per timestep. Its length matches ligand FEP's eq5 (0.1 ns at
 #: either timestep); the manuscript protocol overrides it with 5 ns.
 _RESFEP_EQ5_BY_TIMESTEP = {
     "1fs": (EQ5_1FS_PARAMS["steps"], 1.0, False),
@@ -213,7 +213,7 @@ def get_resfep_equilibration_configs(
     Returns:
         List of EquilibrationConfig for eq1 through eq5.
     """
-    steps, stepsize, shake_hydrogens = _RESFEP_EQ5_BY_TIMESTEP[timestep]
+    steps, stepsize, constrain_hydrogens = _RESFEP_EQ5_BY_TIMESTEP[timestep]
     if eq5_steps is not None:
         steps = int(eq5_steps)
     eq5_params = dict(
@@ -221,7 +221,7 @@ def get_resfep_equilibration_configs(
         stepsize=stepsize,
         temperature="T_VAR",
         bath_coupling=10.0,
-        shake_hydrogens=shake_hydrogens,
+        constrain_hydrogens=constrain_hydrogens,
         interval_output=5,
         **_RESFEP_SHARED,
     )
