@@ -46,7 +46,7 @@ from .templates.sections import (
 
 WATER_ATOM_TYPES = {
     "AMBER14sb": ("OW", "HW"),
-    "OPLS2015": ("OT", "HT"),
+    "OPLSAAM": ("OT", "HT"),
     "CHARMM36": ("OT", "HT"),
 }
 
@@ -55,7 +55,7 @@ TIP3P_CHARGE_H = 0.417
 
 CHLORIDE_NAME = {
     "AMBER14sb": "CHL",
-    "OPLS2015": "CLA",
+    "OPLSAAM": "CLA",
     "CHARMM36": "CLA",
 }
 
@@ -560,7 +560,7 @@ class QligFEP:
         # these made up names for Q because it demands for 3-letter residue names...
         CHLORIDE_NAME = {
             "AMBER14sb": "CHL",
-            "OPLS2015": "CLA",
+            "OPLSAAM": "CLA",
             "CHARMM36": "CLA",
         }
         chloride = CHLORIDE_NAME.get(self.FF, "CLA")

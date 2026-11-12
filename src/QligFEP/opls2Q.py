@@ -22,7 +22,7 @@ class Run(object):
         of the class is created. The method serves to initialize what you
         want to do with the object.
         """
-        supported_FFs = ['OPLS2005', 'OPLS2015']
+        supported_FFs = ['OPLS2005', 'OPLSAAM']
         self.lig = lig
         self.FF = FF
         self.merge = merge
@@ -517,8 +517,8 @@ class Run(object):
         torsion = parm[5]
         improper = parm[6]
 
-        if self.FF == 'OPLS2015' and self.merge is True:
-            prm_file = os.path.join(s.FF_DIR, 'OPLS2015.prm')
+        if self.FF == 'OPLSAAM' and self.merge is True:
+            prm_file = os.path.join(s.FF_DIR, 'OPLSAAM.prm')
             prm_file_out = self.FF + '_' + self.lig + '.prm'
             
         elif self.FF == 'OPLS2005' and self.merge is True:
@@ -647,7 +647,7 @@ if __name__ == "__main__":
     parser.add_argument('-FF', '--forcefield',
                     dest = "FF",
                     required = True,
-                    help = "forcefield to use, OPLS2005 or OPLS2015")
+                    help = "forcefield to use, OPLS2005 or OPLSAAM")
 
     parser.add_argument('-m', '--merge',
                         dest = "merge",

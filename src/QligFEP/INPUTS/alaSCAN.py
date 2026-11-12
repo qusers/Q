@@ -10,7 +10,7 @@ SYSTEMS
 systems.append('apo')
 executable = 'python /home/jespers/software/qligfep-p3/qligfep/QresFEP.py' + ' '
 options = {
-           '-f'    : 'OPLS2015',      # Forcefield
+           '-f'    : 'OPLSAAM',       # Forcefield
            '-l'     : '1',             # starting point
            '-T'     : '298',           # Temperature
            '-r'     : '10',            # Total repeats

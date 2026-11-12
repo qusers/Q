@@ -278,7 +278,7 @@ class TestForceFieldSupport:
         SpherePrep(
             input_pdb="protein.pdb",
             prepared_pdb="protein_processed.pdb",
-            force_field="OPLS2015",
+            force_field="OPLS2005",
             center=[0.0, 0.0, 0.0],
             radius=25.0,
             total_charge=0,
@@ -292,7 +292,7 @@ class TestForceFieldSupport:
             workdir=tmp_path,
         )
 
-        with pytest.raises(MutationError, match="sphere was prepared with OPLS2015"):
+        with pytest.raises(MutationError, match="sphere was prepared with OPLS2005"):
             run.read_prep()
 
 
