@@ -34,9 +34,9 @@ from PIL import Image, ImageFilter
 from pymol import cgo, cmd
 
 OUT = Path(__file__).resolve().parents[1] / "source" / "_static" / "figures" / "sphere-regions.png"
-NORMAL = (0.0, 1.0, 0.0)  # the slab is perpendicular to this axis; the camera looks along it
+NORMAL = (1.0, 0.0, 0.0)  # the slab is perpendicular to this axis; the camera looks along it
 UP = (0.0, 0.0, 1.0)
-HALF_SLAB = 1.8  # A on each side of the plane through the centre
+HALF_SLAB = 3.0  # A on each side of the plane through the centre
 STICK_RADIUS = 0.13  # A, protein, water and ligand
 FREE = (0.10, 0.55, 0.70)  # blue
 EXCLUDED = (0.79, 0.76, 0.70)  # pale sand; also the colour of its surface
