@@ -15,6 +15,8 @@ from scipy.special import logsumexp
 KB_KCAL = 0.00198720425864083
 LAMBDA_ATOL = 1e-12
 SUPPORTED_FORMATS = {"Q_FOREIGN_HAMILTONIANS_V1", "Q_FOREIGN_WORKS_V2"}
+# Initial records discarded per window as burn-in unless the caller chooses otherwise.
+DEFAULT_SKIP = 100
 
 
 @dataclass
@@ -175,7 +177,7 @@ def _bar_delta_f(forward: np.ndarray, reverse: np.ndarray, beta: float) -> float
 def analyze_fhe(
     paths: list[str | Path],
     temperature: float = 298.0,
-    skip: int = 0,
+    skip: int = DEFAULT_SKIP,
     stride: int = 1,
 ) -> dict:
     """Analyze adjacent windows and return BAR/overlap diagnostics.
@@ -289,7 +291,12 @@ def main_exe() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("paths", nargs="+", help=".fhe files or directories containing .fhe files")
     parser.add_argument("-T", "--temperature", type=float, default=298.0)
-    parser.add_argument("--skip", type=int, default=0, help="initial records to discard from every window")
+    parser.add_argument(
+        "--skip",
+        type=int,
+        default=DEFAULT_SKIP,
+        help=f"initial records to discard from every window (default: {DEFAULT_SKIP})",
+    )
     parser.add_argument("--stride", type=int, default=1, help="retain every Nth record after burn-in")
     parser.add_argument("-o", "--output-prefix", default="foreign_bar")
     args = parser.parse_args()

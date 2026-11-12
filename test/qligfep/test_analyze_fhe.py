@@ -40,7 +40,7 @@ def test_read_fhe_and_adjacent_bar(tmp_path):
     assert parsed.energy_at(1.0).tolist() == [2.0, 2.0]
     assert parsed.work_to(1.0).tolist() == [2.0, 2.0]
 
-    result = analyze_fhe([state0, state1], temperature=298.0)
+    result = analyze_fhe([state0, state1], skip=0, temperature=298.0)
     assert result["total_delta_g_kcal"] == pytest.approx(2.0)
     assert result["poor_windows"] == 0
     assert result["adjacent"][0]["overlap_gap_kT"] == pytest.approx(0.0)
@@ -65,8 +65,8 @@ def test_work_format_and_legacy_totals_give_identical_bar(tmp_path):
     with pytest.raises(ValueError, match="stores work"):
         parsed.energy_at(1.0)
 
-    legacy = analyze_fhe([legacy0, legacy1], temperature=298.0)
-    work = analyze_fhe([work0, work1], temperature=298.0)
+    legacy = analyze_fhe([legacy0, legacy1], skip=0, temperature=298.0)
+    work = analyze_fhe([work0, work1], skip=0, temperature=298.0)
     assert work["format"] == "Q_FOREIGN_WORKS_V2"
     assert work["total_delta_g_kcal"] == pytest.approx(legacy["total_delta_g_kcal"])
     assert work["adjacent"][0]["delta_g_kcal"] == pytest.approx(
@@ -98,6 +98,18 @@ def test_frame_selection_applies_per_window(tmp_path):
         analyze_fhe([state0, state1], skip=6)
 
 
+def test_default_burn_in_matches_campaign(tmp_path):
+    state0, state1 = tmp_path / "a.fhe", tmp_path / "b.fhe"
+    _write_fhe(state0, 1, 0, [(0, 2)] * 101, work_format=True)
+    _write_fhe(state1, 0, 1, [(-2, 0)] * 101, work_format=True)
+    result = analyze_fhe([state0, state1])
+    assert result["frame_selection"]["skip"] == 100
+    assert result["adjacent"][0]["frames"] == 1
+    _write_fhe(state1, 0, 1, [(-2, 0)] * 100, work_format=True)
+    with pytest.raises(ValueError, match="no frames remain after skip=100"):
+        analyze_fhe([state0, state1])
+
+
 def test_read_fhe_rejects_nonfinite(tmp_path):
     path = tmp_path / "bad.fhe"
     _write_fhe(path, 1.0, 0.0, [(0.0, float("inf"))])
@@ -109,7 +121,7 @@ def test_unequal_counts_and_large_work_are_stable(tmp_path):
     state0, state1 = tmp_path / "a.fhe", tmp_path / "b.fhe"
     _write_fhe(state0, 1, 0, [(0, 2)] * 7, work_format=True)
     _write_fhe(state1, 0, 1, [(-2, 0)] * 3, work_format=True)
-    result = analyze_fhe([state0, state1])
+    result = analyze_fhe([state0, state1], skip=0)
     assert result["total_delta_g_kcal"] == pytest.approx(2)
     assert result["adjacent"][0]["frames_reverse"] == 3
     assert result["adjacent"][0]["bar_residual"] == pytest.approx(0)
@@ -154,7 +166,7 @@ def test_rejects_duplicate_paths_and_nonfinite_temperature(tmp_path):
     path = tmp_path / "a.fhe"
     _write_fhe(path, 1, 0, [(0, 2)], work_format=True)
     with pytest.raises(ValueError, match="duplicate sidecar"):
-        analyze_fhe([path, path])
+        analyze_fhe([path, path], skip=0)
     with pytest.raises(ValueError, match="temperature must be positive"):
         analyze_fhe([path], temperature=float("nan"))
 
@@ -171,7 +183,7 @@ def test_rejects_incompatible_softcore_hamiltonians(tmp_path, change):
         if change == "parameters":
             b.write_text(b.read_text() + "# softcore_parameters 0.5 42\n")
     with pytest.raises(ValueError, match="different softcore methods/parameters"):
-        analyze_fhe([a,b])
+        analyze_fhe([a,b], skip=0)
 
 
 def test_equilibrium_reader_uses_foreign_bar_without_qfep(tmp_path, monkeypatch):
@@ -182,7 +194,7 @@ def test_equilibrium_reader_uses_foreign_bar_without_qfep(tmp_path, monkeypatch)
     state0, state1 = directory / "a.fhe", directory / "b.fhe"
     _write_fhe(state0, 1, 0, [(0, 2)] * 2, work_format=True)
     _write_fhe(state1, 0, 1, [(-2, 0)] * 2, work_format=True)
-    result = analyze_fhe([state0, state1])
+    result = analyze_fhe([state0, state1], skip=0)
     write_results(result, directory / "foreign_bar")
     reader = FepReader.__new__(FepReader)
     reader.methods_list = ["dG", "dGf", "dGr", "dGos", "dGbar"]
@@ -198,7 +210,7 @@ def test_equilibrium_reader_uses_foreign_bar_without_qfep(tmp_path, monkeypatch)
     assert np.isnan(values).all()
 
 
-@pytest.mark.parametrize("method", ["gapsys", "beutler", "gapsys_v2", "beutler_coul"])
+@pytest.mark.parametrize("method", ["gapsys", "beutler"])
 def test_nonlinear_method_cannot_fall_back_to_linear_qfep(tmp_path, method):
     from QligFEP.analyze_FEP import FepReader
 
@@ -217,7 +229,7 @@ def test_result_collection_discovers_foreign_only_replicates(tmp_path, monkeypat
     state0, state1 = directory / "a.fhe", directory / "b.fhe"
     _write_fhe(state0, 1, 0, [(0, 2)] * 2, work_format=True)
     _write_fhe(state1, 0, 1, [(-2, 0)] * 2, work_format=True)
-    write_results(analyze_fhe([state0, state1]), directory / "foreign_bar")
+    write_results(analyze_fhe([state0, state1], skip=0), directory / "foreign_bar")
     mapping = tmp_path / "mapping.json"
     mapping.write_text(json.dumps({"edges": [{"from": "a", "to": "b"}]}))
     reader = FepReader("water", "test", str(mapping), n_lambdas=2)

@@ -199,7 +199,7 @@ class FepReader:
         for inputs in (directory, directory.parent.parent.parent / "inputfiles"):
             for fep in inputs.glob("*.fep"):
                 if any(line.split()[:2] in (["softcore_method", method] for method in
-                                           ("gapsys", "beutler", "gapsys_v2", "beutler_coul"))
+                                           ("gapsys", "beutler"))
                        for line in fep.read_text().splitlines()):
                     return True
         return False
