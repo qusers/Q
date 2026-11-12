@@ -225,3 +225,26 @@ def test_qfep_rejects_linear_reconstruction_of_foreign_work(engine_case, method)
                             capture_output=True, text=True, timeout=30)
     assert result.returncode != 0
     assert "Nonlinear foreign work found" in result.stderr
+
+
+@pytest.mark.parametrize("flag", [0, 1])
+def test_atom_losing_its_lj_wall_requires_activation(engine_case, flag):
+    """C -> charged zero-LJ H is not real->DUM, but its wall still vanishes in state 2."""
+    directory = engine_case()
+    fep = directory / "test.fep"
+    text = fep.read_text()
+    for old, new in [("1 C DUM", "1 C H"), ("3 H DUM", "3 H H"), ("1 -0.115 0", "1 -0.115 0.115"),
+                     ("3 0.115 0", "3 0.115 -0.115"), ("[softcore]\n1 1 0", f"[softcore]\n1 {flag} 0"),
+                     ("3 1 0", "3 0 0")]:
+        assert text.count(old) == 1, old
+        text = text.replace(old, new)
+    fep.write_text(text)
+    if flag:
+        assert np.isfinite(run_engine(directory).values).all()
+        return
+    binary = ROOT / "src/q6/qdyn"
+    if not binary.exists():
+        pytest.skip("build qdyn first")
+    result = subprocess.run([str(binary), "test.inp"], cwd=directory, capture_output=True, text=True, timeout=30)
+    assert result.returncode != 0
+    assert "LJ vanishes in state 2" in result.stdout

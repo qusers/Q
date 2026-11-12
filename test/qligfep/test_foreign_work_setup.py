@@ -5,7 +5,7 @@ import subprocess
 import pytest
 import pandas as pd
 
-from QligFEP.qligfep import QligFEP, nonlinear_softcore_activation
+from QligFEP.qligfep import QligFEP, nonlinear_softcore_activation, zero_lj_atom_types
 
 
 @pytest.mark.parametrize("start", ["1", "0.5"])
@@ -40,6 +40,16 @@ def test_activation_is_derived_from_endpoint_types():
     assert nonlinear_softcore_activation([(1, "C", "DUM"), (2, "DUM", "H"), (3, "C", "N"), (4, "DUM", "DUM")]) == {
         1: (1, 0), 2: (0, 1), 3: (0, 0), 4: (0, 0),
     }
+
+
+def test_activation_covers_atoms_whose_lj_wall_vanishes():
+    vdw = ["C  1.9080  0.0860  0  0  1.9080  0.0430  12.01", "HO  0.0000  0.0000  0  0  0.0000  0.0000  1.008",
+           "N  1.8240  0.1700  0  0  1.8240  0.0850  14.01"]
+    zero = zero_lj_atom_types(vdw)
+    assert zero == {"DUM", "HO"}
+    assert nonlinear_softcore_activation(
+        [(1, "C", "HO"), (2, "HO", "N"), (3, "HO", "DUM"), (4, "C", "N"), (5, "HO", "HO")], zero
+    ) == {1: (1, 0), 2: (0, 1), 3: (1, 0), 4: (0, 0), 5: (0, 0)}
 
 
 def test_neq_is_rejected_at_setup():

@@ -1813,7 +1813,7 @@ subroutine get_fep
     ! local variables
     character                      :: libtext*80,qaname*2
     integer                        :: i,j,k,iat
-    logical                        :: dum_state1,dum_state2
+    logical                        :: dum_state1,dum_state2,wall_state1,wall_state2
     !temp. array for reallocating long-range exclusion list
     integer(AI), pointer    ::      tempexlong(:,:)
 
@@ -1907,6 +1907,9 @@ subroutine get_fep
                      abs(qbvdw(qiac(i,1),1)) < 1.0e-12_8 .and. abs(qcrg(i,1)) < 1.0e-12_8
         dum_state2 = abs(qavdw(qiac(i,2),1)) < 1.0e-12_8 .and. &
                      abs(qbvdw(qiac(i,2),1)) < 1.0e-12_8 .and. abs(qcrg(i,2)) < 1.0e-12_8
+        ! A Lennard-Jones wall needs both a radius and a well depth.
+        wall_state1 = abs(qavdw(qiac(i,1),1)) >= 1.0e-12_8 .and. abs(qbvdw(qiac(i,1),1)) >= 1.0e-12_8
+        wall_state2 = abs(qavdw(qiac(i,2),1)) >= 1.0e-12_8 .and. abs(qbvdw(qiac(i,2),1)) >= 1.0e-12_8
         if(dum_state1 .and. softcore_enabled(i,1)) then
           call die('nonlinear softcore [softcore] incorrectly enables a state-1 DUM atom')
         end if
@@ -1918,6 +1921,14 @@ subroutine get_fep
         end if
         if(dum_state1 .and. (.not. dum_state2) .and. .not. softcore_enabled(i,2)) then
           call die('nonlinear softcore missing real-state activation for a DUM->real atom')
+        end if
+        ! An atom that keeps its charge but loses its wall (e.g. C -> polar H)
+        ! would otherwise have that wall scaled linearly to zero.
+        if(wall_state1 .and. (.not. wall_state2) .and. .not. softcore_enabled(i,1)) then
+          call die('nonlinear softcore missing state-1 activation for an atom whose LJ vanishes in state 2')
+        end if
+        if(wall_state2 .and. (.not. wall_state1) .and. .not. softcore_enabled(i,2)) then
+          call die('nonlinear softcore missing state-2 activation for an atom whose LJ vanishes in state 1')
         end if
       end do
       call softcore_init_nonlinear(nstates)

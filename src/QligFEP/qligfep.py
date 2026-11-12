@@ -54,19 +54,31 @@ TIP3P_CHARGE_O = -0.834
 TIP3P_CHARGE_H = 0.417
 
 
-def nonlinear_softcore_activation(change_vdw) -> dict[int, tuple[int, int]]:
+def zero_lj_atom_types(fep_vdw) -> set[str]:
+    """Names of FEP [atom_types] entries without a Lennard-Jones wall (R* or epsilon zero)."""
+    zero = {"DUM"}
+    for line in fep_vdw:
+        name, r_star, epsilon = line.split()[:3]
+        if float(r_star) == 0.0 or float(epsilon) == 0.0:
+            zero.add(name)
+    return zero
+
+
+def nonlinear_softcore_activation(change_vdw, zero_lj_types=("DUM",)) -> dict[int, tuple[int, int]]:
     """Map endpoint atom types to real-state nonlinear softcore activation flags.
 
-    A state is enabled only when its atom is real and the other endpoint is
-    DUM. Real-to-real mutations and DUM-to-DUM placeholders remain hard/off.
+    A state is enabled when its atom is real and the other endpoint is DUM, or
+    when its atom has a Lennard-Jones wall that the other endpoint lacks (e.g.
+    a carbon turning into a charged, zero-LJ hydrogen). Mutations between two
+    atoms that both keep their wall, and DUM-to-DUM placeholders, stay hard.
     """
     activation = {}
     for q_idx, type_s1, type_s2 in change_vdw:
-        real_s1 = type_s1 != "DUM"
-        real_s2 = type_s2 != "DUM"
+        real_s1, real_s2 = type_s1 != "DUM", type_s2 != "DUM"
+        wall_s1, wall_s2 = type_s1 not in zero_lj_types, type_s2 not in zero_lj_types
         activation[int(q_idx)] = (
-            int(real_s1 and not real_s2),
-            int(real_s2 and not real_s1),
+            int((real_s1 and not real_s2) or (wall_s1 and not wall_s2)),
+            int((real_s2 and not real_s1) or (wall_s2 and not wall_s1)),
         )
     return activation
 
@@ -553,7 +565,7 @@ class QligFEP:
                 # regularization. Derive semantics from [change_atoms], not from
                 # ligand-size assumptions, so mixed and future topologies remain
                 # correct.
-                activation = nonlinear_softcore_activation(change_vdw)
+                activation = nonlinear_softcore_activation(change_vdw, zero_lj_atom_types(FEP_vdw))
                 for i in range(1, lig_tot + 1):
                     flag_s1, flag_s2 = activation.get(i, (0, 0))
                     outfile.write(f"{i:<5}{flag_s1:>10}{flag_s2:>10}\n")
