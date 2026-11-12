@@ -177,6 +177,7 @@ module md
   logical                   :: wpol_restr, wpol_Born
   logical                   :: wpol_adapt = .true.
   logical                   :: wpol_zero_offsets = .false.
+  logical                   :: wpol_minimizing = .false.
   real(8)                   :: fk_wsphere, crgtot, crgQtot
   ! Opt-in per-state exterior Born self-energy, added to EQ(istate)%total.
   logical                   :: perstate_born = .false.
@@ -6075,6 +6076,9 @@ subroutine md_run
   !***********************************************************************
   !       ENERGY MINIMIZATION (before MD)
   !***********************************************************************
+  ! Keep minimizer force evaluations out of the polarization offset updates
+  ! and their running averages.
+  wpol_minimizing = do_minimize
   if (do_minimize .and. min_method .eq. MIN_FIRE) then
     call fire_minimize
   end if
@@ -6257,6 +6261,7 @@ subroutine md_run
     end if
   end if
 
+  wpol_minimizing = .false.
   work_accumulated = 0.0_8
 
   ! Start timing after any minimization so that progress estimates describe
@@ -17949,7 +17954,7 @@ subroutine watpol
   end do
 
   ! calculate energy and force
-  if (.not. foreign_hamiltonian_evaluation .and. istep .ne. 0 .and. &
+  if (.not. foreign_hamiltonian_evaluation .and. .not. wpol_minimizing .and. istep .ne. 0 .and. &
       mod(istep,itdis_update) .eq. 0) then
     call centered_heading('Water polarization restraint data', '-')
     write(*,'(a)') 'shell    <n>    <theta>    theta_0 theta_corr'
@@ -18037,7 +18042,7 @@ subroutine watpol
       d(i3+9) = d(i3+9) + f0 * ( f1(9) )
     end do
 
-    if(.not. foreign_hamiltonian_evaluation) then
+    if(.not. foreign_hamiltonian_evaluation .and. .not. wpol_minimizing) then
       wshell(is)%avtheta = wshell(is)%avtheta + avtdum/real(wshell(is)%n_insh)
       wshell(is)%avn_insh = wshell(is)%avn_insh + wshell(is)%n_insh
     end if
