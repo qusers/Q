@@ -73,19 +73,22 @@ radius, so all solute inside the sphere is free and can adapt to the ligand.
 See [Boundary conditions](../manual/reference/boundaries.md#solute-boundary-restraints).
 :::
 
-<!-- FIGURE TODO: sphere-regions
-What: a cross-section through the simulation sphere of a real protein leg,
-  with the two solute regions in two colours (free, excluded) and water shown
-  as small spheres or a transparent surface. Annotate the sphere radius with a
-  dashed circle and a label, and mark the centre.
-Why: the table above is abstract; users need to see that "excluded" protein
-  is still there and that water stops at the sphere.
-How: PyMOL with a clipping slab (`clip slab, 6`) through the centre. Colour by
-  distance of each residue from the centre (inside or outside R), or better by
-  the excluded flag: write a PDB from qprep with `mask not excluded` to get the
-  included atoms. The dashed circle can be added afterwards in a vector editor
-  or drawn as CGO.
--->
+```{figure} ../_static/figures/sphere-regions.png
+:alt: Slab through a protein with a dashed circle of 25 angstrom radius around the ligand. Protein residues inside the circle are teal, protein residues outside it are grey, water oxygens fill the rest of the circle as blue dots, and the ligand is orange at the centre.
+:width: 70%
+
+A 6 Å thick slab through the centre of a Tyk2 sphere, seen along the slab
+normal. Tyk2 is the protein of the [tutorial](../tutorials/tyk2.md); the
+structure is the one of the QligFEP benchmark set. Dashed
+circle: the sphere radius of 25 Å; the cross marks the centre. Teal: free
+solute (190 residues in the whole sphere). Grey: excluded solute (98 residues
+in the whole structure), which is kept fixed and has no non-bonded
+interactions. Blue: water oxygens, on the lattice on which `qprep` places
+them, before any dynamics. Orange: a ligand (`ejm_31`). Hydrogens are not
+drawn. A residue is one charge group in this force field, so residues are free
+or excluded as a whole, and a free residue can reach across the circle.
+Rendered by `docs/scripts/render_sphere_regions.py`.
+```
 
 ## Solvent in the sphere
 
