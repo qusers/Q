@@ -22,7 +22,7 @@ which the repulsion reaches thermal energy. Setting
 $\lambda_1 A_{ij}/r^{12} \approx kT$ gives a wall position proportional to
 $\lambda_1^{1/12}$:
 
-```{figure} ../_static/figures/endpoint-wall.svg
+```{figure} ../_static/figures/endpoint-wall-light.svg
 :alt: Lennard-Jones potential scaled by state weights 1, 0.1, 0.01 and 0.001. The distance at which each curve crosses kT moves from 2.9 to 1.7 angstrom.
 :width: 85%
 
