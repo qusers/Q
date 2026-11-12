@@ -9510,7 +9510,7 @@ subroutine nonbon2_qq
 
       r2   = dx1*dx1 + dx2*dx2 + dx3*dx3
       r6_hc = r2*r2*r2  !for softcore
-        r6   = r6_hc + sc_lookup(iq,jq+natyps,istate)  !softcore
+        r6   = r6_hc + sc_lookup(iq,merge(natyps+jq,iacj,jq /= 0),istate)
         r6   = 1._8/r6
       r2   = 1./r2
       r    = sqrt ( r2 )
@@ -9615,7 +9615,7 @@ subroutine nonbon2_qq_lib_charges
 
       r2   = dx1*dx1 + dx2*dx2 + dx3*dx3
       r6_hc = r2*r2*r2   !needed for softcore
-        r6   = r6_hc + sc_lookup(iq,jq+natyps,istate)  !softcore
+        r6   = r6_hc + sc_lookup(iq,merge(natyps+jq,iacj,jq /= 0),istate)
         r6   = 1._8/r6
       r12  = r6*r6
       r2   = 1./r2
