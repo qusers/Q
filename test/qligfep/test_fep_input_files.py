@@ -18,6 +18,7 @@ import pytest
 from conftest import (
     GOLDEN_FEP_SETUP_DIR,
     TUTORIALS_DIR,
+    TYK2_SETUP_DIR,
     InputFileGoldenManager,
     parse_inp_file,
 )
@@ -36,22 +37,19 @@ IGNORE_KEYS = [
 def generated_fep_dir(tmp_path_factory) -> Path:
     """Run qligfep with reference parameters and return output dir.
 
-    Uses the pre-prepared ligand files from tutorials/Tyk2/setupFEP/
-    to avoid running qparams (which is slow).
+    Uses the pre-prepared ligand files in the test resources to avoid
+    running qparams (which is slow).
     """
     work_dir = tmp_path_factory.mktemp("fep_test")
-
-    # Copy required files from tutorials/Tyk2/setupFEP/
-    src_dir = TUTORIALS_DIR / "Tyk2" / "setupFEP"
 
     # Copy ligand files for ejm_31 and ejm_45
     for lig in ["ejm_31", "ejm_45"]:
         for ext in [".lib", ".prm", ".sdf", ".pdb"]:
-            shutil.copy(src_dir / f"{lig}{ext}", work_dir / f"{lig}{ext}")
+            shutil.copy(TYK2_SETUP_DIR / f"{lig}{ext}", work_dir / f"{lig}{ext}")
 
     # Copy protein.pdb and water.pdb for protein system
-    shutil.copy(src_dir / "protein.pdb", work_dir / "protein.pdb")
-    shutil.copy(src_dir / "water.pdb", work_dir / "water.pdb")
+    shutil.copy(TYK2_SETUP_DIR / "protein_neutralized.pdb", work_dir / "protein.pdb")
+    shutil.copy(TUTORIALS_DIR / "Tyk2" / "setupFEP" / "water.pdb", work_dir / "water.pdb")
 
     # Run qligfep with the same parameters as the golden files
     cmd = [

@@ -16,6 +16,7 @@ TEST_DIR = Path(__file__).parent.parent
 PROJECT_ROOT = TEST_DIR.parent
 TUTORIALS_DIR = PROJECT_ROOT / "tutorials"
 SETUP_FEP_DIR = TUTORIALS_DIR / "Tyk2" / "setupFEP"
+TYK2_SETUP_DIR = TEST_DIR / "qligfep" / "resources" / "tyk2_ejm_31_ejm_45"
 
 
 def parse_fep_section(fep_content: str) -> dict[str, str]:
@@ -47,12 +48,11 @@ def fep_work_dir(tmp_path_factory) -> Path:
     # Copy ligand files for ejm_31 and ejm_45
     for lig in ["ejm_31", "ejm_45"]:
         for ext in [".lib", ".prm", ".sdf", ".pdb"]:
-            shutil.copy(SETUP_FEP_DIR / f"{lig}{ext}", work_dir / f"{lig}{ext}")
+            shutil.copy(TYK2_SETUP_DIR / f"{lig}{ext}", work_dir / f"{lig}{ext}")
 
     # Copy protein/water PDB files
-    amber_dir = SETUP_FEP_DIR / "amber"
-    shutil.copy(amber_dir / "protein.pdb", work_dir / "protein.pdb")
-    shutil.copy(amber_dir / "water.pdb", work_dir / "water.pdb")
+    shutil.copy(SETUP_FEP_DIR / "amber" / "protein.pdb", work_dir / "protein.pdb")
+    shutil.copy(SETUP_FEP_DIR / "water.pdb", work_dir / "water.pdb")
 
     return work_dir
 
