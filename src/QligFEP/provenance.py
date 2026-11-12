@@ -7,6 +7,9 @@ No user names, paths or checksums are recorded. The block uses ``*`` comment lin
 Fortran parser (``prmfile.f90``) and QligFEP's own readers already skip, so it has
 no effect on how the file is read.
 
+``provenance_record`` returns the version and git commit as a dict, for the JSON run
+configuration files (``fep_config.json``, ``resfep_config.json``).
+
 Set ``SOURCE_DATE_EPOCH`` to pin the recorded timestamp (e.g. for reproducible
 output in tests).
 """
@@ -27,12 +30,13 @@ from . import __version__
 PathLike = Union[str, "os.PathLike[str]"]
 
 BEGIN_MARKER = "*---- QligFEP provenance " + "-" * 55
+_UNCOMMITTED = "(uncommitted changes)"  # the source tree had modified tracked files
 _WIDTH = 100  # Q reads 400-character lines; stay far below that.
 
 
 @lru_cache(maxsize=1)
 def _git_description() -> Optional[str]:
-    """Return ``<short-hash>[ (dirty)]`` for the QligFEP source tree, if it is a git checkout."""
+    """Return ``<short-hash>[ (uncommitted changes)]`` for the QligFEP source tree, if it is a git checkout."""
     package_dir = Path(__file__).resolve().parent
     try:
         commit = subprocess.run(
@@ -53,7 +57,7 @@ def _git_description() -> Optional[str]:
         return None
     if not commit:
         return None
-    return f"{commit} (dirty)" if status else commit
+    return f"{commit} {_UNCOMMITTED}" if status else commit
 
 
 def _timestamp() -> str:
@@ -103,6 +107,20 @@ def provenance_header(generator: str, details: Optional[Mapping[str, object]] = 
     for label, value in (details or {}).items():
         lines += _field(str(label), str(value))
     return "\n".join(lines) + "\n"
+
+
+def provenance_record() -> dict[str, object]:
+    """Return the same provenance as a JSON-serialisable dict, for run configuration files.
+
+    ``git_commit`` and ``uncommitted_changes`` are ``None`` when QligFEP is not running from a git
+    checkout (e.g. a regular, non-editable install); ``QligFEP_version`` is always set.
+    """
+    git = _git_description()
+    return {
+        "QligFEP_version": __version__,
+        "git_commit": git.split()[0] if git else None,
+        "uncommitted_changes": git.endswith(_UNCOMMITTED) if git else None,
+    }
 
 
 def is_comment(line: str) -> bool:

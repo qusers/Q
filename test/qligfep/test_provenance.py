@@ -8,7 +8,13 @@ import pytest
 
 from QligFEP import provenance
 from QligFEP.IO import get_force_field_paths, read_prm
-from QligFEP.provenance import BEGIN_MARKER, copy_with_provenance, is_comment, provenance_header
+from QligFEP.provenance import (
+    BEGIN_MARKER,
+    copy_with_provenance,
+    is_comment,
+    provenance_header,
+    provenance_record,
+)
 from QligFEP.qresfep import QresFEP
 
 
@@ -87,3 +93,29 @@ def test_git_description_is_safe_outside_a_checkout(monkeypatch):
         assert "QligFEP" in provenance_header("tests.generator")
     finally:
         provenance._git_description.cache_clear()
+
+
+def test_record_matches_the_header_and_is_json_serialisable():
+    import json
+
+    provenance._git_description.cache_clear()
+    record = provenance_record()
+    assert json.loads(json.dumps(record)) == record
+    assert record["QligFEP_version"] == provenance.__version__
+    git = provenance._git_description()
+    if git is None:
+        assert record["git_commit"] is None and record["uncommitted_changes"] is None
+    else:
+        assert re.fullmatch(r"[0-9a-f]{12}", record["git_commit"])
+        assert record["uncommitted_changes"] is ("uncommitted" in git)
+        assert f"git {record['git_commit']}" in provenance_header("tests.generator")
+
+
+def test_record_is_safe_outside_a_checkout(monkeypatch):
+    provenance._git_description.cache_clear()
+    monkeypatch.setattr(provenance, "_git_description", lambda: None)
+    assert provenance_record() == {
+        "QligFEP_version": provenance.__version__,
+        "git_commit": None,
+        "uncommitted_changes": None,
+    }

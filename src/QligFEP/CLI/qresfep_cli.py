@@ -7,9 +7,8 @@ import random
 from pathlib import Path
 from typing import Optional
 
-from QligFEP import __version__
-
 from ..logger import logger, setup_logger
+from ..provenance import provenance_record
 from ..qresfep import QRESFEP_FORCE_FIELD, QresFEP
 from ..resfep_protocols import DEFAULT_PRODUCTION_STEPS, apply_manuscript_settings
 from ..settings.settings import CLUSTER_DICT
@@ -317,7 +316,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> Path:
                 "sphere_radius": run.radius,
                 "sphere_center": run.center,
                 "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "QligFEP_version": __version__,
+                **provenance_record(),
             },
             indent=4,
         )
