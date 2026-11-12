@@ -85,7 +85,7 @@ The purpose of a soft-core potential is to remove this divergence.
 ## Q's soft-core potential
 
 Q's soft-core adds a constant $\alpha$ to $r^6$ in the Lennard-Jones potential
-(the Q6 manual cites Zacharias, Straatsma and McCammon for soft-core
+(the 2017 Q manual cites Zacharias, Straatsma and McCammon for soft-core
 potentials):
 
 $$

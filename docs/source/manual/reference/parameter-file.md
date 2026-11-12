@@ -127,34 +127,38 @@ of atom types. A field that is not a defined atom type acts as a wild card.
 
 ## Example
 
-The start of each section of `OPLS2015.prm`:
+The start of each section of `AMBER14sb.prm`:
 
 ```text
 [options]
-name          OPLS-AA/M 2015
-vdw_rule      geometric   ! vdW combination rule (geometric or arithmetic)
-scale_14      0.5         ! electrostatic 1-4 scaling factor
-switch_atoms  on          ! on = use switch atom; off = use charge group
+name                           Q-Amber14SB
+type                           AMBER
+vdw_rule                       arithmetic !vdW combination rule (geometric or arithmetic)
+scale_14                       0.8333 ! electrostatic 1-4 scaling factor
+switch_atoms                   off
+improper_potential             periodic
 
 [atom_types]
-*-iac------Avdw1------Avdw2-----Bvdw1------Avdw3-----Bvdw2&3----mass---SYBYL-name
-C135     944.5180   944.5180   22.0296   667.8751   15.5773     12.0110 1
-C136     944.5180   944.5180   22.0296   667.8751   15.5773     12.0110 1
+* tac               R*1        R*2   epsilon1        R*3 epsilon2&3       mass
+2C                1.908        0.0     0.1094      1.908     0.0547      12.01
+3C                1.908        0.0     0.1094      1.908     0.0547      12.01
 
 [bonds]
-*iaci  iacj     force.c.    dist.
-OT     HT       1106.000     0.957
-HT     HT          0.000     1.514
+2C           2C                620.0      1.526
+2C           3C                620.0      1.526
 
 [angles]
-*iaci  iacj   iack      forceK   angle0     forceUB    Stheta
-HT     OT     HT        200.00    104.5      0.00      0.00
+2C           2C           C                 126.0      111.1
+2C           2C           CO                126.0      111.1
 
 [torsions]
-*iaci  iacj   iack   iacl      forceK   #minima     phase   #paths
-?      C145   C145   ?          3.625     2.000   180.000     1
+?            2C           2C           ?                   1.4   3.0        0.0   9.0
+?            2C           CA           ?                   0.0   2.0        0.0   1.0
 
 [impropers]
-*iaci  iacj   iack   iacl      forceK     imp0
-C136   C500   C501   C514       1.100   180.000
+?            C            O            ?                  10.5      180.0
+?            C4           H4           ?                   1.1      180.0
 ```
+
+With the arithmetic rule the Lennard-Jones columns hold $R^*$ and
+$\varepsilon$; the 1–4 set has half the $\varepsilon$.

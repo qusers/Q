@@ -1,7 +1,7 @@
 # Q manual
 
 This is the manual of the Q programs in this repository. It is based on the
-*Manual for Q6* (17 August 2017), split into pages and revised so that
+Q manual of 17 August 2017, split into pages and revised so that
 commands, keywords, defaults and file formats are those of the source here.
 
 ```{toctree}
@@ -43,8 +43,8 @@ bibliography
   run dynamics, define a perturbation, analyse.
 - The **reference** pages hold the file formats, command lists and the
   equations behind the boundary conditions and algorithms.
-- [Changes from the Q6 manual](differences.md) is for readers who know the
-  2017 manual or have input files written for Q6.
+- [Changes from the 2017 Q manual](differences.md) is for readers who know the
+  2017 manual or have input files written for it.
 
 Citations in square brackets, such as [1], refer to the
 [bibliography](bibliography.md).

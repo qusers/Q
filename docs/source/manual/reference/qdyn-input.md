@@ -13,8 +13,8 @@ keywords are optional.
 `qdyn` ignores keywords it does not know, without an error. A misspelt
 keyword silently leaves the default in place. Check the log for the values
 that were actually used. Note the spelling of `polarization` and
-`rigid_box_center`. See [Changes from the Q6 manual](../differences.md) if
-your inputs were written for Q6.
+`rigid_box_center`. See [Changes from the 2017 Q manual](../differences.md) if
+your inputs were written for the Q version of that manual.
 :::
 
 ## Keyword sections

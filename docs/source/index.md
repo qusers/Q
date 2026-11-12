@@ -39,7 +39,7 @@ Find every installed Python command and option.
 
 :::{important}
 The documentation follows the source in this repository. The Q manual is a
-port of the 2017 *Manual for Q6* and marks where this source differs from it.
+port of the 2017 2017 Q manual and marks where this source differs from it.
 :::
 
 ```{toctree}

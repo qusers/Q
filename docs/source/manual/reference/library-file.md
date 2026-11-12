@@ -90,58 +90,55 @@ One charge group per line.
 
 ## Example
 
-The CHARMM36 entry for alanine, from `CHARMM36.lib`:
+The AMBER ff14SB entry for alanine, from `AMBER14sb.lib`:
 
 ```text
 {ALA}
     [atoms]
-         1 N      NH1         -0.47
-         2 H      H            0.31
-         3 CA     CT1          0.07
-         4 HA     HB1          0.09
-         5 CB     CT3         -0.27
-         6 HB1    HA3          0.09
-         7 HB2    HA3          0.09
-         8 HB3    HA3          0.09
-         9 C      C            0.51
-        10 O      O           -0.51
+        1  N      N             -0.415700
+        2  H      H              0.271900
+        3  CA     CX             0.033700
+        4  HA     H1             0.082300
+        5  CB     CT            -0.182500
+        6  HB1    HC             0.060300
+        7  HB2    HC             0.060300
+        8  HB3    HC             0.060300
+        9  C      C              0.597300
+       10  O      O             -0.567900
     [bonds]
-       CB     CA
-       N      H
-       N      CA
-       C      CA
-       CA     HA
-       CB     HB1
-       CB     HB2
-       CB     HB3
-       O      C
+        N     H
+        N     CA
+        CA    HA
+        CA    CB
+        CA    C
+        CB    HB1
+        CB    HB2
+        CB    HB3
+        C     O
+    [impropers]
+        -C    N     CA    H
+        CA    C     +N    O
     [connections]
         head N
         tail C
-    [impropers]
-         N      -C     CA     H
-         C      CA     +N     O
-    [charge_groups]
-        N     H     CA    HA
-        CB    HB1   HB2   HB3
-        C     O
 ```
 
-The TIP3P water entry, a solvent:
+The entry has no `[charge_groups]` section; AMBER ff14SB is used with
+`switch_atoms off`.
+
+The TIP3P water entry of the same file, a solvent:
 
 ```text
-{HOH}
+{HOH} !TIP3P water
     [info]
         solvent 1
         density 0.0335
     [atoms]
-         1 O      OT         -0.834
-         2 H1     HT          0.417
-         3 H2     HT          0.417
+         1 O       OW         -0.8340
+         2 H1      HW          0.4170
+         3 H2      HW          0.4170
     [bonds]
-       O      H1
-       O      H2
-       H1     H2
-    [charge_groups]
-       O      H1     H2
+       O    H1
+       O    H2
+       H1   H2 !for shake
 ```

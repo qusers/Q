@@ -180,8 +180,7 @@ it with:
 - `checktors`: the same for torsions;
 - `checkimps`: the same for impropers.
 
-`checkimps` is important for force fields with harmonic impropers (GROMOS,
-CHARMM). With a non-periodic potential it makes a large difference whether
+`checkimps` is important for force fields with harmonic impropers. With a non-periodic potential it makes a large difference whether
 the angle is −179° or +179° if the minimum is at +180°, although the
 structures are nearly the same. Impropers with the wrong sign give high
 energies and strong forces that distort the molecule. The sign depends on the

@@ -1,6 +1,6 @@
 # Bibliography
 
-The numbers are those of the *Manual for Q6*, so that citations can be
+The numbers are those of the 2017 Q manual, so that citations can be
 compared; references that this manual does not cite are omitted.
 
 - \[1\] Marelius, J.; Kolmodin, K.; Feierberg, I.; Åqvist, J. *J. Mol. Graph. Model.* **1998**, *16*, 213–225.

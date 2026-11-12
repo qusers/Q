@@ -74,10 +74,15 @@ The files are in `src/QligFEP/FF/`:
 | Force field | Library | Parameters |
 |---|---|---|
 | AMBER ff14SB | `AMBER14sb.lib` | `AMBER14sb.prm` |
-| CHARMM36 | `CHARMM36.lib` | `CHARMM36.prm` |
-| OPLS 2005 | `OPLS2005.lib` | `OPLS2005.prm` |
-| OPLS 2015 | `OPLS2015.lib` | `OPLS2015.prm` |
 | OPLS-AA/M | `OPLSAAM.lib` | `OPLSAAM.prm` |
+| OPLS-AA (2005) | `OPLS2005.lib` | `OPLS2005.prm` |
+| CHARMM36 | `CHARMM36.lib` | `CHARMM36.prm` |
+
+`AMBER14sb` is the default of QligFEP. `OPLSAAM` is the OPLS-AA/M force field
+of Robertson, Tirado-Rives and Jorgensen (2015), extracted from the original
+parameter and topology files and curated in 2025; it is the force field of
+QresFEP. The directory also holds an older translation named `OPLS2015`,
+which is likewise labelled OPLS-AA/M; prefer `OPLSAAM`.
 
 These are Q translations of the named force fields; identity with the
 original cannot be guaranteed. Do not mix libraries and parameter files of
@@ -100,8 +105,8 @@ properties of the force field:
 | | `vdw_rule` | `scale_14` | `switch_atoms` | Impropers |
 |---|---|---|---|---|
 | `AMBER14sb.prm` | arithmetic | 0.8333 | off | periodic |
+| `OPLSAAM.prm` | geometric | 0.5 | on | periodic, explicit |
 | `CHARMM36.prm` | arithmetic | 1.0 | off | harmonic, explicit |
-| `OPLS2015.prm` | geometric | 0.5 | on | harmonic |
 
 ## Solvents
 

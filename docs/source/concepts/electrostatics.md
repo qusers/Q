@@ -133,35 +133,68 @@ How: matplotlib. Place 5-8 point charges at 12-20 A, compute their potential
 
 Nothing outside the sphere appears in the energy function: excluded solute
 atoms have no non-bonded interactions, and there is no solvent. Physically,
-the outside is taken to be a uniform dielectric continuum, bulk water. The
-polarisation restraints make the surface water orient as it would next to
-such a continuum, but the **energy** of polarising the continuum is not
-computed.
+the outside is taken to be a uniform dielectric continuum, bulk water. Its
+response to charge inside the sphere has two parts, and `qdyn` treats them
+differently.
 
-For a sphere of radius $R$ with net charge $Q$ that energy is, to leading
-order, given by Born's formula:
+| Part | In `qdyn` |
+|---|---|
+| The outside continuum orients the water at the surface | **Included**, through the polarisation restraint and its charge correction (`charge_correction`; see [A charged sphere](spherical-boundary.md#a-charged-sphere)). This changes the forces and the sampling. |
+| The energy gained by polarising the continuum itself | **Not included.** No energy term depends on it. |
+
+### The Born energy
+
+To leading order, the missing energy is given by Born's formula for a charge
+$Q$ in a cavity of radius $R$:
 
 $$
-\Delta G_{\mathrm{Born}} = -\frac{1}{4\pi\varepsilon_0}\,\frac{Q^2}{2R}\left(1 - \frac{1}{\varepsilon}\right) .
+B = -C\,Q^2, \qquad C = \frac{1}{4\pi\varepsilon_0}\,\frac{1}{2R}\left(1 - \frac{1}{\varepsilon}\right) .
 $$
 
-It is not small. For $Q = \pm 1$, $R$ = 25 Å and $\varepsilon$ = 80 it is
-−6.6 kcal/mol, and it grows with the square of the charge.
+For $R$ = 25 Å and $\varepsilon$ = 80, $C$ = 6.6 kcal/mol per squared unit
+charge.
 
-This has three consequences.
+In an FEP calculation the charge of the sphere in state $s$ is the charge of
+the environment plus the charge of the Q-atoms in that state,
+$Q_s = Q_{\mathrm{env}} + q_s$. A constant that is the same in both states
+does not affect a free-energy difference. What matters is the difference
+between the states:
 
-### The two legs must match
+$$
+\Delta B = B_2 - B_1 = -C\left[\,2\,Q_{\mathrm{env}}\,(q_2 - q_1) + \left(q_2^2 - q_1^2\right)\right] .
+$$
 
-A binding free energy is a difference between a simulation in the protein
-and a simulation in water. The missing contribution of the outside cancels
-if it is the same in both, and it is the same if the two spheres have
+Each leg (protein and water) has its own $\Delta B$, and the binding free
+energy contains their difference. Three cases follow.
 
-- the **same radius**, and
-- the **same net charge**.
+**The ligands have the same charge** ($q_1 = q_2$). $\Delta B$ is zero in
+both legs, whatever $Q_{\mathrm{env}}$ is. The net charge of the protein
+sphere may differ from that of the water sphere without any effect from this
+term. This is the common case and the reason why relative binding free
+energies of equally charged ligands are well behaved in spheres with
+different net charges.
 
-This is the reason behind several rules of the Q workflow: the water leg
-uses a sphere of the same size as the protein leg, and the net charge of the
-protein sphere is controlled, as described next.
+**The ligands differ in charge; the self term.** $-C\,(q_2^2 - q_1^2)$ is the
+same in both legs if $C$ is, that is, if the radii are equal. The radius that
+counts is the effective solvent radius, which differs somewhat between a
+protein sphere and a water sphere of the same nominal size. For example,
+24.7 and 23.3 Å give $C$ = 6.6 and 7.0, a residue of 0.4 kcal/mol for a
+change between charge 0 and ±1.
+
+**The ligands differ in charge; the cross term.** $-2\,C\,Q_{\mathrm{env}}\,(q_2 - q_1)$
+depends on the charge of the environment, which generally differs between
+the legs: a pure water sphere has $Q_{\mathrm{env}} = 0$. Each unit of
+environment charge contributes about 13 kcal/mol per unit of charge change.
+It cancels only if the two legs have the same $Q_{\mathrm{env}}$.
+
+Two cautions. The formula is a continuum estimate for a charge at the centre
+of a sharp sphere; a real sphere with a protein in it, fixed atoms and
+restrained surface water does not respond exactly like that, and the
+artefacts observed for charge-changing perturbations are not fully described
+by it. And `qdyn` and QligFEP do not add this term or any other analytical
+correction: results for charge-changing perturbations rely on making the
+legs comparable, as described
+[below](#perturbations-that-change-the-net-charge).
 
 ### Charged groups near the boundary are neutralised
 
@@ -172,8 +205,8 @@ reasons.
   screened by a dielectric constant of the order of 80. In the sphere it has
   water on one side only, or none if it is excluded, and acts on the ligand
   almost unscreened.
-- It adds to the net charge of the sphere, which then differs from that of
-  the water leg.
+- It adds to $Q_{\mathrm{env}}$, which enters the cross term above for
+  charge-changing perturbations.
 
 Ionisable groups far from the centre are therefore modelled in a neutral
 form. Their interaction with the ligand is thereby neglected. For a neutral
@@ -188,7 +221,8 @@ $$
 
 where $p$ runs over the neutralised ionic groups with formal charge $q_p$,
 $l$ over the ligand atoms with partial charges $q_l$, and $\varepsilon$ is
-typically 80. QligFEP does not apply this correction.
+typically 80. The term is the same for two ligands with the same charge
+distribution and is not computed by the QligFEP analysis.
 
 In QligFEP, `qprep_prot` does the neutralisation when it prepares the
 protein:
@@ -224,23 +258,14 @@ How: PyMOL, from the protein PDB before and after `qprep_prot`. Select the
 
 ### Perturbations that change the net charge
 
-If the two ligands of a perturbation have different net charges, the net
-charge of the sphere changes along the path, and the Born term changes with
-it. Two things are involved.
+If the two ligands of a perturbation have different net charges, both parts
+of the outside response change along the path.
 
-**The polarisation of the surface water.** The target orientation of the
-surface water depends on the net charge of the Q-atoms at the current state
-weights (see [A charged sphere](spherical-boundary.md#a-charged-sphere)), so
-the surface water follows the changing charge correctly.
-
-**The energy of the outside continuum.** It is not in the energy function
-and therefore not in the free energy of either leg. It cancels between the
-protein and the water leg only if the charge changes by the same amount, in
-a sphere of the same size, in both; and even then the cancellation relies on
-the two spheres responding to the charge in the same way, which a protein
-sphere with frozen and neutralised parts and a pure water sphere do not do
-exactly. Charge-changing perturbations are therefore harder to converge and
-to validate than neutral ones.
+- **The surface water** follows: its target orientation is computed from the
+  Q-atom charge at the state weights of each window.
+- **The Born energy** changes by $\Delta B$ in each leg and is not computed.
+  Its cross term is the large one, and it is removed by giving both legs the
+  same environment charge.
 
 `setupFEP` has an option for these edges, `-cm` (`--charge-method`):
 
@@ -250,9 +275,14 @@ to validate than neutral ones.
 | `coalchemical_water` | turns a water molecule of the water leg into a Na⁺ or Cl⁻ along the perturbation, so that the net charge of the water leg does not change |
 | `none` | no special handling |
 
-Whichever is used, inspect both legs of a charge-changing edge separately,
-check the total charges reported in the `qdyn` logs, and do not mix methods
-within one network.
+`ion_match` equalises $Q_{\mathrm{env}}$ between the legs, so the cross
+terms cancel. `coalchemical_water` keeps the net charge of the water sphere
+constant along the path.
+
+Even so, charge-changing perturbations remain harder than neutral ones: the
+continuum picture is approximate, and the endpoints are more sensitive.
+Inspect both legs separately, check the total charges that `qdyn` prints
+(`Total charge of system`), and do not mix methods within one network.
 
 ## Settings
 

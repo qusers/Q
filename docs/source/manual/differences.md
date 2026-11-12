@@ -1,16 +1,16 @@
-# Changes from the Q6 manual
+# Changes from the 2017 Q manual
 
-This page is for readers who know the *Manual for Q6* of 17 August 2017 or
-have input files written for Q6. The rest of this manual describes only what
+This page is for readers who know the Q manual of 17 August 2017 or
+have input files written for it. The rest of this manual describes only what
 the source in this repository does.
 
 ## Keywords that are read differently
 
 `qdyn` ignores keywords it does not know, without an error. An input written
-for Q6 therefore runs, but the keywords below do not have the effect they had
+for that version therefore runs, but the keywords below do not have the effect they had
 there.
 
-| Q6 keyword | Here |
+| 2017 keyword | Here |
 |---|---|
 | `polarisation`, `polarisation_force` (`[solvent]`) | spelled `polarization`, `polarization_force` |
 | `rigid_box_centre` (`[PBC]`) | spelled `rigid_box_center` |
@@ -19,7 +19,7 @@ there.
 
 ## Defaults that differ
 
-| Keyword | Q6 manual | Here |
+| Keyword | 2017 manual | Here |
 |---|---|---|
 | `bath_coupling` | 100 fs | 10 fs |
 | `separate_scaling` | `on` | `off` |
@@ -30,7 +30,7 @@ there.
 
 ## Formats that differ
 
-| Item | Q6 manual | Here |
+| Item | 2017 manual | Here |
 |---|---|---|
 | `[el_scale]` of the FEP file | one scale factor per pair | one scale factor per pair and state |
 | `[impropers]` of the parameter file | two atom types | four atom types |
@@ -38,9 +38,9 @@ there.
 | `writemol2` in `qprep` | molecule number, file, hydrogen and water flags | file name only; writes the current mask |
 | Program names | `Qprep6`, `Qdyn6`, `Qdyn6p`, `Qfep6`, `Qcalc6`, `Qdum6` | `qprep`, `qdyn`, `qdynp`, `qfep`, `qcalc`, `qdum` |
 
-## Errors in the Q6 manual corrected here
+## Errors in the 2017 manual corrected here
 
-| Place | Q6 manual | Here |
+| Place | 2017 manual | Here |
 |---|---|---|
 | Two-state ground-state energy (Eq. 7) | $(\varepsilon_1 + \varepsilon_2)^2$ under the square root | $(\varepsilon_1 - \varepsilon_2)^2$, as in `qfep.f90` |
 | Free energy of the mapping potential (Eq. 5) | logarithm of a sum of averages | sum of logarithms of averages |
