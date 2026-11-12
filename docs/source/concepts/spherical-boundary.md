@@ -74,20 +74,21 @@ See [Boundary conditions](../manual/reference/boundaries.md#solute-boundary-rest
 :::
 
 ```{figure} ../_static/figures/sphere-regions.png
-:alt: Slab through a protein with a dashed circle of 25 angstrom radius around the ligand. Protein residues inside the circle are teal, protein residues outside it are grey, water oxygens fill the rest of the circle as blue dots, and the ligand is orange at the centre.
+:alt: Slab through a protein with a dashed circle of 25 angstrom radius around the ligand. Protein residues inside the circle are blue sticks, protein residues outside it are pale sticks inside a translucent grey surface, water molecules fill the rest of the circle, and the ligand is orange near the centre.
 :width: 70%
 
-A 6 Å thick slab through the centre of a Tyk2 sphere, seen along the slab
+A 3.6 Å thick slab through the centre of a Tyk2 sphere, seen along the slab
 normal. Tyk2 is the protein of the [tutorial](../tutorials/tyk2.md); the
-structure is the one of the QligFEP benchmark set. Dashed
-circle: the sphere radius of 25 Å; the cross marks the centre. Teal: free
-solute (190 residues in the whole sphere). Grey: excluded solute (98 residues
-in the whole structure), which is kept fixed and has no non-bonded
-interactions. Blue: water oxygens, on the lattice on which `qprep` places
-them, before any dynamics. Orange: a ligand (`ejm_31`). Hydrogens are not
-drawn. A residue is one charge group in this force field, so residues are free
-or excluded as a whole, and a free residue can reach across the circle.
-Rendered by `docs/scripts/render_sphere_regions.py`.
+structure is the one of the QligFEP benchmark set. Dashed circle: the sphere
+radius of 25 Å. Blue: free solute. Pale sticks inside a grey surface:
+excluded solute, which is kept fixed and has no non-bonded interactions. Red
+and white: water, on the lattice on which `qprep` places it, before any
+dynamics. Orange: a ligand (`ejm_31`). Hydrogens are drawn for water only.
+The slab contains 46 free and 10 excluded residues and 86 water molecules;
+the whole structure has 190 free and 98 excluded residues. A residue is one
+charge group in this force field, so residues are free or excluded as a
+whole, and a free residue can reach across the circle. Rendered by
+`docs/scripts/render_sphere_regions.py`.
 ```
 
 ## Solvent in the sphere
