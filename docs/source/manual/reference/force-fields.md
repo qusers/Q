@@ -81,8 +81,7 @@ The files are in `src/QligFEP/FF/`:
 `AMBER14sb` is the default of QligFEP. `OPLSAAM` is the OPLS-AA/M force field
 of Robertson, Tirado-Rives and Jorgensen (2015), extracted from the original
 parameter and topology files and curated in 2025; it is the force field of
-QresFEP. The directory also holds an older translation named `OPLS2015`,
-which is likewise labelled OPLS-AA/M; prefer `OPLSAAM`.
+QresFEP.
 
 These are Q translations of the named force fields; identity with the
 original cannot be guaranteed. Do not mix libraries and parameter files of

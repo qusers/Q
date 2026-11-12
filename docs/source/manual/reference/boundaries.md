@@ -12,8 +12,11 @@ restrained to their initial coordinates with a harmonic potential, to avoid
 distorting bonds across the boundary. The inner radius of this shell and the
 force constant are set in the `qdyn` input (`[sphere]`, keywords
 `shell_radius` and `shell_force`). The force constant defaults to
-10 kcal·mol⁻¹·Å⁻². The shell radius defaults to 85 % of the exclusion radius; a value of 1 or
-less is read as a fraction of the exclusion radius. Atoms are assigned to the
+10 kcal·mol⁻¹·Å⁻². The shell radius does not change the size of the sphere; it only selects
+the solute inside the sphere that is restrained. If the keyword is absent it
+defaults to 85 % of the exclusion radius; a value of 1 or less is read as a
+fraction of the exclusion radius. Setting it equal to the exclusion radius,
+as QligFEP does, leaves all solute inside the sphere unrestrained. Atoms are assigned to the
 excluded region and to the shell by charge group.
 
 Atoms are assigned to the shell and to the excluded region before the

@@ -110,7 +110,7 @@ qprep_prot -i PROTEIN -cog X Y Z
 | `-log`, `--log-level` | no | `info` | `debug`, `info`, `warning`, `error`, or `critical` |
 
 Valid bundled force-field names are `AMBER14sb`, `CHARMM36`, `OPLS2005`, and
-`OPLS2015`. Automatic disulfide detection uses 1.8–2.5 Å for ordinary or mixed
+`OPLSAAM`. Automatic disulfide detection uses 1.8–2.5 Å for ordinary or mixed
 cysteine labels and 1.8–4.0 Å only when both residues are already labeled
 `CYX`/`CYD`; inspect every detected bond. The neutralization offset is validated
 between zero and the sphere radius.

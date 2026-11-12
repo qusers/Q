@@ -48,11 +48,10 @@ simulation.
 
 | Region | Which atoms | Treatment in `qdyn` |
 |---|---|---|
-| **Free** | solute inside the inner shell radius; all solvent in the sphere | normal dynamics |
-| **Restrained shell** | solute between the inner shell radius and the sphere radius | normal interactions, plus a harmonic restraint to the topology coordinates (default 10 kcal·mol⁻¹·Å⁻²) |
+| **Free** | solute and solvent inside the sphere | normal dynamics |
 | **Excluded** | solute outside the sphere radius | no non-bonded interactions; harmonic restraint to the topology coordinates with 200 kcal·mol⁻¹·Å⁻²; bonded terms are still evaluated |
 
-Three details matter in practice.
+Two details matter in practice.
 
 **Atoms are assigned by charge group, not one by one.** A
 [charge group](electrostatics.md#charge-groups-and-cut-offs) is inside or
@@ -62,41 +61,28 @@ cut in two, so the boundary does not create fractional charges.
 
 **Excluded atoms still hold the structure.** Bonds, angles and torsions that
 cross the boundary are kept, so the free part of the protein remains attached
-to a rigid scaffold with the shape of the starting structure. The restrained
-shell softens the transition between the rigid scaffold and the free
-interior.
+to a rigid scaffold with the shape of the starting structure.
 
-**The shell radius does not change the size of the sphere.** The sphere
-radius is fixed in the topology. `shell_radius`, in the `[sphere]` section of
-the `qdyn` input, only decides how much of the solute *inside* the sphere is
-additionally restrained: solute charge groups between `shell_radius` and the
-sphere radius. Water is not affected, and everything inside the sphere keeps
-all its interactions.
-
-- A value of 1 or less is read as a fraction of the sphere radius.
-- If the keyword is absent, `qdyn` uses 0.85: with a 25 Å sphere, solute
-  between 21.25 and 25 Å is restrained.
-- QligFEP writes `shell_radius` equal to the sphere radius (25). The shell is
-  then empty and all solute inside the sphere is free. The keyword has to be
-  written to get this; leaving it out gives the 0.85 default.
-
-A smaller `shell_radius` therefore does not simulate a smaller system. It
-makes the outer part of the protein stiffer, which can be useful if residues
-near the edge drift, at the cost of less flexibility there.
+:::{note}
+`qdyn` can also restrain the solute in an outer shell of the sphere to its
+starting coordinates (`shell_radius` and `shell_force` in `[sphere]`).
+QligFEP does not use this: it writes `shell_radius` equal to the sphere
+radius, so all solute inside the sphere is free and can adapt to the ligand.
+See [Boundary conditions](../manual/reference/boundaries.md#solute-boundary-restraints).
+:::
 
 <!-- FIGURE TODO: sphere-regions
 What: a cross-section through the simulation sphere of a real protein leg,
-  with the three solute regions in three colours (free, restrained shell,
-  excluded) and water shown as small spheres or a transparent surface.
-  Annotate the sphere radius and the inner shell radius with dashed circles
-  and labels, and mark the centre.
+  with the two solute regions in two colours (free, excluded) and water shown
+  as small spheres or a transparent surface. Annotate the sphere radius with a
+  dashed circle and a label, and mark the centre.
 Why: the table above is abstract; users need to see that "excluded" protein
   is still there and that water stops at the sphere.
 How: PyMOL with a clipping slab (`clip slab, 6`) through the centre. Colour by
-  distance of each residue's CA from the centre: < 0.85 R, 0.85 R to R, > R.
-  Use shell_radius 0.85 for the illustration and say so in the caption, since
-  QligFEP itself uses no shell. Dashed circles can be added afterwards in a
-  vector editor or drawn as CGO.
+  distance of each residue from the centre (inside or outside R), or better by
+  the excluded flag: write a PDB from qprep with `mask not excluded` to get the
+  included atoms. The dashed circle can be added afterwards in a vector editor
+  or drawn as CGO.
 -->
 
 ## Solvent in the sphere
@@ -296,8 +282,7 @@ the net charge of the spheres matter.
 | Setting | Where | Default | QligFEP |
 |---|---|---|---|
 | Sphere centre and radius | `boundary` in `qprep` | none | centre given to `qprep_prot`, for example the centre of geometry of the ligand from `qcog`; radius 25 Å |
-| `shell_radius` | `[sphere]` | 0.85 × radius | the sphere radius (no shell) |
-| `shell_force` | `[sphere]` | 10 kcal·mol⁻¹·Å⁻² | 10 |
+| `shell_radius` | `[sphere]` | 0.85 × radius | the sphere radius (no restrained shell) |
 | `radial_force` ($K$) | `[solvent]` | 60 kcal·mol⁻¹·Å⁻² | 60 |
 | `morse_depth`, `morse_width` ($D_e$, $\alpha$) | `[solvent]` | functions of $r_w$ | defaults |
 | `polarization` | `[solvent]` | on | on |
