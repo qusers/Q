@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent / "_ext"))
 
 project = "Q and QligFEP"
 author = "The Q and QligFEP developers"
@@ -35,6 +37,7 @@ extensions = [
     "sphinx_design",
     "sphinxcontrib.mermaid",
     "sphinx.ext.extlinks",
+    "themed_figures",
 ]
 
 source_suffix = {".md": "markdown"}
