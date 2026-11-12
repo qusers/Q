@@ -175,6 +175,8 @@ module md
   real(8)                   :: Dwmz, awmz, rwat_in
   real(8)                   :: fkwpol
   logical                   :: wpol_restr, wpol_Born
+  logical                   :: wpol_adapt = .true.
+  logical                   :: wpol_zero_offsets = .false.
   real(8)                   :: fk_wsphere, crgtot, crgQtot
   ! Opt-in per-state exterior Born self-energy, added to EQ(istate)%total.
   logical                   :: perstate_born = .false.
@@ -3965,6 +3967,14 @@ logical function initialize()
           write(*,'(a)') '>>> ERROR: charge_correction on requires polarization on (section solvent)'
           initialize = .false.
         end if
+        if(.not. prm_get_logical_by_key('polarization_adaptation', wpol_adapt, .true.)) &
+          call die('polarization_adaptation must be on or off')
+        if(.not. prm_get_logical_by_key('polarization_zero_offsets', wpol_zero_offsets, .false.)) &
+          call die('polarization_zero_offsets must be on or off')
+        if(wpol_zero_offsets .and. wpol_adapt) &
+          call die('polarization_zero_offsets on requires polarization_adaptation off')
+        if(wpol_zero_offsets .and. .not. wpol_restr) &
+          call die('polarization_zero_offsets on requires polarization on')
         yes=prm_get_logical_by_key('perstate_born_correction', perstate_born, .false.)
         yes=prm_get_real8_by_key('born_dielectric', born_eps, 80.0_8)
         if(perstate_born .and. born_eps <= 1.0_8) then
@@ -17817,6 +17827,21 @@ subroutine wat_shells
 102 format('>>> WARNING: Failed to read polarization restraint data from restart file.')
 103 format('Loaded polarization restraint data from restart file.')
 
+  ! The restart record is still read above; zero mode overrides its offsets.
+  if(wpol_zero_offsets) then
+    wshell(:)%theta_corr = 0.0
+    write(*,'(a)') 'Polarization offsets policy            : ZERO (restart offsets overridden)'
+  else
+    write(*,'(a)') 'Polarization offsets policy            : LEGACY (restart or initial zero)'
+  end if
+  if(wpol_adapt) then
+    write(*,'(a)') 'Polarization offset adaptation         : ON'
+  else
+    write(*,'(a)') 'Polarization offset adaptation         : OFF (frozen)'
+  end if
+  write(*,'(a)',advance='no') 'Initial polarization offsets (rad)       = '
+  write(*,'(*(es16.8,1x))') wshell(:)%theta_corr
+
   write(*,'(a)') 'Shell #    outer radius    inner radius'
 110 format(i7, 2f16.2)
 
@@ -17931,7 +17956,7 @@ subroutine watpol
     do is = 1, nwpolr_shell
       wshell(is)%avtheta = wshell(is)%avtheta / real (itdis_update)
       wshell(is)%avn_insh = wshell(is)%avn_insh / real (itdis_update)
-      wshell(is)%theta_corr = wshell(is)%theta_corr + wshell(is)%avtheta-acos(wshell(is)%cstb)
+      if(wpol_adapt) wshell(is)%theta_corr = wshell(is)%theta_corr + wshell(is)%avtheta-acos(wshell(is)%cstb)
       write (*,10) is,wshell(is)%avn_insh,wshell(is)%avtheta/deg2rad, &
         acos(wshell(is)%cstb)/deg2rad,wshell(is)%theta_corr/deg2rad
 10    format(i5,1x,f6.1,3x,f8.3,3x,f8.3,3x,f8.3)
