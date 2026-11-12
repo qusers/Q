@@ -36,6 +36,7 @@ SYSTEMS = ["water", "protein"]
 TEST_DIR = Path(__file__).parent.parent
 PROJECT_ROOT = TEST_DIR.parent
 TYK2_TUTORIAL_PATH = PROJECT_ROOT / "tutorials" / "Tyk2"
+TYK2_SETUP_DIR = Path(__file__).parent / "resources" / "tyk2_ejm_31_ejm_45"
 
 
 def write_mol_to_sdf(mol: Chem.Mol, path: Path) -> Path:
@@ -69,8 +70,8 @@ class TestFEPSetupConsistencyGolden:
 
         # Copy source files
         src_sdf = TYK2_TUTORIAL_PATH / "ligprep" / "tyk2_ligands.sdf"
-        src_protein = TYK2_TUTORIAL_PATH / "setupFEP" / "amber" / "protein_neutralized.pdb"
-        src_water = TYK2_TUTORIAL_PATH / "setupFEP" / "amber" / "water.pdb"
+        src_protein = TYK2_SETUP_DIR / "protein_neutralized.pdb"
+        src_water = TYK2_TUTORIAL_PATH / "setupFEP" / "water.pdb"
 
         shutil.copy(src_water, temp_dir / "water.pdb")
         shutil.copy(src_protein, temp_dir / "protein.pdb")

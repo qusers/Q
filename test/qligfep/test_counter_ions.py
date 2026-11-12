@@ -151,22 +151,22 @@ class TestMinimizeCoulombOnSphere:
 class TestPlaceCounterIonsWithProteinCharge:
     """Tests for place_counter_ions() protein_charge logic.
 
-    Uses a real QligFEP instance with Tyk2 tutorial data to test the charge
+    Uses a real QligFEP instance with Tyk2 test resources to test the charge
     calculation and ion type selection when protein_charge is provided.
     """
 
-    TUTORIAL_DIR = Path(__file__).parents[2] / "tutorials" / "Tyk2" / "setupFEP"
+    INPUT_DIR = Path(__file__).parent / "resources" / "tyk2_ejm_31_ejm_45"
     LIG1 = "ejm_31"
-    LIG2 = "ejm_42"
+    LIG2 = "ejm_45"
 
     def _make_qligfep(self, tmp_path, system="water", protein_charge=None, charge_method="ion_match"):
-        """Create a QligFEP instance in tmp_path with real tutorial ligand files."""
+        """Create a QligFEP instance in tmp_path with the tracked Tyk2 ligand files."""
         from QligFEP.qligfep import QligFEP
 
         # Copy ligand files to tmp_path
         for lig in (self.LIG1, self.LIG2):
             for ext in (".lib", ".prm", ".pdb"):
-                src = self.TUTORIAL_DIR / f"{lig}{ext}"
+                src = self.INPUT_DIR / f"{lig}{ext}"
                 if src.exists():
                     shutil.copy(src, tmp_path / f"{lig}{ext}")
 
@@ -273,7 +273,7 @@ class TestPlaceCounterIonsWithProteinCharge:
     def test_protein_system_returns_zero(self, tmp_path):
         """Counter-ions are only placed in water system."""
         # For protein system we need a protein.pdb file
-        src_pdb = self.TUTORIAL_DIR / "ejm_31.pdb"
+        src_pdb = self.INPUT_DIR / "ejm_31.pdb"
         shutil.copy(src_pdb, tmp_path / "protein.pdb")
 
         run = self._make_qligfep(tmp_path, system="protein", protein_charge=8)
