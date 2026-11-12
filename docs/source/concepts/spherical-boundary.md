@@ -24,20 +24,22 @@ For a protein such as PTP1B, a periodic simulation needs a cubic box with
 sides of about 85 Å; a sphere of 16 Å radius is enough to study its active
 site (Marelius et al.). QligFEP uses a radius of 25 Å by default.
 
-<!-- FIGURE TODO: sphere-vs-box
-What: two panels of the same protein-ligand complex at the same scale.
-  Left: a periodic box (cube outline, solvent as faint dots, whole protein).
-  Right: Q's 25 A sphere centred on the ligand; protein inside the sphere in
-  colour, protein outside in grey, water only inside the sphere.
-Why: shows at a glance how much smaller the simulated system is, and that the
-  protein is not truncated but partly "frozen".
-How: PyMOL. Load a prepared QligFEP protein leg (the PDB written by qprep with
-  water). Draw the sphere with a CGO sphere or a pseudoatom with
-  `set sphere_scale`/`sphere_transparency`, centred on the centre used in
-  qprep. Colour by distance from the centre: `select inside, all within 25 of
-  centre`. For the left panel draw only a cube outline with CGO lines; no
-  periodic simulation is needed. Label both panels with the atom counts.
--->
+```{figure} ../_static/figures/sphere-vs-box.png
+:alt: Two renders of the adenosine A2A receptor. Left - the receptor in a rectangular box with a lipid bilayer, water and ions. Right - a sphere around the ligand containing part of the receptor, the lipids next to it and water.
+:width: 100%
+
+The adenosine A2A receptor with a bound ligand, prepared in two ways. The two
+renders are not at the same scale. Left: the periodic system, with the
+receptor in a POPC bilayer, water and ions; 173,709 atoms in a box of
+127 × 134 × 106 Å. Right: the part of the same system that moves in a Q
+simulation, a sphere of 25 Å radius centred on the ligand, with the receptor
+(cartoon), the ligand (green), the lipids next to the receptor (grey) and
+water (red and white lines). The Q topology has 12,745 atoms before the ligand pair is
+added: 6,031 inside the sphere (4,663 of receptor and lipid, 1,368 of water)
+and 6,714 excluded atoms, which are kept fixed and are not drawn. The tools
+that build the membrane system for Q are in development and not public yet.
+Composed by `docs/scripts/compose_sphere_vs_box.py` from existing renders.
+```
 
 ## Regions of the sphere
 
