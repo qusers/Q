@@ -2308,8 +2308,6 @@ subroutine init_nodes
     if (ierr .ne. 0) call die('init_nodes/MPI_Bcast gapsys_alpha_lj')
     call MPI_Bcast(gapsys_alpha_q,  1, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
     if (ierr .ne. 0) call die('init_nodes/MPI_Bcast gapsys_alpha_q')
-    call MPI_Bcast(gapsys_sigma_lj, 1, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-    if (ierr .ne. 0) call die('init_nodes/MPI_Bcast gapsys_sigma_lj')
     call MPI_Bcast(gapsys_sigma_q,  1, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
     if (ierr .ne. 0) call die('init_nodes/MPI_Bcast gapsys_sigma_q')
 

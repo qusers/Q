@@ -171,7 +171,6 @@ module qatom
   ! Gapsys 2012 soft-core parameters (J. Chem. Theory Comput. 8, 2373; SI Eqs. 1.1-1.4).
   real(8)                                 :: gapsys_alpha_lj = 0.85_8
   real(8)                                 :: gapsys_alpha_q  = 3.0_8
-  real(8)                                 :: gapsys_sigma_lj = 3.0_8
   real(8)                                 :: gapsys_sigma_q  = 1.0_8
   ! Beutler Eqs. 7 and 8: dimensionless alpha_LJ and alpha_C in A^2.
   ! Defaults are illustrative paper values, not universally optimized settings.
@@ -348,15 +347,13 @@ logical function qatom_load_atoms(fep_file)
                                      GAPSYS_ALPHA_LJ_DEFAULT)
           yes = prm_get_real8_by_key('gapsys_scale_linpoint_q', gapsys_alpha_q, &
                                      GAPSYS_ALPHA_Q_ANGSTROM_DEFAULT)
-          yes = prm_get_real8_by_key('gapsys_sigma_lj', gapsys_sigma_lj, &
-                                     GAPSYS_SIGMA_LJ_ANGSTROM_DEFAULT)
           yes = prm_get_real8_by_key('gapsys_sigma_q', gapsys_sigma_q, &
                                      GAPSYS_SIGMA_Q_DEFAULT)
-          if(.not. all(ieee_is_finite([gapsys_alpha_lj,gapsys_alpha_q,gapsys_sigma_lj,gapsys_sigma_q])) .or. &
+          if(.not. all(ieee_is_finite([gapsys_alpha_lj,gapsys_alpha_q,gapsys_sigma_q])) .or. &
              gapsys_alpha_lj <= 0.0_8 .or. gapsys_alpha_lj > 1.0_8 .or. &
-             gapsys_alpha_q <= 0.0_8 .or. gapsys_sigma_lj <= 0.0_8 .or. &
+             gapsys_alpha_q <= 0.0_8 .or. &
              gapsys_sigma_q < 0.0_8) then
-             write(*,'(a)') '>>>>> ERROR: invalid nonlinear softcore parameters (require 0<alpha_lj<=1, alpha_q>0, sigma_lj>0, sigma_q>=0)'
+             write(*,'(a)') '>>>>> ERROR: invalid nonlinear softcore parameters (require 0<alpha_lj<=1, alpha_q>0, sigma_q>=0)'
              qatom_load_atoms = .false.
              return
           end if
@@ -384,10 +381,9 @@ logical function qatom_load_atoms(fep_file)
           write(*,'(a,f8.3,a,f8.3)') 'Soft-core method: beutler, s=6 p=2 (alpha_lj=', &
                beutler_alpha_lj, ', alpha_c in A^2=', beutler_alpha_c
        case(SC_GAPSYS)
-          write(*,'(a,f6.3,a,f6.3,a,f6.3,a,f6.3,a)') &
+          write(*,'(a,f6.3,a,f6.3,a,f6.3,a)') &
                'Soft-core method: gapsys, distances in A (alpha_lj=', gapsys_alpha_lj, &
                ' alpha_q=', gapsys_alpha_q, &
-               ' sigma_lj=', gapsys_sigma_lj, &
                ' sigma_q=', gapsys_sigma_q, ')'
        end select
 

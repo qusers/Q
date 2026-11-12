@@ -2746,8 +2746,6 @@ subroutine init_nodes
     if (ierr .ne. 0) call die('init_nodes/MPI_Bcast gapsys_alpha_lj')
     call MPI_Bcast(gapsys_alpha_q,  1, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
     if (ierr .ne. 0) call die('init_nodes/MPI_Bcast gapsys_alpha_q')
-    call MPI_Bcast(gapsys_sigma_lj, 1, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-    if (ierr .ne. 0) call die('init_nodes/MPI_Bcast gapsys_sigma_lj')
     call MPI_Bcast(gapsys_sigma_q,  1, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
     if (ierr .ne. 0) call die('init_nodes/MPI_Bcast gapsys_sigma_q')
 
@@ -5953,8 +5951,8 @@ subroutine write_foreign_hamiltonians
       write(17,'(a,2(1x,es24.16))') '# softcore_parameters',beutler_alpha_lj,beutler_alpha_c
     else
       write(17,'(a)') '# method gapsys'
-      write(17,'(a,4(1x,es24.16))') '# softcore_parameters', &
-                                   gapsys_alpha_lj,gapsys_alpha_q,gapsys_sigma_lj,gapsys_sigma_q
+      write(17,'(a,3(1x,es24.16))') '# softcore_parameters', &
+                                   gapsys_alpha_lj,gapsys_alpha_q,gapsys_sigma_q
     end if
     write(17,'(a,*(1x,es24.16))') '# target_state2_weights',foreign_lambda
     write(17,'(a)') '# columns frame source_lambda1 source_lambda2 W(source_to_target_1) ...'

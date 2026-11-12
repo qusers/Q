@@ -9,7 +9,6 @@ module qsoftcore
   ! Q's internal distance unit (angstrom). alpha_LJ and sigma_Q are dimensionless.
   real(8), parameter, public :: GAPSYS_ALPHA_LJ_DEFAULT = 0.85_8
   real(8), parameter, public :: GAPSYS_ALPHA_Q_ANGSTROM_DEFAULT = 3.0_8
-  real(8), parameter, public :: GAPSYS_SIGMA_LJ_ANGSTROM_DEFAULT = 3.0_8
   real(8), parameter, public :: GAPSYS_SIGMA_Q_DEFAULT = 1.0_8
 
   public :: gapsys_lj_radius
