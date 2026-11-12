@@ -16,9 +16,9 @@ in `qcalc`:
 - `mean` instead of a file name gives the mean of all frames processed since
   the start, or since the last `mean`.
 
-The input is similar for the three functions. The data files that the
-functions read (atom definitions, translation tables, parameter files) are
-not distributed in this repository.
+The input is similar for the three functions. The functions read data files
+(atom definitions, translation tables, parameter files) that are not
+distributed in this repository; you must supply them.
 
 ## X-Score
 

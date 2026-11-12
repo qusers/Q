@@ -141,8 +141,6 @@ for most simulations.
 polarization        on     ! solvent polarisation restraints
 ```
 
-Polarisation restraints must be turned off for solvents other than
-three-site water.
 
 ### Intervals
 
@@ -279,7 +277,7 @@ centre from becoming bidentate.
 ```
 
 The angle between atoms 133, 132 and 3400 is restrained to 180° with a force
-constant of 3.0, in state 2.
+constant of 3.0 kcal·mol⁻¹·rad⁻², in state 2.
 
 ## Examples
 
@@ -362,6 +360,63 @@ fep                   molecule.fep
 102  102  14.0  5.0  0  0  0
 ```
 
+## Continuing from a restart
+
+Name the restart file of the previous run in `[files]`:
+
+```ini
+[files]
+topology            complex.top
+restart             previous.re
+final               continued.re
+energy              continued.en
+trajectory          continued.dcd
+fep                 FEP1.fep
+```
+
+A restart file holds coordinates and velocities only. Keep the topology, FEP
+file, restraints and atom order the same across a continuation. Do not give
+`initial_temperature` unless the velocities should be randomised again.
+
+## Energy minimisation
+
+`qdyn` can minimise the energy before the dynamics starts. Add to `[MD]`:
+
+```ini
+minimize              on
+max_minimize_steps    1000
+minimize_tolerance    0.1
+minimize_step_size    0.001
+```
+
+The minimiser removes local strain before dynamics. It does not repair wrong
+chemistry; check the resulting coordinates.
+
+## Non-equilibrium switching
+
+When the input has a `[lambda_scaling]` section, the state weights are not
+constant: they are driven from one end state to the other during the run.
+
+```ini
+[lambda_scaling]
+scaling_parameter   sigmoidal
+L_sigmoid           8.0
+```
+
+QligFEP sets up these runs, from equilibrated endpoint snapshots and in both
+directions, and analyses the work values; see
+[Non-equilibrium FEP](../qligfep/neq.md).
+
+## Checking a finished run
+
+A scheduler status of *completed* is not sufficient. Check:
+
+- the normal termination message at the end of the log;
+- that the final restart file and the expected `.en` and `.dcd` files exist;
+- that the temperature and the energies are stable;
+- that there are no SHAKE failures or overflowing numbers in the log;
+- that the number of steps and of energy records is as expected.
+
 ## Running in parallel
 
 `qdynp` is the MPI version of `qdyn`. It needs an MPI installation and is run
@@ -371,10 +426,9 @@ through the MPI launcher:
 mpirun -np 8 qdynp md.inp > md.log
 ```
 
-The log of the parallel version identifies itself as such in the version line
-at the top. The parallel version can run on a single node but still needs
-MPI. The 2017 manual recommends 2 to 12 processes, depending on the size of
-the system.
+The parallel version can run on a single node but still needs MPI. On a
+cluster, follow the site's guidance for the launcher (`mpirun` or `srun`).
+Run a case through `qdum` and a short serial run before using MPI.
 
 ## Checking an input
 

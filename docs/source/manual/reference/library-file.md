@@ -68,8 +68,9 @@ Rules for generating hydrogen coordinates.
 
 ### impropers
 
-Improper torsions. Used only for force fields in which impropers are defined
-explicitly rather than generated automatically (see the parameter file).
+Improper torsions. Used only when the parameter file has
+`improper_definition explicit`; otherwise impropers are generated
+automatically.
 
 | Column | Description |
 |---|---|
@@ -89,41 +90,58 @@ One charge group per line.
 
 ## Example
 
-The CHARMM entry for alanine:
+The CHARMM36 entry for alanine, from `CHARMM36.lib`:
 
 ```text
-{ALA}                  ! Alanine
-[info]
-SYBYLtype  RESIDUE     ! SYBYL substructure type
-[atoms]                ! number, name, type, charge
- 1  N    NH1   -0.470
- 2  HN   H      0.310
- 3  CA   CT1    0.070
- 4  HA   HB     0.090
- 5  CB   CT3   -0.270
- 6  HB1  HA     0.090
- 7  HB2  HA     0.090
- 8  HB3  HA     0.090
- 9  C    C      0.510
-10  O    O     -0.510
-[bonds]
-CB  CA
-N   HN
-N   CA
-O   C
-C   CA
-CA  HA
-CB  HB1
-CB  HB2
-CB  HB3
-[connections]          ! how to bond to the previous and next residue
-head  N
-tail  C
-[impropers]
-N  -C  CA  HN
-C  CA  +N  O
-[charge_groups]        ! switching atom first
-N   HN   CA   HA
-CB  HB1  HB2  HB3
-C   O
+{ALA}
+    [atoms]
+         1 N      NH1         -0.47
+         2 H      H            0.31
+         3 CA     CT1          0.07
+         4 HA     HB1          0.09
+         5 CB     CT3         -0.27
+         6 HB1    HA3          0.09
+         7 HB2    HA3          0.09
+         8 HB3    HA3          0.09
+         9 C      C            0.51
+        10 O      O           -0.51
+    [bonds]
+       CB     CA
+       N      H
+       N      CA
+       C      CA
+       CA     HA
+       CB     HB1
+       CB     HB2
+       CB     HB3
+       O      C
+    [connections]
+        head N
+        tail C
+    [impropers]
+         N      -C     CA     H
+         C      CA     +N     O
+    [charge_groups]
+        N     H     CA    HA
+        CB    HB1   HB2   HB3
+        C     O
+```
+
+The TIP3P water entry, a solvent:
+
+```text
+{HOH}
+    [info]
+        solvent 1
+        density 0.0335
+    [atoms]
+         1 O      OT         -0.834
+         2 H1     HT          0.417
+         3 H2     HT          0.417
+    [bonds]
+       O      H1
+       O      H2
+       H1     H2
+    [charge_groups]
+       O      H1     H2
 ```

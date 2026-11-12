@@ -33,15 +33,17 @@ properties:
 
 | Property | Atoms |
 |---|---|
+| `all` | all atoms |
 | `solute` | all atoms except solvent |
 | `heavy` | all atoms except hydrogens (atoms with a mass of at least 4 u) |
-| `excluded` | atoms outside the simulation sphere, including excluded solvent |
+| `excluded` (`excl`) | atoms outside the simulation sphere, including excluded solvent |
 | `restrained` | atoms in the restrained boundary shell and atoms outside the sphere |
+| `sybyl` *type* | atoms of the given SYBYL atom type |
 
-- `not` before a property negates it.
+- `not` (or `-`) before a property negates it.
 - Several properties on one line are combined with a logical *and*.
 - The line ends with the first and last number of an atom sequence. The word
-  `residue` before the numbers selects a sequence of residues. The last number
+  `residue` (or `res`) before the numbers selects a sequence of residues. The last number
   may be omitted to select one atom or residue.
 - Several lines are combined with a logical *or*.
 - Without a mask, all atoms are selected.
@@ -57,7 +59,7 @@ residue 105 106
 |---|---|---|---|
 | `addbond` | `ab` | | Add extra bonds, such as S–S |
 | `average` | `av` | | Average coordinates |
-| `boundary` | `bc` | boundary condition | Set the boundary condition: sphere (1) or box (2) |
+| `boundary` | `bc` | `sphere` or `box`, centre, size | Set the boundary condition; see below |
 | `changeimp` | | | Redefine (specified) improper torsions |
 | `checkangs` | `ca` | energy threshold | Check angle energies |
 | `checkbonds` | `cb` | energy threshold | Check bond energies |
@@ -84,50 +86,52 @@ residue 105 106
 | `set` | `s` | name, value | Set a preference |
 | `solvate` | `so` | see below | Add solvent |
 | `trajectory` | `tr`, `trj` | trajectory file | Open a trajectory file |
-| `writemol2` | `wm` | molecule number, mol2 file, hydrogen flag, water flag | Write a SYBYL mol2 file |
-| `writepdb` | `wp` | PDB file, gap flag | Write a PDB file of the atoms in the current mask |
+| `writemol2` | `wm` | mol2 file, or `auto` | Write a SYBYL mol2 file of the atoms in the current mask |
+| `writepdb` | `wp` | PDB file, TER flag | Write a PDB file of the atoms in the current mask |
 | `writetop` | `wt` | topology file, title | Write the topology file |
 | `xlink` | `xl`, `crosslink` | | Search for possible cross-links and make bonds |
 
-`average` is in the source of this repository but not in the 2017 manual.
+Arguments can be given on the command line, in the order shown, or left out,
+in which case `qprep` prompts for them.
+
+### boundary
+
+| Arguments | Effect |
+|---|---|
+| `sphere` (or `1`), centre, radius | Spherical boundary |
+| `box` (or `2`), centre, three box lengths | Periodic box |
+
+The centre is `x y z`, `residue_number:atom_name`, or `mass` for the centre
+of mass.
 
 ### solvate
 
-For a **sphere**:
+With a **sphere**, `solvate` takes the centre of the solvent sphere (as for
+`boundary`, or `boundary` to use the centre of the simulation sphere), its
+radius and a mode:
 
-| Arguments | Effect |
-|---|---|
-| centre, radius, `grid`, solvent name | Add solvent molecules from a grid |
-| centre, radius, `file`, file name | Add solvent from a file with a box or a sphere of solvent |
-| centre, radius, `restart`, file name, solvent name | Add solvent from a restart file of the same solute with solvent |
+| Mode | Further arguments | Effect |
+|---|---|---|
+| `grid` (`1`) | solvent library entry | Add solvent molecules from a grid |
+| `file` (`2`) | solvent file name | Add solvent from a file with a box or a sphere of solvent |
+| `restart` (`3`) | restart file name, solvent library entry | Add solvent from a restart file of the same solute with solvent |
 
-For a **box**:
-
-| Arguments | Effect |
-|---|---|
-| `grid`, solvent name, box centre, box size | Add solvent molecules from a grid |
-| file name, box centre, box size | Add solvent from a file with a box of solvent |
-| `restart`, solvent name, file name, box centre, box size | Add solvent from a restart file |
-
-### writemol2
-
-- *Molecule number* is the number of the molecule in the topology (molecules
-  are separated by gaps). `0` writes all molecules.
-- *mol2 file* is the file to create; an existing file is overwritten. `auto`
-  generates the name from the template
-  `coordfile.frame.molecule.mol2`.
-- *Hydrogen flag* and *water flag* say whether hydrogens and water are
-  written: `y` or `n`.
+With a **box**, the box defined by `boundary` is filled and `solvate` takes
+only the mode and its arguments.
 
 ### writepdb
 
-The *gap flag* says whether `GAP` lines are written between molecules: `y` or
-`n`.
+The TER flag (`y` or `n`) says whether `TER` cards are written between
+molecules.
+
+### writemol2
+
+The file name `auto` generates the name from the coordinate source.
 
 ### xlink
 
-For each pair of non-bonded heavy atoms closer than the cross-link limit
-(2.1 Å), the program asks whether to add a bond.
+For each pair of non-bonded heavy atoms closer than 2.1 Å, the program asks
+whether to add a bond.
 
 ## Preferences
 
@@ -140,6 +144,3 @@ Use with `set`, for example `set solvent_pack 2.6`.
 | `solute_density` | Number density of the solute | 0.05794 Å⁻³ |
 | `random_seed_solute` | Seed of the random sequence used to generate solute hydrogen coordinates | 179857 |
 | `random_seed_solvent` | Seed of the random sequence used to generate solvent hydrogen coordinates | 758971 |
-
-The 2017 manual also lists `max_xlink` (2.1 Å), the upper bond length used by
-`xlink`. In this source it is a fixed value and cannot be set.

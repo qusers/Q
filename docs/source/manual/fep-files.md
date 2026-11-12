@@ -105,7 +105,7 @@ No charges change, so `[change_charges]` is omitted.
 
 :::{note}
 The mass in `[atom_types]` is not used in the dynamics. The simulation uses
-the masses of the force field.
+the masses of the topology.
 :::
 
 ## Example: EVB states for a proton transfer

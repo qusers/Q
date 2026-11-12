@@ -19,7 +19,8 @@ concepts.
 - Comments start with `!`, `#` or `*` and may follow values or stand on
   their own line.
 
-Only `[atoms]` is required.
+Only `[atoms]` is required. A file without an `[atoms]` section is read in
+the old, pre-section FEP format.
 
 ## How the sections work together
 
@@ -128,7 +129,8 @@ $V_{\mathrm{soft}} = C_i C_j\, e^{-a_i a_j r_{ij}}$.
 
 ### change_atoms
 
-Assign Q-atom types to Q-atoms.
+Assign Q-atom types to Q-atoms. If the section is present it must have a
+line for every Q-atom.
 
 | Column | Description |
 |---|---|
@@ -158,19 +160,20 @@ can be excluded as well.
 ### el_scale
 
 Scale the electrostatic interaction of Q-atom pairs. Useful, for example,
-when highly charged intermediates appear in FEP/EVB. The factor applies in
-all states. Only Q-atom pairs can be scaled.
+when highly charged intermediates appear in FEP/EVB. Only Q-atom pairs can
+be scaled.
 
 | Column | Description |
 |---|---|
 | 1 | Q-atom number of the first atom |
 | 2 | Q-atom number of the second atom |
-| 3 | Electrostatic scale factor (0 to 1) |
+| 3… | Electrostatic scale factor (0 to 1) in state 1, state 2, … |
 
 ### softcore
 
 Soft-core values of Q-atoms. Their meaning depends on
-`softcore_use_max_potential`.
+`softcore_use_max_potential`. If the section is present it must have a line
+for every Q-atom, and the file must also have a `[change_atoms]` section.
 
 | Column | Description |
 |---|---|
@@ -215,11 +218,6 @@ with four values is a Morse potential; an entry with three is harmonic.
 | 3 | Exponent $\alpha$ (Å⁻¹) | Equilibrium bond length $r_0$ (Å) |
 | 4 | Equilibrium bond length $r_0$ (Å) | |
 
-:::{note}
-The 2017 manual gives the unit of the Morse exponent as Å⁻². The exponent
-multiplies a length, so its unit is Å⁻¹.
-:::
-
 ### change_bonds
 
 Assign Q-bond types. SHAKE constraints of the redefined bonds are removed.
@@ -238,6 +236,8 @@ The order of the two atoms is not important.
 | 1 | Q-angle type number, from 1 |
 | 2 | Harmonic force constant (kcal·mol⁻¹·rad⁻²) |
 | 3 | Equilibrium angle (°) |
+| 4 | Urey–Bradley force constant, optional |
+| 5 | Urey–Bradley equilibrium distance (Å), optional |
 
 ### change_angles
 
@@ -306,6 +306,9 @@ current Morse bond energy to the dissociation energy.
 |---|---|
 | 1 | Q-improper number (line number within `[change_impropers]`) |
 | 2 | Q-bond number (line number within `[change_bonds]`) |
+| 3 | Optional. 1 inverts the scaling (the improper is scaled by one minus the bond ratio); 0 or absent is the normal coupling. |
+
+A bond used in a coupling must be a Morse bond in every state.
 
 ### shake_constraints
 

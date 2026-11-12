@@ -12,13 +12,7 @@ restrained to their initial coordinates with a harmonic potential, to avoid
 distorting bonds across the boundary. The inner radius of this shell and the
 force constant are set in the `qdyn` input (`[sphere]`, keywords
 `shell_radius` and `shell_force`). The force constant defaults to
-10 kcal·mol⁻¹·Å⁻².
-
-:::{note}
-In this source the shell radius defaults to 85 % of the exclusion radius. The
-2017 manual states that it defaults to the outer radius, so that no atoms are
-restrained unless the shell radius is set.
-:::
+10 kcal·mol⁻¹·Å⁻². The shell radius defaults to 85 % of the exclusion radius.
 
 Atoms are assigned to the shell and to the excluded region before the
 simulation starts, from the coordinates of the topology, and the assignment

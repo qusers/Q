@@ -1,14 +1,11 @@
 # Tutorial: binding affinity from LIE simulations
 
-This tutorial is from the 2017 manual. The example is the binding of stearate
-to a muscle fatty-acid binding protein (M-FABP), with the Q version of the
-GROMOS87 force field.
-
-:::{note}
-The GROMOS87 files (`Qgrm87.lib`, `Qgrm87j.prm`) and the helper scripts
-`lsextr` and `tstart` used below are not distributed in this repository. The
-procedure is the same with any force field that is available to you.
-:::
+This tutorial describes a linear interaction energy (LIE) calculation of the
+binding of stearate to a muscle fatty-acid binding protein (M-FABP). The
+published example used the Q version of the GROMOS87 force field, which is
+not among the force fields of this repository; the procedure is the same
+with any force field, but the coefficients $\alpha$ and $\beta$ at the end
+are specific to GROMOS87.
 
 ## Editing the PDB file
 
@@ -30,12 +27,12 @@ Hydrogens need not be present; `qprep` adds them.
 
 ## Modelling ionic groups of the protein
 
-The default entries for the charged residues (ASP, GLU, ARG, LYS) in the
-Q-GROMOS87 library have the protonation state of the ionic form, but the net
-charge is replaced by a dipole similar to that of the neutral form. The
-charged side chains are the entries `AS-`, `GL-`, `AR+` and `LY+`. Renaming,
-for example, an ASP residue to `AS-` is referred to below as *turning on* the
-charge of that side chain.
+In a spherical simulation, ionisable residues far from the centre are
+modelled in a neutral form. In the Q-GROMOS87 library used for this example,
+the default entries for ASP, GLU, ARG and LYS have the protonation state of
+the ionic form but the net charge replaced by a dipole, and the charged side
+chains are separate entries (`AS-`, `GL-`, `AR+`, `LY+`). Changing a residue
+to its charged entry is referred to below as *turning on* its charge.
 
 Decide which charged residues to turn on with the same rules as for the
 waters. Residues near the ligand, forming a salt bridge or otherwise involved

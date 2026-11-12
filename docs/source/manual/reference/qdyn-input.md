@@ -9,15 +9,12 @@ keywords within a section, is not significant. Many keywords have defaults;
 `qdyn` reports in its log when it uses one. Sections without required
 keywords are optional.
 
-The keywords and defaults on this page are those read by `md.f90` in this
-repository. Keywords of the 2017 manual that this source does not read are
-listed in [Differences from the Q6 manual](../differences.md).
-
 :::{warning}
 `qdyn` ignores keywords it does not know, without an error. A misspelt
 keyword silently leaves the default in place. Check the log for the values
-that were actually used. In particular this source spells `polarization` and
-`rigid_box_center` with American spelling.
+that were actually used. Note the spelling of `polarization` and
+`rigid_box_center`. See [Changes from the Q6 manual](../differences.md) if
+your inputs were written for Q6.
 :::
 
 ## Keyword sections
@@ -134,8 +131,7 @@ File names for input and output. Required.
 ### lambda_scaling
 
 Selects non-equilibrium switching, in which the state weights change during
-the run. Without this section the weights are constant. This section is not
-in the 2017 manual.
+the run. Without this section the weights are constant.
 
 | Keyword | Value | Comment |
 |---|---|---|
@@ -205,7 +201,7 @@ Restrain the angle between three atoms.
 |---|---|
 | 1, 2, 3 | Numbers of the three atoms; the second is the central atom |
 | 4 | Target angle (°) |
-| 5 | Force constant (kcal·mol⁻¹·rad⁻²; the source evaluates the deviation in radians, whereas the 2017 manual states degrees⁻²) |
+| 5 | Force constant (kcal·mol⁻¹·rad⁻²) |
 | 6 | FEP state in which the restraint is active, or 0 for all states |
 
 ### wall_restraints

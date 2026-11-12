@@ -32,7 +32,7 @@ commands to:
 - Start with the [quickstart](quickstart.md) for a first workflow.
 - Use the [QligFEP workflow](qligfep/workflow.md) for protocol decisions.
 - Use the [CLI reference](cli/index.md) for exact flags and output names.
-- Use the [Q engine guide](q-engine/index.md) to run the Fortran programs
+- Use the [Q manual](manual/index.md) to run the Fortran programs
   directly.
 - Use the [Q manual](manual/index.md) for the full reference.
 

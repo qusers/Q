@@ -25,9 +25,9 @@ Follow the complete preparation, simulation, and analysis workflow.
 :::
 
 :::{grid-item-card} Q engine user
-:link: q-engine/index
+:link: manual/index
 :link-type: doc
-Learn the Q programs, molecular-dynamics model, and file formats.
+Read the Q manual: programs, input files, file formats and algorithms.
 :::
 
 :::{grid-item-card} Command reference
@@ -57,16 +57,6 @@ cluster-configuration
 :caption: Concepts
 
 concepts/index
-```
-
-```{toctree}
-:maxdepth: 2
-:caption: Q engine quick guide
-
-q-engine/index
-q-engine/running
-q-engine/fep-analysis
-q-engine/file-formats
 ```
 
 ```{toctree}

@@ -29,8 +29,6 @@ The calculations in this source are:
 | `com`, `com_ke` | Centre of mass, and its kinetic energy |
 | `xscore`, `chemscore`, `pmfscore` | [Scoring](../scoring.md) |
 
-The 2017 manual lists only the three scoring functions for `qcalc`.
-
 ## qdum
 
 | | |
@@ -44,10 +42,3 @@ The 2017 manual lists only the three scoring functions for `qcalc`.
 the simulation, writes a restart file and stops. It is built from the same
 source as `qdyn`.
 
-## External tools
-
-The 2017 manual points to the graphical interface QGui [14]
-(<https://github.com/qusers/qgui>) and the command-line tools QTools [15]
-(<https://github.com/mpurg/qtools>) for set-up and analysis. In this
-repository, QligFEP provides the set-up and analysis workflow for ligand
-binding free energies; see [QligFEP workflow](../../qligfep/workflow.md).

@@ -20,8 +20,7 @@ square brackets. It holds the constants of
 | `improper_definition` | `automatic` (default) or `explicit`. With `explicit`, impropers are taken from the `[impropers]` sections of the library entries. |
 | `coulomb_constant` | Coulomb constant, default 332 kcal·mol⁻¹·Å·*e*⁻² |
 
-`vdw_rule` and `scale_14` are required. The last five keywords are read by
-`qprep` in this repository but are not listed in the 2017 manual.
+`vdw_rule` and `scale_14` are required.
 
 ### atom_types
 
@@ -41,13 +40,6 @@ shared by sets 2 and 3.
 | 6 | $B_i$ for sets 2 and 3 | $\varepsilon_i$ for sets 2 and 3 |
 | 7 | mass of the (extended) atom (u) | |
 | 8 | SYBYL atom type (5 characters), optional | |
-
-:::{note}
-The 2017 manual gives the units of $R^*$ as kcal·mol⁻¹·Å¹² and of
-$\varepsilon$ as kcal·mol⁻¹·Å⁶. With the potential written as
-$\varepsilon_{ij}[(R^*_{ij}/r)^{12} - 2(R^*_{ij}/r)^6]$, $R^*$ is a length
-and $\varepsilon$ an energy, as given here.
-:::
 
 ### atom_aliases
 
@@ -93,6 +85,8 @@ only one.
 | 3 | atom type 3 |
 | 4 | force constant (kcal·mol⁻¹·rad⁻²) |
 | 5 | equilibrium angle (°) |
+| 6 | Urey–Bradley force constant, optional |
+| 7 | Urey–Bradley equilibrium distance (Å), optional |
 
 ### torsions
 
@@ -122,54 +116,45 @@ with four types overrides a definition with two.
 
 ### impropers
 
-Force constant and equilibrium angle of harmonic improper torsions, for a
-pair of atom types or one atom type.
+Force constant and equilibrium angle of improper torsions, for a quadruplet
+of atom types. A field that is not a defined atom type acts as a wild card.
 
 | Column | Description |
 |---|---|
-| 1 | atom type 1 |
-| 2 | atom type 2, or `0` or `?` to match any type |
-| 3 | force constant (kcal·mol⁻¹·rad⁻²) |
-| 4 | equilibrium angle (°) |
+| 1–4 | atom types 1 to 4 |
+| 5 | force constant (kcal·mol⁻¹·rad⁻² for harmonic impropers) |
+| 6 | equilibrium angle (°) |
 
 ## Example
 
+The start of each section of `OPLS2015.prm`:
+
 ```text
-* Q-FF params: GROMOS87 parameters
-*------------------------------------------------------------------
-[options] force-field options
-vdw_rule    geometric   ! vdW combination rule
-scale_14    1.0         ! electrostatic 1-4 scaling factor
+[options]
+name          OPLS-AA/M 2015
+vdw_rule      geometric   ! vdW combination rule (geometric or arithmetic)
+scale_14      0.5         ! electrostatic 1-4 scaling factor
+switch_atoms  on          ! on = use switch atom; off = use charge group
 
-[atom_types] atom type definitions
-*tac---Avdw1---Avdw2---Bvdw1---Avdw3---Bvdw2&3---mass---SYBYL-name
-H.np     0.00    0.00    0.00    0.00    0.00     3.000   H    ! non-polar H
-C.3    898.00    0.00   23.65  898.00   23.65    12.001   C.3  ! bare sp3 C
+[atom_types]
+*-iac------Avdw1------Avdw2-----Bvdw1------Avdw3-----Bvdw2&3----mass---SYBYL-name
+C135     944.5180   944.5180   22.0296   667.8751   15.5773     12.0110 1
+C136     944.5180   944.5180   22.0296   667.8751   15.5773     12.0110 1
 
-[atom_aliases]
-10  H.np
-20  C.3
+[bonds]
+*iaci  iacj     force.c.    dist.
+OT     HT       1106.000     0.957
+HT     HT          0.000     1.514
 
-[LJ_type2_pairs] type-2 van der Waals interaction atom type pairs
-N.pep  O.SPC
-N.pep  Cl-
+[angles]
+*iaci  iacj   iack      forceK   angle0     forceUB    Stheta
+HT     OT     HT        200.00    104.5      0.00      0.00
 
-[bonds] bond type definitions
-*iaci iacj force.c. dist. SYBYL
-H.np  C.3  700.000  1.090  1
-H.np  C.2  700.000  1.090  1
+[torsions]
+*iaci  iacj   iack   iacl      forceK   #minima     phase   #paths
+?      C145   C145   ?          3.625     2.000   180.000     1
 
-[angles] angle type definitions
-*iaci iacj iack forceK angle0
-H.np  C.3  H.np    90.00  106.60
-H.np  C.3  C.ar6H  90.00  109.50
-
-[torsions] torsion type definitions
-*iaci iacj iack iacl forceK #minima phase #paths
-?     C.3    C.3H   ?     1.400   3.000  0.000  6
-O.3s  C.3sH  C.3sH  O.3s  1.400  -3.000  0.000  1
-
-[impropers] improper torsion type definitions
-*iaci iacj forceK imp0
-C.2  ?  40.000  180.000
+[impropers]
+*iaci  iacj   iack   iacl      forceK     imp0
+C136   C500   C501   C514       1.100   180.000
 ```

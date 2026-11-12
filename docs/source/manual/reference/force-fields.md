@@ -83,49 +83,31 @@ These are Q translations of the named force fields; identity with the
 original cannot be guaranteed. Do not mix libraries and parameter files of
 different force fields.
 
-## Force fields of the Q6 distribution
+## What a force-field file encodes
 
-The 2017 manual lists the force fields below, which were distributed in the
-`ff` folder of the Q6 source. They are **not in this repository**. The table
-is kept because it documents the properties that a Q force-field file
-encodes.
+Besides the parameters, a Q library and parameter file pair fixes these
+properties of the force field:
 
-| Force field | CH*n* groups | LJ type | Impropers | Charge groups | Cut-off | Atom types | Ref. |
-|---|---|---|---|---|---|---|---|
-| Amber95 | all-atom | $\varepsilon_{ij}, R^*_{ij}$ | periodic | residues | any | 48 | [30] |
-| Amber14 | all-atom | $\varepsilon_{ij}, R^*_{ij}$ | periodic | residues | any | 65 | [31] |
-| Amber/OPLS | extended | $A_{ij}, B_{ij}$ | periodic | ≤ 11 atoms | switching | 39 | [32] |
-| CHARMM v.22 | all-atom | $\varepsilon_{ij}, R^*_{ij}$ | harmonic | ≤ 13 atoms | switching | 186 | [33] |
-| GROMOS87 | extended | $A_{ij}, B_{ij}$ | harmonic | ≤ 10 atoms | switching | 28 | [34] |
-| GROMOS96 | extended | $A_{ij}, B_{ij}$ | harmonic | ≤ 10 atoms | switching | 28 | [35] |
-| OPLS-AA | all-atom | $A_{ij}, B_{ij}$ | periodic | ≤ 15 atoms | switching | 35 | [36] |
-| OPLS-AA/2015 | all-atom | $A_{ij}, B_{ij}$ | periodic | ≤ 15 atoms | switching | 84 | [37] |
+- **Aliphatic hydrogens.** Explicit (all-atom) or part of an extended atom.
+- **Lennard-Jones form**, and thus the combination rule: geometric for
+  $A_{ij}, B_{ij}$, arithmetic for $\varepsilon_{ij}, R^*_{ij}$
+  (`vdw_rule`). The treatment of 1–4 interactions is specific to each force
+  field (`scale_14` and the 1–4 Lennard-Jones set).
+- **Impropers.** Harmonic or periodic (`improper_potential`), generated
+  automatically or listed in the library entries (`improper_definition`).
+- **Charge groups** and the cut-off logic (`switch_atoms`).
 
-- **CH*n* groups.** Hydrogens on aliphatic carbons are either explicit
-  (all-atom) or part of an extended atom.
-- **LJ type.** The form of the Lennard-Jones potential and thus the
-  combination rule: geometric for $A_{ij}, B_{ij}$, arithmetic for
-  $\varepsilon_{ij}, R^*_{ij}$. The treatment of 1–4 interactions is specific
-  to each force field.
-- **Impropers.** Harmonic, or periodic like ordinary dihedrals.
-- **Charge groups.** Typical number of atoms in a charge group.
-- **Cut-off.** Applied to whole charge groups, based either on the distance
-  between switching atoms or on the smallest distance between any pair of
-  atoms.
-- **Atom types.** Number of atom types in the Q implementation.
+| | `vdw_rule` | `scale_14` | `switch_atoms` | Impropers |
+|---|---|---|---|---|
+| `AMBER14sb.prm` | arithmetic | 0.8333 | off | periodic |
+| `CHARMM36.prm` | arithmetic | 1.0 | off | harmonic, explicit |
+| `OPLS2015.prm` | geometric | 0.5 | on | harmonic |
 
 ## Solvents
 
-Any solvent can be used for which a library entry and parameters are
-available. The Q6 distribution tested these organic solvents with OPLS-AA;
-their library files are not in this repository.
-
-| Solvent | Library file | Density (Å⁻³) |
-|---|---|---|
-| Chloroform | `CLF.lib` | 0.00752 |
-| Dichloromethane | `DCM.lib` | 0.00941 |
-| Methanol | `MTH.lib` | 0.01489 |
-| Ethanol | `ETH.lib` | 0.01031 |
+A solvent is a library entry with `solvent` set in its `[info]` section and
+a number density. The libraries of this repository define TIP3P water as
+`HOH`.
 
 ## Solvent file format
 

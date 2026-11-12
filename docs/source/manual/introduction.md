@@ -78,10 +78,7 @@ flowchart TD
 
 ## Installation
 
-See [Installation](../installation.md) for how to build the programs in this
-repository. The system requirements and binary-release instructions of the
-2017 manual refer to the separate `qusers/Q6` repository and are not repeated
-here.
+See [Installation](../installation.md) for how to build the programs.
 
 ## How to cite
 
@@ -94,9 +91,8 @@ See [Citations](../citations.md) for QligFEP and the methods it uses.
 
 ## Licence
 
-The 2017 manual reproduces the GNU General Public License, version 2. The
-`LICENSE` file of this repository is the GNU General Public License,
-version 3, and is the one that applies to this code.
+Q is distributed under the GNU General Public License, version 3; see the
+`LICENSE` file of the repository.
 
 ## Useful tips
 
