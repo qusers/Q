@@ -17,9 +17,9 @@ sphinx-build -b linkcheck docs/source docs/build/linkcheck
 ## Source layout
 
 - `docs/source/` contains the Read the Docs navigation and topic pages.
-- `docs/source/q-engine/manual.md` is the maintained consolidated Q manual.
-- `docs/source/q-engine/manual.md` includes that manual, so it has one canonical
-  editable source.
+- `docs/source/concepts/` explains how Q does FEP.
+- `docs/source/manual/` is the Q manual, one page per chapter.
+- `docs/scripts/` holds the scripts that generate figures.
 - `.readthedocs.yml` defines the hosted build.
 
 Keep generated HTML under `docs/build/` out of version control.

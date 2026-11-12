@@ -137,5 +137,5 @@ the exact canonical key spelling from this reference. File paths, PDB names, and
 force-field atom/residue names may also be case-sensitive. Preserve canonical
 spelling and verify the initialization log.
 
-The [maintained manual](manual.md) contains the fuller section and column
+The [Q manual](../manual/index.md) contains the fuller section and column
 reference.

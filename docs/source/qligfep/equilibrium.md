@@ -57,8 +57,9 @@ Inspect generated `[distance_restraints]`; automatic mapping is not infallible.
 setupFEP ... -sc standard
 ```
 
-Choices are `standard`, `beutler_coul`, and `gapsys`. The method changes the
-alchemical Hamiltonian. Use one validated protocol consistently and report it.
+`standard` is the default. With it, the `[softcore]` section that QligFEP
+writes has no effect on the calculation; see
+[Soft-core and the endpoint problem](../concepts/softcore.md).
 
 ## Charge-changing edges
 

@@ -34,7 +34,7 @@ commands to:
 - Use the [CLI reference](cli/index.md) for exact flags and output names.
 - Use the [Q engine guide](q-engine/index.md) to run the Fortran programs
   directly.
-- Use the [maintained manual](q-engine/manual.md) for the consolidated reference.
+- Use the [Q manual](manual/index.md) for the full reference.
 
 ## Support and development
 

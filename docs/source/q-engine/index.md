@@ -58,10 +58,9 @@ moves. The nonbonded cutoff must remain below half the shortest box length.
 
 The current engine uses the established leapfrog-style update, weak temperature
 coupling, and SHAKE bond constraints. It can run an optional two-phase
-steepest-descent minimization before MD. The free-energy engine offers standard
-LJ softcore, softened LJ/Coulomb effective-distance treatment, and Gapsys-style
-short-range force linearization.
+steepest-descent minimization before MD. The soft-core potential of the
+free-energy engine is described in [Soft-core](../concepts/softcore.md).
 
 For exact input and format tables, continue to [Running Q](running.md),
 [Free-energy analysis](fep-analysis.md), and [File formats](file-formats.md), or
-open the [complete maintained manual](manual.md).
+open the [Q manual](../manual/index.md).

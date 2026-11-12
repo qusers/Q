@@ -38,9 +38,8 @@ Find every installed Python command and option.
 ::::
 
 :::{important}
-The documentation follows the current repository source. The maintained Q manual
-supersedes the OCR-derived 2017 text and explicitly distinguishes current
-behavior from historical material.
+The documentation follows the source in this repository. The Q manual is a
+port of the 2017 *Manual for Q6* and marks where this source differs from it.
 :::
 
 ```{toctree}
@@ -62,7 +61,7 @@ concepts/index
 
 ```{toctree}
 :maxdepth: 2
-:caption: Q molecular-dynamics engine
+:caption: Q engine quick guide
 
 q-engine/index
 q-engine/running
@@ -71,10 +70,10 @@ q-engine/file-formats
 ```
 
 ```{toctree}
-:maxdepth: 1
-:caption: Complete Q reference
+:maxdepth: 2
+:caption: Q manual
 
-q-engine/manual
+manual/index
 ```
 
 ```{toctree}
