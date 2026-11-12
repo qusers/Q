@@ -26,6 +26,9 @@ TEST_DIR = Path(__file__).parent
 PROJECT_ROOT = TEST_DIR.parent
 QLIGFEP_TEST_DIR = TEST_DIR / "qligfep"
 RESOURCES_DIR = QLIGFEP_TEST_DIR / "resources"
+# Pre-generated qparams output (.lib, .prm, .pdb) for the Tyk2 ligands ejm_31 and ejm_45,
+# and the neutralized Tyk2 protein the golden FEP setup files were generated from.
+TYK2_SETUP_DIR = RESOURCES_DIR / "tyk2_ejm_31_ejm_45"
 GOLDEN_RESTRAINTS_DIR = QLIGFEP_TEST_DIR / "golden_restraints"
 GOLDEN_FEP_SETUP_DIR = QLIGFEP_TEST_DIR / "golden_fep_setup"
 TUTORIALS_DIR = PROJECT_ROOT / "tutorials"
@@ -978,8 +981,8 @@ def _generate_fep_golden_data() -> dict:
 
         # Copy source files
         src_sdf = TUTORIALS_DIR / "Tyk2" / "ligprep" / "tyk2_ligands.sdf"
-        src_protein = TUTORIALS_DIR / "Tyk2" / "setupFEP" / "amber" / "protein_neutralized.pdb"
-        src_water = TUTORIALS_DIR / "Tyk2" / "setupFEP" / "amber" / "water.pdb"
+        src_protein = TYK2_SETUP_DIR / "protein_neutralized.pdb"
+        src_water = TUTORIALS_DIR / "Tyk2" / "setupFEP" / "water.pdb"
 
         # Copy water.pdb and protein.pdb to work directory
         shutil.copy(src_water, work_dir / "water.pdb")
