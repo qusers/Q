@@ -92,6 +92,19 @@ module md
   logical                   :: shake_solvent, shake_solute
   logical                   :: shake_hydrogens
   logical                   :: separate_scaling
+  ! Thermostat treatment of restrained atoms outside the simulation sphere
+  ! (excl(i), spherical boundary only). Excluded atoms are integrated under
+  ! their positional restraints but do not contribute to Tfree:
+  !   'separate' (default): own Berendsen bath, coupled to their own
+  !                         temperature with the same Temp0 and tau_T
+  !   'none':     excluded atoms are not velocity-scaled at all
+  !   'frozen':   excluded atoms are held fixed (zero velocity, zero inverse
+  !               mass), the textbook spherical-boundary model
+  !   'legacy':   pre-fix behaviour, scaled by the factor computed from the
+  !               free (active) atoms only. Retained to reproduce older runs;
+  !               can pump energy into the excluded region (issue #131).
+  character(len=16)         :: excluded_thermostat = 'separate'
+  real(8)                   :: Tscale_excl = 1.0_8
 
   ! --- Energy minimization parameters
   logical                   :: do_minimize = .false.
@@ -240,6 +253,7 @@ module md
   type(energies)            :: E
   real(8)                   :: Tfree, Tfree_solvent, Tfree_solute
   real(8)                   :: Temp_solvent, Temp_solute, Texcl_solute, Texcl_solvent
+  real(8)                   :: Texcl
 
   ! Non-equilibrium (fast-switching) control + work integral. equilibrium_simulation
   ! comes from the .inp [lambda_scaling] section (absent => plain MD)
@@ -3034,6 +3048,23 @@ logical function initialize()
     else 
       write(*,'(a)') 'Solute and solvent atoms coupled together to heat bath.'
     end if
+
+    yes = prm_get_string_by_key('excluded_thermostat', excluded_thermostat, 'separate')
+    call locase(excluded_thermostat)
+    select case (trim(excluded_thermostat))
+    case ('separate')
+      write(*,'(a)') 'Excluded atoms coupled to their own heat bath.'
+    case ('none')
+      write(*,'(a)') 'Excluded atoms are not coupled to a heat bath.'
+    case ('frozen')
+      write(*,'(a)') 'Excluded atoms are frozen at their current positions.'
+    case ('legacy')
+      write(*,'(a)') '>>> WARNING: excluded_thermostat legacy scales excluded atoms with the'
+      write(*,'(a)') '             free-atom bath factor; this can overheat excluded atoms.'
+    case default
+      write(*,'(a)') '>>> ERROR: excluded_thermostat must be separate, none, frozen or legacy.'
+      initialize = .false.
+    end select
 12  format ('Target temperature  =',f10.2)
 13  format ('T-relax time        =',f10.2)
 
@@ -4172,6 +4203,7 @@ subroutine temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
     !locals
     integer                        :: i, i3
     real(8)                        :: Ekin
+    real(8)                        :: Texcl_solute_ekin, Texcl_solvent_ekin
 
     Temp = 0.
     Temp_solute = 0.
@@ -4244,6 +4276,8 @@ subroutine temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
 
     Tfree = Tfree_solvent + Tfree_solute
     Temp = Temp_solute + Temp_solvent
+    Texcl_solute_ekin = Texcl_solute
+    Texcl_solvent_ekin = Texcl_solvent
 
     E%kinetic = Temp
 
@@ -4272,6 +4306,17 @@ subroutine temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
       Tscale_solute = Tscale_solvent
     end if
 
+    ! Excluded atoms (solute and solvent) form one group with its own bath.
+    ! Ndegf - Ndegfree = 3*nexats - (constraints involving excluded atoms).
+    Texcl = 0.0_8
+    Tscale_excl = 1.0_8
+    if ( .not. use_PBC .and. Ndegf > Ndegfree ) then
+      Texcl = 2.0*(Texcl_solute_ekin + Texcl_solvent_ekin)/boltz/real(Ndegf - Ndegfree)
+      if ( trim(excluded_thermostat) == 'separate' .and. Texcl > 0.0_8 ) then
+        Tscale_excl = sqrt ( 1 + dt/tau_T * (Temp0/Texcl - 1.0) )
+      end if
+    end if
+
 
 180 format ('>>> WARNING: hot atom, i =',i10,' Temp(i)=',f10.2)
 
@@ -4291,6 +4336,8 @@ subroutine md_run
   real(8)                         :: Temp,Tlast
   real(8)                         :: Ekinmax
   real(8)                         :: Tscale_solute,Tscale_solvent
+  real(8)                         :: scale_i
+  logical                         :: split_excl
   real(8)                         :: time0, time1, time_per_step, startloop
   integer(4)                      :: time_completion
   ! minimization local variables
@@ -4338,6 +4385,11 @@ subroutine md_run
   ! calculate maximum temperature
   !**Martin Nervall-> Only master calc. temp for now.
   if (nodeid .eq. 0) then
+    if (.not. use_PBC .and. trim(excluded_thermostat) == 'frozen') then
+      do i = 1, natom
+        if (excl(i)) v(3*i-2:3*i) = 0.0
+      end do
+    end if
     Ekinmax = 1000.0*Ndegf*boltz*Temp0/2.0/real(natom)
 
     call temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
@@ -4354,6 +4406,8 @@ subroutine md_run
       write (*,120) 'Solute', Temp_solute, Tfree_solute
        ! write (*,120) 'Excl solute, solvent', Texcl_solute, Texcl_solvent
     end if
+    if ( .not. use_PBC .and. Ndegf > Ndegfree ) write (*,121) Texcl
+121 format('Excluded atom temperature is : T_excl =',f10.2)
 120 format(a7,' temperatures are : Ttot =',f10.2,' Tfree =',f10.2)
     write (*,*)
 
@@ -4653,18 +4707,26 @@ subroutine md_run
       start_loop_time1 = rtime()
 #endif
 
+      ! excluded atoms use their own factor unless legacy scaling is requested
+      split_excl = (.not. use_PBC) .and. nexats > 0 .and. &
+        trim(excluded_thermostat) /= 'legacy'
+
       !solute atoms first
       do i=1,nat_solute
         i3=i*3-3
-        v(i3+1)= ( v(i3+1)-d(i3+1)*winv(i)*dt ) * Tscale_solute
+        scale_i = Tscale_solute
+        if (split_excl) then
+          if (excl(i)) scale_i = Tscale_excl
+        end if
+        v(i3+1)= ( v(i3+1)-d(i3+1)*winv(i)*dt ) * scale_i
         xx(i3+1) = x(i3+1)
         x(i3+1) = x(i3+1) + v(i3+1)*dt
 
-        v(i3+2)= ( v(i3+2)-d(i3+2)*winv(i)*dt ) * Tscale_solute
+        v(i3+2)= ( v(i3+2)-d(i3+2)*winv(i)*dt ) * scale_i
         xx(i3+2) = x(i3+2)
         x(i3+2) = x(i3+2) + v(i3+2)*dt
 
-        v(i3+3)= ( v(i3+3)-d(i3+3)*winv(i)*dt ) * Tscale_solute
+        v(i3+3)= ( v(i3+3)-d(i3+3)*winv(i)*dt ) * scale_i
         xx(i3+3) = x(i3+3)
         x(i3+3) = x(i3+3) + v(i3+3)*dt
       end do
@@ -4672,15 +4734,19 @@ subroutine md_run
       !now solvent atoms
       do i=nat_solute+1,natom
         i3=i*3-3
-        v(i3+1)= ( v(i3+1)-d(i3+1)*winv(i)*dt ) * Tscale_solvent
+        scale_i = Tscale_solvent
+        if (split_excl) then
+          if (excl(i)) scale_i = Tscale_excl
+        end if
+        v(i3+1)= ( v(i3+1)-d(i3+1)*winv(i)*dt ) * scale_i
         xx(i3+1) = x(i3+1)
         x(i3+1) = x(i3+1) + v(i3+1)*dt
 
-        v(i3+2)= ( v(i3+2)-d(i3+2)*winv(i)*dt ) * Tscale_solvent
+        v(i3+2)= ( v(i3+2)-d(i3+2)*winv(i)*dt ) * scale_i
         xx(i3+2) = x(i3+2)
         x(i3+2) = x(i3+2) + v(i3+2)*dt
 
-        v(i3+3)= ( v(i3+3)-d(i3+3)*winv(i)*dt ) * Tscale_solvent
+        v(i3+3)= ( v(i3+3)-d(i3+3)*winv(i)*dt ) * scale_i
         xx(i3+3) = x(i3+3)
         x(i3+3) = x(i3+3) + v(i3+3)*dt
       end do
@@ -4749,6 +4815,7 @@ subroutine md_run
           write(*,2020) Tfree_solute, Tfree_solvent
            !  write(*,2030) Texcl_solute, Texcl_solvent
         end if
+        if ( .not. use_PBC .and. Ndegf > Ndegfree ) write(*,2031) Texcl
       end if
 
     end if ! print results
@@ -4758,6 +4825,7 @@ subroutine md_run
 201 format('Temperature at step',i8,':         T_tot=',f10.1,'         T_free=',f10.1)
 2020 format('                             T_free_solute=',f10.1,' T_free_solvent=',f10.1)
 2030 format('                             T_excl_solute=',f10.1,' T_excl_solvent=',f10.1)
+2031 format('                             T_excl=',f10.1)
 
 
 !*******************************************************************************
@@ -15491,6 +15559,11 @@ subroutine prep_sim
 
   !       Prepare an array of inverse masses
   winv(:) = 1./iaclib(iac(:))%mass
+  ! Frozen excluded atoms: zero inverse mass, so forces, SHAKE corrections and
+  ! minimization steps never move them (velocities are zeroed in md_run).
+  if (.not. use_PBC .and. trim(excluded_thermostat) == 'frozen') then
+    where (excl(1:natom)) winv(1:natom) = 0.
+  end if
 
 
   if(use_PBC .and. control_box) then
@@ -16144,6 +16217,11 @@ integer function shake(xx, x)
 
           i = shake_mol(mol)%bond(ic)%i
           j = shake_mol(mol)%bond(ic)%j
+          ! both atoms frozen (excluded_thermostat frozen): nothing can move
+          if (winv(i) + winv(j) == 0.) then
+            shake_mol(mol)%bond(ic)%ready = .true.
+            cycle
+          end if
           i3 = i*3-3
           j3 = j*3-3
           xij(1)  = x(i3+1) - x(j3+1)

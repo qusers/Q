@@ -155,9 +155,9 @@ def parse_arguments() -> argparse.Namespace:
         type=int,
         default=None,
         help=(
-            "Length of the final equilibration (eq5) in steps, overriding the protocol's "
-            "own 2.5 ns at the default 2 fs timestep. Use it to match a set that was "
-            "equilibrated for longer."
+            "Length of the final equilibration (eq5) in steps, overriding the default "
+            "0.1 ns (50,000 steps at 2 fs), the same length as ligand FEP. Use it to "
+            "match a set that was equilibrated for longer."
         ),
     )
     optional.add_argument(
