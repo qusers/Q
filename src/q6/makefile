@@ -235,16 +235,16 @@ qcalc: calc_base.o calc_chemscore.o calc_fit.o calc_geom.o calc_pmfscore.o \
 	calc_entropy.o calc_nb.o calc_xscore.o eigen.o qcalc.o
 	${FC} ${FFLAGS} ${FLIBS} $+ -o $@
 
-qdyn : md.o
+qdyn : boundary_corrections.o md.o
 	${FC} ${FFLAGS} ${FLIBS} $+ -o $@
 	
 qdyn_test : md_test.o #qdyn_test.o
 	${FC} ${FFLAGS} ${FLIBS} $+ -o $@
 
-qdum : md_dum.o
+qdum : boundary_corrections.o md_dum.o
 	${FC} ${FFLAGS} ${FLIBS} $+ -o $@
 
-qdynp : md_mpi.o qdyn_mpi.o lincs_mpi.o
+qdynp : boundary_corrections.o md_mpi.o qdyn_mpi.o lincs_mpi.o
 	${MPIFC} ${MPIFLAGS} ${FFLAGS} ${FLIBS} $+ -o $@
 
 
@@ -325,16 +325,16 @@ test_settle.o: test_settle.f90 settle.o
 test_softcore.o: test_softcore.f90 qsoftcore.o
 	${FC} ${FFLAGS} -c $<
 
-md.o: md.f90 mpiglob.o qatom.o qsoftcore.o sizes.o trj.o topo.o lincs.o settle.o
+md.o: md.f90 boundary_corrections.o mpiglob.o qatom.o qsoftcore.o sizes.o trj.o topo.o lincs.o settle.o
 	${FC} ${FFLAGS} ${FPP_FLG} -c md.f90
 
 md_test.o: md_test.f90 mpiglob.o qatom.o sizes.o trj.o topo.o
 	${FC} ${FFLAGS} ${FPP_FLG} -c md_test.f90
 
-md_dum.o:md.f90 mpiglob.o qatom.o qsoftcore.o sizes.o trj.o topo.o lincs.o settle.o
+md_dum.o:md.f90 boundary_corrections.o mpiglob.o qatom.o qsoftcore.o sizes.o trj.o topo.o lincs.o settle.o
 	${FC} ${FFLAGS} ${FPP_FLG} -DDUM -c md.f90 -o md_dum.o
 
-md_mpi.o: md.f90 mpiglob.o qatom.o qsoftcore.o sizes.o topo.o trj.o lincs.o settle.o lincs_mpi.o
+md_mpi.o: md.f90 boundary_corrections.o mpiglob.o qatom.o qsoftcore.o sizes.o topo.o trj.o lincs.o settle.o lincs_mpi.o
 	${MPIFC} ${MPIFLAGS} ${FFLAGS} ${FPP_FLG} -DUSE_MPI \
 	-c md.f90 -o md_mpi.o
 
@@ -363,6 +363,9 @@ qprep.o: qprep.f90 prep.o avetr.o
 	${FC} ${FFLAGS} -c $<
 
 qsoftcore.o: qsoftcore.f90
+	${FC} ${FFLAGS} -c $<
+
+boundary_corrections.o: boundary_corrections.f90
 	${FC} ${FFLAGS} -c $<
 
 qatom.o: qatom.f90 misc.o nrgy.o prmfile.o sizes.o index.o topo.o qsoftcore.o

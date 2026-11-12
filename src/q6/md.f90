@@ -27,6 +27,7 @@ module md
   use lincs_mpi
 #endif
   use settle
+  use boundary_corrections, only: born_coefficient, born_self_energy
   use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 
   implicit none
@@ -45,6 +46,7 @@ module md
   character*(*), parameter  :: md_date = '2015-02-22'
   real, parameter           :: rho_wat = 0.0335  ! molecules / A**3
   real, parameter           :: boltz = 0.001986
+  real(8), parameter        :: born_ke = 332.0637_8 ! kcal*A/(mol*e**2)
   real(8), parameter        :: angle_cosine_limit = 0.999_8
   real(8), parameter        :: dihedral_sin_threshold = 1.0e-6_8
   real(8)                   :: pi, deg2rad !set in sub startup
@@ -174,6 +176,11 @@ module md
   real(8)                   :: fkwpol
   logical                   :: wpol_restr, wpol_Born
   real(8)                   :: fk_wsphere, crgtot, crgQtot
+  ! Opt-in per-state exterior Born self-energy, added to EQ(istate)%total.
+  logical                   :: perstate_born = .false.
+  real(8)                   :: born_eps = 80.0_8
+  real(8)                   :: born_C = 0.0_8, born_crg_env = 0.0_8
+  real(8), allocatable      :: born_self_state(:), q_region_state(:)
   integer(ai), allocatable  :: list_sh(:,:), nsort(:,:)
   real(8),  allocatable     :: theta(:), theta0(:), tdum(:)
   integer                   :: nwpolr_shell, n_max_insh
@@ -689,6 +696,8 @@ subroutine md_deallocate
   deallocate(theta, stat=alloc_status)
   deallocate(theta0, stat=alloc_status)
   deallocate(tdum, stat=alloc_status)
+  deallocate(born_self_state, stat=alloc_status)
+  deallocate(q_region_state, stat=alloc_status)
 
   ! LRF arrays
   deallocate(iwhich_cgp, lrf, stat=alloc_status)
@@ -1872,8 +1881,13 @@ subroutine get_fep
       if(nstates /= 2) call die('nonlinear softcore currently requires exactly two FEP states')
       if(noffd > 0) call die('nonlinear softcore does not yet support EVB off-diagonal elements')
       if(monitor_group_pairs > 0) call die('nonlinear softcore does not yet support nonbonded monitor groups')
+      ! Charge-changing endpoints need the per-state Born term, which sits in
+      ! EQ%total and is therefore carried exactly by the foreign work. The
+      ! legacy charge_correction shifts the polarization restraint target
+      ! instead, which the foreign work cannot account for.
       if(abs(sum(qcrg(:,1))-sum(qcrg(:,2))) > 1.0e-2_8) then
-        call die('nonlinear softcore direct-H output requires charge-conserving endpoint states')
+        if(wpol_born) call die('charge-changing nonlinear softcore requires charge_correction off')
+        if(.not. perstate_born) call die('charge-changing nonlinear softcore requires perstate_born_correction on')
       end if
       if(iene_cycle > 0 .and. n_foreign_lambda == 0) then
         call die('nonlinear softcore production energy output requires [foreign_lambdas] direct-H targets')
@@ -3949,6 +3963,12 @@ logical function initialize()
         yes=prm_get_logical_by_key('charge_correction', wpol_born, wpol_restr)
         if(wpol_born .and. .not. wpol_restr) then
           write(*,'(a)') '>>> ERROR: charge_correction on requires polarization on (section solvent)'
+          initialize = .false.
+        end if
+        yes=prm_get_logical_by_key('perstate_born_correction', perstate_born, .false.)
+        yes=prm_get_real8_by_key('born_dielectric', born_eps, 80.0_8)
+        if(perstate_born .and. born_eps <= 1.0_8) then
+          write(*,'(a)') '>>> ERROR: born_dielectric must be > 1 for perstate_born_correction'
           initialize = .false.
         end if
         if(.not. prm_get_real8_by_key('polarization_force', fkwpol)) then
@@ -15973,6 +15993,7 @@ subroutine pot_energy
       EQ(istate)%total =  EQ(istate)%q%bond + EQ(istate)%q%angle   &
         + EQ(istate)%q%torsion  + EQ(istate)%q%improper + EQ(istate)%qx%el &
         + EQ(istate)%qx%vdw  + EQ(istate)%restraint
+      if (perstate_born) EQ(istate)%total = EQ(istate)%total + born_self_state(istate)
 
       ! update E with an average of all states
       E%q%bond  = E%q%bond  + EQ(istate)%q%bond *EQ(istate)%lambda
@@ -15994,6 +16015,8 @@ subroutine pot_energy
       E%p%improper + E%pp%el + E%pp%vdw + E%pw%el + E%pw%vdw + E%ww%el + &
       E%ww%vdw + E%q%bond + E%q%angle + E%q%torsion + &
       E%q%improper + E%qx%el + E%qx%vdw + E%restraint%total + E%LRF
+    if (perstate_born) E%potential = E%potential + &
+      dot_product(EQ(1:nstates)%lambda, born_self_state(1:nstates))
   end if
 
   ! NEQ: dU/dlambda for the work integral (sign-flipped so the accumulator adds
@@ -16006,6 +16029,7 @@ subroutine pot_energy
          (EQ(2)%qx%el      - EQ(1)%qx%el)      + &
          (EQ(2)%qx%vdw     - EQ(1)%qx%vdw)     + &
          (EQ(2)%restraint  - EQ(1)%restraint)
+    if (perstate_born) dU = dU + born_self_state(2) - born_self_state(1)
     dU_dlambda = -dU
     EQ(1:2)%lambda = old_lambda(:)
   end if
@@ -16364,6 +16388,10 @@ subroutine prep_sim
     call centered_heading('Initializing dynamics', '-')
   end if
 
+  if (perstate_born .and. nwat <= 0) then
+    call die('per-state exterior Born correction requires explicit solvent')
+  end if
+
   ! Set parameters (bonds, angles, charges,...) & restraints for water
   if(nwat > 0) then
     select case (solvent_type)
@@ -16378,6 +16406,7 @@ subroutine prep_sim
     if( .not. use_PBC ) then
       call wat_sphere
       if (wpol_restr) call wat_shells
+      call init_perstate_born
 
     else !compute charges of the system for box case 
       !(done in subroutine wat_sphere for sphere case)
@@ -17628,16 +17657,40 @@ subroutine wat_sphere
   write (*,60) 'excluded atoms', crgexcl
 60 format ('Total charge of ',a,t41,'= ',f10.2)
 
-  !calc effective charge of simulation sphere at this lambda
-  crgQtot = 0.0
-  do i = 1, nqat
+  if (perstate_born) then
+    ! Endpoint-resolved Born needs every pure-state Q-region charge.
+    if (allocated(q_region_state)) deallocate(q_region_state)
+    allocate(q_region_state(nstates), stat=alloc_status)
+    call check_alloc('pure-state Q-region charges')
+    q_region_state(:) = 0.0_8
     do istate = 1, nstates
-      crgtot = crgtot + qcrg(i,istate)*EQ(istate)%lambda
-      crgQtot = crgQtot + qcrg(i,istate)*EQ(istate)%lambda
+      do i = 1, nqat
+        q_region_state(istate) = q_region_state(istate) + qcrg(i,istate)
+      end do
     end do
-  end do
+    born_crg_env = crgtot
+    crgQtot = dot_product(q_region_state(1:nstates), EQ(1:nstates)%lambda)
+    crgtot = crgtot + crgQtot
+  else
+    ! Preserve the legacy summation order exactly when new terms are disabled.
+    crgQtot = 0.0
+    do i = 1, nqat
+      do istate = 1, nstates
+        crgtot = crgtot + qcrg(i,istate)*EQ(istate)%lambda
+        crgQtot = crgQtot + qcrg(i,istate)*EQ(istate)%lambda
+      end do
+    end do
+  end if
   write (*,70) crgtot
 70 format ('Total charge of system                  = ',f10.2)
+  if (perstate_born) then
+    write(*,'(a,f10.4)') 'Boundary fixed-environment charge       = ', born_crg_env
+    do istate = 1, nstates
+      write(*,'(a,i2,2(a,f10.4))') 'Boundary state ', istate, &
+        ' Q-region charge = ', q_region_state(istate), &
+        ' total charge = ', born_crg_env + q_region_state(istate)
+    end do
+  end if
 
   if (.not. wpol_born) crgQtot = 0.0 !ignore total Q if Born corr. is off
   if ( nwat .eq. 0 ) return
@@ -17681,6 +17734,39 @@ subroutine wat_sphere
 100 format('Radial polarization force constant      = ',f10.2)
 
 end subroutine wat_sphere
+
+!-----------------------------------------------------------------------
+
+subroutine init_perstate_born
+  ! Precompute the missing-exterior Born self-energy for every pure Q state.
+  ! born_C = ke*(1-1/eps)/(2*rwat); rwat is the qprep effective water radius.
+  ! Added into EQ(istate)%total so the exact foreign-work BAR carries it.
+  integer :: istate
+  real(8) :: q_sphere
+
+  if (.not. perstate_born) return
+  if (nstates <= 0) call die('perstate_born_correction requires alchemical states')
+  if (rwat <= 0.0_8) call die('perstate_born_correction requires a positive solvent radius')
+
+  born_C = born_coefficient(born_ke, born_eps, rwat)
+
+  if (allocated(born_self_state)) deallocate(born_self_state)
+  allocate(born_self_state(nstates), stat=alloc_status)
+  call check_alloc('per-state Born self-energies')
+
+  write(*,'(a)') 'Per-state exterior Born term           : ON'
+  write(*,'(a,f10.4)') 'Born solvent radius                    = ', rwat
+  write(*,'(a,f10.2)') 'Born dielectric                        = ', born_eps
+  write(*,'(a,f10.4)') 'Born coefficient                       = ', born_C
+  do istate = 1, nstates
+    q_sphere = born_crg_env + q_region_state(istate)
+    born_self_state(istate) = born_self_energy(q_sphere, born_C)
+    write(*,'(a,i2,a,f8.2,a,f12.4)') 'State ', istate, '  Q_s = ', q_sphere, &
+      '  E_Born = ', born_self_state(istate)
+  end do
+  if (nstates == 2) write(*,'(a,f12.4)') 'Born state difference E(2)-E(1)        = ', &
+    born_self_state(2)-born_self_state(1)
+end subroutine init_perstate_born
 
 !-----------------------------------------------------------------------
 
@@ -18044,6 +18130,11 @@ subroutine write_out
       write (*,32) 'Q-SUM', istate, disp_lambda(istate),&
         EQ(istate)%total, EQ(istate)%restraint
     end do
+    if (perstate_born) then
+      do istate = 1, nstates
+        write (*,32) 'Q-born', istate, disp_lambda(istate), born_self_state(istate)
+      end do
+    end if
     do i=1,noffd
       write (*,360) offd(i)%i, offd(i)%j, Hij(offd(i)%i, offd(i)%j), &
         offd2(i)%k, offd2(i)%l, offd(i)%rkl
