@@ -1,6 +1,7 @@
 """Tests for the QligFEP.CLI.qprep_cli module."""
 
 import argparse
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -808,12 +809,35 @@ class TestFragmentFilteringInQprep:
         "HETATM    6  H2  HOH W 100       2.700   3.750   3.000  1.00 20.00           H\n"
     )
 
-    def _run_qprep_main(self, tmp_path, monkeypatch, args):
-        """Run qprep_cli.main() with mocked external dependencies."""
+    # What qprep would write for PROTEIN_WITH_CRYSTAL_WATER: the protein, the crystal
+    # water it was given, and one water it added itself.
+    COMPLEX_WITH_CRYSTAL_WATER = (
+        "ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00  0.00           N\n"
+        "ATOM      2  CA  ALA A   1       1.458   0.000   0.000  1.00  0.00           C\n"
+        "ATOM      3  C   ALA A   1       2.009   1.420   0.000  1.00  0.00           C\n"
+        "ATOM      4  O   HOH W   2       3.000   3.000   3.000  1.00  0.00           O\n"
+        "ATOM      5  H1  HOH W   2       3.800   3.000   3.000  1.00  0.00           H\n"
+        "ATOM      6  H2  HOH W   2       2.700   3.750   3.000  1.00  0.00           H\n"
+        "ATOM      7  O   HOH W   3       5.000   5.000   5.000  1.00  0.00           O\n"
+    )
+
+    def _run_qprep_main(self, tmp_path, monkeypatch, args, complex_pdb=None, seen_by_qprep=None):
+        """Run qprep_cli.main() with mocked external dependencies.
+
+        If ``seen_by_qprep`` is a list, the contents of the PDB handed to qprep are appended to it.
+        """
         monkeypatch.chdir(tmp_path)
+        complex_pdb = complex_pdb or self.MINIMAL_COMPLEX_PDB
 
         def mock_run_qprep(*a, **kw):
-            (tmp_path / "complexnotexcluded.pdb").write_text(self.MINIMAL_COMPLEX_PDB)
+            if seen_by_qprep is not None:
+                rp = next(
+                    line.split()[1]
+                    for line in (tmp_path / "qprep.inp").read_text().splitlines()
+                    if line.startswith("rp ")
+                )
+                seen_by_qprep.append(Path(rp).read_text())
+            (tmp_path / "complexnotexcluded.pdb").write_text(complex_pdb)
             # main() reads the sphere charge back out of qprep.out for prep.json.
             (tmp_path / "qprep.out").write_text(
                 "Total charge of system                       =  0.00\n"
@@ -862,17 +886,52 @@ class TestFragmentFilteringInQprep:
         assert "B" in df["chain_id"].values, "Chain B should be preserved when filtering is skipped"
 
     def test_crystallographic_waters_are_preserved_by_default(self, tmp_path, monkeypatch):
-        """Input HOH residues remain available for qprep's overlap handling."""
+        """qprep solvates around the crystal waters, which then live only in water.pdb."""
         from QligFEP.pdb_utils import read_pdb_to_dataframe
 
         pdb_file = tmp_path / "protein.pdb"
         pdb_file.write_text(self.PROTEIN_WITH_CRYSTAL_WATER)
         args = self.create_mock_args(skip_fragment_filter=True)
+        seen_by_qprep = []
 
-        self._run_qprep_main(tmp_path, monkeypatch, args)
+        self._run_qprep_main(
+            tmp_path,
+            monkeypatch,
+            args,
+            complex_pdb=self.COMPLEX_WITH_CRYSTAL_WATER,
+            seen_by_qprep=seen_by_qprep,
+        )
 
-        prepared = read_pdb_to_dataframe(pdb_file)
-        assert (prepared["residue_name"] == "HOH").sum() == 3
+        # qprep is given the crystal water, so the solvent it adds avoids it ...
+        assert sum(line[17:20] == "HOH" for line in seen_by_qprep[0].splitlines()) == 3
+        # ... the input file is left untouched ...
+        assert pdb_file.read_text() == self.PROTEIN_WITH_CRYSTAL_WATER
+        # ... the prepared protein carries no waters ...
+        prepared = read_pdb_to_dataframe(tmp_path / "protein_processed.pdb")
+        assert "HOH" not in prepared["residue_name"].values
+        assert len(prepared) == 3
+        # ... and the crystal water is part of the water sphere, alongside the added one.
+        water = read_pdb_to_dataframe(tmp_path / "water.pdb").query("atom_name == 'O'")
+        coords = {tuple(row) for row in water[["x", "y", "z"]].to_numpy().round(3)}
+        assert coords == {(3.0, 3.0, 3.0), (5.0, 5.0, 5.0)}
+
+    def test_crystal_waters_outside_the_sphere_are_dropped(self, tmp_path, monkeypatch):
+        """A crystal water beyond the sphere is neither in the protein nor in water.pdb."""
+        from QligFEP.pdb_utils import read_pdb_to_dataframe
+
+        far_water = (
+            "HETATM    7  O   HOH W 101      30.000  30.000  30.000  1.00 20.00           O\n"
+        )
+        (tmp_path / "protein.pdb").write_text(self.PROTEIN_WITH_CRYSTAL_WATER + far_water)
+        complex_pdb = self.COMPLEX_WITH_CRYSTAL_WATER + far_water.replace("HETATM", "ATOM  ")
+        args = self.create_mock_args(skip_fragment_filter=True)
+
+        self._run_qprep_main(tmp_path, monkeypatch, args, complex_pdb=complex_pdb)
+
+        prepared = read_pdb_to_dataframe(tmp_path / "protein_processed.pdb")
+        assert "HOH" not in prepared["residue_name"].values
+        water = read_pdb_to_dataframe(tmp_path / "water.pdb").query("atom_name == 'O'")
+        assert water["x"].max() < 10.0
 
     def test_crystallographic_waters_can_be_stripped_explicitly(self, tmp_path, monkeypatch):
         """The compatibility flag retains the previous grid-only preparation."""

@@ -6,10 +6,9 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from QligFEP import __version__
-
 from ..logger import logger, setup_logger
 from ..pdb_utils import read_pdb_to_dataframe, residue_atom_serial_range
+from ..provenance import provenance_record
 from ..qligfep import COUNTER_WATER_RESNAME, QligFEP
 from ..templates.sections import format_wall_restraints
 from .parser_base import parse_arguments
@@ -105,7 +104,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     date_str = time_now.strftime("%Y-%m-%d %H:%M:%S")
     (Path(inputdir) / "fep_config.json").write_text(
         json.dumps(
-            {**param_dict, **{"time": date_str, "command_str": command_str, "QligFEP_version": __version__}},
+            {**param_dict, "time": date_str, "command_str": command_str, **provenance_record()},
             indent=4,
         )
     )

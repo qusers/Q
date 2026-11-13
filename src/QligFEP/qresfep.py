@@ -27,7 +27,6 @@ import json
 import math
 import os
 import re
-import shutil
 import stat
 import subprocess
 from pathlib import Path
@@ -38,6 +37,7 @@ from .IO import AA, get_force_field_paths, read_prm, replace, run_qprep
 from .logger import logger
 from .pdb_utils import pdb_parse_in, pdb_parse_out
 from .peptide_caps import PeptideBuildError, build_reference_peptide
+from .provenance import copy_with_provenance, provenance_header
 from .resfep_protocols import DEFAULT_PRODUCTION_STEPS
 from .settings.settings import CLUSTER_DICT, CONFIGS
 from .sphere_prep import SpherePrep, residue_distance_from_center
@@ -385,9 +385,20 @@ class QresFEP:
         self.inputfiles.mkdir(parents=True, exist_ok=True)
         lib_path, _ = get_force_field_paths(self.force_field)
         self.ff_lib_name = Path(lib_path).name
-        shutil.copy(lib_path, self.inputfiles / self.ff_lib_name)
+        generator = "QligFEP.qresfep.QresFEP.create_environment"
+        copy_with_provenance(
+            lib_path,
+            self.inputfiles / self.ff_lib_name,
+            generator,
+            details={"Purpose": f"force field library for {self.name} (copied unchanged)"},
+        )
         for cofactor in self.cofactors:
-            shutil.copy(self.workdir / f"{cofactor}.lib", self.inputfiles / f"{cofactor}.lib")
+            copy_with_provenance(
+                self.workdir / f"{cofactor}.lib",
+                self.inputfiles / f"{cofactor}.lib",
+                generator,
+                details={"Purpose": f"cofactor {cofactor} library for {self.name} (copied unchanged)"},
+            )
 
     def read_pdb(self) -> None:
         """Build the complex with the mutant side chain grafted onto the wild type.
@@ -525,6 +536,15 @@ class QresFEP:
 
         self.hybrid_lib_name = f"{self.hybrid_name}.lib"
         with open(self.inputfiles / self.hybrid_lib_name, "w") as out:
+            out.write(
+                provenance_header(
+                    "QligFEP.qresfep.QresFEP.write_hybrid_lib",
+                    details={
+                        "Purpose": f"dual-topology residue {self.hybrid_name} for {self.name}",
+                        "Force field": Path(self.force_field).name,
+                    },
+                )
+            )
             out.write(f"{{{self.hybrid_name}}}\n")
             for header in headers:
                 out.write(f"\n    {header}\n")
@@ -567,6 +587,12 @@ class QresFEP:
                     out.write(f"{pdb_parse_out(atom)}\n")
 
         with open(self.inputfiles / "tmp.prm", "w") as out:
+            out.write(
+                provenance_header(
+                    "QligFEP.qresfep.QresFEP.find_missing_bonded",
+                    details={"Purpose": f"temporary parameters to probe missing terms for {self.name}"},
+                )
+            )
             for section in _PARAMETER_SECTIONS:
                 out.write(f"{section}\n")
                 out.writelines(parameters[section])
@@ -627,6 +653,14 @@ class QresFEP:
 
         self.prm_name = f"{Path(self.force_field).name}_merged.prm"
         with open(self.inputfiles / self.prm_name, "w") as out:
+            out.write(
+                provenance_header(
+                    "QligFEP.qresfep.QresFEP.write_merged_prm",
+                    details={
+                        "Purpose": f"merged parameters with zero-force dual-topology terms for {self.name}",
+                    },
+                )
+            )
             for section in _PARAMETER_SECTIONS:
                 out.write(f"{section}\n")
                 out.writelines(parameters[section])

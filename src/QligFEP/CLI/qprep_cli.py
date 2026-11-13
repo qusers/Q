@@ -1082,7 +1082,9 @@ def parse_arguments() -> argparse.Namespace:
         action="store_true",
         help=(
             "Remove crystallographic HOH residues before solvating. By default they are "
-            "preserved and qprep removes added solvent that overlaps them."
+            "preserved: qprep solvates around them, and the ones inside the sphere are written "
+            "to water.pdb (not to the prepared protein), so FEP setup filters them like any "
+            "other sphere water."
         ),
     )
     return parser.parse_args()
@@ -1122,6 +1124,7 @@ def main(
     # overlaps them.
     pdb_data = read_pdb_to_dataframe(pdb_file)
     crystal_waters_df = pdb_data.query("residue_name == 'HOH'")
+    crystal_water_oxygens = np.empty((0, 3))
     if not crystal_waters_df.empty:
         water_keys = ["chain_id", "residue_seq_number", "insertion_code"]
         crystal_water_count = len(crystal_waters_df[water_keys].drop_duplicates())
@@ -1134,6 +1137,12 @@ def main(
                 f"Preserving {crystal_water_count} crystallographic water molecules; "
                 "qprep will resolve overlaps with added solvent"
             )
+            crystal_water_oxygens = crystal_waters_df.query("atom_name == 'O'")[["x", "y", "z"]].to_numpy(
+                dtype=float
+            )
+            # Forces a separate protein_processed.pdb, so the input file is never rewritten
+            # when the crystal waters are moved out of the prepared protein below.
+            processing_steps.append("moved crystallographic waters to water.pdb")
 
     # Step 2: Add cofactors if provided
     if args.cofactors:
@@ -1317,6 +1326,9 @@ def main(
         logger.info("All water molecules are inside the sphere radius.")
         logger.debug(f"Final highest distance to COG is {euclidean_distances.max():.2f} A")
 
+    if len(crystal_water_oxygens):
+        _move_crystal_waters_to_water_pdb(processed_pdb_path, waterfile, crystal_water_oxygens)
+
     # Persist the preparation metadata required by downstream QresFEP setup.
     prep = sphere_prep.collect(
         input_pdb=cwd / args.input_pdb_file,
@@ -1337,6 +1349,47 @@ def main(
     )
 
     return neutralization_stats
+
+
+def _move_crystal_waters_to_water_pdb(
+    processed_pdb_path: Path, waterfile: Path, crystal_water_oxygens: np.ndarray
+) -> tuple[int, int]:
+    """Leave crystallographic waters only in water.pdb.
+
+    qprep solvates around the crystal waters and writes the ones inside the sphere,
+    together with the added solvent, to water.pdb. Keeping them in the prepared protein
+    as well would make QligFEP copy them into the FEP input as part of the protein, where
+    qprep reads them as solute. Waters overlapping the perturbed ligands would then bypass
+    the clash filter, which only edits water.pdb, and with --skip-fragment-filter waters
+    outside the sphere would stay in the topology.
+
+    Once in water.pdb, crystal waters are filtered like any other sphere water during FEP
+    setup: by the QligFEP clash filter and by qprep's solvent_pack distance to solute
+    heavy atoms.
+
+    Returns:
+        (number of crystal waters kept in water.pdb, number of crystal waters dropped)
+    """
+    lines = Path(processed_pdb_path).read_text().splitlines(keepends=True)
+    kept_lines = [
+        line for line in lines if not (line.startswith(("ATOM", "HETATM")) and line[17:20] == "HOH")
+    ]
+    Path(processed_pdb_path).write_text("".join(kept_lines))
+
+    water_df = read_pdb_to_dataframe(waterfile)
+    sphere_oxygens = water_df.query("atom_name == 'O'")[["x", "y", "z"]].to_numpy(dtype=float)
+    if len(sphere_oxygens):
+        distances = np.linalg.norm(crystal_water_oxygens[:, None, :] - sphere_oxygens[None, :, :], axis=2)
+        n_kept = int((distances.min(axis=1) < 0.01).sum())
+    else:
+        n_kept = 0
+    n_dropped = len(crystal_water_oxygens) - n_kept
+    logger.info(
+        f"Crystallographic waters: {n_kept} of {len(crystal_water_oxygens)} kept in water.pdb; "
+        f"{n_dropped} not kept (outside the sphere). {Path(processed_pdb_path).name} no longer "
+        "contains HOH."
+    )
+    return n_kept, n_dropped
 
 
 def main_exe() -> None:

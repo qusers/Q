@@ -1275,6 +1275,7 @@ class TestConfigRecord:
         assert config["q_position"] == 39
         assert config["hybrid_residue"] == "L2A"
         assert config["start"] == "1"
+        assert {"QligFEP_version", "git_commit", "uncommitted_changes"} <= set(config)
 
 
 # ----------------------------------------------------------------------
