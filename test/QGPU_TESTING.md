@@ -211,7 +211,6 @@ The labels `Q5` and `Q7` in mismatch messages are historical names. In the curre
 | --- | --- |
 | `--inp PATH [PATH ...]` | Runs one or more input files directly, preparing a separate directory for each; does not automatically chain the output of one input into the next |
 | `-a gpu` / `-a cpu` | Required; selects QGPU's execution mode. QFortran runs in either case |
-| `--qgpu-input inp` | Input parsing mode required for direct input tests; `inp` is the default |
 | `-w PATH` | Existing parent working directory; an absolute path is recommended |
 | `-k All` | Keeps the test files for inspection |
 | `--tolerance VALUE` | Absolute energy comparison tolerance; default 0.0 |
