@@ -57,6 +57,7 @@ myst_url_schemes = ("http", "https", "mailto")
 html_theme = "furo"
 html_title = "Q and QligFEP"
 html_static_path = ["_static"]
+html_logo = "_static/q-logo.svg"  # rebuilt by docs/scripts/logo/make_logo.sh
 html_css_files = ["custom.css"]
 html_theme_options = {
     "source_repository": "https://github.com/qusers/Q/",
