@@ -1,6 +1,8 @@
 #pragma once
+#include <string>
 
-static void fatal(const std::string& message) {
-    printf(">>> FATAL: %s\n", message.c_str());
-    exit(EXIT_FAILURE);
+#include "qgpu_error.h"
+
+[[noreturn]] inline void fatal(const std::string& message) {
+    throw QgpuError(message);
 }

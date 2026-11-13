@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -8,8 +9,27 @@
 
 class InpParser : public BaseParser {
    public:
+    using Sections = std::map<std::string, std::map<std::string, std::string>>;
+    using Lists = std::map<std::string, std::vector<std::vector<std::string>>>;
+
+    // Build a parser without an .inp file. `keyed`/`lists` use the same
+    // section and key names as an .inp file ("md", "cut-offs", "lambdas", ...).
+    // An optional [files] restart starts from that restart file instead of a fresh start.
+    static std::unique_ptr<InpParser> from_sections(const std::string& topology,
+                                                    const std::string& fep,
+                                                    const Sections& keyed,
+                                                    const Lists& lists);
+
+    // Settings only, no files: for parse_stage(), which fills in the .inp defaults.
+    static std::unique_ptr<InpParser> from_settings(const Sections& keyed, const Lists& lists);
+
     explicit InpParser(const std::string& inp_file);
     ~InpParser() override;
+
+    // Files named in [files], resolved. Set by parse() / parse_stage().
+    const std::string& topology_file() const { return topology_file_; }
+    const std::string& fep_file() const { return fep_file_; }
+    const std::string& restart_file() const { return restart_file_; }
 
    protected:
     void parse_md() override;

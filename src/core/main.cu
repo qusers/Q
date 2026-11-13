@@ -5,16 +5,7 @@
 
 #include "command_parser.h"
 #include "context.h"
-#include "cpu_handler.h"
-#include "cuda_handler.cuh"
-
-void calc_integration(const CommandParseResult& parsed) {
-    std::unique_ptr<Handler> handler = parsed.command.requested_gpu
-                                           ? std::unique_ptr<Handler>(std::make_unique<CudaHandler>())
-                                           : std::unique_ptr<Handler>(std::make_unique<CpuHandler>());
-    handler->initialize(parsed.command);
-    handler->run();
-}
+#include "run_simulation.h"
 
 int main(int argc, char* argv[]) {
     CommandParseResult parsed = parse_command(argc, argv);
@@ -23,6 +14,12 @@ int main(int argc, char* argv[]) {
         printf(">>> FATAL: %s Exiting...\n", parsed.error.c_str());
         return EXIT_FAILURE;
     }
-    calc_integration(parsed);
+
+    try {
+        run_simulation(parsed.command);
+    } catch (const std::exception& e) {
+        printf(">>> FATAL: %s Exiting...\n", e.what());
+        return EXIT_FAILURE;
+    }
     return EXIT_SUCCESS;
 }

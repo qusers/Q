@@ -9,6 +9,7 @@
 
 #include "constants.h"
 #include "geometry.h"
+#include "qgpu_error.h"
 #include "vdw_rules.h"
 
 namespace {
@@ -357,7 +358,7 @@ std::vector<special_pair_term_t> build_special_pairs(Context& ctx, const ParseRe
         const int jq = atom_to_q.at(aj);
 
         if (iq < 0 || jq < 0) {
-            throw std::runtime_error("Soft pairs must contain two Q-atoms.");
+            throw InputError("Soft pairs must contain two Q-atoms");
         }
 
         const size_t index_i = static_cast<size_t>(state) * nqat + iq;
@@ -367,7 +368,7 @@ std::vector<special_pair_term_t> build_special_pairs(Context& ctx, const ParseRe
         const int type_j = ctx.q_atypes.at(index_j).code;
 
         if (type_i <= 0 || type_j <= 0) {
-            throw std::runtime_error("Soft pairs require defined Q-atom types.");
+            throw InputError("Soft pairs require defined Q-atom types");
         }
 
         const auto& param_i = ctx.q_catypes.at(type_i - 1);

@@ -17,12 +17,10 @@
 #include <vector>
 
 #include "constants.h"
+#include "error_helper.h"  // parse_error(): InputError, so Python sees qgpu.InputError
 #include "str_helpers.h"
 
 namespace {
-std::runtime_error parse_error(const std::string& message) {
-    return std::runtime_error(message);
-}
 
 std::string value_or(const std::map<std::string, std::string>& values, const std::string& key, const std::string& fallback) {
     auto it = values.find(key);
@@ -355,6 +353,54 @@ struct InpParser::FepData {
 };
 
 InpParser::InpParser(const std::string& inp_file) : BaseParser(inp_file), input_dir_(dirname_of_local(inp_file)) {}
+
+std::unique_ptr<InpParser> InpParser::from_sections(const std::string& topology,
+                                                    const std::string& fep,
+                                                    const Sections& keyed,
+                                                    const Lists& lists) {
+    namespace fs = std::filesystem;
+    const std::string topo_abs = fs::absolute(topology).string();
+    const std::string fep_abs = fep.empty() ? std::string() : fs::absolute(fep).string();
+    if (!fs::is_regular_file(topo_abs)) throw parse_error("Topology file does not exist: " + topo_abs);
+    if (!fep_abs.empty() && !fs::is_regular_file(fep_abs)) throw parse_error("FEP file does not exist: " + fep_abs);
+
+    // file_path is only used for error messages; input_dir_ becomes the topology folder.
+    std::unique_ptr<InpParser> p = from_settings(keyed, lists);
+    p->file_path = topo_abs;
+    p->input_dir_ = dirname_of_local(topo_abs);
+
+    auto& files = p->input_->keyed["files"];
+    files["topology"] = topo_abs;
+    if (!fep_abs.empty()) files["fep"] = fep_abs;
+
+    std::string restart_abs;
+    const std::string restart = value_or(files, "restart", "");
+    if (!restart.empty()) {
+        restart_abs = fs::absolute(restart).string();
+        if (!fs::is_regular_file(restart_abs)) throw parse_error("Restart file does not exist: " + restart_abs);
+        files["restart"] = restart_abs;
+    }
+
+    // ensure_md_input() returns early because input_ is set, so set what it would have set.
+    p->topology_file_ = topo_abs;
+    p->fep_file_ = fep_abs;
+    p->restart_file_ = restart_abs;  // empty -> fresh start; coordinates come from the topology
+    return p;
+}
+
+std::unique_ptr<InpParser> InpParser::from_settings(const Sections& keyed, const Lists& lists) {
+    std::unique_ptr<InpParser> p(new InpParser(""));
+    p->input_ = std::make_unique<MDInput>();  // so ensure_md_input() never reads a file
+
+    for (const auto& [section, values] : keyed) {
+        auto& dst = p->input_->keyed[lower_normalized(section)];
+        for (const auto& [key, value] : values) dst[lower_normalized(key)] = value;
+    }
+    for (const auto& [section, rows] : lists) {
+        p->input_->lists[lower_normalized(section)] = rows;
+    }
+    return p;
+}
 
 InpParser::~InpParser() = default;
 
@@ -1076,8 +1122,12 @@ void InpParser::ensure_run_start_vectors() {
         result.restart_theta_corr.clear();
 
         const auto& mdv = input_->keyed.count("md") ? input_->keyed["md"] : std::map<std::string, std::string>();
-        int seed = parse_int(value_or(mdv, "random-seed", value_or(mdv, "random_seed", "1")));
-        double temperature = parse_double(value_or(mdv, "initial-temperature", value_or(mdv, "initial_temperature", value_or(mdv, "temperature", "0"))));
+        // As in Fortran Q: without initial_temperature there are no starting velocities.
+        if (!mdv.count("initial-temperature")) {
+            throw parse_error("Q input needs [files] restart when [MD] initial_temperature is not given.");
+        }
+        int seed = parse_int(value_or(mdv, "random-seed", "1"));
+        double temperature = parse_double(mdv.at("initial-temperature"));
         if (seed <= 0) throw parse_error("Fresh-start Q input requires a positive random_seed.");
 
         double kT = Boltz * temperature;
@@ -1108,14 +1158,19 @@ void InpParser::parse_md() {
     const auto& solvent = input_->keyed.count("solvent") ? input_->keyed["solvent"] : std::map<std::string, std::string>();
     const auto& intervals = input_->keyed.count("intervals") ? input_->keyed["intervals"] : std::map<std::string, std::string>();
 
+    // Defaults follow Fortran Q6 (src/q6/md.f90, initialize()).
+    for (const char* key : {"steps", "stepsize", "temperature"}) {
+        if (!mdv.count(key)) throw parse_error(std::string("Q input [MD] ") + key + " is required.");
+    }
     md_t& md = result.md;
-    md.steps = parse_int(value_or(mdv, "steps", "0"));
-    md.stepsize = parse_double(value_or(mdv, "stepsize", "0"));
-    md.temperature = parse_double(value_or(mdv, "temperature", "0"));
+    md.steps = parse_int(mdv.at("steps"));
+    md.stepsize = parse_double(mdv.at("stepsize"));
+    md.temperature = parse_double(mdv.at("temperature"));
     md.thermostat = value_or(mdv, "thermostat", "berendsen");
-    md.bath_coupling = parse_double(value_or(mdv, "bath-coupling", value_or(mdv, "bath_coupling", "1")));
-    md.random_seed = parse_int(value_or(mdv, "random-seed", value_or(mdv, "random_seed", "1")));
-    md.initial_temperature = parse_double(value_or(mdv, "initial-temperature", value_or(mdv, "initial_temperature", value_or(mdv, "temperature", "0"))));
+    md.bath_coupling = parse_double(value_or(mdv, "bath-coupling", "10"));
+    md.random_seed = parse_int(value_or(mdv, "random-seed", "1"));
+    md.generate_velocities = mdv.count("initial-temperature") != 0;
+    md.initial_temperature = md.generate_velocities ? parse_double(mdv.at("initial-temperature")) : 0.0;
     md.hmr = is_on_value(mdv, "hmr", "off");
     md.hmr_target_mass = parse_double(value_or(mdv, "hmr-target-mass", "3.024"));
 
@@ -1175,7 +1230,9 @@ void InpParser::parse_md() {
     md.lrf_cutoff = parse_double(value_or(cut, "lrf", "99"));
 
     md.q_atom = parse_double(value_or(cut, "q-atom", value_or(cut, "q_atom", "99")));
-    md.shell_radius = parse_double(value_or(sphere, "shell-radius", value_or(sphere, "shell_radius", "0")));
+    // Å, or a fraction of the exclusion radius when <= 1 (converted in Context::init_shell).
+    md.shell_radius = parse_double(value_or(sphere, "shell-radius", "0.85"));
+    if (md.shell_radius < 0) throw parse_error("Q input [sphere] shell_radius must be >= 0.");
     md.exclude_bonded = is_on_value(sphere, "exclude-bonded", "off");
     md.shell_force = parse_double(value_or(sphere, "shell-force", value_or(sphere, "shell_force", "10.0")));
     md.radial_force = parse_double(value_or(solvent, "radial-force", value_or(solvent, "radial_force", "60.0")));
@@ -1185,11 +1242,12 @@ void InpParser::parse_md() {
         solvent,
         "charge-correction",
         bool_value(solvent, "charge_correction", md.polarisation ? "on" : "off"));
-    md.polarisation_force = parse_double(value_or(solvent, "polarisation-force", value_or(solvent, "polarisation_force", "20.0")));
-    md.non_bond = parse_int(value_or(intervals, "non-bond", value_or(intervals, "non_bond", "25")));
-    md.output = parse_int(value_or(intervals, "output", "5"));
+    // Fortran Q reads polarization_force; qligfep writes polarisation_force.
+    md.polarisation_force = parse_double(value_or(solvent, "polarisation-force", value_or(solvent, "polarization-force", "20.0")));
+    md.non_bond = parse_int(value_or(intervals, "non-bond", "10"));
+    md.output = parse_int(value_or(intervals, "output", "10"));
     md.energy = parse_int(value_or(intervals, "energy", "0"));
-    md.trajectory = parse_int(value_or(intervals, "trajectory", "100"));
+    md.trajectory = parse_int(value_or(intervals, "trajectory", "0"));
 
     result.native_output.final_file = resolve_output_path_local(value_or(files, "final", ""), input_dir_);
     result.native_output.trajectory_file = resolve_output_path_local(value_or(files, "trajectory", ""), input_dir_);
@@ -1207,6 +1265,11 @@ void InpParser::parse_lambdas() {
             for (const std::string& value : row) result.lambdas.push_back(parse_double(value));
         }
     }
+    // As in Fortran Q: a FEP file without [lambdas] means a single state with lambda 1.
+    const auto files_it = input_->keyed.find("files");
+    const bool has_fep = !fep_file_.empty() ||
+                         (files_it != input_->keyed.end() && !value_or(files_it->second, "fep", "").empty());
+    if (result.lambdas.empty() && has_fep) result.lambdas.push_back(1.0);
 
     auto read_rows = [&](const std::string& name) -> std::vector<std::vector<std::string>> {
         auto it = input_->lists.find(name);
@@ -1425,6 +1488,10 @@ void InpParser::parse_charge_groups() {
 
 void InpParser::parse_q_atoms() {
     ensure_fep();
+    if (!fep_file_.empty() && result.lambdas.size() != static_cast<size_t>(fep_->states)) {
+        throw parse_error("Q input [lambdas] has " + std::to_string(result.lambdas.size()) +
+                          " values, but the FEP file has " + std::to_string(fep_->states) + " states.");
+    }
     result.q_atoms.resize(fep_->q_atoms.size());
     for (size_t i = 0; i < fep_->q_atoms.size(); i++) result.q_atoms[i] = parse_int(fep_->q_atoms[i]) - 1;
 }

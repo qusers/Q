@@ -14,6 +14,9 @@ struct md_t {
     double bath_coupling;
     int random_seed;
     double initial_temperature;
+    // initial_temperature was given: new Maxwell velocities are drawn (also on a restart),
+    // as in Fortran Q. Not given: a restart file is required and its velocities are used.
+    bool generate_velocities = false;
     // todo: will remove later
     bool shake_solvent;
     bool shake_solute;
