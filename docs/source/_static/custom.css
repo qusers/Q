@@ -1,0 +1,9 @@
+:root {
+  --color-brand-primary: #176b66;
+  --color-brand-content: #176b66;
+}
+
+body { line-height: 1.62; }
+.content table { width: 100%; }
+.content code { overflow-wrap: anywhere; }
+.sidebar-brand-text { font-weight: 700; }

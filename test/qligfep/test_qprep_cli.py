@@ -151,7 +151,7 @@ class TestQChargeGroupNeutralization:
 class TestOPLSChargeGroupNeutralization:
     @pytest.mark.parametrize(
         ("force_field", "switch_atom"),
-        [("OPLS2005", "CZ"), ("OPLS2015", "CG")],
+        [("OPLS2005", "CZ"), ("OPLSAAM", "NE")],
     )
     def test_uses_force_field_formal_charge_group_switch_atom(self, force_field, switch_atom):
         arg = _build_protein_residue("ARG", "A", 1, 0.0, 0.0, 0.0)
@@ -716,25 +716,6 @@ class TestCHARMMNeutralization:
         # CHARMM has no NARN template, so conservatively neutralize both sites.
         assert (result["residue_name"] == "ARN").all()
         assert stats["residues_neutralized"] == 1
-
-    def test_fractional_prefixed_neutral_template_uses_conservative_fallback(self):
-        neutralizer = Neutralizer((0, 0, 0), radius=25.0, force_field="OPLS2015")
-        entry = neutralizer.residue_library["CARG"]
-        charges = {atom["name"]: atom["charge"] for atom in entry["atoms"]}
-        positions = {
-            group_number: (23.0 if "CZ" in group else 10.0)
-            for group_number, group in enumerate(entry["charge_groups"], 1)
-        }
-        assert any(
-            abs(sum(charges[atom] for atom in group) - 1.0) <= 1e-6
-            for group in entry["charge_groups"]
-            if "CZ" in group
-        )
-        rows = self._template_residue(neutralizer, "CARG", positions)
-
-        result, _ = neutralizer.neutralize_outside_residues_dataframe(rows)
-
-        assert (result["residue_name"] == "ARN").all()
 
     def test_nterminal_ht1_coordinate_is_preserved_as_internal_h(self):
         rows = [

@@ -214,7 +214,7 @@ class TestForceFieldParsing:
         assert parse_prm_options("AMBER14sb")["switch_atoms"] == "off"
         assert parse_prm_options("OPLS2005")["switch_atoms"] == "on"
 
-    @pytest.mark.parametrize("force_field", ["OPLS2005", "OPLS2015"])
+    @pytest.mark.parametrize("force_field", ["OPLS2005", "OPLSAAM"])
     def test_opls_charge_groups_partition_each_residue(self, force_field):
         """Every OPLS atom must occur in exactly one explicit charge group."""
         from collections import Counter
@@ -265,11 +265,6 @@ class TestForceFieldParsing:
                 )
             },
             "OPLS2005": {("SEB", 2, -0.418)},
-            "OPLS2015": {
-                ("CARN", 1, -0.9),
-                ("CPRO", 1, -0.87),
-                ("NPRO", 1, 1.07),
-            },
             "CHARMM36": {("nGLY", 1, 0.03), ("nPRO", 1, 0.18)},
         }
 

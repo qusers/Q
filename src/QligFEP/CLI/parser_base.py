@@ -22,7 +22,7 @@ def parse_arguments(program: str) -> argparse.Namespace:
                 "Generate all FEP files for the directory you're working on, according to the "
                 "edges input in the json_map file. This includes creating directories for both "
                 "water and protein system. Submitting the FEP calculations to the cluster is up to the user. "
-                "A minimal example of usage: setupFEP -FF OPLS2015 -c KEBNE -S sigmoidal -r 25 -l 0.5 -w 100"
+                "A minimal example of usage: setupFEP -FF AMBER14sb -c KEBNE -S sigmoidal -r 25 -l 0.5 -w 100"
             ),
         )
     parser.add_argument(
@@ -34,7 +34,7 @@ def parse_arguments(program: str) -> argparse.Namespace:
         help=(
             "Protein forcefield to be used. Valid inputs: existing path to a forcefield file without the extensions"
             "(either .lib, .prm, or Path without the extensions will work) or one of the following: "
-            "OPLS2005, OPLS2015, OPLSAAM, AMBER14sb, CHARMM36. Defaults to AMBER14sb."
+            "OPLS2005, OPLSAAM, AMBER14sb, CHARMM36. Defaults to AMBER14sb."
         ),
     )
     if program == "QligFEP":

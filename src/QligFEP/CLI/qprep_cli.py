@@ -952,7 +952,7 @@ def parse_arguments() -> argparse.Namespace:
         help=(
             "Protein forcefield to be used. Valid inputs: existing path to a forcefield file without the extensions"
             "(either .lib, .prm, or Path without the extensions will work) or one of the following: "
-            "OPLS2005, OPLS2015, AMBER14sb, CHARMM36. Defaults to AMBER14sb."
+            "OPLS2005, OPLSAAM, AMBER14sb, CHARMM36. Defaults to AMBER14sb."
         ),
     )
     parser.add_argument(

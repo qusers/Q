@@ -485,20 +485,7 @@ cp ligparams/* setupFEP/
 cp ligprep/Tyk2_ligands/lomap.json setupFEP/
 ```
 
-Now, because of the different forcefield [naming conventions](#intro-to-naming-conventions), we have to proceed with a different protein structure depending on the forcefield that you want to use. At the moment, both OPLS2015 and AMBER14sb are demonstrated. See below.
-
-### Using the OPLS2015 forcefield
-
-Please copy the file we have under `/Q/tutorials/Tyk2/setupFEP/opls/protein.pdb` to your `setupFEP` directory. E.g. by doing (if you're in the setupFEP directory):
-
-```bash
-cp opls/protein.pdb .
-```
-After doing this, you should be able to setup the calculations by running:
-
-```bash
-setupFEP -FF OPLS2015 -c TETRA -r 25 -l 0.5 -R 10 -w 100 -j lomap.json -S sigmoidal -clean .dcd
-```
+Now, because of the different forcefield [naming conventions](#intro-to-naming-conventions), the protein structure has to follow the naming of the forcefield that you want to use. This tutorial demonstrates AMBER14sb.
 
 ### Using the AMBER14sb forcefield
 
