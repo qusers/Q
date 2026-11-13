@@ -58,6 +58,7 @@ html_theme = "furo"
 html_title = "Q and QligFEP"
 html_static_path = ["_static"]
 html_logo = "_static/q-logo.svg"  # rebuilt by docs/scripts/logo/make_logo.sh
+html_favicon = "_static/q-favicon.png"
 html_css_files = ["custom.css"]
 html_theme_options = {
     "source_repository": "https://github.com/qusers/Q/",

@@ -2,13 +2,15 @@
 # Rebuild the chosen Q logo (cdk2 ligand 1h1q, polar hydrogens only, in its water sphere).
 # Run from the repository root:  bash docs/scripts/logo/make_logo.sh
 # Writes docs/source/_static/q-logo.svg, the logo shown above the sidebar of the documentation.
-# Requires: pymol (with numpy), and for --retrace also ImageMagick + potrace.
+# Also writes the favicon (q-favicon.svg and q-favicon.png): the red Q without the sphere inside.
+# Requires: pymol (with numpy) and rsvg-convert; for --retrace also ImageMagick + potrace.
 set -euo pipefail
 HERE=docs/scripts/logo
 OUT=docs/source/_static/q-logo.svg
 
 if [[ "${1:-}" == "--retrace" ]]; then
     # 1) Trace the red Q and its bowl from the original raster logo (3x upsampled).
+    #    The raster logo is not kept in the repository; put it at $HERE/original-q-logo.png first.
     tmp=$(mktemp -d)
     magick "$HERE/original-q-logo.png" -alpha off \
         -fx '(r>0.6 && g<0.35 && b<0.35) ? 0 : 1' -morphology Close Disk:2 \
@@ -28,3 +30,7 @@ pymol -cq "$HERE/build_sphere_logo.py" -- \
     test/qligfep/resources/cdk2_ligands.sdf 1h1q \
     "$OUT" \
     scale=74 sphere=20 stick=0.17 keep=1 slab=5 halo=2.0 wrot=37 rot=-20 hyd=polar
+
+# 3) Favicon: the traced Q alone, on a transparent square.
+python "$HERE/make_favicon.py"
+rsvg-convert -w 192 -h 192 docs/source/_static/q-favicon.svg -o docs/source/_static/q-favicon.png
