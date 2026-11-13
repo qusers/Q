@@ -317,10 +317,10 @@ class TestParseQprepTotalCharge:
     """Tests for parse_qprep_total_charge() function."""
 
     def test_parse_real_qprep_out(self):
-        """Parse the real Tyk2 qprep.out and expect total charge = 7."""
+        """Parse a real Tyk2 qprep.out (ejm_31 -> ejm_45, protein leg) and expect total charge = 7."""
         from QligFEP.IO import parse_qprep_total_charge
 
-        qprep_out = Path(__file__).parents[2] / "tutorials" / "Tyk2" / "setupFEP" / "FEP_ejm_31_ejm_42" / "inputfiles" / "qprep.out"
+        qprep_out = Path(__file__).parent / "resources" / "tyk2_ejm_31_ejm_45" / "qprep.out"
         assert qprep_out.exists(), f"Test fixture not found: {qprep_out}"
         charge = parse_qprep_total_charge(qprep_out)
         assert charge == 7
