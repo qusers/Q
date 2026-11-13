@@ -185,6 +185,15 @@ src/q6/bin/
 # Executables
 *.exe
 *.out
+src/q6/test_softcore
+src/q6/test_lincs
+src/q6/test_settle
+src/q6/qprep
+src/q6/qfep
+src/q6/qcalc
+src/q6/qdum
+src/q6/qdyn_test
+src/q6/qdynp
 *.app
 *.dwf
 *.pdb
@@ -198,6 +207,7 @@ src/q6/bin/
 *.log
 *.re
 *.en
+*.fhe
 
 __pycache__/*
 #test/water/no_ion/*
@@ -223,5 +233,5 @@ benchmark/FEP_ligand_binding/2.Q7/1.protein/
 benchmark/FEP_ligand_binding/2.Q7/2.water/
 
 !test/q6/**
+test/q6/**/__pycache__/
 test/*.png
-

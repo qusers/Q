@@ -332,12 +332,13 @@ def parse_arguments(program: str) -> argparse.Namespace:
         dest="softcore_method",
         type=str,
         default="standard",
-        choices=["standard", "beutler_coul", "gapsys"],
+        choices=["standard", "beutler", "gapsys"],
         help=(
             "Soft-core method for nonbonded interactions during FEP. "
             "'standard' applies soft-core only to LJ (current default). "
-            "'beutler_coul' extends soft-core to Coulomb via a modified effective distance. "
-            "'gapsys' uses force-based linearization below a critical radius for both LJ and Coulomb."
+            "'beutler' uses Beutler LJ (s=6) and Coulomb (p=2) softening. "
+            "'gapsys' uses the corrected "
+            "Gapsys method. Both nonlinear methods require two-state equilibrium arithmetic/SBC simulations."
         ),
     )
     parser.add_argument(

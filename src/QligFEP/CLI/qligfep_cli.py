@@ -61,9 +61,8 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     param_dict.update(kwargs)
     setup_logger(level=args.log.upper())
     softcore_method = param_dict.pop("softcore_method", "standard")
-    run = QligFEP(**param_dict)
+    run = QligFEP(**param_dict, softcore_method=softcore_method)
     param_dict["softcore_method"] = softcore_method
-
     writedir = run.makedir()
     inputdir = writedir + "/inputfiles"
 

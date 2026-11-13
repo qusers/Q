@@ -18,12 +18,14 @@ module qatom
 !!  Q-atom force field data and FEP file reading
 !!-------------------------------------------------------------------------------
   use sizes
+  use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
   use nrgy
   use misc
   use prmfile
   use indexer
   !use MPIGLOB
   use topo
+  use qsoftcore
 
   implicit none
 
@@ -37,7 +39,7 @@ module qatom
 
   ! Soft-core method identifiers
   integer, parameter                      :: SC_STANDARD    = 0
-  integer, parameter                      :: SC_BEUTLER_COUL = 1
+  integer, parameter                      :: SC_BEUTLER = 1
   integer, parameter                      :: SC_GAPSYS      = 2
 
   !-----------------------------------------------------------------------
@@ -160,23 +162,24 @@ module qatom
 
   integer                                 :: tmpindex,numsoftlines,i2
   real(8), allocatable                    :: sc_lookup(:,:,:), alpha_max(:,:)
+  logical, allocatable                    :: softcore_enabled(:,:)
   real(8)                                 :: sc_aq,sc_bq,sc_aj,sc_bj,alpha_max_tmp
   logical                                 :: softcore_use_max_potential
 
   ! Soft-core method configuration
   integer                                 :: softcore_method = SC_STANDARD
   ! Gapsys 2012 soft-core parameters (J. Chem. Theory Comput. 8, 2373; SI Eqs. 1.1-1.4).
-  ! Defaults follow the paper (alpha_LJ=0.85, alpha_Q=0.3, sigma_Q=1.0).
   real(8)                                 :: gapsys_alpha_lj = 0.85_8
-  real(8)                                 :: gapsys_alpha_q  = 0.3_8
-  real(8)                                 :: gapsys_sigma_lj = 0.3_8   ! LJ sigma fallback for dummy atoms (C6=C12=0)
-  real(8)                                 :: gapsys_sigma_q  = 1.0_8   ! Paper Eq. 5 charge weighting (sigma_Q)
-  ! Gapsys LJ linearization radii: shape (nqat, natyps+nqat, nstates).
-  real(8), allocatable                    :: gapsys_lj_rsc(:,:,:)
-  ! Gapsys Coulomb lambda-dependent factor: alpha_Q * (1 - lambda_state)^(1/6).
-  ! Shape (nqat, nstates). The partner-charge factor (1 + sigma_Q*|q_i*q_j|)
-  ! is multiplied at runtime in the nonbonded routines where q_j is known.
-  real(8), allocatable                    :: gapsys_q_lambda_factor(:,:)
+  real(8)                                 :: gapsys_alpha_q  = 3.0_8
+  real(8)                                 :: gapsys_sigma_q  = 1.0_8
+  ! Beutler Eqs. 7 and 8: dimensionless alpha_LJ and alpha_C in A^2.
+  ! Defaults are illustrative paper values, not universally optimized settings.
+  real(8)                                 :: beutler_alpha_lj = 0.5_8, beutler_alpha_c = 100.0_8
+  ! Method-specific soft lengths: shape (nqat, natyps+nqat, nstates).
+  real(8), allocatable                    :: softcore_lj_rsc(:,:,:)
+  ! Coulomb soft lengths before the method-specific partner-charge factor.
+  ! Shape (nqat, nstates). The factor equals one for Beutler.
+  real(8), allocatable                    :: softcore_q_lambda_factor(:,:)
 
   !-----------------------------------------------------------------------
   !       fep/evb energies
@@ -234,8 +237,9 @@ subroutine qatom_shutdown
   deallocate(exspec, stat=alloc_status)
   deallocate(offd, offd2, stat=alloc_status)
   if (allocated(qq_el_scale)) deallocate(qq_el_scale)
-  if (allocated(gapsys_lj_rsc)) deallocate(gapsys_lj_rsc)
-  if (allocated(gapsys_q_lambda_factor)) deallocate(gapsys_q_lambda_factor)
+  if (allocated(softcore_lj_rsc)) deallocate(softcore_lj_rsc)
+  if (allocated(softcore_q_lambda_factor)) deallocate(softcore_q_lambda_factor)
+  if (allocated(softcore_enabled)) deallocate(softcore_enabled)
 end subroutine qatom_shutdown
 
 
@@ -326,8 +330,8 @@ logical function qatom_load_atoms(fep_file)
           select case(trim(word))
           case('STANDARD')
              softcore_method = SC_STANDARD
-          case('BEUTLER_COUL')
-             softcore_method = SC_BEUTLER_COUL
+          case('BEUTLER')
+             softcore_method = SC_BEUTLER
           case('GAPSYS')
              softcore_method = SC_GAPSYS
           case default
@@ -337,25 +341,49 @@ logical function qatom_load_atoms(fep_file)
           end select
        end if
 
-       ! Parse Gapsys-specific parameters (only relevant when method=gapsys)
+       ! Paper parameters in Q-native angstrom units.
        if(softcore_method == SC_GAPSYS) then
-          yes = prm_get_real8_by_key('gapsys_scale_linpoint_lj', gapsys_alpha_lj, 0.85_8)
-          yes = prm_get_real8_by_key('gapsys_scale_linpoint_q', gapsys_alpha_q, 0.3_8)
-          yes = prm_get_real8_by_key('gapsys_sigma_lj', gapsys_sigma_lj, 0.3_8)
-          yes = prm_get_real8_by_key('gapsys_sigma_q',  gapsys_sigma_q,  1.0_8)
+          yes = prm_get_real8_by_key('gapsys_scale_linpoint_lj', gapsys_alpha_lj, &
+                                     GAPSYS_ALPHA_LJ_DEFAULT)
+          yes = prm_get_real8_by_key('gapsys_scale_linpoint_q', gapsys_alpha_q, &
+                                     GAPSYS_ALPHA_Q_ANGSTROM_DEFAULT)
+          yes = prm_get_real8_by_key('gapsys_sigma_q', gapsys_sigma_q, &
+                                     GAPSYS_SIGMA_Q_DEFAULT)
+          if(.not. all(ieee_is_finite([gapsys_alpha_lj,gapsys_alpha_q,gapsys_sigma_q])) .or. &
+             gapsys_alpha_lj <= 0.0_8 .or. gapsys_alpha_lj > 1.0_8 .or. &
+             gapsys_alpha_q <= 0.0_8 .or. &
+             gapsys_sigma_q < 0.0_8) then
+             write(*,'(a)') '>>>>> ERROR: invalid nonlinear softcore parameters (require 0<alpha_lj<=1, alpha_q>0, sigma_q>=0)'
+             qatom_load_atoms = .false.
+             return
+          end if
+       else if(softcore_method == SC_BEUTLER) then
+          yes = prm_get_real8_by_key('beutler_alpha_lj', beutler_alpha_lj, 0.5_8)
+          yes = prm_get_real8_by_key('beutler_alpha_c', beutler_alpha_c, 100.0_8)
+          if(.not. all(ieee_is_finite([beutler_alpha_lj,beutler_alpha_c])) .or. &
+             beutler_alpha_lj <= 0.0_8 .or. beutler_alpha_c <= 0.0_8) then
+             write(*,'(a)') '>>>>> ERROR: beutler requires positive finite alpha_lj and alpha_c (A^2)'
+             qatom_load_atoms = .false.
+             return
+          end if
+       end if
+       if(lambda_dependent_softcore() .and. softcore_use_max_potential) then
+          write(*,'(a)') '>>>>> ERROR: nonlinear softcore requires softcore_use_max_potential off (activation flags)'
+          qatom_load_atoms = .false.
+          return
        end if
 
        ! Print selected soft-core method
        select case(softcore_method)
        case(SC_STANDARD)
           write(*,'(a)') 'Soft-core method: standard (LJ only)'
-       case(SC_BEUTLER_COUL)
-          write(*,'(a)') 'Soft-core method: beutler_coul (LJ + Coulomb)'
+       case(SC_BEUTLER)
+          write(*,'(a,f8.3,a,f8.3)') 'Soft-core method: beutler, s=6 p=2 (alpha_lj=', &
+               beutler_alpha_lj, ', alpha_c in A^2=', beutler_alpha_c
        case(SC_GAPSYS)
-          write(*,'(a,f6.3,a,f6.3,a,f6.3,a,f6.3,a)') &
-               'Soft-core method: gapsys (alpha_lj=', gapsys_alpha_lj, &
+          write(*,'(a,f6.3,a,f6.3,a,f6.3,a)') &
+               'Soft-core method: gapsys, distances in A (alpha_lj=', gapsys_alpha_lj, &
                ' alpha_q=', gapsys_alpha_q, &
-               ' sigma_lj=', gapsys_sigma_lj, &
                ' sigma_q=', gapsys_sigma_q, ')'
        end select
 
@@ -942,6 +970,7 @@ logical function qatom_load_fep(fep_file)
     integer                               :: nqcrg,nqcod
     character(len=40)                     :: section
     logical, allocatable, dimension(:)    :: type_read
+    logical                               :: softcore_seen(nqat)
     integer                               :: type_count, filestat
     real(8)                   ::  el_scale(max_states) ! local variable for scaling of different states "masoud Oct_2013"
     integer                   ::  stat
@@ -1619,11 +1648,17 @@ logical function qatom_load_fep(fep_file)
 622 format('>>>>> ERROR: Invalid combination of states: ',2i5)
 
     !************Softcore section************  MPA  Martin Per Ander??
-    if (allocated(sc_lookup))    deallocate (sc_lookup)
-    allocate (alpha_max(nqat,nstates),sc_lookup(nqat,natyps+nqat,nstates))
+    if (allocated(sc_lookup)) deallocate(sc_lookup)
+    if (allocated(alpha_max)) deallocate(alpha_max)
+    if (allocated(softcore_enabled)) deallocate(softcore_enabled)
+    allocate(alpha_max(nqat,nstates), sc_lookup(nqat,natyps+nqat,nstates), &
+             softcore_enabled(nqat,nstates))
 
-    !default is no softcore, i.e. alpha=zero (sc_lookup = 0)
-    sc_lookup(:,:,:)=0.0
+    ! Default is no soft-core. Initialize alpha explicitly as malformed or
+    ! duplicate indices in [softcore] must never leave activation undefined.
+    alpha_max(:,:) = 0.0_8
+    sc_lookup(:,:,:) = 0.0_8
+    softcore_enabled(:,:) = .false.
 
     section = 'softcore'
     if(.not. prm_open_section(section)) then
@@ -1647,7 +1682,10 @@ logical function qatom_load_fep(fep_file)
 1626      format('Q atom    softcore alpha in',6(2x,a5,i2))
 1627      format('Q atom      max potenial in',6(2x,a5,i2))
 
-          if (softcore_use_max_potential) then
+          if(lambda_dependent_softcore()) then
+             write(*,'(a)') 'Using [softcore] values as real-state activation flags'
+             write(*,1626) ('state',i,i=1,nstates)
+          else if (softcore_use_max_potential) then
              write (*,'(a)') ('Using values in FEP file as desired maximum vdW potentials at r=0')
              write (*,1627) ('state',i,i=1,nstates)
           else
@@ -1655,19 +1693,26 @@ logical function qatom_load_fep(fep_file)
              write (*,1626) ('state',i,i=1,nstates)
           end if
 
+          softcore_seen = .false.
           do i=1,nqat   !read all the softcore max_alphas
              !reading should not fail at this stage - get_line was called by prm_count!
              if(.not. prm_get_line(line)) goto 1000
-             read (line,*, err=1000) tmpindex, alpha_max(tmpindex,1:nstates)
+             read (line,*, err=1000, end=1000) tmpindex
+             if(tmpindex < 1 .or. tmpindex > nqat) goto 1000
+             if(softcore_seen(tmpindex)) goto 1000
+             softcore_seen(tmpindex) = .true.
+             read (line,*, err=1000, end=1000) tmpindex, alpha_max(tmpindex,1:nstates)
+             if(.not. all(ieee_is_finite(alpha_max(tmpindex,1:nstates)))) goto 1000
 
              write (*,'(i6,t25,6(f8.2,1x))') tmpindex, alpha_max(tmpindex,1:nstates)
 
           end do
 
-          call populate_sc_lookup(alpha_max)
+          if(.not. lambda_dependent_softcore()) call populate_sc_lookup(alpha_max)
        end if
     end if  !prm_open_section(section)   softcore
 
+    call initialize_softcore_activation()
 
 1630 format('No softcore section found. Using normal LJ potentials.')
 1631 format('>>>>> Erroneous softcore section.')
@@ -1745,12 +1790,59 @@ end function bond_harmonic_in_any_state
 
 !-------------------------------------------------------------------------
 
+subroutine initialize_softcore_activation()
+  integer :: iq, istate, nreal, ndum
+  logical :: is_real
+  real(8), parameter :: TINY_LJ = 1.0e-12_8
+
+  softcore_enabled(:,:) = abs(alpha_max(:,:)) > 1.0e-6_8
+  if(.not. lambda_dependent_softcore()) return
+
+  write(*,'(a)') 'Nonlinear softcore [softcore] values are activation flags; magnitude is ignored.'
+  do istate = 1, nstates
+    nreal = 0
+    ndum = 0
+    do iq = 1, nqat
+      if(.not. softcore_enabled(iq,istate)) cycle
+      is_real = abs(qavdw(qiac(iq,istate),1)) > TINY_LJ .or. &
+                abs(qbvdw(qiac(iq,istate),1)) > TINY_LJ .or. abs(qcrg(iq,istate)) > TINY_LJ
+      if(is_real) then
+        nreal = nreal+1
+      else
+        ndum = ndum+1
+      end if
+    end do
+    write(*,'(a,i0,a,i0,a,i0)') 'Nonlinear softcore state ',istate, &
+         ': enabled real q-atoms=',nreal,', enabled DUM q-atoms=',ndum
+  end do
+end subroutine initialize_softcore_activation
+
+!-------------------------------------------------------------------------
+
+pure logical function softcore_pair_enabled(iq, partner_index, istate)
+  integer, intent(in) :: iq, partner_index, istate
+  integer :: jq
+
+  softcore_pair_enabled = .false.
+  if(.not. allocated(softcore_enabled)) return
+  if(iq < 1 .or. iq > nqat .or. istate < 1 .or. istate > nstates) return
+
+  if(partner_index <= natyps) then
+    softcore_pair_enabled = softcore_enabled(iq,istate)
+  else
+    jq = partner_index-natyps
+    if(jq < 1 .or. jq > nqat) return
+    softcore_pair_enabled = softcore_enabled(iq,istate) .or. softcore_enabled(jq,istate)
+  end if
+end function softcore_pair_enabled
+
+!-------------------------------------------------------------------------
+
 subroutine populate_sc_lookup(alpha_in)
 !!-------------------------------------------------------------------------------
 !! Fill sc_lookup(nqat, natyps+nqat, nstates) from a per-state alpha array.
-!! Body is the original sc_lookup-fill loop from qatom_load_fep, parameterised
-!! on the source alpha array so softcore_scale_beutler can call it with a
-!! per-state-scaled alpha. With `softcore_use_max_potential on`, alpha_in is
+!! This lookup is used only by the standard legacy LJ method.
+!! With `softcore_use_max_potential on`, alpha_in is
 !! the target VdW max-potential at r=0; the quadratic here solves for the r^6
 !! softcore offset that produces that max-potential.
 !!-------------------------------------------------------------------------------
@@ -1821,235 +1913,106 @@ end subroutine populate_sc_lookup
 
 !-------------------------------------------------------------------------
 
-subroutine softcore_scale_beutler(nstates_in)
-!!-------------------------------------------------------------------------------
-!! Multiply the per-state r^6 softcore offset in sc_lookup by (1 - lambda_s)^2,
-!! producing the Beutler 1994 (Chem Phys Lett 222:529) Eq. 7 form for SC_BEUTLER_COUL:
-!!
-!!   V_LJ = eps * [ 1/(alpha*(1-lambda)^2 + (r/sigma)^6)^2
-!!                  - 1/(alpha*(1-lambda)^2 + (r/sigma)^6) ]
-!!
-!! Coulomb uses the s=p=6 case of Beutler's generalized Eq. 9:
-!!
-!!   V_C  = q_i*q_j / [alpha_C*(1-lambda)^2 + r^6]^(1/6)
-!!
-!! NOT Eq. 8 (p=2, the form Beutler favored). The s=p=6 choice lets LJ and
-!! Coulomb share the same r^6 offset (sc_lookup is reused for both); the trade-off
-!! is the high-order root in the Coulomb denominator. Both forms are valid under
-!! Beutler's Eq. 9 criterion (s>1, p>1) and remove the singularity at r=0.
-!!
-!! Consequence per window:
-!!   lambda_s = 1 (coupled endpoint):   offset = 0   -> standard LJ + Coulomb.
-!!   lambda_s = 0 (decoupled endpoint): offset = full -> bounded V at r=0,
-!!                                                       protects per-state energy
-!!                                                       evaluation against collapsed
-!!                                                       ghost-atom configurations.
-!!   intermediate:                      offset = full * (1 - lambda_s)^2.
-!!
-!! The scaling is applied to the r^6 offset itself, not to the alpha value in the
-!! FEP file. Under softcore_use_max_potential, that alpha is interpreted as the
-!! target max V at r=0 and is mapped to an offset via the quadratic in
-!! populate_sc_lookup. Beutler's (1-lambda)^2 factor lives on the offset; scaling
-!! the max-V target would propagate inversely through the quadratic and produce
-!! larger (not smaller) offsets at intermediate lambdas.
-!!
-!! Preconditions: sc_lookup must already be populated from alpha_max, and
-!! EQ(:)%lambda must be set. Call from get_fep, after qatom_load_fep returns.
-!! Restart-safe: sc_lookup is rebuilt from alpha_max on every fep load, so the
-!! scaling never stacks across restarts.
-!!-------------------------------------------------------------------------------
+pure logical function lambda_dependent_softcore()
+  lambda_dependent_softcore = softcore_method == SC_GAPSYS .or. softcore_method == SC_BEUTLER
+end function
+
+pure real(8) function nonlinear_lj_radius(sigma,decoupling) result(radius)
+  real(8), intent(in) :: sigma,decoupling
+  if(softcore_method == SC_BEUTLER) then
+    radius = beutler_lj_radius(beutler_alpha_lj,sigma,decoupling)
+  else
+    radius = gapsys_lj_radius(gapsys_alpha_lj,sigma,decoupling)
+  end if
+end function
+
+pure real(8) function nonlinear_charge_factor(qi,qj) result(factor)
+  real(8), intent(in) :: qi,qj
+  factor = 1.0_8
+  if(softcore_method == SC_GAPSYS) factor = 1.0_8+gapsys_sigma_q*abs(qi*qj)
+end function
+
+pure real(8) function nonlinear_coulomb_radius(qi,qj,decoupling) result(radius)
+  real(8), intent(in) :: qi,qj,decoupling
+  if(softcore_method == SC_BEUTLER) then
+    radius = beutler_coulomb_radius(beutler_alpha_c,decoupling)
+  else
+    radius = gapsys_coulomb_radius(gapsys_alpha_q,gapsys_sigma_q,qi,qj,decoupling)
+  end if
+end function
+
+pure subroutine eval_softcore_lj(c12,c6,rsc,r2,energy,dv,overlap)
+  real(8), intent(in) :: c12,c6,rsc,r2
+  real(8), intent(out) :: energy,dv
+  logical, intent(out) :: overlap
+  if(softcore_method == SC_BEUTLER) then
+    call eval_beutler_lj(c12,c6,rsc,r2,energy,dv,overlap)
+  else
+    call eval_gapsys_lj(c12,c6,rsc,r2,energy,dv,overlap)
+  end if
+end subroutine
+
+pure subroutine eval_softcore_coulomb(qq,rsc,r2,energy,dv,overlap)
+  real(8), intent(in) :: qq,rsc,r2
+  real(8), intent(out) :: energy,dv
+  logical, intent(out) :: overlap
+  if(softcore_method == SC_BEUTLER) then
+    call eval_beutler_coulomb(qq,rsc,r2,energy,dv,overlap)
+  else
+    call eval_gapsys_coulomb(qq,rsc,r2,energy,dv,overlap)
+  end if
+end subroutine
+
+pure real(8) function softcore_lj_energy_difference(c12,c6,source_r,target_r,r2) result(delta)
+  real(8), intent(in) :: c12,c6,source_r,target_r,r2
+  if(softcore_method == SC_BEUTLER) then
+    delta = beutler_lj_energy_difference(c12,c6,source_r,target_r,r2)
+  else
+    delta = gapsys_lj_energy_difference(c12,c6,source_r,target_r,r2)
+  end if
+end function
+
+pure real(8) function softcore_coulomb_energy_difference(qq,source_r,target_r,r2) result(delta)
+  real(8), intent(in) :: qq,source_r,target_r,r2
+  if(softcore_method == SC_BEUTLER) then
+    delta = beutler_coulomb_energy_difference(qq,source_r,target_r,r2)
+  else
+    delta = gapsys_coulomb_energy_difference(qq,source_r,target_r,r2)
+  end if
+end function
+
+subroutine softcore_init_nonlinear(nstates_in)
+  ! Only arithmetic combination rules are supported. Rmin = 2^(1/6) sigma.
   integer, intent(in) :: nstates_in
-  integer :: istate
-  real(8) :: scale, lam
+  integer :: iq,jt,istate,iaci,iacj
+  real(8) :: decoupling,sigma
 
-  if (softcore_method /= SC_BEUTLER_COUL) return
-
-  do istate = 1, nstates_in
-     lam = EQ(istate)%lambda
-     if (lam < -1.0e-6_8 .or. lam > 1.0_8 + 1.0e-6_8) then
-        write(*,'(a,i0,a,f8.4)') &
-             'WARNING: softcore_scale_beutler: lambda for state ', istate, &
-             ' is outside [0,1]: ', lam
-     end if
-     scale = (1.0_8 - lam)**2
-     sc_lookup(:, :, istate) = sc_lookup(:, :, istate) * scale
-  end do
-
-  write(*,'(a)') 'Beutler softcore r^6 offset scaled by (1 - lambda_state)^2.'
-end subroutine softcore_scale_beutler
-
-!-------------------------------------------------------------------------
-
-subroutine softcore_init_gapsys(nstates_in)
-!!-------------------------------------------------------------------------------
-!! Compute Gapsys (Gapsys, Seeliger, de Groot 2012, JCTC 8, 2373) soft-core
-!! linearization radii. Must be called after lambdas (EQ%lambda) are set.
-!!
-!! Lambda convention (Q vs paper):
-!!   The paper uses a global lambda with H = (1-lambda)*H_A + lambda*H_B.
-!!   In the paper's formulas r_sc_A ~ lambda^(1/6), r_sc_B ~ (1-lambda)^(1/6),
-!!   so the decoupled state (lambda=1 for A, lambda=0 for B) always carries
-!!   full soft-core. Q uses per-state lambdas where EQ(istate)%lambda = 1 means
-!!   the state is fully coupled (real, hard-core expected) and = 0 means fully
-!!   decoupled (ghost, full soft-core expected). Translating to Q's convention
-!!   gives r_sc ~ (1 - EQ(istate)%lambda)^(1/6).
-!!
-!! LJ radius (paper Eq. before Eq. 5, SI Eq. before 1.1, in Q convention):
-!!   r_LJ = alpha_LJ * [(26/7) * sigma^6 * (1 - lambda_state)]^(1/6)
-!! Coulomb radius (paper Eq. 5, SI S9, in Q convention):
-!!   r_Q  = alpha_Q  * (1 + sigma_Q*|q_i*q_j|) * (1 - lambda_state)^(1/6)
-!!
-!! We pre-compute the LJ radius per (q-atom, partner-type-or-q-atom, state).
-!! For Coulomb, only the partner-charge-independent factor
-!!     alpha_Q * (1 - lambda_state)^(1/6)
-!! is pre-computed per (q-atom, state); the (1 + sigma_Q*|q_i*q_j|) factor is
-!! applied at runtime in each nonbonded routine, where the partner charge q_j
-!! is in scope. This makes Q-protein, Q-water, and Q-Q Coulomb soft-core all
-!! faithfully match paper Eq. 5 (the per-type lookup approach in any prior
-!! formulation could only use |q_i| for Q-protein because the partner charge
-!! is per-atom, not per-type, which dropped the q_j dependence).
-!!-------------------------------------------------------------------------------
-  integer, intent(in) :: nstates_in
-  integer :: iq, jt, istate, iaci, iacj
-  real(8) :: lambda_st, one_minus_lambda, sigma, C6, C12
-  real(8) :: r_sc_lj
-
-  if(softcore_method /= SC_GAPSYS) return
-
-  ! Allocate linearization lookups
-  if(allocated(gapsys_lj_rsc))          deallocate(gapsys_lj_rsc)
-  if(allocated(gapsys_q_lambda_factor)) deallocate(gapsys_q_lambda_factor)
-  allocate(gapsys_lj_rsc(nqat, natyps+nqat, nstates_in))
-  allocate(gapsys_q_lambda_factor(nqat, nstates_in))
-
-  gapsys_lj_rsc(:,:,:)        = 0.0_8
-  gapsys_q_lambda_factor(:,:) = 0.0_8
-
-  do istate = 1, nstates_in
-    lambda_st        = EQ(istate)%lambda
-    one_minus_lambda = 1.0_8 - lambda_st
-    ! Coupled endpoint (lambda_state = 1): r_sc = 0 and the runtime
-    ! "r < r_sc" branch is never taken. Leave both arrays at zero for
-    ! this state -- standard LJ/Coulomb applies, as required.
-    if(one_minus_lambda < 1.0e-10_8) cycle
-
-    do iq = 1, nqat
-      if(alpha_max(iq, istate) < 1.0e-6_8) cycle  ! soft-core disabled for this q-atom/state
-
-      iaci = qiac(iq, istate)
-
-      ! Coulomb: lambda-dependent factor only (partner-charge factor at runtime).
-      gapsys_q_lambda_factor(iq, istate) = &
-           gapsys_alpha_q * one_minus_lambda**(1.0_8/6.0_8)
-
-      ! Q-atom vs surroundings (atom types 1..natyps)
-      do jt = 1, natyps
-        if(ivdw_rule == VDW_GEOMETRIC) then
-          C12 = qavdw(iaci,1) * iaclib(jt)%avdw(1)
-          C6  = qbvdw(iaci,1) * iaclib(jt)%bvdw(1)
-          if(C6 > 0.0_8 .and. C12 > 0.0_8) then
-            sigma = (C12/C6)**(1.0_8/6.0_8)
-          else
-            sigma = gapsys_sigma_lj  ! Fallback for DUM atoms
-          end if
-        else  ! arithmetic (Lorentz-Berthelot) rule:
-          ! Q's arithmetic libraries (AMBER14sb.prm, CHARMM36.prm) store
-          ! R* = R_min/2 per atom (Q's standard LJ formula consumes R_min^12
-          ! and 2*R_min^6 directly). The sum qavdw + avdw therefore yields
-          ! R_min_pair, NOT sigma_pair. Gapsys's r_sc formula expects sigma
-          ! (zero-crossing radius), so divide by 2^(1/6) to convert
-          ! R_min_pair to sigma_pair.
-          sigma = (qavdw(iaci,1) + iaclib(jt)%avdw(1)) / 2.0_8**(1.0_8/6.0_8)
-          if(sigma < 1.0e-10_8) sigma = gapsys_sigma_lj
+  if(.not. lambda_dependent_softcore()) return
+  ! get_fep rejects unsupported combination rules before dynamics starts.
+  if(ivdw_rule /= VDW_ARITHMETIC) return
+  if(allocated(softcore_lj_rsc)) deallocate(softcore_lj_rsc)
+  if(allocated(softcore_q_lambda_factor)) deallocate(softcore_q_lambda_factor)
+  allocate(softcore_lj_rsc(nqat,natyps+nqat,nstates_in))
+  allocate(softcore_q_lambda_factor(nqat,nstates_in))
+  softcore_lj_rsc = 0.0_8
+  softcore_q_lambda_factor = 0.0_8
+  do istate = 1,nstates_in
+    decoupling = max(0.0_8,1.0_8-EQ(istate)%lambda)
+    do iq = 1,nqat
+      softcore_q_lambda_factor(iq,istate) = nonlinear_coulomb_radius(0.0_8,0.0_8,decoupling)
+      iaci = qiac(iq,istate)
+      do jt = 1,natyps+nqat
+        if(.not. softcore_pair_enabled(iq,jt,istate)) cycle
+        if(jt <= natyps) then
+          sigma = (qavdw(iaci,1)+iaclib(jt)%avdw(1))/2.0_8**(1.0_8/6.0_8)
+        else
+          iacj = qiac(jt-natyps,istate)
+          sigma = (qavdw(iaci,1)+qavdw(iacj,1))/2.0_8**(1.0_8/6.0_8)
         end if
-        r_sc_lj = gapsys_alpha_lj * &
-                  ((26.0_8/7.0_8) * sigma**6 * one_minus_lambda)**(1.0_8/6.0_8)
-        gapsys_lj_rsc(iq, jt, istate) = r_sc_lj
-      end do
-
-      ! Q-atom vs Q-atoms (indices natyps+1..natyps+nqat)
-      do jt = 1, nqat
-        iacj = qiac(jt, istate)
-        if(ivdw_rule == VDW_GEOMETRIC) then
-          C12 = qavdw(iaci,1) * qavdw(iacj,1)
-          C6  = qbvdw(iaci,1) * qbvdw(iacj,1)
-          if(C6 > 0.0_8 .and. C12 > 0.0_8) then
-            sigma = (C12/C6)**(1.0_8/6.0_8)
-          else
-            sigma = gapsys_sigma_lj
-          end if
-        else  ! arithmetic rule: same R*-to-sigma conversion as Q-protein above.
-          sigma = (qavdw(iaci,1) + qavdw(iacj,1)) / 2.0_8**(1.0_8/6.0_8)
-          if(sigma < 1.0e-10_8) sigma = gapsys_sigma_lj
-        end if
-        r_sc_lj = gapsys_alpha_lj * &
-                  ((26.0_8/7.0_8) * sigma**6 * one_minus_lambda)**(1.0_8/6.0_8)
-        gapsys_lj_rsc(iq, jt+natyps, istate) = r_sc_lj
+        softcore_lj_rsc(iq,jt,istate) = nonlinear_lj_radius(sigma,decoupling)
       end do
     end do
   end do
-
-  write(*,'(a)') 'Gapsys linearization radii initialized (1-lambda_state convention, SI Eqs. 1.1-1.4).'
-end subroutine softcore_init_gapsys
-
-!-------------------------------------------------------------------------
-
-pure subroutine gapsys_eval_lj(C12, C6, r_sc_lj, r_ij, V_lin, F_lin)
-!!-------------------------------------------------------------------------------
-!! Gapsys 2012 SI Eq. 1.1 (force) and Eq. 1.3 (energy) for r_ij < r_sc_lj.
-!! V_lin(r) = a*r^2 - b*r + c with
-!!   a = 78*C12/r_sc^14 - 21*C6/r_sc^8
-!!   b = 168*C12/r_sc^13 - 48*C6/r_sc^7
-!!   c = 91*C12/r_sc^12 - 28*C6/r_sc^6
-!! F_radial_lin(r) = -dV/dr = -2*a*r + b
-!! Continuity at r_sc verified by SI Eqs. 2.1, 2.3 (the limits reduce to the
-!! classical LJ force and potential).
-!!-------------------------------------------------------------------------------
-  real(8), intent(in)  :: C12, C6, r_sc_lj, r_ij
-  real(8), intent(out) :: V_lin, F_lin
-  real(8) :: inv, inv2, inv6, inv7, inv8, inv12, inv13, inv14
-  real(8) :: a_lj, b_lj, c_lj
-
-  inv   = 1.0_8 / r_sc_lj
-  inv2  = inv*inv
-  inv6  = inv2*inv2*inv2
-  inv7  = inv6*inv
-  inv8  = inv6*inv2
-  inv12 = inv6*inv6
-  inv13 = inv12*inv
-  inv14 = inv12*inv2
-  a_lj  = 78.0_8  * C12 * inv14 - 21.0_8 * C6 * inv8
-  b_lj  = 168.0_8 * C12 * inv13 - 48.0_8 * C6 * inv7
-  c_lj  = 91.0_8  * C12 * inv12 - 28.0_8 * C6 * inv6
-  V_lin = a_lj*r_ij*r_ij - b_lj*r_ij + c_lj
-  F_lin = -2.0_8*a_lj*r_ij + b_lj
-end subroutine gapsys_eval_lj
-
-!-------------------------------------------------------------------------
-
-pure subroutine gapsys_eval_q(qq, r_sc_q, r_ij, V_lin, F_lin)
-!!-------------------------------------------------------------------------------
-!! Gapsys 2012 SI Eq. 1.2 (force) and Eq. 1.4 (energy) for r_ij < r_sc_q.
-!! qq must be the fully-scaled product q_i*q_j (caller multiplies any 1-4 or
-!! electrostatic scaling factor in advance).
-!! V_lin(r) = a*r^2 - b*r + c with
-!!   a = qq/r_sc^3, b = 3*qq/r_sc^2, c = 3*qq/r_sc
-!! F_radial_lin(r) = -dV/dr = -2*a*r + b
-!! Continuity at r_sc verified by SI Eqs. 2.2, 2.4.
-!!-------------------------------------------------------------------------------
-  real(8), intent(in)  :: qq, r_sc_q, r_ij
-  real(8), intent(out) :: V_lin, F_lin
-  real(8) :: inv, inv2, inv3
-  real(8) :: a_q, b_q, c_q
-
-  inv   = 1.0_8 / r_sc_q
-  inv2  = inv*inv
-  inv3  = inv2*inv
-  a_q   = qq * inv3
-  b_q   = 3.0_8 * qq * inv2
-  c_q   = 3.0_8 * qq * inv
-  V_lin = a_q*r_ij*r_ij - b_q*r_ij + c_q
-  F_lin = -2.0_8*a_q*r_ij + b_q
-end subroutine gapsys_eval_q
+end subroutine
 
 end module qatom
