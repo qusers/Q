@@ -39,4 +39,6 @@ class NativeOutput : public BaseOutput {
     void write_trajectory_frame(Context& ctx);
     void write_energy_frame(Context& ctx);
     void write_restart_file(Context& ctx) const;
+
+    bool writes_restart() const { return !config_.final_file.empty(); }
 };

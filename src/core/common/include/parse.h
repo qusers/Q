@@ -108,6 +108,13 @@ class BaseParser {
     explicit BaseParser(const std::string& file_path) : file_path(file_path) {}
     virtual ~BaseParser() = default;
 
+    ParseResult parse_stage() {
+        result = ParseResult{};
+        parse_md();
+        parse_lambdas();
+        return result;
+    }
+
     ParseResult parse() {
         result = ParseResult{};
 
@@ -168,8 +175,7 @@ class BaseParser {
         parse_q_bonds();
         parse_q_cbonds();
 
-
-        parse_q_angcouples(); // need q_angle and q_bond
+        parse_q_angcouples();  // need q_angle and q_bond
 
         parse_q_impropers();
         parse_q_cimpropers();

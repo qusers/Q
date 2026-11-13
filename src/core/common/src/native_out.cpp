@@ -10,6 +10,8 @@
 #include <utility>
 #include <vector>
 
+#include "qgpu_error.h"
+
 namespace {
 std::string trim_copy(const std::string& value) {
     size_t begin = 0;
@@ -111,17 +113,16 @@ NativeOutput::NativeOutput(NativeOutputConfig config) : config_(std::move(config
 }
 
 void NativeOutput::validate_config() const {
-    if (config_.final_file.empty()) {
-        throw std::runtime_error("Native output requires a final restart file.");
-    }
+    // final_file may be empty: the engine keeps state in memory and
+    // writes a restart only when asked.
 }
 
 void NativeOutput::validate_runtime_config(Context& ctx) const {
     if (ctx.md.trajectory > 0 && config_.trajectory_file.empty()) {
-        throw std::runtime_error("Native output requires a trajectory file when trajectory interval is positive.");
+        throw InputError("Native output requires a trajectory file when trajectory interval is positive.");
     }
     if (ctx.md.energy > 0 && config_.energy_file.empty()) {
-        throw std::runtime_error("Native output requires an energy file when energy interval is positive.");
+        throw InputError("Native output requires an energy file when energy interval is positive.");
     }
 }
 
@@ -146,7 +147,9 @@ void NativeOutput::finish(Context& ctx) {
     if (ctx.md.trajectory > 0 && ctx.md.steps % ctx.md.trajectory == 0) {
         write_trajectory_frame(ctx);
     }
-    write_restart_file(ctx);
+    if (writes_restart()) {
+        write_restart_file(ctx);
+    }
 }
 
 void NativeOutput::shutdown() {
@@ -178,7 +181,7 @@ void NativeOutput::output_restart(Context& ctx, int iteration) {
     ensure_initialized(ctx);
 
     int step = iteration;
-    if (step % 1000 == 0) {
+    if (writes_restart() && step % 1000 == 0) {
         write_restart_file(ctx);
     }
 }
@@ -198,7 +201,7 @@ void NativeOutput::init_trajectory_mask(Context& ctx) {
             if (!excluded[i]) trajectory_atoms_indices_.push_back(i);
         }
     } else {
-        throw std::runtime_error("Unsupported native trajectory_atoms mask: " + config_.trajectory_atoms);
+        throw InputError("Unsupported native trajectory_atoms mask: " + config_.trajectory_atoms);
     }
 }
 
@@ -208,7 +211,7 @@ void NativeOutput::open_trajectory(Context& ctx) {
     ensure_parent_dir(config_.trajectory_file);
     trajectory_stream_.open(config_.trajectory_file.c_str(), std::ios::binary | std::ios::trunc);
     if (!trajectory_stream_) {
-        throw std::runtime_error("Could not write native trajectory file " + config_.trajectory_file);
+        throw InputError("Could not write native trajectory file " + config_.trajectory_file);
     }
 
     std::vector<char> rec1;
@@ -254,7 +257,7 @@ void NativeOutput::open_energy(Context& ctx) {
     ensure_parent_dir(config_.energy_file);
     energy_stream_.open(config_.energy_file.c_str(), std::ios::binary | std::ios::trunc);
     if (!energy_stream_) {
-        throw std::runtime_error("Could not write native energy file " + config_.energy_file);
+        throw InputError("Could not write native energy file " + config_.energy_file);
     }
 }
 
@@ -313,7 +316,7 @@ void NativeOutput::write_restart_file(Context& ctx) const {
     ensure_parent_dir(config_.final_file);
     std::ofstream out(config_.final_file.c_str(), std::ios::binary | std::ios::trunc);
     if (!out) {
-        throw std::runtime_error("Could not write native final restart file " + config_.final_file);
+        throw InputError("Could not write native final restart file " + config_.final_file);
     }
     write_restart_record(out, ctx.coords->cpu_data_p, nullptr, ctx.n_atoms, false);
     write_restart_record(out, nullptr, ctx.velocities->cpu_data_p, ctx.n_atoms, true);
@@ -326,5 +329,5 @@ OutputRequirements NativeOutput::requirements(const Context& ctx, int iteration)
     return {
         .energy = iteration > 0 && ctx.md.energy > 0 && iteration % ctx.md.energy == 0,
         .trajectory = iteration > 0 && ctx.md.trajectory > 0 && iteration % ctx.md.trajectory == 0,
-        .restart = iteration % 1000 == 0};
+        .restart = writes_restart() && iteration % 1000 == 0};
 }

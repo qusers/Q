@@ -134,7 +134,9 @@ def install(ROOTDIR):
 
     os.chdir(ROOTDIR)
     os.chdir("src/core")
-    out = subprocess.check_output("make")
+    # CMake build in src/core/build; the "move" target copies qdyn to bin/.
+    subprocess.check_call(["cmake", "-S", ".", "-B", "build", "-DQDYN_BUILD_TESTS=OFF"])
+    subprocess.check_call(["cmake", "--build", "build", "--target", "move", "--parallel"])
 
     print("If you want to have Q-GPU executable files in your path permanently.")
     print("Please add the following to .bashrc or .bash_profile:")

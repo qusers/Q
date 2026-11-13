@@ -3,6 +3,9 @@
 #include "handler.h"
 
 class CpuHandler : public Handler {
+   public:
+    CpuHandler() : Handler(false) {}
+
    protected:
     std::unique_ptr<ConstraintForce> create_constraint_force_backend() override;
     std::unique_ptr<NonbondedForce> create_nonbonded_force_backend() override;

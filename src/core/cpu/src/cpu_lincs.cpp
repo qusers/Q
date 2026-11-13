@@ -1,6 +1,10 @@
 #include "cpu_lincs.h"
 
+#include <cstdio>
+#include <string>
+
 #include "geometry.h"
+#include "qgpu_error.h"
 
 void CpuLincs::apply(Context& ctx, HostDeviceBuffer<coord_t>& xcoords) {
     coord_t* candidate = ctx.coords->cpu_data_p;
@@ -252,6 +256,7 @@ void CpuLincs::apply_to(Context& ctx, coord_t* coords, const coord_t* xcoords) {
                 printf(">>> Lincs failed, i = %d, j = %d, d = %f, d0 = %f\n", ai, aj, cur_d, aim_d);
             }
         }
-        std::exit(EXIT_FAILURE);
+        std::fflush(stdout);
+        throw ConstraintError("LINCS did not converge at step " + std::to_string(ctx.step) + " (CPU)");
     }
 }

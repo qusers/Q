@@ -1,5 +1,7 @@
 #include "bonded_force.h"
 
+#include "qgpu_error.h"
+
 namespace {
 bool skip_excluded_dihedral(const Context& ctx, int ai, int aj, int ak, int al) {
     // 1-based atom index
@@ -64,7 +66,7 @@ size_t terms_per_state(size_t total, int nstates) {
     if (total == 0) return 0;
 
     if (nstates <= 0 || total % static_cast<size_t>(nstates) != 0) {
-        throw std::runtime_error("Invalid state-dependent bonded interaction layout.");
+        throw QgpuError("Invalid state-dependent bonded interaction layout.");
     }
 
     return total / static_cast<size_t>(nstates);
@@ -78,18 +80,18 @@ int q_energy_slot(int state, EQSlot slot) {
 
 void BondedForce::init(Context& ctx, const ParseResult& parsed, const ConstraintData& shake_data, const std::vector<special_pair_term_t>& special_pairs) {
     if (!parsed.q_shakes.empty()) {
-        throw std::runtime_error("State-dependent Q constraints are not implemented.");
+        throw InputError("State-dependent Q constraints are not implemented");
     }
 
     for (const auto& bond : parsed.q_bonds) {
         if (shake_data.contains(bond.ai, bond.aj)) {
-            throw std::runtime_error("A redefined Q-bond is constrained.");
+            throw InputError("A redefined Q-bond is constrained.");
         }
     }
 
     for (const auto& angle : parsed.q_angles) {
         if (shake_data.contains(angle.ai, angle.ak)) {
-            throw std::runtime_error("A redefined Q-angle has constrained outer atoms.");
+            throw InputError("A redefined Q-angle has constrained outer atoms.");
         }
     }
 
@@ -212,12 +214,12 @@ void BondedForce::build_angles(Context& ctx, const ParseResult& parsed, const Co
             const auto& bond = parsed.q_bonds.at(static_cast<size_t>(s) * nbonds + bond_index);
 
             if (bond.code <= 0) {
-                throw std::runtime_error("A coupled Q-angle references an absent bond.");
+                throw InputError("A coupled Q-angle references an absent bond.");
             }
 
             const auto& bond_param = parsed.q_cbonds.at(bond.code);
             if (!bond_param.is_morse) {
-                throw std::runtime_error("A coupled Q-angle must reference a Morse bond.");
+                throw InputError("A coupled Q-angle must reference a Morse bond.");
             }
 
             coupling.i = bond.ai - 1;
@@ -304,12 +306,12 @@ void BondedForce::build_torsions(Context& ctx, const ParseResult& parsed, const 
             const auto& bond = parsed.q_bonds.at(static_cast<size_t>(s) * nbonds + bond_index);
 
             if (bond.code <= 0) {
-                throw std::runtime_error("A coupled Q-torsion references an absent bond.");
+                throw InputError("A coupled Q-torsion references an absent bond.");
             }
 
             const auto& bond_param = parsed.q_cbonds.at(bond.code);
             if (!bond_param.is_morse) {
-                throw std::runtime_error("A coupled Q-torsion must reference a Morse bond.");
+                throw InputError("A coupled Q-torsion must reference a Morse bond.");
             }
 
             coupling.i = bond.ai - 1;
@@ -399,12 +401,12 @@ void BondedForce::build_impropers(Context& ctx, const ParseResult& parsed, const
             const auto& bond = parsed.q_bonds.at(static_cast<size_t>(s) * nbonds + bond_index);
 
             if (bond.code <= 0) {
-                throw std::runtime_error("A coupled Q-improper references an absent bond.");
+                throw InputError("A coupled Q-improper references an absent bond.");
             }
 
             const auto& bond_param = parsed.q_cbonds.at(bond.code);
             if (!bond_param.is_morse) {
-                throw std::runtime_error("A coupled Q-improper must reference a Morse bond.");
+                throw InputError("A coupled Q-improper must reference a Morse bond.");
             }
 
             coupling.i = bond.ai - 1;

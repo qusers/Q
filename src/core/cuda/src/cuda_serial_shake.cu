@@ -7,6 +7,7 @@
 #include "constants.h"
 #include "cuda_runtime_utility.h"
 #include "cuda_serial_shake.cuh"
+#include "qgpu_error.h"
 
 namespace {
 
@@ -102,7 +103,7 @@ void CudaSerialConstraintSolver::init(
         offsets[mol + 1] = offsets[mol] + molecule_constraint_counts[mol];
     }
     if (offsets.back() != n_constraints_) {
-        throw std::runtime_error("CUDA serial SHAKE molecule counts do not match the constraint list.");
+        throw ConstraintError("CUDA serial SHAKE molecule counts do not match the constraint list.");
     }
 
     molecule_constraint_offsets_ = HostDeviceBuffer<int>::from_vector(offsets, true);
@@ -135,7 +136,9 @@ void CudaSerialConstraintSolver::apply(
     // This synchronizes the SHAKE kernel, but transfers only one integer.  It
     // retains CpuShake's fail-fast behavior without moving coordinate arrays.
     failed_->download();
-    if (failed_->cpu_data_p[0]) std::exit(EXIT_FAILURE);
+    if (failed_->cpu_data_p[0]) {
+        throw ConstraintError("serial SHAKE failed");
+    }
 }
 
 void CudaSerialShake::init_backend(Context& ctx) {

@@ -30,30 +30,140 @@ void Handler::run_iteration(int iteration) {
 
 void Handler::initialize(const CommandInfo& command) {
     ctx.command_info = command;
-    ParseResult parsed = ctx.get_parse_result();
-    ctx.init(parsed);
-    constraint_force_ = create_constraint_force_backend();
-    nonbonded_force_ = create_nonbonded_force_backend();
-    bonded_force_ = create_bonded_force_backend();
-    restraint_force_ = create_restraint_force_backend();
-    temperature_ = create_temperature_backend();
-    integrator_ = create_integrator_backend();
-    water_boundary_force_ = create_water_boundary_force_backend();
-    constraint_force_->init(ctx, parsed);
-    nonbonded_force_->init(ctx, parsed);
-    bonded_force_->init(ctx, parsed, constraint_force_->data(), nonbonded_force_->special_pairs());
-    restraint_force_->init(ctx, parsed.restrspos, parsed.restrseqs, parsed.restrdists, parsed.restrangs, parsed.restrwalls);
-    temperature_->init(ctx, *constraint_force_);
-    water_boundary_force_->init(ctx, *temperature_, parsed);
-    integrator_->init(ctx, *constraint_force_, *temperature_);
+    const ParseResult parsed = ctx.get_parse_result();
+    initialize_system(parsed);
+    configure(stage_from(parsed));  // fresh start: velocities are generated here
+}
 
-    if (ctx.fresh_start) {
-        constraint_force_->initial_constraint(ctx);
-        stop_cm_translation();
+void Handler::initialize_system(const ParseResult& parsed) {
+    if (system_loaded_) {
+        throw InputError("Handler::initialize_system called twice; create a new Handler instead.");
     }
 
-    create_outputs();
-    init_outputs();
+    system_ = parsed;
+    ctx.init(system_);  // topology, FEP, masses, shell, LJ matrix, start coords/velocities
+
+    // Depends only on System fields (cut-offs, LRF, charge groups, pair masks): build once.
+    nonbonded_force_ = create_nonbonded_force_backend();
+    nonbonded_force_->init(ctx, system_);
+
+    system_loaded_ = true;
+    configured_ = false;
+    // Restart: coords/velocities come from the restart file. As in Fortran Q, a given
+    // initial_temperature (with seed > 0) still draws new velocities on the first configure().
+    const bool new_velocities = ctx.md.generate_velocities && ctx.md.random_seed > 0;
+    state_ready_ = !ctx.fresh_start && !new_velocities;
+}
+
+void Handler::rebuild_constraints_and_bonded() {
+    constraint_force_ = create_constraint_force_backend();
+    constraint_force_->init(ctx, system_);
+
+    // Bonded skips constrained bonds/angles, so it must follow the constraint set.
+    bonded_force_ = create_bonded_force_backend();
+    bonded_force_->init(ctx, system_, constraint_force_->data(), nonbonded_force_->special_pairs());
+}
+
+void Handler::configure(const StageSettings& stage) {
+    if (!system_loaded_) {
+        throw InputError("Handler::configure called before initialize_system.");
+    }
+
+    // Read theta_corr from the CURRENT water boundary before it is replaced.
+    std::vector<double> theta = configured_ ? current_theta_corr() : system_.restart_theta_corr;
+
+    ctx.apply_stage(stage);  // md stage fields, dt, lambdas upload, native_output
+
+    const std::array<bool, 3> flags{
+        ctx.md.constraint_solvent,
+        ctx.md.constraint_solute,
+        ctx.md.constraint_hydrogens,
+    };
+    if (!configured_ || flags != constraint_flags_) {
+        rebuild_constraints_and_bonded();
+        constraint_flags_ = flags;
+    }
+
+    restraint_force_ = create_restraint_force_backend();
+    restraint_force_->init(ctx, stage.restrspos, stage.restrseqs, stage.restrdists,
+                           stage.restrangs, stage.restrwalls);
+
+    // Order matters: water boundary and integrator keep raw pointers to these.
+    temperature_ = create_temperature_backend();
+    temperature_->init(ctx, *constraint_force_);
+
+    water_boundary_force_ = create_water_boundary_force_backend();
+    water_boundary_force_->init(ctx, *temperature_, system_, theta);  // cstb depends on lambdas
+
+    integrator_ = create_integrator_backend();
+    integrator_->init(ctx, *constraint_force_, *temperature_);
+
+    configured_ = true;
+
+    // First stage of a fresh start: generate velocities once. Needs the constraints and masses built above.
+    if (!state_ready_) {
+        start_fresh(ctx.md.random_seed, ctx.md.initial_temperature);
+    }
+}
+
+void Handler::start_fresh(int seed, double initial_temperature) {
+    if (!configured_) {
+        throw InputError("Handler::start_fresh called before configure.");
+    }
+    if (seed <= 0) {
+        throw InputError("start_fresh requires a positive random seed.");
+    }
+
+    ctx.generate_velocities(seed, initial_temperature);  // reuses the existing buffer and uploads
+    constraint_force_->initial_constraint(ctx);
+    stop_cm_translation();
+    state_ready_ = true;
+}
+
+void Handler::set_state(const SystemState& s) {
+    if (!system_loaded_) {
+        throw InputError("Handler::set_state called before load_system.");
+    }
+    ctx.set_state(s);  // validates sizes, fills cpu buffers, uploads coords + velocities
+
+    // theta_corr lives in the water boundary backend: re-apply it there.
+    if (configured_) {
+        water_boundary_force_ = create_water_boundary_force_backend();
+        water_boundary_force_->init(ctx, *temperature_, system_, s.theta_corr);
+        integrator_ = create_integrator_backend();  // not strictly needed, keeps pointers fresh
+        integrator_->init(ctx, *constraint_force_, *temperature_);
+    } else {
+        system_.restart_theta_corr = s.theta_corr;  // picked up by the first configure()
+    }
+    state_ready_ = true;
+    broken_ = false;
+}
+
+std::vector<double> Handler::current_theta_corr() {
+    std::vector<double> theta;
+    if (!water_boundary_force_) return theta;
+
+    water_boundary_force_->sync_for_output(ctx);  // copies backend wshells into ctx.wshells
+    theta.reserve(ctx.wshells.size());
+    for (const auto& shell : ctx.wshells) {
+        theta.push_back(shell.theta_corr);
+    }
+    return theta;
+}
+
+SystemState Handler::get_state() {
+    if (!configured_) {
+        throw InputError("Handler::get_state called before configure.");
+    }
+    if (ctx.command_info.requested_gpu) {
+        ctx.coords->download();
+        ctx.velocities->download();
+    }
+    SystemState s;
+    s.coords.assign(ctx.coords->cpu_data_p, ctx.coords->cpu_data_p + ctx.n_atoms);
+    s.velocities.assign(ctx.velocities->cpu_data_p, ctx.velocities->cpu_data_p + ctx.n_atoms);
+    s.theta_corr = current_theta_corr();
+    return s;
 }
 
 void Handler::stop_cm_translation() {
@@ -92,29 +202,6 @@ void Handler::calc_final_potential(int iteration) {
     prepare_offdiags(iteration);
 }
 
-void Handler::run() {
-    // 1. temperature calculation
-    calc_temperature();
-
-    int num_iterations = ctx.md.steps;
-    auto t0 = std::chrono::steady_clock::now();
-
-    for (int i = 0; i < num_iterations; i++) {
-        ctx.step = i;
-        run_iteration(i);
-    }
-    auto t1 = std::chrono::steady_clock::now();
-
-    double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
-    printf("MD loop: %.3f ms total, %.4f ms/step (%d steps)\n", ms, ms / num_iterations, num_iterations);
-
-    calc_final_potential(num_iterations);
-
-    finish_outputs();
-    shutdown_outputs();
-    outputs_.clear();
-}
-
 void Handler::update_energy_totals() {
     if (ctx.command_info.requested_gpu) {
         ctx.energy.download();
@@ -123,6 +210,45 @@ void Handler::update_energy_totals() {
     ctx.energy.unpack();
     temperature_->sync_for_output(ctx);  // publish Ukin before combine sums Utot
     ctx.energy.combine(ctx.lambdas->cpu_data_p);
+}
+
+void Handler::run() {
+    if (!configured_) {
+        throw InputError("Handler::run called before configure.");
+    }
+    if (broken_) {
+        throw QgpuError("Previous run failed; call set_state() before running again.");
+    }
+
+    try {
+        create_outputs();  // moved from initialize(): new files per stage
+        init_outputs();
+
+        // 1. temperature calculation
+        calc_temperature();
+
+        int num_iterations = ctx.md.steps;
+        auto t0 = std::chrono::steady_clock::now();
+
+        for (int i = 0; i < num_iterations; i++) {
+            ctx.step = i;
+            run_iteration(i);
+        }
+        auto t1 = std::chrono::steady_clock::now();
+
+        double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+        printf("MD loop: %.3f ms total, %.4f ms/step (%d steps)\n", ms, ms / num_iterations, num_iterations);
+
+        calc_final_potential(num_iterations);
+
+        finish_outputs();
+        shutdown_outputs();
+        outputs_.clear();
+    } catch (...) {
+        broken_ = true;
+        outputs_.clear();  // closes files (ofstream destructors)
+        throw;
+    }
 }
 
 void Handler::print_outputs(int iteration) {

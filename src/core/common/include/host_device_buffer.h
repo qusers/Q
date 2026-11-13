@@ -95,7 +95,7 @@ void HostDeviceBuffer<T>::deallocate() {
     }
 
     if (gpu_data_p != nullptr) {
-        check_cuda(cudaFree(gpu_data_p));
+        check_cuda_noexcept(cudaFree(gpu_data_p));
         gpu_data_p = nullptr;
     }
 

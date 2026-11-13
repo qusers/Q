@@ -523,7 +523,7 @@ void CudaShake::apply_to(Context& ctx, coord_t* d_coords, coord_t* d_xcoords) {
 
         if (shake_network_failed->cpu_data_p[0]) {
             std::fflush(stdout);
-            std::exit(EXIT_FAILURE);
+            throw ConstraintError("SHAKE network failed at step " + std::to_string(ctx.step));
         }
     }
     if (fallback_shake_bonds->length > 0) {
@@ -550,7 +550,7 @@ void CudaShake::apply_to(Context& ctx, coord_t* d_coords, coord_t* d_xcoords) {
             check_cuda(cudaGetLastError());
             check_cuda(cudaDeviceSynchronize());
             std::fflush(stdout);
-            std::exit(EXIT_FAILURE);
+            throw ConstraintError("fallback SHAKE did not converge at step " + std::to_string(ctx.step));
         }
     }
 }
