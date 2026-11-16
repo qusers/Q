@@ -44,5 +44,4 @@ the QligFEP and the QresFEP workflow.
 
 Every command accepts `-h`/`--help`. Most commands use `-log`/`--log-level` with
 `trace`, `debug`, `info`, `warning`, `error`, or `critical`; `qprep_prot` omits
-`trace`. The reference records implementation behavior even where an argument's
-current help text is less strict.
+`trace`.

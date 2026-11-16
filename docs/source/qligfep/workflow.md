@@ -94,7 +94,7 @@ qprep_prot -i protein.pdb -FF AMBER14sb \
   -cog X Y Z -r 25
 ```
 
-The wrapper removes crystal waters, handles selected boundary ionizable groups,
+The wrapper keeps crystallographic waters by default, handles selected boundary ionizable groups,
 can merge cofactors, writes qprep input, runs qprep, extracts `water.pdb`, and
 filters fragments outside the sphere. Review `qprep.inp`, `qprep.out`, the final
 PDB, charge, and boundary selection.

@@ -61,7 +61,7 @@ qparams -i INPUT_SDF [-lff OpenFF] [-p JOBS] [-am1bcc]
 | Option | Required | Default | Description |
 |---|---:|---|---|
 | `-i`, `--input` | yes | — | One- or multi-molecule SDF |
-| `-lff`, `--ligand-forcefield` | no | `OpenFF` | Ligand parameterizer; currently only `OpenFF` |
+| `-lff`, `--ligand-forcefield` | no | `OpenFF` | Ligand parameterizer; `OpenFF` |
 | `-p`, `--parallel` | no | `1` | Parallel charge-assignment jobs |
 | `-am1bcc`, `--use_am1bcc` | no | off | Use AM1-BCC instead of NAGL |
 | `-ff`, `--forcefield` | no | `openff-2.3.0.offxml` | OpenFF force-field file |
@@ -72,7 +72,7 @@ qparams -i INPUT_SDF [-lff OpenFF] [-p JOBS] [-am1bcc]
 
 Normal mode writes `<molecule>.lib`, `<molecule>.prm`, and `<molecule>.pdb` beside
 the input SDF. Partial charges are rounded while preserving integer net charge.
-Cofactor mode accepts a limited set (currently at most six) and writes
+Cofactor mode accepts at most six cofactors and writes
 `<protein-FF>_plus_cofactor.lib`, `<protein-FF>_plus_cofactor.prm`, and
 `all_cofactors.pdb`.
 
@@ -91,14 +91,14 @@ Prepare a spherical protein system and run bundled qprep.
 qprep_prot -i PROTEIN -cog X Y Z
   [-FF FORCEFIELD] [-r RADIUS] [-b BONDS] [-sp DISTANCE]
   [-cof [PDB ...]] [-skip-n] [-nbo OFFSET] [-sbc DISTANCE]
-  [-skip-ff] [-log LEVEL]
+  [-skip-ff] [--strip-crystal-waters] [-log LEVEL]
 ```
 
 | Option | Required | Default | Description |
 |---|---:|---|---|
 | `-i`, `--input_pdb_file` | yes | — | Protein PDB |
 | `-FF`, `--forcefield` | no | `AMBER14sb` | Bundled name or path base |
-| `-cog`, `--center_of_geometry` | **yes in practice** | — | Sphere center `X Y Z` |
+| `-cog`, `--center_of_geometry` | yes | — | Sphere center `X Y Z` |
 | `-r`, `--sphereradius` | no | `25` | Sphere radius in Å |
 | `-b`, `--cysbond` | no | `auto` | `atom1_atom2,...` or automatic disulfide detection |
 | `-sp`, `--solvent_pack` | no | `3.0` | Minimum solvent packing distance in Å |
@@ -107,6 +107,7 @@ qprep_prot -i PROTEIN -cog X Y Z
 | `-nbo`, `--neutralize_boundary_offset` | no | `3.0` | Neutralization offset inside sphere, Å |
 | `-sbc`, `--salt_bridge_cutoff` | no | `4.0` | Salt-bridge cutoff, Å |
 | `-skip-ff`, `--skip-fragment-filter` | no | off | Keep entirely out-of-sphere fragments |
+| `--strip-crystal-waters` | no | off | Remove crystallographic waters before solvating |
 | `-log`, `--log-level` | no | `info` | `debug`, `info`, `warning`, `error`, or `critical` |
 
 Valid bundled force-field names are `AMBER14sb`, `CHARMM36`, `OPLS2005`, and
@@ -115,12 +116,14 @@ cysteine labels and 1.8–4.0 Å only when both residues are already labeled
 `CYX`/`CYD`; inspect every detected bond. The neutralization offset is validated
 between zero and the sphere radius.
 
-The command removes crystal waters, merges cofactors, handles boundary
+The command keeps crystallographic waters, and removes added solvent that
+overlaps them, unless `--strip-crystal-waters` is given. It merges cofactors, handles boundary
 ionizable groups, optionally converts POPC naming, reindexes residues, filters
 out-of-sphere fragments, writes `qprep.inp`, and captures qprep output in
 `qprep.out`. Expected products include `dualtop.top`, `top_p.pdb`,
-`complexnotexcluded.pdb`, and `water.pdb`; preprocessing can also write
-`protein_processed.pdb`.
+`complexnotexcluded.pdb`, `water.pdb`, and `prep.json`, which records the sphere
+centre and radius, the charge inside the sphere and the mapping from input-PDB
+to Q residue numbers; preprocessing can also write `protein_processed.pdb`.
 
 ```bash
 qprep_prot -i protein.pdb -FF AMBER14sb \

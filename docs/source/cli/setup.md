@@ -49,8 +49,7 @@ other JSON. Protein setup runs before water setup. For an edge explicitly marked
 water-only charge-changing setup expects the corresponding protein edge to
 already exist.
 
-`-po` and `-wo` are not parser-level mutually exclusive flags. Do not pass both;
-the current implementation prioritizes protein-only behavior.
+Pass at most one of `-po` and `-wo`.
 
 ## Shared general options
 
@@ -67,9 +66,6 @@ the current implementation prioritizes protein-only behavior.
 | `-clean`, `--files-to-clean` | none | One or more suffix/pattern fragments for post-run removal |
 | `-rs`, `--random_state` | random | Seed for reproducible FEP seed generation |
 | `-log`, `--log-level` | `info` | Logging threshold |
-
-Although help text mentions an AMBER default for `-FF`, the parser marks it
-required; always provide it.
 
 ## Restraint and water options
 

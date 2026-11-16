@@ -8,9 +8,9 @@ Analyze equilibrium-window water and protein legs.
 ```text
 qligfep_analyze -j MAPPING_JSON -t TARGET
   [-p PROTEIN_DIR] [-w WATER_DIR] [-norun]
-  [-exp KEY] [-experr KEY]
+  [-exp KEY]
   [-m {ddG,ddGf,ddGr,ddGos,ddGbar}]
-  [-v] [-lamb N] [-amiss] [-log LEVEL]
+  [-v] [-lamb N] [-amiss] [--qc] [-log LEVEL]
 ```
 
 | Option | Required | Default | Description |
@@ -21,11 +21,11 @@ qligfep_analyze -j MAPPING_JSON -t TARGET
 | `-w`, `--water-dir` | no | `1.water` | Water-leg root |
 | `-norun`, `--no-run-data` | no | off | Skip Slurm output parsing |
 | `-exp`, `--experimental-key` | no | none | Experimental edge-value key |
-| `-experr`, `--experimental-error-key` | no | none | Reserved parsed option; currently not applied downstream |
 | `-m`, `--method` | no | `ddGbar` | Result estimator |
 | `-v`, `--save-verbose` | no | off | Write detailed CSV tables |
 | `-lamb`, `--n-lambdas` | no | infer | Number of lambda windows to retain |
 | `-amiss`, `--allow-missing` | no | off | Continue when mapped edge directories are missing |
+| `--qc` | no | off | Write replicate and cycle-closure quality-control CSV files |
 | `-log`, `--log-level` | no | `info` | Logging threshold |
 
 The analyzer reads water then protein edge trees, obtains qfep data, subtracts
@@ -35,7 +35,8 @@ legs, and writes:
 - `<mapping-stem>_ddG.json` with `Q_ddG_avg`, `Q_ddG_sem`, and `Q_ddG_std`;
 - `<target>_ddG_plot.png` when `-exp` is provided;
 - `<target>_qEnergies_verbose.csv`, `<target>_dgBar_verbose.csv`, and
-  `<target>_run_data.csv` with `-v`.
+  `<target>_run_data.csv` with `-v`;
+- `<target>_fep_qc.csv` and `<target>_cycle_qc.csv` with `--qc`.
 
 ```bash
 qligfep_analyze -j mapping.json -t Tyk2 -m ddGbar \
