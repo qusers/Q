@@ -36,7 +36,7 @@ Keep generated HTML under `docs/build/` out of version control.
    Docs project settings.
 
 The repository configuration is sufficient for a documentation build; it does
-not install QligFEP or compile the simulation engine on the documentation worker.
+not install the Python package or compile the simulation engine on the documentation worker.
 This keeps hosted builds independent of heavy scientific runtime dependencies.
 
 ## Authoring rules

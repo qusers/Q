@@ -1,30 +1,34 @@
-# Q and QligFEP
+# Q
 
 **Molecular dynamics and automated free-energy calculations in biomolecular
 systems.**
 
-Q is a Fortran molecular-dynamics suite built for free-energy perturbation (FEP),
-empirical valence bond (EVB), and linear interaction energy (LIE) calculations.
-QligFEP is the Python command-line workflow that automates ligand
-parameterization, perturbation-network construction, spherical system setup,
-Q input generation, cluster scripts, and free-energy analysis.
+Q is a molecular dynamics package designed for free-energy calculations:
+free-energy perturbation (FEP), empirical valence bond (EVB) and linear
+interaction energy (LIE). Two Python workflows automate FEP calculations with
+Q, from system preparation to analysis:
+
+- **QligFEP** calculates relative binding free energies of ligands.
+- **QresFEP** calculates the free-energy change caused by amino-acid
+  mutations.
 
 ::::{grid} 1 2 2 2
 :gutter: 3
 
-:::{grid-item-card} New user
-:link: quickstart
-:link-type: doc
-Install the software and prepare a small relative binding free-energy workflow.
-:::
-
-:::{grid-item-card} QligFEP user
+:::{grid-item-card} Ligand FEP (QligFEP)
 :link: qligfep/workflow
 :link-type: doc
-Follow the complete preparation, simulation, and analysis workflow.
+Prepare, run and analyse relative binding free-energy calculations for a
+ligand series.
 :::
 
-:::{grid-item-card} Q engine user
+:::{grid-item-card} Residue FEP (QresFEP)
+:link: qresfep/workflow
+:link-type: doc
+Prepare, run and analyse free-energy calculations of amino-acid mutations.
+:::
+
+:::{grid-item-card} Q engine
 :link: manual/index
 :link-type: doc
 Read the Q manual: programs, input files, file formats and algorithms.
@@ -37,9 +41,10 @@ Find every installed Python command and option.
 :::
 ::::
 
-:::{important}
-The documentation follows the source in this repository. The Q manual is a
-port of the 2017 2017 Q manual and marks where this source differs from it.
+:::{note}
+This documentation describes the Fortran implementation of the Q engine,
+which runs on CPUs. A GPU implementation, Q-GPU, is under development and is
+not yet integrated with the workflows described here.
 :::
 
 ```{toctree}
@@ -78,6 +83,13 @@ qligfep/mapping-format
 ```
 
 ```{toctree}
+:maxdepth: 3
+:caption: QresFEP
+
+qresfep/workflow
+```
+
+```{toctree}
 :maxdepth: 2
 :caption: CLI reference
 
@@ -86,6 +98,7 @@ cli/preparation
 cli/networks
 cli/setup
 cli/analysis
+cli/qresfep
 ```
 
 ```{toctree}
@@ -93,6 +106,7 @@ cli/analysis
 :caption: Tutorials and help
 
 tutorials/tyk2
+tutorials/t4l
 troubleshooting
 citations
 contributing-docs

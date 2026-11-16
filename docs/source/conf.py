@@ -8,13 +8,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent / "_ext"))
 
-project = "Q and QligFEP"
-author = "The Q and QligFEP developers"
-copyright = "The Q and QligFEP developers"
+project = "Q"
+author = "The Q developers"
+copyright = "The Q developers"
 
 
 def repository_version() -> str:
-    """Return a useful documentation version without importing QligFEP."""
+    """Return a useful documentation version without importing the Python package."""
     if os.environ.get("READTHEDOCS_VERSION_NAME"):
         return os.environ["READTHEDOCS_VERSION_NAME"]
     try:
@@ -55,12 +55,13 @@ myst_heading_anchors = 4
 myst_url_schemes = ("http", "https", "mailto")
 
 html_theme = "furo"
-html_title = "Q and QligFEP"
+html_title = "Q"
 html_static_path = ["_static"]
 html_logo = "_static/q-logo.svg"  # rebuilt by docs/scripts/logo/make_logo.sh
 html_favicon = "_static/q-favicon.png"
 html_css_files = ["custom.css"]
 html_theme_options = {
+    "sidebar_hide_name": True,  # the logo already says Q
     "source_repository": "https://github.com/qusers/Q/",
     "source_branch": "main",
     "source_directory": "docs/source/",

@@ -1,8 +1,7 @@
-# Q and QligFEP documentation
+# Q documentation
 
-The documentation is built with Sphinx, MyST Markdown, and the Furo theme. The
-maintained engine manual remains at
-`docs/source/q-engine/manual.md` and is included in this site.
+The documentation is built with Sphinx, MyST Markdown, and the Furo theme. It
+covers the Q engine and the QligFEP and QresFEP workflows.
 
 ## Build locally
 
