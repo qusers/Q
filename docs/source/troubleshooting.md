@@ -127,6 +127,37 @@ Increase switching duration and/or sample count, improve endpoint equilibrium,
 inspect failed/outlier switches, and verify work units and direction. Very low
 overlap means uncertainty from a naive estimate is unreliable.
 
+## QresFEP errors
+
+### `pymol is not on PATH`
+
+`setup_resFEP` builds the mutant side chains with PyMOL. Install it in the
+active environment (see [Installation](installation.md#pymol-for-qresfep)), or
+build the residue PDBs yourself and pass their directory with `-mp`.
+
+### The residue is beyond the sphere radius
+
+`qresfep` stops when the mutated residue lies outside the prepared sphere.
+Prepare a sphere centred on that residue; `setup_resFEP` does this for every
+mutation unless `-cog` is given.
+
+### The prepared residue is not the one the mutation names
+
+A charged residue in the outer layer of the sphere is neutralised during
+preparation, for example `GLU` becomes `GLH`, and `qresfep` then refuses the
+mutation. Centre the sphere on the mutated residue.
+
+### A mutation has `NaN` for `ddG_fold`
+
+One of the two legs is missing or unfinished. `qresfep_analyze` lists these
+mutations in a warning; the `crashes` column counts the failed replicates.
+
+### A mutation or residue name is rejected
+
+Run `setup_resFEP` with `-n` to check the structure and all mutations without
+writing files. Mutations are numbered as in the input PDB, and residue names
+must be those of the force-field library (`HID`, `HIE`, `HIP`, …).
+
 ## Reporting a bug
 
 Create the smallest reproducible case, remove private structures if necessary,

@@ -1,15 +1,14 @@
 # Cluster configuration
 
-QligFEP writes Slurm scripts from Python dictionaries in
-`src/QligFEP/settings/settings.py`. Existing profile names are exposed as the
-allowed values of `qligfep -c` and `setupFEP -c`.
+QligFEP and QresFEP write Slurm scripts from Python dictionaries in
+`src/QligFEP/settings/settings.py`. The profile names are the allowed values of
+`-c` in `qligfep`, `setupFEP`, `qresfep` and `setup_resFEP`.
 
 ## Existing profiles
 
 The current source contains `CSB`, `SNELLIUS`, `ALICE`, `HEBBE`, `KEBNE`,
-`STALLO`, `UPPMAX`, `TETRA`, `DARDEL`, `LOCAL`, and `LOCALP`. These profiles are
-examples of environments used during development—not a guarantee that historical
-module names and accounts remain valid.
+`STALLO`, `UPPMAX`, `TETRA`, `DARDEL`, `HABROK`, `LOCAL`, and `LOCALP`. Treat them
+as examples: check the module names and accounts against your site.
 
 ## Add a profile
 
