@@ -89,8 +89,9 @@ _SOLVENT_RESIDUES = frozenset({"HOH", "SOL", "WAT"})
 #: Parameter-file sections copied into both the temporary and final merged files.
 _PARAMETER_SECTIONS = ("[options]", "[atom_types]", "[bonds]", "[angles]", "[torsions]", "[impropers]")
 
-#: Local profiles cannot run the two chained FEP stages.
-_LOCAL_CLUSTERS = frozenset({"LOCAL", "LOCALP"})
+def _is_local_profile(cluster: str) -> bool:
+    """Whether ``cluster`` is a local execution profile, which cannot chain the two FEP stages."""
+    return CLUSTER_DICT[cluster].get("EXECUTION") == "local"
 
 
 class MutationError(Exception):
@@ -1260,11 +1261,11 @@ class QresFEP:
                 which only the SLURM script does; emitting it for LOCAL would
                 produce a script that cannot run.
         """
-        if self.cluster in _LOCAL_CLUSTERS:
+        if _is_local_profile(self.cluster):
             raise MutationError(
                 "QresFEP has no local run script: the two FEP stages must be chained, "
-                "which only the cluster script does. Pick a cluster profile from "
-                "settings.py, or run the generated eq*.inp / md_*.inp by hand."
+                "which only the cluster script does. Pick a Slurm execution profile "
+                "(see `qligfep_config show`), or run the generated eq*.inp / md_*.inp by hand."
             )
 
         template = Path(CONFIGS["INPUT_DIR"]) / "run_resfep.sh"
@@ -1308,7 +1309,7 @@ class QresFEP:
 
     def write_submitfile(self) -> None:
         """Write the FEP_submit.sh wrapper that queues the run script."""
-        if self.cluster in _LOCAL_CLUSTERS:
+        if _is_local_profile(self.cluster):
             return
         template = Path(CONFIGS["ROOT_DIR"]) / "INPUTS" / "FEP_submit.sh"
         target = self.directory / "FEP_submit.sh"
