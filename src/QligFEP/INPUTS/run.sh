@@ -1,28 +1,30 @@
 #!/bin/bash
 #
-#SBATCH --nodes=NODES
-#SBATCH --ntasks-per-node=NTASKS
-#SBATCH --mem-per-cpu=512  # more than enough for 25A sphere size FEP
-#SBATCH -A ACCOUNT 
-#              d-hh:mm:ss
-#SBATCH --time=TIME
-#SBATCH -J JOBNAME
-#SBATCH --array=1-TOTAL_JOBS
-#SBATCH -o slurm.run%a.%N.%j.out
-
+SBATCH_HEADER
 # Define your parameters
 temperatures=(TEMP_VAR)
 seeds=(RANDOM_SEEDS)
 runs=${#seeds[@]}
 restartfile=md_0000_1000.re
+finalMDrestart=$restartfile
 workdir="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
 inputfiles=$workdir/inputfiles
 fepfiles=(FEPS)
 
+# Scheduler-independent task index and core count. Slurm sets them for array jobs;
+# FEP_submit.sh exports QLIGFEP_TASK_ID / QLIGFEP_NTASKS for local execution.
+task_id=${QLIGFEP_TASK_ID:-${SLURM_ARRAY_TASK_ID:-}}
+ncores=${QLIGFEP_NTASKS:-${SLURM_NTASKS:-DEFAULT_NTASKS}}
+if [ -z "$task_id" ]; then
+    echo "Error: no task index. Start this script through FEP_submit.sh (or sbatch --array)."
+    exit 2
+fi
+
 # Debug prints
 echo "Number of temperatures: ${#temperatures[@]}"
 echo "Number of runs: $runs"
-echo "Array task ID: $SLURM_ARRAY_TASK_ID"
+echo "Array task ID: $task_id"
+echo "Cores available: $ncores"
 
 # Validate inputs
 if [ -z "$runs" ] || [ "$runs" -eq 0 ]; then
@@ -42,7 +44,7 @@ fi
 
 # Calculate indices based on array task ID
 NUMTEMPS=${#temperatures[@]}
-TID=$((SLURM_ARRAY_TASK_ID - 1))  # Convert to 0-based indexing
+TID=$((task_id - 1))  # Convert to 0-based indexing
 
 # Calculate which temperature and run this job corresponds to
 temp_idx=$((TID / runs))
@@ -63,11 +65,10 @@ fi
 temperature=${temperatures[$temp_idx]}
 seed=${seeds[$run_num-1]}
 
-## Load modules for qdynp
-MODULES
-
-## define qdynp location
-QDYN
+## Prepare the job environment (profile setup lines and modules)
+ENVIRONMENT_SETUP
+## Q binaries
+ENGINE_PATHS
 
 # Fail on the first error, so a failed mpirun can't exit 0 and be recorded COMPLETED. Set after
 # `module`, which returns non-zero on some stacks just for unload warnings.
@@ -82,8 +83,8 @@ write_footer() {
     rc=$?
     endtime=$(date +%s)
     runtime=$((endtime - starttime))
-    echo "#    EXPRESS LOG for jobid: $SLURM_JOB_ID"
-    echo "#    Slurm tasks: $SLURM_NTASKS"
+    echo "#    EXPRESS LOG for jobid: ${SLURM_JOB_ID:-local}"
+    echo "#    Slurm tasks: ${ncores:-unknown}"
     echo "#    Starttime: $starttime_readable"
     echo "#    Endtime: $(date)"
     echo "#    Runtime: $((runtime / 3600))h:$((runtime % 3600 / 60))m:$((runtime % 60))s"
@@ -93,6 +94,18 @@ write_footer() {
     echo "#    Exit status: $rc"
 }
 trap write_footer EXIT
+
+# Fail in the first second, with a clear message, if this node cannot see the Q binaries
+# (wrong path, or a job environment that did not inherit the submit environment).
+for exe in ENGINE_VARS; do
+    if [ ! -x "$exe" ]; then
+        echo "ERROR: Q binary missing or not executable on $(hostname): $exe"
+        exit 1
+    fi
+done
+
+# In-place sed that works with both GNU sed and BSD (macOS) sed.
+sedi() { sed -i.bak "$@" && rm -f -- *.inp.bak; }
 
 length=${#fepfiles[@]}
 length=$((length-1))
@@ -114,17 +127,17 @@ echo "Parameters T=$temperature, replicate=$run_num, seed=$seed"
 echo
 
 echo "=== Process Binding Information ==="
-echo "slurm tasks per node: $SLURM_TASKS_PER_NODE"
-echo "slurm cpus per node: $SLURM_JOB_CPUS_PER_NODE"
+echo "slurm tasks per node: ${SLURM_TASKS_PER_NODE:-n/a}"
+echo "slurm cpus per node: ${SLURM_JOB_CPUS_PER_NODE:-n/a}"
 echo
 
 echo -e "\n=== CPU Model Information ==="
-lscpu | grep -E "Model name|Architecture|CPU op|Thread|Core|Socket|NUMA|CPU(s)" || true
+lscpu 2>/dev/null | grep -E "Model name|Architecture|CPU op|Thread|Core|Socket|NUMA|CPU(s)" || true
 echo
 
 # Diagnostics only -- must never be fatal under set -e, hence the `|| true`.
 echo -e "\n=== Available CPU List ==="
-cpu_list=$(grep Cpus_allowed_list /proc/self/status | awk '{print $2}') || true
+cpu_list=$(grep Cpus_allowed_list /proc/self/status 2>/dev/null | awk '{print $2}') || true
 echo "CPU list: $cpu_list"
 echo
 
@@ -135,18 +148,23 @@ cp $inputfiles/$fepfile .
 
 if [ $index -lt 1 ]; then
 cp $inputfiles/eq*.inp .
-sed -i "s/SEED_VAR/$seed/" eq1.inp # change the random seed to custom
+sedi "s/SEED_VAR/$seed/" eq1.inp # change the random seed to custom
 else
     lastfep=FEP$index
     cp $workdir/$lastfep/$temperature/$run_num/$finalMDrestart $rundir/eq5.re
 fi
-sed -i "s/T_VAR/$temperature/" *.inp
-sed -i "s/FEP_VAR/$fepfile/" *.inp
+sedi "s/T_VAR/$temperature/" *.inp
+sedi "s/FEP_VAR/$fepfile/" *.inp
 if [ $index -lt 1 ]; then
 #EQ_FILES
 fi
 #RUN_FILES
-timeout 3m QFEP < qfep.inp > qfep.out || [ $? -eq 124 ]
+# qfep is capped at 3 minutes where `timeout` exists (it is not part of macOS).
+if command -v timeout >/dev/null 2>&1; then
+    timeout 3m $qfep < qfep.inp > qfep.out || [ $? -eq 124 ]
+else
+    $qfep < qfep.inp > qfep.out
+fi
 
 # qdyn's serial abort still exits 0, so a completed run is confirmed by "terminated normally" in
 # its log, not by the exit code. Failing here also stops FEP N+1 from starting on a bad eq5.re.

@@ -38,6 +38,7 @@ dependencies = [
     "scikit-learn",
     "loguru",
     "MDAnalysis>=2.0.0",
+    "pyyaml",
 ]
 
 [project.optional-dependencies]
@@ -56,6 +57,7 @@ include = ["QligFEP", "Qgpu", "q6"]
 
 [tool.setuptools.package-data]
 q6 = ["bin/q6/*", "**/*.f90"]
+QligFEP = ["config/*.yaml"]
 
 [tool.setuptools.dynamic]
 version = {attr = "QligFEP.__version__"}
@@ -127,6 +129,7 @@ qlomap = "QligFEP.CLI.lomap_wrap_cli:main_exe"
 qkonnektor = "QligFEP.CLI.konnektor_cli:main_exe"
 qmapfep = "QligFEP.CLI.qmapfep_cli:main_exe"
 qligfep = "QligFEP.CLI.qligfep_cli:main_exe"
+qligfep_config = "QligFEP.CLI.config_cli:main_exe"
 qresfep = "QligFEP.CLI.qresfep_cli:main_exe"
 setupFEP = "QligFEP.CLI.setupFEP:main_exe"
 setup_resFEP = "QligFEP.CLI.setup_resfep_cli:main_exe"

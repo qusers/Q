@@ -1,6 +1,6 @@
 """Base MD template and render function for Q input files."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -73,6 +73,11 @@ class MDParameters:
     # own pocket. Turn on to relax only the environment around fixed ligand poses.
     minimize_freeze_qatoms: bool = False
 
+    # Additional qdyn keywords that have no field above, as {section: {key: value}}.
+    # Filled from a protocol's `stages.<stage>.inp` (see templates/overrides.py) and
+    # written verbatim at the end of the named section.
+    extra: dict = field(default_factory=dict)
+
     def __post_init__(self) -> None:
         """Normalize and validate the engine's two-part algorithm selector."""
         methods = self.constraint_algorithm.lower().split()
@@ -89,6 +94,30 @@ class MDParameters:
 def onoff(val: bool) -> str:
     """Convert boolean to 'on'/'off' string."""
     return "on" if val else "off"
+
+
+#: Sections render_md_input writes itself; `extra` keys for them are placed inside.
+_RENDERED_SECTIONS = ("MD", "cut-offs", "sphere", "solvent", "intervals")
+
+
+def format_inp_value(value) -> str:
+    """Format a value the way qdyn reads it (booleans are on/off)."""
+    return onoff(value) if isinstance(value, bool) else str(value)
+
+
+def _extra_lines(params: "MDParameters", section: str) -> str:
+    keys = params.extra.get(section) or {}
+    return "".join(f"{key:<25} {format_inp_value(value)}\n" for key, value in keys.items())
+
+
+def _extra_sections(params: "MDParameters") -> str:
+    """Whole sections requested through `extra` that the template does not write."""
+    blocks = []
+    for section, keys in params.extra.items():
+        if section in _RENDERED_SECTIONS or not keys:
+            continue
+        blocks.append(f"\n[{section}]\n" + _extra_lines(params, section))
+    return "".join(blocks)
 
 
 def render_md_input(
@@ -159,6 +188,7 @@ def render_md_input(
     )
 
     lambda_scaling_section = f"\n[lambda_scaling]\n{lambda_scaling}\n" if lambda_scaling else ""
+    lambda_scaling_section += _extra_sections(params)
 
     return f"""\
 [MD]
@@ -174,6 +204,7 @@ constraint_algorithm      {params.constraint_algorithm}
 lrf                       {onoff(params.lrf)}
 separate_scaling          {onoff(params.separate_scaling)}
 {minimization_settings}\
+{_extra_lines(params, 'MD')}\
 
 [cut-offs]
 solute_solvent            {params.cutoff_solute_solvent}
@@ -181,21 +212,25 @@ solute_solute             {params.cutoff_solute_solute}
 solvent_solvent           {params.cutoff_solvent_solvent}
 q_atom                    {params.cutoff_q_atom}
 lrf                       {params.cutoff_lrf}
+{_extra_lines(params, 'cut-offs')}\
 
 [sphere]
 shell_force               {params.shell_force}
 shell_radius              {params.shell_radius}
+{_extra_lines(params, 'sphere')}\
 
 [solvent]
 radial_force              {params.radial_force}
 polarization              {onoff(params.polarization)}
 polarization_force        {params.polarization_force}
+{_extra_lines(params, 'solvent')}\
 
 [intervals]
 output                    {params.interval_output}
 {energy_interval}\
 trajectory                {trajectory_interval}
 non_bond                  {params.interval_non_bond}
+{_extra_lines(params, 'intervals')}\
 
 [files]
 topology                  {params.topology}

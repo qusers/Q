@@ -1,5 +1,6 @@
 recursive-include src/QligFEP/FF *
 recursive-include src/QligFEP/INPUTS *
+include src/QligFEP/config/*.yaml
 recursive-include src/QligFEP/resources *
 recursive-include src/q6 *.f90 *.F90
 include src/q6/makefile

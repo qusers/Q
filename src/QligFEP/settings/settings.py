@@ -1,4 +1,6 @@
-from multiprocessing import cpu_count
+import os
+from collections.abc import Mapping
+from pathlib import Path
 
 from QligFEP import SRC
 
@@ -14,7 +16,9 @@ FF_DIR = ROOT_DIR / "FF"
 INPUT_DIR = ROOT_DIR / "INPUTS"
 # Dicionary of locations of Q executables
 Q_DIR = SRC / "q6"
-BIN = Q_DIR / "bin/q6"
+# $QLIGFEP_Q_BIN points this checkout at binaries compiled elsewhere (another clone, a
+# shared install); by default each checkout uses the engine built inside it.
+BIN = Path(os.environ["QLIGFEP_Q_BIN"]).expanduser() if os.environ.get("QLIGFEP_Q_BIN") else Q_DIR / "bin/q6"
 
 if not BIN.exists():
     raise FileNotFoundError(
@@ -78,138 +82,38 @@ CONFIGS = {
     "SCHROD_DIR": str(SCHROD_DIR),
     **Q_PATHS,
 }
-# CLUSTER INPUTS. To add your own cluster, use the same input as below
-CSB = {
-    "NODES": "1",
-    "NTASKS": "8",
-    "TIME": "0-12:00:00",  # d-hh:mm:ss
-    "MODULES": nljoin(["module purge", "module load Q/6.0.1_ME"]),
-    **Q_PATHS,
-}
-
-# CLUSTER INPUTS. To add your own cluster, use the same input as below
-SNELLIUS = {
-    "NODES": "1",
-    "NTASKS": "16",
-    "TIME": "0-08:00:00",  # d-hh:mm:ss
-    "MODULES": nljoin(
-        [
-            "module purge",
-            "module load 2023",
-            "module load AOCC/4.0.0-GCCcore-12.3.0",
-            "module load OpenMPI/4.1.5-GCC-12.3.0",
-        ]
-    ),
-    **Q_PATHS,
-}
-
-ALICE = {
-    "MAINDIR": Q_DIR,
-    "NODES": "1",
-    "NTASKS": "24",
-    "TIME": "0-3:00:00",  # d-hh:mm:ss
-    "MODULES": nljoin(["module load OpenMPI/3.1.3-GCC-8.2.0-2.31.1"]),
-    **Q_PATHS,
-}
 
 
-HEBBE = {
-    "NODES": "1",
-    "NTASKS": "20",
-    "TIME": "0-02:00:00",  # d-hh:mm:ss
-    "MODULES": nljoin(["module load GCC/5.4.0-2.26", "module load OpenMPI/1.10.3"]),
-    "ACCOUNT": "SNIC2018-2-3",
-    **Q_PATHS,
-}
+class _ProfileClusterDict(Mapping):
+    """Read-only ``CLUSTER_DICT`` view over the YAML execution profiles.
 
-KEBNE = {
-    "NODES": "1",
-    "NTASKS": "28",
-    "TIME": "0-04:00:00",  # d-hh:mm:ss
-    "MODULES": nljoin(["module load gompi/2017b"]),
-    "ACCOUNT": "SNIC2018-2-3",
-    **Q_PATHS,
-}
+    Cluster settings now live in ``QligFEP/config/defaults.yaml`` and the user/project
+    configuration files (see ``qligfep_config``). This mapping keeps the historical
+    ``CLUSTER_DICT[name]["NTASKS"]`` access working for code not yet ported to
+    :class:`QligFEP.config.Profile`. It is resolved on first use so that importing this
+    module never fails on a broken user configuration file.
+    """
 
-STALLO = {
-    "NODES": "1",
-    "NTASKS": "20",
-    "TIME": "0-12:00:00",  # d-hh:mm:ss
-    "MODULES": nljoin(["module load impi/2018.1.163-iccifort-2018.1.163-GCC-6.4.0-2.28"]),
-    "ACCOUNT": "nn4654K",
-    **Q_PATHS,
-}
+    def _config(self):
+        from QligFEP.config import load_config
 
-UPPMAX = {
-    "NODES": "1",
-    "NTASKS": "20",
-    "TIME": "0-24:00:00",  # d-hh:mm:ss
-    "MODULES": nljoin(["gcc/9.2.0", "openmpi/4.0.2"]),
-    "ACCOUNT": "snic2018-2-3",
-    **Q_PATHS,
-}
+        return load_config()
 
-TETRA = {
-    "NODES": "1",
-    "NTASKS": "8",
-    "TIME": "0-06:00:00",  # d-hh:mm:ss
-    # Commented out because we're not compiling Q during the job runtime
-    "MODULES": "# module load buildenv-gcc/2022a-eb\n",
-    "ACCOUNT": "naiss2023-3-5",
-    **Q_PATHS,
-}
+    def __getitem__(self, name):
+        from QligFEP.config import ConfigError
 
-DARDEL = {
-    "NODES": "1",
-    "NTASKS": "8",
-    "TIME": "0-06:00:00",  # d-hh:mm:ss
-    "MODULES": nljoin(["# module purge", "# module load cpe/23.12", "# module load PrgEnv-gnu/8.5.0"]),
-    "ACCOUNT": "naiss2023-3-5",
-    **Q_PATHS,
-}
+        try:
+            return self._config().get_profile(name).as_legacy_dict()
+        except ConfigError as error:
+            if name not in self:
+                raise KeyError(name) from error
+            raise
 
-HABROK = {
-    "NODES": "1",
-    "NTASKS": "8",
-    "TIME": "0-08:00:00",  # d-hh:mm:ss
-    "MODULES": nljoin(
-        [
-            "module purge",
-            "module load OpenMPI/4.1.4-GCC-11.3.0",
-        ]
-    ),
-    **Q_PATHS,
-}
+    def __iter__(self):
+        return iter(self._config().profile_names())
 
-LOCAL = {
-    "NODES": "1",
-    "NTASKS": "1",
-    "TIME": "0-24:00:00",  # d-hh:mm:ss
-    "MODULES": "\n",
-    "USE_MPI": False,
-    **Q_PATHS_LOCAL,
-}
+    def __len__(self):
+        return len(self._config().profile_names())
 
-LOCALP = {
-    "NODES": "1",
-    "NTASKS": str(cpu_count()),
-    "TIME": "0-24:00:00",  # d-hh:mm:ss
-    "MODULES": "\n",
-    "USE_MPI": True,
-    **Q_PATHS_LOCALP,
-}
 
-CLUSTER_DICT = {
-    "CSB": CSB,
-    "SNELLIUS": SNELLIUS,
-    "ALICE": ALICE,
-    "HEBBE": HEBBE,
-    "KEBNE": KEBNE,
-    "STALLO": STALLO,
-    "UPPMAX": UPPMAX,
-    "TETRA": TETRA,
-    "DARDEL": DARDEL,
-    "HABROK": HABROK,
-    "LOCAL": LOCAL,
-    "LOCALP": LOCALP,
-}
+CLUSTER_DICT = _ProfileClusterDict()

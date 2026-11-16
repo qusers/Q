@@ -9,6 +9,6 @@
 for i in $( seq 4 4 32 )
 do
     cd nc$i
-    sbatch -A snic2018-2-3 -n $i --exclusive -t 01:00:00 -J testqdynp run_test_mpi.sh
+    sbatch -n $i --exclusive -t 01:00:00 -J testqdynp run_test_mpi.sh
     cd ..
 done

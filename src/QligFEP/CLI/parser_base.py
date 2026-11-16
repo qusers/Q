@@ -2,7 +2,7 @@
 
 import argparse
 
-from ..settings.settings import CLUSTER_DICT
+from .config_args import add_config_arguments
 
 
 def parse_arguments(program: str) -> argparse.Namespace:
@@ -22,7 +22,8 @@ def parse_arguments(program: str) -> argparse.Namespace:
                 "Generate all FEP files for the directory you're working on, according to the "
                 "edges input in the json_map file. This includes creating directories for both "
                 "water and protein system. Submitting the FEP calculations to the cluster is up to the user. "
-                "A minimal example of usage: setupFEP -FF OPLS2015 -c KEBNE -S sigmoidal -r 25 -l 0.5 -w 100"
+                "A minimal example of usage: setupFEP -FF OPLS2015 -c KEBNE -S sigmoidal -r 25 -l 0.5 -w 100. "
+                "Run `qligfep_config show` to list the execution profiles (-c) and protocols (--protocol)."
             ),
         )
     parser.add_argument(
@@ -46,21 +47,14 @@ def parse_arguments(program: str) -> argparse.Namespace:
             choices=["water", "protein", "vacuum"],
             help="what type of system we are setting up",
         )
-    parser.add_argument(
-        "-c",
-        "--cluster",
-        dest="cluster",
-        required=True,
-        help="cluster you want to submit to, cluster specific parameters added to settings.",
-        choices=list(CLUSTER_DICT.keys()),
-    )
+    add_config_arguments(parser)
     parser.add_argument(
         "-r",
         "--sphereradius",
         dest="sphereradius",
         required=False,
-        default="25",
-        help="Size of the simulation sphere. Defaults to 25.",
+        default=None,
+        help="Size of the simulation sphere. Defaults to 25 (or the value set by --protocol).",
     )
     parser.add_argument(
         "-b",
@@ -79,38 +73,38 @@ def parse_arguments(program: str) -> argparse.Namespace:
         "-l",
         "--start",
         dest="start",
-        default="0.5",
+        default=None,
         choices=["1", "0.5"],
-        help="Starting FEP in the middle or endpoint. Defaults to 0.5.",
+        help="Starting FEP in the middle or endpoint. Defaults to 0.5 (or the value set by --protocol).",
     )
     parser.add_argument(
         "-T",
         "--temperature",
         dest="temperature",
-        default="298",
-        help="Temperature(s), mutliple tempereratures given as 'T1,T2,...,TN'. Defaults to 298K",
+        default=None,
+        help="Temperature(s), mutliple tempereratures given as 'T1,T2,...,TN'. Defaults to 298K (or the value set by --protocol).",
     )
     parser.add_argument(
         "-R",
         "--replicates",
         dest="replicates",
-        default="10",
-        help="How many repeats should be run. Defaults to 10.",
+        default=None,
+        help="How many repeats should be run. Defaults to 10 (or the value set by --protocol).",
     )
     parser.add_argument(
         "-S",
         "--sampling",
         dest="sampling",
-        default="sigmoidal",
+        default=None,
         choices=["linear", "sigmoidal", "exponential", "reverse_exponential"],
-        help="Lambda spacing type to be used. Defaults to `sigmoidal`.",
+        help="Lambda spacing type to be used. Defaults to `sigmoidal` (or the value set by --protocol).",
     )
     parser.add_argument(
         "-w",
         "--windows",
         dest="windows",
-        default="100",
-        help="Total number of windows that will be run. Defaults to 100.",
+        default=None,
+        help="Total number of windows that will be run. Defaults to 100 (or the value set by --protocol).",
         type=str,
     )
     if program == "setupFEP":  # this is only used for setupFEP
@@ -142,8 +136,8 @@ def parse_arguments(program: str) -> argparse.Namespace:
         "--timestep",
         dest="timestep",
         choices=["1fs", "2fs"],
-        default="2fs",
-        help="Simulation timestep, default 2fs",
+        default=None,
+        help="Simulation timestep, default 2fs (or the value set by --protocol)",
     )
     parser.add_argument(
         "--minimize",
@@ -248,6 +242,7 @@ def parse_arguments(program: str) -> argparse.Namespace:
         "--neq",
         dest="neq",
         action="store_true",
+        default=None,
         help=(
             "Set up a non-equilibrium (NEQ) FEP instead of the windowed equilibrium approach. "
             "Instead of many fixed-lambda windows, NEQ runs the serial `qdyn` engine (fast-switching "
@@ -255,7 +250,8 @@ def parse_arguments(program: str) -> argparse.Namespace:
             "from one endpoint to the other over a single simulation, accumulating the switching "
             "work. Free energies are obtained from BAR over the forward/reverse work distributions "
             "(see `qligfep_neq_analyze`). When set, the windowed parameters `--windows` and "
-            "`--sampling` are not used."
+            "`--sampling` are not used. Without this flag the method comes from the protocol "
+            "(`method: nonequilibrium`)."
         ),
     )
     parser.add_argument(
@@ -263,11 +259,11 @@ def parse_arguments(program: str) -> argparse.Namespace:
         "--neq-reps",
         dest="neq_reps",
         type=int,
-        default=5,
+        default=None,
         help=(
             "NEQ only: number of forward/reverse switching pairs run per replicate. Each replicate "
             "keeps a continuous endpoint equilibration and fires a forward and reverse switch from "
-            "successive snapshots to decorrelate the work samples. Defaults to 5."
+            "successive snapshots to decorrelate the work samples. Defaults to 5 (or the value set by --protocol)."
         ),
     )
     parser.add_argument(
@@ -275,10 +271,10 @@ def parse_arguments(program: str) -> argparse.Namespace:
         "--neq-steps",
         dest="neq_steps",
         type=int,
-        default=50000,
+        default=None,
         help=(
             "NEQ only: length of each lambda-switching simulation in MD steps. Recommended >16000. "
-            "Defaults to 50000."
+            "Defaults to 50000 (or the length the protocol sets for stage `switch`)."
         ),
     )
     parser.add_argument(
@@ -286,10 +282,10 @@ def parse_arguments(program: str) -> argparse.Namespace:
         "--neq-eq-steps",
         dest="neq_eq_steps",
         type=int,
-        default=1000,
+        default=None,
         help=(
             "NEQ only: number of endpoint equilibration steps between successive switches "
-            "(spacing). Recommended >250. Defaults to 1000."
+            "(spacing). Recommended >250. Defaults to 1000 (or the length the protocol sets for stage `spacing`)."
         ),
     )
     parser.add_argument(
@@ -297,12 +293,12 @@ def parse_arguments(program: str) -> argparse.Namespace:
         "--neq-relax-steps",
         dest="neq_relax_steps",
         type=int,
-        default=5000,
+        default=None,
         help=(
             "NEQ only: length (MD steps) of the one-time endpoint relaxation run at lambda=0 "
             "and lambda=1 before the first switch, to settle the nearly-decoupled ligand at each "
             "endpoint. Applied to the first switching iteration; later iterations use the shorter "
-            "--neq-eq-steps (tEQ) spacing. ~10 ps at 2 fs. Defaults to 5000."
+            "--neq-eq-steps (tEQ) spacing. ~10 ps at 2 fs. Defaults to 5000 (or the length the protocol sets for stage `relax`)."
         ),
     )
     parser.add_argument(
@@ -310,11 +306,11 @@ def parse_arguments(program: str) -> argparse.Namespace:
         "--neq-steepness",
         dest="neq_L",
         type=float,
-        default=8.0,
+        default=None,
         help=(
             "NEQ only: steepness `L` of the sigmoidal lambda schedule l(t) = 1/[1+e^(L(t-0.5))]. "
             "Higher L spends more time near lambda=0 and lambda=1; lower L approaches a linear "
-            "schedule. Recommended between 4 and 16. Defaults to 8. Ignored when "
+            "schedule. Recommended between 4 and 16. Defaults to 8 (or the value set by --protocol). Ignored when "
             "`--neq-schedule linear` is used."
         ),
     )
@@ -322,9 +318,9 @@ def parse_arguments(program: str) -> argparse.Namespace:
         "-neqsched",
         "--neq-schedule",
         dest="neq_schedule",
-        default="sigmoidal",
+        default=None,
         choices=["sigmoidal", "linear"],
-        help="NEQ only: lambda switching schedule. Defaults to `sigmoidal`.",
+        help="NEQ only: lambda switching schedule. Defaults to `sigmoidal` (or the value set by --protocol).",
     )
     parser.add_argument(
         "-sc",

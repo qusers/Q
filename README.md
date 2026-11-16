@@ -142,35 +142,22 @@ make all COMP=gcc
 
 ## Setting up HPC configurations
 
-Cluster profiles are defined in
-[`src/QligFEP/settings/settings.py`](/src/QligFEP/settings/settings.py). The file
-contains profiles used for QligFEP and QresFEP calculations on several HPC
-systems. To add another system, follow the existing format. This example defines
-a profile named `MY_HPC`:
+Where and how jobs run is described by an execution profile in YAML: Slurm job
+array or local execution, the engine, modules and cores. Create one for your
+machine and test it with:
 
-```python
-MY_HPC = {
-    "NODES": "1",  # We recommend not to change this
-    "NTASKS": "8",  # Number tasks (processes). Check the preprint for guidance on this value
-    "TIME": "0-06:00:00",  # time for job execution; formatted as d-hh:mm:ss
-        "MODULES": nljoin(
-        [
-            "module purge",  # Clear all loaded modules
-            "module load OpenMPI/4.1.4-GCC-11.3.0",  # Load the MPI module used for compiling Q
-        ]
-    ),
-    **Q_PATHS, # Keep this line as is; it passes the paths to Q executables
-}
-
-CLUSTER_DICT = {
-    "CSB": CSB,
-    # ...
-    "MY_HPC": MY_HPC, # Make sure to add your HPC configuration here to use it on the CLI
-}
+```bash
+qligfep_config init     # writes a commented ~/.config/qligfep/config.yaml
+qligfep_config check    # binaries, mpirun, libraries, sbatch
+qligfep_config show     # available profiles and protocols
 ```
 
-Pass the profile name, such as `MY_HPC`, to a QligFEP or QresFEP setup command
-with `--cluster`.
+Pass the profile name to a setup command with `-c`/`--profile`, or set
+`default_profile` to make it optional. The profiles used on several HPC systems
+during development (`SNELLIUS`, `TETRA`, `HABROK`, `LOCAL`, ...) ship with the
+package. Simulation settings such as the number of lambda windows or the length
+of each stage can be collected in named protocols in a project `qligfep.yaml`.
+See [CONFIGURATION.md](CONFIGURATION.md) for the full guide.
 
 ## Q engine executables
 
@@ -183,9 +170,9 @@ Building the Q engine places these Fortran executables in `src/q6/bin/q6`:
 - `qcalc` analyzes Q trajectories and molecular properties.
 
 While the executables can be used directly, QligFEP and QresFEP users do not need to do
-this. The workflows obtain the Q engine paths from
-[`src/QligFEP/settings/settings.py`](src/QligFEP/settings/settings.py), use them
-during preparation, and include them in generated run and submission scripts.
+this. The workflows take the Q engine paths from the execution profile (by
+default the binaries built inside this installation), use them during
+preparation, and include them in generated run and submission scripts.
 
 ## ⌨️ Python command-line tools
 

@@ -69,7 +69,7 @@ def parse_arguments() -> argparse.Namespace:
         dest="cluster",
         required=True,
         choices=list(CLUSTER_DICT.keys()),
-        help="Cluster the run scripts are written for; profiles live in settings.py.",
+        help="Execution profile the run scripts are written for (see `qligfep_config show`).",
     )
 
     sphere = parser.add_argument_group("sphere")
