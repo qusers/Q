@@ -554,16 +554,6 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "-experr",
-        "--experimental-error-key",
-        dest="exp_error",
-        help=("Key in the provided .json file that contains the error for the experimental data."),
-        type=str,
-        required=False,
-        default=None,
-    )
-
-    parser.add_argument(
         "-t",
         "--target",
         dest="target",
