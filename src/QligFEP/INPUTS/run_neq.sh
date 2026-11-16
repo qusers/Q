@@ -1,15 +1,6 @@
 #!/bin/bash
 #
-#SBATCH --nodes=NODES
-#SBATCH --ntasks-per-node=NTASKS
-#SBATCH --mem-per-cpu=1700  # stay at/below the per-core memory so billing matches the core count
-#SBATCH -A ACCOUNT
-#              d-hh:mm:ss
-#SBATCH --time=TIME
-#SBATCH -J JOBNAME
-#SBATCH --array=1-TOTAL_JOBS
-#SBATCH -o slurm.run%a.%N.%j.out
-
+SBATCH_HEADER
 starttime=$(date +%s)
 starttime_readable=$(date)
 
@@ -19,8 +10,8 @@ write_footer() {
     rc=$?
     endtime=$(date +%s)
     runtime=$((endtime - starttime))
-    echo "#    EXPRESS LOG for jobid: $SLURM_JOB_ID"
-    echo "#    Slurm tasks: $SLURM_NTASKS"
+    echo "#    EXPRESS LOG for jobid: ${SLURM_JOB_ID:-local}"
+    echo "#    Slurm tasks: ${ncores:-unknown}"
     echo "#    Starttime: $starttime_readable"
     echo "#    Endtime: $(date)"
     echo "#    Runtime: $((runtime / 3600))h:$((runtime % 3600 / 60))m:$((runtime % 60))s"
@@ -41,12 +32,20 @@ runs=${#seeds[@]}
 workdir="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
 inputfiles=$workdir/inputfiles
 fepfile=FEPS
-ncores=$SLURM_NTASKS
+
+# Scheduler-independent task index and core count. Slurm sets them for array jobs;
+# FEP_submit.sh exports QLIGFEP_TASK_ID / QLIGFEP_NTASKS for local execution.
+task_id=${QLIGFEP_TASK_ID:-${SLURM_ARRAY_TASK_ID:-}}
+ncores=${QLIGFEP_NTASKS:-${SLURM_NTASKS:-DEFAULT_NTASKS}}
+if [ -z "$task_id" ]; then
+    echo "Error: no task index. Start this script through FEP_submit.sh (or sbatch --array)."
+    exit 2
+fi
 
 # Debug prints
 echo "Number of temperatures: ${#temperatures[@]}"
 echo "Number of runs: $runs"
-echo "Array task ID: $SLURM_ARRAY_TASK_ID"
+echo "Array task ID: $task_id"
 echo "Cores available: $ncores"
 
 # Validate inputs
@@ -60,26 +59,36 @@ if [ ${#temperatures[@]} -eq 0 ]; then
 fi
 
 # Calculate which temperature and replicate this array task corresponds to
-TID=$((SLURM_ARRAY_TASK_ID - 1))  # 0-based
+TID=$((task_id - 1))  # 0-based
 temp_idx=$((TID / runs))
 run_num=$((TID % runs + 1))
 temperature=${temperatures[$temp_idx]}
 seed=${seeds[$run_num-1]}
 
-## Load modules
-MODULES
-
-## define the parallel equilibration engine (qdynp) and serial switching engine (qdyn)
-QDYNP
-QDYN_NEQ
+## Prepare the job environment (profile setup lines and modules)
+ENVIRONMENT_SETUP
+## the parallel equilibration engine (qdynp) and serial switching engine (qdyn)
+ENGINE_PATHS
+# Fail in the first second, with a clear message, if this node cannot see the Q binaries
+# (wrong path, or a job environment that did not inherit the submit environment).
+for exe in ENGINE_VARS; do
+    if [ ! -x "$exe" ]; then
+        echo "ERROR: Q binary missing or not executable on $(hostname): $exe"
+        exit 1
+    fi
+done
 
 # Fail on the first error, so a failed mpirun can't exit 0 and be recorded COMPLETED. Set after
 # `module`, which returns non-zero on some stacks just for unload warnings.
 set -eo pipefail
 
 # Pin one rank per core: above two ranks mpirun maps by socket, which misplaces ranks when SLURM
-# splits the allocated cores unevenly across sockets.
-mpi_map="--map-by core --bind-to core"
+# splits the allocated cores unevenly across sockets. Empty for local execution, where there is
+# no scheduler cpuset to bind into.
+mpi_map="MPI_BINDING"
+
+# In-place sed that works with both GNU sed and BSD (macOS) sed.
+sedi() { sed -i.bak "$@" && rm -f -- *.inp.bak; }
 
 rundir=$workdir/$temperature/$run_num
 mkdir -p $rundir
@@ -96,13 +105,13 @@ cp $inputfiles/*.top .
 cp $inputfiles/$fepfile .
 
 # Custom random seed, temperature and FEP file for this realization
-sed -i "s/SEED_VAR/$seed/" eq1.inp
-sed -i "s/T_VAR/$temperature/" *.inp
-sed -i "s/FEP_VAR/$fepfile/" *.inp
+sedi "s/SEED_VAR/$seed/" eq1.inp
+sedi "s/T_VAR/$temperature/" *.inp
+sedi "s/FEP_VAR/$fepfile/" *.inp
 
 # 1) Equilibration eq1 -> eq5 with the MPI engine across all cores (fixed lambda)
 for i in 1 2 3 4 5; do
-    time mpirun -np $ncores $mpi_map $qdynp eq$i.inp > eq$i.log
+    EQUILIBRATION_LAUNCH $qdynp eq$i.inp > eq$i.log
 done
 
 # 2) Endpoint equilibration chain (MPI): one continuous trajectory per endpoint,
@@ -117,7 +126,7 @@ for rep in $(seq 0 $((neq_reps - 1))); do
         if [ "$rep" -eq 0 ]; then eqsrc=relax_${s}.inp; else eqsrc=eq6_${s}.inp; fi
         sed "s|RESTARTFILE|eq6_${s}_prev.re|; s|FINALFILE|eq6_${s}_${rep}.re|" \
             "$eqsrc" > eq6_${s}_run${rep}.inp
-        time mpirun -np $ncores $mpi_map $qdynp eq6_${s}_run${rep}.inp > eq6_${s}_${rep}.log
+        EQUILIBRATION_LAUNCH $qdynp eq6_${s}_run${rep}.inp > eq6_${s}_${rep}.log
         cp eq6_${s}_${rep}.re eq6_${s}_prev.re
     done
 done

@@ -11,6 +11,7 @@ from typing import Optional
 
 from ..IO import parse_qprep_total_charge
 from ..logger import logger, setup_logger
+from .config_args import resolve_run_settings
 from .parser_base import parse_arguments
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -49,11 +50,18 @@ def create_call(**kwargs):
     if "wath_ligand_only" in kwargs and kwargs["wath_ligand_only"]:
         template += " -wath-ligo"
     if kwargs.get("neq"):
-        template += (
-            " --neq --neq-reps {neq_reps} --neq-steps {neq_steps} "
-            "--neq-eq-steps {neq_eq_steps} --neq-relax-steps {neq_relax_steps} "
-            "-L {neq_L} --neq-schedule {neq_schedule}"
-        )
+        template += " --neq --neq-reps {neq_reps} -L {neq_L} --neq-schedule {neq_schedule}"
+        # Stage lengths are forwarded only when given on the command line; otherwise qligfep
+        # takes them from the protocol's stages (or its defaults).
+        for name in ("neq_steps", "neq_eq_steps", "neq_relax_steps"):
+            if kwargs.get(name) is not None:
+                template += f" --{name.replace('_', '-')} {{{name}}}"
+    if kwargs.get("protocol") is not None:
+        template += " --protocol '{protocol}'"
+    if kwargs.get("config") is not None:
+        template += " --config '{config}'"
+    if kwargs.get("q_bin") is not None:
+        template += " --q-bin '{q_bin}'"
     if "protein_charge" in kwargs and kwargs["protein_charge"] is not None:
         template += " -pq {protein_charge}"
     if "softcore_method" in kwargs and kwargs["softcore_method"] != "standard":
@@ -83,6 +91,9 @@ def submit_command(command: str) -> None:
 def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     # setup the logger with the desired log level
     setup_logger(level=args.log)
+    # Validates the profile and protocol once, before any edge is set up, and fills the
+    # protocol-governed settings the command line left unset.
+    resolve_run_settings(args)
 
     cwd = Path.cwd()
 
@@ -164,9 +175,12 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 wath_ligand_only=args.wath_ligand_only,
                 neq=args.neq,
                 neq_reps=args.neq_reps,
-                neq_steps=args.neq_steps,
-                neq_eq_steps=args.neq_eq_steps,
-                neq_relax_steps=args.neq_relax_steps,
+                neq_steps=args.neq_steps if "neq_steps" in args.explicit_neq_steps else None,
+                neq_eq_steps=args.neq_eq_steps if "neq_eq_steps" in args.explicit_neq_steps else None,
+                neq_relax_steps=args.neq_relax_steps if "neq_relax_steps" in args.explicit_neq_steps else None,
+                protocol=args.protocol,
+                config=(str(Path(args.config).resolve()) if args.config else None),
+                q_bin=args.q_bin,
                 neq_L=args.neq_L,
                 neq_schedule=args.neq_schedule,
                 protein_charge=protein_charge,

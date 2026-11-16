@@ -11,6 +11,7 @@ import pandas as pd
 from sklearn.neighbors import NearestNeighbors
 
 from .CLI.utils import handle_cysbonds, parse_restraint_method
+from .config import Profile, StageOverride, load_config
 from .counter_ions import minimize_coulomb_on_sphere
 from .functions import COG, overlapping_pairs, sigmoid
 from .IO import get_force_field_paths, qprep_error_check, replace, run_qprep
@@ -26,7 +27,7 @@ from .pdb_utils import (
     shift_from_ligand_collision,
 )
 from .provenance import copy_with_provenance, is_comment, provenance_header
-from .settings.settings import CLUSTER_DICT, CONFIGS
+from .settings.settings import CONFIGS
 from .templates import (
     QprepFEPParameters,
     format_energy_files,
@@ -37,12 +38,13 @@ from .templates import (
     render_qfep_input,
     render_qprep_fep_input,
 )
-from .templates.run_local import LocalRunConfig, render_local_run
+from .templates.overrides import apply_stage_override
 from .templates.sections import (
     format_distance_restraints,
     format_sequence_restraint,
     format_water_restraint,
 )
+from .templates.submit import engine_block, render_submit_script
 
 WATER_ATOM_TYPES = {
     "AMBER14sb": ("OW", "HW"),
@@ -125,7 +127,18 @@ class QligFEP:
         charge_method: str = "ion_match",
         minimize: bool = False,
         production: bool = False,
+        profile: Optional[Profile] = None,
+        stage_overrides: Optional[dict[str, StageOverride]] = None,
     ):
+        """
+        Args:
+            cluster: Name of the execution profile (see ``qligfep_config show``). Ignored
+                when ``profile`` is given.
+            profile: Resolved execution profile. Defaults to the profile named ``cluster``
+                from the layered configuration files.
+            stage_overrides: Per-stage changes from a protocol (``stages`` in
+                ``qligfep.yaml``), keyed by stage name.
+        """
         self.timestep = timestep
         self.minimize = minimize
         self.production = production
@@ -135,7 +148,9 @@ class QligFEP:
         self.lib_file, self.prm_file = get_force_field_paths(FF)
         self.system = system
         self.rootdir = os.getcwd()
-        self.cluster = cluster
+        self.profile = profile if profile is not None else load_config().get_profile(cluster, system=system)
+        self.cluster = self.profile.name
+        self.stage_overrides = dict(stage_overrides or {})
         self.sphereradius = sphereradius
         self.cysbond = cysbond
         self.start = start
@@ -159,12 +174,12 @@ class QligFEP:
         self.neq_relax_steps = neq_relax_steps
         self.neq_L = neq_L
         self.neq_schedule = neq_schedule
-        if self.neq and self.cluster in ("LOCAL", "LOCALP"):
-            # NEQ setups are generated from the SLURM run_neq.sh template, which needs the
-            # qdynp/qdyn engine paths that only the cluster profiles carry; there is no local NEQ runner.
+        if self.neq and not self.profile.use_mpi:
+            # The fixed-lambda equilibration runs qdynp and the switches are fanned out
+            # one per core through mpirun, so a serial-only profile cannot run them.
             raise ValueError(
-                f"--neq is not supported on cluster '{self.cluster}': the {self.cluster} profile "
-                "does not define QDYN_NEQ. Use a SLURM cluster profile for non-equilibrium setups."
+                f"--neq is not supported by profile '{self.cluster}': its engine is the serial "
+                "'qdyn'. Non-equilibrium setups need a profile with `engine: qdynp` (MPI)."
             )
         # Temporary until flag is here
         self.ABS = False  # True
@@ -207,6 +222,19 @@ class QligFEP:
         else:
             self.atomoffset = 0
             self.residueoffset = 0
+
+    def _get_profile(self) -> Profile:
+        """The execution profile, resolved from ``self.cluster`` when not set explicitly."""
+        profile = getattr(self, "profile", None)
+        if profile is None or profile.name != self.cluster:
+            profile = load_config().get_profile(self.cluster, system=getattr(self, "system", None))
+            self.profile = profile
+        return profile
+
+    def _stage_params(self, stage: str, params):
+        """Apply the protocol's overrides for ``stage`` to an MDParameters instance."""
+        overrides = getattr(self, "stage_overrides", None) or {}
+        return apply_stage_override(params, overrides.get(stage), stage)
 
     def _trajectory_output(self, params, filename: str) -> Optional[str]:
         """Configure and return a trajectory filename for an MD input."""
@@ -1093,6 +1121,7 @@ class QligFEP:
                 minimize=self.minimize,
             )
         ):
+            eq_config.params = self._stage_params(eq_config.name, eq_config.params)
             dr_str, seq_str = self._format_restraints_for_eq(
                 overlapping_atoms, lig_size1, lig_size2, eq_config, self.dr_force
             )
@@ -1202,6 +1231,7 @@ class QligFEP:
             eq_lambda1, eq_lambda2 = "1.000", "0.000"
 
         prod_config = get_production_config(self.timestep, int(self.sphereradius), self.dr_force)
+        prod_config.params = self._stage_params("production", prod_config.params)
 
         # eq files + initial md file
         file_list1 = self._write_equilibration_files(
@@ -1397,7 +1427,15 @@ class QligFEP:
         return file_list1, file_list2, file_list3
 
     def _write_endpoint_file(
-        self, file_out, lambda1, lambda2, steps, distance_restraints, sequence_restraints, lambda_scaling=None
+        self,
+        file_out,
+        lambda1,
+        lambda2,
+        steps,
+        distance_restraints,
+        sequence_restraints,
+        lambda_scaling=None,
+        stage: Optional[str] = None,
     ):
         """Write a single non-equilibrium endpoint MD input file via render_md_input.
 
@@ -1409,6 +1447,8 @@ class QligFEP:
         the endpoint.
         """
         params = get_neq_endpoint_config(self.timestep, int(self.sphereradius), steps)
+        if stage is not None:
+            params = self._stage_params(stage, params)
         content = render_md_input(
             params=params,
             lambda1=lambda1,
@@ -1445,10 +1485,22 @@ class QligFEP:
         endpoint_lambdas = {"0": ("0.000", "1.000"), "1": ("1.000", "0.000")}
         for state, (lambda1, lambda2) in endpoint_lambdas.items():
             self._write_endpoint_file(
-                writedir + f"/relax_{state}.inp", lambda1, lambda2, self.neq_relax_steps, dr_str, seq_str
+                writedir + f"/relax_{state}.inp",
+                lambda1,
+                lambda2,
+                self.neq_relax_steps,
+                dr_str,
+                seq_str,
+                stage="relax",
             )
             self._write_endpoint_file(
-                writedir + f"/eq6_{state}.inp", lambda1, lambda2, self.neq_eq_steps, dr_str, seq_str
+                writedir + f"/eq6_{state}.inp",
+                lambda1,
+                lambda2,
+                self.neq_eq_steps,
+                dr_str,
+                seq_str,
+                stage="spacing",
             )
             self._write_endpoint_file(
                 writedir + f"/neq_{state}.inp",
@@ -1458,225 +1510,148 @@ class QligFEP:
                 dr_str,
                 seq_str,
                 lambda_scaling,
+                stage="switch",
             )
             file_list += [f"relax_{state}.inp", f"eq6_{state}.inp", f"neq_{state}.inp"]
         return file_list
 
-    def write_neq_runfile(self, writedir, file_list):
-        """Write the SLURM run script for a non-equilibrium FEP. Each array task runs
-        eq1-5, then loops `neq_reps` iterations of a forward/reverse lambda switch pair with the
-        serial qdyn engine (NEQ mode selected by the [lambda_scaling] section in neq_*.inp).
+    def _jobname(self) -> str:
+        prefix = {"water": "w_", "protein": "p_", "vacuum": "v_"}.get(getattr(self, "system", ""), "")
+        return f"{prefix}{self.lig1}_{self.lig2}"
 
-        Each iteration produces a forward and a reverse switch, so `neq_reps` iterations give
-        ``2*neq_reps`` independent switches. They run concurrently, so the allocation is sized to
-        hold them all in a single wave: ``max(2*neq_reps, cluster_default)``. Flooring at the
-        cluster default keeps at least the billed core count (some clusters bill a fixed minimum,
-        and the equilibration runs the parallel qdynp engine across all of them); growing to the
-        switch count when the protocol needs more avoids a starved tail wave that would double the
-        switch-phase wall time.
-        """
+    def _total_tasks(self) -> int:
+        """Array size: one task per (temperature, replicate) pair."""
+        return int(self.replicates) * len(str(self.temperature).split(","))
+
+    def _script_replacements(self, method: str, ntasks: int) -> dict[str, str]:
+        """Template substitutions shared by the windowed and non-equilibrium run scripts."""
+        profile = self._get_profile()
+        engines, engine_vars = engine_block(profile, method)
+        return {
+            "SBATCH_HEADER": profile.sbatch_header(method, self._jobname(), self._total_tasks(), ntasks),
+            "TEMP_VAR": str(self.temperature).replace(",", " "),
+            "RANDOM_SEEDS": " ".join(str(seed) for seed in self.seeds),
+            "FEPS": "FEP1.fep",
+            "DEFAULT_NTASKS": str(ntasks),
+            "ENVIRONMENT_SETUP": profile.environment_block(),
+            "ENGINE_PATHS": engines,
+            "ENGINE_VARS": engine_vars,
+        }
+
+    @staticmethod
+    def _make_executable(path) -> None:
+        try:
+            st = os.stat(path)
+            os.chmod(path, st.st_mode | stat.S_IEXEC)
+        except OSError:
+            logger.warning(f"Could not change permission for {path}")
+
+    def neq_cores(self) -> int:
+        """Cores requested for a non-equilibrium task (see ``Profile.neq_cores``)."""
         if self.neq_reps < 1:
             raise ValueError(f"neq_reps must be >= 1 to size the switch allocation, got {self.neq_reps}")
-
-        src = CONFIGS["INPUT_DIR"] + "/run_neq.sh"
-        tgt = writedir + "/run" + self.cluster + ".sh"
-
-        replacements = dict(CLUSTER_DICT[self.cluster])
-        replacements["FEPS"] = "FEP1.fep"
-        replacements["NEQ_REPS"] = str(self.neq_reps)
+        profile = self._get_profile()
         n_switches = 2 * self.neq_reps
-        ncores = max(n_switches, int(replacements["NTASKS"]))
-        replacements["NTASKS"] = str(ncores)
-        logger.info(f"NEQ run: {n_switches} switches per replicate on {ncores} cores (one concurrent wave).")
+        ncores = profile.neq_cores(n_switches)
+        if ncores >= n_switches:
+            logger.info(f"NEQ run: {n_switches} switches per replicate on {ncores} cores (one concurrent wave).")
+        else:
+            waves = -(-n_switches // ncores)
+            logger.info(
+                f"NEQ run: {n_switches} switches per replicate on {ncores} cores, in {waves} waves "
+                f"(profile '{profile.name}' sets resources.neq_cores: {ncores})."
+            )
+            if n_switches % ncores:
+                logger.warning(
+                    f"{n_switches} switches do not divide evenly over {ncores} cores: the last wave "
+                    "leaves cores idle. Prefer a divisor of the switch count."
+                )
+        return ncores
+
+    def write_neq_runfile(self, writedir, file_list):
+        """Write the run script for a non-equilibrium FEP. Each task runs eq1-5, then loops
+        `neq_reps` iterations of a forward/reverse lambda switch pair with the serial qdyn
+        engine (NEQ mode selected by the [lambda_scaling] section in neq_*.inp).
+
+        Each iteration produces a forward and a reverse switch, so `neq_reps` iterations give
+        ``2*neq_reps`` independent switches, which run concurrently. How many cores the task
+        gets is the profile's decision (``resources.neq_cores``): by default the allocation
+        holds every switch in a single wave and never drops below the profile's ``ntasks``,
+        because the equilibration runs the parallel engine across all of them and some
+        clusters bill a fixed minimum. An explicit core count is respected, and the script
+        then fires the switches in successive waves.
+        """
+        profile = self._get_profile()
+        ncores = self.neq_cores()
+        src = CONFIGS["INPUT_DIR"] + "/run_neq.sh"
+        tgt = writedir + "/" + profile.runfile_name
+
+        replacements = self._script_replacements("nonequilibrium", ncores)
+        replacements["NEQ_REPS"] = str(self.neq_reps)
+        replacements["MPI_BINDING"] = profile.mpi_binding()
+        if profile.mpi_command:
+            replacements["EQUILIBRATION_LAUNCH"] = f"time {profile.mpi_command}"
+        else:
+            replacements["EQUILIBRATION_LAUNCH"] = "time mpirun -np $ncores $mpi_map"
         with open(src) as infile, open(tgt, "w") as outfile:
             for line in infile:
-                if line.strip() == "#SBATCH --array=1-TOTAL_JOBS":
-                    replacements["TOTAL_JOBS"] = str(self.replicates)
-                if line.strip() == "temperatures=(TEMP_VAR)":
-                    replacements["TEMP_VAR"] = str(self.temperature)
-                if line.strip() == "seeds=(RANDOM_SEEDS)":
-                    replacements["RANDOM_SEEDS"] = " ".join([str(s) for s in self.seeds])
-                if line.strip() == "#SBATCH -A ACCOUNT":
-                    try:  # Try to take account info - not for all clusters!
-                        replacements["ACCOUNT"]
-                    except KeyError:
-                        line = ""
-                if line.strip() == "#SBATCH -J JOBNAME":
-                    if self.cluster == "DARDEL":  # TODO: refactor this...
-                        outfile.write("#SBATCH -p shared\n")
-                    elif self.cluster == "SNELLIUS":
-                        outfile.write("#SBATCH -p rome\n")
-                    try:
-                        if self.system == "water":
-                            jobname = "w_"
-                        elif self.system == "protein":
-                            jobname = "p_"
-                        elif self.system == "vacuum":
-                            jobname = "v_"
-                        jobname += self.lig1 + "_" + self.lig2
-                        replacements["JOBNAME"] = jobname
-                    except Exception as e:
-                        logger.error(f"Something went wrong while defining the jobname:\n{e}")
-                        line = ""
-                outline = replace(line, replacements)
-                if outline.strip().startswith("#SBATCH --mem-per-cpu=512") and self.cluster == "CSB":
-                    continue
-                outfile.write(outline)
+                outfile.write(replace(line, replacements))
                 if line.strip() == "#CLEANUP" and self.to_clean is not None:
-                    rm_line = cleanup_command(self.to_clean)
-                    outfile.write(rm_line)
-
-        try:
-            st = os.stat(tgt)
-            os.chmod(tgt, st.st_mode | stat.S_IEXEC)
-        except OSError:
-            logger.warning(f"Could not change permission for {tgt}")
+                    outfile.write(cleanup_command(self.to_clean))
+        self._make_executable(tgt)
 
     def write_submitfile(self, writedir):
-        if self.cluster in ("LOCAL", "LOCALP"):
-            return
-        replacements = {}
-        replacements["RUNFILE"] = "run" + self.cluster + ".sh"
-        submit_in = CONFIGS["ROOT_DIR"] + "/INPUTS/FEP_submit.sh"
-        submit_out = writedir + ("/FEP_submit.sh")
-        with open(submit_in) as infile, open(submit_out, "w") as outfile:
-            for line in infile:
-                line = replace(line, replacements)
-                outfile.write(line)
-
-        try:
-            st = os.stat(submit_out)
-            os.chmod(submit_out, st.st_mode | stat.S_IEXEC)
-        except OSError:
-            print("WARNING: Could not change permission for " + submit_out)
-
-    def _write_local_runfile(self, writedir, file_list):
-        """Generate a local run script using the Python template."""
-        cluster_config = CLUSTER_DICT[self.cluster]
-        eq_basenames = [Path(f).stem for f in sorted(glob.glob(writedir + "/eq*.inp"))]
-
-        # Collect MD basenames in execution order
-        if self.start == "1":
-            md_basenames = [Path(f).stem for f in reversed(sorted(glob.glob(writedir + "/md*.inp")))]
-        elif self.start == "0.5":
-            md_1 = file_list[1]
-            md_2 = file_list[2]
-            md_basenames = ["md_0500_0500"]
-            for i in range(len(md_1)):
-                md_basenames.append(Path(md_1[i]).stem)
-                md_basenames.append(Path(md_2[i]).stem)
-
-        config = LocalRunConfig(
-            qdyn_path=cluster_config["QDYN"],
-            qfep_path=cluster_config["QFEP"],
-            use_mpi=cluster_config["USE_MPI"],
-            ntasks=int(cluster_config["NTASKS"]),
-            temperatures=self.temperature.split(","),
-            seeds=self.seeds,
-            eq_files=eq_basenames,
-            md_files=md_basenames,
-            fep_files=["FEP1.fep"],
-            final_md_restart="md_0000_1000.re",
-            cleanup_patterns=self.to_clean if self.to_clean else None,
-        )
-
-        script_content = render_local_run(config)
-        tgt = writedir + "/run" + self.cluster + ".sh"
-        with open(tgt, "w") as outfile:
-            outfile.write(script_content)
-
-        try:
-            st = os.stat(tgt)
-            os.chmod(tgt, st.st_mode | stat.S_IEXEC)
-        except Exception:
-            logger.warning(f"Could not change permission for {tgt}")
+        """Write FEP_submit.sh, which starts the run script's tasks through Slurm or locally."""
+        profile = self._get_profile()
+        ntasks = self.neq_cores() if getattr(self, "neq", False) else profile.resources.ntasks
+        submit_out = writedir + "/FEP_submit.sh"
+        Path(submit_out).write_text(render_submit_script(profile, self._total_tasks(), ntasks))
+        self._make_executable(submit_out)
 
     def write_runfile(self, writedir, file_list):
-        if self.cluster in ("LOCAL", "LOCALP"):
-            self._write_local_runfile(writedir, file_list)
-            return
+        """Write the run script for a windowed FEP.
 
+        The same script serves every execution type: Slurm runs it as an array job, and
+        for a local profile FEP_submit.sh starts its tasks on this machine.
+        """
+        profile = self._get_profile()
         src = CONFIGS["INPUT_DIR"] + "/run.sh"
-        tgt = writedir + "/run" + self.cluster + ".sh"
-        EQ_files = sorted(glob.glob(writedir + "/eq*.inp"))
+        tgt = writedir + "/" + profile.runfile_name
+        eq_stages = [Path(f).stem for f in sorted(glob.glob(writedir + "/eq*.inp"))]
 
         if self.start == "1":
-            MD_files = reversed(sorted(glob.glob(writedir + "/md*.inp")))
-
+            md_stages = [[Path(f).stem] for f in reversed(sorted(glob.glob(writedir + "/md*.inp")))]
         elif self.start == "0.5":
-            md_1 = file_list[1]
-            md_2 = file_list[2]
+            md_stages = [["md_0500_0500"]]
+            md_stages += [[Path(md1).stem, Path(md2).stem] for md1, md2 in zip(file_list[1], file_list[2])]
+        else:
+            raise ValueError(f"start={self.start!r} is not supported; use '0.5' or '1'.")
 
-        # --map-by core pins one rank per core in the job's cpuset. Above two ranks, mpirun defaults to
-        # spreading ranks evenly across sockets, ignoring how many cores SLURM placed on each; on an
-        # uneven split (e.g. 6+2 of 8) that maps more ranks to the small socket than it has cores, and
-        # --bind-to core then refuses to launch ("binding more processes than cpus on a resource").
-        mpirun = "time mpirun -n $SLURM_NTASKS --map-by core --bind-to core $qdyn"
+        # For MPI under Slurm the launch pins one rank per core in the job's cpuset. Above two
+        # ranks, mpirun defaults to spreading ranks evenly across sockets, ignoring how many cores
+        # SLURM placed on each; on an uneven split (e.g. 6+2 of 8) that maps more ranks to the small
+        # socket than it has cores, and --bind-to core then refuses to launch.
+        launch = f"{profile.launch_prefix()} $qdyn"
 
-        replacements = dict(CLUSTER_DICT[self.cluster])
-        replacements["FEPS"] = "FEP1.fep"
+        replacements = self._script_replacements("equilibrium", profile.resources.ntasks)
         with open(src) as infile, open(tgt, "w") as outfile:
             for line in infile:
-                if line.strip() == "#SBATCH --array=1-TOTAL_JOBS":
-                    replacements["TOTAL_JOBS"] = str(self.replicates)
-                if line.strip() == "temperatures=(TEMP_VAR)":
-                    replacements["TEMP_VAR"] = str(self.temperature)
-                if line.strip() == "seeds=(RANDOM_SEEDS)":
-                    replacements["RANDOM_SEEDS"] = " ".join([str(s) for s in self.seeds])
-                if line.strip() == "#SBATCH -A ACCOUNT":
-                    try:  # Try to take account info - not for all clusters!
-                        replacements["ACCOUNT"]
-                    except KeyError:
-                        line = ""
-                if line.strip() == "#SBATCH -J JOBNAME":
-                    if self.cluster == "DARDEL":  # TODO: refactor this...
-                        outfile.write("#SBATCH -p shared\n")
-                    elif self.cluster == "SNELLIUS":
-                        outfile.write("#SBATCH -p rome\n")
-                    try:
-                        if self.system == "water":
-                            jobname = "w_"
-                        elif self.system == "protein":
-                            jobname = "p_"
-                        elif self.system == "vacuum":
-                            jobname = "v_"
-                        jobname += self.lig1 + "_" + self.lig2
-                        replacements["JOBNAME"] = jobname
-                    except Exception as e:
-                        logger.error(f"Something went wrong while defining the jobname:\n{e}")
-                        line = ""
-                outline = replace(line, replacements)
-                # This configuration is not available for CSB
-                if outline.strip().startswith("#SBATCH --mem-per-cpu=512") and self.cluster == "CSB":
-                    continue
-                outfile.write(outline)
+                outfile.write(replace(line, replacements))
                 if line.strip() == "#EQ_FILES":
-                    for line in EQ_files:
-                        file_base = Path(line).stem
-                        outfile.write(f"{mpirun} {file_base}.inp > {file_base}.log\n")
-
+                    for stage in eq_stages:
+                        outfile.write(f"{launch} {stage}.inp > {stage}.log\n")
                 if line.strip() == "#RUN_FILES":
-                    if self.start == "1":
-                        for line in MD_files:
-                            file_base = line.split("/")[-1][:-4]
-                            outfile.write(f"{mpirun} {file_base}.inp > {file_base}.log\n")
-
-                    elif self.start == "0.5":
-                        outfile.write(f"{mpirun} md_0500_0500.inp > md_0500_0500.log\n\n")
-                        for md1, md2 in zip(md_1, md_2):
-                            outfile.write(f"{mpirun} {md1[:-4]}.inp > {md1[:-4]}.log\n")
-                            outfile.write(f"{mpirun} {md2[:-4]}.inp > {md2[:-4]}.log\n")
+                    for group in md_stages:
+                        for stage in group:
+                            outfile.write(f"{launch} {stage}.inp > {stage}.log\n")
+                        if self.start == "0.5":
                             outfile.write("\n")
                 if line.strip() == "#CLEANUP" and self.to_clean is not None:
-                    replacements["CLEANUP"] = "#Cleaned {} files\n".format(" ".join(self.to_clean))
-                    outline = replace(line, replacements)
                     if self.production and self.minimize and "log" in self.to_clean:
-                        outfile.write(
-                            "if [ -f eq1.log ]; then cp eq1.log eq1.minimization; fi\n"
-                        )
-                    rm_line = cleanup_command(self.to_clean)
-                    outfile.write(rm_line)
-                    outfile.write(outline[1:])
+                        outfile.write("if [ -f eq1.log ]; then cp eq1.log eq1.minimization; fi\n")
+                    outfile.write(cleanup_command(self.to_clean))
+                    outfile.write("#Cleaned {} files\n".format(" ".join(self.to_clean)))
+        self._make_executable(tgt)
 
     def write_qfep(self, windows, lambdas):
         qfep_out = self.write_dir + "/inputfiles/qfep.inp"
@@ -1912,8 +1887,7 @@ class QligFEP:
 
     def qprep(self, writedir):
         os.chdir(writedir)
-        cluster_options = CLUSTER_DICT[self.cluster]
-        qprep_path = cluster_options["QPREP"]
+        qprep_path = str(self._get_profile().binary("qprep"))
         logger.info(f"Running QPREP from path {qprep_path}")
         run_qprep(qprep_path, "qprep.inp", "qprep.out", self.FF)
         os.chdir("../../")

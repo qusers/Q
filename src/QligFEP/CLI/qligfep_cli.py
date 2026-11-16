@@ -6,11 +6,14 @@ import json
 from pathlib import Path
 from typing import Optional
 
+import yaml
+
 from ..logger import logger, setup_logger
 from ..pdb_utils import read_pdb_to_dataframe, residue_atom_serial_range
 from ..provenance import provenance_record
 from ..qligfep import COUNTER_WATER_RESNAME, QligFEP
 from ..templates.sections import format_wall_restraints
+from .config_args import resolve_run_settings, resolved_snapshot
 from .parser_base import parse_arguments
 
 
@@ -23,7 +26,9 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         args: argparse.Namespace object containing all the arguments.
         kwargs: keyword arguments that will be passed to QligFEP class.
     """
+    profile = protocol = None
     if args is not None:
+        profile, protocol = resolve_run_settings(args, system=args.system)
         param_dict = {
             "lig1": args.lig1,
             "lig2": args.lig2,
@@ -61,8 +66,14 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     param_dict.update(kwargs)
     setup_logger(level=args.log.upper())
     softcore_method = param_dict.pop("softcore_method", "standard")
-    run = QligFEP(**param_dict)
+    run = QligFEP(
+        **param_dict,
+        profile=profile,
+        stage_overrides=getattr(args, "stage_overrides", None),
+    )
     param_dict["softcore_method"] = softcore_method
+    if protocol is not None:
+        param_dict["protocol"] = protocol.name
 
     writedir = run.makedir()
     inputdir = writedir + "/inputfiles"
@@ -100,6 +111,9 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         else:
             command_str += f" --{k} {v}"
     command_str += f" --restraint_method {args.restraint_method}"
+    for flag, value in (("--config", args.config), ("--q-bin", args.q_bin)):
+        if value is not None:
+            command_str += f" {flag} {value}"
     time_now = datetime.datetime.now()
     date_str = time_now.strftime("%Y-%m-%d %H:%M:%S")
     (Path(inputdir) / "fep_config.json").write_text(
@@ -108,6 +122,14 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             indent=4,
         )
     )
+
+    if profile is not None:
+        # The fully resolved profile and protocol: which engine, modules, resources and stage
+        # settings produced these inputs, independent of the configuration files' later state.
+        (Path(inputdir) / "resolved_config.yaml").write_text(
+            "# Written by qligfep: the execution profile and protocol used for this setup.\n"
+            + yaml.safe_dump(resolved_snapshot(profile, protocol, args), sort_keys=False)
+        )
 
     a = run.read_files()
     changes_for_libfiles = a[0][1]
