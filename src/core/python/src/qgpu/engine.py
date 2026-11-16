@@ -34,7 +34,7 @@ class Engine:
         if not isinstance(config, Config):
             raise TypeError(
                 f"config must be a qgpu.Config, got {type(config).__name__}")
-        _reject_extra(config)
+        _reject_unsupported(config)
         self._mod = _native.load(precision)
         self._precision = precision
         lists = {"lambdas": [[str(x) for x in config.lambdas]]}
@@ -106,12 +106,16 @@ class Engine:
         self._config = config
 
     def _configure(self, config: Config):
-        _reject_extra(config)
+        _reject_unsupported(config)
         self._native.configure(self._to_native(config))
 
     def run(self):
         """Run config.steps steps from the current state."""
         self._native.run()
+
+    def get_energies(self):
+        """Not available yet on the CUDA engine: name an energy_file instead."""
+        raise InputError("The CUDA engine cannot return energies in memory yet: set energy_file.")
 
     def get_state(self):
         return self._native.get_state()
@@ -157,7 +161,11 @@ class Engine:
         return s
 
 
-def _reject_extra(config: Config):
+def _reject_unsupported(config: Config):
+    """What the CUDA engine cannot do yet, refused before it is touched."""
+    if (config.energy or 0) > 0 and not config.energy_file:
+        raise InputError("The CUDA engine writes energies to a file only: energy > 0 needs energy_file "
+                         "(or set energy=0).")
     if config.extra:
         keys = ", ".join(f"[{section}] {key}" for section, items in config.extra.items() for key in items)
         raise InputError(f"The CUDA engine does not support these qdyn keywords yet: {keys}. "

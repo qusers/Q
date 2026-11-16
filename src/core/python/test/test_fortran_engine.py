@@ -336,3 +336,73 @@ def test_from_sections_and_lossless_inp(tmp_path):
     assert config.steps == 20 and config.extra["md"] == {"minimize": "on"}
     assert config.seq_restraints == (SeqRestraint(1, 12, 5.0, False, 1),)
     assert config.final_file == str(tmp_path.resolve() / "a.re")
+
+
+def test_energies_in_memory(tmp_path, launch):
+    """get_energies() holds what energy_file would hold; without a file none is left anywhere."""
+    from qgpu.fortran import read_energy_file
+
+    qdyn, prefix = launch
+    results = []
+    for name, energy_file in (("file", tmp_path / "md.en"), ("memory", "")):
+        work = tmp_path / name
+        engine = FortranEngine(base_config(steps=40), qdyn=qdyn, mpi=prefix, workdir=work)
+        with pytest.raises(InputError, match="No energies"):
+            engine.get_energies()
+        engine.run()
+        engine.update_config(lambdas=(0.5, 0.5), energy=10, energy_file=energy_file)
+        engine.run()
+        results.append(engine.get_energies())
+        assert sorted(p.name for p in work.iterdir()) == ["benzene-water.top", "fep.fep", "run_0002.re"]
+        engine.update_config(energy=0, energy_file="")
+        engine.run()
+        with pytest.raises(InputError, match="No energies"):
+            engine.get_energies()
+        engine.close()
+    from_file, in_memory = results
+    assert from_file == in_memory == read_energy_file(tmp_path / "md.en")
+    assert in_memory.to_bytes() == (tmp_path / "md.en").read_bytes()
+    assert (in_memory.n_frames, in_memory.n_states, in_memory.n_offdiag) == (3, 2, 0)  # steps 10, 20, 30: qdyn counts steps from 0
+    rows = in_memory.q_energies
+    assert list(rows["frame"]) == [1, 1, 2, 2, 3, 3] and list(rows["state"]) == [1, 2] * 3
+    assert set(rows["lambda"]) == {0.5}
+
+
+def test_energy_file_codec(tmp_path):
+    """Frames with off-diagonal elements, an empty file, and what is refused."""
+    import struct
+
+    from qgpu.fortran import ENERGY_TERMS, parse_energies
+
+    def record(payload):
+        return struct.pack("<i", len(payload)) + payload + struct.pack("<i", len(payload))
+
+    data = b""
+    for frame in range(3):
+        for state in (1, 2, 3):
+            data += record(struct.pack("<i", state) + struct.pack(f"<{len(ENERGY_TERMS)}d",
+                                                                    *(frame + state + k / 7 for k in range(15))))
+        data += record(b"".join(struct.pack("<iidd", i, i + 1, frame * 0.1, -i / 3) for i in (1, 2)))
+    energies = parse_energies(data)
+    assert (energies.n_frames, energies.n_states, energies.n_offdiag) == (3, 3, 2)
+    assert energies.to_bytes() == data
+    assert list(energies.offdiag["j"]) == [2, 3] * 3 and energies.offdiag["Hij"][-1] == 0.2
+    assert energies.q_energies["q_bond"][4] == 1 + 2 + 2 / 7
+    assert parse_energies(b"").to_bytes() == b"" and parse_energies(b"").n_frames == 0
+    with pytest.raises(InputError, match="Truncated"):
+        parse_energies(data[:-5])
+    with pytest.raises(InputError, match="Not a Q energy file"):
+        parse_energies(record(b"x" * 10))
+    with pytest.raises(InputError, match="losslessly"):
+        parse_energies(data[:-4] + struct.pack("<i", 47))
+
+
+def test_cuda_engine_refuses_energies_in_memory():
+    """Refused before the CUDA modules are loaded, so this needs no GPU."""
+    from qgpu import Engine
+
+    with pytest.raises(InputError, match="energy > 0 needs energy_file"):
+        Engine(base_config(energy=10))
+    with pytest.raises(InputError, match="cannot return energies"):
+        Engine.__new__(Engine).get_energies()
+    assert base_config(energy=10).energy_file == ""  # Config itself accepts it

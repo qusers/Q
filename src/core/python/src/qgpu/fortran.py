@@ -4,12 +4,16 @@
         engine.run()
         engine.update_config(lambdas=(0.5, 0.5), energy=10, energy_file="md_0500_0500.en")
         engine.run()                      # continues from the previous run's restart file
+        engine.update_config(lambdas=(0.6, 0.4), energy_file="")
+        engine.run()
+        energies = engine.get_energies()  # the run's energies in memory; no file is kept
 
 Fortran Q is a separate (MPI) program, so it cannot live inside the Python process the
 way the CUDA engine does. Every run() starts qdyn on a short-lived .inp file, and the state
 is carried from run to run in one Q restart file. Both are an implementation detail and are
 removed again: the workflow is written with Config and update_config() only, and what
 remains on disk is what the Config asked for (energy_file, trajectory_file, final_file).
+Energies need no file: get_energies() returns those of the latest run().
 
 This module is pure Python: it needs no native extension, CUDA or GPU.
 """
@@ -85,6 +89,7 @@ class FortranEngine(Engine):
         self._n_atoms = _topology_atoms(Path(_abs(config.topology)))
         self._n_states = _fep_states(Path(_abs(config.fep))) if config.fep else 0
         self._n_runs = 0
+        self._energies = None
         self.log_file = None  # log of the latest run(): only of a failed one, unless keep_files
         self._configure(config)
         self._config = config
@@ -141,15 +146,29 @@ class FortranEngine(Engine):
 
         self._n_runs += 1
         self._advance(outputs["final"])
+        self._energies = read_energy_file(self._workdir / outputs["energy"]) if "energy" in outputs else None
         if not self._keep:
             (self._workdir / f"{name}.inp").unlink()
             log.unlink()
             self.log_file = None
         for key, target in (("energy", config.energy_file), ("trajectory", config.trajectory_file)):
             if key in outputs:
-                _place(shutil.move, self._workdir / outputs[key], target)
+                if target:
+                    _place(shutil.move, self._workdir / outputs[key], target)
+                else:
+                    (self._workdir / outputs[key]).unlink()
         if config.final_file:
             _place(shutil.copyfile, final, config.final_file)
+
+    def get_energies(self):
+        """The energies the latest run() recorded (every `energy` steps), as an :class:`Energies`.
+
+        Available whether or not the Config names an energy_file.
+        """
+        if self._energies is None:
+            raise InputError("No energies: the latest run() did not record any (energy interval 0), "
+                             "or there was no run() yet.")
+        return self._energies
 
     def get_state(self):
         """Coordinates, velocities and water-polarisation state, as the CUDA engine returns them."""
@@ -362,6 +381,147 @@ def write_restart(path, state):
         data += record(len(theta), theta)
     Path(path).write_bytes(data)
 
+
+# ---- Q energy files (.en): Fortran unformatted records (4-byte length before and after).
+# No header; one frame every `energy` steps (md.f90 calls put_ene of nrgy.f90):
+#   per state:  istate (int32), q_energies (15 float64)
+#   then:       offdiag_save * n_offdiag (int32 i, int32 j, float64 Hij, float64 rkl), possibly empty
+# qfep reads the same layout back with get_ene.
+
+#: q_energies of nrgy.f90, flattened: lambda, total, q (bonded), el/vdw of qx, qq, qp, qw, restraint.
+ENERGY_TERMS = ("lambda", "total", "q_bond", "q_angle", "q_torsion", "q_improper", "qx_el", "qx_vdw",
+                "qq_el", "qq_vdw", "qp_el", "qp_vdw", "qw_el", "qw_vdw", "restraint")
+_STATE_BYTES = 4 + 8 * len(ENERGY_TERMS)
+_OFFDIAG_FIELDS = [("i", "<i4"), ("j", "<i4"), ("Hij", "<f8"), ("rkl", "<f8")]
+_OFFDIAG_BYTES = 24
+
+
+class Energies:
+    """The energy records of one run, frame by frame.
+
+    q_energies: structured array, one row per (frame, state): ``frame`` (from 1), ``state``
+        (the state number qdyn wrote), then the q_energies terms of nrgy.f90 (ENERGY_TERMS).
+    offdiag:    structured array, one row per (frame, off-diagonal element): ``frame``, then
+        offdiag_save of nrgy.f90: ``i``, ``j``, ``Hij``, ``rkl``. Empty without EVB couplings.
+    n_states, n_offdiag: records per frame.
+
+    to_bytes() gives the .en file qdyn wrote, byte for byte.
+    """
+
+    def __init__(self, q_energies, offdiag, n_states, n_offdiag):
+        self.q_energies, self.offdiag = q_energies, offdiag
+        self.n_states, self.n_offdiag = int(n_states), int(n_offdiag)
+        if self.n_states and len(q_energies) % self.n_states:
+            raise InputError(f"{len(q_energies)} energy rows are not whole frames of {self.n_states} states.")
+        if len(offdiag) != self.n_frames * self.n_offdiag:
+            raise InputError(f"Expected {self.n_frames * self.n_offdiag} off-diagonal rows, got {len(offdiag)}.")
+
+    @property
+    def n_frames(self):
+        return len(self.q_energies) // self.n_states if self.n_states else 0
+
+    def to_bytes(self):
+        import numpy as np
+
+        n_frames = self.n_frames
+        frames = np.zeros(n_frames, _frame_dtype(self.n_states, self.n_offdiag))
+        rows = self.q_energies.reshape(n_frames, self.n_states)
+        for k in range(self.n_states):
+            record = frames[f"s{k}"]
+            record["size"] = record["size_end"] = _STATE_BYTES
+            for term in ("state", *ENERGY_TERMS):
+                record[term] = rows[term][:, k]
+        frames["offdiag"]["size"] = frames["offdiag"]["size_end"] = _OFFDIAG_BYTES * self.n_offdiag
+        if self.n_offdiag:
+            cells = self.offdiag.reshape(n_frames, self.n_offdiag)
+            for name, _ in _OFFDIAG_FIELDS:
+                frames["offdiag"]["data"][name] = cells[name]
+        return frames.tobytes()
+
+    def __eq__(self, other):
+        import numpy as np
+
+        return (isinstance(other, Energies) and (self.n_states, self.n_offdiag) == (other.n_states, other.n_offdiag)
+                and np.array_equal(self.q_energies, other.q_energies) and np.array_equal(self.offdiag, other.offdiag))
+
+    def __repr__(self):
+        return f"Energies({self.n_frames} frames, {self.n_states} states, {self.n_offdiag} off-diagonal)"
+
+
+def q_energies_dtype():
+    """Row type of Energies.q_energies."""
+    return [("frame", "<i4"), ("state", "<i4"), *((term, "<f8") for term in ENERGY_TERMS)]
+
+
+def offdiag_dtype():
+    """Row type of Energies.offdiag."""
+    return [("frame", "<i4"), *_OFFDIAG_FIELDS]
+
+
+def _frame_dtype(n_states, n_offdiag):
+    """One frame of a .en file, record markers included (packed, little-endian)."""
+    state = [("size", "<i4"), ("state", "<i4"), *((term, "<f8") for term in ENERGY_TERMS), ("size_end", "<i4")]
+    offdiag = [("size", "<i4"), ("data", _OFFDIAG_FIELDS, (n_offdiag,)), ("size_end", "<i4")]
+    return [*((f"s{k}", state) for k in range(n_states)), ("offdiag", offdiag)]
+
+
+def parse_energies(data, name="energy file"):
+    """The content of a Q .en file as :class:`Energies`.
+
+    Raises InputError unless the content is whole frames that to_bytes() writes back unchanged.
+    """
+    import numpy as np
+
+    data = bytes(data)
+    if not data:  # a run shorter than one energy interval
+        return Energies(np.zeros(0, q_energies_dtype()), np.zeros(0, offdiag_dtype()), 0, 0)
+    # the layout of the first frame: state records up to the off-diagonal record
+    position, n_states = 0, 0
+    while True:
+        if position + 4 > len(data):
+            raise InputError(f"Truncated {name}: no off-diagonal record after the first states.")
+        (size,) = struct.unpack_from("<i", data, position)
+        if size != _STATE_BYTES:
+            break
+        n_states += 1
+        position += size + 8
+    if n_states == 0 or size < 0 or size % _OFFDIAG_BYTES:
+        raise InputError(f"Not a Q energy file: {name} (record of {size} bytes).")
+    n_offdiag = size // _OFFDIAG_BYTES
+    dtype = np.dtype(_frame_dtype(n_states, n_offdiag))
+    if len(data) % dtype.itemsize:
+        raise InputError(f"Truncated or irregular {name}: {len(data)} bytes are not whole frames "
+                         f"of {dtype.itemsize} bytes.")
+    frames = np.frombuffer(data, dtype)
+    n_frames = len(frames)
+
+    q_energies = np.zeros(n_frames * n_states, q_energies_dtype())
+    rows = q_energies.reshape(n_frames, n_states)
+    rows["frame"] = np.arange(1, n_frames + 1)[:, None]
+    for k in range(n_states):
+        record = frames[f"s{k}"]
+        for term in ("state", *ENERGY_TERMS):
+            rows[term][:, k] = record[term]
+    offdiag = np.zeros(n_frames * n_offdiag, offdiag_dtype())
+    if n_offdiag:
+        cells = offdiag.reshape(n_frames, n_offdiag)
+        cells["frame"] = np.arange(1, n_frames + 1)[:, None]
+        for field, _ in _OFFDIAG_FIELDS:
+            cells[field] = frames["offdiag"]["data"][field]
+    energies = Energies(q_energies, offdiag, n_states, n_offdiag)
+    if energies.to_bytes() != data:  # record markers, or a layout that changes between frames
+        raise InputError(f"Irregular {name}: it cannot be read back losslessly.")
+    return energies
+
+
+def read_energy_file(path):
+    """A Q .en file as :class:`Energies`."""
+    return parse_energies(Path(path).read_bytes(), str(path))
+
+
+def write_energy_file(path, energies):
+    """Write :class:`Energies` as the .en file qdyn writes."""
+    Path(path).write_bytes(energies.to_bytes())
 
 # ---- reading .inp files without the C++ parser (Config.from_inp on Fortran-only installs)
 

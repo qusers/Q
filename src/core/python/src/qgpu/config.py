@@ -146,7 +146,8 @@ class Config:
     wall_restraints: tuple = ()         # of qgpu.WallRestraint
     pos_restraints: tuple = ()          # of qgpu.PosRestraint
     output: int | None = None           # log interval
-    energy: int | None = None           # energy file interval; > 0 needs energy_file
+    # energy interval; > 0 without energy_file keeps them in memory (FortranEngine.get_energies)
+    energy: int | None = None
     # trajectory interval; > 0 needs trajectory_file
     trajectory: int | None = None
     energy_file: str = ""               # "" = none; files are overwritten by every run()
@@ -184,8 +185,6 @@ class Config:
             raise InputError("steps must be >= 0")
         if self.stepsize <= 0:
             raise InputError("stepsize must be > 0")
-        if (self.energy or 0) > 0 and not self.energy_file:
-            raise InputError("energy > 0 needs energy_file (or set energy=0)")
         if (self.trajectory or 0) > 0 and not self.trajectory_file:
             raise InputError(
                 "trajectory > 0 needs trajectory_file (or set trajectory=0)")
