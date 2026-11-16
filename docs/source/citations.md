@@ -39,9 +39,13 @@ of Cheminformatics* **2019**. <https://doi.org/10.1186/s13321-019-0348-5>
 Jespers *et al.*, *Journal of Chemical Theory and Computation* **2019**.
 <https://doi.org/10.1021/acs.jctc.9b00538>
 
+The hybrid-topology protocol used by the current workflow (QresFEP-2):
+Koenekoop *et al.*, *Communications Chemistry* **2025**.
+<https://doi.org/10.1038/s42004-025-01771-0>
+
 ## Method-specific citations
 
 Also cite the relevant force field, ligand parameterization/charge model,
 network or atom-mapping method, free-energy estimator, and any softcore or
-non-equilibrium method used. Record the Q/QligFEP version or Git commit in the
+non-equilibrium method used. Record the Q version or Git commit in the
 methods section so the computational protocol can be reconstructed.

@@ -56,6 +56,18 @@ network-generation and ligand-parameterization package. Use the complete
 environment above if you need `qparams`, `qlomap`, and `qkonnektor`.
 :::
 
+### PyMOL for QresFEP
+
+`setup_resFEP` builds mutant side chains with the mutagenesis wizard of PyMOL.
+Install it in the same environment:
+
+```bash
+micromamba install -n qligfep -c conda-forge pymol-open-source
+```
+
+`setup_resFEP` calls the `pymol` executable. PyMOL is not needed if you supply
+the mutant residue PDBs yourself with `setup_resFEP -mp`.
+
 ## What the Python installation builds
 
 ```bash

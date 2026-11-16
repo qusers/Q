@@ -87,7 +87,7 @@ See [Installation](../installation.md) for how to build the programs.
   simulations in biomolecular systems. *J. Mol. Graph. Model.* **1998**, *16*,
   213–225.
 
-See [Citations](../citations.md) for QligFEP and the methods it uses.
+See [Citations](../citations.md) for QligFEP, QresFEP and the methods they use.
 
 ## Licence
 

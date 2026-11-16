@@ -1,4 +1,4 @@
-# FEP setup commands
+# Ligand FEP setup commands
 
 `qligfep` and `setupFEP` share protocol options. `qligfep` prepares one edge and
 one system; `setupFEP` iterates a mapping and invokes it for both legs.

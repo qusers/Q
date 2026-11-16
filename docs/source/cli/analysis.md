@@ -1,4 +1,4 @@
-# Analysis commands
+# Ligand FEP analysis commands
 
 (qligfep-analyze-cli)=
 ## `qligfep_analyze`
