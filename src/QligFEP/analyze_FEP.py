@@ -8,6 +8,7 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
+import yaml
 
 from QligFEP.analysis_qc import summarize_cycle_closure_qc, summarize_fep_system_qc
 
@@ -150,8 +151,7 @@ class FepReader:
             temperature = [d for d in (_dir / fep_stage).glob("*") if d.is_dir()][0].name
             replicates = len([d for d in (_dir / fep_stage / temperature).iterdir() if d.is_dir()])
 
-            inputs = sorted(_dir.glob("inputfiles/md*.inp"))
-            input_n_lambdas = len(fep_files) * (len(inputs) - 1) if inputs else None
+            input_n_lambdas = self._input_n_lambdas(_dir, len(fep_files))
             n_lambdas = self.n_lambdas
             if n_lambdas is None:
                 if input_n_lambdas is None:
@@ -179,6 +179,19 @@ class FepReader:
                 logger.error(
                     f"Failed to find the ligands for {fep}. Are you sure all calculations ran? Error: \n{e}"
                 )
+
+    @staticmethod
+    def _input_n_lambdas(fep_dir: Path, n_fep_files: int) -> Optional[int]:
+        """Lambda steps (windows - 1) per the setup: from the md*.inp files, or the run plan."""
+        inputs = sorted(fep_dir.glob("inputfiles/md*.inp"))
+        if inputs:
+            return n_fep_files * (len(inputs) - 1)
+        plan = fep_dir / "inputfiles" / "run_plan.yaml"
+        if plan.is_file():
+            windows = (yaml.safe_load(plan.read_text()) or {}).get("windows") or {}
+            if windows.get("lambdas"):
+                return n_fep_files * (len(windows["lambdas"]) - 1)
+        return None
 
     def run_qfep(self, qfep_file: Path):
         """Run qfep for the given FEP directory."""

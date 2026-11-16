@@ -144,6 +144,7 @@ class TestFEPSetupConsistencyGolden:
             str(random_state),
             "-log",
             "error",
+            "--inp-files",  # the test reads md_0500_0500.inp
         ]
         result = subprocess.run(cmd, cwd=work_dir, capture_output=True, text=True)
         if result.returncode != 0:

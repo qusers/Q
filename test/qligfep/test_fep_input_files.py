@@ -90,6 +90,8 @@ def generated_fep_dir(tmp_path_factory) -> Path:
         "dcd",
         "-rs",
         "42",
+        # the golden files are .inp files: they guard the rendering the run plan is built from
+        "--inp-files",
     ]
 
     result = subprocess.run(cmd, cwd=work_dir, capture_output=True, text=True)  # noqa: S603, S607

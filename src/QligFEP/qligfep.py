@@ -129,7 +129,7 @@ class QligFEP:
         production: bool = False,
         profile: Optional[Profile] = None,
         stage_overrides: Optional[dict[str, StageOverride]] = None,
-        run_plan: bool = False,
+        run_plan: bool = True,
         lambdas: Optional[list[float]] = None,
     ):
         """
@@ -140,8 +140,9 @@ class QligFEP:
                 from the layered configuration files.
             stage_overrides: Per-stage changes from a protocol (``stages`` in
                 ``qligfep.yaml``), keyed by stage name.
-            run_plan: Write one ``run_plan.yaml`` instead of one ``.inp`` file per stage
-                (windowed FEP only); the run script then calls ``qligfep_run``.
+            run_plan: Write one ``run_plan.yaml`` instead of one ``.inp`` file per stage;
+                the run script then calls ``qligfep_run``. The default for windowed FEP.
+                Non-equilibrium setups (``neq``) always write ``.inp`` files.
             lambdas: Explicit lambda windows (state-1 values) instead of ``windows`` and
                 ``sampling``. State 2 runs at ``1 - lambda``.
         """
@@ -157,9 +158,8 @@ class QligFEP:
         self.profile = profile if profile is not None else load_config().get_profile(cluster, system=system)
         self.cluster = self.profile.name
         self.stage_overrides = dict(stage_overrides or {})
-        self.run_plan = run_plan
-        if run_plan and neq:
-            raise ValueError("The run plan covers windowed FEP only; non-equilibrium setups keep .inp files.")
+        # the run plan covers windowed FEP only: non-equilibrium setups keep .inp files
+        self.run_plan = bool(run_plan) and not neq
         self.custom_lambdas = [float(x) for x in lambdas] if lambdas is not None else None
         self._plan_stages: list[tuple[str, str]] = []  # (stage name, rendered input) for the run plan
         self.sphereradius = sphereradius

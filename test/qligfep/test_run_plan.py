@@ -308,11 +308,34 @@ def test_run_script_calls_the_runner_once(tmp_path):
     assert subprocess.run(["bash", "-n", tmp_path / "plan" / "runHABROK.sh"]).returncode == 0
 
 
-def test_plan_is_for_windowed_fep_only():
+def test_plan_is_the_default_for_windowed_fep_only():
+    """No flag gives the run plan; a non-equilibrium setup keeps .inp files without one."""
+    profile = load_config().get_profile("HABROK")
+    for neq, expected in ((False, True), (True, False)):
+        run = QligFEP.__new__(QligFEP)
+        QligFEP.__init__(run, "a", "b", "AMBER14sb", "water", profile=profile, neq=neq)
+        assert run.run_plan is expected
     run = QligFEP.__new__(QligFEP)
-    with pytest.raises(ValueError, match="windowed FEP only"):
-        QligFEP.__init__(run, "a", "b", "AMBER14sb", "water", profile=load_config().get_profile("HABROK"),
-                         neq=True, run_plan=True)  # fmt: skip
+    QligFEP.__init__(run, "a", "b", "AMBER14sb", "water", profile=profile, run_plan=False)
+    assert run.run_plan is False
+
+
+def test_command_line_route_flags():
+    from QligFEP.CLI.parser_base import parse_arguments
+    from QligFEP.CLI.setupFEP import create_call
+
+    base = ["qligfep", "-l1", "a", "-l2", "b", "-FF", "AMBER14sb", "-s", "water", "-c", "LOCAL"]
+    for extra, inp_files in (([], False), (["--inp-files"], True), (["--run-plan"], False)):
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr("sys.argv", [*base, *extra])
+            assert parse_arguments("QligFEP").inp_files is inp_files
+    kwargs = dict(
+        lig1="a", lig2="b", FF="AMBER14sb", system="water", cluster="LOCAL", replicates=1, sampling="sigmoidal",
+        sphereradius=25, start="0.5", windows=10, temperature=298, timestep="2fs", rest="overlap", dr_force=0.5,
+        log="info",
+    )  # fmt: skip
+    assert "--inp-files" not in create_call(**kwargs) and "--run-plan" not in create_call(**kwargs)
+    assert "--inp-files" in create_call(**kwargs, inp_files=True)
 
 
 # ---------------------------------------------------------------------------------
@@ -374,3 +397,13 @@ def test_failed_stage_stops_the_replicate(tmp_path, capsys):
     ]  # fmt: skip
     assert main([*arguments, "--replicate", "3"]) == 2
     assert "Replicate 3 is not in the plan" in capsys.readouterr().err
+
+
+def test_analysis_counts_lambdas_from_the_plan(tmp_path):
+    """qligfep_analyze finds the number of lambda steps without md*.inp files."""
+    from QligFEP.analyze_FEP import FepReader
+
+    write_inputs(setup(True), tmp_path / "plan" / "inputfiles")
+    write_inputs(setup(False), tmp_path / "inp" / "inputfiles")
+    assert FepReader._input_n_lambdas(tmp_path / "plan", 1) == FepReader._input_n_lambdas(tmp_path / "inp", 1) == 4
+    assert FepReader._input_n_lambdas(tmp_path, 1) is None

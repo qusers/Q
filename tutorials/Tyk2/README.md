@@ -211,34 +211,36 @@ Setting this part of the string as either of these, will determine if or how the
 
 By default, a restraint force of 1.5 kcal/mol/Å² is applied to the equilibration (eq) 1-4 within the simulation protocol. A second distance restraint is applied to eq5 and all subsequent FEP molecular dynamics steps (labeled as `md_xxxx_xxxx`). The default threshold for the restraint is 0.5 Å, but is customizable through the `--distance_restraint_force` argument, or `-drf` for short.
 
-Though set through the Python CLI, these configuration are set to the input files for **Q**. For example, after creating all the perturbation directories using `setupFEP`, we can investigate further:
+Though set through the Python CLI, these configuration are set to the input files for **Q**. All stages of a perturbation leg are described in one file, `inputfiles/run_plan.yaml` (see [CONFIGURATION.md](../../CONFIGURATION.md#one-run-plan-instead-of-one-input-file-per-stage)). After creating all the perturbation directories using `setupFEP`, we can investigate the restraints there:
 
 ```bash
-head -n 60 2.protein/FEP_ejm_31_ejm_42/inputfiles/eq5.inp | tail -n 12
+grep -A 4 "^restraints:" 2.protein/FEP_ejm_31_ejm_42/inputfiles/run_plan.yaml
+grep -B 6 "distance_force" 2.protein/FEP_ejm_31_ejm_42/inputfiles/run_plan.yaml | grep "name\|distance_force"
 ```
 
-Where we see the output:
+Where we see output like:
 ```text
-[distance_restraints]
-4687 4719 0.0 0.1 0.5 0
-4688 4720 0.0 0.1 0.5 0
-4689 4721 0.0 0.1 0.5 0
-4690 4722 0.0 0.1 0.5 0
-4691 4723 0.0 0.1 0.5 0
-4692 4724 0.0 0.1 0.5 0
-4693 4725 0.0 0.1 0.5 0
-4694 4726 0.0 0.1 0.5 0
-4695 4727 0.0 0.1 0.5 0
-4696 4728 0.0 0.1 0.5 0
-4697 4729 0.0 0.1 0.5 0
+restraints:
+  distance:
+    range: [0.0, 0.1]
+    state: 0
+    pairs: [[4687, 4719], [4688, 4720], [4689, 4721], [4690, 4722], [4691, 4723], [4692, 4724], ...
+  - name: eq1
+    distance_force: 1.5
+  ...
+  - name: eq5
+    distance_force: 0.5
+  distance_force: 0.5
 ```
 
-These lines refer to:
-- The atom index of atom in Ligand 1 (named to `LIG` in QligFEP)
-- The atom index of atom in Ligand 2 (named to `LID` in QligFEP)
-- 0.0 & 0.1:  if distance among atoms is within this range, no force is applied
-- 0.5: The force to be applied (in kcal/mol/Å²)
-- 0 (last column): TODO
+The last `distance_force` is the one of the lambda windows (`windows.settings`).
+These entries refer to:
+- `pairs`: the atom index of an atom in Ligand 1 (named `LIG` in QligFEP) and of its partner in Ligand 2 (named `LID`)
+- `range`: if the distance between the atoms is within this range (0.0 to 0.1 Å), no force is applied
+- `distance_force`: the force constant of each stage (in kcal/mol/Å²): 1.5 for eq1-4, 0.5 from eq5 on
+- `state`: the FEP state the restraint applies to (0: all states)
+
+With `--inp-files` QligFEP writes one qdyn `.inp` file per stage instead, and the same restraints appear in their `[distance_restraints]` sections (`head -n 60 .../inputfiles/eq5.inp | tail -n 12`).
 
 ❗**Note**❗ - The atom inices are based on the ones found in the `complexnotexcluded.pdb` file generated from `qprep`. This file contains the part of the protein that wasn't excluded from the spherical boundary condition cutoff, the ligand, and the water sphere.
 

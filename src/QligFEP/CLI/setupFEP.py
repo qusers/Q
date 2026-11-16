@@ -48,8 +48,8 @@ def create_call(**kwargs):
         template += " --minimize"
     if kwargs.get("production"):
         template += " --production"
-    if kwargs.get("run_plan"):
-        template += " --run-plan"
+    if kwargs.get("inp_files"):
+        template += " --inp-files"
     if "water_thresh" in kwargs and kwargs["water_thresh"] != 1.4:
         template += " -wath {water_thresh}"
     if "wath_ligand_only" in kwargs and kwargs["wath_ligand_only"]:
@@ -174,7 +174,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 timestep=args.timestep,
                 minimize=args.minimize,
                 production=args.production,
-                run_plan=args.run_plan,
+                inp_files=args.inp_files,
                 lambdas=args.lambdas,
                 windows=args.windows,
                 to_clean=to_clean,

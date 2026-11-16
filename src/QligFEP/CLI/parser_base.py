@@ -154,14 +154,20 @@ def parse_arguments(program: str) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--run-plan",
-        dest="run_plan",
+        "--inp-files",
+        dest="inp_files",
         action="store_true",
         help=(
-            "Windowed FEP only: write one inputfiles/run_plan.yaml instead of one .inp file per "
-            "stage and lambda window. The run script then runs each replicate with `qligfep_run`, "
-            "which fills in the temperature and random seed. Results are the same as with .inp files."
+            "Windowed FEP: write one .inp file per stage and lambda window into inputfiles/ and run "
+            "them one by one, instead of the default single inputfiles/run_plan.yaml that `qligfep_run` "
+            "executes. Results are the same on both routes. Non-equilibrium setups always use .inp files."
         ),
+    )
+    parser.add_argument(
+        "--run-plan",
+        dest="run_plan_flag",
+        action="store_true",
+        help=argparse.SUPPRESS,  # the run plan is the default now; kept so older commands still work
     )
     parser.add_argument(
         "-clean",

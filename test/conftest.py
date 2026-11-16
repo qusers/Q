@@ -882,6 +882,7 @@ def _run_qparams(work_dir: Path, sdf_path: Path) -> None:
         str(sdf_path),
         "-log",
         "warning",
+        "--inp-files",  # the parser below reads md_0500_0500.inp
     ]
     result = subprocess.run(cmd, cwd=work_dir, capture_output=True, text=True)
     if result.returncode != 0:
@@ -920,6 +921,7 @@ def _run_qligfep(work_dir: Path, lig1: str, lig2: str, system: str, random_state
         str(random_state),
         "-log",
         "warning",
+        "--inp-files",  # the parser below reads md_0500_0500.inp
     ]
     result = subprocess.run(cmd, cwd=work_dir, capture_output=True, text=True)
     if result.returncode != 0:

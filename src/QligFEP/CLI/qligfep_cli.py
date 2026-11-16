@@ -44,7 +44,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "timestep": args.timestep,
             "minimize": args.minimize,
             "production": args.production,
-            "run_plan": args.run_plan,
+            "inp_files": args.inp_files,
             "to_clean": args.to_clean,
             "water_thresh": args.water_thresh,
             "dr_force": args.dr_force,
@@ -67,13 +67,17 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
     param_dict.update(kwargs)
     setup_logger(level=args.log.upper())
     softcore_method = param_dict.pop("softcore_method", "standard")
+    inp_files = param_dict.pop("inp_files", False)
     run = QligFEP(
         **param_dict,
+        run_plan=not inp_files,
         profile=profile,
         stage_overrides=getattr(args, "stage_overrides", None),
         lambdas=getattr(args, "lambdas", None),
     )
     param_dict["softcore_method"] = softcore_method
+    # recorded as the route actually taken: non-equilibrium setups always write .inp files
+    param_dict["inp_files"] = not run.run_plan
     if protocol is not None:
         param_dict["protocol"] = protocol.name
 
@@ -94,7 +98,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 command_str += f" --{k}".replace("_", "-")
         elif k == "dr_force":
             command_str += f" --{k} {v}".replace("dr_force", "distance_restraint_force")
-        elif k in ("neq", "minimize", "production", "run_plan"):
+        elif k in ("neq", "minimize", "production", "inp_files"):
             if v:
                 command_str += f" --{k.replace('_', '-')}"
         elif k == "neq_L":

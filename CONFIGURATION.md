@@ -256,18 +256,20 @@ that sets 50 windows runs 40. Flags that are not given take the protocol's value
 
 ## One run plan instead of one input file per stage
 
-By default `inputfiles/` holds one qdyn `.inp` file per stage: five equilibration
-stages and one per lambda window, 106 files for 100 windows. The run script copies
-them into every replicate folder and fills in the seed and temperature with `sed`.
-
-With `--run-plan` (`qligfep` and `setupFEP`, windowed FEP only) the same information
-is written once, to `inputfiles/run_plan.yaml`:
+Windowed FEP setups (`qligfep` and `setupFEP`) write the stage inputs once, to
+`inputfiles/run_plan.yaml`:
 
 - `settings`: the qdyn keywords every stage shares;
 - `equilibration`: the stages in order, each with what it does not share;
 - `windows`: the settings of a lambda window, the list of windows and where to start;
 - `replicates`: the temperatures and seeds. A value written as `replicate` is filled
   in per replicate: the temperature, and the random seed of the first stage.
+
+`--inp-files` selects the older route instead: one qdyn `.inp` file per stage in
+`inputfiles/` (five equilibration stages and one per lambda window, 106 files for 100
+windows), which the run script copies into every replicate folder and fills in with
+`sed`. `--run-plan`, which selected the plan route before it became the default, is
+still accepted and changes nothing.
 
 The run script then makes one call per replicate:
 
@@ -291,7 +293,8 @@ Three things to know:
   other side. The `.inp` route alternates between the two sides. Each window
   continues from the same neighbour either way.
 
-Non-equilibrium setups keep their `.inp` files.
+Non-equilibrium setups (`--neq`, or a protocol with `method: nonequilibrium`) always
+write `.inp` files; they need no flag for it.
 
 ## What was used for a run
 
