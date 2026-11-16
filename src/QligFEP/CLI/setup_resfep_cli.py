@@ -227,6 +227,18 @@ def parse_arguments() -> argparse.Namespace:
         help="Set Q's separate_scaling option. Defaults to on.",
     )
     optional.add_argument(
+        "-sc",
+        "--softcore-method",
+        dest="softcore_method",
+        choices=["standard", "gapsys", "beutler"],
+        default="standard",
+        help=(
+            "Soft-core method. 'standard' is the legacy maximum-potential soft-core analysed "
+            "with qfep. 'gapsys' and 'beutler' are lambda-dependent soft-cores analysed with "
+            "foreign-work BAR (qligfep_fhe_analyze); they reject charge-changing mutations."
+        ),
+    )
+    optional.add_argument(
         "--manuscript-settings",
         action="store_true",
         help="Force the residue-FEP manuscript protocol settings.",
@@ -321,6 +333,9 @@ def _qresfep_options(args: argparse.Namespace) -> list[str]:
         if args.seeds is not None:
             options += ["--seeds", *(str(seed) for seed in args.seeds)]
 
+    softcore_method = getattr(args, "softcore_method", "standard")
+    if softcore_method != "standard":
+        options += ["-sc", softcore_method]
     if args.to_clean:
         options += ["-clean", *args.to_clean]
     if not args.write_trajectories:

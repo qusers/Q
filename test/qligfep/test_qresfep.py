@@ -1469,3 +1469,202 @@ def _library_atom_names(lib_file: Path) -> list[str]:
         if inside and stripped:
             names.append(stripped.split()[1])
     return names
+
+
+# ----------------------------------------------------------------------
+# Nonlinear soft-core (gapsys / beutler)
+# ----------------------------------------------------------------------
+
+
+class TestNonlinearActivationFlags:
+    """Flags must satisfy qdyn's get_fep checks, which use charges and both LJ parameters."""
+
+    WALL, NO_WALL = (944.5, 22.0), (0.0, 0.0)
+
+    @pytest.mark.parametrize(
+        "charges,walls,expected",
+        [
+            ((0.0, 0.0), (NO_WALL, WALL), (0, 1)),  # side chain grown in at zero charge
+            ((0.0, 0.0), (WALL, NO_WALL), (1, 0)),  # discharged side chain removed
+            ((0.3, 0.0), (WALL, WALL), (0, 0)),  # discharged behind a kept wall
+            ((0.0, 0.4), (NO_WALL, NO_WALL), (0, 1)),  # polar H charged in: DUM -> real
+            ((0.4, 0.0), (NO_WALL, NO_WALL), (1, 0)),  # polar H discharged: real -> DUM
+            ((0.0, 0.0), (NO_WALL, NO_WALL), (0, 0)),  # neutral polar H: dummy in both
+            ((0.1, 0.1), (WALL, WALL), (0, 0)),  # shared backbone
+        ],
+    )
+    def test_flags(self, charges, walls, expected):
+        from QligFEP.qresfep import nonlinear_activation_flags
+
+        assert nonlinear_activation_flags(charges, walls) == expected
+
+    def test_flags_never_enable_a_dummy_state(self):
+        """qdyn rejects a flag on a state whose atom has no LJ and no charge."""
+        from QligFEP.qresfep import nonlinear_activation_flags
+
+        values = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0)]
+        for q1 in (0.0, 0.2):
+            for q2 in (0.0, 0.2):
+                for w1 in values:
+                    for w2 in values:
+                        flags = nonlinear_activation_flags((q1, q2), (w1, w2))
+                        for state, (q, w) in enumerate(((q1, w1), (q2, w2))):
+                            if q == 0.0 and w == (0.0, 0.0):
+                                assert flags[state] == 0
+
+
+class TestNeighbourWeights:
+    def test_interior_window_has_both_neighbours(self):
+        from QligFEP.qresfep import neighbour_state2_weights
+
+        weights = ["0.000", "0.010", "0.500", "1.000"]
+        assert neighbour_state2_weights("0.010", weights) == ["0.000", "0.010", "0.500"]
+
+    def test_end_windows_have_one_neighbour(self):
+        from QligFEP.qresfep import neighbour_state2_weights
+
+        weights = ["1.000", "0.500", "0.000"]
+        assert neighbour_state2_weights("1.000", weights) == ["0.500", "1.000"]
+        assert neighbour_state2_weights("0.000", weights) == ["0.000", "0.500"]
+
+
+class TestNonlinearSoftcoreRunScript:
+    @pytest.fixture(scope="class")
+    def script(self, tmp_path_factory):
+        run = QresFEP(
+            mutation="LEU39ALA",
+            chain="A",
+            system="protein",
+            force_field="OPLSAAM",
+            cluster="HABROK",
+            windows=2,
+            temperature="298",
+            replicates=1,
+            seeds=[971],
+            to_clean=["en", "re", "inp", "top", "dcd", "log"],
+            write_trajectories=False,
+            softcore_method="gapsys",
+            workdir=tmp_path_factory.mktemp("run-script-sc"),
+        )
+        run.inputfiles.mkdir(parents=True)
+        run.write_runfile([["md_1_1000_0000", "md_1_0000_1000"], ["md_2_1000_0000", "md_2_0000_1000"]])
+        return run.inputfiles / "runHABROK.sh"
+
+    def test_generated_script_is_valid_bash(self, script):
+        subprocess.run(["bash", "-n", script], check=True)
+
+    def test_foreign_bar_replaces_qfep_before_cleanup(self, script):
+        content = script.read_text()
+        assert "QFEP < qfep.inp" not in content
+        assert "#QFEP_" not in content
+        validation = content.index('"FEP$stage replicate $run_num')
+        bar = content.index("qligfep_fhe_analyze", validation)
+        status = content.index("> stage_validation.status", bar)
+        cleanup = content.index("rm -f -- *en *re *inp *top *dcd *log", status)
+        assert validation < bar < status < cleanup
+
+    def test_unknown_method_is_rejected(self, tmp_path):
+        with pytest.raises(MutationError, match="Unsupported softcore method"):
+            QresFEP(mutation="LEU39ALA", chain="A", system="protein", force_field="OPLSAAM",
+                    cluster="HABROK", softcore_method="gapsys_v2", workdir=tmp_path)
+
+
+class TestForeignBarResults:
+    @staticmethod
+    def _write(path: Path, total: float, temperature: float = 298.0):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"temperature_K": temperature, "total_delta_g_kcal": total,
+                                    "poor_windows": 0}))
+
+    def test_stage_value_is_bar_only(self, tmp_path):
+        from QligFEP.analyze_resfep import read_foreign_bar_stage
+
+        result = tmp_path / "foreign_bar.json"
+        self._write(result, 1.25)
+        values = read_foreign_bar_stage(result, 298.0)
+        assert values["dG_bar"] == 1.25
+        assert math.isnan(values["dG"])
+
+    def test_wrong_temperature_is_rejected(self, tmp_path):
+        from QligFEP.analyze_resfep import read_foreign_bar_stage
+
+        result = tmp_path / "foreign_bar.json"
+        self._write(result, 1.25, temperature=310.0)
+        with pytest.raises(ValueError, match="temperature"):
+            read_foreign_bar_stage(result, 298.0)
+
+    def test_stages_are_summed_without_a_direction_flip(self, tmp_path):
+        """Foreign work is G(state 2) - G(state 1) of each stage, even out of glycine."""
+        protein, tripeptide = tmp_path / "protein", tmp_path / "tripeptide"
+        for root, value in ((protein, 3.0), (tripeptide, 1.0)):
+            for stage in (1, 2):
+                self._write(root / "FEP_GLY39ALA" / f"FEP{stage}" / "298" / "1" / "foreign_bar.json", value)
+        record = collect(protein, tripeptide, "298")[0]
+        assert record.ddG() == pytest.approx(4.0)
+        assert math.isnan(record.ddG("dG"))
+
+
+@qprep_required
+class TestNonlinearSoftcoreProteinLeg:
+    @pytest.fixture(scope="class")
+    def fep_dir(self, prepared_t4l):
+        run = QresFEP(
+            mutation="LEU39ALA",
+            chain="A",
+            system="protein",
+            force_field="OPLSAAM",
+            cluster="SNELLIUS",
+            windows=5,
+            sampling="exponential",
+            write_trajectories=False,
+            softcore_method="gapsys",
+            workdir=prepared_t4l / "gapsys",
+        )
+        (prepared_t4l / "gapsys").mkdir(exist_ok=True)
+        for item in prepared_t4l.iterdir():
+            if item.is_file():
+                shutil.copy(item, prepared_t4l / "gapsys" / item.name)
+        return run.run() / "inputfiles"
+
+    @pytest.mark.parametrize("fep", ["FEP1.fep", "FEP2.fep"])
+    def test_fep_file_selects_the_method(self, fep_dir, fep):
+        header = _fep_section(fep_dir / fep, "FEP")
+        assert "softcore_use_max_potential off" in header
+        assert "softcore_method gapsys" in header
+
+    @pytest.mark.parametrize("fep", ["FEP1.fep", "FEP2.fep"])
+    def test_flags_follow_the_endpoint_parameters(self, fep_dir, fep):
+        from QligFEP.qresfep import nonlinear_activation_flags
+
+        path = fep_dir / fep
+        types = {line.split()[0]: (float(line.split()[1]), float(line.split()[2]))
+                 for line in _fep_section(path, "atom_types")
+                 if not line.startswith("!") and len(line.split()) >= 7 and _is_float(line.split()[1])}
+        charges = [tuple(map(float, line.split()[1:3])) for line in _fep_section(path, "change_charges")]
+        atom_types = [tuple(line.split()[1:3]) for line in _fep_section(path, "change_atoms")]
+        flags = [tuple(map(int, line.split()[1:3])) for line in _fep_section(path, "softcore")]
+        assert len(flags) == len(charges) == len(atom_types)
+        assert any(any(pair) for pair in flags)
+        for q, t, f in zip(charges, atom_types, flags):
+            assert f == nonlinear_activation_flags(q, (types[t[0]], types[t[1]]))
+
+    def test_production_windows_list_their_neighbours(self, fep_dir):
+        for md in sorted(fep_dir.glob("md_*.inp")):
+            lines = md.read_text().splitlines()
+            lambdas = lines[lines.index("[lambdas]") + 1].split()
+            start = lines.index("[foreign_lambdas]") + 1
+            foreign = []
+            for line in lines[start:]:
+                if not line.strip() or line.startswith("["):
+                    break
+                foreign.append(line.strip())
+            assert lambdas[1] in foreign
+            assert 2 <= len(foreign) <= 3
+
+
+def _is_float(token: str) -> bool:
+    try:
+        float(token)
+    except ValueError:
+        return False
+    return True

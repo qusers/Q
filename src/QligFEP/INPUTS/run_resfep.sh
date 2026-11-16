@@ -156,6 +156,7 @@ validate_qdyn_logs \
     "FEP$stage replicate $run_num (T=$temperature, seed=$seed)" \
     "${production_logs[@]}"
 
+#QFEP_BEGIN
 # qfep reads the energy files from lambda 1 down to 0; the list is built here because
 # it differs per stage. Reverse lexicographic order is that order, since the file names
 # carry lambda1 zero-padded (`sort -r` rather than `tac`, which BSD systems lack).
@@ -187,6 +188,7 @@ fi
 printf 'status=ok\nstage=%s\ntemperature=%s\nreplicate=%s\nseed=%s\nproduction_logs=%s\nqfep_part3=complete\n' \
     "$stage" "$temperature" "$run_num" "$seed" "${#production_logs[@]}" \
     > stage_validation.status
+#QFEP_END
 # Preserve the sole restart needed by FEP2 before stage-local cleanup removes
 # FEP1's restart chain. The bridge name is unique per temperature and replicate.
 if [ $index -lt 1 ]; then
