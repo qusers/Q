@@ -48,7 +48,7 @@ volume of a solvent molecule (29.9 Å³ for water).
 
 The radial potential has a half-harmonic term that pushes solvent molecules
 back into the sphere and a Morse-like term that pulls molecules from inside
-towards the boundary [38]:
+towards the boundary [21]:
 
 $$
 V_{\mathrm{solvent}}(r) =

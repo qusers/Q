@@ -1,7 +1,7 @@
 # Scoring
 
-Three scoring functions are implemented in `qcalc`: X-Score [27],
-ChemScore [28] and PMF-Score [29]. X-Score and ChemScore are empirical;
+Three scoring functions are implemented in `qcalc`: X-Score [18],
+ChemScore [19] and PMF-Score [20]. X-Score and ChemScore are empirical;
 PMF-Score is knowledge-based.
 
 All of them need a loaded topology and a mask. The initial topology, with the
@@ -79,7 +79,7 @@ file. Entering `default` at the prompt uses these values:
 | `ATOM_TRANSLATIONS` | `atom_type_conversions.dat` | |
 
 Applying more than one hydrophobic algorithm gives a consensus score. The
-default scoring coefficients are those of [27].
+default scoring coefficients are those of [18].
 
 ### Output
 
@@ -164,4 +164,4 @@ followed by the rings that were detected and, if requested, the bonds. The
 atomic binding score is shown only for the initial configuration.
 
 PMF-Score results should be read as rankings, in which a more negative score
-means better binding. For the conversion to a binding free energy see [29].
+means better binding. For the conversion to a binding free energy see [20].

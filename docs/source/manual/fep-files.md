@@ -112,7 +112,7 @@ the masses of the topology.
 
 This example is from a protein tyrosine phosphatase. A proton is transferred
 from a cysteine of the enzyme to the doubly charged phosphate group of the
-substrate, phenyl phosphate [19]. In state 1 the proton (H) is on the sulphur
+substrate, phenyl phosphate [14]. In state 1 the proton (H) is on the sulphur
 and the phosphate carries two negative charges. In state 2 the proton is on a
 phosphate oxygen and one negative charge is on the sulphur. Charges, van der
 Waals parameters, bonds, angles and torsions all change. EVB itself is
@@ -264,7 +264,7 @@ change in this example.
 **Couplings.** Angles, torsions and impropers depend on the existence of the
 bonds between their atoms. They can be coupled to a Morse bond, in which case
 their energy is scaled by the ratio of the current Morse bond energy to the
-dissociation energy [20]. In `[angle_couplings]` the numbers are line numbers:
+dissociation energy [15]. In `[angle_couplings]` the numbers are line numbers:
 the third line of `[change_angles]` (P–O–H) is coupled to the third line of
 `[change_bonds]` (O–H), and the fourth (C–S–H) to the second (S–H).
 Torsions and impropers are coupled in the same way.

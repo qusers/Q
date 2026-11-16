@@ -28,7 +28,7 @@ mol2 files for molecular graphics programs.
 
 ### Trajectory animation
 
-Programs such as VMD [21, 22] and PyMOL read the DCD trajectories of `qdyn`. They need a
+Programs such as VMD [16, 17] and PyMOL read the DCD trajectories of `qdyn`. They need a
 PDB file with the same atoms as the trajectory:
 
 1. Load the topology with `readtop`.

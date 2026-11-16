@@ -10,7 +10,7 @@ molecular system that `qdyn` needs. To make a topology you need:
 
 ## Preparing coordinates
 
-The PDB format [16] read by `qprep` is a fixed format: the number of spaces
+The PDB format [12] read by `qprep` is a fixed format: the number of spaces
 between columns is significant and tab characters are not permitted. Only
 `ATOM` and `HETATM` records are read. See
 [Coordinate files](reference/qprep.md#coordinate-files) for the full list of
@@ -136,7 +136,7 @@ With a periodic boundary, a solvent file containing a sphere cannot be used.
 The threshold distance is then also applied to solvent molecules near the box
 boundary, to avoid clashes between solvent molecules in neighbouring boxes.
 
-The water model is defined by the library entry: TIP3P [18] in the libraries
+The water model is defined by the library entry: TIP3P [13] in the libraries
 of this repository (`HOH`).
 
 :::{note}

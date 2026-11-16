@@ -23,7 +23,7 @@ The features that distinguish Q from other MD packages are:
 
 - **The spherical boundary.** Q is intended for free-energy calculations in
   biomolecular systems solvated in a spherical droplet of explicit water. A
-  spherical boundary [11–13] limits the size of the simulated system, so the
+  spherical boundary [9–11] limits the size of the simulated system, so the
   simulation can focus on a region such as a binding site, and makes accurate
   treatment of long-range electrostatics inexpensive.
 - **The choice of force field.** Force fields are defined in parameter files,

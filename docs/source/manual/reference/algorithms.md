@@ -36,7 +36,7 @@ energies; for small time steps the deviation is not significant.
 
 ## Temperature control
 
-`qdyn` uses the Berendsen thermostat [39]. The system is
+`qdyn` uses the Berendsen thermostat [22]. The system is
 coupled to a heat bath of temperature $T_0$ with a relaxation time $\tau$
 (`bath_coupling` in `[MD]`). The velocities are scaled so that the
 temperature relaxes according to

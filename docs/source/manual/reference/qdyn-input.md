@@ -13,8 +13,7 @@ keywords are optional.
 `qdyn` ignores keywords it does not know, without an error. A misspelt
 keyword silently leaves the default in place. Check the log for the values
 that were actually used. Note the spelling of `polarization` and
-`rigid_box_center`. See [Changes from the 2017 Q manual](../differences.md) if
-your inputs were written for the Q version of that manual.
+`rigid_box_center`.
 :::
 
 ## Keyword sections
@@ -28,7 +27,7 @@ Basic simulation data. Required.
 | `steps` | Number of MD steps | Required |
 | `stepsize` | Step size $\Delta t$ (fs) | Required |
 | `temperature` | Target temperature (K) | Required |
-| `bath_coupling` | Relaxation time $\tau$ of the temperature bath (fs) [39] | Optional, default 10 fs. Must be at least `stepsize`. |
+| `bath_coupling` | Relaxation time $\tau$ of the temperature bath (fs) [22] | Optional, default 10 fs. Must be at least `stepsize`. |
 | `separate_scaling` | Separate temperature scaling of solute and solvent (`on`/`off`) | Optional, default `off` |
 | `random_seed` | Integer seed of the random number generator | Optional, default 1. Used only for random initial velocities. |
 | `initial_temperature` | Temperature (K) of the Maxwell distribution for random velocities | Required when no restart file is given. Give it only when velocities should be randomised. |

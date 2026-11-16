@@ -53,7 +53,7 @@ the old, pre-section FEP format.
 ## Soft-core
 
 If atoms vanish or appear, a soft-core potential may be wanted for the
-Q-atoms concerned [43]. The soft-core potential of `qdyn` is
+Q-atoms concerned [23]. The soft-core potential of `qdyn` is
 
 $$
 V_{\mathrm{vdW}}(r_{ij}) = \frac{A_{ij}}{(r_{ij}^6 + \alpha)^2} - \frac{B_{ij}}{r_{ij}^6 + \alpha}

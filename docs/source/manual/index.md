@@ -1,8 +1,7 @@
 # Q manual
 
-This is the manual of the Q programs in this repository. It is based on the
-Q manual of 17 August 2017, split into pages and revised so that
-commands, keywords, defaults and file formats are those of the source here.
+This is the manual of the Q engine: the programs `qprep`, `qdyn`, `qfep` and
+`qcalc`, their input files, file formats and algorithms.
 
 ```{toctree}
 :maxdepth: 1
@@ -30,7 +29,6 @@ reference/algorithms
 reference/qdyn-input
 reference/fep-file
 reference/utilities
-differences
 bibliography
 ```
 
@@ -43,8 +41,6 @@ bibliography
   run dynamics, define a perturbation, analyse.
 - The **reference** pages hold the file formats, command lists and the
   equations behind the boundary conditions and algorithms.
-- [Changes from the 2017 Q manual](differences.md) is for readers who know the
-  2017 manual or have input files written for it.
 
 Citations in square brackets, such as [1], refer to the
 [bibliography](bibliography.md).
