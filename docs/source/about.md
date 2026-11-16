@@ -52,10 +52,10 @@ it provides the commands of both.
 ## Where to start
 
 - [Installation](installation.md) covers the Python package and the engine.
-- For ligands, read the [QligFEP workflow](qligfep/workflow.md), or follow the
-  [quickstart](quickstart.md) and the [Tyk2 tutorial](tutorials/tyk2.md).
+- For ligands, read the [QligFEP workflow](qligfep/workflow.md) and follow
+  the Tyk2 [tutorial](tutorials/index.md).
 - For mutations, read the [QresFEP workflow](qresfep/workflow.md) and follow
-  the [T4 lysozyme tutorial](tutorials/t4l.md).
+  the T4 lysozyme [tutorial](tutorials/index.md).
 - Use the [CLI reference](cli/index.md) for exact flags and output names.
 - Use the [Q manual](manual/index.md) to run the engine programs directly.
 

@@ -6,7 +6,7 @@ change in folding free energy caused by a point mutation. It follows the
 QresFEP-2 hybrid-topology method of
 [Koenekoop et al. (2025)](https://doi.org/10.1038/s42004-025-01771-0).
 
-For a worked example, see the [T4 lysozyme tutorial](../tutorials/t4l.md).
+For a worked example, see the T4 lysozyme [tutorial](../tutorials/index.md).
 
 ## The thermodynamic cycle
 

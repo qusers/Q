@@ -78,7 +78,7 @@ See [Boundary conditions](../manual/reference/boundaries.md#solute-boundary-rest
 :width: 70%
 
 Cross-section of a simulation sphere around a ligand bound to Tyk2, the
-protein of the [tutorial](../tutorials/tyk2.md). Drawing the whole sphere
+protein of the [tutorial](../tutorials/index.md). Drawing the whole sphere
 would hide its interior, so only the atoms within 3 Å of a plane through the
 sphere centre are shown. Dashed circle: the sphere
 radius of 25 Å. Blue: free solute. Pale sticks inside a grey surface:

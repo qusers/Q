@@ -53,7 +53,6 @@ not yet integrated with the workflows described here.
 
 about
 installation
-quickstart
 cluster-configuration
 ```
 
@@ -105,8 +104,7 @@ cli/qresfep
 :maxdepth: 2
 :caption: Tutorials and help
 
-tutorials/tyk2
-tutorials/t4l
+tutorials/index
 troubleshooting
 citations
 contributing-docs
