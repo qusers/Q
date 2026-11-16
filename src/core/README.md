@@ -146,7 +146,8 @@ engine.run()
 ```
 
 - Fortran Q is a separate program, so every `run()` starts one `qdyn` process. `FortranEngine` writes its `.inp` file and carries the state to the next run in a Q restart file. The results are identical to running the same stages from `.inp` files by hand.
-- These files and the log of every run are kept in `workdir` (default: a temporary folder). `engine.log_file` is the log of the latest run.
+- The output of `qdyn` goes to the Python process's stdout, as with `Engine`, so `python workflow.py > log` gives one log of all stages on both.
+- The `.inp`, restart and per-run log files are kept in `workdir` (default: a temporary folder). `engine.log_file` is the log of the latest run.
 - `get_state()` / `set_state()` return and accept the same dictionary as `Engine`.
 - After a failed `run()` the engine is still at the state before that run.
 - Not supported by Fortran Q, and rejected: `hmr=True`, and any `thermostat` other than `berendsen`.

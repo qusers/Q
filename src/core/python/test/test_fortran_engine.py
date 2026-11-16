@@ -198,6 +198,19 @@ def test_state_branches(tmp_path, launch):
     assert window("c.en", (0.5, 0.5)) == first       # back at the midpoint
 
 
+def test_output_goes_to_stdout(tmp_path, capsys, launch):
+    """qdyn's output is printed, as the CUDA engine's is, and is also in the log of the run."""
+    qdyn, prefix = launch
+    engine = FortranEngine(base_config(steps=10), qdyn=qdyn, mpi=prefix, workdir=tmp_path)
+    engine.run()
+    first = capsys.readouterr().out
+    assert "terminated normally" in first and first == engine.log_file.read_text()
+    engine.update_config(temperature=0)
+    with pytest.raises(InputError):
+        engine.run()
+    assert "No dynamics at zero temperature" in capsys.readouterr().out
+
+
 def test_restart_round_trip(tmp_path):
     if not QDYN.is_file():
         pytest.skip(f"{QDYN} is not built")

@@ -19,6 +19,7 @@ import shlex
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 
 from .config import _INP_KEYS, _RESTRAINTS, Config, _abs
@@ -50,6 +51,8 @@ class FortranEngine(Engine):
     mpi:     launcher prefix, e.g. ("mpirun", "-np", "8") or "srun"; empty = run qdyn directly.
     workdir: where the .inp, log and restart files of every run are kept. Default: a
              temporary folder that is removed with the engine.
+
+    qdyn's output is printed to stdout, as the CUDA engine's is.
     """
 
     def __init__(self, config: Config, qdyn="qdyn", mpi: Sequence[str] | str = (), workdir=None):
@@ -103,14 +106,23 @@ class FortranEngine(Engine):
         (self._workdir / f"{name}.inp").write_text(self._inp(config, outputs))
 
         log = self._workdir / f"{name}.log"
-        with open(log, "w") as out:
-            try:
-                status = subprocess.run([*self._command, f"{name}.inp"], cwd=self._workdir,
-                                        stdout=out, stderr=subprocess.STDOUT).returncode
-            except OSError as e:
-                raise InputError(f"Could not start {shlex.join(self._command)}: {e}") from e
+        try:
+            process = subprocess.Popen([*self._command, f"{name}.inp"], cwd=self._workdir, text=True,
+                                       errors="replace", stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        except OSError as e:
+            raise InputError(f"Could not start {shlex.join(self._command)}: {e}") from e
+        # qdyn's output goes to this process's stdout as it is produced, like the CUDA
+        # engine's, and to the log file of this run.
+        lines = []
+        with process, open(log, "w", errors="replace") as out:
+            for line in process.stdout:
+                lines.append(line)
+                out.write(line)
+                sys.stdout.write(line)
+            sys.stdout.flush()
+        status = process.returncode
         self.log_file = log
-        text = log.read_text(errors="replace")
+        text = "".join(lines)
         final = self._workdir / outputs["final"]
         if status != 0 or "ABNORMAL TERMINATION" in text or not final.is_file():
             # qdyn also writes a restart file when it dies: it is not used, the next
