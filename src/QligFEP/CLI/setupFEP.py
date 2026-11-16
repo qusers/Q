@@ -62,6 +62,10 @@ def create_call(**kwargs):
         template += " --config '{config}'"
     if kwargs.get("q_bin") is not None:
         template += " --q-bin '{q_bin}'"
+    if kwargs.get("account") is not None:
+        template += " --account '{account}'"
+    if kwargs.get("partition") is not None:
+        template += " --partition '{partition}'"
     if "protein_charge" in kwargs and kwargs["protein_charge"] is not None:
         template += " -pq {protein_charge}"
     if "softcore_method" in kwargs and kwargs["softcore_method"] != "standard":
@@ -181,6 +185,8 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 protocol=args.protocol,
                 config=(str(Path(args.config).resolve()) if args.config else None),
                 q_bin=args.q_bin,
+                account=args.account,
+                partition=args.partition,
                 neq_L=args.neq_L,
                 neq_schedule=args.neq_schedule,
                 protein_charge=protein_charge,

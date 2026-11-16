@@ -17,8 +17,10 @@ default_protocol: default
 # ---------------------------------------------------------------------------------
 # Profiles: WHERE and HOW jobs run. They must never change the simulated physics.
 # The site profiles below are the historical `settings.py` clusters, kept so that
-# existing `-c NAME` commands keep working. Module names and accounts are examples
-# from development and are not guaranteed to still be valid at those sites.
+# existing `-c NAME` commands keep working. Module names are examples from development
+# and are not guaranteed to still be valid at those sites. No profile sets an account:
+# the project allocation is yours to choose, with `slurm.account` in your own
+# configuration or `--account` on the command line.
 # ---------------------------------------------------------------------------------
 profiles:
   CSB:
@@ -43,35 +45,30 @@ profiles:
     execution: slurm-array
     modules: [GCC/5.4.0-2.26, OpenMPI/1.10.3]
     resources: {ntasks: 20, time: "0-02:00:00"}
-    slurm: {account: SNIC2018-2-3}
 
   KEBNE:
     execution: slurm-array
     modules: [gompi/2017b]
     resources: {ntasks: 28, time: "0-04:00:00"}
-    slurm: {account: SNIC2018-2-3}
 
   STALLO:
     execution: slurm-array
     modules: [impi/2018.1.163-iccifort-2018.1.163-GCC-6.4.0-2.28]
     resources: {ntasks: 20, time: "0-12:00:00"}
-    slurm: {account: nn4654K}
 
   UPPMAX:
     execution: slurm-array
     modules: [gcc/9.2.0, openmpi/4.0.2]
     resources: {ntasks: 20, time: "0-24:00:00"}
-    slurm: {account: snic2018-2-3}
 
   TETRA:
     execution: slurm-array
     resources: {ntasks: 8, time: "0-06:00:00"}
-    slurm: {account: naiss2023-3-5}
 
   DARDEL:
     execution: slurm-array
     resources: {ntasks: 8, time: "0-06:00:00"}
-    slurm: {account: naiss2023-3-5, partition: shared}
+    slurm: {partition: shared}
 
   HABROK:
     execution: slurm-array

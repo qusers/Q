@@ -111,7 +111,12 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         else:
             command_str += f" --{k} {v}"
     command_str += f" --restraint_method {args.restraint_method}"
-    for flag, value in (("--config", args.config), ("--q-bin", args.q_bin)):
+    for flag, value in (
+        ("--config", args.config),
+        ("--q-bin", args.q_bin),
+        ("--account", args.account),
+        ("--partition", args.partition),
+    ):
         if value is not None:
             command_str += f" {flag} {value}"
     time_now = datetime.datetime.now()

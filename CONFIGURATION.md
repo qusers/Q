@@ -84,9 +84,15 @@ profiles:
     modules: from-build
 ```
 
-`slurm.account` is optional. Left as `null`, jobs are submitted without `-A` and
-Slurm charges your default account; `qligfep_config init` never picks one for you.
-Set it on sites that require an explicit project account.
+`slurm.account` is optional and no packaged profile sets one. Left as `null`, jobs
+are submitted without `-A` and Slurm charges your default account;
+`qligfep_config init` never picks one for you. On sites that require a project
+allocation, set it in your own configuration or pass `--account NAME` to `qligfep`
+or `setupFEP`.
+
+`slurm.partition` works the same way, with `--partition NAME` as the command-line
+override. Site defaults that used to be hardcoded are now profile data: `DARDEL`
+submits to `shared` and `SNELLIUS` to `rome`.
 
 ### Execution types
 

@@ -56,6 +56,11 @@ class TestPackagedProfiles:
         # CSB does not accept --mem-per-cpu
         assert "--mem-per-cpu" not in config.get_profile("CSB").sbatch_header("equilibrium", "j", 3)
 
+    def test_no_packaged_profile_carries_a_project_account(self):
+        config = load_config()
+        for name in config.profile_names():
+            assert config.get_profile(name).slurm.account is None, name
+
     def test_local_profiles(self):
         config = load_config()
         local, localp = config.get_profile("LOCAL"), config.get_profile("LOCALP")
@@ -397,6 +402,15 @@ class TestCommandLinePrecedence:
         assert args.neq_steps == 123 and args.explicit_neq_steps == ["neq_steps"]
         switch = args.stage_overrides["switch"]
         assert switch.time_fs is None and switch.inp == {"MD": {"lrf": False}}
+
+    def test_account_and_partition_flags_override_the_profile(self):
+        args = cli_args(cluster="DARDEL", account="naiss-1", partition=None)
+        profile, _ = resolve_run_settings(args)
+        header = profile.sbatch_header("equilibrium", "j", 1)
+        assert "#SBATCH -A naiss-1" in header and "#SBATCH -p shared" in header
+        profile, _ = resolve_run_settings(cli_args(cluster="DARDEL", partition="main"))
+        header = profile.sbatch_header("equilibrium", "j", 1)
+        assert "#SBATCH -p main" in header and "#SBATCH -A" not in header
 
     def test_configuration_errors_exit_with_a_message(self):
         with pytest.raises(SystemExit, match="Configuration error: Unknown profile"):

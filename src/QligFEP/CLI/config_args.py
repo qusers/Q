@@ -51,6 +51,21 @@ def add_config_arguments(parser: argparse.ArgumentParser) -> None:
         help="Project configuration file. Defaults to qligfep.yaml in the working directory.",
     )
     parser.add_argument(
+        "--account",
+        dest="account",
+        default=None,
+        help=(
+            "Slurm account (project allocation) to charge, overriding the profile's `slurm.account`. "
+            "Without either, jobs are submitted without -A and Slurm charges your default account."
+        ),
+    )
+    parser.add_argument(
+        "--partition",
+        dest="partition",
+        default=None,
+        help="Slurm partition to submit to, overriding the profile's `slurm.partition`.",
+    )
+    parser.add_argument(
         "--q-bin",
         dest="q_bin",
         default=None,
@@ -83,6 +98,17 @@ def resolve_run_settings(args: argparse.Namespace, system: str | None = None) ->
         protocol = config.get_protocol(getattr(args, "protocol", None))
     except ConfigError as error:
         sys.exit(f"Configuration error: {error}")
+
+    account, partition = getattr(args, "account", None), getattr(args, "partition", None)
+    if account or partition:
+        if profile.is_local:
+            logger.warning(f"--account/--partition have no effect on the local profile '{profile.name}'.")
+        slurm = dataclasses.replace(
+            profile.slurm,
+            account=account or profile.slurm.account,
+            partition=partition or profile.slurm.partition,
+        )
+        profile = dataclasses.replace(profile, slurm=slurm)
 
     args.cluster = profile.name
     args.protocol = protocol.name
