@@ -1,14 +1,15 @@
 """The qgpu Engine API on top of Fortran Q (qdyn / qdynp), optionally under MPI.
 
-    engine = FortranEngine(config, qdyn="qdynp", mpi=("mpirun", "-np", "8"))
-    engine.run()
-    engine.update_config(lambdas=(0.5, 0.5), energy=10, energy_file="md_0500_0500.en")
-    engine.run()                          # continues from the previous run's restart file
+    with FortranEngine(config, qdyn="qdynp", mpi=("mpirun", "-np", "8")) as engine:
+        engine.run()
+        engine.update_config(lambdas=(0.5, 0.5), energy=10, energy_file="md_0500_0500.en")
+        engine.run()                      # continues from the previous run's restart file
 
 Fortran Q is a separate (MPI) program, so it cannot live inside the Python process the
-way the CUDA engine does. Every run() writes one .inp file in the work folder and starts
-qdyn on it; the state is carried from run to run in Q restart files. The .inp files are
-an implementation detail: the workflow is written with Config and update_config() only.
+way the CUDA engine does. Every run() starts qdyn on a short-lived .inp file, and the state
+is carried from run to run in one Q restart file. Both are an implementation detail and are
+removed again: the workflow is written with Config and update_config() only, and what
+remains on disk is what the Config asked for (energy_file, trajectory_file, final_file).
 
 This module is pure Python: it needs no native extension, CUDA or GPU.
 """
@@ -49,13 +50,17 @@ class FortranEngine(Engine):
 
     qdyn:    the qdyn or qdynp executable (name on PATH, or a path).
     mpi:     launcher prefix, e.g. ("mpirun", "-np", "8") or "srun"; empty = run qdyn directly.
-    workdir: where the .inp, log and restart files of every run are kept. Default: a
-             temporary folder that is removed with the engine.
+    workdir: where the engine keeps its own files. Default: a temporary folder.
+    keep_files: keep the .inp, log and restart file of every run in workdir, for debugging.
+             By default a run leaves only the restart file the next run starts from; the
+             files of a failed run are kept.
 
     qdyn's output is printed to stdout, as the CUDA engine's is.
+    Use the engine in a `with` block, or call close(), to remove its files at the end.
     """
 
-    def __init__(self, config: Config, qdyn="qdyn", mpi: Sequence[str] | str = (), workdir=None):
+    def __init__(self, config: Config, qdyn="qdyn", mpi: Sequence[str] | str = (), workdir=None,
+                 keep_files=False):
         if not isinstance(config, Config):
             raise TypeError(f"config must be a qgpu.Config, got {type(config).__name__}")
         executable = shutil.which(str(Path(qdyn).expanduser()))
@@ -63,11 +68,15 @@ class FortranEngine(Engine):
             raise InputError(f"qdyn executable not found: {qdyn}")
         self._command = [*(shlex.split(mpi) if isinstance(mpi, str) else map(str, mpi)),
                          str(Path(executable).resolve())]
+        self._keep = keep_files
+        self._tmp = None
         if workdir is None:
             self._tmp = tempfile.TemporaryDirectory(prefix="qgpu_fortran_")
             workdir = self._tmp.name
         self._workdir = Path(workdir).expanduser().resolve()
+        self._created = not self._workdir.exists()
         self._workdir.mkdir(parents=True, exist_ok=True)
+        self._links = []
 
         # under its own name: qdyn writes the topology file name into trajectory headers
         self._topology = self._link(config.topology, Path(config.topology).name)
@@ -76,7 +85,7 @@ class FortranEngine(Engine):
         self._n_atoms = _topology_atoms(Path(_abs(config.topology)))
         self._n_states = _fep_states(Path(_abs(config.fep))) if config.fep else 0
         self._n_runs = 0
-        self.log_file = None  # log of the latest run()
+        self.log_file = None  # log of the latest run(): only of a failed one, unless keep_files
         self._configure(config)
         self._config = config
 
@@ -131,7 +140,11 @@ class FortranEngine(Engine):
             raise _error(text, status, log)
 
         self._n_runs += 1
-        self._restart = outputs["final"]
+        self._advance(outputs["final"])
+        if not self._keep:
+            (self._workdir / f"{name}.inp").unlink()
+            log.unlink()
+            self.log_file = None
         for key, target in (("energy", config.energy_file), ("trajectory", config.trajectory_file)):
             if key in outputs:
                 _place(shutil.move, self._workdir / outputs[key], target)
@@ -150,7 +163,33 @@ class FortranEngine(Engine):
         self._n_runs += 1  # a new name: never overwrite a restart file that a state came from
         name = f"state_{self._n_runs:04d}.re"
         write_restart(self._workdir / name, state)
-        self._restart = name
+        self._advance(name)
+
+    def close(self):
+        """Remove the engine's own files. Outputs named in the Config are not touched."""
+        if self._tmp is not None:
+            self._tmp.cleanup()
+        elif not self._keep:
+            for name in (self._restart, *self._links):
+                if name:
+                    (self._workdir / name).unlink(missing_ok=True)
+            if self._created and not any(self._workdir.iterdir()):
+                self._workdir.rmdir()
+        self._restart = ""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *error):
+        # after an error the files stay, to see what happened
+        if error[0] is None or self._tmp is not None:
+            self.close()
+
+    def _advance(self, restart):
+        """`restart` is now the state; the file it replaces is no longer needed."""
+        previous, self._restart = self._restart, restart
+        if previous and previous != restart and not self._keep:
+            (self._workdir / previous).unlink(missing_ok=True)
 
     def _configure(self, config: Config):
         for name, supported in _UNSUPPORTED.items():
@@ -171,6 +210,7 @@ class FortranEngine(Engine):
         if link.is_symlink() or link.exists():
             link.unlink()
         link.symlink_to(source)
+        self._links.append(name)
         return name
 
     def _inp(self, config: Config, outputs):

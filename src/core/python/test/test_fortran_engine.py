@@ -175,7 +175,8 @@ def test_explicit_defaults_match_fortran_defaults(tmp_path):
     finals = []
     for name, extra in (("unset", {}), ("explicit", CPP_DEFAULTS)):
         final = tmp_path / f"{name}.re"
-        engine = FortranEngine(base_config(final_file=final, **extra), qdyn=QDYN, workdir=tmp_path / name)
+        engine = FortranEngine(base_config(final_file=final, **extra), qdyn=QDYN, workdir=tmp_path / name,
+                                   keep_files=True)
         engine.run()
         engine.update_config(stepsize=1.0, temperature=300, bath_coupling=10, constrain_hydrogens=True)
         engine.run()
@@ -208,7 +209,7 @@ def test_state_branches(tmp_path, launch):
 def test_output_goes_to_stdout(tmp_path, capsys, launch):
     """qdyn's output is printed, as the CUDA engine's is, and is also in the log of the run."""
     qdyn, prefix = launch
-    engine = FortranEngine(base_config(steps=10), qdyn=qdyn, mpi=prefix, workdir=tmp_path)
+    engine = FortranEngine(base_config(steps=10), qdyn=qdyn, mpi=prefix, workdir=tmp_path, keep_files=True)
     engine.run()
     first = capsys.readouterr().out
     assert "terminated normally" in first and first == engine.log_file.read_text()
@@ -216,6 +217,28 @@ def test_output_goes_to_stdout(tmp_path, capsys, launch):
     with pytest.raises(InputError):
         engine.run()
     assert "No dynamics at zero temperature" in capsys.readouterr().out
+
+
+def test_leaves_no_files_behind(tmp_path):
+    """Only what the Config names stays on disk; keep_files keeps the engine's own files too."""
+    if not QDYN.is_file():
+        pytest.skip(f"{QDYN} is not built")
+    work = tmp_path / "work"
+    with FortranEngine(base_config(steps=10), qdyn=QDYN, workdir=work) as engine:
+        engine.run()
+        state = engine.get_state()
+        engine.update_config(energy=5, energy_file=tmp_path / "out" / "a.en", final_file=tmp_path / "out" / "a.re")
+        engine.run()
+        engine.set_state(state)
+        engine.run()
+        assert sorted(p.name for p in work.iterdir()) == ["benzene-water.top", "fep.fep", "run_0004.re"]
+    assert not work.exists()
+    assert sorted(p.name for p in (tmp_path / "out").iterdir()) == ["a.en", "a.re"]
+
+    kept = tmp_path / "kept"
+    with FortranEngine(base_config(steps=10), qdyn=QDYN, workdir=kept, keep_files=True) as engine:
+        engine.run()
+    assert {"run_0001.inp", "run_0001.log", "run_0001.re"} <= {p.name for p in kept.iterdir()}
 
 
 def test_restart_round_trip(tmp_path):
@@ -241,8 +264,7 @@ def test_from_inp(tmp_path):
     assert Path(Config.from_inp(ROOT / "test" / "q6" / "test1" / "eq1.inp").final_file).name == "eq1.re"
     engine = FortranEngine(config, qdyn=QDYN, workdir=tmp_path / "work")
     engine.run()
-    assert (tmp_path / "eq1.re").is_file()
-    assert "terminated normally" in engine.log_file.read_text()
+    assert (tmp_path / "eq1.re").is_file() and engine.log_file is None
 
 
 def test_errors(tmp_path):

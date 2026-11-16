@@ -139,15 +139,16 @@ engine.run()
 ```python
 from qgpu import Config, FortranEngine
 
-engine = FortranEngine(config, qdyn="qdynp", mpi=("mpirun", "-np", "8"))   # mpi=() runs qdyn directly
-engine.run()
-engine.update_config(lambdas=(0.6, 0.4), energy=10, energy_file="md_0600_0400.en")
-engine.run()
+with FortranEngine(config, qdyn="qdynp", mpi=("mpirun", "-np", "8")) as engine:   # mpi=() runs qdyn directly
+    engine.run()
+    engine.update_config(lambdas=(0.6, 0.4), energy=10, energy_file="md_0600_0400.en")
+    engine.run()
 ```
 
-- Fortran Q is a separate program, so every `run()` starts one `qdyn` process. `FortranEngine` writes its `.inp` file and carries the state to the next run in a Q restart file. The results are identical to running the same stages from `.inp` files by hand.
+- Fortran Q is a separate program, so every `run()` starts one `qdyn` process, on a short-lived `.inp` file that `FortranEngine` writes and removes. The state is carried to the next run in one Q restart file. The results are identical to running the same stages from `.inp` files by hand.
+- What stays on disk is what the `Config` names: `energy_file`, `trajectory_file`, `final_file`. Leaving the `with` block (or `close()`) removes the engine's last restart file too.
+- `keep_files=True` keeps the `.inp`, log and restart file of every run in `workdir`. The files of a failed run are always kept, and `engine.log_file` then points to its log.
 - The output of `qdyn` goes to the Python process's stdout, as with `Engine`, so `python workflow.py > log` gives one log of all stages on both.
-- The `.inp`, restart and per-run log files are kept in `workdir` (default: a temporary folder). `engine.log_file` is the log of the latest run.
 - `get_state()` / `set_state()` return and accept the same dictionary as `Engine`.
 - After a failed `run()` the engine is still at the state before that run.
 - Not supported by Fortran Q, and rejected: `hmr=True`, and any `thermostat` other than `berendsen`.
