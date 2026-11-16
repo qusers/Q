@@ -63,7 +63,9 @@ class TestNeutralizationDefaults:
         assert (result["residue_name"] == "GLH").all()
 
     def test_cli_default_protocol_layer_is_three_angstrom(self, monkeypatch):
-        monkeypatch.setattr("sys.argv", ["qprep_prot", "-i", "protein.pdb"])
+        monkeypatch.setattr(
+            "sys.argv", ["qprep_prot", "-i", "protein.pdb", "-cog", "0", "0", "0"]
+        )
         assert parse_arguments().neutralize_boundary_offset == 3.0
 
     def test_q_classifies_exclusion_then_historical_anchor_classifies_included_group(self):

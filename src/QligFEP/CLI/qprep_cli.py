@@ -960,14 +960,10 @@ def parse_arguments() -> argparse.Namespace:
         "--center_of_geometry",
         dest="cog",
         help=(
-            "Center of geometry for the protein. The format is 'x y z', where all numbers "
-            "contain 3 decimal cases. This center of geometry can be obtained using the `qcog ` "
-            "command, but if you include ligands using the `-lig` option, this COG will be "
-            "automatically calculated. If you want to calculate the COG manually, you can use "
-            "this option. Defaults to None."
+            "Center of the water sphere, as 'x y z' in Angstrom. For a ligand series, "
+            "obtain it with the `qcog` command."
         ),
-        required=False,
-        default=None,
+        required=True,
         nargs=3,
         type=str,
     )
