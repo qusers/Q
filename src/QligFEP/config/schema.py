@@ -57,7 +57,7 @@ PROTOCOL_KEYS = (
     "nonequilibrium",
     "stages",
 )
-EQUILIBRIUM_KEYS = ("windows", "sampling", "start")
+EQUILIBRIUM_KEYS = ("windows", "sampling", "start", "lambdas")
 NONEQUILIBRIUM_KEYS = ("switch_pairs", "schedule", "steepness")
 STAGE_KEYS = ("time", "steps", "inp")
 
@@ -474,6 +474,7 @@ class Protocol:
     windows: int
     sampling: str
     start: str
+    lambdas: tuple[float, ...] | None  # explicit windows; replaces windows and sampling
     switch_pairs: int
     schedule: str
     steepness: float
@@ -489,7 +490,12 @@ class Protocol:
             "temperature": self.temperature,
             "replicates": self.replicates,
             "sphere_radius": self.sphere_radius,
-            "equilibrium": {"windows": self.windows, "sampling": self.sampling, "start": self.start},
+            "equilibrium": {
+                "windows": self.windows,
+                "sampling": self.sampling,
+                "start": self.start,
+                "lambdas": list(self.lambdas) if self.lambdas is not None else None,
+            },
             "nonequilibrium": {
                 "switch_pairs": self.switch_pairs,
                 "schedule": self.schedule,
@@ -520,6 +526,32 @@ def _build_stage(name: str, raw: Any, where: str) -> StageOverride:
         steps=_positive_int(raw["steps"], f"{where}.steps") if "steps" in raw else None,
         inp={str(section): dict(keys) for section, keys in inp.items()},
     )
+
+
+def build_lambdas(raw: Any, start: str, where: str) -> tuple[float, ...]:
+    """Validate an explicit list of lambda windows; returned from 1 down to 0.
+
+    QligFEP tells windows apart to 3 decimals (file names depend on it), so values are
+    rounded to that.
+    """
+    if not isinstance(raw, list) or len(raw) < 2:
+        raise ConfigError(f"{where}: expected a list of at least two lambda values, such as [0, 0.5, 1].")
+    values = []
+    for item in raw:
+        if isinstance(item, bool) or not isinstance(item, (int, float)) or not 0 <= item <= 1:
+            raise ConfigError(f"{where}: {item!r} is not a number between 0 and 1.")
+        values.append(round(float(item), 3))
+    duplicates = sorted({value for value in values if values.count(value) > 1})
+    if duplicates:
+        raise ConfigError(
+            f"{where}: {', '.join(f'{value:g}' for value in duplicates)} appear(s) more than once "
+            "(windows are told apart to 3 decimals)."
+        )
+    if 0.0 not in values or 1.0 not in values:
+        raise ConfigError(f"{where}: both end points, 0 and 1, must be in the list.")
+    if float(start) not in values:
+        raise ConfigError(f"{where}: the start window ({start}) must be in the list.")
+    return tuple(sorted(values, reverse=True))
 
 
 def validate_protocol_definition(name: str, raw: Any, source: str) -> None:
@@ -569,6 +601,21 @@ def build_protocol(name: str, raw: dict, own: dict, sources: tuple[str, ...] = (
     if start is None:
         raise ConfigError(f"{where}.equilibrium.start: {equilibrium['start']!r} is not one of 0.5, 1.")
 
+    # An explicit list replaces windows and sampling. A protocol that sets windows or
+    # sampling itself leaves a list it inherited behind.
+    own_equilibrium = own.get("equilibrium") or {}
+    sampled = [key for key in ("windows", "sampling") if key in own_equilibrium]
+    lambdas = equilibrium.get("lambdas")
+    if own_equilibrium.get("lambdas") is not None and sampled:
+        raise ConfigError(
+            f"{where}.equilibrium: 'lambdas' lists the windows explicitly, but the protocol also sets "
+            f"{' and '.join(sampled)}. Give either the list or windows/sampling."
+        )
+    if sampled:
+        lambdas = None
+    if lambdas is not None:
+        lambdas = build_lambdas(lambdas, start, f"{where}.equilibrium.lambdas")
+
     temperature = raw["temperature"]
     temperatures = temperature if isinstance(temperature, list) else str(temperature).split(",")
     try:
@@ -599,6 +646,7 @@ def build_protocol(name: str, raw: dict, own: dict, sources: tuple[str, ...] = (
         windows=_positive_int(equilibrium["windows"], f"{where}.equilibrium.windows"),
         sampling=_choice(equilibrium["sampling"], SAMPLINGS, f"{where}.equilibrium.sampling"),
         start=start,
+        lambdas=lambdas,
         switch_pairs=_positive_int(nonequilibrium["switch_pairs"], f"{where}.nonequilibrium.switch_pairs"),
         schedule=_choice(nonequilibrium["schedule"], NEQ_SCHEDULES, f"{where}.nonequilibrium.schedule"),
         steepness=steepness,

@@ -35,6 +35,9 @@ def create_call(**kwargs):
         "-S {sampling} -r {sphereradius} -l {start} -w {windows} -T {temperature} -ts {timestep} "
         "-rest {rest} -drf {dr_force} -log {log}"
     )
+    if kwargs.get("lambdas") is not None:
+        # The protocol lists its lambda windows; -w/-S would replace that list.
+        template = template.replace("-S {sampling} ", "").replace("-w {windows} ", "")
     if "cysbond" in kwargs and kwargs["cysbond"] is not None:
         template += " -b {cysbond}"
     if "to_clean" in kwargs and kwargs["to_clean"] is not None:
@@ -45,6 +48,8 @@ def create_call(**kwargs):
         template += " --minimize"
     if kwargs.get("production"):
         template += " --production"
+    if kwargs.get("run_plan"):
+        template += " --run-plan"
     if "water_thresh" in kwargs and kwargs["water_thresh"] != 1.4:
         template += " -wath {water_thresh}"
     if "wath_ligand_only" in kwargs and kwargs["wath_ligand_only"]:
@@ -169,6 +174,8 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 timestep=args.timestep,
                 minimize=args.minimize,
                 production=args.production,
+                run_plan=args.run_plan,
+                lambdas=args.lambdas,
                 windows=args.windows,
                 to_clean=to_clean,
                 random_state=args.random_state,

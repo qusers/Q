@@ -107,6 +107,8 @@ protocols:
       windows: 100
       sampling: sigmoidal    # linear | sigmoidal | exponential | reverse_exponential
       start: 0.5             # 0.5 (middle, both directions) | 1 (endpoint)
+      # lambdas: [0, 0.1, 0.5, 0.9, 1]   an explicit list instead of windows + sampling;
+      #                                  must hold 0, 1 and the start window
     nonequilibrium:
       switch_pairs: 5        # forward/reverse switch pairs per replicate
       schedule: sigmoidal    # sigmoidal | linear

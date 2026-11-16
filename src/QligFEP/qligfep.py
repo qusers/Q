@@ -3,6 +3,7 @@ import glob
 import os
 import re
 import stat
+import sys
 from pathlib import Path
 from typing import Literal, Optional, Union
 
@@ -30,7 +31,6 @@ from .provenance import copy_with_provenance, is_comment, provenance_header
 from .settings.settings import CONFIGS
 from .templates import (
     QprepFEPParameters,
-    format_energy_files,
     get_equilibration_configs,
     get_neq_endpoint_config,
     get_production_config,
@@ -129,6 +129,8 @@ class QligFEP:
         production: bool = False,
         profile: Optional[Profile] = None,
         stage_overrides: Optional[dict[str, StageOverride]] = None,
+        run_plan: bool = False,
+        lambdas: Optional[list[float]] = None,
     ):
         """
         Args:
@@ -138,6 +140,10 @@ class QligFEP:
                 from the layered configuration files.
             stage_overrides: Per-stage changes from a protocol (``stages`` in
                 ``qligfep.yaml``), keyed by stage name.
+            run_plan: Write one ``run_plan.yaml`` instead of one ``.inp`` file per stage
+                (windowed FEP only); the run script then calls ``qligfep_run``.
+            lambdas: Explicit lambda windows (state-1 values) instead of ``windows`` and
+                ``sampling``. State 2 runs at ``1 - lambda``.
         """
         self.timestep = timestep
         self.minimize = minimize
@@ -151,6 +157,11 @@ class QligFEP:
         self.profile = profile if profile is not None else load_config().get_profile(cluster, system=system)
         self.cluster = self.profile.name
         self.stage_overrides = dict(stage_overrides or {})
+        self.run_plan = run_plan
+        if run_plan and neq:
+            raise ValueError("The run plan covers windowed FEP only; non-equilibrium setups keep .inp files.")
+        self.custom_lambdas = [float(x) for x in lambdas] if lambdas is not None else None
+        self._plan_stages: list[tuple[str, str]] = []  # (stage name, rendered input) for the run plan
         self.sphereradius = sphereradius
         self.cysbond = cysbond
         self.start = start
@@ -953,6 +964,8 @@ class QligFEP:
                 outfile.write(line)
 
     def get_lambdas(self, windows, sampling):
+        if getattr(self, "custom_lambdas", None) is not None:
+            return [f"{value:.3f}" for value in sorted(self.custom_lambdas, reverse=True)]
         # Constructing the lambda partition scheme
         windows = int(windows)
         step = int(windows / 2)
@@ -1097,6 +1110,28 @@ class QligFEP:
             )
         return torestraint_list
 
+    def _write_stage(self, writedir, name: str, content: str) -> None:
+        """Write one stage's input file, or keep it for the run plan (``run_plan=True``).
+
+        The run plan is built from the very text that would have been written, so both
+        routes describe the same simulation.
+        """
+        if getattr(self, "run_plan", False):
+            self._plan_stages.append((name, content))
+        else:
+            (Path(writedir) / f"{name}.inp").write_text(content)
+
+    def lambda_pairs(self, lambdas: list[str]) -> list[tuple[str, str]]:
+        """(lambda1, lambda2) of every window, in the order of ``lambdas``.
+
+        Sampled schedules pair each value with its mirror in the list, as they always
+        have. An explicit ``lambdas`` list need not be symmetric, so state 2 gets
+        ``1 - lambda1``.
+        """
+        if getattr(self, "custom_lambdas", None) is not None:
+            return [(value, f"{1.0 - float(value):.3f}") for value in lambdas]
+        return [(value, lambdas[-(i + 1)]) for i, value in enumerate(lambdas)]
+
     def _write_equilibration_files(
         self,
         writedir,
@@ -1140,7 +1175,7 @@ class QligFEP:
                 wall_restraints=wall_restraints,
                 is_eq1=(i == 0),
             )
-            (Path(writedir) / f"{eq_config.name}.inp").write_text(content)
+            self._write_stage(writedir, eq_config.name, content)
             file_list.append(f"{eq_config.name}.inp")
             logger.debug(f"Writing {eq_config.name}.inp")
         return file_list
@@ -1217,9 +1252,6 @@ class QligFEP:
         Returns:
             List of three file lists: [eq_files + md_start, forward_lambda_files, reverse_lambda_files]
         """
-        file_list2 = []  # forward lambda files
-        file_list3 = []  # reverse lambda files
-
         # Sequence restraint pinning the counter-water oxygen(s), if any.
         # Appended to every eq and production stage's sequence_restraints.
         cw_restraint = self._format_counter_water_restraint()
@@ -1258,19 +1290,14 @@ class QligFEP:
         if cw_restraint:
             prod_seq_str = f"{prod_seq_str}\n{cw_restraint}" if prod_seq_str else cw_restraint
 
-        # Write production files based on start mode
-        if self.start == "0.5":
-            file_list1, file_list2, file_list3 = self._write_production_05(
-                lambdas, writedir, prod_config, prod_dr_str, prod_seq_str, file_list1, wall_restraints
-            )
-        else:
-            file_list1, file_list2, file_list3 = self._write_production_1(
-                lambdas, writedir, prod_config, prod_dr_str, prod_seq_str, file_list1, wall_restraints
-            )
-
+        file_list2, file_list3 = self._write_production(
+            lambdas, writedir, prod_config, prod_dr_str, prod_seq_str, file_list1, wall_restraints
+        )
+        if getattr(self, "run_plan", False):
+            self.write_run_plan(writedir)
         return [file_list1, file_list2, file_list3]
 
-    def _write_production_05(
+    def _write_production(
         self,
         lambdas: list[str],
         writedir: str,
@@ -1279,152 +1306,70 @@ class QligFEP:
         seq_str: str,
         file_list1: list[str],
         wall_str: str = "",
-    ) -> tuple[list[str], list[str], list[str]]:
-        """Write production MD files for start=0.5 mode.
+    ) -> tuple[list[str], list[str]]:
+        """Write the lambda-window inputs.
 
-        Starts from 0.500/0.500, then branches in both directions.
+        The first window continues from eq5; every other window continues from its
+        neighbour toward the first one. With ``start=0.5`` the first window is
+        0.500/0.500 and two chains leave it, one toward each end state (returned as two
+        lists). Otherwise the windows form a single chain from 1.000/0.000.
+
+        Appends the first window to ``file_list1`` and returns the two chains.
         """
-        file_list2 = []
-        file_list3 = []
-
-        # Split lambdas into forward and reverse from center
-        lambda_1 = []
-        lambda_2 = []
-        block = 0
-        for lmbda in lambdas:
-            if lmbda == "0.500":
-                block = 1
-            if block == 0:
-                lambda_1.append(lmbda)
-            if block == 1:
-                lambda_2.append(lmbda)
-
-        lambda_1 = lambda_1[::-1]
-        lambda_2 = lambda_2[1:]
-
-        # Write initial md_0500_0500.inp
-        content = render_md_input(
-            params=prod_config.params,
-            lambda1="0.500",
-            lambda2="0.500",
-            trajectory_file=self._trajectory_output(prod_config.params, "md_0500_0500.dcd"),
-            final_file="md_0500_0500.re",
-            restart_file="eq5.re",
-            energy_file="md_0500_0500.en",
-            distance_restraints=dr_str,
-            sequence_restraints=seq_str,
-            wall_restraints=wall_str,
-        )
-        filepath = Path(writedir) / "md_0500_0500.inp"
-        filepath.write_text(content)
-        file_list1.append("md_0500_0500.inp")
-
-        # Write lambda window files
-        for index, lambda_list in enumerate([lambda_1, lambda_2], start=1):
-            filename_N = "md_0500_0500"
-
-            for filenr, _ in enumerate(lambda_list):
-                if index == 1:
-                    l1 = lambda_1[filenr]
-                    l2 = lambda_2[filenr]
-                else:
-                    l1 = lambda_2[filenr]
-                    l2 = lambda_1[filenr]
-
-                filename = f"md_{l1.replace('.', '')}_{l2.replace('.', '')}"
-
-                content = render_md_input(
-                    params=prod_config.params,
-                    lambda1=l1,
-                    lambda2=l2,
-                    trajectory_file=self._trajectory_output(prod_config.params, f"{filename}.dcd"),
-                    final_file=f"{filename}.re",
-                    restart_file=f"{filename_N}.re",
-                    energy_file=f"{filename}.en",
-                    distance_restraints=dr_str,
-                    sequence_restraints=seq_str,
-                    wall_restraints=wall_str,
+        pairs = self.lambda_pairs(lambdas)
+        if self.start == "0.5":
+            if "0.500" not in lambdas:
+                raise ValueError(
+                    "start=0.5 needs a window at lambda 0.500, which this lambda schedule does not have. "
+                    "Use start=1 or another schedule."
                 )
-                filepath = Path(writedir) / f"{filename}.inp"
-                filepath.write_text(content)
+            middle = lambdas.index("0.500")
+            first, chains = pairs[middle], [pairs[:middle][::-1], pairs[middle + 1 :]]
+        else:
+            first, chains = pairs[0], [pairs[1:], []]
 
-                filename_N = filename
+        def stem(pair):
+            return f"md_{pair[0].replace('.', '')}_{pair[1].replace('.', '')}"
 
-                if index == 1:
-                    file_list2.append(f"{filename}.inp")
-                else:
-                    file_list3.append(f"{filename}.inp")
-
-        return file_list1, file_list2, file_list3
-
-    def _write_production_1(
-        self,
-        lambdas: list[str],
-        writedir: str,
-        prod_config,
-        dr_str: str,
-        seq_str: str,
-        file_list1: list[str],
-        wall_str: str = "",
-    ) -> tuple[list[str], list[str], list[str]]:
-        """Write production MD files for start=0.0/1 mode.
-
-        Starts from 1.000/0.000 and goes through all windows sequentially.
-        """
-        file_list2 = []
-        file_list3 = []
-        total_lambda = len(lambdas)
-
-        # Write initial md_1000_0000.inp
-        content = render_md_input(
-            params=prod_config.params,
-            lambda1="1.000",
-            lambda2="0.000",
-            trajectory_file=self._trajectory_output(prod_config.params, "md_1000_0000.dcd"),
-            final_file="md_1000_0000.re",
-            restart_file="eq5.re",
-            energy_file="md_1000_0000.en",
-            distance_restraints=dr_str,
-            sequence_restraints=seq_str,
-            wall_restraints=wall_str,
-        )
-        filepath = Path(writedir) / "md_1000_0000.inp"
-        filepath.write_text(content)
-        file_list1.append("md_1000_0000.inp")
-
-        filename_N = "md_1000_0000"
-        filenr = 0
-
-        for lmbda in lambdas:
-            if lmbda == "1.000":
-                continue
-
-            step_n = total_lambda - filenr - 2
-            l1 = lmbda
-            l2 = lambdas[step_n]
-
-            filename = f"md_{l1.replace('.', '')}_{l2.replace('.', '')}"
-
+        def write(pair, restart):
+            name = stem(pair)
             content = render_md_input(
                 params=prod_config.params,
-                lambda1=l1,
-                lambda2=l2,
-                trajectory_file=self._trajectory_output(prod_config.params, f"{filename}.dcd"),
-                final_file=f"{filename}.re",
-                restart_file=f"{filename_N}.re",
-                energy_file=f"{filename}.en",
+                lambda1=pair[0],
+                lambda2=pair[1],
+                trajectory_file=self._trajectory_output(prod_config.params, f"{name}.dcd"),
+                final_file=f"{name}.re",
+                restart_file=f"{restart}.re",
+                energy_file=f"{name}.en",
                 distance_restraints=dr_str,
                 sequence_restraints=seq_str,
                 wall_restraints=wall_str,
             )
-            filepath = Path(writedir) / f"{filename}.inp"
-            filepath.write_text(content)
+            self._write_stage(writedir, name, content)
+            return name
 
-            filename_N = filename
-            filenr += 1
-            file_list2.append(f"{filename}.inp")
+        file_list1.append(write(first, "eq5") + ".inp")
+        file_lists = []
+        for chain in chains:
+            previous, names = stem(first), []
+            for pair in chain:
+                previous = write(pair, previous)
+                names.append(f"{previous}.inp")
+            file_lists.append(names)
+        return file_lists[0], file_lists[1]
 
-        return file_list1, file_list2, file_list3
+    def write_run_plan(self, writedir) -> None:
+        """Write ``run_plan.yaml`` from the stages collected by ``_write_stage``."""
+        from .run_plan import build_plan, write_plan
+
+        plan = build_plan(
+            self._plan_stages,
+            temperatures=[float(t) for t in str(self.temperature).split(",")],
+            seeds=[int(seed) for seed in self.seeds],
+            fep="FEP1.fep",
+        )
+        write_plan(Path(writedir) / "run_plan.yaml", plan)
+        self._plan_stages = []
 
     def _write_endpoint_file(
         self,
@@ -1619,6 +1564,9 @@ class QligFEP:
         profile = self._get_profile()
         src = CONFIGS["INPUT_DIR"] + "/run.sh"
         tgt = writedir + "/" + profile.runfile_name
+        if getattr(self, "run_plan", False):
+            self._write_plan_runfile(src, tgt)
+            return
         eq_stages = [Path(f).stem for f in sorted(glob.glob(writedir + "/eq*.inp"))]
 
         if self.start == "1":
@@ -1655,10 +1603,52 @@ class QligFEP:
                     outfile.write("#Cleaned {} files\n".format(" ".join(self.to_clean)))
         self._make_executable(tgt)
 
+    #: In run.sh, the lines from the first to the last of these copy the stage inputs into
+    #: the replicate folder, patch them with sed and run them one by one. A run plan
+    #: replaces all of that with one call.
+    _STAGE_BLOCK = ("cp $inputfiles/md*.inp .", "#RUN_FILES")
+
+    def _write_plan_runfile(self, src: str, tgt: str) -> None:
+        """Write the run script that executes ``run_plan.yaml`` through ``qligfep_run``."""
+        profile = self._get_profile()
+        lines = Path(src).read_text().splitlines(keepends=True)
+        stripped = [line.strip() for line in lines]
+        try:
+            first, last = (stripped.index(marker) for marker in self._STAGE_BLOCK)
+        except ValueError:
+            raise RuntimeError(f"{src} no longer has the stage block the run plan replaces.") from None
+        launcher = profile.launch_prefix().removeprefix("time").strip()
+        block = [
+            "cp $inputfiles/qfep.inp .\n",
+            "if [ $index -ge 1 ]; then\n",
+            '    echo "ERROR: a run plan covers one FEP file."\n',
+            "    exit 1\n",
+            "fi\n",
+            "# Every stage and lambda window of this replicate, from one file. Topology and FEP file\n",
+            "# are read from inputfiles/; each stage writes <stage>.log, .re, and .en/.dcd as planned.\n",
+            f'time "{sys.executable}" -m QligFEP.run_plan $inputfiles/run_plan.yaml \\\n',
+            f'    --replicate $run_num --temperature $temperature --qdyn $qdyn --mpi "{launcher}"\n',
+        ]
+        # the sed helper is only used by the block that is replaced
+        head = [line for line in lines[:first] if "sedi()" not in line and "In-place sed" not in line]
+        lines = head + block + lines[last + 1 :]
+        replacements = self._script_replacements("equilibrium", profile.resources.ntasks)
+        with open(tgt, "w") as outfile:
+            for line in lines:
+                outfile.write(replace(line, replacements))
+                if line.strip() == "#CLEANUP" and self.to_clean is not None:
+                    if self.production and self.minimize and "log" in self.to_clean:
+                        outfile.write("if [ -f eq1.log ]; then cp eq1.log eq1.minimization; fi\n")
+                    outfile.write(cleanup_command(self.to_clean))
+                    outfile.write("#Cleaned {} files\n".format(" ".join(self.to_clean)))
+        self._make_executable(tgt)
+
     def write_qfep(self, windows, lambdas):
         qfep_out = self.write_dir + "/inputfiles/qfep.inp"
         # TO DO: multiple files will need to be written out for temperature range
-        energy_files = format_energy_files(lambdas)
+        energy_files = [
+            f"md_{l1.replace('.', '')}_{l2.replace('.', '')}.en" for l1, l2 in self.lambda_pairs(lambdas)
+        ]
         content = render_qfep_input(
             total_lambdas=len(lambdas),
             temperature=float(self.temperature),

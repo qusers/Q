@@ -44,6 +44,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
             "timestep": args.timestep,
             "minimize": args.minimize,
             "production": args.production,
+            "run_plan": args.run_plan,
             "to_clean": args.to_clean,
             "water_thresh": args.water_thresh,
             "dr_force": args.dr_force,
@@ -70,6 +71,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
         **param_dict,
         profile=profile,
         stage_overrides=getattr(args, "stage_overrides", None),
+        lambdas=getattr(args, "lambdas", None),
     )
     param_dict["softcore_method"] = softcore_method
     if protocol is not None:
@@ -92,9 +94,9 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
                 command_str += f" --{k}".replace("_", "-")
         elif k == "dr_force":
             command_str += f" --{k} {v}".replace("dr_force", "distance_restraint_force")
-        elif k in ("neq", "minimize", "production"):
+        elif k in ("neq", "minimize", "production", "run_plan"):
             if v:
-                command_str += f" --{k}"
+                command_str += f" --{k.replace('_', '-')}"
         elif k == "neq_L":
             command_str += f" --neq-steepness {v}"
         elif k in ("neq_reps", "neq_steps", "neq_eq_steps", "neq_relax_steps", "neq_schedule"):

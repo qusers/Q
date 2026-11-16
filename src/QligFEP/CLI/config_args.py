@@ -116,6 +116,17 @@ def resolve_run_settings(args: argparse.Namespace, system: str | None = None) ->
     _fill(args, "start", protocol.start)
     _fill(args, "temperature", protocol.temperature)
     _fill(args, "replicates", str(protocol.replicates))
+    # An explicit lambda list replaces windows/sampling, unless those are given as flags.
+    sampled_flags = [f for f, name in (("-w", "windows"), ("-S", "sampling")) if getattr(args, name, None) is not None]
+    args.lambdas = None
+    if protocol.lambdas is not None and sampled_flags:
+        logger.warning(
+            f"{'/'.join(sampled_flags)} given on the command line: the explicit lambda list of protocol "
+            f"'{protocol.name}' is not used."
+        )
+    elif protocol.lambdas is not None:
+        args.lambdas = list(protocol.lambdas)
+        args.windows = str(len(protocol.lambdas) - 1)
     _fill(args, "sampling", protocol.sampling)
     _fill(args, "windows", str(protocol.windows))
     _fill(args, "timestep", protocol.timestep)
@@ -169,7 +180,12 @@ def resolved_snapshot(profile: Profile, protocol: Protocol, args: argparse.Names
         temperature=str(args.temperature),
         replicates=int(args.replicates),
         sphere_radius=int(args.sphereradius),
-        equilibrium={"windows": int(args.windows), "sampling": args.sampling, "start": str(args.start)},
+        equilibrium={
+            "windows": int(args.windows),
+            "sampling": args.sampling,
+            "start": str(args.start),
+            "lambdas": getattr(args, "lambdas", None),
+        },
         nonequilibrium={
             "switch_pairs": args.neq_reps,
             "schedule": args.neq_schedule,

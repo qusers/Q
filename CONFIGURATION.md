@@ -230,10 +230,68 @@ The sections QligFEP generates from the system (`files`, `lambdas`, the restrain
 sections, `lambda_scaling`) and the per-replicate keys (`random_seed`,
 `initial_temperature`) cannot be overridden.
 
+### Explicit lambda windows
+
+`equilibrium.lambdas` lists the windows instead of deriving them from `windows` and
+`sampling`:
+
+```yaml
+protocols:
+  dense-ends:
+    equilibrium:
+      start: 0.5
+      lambdas: [0, 0.01, 0.03, 0.1, 0.25, 0.5, 0.75, 0.9, 0.97, 0.99, 1]
+```
+
+Each value is the lambda of state 1; state 2 runs at `1 - lambda`, so the list need
+not be symmetric. The list must contain 0, 1 and the `start` window, without
+duplicates. Values are rounded to 3 decimals, because file names carry 3. Giving the
+list together with `windows` or `sampling` in the same protocol is an error. `-w` or
+`-S` on the command line replace the list, with a warning.
+
 ### Command-line flags
 
 Flags given on the command line win over the protocol. `-w 40` with a protocol
 that sets 50 windows runs 40. Flags that are not given take the protocol's value.
+
+## One run plan instead of one input file per stage
+
+By default `inputfiles/` holds one qdyn `.inp` file per stage: five equilibration
+stages and one per lambda window, 106 files for 100 windows. The run script copies
+them into every replicate folder and fills in the seed and temperature with `sed`.
+
+With `--run-plan` (`qligfep` and `setupFEP`, windowed FEP only) the same information
+is written once, to `inputfiles/run_plan.yaml`:
+
+- `settings`: the qdyn keywords every stage shares;
+- `equilibration`: the stages in order, each with what it does not share;
+- `windows`: the settings of a lambda window, the list of windows and where to start;
+- `replicates`: the temperatures and seeds. A value written as `replicate` is filled
+  in per replicate: the temperature, and the random seed of the first stage.
+
+The run script then makes one call per replicate:
+
+```bash
+qligfep_run inputfiles/run_plan.yaml --replicate 1 --temperature 298 \
+    --qdyn /path/to/qdynp --mpi "mpirun -n 8"
+```
+
+The replicate folder receives one `.log` and `.re` per stage, the `.en` files of the
+windows and, unless `--production` is set, the `.dcd` files. Names are unchanged, so
+`qfep.inp` and `qligfep_analyze` work as before. No `.inp` file, topology or FEP file
+is copied there. Both routes give the same results, byte for byte.
+
+Three things to know:
+
+- The runner drives Fortran Q through the `qgpu` engine API in `src/core/python`. It
+  is found in the QligFEP checkout; no CUDA build is needed.
+- qdyn still reads an input file, so the engine writes a temporary one per stage in
+  the job's temporary folder and removes it.
+- The window at `start` runs first, then all windows on one side of it, then the
+  other side. The `.inp` route alternates between the two sides. Each window
+  continues from the same neighbour either way.
+
+Non-equilibrium setups keep their `.inp` files.
 
 ## What was used for a run
 

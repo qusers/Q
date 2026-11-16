@@ -154,6 +154,16 @@ def parse_arguments(program: str) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--run-plan",
+        dest="run_plan",
+        action="store_true",
+        help=(
+            "Windowed FEP only: write one inputfiles/run_plan.yaml instead of one .inp file per "
+            "stage and lambda window. The run script then runs each replicate with `qligfep_run`, "
+            "which fills in the temperature and random seed. Results are the same as with .inp files."
+        ),
+    )
+    parser.add_argument(
         "-clean",
         "--clean",
         "--files-to-clean",
