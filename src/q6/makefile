@@ -10,6 +10,19 @@
 ################################################################################
 
 ################################################################################
+# macOS: Homebrew gfortran cannot find libSystem ("ld: library 'System' not
+# found") unless SDKROOT points to the command line tools SDK.
+################################################################################
+ifeq ($(shell uname -s),Darwin)
+ifeq ($(origin SDKROOT),undefined)
+	MACOS_SDK := $(shell xcrun --show-sdk-path 2>/dev/null)
+ifneq ($(MACOS_SDK),)
+	export SDKROOT := $(MACOS_SDK)
+endif
+endif
+endif
+
+################################################################################
 # Intel Fortran ifort ( tested in linux and osx)
 ################################################################################
 ifeq ($(COMP),ifort)
