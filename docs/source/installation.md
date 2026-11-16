@@ -1,72 +1,53 @@
 # Installation
 
-## Supported environment
+## Requirements
 
-The current package metadata requires Python 3.13. QligFEP is developed and
-tested primarily on Linux/HPC systems and macOS. The Python workflow and the
-Fortran Q engine have separate build requirements:
+Q is developed and tested on Linux, including HPC systems, and on macOS. The
+Python workflows and the Q engine have separate build requirements:
 
-- **Python preparation tools:** Python 3.13 and the scientific/cheminformatics
-  dependencies below;
+- **Python workflows (QligFEP and QresFEP):** the environment below;
 - **serial Q programs:** a Fortran compiler, normally `gfortran`;
 - **MPI dynamics:** an MPI installation with `mpif90` built against a compatible
   compiler;
-- **cluster workflow:** Slurm and a configured cluster profile.
+- **cluster workflow:** Slurm and a configured
+  [cluster profile](cluster-configuration.md).
 
-## Recommended environment
+## Python environment
 
 [Micromamba](https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html)
-is recommended because several molecular-modeling dependencies are distributed
+is recommended because several molecular-modelling dependencies are distributed
 through Conda channels.
+
+<!-- The commands below are included from the README of the repository, so
+that the two cannot diverge. Edit them there, between the docs:* markers. -->
 
 ### Linux
 
-```bash
-micromamba create -n qligfep python=3.13 \
-  gfortran=11.3.0 \
-  openff-toolkit=0.17.1 "openff-utilities>=0.1.12" \
-  openff-forcefields=2026.01.0 openmm=8.2.0 \
-  openff-nagl=0.5.4 openff-nagl-models=2025.9.0 \
-  lomap2 kartograf=1.0.1 michellab::fkcombu konnektor \
-  -c conda-forge --yes
-micromamba activate qligfep
-python -m pip install -e .
+```{include} ../../README.md
+:start-after: "<!-- docs:install-linux:start (this block is included in docs/source/installation.md) -->"
+:end-before: "<!-- docs:install-linux:end -->"
 ```
 
 ### macOS
 
-```bash
-micromamba create -n qligfep python=3.13 \
-  gfortran=11.3.0 \
-  openff-toolkit=0.17.1 "openff-utilities>=0.1.12" \
-  openff-forcefields=2026.01.0 openmm=8.2.0 \
-  openff-nagl=0.5.4 openff-nagl-models=2025.9.0 \
-  lomap2 kartograf=1.0.1 davidararipe::kcombu_bss konnektor \
-  -c conda-forge --yes
-micromamba activate qligfep
-python -m pip install -e .
+```{include} ../../README.md
+:start-after: "<!-- docs:install-macos:start (this block is included in docs/source/installation.md) -->"
+:end-before: "<!-- docs:install-macos:end -->"
 ```
 
-The channel-qualified FKComBU package differs between the documented Linux and
-macOS environments.
-
 :::{note}
-The dependencies declared directly in `pyproject.toml` do not include every
-network-generation and ligand-parameterization package. Use the complete
+The dependencies declared in `pyproject.toml` do not include every
+network-generation and ligand-parameterisation package. Use the complete
 environment above if you need `qparams`, `qlomap`, and `qkonnektor`.
 :::
 
+(pymol-for-qresfep)=
 ### PyMOL for QresFEP
 
-`setup_resFEP` builds mutant side chains with the mutagenesis wizard of PyMOL.
-Install it in the same environment:
-
-```bash
-micromamba install -n qligfep -c conda-forge pymol-open-source
+```{include} ../../README.md
+:start-after: "<!-- docs:install-pymol:start (this block is included in docs/source/installation.md) -->"
+:end-before: "<!-- docs:install-pymol:end -->"
 ```
-
-`setup_resFEP` calls the `pymol` executable. PyMOL is not needed if you supply
-the mutant residue PDBs yourself with `setup_resFEP -mp`.
 
 ## What the Python installation builds
 
@@ -74,7 +55,7 @@ the mutant residue PDBs yourself with `setup_resFEP -mp`.
 python -m pip install -e .
 ```
 
-installs the QligFEP console scripts and attempts to compile `qprep`. If no
+installs the QligFEP and QresFEP commands and attempts to compile `qprep`. If no
 Fortran compiler is available, the installation can finish with a warning while
 leaving preparation commands unusable. Check explicitly:
 
@@ -131,7 +112,8 @@ Check the Python command surface:
 
 ```bash
 for command in qcog pdb2amber qprep_prot qparams qlomap qkonnektor \
-  qmapfep qligfep setupFEP qligfep_analyze qligfep_neq_analyze; do
+  qmapfep qligfep setupFEP qligfep_analyze qligfep_neq_analyze \
+  qresfep setup_resFEP qresfep_analyze; do
   command -v "$command" || echo "missing: $command"
 done
 ```

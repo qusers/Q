@@ -49,6 +49,9 @@ We recommend `micromamba`, the lightweight version of `mamba`. Follow the
 then create the project environment:
 
 ### Linux
+
+<!-- docs:install-linux:start (this block is included in docs/source/installation.md) -->
+
 ```bash
 micromamba create -n qligfep_new python=3.11
 micromamba activate qligfep_new
@@ -62,6 +65,8 @@ python -m pip install -e .
 
 The `qprep` Fortran binary will be automatically compiled during installation.
 
+<!-- docs:install-linux:end -->
+
 <details>
 <summary>To install everything in one line...</summary>
 
@@ -71,6 +76,8 @@ micromamba create -n qligfep_new python=3.11 gfortran=11.3.0 openff-toolkit=0.17
 </details>
 
 ### macOS
+
+<!-- docs:install-macos:start (this block is included in docs/source/installation.md) -->
 
 As on Linux, [clone the repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository), enter the `Q` directory with `cd Q/`, create the environment, and install QligFEP:
 
@@ -83,6 +90,8 @@ python -m pip install -e .
 
 The `qprep` Fortran binary will be automatically compiled during installation.
 
+<!-- docs:install-macos:end -->
+
 <details>
 <summary>To install everything in one line...</summary>
 
@@ -92,6 +101,8 @@ micromamba create -n qligfep_new python=3.11 gfortran=11.3.0 openff-toolkit=0.17
 </details>
 
 ### PyMOL for QresFEP mutant preparation
+
+<!-- docs:install-pymol:start (this block is included in docs/source/installation.md) -->
 
 `setup_resFEP` runs PyMOL's mutagenesis wizard to place each mutant side chain
 on the wild-type backbone. Install PyMOL in the project environment:
@@ -104,6 +115,8 @@ micromamba install -n qligfep_new -c conda-forge pymol-open-source
 separate Python environment or the PyMOL Python package. If you already have
 mutant residue PDBs, pass their directory with `setup_resFEP --mutant-pdbs` and
 omit this dependency.
+
+<!-- docs:install-pymol:end -->
 
 ### Compiling Q for HPC (MPI support)
 
