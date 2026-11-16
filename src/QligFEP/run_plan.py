@@ -7,7 +7,10 @@ filled in per replicate (temperature, random seed). The run script then calls
     qligfep_run inputfiles/run_plan.yaml --replicate 1 --temperature 298 \\
         --qdyn /path/qdynp --mpi "mpirun -n 8"
 
-which runs all stages through the qgpu engine API with one engine for the replicate.
+which runs all stages through the qgpu engine API with one engine for the replicate. It
+leaves one log (``replicate.log``), one energy file (``energies.parquet``, see
+:mod:`QligFEP.energies`) and the trajectories, and with ``--qfep`` runs qfep on the
+energies in a temporary folder.
 
 The plan is built from the text of the .inp files QligFEP would otherwise write
 (:func:`build_plan`), so both routes describe the same simulation, and
@@ -21,7 +24,10 @@ import contextlib
 import copy
 import re
 import shlex
+import signal
+import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
@@ -49,8 +55,9 @@ _HEADER = """\
 #   replicates     `replicate` as a value below means: filled in per replicate
 #                  (temperature, and the random seed of the first stage)
 #   restraints     distance restraint pairs; each stage gives their force constant (distance_force)
-# Each stage writes <name>.log and <name>.re, <name>.dcd when its trajectory interval is > 0
-# and <name>.en when its energy interval is > 0. Windows are named md_<lambda1>_<lambda2>.
+# A replicate folder receives replicate.log (every stage's output), energies.parquet (the
+# energies of every window) and <name>.dcd for each stage whose trajectory interval is > 0.
+# Windows are named md_<lambda1>_<lambda2>.
 """
 
 
@@ -429,17 +436,28 @@ def run_replicate(
     mpi=(),
     rundir=".",
     engine_kind: str = "fortran",
+    keep_stage_files: bool = False,
+    qfep=None,
+    qfep_input=None,
     report=lambda message: print(message, flush=True),
 ) -> None:
     """Run every stage of one replicate of a run plan, with one engine.
 
+    What stays in ``rundir``: ``replicate.log`` (qdyn's output of every stage, in run
+    order), ``energies.parquet`` (the energies of every window, see :mod:`QligFEP.energies`),
+    the trajectories the plan asks for, and ``qfep.out`` and ``energies.csv`` when ``qfep``
+    is given. ``keep_stage_files`` also writes what each stage wrote before: ``<stage>.log``,
+    ``<stage>.re`` and the windows' ``<stage>.en``.
+
     The engine is only replaced when a stage changes a setting that is fixed for an
     engine's lifetime (cut-offs, shell radius, ...); the new one starts from the
-    previous stage's restart file.
+    previous stage's state, through a restart file in a temporary folder.
 
     Raises:
         PlanError: The plan or the replicate number is invalid.
-        qgpu.QgpuError: A stage failed; its log is ``<stage>.log`` in ``rundir``.
+        qgpu.QgpuError: A stage failed. ``replicate.log`` holds the output up to the failure,
+            ``<parent>.re`` the state the failed stage started from, and ``energies.parquet``
+            the windows completed so far.
     """
     plan_path = Path(plan_path).resolve()
     plan = load_plan(plan_path)
@@ -452,38 +470,122 @@ def run_replicate(
 
     qgpu = _import_qgpu()
     from qgpu.config import FIXED
+    from qgpu.fortran import write_restart
+
+    from .energies import FILE_NAME, Window, run_qfep, write_energies
 
     fixed = [name for name in FIXED if name not in _START_ONLY]
     changeable = [f.name for f in fields(qgpu.Config) if f.name not in FIXED]
     # stages that are continued from later, after another stage has run in between
     branch_points = {s.parent for previous, s in zip(stages, stages[1:]) if s.parent != previous.name}
+    energy_file = rundir / FILE_NAME
 
-    engine, states, previous = None, {}, None
+    engine, states, previous, windows, stage, start = None, {}, None, [], None, None
     report(f"Run plan {plan_path}: replicate {replicate}, T={temperature:g}, seed={seeds[replicate - 1]}, {len(stages)} stages")
-    try:
-        for stage in stages:
-            config = qgpu.Config.from_sections(stage.sections, folder=rundir)
-            if engine is not None and any(getattr(config, n) != getattr(engine.config, n) for n in fixed):
+    with tempfile.TemporaryDirectory(prefix="qligfep_run_") as scratch, open(rundir / LOG_NAME, "w") as log:
+        try:
+            for number, stage in enumerate(stages, 1):
+                config = qgpu.Config.from_sections(stage.sections, folder=rundir)
+                if not keep_stage_files:
+                    config = replace(config, final_file="", energy_file="")
+                if engine is not None and any(getattr(config, n) != getattr(engine.config, n) for n in fixed):
+                    # a new engine, from the state the old one holds (or the branch point's)
+                    start = states[stage.parent] if stage.parent != previous else engine.get_state()
+                    engine.close()
+                    engine = None
+                    restart = Path(scratch) / f"{stage.parent}.re"
+                    write_restart(restart, start)
+                    config = replace(config, restart=str(restart))
+                    previous = stage.parent
+                if engine is None:
+                    engine = _open_engine(qgpu, engine_kind, config, qdyn, mpi)
+                    start = None
+                else:
+                    if stage.parent != previous:
+                        engine.set_state(states[stage.parent])
+                    engine.update_config(**{name: getattr(config, name) for name in changeable})
+                started = time.time()
+                log.write(f"{_STAGE_HEADER} {stage.name} ({number}/{len(stages)})\n")
+                log.flush()
+                output = _StageOutput(log, rundir / f"{stage.name}.log" if keep_stage_files else None)
+                with output, contextlib.redirect_stdout(output):
+                    engine.run()
+                if not output.terminated_normally:
+                    raise qgpu.QgpuError(f"qdyn did not report a normal termination for stage {stage.name}.")
+                if (config.energy or 0) > 0:
+                    windows.append(Window(stage.name, tuple(config.lambdas or ()), engine.get_energies()))
+                report(f"{stage.name}: {time.time() - started:.1f} s")
+                if stage.name in branch_points:
+                    states[stage.name] = engine.get_state()
+                previous = stage.name
+        except BaseException as error:  # a failed stage, or the job being stopped
+            kept = [f"log: {rundir / LOG_NAME}"]
+            if stage is not None and stage.parent is not None:
+                try:  # the engine is at the state the failed stage started from
+                    state = start if engine is None else engine.get_state()
+                    if state is not None:
+                        write_restart(rundir / f"{stage.parent}.re", state)
+                        kept.append(f"state at the end of {stage.parent}: {rundir / stage.parent}.re")
+                except Exception:  # noqa: BLE001 - keep reporting the original failure
+                    pass
+            if windows:
+                write_energies(energy_file, windows)
+                kept.append(f"energies of {len(windows)} completed window(s): {energy_file}")
+            where = f"Stage {stage.name} failed" if stage is not None else "The replicate failed"
+            if isinstance(error, qgpu.QgpuError):
+                raise type(error)(f"{where}: {error} Kept: {'; '.join(kept)}.") from error
+            report(f"{where} ({type(error).__name__}). Kept: {'; '.join(kept)}.")
+            raise
+        finally:
+            if engine is not None:
                 engine.close()
-                engine = None
-                config = replace(config, restart=str(rundir / f"{stage.parent}.re"))
-            if engine is None:
-                engine = _open_engine(qgpu, engine_kind, config, qdyn, mpi)
-            else:
-                if stage.parent != previous:
-                    engine.set_state(states[stage.parent])
-                engine.update_config(**{name: getattr(config, name) for name in changeable})
-            started = time.time()
-            # qdyn's output, which the engine prints, is this stage's log
-            with open(rundir / f"{stage.name}.log", "w") as log, contextlib.redirect_stdout(log):
-                engine.run()
-            report(f"{stage.name}: {time.time() - started:.1f} s")
-            if stage.name in branch_points:
-                states[stage.name] = engine.get_state()
-            previous = stage.name
-    finally:
-        if engine is not None:
-            engine.close()
+    write_energies(energy_file, windows)
+    report(f"Energies of {len(windows)} windows: {energy_file}")
+    if qfep is not None:
+        run_qfep(energy_file, qfep, qfep_input or plan_path.parent / "qfep.inp", rundir)
+        report(f"qfep: {rundir / 'qfep.out'}")
+
+
+#: The log of a replicate: every stage's qdyn output, each under a header line.
+LOG_NAME = "replicate.log"
+_STAGE_HEADER = "=== qligfep_run stage"
+
+
+class _StageOutput:
+    """Where qdyn's output of one stage goes: the replicate log, and the stage's own log if kept."""
+
+    def __init__(self, log, stage_log=None):
+        self._log, self._path, self._stage = log, stage_log, None
+        self.terminated_normally = False
+
+    def __enter__(self):
+        if self._path is not None:
+            self._stage = open(self._path, "w")
+        return self
+
+    def __exit__(self, *error):
+        self._log.flush()
+        if self._stage is not None:
+            self._stage.close()
+
+    def write(self, text):
+        if "terminated normally" in text:
+            self.terminated_normally = True
+        self._log.write(text)
+        if self._stage is not None:
+            self._stage.write(text)
+        return len(text)
+
+    def flush(self):
+        self._log.flush()
+
+
+class _Stopped(SystemExit):
+    """The job is being stopped (SIGTERM, as Slurm sends at the time limit)."""
+
+
+def _stop(signum, frame):
+    raise _Stopped(128 + signum)
 
 
 def main(argv=None) -> int:
@@ -503,18 +605,34 @@ def main(argv=None) -> int:
     parser.add_argument(
         "--engine", default="fortran", choices=["fortran"], help="Engine running the plan. Only Fortran Q for now."
     )
+    parser.add_argument(
+        "--qfep", help="Run this qfep on the energies at the end; writes qfep.out and energies.csv to --rundir."
+    )
+    parser.add_argument(
+        "--qfep-input", help="The qfep input. Defaults to qfep.inp next to the plan."
+    )
+    parser.add_argument(
+        "--keep-stage-files", action="store_true",
+        help="Also write each stage's .log and .re and each window's .en into --rundir, as the .inp route does "
+        "(for debugging). By default only replicate.log, energies.parquet and trajectories are written.",
+    )
     args = parser.parse_args(argv)
+    signal.signal(signal.SIGTERM, _stop)  # stopped jobs still save the windows finished so far
     try:
         run_replicate(
             args.plan, args.replicate, args.temperature, qdyn=args.qdyn, mpi=shlex.split(args.mpi),
-            rundir=args.rundir, engine_kind=args.engine,
+            rundir=args.rundir, engine_kind=args.engine, keep_stage_files=args.keep_stage_files,
+            qfep=args.qfep, qfep_input=args.qfep_input,
         )  # fmt: skip
     except PlanError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 2
-    except RuntimeError as error:  # qgpu.QgpuError: a stage failed
+    except (RuntimeError, OSError, ValueError, subprocess.CalledProcessError) as error:
+        # qgpu.QgpuError: a stage failed; EnergyStoreError; qfep failed
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
+    finally:
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
     return 0
 
 

@@ -1603,10 +1603,10 @@ class QligFEP:
                     outfile.write("#Cleaned {} files\n".format(" ".join(self.to_clean)))
         self._make_executable(tgt)
 
-    #: In run.sh, the lines from the first to the last of these copy the stage inputs into
-    #: the replicate folder, patch them with sed and run them one by one. A run plan
-    #: replaces all of that with one call.
-    _STAGE_BLOCK = ("cp $inputfiles/md*.inp .", "#RUN_FILES")
+    #: In run.sh, the stage block starts here and runs to the end of the FEP-file loop
+    #: (its last ``done``): copy the stage inputs, patch them with sed, run them one by one,
+    #: run qfep and check every log. A run plan replaces all of that with one call.
+    _STAGE_BLOCK_START = "cp $inputfiles/md*.inp ."
 
     def _write_plan_runfile(self, src: str, tgt: str) -> None:
         """Write the run script that executes ``run_plan.yaml`` through ``qligfep_run``."""
@@ -1614,34 +1614,36 @@ class QligFEP:
         lines = Path(src).read_text().splitlines(keepends=True)
         stripped = [line.strip() for line in lines]
         try:
-            first, last = (stripped.index(marker) for marker in self._STAGE_BLOCK)
+            first = stripped.index(self._STAGE_BLOCK_START)
+            last = len(stripped) - 1 - stripped[::-1].index("done")
         except ValueError:
             raise RuntimeError(f"{src} no longer has the stage block the run plan replaces.") from None
         launcher = profile.launch_prefix().removeprefix("time").strip()
         package_root = Path(__file__).resolve().parents[1]
         block = [
-            "cp $inputfiles/qfep.inp .\n",
             "if [ $index -ge 1 ]; then\n",
             '    echo "ERROR: a run plan covers one FEP file."\n',
             "    exit 1\n",
             "fi\n",
-            "# Every stage and lambda window of this replicate, from one file. Topology and FEP file\n",
-            "# are read from inputfiles/; each stage writes <stage>.log, .re, and .en/.dcd as planned.\n",
+            "# Every stage and lambda window of this replicate, from one file, then qfep. Topology, FEP\n",
+            "# file and qfep.inp are read from inputfiles/. This folder receives replicate.log,\n",
+            "# energies.parquet (all windows), the trajectories, qfep.out and energies.csv. The runner\n",
+            "# fails unless every stage terminated normally.\n",
             # the interpreter and the QligFEP checkout that wrote the plan, whatever the job inherits
             f'export PYTHONPATH="{package_root}${{PYTHONPATH:+:$PYTHONPATH}}"\n',
             f'time "{sys.executable}" -m QligFEP.run_plan $inputfiles/run_plan.yaml \\\n',
-            f'    --replicate $run_num --temperature $temperature --qdyn $qdyn --mpi "{launcher}"\n',
+            f'    --replicate $run_num --temperature $temperature --qdyn $qdyn --mpi "{launcher}" \\\n',
+            "    --qfep $qfep --qfep-input $inputfiles/qfep.inp\n",
         ]
         # the sed helper is only used by the block that is replaced
         head = [line for line in lines[:first] if "sedi()" not in line and "In-place sed" not in line]
-        lines = head + block + lines[last + 1 :]
+        lines = head + block + lines[last:]
         replacements = self._script_replacements("equilibrium", profile.resources.ntasks)
         with open(tgt, "w") as outfile:
             for line in lines:
                 outfile.write(replace(line, replacements))
                 if line.strip() == "#CLEANUP" and self.to_clean is not None:
-                    if self.production and self.minimize and "log" in self.to_clean:
-                        outfile.write("if [ -f eq1.log ]; then cp eq1.log eq1.minimization; fi\n")
+                    # the minimization output is in replicate.log, which no default list removes
                     outfile.write(cleanup_command(self.to_clean))
                     outfile.write("#Cleaned {} files\n".format(" ".join(self.to_clean)))
         self._make_executable(tgt)

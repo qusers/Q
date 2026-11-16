@@ -275,20 +275,59 @@ The run script then makes one call per replicate:
 
 ```bash
 qligfep_run inputfiles/run_plan.yaml --replicate 1 --temperature 298 \
-    --qdyn /path/to/qdynp --mpi "mpirun -n 8"
+    --qdyn /path/to/qdynp --mpi "mpirun -n 8" \
+    --qfep /path/to/qfep --qfep-input inputfiles/qfep.inp
 ```
 
-The replicate folder receives one `.log` and `.re` per stage, the `.en` files of the
-windows and, unless `--production` is set, the `.dcd` files. Names are unchanged, so
-`qfep.inp` and `qligfep_analyze` work as before. No `.inp` file, topology or FEP file
-is copied there. Both routes give the same results, byte for byte.
+which runs every stage with one engine and then qfep. The replicate folder then holds only:
+
+| File | What |
+|---|---|
+| `replicate.log` | qdyn's output of every stage, in run order, each under a line `=== qligfep_run stage <name> (<n>/<total>)` |
+| `energies.parquet` | the energies of every lambda window, in one compressed file (below) |
+| `qfep.out`, `energies.csv` | qfep's output, as before |
+| `<stage>.dcd` | one trajectory per stage, unless `--production` is set |
+
+With trajectories (the default) that is 106 `.dcd` files plus four for 100 windows,
+against 530 files on the `.inp` route; with `--production` it is the four files. No
+`.inp` file, restart file, topology, FEP file or `qfep.inp` is copied or written there.
+The runner fails unless every stage terminated normally; the run script trusts its exit
+status. Both routes give the same results, byte for byte.
+
+`qligfep_run --keep-stage-files` also writes what the `.inp` route leaves, for
+debugging: `<stage>.log`, `<stage>.re` and the windows' `<stage>.en`.
+
+When a stage fails, the runner keeps `replicate.log` up to the failure, the state the
+failed stage started from as `<previous stage>.re`, and the energies of the windows
+finished so far in `energies.parquet`, and names them in its error message. A job
+stopped by Slurm (SIGTERM at the time limit) also saves the finished windows.
+
+### The energy file
+
+`energies.parquet` has one row per (window, frame, state): `window` (`md_0500_0500`),
+`lambda1`, `lambda2` (the window's lambdas), `frame` (from 1), `state`, then the terms qdyn
+writes to a `.en` file: `lambda`, `total`, `q_bond`, `q_angle`, `q_torsion`,
+`q_improper`, `qx_el`, `qx_vdw`, `qq_el`, `qq_vdw`, `qp_el`, `qp_vdw`, `qw_el`, `qw_vdw`,
+`restraint`. It is written once, when the replicate ends (or fails), under a temporary
+name that is then renamed, so it is never half-written.
+
+It is lossless: `qligfep_energies export energies.parquet --to DIR` writes the
+`md_XXXX_YYYY.en` files back, byte for byte as qdyn wrote them.
+`qligfep_energies qfep energies.parquet --input ../../../inputfiles/qfep.inp` runs qfep
+on them in a temporary folder and writes `qfep.out` and `energies.csv`, which is also
+what the run script does. `qligfep_energies list` lists the windows. The file needs
+`pyarrow`, a dependency of QligFEP now.
 
 Three things to know:
 
 - The runner drives Fortran Q through the `qgpu` engine API in `src/core/python`. It
-  is found in the QligFEP checkout; no CUDA build is needed.
-- qdyn still reads an input file, so the engine writes a temporary one per stage in
-  the job's temporary folder and removes it.
+  is found in the QligFEP checkout; no CUDA build is needed. A non-editable
+  `pip install` of QligFEP does not ship it: install it from `src/core/python` with
+  `QGPU_PRECISIONS=none pip install .`.
+- qdyn still reads an input file and writes a restart file and an energy file, so the
+  engine keeps one `.inp`, one `.re` and, during a window, one `.en` in the job's
+  temporary folder (`$TMPDIR`) and removes them. qfep's `.en` files live in a temporary
+  folder of their own while it runs.
 - The window at `start` runs first, then all windows on one side of it, then the
   other side. The `.inp` route alternates between the two sides. Each window
   continues from the same neighbour either way.

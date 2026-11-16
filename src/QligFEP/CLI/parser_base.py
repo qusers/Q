@@ -148,9 +148,10 @@ def parse_arguments(program: str) -> argparse.Namespace:
         "--production",
         action="store_true",
         help=(
-            "Minimize equilibrium FEP output: disable trajectory files and, unless --clean is "
-            "specified, remove .en, .re, and dualtop.top files after qfep has produced "
-            "energies.csv and qfep.out."
+            "Minimize equilibrium FEP output: disable trajectory files. With the default run plan a "
+            "replicate then holds only replicate.log, energies.parquet, qfep.out and energies.csv. "
+            "With --inp-files, and unless --clean is specified, .en, .re and dualtop.top files are "
+            "removed after qfep has produced energies.csv and qfep.out."
         ),
     )
     parser.add_argument(
