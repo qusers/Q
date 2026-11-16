@@ -150,6 +150,33 @@ def test_matches_inp_files(tmp_path, launch):
     assert (tmp_path / "out" / "md.en").read_bytes() == (reference / "md.en").read_bytes()
 
 
+# What the C++ parser fills in for the settings base_config() leaves out (inp_parser.cpp).
+CPP_DEFAULTS = dict(
+    shell_radius=0.85, exclude_bonded=False, shell_force=10.0, solute_solute=10.0, solvent_solvent=10.0,
+    solute_solvent=10.0, q_atom=99.0, lrf_cutoff=99.0, radial_force=60.0, polarisation=True,
+    polarisation_force=20.0, charge_correction=True, non_bond=10, hmr=False, hmr_target_mass=3.024,
+    solute_constraint_algorithm="lincs", solvent_constraint_algorithm="settle", thermostat="berendsen",
+    constrain_solute=False, separate_scaling=False, energy=0, trajectory=0,
+)
+
+
+def test_explicit_defaults_match_fortran_defaults(tmp_path):
+    """With the CUDA modules installed, Config holds the C++ parser's defaults and FortranEngine
+    writes them all out. That must be the same simulation as leaving them to Fortran Q."""
+    if not QDYN.is_file():
+        pytest.skip(f"{QDYN} is not built")
+    finals = []
+    for name, extra in (("unset", {}), ("explicit", CPP_DEFAULTS)):
+        final = tmp_path / f"{name}.re"
+        engine = FortranEngine(base_config(final_file=final, **extra), qdyn=QDYN, workdir=tmp_path / name)
+        engine.run()
+        engine.update_config(stepsize=1.0, temperature=300, bath_coupling=10, constrain_hydrogens=True)
+        engine.run()
+        finals.append(final.read_bytes())
+    assert "polarization_force" in (tmp_path / "explicit" / "run_0001.inp").read_text()
+    assert finals[0] == finals[1]
+
+
 def test_state_branches(tmp_path, launch):
     """set_state() returns to a saved state: the same window run twice from it is identical."""
     qdyn, prefix = launch
