@@ -1,3 +1,0 @@
-FEP_33_64 protein/
-FEP_23_64 protein/
-FEP_64_54 protein/

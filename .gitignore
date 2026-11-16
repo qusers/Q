@@ -189,6 +189,10 @@ src/q6/bin/
 *.dwf
 *.pdb
 
+# ...except the capped-peptide fragments, which ship as package data: without
+# them QresFEP cannot build a reference peptide.
+!src/QligFEP/INPUTS/tripeptide_templates/*.pdb
+
 #Q Test files
 *.dcd
 *.log

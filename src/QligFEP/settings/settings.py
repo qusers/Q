@@ -19,8 +19,18 @@ BIN = Q_DIR / "bin/q6"
 if not BIN.exists():
     raise FileNotFoundError(
         f"Could not find {BIN}.\n"
-        "Please make sure you have compiled q6 by running "
-        f"`make all && make mpi` in the {Q_DIR} directory."
+        "The qprep binary was not compiled during installation.\n"
+        "This can happen if gfortran was not available during pip install.\n\n"
+        "To fix this, please:\n"
+        "  1. Install gfortran:\n"
+        "     micromamba install gfortran -c conda-forge\n"
+        "  2. Recompile qprep manually:\n"
+        f"     cd {Q_DIR}\n"
+        "     make qprep COMP=gcc\n"
+        "     mkdir -p bin/q6 && mv qprep bin/q6/\n\n"
+        "For HPC users who need MPI support, also run:\n"
+        f"     cd {Q_DIR}\n"
+        "     make mpi COMP=gcc\n"
     )
 
 # some example schrodinger directory
@@ -30,7 +40,30 @@ SCHROD_DIR = r"/mnt/c/Program\sFiles/Schrodinger2022-2/"
 EXE = ".exe"
 
 Q_PATHS = {
+    # Windowed FEP run templates use $qdyn as the profile's primary engine (the MPI
+    # qdynp on clusters, the serial qdyn on LOCAL).
     "QDYN": "qdyn=" + str((BIN / "qdynp").absolute()),
+    # Non-equilibrium runs drive both engines by name: $qdynp (parallel) for the
+    # fixed-lambda equilibration and $qdyn (serial) for the lambda switches, which select
+    # NEQ mode from the input's [lambda_scaling] section. The standalone qdyn_neq binary
+    # no longer exists -- the switch is the consolidated serial qdyn.
+    "QDYNP": "qdynp=" + str((BIN / "qdynp").absolute()),
+    "QDYN_NEQ": "qdyn=" + str((BIN / "qdyn").absolute()),
+    "QPREP": str(BIN / "qprep"),
+    "QFEP": str(BIN / "qfep"),
+    "QCALC": str(BIN / "qcalc"),
+}
+
+# Bare paths for local execution (Python template handles formatting, not shell assignment)
+Q_PATHS_LOCAL = {
+    "QDYN": str((BIN / "qdyn").absolute()),
+    "QPREP": str(BIN / "qprep"),
+    "QFEP": str(BIN / "qfep"),
+    "QCALC": str(BIN / "qcalc"),
+}
+
+Q_PATHS_LOCALP = {
+    "QDYN": str((BIN / "qdynp").absolute()),
     "QPREP": str(BIN / "qprep"),
     "QFEP": str(BIN / "qfep"),
     "QCALC": str(BIN / "qcalc"),
@@ -135,12 +168,35 @@ DARDEL = {
     **Q_PATHS,
 }
 
+HABROK = {
+    "NODES": "1",
+    "NTASKS": "8",
+    "TIME": "0-08:00:00",  # d-hh:mm:ss
+    "MODULES": nljoin(
+        [
+            "module purge",
+            "module load OpenMPI/4.1.4-GCC-11.3.0",
+        ]
+    ),
+    **Q_PATHS,
+}
+
 LOCAL = {
+    "NODES": "1",
+    "NTASKS": "1",
+    "TIME": "0-24:00:00",  # d-hh:mm:ss
+    "MODULES": "\n",
+    "USE_MPI": False,
+    **Q_PATHS_LOCAL,
+}
+
+LOCALP = {
     "NODES": "1",
     "NTASKS": str(cpu_count()),
     "TIME": "0-24:00:00",  # d-hh:mm:ss
     "MODULES": "\n",
-    **Q_PATHS,
+    "USE_MPI": True,
+    **Q_PATHS_LOCALP,
 }
 
 CLUSTER_DICT = {
@@ -153,5 +209,7 @@ CLUSTER_DICT = {
     "UPPMAX": UPPMAX,
     "TETRA": TETRA,
     "DARDEL": DARDEL,
+    "HABROK": HABROK,
     "LOCAL": LOCAL,
+    "LOCALP": LOCALP,
 }

@@ -19,7 +19,37 @@ from .pdb_utils import (
     read_pdb_to_dataframe,
     write_dataframe_to_pdb,
 )
+from .provenance import provenance_header
 from .settings.settings import FF_DIR
+
+
+def round_charges_preserving_sum(charges: np.ndarray, decimals: int = 3) -> np.ndarray:
+    """Round atomic charges while retaining the molecule's integer net charge.
+
+    Rounding every atom independently can accumulate a millielectron-scale net-charge
+    error.  Use largest-remainder rounding so every returned charge is representable at
+    the requested precision and their sum is the nearest integer to the unrounded sum.
+    """
+    charges = np.asarray(charges, dtype=float)
+    if charges.ndim != 1 or charges.size == 0 or not np.all(np.isfinite(charges)):
+        raise ValueError("charges must be a non-empty, finite one-dimensional array")
+
+    target_charge = round(float(charges.sum()))
+    if not np.isclose(charges.sum(), target_charge, atol=1e-6):
+        raise ValueError(f"Partial charges sum to {charges.sum():.10f}, not an integer net charge")
+
+    scale = 10**decimals
+    scaled = charges * scale
+    rounded_units = np.floor(scaled).astype(np.int64)
+    units_to_add = target_charge * scale - int(rounded_units.sum())
+    if not 0 <= units_to_add <= charges.size:
+        raise ValueError("Could not preserve the net charge at the requested precision")
+
+    # Stable sorting makes ties deterministic. Each atom is rounded to one of its two
+    # nearest representable values, with the largest fractional remainders rounded up.
+    order = np.argsort(-(scaled - rounded_units), kind="stable")
+    rounded_units[order[:units_to_add]] += 1
+    return rounded_units.astype(float) / scale
 
 
 class OpenFF2Q(MoleculeIO):
@@ -38,7 +68,14 @@ class OpenFF2Q(MoleculeIO):
     """
 
     def __init__(
-        self, lig, pattern: str = "*.sdf", reindex_hydrogens: bool = True, nagl: bool = False, n_jobs: int = 1
+        self,
+        lig,
+        pattern: str = "*.sdf",
+        reindex_hydrogens: bool = True,
+        nagl: bool = True,
+        n_jobs: int = 1,
+        forcefield: str = "openff-2.3.0.offxml",
+        nagl_model: str = "openff-gnn-am1bcc-1.0.0.pt",
     ):
         """Initializes a new instance of OpenFF2Q to process the `.sdf` input as lig.
 
@@ -49,36 +86,47 @@ class OpenFF2Q(MoleculeIO):
             reindex_hydrogens: If True, loading molecules will assert that hydrogen atoms are at the end
                 of the atom list and reindex them if they are not (needed by restraint setting algorithm).
                 If False, the molecules will be loaded as is. Defaults to True.
-            nagl: if True, the partial charges will be calculated with nagl, which does so with
-                deep learning in the backend, and is faster than the default AM1-BCC method.
+            nagl: if True (default), the partial charges will be calculated with NAGL. Assigned via
+                a graph neural network, this method is faster than AM1-BCC. Set to False to use
+                AM1-BCC as a fallback.
             n_jobs: number of jobs to calculate the partial charges in parallel.
+            forcefield: OpenFF forcefield file to use for ligand parameters. Defaults to "openff-2.3.0.offxml".
+                See https://github.com/openforcefield/openff-forcefields for available forcefields.
+            nagl_model: NAGL model to use for partial charge assignment. Defaults to "openff-gnn-am1bcc-1.0.0.pt".
+                See https://github.com/openforcefield/openff-nagl-models for available models.
         """
         super().__init__(lig, pattern=pattern, reindex_hydrogens=reindex_hydrogens)
         self.n_jobs = n_jobs
         self.out_dir = Path(self.lig).parent
         self.mapping = {lname: {} for lname in self.lig_names}
-        self.forcefield = self._set_forcefield(None)
+        self.forcefield_name = forcefield if forcefield is not None else "openff-2.3.0.offxml"
+        self.forcefield = self._set_forcefield(forcefield)
         self.topologies, self.parameters = self.set_topologies_and_parameters()
         self.charges_list_magnitude = {}  # store charge magnitude for each ligand
         self.total_charges = {}  # store the total charges
-        self._set_nagl(nagl=nagl)
+        self._set_nagl(nagl=nagl, nagl_model=nagl_model)
 
     def _set_forcefield(self, ffstring: Optional[str]) -> ForceField:
         if ffstring is None:
             # why not the constrained: https://docs.openforcefield.org/projects/toolkit/en/stable/faq.html
-            ffstring = "openff-2.2.1.offxml"
+            ffstring = "openff-2.3.0.offxml"
             # for a list of the forcefields: https://github.com/openforcefield/openff-forcefields/tree/main/openforcefields/offxml
         logger.debug(f"Forcefield for the ligand parameters: {ffstring}")
         return ForceField(ffstring)
 
-    def _set_nagl(self, nagl: bool):
-        """Set the forcefield to be used to calculate the molecules' partial charges."""
+    def _set_nagl(self, nagl: bool, nagl_model: str = "openff-gnn-am1bcc-1.0.0.pt"):
+        """Set the NAGL model to be used for partial charge calculation.
+
+        Args:
+            nagl: if True, use NAGL for charge assignment. If False, use AM1-BCC.
+            nagl_model: NAGL model file to use. Defaults to "openff-gnn-am1bcc-1.0.0.pt".
+        """
         if nagl:
             self.nagl = NAGLToolkitWrapper()
             # Implementation following the OMSF demo @ Naturalis, Leiden:
             # https://github.com/openforcefield/symposium_2024_demo/tree/main
-            logger.debug("Warming up the NAGL toolkit")
-            self.nagl_partial_charg_str = "openff-gnn-am1bcc-0.1.0-rc.2.pt"
+            logger.debug(f"Warming up the NAGL toolkit with model: {nagl_model}")
+            self.nagl_partial_charg_str = nagl_model
             self.nagl.assign_partial_charges(Molecule.from_smiles("C"), self.nagl_partial_charg_str)
         else:
             self.nagl_partial_charg_str = None
@@ -99,6 +147,15 @@ class OpenFF2Q(MoleculeIO):
         charges_magnitudes = np.array([c._magnitude for c in molecule.partial_charges])
         return charges_magnitudes
 
+    def _provenance(self, generator: str, **details) -> str:
+        """Provenance header for the ligand .lib/.prm files written by this class."""
+        charges = (
+            f"NAGL ({self.nagl_partial_charg_str})" if self.nagl is not None else "AM1-BCC (OpenFF toolkit)"
+        )
+        info = {"Force field": f"OpenFF {self.forcefield_name}", "Charges": charges}
+        info.update(details)
+        return provenance_header(f"QligFEP.openff2Q.OpenFF2Q.{generator}", details=info)
+
     def set_topologies_and_parameters(self):
         topologies = {}
         parameters = {}
@@ -118,8 +175,9 @@ class OpenFF2Q(MoleculeIO):
         logger.info("Done! Writing .lib, .prm and .pdb files for each ligand")
         logger.debug(f"Output path: {self.out_dir}")
         for lname, charges in zip(self.lig_names, charges_magnitudes):
+            charges = round_charges_preserving_sum(charges)
             self.charges_list_magnitude.update({lname: charges})
-            formatted_sum = f"{round(charges.sum(), 10):.3f}"
+            formatted_sum = f"{charges.sum():.3f}"
             if formatted_sum == "-0.000":
                 formatted_sum = "0.000"
             self.total_charges.update({lname: formatted_sum})
@@ -145,9 +203,7 @@ class OpenFF2Q(MoleculeIO):
             self.write_lib_Q(name, prefix=prefix, residue_name=residue_name)
             self.write_prm_Q(name, prefix=prefix)
             self.write_PDB(name, residue_name=residue_name)
-            logger.warning(f"Formal charges of ligands in .sdf are not unique: {self.total_charges}")
-        else:
-            logger.info(f"Output files written for {len(self.lig_names)} ligands")
+        logger.info(f"Output files written for {len(self.lig_names)} ligands")
 
     def create_atom_prm_mapping(self, lname):
         """Get the mapping of the ligand atoms to the forcefield parameters.
@@ -178,12 +234,12 @@ class OpenFF2Q(MoleculeIO):
 
             atom_index = cnt + 1
             try:
-                charge = round(self.charges_list_magnitude[lname][cnt], 3)  # round for Q
+                charge = self.charges_list_magnitude[lname][cnt]
                 self.mapping[lname][cnt] = [
                     str(atom_index),  # atom index
                     atom_data[3] + str(atom_index),  # atom name
                     atom_data[3],  # atom type
-                    str(charge),  # charge
+                    f"{charge:.3f}",  # charge
                     atom_data[0],  # X coordinate
                     atom_data[1],  # Y coordinate
                     atom_data[2],  # Z coordinate
@@ -222,6 +278,7 @@ class OpenFF2Q(MoleculeIO):
             libfile_out = self.out_dir / f"{lname}.lib"
             outfile = open(libfile_out, "w")  # noqa: SIM115
             should_close = True
+            outfile.write(self._provenance("write_lib_Q", Ligand=lname))
         else:
             should_close = False
 
@@ -284,6 +341,7 @@ class OpenFF2Q(MoleculeIO):
             prmfile_out = f"{self.out_dir / lname}.prm"
             outfile = open(prmfile_out, "w")  # noqa: SIM115
             should_close = True
+            outfile.write(self._provenance("write_prm_Q", Ligand=lname))
         else:
             should_close = False
 
@@ -525,8 +583,19 @@ class OpenFF2Q(MoleculeIO):
         lib_out = self.out_dir / f"{ff}_plus_cofactor.lib"
         prm_out = self.out_dir / f"{ff}_plus_cofactor.prm"
 
+        cofactors = ", ".join(f"{n} -> {r}" for n, r in zip(self.lig_names, residues))
         with open(lib_out, "w") as f:
+            f.write(
+                self._provenance(
+                    "write_cofactor_plus_ff_files", **{"Protein FF": Path(ff).name, "Cofactors": cofactors}
+                )
+            )
             f.write("\n".join(protein_lib_lines))
         with open(prm_out, "w") as f:
+            f.write(
+                self._provenance(
+                    "write_cofactor_plus_ff_files", **{"Protein FF": Path(ff).name, "Cofactors": cofactors}
+                )
+            )
             f.write("\n".join(final_prm_contents))
         write_dataframe_to_pdb(cofactor, self.out_dir / "all_cofactors.pdb")

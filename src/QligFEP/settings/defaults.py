@@ -1,5 +1,6 @@
 MD = {  
-'shake_solvent'     : False ,
+'constrain_solvent' : True  ,
+'constraint_algorithm': 'lincs settle',
 'solute_solvent'    : 10    ,
 'solute_solute'     : 10    ,
 'solvent_solvent'   : 10    ,
@@ -25,8 +26,9 @@ MD = {
 #        thermostat
 #        random_seed
 #        initial_temperature
-#        shake_solvent
-#        shake_hydrogens
+#        constrain_solvent
+#        constrain_hydrogens
+#        constraint_algorithm
 #        lrf
 #        solute_solute
 #        solvent_solvent

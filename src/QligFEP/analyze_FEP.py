@@ -3,20 +3,22 @@
 import argparse
 import json
 import os
-import re
 from pathlib import Path
 from typing import Optional
 
-import matplotlib.cm as cm
-import matplotlib.colors as mcolors
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from cinnabar import stats as cstats
-from matplotlib.lines import Line2D
-from matplotlib.patches import Patch
 
-from .IO import read_qfep, read_qfep_verbose, run_command
+from QligFEP.analysis_qc import summarize_cycle_closure_qc, summarize_fep_system_qc
+
+from .analysis_plotting import create_ddG_plot, prepare_df
+from .IO import (
+    ddG_json_path,
+    read_qfep,
+    read_qfep_verbose,
+    read_slurm_diagnostics,
+    run_command,
+)
 from .logger import logger, setup_logger
 from .settings.settings import Q_PATHS
 
@@ -148,21 +150,24 @@ class FepReader:
             temperature = [d for d in (_dir / fep_stage).glob("*") if d.is_dir()][0].name
             replicates = len([d for d in (_dir / fep_stage / temperature).iterdir() if d.is_dir()])
 
-            if self.n_lambdas is None:
-                inputs = sorted(list(_dir.glob("inputfiles/md*.inp")))
-                if len(inputs) == 0:
+            inputs = sorted(_dir.glob("inputfiles/md*.inp"))
+            input_n_lambdas = len(fep_files) * (len(inputs) - 1) if inputs else None
+            n_lambdas = self.n_lambdas
+            if n_lambdas is None:
+                if input_n_lambdas is None:
                     logger.error(
                         f"No input files found in {fep}. If this is a backed up system without input files "
                         ", consider passing the argument --n_lambdas (-lamb) to qligfepA"
                     )
-                self.n_lambdas = len(fep_files) * (len(inputs) - 1)
+                n_lambdas = input_n_lambdas
 
             # register the ligand names in the dictionary for further results analysis
             _from, _to = self._lig_names_from_FEPdir(fep)
             try:
                 self.data[self.system][fep].update(
                     {  # populate the dictionary with the FEP information
-                        "lambda_sum": self.n_lambdas,
+                        "lambda_sum": n_lambdas,
+                        "input_n_lambdas": input_n_lambdas,
                         "fep_stage": fep_stage,
                         "temperature": str(temperature),
                         "replicates": replicates,
@@ -230,32 +235,6 @@ class FepReader:
         """
         feps = [k for k in self.data[self.system]]
 
-        keywords = ["DUE TO TIME LIMIT", "CANCELLED", "Out Of Memory", "abnormally"]
-
-        def search_within(slurm_out: Path):
-            runtime = ""
-            seed = None
-            keyword = None
-            with slurm_out.open("r") as f:
-                for line in f:
-                    if line.startswith("#    Runtime:"):
-                        runtime = line.split(" ")[-1].strip()
-                    if line.startswith("Parameters"):
-                        seed = line.split(" ")[-1].replace("seed=", "").strip()
-                    if any(k in line for k in keywords):
-                        keyword = [k for k in keywords if k in line][0]
-            if keyword is None:
-                comment = "SUCCESS"
-            elif keyword == "DUE TO TIME LIMIT":
-                comment = "TIMEOUT"
-            elif keyword == "CANCELLED":
-                comment = "CANCELLED"
-            elif keyword == "Out Of Memory":
-                comment = "OOM"
-            elif keyword == "abnormally":
-                comment = "CRASHED"
-            return runtime, seed, comment
-
         for fep in feps:
             logger.info(f"Reading FEP: {fep}")
             fep_dict = self.data[self.system][fep]
@@ -290,25 +269,23 @@ class FepReader:
             # handle slurm.out run: data collection
             if add_run_data:
                 try:
-                    # extract data from slurm.out files
-                    slurm_out_files = sorted(
-                        Path(fep_dict["root"]).glob("slurm*.out"),
-                        key=lambda x: int(re.search(r"run(\d+)", x.name).group(1)),
-                    )
-                    for slurm_out in slurm_out_files:
-                        replicate = re.search(r"run(\d+)", slurm_out.name).group(1)
-                        runtime, seed, comment = search_within(slurm_out)
-                        self.run_data.append(
+                    records = []
+                    for slurm_out in Path(fep_dict["root"]).glob("slurm*.out"):
+                        info = read_slurm_diagnostics(slurm_out)
+                        records.append(
                             {
                                 "FEP": fep,
                                 "system": self.system,
-                                "replicate": replicate,
-                                "runtime": runtime,
-                                "seed": seed,
-                                "comment": comment,
+                                "replicate": info.replicate,
+                                "runtime": info.runtime,
+                                "seed": info.seed,
+                                "comment": info.status,
                             }
                         )
-                except (FileNotFoundError, AttributeError) as e:
+                    # order the diagnostics by the true replicate number when it was parsed
+                    records.sort(key=lambda r: int(r["replicate"]) if (r["replicate"] or "").isdigit() else 0)
+                    self.run_data.extend(records)
+                except FileNotFoundError as e:
                     logger.warning(f"Could not process slurm.out files for {fep}: {e}")
                     # Fall back to directory-based run data
                     add_run_data = False
@@ -442,8 +419,18 @@ class FepReader:
             _to = self.data[self.system][fep]["to"]
 
             # search ligands in the edges
+            ddG = None
             for edge in self.mapping_json["edges"]:
                 if edge["from"] == _from and edge["to"] == _to:
+                    if exp_key not in edge:
+                        logger.error(
+                            f"Experimental key '{exp_key}' not found in edge {_from} -> {_to}. "
+                            f"Available keys in this edge: {', '.join(edge.keys())}. "
+                            f"Please check your mapping JSON file and ensure the experimental key is correct."
+                        )
+                        raise KeyError(
+                            f"Key '{exp_key}' not found in edge data. Check your mapping JSON file."
+                        )
                     ddG = edge[exp_key]
                     break
 
@@ -472,9 +459,9 @@ class FepReader:
             for fep in self.feps:
                 fep_dict = self.data["result"][method][fep]
                 if fep_dict["from"] == _from and fep_dict["to"] == _to:
-                    avg_val = fep_dict[f"{method}_avg"] if not np.isnan(fep_dict[f"{method}_avg"]) else None
-                    sem_val = fep_dict[f"{method}_sem"] if not np.isnan(fep_dict[f"{method}_sem"]) else None
-                    std_val = fep_dict[f"{method}_std"] if not np.isnan(fep_dict[f"{method}_std"]) else None
+                    avg_val = fep_dict[f"{method}_avg"] if not pd.isna(fep_dict[f"{method}_avg"]) else None
+                    sem_val = fep_dict[f"{method}_sem"] if not pd.isna(fep_dict[f"{method}_sem"]) else None
+                    std_val = fep_dict[f"{method}_std"] if not pd.isna(fep_dict[f"{method}_std"]) else None
 
                     edge.update(
                         {
@@ -488,234 +475,6 @@ class FepReader:
                 output_file = Path(output_file)
             with output_file.open("w") as f:
                 json.dump(self.mapping_json, f, indent=4)
-
-    @staticmethod
-    def prepare_df(json_dict, experimental_data: bool = True):
-        pref = "dg" if "dg_error" in json_dict["edges"][0] else "ddg"
-        df = pd.DataFrame(json_dict["edges"])
-        if experimental_data:
-            df = (
-                df.assign(
-                    ddg_value=lambda x: x[pref + "_value"],
-                    residual=lambda x: x[pref + "_value"] - x["Q_ddG_avg"],
-                    residual_abs=lambda x: x["residual"].abs(),
-                )
-                .sort_values("residual_abs", ascending=False)
-                .drop(columns="residual_abs")
-            )
-        df = df.assign(
-            fep_name=lambda x: "FEP_" + x["from"] + "_" + x["to"],
-        )
-        return df
-
-    @staticmethod
-    def create_ddG_plot(
-        results_df: pd.DataFrame,
-        margin: float = 1.0,
-        xylims: tuple | None = None,
-        output_path: str | None = None,
-        target_name: str | None = None,
-        savefig: bool = False,
-        font: str | None = None,
-    ):
-        """Creates the ddG plot for the FEP that has already been analyzed. The plot will
-        show the experimental (X axis) vs mean predicted values (Y axis), with error bars
-        representing the standard error of the mean (SEM). Points are colored based on
-        their deviation from experimental values (blue = 0 deviation, red = 3+ kcal/mol).
-
-        Args:
-            reuslts_df: pd.DataFrame with the results from the FEP, output from `prepare_df`.
-            margin: margin value to be added/subtracted to the max/min values obtained. Defaults to 1.0.
-            xylims: if values are passed, x&y min will be xylims[0] and max will be [1]. Defaults to None.
-            output_path: path to save the plot. If None, the plot will not be saved. Defaults to None.
-            target_name: name of the target protein to be added in the plot. Defaults to None.
-            savefig: if True, will save the plot to the output_path. Defaults to False.
-
-        Returns:
-            the matplotlib figure and axis objects (fig, ax).
-        """
-        fep_names = results_df["fep_name"].values
-        avg_values = results_df["Q_ddG_avg"].values
-        sem_values = results_df["Q_ddG_sem"].values
-        exp_values = results_df["ddg_value"].values
-        nan_val_idxs = np.where(np.isnan(avg_values))[0]
-        if len(nan_val_idxs) > 0:
-            logger.warning(f"Dropping FEPs with nan values: {fep_names[nan_val_idxs]}")
-            mask = ~np.isin(np.arange(len(avg_values)), nan_val_idxs)
-            avg_values = avg_values[mask]
-            sem_values = sem_values[mask]
-            exp_values = exp_values[mask]
-
-        # Calculate absolute deviations for coloring
-        deviations = np.abs(avg_values - exp_values)
-
-        # Create colormap from blue to red, with max at 3 kcal/mol
-        norm = mcolors.Normalize(vmin=0, vmax=4)
-        cmap = cm.RdBu_r
-
-        ## CALCULATE STATISTICS
-        def result_to_latex(res, latexify_each=False):  # TODO: move this out of this method?
-            """Round cinnabar's output to one decimal case and return a LaTeX string."""
-            mle = round(res["mle"], 2)
-            low = round(res["low"], 2)
-            high = round(res["high"], 2)
-
-            if latexify_each:
-                return f"${mle:.2f}_{{{low}}}^{{{high}}}$"
-            else:
-                return f"{mle:.2f}_{{{low}}}^{{{high}}}"
-
-        statistics = ["RMSE", "MUE", "KTAU"]
-        stats_dict = {}
-        for stat in statistics:
-            cinnabar_stats = cstats.bootstrap_statistic(avg_values, exp_values, statistic=stat)
-            stats_dict[stat] = result_to_latex(cinnabar_stats)
-
-        if xylims is not None:
-            assert len(xylims) == 2, "xylims must be a tuple with 2 elements."
-            assert xylims[0] < xylims[1], "xylims[0] must be smaller than xylims[1]."
-            min_val = xylims[0]
-            max_val = xylims[1]
-        else:
-            all_values = avg_values + exp_values
-            min_val = min(all_values) - margin
-            max_val = max(all_values) + margin
-
-        fig, ax = plt.subplots(figsize=(7, 4.5))
-
-        # Plot colored points with error bars
-        scatter = plt.errorbar(
-            exp_values,
-            avg_values,
-            fmt="o",
-            yerr=sem_values,
-            ecolor="gray",
-            elinewidth=1.5,
-            capsize=2,
-            zorder=4,
-            linestyle="None",
-            markersize=8,
-        )
-
-        # Remove the default markers and add colored ones
-        scatter[0].remove()
-
-        # Add the colored scatter points
-        scatter_points = plt.scatter(
-            exp_values,
-            avg_values,
-            c=deviations,
-            cmap=cmap,
-            norm=norm,
-            s=45,
-            zorder=5,
-            edgecolors="black",
-            linewidths=0.5,
-            alpha=0.8,
-        )
-
-        plt.plot([min_val, max_val], [min_val, max_val], "k-", linewidth=1.5, zorder=3)  # Black identity line
-
-        # Highlight predictions within 1 and 2 kcal/mol of the experimental affinity
-        ax.fill_between(
-            [min_val, max_val],
-            [min_val - 1, max_val - 1],
-            [min_val + 1, max_val + 1],
-            color="darkgray",
-            alpha=0.3,
-            zorder=2,
-        )
-        ax.fill_between(
-            [min_val, max_val],
-            [min_val - 2, max_val - 2],
-            [min_val + 2, max_val + 2],
-            color="lightgray",
-            alpha=0.3,
-            zorder=1,
-        )
-
-        # Add colorbar
-        cbar = plt.colorbar(scatter_points, ax=ax, shrink=0.40, aspect=10, anchor=(0.0, 0.85), pad=0.05)
-
-        cbar.set_label("|Deviation| (kcal/mol)", rotation=270, labelpad=20)
-        cbar.ax.tick_params(labelsize=10)
-        cbar.set_ticks([0, 1, 2, 3, 4])
-        cbar.set_ticklabels(["0", "1", "2", "3", "≥4"])
-        cbar.ax.tick_params(labelsize=10)
-
-        # set labels, make it square and add legend
-        plt.title(
-            f"{(target_name + ' ' if target_name is not None else '')}"
-            r"$\Delta\Delta \text{G}_{\text{BAR}}$ ($\mathrm{N}="
-            f"{len(exp_values)}$)"
-        )
-        plt.xlabel("$\Delta\Delta G_{exp} (kcal/mol)$")  # noqa: W605
-        plt.ylabel("$\Delta\Delta G_{calc} (kcal/mol)$")  # noqa: W605
-        plt.xlim(min_val, max_val)
-        plt.ylim(min_val, max_val)
-        ax.set_aspect("equal", adjustable="box")
-
-        # add statistics to the plot
-        unit = r"\frac{kcal}{mol}"
-        text_body = (
-            f"$\\tau = {stats_dict['KTAU']}$",
-            f"RMSE = ${stats_dict['RMSE']}  {unit}$",
-            f"MUE = ${stats_dict['MUE']}  {unit}$",
-        )
-        logger.info(f"Stats: {' '.join(text_body)}")
-        hori_height = 0.35
-        spacing = 0.085
-        txt_positions = (
-            (1.04, hori_height),
-            (1.04, hori_height - spacing),
-            (1.04, hori_height - spacing * 2),
-        )
-        for txt_position, body in zip(txt_positions, text_body):
-            plt.text(
-                *txt_position,
-                body,
-                fontsize=12,
-                verticalalignment="bottom",
-                horizontalalignment="left",
-                transform=ax.transAxes,
-                fontproperties=font,
-            )
-
-        legend_elements = [
-            Line2D([0], [0], color="k", linestyle="-", label="Identity line"),
-            Patch(facecolor="darkgray", alpha=0.3, label="Within 1 kcal/mol"),
-            Patch(facecolor="lightgray", alpha=0.3, label="Within 2 kcal/mol"),
-        ]
-
-        ax.legend(
-            handles=legend_elements,
-            bbox_to_anchor=(1.04, 0),
-            loc="lower left",
-            borderaxespad=0,
-            frameon=False,
-        )
-        # Remove top and right spines using matplotlib
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
-        ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.5)
-        ax.set_axisbelow(True)
-
-        if savefig:
-            if output_path is None:
-                output_path = Path().cwd()
-                logger.info("Using default name to save the plot at the current working directory...")
-                fig.savefig(f"{target_name}_ddG_plot.png", dpi=300, bbox_inches="tight")
-                return fig, ax
-            if isinstance(output_path, str):
-                output_path = Path(output_path)
-            assert isinstance(output_path, Path), "output_path must be a string or a Path object."
-            if output_path.isdir():
-                output_path = output_path / f"{target_name}_ddG_plot.png"
-                logger.info(f"Using default name to save the plot at {output_path}")
-            elif output_path.exists():  # Fixed typo: exits() -> exists()
-                logger.warning(f"File {output_path} already exists. Overwriting...")
-            fig.savefig(output_path, dpi=300, bbox_inches="tight")
-        return fig, ax
 
     def save_json_data(self, out_path: str | Path | None = None):
         """Save the data dictionary to a json file.
@@ -763,7 +522,7 @@ def parse_arguments() -> argparse.Namespace:
 
     parser.add_argument(
         "-norun",
-        "--no_run_data",
+        "--no-run-data",
         dest="no_run_data",
         action="store_true",
         help=(
@@ -850,6 +609,11 @@ def parse_arguments() -> argparse.Namespace:
             "Passing this argument will allow the script to continue without raising an error."
         ),
     )
+    parser.add_argument(
+        "--qc",
+        action="store_true",
+        help="Generate FEP replicate and cycle-closure quality-control CSV files.",
+    )
 
     parser.add_argument(
         "-log",
@@ -877,21 +641,110 @@ def main(args: argparse.Namespace):
     fep_reader.load_new_system(system=args.protein_dir)
     fep_reader.read_perturbations(add_run_data=not args.no_run_data)
     fep_reader.calculate_ddG()
+    # Save the primary results before generating optional diagnostic reports.
     fep_reader.save_json_data()
-
-    results_file = args.json_file.replace(".json", "_ddG.json")
+    results_file = ddG_json_path(args.json_file)
     fep_reader.populate_mapping_dictionary(method=args.method, output_file=results_file)
+    if args.qc:
+        qc_method = args.method[1:]
+
+        edge_qc = summarize_fep_system_qc(
+            fep_reader.data,
+            method=qc_method,
+            water_sys=args.water_dir,
+            protein_sys=args.protein_dir,
+        )
+
+        edge_qc_df = pd.DataFrame(edge_qc)
+
+        edge_qc_df["total_failed"] = edge_qc_df["protein_n_failed"] + edge_qc_df["water_n_failed"]
+
+        edge_qc_df["max_leg_std"] = edge_qc_df[["protein_std", "water_std"]].max(axis=1)
+
+        edge_qc_df["max_leg_range"] = edge_qc_df[["protein_range", "water_range"]].max(axis=1)
+
+        numeric_columns = [
+            "ddg",
+            "ddg_sem",
+            "ddg_std",
+            "protein_std",
+            "protein_range",
+            "water_std",
+            "water_range",
+            "max_leg_std",
+            "max_leg_range",
+        ]
+
+        edge_qc_df[numeric_columns] = edge_qc_df[numeric_columns].round(3)
+
+        edge_qc_df = edge_qc_df.sort_values(
+            by=[
+                "protein_n_failed",
+                "water_n_failed",
+                "consistent",
+                "max_leg_std",
+            ],
+            ascending=[False, False, True, False],
+        )
+
+        edge_qc_df.to_csv(
+            f"{args.target}_fep_qc.csv",
+            index=False,
+        )
+
+        cycle_qc = summarize_cycle_closure_qc(
+            fep_reader.data,
+            method=args.method,
+        )
+
+        cycle_rows = [
+            {
+                "cycle": " -> ".join(result["cycle"]),
+                "n_edges": result["n_edges"],
+                "closure_error": result["closure_error"],
+                "abs_closure_error": result["abs_closure_error"],
+                "status": result["status"],
+                "reason": result["reason"],
+            }
+            for result in cycle_qc
+        ]
+
+        cycle_qc_df = pd.DataFrame(
+            cycle_rows,
+            columns=[
+                "cycle",
+                "n_edges",
+                "closure_error",
+                "abs_closure_error",
+                "status",
+                "reason",
+            ],
+        )
+        cycle_qc_df[["closure_error", "abs_closure_error"]] = cycle_qc_df[
+            ["closure_error", "abs_closure_error"]
+        ].round(3)
+
+        cycle_qc_df = cycle_qc_df.sort_values(
+            by="abs_closure_error",
+            ascending=False,
+        )
+
+        cycle_qc_df.to_csv(
+            f"{args.target}_cycle_qc.csv",
+            index=False,
+        )
+
     if args.experimental_key is not None:
         fep_reader.load_experimental_data(exp_key=args.experimental_key)
         results_json = json.loads((Path.cwd() / results_file).read_text())
-        results_df = fep_reader.prepare_df(results_json)
+        results_df = prepare_df(results_json)
         if fep_reader.ignored_edges:
             results_df = results_df.query("~fep_name.isin(@fep_reader.ignored_edges)").reset_index(drop=True)
-        fig, ax = fep_reader.create_ddG_plot(results_df=results_df)
+        fig, _ = create_ddG_plot(results_df=results_df)
         fig.savefig(f"{args.target}_ddG_plot.png", dpi=300, bbox_inches="tight")
     else:
         results_json = json.loads((Path.cwd() / results_file).read_text())
-        results_df = fep_reader.prepare_df(results_json, experimental_data=False)
+        results_df = prepare_df(results_json, experimental_data=False)
     if args.save_verbose:
         verbose_qEnergies = pd.concat(fep_reader.verbose_qEnergies)
         verbose_dgBar = pd.concat(fep_reader.verbose_dgBar)

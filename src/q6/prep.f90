@@ -199,6 +199,11 @@ module prep
   logical                         :: topo_ok = .false.
   logical                         :: ff_ok = .false.
 
+! --- error collection for PDB validation (report all errors at once)
+  integer, parameter              :: max_pdb_errors = 500
+  character(len=200)              :: pdb_errors(max_pdb_errors)
+  integer                         :: npdb_errors = 0
+
 !       memory management
   integer, private                :: alloc_status
   !private subroutine
@@ -206,6 +211,19 @@ module prep
 
 
 contains
+
+subroutine add_pdb_error(msg)
+!!-------------------------------------------------------------------------------
+!!  Adds an error message to the PDB error collection array.
+!!  Used to collect all PDB validation errors before reporting them.
+!!-------------------------------------------------------------------------------
+  character(len=*), intent(in)   :: msg
+  if (npdb_errors < max_pdb_errors) then
+    npdb_errors = npdb_errors + 1
+    pdb_errors(npdb_errors) = msg
+  end if
+end subroutine add_pdb_error
+
 
 subroutine prep_startup
 !!------------------------------------------------------------------------------
@@ -1738,9 +1756,9 @@ integer function genh(j, residue)
   real(8),parameter                :: convergence_criterum = 0.1
   real(8),parameter                :: dV_scale = 0.025
   real(8),parameter                :: max_dx = 1. !max_dx is max distance of line search step in first CG iteration (�)
-  real(8)                          :: local_min = 30
+  real(8)                          :: local_min = 50  ! Increased to account for steric repulsion
   real(8)                          :: tors_fk = 10.
-  integer, parameter               :: max_cg_iterations = 100, max_line_iterations = 35
+  integer, parameter               :: max_cg_iterations = 200, max_line_iterations = 35
   integer                          :: cgiter, lineiter
   real(8)                          :: bnd0
   integer                          :: nHang, Hang_atom(max_conn)
@@ -1756,8 +1774,14 @@ integer function genh(j, residue)
   real(8)                          :: phi, phi_deg, sgn, dVtors, arg, dH(3)
   logical                          :: flipped
   integer                          :: setH
-  integer, parameter               :: nsetH = 5   !number of times to flip, if local min, and retry
-        
+  integer, parameter               :: nsetH = 10  !number of times to restart with new random position if stuck in local min
+  ! Steric repulsion variables - prevents H from being placed on top of other atoms
+  integer                          :: iatom
+  real(8)                          :: xi(3), riH(3), distH, V_steric, dV_steric
+  real(8), parameter               :: steric_cutoff = 2.5  ! Angstrom - check atoms within this distance
+  real(8), parameter               :: steric_k = 20.0      ! Force constant (reduced for gentler repulsion)
+  real(8), parameter               :: steric_sigma = 1.2   ! Minimum allowed distance to heavy atoms
+
   genH = 0
   xj(:) = xtop(3*j-2:3*j)
         
@@ -1839,7 +1863,7 @@ integer function genh(j, residue)
           !                               write(*,9, advance='no') cgiter
 9         format('cg step',i3,':')
           !do line search
-          dx_line = max_dx*2.**(-cgiter)
+          dx_line = max_dx*0.9**cgiter
           flipped = .false.
           do lineiter = 1, max_line_iterations
             Vtot = 0
@@ -1907,6 +1931,7 @@ integer function genh(j, residue)
               dV(:) = dVtors*cross_product(rjk, dH)
               dVtot(:) = dVtot(:) + dV(:)
             end if
+
             if(cgiter == 1 .and. lineiter == 1) then
               !its the start of the search, use the gradient vector
               dvLast(:) = dVtot(:)
@@ -1949,11 +1974,15 @@ integer function genh(j, residue)
           dVlast(:) = dVtot(:) - gamma*dVlast(:)
         end do  !cgiter
 
-        !Check if local min -> restart iteration ; problem with conversion
+        !Check if local min -> restart with new random position
         if(Vtot > local_min) then
-          !it's a local min - flip 180 deg.
-          dVlast(:) = -dVlast(:)
-          xH(:) = xj(:) - rjH(:)
+          !stuck in local min - try new random starting position
+          do axis = 1,3
+            xH(axis) = randm() - 0.5
+          end do
+          bond_length = sqrt(dot_product(xH,xH))
+          xH(:) = xH(:) / bond_length * bnd0
+          xH(:) = xH(:) + xj(:)
         else
           exit
         end if
@@ -1968,6 +1997,28 @@ integer function genh(j, residue)
       end if
       !copy coordinates to topology
       xtop(3*H-2:3*H) = xH(:)
+
+      ! Post-positioning clash check: if H is too close to any heavy atom, flip it
+      do iatom = 1, nat_pro
+        if (iatom == j .or. iatom == H) cycle
+        if (makeH(iatom)) cycle
+        if (.not. heavy(iatom)) cycle
+
+        xi(:) = xtop(3*iatom-2:3*iatom)
+        riH(:) = xH(:) - xi(:)
+        distH = sqrt(dot_product(riH, riH))
+
+        if (distH < steric_sigma) then
+          ! Clash detected! Flip H to opposite side of parent atom j
+          rjH(:) = xH(:) - xj(:)
+          xH(:) = xj(:) - rjH(:)  ! Flip 180 degrees
+          xtop(3*H-2:3*H) = xH(:)
+          write(*,'(a,i6,a,i6,a,f6.3,a)') '>>> Flipped hydrogen ', H, &
+            ' (clash with atom ', iatom, ' at ', distH, ' A)'
+          exit  ! Only flip once
+        end if
+      end do
+
       !clear makeH flag
       makeH(H) = .false.
       genH = genH + 1
@@ -3876,6 +3927,7 @@ subroutine readpdb()
 
 !  character atnam_tmp * 4, resnam_tmp * 4
   character(len=80)         :: line
+  character(len=200)        :: error_msg
   integer resnum_tmp, oldnum, irec, i, atom_id(max_atlib), j
   real(kind=dp)             :: xtmp(3)
 !  real xtmp(3)
@@ -3884,6 +3936,8 @@ subroutine readpdb()
   logical                   :: last_line_was_gap
   integer                   :: atoms, residues, molecules
 
+  ! Reset error collection at start
+  npdb_errors = 0
 
   write( *, * )
   call get_string_arg(pdb_file, '-----> Name of PDB file: ')
@@ -3981,10 +4035,10 @@ subroutine readpdb()
               heavy(res(nres)%start - 1 + i) = .true.
               makeH(res(nres)%start - 1 + i) = .false.
               if(atom_id(i) == 0) then !not found
-                write(*, '(/,a,a,a,i5,/)') '>>> Heavy atom ',&
+                write(error_msg, '(a,a,a,i5)') '>>> Heavy atom ',&
                   lib(res(nres)%irc )%atnam(i), &
                   ' missing in residue ', oldnum
-                goto 210
+                call add_pdb_error(error_msg)
               end if
             else !hydrogen
               heavy(res(nres)%start - 1 + i) = .false.
@@ -4010,9 +4064,12 @@ subroutine readpdb()
           end if
         end do
         if(.not.res_found) then
-          write( * , '(/,a,a,/)') '>>> Residue not found in library: ', &
+          write(error_msg, '(a,a)') '>>> Residue not found in library: ', &
             resnam_tmp
-          goto 210
+          call add_pdb_error(error_msg)
+          ! Skip this residue - decrement nres and continue to next atom
+          nres = nres - 1
+          cycle
         end if
         !clear atom read flags
         do i = 1, lib(res(nres)%irc )%nat
@@ -4067,10 +4124,10 @@ subroutine readpdb()
       end do !i
 
       if(.not.at_found) then
-        write( * , '(/,a,a,a,i5,a,a,/)') '>>> Atom ', atnam_tmp, &
+        write(error_msg, '(a,a,a,i5,a,a)') '>>> Atom ', atnam_tmp, &
           ' in residue no. ', resnum_tmp, ' not found in library entry for ', &
           lib(res(nres)%irc)%nam
-        goto 210
+        call add_pdb_error(error_msg)
       end if !.not.at_found
     end if !line type
   end do
@@ -4097,9 +4154,9 @@ subroutine readpdb()
         heavy(res(nres)%start - 1 + i) = .true.
         makeH(res(nres)%start - 1 + i) = .false.
         if(atom_id(i) == 0) then !it was not found
-          write( * , '(/,a,a,a,i5,/)') '>>> Heavy atom ', &
+          write(error_msg, '(a,a,a,i5)') '>>> Heavy atom ', &
             lib(res(nres)%irc )%atnam(i),' missing in residue ',oldnum
-          goto 210
+          call add_pdb_error(error_msg)
         end if
       else !it is a hydrogen
         heavy(res(nres)%start - 1 + i) = .false.
@@ -4109,6 +4166,18 @@ subroutine readpdb()
         end if
       end if
     end do
+  end if
+
+  ! Check if any errors were collected during PDB parsing
+  if (npdb_errors > 0) then
+    write(*, '(/,a,i5,a)') 'Found ', npdb_errors, ' atom/residue error(s):'
+    write(*, '(a)') '----------------------------------------'
+    do i = 1, npdb_errors
+      write(*, '(a)') trim(pdb_errors(i))
+    end do
+    write(*, '(a,/)') '----------------------------------------'
+    npdb_errors = 0  ! Reset for next attempt
+    goto 210
   end if
 
   nwat = (nat_pro - nat_solute) / 3

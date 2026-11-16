@@ -9,6 +9,7 @@ import argparse
 
 from .IO import replace
 from .pdb_utils import pdb_parse_in, pdb_parse_out
+from .provenance import provenance_header
 import QligFEP.settings as s
 
 class Run(object):
@@ -462,6 +463,8 @@ class Run(object):
         charge_groups = parm[7]
 
         with open(self.lig + '.lib', 'w') as outfile:
+            outfile.write(provenance_header('QligFEP.opls2Q.Run.write_lib_Q',
+                                            details={'Force field': f'{self.FF} (Schrodinger ffld_server)'}))
             outfile.write("{%s}     ! atoms no %4d   total charge %.3f \n\n" % (self.resname,
                 at_len,
                                                                                charge
@@ -530,6 +533,9 @@ class Run(object):
             prm_file_out = self.lig + '.prm'
         
         with open(prm_file) as infile, open(prm_file_out, 'w') as outfile:
+            outfile.write(provenance_header('QligFEP.opls2Q.Run.write_prm_Q',
+                                            details={'Force field': f'{self.FF} (Schrodinger ffld_server)',
+                                                     'Merged': self.merge}))
             for line in infile:
                 block = 0
                 outfile.write(line)

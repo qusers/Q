@@ -1,185 +1,350 @@
-# QligFEP
+# Q
+
+qusers/Q is the repository for the Q molecular dynamics engine and accompanying free energy workflows. It currently contains Q, QligFEP, and QresFEP.
+
+In this README, **Q repository** refers to the complete repository, while **Q engine** refers to the CPU molecular dynamics and free energy engine in `src/q6`.
+
+## Components
+
+| Component | Purpose | Status | Implementation Path |
+| --- | --- | --- | --- |
+| **Q engine** | CPU molecular dynamics and free energy engine for FEP, EVB, and LIE calculations | Available | [`src/q6`](src/q6) |
+| **QligFEP** | Automated ligand relative binding free energy workflows | Available | [`src/QligFEP/qligfep.py`](src/QligFEP/qligfep.py) |
+| **QresFEP** | Residue-level free energy workflows | Protein thermostability protocol available | [`src/QligFEP/qresfep.py`](src/QligFEP/qresfep.py) |
+| **Q-GPU** | GPU implementation of the Q engine | Integration pending | [`src/core`](src/core) and [`src/Qgpu`](src/Qgpu) |
+
+The Python workflows are currently distributed together in the `QligFEP`
+package. Installing that package provides both the QligFEP and QresFEP commands.
+
+## Choose a workflow
+
+- Use the **Q engine** to run FEP, EVB, or LIE calculations directly.
+- Use **QligFEP** to prepare submission files for ligand relative binding free energies using the Q engine.
+- Use **QresFEP** to prepare submission files to calculate mutation-induced changes in free energy. For now, this repository currently includes only the protein thermostability protocol.
+
+## Table of contents
+
+- [⚙️ Installation](#️-installation)
+  - [Linux](#linux)
+  - [macOS](#macos)
+  - [PyMOL for QresFEP mutant preparation](#pymol-for-qresfep-mutant-preparation)
+  - [Compiling Q for HPC (MPI support)](#compiling-q-for-hpc-mpi-support)
+  - [Compiling Q for local use (non-MPI)](#compiling-q-for-local-use-non-mpi)
+  - [Setting up HPC configurations](#setting-up-hpc-configurations)
+- [Q engine executables](#q-engine-executables)
+- [⌨️ Python command-line tools](#️-python-command-line-tools)
+- [Tutorials](#tutorials)
+  - [Protein thermostability with QresFEP](#protein-thermostability-with-qresfep)
+  - [Non-equilibrium FEP (NEQ²)](#non-equilibrium-fep-neq2)
+- [📊 Benchmarking](#-benchmarking)
+- [📚 Citations](#-citations)
+- [⏩ Q-GPU](#-q-gpu)
+  - [Note to the current version](#note-to-the-current-version)
+  - [Testing](#testing)
 
 ## ⚙️ Installation
 
-We recommend that you use `mamba` or, preferably, its lightweight version `micromamba`. Please check this link on how to [install it](https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html).
+We recommend `micromamba`, the lightweight version of `mamba`. Follow the
+[micromamba installation instructions](https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html),
+then create the project environment:
 
-Once you have `micromamba` installed and have already cloned this repo, you can create the environment with:
-
-### 🐧 Linux
+### Linux
 ```bash
 micromamba create -n qligfep_new python=3.11
-```
-Now, activate the environment and update the following conda packages:
-```bash
 micromamba activate qligfep_new
-micromamba install openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 "openff-nagl>=0.3.8" lomap2 kartograf michellab::fkcombu -c conda-forge --yes
+micromamba install gfortran=11.3.0 openff-toolkit=0.17.1 "openff-utilities>=0.1.12" openff-forcefields=2026.01.0 openmm=8.1.1 openff-nagl=0.5.4 openff-nagl-models=2025.9.0 lomap2 kartograf=1.0.1 michellab::fkcombu konnektor -c conda-forge --yes
 ```
 
-Now that you have the environment ready and activated, install qligfep through the command:
+After activating the environment, [clone the repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository), enter the `Q` directory with `cd Q/`, and install the `QligFEP` Python package. This package contains both the QligFEP and QresFEP workflows:
 ```bash
 python -m pip install -e .
 ```
+
+The `qprep` Fortran binary will be automatically compiled during installation.
 
 <details>
 <summary>To install everything in one line...</summary>
 
 ```bash
-micromamba create -n qligfep_new python=3.11 -c conda-forge -y && micromamba activate qligfep_new && micromamba install openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 "openff-nagl>=0.3.8" lomap2 kartograf michellab::fkcombu -c conda-forge --yes && python -m pip install -e .
+micromamba create -n qligfep_new python=3.11 gfortran=11.3.0 openff-toolkit=0.17.1 "openff-utilities>=0.1.12" openff-forcefields=2026.01.0 openmm=8.1.1 openff-nagl=0.5.4 openff-nagl-models=2025.9.0 lomap2 kartograf=1.0.1 michellab::fkcombu konnektor -c conda-forge --yes && micromamba activate qligfep_new && python -m pip install -e .
 ```
 </details>
 
-### 🍎 MacOS
+### macOS
 
-Similar to Linux, you can create the environment and install the required packages with:
+As on Linux, [clone the repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository), enter the `Q` directory with `cd Q/`, create the environment, and install QligFEP:
 
 ``` bash
-micromamba create -n qligfep_new python=3.11 openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 "openff-nagl>=0.3.8" lomap2 kartograf davidararipe::kcombu_bss -c conda-forge --yes
+micromamba create -n qligfep_new python=3.11 gfortran=11.3.0 openff-toolkit=0.17.1 "openff-utilities>=0.1.12" openff-forcefields=2026.01.0 openmm=8.1.1 openff-nagl=0.5.4 openff-nagl-models=2025.9.0 lomap2 kartograf=1.0.1 davidararipe::kcombu_bss konnektor -c conda-forge --yes
 micromamba activate qligfep_new
 python -m pip install joblib scipy tqdm
 python -m pip install -e .
 ```
 
+The `qprep` Fortran binary will be automatically compiled during installation.
+
 <details>
 <summary>To install everything in one line...</summary>
 
 ```bash
-micromamba create -n qligfep_new python=3.11 openff-toolkit=0.16.4 "openff-utilities>=0.1.12" openff-forcefields=2024.09.0 openmm=8.1.1 lomap2 kartograf davidararipe::kcombu_bss -c conda-forge --yes && micromamba activate qligfep_new && python -m pip install joblib scipy tqdm && python -m pip install -e .
+micromamba create -n qligfep_new python=3.11 gfortran=11.3.0 openff-toolkit=0.17.1 "openff-utilities>=0.1.12" openff-forcefields=2026.01.0 openmm=8.1.1 openff-nagl=0.5.4 openff-nagl-models=2025.9.0 lomap2 kartograf=1.0.1 davidararipe::kcombu_bss konnektor -c conda-forge --yes && micromamba activate qligfep_new && python -m pip install joblib scipy tqdm && python -m pip install -e .
 ```
 </details>
 
-### 🛠️ Compiling Q
+### PyMOL for QresFEP mutant preparation
 
-> 💻 **If you're working locally**, If you're working locally, install `gfortran` using micromamba to compile Q, which is required for QligFEP's topology generation via `qprep`. Run the following commands:
+`setup_resFEP` runs PyMOL's mutagenesis wizard to place each mutant side chain
+on the wild-type backbone. Install PyMOL in the project environment:
 
 ```bash
-micromamba install gfortran=11.3.0 -c conda-forge --yes
-cd src/q6
-make all COMP=gcc && cd ../..
+micromamba install -n qligfep_new -c conda-forge pymol-open-source
 ```
 
-If you're working on an HPC system, you will want to access `gfortran` through a pre-existing module avaiable in your system. This is done using the `module load` command. Check [here](/src/QligFEP/settings/settings.py) for a list of the different HPCs we have already ran RBFE simulations on. Module availability and loading is system-dependent, so please check with your system administrator if you have any issues.
+`setup_resFEP` calls the `pymol` executable directly, so you do not need a
+separate Python environment or the PyMOL Python package. If you already have
+mutant residue PDBs, pass their directory with `setup_resFEP --mutant-pdbs` and
+omit this dependency.
 
-_Example_:
+### Compiling Q for HPC (MPI support)
 
-To compile Q on Snellius, you will have to run the following commands:
+> [!IMPORTANT]
+> The QligFEP and QresFEP cluster workflows currently generate Slurm submission
+> scripts. Installation automatically compiles `qprep`, which is sufficient for
+> preparing topologies and workflow inputs. To run the simulations, compile the
+> serial Q tools and the MPI-enabled `qdynp` engine as described below.
+
+On your HPC system, load the appropriate modules (system-dependent). We recommend using the GCC compiler suite and OpenMPI, as those are commonly available and compatible with `qdynp`. To check for module availability, use the command `module spider openmpi` or `module avail openmpi`.
+
+In the output, look for a version compiled with GCC (e.g., `OpenMPI/4.1.4-GCC-11.3.0`) and load it using the `module load` command. After loading the module, navigate to the `src/q6` folder in the Q repository and compile both the serial and MPI versions of Q with the commands `make all` and `make mpi`. In the example, we show how to do this on the Snellius, the Dutch national supercomputer:
+
 ```bash
 module load 2021
 module load gompi/2021a
 ```
-Finally, compiling Q can be done with the following commands:
+
+Then compile the serial and the MPI-enabled versions of Q:
 ```bash
-make all COMP=gcc && make mpi COMP=gcc
-```
-
-_Note_: see how we don't use `make mpi` locally. This is because we don't need parallelization for running `qprep`, which is the only Q program we use locally.
-
-## ⌨️ Command line interface (CLI)
-
-Now you're set with the qligfep package. This includes the command-linde-interfaces (CLIs):
-
-1. `qparams`: used to generate ligand parameters;
-2. `pdb2amber`: formats a PDB file to be used with Q's implementation of the AMBER forcefield;
-3. `qlomap`: wraps `Lomap` to generate the `.json` perturbation mapping;
-4. `qmapfep`: in-house developed method to generate the `.json` perturbation mapping, interactively visualize and add or remove edges.
-5. `qligfep`: main CLI for running QligFEP simulations.
-6. `setupFEP`: sets up all the the QligFEP files for a simulation, including protein and water systems.
-7. `qligfep_analyze`: CLI to analyze the results of a QligFEP simulation.
-8. `qcog`: calculates the center of geometry (COG) of a ligand in a PDB/SDF file. If multiple ligands are found in sdf, the program will calculate the COG for all of them
-9. `qprep_prot`: creates an input file for qprep (fortran program) and runs it to either: 1) solvate the protein structure; 2) create the water sphere.
-
-# Citations: #
-Q6:       https://doi.org/10.1016/j.softx.2017.12.001
-
-Q         https://doi.org/10.1016/S1093-3263(98)80006-5
-
-QligFEP:  https://doi.org/10.1186/s13321-019-0348-5
-
-QresFEP:  https://doi.org/10.1021/acs.jctc.9b00538
-
-# Q-GPU #
-Version control of **Q-GPU**, an adaptation of **Q** version 5.06 running on GPUs.
-
-**Q** is a set of Molecular Dynamics (MD) tools tailored to the following specific kinds of free energy calculations:
-
-1. Free Energy Perturbation (FEP)
-2. Empirical Valence Bond (EVB)
-3. Linear Interaction Energies (LIE)
-
-This version includes a translation of the original **Q** fortran code to C/CUDA and Python.
-
-
-## Authors ##
-Chiel Jespers, David Araripe, Willem Jespers, Mauricio Esguerra, Johan Åqvist, Hugo Gutiérrez‐de‐Terán
-
-
-## Installation ##
-The frontend is built on Python and will run in versions > 3.6. It mainly uses native python libraries and only needs numpy as additional package with no further dependencies.
-
-To compile the qdyn engine source code, you need a CUDA compiler. The code has been tested with the following versions:
-
-- CUDA/10.1.243
-
-To succesfully install and compile the code (Fortran):
-
-```bash
-unset SSH_ASKPASS
-mkdir ~/software
-cd ~/software
-git clone https://yourgitusernamehere@github.com/qusers/qgpu.git
-cd Q
-git checkout refactor/qligfep-david
 cd src/q6
-make
+make all COMP=gcc
+make mpi COMP=gcc
 ```
 
-After this, also install the python package. You should be able to do it through:
+> [!TIP]
+> Module names and versions are system-dependent. When in doubt, reach out to your system administrator. In general, we recommend finding an OpenMPI module compiled with GCC version 11.3.0. Users can also refer to the `settings.py` file in this repository, which outlines the modules we used on other HPC systems, as [described below](#setting-up-hpc-configurations).
+
+### Compiling Q for local use (non-MPI)
+
+For your convenience, our base environment installation includes `gfortran=11.3.0`, which enables you to compile Q locally without MPI support. This is useful for testing purposes. To compile it, navigate to the `src/q6` folder in the Q repository and run:
 ```bash
-cd Q
-conda env create -f environment.yml
-conda activate qligfep_new
-# make sure you have the correct environment installed
-python -m pip install -e .
+cd src/q6
+make all COMP=gcc
 ```
 
-After succesful compilation of **Q-GPU** you have to add the program to your system path by modifying your shell initiation script. 
-If your shell is bash, you can add the following lines to your .bashrc file using a text editor. The following assumes that your user name is "johndoe" and the home directory is "/Users/johndoe/":
+## Setting up HPC configurations
+
+Cluster profiles are defined in
+[`src/QligFEP/settings/settings.py`](/src/QligFEP/settings/settings.py). The file
+contains profiles used for QligFEP and QresFEP calculations on several HPC
+systems. To add another system, follow the existing format. This example defines
+a profile named `MY_HPC`:
+
+```python
+MY_HPC = {
+    "NODES": "1",  # We recommend not to change this
+    "NTASKS": "8",  # Number tasks (processes). Check the preprint for guidance on this value
+    "TIME": "0-06:00:00",  # time for job execution; formatted as d-hh:mm:ss
+        "MODULES": nljoin(
+        [
+            "module purge",  # Clear all loaded modules
+            "module load OpenMPI/4.1.4-GCC-11.3.0",  # Load the MPI module used for compiling Q
+        ]
+    ),
+    **Q_PATHS, # Keep this line as is; it passes the paths to Q executables
+}
+
+CLUSTER_DICT = {
+    "CSB": CSB,
+    # ...
+    "MY_HPC": MY_HPC, # Make sure to add your HPC configuration here to use it on the CLI
+}
+```
+
+Pass the profile name, such as `MY_HPC`, to a QligFEP or QresFEP setup command
+with `--cluster`.
+
+## Q engine executables
+
+Building the Q engine places these Fortran executables in `src/q6/bin/q6`:
+
+- `qprep` prepares and solvates molecular topologies.
+- `qdyn` runs serial molecular dynamics calculations.
+- `qdynp` runs MPI-parallel molecular dynamics calculations.
+- `qfep` analyzes FEP energy files.
+- `qcalc` analyzes Q trajectories and molecular properties.
+
+While the executables can be used directly, QligFEP and QresFEP users do not need to do
+this. The workflows obtain the Q engine paths from
+[`src/QligFEP/settings/settings.py`](src/QligFEP/settings/settings.py), use them
+during preparation, and include them in generated run and submission scripts.
+
+## ⌨️ Python command-line tools
+
+Installing the QligFEP Python package adds the commands below to the active
+Python environment.
+
+### Structure and parameter preparation
+
+The package provides these shared preparation tools:
+
+- `qcog` calculates the center of geometry of each structure in a PDB or SDF
+  file.
+- `pdb2amber` converts a PDB file for use with Q's AMBER force field.
+- `qprep_prot` solvates a protein and prepares its spherical Q topology. It
+  preserves crystallographic waters by default; pass `--strip-crystal-waters`
+  to remove them. The command also records the sphere charge and the
+  input-PDB-to-Q residue mapping in `prep.json` for downstream workflows such as
+  QresFEP.
+- `qparams` generates ligand parameters.
+
+### QligFEP
+
+- `qlomap` uses LoMap to generate a ligand perturbation mapping in JSON format.
+- `qkonnektor` uses Konnektor to generate a ligand perturbation network.
+- `qmapfep` generates and displays a perturbation mapping so that you can add or
+  remove edges interactively.
+- `qligfep` generates the input files for one ligand perturbation.
+- `setupFEP` prepares a complete ligand FEP series, including its protein and
+  water systems. Pass `--neq` to select the non-equilibrium NEQ² workflow.
+- `qligfep_analyze` analyzes windowed ligand FEP results. Optionally, pass `--qc` to write
+  replicate and cycle-closure diagnostic CSVs.
+- `qligfep_neq_analyze` analyzes NEQ² switching-work results.
+
+### QresFEP
+
+- `qresfep` generates one protein or reference-peptide leg for an amino-acid
+  mutation.
+- `setup_resFEP` validates and prepares a mutation series, including one
+  mutation-centered sphere and both thermodynamic-cycle legs per mutation.
+- `qresfep_analyze` combines the protein and reference-peptide legs into
+  mutation-induced folding free energy changes.
+
+Run any Python command with `--help` to see its required inputs and available
+protocol settings.
+
+## Tutorials
+
+- The [Tyk2 tutorial](/tutorials/Tyk2/README.md) covers the standard windowed
+  ligand FEP workflow.
+- The [Tyk2 NEQ² tutorial](/tutorials/Tyk2/neq2/README.md) covers the
+  non-equilibrium workflow.
+- The [T4 lysozyme QresFEP tutorial](/tutorials/T4L/README.md) covers
+  mutation-induced changes in protein folding stability.
+
+### Protein thermostability with QresFEP
+
+The QresFEP implementation in this repository currently provides the protein
+thermostability protocol. It calculates a mutation-induced change in folding
+free energy from two simulations: the mutation in the folded protein and the
+same mutation in a capped reference peptide. It subtracts the reference-peptide
+free energy from the protein free energy:
+
+```text
+ddG_fold = dG_protein - dG_tripeptide
+```
+
+The integrated QresFEP-2 workflow provides the following features:
+
+- Packaged OPLS-AA/M residue libraries and parameters.
+- A hybrid topology with a shared backbone and separate wild-type and mutant
+  side chains.
+- Two consecutive FEP stages, with stage 2 starting from the final coordinates
+  of stage 1.
+- Mutation-centered spherical systems and a `prep.json` manifest that preserves
+  the mapping between the input PDB and Q topology.
+- AXA, GXG, single-residue, and native-neighbor reference peptide models.
+- Charge-matched reference spheres for charge-changing mutations.
+- Explicit controls for lambda windows, production steps, equilibration length,
+  Q's `separate_scaling` option, trajectories, cleanup, and random seeds.
+- A `--manuscript-settings` preset for the fixed protocol and seed vector used
+  by the in-preparation charge-changing campaign.
+- Validation of qdyn and qfep output before cleanup, with the standard EXPRESS
+  LOG footer in each SLURM output file.
+
+For a mutation list, `setup_resFEP` can generate mutant coordinates with PyMOL,
+prepare one sphere per mutation, and write both thermodynamic-cycle legs:
 
 ```bash
-SOFT=/Users/johndoe/software
-export QDIR=$SOFT/qgpu
-export PATH=$QDIR/bin:$QDIR/src:$PATH  
+setup_resFEP -i protein.pdb -M mutations.txt -mc A -FF OPLSAAM -r 25 \
+    -c SNELLIUS -w 25 -s exponential -T 298 -R 10
 ```
-Where $SOFT will be the place where your software folder is located at, e.g. /Users/johndoe/software
 
-Once the q binaries are declared in your path you should be able to call all q binaries from your terminal.
-To test that the path to your compiled **Q** binaries has been correctly assigned you can issue the following commands in the terminal:
+After the cluster jobs finish, combine both legs with:
 
 ```bash
-source ~/.bashrc
-env | grep qgpu
-
-QDIR=/Users/johndoe/software/qgpu
+qresfep_analyze -p protein -t tripeptide -T 298
 ```
 
-Additiontally you can search for the main **Q-GPU** binary file with:
+See the [T4 lysozyme tutorial](/tutorials/T4L/README.md) for mutant preparation,
+single-mutation setup, batch setup, submission, and analysis.
 
-```bash
-which qdyn
+<a id="non-equilibrium-fep-neq2"></a>
+
+### Non-equilibrium FEP (NEQ²)
+
+Alongside the standard windowed protocol, QligFEP supports the
+**non-equilibrium NEQ²** workflow. NEQ² changes λ continuously from one end state
+to the other over many short, independent switching trajectories. It recovers
+ΔΔG with the Bennett Acceptance Ratio over the forward and reverse work
+distributions. The independent switching trajectories can run concurrently on
+a cluster.
+
+To set up a non-equilibrium calculation, pass `--neq` to `setupFEP`. Analyze the
+switching work with `qligfep_neq_analyze`. The serial `qdyn` engine selects
+non-equilibrium mode when its input contains a `[lambda_scaling]` section. The
+`make all` command builds this engine with the other Q binaries in `src/q6`.
+See the [Tyk2 NEQ² tutorial](/tutorials/Tyk2/neq2/README.md) for the complete
+workflow.
+
+# 📊 Benchmarking
+
+Use the [QligFEP benchmarking repository](https://github.com/qusers/qligfepv2-BenchmarkExperiments)
+to reproduce the published performance results.
+
+# 📚 Citations
+
+To cite the latest version of QligFEP, cite:
+```bibtex
+@article{araripe2026qligfepv2,
+  author  = {Alencar Araripe, David and Díaz-Holguín, Alejandro and Poso, Antti and van Westen, Gerard J. P. and Åqvist, Johan and Gutiérrez-de-Terán, Hugo and Jespers, Willem},
+  title   = {Doing More with Less: Accurate and Scalable Ligand Free Energy Calculations by Focusing on the Binding Site},
+  journal = {Journal of Chemical Information and Modeling},
+  year    = {2026},
+  volume  = {66},
+  number  = {6},
+  pages   = {3164--3172},
+  doi     = {10.1021/acs.jcim.5c02932},
+  url     = {https://doi.org/10.1021/acs.jcim.5c02932},
+}
 ```
+**Other relevant references:**
 
+- [Q](https://doi.org/10.1016/S1093-3263(98)80006-5)
+- [QligFEP](https://doi.org/10.1186/s13321-019-0348-5)
+- [QresFEP](https://doi.org/10.1021/acs.jctc.9b00538)
+- [QresFEP-2](https://doi.org/10.1038/s42004-025-01771-0)
 
-## NOTE to the current version ##
-The Qprep tool from **Q** is needed for the preparation of molecular topology files required by the MD engine Qdyn. Currently, Qprep is provided as fortran code, which compiles on CPUs. The workflow for a **Q-GPU** free energy simulation consists then in:
+# ⏩ Q-GPU
+
+**Q-GPU** is an adaptation of **Q** version 5.06 to run on GPUs.
+
+## Note to the current version
+The Qprep tool from **Q** is needed for the preparation of molecular topology files required by the MD engine Qdyn. Currently, Qprep is provided as fortran code, which is compiled upon installation. The workflow for a **Q-GPU** free energy simulation consists then in:
 
 - An initial topology preparation stage that runs on a regular CPU  
 - MD sampling using Qdyn, which runs on a CUDA-based GPU  
 - The FEP analysis tool (qfep) provided in python (running both in GPU or CPU)  
 
-
-## Troubleshooting ##
-If you receive error messages during compilation please report them to the program authors including the compiler used (e.g. CUDA), the compiler version (e.e. 10.1.243), and the error message.
-
+> ⚠️ Integration with the QligFEP workflow is currently under active development and not yet available. For now, we only provide instructions to run our test cases. A publication describing Q-GPU and its performance is in preparation. Please refrain from using this version until the publication is out.
 
 ## Testing ##
 **Q-GPU** includes various tests that compare the output of the original fortran code with the C/CUDA code. They are situated in the test folder and include:
@@ -187,26 +352,37 @@ If you receive error messages during compilation please report them to the progr
 1. interactions  
 2. physical-properties  
 
-The first folder includes test cases for the different type of interactions in **Q**, that is water-water (w-w), solute-solute (p-p) and Qatom-Qatom (q-q) interactions, and any mixture thereof.
-These tests run a single point energy calculation and are compared with the output from Q5.07. The tests can be run separately following the instructions in each folder, or all at once using the run_test.py script (TODO!).
+The first folder includes test cases for the different type of interactions in **Q**, that is water-water (w-w), solute-solute (p-p) and Qatom-Qatom (q-q) interactions, and any mixture thereof. These tests run a single point energy calculation and are compared with the output from Q5.07.
 
-In the second folder, we provide test cases for the calculation of solvation free energies of side-chain mimics, and several protein-ligand binding cases (CDk2 and A2aAR, TODO!). The details for such calculations are described in our QligFEP paper:
+To compile the code and run the tests, you must checkout the GPU feature branch and build the components individually in their respective folders.
 
-- Jespers et al. (<https://doi.org/10.1186/s13321-019-0348-5>).
+**Prerequisites:**
+*   Installation of QligFEP environment as described above.
+*   A CUDA compiler (Tested on CUDA/10.1.243)
 
-## Benchmarking ##
+**Steps:**
 
-We have included a benchmark set of water spheres of sizes 10-30A (in increments of 5). Table generated with https://www.tablesgenerator.com/markdown_tables
+1.  **Checkout the feature branch:**
+    ```bash
+    git checkout feature/qgpu
+    ```
 
-| sphere | cpu Intel(R) Xeon(R) CPU E5-2650 v4 @ 2.20GHz Time in seconds | gpu NVIDIA GeForce GTX 1080  Time in seconds |
-|--------|:-------------------------------------------------------------:|:--------------------------------------------:|
-| 10A    |                                                         6.838 |                                        1.988 |
-| 15A    |                                                        60.698 |                                        4.882 |
-| 20A    |                                                       368.657 |                                       19.233 |
-| 25A    |                                                      1257.150 |                                       59.948 |
-| 30A    |                                                      4060.083 |                                      192.180 |
+2.  **Build the test suite (q6):**
+    Navigate to the `q6` folder and build:
+    ```bash
+    cd src/q6
+    make test
+    ```
 
-# VERSION NOTES: #
+3.  **Build the QGPU engine (core):**
+    Navigate to the `core` folder and build:
+    ```bash
+    cd ../core
+    make
+    ```
 
-**19/08/2020**  
-Generating first version of **Q-GPU** readme.  
+4.  **Run the tests:**
+    Once compiled, you can run the test scripts.
+    ```bash
+    python runTEST.py -a gpu -t 100
+    ```

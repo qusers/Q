@@ -3,9 +3,10 @@ steps                     50000
 stepsize                  1.0
 temperature               T_VAR
 bath_coupling             10
-shake_hydrogens           off
-shake_solute              off
-shake_solvent             on
+constrain_hydrogens       off
+constrain_solute          off
+constrain_solvent         on
+constraint_algorithm      lincs settle
 lrf                       on
 
 [cut-offs]

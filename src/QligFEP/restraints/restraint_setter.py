@@ -100,8 +100,11 @@ class RestraintSetter:
         self.kartograf_mapping = next(mapper.suggest_mappings(self.molA, self.molB))
         # Score Mapping
         rmsd_scorer = MappingVolumeRatioScorer()
-        score = rmsd_scorer(mapping=self.kartograf_mapping)
-        logger.debug(f"Volume ratio score between ligands: {score}")
+        try:
+            score = rmsd_scorer(mapping=self.kartograf_mapping)
+            logger.debug(f"Volume ratio score between ligands: {score}")
+        except ValueError:
+            logger.debug("Volume ratio score could not be computed. Overlap between ligands is poor.")
         self.atom_mapping = deepcopy(self.kartograf_mapping.to_dict()["componentA_to_componentB"])
 
     @staticmethod

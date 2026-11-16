@@ -34,7 +34,7 @@ In this case, follow this definition:
 - `R*2` is 0
 - `epsilon1` is the `eps` value
 - `R*3` is the same `sigma` value
-- `epsilon2&3` corresponds to `sigma/2`
+- `epsilon2&3` is the 1-4 epsilon, i.e. `eps/2` (AMBER scales 1-4 Lennard-Jones by half)
 - `mass` is the mass of the atom.
 
 The following Python function outputs the parameters in the format required by the `AMBER14sb.prm` file (just make sure you have matching indentation with the other parameters in the file):
@@ -132,8 +132,8 @@ OP      1.7493  0.2100          modified acc. to FEP solvation energies for phos
 Which are converted to `AMBER14sb.prm`:
 ```text
 [atom_types]
-OP               1.7493        0.0     0.2100     1.7493    0.87465       16.0
-! first value is sigma(after NONB), second is 0.0, third is epsilon, fourth is sigma again, fifth is sigma/2, sixth is mass
+OP               1.7493        0.0     0.2100     1.7493     0.1050       16.0
+! first value is sigma(after NONB), second is 0.0, third is epsilon, fourth is sigma again, fifth is eps/2 (the 1-4 epsilon), sixth is mass
 
 [bonds]
 HO           OQ               1106.0       0.96

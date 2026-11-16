@@ -22,6 +22,12 @@ module md
   use trj
   use mpiglob
   use qatom
+  use lincs
+#if defined(USE_MPI)
+  use lincs_mpi
+#endif
+  use settle
+  use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 
   implicit none
 
@@ -39,6 +45,8 @@ module md
   character*(*), parameter  :: md_date = '2015-02-22'
   real, parameter           :: rho_wat = 0.0335  ! molecules / A**3
   real, parameter           :: boltz = 0.001986
+  real(8), parameter        :: angle_cosine_limit = 0.999_8
+  real(8), parameter        :: dihedral_sin_threshold = 1.0e-6_8
   real(8)                   :: pi, deg2rad !set in sub startup
 
   ! Read status
@@ -89,9 +97,56 @@ module md
   integer                   :: iseed
   logical                   :: restart
   real(8)                   :: dt, Temp0, Tmaxw, tau_T
-  logical                   :: shake_solvent, shake_solute
-  logical                   :: shake_hydrogens
+  logical                   :: constrain_solvent, constrain_solute
+  logical                   :: constrain_hydrogens
   logical                   :: separate_scaling
+  ! Thermostat treatment of restrained atoms outside the simulation sphere
+  ! (excl(i), spherical boundary only). Excluded atoms are integrated under
+  ! their positional restraints but do not contribute to Tfree:
+  !   'separate' (default): own Berendsen bath, coupled to their own
+  !                         temperature with the same Temp0 and tau_T
+  !   'none':     excluded atoms are not velocity-scaled at all
+  !   'legacy':   pre-fix behaviour, scaled by the factor computed from the
+  !               free (active) atoms only. Retained to reproduce older runs;
+  !               can pump energy into the excluded region (issue #131).
+  character(len=16)         :: excluded_thermostat = 'separate'
+  real(8)                   :: Tscale_excl = 1.0_8
+
+  integer, parameter        :: CONSTRAINT_SHAKE = 1
+  integer, parameter        :: CONSTRAINT_SETTLE = 2
+  integer, parameter        :: CONSTRAINT_LINCS = 3
+  integer                   :: solute_constraint_algorithm = CONSTRAINT_SHAKE
+  integer                   :: solvent_constraint_algorithm = CONSTRAINT_SETTLE
+
+  ! --- Energy minimization parameters
+  logical                   :: do_minimize = .false.
+  integer                   :: max_min_steps = 1000
+  real(8)                   :: min_tol = 0.1      ! kcal/mol/Å convergence tolerance
+  real(8)                   :: min_step = 0.001   ! step size in Å (steepest descent only)
+  logical                   :: min_bonded_only = .false.  ! Flag to skip nonbonded during minimization
+
+  ! Minimizer selection: 1 = FIRE (default), 2 = steepest descent (legacy baseline)
+  integer, parameter        :: MIN_FIRE = 1, MIN_SD = 2
+  integer                   :: min_method = MIN_FIRE
+
+  ! --- FIRE (Bitzek et al., Phys. Rev. Lett. 97, 170201 (2006))
+  ! Defaults are the values recommended in the paper; only the time steps are
+  ! system-dependent. Time steps are given in fs and converted to Q's internal
+  ! time unit (dt = FS_TO_INTERNAL*fs) when read.
+  real(8), parameter        :: FS_TO_INTERNAL = 0.020462d0  ! fs -> Q internal time unit
+  real(8)                   :: fire_dt_start_fs = 0.1d0  ! initial time step (fs)
+  real(8)                   :: fire_dt_max_fs = 1.0d0    ! largest allowed time step (fs)
+  integer                   :: fire_nmin = 5             ! latency steps before accelerating
+  real(8)                   :: fire_maxmove = 0.1d0      ! cap on |dx| per atom per step (Å)
+  real(8)                   :: fire_list_skin = 0.1d0    ! max atom drift before the pair lists are rebuilt (Å)
+  ! Bitzek's fixed recommended constants (never system-tuned, so not exposed):
+  real(8), parameter        :: fire_finc = 1.1d0          ! time step growth factor
+  real(8), parameter        :: fire_fdec = 0.5d0          ! time step cut factor on uphill motion
+  real(8), parameter        :: fire_alpha_start = 0.1d0   ! initial velocity mixing
+  real(8), parameter        :: fire_falpha = 0.99d0       ! mixing decay factor
+
+  ! Hold Q-atoms (both dual-topology ligands) fixed during minimization.
+  logical                   :: min_freeze_qatoms = .false.
 
   ! --- Non-bonded strategy
   logical                   :: use_LRF
@@ -233,7 +288,16 @@ module md
   type(energies)            :: E
   real(8)                   :: Tfree, Tfree_solvent, Tfree_solute
   real(8)                   :: Temp_solvent, Temp_solute, Texcl_solute, Texcl_solvent
+  real(8)                   :: Texcl
 
+  ! Non-equilibrium (fast-switching) control + work integral. equilibrium_simulation
+  ! comes from the .inp [lambda_scaling] section (absent => plain MD)
+  logical                   :: equilibrium_simulation = .true.
+  character(len=200)        :: scaling_parameter   ! lambda schedule, e.g. 'sigmoidal'
+  real(8)                   :: L_sigmoid           ! sigmoid steepness
+  real(8)                   :: dlambda = 0.0_8     ! lambda step of the work integral
+  real(8)                   :: dU_dlambda = 0.0_8
+  real(8)                   :: work_accumulated = 0.0_8
 
   !-----------------------------------------------------------------------
   !       Nonbonded pair information
@@ -310,17 +374,31 @@ module md
   type(lrf_type), allocatable      :: lrf(:)
   type(lrf_type), allocatable      :: old_lrf(:)  !for constant pressure: MC_volume routine
 
+  ! Bounding sphere data for charge group pair list pre-filtering
+  real(8), allocatable             :: cgp_bound_cent(:,:)  ! (3, ncgp_solute) CG centroids
+  real(8), allocatable             :: cgp_bound_rad(:)     ! (ncgp_solute)    max atom-centroid dist
+  integer(ai), allocatable         :: cgp_mol(:)           ! (ncgp_solute) molecule index per CG
+  logical, allocatable             :: mol_has_cross_excl(:) ! (nmol) molecule has cross-mol exclusions
+
+  ! CSR (Compressed Sparse Row) lookup for long-range exclusions and 1-4 pairs.
+  ! Replaces O(nexlong) linear scan with O(log k) binary search per atom pair.
+  integer, allocatable             :: exlong_start(:)    ! (nat_solute+1) row pointers
+  integer(ai), allocatable         :: exlong_partner(:)  ! sorted excluded partner atoms
+  integer, allocatable             :: l14long_start(:)   ! (nat_solute+1) row pointers
+  integer(ai), allocatable         :: l14long_partner(:) ! sorted 1-4 partner atoms
+
   type(node_assignment_type)       :: calculation_assignment
 
   !shake types & variables
   !convergence criterion (fraction of distance)
-  real(8), parameter               :: shake_tol = 0.0001
+  real(8), parameter               :: shake_tol = 0.0001d0
   integer, parameter               :: shake_max_iter = 1000
+  real(8), parameter               :: shake_min_projection = 1.0d-6
+  real(8), parameter               :: shake_max_correction_scale = 1.0d0
 
   type shake_bond_type
     integer(ai)                   :: i,j
     real(8)                       :: dist2
-    logical                       :: ready
   end type shake_bond_type
 
   type shake_mol_type
@@ -329,13 +407,25 @@ module md
   end type shake_mol_type
 
   integer                           :: shake_constraints, shake_molecules
+  integer                           :: settle_constraints = 0
+  integer                           :: lincs_constraints = 0
+  integer                           :: lincs_solute_constraints = 0
+  integer                           :: lincs_solvent_constraints = 0
+  integer                           :: constraint_count = 0
   type(shake_mol_type), allocatable :: shake_mol(:)
+
+  ! The MD constraint set, parked while FIRE additionally constrains bonds to
+  ! hydrogen (see fire_constrain_hydrogens).
+  type(shake_mol_type), allocatable :: md_shake_mol(:)
+  integer                           :: md_shake_molecules = 0
+  integer                           :: md_shake_constraints = 0
+  logical                           :: fire_h_constrained = .false.
 
   !-----------------------------------------------------------------------
   !       profiling vars
   !-----------------------------------------------------------------------
 #if defined (PROFILING)
-  integer, parameter        :: num_profiling_times = 11
+  integer, parameter        :: num_profiling_times = 12
 
   type profiling_var_type
     character(len=100)      :: name
@@ -448,8 +538,10 @@ subroutine die(cause)
   ! abort all processes with exit code 255
   call MPI_Abort(MPI_COMM_WORLD, 255, ierr)
 #else
-  ! stop with a message to stderr
-  stop 'qdyn terminated abnormally'
+  ! write to stderr (unit 0) and exit non-zero, mirroring the MPI_Abort above. The "abnormally"
+  ! text is what QligFEP.IO.read_slurm_diagnostics keys on to label the run CRASHED.
+  write(0,'(a)') 'qdyn terminated abnormally'
+  stop 255
 #endif
 
 end subroutine die
@@ -504,6 +596,13 @@ subroutine allocate_lrf_arrays
 
   call check_alloc('LRF arrays')
 end subroutine allocate_lrf_arrays
+
+
+subroutine allocate_cgp_bounds
+  allocate(cgp_bound_cent(3, ncgp_solute), cgp_bound_rad(ncgp_solute), &
+           cgp_mol(ncgp_solute), stat=alloc_status)
+  call check_alloc('charge group bounding sphere and molecule arrays')
+end subroutine allocate_cgp_bounds
 
 
 #if defined(USE_MPI)
@@ -818,7 +917,7 @@ real(8) function angle(istart, iend)
   ! *** local variables
   integer                                         :: i,j,k,ia,ic,i3,j3,k3
   real(8)                                         :: bjiinv, bjkinv, bji2inv, bjk2inv
-  real(8)                                         :: scp,angv,da,dv,f1
+  real(8)                                         :: scp,scp_force,angv,da,dv,f1
   real(8)                                         :: rji(3),rjk(3),di(3),dk(3)
 
   ! global variables used:
@@ -857,10 +956,11 @@ real(8) function angle(istart, iend)
     ! calculate scp and angv
     scp = ( rji(1)*rjk(1) + rji(2)*rjk(2) + rji(3)*rjk(3) )
     scp = scp * bjiinv*bjkinv
-    if ( scp .gt.  1.0 ) then
-      scp =  1.0
-    else if ( scp .lt. -1.0 ) then
-      scp = -1.0
+    scp_force = scp
+    if ( scp .gt. angle_cosine_limit ) then
+      scp = angle_cosine_limit
+    else if ( scp .lt. -angle_cosine_limit ) then
+      scp = -angle_cosine_limit
     end if
     angv = acos(scp)
 
@@ -869,22 +969,17 @@ real(8) function angle(istart, iend)
     angle = angle + 0.5*anglib(ic)%fk*da**2
     dv = anglib(ic)%fk*da
 
-    ! calculate f1
-    f1 = sin ( angv )
-    if ( abs(f1) .lt. 1.e-12 ) then
-      ! avoid division by zero
-      f1 = -1.e12
-    else
-      f1 =  -1.0 / f1
-    end if
+    ! angle_cosine_limit keeps sin(angv) safely away from zero.  Use the
+    ! unclamped cosine for the perpendicular-vector geometry, as QGPU does.
+    f1 = -1.0 / sin(angv)
 
     ! calculate di and dk
-    di(1) = f1 * ( rjk(1)*bjiinv*bjkinv - scp*rji(1)*bji2inv )
-    di(2) = f1 * ( rjk(2)*bjiinv*bjkinv - scp*rji(2)*bji2inv )
-    di(3) = f1 * ( rjk(3)*bjiinv*bjkinv - scp*rji(3)*bji2inv )
-    dk(1) = f1 * ( rji(1)*bjiinv*bjkinv - scp*rjk(1)*bjk2inv )
-    dk(2) = f1 * ( rji(2)*bjiinv*bjkinv - scp*rjk(2)*bjk2inv )
-    dk(3) = f1 * ( rji(3)*bjiinv*bjkinv - scp*rjk(3)*bjk2inv )
+    di(1) = f1 * ( rjk(1)*bjiinv*bjkinv - scp_force*rji(1)*bji2inv )
+    di(2) = f1 * ( rjk(2)*bjiinv*bjkinv - scp_force*rji(2)*bji2inv )
+    di(3) = f1 * ( rjk(3)*bjiinv*bjkinv - scp_force*rji(3)*bji2inv )
+    dk(1) = f1 * ( rji(1)*bjiinv*bjkinv - scp_force*rjk(1)*bjk2inv )
+    dk(2) = f1 * ( rji(2)*bjiinv*bjkinv - scp_force*rjk(2)*bjk2inv )
+    dk(3) = f1 * ( rji(3)*bjiinv*bjkinv - scp_force*rjk(3)*bjk2inv )
 
     ! update d
     d(i3+1) = d(i3+1) + dv*di(1)
@@ -1017,6 +1112,222 @@ subroutine cgp_centers
   end do
 
 end subroutine cgp_centers
+
+
+subroutine compute_cgp_bounds
+  ! Compute bounding spheres (centroid + max radius) for all solute charge groups.
+  ! Used as a conservative pre-filter in pair list construction to skip
+  ! charge group pairs that cannot have any atom pair within the cutoff.
+  integer  :: ig, i, i3
+  real(8)  :: cent(3), dr2, max_dr2
+
+  do ig = 1, ncgp_solute
+    ! Compute centroid
+    cent(:) = 0.
+    do i = cgp(ig)%first, cgp(ig)%last
+      i3 = cgpatom(i)*3
+      cent(:) = cent(:) + x(i3-2:i3)
+    end do
+    cent(:) = cent(:) / real(cgp(ig)%last - cgp(ig)%first + 1)
+    cgp_bound_cent(:, ig) = cent(:)
+
+    ! Compute max distance from centroid to any atom in the group
+    max_dr2 = 0.
+    do i = cgp(ig)%first, cgp(ig)%last
+      i3 = cgpatom(i)*3
+      dr2 = (x(i3-2) - cent(1))**2 + (x(i3-1) - cent(2))**2 + (x(i3) - cent(3))**2
+      if (dr2 > max_dr2) max_dr2 = dr2
+    end do
+    cgp_bound_rad(ig) = sqrt(max_dr2)
+  end do
+end subroutine compute_cgp_bounds
+
+
+subroutine compute_cgp_mol
+  ! Map each solute charge group to its molecule index using istart_mol.
+  integer :: ig, atom_idx, mol
+  do ig = 1, ncgp_solute
+    atom_idx = cgpatom(cgp(ig)%first)
+    do mol = 1, nmol
+      if (atom_idx >= istart_mol(mol) .and. atom_idx < istart_mol(mol+1)) then
+        cgp_mol(ig) = mol
+        exit
+      end if
+    end do
+  end do
+end subroutine compute_cgp_mol
+
+
+subroutine build_cross_mol_flags
+  ! Scan exclusion/1-4 lists and flag molecules that have cross-molecule entries.
+  ! Flagged molecules will NOT get the exclusion scan skip optimization.
+  integer :: nl, i, j, mol_i, mol_j, mol, count_cross
+  allocate(mol_has_cross_excl(nmol), stat=alloc_status)
+  call check_alloc('cross-molecule exclusion flags')
+  mol_has_cross_excl(:) = .false.
+
+  count_cross = 0
+  do nl = 1, nexlong
+    i = listexlong(1, nl);  j = listexlong(2, nl)
+    if (iqatom(i) /= 0 .or. iqatom(j) /= 0) cycle
+    mol_i = 0; mol_j = 0
+    do mol = 1, nmol
+      if (i >= istart_mol(mol) .and. i < istart_mol(mol+1)) mol_i = mol
+      if (j >= istart_mol(mol) .and. j < istart_mol(mol+1)) mol_j = mol
+    end do
+    if (mol_i /= mol_j) then
+      mol_has_cross_excl(mol_i) = .true.
+      mol_has_cross_excl(mol_j) = .true.
+      count_cross = count_cross + 1
+    end if
+  end do
+  do nl = 1, n14long
+    i = list14long(1, nl);  j = list14long(2, nl)
+    if (iqatom(i) /= 0 .or. iqatom(j) /= 0) cycle
+    mol_i = 0; mol_j = 0
+    do mol = 1, nmol
+      if (i >= istart_mol(mol) .and. i < istart_mol(mol+1)) mol_i = mol
+      if (j >= istart_mol(mol) .and. j < istart_mol(mol+1)) mol_j = mol
+    end do
+    if (mol_i /= mol_j) then
+      mol_has_cross_excl(mol_i) = .true.
+      mol_has_cross_excl(mol_j) = .true.
+      count_cross = count_cross + 1
+    end if
+  end do
+  if (count_cross > 0) then
+    write(*,'(a,i6,a)') 'Note: ', count_cross, &
+      ' cross-molecule exclusion entries found; flagged molecules will use full scan'
+  end if
+end subroutine build_cross_mol_flags
+
+
+subroutine build_exclusion_csr
+  ! Build CSR lookup tables from listexlong and list14long.
+  ! Each atom gets a sorted list of its long-range exclusion/1-4 partners,
+  ! enabling O(log k) binary search instead of O(N) linear scan.
+  integer :: nl, a, b, i, j, tmp, n
+  integer, allocatable :: count(:)
+
+  ! --- Build exlong CSR ---
+  allocate(exlong_start(nat_solute+1), stat=alloc_status)
+  call check_alloc('exlong CSR row pointers')
+
+  allocate(count(nat_solute))
+  count(:) = 0
+  do nl = 1, nexlong
+    a = listexlong(1, nl);  b = listexlong(2, nl)
+    if (a >= 1 .and. a <= nat_solute) count(a) = count(a) + 1
+    if (b >= 1 .and. b <= nat_solute) count(b) = count(b) + 1
+  end do
+
+  exlong_start(1) = 1
+  do i = 1, nat_solute
+    exlong_start(i+1) = exlong_start(i) + count(i)
+  end do
+
+  n = exlong_start(nat_solute+1) - 1
+  allocate(exlong_partner(max(n,1)), stat=alloc_status)
+  call check_alloc('exlong CSR partner array')
+  count(:) = 0
+  do nl = 1, nexlong
+    a = listexlong(1, nl);  b = listexlong(2, nl)
+    if (a >= 1 .and. a <= nat_solute) then
+      count(a) = count(a) + 1
+      exlong_partner(exlong_start(a) + count(a) - 1) = b
+    end if
+    if (b >= 1 .and. b <= nat_solute) then
+      count(b) = count(b) + 1
+      exlong_partner(exlong_start(b) + count(b) - 1) = a
+    end if
+  end do
+
+  ! Sort each row (insertion sort — rows are tiny, typically 1-3 entries)
+  do i = 1, nat_solute
+    do j = exlong_start(i)+1, exlong_start(i+1)-1
+      tmp = exlong_partner(j)
+      nl = j - 1
+      do while (nl >= exlong_start(i) .and. exlong_partner(nl) > tmp)
+        exlong_partner(nl+1) = exlong_partner(nl)
+        nl = nl - 1
+      end do
+      exlong_partner(nl+1) = tmp
+    end do
+  end do
+
+  ! --- Build l14long CSR ---
+  allocate(l14long_start(nat_solute+1), stat=alloc_status)
+  call check_alloc('l14long CSR row pointers')
+
+  count(:) = 0
+  do nl = 1, n14long
+    a = list14long(1, nl);  b = list14long(2, nl)
+    if (a >= 1 .and. a <= nat_solute) count(a) = count(a) + 1
+    if (b >= 1 .and. b <= nat_solute) count(b) = count(b) + 1
+  end do
+
+  l14long_start(1) = 1
+  do i = 1, nat_solute
+    l14long_start(i+1) = l14long_start(i) + count(i)
+  end do
+
+  n = l14long_start(nat_solute+1) - 1
+  allocate(l14long_partner(max(n,1)), stat=alloc_status)
+  call check_alloc('l14long CSR partner array')
+  count(:) = 0
+  do nl = 1, n14long
+    a = list14long(1, nl);  b = list14long(2, nl)
+    if (a >= 1 .and. a <= nat_solute) then
+      count(a) = count(a) + 1
+      l14long_partner(l14long_start(a) + count(a) - 1) = b
+    end if
+    if (b >= 1 .and. b <= nat_solute) then
+      count(b) = count(b) + 1
+      l14long_partner(l14long_start(b) + count(b) - 1) = a
+    end if
+  end do
+
+  do i = 1, nat_solute
+    do j = l14long_start(i)+1, l14long_start(i+1)-1
+      tmp = l14long_partner(j)
+      nl = j - 1
+      do while (nl >= l14long_start(i) .and. l14long_partner(nl) > tmp)
+        l14long_partner(nl+1) = l14long_partner(nl)
+        nl = nl - 1
+      end do
+      l14long_partner(nl+1) = tmp
+    end do
+  end do
+
+  deallocate(count)
+  write(*,'(a,i6,a,i6,a)') 'Built exclusion CSR: ', nexlong, ' excl + ', n14long, ' 1-4 long-range pairs indexed'
+end subroutine build_exclusion_csr
+
+
+logical function csr_search(row_start, partners, atom, target)
+  ! Binary search for target in partners(row_start(atom) : row_start(atom+1)-1)
+  integer, intent(in)     :: row_start(:)
+  integer(ai), intent(in) :: partners(:)
+  integer, intent(in)     :: atom
+  integer(ai), intent(in) :: target
+  integer :: lo, hi, mid
+
+  lo = row_start(atom)
+  hi = row_start(atom+1) - 1
+  csr_search = .false.
+
+  do while (lo <= hi)
+    mid = (lo + hi) / 2
+    if (partners(mid) == target) then
+      csr_search = .true.
+      return
+    else if (partners(mid) < target) then
+      lo = mid + 1
+    else
+      hi = mid - 1
+    end if
+  end do
+end function csr_search
 
 
 subroutine make_nbqqlist
@@ -1522,6 +1833,14 @@ subroutine get_fep
       qbvdw(:,3) = sqrt( qbvdw(:,3) )
     end if
 
+    !Scale Beutler softcore alpha by (1 - lambda_state)^2 (textbook Beutler 1994 Eq. 7).
+    !softcore_scale_beutler and softcore_init_gapsys each self-guard on softcore_method,
+    !so their order is irrelevant; only one ever does work.
+    if (softcore_method == SC_BEUTLER_COUL) call softcore_scale_beutler(nstates)
+
+    !Compute Gapsys linearization radii if method is gapsys
+    if (softcore_method == SC_GAPSYS) call softcore_init_gapsys(nstates)
+
     !remove redefined bonded interactions from topology
     if(nqbond > 0 .or. nqangle > 0 .or. nqtor > 0 .or. nqimp > 0 ) then
       write(*,*)
@@ -1792,7 +2111,7 @@ real(8) function improper2(istart, iend)
     integer                                         ::      istart, iend
     ! local variables
     integer                                         ::      ip
-    real(8)                                         ::      scp,phi,dv,arg,f1
+    real(8)                                         ::      scp,phi,dv,arg,sin_phi,force_per_cos,cos_phi_limit
     real(8)                                         ::      bjinv, bkinv, bj2inv, bk2inv
     real(8)                                         ::      rji(3),rjk(3),rkl(3),rnj(3),rnk(3)
     real(8)                                         ::      rki(3),rlj(3),dp(12),di(3),dl(3)
@@ -1849,15 +2168,25 @@ real(8) function improper2(istart, iend)
       dv  = -2*lib%fk * sin(arg)
 
       ! ---       forces
-      f1 = sin ( phi )
-      if ( abs(f1) .lt. 1.e-12 ) f1 = 1.e-12
-      f1 =  -1.0 / f1
-      di(1) = f1 * ( rnk(1)*bjinv*bkinv - scp*rnj(1)*bj2inv )
-      di(2) = f1 * ( rnk(2)*bjinv*bkinv - scp*rnj(2)*bj2inv )
-      di(3) = f1 * ( rnk(3)*bjinv*bkinv - scp*rnj(3)*bj2inv )
-      dl(1) = f1 * ( rnj(1)*bjinv*bkinv - scp*rnk(1)*bk2inv )
-      dl(2) = f1 * ( rnj(2)*bjinv*bkinv - scp*rnk(2)*bk2inv )
-      dl(3) = f1 * ( rnj(3)*bjinv*bkinv - scp*rnk(3)*bk2inv )
+      ! Evaluate -dU/dphi/sin(phi) analytically at 0 and pi instead of
+      ! replacing sin(phi) by an arbitrary small number.
+      sin_phi = sin(phi)
+      if ( abs(sin_phi) .lt. dihedral_sin_threshold ) then
+        if ( scp .lt. 0.0_8 ) then
+          cos_phi_limit = -1.0_8
+        else
+          cos_phi_limit = 1.0_8
+        end if
+        force_per_cos = 4.0_8*lib%fk*cos(arg)/cos_phi_limit
+      else
+        force_per_cos = -dv/sin_phi
+      end if
+      di(1) = rnk(1)*bjinv*bkinv - scp*rnj(1)*bj2inv
+      di(2) = rnk(2)*bjinv*bkinv - scp*rnj(2)*bj2inv
+      di(3) = rnk(3)*bjinv*bkinv - scp*rnj(3)*bj2inv
+      dl(1) = rnj(1)*bjinv*bkinv - scp*rnk(1)*bk2inv
+      dl(2) = rnj(2)*bjinv*bkinv - scp*rnk(2)*bk2inv
+      dl(3) = rnj(3)*bjinv*bkinv - scp*rnk(3)*bk2inv
 
       rki(1) =  rji(1) - rjk(1)
       rki(2) =  rji(2) - rjk(2)
@@ -1879,20 +2208,20 @@ real(8) function improper2(istart, iend)
       dp(11) = rjk(3)*dl(1) - rjk(1)*dl(3)
       dp(12) = rjk(1)*dl(2) - rjk(2)*dl(1)
 
-      d(t%i*3-2) = d(t%i*3-2) + dv*dp(1)
-      d(t%i*3-1) = d(t%i*3-1) + dv*dp(2)
-      d(t%i*3-0) = d(t%i*3-0) + dv*dp(3)
-      d(t%j*3-2) = d(t%j*3-2) + dv*dp(4)
-      d(t%j*3-1) = d(t%j*3-1) + dv*dp(5)
-      d(t%j*3-0) = d(t%j*3-0) + dv*dp(6)
-      d(t%k*3-2) = d(t%k*3-2) + dv*dp(7)
-      d(t%k*3-1) = d(t%k*3-1) + dv*dp(8)
-      d(t%k*3-0) = d(t%k*3-0) + dv*dp(9)
-      d(t%l*3-2) = d(t%l*3-2) + dv*dp(10)
-      d(t%l*3-1) = d(t%l*3-1) + dv*dp(11)
+      d(t%i*3-2) = d(t%i*3-2) + force_per_cos*dp(1)
+      d(t%i*3-1) = d(t%i*3-1) + force_per_cos*dp(2)
+      d(t%i*3-0) = d(t%i*3-0) + force_per_cos*dp(3)
+      d(t%j*3-2) = d(t%j*3-2) + force_per_cos*dp(4)
+      d(t%j*3-1) = d(t%j*3-1) + force_per_cos*dp(5)
+      d(t%j*3-0) = d(t%j*3-0) + force_per_cos*dp(6)
+      d(t%k*3-2) = d(t%k*3-2) + force_per_cos*dp(7)
+      d(t%k*3-1) = d(t%k*3-1) + force_per_cos*dp(8)
+      d(t%k*3-0) = d(t%k*3-0) + force_per_cos*dp(9)
+      d(t%l*3-2) = d(t%l*3-2) + force_per_cos*dp(10)
+      d(t%l*3-1) = d(t%l*3-1) + force_per_cos*dp(11)
 
 
-      d(t%l*3-0) = d(t%l*3-0) + dv*dp(12)
+      d(t%l*3-0) = d(t%l*3-0) + force_per_cos*dp(12)
     end do
 end function improper2
 
@@ -1922,6 +2251,7 @@ subroutine init_nodes
 !!-------------------------------------------------------------------------------
 
 
+  type(lincs_data_type) :: lincs_topology
   integer, parameter              :: vars = 40 !increment this var when adding data to broadcast in batch 1
   integer                         :: blockcnt(vars), ftype(vars)
   integer(kind=MPI_ADDRESS_KIND)  :: fdisp(vars)
@@ -1947,6 +2277,18 @@ subroutine init_nodes
 
   !external MPI_Type_Create_F90_Integer
   !external MPI_SizeOf
+
+  if (nodeid == 0) call copy_lincs_data(lincs_topology)
+  ! Below 1024 constraints per rank, communication dominates the CPU solver.
+  ! Keep these small jobs on rank zero; standalone MPI tests can force partitioning.
+  call setup_lincs_mpi(MPI_COMM_WORLD, lincs_topology, 1024*numnodes)
+  if (nodeid == 0 .and. lincs_topology%constraint_count > 0) then
+    if (lincs_mpi_active()) then
+      write(*,'(a,i0,a)') 'LINCS execution: distributed across ', numnodes, ' MPI ranks'
+    else
+      write(*,'(a)') 'LINCS execution: rank zero (small constraint set)'
+    end if
+  end if
 
   !Define data types
   ! This is wrong, the 1:st param is "Precision, in decimal digits", not bits
@@ -2121,7 +2463,7 @@ subroutine init_nodes
 
 
   ! --- shake data ---
-  !if (shake_solute .or. shake_solvent .or. shake_hydrogens) then
+  !if (constrain_solute .or. constrain_solvent .or. constrain_hydrogens) then
   ! shake stuff
 
   !if (nodeid .eq. 0) write (*,'(80a)') 'shake data'
@@ -2227,6 +2569,10 @@ subroutine init_nodes
   call MPI_Type_free(mpitype_batch, ierr)
   if (ierr .ne. 0) call die('init_nodes/MPI_Type_free')
 
+  ! Bounding sphere arrays for pair list pre-filtering
+  if (nodeid .ne. 0) call allocate_cgp_bounds
+  call compute_cgp_mol
+
   ! iaclib
   ftype(:) = MPI_REAL8
   blockcnt(1) = 1                                 ! real(8) mass
@@ -2255,6 +2601,10 @@ subroutine init_nodes
   if (ierr .ne. 0) call die('init_nodes/MPI_Bcast list14long')
   call MPI_Bcast(listexlong, 2*nexlong, MPI_INTEGER4, 0, MPI_COMM_WORLD, ierr)
   if (ierr .ne. 0) call die('init_nodes/MPI_Bcast listexlong')
+  if (nodeid .ne. 0) then
+    call build_cross_mol_flags
+    call build_exclusion_csr
+  end if
 
   ! --- data from the QATOM module ---
 
@@ -2276,6 +2626,32 @@ subroutine init_nodes
   !Broadcast sc_lookup(nqat,natyps+nqat,nstates)
   call MPI_Bcast(sc_lookup, size(sc_lookup), MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
   if (ierr .ne. 0) call die('init_nodes/MPI_Bcast sc_lookup')
+
+  !Broadcast softcore_method
+  call MPI_Bcast(softcore_method, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+  if (ierr .ne. 0) call die('init_nodes/MPI_Bcast softcore_method')
+
+  !Broadcast Gapsys scalar parameters and linearization lookups
+  if (softcore_method == SC_GAPSYS) then
+    call MPI_Bcast(gapsys_alpha_lj, 1, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    if (ierr .ne. 0) call die('init_nodes/MPI_Bcast gapsys_alpha_lj')
+    call MPI_Bcast(gapsys_alpha_q,  1, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    if (ierr .ne. 0) call die('init_nodes/MPI_Bcast gapsys_alpha_q')
+    call MPI_Bcast(gapsys_sigma_lj, 1, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    if (ierr .ne. 0) call die('init_nodes/MPI_Bcast gapsys_sigma_lj')
+    call MPI_Bcast(gapsys_sigma_q,  1, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    if (ierr .ne. 0) call die('init_nodes/MPI_Bcast gapsys_sigma_q')
+
+    if (nodeid .ne. 0) then
+      allocate(gapsys_lj_rsc(nqat, natyps+nqat, nstates))
+      allocate(gapsys_q_lambda_factor(nqat, nstates))
+    end if
+    call MPI_Bcast(gapsys_lj_rsc, size(gapsys_lj_rsc), MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    if (ierr .ne. 0) call die('init_nodes/MPI_Bcast gapsys_lj_rsc')
+    call MPI_Bcast(gapsys_q_lambda_factor, size(gapsys_q_lambda_factor), MPI_REAL8, 0, &
+                   MPI_COMM_WORLD, ierr)
+    if (ierr .ne. 0) call die('init_nodes/MPI_Bcast gapsys_q_lambda_factor')
+  end if
 
   ! integer(AI) ::  iqseq(nqat)
   !Change to mpi_type_create  (AI)
@@ -2309,6 +2685,21 @@ subroutine init_nodes
     if (nodeid .ne. 0) EQ(1:nstates)%lambda = temp_lambda(1:nstates)
     deallocate(temp_lambda)
   end if
+
+  ! energy minimization parameters
+  call MPI_Bcast(do_minimize, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+  if (ierr .ne. 0) call die('init_nodes/MPI_Bcast do_minimize')
+  call MPI_Bcast(max_min_steps, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+  if (ierr .ne. 0) call die('init_nodes/MPI_Bcast max_min_steps')
+  call MPI_Bcast(min_tol, 1, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+  if (ierr .ne. 0) call die('init_nodes/MPI_Bcast min_tol')
+  call MPI_Bcast(min_step, 1, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+  if (ierr .ne. 0) call die('init_nodes/MPI_Bcast min_step')
+  ! Slaves must know the minimizer to stay in lockstep on the pot_energy collectives.
+  call MPI_Bcast(min_method, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+  if (ierr .ne. 0) call die('init_nodes/MPI_Bcast min_method')
+  call MPI_Bcast(min_freeze_qatoms, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+  if (ierr .ne. 0) call die('init_nodes/MPI_Bcast min_freeze_qatoms')
 
   if (nodeid .eq. 0) then
     call centered_heading('End of initiation', '-')
@@ -2353,11 +2744,12 @@ subroutine init_shake
       !new molecule
       mol = mol +1
     end do
-    !skip redefined bonds
-    if(bnd(b)%cod == 0) cycle
-    if((shake_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja))) .or. &
-      (shake_solute .and. ia <= nat_solute) .or. &
-      (shake_solvent .and. ia > nat_solute)) then
+    ! Skip redefined bonds and bonds claimed by another constraint solver.
+    if(bnd(b)%cod <= 0) cycle
+    if((ia <= nat_solute .and. solute_constraint_algorithm == CONSTRAINT_SHAKE .and. &
+        ((constrain_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja))) .or. constrain_solute)) .or. &
+       (ia > nat_solute .and. solvent_constraint_algorithm == CONSTRAINT_SHAKE .and. &
+        ((constrain_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja))) .or. constrain_solvent))) then
       shake_mol(mol)%nconstraints = shake_mol(mol)%nconstraints + 1
 
       if( .not. use_PBC ) then
@@ -2368,15 +2760,17 @@ subroutine init_shake
     end if
 
   end do
-  !count extra shake constraints from fep file in appropriate molecule
-  do b = 1, nqshake
-    ia=iqshake(b)
-    mol = 1
-    do while(ia >= istart_mol(mol+1))
-      mol = mol + 1
+  ! Count explicit FEP constraints when SHAKE owns the solute constraint set.
+  if (solute_constraint_algorithm == CONSTRAINT_SHAKE) then
+    do b = 1, nqshake
+      ia=iqshake(b)
+      mol = 1
+      do while(ia >= istart_mol(mol+1))
+        mol = mol + 1
+      end do
+      shake_mol(mol)%nconstraints = shake_mol(mol)%nconstraints + 1
     end do
-    shake_mol(mol)%nconstraints = shake_mol(mol)%nconstraints + 1
-  end do
+  end if
 
   !allocate bond lists for each molecule
   do mol = 1, nmol
@@ -2396,11 +2790,12 @@ subroutine init_shake
       mol = mol +1
       shake_mol(mol)%nconstraints = 0
     end do
-    !skip redefined bonds
-    if(bnd(b)%cod == 0) cycle
-    if((shake_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja))) .or.&
-      (shake_solute .and. ia <= nat_solute) .or. &
-      (shake_solvent .and. ia > nat_solute)) then
+    ! Skip redefined bonds and bonds claimed by another constraint solver.
+    if(bnd(b)%cod <= 0) cycle
+    if((ia <= nat_solute .and. solute_constraint_algorithm == CONSTRAINT_SHAKE .and. &
+        ((constrain_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja))) .or. constrain_solute)) .or. &
+       (ia > nat_solute .and. solvent_constraint_algorithm == CONSTRAINT_SHAKE .and. &
+        ((constrain_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja))) .or. constrain_solvent))) then
       shake_mol(mol)%nconstraints = shake_mol(mol)%nconstraints + 1
       shake_mol(mol)%bond(shake_mol(mol)%nconstraints)%i = ia
       shake_mol(mol)%bond(shake_mol(mol)%nconstraints)%j = ja
@@ -2412,33 +2807,35 @@ subroutine init_shake
     end if
   end do
 
-  !add extra shake constraints from fep file to appropriate molecule
-  do b = 1, nqshake
-    ia=iqshake(b)
-    ja=jqshake(b)
-    mol = 1
-    do while(ia >= istart_mol(mol+1))
-      mol = mol + 1
+  ! Add explicit FEP constraints when SHAKE owns the solute constraint set.
+  if (solute_constraint_algorithm == CONSTRAINT_SHAKE) then
+    do b = 1, nqshake
+      ia=iqshake(b)
+      ja=jqshake(b)
+      mol = 1
+      do while(ia >= istart_mol(mol+1))
+        mol = mol + 1
+      end do
+      !see if already shaken
+      do constr = 1, shake_mol(mol)%nconstraints
+        if((ia == shake_mol(mol)%bond(constr)%i .and. &
+          ja == shake_mol(mol)%bond(constr)%j) .or. &
+          (ja == shake_mol(mol)%bond(constr)%i .and. &
+          ia == shake_mol(mol)%bond(constr)%j)) then
+          !found it: will overwrite
+          !also decrement number of constraints
+          shake_mol(mol)%nconstraints = shake_mol(mol)%nconstraints - 1
+          exit
+        end if
+      end do
+      !constr now contains the right index
+      shake_mol(mol)%bond(constr)%i = ia
+      shake_mol(mol)%bond(constr)%j = ja
+      shake_mol(mol)%bond(constr)%dist2 = &
+        dot_product(EQ(1:nstates)%lambda,qshake_dist(b,1:nstates))**2
+      shake_mol(mol)%nconstraints = shake_mol(mol)%nconstraints + 1
     end do
-    !see if already shaken
-    do constr = 1, shake_mol(mol)%nconstraints
-      if((ia == shake_mol(mol)%bond(constr)%i .and. &
-        ja == shake_mol(mol)%bond(constr)%j) .or. &
-        (ja == shake_mol(mol)%bond(constr)%i .and. &
-        ia == shake_mol(mol)%bond(constr)%j)) then
-        !found it: will overwrite
-        !also decrement number of constraints
-        shake_mol(mol)%nconstraints = shake_mol(mol)%nconstraints - 1
-        exit
-      end if
-    end do
-    !constr now contains the right index
-    shake_mol(mol)%bond(constr)%i = ia
-    shake_mol(mol)%bond(constr)%j = ja
-    shake_mol(mol)%bond(constr)%dist2 = &
-      dot_product(EQ(1:nstates)%lambda,qshake_dist(b,1:nstates))**2
-    shake_mol(mol)%nconstraints = shake_mol(mol)%nconstraints + 1
-  end do
+  end if
 
   !get total number of shake constraints in solute (used for separate scaling of temperatures)
   solute_shake_constraints = sum(shake_mol(1:nmol-nwat)%nconstraints)
@@ -2503,25 +2900,388 @@ subroutine init_shake
 end subroutine init_shake
 
 
+subroutine init_constraints
+!!-------------------------------------------------------------------------------
+!!  Build the solver-specific constraint sets.  SETTLE claims rigid HOH bonds
+!!  first; legacy SHAKE then receives every requested bond that remains.
+!!-------------------------------------------------------------------------------
+  real(8) :: settle_excluded_constraints, lincs_excluded_constraints
+  real(8) :: initial_lincs_error
+  integer :: failed_lincs_constraint
+  logical :: initialized_lincs
+  character(len=120) :: message
+
+  settle_constraints = 0
+  lincs_constraints = 0
+  lincs_solute_constraints = 0
+  lincs_solvent_constraints = 0
+  settle_excluded_constraints = 0.0d0
+  lincs_excluded_constraints = 0.0d0
+
+  if ((solute_constraint_algorithm == CONSTRAINT_LINCS .and. &
+       (constrain_solute .or. constrain_hydrogens .or. nqshake > 0)) .or. &
+      (solvent_constraint_algorithm == CONSTRAINT_LINCS .and. &
+       (constrain_solvent .or. constrain_hydrogens) .and. nwat > 0)) then
+    call init_lincs(lincs_excluded_constraints)
+  end if
+
+  if (solvent_constraint_algorithm == CONSTRAINT_SETTLE .and. &
+      (constrain_solvent .or. constrain_hydrogens) .and. nwat > 0) then
+    call init_settle(settle_excluded_constraints)
+  end if
+
+  call init_shake
+
+  ! Finite-step LINCS assumes its reference coordinates satisfy all constraints.
+  ! Establish that invariant once, including when a restart enables a new set.
+  if (lincs_is_active()) then
+    initialized_lincs = initialize_lincs_positions(x, failed_lincs_constraint, &
+                                                   initial_lincs_error)
+    if (.not. initialized_lincs) then
+      write(message,'(a,i0,a,es12.4)') 'Initial LINCS projection failed at constraint ', &
+        failed_lincs_constraint, '; maximum relative error = ', initial_lincs_error
+      call die(trim(message))
+    end if
+  end if
+
+  ! init_shake computes the temperature degrees of freedom for its own set.
+  ! Account here for constraints claimed first by LINCS and SETTLE.
+  Ndegf = Ndegf - lincs_constraints - settle_constraints
+  Ndegfree = Ndegfree - lincs_constraints - settle_constraints + &
+             nint(lincs_excluded_constraints+settle_excluded_constraints)
+  Ndegf_solvent = Ndegf_solvent - lincs_solvent_constraints - settle_constraints
+  ! Preserve SHAKE's existing solvent/solute temperature partitioning: excluded
+  ! constraint compensation is applied to the total, not the solvent subtotal.
+  Ndegfree_solvent = Ndegfree_solvent - lincs_solvent_constraints - settle_constraints
+  Ndegf_solute = Ndegf - Ndegf_solvent
+  Ndegfree_solute = Ndegfree - Ndegfree_solvent
+  constraint_count = shake_constraints + lincs_constraints + settle_constraints
+
+  write(*,100) lincs_constraints, settle_constraints, shake_constraints, constraint_count
+100 format('Constraints by solver: LINCS = ',i8,', SETTLE = ',i8, &
+           ', SHAKE = ',i8,', total = ',i8)
+end subroutine init_constraints
+
+
+subroutine init_lincs(excluded_constraints)
+!!-------------------------------------------------------------------------------
+!!  Collect every requested bond owned by LINCS, including lambda-weighted FEP
+!!  constraints, then remove those bonds from bonded-force and SHAKE processing.
+!!-------------------------------------------------------------------------------
+  real(8), intent(out) :: excluded_constraints
+
+  integer :: b, k, ia, ja, angle, count, maximum_constraints
+  integer, allocatable :: atom_i(:), atom_j(:)
+  real(8), allocatable :: target_length(:), inverse_mass(:)
+  logical :: selected, found
+
+  maximum_constraints = nbonds+nqshake
+  allocate(atom_i(maximum_constraints), atom_j(maximum_constraints), &
+           target_length(maximum_constraints), inverse_mass(natom), stat=alloc_status)
+  call check_alloc('LINCS constraint arrays')
+  inverse_mass = dble(winv)
+
+  count = 0
+  excluded_constraints = 0.0d0
+  do b = 1, nbonds
+    if (bnd(b)%cod <= 0) cycle
+    ia = bnd(b)%i
+    ja = bnd(b)%j
+    selected = .false.
+    if (ia <= nat_solute .and. ja <= nat_solute .and. &
+        solute_constraint_algorithm == CONSTRAINT_LINCS) then
+      selected = constrain_solute .or. &
+                 (constrain_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja)))
+    else if (ia > nat_solute .and. ja > nat_solute .and. &
+             solvent_constraint_algorithm == CONSTRAINT_LINCS) then
+      selected = constrain_solvent .or. &
+                 (constrain_hydrogens .and. (.not. heavy(ia) .or. .not. heavy(ja)))
+    end if
+    if (.not. selected) cycle
+
+    count = count+1
+    atom_i(count) = ia
+    atom_j(count) = ja
+    target_length(count) = bondlib(bnd(b)%cod)%bnd0
+    if (ia <= nat_solute) then
+      lincs_solute_constraints = lincs_solute_constraints+1
+    else
+      lincs_solvent_constraints = lincs_solvent_constraints+1
+    end if
+    if (.not. use_PBC) then
+      if (excl(ia)) excluded_constraints = excluded_constraints+0.5d0
+      if (excl(ja)) excluded_constraints = excluded_constraints+0.5d0
+    end if
+    bnd(b)%cod = -1
+  end do
+
+  ! Explicit FEP constraints belong to the solute solver.  Override the target
+  ! when the pair was selected above, otherwise append a new constraint.
+  if (solute_constraint_algorithm == CONSTRAINT_LINCS) then
+    do b = 1, nqshake
+      ia = iqshake(b)
+      ja = jqshake(b)
+      found = .false.
+      do k = 1, count
+        if ((atom_i(k) == ia .and. atom_j(k) == ja) .or. &
+            (atom_i(k) == ja .and. atom_j(k) == ia)) then
+          target_length(k) = dot_product(EQ(1:nstates)%lambda, &
+                                         qshake_dist(b,1:nstates))
+          found = .true.
+          exit
+        end if
+      end do
+      if (.not. found) then
+        count = count+1
+        atom_i(count) = ia
+        atom_j(count) = ja
+        target_length(count) = dot_product(EQ(1:nstates)%lambda, &
+                                           qshake_dist(b,1:nstates))
+        lincs_solute_constraints = lincs_solute_constraints+1
+        if (.not. use_PBC) then
+          if (excl(ia)) excluded_constraints = excluded_constraints+0.5d0
+          if (excl(ja)) excluded_constraints = excluded_constraints+0.5d0
+        end if
+      end if
+    end do
+  end if
+
+  if (count > 0) then
+    do k = 1, count
+      ia = atom_i(k)
+      ja = atom_j(k)
+      do angle = 1, nangles
+        if ((ang(angle)%i == ia .and. ang(angle)%k == ja) .or. &
+            (ang(angle)%i == ja .and. ang(angle)%k == ia)) then
+          ang(angle)%cod = 0
+          exit
+        end if
+      end do
+    end do
+    ! Two corrections are normally sufficient. Difficult but valid steps can
+    ! refine to 1e-6 relative error with at most eight bounded corrections.
+    call setup_lincs(atom_i(1:count), atom_j(1:count), target_length(1:count), &
+                     inverse_mass, 8, 2, 1.0d-6, 8)
+  end if
+  lincs_constraints = count
+
+  write(*,100) lincs_solute_constraints, lincs_solvent_constraints
+100 format(/,'LINCS constraints: solute = ',i8,', solvent = ',i8, &
+           ', expansion order = 8, rotations = 2..8, tolerance = 1e-6')
+  deallocate(atom_i, atom_j, target_length, inverse_mass)
+end subroutine init_lincs
+
+
+subroutine init_settle(excluded_constraints)
+!!-------------------------------------------------------------------------------
+!!  Validate Q's solvent topology as homogeneous three-site HOH, obtain its
+!!  geometry from the three constrained bond records, and assign every HOH to
+!!  SETTLE.  SETTLE is deliberately not applied to solute water-like residues.
+!!-------------------------------------------------------------------------------
+  real(8), intent(out) :: excluded_constraints
+
+  integer :: water, residue, oxygen, h1, h2, b, angle, claimed
+  integer, allocatable :: oxygen_atoms(:)
+  real(8) :: d_oh1, d_oh2, d_hh, m_o, m_h1, m_h2
+  real(8), parameter :: parameter_tolerance = 1.0d-6
+
+  if (nres-nres_solute /= nwat) then
+    call die('SETTLE requires one solvent residue per three-site HOH molecule')
+  end if
+
+  allocate(oxygen_atoms(nwat), stat=alloc_status)
+  call check_alloc('SETTLE oxygen atom list')
+  do water = 1, nwat
+    residue = nres_solute + water
+    oxygen = nat_solute + 3*(water-1) + 1
+    if (trim(adjustl(res(residue)%name)) /= 'HOH') then
+      call die('SETTLE supports only solvent residues named HOH')
+    end if
+    if (res(residue)%start /= oxygen) then
+      call die('SETTLE requires sequential O-H1-H2 solvent triplets')
+    end if
+    oxygen_atoms(water) = oxygen
+  end do
+
+  oxygen = oxygen_atoms(1)
+  h1 = oxygen + 1
+  h2 = oxygen + 2
+  d_oh1 = 0.0d0
+  d_oh2 = 0.0d0
+  d_hh = 0.0d0
+  do b = 1, nbonds
+    if (bnd(b)%cod <= 0) cycle
+    if ((bnd(b)%i == oxygen .and. bnd(b)%j == h1) .or. &
+        (bnd(b)%i == h1 .and. bnd(b)%j == oxygen)) then
+      d_oh1 = bondlib(bnd(b)%cod)%bnd0
+    else if ((bnd(b)%i == oxygen .and. bnd(b)%j == h2) .or. &
+             (bnd(b)%i == h2 .and. bnd(b)%j == oxygen)) then
+      d_oh2 = bondlib(bnd(b)%cod)%bnd0
+    else if ((bnd(b)%i == h1 .and. bnd(b)%j == h2) .or. &
+             (bnd(b)%i == h2 .and. bnd(b)%j == h1)) then
+      d_hh = bondlib(bnd(b)%cod)%bnd0
+    end if
+  end do
+  if (min(d_oh1, d_oh2, d_hh) <= 0.0d0) then
+    call die('SETTLE requires O-H1, O-H2, and H1-H2 bonds for HOH')
+  end if
+  if (abs(d_oh1-d_oh2) > parameter_tolerance*max(d_oh1,d_oh2)) then
+    call die('SETTLE requires identical O-H1 and O-H2 distances')
+  end if
+
+  m_o = 1.0d0/dble(winv(oxygen))
+  m_h1 = 1.0d0/dble(winv(h1))
+  m_h2 = 1.0d0/dble(winv(h2))
+  if (abs(m_h1-m_h2) > parameter_tolerance*max(m_h1,m_h2)) then
+    call die('SETTLE requires identical hydrogen masses')
+  end if
+
+  ! All solvent has just been verified as HOH.  Claim its three bonds per water
+  ! so SHAKE and the bonded-force routines do not process them again.
+  claimed = 0
+  excluded_constraints = 0.0d0
+  do b = 1, nbonds
+    if (bnd(b)%cod <= 0) cycle
+    if (bnd(b)%i > nat_solute .and. bnd(b)%j > nat_solute) then
+      claimed = claimed + 1
+      if (.not. use_PBC) then
+        if (excl(bnd(b)%i)) excluded_constraints = excluded_constraints + 0.5d0
+        if (excl(bnd(b)%j)) excluded_constraints = excluded_constraints + 0.5d0
+      end if
+      bnd(b)%cod = -1
+    end if
+  end do
+  if (claimed /= 3*nwat) then
+    call die('SETTLE requires exactly three bonds per HOH molecule')
+  end if
+
+  ! A separate H-O-H term would duplicate the geometry fixed by all three
+  ! distances.  This mirrors init_shake's removal of constrained end angles.
+  do angle = 1, nangles
+    if (ang(angle)%i > nat_solute .and. ang(angle)%j > nat_solute .and. &
+        ang(angle)%k > nat_solute) ang(angle)%cod = 0
+  end do
+
+  call setup_settle(0.5d0*(d_oh1+d_oh2), d_hh, m_o, 0.5d0*(m_h1+m_h2), &
+                    oxygen_atoms)
+  settle_constraints = claimed
+
+  write(*,100) nwat, 0.5d0*(d_oh1+d_oh2), d_hh
+100 format(/,'SETTLE rigid HOH molecules = ',i8,', O-H = ',f8.5, &
+           ' A, H-H = ',f8.5,' A')
+  deallocate(oxygen_atoms)
+end subroutine init_settle
+
+
+subroutine apply_constraints(x_reference, x_candidate, shake_iterations, skip_lincs)
+!!-------------------------------------------------------------------------------
+!!  Apply each active position-constraint solver to one integration update.
+!!-------------------------------------------------------------------------------
+  real(8), intent(in) :: x_reference(:)
+  real(8), intent(inout) :: x_candidate(:)
+  integer, intent(out), optional :: shake_iterations
+  logical, intent(in), optional :: skip_lincs
+
+  integer :: iterations, failed_oxygen, failed_lincs_constraint
+  logical :: settled, lincs_applied, do_lincs
+  real(8) :: lincs_error
+  character(len=100) :: message
+#if defined(PROFILING)
+  real(8) :: constraint_start_time
+  constraint_start_time = rtime()
+#endif
+
+  iterations = 0
+  do_lincs = lincs_is_active()
+  if (present(skip_lincs)) do_lincs = do_lincs .and. .not. skip_lincs
+  if (do_lincs) then
+    lincs_applied = lincs_positions(x_reference, x_candidate, &
+                                    failed_lincs_constraint, lincs_error)
+    if (.not. lincs_applied) then
+      if (lincs_error >= 0.0d0) then
+        write(message,'(a,i0,a,es12.4)') 'LINCS failed for constraint ', &
+          failed_lincs_constraint, '; maximum relative error = ', lincs_error
+      else
+        write(message,'(a,i0)') 'LINCS failed for constraint ', failed_lincs_constraint
+      end if
+      call die(trim(message))
+    end if
+    if (lincs_error > 1.0d-4) then
+      write(message,'(a,es12.4)') 'LINCS maximum relative constraint error = ', &
+                                  lincs_error
+      call die(trim(message))
+    end if
+  end if
+  if (settle_is_active()) then
+    settled = settle_positions(x_reference, x_candidate, failed_oxygen)
+    if (.not. settled) then
+      write(message,'(a,i0)') 'SETTLE failed for HOH oxygen atom ', failed_oxygen
+      call die(trim(message))
+    end if
+  end if
+  if (shake_constraints > 0) iterations = shake(x_reference, x_candidate)
+  if (present(shake_iterations)) shake_iterations = iterations
+#if defined(PROFILING)
+  profile(7)%time = profile(7)%time + rtime() - constraint_start_time
+#endif
+end subroutine apply_constraints
+
+
+subroutine apply_dynamics_constraints(iterations)
+  integer, intent(out) :: iterations
+  logical :: already_applied
+#if defined(USE_MPI)
+  logical :: success
+  integer :: failed
+  real(8) :: error
+  character(len=120) :: message
+#if defined(PROFILING)
+  real(8) :: start_time
+#endif
+#endif
+  iterations = 0
+  already_applied = .false.
+#if defined(USE_MPI)
+  if (lincs_mpi_active()) then
+#if defined(PROFILING)
+    start_time = rtime()
+#endif
+    success = lincs_positions_mpi(xx, x, failed, error)
+#if defined(PROFILING)
+    profile(7)%time = profile(7)%time + rtime() - start_time
+#endif
+    if (.not. success) then
+      write(message,'(a,i0,a,es12.4)') 'MPI LINCS failed at constraint ', failed, &
+                                    '; maximum relative error = ', error
+      call die(trim(message))
+    end if
+    already_applied = .true.
+  end if
+#endif
+  if (nodeid == 0 .and. constraint_count > 0) then
+    call apply_constraints(xx, x, iterations, already_applied)
+    v(:) = (x(:)-xx(:))/dt
+  end if
+end subroutine apply_dynamics_constraints
+
+
 subroutine initial_shaking
-!!!--------------------------------------------------------------------------------
-!!  subroutine  **initial_shaking**
-!!
-!!!--------------------------------------------------------------------------------
-  integer                        :: niter
+!!-------------------------------------------------------------------------------
+!!  Project generated positions and velocities onto all active constraints.
+!!-------------------------------------------------------------------------------
+  integer :: niter
 
-  xx(:)=x(:)
-  niter=shake(xx, x)
+  xx(:) = x(:)
+  call apply_constraints(xx, x, niter)
   write(*,100) 'x', niter
-100 format('Initial ',a,'-shaking required',i4,&
-    ' interations per molecule on average.')
+100 format('Initial ',a,' constraints required ',i4, &
+           ' SHAKE iterations per molecule on average.')
 
-  xx(:)=x(:)-dt*v(:)
-  niter=shake(x, xx)
+  xx(:) = x(:)-dt*v(:)
+  call apply_constraints(x, xx, niter)
   write(*,100) 'v', niter
 
-  v(:)=(x(:)-xx(:))/dt
-
+  v(:) = (x(:)-xx(:))/dt
 end subroutine initial_shaking
 
 
@@ -2542,13 +3302,18 @@ logical function initialize()
     logical                                         :: need_restart
     character(len=80)                               :: instring
     logical                                         :: inlog
+    logical                                         :: has_new_constraint_key
+    logical                                         :: has_legacy_constraint_key
+    logical                                         :: legacy_constraint_input
     integer                                         :: mask_rows
+    character(len=16)                               :: solute_algorithm_name
+    character(len=16)                               :: solvent_algorithm_name
 
     !This function initializes the following variables:
     !  nsteps, stepsize, dt
     !  Temp0, tau_T, iseed, Tmaxw
     !  use_LRF, NBcycle, Rcpp, Rcww, Rcpw, Rcq
-    !  shake_solute, shake_solvent, shake_hydrogens
+    !  constrain_solute, constrain_solvent, constrain_hydrogens
     !  fk_pshell
     !  fk_wsphere=-1, wpol_restr, wpol_born
     !  fkwpol=-1, Dwmz=-1 (values  ized to -1 will be set in water_sphere, once target radius is known)
@@ -2655,6 +3420,22 @@ logical function initialize()
 
     end if !section PBC
 
+    ! Optional [lambda_scaling] section selects fast-switching; absent => plain MD.
+    if (.not. prm_open_section('lambda_scaling', infilename)) then
+      equilibrium_simulation = .true.
+    else
+      equilibrium_simulation = .false.
+      write(*,'(a)') 'Using non-equilibrium lambda scaling'
+      if (.not. prm_get_string_by_key('scaling_parameter', scaling_parameter)) then
+        scaling_parameter = 'sigmoidal'
+        write(*,'(a)') 'No scaling_parameter provided, using default (sigmoidal)'
+      end if
+      if (.not. prm_get_real8_by_key('L_sigmoid', L_sigmoid)) then
+        L_sigmoid = 8.0_8
+        write(*,'(a)') 'No L_sigmoid provided, using default steepness (8.0)'
+      end if
+    end if !section lambda_scaling
+
 
     if(.not. prm_open_section('md')) then
       call prm_close
@@ -2713,6 +3494,21 @@ logical function initialize()
     else 
       write(*,'(a)') 'Solute and solvent atoms coupled together to heat bath.'
     end if
+
+    yes = prm_get_string_by_key('excluded_thermostat', excluded_thermostat, 'separate')
+    call locase(excluded_thermostat)
+    select case (trim(excluded_thermostat))
+    case ('separate')
+      write(*,'(a)') 'Excluded atoms coupled to their own heat bath.'
+    case ('none')
+      write(*,'(a)') 'Excluded atoms are not coupled to a heat bath.'
+    case ('legacy')
+      write(*,'(a)') '>>> WARNING: excluded_thermostat legacy scales excluded atoms with the'
+      write(*,'(a)') '             free-atom bath factor; this can overheat excluded atoms.'
+    case default
+      write(*,'(a)') '>>> ERROR: excluded_thermostat must be separate, none or legacy.'
+      initialize = .false.
+    end select
 12  format ('Target temperature  =',f10.2)
 13  format ('T-relax time        =',f10.2)
 
@@ -2728,26 +3524,124 @@ logical function initialize()
 15  format ('Maxwell temperature =',f10.2)
 16  format ('Random number seed  =',i10)
 
-    ! --- shake, LRF
-    if(.not. prm_get_logical_by_key('shake_solvent', shake_solvent, .true.)) then
-      write(*,'(a)') '>>> Error: shake_solvent must be on or off.'
+    ! --- constraints, LRF
+    ! New solver-neutral switches take precedence.  The shake_* spellings are
+    ! accepted as compatibility aliases and retain SHAKE/SHAKE when no explicit
+    ! constraint_algorithm is supplied, so existing input files do not silently
+    ! change trajectories before they are deliberately migrated.
+    legacy_constraint_input = .false.
+
+    has_new_constraint_key = prm_get_line_by_key('constrain_solvent', instring)
+    has_legacy_constraint_key = prm_get_line_by_key('shake_solvent', instring)
+    if (has_new_constraint_key .and. has_legacy_constraint_key) then
+      write(*,'(a)') '>>> Error: specify only constrain_solvent, not also shake_solvent.'
       initialize = .false.
     end if
-    write(*,17) 'all solvent bonds', onoff(shake_solvent)
-17  format('SHAKE ',a,t32,'= ',a3)
+    if (has_new_constraint_key) then
+      if (.not. prm_get_logical_by_key('constrain_solvent', constrain_solvent)) then
+        write(*,'(a)') '>>> Error: constrain_solvent must be on or off.'
+        initialize = .false.
+      end if
+    else if (has_legacy_constraint_key) then
+      legacy_constraint_input = .true.
+      if (.not. prm_get_logical_by_key('shake_solvent', constrain_solvent)) then
+        write(*,'(a)') '>>> Error: shake_solvent must be on or off.'
+        initialize = .false.
+      end if
+    else
+      constrain_solvent = .true.
+    end if
 
-    if(.not. prm_get_logical_by_key('shake_solute', shake_solute, .false.)) then
-      write(*,'(a)') '>>> Error: shake_solute must be on or off.'
+    has_new_constraint_key = prm_get_line_by_key('constrain_solute', instring)
+    has_legacy_constraint_key = prm_get_line_by_key('shake_solute', instring)
+    if (has_new_constraint_key .and. has_legacy_constraint_key) then
+      write(*,'(a)') '>>> Error: specify only constrain_solute, not also shake_solute.'
       initialize = .false.
     end if
-    write(*,17) 'all solute bonds', onoff(shake_solute)
+    if (has_new_constraint_key) then
+      if (.not. prm_get_logical_by_key('constrain_solute', constrain_solute)) then
+        write(*,'(a)') '>>> Error: constrain_solute must be on or off.'
+        initialize = .false.
+      end if
+    else if (has_legacy_constraint_key) then
+      legacy_constraint_input = .true.
+      if (.not. prm_get_logical_by_key('shake_solute', constrain_solute)) then
+        write(*,'(a)') '>>> Error: shake_solute must be on or off.'
+        initialize = .false.
+      end if
+    else
+      constrain_solute = .false.
+    end if
 
-    if(.not. prm_get_logical_by_key('shake_hydrogens', shake_hydrogens, .false.)) then
-      write(*,'(a)') '>>> Error: shake_hydrogens must be on or off.'
+    has_new_constraint_key = prm_get_line_by_key('constrain_hydrogens', instring)
+    has_legacy_constraint_key = prm_get_line_by_key('shake_hydrogens', instring)
+    if (has_new_constraint_key .and. has_legacy_constraint_key) then
+      write(*,'(a)') '>>> Error: specify only constrain_hydrogens, not also shake_hydrogens.'
       initialize = .false.
     end if
-    write(*,17) 'all bonds to hydrogen', onoff(shake_hydrogens)
+    if (has_new_constraint_key) then
+      if (.not. prm_get_logical_by_key('constrain_hydrogens', constrain_hydrogens)) then
+        write(*,'(a)') '>>> Error: constrain_hydrogens must be on or off.'
+        initialize = .false.
+      end if
+    else if (has_legacy_constraint_key) then
+      legacy_constraint_input = .true.
+      if (.not. prm_get_logical_by_key('shake_hydrogens', constrain_hydrogens)) then
+        write(*,'(a)') '>>> Error: shake_hydrogens must be on or off.'
+        initialize = .false.
+      end if
+    else
+      constrain_hydrogens = .false.
+    end if
 
+    if (prm_get_line_by_key('constraint_algorithm', instring)) then
+      solute_algorithm_name = ''
+      solvent_algorithm_name = ''
+      read(instring, *, iostat=fstat) solute_algorithm_name, solvent_algorithm_name
+      if (fstat /= 0) then
+        write(*,'(a)') '>>> Error: constraint_algorithm requires solute and solvent methods.'
+        initialize = .false.
+      end if
+      call upcase(solute_algorithm_name)
+      call upcase(solvent_algorithm_name)
+    else if (legacy_constraint_input) then
+      solute_algorithm_name = 'SHAKE'
+      solvent_algorithm_name = 'SHAKE'
+      write(*,'(a)') '>>> WARNING: shake_* input keys are deprecated; use constrain_*.'
+    else
+      solute_algorithm_name = 'LINCS'
+      solvent_algorithm_name = 'SETTLE'
+    end if
+
+    select case (trim(solute_algorithm_name))
+    case ('SHAKE')
+      solute_constraint_algorithm = CONSTRAINT_SHAKE
+    case ('LINCS')
+      solute_constraint_algorithm = CONSTRAINT_LINCS
+    case default
+      write(*,'(a,a)') '>>> Error: unsupported solute constraint algorithm: ', &
+                       trim(solute_algorithm_name)
+      initialize = .false.
+    end select
+    select case (trim(solvent_algorithm_name))
+    case ('SHAKE')
+      solvent_constraint_algorithm = CONSTRAINT_SHAKE
+    case ('SETTLE')
+      solvent_constraint_algorithm = CONSTRAINT_SETTLE
+    case ('LINCS')
+      solvent_constraint_algorithm = CONSTRAINT_LINCS
+    case default
+      write(*,'(a,a)') '>>> Error: unsupported solvent constraint algorithm: ', &
+                       trim(solvent_algorithm_name)
+      initialize = .false.
+    end select
+
+    write(*,17) 'solvent', onoff(constrain_solvent)
+    write(*,17) 'solute', onoff(constrain_solute)
+    write(*,17) 'bonds to hydrogen', onoff(constrain_hydrogens)
+    write(*,'(a,a,1x,a)') 'Constraint algorithms = ', trim(solute_algorithm_name), &
+                          trim(solvent_algorithm_name)
+17  format('Constrain ',a,t32,'= ',a3)
 
     yes = prm_get_logical_by_key('lrf', use_LRF, .false.)
     if(use_LRF) then
@@ -2764,6 +3658,69 @@ logical function initialize()
     end if
 22  format ('R.M.S. force will be calculated.')
 
+    ! --- Energy minimization
+    yes = prm_get_logical_by_key('minimize', do_minimize, .false.)
+    if(do_minimize) then
+      write(*,'(a)') 'Energy minimization enabled before MD.'
+      if(.not. prm_get_integer_by_key('max_minimize_steps', max_min_steps)) then
+        max_min_steps = 1000
+      end if
+      if(.not. prm_get_real8_by_key('minimize_tolerance', min_tol)) then
+        min_tol = 0.1
+      end if
+      if(.not. prm_get_real8_by_key('minimize_step_size', min_step)) then
+        min_step = 0.001
+      end if
+
+      ! Minimizer selection. FIRE is the default; steepest descent is retained
+      ! as a baseline for comparison.
+      if(prm_get_string_by_key('minimize_method', instring)) then
+        call upcase(instring)
+        select case (trim(instring))
+        case ('FIRE')
+          min_method = MIN_FIRE
+        case ('SD', 'STEEPEST_DESCENT')
+          min_method = MIN_SD
+        case default
+          write(*,*) '>>> ERROR: unknown minimize_method: ', trim(instring)
+          initialize = .false.
+        end select
+      else
+        min_method = MIN_FIRE
+      end if
+
+      yes = prm_get_logical_by_key('minimize_freeze_qatoms', min_freeze_qatoms, .false.)
+
+      write(*,2001) max_min_steps
+      write(*,2002) min_tol
+      if(min_freeze_qatoms) write(*,'(a)') 'Q-atoms (ligands) held fixed during minimization.'
+
+      if(min_method .eq. MIN_FIRE) then
+        write(*,'(a)') 'Minimizer            = FIRE'
+        yes = prm_get_real8_by_key('fire_dt_start', fire_dt_start_fs, 0.1d0)
+        yes = prm_get_real8_by_key('fire_dt_max',   fire_dt_max_fs,   1.0d0)
+        yes = prm_get_integer_by_key('fire_nmin',   fire_nmin,        5)
+        yes = prm_get_real8_by_key('fire_maxmove',  fire_maxmove,     0.1d0)
+        yes = prm_get_real8_by_key('fire_list_skin', fire_list_skin,  0.1d0)
+        write(*,2004) fire_dt_start_fs
+        write(*,2005) fire_dt_max_fs
+        write(*,2006) fire_nmin
+        write(*,2007) fire_maxmove
+        write(*,2008) fire_list_skin
+      else
+        write(*,'(a)') 'Minimizer            = steepest descent'
+        write(*,2003) min_step
+      end if
+
+2001  format ('Max minimize steps  =',i10)
+2002  format ('Minimize tolerance  =',f10.4,' kcal/mol/A')
+2003  format ('Minimize step size  =',f10.6,' A')
+2004  format ('FIRE initial dt     =',f10.4,' fs')
+2005  format ('FIRE maximum dt     =',f10.4,' fs')
+2006  format ('FIRE N_min          =',i10)
+2007  format ('FIRE max move/step  =',f10.4,' A')
+2008  format ('FIRE pair list skin =',f10.4,' A')
+    end if
 
     ! --- Rcpp, Rcww, Rcpw, Rcq, RcLRF
     if(.not. prm_open_section('cut-offs')) then
@@ -3285,7 +4242,7 @@ logical function old_initialize(fu)
     !  nsteps, stepsize, dt
     !  Temp0, tau_T, iseed, Tmaxw
     !  usr_LRF, NBcycle, Rcpp, Rcww, Rcpw, Rcq
-    !  shake_solvent, shake_solute, shake_hydrogens
+    !  constrain_solvent, constrain_solute, constrain_hydrogens
     !  fk_pshell
 
     !  fk_wsphere=-1, wpol_restr, wpol_born fkwpol=-1, Dwmz=-1, awmz=-1
@@ -3316,7 +4273,7 @@ logical function old_initialize(fu)
     RcLRF = 999.
     exclude_bonded = .false.
     force_rms = .false.
-    shake_hydrogens = .false.
+    constrain_hydrogens = .false.
     itemp_cycle = iout_cycle_default
     awmz = -1
 
@@ -3369,13 +4326,15 @@ logical function old_initialize(fu)
 
     ! --- shake_flag
     read (fu,*) shake_flag
-    shake_solvent = .false.
-    shake_solute = .false.
+    constrain_solvent = .false.
+    constrain_solute = .false.
+    solute_constraint_algorithm = CONSTRAINT_SHAKE
+    solvent_constraint_algorithm = CONSTRAINT_SHAKE
     if(shake_flag >= 1) then
-      shake_solvent = .true.
+      constrain_solvent = .true.
     end if
     if(shake_flag == 2) then
-      shake_solute = .true.
+      constrain_solute = .true.
     end if
 
     write (*,30) shake_flag
@@ -3719,6 +4678,9 @@ subroutine make_pair_lists
     start_loop_time = rtime()
 #endif
 
+    ! Recompute bounding spheres for the pre-filter (only useful for lis2 routines)
+    if (iuse_switch_atom == 0) call compute_cgp_bounds
+
     if( use_PBC ) then
       if (.not. use_LRF)then
         !cutoff
@@ -3828,6 +4790,7 @@ subroutine temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
     !locals
     integer                        :: i, i3
     real(8)                        :: Ekin
+    real(8)                        :: Texcl_solute_ekin, Texcl_solvent_ekin
 
     Temp = 0.
     Temp_solute = 0.
@@ -3850,6 +4813,16 @@ subroutine temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
       if ( Ekin .gt. Ekinmax ) then
         ! hot atom warning
         write (*,180) i,2.*Ekin/boltz/3.
+        ! zero velocity and remove from temperature accumulators
+        v(i3+1) = 0.0
+        v(i3+2) = 0.0
+        v(i3+3) = 0.0
+        Temp_solute = Temp_solute - Ekin
+        if( use_PBC .or. ( (.not. use_PBC) .and. (.not. excl(i)) ) ) then
+          Tfree_solute = Tfree_solute - Ekin
+        else
+          Texcl_solute = Texcl_solute - Ekin
+        end if
       end if
     end do
 
@@ -3875,11 +4848,23 @@ subroutine temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
       if ( Ekin .gt. Ekinmax ) then
         ! hot atom warning
         write (*,180) i,2.*Ekin/boltz/3.
+        ! zero velocity and remove from temperature accumulators
+        v(i3+1) = 0.0
+        v(i3+2) = 0.0
+        v(i3+3) = 0.0
+        Temp_solvent = Temp_solvent - Ekin
+        if( use_PBC .or. ( (.not. use_PBC) .and. (.not. excl(i)) ) ) then
+          Tfree_solvent = Tfree_solvent - Ekin
+        else
+          Texcl_solvent = Texcl_solvent - Ekin
+        end if
       end if
     end do
 
     Tfree = Tfree_solvent + Tfree_solute
     Temp = Temp_solute + Temp_solvent
+    Texcl_solute_ekin = Texcl_solute
+    Texcl_solvent_ekin = Texcl_solvent
 
     E%kinetic = Temp
 
@@ -3908,10 +4893,482 @@ subroutine temperature(Temp,Tscale_solute,Tscale_solvent,Ekinmax)
       Tscale_solute = Tscale_solvent
     end if
 
+    ! Excluded atoms (solute and solvent) form one group with its own bath.
+    ! Ndegf - Ndegfree = 3*nexats - (constraints involving excluded atoms).
+    Texcl = 0.0_8
+    Tscale_excl = 1.0_8
+    if ( .not. use_PBC .and. Ndegf > Ndegfree ) then
+      Texcl = 2.0*(Texcl_solute_ekin + Texcl_solvent_ekin)/boltz/real(Ndegf - Ndegfree)
+      if ( trim(excluded_thermostat) == 'separate' .and. Texcl > 0.0_8 ) then
+        Tscale_excl = sqrt ( 1 + dt/tau_T * (Temp0/Texcl - 1.0) )
+      end if
+    end if
+
 
 180 format ('>>> WARNING: hot atom, i =',i10,' Temp(i)=',f10.2)
 
 end subroutine temperature
+
+
+!-------------------------------------------------------------------------------
+subroutine fire_constrain_hydrogens
+!!-------------------------------------------------------------------------------
+!!  **subroutine fire_constrain_hydrogens**
+!!
+!!  Adds every remaining bond to hydrogen to the SHAKE constraint set, for the
+!!  duration of the minimization only.
+!!
+!!  This is not a performance tweak, it is required for correctness. The polar
+!!  hydrogens of AMBER-type force fields (HW on water, HO on hydroxyls) carry a
+!!  large positive charge and *no* Lennard-Jones core, so the only thing keeping
+!!  them out of a nearby acceptor is the LJ shell of the heavy atom they hang
+!!  off. Let their bond stretch and a hydrogen can reach past that shell and
+!!  fall into the bare Coulomb well of an acceptor, where the energy diverges to
+!!  -infinity and the force to +infinity. MD never gets there; a minimizer walks
+!!  straight in. Crystallographic waters are the usual victims, since they are
+!!  part of the solute and 'constrain_solvent' therefore leaves them flexible.
+!!
+!!  Constraining the bonds to hydrogen removes that degree of freedom and costs
+!!  nothing: they sit at their equilibrium length anyway. The MD constraint set
+!!  is parked and handed back afterwards, so the dynamics that follow run with
+!!  exactly the constraints the user asked for.
+!!
+!!  All the new constraints go into one group. SHAKE only uses the grouping to
+!!  bound its iteration, and this is what Q does anyway when constrain_hydrogens is
+!!  set: a protein is a single molecule, so all of its hydrogens land in one
+!!  group. We must not group by molecule here in any case, because
+!!  shrink_topology fills the holes it leaves by swapping in the last bond,
+!!  which destroys the ordering of bnd that init_shake relies on.
+!!
+!!  Master node only: shake_mol lives there.
+!!-------------------------------------------------------------------------------
+  integer :: b, ia, ja, k, n_new
+
+  fire_h_constrained = .false.
+  if (nodeid .ne. 0) return
+
+  n_new = 0
+  do b = 1, nbonds
+    if (bnd(b)%cod .le. 0) cycle
+    ia = bnd(b)%i
+    ja = bnd(b)%j
+    ! Leave the alchemical region alone: q-atom bond lengths are lambda-dependent
+    ! and owned by the FEP machinery, and ligand hydrogens have a real LJ core.
+    if (iqatom(ia) .ne. 0 .or. iqatom(ja) .ne. 0) cycle
+    if (heavy(ia) .and. heavy(ja)) cycle
+    n_new = n_new + 1
+  end do
+
+  if (n_new .eq. 0) return
+
+  ! Park the MD constraint set. Shallow copy: the bond arrays it points at are
+  ! left untouched and handed straight back in fire_release_hydrogens.
+  call move_alloc(shake_mol, md_shake_mol)
+  md_shake_molecules   = shake_molecules
+  md_shake_constraints = shake_constraints
+
+  allocate(shake_mol(md_shake_molecules + 1), stat=alloc_status)
+  call check_alloc('FIRE shake set')
+  shake_mol(1:md_shake_molecules) = md_shake_mol(1:md_shake_molecules)
+
+  k = md_shake_molecules + 1
+  allocate(shake_mol(k)%bond(n_new), stat=alloc_status)
+  call check_alloc('FIRE shake bond array')
+  shake_mol(k)%nconstraints = 0
+
+  do b = 1, nbonds
+    if (bnd(b)%cod .le. 0) cycle
+    ia = bnd(b)%i
+    ja = bnd(b)%j
+    if (iqatom(ia) .ne. 0 .or. iqatom(ja) .ne. 0) cycle
+    if (heavy(ia) .and. heavy(ja)) cycle
+    shake_mol(k)%nconstraints = shake_mol(k)%nconstraints + 1
+    shake_mol(k)%bond(shake_mol(k)%nconstraints)%i     = ia
+    shake_mol(k)%bond(shake_mol(k)%nconstraints)%j     = ja
+    shake_mol(k)%bond(shake_mol(k)%nconstraints)%dist2 = bondlib(bnd(b)%cod)%bnd0**2
+  end do
+
+  shake_molecules    = md_shake_molecules + 1
+  shake_constraints  = md_shake_constraints + n_new
+  fire_h_constrained = .true.
+
+  write(*,100) n_new, shake_constraints
+100 format('Constraining ',i8,' bonds to hydrogen for the minimization', &
+           ' (',i8,' constraints in total).')
+
+
+end subroutine fire_constrain_hydrogens
+
+
+!-------------------------------------------------------------------------------
+subroutine fire_release_hydrogens
+!!-------------------------------------------------------------------------------
+!!  **subroutine fire_release_hydrogens**
+!!  Hands the MD constraint set back after minimization.
+!!-------------------------------------------------------------------------------
+  integer :: k
+
+  if (.not. fire_h_constrained) return
+
+  do k = md_shake_molecules + 1, shake_molecules
+    deallocate(shake_mol(k)%bond)
+  end do
+
+  deallocate(shake_mol)
+  call move_alloc(md_shake_mol, shake_mol)
+
+  shake_molecules   = md_shake_molecules
+  shake_constraints = md_shake_constraints
+  fire_h_constrained = .false.
+
+end subroutine fire_release_hydrogens
+
+
+!-------------------------------------------------------------------------------
+subroutine fire_minimize
+!!-------------------------------------------------------------------------------
+!!  **subroutine fire_minimize**
+!!  Energy minimization with the Fast Inertial Relaxation Engine.
+!!
+!!  Bitzek, Koskinen, Gaehler, Moseler & Gumbsch, "Structural Relaxation Made
+!!  Simple", Phys. Rev. Lett. 97, 170201 (2006).
+!!
+!!  Run in two phases, for reasons that are structural rather than algorithmic:
+!!
+!!  Phase 1 relaxes the bonded terms while retaining the SCAAS boundary
+!!  restraints. Prepared structures routinely arrive with hydrogens that the
+!!  topology bonds to one atom but the coordinates place next to another -
+!!  protonated Asp/Glu (ASH/GLH) are the usual offenders, and their O-H bonds can
+!!  start out stretched to 2.5 A. Repairing that without non-bonded terms is safe,
+!!  because there is no Coulomb well for a hydrogen to fall into.
+!!
+!!  Phase 2 then minimizes the full force field with the bonds to hydrogen held
+!!  by SHAKE (see fire_constrain_hydrogens). By now those bonds sit at their
+!!  equilibrium length, so adding the constraints displaces nothing.
+!!
+!!  Every atom is propagated, including Q-atoms and solvent; atoms outside the
+!!  simulation sphere are held by the usual fk_fix restraints, exactly as in MD.
+!!  Gradients are projected onto the active constraint manifold before they are
+!!  used for convergence or FIRE propagation. Raw gradients generally do not
+!!  vanish at a constrained minimum because constraint reactions balance their
+!!  normal components.
+!!-------------------------------------------------------------------------------
+  real(8), allocatable :: v_save(:)
+  real, allocatable :: wpol_state_save(:,:)
+
+  if (nodeid .eq. 0) then
+    call centered_heading('Energy Minimization (FIRE)', '-')
+    write(*,'(a)') 'Fast inertial relaxation engine, Bitzek et al. PRL 97, 170201 (2006).'
+    write(*,'(a)') 'All atoms are mobile; convergence is on the RMS force.'
+    write(*,*)
+  end if
+
+  ! MD carries on with the velocities it was given (restart, or drawn from the
+  ! initial temperature). FIRE must not consume them, so park them.
+  allocate(v_save(nat3), stat=alloc_status)
+  call check_alloc('FIRE velocity buffer')
+  v_save(1:nat3) = v(1:nat3)
+
+  ! watpol accumulates MD running averages on every force evaluation. FIRE's
+  ! evaluations are not MD samples: retaining them makes the first MD update
+  ! depend on the minimization step count. Preserve the pre-MD state exactly,
+  ! including the correction loaded from a restart. Shell geometry is rebuilt
+  ! from the new coordinates by the next ordinary force evaluation.
+  if (nodeid .eq. 0 .and. wpol_restr .and. allocated(wshell)) then
+    allocate(wpol_state_save(3, nwpolr_shell), stat=alloc_status)
+    call check_alloc('FIRE water polarization buffer')
+    wpol_state_save(1,:) = wshell(:)%avtheta
+    wpol_state_save(2,:) = wshell(:)%avn_insh
+    wpol_state_save(3,:) = wshell(:)%theta_corr
+  end if
+
+  ! ---- Phase 1: bonded terms only, hydrogens free ----
+  if (nodeid .eq. 0) write(*,'(a)') '--- Phase 1: bonded terms only ---'
+  min_bonded_only = .true.
+  call fire_descend
+  min_bonded_only = .false.
+
+  ! ---- Phase 2: full force field, bonds to hydrogen constrained ----
+  if (nodeid .eq. 0) write(*,'(a)') '--- Phase 2: full force field ---'
+  call fire_constrain_hydrogens
+  call fire_descend
+  call fire_release_hydrogens
+
+  ! Hand the pre-minimization velocities back to MD.
+  v(1:nat3) = v_save(1:nat3)
+  deallocate(v_save)
+
+  if (allocated(wpol_state_save)) then
+    wshell(:)%avtheta = wpol_state_save(1,:)
+    wshell(:)%avn_insh = wpol_state_save(2,:)
+    wshell(:)%theta_corr = wpol_state_save(3,:)
+    deallocate(wpol_state_save)
+  end if
+
+end subroutine fire_minimize
+
+
+!-------------------------------------------------------------------------------
+subroutine fire_project_gradient(niter)
+!!-------------------------------------------------------------------------------
+!!  Project dE/dx onto the tangent space of the active position constraints.
+!!
+!!  apply_constraints already implements the mass-weighted projection needed by
+!!  the integrator. Apply it to a small virtual steepest-descent displacement and
+!!  recover the corresponding tangent gradient. The displacement is capped so
+!!  this remains a linear projection even when the initial force is very large.
+!!-------------------------------------------------------------------------------
+  integer, intent(out) :: niter
+  integer              :: i
+  real(8)               :: max_acceleration, projection_scale
+
+  niter = 0
+  if (shake_constraints+lincs_constraints+settle_constraints .eq. 0) return
+
+  max_acceleration = 0.0d0
+  do i = 1, natom
+    max_acceleration = max(max_acceleration, &
+      maxval(abs(d(3*i-2:3*i)))*winv(i))
+  end do
+  if (max_acceleration .le. 0.0d0) return
+
+  ! Normally use a 1e-6 virtual time factor, but cap the largest unconstrained
+  ! trial displacement at 1e-4 A for highly strained starting structures.
+  projection_scale = min(1.0d-6, 1.0d-4/max_acceleration)
+  xx(1:nat3) = x(1:nat3)
+  do i = 1, natom
+    xx(3*i-2:3*i) = x(3*i-2:3*i) &
+                    - projection_scale*winv(i)*d(3*i-2:3*i)
+  end do
+  call apply_constraints(x, xx, niter)
+  do i = 1, natom
+    d(3*i-2:3*i) = -(xx(3*i-2:3*i)-x(3*i-2:3*i)) &
+                    /(projection_scale*winv(i))
+  end do
+end subroutine fire_project_gradient
+
+
+!-------------------------------------------------------------------------------
+subroutine fire_descend
+!!-------------------------------------------------------------------------------
+!!  **subroutine fire_descend**
+!!  One FIRE descent, on whatever potential pot_energy currently evaluates.
+!!
+!!  Damped MD in which the velocity is steered towards the force direction
+!!  (F2: v -> (1-alpha)*v + alpha*|v|*Fhat) and the system is frozen the moment
+!!  the power P = F.v turns negative, i.e. as soon as it starts to climb. The
+!!  time step grows while the descent stays productive (F3) and is cut hard on
+!!  every uphill event (F4), so the step size adapts to the local curvature with
+!!  no line search at all.
+!!-------------------------------------------------------------------------------
+  integer              :: i, i3, iter, n_pos, niter, n_rebuild
+  real(8)              :: dt_fire, dt_max, dt_floor, alpha
+  real(8)              :: power, vnorm, fnorm, fsq, frms, fmax
+  real(8)              :: fi, vscale, dxnorm, dxi(3), dmax
+  logical              :: converged, need_rebuild
+  real(8), allocatable :: x_ref(:)
+
+  ! Q's internal time unit: dt = FS_TO_INTERNAL * (step size in fs)
+  dt_fire  = FS_TO_INTERNAL * fire_dt_start_fs
+  dt_max   = FS_TO_INTERNAL * fire_dt_max_fs
+  dt_floor = FS_TO_INTERNAL * 1.0d-4        ! keep dt off zero after repeated cuts
+  alpha    = fire_alpha_start
+  n_pos    = 0
+  n_rebuild = 1
+  converged = .false.
+  frms = 0.0d0
+  fmax = 0.0d0
+
+  allocate(x_ref(nat3), stat=alloc_status)
+  call check_alloc('FIRE reference coordinates')
+
+  ! FIRE starts from rest.
+  v(1:nat3) = 0.0d0
+
+  ! Project the starting structure onto the constraints in force.
+  if (nodeid .eq. 0 .and. &
+      shake_constraints+lincs_constraints+settle_constraints .gt. 0) then
+    xx(1:nat3) = x(1:nat3)
+    call apply_constraints(xx, x, niter)
+  end if
+
+#if defined(USE_MPI)
+  call MPI_Bcast(x, nat3, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+  if (ierr .ne. 0) call die('fire_descend/MPI_Bcast x init')
+#endif
+
+  call make_pair_lists
+  x_ref(1:nat3) = x(1:nat3)
+
+  if (nodeid .eq. 0) write(*,300)
+300 format('   step',t13,'E_pot',t32,'F_rms',t47,'F_max',t60,'dt/fs',t70,'alpha')
+
+  do iter = 1, max_min_steps
+
+    ! Refresh the pair lists (and with them the LRF expansion) once an atom has
+    ! drifted further than the list skin. A single FIRE step can move an atom as
+    ! far as MD moves it in hundreds of steps, so the fixed NBcycle interval the
+    ! MD loop uses is far too coarse here: stale lists let atoms interpenetrate
+    ! and stale LRF centres inject spurious long-range forces.
+    need_rebuild = .false.
+    if (nodeid .eq. 0 .and. iter .gt. 1) then
+      ! Compare squared drift against the squared skin to skip a per-atom sqrt.
+      dmax = 0.0d0
+      do i = 1, natom
+        i3 = 3*(i-1)
+        dxnorm = (x(i3+1)-x_ref(i3+1))**2 + (x(i3+2)-x_ref(i3+2))**2 &
+               + (x(i3+3)-x_ref(i3+3))**2
+        if (dxnorm .gt. dmax) dmax = dxnorm
+      end do
+      if (dmax .gt. fire_list_skin**2) need_rebuild = .true.
+    end if
+
+#if defined(USE_MPI)
+    call MPI_Bcast(need_rebuild, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+    if (ierr .ne. 0) call die('fire_descend/MPI_Bcast need_rebuild')
+#endif
+    if (need_rebuild) then
+      call make_pair_lists
+      x_ref(1:nat3) = x(1:nat3)
+      n_rebuild = n_rebuild + 1
+    end if
+
+    call pot_energy
+
+    if (nodeid .eq. 0) then
+      call fire_project_gradient(niter)
+
+      ! d holds the constraint-projected gradient dE/dx, so the force is F = -d.
+      fsq  = 0.0d0
+      fmax = 0.0d0
+      do i = 1, nat3
+        fi = d(i)
+        if (fi .ne. fi) then          ! NaN guard
+          d(i) = 0.0d0
+          fi   = 0.0d0
+        end if
+        fsq = fsq + fi*fi
+        if (abs(fi) .gt. fmax) fmax = abs(fi)
+      end do
+      frms = sqrt(fsq/real(nat3, 8))
+
+      if (mod(iter-1, 50) .eq. 0) then
+        write(*,301) iter, E%potential, frms, fmax, dt_fire/FS_TO_INTERNAL, alpha
+      end if
+301   format(i7,t10,es15.6,t30,f12.3,t45,f12.3,t58,f7.4,t68,f8.5)
+
+      if (frms .lt. min_tol) converged = .true.
+    end if
+
+#if defined(USE_MPI)
+    call MPI_Bcast(converged, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+    if (ierr .ne. 0) call die('fire_descend/MPI_Bcast converged')
+#endif
+    if (converged) exit
+
+    if (nodeid .eq. 0) then
+      ! --- F1: P = F.v
+      power = 0.0d0
+      do i = 1, nat3
+        power = power - d(i)*v(i)
+      end do
+      ! v = 0 on entry, so P = 0 on the first step: do not trip the freeze branch.
+      if (iter .eq. 1) power = 1.0d0
+
+      if (power .gt. 0.0d0) then
+        ! --- F3: descent is productive, accelerate and ease off the mixing
+        n_pos = n_pos + 1
+        if (n_pos .gt. fire_nmin) then
+          dt_fire = min(dt_fire*fire_finc, dt_max)
+          alpha   = alpha*fire_falpha
+        end if
+
+        ! --- F2: v -> (1-alpha)*v + alpha*|v|*Fhat
+        vnorm = sqrt(dot_product(v(1:nat3), v(1:nat3)))
+        fnorm = sqrt(fsq)
+        if (fnorm .gt. 1.0d-10) then
+          vscale = alpha*vnorm/fnorm
+          do i = 1, nat3
+            v(i) = (1.0d0 - alpha)*v(i) - vscale*d(i)
+          end do
+        end if
+      else
+        ! --- F4: heading uphill, freeze and cut the time step
+        n_pos     = 0
+        dt_fire   = max(dt_fire*fire_fdec, dt_floor)
+        alpha     = fire_alpha_start
+        v(1:nat3) = 0.0d0
+      end if
+
+      ! --- MD: semi-implicit Euler, displacement capped per atom.
+      ! The paper suggests equalising the masses so every degree of freedom
+      ! shares one velocity scale. We keep the true masses instead: SHAKE
+      ! distributes its corrections by inverse mass, so a unit-mass integrator
+      ! would be inconsistent with the constraint solver.
+      do i = 1, natom
+        i3 = 3*(i-1)
+
+        ! Optionally hold the Q-atoms fixed. The two dual-topology ligands do not
+        ! interact (each is a dummy in the other's state, so their pairwise force
+        ! is exactly zero), so relaxing them is physically sound and lets each
+        ! ligand settle local strain against its own pocket. But freezing them is
+        ! offered for callers who want the ligand poses left exactly as prepared
+        ! and only the environment relaxed -- the behaviour of the old minimiser.
+        if (min_freeze_qatoms .and. iqatom(i) .ne. 0) then
+          v(i3+1:i3+3) = 0.0d0
+          cycle
+        end if
+
+        v(i3+1:i3+3) = v(i3+1:i3+3) - d(i3+1:i3+3)*winv(i)*dt_fire
+        dxi(1:3)     = v(i3+1:i3+3)*dt_fire
+
+        dxnorm = sqrt(dxi(1)**2 + dxi(2)**2 + dxi(3)**2)
+        if (dxnorm .gt. fire_maxmove) then
+          vscale       = fire_maxmove/dxnorm
+          dxi(1:3)     = dxi(1:3)*vscale
+          ! keep the velocity consistent with the truncated move
+          v(i3+1:i3+3) = dxi(1:3)/dt_fire
+        end if
+
+        xx(i3+1:i3+3) = x(i3+1:i3+3)
+        x(i3+1:i3+3)  = x(i3+1:i3+3) + dxi(1:3)
+      end do
+
+      ! Constraints, as in the MD integrator.
+      if (shake_constraints+lincs_constraints+settle_constraints .gt. 0) then
+        call apply_constraints(xx, x, niter)
+        v(1:nat3) = (x(1:nat3) - xx(1:nat3))/dt_fire
+      end if
+    end if
+
+#if defined(USE_MPI)
+    call MPI_Bcast(x, nat3, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    if (ierr .ne. 0) call die('fire_descend/MPI_Bcast x')
+#endif
+  end do
+
+  if (nodeid .eq. 0) then
+    write(*,301) min(iter, max_min_steps), E%potential, frms, fmax, &
+                 dt_fire/FS_TO_INTERNAL, alpha
+    if (converged) then
+      write(*,302) min(iter, max_min_steps), frms
+    else
+      write(*,303) max_min_steps, frms, min_tol
+    end if
+    write(*,304) E%potential, fmax
+    write(*,305) n_rebuild
+302 format('FIRE converged after ',i6,' steps: projected RMS force = ',f10.4,' kcal/mol/A')
+303 format('>>> WARNING: FIRE did not converge in ',i6,' steps: projected RMS force = ', &
+           f10.4,' > tolerance ',f10.4,' kcal/mol/A')
+304 format('Energy after minimization = ',es15.6,' kcal/mol, projected max force = ', &
+           es12.4,' kcal/mol/A')
+305 format('Pair list rebuilds        = ',i6)
+    write(*,*)
+  end if
+
+  deallocate(x_ref)
+
+end subroutine fire_descend
 
 
 subroutine md_run
@@ -3927,8 +5384,20 @@ subroutine md_run
   real(8)                         :: Temp,Tlast
   real(8)                         :: Ekinmax
   real(8)                         :: Tscale_solute,Tscale_solvent
+  real(8)                         :: scale_i
+  logical                         :: split_excl
   real(8)                         :: time0, time1, time_per_step, startloop
-  integer(4)                      :: time_completion
+  real(8)                         :: progress_percent
+  integer                         :: eta_total_seconds
+  integer                         :: eta_hours, eta_minutes, eta_seconds
+  real(8), parameter              :: timing_interval = 30.0d0
+  ! minimization local variables
+  integer                         :: min_iter, min_phase
+  real(8)                         :: min_grms, min_E_last, min_alpha
+  real(8)                         :: dx, max_disp, fmax, fi
+  logical                         :: min_converged
+  parameter (max_disp = 0.1d0)   ! maximum displacement per coordinate per step (Angstrom)
+  parameter (fmax = 1000.0d0)    ! maximum force per component for force capping (kcal/mol/A)
 
 #if defined(PROFILING)
   real(8)                         :: start_loop_time1, start_loop_time2
@@ -3938,11 +5407,12 @@ subroutine md_run
   profile(4)%name = '   nbpwlist_time'
   profile(5)%name = '   nbqplist_time'
   profile(6)%name = '   nbqwlist_time'
-  profile(7)%name = 'SHAKE'
+  profile(7)%name = 'Constraints'
   profile(8)%name = 'Bonded Terms'
   profile(9)%name = 'Restraints'
   profile(10)%name = 'Nonbonded Terms'
   profile(11)%name = 'Update vel. & coords.'
+  profile(12)%name = 'Temperature & scaling'
 #endif
 
 #if defined(PROFILING)
@@ -3950,11 +5420,10 @@ subroutine md_run
   if (nodeid .eq. 0) then
     allocate(all_node_times(num_profiling_times*numnodes), stat=alloc_status) !vector for storing all node's node_times, used by mpi_gather at end of md_run
     call check_alloc('MPI profiling')
+    all_node_times(:) = 0.0
   end if
   allocate(node_times(num_profiling_times), stat=alloc_status) !each node's profiling times, used at end of md_run by mpi_gather
   call check_alloc('MPI profiling')
-
-  all_node_times(:) = 0.0
   node_times(:) = 0.0
 
 #endif
@@ -3983,16 +5452,219 @@ subroutine md_run
       write (*,120) 'Solute', Temp_solute, Tfree_solute
        ! write (*,120) 'Excl solute, solvent', Texcl_solute, Texcl_solvent
     end if
+    if ( .not. use_PBC .and. Ndegf > Ndegfree ) write (*,121) Texcl
+121 format('Excluded atom temperature is : T_excl =',f10.2)
 120 format(a7,' temperatures are : Ttot =',f10.2,' Tfree =',f10.2)
     write (*,*)
 
-    ! init timer
-    time0 = rtime()
-
-    ! Init timer of total loop time
-    startloop = rtime()
   end if
 
+  ! NEQ (lambda_scaling) validation, before the minimization pre-loop: pot_energy's
+  ! switching block indexes EQ(2) and follows the istep schedule, so it is valid only
+  ! with exactly two states and only inside the main dynamics loop (where istep is set).
+  ! It must also run serially: the dU/dlambda work integral reads EQ(2)-EQ(1) energies
+  ! that are only summed on the master rank, so under MPI the slaves would silently
+  ! accumulate garbage work. equilibrium_simulation is .true. on slaves (never broadcast),
+  ! so only the master reaches this die, which aborts all ranks via MPI_Abort.
+  if (.not. equilibrium_simulation) then
+    if (numnodes > 1) call die('lambda_scaling (NEQ) must run serially; use qdyn, not mpirun qdynp')
+    if (nstates /= 2) call die('lambda_scaling (NEQ) requires exactly 2 FEP states')
+    if (do_minimize) call die('lambda_scaling (NEQ) does not support energy minimization')
+  end if
+
+  !***********************************************************************
+  !       ENERGY MINIMIZATION (before MD)
+  !***********************************************************************
+  if (do_minimize .and. min_method .eq. MIN_FIRE) then
+    call fire_minimize
+  end if
+
+  if (do_minimize .and. min_method .eq. MIN_SD) then
+    if (nodeid .eq. 0) then
+      call centered_heading('Energy Minimization', '-')
+      write(*,'(a)') 'Two-phase steepest descent energy minimization:'
+      write(*,'(a)') '  Phase 1: Bonded terms only (fixes geometric strain)'
+      write(*,'(a)') '  Phase 2: Full force field with force capping'
+      write(*,'(a)') 'Q-atoms and solvent atoms are frozen during minimization.'
+      write(*,*)
+    end if
+
+    ! ---- Phase 1: Bonded-only minimization ----
+    if (nodeid .eq. 0) then
+      write(*,'(a)') '--- Phase 1: Bonded-only minimization ---'
+    end if
+    min_bonded_only = .true.
+    min_alpha = min_step
+
+    do min_iter = 1, max_min_steps
+      call pot_energy
+
+      min_converged = .false.
+      if (nodeid .eq. 0) then
+        ! Zero NaN forces
+        do i = 1, natom
+          i3 = 3*(i-1)
+          if (d(i3+1) .ne. d(i3+1)) d(i3+1) = 0.0
+          if (d(i3+2) .ne. d(i3+2)) d(i3+2) = 0.0
+          if (d(i3+3) .ne. d(i3+3)) d(i3+3) = 0.0
+        end do
+
+        min_grms = sqrt(dot_product(d(1:nat3), d(1:nat3))/nat3)
+
+        if (mod(min_iter, 500) .eq. 1 .or. min_iter .eq. 1) then
+          write(*,130) min_iter, E%p%bond + E%p%angle + E%p%torsion, &
+            min_grms, min_alpha
+130       format('Min step ',i6,': E_bonded = ',f14.4, &
+            ', RMS = ',f10.4,', step = ',es8.1)
+        end if
+
+        if (min_grms .lt. min_tol) then
+          write(*,'(a,i6,a,f10.4)') 'Phase 1 converged at step ', &
+            min_iter, ', RMS force = ', min_grms
+          min_converged = .true.
+        end if
+      end if
+
+#if defined(USE_MPI)
+      call MPI_Bcast(min_converged, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+      if (ierr .ne. 0) call die('minimize/MPI_Bcast min_converged')
+#endif
+      if (min_converged) exit
+
+      if (nodeid .eq. 0) then
+        ! Steepest descent step with displacement cap
+        ! Only move solute non-Q atoms; solvent is frozen (SHAKE-constrained)
+        do i = 1, nat_solute
+          if (iqatom(i) .eq. 0) then
+            i3 = 3*(i-1)
+            dx = -min_alpha * d(i3+1) * winv(i)
+            if (dx .gt. max_disp) dx = max_disp
+            if (dx .lt. -max_disp) dx = -max_disp
+            x(i3+1) = x(i3+1) + dx
+            dx = -min_alpha * d(i3+2) * winv(i)
+            if (dx .gt. max_disp) dx = max_disp
+            if (dx .lt. -max_disp) dx = -max_disp
+            x(i3+2) = x(i3+2) + dx
+            dx = -min_alpha * d(i3+3) * winv(i)
+            if (dx .gt. max_disp) dx = max_disp
+            if (dx .lt. -max_disp) dx = -max_disp
+            x(i3+3) = x(i3+3) + dx
+          end if
+        end do
+      end if
+    end do
+
+    if (nodeid .eq. 0) then
+      write(*,'(a,f14.4)') 'Phase 1 final bonded energy: ', &
+        E%p%bond + E%p%angle + E%p%torsion
+      write(*,*)
+    end if
+
+    ! Broadcast Phase 1 coordinates to slaves before Phase 2
+#if defined(USE_MPI)
+    call MPI_Bcast(x, nat3, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    if (ierr .ne. 0) call die('minimize/MPI_Bcast x phase1')
+#endif
+
+    min_bonded_only = .false.
+
+    ! ---- Phase 2: Full force field with force capping ----
+    if (nodeid .eq. 0) then
+      write(*,'(a)') '--- Phase 2: Full force field minimization ---'
+    end if
+    min_alpha = min_step
+
+    ! Build initial pair lists for nonbonded interactions
+    call make_pair_lists
+
+    do min_iter = 1, max_min_steps
+      ! Rebuild pair lists periodically as atoms move
+      if (mod(min_iter, NBcycle) .eq. 1 .and. min_iter .gt. 1) then
+        call make_pair_lists
+      end if
+      call pot_energy
+
+      min_converged = .false.
+      if (nodeid .eq. 0) then
+        ! Zero NaN forces and cap large forces
+        do i = 1, natom
+          i3 = 3*(i-1)
+          do j = 1, 3
+            fi = d(i3+j)
+            if (fi .ne. fi) then
+              d(i3+j) = 0.0
+            else if (fi .gt. fmax) then
+              d(i3+j) = fmax
+            else if (fi .lt. -fmax) then
+              d(i3+j) = -fmax
+            end if
+          end do
+        end do
+
+        min_grms = sqrt(dot_product(d(1:nat3), d(1:nat3))/nat3)
+
+        if (mod(min_iter, 500) .eq. 1 .or. min_iter .eq. 1) then
+          write(*,131) min_iter, E%potential, min_grms, min_alpha
+131       format('Min step ',i6,': E_total = ',es14.4, &
+            ', RMS = ',f10.4,', step = ',es8.1)
+        end if
+
+        if (min_grms .lt. min_tol) then
+          write(*,'(a,i6,a,f10.4)') 'Phase 2 converged at step ', &
+            min_iter, ', RMS force = ', min_grms
+          min_converged = .true.
+        end if
+      end if
+
+#if defined(USE_MPI)
+      call MPI_Bcast(min_converged, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+      if (ierr .ne. 0) call die('minimize/MPI_Bcast min_converged')
+#endif
+      if (min_converged) exit
+
+      if (nodeid .eq. 0) then
+        ! Steepest descent step with displacement cap
+        ! Only move solute non-Q atoms; solvent is frozen (SHAKE-constrained)
+        do i = 1, nat_solute
+          if (iqatom(i) .eq. 0) then
+            i3 = 3*(i-1)
+            dx = -min_alpha * d(i3+1) * winv(i)
+            if (dx .gt. max_disp) dx = max_disp
+            if (dx .lt. -max_disp) dx = -max_disp
+            x(i3+1) = x(i3+1) + dx
+            dx = -min_alpha * d(i3+2) * winv(i)
+            if (dx .gt. max_disp) dx = max_disp
+            if (dx .lt. -max_disp) dx = -max_disp
+            x(i3+2) = x(i3+2) + dx
+            dx = -min_alpha * d(i3+3) * winv(i)
+            if (dx .gt. max_disp) dx = max_disp
+            if (dx .lt. -max_disp) dx = -max_disp
+            x(i3+3) = x(i3+3) + dx
+          end if
+        end do
+      end if
+
+      ! Broadcast updated coordinates to slaves for next step's nonbonds
+#if defined(USE_MPI)
+      call MPI_Bcast(x, nat3, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+      if (ierr .ne. 0) call die('minimize/MPI_Bcast x phase2')
+#endif
+    end do
+
+    if (nodeid .eq. 0) then
+      write(*,'(a,es14.4)') 'Phase 2 final total energy:  ', E%potential
+      write(*,*)
+    end if
+  end if
+
+  work_accumulated = 0.0_8
+
+  ! Start timing after any minimization so that progress estimates describe
+  ! the dynamics loop only.  time0 controls how often progress is reported.
+  if (nodeid .eq. 0) then
+    startloop = rtime()
+    time0 = startloop
+  end if
 
   !***********************************************************************
   !       begin MAIN DYNAMICS LOOP (Verlet leap-frog algorithm)
@@ -4013,15 +5685,22 @@ subroutine md_run
       end if
 
       if ((nodeid .eq. 0) .and. (istep > 0)) then
-        ! print timing info
-        call centered_heading('Timing', '-')
+        ! Pair lists may be rebuilt many times per second, so report progress
+        ! on a wall-clock cadence instead of at every rebuild.
         time1 = rtime()
-        time_per_step = (time1-time0)/NBcycle
-        time_completion = int(time_per_step*(nsteps-istep)/60)
-        time0 = time1
-        write(*,222) time_per_step, time_completion
-222     format('Seconds per step (wall-clock): ', f5.2, &
-          ' Estimated completion in',i6,' minutes')
+        if (time1-time0 .ge. timing_interval) then
+          time_per_step = (time1-startloop)/dble(istep)
+          progress_percent = 100.0d0*dble(istep)/dble(nsteps)
+          eta_total_seconds = ceiling(time_per_step*dble(nsteps-istep))
+          eta_hours = eta_total_seconds/3600
+          eta_minutes = mod(eta_total_seconds, 3600)/60
+          eta_seconds = mod(eta_total_seconds, 60)
+          time0 = time1
+          write(*,222) istep, nsteps, progress_percent, time_per_step, &
+                       eta_hours, eta_minutes, eta_seconds
+222       format('Progress ',i0,'/',i0,' (',f5.1,'%): ',f9.4, &
+            ' s/step, ETA ',i0,':',i2.2,':',i2.2)
+        end if
       end if
 
       ! update lists of nonbonded interaction pairs
@@ -4063,6 +5742,15 @@ subroutine md_run
     ! get potential energy and derivatives from FF
     call pot_energy
 
+    ! NEQ work integral. NOTE: the window (istep in [2, nsteps-2]) drops the first two
+    ! steps and the final step -- kept verbatim from the original NEQ engine; whether
+    ! this truncation is intentional (it shifts the BAR free energy) is unresolved.
+    if (.not. equilibrium_simulation) then
+      if (istep >= 2 .and. istep <= nsteps-2) then
+        work_accumulated = work_accumulated + dU_dlambda * dlambda
+      end if
+    end if
+
     if(nodeid .eq. 0) then
       if ( mod(istep,iout_cycle) == 0 .and. monitor_group_pairs > 0) then
         call nonbond_monitor
@@ -4078,18 +5766,26 @@ subroutine md_run
       start_loop_time1 = rtime()
 #endif
 
+      ! excluded atoms use their own factor unless legacy scaling is requested
+      split_excl = (.not. use_PBC) .and. nexats > 0 .and. &
+        trim(excluded_thermostat) /= 'legacy'
+
       !solute atoms first
       do i=1,nat_solute
         i3=i*3-3
-        v(i3+1)= ( v(i3+1)-d(i3+1)*winv(i)*dt ) * Tscale_solute
+        scale_i = Tscale_solute
+        if (split_excl) then
+          if (excl(i)) scale_i = Tscale_excl
+        end if
+        v(i3+1)= ( v(i3+1)-d(i3+1)*winv(i)*dt ) * scale_i
         xx(i3+1) = x(i3+1)
         x(i3+1) = x(i3+1) + v(i3+1)*dt
 
-        v(i3+2)= ( v(i3+2)-d(i3+2)*winv(i)*dt ) * Tscale_solute
+        v(i3+2)= ( v(i3+2)-d(i3+2)*winv(i)*dt ) * scale_i
         xx(i3+2) = x(i3+2)
         x(i3+2) = x(i3+2) + v(i3+2)*dt
 
-        v(i3+3)= ( v(i3+3)-d(i3+3)*winv(i)*dt ) * Tscale_solute
+        v(i3+3)= ( v(i3+3)-d(i3+3)*winv(i)*dt ) * scale_i
         xx(i3+3) = x(i3+3)
         x(i3+3) = x(i3+3) + v(i3+3)*dt
       end do
@@ -4097,15 +5793,19 @@ subroutine md_run
       !now solvent atoms
       do i=nat_solute+1,natom
         i3=i*3-3
-        v(i3+1)= ( v(i3+1)-d(i3+1)*winv(i)*dt ) * Tscale_solvent
+        scale_i = Tscale_solvent
+        if (split_excl) then
+          if (excl(i)) scale_i = Tscale_excl
+        end if
+        v(i3+1)= ( v(i3+1)-d(i3+1)*winv(i)*dt ) * scale_i
         xx(i3+1) = x(i3+1)
         x(i3+1) = x(i3+1) + v(i3+1)*dt
 
-        v(i3+2)= ( v(i3+2)-d(i3+2)*winv(i)*dt ) * Tscale_solvent
+        v(i3+2)= ( v(i3+2)-d(i3+2)*winv(i)*dt ) * scale_i
         xx(i3+2) = x(i3+2)
         x(i3+2) = x(i3+2) + v(i3+2)*dt
 
-        v(i3+3)= ( v(i3+3)-d(i3+3)*winv(i)*dt ) * Tscale_solvent
+        v(i3+3)= ( v(i3+3)-d(i3+3)*winv(i)*dt ) * scale_i
         xx(i3+3) = x(i3+3)
         x(i3+3) = x(i3+3) + v(i3+3)*dt
       end do
@@ -4113,11 +5813,15 @@ subroutine md_run
       profile(11)%time = profile(11)%time + rtime() - start_loop_time1
 #endif
 
-      ! shake if necessary
-      if(shake_constraints > 0) then
-        niter=shake(xx, x)
-        v(:) = (x(:) - xx(:)) / dt
-      end if
+#endif
+    end if
+
+#ifndef DUM
+    call apply_dynamics_constraints(niter)
+#endif
+
+    if (nodeid == 0) then
+#ifndef DUM
 
       ! --- end of time step ---
 #if defined (PROFILING)
@@ -4174,6 +5878,7 @@ subroutine md_run
           write(*,2020) Tfree_solute, Tfree_solvent
            !  write(*,2030) Texcl_solute, Texcl_solvent
         end if
+        if ( .not. use_PBC .and. Ndegf > Ndegfree ) write(*,2031) Texcl
       end if
 
     end if ! print results
@@ -4183,6 +5888,7 @@ subroutine md_run
 201 format('Temperature at step',i8,':         T_tot=',f10.1,'         T_free=',f10.1)
 2020 format('                             T_free_solute=',f10.1,' T_free_solvent=',f10.1)
 2030 format('                             T_excl_solute=',f10.1,' T_excl_solvent=',f10.1)
+2031 format('                             T_excl=',f10.1)
 
 
 !*******************************************************************************
@@ -4199,7 +5905,7 @@ end if
 ! write final trajectory image when istep = nsteps
 #ifndef DUM
 if (nodeid .eq. 0) then
-  if ( mod(istep,itrj_cycle) == 0) call write_trj
+  if ( itrj_cycle > 0 .and. mod(istep,itrj_cycle) == 0) call write_trj
 end if
 #endif
 
@@ -4245,7 +5951,7 @@ if (nodeid .eq. 0) then
   end do
 
 207 format('Total time of ',A25,T40,': ')
-208 format(f10.1,' ')
+208 format(f12.6,' ')
 209 format(I11)
 210 format(T30,'node:     ')
   write (*,*)
@@ -4255,7 +5961,7 @@ end if
 do i=1,num_profiling_times
   write (*,207) profile(i)%name,profile(i)%time
 end do
-207 format('Total time of ',A25,T40,': ',f15.1,' (s).')
+207 format('Total time of ',A25,T40,': ',f15.6,' (s).')
 #endif
 #endif
 
@@ -4359,12 +6065,7 @@ subroutine nbpp_count(npp, nppcgp)
               if ( listex(i-j,j) ) cycle jaloop
             end if
           else
-            do nl = 1, nexlong
-              if ( (listexlong(1,nl) .eq. i .and. &
-                listexlong(2,nl) .eq. j      ) .or. &
-                (listexlong(1,nl) .eq. j .and. &
-                listexlong(2,nl) .eq. i      ) ) cycle jaloop
-            end do
+            if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
           end if
 
           ! passed all tests -- count the pair
@@ -4385,7 +6086,7 @@ subroutine nbpplis2
    ! local variables
   integer                                         :: i,j,ig,jg,ia,ja,i3,j3,nl,inside
   real(8)                                         :: rcut2,r2
-
+  logical                                         :: cross_mol
 
   ! for spherical boundary
   !       This routine makes a list of non-bonded solute-solute atom pairs
@@ -4415,34 +6116,37 @@ subroutine nbpplis2
       ja = cgp(jg)%iswitch
       if ( excl(ja) ) cycle jgloop
 
+      ! Bounding sphere pre-filter: skip if centroids too far for any atom pair within cutoff
+      r2 = ( cgp_bound_cent(1,ig) - cgp_bound_cent(1,jg) )**2 &
+        +( cgp_bound_cent(2,ig) - cgp_bound_cent(2,jg) )**2 &
+        +( cgp_bound_cent(3,ig) - cgp_bound_cent(3,jg) )**2
+      if ( r2 > (Rcpp + cgp_bound_rad(ig) + cgp_bound_rad(jg))**2 ) cycle jgloop
+
       !             --- outside cutoff ? ---
       inside = 0
       ia = cgp(ig)%first
       do while ((ia .le. cgp(ig)%last) .and. (inside .eq. 0))
         i = cgpatom(ia)
         i3 = 3*i-3
-
         ja = cgp(jg)%first
         do while ((ja .le. cgp(jg)%last) .and. (inside .eq. 0))
           j = cgpatom(ja)
           j3 = 3*j-3
-
-
           r2 = ( x(i3+1) -x(j3+1) )**2 &
             +( x(i3+2) -x(j3+2) )**2 &
             +( x(i3+3) -x(j3+3) )**2
-
           if ( r2 .le. rcut2 ) then
-            ! one atom pair is within cutoff: set inside
             inside = 1
           end if
-
           ja = ja + 1
         end do
-
         ia = ia + 1
       end do
       if (inside .eq. 0) cycle jgloop
+
+      cross_mol = (cgp_mol(ig) /= cgp_mol(jg)) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(ig))) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(jg)))
 
       ialoop:    do ia = cgp(ig)%first, cgp(ig)%last
         i = cgpatom(ia)
@@ -4467,13 +6171,8 @@ subroutine nbpplis2
             else
               if ( listex(i-j,j) ) cycle jaloop
             end if
-          else
-            do nl = 1, nexlong
-              if ( (listexlong(1,nl) .eq. i .and. &
-                listexlong(2,nl) .eq. j      ) .or. &
-                (listexlong(1,nl) .eq. j .and. &
-                listexlong(2,nl) .eq. i      ) ) cycle jaloop
-            end do
+          else if (.not. cross_mol) then
+            if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
           end if
 
           ! if out of space then make more space
@@ -4490,24 +6189,18 @@ subroutine nbpplis2
             else
               if ( list14(i-j,j) ) nbpp(nbpp_pair)%LJcod = 3
             end if
-          else
-            do nl = 1, n14long
-              if ( (list14long(1,nl) .eq. i .and. &
-                list14long(2,nl) .eq. j      ) .or. &
-                (list14long(1,nl) .eq. j .and. &
-                list14long(2,nl) .eq. i      ) ) then
-                nbpp(nbpp_pair)%LJcod = 3
-              end if
-            end do
+          else if (.not. cross_mol) then
+            if (csr_search(l14long_start, l14long_partner, i, j)) nbpp(nbpp_pair)%LJcod = 3
           end if
 
         end do jaloop
       end do ialoop
     end do jgloop
   end do igloop
-#if defined (PROFILING) 
+
+#if defined (PROFILING)
   profile(3)%time = profile(3)%time + rtime() - start_loop_time
-#endif 
+#endif
 
 end subroutine nbpplis2
 
@@ -4519,6 +6212,7 @@ subroutine nbpplis2_box
   integer                   :: i,j,ig,jg,ia,ja,i3,j3,nl,inside
   real(8)                   :: rcut2,r2
   real(8)                   :: dx, dy, dz
+  logical                   :: cross_mol
 
 #if defined (PROFILING)
   real(8)                   :: start_loop_time
@@ -4541,13 +6235,22 @@ subroutine nbpplis2_box
         ((ig .lt. jg) .and. (mod(ig+jg,2) .eq. 1)) ) &
         cycle jgloop
 
+      ! Bounding sphere pre-filter with minimum image convention
+      dx = cgp_bound_cent(1,ig) - cgp_bound_cent(1,jg)
+      dy = cgp_bound_cent(2,ig) - cgp_bound_cent(2,jg)
+      dz = cgp_bound_cent(3,ig) - cgp_bound_cent(3,jg)
+      dx = dx - boxlength(1)*nint( dx*inv_boxl(1) )
+      dy = dy - boxlength(2)*nint( dy*inv_boxl(2) )
+      dz = dz - boxlength(3)*nint( dz*inv_boxl(3) )
+      r2 = dx**2 + dy**2 + dz**2
+      if ( r2 > (Rcpp + cgp_bound_rad(ig) + cgp_bound_rad(jg))**2 ) cycle jgloop
+
       !             --- outside cutoff ? ---
       inside = 0
       ia = cgp(ig)%first
       do while ((ia .le. cgp(ig)%last) .and. (inside .eq. 0))
         i = cgpatom(ia)
         i3 = 3*i-3
-
         ja = cgp(jg)%first
         do while ((ja .le. cgp(jg)%last) .and. (inside .eq. 0))
           j = cgpatom(ja)
@@ -4559,25 +6262,22 @@ subroutine nbpplis2_box
           dy = dy - boxlength(2)*nint( dy*inv_boxl(2) )
           dz = dz - boxlength(3)*nint( dz*inv_boxl(3) )
           r2 = dx**2 + dy**2 + dz**2
-
           if ( r2 .le. rcut2 ) then
-            ! one atom pair is within cutoff: set inside
             inside = 1
-
             if (nbpp_cgp_pair .eq. size(nbpp_cgp, 1) )  call reallocate_nbpp_cgp
-
             nbpp_cgp_pair = nbpp_cgp_pair + 1
             nbpp_cgp(nbpp_cgp_pair)%i = i
             nbpp_cgp(nbpp_cgp_pair)%j = j
-
           end if
-
           ja = ja + 1
         end do
-
         ia = ia + 1
       end do
       if (inside .eq. 0) cycle jgloop
+
+      cross_mol = (cgp_mol(ig) /= cgp_mol(jg)) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(ig))) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(jg)))
 
       ialoop:    do ia = cgp(ig)%first, cgp(ig)%last
         i = cgpatom(ia)
@@ -4602,13 +6302,8 @@ subroutine nbpplis2_box
             else
               if ( listex(i-j,j) ) cycle jaloop
             end if
-          else
-            do nl = 1, nexlong
-              if ( (listexlong(1,nl) .eq. i .and. &
-                listexlong(2,nl) .eq. j      ) .or. &
-                (listexlong(1,nl) .eq. j .and. &
-                listexlong(2,nl) .eq. i      ) ) cycle jaloop
-            end do
+          else if (.not. cross_mol) then
+            if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
           end if
 
           ! if out of space then make more space
@@ -4626,15 +6321,8 @@ subroutine nbpplis2_box
             else
               if ( list14(i-j,j) ) nbpp(nbpp_pair)%LJcod = 3
             end if
-          else
-            do nl = 1, n14long
-              if ( (list14long(1,nl) .eq. i .and. &
-                list14long(2,nl) .eq. j      ) .or. &
-                (list14long(1,nl) .eq. j .and. &
-                list14long(2,nl) .eq. i      ) ) then
-                nbpp(nbpp_pair)%LJcod = 3
-              end if
-            end do
+          else if (.not. cross_mol) then
+            if (csr_search(l14long_start, l14long_partner, i, j)) nbpp(nbpp_pair)%LJcod = 3
           end if
 
         end do jaloop
@@ -4657,6 +6345,7 @@ subroutine nbpplis2_box_lrf
   real(8)                                               ::dr(3)
   real(8)                                               ::boxshiftx, boxshifty, boxshiftz
   integer                                               ::inside_LRF, is3
+  logical                                               :: cross_mol
   ! for periodic boundary conditions
   !     This routine makes a list of non-bonded solute-solute atom pairs
   !     excluding any Q-atoms.
@@ -4678,6 +6367,16 @@ subroutine nbpplis2_box_lrf
         ((ig .lt. jg) .and. (mod(ig+jg,2) .eq. 1)) ) &
         cycle jgloop
 
+      ! Bounding sphere pre-filter with minimum image: skip if outside LRF cutoff
+      dx = cgp_bound_cent(1,ig) - cgp_bound_cent(1,jg)
+      dy = cgp_bound_cent(2,ig) - cgp_bound_cent(2,jg)
+      dz = cgp_bound_cent(3,ig) - cgp_bound_cent(3,jg)
+      dx = dx - boxlength(1)*nint( dx*inv_boxl(1) )
+      dy = dy - boxlength(2)*nint( dy*inv_boxl(2) )
+      dz = dz - boxlength(3)*nint( dz*inv_boxl(3) )
+      r2 = dx**2 + dy**2 + dz**2
+      if ( r2 > (RcLRF + cgp_bound_rad(ig) + cgp_bound_rad(jg))**2 ) cycle jgloop
+
       !             --- outside cutoff ? ---
       inside = 0
       inside_LRF = 0
@@ -4685,7 +6384,6 @@ subroutine nbpplis2_box_lrf
       do while ((ia .le. cgp(ig)%last) .and. (inside .eq. 0))
         i = cgpatom(ia)
         i3 = 3*i-3
-
         ja = cgp(jg)%first
         do while ((ja .le. cgp(jg)%last) .and. (inside .eq. 0))
           j = cgpatom(ja)
@@ -4697,13 +6395,9 @@ subroutine nbpplis2_box_lrf
           dy = dy - boxlength(2)*nint( dy*inv_boxl(2) )
           dz = dz - boxlength(3)*nint( dz*inv_boxl(3) )
           r2 = dx**2 + dy**2 + dz**2
-
           if ( r2 .le. rcut2 ) then
-            ! one atom pair is within cutoff: set inside
             inside = 1
-
             if (nbpp_cgp_pair .eq. size(nbpp_cgp, 1) )  call reallocate_nbpp_cgp
-
             nbpp_cgp_pair = nbpp_cgp_pair + 1
             nbpp_cgp(nbpp_cgp_pair)%i = i
             nbpp_cgp(nbpp_cgp_pair)%j = j
@@ -4716,6 +6410,10 @@ subroutine nbpplis2_box_lrf
       end do
 
       if (inside .eq. 1) then
+        cross_mol = (cgp_mol(ig) /= cgp_mol(jg)) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(ig))) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(jg)))
+
         ialoop:    do ia = cgp(ig)%first, cgp(ig)%last
           i = cgpatom(ia)
 
@@ -4739,13 +6437,8 @@ subroutine nbpplis2_box_lrf
               else
                 if ( listex(i-j,j) ) cycle jaloop
               end if
-            else
-              do nl = 1, nexlong
-                if ( (listexlong(1,nl) .eq. i .and. &
-                  listexlong(2,nl) .eq. j      ) .or. &
-                  (listexlong(1,nl) .eq. j .and. &
-                  listexlong(2,nl) .eq. i      ) ) cycle jaloop
-              end do
+            else if (.not. cross_mol) then
+              if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
             end if
 
             ! if out of space then make more space
@@ -4763,15 +6456,8 @@ subroutine nbpplis2_box_lrf
               else
                 if ( list14(i-j,j) ) nbpp(nbpp_pair)%LJcod = 3
               end if
-            else
-              do nl = 1, n14long
-                if ( (list14long(1,nl) .eq. i .and. &
-                  list14long(2,nl) .eq. j      ) .or. &
-                  (list14long(1,nl) .eq. j .and. &
-                  list14long(2,nl) .eq. i      ) ) then
-                  nbpp(nbpp_pair)%LJcod = 3
-                end if
-              end do
+            else if (.not. cross_mol) then
+              if (csr_search(l14long_start, l14long_partner, i, j)) nbpp(nbpp_pair)%LJcod = 3
             end if
 
           end do jaloop
@@ -4930,6 +6616,7 @@ subroutine nbpplis2_lrf
   real(8)                                         :: rcut2,r2,field0,field1,field2
   real(8)                                         :: dr(3)
   real(8)                                         ::      RcLRF2
+  logical                                         :: cross_mol
 
   !       This routine makes a list of non-bonded solute-solute atom pairs
   !       excluding any Q-atoms.
@@ -4961,29 +6648,58 @@ subroutine nbpplis2_lrf
       if ( excl(ja) ) cycle jgloop
 
       !             --- outside cutoff ? ---
+      ! Bounding sphere pre-filter: skip expensive all-atom check if centroids too far
+      r2 = ( cgp_bound_cent(1,ig) - cgp_bound_cent(1,jg) )**2 &
+        +( cgp_bound_cent(2,ig) - cgp_bound_cent(2,jg) )**2 &
+        +( cgp_bound_cent(3,ig) - cgp_bound_cent(3,jg) )**2
+      if ( r2 > (Rcpp + cgp_bound_rad(ig) + cgp_bound_rad(jg))**2 ) then
+        ! Definitely outside Rcpp. Compute r2 for LRF gate using last atom pair.
+        inside = .false.
+        i = cgpatom(cgp(ig)%last)
+        j = cgpatom(cgp(jg)%last)
+        i3 = 3*i-3
+        j3 = 3*j-3
+        r2 = ( x(i3+1) -x(j3+1) )**2 &
+          +( x(i3+2) -x(j3+2) )**2 &
+          +( x(i3+3) -x(j3+3) )**2
+      else
       inside = .false.
-      pairloop:       do ia=cgp(ig)%first, cgp(ig)%last
+      ia = cgp(ig)%first
+      do while ((ia .le. cgp(ig)%last) .and. (.not. inside))
         i = cgpatom(ia)
         i3 = 3*i-3
-
-        do ja=cgp(jg)%first, cgp(jg)%last
+        ja = cgp(jg)%first
+        do while ((ja .le. cgp(jg)%last) .and. (.not. inside))
           j = cgpatom(ja)
           j3 = 3*j-3
-
           r2 = ( x(i3+1) -x(j3+1) )**2 &
             +( x(i3+2) -x(j3+2) )**2 &
             +( x(i3+3) -x(j3+3) )**2
-
-          if ( r2 <= rcut2 ) then
-            ! one atom pair is within cutoff: set inside
+          if ( r2 .le. rcut2 ) then
             inside = .true.
-            exit pairloop
           end if
+          ja = ja + 1
         end do
-      end do pairloop
+        ia = ia + 1
+      end do
+
+      if (.not. inside) then
+        i = cgpatom(cgp(ig)%last)
+        j = cgpatom(cgp(jg)%last)
+        i3 = 3*i-3
+        j3 = 3*j-3
+        r2 = ( x(i3+1) -x(j3+1) )**2 &
+          +( x(i3+2) -x(j3+2) )**2 &
+          +( x(i3+3) -x(j3+3) )**2
+      end if
+      end if ! bounding sphere pre-filter else branch
 
       !             --- inside cutoff ? ---
       if (inside) then
+        cross_mol = (cgp_mol(ig) /= cgp_mol(jg)) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(ig))) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(jg)))
+
         ialoop:                 do ia = cgp(ig)%first, cgp(ig)%last
           i = cgpatom(ia)
 
@@ -5002,13 +6718,8 @@ subroutine nbpplis2_lrf
               else
                 if ( listex(i-j,j) ) cycle jaloop
               end if
-            else
-              do nl = 1, nexlong
-                if ( (listexlong(1,nl) .eq. i .and. &
-                  listexlong(2,nl) .eq. j      ) .or. &
-                  (listexlong(1,nl) .eq. j .and. &
-                  listexlong(2,nl) .eq. i      ) ) cycle jaloop
-              end do
+            else if (.not. cross_mol) then
+              if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
             end if
 
             ! if out of space then make more space
@@ -5025,14 +6736,8 @@ subroutine nbpplis2_lrf
               else
                 if ( list14(i-j,j) ) nbpp(nbpp_pair)%LJcod = 3
               end if
-            else
-              do nl = 1, n14long
-                if ( (list14long(1,nl) .eq. i .and. &
-                  list14long(2,nl) .eq. j      ) .or. &
-                  (list14long(1,nl) .eq. j .and. &
-                  list14long(2,nl) .eq. i      ) ) &
-                  nbpp(nbpp_pair)%LJcod = 3
-              end do
+            else if (.not. cross_mol) then
+              if (csr_search(l14long_start, l14long_partner, i, j)) nbpp(nbpp_pair)%LJcod = 3
             end if
 
 
@@ -5177,6 +6882,7 @@ subroutine nbpplist
   integer                                         :: i,j,ig,jg,ia,ja,i3,j3,nl
   real(8)                                         :: rcut2,r2
   integer                                         :: LJ_code
+  logical                                         :: cross_mol
 
   ! For use with spherical boundary
   !       This routine makes a list of non-bonded solute-solute atom pairs
@@ -5225,6 +6931,10 @@ subroutine nbpplist
       ! skip if outside cutoff
       if ( r2 .gt. rcut2 ) cycle jgloop
 
+      cross_mol = (cgp_mol(ig) /= cgp_mol(jg)) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(ig))) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(jg)))
+
       ialoop: do ia = cgp(ig)%first, cgp(ig)%last
         ! for every atom in the charge group (of the outermost loop):
         i = cgpatom(ia)
@@ -5259,12 +6969,8 @@ subroutine nbpplist
             else
               if ( listex(i-j, j) ) cycle jaloop
             end if
-          else
-            do nl = 1, nexlong
-              if ((listexlong(1, nl) .eq. i .and. listexlong(2, nl) .eq. j) .or. &
-                (listexlong(1, nl) .eq. j .and. listexlong(2, nl) .eq. i) ) &
-                cycle jaloop
-            end do
+          else if (.not. cross_mol) then
+            if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
           end if
 
           ! if out of space then make more space
@@ -5283,22 +6989,16 @@ subroutine nbpplist
             else
               if ( list14(i-j, j) ) nbpp(nbpp_pair)%LJcod = 3
             end if
-          else
-
-
-            do nl = 1, n14long
-              if ((list14long(1, nl) .eq. i .and. list14long(2, nl) .eq. j) .or. &
-                (list14long(1, nl) .eq. j .and. list14long(2, nl) .eq. i)) &
-                nbpp(nbpp_pair)%LJcod = 3
-            end do
+          else if (.not. cross_mol) then
+            if (csr_search(l14long_start, l14long_partner, i, j)) nbpp(nbpp_pair)%LJcod = 3
           end if
         end do jaloop
       end do ialoop
     end do jgloop
   end do igloop
-#if defined (PROFILING) 
+#if defined (PROFILING)
   profile(3)%time = profile(3)%time + rtime() - start_loop_time
-#endif 
+#endif
 
 end subroutine nbpplist
 
@@ -5310,6 +7010,7 @@ subroutine nbpplist_box
   real(8)                                               :: rcut2,r2
   integer                                               :: LJ_code
   real(8)                                               :: dx, dy, dz
+  logical                                               :: cross_mol
 
   ! For use with periodic boundary conditions
   !     This routine makes a list of non-bonded solute-solute atom pairs
@@ -5366,6 +7067,10 @@ subroutine nbpplist_box
       nbpp_cgp(nbpp_cgp_pair)%i = ig_sw !the switching atoms of the charge groups in the pair
       nbpp_cgp(nbpp_cgp_pair)%j = jg_sw
 
+      cross_mol = (cgp_mol(ig) /= cgp_mol(jg)) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(ig))) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(jg)))
+
       ialoop: do ia = cgp(ig)%first, cgp(ig)%last
         ! for every atom in the charge group ig (of the outermost loop):
         i = cgpatom(ia)
@@ -5400,12 +7105,8 @@ subroutine nbpplist_box
             else
               if ( listex(i-j, j) ) cycle jaloop
             end if
-          else
-            do nl = 1, nexlong
-              if ((listexlong(1, nl) .eq. i .and. listexlong(2, nl) .eq. j) .or. &
-                (listexlong(1, nl) .eq. j .and. listexlong(2, nl) .eq. i) ) &
-                cycle jaloop
-            end do
+          else if (.not. cross_mol) then
+            if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
           end if
 
           ! if out of space then make more space
@@ -5425,21 +7126,16 @@ subroutine nbpplist_box
             else
               if ( list14(i-j, j) ) nbpp(nbpp_pair)%LJcod = 3
             end if
-          else
-
-            do nl = 1, n14long
-              if ((list14long(1, nl) .eq. i .and. list14long(2, nl) .eq. j) .or. &
-                (list14long(1, nl) .eq. j .and. list14long(2, nl) .eq. i)) &
-                nbpp(nbpp_pair)%LJcod = 3
-            end do
+          else if (.not. cross_mol) then
+            if (csr_search(l14long_start, l14long_partner, i, j)) nbpp(nbpp_pair)%LJcod = 3
           end if
         end do jaloop
       end do ialoop
     end do jgloop
   end do igloop
-#if defined (PROFILING) 
+#if defined (PROFILING)
   profile(3)%time = profile(3)%time + rtime() - start_loop_time
-#endif 
+#endif
 
 end subroutine nbpplist_box
 
@@ -5452,6 +7148,7 @@ subroutine nbpplist_lrf
   real(8)                                         :: dr(3)
   integer                                         :: LJ_code
   real(8)                                         ::      RcLRF2
+  logical                                         :: cross_mol
 
 #if defined (PROFILING)
   real(8)                                         :: start_loop_time
@@ -5499,6 +7196,10 @@ subroutine nbpplist_lrf
 
       ! inside cutoff?
       if ( r2 .le. rcut2 ) then
+        cross_mol = (cgp_mol(ig) /= cgp_mol(jg)) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(ig))) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(jg)))
+
         ialoop: do ia = cgp(ig)%first, cgp(ig)%last
 
           ! skip if q-atom
@@ -5531,14 +7232,8 @@ subroutine nbpplist_lrf
               else
                 if ( listex(i-j,j) ) cycle jaloop
               end if
-            else
-              do nl = 1, nexlong
-                if ( (listexlong(1,nl) .eq. i .and. &
-                  listexlong(2,nl) .eq. j      ) .or. &
-                  (listexlong(1,nl) .eq. j .and. &
-                  listexlong(2,nl) .eq. i ) ) &
-                  cycle jaloop
-              end do
+            else if (.not. cross_mol) then
+              if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
             end if
 
             ! if out of space then make more space
@@ -5557,14 +7252,8 @@ subroutine nbpplist_lrf
               else
                 if ( list14(i-j,j) ) nbpp(nbpp_pair)%LJcod = 3
               end if
-            else
-              do nl = 1, n14long
-                if ( (list14long(1,nl) .eq. i .and. &
-                  list14long(2,nl) .eq. j      ) .or. &
-                  (list14long(1,nl) .eq. j .and. &
-                  list14long(2,nl) .eq. i      ) ) &
-                  nbpp(nbpp_pair)%LJcod = 3
-              end do
+            else if (.not. cross_mol) then
+              if (csr_search(l14long_start, l14long_partner, i, j)) nbpp(nbpp_pair)%LJcod = 3
             end if
           end do jaloop
         end do ialoop
@@ -5705,6 +7394,7 @@ subroutine nbpplist_box_lrf
   real(8)                                               :: rcut2,r2
   integer                                               :: LJ_code
   real(8)                                               :: dx, dy, dz
+  logical                                               :: cross_mol
 
   real(8)                                               ::RcLRF2,field0, field1, field2
   real(8)                                               ::dr(3)
@@ -5765,6 +7455,10 @@ subroutine nbpplist_box_lrf
         nbpp_cgp(nbpp_cgp_pair)%i = ig_sw !the switching atoms of the charge groups in the pair
         nbpp_cgp(nbpp_cgp_pair)%j = jg_sw
 
+        cross_mol = (cgp_mol(ig) /= cgp_mol(jg)) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(ig))) .and. &
+          (.not. mol_has_cross_excl(cgp_mol(jg)))
+
         ialoop: do ia = cgp(ig)%first, cgp(ig)%last
           ! for every atom in the charge group ig (of the outermost loop):
           i = cgpatom(ia)
@@ -5799,12 +7493,8 @@ subroutine nbpplist_box_lrf
               else
                 if ( listex(i-j, j) ) cycle jaloop
               end if
-            else
-              do nl = 1, nexlong
-                if ((listexlong(1, nl) .eq. i .and. listexlong(2, nl) .eq. j) .or. &
-                  (listexlong(1, nl) .eq. j .and. listexlong(2, nl) .eq. i) ) &
-                  cycle jaloop
-              end do
+            else if (.not. cross_mol) then
+              if (csr_search(exlong_start, exlong_partner, i, j)) cycle jaloop
             end if
 
             ! if out of space then make more space
@@ -5824,13 +7514,8 @@ subroutine nbpplist_box_lrf
               else
                 if ( list14(i-j, j) ) nbpp(nbpp_pair)%LJcod = 3
               end if
-            else
-
-              do nl = 1, n14long
-                if ((list14long(1, nl) .eq. i .and. list14long(2, nl) .eq. j) .or. &
-                  (list14long(1, nl) .eq. j .and. list14long(2, nl) .eq. i)) &
-                  nbpp(nbpp_pair)%LJcod = 3
-              end do
+            else if (.not. cross_mol) then
+              if (csr_search(l14long_start, l14long_partner, i, j)) nbpp(nbpp_pair)%LJcod = 3
             end if
 
           end do jaloop
@@ -8811,14 +10496,7 @@ subroutine nbmonitorlist
                 if ( list14(atomj-atomi, atomj) ) LJ_code = 3
               end if
             else
-              do nl = 1, n14long
-                if ((list14long(1, nl) .eq. atomi &
-                  .and. list14long(2, nl) .eq. atomj) .or. &
-                  (list14long(1, nl) .eq. atomj &
-                  .and. list14long(2, nl) .eq. atomi)) then
-                  LJ_code = 3
-                endif
-              end do
+              if (csr_search(l14long_start, l14long_partner, atomi, atomj)) LJ_code = 3
             endif   !kolla 1-4 interaktioner
           else      !at least one is Q-atom
             !check Q-Q pairlist to find LJ-code
@@ -8853,6 +10531,10 @@ subroutine nonbond_monitor
   real(8)  :: r6_hc         !  softcore variables
   integer  :: sc_1,sc_2     !  softcore variables, sc_1 is the first index in sc_lookup (the qatom)
   logical  :: do_sc         !  softcore variables,   do_sc is a boolean to determine if softcore should be done
+  real(8)  :: dist,r_sc_lj,r_sc_q
+  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization (energy only).
+  real(8)  :: gap_qq,gap_qj_fact,gap_Flj_unused,gap_Fq_unused
+  real(8)  :: gap_aplusa6
   ! do_sc is true when atom i or j is a qatom  (and qvdw is true)
 
 
@@ -8942,17 +10624,69 @@ subroutine nonbond_monitor
             endif
 
             if (do_sc) then  ! calculate softcore r6
-              r6 = r6_hc + sc_lookup (sc_1,sc_2,istate)
-              r6 = 1._8/r6
+              if (softcore_method == SC_GAPSYS) then
+                r6 = 1._8/r6_hc
+              else
+                r6 = r6_hc + sc_lookup (sc_1,sc_2,istate)
+                r6 = 1._8/r6
+              end if
             end if
           endif
-          Vel  = qi*qj*r
-          if(ivdw_rule==1) then !geometric comb. rule
-            Vvdw = aLJi*aLJj*r6*r6 - bLJi*bLJj*r6
-          else !arithmetic
-            Vvdw = bLJi * bLJj * (aLJi+aLJj)**6 * r6 * &
-              ((aLJi+aLJj)**6 * r6 - 2.0)
-          endif
+          if (softcore_method == SC_GAPSYS .and. do_sc .and. &
+              sc_lookup(sc_1,sc_2,istate) > 0) then
+            ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization (monitor, energy only).
+            dist        = 1._8/r
+            gap_qq      = qi*qj
+            gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(gap_qq)
+
+            ! Coulomb -- partner-charge factor at runtime.
+            r_sc_q = gapsys_q_lambda_factor(sc_1, istate) * gap_qj_fact
+            if (dist < r_sc_q .and. r_sc_q > 0._8) then
+              call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel, gap_Fq_unused)
+            else
+              Vel = gap_qq*r
+            end if
+
+            ! LJ -- conventions in monitor:
+            !   ivdw_rule=1 (geometric, sqrt-stored): C12 = aLJi*aLJj, C6 = bLJi*bLJj
+            !   ivdw_rule=2 (arithmetic):             C12 = bLJi*bLJj*(aLJi+aLJj)^12,
+            !                                         C6  = 2*bLJi*bLJj*(aLJi+aLJj)^6
+            r_sc_lj = gapsys_lj_rsc(sc_1, sc_2, istate)
+            if(ivdw_rule==1) then !geometric comb. rule
+              if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
+                call gapsys_eval_lj(aLJi*aLJj, bLJi*bLJj, r_sc_lj, dist, Vvdw, gap_Flj_unused)
+              else
+                Vvdw = aLJi*aLJj*r6*r6 - bLJi*bLJj*r6
+              end if
+            else !arithmetic
+              gap_aplusa6 = (aLJi+aLJj)**6
+              if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
+                call gapsys_eval_lj(bLJi*bLJj*gap_aplusa6*gap_aplusa6, &
+                                    2.0_8*bLJi*bLJj*gap_aplusa6, &
+                                    r_sc_lj, dist, Vvdw, gap_Flj_unused)
+              else
+                Vvdw = bLJi * bLJj * gap_aplusa6 * r6 * &
+                  (gap_aplusa6 * r6 - 2.0_8)
+              end if
+            endif
+          else if (softcore_method == SC_BEUTLER_COUL .and. do_sc .and. &
+              sc_lookup(sc_1,sc_2,istate) > 0) then
+            Vel = qi*qj / (r6_hc+sc_lookup(sc_1,sc_2,istate))**(1.0_8/6.0_8)
+            if(ivdw_rule==1) then !geometric comb. rule
+              Vvdw = aLJi*aLJj*r6*r6 - bLJi*bLJj*r6
+            else !arithmetic
+              Vvdw = bLJi * bLJj * (aLJi+aLJj)**6 * r6 * &
+                ((aLJi+aLJj)**6 * r6 - 2.0)
+            endif
+          else
+            Vel = qi*qj*r
+            if(ivdw_rule==1) then !geometric comb. rule
+              Vvdw = aLJi*aLJj*r6*r6 - bLJi*bLJj*r6
+            else !arithmetic
+              Vvdw = bLJi * bLJj * (aLJi+aLJj)**6 * r6 * &
+                ((aLJi+aLJj)**6 * r6 - 2.0)
+            endif
+          end if
           !add up for this pair of atom groups
           monitor_group_pair(par)%Vel(istate)= monitor_group_pair(par)%Vel(istate)+Vel
           monitor_group_pair(par)%Vlj(istate)= monitor_group_pair(par)%Vlj(istate)+Vvdw
@@ -9388,6 +11122,10 @@ subroutine nonbon2_qq
   integer                                         :: ip,iq,jq,i,j,k,i3,j3,iaci,iacj,iLJ
   real(8)                                         :: qi,qj,aLJ,bLJ,dx1,dx2,dx3,r2,r,r6,r12,r6_hc
   real(8)                                         :: Vel,V_a,V_b,dv,el_scale
+  real(8)                                         :: dist,r_sc_lj,r_sc_q
+  real(8)                                         :: dv_lj,dv_el
+  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
+  real(8)                                         :: gap_qq,gap_qj_fact,gap_Flj,gap_Fq
 
   do istate = 1, nstates
     ! for every state:
@@ -9448,16 +11186,20 @@ subroutine nonbon2_qq
 
       r2   = dx1*dx1 + dx2*dx2 + dx3*dx3
       r6_hc = r2*r2*r2  !for softcore
-      r6   = r6_hc + sc_lookup(iq,jq+natyps,istate)  !softcore
-      r6   = 1._8/r6
+      if (softcore_method == SC_GAPSYS) then
+        r6 = 1._8/r6_hc
+      else
+        r6   = r6_hc + sc_lookup(iq,jq+natyps,istate)  !softcore
+        r6   = 1._8/r6
+      end if
       r2   = 1./r2
       r    = sqrt ( r2 )
       r12  = r6*r6
 
       ! calculate Vel, V_a, V_b and dv
-      Vel  = qi*qj*r*el_scale
-      if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
       if (qvdw_flag .and. jq /= 0 .and. iLJ .eq. 2 ) then
+        Vel  = qi*qj*r*el_scale
+        if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
         V_a = aLJ*exp(-bLJ/r)
         V_b = 0.0
         dv  = r2*( -Vel -bLJ*V_a/r )*EQ(istate)%lambda
@@ -9466,7 +11208,48 @@ subroutine nonbon2_qq
         aLJ  = aLJ*aLJ*aLJ
         V_a  = bLJ*aLJ*aLJ*r12
         V_b  = 2.0*bLJ*aLJ*r6
-        dv  = r2*( -Vel -(12.*V_a -6.*V_b)*r6*r6_hc )*EQ(istate)%lambda
+        if (softcore_method == SC_GAPSYS .and. &
+            sc_lookup(iq,jq+natyps,istate) > 0) then
+          ! Gapsys 2012 SI Eqs. 1.1-1.4 (paper-faithful linearization).
+          ! Q convention here: V_a = (bLJ*aLJ*aLJ)/r^12, V_b = (2*bLJ*aLJ)/r^6,
+          ! so SI's C12 = bLJ*aLJ*aLJ and SI's C6 = 2*bLJ*aLJ.
+          dist = 1._8/r
+
+          ! LJ
+          r_sc_lj = gapsys_lj_rsc(iq, natyps+jq, istate)
+          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
+            call gapsys_eval_lj(bLJ*aLJ*aLJ, 2.0_8*bLJ*aLJ, r_sc_lj, dist, V_a, gap_Flj)
+            V_b   = 0._8
+            dv_lj = -gap_Flj / dist
+          else
+            dv_lj = r2*(-(12.*V_a - 6.*V_b))
+          end if
+
+          ! Coulomb -- paper Eq. 5 with partner-charge factor at runtime.
+          gap_qq      = qi*qj*el_scale
+          if ( iLJ .eq. 3 ) gap_qq = gap_qq*el14_scale
+          gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(qi*qj)
+          r_sc_q      = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
+          if (dist < r_sc_q .and. r_sc_q > 0._8) then
+            call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel, gap_Fq)
+            dv_el = -gap_Fq / dist
+          else
+            Vel = qi*qj*r*el_scale
+            if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+            dv_el = r2*(-Vel)
+          end if
+
+          dv = (dv_lj + dv_el)*EQ(istate)%lambda
+        else if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,jq+natyps,istate) > 0) then
+          Vel = qi*qj*el_scale / (r6_hc+sc_lookup(iq,jq+natyps,istate))**(1.0_8/6.0_8)
+          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+          dv  = r2*( -Vel -(12.*V_a -6.*V_b) )*(r6*r6_hc)*EQ(istate)%lambda
+        else
+          Vel  = qi*qj*r*el_scale
+          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+          dv  = r2*( -Vel -(12.*V_a -6.*V_b)*r6*r6_hc )*EQ(istate)%lambda
+        end if
       endif
 
       ! update forces
@@ -9497,6 +11280,10 @@ subroutine nonbon2_qq_lib_charges
   integer                                         :: ip,iq,jq,i,j,k,i3,j3,iaci,iacj,iLJ
   real(8)                                         :: qi,qj,aLJ,bLJ,dx1,dx2,dx3,r2,r,r6,r12,r6_hc
   real(8)                                         :: Vel,V_a,V_b,dv,el_scale
+  real(8)                                         :: dist,r_sc_lj,r_sc_q
+  real(8)                                         :: dv_lj,dv_el
+  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
+  real(8)                                         :: gap_qq,gap_qj_fact,gap_Flj,gap_Fq
 
   do istate = 1, nstates
     ! for every state:
@@ -9551,16 +11338,20 @@ subroutine nonbon2_qq_lib_charges
 
       r2   = dx1*dx1 + dx2*dx2 + dx3*dx3
       r6_hc = r2*r2*r2   !needed for softcore
-      r6   = r6_hc + sc_lookup(iq,jq+natyps,istate)  !softcore
-      r6   = 1._8/r6
+      if (softcore_method == SC_GAPSYS) then
+        r6 = 1._8/r6_hc
+      else
+        r6   = r6_hc + sc_lookup(iq,jq+natyps,istate)  !softcore
+        r6   = 1._8/r6
+      end if
       r12  = r6*r6
       r2   = 1./r2
       r    = sqrt ( r2 )
 
       ! calculate Vel, V_a, V_b and dv
-      Vel  = qi*qj*r*el_scale
-      if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
       if (qvdw_flag .and. jq /= 0 .and. iLJ .eq. 2 ) then
+        Vel  = qi*qj*r*el_scale
+        if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
         V_a = aLJ*exp(-bLJ/r)
         V_b = qbvdw(iaci,1)*qbvdw(iacj,1)*r6
         dv  = r2*( -Vel -bLJ*V_a/r +6.*V_b )*EQ(istate)%lambda
@@ -9574,7 +11365,48 @@ subroutine nonbon2_qq_lib_charges
         aLJ  = aLJ*aLJ*aLJ
         V_a  = bLJ*aLJ*aLJ*r12
         V_b  = 2.0*bLJ*aLJ*r6
-        dv  = r2*( -Vel -(12.*V_a -6.*V_b)*r6*r6_hc )*EQ(istate)%lambda
+        if (softcore_method == SC_GAPSYS .and. &
+            sc_lookup(iq,jq+natyps,istate) > 0) then
+          ! Gapsys 2012 SI Eqs. 1.1-1.4 (paper-faithful linearization).
+          ! Q convention here: V_a = (bLJ*aLJ*aLJ)/r^12, V_b = (2*bLJ*aLJ)/r^6,
+          ! so SI's C12 = bLJ*aLJ*aLJ and SI's C6 = 2*bLJ*aLJ.
+          dist = 1._8/r
+
+          ! LJ
+          r_sc_lj = gapsys_lj_rsc(iq, natyps+jq, istate)
+          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
+            call gapsys_eval_lj(bLJ*aLJ*aLJ, 2.0_8*bLJ*aLJ, r_sc_lj, dist, V_a, gap_Flj)
+            V_b   = 0._8
+            dv_lj = -gap_Flj / dist
+          else
+            dv_lj = r2*(-(12.*V_a - 6.*V_b))
+          end if
+
+          ! Coulomb -- paper Eq. 5 with partner-charge factor at runtime.
+          gap_qq      = qi*qj*el_scale
+          if ( iLJ .eq. 3 ) gap_qq = gap_qq*el14_scale
+          gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(qi*qj)
+          r_sc_q      = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
+          if (dist < r_sc_q .and. r_sc_q > 0._8) then
+            call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel, gap_Fq)
+            dv_el = -gap_Fq / dist
+          else
+            Vel = qi*qj*r*el_scale
+            if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+            dv_el = r2*(-Vel)
+          end if
+
+          dv = (dv_lj + dv_el)*EQ(istate)%lambda
+        else if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,jq+natyps,istate) > 0) then
+          Vel = qi*qj*el_scale / (r6_hc+sc_lookup(iq,jq+natyps,istate))**(1.0_8/6.0_8)
+          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+          dv  = r2*( -Vel -(12.*V_a -6.*V_b) )*(r6*r6_hc)*EQ(istate)%lambda
+        else
+          Vel  = qi*qj*r*el_scale
+          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+          dv  = r2*( -Vel -(12.*V_a -6.*V_b)*r6*r6_hc )*EQ(istate)%lambda
+        end if
       endif
 
       ! update forces
@@ -9606,6 +11438,10 @@ subroutine nonbon2_qp
   integer                                         :: istate
   real(8)                                         :: aLJ,bLJ,dx1,dx2,dx3,r2,r,r6,r6_hc
   real(8)                                         :: Vel,V_a,V_b,dv
+  real(8)                                         :: dist,r_sc_lj,r_sc_q
+  real(8)                                         :: dv_lj,dv_el
+  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
+  real(8)                                         :: gap_qq,gap_qj_fact,gap_Flj,gap_Fq,gap_qiqj
 
   ! global variables used:
   !  iqseq, iac, crg, x, nstates, qvdw_flag, iaclib, qiac, qavdw, qbvdw, qcrg, el14_scale, EQ, d, nat_solute
@@ -9657,8 +11493,12 @@ subroutine nonbon2_qp
           bLJ  = qbvdw(iaci,iLJ)
         end if
 
-        r6 = r6_hc + sc_lookup(iq,iacj,istate) !this is softcore
-        r6 = 1._8/r6
+        if (softcore_method == SC_GAPSYS) then
+          r6 = 1._8/r6_hc
+        else
+          r6 = r6_hc + sc_lookup(iq,iacj,istate) !this is softcore
+          r6 = 1._8/r6
+        end if
       end if
       aLJ = aLJ+iaclib(iacj)%avdw(iLJ)
       bLJ = bLJ*iaclib(iacj)%bvdw(iLJ)
@@ -9666,11 +11506,50 @@ subroutine nonbon2_qp
       aLJ  = aLJ*aLJ*aLJ
 
       ! calculate qi, Vel, V_a, V_b and dv
-      Vel  = qcrg(iq,istate)*crg(j)*r
-      if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
       V_a  = bLJ*aLJ*aLJ*r6*r6
       V_b  = 2.0*bLJ*aLJ*r6
-      dv   = r2*( -Vel -(12.*V_a -6.*V_b)*r6*r6_hc )*EQ(istate)%lambda   !softcore r6*r6_hc is (r^6/(r^6+alpha))
+      if (softcore_method == SC_GAPSYS .and. &
+          sc_lookup(iq,iacj,istate) > 0) then
+        ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization.
+        ! Q convention: V_a = (bLJ*aLJ*aLJ)/r^12, V_b = (2*bLJ*aLJ)/r^6.
+        dist     = 1._8/r
+        gap_qiqj = qcrg(iq,istate)*crg(j)
+
+        ! LJ
+        r_sc_lj = gapsys_lj_rsc(iq, iacj, istate)
+        if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
+          call gapsys_eval_lj(bLJ*aLJ*aLJ, 2.0_8*bLJ*aLJ, r_sc_lj, dist, V_a, gap_Flj)
+          V_b   = 0._8
+          dv_lj = -gap_Flj / dist
+        else
+          dv_lj = r2*(-(12.*V_a - 6.*V_b))
+        end if
+
+        ! Coulomb -- paper Eq. 5 with partner-charge factor at runtime.
+        gap_qq      = gap_qiqj
+        if ( iLJ .eq. 3 ) gap_qq = gap_qq*el14_scale
+        gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(gap_qiqj)
+        r_sc_q      = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
+        if (dist < r_sc_q .and. r_sc_q > 0._8) then
+          call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel, gap_Fq)
+          dv_el = -gap_Fq / dist
+        else
+          Vel = gap_qiqj*r
+          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+          dv_el = r2*(-Vel)
+        end if
+
+        dv = (dv_lj + dv_el)*EQ(istate)%lambda
+      else if (softcore_method == SC_BEUTLER_COUL .and. &
+          sc_lookup(iq,iacj,istate) > 0) then
+        Vel = qcrg(iq,istate)*crg(j) / (r6_hc+sc_lookup(iq,iacj,istate))**(1.0_8/6.0_8)
+        if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+        dv  = r2*( -Vel -(12.*V_a -6.*V_b) )*(r6*r6_hc)*EQ(istate)%lambda
+      else
+        Vel  = qcrg(iq,istate)*crg(j)*r
+        if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+        dv   = r2*( -Vel -(12.*V_a -6.*V_b)*r6*r6_hc )*EQ(istate)%lambda
+      end if
 
       ! update forces
       d(i3+1) = d(i3+1) - dv*dx1
@@ -9696,6 +11575,10 @@ subroutine nonbon2_qp_box
   integer                                               :: istate
   real(8)                                               :: aLJ,bLJ,dx1,dx2,dx3,r2,r,r6,r6_hc
   real(8)                                               :: Vel,V_a,V_b,dv
+  real(8)                                               :: dist,r_sc_lj,r_sc_q
+  real(8)                                               :: dv_lj,dv_el
+  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
+  real(8)                                               :: gap_qq,gap_qj_fact,gap_Flj,gap_Fq,gap_qiqj
   integer                                               :: group, gr, ia
 
   ! global variables used:
@@ -9762,8 +11645,12 @@ subroutine nonbon2_qp_box
           aLJ  = qavdw(iaci,iLJ)
           bLJ  = qbvdw(iaci,iLJ)
         end if
-        r6 = r6_hc + sc_lookup(iq,iacj,istate)
-        r6 = 1._8/r6
+        if (softcore_method == SC_GAPSYS) then
+          r6 = 1._8/r6_hc
+        else
+          r6 = r6_hc + sc_lookup(iq,iacj,istate)
+          r6 = 1._8/r6
+        end if
       end if
       aLJ = aLJ+iaclib(iacj)%avdw(iLJ)
       bLJ = bLJ*iaclib(iacj)%bvdw(iLJ)
@@ -9771,11 +11658,50 @@ subroutine nonbon2_qp_box
       aLJ  = aLJ*aLJ*aLJ
 
       ! calculate qi, Vel, V_a, V_b and dv
-      Vel  = qcrg(iq,istate)*crg(j)*r
-      if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
       V_a  = bLJ*aLJ*aLJ*r6*r6
       V_b  = 2.0*bLJ*aLJ*r6
-      dv   = r2*( -Vel -(12.*V_a -6.*V_b)*r6*r6_hc )*EQ(istate)%lambda
+      if (softcore_method == SC_GAPSYS .and. &
+          sc_lookup(iq,iacj,istate) > 0) then
+        ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization.
+        ! Q convention: V_a = (bLJ*aLJ*aLJ)/r^12, V_b = (2*bLJ*aLJ)/r^6.
+        dist     = 1._8/r
+        gap_qiqj = qcrg(iq,istate)*crg(j)
+
+        ! LJ
+        r_sc_lj = gapsys_lj_rsc(iq, iacj, istate)
+        if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
+          call gapsys_eval_lj(bLJ*aLJ*aLJ, 2.0_8*bLJ*aLJ, r_sc_lj, dist, V_a, gap_Flj)
+          V_b   = 0._8
+          dv_lj = -gap_Flj / dist
+        else
+          dv_lj = r2*(-(12.*V_a - 6.*V_b))
+        end if
+
+        ! Coulomb -- paper Eq. 5 with partner-charge factor at runtime.
+        gap_qq      = gap_qiqj
+        if ( iLJ .eq. 3 ) gap_qq = gap_qq*el14_scale
+        gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(gap_qiqj)
+        r_sc_q      = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
+        if (dist < r_sc_q .and. r_sc_q > 0._8) then
+          call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel, gap_Fq)
+          dv_el = -gap_Fq / dist
+        else
+          Vel = gap_qiqj*r
+          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+          dv_el = r2*(-Vel)
+        end if
+
+        dv = (dv_lj + dv_el)*EQ(istate)%lambda
+      else if (softcore_method == SC_BEUTLER_COUL .and. &
+          sc_lookup(iq,iacj,istate) > 0) then
+        Vel = qcrg(iq,istate)*crg(j) / (r6_hc+sc_lookup(iq,iacj,istate))**(1.0_8/6.0_8)
+        if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+        dv  = r2*( -Vel -(12.*V_a -6.*V_b) )*(r6*r6_hc)*EQ(istate)%lambda
+      else
+        Vel  = qcrg(iq,istate)*crg(j)*r
+        if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+        dv   = r2*( -Vel -(12.*V_a -6.*V_b)*r6*r6_hc )*EQ(istate)%lambda
+      end if
 
       ! update forces
       d(i3+1) = d(i3+1) - dv*dx1
@@ -9805,6 +11731,11 @@ subroutine nonbon2_qw
   real(8)                                         ::      rO, r2O, r6O, rH1, r2H1, r6H1, rH2, r2H2, r6H2,r6O_hc,r6H1_hc,r6H2_hc
   real(8)                                         ::      VelO, VelH1, VelH2, dvO, dvH1, dvH2
   real(8)                                         :: V_ao, V_bo, V_ah1, V_bh1, V_ah2, V_bh2
+  real(8)                                         :: dist,r_sc_lj,r_sc_q
+  real(8)                                         :: dv_lj,dv_el
+  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
+  real(8)                                         :: gap_qq_o,gap_qq_h,gap_Flj,gap_Fq
+  real(8)                                         :: gap_qj_fact_o,gap_qj_fact_h
   real(8), save                           ::      aO(2), bO(2), aH(2), bH(2)
   integer, save                           ::      iac_ow, iac_hw
   ! global variables used:
@@ -9877,15 +11808,21 @@ subroutine nonbon2_qw
         ! set new LJ params if Q-atom types are used
         if (qvdw_flag) then
 
-          r6O = 1._8/r6O_hc
-          r6O = r6O + sc_lookup(iq,iac_ow,istate)   !softcore
-          r6O = 1._8/r6O
-          r6H1 = 1._8/r6H1_hc
-          r6H1 = r6H1 + sc_lookup(iq,iac_hw,istate)   !softcore
-          r6H1 = 1._8/r6H1
-          r6H2 = 1._8/r6H2_hc
-          r6H2 = r6H2 + sc_lookup(iq,iac_hw,istate)   !softcore
-          r6H2 = 1._8/r6H2
+          if (softcore_method == SC_GAPSYS) then
+            r6O = r6O_hc
+            r6H1 = r6H1_hc
+            r6H2 = r6H2_hc
+          else
+            r6O = 1._8/r6O_hc
+            r6O = r6O + sc_lookup(iq,iac_ow,istate)   !softcore
+            r6O = 1._8/r6O
+            r6H1 = 1._8/r6H1_hc
+            r6H1 = r6H1 + sc_lookup(iq,iac_hw,istate)   !softcore
+            r6H1 = 1._8/r6H1
+            r6H2 = 1._8/r6H2_hc
+            r6H2 = r6H2 + sc_lookup(iq,iac_hw,istate)   !softcore
+            r6H2 = 1._8/r6H2
+          end if
           aLJO  = qavdw(qiac(iq,istate),1)+aO(iLJO)
           bLJO  = qbvdw(qiac(iq,istate),1)*bO(iLJO)
           aLJH  = qavdw(qiac(iq,istate),1)+aH(iLJH)
@@ -9904,12 +11841,100 @@ subroutine nonbon2_qw
 
 
         ! calculate qi, Vel, V_a, V_b and dv
-        VelO = crg_ow*qcrg(iq,istate)*rO
-        VelH1 = crg_hw*qcrg(iq,istate)*rH1
-        VelH2 = crg_hw*qcrg(iq,istate)*rH2
-        dvO  = dvO  + r2O *( -VelO  -(12.*V_aO  -6.*V_bO )*r6O/r6O_hc)*EQ(istate)%lambda
-        dvH1 = dvH1 + r2H1*( -VelH1 -(12.*V_aH1 -6.*V_bH1)*r6H1/r6H1_hc)*EQ(istate)%lambda
-        dvH2 = dvH2 + r2H2*( -VelH2 -(12.*V_aH2 -6.*V_bH2)*r6H2/r6H2_hc)*EQ(istate)%lambda
+        ! Oxygen
+        if (softcore_method == SC_GAPSYS .and. &
+            sc_lookup(iq,iac_ow,istate) > 0) then
+          ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization (Q-water O).
+          dist     = 1._8/rO
+          gap_qq_o = crg_ow*qcrg(iq,istate)
+
+          ! LJ -- C12 = bLJO*aLJO*aLJO, C6 = 2*bLJO*aLJO
+          r_sc_lj = gapsys_lj_rsc(iq, iac_ow, istate)
+          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
+            call gapsys_eval_lj(bLJO*aLJO*aLJO, 2.0_8*bLJO*aLJO, r_sc_lj, dist, V_aO, gap_Flj)
+            V_bO  = 0._8
+            dv_lj = -gap_Flj / dist
+          else
+            dv_lj = r2O*(-(12.*V_aO - 6.*V_bO))
+          end if
+
+          ! Coulomb -- partner-charge factor at runtime.
+          gap_qj_fact_o = 1.0_8 + gapsys_sigma_q*abs(gap_qq_o)
+          r_sc_q        = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact_o
+          if (dist < r_sc_q .and. r_sc_q > 0._8) then
+            call gapsys_eval_q(gap_qq_o, r_sc_q, dist, VelO, gap_Fq)
+            dv_el = -gap_Fq / dist
+          else
+            VelO = gap_qq_o*rO
+            dv_el = r2O*(-VelO)
+          end if
+
+          dvO = dvO + (dv_lj + dv_el)*EQ(istate)%lambda
+        else if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,iac_ow,istate) > 0) then
+          VelO = crg_ow*qcrg(iq,istate) * r6O**(1.0_8/6.0_8)
+          dvO  = dvO  + r2O *( -VelO  -(12.*V_aO  -6.*V_bO ))*(r6O/r6O_hc)*EQ(istate)%lambda
+        else
+          VelO = crg_ow*qcrg(iq,istate)*rO
+          dvO  = dvO  + r2O *( -VelO  -(12.*V_aO  -6.*V_bO )*r6O/r6O_hc)*EQ(istate)%lambda
+        end if
+        ! Hydrogens
+        if (softcore_method == SC_GAPSYS .and. &
+            sc_lookup(iq,iac_hw,istate) > 0) then
+          ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization (Q-water H1/H2).
+          ! Both Hs share iac_hw, partner-charge factor, r_sc_lj, r_sc_q at this state.
+          gap_qq_h      = crg_hw*qcrg(iq,istate)
+          gap_qj_fact_h = 1.0_8 + gapsys_sigma_q*abs(gap_qq_h)
+          r_sc_lj       = gapsys_lj_rsc(iq, iac_hw, istate)
+          r_sc_q        = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact_h
+
+          ! H1
+          dist = 1._8/rH1
+          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
+            call gapsys_eval_lj(bLJH*aLJH*aLJH, 2.0_8*bLJH*aLJH, r_sc_lj, dist, V_aH1, gap_Flj)
+            V_bH1 = 0._8
+            dv_lj = -gap_Flj / dist
+          else
+            dv_lj = r2H1*(-(12.*V_aH1 - 6.*V_bH1))
+          end if
+          if (dist < r_sc_q .and. r_sc_q > 0._8) then
+            call gapsys_eval_q(gap_qq_h, r_sc_q, dist, VelH1, gap_Fq)
+            dv_el = -gap_Fq / dist
+          else
+            VelH1 = gap_qq_h*rH1
+            dv_el = r2H1*(-VelH1)
+          end if
+          dvH1 = dvH1 + (dv_lj + dv_el)*EQ(istate)%lambda
+
+          ! H2
+          dist = 1._8/rH2
+          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
+            call gapsys_eval_lj(bLJH*aLJH*aLJH, 2.0_8*bLJH*aLJH, r_sc_lj, dist, V_aH2, gap_Flj)
+            V_bH2 = 0._8
+            dv_lj = -gap_Flj / dist
+          else
+            dv_lj = r2H2*(-(12.*V_aH2 - 6.*V_bH2))
+          end if
+          if (dist < r_sc_q .and. r_sc_q > 0._8) then
+            call gapsys_eval_q(gap_qq_h, r_sc_q, dist, VelH2, gap_Fq)
+            dv_el = -gap_Fq / dist
+          else
+            VelH2 = gap_qq_h*rH2
+            dv_el = r2H2*(-VelH2)
+          end if
+          dvH2 = dvH2 + (dv_lj + dv_el)*EQ(istate)%lambda
+        else if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,iac_hw,istate) > 0) then
+          VelH1 = crg_hw*qcrg(iq,istate) * r6H1**(1.0_8/6.0_8)
+          VelH2 = crg_hw*qcrg(iq,istate) * r6H2**(1.0_8/6.0_8)
+          dvH1 = dvH1 + r2H1*( -VelH1 -(12.*V_aH1 -6.*V_bH1))*(r6H1/r6H1_hc)*EQ(istate)%lambda
+          dvH2 = dvH2 + r2H2*( -VelH2 -(12.*V_aH2 -6.*V_bH2))*(r6H2/r6H2_hc)*EQ(istate)%lambda
+        else
+          VelH1 = crg_hw*qcrg(iq,istate)*rH1
+          VelH2 = crg_hw*qcrg(iq,istate)*rH2
+          dvH1 = dvH1 + r2H1*( -VelH1 -(12.*V_aH1 -6.*V_bH1)*r6H1/r6H1_hc)*EQ(istate)%lambda
+          dvH2 = dvH2 + r2H2*( -VelH2 -(12.*V_aH2 -6.*V_bH2)*r6H2/r6H2_hc)*EQ(istate)%lambda
+        end if
         ! update q-water energies
         EQ(istate)%qw%el  = EQ(istate)%qw%el + VelO + VelH1 + VelH2
         EQ(istate)%qw%vdw = EQ(istate)%qw%vdw + V_aO + V_aH1 + V_aH2 - V_bO - V_bH1 - V_bH2
@@ -9946,6 +11971,11 @@ subroutine nonbon2_qw_box
   real(8)                                         ::      rO, r2O, r6O, rH1, r2H1, r6H1, rH2, r2H2, r6H2,r6O_hc,r6H1_hc,r6H2_hc
   real(8)                                         ::      VelO, VelH1, VelH2, dvO, dvH1, dvH2
   real(8)                                         :: V_ao, V_bo, V_ah1, V_bh1, V_ah2, V_bh2
+  real(8)                                         :: dist,r_sc_lj,r_sc_q
+  real(8)                                         :: dv_lj,dv_el
+  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
+  real(8)                                         :: gap_qq_o,gap_qq_h,gap_Flj,gap_Fq
+  real(8)                                         :: gap_qj_fact_o,gap_qj_fact_h
   real(8)                                         :: boxshiftx, boxshifty, boxshiftz, dx, dy, dz
   real(8), save                           ::      aO(2), bO(2), aH(2), bH(2)
   integer, save                           ::      iac_ow, iac_hw
@@ -10035,15 +12065,21 @@ subroutine nonbon2_qw_box
 
         ! set new LJ params if Q-atom types are used
         if (qvdw_flag) then
-          r6O = 1._8/r6O_hc
-          r6O = r6O + sc_lookup(iq,iac_ow,istate)   !softcore
-          r6O = 1._8/r6O
-          r6H1 = 1._8/r6H1_hc
-          r6H1 = r6H1 + sc_lookup(iq,iac_hw,istate)   !softcore
-          r6H1 = 1._8/r6H1
-          r6H2 = 1._8/r6H2_hc
-          r6H2 = r6H2 + sc_lookup(iq,iac_hw,istate)   !softcore
-          r6H2 = 1._8/r6H2
+          if (softcore_method == SC_GAPSYS) then
+            r6O = r6O_hc
+            r6H1 = r6H1_hc
+            r6H2 = r6H2_hc
+          else
+            r6O = 1._8/r6O_hc
+            r6O = r6O + sc_lookup(iq,iac_ow,istate)   !softcore
+            r6O = 1._8/r6O
+            r6H1 = 1._8/r6H1_hc
+            r6H1 = r6H1 + sc_lookup(iq,iac_hw,istate)   !softcore
+            r6H1 = 1._8/r6H1
+            r6H2 = 1._8/r6H2_hc
+            r6H2 = r6H2 + sc_lookup(iq,iac_hw,istate)   !softcore
+            r6H2 = 1._8/r6H2
+          end if
           aLJO  = qavdw(qiac(iq,istate),1)+aO(iLJO)
           bLJO  = qbvdw(qiac(iq,istate),1)*bO(iLJO)
           aLJH  = qavdw(qiac(iq,istate),1)+aH(iLJH)
@@ -10062,13 +12098,100 @@ subroutine nonbon2_qw_box
 
 
         ! calculate qi, Vel, V_a, V_b and dv
-        VelO = crg_ow*qcrg(iq,istate)*rO
-        VelH1 = crg_hw*qcrg(iq,istate)*rH1
-        VelH2 = crg_hw*qcrg(iq,istate)*rH2
+        ! Oxygen
+        if (softcore_method == SC_GAPSYS .and. &
+            sc_lookup(iq,iac_ow,istate) > 0) then
+          ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization (Q-water O).
+          dist     = 1._8/rO
+          gap_qq_o = crg_ow*qcrg(iq,istate)
 
-        dvO  = dvO  + r2O *( -VelO  -(12.*V_aO  -6.*V_bO )*r6O/r6O_hc)*EQ(istate)%lambda    !r6O/r6O_hc softcore
-        dvH1 = dvH1 + r2H1*( -VelH1 -(12.*V_aH1 -6.*V_bH1)*r6H1/r6H1_hc)*EQ(istate)%lambda  !r6H1/r6H1_hc softcore
-        dvH2 = dvH2 + r2H2*( -VelH2 -(12.*V_aH2 -6.*V_bH2)*r6H2/r6H2_hc)*EQ(istate)%lambda  !r6H2/r6H2_hc softcore
+          ! LJ -- C12 = bLJO*aLJO*aLJO, C6 = 2*bLJO*aLJO
+          r_sc_lj = gapsys_lj_rsc(iq, iac_ow, istate)
+          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
+            call gapsys_eval_lj(bLJO*aLJO*aLJO, 2.0_8*bLJO*aLJO, r_sc_lj, dist, V_aO, gap_Flj)
+            V_bO  = 0._8
+            dv_lj = -gap_Flj / dist
+          else
+            dv_lj = r2O*(-(12.*V_aO - 6.*V_bO))
+          end if
+
+          ! Coulomb -- partner-charge factor at runtime.
+          gap_qj_fact_o = 1.0_8 + gapsys_sigma_q*abs(gap_qq_o)
+          r_sc_q        = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact_o
+          if (dist < r_sc_q .and. r_sc_q > 0._8) then
+            call gapsys_eval_q(gap_qq_o, r_sc_q, dist, VelO, gap_Fq)
+            dv_el = -gap_Fq / dist
+          else
+            VelO = gap_qq_o*rO
+            dv_el = r2O*(-VelO)
+          end if
+
+          dvO = dvO + (dv_lj + dv_el)*EQ(istate)%lambda
+        else if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,iac_ow,istate) > 0) then
+          VelO = crg_ow*qcrg(iq,istate) * r6O**(1.0_8/6.0_8)
+          dvO  = dvO  + r2O *( -VelO  -(12.*V_aO  -6.*V_bO ))*(r6O/r6O_hc)*EQ(istate)%lambda
+        else
+          VelO = crg_ow*qcrg(iq,istate)*rO
+          dvO  = dvO  + r2O *( -VelO  -(12.*V_aO  -6.*V_bO )*r6O/r6O_hc)*EQ(istate)%lambda
+        end if
+        ! Hydrogens
+        if (softcore_method == SC_GAPSYS .and. &
+            sc_lookup(iq,iac_hw,istate) > 0) then
+          ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization (Q-water H1/H2).
+          ! Both Hs share iac_hw, partner-charge factor, r_sc_lj, r_sc_q at this state.
+          gap_qq_h      = crg_hw*qcrg(iq,istate)
+          gap_qj_fact_h = 1.0_8 + gapsys_sigma_q*abs(gap_qq_h)
+          r_sc_lj       = gapsys_lj_rsc(iq, iac_hw, istate)
+          r_sc_q        = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact_h
+
+          ! H1
+          dist = 1._8/rH1
+          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
+            call gapsys_eval_lj(bLJH*aLJH*aLJH, 2.0_8*bLJH*aLJH, r_sc_lj, dist, V_aH1, gap_Flj)
+            V_bH1 = 0._8
+            dv_lj = -gap_Flj / dist
+          else
+            dv_lj = r2H1*(-(12.*V_aH1 - 6.*V_bH1))
+          end if
+          if (dist < r_sc_q .and. r_sc_q > 0._8) then
+            call gapsys_eval_q(gap_qq_h, r_sc_q, dist, VelH1, gap_Fq)
+            dv_el = -gap_Fq / dist
+          else
+            VelH1 = gap_qq_h*rH1
+            dv_el = r2H1*(-VelH1)
+          end if
+          dvH1 = dvH1 + (dv_lj + dv_el)*EQ(istate)%lambda
+
+          ! H2
+          dist = 1._8/rH2
+          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
+            call gapsys_eval_lj(bLJH*aLJH*aLJH, 2.0_8*bLJH*aLJH, r_sc_lj, dist, V_aH2, gap_Flj)
+            V_bH2 = 0._8
+            dv_lj = -gap_Flj / dist
+          else
+            dv_lj = r2H2*(-(12.*V_aH2 - 6.*V_bH2))
+          end if
+          if (dist < r_sc_q .and. r_sc_q > 0._8) then
+            call gapsys_eval_q(gap_qq_h, r_sc_q, dist, VelH2, gap_Fq)
+            dv_el = -gap_Fq / dist
+          else
+            VelH2 = gap_qq_h*rH2
+            dv_el = r2H2*(-VelH2)
+          end if
+          dvH2 = dvH2 + (dv_lj + dv_el)*EQ(istate)%lambda
+        else if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,iac_hw,istate) > 0) then
+          VelH1 = crg_hw*qcrg(iq,istate) * r6H1**(1.0_8/6.0_8)
+          VelH2 = crg_hw*qcrg(iq,istate) * r6H2**(1.0_8/6.0_8)
+          dvH1 = dvH1 + r2H1*( -VelH1 -(12.*V_aH1 -6.*V_bH1))*(r6H1/r6H1_hc)*EQ(istate)%lambda
+          dvH2 = dvH2 + r2H2*( -VelH2 -(12.*V_aH2 -6.*V_bH2))*(r6H2/r6H2_hc)*EQ(istate)%lambda
+        else
+          VelH1 = crg_hw*qcrg(iq,istate)*rH1
+          VelH2 = crg_hw*qcrg(iq,istate)*rH2
+          dvH1 = dvH1 + r2H1*( -VelH1 -(12.*V_aH1 -6.*V_bH1)*r6H1/r6H1_hc)*EQ(istate)%lambda
+          dvH2 = dvH2 + r2H2*( -VelH2 -(12.*V_aH2 -6.*V_bH2)*r6H2/r6H2_hc)*EQ(istate)%lambda
+        end if
         ! update q-water energies
         EQ(istate)%qw%el  = EQ(istate)%qw%el + VelO + VelH1 + VelH2
         EQ(istate)%qw%vdw = EQ(istate)%qw%vdw + V_aO + V_aH1 + V_aH2 - V_bO - V_bH1 - V_bH2
@@ -10766,6 +12889,10 @@ subroutine nonbond_qq
   integer                                 :: ip,iq,jq,i,j,k,i3,j3,iaci,iacj,iLJ
   real(8)                                 :: qi,qj,aLJ,bLJ,dx1,dx2,dx3,r2,r,r6,r12,r6_hc
   real(8)                                 :: Vel,V_a,V_b,dv,el_scale
+  real(8)                                 :: dist,r_sc_lj,r_sc_q
+  real(8)                                 :: dv_lj,dv_el
+  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
+  real(8)                                 :: gap_qq,gap_qj_fact,gap_Flj,gap_Fq
 
   do istate = 1, nstates
     ! for every state:
@@ -10827,24 +12954,69 @@ subroutine nonbond_qq
       r2   = dx1*dx1 + dx2*dx2 + dx3*dx3
 
       r6_hc   = r2*r2*r2   !hardcore
-      r6   = r2*r2*r2+sc_lookup(iq,natyps+jq,istate)   !Use softcore instead. sc is 0 for hardcore MPA
-      r6   = 1./r6
+      if (softcore_method == SC_GAPSYS) then
+        r6 = 1._8/r6_hc
+      else
+        r6 = r6_hc+sc_lookup(iq,natyps+jq,istate)   !softcore
+        r6 = 1._8/r6
+      end if
       r12  = r6*r6
 
-      r2   = 1./r2
+      r2   = 1._8/r2
       r    = sqrt ( r2 )
 
       ! calculate Vel, V_a, V_b and dv
-      Vel  = qi*qj*r*el_scale
-      if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
       if (qvdw_flag .and. jq /= 0 .and. iLJ .eq. 2 ) then
+        Vel  = qi*qj*r*el_scale
         V_a = aLJ*exp(-bLJ/r)
         V_b = 0.0
         dv  = r2*( -Vel -bLJ*V_a/r )*EQ(istate)%lambda
+      else if (softcore_method == SC_GAPSYS .and. &
+               sc_lookup(iq,natyps+jq,istate) > 0) then
+        ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization.
+        ! Q convention here (nonbond_qq): aLJ = C12, bLJ = C6 (no factor of 2).
+        V_a  = aLJ*r12
+        V_b  = bLJ*r6
+        dist = 1._8/r
+
+        ! LJ
+        r_sc_lj = gapsys_lj_rsc(iq, natyps+jq, istate)
+        if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
+          call gapsys_eval_lj(aLJ, bLJ, r_sc_lj, dist, V_a, gap_Flj)
+          V_b   = 0._8
+          dv_lj = -gap_Flj / dist
+        else
+          dv_lj = r2*(-(12.*V_a - 6.*V_b))
+        end if
+
+        ! Coulomb -- paper Eq. 5 with partner-charge factor at runtime.
+        gap_qq      = qi*qj*el_scale
+        if ( iLJ .eq. 3 ) gap_qq = gap_qq*el14_scale
+        gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(qi*qj)
+        r_sc_q      = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
+        if (dist < r_sc_q .and. r_sc_q > 0._8) then
+          call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel, gap_Fq)
+          dv_el = -gap_Fq / dist
+        else
+          Vel = qi*qj*r*el_scale
+          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+          dv_el = r2*(-Vel)
+        end if
+
+        dv = (dv_lj + dv_el)*EQ(istate)%lambda
       else
         V_a = aLJ*r12
         V_b = bLJ*r6
-        dv  = r2*( -Vel - (12.*V_a - 6.*V_b)*r6_hc*r6 )*EQ(istate)%lambda
+        if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,natyps+jq,istate) > 0) then
+          Vel = qi*qj*el_scale / (r6_hc+sc_lookup(iq,natyps+jq,istate))**(1.0_8/6.0_8)
+          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+          dv  = r2*( -Vel -(12.*V_a -6.*V_b) )*(r6_hc*r6)*EQ(istate)%lambda
+        else
+          Vel = qi*qj*r*el_scale
+          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+          dv  = r2*( -Vel -(12.*V_a -6.*V_b)*r6_hc*r6 )*EQ(istate)%lambda
+        end if
       endif
 
       ! update forces
@@ -10878,6 +13050,10 @@ subroutine nonbond_qq_lib_charges
   integer                                 :: ip,iq,jq,i,j,k,i3,j3,iaci,iacj,iLJ
   real(8)                                 :: qi,qj,aLJ,bLJ,dx1,dx2,dx3,r2,r,r6,r12,r6_hc
   real(8)                                 :: Vel,V_a,V_b,dv,el_scale
+  real(8)                                 :: dist,r_sc_lj,r_sc_q
+  real(8)                                 :: dv_lj,dv_el
+  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
+  real(8)                                 :: gap_qq,gap_qj_fact,gap_Flj,gap_Fq
 
   do istate = 1, nstates
     ! for every state:
@@ -10934,24 +13110,69 @@ subroutine nonbond_qq_lib_charges
       r2   = dx1*dx1 + dx2*dx2 + dx3*dx3
 
       r6_hc = r2*r2*r2   !hardcore
-      r6   = r2*r2*r2+sc_lookup(iq,natyps+jq,istate)   !sc_lookup is softcore fix MPA
-      r6   = 1./r6
+      if (softcore_method == SC_GAPSYS) then
+        r6 = 1._8/r6_hc
+      else
+        r6   = r2*r2*r2+sc_lookup(iq,natyps+jq,istate)   !sc_lookup is softcore fix MPA
+        r6   = 1./r6
+      end if
       r12  = r6*r6
 
       r2   = 1./r2
       r    = sqrt ( r2 )
 
       ! calculate Vel, V_a, V_b and dv
-      Vel  = qi*qj*r*el_scale
-      if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
       if (qvdw_flag .and. jq /= 0 .and. iLJ .eq. 2 ) then
+        Vel  = qi*qj*r*el_scale
         V_a = aLJ*exp(-bLJ/r)
         V_b = 0.0
         dv  = r2*( -Vel -bLJ*V_a/r )*EQ(istate)%lambda
+      else if (softcore_method == SC_GAPSYS .and. &
+               sc_lookup(iq,natyps+jq,istate) > 0) then
+        ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization.
+        ! Q convention here (nonbond_qq): aLJ = C12, bLJ = C6 (no factor of 2).
+        V_a  = aLJ*r12
+        V_b  = bLJ*r6
+        dist = 1._8/r
+
+        ! LJ
+        r_sc_lj = gapsys_lj_rsc(iq, natyps+jq, istate)
+        if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
+          call gapsys_eval_lj(aLJ, bLJ, r_sc_lj, dist, V_a, gap_Flj)
+          V_b   = 0._8
+          dv_lj = -gap_Flj / dist
+        else
+          dv_lj = r2*(-(12.*V_a - 6.*V_b))
+        end if
+
+        ! Coulomb -- paper Eq. 5 with partner-charge factor at runtime.
+        gap_qq      = qi*qj*el_scale
+        if ( iLJ .eq. 3 ) gap_qq = gap_qq*el14_scale
+        gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(qi*qj)
+        r_sc_q      = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
+        if (dist < r_sc_q .and. r_sc_q > 0._8) then
+          call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel, gap_Fq)
+          dv_el = -gap_Fq / dist
+        else
+          Vel = qi*qj*r*el_scale
+          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+          dv_el = r2*(-Vel)
+        end if
+
+        dv = (dv_lj + dv_el)*EQ(istate)%lambda
       else
         V_a = aLJ*r12
         V_b = bLJ*r6
-        dv  = r2*( -Vel -(12.*V_a -6.*V_b)*r6_hc*r6 )*EQ(istate)%lambda
+        if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,natyps+jq,istate) > 0) then
+          Vel = qi*qj*el_scale / (r6_hc+sc_lookup(iq,natyps+jq,istate))**(1.0_8/6.0_8)
+          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+          dv  = r2*( -Vel -(12.*V_a -6.*V_b) )*(r6_hc*r6)*EQ(istate)%lambda
+        else
+          Vel = qi*qj*r*el_scale
+          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+          dv  = r2*( -Vel -(12.*V_a -6.*V_b)*r6_hc*r6 )*EQ(istate)%lambda
+        end if
       endif
 
       ! update forces
@@ -11144,6 +13365,10 @@ subroutine nonbond_qp_qvdw
   integer                                         :: istate
   real(8)                                         :: aLJ,bLJ,dx1,dx2,dx3,r2,r,r6
   real(8)                                         :: Vel,V_a,V_b,dv,r6_sc
+  real(8)                                         :: dist,r_sc_lj,r_sc_q
+  real(8)                                         :: dv_lj,dv_el
+  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
+  real(8)                                         :: gap_qq,gap_qj_fact,gap_Flj,gap_Fq,gap_qiqj
 
   ! global variables used:
   !  iqseq, iac, crg, x, nstates, qvdw_flag, iaclib, qiac, qavdw, qbvdw, qcrg, el14_scale, EQ, d, nat_solute
@@ -11179,13 +13404,56 @@ subroutine nonbond_qp_qvdw
       bLJ  = qbvdw(iaci,qLJ)*iaclib(iacj)%bvdw(iLJ)
 
       ! calculate qi, Vel, V_a, V_b and dv
-      Vel  = qcrg(iq,istate)*crg(j)*r
-      if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
-
-      r6_sc = r6 + sc_lookup(iq,iacj,istate) !sc_lookup is softcore fix MPA
+      if (softcore_method == SC_GAPSYS) then
+        r6_sc = r6
+      else
+        r6_sc = r6 + sc_lookup(iq,iacj,istate) !sc_lookup is softcore fix MPA
+      end if
       V_a  = aLJ/(r6_sc*r6_sc)
       V_b  = bLJ/(r6_sc)
-      dv   = r2*( -Vel -(12.*V_a -6.*V_b)*(r6/r6_sc) )*EQ(istate)%lambda  !r6 is r^6 not 1/r^6, r6_sc is r^6+sc not 1/(r^6+sc)
+      if (softcore_method == SC_GAPSYS .and. &
+          sc_lookup(iq,iacj,istate) > 0) then
+        ! Gapsys force linearization
+        ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization.
+        ! Q convention (nonbond_qp_qvdw): aLJ = C12, bLJ = C6 (no factor of 2).
+        dist     = 1._8/r
+        gap_qiqj = qcrg(iq,istate)*crg(j)
+
+        ! LJ
+        r_sc_lj = gapsys_lj_rsc(iq, iacj, istate)
+        if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
+          call gapsys_eval_lj(aLJ, bLJ, r_sc_lj, dist, V_a, gap_Flj)
+          V_b   = 0._8
+          dv_lj = -gap_Flj / dist
+        else
+          dv_lj = r2*(-(12.*V_a - 6.*V_b))
+        end if
+
+        ! Coulomb -- partner-charge factor at runtime.
+        gap_qq      = gap_qiqj
+        if ( iLJ .eq. 3 ) gap_qq = gap_qq*el14_scale
+        gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(gap_qiqj)
+        r_sc_q      = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
+        if (dist < r_sc_q .and. r_sc_q > 0._8) then
+          call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel, gap_Fq)
+          dv_el = -gap_Fq / dist
+        else
+          Vel = gap_qiqj*r
+          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+          dv_el = r2*(-Vel)
+        end if
+
+        dv = (dv_lj + dv_el)*EQ(istate)%lambda
+      else if (softcore_method == SC_BEUTLER_COUL .and. &
+          sc_lookup(iq,iacj,istate) > 0) then
+        Vel = qcrg(iq,istate)*crg(j) / r6_sc**(1.0_8/6.0_8)
+        if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+        dv  = r2*( -Vel -(12.*V_a -6.*V_b) )*(r6/r6_sc)*EQ(istate)%lambda
+      else
+        Vel = qcrg(iq,istate)*crg(j)*r
+        if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+        dv  = r2*( -Vel -(12.*V_a -6.*V_b)*(r6/r6_sc) )*EQ(istate)%lambda
+      end if
 
       ! update forces
       d(i3+1) = d(i3+1) - dv*dx1
@@ -11213,6 +13481,10 @@ subroutine nonbond_qp_qvdw_box
   integer                                               :: istate
   real(8)                                               :: aLJ,bLJ,dx1,dx2,dx3,r2,r,r6
   real(8)                                               :: Vel,V_a,V_b,dv,r6_sc
+  real(8)                                               :: dist,r_sc_lj,r_sc_q
+  real(8)                                               :: dv_lj,dv_el
+  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
+  real(8)                                               :: gap_qq,gap_qj_fact,gap_Flj,gap_Fq,gap_qiqj
   integer                                               :: group, gr, ia
 
 
@@ -11272,14 +13544,55 @@ subroutine nonbond_qp_qvdw_box
       bLJ  = qbvdw(iaci,qLJ)*iaclib(iacj)%bvdw(iLJ)
 
       ! calculate qi, Vel, V_a, V_b and dv
-      Vel  = qcrg(iq,istate)*crg(j)*r
-      if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
-
-
-      r6_sc = r6 + sc_lookup(iq,iacj,istate)        !sc_lookup is softcore fix MPA
+      if (softcore_method == SC_GAPSYS) then
+        r6_sc = r6
+      else
+        r6_sc = r6 + sc_lookup(iq,iacj,istate)        !sc_lookup is softcore fix MPA
+      end if
       V_a  = aLJ/(r6_sc*r6_sc)
-      V_b  = bLJ/r6_sc         !sc_lookup is softcore fix MPA
-      dv   = r2*( -Vel - ( (12.*V_a - 6.*V_b)*(r6/r6_sc) ) )*EQ(istate)%lambda  !r6 is r^6 not 1/r^6, r6_sc is r^6+sc not 1/(r^6+sc)
+      V_b  = bLJ/r6_sc
+      if (softcore_method == SC_GAPSYS .and. &
+          sc_lookup(iq,iacj,istate) > 0) then
+        ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization.
+        ! Q convention (nonbond_qp_qvdw_box): aLJ = C12, bLJ = C6 (no factor of 2).
+        dist     = 1._8/r
+        gap_qiqj = qcrg(iq,istate)*crg(j)
+
+        ! LJ
+        r_sc_lj = gapsys_lj_rsc(iq, iacj, istate)
+        if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
+          call gapsys_eval_lj(aLJ, bLJ, r_sc_lj, dist, V_a, gap_Flj)
+          V_b   = 0._8
+          dv_lj = -gap_Flj / dist
+        else
+          dv_lj = r2*(-(12.*V_a - 6.*V_b))
+        end if
+
+        ! Coulomb -- partner-charge factor at runtime.
+        gap_qq      = gap_qiqj
+        if ( iLJ .eq. 3 ) gap_qq = gap_qq*el14_scale
+        gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(gap_qiqj)
+        r_sc_q      = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
+        if (dist < r_sc_q .and. r_sc_q > 0._8) then
+          call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel, gap_Fq)
+          dv_el = -gap_Fq / dist
+        else
+          Vel = gap_qiqj*r
+          if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+          dv_el = r2*(-Vel)
+        end if
+
+        dv = (dv_lj + dv_el)*EQ(istate)%lambda
+      else if (softcore_method == SC_BEUTLER_COUL .and. &
+          sc_lookup(iq,iacj,istate) > 0) then
+        Vel = qcrg(iq,istate)*crg(j) / r6_sc**(1.0_8/6.0_8)
+        if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+        dv  = r2*( -Vel -(12.*V_a -6.*V_b) )*(r6/r6_sc)*EQ(istate)%lambda
+      else
+        Vel = qcrg(iq,istate)*crg(j)*r
+        if ( iLJ .eq. 3 ) Vel = Vel*el14_scale
+        dv  = r2*( -Vel -( (12.*V_a -6.*V_b)*(r6/r6_sc) ) )*EQ(istate)%lambda
+      end if
 
       ! update forces
       d(i3+1) = d(i3+1) - dv*dx1
@@ -11311,6 +13624,11 @@ subroutine nonbond_qw_spc
   real(8)                                         ::      rO, r2O, r6O, rH1, r2H1, r6H1, rH2, r2H2, r6H2
   real(8)                                         ::      VelO, VelH1, VelH2, dvO, dvH1, dvH2
   real(8)                                         ::  V_a, V_b, r6O_sc, r6O_hc
+  real(8)                                         :: distO,distH1,distH2,r_sc_lj,r_sc_q
+  real(8)                                         :: dv_lj,dv_el
+  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
+  real(8)                                         :: gap_qq_o,gap_qq_h,gap_Flj,gap_Fq
+  real(8)                                         :: gap_qj_fact_o,gap_qj_fact_h,r_sc_q_h
   real(8), save                           ::      aO(2), bO(2)
   integer, save                           ::      iac_ow = 0, iac_hw = 0
 
@@ -11371,25 +13689,93 @@ subroutine nonbond_qw_spc
         if (qvdw_flag) then
           aLJ  = qavdw(qiac(iq,istate),1)
           bLJ  = qbvdw(qiac(iq,istate),1)
-          r6O_sc = r6O_hc + sc_lookup(iq,iac_ow,istate)   !softcore  MPA
+          if (softcore_method == SC_GAPSYS) then
+            r6O_sc = r6O_hc
+          else
+            r6O_sc = r6O_hc + sc_lookup(iq,iac_ow,istate)   !softcore  MPA
+          end if
 
           V_a  = aLJ*aO(iLJ)/(r6O_sc*r6O_sc)
           V_b  = bLJ*bO(iLJ)/(r6O_sc)
         end if
         ! calculate qi, Vel, V_a, V_b and dv
-        VelO = crg_ow*qcrg(iq,istate)*rO
-        VelH1 = crg_hw*qcrg(iq,istate)*rH1
-        VelH2 = crg_hw*qcrg(iq,istate)*rH2
-        dvO  = dvO  + r2O*( -VelO -( (12.*V_a - 6.*V_b)*(r6O_hc/r6O_sc) ))*EQ(istate)%lambda
-        dvH1 = dvH1 - r2H1*VelH1*EQ(istate)%lambda
-        dvH2 = dvH2 - r2H2*VelH2*EQ(istate)%lambda
+        if (softcore_method == SC_GAPSYS .and. &
+            sc_lookup(iq,iac_ow,istate) > 0) then
+          ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization.
+          ! Routine handles any 3-site water with zero VdW on H (SPC, SPC/E,
+          ! TIP3P -- not TIP4P/TIP5P/OPC, which need a multi-atom routine).
+          ! Q convention: aLJ = sqrt(C12_qatom), aO = sqrt(C12_OW); same for b.
+          ! Pair C12 = aLJ*aO(iLJ), pair C6 = bLJ*bO(iLJ) (no factor of 2).
+          distO         = 1._8/rO
+          gap_qq_o      = crg_ow*qcrg(iq,istate)
+          gap_qj_fact_o = 1.0_8 + gapsys_sigma_q*abs(gap_qq_o)
+          gap_qq_h      = crg_hw*qcrg(iq,istate)
+          gap_qj_fact_h = 1.0_8 + gapsys_sigma_q*abs(gap_qq_h)
+          r_sc_q_h      = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact_h
+
+          ! LJ for O
+          r_sc_lj = gapsys_lj_rsc(iq, iac_ow, istate)
+          if (distO < r_sc_lj .and. r_sc_lj > 0._8) then
+            call gapsys_eval_lj(aLJ*aO(iLJ), bLJ*bO(iLJ), r_sc_lj, distO, V_a, gap_Flj)
+            V_b   = 0._8
+            dv_lj = -gap_Flj / distO
+          else
+            dv_lj = r2O*(-(12.*V_a - 6.*V_b))
+          end if
+
+          ! Coulomb for O
+          r_sc_q = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact_o
+          if (distO < r_sc_q .and. r_sc_q > 0._8) then
+            call gapsys_eval_q(gap_qq_o, r_sc_q, distO, VelO, gap_Fq)
+            dv_el = -gap_Fq / distO
+          else
+            VelO = gap_qq_o*rO
+            dv_el = r2O*(-VelO)
+          end if
+
+          dvO = dvO + (dv_lj + dv_el)*EQ(istate)%lambda
+
+          ! Coulomb for H1 (SPC: zero VdW on H, only Coulomb)
+          distH1 = 1._8/rH1
+          if (distH1 < r_sc_q_h .and. r_sc_q_h > 0._8) then
+            call gapsys_eval_q(gap_qq_h, r_sc_q_h, distH1, VelH1, gap_Fq)
+            dv_el = -gap_Fq / distH1
+          else
+            VelH1 = gap_qq_h*rH1
+            dv_el = r2H1*(-VelH1)
+          end if
+          dvH1 = dvH1 + dv_el*EQ(istate)%lambda
+
+          ! Coulomb for H2
+          distH2 = 1._8/rH2
+          if (distH2 < r_sc_q_h .and. r_sc_q_h > 0._8) then
+            call gapsys_eval_q(gap_qq_h, r_sc_q_h, distH2, VelH2, gap_Fq)
+            dv_el = -gap_Fq / distH2
+          else
+            VelH2 = gap_qq_h*rH2
+            dv_el = r2H2*(-VelH2)
+          end if
+          dvH2 = dvH2 + dv_el*EQ(istate)%lambda
+        else if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,iac_ow,istate) > 0) then
+          VelO = crg_ow*qcrg(iq,istate) / r6O_sc**(1.0_8/6.0_8)
+          dvO  = dvO + r2O*( -VelO -(12.*V_a -6.*V_b) )*(r6O_hc/r6O_sc)*EQ(istate)%lambda
+          VelH1 = crg_hw*qcrg(iq,istate)*rH1
+          VelH2 = crg_hw*qcrg(iq,istate)*rH2
+          dvH1 = dvH1 - r2H1*VelH1*EQ(istate)%lambda
+          dvH2 = dvH2 - r2H2*VelH2*EQ(istate)%lambda
+        else
+          VelO = crg_ow*qcrg(iq,istate)*rO
+          dvO  = dvO + r2O*( -VelO -( (12.*V_a -6.*V_b)*(r6O_hc/r6O_sc) ))*EQ(istate)%lambda
+          VelH1 = crg_hw*qcrg(iq,istate)*rH1
+          VelH2 = crg_hw*qcrg(iq,istate)*rH2
+          dvH1 = dvH1 - r2H1*VelH1*EQ(istate)%lambda
+          dvH2 = dvH2 - r2H2*VelH2*EQ(istate)%lambda
+        end if
         ! update q-water energies
         EQ(istate)%qw%el  = EQ(istate)%qw%el + VelO + VelH1 + VelH2
         EQ(istate)%qw%vdw = EQ(istate)%qw%vdw + V_a - V_b
       end do !istate
-
-      ! if qvdw_flag is true, then r6O is not the usual 1/rO^6, but rather rO^6. be careful!!! MPA
-
 
       ! update forces on Q-atom
       d(3*i-2) = d(3*i-2) - dvO*dxO - dvH1*dxH1 - dvH2*dxH2
@@ -11424,6 +13810,11 @@ subroutine nonbond_qw_spc_box
   real(8)                                         ::      rO, r2O, r6O, rH1, r2H1, r6H1, rH2, r2H2, r6H2
   real(8)                                         ::      VelO, VelH1, VelH2, dvO, dvH1, dvH2
   real(8)                                         :: V_a, V_b, r6O_sc, r6O_hc
+  real(8)                                         :: distO,distH1,distH2,r_sc_lj,r_sc_q
+  real(8)                                         :: dv_lj,dv_el
+  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
+  real(8)                                         :: gap_qq_o,gap_qq_h,gap_Flj,gap_Fq
+  real(8)                                         :: gap_qj_fact_o,gap_qj_fact_h,r_sc_q_h
   real(8)                                         :: dx, dy, dz, boxshiftx, boxshifty, boxshiftz
   real(8), save                           ::      aO(2), bO(2)
   integer, save                           ::      iac_ow = 0, iac_hw = 0
@@ -11505,18 +13896,89 @@ subroutine nonbond_qw_spc_box
         if (qvdw_flag) then
           aLJ  = qavdw(qiac(iq,istate),1)
           bLJ  = qbvdw(qiac(iq,istate),1)
-          r6O_sc = r6O_hc + sc_lookup(iq,iac_ow,istate)   !softcore  MPA
+          if (softcore_method == SC_GAPSYS) then
+            r6O_sc = r6O_hc
+          else
+            r6O_sc = r6O_hc + sc_lookup(iq,iac_ow,istate)   !softcore  MPA
+          end if
 
           V_a  = aLJ*aO(iLJ)/(r6O_sc*r6O_sc)
           V_b  = bLJ*bO(iLJ)/r6O_sc
         end if
         ! calculate qi, Vel, V_a, V_b and dv
-        VelO = crg_ow*qcrg(iq,istate)*rO
-        VelH1 = crg_hw*qcrg(iq,istate)*rH1
-        VelH2 = crg_hw*qcrg(iq,istate)*rH2
-        dvO  = dvO  + r2O*( -VelO -( (12.*V_a - 6.*V_b)*(r6O_hc/r6O_sc) ))*EQ(istate)%lambda
-        dvH1 = dvH1 - r2H1*VelH1*EQ(istate)%lambda
-        dvH2 = dvH2 - r2H2*VelH2*EQ(istate)%lambda
+        if (softcore_method == SC_GAPSYS .and. &
+            sc_lookup(iq,iac_ow,istate) > 0) then
+          ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization.
+          ! Routine handles any 3-site water with zero VdW on H (SPC, SPC/E,
+          ! TIP3P -- not TIP4P/TIP5P/OPC, which need a multi-atom routine).
+          ! Q convention: aLJ = sqrt(C12_qatom), aO = sqrt(C12_OW); same for b.
+          ! Pair C12 = aLJ*aO(iLJ), pair C6 = bLJ*bO(iLJ) (no factor of 2).
+          distO         = 1._8/rO
+          gap_qq_o      = crg_ow*qcrg(iq,istate)
+          gap_qj_fact_o = 1.0_8 + gapsys_sigma_q*abs(gap_qq_o)
+          gap_qq_h      = crg_hw*qcrg(iq,istate)
+          gap_qj_fact_h = 1.0_8 + gapsys_sigma_q*abs(gap_qq_h)
+          r_sc_q_h      = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact_h
+
+          ! LJ for O
+          r_sc_lj = gapsys_lj_rsc(iq, iac_ow, istate)
+          if (distO < r_sc_lj .and. r_sc_lj > 0._8) then
+            call gapsys_eval_lj(aLJ*aO(iLJ), bLJ*bO(iLJ), r_sc_lj, distO, V_a, gap_Flj)
+            V_b   = 0._8
+            dv_lj = -gap_Flj / distO
+          else
+            dv_lj = r2O*(-(12.*V_a - 6.*V_b))
+          end if
+
+          ! Coulomb for O
+          r_sc_q = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact_o
+          if (distO < r_sc_q .and. r_sc_q > 0._8) then
+            call gapsys_eval_q(gap_qq_o, r_sc_q, distO, VelO, gap_Fq)
+            dv_el = -gap_Fq / distO
+          else
+            VelO = gap_qq_o*rO
+            dv_el = r2O*(-VelO)
+          end if
+
+          dvO = dvO + (dv_lj + dv_el)*EQ(istate)%lambda
+
+          ! Coulomb for H1 (SPC: zero VdW on H, only Coulomb)
+          distH1 = 1._8/rH1
+          if (distH1 < r_sc_q_h .and. r_sc_q_h > 0._8) then
+            call gapsys_eval_q(gap_qq_h, r_sc_q_h, distH1, VelH1, gap_Fq)
+            dv_el = -gap_Fq / distH1
+          else
+            VelH1 = gap_qq_h*rH1
+            dv_el = r2H1*(-VelH1)
+          end if
+          dvH1 = dvH1 + dv_el*EQ(istate)%lambda
+
+          ! Coulomb for H2
+          distH2 = 1._8/rH2
+          if (distH2 < r_sc_q_h .and. r_sc_q_h > 0._8) then
+            call gapsys_eval_q(gap_qq_h, r_sc_q_h, distH2, VelH2, gap_Fq)
+            dv_el = -gap_Fq / distH2
+          else
+            VelH2 = gap_qq_h*rH2
+            dv_el = r2H2*(-VelH2)
+          end if
+          dvH2 = dvH2 + dv_el*EQ(istate)%lambda
+        else if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,iac_ow,istate) > 0) then
+          VelO = crg_ow*qcrg(iq,istate) / r6O_sc**(1.0_8/6.0_8)
+          dvO  = dvO + r2O*( -VelO -(12.*V_a -6.*V_b) )*(r6O_hc/r6O_sc)*EQ(istate)%lambda
+          VelH1 = crg_hw*qcrg(iq,istate)*rH1
+          VelH2 = crg_hw*qcrg(iq,istate)*rH2
+          dvH1 = dvH1 - r2H1*VelH1*EQ(istate)%lambda
+          dvH2 = dvH2 - r2H2*VelH2*EQ(istate)%lambda
+        else
+          VelO = crg_ow*qcrg(iq,istate)*rO
+          dvO  = dvO + r2O*( -VelO -( (12.*V_a -6.*V_b)*(r6O_hc/r6O_sc) ))*EQ(istate)%lambda
+          VelH1 = crg_hw*qcrg(iq,istate)*rH1
+          VelH2 = crg_hw*qcrg(iq,istate)*rH2
+          dvH1 = dvH1 - r2H1*VelH1*EQ(istate)%lambda
+          dvH2 = dvH2 - r2H2*VelH2*EQ(istate)%lambda
+        end if
         ! update q-water energies
         EQ(istate)%qw%el  = EQ(istate)%qw%el + VelO + VelH1 + VelH2
         EQ(istate)%qw%vdw = EQ(istate)%qw%vdw + V_a - V_b
@@ -11553,6 +14015,10 @@ subroutine nonbond_qw_3atom
   real(8)                           :: r_1, r2_1, r6_1, r_2, r2_2, r6_2, r_3, r2_3, r6_3
   real(8)                           :: Vel1, Vel2, Vel3, dv1, dv2, dv3
   real(8)                           :: V_a1,V_b1, V_a2, V_b2, V_a3, V_b3,r6_1_sc,r6_2_sc,r6_3_sc,r6_1_hc,r6_2_hc,r6_3_hc
+  real(8)                           :: dist,r_sc_lj,r_sc_q
+  real(8)                           :: dv_lj,dv_el
+  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
+  real(8)                           :: gap_qq,gap_qj_fact,gap_Flj,gap_Fq
   real(8), save                     :: a1(2), b1(2), a2(2), b2(2), a3(2), b3(2)
   integer, save                     :: iac1, iac2, iac3
   real, save                        :: crg1, crg2, crg3
@@ -11628,9 +14094,15 @@ subroutine nonbond_qw_3atom
 
         ! calculate V_a:s and V_b:s for each state
         if (qvdw_flag) then
-          r6_1_sc = r6_1_hc + sc_lookup(iq,iac1,istate)
-          r6_2_sc = r6_2_hc + sc_lookup(iq,iac2,istate)
-          r6_3_sc = r6_3_hc + sc_lookup(iq,iac3,istate)
+          if (softcore_method == SC_GAPSYS) then
+            r6_1_sc = r6_1_hc
+            r6_2_sc = r6_2_hc
+            r6_3_sc = r6_3_hc
+          else
+            r6_1_sc = r6_1_hc + sc_lookup(iq,iac1,istate)
+            r6_2_sc = r6_2_hc + sc_lookup(iq,iac2,istate)
+            r6_3_sc = r6_3_hc + sc_lookup(iq,iac3,istate)
+          end if
           V_a1 = qavdw(qiac(iq,istate),1)*a1(iLJ1)/(r6_1_sc*r6_1_sc)
           V_b1 = qbvdw(qiac(iq,istate),1)*b1(iLJ1)/(r6_1_sc)
           V_a2 = qavdw(qiac(iq,istate),1)*a2(iLJ2)/(r6_2_sc*r6_2_sc)
@@ -11639,12 +14111,124 @@ subroutine nonbond_qw_3atom
           V_b3 = qbvdw(qiac(iq,istate),1)*b3(iLJ3)/(r6_3_sc)
         end if
         ! calculate  Vel, V_a, V_b and dv
-        Vel1 = crg1*qcrg(iq,istate)*r_1
-        Vel2 = crg2*qcrg(iq,istate)*r_2
-        Vel3 = crg3*qcrg(iq,istate)*r_3
-        dv1 = dv1 + r2_1*(-Vel1- ((12.*V_a1-6.*V_b1)*(r6_1_hc/r6_1_sc)) )*EQ(istate)%lambda
-        dv2 = dv2 + r2_2*(-Vel2- ((12.*V_a2-6.*V_b2)*(r6_2_hc/r6_2_sc)) )*EQ(istate)%lambda
-        dv3 = dv3 + r2_3*(-Vel3- ((12.*V_a3-6.*V_b3)*(r6_3_hc/r6_3_sc)) )*EQ(istate)%lambda
+        ! Atom 1
+        if (softcore_method == SC_GAPSYS .and. &
+            sc_lookup(iq,iac1,istate) > 0) then
+          ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization (3-atom water, atom 1).
+          ! Pair C12 = qavdw*a1(iLJ1), C6 = qbvdw*b1(iLJ1) (geometric mix, no factor of 2).
+          dist        = 1._8/r_1
+          gap_qq      = crg1*qcrg(iq,istate)
+          gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(gap_qq)
+
+          ! LJ
+          r_sc_lj = gapsys_lj_rsc(iq, iac1, istate)
+          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
+            call gapsys_eval_lj(qavdw(qiac(iq,istate),1)*a1(iLJ1), &
+                                qbvdw(qiac(iq,istate),1)*b1(iLJ1), &
+                                r_sc_lj, dist, V_a1, gap_Flj)
+            V_b1  = 0._8
+            dv_lj = -gap_Flj / dist
+          else
+            dv_lj = r2_1*(-(12.*V_a1 - 6.*V_b1))
+          end if
+
+          ! Coulomb
+          r_sc_q = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
+          if (dist < r_sc_q .and. r_sc_q > 0._8) then
+            call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel1, gap_Fq)
+            dv_el = -gap_Fq / dist
+          else
+            Vel1 = gap_qq*r_1
+            dv_el = r2_1*(-Vel1)
+          end if
+
+          dv1 = dv1 + (dv_lj + dv_el)*EQ(istate)%lambda
+        else if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,iac1,istate) > 0) then
+          Vel1 = crg1*qcrg(iq,istate) / r6_1_sc**(1.0_8/6.0_8)
+          dv1 = dv1 + r2_1*(-Vel1 -(12.*V_a1-6.*V_b1))*(r6_1_hc/r6_1_sc)*EQ(istate)%lambda
+        else
+          Vel1 = crg1*qcrg(iq,istate)*r_1
+          dv1 = dv1 + r2_1*(-Vel1- ((12.*V_a1-6.*V_b1)*(r6_1_hc/r6_1_sc)) )*EQ(istate)%lambda
+        end if
+        ! Atom 2
+        if (softcore_method == SC_GAPSYS .and. &
+            sc_lookup(iq,iac2,istate) > 0) then
+          ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization (3-atom water, atom 2).
+          dist        = 1._8/r_2
+          gap_qq      = crg2*qcrg(iq,istate)
+          gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(gap_qq)
+
+          ! LJ
+          r_sc_lj = gapsys_lj_rsc(iq, iac2, istate)
+          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
+            call gapsys_eval_lj(qavdw(qiac(iq,istate),1)*a2(iLJ2), &
+                                qbvdw(qiac(iq,istate),1)*b2(iLJ2), &
+                                r_sc_lj, dist, V_a2, gap_Flj)
+            V_b2  = 0._8
+            dv_lj = -gap_Flj / dist
+          else
+            dv_lj = r2_2*(-(12.*V_a2 - 6.*V_b2))
+          end if
+
+          ! Coulomb
+          r_sc_q = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
+          if (dist < r_sc_q .and. r_sc_q > 0._8) then
+            call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel2, gap_Fq)
+            dv_el = -gap_Fq / dist
+          else
+            Vel2 = gap_qq*r_2
+            dv_el = r2_2*(-Vel2)
+          end if
+
+          dv2 = dv2 + (dv_lj + dv_el)*EQ(istate)%lambda
+        else if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,iac2,istate) > 0) then
+          Vel2 = crg2*qcrg(iq,istate) / r6_2_sc**(1.0_8/6.0_8)
+          dv2 = dv2 + r2_2*(-Vel2 -(12.*V_a2-6.*V_b2))*(r6_2_hc/r6_2_sc)*EQ(istate)%lambda
+        else
+          Vel2 = crg2*qcrg(iq,istate)*r_2
+          dv2 = dv2 + r2_2*(-Vel2- ((12.*V_a2-6.*V_b2)*(r6_2_hc/r6_2_sc)) )*EQ(istate)%lambda
+        end if
+        ! Atom 3
+        if (softcore_method == SC_GAPSYS .and. &
+            sc_lookup(iq,iac3,istate) > 0) then
+          ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization (3-atom water, atom 3).
+          dist        = 1._8/r_3
+          gap_qq      = crg3*qcrg(iq,istate)
+          gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(gap_qq)
+
+          ! LJ
+          r_sc_lj = gapsys_lj_rsc(iq, iac3, istate)
+          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
+            call gapsys_eval_lj(qavdw(qiac(iq,istate),1)*a3(iLJ3), &
+                                qbvdw(qiac(iq,istate),1)*b3(iLJ3), &
+                                r_sc_lj, dist, V_a3, gap_Flj)
+            V_b3  = 0._8
+            dv_lj = -gap_Flj / dist
+          else
+            dv_lj = r2_3*(-(12.*V_a3 - 6.*V_b3))
+          end if
+
+          ! Coulomb
+          r_sc_q = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
+          if (dist < r_sc_q .and. r_sc_q > 0._8) then
+            call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel3, gap_Fq)
+            dv_el = -gap_Fq / dist
+          else
+            Vel3 = gap_qq*r_3
+            dv_el = r2_3*(-Vel3)
+          end if
+
+          dv3 = dv3 + (dv_lj + dv_el)*EQ(istate)%lambda
+        else if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,iac3,istate) > 0) then
+          Vel3 = crg3*qcrg(iq,istate) / r6_3_sc**(1.0_8/6.0_8)
+          dv3 = dv3 + r2_3*(-Vel3 -(12.*V_a3-6.*V_b3))*(r6_3_hc/r6_3_sc)*EQ(istate)%lambda
+        else
+          Vel3 = crg3*qcrg(iq,istate)*r_3
+          dv3 = dv3 + r2_3*(-Vel3- ((12.*V_a3-6.*V_b3)*(r6_3_hc/r6_3_sc)) )*EQ(istate)%lambda
+        end if
         ! update q-water energies
         EQ(istate)%qw%el  = EQ(istate)%qw%el + Vel1 + Vel2 + Vel3
         EQ(istate)%qw%vdw = EQ(istate)%qw%vdw + V_a1 - V_b1 &
@@ -11681,6 +14265,10 @@ subroutine nonbond_qw_3atom_box
   real(8)                           :: r_1, r2_1, r6_1, r_2, r2_2, r6_2, r_3, r2_3, r6_3
   real(8)                           :: Vel1, Vel2, Vel3, dv1, dv2, dv3
   real(8)                           :: V_a1,V_b1, V_a2, V_b2, V_a3, V_b3,r6_1_sc,r6_2_sc,r6_3_sc,r6_1_hc,r6_2_hc,r6_3_hc
+  real(8)                           :: dist,r_sc_lj,r_sc_q
+  real(8)                           :: dv_lj,dv_el
+  ! Gapsys SI Eqs. 1.1-1.4 paper-faithful linearization
+  real(8)                           :: gap_qq,gap_qj_fact,gap_Flj,gap_Fq
   real(8)                           :: boxshiftx, boxshifty, boxshiftz, dx, dy, dz
   real(8), save                     :: a1(2), b1(2), a2(2), b2(2), a3(2), b3(2)
   integer, save                     :: iac1, iac2, iac3
@@ -11776,9 +14364,15 @@ subroutine nonbond_qw_3atom_box
 
         ! calculate V_a:s and V_b:s for each state
         if (qvdw_flag) then
-          r6_1_sc = r6_1_hc + sc_lookup(iq,iac1,istate)
-          r6_2_sc = r6_2_hc + sc_lookup(iq,iac2,istate)
-          r6_3_sc = r6_3_hc + sc_lookup(iq,iac3,istate)
+          if (softcore_method == SC_GAPSYS) then
+            r6_1_sc = r6_1_hc
+            r6_2_sc = r6_2_hc
+            r6_3_sc = r6_3_hc
+          else
+            r6_1_sc = r6_1_hc + sc_lookup(iq,iac1,istate)
+            r6_2_sc = r6_2_hc + sc_lookup(iq,iac2,istate)
+            r6_3_sc = r6_3_hc + sc_lookup(iq,iac3,istate)
+          end if
           V_a1 = qavdw(qiac(iq,istate),1)*a1(iLJ1)/(r6_1_sc*r6_1_sc)
           V_b1 = qbvdw(qiac(iq,istate),1)*b1(iLJ1)/(r6_1_sc)
           V_a2 = qavdw(qiac(iq,istate),1)*a2(iLJ2)/(r6_2_sc*r6_2_sc)
@@ -11788,12 +14382,124 @@ subroutine nonbond_qw_3atom_box
 
         end if
         ! calculate  Vel, V_a, V_b and dv
-        Vel1 = crg1*qcrg(iq,istate)*r_1
-        Vel2 = crg2*qcrg(iq,istate)*r_2
-        Vel3 = crg3*qcrg(iq,istate)*r_3
-        dv1 = dv1 + r2_1*(-Vel1- ((12.*V_a1-6.*V_b1)*(r6_1_hc/r6_1_sc)) )*EQ(istate)%lambda
-        dv2 = dv2 + r2_2*(-Vel2- ((12.*V_a2-6.*V_b2)*(r6_2_hc/r6_2_sc)) )*EQ(istate)%lambda
-        dv3 = dv3 + r2_3*(-Vel3- ((12.*V_a3-6.*V_b3)*(r6_3_hc/r6_3_sc)) )*EQ(istate)%lambda
+        ! Atom 1
+        if (softcore_method == SC_GAPSYS .and. &
+            sc_lookup(iq,iac1,istate) > 0) then
+          ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization (3-atom water, atom 1).
+          ! Pair C12 = qavdw*a1(iLJ1), C6 = qbvdw*b1(iLJ1) (geometric mix, no factor of 2).
+          dist        = 1._8/r_1
+          gap_qq      = crg1*qcrg(iq,istate)
+          gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(gap_qq)
+
+          ! LJ
+          r_sc_lj = gapsys_lj_rsc(iq, iac1, istate)
+          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
+            call gapsys_eval_lj(qavdw(qiac(iq,istate),1)*a1(iLJ1), &
+                                qbvdw(qiac(iq,istate),1)*b1(iLJ1), &
+                                r_sc_lj, dist, V_a1, gap_Flj)
+            V_b1  = 0._8
+            dv_lj = -gap_Flj / dist
+          else
+            dv_lj = r2_1*(-(12.*V_a1 - 6.*V_b1))
+          end if
+
+          ! Coulomb
+          r_sc_q = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
+          if (dist < r_sc_q .and. r_sc_q > 0._8) then
+            call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel1, gap_Fq)
+            dv_el = -gap_Fq / dist
+          else
+            Vel1 = gap_qq*r_1
+            dv_el = r2_1*(-Vel1)
+          end if
+
+          dv1 = dv1 + (dv_lj + dv_el)*EQ(istate)%lambda
+        else if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,iac1,istate) > 0) then
+          Vel1 = crg1*qcrg(iq,istate) / r6_1_sc**(1.0_8/6.0_8)
+          dv1 = dv1 + r2_1*(-Vel1 -(12.*V_a1-6.*V_b1))*(r6_1_hc/r6_1_sc)*EQ(istate)%lambda
+        else
+          Vel1 = crg1*qcrg(iq,istate)*r_1
+          dv1 = dv1 + r2_1*(-Vel1- ((12.*V_a1-6.*V_b1)*(r6_1_hc/r6_1_sc)) )*EQ(istate)%lambda
+        end if
+        ! Atom 2
+        if (softcore_method == SC_GAPSYS .and. &
+            sc_lookup(iq,iac2,istate) > 0) then
+          ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization (3-atom water, atom 2).
+          dist        = 1._8/r_2
+          gap_qq      = crg2*qcrg(iq,istate)
+          gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(gap_qq)
+
+          ! LJ
+          r_sc_lj = gapsys_lj_rsc(iq, iac2, istate)
+          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
+            call gapsys_eval_lj(qavdw(qiac(iq,istate),1)*a2(iLJ2), &
+                                qbvdw(qiac(iq,istate),1)*b2(iLJ2), &
+                                r_sc_lj, dist, V_a2, gap_Flj)
+            V_b2  = 0._8
+            dv_lj = -gap_Flj / dist
+          else
+            dv_lj = r2_2*(-(12.*V_a2 - 6.*V_b2))
+          end if
+
+          ! Coulomb
+          r_sc_q = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
+          if (dist < r_sc_q .and. r_sc_q > 0._8) then
+            call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel2, gap_Fq)
+            dv_el = -gap_Fq / dist
+          else
+            Vel2 = gap_qq*r_2
+            dv_el = r2_2*(-Vel2)
+          end if
+
+          dv2 = dv2 + (dv_lj + dv_el)*EQ(istate)%lambda
+        else if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,iac2,istate) > 0) then
+          Vel2 = crg2*qcrg(iq,istate) / r6_2_sc**(1.0_8/6.0_8)
+          dv2 = dv2 + r2_2*(-Vel2 -(12.*V_a2-6.*V_b2))*(r6_2_hc/r6_2_sc)*EQ(istate)%lambda
+        else
+          Vel2 = crg2*qcrg(iq,istate)*r_2
+          dv2 = dv2 + r2_2*(-Vel2- ((12.*V_a2-6.*V_b2)*(r6_2_hc/r6_2_sc)) )*EQ(istate)%lambda
+        end if
+        ! Atom 3
+        if (softcore_method == SC_GAPSYS .and. &
+            sc_lookup(iq,iac3,istate) > 0) then
+          ! Gapsys 2012 SI Eqs. 1.1-1.4 paper-faithful linearization (3-atom water, atom 3).
+          dist        = 1._8/r_3
+          gap_qq      = crg3*qcrg(iq,istate)
+          gap_qj_fact = 1.0_8 + gapsys_sigma_q*abs(gap_qq)
+
+          ! LJ
+          r_sc_lj = gapsys_lj_rsc(iq, iac3, istate)
+          if (dist < r_sc_lj .and. r_sc_lj > 0._8) then
+            call gapsys_eval_lj(qavdw(qiac(iq,istate),1)*a3(iLJ3), &
+                                qbvdw(qiac(iq,istate),1)*b3(iLJ3), &
+                                r_sc_lj, dist, V_a3, gap_Flj)
+            V_b3  = 0._8
+            dv_lj = -gap_Flj / dist
+          else
+            dv_lj = r2_3*(-(12.*V_a3 - 6.*V_b3))
+          end if
+
+          ! Coulomb
+          r_sc_q = gapsys_q_lambda_factor(iq, istate) * gap_qj_fact
+          if (dist < r_sc_q .and. r_sc_q > 0._8) then
+            call gapsys_eval_q(gap_qq, r_sc_q, dist, Vel3, gap_Fq)
+            dv_el = -gap_Fq / dist
+          else
+            Vel3 = gap_qq*r_3
+            dv_el = r2_3*(-Vel3)
+          end if
+
+          dv3 = dv3 + (dv_lj + dv_el)*EQ(istate)%lambda
+        else if (softcore_method == SC_BEUTLER_COUL .and. &
+            sc_lookup(iq,iac3,istate) > 0) then
+          Vel3 = crg3*qcrg(iq,istate) / r6_3_sc**(1.0_8/6.0_8)
+          dv3 = dv3 + r2_3*(-Vel3 -(12.*V_a3-6.*V_b3))*(r6_3_hc/r6_3_sc)*EQ(istate)%lambda
+        else
+          Vel3 = crg3*qcrg(iq,istate)*r_3
+          dv3 = dv3 + r2_3*(-Vel3- ((12.*V_a3-6.*V_b3)*(r6_3_hc/r6_3_sc)) )*EQ(istate)%lambda
+        end if
         ! update q-water energies
         EQ(istate)%qw%el  = EQ(istate)%qw%el + Vel1 + Vel2 + Vel3
         EQ(istate)%qw%vdw = EQ(istate)%qw%vdw + V_a1 - V_b1 &
@@ -12940,7 +15646,7 @@ end subroutine offdiag
 subroutine p_restrain
    ! *** Local variables
   integer :: ir,i,j,k,i3,j3,k3,istate,n_ctr
-  real(8) :: fk,r2,erst,Edum,x2,y2,z2,wgt,b,db,dv,totmass,theta,rij,r2ij,rjk,r2jk,scp,f1
+  real(8) :: fk,r2,erst,Edum,x2,y2,z2,wgt,b,db,dv,totmass,theta,rij,r2ij,rjk,r2jk,scp,scp_force,f1
   real(8) :: dr(3), dr2(3), ctr(3), di(3), dk(3)
   real(8) :: fexp
 
@@ -13185,10 +15891,11 @@ subroutine p_restrain
     ! calculate the scalar product (scp) and the angle theta from it
     scp = ( dr(1)*dr2(1) + dr(2)*dr2(2) + dr(3)*dr2(3) )
     scp = scp / ( rij*rjk )
+    scp_force = scp
 
-    ! criteria inserted on the real angle force calculations to ensure no weird scp.
-    if ( scp .gt.  1.0 ) scp =  1.0
-    if ( scp .lt. -1.0 ) scp = -1.0
+    ! Match QGPU's finite-angle guard near collinear geometries.
+    if ( scp .gt. angle_cosine_limit ) scp = angle_cosine_limit
+    if ( scp .lt. -angle_cosine_limit ) scp = -angle_cosine_limit
 
     theta = acos(scp)
     db    = theta - (rstang(ir)%ang)*deg2rad
@@ -13197,22 +15904,16 @@ subroutine p_restrain
     Edum   = 0.5*rstang(ir)%fk*db**2
     dv     = wgt*rstang(ir)%fk*db
 
-    ! calculate sin(theta) to use in forces
-    f1 = sin ( theta )
-    if ( abs(f1) .lt. 1.e-12 ) then
-      ! avoid division by zero
-      f1 = -1.e12
-    else
-      f1 =  -1.0 / f1
-    end if
+    ! angle_cosine_limit keeps this denominator finite.
+    f1 = -1.0 / sin(theta)
 
             ! calculate di and dk
-    di(1) = f1 * ( dr2(1) / ( rij * rjk ) - scp * dr(1) / r2ij )
-    di(2) = f1 * ( dr2(2) / ( rij * rjk ) - scp * dr(2) / r2ij )
-    di(3) = f1 * ( dr2(3) / ( rij * rjk ) - scp * dr(3) / r2ij )
-    dk(1) = f1 * ( dr(1) / ( rij * rjk ) - scp * dr2(1) / r2jk )
-    dk(2) = f1 * ( dr(2) / ( rij * rjk ) - scp * dr2(2) / r2jk )
-    dk(3) = f1 * ( dr(3) / ( rij * rjk ) - scp * dr2(3) / r2jk )
+    di(1) = f1 * ( dr2(1) / ( rij * rjk ) - scp_force * dr(1) / r2ij )
+    di(2) = f1 * ( dr2(2) / ( rij * rjk ) - scp_force * dr(2) / r2ij )
+    di(3) = f1 * ( dr2(3) / ( rij * rjk ) - scp_force * dr(3) / r2ij )
+    dk(1) = f1 * ( dr(1) / ( rij * rjk ) - scp_force * dr2(1) / r2jk )
+    dk(2) = f1 * ( dr(2) / ( rij * rjk ) - scp_force * dr2(2) / r2jk )
+    dk(3) = f1 * ( dr(3) / ( rij * rjk ) - scp_force * dr2(3) / r2jk )
 
             ! update d
     d(i3+1) = d(i3+1) + dv*di(1)
@@ -13279,6 +15980,9 @@ subroutine pot_energy
    ! local variables
   integer                                 :: istate, i, nat3
   integer                                 :: is, j
+  ! Non-equilibrium switching locals (used only when equilibrium_simulation is .false.);
+  ! old_lambda is real(8) so the endpoint round-trips exactly.
+  real(8)                                 :: old_lambda(2), lam(2), lam_next(2), dU
 #if defined (PROFILING)
   real(8)                                 :: start_loop_time1
   real(8)                                 :: start_loop_time2
@@ -13316,6 +16020,18 @@ subroutine pot_energy
   E%restraint%protein = 0.0
   E%restraint%solvent_radial = 0.0
   E%restraint%water_pol = 0.0
+
+  ! NEQ: set EQ%lambda from the switching schedule for this step (restored after the
+  ! energy evaluation below); dlambda is the step's lambda increment for the work integral.
+  if (.not. equilibrium_simulation) then
+    old_lambda(:) = EQ(1:2)%lambda
+    call schedule_lambda(istep,   old_lambda(1), lam)
+    call schedule_lambda(istep+1, old_lambda(1), lam_next)
+    EQ(1)%lambda = lam(1)
+    EQ(2)%lambda = lam(2)
+    dlambda      = lam_next(1) - lam(1)
+  end if
+
   do istate = 1, nstates
     !EQ(istate)%lambda set by initialize
     !EQ(istate)%total assigned its final value later
@@ -13351,8 +16067,10 @@ subroutine pot_energy
   start_loop_time2 = rtime()
 #endif
 
-  ! classical nonbonds
-  call pot_energy_nonbonds
+  ! classical nonbonds (skip if doing bonded-only minimization)
+  if (.not. min_bonded_only) then
+    call pot_energy_nonbonds
+  end if
 #if defined (PROFILING)
   profile(10)%time = profile(10)%time + rtime() - start_loop_time2
 #endif
@@ -13369,32 +16087,39 @@ subroutine pot_energy
     profile(8)%time = profile(8)%time + rtime() - start_loop_time1
 #endif
 
-    ! various restraints
-    if( .not. use_PBC ) then
-      call fix_shell     !Restrain all excluded atoms plus heavy solute atoms in the inner shell.
+    ! The SCAAS boundary is part of the physical model and remains active in
+    ! both minimization phases. In particular, excluded atoms must not first
+    ! relax freely and then encounter fk_fix only when the full force field starts.
+    if (.not. use_PBC) then
+      call fix_shell       !Restrain excluded atoms and heavy atoms in the inner shell.
     end if
 
-    call p_restrain       !Seq. restraints, dist. restaints, etc
+    ! Other restraints are skipped during bonded-only minimization.
+    if (.not. min_bonded_only) then
+      call p_restrain       !Seq. restraints, dist. restaints, etc
 
-    if( .not. use_PBC ) then
-      if(nwat > 0) then
-        call restrain_solvent
-        if (wpol_restr) call watpol
+      if( .not. use_PBC ) then
+        if(nwat > 0) then
+          call restrain_solvent
+          if (wpol_restr) call watpol
+        end if
       end if
     end if
 
-    ! q-q nonbonded interactions
-    if(.not. qq_use_library_charges) then
-      if(ivdw_rule .eq. 1 ) then
-        call nonbond_qq
-      elseif ( ivdw_rule .eq. 2 ) then
-        call nonbon2_qq
-      end if
-    else
-      if ( ivdw_rule .eq. 1 ) then
-        call nonbond_qq_lib_charges
-      else if ( ivdw_rule .eq. 2 ) then
-        call nonbon2_qq_lib_charges
+    ! q-q nonbonded interactions (skip if doing bonded-only minimization)
+    if (.not. min_bonded_only) then
+      if(.not. qq_use_library_charges) then
+        if(ivdw_rule .eq. 1 ) then
+          call nonbond_qq
+        elseif ( ivdw_rule .eq. 2 ) then
+          call nonbon2_qq
+        end if
+      else
+        if ( ivdw_rule .eq. 1 ) then
+          call nonbond_qq_lib_charges
+        else if ( ivdw_rule .eq. 2 ) then
+          call nonbon2_qq_lib_charges
+        end if
       end if
     end if
 
@@ -13470,8 +16195,49 @@ subroutine pot_energy
       E%ww%vdw + E%q%bond + E%q%angle + E%q%torsion + &
       E%q%improper + E%qx%el + E%qx%vdw + E%restraint%total + E%LRF
   end if
+
+  ! NEQ: dU/dlambda for the work integral (sign-flipped so the accumulator adds
+  ! +dU/dlambda), then restore the endpoint lambdas saved above.
+  if (.not. equilibrium_simulation) then
+    dU = (EQ(2)%q%bond     - EQ(1)%q%bond)     + &
+         (EQ(2)%q%angle    - EQ(1)%q%angle)    + &
+         (EQ(2)%q%torsion  - EQ(1)%q%torsion)  + &
+         (EQ(2)%q%improper - EQ(1)%q%improper) + &
+         (EQ(2)%qx%el      - EQ(1)%qx%el)      + &
+         (EQ(2)%qx%vdw     - EQ(1)%qx%vdw)     + &
+         (EQ(2)%restraint  - EQ(1)%restraint)
+    dU_dlambda = -dU
+    EQ(1:2)%lambda = old_lambda(:)
+  end if
 end subroutine pot_energy
 
+!-----------------------------------------------------------------------
+! Sigmoidal rescaling for fast-switching, normalised so u=0 -> 0 and u=1 -> 1.
+real function sigmoid_rescale(u, L)
+  implicit none
+  real,    intent(in) :: u   ! switch progress in [0,1]
+  real(8), intent(in) :: L   ! steepness parameter
+  real :: s, s0, s1
+  s  = 1.0 / (1.0 + exp(-(2.0*u - 1.0)*L))   ! raw sigmoid
+  s0 = 1.0 / (1.0 + exp(+L))                 ! sigmoid at u=0
+  s1 = 1.0 / (1.0 + exp(-L))                 ! sigmoid at u=1
+  sigmoid_rescale = (s - s0) / (s1 - s0)
+end function sigmoid_rescale
+
+!-----------------------------------------------------------------------
+! Lambda for switching step `step`: state 1 follows the (optionally sigmoid-rescaled)
+! step/nsteps schedule from its endpoint, state 2 is the complement. Two states only,
+! shared by pot_energy (drives the forces) and write_out (reports the same lambda).
+subroutine schedule_lambda(step, endpoint1, lam)
+  integer, intent(in)  :: step
+  real(8), intent(in)  :: endpoint1
+  real(8), intent(out) :: lam(2)
+  real :: ratio
+  ratio = real(step) / real(nsteps)
+  if (scaling_parameter == 'sigmoidal') ratio = sigmoid_rescale(ratio, L_sigmoid)
+  lam(1) = endpoint1 * (1-ratio) + (1-endpoint1)*ratio
+  lam(2) = 1.0_8 - lam(1)
+end subroutine schedule_lambda
 
 !-----------------------------------------------------------------------
 subroutine pot_energy_bonds
@@ -13682,7 +16448,8 @@ subroutine prep_coord
 #if defined(USE_MPI)
 112 call MPI_Abort(MPI_COMM_WORLD,1,ierr)
 #else
-112 stop 'Aborting due to errors reading restart file.'
+112 write(0,'(a)') 'Aborting due to errors reading restart file.'
+    stop 255
 #endif
 
 end subroutine prep_coord
@@ -13845,6 +16612,12 @@ subroutine prep_sim
     end do
   end if
 
+  ! Bounding sphere arrays for pair list pre-filtering (always needed)
+  call allocate_cgp_bounds
+  call compute_cgp_mol
+  call build_cross_mol_flags
+  call build_exclusion_csr
+
   !       Prepare an array of inverse masses
   winv(:) = 1./iaclib(iac(:))%mass
 
@@ -13899,7 +16672,7 @@ subroutine qangle (istate)
 
   ! local variables
   integer                                         :: ia,i,j,k,ic,i3,j3,k3,im,icoupl,ib
-  real(8)                                         :: bji,bjk,scp,ang,da,ae,dv,gamma
+  real(8)                                         :: bji,bjk,scp,scp_force,ang,da,ae,dv,gamma
   real(8)                                         :: rji(3),rjk(3),f1,di(3),dk(3)
 
 
@@ -13941,23 +16714,22 @@ subroutine qangle (istate)
       bjk = sqrt ( rjk(1)**2 + rjk(2)**2 + rjk(3)**2 )
       scp = ( rji(1)*rjk(1) + rji(2)*rjk(2) + rji(3)*rjk(3) )
       scp = scp / (bji*bjk)
-      if ( scp .gt.  1.0 ) scp =  1.0
-      if ( scp .lt. -1.0 ) scp = -1.0
+      scp_force = scp
+      if ( scp .gt. angle_cosine_limit ) scp = angle_cosine_limit
+      if ( scp .lt. -angle_cosine_limit ) scp = -angle_cosine_limit
       ang = acos(scp)
       da = ang - qanglib(ic)%ang0
       ae = 0.5*qanglib(ic)%fk*da**2
       EQ(istate)%q%angle = EQ(istate)%q%angle + ae*gamma
 
       dv = gamma*qanglib(ic)%fk*da*EQ(istate)%lambda
-      f1 = sin ( ang )
-      if ( abs(f1) .lt. 1.e-12 ) f1 = 1.e-12
-      f1 =  -1.0 / f1
-      di(1) = f1 * ( rjk(1)/(bji*bjk) - scp*rji(1)/bji**2 )
-      di(2) = f1 * ( rjk(2)/(bji*bjk) - scp*rji(2)/bji**2 )
-      di(3) = f1 * ( rjk(3)/(bji*bjk) - scp*rji(3)/bji**2 )
-      dk(1) = f1 * ( rji(1)/(bji*bjk) - scp*rjk(1)/bjk**2 )
-      dk(2) = f1 * ( rji(2)/(bji*bjk) - scp*rjk(2)/bjk**2 )
-      dk(3) = f1 * ( rji(3)/(bji*bjk) - scp*rjk(3)/bjk**2 )
+      f1 = -1.0 / sin(ang)
+      di(1) = f1 * ( rjk(1)/(bji*bjk) - scp_force*rji(1)/bji**2 )
+      di(2) = f1 * ( rjk(2)/(bji*bjk) - scp_force*rji(2)/bji**2 )
+      di(3) = f1 * ( rjk(3)/(bji*bjk) - scp_force*rji(3)/bji**2 )
+      dk(1) = f1 * ( rji(1)/(bji*bjk) - scp_force*rjk(1)/bjk**2 )
+      dk(2) = f1 * ( rji(2)/(bji*bjk) - scp_force*rjk(2)/bjk**2 )
+      dk(3) = f1 * ( rji(3)/(bji*bjk) - scp_force*rjk(3)/bjk**2 )
       d(i3+1) = d(i3+1) + dv*di(1)
       d(i3+2) = d(i3+2) + dv*di(2)
       d(i3+3) = d(i3+3) + dv*di(3)
@@ -14266,7 +17038,7 @@ subroutine qtorsion (istate)
   ! local variables
   integer                                         ::      i,j,k,l,ip,ic,i3,j3,k3,l3
   integer                                         ::      icoupl,im,ib
-  real(8)                                         ::      bj,bk,scp,phi,sgn,pe,dv,arg,f1,gamma
+  real(8)                                         ::      bj,bk,scp,phi,sgn,pe,dv,arg,sin_phi,cos_phi_limit,gamma
   real(8)                                         ::      rji(3),rjk(3),rkl(3),rnj(3),rnk(3)
   real(8)                                         ::      rki(3),rlj(3),dp(12),di(3),dl(3)
 
@@ -14336,15 +17108,24 @@ subroutine qtorsion (istate)
       dv = -qrmult(ic)*qfktor(ic)*sin(arg)*gamma*EQ(istate)%lambda
 
       ! ---       forces
-      f1 = sin ( phi )
-      if ( abs(f1) .lt. 1.e-12 ) f1 = 1.e-12
-      f1 =  -1.0 / f1
-      di(1) = f1 * ( rnk(1)/(bj*bk) - scp*rnj(1)/bj**2 )
-      di(2) = f1 * ( rnk(2)/(bj*bk) - scp*rnj(2)/bj**2 )
-      di(3) = f1 * ( rnk(3)/(bj*bk) - scp*rnj(3)/bj**2 )
-      dl(1) = f1 * ( rnj(1)/(bj*bk) - scp*rnk(1)/bk**2 )
-      dl(2) = f1 * ( rnj(2)/(bj*bk) - scp*rnk(2)/bk**2 )
-      dl(3) = f1 * ( rnj(3)/(bj*bk) - scp*rnk(3)/bk**2 )
+      ! Replace -dU/dphi/sin(phi) by its analytic limit near 0 and pi.
+      sin_phi = sin(phi)
+      if ( abs(sin_phi) .lt. dihedral_sin_threshold ) then
+        if ( scp .lt. 0.0_8 ) then
+          cos_phi_limit = -1.0_8
+        else
+          cos_phi_limit = 1.0_8
+        end if
+        dv = qfktor(ic)*qrmult(ic)**2*gamma*EQ(istate)%lambda*cos(arg)/cos_phi_limit
+      else
+        dv = -dv/sin_phi
+      end if
+      di(1) = rnk(1)/(bj*bk) - scp*rnj(1)/bj**2
+      di(2) = rnk(2)/(bj*bk) - scp*rnj(2)/bj**2
+      di(3) = rnk(3)/(bj*bk) - scp*rnj(3)/bj**2
+      dl(1) = rnj(1)/(bj*bk) - scp*rnk(1)/bk**2
+      dl(2) = rnj(2)/(bj*bk) - scp*rnk(2)/bk**2
+      dl(3) = rnj(3)/(bj*bk) - scp*rnk(3)/bk**2
 
       rki(1) =  rji(1) - rjk(1)
       rki(2) =  rji(2) - rjk(2)
@@ -14445,10 +17226,7 @@ end function randm
 integer function shake(xx, x)
 !!-------------------------------------------------------------------------------
 !! function: **shake**
-!! This is the main SHAKE algorithm. Uncertain where it came from.
-!! Citation needed here.
-!! Could it be that it's QSHAKE, that is, holonomic constraints SHAKE,
-!! so-called QSHAKE? Improbable.
+!! Molecular SHAKE position constraints with full-sweep convergence checks.
 !!
 !! The original reference for SHAKE is:
 !! Ryckaert, J-P; Ciccotti G; Berendsen HJC (1977). "Numerical Integration
@@ -14456,114 +17234,167 @@ integer function shake(xx, x)
 !! Dynamics of n-Alkanes". Journal of Computational Physics. 23 (3): 327–341.
 !! Bibcode:1977JCoPh..23..327R. doi:10.1016/0021-9991(77)90098-5
 !!
-!! When looking at the code and comparing it to the MOLARIS subroutine
-!! shake_bond one can see that they're practically the same.
-!!
-!! shake tolerance is hard-fixed on compilation number. should be changed to
-!! an option with a default value.
-!!
-!! SHAKE_TOL = 0.0001
+!! Constraints are corrected along their reference bond directions. A complete
+!! post-correction sweep verifies that all coupled bonds satisfy SHAKE_TOL =
+!! 0.0001 simultaneously before the molecule is accepted.
 !!
 !! SHAKE is not parallelized in Q, to do so check-out the next reference.
 !! SHAKE parallelization.
 !! Eur Phys J Spec Top. 2011 Nov 1;200(1):211-223.
 !! Elber R, Ruymgaart AP, Hess B.
 !!-------------------------------------------------------------------------------
-  !arguments
-  real(8)                          :: xx(:), x(:)
-  !returns no. of iterations
+  real(8), intent(in)             :: xx(:)
+  real(8), intent(inout)          :: x(:)
 
-  ! *** local variables
-  integer                          :: i,j,i3,j3,mol,ic,nits
-  real(8)                          :: xij2,diff,corr,scp,xxij2 ! scp = scalar product
-  real(8)                          :: xij(3),xxij(3)
-#if defined (PROFILING)
-  real(8)                          :: start_loop_time
-  start_loop_time = rtime()
-#endif
+  integer                         :: i, j, i3, j3, mol, ic, nits
+  real(8)                         :: xij2, diff, corr, scp, target2, inverse_mass_sum
+  real(8)                         :: xij(3), xxij(3)
+  logical                         :: corrected, converged
 
-  ! reset niter
   shake = 0
 
-  do mol=1,shake_molecules
-    ! for every molecule:
-    ! reset nits (iterations per molecule)
+  do mol = 1, shake_molecules
+    if (shake_mol(mol)%nconstraints == 0) cycle
     nits = 0
-    ! reset iready for every constraint
-    shake_mol(mol)%bond(:)%ready = .false.
-    do !iteration loop
-      do ic=1,shake_mol(mol)%nconstraints
-        ! for every constraint:
 
-        if (.not. shake_mol(mol)%bond(ic)%ready) then
-          ! repeat until done:
-
-          i = shake_mol(mol)%bond(ic)%i
-          j = shake_mol(mol)%bond(ic)%j
-          i3 = i*3-3
-          j3 = j*3-3
-          xij(1)  = x(i3+1) - x(j3+1)
-          xij(2)  = x(i3+2) - x(j3+2)
-          xij(3)  = x(i3+3) - x(j3+3)
-          xij2    = xij(1)**2+xij(2)**2+xij(3)**2
-          diff    = shake_mol(mol)%bond(ic)%dist2 - xij2
-          if(abs(diff) < shake_tol*shake_mol(mol)%bond(ic)%dist2) then
-            shake_mol(mol)%bond(ic)%ready = .true. ! in range
-          end if
-          xxij(1) = xx(i3+1) - xx(j3+1)
-          xxij(2) = xx(i3+2) - xx(j3+2)
-          xxij(3) = xx(i3+3) - xx(j3+3)
-          scp = xij(1)*xxij(1)+xij(2)*xxij(2)+xij(3)*xxij(3)
-          corr = diff/(2.*scp*(winv(i)+winv(j)))
-
-          x(i3+1) = x(i3+1)+xxij(1)*corr*winv(i)
-          x(i3+2) = x(i3+2)+xxij(2)*corr*winv(i)
-          x(i3+3) = x(i3+3)+xxij(3)*corr*winv(i)
-          x(j3+1) = x(j3+1)-xxij(1)*corr*winv(j)
-          x(j3+2) = x(j3+2)-xxij(2)*corr*winv(j)
-          x(j3+3) = x(j3+3)-xxij(3)*corr*winv(j)
+    do
+      corrected = .false.
+      do ic = 1, shake_mol(mol)%nconstraints
+        i = shake_mol(mol)%bond(ic)%i
+        j = shake_mol(mol)%bond(ic)%j
+        i3 = 3*i-3
+        j3 = 3*j-3
+        target2 = shake_mol(mol)%bond(ic)%dist2
+        inverse_mass_sum = dble(winv(i))+dble(winv(j))
+        if (.not. ieee_is_finite(target2) .or. target2 <= 0.0d0 .or. &
+            .not. ieee_is_finite(inverse_mass_sum) .or. inverse_mass_sum <= 0.0d0) then
+          call report_shake_failure('invalid target or inverse mass', mol, ic, nits, xx, x)
         end if
-      end do
+        xij = x(i3+1:i3+3)-x(j3+1:j3+3)
+        xij2 = dot_product(xij,xij)
+        diff = target2-xij2
 
+        if (.not. ieee_is_finite(xij2) .or. .not. ieee_is_finite(diff)) then
+          call report_shake_failure('non-finite candidate bond', mol, ic, nits, xx, x)
+        end if
+        if (abs(diff) < shake_tol*target2) cycle
+
+        xxij = xx(i3+1:i3+3)-xx(j3+1:j3+3)
+        scp = dot_product(xij,xxij)
+        if (.not. ieee_is_finite(scp) .or. &
+            scp <= shake_min_projection*target2) then
+          call report_shake_failure('invalid reference projection', mol, ic, nits, xx, x)
+        end if
+
+        corr = diff/(2.0d0*scp*inverse_mass_sum)
+        if (.not. ieee_is_finite(corr) .or. &
+            abs(corr*dble(winv(i))) > shake_max_correction_scale .or. &
+            abs(corr*dble(winv(j))) > shake_max_correction_scale) then
+          call report_shake_failure('invalid or excessive correction', mol, ic, nits, xx, x)
+        end if
+
+        x(i3+1:i3+3) = x(i3+1:i3+3)+xxij*corr*dble(winv(i))
+        x(j3+1:j3+3) = x(j3+1:j3+3)-xxij*corr*dble(winv(j))
+        corrected = .true.
+      end do
       nits = nits+1
 
-      ! see if every constraint is met
-      if(all(shake_mol(mol)%bond(1:shake_mol(mol)%nconstraints)%ready)) then
-        exit !from iteration loop
-      elseif(nits >= shake_max_iter) then
-        ! fail on too many iterations
-        do ic=1,shake_mol(mol)%nconstraints
-          if (.not. shake_mol(mol)%bond(ic)%ready) then
-            ! repeat until done:
+      ! If the sweep made no corrections, every constraint was already valid.
+      if (.not. corrected) exit
 
-            i = shake_mol(mol)%bond(ic)%i
-            j = shake_mol(mol)%bond(ic)%j
-            i3 = i*3-3
-            j3 = j*3-3
-            xxij(1) = xx(i3+1) - xx(j3+1)
-            xxij(2) = xx(i3+2) - xx(j3+2)
-            xxij(3) = xx(i3+3) - xx(j3+3)
-            xxij2   = xxij(1)**2+xxij(2)**2+xxij(3)**2
-            write (*,100) i,j,sqrt(xxij2),&
-              sqrt(shake_mol(mol)%bond(ic)%dist2)
+      ! Corrections to coupled bonds can invalidate an earlier constraint.
+      converged = .true.
+      do ic = 1, shake_mol(mol)%nconstraints
+        i = shake_mol(mol)%bond(ic)%i
+        j = shake_mol(mol)%bond(ic)%j
+        i3 = 3*i-3
+        j3 = 3*j-3
+        target2 = shake_mol(mol)%bond(ic)%dist2
+        xij = x(i3+1:i3+3)-x(j3+1:j3+3)
+        xij2 = dot_product(xij,xij)
+        if (.not. ieee_is_finite(xij2) .or. &
+            abs(target2-xij2) >= shake_tol*target2) then
+          converged = .false.
+          exit
+        end if
+      end do
+      if (converged) exit
+
+      if (nits >= shake_max_iter) then
+        do ic = 1, shake_mol(mol)%nconstraints
+          i = shake_mol(mol)%bond(ic)%i
+          j = shake_mol(mol)%bond(ic)%j
+          i3 = 3*i-3
+          j3 = 3*j-3
+          target2 = shake_mol(mol)%bond(ic)%dist2
+          xij = x(i3+1:i3+3)-x(j3+1:j3+3)
+          xij2 = dot_product(xij,xij)
+          if (.not. ieee_is_finite(xij2) .or. &
+              abs(target2-xij2) >= shake_tol*target2) then
+            call print_shake_constraint(mol, ic, nits, xx, x)
           end if
         end do
-        call die('shake failure')
+        call die('shake failure after maximum iterations')
       end if
-100   format ('>>> Shake failed, i,j,d,d0 = ',2i6,2f10.5)
     end do
 
-    ! update niter
     shake = shake+nits
   end do
 
-  ! set niter to the average number of iterations per molecule
-  shake=shake/nmol
-#if defined (PROFILING)
-  profile(7)%time = profile(7)%time + rtime() - start_loop_time
-#endif
-
+  if (shake_molecules > 0) shake = shake/shake_molecules
 end function shake
+
+
+subroutine report_shake_failure(reason, molecule, constraint, iteration, xx, x)
+  character(*), intent(in) :: reason
+  integer, intent(in) :: molecule, constraint, iteration
+  real(8), intent(in) :: xx(:), x(:)
+
+  write(*,'(a,a)') '>>> Shake failed: ', trim(reason)
+  call print_shake_constraint(molecule, constraint, iteration, xx, x)
+  call die('shake failure')
+end subroutine report_shake_failure
+
+
+subroutine print_shake_constraint(molecule, constraint, iteration, xx, x)
+  integer, intent(in) :: molecule, constraint, iteration
+  real(8), intent(in) :: xx(:), x(:)
+
+  integer :: i, j, i3, j3
+  real(8) :: current_vector(3), reference_vector(3)
+  real(8) :: current2, reference2, target2, projection
+  real(8) :: current_length, reference_length, relative_error
+
+  i = shake_mol(molecule)%bond(constraint)%i
+  j = shake_mol(molecule)%bond(constraint)%j
+  i3 = 3*i-3
+  j3 = 3*j-3
+  current_vector = x(i3+1:i3+3)-x(j3+1:j3+3)
+  reference_vector = xx(i3+1:i3+3)-xx(j3+1:j3+3)
+  current2 = dot_product(current_vector,current_vector)
+  reference2 = dot_product(reference_vector,reference_vector)
+  target2 = shake_mol(molecule)%bond(constraint)%dist2
+  projection = dot_product(current_vector,reference_vector)
+  if (ieee_is_finite(current2)) then
+    current_length = sqrt(max(0.0d0,current2))
+    relative_error = abs(current2-target2)/target2
+  else
+    current_length = current2
+    relative_error = current2
+  end if
+  if (ieee_is_finite(reference2)) then
+    reference_length = sqrt(max(0.0d0,reference2))
+  else
+    reference_length = reference2
+  end if
+
+  write(*,100) istep, molecule, iteration, i, j, current_length, &
+               reference_length, sqrt(target2), relative_error, projection
+100 format('>>> Shake failed: step=',i8,', molecule=',i8,', iteration=',i5, &
+           ', atoms=',i8,1x,i8,', current=',es12.4,', reference=',es12.4, &
+           ', target=',es12.4,', squared-relative-error=',es12.4, &
+           ', projection=',es12.4)
+end subroutine print_shake_constraint
 
 
 subroutine shrink_topology
@@ -14796,7 +17627,7 @@ real(8) function torsion(istart, iend)
 
   ! local variables
   integer                                         ::      ip
-  real(8)                                         ::      scp,phi,dv,arg,f1
+  real(8)                                         ::      scp,phi,dv,arg,sin_phi,force_per_cos,cos_phi_limit
   real(8)                                         ::      bjinv, bkinv, bj2inv, bk2inv
   real(8), save                                   ::      rji(3),rjk(3),rkl(3),rnj(3),rnk(3)
   real(8), save                                   ::      rki(3),rlj(3),dp(12),di(3),dl(3)
@@ -14855,20 +17686,28 @@ real(8) function torsion(istart, iend)
 
     ! ---       energy
     arg = lib%rmult*phi-lib%deltor
-    torsion = torsion + lib%fk*(1.0+cos(arg))*lib%paths   !lib%paths is previously inverted 
+    torsion = torsion + lib%fk*(1.0+cos(arg))*lib%paths   !lib%paths is previously inverted
     dv = -lib%rmult*lib%fk*sin(arg)*lib%paths
 
     ! ---       forces
-
-    f1 = sin ( phi ) 
-    if ( abs(f1) .lt. 1.e-12 ) f1 = 1.e-12
-    f1 =  -1.0 / f1
-    di(1) = f1 * ( rnk(1)*(bjinv*bkinv) - scp*rnj(1)*bj2inv )
-    di(2) = f1 * ( rnk(2)*(bjinv*bkinv) - scp*rnj(2)*bj2inv )
-    di(3) = f1 * ( rnk(3)*(bjinv*bkinv) - scp*rnj(3)*bj2inv )
-    dl(1) = f1 * ( rnj(1)*(bjinv*bkinv) - scp*rnk(1)*bk2inv )
-    dl(2) = f1 * ( rnj(2)*(bjinv*bkinv) - scp*rnk(2)*bk2inv )
-    dl(3) = f1 * ( rnj(3)*(bjinv*bkinv) - scp*rnk(3)*bk2inv )
+    ! Use the analytic limit of -dU/dphi/sin(phi) at 0 and pi.
+    sin_phi = sin(phi)
+    if ( abs(sin_phi) .lt. dihedral_sin_threshold ) then
+      if ( scp .lt. 0.0_8 ) then
+        cos_phi_limit = -1.0_8
+      else
+        cos_phi_limit = 1.0_8
+      end if
+      force_per_cos = lib%fk*lib%rmult**2*lib%paths*cos(arg)/cos_phi_limit
+    else
+      force_per_cos = -dv/sin_phi
+    end if
+    di(1) = rnk(1)*(bjinv*bkinv) - scp*rnj(1)*bj2inv
+    di(2) = rnk(2)*(bjinv*bkinv) - scp*rnj(2)*bj2inv
+    di(3) = rnk(3)*(bjinv*bkinv) - scp*rnj(3)*bj2inv
+    dl(1) = rnj(1)*(bjinv*bkinv) - scp*rnk(1)*bk2inv
+    dl(2) = rnj(2)*(bjinv*bkinv) - scp*rnk(2)*bk2inv
+    dl(3) = rnj(3)*(bjinv*bkinv) - scp*rnk(3)*bk2inv
 
     rki(1) =  rji(1) - rjk(1)
     rki(2) =  rji(2) - rjk(2)
@@ -14890,18 +17729,18 @@ real(8) function torsion(istart, iend)
     dp(11) = rjk(3)*dl(1) - rjk(1)*dl(3)
     dp(12) = rjk(1)*dl(2) - rjk(2)*dl(1)
 
-    d(t%i*3-2) = d(t%i*3-2) + dv*dp(1)
-    d(t%i*3-1) = d(t%i*3-1) + dv*dp(2)
-    d(t%i*3-0) = d(t%i*3-0) + dv*dp(3)
-    d(t%j*3-2) = d(t%j*3-2) + dv*dp(4)
-    d(t%j*3-1) = d(t%j*3-1) + dv*dp(5)
-    d(t%j*3-0) = d(t%j*3-0) + dv*dp(6)
-    d(t%k*3-2) = d(t%k*3-2) + dv*dp(7)
-    d(t%k*3-1) = d(t%k*3-1) + dv*dp(8)
-    d(t%k*3-0) = d(t%k*3-0) + dv*dp(9)
-    d(t%l*3-2) = d(t%l*3-2) + dv*dp(10)
-    d(t%l*3-1) = d(t%l*3-1) + dv*dp(11)
-    d(t%l*3-0) = d(t%l*3-0) + dv*dp(12)
+    d(t%i*3-2) = d(t%i*3-2) + force_per_cos*dp(1)
+    d(t%i*3-1) = d(t%i*3-1) + force_per_cos*dp(2)
+    d(t%i*3-0) = d(t%i*3-0) + force_per_cos*dp(3)
+    d(t%j*3-2) = d(t%j*3-2) + force_per_cos*dp(4)
+    d(t%j*3-1) = d(t%j*3-1) + force_per_cos*dp(5)
+    d(t%j*3-0) = d(t%j*3-0) + force_per_cos*dp(6)
+    d(t%k*3-2) = d(t%k*3-2) + force_per_cos*dp(7)
+    d(t%k*3-1) = d(t%k*3-1) + force_per_cos*dp(8)
+    d(t%k*3-0) = d(t%k*3-0) + force_per_cos*dp(9)
+    d(t%l*3-2) = d(t%l*3-2) + force_per_cos*dp(10)
+    d(t%l*3-1) = d(t%l*3-1) + force_per_cos*dp(11)
+    d(t%l*3-0) = d(t%l*3-0) + force_per_cos*dp(12)
   end do
 
 end function torsion
@@ -15292,6 +18131,14 @@ end subroutine watpol
 subroutine write_out
    ! local variables
   integer                                 ::      i,istate
+  ! NEQ: the lambda shown in the summary tracks the switch progress; equilibrium runs
+  ! display the fixed EQ%lambda. Held in a local so this reporter never mutates EQ.
+  real(8)                                 :: disp_lambda(nstates)
+
+  if(nstates > 0) then
+    disp_lambda(:) = EQ(:)%lambda
+    if (.not. equilibrium_simulation) call schedule_lambda(istep, EQ(1)%lambda, disp_lambda)
+  end if
 
   ! header line
   if(istep >= nsteps) then
@@ -15354,32 +18201,32 @@ subroutine write_out
     write(*,26) 'el', 'vdW' ,'bond', 'angle', 'torsion', 'improper'
 
     do istate =1, nstates
-      write (*,32) 'Q-Q', istate, EQ(istate)%lambda, EQ(istate)%qq%el, EQ(istate)%qq%vdw
+      write (*,32) 'Q-Q', istate, disp_lambda(istate), EQ(istate)%qq%el, EQ(istate)%qq%vdw
     end do
     write(*,*)
     if(nat_solute > nqat) then !only if there is something else than Q-atoms in topology
       do istate =1, nstates
-        write (*,32) 'Q-prot', istate,EQ(istate)%lambda, EQ(istate)%qp%el, EQ(istate)%qp%vdw
+        write (*,32) 'Q-prot', istate,disp_lambda(istate), EQ(istate)%qp%el, EQ(istate)%qp%vdw
       end do
       write(*,*)
     end if
 
     if(nwat > 0) then
       do istate =1, nstates
-        write (*,32) 'Q-wat', istate, EQ(istate)%lambda, EQ(istate)%qw%el, EQ(istate)%qw%vdw
+        write (*,32) 'Q-wat', istate, disp_lambda(istate), EQ(istate)%qw%el, EQ(istate)%qw%vdw
       end do
       write(*,*)
     end if
 
     do istate =1, nstates
-      write (*,32) 'Q-surr.',istate, EQ(istate)%lambda, &
+      write (*,32) 'Q-surr.',istate, disp_lambda(istate), &
         EQ(istate)%qp%el + EQ(istate)%qw%el, EQ(istate)%qp%vdw &
         + EQ(istate)%qw%vdw
     end do
     write(*,*)
 
     do istate = 1, nstates
-      write (*,36) 'Q-any', istate, EQ(istate)%lambda, EQ(istate)%qx%el,&
+      write (*,36) 'Q-any', istate, disp_lambda(istate), EQ(istate)%qx%el,&
         EQ(istate)%qx%vdw, EQ(istate)%q%bond, EQ(istate)%q%angle,&
         EQ(istate)%q%torsion, EQ(istate)%q%improper
     end do
@@ -15387,7 +18234,7 @@ subroutine write_out
 
     write(*,22) 'total', 'restraint'
     do istate = 1, nstates
-      write (*,32) 'Q-SUM', istate, EQ(istate)%lambda,&
+      write (*,32) 'Q-SUM', istate, disp_lambda(istate),&
         EQ(istate)%total, EQ(istate)%restraint
     end do
     do i=1,noffd
@@ -15435,6 +18282,12 @@ subroutine write_out
 46 format(16X, 3A10)
 47 format(A,T17, 2i10, f10.3)
 
+  ! NEQ: report the accumulated work (not present on equilibrium runs)
+  if (.not. equilibrium_simulation) then
+    write(*,'(A,I0,A,E24.16,A,E24.16,E24.16)') 'At step ', istep, &
+      ', work accumulated was ', work_accumulated, &
+      ' and dU and dlambda were ', dU_dlambda, dlambda
+  end if
 end subroutine write_out
 
 !-----------------------------------------------------------------------

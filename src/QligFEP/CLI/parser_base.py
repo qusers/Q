@@ -34,7 +34,7 @@ def parse_arguments(program: str) -> argparse.Namespace:
         help=(
             "Protein forcefield to be used. Valid inputs: existing path to a forcefield file without the extensions"
             "(either .lib, .prm, or Path without the extensions will work) or one of the following: "
-            "OPLS2005, OPLS2015, AMBER14sb, CHARMM36. Defaults to AMBER14sb."
+            "OPLS2005, OPLS2015, OPLSAAM, AMBER14sb, CHARMM36. Defaults to AMBER14sb."
         ),
     )
     if program == "QligFEP":
@@ -146,15 +146,31 @@ def parse_arguments(program: str) -> argparse.Namespace:
         help="Simulation timestep, default 2fs",
     )
     parser.add_argument(
+        "--minimize",
+        action="store_true",
+        help="Run FIRE energy minimization before the first equilibration stage. Disabled by default.",
+    )
+    parser.add_argument(
+        "--production",
+        action="store_true",
+        help=(
+            "Minimize equilibrium FEP output: disable trajectory files and, unless --clean is "
+            "specified, remove .en, .re, and dualtop.top files after qfep has produced "
+            "energies.csv and qfep.out."
+        ),
+    )
+    parser.add_argument(
         "-clean",
+        "--clean",
         "--files-to-clean",
         dest="to_clean",
         nargs="+",
-        default="",
+        default=None,
         help=(
-            "Files to clean after the simulation. The arguments are given as a list of strings "
-            "and the cleaning is done by adding the command `rm -rf *{arg1} *{arg2}` to the job submission. "
-            "Usage example: `-clean dcd` will remove all dcd files after the simulation. If left as None, won't clean any files."
+            "File suffixes to remove after a successful simulation and qfep run. "
+            "Usage example: `--clean en dualtop.top` removes *en and *dualtop.top. "
+            "When explicitly supplied with --production, this list replaces the production "
+            "defaults, allowing other files (for example .re files) to be retained."
         ),
     )
     parser.add_argument(
@@ -228,6 +244,119 @@ def parse_arguments(program: str) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "-neq",
+        "--neq",
+        dest="neq",
+        action="store_true",
+        help=(
+            "Set up a non-equilibrium (NEQ) FEP instead of the windowed equilibrium approach. "
+            "Instead of many fixed-lambda windows, NEQ runs the serial `qdyn` engine (fast-switching "
+            "mode) to drive lambda "
+            "from one endpoint to the other over a single simulation, accumulating the switching "
+            "work. Free energies are obtained from BAR over the forward/reverse work distributions "
+            "(see `qligfep_neq_analyze`). When set, the windowed parameters `--windows` and "
+            "`--sampling` are not used."
+        ),
+    )
+    parser.add_argument(
+        "-neqr",
+        "--neq-reps",
+        dest="neq_reps",
+        type=int,
+        default=5,
+        help=(
+            "NEQ only: number of forward/reverse switching pairs run per replicate. Each replicate "
+            "keeps a continuous endpoint equilibration and fires a forward and reverse switch from "
+            "successive snapshots to decorrelate the work samples. Defaults to 5."
+        ),
+    )
+    parser.add_argument(
+        "-neqs",
+        "--neq-steps",
+        dest="neq_steps",
+        type=int,
+        default=50000,
+        help=(
+            "NEQ only: length of each lambda-switching simulation in MD steps. Recommended >16000. "
+            "Defaults to 50000."
+        ),
+    )
+    parser.add_argument(
+        "-neqes",
+        "--neq-eq-steps",
+        dest="neq_eq_steps",
+        type=int,
+        default=1000,
+        help=(
+            "NEQ only: number of endpoint equilibration steps between successive switches "
+            "(spacing). Recommended >250. Defaults to 1000."
+        ),
+    )
+    parser.add_argument(
+        "-neqrs",
+        "--neq-relax-steps",
+        dest="neq_relax_steps",
+        type=int,
+        default=5000,
+        help=(
+            "NEQ only: length (MD steps) of the one-time endpoint relaxation run at lambda=0 "
+            "and lambda=1 before the first switch, to settle the nearly-decoupled ligand at each "
+            "endpoint. Applied to the first switching iteration; later iterations use the shorter "
+            "--neq-eq-steps (tEQ) spacing. ~10 ps at 2 fs. Defaults to 5000."
+        ),
+    )
+    parser.add_argument(
+        "-L",
+        "--neq-steepness",
+        dest="neq_L",
+        type=float,
+        default=8.0,
+        help=(
+            "NEQ only: steepness `L` of the sigmoidal lambda schedule l(t) = 1/[1+e^(L(t-0.5))]. "
+            "Higher L spends more time near lambda=0 and lambda=1; lower L approaches a linear "
+            "schedule. Recommended between 4 and 16. Defaults to 8. Ignored when "
+            "`--neq-schedule linear` is used."
+        ),
+    )
+    parser.add_argument(
+        "-neqsched",
+        "--neq-schedule",
+        dest="neq_schedule",
+        default="sigmoidal",
+        choices=["sigmoidal", "linear"],
+        help="NEQ only: lambda switching schedule. Defaults to `sigmoidal`.",
+    )
+    parser.add_argument(
+        "-sc",
+        "--softcore-method",
+        dest="softcore_method",
+        type=str,
+        default="standard",
+        choices=["standard", "beutler_coul", "gapsys"],
+        help=(
+            "Soft-core method for nonbonded interactions during FEP. "
+            "'standard' applies soft-core only to LJ (current default). "
+            "'beutler_coul' extends soft-core to Coulomb via a modified effective distance. "
+            "'gapsys' uses force-based linearization below a critical radius for both LJ and Coulomb."
+        ),
+    )
+    parser.add_argument(
+        "-cm",
+        "--charge-method",
+        dest="charge_method",
+        type=str,
+        default="ion_match",
+        choices=["none", "ion_match", "coalchemical_water"],
+        help=(
+            "Strategy for handling FEP edges that change the ligand net charge. "
+            "'ion_match' (default) adds Cl-/Na+ counter-ions to the water leg so its total "
+            "charge matches the protein leg. "
+            "'coalchemical_water' turns a real water in the water leg into a co-alchemical Na+/Cl- "
+            "(O <-> ion, H <-> DUM). "
+            "'none' disables all neutralization (raw ddG retains the Born artifact)."
+        ),
+    )
+    parser.add_argument(
         "-log",
         "--log-level",
         dest="log",
@@ -236,4 +365,16 @@ def parse_arguments(program: str) -> argparse.Namespace:
         help="Set the log level for the logger. Defaults to `info`.",
         choices=["trace", "debug", "info", "warning", "error", "critical"],
     )
+    if program == "QligFEP":
+        parser.add_argument(
+            "-pq",
+            "--protein_charge",
+            dest="protein_charge",
+            type=int,
+            default=None,
+            help=(
+                "Total charge from the protein leg's qprep output. Used by setupFEP to pass "
+                "the protein system charge so the water leg can match it with counter-ions."
+            ),
+        )
     return parser.parse_args()

@@ -10,7 +10,14 @@ readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 # keywords = [""]
-authors = [{ name = "Willem Jespers", email = "w.jespers@lacdr.leidenuniv.nl" }]
+authors = [{ name = "Willem Jespers", email = "w.jespers@rug.nl" },
+           { name = "Chiel Jespers", email = "m.jespers@lacdr.leidenuniv.nl" },
+           { name = "David Araripe", email = "david.araripe@rug.nl" },
+           { name = "Shen Guo", email = "g.shen@rug.nl" },
+           { name = "Mauricio Esguerra" },
+           { name = "Johan Åqvist" },
+           { name = "Hugo Gutiérrez de Terán" }
+]
 # maintainers = [{ name = "", email = "" }] # TODO
 classifiers = [
     "License :: OSI Approved :: GNU General Public License v2 (GPLv2)",
@@ -25,12 +32,19 @@ dependencies = [
     "tqdm",
     "py3Dmol",
     "numpy",
+    "pandas",
     "matplotlib",
     "rdkit",
     "scikit-learn",
     "loguru",
-    "cinnabar",
-    "MolClusterkit @ git+https://github.com/David-Araripe/MolClusterkit.git#master",
+    "MDAnalysis>=2.0.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-timeout>=2.0",
 ]
 
 [tool.setuptools]
@@ -38,7 +52,10 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["QligFEP", "Qgpu"]
+include = ["QligFEP", "Qgpu", "q6"]
+
+[tool.setuptools.package-data]
+q6 = ["bin/q6/*", "**/*.f90"]
 
 [tool.setuptools.dynamic]
 version = {attr = "QligFEP.__version__"}
@@ -86,14 +103,33 @@ ignore = [
     "E501" # line too long
 ]
 
+[tool.pytest.ini_options]
+testpaths = ["test"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "tutorial: marks tests that run tutorial workflow steps",
+    "golden: marks golden file regression tests",
+    "fep_setup: marks FEP setup specific tests",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    # third-party (gufe/pydantic) deprecation surfaced when importing the package
+    "ignore:.*pydantic.config.Extra.*:DeprecationWarning",
+]
+
 [project.scripts]
-qligfep = "QligFEP.CLI.qligfep_cli:main_exe"
-qmapfep = "QligFEP.CLI.qmapfep_cli:main_exe"
-setupFEP = "QligFEP.CLI.setupFEP:main_exe"
+qcog = "QligFEP.CLI.cog_cli:main_exe"
+pdb2amber = "QligFEP.CLI.pdb_to_amber:main_exe"
+qprep_prot = "QligFEP.CLI.qprep_cli:main_exe"
 qparams = "QligFEP.CLI.qparams_cli:main_exe"
 qlomap = "QligFEP.CLI.lomap_wrap_cli:main_exe"
-pdb2amber = "QligFEP.CLI.pdb_to_amber:main_exe"
+qkonnektor = "QligFEP.CLI.konnektor_cli:main_exe"
+qmapfep = "QligFEP.CLI.qmapfep_cli:main_exe"
+qligfep = "QligFEP.CLI.qligfep_cli:main_exe"
+qresfep = "QligFEP.CLI.qresfep_cli:main_exe"
+setupFEP = "QligFEP.CLI.setupFEP:main_exe"
+setup_resFEP = "QligFEP.CLI.setup_resfep_cli:main_exe"
 qligfep_analyze = "QligFEP.analyze_FEP:main_exe"
-qprep_prot = "QligFEP.CLI.qprep_cli:main_exe"
-qcog = "QligFEP.CLI.cog_cli:main_exe"
-ligalign = "QligFEP.CLI.lig_align_cli:main_exe"
+qresfep_analyze = "QligFEP.analyze_resfep:main_exe"
+qligfep_neq_analyze = "QligFEP.analyze_neq:main_exe"

@@ -17,7 +17,7 @@ program qfep
 !!  Copyright (c) 2017 Johan Aqvist, John Marelius, Shina Caroline Lynn Kamerlin  
 !!  and Paul Bauer  
 !!!-------------------------------------------------------------------------------  
-  use iso_fortran_env, only : compiler_version, compiler_options
+  use iso_fortran_env, only : compiler_version, compiler_options, output_unit
   
   use nrgy
   use parse
@@ -34,9 +34,11 @@ program qfep
   integer,parameter :: mxbin = 600
   integer,parameter :: mxstates = 4
   character(80)     :: filnam, line
+  character(*), parameter :: energy_csv_file = 'energies.csv'
   integer           :: i,j,ifile,ipt,istate,ibin,nfiles,nstates,ERR, &
                        nskip,nbins,nmin,idum,noffd,nnoffd,offel,ngroups, &
-                       iexclg,igrp,mpts,iexclgn,astate,bstate
+                       iexclg,igrp,mpts,iexclgn,astate,bstate, &
+                       csv_unit,csv_status,bar_iter,bar_maxiter
 
   type(offdiag_save), dimension(mxstates) :: offd
 
@@ -91,6 +93,7 @@ program qfep
 1 format('# Number of files                                  =',i6)
   call prompt ('--> No. of states, no. of predefined off-diag elements: ')
   read (*,*) nstates, noffd
+  nnoffd = noffd
   write (*,2) nstates, noffd
 
 2 format('# Number of states     =',i6,/, &
@@ -199,9 +202,24 @@ program qfep
 
   gapmin=999.
   gapmax=-999.
-  f = freefile()
   FEPtmp%c1(:) = 0.
   FEPtmp%c2(:) = 0.
+
+  ! Consolidate every parsed native energy record before any free-energy
+  ! calculation. If a later estimator stalls or fails, this CSV is already
+  ! complete and closed, so the many binary inputs can still be archived.
+  csv_unit = freefile()
+  open(unit=csv_unit, file=energy_csv_file, status='replace', action='write', &
+       iostat=csv_status)
+  if(csv_status /= 0) then
+    stop 'qfep terminated abnormally: Failed to open energies.csv.'
+  end if
+  ! Match QGPU's compact [q-energies] summary while adding source and frame
+  ! identifiers so every qfep input can live in this one table.
+  write(csv_unit,'(a)') 'source_file,file_index,frame,state,lambda,SUM,' // &
+       'Ubond,Uangle,Utor,Uimp,Ucoul,Uvdw,Urestr'
+
+  f = freefile()
 
   write(*,*)
   write(*,*)
@@ -250,6 +268,9 @@ program qfep
     FEPtmp%gap(:) = 0.
     do while(get_ene(f, EQ(:), offd, nstates, nnoffd) == 0) !keep reading till EOF
       ipt = ipt + 1
+      do istate=1,nstates
+        call write_energy_csv_state(csv_unit, filnam, ifile, ipt, istate, EQ(istate))
+      end do
 !   masoud
 !if the gas flag is > 0 then total energy will be just q (bonded), qq(nonbonded) and restraint
       if (gas .gt. 0 ) then
@@ -385,6 +406,13 @@ program qfep
 17   format(a,t23,i2,1x,i6,1x,f8.6,14f8.2)
   end do  !ifile
 
+  close(csv_unit, iostat=csv_status)
+  if(csv_status /= 0) then
+    stop 'qfep terminated abnormally: Failed to finalize energies.csv.'
+  end if
+  write(*,'(a,a)') '# Consolidated energy CSV written before free-energy calculations: ', &
+       energy_csv_file
+  flush(output_unit)
 
 
   !the following is meaningless for a single file
@@ -529,11 +557,13 @@ program qfep
      dv=0.
      konst=0
      fel=1
+     bar_maxiter=10000
      do ifile=1,nfiles-1
         konst=dglu(ifile)
         !print *, 'constant for the bennett formula initial', dglu(ifile)
         felcutoff = 0.001
-        do while (fel > felcutoff)
+        bar_iter=0
+        do while (fel > felcutoff .and. bar_iter < bar_maxiter)
            nfnr=real(FEP(ifile)%npts-nskip)/real(FEP(ifile+1)%npts-nskip)
            nrnf=real(FEP(ifile+1)%npts-nskip)/real(FEP(ifile)%npts-nskip)
            !print *, 'optimization cutoff begin', 0.001
@@ -569,8 +599,12 @@ program qfep
            sum=0.
            fel=abs(konst-dgbar(ifile))
            konst=dgbar(ifile)
+           bar_iter=bar_iter+1
            !print *, 'optimization cutoff end', ifile, fel
         end do
+        if (bar_iter >= bar_maxiter) write(*,'(a,i5,a,i7,a,e10.3)') &
+             '# WARNING: BAR did not converge at window ',ifile, &
+             ' after ',bar_maxiter,' iterations; last |delta|=',fel
 
         !print *, 'constant for the bennett formula end', dglu(ifile)
         dgbarsum(ifile+1)=dgbarsum(ifile)+dgbar(ifile)
@@ -777,6 +811,59 @@ program qfep
 
 
 contains
+
+
+subroutine append_csv_field(line, value)
+  character(len=*), intent(inout) :: line
+  character(len=*), intent(in)    :: value
+
+  line = trim(line) // ',' // trim(adjustl(value))
+end subroutine append_csv_field
+
+
+subroutine append_csv_integer(line, value)
+  character(len=*), intent(inout) :: line
+  integer, intent(in)             :: value
+  character(32)                   :: field
+
+  write(field,'(i0)') value
+  call append_csv_field(line, field)
+end subroutine append_csv_integer
+
+
+subroutine append_csv_real(line, value)
+  character(len=*), intent(inout) :: line
+  real(8), intent(in)             :: value
+  character(32)                   :: field
+
+  ! Match QGPU's fixed-point CSV precision. Six decimal places remain much
+  ! more precise than qfep's final free-energy summaries while saving space.
+  write(field,'(f0.6)') value
+  call append_csv_field(line, field)
+end subroutine append_csv_real
+
+
+subroutine write_energy_csv_state(unit, filename, file_index, frame, state, energy)
+  integer, intent(in)                  :: unit, file_index, frame, state
+  character(len=*), intent(in)         :: filename
+  type(q_energies), intent(in)         :: energy
+  character(4096)                      :: csv_line
+
+  csv_line = '"' // trim(filename) // '"'
+  call append_csv_integer(csv_line, file_index)
+  call append_csv_integer(csv_line, frame)
+  call append_csv_integer(csv_line, state)
+  call append_csv_real(csv_line, energy%lambda)
+  call append_csv_real(csv_line, energy%total)
+  call append_csv_real(csv_line, energy%q%bond)
+  call append_csv_real(csv_line, energy%q%angle)
+  call append_csv_real(csv_line, energy%q%torsion)
+  call append_csv_real(csv_line, energy%q%improper)
+  call append_csv_real(csv_line, energy%qx%el)
+  call append_csv_real(csv_line, energy%qx%vdw)
+  call append_csv_real(csv_line, energy%restraint)
+  write(unit,'(a)') trim(csv_line)
+end subroutine write_energy_csv_state
 
 
 subroutine startup

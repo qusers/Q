@@ -1,0 +1,2 @@
+# Tutorial notebooks are part of the documentation and should not affect repository language statistics.
+tutorials/**/*.ipynb linguist-documentation
