@@ -7,3 +7,4 @@ body { line-height: 1.62; }
 .content table { width: 100%; }
 .content code { overflow-wrap: anywhere; }
 .sidebar-brand-text { font-weight: 700; }
+.sidebar-logo { max-width: 75%; }
