@@ -69,7 +69,8 @@ class FortranEngine(Engine):
         self._workdir = Path(workdir).expanduser().resolve()
         self._workdir.mkdir(parents=True, exist_ok=True)
 
-        self._topology = self._link(config.topology, "topology.top")
+        # under its own name: qdyn writes the topology file name into trajectory headers
+        self._topology = self._link(config.topology, Path(config.topology).name)
         self._fep = self._link(config.fep, "fep.fep") if config.fep else ""
         self._restart = self._link(config.restart, "start.re") if config.restart else ""
         self._n_atoms = _topology_atoms(Path(_abs(config.topology)))

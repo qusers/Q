@@ -105,12 +105,16 @@ lrf on
 [intervals]
 output 50
 energy 10
+trajectory 50
 [files]
 topology top.top
 fep fep.fep
 restart eq2.re
 final md.re
 energy md.en
+trajectory md.dcd
+[trajectory_atoms]
+not excluded
 [lambdas]
 0.5 0.5
 [distance_restraints]
@@ -136,18 +140,21 @@ def test_matches_inp_files(tmp_path, launch):
     qdyn, prefix = launch
     reference = run_by_hand(tmp_path / "by_hand", launch)
 
-    engine = FortranEngine(base_config(), qdyn=qdyn, mpi=prefix, workdir=tmp_path / "api")
+    engine = FortranEngine(base_config(topology=reference / "top.top"), qdyn=qdyn, mpi=prefix,
+                           workdir=tmp_path / "api")
     engine.run()
     engine.update_config(steps=150, stepsize=1.0, temperature=300, bath_coupling=10, constrain_hydrogens=True,
                          seq_restraints=(), dist_restraints=(DistRestraint(1, 4, 2.0, 3.0, 0.5),))
     engine.run()
     engine.update_config(steps=100, lambdas=(0.5, 0.5), energy=10, energy_file=tmp_path / "out" / "md.en",
-                         final_file=tmp_path / "out" / "md.re")
+                         final_file=tmp_path / "out" / "md.re",
+                         trajectory=50, trajectory_file=tmp_path / "out" / "md.dcd", trajectory_atoms="not excluded")
     engine.run()
 
     assert engine.n_atoms == 3420
     assert (tmp_path / "out" / "md.re").read_bytes() == (reference / "md.re").read_bytes()
     assert (tmp_path / "out" / "md.en").read_bytes() == (reference / "md.en").read_bytes()
+    assert (tmp_path / "out" / "md.dcd").read_bytes() == (reference / "md.dcd").read_bytes()
 
 
 # What the C++ parser fills in for the settings base_config() leaves out (inp_parser.cpp).
