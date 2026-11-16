@@ -1792,6 +1792,16 @@ subroutine get_fep
       call die('failure to load Q-atoms from FEP file.')
     end if
 
+    ! The FEP file sets nstates, but EQ was sized from the [lambdas] of the input
+    ! file: with a different count, states would read lambdas outside the array.
+    if(allocated(EQ)) then
+      if(size(EQ) /= nstates) then
+        write(*,'(a,i0,a,i0,a)') '>>> ERROR: ', size(EQ), &
+          ' lambda value(s) in the input file, but the FEP file has ', nstates, ' state(s).'
+        call die('number of lambda values does not match the FEP states.')
+      end if
+    end if
+
     ! set flags
     do i=1,nqat
       if(iqseq(i) > 0 .and. iqseq(i) <= nat_solute)  then
