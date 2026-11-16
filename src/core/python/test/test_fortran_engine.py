@@ -288,3 +288,51 @@ def test_errors(tmp_path):
     assert np.array_equal(engine.get_state()["coords"], before["coords"])
     engine.update_config(temperature=1)              # still usable, at the state before the failure
     engine.run()
+
+
+def test_extra_keywords(tmp_path, capsys):
+    """Keywords without a Config field reach qdyn through Config.extra and can change between runs."""
+    if not QDYN.is_file():
+        pytest.skip(f"{QDYN} is not built")
+    with pytest.raises(InputError, match="own Config field"):
+        base_config(extra={"MD": {"steps": 5}})
+    with pytest.raises(InputError, match="own Config field"):
+        base_config(extra={"solvent": {"polarization": True}})
+
+    config = base_config(steps=10, extra={"MD": {"excluded_thermostat": "bogus"}})
+    assert config.extra == {"md": {"excluded_thermostat": "bogus"}}
+    engine = FortranEngine(config, qdyn=QDYN, workdir=tmp_path, keep_files=True)
+    with pytest.raises(InputError):
+        engine.run()                                  # qdyn read the keyword and refused its value
+    assert "excluded_thermostat must be" in capsys.readouterr().out
+    engine.update_config(extra={"md": {"excluded_thermostat": "none"}, "PBC": {}})
+    engine.run()
+    assert "excluded_thermostat" in (tmp_path / "run_0001.inp").read_text()
+    engine.update_config(extra={})
+    engine.run()
+    assert "excluded_thermostat" not in (tmp_path / "run_0002.inp").read_text()
+
+
+def test_from_sections_and_lossless_inp(tmp_path):
+    """Config.from_sections() equals Config.from_inp() of the same content; unknown keys are kept."""
+    from qgpu.fortran import read_inp
+
+    (tmp_path / "a.inp").write_text(
+        "[MD]\nsteps 10\nstepsize 1.0\ntemperature 300\nminimize on\nshake_solvent on\n"
+        "constraint_algorithm lincs settle\n[PBC]\npressure 1.0\n[files]\ntopology t.top\nfinal a.re\n"
+        "[lambdas]\n0.5 0.5\n[trajectory_atoms]\nnot excluded\n[sequence_restraints]\n1 12 5.0 0 1\n")
+    values = read_inp(tmp_path / "a.inp")
+    assert values["extra"] == {"md": {"minimize": "on"}, "pbc": {"pressure": "1.0"}}
+    sections = {
+        "MD": {"steps": 10, "stepsize": 1.0, "temperature": 300, "minimize": True, "constrain_solvent": True,
+               "constraint_algorithm": "lincs settle"},
+        "PBC": {"pressure": 1.0}, "files": {"topology": "t.top", "final": "a.re"},
+        "lambdas": [0.5, 0.5], "trajectory_atoms": "not excluded", "sequence_restraints": [[1, 12, 5.0, 0, 1]],
+    }
+    from qgpu import _native
+    if not _native.is_any_available():
+        assert Config.from_sections(sections, folder=tmp_path) == Config.from_inp(tmp_path / "a.inp")
+    config = Config.from_sections(sections, folder=tmp_path, steps=20)
+    assert config.steps == 20 and config.extra["md"] == {"minimize": "on"}
+    assert config.seq_restraints == (SeqRestraint(1, 12, 5.0, False, 1),)
+    assert config.final_file == str(tmp_path.resolve() / "a.re")

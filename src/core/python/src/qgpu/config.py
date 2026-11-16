@@ -4,7 +4,7 @@
     config = replace(config, steps=1000)  # or engine.update_config(steps=1000)
 """
 
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 from . import _native
@@ -153,8 +153,15 @@ class Config:
     trajectory_file: str = ""
     final_file: str = ""                # restart file written at the end
     trajectory_atoms: str = ""          # "" = default mask
+    # qdyn keywords without a field above, as {section: {key: value}}, e.g.
+    # {"md": {"minimize": True}}. Fortran Q reads them; the CUDA engine rejects them.
+    extra: dict = field(default_factory=dict)
 
     def __post_init__(self):
+        if self.extra:
+            from .fortran import normalise_extra
+            object.__setattr__(self, "extra", normalise_extra(self.extra))
+
         # Without a native extension (Fortran-only install) unset settings stay None,
         # and Fortran Q applies its own defaults when it reads the generated .inp.
         if any(getattr(self, name) is None for name in _DEFAULTED) and _native.is_any_available():
@@ -207,8 +214,23 @@ class Config:
         else:
             from .fortran import read_inp  # pure Python, for Fortran-only installs
             values = read_inp(path)
+        return cls._from_values(values, overrides)
+
+    @classmethod
+    def from_sections(cls, sections, folder=".", **overrides):
+        """A Config from .inp content given as data: {section: {key: value}}.
+
+        Sections without keys are lists: "lambdas" is a list of numbers, a restraint
+        section a list of rows, "trajectory_atoms" a string. Relative paths in "files"
+        are resolved against `folder`. Keywords without a Config field go to `extra`.
+        """
+        from .fortran import read_sections
+        return cls._from_values(read_sections(sections, folder), overrides)
+
+    @classmethod
+    def _from_values(cls, values, overrides):
         for name, rcls in _RESTRAINTS.items():
-            values[name] = tuple(rcls(*row) for row in values[name])
+            values[name] = tuple(rcls(*row) for row in values.get(name, ()))
         return cls(**{**values, **overrides})
 
     def _sections(self):

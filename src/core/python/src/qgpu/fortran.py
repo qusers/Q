@@ -227,9 +227,12 @@ class FortranEngine(Engine):
 
         files = {"topology": self._topology, "fep": self._fep, "restart": self._restart, **outputs}
         sections["files"] = {key: path for key, path in files.items() if path}
+        for section, items in config.extra.items():
+            sections.setdefault(section, {}).update({key: _value(v, None) for key, v in items.items()})
 
         lines = []
-        for section in (*_SECTION_ORDER, "files"):
+        order = (*_SECTION_ORDER, "files")
+        for section in (*order, *(s for s in config.extra if s not in order)):
             if section in sections:
                 lines.append(f"[{section}]")
                 lines += [f"{key:<26}{value}" for key, value in sections[section].items()]
@@ -248,9 +251,9 @@ class FortranEngine(Engine):
 def _value(value, kind):
     if isinstance(value, str):
         return value
-    if kind is bool:
+    if kind is bool or isinstance(value, bool):
         return "on" if value else "off"
-    return repr(kind(value))
+    return repr(kind(value)) if kind else str(value)
 
 
 def _restraint_row(r):
@@ -394,13 +397,37 @@ def _sections(path):
     return sections
 
 
+# Sections that are not key-value settings, or whose keys are all Config fields.
+_LIST_SECTIONS = frozenset({"lambdas", "trajectory_atoms", *_RESTRAINT_SECTIONS.values()})
+
+
 def read_inp(path):
     """The Config values in a Q .inp file. Settings that the file leaves out are not returned."""
     path = Path(path).expanduser().resolve()
-    sections = _sections(path)
+    return _values(_sections(path), path.parent)
+
+
+def read_sections(sections, folder="."):
+    """As read_inp, for .inp content given as {section: {key: value}} (see Config.from_sections)."""
+    rows = {}
+    for section, content in sections.items():
+        name = _SECTION_ALIASES.get(str(section).lower(), str(section).lower())
+        if name == "lambdas":
+            content = [list(content)]
+        elif name == "trajectory_atoms":
+            content = [str(content).split()]
+        elif isinstance(content, dict):
+            content = [[str(key), *_value(value, None).split()] for key, value in content.items()]
+        rows.setdefault(name, []).extend([str(x) for x in row] for row in content)
+    return _values(rows, Path(folder).expanduser().resolve())
+
+
+def _values(sections, folder):
     keys = {(section, key): (name, kind) for name, (section, key, kind) in _INP_KEYS.items()}
-    values = {}
+    values, extra = {}, {}
     for section, rows in sections.items():
+        if section in _LIST_SECTIONS:
+            continue
         for row in rows:
             key = _KEY_ALIASES.get(row[0].lower(), row[0].lower())
             if (section, key) in keys and len(row) > 1:
@@ -410,7 +437,13 @@ def read_inp(path):
                 values["solute_constraint_algorithm"] = row[1].lower()
                 values["solvent_constraint_algorithm"] = row[2].lower()
             elif section == "files" and key in _FILE_FIELDS and len(row) > 1:
-                values[_FILE_FIELDS[key]] = str((path.parent / row[1]).resolve())
+                values[_FILE_FIELDS[key]] = str((folder / row[1]).resolve())
+            elif len(row) > 1:
+                # no Config field: kept for Fortran Q (other files in [files] by their full path)
+                value = str((folder / row[1]).resolve()) if section == "files" else " ".join(row[1:])
+                extra.setdefault(section, {})[key] = value
+    if extra:
+        values["extra"] = extra
     if sections.get("lambdas"):
         values["lambdas"] = tuple(float(x) for row in sections["lambdas"] for x in row)
     if sections.get("trajectory_atoms"):
@@ -418,6 +451,23 @@ def read_inp(path):
     for name in _RESTRAINTS:
         values[name] = tuple(_read_restraint(name, row) for row in sections.get(_RESTRAINT_SECTIONS[name], []))
     return values
+
+
+def normalise_extra(extra):
+    """Config.extra with lower-case names; keywords that have a Config field are refused."""
+    named = {(section, key) for section, key, _ in _INP_KEYS.values()}
+    named |= {("md", "constraint_algorithm"), *(("files", key) for key in _FILE_FIELDS)}
+    result = {}
+    for section, items in extra.items():
+        section = _SECTION_ALIASES.get(str(section).lower(), str(section).lower())
+        if section in _LIST_SECTIONS or not isinstance(items, dict):
+            raise InputError(f"extra: [{section}] is not a section of key-value settings.")
+        for key, value in items.items():
+            key = str(key).lower()
+            if (section, _KEY_ALIASES.get(key, key)) in named:
+                raise InputError(f"extra: [{section}] {key} has its own Config field; set that instead.")
+            result.setdefault(section, {})[key] = value
+    return result
 
 
 def _read_restraint(name, row):

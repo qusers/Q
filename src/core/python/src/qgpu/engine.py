@@ -34,6 +34,7 @@ class Engine:
         if not isinstance(config, Config):
             raise TypeError(
                 f"config must be a qgpu.Config, got {type(config).__name__}")
+        _reject_extra(config)
         self._mod = _native.load(precision)
         self._precision = precision
         lists = {"lambdas": [[str(x) for x in config.lambdas]]}
@@ -88,6 +89,8 @@ class Engine:
         trajectory_file: str = _KEEP,
         final_file: str = _KEEP,
         trajectory_atoms: str = _KEEP,
+        # other qdyn keywords, {section: {key: value}}: Fortran Q only
+        extra: dict = _KEEP,
     ):
         """Change settings for the next run(), e.g. update_config(lambdas=(0.5, 0.5)).
 
@@ -103,6 +106,7 @@ class Engine:
         self._config = config
 
     def _configure(self, config: Config):
+        _reject_extra(config)
         self._native.configure(self._to_native(config))
 
     def run(self):
@@ -151,6 +155,13 @@ class Engine:
         s.outputs.trajectory_file = _abs(config.trajectory_file)
         s.outputs.trajectory_atoms = config.trajectory_atoms
         return s
+
+
+def _reject_extra(config: Config):
+    if config.extra:
+        keys = ", ".join(f"[{section}] {key}" for section, items in config.extra.items() for key in items)
+        raise InputError(f"The CUDA engine does not support these qdyn keywords yet: {keys}. "
+                         "Remove them from Config.extra, or run with FortranEngine.")
 
 
 # update_config() lists the changeable Config fields by hand, for autocompletion.
