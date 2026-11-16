@@ -5,6 +5,7 @@ converted to arithmetic Rmin/2, epsilon for a synthetic neutral annihilation.
 These are numerical regressions, not a solvation free-energy benchmark.
 """
 
+import math
 import os
 import re
 import shutil
@@ -39,11 +40,25 @@ def arithmetic_topology(source):
     return text
 
 
+def geometric_carbon(rmin=3.8, epsilon=0.1, epsilon14=0.05):
+    """Per-atom sqrt(C12), sqrt(C6) for the arithmetic carbon below (Rmin = 2 x 1.9)."""
+    return (math.sqrt(epsilon) * rmin**6, math.sqrt(2 * epsilon) * rmin**3,
+            math.sqrt(epsilon14) * rmin**6, math.sqrt(2 * epsilon14) * rmin**3)
+
+
 @pytest.fixture
 def engine_case(tmp_path):
-    def setup(solvent=True, source=0.5, mode="validate", constraints="lincs settle", method="gapsys"):
+    def setup(solvent=True, source=0.5, mode="validate", constraints="lincs settle", method="gapsys",
+              rule="arithmetic"):
         top = ROOT / "test/data/topology" / ("benzene-water.top" if solvent else "benzene-vacuum.top")
-        (tmp_path / "test.top").write_text(arithmetic_topology(top))
+        if rule == "geometric":
+            # The fixture topologies are geometric (sqrt(Aii), sqrt(Bii)) already.
+            (tmp_path / "test.top").write_text(top.read_text())
+            a, b, a14, b14 = geometric_carbon()
+            carbon = f"C {a:.4f} {b:.4f} 0 0 {a14:.4f} {b14:.4f} 12.011"
+        else:
+            (tmp_path / "test.top").write_text(arithmetic_topology(top))
+            carbon = "C 1.9 0.1 0 0 1.9 0.05 12.011"
         (tmp_path / "test.fep").write_text(f"""[FEP]
 states 2
 softcore_method {method}
@@ -54,7 +69,7 @@ softcore_use_max_potential off
 3 7
 4 10
 [atom_types]
-C 1.9 0.1 0 0 1.9 0.05 12.011
+{carbon}
 H 0 0 0 0 0 0 1.008
 DUM 0 0 0 0 0 0 1.008
 [change_atoms]
@@ -141,6 +156,27 @@ def test_correction_matches_complete_hamiltonian(engine_case, solvent, source, m
     np.testing.assert_allclose(samples.work_to(source), 0, atol=1e-7)
 
 
+@pytest.mark.parametrize("solvent,source", [(False, 0.5), (True, 0), (True, 0.0001), (True, 0.5), (True, 0.9999), (True, 1)])
+@pytest.mark.parametrize("method", ["gapsys", "beutler"])
+def test_geometric_rule_correction_matches_complete_hamiltonian(engine_case, solvent, source, method):
+    """Geometric (OPLS-style) combination rules share the nonlinear Q-atom kernels."""
+    directory = engine_case(solvent=solvent, source=source, method=method, rule="geometric")
+    samples = run_engine(directory)
+    assert np.isfinite(samples.values).all()
+    np.testing.assert_allclose(samples.work_to(source), 0, atol=1e-7)
+    assert "Nonlinear softcore lambda-dependent SBC dynamics enabled" in (directory / "serial.log").read_text()
+
+
+def test_geometric_softcore_pair_matches_arithmetic_pair():
+    """Same Rmin and epsilon give the same C12, C6 and sigma under either rule."""
+    a, b, _, _ = geometric_carbon()
+    rmin, epsilon = 3.8, 0.1
+    c12, c6 = a * a, b * b
+    assert c12 == pytest.approx(epsilon * rmin**12)
+    assert c6 == pytest.approx(2 * epsilon * rmin**6)
+    assert (c12 / c6) ** (1 / 6) == pytest.approx(rmin / 2 ** (1 / 6))
+
+
 @pytest.mark.parametrize("method", ["gapsys", "beutler"])
 def test_validation_does_not_change_dynamics(engine_case, method):
     directory = engine_case(mode="correction", method=method)
@@ -153,9 +189,10 @@ def test_validation_does_not_change_dynamics(engine_case, method):
 
 
 @pytest.mark.skipif(os.environ.get("Q_TEST_MPI") != "1", reason="set Q_TEST_MPI=1 to run MPI regression")
+@pytest.mark.parametrize("rule", ["arithmetic", "geometric"])
 @pytest.mark.parametrize("method", ["gapsys", "beutler"])
-def test_mpi_matches_serial(engine_case, method):
-    directory = engine_case(method=method)
+def test_mpi_matches_serial(engine_case, method, rule):
+    directory = engine_case(method=method, rule=rule)
     if method == "beutler":
         fep = directory / "test.fep"
         fep.write_text(fep.read_text().replace("[atoms]", "beutler_alpha_lj 0.4\nbeutler_alpha_c 42\n[atoms]"))

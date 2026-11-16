@@ -175,6 +175,8 @@ module qatom
   ! Beutler Eqs. 7 and 8: dimensionless alpha_LJ and alpha_C in A^2.
   ! Defaults are illustrative paper values, not universally optimized settings.
   real(8)                                 :: beutler_alpha_lj = 0.5_8, beutler_alpha_c = 100.0_8
+  ! Soft-core sigma (angstrom) for geometric-rule pairs with only C12 or only C6.
+  real(8), parameter                      :: SOFTCORE_SIGMA_FALLBACK = 3.0_8
   ! Method-specific soft lengths: shape (nqat, natyps+nqat, nstates).
   real(8), allocatable                    :: softcore_lj_rsc(:,:,:)
   ! Coulomb soft lengths before the method-specific partner-charge factor.
@@ -1926,6 +1928,35 @@ pure real(8) function nonlinear_lj_radius(sigma,decoupling) result(radius)
   end if
 end function
 
+pure subroutine softcore_lj_pair(ai,bi,aj,bj,c12,c6,sigma)
+  ! Pair LJ coefficients and soft-core sigma from per-atom parameters, for
+  ! either combination rule. Energies are c12/r^12 - c6/r^6.
+  !  arithmetic: a = Rmin/2, b = sqrt(epsilon); sigma = Rmin/2^(1/6)
+  !  geometric:  a = sqrt(C12), b = sqrt(C6);  sigma = (C12/C6)^(1/6)
+  ! A geometric pair with only one of C12/C6 non-zero has no LJ sigma; it
+  ! falls back to GROMACS' sc-sigma (0.3 nm).
+  real(8), intent(in) :: ai,bi,aj,bj
+  real(8), intent(out) :: c12,c6,sigma
+  real(8) :: rmin,a6
+  if(ivdw_rule == VDW_GEOMETRIC) then
+    c12 = ai*aj
+    c6 = bi*bj
+    if(c12 > 0.0_8 .and. c6 > 0.0_8) then
+      sigma = (c12/c6)**(1.0_8/6.0_8)
+    else if(c12 /= 0.0_8 .or. c6 /= 0.0_8) then
+      sigma = SOFTCORE_SIGMA_FALLBACK
+    else
+      sigma = 0.0_8
+    end if
+  else
+    rmin = ai+aj
+    a6 = rmin**6
+    c12 = bi*bj*a6*a6
+    c6 = 2.0_8*bi*bj*a6
+    sigma = rmin/2.0_8**(1.0_8/6.0_8)
+  end if
+end subroutine
+
 pure real(8) function nonlinear_charge_factor(qi,qj) result(factor)
   real(8), intent(in) :: qi,qj
   factor = 1.0_8
@@ -1982,14 +2013,12 @@ pure real(8) function softcore_coulomb_energy_difference(qq,source_r,target_r,r2
 end function
 
 subroutine softcore_init_nonlinear(nstates_in)
-  ! Only arithmetic combination rules are supported. Rmin = 2^(1/6) sigma.
+  ! Lambda-only Coulomb factors and LJ soft-core radii for LJ code 1 pairs.
   integer, intent(in) :: nstates_in
   integer :: iq,jt,istate,iaci,iacj
-  real(8) :: decoupling,sigma
+  real(8) :: decoupling,sigma,c12,c6
 
   if(.not. lambda_dependent_softcore()) return
-  ! get_fep rejects unsupported combination rules before dynamics starts.
-  if(ivdw_rule /= VDW_ARITHMETIC) return
   if(allocated(softcore_lj_rsc)) deallocate(softcore_lj_rsc)
   if(allocated(softcore_q_lambda_factor)) deallocate(softcore_q_lambda_factor)
   allocate(softcore_lj_rsc(nqat,natyps+nqat,nstates_in))
@@ -2004,10 +2033,12 @@ subroutine softcore_init_nonlinear(nstates_in)
       do jt = 1,natyps+nqat
         if(.not. softcore_pair_enabled(iq,jt,istate)) cycle
         if(jt <= natyps) then
-          sigma = (qavdw(iaci,1)+iaclib(jt)%avdw(1))/2.0_8**(1.0_8/6.0_8)
+          call softcore_lj_pair(qavdw(iaci,1),qbvdw(iaci,1),iaclib(jt)%avdw(1), &
+                                iaclib(jt)%bvdw(1),c12,c6,sigma)
         else
           iacj = qiac(jt-natyps,istate)
-          sigma = (qavdw(iaci,1)+qavdw(iacj,1))/2.0_8**(1.0_8/6.0_8)
+          call softcore_lj_pair(qavdw(iaci,1),qbvdw(iaci,1),qavdw(iacj,1), &
+                                qbvdw(iacj,1),c12,c6,sigma)
         end if
         softcore_lj_rsc(iq,jt,istate) = nonlinear_lj_radius(sigma,decoupling)
       end do

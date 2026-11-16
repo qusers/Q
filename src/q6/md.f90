@@ -1875,9 +1875,8 @@ subroutine get_fep
 
 
     ! Nonlinear softcore is deliberately fail-closed while kernel coverage is limited to
-    ! the arithmetic, spherical-boundary path validated for PTP1B.
+    ! the spherical-boundary path (arithmetic and geometric VdW rules).
     if (lambda_dependent_softcore()) then
-      if(ivdw_rule /= VDW_ARITHMETIC) call die('nonlinear softcore currently requires arithmetic VdW rules')
       if(.not. qvdw_flag) call die('nonlinear softcore requires [atom_types] and [change_atoms]')
       if(use_PBC) call die('nonlinear softcore does not yet support periodic boundaries')
       if(.not. equilibrium_simulation) call die('nonlinear softcore does not yet support NEQ lambda scaling')
@@ -1932,7 +1931,7 @@ subroutine get_fep
         end if
       end do
       call softcore_init_nonlinear(nstates)
-      write(*,'(a)') 'Nonlinear softcore lambda-dependent arithmetic/SBC dynamics enabled.'
+      write(*,'(a)') 'Nonlinear softcore lambda-dependent SBC dynamics enabled.'
       write(*,'(a)') 'WARNING: legacy QFEP lambda reconstruction is invalid for nonlinear softcore.'
     end if
 
@@ -5569,7 +5568,7 @@ subroutine foreign_shape_qq(source_lj_scale,source_q_scale,target_lj_scale,targe
   real(8), intent(in) :: target_q_scale(n_foreign_lambda,nstates)
   real(8), intent(inout) :: correction(n_foreign_lambda)
   integer :: istate,ip,iq,jq,i,j,i3,j3,iaci,iacj,iLJ,sc_index,k
-  real(8) :: qi,qj,aLJ,bLJ,a6,c12,c6,qq,el_scale,r2,dx1,dx2,dx3
+  real(8) :: qi,qj,sigma,c12,c6,qq,el_scale,r2,dx1,dx2,dx3
   real(8) :: qi_e,qj_e,qfactor,rsc_lj_source,rsc_q_source,core_radius
   real(8) :: rsc_lj_target,rsc_q_target,target_weight,delta
 
@@ -5586,19 +5585,17 @@ subroutine foreign_shape_qq(source_lj_scale,source_q_scale,target_lj_scale,targe
       qi = qcrg(iq,istate)
       el_scale = nbqq(ip,istate)%el_scale
       iaci = qiac(iq,istate)
-      aLJ = qavdw(iaci,iLJ)
-      bLJ = qbvdw(iaci,iLJ)
       if(jq /= 0) then
         iacj = qiac(jq,istate)
         qj = qcrg(jq,istate)
-        aLJ = aLJ+qavdw(iacj,iLJ)
-        bLJ = bLJ*qbvdw(iacj,iLJ)
+        call softcore_lj_pair(qavdw(iaci,iLJ),qbvdw(iaci,iLJ),qavdw(iacj,iLJ), &
+                              qbvdw(iacj,iLJ),c12,c6,sigma)
         sc_index = natyps+jq
       else
         iacj = iac(j)
         qj = crg(j)
-        aLJ = aLJ+iaclib(iacj)%avdw(iLJ)
-        bLJ = bLJ*iaclib(iacj)%bvdw(iLJ)
+        call softcore_lj_pair(qavdw(iaci,iLJ),qbvdw(iaci,iLJ),iaclib(iacj)%avdw(iLJ), &
+                              iaclib(iacj)%bvdw(iLJ),c12,c6,sigma)
         sc_index = iacj
       end if
       if(.not. softcore_pair_enabled(iq,sc_index,istate)) cycle
@@ -5612,14 +5609,11 @@ subroutine foreign_shape_qq(source_lj_scale,source_q_scale,target_lj_scale,targe
       qi_e = qi/sqrt(coulomb_constant)
       qj_e = qj/sqrt(coulomb_constant)
       qfactor = nonlinear_charge_factor(qi_e,qj_e)
-      rsc_lj_source = source_lj_scale(istate)*aLJ
+      rsc_lj_source = source_lj_scale(istate)*sigma
       rsc_q_source = source_q_scale(istate)*qfactor
-      core_radius = max(max(source_lj_scale(istate),maxval(target_lj_scale(:,istate)))*aLJ, &
+      core_radius = max(max(source_lj_scale(istate),maxval(target_lj_scale(:,istate)))*sigma, &
                         max(source_q_scale(istate),maxval(target_q_scale(:,istate)))*qfactor)
       if(softcore_method == SC_GAPSYS .and. r2 >= core_radius*core_radius) cycle
-      a6 = aLJ**6
-      c12 = bLJ*a6*a6
-      c6 = 2.0_8*bLJ*a6
 
       do k = 1, n_foreign_lambda
         if(istate == 1) then
@@ -5632,7 +5626,7 @@ subroutine foreign_shape_qq(source_lj_scale,source_q_scale,target_lj_scale,targe
           call die('nonlinear softcore foreign work encountered exact Q-Q/Q-solute overlap')
         end if
         if(target_weight == 0.0_8) cycle
-        rsc_lj_target = target_lj_scale(k,istate)*aLJ
+        rsc_lj_target = target_lj_scale(k,istate)*sigma
         rsc_q_target = target_q_scale(k,istate)*qfactor
         delta = softcore_lj_energy_difference(c12,c6,rsc_lj_source,rsc_lj_target,r2) + &
                 softcore_coulomb_energy_difference(qq,rsc_q_source,rsc_q_target,r2)
@@ -5650,7 +5644,7 @@ subroutine foreign_shape_qp(source_lj_scale,source_q_scale,target_lj_scale,targe
   real(8), intent(in) :: target_q_scale(n_foreign_lambda,nstates)
   real(8), intent(inout) :: correction(n_foreign_lambda)
   integer :: ip,iq,i,j,i3,j3,iacj,iaci,iLJ,istate,k
-  real(8) :: aLJ,bLJ,a6,c12,c6,qq,r2,dx1,dx2,dx3,qi_e,qj_e,qfactor
+  real(8) :: sigma,c12,c6,qq,r2,dx1,dx2,dx3,qi_e,qj_e,qfactor
   real(8) :: rsc_lj_source,rsc_q_source,rsc_lj_target,rsc_q_target,target_weight,delta
   real(8) :: core_radius
 
@@ -5673,20 +5667,17 @@ subroutine foreign_shape_qp(source_lj_scale,source_q_scale,target_lj_scale,targe
     do istate = 1, nstates
       if(.not. softcore_pair_enabled(iq,iacj,istate)) cycle
       iaci = qiac(iq,istate)
-      aLJ = qavdw(iaci,iLJ)+iaclib(iacj)%avdw(iLJ)
-      bLJ = qbvdw(iaci,iLJ)*iaclib(iacj)%bvdw(iLJ)
+      call softcore_lj_pair(qavdw(iaci,iLJ),qbvdw(iaci,iLJ),iaclib(iacj)%avdw(iLJ), &
+                            iaclib(iacj)%bvdw(iLJ),c12,c6,sigma)
       qq = qcrg(iq,istate)*crg(j)
       if(iLJ == 3) qq = qq*el14_scale
       qi_e = real(qcrg(iq,istate),8)/sqrt(coulomb_constant)
       qfactor = nonlinear_charge_factor(qi_e,qj_e)
-      rsc_lj_source = source_lj_scale(istate)*aLJ
+      rsc_lj_source = source_lj_scale(istate)*sigma
       rsc_q_source = source_q_scale(istate)*qfactor
-      core_radius = max(max(source_lj_scale(istate),maxval(target_lj_scale(:,istate)))*aLJ, &
+      core_radius = max(max(source_lj_scale(istate),maxval(target_lj_scale(:,istate)))*sigma, &
                         max(source_q_scale(istate),maxval(target_q_scale(:,istate)))*qfactor)
       if(softcore_method == SC_GAPSYS .and. r2 >= core_radius*core_radius) cycle
-      a6 = aLJ**6
-      c12 = bLJ*a6*a6
-      c6 = 2.0_8*bLJ*a6
 
       do k = 1, n_foreign_lambda
         if(istate == 1) then
@@ -5699,7 +5690,7 @@ subroutine foreign_shape_qp(source_lj_scale,source_q_scale,target_lj_scale,targe
           call die('nonlinear softcore foreign work encountered exact Q-protein overlap')
         end if
         if(target_weight == 0.0_8) cycle
-        rsc_lj_target = target_lj_scale(k,istate)*aLJ
+        rsc_lj_target = target_lj_scale(k,istate)*sigma
         rsc_q_target = target_q_scale(k,istate)*qfactor
         delta = softcore_lj_energy_difference(c12,c6,rsc_lj_source,rsc_lj_target,r2) + &
                 softcore_coulomb_energy_difference(qq,rsc_q_source,rsc_q_target,r2)
@@ -5719,7 +5710,7 @@ subroutine foreign_shape_qw(source_lj_scale,source_q_scale,target_lj_scale,targe
   real(8), intent(inout) :: correction(n_foreign_lambda)
   integer :: jw,iq,i,j,istate,k,iac_ow,iac_hw,iLJO,iLJH,iaci
   real(8) :: dxO,dyO,dzO,dxH1,dyH1,dzH1,dxH2,dyH2,dzH2,r2O,r2H1,r2H2
-  real(8) :: aO,bO,aH,bH,aPair,bPair,a6,c12,c6,qq,qi_e,qj_e,qfactor
+  real(8) :: aO,bO,aH,bH,sigma,c12,c6,qq,qi_e,qj_e,qfactor
   real(8) :: rsc_lj_source,rsc_q_source,rsc_lj_target,rsc_q_target,target_weight,delta
   real(8) :: core_radius
 
@@ -5755,19 +5746,16 @@ subroutine foreign_shape_qw(source_lj_scale,source_q_scale,target_lj_scale,targe
         qi_e = real(qcrg(iq,istate),8)/sqrt(coulomb_constant)
 
         if(softcore_pair_enabled(iq,iac_ow,istate)) then
-          aPair = qavdw(qiac(iq,istate),1)+aO
-          bPair = qbvdw(qiac(iq,istate),1)*bO
+          call softcore_lj_pair(qavdw(qiac(iq,istate),1),qbvdw(qiac(iq,istate),1),aO,bO, &
+                                c12,c6,sigma)
           qq = qcrg(iq,istate)*crg_ow
           qj_e = real(crg_ow,8)/sqrt(coulomb_constant)
           qfactor = nonlinear_charge_factor(qi_e,qj_e)
-          rsc_lj_source = source_lj_scale(istate)*aPair
+          rsc_lj_source = source_lj_scale(istate)*sigma
           rsc_q_source = source_q_scale(istate)*qfactor
-          core_radius = max(max(source_lj_scale(istate),maxval(target_lj_scale(:,istate)))*aPair, &
+          core_radius = max(max(source_lj_scale(istate),maxval(target_lj_scale(:,istate)))*sigma, &
                             max(source_q_scale(istate),maxval(target_q_scale(:,istate)))*qfactor)
           if(softcore_method == SC_BEUTLER .or. r2O < core_radius*core_radius) then
-            a6 = aPair**6
-            c12 = bPair*a6*a6
-            c6 = 2.0_8*bPair*a6
             do k = 1, n_foreign_lambda
               if(istate == 1) then
                 target_weight = 1.0_8-foreign_lambda(k)
@@ -5779,7 +5767,7 @@ subroutine foreign_shape_qw(source_lj_scale,source_q_scale,target_lj_scale,targe
                 call die('nonlinear softcore foreign work encountered exact Q-water oxygen overlap')
               end if
               if(target_weight == 0.0_8) cycle
-              rsc_lj_target = target_lj_scale(k,istate)*aPair
+              rsc_lj_target = target_lj_scale(k,istate)*sigma
               rsc_q_target = target_q_scale(k,istate)*qfactor
               delta = softcore_lj_energy_difference(c12,c6,rsc_lj_source,rsc_lj_target,r2O) + &
                       softcore_coulomb_energy_difference(qq,rsc_q_source,rsc_q_target,r2O)
@@ -5789,20 +5777,17 @@ subroutine foreign_shape_qw(source_lj_scale,source_q_scale,target_lj_scale,targe
         end if
 
         if(softcore_pair_enabled(iq,iac_hw,istate)) then
-          aPair = qavdw(qiac(iq,istate),1)+aH
-          bPair = qbvdw(qiac(iq,istate),1)*bH
+          call softcore_lj_pair(qavdw(qiac(iq,istate),1),qbvdw(qiac(iq,istate),1),aH,bH, &
+                                c12,c6,sigma)
           qq = qcrg(iq,istate)*crg_hw
           qj_e = real(crg_hw,8)/sqrt(coulomb_constant)
           qfactor = nonlinear_charge_factor(qi_e,qj_e)
-          rsc_lj_source = source_lj_scale(istate)*aPair
+          rsc_lj_source = source_lj_scale(istate)*sigma
           rsc_q_source = source_q_scale(istate)*qfactor
-          core_radius = max(max(source_lj_scale(istate),maxval(target_lj_scale(:,istate)))*aPair, &
+          core_radius = max(max(source_lj_scale(istate),maxval(target_lj_scale(:,istate)))*sigma, &
                             max(source_q_scale(istate),maxval(target_q_scale(:,istate)))*qfactor)
           if(softcore_method == SC_BEUTLER .or. &
              r2H1 < core_radius*core_radius .or. r2H2 < core_radius*core_radius) then
-            a6 = aPair**6
-            c12 = bPair*a6*a6
-            c6 = 2.0_8*bPair*a6
             do k = 1, n_foreign_lambda
               if(istate == 1) then
                 target_weight = 1.0_8-foreign_lambda(k)
@@ -5814,7 +5799,7 @@ subroutine foreign_shape_qw(source_lj_scale,source_q_scale,target_lj_scale,targe
                 call die('nonlinear softcore foreign work encountered exact Q-water hydrogen overlap')
               end if
               if(target_weight == 0.0_8) cycle
-              rsc_lj_target = target_lj_scale(k,istate)*aPair
+              rsc_lj_target = target_lj_scale(k,istate)*sigma
               rsc_q_target = target_q_scale(k,istate)*qfactor
               delta = softcore_lj_energy_difference(c12,c6,rsc_lj_source,rsc_lj_target,r2H1) + &
                       softcore_coulomb_energy_difference(qq,rsc_q_source,rsc_q_target,r2H1) + &
@@ -5833,20 +5818,20 @@ end subroutine foreign_shape_qw
 subroutine evaluate_foreign_correction_work(source_lambda,work)
   ! Exact work = legacy frozen-state recombination + nonlinear shape correction.
   ! Only lambda-shaped Q nonbonds are revisited; all environment-only terms cancel.
+  ! LJ scales are soft-core radii per unit pair sigma (both kernels are linear in sigma).
   real(8), intent(in) :: source_lambda(2)
   real(8), intent(out) :: work(n_foreign_lambda)
   real(8) :: source_lj_scale(nstates),source_q_scale(nstates)
   real(8) :: target_lj_scale(n_foreign_lambda,nstates)
   real(8) :: target_q_scale(n_foreign_lambda,nstates)
   real(8) :: local_correction(n_foreign_lambda),correction(n_foreign_lambda)
-  real(8) :: state_lambda,decoupling,two_sixth
+  real(8) :: state_lambda,decoupling
   integer :: istate,k
 
-  two_sixth = 2.0_8**(1.0_8/6.0_8)
   do istate = 1, nstates
     state_lambda = source_lambda(istate)
     decoupling = max(0.0_8,1.0_8-state_lambda)
-    source_lj_scale(istate) = nonlinear_lj_radius(1.0_8/two_sixth,decoupling)
+    source_lj_scale(istate) = nonlinear_lj_radius(1.0_8,decoupling)
     source_q_scale(istate) = nonlinear_coulomb_radius(0.0_8,0.0_8,decoupling)
     do k = 1, n_foreign_lambda
       if(istate == 1) then
@@ -5855,7 +5840,7 @@ subroutine evaluate_foreign_correction_work(source_lambda,work)
         state_lambda = foreign_lambda(k)
       end if
       decoupling = max(0.0_8,1.0_8-state_lambda)
-      target_lj_scale(k,istate) = nonlinear_lj_radius(1.0_8/two_sixth,decoupling)
+      target_lj_scale(k,istate) = nonlinear_lj_radius(1.0_8,decoupling)
       target_q_scale(k,istate) = nonlinear_coulomb_radius(0.0_8,0.0_8,decoupling)
     end do
   end do
@@ -11688,7 +11673,7 @@ subroutine nonbon2_qq
   real(8)                                         :: Vel,V_a,V_b,dv,el_scale
   real(8)                                         :: r_sc_lj,r_sc_q
   real(8)                                         :: dv_lj,dv_el
-  real(8)                                         :: a6,c12,c6,qi_e,qj_e,decoupling
+  real(8)                                         :: c12,c6,sigma,qi_e,qj_e,decoupling
   logical                                         :: overlap_lj,overlap_q,do_sc_nonlinear
   real(8)                                         :: gap_qq
 
@@ -11753,10 +11738,15 @@ subroutine nonbon2_qq
 
       if(lambda_dependent_softcore()) then
         if(iLJ == 2) call die('nonlinear softcore does not support exponential Q-Q nonbonded pairs')
+        ! get_fep requires qvdw_flag, so iaci/iacj are Q-atom or topology types.
         if(jq /= 0) then
           sc_index = natyps+jq
+          call softcore_lj_pair(qavdw(iaci,iLJ),qbvdw(iaci,iLJ),qavdw(iacj,iLJ), &
+                                qbvdw(iacj,iLJ),c12,c6,sigma)
         else
           sc_index = iacj
+          call softcore_lj_pair(qavdw(iaci,iLJ),qbvdw(iaci,iLJ),iaclib(iacj)%avdw(iLJ), &
+                                iaclib(iacj)%bvdw(iLJ),c12,c6,sigma)
         end if
         do_sc_nonlinear = softcore_pair_enabled(iq,sc_index,istate)
         if(do_sc_nonlinear) then
@@ -11766,8 +11756,7 @@ subroutine nonbon2_qq
             ! The direct validation oracle changes EQ%lambda without rebuilding
             ! source-window lookups, so it deliberately follows the general path.
             decoupling = max(0.0_8,1.0_8-EQ(istate)%lambda)
-            r_sc_lj = nonlinear_lj_radius( &
-                         aLJ/2.0_8**(1.0_8/6.0_8),decoupling)
+            r_sc_lj = nonlinear_lj_radius(sigma,decoupling)
             r_sc_q = nonlinear_coulomb_radius( &
                                             qi_e,qj_e,decoupling)
           else
@@ -11781,9 +11770,6 @@ subroutine nonbon2_qq
           r_sc_q = 0.0_8
         end if
 
-        a6 = aLJ**6
-        c12 = bLJ*a6*a6
-        c6 = 2.0_8*bLJ*a6
         gap_qq = qi*qj*el_scale
         if(iLJ == 3) gap_qq = gap_qq*el14_scale
         call eval_softcore_lj(c12,c6,r_sc_lj,r2,V_a,dv_lj,overlap_lj)
@@ -11961,7 +11947,7 @@ subroutine nonbon2_qp
   real(8)                                         :: Vel,V_a,V_b,dv
   real(8)                                         :: r_sc_lj,r_sc_q
   real(8)                                         :: dv_lj,dv_el
-  real(8)                                         :: a6,c12,c6,qi_e,qj_e,decoupling
+  real(8)                                         :: c12,c6,sigma,qi_e,qj_e,decoupling
   logical                                         :: overlap_lj,overlap_q,do_sc_nonlinear
   real(8)                                         :: gap_qq
 
@@ -12022,14 +12008,15 @@ subroutine nonbon2_qp
 
       if(lambda_dependent_softcore()) then
         if(iLJ == 2) call die('nonlinear softcore does not support exponential Q-protein pairs')
+        call softcore_lj_pair(qavdw(iaci,iLJ),qbvdw(iaci,iLJ),iaclib(iacj)%avdw(iLJ), &
+                              iaclib(iacj)%bvdw(iLJ),c12,c6,sigma)
         do_sc_nonlinear = softcore_pair_enabled(iq,iacj,istate)
         if(do_sc_nonlinear) then
           qi_e = real(qcrg(iq,istate),8)/sqrt(coulomb_constant)
           qj_e = crg(j)/sqrt(coulomb_constant)
           if(foreign_hamiltonian_evaluation .or. iLJ /= 1) then
             decoupling = max(0.0_8,1.0_8-EQ(istate)%lambda)
-            r_sc_lj = nonlinear_lj_radius( &
-                         aLJ/2.0_8**(1.0_8/6.0_8),decoupling)
+            r_sc_lj = nonlinear_lj_radius(sigma,decoupling)
             r_sc_q = nonlinear_coulomb_radius( &
                                             qi_e,qj_e,decoupling)
           else
@@ -12041,9 +12028,6 @@ subroutine nonbon2_qp
           r_sc_lj = 0.0_8
           r_sc_q = 0.0_8
         end if
-        a6 = aLJ**6
-        c12 = bLJ*a6*a6
-        c6 = 2.0_8*bLJ*a6
         gap_qq = qcrg(iq,istate)*crg(j)
         if(iLJ == 3) gap_qq = gap_qq*el14_scale
         call eval_softcore_lj(c12,c6,r_sc_lj,r2,V_a,dv_lj,overlap_lj)
@@ -12346,7 +12330,7 @@ subroutine nonbon2_qw_softcore
   integer :: jw,iq,i,j,istate,iLJO,iLJH,iaci,iac_ow,iac_hw
   real(8) :: dxO,dyO,dzO,dxH1,dyH1,dzH1,dxH2,dyH2,dzH2
   real(8) :: r2O,r2H1,r2H2,dvO,dvH1,dvH2,dv_lj,dv_el
-  real(8) :: aO,bO,aH,bH,aPair,bPair,a6,c12,c6
+  real(8) :: aO,bO,aH,bH,c12,c6,sigma
   real(8) :: VelO,VelH1,VelH2,VljO,VljH1,VljH2
   real(8) :: rsc_lj,rsc_q,decoupling,qi_e,qO_e,qH_e,qqO,qqH
   logical :: enabled,overlap_lj,overlap_q
@@ -12388,16 +12372,12 @@ subroutine nonbon2_qw_softcore
         enabled = softcore_pair_enabled(iq,iac_ow,istate)
 
         ! Oxygen LJ and Coulomb.
-        aPair = qavdw(qiac(iq,istate),1)+aO
-        bPair = qbvdw(qiac(iq,istate),1)*bO
-        a6 = aPair**6
-        c12 = bPair*a6*a6
-        c6 = 2.0_8*bPair*a6
+        call softcore_lj_pair(qavdw(qiac(iq,istate),1),qbvdw(qiac(iq,istate),1),aO,bO, &
+                              c12,c6,sigma)
         if(enabled) then
           if(foreign_hamiltonian_evaluation .or. iLJO /= 1) then
             decoupling = max(0.0_8,1.0_8-EQ(istate)%lambda)
-            rsc_lj = nonlinear_lj_radius( &
-                       aPair/2.0_8**(1.0_8/6.0_8),decoupling)
+            rsc_lj = nonlinear_lj_radius(sigma,decoupling)
             rsc_q = nonlinear_coulomb_radius( &
                                            qi_e,qO_e,decoupling)
           else
@@ -12419,17 +12399,13 @@ subroutine nonbon2_qw_softcore
         dvO = dvO+(dv_lj+dv_el)*EQ(istate)%lambda
 
         ! Hydrogen LJ is usually zero, but Coulomb is regularized independently.
-        aPair = qavdw(qiac(iq,istate),1)+aH
-        bPair = qbvdw(qiac(iq,istate),1)*bH
-        a6 = aPair**6
-        c12 = bPair*a6*a6
-        c6 = 2.0_8*bPair*a6
+        call softcore_lj_pair(qavdw(qiac(iq,istate),1),qbvdw(qiac(iq,istate),1),aH,bH, &
+                              c12,c6,sigma)
         enabled = softcore_pair_enabled(iq,iac_hw,istate)
         if(enabled) then
           if(foreign_hamiltonian_evaluation .or. iLJH /= 1) then
             decoupling = max(0.0_8,1.0_8-EQ(istate)%lambda)
-            rsc_lj = nonlinear_lj_radius( &
-                       aPair/2.0_8**(1.0_8/6.0_8),decoupling)
+            rsc_lj = nonlinear_lj_radius(sigma,decoupling)
             rsc_q = nonlinear_coulomb_radius( &
                                            qi_e,qH_e,decoupling)
           else
@@ -15953,9 +15929,9 @@ subroutine pot_energy
     ! q-q nonbonded interactions (skip if doing bonded-only minimization)
     if (.not. min_bonded_only) then
       if(.not. qq_use_library_charges) then
-        if(ivdw_rule .eq. 1 ) then
+        if(ivdw_rule .eq. 1 .and. .not. lambda_dependent_softcore()) then
           call nonbond_qq
-        elseif ( ivdw_rule .eq. 2 ) then
+        else  ! arithmetic, or nonlinear softcore with either rule
           call nonbon2_qq
         end if
       else
@@ -16171,7 +16147,10 @@ subroutine pot_energy_nonbonds
       case(VDW_GEOMETRIC)
         call nonbond_pp
         call nonbond_pw
-        if(qvdw_flag) then
+        ! Nonlinear softcore Q-atom kernels are rule-agnostic (softcore_lj_pair).
+        if(lambda_dependent_softcore()) then
+          call nonbon2_qp
+        elseif(qvdw_flag) then
           call nonbond_qp_qvdw
         else
           call nonbond_qp
@@ -16180,10 +16159,18 @@ subroutine pot_energy_nonbonds
           if(solvent_type == SOLVENT_SPC) then
             !use the optimized SPC routine when possible
             call nonbond_ww_spc
-            call nonbond_qw_spc
+            if(lambda_dependent_softcore()) then
+              call nonbon2_qw_softcore
+            else
+              call nonbond_qw_spc
+            end if
           elseif(solvent_type == SOLVENT_3ATOM) then !otherwise calc. LJ with all atoms
             call nonbond_3atomsolvent
-            call nonbond_qw_3atom
+            if(lambda_dependent_softcore()) then
+              call nonbon2_qw_softcore
+            else
+              call nonbond_qw_3atom
+            end if
           end if
         end if
       case(VDW_ARITHMETIC)
@@ -18707,9 +18694,9 @@ subroutine new_potential( old )
     call p_restrain
 
     if(.not. qq_use_library_charges) then
-      if(ivdw_rule .eq. 1 ) then
+      if(ivdw_rule .eq. 1 .and. .not. lambda_dependent_softcore()) then
         call nonbond_qq
-      elseif ( ivdw_rule .eq. 2 ) then
+      else  ! arithmetic, or nonlinear softcore with either rule
         call nonbon2_qq
       end if
     else
