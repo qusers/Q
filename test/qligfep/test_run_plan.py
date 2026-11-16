@@ -298,6 +298,8 @@ def test_run_script_calls_the_runner_once(tmp_path):
     script = (tmp_path / "plan" / "runHABROK.sh").read_text()
     assert script.count("-m QligFEP.run_plan $inputfiles/run_plan.yaml") == 1
     assert '--replicate $run_num --temperature $temperature --qdyn $qdyn --mpi "mpirun -n $ncores' in script
+    # the job may not inherit the setup environment: the script names the checkout itself
+    assert f'export PYTHONPATH="{ROOT / "src"}${{PYTHONPATH:+:$PYTHONPATH}}"' in script
     assert "eq1.inp" not in script and "sedi" not in script and "T_VAR" not in script
     # what the script keeps: seeds, footer, binary check, qfep, the completion check, cleanup
     for kept in ("seeds=(11 12)", "trap write_footer EXIT", "ERROR: Q binary missing", "$qfep < qfep.inp",

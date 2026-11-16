@@ -1618,6 +1618,7 @@ class QligFEP:
         except ValueError:
             raise RuntimeError(f"{src} no longer has the stage block the run plan replaces.") from None
         launcher = profile.launch_prefix().removeprefix("time").strip()
+        package_root = Path(__file__).resolve().parents[1]
         block = [
             "cp $inputfiles/qfep.inp .\n",
             "if [ $index -ge 1 ]; then\n",
@@ -1626,6 +1627,8 @@ class QligFEP:
             "fi\n",
             "# Every stage and lambda window of this replicate, from one file. Topology and FEP file\n",
             "# are read from inputfiles/; each stage writes <stage>.log, .re, and .en/.dcd as planned.\n",
+            # the interpreter and the QligFEP checkout that wrote the plan, whatever the job inherits
+            f'export PYTHONPATH="{package_root}${{PYTHONPATH:+:$PYTHONPATH}}"\n',
             f'time "{sys.executable}" -m QligFEP.run_plan $inputfiles/run_plan.yaml \\\n',
             f'    --replicate $run_num --temperature $temperature --qdyn $qdyn --mpi "{launcher}"\n',
         ]
