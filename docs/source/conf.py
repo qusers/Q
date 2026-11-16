@@ -42,15 +42,7 @@ extensions = [
 
 source_suffix = {".md": "markdown"}
 master_doc = "index"
-# The three pages at the end are retired; delete the files, then these entries.
-exclude_patterns = [
-    "_build",
-    "Thumbs.db",
-    ".DS_Store",
-    "manual/differences.md",
-    "quickstart.md",
-    "tutorials/t4l.md",
-]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 myst_enable_extensions = [
     "colon_fence",
