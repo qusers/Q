@@ -58,8 +58,8 @@ shell_radius              {}
 
 [solvent]
 radial_force              60.0
-polarisation              on
-polarisation_force        20.0
+polarization              on
+polarization_force        20.0
 charge_correction         off
 
 [intervals]

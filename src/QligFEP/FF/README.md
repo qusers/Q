@@ -4,7 +4,7 @@ The forcefields provided in this repo are provided as `.lib` and `.prm` files. T
 
 ## Charmm & OPLS ForceFields
 
-To add extra parameters to the forcefield, you will need to make some conversion. For the `OPLS2015` and the `CHARMM36` forcefields, you can obtain the values required by the `.prm` file by using the function:
+To add extra parameters to the forcefield, you will need to make some conversion. For the `OPLSAAM`, `OPLS2005` and `CHARMM36` forcefields, you can obtain the values required by the `.prm` file by using the function:
 
 ```python
 import math

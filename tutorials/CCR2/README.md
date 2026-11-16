@@ -8,7 +8,7 @@ This is done in a jupyter notebook, please have a look at the [align_CCR2_ligand
 
 ```bash
 mkdir qprep && cp protein.pdb qprep && cd qprep
-qprep_prot -i protein.pdb -FF OPLS2015 -cog 24.357 51.502 31.997
+qprep_prot -i protein.pdb -FF OPLSAAM -cog 24.357 51.502 31.997
 # COG taken from qcog -i aligned_ligands.sdf
 ```
 ## generate the ligand perturbation network
@@ -47,5 +47,5 @@ cp ../qprep/protein.pdb .
 ## run setup FEP
 
 ```bash
-setupFEP -c SNELLIUS -FF OPLS2015 -rs 42 -j lomap.json -rest hybridization_p -clean .dcd
+setupFEP -c SNELLIUS -FF OPLSAAM -rs 42 -j lomap.json -rest hybridization_p -clean .dcd
 ```

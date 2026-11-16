@@ -403,7 +403,7 @@ if __name__ == "__main__":
     parser.add_argument('-f', '--forcefield',
                         dest = "forcefield",
                         required = True,
-                        choices = ['OPLS2015', 'OPLS2005'],
+                        choices = ['OPLSAAM', 'OPLS2005'],
                         help = "Forcefield to use.")
     
     parser.add_argument('-S', '--system',

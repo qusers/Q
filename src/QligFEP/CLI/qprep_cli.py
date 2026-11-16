@@ -952,7 +952,7 @@ def parse_arguments() -> argparse.Namespace:
         help=(
             "Protein forcefield to be used. Valid inputs: existing path to a forcefield file without the extensions"
             "(either .lib, .prm, or Path without the extensions will work) or one of the following: "
-            "OPLS2005, OPLS2015, AMBER14sb, CHARMM36. Defaults to AMBER14sb."
+            "OPLS2005, OPLSAAM, AMBER14sb, CHARMM36. Defaults to AMBER14sb."
         ),
     )
     parser.add_argument(
@@ -960,14 +960,10 @@ def parse_arguments() -> argparse.Namespace:
         "--center_of_geometry",
         dest="cog",
         help=(
-            "Center of geometry for the protein. The format is 'x y z', where all numbers "
-            "contain 3 decimal cases. This center of geometry can be obtained using the `qcog ` "
-            "command, but if you include ligands using the `-lig` option, this COG will be "
-            "automatically calculated. If you want to calculate the COG manually, you can use "
-            "this option. Defaults to None."
+            "Center of the water sphere, as 'x y z' in Angstrom. For a ligand series, "
+            "obtain it with the `qcog` command."
         ),
-        required=False,
-        default=None,
+        required=True,
         nargs=3,
         type=str,
     )
