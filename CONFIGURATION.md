@@ -84,6 +84,10 @@ profiles:
     modules: from-build
 ```
 
+`slurm.account` is optional. Left as `null`, jobs are submitted without `-A` and
+Slurm charges your default account; `qligfep_config init` never picks one for you.
+Set it on sites that require an explicit project account.
+
 ### Execution types
 
 The generated run script is the same for both types. It takes its task index and

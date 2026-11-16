@@ -510,6 +510,15 @@ class TestConfigCommand:
         profile = load_config().get_profile()
         assert profile.name == "site" and profile.slurm.account == "acc" and not profile.is_local
 
+    def test_init_does_not_guess_the_slurm_account(self, tmp_path, capsys, monkeypatch):
+        detect = config_cli.detect_environment
+        monkeypatch.setattr(config_cli, "detect_environment", lambda q_bin: {**detect(q_bin), "accounts": ["users"]})
+        assert config_cli.main(["init", "--execution", "slurm-array"]) == 0
+        profile = load_config().get_profile()
+        assert profile.slurm.account is None
+        assert "#SBATCH -A" not in profile.sbatch_header("equilibrium", "j", 1)
+        assert "default account" in capsys.readouterr().err
+
     def test_init_never_overwrites(self, tmp_path, capsys):
         path = write_yaml(user_file(tmp_path), "# mine\ndefault_profile: LOCAL\n")
         assert config_cli.main(["init"]) == 1

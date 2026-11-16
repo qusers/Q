@@ -203,6 +203,7 @@ def render_user_config(
         partitions = ", ".join(env["partitions"]) or "none reported by sinfo"
         lines += [
             "    slurm:",
+            "      # null submits without -A, so Slurm charges your default account.",
             f"      # Accounts you can charge: {accounts}",
             f"      account: {account if account else 'null'}",
             f"      # Partitions: {partitions}",

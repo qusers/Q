@@ -56,7 +56,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     init.add_argument("--ntasks", default=None, help="Cores per replicate (or `auto` for local execution).")
     init.add_argument("--time", default=None, help='Wall time per job, e.g. "0-08:00:00".')
-    init.add_argument("--account", default=None, help="Slurm account to charge.")
+    init.add_argument(
+        "--account",
+        default=None,
+        help="Slurm account to charge. Left unset by default, so Slurm uses your default account.",
+    )
     init.add_argument("--partition", default=None, help="Slurm partition.")
     init.add_argument(
         "--modules",
@@ -130,9 +134,9 @@ def cmd_init(args: argparse.Namespace) -> int:
         # The modules of this shell say nothing about what the binaries were built with,
         # so they are reported below rather than written into the profile.
         modules = []
+    # Never guessed: without -A Slurm charges the user's default account, which is what
+    # most people want. Sites that require an explicit account get it through --account.
     account = args.account
-    if account is None and not local and len(env["accounts"]) == 1:
-        account = env["accounts"][0]
 
     text = render_user_config(
         env,
@@ -163,7 +167,10 @@ def cmd_init(args: argparse.Namespace) -> int:
             "and run `qligfep_config build-info`, then set `modules: from-build`; or pass --modules."
         )
     if not local and account is None and env["accounts"]:
-        notes.append(f"Several Slurm accounts are available ({', '.join(env['accounts'])}); set `slurm.account`.")
+        notes.append(
+            "No Slurm account was set, so jobs are charged to your default account. Accounts you can "
+            f"charge: {', '.join(env['accounts'])}. Set `slurm.account` (or pass --account) to pick one."
+        )
 
     target = None if args.print_only else (args.output or str(user_config_path()))
     if target is None:
