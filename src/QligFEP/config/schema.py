@@ -217,11 +217,14 @@ class Profile:
     def neq_cores(self, n_switches: int) -> int:
         """Cores for a non-equilibrium job that fires ``n_switches`` concurrent switches.
 
-        ``auto`` grows the allocation so every switch runs in one wave and never drops
-        below ``ntasks``. An explicit ``neq_cores`` is used as is; with fewer cores than
-        switches the run script fires them in successive waves.
+        Under Slurm, ``auto`` grows the allocation so every switch runs in one wave and
+        never drops below ``ntasks``. For local execution there is nothing to grow, so
+        ``auto`` is the profile's ``ntasks``. An explicit ``neq_cores`` is used as is. With
+        fewer cores than switches the run script fires them in successive waves.
         """
         if self.resources.neq_cores == "auto":
+            if self.is_local:
+                return self.resources.ntasks
             return max(n_switches, self.resources.ntasks)
         return int(self.resources.neq_cores)
 

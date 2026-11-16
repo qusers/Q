@@ -12,7 +12,7 @@ import yaml
 from QligFEP.CLI import config_cli
 from QligFEP.CLI.config_args import resolve_run_settings
 from QligFEP.config import ConfigError, StageOverride, load_config
-from QligFEP.config.detect import render_user_config, write_build_info
+from QligFEP.config.detect import render_user_config, requested_modules, write_build_info
 from QligFEP.config.schema import parse_duration_fs
 from QligFEP.qligfep import QligFEP
 from QligFEP.templates import get_production_config, render_md_input
@@ -156,6 +156,27 @@ class TestEngineLocation:
         assert profile.modules == ("foss/2023a",)
         assert profile.environment_block() == "module purge\nmodule load foss/2023a\n"
 
+    def test_only_requested_modules_are_recorded_with_lmod(self, monkeypatch):
+        import base64
+
+        table = """_ModuleTable_ = { mT = {
+        GCCcore = { fn = "x", fullName = "GCCcore/11.3.0", loadOrder = 2, propT = {}, stackDepth = 2, status = "active", },
+        OpenMPI = { fn = "x", fullName = "OpenMPI/4.1.4-GCC-11.3.0", loadOrder = 3, propT = {}, stackDepth = 0, },
+        StdEnv = { fn = "x", fullName = "StdEnv", loadOrder = 1, propT = {}, stackDepth = 0, },
+        }, }"""
+        encoded = base64.b64encode(table.encode()).decode()
+        half = len(encoded) // 2
+        monkeypatch.setenv("_ModuleTable_Sz_", "2")
+        monkeypatch.setenv("_ModuleTable001_", encoded[:half])
+        monkeypatch.setenv("_ModuleTable002_", encoded[half:])
+        monkeypatch.setenv("LOADEDMODULES", "StdEnv:GCCcore/11.3.0:OpenMPI/4.1.4-GCC-11.3.0")
+        assert requested_modules() == ["StdEnv", "OpenMPI/4.1.4-GCC-11.3.0"]
+
+    def test_all_loaded_modules_without_lmod(self, monkeypatch):
+        monkeypatch.delenv("_ModuleTable_Sz_", raising=False)
+        monkeypatch.setenv("LOADEDMODULES", "a/1:b/2")
+        assert requested_modules() == ["a/1", "b/2"]
+
     def test_from_build_without_a_manifest_says_what_to_do(self, tmp_path):
         write_yaml(
             tmp_path / "qligfep.yaml",
@@ -199,6 +220,10 @@ class TestSbatchHeader:
     def test_export_can_be_left_to_the_site(self, tmp_path):
         write_yaml(tmp_path / "qligfep.yaml", "profiles: {mine: {slurm: {export: null}}}")
         assert "--export" not in load_config().get_profile("mine").sbatch_header("equilibrium", "j", 1)
+
+    def test_local_neq_cores_stay_within_the_profile(self, tmp_path):
+        write_yaml(tmp_path / "qligfep.yaml", "profiles: {box: {extends: LOCALP, resources: {ntasks: 4}}}")
+        assert load_config().get_profile("box").neq_cores(20) == 4
 
     def test_neq_cores_policy(self, tmp_path):
         write_yaml(tmp_path / "qligfep.yaml", "profiles: {waves: {extends: HABROK, resources: {neq_cores: 4}}}")

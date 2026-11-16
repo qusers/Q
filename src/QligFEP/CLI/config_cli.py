@@ -64,7 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Modules to load in jobs. Defaults to the modules recorded at build time when available "
-            "(`from-build`), otherwise the modules loaded in this shell."
+            "(`from-build`), otherwise none."
         ),
     )
     init.add_argument("--q-bin", default=None, help="Directory with the Q binaries to inspect.")
@@ -127,7 +127,9 @@ def cmd_init(args: argparse.Namespace) -> int:
     elif env["build_info"] is not None:
         modules = "from-build"
     else:
-        modules = env["loaded_modules"]
+        # The modules of this shell say nothing about what the binaries were built with,
+        # so they are reported below rather than written into the profile.
+        modules = []
     account = args.account
     if account is None and not local and len(env["accounts"]) == 1:
         account = env["accounts"][0]
@@ -156,8 +158,9 @@ def cmd_init(args: argparse.Namespace) -> int:
         notes.append(f"Modules come from {q_bin}/build-info.json: {', '.join(env['build_info'].get('modules', [])) or 'none'}.")
     elif args.modules is None and env["has_modules"]:
         notes.append(
-            "Modules are the ones loaded in this shell. If they differ from the ones the binaries were "
-            "compiled with, edit `modules`, or run `qligfep_config build-info` in the build environment."
+            "No modules were written: it is not known which ones the Q binaries were compiled with "
+            f"(loaded in this shell: {', '.join(env['loaded_modules']) or 'none'}). Load the build modules "
+            "and run `qligfep_config build-info`, then set `modules: from-build`; or pass --modules."
         )
     if not local and account is None and env["accounts"]:
         notes.append(f"Several Slurm accounts are available ({', '.join(env['accounts'])}); set `slurm.account`.")

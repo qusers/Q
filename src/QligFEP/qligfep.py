@@ -1546,20 +1546,22 @@ class QligFEP:
         except OSError:
             logger.warning(f"Could not change permission for {path}")
 
-    def neq_cores(self) -> int:
+    def neq_cores(self, report: bool = True) -> int:
         """Cores requested for a non-equilibrium task (see ``Profile.neq_cores``)."""
         if self.neq_reps < 1:
             raise ValueError(f"neq_reps must be >= 1 to size the switch allocation, got {self.neq_reps}")
         profile = self._get_profile()
         n_switches = 2 * self.neq_reps
         ncores = profile.neq_cores(n_switches)
+        if not report:
+            return ncores
         if ncores >= n_switches:
             logger.info(f"NEQ run: {n_switches} switches per replicate on {ncores} cores (one concurrent wave).")
         else:
             waves = -(-n_switches // ncores)
             logger.info(
                 f"NEQ run: {n_switches} switches per replicate on {ncores} cores, in {waves} waves "
-                f"(profile '{profile.name}' sets resources.neq_cores: {ncores})."
+                f"(profile '{profile.name}'; change resources.neq_cores to resize)."
             )
             if n_switches % ncores:
                 logger.warning(
@@ -1603,7 +1605,7 @@ class QligFEP:
     def write_submitfile(self, writedir):
         """Write FEP_submit.sh, which starts the run script's tasks through Slurm or locally."""
         profile = self._get_profile()
-        ntasks = self.neq_cores() if getattr(self, "neq", False) else profile.resources.ntasks
+        ntasks = self.neq_cores(report=False) if getattr(self, "neq", False) else profile.resources.ntasks
         submit_out = writedir + "/FEP_submit.sh"
         Path(submit_out).write_text(render_submit_script(profile, self._total_tasks(), ntasks))
         self._make_executable(submit_out)

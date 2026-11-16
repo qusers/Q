@@ -7,10 +7,12 @@ prefers facts over guesses: the modules that were loaded when the binaries were 
 
 from __future__ import annotations
 
+import base64
 import datetime
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 from multiprocessing import cpu_count
@@ -33,6 +35,29 @@ def _run(command: list[str], timeout: int = 20) -> str | None:
 def loaded_modules() -> list[str]:
     """Environment modules loaded in this shell (``$LOADEDMODULES``), in load order."""
     return [module for module in os.environ.get("LOADEDMODULES", "").split(":") if module]
+
+
+def requested_modules() -> list[str]:
+    """Modules the user loaded, without the dependencies they pulled in.
+
+    Loading one toolchain module typically loads a dozen more. Lmod records which ones
+    were asked for (``stackDepth`` 0) in its module table; replaying only those in a job
+    reproduces the environment without pinning every dependency. Falls back to every
+    loaded module for other module systems.
+    """
+    try:
+        size = int(os.environ.get("_ModuleTable_Sz_", "0"))  # noqa: SIM112 - Lmod's spelling
+        encoded = "".join(os.environ.get(f"_ModuleTable{index:03d}_", "") for index in range(1, size + 1))
+        table = base64.b64decode(encoded).decode() if encoded else ""
+    except ValueError:
+        table = ""
+    entries = re.findall(
+        r'fullName\s*=\s*"([^"]+)".*?loadOrder\s*=\s*(\d+).*?stackDepth\s*=\s*(\d+)', table, flags=re.DOTALL
+    )
+    if not entries:
+        return loaded_modules()
+    top_level = sorted((int(order), name) for name, order, depth in entries if int(depth) == 0)
+    return [name for _, name in top_level]
 
 
 def _first_line(command: list[str]) -> str | None:
@@ -65,7 +90,7 @@ def detect_environment(q_bin: Path) -> dict:
         "cpu_count": cpu_count(),
         "has_slurm": has_slurm,
         "has_modules": bool(os.environ.get("MODULESHOME") or os.environ.get("LMOD_CMD")),
-        "loaded_modules": loaded_modules(),
+        "loaded_modules": requested_modules(),
         "build_info": build_info,
         "mpirun": shutil.which("mpirun"),
         "accounts": slurm_accounts() if has_slurm else [],
@@ -85,7 +110,7 @@ def write_build_info(q_bin: Path, modules: list[str] | None = None) -> Path:
     info = {
         "written": datetime.datetime.now().isoformat(timespec="seconds"),
         "hostname": platform.node(),
-        "modules": list(modules) if modules is not None else loaded_modules(),
+        "modules": list(modules) if modules is not None else requested_modules(),
         "gfortran": _first_line(["gfortran", "--version"]),
         "mpif90": _first_line(["mpif90", "--version"]),
         "mpirun": _first_line(["mpirun", "--version"]),

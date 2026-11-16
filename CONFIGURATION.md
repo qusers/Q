@@ -126,14 +126,18 @@ them once, in the environment the binaries were compiled in:
 qligfep_config build-info          # writes <q_bin>/build-info.json
 ```
 
+With Lmod only the modules you loaded yourself are recorded, not the dependencies
+they pulled in.
+
 Clones built with different toolchains then get the right modules from one profile.
 
 ### Non-equilibrium cores
 
 A non-equilibrium task fires `2 x switch_pairs` switches concurrently.
 
-- `neq_cores: auto` requests enough cores for all of them in one wave, and never
-  fewer than `ntasks`. This is the previous behaviour.
+- `neq_cores: auto` under Slurm requests enough cores for all of them in one wave,
+  and never fewer than `ntasks`. This is the previous behaviour. For local execution
+  `auto` is the profile's `ntasks`.
 - `neq_cores: 16` is used as is. With fewer cores than switches the script runs
   them in successive waves; choose a divisor of the switch count to avoid idle cores.
 
