@@ -18,6 +18,10 @@ def is_available(precision):
     return find_spec(module_name(precision)) is not None
 
 
+def is_any_available():
+    return any(is_available(precision) for precision in MODULES)
+
+
 def load(precision):
     name = module_name(precision)
     try:

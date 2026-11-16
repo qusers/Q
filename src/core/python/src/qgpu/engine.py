@@ -99,8 +99,11 @@ class Engine:
         changes = {name: value for name, value in locals().items()
                    if name != "self" and value is not _KEEP}
         config = replace(self._config, **changes)  # validates
-        self._native.configure(self._to_native(config))
+        self._configure(config)
         self._config = config
+
+    def _configure(self, config: Config):
+        self._native.configure(self._to_native(config))
 
     def run(self):
         """Run config.steps steps from the current state."""

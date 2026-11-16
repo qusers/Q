@@ -78,6 +78,8 @@ class CMakeBuild(build_ext):
 
 def selected_precisions():
     names = [p.strip() for p in os.environ.get("QGPU_PRECISIONS", "double,spfp").split(",") if p.strip()]
+    if names == ["none"]:
+        return []  # pure Python: only qgpu.FortranEngine works, no CUDA needed
     unknown = sorted(set(names) - MODULES.keys())
     if unknown or not names:
         raise RuntimeError(

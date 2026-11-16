@@ -132,11 +132,33 @@ engine.run()
 - For parallel replicates, use separate processes. For example, use `concurrent.futures.ProcessPoolExecutor` with the `spawn` start method, as in `python/test/test_qligfep_workflow.py`.
 - Do not run several engines in threads of one process.
 
+### Fortran Q backend
+
+`FortranEngine` has the same interface as `Engine`, but runs Fortran Q (`src/q6`), optionally under MPI. It needs no GPU.
+
+```python
+from qgpu import Config, FortranEngine
+
+engine = FortranEngine(config, qdyn="qdynp", mpi=("mpirun", "-np", "8"))   # mpi=() runs qdyn directly
+engine.run()
+engine.update_config(lambdas=(0.6, 0.4), energy=10, energy_file="md_0600_0400.en")
+engine.run()
+```
+
+- Fortran Q is a separate program, so every `run()` starts one `qdyn` process. `FortranEngine` writes its `.inp` file and carries the state to the next run in a Q restart file. The results are identical to running the same stages from `.inp` files by hand.
+- These files and the log of every run are kept in `workdir` (default: a temporary folder). `engine.log_file` is the log of the latest run.
+- `get_state()` / `set_state()` return and accept the same dictionary as `Engine`.
+- After a failed `run()` the engine is still at the state before that run.
+- Not supported by Fortran Q, and rejected: `hmr=True`, and any `thermostat` other than `berendsen`.
+- Install without CUDA: `QGPU_PRECISIONS=none python -m pip install .` Then settings left out of `Config` stay `None`, and Fortran Q applies its own defaults. `Config.from_inp()` works too.
+- With the CUDA modules installed, `Config` is filled in by the C++ parser as usual, and `FortranEngine` passes every value to Fortran Q explicitly.
+
 ### Examples
 
 - `python/test/test_qligfep_one_replicate.py`: one replicate of the qligfep FEP workflow (eq1 to eq5, then 101 lambda windows). It is written entirely in Python and writes `md_XXXX_YYYY.en` files for qfep.
 - `python/test/test_qligfep_workflow.py`: all replicates in parallel processes.
 - `python/test/test_short_simulation.py`: run an existing `.inp` file.
+- `python/test/test_fortran_engine.py`: `FortranEngine` checked against hand-written `.inp` files, serial and under MPI (pytest; needs the `src/q6` binaries).
 
 ## Tests
 

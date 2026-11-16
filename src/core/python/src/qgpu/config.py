@@ -155,11 +155,13 @@ class Config:
     trajectory_atoms: str = ""          # "" = default mask
 
     def __post_init__(self):
-        if any(getattr(self, name) is None for name in _DEFAULTED):
+        # Without a native extension (Fortran-only install) unset settings stay None,
+        # and Fortran Q applies its own defaults when it reads the generated .inp.
+        if any(getattr(self, name) is None for name in _DEFAULTED) and _native.is_any_available():
             self._resolve()
 
-        object.__setattr__(self, "lambdas", tuple(float(x)
-                           for x in self.lambdas))
+        if self.lambdas is not None:
+            object.__setattr__(self, "lambdas", tuple(float(x) for x in self.lambdas))
         for name, cls in _RESTRAINTS.items():
             items = tuple(getattr(self, name))
             for r in items:
@@ -168,13 +170,16 @@ class Config:
                         f"{name} must contain qgpu.{cls.__name__}, got {type(r).__name__}")
             object.__setattr__(self, name, items)
 
+        for name in ("steps", "stepsize", "temperature"):
+            if getattr(self, name) is None:
+                raise InputError(f"{name} is required")
         if self.steps < 0:
             raise InputError("steps must be >= 0")
         if self.stepsize <= 0:
             raise InputError("stepsize must be > 0")
-        if self.energy > 0 and not self.energy_file:
+        if (self.energy or 0) > 0 and not self.energy_file:
             raise InputError("energy > 0 needs energy_file (or set energy=0)")
-        if self.trajectory > 0 and not self.trajectory_file:
+        if (self.trajectory or 0) > 0 and not self.trajectory_file:
             raise InputError(
                 "trajectory > 0 needs trajectory_file (or set trajectory=0)")
 
@@ -197,7 +202,11 @@ class Config:
 
         Relative paths in the file are resolved against the file's folder.
         """
-        values = _native.load_any().read_inp(str(path))
+        if _native.is_any_available():
+            values = _native.load_any().read_inp(str(path))
+        else:
+            from .fortran import read_inp  # pure Python, for Fortran-only installs
+            values = read_inp(path)
         for name, rcls in _RESTRAINTS.items():
             values[name] = tuple(rcls(*row) for row in values[name])
         return cls(**{**values, **overrides})
