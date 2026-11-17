@@ -419,7 +419,7 @@ def test_cuda_engine_refuses_energies_in_memory():
 
     with pytest.raises(InputError, match="energy > 0 needs energy_file"):
         Engine(base_config(energy=10))
-    with pytest.raises(InputError, match="cannot return energies"):
+    with pytest.raises(InputError, match="cannot return the full .en records"):
         Engine.__new__(Engine).get_energies()
     assert base_config(energy=10).energy_file == ""  # Config itself accepts it
 

@@ -112,7 +112,8 @@ engine.update_config(steps=5000, stepsize=2.0, temperature=50, bath_coupling=2.0
 engine.run()                                            # continues from the current state
 
 engine.update_config(lambdas=(0.6, 0.4), energy=10, energy_file="md_0600_0400.en")
-engine.run()
+result = engine.run()                                   # a qgpu.RunResult
+result.q_energy                                         # (frames, states): the Q energy of each state
 ```
 
 - **`Config`** has the same settings, names and meanings as the `.inp` keys.
@@ -121,6 +122,19 @@ engine.run()
   - A fresh start (no `restart`) needs `initial_temperature` and a `seed`.
 - **`Config.from_inp("eq5.inp", steps=100)`** reads an existing `.inp` file, with overrides.
 - **`engine.update_config(...)`** changes the settings that may change between runs. Its parameters are listed explicitly, so editors can autocomplete and check them. Settings that define the system (`shell_radius`, `lrf`, `restart`, cut-offs, ...) cannot change: create a new `Engine` for those.
+- **`engine.run()`** returns a `RunResult` with the energies of that run, in kcal/mol:
+
+  | Field | Shape | Contents |
+  |---|---|---|
+  | `lambdas` | (states,) | λ of the run |
+  | `steps` | (frames,) | Step of each frame: one frame every `energy` steps, the same frames as the `.en` file. Empty when `energy` is 0. |
+  | `q_energy` | (frames, states) | Q energy of each state, not weighted by λ (the total written to the `.en` file) |
+  | `upot`, `ukin`, `utot` | (frames,) | Potential, kinetic and total energy |
+  | `final_q` | (states,) | Q energy of each state at the coordinates after the last step. Filled even when `energy` is 0. |
+  | `final_upot`, `final_ukin`, `final_utot` | scalar | Totals at the coordinates after the last step |
+
+  - The last frame in `steps` is before the final step: a 100-step run with `energy=10` has frames at steps 10 to 90. The energies after step 100 are in the `final_*` fields.
+  - The potential at any λ is `E_rest + λ · q_energy`, where `E_rest` does not depend on λ. Energy differences between λ windows, as used by BAR, MBAR and replica exchange, therefore need only `q_energy` or `final_q`.
 - **`engine.get_state()` / `engine.set_state(state)`** save and restore coordinates, velocities and the water-polarisation state, e.g. to start two FEP branches from the same midpoint.
 - **Errors** are raised as `qgpu.InputError` (bad input), `qgpu.ConstraintError` (SHAKE/LINCS failure), `qgpu.CudaError`, or `qgpu.QgpuError`.
   - A rejected `update_config()` leaves the engine usable.

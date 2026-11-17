@@ -16,6 +16,7 @@ from . import _native
 from .config import _FIELDS, FIXED, Config, _abs
 from .errors import InputError
 from .restraints import AngRestraint, DistRestraint, PosRestraint, SeqRestraint, WallRestraint
+from .energy import RunResult
 
 
 class _Keep:
@@ -109,13 +110,18 @@ class Engine:
         _reject_unsupported(config)
         self._native.configure(self._to_native(config))
 
-    def run(self):
-        """Run config.steps steps from the current state."""
+    def run(self) -> RunResult:
+        """Run config.steps steps from the current state and return the energies"""
         self._native.run()
+        return RunResult(**self._native.last_energies())
 
     def get_energies(self):
-        """Not available yet on the CUDA engine: name an energy_file instead."""
-        raise InputError("The CUDA engine cannot return energies in memory yet: set energy_file.")
+        """Not available on the CUDA engine yet: the .en records (every term of every state).
+
+        run() returns a RunResult with the Q energy totals; for the full records, set energy_file.
+        """
+        raise InputError("The CUDA engine cannot return the full .en records in memory yet: set "
+                         "energy_file. run() returns a RunResult with the Q energy totals of each state.")
 
     def get_state(self):
         return self._native.get_state()
