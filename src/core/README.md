@@ -135,6 +135,7 @@ result.q_energy                                         # (frames, states): the 
 
   - The last frame in `steps` is before the final step: a 100-step run with `energy=10` has frames at steps 10 to 90. The energies after step 100 are in the `final_*` fields.
   - The potential at any λ is `E_rest + λ · q_energy`, where `E_rest` does not depend on λ. Energy differences between λ windows, as used by BAR, MBAR and replica exchange, therefore need only `q_energy` or `final_q`.
+  - `FortranEngine.run()` returns the same `RunResult`. `q_energy` is exact (the `.en` records). qdyn writes `upot`, `ukin` and `utot` only to its log, every `output` steps and with two decimals: frames on other steps hold NaN, and `final_*` also has two decimals. `FortranEngine.get_energies()` returns every term of every state, as in the `.en` file.
 - **`engine.get_state()` / `engine.set_state(state)`** save and restore coordinates, velocities and the water-polarisation state, e.g. to start two FEP branches from the same midpoint.
 - **Errors** are raised as `qgpu.InputError` (bad input), `qgpu.ConstraintError` (SHAKE/LINCS failure), `qgpu.CudaError`, or `qgpu.QgpuError`.
   - A rejected `update_config()` leaves the engine usable.

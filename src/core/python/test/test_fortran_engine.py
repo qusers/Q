@@ -495,3 +495,32 @@ def test_persistent_needs_a_qdyn_that_serves(tmp_path):
     engine.run()
     engine.run()
     assert engine.n_processes == 3  # the failed --serve attempt, then one per run
+
+
+def test_run_returns_a_run_result(tmp_path, launch):
+    """FortranEngine.run() returns the RunResult the CUDA engine returns: q_energy exactly as in
+    the .en records, the totals where qdyn printed them (two decimals), the final values."""
+    from qgpu import RunResult
+    from qgpu.fortran import read_energy_file
+
+    qdyn, prefix = launch
+    engine = FortranEngine(base_config(steps=40), qdyn=qdyn, mpi=prefix, workdir=tmp_path / "work",
+                           keep_files=True)
+    result = engine.run()                                   # energy = 0: no frames, final values only
+    assert isinstance(result, RunResult) and result.steps.shape == (0,) and result.q_energy.shape == (0, 2)
+    assert np.isfinite(result.final_q).all() and np.isfinite(result.final_upot)
+    log = engine.log_file.read_text()
+    final_sum = log.split("FINAL  Energy summary")[1].split("\nSUM")[1].split()[:3]
+    assert (result.final_utot, result.final_upot, result.final_ukin) == tuple(float(x) for x in final_sum)
+
+    engine.update_config(lambdas=(0.5, 0.5), energy=10, output=20, energy_file=tmp_path / "md.en")
+    result = engine.run()
+    records = read_energy_file(tmp_path / "md.en")
+    assert list(result.steps) == [10, 20, 30]                # steps 40 is the final, not a frame
+    assert np.array_equal(result.q_energy, records.q_energies["total"].reshape(3, 2))
+    assert list(result.lambdas) == [0.5, 0.5]
+    # printed totals only every `output` steps: the frame at step 20, not 10 or 30
+    assert np.isnan(result.upot[[0, 2]]).all() and np.isfinite(result.upot[1])
+    assert result.utot[1] == pytest.approx(result.upot[1] + result.ukin[1], abs=0.011)
+    assert result.final_q == pytest.approx(result.q_energy[-1], abs=50)   # same run, a few steps on
+    engine.close()

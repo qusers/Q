@@ -20,6 +20,7 @@ This module is pure Python: it needs no native extension, CUDA or GPU.
 
 from collections.abc import Sequence
 from pathlib import Path
+import re
 import shlex
 import shutil
 import struct
@@ -120,8 +121,12 @@ class FortranEngine(Engine):
         return self._workdir
 
     def run(self):
-        """Run config.steps steps from the current state.
+        """Run config.steps steps from the current state and return its qgpu.RunResult.
 
+        The RunResult is that of the CUDA engine: q_energy is exact (from the .en records);
+        upot/ukin/utot exist only where qdyn printed an energy summary (frames on a multiple
+        of `output` steps, NaN elsewhere) and, like final_*, have two decimals.
+        For every energy term of every state, use get_energies().
         After an error the engine is still at the state before this run().
         """
         if self._persistent is not False:
@@ -169,6 +174,7 @@ class FortranEngine(Engine):
         self._n_runs += 1
         self._advance(outputs["final"])
         self._energies = read_energy_file(self._workdir / outputs["energy"]) if "energy" in outputs else None
+        result = _run_result(text, config, self._energies, self._n_states)
         if not self._keep:
             (self._workdir / f"{name}.inp").unlink()
             log.unlink()
@@ -181,6 +187,7 @@ class FortranEngine(Engine):
                     (self._workdir / outputs[key]).unlink()
         if config.final_file:
             _place(shutil.copyfile, final, config.final_file)
+        return result
 
     def get_energies(self):
         """The energies the latest run() recorded (every `energy` steps), as an :class:`Energies`.
@@ -348,6 +355,7 @@ class FortranEngine(Engine):
         self._served_state = True
         self._advance("")  # the state is in the process now; a start file is no longer needed
         self._energies = read_energy_file(self._workdir / outputs["energy"]) if "energy" in outputs else None
+        result = _run_result(text_out, config, self._energies, self._n_states)
         self.log_file = log
         if not self._keep:
             log.unlink()
@@ -364,6 +372,7 @@ class FortranEngine(Engine):
             self._command_server(f"save {target}")
         if self._keep:  # as in process mode: the restart file of every run
             self._command_server(f"save {name}.re")
+        return result
 
     def _recover(self):
         """After a served run died: the state it started from, for the next process."""
@@ -442,6 +451,61 @@ class FortranEngine(Engine):
             if rows:
                 lines += [f"[{section}]", *rows, ""]
         return "\n".join(lines)
+
+
+_SUMMARY = re.compile(r"Energy summary at step\s+(\d+)|FINAL\s+Energy summary")
+_Q_ENERGIES = re.compile(r"Q-atom energies at step\s+(\d+)|FINAL\s+Q-atom energies")
+
+
+def _run_result(text, config, energies, n_states):
+    """The RunResult of one Fortran run, as the CUDA Engine.run() returns it.
+
+    q_energy is exact: the `total` of each state in the .en records, the value RunResult
+    documents. qdyn writes upot/ukin/utot only to its log, every `output` steps, with two
+    decimals: frames on such a step get those values, the others NaN. The final_* values
+    come from the log's FINAL summaries, also with two decimals.
+    """
+    import numpy as np
+
+    from .energy import RunResult
+
+    totals, q_sums, block, step = {}, {}, None, None
+    for line in text.splitlines():
+        summary, q_block = _SUMMARY.search(line), _Q_ENERGIES.search(line)
+        if summary:
+            block, step = "sum", int(summary.group(1)) if summary.group(1) else "final"
+        elif q_block:
+            block, step = "q", int(q_block.group(1)) if q_block.group(1) else "final"
+        elif block == "sum" and line.startswith("SUM "):
+            total, potential, kinetic = (float(x) for x in line.split()[1:4])
+            totals[step] = (potential, kinetic, total)
+        elif block == "q" and line.startswith("Q-SUM "):
+            fields = line.split()
+            q_sums.setdefault(step, {})[int(fields[1])] = float(fields[3])
+
+    interval = config.energy or 0
+    if energies is not None and energies.n_frames:
+        rows = energies.q_energies.reshape(energies.n_frames, energies.n_states)
+        q_energy = np.ascontiguousarray(rows["total"], dtype=float)
+        steps = np.arange(1, energies.n_frames + 1, dtype=np.int32) * interval
+    else:
+        q_energy = np.zeros((0, n_states))
+        steps = np.zeros(0, dtype=np.int32)
+    frame_totals = np.array([totals.get(int(s), (np.nan,) * 3) for s in steps], dtype=float).reshape(-1, 3)
+    final = totals.get("final", (np.nan,) * 3)
+    final_q = q_sums.get("final", {})
+    return RunResult(
+        lambdas=np.array(config.lambdas if config.lambdas is not None else (), dtype=float),
+        steps=steps,
+        q_energy=q_energy,
+        upot=frame_totals[:, 0].copy(),
+        ukin=frame_totals[:, 1].copy(),
+        utot=frame_totals[:, 2].copy(),
+        final_q=np.array([final_q.get(s, np.nan) for s in range(1, n_states + 1)], dtype=float),
+        final_upot=float(final[0]),
+        final_ukin=float(final[1]),
+        final_utot=float(final[2]),
+    )
 
 
 class _ServerEnded(Exception):
