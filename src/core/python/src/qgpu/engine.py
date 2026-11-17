@@ -16,6 +16,7 @@ from . import _native
 from .config import _FIELDS, FIXED, Config, _abs
 from .errors import InputError
 from .restraints import AngRestraint, DistRestraint, PosRestraint, SeqRestraint, WallRestraint
+from .energy import RunResult
 
 
 class _Keep:
@@ -102,9 +103,10 @@ class Engine:
         self._native.configure(self._to_native(config))
         self._config = config
 
-    def run(self):
-        """Run config.steps steps from the current state."""
+    def run(self) -> RunResult:
+        """Run config.steps steps from the current state and return the energies"""
         self._native.run()
+        return RunResult(**self._native.last_energies())
 
     def get_state(self):
         return self._native.get_state()

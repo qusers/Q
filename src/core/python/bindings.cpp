@@ -149,6 +149,43 @@ class Engine {
         });
     }
 
+    // Energies of the last successful run(). Keeps the GIL: creates NumPy arrays.
+    py::dict last_energies() const {
+        const RunEnergies& r = handler_->last_energies();
+        const auto n = static_cast<py::ssize_t>(r.frames.size());
+        const auto s = static_cast<py::ssize_t>(r.lambdas.size());
+
+        py::array_t<int> steps(n);
+        py::array_t<double> q({n, s});
+        py::array_t<double> upot(n), ukin(n), utot(n);
+        auto st = steps.mutable_unchecked<1>();
+        auto qq = q.mutable_unchecked<2>();
+        auto up = upot.mutable_unchecked<1>();
+        auto uk = ukin.mutable_unchecked<1>();
+        auto ut = utot.mutable_unchecked<1>();
+        for (py::ssize_t i = 0; i < n; ++i) {
+            const EnergyFrame& f = r.frames[i];
+            st(i) = f.step;
+            up(i) = f.Upot;
+            uk(i) = f.Ukin;
+            ut(i) = f.Utot;
+            for (py::ssize_t j = 0; j < s; ++j) qq(i, j) = f.q[j];
+        }
+
+        py::dict d;
+        d["lambdas"] = py::array_t<double>(s, r.lambdas.data());
+        d["steps"] = steps;
+        d["q_energy"] = q;
+        d["upot"] = upot;
+        d["ukin"] = ukin;
+        d["utot"] = utot;
+        d["final_q"] = py::array_t<double>(s, r.final.q.data());
+        d["final_upot"] = r.final.Upot;
+        d["final_ukin"] = r.final.Ukin;
+        d["final_utot"] = r.final.Utot;
+        return d;
+    }
+
     // Keeps the GIL: creates NumPy arrays.
     py::dict get_state() {
         guard();
@@ -358,7 +395,8 @@ PYBIND11_MODULE(QGPU_MODULE_NAME, m) {
         .def("configure", &Engine::configure, py::arg("stage"), py::call_guard<py::gil_scoped_release>())
         .def("run", &Engine::run, py::call_guard<py::gil_scoped_release>())
         .def("get_state", &Engine::get_state)
-        .def("set_state", &Engine::set_state, py::arg("coords"), py::arg("velocities"), py::arg("theta_corr"));
+        .def("set_state", &Engine::set_state, py::arg("coords"), py::arg("velocities"), py::arg("theta_corr"))
+        .def("last_energies", &Engine::last_energies);
 
     m.def("read_inp", &read_inp, py::arg("input_file"));
     m.def("resolve_settings", &resolve_settings, py::arg("sections"), py::arg("lists"));

@@ -290,6 +290,7 @@ void Handler::create_outputs() {
     outputs_.clear();
     outputs_.push_back(std::make_unique<StdOutput>());
     outputs_.push_back(std::make_unique<NativeOutput>(ctx.native_output));
+    outputs_.push_back(std::make_unique<EnergyRecorder>(last_energies_));
 }
 
 void Handler::init_outputs() {
