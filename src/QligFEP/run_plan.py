@@ -7,7 +7,8 @@ filled in per replicate (temperature, random seed). The run script then calls
     qligfep_run inputfiles/run_plan.yaml --replicate 1 --temperature 298 \\
         --qdyn /path/qdynp --mpi "mpirun -n 8"
 
-which runs all stages through the qgpu engine API with one engine for the replicate. It
+which runs all stages through the qgpu engine API with one engine, and so one persistent
+``qdyn --serve`` process, for the replicate. It
 leaves one log (``replicate.log``), one energy file (``energies.parquet``, see
 :mod:`QligFEP.energies`) and the trajectories, and with ``--qfep`` runs qfep on the
 energies in a temporary folder.

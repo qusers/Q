@@ -58,13 +58,26 @@ class FortranEngine(Engine):
     keep_files: keep the .inp, log and restart file of every run in workdir, for debugging.
              By default a run leaves only the restart file the next run starts from; the
              files of a failed run are kept.
+    persistent: True: one `qdyn --serve` process serves every run(); the state stays in its
+             memory, and no restart file or process start comes between runs. False: one qdyn
+             process per run(), the state carried in a restart file. "auto" (default): True
+             when the qdyn binary supports --serve, else False. Results are the same.
+             After a failed run() the process is gone; the next run() starts a new one from
+             the state the failed run started from.
 
     qdyn's output is printed to stdout, as the CUDA engine's is.
     Use the engine in a `with` block, or call close(), to remove its files at the end.
     """
 
     def __init__(self, config: Config, qdyn="qdyn", mpi: Sequence[str] | str = (), workdir=None,
-                 keep_files=False):
+                 keep_files=False, persistent="auto"):
+        if persistent not in (True, False, "auto"):
+            raise InputError(f"persistent must be True, False or 'auto', not {persistent!r}")
+        self._persistent = persistent
+        self._server = None
+        self._served_state = False  # the server's memory holds the current state
+        self._banner = []
+        self._n_processes = 0
         if not isinstance(config, Config):
             raise TypeError(f"config must be a qgpu.Config, got {type(config).__name__}")
         executable = shutil.which(str(Path(qdyn).expanduser()))
@@ -107,10 +120,18 @@ class FortranEngine(Engine):
         return self._workdir
 
     def run(self):
-        """Run config.steps steps from the current state, in one qdyn process.
+        """Run config.steps steps from the current state.
 
         After an error the engine is still at the state before this run().
         """
+        if self._persistent is not False:
+            if self._server is None and not self._start_server():
+                return self._run_process()  # "auto" with a qdyn that cannot serve
+            return self._run_served()
+        return self._run_process()
+
+    def _run_process(self):
+        """One run in a qdyn process of its own, carrying the state in a restart file."""
         config = self._config
         name = f"run_{self._n_runs + 1:04d}"
         outputs = {"final": f"{name}.re"}
@@ -126,6 +147,7 @@ class FortranEngine(Engine):
                                        errors="replace", stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         except OSError as e:
             raise InputError(f"Could not start {shlex.join(self._command)}: {e}") from e
+        self._n_processes += 1
         # qdyn's output goes to this process's stdout as it is produced, like the CUDA
         # engine's, and to the log file of this run.
         lines = []
@@ -172,6 +194,12 @@ class FortranEngine(Engine):
 
     def get_state(self):
         """Coordinates, velocities and water-polarisation state, as the CUDA engine returns them."""
+        if self._server is not None and self._served_state:
+            path = self._workdir / "get_state.re"
+            self._command_server(f"save {path.name}")
+            state = read_restart(path)
+            path.unlink()
+            return state
         if not self._restart:
             raise InputError("No state yet: call run() first, or start from Config(restart=...).")
         return read_restart(self._workdir / self._restart)
@@ -182,14 +210,27 @@ class FortranEngine(Engine):
         self._n_runs += 1  # a new name: never overwrite a restart file that a state came from
         name = f"state_{self._n_runs:04d}.re"
         write_restart(self._workdir / name, state)
-        self._advance(name)
+        if self._server is not None:
+            self._command_server(f"load {name}")
+            self._served_state = True
+            (self._workdir / name).unlink()
+            self._advance("")
+        else:
+            self._advance(name)
+
+    @property
+    def n_processes(self):
+        """How many qdyn processes this engine has started so far."""
+        return self._n_processes
 
     def close(self):
         """Remove the engine's own files. Outputs named in the Config are not touched."""
+        self._stop_server()
         if self._tmp is not None:
             self._tmp.cleanup()
         elif not self._keep:
-            for name in (self._restart, *self._links):
+            # stage.inp: the input `qdyn --serve` reads, overwritten by every run
+            for name in (self._restart, *self._links, "stage.inp"):
                 if name:
                     (self._workdir / name).unlink(missing_ok=True)
             if self._created and not any(self._workdir.iterdir()):
@@ -203,6 +244,141 @@ class FortranEngine(Engine):
         # after an error the files stay, to see what happened
         if error[0] is None or self._tmp is not None:
             self.close()
+
+    # ---- persistent mode: one `qdyn --serve` process for every run()
+
+    def _start_server(self):
+        """Start `qdyn --serve`. False (persistent="auto" only) if this qdyn cannot serve."""
+        try:
+            process = subprocess.Popen([*self._command, "--serve", "."], cwd=self._workdir, text=True,
+                                       errors="replace", stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                       stderr=subprocess.STDOUT, bufsize=1)
+        except OSError as e:
+            raise InputError(f"Could not start {shlex.join(self._command)}: {e}") from e
+        self._n_processes += 1
+        banner = []
+        for line in process.stdout:
+            if line.startswith("@qdyn ready"):
+                self._server, self._banner, self._served_state = process, banner, False
+                return True
+            banner.append(line)
+        process.wait()
+        if self._persistent is True:
+            raise InputError(f"{self._command[-1]} cannot run as a persistent process (qdyn --serve): "
+                             f"{''.join(banner[-5:]).strip() or 'no output'}. Rebuild Q, or use persistent=False.")
+        self._persistent = False  # "auto": this qdyn predates --serve
+        return False
+
+    def _command_server(self, command, body=None, echo=None):
+        """Send one command and wait for its answer. Returns qdyn's output in between."""
+        process = self._server
+        try:
+            process.stdin.write(command + "\n")
+            if body is not None:
+                process.stdin.write(body.rstrip("\n") + "\n@end\n")
+            process.stdin.flush()
+        except BrokenPipeError:
+            pass  # it died; its output below says why
+        lines = []
+        for line in process.stdout:
+            if line.startswith("@qdyn done"):
+                return lines
+            if line.startswith("@qdyn error"):
+                raise InputError(f"qdyn --serve: {line[len('@qdyn error'):].strip()}")
+            lines.append(line)
+            if echo is not None:
+                echo(line)
+        # the process ended: a stage died, or the launcher failed
+        status = process.wait()
+        self._server = None
+        raise _ServerEnded("".join(lines), status)
+
+    def _stop_server(self):
+        process, self._server = self._server, None
+        if process is None:
+            return
+        try:
+            process.stdin.write("quit\n")
+            process.stdin.flush()
+            process.stdin.close()
+        except (BrokenPipeError, ValueError):
+            pass
+        for _ in process.stdout:
+            pass
+        process.wait()
+
+    def _run_served(self):
+        config = self._config
+        name = f"run_{self._n_runs + 1:04d}"
+        outputs = {}
+        if (config.energy or 0) > 0:
+            outputs["energy"] = f"{name}.en"
+        if (config.trajectory or 0) > 0:
+            outputs["trajectory"] = f"{name}.dcd"
+        # the process starts from memory once it holds a state, from the restart file before
+        restart = "" if self._served_state else self._restart
+        text = self._inp(config, outputs, restart=restart)
+        if self._keep:
+            (self._workdir / f"{name}.inp").write_text(text)
+
+        log = self._workdir / f"{name}.log"
+        with open(log, "w", errors="replace") as out:
+            def echo(line):
+                out.write(line)
+                sys.stdout.write(line)
+
+            for line in self._banner:  # the process's startup output belongs to its first run
+                echo(line)
+            self._banner = []
+            try:
+                lines = self._command_server("run", text, echo)
+            except _ServerEnded as ended:
+                sys.stdout.flush()
+                self.log_file = log
+                self._recover()
+                raise _error(ended.text, ended.status, log) from None
+            finally:
+                sys.stdout.flush()
+        text_out = "".join(lines)
+        if "terminated normally" not in text_out:
+            self.log_file = log
+            raise _error(text_out, 0, log)
+
+        self._n_runs += 1
+        self._served_state = True
+        self._advance("")  # the state is in the process now; a start file is no longer needed
+        self._energies = read_energy_file(self._workdir / outputs["energy"]) if "energy" in outputs else None
+        self.log_file = log
+        if not self._keep:
+            log.unlink()
+            self.log_file = None
+        for key, target in (("energy", config.energy_file), ("trajectory", config.trajectory_file)):
+            if key in outputs:
+                if target:
+                    _place(shutil.move, self._workdir / outputs[key], target)
+                else:
+                    (self._workdir / outputs[key]).unlink()
+        if config.final_file:
+            target = Path(_abs(config.final_file))
+            target.parent.mkdir(parents=True, exist_ok=True)
+            self._command_server(f"save {target}")
+        if self._keep:  # as in process mode: the restart file of every run
+            self._command_server(f"save {name}.re")
+
+    def _recover(self):
+        """After a served run died: the state it started from, for the next process."""
+        recovery = self._workdir / "recovery.re"
+        if self._served_state:
+            if not recovery.is_file():
+                self._restart = ""
+                self._served_state = False
+                raise QgpuError("qdyn --serve ended without leaving the state of the last good run "
+                                "(recovery.re); this engine cannot continue.")
+            self._n_runs += 1
+            name = f"state_{self._n_runs:04d}.re"
+            recovery.rename(self._workdir / name)
+            self._advance(name)
+        self._served_state = False
 
     def _advance(self, restart):
         """`restart` is now the state; the file it replaces is no longer needed."""
@@ -232,7 +408,8 @@ class FortranEngine(Engine):
         self._links.append(name)
         return name
 
-    def _inp(self, config: Config, outputs):
+    def _inp(self, config: Config, outputs, restart=None):
+        restart = self._restart if restart is None else restart
         first = self._n_runs == 0 and self._restart in ("", "start.re")
         sections = {}
         for name, (section, key, kind) in _INP_KEYS.items():
@@ -244,7 +421,7 @@ class FortranEngine(Engine):
             sections["md"]["constraint_algorithm"] = \
                 f"{config.solute_constraint_algorithm} {config.solvent_constraint_algorithm}"
 
-        files = {"topology": self._topology, "fep": self._fep, "restart": self._restart, **outputs}
+        files = {"topology": self._topology, "fep": self._fep, "restart": restart, **outputs}
         sections["files"] = {key: path for key, path in files.items() if path}
         for section, items in config.extra.items():
             sections.setdefault(section, {}).update({key: _value(v, None) for key, v in items.items()})
@@ -265,6 +442,14 @@ class FortranEngine(Engine):
             if rows:
                 lines += [f"[{section}]", *rows, ""]
         return "\n".join(lines)
+
+
+class _ServerEnded(Exception):
+    """The `qdyn --serve` process ended while running a command."""
+
+    def __init__(self, text, status):
+        super().__init__(status)
+        self.text, self.status = text, status
 
 
 def _value(value, kind):

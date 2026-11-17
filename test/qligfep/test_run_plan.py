@@ -397,7 +397,10 @@ def test_plan_run_equals_inp_run(tmp_path, launch, case):
     assert run_plan_route(plan_file, rundir, launch) == 0
     assert sorted(p.name for p in rundir.iterdir()) == sorted([*trajectories, "energies.parquet", "replicate.log"])
     assert stage_headers(rundir / "replicate.log") == order
-    assert (rundir / "replicate.log").read_text().count("terminated normally") == len(order)
+    log = (rundir / "replicate.log").read_text()
+    assert log.count("terminated normally") == len(order)
+    # one qdyn process for the replicate; "overrides" changes a cut-off, which needs a new engine
+    assert log.count("Welcome to Q") == (2 if case == "overrides" else 1)
     assert [w.name for w in read_energies(rundir / "energies.parquet")] == windows
     export(rundir / "energies.parquet", tmp_path / "exported")
     assert sorted(p.name for p in (tmp_path / "exported").iterdir()) == energies

@@ -324,10 +324,17 @@ Three things to know:
   is found in the QligFEP checkout; no CUDA build is needed. A non-editable
   `pip install` of QligFEP does not ship it: install it from `src/core/python` with
   `QGPU_PRECISIONS=none pip install .`.
-- qdyn still reads an input file and writes a restart file and an energy file, so the
-  engine keeps one `.inp`, one `.re` and, during a window, one `.en` in the job's
-  temporary folder (`$TMPDIR`) and removes them. qfep's `.en` files live in a temporary
-  folder of their own while it runs.
+- One `qdynp` process runs the whole replicate (`qdynp --serve`): the coordinates,
+  velocities and water-polarisation state stay in its memory from stage to stage, and no
+  restart file is written between stages. Each stage goes through the same setup a new
+  process would, so results are byte-identical to one process per stage. A protocol that
+  changes a cut-off or another setting fixed for an engine starts a second process from
+  the state of the first. In the job's temporary folder (`$TMPDIR`) the process keeps one
+  `stage.inp`, overwritten by every stage, and during a window one `.en`; qfep's `.en`
+  files live in a temporary folder of their own while it runs. All are removed at the end.
+- `qdyn eq1.inp` and the `--inp-files` route work as before: without `--serve`, qdyn runs
+  one stage and exits. A qdyn built before `--serve` existed is detected and used one
+  process per stage.
 - The window at `start` runs first, then all windows on one side of it, then the
   other side. The `.inp` route alternates between the two sides. Each window
   continues from the same neighbour either way.

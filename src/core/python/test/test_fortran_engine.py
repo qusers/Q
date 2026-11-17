@@ -39,6 +39,19 @@ def launch(request):
     return request.param
 
 
+@pytest.fixture(autouse=True, params=[False, True], ids=["per-run", "persistent"])
+def persistent(request, monkeypatch):
+    """Every test runs in both modes: one qdyn process per run(), and one `qdyn --serve`
+    process for all of them. Results must be the same."""
+    original = FortranEngine.__init__
+
+    def init(self, *args, persistent=request.param, **kwargs):
+        original(self, *args, persistent=persistent, **kwargs)
+
+    monkeypatch.setattr(FortranEngine, "__init__", init)
+    return request.param
+
+
 def base_config(**changes):
     values = dict(
         topology=TOPOLOGY, fep=FEP, seed=7, initial_temperature=1, lrf=True,
@@ -219,7 +232,7 @@ def test_output_goes_to_stdout(tmp_path, capsys, launch):
     assert "No dynamics at zero temperature" in capsys.readouterr().out
 
 
-def test_leaves_no_files_behind(tmp_path):
+def test_leaves_no_files_behind(tmp_path, persistent):
     """Only what the Config names stays on disk; keep_files keeps the engine's own files too."""
     if not QDYN.is_file():
         pytest.skip(f"{QDYN} is not built")
@@ -231,7 +244,9 @@ def test_leaves_no_files_behind(tmp_path):
         engine.run()
         engine.set_state(state)
         engine.run()
-        assert sorted(p.name for p in work.iterdir()) == ["benzene-water.top", "fep.fep", "run_0004.re"]
+        # the state is in the restart file of the last run, or in the qdyn process's memory
+        state_file = "stage.inp" if persistent else "run_0004.re"
+        assert sorted(p.name for p in work.iterdir()) == sorted(["benzene-water.top", "fep.fep", state_file])
     assert not work.exists()
     assert sorted(p.name for p in (tmp_path / "out").iterdir()) == ["a.en", "a.re"]
 
@@ -338,7 +353,7 @@ def test_from_sections_and_lossless_inp(tmp_path):
     assert config.final_file == str(tmp_path.resolve() / "a.re")
 
 
-def test_energies_in_memory(tmp_path, launch):
+def test_energies_in_memory(tmp_path, launch, persistent):
     """get_energies() holds what energy_file would hold; without a file none is left anywhere."""
     from qgpu.fortran import read_energy_file
 
@@ -353,7 +368,8 @@ def test_energies_in_memory(tmp_path, launch):
         engine.update_config(lambdas=(0.5, 0.5), energy=10, energy_file=energy_file)
         engine.run()
         results.append(engine.get_energies())
-        assert sorted(p.name for p in work.iterdir()) == ["benzene-water.top", "fep.fep", "run_0002.re"]
+        state_file = "stage.inp" if persistent else "run_0002.re"
+        assert sorted(p.name for p in work.iterdir()) == sorted(["benzene-water.top", "fep.fep", state_file])
         engine.update_config(energy=0, energy_file="")
         engine.run()
         with pytest.raises(InputError, match="No energies"):
@@ -406,3 +422,76 @@ def test_cuda_engine_refuses_energies_in_memory():
     with pytest.raises(InputError, match="cannot return energies"):
         Engine.__new__(Engine).get_energies()
     assert base_config(energy=10).energy_file == ""  # Config itself accepts it
+
+
+def test_persistent_engine_starts_one_process(tmp_path, launch, persistent):
+    """Persistent: one qdyn process for every run(), state changes included; the same results."""
+    qdyn, prefix = launch
+    engine = FortranEngine(base_config(steps=20), qdyn=qdyn, mpi=prefix, workdir=tmp_path / "work")
+    engine.run()
+    start = engine.get_state()
+    engine.update_config(lambdas=(0.5, 0.5), energy=5, energy_file=tmp_path / "a.en")
+    engine.run()
+    engine.set_state(start)
+    engine.update_config(energy_file=tmp_path / "b.en", final_file=tmp_path / "b.re")
+    engine.run()
+    engine.close()
+    assert engine.n_processes == (1 if persistent else 3)
+    assert (tmp_path / "a.en").read_bytes() == (tmp_path / "b.en").read_bytes()
+    assert np.array_equal(read_restart(tmp_path / "b.re")["coords"], engine_coords(tmp_path, launch))
+
+
+def engine_coords(tmp_path, launch):
+    """The same three runs, one process each: the reference for the persistent engine."""
+    qdyn, prefix = launch
+    engine = FortranEngine(base_config(steps=20), qdyn=qdyn, mpi=prefix, workdir=tmp_path / "reference",
+                           persistent=False)
+    engine.run()
+    start = engine.get_state()
+    engine.update_config(lambdas=(0.5, 0.5), energy=5, energy_file=tmp_path / "ref_a.en")
+    engine.run()
+    engine.set_state(start)
+    engine.update_config(energy_file=tmp_path / "ref_b.en", final_file=tmp_path / "ref_b.re")
+    engine.run()
+    engine.close()
+    assert (tmp_path / "ref_b.en").read_bytes() == (tmp_path / "b.en").read_bytes()
+    return read_restart(tmp_path / "ref_b.re")["coords"]
+
+
+def test_persistent_engine_recovers_after_a_failed_run(tmp_path, persistent):
+    """A failed run ends the qdyn process; the next run() starts a new one from the state the
+    failed run started from, and gives what an engine without the failure gives."""
+    if not QDYN.is_file():
+        pytest.skip(f"{QDYN} is not built")
+    results = []
+    for name, fail in (("clean", False), ("failed", True)):
+        engine = FortranEngine(base_config(steps=20), qdyn=QDYN, workdir=tmp_path / name)
+        engine.run()
+        if fail:
+            engine.update_config(extra={"md": {"excluded_thermostat": "bogus"}})
+            with pytest.raises(InputError, match="excluded_thermostat"):
+                engine.run()
+            engine.update_config(extra={})
+        engine.update_config(lambdas=(0.5, 0.5), energy=5, energy_file=tmp_path / f"{name}.en")
+        engine.run()
+        results.append((tmp_path / f"{name}.en").read_bytes())
+        if persistent:
+            assert engine.n_processes == (2 if fail else 1)
+        engine.close()
+    assert results[0] == results[1]
+
+
+def test_persistent_needs_a_qdyn_that_serves(tmp_path):
+    """persistent=True with a qdyn that has no --serve fails clearly; "auto" falls back."""
+    if not QDYN.is_file():
+        pytest.skip(f"{QDYN} is not built")
+    old = tmp_path / "old_qdyn"
+    old.write_text("#!/bin/sh\nif [ \"$1\" = --serve ]; then echo 'no such option'; exit 1; fi\n"
+                   f"exec {QDYN} \"$@\"\n")
+    old.chmod(0o755)
+    with pytest.raises(InputError, match="cannot run as a persistent process"):
+        FortranEngine(base_config(steps=10), qdyn=old, persistent=True).run()
+    engine = FortranEngine(base_config(steps=10), qdyn=old, persistent="auto")
+    engine.run()
+    engine.run()
+    assert engine.n_processes == 3  # the failed --serve attempt, then one per run
