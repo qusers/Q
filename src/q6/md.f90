@@ -12157,7 +12157,7 @@ subroutine nonbon2_qp_nonlinear
   integer :: ip,iq,i,j,i3,j3,iacj,iLJ,istate
   real(8) :: dx1,dx2,dx3,r2,r,invr,invr2,invr6
   real(8) :: c12,c6,qi_e,qj_e,decoupling,r_sc_lj,r_sc_q,gap_qq
-  real(8) :: V_a,Vel,dv_lj,dv_el,dv
+  real(8) :: V_a,Vel,dv_lj,dv_el,dv,va,vb
   logical :: overlap_lj,overlap_q,gapsys
   real(8) :: qi_tab(nqat,nstates)
 
@@ -12210,11 +12210,31 @@ subroutine nonbon2_qp_nonlinear
       end if
       gap_qq = qcrg(iq,istate)*crg(j)
       if(iLJ == 3) gap_qq = gap_qq*el14_scale
-      call nonlinear_pair_eval(c12,c6,gap_qq,r_sc_lj,r_sc_q,r2,r,invr,invr2,invr6, &
-                               V_a,Vel,dv_lj,dv_el,overlap_lj,overlap_q)
-      if((overlap_lj .or. overlap_q) .and. EQ(istate)%lambda > 1.0e-12_8 .and. &
-         (c12 /= 0.0_8 .or. c6 /= 0.0_8 .or. gap_qq /= 0.0_8)) then
-        call die('nonlinear softcore encountered exact overlap in an active Q-protein pair')
+      if(gapsys .and. r2 > 0.0_8 .and. r >= r_sc_lj .and. r >= r_sc_q) then
+        ! Hard potential, same arithmetic as eval_gapsys_lj/eval_gapsys_coulomb.
+        if(c12 == 0.0_8 .and. c6 == 0.0_8) then
+          V_a = 0.0_8
+          dv_lj = 0.0_8
+        else
+          va = c12*invr6*invr6
+          vb = c6*invr6
+          V_a = va-vb
+          dv_lj = (-12.0_8*va+6.0_8*vb)*invr2
+        end if
+        if(gap_qq == 0.0_8) then
+          Vel = 0.0_8
+          dv_el = 0.0_8
+        else
+          Vel = gap_qq*invr
+          dv_el = -Vel*invr2
+        end if
+      else
+        call nonlinear_pair_eval(c12,c6,gap_qq,r_sc_lj,r_sc_q,r2,r,invr,invr2,invr6, &
+                                 V_a,Vel,dv_lj,dv_el,overlap_lj,overlap_q)
+        if((overlap_lj .or. overlap_q) .and. EQ(istate)%lambda > 1.0e-12_8 .and. &
+           (c12 /= 0.0_8 .or. c6 /= 0.0_8 .or. gap_qq /= 0.0_8)) then
+          call die('nonlinear softcore encountered exact overlap in an active Q-protein pair')
+        end if
       end if
       dv = (dv_lj+dv_el)*EQ(istate)%lambda
       d(i3+1) = d(i3+1)-dv*dx1
