@@ -46,6 +46,10 @@ program qdyn
   integer :: qdyn_ierr
 #endif
 
+  ! qdyn --serve <folder>: one process, many stages (see run_stage and serve)
+  character(len=200)      :: serve_arg
+  integer                 :: serve_nargs
+
   ! signal handler data and declarations
   integer(4) :: sigret
 
@@ -82,6 +86,39 @@ program qdyn
   ! initialize static data, display banner etc
   call startup
 
+  serve_nargs = command_argument_count()
+  if (serve_nargs >= 1) then
+    call get_command_argument(1, serve_arg)
+    if (trim(serve_arg) == '--serve') then
+      if (serve_nargs < 2) call die('usage: qdyn --serve <work folder>')
+      call get_command_argument(2, serve_dir)
+      serve_mode = .true.
+      serve_input = trim(serve_dir)//'/stage.inp'
+      call serve
+#if defined (USE_MPI)
+      call MPI_Finalize(qdyn_ierr)
+#endif
+      stop
+    end if
+  end if
+
+  call run_stage
+  ! deallocate memory etc.
+  call shutdown
+
+#if defined (USE_MPI)
+  ! shut down MPI
+  call MPI_Finalize(qdyn_ierr)
+#endif
+
+
+
+contains
+
+  !-----------------------------------------------------------------------------
+  ! one stage, from reading the input to closing the output files
+  !-----------------------------------------------------------------------------
+  subroutine run_stage
   if (nodeid .eq. 0) then
     ! master node: read input and initialize
     if(.not. initialize()) call die('Invalid data in input file') ! read input data
@@ -124,18 +161,123 @@ program qdyn
     ! master node: close output files
     call close_output_files
   end if
+  end subroutine run_stage
 
-  ! deallocate memory etc.
-  call shutdown
 
+  !-----------------------------------------------------------------------------
+  ! qdyn --serve <folder>
+  !
+  ! Rank 0 reads commands from standard input, one per line, and answers each
+  ! on standard output with a line starting with "@qdyn":
+  !
+  !   run     the stage input follows, up to a line "@end". It is written to
+  !           <folder>/stage.inp and run as qdyn would run that file, except
+  !           that without [files] restart the stage continues from the state
+  !           the previous stage ended in, and [files] final may be left out.
+  !           Answer: "@qdyn done" once qdyn's output for the stage is complete.
+  !   save F  write the current state to F as a Q restart file
+  !   load F  make the Q restart file F the current state
+  !   quit    end the process
+  !
+  ! A stage that fails ends the process as qdyn always does (die). The state
+  ! the failed stage started from is then in <folder>/recovery.re.
+  !-----------------------------------------------------------------------------
+  subroutine serve
+    character(len=1024) :: line
+    character(len=16)   :: command
+    character(len=1000) :: argument
+    integer             :: stat, u, n_stage
+    logical             :: ok
+    integer             :: code
+
+    n_stage = 0
+    if (nodeid == 0) then
+      write(*,'(a)') '@qdyn ready'
+      flush(output_unit)
+    end if
+    do
+      code = 0
+      if (nodeid == 0) then
+        read(*,'(a)', iostat=stat) line
+        if (stat /= 0) then
+          code = 4  ! end of input: same as quit
+        else
+          line = adjustl(line)
+          command = line(1:index(line//' ', ' ')-1)
+          argument = adjustl(line(len_trim(command)+1:))
+          select case (trim(command))
+          case ('run')
+            code = 1
+            open(newunit=u, file=serve_input, status='replace', action='write', iostat=stat)
+            if (stat /= 0) call die('qdyn --serve: cannot write '//trim(serve_input))
+            do
+              read(*,'(a)', iostat=stat) line
+              if (stat /= 0) call die('qdyn --serve: input ended inside a stage')
+              if (trim(adjustl(line)) == '@end') exit
+              write(u,'(a)') trim(line)
+            end do
+            close(u)
+          case ('save')
+            code = 2
+          case ('load')
+            code = 3
+          case ('quit')
+            code = 4
+          case default
+            write(*,'(a)') '@qdyn error unknown command: '//trim(line)
+            flush(output_unit)
+            cycle
+          end select
+        end if
+      end if
 #if defined (USE_MPI)
-  ! shut down MPI
-  call MPI_Finalize(qdyn_ierr)
+      call MPI_Bcast(code, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, qdyn_ierr)
 #endif
+      select case (code)
+      case (1)
+        n_stage = n_stage + 1
+        if (n_stage > 1) call serve_reset
+        call run_stage
+        call serve_keep_state
+        ! a fresh process closes the trajectory when it exits; here the stage's
+        ! files must be complete when "@qdyn done" is sent
+        if (nodeid == 0) call serve_close_trajectory
+        if (nodeid == 0) then
+          write(*,*) 'qdyn version ', trim(program_version), trim(program_suffix), ' terminated normally.'
+          write(*,'(a)') '@qdyn done'
+          flush(output_unit)
+        end if
+      case (2)
+        if (nodeid == 0) then
+          if (.not. serve_has_state) then
+            write(*,'(a)') '@qdyn error no state to save'
+          else
+            call serve_write_state(trim(argument))
+            write(*,'(a)') '@qdyn done'
+          end if
+          flush(output_unit)
+        end if
+      case (3)
+        if (nodeid == 0) then
+          ok = serve_read_state(trim(argument))
+          if (ok) then
+            write(*,'(a)') '@qdyn done'
+          else
+            write(*,'(a)') '@qdyn error cannot read '//trim(argument)
+          end if
+          flush(output_unit)
+        end if
+      case (4)
+        exit
+      end select
+    end do
+    if (n_stage > 0) call serve_reset
+    if (nodeid == 0) then
+      write(*,'(a)') '@qdyn bye'
+      flush(output_unit)
+    end if
+  end subroutine serve
 
-
-
-contains
 
   !-----------------------------------------------------------------------------
   ! startup subroutine

@@ -51,6 +51,25 @@ module trj
 
 
 contains
+! BEGIN GENERATED reset_state (tools/reset_state.py; do not edit by hand)
+subroutine trj_reset_state
+!! Every variable of this module back to its value at program start (qdyn --serve).
+  integer :: reset_status
+  type(rec1), save :: fresh_rec1
+  type(mask_type), save :: fresh_mask_type
+  reset_status = 0
+  call trj_close
+  r1 = fresh_rec1
+  topology = repeat(achar(0), len(topology))
+  mask_rows = 0
+  mask_row = repeat(achar(0), len(mask_row))
+  lun = 0
+  current_frame = 0
+  ncoords = 0
+  if (allocated(xmasked)) deallocate(xmasked)
+  mask = fresh_mask_type
+end subroutine trj_reset_state
+! END GENERATED reset_state
 
 
 subroutine trj_startup

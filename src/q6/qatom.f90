@@ -196,6 +196,100 @@ module qatom
   
 
 contains
+! BEGIN GENERATED reset_state (tools/reset_state.py; do not edit by hand)
+subroutine qatom_reset_state
+!! Every variable of this module back to its value at program start (qdyn --serve).
+  integer :: reset_status
+  reset_status = 0
+  pi = 0
+  deg2rad = 0
+  nstates = 0
+  nqat = 0
+  qswitch = 0
+  offset = 0
+  qvdw_flag = .false.
+  qq_use_library_charges = .false.
+  if (allocated(iqseq)) deallocate(iqseq)
+  if (allocated(qiac)) deallocate(qiac)
+  if (allocated(qtac)) deallocate(qtac)
+  nqexpnb = 0
+  if (allocated(iqexpnb)) deallocate(iqexpnb)
+  if (allocated(jqexpnb)) deallocate(jqexpnb)
+  nqlib = 0
+  if (allocated(qcrg)) deallocate(qcrg)
+  if (allocated(qmass)) deallocate(qmass)
+  if (allocated(qavdw)) deallocate(qavdw)
+  if (allocated(qbvdw)) deallocate(qbvdw)
+  nqbond = 0
+  if (allocated(qbnd)) deallocate(qbnd)
+  if (allocated(qbondlib)) deallocate(qbondlib)
+  nqangle = 0
+  if (allocated(qang)) deallocate(qang)
+  if (allocated(qanglib)) deallocate(qanglib)
+  nqtor = 0
+  if (allocated(iqtor)) deallocate(iqtor)
+  if (allocated(jqtor)) deallocate(jqtor)
+  if (allocated(kqtor)) deallocate(kqtor)
+  if (allocated(lqtor)) deallocate(lqtor)
+  if (allocated(qtorcod)) deallocate(qtorcod)
+  if (allocated(qfktor)) deallocate(qfktor)
+  if (allocated(qrmult)) deallocate(qrmult)
+  if (allocated(qdeltor)) deallocate(qdeltor)
+  nqimp = 0
+  if (allocated(iqimp)) deallocate(iqimp)
+  if (allocated(jqimp)) deallocate(jqimp)
+  if (allocated(kqimp)) deallocate(kqimp)
+  if (allocated(lqimp)) deallocate(lqimp)
+  if (allocated(qimpcod)) deallocate(qimpcod)
+  if (allocated(qfkimp)) deallocate(qfkimp)
+  if (allocated(qimp0)) deallocate(qimp0)
+  nang_coupl = 0
+  ntor_coupl = 0
+  nimp_coupl = 0
+  iang_coupl = 0
+  itor_coupl = 0
+  iimp_coupl = 0
+  nqshake = 0
+  iqshake = 0
+  jqshake = 0
+  qshake_dist = 0
+  noffd = 0
+  if (allocated(offd)) deallocate(offd)
+  if (allocated(offd2)) deallocate(offd2)
+  nexspec = 0
+  if (allocated(exspec)) deallocate(exspec)
+  if (allocated(monitor_group_pair)) deallocate(monitor_group_pair)
+  if (allocated(monitor_atom_group)) deallocate(monitor_atom_group)
+  monitor_group_pairs = 0
+  monitor_groups = 0
+  if (allocated(qq_el_scale)) deallocate(qq_el_scale)
+  nel_scale = 0
+  tmpindex = 0
+  numsoftlines = 0
+  i2 = 0
+  if (allocated(sc_lookup)) deallocate(sc_lookup)
+  if (allocated(alpha_max)) deallocate(alpha_max)
+  sc_aq = 0
+  sc_bq = 0
+  sc_aj = 0
+  sc_bj = 0
+  alpha_max_tmp = 0
+  softcore_use_max_potential = .false.
+  softcore_method = SC_STANDARD
+  gapsys_alpha_lj = 0.85_8
+  gapsys_alpha_q = 0.3_8
+  gapsys_sigma_lj = 0.3_8
+  gapsys_sigma_q = 1.0_8
+  if (allocated(gapsys_lj_rsc)) deallocate(gapsys_lj_rsc)
+  if (allocated(gapsys_q_lambda_factor)) deallocate(gapsys_q_lambda_factor)
+  if (allocated(EQ)) deallocate(EQ)
+  Hij = 0
+  EMorseD = 0
+  dMorse_i = 0
+  dMorse_j = 0
+  use_new_fep_format = .false.
+end subroutine qatom_reset_state
+! END GENERATED reset_state
 
 subroutine qatom_startup
 !!-------------------------------------------------------------------------------  

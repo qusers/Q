@@ -103,6 +103,26 @@ module prmfile
   private                          :: get_strings
   private                          :: load
 contains
+! BEGIN GENERATED reset_state (tools/reset_state.py; do not edit by hand)
+subroutine prmfile_reset_state
+!! Every variable of this module back to its value at program start (qdyn --serve).
+  integer :: reset_status
+  logical :: reset_ok
+  character(len=1) :: reset_field
+  reset_status = 0
+  call prm_close
+  reset_ok = prm_get_field(reset_field, skip=.true.)
+  nullify(first_sec)
+  nullify(current_sec)
+  nullify(current_lp)
+  section_count = 0
+  current_title = repeat(achar(0), len(current_title))
+  next_title = repeat(achar(0), len(next_title))
+  PRM_U = 0
+  PRM_FN = repeat(achar(0), len(PRM_FN))
+  stat = 0
+end subroutine prmfile_reset_state
+! END GENERATED reset_state
 
 !  subroutine prmfile_startup
 !     At some point someone created this empty subroutine which used to be

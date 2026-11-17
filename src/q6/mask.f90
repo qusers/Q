@@ -48,6 +48,14 @@ module atom_mask
   end type mask_type
 
 contains
+! BEGIN GENERATED reset_state (tools/reset_state.py; do not edit by hand)
+subroutine atom_mask_reset_state
+!! Every variable of this module back to its value at program start (qdyn --serve).
+  integer :: reset_status
+  reset_status = 0
+  if (allocated(solute)) deallocate(solute)
+end subroutine atom_mask_reset_state
+! END GENERATED reset_state
 
 
   subroutine mask_startup

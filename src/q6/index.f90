@@ -38,6 +38,18 @@ module indexer
 
 
 contains
+! BEGIN GENERATED reset_state (tools/reset_state.py; do not edit by hand)
+subroutine indexer_reset_state
+!! Every variable of this module back to its value at program start (qdyn --serve).
+  integer :: reset_status
+  reset_status = 0
+  call index_clear
+  count = 0
+  top = 0
+  nullify(ndx)
+  memstat = 0
+end subroutine indexer_reset_state
+! END GENERATED reset_state
 
 
 subroutine index_create(size)

@@ -193,6 +193,112 @@ module topo
   integer, allocatable             :: istart_mol(:)
 
   contains
+! BEGIN GENERATED reset_state (tools/reset_state.py; do not edit by hand)
+subroutine topo_reset_state
+!! Every variable of this module back to its value at program start (qdyn --serve).
+  integer :: reset_status
+  reset_status = 0
+  alloc_status = 0
+  version = 0
+  title = ''
+  forcefield = ''
+  creation_date = repeat(achar(0), len(creation_date))
+  pdb_file = ''
+  lib_files = ''
+  prm_file = repeat(achar(0), len(prm_file))
+  nat_pro = 0
+  nat_solute = 0
+  max_atom = 0
+  if (allocated(xtop)) deallocate(xtop)
+  if (allocated(iac)) deallocate(iac)
+  if (allocated(heavy)) deallocate(heavy)
+  if (allocated(crg)) deallocate(crg)
+  if (allocated(cgpatom)) deallocate(cgpatom)
+  solvent_type = 0
+  if (allocated(glb_cofactor)) deallocate(glb_cofactor)
+  ligand_offset = 0
+  xpcent = 0
+  xwcent = 0
+  rwat = 0
+  rexcl_o = 0
+  rexcl_i = 0
+  nexats = 0
+  nshellats = 0
+  nexwat = 0
+  if (allocated(shell)) deallocate(shell)
+  if (allocated(excl)) deallocate(excl)
+  boxlength = 0
+  boxcenter = 0
+  inv_boxl = 0
+  use_pbc = .false.
+  nbonds = 0
+  nbonds_solute = 0
+  max_bonds = 0
+  if (allocated(bnd)) deallocate(bnd)
+  nbndcod = 0
+  max_bondlib = 0
+  if (allocated(bondlib)) deallocate(bondlib)
+  if (allocated(sybyl_bond_type)) deallocate(sybyl_bond_type)
+  nangles = 0
+  nangles_solute = 0
+  max_angles = 0
+  if (allocated(ang)) deallocate(ang)
+  nangcod = 0
+  max_anglib = 0
+  if (allocated(anglib)) deallocate(anglib)
+  ntors = 0
+  ntors_solute = 0
+  ntorcod = 0
+  max_tors = 0
+  max_torlib = 0
+  nimps = 0
+  nimps_solute = 0
+  nimpcod = 0
+  max_imps = 0
+  max_implib = 0
+  imp_type = 0
+  if (allocated(tor)) deallocate(tor)
+  if (allocated(imp)) deallocate(imp)
+  if (allocated(torlib)) deallocate(torlib)
+  if (allocated(implib)) deallocate(implib)
+  ncgp = 0
+  ncgp_solute = 0
+  max_cgp = 0
+  if (allocated(cgp)) deallocate(cgp)
+  natyps = 0
+  max_atyps = 0
+  nlj2 = 0
+  max_lj2 = 0
+  if (allocated(iaclib)) deallocate(iaclib)
+  if (allocated(sybyl_atom_type)) deallocate(sybyl_atom_type)
+  if (allocated(tac)) deallocate(tac)
+  if (allocated(lj2)) deallocate(lj2)
+  ivdw_rule = 0
+  el14_scale = 0
+  iuse_switch_atom = 0
+  coulomb_constant = 0
+  ff_type = 0
+  n14nbrs = 0
+  nexnbrs = 0
+  max_exbnrs = 0
+  n14long = 0
+  max_14long = 0
+  nexlong = 0
+  max_exlong = 0
+  if (allocated(list14)) deallocate(list14)
+  if (allocated(listex)) deallocate(listex)
+  if (allocated(list14long)) deallocate(list14long)
+  deallocate(listexlong, stat=reset_status)
+  nullify(listexlong)
+  nres = 0
+  nres_solute = 0
+  max_res = 0
+  if (allocated(res)) deallocate(res)
+  nmol = 0
+  max_mol = 0
+  if (allocated(istart_mol)) deallocate(istart_mol)
+end subroutine topo_reset_state
+! END GENERATED reset_state
 
 
 subroutine topo_startup

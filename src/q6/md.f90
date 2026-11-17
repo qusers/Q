@@ -422,6 +422,30 @@ module md
   logical                           :: fire_h_constrained = .false.
 
   !-----------------------------------------------------------------------
+  !       qdyn --serve: one process runs many stages (see qdyn.f90).
+  !       The serve_* variables survive between stages; everything else in
+  !       this module is reset by md_reset_state before each stage.
+  !-----------------------------------------------------------------------
+  logical                   :: serve_mode = .false.
+  character(len=200)        :: serve_dir = ''
+  character(len=200)        :: serve_input = ''
+  character(len=200)        :: serve_topology = ''
+  ! the state at the end of the last stage: where the next one starts
+  logical                   :: serve_has_state = .false.
+  real(8), allocatable      :: serve_x(:), serve_v(:)
+  logical                   :: serve_has_theta = .false.
+  real, allocatable         :: serve_theta_corr(:)
+  real(8)                   :: serve_boxlength(3), serve_boxcenter(3)
+  ! this stage starts from serve_x/serve_v instead of a restart file
+  logical                   :: restart_from_memory = .false.
+  ! formerly SAVEd inside nbqplis2, nbqplist and randm: module variables so
+  ! that a new stage starts with the values a new process has
+  logical                   :: nbqplis2_list_done = .false.
+  logical                   :: nbqplist_list_done = .false.
+  integer                   :: randm_irand = 0
+  integer                   :: randm_new = 0
+
+  !-----------------------------------------------------------------------
   !       profiling vars
   !-----------------------------------------------------------------------
 #if defined (PROFILING)
@@ -459,6 +483,209 @@ module md
 !       START OF PUBLIC SUBROUTINES
 !-------------------------------------------------------------------------------
 contains
+! BEGIN GENERATED reset_state (tools/reset_state.py; do not edit by hand)
+subroutine md_reset_state
+!! Every variable of this module back to its value at program start (qdyn --serve).
+  integer :: reset_status
+  type(energies), save :: fresh_energies
+  type(node_assignment_type), save :: fresh_node_assignment_type
+#if defined (PROFILING)
+  type(profiling_var_type), save :: fresh_profiling_var_type
+#endif
+  reset_status = 0
+  pi = 0
+  deg2rad = 0
+  stat = 0
+  alloc_status = 0
+  natom = 0
+  nat3 = 0
+  if (allocated(iqatom)) deallocate(iqatom)
+  nwat = 0
+  crg_ow = 0
+  crg_hw = 0
+  mu_w = 0
+  box = .false.
+  rigid_box_center = .false.
+  put_solute_back_in_box = .false.
+  put_solvent_back_in_box = .false.
+  constant_pressure = .false.
+  volume_try = 0
+  volume_acc = 0
+  pressure = 0
+  max_vol_displ = 0
+  pressure_seed = 0
+  if (allocated(mol_mass)) deallocate(mol_mass)
+  if (allocated(mass)) deallocate(mass)
+  control_box = .false.
+  new_boxl = 0
+  nsteps = 0
+  istep = 0
+  iseed = 0
+  restart = .false.
+  dt = 0
+  Temp0 = 0
+  Tmaxw = 0
+  tau_T = 0
+  constrain_solvent = .false.
+  constrain_solute = .false.
+  constrain_hydrogens = .false.
+  separate_scaling = .false.
+  excluded_thermostat = 'separate'
+  Tscale_excl = 1.0_8
+  solute_constraint_algorithm = CONSTRAINT_SHAKE
+  solvent_constraint_algorithm = CONSTRAINT_SETTLE
+  do_minimize = .false.
+  max_min_steps = 1000
+  min_tol = 0.1
+  min_step = 0.001
+  min_bonded_only = .false.
+  min_method = MIN_FIRE
+  fire_dt_start_fs = 0.1d0
+  fire_dt_max_fs = 1.0d0
+  fire_nmin = 5
+  fire_maxmove = 0.1d0
+  fire_list_skin = 0.1d0
+  min_freeze_qatoms = .false.
+  use_LRF = .false.
+  NBcycle = 0
+  Rcpp = 0
+  Rcww = 0
+  Rcpw = 0
+  Rcq = 0
+  RcLRF = 0
+  ljcod = 0
+  itrj_cycle = 0
+  iene_cycle = 0
+  itemp_cycle = 0
+  iout_cycle = 0
+  force_rms = .false.
+  ivolume_cycle = 0
+  exclude_bonded = .false.
+  fk_pshell = 0
+  Dwmz = 0
+  awmz = 0
+  rwat_in = 0
+  fkwpol = 0
+  wpol_restr = .false.
+  wpol_Born = .false.
+  fk_wsphere = 0
+  crgtot = 0
+  crgQtot = 0
+  if (allocated(list_sh)) deallocate(list_sh)
+  if (allocated(nsort)) deallocate(nsort)
+  if (allocated(theta)) deallocate(theta)
+  if (allocated(theta0)) deallocate(theta0)
+  if (allocated(tdum)) deallocate(tdum)
+  nwpolr_shell = 0
+  n_max_insh = 0
+  if (allocated(wshell)) deallocate(wshell)
+  top_file = repeat(achar(0), len(top_file))
+  restart_file = repeat(achar(0), len(restart_file))
+  xfin_file = repeat(achar(0), len(xfin_file))
+  trj_file = repeat(achar(0), len(trj_file))
+  fep_file = repeat(achar(0), len(fep_file))
+  ene_file = repeat(achar(0), len(ene_file))
+  exrstr_file = repeat(achar(0), len(exrstr_file))
+  xwat_file = repeat(achar(0), len(xwat_file))
+  implicit_rstr_from_file = 0
+  nrstr_seq = 0
+  nrstr_pos = 0
+  nrstr_dist = 0
+  nrstr_angl = 0
+  nrstr_wall = 0
+  if (allocated(rstseq)) deallocate(rstseq)
+  if (allocated(rstpos)) deallocate(rstpos)
+  if (allocated(rstdis)) deallocate(rstdis)
+  if (allocated(rstang)) deallocate(rstang)
+  if (allocated(rstwal)) deallocate(rstwal)
+  if (allocated(d)) deallocate(d)
+  if (allocated(x)) deallocate(x)
+  if (allocated(xx)) deallocate(xx)
+  if (allocated(v)) deallocate(v)
+  if (allocated(winv)) deallocate(winv)
+  grms = 0
+  E = fresh_energies
+  Tfree = 0
+  Tfree_solvent = 0
+  Tfree_solute = 0
+  Temp_solvent = 0
+  Temp_solute = 0
+  Texcl_solute = 0
+  Texcl_solvent = 0
+  Texcl = 0
+  equilibrium_simulation = .true.
+  scaling_parameter = repeat(achar(0), len(scaling_parameter))
+  L_sigmoid = 0
+  dlambda = 0.0_8
+  dU_dlambda = 0.0_8
+  work_accumulated = 0.0_8
+  nbpp_pair = 0
+  if (allocated(nbpp)) deallocate(nbpp)
+  nbww_pair = 0
+  nbww_true_pair = 0
+  if (allocated(nbww)) deallocate(nbww)
+  nbpw_pair = 0
+  if (allocated(nbpw)) deallocate(nbpw)
+  nbqq_max = 0
+  if (allocated(qconn)) deallocate(qconn)
+  nbqq_pair = 0
+  if (allocated(nbqq)) deallocate(nbqq)
+  nbqp_pair = 0
+  if (allocated(nbqp)) deallocate(nbqp)
+  nbqw_pair = 0
+  if (allocated(nbqw)) deallocate(nbqw)
+  nbpp_cgp_pair = 0
+  if (allocated(nbpp_cgp)) deallocate(nbpp_cgp)
+  nbpw_cgp_pair = 0
+  if (allocated(nbpw_cgp)) deallocate(nbpw_cgp)
+  nbqp_cgp_pair = 0
+  if (allocated(nbqp_cgp)) deallocate(nbqp_cgp)
+  if (allocated(special_LJcod)) deallocate(special_LJcod)
+  if (allocated(iwhich_cgp)) deallocate(iwhich_cgp)
+  if (allocated(lrf)) deallocate(lrf)
+  if (allocated(old_lrf)) deallocate(old_lrf)
+  if (allocated(cgp_bound_cent)) deallocate(cgp_bound_cent)
+  if (allocated(cgp_bound_rad)) deallocate(cgp_bound_rad)
+  if (allocated(cgp_mol)) deallocate(cgp_mol)
+  if (allocated(mol_has_cross_excl)) deallocate(mol_has_cross_excl)
+  if (allocated(exlong_start)) deallocate(exlong_start)
+  if (allocated(exlong_partner)) deallocate(exlong_partner)
+  if (allocated(l14long_start)) deallocate(l14long_start)
+  if (allocated(l14long_partner)) deallocate(l14long_partner)
+  calculation_assignment = fresh_node_assignment_type
+  shake_constraints = 0
+  shake_molecules = 0
+  settle_constraints = 0
+  lincs_constraints = 0
+  lincs_solute_constraints = 0
+  lincs_solvent_constraints = 0
+  constraint_count = 0
+  if (allocated(shake_mol)) deallocate(shake_mol)
+  if (allocated(md_shake_mol)) deallocate(md_shake_mol)
+  md_shake_molecules = 0
+  md_shake_constraints = 0
+  fire_h_constrained = .false.
+  restart_from_memory = .false.
+  nbqplis2_list_done = .false.
+  nbqplist_list_done = .false.
+  randm_irand = 0
+  randm_new = 0
+#if defined (PROFILING)
+  profile = fresh_profiling_var_type
+#if defined (USE_MPI)
+  if (allocated(all_node_times)) deallocate(all_node_times)
+  if (allocated(node_times)) deallocate(node_times)
+#endif
+#endif
+  Ndegf = 0
+  Ndegfree = 0
+  Ndegf_solute = 0
+  Ndegfree_solute = 0
+  Ndegf_solvent = 0
+  Ndegfree_solvent = 0
+  detail_temps = .false.
+end subroutine md_reset_state
+! END GENERATED reset_state
 
 
 subroutine md_startup
@@ -487,6 +714,121 @@ subroutine md_shutdown
 end subroutine md_shutdown
 
 
+!-------------------------------------------------------------------------------
+! qdyn --serve: one process, many stages (qdyn.f90 drives the loop)
+!-------------------------------------------------------------------------------
+
+subroutine serve_keep_state
+!! At the end of a stage (rank 0): keep the state the next stage starts from.
+  if (nodeid /= 0) return
+  if (allocated(serve_x)) deallocate(serve_x)
+  if (allocated(serve_v)) deallocate(serve_v)
+  allocate(serve_x(3*natom), serve_v(3*natom))
+  serve_x(:) = x(1:3*natom)
+  serve_v(:) = v(1:3*natom)
+  if (allocated(serve_theta_corr)) deallocate(serve_theta_corr)
+  serve_has_theta = wpol_restr .and. allocated(wshell)
+  if (serve_has_theta) then
+    allocate(serve_theta_corr(nwpolr_shell))
+    serve_theta_corr(:) = wshell(:)%theta_corr
+  end if
+  if (use_PBC) then
+    serve_boxlength(:) = boxlength(:)
+    serve_boxcenter(:) = boxcenter(:)
+  end if
+  serve_has_state = .true.
+end subroutine serve_keep_state
+
+
+subroutine serve_write_state(filename)
+!! The kept state as a Q restart file, record for record as write_xfin writes it.
+  character(*), intent(in) :: filename
+  integer                  :: u, n3, stat
+  if (nodeid /= 0 .or. .not. serve_has_state) return
+  n3 = size(serve_x)
+  open(newunit=u, file=filename, status='replace', form='unformatted', action='write', iostat=stat)
+  if (stat /= 0) then
+    write(*,'(a)') '>>> WARNING: could not write '//trim(filename)
+    return
+  end if
+  write(u) n3, serve_x(:)
+  write(u) n3, serve_v(:)
+  if (serve_has_theta) write(u) size(serve_theta_corr), serve_theta_corr(:)
+  if (use_PBC) then
+    write(u) serve_boxlength(:)
+    write(u) serve_boxcenter(:)
+  end if
+  close(u)
+end subroutine serve_write_state
+
+
+logical function serve_read_state(filename)
+!! Load a Q restart file as the kept state (rank 0). Periodic boxes are not supported.
+  character(*), intent(in) :: filename
+  integer                  :: u, n3, nshell, stat
+  serve_read_state = .false.
+  if (nodeid /= 0) then
+    serve_read_state = .true.
+    return
+  end if
+  open(newunit=u, file=filename, status='old', form='unformatted', action='read', iostat=stat)
+  if (stat /= 0) return
+  read(u, iostat=stat) n3
+  if (stat /= 0 .or. n3 <= 0) then
+    close(u)
+    return
+  end if
+  rewind(u)
+  if (allocated(serve_x)) deallocate(serve_x)
+  if (allocated(serve_v)) deallocate(serve_v)
+  allocate(serve_x(n3), serve_v(n3))
+  read(u, iostat=stat) n3, serve_x(:)
+  if (stat == 0) read(u, iostat=stat) n3, serve_v(:)
+  if (stat /= 0) then
+    close(u)
+    return
+  end if
+  if (allocated(serve_theta_corr)) deallocate(serve_theta_corr)
+  serve_has_theta = .false.
+  read(u, iostat=stat) nshell
+  if (stat == 0 .and. nshell > 0) then
+    backspace(u)
+    allocate(serve_theta_corr(nshell))
+    read(u, iostat=stat) nshell, serve_theta_corr(:)
+    serve_has_theta = (stat == 0)
+  end if
+  close(u)
+  serve_has_state = .true.
+  serve_read_state = .true.
+end function serve_read_state
+
+
+subroutine serve_close_trajectory
+!! Close the trajectory file of the stage that just ended.
+  if (itrj_cycle > 0) call trj_close
+end subroutine serve_close_trajectory
+
+
+subroutine serve_reset
+!! Every module back to its state at program start, the serve_* variables excepted.
+  call md_reset_state
+  call topo_reset_state
+  call qatom_reset_state
+  call trj_reset_state
+  call atom_mask_reset_state
+  call prmfile_reset_state
+  call indexer_reset_state
+  call mpiglob_reset_state
+  call lincs_reset_state
+#if defined(USE_MPI)
+  call lincs_mpi_reset_state
+#endif
+  call settle_reset_state
+  ! what md_startup sets at program start
+  call md_startup
+end subroutine serve_reset
+
+
 subroutine die(cause)
 !!--------------------------------------------------------------------------------
 !! subroutine **die**
@@ -507,11 +849,16 @@ subroutine die(cause)
     if (istep > 0) then
       if ( mod(istep,iout_cycle) .ne. 1 ) call write_out
     end if
-    if(allocated(v)) then
+    if(allocated(v) .and. xfin_file /= '') then
       !save restart file for diagnosing coordinate problems
       write(*,*) 'restart file written at step', istep
       call write_xfin
     endif
+    if(serve_mode .and. serve_has_state) then
+      ! the state this stage started from, so that a new process can carry on
+      call serve_write_state(trim(serve_dir)//'/recovery.re')
+      write(*,'(a)') 'qdyn --serve: state before this stage written to '//trim(serve_dir)//'/recovery.re'
+    end if
     write (*,'(79a)') ('!',i=1,79)
     call close_output_files
 
@@ -1675,7 +2022,7 @@ end subroutine distribute_nonbonds
 !-------------------------------------------------------------------------------
 subroutine close_input_files
     close (1)
-    if(restart) close (2)
+    if(restart .and. .not. restart_from_memory) close (2)
     if ( implicit_rstr_from_file .eq. 1 ) close (12)
     close (13)
 end subroutine close_input_files
@@ -1692,12 +2039,14 @@ end subroutine close_output_files
 !-------------------------------------------------------------------------------
 subroutine open_files
     ! --> restart file (2)
-    if(restart) then
+    if(restart .and. .not. restart_from_memory) then
       open (unit=2, file=restart_file, status='old', form='unformatted', action='read', err=2)
     end if
 
     ! --> final coords (3)
-    open (unit=3, file=xfin_file, status='unknown', form='unformatted', action='write', err=3)
+    if(xfin_file /= '') then
+      open (unit=3, file=xfin_file, status='unknown', form='unformatted', action='write', err=3)
+    end if
 
     ! --> energy output file (11)
     if ( iene_cycle .gt. 0 ) then
@@ -3343,6 +3692,9 @@ logical function initialize()
     ! read name of input file from the command line
     num_args = command_argument_count()
     if (num_args .lt. 1) call die('no input file specified on the command line')
+    if (serve_mode) then
+      infilename = serve_input
+    else
 #if defined(CRAY)
     call pxfgetarg(num_args, infilename, 200, i)
 #elif defined(MPICH)
@@ -3350,6 +3702,7 @@ logical function initialize()
 #else
     call getarg(num_args, infilename)
 #endif
+    end if
     text = 'Reading input from '//infilename
     call centered_heading(trim(text), '-')
 
@@ -3962,10 +4315,25 @@ logical function initialize()
       end if
       write (*,60) trim(top_file)
 60    format ('Topology file      = ',a)
+      if(serve_mode) then
+        ! some nonbonded routines keep water parameters from their first call:
+        ! one process serves one topology
+        if(serve_topology == '') then
+          serve_topology = top_file
+        else if(top_file /= serve_topology) then
+          write(*,'(a)') '>>> ERROR: qdyn --serve runs one topology; this stage names another: '//trim(top_file)
+          initialize = .false.
+        end if
+      end if
 
       if(.not. prm_get_string_by_key('restart', restart_file)) then
         restart = .false.
-        if(need_restart) then
+        if(serve_has_state) then
+          ! qdyn --serve: continue from the state the previous stage ended in
+          restart = .true.
+          restart_from_memory = .true.
+          restart_file = '(state in memory)'
+        else if(need_restart) then
           write(*,'(a)') '>>> ERROR: Restart file required when initial temp. not given.'
           initialize = .false.
         end if
@@ -3986,10 +4354,14 @@ logical function initialize()
 65    format ('Initial coord. file= ',a)
 
       if(.not. prm_get_string_by_key('final', xfin_file)) then
-        write(*,'(a)') '>>> ERROR: final coordinate file not specified (section files, keyword final)'
-        initialize = .false.
+        if(serve_mode) then
+          xfin_file = '' ! qdyn --serve keeps the final state in memory
+        else
+          write(*,'(a)') '>>> ERROR: final coordinate file not specified (section files, keyword final)'
+          initialize = .false.
+        end if
       end if
-      write (*,80) trim(xfin_file)
+      if(xfin_file /= '') write (*,80) trim(xfin_file)
 80    format ('Final coord. file  = ',a)
 
       if(.not. prm_get_string_by_key('trajectory', trj_file)) then
@@ -9361,7 +9733,6 @@ subroutine nbqplis2
   integer                                         :: ig,ia,i,j,iq,i3,nl,inside
   real(8)                                         :: rcut2,r2
   integer                                         :: xspec
-  logical, save                                   :: list_done
 
 
   !       This routine makes a list of non-bonded atom pairs involving
@@ -9386,7 +9757,7 @@ subroutine nbqplis2
 
 
 
-  if(list_done .and. rcq > rexcl_o) return
+  if(nbqplis2_list_done .and. rcq > rexcl_o) return
 
   nbqp_pair = 0
   rcut2 = Rcq*Rcq
@@ -9455,7 +9826,7 @@ subroutine nbqplis2
     end do ialoop
   end do igloop
 
-  list_done = .true. !save this value
+  nbqplis2_list_done = .true. !save this value
 #if defined (PROFILING)
   profile(5)%time = profile(5)%time + rtime() - start_loop_time
 #endif
@@ -9572,7 +9943,6 @@ subroutine nbqplist
   integer                                         :: ig,ia,i,j,iq,i3,nl
   real(8)                                         :: rcut2,r2
   integer                                         ::      xspec
-  logical, save                           ::      list_done = .false.
 
 #if defined (PROFILING)
   real(8)                                         :: start_loop_time
@@ -9595,7 +9965,7 @@ subroutine nbqplist
 
   !don't remake pair list if q-atoms interact with all solute atoms (rcq>rexcl_o)
   !and list already made
-  if(list_done .and. rcq > rexcl_o) return
+  if(nbqplist_list_done .and. rcq > rexcl_o) return
 
   nbqp_pair = 0
   rcut2 = Rcq*Rcq
@@ -9650,7 +10020,7 @@ subroutine nbqplist
     end do ialoop
   end do igloop
 
-  list_done = .true. !save this value
+  nbqplist_list_done = .true. !save this value
 
 #if defined (PROFILING)
   profile(5)%time = profile(5)%time + rtime() - start_loop_time
@@ -16423,7 +16793,21 @@ subroutine prep_coord
   ! --- read restart file
 
   call allocate_natom_arrays
-  if(restart) then
+  if(restart_from_memory) then
+    call centered_heading('Starting from the state in memory','-')
+    if(size(serve_x) /= 3*natom) then
+      write(*,100) size(serve_x)/3, natom
+      call die('wrong number of atoms in the state in memory')
+    end if
+    x(1:3*natom) = serve_x(1:3*natom)
+    v(1:3*natom) = serve_v(1:3*natom)
+    write (*,'(a30,i8)')   'Total number of atoms        =',natom
+    write (*,'(a30,i8,/)') 'Number of waters encountered =',nwat
+    if(use_PBC) then
+      boxlength(:) = serve_boxlength(:)
+      boxcenter(:) = serve_boxcenter(:)
+    end if
+  else if(restart) then
     ! topology routine has determined nwat, natom and allocated storage
     call centered_heading('Reading restart file','-')
     read (2) nat3
@@ -17206,29 +17590,27 @@ real(8) function randm (ig)
   integer, parameter              ::      mult=31415821
   integer                                 ::      irandh,irandl,multh,multl
   real(8)                                 ::      r
-  integer, save                           ::      irand = 0
-  integer, save                           ::  new = 0
 
-  if (new .eq. 0) then
-    new = 1
-    irand = mod (iabs(ig),m)
+  if (randm_new .eq. 0) then
+    randm_new = 1
+    randm_irand = mod (iabs(ig),m)
   end if
 
   ! --- multiply irand by mult, but take into account that overflow must
   ! --- be discarded, and do not generate an error.
-  irandh = irand / m1
-  irandl = mod(irand, m1)
+  irandh = randm_irand / m1
+  irandl = mod(randm_irand, m1)
   multh = mult / m1
   multl = mod(mult, m1)
 
-  irand = mod(irandh*multl + irandl*multh, m1) * m1 + irandl*multl
-  irand = mod(irand + 1, m)
+  randm_irand = mod(irandh*multl + irandl*multh, m1) * m1 + irandl*multl
+  randm_irand = mod(randm_irand + 1, m)
 
   ! --- convert irand to a real random number between 0 and 1.
-  r = real(irand / 10) * 10 / real(m)
+  r = real(randm_irand / 10) * 10 / real(m)
   if ((r .le. 0.e0) .or. (r .gt. 1.e0)) r = 0.e0
   randm = r
-  ig = irand
+  ig = randm_irand
 
 end function randm
 
@@ -17920,7 +18302,15 @@ subroutine wat_shells
   write(*, 100) nwpolr_shell
 100 format(/,'Setting up ', i1, ' water shells for polarization restraints.')
 
-  if(restart) then !try to load theta_corr from restart file
+  if(restart_from_memory) then
+    if(serve_has_theta .and. size(serve_theta_corr) == nwpolr_shell) then
+      wshell(:)%theta_corr = serve_theta_corr(:)
+      write(*,103)
+    else
+      write(*,102)
+      wshell(:)%theta_corr = 0.
+    end if
+  else if(restart) then !try to load theta_corr from restart file
     read(2, iostat=filestat) nwpolr_shell_restart
     if(filestat /= 0 .or. nwpolr_shell_restart /= nwpolr_shell) then
       write(*,102)
@@ -18317,6 +18707,7 @@ subroutine write_xfin
   integer                                         ::      i,nat3
 
   nat3 = natom*3
+  if(xfin_file == '') return ! qdyn --serve without a final file
 
   rewind (3)
   write (3) nat3, (x(i),i=1,nat3)

@@ -65,5 +65,33 @@ module  mpiglob
   integer,allocatable  :: nbqp_per_cgp(:)
   integer,allocatable  :: nbqw_per_cgp(:)
 
+contains
+! BEGIN GENERATED reset_state (tools/reset_state.py; do not edit by hand)
+subroutine mpiglob_reset_state
+!! Every variable of this module back to its value at program start (qdyn --serve).
+  integer :: reset_status
+  reset_status = 0
+  ierr = 0
+  if (allocated(mpi_status)) deallocate(mpi_status)
+  if (allocated(d_recv)) deallocate(d_recv)
+  if (allocated(E_recv)) deallocate(E_recv)
+  if (allocated(E_send)) deallocate(E_send)
+  if (allocated(EQ_recv)) deallocate(EQ_recv)
+  if (allocated(EQ_send)) deallocate(EQ_send)
+  if (allocated(request_recv)) deallocate(request_recv)
+  totnbpp = 0
+  totnbpw = 0
+  totnbww = 0
+  totnbqp = 0
+  totnbqw = 0
+  nbxx = 0
+  nbxx_tot = 0
+  if (allocated(nbpp_per_cgp)) deallocate(nbpp_per_cgp)
+  if (allocated(nbpw_per_cgp)) deallocate(nbpw_per_cgp)
+  if (allocated(nbww_per_cgp)) deallocate(nbww_per_cgp)
+  if (allocated(nbqp_per_cgp)) deallocate(nbqp_per_cgp)
+  if (allocated(nbqw_per_cgp)) deallocate(nbqw_per_cgp)
+end subroutine mpiglob_reset_state
+! END GENERATED reset_state
 end module mpiglob
 
