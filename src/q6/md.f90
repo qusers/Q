@@ -12158,9 +12158,16 @@ subroutine nonbon2_qp_nonlinear
   real(8) :: dx1,dx2,dx3,r2,r,invr,invr2,invr6
   real(8) :: c12,c6,qi_e,qj_e,decoupling,r_sc_lj,r_sc_q,gap_qq
   real(8) :: V_a,Vel,dv_lj,dv_el,dv
-  logical :: overlap_lj,overlap_q
+  logical :: overlap_lj,overlap_q,gapsys
+  real(8) :: qi_tab(nqat,nstates)
 
   call ensure_softcore_pair_tables
+  gapsys = softcore_method == SC_GAPSYS
+  do istate = 1, nstates
+    do iq = 1, nqat
+      qi_tab(iq,istate) = real(qcrg(iq,istate),8)/sqrt(coulomb_constant)
+    end do
+  end do
 
   do ip = 1, nbqp_pair
     iq   = nbqp(ip)%i
@@ -12177,21 +12184,25 @@ subroutine nonbon2_qp_nonlinear
     dx3 = x(j3+3)-x(i3+3)
     r2 = dx1*dx1+dx2*dx2+dx3*dx3
     call pair_distance_terms(r2,r,invr,invr2,invr6)
+    qj_e = crg(j)/sqrt(coulomb_constant)
 
     do istate = 1, nstates
       c12 = sc_pair_c12(iq,iacj,istate,iLJ)
       c6  = sc_pair_c6(iq,iacj,istate,iLJ)
       if(softcore_enabled(iq,istate)) then
-        qi_e = real(qcrg(iq,istate),8)/sqrt(coulomb_constant)
-        qj_e = crg(j)/sqrt(coulomb_constant)
+        qi_e = qi_tab(iq,istate)
         if(foreign_hamiltonian_evaluation .or. iLJ /= 1) then
           decoupling = max(0.0_8,1.0_8-EQ(istate)%lambda)
           r_sc_lj = nonlinear_lj_radius(sc_pair_sigma(iq,iacj,istate,iLJ),decoupling)
           r_sc_q = nonlinear_coulomb_radius(qi_e,qj_e,decoupling)
         else
           r_sc_lj = softcore_lj_rsc(iq,iacj,istate)
-          r_sc_q = softcore_q_lambda_factor(iq,istate)* &
-                   nonlinear_charge_factor(qi_e,qj_e)
+          ! Inline nonlinear_charge_factor (same arithmetic).
+          if(gapsys) then
+            r_sc_q = softcore_q_lambda_factor(iq,istate)*(1.0_8+gapsys_sigma_q*abs(qi_e*qj_e))
+          else
+            r_sc_q = softcore_q_lambda_factor(iq,istate)
+          end if
         end if
       else
         r_sc_lj = 0.0_8
@@ -12473,18 +12484,20 @@ subroutine nonbon2_qw_softcore
   ! activation are independent, so zero-LJ water hydrogens still receive
   ! Coulomb soft-core. Water-independent pair parameters are built once per
   ! call; distance terms are shared across both states and both terms.
-  integer :: jw,iq,i,j,istate,iLJO,iLJH,iaci,iac_ow,iac_hw
-  real(8) :: dxO,dyO,dzO,dxH1,dyH1,dzH1,dxH2,dyH2,dzH2
-  real(8) :: r2O,r2H1,r2H2,dvO,dvH1,dvH2,dv_lj,dv_el
-  real(8) :: rO,invrO,invr2O,invr6O,rH1,invrH1,invr2H1,invr6H1,rH2,invrH2,invr2H2,invr6H2
+  integer :: jw,iq,i,j,istate,iLJO,iLJH,iaci,iac_ow,iac_hw,site
+  ! Per water site (1 = O, 2-3 = H): displacement, distance terms, energies, dV/dr/r.
+  real(8) :: dxs(3),dys(3),dzs(3),r2s(3),rs(3),invrs(3),invr2s(3),invr6s(3),dvs(3)
+  real(8) :: vel(3),vlj(3)
+  real(8) :: dv_lj,dv_el,va,vb,c12,c6,qq,rlj,rq,rsoft
   real(8) :: aO,bO,aH,bH,sigma,decoupling,qi_e,qO_e,qH_e
-  real(8) :: VelO,VelH1,VelH2,VljO,VljH1,VljH2
-  logical :: overlap_lj,overlap_q
+  logical :: overlap_lj,overlap_q,gapsys
   ! Per (Q-atom, state) parameters for the oxygen (O) and hydrogen (H) sites.
   real(8) :: c12O(nqat,nstates),c6O(nqat,nstates),rljO(nqat,nstates),rqO(nqat,nstates)
   real(8) :: qqO(nqat,nstates)
   real(8) :: c12H(nqat,nstates),c6H(nqat,nstates),rljH(nqat,nstates),rqH(nqat,nstates)
   real(8) :: qqH(nqat,nstates)
+  ! Largest switching radius per (Q-atom, state); beyond it both terms are hard.
+  real(8) :: rsO(nqat,nstates),rsH(nqat,nstates)
 
   iac_ow = iac(nat_solute+1)
   iac_hw = iac(nat_solute+2)
@@ -12539,73 +12552,81 @@ subroutine nonbon2_qw_softcore
     end do
   end do
 
+  do istate = 1, nstates
+    do iq = 1, nqat
+      rsO(iq,istate) = max(rljO(iq,istate),rqO(iq,istate))
+      rsH(iq,istate) = max(rljH(iq,istate),rqH(iq,istate))
+    end do
+  end do
+  gapsys = softcore_method == SC_GAPSYS
+
   do jw = 1, nbqw_pair
     j = nbqw(jw)
     do iq = 1, nqat
       i = iqseq(iq)
-      dxO = x(3*j-2)-x(3*i-2)
-      dyO = x(3*j-1)-x(3*i-1)
-      dzO = x(3*j)-x(3*i)
-      dxH1 = x(3*j+1)-x(3*i-2)
-      dyH1 = x(3*j+2)-x(3*i-1)
-      dzH1 = x(3*j+3)-x(3*i)
-      dxH2 = x(3*j+4)-x(3*i-2)
-      dyH2 = x(3*j+5)-x(3*i-1)
-      dzH2 = x(3*j+6)-x(3*i)
-      r2O = dxO*dxO+dyO*dyO+dzO*dzO
-      r2H1 = dxH1*dxH1+dyH1*dyH1+dzH1*dzH1
-      r2H2 = dxH2*dxH2+dyH2*dyH2+dzH2*dzH2
-      call pair_distance_terms(r2O,rO,invrO,invr2O,invr6O)
-      call pair_distance_terms(r2H1,rH1,invrH1,invr2H1,invr6H1)
-      call pair_distance_terms(r2H2,rH2,invrH2,invr2H2,invr6H2)
-      dvO = 0.0_8
-      dvH1 = 0.0_8
-      dvH2 = 0.0_8
-
-      do istate = 1, nstates
-        call nonlinear_pair_eval(c12O(iq,istate),c6O(iq,istate),qqO(iq,istate),rljO(iq,istate), &
-                                 rqO(iq,istate),r2O,rO,invrO,invr2O,invr6O, &
-                                 VljO,VelO,dv_lj,dv_el,overlap_lj,overlap_q)
-        if((overlap_lj .or. overlap_q) .and. EQ(istate)%lambda > 1.0e-12_8 .and. &
-           (c12O(iq,istate) /= 0.0_8 .or. c6O(iq,istate) /= 0.0_8 .or. qqO(iq,istate) /= 0.0_8)) then
-          call die('nonlinear softcore encountered exact overlap in an active Q-water oxygen pair')
-        end if
-        dvO = dvO+(dv_lj+dv_el)*EQ(istate)%lambda
-
-        call nonlinear_pair_eval(c12H(iq,istate),c6H(iq,istate),qqH(iq,istate),rljH(iq,istate), &
-                                 rqH(iq,istate),r2H1,rH1,invrH1,invr2H1,invr6H1, &
-                                 VljH1,VelH1,dv_lj,dv_el,overlap_lj,overlap_q)
-        if((overlap_lj .or. overlap_q) .and. EQ(istate)%lambda > 1.0e-12_8 .and. &
-           (c12H(iq,istate) /= 0.0_8 .or. c6H(iq,istate) /= 0.0_8 .or. qqH(iq,istate) /= 0.0_8)) then
-          call die('nonlinear softcore encountered exact overlap in an active Q-water hydrogen pair')
-        end if
-        dvH1 = dvH1+(dv_lj+dv_el)*EQ(istate)%lambda
-
-        call nonlinear_pair_eval(c12H(iq,istate),c6H(iq,istate),qqH(iq,istate),rljH(iq,istate), &
-                                 rqH(iq,istate),r2H2,rH2,invrH2,invr2H2,invr6H2, &
-                                 VljH2,VelH2,dv_lj,dv_el,overlap_lj,overlap_q)
-        if((overlap_lj .or. overlap_q) .and. EQ(istate)%lambda > 1.0e-12_8 .and. &
-           (c12H(iq,istate) /= 0.0_8 .or. c6H(iq,istate) /= 0.0_8 .or. qqH(iq,istate) /= 0.0_8)) then
-          call die('nonlinear softcore encountered exact overlap in an active Q-water hydrogen pair')
-        end if
-        dvH2 = dvH2+(dv_lj+dv_el)*EQ(istate)%lambda
-
-        EQ(istate)%qw%el = EQ(istate)%qw%el+VelO+VelH1+VelH2
-        EQ(istate)%qw%vdw = EQ(istate)%qw%vdw+VljO+VljH1+VljH2
+      do site = 1, 3
+        dxs(site) = x(3*j+3*site-5)-x(3*i-2)
+        dys(site) = x(3*j+3*site-4)-x(3*i-1)
+        dzs(site) = x(3*j+3*site-3)-x(3*i)
+        r2s(site) = dxs(site)*dxs(site)+dys(site)*dys(site)+dzs(site)*dzs(site)
+        call pair_distance_terms(r2s(site),rs(site),invrs(site),invr2s(site),invr6s(site))
+        dvs(site) = 0.0_8
       end do
 
-      d(3*i-2) = d(3*i-2)-dvO*dxO-dvH1*dxH1-dvH2*dxH2
-      d(3*i-1) = d(3*i-1)-dvO*dyO-dvH1*dyH1-dvH2*dyH2
-      d(3*i) = d(3*i)-dvO*dzO-dvH1*dzH1-dvH2*dzH2
-      d(3*j-2) = d(3*j-2)+dvO*dxO
-      d(3*j-1) = d(3*j-1)+dvO*dyO
-      d(3*j) = d(3*j)+dvO*dzO
-      d(3*j+1) = d(3*j+1)+dvH1*dxH1
-      d(3*j+2) = d(3*j+2)+dvH1*dyH1
-      d(3*j+3) = d(3*j+3)+dvH1*dzH1
-      d(3*j+4) = d(3*j+4)+dvH2*dxH2
-      d(3*j+5) = d(3*j+5)+dvH2*dyH2
-      d(3*j+6) = d(3*j+6)+dvH2*dzH2
+      do istate = 1, nstates
+        do site = 1, 3
+          if(site == 1) then
+            c12 = c12O(iq,istate); c6 = c6O(iq,istate); qq = qqO(iq,istate)
+            rlj = rljO(iq,istate); rq = rqO(iq,istate); rsoft = rsO(iq,istate)
+          else
+            c12 = c12H(iq,istate); c6 = c6H(iq,istate); qq = qqH(iq,istate)
+            rlj = rljH(iq,istate); rq = rqH(iq,istate); rsoft = rsH(iq,istate)
+          end if
+          if(gapsys .and. r2s(site) > 0.0_8 .and. rs(site) >= rsoft) then
+            ! Hard potential, same arithmetic as eval_gapsys_lj/eval_gapsys_coulomb.
+            if(c12 == 0.0_8 .and. c6 == 0.0_8) then
+              vlj(site) = 0.0_8
+              dv_lj = 0.0_8
+            else
+              va = c12*invr6s(site)*invr6s(site)
+              vb = c6*invr6s(site)
+              vlj(site) = va-vb
+              dv_lj = (-12.0_8*va+6.0_8*vb)*invr2s(site)
+            end if
+            if(qq == 0.0_8) then
+              vel(site) = 0.0_8
+              dv_el = 0.0_8
+            else
+              vel(site) = qq*invrs(site)
+              dv_el = -vel(site)*invr2s(site)
+            end if
+          else
+            call nonlinear_pair_eval(c12,c6,qq,rlj,rq,r2s(site),rs(site),invrs(site), &
+                                     invr2s(site),invr6s(site),vlj(site),vel(site), &
+                                     dv_lj,dv_el,overlap_lj,overlap_q)
+            if((overlap_lj .or. overlap_q) .and. EQ(istate)%lambda > 1.0e-12_8 .and. &
+               (c12 /= 0.0_8 .or. c6 /= 0.0_8 .or. qq /= 0.0_8)) then
+              if(site == 1) then
+                call die('nonlinear softcore encountered exact overlap in an active Q-water oxygen pair')
+              else
+                call die('nonlinear softcore encountered exact overlap in an active Q-water hydrogen pair')
+              end if
+            end if
+          end if
+          dvs(site) = dvs(site)+(dv_lj+dv_el)*EQ(istate)%lambda
+        end do
+        EQ(istate)%qw%el = EQ(istate)%qw%el+vel(1)+vel(2)+vel(3)
+        EQ(istate)%qw%vdw = EQ(istate)%qw%vdw+vlj(1)+vlj(2)+vlj(3)
+      end do
+
+      d(3*i-2) = d(3*i-2)-dvs(1)*dxs(1)-dvs(2)*dxs(2)-dvs(3)*dxs(3)
+      d(3*i-1) = d(3*i-1)-dvs(1)*dys(1)-dvs(2)*dys(2)-dvs(3)*dys(3)
+      d(3*i) = d(3*i)-dvs(1)*dzs(1)-dvs(2)*dzs(2)-dvs(3)*dzs(3)
+      do site = 1, 3
+        d(3*j+3*site-5) = d(3*j+3*site-5)+dvs(site)*dxs(site)
+        d(3*j+3*site-4) = d(3*j+3*site-4)+dvs(site)*dys(site)
+        d(3*j+3*site-3) = d(3*j+3*site-3)+dvs(site)*dzs(site)
+      end do
     end do
   end do
 end subroutine nonbon2_qw_softcore
