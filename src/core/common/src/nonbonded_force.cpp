@@ -398,6 +398,20 @@ std::vector<special_pair_term_t> build_special_pairs(Context& ctx, const ParseRe
 
 }  // namespace
 
+void NonbondedForce::update_lambdas(Context& ctx) {
+    if (!data_.enabled()) return;
+
+    const int* q_state = data_.q_state->cpu_data_p;
+    real_t* atom_lambdas = data_.atom_lambdas->cpu_data_p;
+    const double* lambdas = ctx.lambdas->cpu_data_p;
+
+    // Only Q atoms carry a state. P/W atoms stay 1 and padding slots stay 0.
+    for (int i = 0; i < data_.n_total; i++) {
+        if (q_state[i] >= 0) atom_lambdas[i] = static_cast<real_t>(lambdas[q_state[i]]);
+    }
+    if (ctx.command_info.requested_gpu) data_.atom_lambdas->upload();
+}
+
 void NonbondedForce::init(Context& ctx, const ParseResult& parsed) {
     build_combinded_list(ctx);
     build_charge_table(ctx);

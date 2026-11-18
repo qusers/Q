@@ -74,6 +74,8 @@ void Handler::configure(const StageSettings& stage) {
 
     ctx.apply_stage(stage);  // md stage fields, dt, lambdas upload, native_output
 
+    nonbonded_force_->update_lambdas(ctx);
+
     const std::array<bool, 3> flags{
         ctx.md.constraint_solvent,
         ctx.md.constraint_solute,
