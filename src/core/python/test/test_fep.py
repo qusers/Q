@@ -2,7 +2,7 @@ from pathlib import Path
 import time
 import tempfile
 import numpy as np
-from qgpu.fep import stability, run_window
+from qgpu.fep import stability, run_window, walk, pairs
 from qgpu import Config, DistRestraint, Engine, SeqRestraint
 
 from dataclasses import replace
@@ -131,6 +131,9 @@ def check_window(engine, out, lambdas=(0.5, 0.5), blocks=50, block=1000, energy=
 
 def run(scale=1.0):
     fep_dir, out = create_fep_dir()
+    for old in out.glob("md_*.en*"):
+        old.unlink()
+
     restart = out / "eq5.re"
     if restart.exists():
         engine = load_equilibrium(fep_dir, restart)
@@ -142,7 +145,8 @@ def run(scale=1.0):
     engine.update_config(output=1000)
     windows = walk(engine, out)
     for a, b, check in pairs(windows, engine.config.temperature):
-        print(a.lambdas[0], b.lambdas[0], a.steps, round(check.forward, 2), round(check.backward, 2), check.fits)
+        print(a.lambdas[0], b.lambdas[0], a.steps, round(
+            check.forward, 2), round(check.backward, 2), check.fits)
     # window = run_window(engine, (0.5, 0.5), out / "md_0500_0500.en")
 
     # print(window.steps, window.stable, window.check)

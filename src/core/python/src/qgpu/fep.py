@@ -60,9 +60,6 @@ class Window:
     check: Stability        # the last check
 
 
-_OFF = 1e-9
-
-
 def run_window(engine, lambdas, energy_file, block=1000, energy=10,
                min_blocks=10, max_blocks=50, error_limit=1.0):
     """Run one lambda window from the engine's current state, block by block, until it is stable.
@@ -74,14 +71,16 @@ def run_window(engine, lambdas, energy_file, block=1000, energy=10,
     if min_blocks < 2 or max_blocks < min_blocks:
         raise InputError("need 2 <= min_blocks <= max_blocks")
     energy_file = Path(energy_file)
-    for_engine = tuple(max(x, _OFF) for x in lambdas)
+    if 0.0 in lambdas:
+        raise InputError("run_window cannot use a lambda of exactly 0: "
+                         "the engine reports no energy for that state")
 
     chunks, parts, passed = [], [], 0
     while True:
         # every run() overwrites its energy file: one chunk per block, joined below
         chunks.append(energy_file.with_name(
             f"{energy_file.name}.{len(chunks) + 1:03d}"))
-        engine.update_config(steps=block, lambdas=for_engine, energy=energy,
+        engine.update_config(steps=block, lambdas=tuple(lambdas), energy=energy,
                              energy_file=str(chunks[-1]))
         parts.append(engine.run().q_energy)
         q_energy = np.concatenate(parts)
@@ -186,7 +185,7 @@ def next_lambda(window, end, temperature, aim=0.6, max_step=0.1):
     return round(l1 + direction * best, 3)
 
 
-def walk(engine, out, target=0.5, aim=0.6, max_step=0.1, max_windows=60, **window_settings):
+def walk(engine, out, ends=(0.999, 0.001), target=0.5, aim=0.6, max_step=0.1, max_windows=60, dg_limit=0.07, **window_settings):
     """Choose and run the lambda windows of one leg, from the engine's current state (after eq5).
 
     Runs lambda = 0.5, then walks to 1, then returns to the 0.5 end state and walks to 0.
@@ -201,11 +200,12 @@ def walk(engine, out, target=0.5, aim=0.6, max_step=0.1, max_windows=60, **windo
     windows = {}
 
     def run(l1, start):
+        step = max_step if start is None else abs(l1 - start.lambdas[0])
         if start is not None:
             engine.set_state(start.state)
         lambdas = _pair(l1)
-        windows[lambdas[0]] = run_window(
-            engine, lambdas, _energy_file(out, lambdas), **window_settings)
+        windows[lambdas[0]] = run_window(engine, lambdas, _energy_file(out, lambdas),
+                                         error_limit=dg_limit / step, **window_settings)
         return windows[lambdas[0]]
 
     def connect(inner, outer):
@@ -219,7 +219,7 @@ def walk(engine, out, target=0.5, aim=0.6, max_step=0.1, max_windows=60, **windo
         connect(between, outer)
 
     midpoint = run(0.5, None)
-    for end in (1.0, 0.0):
+    for end in ends:
         current = midpoint
         while current.lambdas[0] != end:
             trial = run(next_lambda(
