@@ -295,30 +295,26 @@ end program qdyn
 !-------------------------------------------------------------------------------
 ! signal handlers
 !-------------------------------------------------------------------------------
-integer(4) function sigint_handler(sig_num)
+subroutine sigint_handler(sig_num)
   use md
   implicit none
   integer(4) :: sig_num
 
   call die('user request (control-C)')
-  sigint_handler = 1
-end function sigint_handler
+end subroutine sigint_handler
 
-integer(4) function sigkill_handler(sig_num)
+subroutine sigkill_handler(sig_num)
   use md
   implicit none
   integer(4) :: sig_num
 
   call die('kill signal')
-  sigkill_handler = 1
-end function sigkill_handler
+end subroutine sigkill_handler
 
-integer(4) function sigabrt_handler(sig_num)
+subroutine sigabrt_handler(sig_num)
   use md
   implicit none
   integer(4) :: sig_num
 
   call die('kill signal')
-  sigabrt_handler = 1
-end function sigabrt_handler
-
+end subroutine sigabrt_handler

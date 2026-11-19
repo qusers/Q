@@ -665,6 +665,36 @@ class TestWallRestraintsInMdInput:
         assert wr_idx > dr_idx
 
 
+class TestForeignHamiltonianWorkMode:
+    def test_correction_mode_is_rendered_with_foreign_targets(self):
+        params = MDParameters(steps=10, stepsize=2.0, temperature=298, bath_coupling=10.0)
+        content = render_md_input(
+            params=params,
+            lambda1="0.500",
+            lambda2="0.500",
+            trajectory_file="test.dcd",
+            final_file="test.re",
+            energy_file="test.en",
+            foreign_lambdas=["0.490", "0.500", "0.510"],
+        )
+        assert "foreign_hamiltonian_mode  correction" in content
+        assert "[foreign_lambdas]\n0.490\n0.500\n0.510" in content
+
+    def test_unknown_foreign_mode_is_rejected(self):
+        params = MDParameters(steps=10, stepsize=2.0, temperature=298, bath_coupling=10.0)
+        with pytest.raises(ValueError, match="unsupported foreign Hamiltonian mode"):
+            render_md_input(
+                params=params,
+                lambda1="0.500",
+                lambda2="0.500",
+                trajectory_file="test.dcd",
+                final_file="test.re",
+                energy_file="test.en",
+                foreign_lambdas=["0.500"],
+                foreign_hamiltonian_mode="approximate",
+            )
+
+
 class TestGoldenFileComparison:
     """Tests comparing rendered output against golden files."""
 

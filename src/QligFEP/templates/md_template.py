@@ -104,6 +104,8 @@ def render_md_input(
     energy_file: str | None = None,
     is_eq1: bool = False,
     lambda_scaling: str | None = None,
+    foreign_lambdas: list[str] | None = None,
+    foreign_hamiltonian_mode: str = "correction",
 ) -> str:
     """Render an MD input file from parameters.
 
@@ -123,6 +125,10 @@ def render_md_input(
         is_eq1: True for eq1.inp which has random_seed and initial_temperature
         lambda_scaling: Pre-formatted [lambda_scaling] body for the non-equilibrium
             switching runs (scaling_parameter/L_sigmoid). Omitted when None.
+        foreign_lambdas: State-2 target weights for exact cross-window work.
+            Used by nonlinear soft-core BAR.
+        foreign_hamiltonian_mode: ``correction`` for production, ``direct`` for
+            complete target-H reevaluation, or ``validate`` to compare both.
 
     Returns:
         Complete .inp file content as string
@@ -159,6 +165,14 @@ def render_md_input(
     )
 
     lambda_scaling_section = f"\n[lambda_scaling]\n{lambda_scaling}\n" if lambda_scaling else ""
+    foreign_lambdas_section = (
+        "\n[foreign_lambdas]\n" + "\n".join(foreign_lambdas) + "\n" if foreign_lambdas else ""
+    )
+    if foreign_lambdas and foreign_hamiltonian_mode not in {"correction", "direct", "validate"}:
+        raise ValueError(f"unsupported foreign Hamiltonian mode: {foreign_hamiltonian_mode}")
+    foreign_mode_setting = (
+        f"foreign_hamiltonian_mode  {foreign_hamiltonian_mode}\n" if foreign_lambdas else ""
+    )
 
     return f"""\
 [MD]
@@ -173,6 +187,7 @@ constrain_solute          {onoff(params.constrain_solute)}
 constraint_algorithm      {params.constraint_algorithm}
 lrf                       {onoff(params.lrf)}
 separate_scaling          {onoff(params.separate_scaling)}
+{foreign_mode_setting}\
 {minimization_settings}\
 
 [cut-offs]
@@ -210,7 +225,7 @@ not excluded
 
 [lambdas]
 {lambda1} {lambda2}
-
+{foreign_lambdas_section}
 [sequence_restraints]
 {sequence_restraints}
 

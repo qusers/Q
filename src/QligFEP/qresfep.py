@@ -69,6 +69,44 @@ CHARGED_RESIDUES = frozenset({"ASP", "GLU", "LYS", "ARG", "HIP"})
 #: `softcore_use_max_potential on`.
 SOFTCORE_MAX_POTENTIAL = "20"
 
+#: Soft-core methods whose Hamiltonian is nonlinear in lambda. They need explicit
+#: activation flags, foreign-lambda energies and foreign-work BAR instead of qfep.
+NONLINEAR_SOFTCORE_METHODS = frozenset({"gapsys", "beutler"})
+SOFTCORE_METHODS = frozenset({"standard"}) | NONLINEAR_SOFTCORE_METHODS
+
+
+def nonlinear_activation_flags(
+    charges: tuple[float, float], walls: tuple[tuple[float, float], tuple[float, float]]
+) -> tuple[int, int]:
+    """Return qdyn's nonlinear soft-core activation flags for one Q-atom.
+
+    Mirrors the checks in qdyn's ``get_fep``: an atom is a dummy in a state when
+    its LJ parameters and charge are all zero, and it has a Lennard-Jones wall
+    when both LJ parameters are non-zero. A state is activated when its atom is
+    real and the other state's is a dummy, or when it has a wall the other
+    state lacks. QresFEP needs this charge-aware rule because a side-chain atom
+    can be neutral in both states of a stage (e.g. a polar hydrogen while its
+    side chain is grown in at zero charge).
+    """
+    dummy = [walls[s][0] == 0.0 and walls[s][1] == 0.0 and charges[s] == 0.0 for s in (0, 1)]
+    wall = [walls[s][0] != 0.0 and walls[s][1] != 0.0 for s in (0, 1)]
+    return (
+        int((not dummy[0] and dummy[1]) or (wall[0] and not wall[1])),
+        int((not dummy[1] and dummy[0]) or (wall[1] and not wall[0])),
+    )
+
+
+def neighbour_state2_weights(current: str, stage_weights: list[str]) -> list[str]:
+    """Return the state-2 weights of a window and its neighbours within one stage.
+
+    QresFEP ladders are not symmetric, so neighbours are taken from the sorted
+    state-2 weights of the stage itself.
+    """
+    ordered = sorted(set(stage_weights), key=float)
+    index = ordered.index(current)
+    return ordered[max(0, index - 1) : index + 2]
+
+
 #: Distance-restraint window and force holding the two side chains superimposed.
 #: Pairs closer than `low` are free; the force acts beyond it.
 RESTRAINT_LOW = 0.0
@@ -88,6 +126,23 @@ _SOLVENT_RESIDUES = frozenset({"HOH", "SOL", "WAT"})
 
 #: Parameter-file sections copied into both the temporary and final merged files.
 _PARAMETER_SECTIONS = ("[options]", "[atom_types]", "[bonds]", "[angles]", "[torsions]", "[impropers]")
+
+#: Stage analysis for nonlinear soft-core, replacing the qfep block of run_resfep.sh.
+_FOREIGN_BAR_STAGE = """\
+# Nonlinear soft-core: BAR on the foreign work written to the .fhe files.
+timeout 10m qligfep_fhe_analyze . -T "$temperature" -o foreign_bar > foreign_bar.out || {
+    fhe_rc=$?
+    echo "ERROR: qligfep_fhe_analyze failed for FEP$stage replicate $run_num with exit status $fhe_rc."
+    exit 1
+}
+if [ ! -s foreign_bar.json ]; then
+    echo "ERROR: foreign-work BAR produced no result for FEP$stage replicate $run_num."
+    exit 1
+fi
+printf 'status=ok\\nstage=%s\\ntemperature=%s\\nreplicate=%s\\nseed=%s\\nproduction_logs=%s\\nforeign_bar=complete\\n' \\
+    "$stage" "$temperature" "$run_num" "$seed" "${#production_logs[@]}" \\
+    > stage_validation.status
+"""
 
 #: Local profiles cannot run the two chained FEP stages.
 _LOCAL_CLUSTERS = frozenset({"LOCAL", "LOCALP"})
@@ -160,6 +215,7 @@ class QresFEP:
         write_trajectories: bool = True,
         separate_scaling: bool = True,
         workdir: Path | None = None,
+        softcore_method: str = "standard",
     ):
         """
         Args:
@@ -188,6 +244,9 @@ class QresFEP:
                 production when trajectories are not needed for analysis.
             separate_scaling: Scale solute and solvent independently.
             workdir: Directory holding the preparation output. Defaults to cwd.
+            softcore_method: ``standard`` (legacy maximum-potential soft-core),
+                or the lambda-dependent ``gapsys`` or ``beutler`` soft-core,
+                which are analysed with foreign-work BAR instead of qfep.
         """
         self.workdir = Path(workdir or Path.cwd())
         self.wild_type, self.position, self.mutant = parse_mutation(mutation)
@@ -199,6 +258,9 @@ class QresFEP:
                 f"QresFEP currently supports only {QRESFEP_FORCE_FIELD}, got "
                 f"{self.force_field!r}"
             )
+        if softcore_method not in SOFTCORE_METHODS:
+            raise MutationError(f"Unsupported softcore method: {softcore_method!r}")
+        self.softcore_method = softcore_method
         self.cluster = cluster
         self.windows = int(windows)
         self.sampling = sampling
@@ -1024,8 +1086,7 @@ class QresFEP:
 
         stage_files = []
         for stage, lambdas in enumerate(self.lambda_schedule(), start=1):
-            names = []
-            previous = "eq5.re"  # stage 2 inherits stage 1's endpoint under this name
+            windows = []
             for window in range(self.windows):
                 if self.start == "0.5" and stage == 1:
                     value = 1.000 - float(lambdas[-window - 1])
@@ -1039,6 +1100,17 @@ class QresFEP:
                 # analysis and the run script can still find the windows.
                 if self.from_gly or (self.start == "0.5" and stage == 1):
                     first, second = second, first
+                windows.append((basename, first, second))
+
+            stage_weights = [second for _, _, second in windows]
+            names = []
+            previous = "eq5.re"  # stage 2 inherits stage 1's endpoint under this name
+            for basename, first, second in windows:
+                foreign = (
+                    neighbour_state2_weights(second, stage_weights)
+                    if self.softcore_method in NONLINEAR_SOFTCORE_METHODS
+                    else None
+                )
 
                 content = render_md_input(
                     params=config.params,
@@ -1051,6 +1123,7 @@ class QresFEP:
                     distance_restraints=distance_restraints,
                     sequence_restraints=anchor,
                     wall_restraints=wall,
+                    foreign_lambdas=foreign,
                 )
                 (self.inputfiles / f"{basename}.inp").write_text(content)
                 names.append(basename)
@@ -1092,28 +1165,38 @@ class QresFEP:
 
     def _render_fep_file(self, is_first_stage: bool, vdw_parameters: list[str]) -> str:
         hybrid = self.pdb[self.q_position]
+        nonlinear = self.softcore_method in NONLINEAR_SOFTCORE_METHODS
         lines = [
             f"! Dual topology QresFEP: {self.hybrid_name}",
             "",
             "[FEP]",
             "   states 2",
-            "   softcore_use_max_potential on",
-            "",
-            "[atoms]",
+            f"   softcore_use_max_potential {'off' if nonlinear else 'on'}",
         ]
+        if nonlinear:
+            lines.append(f"   softcore_method {self.softcore_method}")
+        lines += ["", "[atoms]"]
         for index, atom in enumerate(hybrid, start=1):
             lines.append(f"{index:4d} {atom[1]:4d} ! {atom[2]:<4s}")
 
+        charge_pairs, type_pairs = [], []
         lines += ["", "[change_charges]"]
         for index, entry in enumerate(self.merged_lib["[atoms]"], start=1):
             tokens = entry.split()
             first, second = self._charge_pair(tokens[1], tokens[3], is_first_stage)
+            charge_pairs.append((float(first), float(second)))
             lines.append(f"{index:4d}{first:>10s}{second:>10s}")
 
+        # Q-atom LJ parameters per type: A and B of the first LJ code.
+        lj_parameters = {}
         lines += ["", "[atom_types]"]
         for entry in vdw_parameters:
             tokens = entry.split()
             if len(tokens) >= 7:
+                try:
+                    lj_parameters[tokens[0]] = (float(tokens[1]), float(tokens[3]))
+                except ValueError:
+                    pass  # column-header rows of the parameter file
                 lines.append(
                     f"{tokens[0]:<8s}{tokens[1]:>10s}{tokens[3]:>10s}  0.0  0.0"
                     f"{tokens[4]:>10s}{tokens[5]:>10s}{tokens[6]:>10s}"
@@ -1123,12 +1206,27 @@ class QresFEP:
         for index, entry in enumerate(self.merged_lib["[atoms]"], start=1):
             tokens = entry.split()
             first, second = self._type_pair(tokens[1], tokens[2], is_first_stage)
+            type_pairs.append((first, second))
             lines.append(f"{index:4d}{first:>10s}{second:>10s}")
+
+        if nonlinear:
+            net = [sum(pair[state] for pair in charge_pairs) for state in (0, 1)]
+            if abs(net[0] - net[1]) > 1e-3:
+                # qdyn requires perstate_born_correction for charge-changing
+                # nonlinear soft-core, which QresFEP does not write yet.
+                raise MutationError(
+                    f"{self.softcore_method} soft-core has not yet been validated for "
+                    f"charge-changing mutations ({self.name})"
+                )
 
         lines += ["", "[softcore]"]
         for index, entry in enumerate(self.merged_lib["[atoms]"], start=1):
             name = entry.split()[1]
-            if name in self.backbone:
+            if nonlinear:
+                walls = tuple(lj_parameters[atom_type] for atom_type in type_pairs[index - 1])
+                flags = nonlinear_activation_flags(charge_pairs[index - 1], walls)
+                pair = (str(flags[0]), str(flags[1]))
+            elif name in self.backbone:
                 pair = ("0", "0")  # the shared backbone is never softcored
             elif is_first_stage:
                 pair = ("0", SOFTCORE_MAX_POTENTIAL)
@@ -1284,9 +1382,21 @@ class QresFEP:
             Path(path).stem for path in sorted(glob.glob(str(self.inputfiles / "eq*.inp")))
         ]
 
+        nonlinear = self.softcore_method in NONLINEAR_SOFTCORE_METHODS
+        in_qfep_block = False
         with open(template) as source, open(target, "w") as out:
             for line in source:
                 if line.strip() == "#SBATCH -A ACCOUNT" and "ACCOUNT" not in substitutions:
+                    continue
+                # Nonlinear soft-core is not linear in lambda, so qfep's
+                # reconstruction is invalid; the stage is analysed with BAR on
+                # the foreign work qdyn writes to the .fhe files instead.
+                if nonlinear and line.strip() == "#QFEP_BEGIN":
+                    in_qfep_block = True
+                    out.write(_FOREIGN_BAR_STAGE)
+                    continue
+                if in_qfep_block:
+                    in_qfep_block = line.strip() != "#QFEP_END"
                     continue
                 out.write(replace(line, substitutions))
 

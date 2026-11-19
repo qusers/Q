@@ -153,6 +153,30 @@ def read_qfep_stage(qfep_out: Path, reverse_direction: bool) -> dict[str, float]
     return results
 
 
+def read_foreign_bar_stage(result_file: Path, temperature: float) -> dict[str, float]:
+    """Read one stage's free energy from a nonlinear soft-core ``foreign_bar.json``.
+
+    The foreign work is oriented H(state 2) - H(state 1) of the stage's FEP file
+    whatever direction the windows ran in, which is the orientation
+    :func:`read_qfep_stage` normalises to, so no sign flip is needed. Only the
+    BAR estimate exists; the Zwanzig entries are NaN.
+
+    Raises:
+        ValueError: If the result is for another temperature or is not finite.
+    """
+    result = json.loads(result_file.read_text())
+    if not math.isclose(float(result["temperature_K"]), temperature):
+        raise ValueError(f"{result_file}: foreign BAR temperature does not match {temperature}")
+    value = float(result["total_delta_g_kcal"])
+    if not math.isfinite(value):
+        raise ValueError(f"{result_file}: non-finite foreign BAR result")
+    if result.get("poor_windows"):
+        logger.warning(f"{result_file}: {result['poor_windows']} poor-overlap BAR windows")
+    values = dict.fromkeys(ESTIMATORS, math.nan)
+    values["dG_bar"] = value
+    return values
+
+
 def _stage_direction(wild_type: str, start: str, stage: int) -> bool:
     """Return whether a stage ran from lambda 0 to 1.
 
@@ -208,15 +232,20 @@ def read_mutation_leg(fep_dir: Path, leg: str, temperature: str) -> LegResult:
         failed = None
         for stage_dir in stage_dirs:
             stage = int(stage_dir.name[-1])
-            qfep_out = stage_dir / temperature / replicate / "qfep.out"
-            if not qfep_out.exists():
+            run_dir = stage_dir / temperature / replicate
+            qfep_out = run_dir / "qfep.out"
+            foreign_bar = run_dir / "foreign_bar.json"
+            if not qfep_out.exists() and not foreign_bar.exists():
                 failed = f"replicate {replicate}: {stage_dir.name} has no qfep.out"
                 break
             try:
-                values = read_qfep_stage(
-                    qfep_out, _stage_direction(wild_type, start, stage)
-                )
-            except OSError as exc:
+                if foreign_bar.exists():
+                    values = read_foreign_bar_stage(foreign_bar, float(temperature))
+                else:
+                    values = read_qfep_stage(
+                        qfep_out, _stage_direction(wild_type, start, stage)
+                    )
+            except (OSError, ValueError, KeyError) as exc:
                 failed = f"replicate {replicate}: {exc}"
                 break
             for estimator in ESTIMATORS:

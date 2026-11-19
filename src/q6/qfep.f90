@@ -31,6 +31,7 @@ program qfep
   integer                 :: k
   
   integer,parameter :: mxpts = 20000000
+  logical :: foreign_sidecar
   integer,parameter :: mxbin = 600
   integer,parameter :: mxstates = 4
   character(80)     :: filnam, line
@@ -234,6 +235,10 @@ program qfep
 14  format('--> Name of file number',i4,':')
     call prompt(line)
     read(*,*) filnam
+    inquire(file=trim(filnam)//'.fhe', exist=foreign_sidecar)
+    if(foreign_sidecar) then
+      error stop 'Nonlinear foreign work found: use qligfep_fhe_analyze.'
+    end if
     write (*,*) ''
     if(openit(f,filnam,'old','unformatted','read') /= 0) then
       stop 'qfep terminated abnormally: Failed to open energy file.'
