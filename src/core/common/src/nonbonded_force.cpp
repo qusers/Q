@@ -9,6 +9,7 @@
 
 #include "constants.h"
 #include "geometry.h"
+#include "qgpu_error.h"
 #include "vdw_rules.h"
 
 namespace {
@@ -357,7 +358,7 @@ std::vector<special_pair_term_t> build_special_pairs(Context& ctx, const ParseRe
         const int jq = atom_to_q.at(aj);
 
         if (iq < 0 || jq < 0) {
-            throw std::runtime_error("Soft pairs must contain two Q-atoms.");
+            throw InputError("Soft pairs must contain two Q-atoms");
         }
 
         const size_t index_i = static_cast<size_t>(state) * nqat + iq;
@@ -367,7 +368,7 @@ std::vector<special_pair_term_t> build_special_pairs(Context& ctx, const ParseRe
         const int type_j = ctx.q_atypes.at(index_j).code;
 
         if (type_i <= 0 || type_j <= 0) {
-            throw std::runtime_error("Soft pairs require defined Q-atom types.");
+            throw InputError("Soft pairs require defined Q-atom types");
         }
 
         const auto& param_i = ctx.q_catypes.at(type_i - 1);
@@ -396,6 +397,20 @@ std::vector<special_pair_term_t> build_special_pairs(Context& ctx, const ParseRe
 }
 
 }  // namespace
+
+void NonbondedForce::update_lambdas(Context& ctx) {
+    if (!data_.enabled()) return;
+
+    const int* q_state = data_.q_state->cpu_data_p;
+    real_t* atom_lambdas = data_.atom_lambdas->cpu_data_p;
+    const double* lambdas = ctx.lambdas->cpu_data_p;
+
+    // Only Q atoms carry a state. P/W atoms stay 1 and padding slots stay 0.
+    for (int i = 0; i < data_.n_total; i++) {
+        if (q_state[i] >= 0) atom_lambdas[i] = static_cast<real_t>(lambdas[q_state[i]]);
+    }
+    if (ctx.command_info.requested_gpu) data_.atom_lambdas->upload();
+}
 
 void NonbondedForce::init(Context& ctx, const ParseResult& parsed) {
     build_combinded_list(ctx);

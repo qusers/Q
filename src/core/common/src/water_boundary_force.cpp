@@ -7,6 +7,7 @@
 
 #include "constants.h"
 #include "q_math.h"
+#include "qgpu_error.h"
 
 namespace {
 int get_oh_bond_code(int o, int h1, const std::vector<bond_t>& bonds) {
@@ -40,11 +41,11 @@ int get_hoh_angle_code(int o, int h1, int h2, const std::vector<angle_t>& angles
 
 }  // namespace
 
-void WaterBoundaryForce::init(Context& ctx, const Temperature& temperature, const ParseResult& parsed) {
+void WaterBoundaryForce::init(Context& ctx, const Temperature& temperature, const ParseResult& parsed, const std::vector<double>& theta_corr) {
     temperature_ = &temperature;
     if (ctx.n_waters() > 0) {
         const double crgQtot = build_water_sphere(ctx);
-        build_wshells(ctx, crgQtot, parsed);
+        build_wshells(ctx, crgQtot, parsed, theta_corr);
     }
     init_backend(ctx);
 }
@@ -71,10 +72,10 @@ double WaterBoundaryForce::build_water_sphere(Context& ctx) {
     return crgQtot;
 }
 
-void WaterBoundaryForce::build_wshells(Context& ctx, double crgQtot, const ParseResult& parsed) {
+void WaterBoundaryForce::build_wshells(Context& ctx, double crgQtot, const ParseResult& parsed, const std::vector<double>& theta_corr) {
     bool run_gpu = ctx.command_info.requested_gpu;
 
-    const auto& restart_theta_corr = parsed.restart_theta_corr;
+    const auto& restart_theta_corr = theta_corr;
 
     // Topology interaction atom indices are 1-based.
     const int oxygen = ctx.n_atoms_solute + 1;
@@ -85,12 +86,11 @@ void WaterBoundaryForce::build_wshells(Context& ctx, double crgQtot, const Parse
     int angle_code = get_hoh_angle_code(oxygen, hydrogen1, hydrogen2, parsed.angles);
 
     if (bond_code == 0 || angle_code == 0) {
-        throw std::runtime_error( "Water polarization requires an O-H bond and H-O-H angle for the first solvent molecule.");
+        throw InputError("Water polarization requires an O-H bond");
     }
 
     const auto& water_bond_parameter = parsed.cbonds[bond_code - 1];
     const auto& water_angle_parameter = parsed.cangles[angle_code - 1];
-
 
     const charge_t& oxygen_charge = parsed.charges[oxygen - 1];
     const ccharge_t& oxygen_charge_parameter = parsed.ccharges[oxygen_charge.code - 1];

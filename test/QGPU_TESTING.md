@@ -11,7 +11,7 @@ Before starting, prepare the following tools and make sure their commands are av
 - **Python 3**: required to run the test script, with NumPy and Matplotlib installed (see Section 2.1).
 - **Fortran compiler `gfortran`**: required to compile the QFortran test executable.
 - **CUDA compiler `nvcc`**: provided by the CUDA Toolkit and required to compile QGPU. A C++ compiler compatible with the CUDA Toolkit is also required.
-- **Git and GNU Make**: required to obtain the code and run the build commands.
+- **Git, CMake (3.24 or newer) and GNU Make**: required to obtain the code and run the build commands.
 
 Running tests in GPU mode also requires an NVIDIA GPU and a suitable driver.
 
@@ -65,12 +65,11 @@ cd ../..
 From the Q repository root, run:
 
 ```bash
-cd src/core
-make double
-cd ../..
+cmake -S src/core -B src/core/build -DCMAKE_CUDA_ARCHITECTURES=89 -DQDYN_SPFP=OFF -DQDYN_BUILD_TESTS=OFF
+cmake --build src/core/build --target move --parallel
 ```
 
-`make double` cleans the build and rebuilds with `SPFP=0`, producing `bin/qdyn`. The last command returns to the repository root. The current Makefile includes `-arch=sm_89` by default; adjust the build settings for your target GPU. To test an SPFP build, use `make spfp` and note this in your test records.
+This builds QGPU in double precision and copies it to `bin/qdyn`. `CMAKE_CUDA_ARCHITECTURES=89` matches an RTX 40-series GPU; set it for your target GPU (for example `80` for A100, `90` for H100). To test an SPFP build, use `-DQDYN_SPFP=ON` and note this in your test records.
 
 To view the test script's options, run from the repository root:
 
@@ -212,7 +211,6 @@ The labels `Q5` and `Q7` in mismatch messages are historical names. In the curre
 | --- | --- |
 | `--inp PATH [PATH ...]` | Runs one or more input files directly, preparing a separate directory for each; does not automatically chain the output of one input into the next |
 | `-a gpu` / `-a cpu` | Required; selects QGPU's execution mode. QFortran runs in either case |
-| `--qgpu-input inp` | Input parsing mode required for direct input tests; `inp` is the default |
 | `-w PATH` | Existing parent working directory; an absolute path is recommended |
 | `-k All` | Keeps the test files for inspection |
 | `--tolerance VALUE` | Absolute energy comparison tolerance; default 0.0 |

@@ -1,9 +1,12 @@
 #include "cpu_shake.h"
 
 #include <cmath>
+#include <cstdio>
+#include <string>
 #include <vector>
 
 #include "constants.h"
+#include "qgpu_error.h"
 
 void CpuShake::apply(Context& ctx, HostDeviceBuffer<coord_t>& xcoords_buffer) {
     auto* coords = ctx.coords->cpu_data_p;
@@ -138,7 +141,8 @@ void CpuShake::apply_to(Context& ctx, coord_t* coords, coord_t* xcoords) {
                     printf(">>> Shake failed, i = %d, j = %d, d = %f, d0 = %f\n", ai, aj, sqrt(dist2), sqrt(shake_bonds[shake + i].dist2));
                 }
             }
-            std::exit(EXIT_FAILURE);
+            std::fflush(stdout);
+            throw ConstraintError("SHAKE did not converge at step " + std::to_string(ctx.step) + " (CPU, " + std::to_string(shake_max_iter) + " iterations)");
         }
 
         shake += current_shake_num;

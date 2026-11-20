@@ -1,0 +1,22 @@
+[build-system]
+requires = [
+    "setuptools>=64",
+    "wheel",
+    "cmake>=3.24",
+    "pybind11>=2.12",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qgpu"
+version = "0.1.0"
+description = "Python interface to the QGPU molecular dynamics engine"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["qgpu", "qgpu.*"]

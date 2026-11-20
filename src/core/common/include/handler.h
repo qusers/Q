@@ -1,5 +1,5 @@
 #pragma once
-
+#include <array>
 #include <memory>
 #include <vector>
 
@@ -7,6 +7,7 @@
 #include "bonded_force.h"
 #include "constraint_force.h"
 #include "context.h"
+#include "energy_record.h"
 #include "integrator.h"
 #include "nonbonded_force.h"
 #include "restraint_force.h"
@@ -16,11 +17,17 @@
 class Handler {
    public:
     virtual ~Handler() = default;
-    void initialize(const CommandInfo& command);
-    void run();
+    void initialize(const CommandInfo& command);                                          // CLI: parse .inp, system + first stage
+    void initialize_system(const ParseResult& parsed);                                    // once. System fields, plus the starting coords/velocities from the restart file if there is one
+    void configure(const StageSettings& stage);                                           // per stage
+    void validate_stage(const StageSettings& stage) const { ctx.validate_stage(stage); }  // throws, changes nothing
+    void set_state(const SystemState& s);
+    SystemState get_state();
+    void run();  // runs the configured stage
+    const RunEnergies& last_energies() const { return last_energies_; }
 
    protected:
-    Handler() = default;
+    explicit Handler(bool use_gpu) { ctx.command_info.requested_gpu = use_gpu; }
     Handler(const Handler&) = delete;
     Handler& operator=(const Handler&) = delete;
 
@@ -33,6 +40,7 @@ class Handler {
     virtual std::unique_ptr<WaterBoundaryForce> create_water_boundary_force_backend() = 0;
 
    private:
+    void start_fresh(int seed, double initial_temperature);
     void stop_cm_translation();
     void calc_internal_forces(int iteration);
     void calc_nonbonded_forces();
@@ -57,5 +65,16 @@ class Handler {
     std::unique_ptr<Integrator> integrator_;
     std::unique_ptr<WaterBoundaryForce> water_boundary_force_;
     std::vector<std::unique_ptr<BaseOutput>> outputs_;
+    RunEnergies last_energies_;
     Context ctx;
+
+    std::vector<double> current_theta_corr();
+    void rebuild_constraints_and_bonded();
+
+    ParseResult system_;
+    bool system_loaded_ = false;
+    bool configured_ = false;
+    bool state_ready_ = false;
+    bool broken_ = false;                     // NEW: set when run() throws
+    std::array<bool, 3> constraint_flags_{};  // solvent, solute, hydrogens of the last build
 };

@@ -3,6 +3,9 @@
 #include "handler.h"
 
 class CudaHandler : public Handler {
+   public:
+    CudaHandler() : Handler(true) {}
+
    protected:
     std::unique_ptr<ConstraintForce> create_constraint_force_backend() override;
     std::unique_ptr<NonbondedForce> create_nonbonded_force_backend() override;

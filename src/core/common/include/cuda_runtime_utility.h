@@ -1,8 +1,11 @@
 #pragma once
 
+#include <cuda_runtime.h>
+
 #include <cstdio>
 #include <cstdlib>
-#include <cuda_runtime.h>
+
+#include "qgpu_error.h"
 #ifdef __CUDACC__
 #define HD __host__ __device__
 
@@ -13,9 +16,14 @@
 
 inline void check_cuda(cudaError_t status) {
     if (status != cudaSuccess) {
-        std::printf(">>> FATAL: CUDA call failed with error code %d: %s\n", status, cudaGetErrorString(status));
-        std::exit(EXIT_FAILURE);
+        throw CudaError(std::string("CUDA error ") + std::to_string(status) + ": " + cudaGetErrorString(status));
     }
+}
+
+// For destructors: never throw.
+inline void check_cuda_noexcept(cudaError_t status) noexcept {
+    if (status != cudaSuccess)
+        std::fprintf(stderr, "CUDA error during cleanup: %s\n", cudaGetErrorString(status));
 }
 
 inline void check_cudaMalloc(void** dev_ptr, size_t size) {
