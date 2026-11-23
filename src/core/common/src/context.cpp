@@ -1,8 +1,10 @@
 #include "context.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 
 #include "constants.h"
 #include "geometry.h"
@@ -10,7 +12,7 @@
 #include "inp_parser.h"
 #include "parse.h"
 #include "q_math.h"
-
+#include "qgpu_error.h"
 namespace {
 
 int per_lambda_count(size_t size, int n_lambdas) {
@@ -95,20 +97,7 @@ void Context::init_velocities(const ParseResult& parsed) {
     if (!fresh_start) {
         velocities = HostDeviceBuffer<vel_t>::from_vector(parsed.velocities, command_info.requested_gpu);
     } else {
-        srand(md.random_seed);
-        const auto* atom_mass = masses->cpu_data_p;
-
-        std::vector<vel_t> velocity_data(n_atoms);
-
-        const double kT = Boltz * md.initial_temperature;
-        for (int atom = 0; atom < n_atoms; atom++) {
-            double mass = atom_mass[atom];
-            const double sd = sqrt(kT / mass);
-            velocity_data[atom].x = gauss(0, sd);
-            velocity_data[atom].y = gauss(0, sd);
-            velocity_data[atom].z = gauss(0, sd);
-        }
-        velocities = HostDeviceBuffer<vel_t>::from_vector(velocity_data, command_info.requested_gpu);
+        velocities = std::make_unique<HostDeviceBuffer<vel_t>>(n_atoms, true, command_info.requested_gpu);
     }
 }
 
@@ -315,7 +304,12 @@ void Context::init_shell() {
     std::vector<bool> shell_(n_atoms, false);
 
     if (md.charge_groups) {
-        double rin2 = md.shell_radius * md.shell_radius;
+        // As in Fortran Q: shell_radius <= 1 is a fraction of the exclusion radius, else Å.
+        if (md.shell_radius > topo.exclusion_radius) {
+            throw InputError("shell_radius must be < the exclusion radius (" + std::to_string(topo.exclusion_radius) + ").");
+        }
+        const double rin = md.shell_radius <= 1.0 ? md.shell_radius * topo.exclusion_radius : md.shell_radius;
+        double rin2 = rin * rin;
         auto& host_charge_groups = charge_group_config;
         const bool use_switch_atom = host_charge_groups.iuse_switch_atom == 1;
 
@@ -407,4 +401,115 @@ void Context::init(const ParseResult& parsed) {
     // 6. Runtime buffers
     init_dvelocities();
     init_energy();
+}
+
+void Context::generate_velocities(int seed, double initial_temperature) {
+    md.random_seed = seed;
+    md.initial_temperature = initial_temperature;
+    srand(seed);
+    const auto* atom_mass = masses->cpu_data_p;
+
+    std::vector<vel_t> velocity_data(n_atoms);
+    const double kT = Boltz * initial_temperature;
+    for (int atom = 0; atom < n_atoms; atom++) {
+        const double sd = sqrt(kT / atom_mass[atom]);
+        velocity_data[atom].x = gauss(0, sd);
+        velocity_data[atom].y = gauss(0, sd);
+        velocity_data[atom].z = gauss(0, sd);
+    }
+
+    if (!velocities || velocities->length != static_cast<size_t>(n_atoms)) {
+        throw InputError("generate_velocities: velocity buffer not allocated for " + std::to_string(n_atoms) + " atoms.");
+    }
+    std::copy(velocity_data.begin(), velocity_data.end(), velocities->cpu_data_p);
+    if (command_info.requested_gpu) velocities->upload();
+    fresh_start = true;
+}
+
+void Context::validate_system_fields(const md_t& s) const {
+    auto check = [](bool same, const char* name) {
+        if (!same) {
+            throw InputError(std::string("Stage changes system-level setting '") + name +
+                             "'; it must stay the same for the whole engine.");
+        }
+    };
+    check(s.hmr == md.hmr, "hmr");
+    check(s.hmr_target_mass == md.hmr_target_mass, "hmr_target_mass");
+    check(s.shell_radius == md.shell_radius, "shell_radius");
+    check(s.charge_groups == md.charge_groups, "charge_groups");
+    check(s.lrf == md.lrf, "lrf");
+    check(s.lrf_cutoff == md.lrf_cutoff, "lrf_cutoff");
+    check(s.solute_solute == md.solute_solute, "solute_solute");
+    check(s.solvent_solvent == md.solvent_solvent, "solvent_solvent");
+    check(s.solute_solvent == md.solute_solvent, "solute_solvent");
+    check(s.q_atom == md.q_atom, "q_atom");
+    check(s.polarisation == md.polarisation, "polarisation");
+    check(s.charge_correction == md.charge_correction, "charge_correction");
+    check(s.radial_force == md.radial_force, "radial_force");
+    check(s.polarisation_force == md.polarisation_force, "polarisation_force");
+    check(s.exclude_bonded == md.exclude_bonded, "exclude_bonded");
+    check(s.non_bond == md.non_bond, "non_bond");
+    check(s.solute_constraint_algorithm == md.solute_constraint_algorithm, "solute_constraint_algorithm");
+    check(s.solvent_constraint_algorithm == md.solvent_constraint_algorithm, "solvent_constraint_algorithm");
+}
+
+void Context::validate_stage(const StageSettings& stage) const {
+    const md_t& s = stage.md;
+    validate_system_fields(s);
+    if (stage.lambdas.size() != static_cast<size_t>(n_lambdas())) {
+        throw InputError("Stage has " + std::to_string(stage.lambdas.size()) +
+                         " lambdas, system has " + std::to_string(n_lambdas()) + " FEP states.");
+    }
+    if (s.steps < 0) throw InputError("Stage steps must be >= 0.");
+    if (s.stepsize <= 0) throw InputError("Stage stepsize must be > 0.");
+    if (s.temperature <= 0) throw InputError("Stage temperature must be > 0 (no dynamics at zero temperature).");
+    if (s.bath_coupling < s.stepsize) throw InputError("Stage bath_coupling must be >= stepsize.");
+}
+
+void Context::apply_stage(const StageSettings& stage) {
+    validate_stage(stage);  // before anything changes, so a rejected stage leaves the context as it was
+    const md_t& s = stage.md;
+
+    // Stage fields only; System fields in md stay as loaded.
+    md.steps = s.steps;
+    md.stepsize = s.stepsize;
+    md.temperature = s.temperature;
+    md.thermostat = s.thermostat;
+    md.bath_coupling = s.bath_coupling;
+    md.constraint_solvent = s.constraint_solvent;
+    md.constraint_solute = s.constraint_solute;
+    md.constraint_hydrogens = s.constraint_hydrogens;
+    md.shake_solvent = s.constraint_solvent;  // legacy mirrors
+    md.shake_solute = s.constraint_solute;
+    md.shake_hydrogens = s.constraint_hydrogens;
+    md.separate_scaling = s.separate_scaling;
+    md.shell_force = s.shell_force;
+    md.output = s.output;
+    md.energy = s.energy;
+    md.trajectory = s.trajectory;
+
+    dt = time_unit * md.stepsize;
+
+    // Lambdas: overwrite values in place; length is fixed by the FEP states.
+    std::copy(stage.lambdas.begin(), stage.lambdas.end(), lambdas->cpu_data_p);
+    if (command_info.requested_gpu) lambdas->upload();
+
+    // Output paths for this stage; keep topology_file from the system.
+    const std::string topology_file = native_output.topology_file;
+    native_output = stage.outputs;
+    native_output.topology_file = topology_file;
+}
+
+void Context::set_state(const SystemState& state) {
+    if (state.coords.size() != static_cast<size_t>(n_atoms) ||
+        state.velocities.size() != static_cast<size_t>(n_atoms)) {
+        throw InputError("State atom count does not match the system (" + std::to_string(n_atoms) + ").");
+    }
+    std::copy(state.coords.begin(), state.coords.end(), coords->cpu_data_p);
+    std::copy(state.velocities.begin(), state.velocities.end(), velocities->cpu_data_p);
+    if (command_info.requested_gpu) {
+        coords->upload();
+        velocities->upload();
+    }
+    fresh_start = false;
 }

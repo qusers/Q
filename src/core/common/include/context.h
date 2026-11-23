@@ -11,6 +11,7 @@
 #include "common/include/parse.h"
 #include "common/include/vdw_rules.h"
 #include "energy.h"
+#include "engine_types.h"
 #include "host_device_buffer.h"
 
 class ConstraintForce;
@@ -71,7 +72,16 @@ class Context {
     int n_molecules() const { return molecules.size(); }
     int n_patoms() const { return p_atoms.size(); }
 
+    void validate_stage(const StageSettings& stage) const;  // throws InputError; changes nothing
+    void apply_stage(const StageSettings& s);       // copy Stage fields into md, dt = time_unit*md.stepsize,
+                                                    // copy s.lambdas into lambdas->cpu_data_p + upload,
+                                                    // native_output = s.outputs; validate System fields unchanged
+    void set_state(const SystemState& s);           // fill coords/velocities cpu buffers, upload
+    void generate_velocities(int seed, double T0);
+
    private:
+    void validate_system_fields(const md_t& stage_md) const;
+
     void set_lj_pairs(std::vector<int>& matrix, const std::vector<std::pair<int, int>>& pair, int value);
 
     void init_fresh_start(const ParseResult& parsed);

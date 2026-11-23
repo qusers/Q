@@ -9,7 +9,7 @@ Prepare the following tools and make sure their commands are available in your t
 - **Python 3**, with `psutil` and `jinja2` installed.
 - **CUDA compiler `nvcc`**, provided by the CUDA Toolkit, and a compatible C++ compiler.
 - **An NVIDIA GPU and driver**, with `nvidia-smi` available for resource monitoring.
-- **Git and GNU Make**, for obtaining and compiling the code.
+- **Git, CMake (3.24 or newer) and GNU Make**, for obtaining and compiling the code.
 
 This workflow uses QGPU's `bin/qdyn` for both the CPU baseline and GPU runs. It does not require a Fortran executable or Matplotlib.
 
@@ -49,12 +49,11 @@ python -m pip install psutil jinja2
 From the Q repository root, run:
 
 ```bash
-cd src/core
-make double
-cd ../..
+cmake -S src/core -B src/core/build -DCMAKE_CUDA_ARCHITECTURES=89 -DQDYN_SPFP=OFF -DQDYN_BUILD_TESTS=OFF
+cmake --build src/core/build --target move --parallel
 ```
 
-This builds `bin/qdyn` with `SPFP=0`. The current Makefile uses `-arch=sm_89` by default; adjust it for your target GPU. Use `make spfp` instead if you want to benchmark an SPFP build.
+This builds `bin/qdyn` in double precision. `CMAKE_CUDA_ARCHITECTURES=89` matches an RTX 40-series GPU; set it for your target GPU (for example `80` for A100, `90` for H100). Use `-DQDYN_SPFP=ON` instead if you want to benchmark an SPFP build.
 
 ## 3. CDK2 input files
 

@@ -6,6 +6,7 @@
 
 #include "cuda_lincs.cuh"
 #include "geometry.h"
+#include "qgpu_error.h"
 #include "union_find.h"
 
 namespace cg = cooperative_groups;
@@ -826,7 +827,7 @@ void CudaLincs::init_backend_for_big_group(
             const int storage_idx = slot * n_packed_threads + packed;
 
             if (neighbor_packed < 0) {
-                throw std::runtime_error("CUDA LINCS large-group neighbor was not packed");
+                throw QgpuError("CUDA LINCS large-group neighbor was not packed");
             }
 
             neighbor_indices[storage_idx] = neighbor_packed;
@@ -1081,7 +1082,7 @@ void CudaLincs::apply_to(Context& ctx, coord_t* coords, const coord_t* xcoords) 
         const int failed = data.failed_constraint->cpu_data_p[0];
         if (failed != -1) {
             std::fflush(stdout);
-            std::exit(EXIT_FAILURE);
+            throw ConstraintError("LINCS failed to converge at step " + std::to_string(ctx.step) + " (small-block constraint index " + std::to_string(failed) + ")");
         }
     }
 
@@ -1208,7 +1209,7 @@ void CudaLincs::apply_to(Context& ctx, coord_t* coords, const coord_t* xcoords) 
 
             if (failed_index != -1) {
                 std::fflush(stdout);
-                std::exit(EXIT_FAILURE);
+                throw ConstraintError("LINCS failed to converge at step " + std::to_string(ctx.step) + " (big-block constraint index " + std::to_string(failed_index) + ")");
             }
         } else {
             auto solve_expansion = [&]() {
@@ -1340,7 +1341,7 @@ void CudaLincs::apply_to(Context& ctx, coord_t* coords, const coord_t* xcoords) 
             const int failed = big_lincs_data.failed_constraint->cpu_data_p[0];
             if (failed != -1) {
                 std::fflush(stdout);
-                std::exit(EXIT_FAILURE);
+                throw ConstraintError("LINCS validation failed at step " + std::to_string(ctx.step) + " (big-block constraint index " + std::to_string(failed) + ")");
             }
         }
     }

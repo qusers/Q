@@ -120,7 +120,7 @@ struct NonbondedData {
     std::unique_ptr<HostDeviceBuffer<real_t>> atom_lambdas;  // lambdas[state]; 1.0 for P/W
     std::unique_ptr<HostDeviceBuffer<int>> group_indices;    // group idx;
     std::unique_ptr<HostDeviceBuffer<int>> group_start_idx;  // In the atom_idx, the first index of the atom that belongs to the group
-    std::unique_ptr<HostDeviceBuffer<int>> group_sizes;       // The group size
+    std::unique_ptr<HostDeviceBuffer<int>> group_sizes;      // The group size
 
     std::unique_ptr<HostDeviceBuffer<real_t>> atom_charge;
     std::unique_ptr<HostDeviceBuffer<vdw_atom_param_t>> atom_vdw;
@@ -162,6 +162,9 @@ class NonbondedForce {
     virtual void calc(Context& ctx) = 0;
 
     virtual void cleanup() {}
+
+    // Refresh the per-atom copy of lambda after ctx.lambdas changed. Call from Handler::configure.
+    void update_lambdas(Context& ctx);
 
    protected:
     virtual void init_backend(Context& ctx) {}  // backend allocation hook

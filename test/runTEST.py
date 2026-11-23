@@ -12,10 +12,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../s
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../env/')))
 
 import settings
-import topology as TOPOLOGY
-import md as MD
-import fep as FEP
-import restart as RESTART
 import compare
 
 lambdas = ['eq5', '0744_0256', '0998_0002']
@@ -366,43 +362,14 @@ class Parse_Q6_data(object):
         else:
             data['q6_velocities'] = []
 
-def prepare_qgpu_csv_input(data):
-    csv_dir = 'qgpu_csv'
-    if os.path.exists(csv_dir):
-        shutil.rmtree(csv_dir)
-    os.mkdir(csv_dir)
-    os.mkdir(os.path.join(csv_dir, 'output'))
-
-    top_data = TOPOLOGY.Read_Topology(data['topology_path']).Q()
-    TOPOLOGY.Write_Topology(top_data).CSV(csv_dir + '/')
-
-    md_data = MD.Read_MD('eq1.inp').Q()
-    MD.Write_MD(md_data).CSV(csv_dir + '/')
-
-    if data.get('fep_path') is not None:
-        fep_data = FEP.Read_Fep(data['fep_path']).Q()
-    else:
-        fep_data = FEP.Read_Fep(None).EMPTY()
-    FEP.Write_Fep(fep_data).CSV(csv_dir + '/')
-
-    if len(data.get('q6_velocities', [])) != len(top_data['coords']):
-        raise RuntimeError('Q6 velocity count does not match topology atom count.')
-    RESTART.Write_Restart(data['q6_velocities'], top_data['coords']).CSV(csv_dir + '/')
-    return csv_dir
-
 class Run_QGPU(object):
     def __init__(self,data):
-        print('Running QGPU ({})'.format(data['qgpu_input']))
-        if data.get('direct_inp') and data['qgpu_input'] != 'inp':
-            raise RuntimeError('Direct .inp tests support --qgpu-input inp only.')
+        print('Running QGPU')
         qdyn = '{}bin/qdyn'.format(settings.ROOT)
         args = [qdyn]
         if data['arch'] == 'gpu':
             args.append('--gpu')
-        if data['qgpu_input'] == 'csv':
-            args.extend(['--csv-dir', prepare_qgpu_csv_input(data)])
-        else:
-            args.append(data.get('q_input_file', 'eq1.inp'))
+        args.append(data.get('q_input_file', 'eq1.inp'))
 
         run_dir = data.get('q_input_dir', os.getcwd())
         log_path = data.get('qgpu_log', 'qgpu.log')
@@ -680,9 +647,6 @@ class Init(object):
                 Cleanup(self.data)
 
     def run_direct_inputs(self):
-        if self.data['qgpu_input'] != 'inp':
-            raise RuntimeError('Direct .inp tests support --qgpu-input inp only.')
-
         if self.data['wd'] is None:
             self.data['wd'] = self.data['curdir'] + '/'
         if self.data['wd'][-1] != '/':
@@ -827,13 +791,6 @@ if __name__ == "__main__":
                         default = 0.0,
                         required = False,
                         help = "Energy comparison tolerance (default: 0.0 = exact match)")
-
-    parser.add_argument('--qgpu-input',
-                        dest = "qgpu_input",
-                        default = 'inp',
-                        choices = ['inp', 'csv'],
-                        required = False,
-                        help = "Choose QGPU input path: native .inp parser or generated CSV directory")
 
     parser.add_argument('--inp',
                         dest = "inp",

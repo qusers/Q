@@ -2,6 +2,7 @@
 #include "cuda_lrf_force.cuh"
 #include "cuda_nonbonded_pair.cuh"
 #include "geometry.h"
+#include "qgpu_error.h"
 
 namespace {
 
@@ -1006,7 +1007,7 @@ void CudaLrfForce::init(Context& ctx, const NonbondedData& data) {
     const int max_group_pairs = n_group_ranges * (n_group_ranges + 1) / 2;
 
     if ((data_->n_total & 31) != 0) {
-        throw std::runtime_error("CUDA exact cluster list requires n_total to be padded to 32");
+        throw QgpuError("CUDA exact cluster list requires n_total to be padded to 32");
     }
 
     const int n_exact_clusters = data_->n_total / 32;
@@ -1167,7 +1168,6 @@ void CudaLrfForce::init_lrf_coefficients(Context& ctx, const NonbondedCoordinate
         lrf_coefficients_->gpu_data_p);
 
     check_cuda(cudaGetLastError());
-    
 
     /*
      * Exactly one block per target range.
@@ -1275,13 +1275,13 @@ void CudaLrfForce::build_exact_atom_tiles(Context& ctx) {
     list_overflow_->download();
 
     if (list_overflow_->cpu_data_p[0] != 0) {
-        throw std::runtime_error("CUDA exact cluster tile capacity exceeded");
+        throw QgpuError("CUDA exact cluster tile capacity exceeded");
     }
 
     n_exact_tiles_ = exact_tile_count_->cpu_data_p[0];
 
     if (n_exact_tiles_ < 0 || static_cast<size_t>(n_exact_tiles_) > exact_tile_capacity_) {
-        throw std::runtime_error("Invalid CUDA exact cluster tile count");
+        throw QgpuError("Invalid CUDA exact cluster tile count");
     }
 }
 
