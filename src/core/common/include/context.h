@@ -61,6 +61,7 @@ class Context {
     std::unique_ptr<HostDeviceBuffer<offdiag_term_t>> offdiag_terms;
     std::unique_ptr<HostDeviceBuffer<offdiag_record_t>> offdiag_records;
 
+    softcore_params_t softcore;         // as read from the FEP file; the .fhe header reports it
     foreign_targets_t foreign_targets;  // all targets of the stage; n is their count
     int n_foreign_active = 0;           // targets to evaluate in the current force call; 0 on steps without energy output
 

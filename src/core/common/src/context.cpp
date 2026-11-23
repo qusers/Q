@@ -367,6 +367,7 @@ void Context::init(const ParseResult& parsed) {
     init_topo(parsed);
     init_native_output(parsed);
     init_const(parsed);
+    softcore = parsed.softcore;
 
     // 2. Basic atom data
     init_coords_init(parsed);
@@ -468,6 +469,14 @@ void Context::validate_stage(const StageSettings& stage) const {
     }
     for (const double f : stage.foreign_lambdas) {
         if (!(f >= 0.0 && f <= 1.0)) throw InputError("[foreign_lambdas] values must be in [0, 1].");
+    }
+    // One column per target in the .fhe file; the analysis looks a window up by its value.
+    for (size_t i = 0; i < stage.foreign_lambdas.size(); i++) {
+        for (size_t j = 0; j < i; j++) {
+            if (std::fabs(stage.foreign_lambdas[i] - stage.foreign_lambdas[j]) < 1e-12) {
+                throw InputError("[foreign_lambdas] values must be distinct.");
+            }
+        }
     }
     if (s.steps < 0) throw InputError("Stage steps must be >= 0.");
     if (s.stepsize <= 0) throw InputError("Stage stepsize must be > 0.");

@@ -74,6 +74,8 @@ class Engine:
         shell_force: float = _KEEP,
         # [lambdas]
         lambdas: Sequence[float] = _KEEP,
+        # [foreign_lambdas]
+        foreign_lambdas: Sequence[float] = _KEEP,
         # restraints
         seq_restraints: Sequence[SeqRestraint] = _KEEP,
         dist_restraints: Sequence[DistRestraint] = _KEEP,
@@ -138,6 +140,7 @@ class Engine:
         md.trajectory = config.trajectory
 
         s.lambdas = list(config.lambdas)
+        s.foreign_lambdas = list(config.foreign_lambdas)
         # Convert to this engine's module; assign whole lists (vectors are copied).
         s.restrseqs = [r._native(self._mod) for r in config.seq_restraints]
         s.restrdists = [r._native(self._mod) for r in config.dist_restraints]

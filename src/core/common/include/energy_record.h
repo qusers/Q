@@ -8,10 +8,12 @@ struct EnergyFrame {
     int step = 0;  // MD step; the final frame has step == md.steps
     double Upot = 0, Ukin = 0, Utot = 0;
     std::vector<double> q;  // per-state Q energy (EnergyData::eq_total), one per state
+    std::vector<double> foreign_work;  // U(lambda') - U(lambda), one per foreign target
 };
 
 struct RunEnergies {
     std::vector<double> lambdas;      // λ of this run
+    std::vector<double> foreign_lambdas;  // state-2 weight of each foreign target, as in StageSettings
     std::vector<EnergyFrame> frames;  // one per `energy` interval; empty when energy = 0
     EnergyFrame final;                // at the coordinates after the last step
 };

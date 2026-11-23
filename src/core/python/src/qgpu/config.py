@@ -140,6 +140,9 @@ class Config:
     separate_scaling: bool | None = None
     shell_force: float | None = None
     lambdas: tuple | None = None
+    # Windows to compute foreign work for: the lambda of state 2 of each ([foreign_lambdas]).
+    # RunResult.foreign_work then has U(that window) - U(this window) for every frame.
+    foreign_lambdas: tuple = ()
     seq_restraints: tuple = ()          # of qgpu.SeqRestraint
     dist_restraints: tuple = ()         # of qgpu.DistRestraint
     ang_restraints: tuple = ()          # of qgpu.AngRestraint
@@ -160,6 +163,8 @@ class Config:
 
         object.__setattr__(self, "lambdas", tuple(float(x)
                            for x in self.lambdas))
+        object.__setattr__(self, "foreign_lambdas", tuple(float(x)
+                           for x in self.foreign_lambdas))
         for name, cls in _RESTRAINTS.items():
             items = tuple(getattr(self, name))
             for r in items:

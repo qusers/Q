@@ -27,6 +27,8 @@ class NativeOutput : public BaseOutput {
 
     std::ofstream trajectory_stream_;
     std::ofstream energy_stream_;
+    std::ofstream foreign_stream_;  // <energy file>.fhe: foreign work, one row per energy frame
+    int foreign_frame_ = 0;
     std::vector<int> trajectory_atoms_indices_;
     bool output_ready_ = false;
 
@@ -38,6 +40,8 @@ class NativeOutput : public BaseOutput {
     void open_energy(Context& ctx);
     void write_trajectory_frame(Context& ctx);
     void write_energy_frame(Context& ctx);
+    void open_foreign(Context& ctx);
+    void write_foreign_frame(Context& ctx);
     void write_restart_file(Context& ctx) const;
 
     bool writes_restart() const { return !config_.final_file.empty(); }

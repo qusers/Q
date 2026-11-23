@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <stdexcept>
@@ -139,6 +140,7 @@ void NativeOutput::init(Context& ctx) {
     init_trajectory_mask(ctx);
     open_trajectory(ctx);
     open_energy(ctx);
+    open_foreign(ctx);
     output_ready_ = true;
 }
 
@@ -155,6 +157,7 @@ void NativeOutput::finish(Context& ctx) {
 void NativeOutput::shutdown() {
     if (trajectory_stream_.is_open()) trajectory_stream_.close();
     if (energy_stream_.is_open()) energy_stream_.close();
+    if (foreign_stream_.is_open()) foreign_stream_.close();
     trajectory_atoms_indices_.clear();
     output_ready_ = false;
 }
@@ -174,6 +177,7 @@ void NativeOutput::output_energy(Context& ctx, int iteration) {
     int step = iteration;
     if (ctx.md.energy > 0 && step > 0 && step % ctx.md.energy == 0) {
         write_energy_frame(ctx);
+        write_foreign_frame(ctx);
     }
 }
 
@@ -259,6 +263,55 @@ void NativeOutput::open_energy(Context& ctx) {
     if (!energy_stream_) {
         throw InputError("Could not write native energy file " + config_.energy_file);
     }
+}
+
+namespace {
+// Fortran's es24.16, which Q writes .fhe files with.
+std::string fhe_number(double value) {
+    char buffer[40];
+    std::snprintf(buffer, sizeof(buffer), " %23.16E", value);
+    return buffer;
+}
+}  // namespace
+
+// The foreign-work file (Q_FOREIGN_WORKS_V2, as Fortran Q writes it and qligfep_fhe_analyze
+// reads it): for every energy frame, U(lambda') - U(lambda) for each window in [foreign_lambdas].
+void NativeOutput::open_foreign(Context& ctx) {
+    foreign_frame_ = 0;
+    if (ctx.md.energy <= 0 || ctx.foreign_targets.n == 0) return;
+
+    const std::string path = config_.energy_file + ".fhe";
+    foreign_stream_.open(path.c_str(), std::ios::trunc);
+    if (!foreign_stream_) {
+        throw InputError("Could not write foreign work file " + path);
+    }
+
+    foreign_stream_ << "# Q_FOREIGN_WORKS_V2\n";
+    foreign_stream_ << "# units kcal/mol\n";
+    if (ctx.softcore.method == SC_GAPSYS) {
+        foreign_stream_ << "# method gapsys\n";
+        foreign_stream_ << "# softcore_parameters" << fhe_number(ctx.softcore.alpha_lj) << fhe_number(ctx.softcore.alpha_q)
+                        << fhe_number(ctx.softcore.sigma_q) << "\n";
+    } else {
+        // No soft-core: the work is the linear recombination of the per-state energies.
+        foreign_stream_ << "# method none\n";
+    }
+    foreign_stream_ << "# target_state2_weights";
+    for (int k = 0; k < ctx.foreign_targets.n; k++) foreign_stream_ << fhe_number(ctx.foreign_targets.weight[k][1]);
+    foreign_stream_ << "\n";
+    foreign_stream_ << "# columns frame source_lambda1 source_lambda2 W(source_to_target_1) ...\n";
+}
+
+void NativeOutput::write_foreign_frame(Context& ctx) {
+    if (!foreign_stream_.is_open()) return;
+
+    char frame[16];
+    std::snprintf(frame, sizeof(frame), "%10d", ++foreign_frame_);
+    foreign_stream_ << frame;
+    for (int state = 0; state < ctx.n_lambdas(); state++) foreign_stream_ << fhe_number(ctx.lambdas->cpu_data_p[state]);
+    for (const double work : ctx.energy.data().foreign_work) foreign_stream_ << fhe_number(work);
+    foreign_stream_ << "\n";
+    foreign_stream_.flush();
 }
 
 void NativeOutput::write_trajectory_frame(Context& ctx) {

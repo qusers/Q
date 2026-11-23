@@ -80,6 +80,7 @@ py::dict settings_dict(const ParseResult& p) {
     d["final_file"] = out.final_file;
     d["trajectory_atoms"] = out.trajectory_atoms;
     d["lambdas"] = p.lambdas;
+    d["foreign_lambdas"] = p.foreign_lambdas;
 
     py::list seq, dist, ang, wall, pos;
     for (const auto& r : p.restrseqs) seq.append(py::make_tuple(r.ai, r.aj, r.k, r.ih, r.to_center));
@@ -154,9 +155,12 @@ class Engine {
         const RunEnergies& r = handler_->last_energies();
         const auto n = static_cast<py::ssize_t>(r.frames.size());
         const auto s = static_cast<py::ssize_t>(r.lambdas.size());
+        const auto k = static_cast<py::ssize_t>(r.foreign_lambdas.size());
 
         py::array_t<int> steps(n);
         py::array_t<double> q({n, s});
+        py::array_t<double> work({n, k});
+        auto fw = work.mutable_unchecked<2>();
         py::array_t<double> upot(n), ukin(n), utot(n);
         auto st = steps.mutable_unchecked<1>();
         auto qq = q.mutable_unchecked<2>();
@@ -170,6 +174,7 @@ class Engine {
             uk(i) = f.Ukin;
             ut(i) = f.Utot;
             for (py::ssize_t j = 0; j < s; ++j) qq(i, j) = f.q[j];
+            for (py::ssize_t j = 0; j < k; ++j) fw(i, j) = f.foreign_work[j];
         }
 
         py::dict d;
@@ -183,6 +188,9 @@ class Engine {
         d["final_upot"] = r.final.Upot;
         d["final_ukin"] = r.final.Ukin;
         d["final_utot"] = r.final.Utot;
+        d["foreign_lambdas"] = py::array_t<double>(k, r.foreign_lambdas.data());
+        d["foreign_work"] = work;
+        d["final_foreign_work"] = py::array_t<double>(k, r.final.foreign_work.data());
         return d;
     }
 
@@ -378,6 +386,7 @@ PYBIND11_MODULE(QGPU_MODULE_NAME, m) {
         .def(py::init<const StageSettings&>())  // copy
         .def_readwrite("md", &StageSettings::md)
         .def_readwrite("lambdas", &StageSettings::lambdas)
+        .def_readwrite("foreign_lambdas", &StageSettings::foreign_lambdas)
         .def_readwrite("restrspos", &StageSettings::restrspos)
         .def_readwrite("restrseqs", &StageSettings::restrseqs)
         .def_readwrite("restrdists", &StageSettings::restrdists)
