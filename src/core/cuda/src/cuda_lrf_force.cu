@@ -624,6 +624,8 @@ __global__ void classify_group_pairs_kernel(
     }
 }
 
+// kSoft: see nonbonded_force_calculation.
+template <bool kSoft>
 __global__ void exact_tiles_nonbonded_force_kernel(
     int n_exact_tiles,
     const ExactEntry* exact_entries,
@@ -644,6 +646,9 @@ __global__ void exact_tiles_nonbonded_force_kernel(
     // ---- topology scalars (passed by value) ----
     real_t coulomb_constant,  // ctx.topo.coulomb_constant
     int vdw_rule,
+    const real_t* atom_softcore,
+    softcore_pair_params_t sc_params,
+    foreign_targets_t foreign,
 
     // ---- coordinates / outputs ----
     const real_t* cx, const real_t* cy, const real_t* cz,
@@ -671,8 +676,8 @@ __global__ void exact_tiles_nonbonded_force_kernel(
     const int x_idx = tile.x_start + lane;
     const int y_idx = tile.y_start + lane;
 
-    nonbonded_force_calculation(x_idx, y_idx, pair_mask, tile.x_start, tile.y_start, n_states, atom_idx,
-                                category, q_state, atom_lambdas, atom_charge, atom_vdw, coulomb_constant, vdw_rule, cx, cy, cz, dvelocities, e);
+    nonbonded_force_calculation<kSoft>(x_idx, y_idx, pair_mask, tile.x_start, tile.y_start, n_states, atom_idx,
+                                       category, q_state, atom_lambdas, atom_charge, atom_vdw, coulomb_constant, vdw_rule, atom_softcore, sc_params, foreign, cx, cy, cz, dvelocities, e);
 }
 
 __global__ void compute_lrf_centers_kernel(
@@ -1108,7 +1113,8 @@ void CudaLrfForce::calc_exact_tiles(Context& ctx, const NonbondedCoordinates& co
 
     const int grid_sz = (n_exact_tiles_ + warps_per_block - 1) / warps_per_block;
 
-    exact_tiles_nonbonded_force_kernel<<<grid_sz, thread_num>>>(
+    const auto kernel = data_->softcore.method != SC_NONE ? exact_tiles_nonbonded_force_kernel<true> : exact_tiles_nonbonded_force_kernel<false>;
+    kernel<<<grid_sz, thread_num>>>(
         n_exact_tiles_,
         exact_tiles_->gpu_data_p,
         exact_pair_masks_->gpu_data_p,
@@ -1125,6 +1131,9 @@ void CudaLrfForce::calc_exact_tiles(Context& ctx, const NonbondedCoordinates& co
         static_cast<real_t>(ctx.topo.coulomb_constant),
 
         ctx.topo.vdw_rule,
+        data_->atom_softcore->gpu_data_p,
+        data_->softcore,
+        ctx.active_foreign_targets(),
 
         coords.x,
         coords.y,

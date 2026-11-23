@@ -328,6 +328,7 @@ struct InpParser::TopData {
 struct InpParser::FepData {
     int states = 0;
     bool softcore_use_max_potential = false;
+    softcore_params_t softcore;
     std::vector<std::string> q_atoms;
     std::vector<std::vector<std::string>> q_atypes;
     std::vector<std::vector<std::string>> q_charges;
@@ -425,7 +426,7 @@ void InpParser::ensure_md_input() {
         std::vector<std::string> fields = split_ws(line);
         if (fields.empty()) continue;
 
-        if (section == "lambdas" || section == "trajectory-atoms" || section == "sequence-restraints" || section == "atom-restraints" ||
+        if (section == "lambdas" || section == "foreign-lambdas" || section == "trajectory-atoms" || section == "sequence-restraints" || section == "atom-restraints" ||
             section == "distance-restraints" || section == "angle-restraints" || section == "wall-restraints") {
             input_->lists[section].push_back(fields);
         } else if (fields.size() >= 2) {
@@ -808,6 +809,18 @@ void InpParser::ensure_fep() {
         std::vector<std::string> f = split_ws(strip_comment(raw));
         if (f.size() >= 2 && f[0] == "states") fep_->states = parse_int(f[1]);
         if (f.size() >= 2 && f[0] == "softcore_use_max_potential") fep_->softcore_use_max_potential = is_on_token(f[1]);
+        if (f.size() >= 2 && f[0] == "softcore_method") {
+            std::string method = f[1];
+            for (char& c : method) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (method == "gapsys") {
+                fep_->softcore.method = SC_GAPSYS;
+            } else if (method != "standard") {
+                throw parse_error("[FEP]: unsupported softcore_method " + f[1]);
+            }
+        }
+        if (f.size() >= 2 && f[0] == "gapsys_scale_linpoint_lj") fep_->softcore.alpha_lj = parse_double(f[1]);
+        if (f.size() >= 2 && f[0] == "gapsys_scale_linpoint_q") fep_->softcore.alpha_q = parse_double(f[1]);
+        if (f.size() >= 2 && f[0] == "gapsys_sigma_q") fep_->softcore.sigma_q = parse_double(f[1]);
     }
 
     if (fep_->states <= 0) {
@@ -1265,6 +1278,15 @@ void InpParser::parse_lambdas() {
             for (const std::string& value : row) result.lambdas.push_back(parse_double(value));
         }
     }
+    // State-2 weights of the windows to compute foreign work for.
+    result.foreign_lambdas.clear();
+    auto foreign_it = input_->lists.find("foreign-lambdas");
+    if (foreign_it != input_->lists.end()) {
+        for (const auto& row : foreign_it->second) {
+            for (const std::string& value : row) result.foreign_lambdas.push_back(parse_double(value));
+        }
+    }
+
     // As in Fortran Q: a FEP file without [lambdas] means a single state with lambda 1.
     const auto files_it = input_->keyed.find("files");
     const bool has_fep = !fep_file_.empty() ||
@@ -2051,6 +2073,13 @@ void InpParser::parse_q_softcores() {
     for (int state = 0; state < n_lambdas && state < static_cast<int>(fep_->q_softcores.size()); state++) {
         for (int i = 0; i < n_qsoftcores && static_cast<size_t>(i) < fep_->q_softcores[state].size(); i++) {
             result.q_softcores[i + state * n_qsoftcores].s = parse_double(fep_->q_softcores[state][i]);
+        }
+    }
+    result.softcore = fep_->softcore;
+    if (result.softcore.method == SC_GAPSYS) {
+        const auto& sc = result.softcore;
+        if (!(sc.alpha_lj > 0 && sc.alpha_lj <= 1) || !(sc.alpha_q > 0) || !(sc.sigma_q >= 0)) {
+            throw parse_error("[FEP]: Gapsys soft-core requires 0 < alpha_lj <= 1, alpha_q > 0, sigma_q >= 0.");
         }
     }
 }

@@ -4,6 +4,8 @@
 
 #include <math.h>
 #include <precision.h>
+#include "constants.h"
+
 #include "cuda_runtime_utility.h"
 
 HD inline void calc_vdw_geometric(
@@ -31,5 +33,20 @@ HD inline void calc_vdw_arithmetic(
     real_t R6 = R2 * R2 * R2;
 
     *V_a = sqrt_eps_ij * R6 * R6 * r6 * r6;  // sqrt(eps_i * eps_j) * R^12 * r^-12
-    *V_b = 2.0f * sqrt_eps_ij * R6 * r6;  // 2 * sqrt(eps_i * eps_j) * R^6 * r^-6
+    *V_b = 2.0f * sqrt_eps_ij * R6 * r6;     // 2 * sqrt(eps_i * eps_j) * R^6 * r^-6
+}
+
+// LJ sigma of a pair from the per-atom parameters.
+//   arithmetic: a = R*, so sigma = (R*_i + R*_j) / 2^(1/6)
+//   geometric:  a = sqrt(C12), b = sqrt(C6), so sigma = (C12 / C6)^(1/6);
+//               3 A when only one of C12, C6 is non-zero (GROMACS sc-sigma default).
+HD inline real_t softcore_pair_sigma(int vdw_rule, real_t aii_i, real_t bii_i, real_t aii_j, real_t bii_j) {
+    if (vdw_rule == VDW_GEOMETRIC) {
+        const real_t c12 = aii_i * aii_j;
+        const real_t c6 = bii_i * bii_j;
+        if (c12 > 0 && c6 > 0) return pow(c12 / c6, static_cast<real_t>(1.0 / 6.0));
+        if (c12 != 0 || c6 != 0) return static_cast<real_t>(3.0);
+        return 0;
+    }
+    return (aii_i + aii_j) * static_cast<real_t>(0.8908987181403393);
 }

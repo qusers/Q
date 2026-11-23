@@ -6,6 +6,7 @@
 struct StageSettings {
     md_t md;                      // only "Stage" fields are applied
     std::vector<double> lambdas;  // size must equal number of FEP states
+    std::vector<double> foreign_lambdas;  // state-2 weight of each foreign-work target window
     std::vector<restrpos_t> restrspos;
     std::vector<restrseq_t> restrseqs;
     std::vector<restrdis_t> restrdists;

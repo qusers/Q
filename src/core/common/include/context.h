@@ -61,6 +61,9 @@ class Context {
     std::unique_ptr<HostDeviceBuffer<offdiag_term_t>> offdiag_terms;
     std::unique_ptr<HostDeviceBuffer<offdiag_record_t>> offdiag_records;
 
+    foreign_targets_t foreign_targets;  // all targets of the stage; n is their count
+    int n_foreign_active = 0;           // targets to evaluate in the current force call; 0 on steps without energy output
+
     ParseResult get_parse_result();
     void init(const ParseResult& parsed);
     int n_offdiags() const {
@@ -73,11 +76,17 @@ class Context {
     int n_patoms() const { return p_atoms.size(); }
 
     void validate_stage(const StageSettings& stage) const;  // throws InputError; changes nothing
-    void apply_stage(const StageSettings& s);       // copy Stage fields into md, dt = time_unit*md.stepsize,
-                                                    // copy s.lambdas into lambdas->cpu_data_p + upload,
-                                                    // native_output = s.outputs; validate System fields unchanged
-    void set_state(const SystemState& s);           // fill coords/velocities cpu buffers, upload
+    void apply_stage(const StageSettings& s);               // copy Stage fields into md, dt = time_unit*md.stepsize,
+                                                            // copy s.lambdas into lambdas->cpu_data_p + upload,
+                                                            // native_output = s.outputs; validate System fields unchanged
+    void set_state(const SystemState& s);                   // fill coords/velocities cpu buffers, upload
     void generate_velocities(int seed, double T0);
+    // The targets with n set for the current force call (0 on steps that do not use energies).
+    foreign_targets_t active_foreign_targets() const {
+        foreign_targets_t f = foreign_targets;
+        f.n = n_foreign_active;
+        return f;
+    }
 
    private:
     void validate_system_fields(const md_t& stage_md) const;

@@ -171,6 +171,25 @@ struct vdw_atom_param_t {
     real_t bii_normal;
 };
 
+enum SoftcoreMethod : int {
+    SC_NONE = 0,
+    SC_GAPSYS = 1,
+};
+
+struct softcore_params_t {
+    int method = SC_NONE;
+    double alpha_lj = 0.85;  // gapsys_scale_linpoint_lj
+    double alpha_q = 3.0;    // gapsys_scale_linpoint_q, in Angstrom
+    double sigma_q = 1.0;    // gapsys_sigma_q
+};
+
+struct softcore_pair_params_t {
+    int method = SC_NONE;
+    real_t lj_scale = 0;  // alpha_lj * (26/7)^(1/6)
+    real_t alpha_q = 0;
+    real_t sigma_q = 0;
+};
+
 enum ForceFieldType : int {
     FF_GROMOS = 1,
     FF_AMBER = 2,
@@ -409,4 +428,8 @@ struct special_pair_term_t {
     // LJ14: p1 = combined A14, p2 = combined B14
     double p1 = 0.0;
     double p2 = 0.0;
+
+    // Gapsys soft-core of a 1-4 pair; 0 = hard pair. Radii are these times (1 - lambda)^(1/6).
+    double sc_lj = 0.0;  // alpha_lj * (26/7)^(1/6) * sigma_ij
+    double sc_q = 0.0;   // alpha_q * (1 + sigma_q * |qi * qj|)
 };

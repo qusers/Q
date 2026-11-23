@@ -21,6 +21,10 @@ __device__ void compute_pair(
     real_t atom2_charge, const vdw_atom_param_t& atom2_vdw, real_t atom2_lambda, const real_t3& atom2_coord,
     // scalars
     real_t coulomb_constant, int vdw_rule,
+    // soft-core: soft_tile is false when neither tile holds Q atoms
+    bool soft_tile, const softcore_pair_params_t& sc_params, real_t atom1_sc, real_t atom2_sc,
+    // foreign work: tile_state is the FEP state of the tile's Q atoms
+    const foreign_targets_t& foreign, int tile_state, int n_states, energy_accum_t* e,
     // output
     real_t3& atom1_force, real_t3& atom2_force,
     real_t& e_coul, real_t& e_vdw) {
@@ -34,12 +38,31 @@ __device__ void compute_pair(
     real_t qij = atom1_charge * atom2_charge;
     real_t2 pair = combine_vdw(vdw_rule, atom1_vdw.aii_normal, atom1_vdw.bii_normal, atom2_vdw.aii_normal, atom2_vdw.bii_normal);
 
-    auto [vel, dvel] = calc_electrostatic(qij, coulomb_constant, inv_dis);
-    auto [vvdw, dvvdw] = calc_vdw(pair, inv_dis);
+    real_t2 el = calc_electrostatic(qij, coulomb_constant, inv_dis);
+    real_t2 vdw = calc_vdw(pair, inv_dis);
+
+    if (soft_tile) {
+        const real_t sc = max(atom1_sc, atom2_sc);  // < 0: neither atom has soft-core
+        if (sc >= 0) {
+            const real_t sigma = softcore_pair_sigma(vdw_rule, atom1_vdw.aii_normal, atom1_vdw.bii_normal, atom2_vdw.aii_normal, atom2_vdw.bii_normal);
+            const real_t dis = sqrt(dis2);
+            if (sc > 0) apply_gapsys(sc_params, sc, sigma, qij, coulomb_constant, pair, dis, el, vdw);
+            // At r = 0 a soft pair has a finite energy and no force direction.
+            if (!(dis2 > 0)) inv_dis = 0;
+
+            for (int k = 0; k < foreign.n; k++) {
+                const real_t target_sc = static_cast<real_t>(foreign.sc[k][tile_state]);
+                const real_t diff = gapsys_shape_difference(sc_params, sc, target_sc, sigma, qij, coulomb_constant, pair, dis);
+                if (diff != 0) {
+                    atomic_add_energy(&e[EnergyBuffer::foreign_index(n_states, k)], static_cast<real_t>(foreign.weight[k][tile_state]) * diff);
+                }
+            }
+        }
+    }
 
     real_t lambda = min(atom1_lambda, atom2_lambda);
 
-    real_t dva = (dvel + dvvdw) * inv_dis * lambda;
+    real_t dva = (el.y + vdw.y) * inv_dis * lambda;
 
     atom1_force.x -= dva * dx;
     atom1_force.y -= dva * dy;
@@ -49,11 +72,11 @@ __device__ void compute_pair(
     atom2_force.y += dva * dy;
     atom2_force.z += dva * dz;
 
-    e_coul += vel;
-    e_vdw += vvdw;
+    e_coul += el.x;
+    e_vdw += vdw.x;
 }
 
-__device__ void shuffle(int& atom, real_t& atom_charge, vdw_atom_param_t& atom_vdw, real_t& atom_lambda, real_t3& atom_force, real_t3& atom_coord) {
+__device__ void shuffle(int& atom, real_t& atom_charge, vdw_atom_param_t& atom_vdw, real_t& atom_lambda, real_t3& atom_force, real_t3& atom_coord, real_t& atom_sc, bool soft_tile) {
     constexpr unsigned FULL_MASK = 0xFFFFFFFF;
     int src = ((threadIdx.x & 31) + 1) & 31;
     atom = __shfl_sync(FULL_MASK, atom, src);
@@ -69,8 +92,12 @@ __device__ void shuffle(int& atom, real_t& atom_charge, vdw_atom_param_t& atom_v
     atom_coord.x = __shfl_sync(FULL_MASK, atom_coord.x, src);
     atom_coord.y = __shfl_sync(FULL_MASK, atom_coord.y, src);
     atom_coord.z = __shfl_sync(FULL_MASK, atom_coord.z, src);
+    if (soft_tile) atom_sc = __shfl_sync(FULL_MASK, atom_sc, src);
 }
 
+// kSoft = false compiles the soft-core and foreign-work code out of the kernel, so a run
+// without soft-core pays nothing for it.
+template <bool kSoft>
 __device__ void nonbonded_force_calculation(
     int x_idx,
     int y_idx,
@@ -78,7 +105,7 @@ __device__ void nonbonded_force_calculation(
     int base_x,
     int base_y,
 
-    int n_states,        // ctx.n_lambdas, used by nb_coul_slot
+    int n_states,  // ctx.n_lambdas, used by nb_coul_slot
 
     // ---- per-atom arrays (length sz, parallel to atom_idx) ----
     const int* atom_idx,               // data_.atom_idx, local i -> global atom index
@@ -91,6 +118,9 @@ __device__ void nonbonded_force_calculation(
     // ---- topology scalars (passed by value) ----
     real_t coulomb_constant,  // ctx.topo.coulomb_constant
     int vdw_rule,
+    const real_t* atom_softcore,
+    softcore_pair_params_t sc_params,
+    foreign_targets_t foreign,
 
     // ---- coordinates / outputs ----
     const real_t* cx, const real_t* cy, const real_t* cz,
@@ -116,6 +146,13 @@ __device__ void nonbonded_force_calculation(
     real_t3 atom2_coord = atom2 == -1 ? real_t3{0, 0, 0} : real_t3{cx[y_idx], cy[y_idx], cz[y_idx]};
     real_t3 atom2_force = {0, 0, 0};
 
+    // A cluster holds atoms of one category, so the first slot tells whether a tile has Q atoms.
+    const uint8_t q_category = static_cast<uint8_t>(AtomCategory::Q);
+    const bool soft_tile = kSoft && (category[base_x] == q_category || category[base_y] == q_category);
+    const real_t atom1_sc = (soft_tile && atom1 != -1) ? atom_softcore[x_idx] : -1;
+    real_t atom2_sc = (soft_tile && atom2 != -1) ? atom_softcore[y_idx] : -1;
+    const int tile_state = category[base_x] == q_category ? q_state[base_x] : q_state[base_y];
+
     real_t local_e_coul = 0, local_e_vdw = 0;
     int y_lane = lane;
     for (int i = 0; i < 32; i++) {
@@ -123,12 +160,14 @@ __device__ void nonbonded_force_calculation(
         const bool mask_enabled = (pair_mask & bit) != 0;
         if (mask_enabled) {
             compute_pair(atom1_charge, atom1_vdw, atom1_lambda, atom1_coord,
-                                              atom2_charge, atom2_vdw, atom2_lambda, atom2_coord,
-                                              coulomb_constant, vdw_rule,
-                                              atom1_force, atom2_force,
-                                              local_e_coul, local_e_vdw);
+                         atom2_charge, atom2_vdw, atom2_lambda, atom2_coord,
+                         coulomb_constant, vdw_rule,
+                         soft_tile, sc_params, atom1_sc, atom2_sc,
+                         foreign, tile_state, n_states, e,
+                         atom1_force, atom2_force,
+                         local_e_coul, local_e_vdw);
         }
-        shuffle(atom2, atom2_charge, atom2_vdw, atom2_lambda, atom2_force, atom2_coord);
+        shuffle(atom2, atom2_charge, atom2_vdw, atom2_lambda, atom2_force, atom2_coord, atom2_sc, soft_tile);
         y_lane = (y_lane + 1) & 31;
     }
 
@@ -161,4 +200,4 @@ __device__ void nonbonded_force_calculation(
     }
 }
 
-} // namespace
+}  // namespace

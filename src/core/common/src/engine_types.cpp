@@ -4,6 +4,7 @@ StageSettings stage_from(const ParseResult& p) {
     StageSettings s;
     s.md = p.md;
     s.lambdas = p.lambdas;
+    s.foreign_lambdas = p.foreign_lambdas;
     s.restrspos = p.restrspos;
     s.restrseqs = p.restrseqs;
     s.restrdists = p.restrdists;

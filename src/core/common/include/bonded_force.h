@@ -5,6 +5,7 @@
 #include "constraint_force.h"
 #include "context.h"
 #include "host_device_buffer.h"
+#include "pair_potential.h"
 #include "precision.h"
 
 struct bond_idx_t {
@@ -185,10 +186,12 @@ HD inline dparam2_t calc_q_improper(const double k, const double phi0, const dou
     return {v, dv};
 }
 
-HD inline special_pair_result_t calc_special_pair(const special_pair_term_t& param, const double r) {
+// sc = (1 - lambda)^(1/6) for a soft 1-4 pair, 0 otherwise.
+HD inline special_pair_result_t calc_special_pair(const special_pair_term_t& param, const double r, const double sc = 0.0) {
     const double inv_r = 1.0 / r;
 
-    const double coul = param.coulomb_coeff * inv_r;
+    double coul = param.coulomb_coeff * inv_r;
+    double dv_coul = -coul * inv_r;
 
     double vdw, dv_vdw;
 
@@ -201,11 +204,28 @@ HD inline special_pair_result_t calc_special_pair(const special_pair_term_t& par
 
         vdw = Va - Vb;
         dv_vdw = (-12.0 * Va + 6.0 * Vb) * inv_r;
+
+        if (sc > 0) {
+            const double rsc_lj = param.sc_lj * sc;
+            if (r < rsc_lj) {
+                const auto soft = calc_vdw_gapsys(Real2<double>{param.p1, param.p2}, r, rsc_lj);
+                vdw = soft.x;
+                dv_vdw = soft.y;
+            }
+
+            const double rsc_q = param.sc_q * sc;
+            if (r < rsc_q) {
+                // coulomb_coeff already holds the Coulomb constant and the 1-4 scale.
+                const auto soft = calc_electrostatic_gapsys(param.coulomb_coeff, 1.0, r, rsc_q);
+                coul = soft.x;
+                dv_coul = soft.y;
+            }
+        }
     } else {
         vdw = param.p1 * exp(-param.p2 * r);
         dv_vdw = -param.p2 * vdw;
     }
-    const double dv = -coul * inv_r + dv_vdw;
+    const double dv = dv_coul + dv_vdw;
 
     return {coul, vdw, dv};
 }

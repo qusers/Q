@@ -1,6 +1,7 @@
 #include "nonbonded_force.h"
 
 #include <algorithm>
+#include <cmath>
 #include <map>
 #include <queue>
 #include <set>
@@ -265,7 +266,7 @@ SolutePairClassification classify_solute_pairs(Context& ctx, const ParseResult& 
     return {std::move(result_excluded), std::move(result_14), std::move(result_special)};
 }
 
-std::vector<special_pair_term_t> build_lj14_pairs(Context& ctx, const std::set<Status>& pairs_14, const std::set<Status>& excluded) {
+std::vector<special_pair_term_t> build_lj14_pairs(Context& ctx, const ParseResult& parsed, const std::set<Status>& pairs_14, const std::set<Status>& excluded) {
     const int nqat = ctx.n_qatoms();
     std::vector<int> atom_to_q(ctx.n_atoms_solute, -1);
 
@@ -331,6 +332,18 @@ std::vector<special_pair_term_t> build_lj14_pairs(Context& ctx, const std::set<S
 
         term.p1 = pair.x;
         term.p2 = pair.y;
+
+        if (parsed.softcore.method == SC_GAPSYS && (qi || qj)) {
+            auto enabled = [&](int atom) {
+                const int q = atom_to_q.at(atom);
+                return q >= 0 && std::fabs(parsed.q_softcores.at(q + static_cast<size_t>(s) * nqat).s) > 1e-6;
+            };
+            if (enabled(ai) || enabled(aj)) {
+                const double sigma = softcore_pair_sigma(ctx.topo.vdw_rule, param_i->aii_1_4, param_i->bii_1_4, param_j->aii_1_4, param_j->bii_1_4);
+                term.sc_lj = parsed.softcore.alpha_lj * std::pow(26.0 / 7.0, 1.0 / 6.0) * sigma;
+                term.sc_q = parsed.softcore.alpha_q * (1.0 + parsed.softcore.sigma_q * std::fabs(charge_i * charge_j));
+            }
+        }
 
         terms.push_back(term);
     }
@@ -410,12 +423,24 @@ void NonbondedForce::update_lambdas(Context& ctx) {
         if (q_state[i] >= 0) atom_lambdas[i] = static_cast<real_t>(lambdas[q_state[i]]);
     }
     if (ctx.command_info.requested_gpu) data_.atom_lambdas->upload();
+
+    if (data_.softcore.method != SC_NONE) {
+        real_t* sc = data_.atom_softcore->cpu_data_p;
+        for (int i = 0; i < data_.n_total; i++) {
+            if (!data_.softcore_enabled[i]) continue;
+            const double lambda = lambdas[q_state[i]];
+            if (lambda < 0.0 || lambda > 1.0) throw InputError("Gapsys soft-core requires lambdas in [0, 1].");
+            sc[i] = static_cast<real_t>(std::pow(1.0 - lambda, 1.0 / 6.0));
+        }
+        if (ctx.command_info.requested_gpu) data_.atom_softcore->upload();
+    }
 }
 
 void NonbondedForce::init(Context& ctx, const ParseResult& parsed) {
     build_combinded_list(ctx);
     build_charge_table(ctx);
     build_catype_table(ctx);
+    build_softcore_table(ctx, parsed);
     build_atom_to_group(ctx);
     build_pair_masks(ctx, parsed);
     init_backend(ctx);
@@ -449,7 +474,7 @@ void NonbondedForce::build_pair_masks(Context& ctx, const ParseResult& parsed) {
     auto [result_excluded, result_14, result_special] = classify_solute_pairs(ctx, parsed);
 
     data_.special_pairs = build_special_pairs(ctx, parsed, result_special);
-    const auto pairs14 = build_lj14_pairs(ctx, result_14, result_excluded);
+    const auto pairs14 = build_lj14_pairs(ctx, parsed, result_14, result_excluded);
     data_.special_pairs.insert(data_.special_pairs.end(), pairs14.begin(), pairs14.end());
 
     data_.n_cluster = data_.n_total / 32;
@@ -765,4 +790,41 @@ void NonbondedForce::build_catype_table(Context& ctx) {
         }
     }
     data_.atom_vdw = HostDeviceBuffer<vdw_atom_param_t>::from_vector(atom_vdw, ctx.command_info.requested_gpu);
+}
+
+void NonbondedForce::build_softcore_table(Context& ctx, const ParseResult& parsed) {
+    data_.softcore = {};
+    data_.softcore_enabled.assign(data_.n_total, 0);
+    data_.atom_softcore = HostDeviceBuffer<real_t>::from_vector(std::vector<real_t>(data_.n_total, -1), ctx.command_info.requested_gpu);
+
+    if (parsed.softcore.method != SC_GAPSYS) return;
+
+    const int nqat = ctx.n_qatoms();
+    const int n_states = ctx.n_lambdas();
+
+    if (n_states != 2) throw InputError("Gapsys soft-core requires exactly two FEP states.");
+    if (parsed.softcore_use_max_potential) throw InputError("Gapsys soft-core requires softcore_use_max_potential off.");
+    if (!parsed.q_softpairs.empty()) throw InputError("Gapsys soft-core does not support [soft_pairs].");
+    if (!parsed.q_offdiags.empty()) throw InputError("Gapsys soft-core does not support [off_diagonals].");
+    if (parsed.q_softcores.size() != static_cast<size_t>(nqat) * n_states) {
+        throw InputError("[softcore] must list every Q atom once.");
+    }
+
+    data_.softcore.method = SC_GAPSYS;
+    data_.softcore.lj_scale = static_cast<real_t>(parsed.softcore.alpha_lj * std::pow(26.0 / 7.0, 1.0 / 6.0));
+    data_.softcore.alpha_q = static_cast<real_t>(parsed.softcore.alpha_q);
+    data_.softcore.sigma_q = static_cast<real_t>(parsed.softcore.sigma_q);
+
+    std::vector<int> atom_to_q(ctx.n_atoms, -1);
+    for (int q = 0; q < nqat; q++) atom_to_q[ctx.q_atoms[q]] = q;
+
+    for (int i = 0; i < data_.n_total; i++) {
+        const int state = data_.q_state->cpu_data_p[i];
+        if (state < 0) continue;
+        const int q = atom_to_q[data_.atom_idx->cpu_data_p[i]];
+        // The values in [softcore] are flags; their size is ignored.
+        data_.softcore_enabled[i] = std::fabs(parsed.q_softcores[q + static_cast<size_t>(state) * nqat].s) > 1e-6;
+    }
+
+    update_lambdas(ctx);
 }

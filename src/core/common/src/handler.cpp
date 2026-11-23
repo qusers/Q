@@ -8,6 +8,8 @@
 
 void Handler::run_iteration(int iteration) {
     reset_energies();
+    // Foreign work is only needed when this iteration's energies are used.
+    ctx.n_foreign_active = output_requirements(iteration).energy ? ctx.foreign_targets.n : 0;
 
     // 3. nonbonded forces
     calc_nonbonded_forces();
@@ -199,6 +201,7 @@ void Handler::stop_cm_translation() {
 void Handler::calc_final_potential(int iteration) {
     ctx.step = iteration;
     reset_energies();
+    ctx.n_foreign_active = ctx.foreign_targets.n;
     calc_nonbonded_forces();
     calc_internal_forces(iteration);
     prepare_offdiags(iteration);
@@ -211,6 +214,20 @@ void Handler::update_energy_totals() {
     }
     ctx.energy.unpack();
     temperature_->sync_for_output(ctx);  // publish Ukin before combine sums Utot
+
+    // Foreign work: U(lambda') - U(lambda). The per-state energies are linear in lambda except for
+    // the shape of the soft pairs, which the kernels put in foreign_shape. Uses the unpacked
+    // per-state energies, before combine() zeroes the states with lambda = 0.
+    auto& energy = ctx.energy.data();
+    energy.foreign_work.assign(ctx.foreign_targets.n, 0.0);
+    for (int k = 0; k < ctx.foreign_targets.n; k++) {
+        double work = energy.foreign_shape[k];
+        for (int s = 0; s < ctx.n_lambdas(); s++) {
+            work += (ctx.foreign_targets.weight[k][s] - ctx.lambdas->cpu_data_p[s]) * energy.eq_total[s];
+        }
+        energy.foreign_work[k] = work;
+    }
+
     ctx.energy.combine(ctx.lambdas->cpu_data_p);
 }
 
@@ -253,32 +270,34 @@ void Handler::run() {
     }
 }
 
-void Handler::print_outputs(int iteration) {
-    bool needs_energy = false;
-    bool needs_restart = false;
-    bool needs_trajectory = false;
-
+// What the outputs of this iteration need, over all outputs.
+OutputRequirements Handler::output_requirements(int iteration) const {
+    OutputRequirements needs;
     for (const auto& output : outputs_) {
         const auto required = output->requirements(ctx, iteration);
-
-        needs_energy |= required.energy;
-        needs_restart |= required.restart;
-        needs_trajectory |= required.trajectory;
+        needs.energy |= required.energy;
+        needs.restart |= required.restart;
+        needs.trajectory |= required.trajectory;
     }
+    return needs;
+}
 
-    if (needs_energy) {
+void Handler::print_outputs(int iteration) {
+    const OutputRequirements needs = output_requirements(iteration);
+
+    if (needs.energy) {
         update_energy_totals();
     }
 
-    if (needs_restart) {
+    if (needs.restart) {
         water_boundary_force_->sync_for_output(ctx);
     }
 
     if (ctx.command_info.requested_gpu) {
-        if (needs_trajectory || needs_restart) {
+        if (needs.trajectory || needs.restart) {
             ctx.coords->download();
         }
-        if (needs_restart) {
+        if (needs.restart) {
             ctx.velocities->download();
         }
     }

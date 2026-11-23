@@ -347,14 +347,24 @@ void CpuBondedForce::calc_special_pairs(Context& ctx) {
     auto* gradients = ctx.dvelocities->cpu_data_p;
     auto* energy = ctx.energy.host();
 
+    const foreign_targets_t foreign = ctx.active_foreign_targets();
     for (int i = 0; i < data_.special_pairs.n; i++) {
         const auto& term = terms[i];
 
         const auto d = coords[term.aj] - coords[term.ai];
         const double r = norm(d);
 
-        const auto result = calc_special_pair(term, r);
         const double weight = term.state < 0 ? 1.0 : lambdas[term.state];
+        const double sc = (term.sc_lj > 0 || term.sc_q > 0) ? std::pow(std::max(0.0, 1.0 - weight), 1.0 / 6.0) : 0.0;
+        const auto result = calc_special_pair(term, r, sc);
+
+        if (term.sc_lj > 0 || term.sc_q > 0) {
+            for (int k = 0; k < foreign.n; k++) {
+                const auto target = calc_special_pair(term, r, foreign.sc[k][term.state]);
+                const double diff = (target.coul + target.vdw) - (result.coul + result.vdw);
+                if (diff != 0) add_energy(energy[EnergyBuffer::foreign_index(ctx.n_lambdas(), k)], foreign.weight[k][term.state] * diff);
+            }
+        }
         const double ampl = result.dv / r * weight;
 
         add_force(gradients[term.ai].x, -ampl * d.x);

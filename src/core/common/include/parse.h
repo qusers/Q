@@ -30,6 +30,7 @@ class ParseResult {
     int n_impropers_solute = 0;
 
     std::vector<double> lambdas;
+    std::vector<double> foreign_lambdas;  // [foreign_lambdas]: state-2 weight of each target window
     std::vector<coord_t> coords_init;
     std::vector<coord_t> coords;
     std::vector<vel_t> velocities;
@@ -101,6 +102,7 @@ class ParseResult {
     std::vector<q_shake_t> q_shakes;
     std::vector<q_softcore_t> q_softcores;
     bool softcore_use_max_potential = false;
+    softcore_params_t softcore;
 };
 
 class BaseParser {

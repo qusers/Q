@@ -7,6 +7,7 @@
 #include "constants.h"
 #include "context.h"
 #include "host_device_buffer.h"
+#include "pair_potential.h"
 
 enum class CalculationType : uint8_t {
     Exclude,
@@ -79,37 +80,6 @@ HD inline BondType get_bond_type(int n_atoms_solute, const int* LJ_matrix, int a
     return BondType::NonBond;
 }
 
-HD inline real_t2 calc_electrostatic(real_t qij, real_t coulomb_constant, real_t inv_dis) {
-    if (qij == 0) return {0, 0};
-    real_t vel = qij * coulomb_constant * inv_dis;  // k * qi * qj / r
-    real_t dvel = -vel * inv_dis;                   /// -k * qi * qj / r2
-    return {vel, dvel};
-}
-
-HD inline real_t2 calc_vdw(const real_t2& pair, real_t inv_dis) {
-    if (pair.x == 0 && pair.y == 0) return {0, 0};
-    real_t inv_dis3 = inv_dis * inv_dis * inv_dis;
-    real_t inv_dis6 = inv_dis3 * inv_dis3;
-
-    real_t V_a = pair.x * inv_dis6 * inv_dis6;  // precomputed A / r^12
-    real_t V_b = pair.y * inv_dis6;             // precomputed B / r^6
-
-    real_t vvdw = V_a - V_b;
-    real_t dvvdw = (static_cast<real_t>(-12.0) * V_a + static_cast<real_t>(6.0) * V_b) * inv_dis;
-
-    return {vvdw, dvvdw};
-}
-
-HD inline real_t2 combine_vdw(int vdw_rule, real_t aii_i, real_t bii_i, real_t aii_j, real_t bii_j) {
-    real_t a, b;
-    if (vdw_rule == VDW_GEOMETRIC) {
-        calc_vdw_geometric(aii_i, aii_j, bii_i, bii_j, (real_t)1.0, &a, &b);
-    } else {
-        calc_vdw_arithmetic(aii_i, aii_j, bii_i, bii_j, (real_t)1.0, &a, &b);
-    }
-    return {a, b};
-}
-
 struct NonbondedData {
     int n_total = 0;
     std::unique_ptr<HostDeviceBuffer<int>> atom_idx;       // global atom index
@@ -134,6 +104,10 @@ struct NonbondedData {
     // Bit y_lane describes the pair (x_lane, y_lane).
     std::unique_ptr<HostDeviceBuffer<uint32_t>> pair_masks;
     // std::unique_ptr<HostDeviceBuffer<uint32_t>> pair_14_masks;
+
+    softcore_pair_params_t softcore;                          // method == SC_NONE: no soft-core
+    std::vector<uint8_t> softcore_enabled;                    // per slot: Q atom flagged in [softcore] for its state
+    std::unique_ptr<HostDeviceBuffer<real_t>> atom_softcore;  // per slot: (1 - lambda)^(1/6) if enabled, else -1
 
     bool enabled() const { return n_total > 0; }
 };
@@ -177,4 +151,5 @@ class NonbondedForce {
     void build_catype_table(Context& ctx);    // catype_pair_params + catype_types + counts
     void build_atom_to_group(Context& ctx);   // atom_to_group
     void build_pair_masks(Context& ctx, const ParseResult& parsed);
+    void build_softcore_table(Context& ctx, const ParseResult& parsed);
 };

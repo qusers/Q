@@ -460,6 +460,15 @@ void Context::validate_stage(const StageSettings& stage) const {
         throw InputError("Stage has " + std::to_string(stage.lambdas.size()) +
                          " lambdas, system has " + std::to_string(n_lambdas()) + " FEP states.");
     }
+    if (stage.foreign_lambdas.size() > MAX_FOREIGN_LAMBDAS) {
+        throw InputError("At most " + std::to_string(MAX_FOREIGN_LAMBDAS) + " [foreign_lambdas] are supported.");
+    }
+    if (!stage.foreign_lambdas.empty() && n_lambdas() != 2) {
+        throw InputError("[foreign_lambdas] requires exactly two FEP states.");
+    }
+    for (const double f : stage.foreign_lambdas) {
+        if (!(f >= 0.0 && f <= 1.0)) throw InputError("[foreign_lambdas] values must be in [0, 1].");
+    }
     if (s.steps < 0) throw InputError("Stage steps must be >= 0.");
     if (s.stepsize <= 0) throw InputError("Stage stepsize must be > 0.");
     if (s.temperature <= 0) throw InputError("Stage temperature must be > 0 (no dynamics at zero temperature).");
@@ -493,6 +502,17 @@ void Context::apply_stage(const StageSettings& stage) {
     // Lambdas: overwrite values in place; length is fixed by the FEP states.
     std::copy(stage.lambdas.begin(), stage.lambdas.end(), lambdas->cpu_data_p);
     if (command_info.requested_gpu) lambdas->upload();
+
+    foreign_targets = {};
+    foreign_targets.n = static_cast<int>(stage.foreign_lambdas.size());
+    for (int k = 0; k < foreign_targets.n; k++) {
+        const double weights[2] = {1.0 - stage.foreign_lambdas[k], stage.foreign_lambdas[k]};
+        for (int s = 0; s < 2; s++) {
+            foreign_targets.weight[k][s] = weights[s];
+            foreign_targets.sc[k][s] = std::pow(1.0 - weights[s], 1.0 / 6.0);
+        }
+    }
+    n_foreign_active = 0;
 
     // Output paths for this stage; keep topology_file from the system.
     const std::string topology_file = native_output.topology_file;

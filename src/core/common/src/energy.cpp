@@ -63,6 +63,11 @@ void EnergyBuffer::unpack() {
         d.eq_total[s] = d.eq_bond[s].Ubond + d.eq_bond[s].Uangle + d.eq_bond[s].Utor + d.eq_bond[s].Uimp +
                         d.eq_qx[s].Ucoul + d.eq_qx[s].Uvdw + d.eq_restr[s];
     }
+
+    d.foreign_shape.resize(MAX_FOREIGN_LAMBDAS);
+    for (int k = 0; k < MAX_FOREIGN_LAMBDAS; k++) {
+        d.foreign_shape[k] = E(foreign_index(n_lambdas_, k));
+    }
 }
 
 void EnergyBuffer::combine(const double* lambdas) {

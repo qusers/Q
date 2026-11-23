@@ -1,6 +1,16 @@
 #pragma once
 #include "host_device_buffer.h"
 #include "md_types.h"
+// Foreign-work targets per stage ([foreign_lambdas]); fixed so that the energy buffer keeps its size.
+constexpr int MAX_FOREIGN_LAMBDAS = 8;
+
+// Passed by value to the pair kernels. n == 0 means "do not evaluate", which is every step
+// that does not write energies.
+struct foreign_targets_t {
+    int n = 0;
+    double weight[MAX_FOREIGN_LAMBDAS][2] = {};  // lambda' of state 1 and 2
+    double sc[MAX_FOREIGN_LAMBDAS][2] = {};      // (1 - lambda')^(1/6)
+};
 
 enum EnergySlot : int {  // fixed, non-FEP slots
     E_BOND_P_BOND,
@@ -64,11 +74,17 @@ struct EnergyData {
     // derived global / lambda-weighted
     E_bonded_t bond_q;
     E_nonbonded_t nb_qx;
+
+    // Per target: sum over states of lambda'_s * sum over soft pairs of [V_s(lambda'_s) - V_s(lambda_s)].
+    std::vector<double> foreign_shape;
+    // Per target: U(lambda') - U(lambda) at the current coordinates.
+    std::vector<double> foreign_work;
+
     double Upot = 0, Ukin = 0, Utot = 0;
 };
 
 class EnergyBuffer {
-    std::unique_ptr<HostDeviceBuffer<energy_accum_t>> accum_;  // length = ENERGY_FIXED_COUNT + EQ_STRIDE * n_lambdas
+    std::unique_ptr<HostDeviceBuffer<energy_accum_t>> accum_;  // length = ENERGY_FIXED_COUNT + EQ_STRIDE * n_lambdas + MAX_FOREIGN_LAMBDAS
     EnergyData data_;
 
     int n_lambdas_;
@@ -79,7 +95,8 @@ class EnergyBuffer {
     { return n_fixed + state * EQ_STRIDE + s; }
     energy_accum_t* device() { return accum_->gpu_data_p; }  // hand to kernels
     energy_accum_t* host() { return accum_->cpu_data_p; }
-    int size() const { return ENERGY_FIXED_COUNT + EQ_STRIDE * n_lambdas_; }
+    int size() const { return ENERGY_FIXED_COUNT + EQ_STRIDE * n_lambdas_ + MAX_FOREIGN_LAMBDAS; }
+    HD static int foreign_index(int n_lambdas, int k) { return ENERGY_FIXED_COUNT + n_lambdas * EQ_STRIDE + k; }
 
     void reset();
     void download();
