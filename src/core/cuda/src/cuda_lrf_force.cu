@@ -1140,7 +1140,7 @@ void CudaLrfForce::calc_exact_tiles(Context& ctx, const NonbondedCoordinates& co
         coords.z,
 
         ctx.dvelocities->gpu_data_p,
-        ctx.energy.device());
+        ctx.optional_energy_device());
 
     check_cuda(cudaGetLastError());
 }

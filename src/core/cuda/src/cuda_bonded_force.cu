@@ -66,8 +66,10 @@ __device__ void compute_special_pair(int i, const special_pair_term_t* terms, co
     atomic_add_force(&dvel[term.aj].y, ampl * d.y);
     atomic_add_force(&dvel[term.aj].z, ampl * d.z);
 
-    atomic_add_energy(&energy[term.coul_slot], result.coul);
-    atomic_add_energy(&energy[term.vdw_slot], result.vdw);
+    if (energy != nullptr) {
+        atomic_add_energy(&energy[term.coul_slot], result.coul);
+        atomic_add_energy(&energy[term.vdw_slot], result.vdw);
+    }
 }
 
 __device__ void compute_bond(int i, const bond_idx_t* ids, const cbond_t* params, const int* eslot, const int* states, const double* lambdas, const coord_t* coords, dvel_t* dvel, energy_accum_t* e_bond) {
@@ -80,7 +82,7 @@ __device__ void compute_bond(int i, const bond_idx_t* ids, const cbond_t* params
     auto [v, dv] = calc_bond(params[i], r);
     const double ampl = dv / r * weight;
 
-    atomic_add_energy(&e_bond[eslot[i]], v);
+    if (e_bond != nullptr) atomic_add_energy(&e_bond[eslot[i]], v);
     atomic_add_force(&dvel[ai].x, -ampl * d.x);
     atomic_add_force(&dvel[ai].y, -ampl * d.y);
     atomic_add_force(&dvel[ai].z, -ampl * d.z);
@@ -112,7 +114,7 @@ __device__ void compute_angle(int i, const angle_idx_t* ids, const dparam2_t* pa
     double gamma = morse_coupling(couplings[i], coords, dvel, v, weight);
 
     dv_per_angle *= gamma;
-    atomic_add_energy(&e_angle[eslot[i]], v * gamma);
+    if (e_angle != nullptr) atomic_add_energy(&e_angle[eslot[i]], v * gamma);
 
     coord_t perpendicular_v = get_perpendicular_vector(aji, ajk);
     double sin_th = sin(th);
@@ -166,7 +168,7 @@ __device__ void compute_torsion(int i, const dihe_idx_t* ids, const torsion_para
     auto [v, dv_per_angle] = calc_torsion(k, n, phi, gamma, paths);
     double morse_scale = morse_coupling(couplings[i], coords, dvelocities, v, weight);
 
-    atomic_add_energy(&e_torsion[eslot[i]], static_cast<double>(v) * morse_scale);
+    if (e_torsion != nullptr) atomic_add_energy(&e_torsion[eslot[i]], static_cast<double>(v) * morse_scale);
 
     real_t3 di = get_perpendicular_vector(n_ijk, n_jkl);
 
@@ -267,7 +269,7 @@ __device__ void compute_improper(int i, const dihe_idx_t* ids, const dparam2_t* 
     }
     const double morse_scale = morse_coupling(couplings[i], coords, dvelocities, v, weight);
 
-    atomic_add_energy(&e_improper[eslot[i]], v * morse_scale);
+    if (e_improper != nullptr) atomic_add_energy(&e_improper[eslot[i]], v * morse_scale);
 
     coord_t di = get_perpendicular_vector(n_ijk, n_jkl);
     double sin_phi = sin(phi);
@@ -324,7 +326,7 @@ __global__ void bonded_kernel(
     const dihe_idx_t* imp_ids, const dparam2_t* imp_p, const int* imp_es, const int* imp_state, const morse_coupling_t* imp_couplings,
     const special_pair_term_t* special_pairs, foreign_targets_t foreign, int n_states,
     const double* lambdas, const coord_t* coords, dvel_t* dvel,
-    energy_accum_t* e) {
+    energy_accum_t* e) {  // e: nullptr when the energies of this step are not used
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid < n_bond) {
         compute_bond(tid, bond_ids, bond_p, bond_es, bond_state, lambdas, coords, dvel, e);
@@ -376,5 +378,5 @@ void CudaBondedForce::calc(Context& ctx) {
         data_.torsion.ids->gpu_data_p, data_.torsion.params->gpu_data_p, data_.torsion.eslot->gpu_data_p, data_.torsion.state->gpu_data_p, data_.torsion.couplings->gpu_data_p,
         data_.improper.ids->gpu_data_p, data_.improper.params->gpu_data_p, data_.improper.eslot->gpu_data_p, data_.improper.state->gpu_data_p, data_.improper.couplings->gpu_data_p,
         data_.special_pairs.terms->gpu_data_p, ctx.active_foreign_targets(), ctx.n_lambdas(),
-        ctx.lambdas->gpu_data_p, ctx.coords->gpu_data_p, ctx.dvelocities->gpu_data_p, ctx.energy.device());
+        ctx.lambdas->gpu_data_p, ctx.coords->gpu_data_p, ctx.dvelocities->gpu_data_p, ctx.optional_energy_device());
 }

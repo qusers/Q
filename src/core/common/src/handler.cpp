@@ -9,7 +9,10 @@
 void Handler::run_iteration(int iteration) {
     reset_energies();
     // Foreign work is only needed when this iteration's energies are used.
-    ctx.n_foreign_active = output_requirements(iteration).energy ? ctx.foreign_targets.n : 0;
+    const bool needs_energy = output_requirements(iteration).energy;
+    ctx.n_foreign_active = needs_energy ? ctx.foreign_targets.n : 0;
+    // Off-diagonal (EVB) terms use the Q energies of every step.
+    ctx.energy_active = needs_energy || ctx.n_offdiags() > 0;
 
     // 3. nonbonded forces
     calc_nonbonded_forces();
@@ -202,6 +205,7 @@ void Handler::calc_final_potential(int iteration) {
     ctx.step = iteration;
     reset_energies();
     ctx.n_foreign_active = ctx.foreign_targets.n;
+    ctx.energy_active = true;
     calc_nonbonded_forces();
     calc_internal_forces(iteration);
     prepare_offdiags(iteration);

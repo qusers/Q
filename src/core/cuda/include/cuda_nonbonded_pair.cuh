@@ -129,7 +129,7 @@ __device__ void nonbonded_force_calculation(
     const real_t* cx, const real_t* cy, const real_t* cz,
     dvel_t* dvelocities,  // ctx.dvelocities->gpu_data_p (fixed-point, atomic_add_force)
 
-    // ---- energy accumulators  ----
+    // ---- energy accumulators; nullptr: do not accumulate energies ----
     energy_accum_t* e
 
 ) {
@@ -191,6 +191,9 @@ __device__ void nonbonded_force_calculation(
         atomic_add_force(&dvelocities[atom2].y, atom2_force.y);
         atomic_add_force(&dvelocities[atom2].z, atom2_force.z);
     }
+    // e is nullptr on steps whose energies are not used (the whole warp takes the same branch).
+    if (e == nullptr) return;
+
     const unsigned mask = 0xffffffffu;
     for (int offset = 16; offset > 0; offset >>= 1) {
         local_e_coul += __shfl_down_sync(mask, local_e_coul, offset);
