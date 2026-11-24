@@ -346,11 +346,15 @@ __global__ void calc_lrf_kernel(
         lrf.center.y - static_cast<double>(cy[slot]),
         lrf.center.z - static_cast<double>(cz[slot])};
 
-    double df[3] = {lrf.phi1[0], lrf.phi1[1], lrf.phi1[2]};
+    // Forces in working precision, like the pair kernel; the coefficients stay in double precision and
+    // are cast after loading. d is formed in double precision so that the group centre keeps its digits.
+    const real_t dr[3] = {static_cast<real_t>(d[0]), static_cast<real_t>(d[1]), static_cast<real_t>(d[2])};
+
+    real_t df[3] = {static_cast<real_t>(lrf.phi1[0]), static_cast<real_t>(lrf.phi1[1]), static_cast<real_t>(lrf.phi1[2])};
 
     for (int a = 0; a < 3; ++a) {
         for (int b = 0; b < 3; ++b) {
-            df[a] += lrf.phi2[a * 3 + b] * d[b];
+            df[a] += static_cast<real_t>(lrf.phi2[a * 3 + b]) * dr[b];
         }
     }
 
@@ -358,14 +362,12 @@ __global__ void calc_lrf_kernel(
         for (int b = 0; b < 3; ++b) {
             for (int c = 0; c < 3; ++c) {
                 const int index = (a * 3 + b) * 3 + c;
-                df[a] += 0.5 * lrf.phi3[index] * d[b] * d[c];
+                df[a] += real_t(0.5) * static_cast<real_t>(lrf.phi3[index]) * dr[b] * dr[c];
             }
         }
     }
 
-    const double charge = static_cast<double>(atom_charge[slot]);
-
-    const double force_scale = -coulomb_constant * charge;
+    const real_t force_scale = -static_cast<real_t>(coulomb_constant) * atom_charge[slot];
 
     atomic_add_force(&dvelocities[atom].x, force_scale * df[0]);
 
@@ -389,6 +391,8 @@ __global__ void calc_lrf_kernel(
             potential += 0.5 * lrf.phi2[a * 3 + b] * d[a] * d[b];
         }
     }
+
+    const double charge = static_cast<double>(atom_charge[slot]);
 
     const double energy_value = 0.5 * coulomb_constant * charge * potential;
 
