@@ -68,6 +68,13 @@ __global__ void finalize_temperature_kernel(
         ts_slv = (Tfree != 0) ? sqrt(1 + (dt / tau_T) * (target_T / Tfree - 1.0)) : 1.0;
         ts_sol = ts_slv;
     }
+    double Uexcl = energy_from_accum(acc[TEXCL_SOL]) + energy_from_accum(acc[TEXCL_SLV]);
+    double ts_excl = 1.0;
+    if (Ndegf > Ndegfree) {
+        double Texcl = 2.0 * Uexcl / Boltz / (Ndegf - Ndegfree);
+        if (Texcl > 0) ts_excl = sqrt(1 + (dt / tau_T) * (target_T / Texcl - 1.0));
+    }
+    results[R_TSCALE_EXCL] = ts_excl;
 
     results[R_TEMP] = Temp;
     results[R_TFREE] = Tfree;
