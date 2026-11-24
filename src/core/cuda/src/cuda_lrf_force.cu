@@ -346,18 +346,6 @@ __global__ void calc_lrf_kernel(
         lrf.center.y - static_cast<double>(cy[slot]),
         lrf.center.z - static_cast<double>(cz[slot])};
 
-    double potential = lrf.phi0;
-
-    for (int a = 0; a < 3; ++a) {
-        potential += lrf.phi1[a] * d[a];
-    }
-
-    for (int a = 0; a < 3; ++a) {
-        for (int b = 0; b < 3; ++b) {
-            potential += 0.5 * lrf.phi2[a * 3 + b] * d[a] * d[b];
-        }
-    }
-
     double df[3] = {lrf.phi1[0], lrf.phi1[1], lrf.phi1[2]};
 
     for (int a = 0; a < 3; ++a) {
@@ -377,8 +365,6 @@ __global__ void calc_lrf_kernel(
 
     const double charge = static_cast<double>(atom_charge[slot]);
 
-    const double energy_value = 0.5 * coulomb_constant * charge * potential;
-
     const double force_scale = -coulomb_constant * charge;
 
     atomic_add_force(&dvelocities[atom].x, force_scale * df[0]);
@@ -386,6 +372,25 @@ __global__ void calc_lrf_kernel(
     atomic_add_force(&dvelocities[atom].y, force_scale * df[1]);
 
     atomic_add_force(&dvelocities[atom].z, force_scale * df[2]);
+
+    // energy is nullptr on steps whose energies are not used; the potential is only needed for the energy.
+    if (energy == nullptr) {
+        return;
+    }
+
+    double potential = lrf.phi0;
+
+    for (int a = 0; a < 3; ++a) {
+        potential += lrf.phi1[a] * d[a];
+    }
+
+    for (int a = 0; a < 3; ++a) {
+        for (int b = 0; b < 3; ++b) {
+            potential += 0.5 * lrf.phi2[a * 3 + b] * d[a] * d[b];
+        }
+    }
+
+    const double energy_value = 0.5 * coulomb_constant * charge * potential;
 
     atomic_add_energy(&energy[E_LRF], energy_value);
 }
@@ -1233,7 +1238,7 @@ void CudaLrfForce::calc_lrf(Context& ctx, const NonbondedCoordinates& coords) {
         ctx.topo.coulomb_constant,
 
         ctx.dvelocities->gpu_data_p,
-        ctx.energy.device());
+        ctx.optional_energy_device());
 
     check_cuda(cudaGetLastError());
 }

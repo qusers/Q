@@ -64,8 +64,9 @@ class Context {
     softcore_params_t softcore;         // as read from the FEP file; the .fhe header reports it
     foreign_targets_t foreign_targets;  // all targets of the stage; n is their count
     int n_foreign_active = 0;           // targets to evaluate in the current force call; 0 on steps without energy output
-    // Are the potential energies of the current force call used? When not, the pair and bonded GPU
-    // kernels skip their energy accumulation; the forces are the same either way.
+    // Are the potential energies of the current force call used? When not, the GPU force kernels
+    // (pair, bonded, LRF, water boundary, restraints) skip their energy accumulation; the forces are
+    // the same either way.
     bool energy_active = true;
 
     // Energy buffer for the kernels that can skip it: nullptr when the energies are not used.

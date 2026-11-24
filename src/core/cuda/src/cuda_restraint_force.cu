@@ -20,8 +20,8 @@ __device__ void compute_posrestr(int i, const int* ids, const double* kk,
     const double dz = coords[idx].z - coords_init[idx].z;
     const double ener = 0.5 * k * (dx * dx + dy * dy + dz * dz);
 
-    if (eslot_a[i] >= 0) atomic_add_energy(&e[eslot_a[i]], ener);
-    if (eslot_b[i] >= 0) atomic_add_energy(&e[eslot_b[i]], ener);
+    if (e != nullptr && eslot_a[i] >= 0) atomic_add_energy(&e[eslot_a[i]], ener);
+    if (e != nullptr && eslot_b[i] >= 0) atomic_add_energy(&e[eslot_b[i]], ener);
 
     atomic_add_force(&dvel[idx].x, k * dx);
     atomic_add_force(&dvel[idx].y, k * dy);
@@ -45,7 +45,7 @@ __device__ void compute_restrseq(int s, const restrseq_t* recs,
             }
         if (n_ctr > 0) {
             d = d * (1.0 / static_cast<double>(n_ctr));
-            atomic_add_energy(&e[E_RESTR_PRES], 0.5 * k * norm2(d));
+            if (e != nullptr) atomic_add_energy(&e[E_RESTR_PRES], 0.5 * k * norm2(d));
             for (int i = recs[s].ai - 1; i < recs[s].aj - 1; i++)
                 if (heavy[i] || recs[s].ih) {
                     const double tmp = masses[i] / CARBON_MASS;
@@ -64,7 +64,7 @@ __device__ void compute_restrseq(int s, const restrseq_t* recs,
             }
         if (totmass > 0) {
             d = d * (1.0 / totmass);
-            atomic_add_energy(&e[E_RESTR_PRES], 0.5 * k * norm2(d));
+            if (e != nullptr) atomic_add_energy(&e[E_RESTR_PRES], 0.5 * k * norm2(d));
             for (int i = recs[s].ai - 1; i < recs[s].aj - 1; i++)
                 if (heavy[i] || recs[s].ih) {
                     atomic_add_force(&dvel[i].x, k * d.x);
@@ -76,7 +76,7 @@ __device__ void compute_restrseq(int s, const restrseq_t* recs,
         for (int i = recs[s].ai - 1; i < recs[s].aj - 1; i++)
             if (heavy[i] || recs[s].ih) {
                 d = coords[i] - coords_init[i];
-                atomic_add_energy(&e[E_RESTR_PRES], 0.5 * k * norm2(d));
+                if (e != nullptr) atomic_add_energy(&e[E_RESTR_PRES], 0.5 * k * norm2(d));
                 atomic_add_force(&dvel[i].x, k * d.x);
                 atomic_add_force(&dvel[i].y, k * d.y);
                 atomic_add_force(&dvel[i].z, k * d.z);
@@ -99,6 +99,7 @@ __device__ void compute_restrpos(int ir, const restrpos_t* recs, const coord_t* 
     atomic_add_force(&dvel[i].y, k.y * d.y * lambda);
     atomic_add_force(&dvel[i].z, k.z * d.z * lambda);
 
+    if (e == nullptr) return;  // energies of this step are not used
     if (recs[ir].ipsi == 0) {
         for (int st = 0; st < n_lambdas; st++)
             atomic_add_energy(&e[EnergyBuffer::eq_index(ENERGY_FIXED_COUNT, st, EQ_RESTR_URESTR)], ener);
@@ -137,6 +138,7 @@ __device__ void compute_restrdis(int ir, const restrdis_t* recs, const coord_t* 
     atomic_add_force(&dvel[i].y, -aij.y * dv);
     atomic_add_force(&dvel[i].z, -aij.z * dv);
 
+    if (e == nullptr) return;  // energies of this step are not used
     if (recs[ir].ipsi == 0) {
         for (int st = 0; st < n_lambdas; st++)
             atomic_add_energy(&e[EnergyBuffer::eq_index(ENERGY_FIXED_COUNT, st, EQ_RESTR_URESTR)], ener);
@@ -186,6 +188,7 @@ __device__ void compute_restrang(int ir, const restrang_t* recs, const coord_t* 
     atomic_add_force(&dvel[j].y, -(force1.y + force2.y));
     atomic_add_force(&dvel[j].z, -(force1.z + force2.z));
 
+    if (e == nullptr) return;  // energies of this step are not used
     if (recs[ir].ipsi == 0) {
         for (int st = 0; st < n_lambdas; st++)
             atomic_add_energy(&e[EnergyBuffer::eq_index(ENERGY_FIXED_COUNT, st, EQ_RESTR_URESTR)], v);
@@ -214,7 +217,7 @@ __device__ void compute_restrwall(int ir, const restrwall_t* recs, const bool* h
             ener = recs[ir].dMorse * (fexp * fexp - 2.0 * fexp);
             dv = -2.0 * recs[ir].dMorse * recs[ir].aMorse * (fexp - fexp * fexp) / b;
         }
-        atomic_add_energy(&e[EQ_RESTR_URESTR], ener);  // NOTE: preserved from CPU (flat index)
+        if (e != nullptr) atomic_add_energy(&e[EQ_RESTR_URESTR], ener);  // NOTE: preserved from CPU (flat index)
         atomic_add_force(&dvel[i].x, dv * d.x);
         atomic_add_force(&dvel[i].y, dv * d.y);
         atomic_add_force(&dvel[i].z, dv * d.z);
@@ -292,5 +295,5 @@ void CudaRestraintForce::calc(Context& ctx) {
         ctx.masses->gpu_data_p, ctx.heavy->gpu_data_p,
         ctx.lambdas->gpu_data_p, ctx.n_lambdas(), ctx.topo.solvent_center,
         ctx.coords->gpu_data_p, ctx.coords_init->gpu_data_p,
-        ctx.dvelocities->gpu_data_p, ctx.energy.device());
+        ctx.dvelocities->gpu_data_p, ctx.optional_energy_device());
 }

@@ -58,7 +58,7 @@ __global__ void calc_radix_kernel(
         dv = 0.0;
     }
 
-    atomic_add_energy(&energy[E_RESTR_RADX], ener);
+    if (energy != nullptr) atomic_add_energy(&energy[E_RESTR_RADX], ener);  // nullptr: energies of this step are not used
 
     atomic_add_force(&dvelocities[oxygen_idx].x, dv * dx);
 
@@ -204,7 +204,7 @@ __global__ void calc_polx_force_with_rank_kernel(int n_atoms_solute,
 
     const double ener = 0.5 * md.polarisation_force * dtheta * dtheta;
 
-    atomic_add_energy(&energy[E_RESTR_POLX], ener);
+    if (energy != nullptr) atomic_add_energy(&energy[E_RESTR_POLX], ener);  // nullptr: energies of this step are not used
 
     const double dv = md.polarisation_force * dtheta;
 
@@ -305,7 +305,7 @@ void CudaWaterBoundaryForce::calc_radix(
         data_.Dwmz,
         data_.awmz,
         ctx.dvelocities->gpu_data_p,
-        ctx.energy.device());
+        ctx.optional_energy_device());
 }
 
 void CudaWaterBoundaryForce::calc_polx(Context& ctx, int iteration) {
@@ -350,7 +350,7 @@ void CudaWaterBoundaryForce::calc_polx(Context& ctx, int iteration) {
         ctx.topo,
         ctx.md,
         ctx.dvelocities->gpu_data_p,
-        ctx.energy.device());
+        ctx.optional_energy_device());
 }
 
 void CudaWaterBoundaryForce::sync_for_output(
