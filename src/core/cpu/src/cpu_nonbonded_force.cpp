@@ -291,6 +291,13 @@ void CpuNonbondedForce::calc_direct_pair(Context& ctx, int slot1, int slot2) {
     auto el = calc_electrostatic(qij, ctx.topo.coulomb_constant, inv_dis);
     auto vdw = calc_vdw(pair, inv_dis);
 
+    const foreign_targets_t foreign = ctx.active_foreign_targets();
+    constexpr uint8_t Q = static_cast<uint8_t>(AtomCategory::Q);
+    const bool q_pair = atom1_type == Q && atom2_type == Q;
+    const bool q_any = atom1_type == Q || atom2_type == Q;
+    const real_t pair_rest = static_cast<real_t>(q_pair ? foreign.rest : q_any ? foreign.rest_sqrt
+                                                                               : 1.0);
+
     if (data_.softcore.method != SC_NONE) {
         const real_t sc = std::max(data_.atom_softcore->cpu_data_p[slot1], data_.atom_softcore->cpu_data_p[slot2]);
         if (sc >= 0) {
@@ -300,19 +307,19 @@ void CpuNonbondedForce::calc_direct_pair(Context& ctx, int slot1, int slot2) {
             // At r = 0 a soft pair has a finite energy and no force direction.
             if (!(dis2 > 0)) inv_dis = 0;
 
-            const foreign_targets_t foreign = ctx.active_foreign_targets();
             const int state = atom1_state >= 0 ? atom1_state : atom2_state;
             for (int k = 0; k < foreign.n; k++) {
                 const real_t diff = gapsys_shape_difference(data_.softcore, sc, static_cast<real_t>(foreign.sc[k][state]), sigma, qij,
                                                             ctx.topo.coulomb_constant, pair, dis);
                 if (diff != 0) {
-                    add_energy(ctx.energy.host()[EnergyBuffer::foreign_index(ctx.n_lambdas(), k)], foreign.weight[k][state] * diff);
+                    const double target_rest = q_pair ? foreign.rest_target[k] : foreign.rest_target_sqrt[k];
+                    add_energy(ctx.energy.host()[EnergyBuffer::foreign_index(ctx.n_lambdas(), k)], foreign.weight[k][state] * target_rest * diff);
                 }
             }
         }
     }
 
-    real_t lambda = std::min(data_.atom_lambdas->cpu_data_p[slot1], data_.atom_lambdas->cpu_data_p[slot2]);
+    real_t lambda = std::min(data_.atom_lambdas->cpu_data_p[slot1], data_.atom_lambdas->cpu_data_p[slot2]) * pair_rest;
 
     real_t dva = (el.y + vdw.y) * inv_dis * lambda;
 

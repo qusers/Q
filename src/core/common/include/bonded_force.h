@@ -114,6 +114,15 @@ class BondedForce {
     void build_special_pairs(Context& ctx, const std::vector<special_pair_term_t>& special_pairs);
 };
 
+// TorsionTerms::state of a topology torsion whose four atoms are Q atoms: weight 1 like any
+// topology term, times the REST2 scale.
+constexpr int REST_TORSION = -2;
+
+HD inline double special_pair_rest(const special_pair_term_t& term, double rest, double rest_sqrt) {
+    return term.n_q == 2 ? rest : term.n_q == 1 ? rest_sqrt
+                                                : 1.0;
+}
+
 HD inline dparam2_t calc_morse_bond(const double D, const double a, const double r, const double r_eq) {
     const double dr = r - r_eq;
     const double f = exp(-a * dr);

@@ -49,11 +49,14 @@ __device__ void compute_special_pair(int i, const special_pair_term_t* terms, co
         for (int k = 0; k < foreign.n; k++) {
             const auto target = calc_special_pair(term, r, foreign.sc[k][term.state]);
             const double diff = (target.coul + target.vdw) - (result.coul + result.vdw);
-            if (diff != 0) atomic_add_energy(&energy[EnergyBuffer::foreign_index(n_states, k)], foreign.weight[k][term.state] * diff);
+            if (diff != 0) {
+                const double target_rest = special_pair_rest(term, foreign.rest_target[k], foreign.rest_target_sqrt[k]);
+                atomic_add_energy(&energy[EnergyBuffer::foreign_index(n_states, k)], foreign.weight[k][term.state] * target_rest * diff);
+            }
         }
     }
 
-    const double ampl = result.dv / r * weight;
+    const double ampl = result.dv / r * weight * special_pair_rest(term, foreign.rest, foreign.rest_sqrt);
 
     atomic_add_force(&dvel[term.ai].x, -ampl * d.x);
     atomic_add_force(&dvel[term.ai].y, -ampl * d.y);
@@ -133,10 +136,10 @@ __device__ void compute_angle(int i, const angle_idx_t* ids, const dparam2_t* pa
     atomic_add_force(&dvel[aj].z, -(force1.z + force2.z));
 }
 
-__device__ void compute_torsion(int i, const dihe_idx_t* ids, const torsion_param_t* params, const int* eslot, const int* states, const morse_coupling_t* couplings, const double* lambdas, const coord_t* coords, dvel_t* dvelocities, energy_accum_t* e_torsion) {
+__device__ void compute_torsion(int i, const dihe_idx_t* ids, const torsion_param_t* params, const int* eslot, const int* states, const morse_coupling_t* couplings, const double* lambdas, const coord_t* coords, dvel_t* dvelocities, energy_accum_t* e_torsion, double rest) {
     const int ai = ids[i].i, aj = ids[i].j, ak = ids[i].k, al = ids[i].l;
     const int s = states[i];
-    const double weight = s < 0 ? 1.0 : lambdas[s];
+    const double weight = s >= 0 ? lambdas[s] * rest : (s == REST_TORSION ? rest : 1.0);
 
     real_t3 aji = real3_cast<real_t>(coords[ai] - coords[aj]);
     real_t3 ajk = real3_cast<real_t>(coords[ak] - coords[aj]);
@@ -334,7 +337,7 @@ __global__ void bonded_kernel(
     }
     tid -= n_angle;
     if (tid < n_torsion) {
-        compute_torsion(tid, tor_ids, tor_p, tor_es, tor_state, tor_couplings, lambdas, coords, dvel, e);
+        compute_torsion(tid, tor_ids, tor_p, tor_es, tor_state, tor_couplings, lambdas, coords, dvel, e, foreign.rest);
         return;
     }
     tid -= n_torsion;

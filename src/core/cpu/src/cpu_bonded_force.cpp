@@ -166,11 +166,12 @@ void CpuBondedForce::calc_torsions(Context& ctx) {
     auto* coords = ctx.coords->cpu_data_p;
 
     auto* e = ctx.energy.host();
+    const double rest = ctx.foreign_targets.rest;
 
     for (int i = 0; i < data_.torsion.n; i++) {
         const int ai = ids[i].i, aj = ids[i].j, ak = ids[i].k, al = ids[i].l;
         const int s = state[i];
-        const double weight = s < 0 ? 1.0 : lambdas[s];
+        const double weight = s >= 0 ? lambdas[s] * rest : (s == REST_TORSION ? rest : 1.0);
         real_t3 aji = real3_cast<real_t>(coords[ai] - coords[aj]);
         real_t3 ajk = real3_cast<real_t>(coords[ak] - coords[aj]);
         real_t3 akl = real3_cast<real_t>(coords[al] - coords[ak]);
@@ -362,10 +363,13 @@ void CpuBondedForce::calc_special_pairs(Context& ctx) {
             for (int k = 0; k < foreign.n; k++) {
                 const auto target = calc_special_pair(term, r, foreign.sc[k][term.state]);
                 const double diff = (target.coul + target.vdw) - (result.coul + result.vdw);
-                if (diff != 0) add_energy(energy[EnergyBuffer::foreign_index(ctx.n_lambdas(), k)], foreign.weight[k][term.state] * diff);
+                if (diff != 0) {
+                    const double target_rest = special_pair_rest(term, foreign.rest_target[k], foreign.rest_target_sqrt[k]);
+                    add_energy(energy[EnergyBuffer::foreign_index(ctx.n_lambdas(), k)], foreign.weight[k][term.state] * target_rest * diff);
+                }
             }
         }
-        const double ampl = result.dv / r * weight;
+        const double ampl = result.dv / r * weight * special_pair_rest(term, foreign.rest, foreign.rest_sqrt);
 
         add_force(gradients[term.ai].x, -ampl * d.x);
         add_force(gradients[term.ai].y, -ampl * d.y);

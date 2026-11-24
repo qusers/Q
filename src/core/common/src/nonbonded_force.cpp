@@ -320,6 +320,7 @@ std::vector<special_pair_term_t> build_lj14_pairs(Context& ctx, const ParseResul
         term.ai = ai;
         term.aj = aj;
         term.state = (qi || qj) ? s : -1;
+        term.n_q = static_cast<int>(qi) + static_cast<int>(qj);
         term.kind = SpecialPairKind::LJ14;
 
         const auto category_i = static_cast<uint8_t>(qi ? AtomCategory::Q : AtomCategory::P);
@@ -393,6 +394,7 @@ std::vector<special_pair_term_t> build_special_pairs(Context& ctx, const ParseRe
         special_pair_term_t term{};
         term.ai = ai;
         term.aj = aj;
+        term.n_q = 2;
         term.state = state;
         term.kind = SpecialPairKind::SoftRepulsion;
 

@@ -1,5 +1,7 @@
 #include "energy.h"
 
+#include <cmath>
+
 #include "cpu_force_accumulation.h"
 
 void EnergyBuffer::init(int n_lambdas) {
@@ -41,6 +43,7 @@ void EnergyBuffer::unpack() {
     d.nb_pw = {E(E_NB_PW_COUL), E(E_NB_PW_VDW)};
     d.nb_ww = {E(E_NB_WW_COUL), E(E_NB_WW_VDW)};
     d.lrf = E(E_LRF);
+    d.rest_tor = E(E_BOND_REST_TOR);
 
     // fixed restraint components (raw). Upres here is only the direct kernel
     // contribution; the lambda-weighted per-state term is added in combine.
@@ -70,30 +73,22 @@ void EnergyBuffer::unpack() {
     }
 }
 
-void EnergyBuffer::combine(const double* lambdas) {
+void EnergyBuffer::combine(const double* lambdas, double rest) {
     auto& d = data_;
     d.bond_q = {};
     d.nb_qx = {};
+    const double rest_sqrt = std::sqrt(rest);
     for (int s = 0; s < n_lambdas_; s++) {
         double L = lambdas[s];
-        // if (L == 0.0) {  // zero-weight state contributes nothing
-        //     d.eq_bond[s] = {};
-        //     d.eq_qq[s] = {};
-        //     d.eq_qp[s] = {};
-        //     d.eq_qw[s] = {};
-        //     d.eq_qx[s] = {};
-        //     d.eq_restr[s] = 0;
-        //     d.eq_total[s] = 0;
-        //     continue;
-        // }
         d.bond_q.Ubond += d.eq_bond[s].Ubond * L;
         d.bond_q.Uangle += d.eq_bond[s].Uangle * L;
-        d.bond_q.Utor += d.eq_bond[s].Utor * L;
+        d.bond_q.Utor += d.eq_bond[s].Utor * L * rest;
         d.bond_q.Uimp += d.eq_bond[s].Uimp * L;
-        d.nb_qx.Ucoul += d.eq_qx[s].Ucoul * L;
-        d.nb_qx.Uvdw += d.eq_qx[s].Uvdw * L;
+        d.nb_qx.Ucoul += (rest * d.eq_qq[s].Ucoul + rest_sqrt * (d.eq_qp[s].Ucoul + d.eq_qw[s].Ucoul)) * L;
+        d.nb_qx.Uvdw += (rest * d.eq_qq[s].Uvdw + rest_sqrt * (d.eq_qp[s].Uvdw + d.eq_qw[s].Uvdw)) * L;
         d.restraint.Upres += d.eq_restr[s] * L;  // λ-weighted per-state restraint
     }
+    d.bond_p.Utor += rest * d.rest_tor;
     d.restraint.Urestr = d.restraint.Uradx + d.restraint.Upolx +
                          d.restraint.Ushell + d.restraint.Ufix + d.restraint.Upres;
     d.Upot = d.bond_p.Ubond + d.bond_w.Ubond + d.bond_p.Uangle + d.bond_w.Uangle +

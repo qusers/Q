@@ -25,6 +25,8 @@ __device__ void compute_pair(
     bool soft_tile, const softcore_pair_params_t& sc_params, real_t atom1_sc, real_t atom2_sc,
     // foreign work: tile_state is the FEP state of the tile's Q atoms
     const foreign_targets_t& foreign, int tile_state, int n_states, energy_accum_t* e,
+    // REST2: pair_rest scales the force of this tile's pairs; q_pair = both atoms are Q atoms
+    real_t pair_rest, bool q_pair,
     // output
     real_t3& atom1_force, real_t3& atom2_force,
     real_t& e_coul, real_t& e_vdw) {
@@ -54,13 +56,14 @@ __device__ void compute_pair(
                 const real_t target_sc = static_cast<real_t>(foreign.sc[k][tile_state]);
                 const real_t diff = gapsys_shape_difference(sc_params, sc, target_sc, sigma, qij, coulomb_constant, pair, dis);
                 if (diff != 0) {
-                    atomic_add_energy(&e[EnergyBuffer::foreign_index(n_states, k)], static_cast<real_t>(foreign.weight[k][tile_state]) * diff);
+                    const double target_rest = q_pair ? foreign.rest_target[k] : foreign.rest_target_sqrt[k];
+                    atomic_add_energy(&e[EnergyBuffer::foreign_index(n_states, k)], static_cast<real_t>(foreign.weight[k][tile_state] * target_rest) * diff);
                 }
             }
         }
     }
 
-    real_t lambda = min(atom1_lambda, atom2_lambda);
+    real_t lambda = min(atom1_lambda, atom2_lambda) * pair_rest;
 
     real_t dva = (el.y + vdw.y) * inv_dis * lambda;
 
@@ -148,7 +151,12 @@ __device__ void nonbonded_force_calculation(
 
     // A cluster holds atoms of one category, so the first slot tells whether a tile has Q atoms.
     const uint8_t q_category = static_cast<uint8_t>(AtomCategory::Q);
-    const bool soft_tile = kSoft && (category[base_x] == q_category || category[base_y] == q_category);
+    const bool q_x = category[base_x] == q_category;
+    const bool q_y = category[base_y] == q_category;
+    const bool soft_tile = kSoft && (q_x || q_y);
+    const bool q_pair = q_x && q_y;
+    const real_t pair_rest = static_cast<real_t>(q_pair ? foreign.rest : (q_x || q_y) ? foreign.rest_sqrt
+                                                                                      : 1.0);
     const real_t atom1_sc = (soft_tile && atom1 != -1) ? atom_softcore[x_idx] : -1;
     real_t atom2_sc = (soft_tile && atom2 != -1) ? atom_softcore[y_idx] : -1;
     const int tile_state = category[base_x] == q_category ? q_state[base_x] : q_state[base_y];
@@ -164,6 +172,7 @@ __device__ void nonbonded_force_calculation(
                          coulomb_constant, vdw_rule,
                          soft_tile, sc_params, atom1_sc, atom2_sc,
                          foreign, tile_state, n_states, e,
+                         pair_rest, q_pair,
                          atom1_force, atom2_force,
                          local_e_coul, local_e_vdw);
         }

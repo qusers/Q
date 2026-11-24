@@ -387,6 +387,8 @@ PYBIND11_MODULE(QGPU_MODULE_NAME, m) {
         .def_readwrite("md", &StageSettings::md)
         .def_readwrite("lambdas", &StageSettings::lambdas)
         .def_readwrite("foreign_lambdas", &StageSettings::foreign_lambdas)
+        .def_readwrite("rest_scale", &StageSettings::rest_scale)
+        .def_readwrite("foreign_rest", &StageSettings::foreign_rest)
         .def_readwrite("restrspos", &StageSettings::restrspos)
         .def_readwrite("restrseqs", &StageSettings::restrseqs)
         .def_readwrite("restrdists", &StageSettings::restrdists)

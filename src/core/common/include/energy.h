@@ -10,6 +10,11 @@ struct foreign_targets_t {
     int n = 0;
     double weight[MAX_FOREIGN_LAMBDAS][2] = {};  // lambda' of state 1 and 2
     double sc[MAX_FOREIGN_LAMBDAS][2] = {};      // (1 - lambda')^(1/6)
+
+    double rest = 1.0;
+    double rest_sqrt = 1.0;
+    double rest_target[MAX_FOREIGN_LAMBDAS] = {};
+    double rest_target_sqrt[MAX_FOREIGN_LAMBDAS] = {};
 };
 
 enum EnergySlot : int {  // fixed, non-FEP slots
@@ -38,6 +43,8 @@ enum EnergySlot : int {  // fixed, non-FEP slots
     E_RESTR_SHELL,
     E_RESTR_PRES,
 
+    E_BOND_REST_TOR,  // topology torsions with four Q atoms; raw, scaled by rest in combine()
+
     ENERGY_FIXED_COUNT
 };
 
@@ -63,6 +70,7 @@ struct EnergyData {
     E_nonbonded_t nb_pp, nb_pw, nb_ww;
     E_restraint_t restraint;  // Uradx, Upolx, Ufix, Ushell, Upres, Urestr
     double lrf = 0;
+    double rest_tor = 0;  // raw energy of the torsions scaled by REST (E_BOND_REST_TOR)
 
     // per-state (FEP)
     std::vector<E_bonded_t> eq_bond;
@@ -102,5 +110,5 @@ class EnergyBuffer {
     void download();
     EnergyData& data() { return data_; }
     void unpack();
-    void combine(const double* lambdas);
+    void combine(const double* lambdas, double rest = 1.0);
 };

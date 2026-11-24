@@ -470,6 +470,20 @@ void Context::validate_stage(const StageSettings& stage) const {
     for (const double f : stage.foreign_lambdas) {
         if (!(f >= 0.0 && f <= 1.0)) throw InputError("[foreign_lambdas] values must be in [0, 1].");
     }
+    if (!(stage.rest_scale > 0.0 && stage.rest_scale <= 1.0)) {
+        throw InputError("rest_scale must be in (0, 1].");
+    }
+    if (!stage.foreign_rest.empty() && stage.foreign_rest.size() != stage.foreign_lambdas.size()) {
+        throw InputError("foreign_rest must have one value per foreign lambda.");
+    }
+    for (const double r : stage.foreign_rest) {
+        if (!(r > 0.0 && r <= 1.0)) throw InputError("foreign_rest values must be in (0, 1].");
+    }
+    const bool scaled = stage.rest_scale != 1.0 ||
+                        std::any_of(stage.foreign_rest.begin(), stage.foreign_rest.end(), [](double r) { return r != 1.0; });
+    if (scaled && n_offdiags() > 0) {
+        throw InputError("rest_scale does not support [off_diagonals].");
+    }
     // One column per target in the .fhe file; the analysis looks a window up by its value.
     for (size_t i = 0; i < stage.foreign_lambdas.size(); i++) {
         for (size_t j = 0; j < i; j++) {
@@ -513,6 +527,8 @@ void Context::apply_stage(const StageSettings& stage) {
     if (command_info.requested_gpu) lambdas->upload();
 
     foreign_targets = {};
+    foreign_targets.rest = stage.rest_scale;
+    foreign_targets.rest_sqrt = std::sqrt(stage.rest_scale);
     foreign_targets.n = static_cast<int>(stage.foreign_lambdas.size());
     for (int k = 0; k < foreign_targets.n; k++) {
         const double weights[2] = {1.0 - stage.foreign_lambdas[k], stage.foreign_lambdas[k]};
@@ -520,6 +536,9 @@ void Context::apply_stage(const StageSettings& stage) {
             foreign_targets.weight[k][s] = weights[s];
             foreign_targets.sc[k][s] = std::pow(1.0 - weights[s], 1.0 / 6.0);
         }
+        const double rest = stage.foreign_rest.empty() ? 1.0 : stage.foreign_rest[k];
+        foreign_targets.rest_target[k] = rest;
+        foreign_targets.rest_target_sqrt[k] = std::sqrt(rest);
     }
     n_foreign_active = 0;
 

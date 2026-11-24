@@ -219,16 +219,26 @@ void Handler::update_energy_totals() {
     // the shape of the soft pairs, which the kernels put in foreign_shape. Uses the unpacked
     // per-state energies, before combine() zeroes the states with lambda = 0.
     auto& energy = ctx.energy.data();
-    energy.foreign_work.assign(ctx.foreign_targets.n, 0.0);
-    for (int k = 0; k < ctx.foreign_targets.n; k++) {
-        double work = energy.foreign_shape[k];
+    const auto& targets = ctx.foreign_targets;
+    // Energy of state s with the Q region scaled by rest (sqrt_rest = sqrt(rest)).
+    auto state_energy = [&](int s, double rest, double sqrt_rest) {
+        const auto& b = energy.eq_bond[s];
+        return b.Ubond + b.Uangle + b.Uimp + rest * b.Utor +
+               rest * (energy.eq_qq[s].Ucoul + energy.eq_qq[s].Uvdw) +
+               sqrt_rest * (energy.eq_qp[s].Ucoul + energy.eq_qp[s].Uvdw + energy.eq_qw[s].Ucoul + energy.eq_qw[s].Uvdw) +
+               energy.eq_restr[s];
+    };
+    energy.foreign_work.assign(targets.n, 0.0);
+    for (int k = 0; k < targets.n; k++) {
+        double work = energy.foreign_shape[k] + (targets.rest_target[k] - targets.rest) * energy.rest_tor;
         for (int s = 0; s < ctx.n_lambdas(); s++) {
-            work += (ctx.foreign_targets.weight[k][s] - ctx.lambdas->cpu_data_p[s]) * energy.eq_total[s];
+            work += targets.weight[k][s] * state_energy(s, targets.rest_target[k], targets.rest_target_sqrt[k]) -
+                    ctx.lambdas->cpu_data_p[s] * state_energy(s, targets.rest, targets.rest_sqrt);
         }
         energy.foreign_work[k] = work;
     }
 
-    ctx.energy.combine(ctx.lambdas->cpu_data_p);
+    ctx.energy.combine(ctx.lambdas->cpu_data_p, targets.rest);
 }
 
 void Handler::run() {

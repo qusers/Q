@@ -299,6 +299,15 @@ void NativeOutput::open_foreign(Context& ctx) {
     foreign_stream_ << "# target_state2_weights";
     for (int k = 0; k < ctx.foreign_targets.n; k++) foreign_stream_ << fhe_number(ctx.foreign_targets.weight[k][1]);
     foreign_stream_ << "\n";
+    // Only when a REST2 scale is in use, so files of ordinary runs stay as Fortran Q writes them.
+    bool scaled = ctx.foreign_targets.rest != 1.0;
+    for (int k = 0; k < ctx.foreign_targets.n; k++) scaled = scaled || ctx.foreign_targets.rest_target[k] != 1.0;
+    if (scaled) {
+        foreign_stream_ << "# source_rest_scale" << fhe_number(ctx.foreign_targets.rest) << "\n";
+        foreign_stream_ << "# target_rest_scales";
+        for (int k = 0; k < ctx.foreign_targets.n; k++) foreign_stream_ << fhe_number(ctx.foreign_targets.rest_target[k]);
+        foreign_stream_ << "\n";
+    }
     foreign_stream_ << "# columns frame source_lambda1 source_lambda2 W(source_to_target_1) ...\n";
 }
 

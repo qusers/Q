@@ -416,6 +416,7 @@ struct special_pair_term_t {
     int ai = -1;  // 0-bas
     int aj = -1;
     int state = -1;  // -1: weight 1; otherwise lambdas[state]
+    int n_q = 0;     // Q atoms in the pair: 2 scales with rest, 1 with sqrt(rest)
 
     SpecialPairKind kind = SpecialPairKind::SoftRepulsion;
 

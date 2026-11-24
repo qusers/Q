@@ -76,6 +76,9 @@ class Engine:
         lambdas: Sequence[float] = _KEEP,
         # [foreign_lambdas]
         foreign_lambdas: Sequence[float] = _KEEP,
+        # REST2 scale of the Q atoms, for this window and for each window in foreign_lambdas
+        rest_scale: float = _KEEP,
+        foreign_rest: Sequence[float] = _KEEP,
         # restraints
         seq_restraints: Sequence[SeqRestraint] = _KEEP,
         dist_restraints: Sequence[DistRestraint] = _KEEP,
@@ -101,6 +104,9 @@ class Engine:
         """
         changes = {name: value for name, value in locals().items()
                    if name != "self" and value is not _KEEP}
+        # foreign_rest goes with foreign_lambdas: new windows without it are all at scale 1
+        if "foreign_lambdas" in changes:
+            changes.setdefault("foreign_rest", ())
         config = replace(self._config, **changes)  # validates
         self._native.configure(self._to_native(config))
         self._config = config
@@ -141,6 +147,8 @@ class Engine:
 
         s.lambdas = list(config.lambdas)
         s.foreign_lambdas = list(config.foreign_lambdas)
+        s.rest_scale = config.rest_scale
+        s.foreign_rest = list(config.foreign_rest)
         # Convert to this engine's module; assign whole lists (vectors are copied).
         s.restrseqs = [r._native(self._mod) for r in config.seq_restraints]
         s.restrdists = [r._native(self._mod) for r in config.dist_restraints]
