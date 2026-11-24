@@ -1,16 +1,17 @@
-"""Scan the lambda windows of one replicate, then run replica exchange over them (prototype).
+"""Run replica exchange over fixed lambda windows for one replicate (prototype).
 
-    python -m qgpu.run_hrex --cycles 500 [--block 500] [--no-exchange] [--save-atoms 9033:9131]
+    python -m qgpu.run_hrex --cycles 500 [--windows 16] [--workers 8] [--block 500] [--no-exchange]
+    python -m qgpu.run_hrex --lambdas 0 0.05 0.1 ... 1 --cycles 500
 
-Run inside a replicate folder after eq5, like qgpu.run_walk. The scan is the adaptive
-walk with its usual settings; it places the windows and gives each one a starting
-configuration. Replica exchange then runs `cycles` blocks in every window.
+Run inside a replicate folder after eq5, like qgpu.run_walk. The windows are given, either
+as a number of evenly spaced ones (0 and 1 included; 16 by default) or as their lambda_1 values. Each gets
+a starting configuration from a short run (see hrex.prepare); replica exchange then runs
+`cycles` blocks in every window.
 
 Written to the run folder:
-    scan/md_XXXX_YYYY.en   energies of the scan (not used for the result)
-    md_XXXX_YYYY.en        one energy file per window, replica exchange only
-    qfep.inp               rewritten to list the windows
+    md_XXXX_YYYY.en        one energy file per window
     md_XXXX_YYYY.en.fhe    foreign work of each window to itself and its neighbours
+    qfep.inp               rewritten to list the windows (qfep is only right without soft-core)
     hrex.tsv               per window: lambda, acceptance with the next window, and the free
                            energy step to it (BAR on the foreign work, kcal/mol)
     hrex_dg.txt            free energy of state 1 -> state 2: all frames, and each half
@@ -19,22 +20,25 @@ Written to the run folder:
                            (see hrex.neighbour_work)
 """
 import argparse
+import os
 from pathlib import Path
 
 import numpy as np
 
 from qgpu import Engine
-from qgpu.fep import walk
-from qgpu.hrex import free_energy, hrex, neighbour_work, round_trips
+from qgpu.hrex import Workers, even_windows, window_pairs, free_energy, hrex, neighbour_work, prepare, round_trips
 from qgpu.run_walk import read_config, write_qfep_inp
 
 
 def atom_range(text):
-    """'first:last', 1-based and inclusive as in the topology -> 0-based indices."""
-    first, last = (int(x) for x in text.split(":"))
-    if first < 1 or last < first:
-        raise argparse.ArgumentTypeError("use first:last with 1 <= first <= last")
-    return np.arange(first - 1, last)
+    """'first:last[,first:last...]', 1-based and inclusive as in the topology -> 0-based indices."""
+    parts = []
+    for item in text.split(","):
+        first, last = (int(x) for x in item.split(":"))
+        if first < 1 or last < first:
+            raise argparse.ArgumentTypeError("use first:last with 1 <= first <= last")
+        parts.append(np.arange(first - 1, last))
+    return np.concatenate(parts)
 
 
 def _first(result, frames):
@@ -52,33 +56,43 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--template", default="md_0500_0500.inp")
     parser.add_argument("--qfep-inp", default="qfep.inp")
-    parser.add_argument("--ends", type=float, nargs=2, default=(0.999, 0.001), metavar=("UP", "DOWN"))
-    parser.add_argument("--dg-limit", type=float, default=0.07, help="scan: see qgpu.run_walk")
-    parser.add_argument("--scan-block", type=int, default=1000)
-    parser.add_argument("--scan-min-blocks", type=int, default=10)
-    parser.add_argument("--scan-max-blocks", type=int, default=50)
+    which = parser.add_mutually_exclusive_group()
+    which.add_argument("--windows", type=int, default=16,
+                       help="number of evenly spaced windows, 0 and 1 included")
+    which.add_argument("--lambdas", type=float, nargs="+", metavar="L1", help="lambda_1 of every window")
+    parser.add_argument("--prepare-steps", type=int, default=5000,
+                        help="steps each window runs before replica exchange starts")
     parser.add_argument("--cycles", type=int, required=True, help="blocks per window")
     parser.add_argument("--block", type=int, default=500, help="steps between swap attempts")
     parser.add_argument("--no-exchange", action="store_true", help="control: same schedule, no swaps")
-    parser.add_argument("--save-atoms", type=atom_range, default=None, metavar="FIRST:LAST",
+    parser.add_argument("--save-atoms", type=atom_range, default=None, metavar="FIRST:LAST[,...]",
                         help="keep the coordinates of these atoms after every block")
+    parser.add_argument("--work-dir", default=os.environ.get("TMPDIR"),
+                        help="folder for the files that grow during the run (default: $TMPDIR); "
+                             "they move to the run folder at the end")
+    parser.add_argument("--workers", type=int, default=1,
+                        help="processes that run the windows of a cycle at the same time, on one GPU")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", type=int, default=0)
     parser.add_argument("--precision", default="spfp")
     args = parser.parse_args(argv)
 
     config, energy = read_config(args.template)
-    engine = Engine(config, device=args.device, precision=args.precision)
+    lambda1 = window_pairs(args.lambdas if args.lambdas else even_windows(args.windows))
 
-    scan_dir = Path("scan")
-    scan_dir.mkdir(exist_ok=True)
-    windows = walk(engine, scan_dir, ends=tuple(args.ends), dg_limit=args.dg_limit,
-                   block=args.scan_block, energy=energy,
-                   min_blocks=args.scan_min_blocks, max_blocks=args.scan_max_blocks)
-    print(f"scan: {len(windows)} windows, {sum(w.steps for w in windows)} steps", flush=True)
+    def run(engine, prepare_windows):
+        windows = prepare_windows(lambda1, steps=args.prepare_steps)
+        print(f"prepared {len(windows)} windows, {args.prepare_steps} steps each", flush=True)
+        return hrex(engine, windows, Path("."), cycles=args.cycles, block=args.block, energy=energy,
+                    exchange=not args.no_exchange, save_atoms=args.save_atoms, seed=args.seed,
+                    work_dir=args.work_dir)
 
-    result = hrex(engine, windows, Path("."), cycles=args.cycles, block=args.block, energy=energy,
-                  exchange=not args.no_exchange, save_atoms=args.save_atoms, seed=args.seed)
+    if args.workers > 1:
+        with Workers(config, min(args.workers, len(lambda1)), device=args.device, precision=args.precision) as workers:
+            result = run(workers, workers.prepare)
+    else:
+        engine = Engine(config, device=args.device, precision=args.precision)
+        result = run(engine, lambda l, steps: prepare(engine, l, steps=steps))
 
     write_qfep_inp(args.qfep_inp, [_Placed(l) for l in result.lambdas])
     trips = round_trips(result.replica)
