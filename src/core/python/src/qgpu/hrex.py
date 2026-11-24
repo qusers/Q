@@ -12,6 +12,12 @@ Each bracket is the foreign work of one window to the other at its final coordin
 (RunResult.final_foreign_work), so every window is run with its neighbours as foreign
 windows. Without soft-core this is (L_a - L_b) @ (q(x_b) - q(x_a)); with soft-core the Q
 energies depend on lambda and only the foreign work is right.
+
+REST2. A window can also scale the interactions of the Q atoms by s = T0 / T_effective
+(Config.rest_scale): the ligand region is "heated", which lowers the barriers that keep a
+configuration trapped at every lambda. The end windows have s = 1 and are the physical
+states; the free energy between them does not depend on the windows in between. The foreign
+work then includes the change of s between neighbours. See rest_ladder().
 """
 
 from dataclasses import dataclass
@@ -34,13 +40,14 @@ class HrexResult:
     replica: np.ndarray      # (cycles + 1, n_windows): which configuration each window holds
     tried: np.ndarray        # (n_windows - 1,) swap attempts per neighbouring pair
     accepted: np.ndarray     # (n_windows - 1,) accepted swaps
-    coords: np.ndarray       # (cycles, n_windows, n_saved, 3) or empty; see save_atoms
+    coords: np.ndarray       # (cycles // save_every, n_windows, n_saved, 3) or empty; see save_atoms
     states: list             # Engine.get_state() of every window after the last cycle
     # per window: (lambda_1, lambda_2) of the windows its foreign work is for (the one before,
     # itself, the one after), and the work U(that window) - U(this window) of every frame,
     # (n_frames, n_targets)
     foreign_lambdas: list
     foreign_work: list
+    scales: list             # REST2 scale of every window (1 = not scaled)
 
     @property
     def acceptance(self):
@@ -119,6 +126,7 @@ def round_trips(replica):
 class Start:
     lambdas: tuple      # (lambda_1, lambda_2)
     state: dict         # Engine.get_state() to start the window from
+    scale: float = 1.0  # REST2 scale of the window, see rest_ladder
 
 
 def even_windows(n):
@@ -136,18 +144,35 @@ def window_pairs(lambda1):
     return [(t, round(1.0 - t, 3)) for t in values]
 
 
-def prepare(engine, windows, steps=5000):
+def rest_ladder(n, rest_min=1.0):
+    """REST2 scale of each of n windows: 1 at both ends, rest_min in the middle.
+
+    The effective temperature T0 / s rises by the same factor from one window to the next,
+    which gives neighbouring windows about the same overlap. rest_min = 1 switches REST off.
+    """
+    if not 0.0 < rest_min <= 1.0:
+        raise InputError("rest_min must be in (0, 1]")
+    if n < 2:
+        raise InputError("need at least two windows")
+    steps = max((n - 1) // 2, 1)        # windows from an end to the middle
+    return [round(rest_min ** (min(k, n - 1 - k) / steps), 4) for k in range(n)]
+
+
+def prepare(engine, windows, steps=5000, scales=None):
     """Give every window a starting configuration.
 
     windows: (lambda_1, lambda_2) of every window, in the order replica exchange will use
     (see window_pairs). The window where the two lambdas are closest starts from the
     engine's current state; going outwards to both ends, each window starts from the end of
     the one before it. Every window runs `steps` steps. Returns one Start per window, in the
-    same order.
+    same order. scales: the REST2 scale of every window (see rest_ladder); None = all 1.
     """
     windows = [(float(a), float(b)) for a, b in windows]
     if len(windows) < 2:
         raise InputError("need at least two windows")
+    scales = [1.0] * len(windows) if scales is None else [float(s) for s in scales]
+    if len(scales) != len(windows):
+        raise InputError("need one scale per window")
     middle = min(range(len(windows)), key=lambda k: abs(windows[k][0] - windows[k][1]))
     origin = engine.get_state()
     engine.update_config(energy=0, energy_file="", foreign_lambdas=())
@@ -155,9 +180,10 @@ def prepare(engine, windows, steps=5000):
     for order in (range(middle, len(windows)), range(middle - 1, -1, -1)):
         engine.set_state(starts[middle].state if middle in starts else origin)
         for k in order:
-            engine.update_config(steps=steps, lambdas=windows[k])
+            engine.update_config(steps=steps, lambdas=windows[k], rest_scale=scales[k])
             engine.run()
-            starts[k] = Start(windows[k], engine.get_state())
+            starts[k] = Start(windows[k], engine.get_state(), scales[k])
+    engine.update_config(rest_scale=1.0)
     return [starts[k] for k in range(len(windows))]
 
 
@@ -172,11 +198,13 @@ class Block:
     fhe_frames: int     # frames in the window's .fhe file so far
 
 
-def _run_block(engine, chunk, state, lambdas, targets, steps, energy, energy_file, fhe_frames):
+def _run_block(engine, chunk, state, lambdas, targets, steps, energy, energy_file, fhe_frames,
+               scale=1.0, target_scales=()):
     """Run one block of one window and append its energies to the window's files."""
     engine.set_state(state)
     engine.update_config(steps=steps, lambdas=lambdas, energy=energy, energy_file=str(chunk),
-                         foreign_lambdas=[t[1] for t in targets])
+                         foreign_lambdas=[t[1] for t in targets],
+                         rest_scale=scale, foreign_rest=list(target_scales))
     result = engine.run()
     with open(energy_file, "ab") as joined:     # .en files have no header: append
         joined.write(Path(chunk).read_bytes())
@@ -199,7 +227,7 @@ class _Serial:
         return blocks
 
     def finish(self):
-        self.engine.update_config(energy=0, energy_file="", foreign_lambdas=())
+        self.engine.update_config(energy=0, energy_file="", foreign_lambdas=(), rest_scale=1.0)
 
 
 def _serve(pipe, index, config, device, precision):
@@ -268,9 +296,9 @@ class Workers:
             raise InputError("a replica-exchange worker failed:\n" + value)
         return value
 
-    def prepare(self, lambda1, steps=5000):
+    def prepare(self, windows, steps=5000, scales=None):
         """prepare() in the first worker, from the state of its new engine."""
-        self._pipes[0].send(("prepare", lambda1, steps))
+        self._pipes[0].send(("prepare", windows, steps, scales))
         return self._receive(self._pipes[0])
 
     def run_blocks(self, out, jobs):
@@ -299,17 +327,18 @@ class Workers:
 
 
 def hrex(engine, windows, out, cycles, block=500, energy=10, exchange=True,
-         save_atoms=None, seed=0, work_dir=None):
+         save_atoms=None, seed=0, work_dir=None, save_every=1):
     """Run `cycles` cycles of replica exchange over `windows`, starting from their states.
 
     engine: an Engine, which runs the windows in turn, or Workers, which run them at the
     same time.
-    windows: objects with .lambdas and .state (e.g. the result of prepare), in the order
-    of the ladder: neighbours in the list are the ones that swap.
+    windows: objects with .lambdas and .state, and .scale for REST2 (e.g. the result of
+    prepare), in the order of the ladder: neighbours in the list are the ones that swap.
     Each cycle runs `block` steps in every window and then tries to swap neighbours:
     pairs (0,1), (2,3), ... in even cycles and (1,2), (3,4), ... in odd ones.
     exchange=False runs the same schedule without swaps (the control).
-    save_atoms: 0-based atom indices whose coordinates are kept after every block.
+    save_atoms: 0-based atom indices whose coordinates are kept after every save_every-th
+    block (row i of HrexResult.coords is the end of cycle (i + 1) * save_every - 1).
 
     Writes md_XXXX_YYYY.en per window into `out`, and next to each its foreign-work file
     (.en.fhe) for the window itself and its neighbours. Every block appends to these files;
@@ -338,6 +367,9 @@ def hrex(engine, windows, out, cycles, block=500, energy=10, exchange=True,
         raise InputError("replica exchange needs windows with different lambdas")
     # each window computes the work to itself (zero; the .fhe file needs the column) and its neighbours
     targets = [tuple(lambdas[j] for j in (k - 1, k, k + 1) if 0 <= j < n) for k in range(n)]
+    # REST2 scale of every window and of its targets; 1 for windows that carry none
+    scales = [float(getattr(w, "scale", 1.0)) for w in windows]
+    target_scales = [tuple(scales[j] for j in (k - 1, k, k + 1) if 0 <= j < n) for k in range(n)]
 
     work = Path(tempfile.mkdtemp(prefix="hrex_", dir=work_dir)) if work_dir is not None else out
     files = [_energy_file(work, l) for l in lambdas]
@@ -354,18 +386,21 @@ def hrex(engine, windows, out, cycles, block=500, energy=10, exchange=True,
     parts = [[] for _ in range(n)]
     works = [[] for _ in range(n)]
     save_atoms = None if save_atoms is None else np.asarray(save_atoms, dtype=int)
-    coords = np.empty((cycles, n, 0 if save_atoms is None else len(save_atoms), 3), dtype=np.float32)
+    if save_every < 1:
+        raise InputError("need save_every >= 1")
+    coords = np.empty((cycles // save_every, n, 0 if save_atoms is None else len(save_atoms), 3), dtype=np.float32)
 
     for cycle in range(cycles):
-        results = runner.run_blocks(work, [(states[k], lambdas[k], targets[k], block, energy, files[k], fhe_frames[k])
+        results = runner.run_blocks(work, [(states[k], lambdas[k], targets[k], block, energy, files[k], fhe_frames[k],
+                                            scales[k], target_scales[k])
                                           for k in range(n)])
         for k, result in enumerate(results):
             states[k] = result.state
             fhe_frames[k] = result.fhe_frames
             parts[k].append(result.q_energy)
             works[k].append(result.foreign_work)
-            if save_atoms is not None:
-                coords[cycle, k] = np.asarray(states[k]["coords"]).reshape(-1, 3)[save_atoms]
+            if save_atoms is not None and (cycle + 1) % save_every == 0:
+                coords[cycle // save_every, k] = np.asarray(states[k]["coords"]).reshape(-1, 3)[save_atoms]
 
         if exchange:
             for k in range(cycle % 2, n - 1, 2):
@@ -387,4 +422,4 @@ def hrex(engine, windows, out, cycles, block=500, energy=10, exchange=True,
                     shutil.move(str(path), str(out / path.name))
         shutil.rmtree(work, ignore_errors=True)
     return HrexResult(lambdas, [np.concatenate(p) for p in parts], replica, tried, accepted,
-                      coords, states, targets, [np.concatenate(w) for w in works])
+                      coords, states, targets, [np.concatenate(w) for w in works], scales)
