@@ -35,11 +35,13 @@ struct dparam2_t {
     double x, y;
 };
 
-struct special_pair_result_t {
-    double coul;
-    double vdw;
-    double dv;
+template <typename T>
+struct SpecialPairResult {
+    T coul;
+    T vdw;
+    T dv;
 };
+using special_pair_result_t = SpecialPairResult<double>;
 
 struct SpecialPairTerms {
     int n = 0;
@@ -178,63 +180,68 @@ HD inline real_t2 calc_torsion(const real_t k, const real_t n, const real_t phi,
     return {v, dv};
 }
 
-HD inline dparam2_t calc_improper2(const double k, const double phi0, const double phi) {
-    const double arg = 2.0 * phi - phi0;
-    const double v = k * (1.0 + cos(arg));
-    const double dv = k * -sin(arg) * 2.0;
+// T is the precision of the geometry: double, or real_t in the GPU kernel.
+template <typename T>
+HD inline Real2<T> calc_improper2(const T k, const T phi0, const T phi) {
+    const T arg = static_cast<T>(2) * phi - phi0;
+    const T v = k * (static_cast<T>(1) + cos(arg));
+    const T dv = k * -sin(arg) * static_cast<T>(2);
     return {v, dv};
 }
 
-HD inline dparam2_t calc_q_improper(const double k, const double phi0, const double phi) {
-    double delta = phi - phi0;
-    const double two_pi = 2.0 * M_PI;
-    delta -= two_pi * std::round(delta / two_pi);  // warps the angular difference into -pi to pi
+template <typename T>
+HD inline Real2<T> calc_q_improper(const T k, const T phi0, const T phi) {
+    T delta = phi - phi0;
+    const T two_pi = static_cast<T>(2.0 * M_PI);
+    delta -= two_pi * round(delta / two_pi);  // warps the angular difference into -pi to pi
 
-    double v = 0.5 * k * delta * delta;
-    double dv = k * delta;
+    T v = static_cast<T>(0.5) * k * delta * delta;
+    T dv = k * delta;
     return {v, dv};
 }
 
 // sc = (1 - lambda)^(1/6) for a soft 1-4 pair, 0 otherwise.
-HD inline special_pair_result_t calc_special_pair(const special_pair_term_t& param, const double r, const double sc = 0.0) {
-    const double inv_r = 1.0 / r;
+// T is the precision of the geometry: double, or real_t in the GPU kernel.
+template <typename T>
+HD inline SpecialPairResult<T> calc_special_pair(const special_pair_term_t& param, const T r, const T sc = 0) {
+    const T inv_r = static_cast<T>(1) / r;
 
-    double coul = param.coulomb_coeff * inv_r;
-    double dv_coul = -coul * inv_r;
+    T coul = static_cast<T>(param.coulomb_coeff) * inv_r;
+    T dv_coul = -coul * inv_r;
 
-    double vdw, dv_vdw;
+    T vdw, dv_vdw;
 
     if (param.kind == SpecialPairKind::LJ14) {
-        const double inv_r2 = inv_r * inv_r;
-        const double inv_r6 = inv_r2 * inv_r2 * inv_r2;
+        const T inv_r2 = inv_r * inv_r;
+        const T inv_r6 = inv_r2 * inv_r2 * inv_r2;
 
-        const double Va = param.p1 * inv_r6 * inv_r6;
-        const double Vb = param.p2 * inv_r6;
+        const T Va = static_cast<T>(param.p1) * inv_r6 * inv_r6;
+        const T Vb = static_cast<T>(param.p2) * inv_r6;
 
         vdw = Va - Vb;
-        dv_vdw = (-12.0 * Va + 6.0 * Vb) * inv_r;
+        dv_vdw = (static_cast<T>(-12) * Va + static_cast<T>(6) * Vb) * inv_r;
 
         if (sc > 0) {
-            const double rsc_lj = param.sc_lj * sc;
+            const T rsc_lj = static_cast<T>(param.sc_lj) * sc;
             if (r < rsc_lj) {
-                const auto soft = calc_vdw_gapsys(Real2<double>{param.p1, param.p2}, r, rsc_lj);
+                const auto soft = calc_vdw_gapsys(Real2<T>{static_cast<T>(param.p1), static_cast<T>(param.p2)}, r, rsc_lj);
                 vdw = soft.x;
                 dv_vdw = soft.y;
             }
 
-            const double rsc_q = param.sc_q * sc;
+            const T rsc_q = static_cast<T>(param.sc_q) * sc;
             if (r < rsc_q) {
                 // coulomb_coeff already holds the Coulomb constant and the 1-4 scale.
-                const auto soft = calc_electrostatic_gapsys(param.coulomb_coeff, 1.0, r, rsc_q);
+                const auto soft = calc_electrostatic_gapsys(static_cast<T>(param.coulomb_coeff), static_cast<T>(1), r, rsc_q);
                 coul = soft.x;
                 dv_coul = soft.y;
             }
         }
     } else {
-        vdw = param.p1 * exp(-param.p2 * r);
-        dv_vdw = -param.p2 * vdw;
+        vdw = static_cast<T>(param.p1) * exp(-static_cast<T>(param.p2) * r);
+        dv_vdw = -static_cast<T>(param.p2) * vdw;
     }
-    const double dv = dv_coul + dv_vdw;
+    const T dv = dv_coul + dv_vdw;
 
     return {coul, vdw, dv};
 }
