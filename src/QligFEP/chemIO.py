@@ -1,7 +1,7 @@
 from io import StringIO
 from itertools import product
 from pathlib import Path
-from typing import Generator, Optional, Union  # noqa: UP035
+from typing import Generator  # noqa: UP035
 
 import pandas as pd
 import py3Dmol
@@ -55,7 +55,7 @@ class MoleculeIO:
         self.setup_mols_and_names(self.lig, pattern)
         self.parse_sdf_contents()  # add the sdf content to the dictionary
 
-    def __getitem__(self, name: str) -> Optional[Molecule]:
+    def __getitem__(self, name: str) -> Molecule | None:
         """Retrieve a molecule by its name.
 
         Args:
@@ -71,12 +71,12 @@ class MoleculeIO:
             logger.warning(f"Molecule with name {name} not found.")
             return None
 
-    def __iter__(self) -> Generator[tuple[str, Molecule], None, None]:
+    def __iter__(self) -> Generator[tuple[str, Molecule]]:
         """Iterate over the names and the Molecule objects"""
-        yield from zip(self.lig_names, self.molecules)
+        yield from zip(self.lig_names, self.molecules, strict=False)
 
     def display_overlay(
-        self, *ligands: Union[str, Chem.Mol, Molecule], size=(800, 600), render=False
+        self, *ligands: str | Chem.Mol | Molecule, size=(800, 600), render=False
     ) -> py3Dmol.view:
         """Display the overlay of the ligands using py3Dmol.
 
@@ -138,7 +138,7 @@ class MoleculeIO:
                 rdkit_mol, hydrogens_are_explicit=hydrogens_are_explicit, allow_undefined_stereo=True
             )
 
-    def _parse_mol(self, ligpath: Union[Path, str]) -> tuple[list[Molecule], list[str]]:
+    def _parse_mol(self, ligpath: Path | str) -> tuple[list[Molecule], list[str]]:
         """Parse a .sdf file into a list of Molecule objects and their names.
 
         Loads via RDKit first to inspect the original hydrogen state, then converts
@@ -193,7 +193,7 @@ class MoleculeIO:
 
         if self._reindex_hydrogens:
             mols = [self._force_H_reindexing(mol) for mol in mols]
-        for mol, name in zip(mols, lig_names):
+        for mol, name in zip(mols, lig_names, strict=False):
             mol.name = name
         return mols, lig_names
 
@@ -246,7 +246,7 @@ class MoleculeIO:
             mol.to_file(string_buffer, file_format="sdf")
             self.sdf_contents.update({name: string_buffer.getvalue().splitlines()})
 
-    def write_sdf_separate(self, output_dir, molecules: Optional[list[Molecule]] = None) -> None:
+    def write_sdf_separate(self, output_dir, molecules: list[Molecule] | None = None) -> None:
         """Function to write the separate multiple molecules within a sdf file into their own
         .sdf, placed under `output_dir`.
 
@@ -273,7 +273,7 @@ class MoleculeIO:
             for mol in molecules:
                 mol.to_file(file_path=f"{mol.name}.sdf", file_format="sdf")
 
-    def write_to_single_sdf(self, output_name: str, molecules: Optional[list[Molecule]] = None) -> None:
+    def write_to_single_sdf(self, output_name: str, molecules: list[Molecule] | None = None) -> None:
         """Writes all `self.molecules` to a single `.sdf` file.
 
         Args:
@@ -304,7 +304,7 @@ class MoleculeIO:
         lig_resn = ["LI", "LG", "LH"]
         last_lig_resn = [d for d in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"]
         lig_resnames = ["".join(i) for i in product(lig_resn, last_lig_resn)]
-        for mol, resn in zip(self.molecules, lig_resnames):
+        for mol, resn in zip(self.molecules, lig_resnames, strict=False):
             # write the molecule pdb lines in memory and convert them to pd.DataFrame
             output = StringIO()
             mol.to_file(output, file_format="pdb")

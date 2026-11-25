@@ -3,7 +3,6 @@
 from copy import deepcopy
 from itertools import zip_longest
 from pathlib import Path
-from typing import Union
 
 import numpy as np
 from kartograf import KartografAtomMapper, SmallMoleculeComponent
@@ -53,7 +52,7 @@ class RestraintSetter:
 
     @staticmethod
     def input_to_small_molecule_component(
-        input_molecule: Union[Molecule, Chem.Mol, str, Path],
+        input_molecule: Molecule | Chem.Mol | str | Path,
     ) -> SmallMoleculeComponent:
         if isinstance(input_molecule, SmallMoleculeComponent):
             mol = input_molecule
@@ -257,7 +256,7 @@ class RestraintSetter:
             return False
 
         # Further check the atomic number and connectivity
-        for a, b in zip(ring_atoms_a_indices, ring_atoms_b_indices):
+        for a, b in zip(ring_atoms_a_indices, ring_atoms_b_indices, strict=False):
             logger.trace(f"Comparison method: {compare_method}")
             atom_a = mol_a.GetAtomWithIdx(a)
             atom_b = mol_b.GetAtomWithIdx(b)

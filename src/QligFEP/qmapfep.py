@@ -8,7 +8,7 @@ import sys
 from collections import namedtuple
 from functools import cached_property, lru_cache
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 import networkx as nx
 from networkx.readwrite import json_graph
@@ -345,7 +345,9 @@ class MoleculeImage:
             self._remove_hs()  # Does this three belongs here ??
             self._reorient_molecule()  #
             # Loop over R groups.
-            for color, (label, group) in zip(self.palette, self.pool.groups[self.pool_idx].items()):
+            for color, (label, group) in zip(
+                self.palette, self.pool.groups[self.pool_idx].items(), strict=False
+            ):
                 if label == "Core":
                     continue
                 self._highlight_residue(group, color, highlights)
@@ -1020,11 +1022,11 @@ class GenPlot:
 class Init:
     def __init__(
         self,
-        input_sdf: Optional[str] = None,
-        input_json: Optional[str] = None,
+        input_sdf: str | None = None,
+        input_json: str | None = None,
         metric: Literal["MFP", "Tanimoto", "MCS", "SMILES"] = "Tanimoto",
-        output: Optional[str] = None,
-        wrkdir: Optional[str] = None,
+        output: str | None = None,
+        wrkdir: str | None = None,
     ):
         metric = metric
         o = output

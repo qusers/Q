@@ -65,7 +65,7 @@ class MolecularCOG:
             for i, center in enumerate(centers):
                 logger.debug(f"Ligand {i+1} center: {center}")
 
-        overall_center = [sum(x) / len(centers) for x in zip(*centers)]
+        overall_center = [sum(x) / len(centers) for x in zip(*centers, strict=False)]
         return f"[{round(overall_center[0], 3):.3f} {round(overall_center[1], 3):.3f} {round(overall_center[2], 3):.3f}]"
 
     def _calculate_center(self, coordinates):

@@ -1,7 +1,6 @@
 """Module to hold utility visualization functions for QligFEP."""
 
 from pathlib import Path
-from typing import Optional, Union
 
 import matplotlib.pyplot as plt
 import py3Dmol
@@ -15,15 +14,15 @@ from .logger import logger
 from .restraints.restraint_setter import RestraintSetter
 
 
-def mol_to_molblock(mol: Union[Molecule, Chem.Mol]) -> str:
+def mol_to_molblock(mol: Molecule | Chem.Mol) -> str:
     if isinstance(mol, Molecule):
         mol = mol.to_rdkit()
     return Chem.MolToMolBlock(mol)
 
 
 def render_system(
-    molecules: list[Union[Molecule, Chem.Mol]],
-    protein_path: Optional[Union[Path, str]] = None,
+    molecules: list[Molecule | Chem.Mol],
+    protein_path: Path | str | None = None,
     protein_style: str = "stick",
     size: tuple[int, int] = (600, 500),
 ) -> None:
@@ -83,8 +82,8 @@ def render_system(
 # Credit to: https://github.com/OpenFreeEnergy/openfe/blob/main/openfe/utils/visualization_3D.py
 # And to: https://github.com/OpenFreeEnergy/kartograf/blob/main/src/kartograf/utils/mapping_visualization_widget.py
 def render_ligand_restraints(
-    ligand1: Union[Chem.Mol, Molecule, SmallMoleculeComponent],
-    ligand2: Union[Chem.Mol, Molecule, SmallMoleculeComponent],
+    ligand1: Chem.Mol | Molecule | SmallMoleculeComponent,
+    ligand2: Chem.Mol | Molecule | SmallMoleculeComponent,
     restraint_mapping: dict[int, int],
     show_atom_idxs: bool = True,
     size: tuple[int, int] = (900, 500),
@@ -177,8 +176,8 @@ def render_ligand_restraints(
 
 
 def apply_and_render_restraint(
-    ligand1: Union[Molecule, Chem.Mol, str, Path],
-    ligand2: Union[Molecule, Chem.Mol, str, Path],
+    ligand1: Molecule | Chem.Mol | str | Path,
+    ligand2: Molecule | Chem.Mol | str | Path,
     restraint_method: str = "hybridization_p",
     show_atom_idxs: bool = True,
     size: tuple[int, int] = (900, 500),

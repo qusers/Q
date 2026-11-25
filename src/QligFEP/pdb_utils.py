@@ -5,7 +5,6 @@ import re
 import warnings
 from pathlib import Path
 from string import ascii_uppercase
-from typing import Optional, Union
 
 import MDAnalysis as mda
 import numpy as np
@@ -21,10 +20,10 @@ def rm_HOH_clash_NN(
     pdb_df_query: pd.DataFrame,
     pdb_df_target: pd.DataFrame,
     th: float = 2.5,
-    output_file: Union[str, Path] = None,
+    output_file: str | Path = None,
     heavy_only: bool = True,
     ligand_only: bool = False,
-    header: Optional[str] = None,
+    header: str | None = None,
     save_removed: bool = False,
 ):
     """Use a NearestNeighbors approach to find water molecules within a distance threshold
@@ -189,11 +188,11 @@ def next_chain_id(existing_ids):
 
 
 def append_pdb_to_another(
-    main_pdb: Union[pd.DataFrame, str, list[str]],
-    to_append_pdb: Union[pd.DataFrame, str, list[str]],
-    save_pdb: Optional[str] = None,
+    main_pdb: pd.DataFrame | str | list[str],
+    to_append_pdb: pd.DataFrame | str | list[str],
+    save_pdb: str | None = None,
     assign_new_chain: bool = False,
-    new_ligname: Optional[str] = None,
+    new_ligname: str | None = None,
     ignore_waters: bool = False,
 ) -> pd.DataFrame:
     """Reads the two pdbs as DataFrames, appends the second to the end of the protein
@@ -370,7 +369,9 @@ def disulfide_search(npdb, min_dist=1.8, max_dist_cyx=4.0, max_dist_cys=2.5):
     # Find disulfide pairs with appropriate distance cutoffs
     for ii, res_i in enumerate(cys_residues):
         for res_j in cys_residues[ii + 1 :]:
-            distance = math.sqrt(sum((a - b) ** 2 for a, b in zip(res_i["coords"], res_j["coords"])))
+            distance = math.sqrt(
+                sum((a - b) ** 2 for a, b in zip(res_i["coords"], res_j["coords"], strict=False))
+            )
 
             # Use wide range only when both residues are CYX/CYD (confirmed disulfide
             # partners). Mixed CYX+CYS pairs use the strict cutoff to avoid false
@@ -407,7 +408,7 @@ def get_coords(atomname, residue):
 
 
 def calculate_distance(atom_coords, center_coords) -> float:
-    return math.sqrt(sum((a - b) ** 2 for a, b in zip(atom_coords, center_coords)))
+    return math.sqrt(sum((a - b) ** 2 for a, b in zip(atom_coords, center_coords, strict=False)))
 
 
 def _convert_to(value, dtype):
@@ -477,7 +478,7 @@ def read_pdb_to_dataframe(pdb_file):
     return df
 
 
-def residue_atom_serial_range(pdb_df, residue_names: Union[str, list[str]]) -> Optional[tuple[int, int]]:
+def residue_atom_serial_range(pdb_df, residue_names: str | list[str]) -> tuple[int, int] | None:
     """Return the (first, last) atom serial numbers for the given residue name(s).
 
     Returns None when no atoms match, so callers can skip building restraints
@@ -497,7 +498,7 @@ def residue_atom_serial_range(pdb_df, residue_names: Union[str, list[str]]) -> O
 
 
 def write_dataframe_to_pdb(
-    df, output_file, header: Optional[str] = None, ter_after_indices: Optional[set[int]] = None
+    df, output_file, header: str | None = None, ter_after_indices: set[int] | None = None
 ):
     """Save a DataFrame object created from read_pdb_to_dataframe function to a PDB file.
 

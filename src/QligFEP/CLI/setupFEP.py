@@ -7,7 +7,6 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 from ..IO import parse_qprep_total_charge
 from ..logger import logger, setup_logger
@@ -76,7 +75,7 @@ def submit_command(command: str) -> None:
         raise
 
 
-def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
+def main(args: argparse.Namespace | None = None, **kwargs) -> None:
     # setup the logger with the desired log level
     setup_logger(level=args.log)
 
@@ -113,7 +112,7 @@ def main(args: Optional[argparse.Namespace] = None, **kwargs) -> None:
 
     lig_pairs = ligpairs_from_json(args.json_map)
     protein_dir = cwd / "2.protein"
-    for system, sys_dir in zip(systems, sys_directories):
+    for system, sys_dir in zip(systems, sys_directories, strict=False):
         for lig1, lig2, same_charge in lig_pairs:
 
             # For cross-charge water edges, look up the protein leg's total charge

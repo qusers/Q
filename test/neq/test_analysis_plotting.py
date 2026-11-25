@@ -66,7 +66,7 @@ def test_create_ddG_plot_axis_bounds_include_all_points():
     fig, ax = create_ddG_plot(df, target_name="test")
     xlo, xhi = ax.get_xlim()
     ylo, yhi = ax.get_ylim()
-    for exp, calc in zip(df["ddg_value"], df["Q_ddG_avg"]):
+    for exp, calc in zip(df["ddg_value"], df["Q_ddG_avg"], strict=False):
         assert xlo <= exp <= xhi, f"exp {exp} outside x-range [{xlo}, {xhi}]"
         assert ylo <= calc <= yhi, f"calc {calc} outside y-range [{ylo}, {yhi}]"
 
