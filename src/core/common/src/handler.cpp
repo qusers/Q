@@ -8,6 +8,9 @@
 
 void Handler::run_iteration(int iteration) {
     reset_energies();
+    // Foreign work is only needed when this iteration's energies are used.
+
+    ctx.energy_step = output_requirements(iteration).energy;
 
     // 3. nonbonded forces
     calc_nonbonded_forces();
@@ -198,6 +201,7 @@ void Handler::stop_cm_translation() {
 
 void Handler::calc_final_potential(int iteration) {
     ctx.step = iteration;
+    ctx.energy_step = true;
     reset_energies();
     calc_nonbonded_forces();
     calc_internal_forces(iteration);
@@ -211,7 +215,11 @@ void Handler::update_energy_totals() {
     }
     ctx.energy.unpack();
     temperature_->sync_for_output(ctx);  // publish Ukin before combine sums Utot
-    ctx.energy.combine(ctx.lambdas->cpu_data_p);
+
+    const double* lambdas = ctx.lambdas->cpu_data_p;
+    ctx.energy.calc_foreign_work(ctx.foreign_targets, lambdas, ctx.rest_scale);
+
+    ctx.energy.combine(lambdas, ctx.rest_scale);
 }
 
 void Handler::run() {
@@ -253,32 +261,34 @@ void Handler::run() {
     }
 }
 
-void Handler::print_outputs(int iteration) {
-    bool needs_energy = false;
-    bool needs_restart = false;
-    bool needs_trajectory = false;
-
+// What the outputs of this iteration need, over all outputs.
+OutputRequirements Handler::output_requirements(int iteration) const {
+    OutputRequirements needs;
     for (const auto& output : outputs_) {
         const auto required = output->requirements(ctx, iteration);
-
-        needs_energy |= required.energy;
-        needs_restart |= required.restart;
-        needs_trajectory |= required.trajectory;
+        needs.energy |= required.energy;
+        needs.restart |= required.restart;
+        needs.trajectory |= required.trajectory;
     }
+    return needs;
+}
 
-    if (needs_energy) {
+void Handler::print_outputs(int iteration) {
+    const OutputRequirements needs = output_requirements(iteration);
+
+    if (needs.energy) {
         update_energy_totals();
     }
 
-    if (needs_restart) {
+    if (needs.restart) {
         water_boundary_force_->sync_for_output(ctx);
     }
 
     if (ctx.command_info.requested_gpu) {
-        if (needs_trajectory || needs_restart) {
+        if (needs.trajectory || needs.restart) {
             ctx.coords->download();
         }
-        if (needs_restart) {
+        if (needs.restart) {
             ctx.velocities->download();
         }
     }

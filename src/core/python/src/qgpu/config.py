@@ -140,6 +140,14 @@ class Config:
     separate_scaling: bool | None = None
     shell_force: float | None = None
     lambdas: tuple | None = None
+    # Windows to compute foreign work for: the lambda of state 2 of each ([foreign_lambdas]).
+    # RunResult.foreign_work then has U(that window) - U(this window) for every frame.
+    foreign_lambdas: tuple = ()
+    # REST2 scale of the Q atoms (T0 / T_effective): Q-Q pairs and Q torsions times rest_scale,
+    # Q-P and Q-W pairs times its square root. 1 = off.
+    rest_scale: float = 1.0
+    # rest_scale of each window in foreign_lambdas; empty = all 1.
+    foreign_rest: tuple = ()
     seq_restraints: tuple = ()          # of qgpu.SeqRestraint
     dist_restraints: tuple = ()         # of qgpu.DistRestraint
     ang_restraints: tuple = ()          # of qgpu.AngRestraint
@@ -160,6 +168,10 @@ class Config:
 
         object.__setattr__(self, "lambdas", tuple(float(x)
                            for x in self.lambdas))
+        object.__setattr__(self, "foreign_lambdas", tuple(float(x)
+                           for x in self.foreign_lambdas))
+        object.__setattr__(self, "foreign_rest", tuple(float(x)
+                           for x in self.foreign_rest))
         for name, cls in _RESTRAINTS.items():
             items = tuple(getattr(self, name))
             for r in items:

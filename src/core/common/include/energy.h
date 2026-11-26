@@ -1,4 +1,5 @@
 #pragma once
+#include "foreign_targets.h"
 #include "host_device_buffer.h"
 #include "md_types.h"
 
@@ -28,6 +29,8 @@ enum EnergySlot : int {  // fixed, non-FEP slots
     E_RESTR_SHELL,
     E_RESTR_PRES,
 
+    E_BOND_REST_TOR,  // topology torsions with four Q atoms; raw, scaled by rest in combine()
+
     ENERGY_FIXED_COUNT
 };
 
@@ -53,6 +56,7 @@ struct EnergyData {
     E_nonbonded_t nb_pp, nb_pw, nb_ww;
     E_restraint_t restraint;  // Uradx, Upolx, Ufix, Ushell, Upres, Urestr
     double lrf = 0;
+    double rest_tor = 0;  // raw energy of the torsions scaled by REST (E_BOND_REST_TOR)
 
     // per-state (FEP)
     std::vector<E_bonded_t> eq_bond;
@@ -64,11 +68,20 @@ struct EnergyData {
     // derived global / lambda-weighted
     E_bonded_t bond_q;
     E_nonbonded_t nb_qx;
+
     double Upot = 0, Ukin = 0, Utot = 0;
+
+    // Per target: sum over states of lambda'_s * sum over soft pairs of [V_s(lambda'_s) - V_s(lambda_s)].
+    std::vector<double> foreign_shape;
+    // Per target: U(lambda') - U(lambda) at the current coordinates.
+    std::vector<double> foreign_work;
+
+    // Energy of FEP state s with the Q atoms scaled by rest, before the lambda weight.
+    double state_energy(int s, const RestScale& rest) const;
 };
 
 class EnergyBuffer {
-    std::unique_ptr<HostDeviceBuffer<energy_accum_t>> accum_;  // length = ENERGY_FIXED_COUNT + EQ_STRIDE * n_lambdas
+    std::unique_ptr<HostDeviceBuffer<energy_accum_t>> accum_;  // length = ENERGY_FIXED_COUNT + EQ_STRIDE * n_lambdas + MAX_FOREIGN_LAMBDAS
     EnergyData data_;
 
     int n_lambdas_;
@@ -79,11 +92,15 @@ class EnergyBuffer {
     { return n_fixed + state * EQ_STRIDE + s; }
     energy_accum_t* device() { return accum_->gpu_data_p; }  // hand to kernels
     energy_accum_t* host() { return accum_->cpu_data_p; }
-    int size() const { return ENERGY_FIXED_COUNT + EQ_STRIDE * n_lambdas_; }
+    int size() const { return ENERGY_FIXED_COUNT + EQ_STRIDE * n_lambdas_ + MAX_FOREIGN_LAMBDAS; }
+    HD static int foreign_index(int n_lambdas, int k) { return ENERGY_FIXED_COUNT + n_lambdas * EQ_STRIDE + k; }
 
     void reset();
     void download();
     EnergyData& data() { return data_; }
     void unpack();
-    void combine(const double* lambdas);
+    void combine(const double* lambdas, const RestScale& rest = {});
+
+    // Fills data().foreign_work[k] = U(target k) - U(current window). Call after unpack().
+    void calc_foreign_work(const foreign_targets_t& targets, const double* lambdas, const RestScale& rest);
 };

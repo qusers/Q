@@ -367,6 +367,7 @@ void Context::init(const ParseResult& parsed) {
     init_topo(parsed);
     init_native_output(parsed);
     init_const(parsed);
+    softcore = parsed.softcore;
 
     // 2. Basic atom data
     init_coords_init(parsed);
@@ -460,6 +461,37 @@ void Context::validate_stage(const StageSettings& stage) const {
         throw InputError("Stage has " + std::to_string(stage.lambdas.size()) +
                          " lambdas, system has " + std::to_string(n_lambdas()) + " FEP states.");
     }
+    if (stage.foreign_lambdas.size() > MAX_FOREIGN_LAMBDAS) {
+        throw InputError("At most " + std::to_string(MAX_FOREIGN_LAMBDAS) + " [foreign_lambdas] are supported.");
+    }
+    if (!stage.foreign_lambdas.empty() && n_lambdas() != 2) {
+        throw InputError("[foreign_lambdas] requires exactly two FEP states.");
+    }
+    for (const double f : stage.foreign_lambdas) {
+        if (!(f >= 0.0 && f <= 1.0)) throw InputError("[foreign_lambdas] values must be in [0, 1].");
+    }
+    if (!(stage.rest_scale > 0.0 && stage.rest_scale <= 1.0)) {
+        throw InputError("rest_scale must be in (0, 1].");
+    }
+    if (!stage.foreign_rest.empty() && stage.foreign_rest.size() != stage.foreign_lambdas.size()) {
+        throw InputError("foreign_rest must have one value per foreign lambda.");
+    }
+    for (const double r : stage.foreign_rest) {
+        if (!(r > 0.0 && r <= 1.0)) throw InputError("foreign_rest values must be in (0, 1].");
+    }
+    const bool scaled = stage.rest_scale != 1.0 ||
+                        std::any_of(stage.foreign_rest.begin(), stage.foreign_rest.end(), [](double r) { return r != 1.0; });
+    if (scaled && n_offdiags() > 0) {
+        throw InputError("rest_scale does not support [off_diagonals].");
+    }
+    // One column per target in the .fhe file; the analysis looks a window up by its value.
+    for (size_t i = 0; i < stage.foreign_lambdas.size(); i++) {
+        for (size_t j = 0; j < i; j++) {
+            if (std::fabs(stage.foreign_lambdas[i] - stage.foreign_lambdas[j]) < 1e-12) {
+                throw InputError("[foreign_lambdas] values must be distinct.");
+            }
+        }
+    }
     if (s.steps < 0) throw InputError("Stage steps must be >= 0.");
     if (s.stepsize <= 0) throw InputError("Stage stepsize must be > 0.");
     if (s.temperature <= 0) throw InputError("Stage temperature must be > 0 (no dynamics at zero temperature).");
@@ -493,6 +525,19 @@ void Context::apply_stage(const StageSettings& stage) {
     // Lambdas: overwrite values in place; length is fixed by the FEP states.
     std::copy(stage.lambdas.begin(), stage.lambdas.end(), lambdas->cpu_data_p);
     if (command_info.requested_gpu) lambdas->upload();
+
+    foreign_targets = {};
+    rest_scale = make_rest_scale(stage.rest_scale);
+    foreign_targets.n = static_cast<int>(stage.foreign_lambdas.size());
+    for (int k = 0; k < foreign_targets.n; k++) {
+        const double weights[2] = {1.0 - stage.foreign_lambdas[k], stage.foreign_lambdas[k]};
+        for (int s = 0; s < 2; s++) {
+            foreign_targets.weight[k][s] = weights[s];
+            foreign_targets.sc[k][s] = std::pow(1.0 - weights[s], 1.0 / 6.0);
+        }
+        foreign_targets.rest[k] = make_rest_scale(stage.foreign_rest.empty() ? 1.0 : stage.foreign_rest[k]);
+    }
+    energy_step = false;
 
     // Output paths for this stage; keep topology_file from the system.
     const std::string topology_file = native_output.topology_file;

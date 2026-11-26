@@ -288,12 +288,40 @@ void CpuNonbondedForce::calc_direct_pair(Context& ctx, int slot1, int slot2) {
     real_t qij = atom1_charge * atom2_charge;
     real_t2 pair = combine_vdw(ctx.topo.vdw_rule, atom1_vdw.aii_normal, atom1_vdw.bii_normal, atom2_vdw.aii_normal, atom2_vdw.bii_normal);
 
-    auto [vel, dvel] = calc_electrostatic(qij, ctx.topo.coulomb_constant, inv_dis);
-    auto [vvdw, dvvdw] = calc_vdw(pair, inv_dis);
+    auto el = calc_electrostatic(qij, ctx.topo.coulomb_constant, inv_dis);
+    auto vdw = calc_vdw(pair, inv_dis);
 
-    real_t lambda = std::min(data_.atom_lambdas->cpu_data_p[slot1], data_.atom_lambdas->cpu_data_p[slot2]);
+    constexpr uint8_t Q = static_cast<uint8_t>(AtomCategory::Q);
+    const int n_q = (atom1_type == Q) + (atom2_type == Q);
+    const real_t pair_rest = static_cast<real_t>(ctx.rest_scale.pair(n_q));
 
-    real_t dva = (dvel + dvvdw) * inv_dis * lambda;
+    if (ctx.softcore.method != SC_NONE) {
+        const real_t sc = std::max(data_.atom_softcore->cpu_data_p[slot1], data_.atom_softcore->cpu_data_p[slot2]);
+        if (sc >= 0) {
+            const real_t sigma = softcore_pair_sigma(ctx.topo.vdw_rule, atom1_vdw.aii_normal, atom1_vdw.bii_normal, atom2_vdw.aii_normal, atom2_vdw.bii_normal);
+            const real_t dis = std::sqrt(dis2);
+            const real_t2 el_hard = el, vdw_hard = vdw;
+            if (sc > 0) apply_gapsys(data_.softcore, sc, sigma, qij, ctx.topo.coulomb_constant, pair, dis, el, vdw);
+            // At r = 0 a soft pair has a finite energy and no force direction.
+            if (!(dis2 > 0)) inv_dis = 0;
+
+            if (ctx.energy_step && dis2 > 0) {
+                const int state = atom1_state >= 0 ? atom1_state : atom2_state;
+                for (int k = 0; k < ctx.foreign_targets.n; k++) {
+                    real_t2 el_target = el_hard, vdw_target = vdw_hard;
+                    apply_gapsys(data_.softcore, static_cast<real_t>(ctx.foreign_targets.sc[k][state]), sigma, qij, ctx.topo.coulomb_constant, pair, dis, el_target, vdw_target);
+                    const real_t diff = (el_target.x - el.x) + (vdw_target.x - vdw.x);
+                    if (diff != 0) {
+                        add_energy(ctx.energy.host()[EnergyBuffer::foreign_index(ctx.n_lambdas(), k)], ctx.foreign_targets.shape_weight(k, state, n_q) * diff);
+                    }
+                }
+            }
+        }
+    }
+
+    real_t lambda = std::min(data_.atom_lambdas->cpu_data_p[slot1], data_.atom_lambdas->cpu_data_p[slot2]) * pair_rest;
+
+    real_t dva = (el.y + vdw.y) * inv_dis * lambda;
 
     add_force(dvelocities[atom1].x, -dva * dx);
     add_force(dvelocities[atom1].y, -dva * dy);
@@ -304,7 +332,7 @@ void CpuNonbondedForce::calc_direct_pair(Context& ctx, int slot1, int slot2) {
     add_force(dvelocities[atom2].z, dva * dz);
 
     // Accumulate energy
-    accumulate_energy(ctx, vel, vvdw, atom1_type, atom2_type, atom1_state, atom2_state);
+    accumulate_energy(ctx, el.x, vdw.x, atom1_type, atom2_type, atom1_state, atom2_state);
 }
 
 void CpuNonbondedForce::calc_exact_pairs(Context& ctx) {

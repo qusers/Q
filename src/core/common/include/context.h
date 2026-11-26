@@ -61,6 +61,11 @@ class Context {
     std::unique_ptr<HostDeviceBuffer<offdiag_term_t>> offdiag_terms;
     std::unique_ptr<HostDeviceBuffer<offdiag_record_t>> offdiag_records;
 
+    RestScale rest_scale;               // REST2 scale of the Q atoms in the current stage
+    softcore_params_t softcore;         // as read from the FEP file; the .fhe header reports it
+    foreign_targets_t foreign_targets;  // all targets of the stage; n is their count
+    bool energy_step = false;           // the energies of the current force call are used (written or returned)
+
     ParseResult get_parse_result();
     void init(const ParseResult& parsed);
     int n_offdiags() const {
@@ -73,10 +78,10 @@ class Context {
     int n_patoms() const { return p_atoms.size(); }
 
     void validate_stage(const StageSettings& stage) const;  // throws InputError; changes nothing
-    void apply_stage(const StageSettings& s);       // copy Stage fields into md, dt = time_unit*md.stepsize,
-                                                    // copy s.lambdas into lambdas->cpu_data_p + upload,
-                                                    // native_output = s.outputs; validate System fields unchanged
-    void set_state(const SystemState& s);           // fill coords/velocities cpu buffers, upload
+    void apply_stage(const StageSettings& s);               // copy Stage fields into md, dt = time_unit*md.stepsize,
+                                                            // copy s.lambdas into lambdas->cpu_data_p + upload,
+                                                            // native_output = s.outputs; validate System fields unchanged
+    void set_state(const SystemState& s);                   // fill coords/velocities cpu buffers, upload
     void generate_velocities(int seed, double T0);
 
    private:

@@ -644,6 +644,11 @@ __global__ void exact_tiles_nonbonded_force_kernel(
     // ---- topology scalars (passed by value) ----
     real_t coulomb_constant,  // ctx.topo.coulomb_constant
     int vdw_rule,
+    const real_t* atom_softcore,
+    GapsysKernelParams sc_params,
+    foreign_targets_t foreign,
+    RestScale rest,
+    bool energy_step,
 
     // ---- coordinates / outputs ----
     const real_t* cx, const real_t* cy, const real_t* cz,
@@ -672,7 +677,7 @@ __global__ void exact_tiles_nonbonded_force_kernel(
     const int y_idx = tile.y_start + lane;
 
     nonbonded_force_calculation(x_idx, y_idx, pair_mask, tile.x_start, tile.y_start, n_states, atom_idx,
-                                category, q_state, atom_lambdas, atom_charge, atom_vdw, coulomb_constant, vdw_rule, cx, cy, cz, dvelocities, e);
+                                       category, q_state, atom_lambdas, atom_charge, atom_vdw, coulomb_constant, vdw_rule, atom_softcore, sc_params, foreign, rest, energy_step, cx, cy, cz, dvelocities, e);
 }
 
 __global__ void compute_lrf_centers_kernel(
@@ -1125,6 +1130,11 @@ void CudaLrfForce::calc_exact_tiles(Context& ctx, const NonbondedCoordinates& co
         static_cast<real_t>(ctx.topo.coulomb_constant),
 
         ctx.topo.vdw_rule,
+        data_->atom_softcore->gpu_data_p,
+        data_->softcore,
+        ctx.foreign_targets,
+        ctx.rest_scale,
+        ctx.energy_step,
 
         coords.x,
         coords.y,

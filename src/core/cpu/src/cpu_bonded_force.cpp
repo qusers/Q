@@ -166,11 +166,12 @@ void CpuBondedForce::calc_torsions(Context& ctx) {
     auto* coords = ctx.coords->cpu_data_p;
 
     auto* e = ctx.energy.host();
+    const double rest = ctx.rest_scale.full;
 
     for (int i = 0; i < data_.torsion.n; i++) {
         const int ai = ids[i].i, aj = ids[i].j, ak = ids[i].k, al = ids[i].l;
         const int s = state[i];
-        const double weight = s < 0 ? 1.0 : lambdas[s];
+        const double weight = s >= 0 ? lambdas[s] * rest : (s == REST_TORSION ? rest : 1.0);
         real_t3 aji = real3_cast<real_t>(coords[ai] - coords[aj]);
         real_t3 ajk = real3_cast<real_t>(coords[ak] - coords[aj]);
         real_t3 akl = real3_cast<real_t>(coords[al] - coords[ak]);
@@ -347,15 +348,28 @@ void CpuBondedForce::calc_special_pairs(Context& ctx) {
     auto* gradients = ctx.dvelocities->cpu_data_p;
     auto* energy = ctx.energy.host();
 
+    const foreign_targets_t& foreign = ctx.foreign_targets;
+    const RestScale rest = ctx.rest_scale;
     for (int i = 0; i < data_.special_pairs.n; i++) {
         const auto& term = terms[i];
 
         const auto d = coords[term.aj] - coords[term.ai];
         const double r = norm(d);
 
-        const auto result = calc_special_pair(term, r);
         const double weight = term.state < 0 ? 1.0 : lambdas[term.state];
-        const double ampl = result.dv / r * weight;
+        const double sc = (term.sc_lj > 0 || term.sc_q > 0) ? std::pow(std::max(0.0, 1.0 - weight), 1.0 / 6.0) : 0.0;
+        const auto result = calc_special_pair(term, r, sc);
+
+        if (ctx.energy_step && (term.sc_lj > 0 || term.sc_q > 0)) {
+            for (int k = 0; k < foreign.n; k++) {
+                const auto target = calc_special_pair(term, r, foreign.sc[k][term.state]);
+                const double diff = (target.coul + target.vdw) - (result.coul + result.vdw);
+                if (diff != 0) {
+                    add_energy(energy[EnergyBuffer::foreign_index(ctx.n_lambdas(), k)], foreign.shape_weight(k, term.state, term.n_q) * diff);
+                }
+            }
+        }
+        const double ampl = result.dv / r * weight * rest.pair(term.n_q);
 
         add_force(gradients[term.ai].x, -ampl * d.x);
         add_force(gradients[term.ai].y, -ampl * d.y);

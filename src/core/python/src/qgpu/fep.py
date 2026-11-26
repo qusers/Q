@@ -58,15 +58,82 @@ class Window:
     steps: int
     stable: bool            # False: stopped at max_blocks
     check: Stability        # the last check
+    # Foreign work of every frame, see work(): lambda_2 of the windows it was computed for
+    # (sorted, this window among them) and U(that window) - U(this window), kcal/mol.
+    foreign_lambdas: tuple = ()
+    foreign_work: np.ndarray | None = None  # (n_frames, n_targets)
+
+
+def _soft_coordinate(lambda2):
+    """A coordinate along lambda_2 in which soft-core energies change evenly.
+
+    The soft-core radius of a state goes as (1 - lambda)^(1/6): it changes fastest in lambda
+    where a state is nearly fully on, i.e. at both ends. Equal steps of this coordinate are
+    equal steps of the radii there, and nearly equal steps of lambda in the middle.
+    """
+    lambda2 = np.clip(lambda2, 0.0, 1.0)
+    return lambda2 ** (1.0 / 6.0) - (1.0 - lambda2) ** (1.0 / 6.0)
+
+
+def _from_soft_coordinate(x):
+    lo, hi = 0.0, 1.0       # _soft_coordinate rises from -1 to 1
+    for _ in range(60):
+        middle = 0.5 * (lo + hi)
+        lo, hi = (middle, hi) if _soft_coordinate(middle) < x else (lo, middle)
+    return 0.5 * (lo + hi)
+
+
+def foreign_targets(lambda2, reach, per_side=3):
+    """lambda_2 of the windows a window at `lambda2` computes foreign work for.
+
+    The window itself and per_side on each side, out to `reach` and not past 0 or 1; sorted.
+    They are evenly spaced in _soft_coordinate, so closer together towards the ends.
+    work() is exact at these and interpolates between them.
+    """
+    targets = {float(lambda2)}
+    x0 = _soft_coordinate(lambda2)
+    for end in (max(0.0, lambda2 - reach), min(1.0, lambda2 + reach)):
+        x_end = _soft_coordinate(end)
+        for j in range(1, per_side + 1):
+            t = end if j == per_side else _from_soft_coordinate(x0 + (x_end - x0) * j / per_side)
+            if abs(t - lambda2) > 1e-9:
+                targets.add(round(t, 9))
+    return tuple(sorted(targets))
+
+
+def append_fhe(chunk_energy_file, energy_file, frames):
+    """Append the foreign-work file of one run() to that of the whole window.
+
+    Both are named after their energy file (<energy file>.fhe). `frames` is the number of
+    frames already in the window's file; 0 starts it with the header. Returns the new number.
+    The chunk is removed.
+    """
+    chunk = Path(str(chunk_energy_file) + ".fhe")
+    if not chunk.exists():      # the run had no foreign targets
+        return frames
+    lines = chunk.read_text().splitlines()
+    chunk.unlink()
+    with open(str(energy_file) + ".fhe", "w" if frames == 0 else "a") as joined:
+        for line in lines:
+            if line.startswith("#"):
+                if frames == 0:
+                    joined.write(line + "\n")
+            elif line.strip():
+                frames += 1
+                # the first column is the frame number, 10 wide, counted per run()
+                joined.write(f"{frames:10d}{line[10:]}\n")
+    return frames
 
 
 def run_window(engine, lambdas, energy_file, block=1000, energy=10,
-               min_blocks=10, max_blocks=50, error_limit=1.0):
+               min_blocks=10, max_blocks=50, error_limit=1.0, reach=0.1):
     """Run one lambda window from the engine's current state, block by block, until it is stable.
 
     Stable: at least min_blocks blocks, and stability() passed after each of the last two.
     The window ends at max_blocks in any case. Writes energy_file, the .en file of the
-    whole window. Afterwards the engine has energy output switched off.
+    whole window, and its foreign-work file (energy_file + ".fhe") for the windows of
+    foreign_targets(lambda_2, reach). Afterwards the engine has energy output and foreign
+    work switched off.
     """
     if min_blocks < 2 or max_blocks < min_blocks:
         raise InputError("need 2 <= min_blocks <= max_blocks")
@@ -75,14 +142,17 @@ def run_window(engine, lambdas, energy_file, block=1000, energy=10,
         raise InputError("run_window cannot use a lambda of exactly 0: "
                          "the engine reports no energy for that state")
 
-    chunks, parts, passed = [], [], 0
+    targets = foreign_targets(lambdas[1], reach)
+    chunks, parts, works, passed = [], [], [], 0
     while True:
         # every run() overwrites its energy file: one chunk per block, joined below
         chunks.append(energy_file.with_name(
             f"{energy_file.name}.{len(chunks) + 1:03d}"))
         engine.update_config(steps=block, lambdas=tuple(lambdas), energy=energy,
-                             energy_file=str(chunks[-1]))
-        parts.append(engine.run().q_energy)
+                             energy_file=str(chunks[-1]), foreign_lambdas=targets)
+        result = engine.run()
+        parts.append(result.q_energy)
+        works.append(result.foreign_work)
         q_energy = np.concatenate(parts)
         check = stability(q_energy[:, 0] - q_energy[:, 1], error_limit)
         passed = passed + 1 if check.stable else 0
@@ -91,15 +161,18 @@ def run_window(engine, lambdas, energy_file, block=1000, energy=10,
             break
 
     state = engine.get_state()
-    engine.update_config(energy=0, energy_file="")
+    engine.update_config(energy=0, energy_file="", foreign_lambdas=())
 
     # .en files have no header and no frame at step 0: appending the chunks gives one file
+    frames = 0
     with open(energy_file, "wb") as joined:
         for chunk in chunks:
             joined.write(chunk.read_bytes())
+            frames = append_fhe(chunk, energy_file, frames)
             chunk.unlink()
 
-    return Window(tuple(lambdas), q_energy, state, len(chunks) * block, stable, check)
+    return Window(tuple(lambdas), q_energy, state, len(chunks) * block, stable, check,
+                  targets, np.concatenate(works))
 
 
 K_B = 0.0019872041  # Boltzmann constant, kcal/(mol K)
@@ -113,13 +186,51 @@ class Overlap:
     mismatch: float  # kcal/mol, see overlap()
 
 
-def _reweight(q_energy, lambdas_from, lambdas_to, temperature):
-    """ESS fraction and mean gap of the frames sampled at lambdas_from, weighted for lambdas_to."""
-    q_energy = np.asarray(q_energy, dtype=float)
-    step = np.asarray(lambdas_to, dtype=float) - \
-        np.asarray(lambdas_from, dtype=float)
+def work(window, lambdas_to):
+    """U(lambdas_to) - U(window.lambdas) for every frame of the window, kcal/mol.
+
+    The part that is linear in lambda is  q_energy @ (lambdas_to - window.lambdas), exact for
+    any lambdas_to. With soft-core the Q energies themselves change with lambda; that part is
+    what window.foreign_work holds beyond the linear one. It is exact at the windows in
+    window.foreign_lambdas and interpolated between them; lambdas_to outside their
+    range is an error. A window without foreign work gets the linear part only, which is
+    the whole answer only when there is no soft-core.
+    """
+    q_energy = np.asarray(window.q_energy, dtype=float)
+    source = np.asarray(window.lambdas, dtype=float)
+    linear = q_energy @ (np.asarray(lambdas_to, dtype=float) - source)
+
+    nodes = np.asarray(getattr(window, "foreign_lambdas", ()), dtype=float)
+    if nodes.size == 0:
+        return linear
+    foreign = np.asarray(window.foreign_work, dtype=float)
+    if foreign.shape != (len(q_energy), nodes.size):
+        raise InputError("window.foreign_work must have one row per frame and one column per foreign lambda")
+
+    t = float(lambdas_to[1])
+    if not nodes[0] - 1e-9 <= t <= nodes[-1] + 1e-9:
+        raise InputError(f"lambda_2 = {t:g} is outside the foreign windows of this window "
+                         f"({nodes[0]:g} to {nodes[-1]:g}); run it with a larger reach")
+    nearest = np.argsort(np.abs(nodes - t), kind="stable")[:3]
+    if abs(nodes[nearest[0]] - t) <= 1e-9:
+        return foreign[:, nearest[0]]
+
+    # The soft-core part (foreign work minus its linear part) at the three windows nearest
+    # to lambdas_to, interpolated with the parabola through them, in the coordinate in which
+    # it changes evenly (see _soft_coordinate).
+    x, x_nodes = _soft_coordinate(t), _soft_coordinate(nodes)
+    result = linear.copy()
+    for k in nearest:
+        weight = np.prod([(x - x_nodes[j]) / (x_nodes[k] - x_nodes[j]) for j in nearest if j != k])
+        result += weight * (foreign[:, k] - q_energy @ (np.array([1.0 - nodes[k], nodes[k]]) - source))
+    return result
+
+
+def _reweight(window, lambdas_to, temperature):
+    """ESS fraction and mean gap of the frames of `window`, weighted for lambdas_to."""
+    q_energy = np.asarray(window.q_energy, dtype=float)
     # energy change of each frame, in kT
-    du = q_energy @ step / (K_B * temperature)
+    du = work(window, lambdas_to) / (K_B * temperature)
     # shifted: the largest weight is 1
     w = np.exp(-(du - du.min()))
     ess = w.sum() ** 2 / (len(w) * (w ** 2).sum())
@@ -128,7 +239,8 @@ def _reweight(q_energy, lambdas_from, lambdas_to, temperature):
 
 
 def overlap(a, b, temperature, target=0.5):
-    """Do two windows overlap enough to connect them? a and b have .lambdas and .q_energy.
+    """Do two windows overlap enough to connect them? a and b are Window objects, or anything
+    with .lambdas and .q_energy (and, with soft-core, .foreign_lambdas and .foreign_work: see work()).
 
     The frames of a are weighted for the lambda of b, and the frames of b for a. The ESS
     fraction says how many of them still count: 1 = all, near 0 = a few frames carry the
@@ -141,10 +253,8 @@ def overlap(a, b, temperature, target=0.5):
     """
     if len(a.q_energy) == 0 or len(b.q_energy) == 0:
         raise InputError("overlap needs frames in both windows")
-    forward, gap_at_b = _reweight(
-        a.q_energy, a.lambdas, b.lambdas, temperature)
-    backward, gap_at_a = _reweight(
-        b.q_energy, b.lambdas, a.lambdas, temperature)
+    forward, gap_at_b = _reweight(a, b.lambdas, temperature)
+    backward, gap_at_a = _reweight(b, a.lambdas, temperature)
     miss_b = gap_at_b - float(np.mean(b.q_energy[:, 0] - b.q_energy[:, 1]))
     miss_a = gap_at_a - float(np.mean(a.q_energy[:, 0] - a.q_energy[:, 1]))
     mismatch = miss_b if abs(miss_b) >= abs(miss_a) else miss_a
@@ -173,8 +283,7 @@ def next_lambda(window, end, temperature, aim=0.6, max_step=0.1):
     remaining = round(abs(end - l1), 3)
     best = 0.001
     for k in range(2, round(min(max_step, remaining) * 1000) + 1):
-        ess, _ = _reweight(window.q_energy, window.lambdas,
-                           _pair(l1 + direction * k / 1000), temperature)
+        ess, _ = _reweight(window, _pair(l1 + direction * k / 1000), temperature)
         if ess < aim:
             break
         best = k / 1000
@@ -204,8 +313,9 @@ def walk(engine, out, ends=(0.999, 0.001), target=0.5, aim=0.6, max_step=0.1, ma
         if start is not None:
             engine.set_state(start.state)
         lambdas = _pair(l1)
+        # reach = max_step: every window this one is compared with is within its foreign windows
         windows[lambdas[0]] = run_window(engine, lambdas, _energy_file(out, lambdas),
-                                         error_limit=dg_limit / step, **window_settings)
+                                         error_limit=dg_limit / step, reach=max_step, **window_settings)
         return windows[lambdas[0]]
 
     def connect(inner, outer):

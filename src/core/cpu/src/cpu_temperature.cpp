@@ -74,5 +74,14 @@ void CpuTemperature::calc(Context& ctx) {
         r[R_TSCALE_SOL] = r[R_TSCALE_SLV];
     }
 
+    // Excluded atoms (solute and solvent) are coupled to their own bath
+    double ts_excl = 1.0;
+    if (data_.Ndegf > data_.Ndegfree) {
+        const double Uexcl = energy_from_accum(Texcl_solute) + energy_from_accum(Texcl_solvent);
+        const double Texcl = 2.0 * Uexcl / Boltz / (data_.Ndegf - data_.Ndegfree);
+        if (Texcl > 0) ts_excl = sqrt(1 + (ctx.dt / data_.tau_T) * (ctx.md.temperature / Texcl - 1.0));
+    }
+    r[R_TSCALE_EXCL] = ts_excl;
+
     printf("Tscale = %f, tau_T = %f, Temp = %f, Tfree = %f\n", r[R_TSCALE_SLV], data_.tau_T, r[R_TEMP], r[R_TFREE]);
 }

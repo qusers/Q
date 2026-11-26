@@ -12,13 +12,15 @@ __global__ void calc_leapfrog_kernel(
     int n_atoms,
     int n_atoms_solute,
     const double* temperature_results,
-    double dt) {
+    double dt,
+    const bool* excluded) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_atoms) return;
 
     const double winv_i = winv[i];
-    const double scale = (i < n_atoms_solute) ? temperature_results[R_TSCALE_SOL]
-                                              : temperature_results[R_TSCALE_SLV];
+    const double scale = excluded[i]            ? temperature_results[R_TSCALE_EXCL]
+                         : (i < n_atoms_solute) ? temperature_results[R_TSCALE_SOL]
+                                                : temperature_results[R_TSCALE_SLV];
 
     const double fx = force_from_accum(dvelocities[i].x);
     const double fy = force_from_accum(dvelocities[i].y);
@@ -67,7 +69,7 @@ void CudaIntegrator::step(Context& ctx) {
     calc_leapfrog_kernel<<<numBlocks, blockSize>>>(
         winv, d_velocities, d_dvelocities,
         d_coords, d_xcoords, ctx.n_atoms, ctx.n_atoms_solute,
-        d_temperature_results, ctx.dt);
+        d_temperature_results, ctx.dt, ctx.excluded->gpu_data_p);
 
     if (constraint_force_->data().n_constraints > 0) {
         constraint_force_->apply(ctx, *data_.xcoords);

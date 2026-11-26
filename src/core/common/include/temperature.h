@@ -7,6 +7,7 @@ enum TResult { R_TEMP,
                R_TFREE,
                R_TSCALE_SOL,
                R_TSCALE_SLV,
+               R_TSCALE_EXCL,
                R_UKIN,
                N_TRESULT };
 

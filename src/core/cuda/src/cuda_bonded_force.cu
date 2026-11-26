@@ -36,15 +36,27 @@ __device__ double morse_coupling(const morse_coupling_t& coupling, const coord_t
     return gamma;
 }
 
-__device__ void compute_special_pair(int i, const special_pair_term_t* terms, const double* lambdas, const coord_t* coords, dvel_t* dvel, energy_accum_t* energy) {
+__device__ void compute_special_pair(int i, const special_pair_term_t* terms, const foreign_targets_t& foreign, bool energy_step, const RestScale& rest, int n_states, const double* lambdas, const coord_t* coords,
+                                     dvel_t* dvel, energy_accum_t* energy) {
     const auto& term = terms[i];
     const coord_t d = coords[term.aj] - coords[term.ai];
     const double r = norm(d);
 
-    const auto result = calc_special_pair(term, r);
-    const double weight =
-        term.state < 0 ? 1.0 : lambdas[term.state];
-    const double ampl = result.dv / r * weight;
+    const double weight = term.state < 0 ? 1.0 : lambdas[term.state];
+    const double sc = (term.sc_lj > 0 || term.sc_q > 0) ? pow(fmax(0.0, 1.0 - weight), 1.0 / 6.0) : 0.0;
+    const auto result = calc_special_pair(term, r, sc);
+
+    if (energy_step && (term.sc_lj > 0 || term.sc_q > 0)) {
+        for (int k = 0; k < foreign.n; k++) {
+            const auto target = calc_special_pair(term, r, foreign.sc[k][term.state]);
+            const double diff = (target.coul + target.vdw) - (result.coul + result.vdw);
+            if (diff != 0) {
+                atomic_add_energy(&energy[EnergyBuffer::foreign_index(n_states, k)], foreign.shape_weight(k, term.state, term.n_q) * diff);
+            }
+        }
+    }
+
+    const double ampl = result.dv / r * weight * rest.pair(term.n_q);
 
     atomic_add_force(&dvel[term.ai].x, -ampl * d.x);
     atomic_add_force(&dvel[term.ai].y, -ampl * d.y);
@@ -124,10 +136,10 @@ __device__ void compute_angle(int i, const angle_idx_t* ids, const dparam2_t* pa
     atomic_add_force(&dvel[aj].z, -(force1.z + force2.z));
 }
 
-__device__ void compute_torsion(int i, const dihe_idx_t* ids, const torsion_param_t* params, const int* eslot, const int* states, const morse_coupling_t* couplings, const double* lambdas, const coord_t* coords, dvel_t* dvelocities, energy_accum_t* e_torsion) {
+__device__ void compute_torsion(int i, const dihe_idx_t* ids, const torsion_param_t* params, const int* eslot, const int* states, const morse_coupling_t* couplings, const double* lambdas, const coord_t* coords, dvel_t* dvelocities, energy_accum_t* e_torsion, double rest) {
     const int ai = ids[i].i, aj = ids[i].j, ak = ids[i].k, al = ids[i].l;
     const int s = states[i];
-    const double weight = s < 0 ? 1.0 : lambdas[s];
+    const double weight = s >= 0 ? lambdas[s] * rest : (s == REST_TORSION ? rest : 1.0);
 
     real_t3 aji = real3_cast<real_t>(coords[ai] - coords[aj]);
     real_t3 ajk = real3_cast<real_t>(coords[ak] - coords[aj]);
@@ -310,7 +322,7 @@ __global__ void bonded_kernel(
     const angle_idx_t* angl_ids, const dparam2_t* angl_p, const int* angl_es, const int* angl_state, const morse_coupling_t* angl_couplings,
     const dihe_idx_t* tor_ids, const torsion_param_t* tor_p, const int* tor_es, const int* tor_state, const morse_coupling_t* tor_couplings,
     const dihe_idx_t* imp_ids, const dparam2_t* imp_p, const int* imp_es, const int* imp_state, const morse_coupling_t* imp_couplings,
-    const special_pair_term_t* special_pairs,
+    const special_pair_term_t* special_pairs, foreign_targets_t foreign, bool energy_step, RestScale rest, int n_states,
     const double* lambdas, const coord_t* coords, dvel_t* dvel,
     energy_accum_t* e) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -325,7 +337,7 @@ __global__ void bonded_kernel(
     }
     tid -= n_angle;
     if (tid < n_torsion) {
-        compute_torsion(tid, tor_ids, tor_p, tor_es, tor_state, tor_couplings, lambdas, coords, dvel, e);
+        compute_torsion(tid, tor_ids, tor_p, tor_es, tor_state, tor_couplings, lambdas, coords, dvel, e, rest.full);
         return;
     }
     tid -= n_torsion;
@@ -335,7 +347,7 @@ __global__ void bonded_kernel(
     }
     tid -= n_improper;
     if (tid < n_special) {
-        compute_special_pair(tid, special_pairs, lambdas, coords, dvel, e);
+        compute_special_pair(tid, special_pairs, foreign, energy_step, rest, n_states, lambdas, coords, dvel, e);
         return;
     }
 }
@@ -363,6 +375,6 @@ void CudaBondedForce::calc(Context& ctx) {
         data_.angle.ids->gpu_data_p, data_.angle.params->gpu_data_p, data_.angle.eslot->gpu_data_p, data_.angle.state->gpu_data_p, data_.angle.couplings->gpu_data_p,
         data_.torsion.ids->gpu_data_p, data_.torsion.params->gpu_data_p, data_.torsion.eslot->gpu_data_p, data_.torsion.state->gpu_data_p, data_.torsion.couplings->gpu_data_p,
         data_.improper.ids->gpu_data_p, data_.improper.params->gpu_data_p, data_.improper.eslot->gpu_data_p, data_.improper.state->gpu_data_p, data_.improper.couplings->gpu_data_p,
-        data_.special_pairs.terms->gpu_data_p,
+        data_.special_pairs.terms->gpu_data_p, ctx.foreign_targets, ctx.energy_step, ctx.rest_scale, ctx.n_lambdas(),
         ctx.lambdas->gpu_data_p, ctx.coords->gpu_data_p, ctx.dvelocities->gpu_data_p, ctx.energy.device());
 }

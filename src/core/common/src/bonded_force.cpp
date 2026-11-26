@@ -268,6 +268,9 @@ void BondedForce::build_torsions(Context& ctx, const ParseResult& parsed, const 
         replaced.insert(torsion_key(torsion.ai, torsion.aj, torsion.ak, torsion.al));
     }
 
+    std::vector<char> is_q(ctx.n_atoms, 0);
+    for (const int atom : ctx.q_atoms) is_q[atom] = 1;  // 0-based, as in build_lj14_pairs
+
     for (int i = 0; i < parsed.torsions.size(); i++) {
         const torsion_t& torsion = parsed.torsions[i];
 
@@ -282,8 +285,9 @@ void BondedForce::build_torsions(Context& ctx, const ParseResult& parsed, const 
                           static_cast<real_t>(c.n),
                           static_cast<real_t>(deg2rad(c.d)),
                           static_cast<real_t>(c.paths)});  // {k, n, d(rad), paths}
-        eslot.push_back(i < parsed.n_torsions_solute ? E_BOND_P_TOR : E_BOND_W_TOR);
-        state.push_back(-1);
+        const bool in_rest = is_q[torsion.ai - 1] && is_q[torsion.aj - 1] && is_q[torsion.ak - 1] && is_q[torsion.al - 1];
+        eslot.push_back(in_rest ? E_BOND_REST_TOR : (i < parsed.n_torsions_solute ? E_BOND_P_TOR : E_BOND_W_TOR));
+        state.push_back(in_rest ? REST_TORSION : -1);
         couplings.emplace_back();
     }
 

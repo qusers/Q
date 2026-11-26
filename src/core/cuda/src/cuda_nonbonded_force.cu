@@ -37,6 +37,11 @@ __global__ void nonbonded_kernel(
     // ---- topology scalars (passed by value) ----
     real_t coulomb_constant,  // ctx.topo.coulomb_constant
     int vdw_rule,
+    const real_t* atom_softcore,
+    GapsysKernelParams sc_params,
+    foreign_targets_t foreign,
+    RestScale rest,
+    bool energy_step,
 
     // ---- coordinates / outputs ----
     const real_t* cx, const real_t* cy, const real_t* cz,
@@ -67,7 +72,7 @@ __global__ void nonbonded_kernel(
     y_idx = y_idx < sz ? y_idx : -1;
 
     nonbonded_force_calculation(x_idx, y_idx, active_mask, base_x, base_y, n_states,
-                                atom_idx, category, q_state, atom_lambdas, atom_charge, atom_vdw, coulomb_constant, vdw_rule, cx, cy, cz, dvelocities, e);
+                                atom_idx, category, q_state, atom_lambdas, atom_charge, atom_vdw, coulomb_constant, vdw_rule, atom_softcore, sc_params, foreign, rest, energy_step, cx, cy, cz, dvelocities, e);
 }
 
 }  // namespace
@@ -98,7 +103,7 @@ void CudaNonbondedForce::calc_all_direct_pairs(Context& ctx) {
     nonbonded_kernel<<<grid, thread_num>>>(n_atom, ctx.n_lambdas(),
                                            data_.atom_idx->gpu_data_p, data_.category->gpu_data_p, data_.q_state->gpu_data_p,
                                            data_.atom_lambdas->gpu_data_p, data_.atom_charge->gpu_data_p, data_.atom_vdw->gpu_data_p,
-                                           data_.pair_masks->gpu_data_p, ctx.topo.coulomb_constant, ctx.topo.vdw_rule,
+                                           data_.pair_masks->gpu_data_p, ctx.topo.coulomb_constant, ctx.topo.vdw_rule, data_.atom_softcore->gpu_data_p, data_.softcore, ctx.foreign_targets, ctx.rest_scale, ctx.energy_step,
                                            coord_x_->gpu_data_p, coord_y_->gpu_data_p, coord_z_->gpu_data_p, ctx.dvelocities->gpu_data_p, ctx.energy.device());
 }
 

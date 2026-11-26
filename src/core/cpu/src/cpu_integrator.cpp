@@ -8,13 +8,16 @@ void CpuIntegrator::step(Context& ctx) {
     auto& velocities = ctx.velocities->cpu_data_p;
     auto& dvelocities = ctx.dvelocities->cpu_data_p;
     auto* xcoords = data_.xcoords->cpu_data_p;
+    const auto* excluded = ctx.excluded->cpu_data_p;
 
     const double* temperature_results = temperature_->data().results->cpu_data_p;
 
     for (int i = 0; i < ctx.n_atoms; i++) {
         const double winv_i = winv[i];
 
-        const double scale = (i < ctx.n_atoms_solute) ? temperature_results[R_TSCALE_SOL] : temperature_results[R_TSCALE_SLV];
+        const double scale = excluded[i]                ? temperature_results[R_TSCALE_EXCL]
+                             : (i < ctx.n_atoms_solute) ? temperature_results[R_TSCALE_SOL]
+                                                        : temperature_results[R_TSCALE_SLV];
 
         const double fx = force_from_accum(dvelocities[i].x);
         const double fy = force_from_accum(dvelocities[i].y);
