@@ -12,7 +12,7 @@ namespace {
 __device__ void compute_posrestr(int i, const int* ids, const double* kk,
                                  const int* eslot_a, const int* eslot_b,
                                  const coord_t* coords, const coord_t* coords_init,
-                                 dvel_t* dvel, energy_accum_t* e) {
+                                 dvel_t* dvel, energy_accum_t* e, bool energy_step) {
     const int idx = ids[i];
     const double k = kk[i];
     const double dx = coords[idx].x - coords_init[idx].x;
@@ -20,8 +20,8 @@ __device__ void compute_posrestr(int i, const int* ids, const double* kk,
     const double dz = coords[idx].z - coords_init[idx].z;
     const double ener = 0.5 * k * (dx * dx + dy * dy + dz * dz);
 
-    if (eslot_a[i] >= 0) atomic_add_energy(&e[eslot_a[i]], ener);
-    if (eslot_b[i] >= 0) atomic_add_energy(&e[eslot_b[i]], ener);
+    if (energy_step && eslot_a[i] >= 0) atomic_add_energy(&e[eslot_a[i]], ener);
+    if (energy_step && eslot_b[i] >= 0) atomic_add_energy(&e[eslot_b[i]], ener);
 
     atomic_add_force(&dvel[idx].x, k * dx);
     atomic_add_force(&dvel[idx].y, k * dy);
@@ -32,7 +32,7 @@ __device__ void compute_posrestr(int i, const int* ids, const double* kk,
 __device__ void compute_restrseq(int s, const restrseq_t* recs,
                                  const double* masses,
                                  const bool* heavy, const coord_t* coords,
-                                 const coord_t* coords_init, dvel_t* dvel, energy_accum_t* e) {
+                                 const coord_t* coords_init, dvel_t* dvel, energy_accum_t* e, bool energy_step) {
     const double k = recs[s].k;
     coord_t d = {0, 0, 0};
 
@@ -45,7 +45,7 @@ __device__ void compute_restrseq(int s, const restrseq_t* recs,
             }
         if (n_ctr > 0) {
             d = d * (1.0 / static_cast<double>(n_ctr));
-            atomic_add_energy(&e[E_RESTR_PRES], 0.5 * k * norm2(d));
+            if (energy_step) atomic_add_energy(&e[E_RESTR_PRES], 0.5 * k * norm2(d));
             for (int i = recs[s].ai - 1; i < recs[s].aj - 1; i++)
                 if (heavy[i] || recs[s].ih) {
                     const double tmp = masses[i] / CARBON_MASS;
@@ -64,7 +64,7 @@ __device__ void compute_restrseq(int s, const restrseq_t* recs,
             }
         if (totmass > 0) {
             d = d * (1.0 / totmass);
-            atomic_add_energy(&e[E_RESTR_PRES], 0.5 * k * norm2(d));
+            if (energy_step) atomic_add_energy(&e[E_RESTR_PRES], 0.5 * k * norm2(d));
             for (int i = recs[s].ai - 1; i < recs[s].aj - 1; i++)
                 if (heavy[i] || recs[s].ih) {
                     atomic_add_force(&dvel[i].x, k * d.x);
@@ -76,7 +76,7 @@ __device__ void compute_restrseq(int s, const restrseq_t* recs,
         for (int i = recs[s].ai - 1; i < recs[s].aj - 1; i++)
             if (heavy[i] || recs[s].ih) {
                 d = coords[i] - coords_init[i];
-                atomic_add_energy(&e[E_RESTR_PRES], 0.5 * k * norm2(d));
+                if (energy_step) atomic_add_energy(&e[E_RESTR_PRES], 0.5 * k * norm2(d));
                 atomic_add_force(&dvel[i].x, k * d.x);
                 atomic_add_force(&dvel[i].y, k * d.y);
                 atomic_add_force(&dvel[i].z, k * d.z);
@@ -87,7 +87,7 @@ __device__ void compute_restrseq(int s, const restrseq_t* recs,
 // atom restraints (FEP)
 __device__ void compute_restrpos(int ir, const restrpos_t* recs, const coord_t* coords,
                                  const double* lambdas, int n_lambdas,
-                                 dvel_t* dvel, energy_accum_t* e) {
+                                 dvel_t* dvel, energy_accum_t* e, bool energy_step) {
     const int state = recs[ir].ipsi - 1;
     const int i = recs[ir].a - 1;
     coord_t d = coords[i] - recs[ir].x;
@@ -99,6 +99,7 @@ __device__ void compute_restrpos(int ir, const restrpos_t* recs, const coord_t* 
     atomic_add_force(&dvel[i].y, k.y * d.y * lambda);
     atomic_add_force(&dvel[i].z, k.z * d.z * lambda);
 
+    if (!energy_step) return;  // energies of this step are not used
     if (recs[ir].ipsi == 0) {
         for (int st = 0; st < n_lambdas; st++)
             atomic_add_energy(&e[EnergyBuffer::eq_index(ENERGY_FIXED_COUNT, st, EQ_RESTR_URESTR)], ener);
@@ -111,7 +112,7 @@ __device__ void compute_restrpos(int ir, const restrpos_t* recs, const coord_t* 
 // distance restraints (FEP), flat-bottom [d1,d2]
 __device__ void compute_restrdis(int ir, const restrdis_t* recs, const coord_t* coords,
                                  const double* lambdas, int n_lambdas,
-                                 dvel_t* dvel, energy_accum_t* e) {
+                                 dvel_t* dvel, energy_accum_t* e, bool energy_step) {
     const int state = recs[ir].ipsi - 1;
     const int i = recs[ir].ai - 1;
     const int j = recs[ir].aj - 1;
@@ -137,6 +138,7 @@ __device__ void compute_restrdis(int ir, const restrdis_t* recs, const coord_t* 
     atomic_add_force(&dvel[i].y, -aij.y * dv);
     atomic_add_force(&dvel[i].z, -aij.z * dv);
 
+    if (!energy_step) return;  // energies of this step are not used
     if (recs[ir].ipsi == 0) {
         for (int st = 0; st < n_lambdas; st++)
             atomic_add_energy(&e[EnergyBuffer::eq_index(ENERGY_FIXED_COUNT, st, EQ_RESTR_URESTR)], ener);
@@ -149,7 +151,7 @@ __device__ void compute_restrdis(int ir, const restrdis_t* recs, const coord_t* 
 // angle restraints (FEP)
 __device__ void compute_restrang(int ir, const restrang_t* recs, const coord_t* coords,
                                  const double* lambdas, int n_lambdas,
-                                 dvel_t* dvel, energy_accum_t* e) {
+                                 dvel_t* dvel, energy_accum_t* e, bool energy_step) {
     const int state = recs[ir].ipsi - 1;
     const double lambda = (recs[ir].ipsi != 0) ? lambdas[state] : 1.0;
     const int i = recs[ir].ai - 1;
@@ -186,6 +188,7 @@ __device__ void compute_restrang(int ir, const restrang_t* recs, const coord_t* 
     atomic_add_force(&dvel[j].y, -(force1.y + force2.y));
     atomic_add_force(&dvel[j].z, -(force1.z + force2.z));
 
+    if (!energy_step) return;  // energies of this step are not used
     if (recs[ir].ipsi == 0) {
         for (int st = 0; st < n_lambdas; st++)
             atomic_add_energy(&e[EnergyBuffer::eq_index(ENERGY_FIXED_COUNT, st, EQ_RESTR_URESTR)], v);
@@ -198,7 +201,7 @@ __device__ void compute_restrang(int ir, const restrang_t* recs, const coord_t* 
 // wall restraints: one thread owns the whole [ai,aj) group
 __device__ void compute_restrwall(int ir, const restrwall_t* recs, const bool* heavy,
                                   const coord_t* coords, coord_t solvent_center,
-                                  dvel_t* dvel, energy_accum_t* e) {
+                                  dvel_t* dvel, energy_accum_t* e, bool energy_step) {
     const double k = recs[ir].k;
     for (int i = recs[ir].ai - 1; i < recs[ir].aj - 1; i++) {
         if (!(heavy[i] || recs[ir].ih)) continue;
@@ -214,7 +217,7 @@ __device__ void compute_restrwall(int ir, const restrwall_t* recs, const bool* h
             ener = recs[ir].dMorse * (fexp * fexp - 2.0 * fexp);
             dv = -2.0 * recs[ir].dMorse * recs[ir].aMorse * (fexp - fexp * fexp) / b;
         }
-        atomic_add_energy(&e[EQ_RESTR_URESTR], ener);  // NOTE: preserved from CPU (flat index)
+        if (energy_step) atomic_add_energy(&e[EQ_RESTR_URESTR], ener);  // NOTE: preserved from CPU (flat index)
         atomic_add_force(&dvel[i].x, dv * d.x);
         atomic_add_force(&dvel[i].y, dv * d.y);
         atomic_add_force(&dvel[i].z, dv * d.z);
@@ -229,35 +232,35 @@ __global__ void restraint_kernel(
     const double* masses, const bool* heavy,
     const double* lambdas, int n_lambdas, coord_t solvent_center,
     const coord_t* coords, const coord_t* coords_init,
-    dvel_t* dvel, energy_accum_t* e) {
+    dvel_t* dvel, energy_accum_t* e, bool energy_step) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid < n_posrestr) {
-        compute_posrestr(tid, pr_ids, pr_k, pr_esa, pr_esb, coords, coords_init, dvel, e);
+        compute_posrestr(tid, pr_ids, pr_k, pr_esa, pr_esb, coords, coords_init, dvel, e, energy_step);
         return;
     }
     tid -= n_posrestr;
     if (tid < n_restrseq) {
-        compute_restrseq(tid, seq_recs, masses, heavy, coords, coords_init, dvel, e);
+        compute_restrseq(tid, seq_recs, masses, heavy, coords, coords_init, dvel, e, energy_step);
         return;
     }
     tid -= n_restrseq;
     if (tid < n_restrpos) {
-        compute_restrpos(tid, pos_recs, coords, lambdas, n_lambdas, dvel, e);
+        compute_restrpos(tid, pos_recs, coords, lambdas, n_lambdas, dvel, e, energy_step);
         return;
     }
     tid -= n_restrpos;
     if (tid < n_restrdis) {
-        compute_restrdis(tid, dis_recs, coords, lambdas, n_lambdas, dvel, e);
+        compute_restrdis(tid, dis_recs, coords, lambdas, n_lambdas, dvel, e, energy_step);
         return;
     }
     tid -= n_restrdis;
     if (tid < n_restrang) {
-        compute_restrang(tid, ang_recs, coords, lambdas, n_lambdas, dvel, e);
+        compute_restrang(tid, ang_recs, coords, lambdas, n_lambdas, dvel, e, energy_step);
         return;
     }
     tid -= n_restrang;
     if (tid < n_restrwall) {
-        compute_restrwall(tid, wall_recs, heavy, coords, solvent_center, dvel, e);
+        compute_restrwall(tid, wall_recs, heavy, coords, solvent_center, dvel, e, energy_step);
         return;
     }
 }
@@ -292,5 +295,5 @@ void CudaRestraintForce::calc(Context& ctx) {
         ctx.masses->gpu_data_p, ctx.heavy->gpu_data_p,
         ctx.lambdas->gpu_data_p, ctx.n_lambdas(), ctx.topo.solvent_center,
         ctx.coords->gpu_data_p, ctx.coords_init->gpu_data_p,
-        ctx.dvelocities->gpu_data_p, ctx.energy.device());
+        ctx.dvelocities->gpu_data_p, ctx.energy.device(), ctx.energy_step);
 }

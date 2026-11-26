@@ -311,7 +311,8 @@ __global__ void calc_lrf_kernel(
     double coulomb_constant,
 
     dvel_t* dvelocities,
-    energy_accum_t* energy) {
+    energy_accum_t* energy,
+    bool energy_step) {
     const int slot = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (slot >= n_slots) {
@@ -346,6 +347,38 @@ __global__ void calc_lrf_kernel(
         lrf.center.y - static_cast<double>(cy[slot]),
         lrf.center.z - static_cast<double>(cz[slot])};
 
+    // Forces in working precision, like the pair kernel; the coefficients stay in double precision and
+    // are cast after loading. d is formed in double precision so that the group centre keeps its digits.
+    const real_t dr[3] = {static_cast<real_t>(d[0]), static_cast<real_t>(d[1]), static_cast<real_t>(d[2])};
+
+    real_t df[3] = {static_cast<real_t>(lrf.phi1[0]), static_cast<real_t>(lrf.phi1[1]), static_cast<real_t>(lrf.phi1[2])};
+
+    for (int a = 0; a < 3; ++a) {
+        for (int b = 0; b < 3; ++b) {
+            df[a] += static_cast<real_t>(lrf.phi2[a * 3 + b]) * dr[b];
+        }
+    }
+
+    for (int a = 0; a < 3; ++a) {
+        for (int b = 0; b < 3; ++b) {
+            for (int c = 0; c < 3; ++c) {
+                const int index = (a * 3 + b) * 3 + c;
+                df[a] += real_t(0.5) * static_cast<real_t>(lrf.phi3[index]) * dr[b] * dr[c];
+            }
+        }
+    }
+
+    const real_t force_scale = -static_cast<real_t>(coulomb_constant) * atom_charge[slot];
+
+    atomic_add_force(&dvelocities[atom].x, force_scale * df[0]);
+
+    atomic_add_force(&dvelocities[atom].y, force_scale * df[1]);
+
+    atomic_add_force(&dvelocities[atom].z, force_scale * df[2]);
+
+    // The potential is only needed for the energy.
+    if (!energy_step) return;
+
     double potential = lrf.phi0;
 
     for (int a = 0; a < 3; ++a) {
@@ -358,34 +391,9 @@ __global__ void calc_lrf_kernel(
         }
     }
 
-    double df[3] = {lrf.phi1[0], lrf.phi1[1], lrf.phi1[2]};
-
-    for (int a = 0; a < 3; ++a) {
-        for (int b = 0; b < 3; ++b) {
-            df[a] += lrf.phi2[a * 3 + b] * d[b];
-        }
-    }
-
-    for (int a = 0; a < 3; ++a) {
-        for (int b = 0; b < 3; ++b) {
-            for (int c = 0; c < 3; ++c) {
-                const int index = (a * 3 + b) * 3 + c;
-                df[a] += 0.5 * lrf.phi3[index] * d[b] * d[c];
-            }
-        }
-    }
-
     const double charge = static_cast<double>(atom_charge[slot]);
 
     const double energy_value = 0.5 * coulomb_constant * charge * potential;
-
-    const double force_scale = -coulomb_constant * charge;
-
-    atomic_add_force(&dvelocities[atom].x, force_scale * df[0]);
-
-    atomic_add_force(&dvelocities[atom].y, force_scale * df[1]);
-
-    atomic_add_force(&dvelocities[atom].z, force_scale * df[2]);
 
     atomic_add_energy(&energy[E_LRF], energy_value);
 }
@@ -677,7 +685,7 @@ __global__ void exact_tiles_nonbonded_force_kernel(
     const int y_idx = tile.y_start + lane;
 
     nonbonded_force_calculation(x_idx, y_idx, pair_mask, tile.x_start, tile.y_start, n_states, atom_idx,
-                                       category, q_state, atom_lambdas, atom_charge, atom_vdw, coulomb_constant, vdw_rule, atom_softcore, sc_params, foreign, rest, energy_step, cx, cy, cz, dvelocities, e);
+                                category, q_state, atom_lambdas, atom_charge, atom_vdw, coulomb_constant, vdw_rule, atom_softcore, sc_params, foreign, rest, energy_step, cx, cy, cz, dvelocities, e);
 }
 
 __global__ void compute_lrf_centers_kernel(
@@ -1234,7 +1242,7 @@ void CudaLrfForce::calc_lrf(Context& ctx, const NonbondedCoordinates& coords) {
         ctx.topo.coulomb_constant,
 
         ctx.dvelocities->gpu_data_p,
-        ctx.energy.device());
+        ctx.energy.device(), ctx.energy_step);
 
     check_cuda(cudaGetLastError());
 }

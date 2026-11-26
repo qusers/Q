@@ -39,24 +39,26 @@ __device__ double morse_coupling(const morse_coupling_t& coupling, const coord_t
 __device__ void compute_special_pair(int i, const special_pair_term_t* terms, const foreign_targets_t& foreign, bool energy_step, const RestScale& rest, int n_states, const double* lambdas, const coord_t* coords,
                                      dvel_t* dvel, energy_accum_t* energy) {
     const auto& term = terms[i];
-    const coord_t d = coords[term.aj] - coords[term.ai];
-    const double r = norm(d);
+    // The difference of the double coordinates, then working precision (as compute_torsion).
+    const real_t3 d = real3_cast<real_t>(coords[term.aj] - coords[term.ai]);
+    const real_t r = norm(d);
 
     const double weight = term.state < 0 ? 1.0 : lambdas[term.state];
-    const double sc = (term.sc_lj > 0 || term.sc_q > 0) ? pow(fmax(0.0, 1.0 - weight), 1.0 / 6.0) : 0.0;
+    const bool soft = term.sc_lj > 0 || term.sc_q > 0;
+    const real_t sc = soft ? static_cast<real_t>(pow(fmax(0.0, 1.0 - weight), 1.0 / 6.0)) : static_cast<real_t>(0);
     const auto result = calc_special_pair(term, r, sc);
 
-    if (energy_step && (term.sc_lj > 0 || term.sc_q > 0)) {
+    if (energy_step && soft) {
         for (int k = 0; k < foreign.n; k++) {
-            const auto target = calc_special_pair(term, r, foreign.sc[k][term.state]);
-            const double diff = (target.coul + target.vdw) - (result.coul + result.vdw);
+            const auto target = calc_special_pair(term, r, static_cast<real_t>(foreign.sc[k][term.state]));
+            const real_t diff = (target.coul + target.vdw) - (result.coul + result.vdw);
             if (diff != 0) {
-                atomic_add_energy(&energy[EnergyBuffer::foreign_index(n_states, k)], foreign.shape_weight(k, term.state, term.n_q) * diff);
+                atomic_add_energy(&energy[EnergyBuffer::foreign_index(n_states, k)], foreign.shape_weight(k, term.state, term.n_q) * static_cast<double>(diff));
             }
         }
     }
 
-    const double ampl = result.dv / r * weight * rest.pair(term.n_q);
+    const real_t ampl = result.dv / r * static_cast<real_t>(weight * rest.pair(term.n_q));
 
     atomic_add_force(&dvel[term.ai].x, -ampl * d.x);
     atomic_add_force(&dvel[term.ai].y, -ampl * d.y);
@@ -66,11 +68,13 @@ __device__ void compute_special_pair(int i, const special_pair_term_t* terms, co
     atomic_add_force(&dvel[term.aj].y, ampl * d.y);
     atomic_add_force(&dvel[term.aj].z, ampl * d.z);
 
-    atomic_add_energy(&energy[term.coul_slot], result.coul);
-    atomic_add_energy(&energy[term.vdw_slot], result.vdw);
+    if (energy_step) {
+        atomic_add_energy(&energy[term.coul_slot], result.coul);
+        atomic_add_energy(&energy[term.vdw_slot], result.vdw);
+    }
 }
 
-__device__ void compute_bond(int i, const bond_idx_t* ids, const cbond_t* params, const int* eslot, const int* states, const double* lambdas, const coord_t* coords, dvel_t* dvel, energy_accum_t* e_bond) {
+__device__ void compute_bond(int i, const bond_idx_t* ids, const cbond_t* params, const int* eslot, const int* states, const double* lambdas, const coord_t* coords, dvel_t* dvel, energy_accum_t* e_bond, bool energy_step) {
     const int ai = ids[i].i, aj = ids[i].j;
     const int s = states[i];
     const double weight = s < 0 ? 1.0 : lambdas[s];
@@ -80,7 +84,7 @@ __device__ void compute_bond(int i, const bond_idx_t* ids, const cbond_t* params
     auto [v, dv] = calc_bond(params[i], r);
     const double ampl = dv / r * weight;
 
-    atomic_add_energy(&e_bond[eslot[i]], v);
+    if (energy_step) atomic_add_energy(&e_bond[eslot[i]], v);
     atomic_add_force(&dvel[ai].x, -ampl * d.x);
     atomic_add_force(&dvel[ai].y, -ampl * d.y);
     atomic_add_force(&dvel[ai].z, -ampl * d.z);
@@ -89,7 +93,7 @@ __device__ void compute_bond(int i, const bond_idx_t* ids, const cbond_t* params
     atomic_add_force(&dvel[aj].z, ampl * d.z);
 }
 
-__device__ void compute_angle(int i, const angle_idx_t* ids, const dparam2_t* params, const int* eslot, const int* states, const morse_coupling_t* couplings, const double* lambdas, const coord_t* coords, dvel_t* dvel, energy_accum_t* e_angle) {
+__device__ void compute_angle(int i, const angle_idx_t* ids, const dparam2_t* params, const int* eslot, const int* states, const morse_coupling_t* couplings, const double* lambdas, const coord_t* coords, dvel_t* dvel, energy_accum_t* e_angle, bool energy_step) {
     const int ai = ids[i].i, aj = ids[i].j, ak = ids[i].k;
     const double k = params[i].x;
     const double th_eq = params[i].y;
@@ -112,7 +116,9 @@ __device__ void compute_angle(int i, const angle_idx_t* ids, const dparam2_t* pa
     double gamma = morse_coupling(couplings[i], coords, dvel, v, weight);
 
     dv_per_angle *= gamma;
-    atomic_add_energy(&e_angle[eslot[i]], v * gamma);
+    if (energy_step) {
+        atomic_add_energy(&e_angle[eslot[i]], v * gamma);
+    }
 
     coord_t perpendicular_v = get_perpendicular_vector(aji, ajk);
     double sin_th = sin(th);
@@ -136,7 +142,7 @@ __device__ void compute_angle(int i, const angle_idx_t* ids, const dparam2_t* pa
     atomic_add_force(&dvel[aj].z, -(force1.z + force2.z));
 }
 
-__device__ void compute_torsion(int i, const dihe_idx_t* ids, const torsion_param_t* params, const int* eslot, const int* states, const morse_coupling_t* couplings, const double* lambdas, const coord_t* coords, dvel_t* dvelocities, energy_accum_t* e_torsion, double rest) {
+__device__ void compute_torsion(int i, const dihe_idx_t* ids, const torsion_param_t* params, const int* eslot, const int* states, const morse_coupling_t* couplings, const double* lambdas, const coord_t* coords, dvel_t* dvelocities, energy_accum_t* e_torsion, double rest, bool energy_step) {
     const int ai = ids[i].i, aj = ids[i].j, ak = ids[i].k, al = ids[i].l;
     const int s = states[i];
     const double weight = s >= 0 ? lambdas[s] * rest : (s == REST_TORSION ? rest : 1.0);
@@ -166,7 +172,9 @@ __device__ void compute_torsion(int i, const dihe_idx_t* ids, const torsion_para
     auto [v, dv_per_angle] = calc_torsion(k, n, phi, gamma, paths);
     double morse_scale = morse_coupling(couplings[i], coords, dvelocities, v, weight);
 
-    atomic_add_energy(&e_torsion[eslot[i]], static_cast<double>(v) * morse_scale);
+    if (energy_step) {
+        atomic_add_energy(&e_torsion[eslot[i]], static_cast<double>(v) * morse_scale);
+    }
 
     real_t3 di = get_perpendicular_vector(n_ijk, n_jkl);
 
@@ -223,56 +231,48 @@ __device__ void compute_torsion(int i, const dihe_idx_t* ids, const torsion_para
     atomic_add_force(&dvelocities[ak].z, force_per_cos * dpk.z);
 }
 
-__device__ void compute_improper(int i, const dihe_idx_t* ids, const dparam2_t* params, const int* eslot, const int* states, const morse_coupling_t* couplings, const double* lambdas, const coord_t* coords, dvel_t* dvelocities, energy_accum_t* e_improper) {
+__device__ void compute_improper(int i, const dihe_idx_t* ids, const dparam2_t* params, const int* eslot, const int* states, const morse_coupling_t* couplings, const double* lambdas, const coord_t* coords, dvel_t* dvelocities, energy_accum_t* e_improper, bool energy_step) {
     const int ai = ids[i].i, aj = ids[i].j, ak = ids[i].k, al = ids[i].l;
     const int s = states[i];
     const bool is_q = s >= 0;
     const double weight = is_q ? lambdas[s] : 1.0;
 
-    coord_t aji = coords[ai] - coords[aj];
-    coord_t ajk = coords[ak] - coords[aj];
-    coord_t akl = coords[al] - coords[ak];
+    // The differences of the double coordinates, then working precision (as compute_torsion).
+    const real_t3 aji = real3_cast<real_t>(coords[ai] - coords[aj]);
+    const real_t3 ajk = real3_cast<real_t>(coords[ak] - coords[aj]);
+    const real_t3 akl = real3_cast<real_t>(coords[al] - coords[ak]);
 
-    coord_t n_ijk = cross(aji, ajk);
-    coord_t n_jkl = cross(akl, ajk);
+    const real_t3 n_ijk = cross(aji, ajk);
+    const real_t3 n_jkl = cross(akl, ajk);
 
-    double norm_ijk = norm(n_ijk);
-    double norm_jkl = norm(n_jkl);
-    double cos_phi = dot(n_ijk, n_jkl) / (norm_ijk * norm_jkl);
-    if (is_q) {
-        cos_phi = min(cos_phi, pt999);
-        cos_phi = max(cos_phi, -pt999);
-    } else {
-        cos_phi = min(cos_phi, 1.0);
-        cos_phi = max(cos_phi, -1.0);
-    }
-    double phi = acos(cos_phi);
+    const real_t norm_ijk = norm(n_ijk);
+    const real_t norm_jkl = norm(n_jkl);
+    real_t cos_phi = dot(n_ijk, n_jkl) / (norm_ijk * norm_jkl);
+    const real_t limit = is_q ? static_cast<real_t>(pt999) : static_cast<real_t>(1);
+    cos_phi = min(cos_phi, limit);
+    cos_phi = max(cos_phi, -limit);
+    real_t phi = acos(cos_phi);
 
     if (dot(ajk, cross(n_ijk, n_jkl)) < 0) {
         phi = -phi;
     }
 
-    const double k = params[i].x, phi0 = params[i].y;
+    const real_t k = static_cast<real_t>(params[i].x), phi0 = static_cast<real_t>(params[i].y);
 
-    double v, dv_per_angle;
+    const auto potential = is_q ? calc_q_improper(k, phi0, phi) : calc_improper2(k, phi0, phi);
+    const real_t v = potential.x;
+    const real_t dv_per_angle = potential.y;
 
-    if (is_q) {
-        const auto potential = calc_q_improper(k, phi0, phi);
-        v = potential.x;
-        dv_per_angle = potential.y;
-    } else {
-        const auto potential = calc_improper2(k, phi0, phi);
-        v = potential.x;
-        dv_per_angle = potential.y;
-    }
     const double morse_scale = morse_coupling(couplings[i], coords, dvelocities, v, weight);
 
-    atomic_add_energy(&e_improper[eslot[i]], v * morse_scale);
+    if (energy_step) {
+        atomic_add_energy(&e_improper[eslot[i]], static_cast<double>(v) * morse_scale);
+    }
 
-    coord_t di = get_perpendicular_vector(n_ijk, n_jkl);
-    double sin_phi = sin(phi);
-    double force_per_cos;
-    if (abs(sin_phi) < tm06) {
+    real_t3 di = get_perpendicular_vector(n_ijk, n_jkl);
+    const real_t sin_phi = sin(phi);
+    real_t force_per_cos;
+    if (abs(sin_phi) < static_cast<real_t>(tm06)) {
         /*
         dv_per_angle = k * -2.0 * sin(2.0 * phi - phi0)
         force_per_cos = -dv_per_angle / sin_phi = 2.0 * k * sin(2.0 * phi - phi0) / sin(phi)
@@ -283,21 +283,21 @@ __device__ void compute_improper(int i, const dihe_idx_t* ids, const dparam2_t* 
         g(phi) = sin(phi)
         g' = cos(phi)
         */
-        double cos_phi_limit = cos_phi < 0 ? -1 : 1;
-        force_per_cos = 4.0 * k * cos(2.0 * phi - phi0) / cos_phi_limit;
+        const real_t cos_phi_limit = cos_phi < 0 ? -1 : 1;
+        force_per_cos = static_cast<real_t>(4) * k * cos(static_cast<real_t>(2) * phi - phi0) / cos_phi_limit;
     } else {
         force_per_cos = -dv_per_angle / sin_phi;
     }
-    force_per_cos *= weight * morse_scale;
+    force_per_cos *= static_cast<real_t>(weight * morse_scale);
     di = di / norm_ijk;
 
-    coord_t dl = get_perpendicular_vector(n_jkl, n_ijk);
+    real_t3 dl = get_perpendicular_vector(n_jkl, n_ijk);
     dl = dl / norm_jkl;
 
-    coord_t dpi = cross(ajk, di);
-    coord_t dpl = cross(ajk, dl);
-    coord_t dpj = cross((aji - ajk), di) + cross(akl, dl);
-    coord_t dpk = cross(-1 * (ajk + akl), dl) - cross(aji, di);
+    const real_t3 dpi = cross(ajk, di);
+    const real_t3 dpl = cross(ajk, dl);
+    const real_t3 dpj = cross((aji - ajk), di) + cross(akl, dl);
+    const real_t3 dpk = cross(static_cast<real_t>(-1) * (ajk + akl), dl) - cross(aji, di);
 
     atomic_add_force(&dvelocities[ai].x, force_per_cos * dpi.x);
     atomic_add_force(&dvelocities[ai].y, force_per_cos * dpi.y);
@@ -327,22 +327,22 @@ __global__ void bonded_kernel(
     energy_accum_t* e) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid < n_bond) {
-        compute_bond(tid, bond_ids, bond_p, bond_es, bond_state, lambdas, coords, dvel, e);
+        compute_bond(tid, bond_ids, bond_p, bond_es, bond_state, lambdas, coords, dvel, e, energy_step);
         return;
     }
     tid -= n_bond;
     if (tid < n_angle) {
-        compute_angle(tid, angl_ids, angl_p, angl_es, angl_state, angl_couplings, lambdas, coords, dvel, e);
+        compute_angle(tid, angl_ids, angl_p, angl_es, angl_state, angl_couplings, lambdas, coords, dvel, e, energy_step);
         return;
     }
     tid -= n_angle;
     if (tid < n_torsion) {
-        compute_torsion(tid, tor_ids, tor_p, tor_es, tor_state, tor_couplings, lambdas, coords, dvel, e, rest.full);
+        compute_torsion(tid, tor_ids, tor_p, tor_es, tor_state, tor_couplings, lambdas, coords, dvel, e, rest.full, energy_step);
         return;
     }
     tid -= n_torsion;
     if (tid < n_improper) {
-        compute_improper(tid, imp_ids, imp_p, imp_es, imp_state, imp_couplings, lambdas, coords, dvel, e);
+        compute_improper(tid, imp_ids, imp_p, imp_es, imp_state, imp_couplings, lambdas, coords, dvel, e, energy_step);
         return;
     }
     tid -= n_improper;
