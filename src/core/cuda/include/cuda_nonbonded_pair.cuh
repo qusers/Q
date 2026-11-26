@@ -192,6 +192,10 @@ __device__ void nonbonded_force_calculation(
         atomic_add_force(&dvelocities[atom2].y, atom2_force.y);
         atomic_add_force(&dvelocities[atom2].z, atom2_force.z);
     }
+
+    // Energies of this step are not used (the whole warp takes the same branch).
+    if (!energy_step) return;
+
     const unsigned mask = 0xffffffffu;
     for (int offset = 16; offset > 0; offset >>= 1) {
         local_e_coul += __shfl_down_sync(mask, local_e_coul, offset);
