@@ -22,7 +22,8 @@ __global__ void calc_radix_kernel(
     double Dwmz,
     double awmz,
     dvel_t* dvelocities,
-    energy_accum_t* energy) {
+    energy_accum_t* energy,
+    bool energy_step) {
     const int water_idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (water_idx >= n_waters) return;
@@ -58,7 +59,7 @@ __global__ void calc_radix_kernel(
         dv = 0.0;
     }
 
-    atomic_add_energy(&energy[E_RESTR_RADX], ener);
+    if (energy_step) atomic_add_energy(&energy[E_RESTR_RADX], ener);
 
     atomic_add_force(&dvelocities[oxygen_idx].x, dv * dx);
 
@@ -151,7 +152,8 @@ __global__ void calc_polx_force_with_rank_kernel(int n_atoms_solute,
                                                  topo_t topo,
                                                  md_t md,
                                                  dvel_t* dvelocities,
-                                                 energy_accum_t* energy) {
+                                                 energy_accum_t* energy,
+                                                 bool energy_step) {
     const int flat_idx = blockIdx.x * blockDim.x + threadIdx.x;
     const int total_slots = n_shells * n_max_inshell;
     if (flat_idx >= total_slots) return;
@@ -204,7 +206,7 @@ __global__ void calc_polx_force_with_rank_kernel(int n_atoms_solute,
 
     const double ener = 0.5 * md.polarisation_force * dtheta * dtheta;
 
-    atomic_add_energy(&energy[E_RESTR_POLX], ener);
+    if (energy_step) atomic_add_energy(&energy[E_RESTR_POLX], ener);
 
     const double dv = md.polarisation_force * dtheta;
 
@@ -305,7 +307,8 @@ void CudaWaterBoundaryForce::calc_radix(
         data_.Dwmz,
         data_.awmz,
         ctx.dvelocities->gpu_data_p,
-        ctx.energy.device());
+        ctx.energy.device(),
+        ctx.energy_step);
 }
 
 void CudaWaterBoundaryForce::calc_polx(Context& ctx, int iteration) {
@@ -350,7 +353,8 @@ void CudaWaterBoundaryForce::calc_polx(Context& ctx, int iteration) {
         ctx.topo,
         ctx.md,
         ctx.dvelocities->gpu_data_p,
-        ctx.energy.device());
+        ctx.energy.device(),
+        ctx.energy_step);
 }
 
 void CudaWaterBoundaryForce::sync_for_output(
