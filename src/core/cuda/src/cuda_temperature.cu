@@ -15,33 +15,43 @@ enum TAccum { TEMP_SOL,
 __global__ void calc_temperature_kernel(int n_atoms, int n_atoms_solute, const double* masses, vel_t* velocities, bool* excluded, double boltz, double ekinmax,
                                         energy_accum_t* Temp_solute, energy_accum_t* Tfree_solute, energy_accum_t* Texcl_solute,
                                         energy_accum_t* Temp_solvent, energy_accum_t* Tfree_solvent, energy_accum_t* Texcl_solvent) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= n_atoms) return;
+    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
-    double mass_i = masses[idx];
-    const double vx = velocities[idx].x;
-    const double vy = velocities[idx].y;
-    const double vz = velocities[idx].z;
-    double ener = .5 * mass_i * (vx * vx + vy * vy + vz * vz);
+    // Kinetic energy of this atom in fixed point, in one of four bins:
+    // free solute, excluded solute, free solvent, excluded solvent. Threads past the last atom add 0.
+    energy_accum_t bin[4] = {0, 0, 0, 0};
+    if (idx < n_atoms) {
+        double mass_i = masses[idx];
+        const double vx = velocities[idx].x;
+        const double vy = velocities[idx].y;
+        const double vz = velocities[idx].z;
+        double ener = .5 * mass_i * (vx * vx + vy * vy + vz * vz);
 
-    bool is_solute = (idx < n_atoms_solute);
-    bool is_excluded = excluded[idx];
-    if (is_solute) {
-        atomic_add_energy(Temp_solute, ener);
-        if (!is_excluded)
-            atomic_add_energy(Tfree_solute, ener);
-        else
-            atomic_add_energy(Texcl_solute, ener);
-    } else {
-        atomic_add_energy(Temp_solvent, ener);
-        if (!is_excluded)
-            atomic_add_energy(Tfree_solvent, ener);
-        else
-            atomic_add_energy(Texcl_solvent, ener);
+        bin[(idx < n_atoms_solute ? 0 : 2) + (excluded[idx] ? 1 : 0)] = energy_to_accum(ener);
+        if (ener > ekinmax) {
+            printf(">>> WARNING: hot atom %d: %f\n", idx, ener / boltz / 3);
+        }
     }
-    if (ener > ekinmax) {
-        printf(">>> WARNING: hot atom %d: %f\n", idx, ener / boltz / 3);
+
+    // Sum over the warp, then one atomic add per slot and warp instead of two per atom. The sums are
+    // integers, so the totals do not depend on the order.
+    const unsigned mask = 0xffffffffu;
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        for (int b = 0; b < 4; ++b) {
+            bin[b] += __shfl_down_sync(mask, bin[b], offset);
+        }
     }
+    if ((threadIdx.x & 31) != 0) return;
+
+    auto add = [](energy_accum_t* target, energy_accum_t value) {
+        if (value != 0) atomicAdd(reinterpret_cast<unsigned long long int*>(target), static_cast<unsigned long long int>(value));
+    };
+    add(Temp_solute, bin[0] + bin[1]);
+    add(Tfree_solute, bin[0]);
+    add(Texcl_solute, bin[1]);
+    add(Temp_solvent, bin[2] + bin[3]);
+    add(Tfree_solvent, bin[2]);
+    add(Texcl_solvent, bin[3]);
 }
 
 __global__ void finalize_temperature_kernel(
