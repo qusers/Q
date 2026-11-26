@@ -1,21 +1,7 @@
 #pragma once
+#include "foreign_targets.h"
 #include "host_device_buffer.h"
 #include "md_types.h"
-// Foreign-work targets per stage ([foreign_lambdas]); fixed so that the energy buffer keeps its size.
-constexpr int MAX_FOREIGN_LAMBDAS = 8;
-
-// Passed by value to the pair kernels. n == 0 means "do not evaluate", which is every step
-// that does not write energies.
-struct foreign_targets_t {
-    int n = 0;
-    double weight[MAX_FOREIGN_LAMBDAS][2] = {};  // lambda' of state 1 and 2
-    double sc[MAX_FOREIGN_LAMBDAS][2] = {};      // (1 - lambda')^(1/6)
-
-    double rest = 1.0;
-    double rest_sqrt = 1.0;
-    double rest_target[MAX_FOREIGN_LAMBDAS] = {};
-    double rest_target_sqrt[MAX_FOREIGN_LAMBDAS] = {};
-};
 
 enum EnergySlot : int {  // fixed, non-FEP slots
     E_BOND_P_BOND,
@@ -83,12 +69,15 @@ struct EnergyData {
     E_bonded_t bond_q;
     E_nonbonded_t nb_qx;
 
+    double Upot = 0, Ukin = 0, Utot = 0;
+
     // Per target: sum over states of lambda'_s * sum over soft pairs of [V_s(lambda'_s) - V_s(lambda_s)].
     std::vector<double> foreign_shape;
     // Per target: U(lambda') - U(lambda) at the current coordinates.
     std::vector<double> foreign_work;
 
-    double Upot = 0, Ukin = 0, Utot = 0;
+    // Energy of FEP state s with the Q atoms scaled by rest, before the lambda weight.
+    double state_energy(int s, const RestScale& rest) const;
 };
 
 class EnergyBuffer {
@@ -110,5 +99,8 @@ class EnergyBuffer {
     void download();
     EnergyData& data() { return data_; }
     void unpack();
-    void combine(const double* lambdas, double rest = 1.0);
+    void combine(const double* lambdas, const RestScale& rest = {});
+
+    // Fills data().foreign_work[k] = U(target k) - U(current window). Call after unpack().
+    void calc_foreign_work(const foreign_targets_t& targets, const double* lambdas, const RestScale& rest);
 };

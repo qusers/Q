@@ -18,8 +18,6 @@ __global__ void update_nonbonded_coords_kernel(
     cz[i] = static_cast<real_t>(coords[idx].z);
 }
 
-// kSoft: see nonbonded_force_calculation.
-template <bool kSoft>
 __global__ void nonbonded_kernel(
     // ---- dimensions ----
     int sz,        // data_.n_total, number of participating atoms
@@ -40,8 +38,10 @@ __global__ void nonbonded_kernel(
     real_t coulomb_constant,  // ctx.topo.coulomb_constant
     int vdw_rule,
     const real_t* atom_softcore,
-    softcore_pair_params_t sc_params,
+    GapsysKernelParams sc_params,
     foreign_targets_t foreign,
+    RestScale rest,
+    bool energy_step,
 
     // ---- coordinates / outputs ----
     const real_t* cx, const real_t* cy, const real_t* cz,
@@ -71,8 +71,8 @@ __global__ void nonbonded_kernel(
     x_idx = x_idx < sz ? x_idx : -1;
     y_idx = y_idx < sz ? y_idx : -1;
 
-    nonbonded_force_calculation<kSoft>(x_idx, y_idx, active_mask, base_x, base_y, n_states,
-                                       atom_idx, category, q_state, atom_lambdas, atom_charge, atom_vdw, coulomb_constant, vdw_rule, atom_softcore, sc_params, foreign, cx, cy, cz, dvelocities, e);
+    nonbonded_force_calculation(x_idx, y_idx, active_mask, base_x, base_y, n_states,
+                                atom_idx, category, q_state, atom_lambdas, atom_charge, atom_vdw, coulomb_constant, vdw_rule, atom_softcore, sc_params, foreign, rest, energy_step, cx, cy, cz, dvelocities, e);
 }
 
 }  // namespace
@@ -100,11 +100,10 @@ void CudaNonbondedForce::calc_all_direct_pairs(Context& ctx) {
     int grid_sz = (total_tiles + tile_num_per_block - 1) / tile_num_per_block;
 
     dim3 grid = dim3(grid_sz);
-    const auto kernel = data_.softcore.method != SC_NONE ? nonbonded_kernel<true> : nonbonded_kernel<false>;
-    kernel<<<grid, thread_num>>>(n_atom, ctx.n_lambdas(),
+    nonbonded_kernel<<<grid, thread_num>>>(n_atom, ctx.n_lambdas(),
                                            data_.atom_idx->gpu_data_p, data_.category->gpu_data_p, data_.q_state->gpu_data_p,
                                            data_.atom_lambdas->gpu_data_p, data_.atom_charge->gpu_data_p, data_.atom_vdw->gpu_data_p,
-                                           data_.pair_masks->gpu_data_p, ctx.topo.coulomb_constant, ctx.topo.vdw_rule, data_.atom_softcore->gpu_data_p, data_.softcore, ctx.active_foreign_targets(),
+                                           data_.pair_masks->gpu_data_p, ctx.topo.coulomb_constant, ctx.topo.vdw_rule, data_.atom_softcore->gpu_data_p, data_.softcore, ctx.foreign_targets, ctx.rest_scale, ctx.energy_step,
                                            coord_x_->gpu_data_p, coord_y_->gpu_data_p, coord_z_->gpu_data_p, ctx.dvelocities->gpu_data_p, ctx.energy.device());
 }
 

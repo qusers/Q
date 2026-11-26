@@ -1,7 +1,5 @@
 #include "energy.h"
 
-#include <cmath>
-
 #include "cpu_force_accumulation.h"
 
 void EnergyBuffer::init(int n_lambdas) {
@@ -73,22 +71,46 @@ void EnergyBuffer::unpack() {
     }
 }
 
-void EnergyBuffer::combine(const double* lambdas, double rest) {
+double EnergyData::state_energy(int s, const RestScale& rest) const {
+    const auto& b = eq_bond[s];
+    return b.Ubond + b.Uangle + b.Uimp + rest.full * b.Utor +
+           rest.full * (eq_qq[s].Ucoul + eq_qq[s].Uvdw) +
+           rest.half * (eq_qp[s].Ucoul + eq_qp[s].Uvdw + eq_qw[s].Ucoul + eq_qw[s].Uvdw) +
+           eq_restr[s];
+}
+
+// The per-state energies are stored raw (no lambda, no REST scale) at the current soft-core, so
+// U(target k) - U(current window) is their difference with each side's own weights, plus
+// foreign_shape[k]: what the soft pairs change by when they take the target's soft-core.
+void EnergyBuffer::calc_foreign_work(const foreign_targets_t& targets, const double* lambdas, const RestScale& rest) {
+    auto& d = data_;
+    d.foreign_work.assign(targets.n, 0.0);
+    for (int k = 0; k < targets.n; k++) {
+        const RestScale& target_rest = targets.rest[k];
+        // Topology torsions of the Q atoms have no lambda, only the REST scale.
+        double work = d.foreign_shape[k] + (target_rest.full - rest.full) * d.rest_tor;
+        for (int s = 0; s < n_lambdas_; s++) {
+            work += targets.weight[k][s] * d.state_energy(s, target_rest) - lambdas[s] * d.state_energy(s, rest);
+        }
+        d.foreign_work[k] = work;
+    }
+}
+
+void EnergyBuffer::combine(const double* lambdas, const RestScale& rest) {
     auto& d = data_;
     d.bond_q = {};
     d.nb_qx = {};
-    const double rest_sqrt = std::sqrt(rest);
     for (int s = 0; s < n_lambdas_; s++) {
         double L = lambdas[s];
         d.bond_q.Ubond += d.eq_bond[s].Ubond * L;
         d.bond_q.Uangle += d.eq_bond[s].Uangle * L;
-        d.bond_q.Utor += d.eq_bond[s].Utor * L * rest;
+        d.bond_q.Utor += d.eq_bond[s].Utor * L * rest.full;
         d.bond_q.Uimp += d.eq_bond[s].Uimp * L;
-        d.nb_qx.Ucoul += (rest * d.eq_qq[s].Ucoul + rest_sqrt * (d.eq_qp[s].Ucoul + d.eq_qw[s].Ucoul)) * L;
-        d.nb_qx.Uvdw += (rest * d.eq_qq[s].Uvdw + rest_sqrt * (d.eq_qp[s].Uvdw + d.eq_qw[s].Uvdw)) * L;
+        d.nb_qx.Ucoul += (rest.full * d.eq_qq[s].Ucoul + rest.half * (d.eq_qp[s].Ucoul + d.eq_qw[s].Ucoul)) * L;
+        d.nb_qx.Uvdw += (rest.full * d.eq_qq[s].Uvdw + rest.half * (d.eq_qp[s].Uvdw + d.eq_qw[s].Uvdw)) * L;
         d.restraint.Upres += d.eq_restr[s] * L;  // λ-weighted per-state restraint
     }
-    d.bond_p.Utor += rest * d.rest_tor;
+    d.bond_p.Utor += rest.full * d.rest_tor;
     d.restraint.Urestr = d.restraint.Uradx + d.restraint.Upolx +
                          d.restraint.Ushell + d.restraint.Ufix + d.restraint.Upres;
     d.Upot = d.bond_p.Ubond + d.bond_w.Ubond + d.bond_p.Uangle + d.bond_w.Uangle +

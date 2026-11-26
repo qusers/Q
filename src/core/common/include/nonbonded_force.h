@@ -105,7 +105,7 @@ struct NonbondedData {
     std::unique_ptr<HostDeviceBuffer<uint32_t>> pair_masks;
     // std::unique_ptr<HostDeviceBuffer<uint32_t>> pair_14_masks;
 
-    softcore_pair_params_t softcore;                          // method == SC_NONE: no soft-core
+    GapsysKernelParams softcore;
     std::vector<uint8_t> softcore_enabled;                    // per slot: Q atom flagged in [softcore] for its state
     std::unique_ptr<HostDeviceBuffer<real_t>> atom_softcore;  // per slot: (1 - lambda)^(1/6) if enabled, else -1
 

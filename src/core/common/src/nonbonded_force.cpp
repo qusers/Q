@@ -426,7 +426,7 @@ void NonbondedForce::update_lambdas(Context& ctx) {
     }
     if (ctx.command_info.requested_gpu) data_.atom_lambdas->upload();
 
-    if (data_.softcore.method != SC_NONE) {
+    if (ctx.softcore.method != SC_NONE) {
         real_t* sc = data_.atom_softcore->cpu_data_p;
         for (int i = 0; i < data_.n_total; i++) {
             if (!data_.softcore_enabled[i]) continue;
@@ -800,6 +800,7 @@ void NonbondedForce::build_softcore_table(Context& ctx, const ParseResult& parse
     data_.atom_softcore = HostDeviceBuffer<real_t>::from_vector(std::vector<real_t>(data_.n_total, -1), ctx.command_info.requested_gpu);
 
     if (parsed.softcore.method != SC_GAPSYS) return;
+    data_.softcore.method = SC_GAPSYS;
 
     const int nqat = ctx.n_qatoms();
     const int n_states = ctx.n_lambdas();
@@ -812,7 +813,6 @@ void NonbondedForce::build_softcore_table(Context& ctx, const ParseResult& parse
         throw InputError("[softcore] must list every Q atom once.");
     }
 
-    data_.softcore.method = SC_GAPSYS;
     data_.softcore.lj_scale = static_cast<real_t>(parsed.softcore.alpha_lj * std::pow(26.0 / 7.0, 1.0 / 6.0));
     data_.softcore.alpha_q = static_cast<real_t>(parsed.softcore.alpha_q);
     data_.softcore.sigma_q = static_cast<real_t>(parsed.softcore.sigma_q);

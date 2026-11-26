@@ -183,7 +183,8 @@ struct softcore_params_t {
     double sigma_q = 1.0;    // gapsys_sigma_q
 };
 
-struct softcore_pair_params_t {
+struct GapsysKernelParams {
+    // softcore_params_t cast to real_t for the kernels; lj_scale = alpha_lj * (26/7) ^ (1/6)
     int method = SC_NONE;
     real_t lj_scale = 0;  // alpha_lj * (26/7)^(1/6)
     real_t alpha_q = 0;

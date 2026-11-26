@@ -527,8 +527,7 @@ void Context::apply_stage(const StageSettings& stage) {
     if (command_info.requested_gpu) lambdas->upload();
 
     foreign_targets = {};
-    foreign_targets.rest = stage.rest_scale;
-    foreign_targets.rest_sqrt = std::sqrt(stage.rest_scale);
+    rest_scale = make_rest_scale(stage.rest_scale);
     foreign_targets.n = static_cast<int>(stage.foreign_lambdas.size());
     for (int k = 0; k < foreign_targets.n; k++) {
         const double weights[2] = {1.0 - stage.foreign_lambdas[k], stage.foreign_lambdas[k]};
@@ -536,11 +535,9 @@ void Context::apply_stage(const StageSettings& stage) {
             foreign_targets.weight[k][s] = weights[s];
             foreign_targets.sc[k][s] = std::pow(1.0 - weights[s], 1.0 / 6.0);
         }
-        const double rest = stage.foreign_rest.empty() ? 1.0 : stage.foreign_rest[k];
-        foreign_targets.rest_target[k] = rest;
-        foreign_targets.rest_target_sqrt[k] = std::sqrt(rest);
+        foreign_targets.rest[k] = make_rest_scale(stage.foreign_rest.empty() ? 1.0 : stage.foreign_rest[k]);
     }
-    n_foreign_active = 0;
+    energy_step = false;
 
     // Output paths for this stage; keep topology_file from the system.
     const std::string topology_file = native_output.topology_file;

@@ -22,11 +22,10 @@ __device__ void compute_pair(
     // scalars
     real_t coulomb_constant, int vdw_rule,
     // soft-core: soft_tile is false when neither tile holds Q atoms
-    bool soft_tile, const softcore_pair_params_t& sc_params, real_t atom1_sc, real_t atom2_sc,
+    bool soft_tile, const GapsysKernelParams& sc_params, real_t atom1_sc, real_t atom2_sc,
     // foreign work: tile_state is the FEP state of the tile's Q atoms
-    const foreign_targets_t& foreign, int tile_state, int n_states, energy_accum_t* e,
-    // REST2: pair_rest scales the force of this tile's pairs; q_pair = both atoms are Q atoms
-    real_t pair_rest, bool q_pair,
+    const foreign_targets_t& foreign, bool energy_step, int tile_state, int n_states, energy_accum_t* e,
+    real_t pair_rest, int n_q,
     // output
     real_t3& atom1_force, real_t3& atom2_force,
     real_t& e_coul, real_t& e_vdw) {
@@ -48,16 +47,20 @@ __device__ void compute_pair(
         if (sc >= 0) {
             const real_t sigma = softcore_pair_sigma(vdw_rule, atom1_vdw.aii_normal, atom1_vdw.bii_normal, atom2_vdw.aii_normal, atom2_vdw.bii_normal);
             const real_t dis = sqrt(dis2);
+            const real_t2 el_hard = el, vdw_hard = vdw;
             if (sc > 0) apply_gapsys(sc_params, sc, sigma, qij, coulomb_constant, pair, dis, el, vdw);
             // At r = 0 a soft pair has a finite energy and no force direction.
             if (!(dis2 > 0)) inv_dis = 0;
 
-            for (int k = 0; k < foreign.n; k++) {
-                const real_t target_sc = static_cast<real_t>(foreign.sc[k][tile_state]);
-                const real_t diff = gapsys_shape_difference(sc_params, sc, target_sc, sigma, qij, coulomb_constant, pair, dis);
-                if (diff != 0) {
-                    const double target_rest = q_pair ? foreign.rest_target[k] : foreign.rest_target_sqrt[k];
-                    atomic_add_energy(&e[EnergyBuffer::foreign_index(n_states, k)], static_cast<real_t>(foreign.weight[k][tile_state] * target_rest) * diff);
+            if (energy_step && dis2 > 0) {
+                for (int k = 0; k < foreign.n; k++) {
+                    const real_t target_sc = static_cast<real_t>(foreign.sc[k][tile_state]);
+                    real_t2 el_target = el_hard, vdw_target = vdw_hard;
+                    apply_gapsys(sc_params, target_sc, sigma, qij, coulomb_constant, pair, dis, el_target, vdw_target);
+                    const real_t diff = (el_target.x - el.x) + (vdw_target.x - vdw.x);
+                    if (diff != 0) {
+                        atomic_add_energy(&e[EnergyBuffer::foreign_index(n_states, k)], static_cast<real_t>(foreign.shape_weight(k, tile_state, n_q)) * diff);
+                    }
                 }
             }
         }
@@ -98,9 +101,6 @@ __device__ void shuffle(int& atom, real_t& atom_charge, vdw_atom_param_t& atom_v
     if (soft_tile) atom_sc = __shfl_sync(FULL_MASK, atom_sc, src);
 }
 
-// kSoft = false compiles the soft-core and foreign-work code out of the kernel, so a run
-// without soft-core pays nothing for it.
-template <bool kSoft>
 __device__ void nonbonded_force_calculation(
     int x_idx,
     int y_idx,
@@ -122,8 +122,10 @@ __device__ void nonbonded_force_calculation(
     real_t coulomb_constant,  // ctx.topo.coulomb_constant
     int vdw_rule,
     const real_t* atom_softcore,
-    softcore_pair_params_t sc_params,
+    GapsysKernelParams sc_params,
     foreign_targets_t foreign,
+    RestScale rest,
+    bool energy_step,
 
     // ---- coordinates / outputs ----
     const real_t* cx, const real_t* cy, const real_t* cz,
@@ -153,10 +155,9 @@ __device__ void nonbonded_force_calculation(
     const uint8_t q_category = static_cast<uint8_t>(AtomCategory::Q);
     const bool q_x = category[base_x] == q_category;
     const bool q_y = category[base_y] == q_category;
-    const bool soft_tile = kSoft && (q_x || q_y);
-    const bool q_pair = q_x && q_y;
-    const real_t pair_rest = static_cast<real_t>(q_pair ? foreign.rest : (q_x || q_y) ? foreign.rest_sqrt
-                                                                                      : 1.0);
+    const bool soft_tile = (sc_params.method != SC_NONE) && (q_x || q_y);
+    int n_q = static_cast<int>(q_x) + static_cast<int>(q_y);
+    const real_t pair_rest = static_cast<real_t>(rest.pair(n_q));
     const real_t atom1_sc = (soft_tile && atom1 != -1) ? atom_softcore[x_idx] : -1;
     real_t atom2_sc = (soft_tile && atom2 != -1) ? atom_softcore[y_idx] : -1;
     const int tile_state = category[base_x] == q_category ? q_state[base_x] : q_state[base_y];
@@ -171,8 +172,8 @@ __device__ void nonbonded_force_calculation(
                          atom2_charge, atom2_vdw, atom2_lambda, atom2_coord,
                          coulomb_constant, vdw_rule,
                          soft_tile, sc_params, atom1_sc, atom2_sc,
-                         foreign, tile_state, n_states, e,
-                         pair_rest, q_pair,
+                         foreign, energy_step, tile_state, n_states, e,
+                         pair_rest, n_q,
                          atom1_force, atom2_force,
                          local_e_coul, local_e_vdw);
         }

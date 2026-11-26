@@ -119,9 +119,8 @@ const std::vector<PairCase> kPairs = {
 
 const std::vector<double> kLambdas = {0.0, 0.25, 0.5, 0.9, 0.999};
 
-softcore_pair_params_t pair_params(double alpha_lj, double alpha_q, double sigma_q) {
-    softcore_pair_params_t p;
-    p.method = SC_GAPSYS;
+GapsysKernelParams pair_params(double alpha_lj, double alpha_q, double sigma_q) {
+    GapsysKernelParams p;
     // Same expression as NonbondedForce::build_softcore_table.
     p.lj_scale = static_cast<real_t>(alpha_lj * std::pow(26.0 / 7.0, 1.0 / 6.0));
     p.alpha_q = static_cast<real_t>(alpha_q);
@@ -195,7 +194,7 @@ struct PairResult {
     double e_coul, e_vdw, dv;
 };
 
-PairResult kernel_pair(const PairCase& c, const softcore_pair_params_t& p, real_t sc, double r) {
+PairResult kernel_pair(const PairCase& c, const GapsysKernelParams& p, real_t sc, double r) {
     const real_t dis = static_cast<real_t>(r);
     const real_t inv_dis = static_cast<real_t>(1.0) / dis;
     const real_t qij = static_cast<real_t>(c.i.q) * static_cast<real_t>(c.j.q);
@@ -213,7 +212,7 @@ PairResult kernel_pair(const PairCase& c, const softcore_pair_params_t& p, real_
 // apply_gapsys against the reference, for both rules, several lambdas, and r across both radii.
 void test_nonbonded_pair_matches_reference() {
     const double alpha_lj = 0.85, alpha_q = 3.0, sigma_q = 1.0;
-    const softcore_pair_params_t p = pair_params(alpha_lj, alpha_q, sigma_q);
+    const GapsysKernelParams p = pair_params(alpha_lj, alpha_q, sigma_q);
 
     for (const auto& c : kPairs) {
         const real_t2 pair = combine_vdw(c.rule, c.i.a, c.i.b, c.j.a, c.j.b);
@@ -249,7 +248,7 @@ void test_nonbonded_pair_matches_reference() {
 // lambda = 1 gives sc = 0: a pair of an enabled atom is then the hard pair, bit for bit.
 // A pair outside both radii is also untouched.
 void test_hard_limits() {
-    const softcore_pair_params_t p = pair_params(0.85, 3.0, 1.0);
+    const GapsysKernelParams p = pair_params(0.85, 3.0, 1.0);
     for (const auto& c : kPairs) {
         for (int k = 5; k <= 60; k++) {
             const double r = 0.1 * k;
@@ -275,7 +274,7 @@ void test_hard_limits() {
 // dV/dr of the non-bonded pair equals the finite difference of its energy, also across the radii.
 void test_nonbonded_force_is_energy_derivative() {
     if (!kDouble) return;  // a finite difference in single precision checks nothing useful
-    const softcore_pair_params_t p = pair_params(0.85, 3.0, 1.0);
+    const GapsysKernelParams p = pair_params(0.85, 3.0, 1.0);
     const double h = 1.0e-5;
     for (const auto& c : kPairs) {
         for (double lambda : kLambdas) {
@@ -296,7 +295,7 @@ void test_nonbonded_force_is_energy_derivative() {
 // The energy has no jump when the radius sweeps over the pair as lambda changes.
 void test_continuous_in_lambda() {
     if (!kDouble) return;
-    const softcore_pair_params_t p = pair_params(0.85, 3.0, 1.0);
+    const GapsysKernelParams p = pair_params(0.85, 3.0, 1.0);
     const PairCase& c = kPairs[0];
     const double r = 1.8;
     double previous = 0;

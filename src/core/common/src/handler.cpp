@@ -9,7 +9,8 @@
 void Handler::run_iteration(int iteration) {
     reset_energies();
     // Foreign work is only needed when this iteration's energies are used.
-    ctx.n_foreign_active = output_requirements(iteration).energy ? ctx.foreign_targets.n : 0;
+
+    ctx.energy_step = output_requirements(iteration).energy;
 
     // 3. nonbonded forces
     calc_nonbonded_forces();
@@ -200,8 +201,8 @@ void Handler::stop_cm_translation() {
 
 void Handler::calc_final_potential(int iteration) {
     ctx.step = iteration;
+    ctx.energy_step = true;
     reset_energies();
-    ctx.n_foreign_active = ctx.foreign_targets.n;
     calc_nonbonded_forces();
     calc_internal_forces(iteration);
     prepare_offdiags(iteration);
@@ -215,30 +216,10 @@ void Handler::update_energy_totals() {
     ctx.energy.unpack();
     temperature_->sync_for_output(ctx);  // publish Ukin before combine sums Utot
 
-    // Foreign work: U(lambda') - U(lambda). The per-state energies are linear in lambda except for
-    // the shape of the soft pairs, which the kernels put in foreign_shape. Uses the unpacked
-    // per-state energies, before combine() zeroes the states with lambda = 0.
-    auto& energy = ctx.energy.data();
-    const auto& targets = ctx.foreign_targets;
-    // Energy of state s with the Q region scaled by rest (sqrt_rest = sqrt(rest)).
-    auto state_energy = [&](int s, double rest, double sqrt_rest) {
-        const auto& b = energy.eq_bond[s];
-        return b.Ubond + b.Uangle + b.Uimp + rest * b.Utor +
-               rest * (energy.eq_qq[s].Ucoul + energy.eq_qq[s].Uvdw) +
-               sqrt_rest * (energy.eq_qp[s].Ucoul + energy.eq_qp[s].Uvdw + energy.eq_qw[s].Ucoul + energy.eq_qw[s].Uvdw) +
-               energy.eq_restr[s];
-    };
-    energy.foreign_work.assign(targets.n, 0.0);
-    for (int k = 0; k < targets.n; k++) {
-        double work = energy.foreign_shape[k] + (targets.rest_target[k] - targets.rest) * energy.rest_tor;
-        for (int s = 0; s < ctx.n_lambdas(); s++) {
-            work += targets.weight[k][s] * state_energy(s, targets.rest_target[k], targets.rest_target_sqrt[k]) -
-                    ctx.lambdas->cpu_data_p[s] * state_energy(s, targets.rest, targets.rest_sqrt);
-        }
-        energy.foreign_work[k] = work;
-    }
+    const double* lambdas = ctx.lambdas->cpu_data_p;
+    ctx.energy.calc_foreign_work(ctx.foreign_targets, lambdas, ctx.rest_scale);
 
-    ctx.energy.combine(ctx.lambdas->cpu_data_p, targets.rest);
+    ctx.energy.combine(lambdas, ctx.rest_scale);
 }
 
 void Handler::run() {
