@@ -180,12 +180,16 @@ ARCHITECTURE_SLURM = "slurm"
 ARCHITECTURE_LOCAL = "local"
 ARCHITECTURE_K8S = "k8s"
 ARCHITECTURE_QMAPFEP_SLURM = "qmapfep-slurm"
+# QmapFEP on one machine reached over SSH, with no scheduler: the qmapfep-slurm
+# run script, with a submit script that runs a leg's tasks one after another.
+ARCHITECTURE_SIMPLE_VM = "simple-vm"
 
 ARCHITECTURES = (
     ARCHITECTURE_SLURM,
     ARCHITECTURE_LOCAL,
     ARCHITECTURE_K8S,
     ARCHITECTURE_QMAPFEP_SLURM,
+    ARCHITECTURE_SIMPLE_VM,
 )
 
 DEFAULT_ARCHITECTURE = ARCHITECTURE_SLURM
@@ -196,6 +200,7 @@ ARCHITECTURE_SCRIPTS = {
     ARCHITECTURE_LOCAL: ("FEP_submit_noslurm.sh", "run_noslurm.sh"),
     ARCHITECTURE_K8S: ("FEP_submit_k8s.sh", "run_k8s.sh"),
     ARCHITECTURE_QMAPFEP_SLURM: ("FEP_submit.sh", "run_qmapfep_slurm.sh"),
+    ARCHITECTURE_SIMPLE_VM: ("FEP_submit_simple_vm.sh", "run_qmapfep_slurm.sh"),
 }
 
 

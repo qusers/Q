@@ -28,6 +28,7 @@ from .settings.settings import (
     ARCHITECTURE_LOCAL,
     ARCHITECTURE_QMAPFEP_SLURM,
     ARCHITECTURE_SCRIPTS,
+    ARCHITECTURE_SIMPLE_VM,
     CLUSTER_DICT,
     CONFIGS,
     resolve_architecture,
@@ -865,11 +866,12 @@ class QligFEP:
           SLURM running several array tasks at once. Each step is additionally
           followed by a NaN check, because qdyn exits 0 on a trajectory whose
           energies stopped being finite - without it the run continues through
-          every remaining window and is reported as a success. The scheduler may
+          every remaining window and is reported as a success. simple-vm runs
+          the same script without a scheduler. The scheduler may
           add arguments for qdyn (`$qdyn_args`), which is how the same tree runs
           on the QGPU engine with --gpu.
         """
-        if self.architecture == ARCHITECTURE_QMAPFEP_SLURM:
+        if self.architecture in (ARCHITECTURE_QMAPFEP_SLURM, ARCHITECTURE_SIMPLE_VM):
             return f"time $qdyn $qdyn_args {file_base}.inp > {file_base}.log\ncheck_nan {file_base}.log\n"
 
         if self.architecture == ARCHITECTURE_K8S:

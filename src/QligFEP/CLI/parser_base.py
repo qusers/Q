@@ -249,8 +249,9 @@ def parse_arguments(program: str) -> argparse.Namespace:
             "them sequentially on one machine with no scheduler. `k8s` runs a single "
             "replicate per invocation, with the orchestrator supplying replicate identity. "
             "`qmapfep-slurm` gives one array task per replicate, runs qdyn serially and "
-            "writes .finished/.failed sentinels. This replaces --no-slurm, which could only "
-            "express two of the four."
+            "writes .finished/.failed sentinels. `simple-vm` runs the qmapfep-slurm run script "
+            "on one machine without a scheduler, a leg's tasks one after another. This replaces "
+            "--no-slurm, which could only express two of these."
         ),
     )
     parser.add_argument(
