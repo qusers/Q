@@ -123,6 +123,10 @@ class Engine:
         self._native.set_state(
             state["coords"], state["velocities"], list(state["theta_corr"]))
 
+    def load_restart(self, path):
+        """Replace the current state by the one in a Q restart file (.re)."""
+        self._native.load_restart(_abs(path))
+
     def _to_native(self, config: Config):
         if len(config.lambdas) != self._native.n_states:
             raise InputError(

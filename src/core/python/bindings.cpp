@@ -3,7 +3,10 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <cstdint>
+#include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <vector>
@@ -32,6 +35,63 @@ std::string abs_inp(const std::string& file) {
     if (!std::filesystem::is_regular_file(p)) throw InputError("Input file does not exist: " + p.string());
     if (p.extension() != ".inp") throw InputError("Expected a Q .inp input file.");
     return p.string();
+}
+
+// One Fortran record of a Q restart file: byte count, content, byte count. False at the end of the file.
+bool read_record(std::ifstream& in, std::vector<char>& content) {
+    int32_t size = 0, size_after = 0;
+    in.read(reinterpret_cast<char*>(&size), sizeof(size));
+    if (!in) return false;
+    if (size <= 0) throw InputError("Invalid restart file: bad record size.");
+    content.assign(size, 0);
+    in.read(content.data(), size);
+    in.read(reinterpret_cast<char*>(&size_after), sizeof(size_after));
+    if (!in || size_after != size) throw InputError("Invalid or truncated restart file.");
+    return true;
+}
+
+// A coordinate or velocity record: 3 * n_atoms as int32, then x y z of every atom as double.
+template <class T>
+std::vector<T> restart_vectors(const std::vector<char>& content, int n_atoms, const std::string& what) {
+    int32_t count = 0;
+    if (content.size() >= sizeof(count)) std::memcpy(&count, content.data(), sizeof(count));
+    if (count != 3 * n_atoms || content.size() != sizeof(count) + size_t(count) * sizeof(double))
+        throw InputError("Restart file does not match the system: " + what + " for " + std::to_string(count / 3) +
+                         " atoms, the engine has " + std::to_string(n_atoms) + ".");
+    std::vector<T> out(n_atoms);
+    for (int i = 0; i < n_atoms; ++i) {
+        double xyz[3];
+        std::memcpy(xyz, content.data() + sizeof(count) + size_t(i) * sizeof(xyz), sizeof(xyz));
+        out[i].x = xyz[0];
+        out[i].y = xyz[1];
+        out[i].z = xyz[2];
+    }
+    return out;
+}
+
+// A Q restart file (.re) as a state: coordinates, velocities and, if the file has them, the
+// water polarisation shells (shell count as int32, then one float per shell).
+SystemState read_restart(const std::string& path, int n_atoms) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) throw InputError("Could not open restart file " + path);
+    SystemState s;
+    std::vector<char> content;
+    if (!read_record(in, content)) throw InputError("Restart file has no coordinates: " + path);
+    s.coords = restart_vectors<coord_t>(content, n_atoms, "coordinates");
+    if (!read_record(in, content)) throw InputError("Restart file has no velocities: " + path);
+    s.velocities = restart_vectors<vel_t>(content, n_atoms, "velocities");
+    if (read_record(in, content)) {
+        int32_t shells = 0;
+        if (content.size() >= sizeof(shells)) std::memcpy(&shells, content.data(), sizeof(shells));
+        if (shells > 0 && content.size() == sizeof(shells) + size_t(shells) * sizeof(float)) {
+            for (int i = 0; i < shells; ++i) {
+                float value = 0;
+                std::memcpy(&value, content.data() + sizeof(shells) + size_t(i) * sizeof(value), sizeof(value));
+                s.theta_corr.push_back(value);
+            }
+        }
+    }
+    return s;
 }
 
 // Parsed settings as qgpu.Config field values (the parser's defaults included).
@@ -249,6 +309,14 @@ class Engine {
         broken_ = false;
     }
 
+    // Replace the current state by the one in a Q restart file (as set_state does with arrays).
+    void load_restart(const std::string& path) {
+        const SystemState s = read_restart(path, n_atoms_);
+        check_cuda(cudaSetDevice(device_));
+        handler_->set_state(s);
+        broken_ = false;
+    }
+
    private:
     void guard() const {
         if (broken_)
@@ -407,6 +475,7 @@ PYBIND11_MODULE(QGPU_MODULE_NAME, m) {
         .def("run", &Engine::run, py::call_guard<py::gil_scoped_release>())
         .def("get_state", &Engine::get_state)
         .def("set_state", &Engine::set_state, py::arg("coords"), py::arg("velocities"), py::arg("theta_corr"))
+        .def("load_restart", &Engine::load_restart, py::arg("path"))
         .def("last_energies", &Engine::last_energies);
 
     m.def("read_inp", &read_inp, py::arg("input_file"));
