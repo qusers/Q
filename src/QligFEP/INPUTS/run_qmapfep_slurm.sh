@@ -88,6 +88,10 @@ QDYN
 # (SLURM --export=Q_QDYN=...,Q_QFEP=...); fall back to the default when unset.
 qdyn=${Q_QDYN:-$qdyn}
 qfep_bin=${Q_QFEP:-QFEP}
+# Arguments for qdyn from the scheduler, such as --gpu for the QGPU engine, which
+# reads the same inputs and is otherwise called the same way. Left unquoted where
+# it is used, so several arguments split and none expands to nothing.
+qdyn_args=${Q_QDYN_ARGS:-}
 
 # check_nan fails the step when Q's energies stopped being finite.
 #

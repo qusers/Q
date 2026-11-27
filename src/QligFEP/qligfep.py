@@ -865,10 +865,12 @@ class QligFEP:
           SLURM running several array tasks at once. Each step is additionally
           followed by a NaN check, because qdyn exits 0 on a trajectory whose
           energies stopped being finite - without it the run continues through
-          every remaining window and is reported as a success.
+          every remaining window and is reported as a success. The scheduler may
+          add arguments for qdyn (`$qdyn_args`), which is how the same tree runs
+          on the QGPU engine with --gpu.
         """
         if self.architecture == ARCHITECTURE_QMAPFEP_SLURM:
-            return f"time $qdyn {file_base}.inp > {file_base}.log\ncheck_nan {file_base}.log\n"
+            return f"time $qdyn $qdyn_args {file_base}.inp > {file_base}.log\ncheck_nan {file_base}.log\n"
 
         if self.architecture == ARCHITECTURE_K8S:
             return f"time $qdyn {file_base}.inp > {file_base}.log\n"
