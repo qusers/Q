@@ -1,0 +1,2085 @@
+#include "inp_parser.h"
+
+#include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <map>
+#include <set>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+#include "constants.h"
+#include "error_helper.h"  // parse_error(): InputError, so Python sees qgpu.InputError
+#include "str_helpers.h"
+
+namespace {
+
+std::string value_or(const std::map<std::string, std::string>& values, const std::string& key, const std::string& fallback) {
+    auto it = values.find(key);
+    if (it == values.end()) return fallback;
+    return it->second;
+}
+
+std::string bool_value(const std::map<std::string, std::string>& values, const std::string& key, const std::string& fallback) {
+    auto it = values.find(key);
+    if (it == values.end()) return fallback;
+    std::string value = lower_normalized(it->second);
+    if (value == "true" || value == "yes" || value == "1") return "on";
+    if (value == "false" || value == "no" || value == "0") return "off";
+    return value;
+}
+
+int parse_int(const std::string& value) {
+    return std::atoi(value.c_str());
+}
+
+double parse_double(const std::string& value) {
+    return std::atof(value.c_str());
+}
+
+int row_int(const std::vector<std::string>& row, size_t index, int fallback = 0) {
+    return index < row.size() ? parse_int(row[index]) : fallback;
+}
+
+double row_double(const std::vector<std::string>& row, size_t index, double fallback = 0.0) {
+    return index < row.size() ? parse_double(row[index]) : fallback;
+}
+
+bool is_on_value(const std::map<std::string, std::string>& values, const std::string& key, const std::string& fallback) {
+    return bool_value(values, key, fallback) == "on";
+}
+
+bool is_on_token(const std::string& token) {
+    std::string value = lower_normalized(token);
+    if (value == "true" || value == "yes" || value == "1") return true;
+    return value == "on";
+}
+
+bool parse_constraint_logical(const std::string& value, const std::string& key) {
+    const std::string normalized = lower_normalized(value);
+    if (normalized == "on" || normalized == "1") return true;
+    if (normalized == "off" || normalized == "0") return false;
+    throw parse_error("Q input [MD] " + key + " must be on, off, 1, or 0.");
+}
+
+bool parse_constraint_switch(
+    const std::map<std::string, std::string>& values,
+    const std::string& canonical_key,
+    const std::string& legacy_key,
+    bool default_value) {
+    const auto canonical = values.find(canonical_key);
+    const auto legacy = values.find(legacy_key);
+
+    if (canonical != values.end() && legacy != values.end()) {
+        throw parse_error(
+            "Q input [MD] must not specify both " + canonical_key +
+            " and deprecated alias " + legacy_key + ".");
+    }
+    if (canonical != values.end()) {
+        return parse_constraint_logical(canonical->second, canonical_key);
+    }
+    if (legacy != values.end()) {
+        return parse_constraint_logical(legacy->second, legacy_key);
+    }
+    return default_value;
+}
+
+std::vector<std::vector<std::string>> checked_split_groups(const std::vector<std::string>& flat, size_t width) {
+    if (width == 0) throw parse_error("Invalid grouped input width.");
+    if (flat.size() % width != 0) {
+        throw parse_error("Invalid grouped input length: " + std::to_string(flat.size()) + " values cannot be split into groups of " + std::to_string(width) + ".");
+    }
+
+    std::vector<std::vector<std::string>> groups;
+    groups.reserve(flat.size() / width);
+    for (size_t i = 0; i + width <= flat.size(); i += width) {
+        groups.emplace_back(flat.begin() + i, flat.begin() + i + width);
+    }
+    return groups;
+}
+
+coord_t row_coord(const std::vector<std::string>& row) {
+    return {row_double(row, 0), row_double(row, 1), row_double(row, 2)};
+}
+
+vel_t row_vel(const std::vector<std::string>& row) {
+    return {row_double(row, 0), row_double(row, 1), row_double(row, 2)};
+}
+
+std::string dirname_of_local(const std::string& path) {
+    std::filesystem::path p(path);
+    std::filesystem::path parent = p.parent_path();
+    if (parent.empty()) return ".";
+    return parent.string();
+}
+
+std::string resolve_existing_or_cwd_local(const std::string& value, const std::string& input_dir) {
+    if (value.empty()) return "";
+    std::filesystem::path path(value);
+    if (path.is_absolute()) return path.string();
+
+    std::filesystem::path input_relative = std::filesystem::path(input_dir) / path;
+    if (std::filesystem::exists(input_relative)) return input_relative.string();
+    return (std::filesystem::current_path() / path).string();
+}
+
+std::string resolve_output_path_local(const std::string& value, const std::string& input_dir) {
+    if (value.empty()) return "";
+    std::filesystem::path path(value);
+    if (path.is_absolute()) return path.string();
+    return (std::filesystem::path(input_dir) / path).string();
+}
+
+std::string join_space(const std::vector<std::string>& fields) {
+    std::string out;
+    for (size_t i = 0; i < fields.size(); i++) {
+        if (i > 0) out += " ";
+        out += fields[i];
+    }
+    return out;
+}
+
+std::string trajectory_atoms_setting(const std::map<std::string, std::vector<std::vector<std::string>>>& lists) {
+    auto it = lists.find("trajectory-atoms");
+    if (it == lists.end() || it->second.empty()) return "";
+    if (it->second.size() > 1) {
+        throw parse_error("Native QGPU output supports only one trajectory_atoms mask line.");
+    }
+    return join_space(it->second[0]);
+}
+
+std::vector<std::string> split_state_row(const std::string& value) {
+    return split_ws(value);
+}
+
+std::string precise_double_string(double value) {
+    std::ostringstream out;
+    out << std::setprecision(17) << value;
+    return out.str();
+}
+
+void add_short_neighbors(const std::vector<std::string>& lines, std::vector<std::pair<int, int>>& out) {
+    out.clear();
+    int n_lines = static_cast<int>(lines.size());
+    for (int line_i = 0; line_i < n_lines; line_i++) {
+        for (int i = 0; i < line_width && static_cast<size_t>(i) < lines[line_i].size(); i++) {
+            if (lines[line_i][i] == '1') {
+                out.push_back({line_i, (line_i + i + 1) % n_lines});
+            }
+        }
+    }
+}
+
+void add_long_neighbors(const std::vector<std::vector<std::string>>& rows, std::vector<std::pair<int, int>>& out) {
+    out.resize(rows.size());
+    for (size_t i = 0; i < rows.size(); i++) {
+        out[i] = {row_int(rows[i], 0) - 1, row_int(rows[i], 1) - 1};
+    }
+}
+
+bool read_fortran_record(std::ifstream& in, std::vector<char>& payload) {
+    int32_t nbytes = 0;
+    in.read(reinterpret_cast<char*>(&nbytes), sizeof(nbytes));
+    if (!in) return false;
+    if (nbytes <= 0) throw parse_error("Invalid Fortran restart record marker.");
+    payload.assign(nbytes, 0);
+    in.read(payload.data(), nbytes);
+    int32_t end_nbytes = 0;
+    in.read(reinterpret_cast<char*>(&end_nbytes), sizeof(end_nbytes));
+    if (!in || end_nbytes != nbytes) throw parse_error("Invalid or truncated Fortran restart record.");
+    return true;
+}
+
+std::vector<std::vector<std::string>> unpack_restart_vector(const std::vector<char>& payload) {
+    if (payload.size() < sizeof(int32_t)) throw parse_error("Invalid restart vector record.");
+    int32_t nat3 = 0;
+    std::memcpy(&nat3, payload.data(), sizeof(int32_t));
+    if (nat3 <= 0 || nat3 % 3 != 0) throw parse_error("Invalid restart atom count.");
+    size_t expected = sizeof(int32_t) + static_cast<size_t>(nat3) * sizeof(double);
+    if (payload.size() != expected) throw parse_error("Invalid restart vector record length.");
+
+    const double* values = reinterpret_cast<const double*>(payload.data() + sizeof(int32_t));
+    std::vector<std::vector<std::string>> rows;
+    rows.reserve(nat3 / 3);
+    for (int i = 0; i < nat3; i += 3) {
+        rows.push_back({precise_double_string(values[i]), precise_double_string(values[i + 1]), precise_double_string(values[i + 2])});
+    }
+    return rows;
+}
+
+std::vector<double> unpack_restart_theta_corr(const std::vector<char>& payload) {
+    if (payload.size() < sizeof(int32_t)) return {};
+
+    int32_t n_shells = 0;
+    std::memcpy(&n_shells, payload.data(), sizeof(int32_t));
+    if (n_shells <= 0) return {};
+
+    size_t expected = sizeof(int32_t) + static_cast<size_t>(n_shells) * sizeof(float);
+    if (payload.size() != expected) return {};
+
+    std::vector<double> theta_corr(n_shells);
+    const float* values = reinterpret_cast<const float*>(payload.data() + sizeof(int32_t));
+    for (int i = 0; i < n_shells; i++) {
+        theta_corr[i] = static_cast<double>(values[i]);
+    }
+    return theta_corr;
+}
+
+void read_restart_vectors(const std::string& path,
+                          std::vector<std::vector<std::string>>& coords,
+                          std::vector<std::vector<std::string>>& velocities,
+                          std::vector<double>& theta_corr) {
+    std::ifstream in(path.c_str(), std::ios::binary);
+    if (!in) throw parse_error("Could not open restart file " + path);
+
+    std::vector<char> payload;
+    if (!read_fortran_record(in, payload)) throw parse_error("Could not read restart coordinates.");
+    coords = unpack_restart_vector(payload);
+    if (!read_fortran_record(in, payload)) throw parse_error("Could not read restart velocities.");
+    velocities = unpack_restart_vector(payload);
+    if (coords.size() != velocities.size()) throw parse_error("Restart coordinate and velocity atom counts differ.");
+
+    theta_corr.clear();
+    if (read_fortran_record(in, payload)) {
+        theta_corr = unpack_restart_theta_corr(payload);
+    }
+}
+
+double q_randm(int& seed) {
+    const int m = 100000000;
+    const int m1 = 10000;
+    const int mult = 31415821;
+    int irand = std::abs(seed) % m;
+    int irandh = irand / m1;
+    int irandl = irand % m1;
+    int multh = mult / m1;
+    int multl = mult % m1;
+    irand = ((irandh * multl + irandl * multh) % m1) * m1 + irandl * multl;
+    irand = (irand + 1) % m;
+    double r = ((irand / 10) * 10) / static_cast<double>(m);
+    if (r <= 0.0 || r > 1.0) r = 0.0;
+    seed = irand;
+    return r;
+}
+
+double q_gauss(int& seed, double sd) {
+    double total = 0.0;
+    for (int i = 0; i < 12; i++) total += q_randm(seed);
+    return (total - 6.0) * sd;
+}
+}  // namespace
+
+struct InpParser::MDInput {
+    std::map<std::string, std::map<std::string, std::string>> keyed;
+    std::map<std::string, std::vector<std::vector<std::string>>> lists;
+};
+
+struct InpParser::TopData {
+    std::string natoms_solute = "0";
+    std::string nbonds_solute = "0";
+    std::string nangles_solute = "0";
+    std::string ntorsions_solute = "0";
+    std::string nimpropers_solute = "0";
+    std::vector<std::vector<std::string>> coords;
+    std::vector<std::vector<std::string>> bonds;
+    std::vector<std::vector<std::string>> angles;
+    std::vector<std::vector<std::string>> torsions;
+    std::vector<std::vector<std::string>> impropers;
+    std::vector<std::vector<std::string>> ngbr14long;
+    std::vector<std::vector<std::string>> ngbr23long;
+    std::vector<std::pair<int, int>> atypes;
+    std::map<int, std::vector<std::string>> cbonds;
+    std::map<int, std::vector<std::string>> cangles;
+    std::map<int, std::vector<std::string>> ctorsions;
+    std::map<int, std::vector<std::string>> cimpropers;
+    std::map<int, std::vector<std::string>> catypes;
+    std::vector<std::pair<int, int>> charges;
+    std::map<int, std::string> ccharges;
+    std::vector<std::string> ngbr14;
+    std::vector<std::string> ngbr23;
+    std::vector<std::string> molecules;
+    std::vector<std::string> excluded;
+    std::string solute_cgps = "0";
+    std::string solvent_cgps = "0";
+    std::vector<std::vector<std::string>> charge_group_headers;
+    std::vector<std::vector<std::string>> charge_group_atoms;
+    std::string solvtype = "0";
+    std::string exclusion = "0";
+    std::string radii = "0";
+    std::string scaling14 = "1";
+    std::string coulomb = "332.0716";
+    std::string vdw_rule = "1";
+    std::vector<std::string> solucenter;
+    std::vector<std::string> solvcenter;
+
+    std::string use_switch_atom = "1";
+
+    int ff_type = FF_GROMOS;
+};
+
+struct InpParser::FepData {
+    int states = 0;
+    bool softcore_use_max_potential = false;
+    softcore_params_t softcore;
+    std::vector<std::string> q_atoms;
+    std::vector<std::vector<std::string>> q_atypes;
+    std::vector<std::vector<std::string>> q_charges;
+    std::vector<std::vector<std::string>> q_softpairs;
+    std::vector<std::vector<std::string>> q_exclpairs;
+    std::vector<std::vector<std::string>> q_softcores;
+    std::vector<std::vector<std::string>> q_bonds;
+    std::vector<std::vector<std::string>> q_angles;
+    std::vector<std::vector<std::string>> q_torsions;
+    std::vector<std::vector<std::string>> q_impropers;
+    std::vector<std::vector<std::string>> q_shakes;
+    std::vector<std::vector<std::string>> q_catypes;
+    std::vector<std::vector<std::string>> q_elscales;
+    std::vector<std::vector<std::string>> q_cbonds;
+    std::vector<std::vector<std::string>> q_cangles;
+    std::vector<std::vector<std::string>> q_ctorsions;
+    std::vector<std::vector<std::string>> q_cimpropers;
+    std::vector<std::vector<std::string>> q_angcouples;
+    std::vector<std::vector<std::string>> q_torcouples;
+    std::vector<std::vector<std::string>> q_imprcouples;
+    std::vector<std::vector<std::string>> q_offdiags;
+    std::map<std::string, int> atypemap;
+};
+
+InpParser::InpParser(const std::string& inp_file) : BaseParser(inp_file), input_dir_(dirname_of_local(inp_file)) {}
+
+std::unique_ptr<InpParser> InpParser::from_sections(const std::string& topology,
+                                                    const std::string& fep,
+                                                    const Sections& keyed,
+                                                    const Lists& lists) {
+    namespace fs = std::filesystem;
+    const std::string topo_abs = fs::absolute(topology).string();
+    const std::string fep_abs = fep.empty() ? std::string() : fs::absolute(fep).string();
+    if (!fs::is_regular_file(topo_abs)) throw parse_error("Topology file does not exist: " + topo_abs);
+    if (!fep_abs.empty() && !fs::is_regular_file(fep_abs)) throw parse_error("FEP file does not exist: " + fep_abs);
+
+    // file_path is only used for error messages; input_dir_ becomes the topology folder.
+    std::unique_ptr<InpParser> p = from_settings(keyed, lists);
+    p->file_path = topo_abs;
+    p->input_dir_ = dirname_of_local(topo_abs);
+
+    auto& files = p->input_->keyed["files"];
+    files["topology"] = topo_abs;
+    if (!fep_abs.empty()) files["fep"] = fep_abs;
+
+    std::string restart_abs;
+    const std::string restart = value_or(files, "restart", "");
+    if (!restart.empty()) {
+        restart_abs = fs::absolute(restart).string();
+        if (!fs::is_regular_file(restart_abs)) throw parse_error("Restart file does not exist: " + restart_abs);
+        files["restart"] = restart_abs;
+    }
+
+    // ensure_md_input() returns early because input_ is set, so set what it would have set.
+    p->topology_file_ = topo_abs;
+    p->fep_file_ = fep_abs;
+    p->restart_file_ = restart_abs;  // empty -> fresh start; coordinates come from the topology
+    return p;
+}
+
+std::unique_ptr<InpParser> InpParser::from_settings(const Sections& keyed, const Lists& lists) {
+    std::unique_ptr<InpParser> p(new InpParser(""));
+    p->input_ = std::make_unique<MDInput>();  // so ensure_md_input() never reads a file
+
+    for (const auto& [section, values] : keyed) {
+        auto& dst = p->input_->keyed[lower_normalized(section)];
+        for (const auto& [key, value] : values) dst[lower_normalized(key)] = value;
+    }
+    for (const auto& [section, rows] : lists) {
+        p->input_->lists[lower_normalized(section)] = rows;
+    }
+    return p;
+}
+
+InpParser::~InpParser() = default;
+
+void InpParser::ensure_md_input() {
+    if (input_) return;
+
+    std::ifstream in(file_path.c_str());
+    if (!in) throw parse_error("Could not open Q input file " + file_path);
+
+    input_ = std::make_unique<MDInput>();
+    std::string section;
+    std::string raw;
+    while (std::getline(in, raw)) {
+        std::string line = strip_comment(raw);
+        if (line.empty()) continue;
+        if (line[0] == '[' && line[line.size() - 1] == ']') {
+            section = lower_normalized(trim(line.substr(1, line.size() - 2)));
+            continue;
+        }
+        if (section.empty()) continue;
+
+        std::vector<std::string> fields = split_ws(line);
+        if (fields.empty()) continue;
+
+        if (section == "lambdas" || section == "foreign-lambdas" || section == "trajectory-atoms" || section == "sequence-restraints" || section == "atom-restraints" ||
+            section == "distance-restraints" || section == "angle-restraints" || section == "wall-restraints") {
+            input_->lists[section].push_back(fields);
+        } else if (fields.size() >= 2) {
+            std::string key = lower_normalized(fields[0]);
+            std::string value = fields[1];
+            for (size_t i = 2; i < fields.size(); i++) value += " " + fields[i];
+            input_->keyed[section][key] = value;
+        }
+    }
+
+    if (!input_->keyed.count("files")) throw parse_error("Q input requires a [files] section.");
+    const auto& files = input_->keyed["files"];
+    topology_file_ = resolve_existing_or_cwd_local(value_or(files, "topology", ""), input_dir_);
+    fep_file_ = resolve_existing_or_cwd_local(value_or(files, "fep", ""), input_dir_);
+    restart_file_ = resolve_existing_or_cwd_local(value_or(files, "restart", ""), input_dir_);
+    if (topology_file_.empty()) throw parse_error("Q input [files] section must specify topology.");
+}
+
+void InpParser::ensure_topology() {
+    if (top_) return;
+    ensure_md_input();
+
+    std::ifstream in(topology_file_.c_str());
+    if (!in) throw parse_error("Could not open topology file " + topology_file_);
+
+    top_ = std::make_unique<TopData>();
+    int block = 0;
+    int atype_count = 0;
+    int charge_group_switch = 0;
+    int charge_group_atoms_expected = 0;
+    std::vector<std::string> current_group_header;
+    std::vector<std::string> current_group_atoms;
+    std::vector<std::string> coord_flat, bond_flat, angle_flat, torsion_flat, improper_flat;
+    std::vector<std::string> charges_tmp, masses, aii_normal, bii_normal, aii_polar, bii_polar, aii14, bii14;
+    std::string ngbr14_flat, ngbr23_flat;
+
+    std::string raw;
+    while (std::getline(in, raw)) {
+        std::string line = trim(raw);
+        if (line.empty()) continue;
+
+        if (block == 0) {
+            const auto fields = split_ws(line);
+
+            if (!fields.empty() && fields[0] == "FF_TYPE") {
+                if (fields.size() < 2) {
+                    throw parse_error("FF_TYPE requires a numeric value.");
+                }
+
+                top_->ff_type = parse_int(fields[1]);
+
+                if (top_->ff_type != FF_GROMOS &&
+                    top_->ff_type != FF_AMBER &&
+                    top_->ff_type != FF_CHARMM) {
+                    throw parse_error("Unsupported FF_TYPE: " + fields[1]);
+                }
+
+                continue;
+            }
+        }
+
+        if (line.find("Total no. of atoms") != std::string::npos) {
+            std::vector<std::string> f = split_ws(line);
+            if (f.size() > 1) top_->natoms_solute = f[1];
+            block = 1;
+            continue;
+        }
+        if (line.find("No. of integer atom codes") != std::string::npos) {
+            block = 2;
+            continue;
+        }
+        if (line.find("No. of bonds") != std::string::npos) {
+            std::vector<std::string> f = split_ws(line);
+            if (f.size() > 1) top_->nbonds_solute = f[1];
+            block = 3;
+            continue;
+        }
+        if (line.find("No. of bond codes") != std::string::npos) {
+            block = 4;
+            continue;
+        }
+        if (line.find("No. of angles") != std::string::npos) {
+            std::vector<std::string> f = split_ws(line);
+            if (f.size() > 1) top_->nangles_solute = f[1];
+            block = 5;
+            continue;
+        }
+        if (line.find("No. of angle codes") != std::string::npos) {
+            block = 6;
+            continue;
+        }
+        if (line.find("No. of torsions") != std::string::npos) {
+            std::vector<std::string> f = split_ws(line);
+            if (f.size() > 1) top_->ntorsions_solute = f[1];
+            block = 7;
+            continue;
+        }
+        if (line.find("No. of torsion codes") != std::string::npos) {
+            block = 8;
+            continue;
+        }
+        if (line.find("No. of impropers") != std::string::npos) {
+            std::vector<std::string> f = split_ws(line);
+            if (f.size() > 1) top_->nimpropers_solute = f[1];
+            block = 9;
+            continue;
+        }
+        if (line.find("No. of improper codes") != std::string::npos) {
+            block = 10;
+            continue;
+        }
+        if (line.find("No. of atomic charges") != std::string::npos) {
+            block = 11;
+            continue;
+        }
+        if (line.find("No. of charge groups") != std::string::npos) {
+            std::vector<std::string> f = split_ws(line);
+            int total = f.empty() ? 0 : parse_int(f[0]);
+            int solute = f.size() > 1 ? parse_int(f[1]) : 0;
+            top_->solute_cgps = std::to_string(solute);
+            top_->solvent_cgps = std::to_string(total - solute);
+            top_->use_switch_atom = f.size() > 2 ? f[2] : "1";
+            block = 12;
+            charge_group_switch = 1;
+            continue;
+        }
+        if (line.find("vdW combination rule") != std::string::npos) {
+            std::vector<std::string> f = split_ws(line);
+            if (!f.empty()) top_->vdw_rule = f[0];
+            block = 13;
+            continue;
+        }
+        if (line.find("Electrostatic 1-4 scaling factor") != std::string::npos) {
+            block = 14;
+        }
+        if (line.find("Masses") != std::string::npos) {
+            block = 15;
+            continue;
+        }
+        if (line.find("sqrt (Aii) normal") != std::string::npos || line.find("R* normal:") != std::string::npos) {
+            block = 16;
+            continue;
+        }
+        if (line.find("sqrt (Bii) normal") != std::string::npos || line.find("epsilon normal:") != std::string::npos) {
+            block = 17;
+            continue;
+        }
+        if (line.find("sqrt (Aii) polar") != std::string::npos || line.find("R* polar:") != std::string::npos) {
+            block = 18;
+            continue;
+        }
+        if (line.find("sqrt (Bii) polar") != std::string::npos || line.find("epsilon polar:") != std::string::npos) {
+            block = 19;
+            continue;
+        }
+        if (line.find("sqrt (Aii) 1-4") != std::string::npos || line.find("R* 1-4:") != std::string::npos) {
+            block = 20;
+            continue;
+        }
+        if (line.find("sqrt (Bii) 1-4") != std::string::npos || line.find("epsilon 1-4:") != std::string::npos) {
+            block = 21;
+            continue;
+        }
+        if (line.find("No. of type-2 vdW interactions") != std::string::npos) {
+            block = 22;
+            continue;
+        }
+        if (line.find("No. of 1-4 neighbours") != std::string::npos) {
+            block = 23;
+            continue;
+        }
+        if (line.find("No. of long 1-4 nbrs") != std::string::npos) {
+            block = 24;
+            continue;
+        }
+        if (line.find("No. of exclusions") != std::string::npos) {
+            block = 25;
+            continue;
+        }
+        if (line.find("No. of long exclusions") != std::string::npos) {
+            block = 26;
+            continue;
+        }
+        if (line.find("No. of residues") != std::string::npos) {
+            block = 27;
+            continue;
+        }
+        if (line.find("Sequence") != std::string::npos) {
+            block = 28;
+            continue;
+        }
+        if (line.find("No. of separate molecules") != std::string::npos) {
+            block = 29;
+            continue;
+        }
+        if (line.find("No. of atom types") != std::string::npos) {
+            block = 30;
+            continue;
+        }
+        if (line.find("No. of SYBYL atom types") != std::string::npos) {
+            block = 31;
+            continue;
+        }
+        if (line.find("solvent type (0=SPC,1=3-atom,2=general)") != std::string::npos) {
+            std::vector<std::string> f = split_ws(line);
+            if (!f.empty()) top_->solvtype = f[0];
+            if (top_->solvtype != "0") throw parse_error("solvent type other than SPC (0) is not supported");
+            block = 32;
+            continue;
+        }
+        if (line.find("No. of excluded atoms") != std::string::npos) {
+            block = 33;
+            continue;
+        }
+
+        std::vector<std::string> f = split_ws(line);
+        switch (block) {
+            case 1:
+                coord_flat.insert(coord_flat.end(), f.begin(), f.end());
+                break;
+            case 2:
+                for (const std::string& value : f) top_->atypes.push_back({++atype_count, parse_int(value)});
+                break;
+            case 3:
+                bond_flat.insert(bond_flat.end(), f.begin(), f.end());
+                break;
+            case 4:
+                if (f.size() >= 3) top_->cbonds[parse_int(f[0])] = std::vector<std::string>(f.begin() + 1, f.begin() + 3);
+                break;
+            case 5:
+                angle_flat.insert(angle_flat.end(), f.begin(), f.end());
+                break;
+            case 6:
+                if (f.size() >= 3) top_->cangles[parse_int(f[0])] = std::vector<std::string>(f.begin() + 1, f.begin() + 3);
+                break;
+            case 7:
+                torsion_flat.insert(torsion_flat.end(), f.begin(), f.end());
+                break;
+            case 8:
+                if (f.size() >= 5) top_->ctorsions[parse_int(f[0])] = std::vector<std::string>(f.begin() + 1, f.begin() + 5);
+                break;
+            case 9:
+                improper_flat.insert(improper_flat.end(), f.begin(), f.end());
+                break;
+            case 10:
+                if (f.size() >= 3) top_->cimpropers[parse_int(f[0])] = std::vector<std::string>(f.begin() + 1, f.begin() + 3);
+                break;
+            case 11:
+                charges_tmp.insert(charges_tmp.end(), f.begin(), f.end());
+                break;
+            case 12:
+                if (charge_group_switch == 1 && f.size() >= 2) {
+                    current_group_header = f;
+                    current_group_atoms.clear();
+                    charge_group_atoms_expected = parse_int(f[0]);
+                    charge_group_switch = 2;
+                } else if (charge_group_switch == 2) {
+                    current_group_atoms.insert(current_group_atoms.end(), f.begin(), f.end());
+                    if (static_cast<int>(current_group_atoms.size()) >= charge_group_atoms_expected) {
+                        top_->charge_group_headers.push_back(current_group_header);
+                        top_->charge_group_atoms.push_back(current_group_atoms);
+                        charge_group_switch = 1;
+                    }
+                }
+                break;
+            case 14:
+                if (f.size() >= 2) {
+                    top_->scaling14 = f[0];
+                    top_->coulomb = f[1];
+                }
+                break;
+            case 15:
+                masses.insert(masses.end(), f.begin(), f.end());
+                break;
+            case 16:
+                aii_normal.insert(aii_normal.end(), f.begin(), f.end());
+                break;
+            case 17:
+                bii_normal.insert(bii_normal.end(), f.begin(), f.end());
+                break;
+            case 18:
+                aii_polar.insert(aii_polar.end(), f.begin(), f.end());
+                break;
+            case 19:
+                bii_polar.insert(bii_polar.end(), f.begin(), f.end());
+                break;
+            case 20:
+                aii14.insert(aii14.end(), f.begin(), f.end());
+                break;
+            case 21:
+                bii14.insert(bii14.end(), f.begin(), f.end());
+                break;
+            case 23:
+                ngbr14_flat += trim(line);
+                break;
+            case 24: {
+                auto groups = checked_split_groups(f, 2);
+                top_->ngbr14long.insert(top_->ngbr14long.end(), groups.begin(), groups.end());
+                break;
+            }
+            case 25:
+                ngbr23_flat += trim(line);
+                break;
+            case 26: {
+                auto groups = checked_split_groups(f, 2);
+                top_->ngbr23long.insert(top_->ngbr23long.end(), groups.begin(), groups.end());
+                break;
+            }
+            case 29:
+                top_->molecules.insert(top_->molecules.end(), f.begin(), f.end());
+                break;
+            case 32:
+                if (line.find("Exclusion") != std::string::npos && f.size() >= 2) {
+                    if (parse_double(f[0]) > 30.0) throw parse_error("Sphere sizes exceeding 30A are currently not supported");
+                    top_->exclusion = f[0];
+                    top_->radii = f[1];
+                }
+                if ((line.find("Solute centre") != std::string::npos || line.find("Solute center") != std::string::npos) && f.size() >= 3) {
+                    top_->solucenter = std::vector<std::string>(f.begin(), f.begin() + 3);
+                }
+                if ((line.find("Solvent centre") != std::string::npos || line.find("Solvent center") != std::string::npos) && f.size() >= 3) {
+                    top_->solvcenter = std::vector<std::string>(f.begin(), f.begin() + 3);
+                }
+                break;
+            case 33:
+                for (char ch : line) {
+                    if (!std::isspace(static_cast<unsigned char>(ch))) top_->excluded.push_back(ch == 'F' ? "0" : "1");
+                }
+                break;
+            default:
+                break;
+        }
+    }
+
+    top_->coords = checked_split_groups(coord_flat, 3);
+    top_->bonds = checked_split_groups(bond_flat, 3);
+    top_->angles = checked_split_groups(angle_flat, 4);
+    top_->torsions = checked_split_groups(torsion_flat, 5);
+    top_->impropers = checked_split_groups(improper_flat, 5);
+    for (size_t i = 0; i < ngbr14_flat.size(); i += line_width) top_->ngbr14.push_back(ngbr14_flat.substr(i, line_width));
+    for (size_t i = 0; i < ngbr23_flat.size(); i += line_width) top_->ngbr23.push_back(ngbr23_flat.substr(i, line_width));
+
+    std::map<std::string, int> charge_codes;
+    int next_charge_code = 0;
+    for (size_t i = 0; i < charges_tmp.size(); i++) {
+        if (!charge_codes.count(charges_tmp[i])) charge_codes[charges_tmp[i]] = ++next_charge_code;
+        top_->charges.push_back({static_cast<int>(i) + 1, charge_codes[charges_tmp[i]]});
+    }
+    for (const auto& item : charge_codes) {
+        top_->ccharges[item.second] = item.first;
+    }
+
+    for (size_t i = 0; i < masses.size(); i++) {
+        top_->catypes[static_cast<int>(i) + 1] = {
+            masses[i],
+            i < aii_normal.size() ? aii_normal[i] : "0",
+            i < bii_normal.size() ? bii_normal[i] : "0",
+            i < aii_polar.size() ? aii_polar[i] : "0",
+            i < bii_polar.size() ? bii_polar[i] : "0",
+            i < aii14.size() ? aii14[i] : "0",
+            i < bii14.size() ? bii14[i] : "0",
+        };
+    }
+    if (top_->solucenter.empty()) top_->solucenter = std::vector<std::string>(3, "0");
+    if (top_->solvcenter.empty()) top_->solvcenter = std::vector<std::string>(3, "0");
+}
+
+void InpParser::ensure_fep() {
+    if (fep_) return;
+    ensure_md_input();
+    ensure_topology();
+
+    fep_ = std::make_unique<FepData>();
+    if (fep_file_.empty()) return;
+
+    std::ifstream first(fep_file_.c_str());
+    if (!first) throw parse_error("Could not open FEP file " + fep_file_);
+    std::string raw;
+    while (std::getline(first, raw)) {
+        std::vector<std::string> f = split_ws(strip_comment(raw));
+        if (f.size() >= 2 && f[0] == "states") fep_->states = parse_int(f[1]);
+        if (f.size() >= 2 && f[0] == "softcore_use_max_potential") fep_->softcore_use_max_potential = is_on_token(f[1]);
+        if (f.size() >= 2 && f[0] == "softcore_method") {
+            std::string method = f[1];
+            for (char& c : method) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (method == "gapsys") {
+                fep_->softcore.method = SC_GAPSYS;
+            } else if (method != "standard") {
+                throw parse_error("[FEP]: unsupported softcore_method " + f[1]);
+            }
+        }
+        if (f.size() >= 2 && f[0] == "gapsys_scale_linpoint_lj") fep_->softcore.alpha_lj = parse_double(f[1]);
+        if (f.size() >= 2 && f[0] == "gapsys_scale_linpoint_q") fep_->softcore.alpha_q = parse_double(f[1]);
+        if (f.size() >= 2 && f[0] == "gapsys_sigma_q") fep_->softcore.sigma_q = parse_double(f[1]);
+    }
+
+    if (fep_->states <= 0) {
+        throw parse_error("[FEP]: states must be positive.");
+    }
+
+    fep_->q_atypes.assign(fep_->states, {});
+    fep_->q_charges.assign(fep_->states, {});
+    fep_->q_exclpairs.assign(fep_->states, {});
+    fep_->q_softcores.assign(fep_->states, {});
+    fep_->q_bonds.assign(fep_->states, {});
+    fep_->q_angles.assign(fep_->states, {});
+    fep_->q_torsions.assign(fep_->states, {});
+    fep_->q_impropers.assign(fep_->states, {});
+    fep_->q_shakes.assign(fep_->states, {});
+
+    std::ifstream in(fep_file_.c_str());
+    int block = 0;
+    int atype_index = 0;
+    while (std::getline(in, raw)) {
+        std::string line = strip_comment(raw);
+        if (line.empty()) continue;
+        if (line.find("[atoms]") != std::string::npos) {
+            block = 1;
+            continue;
+        }
+        if (line.find("[FEP]") != std::string::npos) {
+            block = 2;
+            continue;
+        }
+        if (line.find("[change_charges]") != std::string::npos) {
+            block = 3;
+            continue;
+        }
+        if (line.find("[atom_types]") != std::string::npos) {
+            block = 4;
+            atype_index = 0;
+            continue;
+        }
+        if (line.find("[change_atoms]") != std::string::npos) {
+            block = 5;
+            continue;
+        }
+        if (line.find("[soft_pairs]") != std::string::npos) {
+            block = 6;
+            continue;
+        }
+        if (line.find("[excluded_pairs]") != std::string::npos) {
+            block = 7;
+            continue;
+        }
+        if (line.find("[el_scale]") != std::string::npos) {
+            block = 8;
+            continue;
+        }
+        if (line.find("[softcore]") != std::string::npos) {
+            block = 9;
+            continue;
+        }
+        if (line.find("[bond_types]") != std::string::npos) {
+            block = 12;
+            continue;
+        }
+        if (line.find("[change_bonds]") != std::string::npos) {
+            block = 13;
+            continue;
+        }
+        if (line.find("[angle_types]") != std::string::npos) {
+            block = 14;
+            continue;
+        }
+        if (line.find("[change_angles]") != std::string::npos) {
+            block = 15;
+            continue;
+        }
+        if (line.find("[torsion_types]") != std::string::npos) {
+            block = 16;
+            continue;
+        }
+        if (line.find("[change_torsions]") != std::string::npos) {
+            block = 17;
+            continue;
+        }
+        if (line.find("[improper_types]") != std::string::npos) {
+            block = 18;
+            continue;
+        }
+        if (line.find("[change_impropers]") != std::string::npos) {
+            block = 19;
+            continue;
+        }
+        if (line.find("[angle_couplings]") != std::string::npos) {
+            block = 20;
+            continue;
+        }
+        if (line.find("[torsion_couplings]") != std::string::npos) {
+            block = 21;
+            continue;
+        }
+        if (line.find("[improper_couplings]") != std::string::npos) {
+            block = 22;
+            continue;
+        }
+        if (line.find("[shake_constraints]") != std::string::npos) {
+            block = 23;
+            continue;
+        }
+        if (line.find("[off_diagonals]") != std::string::npos) {
+            block = 24;
+            continue;
+        }
+        if (line.front() == '[') {
+            throw parse_error("Unsupported FEP section: " + line);
+        }
+
+        std::vector<std::string> f = split_ws(line);
+        if (f.empty()) continue;
+        switch (block) {
+            case 1:
+                if (f.size() >= 2) fep_->q_atoms.push_back(f[1]);
+                break;
+            case 3:
+                for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_charges[s].push_back(f[s + 1]);
+                break;
+            case 4:
+                atype_index++;
+                fep_->q_catypes.push_back(f);
+                fep_->atypemap[f[0]] = atype_index;
+                break;
+            case 5:
+                for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) {
+                    auto it = fep_->atypemap.find(f[s + 1]);
+                    fep_->q_atypes[s].push_back(it == fep_->atypemap.end() ? "0" : std::to_string(it->second));
+                }
+                break;
+            case 6:
+                if (f.size() != 2) {
+                    throw parse_error("[soft_pairs]: expected two Q-atom indices.");
+                }
+                fep_->q_softpairs.push_back(f);
+                break;
+            case 7:
+                if (f.size() != static_cast<size_t>(2 + fep_->states)) {
+                    throw parse_error(
+                        "[excluded_pairs]: expected two atom numbers followed by one flag per state.");
+                }
+                for (int s = 0; s < fep_->states; ++s) {
+                    const auto& flag = f[2 + s];
+
+                    if (flag != "0" && flag != "1") {
+                        throw parse_error("[excluded_pairs]: flags must be 0 or 1.");
+                    }
+                    fep_->q_exclpairs[s].push_back(f[0] + " " + f[1] + " " + flag);
+                }
+                break;
+            case 8:
+                fep_->q_elscales.push_back(f);
+                break;
+            case 9:
+                for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_softcores[s].push_back(f[s + 1]);
+                break;
+            case 12:
+                if (f.size() != 3 && f.size() != 4) {
+                    throw parse_error("[bond_types]: expected harmonic 'type_id k r0' or Morse 'type_id D a r0'.");
+                }
+                fep_->q_cbonds.push_back(f);
+                break;
+
+            case 13:
+                // atom_i atom_j type_state1 type_state2 ... type_stateN
+                if (f.size() != static_cast<size_t>(2 + fep_->states)) {
+                    throw parse_error(
+                        "[change_bonds]: expected two atom indices "
+                        "followed by one type code per state.");
+                }
+
+                for (int s = 0; s < fep_->states; s++) {
+                    fep_->q_bonds[s].push_back(f[0] + " " + f[1] + " " + f[2 + s]);
+                }
+                break;
+            case 14:
+                if (f.size() != 3) {
+                    throw parse_error(
+                        "[angle_types]: currently only harmonic "
+                        "'type_id k theta0' is supported.");
+                }
+                fep_->q_cangles.push_back(f);
+                break;
+            case 15:
+                // atom_i atom_j atom_k type_state1 type_state2 ... type_stateN
+                if (f.size() != static_cast<size_t>(3 + fep_->states)) {
+                    throw parse_error(
+                        "[change_angles]: expected three atom indices "
+                        "followed by one type code per state.");
+                }
+
+                for (int s = 0; s < fep_->states; s++) {
+                    fep_->q_angles[s].push_back(f[0] + " " + f[1] + " " + f[2] + " " + f[3 + s]);
+                }
+                break;
+            case 16:
+                if (f.size() != 4) {
+                    throw parse_error("[torsion_types]: expected type_id k multiplicity phase.");
+                }
+                fep_->q_ctorsions.push_back(f);
+                break;
+            case 17:
+                if (f.size() != static_cast<size_t>(4 + fep_->states)) {
+                    throw parse_error("[change_torsions]: expected four atom indices followed by one type code per state.");
+                }
+                for (int s = 0; s < fep_->states; s++) {
+                    fep_->q_torsions[s].push_back(f[0] + " " + f[1] + " " + f[2] + " " + f[3] + " " + f[4 + s]);
+                }
+                break;
+            case 18:
+                if (f.size() != 3) {
+                    throw parse_error("[improper_types]: expected type_id k phi0.");
+                }
+                fep_->q_cimpropers.push_back(f);
+                break;
+            case 19:
+                if (f.size() != static_cast<size_t>(4 + fep_->states)) {
+                    throw parse_error("[change_impropers]: expected four atom indices followed by one type code per state.");
+                }
+                for (int s = 0; s < fep_->states; s++) {
+                    fep_->q_impropers[s].push_back(f[0] + " " + f[1] + " " + f[2] + " " + f[3] + " " + f[4 + s]);
+                }
+                break;
+            case 20:
+                if (f.size() != 2) {
+                    throw parse_error("[angle_couplings]: expected angle_index bond_index.");
+                }
+                fep_->q_angcouples.push_back(f);
+                break;
+            case 21:
+                if (f.size() != 2) {
+                    throw parse_error("[torsion_couplings]: expected torsion_index bond_index.");
+                }
+                fep_->q_torcouples.push_back(f);
+                break;
+            case 22:
+                if (f.size() != 2 && f.size() != 3) {
+                    throw parse_error("[improper_couplings]: expected improper_index bond_index [mode].");
+                }
+                fep_->q_imprcouples.push_back(f);
+                break;
+
+            case 23:
+                for (int s = 0; s < fep_->states && static_cast<size_t>(s + 1) < f.size(); s++) fep_->q_shakes[s].push_back(f[s + 1]);
+                break;
+            case 24:
+                if (f.size() != 6) {
+                    throw parse_error("[off_diagonals]: expected state_i state_j Q_atom_k Q_atom_l A mu.");
+                }
+                fep_->q_offdiags.push_back(f);
+                break;
+            default:
+                break;
+        }
+    }
+
+    if (fep_->states <= 0 || fep_->q_atoms.empty()) return;
+
+    if (fep_->q_catypes.empty()) {
+        for (const auto& item : top_->catypes) {
+            const std::vector<std::string>& t = item.second;
+            fep_->q_catypes.push_back({
+                std::to_string(item.first),
+                t.size() > 1 ? t[1] : "0",
+                t.size() > 2 ? t[2] : "0",
+                "0",
+                "0",
+                t.size() > 5 ? t[5] : "0",
+                t.size() > 6 ? t[6] : "0",
+                t.size() > 0 ? t[0] : "0",
+            });
+        }
+    }
+
+    for (int state = 0; state < fep_->states; state++) {
+        if (fep_->q_atypes[state].empty()) {
+            for (const std::string& q_atom : fep_->q_atoms) {
+                int atom = parse_int(q_atom) - 1;
+                if (atom < 0 || static_cast<size_t>(atom) >= top_->atypes.size()) throw parse_error("FEP atom index outside topology atom types.");
+                fep_->q_atypes[state].push_back(std::to_string(top_->atypes[atom].second));
+            }
+        }
+
+        if (fep_->q_charges[state].empty()) {
+            for (const std::string& q_atom : fep_->q_atoms) {
+                int atom = parse_int(q_atom) - 1;
+                if (atom < 0 || static_cast<size_t>(atom) >= top_->charges.size()) throw parse_error("FEP atom index outside topology charges.");
+                int charge_code = top_->charges[atom].second;
+                auto charge = top_->ccharges.find(charge_code);
+                if (charge == top_->ccharges.end()) throw parse_error("Topology atom charge code missing.");
+                fep_->q_charges[state].push_back(charge->second);
+            }
+        }
+    }
+}
+
+void InpParser::ensure_run_start_vectors() {
+    if (run_start_ready_) return;
+    ensure_md_input();
+    ensure_topology();
+
+    result.fresh_start = restart_file_.empty();
+    if (!restart_file_.empty()) {
+        read_restart_vectors(restart_file_, run_coords_, run_velocities_, result.restart_theta_corr);
+    } else {
+        run_coords_ = top_->coords;
+        result.restart_theta_corr.clear();
+
+        const auto& mdv = input_->keyed.count("md") ? input_->keyed["md"] : std::map<std::string, std::string>();
+        // As in Fortran Q: without initial_temperature there are no starting velocities.
+        if (!mdv.count("initial-temperature")) {
+            throw parse_error("Q input needs [files] restart when [MD] initial_temperature is not given.");
+        }
+        int seed = parse_int(value_or(mdv, "random-seed", "1"));
+        double temperature = parse_double(mdv.at("initial-temperature"));
+        if (seed <= 0) throw parse_error("Fresh-start Q input requires a positive random_seed.");
+
+        double kT = Boltz * temperature;
+        run_velocities_.clear();
+        run_velocities_.reserve(top_->atypes.size());
+        for (size_t i = 0; i < top_->atypes.size(); i++) {
+            int type_code = top_->atypes[i].second;
+            auto catype = top_->catypes.find(type_code);
+            if (catype == top_->catypes.end() || catype->second.empty()) throw parse_error("Topology atom type references missing mass.");
+            double mass = parse_double(catype->second[0]);
+            double sd = std::sqrt(kT / mass);
+            run_velocities_.push_back({std::to_string(q_gauss(seed, sd)), std::to_string(q_gauss(seed, sd)), std::to_string(q_gauss(seed, sd))});
+        }
+    }
+
+    if (run_coords_.size() != top_->coords.size() || run_velocities_.size() != top_->coords.size()) {
+        throw parse_error("Input coordinate/velocity atom count does not match topology.");
+    }
+    run_start_ready_ = true;
+}
+
+void InpParser::parse_md() {
+    ensure_md_input();
+    const auto& files = input_->keyed["files"];
+    const auto& mdv = input_->keyed.count("md") ? input_->keyed["md"] : std::map<std::string, std::string>();
+    const auto& cut = input_->keyed.count("cut-offs") ? input_->keyed["cut-offs"] : std::map<std::string, std::string>();
+    const auto& sphere = input_->keyed.count("sphere") ? input_->keyed["sphere"] : std::map<std::string, std::string>();
+    const auto& solvent = input_->keyed.count("solvent") ? input_->keyed["solvent"] : std::map<std::string, std::string>();
+    const auto& intervals = input_->keyed.count("intervals") ? input_->keyed["intervals"] : std::map<std::string, std::string>();
+
+    // Defaults follow Fortran Q6 (src/q6/md.f90, initialize()).
+    for (const char* key : {"steps", "stepsize", "temperature"}) {
+        if (!mdv.count(key)) throw parse_error(std::string("Q input [MD] ") + key + " is required.");
+    }
+    md_t& md = result.md;
+    md.steps = parse_int(mdv.at("steps"));
+    md.stepsize = parse_double(mdv.at("stepsize"));
+    md.temperature = parse_double(mdv.at("temperature"));
+    md.thermostat = value_or(mdv, "thermostat", "berendsen");
+    md.bath_coupling = parse_double(value_or(mdv, "bath-coupling", "10"));
+    md.random_seed = parse_int(value_or(mdv, "random-seed", "1"));
+    md.generate_velocities = mdv.count("initial-temperature") != 0;
+    md.initial_temperature = md.generate_velocities ? parse_double(mdv.at("initial-temperature")) : 0.0;
+    md.hmr = is_on_value(mdv, "hmr", "off");
+    md.hmr_target_mass = parse_double(value_or(mdv, "hmr-target-mass", "3.024"));
+
+    const bool has_legacy_constraint_key =
+        mdv.count("shake-solvent") != 0 ||
+        mdv.count("shake-solute") != 0 ||
+        mdv.count("shake-hydrogens") != 0;
+
+    md.constraint_solvent = parse_constraint_switch(
+        mdv, "constrain-solvent", "shake-solvent", true);
+    md.constraint_solute = parse_constraint_switch(
+        mdv, "constrain-solute", "shake-solute", false);
+    md.constraint_hydrogens = parse_constraint_switch(
+        mdv, "constrain-hydrogens", "shake-hydrogens", false);
+
+    const auto constraint_algorithm = mdv.find("constraint-algorithm");
+    if (constraint_algorithm == mdv.end()) {
+        md.solute_constraint_algorithm = has_legacy_constraint_key ? "shake" : "lincs";
+        md.solvent_constraint_algorithm = has_legacy_constraint_key ? "shake" : "settle";
+    } else {
+        const std::vector<std::string> algorithms = split_ws(constraint_algorithm->second);
+        if (algorithms.size() != 2) {
+            throw parse_error(
+                "Q input [MD] constraint_algorithm requires exactly two values: "
+                "<solute-method> <solvent-method>.");
+        }
+
+        md.solute_constraint_algorithm = lower_normalized(algorithms[0]);
+        md.solvent_constraint_algorithm = lower_normalized(algorithms[1]);
+
+        if (md.solute_constraint_algorithm != "shake" &&
+            md.solute_constraint_algorithm != "lincs") {
+            throw parse_error(
+                "Q input [MD] constraint_algorithm has invalid solute method '" +
+                algorithms[0] + "'; expected shake or lincs.");
+        }
+        if (md.solvent_constraint_algorithm != "shake" &&
+            md.solvent_constraint_algorithm != "lincs" &&
+            md.solvent_constraint_algorithm != "settle") {
+            throw parse_error(
+                "Q input [MD] constraint_algorithm has invalid solvent method '" +
+                algorithms[1] + "'; expected shake, lincs, or settle.");
+        }
+    }
+
+    // Keep the legacy fields synchronized until their remaining users are removed.
+    md.shake_solvent = md.constraint_solvent;
+    md.shake_solute = md.constraint_solute;
+    md.shake_hydrogens = md.constraint_hydrogens;
+
+    md.lrf = is_on_value(mdv, "lrf", "off");
+    md.separate_scaling = is_on_value(mdv, "separate-scaling", bool_value(mdv, "separate_scaling", "off"));
+    md.charge_groups = true;
+    md.solute_solute = parse_double(value_or(cut, "solute-solute", value_or(cut, "solute_solute", "10")));
+    md.solvent_solvent = parse_double(value_or(cut, "solvent-solvent", value_or(cut, "solvent_solvent", "10")));
+    md.solute_solvent = parse_double(value_or(cut, "solute-solvent", value_or(cut, "solute_solvent", "10")));
+    md.lrf_cutoff = parse_double(value_or(cut, "lrf", "99"));
+
+    md.q_atom = parse_double(value_or(cut, "q-atom", value_or(cut, "q_atom", "99")));
+    // Å, or a fraction of the exclusion radius when <= 1 (converted in Context::init_shell).
+    md.shell_radius = parse_double(value_or(sphere, "shell-radius", "0.85"));
+    if (md.shell_radius < 0) throw parse_error("Q input [sphere] shell_radius must be >= 0.");
+    md.exclude_bonded = is_on_value(sphere, "exclude-bonded", "off");
+    md.shell_force = parse_double(value_or(sphere, "shell-force", value_or(sphere, "shell_force", "10.0")));
+    md.radial_force = parse_double(value_or(solvent, "radial-force", value_or(solvent, "radial_force", "60.0")));
+    const std::string polarisation_value = bool_value(solvent, "polarisation", bool_value(solvent, "polarization", "on"));
+    md.polarisation = polarisation_value == "on";
+    md.charge_correction = is_on_value(
+        solvent,
+        "charge-correction",
+        bool_value(solvent, "charge_correction", md.polarisation ? "on" : "off"));
+    // Fortran Q reads polarization_force; qligfep writes polarisation_force.
+    md.polarisation_force = parse_double(value_or(solvent, "polarisation-force", value_or(solvent, "polarization-force", "20.0")));
+    md.non_bond = parse_int(value_or(intervals, "non-bond", "10"));
+    md.output = parse_int(value_or(intervals, "output", "10"));
+    md.energy = parse_int(value_or(intervals, "energy", "0"));
+    md.trajectory = parse_int(value_or(intervals, "trajectory", "0"));
+
+    result.native_output.final_file = resolve_output_path_local(value_or(files, "final", ""), input_dir_);
+    result.native_output.trajectory_file = resolve_output_path_local(value_or(files, "trajectory", ""), input_dir_);
+    result.native_output.energy_file = resolve_output_path_local(value_or(files, "energy", ""), input_dir_);
+    result.native_output.trajectory_atoms = trajectory_atoms_setting(input_->lists);
+    result.native_output.topology_file = topology_file_;
+}
+
+void InpParser::parse_lambdas() {
+    ensure_md_input();
+    result.lambdas.clear();
+    auto lambdas_it = input_->lists.find("lambdas");
+    if (lambdas_it != input_->lists.end()) {
+        for (const auto& row : lambdas_it->second) {
+            for (const std::string& value : row) result.lambdas.push_back(parse_double(value));
+        }
+    }
+    // State-2 weights of the windows to compute foreign work for.
+    result.foreign_lambdas.clear();
+    auto foreign_it = input_->lists.find("foreign-lambdas");
+    if (foreign_it != input_->lists.end()) {
+        for (const auto& row : foreign_it->second) {
+            for (const std::string& value : row) result.foreign_lambdas.push_back(parse_double(value));
+        }
+    }
+
+    // As in Fortran Q: a FEP file without [lambdas] means a single state with lambda 1.
+    const auto files_it = input_->keyed.find("files");
+    const bool has_fep = !fep_file_.empty() ||
+                         (files_it != input_->keyed.end() && !value_or(files_it->second, "fep", "").empty());
+    if (result.lambdas.empty() && has_fep) result.lambdas.push_back(1.0);
+
+    auto read_rows = [&](const std::string& name) -> std::vector<std::vector<std::string>> {
+        auto it = input_->lists.find(name);
+        return it == input_->lists.end() ? std::vector<std::vector<std::string>>() : it->second;
+    };
+
+    auto seq = read_rows("sequence-restraints");
+    result.restrseqs.resize(seq.size());
+    for (size_t i = 0; i < seq.size(); i++) {
+        result.restrseqs[i] = {row_int(seq[i], 0), row_int(seq[i], 1), row_double(seq[i], 2), row_int(seq[i], 3) == 1, row_int(seq[i], 4)};
+    }
+
+    auto pos = read_rows("atom-restraints");
+    result.restrspos.resize(pos.size());
+    for (size_t i = 0; i < pos.size(); i++) {
+        result.restrspos[i] = {row_int(pos[i], 0), row_int(pos[i], 1), {row_double(pos[i], 2), row_double(pos[i], 3), row_double(pos[i], 4)}, {row_double(pos[i], 5), row_double(pos[i], 6), row_double(pos[i], 7)}};
+    }
+
+    auto dist = read_rows("distance-restraints");
+    result.restrdists.resize(dist.size());
+    for (size_t i = 0; i < dist.size(); i++) {
+        restrdis_t r = {};
+        r.ai = row_int(dist[i], 0);
+        r.aj = row_int(dist[i], 1);
+        r.d1 = row_double(dist[i], 2);
+        r.d2 = row_double(dist[i], 3);
+        r.k = row_double(dist[i], 4);
+        r.ipsi = row_int(dist[i], 5);
+        result.restrdists[i] = r;
+    }
+
+    auto angle = read_rows("angle-restraints");
+    result.restrangs.resize(angle.size());
+    for (size_t i = 0; i < angle.size(); i++) {
+        result.restrangs[i] = {row_int(angle[i], 0), row_int(angle[i], 1), row_int(angle[i], 2), row_int(angle[i], 3), row_double(angle[i], 4), row_double(angle[i], 5)};
+    }
+
+    auto wall = read_rows("wall-restraints");
+    result.restrwalls.resize(wall.size());
+    for (size_t i = 0; i < wall.size(); i++) {
+        result.restrwalls[i] = {row_int(wall[i], 0), row_int(wall[i], 1), row_double(wall[i], 2), row_double(wall[i], 3), row_double(wall[i], 5), row_double(wall[i], 4), row_int(wall[i], 6) == 1};
+    }
+}
+
+void InpParser::parse_topo() {
+    ensure_topology();
+    result.topo.ff_type = top_->ff_type;
+    result.topo.solvent_type = parse_int(top_->solvtype);
+    result.topo.exclusion_radius = parse_double(top_->exclusion);
+    result.topo.solvent_radius = parse_double(top_->radii);
+    result.topo.solute_center = row_coord(top_->solucenter);
+    result.topo.solvent_center = row_coord(top_->solvcenter);
+    result.topo.el14_scale = parse_double(top_->scaling14);
+    result.topo.coulomb_constant = parse_double(top_->coulomb);
+    result.topo.vdw_rule = parse_int(top_->vdw_rule);
+    if (result.topo.vdw_rule == 0) result.topo.vdw_rule = VDW_GEOMETRIC;
+}
+
+void InpParser::parse_coords_init() {
+    ensure_topology();
+    result.n_atoms_solute = parse_int(top_->natoms_solute);
+    result.coords_init.resize(top_->coords.size());
+    for (size_t i = 0; i < top_->coords.size(); i++) result.coords_init[i] = row_coord(top_->coords[i]);
+}
+
+void InpParser::parse_coords() {
+    ensure_run_start_vectors();
+    result.coords.resize(run_coords_.size());
+    for (size_t i = 0; i < run_coords_.size(); i++) result.coords[i] = row_coord(run_coords_[i]);
+}
+
+void InpParser::parse_velocities() {
+    ensure_run_start_vectors();
+    result.velocities.resize(run_velocities_.size());
+    for (size_t i = 0; i < run_velocities_.size(); i++) result.velocities[i] = row_vel(run_velocities_[i]);
+}
+
+void InpParser::parse_bonds() {
+    ensure_topology();
+    result.n_bonds_solute = parse_int(top_->nbonds_solute);
+    result.bonds.resize(top_->bonds.size());
+    for (size_t i = 0; i < top_->bonds.size(); i++) result.bonds[i] = {row_int(top_->bonds[i], 0), row_int(top_->bonds[i], 1), row_int(top_->bonds[i], 2)};
+}
+
+void InpParser::parse_cbonds() {
+    ensure_topology();
+    result.cbonds.clear();
+    for (const auto& item : top_->cbonds) result.cbonds.push_back({item.first, row_double(item.second, 0), row_double(item.second, 1)});
+}
+
+void InpParser::parse_angles() {
+    ensure_topology();
+    result.n_angles_solute = parse_int(top_->nangles_solute);
+    result.angles.resize(top_->angles.size());
+    for (size_t i = 0; i < top_->angles.size(); i++) result.angles[i] = {row_int(top_->angles[i], 0), row_int(top_->angles[i], 1), row_int(top_->angles[i], 2), row_int(top_->angles[i], 3)};
+}
+
+void InpParser::parse_cangles() {
+    ensure_topology();
+    result.cangles.clear();
+    for (const auto& item : top_->cangles) result.cangles.push_back({item.first, row_double(item.second, 0), row_double(item.second, 1)});
+}
+
+void InpParser::parse_torsions() {
+    ensure_topology();
+    result.n_torsions_solute = parse_int(top_->ntorsions_solute);
+    result.torsions.resize(top_->torsions.size());
+    for (size_t i = 0; i < top_->torsions.size(); i++) result.torsions[i] = {row_int(top_->torsions[i], 0), row_int(top_->torsions[i], 1), row_int(top_->torsions[i], 2), row_int(top_->torsions[i], 3), row_int(top_->torsions[i], 4)};
+}
+
+void InpParser::parse_ctorsions() {
+    ensure_topology();
+    result.ctorsions.clear();
+    for (const auto& item : top_->ctorsions) {
+        double paths = row_double(item.second, 3);
+        result.ctorsions.push_back({item.first, row_double(item.second, 0), row_double(item.second, 1), row_double(item.second, 2), paths == 0.0 ? 0.0 : 1.0 / paths});
+    }
+}
+
+void InpParser::parse_impropers() {
+    ensure_topology();
+    result.n_impropers_solute = parse_int(top_->nimpropers_solute);
+    result.impropers.resize(top_->impropers.size());
+    for (size_t i = 0; i < top_->impropers.size(); i++) result.impropers[i] = {row_int(top_->impropers[i], 0), row_int(top_->impropers[i], 1), row_int(top_->impropers[i], 2), row_int(top_->impropers[i], 3), row_int(top_->impropers[i], 4)};
+}
+
+void InpParser::parse_cimpropers() {
+    ensure_topology();
+    result.cimpropers.clear();
+    for (const auto& item : top_->cimpropers) result.cimpropers.push_back({item.first, row_double(item.second, 0), row_double(item.second, 1)});
+}
+
+void InpParser::parse_restrspos() {}
+void InpParser::parse_restrangs() {}
+void InpParser::parse_restrdists() {}
+void InpParser::parse_restrseqs() {}
+void InpParser::parse_restrwalls() {}
+
+void InpParser::parse_charges() {
+    ensure_topology();
+    result.charges.resize(top_->charges.size());
+    for (size_t i = 0; i < top_->charges.size(); i++) result.charges[i] = {top_->charges[i].first, top_->charges[i].second};
+}
+
+void InpParser::parse_ccharges() {
+    ensure_topology();
+    result.ccharges.clear();
+    for (const auto& item : top_->ccharges) result.ccharges.push_back({item.first, parse_double(item.second)});
+}
+
+void InpParser::parse_atypes() {
+    ensure_topology();
+    result.atypes.resize(top_->atypes.size());
+    for (size_t i = 0; i < top_->atypes.size(); i++) result.atypes[i] = {top_->atypes[i].first, top_->atypes[i].second};
+}
+
+void InpParser::parse_catypes() {
+    ensure_topology();
+    result.catypes.clear();
+    for (const auto& item : top_->catypes) {
+        const auto& row = item.second;
+        result.catypes.push_back({item.first, row_double(row, 0), row_double(row, 1), row_double(row, 2), row_double(row, 5), row_double(row, 6)});
+    }
+}
+
+void InpParser::parse_heavy() {}
+
+void InpParser::parse_excluded() {
+    ensure_topology();
+    result.excluded.assign(result.coords_init.size(), false);
+    for (size_t i = 0; i < result.excluded.size() && i < top_->excluded.size(); i++) {
+        result.excluded[i] = top_->excluded[i] == "1";
+    }
+}
+
+void InpParser::parse_ngbrs14() {
+    ensure_topology();
+    add_short_neighbors(top_->ngbr14, result.ngbrs14);
+}
+
+void InpParser::parse_ngbrs14_long() {
+    ensure_topology();
+    add_long_neighbors(top_->ngbr14long, result.ngbrs14_long);
+}
+
+void InpParser::parse_ngbrs23() {
+    ensure_topology();
+    add_short_neighbors(top_->ngbr23, result.ngbrs23);
+}
+
+void InpParser::parse_ngbrs23_long() {
+    ensure_topology();
+    add_long_neighbors(top_->ngbr23long, result.ngbrs23_long);
+}
+
+void InpParser::parse_molecules() {
+    ensure_topology();
+    result.molecules.resize(top_->molecules.size());
+    for (size_t i = 0; i < top_->molecules.size(); i++) result.molecules[i] = parse_int(top_->molecules[i]);
+}
+
+void InpParser::parse_charge_groups() {
+    ensure_topology();
+    charge_group_config_t config;
+    config.n_cgrps_solute = parse_int(top_->solute_cgps);
+    config.n_cgrps_solvent = parse_int(top_->solvent_cgps);
+    config.iuse_switch_atom = parse_int(top_->use_switch_atom);
+    config.charge_groups.resize(top_->charge_group_headers.size());
+    for (size_t i = 0; i < top_->charge_group_headers.size(); i++) {
+        config.charge_groups[i].iswitch = row_int(top_->charge_group_headers[i], 1);
+        config.charge_groups[i].atoms.resize(top_->charge_group_atoms[i].size());
+        for (size_t j = 0; j < top_->charge_group_atoms[i].size(); j++) config.charge_groups[i].atoms[j] = parse_int(top_->charge_group_atoms[i][j]);
+    }
+    result.charge_groups = config;
+}
+
+void InpParser::parse_q_atoms() {
+    ensure_fep();
+    if (!fep_file_.empty() && result.lambdas.size() != static_cast<size_t>(fep_->states)) {
+        throw parse_error("Q input [lambdas] has " + std::to_string(result.lambdas.size()) +
+                          " values, but the FEP file has " + std::to_string(fep_->states) + " states.");
+    }
+    result.q_atoms.resize(fep_->q_atoms.size());
+    for (size_t i = 0; i < fep_->q_atoms.size(); i++) result.q_atoms[i] = parse_int(fep_->q_atoms[i]) - 1;
+}
+
+void InpParser::parse_q_angcouples() {
+    ensure_fep();
+
+    result.q_angcouples.clear();
+
+    if (fep_->q_angcouples.empty()) return;
+
+    const int nstates = static_cast<int>(result.lambdas.size());
+
+    if (nstates <= 0 || result.q_angles.size() % nstates != 0 || result.q_bonds.size() % nstates != 0) {
+        throw parse_error("[angle_couplings]: invalid state-dependent bonded layout.");
+    }
+
+    const size_t nangles = result.q_angles.size() / nstates;
+    const size_t nbonds = result.q_bonds.size() / nstates;
+
+    // One coupled bond per angle.
+    std::map<int, int> coupled_bonds;
+
+    for (const auto& row : fep_->q_angcouples) {
+        const int angle_index = row_int(row, 0);
+        const int bond_index = row_int(row, 1);
+
+        if (angle_index <= 0 || static_cast<size_t>(angle_index) > nangles) {
+            throw parse_error("[angle_couplings]: angle index out of range.");
+        }
+
+        if (bond_index <= 0 || static_cast<size_t>(bond_index) > nbonds) {
+            throw parse_error("[angle_couplings]: bond index out of range.");
+        }
+
+        const auto inserted = coupled_bonds.emplace(angle_index, bond_index);
+
+        if (!inserted.second) {
+            if (inserted.first->second != bond_index) {
+                throw parse_error("[angle_couplings]: an angle cannot couple to multiple bonds.");
+            }
+            continue;  // Identical duplicate
+        }
+
+        for (int s = 0; s < nstates; ++s) {
+            const auto& angle = result.q_angles[s * nangles + angle_index - 1];
+            const auto& bond = result.q_bonds[s * nbonds + bond_index - 1];
+
+            if (bond.code == 0) {
+                if (angle.code != 0) {
+                    throw parse_error("[angle_couplings]: coupled bond is absent in a state where the angle is present.");
+                }
+                continue;
+            }
+
+            const auto& param = result.q_cbonds.at(bond.code);
+            if (!param.is_morse) {
+                throw parse_error("[angle_couplings]: coupled bond must be Morse in every state where the bond is present.");
+            }
+        }
+        result.q_angcouples.push_back({angle_index, bond_index});
+    }
+}
+
+void InpParser::parse_q_atypes() {
+    ensure_fep();
+    int n_lambdas = static_cast<int>(result.lambdas.size());
+    result.q_atypes.resize(result.q_atoms.size() * n_lambdas);
+    for (int state = 0; state < n_lambdas && state < static_cast<int>(fep_->q_atypes.size()); state++) {
+        for (size_t i = 0; i < result.q_atoms.size() && i < fep_->q_atypes[state].size(); i++) {
+            result.q_atypes[i + state * result.q_atoms.size()].code = parse_int(fep_->q_atypes[state][i]);
+        }
+    }
+}
+
+void InpParser::parse_q_catypes() {
+    ensure_fep();
+    result.q_catypes.resize(fep_->q_catypes.size());
+    for (size_t i = 0; i < fep_->q_catypes.size(); i++) {
+        const auto& row = fep_->q_catypes[i];
+        // name A B C a A14 B14 mass
+        if (row.size() != 8) {
+            throw parse_error("[atom_types]: expected name A B C a A14 B14 mass.");
+        }
+
+        catype_t param{};
+        param.code = static_cast<int>(i) + 1;
+        param.m = row_double(row, 7);
+        param.aii_normal = row_double(row, 1);
+        param.bii_normal = row_double(row, 2);
+        param.aii_1_4 = row_double(row, 5);
+        param.bii_1_4 = row_double(row, 6);
+        param.soft_C = row_double(row, 3);
+        param.soft_a = row_double(row, 4);
+
+        result.q_catypes[i] = param;
+    }
+}
+
+void InpParser::parse_q_charges() {
+    ensure_fep();
+    int n_lambdas = static_cast<int>(result.lambdas.size());
+    result.q_charges.resize(result.q_atoms.size() * n_lambdas);
+    for (int state = 0; state < n_lambdas && state < static_cast<int>(fep_->q_charges.size()); state++) {
+        for (size_t i = 0; i < result.q_atoms.size() && i < fep_->q_charges[state].size(); i++) {
+            result.q_charges[i + state * result.q_atoms.size()].charge = parse_double(fep_->q_charges[state][i]);
+        }
+    }
+}
+
+void InpParser::parse_q_angles() {
+    ensure_fep();
+    int n_lambdas = static_cast<int>(result.lambdas.size());
+    if (!fep_file_.empty() && n_lambdas != fep_->states) {
+        throw parse_error("[FEP]: number of lambdas must match states.");
+    }
+    size_t total = 0;
+    for (const auto& state : fep_->q_angles) total += state.size();
+    int n_qangles = n_lambdas > 0 ? static_cast<int>(total) / n_lambdas : 0;
+    result.q_angles.resize(n_qangles * n_lambdas);
+    for (int state = 0; state < n_lambdas && state < static_cast<int>(fep_->q_angles.size()); state++) {
+        for (int i = 0; i < n_qangles && static_cast<size_t>(i) < fep_->q_angles[state].size(); i++) {
+            auto row = split_state_row(fep_->q_angles[state][i]);
+            result.q_angles[i + state * n_qangles] = {row_int(row, 0), row_int(row, 1), row_int(row, 2), row_int(row, 3)};
+        }
+    }
+}
+
+void InpParser::parse_q_cangles() {
+    ensure_fep();
+    result.q_cangles.assign(1, cangle_t{});
+    for (size_t i = 0; i < fep_->q_cangles.size(); i++) {
+        int id = row_int(fep_->q_cangles[i], 0);
+        if (id <= 0) {
+            throw parse_error("Parameter type IDs must be positive.");
+        }
+        if (result.q_cangles.size() <= static_cast<size_t>(id)) {
+            result.q_cangles.resize(static_cast<size_t>(id) + 1);
+        }
+        result.q_cangles[id] = {id, row_double(fep_->q_cangles[i], 1), row_double(fep_->q_cangles[i], 2)};
+    }
+
+    for (const auto& angle : result.q_angles) {
+        const int code = angle.code;
+        if (code == 0) continue;
+        if (code < 0 || static_cast<size_t>(code) >= result.q_cangles.size() || result.q_cangles[code].code != code) {
+            throw parse_error("[change_angles]: undefined angle type " + std::to_string(code));
+        }
+    }
+}
+
+void InpParser::parse_q_bonds() {
+    ensure_fep();
+    int n_lambdas = static_cast<int>(result.lambdas.size());
+    if (!fep_file_.empty() && n_lambdas != fep_->states) {
+        throw parse_error("[FEP]: number of lambdas must match states.");
+    }
+    size_t total = 0;
+    for (const auto& state : fep_->q_bonds) total += state.size();
+    int n_qbonds = n_lambdas > 0 ? static_cast<int>(total) / n_lambdas : 0;
+    result.q_bonds.resize(n_qbonds * n_lambdas);
+    for (int state = 0; state < n_lambdas && state < static_cast<int>(fep_->q_bonds.size()); state++) {
+        for (int i = 0; i < n_qbonds && static_cast<size_t>(i) < fep_->q_bonds[state].size(); i++) {
+            auto row = split_state_row(fep_->q_bonds[state][i]);
+            result.q_bonds[i + state * n_qbonds] = {row_int(row, 0), row_int(row, 1), row_int(row, 2)};
+        }
+    }
+}
+
+void InpParser::parse_q_cbonds() {
+    ensure_fep();
+    result.q_cbonds.assign(1, cbond_t{});
+    for (size_t i = 0; i < fep_->q_cbonds.size(); i++) {
+        const auto& row = fep_->q_cbonds[i];
+        int id = row_int(row, 0);
+        if (id <= 0) {
+            throw parse_error("Parameter type IDs must be positive.");
+        }
+
+        cbond_t param{};
+        param.code = id;
+        if (row.size() == 3) {
+            // Harmonic: type_id k r0
+            param.kb = row_double(row, 1);
+            param.b0 = row_double(row, 2);
+        } else {
+            // Morse: type_id D a r0
+            param.is_morse = true;
+            param.D = row_double(row, 1);
+            param.a = row_double(row, 2);
+            param.b0 = row_double(row, 3);
+        }
+
+        if (result.q_cbonds.size() <= static_cast<size_t>(id)) {
+            result.q_cbonds.resize(static_cast<size_t>(id) + 1);
+        }
+        result.q_cbonds[id] = param;
+    }
+    for (const auto& bond : result.q_bonds) {
+        const int code = bond.code;
+        if (code == 0) continue;
+        if (code < 0 || static_cast<size_t>(code) >= result.q_cbonds.size() || result.q_cbonds[code].code != code) {
+            throw parse_error("[change_bonds]: undefined bond type " + std::to_string(code));
+        }
+    }
+}
+
+void InpParser::parse_q_impropers() {
+    ensure_fep();
+    int n_lambdas = static_cast<int>(result.lambdas.size());
+    if (!fep_file_.empty() && n_lambdas != fep_->states) {
+        throw parse_error("[FEP]: number of lambdas must match states.");
+    }
+    size_t total = 0;
+    for (const auto& state : fep_->q_impropers) total += state.size();
+    int n_qimpropers = n_lambdas > 0 ? static_cast<int>(total) / n_lambdas : 0;
+    result.q_impropers.resize(n_qimpropers * n_lambdas);
+    for (int state = 0; state < n_lambdas && state < static_cast<int>(fep_->q_impropers.size()); state++) {
+        for (int i = 0; i < n_qimpropers && static_cast<size_t>(i) < fep_->q_impropers[state].size(); i++) {
+            auto row = split_state_row(fep_->q_impropers[state][i]);
+            result.q_impropers[i + state * n_qimpropers] = {row_int(row, 0), row_int(row, 1), row_int(row, 2), row_int(row, 3), row_int(row, 4)};
+        }
+    }
+}
+
+void InpParser::parse_q_cimpropers() {
+    ensure_fep();
+    result.q_cimpropers.assign(1, q_cimproper_t{});
+    std::vector<bool> type_read(1, false);
+    for (const auto& row : fep_->q_cimpropers) {
+        const int id = row_int(row, 0);
+        if (id <= 0) {
+            throw parse_error("[improper_types]: parameter type IDs must be positive.");
+        }
+        if (result.q_cimpropers.size() <= static_cast<size_t>(id)) {
+            result.q_cimpropers.resize(static_cast<size_t>(id) + 1);
+            type_read.resize(static_cast<size_t>(id) + 1, false);
+        }
+        // Keep angles in degrees, as in the other QGPU parsed parameter tables.
+        result.q_cimpropers[id] = {row_double(row, 1), row_double(row, 2)};
+        type_read[id] = true;
+    }
+    for (const auto& improper : result.q_impropers) {
+        const int code = improper.code;
+        if (code == 0) continue;
+        if (code < 0 || static_cast<size_t>(code) >= type_read.size() || !type_read[code]) {
+            throw parse_error("[change_impropers]: undefined improper type " + std::to_string(code));
+        }
+    }
+}
+
+void InpParser::parse_q_torsions() {
+    ensure_fep();
+    int n_lambdas = static_cast<int>(result.lambdas.size());
+    if (!fep_file_.empty() && n_lambdas != fep_->states) {
+        throw parse_error("[FEP]: number of lambdas must match states.");
+    }
+    size_t total = 0;
+    for (const auto& state : fep_->q_torsions) total += state.size();
+    int n_qtorsions = n_lambdas > 0 ? static_cast<int>(total) / n_lambdas : 0;
+    result.q_torsions.resize(n_qtorsions * n_lambdas);
+    for (int state = 0; state < n_lambdas && state < static_cast<int>(fep_->q_torsions.size()); state++) {
+        for (int i = 0; i < n_qtorsions && static_cast<size_t>(i) < fep_->q_torsions[state].size(); i++) {
+            auto row = split_state_row(fep_->q_torsions[state][i]);
+            result.q_torsions[i + state * n_qtorsions] = {row_int(row, 0), row_int(row, 1), row_int(row, 2), row_int(row, 3), row_int(row, 4)};
+        }
+    }
+}
+
+void InpParser::parse_q_ctorsions() {
+    ensure_fep();
+    result.q_ctorsions.assign(1, ctorsion_t{});
+    for (const auto& row : fep_->q_ctorsions) {
+        const int id = row_int(row, 0);
+        if (id <= 0) {
+            throw parse_error("[torsion_types]: parameter type IDs must be positive.");
+        }
+        if (result.q_ctorsions.size() <= static_cast<size_t>(id)) {
+            result.q_ctorsions.resize(static_cast<size_t>(id) + 1);
+        }
+        // Fortran Q-torsions have no path divisor; preserve k with unit scaling.
+        // Phase stays in degrees until force parameters are constructed.
+        result.q_ctorsions[id] = {id, row_double(row, 1), row_double(row, 2), row_double(row, 3), 1.0};
+    }
+    for (const auto& torsion : result.q_torsions) {
+        const int code = torsion.code;
+        if (code == 0) continue;
+        if (code < 0 || static_cast<size_t>(code) >= result.q_ctorsions.size() || result.q_ctorsions[code].code != code) {
+            throw parse_error("[change_torsions]: undefined torsion type " + std::to_string(code));
+        }
+    }
+}
+
+void InpParser::parse_q_offdiags() {
+    ensure_fep();
+    result.q_offdiags.clear();
+
+    const int nstates = static_cast<int>(result.lambdas.size());
+    const int nqat = static_cast<int>(result.q_atoms.size());
+
+    for (const auto& row : fep_->q_offdiags) {
+        q_offdiag_t param{};
+        param.i = row_int(row, 0);
+        param.j = row_int(row, 1);
+        param.qk = row_int(row, 2);
+        param.ql = row_int(row, 3);
+        param.Aij = row_double(row, 4);
+        param.muij = row_double(row, 5);
+
+        if (param.i < 1 || param.i > nstates || param.j < 1 || param.j > nstates || param.i == param.j) {
+            throw parse_error("[off_diagonals]: state indices must be different and within range.");
+        }
+
+        if (param.qk < 1 || param.qk > nqat || param.ql < 1 || param.ql > nqat) {
+            throw parse_error("[off_diagonals]: Q-atom index out of range.");
+        }
+
+        if (!std::isfinite(param.Aij) || !std::isfinite(param.muij)) {
+            throw parse_error("[off_diagonals]: A and mu must be finite.");
+        }
+
+        result.q_offdiags.push_back(param);
+    }
+}
+
+void InpParser::parse_q_imprcouples() {
+    ensure_fep();
+    result.q_imprcouples.clear();
+
+    if (fep_->q_imprcouples.empty()) return;
+
+    const int nstates = static_cast<int>(result.lambdas.size());
+
+    if (nstates <= 0 || result.q_impropers.size() % nstates != 0 || result.q_bonds.size() % nstates != 0) {
+        throw parse_error("[improper_couplings]: invalid state-dependent bonded layout.");
+    }
+
+    const size_t nimpropers = result.q_impropers.size() / nstates;
+    const size_t nbonds = result.q_bonds.size() / nstates;
+
+    // Improper row -> {bond row, inverted mode}
+    std::map<int, std::pair<int, bool>> coupled_bonds;
+
+    for (const auto& row : fep_->q_imprcouples) {
+        const int improper_index = row_int(row, 0);
+        const int bond_index = row_int(row, 1);
+        const int mode = row_int(row, 2, 0);
+
+        if (improper_index <= 0 || static_cast<size_t>(improper_index) > nimpropers) {
+            throw parse_error("[improper_couplings]: improper index out of range.");
+        }
+
+        if (bond_index <= 0 || static_cast<size_t>(bond_index) > nbonds) {
+            throw parse_error("[improper_couplings]: bond index out of range.");
+        }
+
+        if (mode != 0 && mode != 1) {
+            throw parse_error("[improper_couplings]: mode must be 0 or 1.");
+        }
+
+        const bool inverted = mode == 1;
+        const std::pair<int, bool> target{bond_index, inverted};
+        const auto inserted = coupled_bonds.emplace(improper_index, target);
+
+        if (!inserted.second) {
+            if (inserted.first->second != target) {
+                throw parse_error("[improper_couplings]: conflicting couplings for the same improper.");
+            }
+            continue;  // Identical duplicate
+        }
+
+        for (int s = 0; s < nstates; ++s) {
+            const auto& improper = result.q_impropers[s * nimpropers + improper_index - 1];
+            const auto& bond = result.q_bonds[s * nbonds + bond_index - 1];
+
+            if (bond.code == 0) {
+                if (improper.code != 0) {
+                    throw parse_error("[improper_couplings]: coupled bond is absent in a state where the improper is present.");
+                }
+                continue;
+            }
+
+            const auto& param = result.q_cbonds.at(bond.code);
+            if (!param.is_morse) {
+                throw parse_error("[improper_couplings]: coupled bond must be Morse in every state where the bond is present.");
+            }
+        }
+        result.q_imprcouples.push_back({improper_index, bond_index, inverted});
+    }
+}
+
+void InpParser::parse_q_softpairs() {
+    ensure_fep();
+    result.q_softpairs.clear();
+
+    const int nqat = static_cast<int>(result.q_atoms.size());
+    std::set<std::pair<int, int>> seen;
+
+    for (const auto& row : fep_->q_softpairs) {
+        int qi = row_int(row, 0);
+        int qj = row_int(row, 1);
+
+        if (qi < 1 || qi > nqat || qj < 1 || qj > nqat) {
+            throw parse_error("[soft_pairs]: Q-atom index is out of range.");
+        }
+
+        if (qi == qj) {
+            throw parse_error("[soft_pairs]: the two Q-atoms must be different.");
+        }
+
+        if (qi > qj) {
+            std::swap(qi, qj);
+        }
+
+        // Treat reversed or repeated entries as the same pair.
+        if (seen.emplace(qi, qj).second) {
+            result.q_softpairs.push_back({qi, qj});
+        }
+    }
+}
+
+void InpParser::parse_q_torcouples() {
+    ensure_fep();
+    result.q_torcouples.clear();
+
+    if (fep_->q_torcouples.empty()) return;
+
+    const int nstates = static_cast<int>(result.lambdas.size());
+
+    if (nstates <= 0 || result.q_torsions.size() % nstates != 0 || result.q_bonds.size() % nstates != 0) {
+        throw parse_error("[torsion_couplings]: invalid state-dependent bonded layout.");
+    }
+    const size_t ntorsions = result.q_torsions.size() / nstates;
+    const size_t nbonds = result.q_bonds.size() / nstates;
+
+    std::map<int, int> coupled_bonds;
+
+    for (const auto& row : fep_->q_torcouples) {
+        const int torsion_index = row_int(row, 0);
+        const int bond_index = row_int(row, 1);
+
+        if (torsion_index <= 0 || static_cast<size_t>(torsion_index) > ntorsions) {
+            throw parse_error("[torsion_couplings]: torsion index out of range.");
+        }
+
+        if (bond_index <= 0 || static_cast<size_t>(bond_index) > nbonds) {
+            throw parse_error("[torsion_couplings]: bond index out of range.");
+        }
+
+        const auto inserted = coupled_bonds.emplace(torsion_index, bond_index);
+
+        if (!inserted.second) {
+            if (inserted.first->second != bond_index) {
+                throw parse_error(
+                    "[torsion_couplings]: a torsion cannot couple "
+                    "to multiple bonds.");
+            }
+            continue;  // Identical duplicate
+        }
+
+        for (int s = 0; s < nstates; ++s) {
+            const auto& torsion = result.q_torsions[s * ntorsions + torsion_index - 1];
+            const auto& bond = result.q_bonds[s * nbonds + bond_index - 1];
+
+            if (bond.code == 0) {
+                if (torsion.code != 0) {
+                    throw parse_error("[torsion_couplings]: coupled bond is absent in a state where the torsion is present.");
+                }
+                continue;
+            }
+
+            const auto& param = result.q_cbonds.at(bond.code);
+            if (!param.is_morse) {
+                throw parse_error("[torsion_couplings]: coupled bond must be Morse in every state where the bond is present.");
+            }
+        }
+        result.q_torcouples.push_back({torsion_index, bond_index});
+    }
+}
+
+void InpParser::parse_q_elscales() {
+    ensure_fep();
+    result.q_elscales.resize(fep_->q_elscales.size());
+    for (size_t i = 0; i < fep_->q_elscales.size(); i++) result.q_elscales[i] = {row_int(fep_->q_elscales[i], 0), row_int(fep_->q_elscales[i], 1), row_double(fep_->q_elscales[i], 2)};
+}
+
+void InpParser::parse_q_exclpairs() {
+    ensure_fep();
+    result.q_exclpairs.clear();
+    if (fep_->q_exclpairs.empty()) return;
+
+    const size_t nstates = result.lambdas.size();
+
+    const size_t npairs = fep_->q_exclpairs.front().size();
+    result.q_exclpairs.resize(nstates * npairs);
+
+    for (size_t s = 0; s < nstates; s++) {
+        for (size_t i = 0; i < npairs; i++) {
+            const auto row = split_state_row(fep_->q_exclpairs[s][i]);
+            const int ai = row_int(row, 0);
+            const int aj = row_int(row, 1);
+
+            if (ai < 1 || ai > result.n_atoms_solute || aj < 1 || aj > result.n_atoms_solute) {
+                throw parse_error("[excluded_pairs]: atom number is outside the solute.");
+            }
+            const int flag = row_int(row, 2);
+
+            result.q_exclpairs[s * npairs + i] = {ai, aj, flag};
+        }
+    }
+
+    std::set<int> q_atoms;
+    for (int i = 0; i < result.q_atoms.size(); i++) {
+        q_atoms.insert(result.q_atoms[i]);
+    }
+
+    for (int i = 0; i < npairs; i++) {
+        const auto& first = result.q_exclpairs[i];
+
+        const bool qi = q_atoms.count(first.ai - 1);
+        const bool qj = q_atoms.count(first.aj - 1);
+        if (qi && qj) continue;
+
+        for (int s = 1; s < nstates; s++) {
+            if (result.q_exclpairs[s * npairs + i].excl != first.excl) {
+                throw parse_error(
+                    "[excluded_pairs]: a pair involving a non-Q "
+                    "atom must be excluded in all or no states.");
+            }
+        }
+    }
+}
+
+void InpParser::parse_q_shakes() {
+    ensure_fep();
+    int n_lambdas = static_cast<int>(result.lambdas.size());
+    size_t total = 0;
+    for (const auto& state : fep_->q_shakes) total += state.size();
+    int n_qshakes = n_lambdas > 0 ? static_cast<int>(total) / n_lambdas : 0;
+    result.q_shakes.resize(n_qshakes * n_lambdas);
+    for (int state = 0; state < n_lambdas && state < static_cast<int>(fep_->q_shakes.size()); state++) {
+        for (int i = 0; i < n_qshakes && static_cast<size_t>(i) < fep_->q_shakes[state].size(); i++) {
+            auto row = split_state_row(fep_->q_shakes[state][i]);
+            result.q_shakes[i + state * n_qshakes] = {row_int(row, 0), row_int(row, 1), row_double(row, 2)};
+        }
+    }
+}
+
+void InpParser::parse_q_softcores() {
+    ensure_fep();
+    result.softcore_use_max_potential = fep_->softcore_use_max_potential;
+    int n_lambdas = static_cast<int>(result.lambdas.size());
+    size_t total = 0;
+    for (const auto& state : fep_->q_softcores) total += state.size();
+    int n_qsoftcores = n_lambdas > 0 ? static_cast<int>(total) / n_lambdas : 0;
+    result.q_softcores.resize(n_qsoftcores * n_lambdas);
+    for (int state = 0; state < n_lambdas && state < static_cast<int>(fep_->q_softcores.size()); state++) {
+        for (int i = 0; i < n_qsoftcores && static_cast<size_t>(i) < fep_->q_softcores[state].size(); i++) {
+            result.q_softcores[i + state * n_qsoftcores].s = parse_double(fep_->q_softcores[state][i]);
+        }
+    }
+    result.softcore = fep_->softcore;
+    if (result.softcore.method == SC_GAPSYS) {
+        const auto& sc = result.softcore;
+        if (!(sc.alpha_lj > 0 && sc.alpha_lj <= 1) || !(sc.alpha_q > 0) || !(sc.sigma_q >= 0)) {
+            throw parse_error("[FEP]: Gapsys soft-core requires 0 < alpha_lj <= 1, alpha_q > 0, sigma_q >= 0.");
+        }
+    }
+}

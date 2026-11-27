@@ -1,5 +1,5 @@
 import math
-import functions as f
+import Qgpu.functions as f
 import numpy as np
 import sys
 

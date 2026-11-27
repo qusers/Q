@@ -1,0 +1,155 @@
+
+#pragma once
+#include <cstdint>
+#include <memory>
+#include <vector>
+
+#include "constants.h"
+#include "context.h"
+#include "host_device_buffer.h"
+#include "pair_potential.h"
+
+enum class CalculationType : uint8_t {
+    Exclude,
+    Calculate,
+    // Calculate_14,
+    Calculate_Special,  // Now for the softpair
+};
+
+enum class AtomCategory : uint8_t { P,
+                                    Q,
+                                    W,
+                                    INVALID };
+
+// Maps a tile's category/state to the EnergyBuffer *coul* slot.
+HD inline int nb_coul_slot(uint8_t t1, uint8_t t2, int s1, int s2, int n_states) {
+    const uint8_t P = (uint8_t)AtomCategory::P;
+    const uint8_t Q = (uint8_t)AtomCategory::Q;
+    const uint8_t W = (uint8_t)AtomCategory::W;
+    bool q1 = (t1 == Q), q2 = (t2 == Q);
+    if (!q1 && !q2) {
+        if (t1 == P && t2 == P) return E_NB_PP_COUL;
+        if (t1 == W && t2 == W) return E_NB_WW_COUL;
+        return E_NB_PW_COUL;  // remaining non-Q pair is P-W
+    }
+    int state = q1 ? s1 : s2;  // the Q atom's state
+    if (q1 && q2) return EnergyBuffer::eq_index(ENERGY_FIXED_COUNT, state, EQ_NB_QQ_COUL);
+    if (t1 == W || t2 == W) return EnergyBuffer::eq_index(ENERGY_FIXED_COUNT, state, EQ_NB_QW_COUL);
+    return EnergyBuffer::eq_index(ENERGY_FIXED_COUNT, state, EQ_NB_QP_COUL);  // else Q-P
+}
+
+// The vdw slot is always coul+1
+HD inline int nb_vdw_slot(uint8_t t1, uint8_t t2, int s1, int s2, int n_states) {
+    return nb_coul_slot(t1, t2, s1, s2, n_states) + 1;
+}
+
+enum class BondType : uint8_t { Bond23,
+                                Bond14,
+                                NonBond };
+
+HD inline size_t pair_tile_index(int tile_x, int tile_y, int n_clusters) {
+    const size_t x = static_cast<size_t>(tile_x);
+    const size_t y = static_cast<size_t>(tile_y);
+    const size_t n = static_cast<size_t>(n_clusters);
+
+    return x * (2 * n - x + 1) / 2 + (y - x);
+}
+
+HD inline BondType get_bond_type(int n_atoms_solute, const int* LJ_matrix, int atom1, uint8_t atom1_type, int atom2, uint8_t atom2_type) {
+    bool w1 = atom1_type == static_cast<uint8_t>(AtomCategory::W);
+    bool w2 = atom2_type == static_cast<uint8_t>(AtomCategory::W);
+
+    if (w1 != w2) {
+        return BondType::NonBond;  // solute-water never bonded
+    }
+
+    if (w1) {
+        // both w
+        if ((atom1 - n_atoms_solute) / 3 == (atom2 - n_atoms_solute) / 3) {
+            return BondType::Bond23;
+        }
+        return BondType::NonBond;
+    }
+
+    int lj_matrix_value = LJ_matrix[atom1 * n_atoms_solute + atom2];
+    if (lj_matrix_value == 3) {
+        return BondType::Bond23;
+    } else if (lj_matrix_value == 1) {
+        return BondType::Bond14;
+    }
+    return BondType::NonBond;
+}
+
+struct NonbondedData {
+    int n_total = 0;
+    std::unique_ptr<HostDeviceBuffer<int>> atom_idx;       // global atom index
+    std::unique_ptr<HostDeviceBuffer<int>> atom_to_group;  // global atom index
+
+    std::unique_ptr<HostDeviceBuffer<uint8_t>> category;     // Atom Category
+    std::unique_ptr<HostDeviceBuffer<int>> q_state;          // segment idx; -1 for P/W
+    std::unique_ptr<HostDeviceBuffer<real_t>> atom_lambdas;  // lambdas[state]; 1.0 for P/W
+    std::unique_ptr<HostDeviceBuffer<int>> group_indices;    // group idx;
+    std::unique_ptr<HostDeviceBuffer<int>> group_start_idx;  // In the atom_idx, the first index of the atom that belongs to the group
+    std::unique_ptr<HostDeviceBuffer<int>> group_sizes;      // The group size
+
+    std::unique_ptr<HostDeviceBuffer<real_t>> atom_charge;
+    std::unique_ptr<HostDeviceBuffer<vdw_atom_param_t>> atom_vdw;
+
+    std::vector<special_pair_term_t> special_pairs;
+
+    int n_cluster = 0;
+    size_t n_pair_tiles = 0;
+
+    // Layout: [tile_index * 32 + x_lane].
+    // Bit y_lane describes the pair (x_lane, y_lane).
+    std::unique_ptr<HostDeviceBuffer<uint32_t>> pair_masks;
+    // std::unique_ptr<HostDeviceBuffer<uint32_t>> pair_14_masks;
+
+    GapsysKernelParams softcore;
+    std::vector<uint8_t> softcore_enabled;                    // per slot: Q atom flagged in [softcore] for its state
+    std::unique_ptr<HostDeviceBuffer<real_t>> atom_softcore;  // per slot: (1 - lambda)^(1/6) if enabled, else -1
+
+    bool enabled() const { return n_total > 0; }
+};
+
+struct LrfCoefficients {
+    coord_t center{};
+
+    double phi0 = 0;
+    double phi1[3]{};
+    double phi2[9]{};
+    double phi3[27]{};
+};
+
+class NonbondedForce {
+   public:
+    virtual ~NonbondedForce() = default;
+    // Builds the combined atom list + pairwise tables, then calls init_backend(ctx).
+    // Call once before the first MD step
+    void init(Context& ctx, const ParseResult& parsed);
+
+    const std::vector<special_pair_term_t>& special_pairs() const {
+        return data_.special_pairs;
+    }
+
+    // Per-step : compute all groups, write energies to ctx.E_nonbond_*, ctx.EQ_nonbond_*
+    virtual void calc(Context& ctx) = 0;
+
+    virtual void cleanup() {}
+
+    // Refresh the per-atom copy of lambda after ctx.lambdas changed. Call from Handler::configure.
+    void update_lambdas(Context& ctx);
+
+   protected:
+    virtual void init_backend(Context& ctx) {}  // backend allocation hook
+
+    NonbondedData data_;
+
+   private:
+    void build_combinded_list(Context& ctx);  // atom_idx, category, q_state, atom_lambdas
+    void build_charge_table(Context& ctx);    // charge_pair_products + charge_types + counts
+    void build_catype_table(Context& ctx);    // catype_pair_params + catype_types + counts
+    void build_atom_to_group(Context& ctx);   // atom_to_group
+    void build_pair_masks(Context& ctx, const ParseResult& parsed);
+    void build_softcore_table(Context& ctx, const ParseResult& parsed);
+};

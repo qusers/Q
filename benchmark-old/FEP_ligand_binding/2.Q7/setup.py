@@ -1,7 +1,7 @@
 import glob
 import os
 
-QligFEP = '../../../bin/QligFEP.py'
+QligFEP = '../../../src/bin/QligFEP.py'
 # construct FEPfiles
 FEPs = glob.glob('../1.Q5/*/*')
 #FEPs = [FEPs[0]]

@@ -1,0 +1,153 @@
+#include "cpu_shake.h"
+
+#include <cmath>
+#include <cstdio>
+#include <string>
+#include <vector>
+
+#include "constants.h"
+#include "qgpu_error.h"
+
+void CpuShake::apply(Context& ctx, HostDeviceBuffer<coord_t>& xcoords_buffer) {
+    auto* coords = ctx.coords->cpu_data_p;
+    auto* xcoords = xcoords_buffer.cpu_data_p;
+    apply_to(ctx, coords, xcoords);
+}
+
+void CpuShake::initial_constraint(Context& ctx) {
+    /*
+     * Fresh-start setup has no previous coordinate frame yet.
+     *
+     * The leapfrog/SHAKE state uses:
+     *   coords  = current coordinates
+     *   xcoords = previous/reference coordinates
+     *   velocity = (coords - xcoords) / dt
+     *
+     * Initial SHAKE should therefore:
+     *   1. Copy coords into xcoords and SHAKE coords so the initial structure
+     *      satisfies all distance constraints.
+     *   2. Reconstruct a previous frame with xcoords = coords - dt * velocity.
+     *   3. SHAKE that reconstructed previous frame as well, using coords as
+     *      the reference frame.
+     *   4. Recompute velocities from the corrected coords/xcoords pair so the
+     *      initial velocities are consistent with the constrained geometry.
+     */
+    auto* coords = ctx.coords->cpu_data_p;
+    auto* velocities = ctx.velocities->cpu_data_p;
+    std::vector<coord_t> xcoords(ctx.n_atoms);
+
+    for (int i = 0; i < ctx.n_atoms; i++) {
+        xcoords[i] = coords[i];
+    }
+
+    apply_to(ctx, coords, xcoords.data());
+
+    for (int i = 0; i < ctx.n_atoms; i++) {
+        const double dt = ctx.dt;
+        xcoords[i].x = coords[i].x - dt * velocities[i].x;
+        xcoords[i].y = coords[i].y - dt * velocities[i].y;
+        xcoords[i].z = coords[i].z - dt * velocities[i].z;
+    }
+
+    apply_to(ctx, xcoords.data(), coords);
+
+    for (int i = 0; i < ctx.n_atoms; i++) {
+        const double dt = ctx.dt;
+        velocities[i].x = (coords[i].x - xcoords[i].x) / dt;
+        velocities[i].y = (coords[i].y - xcoords[i].y) / dt;
+        velocities[i].z = (coords[i].z - xcoords[i].z) / dt;
+    }
+}
+
+void CpuShake::apply_to(Context& ctx, coord_t* coords, coord_t* xcoords) {
+    /*
+     * This follows the original Fortran SHAKE loop: each molecule owns a
+     * ready flag per constraint, and a constraint that reaches tolerance is
+     * skipped for the rest of that molecule's iteration loop.
+     *
+     * That behavior is kept for parity with Q, but it is not obviously the
+     * safest iterative scheme. If two constraints share atoms, a later
+     * correction can move a previously-ready bond away from tolerance again.
+     * A stricter implementation would recheck every constraint each iteration,
+     * or at least clear ready after coupled corrections.
+     */
+    const auto* winv = ctx.winv->cpu_data_p;
+    const auto* shake_bonds = data_.constraint_bonds->cpu_data_p;
+    const auto* mol_n_shakes = data_.mol_n_constraints->cpu_data_p;
+
+    // Kept outside the iteration loop to match the Fortran ready semantics.
+    std::vector<bool> ready(data_.n_constraints, false);
+    int shake = 0;
+    for (int mol = 0; mol < ctx.n_molecules(); mol++) {
+        if (mol_n_shakes[mol] == 0) continue;
+
+        bool converged;
+        int try_times = 0;
+
+        int current_shake_num = mol_n_shakes[mol];
+        do {
+            converged = true;
+            for (int i = 0; i < current_shake_num; i++) {
+                if (ready[shake + i]) continue;
+
+                const int ai = shake_bonds[shake + i].ai - 1;
+                const int aj = shake_bonds[shake + i].aj - 1;
+
+                const double xij_x = coords[ai].x - coords[aj].x;
+                const double xij_y = coords[ai].y - coords[aj].y;
+                const double xij_z = coords[ai].z - coords[aj].z;
+
+                const double current_dist2 = xij_x * xij_x + xij_y * xij_y + xij_z * xij_z;
+                const double diff = shake_bonds[shake + i].dist2 - current_dist2;
+
+                if (std::abs(diff) < shake_tol * shake_bonds[shake + i].dist2) {
+                    ready[shake + i] = true;
+                } else {
+                    converged = false;
+                }
+
+                const double xxij_x = xcoords[ai].x - xcoords[aj].x;
+                const double xxij_y = xcoords[ai].y - xcoords[aj].y;
+                const double xxij_z = xcoords[ai].z - xcoords[aj].z;
+                const double scp = xij_x * xxij_x + xij_y * xxij_y + xij_z * xxij_z;
+                const double winv_ai = winv[ai];
+                const double winv_aj = winv[aj];
+                const double corr = diff / (2.0 * scp * (winv_ai + winv_aj));
+
+                coords[ai].x = coords[ai].x + xxij_x * corr * winv_ai;
+                coords[ai].y = coords[ai].y + xxij_y * corr * winv_ai;
+                coords[ai].z = coords[ai].z + xxij_z * corr * winv_ai;
+
+                coords[aj].x = coords[aj].x - xxij_x * corr * winv_aj;
+                coords[aj].y = coords[aj].y - xxij_y * corr * winv_aj;
+                coords[aj].z = coords[aj].z - xxij_z * corr * winv_aj;
+            }
+
+            try_times++;
+        } while (try_times < shake_max_iter && !converged);
+
+        if (!converged) {
+            for (int i = 0; i < current_shake_num; i++) {
+                const int ai = shake_bonds[shake + i].ai - 1;
+                const int aj = shake_bonds[shake + i].aj - 1;
+
+                const double dx = coords[ai].x - coords[aj].x;
+                const double dy = coords[ai].y - coords[aj].y;
+                const double dz = coords[ai].z - coords[aj].z;
+                const double dist2 = dx * dx + dy * dy + dz * dz;
+
+                if (!isfinite(dist2) ||
+                    fabs(shake_bonds[shake + i].dist2 - dist2) >= shake_tol * shake_bonds[shake + i].dist2) {
+                    printf(">>> Shake failed, i = %d, j = %d, d = %f, d0 = %f\n", ai, aj, sqrt(dist2), sqrt(shake_bonds[shake + i].dist2));
+                }
+            }
+            std::fflush(stdout);
+            throw ConstraintError("SHAKE did not converge at step " + std::to_string(ctx.step) + " (CPU, " + std::to_string(shake_max_iter) + " iterations)");
+        }
+
+        shake += current_shake_num;
+    }
+}
+
+void CpuShake::init_from_bonds(Context& ctx, const std::vector<ConstraintBond>& bonds) {
+}

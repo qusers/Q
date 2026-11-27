@@ -1,24 +1,25 @@
-#include "system.h"
-
-#include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 
-int main(int argc, char *argv[]){
-    if (argc < 2) {
-        printf(">>> FATAL: Input file folder expected. Exiting...\n");
-        exit(EXIT_FAILURE);
+#include <memory>
+
+#include "command_parser.h"
+#include "context.h"
+#include "run_simulation.h"
+
+int main(int argc, char* argv[]) {
+    CommandParseResult parsed = parse_command(argc, argv);
+    if (!parsed.ok) {
+        print_command_usage();
+        printf(">>> FATAL: %s Exiting...\n", parsed.error.c_str());
+        return EXIT_FAILURE;
     }
 
-    if (argc > 2) {
-        run_gpu = strcmp(argv[1], "--gpu") == 0;
-        strcpy(base_folder, argv[2]);
+    try {
+        run_simulation(parsed.command);
+    } catch (const std::exception& e) {
+        printf(">>> FATAL: %s Exiting...\n", e.what());
+        return EXIT_FAILURE;
     }
-    else {
-        run_gpu = false;
-        strcpy(base_folder, argv[1]);
-    }
-
-    calc_integration();
-
-    exit(EXIT_SUCCESS);
+    return EXIT_SUCCESS;
 }
