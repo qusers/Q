@@ -215,6 +215,10 @@ echo "#    Slurm tasks: $SLURM_NTASKS"
 echo "#    Starttime: $starttime_readable"
 echo "#    Endtime: $endtime_readable"
 echo "#    Runtime: ${hours}h:${minutes}m:${seconds}s"
+# The same start and end as seconds since the epoch, which read the same in any
+# locale or timezone; the analysis takes the run's elapsed time from them.
+echo "#    Start epoch: $starttime"
+echo "#    End epoch: $endtime"
 echo "#    Random seed: $seed"
 echo "#    Replicate Number: $run_num"
 echo "#    Working Directory: $workdir"
